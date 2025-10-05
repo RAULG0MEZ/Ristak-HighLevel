@@ -34,7 +34,7 @@ export const Contacts: React.FC = () => {
   const [editingContact, setEditingContact] = useState<Contact | null>(null)
   const [deletingContact, setDeletingContact] = useState<Contact | null>(null)
   const [loading, setLoading] = useState(false)
-  const [viewMode, setViewMode] = useState<'all' | 'by-date'>('by-date') // Por defecto 'by-date' (Por fecha)
+  const [viewMode, setViewMode] = useState<'all' | 'by-date'>('all') // Por defecto 'all' (Todos)
 
   const rangeStart = dateRange.start instanceof Date ? dateRange.start : new Date(dateRange.start)
   const rangeEnd = dateRange.end instanceof Date ? dateRange.end : new Date(dateRange.end)
