@@ -1,6 +1,6 @@
 // Servicio para el Dashboard principal
-// En producción usa rutas relativas (mismo origen), en desarrollo localhost:3001
-const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.MODE === 'production' ? '' : 'http://localhost:3001');
+// Si no hay VITE_API_URL, usa rutas relativas
+const API_URL = import.meta.env.VITE_API_URL || '';
 
 export interface DashboardKPI {
   value: number;
