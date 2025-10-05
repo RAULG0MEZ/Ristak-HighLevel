@@ -149,16 +149,20 @@ export const handlePaymentWebhook = async (req, res) => {
  */
 export const handleAppointmentWebhook = async (req, res) => {
   try {
-    const appointment = req.body;
+    const data = req.body;
+    const calendar = data.calendar || {};
 
-    logger.info(`📥 Webhook de cita recibido: ${appointment.id || 'sin ID'}`);
+    // HighLevel manda el ID de la cita en calendar.appointmentId
+    const appointmentId = calendar.appointmentId || data.id || data.appointment_id;
 
-    if (!appointment.id) {
+    logger.info(`📥 Webhook de cita recibido: ${appointmentId || 'sin ID'}`);
+
+    if (!appointmentId) {
       logger.warn('Webhook de cita sin ID, ignorando');
       return res.status(200).json({ success: true, message: 'Webhook recibido' });
     }
 
-    const contactId = appointment.contactId || appointment.contact_id;
+    const contactId = data.contact_id || data.contactId;
     const usePostgres = process.env.DATABASE_URL ? true : false;
 
     // Verificar si el contacto existe, si no crearlo con datos básicos
@@ -168,13 +172,15 @@ export const handleAppointmentWebhook = async (req, res) => {
         logger.info(`Contacto ${contactId} no existe, creando con datos básicos...`);
 
         const contactQuery = usePostgres
-          ? `INSERT INTO contacts (id, full_name, source) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING`
-          : `INSERT OR IGNORE INTO contacts (id, full_name, source) VALUES (?, ?, ?)`;
+          ? `INSERT INTO contacts (id, full_name, phone, source, created_at) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING`
+          : `INSERT OR IGNORE INTO contacts (id, full_name, phone, source, created_at) VALUES (?, ?, ?, ?, ?)`;
 
         await db.run(contactQuery, [
           contactId,
-          appointment.contactName || 'Contacto sin nombre',
-          'appointment-webhook'
+          data.full_name || data.contactName || 'Contacto sin nombre',
+          data.phone || null,
+          'appointment-webhook',
+          data.date_created || new Date().toISOString()
         ]);
       }
     }
@@ -191,25 +197,25 @@ export const handleAppointmentWebhook = async (req, res) => {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
     await db.run(query, [
-      appointment.id,
-      appointment.calendarId || appointment.calendar_id,
+      appointmentId,
+      calendar.id || data.calendarId || data.calendar_id,
       contactId,
-      appointment.locationId || appointment.location_id,
-      appointment.title,
-      appointment.status,
-      appointment.appointmentStatus || appointment.appointment_status,
-      appointment.assignedUserId || appointment.assigned_user_id,
-      appointment.notes,
-      appointment.address,
-      appointment.startTime || appointment.start_time,
-      appointment.endTime || appointment.end_time,
-      appointment.dateAdded || appointment.date_added || new Date().toISOString(),
-      appointment.dateUpdated || appointment.date_updated || new Date().toISOString()
+      data.location?.id || data.locationId || data.location_id,
+      calendar.title || data.title || calendar.calendarName,
+      calendar.status || data.status,
+      calendar.appoinmentStatus || calendar.appointmentStatus || data.appointment_status,
+      calendar.created_by_user_id || data.assignedUserId || data.assigned_user_id,
+      calendar.notes || data.notes,
+      calendar.address || data.address || data.location?.fullAddress,
+      calendar.startTime || data.startTime || data.start_time,
+      calendar.endTime || data.endTime || data.end_time,
+      calendar.date_created || data.dateAdded || data.date_added || new Date().toISOString(),
+      calendar.last_updated || data.dateUpdated || data.date_updated || new Date().toISOString()
     ]);
 
     // Actualizar appointment_date del contacto con la fecha de la cita más próxima
-    if (contactId && (appointment.startTime || appointment.start_time)) {
-      const startTime = appointment.startTime || appointment.start_time;
+    const startTime = calendar.startTime || data.startTime || data.start_time;
+    if (contactId && startTime) {
       await db.run(`
         UPDATE contacts
         SET appointment_date = ?
@@ -218,7 +224,7 @@ export const handleAppointmentWebhook = async (req, res) => {
       `, [startTime, contactId, startTime]);
     }
 
-    logger.info(`✅ Cita ${appointment.id} procesada exitosamente`);
+    logger.info(`✅ Cita ${appointmentId} procesada exitosamente para contacto ${contactId}`);
     res.status(200).json({ success: true, message: 'Cita procesada' });
 
   } catch (error) {
