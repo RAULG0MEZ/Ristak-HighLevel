@@ -301,10 +301,13 @@ export const handleRefundWebhook = async (req, res) => {
 export const handleWhatsAppAttributionWebhook = async (req, res) => {
   try {
     const data = req.body;
+    const customData = data.customData || {};
 
-    logger.info(`📥 Webhook de atribución WhatsApp recibido para: ${data.phone || 'sin teléfono'}`);
+    const phone = data.phone || data.contactPhone;
 
-    if (!data.phone) {
+    logger.info(`📥 Webhook de atribución WhatsApp recibido para: ${phone || 'sin teléfono'}`);
+
+    if (!phone) {
       logger.warn('Webhook de atribución sin teléfono, ignorando');
       return res.status(200).json({ success: true, message: 'Webhook recibido' });
     }
@@ -324,19 +327,19 @@ export const handleWhatsAppAttributionWebhook = async (req, res) => {
 
     await db.run(query, [
       data.contact_id || data.contactId,
-      data.phone,
-      data.referral_source_url || data.sourceUrl || data.source_url,
-      data.referral_source_type || data.sourceType || data.source_type,
-      data.referral_source_id || data.sourceId || data.source_id,
-      data.referral_headline || data.headline,
-      data.referral_body || data.body,
-      data.referral_image_url || data.imageUrl || data.image_url,
-      data.referral_video_url || data.videoUrl || data.video_url,
-      data.referral_thumbnail_url || data.thumbnailUrl || data.thumbnail_url,
-      data.referral_ctwa_clid || data.ctwa_clid || data.ctwaCLID
+      phone,
+      customData.source_url || data.referral_source_url || data.sourceUrl || data.source_url,
+      customData.source_type || data.referral_source_type || data.sourceType || data.source_type,
+      customData.source_id || data.referral_source_id || data.sourceId || data.source_id,
+      customData.headline || data.referral_headline || data.headline,
+      customData.body || data.referral_body || data.body,
+      customData.image_url || data.referral_image_url || data.imageUrl || data.image_url,
+      customData.video_url || data.referral_video_url || data.videoUrl || data.video_url,
+      customData.thumbnail_url || data.referral_thumbnail_url || data.thumbnailUrl || data.thumbnail_url,
+      customData.ctwa_clid || data.referral_ctwa_clid || data.ctwa_clid || data.ctwaCLID
     ]);
 
-    logger.info(`✅ Atribución WhatsApp procesada para ${data.phone}`);
+    logger.info(`✅ Atribución WhatsApp procesada para ${phone} (contacto ${data.contact_id})`);
     res.status(200).json({ success: true, message: 'Atribución procesada' });
 
   } catch (error) {
