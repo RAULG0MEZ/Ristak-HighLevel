@@ -21,6 +21,12 @@ if (usePostgres) {
     }
   })
 
+  // Helper para convertir placeholders SQLite (?) a PostgreSQL ($1, $2, etc.)
+  const convertPlaceholders = (sql) => {
+    let index = 1
+    return sql.replace(/\?/g, () => `$${index++}`)
+  }
+
   db = {
     run: async (sql, params = []) => {
       const client = await pool.connect()
@@ -30,6 +36,9 @@ if (usePostgres) {
         sql = sql.replace(/INTEGER PRIMARY KEY AUTOINCREMENT/g, 'SERIAL PRIMARY KEY')
         sql = sql.replace(/DATETIME/g, 'TIMESTAMP')
         sql = sql.replace(/TEXT/g, 'TEXT')
+
+        // Convertir placeholders ? a $1, $2, etc.
+        sql = convertPlaceholders(sql)
 
         const result = await client.query(sql, params)
         return {
@@ -45,6 +54,8 @@ if (usePostgres) {
       const client = await pool.connect()
       try {
         sql = sql.replace(/DATETIME/g, 'TIMESTAMP')
+        sql = convertPlaceholders(sql)
+
         const result = await client.query(sql, params)
         return result.rows[0] || null
       } finally {
@@ -56,6 +67,8 @@ if (usePostgres) {
       const client = await pool.connect()
       try {
         sql = sql.replace(/DATETIME/g, 'TIMESTAMP')
+        sql = convertPlaceholders(sql)
+
         const result = await client.query(sql, params)
         return result.rows
       } finally {
