@@ -11,12 +11,20 @@ export const handleContactWebhook = async (req, res) => {
 
     // HighLevel puede mandar el ID en diferentes lugares
     const contactId = data.contact_id || data.id || data.contactId;
+    const email = data.email;
+    const phone = data.phone || data.contactPhone;
 
     logger.info(`📥 Webhook de contacto recibido: ${contactId || 'sin ID'}`);
 
     if (!contactId) {
       logger.warn('Webhook de contacto sin ID, ignorando');
       return res.status(200).json({ success: true, message: 'Webhook recibido' });
+    }
+
+    // Validar que venga al menos email O phone
+    if (!email && !phone) {
+      logger.warn(`Webhook de contacto ${contactId} sin email ni phone, ignorando`);
+      return res.status(200).json({ success: true, message: 'Contacto sin email ni phone' });
     }
 
     // Extraer datos de atribución (pueden venir en diferentes estructuras)
