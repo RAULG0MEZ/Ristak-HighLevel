@@ -327,9 +327,13 @@ cd frontend && npm run build
 
 ## 📅 ÚLTIMA ACTUALIZACIÓN
 
-**Fecha**: 2025-10-03
-**Versión**: 1.4.0
-**Último cambio estructural**: Agregada funcionalidad completa de edición y eliminación de contactos desde la tabla en la página de Contactos. Incluye modales de edición y confirmación de eliminación.
+**Fecha**: 2025-10-05
+**Versión**: 1.5.0
+**Último cambio estructural**:
+- Frontend usa rutas relativas en producción (no más localhost hardcodeado)
+- Progreso global de sincronización corregido
+- PostgreSQL placeholders fix ($1, $2 en vez de ?)
+- Repositorio principal movido a "Ristak - High Level" (con espacio)
 
 ---
 
