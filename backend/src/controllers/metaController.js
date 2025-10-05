@@ -407,7 +407,7 @@ export const getSpendOverTime = async (req, res) => {
           TO_CHAR(date::date, 'YYYY-MM-DD') as day,
           SUM(spend) as spend
         FROM meta_ads
-        WHERE date >= $1 AND date < ($2::date + INTERVAL '1 day')
+        WHERE date::date >= $1::date AND date::date < ($2::date + INTERVAL '1 day')
         GROUP BY day
         ORDER BY day ASC
       `
@@ -430,7 +430,7 @@ export const getSpendOverTime = async (req, res) => {
           SUM(amount) as revenue
         FROM payments
         WHERE status = 'succeeded'
-          AND date >= $1 AND date < ($2::date + INTERVAL '1 day')
+          AND date::date >= $1::date AND date::date < ($2::date + INTERVAL '1 day')
         GROUP BY day
         ORDER BY day ASC
       `
