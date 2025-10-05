@@ -244,11 +244,12 @@ export const handleAppointmentWebhook = async (req, res) => {
  */
 export const handleRefundWebhook = async (req, res) => {
   try {
-    const refund = req.body;
+    const data = req.body;
 
-    logger.info(`📥 Webhook de reembolso recibido: ${refund._id || refund.id || 'sin ID'}`);
+    // HighLevel manda el refund_id en customData.refund_id
+    const refundId = data.customData?.refund_id || data._id || data.id || data.refund_id;
 
-    const refundId = refund._id || refund.id;
+    logger.info(`📥 Webhook de reembolso recibido: ${refundId || 'sin ID'}`);
 
     if (!refundId) {
       logger.warn('Webhook de reembolso sin ID, ignorando');
@@ -258,18 +259,25 @@ export const handleRefundWebhook = async (req, res) => {
     // Obtener el contactId del pago antes de actualizarlo
     const payment = await db.get('SELECT contact_id FROM payments WHERE id = ?', [refundId]);
 
+    if (!payment) {
+      logger.warn(`Pago ${refundId} no encontrado para reembolso`);
+      return res.status(200).json({ success: true, message: 'Pago no encontrado' });
+    }
+
     // Actualizar el pago como reembolsado
     await db.run(
       `UPDATE payments SET status = 'refunded', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
       [refundId]
     );
 
-    // Recalcular estadísticas del contacto si se encontró
-    if (payment && payment.contact_id) {
+    // Recalcular estadísticas del contacto
+    if (payment.contact_id) {
       await updateSingleContactStats(payment.contact_id);
+      logger.info(`✅ Reembolso ${refundId} procesado exitosamente para contacto ${payment.contact_id}`);
+    } else {
+      logger.info(`✅ Reembolso ${refundId} procesado exitosamente`);
     }
 
-    logger.info(`✅ Reembolso ${refundId} procesado exitosamente`);
     res.status(200).json({ success: true, message: 'Reembolso procesado' });
 
   } catch (error) {
