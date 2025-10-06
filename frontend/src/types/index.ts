@@ -10,6 +10,8 @@ export interface Contact {
   lastPurchase?: string
   purchases: number
   source?: string
+  ad_name?: string
+  ad_id?: string
   notes?: string
   normalizedPhone?: string | null
   duplicateCount?: number

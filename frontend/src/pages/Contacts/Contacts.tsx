@@ -337,6 +337,32 @@ export const Contacts: React.FC = () => {
                   )}
                 </div>
               </div>
+
+              {(selectedContact.source || selectedContact.ad_name || selectedContact.ad_id) && (
+                <div className={styles.infoSection}>
+                  <h3>De dónde llegó el contacto:</h3>
+                  <div className={styles.infoGrid}>
+                    {selectedContact.source && (
+                      <div>
+                        <span className={styles.label}>Fuente:</span>
+                        <span className={styles.value}>{selectedContact.source}</span>
+                      </div>
+                    )}
+                    {selectedContact.ad_name && (
+                      <div>
+                        <span className={styles.label}>Anuncio:</span>
+                        <span className={styles.value}>{selectedContact.ad_name}</span>
+                      </div>
+                    )}
+                    {selectedContact.ad_id && (
+                      <div>
+                        <span className={styles.label}>ID del Anuncio:</span>
+                        <span className={styles.value}>{selectedContact.ad_id}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

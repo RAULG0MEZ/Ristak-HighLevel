@@ -140,6 +140,8 @@ export const getContacts = async (req, res) => {
         lastPurchase: c.last_purchase_date,
         purchases: c.purchases_count || 0,
         source: c.source,
+        ad_name: c.attribution_ad_name,
+        ad_id: c.attribution_ad_id,
         notes: ''
       }
     })
@@ -261,6 +263,8 @@ export const getContactById = async (req, res) => {
       lastPurchase: contact.last_purchase_date,
       purchases: contact.purchases_count || 0,
       source: contact.source,
+      ad_name: contact.attribution_ad_name,
+      ad_id: contact.attribution_ad_id,
       notes: '',
       payments,
       appointments
@@ -322,7 +326,9 @@ export const searchContacts = async (req, res) => {
         c.appointment_date,
         COALESCE(ps.last_purchase_date, c.last_purchase_date) AS last_purchase_date,
         c.created_at,
-        c.source
+        c.source,
+        c.attribution_ad_name,
+        c.attribution_ad_id
       FROM contacts c
       LEFT JOIN payment_stats ps ON ps.contact_id = c.id
       WHERE
@@ -354,6 +360,8 @@ export const searchContacts = async (req, res) => {
         lastPurchase: c.last_purchase_date,
         purchases: c.purchases_count || 0,
         source: c.source,
+        ad_name: c.attribution_ad_name,
+        ad_id: c.attribution_ad_id,
         notes: ''
       }
     })
