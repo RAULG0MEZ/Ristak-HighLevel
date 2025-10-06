@@ -130,15 +130,11 @@ const DATE_PRESETS: DatePreset[] = [
 
 // Helper: Parsear string YYYY-MM-DD como fecha LOCAL (no UTC)
 const parseLocalDate = (dateStr: string | undefined | null): Date | null => {
-  console.log('🔍 parseLocalDate - Input:', dateStr)
   if (!dateStr) return null
   try {
     const [year, month, day] = dateStr.split('-').map(Number)
-    console.log('🔍 parseLocalDate - Parsed:', { year, month, day })
     if (isNaN(year) || isNaN(month) || isNaN(day)) return null
-    const result = new Date(year, month - 1, day, 0, 0, 0, 0)
-    console.log('🔍 parseLocalDate - Result:', result, 'ISO:', result.toISOString())
-    return result
+    return new Date(year, month - 1, day, 0, 0, 0, 0)
   } catch {
     return null
   }
@@ -149,7 +145,6 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
   onChange,
   placeholder = 'Seleccionar fechas'
 }) => {
-  console.log('📅 DateRangePicker RENDER - Props:', { startDate, endDate })
   const [isOpen, setIsOpen] = useState(false)
   const [leftMonth, setLeftMonth] = useState(() => {
     if (startDate) {
@@ -246,10 +241,8 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
   }
 
   const handleDateClick = (date: Date) => {
-    console.log('🖱️ handleDateClick - Clicked date:', date, 'selectingEndDate:', selectingEndDate)
     if (!selectingEndDate) {
       // Selecting start date
-      console.log('🖱️ Setting tempStart:', date)
       setTempStart(date)
       setTempEnd(null)
       setSelectingEndDate(true)
@@ -257,11 +250,9 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
       // Selecting end date
       if (date < tempStart!) {
         // If end date is before start date, swap them
-        console.log('🖱️ Swapping - Setting tempStart:', date, 'tempEnd:', tempStart)
         setTempEnd(tempStart)
         setTempStart(date)
       } else {
-        console.log('🖱️ Setting tempEnd:', date)
         setTempEnd(date)
       }
       setSelectingEndDate(false)
@@ -269,9 +260,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
   }
 
   const handlePresetClick = (preset: DatePreset) => {
-    console.log('⚡ handlePresetClick - Preset:', preset.label)
     const { start, end } = preset.getValue()
-    console.log('⚡ Preset dates - start:', start, 'end:', end)
     setTempStart(start)
     setTempEnd(end)
 
@@ -282,12 +271,11 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
   }
 
   const applyDateRange = () => {
-    console.log('🎯 applyDateRange - tempStart:', tempStart, 'tempEnd:', tempEnd)
     if (tempStart && tempEnd) {
-      const startISO = formatDateToISO(tempStart)
-      const endISO = formatDateToISO(tempEnd)
-      console.log('🎯 applyDateRange - Enviando:', { startISO, endISO })
-      onChange(startISO, endISO)
+      onChange(
+        formatDateToISO(tempStart),
+        formatDateToISO(tempEnd)
+      )
       setIsOpen(false)
     }
   }

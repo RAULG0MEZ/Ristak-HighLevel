@@ -15,7 +15,7 @@ import {
 } from 'lucide-react'
 import { useDateRange } from '@/contexts/DateRangeContext'
 import { useLabels } from '@/contexts/LabelsContext'
-import { formatCurrency, formatDate, formatDateToISO, formatNumber } from '@/utils/format'
+import { formatCurrency, formatDate, formatDateToISO, formatNumber, parseLocalDateString } from '@/utils/format'
 import { contactsService, type Contact, type ContactStats } from '@/services/contactsService'
 import { useNotification } from '@/contexts/NotificationContext'
 import styles from './Contacts.module.css'
@@ -207,8 +207,8 @@ export const Contacts: React.FC = () => {
                 startDate={formatDateToISO(dateRange.start)}
                 endDate={formatDateToISO(dateRange.end)}
                 onChange={(start, end) => setDateRange({
-                  start: new Date(start),
-                  end: new Date(end),
+                  start: parseLocalDateString(start),
+                  end: parseLocalDateString(end),
                   preset: 'custom'
                 })}
               />

@@ -21,7 +21,7 @@ import {
   type ContactListItem,
   type ReportRange
 } from '@/services/reportsService'
-import { formatCurrency, formatNumber, formatRoas, formatDate, formatDateToISO } from '@/utils/format'
+import { formatCurrency, formatNumber, formatRoas, formatDate, formatDateToISO, parseLocalDateString } from '@/utils/format'
 import styles from './Reports.module.css'
 import {
   Users,
@@ -822,8 +822,8 @@ export const Reports: React.FC = () => {
                 startDate={toIsoDate(baseRange.start)}
                 endDate={toIsoDate(baseRange.end)}
                 onChange={(start, end) => setDateRange({
-                  start: new Date(start),
-                  end: new Date(end),
+                  start: parseLocalDateString(start),
+                  end: parseLocalDateString(end),
                   preset: 'custom'
                 })}
               />

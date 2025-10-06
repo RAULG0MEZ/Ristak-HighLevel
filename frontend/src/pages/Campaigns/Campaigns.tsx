@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import { useDateRange } from '@/contexts/DateRangeContext'
 import { useLabels } from '@/contexts/LabelsContext'
-import { formatCurrency, formatRoas, formatChartDate, formatDateToISO } from '@/utils/format'
+import { formatCurrency, formatRoas, formatChartDate, formatDateToISO, parseLocalDateString } from '@/utils/format'
 import { campaignsService, type CampaignContact } from '@/services/campaignsService'
 import { reportsService, type CampaignsReport } from '@/services/reportsService'
 import styles from './Campaigns.module.css'
@@ -671,8 +671,8 @@ export const Campaigns: React.FC = () => {
           startDate={formatDateToISO(dateRange.start instanceof Date ? dateRange.start : new Date(dateRange.start))}
           endDate={formatDateToISO(dateRange.end instanceof Date ? dateRange.end : new Date(dateRange.end))}
           onChange={(start, end) => setDateRange({
-            start: new Date(start),
-            end: new Date(end),
+            start: parseLocalDateString(start),
+            end: parseLocalDateString(end),
             preset: 'custom' as const
           })}
         />

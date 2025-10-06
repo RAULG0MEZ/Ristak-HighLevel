@@ -16,7 +16,7 @@ import {
   RotateCcw
 } from 'lucide-react'
 import { useDateRange } from '@/contexts/DateRangeContext'
-import { formatCurrency, formatDate, formatDateToISO, formatNumber } from '@/utils/format'
+import { formatCurrency, formatDate, formatDateToISO, formatNumber, parseLocalDateString } from '@/utils/format'
 import { transactionsService, type Transaction, type TransactionSummary } from '@/services/transactionsService'
 import styles from './Transactions.module.css'
 
@@ -268,8 +268,8 @@ export const Transactions: React.FC = () => {
                 startDate={formatDateToISO(dateRange.start)}
                 endDate={formatDateToISO(dateRange.end)}
                 onChange={(start, end) => setDateRange({
-                  start: new Date(start),
-                  end: new Date(end),
+                  start: parseLocalDateString(start),
+                  end: parseLocalDateString(end),
                   preset: 'custom'
                 })}
               />
