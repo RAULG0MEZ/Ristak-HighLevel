@@ -198,12 +198,20 @@ export const HighLevelIntegration: React.FC = () => {
   const handleRefreshStatus = async () => {
     setCheckingStatus(true)
     try {
-      await highLevelService.refreshLocationData()
-      await loadIntegrationStatus()
-      await loadGHLConfig()
-      showToast('success', 'Actualizado', 'Estado actualizado correctamente')
+      // Ejecutar sincronización completa (igual que cuando conectas por primera vez)
+      const result = await highLevelService.syncAllData()
+
+      if (result.success) {
+        showToast('success', 'Sincronizando', 'Sincronización completa iniciada. Los datos se actualizarán en unos momentos.')
+
+        // Actualizar estado después de iniciar sincronización
+        await loadIntegrationStatus()
+        await loadGHLConfig()
+      } else {
+        showToast('error', 'Error', result.error || 'No se pudo iniciar la sincronización')
+      }
     } catch (error) {
-      // Silent error
+      showToast('error', 'Error', 'Error al sincronizar los datos')
     } finally {
       setCheckingStatus(false)
     }
@@ -289,7 +297,7 @@ export const HighLevelIntegration: React.FC = () => {
                 disabled={checkingStatus}
               >
                 <RefreshCw size={16} className={checkingStatus ? styles.spinIcon : ''} />
-                Actualizar
+                {checkingStatus ? 'Sincronizando...' : 'Sincronizar ahora'}
               </Button>
               <Button
                 variant="ghost"

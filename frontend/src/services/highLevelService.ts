@@ -178,6 +178,33 @@ class HighLevelService {
     }
   }
 
+  // Sincronizar datos completos desde HighLevel (contactos, pagos, citas)
+  async syncAllData(): Promise<any> {
+    try {
+      const response = await fetch('/api/highlevel/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+      return await response.json()
+    } catch (error) {
+      // TODO: Implement proper logging service
+      throw error
+    }
+  }
+
+  // Obtener progreso de sincronización
+  async getSyncProgress(): Promise<any> {
+    try {
+      const response = await fetch('/api/highlevel/sync-progress')
+      return await response.json()
+    } catch (error) {
+      // TODO: Implement proper logging service
+      throw error
+    }
+  }
+
 }
 
 // Exportar instancia única
