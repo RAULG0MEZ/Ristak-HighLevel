@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { X, Info, AlertCircle, ShieldAlert } from 'lucide-react'
 import { Button } from '../Button'
 import styles from './Modal.module.css'
@@ -66,7 +67,7 @@ export const Modal: React.FC<ModalProps> = ({
     }
   }
 
-  return (
+  const modalContent = (
     <div className={styles.backdrop} onClick={handleBackdropClick}>
       <div className={`${styles.modal} ${styles[type]} ${styles[size]}`}>
         <div className={styles.header}>
@@ -132,4 +133,6 @@ export const Modal: React.FC<ModalProps> = ({
       </div>
     </div>
   )
+
+  return createPortal(modalContent, document.body)
 }
