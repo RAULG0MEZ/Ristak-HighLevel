@@ -175,7 +175,8 @@ export async function syncMetaAds(startDate) {
       message: 'Preparando sincronización de Meta Ads...'
     })
 
-    const endDate = new Date()
+    // Meta tiene un delay de ~24h en procesar datos, usar ayer como fecha final
+    const endDate = daysAgo(1)
     const start = new Date(startDate)
 
     // Dividir en chunks mensuales
@@ -255,9 +256,10 @@ export async function updateRecentAds() {
 
     // Últimos 7 días
     const startDate = daysAgo(7)
-    const endDate = new Date()
+    // Meta tiene un delay de ~24h en procesar datos, usar ayer como fecha final
+    const endDate = daysAgo(1)
 
-    logger.info(`Actualizando ads recientes (últimos 7 días)...`)
+    logger.info(`Actualizando ads recientes (últimos 7 días hasta ayer)...`)
 
     const ads = await fetchMetaAdsInsights(
       ad_account_id,

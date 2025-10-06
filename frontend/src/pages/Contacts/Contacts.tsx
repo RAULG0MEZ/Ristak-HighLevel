@@ -125,7 +125,8 @@ export const Contacts: React.FC = () => {
     {
       key: 'email',
       header: 'Email',
-      sortable: true
+      sortable: true,
+      visible: false
     },
     {
       key: 'phone',

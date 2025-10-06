@@ -190,7 +190,8 @@ export const Transactions: React.FC = () => {
     {
       key: 'email',
       header: 'Email',
-      sortable: true
+      sortable: true,
+      visible: false
     },
     {
       key: 'amount',
