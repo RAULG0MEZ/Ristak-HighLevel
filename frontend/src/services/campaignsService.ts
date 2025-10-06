@@ -64,6 +64,7 @@ export interface CampaignContact {
   ltv: number
   ad_id?: string | null
   ad_name?: string | null
+  source?: string | null
   is_sale: boolean
   payments?: CampaignContactPayment[]
   normalizedPhone?: string | null

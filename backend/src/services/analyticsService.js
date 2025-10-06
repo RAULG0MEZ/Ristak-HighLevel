@@ -1094,7 +1094,9 @@ export async function buildContactsList ({ startDate, endDate, type = 'interesad
         created_at,
         total_paid,
         purchases_count,
-        attribution_ad_id
+        attribution_ad_id,
+        attribution_ad_name,
+        source
       FROM contacts
       ${contactWhere}
       ORDER BY created_at DESC
@@ -1115,7 +1117,9 @@ export async function buildContactsList ({ startDate, endDate, type = 'interesad
           created_at,
           total_paid,
           purchases_count,
-          attribution_ad_id
+          attribution_ad_id,
+          attribution_ad_name,
+          source
         FROM contacts
         WHERE id IN (${placeholders})
         ${scopeAttributed ? `AND ${attributionMatchCondition('contacts')}` : ''}
@@ -1152,7 +1156,10 @@ export async function buildContactsList ({ startDate, endDate, type = 'interesad
       purchases: finalPurchases,
       attributed: Boolean(contact.attribution_ad_id),
       payments,
-      appointments
+      appointments,
+      source: contact.source || null,
+      ad_name: contact.attribution_ad_name || null,
+      ad_id: contact.attribution_ad_id || null
     }
   })
 

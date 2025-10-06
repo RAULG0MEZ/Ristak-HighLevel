@@ -125,6 +125,9 @@ export interface ContactListItem {
   normalizedPhone?: string | null
   duplicateCount?: number
   mergedContactIds?: string[]
+  source?: string
+  ad_name?: string
+  ad_id?: string
 }
 
 class ReportsService {

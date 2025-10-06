@@ -974,7 +974,10 @@ export const Reports: React.FC = () => {
             created_at: contact.created_at,
             ltv: contact.ltv,
             payments: contact.payments,
-            appointments: contact.appointments
+            appointments: contact.appointments,
+            source: contact.source,
+            ad_name: contact.ad_name,
+            ad_id: contact.ad_id
           }))}
           loading={modalState.loading}
           type={modalState.type === 'customers' ? 'sales' : modalState.type === 'sales' ? 'sales' : modalState.type === 'appointments' ? 'appointments' : 'interesados'}
