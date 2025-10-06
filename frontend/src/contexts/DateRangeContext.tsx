@@ -91,14 +91,29 @@ export const DateRangeProvider: React.FC<{ children: ReactNode }> = ({ children 
 
         // Parsear fechas YYYY-MM-DD como fecha LOCAL, no UTC
         // new Date("2025-10-05") lo parsea como UTC, causando problemas de zona horaria
-        const parseLocalDate = (dateStr: string): Date => {
-          const [year, month, day] = dateStr.split('-').map(Number)
-          return new Date(year, month - 1, day, 0, 0, 0, 0)
+        const parseLocalDate = (dateStr: string | undefined | null): Date | null => {
+          if (!dateStr) return null
+          try {
+            const [year, month, day] = dateStr.split('-').map(Number)
+            if (isNaN(year) || isNaN(month) || isNaN(day)) return null
+            return new Date(year, month - 1, day, 0, 0, 0, 0)
+          } catch {
+            return null
+          }
+        }
+
+        const start = parseLocalDate(parsed.start)
+        const end = parseLocalDate(parsed.end)
+
+        // Si las fechas no son válidas, usar default
+        if (!start || !end) {
+          const defaultDates = getPresetDates('thisMonth')
+          return { start: defaultDates.start, end: defaultDates.end, preset: 'thisMonth' }
         }
 
         return {
-          start: parseLocalDate(parsed.start),
-          end: parseLocalDate(parsed.end),
+          start,
+          end,
           preset: parsed.preset
         }
       } catch (e) {
@@ -116,6 +131,11 @@ export const DateRangeProvider: React.FC<{ children: ReactNode }> = ({ children 
     // Ensure dates are Date objects before saving
     const start = dateRange.start instanceof Date ? dateRange.start : new Date(dateRange.start)
     const end = dateRange.end instanceof Date ? dateRange.end : new Date(dateRange.end)
+
+    // Validar que las fechas sean válidas
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return // No guardar fechas inválidas
+    }
 
     // Guardar fechas en formato YYYY-MM-DD LOCAL (sin hora, sin UTC)
     // para evitar problemas de zona horaria al cargar
