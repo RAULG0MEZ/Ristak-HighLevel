@@ -548,7 +548,8 @@ export const Reports: React.FC = () => {
     if (modalState.open && modalState.type) {
       handleOpenModal(modalState.type, modalState.range, modalState.titleOverride)
     }
-  }, [dateRange, modalState.open, modalState.type, modalState.range, modalState.titleOverride, handleOpenModal])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateRange])
 
   const initialColumns: Column<TableRow>[] = useMemo(() => {
     const salesLabel = reportType === 'campaigns' ? 'Ventas' : 'Transacciones'
