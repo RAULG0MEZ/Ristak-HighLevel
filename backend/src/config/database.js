@@ -148,12 +148,24 @@ async function initTables() {
     await db.run(`
       CREATE TABLE IF NOT EXISTS highlevel_config (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        location_id TEXT UNIQUE NOT NULL,
-        api_token TEXT NOT NULL,
+        location_id TEXT UNIQUE,
+        api_token TEXT,
         location_data TEXT,
+        custom_labels TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `)
+
+    // Agregar columna custom_labels si no existe (migración)
+    try {
+      await db.run(`ALTER TABLE highlevel_config ADD COLUMN custom_labels TEXT`)
+      logger.info('Columna custom_labels agregada a highlevel_config')
+    } catch (error) {
+      // La columna ya existe, ignorar error
+      if (!error.message.includes('duplicate column')) {
+        logger.warn(`Error al agregar columna custom_labels: ${error.message}`)
+      }
+    }
 
     // Tabla de contactos
     await db.run(`

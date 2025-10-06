@@ -574,9 +574,10 @@ export const updateCustomLabels = async (req, res) => {
       );
     } else {
       // Crear una nueva configuración básica solo con labels
+      // Usar NULL en location_id y api_token si no se han configurado
       await db.run(
         'INSERT INTO highlevel_config (location_id, api_token, custom_labels) VALUES (?, ?, ?)',
-        ['', '', JSON.stringify(labels)]
+        [null, null, JSON.stringify(labels)]
       );
     }
 
