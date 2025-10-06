@@ -220,11 +220,13 @@ export function ContactDetailsModal({
 
                       <div className={styles.contactInfo}>
                         <p className={styles.contactName}>
-                          {contact.name || 'Sin nombre'}
+                          {contact.name || '—'}
                         </p>
-                        <p className={styles.contactDetail}>
-                          {contact.email || contact.phone || 'Sin datos de contacto'}
-                        </p>
+                        {(contact.email || contact.phone) && (
+                          <p className={styles.contactDetail}>
+                            {contact.email || contact.phone}
+                          </p>
+                        )}
                       </div>
 
                       <div className={styles.contactIndicators}>
@@ -260,11 +262,13 @@ export function ContactDetailsModal({
                 </div>
                 <div className={styles.contactHeaderInfo}>
                   <h4 className={styles.contactHeaderName}>
-                    {selectedContact.name || 'Sin nombre'}
+                    {selectedContact.name || '—'}
                   </h4>
-                  <p className={styles.contactHeaderEmail}>
-                    {selectedContact.email || 'Sin email'}
-                  </p>
+                  {selectedContact.email && (
+                    <p className={styles.contactHeaderEmail}>
+                      {selectedContact.email}
+                    </p>
+                  )}
                   {selectedContact.phone && (
                     <p className={styles.contactHeaderPhone}>
                       {selectedContact.phone}
