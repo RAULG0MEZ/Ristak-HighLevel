@@ -255,3 +255,41 @@ export const getTransactionSummary = async (req, res) => {
     })
   }
 }
+
+/**
+ * Elimina una transacción/pago
+ */
+export const deleteTransaction = async (req, res) => {
+  try {
+    const { id } = req.params
+
+    logger.info(`Eliminando transacción: ${id}`)
+
+    // Verificar que existe
+    const transaction = await db.get('SELECT * FROM payments WHERE id = ?', [id])
+
+    if (!transaction) {
+      return res.status(404).json({
+        success: false,
+        error: 'Transacción no encontrada'
+      })
+    }
+
+    // Eliminar de la base de datos
+    await db.run('DELETE FROM payments WHERE id = ?', [id])
+
+    logger.success(`Transacción eliminada: ${id}`)
+
+    res.json({
+      success: true,
+      message: 'Transacción eliminada correctamente'
+    })
+
+  } catch (error) {
+    logger.error(`Error eliminando transacción: ${error.message}`)
+    res.status(500).json({
+      success: false,
+      error: 'Error eliminando transacción'
+    })
+  }
+}
