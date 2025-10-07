@@ -87,12 +87,27 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     const timer = setTimeout(async () => {
       setSearchingContact(true)
       try {
-        const response = await fetch(`/api/contacts/search?q=${encodeURIComponent(searchQuery)}`)
+        const response = await fetch('/api/contacts/search?q=' + encodeURIComponent(searchQuery))
+        if (!response.ok) {
+          throw new Error('Error al buscar contactos')
+        }
         const data = await response.json()
-        setContacts(data.contacts || [])
+
+        // Transform contacts to ensure they have all required fields
+        const transformedContacts = (data.contacts || []).map((contact: any) => ({
+          id: contact.id,
+          name: contact.name || contact.contactName || `${contact.firstName || ''} ${contact.lastName || ''}`.trim() || 'Sin nombre',
+          email: contact.email || '',
+          phone: contact.phone || '',
+          firstName: contact.firstName || '',
+          lastName: contact.lastName || ''
+        }))
+
+        setContacts(transformedContacts)
         setShowContactDropdown(true)
       } catch (error) {
         console.error('Error buscando contactos:', error)
+        setContacts([])
       } finally {
         setSearchingContact(false)
       }
@@ -258,7 +273,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
           },
           items: items,
           issueDate: new Date().toISOString().split('T')[0],
-          dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          dueDate: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 1 day from now
           liveMode: true,
         })
       })

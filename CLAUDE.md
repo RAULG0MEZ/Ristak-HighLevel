@@ -61,6 +61,7 @@ Backend:
 │   │   │   │   ├── Toast/
 │   │   │   │   ├── ViewSelector/
 │   │   │   │   ├── SyncProgressBar/
+│   │   │   │   ├── RecordPaymentModal/  # Modal de registro de pagos offline
 │   │   │   │   └── index.ts   # Exportaciones centralizadas
 │   │   │   └── layout/
 │   │   │       └── AppShell/  # Layout principal
@@ -300,6 +301,14 @@ cd frontend && npm run build
 - ✓ Eliminación de contactos con modal de confirmación
 - ✓ Endpoints backend PUT /api/contacts/:id y DELETE /api/contacts/:id
 - ✓ Protección contra eliminación accidental con confirmación explícita
+- ✓ Registro de pagos offline (RecordPaymentModal):
+  - Búsqueda de contactos en tiempo real
+  - 2 tipos de cobro: directo (solo monto) o desde productos guardados
+  - Permite personalizar monto del producto seleccionado
+  - Crea invoice en HighLevel y lo marca como pagado automáticamente
+  - Endpoints: GET /api/highlevel/products, GET /api/highlevel/products/:id/prices, POST /api/highlevel/invoices, POST /api/highlevel/invoices/:id/record-payment
+  - Integrado en página de Transactions con botón "+ Registrar pago"
+  - ⚠️ Nota: Cargar productos requiere scope `products.readonly` en el token de HighLevel. El cobro directo funciona sin este scope.
 
 ### Resueltos
 - ✓ Lodash instalado como dependencia directa
