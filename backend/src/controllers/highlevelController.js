@@ -597,3 +597,226 @@ export const updateCustomLabels = async (req, res) => {
     });
   }
 };
+
+/**
+ * Lista productos de HighLevel
+ */
+export const listProducts = async (req, res) => {
+  try {
+    const { limit = 100 } = req.query;
+
+    // Obtener configuración
+    const config = await db.get('SELECT location_id, api_token FROM highlevel_config LIMIT 1');
+
+    if (!config || !config.location_id || !config.api_token) {
+      return res.status(400).json({
+        success: false,
+        error: 'No hay configuración de HighLevel'
+      });
+    }
+
+    // Hacer petición a la API de HighLevel
+    const response = await fetch(`https://services.leadconnectorhq.com/products/?locationId=${config.location_id}&limit=${limit}`, {
+      headers: {
+        'Authorization': `Bearer ${config.api_token}`,
+        'Version': '2021-07-28'
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error(`Error al obtener productos: ${errorText}`);
+      return res.status(500).json({
+        success: false,
+        error: 'Error al obtener productos de HighLevel'
+      });
+    }
+
+    const data = await response.json();
+
+    res.json({
+      success: true,
+      products: data.products || data.data || []
+    });
+
+  } catch (error) {
+    logger.error(`Error en listProducts: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: 'Error al obtener productos'
+    });
+  }
+};
+
+/**
+ * Lista precios de un producto
+ */
+export const listPrices = async (req, res) => {
+  try {
+    const { productId } = req.params;
+
+    // Obtener configuración
+    const config = await db.get('SELECT location_id, api_token FROM highlevel_config LIMIT 1');
+
+    if (!config || !config.location_id || !config.api_token) {
+      return res.status(400).json({
+        success: false,
+        error: 'No hay configuración de HighLevel'
+      });
+    }
+
+    // Hacer petición a la API de HighLevel
+    const response = await fetch(`https://services.leadconnectorhq.com/products/${productId}/prices`, {
+      headers: {
+        'Authorization': `Bearer ${config.api_token}`,
+        'Version': '2021-07-28'
+      }
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error(`Error al obtener precios: ${errorText}`);
+      return res.status(500).json({
+        success: false,
+        error: 'Error al obtener precios de HighLevel'
+      });
+    }
+
+    const data = await response.json();
+
+    res.json({
+      success: true,
+      prices: data.prices || data.data || []
+    });
+
+  } catch (error) {
+    logger.error(`Error en listPrices: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: 'Error al obtener precios'
+    });
+  }
+};
+
+/**
+ * Crea un invoice en HighLevel
+ */
+export const createInvoice = async (req, res) => {
+  try {
+    const invoiceData = req.body;
+
+    // Obtener configuración
+    const config = await db.get('SELECT location_id, api_token FROM highlevel_config LIMIT 1');
+
+    if (!config || !config.location_id || !config.api_token) {
+      return res.status(400).json({
+        success: false,
+        error: 'No hay configuración de HighLevel'
+      });
+    }
+
+    logger.info('Creando invoice en HighLevel');
+
+    // Hacer petición a la API de HighLevel
+    const response = await fetch(`https://services.leadconnectorhq.com/invoices/`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.api_token}`,
+        'Version': '2021-07-28',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        ...invoiceData,
+        altId: config.location_id,
+        altType: 'location'
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error(`Error al crear invoice: ${errorText}`);
+      return res.status(500).json({
+        success: false,
+        error: 'Error al crear invoice en HighLevel'
+      });
+    }
+
+    const data = await response.json();
+    logger.success(`Invoice creado: ${data.id || data._id}`);
+
+    res.json({
+      success: true,
+      invoice: data
+    });
+
+  } catch (error) {
+    logger.error(`Error en createInvoice: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: 'Error al crear invoice'
+    });
+  }
+};
+
+/**
+ * Registra un pago offline en HighLevel
+ */
+export const recordPayment = async (req, res) => {
+  try {
+    const { invoiceId } = req.params;
+    const { amount, currency, fulfilledAt, note } = req.body;
+
+    // Obtener configuración
+    const config = await db.get('SELECT location_id, api_token FROM highlevel_config LIMIT 1');
+
+    if (!config || !config.location_id || !config.api_token) {
+      return res.status(400).json({
+        success: false,
+        error: 'No hay configuración de HighLevel'
+      });
+    }
+
+    logger.info(`Registrando pago offline para invoice: ${invoiceId}`);
+
+    // Hacer petición a la API de HighLevel
+    const response = await fetch(`https://services.leadconnectorhq.com/invoices/${invoiceId}/record-payment`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.api_token}`,
+        'Version': '2021-07-28',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        amount,
+        currency,
+        fulfilledAt: fulfilledAt || new Date().toISOString(),
+        note: note || 'Pago registrado manualmente'
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error(`Error al registrar pago: ${errorText}`);
+      return res.status(500).json({
+        success: false,
+        error: 'Error al registrar pago en HighLevel'
+      });
+    }
+
+    const data = await response.json();
+    logger.success(`Pago registrado correctamente para invoice: ${invoiceId}`);
+
+    res.json({
+      success: true,
+      message: 'Pago registrado correctamente',
+      data: data
+    });
+
+  } catch (error) {
+    logger.error(`Error en recordPayment: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: 'Error al registrar pago'
+    });
+  }
+};

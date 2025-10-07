@@ -1,0 +1,1 @@
+export { RecordPaymentModal } from './RecordPaymentModal'

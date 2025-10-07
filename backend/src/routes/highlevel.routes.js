@@ -12,7 +12,11 @@ import {
   deleteConfig,
   refreshLocationData,
   getCustomLabels,
-  updateCustomLabels
+  updateCustomLabels,
+  listProducts,
+  listPrices,
+  createInvoice,
+  recordPayment
 } from '../controllers/highlevelController.js'
 
 const router = express.Router()
@@ -31,5 +35,11 @@ router.post('/sync-custom-values', syncCustomValues)
 router.post('/sync-contacts', syncContacts)
 router.get('/custom-labels', getCustomLabels)
 router.post('/custom-labels', updateCustomLabels)
+
+// Products and Payments
+router.get('/products', listProducts)
+router.get('/products/:productId/prices', listPrices)
+router.post('/invoices', createInvoice)
+router.post('/invoices/:invoiceId/record-payment', recordPayment)
 
 export default router

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { KpiCard, Card, Button, Table, DateRangePicker, ContactSearchInput, PageContainer, TabList } from '@/components/common'
+import { KpiCard, Card, Button, Table, DateRangePicker, ContactSearchInput, PageContainer, TabList, RecordPaymentModal } from '@/components/common'
 import type { Column } from '@/components/common'
 import { useNotification } from '@/contexts/NotificationContext'
 import { Contact } from '@/types'
@@ -35,6 +35,7 @@ export const Transactions: React.FC = () => {
   const [loading, setLoading] = useState(false)
   const [modal, setModal] = useState<ModalData>({ type: null, selectedContact: null })
   const [viewMode, setViewMode] = useState<'all' | 'by-date'>('all') // Por defecto 'all' (Todos)
+  const [showRecordPaymentModal, setShowRecordPaymentModal] = useState(false)
 
   const rangeStart = dateRange.start instanceof Date ? dateRange.start : new Date(dateRange.start)
   const rangeEnd = dateRange.end instanceof Date ? dateRange.end : new Date(dateRange.end)
@@ -287,11 +288,10 @@ export const Transactions: React.FC = () => {
             onTabChange={(value) => setViewMode(value as 'all' | 'by-date')}
             variant="compact"
           />
-          {/* Botón de crear pago oculto - solo editar/eliminar permitido */}
-          {/* <Button variant="secondary" onClick={handleCreate}>
+          <Button variant="secondary" onClick={() => setShowRecordPaymentModal(true)}>
             <Plus size={16} />
             Registrar pago
-          </Button> */}
+          </Button>
         </div>
 
         <div className={styles.kpiRow}>
@@ -425,6 +425,15 @@ export const Transactions: React.FC = () => {
           </div>
         </div>
       )}
+
+      <RecordPaymentModal
+        isOpen={showRecordPaymentModal}
+        onClose={() => setShowRecordPaymentModal(false)}
+        onSuccess={() => {
+          setShowRecordPaymentModal(false)
+          fetchData()
+        }}
+      />
       </div>
     </PageContainer>
   )

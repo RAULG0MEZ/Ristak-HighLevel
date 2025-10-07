@@ -213,7 +213,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
       const day = date.getDate()
       const month = MONTHS[date.getMonth()].slice(0, 3)
       const year = date.getFullYear()
-      return `${day} ${month} ${year}`
+      return `${day} ${month}, ${year}`
     }
 
     if (start.getTime() === end.getTime()) {
