@@ -59,6 +59,11 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   const [description, setDescription] = useState('')
   const [currency, setCurrency] = useState('MXN')
 
+  // Business details (required by GHL)
+  const [businessName, setBusinessName] = useState('Mi Negocio')
+  const [businessEmail, setBusinessEmail] = useState('')
+  const [logoUrl, setLogoUrl] = useState('')
+
   // Product charge
   const [products, setProducts] = useState<Product[]>([])
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
@@ -73,8 +78,39 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   useEffect(() => {
     if (!isOpen) {
       resetForm()
+    } else {
+      // Load configuration when modal opens
+      loadConfig()
     }
   }, [isOpen])
+
+  // Load configuration
+  const loadConfig = async () => {
+    try {
+      const response = await fetch('/api/highlevel/config')
+      if (!response.ok) return
+
+      const config = await response.json()
+
+      if (config.locationData) {
+        const locationData = typeof config.locationData === 'string'
+          ? JSON.parse(config.locationData)
+          : config.locationData
+
+        if (locationData.name) {
+          setBusinessName(locationData.name)
+        }
+        if (locationData.email) {
+          setBusinessEmail(locationData.email)
+        }
+        if (locationData.logoUrl) {
+          setLogoUrl(locationData.logoUrl)
+        }
+      }
+    } catch (error) {
+      console.error('Error loading config:', error)
+    }
+  }
 
   // Search contacts
   useEffect(() => {
@@ -274,6 +310,11 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
           name: description || `Pago de ${contactName}`,
           title: 'PAGO',
           currency: finalCurrency,
+          businessDetails: {
+            name: businessName,
+            ...(businessEmail && { email: businessEmail }),
+            ...(logoUrl && { logoUrl: logoUrl }),
+          },
           contactDetails: {
             id: selectedContact.id,
             name: contactName,
