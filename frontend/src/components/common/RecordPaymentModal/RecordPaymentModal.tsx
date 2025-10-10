@@ -63,6 +63,13 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   const [businessName, setBusinessName] = useState('Mi Negocio')
   const [businessEmail, setBusinessEmail] = useState('')
   const [logoUrl, setLogoUrl] = useState('')
+  const [businessPhone, setBusinessPhone] = useState('')
+  const [businessAddress, setBusinessAddress] = useState('')
+  const [businessCity, setBusinessCity] = useState('')
+  const [businessState, setBusinessState] = useState('')
+  const [businessCountry, setBusinessCountry] = useState('')
+  const [businessPostalCode, setBusinessPostalCode] = useState('')
+  const [businessWebsite, setBusinessWebsite] = useState('')
 
   // Product charge
   const [products, setProducts] = useState<Product[]>([])
@@ -97,15 +104,17 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
           ? JSON.parse(config.locationData)
           : config.locationData
 
-        if (locationData.name) {
-          setBusinessName(locationData.name)
-        }
-        if (locationData.email) {
-          setBusinessEmail(locationData.email)
-        }
-        if (locationData.logoUrl) {
-          setLogoUrl(locationData.logoUrl)
-        }
+        // Cargar TODOS los datos disponibles del location
+        if (locationData.name) setBusinessName(locationData.name)
+        if (locationData.email) setBusinessEmail(locationData.email)
+        if (locationData.logoUrl) setLogoUrl(locationData.logoUrl)
+        if (locationData.phone) setBusinessPhone(locationData.phone)
+        if (locationData.address) setBusinessAddress(locationData.address)
+        if (locationData.city) setBusinessCity(locationData.city)
+        if (locationData.state) setBusinessState(locationData.state)
+        if (locationData.country) setBusinessCountry(locationData.country)
+        if (locationData.postalCode) setBusinessPostalCode(locationData.postalCode)
+        if (locationData.website) setBusinessWebsite(locationData.website)
       }
     } catch (error) {
       console.error('Error loading config:', error)
@@ -308,12 +317,19 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: description || `Pago de ${contactName}`,
-          title: 'PAGO',
+          title: 'RECIBO',
           currency: finalCurrency,
           businessDetails: {
             name: businessName,
             ...(businessEmail && { email: businessEmail }),
             ...(logoUrl && { logoUrl: logoUrl }),
+            ...(businessPhone && { phone: businessPhone }),
+            ...(businessAddress && { address: businessAddress }),
+            ...(businessCity && { city: businessCity }),
+            ...(businessState && { state: businessState }),
+            ...(businessCountry && { country: businessCountry }),
+            ...(businessPostalCode && { postalCode: businessPostalCode }),
+            ...(businessWebsite && { website: businessWebsite }),
           },
           contactDetails: {
             id: selectedContact.id,

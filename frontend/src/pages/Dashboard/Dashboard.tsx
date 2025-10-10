@@ -352,7 +352,7 @@ export const Dashboard: React.FC = () => {
   }, [dateRange, user])
 
   if (loading || !metrics) {
-    return <div className="h-[500px] rounded-2xl glass animate-pulse" />
+    return null
   }
 
   return (

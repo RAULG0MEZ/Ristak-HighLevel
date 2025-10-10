@@ -14,6 +14,7 @@ import { Logo } from '@/components/common'
 interface SidebarProps {
   onNavigate?: () => void
   locationName?: string
+  locationLogo?: string | null
 }
 
 const navigation = [
@@ -24,7 +25,7 @@ const navigation = [
   { name: 'Contactos', href: '/contacts', icon: Users }
 ]
 
-export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, locationLogo }) => {
   const location = useLocation()
   const [mounted, setMounted] = useState(false)
 
@@ -39,11 +40,25 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName }) =>
   return (
     <div className="flex flex-col h-full">
       <div className="flex flex-col items-center justify-center px-4 gap-2 border-b border-[rgba(148,163,184,0.12)]" style={{ height: 'var(--header-height)' }}>
-        <Logo size="2xl" />
-        {mounted && locationName && (
-          <span className="text-xs text-[var(--color-text-tertiary)] font-medium truncate max-w-[180px] text-center">
-            {locationName}
-          </span>
+        {mounted && locationLogo ? (
+          // Si hay logo de HighLevel, mostrarlo
+          <div className="w-24 h-10 flex items-center justify-center">
+            <img
+              src={locationLogo}
+              alt={locationName || 'Logo'}
+              className="max-w-full max-h-full object-contain"
+            />
+          </div>
+        ) : mounted && locationName ? (
+          // Si no hay logo pero sí nombre, mostrar el nombre como logo
+          <div className="w-full flex items-center justify-center px-2">
+            <span className="text-lg font-bold text-[var(--color-text-primary)] truncate max-w-[180px] text-center">
+              {locationName}
+            </span>
+          </div>
+        ) : (
+          // Si no hay nada de HighLevel, mostrar logo de Ristak
+          <Logo size="2xl" />
         )}
       </div>
 

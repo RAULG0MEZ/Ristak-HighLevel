@@ -359,3 +359,13 @@ body.dark .glow-sm {
     padding: 0 1rem;
   }
 }
+
+/* Animación para evitar parpadeo al cargar */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

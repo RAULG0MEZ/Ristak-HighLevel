@@ -1,4 +1,4 @@
-import pg from 'pg'
+import sqlite3 from 'sqlite3'
 import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import { logger } from '../utils/logger.js'
@@ -6,138 +6,48 @@ import { logger } from '../utils/logger.js'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-const DATABASE_URL = process.env.DATABASE_URL
-const usePostgres = !!DATABASE_URL
+// SQLite - Base de datos local
+logger.info('Usando SQLite')
 
-let db
+const dbPath = join(__dirname, '../../../ristak.db')
+const sqliteDb = new sqlite3.Database(dbPath)
+logger.success('Conectado a SQLite:', dbPath)
 
-if (usePostgres) {
-  // PostgreSQL (Producción en Render)
-  logger.info('Usando PostgreSQL')
-  const pool = new pg.Pool({
-    connectionString: DATABASE_URL,
-    ssl: {
-      rejectUnauthorized: false
-    }
-  })
-
-  // Helper para convertir placeholders SQLite (?) a PostgreSQL ($1, $2, etc.)
-  const convertPlaceholders = (sql) => {
-    let index = 1
-    return sql.replace(/\?/g, () => `$${index++}`)
-  }
-
-  db = {
-    run: async (sql, params = []) => {
-      const client = await pool.connect()
-      try {
-        // Convertir sintaxis SQLite a PostgreSQL
-        sql = sql.replace(/AUTOINCREMENT/g, 'GENERATED ALWAYS AS IDENTITY')
-        sql = sql.replace(/INTEGER PRIMARY KEY AUTOINCREMENT/g, 'SERIAL PRIMARY KEY')
-        sql = sql.replace(/DATETIME/g, 'TIMESTAMP')
-        sql = sql.replace(/TEXT/g, 'TEXT')
-
-        // Convertir placeholders ? a $1, $2, etc.
-        sql = convertPlaceholders(sql)
-
-        const result = await client.query(sql, params)
-        return {
-          lastID: result.rows[0]?.id || null,
-          changes: result.rowCount
-        }
-      } finally {
-        client.release()
-      }
-    },
-
-    get: async (sql, params = []) => {
-      const client = await pool.connect()
-      try {
-        sql = sql.replace(/DATETIME/g, 'TIMESTAMP')
-        sql = convertPlaceholders(sql)
-
-        const result = await client.query(sql, params)
-        return result.rows[0] || null
-      } finally {
-        client.release()
-      }
-    },
-
-    all: async (sql, params = []) => {
-      const client = await pool.connect()
-      try {
-        sql = sql.replace(/DATETIME/g, 'TIMESTAMP')
-        sql = convertPlaceholders(sql)
-
-        const result = await client.query(sql, params)
-        return result.rows
-      } finally {
-        client.release()
-      }
-    },
-
-    exec: async (sql) => {
-      const client = await pool.connect()
-      try {
-        sql = sql.replace(/AUTOINCREMENT/g, 'GENERATED ALWAYS AS IDENTITY')
-        sql = sql.replace(/INTEGER PRIMARY KEY AUTOINCREMENT/g, 'SERIAL PRIMARY KEY')
-        sql = sql.replace(/DATETIME/g, 'TIMESTAMP')
-        await client.query(sql)
-      } finally {
-        client.release()
-      }
-    }
-  }
-
-  logger.success('Conectado a PostgreSQL')
-} else {
-  // SQLite (Desarrollo local)
-  logger.info('Usando SQLite')
-
-  // Import dinámico de sqlite3 solo en desarrollo
-  const sqlite3Module = await import('sqlite3')
-  const sqlite3 = sqlite3Module.default
-
-  const dbPath = join(__dirname, '../../../ristak.db')
-  const sqliteDb = new sqlite3.Database(dbPath)
-  logger.success('Conectado a SQLite:', dbPath)
-
-  db = {
-    run: (sql, params = []) => {
-      return new Promise((resolve, reject) => {
-        sqliteDb.run(sql, params, function(err) {
-          if (err) reject(err)
-          else resolve({ lastID: this.lastID, changes: this.changes })
-        })
+const db = {
+  run: (sql, params = []) => {
+    return new Promise((resolve, reject) => {
+      sqliteDb.run(sql, params, function(err) {
+        if (err) reject(err)
+        else resolve({ lastID: this.lastID, changes: this.changes })
       })
-    },
+    })
+  },
 
-    get: (sql, params = []) => {
-      return new Promise((resolve, reject) => {
-        sqliteDb.get(sql, params, (err, row) => {
-          if (err) reject(err)
-          else resolve(row || null)
-        })
+  get: (sql, params = []) => {
+    return new Promise((resolve, reject) => {
+      sqliteDb.get(sql, params, (err, row) => {
+        if (err) reject(err)
+        else resolve(row || null)
       })
-    },
+    })
+  },
 
-    all: (sql, params = []) => {
-      return new Promise((resolve, reject) => {
-        sqliteDb.all(sql, params, (err, rows) => {
-          if (err) reject(err)
-          else resolve(rows)
-        })
+  all: (sql, params = []) => {
+    return new Promise((resolve, reject) => {
+      sqliteDb.all(sql, params, (err, rows) => {
+        if (err) reject(err)
+        else resolve(rows)
       })
-    },
+    })
+  },
 
-    exec: (sql) => {
-      return new Promise((resolve, reject) => {
-        sqliteDb.exec(sql, (err) => {
-          if (err) reject(err)
-          else resolve()
-        })
+  exec: (sql) => {
+    return new Promise((resolve, reject) => {
+      sqliteDb.exec(sql, (err) => {
+        if (err) reject(err)
+        else resolve()
       })
-    }
+    })
   }
 }
 
@@ -155,17 +65,6 @@ async function initTables() {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `)
-
-    // Agregar columna custom_labels si no existe (migración)
-    try {
-      await db.run(`ALTER TABLE highlevel_config ADD COLUMN custom_labels TEXT`)
-      logger.info('Columna custom_labels agregada a highlevel_config')
-    } catch (error) {
-      // La columna ya existe, ignorar error
-      if (!error.message.includes('duplicate column')) {
-        logger.warn(`Error al agregar columna custom_labels: ${error.message}`)
-      }
-    }
 
     // Tabla de contactos
     await db.run(`

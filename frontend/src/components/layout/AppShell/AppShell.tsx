@@ -11,22 +11,29 @@ export const AppShell: React.FC = () => {
   const { logout } = useAuth()
   const [syncProgressVisible, setSyncProgressVisible] = useState(false)
   const [locationName, setLocationName] = useState<string>('Ristak')
+  const [locationLogo, setLocationLogo] = useState<string | null>(null)
 
-  // Obtener nombre del location de HighLevel
+  // Obtener nombre y logo del location de HighLevel
   useEffect(() => {
-    const fetchLocationName = async () => {
+    const fetchLocationData = async () => {
       try {
         const response = await fetch('/api/integrations/status')
         const data = await response.json()
-        if (data.highlevel?.locationData?.name) {
-          setLocationName(data.highlevel.locationData.name)
+        if (data.highlevel?.locationData) {
+          const locationData = data.highlevel.locationData
+          if (locationData.name) {
+            setLocationName(locationData.name)
+          }
+          if (locationData.logoUrl) {
+            setLocationLogo(locationData.logoUrl)
+          }
         }
       } catch (error) {
         // Silently handle error - keep default name
       }
     }
 
-    fetchLocationName()
+    fetchLocationData()
   }, [])
 
   // Detectar cuando el panel de progreso está activo
@@ -68,7 +75,7 @@ export const AppShell: React.FC = () => {
       {syncProgressVisible && <SyncProgressBar onClose={handleProgressBarClose} />}
 
       <div className="relative transition-all duration-300 ease-in-out">
-        <Layout sidebar={<Sidebar locationName={locationName} />}>
+        <Layout sidebar={<Sidebar locationName={locationName} locationLogo={locationLogo} />}>
           <div className="flex flex-col min-h-full">
             <Header onLogout={handleLogout} />
             <div className="flex-1 overflow-auto">
