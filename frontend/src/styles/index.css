@@ -254,6 +254,12 @@ body.light {
   padding: 0 1.5rem;
 }
 
+/* Espacio bottom para todas las páginas - evita que el contenido toque el borde */
+.container,
+[class*="container"] {
+  padding-bottom: 4rem;
+}
+
 .glass {
   background: var(--effect-glassMorphism-background);
   backdrop-filter: var(--effect-glassMorphism-backdropFilter);
