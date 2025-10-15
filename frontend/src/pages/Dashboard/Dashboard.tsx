@@ -357,19 +357,21 @@ export const Dashboard: React.FC = () => {
 
   return (
     <PageContainer>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <div className="flex flex-col">
+        <div className="mb-4">
           <h1 className="text-2xl font-semibold text-[var(--color-text-primary)]">Dashboard</h1>
-          <p className="text-sm text-[var(--color-text-tertiary)]">Resumen financiero y de marketing</p>
+          <p className="text-sm text-[var(--color-text-tertiary)] mt-1">Resumen financiero y de marketing</p>
         </div>
 
-        <DateRangePicker
-          startDate={formatDateToISO(dateRange.start)}
-          endDate={formatDateToISO(dateRange.end)}
-          onChange={(start, end) => setDateRange({ start: parseLocalDateString(start), end: parseLocalDateString(end), preset: 'custom' })}
-        />
+        <div className="mb-6">
+          <DateRangePicker
+            startDate={formatDateToISO(dateRange.start)}
+            endDate={formatDateToISO(dateRange.end)}
+            onChange={(start, end) => setDateRange({ start: parseLocalDateString(start), end: parseLocalDateString(end), preset: 'custom' })}
+          />
+        </div>
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4 mb-6">
           <KpiCard
             title="Ingresos Netos"
             value={formatCurrency(metrics.ingresosNetos.value)}
@@ -428,7 +430,7 @@ export const Dashboard: React.FC = () => {
         />
         </div>
 
-        <Card variant="glass" className="space-y-4">
+        <Card variant="glass" className="space-y-4 mb-6">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-xl font-semibold text-[var(--color-text-primary)]">{selectedConfig.title}</h2>

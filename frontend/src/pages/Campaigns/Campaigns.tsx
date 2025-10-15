@@ -664,17 +664,19 @@ export const Campaigns: React.FC = () => {
   return (
     <PageContainer>
       <div className={styles.container}>
-      <h1 className={styles.pageTitle}>Publicidad</h1>
+      <h1 className={`${styles.pageTitle} mb-4`}>Publicidad</h1>
 
-      <DateRangePicker
-        startDate={formatDateToISO(dateRange.start instanceof Date ? dateRange.start : new Date(dateRange.start))}
-        endDate={formatDateToISO(dateRange.end instanceof Date ? dateRange.end : new Date(dateRange.end))}
-        onChange={(start, end) => setDateRange({
-          start: parseLocalDateString(start),
-          end: parseLocalDateString(end),
-          preset: 'custom' as const
-        })}
-      />
+      <div className="mb-6">
+        <DateRangePicker
+          startDate={formatDateToISO(dateRange.start instanceof Date ? dateRange.start : new Date(dateRange.start))}
+          endDate={formatDateToISO(dateRange.end instanceof Date ? dateRange.end : new Date(dateRange.end))}
+          onChange={(start, end) => setDateRange({
+            start: parseLocalDateString(start),
+            end: parseLocalDateString(end),
+            preset: 'custom' as const
+          })}
+        />
+      </div>
 
       {/* Sync Status Banner - Rediseñado */}
       {syncStatus && syncStatus.running && (
@@ -723,7 +725,7 @@ export const Campaigns: React.FC = () => {
         </div>
       )}
 
-      <div className={styles.kpiRow}>
+      <div className={`${styles.kpiRow} mb-6`}>
         <KpiCard
           title="Ingresos"
           value={formatCurrency(totals.revenue)}
@@ -761,7 +763,7 @@ export const Campaigns: React.FC = () => {
         />
       </div>
 
-      <Card className={styles.chartCard}>
+      <Card className={`${styles.chartCard} mb-6`}>
         <h2 className={styles.chartTitle}>Ingresos vs Gastos de Publicidad</h2>
         <div style={{ height: 300 }}>
           {timeSeriesData.length > 0 ? (
