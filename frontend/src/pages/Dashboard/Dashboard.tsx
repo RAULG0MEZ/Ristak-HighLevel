@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { KpiCard, Card, DateRangePicker, LineChart, PageContainer, ViewSelector } from '@/components/common'
+import { KpiCard, Card, DateRangePicker, AreaChart, PageContainer, ViewSelector } from '@/components/common'
 import {
   DollarSign,
   Megaphone,
@@ -291,7 +291,7 @@ export const Dashboard: React.FC = () => {
     }
   }
 
-  const chartHeight = 320
+  const chartHeight = 250
 
   useEffect(() => {
     const loadData = async () => {
@@ -357,21 +357,19 @@ export const Dashboard: React.FC = () => {
 
   return (
     <PageContainer>
-      <div className="flex flex-col">
-        <div className="mb-4">
+      <div className="flex flex-col gap-2">
+        <div>
           <h1 className="text-2xl font-bold text-[var(--color-text-primary)]">Dashboard</h1>
           <p className="text-sm text-[var(--color-text-tertiary)] mt-1">Resumen financiero y de marketing</p>
         </div>
 
-        <div className="mb-4">
-          <DateRangePicker
-            startDate={formatDateToISO(dateRange.start)}
-            endDate={formatDateToISO(dateRange.end)}
-            onChange={(start, end) => setDateRange({ start: parseLocalDateString(start), end: parseLocalDateString(end), preset: 'custom' })}
-          />
-        </div>
+        <DateRangePicker
+          startDate={formatDateToISO(dateRange.start)}
+          endDate={formatDateToISO(dateRange.end)}
+          onChange={(start, end) => setDateRange({ start: parseLocalDateString(start), end: parseLocalDateString(end), preset: 'custom' })}
+        />
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4 mb-6">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
           <KpiCard
             title="Ingresos Netos"
             value={formatCurrency(metrics.ingresosNetos.value)}
@@ -430,7 +428,7 @@ export const Dashboard: React.FC = () => {
         />
         </div>
 
-        <Card variant="glass" className="space-y-4 mb-6">
+        <Card variant="glass" className="space-y-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">{selectedConfig.title}</h2>
@@ -445,7 +443,7 @@ export const Dashboard: React.FC = () => {
           </div>
           <div style={{ height: chartHeight }} className="w-full">
             {selectedConfig.data.length > 0 ? (
-              <LineChart
+              <AreaChart
                 data={selectedConfig.data}
                 height={chartHeight}
                 showGrid
@@ -465,10 +463,10 @@ export const Dashboard: React.FC = () => {
         </Card>
 
         <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-          <Card variant="glass" className="space-y-4">
-            <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Nuevos {labels.customers}</h2>
+          <Card variant="glass">
+            <h2 className="text-lg font-semibold text-[var(--color-text-primary)] mb-4">Nuevos {labels.customers}</h2>
             <div className="h-[240px]">
-              <LineChart
+              <AreaChart
                 data={formattedCustomersData.length > 0
                   ? formattedCustomersData
                   : [{ label: 'Sin datos', value: 0 }]}
@@ -481,10 +479,10 @@ export const Dashboard: React.FC = () => {
             </div>
           </Card>
 
-          <Card variant="glass" className="space-y-4">
-            <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">{labels.leads}</h2>
+          <Card variant="glass">
+            <h2 className="text-lg font-semibold text-[var(--color-text-primary)] mb-4">{labels.leads}</h2>
             <div className="h-[240px]">
-              <LineChart
+              <AreaChart
                 data={formattedLeadsData.length > 0
                   ? formattedLeadsData
                   : [{ label: 'Sin datos', value: 0 }]}
@@ -497,10 +495,10 @@ export const Dashboard: React.FC = () => {
             </div>
           </Card>
 
-          <Card variant="glass" className="space-y-4">
-            <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">Nuevas Citas</h2>
+          <Card variant="glass">
+            <h2 className="text-lg font-semibold text-[var(--color-text-primary)] mb-4">Nuevas Citas</h2>
             <div className="h-[240px]">
-              <LineChart
+              <AreaChart
                 data={formattedAppointmentsData.length > 0
                   ? formattedAppointmentsData
                   : [{ label: 'Sin datos', value: 0 }]}
