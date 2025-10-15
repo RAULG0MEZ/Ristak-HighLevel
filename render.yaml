@@ -2,7 +2,7 @@ databases:
   - name: ristak-db
     databaseName: ristak_production
     region: oregon
-    plan: free
+    plan: starter  # Plan de pago básico ($7/mes) - Mayor rendimiento y sin límites del free tier
 
 services:
   # Web Service Principal
@@ -10,7 +10,7 @@ services:
     name: ristak-app
     runtime: node
     region: oregon
-    plan: starter
+    plan: starter  # Plan de pago básico ($7/mes) - Mejor uptime y rendimiento que free tier
     buildCommand: npm install --prefix backend && npm install --include=dev --prefix frontend && NODE_ENV=production npm run build --prefix frontend
     startCommand: npm start --prefix backend
     envVars:
