@@ -12,15 +12,6 @@
   margin: 0;
 }
 
-.controlsHeader {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--spacing-md);
-  padding: 0;
-  margin: 0;
-}
-
 .kpiRow {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
