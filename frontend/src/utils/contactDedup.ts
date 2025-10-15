@@ -380,7 +380,7 @@ function aggregateGroup<T extends ContactLike>(group: T[], normalizedPhone: stri
     }
   }
 
-  return merged
+  return applyNameFormatting(merged as ContactLike)
 }
 
 export function dedupeContacts<T extends ContactLike>(contacts: T[]): Array<WithMetadata<T>> {
@@ -401,7 +401,7 @@ export function dedupeContacts<T extends ContactLike>(contacts: T[]): Array<With
         duplicateCount: 1,
         mergedContactIds: [getId(contact)].filter((id): id is string => Boolean(id))
       }
-      applyNameFormatting(cloned as unknown as ContactLike)
+      applyNameFormatting(cloned as ContactLike)
       uniques.push({ index, item: cloned })
       return
     }
