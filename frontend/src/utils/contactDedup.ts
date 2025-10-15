@@ -1,3 +1,5 @@
+import { formatName } from './format'
+
 const PHONE_DIGIT_LENGTH = 10
 
 const STATUS_PRIORITY: Record<string, number> = {
@@ -28,6 +30,8 @@ export type ContactLike = {
   phone?: string | null
   name?: string | null
   full_name?: string | null
+  fullName?: string | null
+  contactName?: string | null
   status?: string | null
   createdAt?: string | null
   created_at?: string | null
@@ -42,6 +46,29 @@ export type ContactLike = {
 }
 
 type WithMetadata<T> = T & DedupedMetadata
+
+function applyNameFormatting<U extends ContactLike>(contact: U): U {
+  if (!contact) {
+    return contact
+  }
+
+  const target = contact as Record<string, unknown>
+
+  if (typeof target.name === 'string') {
+    target.name = formatName(target.name)
+  }
+  if (typeof target.full_name === 'string') {
+    target.full_name = formatName(target.full_name)
+  }
+  if (typeof target.fullName === 'string') {
+    target.fullName = formatName(target.fullName)
+  }
+  if (typeof target.contactName === 'string') {
+    target.contactName = formatName(target.contactName)
+  }
+
+  return contact
+}
 
 function extractPhone(contact?: ContactLike | null): string | null {
   if (!contact) {

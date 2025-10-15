@@ -666,15 +666,17 @@ export const Campaigns: React.FC = () => {
       <div className={styles.container}>
         <div className={styles.pageHeader}>
           <h1 className={styles.pageTitle}>Publicidad</h1>
-          <DateRangePicker
-            startDate={formatDateToISO(dateRange.start instanceof Date ? dateRange.start : new Date(dateRange.start))}
-            endDate={formatDateToISO(dateRange.end instanceof Date ? dateRange.end : new Date(dateRange.end))}
-            onChange={(start, end) => setDateRange({
-              start: parseLocalDateString(start),
-              end: parseLocalDateString(end),
-              preset: 'custom' as const
-            })}
-          />
+          <div className={styles.datePickerWrapper}>
+            <DateRangePicker
+              startDate={formatDateToISO(dateRange.start instanceof Date ? dateRange.start : new Date(dateRange.start))}
+              endDate={formatDateToISO(dateRange.end instanceof Date ? dateRange.end : new Date(dateRange.end))}
+              onChange={(start, end) => setDateRange({
+                start: parseLocalDateString(start),
+                end: parseLocalDateString(end),
+                preset: 'custom' as const
+              })}
+            />
+          </div>
         </div>
 
         {/* Sync Status Banner - Rediseñado */}

@@ -6,6 +6,68 @@ const capitalize = (value: string): string => {
   return value.charAt(0).toUpperCase() + value.slice(1)
 }
 
+const NAME_CONNECTORS = new Set([
+  'de',
+  'del',
+  'la',
+  'las',
+  'los',
+  'y',
+  'e',
+  'da',
+  'do',
+  'dos',
+  'das',
+  'van',
+  'von',
+  'al'
+])
+
+const capitalizeCompoundSegment = (segment: string): string => {
+  if (!segment) return ''
+  return segment.charAt(0).toUpperCase() + segment.slice(1)
+}
+
+const formatCompoundWord = (word: string): string => {
+  return word
+    .split(/([-'])/)
+    .map(segment => {
+      if (segment === '-' || segment === '\'') {
+        return segment
+      }
+      return capitalizeCompoundSegment(segment)
+    })
+    .join('')
+}
+
+export const formatName = (value?: string | null): string => {
+  if (!value) return ''
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+
+  const lowercase = trimmed.toLowerCase()
+  const uppercase = trimmed.toUpperCase()
+  const shouldNormalize =
+    trimmed === lowercase ||
+    (trimmed === uppercase && /\s/.test(trimmed))
+
+  if (!shouldNormalize) {
+    return trimmed
+  }
+
+  const words = lowercase
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word, index) => {
+      if (index > 0 && NAME_CONNECTORS.has(word)) {
+        return word
+      }
+      return formatCompoundWord(word)
+    })
+
+  return words.join(' ')
+}
+
 /**
  * Parsea una fecha YYYY-MM-DD como hora LOCAL (no UTC)
  * Esto evita problemas donde new Date("2025-10-05") lo parsea como UTC
