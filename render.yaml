@@ -29,17 +29,3 @@ services:
         value: https://ristak-app.onrender.com
     healthCheckPath: /api/health
     autoDeploy: true
-
-  # Cron Job - Actualización de Meta Ads cada hora
-  - type: cron
-    name: ristak-meta-sync
-    runtime: node
-    region: oregon
-    schedule: "0 * * * *"
-    buildCommand: echo "Cron job configurado"
-    envVars:
-      - key: APP_URL
-        value: https://ristak-app.onrender.com
-    startCommand: |
-      curl -X POST ${APP_URL}/api/meta/update-recent \
-      -H "Content-Type: application/json"

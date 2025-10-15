@@ -4,16 +4,9 @@ import { logger } from '../utils/logger.js'
 
 /**
  * Cron job para actualizar ads recientes cada hora
- * Solo se ejecuta en desarrollo (NODE_ENV !== 'production')
- * En producción, Render Cron Job llama directamente al endpoint
+ * Se ejecuta tanto en desarrollo como en producción
  */
 export function startMetaSyncCron() {
-  // Solo ejecutar en desarrollo
-  if (process.env.NODE_ENV === 'production') {
-    logger.info('Modo producción: Cron job de Meta manejado por Render')
-    return
-  }
-
   logger.info('Iniciando cron job de Meta Ads (cada hora)')
 
   // Ejecutar cada hora (minuto 0)
