@@ -291,7 +291,7 @@ export const Dashboard: React.FC = () => {
     }
   }
 
-  const chartHeight = 250
+  const chartHeight = 300
 
   useEffect(() => {
     const loadData = async () => {
@@ -357,9 +357,9 @@ export const Dashboard: React.FC = () => {
 
   return (
     <PageContainer>
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-6">
         <div>
-          <h1 className="text-2xl font-bold text-[var(--color-text-primary)]">Dashboard</h1>
+          <h1 className="text-3xl font-bold text-[var(--color-text-primary)]">Dashboard</h1>
           <p className="text-sm text-[var(--color-text-tertiary)] mt-1">Resumen financiero y de marketing</p>
         </div>
 
@@ -369,7 +369,7 @@ export const Dashboard: React.FC = () => {
           onChange={(start, end) => setDateRange({ start: parseLocalDateString(start), end: parseLocalDateString(end), preset: 'custom' })}
         />
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 sm:gap-5 xl:grid-cols-4">
           <KpiCard
             title="Ingresos Netos"
             value={formatCurrency(metrics.ingresosNetos.value)}
@@ -431,8 +431,8 @@ export const Dashboard: React.FC = () => {
         <Card variant="glass" className="space-y-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">{selectedConfig.title}</h2>
-              <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">{selectedConfig.subtitle}</p>
+              <h2 className="text-xl font-semibold text-[var(--color-text-primary)]">{selectedConfig.title}</h2>
+              <p className="text-sm text-[var(--color-text-secondary)] mt-0.5">{selectedConfig.subtitle}</p>
             </div>
             <ViewSelector
               value={selectedChart}
@@ -464,13 +464,13 @@ export const Dashboard: React.FC = () => {
 
         <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
           <Card variant="glass">
-            <h2 className="text-lg font-semibold text-[var(--color-text-primary)] mb-4">Nuevos {labels.customers}</h2>
-            <div className="h-[240px]">
+            <h2 className="text-xl font-semibold text-[var(--color-text-primary)] mb-4">Nuevos {labels.customers}</h2>
+            <div className="h-[280px]">
               <AreaChart
                 data={formattedCustomersData.length > 0
                   ? formattedCustomersData
                   : [{ label: 'Sin datos', value: 0 }]}
-                height={220}
+                height={250}
                 showGrid
                 color="#10b981"
                 formatValue={(v) => v.toFixed(0)}
@@ -480,13 +480,13 @@ export const Dashboard: React.FC = () => {
           </Card>
 
           <Card variant="glass">
-            <h2 className="text-lg font-semibold text-[var(--color-text-primary)] mb-4">{labels.leads}</h2>
-            <div className="h-[240px]">
+            <h2 className="text-xl font-semibold text-[var(--color-text-primary)] mb-4">{labels.leads}</h2>
+            <div className="h-[280px]">
               <AreaChart
                 data={formattedLeadsData.length > 0
                   ? formattedLeadsData
                   : [{ label: 'Sin datos', value: 0 }]}
-                height={220}
+                height={250}
                 showGrid
                 color="#3b82f6"
                 formatValue={(v) => v.toFixed(0)}
@@ -496,13 +496,13 @@ export const Dashboard: React.FC = () => {
           </Card>
 
           <Card variant="glass">
-            <h2 className="text-lg font-semibold text-[var(--color-text-primary)] mb-4">Nuevas Citas</h2>
-            <div className="h-[240px]">
+            <h2 className="text-xl font-semibold text-[var(--color-text-primary)] mb-4">Nuevas Citas</h2>
+            <div className="h-[280px]">
               <AreaChart
                 data={formattedAppointmentsData.length > 0
                   ? formattedAppointmentsData
                   : [{ label: 'Sin datos', value: 0 }]}
-                height={220}
+                height={250}
                 showGrid
                 color="#8b5cf6"
                 formatValue={(v) => v.toFixed(0)}

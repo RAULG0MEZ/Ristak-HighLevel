@@ -9,6 +9,7 @@ export { PageContainer } from './PageContainer'
 // Componentes de datos
 export { KpiCard } from './KpiCard'
 export { LineChart } from './LineChart'
+export { AreaChart } from './AreaChart'
 export { Table } from './Table'
 export type { Column } from './Table'
 
