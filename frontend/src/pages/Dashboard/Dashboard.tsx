@@ -360,7 +360,7 @@ export const Dashboard: React.FC = () => {
       <div className="flex flex-col gap-6">
         <div className="space-y-3">
           <div>
-            <h1 className="text-3xl font-bold text-[var(--color-text-primary)]">Dashboard</h1>
+            <h1 className="text-[var(--font-size-3xl)] font-bold text-[var(--color-text-primary)]">Dashboard</h1>
             <p className="mt-1 text-sm text-[var(--color-text-tertiary)]">Resumen financiero y de marketing</p>
           </div>
           <DateRangePicker
