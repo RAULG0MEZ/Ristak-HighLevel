@@ -666,7 +666,7 @@ export const Campaigns: React.FC = () => {
       <div className={styles.container}>
       <h1 className={`${styles.pageTitle} mb-4`}>Publicidad</h1>
 
-      <div className="mb-6">
+      <div className="mb-4">
         <DateRangePicker
           startDate={formatDateToISO(dateRange.start instanceof Date ? dateRange.start : new Date(dateRange.start))}
           endDate={formatDateToISO(dateRange.end instanceof Date ? dateRange.end : new Date(dateRange.end))}
