@@ -27,6 +27,7 @@ interface LineChartProps {
   showGrid?: boolean
   color?: string
   color2?: string
+  showPoints?: boolean
   formatValue?: (value: number) => string
   formatTooltipValue?: (value: number, key: string) => string
   showLegend?: boolean
@@ -95,6 +96,7 @@ export const LineChart: React.FC<LineChartProps> = ({
   showGrid = true,
   color = DEFAULT_COLOR_PRIMARY,
   color2 = DEFAULT_COLOR_SECONDARY,
+  showPoints = true,
   formatValue = defaultFormatAxis,
   formatTooltipValue = (value) => defaultFormatTooltip(value),
   showLegend = false,
@@ -151,22 +153,22 @@ export const LineChart: React.FC<LineChartProps> = ({
         style={{ minHeight: height, height }}
       >
         <ResponsiveContainer width="100%" height="100%">
-          <RechartsLineChart data={data} margin={{ top: 10, right: 24, left: -10, bottom: 6 }}>
+          <RechartsLineChart data={data} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
             {showGrid && (
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-subtle)" opacity={0.5} />
             )}
 
             <XAxis
               dataKey="label"
-              tick={{ fill: 'var(--color-text-tertiary)', fontSize: 12 }}
-              axisLine={{ stroke: 'var(--color-border-subtle)', opacity: 0.4 }}
+              tick={{ fill: 'var(--color-text-tertiary)', fontSize: 13 }}
+              axisLine={{ stroke: 'var(--color-border-subtle)', opacity: 0.2 }}
               tickLine={false}
             />
 
             <YAxis
               domain={yDomain}
-              tick={{ fill: 'var(--color-text-tertiary)', fontSize: 12 }}
-              axisLine={{ stroke: 'var(--color-border-subtle)', opacity: 0.4 }}
+              tick={{ fill: 'var(--color-text-tertiary)', fontSize: 13 }}
+              axisLine={{ stroke: 'var(--color-border-subtle)', opacity: 0.2 }}
               tickLine={false}
               tickFormatter={axisFormatter}
               allowDecimals={false}
@@ -185,8 +187,26 @@ export const LineChart: React.FC<LineChartProps> = ({
                 dataKey={serie.key}
                 stroke={serie.color}
                 strokeWidth={2.5}
-                dot={{ r: 4, fill: serie.color, strokeWidth: 2, stroke: 'var(--color-background)' }}
-                activeDot={{ r: 6 }}
+                dot={
+                  showPoints
+                    ? {
+                        r: 5,
+                        fill: serie.color,
+                        stroke: 'var(--color-background)',
+                        strokeWidth: 2
+                      }
+                    : false
+                }
+                activeDot={
+                  showPoints
+                    ? {
+                        r: 7,
+                        fill: serie.color,
+                        stroke: 'var(--color-background)',
+                        strokeWidth: 2
+                      }
+                    : false
+                }
                 connectNulls
                 isAnimationActive={false}
               />

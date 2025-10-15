@@ -25,7 +25,7 @@ const variantClasses: Record<CardVariant, string> = {
 export const Card: React.FC<CardProps> = ({
   children,
   className = '',
-  padding = 'md',
+  padding = 'lg',
   variant = 'default',
   onClick,
   ...props

@@ -1,7 +1,7 @@
 .container {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-lg);
+  gap: calc(var(--spacing-md) * 0.75);
   padding-bottom: 4rem;
 }
 
@@ -13,7 +13,7 @@
 
 .pageTitle {
   font-size: var(--font-size-2xl);
-  font-weight: var(--font-weight-semibold);
+  font-weight: var(--font-weight-bold);
   color: var(--color-text-primary);
   margin: 0;
 }

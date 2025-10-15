@@ -357,17 +357,24 @@ export const Dashboard: React.FC = () => {
 
   return (
     <PageContainer>
-      <div className="flex flex-col gap-6">
-        <div>
-          <h1 className="text-3xl font-bold text-[var(--color-text-primary)]">Dashboard</h1>
-          <p className="text-sm text-[var(--color-text-tertiary)] mt-1">Resumen financiero y de marketing</p>
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-[var(--color-text-primary)]">Dashboard</h1>
+            <p className="mt-1 text-sm text-[var(--color-text-tertiary)]">Resumen financiero y de marketing</p>
+          </div>
+          <div className="mt-2 md:mt-0">
+            <DateRangePicker
+              startDate={formatDateToISO(dateRange.start)}
+              endDate={formatDateToISO(dateRange.end)}
+              onChange={(start, end) => setDateRange({
+                start: parseLocalDateString(start),
+                end: parseLocalDateString(end),
+                preset: 'custom'
+              })}
+            />
+          </div>
         </div>
-
-        <DateRangePicker
-          startDate={formatDateToISO(dateRange.start)}
-          endDate={formatDateToISO(dateRange.end)}
-          onChange={(start, end) => setDateRange({ start: parseLocalDateString(start), end: parseLocalDateString(end), preset: 'custom' })}
-        />
 
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 sm:gap-5 xl:grid-cols-4">
           <KpiCard

@@ -664,124 +664,125 @@ export const Campaigns: React.FC = () => {
   return (
     <PageContainer>
       <div className={styles.container}>
-      <h1 className={styles.pageTitle}>Publicidad</h1>
+        <div className={styles.pageHeader}>
+          <h1 className={styles.pageTitle}>Publicidad</h1>
+          <DateRangePicker
+            startDate={formatDateToISO(dateRange.start instanceof Date ? dateRange.start : new Date(dateRange.start))}
+            endDate={formatDateToISO(dateRange.end instanceof Date ? dateRange.end : new Date(dateRange.end))}
+            onChange={(start, end) => setDateRange({
+              start: parseLocalDateString(start),
+              end: parseLocalDateString(end),
+              preset: 'custom' as const
+            })}
+          />
+        </div>
 
-      <DateRangePicker
-        startDate={formatDateToISO(dateRange.start instanceof Date ? dateRange.start : new Date(dateRange.start))}
-        endDate={formatDateToISO(dateRange.end instanceof Date ? dateRange.end : new Date(dateRange.end))}
-        onChange={(start, end) => setDateRange({
-          start: parseLocalDateString(start),
-          end: parseLocalDateString(end),
-          preset: 'custom' as const
-        })}
-      />
-
-      {/* Sync Status Banner - Rediseñado */}
-      {syncStatus && syncStatus.running && (
-        <div className={styles.syncBanner}>
-          <div className={styles.syncHeader}>
-            <div className={styles.syncIconWrapper}>
-              <RefreshCw size={20} className={styles.syncIcon} />
-            </div>
-            <div className={styles.syncTextWrapper}>
-              <div className={styles.syncTitle}>Sincronizando campañas</div>
-              <div className={styles.syncSubtitle}>
-                {syncStatus.currentMonth ? `Procesando ${syncStatus.currentMonth}` : (syncStatus.message || 'Preparando sincronización...')}
+        {/* Sync Status Banner - Rediseñado */}
+        {syncStatus && syncStatus.running && (
+          <div className={styles.syncBanner}>
+            <div className={styles.syncHeader}>
+              <div className={styles.syncIconWrapper}>
+                <RefreshCw size={20} className={styles.syncIcon} />
+              </div>
+              <div className={styles.syncTextWrapper}>
+                <div className={styles.syncTitle}>Sincronizando campañas</div>
+                <div className={styles.syncSubtitle}>
+                  {syncStatus.currentMonth ? `Procesando ${syncStatus.currentMonth}` : (syncStatus.message || 'Preparando sincronización...')}
+                </div>
               </div>
             </div>
-          </div>
 
-          {syncStatus.total > 0 ? (
-            <div className={styles.syncProgressSection}>
-              <div className={styles.syncProgressBar}>
-                <div
-                  className={styles.syncProgressFill}
-                  style={{ width: `${Math.round((syncStatus.processed / syncStatus.total) * 100)}%` }}
-                />
-              </div>
-              <div className={styles.syncStats}>
-                <span className={styles.syncStat}>
-                  {syncStatus.processed} / {syncStatus.total} períodos
-                </span>
-                {syncStatus.totalRecords > 0 && (
+            {syncStatus.total > 0 ? (
+              <div className={styles.syncProgressSection}>
+                <div className={styles.syncProgressBar}>
+                  <div
+                    className={styles.syncProgressFill}
+                    style={{ width: `${Math.round((syncStatus.processed / syncStatus.total) * 100)}%` }}
+                  />
+                </div>
+                <div className={styles.syncStats}>
                   <span className={styles.syncStat}>
-                    {syncStatus.totalRecords.toLocaleString()} registros
+                    {syncStatus.processed} / {syncStatus.total} períodos
                   </span>
-                )}
-                <span className={styles.syncPercentage}>
-                  {Math.round((syncStatus.processed / syncStatus.total) * 100)}%
-                </span>
+                  {syncStatus.totalRecords > 0 && (
+                    <span className={styles.syncStat}>
+                      {syncStatus.totalRecords.toLocaleString()} registros
+                    </span>
+                  )}
+                  <span className={styles.syncPercentage}>
+                    {Math.round((syncStatus.processed / syncStatus.total) * 100)}%
+                  </span>
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className={styles.syncProgressSection}>
-              <div className={styles.syncSubtitle} style={{ textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-                {syncStatus.message || 'Iniciando...'}
+            ) : (
+              <div className={styles.syncProgressSection}>
+                <div className={styles.syncSubtitle} style={{ textAlign: 'center', color: 'var(--color-text-secondary)', fontSize: '13px' }}>
+                  {syncStatus.message || 'Iniciando...'}
+                </div>
               </div>
-            </div>
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        )}
 
-      <div className={styles.kpiRow}>
-        <KpiCard
-          title="Ingresos"
-          value={formatCurrency(totals.revenue)}
-          delta={campaignDeltas.revenue}
-          deltaLabel="vs periodo anterior"
-          icon={<DollarSign size={20} />}
-        />
-        <KpiCard
-          title="Inversión Total"
-          value={formatCurrency(totals.spend)}
-          delta={campaignDeltas.spend}
-          deltaLabel="vs periodo anterior"
-          icon={<Megaphone size={20} />}
-        />
-        <KpiCard
-          title="Retorno de Inversión Promedio"
-          value={formatRoas(avgRoas)}
-          delta={campaignDeltas.roas}
-          deltaLabel="vs periodo anterior"
-          icon={<TrendingUp size={20} />}
-        />
-        <KpiCard
-          title={`Nuevos ${labels.customers}`}
-          value={totals.sales.toString()}
-          delta={campaignDeltas.sales}
-          deltaLabel="vs periodo anterior"
-          icon={<Target size={20} />}
-        />
-        <KpiCard
-          title={labels.leads}
-          value={totals.leads.toString()}
-          delta={campaignDeltas.leads}
-          deltaLabel="vs periodo anterior"
-          icon={<Users size={20} />}
-        />
-      </div>
-
-      <Card className={styles.chartCard}>
-        <h2 className={styles.chartTitle}>Ingresos vs Gastos de Publicidad</h2>
-        <div style={{ height: 300 }}>
-          {timeSeriesData.length > 0 ? (
-            <LineChart
-              data={timeSeriesData}
-              height={300}
-              showGrid={true}
-              color="#10b981"
-              color2="#64748b"
-              formatValue={(v) => `$${(v / 1000).toFixed(1)}k`}
-              showLegend={true}
-              legendLabels={{ label1: 'Ingresos', label2: 'Gastos Publicidad' }}
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center rounded-xl border border-[rgba(148,163,184,0.18)] bg-[color-mix(in_srgb,var(--color-background-glass) 82%, transparent)] text-sm text-[var(--color-text-tertiary)]">
-              Sin datos de campañas disponibles
-            </div>
-          )}
+        <div className={styles.kpiRow}>
+          <KpiCard
+            title="Ingresos"
+            value={formatCurrency(totals.revenue)}
+            delta={campaignDeltas.revenue}
+            deltaLabel="vs periodo anterior"
+            icon={<DollarSign size={20} />}
+          />
+          <KpiCard
+            title="Inversión Total"
+            value={formatCurrency(totals.spend)}
+            delta={campaignDeltas.spend}
+            deltaLabel="vs periodo anterior"
+            icon={<Megaphone size={20} />}
+          />
+          <KpiCard
+            title="Retorno de Inversión Promedio"
+            value={formatRoas(avgRoas)}
+            delta={campaignDeltas.roas}
+            deltaLabel="vs periodo anterior"
+            icon={<TrendingUp size={20} />}
+          />
+          <KpiCard
+            title={`Nuevos ${labels.customers}`}
+            value={totals.sales.toString()}
+            delta={campaignDeltas.sales}
+            deltaLabel="vs periodo anterior"
+            icon={<Target size={20} />}
+          />
+          <KpiCard
+            title={labels.leads}
+            value={totals.leads.toString()}
+            delta={campaignDeltas.leads}
+            deltaLabel="vs periodo anterior"
+            icon={<Users size={20} />}
+          />
         </div>
-      </Card>
+
+        <Card className={styles.chartCard}>
+          <h2 className={styles.chartTitle}>Ingresos vs Gastos de Publicidad</h2>
+          <div style={{ height: 300 }}>
+            {timeSeriesData.length > 0 ? (
+              <LineChart
+                data={timeSeriesData}
+                height={300}
+                showGrid={true}
+                color="#10b981"
+                color2="#64748b"
+                formatValue={(v) => `$${(v / 1000).toFixed(1)}k`}
+                showLegend={true}
+                legendLabels={{ label1: 'Ingresos', label2: 'Gastos Publicidad' }}
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center rounded-xl border border-[rgba(148,163,184,0.18)] bg-[color-mix(in_srgb,var(--color-background-glass) 82%, transparent)] text-sm text-[var(--color-text-tertiary)]">
+                Sin datos de campañas disponibles
+              </div>
+            )}
+          </div>
+        </Card>
 
       <Card padding="none">
         <Table

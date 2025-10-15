@@ -1,7 +1,7 @@
 .container {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xl);
+  gap: var(--spacing-lg);
   padding-bottom: 4rem;
 }
 
@@ -9,12 +9,12 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--spacing-md);
+  gap: var(--spacing-sm);
 }
 
 .title {
   font-size: var(--font-size-2xl);
-  font-weight: var(--font-weight-semibold);
+  font-weight: var(--font-weight-bold);
   color: var(--color-text-primary);
   margin: 0;
 }
@@ -33,7 +33,7 @@
 }
 
 .datePickerInline {
-  margin-top: var(--spacing-sm);
+  margin-top: var(--spacing-xs);
 }
 
 .filtersRow {
