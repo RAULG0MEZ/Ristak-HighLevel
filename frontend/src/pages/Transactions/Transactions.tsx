@@ -293,7 +293,11 @@ export const Transactions: React.FC = () => {
             onTabChange={(value) => setViewMode(value as 'all' | 'by-date')}
             variant="compact"
           />
-          <Button variant="secondary" onClick={() => setShowRecordPaymentModal(true)}>
+          <Button
+            variant="secondary"
+            className={styles.neutralPaymentButton}
+            onClick={() => setShowRecordPaymentModal(true)}
+          >
             <Plus size={16} />
             Registrar pago
           </Button>

@@ -17,6 +17,9 @@ import {
   listPrices,
   createInvoice,
   recordPayment,
+  sendInvoice,
+  getContactPaymentMethods,
+  chargeSavedPaymentMethod,
   searchContacts
 } from '../controllers/highlevelController.js'
 
@@ -44,6 +47,9 @@ router.post('/contacts/search', searchContacts)
 router.get('/products', listProducts)
 router.get('/products/:productId/prices', listPrices)
 router.post('/invoices', createInvoice)
+router.post('/invoices/:invoiceId/send', sendInvoice)
 router.post('/invoices/:invoiceId/record-payment', recordPayment)
+router.get('/payment-methods/contact/:contactId', getContactPaymentMethods)
+router.post('/payment-methods/charge', chargeSavedPaymentMethod)
 
 export default router

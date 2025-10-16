@@ -813,51 +813,51 @@ export const Reports: React.FC = () => {
   return (
     <PageContainer>
       <div className={styles.container}>
-      <header className={styles.header}>
-        <div className={styles.titleBlock}>
-          <h1 className={styles.title}>Reportes</h1>
-          <p className={styles.subtitle}>Explora métricas financieras y de marketing agrupadas por periodo.</p>
-          {metricsRangeLabel && <span className={styles.rangeLabel}>{metricsRangeLabel}</span>}
-          {viewType === 'day' && (
-            <div className={styles.datePickerInline}>
-              <DateRangePicker
-                startDate={toIsoDate(baseRange.start)}
-                endDate={toIsoDate(baseRange.end)}
-                onChange={(start, end) => setDateRange({
-                  start: parseLocalDateString(start),
-                  end: parseLocalDateString(end),
-                  preset: 'custom'
-                })}
-              />
-            </div>
-          )}
-        </div>
-        <div className={styles.filtersRow}>
-          {viewType === 'month' && (
-            <div className={styles.monthControls}>
-              <ViewSelector
-                value={monthPreset}
-                options={monthRangeOptions}
-                onChange={handleMonthPresetChange}
-              />
-              {monthPreset === 'custom' && (
-                <div className={styles.customMonthControls}>
-                  <label className={styles.customControl}>
-                    Año
-                    <input
-                      type="number"
-                      value={customMonthYear}
-                      onChange={(event) => setCustomMonthYear(Number(event.target.value))}
-                      className={styles.numberInput}
-                    />
-                  </label>
-                  <label className={styles.customControl}>
-                    Inicio
-                    <select
-                      value={customMonthStart}
-                      onChange={(event) => handleCustomMonthChange('start', Number(event.target.value))}
-                    >
-                      {monthNames.map((name, index) => (
+        <header className={styles.header}>
+          <div className={styles.titleBlock}>
+            <h1 className={styles.title}>Reportes</h1>
+            <p className={styles.subtitle}>Explora métricas financieras y de marketing agrupadas por periodo.</p>
+            {metricsRangeLabel && <span className={styles.rangeLabel}>{metricsRangeLabel}</span>}
+            {viewType === 'day' && (
+              <div className={styles.datePickerInline}>
+                <DateRangePicker
+                  startDate={toIsoDate(baseRange.start)}
+                  endDate={toIsoDate(baseRange.end)}
+                  onChange={(start, end) => setDateRange({
+                    start: parseLocalDateString(start),
+                    end: parseLocalDateString(end),
+                    preset: 'custom'
+                  })}
+                />
+              </div>
+            )}
+          </div>
+          <div className={styles.filtersRow}>
+            {viewType === 'month' && (
+              <div className={styles.monthControls}>
+                <ViewSelector
+                  value={monthPreset}
+                  options={monthRangeOptions}
+                  onChange={handleMonthPresetChange}
+                />
+                {monthPreset === 'custom' && (
+                  <div className={styles.customMonthControls}>
+                    <label className={styles.customControl}>
+                      Año
+                      <input
+                        type="number"
+                        value={customMonthYear}
+                        onChange={(event) => setCustomMonthYear(Number(event.target.value))}
+                        className={styles.numberInput}
+                      />
+                    </label>
+                    <label className={styles.customControl}>
+                      Inicio
+                      <select
+                        value={customMonthStart}
+                        onChange={(event) => handleCustomMonthChange('start', Number(event.target.value))}
+                      >
+                        {monthNames.map((name, index) => (
                         <option key={name} value={index}>{name}</option>
                       ))}
                     </select>

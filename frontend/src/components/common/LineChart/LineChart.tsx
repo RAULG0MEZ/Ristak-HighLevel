@@ -1,14 +1,14 @@
 import React, { useMemo } from 'react'
 import {
-  LineChart as RechartsLineChart,
-  Line,
+  AreaChart as RechartsAreaChart,
+  Area,
   XAxis,
   YAxis,
   CartesianGrid,
   ResponsiveContainer,
   Tooltip
 } from 'recharts'
-import { formatCurrency, formatNumber } from '@/utils/format'
+import { formatCurrency } from '@/utils/format'
 
 interface DataPoint {
   label: string
@@ -103,6 +103,7 @@ export const LineChart: React.FC<LineChartProps> = ({
   legendLabels = { label1: 'Serie 1', label2: 'Serie 2' }
 }) => {
   const hasSecondSeries = data.some((d) => typeof d.value2 === 'number')
+  const isDarkMode = typeof document !== 'undefined' && document.body.classList.contains('dark')
 
   const series = useMemo<SeriesDefinition[]>(() => {
     const definitions: SeriesDefinition[] = [
@@ -153,7 +154,21 @@ export const LineChart: React.FC<LineChartProps> = ({
         style={{ minHeight: height, height }}
       >
         <ResponsiveContainer width="100%" height="100%">
-          <RechartsLineChart data={data} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+          <RechartsAreaChart data={data} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+            <defs>
+              {series.map((serie) => (
+                <linearGradient
+                  key={`gradient-${serie.key}`}
+                  id={`gradient-${serie.key}-${isDarkMode ? 'dark' : 'light'}`}
+                  x1="0" y1="0" x2="0" y2="1"
+                >
+                  <stop offset="0%" stopColor={serie.color} stopOpacity={0.18} />
+                  <stop offset="50%" stopColor={serie.color} stopOpacity={0.1} />
+                  <stop offset="100%" stopColor={serie.color} stopOpacity={0.02} />
+                </linearGradient>
+              ))}
+            </defs>
+
             {showGrid && (
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-subtle)" opacity={0.5} />
             )}
@@ -181,12 +196,14 @@ export const LineChart: React.FC<LineChartProps> = ({
             />
 
             {series.map((serie) => (
-              <Line
+              <Area
                 key={serie.key}
+                name={serie.label}
                 type="monotone"
                 dataKey={serie.key}
                 stroke={serie.color}
                 strokeWidth={2.5}
+                fill={`url(#gradient-${serie.key}-${isDarkMode ? 'dark' : 'light'})`}
                 dot={
                   showPoints
                     ? {
@@ -212,7 +229,7 @@ export const LineChart: React.FC<LineChartProps> = ({
                 isAnimationActive={false}
               />
             ))}
-          </RechartsLineChart>
+          </RechartsAreaChart>
         </ResponsiveContainer>
       </div>
     </div>

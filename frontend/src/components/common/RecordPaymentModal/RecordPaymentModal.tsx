@@ -1,9 +1,32 @@
-import React, { useState, useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Modal } from '../Modal'
 import { Button } from '../Button'
-import { Search, Loader2, X, DollarSign } from 'lucide-react'
+import {
+  Search,
+  Loader2,
+  X,
+  DollarSign,
+  Link as LinkIcon,
+  CreditCard,
+  Check
+} from 'lucide-react'
 import styles from './RecordPaymentModal.module.css'
 import { useNotification } from '@/contexts/NotificationContext'
+import { formatCurrency } from '@/utils/format'
+
+const IVA_RATE = 0.16
+
+const normalizeAmount = (value: string | number): number => {
+  if (typeof value === 'number') {
+    return Math.round(value * 100) / 100
+  }
+  if (!value) return 0
+  const parsed = parseFloat(String(value).replace(/[^0-9.-]/g, ''))
+  if (Number.isNaN(parsed)) return 0
+  return Math.round(parsed * 100) / 100
+}
+
+type PaymentOption = 'link' | 'saved' | 'manual'
 
 interface RecordPaymentModalProps {
   isOpen: boolean
@@ -36,13 +59,49 @@ interface Price {
   currency: string
 }
 
+interface InvoiceSummary {
+  contactId: string
+  contactName: string
+  contactEmail?: string
+  amount: number
+  subtotal: number
+  taxAmount: number
+  includesTax: boolean
+  currency: string
+  description: string
+  invoiceId?: string
+}
+
+interface ManualPaymentData {
+  paymentDate: string
+  paymentMethod: string
+  reference: string
+  notes: string
+}
+
+interface PaymentMethod {
+  id: string
+  brand: string
+  last4: string
+  expMonth: number
+  expYear: number
+  createdAt: string | null
+}
+
+const defaultManualPaymentData = (): ManualPaymentData => ({
+  paymentDate: new Date().toISOString().split('T')[0],
+  paymentMethod: 'cash',
+  reference: '',
+  notes: ''
+})
+
 export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   isOpen,
   onClose,
   onSuccess
 }) => {
   const [loading, setLoading] = useState(false)
-  const [step, setStep] = useState<'form' | 'processing'>('form')
+  const [step, setStep] = useState<'form' | 'options' | 'processing'>('form')
 
   // Contact search
   const [searchQuery, setSearchQuery] = useState('')
@@ -58,6 +117,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   const [amount, setAmount] = useState('')
   const [description, setDescription] = useState('')
   const [currency, setCurrency] = useState('MXN')
+  const [includeIVA, setIncludeIVA] = useState(false)
 
   // Business details (required by GHL)
   const [businessName, setBusinessName] = useState('Mi Negocio')
@@ -70,6 +130,9 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   const [businessCountry, setBusinessCountry] = useState('')
   const [businessPostalCode, setBusinessPostalCode] = useState('')
   const [businessWebsite, setBusinessWebsite] = useState('')
+  const [invoiceTitle, setInvoiceTitle] = useState('PAGO')
+  const [invoiceTermsNotes, setInvoiceTermsNotes] = useState<string | null>(null)
+  const [invoiceDueDays, setInvoiceDueDays] = useState(7)
 
   // Product charge
   const [products, setProducts] = useState<Product[]>([])
@@ -79,47 +142,84 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   const [customAmount, setCustomAmount] = useState('')
   const [loadingProducts, setLoadingProducts] = useState(false)
 
+  // Payment options
+  const [invoicePayload, setInvoicePayload] = useState<Record<string, any> | null>(null)
+  const [invoiceSummary, setInvoiceSummary] = useState<InvoiceSummary | null>(null)
+  const [paymentOption, setPaymentOption] = useState<PaymentOption>('link')
+  const [checkingCards, setCheckingCards] = useState(false)
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string | null>(null)
+  const [customerId, setCustomerId] = useState<string | null>(null)
+  const [manualPaymentData, setManualPaymentData] = useState<ManualPaymentData>(defaultManualPaymentData)
+
   const { showToast } = useNotification()
 
-  // Reset form when modal opens/closes
-  useEffect(() => {
-    if (!isOpen) {
-      resetForm()
-    } else {
-      // Load configuration when modal opens
-      loadConfig()
-    }
-  }, [isOpen])
+  const resetForm = () => {
+    setStep('form')
+    setLoading(false)
+    setSearchQuery('')
+    setSearchingContact(false)
+    setContacts([])
+    setSelectedContact(null)
+    setShowContactDropdown(false)
+    setChargeType('direct')
+    setAmount('')
+    setDescription('')
+    setCurrency('MXN')
+    setIncludeIVA(false)
+    setSelectedProduct(null)
+    setSelectedPrice(null)
+    setPrices([])
+    setProducts([])
+    setCustomAmount('')
+    setInvoicePayload(null)
+    setInvoiceSummary(null)
+    setPaymentOption('link')
+    setCheckingCards(false)
+    setPaymentMethods([])
+    setSelectedPaymentMethod(null)
+    setCustomerId(null)
+    setManualPaymentData(defaultManualPaymentData())
+  }
 
-  // Load configuration
   const loadConfig = async () => {
     try {
       const response = await fetch('/api/highlevel/config')
       if (!response.ok) return
 
       const config = await response.json()
+      const locationData = typeof config.locationData === 'string'
+        ? JSON.parse(config.locationData)
+        : config.locationData
+      const business = locationData?.business || {}
 
-      if (config.locationData) {
-        const locationData = typeof config.locationData === 'string'
-          ? JSON.parse(config.locationData)
-          : config.locationData
-
-        // Cargar TODOS los datos disponibles del location
-        if (locationData.name) setBusinessName(locationData.name)
-        if (locationData.email) setBusinessEmail(locationData.email)
-        if (locationData.logoUrl) setLogoUrl(locationData.logoUrl)
-        if (locationData.phone) setBusinessPhone(locationData.phone)
-        if (locationData.address) setBusinessAddress(locationData.address)
-        if (locationData.city) setBusinessCity(locationData.city)
-        if (locationData.state) setBusinessState(locationData.state)
-        if (locationData.country) setBusinessCountry(locationData.country)
-        if (locationData.postalCode) setBusinessPostalCode(locationData.postalCode)
-        if (locationData.website) setBusinessWebsite(locationData.website)
-      }
+      setBusinessName(config.businessName || business.name || locationData?.name || 'Mi Negocio')
+      setBusinessEmail(config.businessEmail || business.email || locationData?.email || '')
+      setLogoUrl(config.companyLogoUrl || business.logoUrl || locationData?.logoUrl || '')
+      setBusinessPhone(business.phone || locationData?.phone || '')
+      setBusinessAddress(business.address || locationData?.address || '')
+      setBusinessCity(business.city || locationData?.city || '')
+      setBusinessState(business.state || locationData?.state || '')
+      setBusinessCountry(business.country || locationData?.country || '')
+      setBusinessPostalCode(business.postalCode || locationData?.postalCode || '')
+      setBusinessWebsite(config.companyWebsite || business.website || locationData?.website || config.domain || '')
+      setInvoiceTitle(config.invoiceTitle || 'PAGO')
+      setInvoiceTermsNotes(config.invoiceTermsNotes || null)
+      setInvoiceDueDays(config.invoiceDueDays || 7)
     } catch (error) {
       console.error('Error loading config:', error)
     }
   }
+
+  useEffect(() => {
+    if (!isOpen) {
+      resetForm()
+      return
+    }
+
+    resetForm()
+    loadConfig()
+  }, [isOpen])
 
   // Search contacts
   useEffect(() => {
@@ -147,8 +247,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
         }
         const data = await response.json()
 
-        // Contacts come already transformed from the backend
-        const contacts = (data.contacts || []).map((contact: any) => ({
+        const formattedContacts = (data.contacts || []).map((contact: any) => ({
           id: contact.id,
           name: contact.name || 'Sin nombre',
           email: contact.email || '',
@@ -157,7 +256,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
           lastName: contact.lastName || ''
         }))
 
-        setContacts(contacts)
+        setContacts(formattedContacts)
         setShowContactDropdown(true)
       } catch (error) {
         console.error('Error buscando contactos:', error)
@@ -170,24 +269,23 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     return () => clearTimeout(timer)
   }, [searchQuery])
 
-  // Load products when switching to product charge
   useEffect(() => {
     if (isOpen && chargeType === 'product' && products.length === 0) {
       loadProducts()
     }
   }, [isOpen, chargeType])
 
-  // Load prices when product is selected
   useEffect(() => {
     if (selectedProduct) {
       loadPrices(selectedProduct.id || selectedProduct._id)
     }
   }, [selectedProduct])
 
-  // Auto-fill custom amount when price is selected
   useEffect(() => {
     if (selectedPrice) {
-      setCustomAmount(String(selectedPrice.amount || selectedPrice.price || ''))
+      const priceAmount = selectedPrice.amount || selectedPrice.price
+      setCustomAmount(priceAmount ? String(priceAmount) : '')
+      setCurrency(selectedPrice.currency || 'MXN')
     }
   }, [selectedPrice])
 
@@ -195,6 +293,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     setLoadingProducts(true)
     try {
       const response = await fetch('/api/highlevel/products?limit=100')
+      if (!response.ok) throw new Error('Error al obtener productos')
       const data = await response.json()
       setProducts(data.products || [])
     } catch (error) {
@@ -208,27 +307,13 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   const loadPrices = async (productId: string) => {
     try {
       const response = await fetch(`/api/highlevel/products/${productId}/prices`)
+      if (!response.ok) throw new Error('Error al obtener precios')
       const data = await response.json()
       setPrices(data.prices || [])
     } catch (error) {
       console.error('Error cargando precios:', error)
       showToast('error', 'No se pudieron cargar los precios')
     }
-  }
-
-  const resetForm = () => {
-    setStep('form')
-    setSearchQuery('')
-    setSelectedContact(null)
-    setShowContactDropdown(false)
-    setContacts([])
-    setChargeType('direct')
-    setAmount('')
-    setDescription('')
-    setSelectedProduct(null)
-    setSelectedPrice(null)
-    setCustomAmount('')
-    setPrices([])
   }
 
   const handleSelectContact = (contact: Contact) => {
@@ -243,8 +328,49 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     setSearchQuery('')
   }
 
-  const handleSubmit = async () => {
-    // Validations
+  const buildInvoicePayload = (preparedSubtotal: number, preparedTaxAmount: number, finalCurrency: string, contactName: string, items: any[]) => {
+    const dueDate = new Date(Date.now() + (invoiceDueDays || 7) * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split('T')[0]
+
+    return {
+      name: description || `Pago de ${contactName}`,
+      title: invoiceTitle || 'PAGO',
+      currency: finalCurrency,
+      businessDetails: {
+        name: businessName,
+        ...(businessEmail && { email: businessEmail }),
+        ...(logoUrl && { logoUrl }),
+        ...(businessPhone && { phone: businessPhone }),
+        ...(businessAddress && { address: businessAddress }),
+        ...(businessCity && { city: businessCity }),
+        ...(businessState && { state: businessState }),
+        ...(businessCountry && { country: businessCountry }),
+        ...(businessPostalCode && { postalCode: businessPostalCode }),
+        ...(businessWebsite && { website: businessWebsite })
+      },
+      contactDetails: {
+        id: selectedContact?.id,
+        name: contactName,
+        email: selectedContact?.email || '',
+        phoneNo: selectedContact?.phone || ''
+      },
+      items,
+      issueDate: new Date().toISOString().split('T')[0],
+      dueDate,
+      liveMode: true,
+      ...(includeIVA && {
+        tax: {
+          name: 'IVA',
+          rate: IVA_RATE * 100,
+          amount: preparedTaxAmount
+        }
+      }),
+      ...(invoiceTermsNotes && { termsNotes: invoiceTermsNotes })
+    }
+  }
+
+  const handleContinue = async () => {
     if (!selectedContact) {
       showToast('error', 'Selecciona un contacto')
       return
@@ -270,238 +396,344 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       }
     }
 
-    setLoading(true)
-    setStep('processing')
-
     try {
-      const contactName = selectedContact.name ||
+      setLoading(true)
+
+      const contactName =
+        selectedContact.name ||
         `${selectedContact.firstName || ''} ${selectedContact.lastName || ''}`.trim() ||
         selectedContact.email ||
         selectedContact.phone ||
         'Cliente'
 
-      // Build items based on charge type
-      let items: any[]
+      let items: any[] = []
       let finalCurrency = currency
+      let subtotal = 0
 
-      if (chargeType === 'product' && selectedPrice) {
+      if (chargeType === 'product' && selectedProduct && selectedPrice) {
+        const parsedAmount = normalizeAmount(customAmount)
+        subtotal = parsedAmount
         finalCurrency = selectedPrice.currency || currency
+
         items = [
           {
-            name: selectedProduct!.name,
-            description: selectedProduct!.description || selectedPrice.name || 'Producto',
+            name: selectedProduct.name,
+            description: selectedProduct.description || selectedPrice.name || 'Producto',
             priceId: selectedPrice.id || selectedPrice._id,
-            productId: selectedProduct!.id || selectedProduct!._id,
-            amount: parseFloat(customAmount),
+            productId: selectedProduct.id || selectedProduct._id,
+            amount: parsedAmount,
             qty: 1,
-            currency: finalCurrency,
+            currency: finalCurrency
           }
         ]
       } else {
+        const parsedAmount = normalizeAmount(amount)
+        subtotal = parsedAmount
         items = [
           {
             name: description || 'Pago',
             description: description || 'Pago',
-            amount: parseFloat(amount),
+            amount: parsedAmount,
             qty: 1,
-            currency: currency,
+            currency
           }
         ]
       }
 
-      const invoiceTotal = chargeType === 'product' ? parseFloat(customAmount) : parseFloat(amount)
+      const taxAmount = includeIVA ? normalizeAmount(subtotal * IVA_RATE) : 0
+      const totalAmount = includeIVA ? normalizeAmount(subtotal + taxAmount) : subtotal
 
-      // Create invoice
-      const invoiceResponse = await fetch('/api/highlevel/invoices', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: description || `Pago de ${contactName}`,
-          title: 'RECIBO',
-          currency: finalCurrency,
-          businessDetails: {
-            name: businessName,
-            ...(businessEmail && { email: businessEmail }),
-            ...(logoUrl && { logoUrl: logoUrl }),
-            ...(businessPhone && { phone: businessPhone }),
-            ...(businessAddress && { address: businessAddress }),
-            ...(businessCity && { city: businessCity }),
-            ...(businessState && { state: businessState }),
-            ...(businessCountry && { country: businessCountry }),
-            ...(businessPostalCode && { postalCode: businessPostalCode }),
-            ...(businessWebsite && { website: businessWebsite }),
-          },
-          contactDetails: {
-            id: selectedContact.id,
-            name: contactName,
-            email: selectedContact.email || '',
-            phoneNo: selectedContact.phone || '',
-          },
-          items: items,
-          issueDate: new Date().toISOString().split('T')[0],
-          dueDate: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 1 day from now
-          liveMode: true,
-        })
+      const payload = buildInvoicePayload(subtotal, taxAmount, finalCurrency, contactName, items)
+
+      setInvoicePayload(payload)
+      setInvoiceSummary({
+        contactId: selectedContact.id,
+        contactName,
+        contactEmail: selectedContact.email || '',
+        amount: totalAmount,
+        subtotal,
+        taxAmount,
+        includesTax: includeIVA,
+        currency: finalCurrency,
+        description: description || (chargeType === 'product' && selectedProduct ? selectedProduct.name : 'Pago')
       })
 
-      if (!invoiceResponse.ok) {
-        throw new Error('Error al crear el pago')
-      }
-
-      const invoiceData = await invoiceResponse.json()
-      const invoiceId = invoiceData.invoice?.id || invoiceData.invoice?._id
-
-      if (!invoiceId) {
-        throw new Error('No se pudo obtener el ID del pago')
-      }
-
-      // Record payment
-      const paymentResponse = await fetch(`/api/highlevel/invoices/${invoiceId}/record-payment`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: invoiceTotal,
-          currency: finalCurrency,
-          fulfilledAt: new Date().toISOString(),
-          note: 'Pago registrado manualmente',
-        })
-      })
-
-      if (!paymentResponse.ok) {
-        throw new Error('Error al registrar el pago')
-      }
-
-      showToast('success', 'Pago registrado correctamente')
-      onSuccess?.()
-      onClose()
+      setPaymentOption('link')
+      setPaymentMethods([])
+      setSelectedPaymentMethod(null)
+      setCustomerId(null)
+      setManualPaymentData(defaultManualPaymentData())
+      setStep('options')
     } catch (error: any) {
-      console.error('Error:', error)
-      showToast('error', error.message || 'No se pudo registrar el pago')
-      setStep('form')
+      console.error('Error preparando invoice:', error)
+      showToast('error', error.message || 'No se pudo preparar el invoice')
     } finally {
       setLoading(false)
     }
   }
 
-  const renderForm = () => (
-    <div className={styles.content}>
-      {/* Contact search */}
-      <div className={styles.field}>
-        <label className={styles.label}>Cliente</label>
+  const loadPaymentMethods = async (contactId: string) => {
+    setCheckingCards(true)
+    try {
+      const response = await fetch(`/api/highlevel/payment-methods/contact/${contactId}`)
+      const data = await response.json()
 
-        {selectedContact ? (
-          <div className={styles.selectedContact}>
-            <div className={styles.contactInfo}>
-              <p className={styles.contactName}>{selectedContact.name || 'Sin nombre'}</p>
-              <p className={styles.contactDetail}>{selectedContact.email || selectedContact.phone}</p>
+      if (!response.ok) {
+        throw new Error(data.error || 'Error al obtener tarjetas guardadas')
+      }
+
+      const methods = data.paymentMethods || []
+      setPaymentMethods(methods)
+      setCustomerId(data.customerId || null)
+      setSelectedPaymentMethod(methods.length > 0 ? methods[0].id : null)
+
+      if (methods.length === 0 && data.message) {
+        showToast('info', data.message)
+      }
+    } catch (error: any) {
+      console.error('Error cargando tarjetas:', error)
+      showToast('error', error.message || 'No se pudieron obtener las tarjetas guardadas')
+      setPaymentMethods([])
+      setCustomerId(null)
+      setSelectedPaymentMethod(null)
+    } finally {
+      setCheckingCards(false)
+    }
+  }
+
+  const handleConfirm = async () => {
+    if (!invoiceSummary || !invoicePayload) {
+      showToast('error', 'No se pudo procesar el pago. Intenta nuevamente.')
+      return
+    }
+
+    setLoading(true)
+    setStep('processing')
+
+    try {
+      let invoiceId = invoiceSummary.invoiceId
+
+      if (!invoiceId) {
+        const response = await fetch('/api/highlevel/invoices', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(invoicePayload)
+        })
+
+        const data = await response.json()
+        if (!response.ok) {
+          throw new Error(data.error || 'Error al crear el invoice')
+        }
+
+        invoiceId = data.invoice?.id || data.invoice?._id
+
+        if (!invoiceId) {
+          throw new Error('No se pudo obtener el ID del invoice')
+        }
+
+        setInvoiceSummary(prev => (prev ? { ...prev, invoiceId } : prev))
+      }
+
+      switch (paymentOption) {
+        case 'link': {
+          const response = await fetch(`/api/highlevel/invoices/${invoiceId}/send`, {
+            method: 'POST'
+          })
+          const data = await response.json()
+          if (!response.ok) {
+            throw new Error(data.error || 'No se pudo enviar el enlace de pago')
+          }
+          showToast('success', 'Éxito', 'Enlace de pago enviado al cliente')
+          break
+        }
+        case 'saved': {
+          if (!selectedPaymentMethod || !customerId) {
+            throw new Error('Selecciona una tarjeta para continuar')
+          }
+
+          const response = await fetch('/api/highlevel/payment-methods/charge', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contactId: invoiceSummary.contactId,
+              paymentMethodId: selectedPaymentMethod,
+              amount: invoiceSummary.amount,
+              currency: invoiceSummary.currency,
+              invoiceId,
+              description: invoiceSummary.description
+            })
+          })
+
+          const data = await response.json()
+          if (!response.ok) {
+            throw new Error(data.error || 'No se pudo procesar el pago con tarjeta guardada')
+          }
+
+          showToast('success', 'Éxito', 'Pago procesado exitosamente')
+          break
+        }
+        case 'manual': {
+          const response = await fetch(`/api/highlevel/invoices/${invoiceId}/record-payment`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              amount: invoiceSummary.amount,
+              currency: invoiceSummary.currency,
+              paymentDate: manualPaymentData.paymentDate,
+              paymentMethod: manualPaymentData.paymentMethod,
+              reference: manualPaymentData.reference,
+              notes: manualPaymentData.notes
+            })
+          })
+
+          const data = await response.json()
+          if (!response.ok) {
+            throw new Error(data.error || 'No se pudo registrar el pago')
+          }
+
+          showToast('success', 'Éxito', 'Pago registrado correctamente')
+          break
+        }
+        default:
+          break
+      }
+
+      onSuccess?.()
+      onClose()
+    } catch (error: any) {
+      console.error('Error procesando pago:', error)
+      showToast('error', 'Error', error.message || 'No se pudo completar la operación')
+      setStep('options')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const renderForm = () => {
+    const subtotalAmount = chargeType === 'product'
+      ? normalizeAmount(customAmount)
+      : normalizeAmount(amount)
+
+    const taxAmount = includeIVA ? normalizeAmount(subtotalAmount * IVA_RATE) : 0
+    const totalAmount = includeIVA ? normalizeAmount(subtotalAmount + taxAmount) : subtotalAmount
+
+    return (
+      <div className={styles.content}>
+        <div className={styles.field}>
+          <label className={styles.label}>Cliente</label>
+
+          {selectedContact ? (
+            <div className={styles.selectedContact}>
+              <div className={styles.contactInfo}>
+                <p className={styles.contactName}>{selectedContact.name || 'Sin nombre'}</p>
+                <p className={styles.contactDetail}>{selectedContact.email || selectedContact.phone}</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleClearContact}
+                className={styles.clearButton}
+                title="Cambiar contacto"
+              >
+                <X size={16} />
+              </button>
             </div>
+          ) : (
+            <div className={styles.searchWrapper}>
+              <div className={styles.searchInput}>
+                <Search size={16} className={styles.searchIcon} />
+                <input
+                  type="text"
+                  placeholder="Buscar por nombre, email o teléfono..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className={styles.input}
+                />
+                {searchingContact && <Loader2 size={16} className={styles.loadingIcon} />}
+              </div>
+
+              {showContactDropdown && (
+                <div className={styles.dropdown}>
+                  {contacts.length > 0 ? (
+                    contacts.map((contact) => (
+                      <button
+                        key={contact.id}
+                        type="button"
+                        className={styles.dropdownItem}
+                        onClick={() => handleSelectContact(contact)}
+                      >
+                        <p className={styles.dropdownName}>{contact.name || 'Sin nombre'}</p>
+                        <p className={styles.dropdownDetail}>
+                          {contact.email || contact.phone || 'Sin información de contacto'}
+                        </p>
+                      </button>
+                    ))
+                  ) : (
+                    <div className={styles.dropdownEmpty}>
+                      No se encontraron contactos
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className={styles.field}>
+          <label className={styles.label}>Tipo de cobro</label>
+          <div className={styles.toggle}>
             <button
               type="button"
-              onClick={handleClearContact}
-              className={styles.clearButton}
-              title="Cambiar contacto"
-            >
-              <X size={16} />
-            </button>
-          </div>
-        ) : (
-          <div className={styles.searchWrapper}>
-            <div className={styles.searchInput}>
-              <Search size={16} className={styles.searchIcon} />
-              <input
-                type="text"
-                placeholder="Buscar por nombre, email o teléfono..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className={styles.input}
-              />
-              {searchingContact && <Loader2 size={16} className={styles.loadingIcon} />}
-            </div>
-
-            {showContactDropdown && (
-              <div className={styles.dropdown}>
-                {contacts.length > 0 ? (
-                  contacts.map((contact) => (
-                    <button
-                      key={contact.id}
-                      type="button"
-                      className={styles.dropdownItem}
-                      onClick={() => handleSelectContact(contact)}
-                    >
-                      <p className={styles.dropdownName}>{contact.name || 'Sin nombre'}</p>
-                      <p className={styles.dropdownDetail}>
-                        {contact.email || contact.phone || 'Sin información de contacto'}
-                      </p>
-                    </button>
-                  ))
-                ) : (
-                  <div className={styles.dropdownEmpty}>
-                    No se encontraron contactos
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Charge type selector */}
-      <div className={styles.field}>
-        <label className={styles.label}>Tipo de cobro</label>
-        <div className={styles.toggle}>
-          <button
-            type="button"
-            onClick={() => {
-              setChargeType('direct')
-              setSelectedProduct(null)
-              setSelectedPrice(null)
-              setCustomAmount('')
-            }}
-            className={`${styles.toggleButton} ${chargeType === 'direct' ? styles.toggleButtonActive : ''}`}
-          >
-            Cobro directo
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setChargeType('product')
-              setAmount('')
-            }}
-            className={`${styles.toggleButton} ${chargeType === 'product' ? styles.toggleButtonActive : ''}`}
-          >
-            Productos guardados
-          </button>
-        </div>
-      </div>
-
-      {/* Product selection */}
-      {chargeType === 'product' && (
-        <>
-          <div className={styles.field}>
-            <label className={styles.label}>Producto</label>
-            <select
-              value={selectedProduct?.id || selectedProduct?._id || ''}
-              onChange={(e) => {
-                const product = products.find(p => (p.id || p._id) === e.target.value)
-                setSelectedProduct(product || null)
+              onClick={() => {
+                setChargeType('direct')
+                setSelectedProduct(null)
                 setSelectedPrice(null)
                 setPrices([])
+                setCustomAmount('')
+                setCurrency('MXN')
               }}
-              className={styles.select}
-              disabled={loadingProducts}
+              className={`${styles.toggleButton} ${chargeType === 'direct' ? styles.toggleButtonActive : ''}`}
             >
-              <option value="">Selecciona un producto</option>
-              {products.map((product) => (
-                <option key={product.id || product._id} value={product.id || product._id}>
-                  {product.name}
-                </option>
-              ))}
-            </select>
-            {loadingProducts && <p className={styles.hint}>Cargando productos...</p>}
+              Cobro directo
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setChargeType('product')
+                setAmount('')
+              }}
+              className={`${styles.toggleButton} ${chargeType === 'product' ? styles.toggleButtonActive : ''}`}
+            >
+              Productos guardados
+            </button>
           </div>
+        </div>
 
-          {selectedProduct && (
-            <>
+        {chargeType === 'product' && (
+          <>
+            <div className={styles.field}>
+              <label className={styles.label}>Producto</label>
+              <select
+                value={selectedProduct?.id || selectedProduct?._id || ''}
+                onChange={(e) => {
+                  const product = products.find(p => (p.id || p._id) === e.target.value)
+                  setSelectedProduct(product || null)
+                  setSelectedPrice(null)
+                  setPrices([])
+                }}
+                className={styles.select}
+                disabled={loadingProducts}
+              >
+                <option value="">Selecciona un producto</option>
+                {products.map((product) => (
+                  <option key={product.id || product._id} value={product.id || product._id}>
+                    {product.name}
+                  </option>
+                ))}
+              </select>
+              {loadingProducts && <p className={styles.hint}>Cargando productos...</p>}
+            </div>
+
+            {selectedProduct && (
               <div className={styles.field}>
                 <label className={styles.label}>Precio</label>
                 <select
@@ -523,102 +755,384 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                   <p className={styles.hint}>No hay precios disponibles para este producto</p>
                 )}
               </div>
+            )}
 
-              {selectedPrice && (
-                <div className={styles.field}>
-                  <label className={styles.label}>Monto a cobrar (personalizable)</label>
-                  <div className={styles.amountInput}>
-                    <DollarSign size={16} className={styles.dollarIcon} />
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      placeholder="0.00"
-                      value={customAmount}
-                      onChange={(e) => setCustomAmount(e.target.value)}
-                      className={styles.input}
-                    />
-                  </div>
-                  <p className={styles.hint}>Puedes modificar el precio según tu negociación con el cliente</p>
+            {selectedProduct && selectedPrice && (
+              <div className={styles.field}>
+                <label className={styles.label}>Monto a cobrar (personalizable)</label>
+                <div className={styles.amountInput}>
+                  <DollarSign size={16} className={styles.dollarIcon} />
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    value={customAmount}
+                    onChange={(e) => setCustomAmount(e.target.value)}
+                    className={styles.input}
+                  />
                 </div>
-              )}
-            </>
-          )}
-        </>
-      )}
+                <p className={styles.hint}>Puedes modificar el precio según tu negociación con el cliente</p>
+              </div>
+            )}
+          </>
+        )}
 
-      {/* Direct amount */}
-      {chargeType === 'direct' && (
+        {chargeType === 'direct' && (
+          <div className={styles.field}>
+            <label className={styles.label}>Monto ({currency})</label>
+            <div className={styles.amountInput}>
+              <DollarSign size={16} className={styles.dollarIcon} />
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0.00"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                className={styles.input}
+              />
+            </div>
+          </div>
+        )}
+
         <div className={styles.field}>
-          <label className={styles.label}>Monto ({currency})</label>
-          <div className={styles.amountInput}>
-            <DollarSign size={16} className={styles.dollarIcon} />
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="0.00"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              className={styles.input}
-            />
+          <label className={styles.label}>Descripción (opcional)</label>
+          <input
+            type="text"
+            placeholder="Ej: Pago de servicios, consulta, etc."
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            className={styles.input}
+          />
+        </div>
+
+        <div className={styles.field}>
+          <label className={styles.label}>IVA</label>
+          <div className={styles.switchRow}>
+            <button
+              type="button"
+              className={`${styles.switchButton} ${includeIVA ? styles.switchButtonActive : ''}`}
+              onClick={() => setIncludeIVA(!includeIVA)}
+            >
+              {includeIVA ? 'Aplicando IVA 16%' : 'No aplicar IVA'}
+            </button>
+            <span className={styles.switchHint}>
+              {includeIVA
+                ? 'Se agregará IVA al total.'
+                : 'Activa para agregar IVA (16%) al monto.'}
+            </span>
           </div>
         </div>
-      )}
 
-      {/* Description */}
-      <div className={styles.field}>
-        <label className={styles.label}>Descripción (opcional)</label>
-        <input
-          type="text"
-          placeholder="Ej: Pago de servicios, consulta, etc."
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          className={styles.input}
-        />
+        <div className={styles.summaryCard}>
+          <div className={styles.summaryHeader}>
+            <span>Resumen del cobro</span>
+            <span className={styles.summaryBadge}>
+              {chargeType === 'product' ? 'Producto' : 'Cobro directo'}
+            </span>
+          </div>
+          <div className={styles.summaryBody}>
+            <div className={styles.summaryRow}>
+              <span>Subtotal</span>
+              <span>{formatCurrency(subtotalAmount, currency)}</span>
+            </div>
+            {includeIVA && (
+              <div className={styles.summaryRow}>
+                <span>IVA (16%)</span>
+                <span className={styles.summaryTax}>+ {formatCurrency(taxAmount, currency)}</span>
+              </div>
+            )}
+          </div>
+          <div className={styles.summaryFooter}>
+            <span>Total a cobrar</span>
+            <span className={styles.summaryTotal}>{formatCurrency(totalAmount, currency)}</span>
+          </div>
+        </div>
       </div>
-    </div>
-  )
+    )
+  }
+
+  const renderPaymentOptions = () => {
+    if (!invoiceSummary) return null
+
+    return (
+      <div className={styles.optionsContent}>
+        <div className={styles.summaryCard}>
+          <div className={styles.summaryHeader}>
+            <div>
+              <span>Cliente</span>
+              <h3 className={styles.summaryClient}>{invoiceSummary.contactName}</h3>
+              {invoiceSummary.contactEmail && (
+                <p className={styles.summaryDetail}>{invoiceSummary.contactEmail}</p>
+              )}
+            </div>
+            <div className={styles.summaryAmountBlock}>
+              <span>Total a cobrar</span>
+              <p className={styles.summaryTotal}>{formatCurrency(invoiceSummary.amount, invoiceSummary.currency)}</p>
+            </div>
+          </div>
+          {invoiceSummary.includesTax ? (
+            <div className={styles.summaryBreakdown}>
+              <div className={styles.summaryRow}>
+                <span>Subtotal</span>
+                <span>{formatCurrency(invoiceSummary.subtotal, invoiceSummary.currency)}</span>
+              </div>
+              <div className={styles.summaryRow}>
+                <span>IVA (16%)</span>
+                <span className={styles.summaryTax}>+ {formatCurrency(invoiceSummary.taxAmount, invoiceSummary.currency)}</span>
+              </div>
+            </div>
+          ) : (
+            <p className={styles.summaryDetail}>Este cobro no incluye IVA</p>
+          )}
+          {invoiceSummary.description && (
+            <div className={styles.summaryDescription}>
+              <span>Concepto</span>
+              <p>{invoiceSummary.description}</p>
+            </div>
+          )}
+        </div>
+
+        <div className={styles.paymentOptions}>
+          <button
+            type="button"
+            className={`${styles.optionButton} ${paymentOption === 'link' ? styles.optionButtonActive : ''}`}
+            onClick={() => setPaymentOption('link')}
+          >
+            <div className={styles.optionInfo}>
+              <div className={styles.optionIcon}>
+                <LinkIcon size={18} />
+              </div>
+              <div>
+                <p>Enviar enlace de pago</p>
+                <span>El cliente recibirá un enlace directo para pagar</span>
+              </div>
+            </div>
+            {paymentOption === 'link' && <Check size={18} />}
+          </button>
+
+          <button
+            type="button"
+            className={`${styles.optionButton} ${paymentOption === 'saved' ? styles.optionButtonActive : ''}`}
+            onClick={() => {
+              setPaymentOption('saved')
+              loadPaymentMethods(invoiceSummary.contactId)
+            }}
+          >
+            <div className={styles.optionInfo}>
+              <div className={styles.optionIcon}>
+                <CreditCard size={18} />
+              </div>
+              <div>
+                <p>Cobrar tarjeta guardada</p>
+                <span>
+                  {checkingCards
+                    ? 'Verificando tarjetas...'
+                    : paymentMethods.length > 0
+                      ? `${paymentMethods.length} tarjeta${paymentMethods.length > 1 ? 's' : ''} disponible${paymentMethods.length > 1 ? 's' : ''}`
+                      : 'Comprueba si el cliente tiene tarjetas guardadas'}
+                </span>
+              </div>
+            </div>
+            {paymentOption === 'saved' && <Check size={18} />}
+          </button>
+
+          {paymentOption === 'saved' && (
+            <div className={styles.cardList}>
+              {checkingCards ? (
+                <div className={styles.cardLoading}>
+                  <Loader2 size={16} className={styles.processingIcon} />
+                  <span>Buscando tarjetas guardadas...</span>
+                </div>
+              ) : paymentMethods.length > 0 ? (
+                paymentMethods.map((pm) => (
+                  <button
+                    key={pm.id}
+                    type="button"
+                    className={`${styles.cardButton} ${selectedPaymentMethod === pm.id ? styles.cardButtonActive : ''}`}
+                    onClick={() => setSelectedPaymentMethod(pm.id)}
+                  >
+                    <div>
+                      <p>{pm.brand?.toUpperCase()} •••• {pm.last4}</p>
+                      <span>Vence {pm.expMonth}/{pm.expYear}</span>
+                    </div>
+                    {selectedPaymentMethod === pm.id && <Check size={16} />}
+                  </button>
+                ))
+              ) : (
+                <div className={styles.cardEmpty}>
+                  Este cliente no tiene tarjetas guardadas en Stripe.
+                </div>
+              )}
+            </div>
+          )}
+
+          <button
+            type="button"
+            className={`${styles.optionButton} ${paymentOption === 'manual' ? styles.optionButtonActive : ''}`}
+            onClick={() => setPaymentOption('manual')}
+          >
+            <div className={styles.optionInfo}>
+              <div className={styles.optionIcon}>
+                <DollarSign size={18} />
+              </div>
+              <div>
+                <p>Registrar pago manual</p>
+                <span>Marca el invoice como pagado (efectivo, transferencia, etc.)</span>
+              </div>
+            </div>
+            {paymentOption === 'manual' && <Check size={18} />}
+          </button>
+        </div>
+
+        {paymentOption === 'manual' && (
+          <div className={styles.manualFields}>
+            <div className={styles.manualGrid}>
+              <div className={styles.manualField}>
+                <label>Fecha de pago</label>
+                <input
+                  type="date"
+                  value={manualPaymentData.paymentDate}
+                  onChange={(e) => setManualPaymentData({ ...manualPaymentData, paymentDate: e.target.value })}
+                  className={styles.input}
+                />
+              </div>
+              <div className={styles.manualField}>
+                <label>Método de pago</label>
+                <select
+                  value={manualPaymentData.paymentMethod}
+                  onChange={(e) => setManualPaymentData({ ...manualPaymentData, paymentMethod: e.target.value })}
+                  className={styles.select}
+                >
+                  <option value="cash">Efectivo</option>
+                  <option value="transfer">Transferencia</option>
+                  <option value="card">Tarjeta (manual)</option>
+                  <option value="check">Cheque</option>
+                  <option value="other">Otro</option>
+                </select>
+              </div>
+            </div>
+            <div className={styles.manualGrid}>
+              <div className={styles.manualField}>
+                <label>Referencia (opcional)</label>
+                <input
+                  type="text"
+                  value={manualPaymentData.reference}
+                  onChange={(e) => setManualPaymentData({ ...manualPaymentData, reference: e.target.value })}
+                  className={styles.input}
+                  placeholder="Numero de transferencia, cheque, etc."
+                />
+              </div>
+              <div className={styles.manualField}>
+                <label>Notas internas</label>
+                <textarea
+                  value={manualPaymentData.notes}
+                  onChange={(e) => setManualPaymentData({ ...manualPaymentData, notes: e.target.value })}
+                  className={styles.textArea}
+                  placeholder="Notas adicionales para este pago manual"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
 
   const renderProcessing = () => (
     <div className={styles.processing}>
       <Loader2 size={48} className={styles.processingIcon} />
-      <p className={styles.processingText}>Registrando pago...</p>
-      <p className={styles.processingHint}>Por favor espera...</p>
+      <p className={styles.processingText}>Procesando...</p>
+      <p className={styles.processingHint}>Por favor espera mientras registramos el pago.</p>
     </div>
   )
+
+  const renderFooter = () => {
+    if (step === 'processing') {
+      return null
+    }
+
+    if (step === 'options') {
+      return (
+        <div className={styles.footer}>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setStep('form')
+              setInvoicePayload(null)
+              setInvoiceSummary(null)
+              setPaymentOption('link')
+              setPaymentMethods([])
+              setSelectedPaymentMethod(null)
+              setCustomerId(null)
+            }}
+            disabled={loading}
+          >
+            Regresar
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleConfirm}
+            disabled={loading || (paymentOption === 'saved' && (!selectedPaymentMethod || checkingCards))}
+          >
+            {loading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Procesando...
+              </>
+            ) : (
+              <>
+                {paymentOption === 'link' && 'Enviar enlace'}
+                {paymentOption === 'saved' && 'Cobrar tarjeta'}
+                {paymentOption === 'manual' && 'Registrar pago'}
+              </>
+            )}
+          </Button>
+        </div>
+      )
+    }
+
+    return (
+      <div className={styles.footer}>
+        <Button
+          variant="secondary"
+          onClick={onClose}
+          disabled={loading}
+        >
+          Cancelar
+        </Button>
+        <Button
+          variant="primary"
+          onClick={handleContinue}
+          disabled={loading}
+        >
+          {loading ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Preparando...
+            </>
+          ) : (
+            'Continuar'
+          )}
+        </Button>
+      </div>
+    )
+  }
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Registrar Pago Offline"
+      title={step === 'options' ? 'Elige cómo cobrar' : 'Registrar nuevo cobro'}
       size="lg"
       type="custom"
-      showCloseButton={step === 'form'}
+      showCloseButton={step !== 'processing'}
     >
-      {step === 'form' && (
-        <>
-          {renderForm()}
-          <div className={styles.footer}>
-            <Button
-              variant="secondary"
-              onClick={onClose}
-              disabled={loading}
-            >
-              Cancelar
-            </Button>
-            <Button
-              variant="primary"
-              onClick={handleSubmit}
-              disabled={loading}
-            >
-              Registrar Pago
-            </Button>
-          </div>
-        </>
-      )}
       {step === 'processing' && renderProcessing()}
+      {step === 'form' && renderForm()}
+      {step === 'options' && renderPaymentOptions()}
+      {renderFooter()}
     </Modal>
   )
 }

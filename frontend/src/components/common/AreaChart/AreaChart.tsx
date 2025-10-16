@@ -207,11 +207,14 @@ export const AreaChart: React.FC<AreaChartProps> = ({
                     ? {
                         r: 5,
                         fill: serie.color,
-                        stroke: isDarkMode ? '#0a0b0d' : '#ffffff',
+                        stroke: 'var(--color-background-primary)',
                         strokeWidth: 2
                       }
                     : false
                 }
+                animationDuration={0}
+                animationBegin={0}
+                isAnimationActive={false}
               />
             ))}
           </RechartsAreaChart>

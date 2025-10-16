@@ -358,20 +358,22 @@ export const Dashboard: React.FC = () => {
   return (
     <PageContainer>
       <div className="flex flex-col gap-6">
-        <div className="space-y-4">
-          <div>
-            <h1 className="text-[var(--font-size-4xl)] font-bold leading-tight text-[var(--color-text-primary)]">Dashboard</h1>
-            <p className="mt-2 text-base text-[var(--color-text-tertiary)]">Resumen financiero y de marketing</p>
+        <div className="mb-10 flex flex-col gap-6 border-b border-[var(--color-border)] pb-8 md:flex-row md:items-end md:justify-between">
+          <div className="space-y-2">
+            <h1 className="m-0 text-[var(--font-size-2xl)] font-bold text-[var(--color-text-primary)]">Dashboard</h1>
+            <p className="m-0 text-base text-[var(--color-text-secondary)]">Resumen financiero y de marketing</p>
           </div>
-          <DateRangePicker
-            startDate={formatDateToISO(dateRange.start)}
-            endDate={formatDateToISO(dateRange.end)}
-            onChange={(start, end) => setDateRange({
-              start: parseLocalDateString(start),
-              end: parseLocalDateString(end),
-              preset: 'custom'
-            })}
-          />
+          <div className="md:self-end">
+            <DateRangePicker
+              startDate={formatDateToISO(dateRange.start)}
+              endDate={formatDateToISO(dateRange.end)}
+              onChange={(start, end) => setDateRange({
+                start: parseLocalDateString(start),
+                end: parseLocalDateString(end),
+                preset: 'custom'
+              })}
+            />
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 sm:gap-5 xl:grid-cols-4">

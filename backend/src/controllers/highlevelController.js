@@ -4,6 +4,11 @@ import { syncHighLevelData, getSyncProgress } from '../services/highlevelSyncSer
 import { logger } from '../utils/logger.js';
 import { API_URLS } from '../config/constants.js';
 import { getGHLClient } from '../services/ghlClient.js';
+import {
+  chargePaymentMethod as stripeChargePaymentMethod,
+  findCustomerByEmail as stripeFindCustomerByEmail,
+  listPaymentMethods as stripeListPaymentMethods
+} from '../services/stripeService.js';
 
 /**
  * Prueba la conexión con HighLevel
@@ -190,7 +195,7 @@ export const saveConfig = async (req, res) => {
 export const getConfig = async (req, res) => {
   try {
     const config = await db.get(
-      'SELECT location_id, api_token, created_at FROM highlevel_config LIMIT 1'
+      'SELECT location_id, api_token, location_data, created_at FROM highlevel_config LIMIT 1'
     );
 
     if (!config) {
@@ -201,6 +206,15 @@ export const getConfig = async (req, res) => {
         apiTokenPreview: null
       });
     }
+
+    const locationDataRaw = config.location_data ? JSON.parse(config.location_data) : null;
+    const business = locationDataRaw?.business || {};
+    const address = business.address || locationDataRaw?.address || null;
+    const city = business.city || locationDataRaw?.city || null;
+    const state = business.state || locationDataRaw?.state || null;
+    const country = business.country || locationDataRaw?.country || null;
+    const postalCode = business.postalCode || locationDataRaw?.postalCode || null;
+    const phone = business.phone || locationDataRaw?.phone || null;
 
     // Crear preview del token (primeros y últimos caracteres)
     const token = config.api_token;
@@ -213,7 +227,23 @@ export const getConfig = async (req, res) => {
       locationId: config.location_id,
       hasToken: true,
       apiTokenPreview: tokenPreview,
-      updatedAt: config.created_at
+      updatedAt: config.created_at,
+      locationData: locationDataRaw,
+      businessName: business.name || locationDataRaw?.name || null,
+      businessEmail: business.email || locationDataRaw?.email || null,
+      businessPhone: phone || null,
+      businessAddress: address || null,
+      businessCity: city || null,
+      businessState: state || null,
+      businessCountry: country || null,
+      businessPostalCode: postalCode || null,
+      companyLogoUrl: business.logoUrl || locationDataRaw?.logoUrl || null,
+      companyWebsite: business.website || locationDataRaw?.website || null,
+      domain: locationDataRaw?.domain || null,
+      invoiceTitle: 'PAGO',
+      invoiceNumberPrefix: 'INV-',
+      invoiceTermsNotes: null,
+      invoiceDueDays: 7
     });
 
   } catch (error) {
@@ -716,26 +746,129 @@ export const createInvoice = async (req, res) => {
 };
 
 /**
+ * Envía un invoice existente (enlace de pago)
+ */
+export const sendInvoice = async (req, res) => {
+  try {
+    const { invoiceId } = req.params;
+
+    if (!invoiceId) {
+      return res.status(400).json({
+        success: false,
+        error: 'InvoiceId requerido'
+      });
+    }
+
+    const config = await db.get('SELECT location_data FROM highlevel_config LIMIT 1');
+    if (!config || !config.location_data) {
+      return res.status(400).json({
+        success: false,
+        error: 'Configura tu cuenta de HighLevel antes de enviar invoices'
+      });
+    }
+
+    const locationData = JSON.parse(config.location_data);
+    const business = locationData?.business || {};
+    const fromName = business.name || locationData?.name || null;
+    const fromEmail = business.email || locationData?.email || null;
+
+    if (!fromName || !fromEmail) {
+      return res.status(400).json({
+        success: false,
+        error: 'Tu perfil de HighLevel requiere nombre y correo del negocio para enviar invoices'
+      });
+    }
+
+    const ghlClient = await getGHLClient();
+    await ghlClient.sendInvoice(invoiceId, {
+      sentFrom: {
+        fromName,
+        fromEmail
+      }
+    });
+
+    res.json({
+      success: true,
+      message: 'Enlace de pago enviado correctamente'
+    });
+  } catch (error) {
+    logger.error(`Error en sendInvoice: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'No se pudo enviar el invoice'
+    });
+  }
+};
+
+/**
  * Registra un pago offline en HighLevel
  */
 export const recordPayment = async (req, res) => {
   try {
     const { invoiceId } = req.params;
-    const { amount, currency, fulfilledAt, note } = req.body;
-
-    // Usar GHL Client
-    const ghlClient = await getGHLClient();
-    const data = await ghlClient.recordPayment(invoiceId, {
+    const {
       amount,
       currency,
-      fulfilledAt: fulfilledAt || new Date().toISOString(),
-      note: note || 'Pago registrado manualmente'
+      paymentDate,
+      paymentMethod,
+      reference,
+      notes
+    } = req.body;
+
+    if (!invoiceId) {
+      return res.status(400).json({
+        success: false,
+        error: 'InvoiceId requerido'
+      });
+    }
+
+    if (!amount || Number(amount) <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Monto inválido para registrar pago'
+      });
+    }
+
+    const methodMap = {
+      cash: 'cash',
+      transfer: 'bank_transfer',
+      bank_transfer: 'bank_transfer',
+      check: 'check',
+      card: 'card',
+      other: 'other'
+    };
+
+    const methodLabels = {
+      cash: 'Efectivo',
+      transfer: 'Transferencia',
+      bank_transfer: 'Transferencia',
+      card: 'Tarjeta',
+      check: 'Cheque',
+      other: 'Otro'
+    };
+
+    const normalizedMethod = paymentMethod || 'cash';
+    const mode = methodMap[normalizedMethod] || 'cash';
+
+    const noteParts = [
+      `Pago registrado desde Ristak`,
+      `Método: ${methodLabels[normalizedMethod] || normalizedMethod}`,
+      reference ? `Referencia: ${reference}` : '',
+      notes ? `Notas: ${notes}` : ''
+    ].filter(Boolean);
+
+    const ghlClient = await getGHLClient();
+    await ghlClient.recordPayment(invoiceId, {
+      amount,
+      currency,
+      fulfilledAt: paymentDate || new Date().toISOString(),
+      note: noteParts.join('\n'),
+      mode
     });
 
     res.json({
       success: true,
-      message: 'Pago registrado correctamente',
-      data: data
+      message: 'Pago registrado correctamente'
     });
 
   } catch (error) {
@@ -743,6 +876,160 @@ export const recordPayment = async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message || 'Error al registrar pago'
+    });
+  }
+};
+
+/**
+ * Obtiene tarjetas guardadas para un contacto
+ */
+export const getContactPaymentMethods = async (req, res) => {
+  try {
+    const { contactId } = req.params;
+
+    if (!contactId) {
+      return res.status(400).json({
+        success: false,
+        error: 'contactId es requerido'
+      });
+    }
+
+    const ghlClient = await getGHLClient();
+    const contactResponse = await ghlClient.getContact(contactId);
+    const contact = contactResponse?.contact || contactResponse;
+
+    if (!contact || !contact.email) {
+      return res.json({
+        hasPaymentMethods: false,
+        paymentMethods: [],
+        message: 'El contacto no tiene email registrado'
+      });
+    }
+
+    const customer = await stripeFindCustomerByEmail(contact.email);
+
+    if (!customer) {
+      return res.json({
+        hasPaymentMethods: false,
+        paymentMethods: [],
+        message: 'El contacto no tiene tarjetas guardadas en Stripe'
+      });
+    }
+
+    const paymentMethods = await stripeListPaymentMethods(customer.id);
+    const formattedMethods = paymentMethods.map((method) => ({
+      id: method.id,
+      brand: method.card?.brand || 'Desconocido',
+      last4: method.card?.last4 || '****',
+      expMonth: method.card?.exp_month || 0,
+      expYear: method.card?.exp_year || 0,
+      createdAt: method.created ? new Date(method.created * 1000).toISOString() : null
+    }));
+
+    res.json({
+      hasPaymentMethods: formattedMethods.length > 0,
+      customerId: customer.id,
+      paymentMethods: formattedMethods
+    });
+  } catch (error) {
+    logger.error(`Error en getContactPaymentMethods: ${error.message}`);
+
+    const status = error.message?.includes('Stripe no está configurado') ? 400 : 500;
+
+    res.status(status).json({
+      success: false,
+      error: error.message || 'Error al buscar tarjetas guardadas'
+    });
+  }
+};
+
+/**
+ * Cobra a una tarjeta guardada
+ */
+export const chargeSavedPaymentMethod = async (req, res) => {
+  try {
+    const {
+      contactId,
+      paymentMethodId,
+      amount,
+      currency,
+      invoiceId,
+      description
+    } = req.body;
+
+    if (!contactId || !paymentMethodId || !amount || Number(amount) <= 0 || !currency) {
+      return res.status(400).json({
+        success: false,
+        error: 'contactId, paymentMethodId, amount y currency son requeridos'
+      });
+    }
+
+    const ghlClient = await getGHLClient();
+    const contactResponse = await ghlClient.getContact(contactId);
+    const contact = contactResponse?.contact || contactResponse;
+
+    if (!contact || !contact.email) {
+      return res.status(400).json({
+        success: false,
+        error: 'El contacto no tiene email registrado'
+      });
+    }
+
+    const customer = await stripeFindCustomerByEmail(contact.email);
+
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        error: 'No se encontró un cliente en Stripe para este contacto'
+      });
+    }
+
+    const paymentIntent = await stripeChargePaymentMethod({
+      customerId: customer.id,
+      paymentMethodId,
+      amount: Number(amount),
+      currency,
+      description: description || `Cobro manual para ${contact.name || contact.email}`
+    });
+
+    if (paymentIntent.status !== 'succeeded') {
+      return res.status(400).json({
+        success: false,
+        error: 'El pago no se completó',
+        status: paymentIntent.status
+      });
+    }
+
+    if (invoiceId) {
+      try {
+        await ghlClient.recordPayment(invoiceId, {
+          amount,
+          currency,
+          fulfilledAt: new Date().toISOString(),
+          note: `Pago automático con tarjeta guardada (${paymentMethodId})`,
+          mode: 'card'
+        });
+      } catch (recordError) {
+        logger.warn(`No se pudo registrar el pago en GHL: ${recordError.message}`);
+      }
+    }
+
+    res.json({
+      success: true,
+      paymentIntent: {
+        id: paymentIntent.id,
+        amount: paymentIntent.amount,
+        currency: paymentIntent.currency,
+        status: paymentIntent.status
+      }
+    });
+  } catch (error) {
+    logger.error(`Error en chargeSavedPaymentMethod: ${error.message}`);
+    const status = error.message?.includes('Stripe no está configurado') ? 400 : 500;
+
+    res.status(status).json({
+      success: false,
+      error: error.message || 'Error al procesar el pago con tarjeta guardada'
     });
   }
 };
