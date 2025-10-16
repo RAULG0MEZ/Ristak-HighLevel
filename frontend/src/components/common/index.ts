@@ -29,6 +29,7 @@ export { ViewSelector } from './ViewSelector'
 export { Icon } from './Icon'
 export { Badge } from './Badge'
 export type { BadgeProps, BadgeVariant } from './Badge'
+export { CustomSelect } from './CustomSelect'
 export {
   DropdownMenu,
   DropdownMenuTrigger,

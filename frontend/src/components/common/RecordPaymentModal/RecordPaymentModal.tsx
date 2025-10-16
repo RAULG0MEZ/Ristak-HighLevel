@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { Modal } from '../Modal'
 import { Button } from '../Button'
 import { TabList } from '../TabList'
+import { CustomSelect } from '../CustomSelect'
 import {
   Search,
   Loader2,
@@ -720,45 +721,45 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
           <>
             <div className={styles.field}>
               <label className={styles.label}>Producto</label>
-              <select
+              <CustomSelect
+                options={[
+                  { value: '', label: 'Selecciona un producto' },
+                  ...products.map((product) => ({
+                    value: product.id || product._id || '',
+                    label: product.name
+                  }))
+                ]}
                 value={selectedProduct?.id || selectedProduct?._id || ''}
-                onChange={(e) => {
-                  const product = products.find(p => (p.id || p._id) === e.target.value)
+                onChange={(value) => {
+                  const product = products.find(p => (p.id || p._id) === value)
                   setSelectedProduct(product || null)
                   setSelectedPrice(null)
                   setPrices([])
                 }}
-                className={styles.select}
                 disabled={loadingProducts}
-              >
-                <option value="">Selecciona un producto</option>
-                {products.map((product) => (
-                  <option key={product.id || product._id} value={product.id || product._id}>
-                    {product.name}
-                  </option>
-                ))}
-              </select>
+                placeholder="Selecciona un producto"
+              />
               {loadingProducts && <p className={styles.hint}>Cargando productos...</p>}
             </div>
 
             {selectedProduct && (
               <div className={styles.field}>
                 <label className={styles.label}>Precio</label>
-                <select
+                <CustomSelect
+                  options={[
+                    { value: '', label: 'Selecciona un precio' },
+                    ...prices.map((price) => ({
+                      value: price.id || price._id || '',
+                      label: `${price.name || 'Precio'} - ${formatCurrency(price.amount || price.price, price.currency)}`
+                    }))
+                  ]}
                   value={selectedPrice?.id || selectedPrice?._id || ''}
-                  onChange={(e) => {
-                    const price = prices.find(p => (p.id || p._id) === e.target.value)
+                  onChange={(value) => {
+                    const price = prices.find(p => (p.id || p._id) === value)
                     setSelectedPrice(price || null)
                   }}
-                  className={styles.select}
-                >
-                  <option value="">Selecciona un precio</option>
-                  {prices.map((price) => (
-                    <option key={price.id || price._id} value={price.id || price._id}>
-                      {price.name || 'Precio'} - ${price.amount || price.price} {price.currency}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="Selecciona un precio"
+                />
                 {prices.length === 0 && (
                   <p className={styles.hint}>No hay precios disponibles para este producto</p>
                 )}
