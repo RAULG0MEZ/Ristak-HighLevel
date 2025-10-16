@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { KpiCard, Card, Button, Table, DateRangePicker, PageContainer, TabList, Badge } from '@/components/common'
+import { KpiCard, Card, Button, Table, DateRangePicker, PageContainer, TabList, Badge, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from '@/components/common'
 import type { Column, BadgeVariant } from '@/components/common'
 import {
   Plus,
@@ -12,7 +12,12 @@ import {
   TrendingUp,
   X,
   Pencil,
-  Trash2
+  Trash2,
+  MoreVertical,
+  Eye,
+  Mail,
+  Phone,
+  Tag
 } from 'lucide-react'
 import { useDateRange } from '@/contexts/DateRangeContext'
 import { useLabels } from '@/contexts/LabelsContext'
@@ -153,20 +158,54 @@ export const Contacts: React.FC = () => {
       header: 'Acciones',
       render: (_, item) => (
         <div className={styles.actions}>
-          <button
-            className={styles.actionButton}
-            onClick={() => setEditingContact(item)}
-            title="Editar contacto"
-          >
-            <Pencil size={16} />
-          </button>
-          <button
-            className={`${styles.actionButton} ${styles.deleteButton}`}
-            onClick={() => setDeletingContact(item)}
-            title="Eliminar contacto"
-          >
-            <Trash2 size={16} />
-          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className={styles.actionButton} title="Más acciones">
+                <MoreVertical size={16} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {/* Ver detalles */}
+              <DropdownMenuItem onClick={() => setSelectedContact(item)}>
+                <Eye size={16} />
+                <span style={{ marginLeft: '8px' }}>Ver detalles</span>
+              </DropdownMenuItem>
+
+              {/* Enviar email (si tiene email) */}
+              {item.email && (
+                <DropdownMenuItem onClick={() => window.location.href = `mailto:${item.email}`}>
+                  <Mail size={16} />
+                  <span style={{ marginLeft: '8px' }}>Enviar email</span>
+                </DropdownMenuItem>
+              )}
+
+              {/* Llamar (si tiene teléfono) */}
+              {item.phone && (
+                <DropdownMenuItem onClick={() => window.location.href = `tel:${item.phone}`}>
+                  <Phone size={16} />
+                  <span style={{ marginLeft: '8px' }}>Llamar</span>
+                </DropdownMenuItem>
+              )}
+
+              {/* Editar */}
+              <DropdownMenuItem onClick={() => setEditingContact(item)}>
+                <Pencil size={16} />
+                <span style={{ marginLeft: '8px' }}>Editar contacto</span>
+              </DropdownMenuItem>
+
+              {/* Separador antes de acción destructiva */}
+              <DropdownMenuSeparator />
+
+              {/* Eliminar */}
+              <DropdownMenuItem
+                onClick={() => setDeletingContact(item)}
+                className={styles.destructive}
+              >
+                <Trash2 size={16} />
+                <span style={{ marginLeft: '8px' }}>Eliminar contacto</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       ),
       sortable: false
