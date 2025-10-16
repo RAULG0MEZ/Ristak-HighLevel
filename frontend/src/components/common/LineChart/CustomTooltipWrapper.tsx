@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import ReactDOM from 'react-dom'
 
 interface CustomTooltipWrapperProps {
   active?: boolean
@@ -21,6 +22,7 @@ export const CustomTooltipWrapper: React.FC<CustomTooltipWrapperProps> = ({
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
+      // Guardar la posición exacta del mouse en la ventana
       setMousePosition({ x: e.clientX, y: e.clientY })
     }
 
@@ -52,25 +54,34 @@ export const CustomTooltipWrapper: React.FC<CustomTooltipWrapperProps> = ({
 
   if (items.length === 0) return null
 
-  // Usar la posición real del mouse, SIEMPRE 120px por encima
+  // FORZAR posición SIEMPRE arriba del cursor
+  // No importa si se sale de la pantalla o del componente
+  const OFFSET_Y = 120 // Distancia fija arriba del cursor
+
   const tooltipStyle: React.CSSProperties = {
     position: 'fixed',
     left: `${mousePosition.x}px`,
-    top: `${mousePosition.y - 120}px`, // SIEMPRE 120px por encima del cursor
+    top: `${mousePosition.y - OFFSET_Y}px`, // SIEMPRE resta, nunca suma
     transform: 'translateX(-50%)',
     pointerEvents: 'none',
-    zIndex: 99999,
-    willChange: 'transform'
+    zIndex: 999999, // Máxima prioridad
+    willChange: 'transform',
+    // Asegurar que nunca se voltee hacia abajo
+    maxHeight: 'none',
+    overflow: 'visible'
   }
 
-  return (
-    <div style={tooltipStyle}>
+  // Renderizar en un portal para escapar COMPLETAMENTE de cualquier contenedor
+  // Esto garantiza que el tooltip NUNCA esté limitado por overflow:hidden o cualquier otra restricción
+  return ReactDOM.createPortal(
+    <div style={tooltipStyle} data-tooltip="above-cursor">
       <div className="glass rounded-lg border border-[rgba(148,163,184,0.14)] px-4 py-3 dark:shadow-[0_18px_35px_-25px_rgba(15,23,42,0.6)]">
         {label && <p className="mb-2 text-xs font-medium uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">{label}</p>}
         <div className="space-y-1.5">
           {items}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body // Renderizar directamente en el body, fuera de todos los contenedores
   )
 }
