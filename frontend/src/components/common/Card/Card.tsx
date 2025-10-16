@@ -33,7 +33,7 @@ export const Card: React.FC<CardProps> = ({
   return (
     <div
       className={cn(
-        'relative overflow-hidden rounded-xl transition-colors duration-300',
+        'relative rounded-xl transition-colors duration-300',
         variantClasses[variant],
         paddingClasses[padding],
         onClick ? 'cursor-pointer' : '',

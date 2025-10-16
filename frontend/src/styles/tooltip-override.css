@@ -2,6 +2,8 @@
 .recharts-tooltip-wrapper {
   transform: translateY(-120px) !important;
   pointer-events: none !important;
+  z-index: 99999 !important;
+  position: fixed !important;
 }
 
 /* Asegurar que el tooltip sea visible y esté por encima */
@@ -9,11 +11,13 @@
   transform: translateX(-50%) !important;
   margin-top: 0 !important;
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04) !important;
+  z-index: 99999 !important;
 }
 
 /* Para gráficos con active dot, posicionar relativo al punto */
 .recharts-active-dot ~ .recharts-tooltip-wrapper {
   transform: translateY(-100px) translateX(-50%) !important;
+  z-index: 99999 !important;
 }
 
 /* Tooltip personalizado siempre arriba */
@@ -21,5 +25,14 @@
   position: fixed !important;
   transform: translate(-50%, -120px) !important;
   pointer-events: none !important;
-  z-index: 10000 !important;
+  z-index: 99999 !important;
+}
+
+/* Asegurar que los contenedores de gráficos NO bloqueen el tooltip */
+.recharts-wrapper {
+  overflow: visible !important;
+}
+
+.recharts-surface {
+  overflow: visible !important;
 }
