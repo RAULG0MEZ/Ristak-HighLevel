@@ -144,6 +144,10 @@
   display: flex !important;
 }
 
+.fullWidthTabList button {
+  flex: 1;
+}
+
 /* Contact selection */
 .selectedContact {
   display: flex;

@@ -37,7 +37,7 @@ export const TabList: React.FC<TabListProps> = ({
             key={tab.value}
             onClick={() => onTabChange(tab.value)}
             className={cn(
-              'relative flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap',
+              'relative rounded-lg px-3 py-1.5 text-sm font-medium transition-colors whitespace-nowrap',
               isActive
                 ? 'bg-[rgba(148,163,184,0.16)] text-[var(--color-text-primary)] dark:shadow-[0_10px_20px_-16px_rgba(15,23,42,0.45)]'
                 : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[rgba(148,163,184,0.12)]'
