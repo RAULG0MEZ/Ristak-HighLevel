@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Modal } from '../Modal'
 import { Button } from '../Button'
+import { TabList } from '../TabList'
 import {
   Search,
   Loader2,
@@ -689,32 +690,27 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
 
         <div className={styles.field}>
           <label className={styles.label}>Tipo de cobro</label>
-          <div className={styles.toggle}>
-            <button
-              type="button"
-              onClick={() => {
+          <TabList
+            tabs={[
+              { value: 'direct', label: 'Cobro directo' },
+              { value: 'product', label: 'Productos guardados' }
+            ]}
+            activeTab={chargeType}
+            onTabChange={(value) => {
+              if (value === 'direct') {
                 setChargeType('direct')
                 setSelectedProduct(null)
                 setSelectedPrice(null)
                 setPrices([])
                 setCustomAmount('')
                 setCurrency('MXN')
-              }}
-              className={`${styles.toggleButton} ${chargeType === 'direct' ? styles.toggleButtonActive : ''}`}
-            >
-              Cobro directo
-            </button>
-            <button
-              type="button"
-              onClick={() => {
+              } else {
                 setChargeType('product')
                 setAmount('')
-              }}
-              className={`${styles.toggleButton} ${chargeType === 'product' ? styles.toggleButtonActive : ''}`}
-            >
-              Productos guardados
-            </button>
-          </div>
+              }
+            }}
+            variant="compact"
+          />
         </div>
 
         {chargeType === 'product' && (

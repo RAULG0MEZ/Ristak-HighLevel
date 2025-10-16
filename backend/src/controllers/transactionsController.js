@@ -4,6 +4,7 @@ import { resolveDateRange } from '../utils/dateUtils.js'
 import { buildTransactionStats, buildTransactionSummary } from '../services/analyticsService.js'
 import { getGHLClient } from '../services/ghlClient.js'
 import { getHighLevelConfig } from '../config/database.js'
+import { syncInvoices, getInvoicesFromDB } from '../services/invoicesSyncService.js'
 
 /**
  * Obtiene todas las transacciones/pagos con paginación y filtros
@@ -17,7 +18,8 @@ export const getTransactions = async (req, res) => {
       startDate,
       endDate,
       sortBy = 'date',
-      sortOrder = 'DESC'
+      sortOrder = 'DESC',
+      sync = 'true' // Por defecto sincroniza
     } = req.query
 
     const pageNumber = Number(page) || 1
@@ -30,6 +32,18 @@ export const getTransactions = async (req, res) => {
       : 'todos'
 
     logger.info(`Obteniendo transacciones - página ${pageNumber}, límite ${limitNumber}, rango: ${rangeLabel}`)
+
+    // Sincronizar invoices desde HighLevel antes de devolver datos
+    if (sync !== 'false') {
+      try {
+        logger.info('Sincronizando invoices desde HighLevel...')
+        await syncInvoices({ limit: 100 })
+        logger.success('Sincronización de invoices completada')
+      } catch (syncError) {
+        logger.warn('Error en sincronización de invoices (continuando):', syncError.message)
+        // No fallar la request si la sincronización falla
+      }
+    }
 
     const filters = []
     const params = []
@@ -75,6 +89,10 @@ export const getTransactions = async (req, res) => {
         p.description,
         p.date,
         p.created_at,
+        p.ghl_invoice_id,
+        p.invoice_number,
+        p.due_date,
+        p.sent_at,
         c.full_name as contact_name,
         c.email as contact_email,
         c.phone as contact_phone
@@ -101,7 +119,11 @@ export const getTransactions = async (req, res) => {
       status: t.status === 'succeeded' ? 'paid' : t.status,
       reference: t.reference,
       description: t.description,
-      createdAt: t.created_at
+      createdAt: t.created_at,
+      invoiceId: t.ghl_invoice_id,
+      invoiceNumber: t.invoice_number,
+      dueDate: t.due_date,
+      sentAt: t.sent_at
     }))
 
     // Calcular información de paginación

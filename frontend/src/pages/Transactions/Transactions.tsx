@@ -472,8 +472,7 @@ export const Transactions: React.FC = () => {
             )}
           </div>
           <Button
-            variant="secondary"
-            className={styles.neutralPaymentButton}
+            variant="primary"
             onClick={() => setShowRecordPaymentModal(true)}
           >
             <Plus size={16} />

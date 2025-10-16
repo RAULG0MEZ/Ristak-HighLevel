@@ -6,12 +6,19 @@ export interface Transaction {
   contactId?: string
   contactName: string
   email: string
+  phone?: string
   amount: number
-  method: 'card' | 'transfer' | 'cash' | 'paypal' | 'stripe' | 'other'
+  currency?: string
+  method: 'card' | 'transfer' | 'cash' | 'paypal' | 'stripe' | 'other' | 'bank_transfer' | 'check'
   status: 'paid' | 'pending' | 'failed' | 'refunded'
+  reference?: string
   description?: string
   createdAt?: string
   updatedAt?: string
+  invoiceId?: string
+  invoiceNumber?: string
+  dueDate?: string
+  sentAt?: string
 }
 
 export interface TransactionSummary {
