@@ -205,6 +205,7 @@ async function initTables() {
     await db.run('CREATE INDEX IF NOT EXISTS idx_payments_contact ON payments(contact_id)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_payments_date ON payments(date)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status)')
+    await db.run('CREATE INDEX IF NOT EXISTS idx_payments_ghl_invoice ON payments(ghl_invoice_id)')
 
     // Tabla de citas
     await db.run(`
@@ -323,6 +324,42 @@ async function initTables() {
 
     // Agregar columnas que puedan faltar en tablas existentes
     try {
+      // Agregar ghl_invoice_id a payments (UNIQUE para evitar duplicados)
+      try {
+        await db.run('ALTER TABLE payments ADD COLUMN ghl_invoice_id TEXT UNIQUE')
+      } catch (err) {
+        if (!err.message.includes('duplicate column name') && !err.message.includes('already exists')) {
+          throw err
+        }
+      }
+
+      // Agregar invoice_number para mostrar en UI
+      try {
+        await db.run('ALTER TABLE payments ADD COLUMN invoice_number TEXT')
+      } catch (err) {
+        if (!err.message.includes('duplicate column name') && !err.message.includes('already exists')) {
+          throw err
+        }
+      }
+
+      // Agregar due_date para pagos pendientes
+      try {
+        await db.run('ALTER TABLE payments ADD COLUMN due_date DATETIME')
+      } catch (err) {
+        if (!err.message.includes('duplicate column name') && !err.message.includes('already exists')) {
+          throw err
+        }
+      }
+
+      // Agregar sent_at para saber cuándo se envió
+      try {
+        await db.run('ALTER TABLE payments ADD COLUMN sent_at DATETIME')
+      } catch (err) {
+        if (!err.message.includes('duplicate column name') && !err.message.includes('already exists')) {
+          throw err
+        }
+      }
+
       // Agregar location_data a highlevel_config si no existe
       try {
         await db.run('ALTER TABLE highlevel_config ADD COLUMN location_data TEXT')
