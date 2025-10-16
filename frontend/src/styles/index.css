@@ -311,6 +311,13 @@ body.dark .app-bg {
 
 .recharts-tooltip-wrapper {
   pointer-events: none !important;
+  visibility: visible !important;
+}
+
+.recharts-default-tooltip {
+  visibility: visible !important;
+  pointer-events: none;
+  z-index: 1000;
 }
 
 .text-gradient {

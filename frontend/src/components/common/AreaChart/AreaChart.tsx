@@ -5,10 +5,10 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  ResponsiveContainer,
-  Tooltip
+  ResponsiveContainer
 } from 'recharts'
 import { formatCurrency, formatNumber } from '@/utils/format'
+import { SmartRechartsTooltip } from '@/components/common/SmartRechartsTooltip'
 
 interface DataPoint {
   label: string
@@ -179,7 +179,7 @@ export const AreaChart: React.FC<AreaChartProps> = ({
               }}
             />
 
-            <Tooltip
+            <SmartRechartsTooltip
               content={<CustomTooltip />}
               cursor={false}
             />

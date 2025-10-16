@@ -331,6 +331,13 @@ cd frontend && npm run build
 - ✓ Dependencia 'pg' removida del package.json
 - ✓ database.js simplificado (solo SQLite, sin condicionales)
 - ✓ Archivo test-neon.js eliminado
+- ✓ Tooltips en gráficos corregidos (LineChart y AreaChart):
+  - Reemplazado SmartRechartsTooltip roto (heredado de otra app)
+  - Implementación simplificada que funciona correctamente con Recharts
+  - Props simplificadas (solo content, cursor, wrapperStyle)
+  - Tooltips ahora visibles al hacer hover sobre los gráficos
+  - CSS mejorado para .recharts-tooltip-wrapper y .recharts-default-tooltip
+  - Build exitoso sin errores de compilación
 
 ---
 
