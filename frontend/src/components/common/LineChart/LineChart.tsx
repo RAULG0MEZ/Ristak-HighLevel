@@ -75,6 +75,13 @@ export const LineChart: React.FC<LineChartProps> = ({
   const hasSecondSeries = data.some((d) => typeof d.value2 === 'number')
   const isDarkMode = typeof document !== 'undefined' && document.body.classList.contains('dark')
 
+  // Resetear la posición cuando no hay hover
+  useEffect(() => {
+    if (!isHovering) {
+      setActualPointPos(null)
+    }
+  }, [isHovering])
+
   const series = useMemo<SeriesDefinition[]>(() => {
     const definitions: SeriesDefinition[] = [
       { key: 'value', label: legendLabels.label1, color }
@@ -219,11 +226,11 @@ export const LineChart: React.FC<LineChartProps> = ({
         </ResponsiveContainer>
       </div>
 
-      {/* Nuestro tooltip flotante que sigue al cursor */}
+      {/* Nuestro tooltip flotante que aparece sobre el punto */}
       <ChartTooltip
         active={isHovering}
         data={activeData}
-        mousePos={mousePos}
+        pointPos={actualPointPos || pointPos}
         series={series}
         formatValue={tooltipFormatter}
       />

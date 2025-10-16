@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, useRef, useState, useEffect } from 'react'
 import {
   AreaChart as RechartsAreaChart,
   Area,
@@ -69,9 +69,18 @@ export const AreaChart: React.FC<AreaChartProps> = ({
   showLegend = false,
   legendLabels = { label1: 'Serie 1', label2: 'Serie 2' }
 }) => {
-  const { chartRef, mousePos, isHovering, activeIndex, activeData } = useChartHover({ data })
+  const { chartRef, pointPos, isHovering, activeIndex, activeData } = useChartHover({ data })
+  const [actualPointPos, setActualPointPos] = useState<{ x: number; y: number } | null>(null)
+  const activePointRef = useRef<{ [key: string]: { x: number; y: number } }>({})
   const hasSecondSeries = data.some((d) => typeof d.value2 === 'number')
   const isDarkMode = document.body.classList.contains('dark')
+
+  // Resetear la posición cuando no hay hover
+  useEffect(() => {
+    if (!isHovering) {
+      setActualPointPos(null)
+    }
+  }, [isHovering])
 
   const series = useMemo<SeriesDefinition[]>(() => {
     const definitions: SeriesDefinition[] = [
@@ -174,6 +183,22 @@ export const AreaChart: React.FC<AreaChartProps> = ({
                   showPoints
                     ? (props: any) => {
                         const isActive = props.index === activeIndex
+
+                        // Capturar la posición real del punto cuando está activo
+                        if (isActive && props.cx && props.cy) {
+                          const rect = chartRef.current?.getBoundingClientRect()
+                          if (rect) {
+                            const pointX = rect.left + props.cx
+                            const pointY = rect.top + props.cy
+                            activePointRef.current[`${props.index}-${serie.key}`] = { x: pointX, y: pointY }
+
+                            // Actualizar la posición del punto activo
+                            setTimeout(() => {
+                              setActualPointPos({ x: pointX, y: pointY })
+                            }, 0)
+                          }
+                        }
+
                         return (
                           <circle
                             cx={props.cx}
@@ -201,11 +226,11 @@ export const AreaChart: React.FC<AreaChartProps> = ({
         </ResponsiveContainer>
       </div>
 
-      {/* Nuestro tooltip flotante que sigue al cursor */}
+      {/* Nuestro tooltip flotante que aparece sobre el punto */}
       <ChartTooltip
         active={isHovering}
         data={activeData}
-        mousePos={mousePos}
+        pointPos={actualPointPos || pointPos}
         series={series}
         formatValue={tooltipFormatter}
       />
