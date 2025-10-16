@@ -766,7 +766,7 @@ export const Campaigns: React.FC = () => {
           />
         </div>
 
-        <Card className={styles.chartCard}>
+        <Card variant="glass" className={styles.chartCard}>
           <h2 className={styles.chartTitle}>Ingresos vs Gastos de Publicidad</h2>
           <div style={{ height: 300 }}>
             {timeSeriesData.length > 0 ? (
