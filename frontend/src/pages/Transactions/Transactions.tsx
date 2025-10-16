@@ -265,6 +265,7 @@ export const Transactions: React.FC = () => {
       <div className={styles.container}>
         <div className={styles.pageHeader}>
           <h1 className={styles.pageTitle}>Pagos</h1>
+          <p className={styles.pageSubtitle}>Monitorea ingresos, reembolsos y tickets promedio de tus operaciones.</p>
         </div>
 
         <div className={styles.controlsRow}>

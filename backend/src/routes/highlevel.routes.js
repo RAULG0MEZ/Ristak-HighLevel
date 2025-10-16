@@ -20,7 +20,9 @@ import {
   sendInvoice,
   getContactPaymentMethods,
   chargeSavedPaymentMethod,
-  searchContacts
+  searchContacts,
+  saveStripeConfig,
+  getStripeConfig
 } from '../controllers/highlevelController.js'
 
 const router = express.Router()
@@ -42,6 +44,10 @@ router.post('/custom-labels', updateCustomLabels)
 
 // Contacts
 router.post('/contacts/search', searchContacts)
+
+// Stripe Configuration
+router.post('/stripe-config', saveStripeConfig)
+router.get('/stripe-config', getStripeConfig)
 
 // Products and Payments
 router.get('/products', listProducts)

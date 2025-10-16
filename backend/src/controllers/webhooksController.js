@@ -1,6 +1,7 @@
 import { db } from '../config/database.js';
 import { logger } from '../utils/logger.js';
 import { updateSingleContactStats } from '../utils/updateContactsStats.js';
+import * as stripeService from '../services/stripeService.js';
 
 /**
  * Procesa webhook de contacto nuevo o actualizado
@@ -146,6 +147,44 @@ export const handlePaymentWebhook = async (req, res) => {
 
     // Actualizar estadísticas del contacto
     await updateSingleContactStats(contactId);
+
+    // Guardar payment method si viene info de Stripe en el webhook
+    try {
+      const chargeSnapshot = payment.chargeSnapshot || payment.charge_snapshot || {};
+
+      if (chargeSnapshot.customer && chargeSnapshot.payment_method) {
+        // Obtener location_id
+        const config = await db.get('SELECT location_id FROM highlevel_config LIMIT 1');
+
+        if (config && config.location_id) {
+          // Obtener datos del contacto
+          const contact = await db.get('SELECT full_name, email FROM contacts WHERE id = ?', [contactId]);
+
+          const paymentMethodData = chargeSnapshot.payment_method;
+          const card = paymentMethodData.card || {};
+
+          // Guardar payment method
+          await stripeService.savePaymentMethod({
+            locationId: config.location_id,
+            contactId: contactId,
+            contactName: contact?.full_name || payment.customer?.name || 'Sin nombre',
+            contactEmail: contact?.email || payment.customer?.email,
+            stripeCustomerId: chargeSnapshot.customer,
+            stripePaymentMethodId: paymentMethodData.id || paymentMethodData,
+            brand: card.brand || 'unknown',
+            last4: card.last4 || '****',
+            expMonth: card.exp_month || 12,
+            expYear: card.exp_year || 2099,
+            isDefault: false
+          });
+
+          logger.info(`💳 Payment method guardado automáticamente para contacto ${contactId}`);
+        }
+      }
+    } catch (error) {
+      // No fallar el webhook si no se pudo guardar el payment method
+      logger.warn(`⚠️  No se pudo guardar payment method del webhook: ${error.message}`);
+    }
 
     logger.info(`✅ Pago ${paymentId} procesado exitosamente para contacto ${contactId}`);
     res.status(200).json({ success: true, message: 'Pago procesado' });

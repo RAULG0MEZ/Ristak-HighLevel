@@ -318,4 +318,25 @@ export async function getGHLClient() {
   return new GHLClient(config.api_token, config.location_id)
 }
 
+/**
+ * Obtiene un contacto por ID
+ * @param {string} contactId - ID del contacto
+ * @returns {Promise<Object>} - Datos del contacto
+ */
+export async function getContactById(contactId) {
+  const client = await getGHLClient()
+  return await client.get(`/contacts/${contactId}`)
+}
+
+/**
+ * Registra un pago en un invoice
+ * @param {string} invoiceId - ID del invoice
+ * @param {Object} paymentData - Datos del pago
+ * @returns {Promise<Object>} - Respuesta de la API
+ */
+export async function recordPayment(invoiceId, paymentData) {
+  const client = await getGHLClient()
+  return await client.post(`/invoices/${invoiceId}/record-payment`, paymentData)
+}
+
 export default GHLClient

@@ -294,6 +294,33 @@ async function initTables() {
 
     await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_contact ON whatsapp_attribution(contact_id)')
 
+    // Tabla de métodos de pago (tarjetas guardadas en Stripe)
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS payment_methods (
+        id TEXT PRIMARY KEY,
+        location_id TEXT,
+        contact_id TEXT,
+        contact_name TEXT,
+        contact_email TEXT,
+        stripe_customer_id TEXT,
+        stripe_payment_method_id TEXT UNIQUE,
+        brand TEXT,
+        last4 TEXT,
+        exp_month INTEGER,
+        exp_year INTEGER,
+        is_default INTEGER DEFAULT 0,
+        is_active INTEGER DEFAULT 1,
+        last_used_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE CASCADE
+      )
+    `)
+
+    await db.run('CREATE INDEX IF NOT EXISTS idx_payment_methods_contact ON payment_methods(contact_id)')
+    await db.run('CREATE INDEX IF NOT EXISTS idx_payment_methods_stripe_customer ON payment_methods(stripe_customer_id)')
+    await db.run('CREATE INDEX IF NOT EXISTS idx_payment_methods_location ON payment_methods(location_id)')
+
     // Agregar columnas que puedan faltar en tablas existentes
     try {
       // Agregar location_data a highlevel_config si no existe
@@ -318,6 +345,31 @@ async function initTables() {
       // Agregar updated_at a contacts si no existe
       try {
         await db.run('ALTER TABLE contacts ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP')
+      } catch (err) {
+        if (!err.message.includes('duplicate column name') && !err.message.includes('already exists')) {
+          throw err
+        }
+      }
+
+      // Agregar columnas de Stripe a highlevel_config
+      try {
+        await db.run('ALTER TABLE highlevel_config ADD COLUMN stripe_test_secret_key_encrypted TEXT')
+      } catch (err) {
+        if (!err.message.includes('duplicate column name') && !err.message.includes('already exists')) {
+          throw err
+        }
+      }
+
+      try {
+        await db.run('ALTER TABLE highlevel_config ADD COLUMN stripe_live_secret_key_encrypted TEXT')
+      } catch (err) {
+        if (!err.message.includes('duplicate column name') && !err.message.includes('already exists')) {
+          throw err
+        }
+      }
+
+      try {
+        await db.run('ALTER TABLE highlevel_config ADD COLUMN stripe_mode TEXT DEFAULT "test"')
       } catch (err) {
         if (!err.message.includes('duplicate column name') && !err.message.includes('already exists')) {
           throw err

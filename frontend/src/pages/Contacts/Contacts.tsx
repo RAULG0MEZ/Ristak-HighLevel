@@ -204,6 +204,7 @@ export const Contacts: React.FC = () => {
       <div className={styles.container}>
         <div className={styles.pageHeader}>
           <h1 className={styles.pageTitle}>Contactos</h1>
+          <p className={styles.pageSubtitle}>Visualiza tus contactos, clientes y su valor acumulado en el tiempo.</p>
         </div>
 
         <div className={styles.controlsRow}>

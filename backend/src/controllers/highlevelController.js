@@ -4,6 +4,7 @@ import { syncHighLevelData, getSyncProgress } from '../services/highlevelSyncSer
 import { logger } from '../utils/logger.js';
 import { API_URLS } from '../config/constants.js';
 import { getGHLClient } from '../services/ghlClient.js';
+import { encrypt } from '../utils/encryption.js';
 import {
   chargePaymentMethod as stripeChargePaymentMethod,
   findCustomerByEmail as stripeFindCustomerByEmail,
@@ -1055,6 +1056,117 @@ export const searchContacts = async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message || 'Error al buscar contactos'
+    });
+  }
+};
+
+/**
+ * Guarda la configuración de Stripe
+ * POST /api/highlevel/stripe-config
+ */
+export const saveStripeConfig = async (req, res) => {
+  try {
+    const { testSecretKey, liveSecretKey, mode } = req.body;
+
+    // Validaciones
+    if (!mode || !['test', 'live'].includes(mode)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Modo inválido. Debe ser "test" o "live"'
+      });
+    }
+
+    if (mode === 'test' && !testSecretKey) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requiere la clave de prueba para modo test'
+      });
+    }
+
+    if (mode === 'live' && !liveSecretKey) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requiere la clave de producción para modo live'
+      });
+    }
+
+    // Obtener configuración actual
+    const config = await db.get('SELECT id, location_id FROM highlevel_config LIMIT 1');
+
+    if (!config || !config.location_id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Primero debes configurar tu cuenta de HighLevel'
+      });
+    }
+
+    // Encriptar claves
+    const encryptedTestKey = testSecretKey ? encrypt(testSecretKey.trim()) : null;
+    const encryptedLiveKey = liveSecretKey ? encrypt(liveSecretKey.trim()) : null;
+
+    // Actualizar configuración
+    await db.run(
+      `UPDATE highlevel_config
+       SET stripe_test_secret_key_encrypted = ?,
+           stripe_live_secret_key_encrypted = ?,
+           stripe_mode = ?
+       WHERE location_id = ?`,
+      [
+        encryptedTestKey,
+        encryptedLiveKey,
+        mode,
+        config.location_id
+      ]
+    );
+
+    logger.info(`Configuración de Stripe guardada para location ${config.location_id} en modo ${mode}`);
+
+    res.json({
+      success: true,
+      message: 'Configuración de Stripe guardada exitosamente',
+      mode: mode
+    });
+
+  } catch (error) {
+    logger.error(`Error guardando configuración de Stripe: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Error guardando configuración de Stripe'
+    });
+  }
+};
+
+/**
+ * Obtiene la configuración de Stripe (sin mostrar las claves)
+ * GET /api/highlevel/stripe-config
+ */
+export const getStripeConfig = async (req, res) => {
+  try {
+    const config = await db.get(
+      'SELECT stripe_mode, stripe_test_secret_key_encrypted, stripe_live_secret_key_encrypted FROM highlevel_config LIMIT 1'
+    );
+
+    if (!config) {
+      return res.json({
+        success: true,
+        configured: false,
+        mode: null
+      });
+    }
+
+    res.json({
+      success: true,
+      configured: !!(config.stripe_test_secret_key_encrypted || config.stripe_live_secret_key_encrypted),
+      mode: config.stripe_mode || 'test',
+      hasTestKey: !!config.stripe_test_secret_key_encrypted,
+      hasLiveKey: !!config.stripe_live_secret_key_encrypted
+    });
+
+  } catch (error) {
+    logger.error(`Error obteniendo configuración de Stripe: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: 'Error obteniendo configuración de Stripe'
     });
   }
 };

@@ -484,7 +484,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   const loadPaymentMethods = async (contactId: string) => {
     setCheckingCards(true)
     try {
-      const response = await fetch(`/api/highlevel/payment-methods/contact/${contactId}`)
+      const response = await fetch(`/api/payment-methods/contact/${contactId}`)
       const data = await response.json()
 
       if (!response.ok) {
@@ -560,7 +560,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
             throw new Error('Selecciona una tarjeta para continuar')
           }
 
-          const response = await fetch('/api/highlevel/payment-methods/charge', {
+          const response = await fetch('/api/payment-methods/charge', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
