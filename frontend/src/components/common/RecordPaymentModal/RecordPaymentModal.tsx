@@ -690,7 +690,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
 
         <div className={styles.field}>
           <label className={styles.label}>Tipo de cobro</label>
-          <div style={{ marginTop: '4px' }}>
+          <div style={{ marginTop: '4px', display: 'flex', width: '100%' }}>
             <TabList
               tabs={[
                 { value: 'direct', label: 'Cobro directo' },
@@ -711,6 +711,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                 }
               }}
               variant="compact"
+              style={{ width: '100%' }}
             />
           </div>
         </div>

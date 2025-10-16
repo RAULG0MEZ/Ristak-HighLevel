@@ -4,7 +4,7 @@ import ReactDOM from 'react-dom'
 interface ChartTooltipProps {
   active: boolean
   data: any
-  mousePos: { x: number; y: number }
+  pointPos: { x: number; y: number } | null
   series: { key: string; label: string; color: string }[]
   formatValue: (value: number, key: string) => string
 }
@@ -12,11 +12,11 @@ interface ChartTooltipProps {
 export const ChartTooltip: React.FC<ChartTooltipProps> = ({
   active,
   data,
-  mousePos,
+  pointPos,
   series,
   formatValue
 }) => {
-  if (!active || !data) {
+  if (!active || !data || !pointPos) {
     return null
   }
 
@@ -24,12 +24,12 @@ export const ChartTooltip: React.FC<ChartTooltipProps> = ({
     <div
       style={{
         position: 'fixed',
-        left: mousePos.x,
-        top: mousePos.y - 100, // SIEMPRE 100px arriba del cursor
+        left: pointPos.x,
+        top: pointPos.y - 80, // 80px arriba del punto de datos
         transform: 'translateX(-50%)',
         pointerEvents: 'none',
         zIndex: 2147483647, // Máximo z-index posible
-        transition: 'none', // Sin transiciones para seguimiento inmediato
+        transition: 'left 150ms ease-out, top 150ms ease-out', // Transición suave entre puntos
       }}
     >
       <div className="glass rounded-lg border border-[rgba(148,163,184,0.14)] px-4 py-3 dark:shadow-[0_18px_35px_-25px_rgba(15,23,42,0.6)] bg-[var(--color-background-primary)]">

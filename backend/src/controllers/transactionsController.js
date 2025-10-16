@@ -19,7 +19,7 @@ export const getTransactions = async (req, res) => {
       endDate,
       sortBy = 'date',
       sortOrder = 'DESC',
-      sync = 'true' // Por defecto sincroniza
+      sync = 'false' // Por defecto NO sincroniza (más rápido)
     } = req.query
 
     const pageNumber = Number(page) || 1

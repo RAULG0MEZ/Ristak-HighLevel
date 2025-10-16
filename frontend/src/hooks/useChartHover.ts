@@ -7,6 +7,7 @@ interface UseChartHoverProps {
 
 interface ChartHoverState {
   mousePos: { x: number; y: number }
+  pointPos: { x: number; y: number } | null
   isHovering: boolean
   activeIndex: number
   activeData: any
@@ -16,6 +17,7 @@ export const useChartHover = ({ data, enabled = true }: UseChartHoverProps) => {
   const chartRef = useRef<HTMLDivElement>(null)
   const [state, setState] = useState<ChartHoverState>({
     mousePos: { x: 0, y: 0 },
+    pointPos: null,
     isHovering: false,
     activeIndex: -1,
     activeData: null
@@ -45,21 +47,26 @@ export const useChartHover = ({ data, enabled = true }: UseChartHoverProps) => {
             const dataIndex = Math.round((relativeX / chartWidth) * (data.length - 1))
             const clampedIndex = Math.max(0, Math.min(data.length - 1, dataIndex))
 
+            // Calcular la posición absoluta del punto de datos
+            const pointX = rect.left + (clampedIndex / (data.length - 1)) * chartWidth
+            const pointY = rect.top + rect.height * 0.5 // Aproximado, se ajustará con el valor real
+
             setState(prev => {
               if (prev.activeIndex !== clampedIndex || !prev.isHovering) {
                 return {
                   mousePos: newMousePos,
+                  pointPos: { x: pointX, y: pointY },
                   isHovering: true,
                   activeIndex: clampedIndex,
                   activeData: data[clampedIndex]
                 }
               }
-              return { ...prev, mousePos: newMousePos }
+              return { ...prev, mousePos: newMousePos, pointPos: { x: pointX, y: pointY } }
             })
           } else {
             setState(prev =>
               prev.isHovering
-                ? { mousePos: newMousePos, isHovering: false, activeIndex: -1, activeData: null }
+                ? { mousePos: newMousePos, pointPos: null, isHovering: false, activeIndex: -1, activeData: null }
                 : { ...prev, mousePos: newMousePos }
             )
           }
@@ -72,6 +79,7 @@ export const useChartHover = ({ data, enabled = true }: UseChartHoverProps) => {
     const handleMouseLeave = () => {
       setState(prev => ({
         ...prev,
+        pointPos: null,
         isHovering: false,
         activeIndex: -1,
         activeData: null
