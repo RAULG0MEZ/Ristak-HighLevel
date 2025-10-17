@@ -708,15 +708,17 @@ export const Appointments: React.FC = () => {
                           const endHour = endDate.getHours() + endDate.getMinutes() / 60;
                           const top = (startHour / 24) * 100;
                           const height = ((endHour - startHour) / 24) * 100;
+                          const statusClass =
+                            styles[`event${event.appointmentStatus.charAt(0).toUpperCase() + event.appointmentStatus.slice(1).toLowerCase()}`] ||
+                            styles.eventDefault;
 
                           return (
                             <div
                               key={event.id}
-                              className={styles.weekEvent}
+                              className={`${styles.weekEvent} ${statusClass}`}
                               style={{
                                 top: `${top}%`,
-                                height: `${height}%`,
-                                backgroundColor: getEventColor(event.appointmentStatus),
+                                height: `${height}%`
                               }}
                               title={`${event.title} - ${formatTime12h(event.startTime)} a ${formatTime12h(event.endTime)}`}
                               onClick={() => handleEventClick(event)}
@@ -806,15 +808,17 @@ export const Appointments: React.FC = () => {
                       const endHour = endDate.getHours() + endDate.getMinutes() / 60;
                       const top = (startHour / 24) * 100;
                       const height = ((endHour - startHour) / 24) * 100;
+                      const statusClass =
+                        styles[`event${event.appointmentStatus.charAt(0).toUpperCase() + event.appointmentStatus.slice(1).toLowerCase()}`] ||
+                        styles.eventDefault;
 
                       return (
                         <div
                           key={event.id}
-                          className={styles.dayEvent}
+                          className={`${styles.dayEvent} ${statusClass}`}
                           style={{
                             top: `${top}%`,
-                            height: `${height}%`,
-                            backgroundColor: getEventColor(event.appointmentStatus),
+                            height: `${height}%`
                           }}
                           title={`${event.title} - ${formatTime12h(event.startTime)} a ${formatTime12h(event.endTime)}`}
                           onClick={() => handleEventClick(event)}
