@@ -72,9 +72,14 @@ body.dark .toast {
 }
 
 body.dark .success {
-  background: rgba(16, 185, 129, 0.15);
-  border-color: rgba(16, 185, 129, 0.3);
-  color: #86efac;
+  background: rgba(16, 185, 129, 0.2);
+  border-color: #10b981;
+  color: #6ee7b7;
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.3), 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+body.dark .success .icon {
+  filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.8));
 }
 
 .error {
@@ -84,9 +89,14 @@ body.dark .success {
 }
 
 body.dark .error {
-  background: rgba(220, 38, 38, 0.15);
-  border-color: rgba(220, 38, 38, 0.3);
+  background: rgba(239, 68, 68, 0.2);
+  border-color: #ef4444;
   color: #fca5a5;
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.3), 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+body.dark .error .icon {
+  filter: drop-shadow(0 0 8px rgba(239, 68, 68, 0.8));
 }
 
 .warning {
@@ -96,9 +106,14 @@ body.dark .error {
 }
 
 body.dark .warning {
-  background: rgba(245, 158, 11, 0.15);
-  border-color: rgba(245, 158, 11, 0.3);
-  color: #fcd34d;
+  background: rgba(251, 191, 36, 0.2);
+  border-color: #fbbf24;
+  color: #fde047;
+  box-shadow: 0 0 20px rgba(251, 191, 36, 0.3), 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+body.dark .warning .icon {
+  filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.8));
 }
 
 .info {
@@ -108,7 +123,12 @@ body.dark .warning {
 }
 
 body.dark .info {
-  background: rgba(100, 116, 139, 0.15);
-  border-color: rgba(100, 116, 139, 0.3);
-  color: #cbd5e1;
+  background: rgba(59, 130, 246, 0.2);
+  border-color: #3b82f6;
+  color: #93c5fd;
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.3), 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+body.dark .info .icon {
+  filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.8));
 }
