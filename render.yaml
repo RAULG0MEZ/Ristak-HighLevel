@@ -2,6 +2,7 @@ databases:
   - name: ristak-db
     databaseName: ristak_production
     plan: basic-256mb  # Plan de pago básico ($7/mes) - 256MB RAM
+    diskSizeGB: 1  # Tamaño de disco: 1GB (mínimo, más barato)
     ipAllowList: []  # Requerido para planes de pago ([] = permitir todas las IPs)
     region: oregon
 
