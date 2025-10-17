@@ -51,12 +51,16 @@ class ApiClient {
     const rawJson = await response.json()
     const json = dedupeContactsPayload(rawJson)
 
+    console.log('🔍 ApiClient response:', { endpoint, json })
+
     // Si la respuesta tiene la estructura { success: true, data: ... } Y el campo data existe, extraer el campo data
     // IMPORTANTE: Solo extraer data si existe, algunos endpoints devuelven success + otros campos directamente
     if (json && typeof json === 'object' && 'data' in json && 'success' in json && json.data !== undefined) {
+      console.log('📦 Extrayendo campo data:', json.data)
       return (json as { data: unknown }).data as T
     }
 
+    console.log('✅ Devolviendo json completo')
     return json as T
   }
 

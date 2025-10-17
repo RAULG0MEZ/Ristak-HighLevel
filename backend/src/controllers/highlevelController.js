@@ -1185,18 +1185,24 @@ export const saveStripeConfig = async (req, res) => {
       });
     }
 
-    if (mode === 'test' && !testSecretKey) {
-      return res.status(400).json({
-        success: false,
-        error: 'Se requiere la clave de prueba para modo test'
-      });
-    }
+    // Solo validar keys si se están enviando (guardado inicial)
+    // Si solo se está cambiando el modo (toggle), no requerir keys
+    const isSavingKeys = testSecretKey || liveSecretKey;
 
-    if (mode === 'live' && !liveSecretKey) {
-      return res.status(400).json({
-        success: false,
-        error: 'Se requiere la clave de producción para modo live'
-      });
+    if (isSavingKeys) {
+      if (mode === 'test' && !testSecretKey) {
+        return res.status(400).json({
+          success: false,
+          error: 'Se requiere la clave de prueba para modo test'
+        });
+      }
+
+      if (mode === 'live' && !liveSecretKey) {
+        return res.status(400).json({
+          success: false,
+          error: 'Se requiere la clave de producción para modo live'
+        });
+      }
     }
 
     // Obtener configuración actual
@@ -1209,25 +1215,34 @@ export const saveStripeConfig = async (req, res) => {
       });
     }
 
-    // Encriptar claves
+    // Encriptar claves solo si se envían
     const encryptedTestKey = testSecretKey ? encrypt(testSecretKey.trim()) : null;
     const encryptedLiveKey = liveSecretKey ? encrypt(liveSecretKey.trim()) : null;
 
+    // Construir UPDATE dinámico: solo actualizar campos que se envían
+    const updates = [];
+    const values = [];
+
+    if (encryptedTestKey) {
+      updates.push('stripe_test_secret_key_encrypted = ?');
+      values.push(encryptedTestKey);
+    }
+
+    if (encryptedLiveKey) {
+      updates.push('stripe_live_secret_key_encrypted = ?');
+      values.push(encryptedLiveKey);
+    }
+
+    // El modo SIEMPRE se actualiza
+    updates.push('stripe_mode = ?');
+    values.push(mode);
+    values.push(config.location_id);
+
+    const updateSQL = `UPDATE highlevel_config SET ${updates.join(', ')} WHERE location_id = ?`;
+
     // Intentar actualizar configuración (puede fallar si las columnas no existen)
     try {
-      await db.run(
-        `UPDATE highlevel_config
-         SET stripe_test_secret_key_encrypted = ?,
-             stripe_live_secret_key_encrypted = ?,
-             stripe_mode = ?
-         WHERE location_id = ?`,
-        [
-          encryptedTestKey,
-          encryptedLiveKey,
-          mode,
-          config.location_id
-        ]
-      );
+      await db.run(updateSQL, values);
     } catch (updateError) {
       // Si falla porque las columnas no existen, agregarlas primero
       logger.error(`Error en UPDATE de Stripe: ${updateError.message}`);
@@ -1259,20 +1274,8 @@ export const saveStripeConfig = async (req, res) => {
 
         logger.info('🔄 Reintentando UPDATE después de agregar columnas...');
 
-        // Reintentar el UPDATE
-        await db.run(
-          `UPDATE highlevel_config
-           SET stripe_test_secret_key_encrypted = ?,
-               stripe_live_secret_key_encrypted = ?,
-               stripe_mode = ?
-           WHERE location_id = ?`,
-          [
-            encryptedTestKey,
-            encryptedLiveKey,
-            mode,
-            config.location_id
-          ]
-        );
+        // Reintentar el UPDATE con el mismo SQL dinámico
+        await db.run(updateSQL, values);
 
         logger.success('✅ UPDATE exitoso después de agregar columnas');
       } else {
