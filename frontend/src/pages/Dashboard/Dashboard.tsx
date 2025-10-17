@@ -362,7 +362,7 @@ export const Dashboard: React.FC = () => {
           <h1 className="m-0 text-[24px] font-bold text-[var(--color-text-primary)]">Dashboard</h1>
         </div>
 
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between">
           <DateRangePicker
             startDate={formatDateToISO(dateRange.start)}
             endDate={formatDateToISO(dateRange.end)}
