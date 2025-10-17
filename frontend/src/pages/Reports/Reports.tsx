@@ -28,7 +28,6 @@ import {
   UserCheck,
   DollarSign,
   Target,
-  Download,
   Layers,
   MousePointerClick,
   Table as TableIcon,
@@ -779,41 +778,6 @@ export const Reports: React.FC = () => {
     })
   }
 
-  const handleExportCsv = () => {
-    if (typeof window === 'undefined') {
-      return
-    }
-
-    const salesLabel = reportType === 'campaigns' ? 'Ventas' : 'Transacciones'
-    const headers = ['Periodo', 'Retorno de Inversión', 'Ganancias', 'Recolectado', 'Invertido', salesLabel, 'Citas', labels.leads]
-    const wrapValue = (value: string | number) => {
-      const safeValue = String(value).replace(/"/g, '""')
-      return `"${safeValue}"`
-    }
-
-    const rows = tableData.map(row => [
-      row.displayDate || row.date,
-      `${row.roas.toFixed(2)}x`,
-      formatCurrency(row.profit),
-      formatCurrency(row.revenue),
-      formatCurrency(row.spend),
-      formatNumber(row.sales),
-      formatNumber(row.appointments),
-      formatNumber(row.leads)
-    ].map(wrapValue).join(','))
-
-    const csvContent = [headers.map(wrapValue).join(','), ...rows].join('\n')
-    const blob = new Blob([`\uFEFF${csvContent}`], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `reportes_${reportType}_${viewType}_${formatDateToISO(new Date())}.csv`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(url)
-  }
-
   const metricsRangeLabel = formatRangeLabel(metricsRange)
   const closeModal = () => setModalState(prev => ({ ...prev, open: false }))
 
@@ -924,15 +888,6 @@ export const Reports: React.FC = () => {
                 onTabChange={(value) => setDisplayMode(value as DisplayMode)}
                 variant="compact"
               />
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={handleExportCsv}
-                className={styles.exportButton}
-              >
-                <Download size={16} />
-                Exportar CSV
-              </Button>
             </div>
           </div>
       </header>
