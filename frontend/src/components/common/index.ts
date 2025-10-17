@@ -52,3 +52,6 @@ export {
 export { Toast, ToastContainer } from './Toast'
 export type { ToastType } from './Toast'
 export type { ModalType } from './Modal'
+
+// Componentes de sistema
+export { StorageAlert } from './StorageAlert'

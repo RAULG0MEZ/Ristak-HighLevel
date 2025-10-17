@@ -15,6 +15,7 @@ import { Contacts } from '@/pages/Contacts'
 import { Settings } from '@/pages/Settings'
 import { ToastContainer } from '@/components/common/Toast'
 import { Modal } from '@/components/common/Modal'
+import { StorageAlert } from '@/components/common/StorageAlert'
 
 const AppWithNotifications: React.FC = () => {
   const { toasts, removeToast, modal, closeModal } = useNotification()
@@ -34,6 +35,7 @@ const AppWithNotifications: React.FC = () => {
           </Route>
         </Routes>
       </BrowserRouter>
+      <StorageAlert />
       <ToastContainer toasts={toasts} onClose={removeToast} />
       <Modal
         isOpen={modal.isOpen}

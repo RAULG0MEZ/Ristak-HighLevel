@@ -621,3 +621,57 @@ export const getSalesData = async (req, res) => {
     res.json([]);
   }
 };
+
+/**
+ * Obtiene el estado del storage de la base de datos
+ */
+export const getStorageStatus = async (req, res) => {
+  try {
+    const STORAGE_LIMIT_GB = 1; // Límite configurado en render.yaml
+    const WARNING_THRESHOLD = 0.8; // Alertar al 80%
+
+    // Solo funciona en PostgreSQL (producción)
+    const isPostgres = Boolean(process.env.DATABASE_URL);
+
+    if (!isPostgres) {
+      // En SQLite (local) devolver datos mock
+      return res.json({
+        sizeGB: 0.05,
+        limitGB: STORAGE_LIMIT_GB,
+        percentUsed: 5,
+        warningThreshold: WARNING_THRESHOLD * 100,
+        needsAttention: false,
+        message: 'Desarrollo local (SQLite)'
+      });
+    }
+
+    // Obtener tamaño actual de la BD
+    const result = await db.get(`
+      SELECT
+        pg_size_pretty(pg_database_size(current_database())) as size_pretty,
+        pg_database_size(current_database()) as size_bytes
+    `);
+
+    const sizeGB = result.size_bytes / (1024 * 1024 * 1024);
+    const percentUsed = (sizeGB / STORAGE_LIMIT_GB) * 100;
+    const needsAttention = percentUsed >= WARNING_THRESHOLD * 100;
+
+    res.json({
+      sizeGB: parseFloat(sizeGB.toFixed(2)),
+      sizePretty: result.size_pretty,
+      limitGB: STORAGE_LIMIT_GB,
+      percentUsed: parseFloat(percentUsed.toFixed(1)),
+      warningThreshold: WARNING_THRESHOLD * 100,
+      needsAttention,
+      message: needsAttention
+        ? `⚠️ Base de datos usando ${percentUsed.toFixed(1)}% del storage disponible`
+        : `✅ Storage en niveles normales (${percentUsed.toFixed(1)}%)`
+    });
+
+  } catch (error) {
+    logger.error(`Error en getStorageStatus: ${error.message}`);
+    res.status(500).json({
+      error: 'No se pudo obtener el estado del storage'
+    });
+  }
+};
