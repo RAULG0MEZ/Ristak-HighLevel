@@ -24,6 +24,9 @@ export { ContactSearchInput } from './ContactSearchInput/ContactSearchInput'
 // Componentes de pagos
 export { RecordPaymentModal } from './RecordPaymentModal'
 
+// Componentes de citas
+export { AppointmentModal } from './AppointmentModal'
+
 // Componentes de UI
 export { ViewSelector } from './ViewSelector'
 export { Icon } from './Icon'

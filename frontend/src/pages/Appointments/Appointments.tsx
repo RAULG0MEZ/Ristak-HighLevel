@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { KpiCard, Card, Button, PageContainer } from '@/components/common';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus } from 'lucide-react';
+import { KpiCard, Card, Button, PageContainer, AppointmentModal } from '@/components/common';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, ChevronDown, Check } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNotification } from '@/contexts/NotificationContext';
 import { calendarsService, type Calendar, type CalendarEvent, type AppointmentStats } from '@/services/calendarsService';
@@ -45,6 +45,13 @@ export const Appointments: React.FC = () => {
   });
   const [loading, setLoading] = useState(false);
 
+  // Modal de cita
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Dropdown de calendarios
+  const [isCalendarDropdownOpen, setIsCalendarDropdownOpen] = useState(false);
+
   // Cargar calendarios al montar
   useEffect(() => {
     if (locationId && accessToken) {
@@ -58,6 +65,20 @@ export const Appointments: React.FC = () => {
       loadEvents();
     }
   }, [selectedCalendar, currentDate, viewMode, locationId, accessToken]);
+
+  // Cerrar dropdown al presionar Escape
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsCalendarDropdownOpen(false);
+      }
+    };
+
+    if (isCalendarDropdownOpen) {
+      document.addEventListener('keydown', handleEscape);
+      return () => document.removeEventListener('keydown', handleEscape);
+    }
+  }, [isCalendarDropdownOpen]);
 
   const loadCalendars = async () => {
     if (!locationId || !accessToken) return;
@@ -208,8 +229,48 @@ export const Appointments: React.FC = () => {
     setCurrentDate(new Date());
   };
 
-  // Esta función ya no se necesita porque cambiamos directo en el onChange del select
-  // Dejamos el código limpio sin funciones huérfanas
+  // Manejar apertura del modal de cita
+  const handleEventClick = (event: CalendarEvent) => {
+    setSelectedEvent(event);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedEvent(null);
+  };
+
+  // Actualizar cita
+  const handleSaveAppointment = async (eventId: string, updates: Partial<CalendarEvent>) => {
+    if (!accessToken) return;
+
+    try {
+      await calendarsService.updateAppointment(eventId, updates, accessToken);
+      showToast('success', 'Cita actualizada', 'Los cambios se guardaron correctamente.');
+
+      // Recargar eventos
+      loadEvents();
+    } catch (error) {
+      showToast('error', 'Error al actualizar', 'No se pudo guardar la cita. Intenta nuevamente.');
+      throw error;
+    }
+  };
+
+  // Eliminar cita
+  const handleDeleteAppointment = async (eventId: string) => {
+    if (!accessToken) return;
+
+    try {
+      await calendarsService.deleteEvent(eventId, accessToken);
+      showToast('success', 'Cita eliminada', 'La cita se eliminó correctamente.');
+
+      // Recargar eventos
+      loadEvents();
+    } catch (error) {
+      showToast('error', 'Error al eliminar', 'No se pudo eliminar la cita. Intenta nuevamente.');
+      throw error;
+    }
+  };
 
   // Renderizar label según vista
   const renderLabel = () => {
@@ -261,31 +322,51 @@ export const Appointments: React.FC = () => {
           <h1 className={styles.title}>Calendarios</h1>
 
           <div className={styles.calendarSelector}>
-            <label htmlFor="calendar-select" className={styles.selectorLabel}>
-              Calendario:
-            </label>
-            <select
-              id="calendar-select"
-              className={styles.calendarDropdown}
-              value={selectedCalendar?.id || ''}
-              onChange={(e) => {
-                const selected = calendars.find(c => c.id === e.target.value);
-                if (selected) {
-                  setSelectedCalendar(selected);
-                }
-              }}
+            <button
+              className={styles.calendarDropdownButton}
+              onClick={() => setIsCalendarDropdownOpen(!isCalendarDropdownOpen)}
               disabled={loading || calendars.length === 0}
             >
-              {calendars.length === 0 ? (
-                <option value="">No hay calendarios disponibles</option>
-              ) : (
-                calendars.map((calendar) => (
-                  <option key={calendar.id} value={calendar.id}>
-                    {calendar.name}
-                  </option>
-                ))
-              )}
-            </select>
+              <span className={styles.dropdownButtonText}>
+                {selectedCalendar?.name || 'Selecciona un calendario'}
+              </span>
+              <ChevronDown
+                size={18}
+                className={`${styles.dropdownIcon} ${isCalendarDropdownOpen ? styles.dropdownIconOpen : ''}`}
+              />
+            </button>
+
+            {isCalendarDropdownOpen && (
+              <>
+                <div
+                  className={styles.dropdownOverlay}
+                  onClick={() => setIsCalendarDropdownOpen(false)}
+                />
+                <div className={styles.dropdownMenu}>
+                  {calendars.length === 0 ? (
+                    <div className={styles.dropdownEmpty}>
+                      No hay calendarios disponibles
+                    </div>
+                  ) : (
+                    calendars.map((calendar) => (
+                      <button
+                        key={calendar.id}
+                        className={`${styles.dropdownItem} ${selectedCalendar?.id === calendar.id ? styles.dropdownItemActive : ''}`}
+                        onClick={() => {
+                          setSelectedCalendar(calendar);
+                          setIsCalendarDropdownOpen(false);
+                        }}
+                      >
+                        <span className={styles.dropdownItemText}>{calendar.name}</span>
+                        {selectedCalendar?.id === calendar.id && (
+                          <Check size={16} className={styles.dropdownCheckIcon} />
+                        )}
+                      </button>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -394,6 +475,10 @@ export const Appointments: React.FC = () => {
                           className={styles.eventChip}
                           style={{ borderColor: getEventColor(event.appointmentStatus) }}
                           title={`${event.title} - ${event.appointmentStatus}`}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            handleEventClick(event);
+                          }}
                         >
                           <span className={styles.eventTime}>
                             {formatTime12h(event.startTime)}
@@ -486,6 +571,7 @@ export const Appointments: React.FC = () => {
                                 backgroundColor: getEventColor(event.appointmentStatus),
                               }}
                               title={`${event.title} - ${formatTime12h(event.startTime)} a ${formatTime12h(event.endTime)}`}
+                              onDoubleClick={() => handleEventClick(event)}
                             >
                               <div className={styles.weekEventTime}>
                                 {formatTime12h(event.startTime)}
@@ -577,6 +663,7 @@ export const Appointments: React.FC = () => {
                             backgroundColor: getEventColor(event.appointmentStatus),
                           }}
                           title={`${event.title} - ${formatTime12h(event.startTime)} a ${formatTime12h(event.endTime)}`}
+                          onDoubleClick={() => handleEventClick(event)}
                         >
                           <div className={styles.dayEventTime}>
                             {formatTime12h(event.startTime)} - {formatTime12h(event.endTime)}
@@ -621,7 +708,12 @@ export const Appointments: React.FC = () => {
               <p className={styles.emptyText}>No hay citas próximas</p>
             ) : (
               upcomingAppointments.map((event) => (
-                <div key={event.id} className={styles.upcomingItem}>
+                <div
+                  key={event.id}
+                  className={styles.upcomingItem}
+                  onClick={() => handleEventClick(event)}
+                  style={{ cursor: 'pointer' }}
+                >
                   <div className={styles.upcomingInfo}>
                     <div className={styles.upcomingTitle}>{event.title}</div>
                     <div className={styles.upcomingDetails}>
@@ -640,6 +732,15 @@ export const Appointments: React.FC = () => {
           </div>
         </Card>
       </div>
+
+      {/* Modal de detalles/edición de cita */}
+      <AppointmentModal
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+        event={selectedEvent}
+        onSave={handleSaveAppointment}
+        onDelete={handleDeleteAppointment}
+      />
     </PageContainer>
   );
 };
