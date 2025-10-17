@@ -10,7 +10,8 @@ import {
   DollarSign,
   Link as LinkIcon,
   CreditCard,
-  Check
+  Check,
+  AlertCircle
 } from 'lucide-react'
 import styles from './RecordPaymentModal.module.css'
 import { useNotification } from '@/contexts/NotificationContext'
@@ -154,6 +155,10 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   const [customerId, setCustomerId] = useState<string | null>(null)
   const [manualPaymentData, setManualPaymentData] = useState<ManualPaymentData>(defaultManualPaymentData)
 
+  // Stripe connection status
+  const [stripeConnected, setStripeConnected] = useState(false)
+  const [checkingStripe, setCheckingStripe] = useState(true)
+
   const { showToast } = useNotification()
 
   const resetForm = () => {
@@ -213,6 +218,24 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     }
   }
 
+  const checkStripeConnection = async () => {
+    setCheckingStripe(true)
+    try {
+      const response = await fetch('/api/highlevel/stripe-config')
+      if (response.ok) {
+        const data = await response.json()
+        setStripeConnected(data.configured || false)
+      } else {
+        setStripeConnected(false)
+      }
+    } catch (error) {
+      console.error('Error checking Stripe connection:', error)
+      setStripeConnected(false)
+    } finally {
+      setCheckingStripe(false)
+    }
+  }
+
   useEffect(() => {
     if (!isOpen) {
       resetForm()
@@ -221,6 +244,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
 
     resetForm()
     loadConfig()
+    checkStripeConnection()
   }, [isOpen])
 
   // Search contacts
@@ -920,6 +944,22 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
           )}
         </div>
 
+        {!stripeConnected && !checkingStripe && (
+          <div className={styles.infoBox} style={{ marginBottom: '16px', backgroundColor: '#fef3c7', border: '1px solid #fbbf24' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+              <AlertCircle size={16} style={{ color: '#f59e0b', marginTop: '2px', flexShrink: 0 }} />
+              <div>
+                <p style={{ margin: 0, fontSize: '14px', fontWeight: '500', color: '#92400e' }}>
+                  Stripe no está conectado
+                </p>
+                <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#78350f' }}>
+                  Solo puedes registrar pagos manuales. Para cobrar tarjetas guardadas, configura Stripe en Settings.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className={styles.paymentOptions}>
           <button
             type="button"
@@ -938,60 +978,64 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
             {paymentOption === 'link' && <Check size={18} />}
           </button>
 
-          <button
-            type="button"
-            className={`${styles.optionButton} ${paymentOption === 'saved' ? styles.optionButtonActive : ''}`}
-            onClick={() => {
-              setPaymentOption('saved')
-              loadPaymentMethods(invoiceSummary.contactId)
-            }}
-          >
-            <div className={styles.optionInfo}>
-              <div className={styles.optionIcon}>
-                <CreditCard size={18} />
-              </div>
-              <div>
-                <p>Cobrar tarjeta guardada</p>
-                <span>
-                  {checkingCards
-                    ? 'Verificando tarjetas...'
-                    : paymentMethods.length > 0
-                      ? `${paymentMethods.length} tarjeta${paymentMethods.length > 1 ? 's' : ''} disponible${paymentMethods.length > 1 ? 's' : ''}`
-                      : 'Comprueba si el cliente tiene tarjetas guardadas'}
-                </span>
-              </div>
-            </div>
-            {paymentOption === 'saved' && <Check size={18} />}
-          </button>
-
-          {paymentOption === 'saved' && (
-            <div className={styles.cardList}>
-              {checkingCards ? (
-                <div className={styles.cardLoading}>
-                  <Loader2 size={16} className={styles.processingIcon} />
-                  <span>Buscando tarjetas guardadas...</span>
+          {stripeConnected && (
+            <>
+              <button
+                type="button"
+                className={`${styles.optionButton} ${paymentOption === 'saved' ? styles.optionButtonActive : ''}`}
+                onClick={() => {
+                  setPaymentOption('saved')
+                  loadPaymentMethods(invoiceSummary.contactId)
+                }}
+              >
+                <div className={styles.optionInfo}>
+                  <div className={styles.optionIcon}>
+                    <CreditCard size={18} />
+                  </div>
+                  <div>
+                    <p>Cobrar tarjeta guardada</p>
+                    <span>
+                      {checkingCards
+                        ? 'Verificando tarjetas...'
+                        : paymentMethods.length > 0
+                          ? `${paymentMethods.length} tarjeta${paymentMethods.length > 1 ? 's' : ''} disponible${paymentMethods.length > 1 ? 's' : ''}`
+                          : 'Comprueba si el cliente tiene tarjetas guardadas'}
+                    </span>
+                  </div>
                 </div>
-              ) : paymentMethods.length > 0 ? (
-                paymentMethods.map((pm) => (
-                  <button
-                    key={pm.id}
-                    type="button"
-                    className={`${styles.cardButton} ${selectedPaymentMethod === pm.id ? styles.cardButtonActive : ''}`}
-                    onClick={() => setSelectedPaymentMethod(pm.id)}
-                  >
-                    <div>
-                      <p>{pm.brand?.toUpperCase()} •••• {pm.last4}</p>
-                      <span>Vence {pm.expMonth}/{pm.expYear}</span>
+                {paymentOption === 'saved' && <Check size={18} />}
+              </button>
+
+              {paymentOption === 'saved' && (
+                <div className={styles.cardList}>
+                  {checkingCards ? (
+                    <div className={styles.cardLoading}>
+                      <Loader2 size={16} className={styles.processingIcon} />
+                      <span>Buscando tarjetas guardadas...</span>
                     </div>
-                    {selectedPaymentMethod === pm.id && <Check size={16} />}
-                  </button>
-                ))
-              ) : (
-                <div className={styles.cardEmpty}>
-                  Este cliente no tiene tarjetas guardadas en Stripe.
+                  ) : paymentMethods.length > 0 ? (
+                    paymentMethods.map((pm) => (
+                      <button
+                        key={pm.id}
+                        type="button"
+                        className={`${styles.cardButton} ${selectedPaymentMethod === pm.id ? styles.cardButtonActive : ''}`}
+                        onClick={() => setSelectedPaymentMethod(pm.id)}
+                      >
+                        <div>
+                          <p>{pm.brand?.toUpperCase()} •••• {pm.last4}</p>
+                          <span>Vence {pm.expMonth}/{pm.expYear}</span>
+                        </div>
+                        {selectedPaymentMethod === pm.id && <Check size={16} />}
+                      </button>
+                    ))
+                  ) : (
+                    <div className={styles.cardEmpty}>
+                      Este cliente no tiene tarjetas guardadas en Stripe.
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
+            </>
           )}
 
           <button

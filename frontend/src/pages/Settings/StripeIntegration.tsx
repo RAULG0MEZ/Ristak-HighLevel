@@ -26,6 +26,7 @@ export const StripeIntegration: React.FC = () => {
   const loadStripeConfig = async () => {
     try {
       const config = await getStripeConfig()
+      console.log('🔍 Stripe config recibida:', config)
 
       if (config.configured) {
         setIsConfigured(true)
@@ -40,9 +41,15 @@ export const StripeIntegration: React.FC = () => {
         if (config.hasLiveKey) {
           setStripeLiveKey('sk_live_************************************')
         }
+      } else {
+        console.log('⚠️ Stripe NO está configurado según el backend')
+        // Resetear estado si no está configurado
+        setIsConfigured(false)
+        setHasTestKey(false)
+        setHasLiveKey(false)
       }
     } catch (error) {
-      console.error('Error cargando configuración de Stripe:', error)
+      console.error('❌ Error cargando configuración de Stripe:', error)
     }
   }
 

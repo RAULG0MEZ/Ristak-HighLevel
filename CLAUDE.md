@@ -306,7 +306,10 @@ cd frontend && npm run build
   - 2 tipos de cobro: directo (solo monto) o desde productos guardados
   - Permite personalizar monto del producto seleccionado
   - Crea invoice en HighLevel y lo marca como pagado automáticamente
-  - Endpoints: GET /api/highlevel/products, GET /api/highlevel/products/:id/prices, POST /api/highlevel/invoices, POST /api/highlevel/invoices/:id/record-payment
+  - 3 opciones de pago: Enviar enlace, Cobrar tarjeta guardada (solo si Stripe está conectado), Registrar pago manual
+  - Detección automática de Stripe: Si no está configurado, solo muestra opciones de enlace y pago manual
+  - Alerta visual cuando Stripe no está disponible con instrucciones para configurarlo
+  - Endpoints: GET /api/highlevel/products, GET /api/highlevel/products/:id/prices, POST /api/highlevel/invoices, POST /api/highlevel/invoices/:id/record-payment, GET /api/highlevel/stripe-config
   - Integrado en página de Transactions con botón "+ Registrar pago"
   - ⚠️ Nota: Cargar productos requiere scope `products.readonly` en el token de HighLevel. El cobro directo funciona sin este scope.
 
