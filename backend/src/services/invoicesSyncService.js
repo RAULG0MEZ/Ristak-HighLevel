@@ -96,7 +96,57 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
             skipped++
           }
         } else {
-          // Crear nuevo invoice en BD local
+          // PRIMERO: Verificar si el contacto existe en la BD
+          const contactExists = await db.get(
+            'SELECT id FROM contacts WHERE id = ?',
+            [invoiceData.contact_id]
+          )
+
+          if (!contactExists && invoiceData.contact_id) {
+            // El contacto NO existe en BD local/remota, necesitamos crearlo
+            logger.warn(`Contacto ${invoiceData.contact_id} no existe en BD, obteniéndolo desde HighLevel...`)
+
+            try {
+              // Obtener datos del contacto desde HighLevel
+              const ghlClient = await getGHLClient()
+              const contactResponse = await ghlClient.getContact(invoiceData.contact_id)
+              const contact = contactResponse?.contact || contactResponse
+
+              if (contact && contact.id) {
+                // Preparar datos del contacto
+                const contactName = contact.name ||
+                  `${contact.firstName || ''} ${contact.lastName || ''}`.trim() ||
+                  contact.email ||
+                  contact.phone ||
+                  'Sin nombre'
+
+                // Insertar contacto en BD
+                await db.run(
+                  `INSERT INTO contacts (
+                    id, name, email, phone, source, created_at, updated_at
+                  ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+                  [
+                    contact.id,
+                    contactName,
+                    contact.email || null,
+                    contact.phone || null,
+                    'highlevel' // Fuente del contacto
+                  ]
+                )
+                logger.success(`Contacto ${contact.id} creado en BD: ${contactName}`)
+              } else {
+                logger.error(`No se pudo obtener información del contacto ${invoiceData.contact_id} desde HighLevel`)
+                skipped++
+                continue // Saltar este invoice
+              }
+            } catch (contactError) {
+              logger.error(`Error creando contacto ${invoiceData.contact_id}:`, contactError)
+              skipped++
+              continue // Saltar este invoice si no se pudo crear el contacto
+            }
+          }
+
+          // AHORA SÍ: Crear nuevo invoice en BD
           await db.run(
             `INSERT INTO payments (
               id, contact_id, amount, currency, status, payment_method,
