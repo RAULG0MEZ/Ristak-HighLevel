@@ -253,8 +253,8 @@ body.dark .formInput:focus {
 /* Scopes grid simple */
 .scopesGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: var(--spacing-sm);
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--spacing-md);
   margin-top: var(--spacing-md);
 }
 
@@ -510,6 +510,12 @@ body.dark .dropdownMenu {
 }
 
 /* Responsive */
+@media (max-width: 1200px) {
+  .scopesGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
 @media (max-width: 768px) {
   .headerContent {
     flex-direction: column;
