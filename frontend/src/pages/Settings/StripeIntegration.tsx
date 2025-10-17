@@ -69,7 +69,9 @@ export const StripeIntegration: React.FC = () => {
       await saveStripeConfig({
         testSecretKey: hasValidTestKey ? stripeTestKey.trim() : undefined,
         liveSecretKey: hasValidLiveKey ? stripeLiveKey.trim() : undefined,
-        mode: stripeMode
+        // Cuando NO está configurado, siempre usar 'test' por defecto
+        // Solo usar stripeMode cuando ya está configurado (tiene toggle visible)
+        mode: isConfigured ? stripeMode : 'test'
       })
 
       showToast('success', 'Configuración de Stripe guardada exitosamente')
@@ -261,42 +263,8 @@ export const StripeIntegration: React.FC = () => {
             </div>
           </>
         ) : (
-          /* VISTA NO CONFIGURADO: Formulario completo */
+          /* VISTA NO CONFIGURADO: Formulario simplificado */
           <>
-            {/* Modo de operación */}
-            <div className={styles.section}>
-              <h3 className={styles.sectionTitle}>Modo de Operación</h3>
-              <div className={styles.sectionContent}>
-                <div className={styles.radioGroup}>
-                  <label className={styles.radioLabel}>
-                    <input
-                      type="radio"
-                      value="test"
-                      checked={stripeMode === 'test'}
-                      onChange={(e) => setStripeMode(e.target.value as 'test' | 'live')}
-                      className={styles.radio}
-                    />
-                    <span>Modo Test (Sandbox)</span>
-                  </label>
-                  <label className={styles.radioLabel}>
-                    <input
-                      type="radio"
-                      value="live"
-                      checked={stripeMode === 'live'}
-                      onChange={(e) => setStripeMode(e.target.value as 'test' | 'live')}
-                      className={styles.radio}
-                    />
-                    <span>Modo Live (Producción)</span>
-                  </label>
-                </div>
-                <p className={styles.hint}>
-                  {stripeMode === 'test'
-                    ? '🧪 Modo de pruebas - usa tarjetas de test como 4242 4242 4242 4242'
-                    : '⚡ Modo de producción - se cobrarán tarjetas reales'}
-                </p>
-              </div>
-            </div>
-
             {/* Credenciales */}
             <div className={styles.section}>
               <h3 className={styles.sectionTitle}>Credenciales de Stripe</h3>
