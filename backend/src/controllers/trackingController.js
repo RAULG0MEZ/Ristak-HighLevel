@@ -1,5 +1,7 @@
 import { logger } from '../utils/logger.js'
 import { createSession, updateSession, getRecentSessions, getSessionById } from '../services/trackingService.js'
+import { getHighLevelConfig } from '../config/database.js'
+import fetch from 'node-fetch'
 
 /**
  * Genera el código JavaScript del pixel de tracking
@@ -307,6 +309,147 @@ export async function getSessionHandler(req, res) {
     res.json({ session })
   } catch (error) {
     logger.error('Error obteniendo sesión:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+}
+
+/**
+ * Detecta automáticamente el dominio de tracking
+ * GET /api/tracking/config
+ */
+export async function getTrackingConfig(req, res) {
+  try {
+    // Detectar dominio automáticamente
+    let trackingDomain = null
+
+    // 1. Intentar desde RENDER_EXTERNAL_URL
+    if (process.env.RENDER_EXTERNAL_URL) {
+      trackingDomain = process.env.RENDER_EXTERNAL_URL.replace(/^https?:\/\//, '')
+    }
+    // 2. Si no, usar el host del request
+    else if (req.headers.host) {
+      trackingDomain = req.headers.host
+    }
+
+    // Verificar si ya está configurado en HighLevel
+    const ghlConfig = await getHighLevelConfig()
+    let isConfigured = false
+
+    if (ghlConfig && ghlConfig.location_id && ghlConfig.api_token) {
+      try {
+        // Consultar custom values de HighLevel
+        const response = await fetch(
+          `https://services.leadconnectorhq.com/locations/${ghlConfig.location_id}/customValues`,
+          {
+            headers: {
+              'Authorization': `Bearer ${ghlConfig.api_token}`,
+              'Version': '2021-07-28'
+            }
+          }
+        )
+
+        if (response.ok) {
+          const data = await response.json()
+          const trackingValue = data.customValues?.find(cv => cv.id === 'rstktrack')
+          isConfigured = !!trackingValue && trackingValue.value && trackingValue.value.includes('<script')
+        }
+      } catch (error) {
+        logger.warn('Error verificando custom values:', error.message)
+      }
+    }
+
+    res.json({
+      trackingDomain,
+      isConfigured,
+      hasHighLevel: !!(ghlConfig && ghlConfig.location_id && ghlConfig.api_token)
+    })
+  } catch (error) {
+    logger.error('Error obteniendo configuración de tracking:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+}
+
+/**
+ * Configura automáticamente el tracking en HighLevel
+ * POST /api/tracking/configure
+ */
+export async function configureTracking(req, res) {
+  try {
+    // Obtener configuración de HighLevel
+    const ghlConfig = await getHighLevelConfig()
+
+    if (!ghlConfig || !ghlConfig.location_id || !ghlConfig.api_token) {
+      return res.status(400).json({
+        error: 'HighLevel no está configurado. Por favor configura tu cuenta de HighLevel primero.'
+      })
+    }
+
+    // Detectar dominio automáticamente
+    let trackingDomain = null
+
+    if (process.env.RENDER_EXTERNAL_URL) {
+      trackingDomain = process.env.RENDER_EXTERNAL_URL.replace(/^https?:\/\//, '')
+    } else if (req.headers.host) {
+      trackingDomain = req.headers.host
+    }
+
+    if (!trackingDomain) {
+      return res.status(400).json({
+        error: 'No se pudo detectar el dominio de tracking automáticamente'
+      })
+    }
+
+    // Generar el snippet
+    const snippet = `<!-- Pixel de Tracking Ristak -->
+<script async src="https://${trackingDomain}/snip.js"></script>`
+
+    logger.info(`Configurando tracking en HighLevel para dominio: ${trackingDomain}`)
+
+    // Crear/actualizar custom value en HighLevel
+    try {
+      const response = await fetch(
+        `https://services.leadconnectorhq.com/locations/${ghlConfig.location_id}/customValues`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${ghlConfig.api_token}`,
+            'Content-Type': 'application/json',
+            'Version': '2021-07-28'
+          },
+          body: JSON.stringify({
+            id: 'rstktrack',
+            name: 'Código de Tracking Ristak',
+            value: snippet
+          })
+        }
+      )
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        logger.error('Error creando custom value en HighLevel:', errorData)
+        return res.status(500).json({
+          error: 'No se pudo configurar el tracking en HighLevel',
+          details: errorData
+        })
+      }
+
+      logger.success(`Custom value 'rstktrack' creado/actualizado en HighLevel`)
+
+      res.json({
+        success: true,
+        message: 'Tracking configurado correctamente en HighLevel',
+        snippet,
+        instructions: 'Ahora agrega {{ custom_values.rstktrack }} en el <head> de tu sitio web en HighLevel'
+      })
+    } catch (error) {
+      logger.error('Error llamando API de HighLevel:', error)
+      return res.status(500).json({
+        error: 'Error comunicándose con HighLevel',
+        details: error.message
+      })
+    }
+  } catch (error) {
+    logger.error('Error configurando tracking:', error)
     res.status(500).json({ error: 'Internal server error' })
   }
 }

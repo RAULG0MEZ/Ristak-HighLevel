@@ -3,7 +3,9 @@ import {
   servePixel,
   collectEvent,
   getSessionsHandler,
-  getSessionHandler
+  getSessionHandler,
+  getTrackingConfig,
+  configureTracking
 } from '../controllers/trackingController.js'
 
 const router = express.Router()
@@ -17,5 +19,9 @@ router.post('/collect', collectEvent)
 // Obtener sesiones (dashboard)
 router.get('/sessions', getSessionsHandler)
 router.get('/sessions/:id', getSessionHandler)
+
+// Configuración automática
+router.get('/config', getTrackingConfig)
+router.post('/configure', configureTracking)
 
 export default router

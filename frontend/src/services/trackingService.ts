@@ -38,6 +38,12 @@ export interface TrackingStats {
   }>
 }
 
+export interface TrackingConfig {
+  trackingDomain: string | null
+  isConfigured: boolean
+  hasHighLevel: boolean
+}
+
 /**
  * Obtiene las sesiones recientes de tracking
  */
@@ -62,8 +68,26 @@ export function generateSnippet(domain: string): string {
 <script async src="https://${domain}/snip.js"></script>`
 }
 
+/**
+ * Obtiene la configuración automática del tracking
+ */
+export async function getTrackingConfig(): Promise<TrackingConfig> {
+  const response = await apiClient.get<TrackingConfig>('/api/tracking/config')
+  return response
+}
+
+/**
+ * Configura automáticamente el tracking en HighLevel
+ */
+export async function configureTracking(): Promise<{ success: boolean; message: string; snippet?: string; instructions?: string; error?: string }> {
+  const response = await apiClient.post<any>('/api/tracking/configure')
+  return response
+}
+
 export const trackingService = {
   getSessions,
   getSessionById,
-  generateSnippet
+  generateSnippet,
+  getTrackingConfig,
+  configureTracking
 }
