@@ -40,7 +40,23 @@
   gap: var(--spacing-md);
 }
 
-/* .neutralPaymentButton - eliminado, ahora usa variant="primary" del Button */
+/* Botón de registrar pago con contorno visible en dark mode */
+.registerPaymentButton {
+  background-color: #0f172a !important;
+  color: white !important;
+  border: 1px solid rgba(30, 41, 59, 0.5) !important;
+}
+
+body.dark .registerPaymentButton {
+  background-color: #0f172a !important;
+  border: 1px solid rgba(148, 163, 184, 0.4) !important;
+  box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.15) !important;
+}
+
+body.dark .registerPaymentButton:hover {
+  border-color: rgba(148, 163, 184, 0.6) !important;
+  box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.25) !important;
+}
 
 .kpiRow {
   display: grid;
