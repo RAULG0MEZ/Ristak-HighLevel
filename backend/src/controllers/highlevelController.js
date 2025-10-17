@@ -1213,20 +1213,57 @@ export const saveStripeConfig = async (req, res) => {
     const encryptedTestKey = testSecretKey ? encrypt(testSecretKey.trim()) : null;
     const encryptedLiveKey = liveSecretKey ? encrypt(liveSecretKey.trim()) : null;
 
-    // Actualizar configuración
-    await db.run(
-      `UPDATE highlevel_config
-       SET stripe_test_secret_key_encrypted = ?,
-           stripe_live_secret_key_encrypted = ?,
-           stripe_mode = ?
-       WHERE location_id = ?`,
-      [
-        encryptedTestKey,
-        encryptedLiveKey,
-        mode,
-        config.location_id
-      ]
-    );
+    // Intentar actualizar configuración (puede fallar si las columnas no existen)
+    try {
+      await db.run(
+        `UPDATE highlevel_config
+         SET stripe_test_secret_key_encrypted = ?,
+             stripe_live_secret_key_encrypted = ?,
+             stripe_mode = ?
+         WHERE location_id = ?`,
+        [
+          encryptedTestKey,
+          encryptedLiveKey,
+          mode,
+          config.location_id
+        ]
+      );
+    } catch (updateError) {
+      // Si falla porque las columnas no existen, agregarlas primero
+      if (updateError.message.includes('does not exist') || updateError.message.includes('no such column')) {
+        logger.warn('Columnas de Stripe no existen, agregándolas...');
+
+        // Agregar columnas
+        try {
+          await db.run('ALTER TABLE highlevel_config ADD COLUMN stripe_test_secret_key_encrypted TEXT');
+        } catch (e) { /* ignorar si ya existe */ }
+
+        try {
+          await db.run('ALTER TABLE highlevel_config ADD COLUMN stripe_live_secret_key_encrypted TEXT');
+        } catch (e) { /* ignorar si ya existe */ }
+
+        try {
+          await db.run('ALTER TABLE highlevel_config ADD COLUMN stripe_mode TEXT DEFAULT \'test\'');
+        } catch (e) { /* ignorar si ya existe */ }
+
+        // Reintentar el UPDATE
+        await db.run(
+          `UPDATE highlevel_config
+           SET stripe_test_secret_key_encrypted = ?,
+               stripe_live_secret_key_encrypted = ?,
+               stripe_mode = ?
+           WHERE location_id = ?`,
+          [
+            encryptedTestKey,
+            encryptedLiveKey,
+            mode,
+            config.location_id
+          ]
+        );
+      } else {
+        throw updateError;
+      }
+    }
 
     logger.info(`Configuración de Stripe guardada para location ${config.location_id} en modo ${mode}`);
 
@@ -1251,15 +1288,31 @@ export const saveStripeConfig = async (req, res) => {
  */
 export const getStripeConfig = async (req, res) => {
   try {
-    const config = await db.get(
-      'SELECT stripe_mode, stripe_test_secret_key_encrypted, stripe_live_secret_key_encrypted FROM highlevel_config LIMIT 1'
-    );
+    // Intentar obtener config con columnas de Stripe
+    let config;
+    try {
+      config = await db.get(
+        'SELECT stripe_mode, stripe_test_secret_key_encrypted, stripe_live_secret_key_encrypted FROM highlevel_config LIMIT 1'
+      );
+    } catch (selectError) {
+      // Si falla (columnas no existen), retornar no configurado
+      logger.warn(`Columnas de Stripe no existen todavía: ${selectError.message}`);
+      return res.json({
+        success: true,
+        configured: false,
+        mode: null,
+        hasTestKey: false,
+        hasLiveKey: false
+      });
+    }
 
     if (!config) {
       return res.json({
         success: true,
         configured: false,
-        mode: null
+        mode: null,
+        hasTestKey: false,
+        hasLiveKey: false
       });
     }
 
