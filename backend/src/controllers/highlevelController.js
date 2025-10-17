@@ -1205,42 +1205,67 @@ export const saveStripeConfig = async (req, res) => {
     const hasExistingTestKey = !!config.stripe_test_secret_key_encrypted;
     const hasExistingLiveKey = !!config.stripe_live_secret_key_encrypted;
 
-    // Validar que existan keys para el modo seleccionado
-    // Si se están enviando keys nuevas, validar esas
-    // Si no, validar que ya existan keys guardadas para el modo
-    const willHaveTestKey = testSecretKey || hasExistingTestKey;
-    const willHaveLiveKey = liveSecretKey || hasExistingLiveKey;
+    // Calcular qué keys tendremos DESPUÉS del UPDATE
+    // Si se envía testSecretKey !== undefined, usar ese valor (puede ser '' para borrar)
+    // Si NO se envía (undefined), mantener el valor existente
+    let willHaveTestKey = hasExistingTestKey;
+    let willHaveLiveKey = hasExistingLiveKey;
 
-    if (mode === 'test' && !willHaveTestKey) {
-      return res.status(400).json({
-        success: false,
-        error: 'Se requiere la clave de prueba para modo test. Guarda primero tu Test Secret Key.'
-      });
+    if (testSecretKey !== undefined) {
+      willHaveTestKey = !!testSecretKey.trim();
     }
 
-    if (mode === 'live' && !willHaveLiveKey) {
-      return res.status(400).json({
-        success: false,
-        error: 'Se requiere la clave de producción para modo live. Guarda primero tu Live Secret Key.'
-      });
+    if (liveSecretKey !== undefined) {
+      willHaveLiveKey = !!liveSecretKey.trim();
     }
 
-    // Encriptar claves solo si se envían
-    const encryptedTestKey = testSecretKey ? encrypt(testSecretKey.trim()) : null;
-    const encryptedLiveKey = liveSecretKey ? encrypt(liveSecretKey.trim()) : null;
+    // Caso especial: Si se están borrando AMBAS keys (desconectar), permitirlo sin validación
+    const isDeletingAllKeys = (testSecretKey === '' && liveSecretKey === '');
 
-    // Construir UPDATE dinámico: solo actualizar campos que se envían
+    if (!isDeletingAllKeys) {
+      // Validar que existan keys para el modo seleccionado
+      if (mode === 'test' && !willHaveTestKey) {
+        return res.status(400).json({
+          success: false,
+          error: 'Se requiere la clave de prueba para modo test. Guarda primero tu Test Secret Key.'
+        });
+      }
+
+      if (mode === 'live' && !willHaveLiveKey) {
+        return res.status(400).json({
+          success: false,
+          error: 'Se requiere la clave de producción para modo live. Guarda primero tu Live Secret Key.'
+        });
+      }
+    }
+
+    // Encriptar claves solo si se envían Y no están vacías
+    // Si se envía string vacío, significa "borrar esta key"
+    let encryptedTestKey = null;
+    let encryptedLiveKey = null;
+
+    if (testSecretKey !== undefined) {
+      // Se envió testSecretKey (puede ser vacío o con valor)
+      encryptedTestKey = testSecretKey.trim() ? encrypt(testSecretKey.trim()) : null;
+    }
+
+    if (liveSecretKey !== undefined) {
+      // Se envió liveSecretKey (puede ser vacío o con valor)
+      encryptedLiveKey = liveSecretKey.trim() ? encrypt(liveSecretKey.trim()) : null;
+    }
+
+    // Construir UPDATE dinámico: solo actualizar campos que se envían explícitamente
     const updates = [];
     const values = [];
 
-    if (encryptedTestKey) {
+    if (testSecretKey !== undefined) {
       updates.push('stripe_test_secret_key_encrypted = ?');
-      values.push(encryptedTestKey);
+      values.push(encryptedTestKey); // Puede ser null (borrar) o encrypted (actualizar)
     }
 
-    if (encryptedLiveKey) {
+    if (liveSecretKey !== undefined) {
       updates.push('stripe_live_secret_key_encrypted = ?');
-      values.push(encryptedLiveKey);
+      values.push(encryptedLiveKey); // Puede ser null (borrar) o encrypted (actualizar)
     }
 
     // El modo SIEMPRE se actualiza
