@@ -126,14 +126,25 @@ export const WebTracking: React.FC = () => {
         <div className={styles.pageHeader}>
           <div className={styles.headerContent}>
             <div className={styles.headerLeft}>
-              <div className={styles.logoContainer} style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
-                <Activity size={32} color="white" />
-              </div>
-              <div>
-                <h1 className={styles.pageTitle}>Web Tracking</h1>
-                <p className={styles.pageSubtitle}>
-                  Captura visitas, UTMs y atribución de campañas
-                </p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <div style={{
+                  width: '56px',
+                  height: '56px',
+                  borderRadius: '12px',
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  <Activity size={28} color="white" />
+                </div>
+                <div>
+                  <h1 className={styles.pageTitle}>Web Tracking</h1>
+                  <p className={styles.pageSubtitle}>
+                    Captura visitas, UTMs y atribución de campañas
+                  </p>
+                </div>
               </div>
             </div>
           </div>
