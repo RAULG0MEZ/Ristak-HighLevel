@@ -113,7 +113,7 @@
   min-width: 280px;
   max-height: 320px;
   overflow-y: auto;
-  background-color: var(--color-white);
+  background-color: var(--color-background);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
@@ -158,7 +158,7 @@
   font-size: 0.875rem;
   font-weight: 500;
   color: var(--color-text-primary);
-  background-color: var(--color-gray-50);
+  background-color: var(--color-background);
   border: none;
   border-bottom: 1px solid rgba(148, 163, 184, 0.25);
   border-radius: 0;
@@ -183,7 +183,7 @@
 }
 
 .dropdownItem:hover {
-  background-color: var(--color-gray-100);
+  background-color: var(--color-background-tertiary);
   transform: translateX(2px);
 }
 
@@ -360,6 +360,7 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  justify-content: center;
 }
 
 .dateSelectors {
@@ -420,7 +421,7 @@
   min-width: 140px;
   max-height: 280px;
   overflow-y: auto;
-  background-color: var(--color-white);
+  background-color: var(--color-background);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
@@ -435,7 +436,7 @@
   text-align: left;
   font-size: 0.875rem;
   color: var(--color-text-primary);
-  background-color: var(--color-gray-50);
+  background-color: var(--color-background);
   border: none;
   border-bottom: 1px solid rgba(148, 163, 184, 0.25);
   border-radius: 0;
@@ -455,7 +456,7 @@
 }
 
 .selectorItem:hover {
-  background-color: var(--color-gray-100);
+  background-color: var(--color-background-tertiary);
 }
 
 .selectorItemActive {
@@ -696,30 +697,32 @@
   flex: 1;
   display: grid;
   grid-template-columns: 60px repeat(7, 1fr);
-  overflow-y: auto;
+  overflow-y: scroll;
   overflow-x: hidden;
   position: relative;
   min-height: 0;
   height: 100%;
-  scrollbar-gutter: stable both-edges;
+  scrollbar-gutter: stable;
 }
 
 .weekGrid::-webkit-scrollbar {
-  width: 8px;
+  width: 10px;
+  display: block;
 }
 
 .weekGrid::-webkit-scrollbar-track {
-  background: var(--color-gray-50);
+  background: var(--color-gray-100);
   border-radius: var(--radius-sm);
 }
 
 .weekGrid::-webkit-scrollbar-thumb {
-  background: var(--color-gray-300);
+  background: var(--color-gray-400);
   border-radius: var(--radius-sm);
+  border: 2px solid var(--color-gray-100);
 }
 
 .weekGrid::-webkit-scrollbar-thumb:hover {
-  background: var(--color-gray-400);
+  background: var(--color-gray-500);
 }
 
 .timeColumn {
@@ -898,30 +901,32 @@
   flex: 1;
   display: grid;
   grid-template-columns: 60px 1fr;
-  overflow-y: auto;
+  overflow-y: scroll;
   overflow-x: hidden;
   position: relative;
   min-height: 0;
   height: 100%;
-  scrollbar-gutter: stable both-edges;
+  scrollbar-gutter: stable;
 }
 
 .dayGrid::-webkit-scrollbar {
-  width: 8px;
+  width: 10px;
+  display: block;
 }
 
 .dayGrid::-webkit-scrollbar-track {
-  background: var(--color-gray-50);
+  background: var(--color-gray-100);
   border-radius: var(--radius-sm);
 }
 
 .dayGrid::-webkit-scrollbar-thumb {
-  background: var(--color-gray-300);
+  background: var(--color-gray-400);
   border-radius: var(--radius-sm);
+  border: 2px solid var(--color-gray-100);
 }
 
 .dayGrid::-webkit-scrollbar-thumb:hover {
-  background: var(--color-gray-400);
+  background: var(--color-gray-500);
 }
 
 .dayEvent {
@@ -975,11 +980,23 @@
   border-radius: 50%;
   background-color: var(--color-error-500);
   box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+  animation: currentTimePulse 2s ease-in-out infinite;
+}
+
+@keyframes currentTimePulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+  }
+  50% {
+    transform: scale(1.2);
+    box-shadow: 0 0 0 6px rgba(239, 68, 68, 0.1);
+  }
 }
 
 .currentTimeLabel {
   position: absolute;
-  right: 8px;
+  left: 8px;
   top: -10px;
   font-size: 0.688rem;
   font-weight: 600;

@@ -165,13 +165,10 @@ export const Appointments: React.FC = () => {
     if (!locationId || !accessToken || !selectedCalendar) return;
 
     try {
-      // Usar nueva función que SIEMPRE trae eventos del día actual
-      // independiente de la vista (mes/semana/día)
-      const upcomingData = await calendarsService.getTodayUpcomingAppointments(
+      const upcomingData = await calendarsService.getFutureAppointments(
         selectedCalendar.id,
         locationId,
-        accessToken,
-        8 // Límite de 8 citas
+        accessToken
       );
 
       setUpcomingEvents(upcomingData);
@@ -268,8 +265,8 @@ export const Appointments: React.FC = () => {
 
   // Próximas citas (siempre desde HOY, no del rango visible)
   const upcomingAppointments = useMemo(() => {
-    return calendarsService.getUpcomingAppointments(events, 8);
-  }, [events]);
+    return upcomingEvents.slice().sort((a, b) => a.startTime.localeCompare(b.startTime));
+  }, [upcomingEvents]);
 
   // Navegación del calendario
   const handlePrev = () => {

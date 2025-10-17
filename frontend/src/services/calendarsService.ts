@@ -339,6 +339,35 @@ export const calendarsService = {
     }
   },
 
+  async getFutureAppointments(
+    calendarId: string,
+    locationId: string,
+    accessToken: string
+  ): Promise<CalendarEvent[]> {
+    try {
+      const now = new Date();
+      const startTimestamp = now.getTime();
+
+      const endDate = new Date(now);
+      endDate.setFullYear(endDate.getFullYear() + 1);
+      const endTimestamp = endDate.getTime();
+
+      const events = await this.getEvents(
+        locationId,
+        startTimestamp,
+        endTimestamp,
+        accessToken,
+        calendarId
+      );
+
+      return events
+        .filter((event: CalendarEvent) => new Date(event.startTime) >= now)
+        .sort((a: CalendarEvent, b: CalendarEvent) => a.startTime.localeCompare(b.startTime));
+    } catch (error) {
+      return [];
+    }
+  },
+
   /**
    * Convertir horarios de OpenHours a formato más legible
    */
