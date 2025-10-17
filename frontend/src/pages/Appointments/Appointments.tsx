@@ -162,10 +162,25 @@ export const Appointments: React.FC = () => {
     let end: Date;
 
     if (viewMode === 'month') {
+      // Para vista mensual, necesitamos incluir días del mes anterior/siguiente que se muestran en el grid
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth();
+
       // Primer día del mes
-      start = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+      const firstDay = new Date(year, month, 1);
+      // Lunes de la semana del primer día
+      start = new Date(firstDay);
+      const dayOfWeek = (firstDay.getDay() + 6) % 7; // 0 = lunes
+      start.setDate(firstDay.getDate() - dayOfWeek);
+      start.setHours(0, 0, 0, 0);
+
       // Último día del mes
-      end = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+      const lastDay = new Date(year, month + 1, 0);
+      // Domingo de la semana del último día
+      end = new Date(lastDay);
+      const lastDayOfWeek = (lastDay.getDay() + 6) % 7;
+      const daysToAdd = 6 - lastDayOfWeek;
+      end.setDate(lastDay.getDate() + daysToAdd);
       end.setHours(23, 59, 59, 999);
     } else if (viewMode === 'week') {
       // Lunes de la semana actual
@@ -205,11 +220,19 @@ export const Appointments: React.FC = () => {
     const dayOfWeek = (firstDay.getDay() + 6) % 7; // 0 = lunes
     startDay.setDate(firstDay.getDate() - dayOfWeek);
 
+    // Calcular cuántas semanas necesitamos (5 o 6)
+    const lastDayOfMonth = new Date(year, month + 1, 0);
+    const lastDayOfWeek = (lastDayOfMonth.getDay() + 6) % 7;
+    const daysAfterMonth = 6 - lastDayOfWeek;
+    const totalDays = dayOfWeek + lastDayOfMonth.getDate() + daysAfterMonth;
+    const weeks = Math.ceil(totalDays / 7);
+    const cellCount = weeks * 7; // 35 o 42 celdas
+
     const cells: DayCell[] = [];
     const eventsByDate = calendarsService.groupEventsByDate(events);
 
-    // Generar 28 celdas (4 semanas)
-    for (let i = 0; i < 28; i++) {
+    // Generar todas las celdas necesarias
+    for (let i = 0; i < cellCount; i++) {
       const date = new Date(startDay);
       date.setDate(startDay.getDate() + i);
 
@@ -228,8 +251,8 @@ export const Appointments: React.FC = () => {
 
   // Próximas citas (siempre desde HOY, no del rango visible)
   const upcomingAppointments = useMemo(() => {
-    return calendarsService.getUpcomingAppointments(upcomingEvents, 8);
-  }, [upcomingEvents]);
+    return calendarsService.getUpcomingAppointments(events, 8);
+  }, [events]);
 
   // Navegación del calendario
   const handlePrev = () => {
