@@ -245,18 +245,260 @@
   margin-top: 0.125rem;
 }
 
-/* Week/Day View */
+/* Week View */
 .weekView {
   flex: 1;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 400px;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
-.comingSoon {
-  font-size: 0.875rem;
+.weekHeader {
+  display: grid;
+  grid-template-columns: 60px repeat(7, 1fr);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.weekDayHeader {
+  text-align: center;
+  padding: 0.5rem;
+}
+
+.weekDayName {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  margin-bottom: 0.25rem;
+}
+
+.weekDayNumber {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+}
+
+.weekDayToday {
+  background-color: var(--color-primary-500);
+  color: white;
+}
+
+.weekGrid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 60px repeat(7, 1fr);
+  overflow-y: auto;
+  position: relative;
+  min-height: 0;
+}
+
+.timeColumn {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--color-border);
+  padding-right: 0.5rem;
+}
+
+.timeSlot {
+  height: 60px;
+  display: flex;
+  align-items: flex-start;
+  padding-top: 0.25rem;
+  border-top: 1px solid var(--color-gray-100);
+}
+
+.timeLabel {
+  font-size: 0.688rem;
   color: var(--color-text-tertiary);
+  font-weight: 500;
+}
+
+.dayColumn {
+  position: relative;
+  border-right: 1px solid var(--color-gray-100);
+}
+
+.dayColumn:last-child {
+  border-right: none;
+}
+
+.hourLine {
+  height: 60px;
+  border-top: 1px solid var(--color-gray-100);
+  position: relative;
+}
+
+.weekEvent {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  border-radius: var(--radius-md);
+  padding: 0.25rem 0.5rem;
+  overflow: hidden;
+  cursor: pointer;
+  color: white;
+  font-size: 0.75rem;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  z-index: 1;
+}
+
+.weekEvent:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+  z-index: 2;
+}
+
+.weekEventTime {
+  font-weight: 700;
+  font-size: 0.688rem;
+  margin-bottom: 0.125rem;
+}
+
+.weekEventTitle {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Day View */
+.dayView {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.dayHeader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 0.5rem;
+}
+
+.dayHeaderTitle {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.dayHeaderName {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+}
+
+.dayHeaderNumber {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  width: 3.5rem;
+  height: 3.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+}
+
+.dayHeaderToday {
+  background-color: var(--color-primary-500);
+  color: white;
+}
+
+.dayGrid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 60px 1fr;
+  overflow-y: auto;
+  position: relative;
+  min-height: 0;
+}
+
+.dayEvent {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  border-radius: var(--radius-md);
+  padding: 0.5rem;
+  overflow: hidden;
+  cursor: pointer;
+  color: white;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  z-index: 1;
+}
+
+.dayEvent:hover {
+  transform: translateX(2px);
+  box-shadow: var(--shadow-md);
+  z-index: 2;
+}
+
+.dayEventTime {
+  font-weight: 700;
+  font-size: 0.813rem;
+  margin-bottom: 0.25rem;
+}
+
+.dayEventTitle {
+  font-weight: 600;
+  font-size: 0.938rem;
+  margin-bottom: 0.25rem;
+}
+
+.dayEventStatus {
+  font-size: 0.75rem;
+  opacity: 0.9;
+  text-transform: capitalize;
+}
+
+/* Current Time Indicator */
+.currentTimeLine {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background-color: var(--color-error-500);
+  z-index: 10;
+  pointer-events: none;
+}
+
+.currentTimeDot {
+  position: absolute;
+  left: -4px;
+  top: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--color-error-500);
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+}
+
+.currentTimeLabel {
+  position: absolute;
+  right: 8px;
+  top: -10px;
+  font-size: 0.688rem;
+  font-weight: 600;
+  color: var(--color-error-500);
+  background-color: white;
+  padding: 0.125rem 0.375rem;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-xs);
 }
 
 /* Upcoming Card */

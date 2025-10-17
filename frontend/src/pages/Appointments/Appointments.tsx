@@ -422,9 +422,201 @@ export const Appointments: React.FC = () => {
             </div>
           )}
 
-          {(viewMode === 'week' || viewMode === 'day') && (
+          {viewMode === 'week' && (
             <div className={styles.weekView}>
-              <p className={styles.comingSoon}>Vista de semana/día en desarrollo</p>
+              {/* Encabezados de días de la semana */}
+              <div className={styles.weekHeader}>
+                <div className={styles.timeColumn}></div>
+                {(() => {
+                  const startOfWeek = new Date(currentDate);
+                  const dayOfWeek = (currentDate.getDay() + 6) % 7;
+                  startOfWeek.setDate(currentDate.getDate() - dayOfWeek);
+
+                  return Array.from({ length: 7 }).map((_, i) => {
+                    const date = new Date(startOfWeek);
+                    date.setDate(startOfWeek.getDate() + i);
+                    const isToday = date.toDateString() === new Date().toDateString();
+
+                    return (
+                      <div key={i} className={styles.weekDayHeader}>
+                        <div className={styles.weekDayName}>{DAYS_SHORT[i]}</div>
+                        <div className={`${styles.weekDayNumber} ${isToday ? styles.weekDayToday : ''}`}>
+                          {date.getDate()}
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+
+              {/* Grid de horarios */}
+              <div className={styles.weekGrid}>
+                <div className={styles.timeColumn}>
+                  {Array.from({ length: 24 }).map((_, hour) => (
+                    <div key={hour} className={styles.timeSlot}>
+                      <span className={styles.timeLabel}>{formatTime12h(`2000-01-01T${String(hour).padStart(2, '0')}:00:00`)}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Columnas de días */}
+                {(() => {
+                  const startOfWeek = new Date(currentDate);
+                  const dayOfWeek = (currentDate.getDay() + 6) % 7;
+                  startOfWeek.setDate(currentDate.getDate() - dayOfWeek);
+
+                  return Array.from({ length: 7 }).map((_, dayIndex) => {
+                    const date = new Date(startOfWeek);
+                    date.setDate(startOfWeek.getDate() + dayIndex);
+                    const dateStr = date.toISOString().split('T')[0];
+                    const dayEvents = calendarsService.groupEventsByDate(events)[dateStr] || [];
+
+                    return (
+                      <div key={dayIndex} className={styles.dayColumn}>
+                        {/* Líneas de hora */}
+                        {Array.from({ length: 24 }).map((_, hour) => (
+                          <div key={hour} className={styles.hourLine}></div>
+                        ))}
+
+                        {/* Eventos posicionados */}
+                        {dayEvents.map((event) => {
+                          const startDate = new Date(event.startTime);
+                          const endDate = new Date(event.endTime);
+                          const startHour = startDate.getHours() + startDate.getMinutes() / 60;
+                          const endHour = endDate.getHours() + endDate.getMinutes() / 60;
+                          const top = (startHour / 24) * 100;
+                          const height = ((endHour - startHour) / 24) * 100;
+
+                          return (
+                            <div
+                              key={event.id}
+                              className={styles.weekEvent}
+                              style={{
+                                top: `${top}%`,
+                                height: `${height}%`,
+                                backgroundColor: getEventColor(event.appointmentStatus),
+                              }}
+                              title={`${event.title} - ${formatTime12h(event.startTime)} a ${formatTime12h(event.endTime)}`}
+                            >
+                              <div className={styles.weekEventTime}>
+                                {formatTime12h(event.startTime)}
+                              </div>
+                              <div className={styles.weekEventTitle}>{event.title}</div>
+                            </div>
+                          );
+                        })}
+
+                        {/* Indicador de hora actual */}
+                        {(() => {
+                          const now = new Date();
+                          const isToday = date.toDateString() === now.toDateString();
+                          if (!isToday) return null;
+
+                          const currentHour = now.getHours() + now.getMinutes() / 60;
+                          const position = (currentHour / 24) * 100;
+
+                          return (
+                            <div className={styles.currentTimeLine} style={{ top: `${position}%` }}>
+                              <div className={styles.currentTimeDot}></div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+          )}
+
+          {viewMode === 'day' && (
+            <div className={styles.dayView}>
+              {/* Header del día */}
+              <div className={styles.dayHeader}>
+                <div className={styles.dayHeaderTitle}>
+                  {(() => {
+                    const dayName = DAYS_SHORT[(currentDate.getDay() + 6) % 7];
+                    const isToday = currentDate.toDateString() === new Date().toDateString();
+                    return (
+                      <>
+                        <span className={styles.dayHeaderName}>{dayName}</span>
+                        <span className={`${styles.dayHeaderNumber} ${isToday ? styles.dayHeaderToday : ''}`}>
+                          {currentDate.getDate()}
+                        </span>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* Grid de horarios del día */}
+              <div className={styles.dayGrid}>
+                <div className={styles.timeColumn}>
+                  {Array.from({ length: 24 }).map((_, hour) => (
+                    <div key={hour} className={styles.timeSlot}>
+                      <span className={styles.timeLabel}>{formatTime12h(`2000-01-01T${String(hour).padStart(2, '0')}:00:00`)}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className={styles.dayColumn}>
+                  {/* Líneas de hora */}
+                  {Array.from({ length: 24 }).map((_, hour) => (
+                    <div key={hour} className={styles.hourLine}></div>
+                  ))}
+
+                  {/* Eventos del día */}
+                  {(() => {
+                    const dateStr = currentDate.toISOString().split('T')[0];
+                    const dayEvents = calendarsService.groupEventsByDate(events)[dateStr] || [];
+
+                    return dayEvents.map((event) => {
+                      const startDate = new Date(event.startTime);
+                      const endDate = new Date(event.endTime);
+                      const startHour = startDate.getHours() + startDate.getMinutes() / 60;
+                      const endHour = endDate.getHours() + endDate.getMinutes() / 60;
+                      const top = (startHour / 24) * 100;
+                      const height = ((endHour - startHour) / 24) * 100;
+
+                      return (
+                        <div
+                          key={event.id}
+                          className={styles.dayEvent}
+                          style={{
+                            top: `${top}%`,
+                            height: `${height}%`,
+                            backgroundColor: getEventColor(event.appointmentStatus),
+                          }}
+                          title={`${event.title} - ${formatTime12h(event.startTime)} a ${formatTime12h(event.endTime)}`}
+                        >
+                          <div className={styles.dayEventTime}>
+                            {formatTime12h(event.startTime)} - {formatTime12h(event.endTime)}
+                          </div>
+                          <div className={styles.dayEventTitle}>{event.title}</div>
+                          <div className={styles.dayEventStatus}>{event.appointmentStatus}</div>
+                        </div>
+                      );
+                    });
+                  })()}
+
+                  {/* Indicador de hora actual */}
+                  {(() => {
+                    const now = new Date();
+                    const isToday = currentDate.toDateString() === now.toDateString();
+                    if (!isToday) return null;
+
+                    const currentHour = now.getHours() + now.getMinutes() / 60;
+                    const position = (currentHour / 24) * 100;
+
+                    return (
+                      <div className={styles.currentTimeLine} style={{ top: `${position}%` }}>
+                        <div className={styles.currentTimeDot}></div>
+                        <div className={styles.currentTimeLabel}>{formatTime12h(now.toISOString())}</div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
             </div>
           )}
         </Card>
