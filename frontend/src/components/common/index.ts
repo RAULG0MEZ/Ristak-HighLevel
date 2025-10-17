@@ -55,3 +55,4 @@ export type { ModalType } from './Modal'
 
 // Componentes de sistema
 export { StorageAlert } from './StorageAlert'
+export { TestModeBanner } from './TestModeBanner'
