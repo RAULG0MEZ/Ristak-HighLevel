@@ -166,7 +166,7 @@ export const Appointments: React.FC = () => {
 
       setUpcomingEvents(upcomingData);
     } catch (error) {
-      console.error('Error al cargar próximas citas:', error);
+      // Error silencioso - no afecta funcionalidad principal
     }
   };
 

@@ -14,7 +14,6 @@
 export function buildInvoicePaymentUrl(domain, invoiceId) {
   if (!domain) {
     // Fallback si no hay domain configurado
-    console.warn('⚠️  No hay domain configurado, usando URL de fallback');
     return `https://payments.msgsndr.com/invoice/${invoiceId}`;
   }
 
@@ -33,7 +32,6 @@ export function buildInvoicePaymentUrl(domain, invoiceId) {
 export function buildSchedulePaymentUrl(domain, scheduleId) {
   if (!domain) {
     // Fallback si no hay domain configurado
-    console.warn('⚠️  No hay domain configurado, usando URL de fallback');
     return `https://payments.msgsndr.com/invoice/schedule/${scheduleId}`;
   }
 

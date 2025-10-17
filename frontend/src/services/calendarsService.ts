@@ -126,7 +126,6 @@ export const calendarsService = {
       });
       return Array.isArray(data) ? data : [];
     } catch (error) {
-      console.error('[Calendars Service] Error al obtener calendarios:', error);
       return [];
     }
   },
@@ -141,7 +140,6 @@ export const calendarsService = {
       });
       return data;
     } catch (error) {
-      console.error('[Calendars Service] Error al obtener calendario:', error);
       return null;
     }
   },
@@ -171,7 +169,6 @@ export const calendarsService = {
       const data = await apiClient.get<CalendarEvent[]>('/calendars/events', { params });
       return Array.isArray(data) ? data : [];
     } catch (error) {
-      console.error('[Calendars Service] Error al obtener eventos:', error);
       return [];
     }
   },
@@ -192,7 +189,6 @@ export const calendarsService = {
       });
       return Array.isArray(data) ? data : [];
     } catch (error) {
-      console.error('[Calendars Service] Error al obtener slots disponibles:', error);
       return [];
     }
   },
@@ -208,7 +204,6 @@ export const calendarsService = {
       });
       return data;
     } catch (error) {
-      console.error('[Calendars Service] Error al crear cita:', error);
       throw error;
     }
   },
@@ -228,7 +223,6 @@ export const calendarsService = {
       });
       return data;
     } catch (error) {
-      console.error('[Calendars Service] Error al actualizar cita:', error);
       throw error;
     }
   },
@@ -243,7 +237,6 @@ export const calendarsService = {
       });
       return true;
     } catch (error) {
-      console.error('[Calendars Service] Error al eliminar evento:', error);
       throw error;
     }
   },
@@ -342,7 +335,6 @@ export const calendarsService = {
         .sort((a: CalendarEvent, b: CalendarEvent) => a.startTime.localeCompare(b.startTime))
         .slice(0, limit);
     } catch (error) {
-      console.error('[Calendars Service] Error al obtener citas próximas de hoy:', error);
       return [];
     }
   },

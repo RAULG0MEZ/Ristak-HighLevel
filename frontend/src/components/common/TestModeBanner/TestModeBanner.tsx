@@ -16,7 +16,7 @@ export const TestModeBanner = () => {
       // Solo mostrar si Stripe está configurado Y está en modo test
       setIsTestMode(config.configured && config.mode === 'test')
     } catch (error) {
-      console.error('Error al cargar configuración de Stripe:', error)
+      // Error silencioso
     } finally {
       setLoading(false)
     }

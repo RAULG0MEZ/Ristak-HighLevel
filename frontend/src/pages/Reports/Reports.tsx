@@ -416,7 +416,6 @@ export const Reports: React.FC = () => {
         setMetrics(result.metrics)
         setMetricsRange(result.range)
       } catch (error) {
-        console.error(error)
         setMetrics([])
         showToast('error', 'No se pudieron cargar las métricas', 'Revisa tu conexión e intenta nuevamente')
       } finally {
@@ -434,7 +433,6 @@ export const Reports: React.FC = () => {
         const result = await reportsService.getSummary({ from: apiRange.from, to: apiRange.to, scope: scopeParam })
         setSummary(result)
       } catch (error) {
-        console.error(error)
         setSummary(null)
       } finally {
         setLoadingSummary(false)
@@ -540,7 +538,6 @@ export const Reports: React.FC = () => {
         loading: false
       }))
     } catch (error) {
-      console.error(error)
       setModalState(prev => ({ ...prev, contacts: [], loading: false }))
       showToast('error', 'No se pudieron cargar los contactos', 'Intenta nuevamente más tarde')
     }

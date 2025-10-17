@@ -37,7 +37,6 @@ export const StorageAlert: React.FC = () => {
         setDismissed(false)
       }
     } catch (error) {
-      console.error('Error verificando storage:', error)
     }
   }
 

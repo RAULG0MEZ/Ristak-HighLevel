@@ -56,7 +56,6 @@ export const TimezoneProvider: React.FC<{ children: ReactNode }> = ({ children }
           localStorage.setItem('userTimezone', data.timezone)
         }
       } catch (error) {
-        console.error('Error fetching timezone from GHL:', error)
         // Keep default or saved timezone
       }
     }

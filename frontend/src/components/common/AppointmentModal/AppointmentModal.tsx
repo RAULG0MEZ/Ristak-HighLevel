@@ -70,7 +70,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
       await onSave(event.id, updates);
       onClose();
     } catch (error) {
-      console.error('Error al guardar cita:', error);
+      // Error manejado por el componente padre
     } finally {
       setIsSaving(false);
     }
@@ -87,7 +87,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
       await onDelete(event.id);
       onClose();
     } catch (error) {
-      console.error('Error al eliminar cita:', error);
+      // Error manejado por el componente padre
     } finally {
       setIsSaving(false);
     }

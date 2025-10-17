@@ -37,7 +37,6 @@ export const LabelsProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       }
     } catch (error) {
       // Si falla, usar los valores por defecto
-      console.error('Error loading custom labels:', error)
     } finally {
       setLoading(false)
     }
@@ -61,7 +60,6 @@ export const LabelsProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         setLabels(json.data)
       }
     } catch (error) {
-      console.error('Error updating custom labels:', error)
       throw error
     }
   }

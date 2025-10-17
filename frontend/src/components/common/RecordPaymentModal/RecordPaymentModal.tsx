@@ -214,7 +214,6 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       setInvoiceTermsNotes(config.invoiceTermsNotes || null)
       setInvoiceDueDays(config.invoiceDueDays || 7)
     } catch (error) {
-      console.error('Error loading config:', error)
     }
   }
 
@@ -229,7 +228,6 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
         setStripeConnected(false)
       }
     } catch (error) {
-      console.error('Error checking Stripe connection:', error)
       setStripeConnected(false)
     } finally {
       setCheckingStripe(false)
@@ -285,7 +283,6 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
         setContacts(formattedContacts)
         setShowContactDropdown(true)
       } catch (error) {
-        console.error('Error buscando contactos:', error)
         setContacts([])
       } finally {
         setSearchingContact(false)
@@ -323,7 +320,6 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       const data = await response.json()
       setProducts(data.products || [])
     } catch (error) {
-      console.error('Error cargando productos:', error)
       showToast('error', 'No se pudieron cargar los productos')
     } finally {
       setLoadingProducts(false)
@@ -337,7 +333,6 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       const data = await response.json()
       setPrices(data.prices || [])
     } catch (error) {
-      console.error('Error cargando precios:', error)
       showToast('error', 'No se pudieron cargar los precios')
     }
   }
@@ -507,7 +502,6 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
 
       setStep('options')
     } catch (error: any) {
-      console.error('Error preparando invoice:', error)
       showToast('error', error.message || 'No se pudo preparar el invoice')
     } finally {
       setLoading(false)
@@ -533,7 +527,6 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
         showToast('info', data.message)
       }
     } catch (error: any) {
-      console.error('Error cargando tarjetas:', error)
       showToast('error', error.message || 'No se pudieron obtener las tarjetas guardadas')
       setPaymentMethods([])
       setCustomerId(null)
@@ -643,7 +636,6 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       onSuccess?.()
       onClose()
     } catch (error: any) {
-      console.error('Error procesando pago:', error)
       showToast('error', 'Error', error.message || 'No se pudo completar la operación')
       setStep('options')
     } finally {

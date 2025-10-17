@@ -571,7 +571,8 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
+  height: 100%;
 }
 
 .weekHeader {
@@ -633,10 +634,11 @@
   flex: 1;
   display: grid;
   grid-template-columns: 60px repeat(7, 1fr);
-  overflow-y: auto;
+  overflow-y: scroll;
   overflow-x: hidden;
   position: relative;
   min-height: 0;
+  height: calc(100vh - 400px);
 }
 
 .weekGrid::-webkit-scrollbar {
@@ -754,7 +756,8 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
+  height: 100%;
 }
 
 .dayHeader {
@@ -807,10 +810,11 @@
   flex: 1;
   display: grid;
   grid-template-columns: 60px 1fr;
-  overflow-y: auto;
+  overflow-y: scroll;
   overflow-x: hidden;
   position: relative;
   min-height: 0;
+  height: calc(100vh - 450px);
 }
 
 .dayGrid::-webkit-scrollbar {

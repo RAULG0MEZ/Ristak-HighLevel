@@ -79,10 +79,6 @@ export const contactsService = {
         }
       }
 
-      if (page > MAX_PAGES) {
-        console.warn('getContacts reached pagination safeguard limit. Verify backend pagination response.')
-      }
-
       return dedupeContacts<Contact>(allContacts).map(normalizeContact)
     } catch (error) {
       // TODO: Implement proper logging service

@@ -61,7 +61,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
       } catch (error) {
         // Si falla, mantener usuario por defecto
-        console.error('Error loading location data:', error)
       }
     }
 

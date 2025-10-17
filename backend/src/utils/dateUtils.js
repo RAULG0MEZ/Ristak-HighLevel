@@ -22,7 +22,6 @@ export async function getTimezoneFromGHL() {
 
     return DEFAULT_TIMEZONE
   } catch (error) {
-    console.error('Error obteniendo timezone de GHL:', error)
     return DEFAULT_TIMEZONE
   }
 }
