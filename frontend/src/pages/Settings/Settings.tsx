@@ -2,7 +2,7 @@ import React from 'react'
 import { Routes, Route, Navigate, NavLink } from 'react-router-dom'
 import { Send, CreditCard, Facebook } from 'lucide-react'
 import { HighLevelIntegration } from './HighLevelIntegration'
-import { StripeIntegration } from './StripeIntegration'
+import { PaymentsConfiguration } from './PaymentsConfiguration'
 import { MetaAdsIntegration } from './MetaAdsIntegration'
 import styles from './Settings.module.css'
 
@@ -23,11 +23,11 @@ export const Settings: React.FC = () => {
           <span>HighLevel</span>
         </NavLink>
         <NavLink
-          to="/settings/stripe"
+          to="/settings/payments"
           className={({ isActive }) => `${styles.tab} ${isActive ? styles.tabActive : ''}`}
         >
           <CreditCard size={18} />
-          <span>Stripe</span>
+          <span>Configuración de Pagos</span>
         </NavLink>
         <NavLink
           to="/settings/meta-ads"
@@ -42,7 +42,7 @@ export const Settings: React.FC = () => {
         <Routes>
           <Route index element={<Navigate to="highlevel" replace />} />
           <Route path="highlevel" element={<HighLevelIntegration />} />
-          <Route path="stripe" element={<StripeIntegration />} />
+          <Route path="payments" element={<PaymentsConfiguration />} />
           <Route path="meta-ads" element={<MetaAdsIntegration />} />
         </Routes>
       </div>

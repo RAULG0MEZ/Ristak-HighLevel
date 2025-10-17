@@ -5,7 +5,7 @@ import { useNotification } from '@/contexts/NotificationContext'
 import { getStripeConfig, saveStripeConfig } from '@/services/paymentMethodsService'
 import styles from './HighLevelIntegration.module.css'
 
-export const StripeIntegration: React.FC = () => {
+export const PaymentsConfiguration: React.FC = () => {
   const { showToast } = useNotification()
 
   // Estados de configuración
