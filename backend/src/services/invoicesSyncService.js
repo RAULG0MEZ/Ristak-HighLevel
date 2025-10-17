@@ -55,9 +55,18 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
           [ghlInvoiceId]
         )
 
+        // Validar que tenga contactId válido (NO usar altId que es el location ID)
+        const contactId = invoice.contactId
+
+        if (!contactId) {
+          logger.warn(`⚠️ Invoice ${ghlInvoiceId} sin contactId válido, saltando...`)
+          skipped++
+          continue
+        }
+
         // Datos comunes del invoice
         const invoiceData = {
-          contact_id: invoice.contactId || invoice.altId,
+          contact_id: contactId,
           amount: invoice.total || invoice.amount || 0,
           currency: invoice.currency || 'MXN',
           status: mapInvoiceStatus(invoice.status),
@@ -96,7 +105,21 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
             skipped++
           }
         } else {
-          // Crear nuevo invoice en BD (sin validar si contacto existe)
+          // Verificar si el contacto existe antes de crear el invoice
+          if (invoiceData.contact_id) {
+            const contactExists = await db.get(
+              'SELECT id FROM contacts WHERE id = ?',
+              [invoiceData.contact_id]
+            )
+
+            if (!contactExists) {
+              logger.warn(`⚠️ Ignorando invoice ${ghlInvoiceId}: contacto ${invoiceData.contact_id} no existe`)
+              skipped++
+              continue
+            }
+          }
+
+          // Crear nuevo invoice en BD
           await db.run(
             `INSERT INTO payments (
               id, contact_id, amount, currency, status, payment_method,

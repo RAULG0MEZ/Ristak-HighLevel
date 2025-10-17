@@ -265,6 +265,26 @@ export const PaymentsConfiguration: React.FC = () => {
                     </span>
                   </div>
                   <div className={styles.infoItem}>
+                    <span className={styles.infoLabel}>Modo:</span>
+                    <span className={styles.infoValue}>
+                      <div className={styles.toggleContainer}>
+                        <span className={`${styles.toggleLabel} ${stripeMode === 'test' ? styles.toggleLabelActive : ''}`}>
+                          🧪 Test
+                        </span>
+                        <button
+                          onClick={handleToggleMode}
+                          className={`${styles.toggle} ${stripeMode === 'live' ? styles.toggleActive : ''}`}
+                          disabled={loadingStripe}
+                        >
+                          <span className={styles.toggleThumb} />
+                        </button>
+                        <span className={`${styles.toggleLabel} ${stripeMode === 'live' ? styles.toggleLabelActive : ''}`}>
+                          ⚡ Live
+                        </span>
+                      </div>
+                    </span>
+                  </div>
+                  <div className={styles.infoItem}>
                     <span className={styles.infoLabel}>Dashboard:</span>
                     <span className={styles.infoValue}>
                       <a
@@ -278,37 +298,6 @@ export const PaymentsConfiguration: React.FC = () => {
                       >
                         Ver en Stripe <ExternalLink size={12} />
                       </a>
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Modo de Operación */}
-            <div className={styles.section}>
-              <div className={styles.sectionHeader}>
-                <h3 className={styles.sectionTitle}>Modo de Operación</h3>
-              </div>
-              <div className={styles.sectionContent}>
-                <div className={styles.infoBox}>
-                  <p className={styles.infoText}>
-                    {stripeMode === 'test'
-                      ? 'Usando tarjetas de prueba (sandbox)'
-                      : 'Usando tarjetas reales (producción)'}
-                  </p>
-                  <div className={styles.toggleContainer}>
-                    <span className={`${styles.toggleLabel} ${stripeMode === 'test' ? styles.toggleLabelActive : ''}`}>
-                      🧪 Test
-                    </span>
-                    <button
-                      onClick={handleToggleMode}
-                      className={`${styles.toggle} ${stripeMode === 'live' ? styles.toggleActive : ''}`}
-                      disabled={loadingStripe}
-                    >
-                      <span className={styles.toggleThumb} />
-                    </button>
-                    <span className={`${styles.toggleLabel} ${stripeMode === 'live' ? styles.toggleLabelActive : ''}`}>
-                      ⚡ Live
                     </span>
                   </div>
                 </div>
