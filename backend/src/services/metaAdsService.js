@@ -155,8 +155,10 @@ async function saveAdsToDatabase(ads, accountId) {
 
 /**
  * Sincroniza ads desde una fecha específica hasta hoy
+ * @param {Date} startDate - Fecha de inicio
+ * @param {Function} onProgress - Callback para reportar progreso (opcional)
  */
-export async function syncMetaAds(startDate) {
+export async function syncMetaAds(startDate, onProgress = null) {
   try {
     const config = await getMetaConfig()
     if (!config) {
@@ -186,6 +188,11 @@ export async function syncMetaAds(startDate) {
 
     syncProgress.monthsTotal = dateChunks.length
 
+    // Reportar total de meses a sincronizar
+    if (onProgress) {
+      onProgress({ saved: 0, total: dateChunks.length, status: 'syncing', message: `Preparando ${dateChunks.length} meses de datos...` })
+    }
+
     // Borrar TODOS los ads existentes antes de sincronizar
     logger.info('Borrando ads existentes...')
     await db.run('DELETE FROM meta_ads WHERE ad_account_id = ?', [ad_account_id])
@@ -200,6 +207,16 @@ export async function syncMetaAds(startDate) {
         message: `Obteniendo datos del ${chunk.since} al ${chunk.until}...`
       })
 
+      // Reportar progreso en tiempo real
+      if (onProgress) {
+        onProgress({
+          saved: i,
+          total: dateChunks.length,
+          status: 'syncing',
+          message: `Sincronizando mes ${i + 1}/${dateChunks.length}...`
+        })
+      }
+
       const ads = await fetchMetaAdsInsights(ad_account_id, access_token, chunk.since, chunk.until)
 
       logger.info(`Mes ${i + 1}/${dateChunks.length}: ${ads.length} ads obtenidos`)
@@ -213,6 +230,16 @@ export async function syncMetaAds(startDate) {
         total: dateChunks.length,
         message: `Mes ${i + 1}/${dateChunks.length} completado`
       })
+
+      // Reportar progreso actualizado
+      if (onProgress) {
+        onProgress({
+          saved: i + 1,
+          total: dateChunks.length,
+          status: 'syncing',
+          message: `Mes ${i + 1}/${dateChunks.length} completado`
+        })
+      }
     }
 
     syncProgress = {
@@ -225,6 +252,16 @@ export async function syncMetaAds(startDate) {
       message: 'Sincronización de Meta Ads completada exitosamente'
     }
 
+    // Reportar completado
+    if (onProgress) {
+      onProgress({
+        saved: dateChunks.length,
+        total: dateChunks.length,
+        status: 'completed',
+        message: `${dateChunks.length} meses sincronizados exitosamente`
+      })
+    }
+
     logger.success('Sincronización de Meta Ads completada')
     return { success: true }
   } catch (error) {
@@ -235,6 +272,17 @@ export async function syncMetaAds(startDate) {
       current: 0,
       message: error.message
     }
+
+    // Reportar error
+    if (onProgress) {
+      onProgress({
+        saved: 0,
+        total: 0,
+        status: 'error',
+        message: `Error: ${error.message}`
+      })
+    }
+
     logger.error('Error en sincronización de Meta Ads:', error.message)
     throw error
   }

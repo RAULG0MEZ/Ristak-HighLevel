@@ -43,8 +43,11 @@ export const AppShell: React.FC = () => {
       try {
         const response = await fetch('/api/highlevel/sync/progress')
         const data = await response.json()
-        // Solo mostrar cuando realmente está sincronizando
-        if (data.progress?.status === 'running' || data.progress?.status === 'syncing') {
+        // Solo mostrar si está sincronizando Y el origen es 'manual' (no cron)
+        const isRunning = data.progress?.status === 'running' || data.progress?.status === 'syncing'
+        const isManualTrigger = data.progress?.triggerSource === 'manual'
+
+        if (isRunning && isManualTrigger) {
           setSyncProgressVisible(true)
         } else {
           setSyncProgressVisible(false)

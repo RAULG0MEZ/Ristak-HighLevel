@@ -20,6 +20,7 @@ interface SyncProgress {
   total: number
   current: number
   message: string
+  triggerSource?: 'manual' | 'cron'
   contacts: SyncModuleProgress
   appointments: SyncModuleProgress
   payments: SyncModuleProgress
@@ -140,8 +141,10 @@ export const SyncProgressBar: React.FC<SyncProgressBarProps> = ({ onClose }) => 
         setProgress((previous) => {
           const incoming: SyncProgress | undefined = data.progress
           const status = incoming?.status?.toLowerCase() as SyncStatus | undefined
+          const triggerSource = incoming?.triggerSource || 'manual'
 
-          if (status === 'running' || status === 'syncing') {
+          // Solo mostrar si es una sincronización manual (no cron)
+          if ((status === 'running' || status === 'syncing') && triggerSource === 'manual') {
             setIsVisible(true)
             setLastUpdated(Date.now())
             return incoming || null
@@ -273,7 +276,7 @@ export const SyncProgressBar: React.FC<SyncProgressBarProps> = ({ onClose }) => 
           rawTotal: totalRaw,
           percent,
           state,
-          statusLabel: moduleData?.status || (state === 'completed' ? 'Completado' : state === 'active' ? 'En progreso' : 'Pendiente')
+          statusLabel: moduleData?.status === 'running' ? 'En progreso' : moduleData?.status === 'completed' ? 'Completado' : moduleData?.status === 'syncing' ? 'Sincronizando' : state === 'completed' ? 'Completado' : state === 'active' ? 'En progreso' : 'Pendiente'
         }
       })
       .filter(Boolean) as StepData[]
@@ -357,7 +360,7 @@ export const SyncProgressBar: React.FC<SyncProgressBarProps> = ({ onClose }) => 
                     background: `color-mix(in srgb, ${statusInfo.accentColor} 12%, transparent)`
                   }}
                 >
-                  Status
+                  Estado
                 </span>
               </div>
 

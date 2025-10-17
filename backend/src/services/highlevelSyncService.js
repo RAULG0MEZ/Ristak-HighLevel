@@ -19,14 +19,23 @@ let syncProgress = {
   total: 0,
   current: 0,
   message: '',
+  triggerSource: 'manual', // 'manual' o 'cron' - indica si se debe mostrar en UI
   contacts: { saved: 0, total: 0, status: 'pending', message: '' },
   appointments: { saved: 0, total: 0, status: 'pending', message: '' },
   payments: { saved: 0, total: 0, status: 'pending', message: '' },
-  metaAds: { synced: false, count: 0, status: 'pending', message: '' }
+  metaAds: { synced: false, count: 0, saved: 0, total: 0, status: 'pending', message: '' }
 }
 
 export function getSyncProgress() {
   return syncProgress
+}
+
+/**
+ * Establece el origen de la sincronización ('manual' o 'cron')
+ * Esto controla si la barra de progreso se muestra en el frontend
+ */
+export function setSyncTriggerSource(source) {
+  syncProgress.triggerSource = source
 }
 
 function updateGlobalProgress() {
@@ -35,13 +44,13 @@ function updateGlobalProgress() {
     (syncProgress.contacts.total || 0) +
     (syncProgress.appointments.total || 0) +
     (syncProgress.payments.total || 0) +
-    (syncProgress.metaAds?.count || 0)
+    (syncProgress.metaAds?.total || 0)
 
   const currentGlobal =
     (syncProgress.contacts.saved || 0) +
     (syncProgress.appointments.saved || 0) +
     (syncProgress.payments.saved || 0) +
-    (syncProgress.metaAds?.count || 0) // Meta se considera completo cuando tiene count
+    (syncProgress.metaAds?.saved || 0)
 
   syncProgress.total = totalGlobal
   syncProgress.current = currentGlobal
@@ -65,8 +74,8 @@ function updatePayments(saved, total, status, message) {
   logger.info(`Pagos: ${message}`)
 }
 
-function updateMetaAds(synced, count, status, message) {
-  syncProgress.metaAds = { synced, count, status, message }
+function updateMetaAds(synced, count, status, message, saved = 0, total = 0) {
+  syncProgress.metaAds = { synced, count, saved, total, status, message }
   updateGlobalProgress()
   logger.info(`Meta Ads: ${message}`)
 }
@@ -998,8 +1007,11 @@ async function fetchAndSaveMetaConfig(locationId, apiToken) {
 
 /**
  * Sincronización principal que ejecuta todos los pasos
+ * @param {string} locationId - ID del location de HighLevel
+ * @param {string} apiToken - Token de API de HighLevel
+ * @param {string} triggerSource - 'manual' o 'cron' - indica si se debe mostrar en UI
  */
-export async function syncHighLevelData(locationId, apiToken) {
+export async function syncHighLevelData(locationId, apiToken, triggerSource = 'manual') {
   try {
     syncProgress = {
       status: 'running',
@@ -1007,9 +1019,11 @@ export async function syncHighLevelData(locationId, apiToken) {
       total: 0,
       current: 0,
       message: 'Preparando sincronización de datos',
+      triggerSource: triggerSource,
       contacts: { saved: 0, total: 0, status: 'pending', message: 'Esperando...' },
       appointments: { saved: 0, total: 0, status: 'pending', message: 'Esperando...' },
-      payments: { saved: 0, total: 0, status: 'pending', message: 'Esperando...' }
+      payments: { saved: 0, total: 0, status: 'pending', message: 'Esperando...' },
+      metaAds: { synced: false, count: 0, saved: 0, total: 0, status: 'pending', message: 'Esperando...' }
     }
 
     logger.info('===========================================')
@@ -1084,8 +1098,18 @@ export async function syncHighLevelData(locationId, apiToken) {
 
         logger.info(`Sincronizando anuncios desde: ${startDate.toISOString().split('T')[0]}`)
 
-        // Sincronizar anuncios
-        const metaResult = await syncMetaAds(startDate)
+        // Sincronizar anuncios con callback de progreso
+        const metaResult = await syncMetaAds(startDate, (progress) => {
+          // Reportar progreso de Meta en tiempo real
+          updateMetaAds(
+            progress.status === 'completed',
+            progress.saved || 0,
+            progress.status,
+            progress.message,
+            progress.saved || 0,
+            progress.total || 0
+          )
+        })
 
         if (metaResult.success) {
           logger.success('✅ Anuncios de Meta sincronizados exitosamente')

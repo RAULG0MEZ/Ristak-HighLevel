@@ -838,99 +838,103 @@ export const Reports: React.FC = () => {
               </div>
             )}
           </div>
-          {viewType === 'month' && (
-            <div className={styles.rangeControls}>
-              <ViewSelector
-                value={monthPreset}
-                options={monthRangeOptions}
-                onChange={handleMonthPresetChange}
-              />
-              {monthPreset === 'custom' && (
-                <div className={styles.customMonthControls}>
-                  <label className={styles.customControl}>
-                    Año
-                    <input
-                      type="number"
-                      value={customMonthYear}
-                      onChange={(event) => setCustomMonthYear(Number(event.target.value))}
-                      className={styles.numberInput}
-                    />
-                  </label>
-                  <label className={styles.customControl}>
-                    Inicio
-                    <select
-                      value={customMonthStart}
-                      onChange={(event) => handleCustomMonthChange('start', Number(event.target.value))}
-                    >
-                      {monthNames.map((name, index) => (
-                      <option key={name} value={index}>{name}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className={styles.customControl}>
-                  Fin
-                  <select
-                    value={customMonthEnd}
-                    onChange={(event) => handleCustomMonthChange('end', Number(event.target.value))}
-                  >
-                    {monthNames.map((name, index) => (
-                      <option key={name} value={index}>{name}</option>
-                    ))}
-                  </select>
-                </label>
+          <div className={styles.filtersRow}>
+            <div className={styles.rangeControlsInline}>
+              {viewType === 'month' && (
+                <>
+                  <ViewSelector
+                    value={monthPreset}
+                    options={monthRangeOptions}
+                    onChange={handleMonthPresetChange}
+                  />
+                  {monthPreset === 'custom' && (
+                    <div className={styles.customMonthControls}>
+                      <label className={styles.customControl}>
+                        Año
+                        <input
+                          type="number"
+                          value={customMonthYear}
+                          onChange={(event) => setCustomMonthYear(Number(event.target.value))}
+                          className={styles.numberInput}
+                        />
+                      </label>
+                      <label className={styles.customControl}>
+                        Inicio
+                        <select
+                          value={customMonthStart}
+                          onChange={(event) => handleCustomMonthChange('start', Number(event.target.value))}
+                        >
+                          {monthNames.map((name, index) => (
+                          <option key={name} value={index}>{name}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className={styles.customControl}>
+                      Fin
+                      <select
+                        value={customMonthEnd}
+                        onChange={(event) => handleCustomMonthChange('end', Number(event.target.value))}
+                      >
+                        {monthNames.map((name, index) => (
+                          <option key={name} value={index}>{name}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                )}
+              </>
+            )}
+            {viewType === 'year' && (
+              <div className={styles.yearControls}>
+                <div className={styles.yearControlGroup}>
+                  <span>Inicio</span>
+                  <div className={styles.yearButtons}>
+                    <Button variant="ghost" onClick={() => handleYearRangeChange('start', -1)}>-</Button>
+                    <span>{yearRange.start}</span>
+                    <Button variant="ghost" onClick={() => handleYearRangeChange('start', 1)}>+</Button>
+                  </div>
+                </div>
+                <div className={styles.yearControlGroup}>
+                  <span>Fin</span>
+                  <div className={styles.yearButtons}>
+                    <Button variant="ghost" onClick={() => handleYearRangeChange('end', -1)}>-</Button>
+                    <span>{yearRange.end}</span>
+                    <Button variant="ghost" onClick={() => handleYearRangeChange('end', 1)}>+</Button>
+                  </div>
+                </div>
               </div>
             )}
-          </div>
-        )}
-        {viewType === 'year' && (
-          <div className={styles.yearControls}>
-            <div className={styles.yearControlGroup}>
-              <span>Inicio</span>
-              <div className={styles.yearButtons}>
-                <Button variant="ghost" onClick={() => handleYearRangeChange('start', -1)}>-</Button>
-                <span>{yearRange.start}</span>
-                <Button variant="ghost" onClick={() => handleYearRangeChange('start', 1)}>+</Button>
-              </div>
             </div>
-            <div className={styles.yearControlGroup}>
-              <span>Fin</span>
-              <div className={styles.yearButtons}>
-                <Button variant="ghost" onClick={() => handleYearRangeChange('end', -1)}>-</Button>
-                <span>{yearRange.end}</span>
-                <Button variant="ghost" onClick={() => handleYearRangeChange('end', 1)}>+</Button>
-              </div>
+            <div className={styles.tabsContainer}>
+              <TabList
+                tabs={viewTabs}
+                activeTab={viewType}
+                onTabChange={(value) => setViewType(value as ViewType)}
+                variant="compact"
+              />
+              <TabList
+                tabs={scopeTabs}
+                activeTab={reportType}
+                onTabChange={(value) => setReportType(value as ReportType)}
+                variant="compact"
+              />
+              <TabList
+                tabs={displayTabs}
+                activeTab={displayMode}
+                onTabChange={(value) => setDisplayMode(value as DisplayMode)}
+                variant="compact"
+              />
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleExportCsv}
+                className={styles.exportButton}
+              >
+                <Download size={16} />
+                Exportar CSV
+              </Button>
             </div>
           </div>
-        )}
-        <div className={styles.filtersRow}>
-          <TabList
-            tabs={viewTabs}
-            activeTab={viewType}
-            onTabChange={(value) => setViewType(value as ViewType)}
-            variant="compact"
-          />
-          <TabList
-            tabs={scopeTabs}
-            activeTab={reportType}
-            onTabChange={(value) => setReportType(value as ReportType)}
-            variant="compact"
-          />
-          <TabList
-            tabs={displayTabs}
-            activeTab={displayMode}
-            onTabChange={(value) => setDisplayMode(value as DisplayMode)}
-            variant="compact"
-          />
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleExportCsv}
-            className={styles.exportButton}
-          >
-            <Download size={16} />
-            Exportar CSV
-          </Button>
-        </div>
       </header>
 
       {displayMode === 'table' && summary && (

@@ -40,7 +40,8 @@ export function startInvoicesReconciliation() {
 
       // 2. Sincronizar contactos PRIMERO (para que existan cuando se sincronicen invoices)
       logger.info('📇 Sincronizando contactos...')
-      await syncHighLevelData(config.location_id, config.api_token)
+      // IMPORTANTE: Usar triggerSource 'cron' para NO mostrar la barra en el frontend
+      await syncHighLevelData(config.location_id, config.api_token, 'cron')
 
       // 3. Sincronizar invoices DESPUÉS de contactos
       logger.info('🧾 Sincronizando invoices...')
@@ -75,7 +76,8 @@ export function startInvoicesReconciliation() {
 
       // Sincronizar contactos PRIMERO
       logger.info('📇 Sincronizando contactos...')
-      await syncHighLevelData(config.location_id, config.api_token)
+      // IMPORTANTE: Usar triggerSource 'cron' para NO mostrar la barra en el frontend
+      await syncHighLevelData(config.location_id, config.api_token, 'cron')
 
       // Sincronizar invoices DESPUÉS
       logger.info('🧾 Sincronizando invoices...')
