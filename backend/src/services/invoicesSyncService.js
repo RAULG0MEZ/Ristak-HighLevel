@@ -140,9 +140,41 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
                 continue // Saltar este invoice
               }
             } catch (contactError) {
-              logger.error(`Error creando contacto ${invoiceData.contact_id}:`, contactError)
-              skipped++
-              continue // Saltar este invoice si no se pudo crear el contacto
+              // Si el contacto no existe en HighLevel (404/400), crear un contacto placeholder
+              // para evitar loop infinito de reintentos
+              const isNotFound = contactError.message?.includes('not found') ||
+                                 contactError.message?.includes('400') ||
+                                 contactError.message?.includes('404')
+
+              if (isNotFound) {
+                logger.warn(`Contacto ${invoiceData.contact_id} no existe en HighLevel, creando placeholder...`)
+
+                // Crear contacto placeholder para evitar reintentos
+                try {
+                  await db.run(
+                    `INSERT INTO contacts (
+                      id, name, email, phone, source, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+                    [
+                      invoiceData.contact_id,
+                      `[Contacto eliminado] ${invoiceData.contact_id}`,
+                      null,
+                      null,
+                      'highlevel_deleted' // Marcar como eliminado
+                    ]
+                  )
+                  logger.info(`Contacto placeholder creado para ${invoiceData.contact_id}`)
+                } catch (placeholderError) {
+                  logger.error(`Error creando placeholder para ${invoiceData.contact_id}:`, placeholderError)
+                  skipped++
+                  continue
+                }
+              } else {
+                // Otro tipo de error (red, timeout, etc.), skip sin crear placeholder
+                logger.error(`Error obteniendo contacto ${invoiceData.contact_id}:`, contactError)
+                skipped++
+                continue
+              }
             }
           }
 
