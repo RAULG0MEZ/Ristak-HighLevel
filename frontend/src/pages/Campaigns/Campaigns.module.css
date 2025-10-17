@@ -233,14 +233,21 @@
 .nameText.adset {
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
-  color: var(--color-primary);
-  opacity: 0.9;
+  color: var(--color-text-primary);
+}
+
+[data-theme="dark"] .nameText.adset {
+  color: rgb(226, 232, 240);
 }
 
 .nameText.ad {
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-normal);
   color: var(--color-text-secondary);
+}
+
+[data-theme="dark"] .nameText.ad {
+  color: rgb(203, 213, 225);
 }
 
 /* Badges para identificar niveles */
