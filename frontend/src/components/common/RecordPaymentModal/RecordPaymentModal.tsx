@@ -493,11 +493,18 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
         description: description || (chargeType === 'product' && selectedProduct ? selectedProduct.name : 'Pago')
       })
 
-      setPaymentOption('link')
       setPaymentMethods([])
       setSelectedPaymentMethod(null)
       setCustomerId(null)
       setManualPaymentData(defaultManualPaymentData())
+
+      // Si Stripe no está conectado, ir directo a pago manual
+      if (!stripeConnected) {
+        setPaymentOption('manual')
+      } else {
+        setPaymentOption('link')
+      }
+
       setStep('options')
     } catch (error: any) {
       console.error('Error preparando invoice:', error)
@@ -953,13 +960,14 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                   Stripe no está conectado
                 </p>
                 <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#78350f' }}>
-                  Solo puedes registrar pagos manuales. Para cobrar tarjetas guardadas, configura Stripe en Settings.
+                  Registrando pago manual. Para usar otras opciones de pago, configura Stripe en Settings.
                 </p>
               </div>
             </div>
           </div>
         )}
 
+        {stripeConnected && (
         <div className={styles.paymentOptions}>
           <button
             type="button"
@@ -1055,6 +1063,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
             {paymentOption === 'manual' && <Check size={18} />}
           </button>
         </div>
+        )}
 
         {paymentOption === 'manual' && (
           <div className={styles.manualFields}>
