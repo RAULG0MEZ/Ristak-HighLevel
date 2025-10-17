@@ -17,12 +17,14 @@ export const getStatus = async (req, res) => {
       configured: false,
       connected: false,
       locationId: null,
-      locationData: null
+      locationData: null,
+      accessToken: null
     };
 
     if (config) {
       highlevelStatus.configured = true;
       highlevelStatus.locationId = config.location_id;
+      highlevelStatus.accessToken = config.api_token;
 
       // Parsear los datos del location si existen
       if (config.location_data) {
@@ -78,7 +80,8 @@ export const getStatus = async (req, res) => {
         configured: false,
         connected: false,
         locationId: null,
-        locationData: null
+        locationData: null,
+        accessToken: null
       },
       meta: {
         connected: false,

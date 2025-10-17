@@ -13,6 +13,8 @@ interface AuthContextType {
   isAuthenticated: boolean
   login: (email: string, password: string) => Promise<void>
   logout: () => void
+  locationId: string | null
+  accessToken: string | null
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -27,6 +29,8 @@ const defaultUser: User = {
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(() => defaultUser)
+  const [locationId, setLocationId] = useState<string | null>(null)
+  const [accessToken, setAccessToken] = useState<string | null>(null)
 
   // Cargar datos del location de HighLevel
   useEffect(() => {
@@ -44,6 +48,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             role: 'admin',
             tenant: locationData.name || 'ristak'
           })
+
+          // Guardar locationId y accessToken para usar en otras partes de la app
+          if (locationData.id) {
+            setLocationId(locationData.id)
+          }
+        }
+
+        // Guardar el accessToken si existe
+        if (data.highlevel?.accessToken) {
+          setAccessToken(data.highlevel.accessToken)
         }
       } catch (error) {
         // Si falla, mantener usuario por defecto
@@ -68,7 +82,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         user,
         isAuthenticated: !!user,
         login,
-        logout
+        logout,
+        locationId,
+        accessToken
       }}
     >
       {children}

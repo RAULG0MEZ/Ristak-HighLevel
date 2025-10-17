@@ -737,18 +737,23 @@ export const Reports: React.FC = () => {
       icon: <Target className="text-[var(--color-text-tertiary)]" />
     },
     {
-      label: 'Clientes Nuevos',
-      value: formatNumber(summary.contacts.customers),
-      delta: calcDelta(summary.contacts.customers, summary.contacts.customersPrev),
-      deltaLabel: 'vs anterior',
-      icon: <UserCheck className="text-[var(--color-text-tertiary)]" />
-    },
-    {
       label: 'Gastos',
       value: formatCurrency(summary.campaigns.spend),
       delta: calcDelta(summary.campaigns.spend, summary.campaigns.spendPrev),
       deltaLabel: 'vs anterior',
       icon: <Users className="text-[var(--color-text-tertiary)]" />
+    },
+    {
+      label: 'Retorno de Inversión',
+      value: summary.campaigns.spend > 0
+        ? `${(summary.payments.totalRevenue / summary.campaigns.spend).toFixed(2)}x`
+        : '0.00x',
+      delta: calcDelta(
+        summary.campaigns.spend > 0 ? summary.payments.totalRevenue / summary.campaigns.spend : 0,
+        summary.campaigns.spendPrev > 0 ? summary.payments.totalRevenuePrev / summary.campaigns.spendPrev : 0
+      ),
+      deltaLabel: 'vs anterior',
+      icon: <UserCheck className="text-[var(--color-text-tertiary)]" />
     }
   ] : []
 
