@@ -758,25 +758,30 @@ export const Appointments: React.FC = () => {
             <div className={styles.dayView}>
               {/* Header del día */}
               <div className={styles.dayHeader}>
-                <div className={styles.dayHeaderTitle}>
-                  {(() => {
-                    const isToday = currentDate.toDateString() === new Date().toDateString();
-                    // Formato completo: "Viernes 17 de octubre de 2025"
-                    const dayName = currentDate.toLocaleDateString('es-MX', { weekday: 'long' });
-                    const dateStr = currentDate.toLocaleDateString('es-MX', {
-                      day: 'numeric',
-                      month: 'long',
-                      year: 'numeric'
-                    });
-                    return (
-                      <div className={styles.dayHeaderContent}>
-                        <span className={styles.dayHeaderName}>
-                          {dayName.charAt(0).toUpperCase() + dayName.slice(1)} {dateStr}
-                        </span>
-                        {isToday && <span className={styles.todayChip}>Hoy</span>}
-                      </div>
-                    );
-                  })()}
+                <div className={styles.dayHeaderInfo}>
+                  <div className={styles.dayHeaderWeekday}>
+                    {currentDate.toLocaleDateString('es-MX', { weekday: 'short' }).toUpperCase()}
+                  </div>
+                  <div className={styles.dayHeaderDate}>
+                    <span className={styles.dayHeaderDay}>{currentDate.getDate()}</span>
+                    <div className={styles.dayHeaderMeta}>
+                      <span>{currentDate.toLocaleDateString('es-MX', { month: 'long' })}</span>
+                      <span>{currentDate.getFullYear()}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className={styles.dayHeaderExtras}>
+                  <button className={styles.dayHeaderToday} onClick={handleToday}>
+                    Hoy
+                  </button>
+                  <div className={styles.dayHeaderNav}>
+                    <button className={styles.dayHeaderNavBtn} onClick={handlePrev} aria-label="Anterior">
+                      <ChevronLeft size={16} />
+                    </button>
+                    <button className={styles.dayHeaderNavBtn} onClick={handleNext} aria-label="Siguiente">
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
                 </div>
               </div>
 

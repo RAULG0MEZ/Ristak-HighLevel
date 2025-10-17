@@ -705,7 +705,8 @@
 .timeColumn {
   display: flex;
   flex-direction: column;
-  border-right: 2px solid var(--color-border);
+  border-right: 1px solid var(--color-border);
+  border-left: none;
   padding-right: 0.5rem;
   background-color: var(--color-background);
 }
@@ -826,47 +827,97 @@
 .dayHeader {
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 12px 16px;
-  margin-bottom: 1rem;
-  background-color: #F7F7F9;
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  justify-content: space-between;
+  padding: 0;
+  margin-bottom: 0.75rem;
 }
 
-.dayHeaderTitle {
+.dayHeaderInfo {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 100%;
+  gap: 1rem;
 }
 
-.dayHeaderContent {
+.dayHeaderWeekday {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.dayHeaderDate {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  color: var(--color-text-primary);
+}
+
+.dayHeaderDay {
+  font-size: 2.5rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.dayHeaderMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  font-size: 0.875rem;
+  text-transform: capitalize;
+  color: var(--color-text-secondary);
+}
+
+.dayHeaderMeta span:last-child {
+  font-size: 0.75rem;
+  color: var(--color-text-tertiary);
+}
+
+.dayHeaderExtras {
   display: flex;
   align-items: center;
   gap: 0.75rem;
 }
 
-.dayHeaderName {
-  font-size: 1rem;
+.dayHeaderToday {
+  padding: 0.45rem 0.95rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  background-color: var(--color-white);
+  font-size: 0.8125rem;
   font-weight: 600;
   color: var(--color-text-primary);
-  text-transform: none;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
-.todayChip {
-  font-size: 0.75rem;
-  font-weight: 600;
-  padding: 4px 10px;
-  background-color: var(--color-primary-500);
-  color: white;
-  border-radius: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+.dayHeaderToday:hover {
+  background-color: var(--color-gray-50);
+  border-color: var(--color-primary-300);
+}
+
+.dayHeaderNav {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.dayHeaderNavBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background-color: var(--color-white);
+  border: none;
+  color: var(--color-text-secondary);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.dayHeaderNavBtn:hover {
+  background-color: var(--color-gray-50);
+  color: var(--color-text-primary);
 }
 
 .dayGrid {
