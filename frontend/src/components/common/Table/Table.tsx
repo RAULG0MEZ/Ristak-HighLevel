@@ -487,12 +487,16 @@ export function Table<T extends Record<string, any>>({
             {Array.from({ length: Math.min(9, totalPages) }, (_, i) => {
               let pageNum
               if (totalPages <= 9) {
+                // Mostrar todas las páginas si hay 9 o menos
                 pageNum = i + 1
               } else if (currentPage <= 5) {
+                // Mostrar las primeras 9 páginas
                 pageNum = i + 1
               } else if (currentPage >= totalPages - 4) {
+                // Mostrar las últimas 9 páginas
                 pageNum = totalPages - 8 + i
               } else {
+                // Centrar la página actual (4 antes, 4 después)
                 pageNum = currentPage - 4 + i
               }
 

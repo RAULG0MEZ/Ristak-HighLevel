@@ -39,7 +39,7 @@
 .kpiRow {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: var(--spacing-lg);
+  gap: var(--spacing-md);
 }
 
 /* .chartCard eliminado - no necesario ya que el container tiene gap */
