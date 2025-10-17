@@ -834,71 +834,71 @@ export const Reports: React.FC = () => {
               </div>
             )}
           </div>
-          <div className={styles.filtersRow}>
-            {viewType === 'month' && (
-              <div className={styles.monthControls}>
-                <ViewSelector
-                  value={monthPreset}
-                  options={monthRangeOptions}
-                  onChange={handleMonthPresetChange}
-                />
-                {monthPreset === 'custom' && (
-                  <div className={styles.customMonthControls}>
-                    <label className={styles.customControl}>
-                      Año
-                      <input
-                        type="number"
-                        value={customMonthYear}
-                        onChange={(event) => setCustomMonthYear(Number(event.target.value))}
-                        className={styles.numberInput}
-                      />
-                    </label>
-                    <label className={styles.customControl}>
-                      Inicio
-                      <select
-                        value={customMonthStart}
-                        onChange={(event) => handleCustomMonthChange('start', Number(event.target.value))}
-                      >
-                        {monthNames.map((name, index) => (
-                        <option key={name} value={index}>{name}</option>
-                      ))}
-                    </select>
+          {viewType === 'month' && (
+            <div className={styles.rangeControls}>
+              <ViewSelector
+                value={monthPreset}
+                options={monthRangeOptions}
+                onChange={handleMonthPresetChange}
+              />
+              {monthPreset === 'custom' && (
+                <div className={styles.customMonthControls}>
+                  <label className={styles.customControl}>
+                    Año
+                    <input
+                      type="number"
+                      value={customMonthYear}
+                      onChange={(event) => setCustomMonthYear(Number(event.target.value))}
+                      className={styles.numberInput}
+                    />
                   </label>
                   <label className={styles.customControl}>
-                    Fin
+                    Inicio
                     <select
-                      value={customMonthEnd}
-                      onChange={(event) => handleCustomMonthChange('end', Number(event.target.value))}
+                      value={customMonthStart}
+                      onChange={(event) => handleCustomMonthChange('start', Number(event.target.value))}
                     >
                       {monthNames.map((name, index) => (
-                        <option key={name} value={index}>{name}</option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-              )}
-            </div>
-          )}
-          {viewType === 'year' && (
-            <div className={styles.yearControls}>
-              <div className={styles.yearControlGroup}>
-                <span>Inicio</span>
-                <div className={styles.yearButtons}>
-                  <Button variant="ghost" onClick={() => handleYearRangeChange('start', -1)}>-</Button>
-                  <span>{yearRange.start}</span>
-                  <Button variant="ghost" onClick={() => handleYearRangeChange('start', 1)}>+</Button>
-                </div>
+                      <option key={name} value={index}>{name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className={styles.customControl}>
+                  Fin
+                  <select
+                    value={customMonthEnd}
+                    onChange={(event) => handleCustomMonthChange('end', Number(event.target.value))}
+                  >
+                    {monthNames.map((name, index) => (
+                      <option key={name} value={index}>{name}</option>
+                    ))}
+                  </select>
+                </label>
               </div>
-              <div className={styles.yearControlGroup}>
-                <span>Fin</span>
-                <div className={styles.yearButtons}>
-                  <Button variant="ghost" onClick={() => handleYearRangeChange('end', -1)}>-</Button>
-                  <span>{yearRange.end}</span>
-                  <Button variant="ghost" onClick={() => handleYearRangeChange('end', 1)}>+</Button>
-                </div>
+            )}
+          </div>
+        )}
+        {viewType === 'year' && (
+          <div className={styles.yearControls}>
+            <div className={styles.yearControlGroup}>
+              <span>Inicio</span>
+              <div className={styles.yearButtons}>
+                <Button variant="ghost" onClick={() => handleYearRangeChange('start', -1)}>-</Button>
+                <span>{yearRange.start}</span>
+                <Button variant="ghost" onClick={() => handleYearRangeChange('start', 1)}>+</Button>
               </div>
             </div>
-          )}
+            <div className={styles.yearControlGroup}>
+              <span>Fin</span>
+              <div className={styles.yearButtons}>
+                <Button variant="ghost" onClick={() => handleYearRangeChange('end', -1)}>-</Button>
+                <span>{yearRange.end}</span>
+                <Button variant="ghost" onClick={() => handleYearRangeChange('end', 1)}>+</Button>
+              </div>
+            </div>
+          </div>
+        )}
+        <div className={styles.filtersRow}>
           <TabList
             tabs={viewTabs}
             activeTab={viewType}
