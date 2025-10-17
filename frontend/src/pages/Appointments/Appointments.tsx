@@ -155,16 +155,13 @@ export const Appointments: React.FC = () => {
     if (!locationId || !accessToken || !selectedCalendar) return;
 
     try {
-      const now = new Date();
-      const futureDate = new Date();
-      futureDate.setMonth(futureDate.getMonth() + 3); // Próximos 3 meses
-
-      const upcomingData = await calendarsService.getEvents(
+      // Usar nueva función que SIEMPRE trae eventos del día actual
+      // independiente de la vista (mes/semana/día)
+      const upcomingData = await calendarsService.getTodayUpcomingAppointments(
+        selectedCalendar.id,
         locationId,
-        now.getTime(),
-        futureDate.getTime(),
         accessToken,
-        selectedCalendar.id
+        8 // Límite de 8 citas
       );
 
       setUpcomingEvents(upcomingData);
@@ -758,18 +755,21 @@ export const Appointments: React.FC = () => {
               <div className={styles.dayHeader}>
                 <div className={styles.dayHeaderTitle}>
                   {(() => {
-                    const dayName = DAYS_SHORT[(currentDate.getDay() + 6) % 7];
                     const isToday = currentDate.toDateString() === new Date().toDateString();
-                    const monthYear = currentDate.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+                    // Formato completo: "Viernes 17 de octubre de 2025"
+                    const dayName = currentDate.toLocaleDateString('es-MX', { weekday: 'long' });
+                    const dateStr = currentDate.toLocaleDateString('es-MX', {
+                      day: 'numeric',
+                      month: 'long',
+                      year: 'numeric'
+                    });
                     return (
-                      <>
+                      <div className={styles.dayHeaderContent}>
                         <span className={styles.dayHeaderName}>
-                          {dayName} {currentDate.getDate()} · {monthYear}
+                          {dayName.charAt(0).toUpperCase() + dayName.slice(1)} {dateStr}
                         </span>
-                        <span className={`${styles.dayHeaderNumber} ${isToday ? styles.dayHeaderToday : ''}`}>
-                          {currentDate.getDate()}
-                        </span>
-                      </>
+                        {isToday && <span className={styles.todayChip}>Hoy</span>}
+                      </div>
                     );
                   })()}
                 </div>

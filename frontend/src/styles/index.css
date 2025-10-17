@@ -1,94 +1,8 @@
+@import './tooltip-override.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-@import './tooltip-override.css';
-
-/* Sobrescribir TODOS los outlines y rings de Tailwind */
-@layer base {
-  *,
-  *::before,
-  *::after {
-    --tw-ring-color: transparent !important;
-    --tw-ring-shadow: 0 0 #0000 !important;
-    --tw-ring-offset-shadow: 0 0 #0000 !important;
-    --tw-ring-offset-width: 0px !important;
-  }
-
-  *:focus,
-  *:focus-visible,
-  *:active {
-    outline: none !important;
-    outline-width: 0 !important;
-    outline-offset: 0 !important;
-    box-shadow: none !important;
-    --tw-ring-shadow: 0 0 #0000 !important;
-    --tw-ring-offset-shadow: 0 0 #0000 !important;
-  }
-
-  button:focus,
-  button:focus-visible,
-  button:active,
-  a:focus,
-  a:focus-visible,
-  div[role="button"]:focus,
-  div[role="button"]:focus-visible,
-  div:focus,
-  div:focus-visible {
-    outline: none !important;
-    outline-width: 0 !important;
-    box-shadow: none !important;
-    --tw-ring-shadow: 0 0 #0000 !important;
-    --tw-ring-offset-shadow: 0 0 #0000 !important;
-  }
-}
-
-/* Regla adicional FUERA de @layer para mayor especificidad */
-*:focus,
-*:focus-visible,
-*:active,
-button:focus,
-div:focus,
-a:focus {
-  outline: none !important;
-  box-shadow: none !important;
-}
-
-/* DEBUG: Esto debería eliminar TODOS los outlines visibles */
-* {
-  outline: none !important;
-  outline-width: 0px !important;
-  outline-style: none !important;
-  outline-color: transparent !important;
-}
-
-/* DEBUG TEMPORAL: Si ves fondo rojo, los estilos SÍ se están cargando */
-body::before {
-  content: "✅ ESTILOS CARGADOS - Si ves esto, el CSS está funcionando";
-  position: fixed;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  background: red;
-  color: white;
-  padding: 8px 16px;
-  z-index: 999999;
-  font-weight: bold;
-  font-size: 12px;
-}
-
-*:hover,
-*:focus,
-*:active,
-*:focus-visible,
-*:focus-within {
-  outline: none !important;
-  outline-width: 0px !important;
-  outline-style: none !important;
-  outline-color: transparent !important;
-  box-shadow: none !important;
-  -webkit-box-shadow: none !important;
-  -moz-box-shadow: none !important;
-}
 
 :root {
   /* Layout */
@@ -450,4 +364,84 @@ body.dark .glow-sm {
   to {
     opacity: 1;
   }
+}
+
+/* ============================================
+   ELIMINAR TODOS LOS OUTLINES Y RINGS
+   DEBE ESTAR AL FINAL PARA MÁXIMA PRIORIDAD
+   ============================================ */
+
+/* Resetear variables de Tailwind para rings */
+*,
+*::before,
+*::after,
+button,
+a,
+div,
+input,
+select,
+textarea {
+  --tw-ring-color: transparent !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
+  --tw-ring-offset-width: 0px !important;
+  --tw-shadow: 0 0 #0000 !important;
+  --tw-shadow-colored: 0 0 #0000 !important;
+}
+
+/* Eliminar TODOS los outlines en TODOS los estados */
+*,
+*::before,
+*::after,
+*:hover,
+*:focus,
+*:active,
+*:focus-visible,
+*:focus-within,
+button,
+button:hover,
+button:focus,
+button:active,
+button:focus-visible,
+a,
+a:hover,
+a:focus,
+a:active,
+a:focus-visible,
+div,
+div:hover,
+div:focus,
+div:active,
+div:focus-visible,
+input,
+input:hover,
+input:focus,
+input:active,
+input:focus-visible,
+select,
+select:hover,
+select:focus,
+select:active,
+select:focus-visible,
+textarea,
+textarea:hover,
+textarea:focus,
+textarea:active,
+textarea:focus-visible {
+  outline: none !important;
+  outline-width: 0 !important;
+  outline-style: none !important;
+  outline-color: transparent !important;
+  outline-offset: 0 !important;
+}
+
+/* Eliminar box-shadow que podría parecer outline */
+button:focus-visible,
+a:focus-visible,
+div:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible {
+  box-shadow: none !important;
+  -webkit-box-shadow: none !important;
+  -moz-box-shadow: none !important;
 }

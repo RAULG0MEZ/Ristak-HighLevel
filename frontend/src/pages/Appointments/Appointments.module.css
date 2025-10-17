@@ -670,7 +670,7 @@
   display: flex;
   align-items: flex-start;
   padding-top: 0;
-  border-bottom: 1px solid var(--color-gray-200);
+  border-bottom: 1px solid var(--color-gray-300);
   position: relative;
 }
 
@@ -705,8 +705,8 @@
     to bottom,
     transparent 0%,
     transparent 50%,
-    var(--color-gray-200) 50%,
-    var(--color-gray-200) 51%,
+    var(--color-gray-300) 50%,
+    var(--color-gray-300) 51%,
     transparent 51%
   );
 }
@@ -761,44 +761,46 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1rem;
-  border-bottom: 2px solid var(--color-border);
-  margin-bottom: 0;
-  background-color: var(--color-background);
+  padding: 12px 16px;
+  margin-bottom: 1rem;
+  background-color: #F7F7F9;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
   position: sticky;
   top: 0;
-  z-index: 5;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  z-index: 10;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
 .dayHeaderTitle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.dayHeaderContent {
   display: flex;
   align-items: center;
   gap: 0.75rem;
 }
 
 .dayHeaderName {
-  font-size: 0.875rem;
+  font-size: 1rem;
   font-weight: 600;
-  color: var(--color-text-secondary);
-  text-transform: uppercase;
-}
-
-.dayHeaderNumber {
-  font-size: 2rem;
-  font-weight: 700;
   color: var(--color-text-primary);
-  width: 3.5rem;
-  height: 3.5rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-full);
+  text-transform: none;
 }
 
-.dayHeaderToday {
+.todayChip {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 10px;
   background-color: var(--color-primary-500);
   color: white;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .dayGrid {

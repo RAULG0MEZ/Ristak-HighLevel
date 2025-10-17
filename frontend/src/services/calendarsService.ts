@@ -308,6 +308,46 @@ export const calendarsService = {
   },
 
   /**
+   * Obtener citas próximas del día actual (independiente de la vista del calendario)
+   * SIEMPRE consulta eventos del día de HOY, sin importar qué vista esté activa
+   */
+  async getTodayUpcomingAppointments(
+    calendarId: string,
+    locationId: string,
+    accessToken: string,
+    limit: number = 8
+  ): Promise<CalendarEvent[]> {
+    try {
+      // Fecha de hoy 00:00:00
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      // Fecha de hoy 23:59:59
+      const endOfDay = new Date(today);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      // Obtener eventos del día actual usando timestamps
+      const events = await this.getEvents(
+        locationId,
+        today.getTime(),
+        endOfDay.getTime(),
+        accessToken,
+        calendarId
+      );
+
+      // Filtrar solo eventos futuros (desde ahora) y ordenar
+      const now = new Date();
+      return events
+        .filter((event: CalendarEvent) => new Date(event.startTime) >= now)
+        .sort((a: CalendarEvent, b: CalendarEvent) => a.startTime.localeCompare(b.startTime))
+        .slice(0, limit);
+    } catch (error) {
+      console.error('[Calendars Service] Error al obtener citas próximas de hoy:', error);
+      return [];
+    }
+  },
+
+  /**
    * Convertir horarios de OpenHours a formato más legible
    */
   parseOpenHours(openHours?: OpenHours[]): Record<number, { start: string; end: string }[]> {
