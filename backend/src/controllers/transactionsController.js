@@ -13,7 +13,7 @@ export const getTransactions = async (req, res) => {
   try {
     const {
       page = 1,
-      limit = 50,
+      limit,
       status = '',
       startDate,
       endDate,
@@ -22,16 +22,18 @@ export const getTransactions = async (req, res) => {
       sync = 'false' // Por defecto NO sincroniza (más rápido)
     } = req.query
 
-    const pageNumber = Number(page) || 1
-    const limitNumber = Math.min(Number(limit) || 50, 500)
-    const offset = Math.max((pageNumber - 1) * limitNumber, 0)
-
     const range = resolveDateRange({ startDate, endDate })
     const rangeLabel = range.isFiltered
       ? `${range.startUtc || '---'} -> ${range.endUtc || '---'}`
       : 'todos'
 
-    logger.info(`Obteniendo transacciones - página ${pageNumber}, límite ${limitNumber}, rango: ${rangeLabel}`)
+    // Si NO hay filtro de fechas (modo "TODOS"), traer TODOS los registros sin límite
+    const usePagination = range.isFiltered || limit
+    const limitNumber = usePagination ? Math.min(Number(limit) || 50, 5000) : 999999
+    const pageNumber = usePagination ? (Number(page) || 1) : 1
+    const offset = usePagination ? Math.max((pageNumber - 1) * limitNumber, 0) : 0
+
+    logger.info(`Obteniendo transacciones - página ${pageNumber}, límite ${limitNumber}, rango: ${rangeLabel}, paginación: ${usePagination}`)
 
     // Sincronizar invoices desde HighLevel antes de devolver datos
     if (sync !== 'false') {
