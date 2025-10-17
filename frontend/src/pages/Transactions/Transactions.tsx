@@ -542,7 +542,7 @@ export const Transactions: React.FC = () => {
           />
           <KpiCard
             title="Reembolsos"
-            value={formatCurrency(totals.reembolsos)}
+            value={formatNumber(totals.reembolsos)}
             delta={totals.reembolsosChange}
             deltaLabel="vs periodo anterior"
             icon={<RotateCcw className="text-[var(--color-text-tertiary)]" />}
