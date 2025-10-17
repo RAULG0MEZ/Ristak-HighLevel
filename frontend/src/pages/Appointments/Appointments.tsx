@@ -393,29 +393,31 @@ export const Appointments: React.FC = () => {
         <h1 className={styles.title}>Calendarios</h1>
 
         <div className={styles.calendarSelector}>
-          <button
-            className={styles.calendarDropdownButton}
-            onClick={() => setIsCalendarDropdownOpen(!isCalendarDropdownOpen)}
-            disabled={loading || calendars.length === 0}
-          >
-            <span className={styles.dropdownButtonText}>
-              {selectedCalendar?.name || 'Selecciona un calendario'}
-            </span>
-            <ChevronDown
-              size={18}
-              className={`${styles.dropdownIcon} ${isCalendarDropdownOpen ? styles.dropdownIconOpen : ''}`}
-            />
-          </button>
-
-          {selectedCalendar && (
+          <div className={styles.calendarSelectorRow}>
             <button
-              className={styles.setDefaultLink}
-              onClick={handleSetDefaultCalendar}
-              disabled={defaultCalendarId === selectedCalendar.id}
+              className={styles.calendarDropdownButton}
+              onClick={() => setIsCalendarDropdownOpen(!isCalendarDropdownOpen)}
+              disabled={loading || calendars.length === 0}
             >
-              {defaultCalendarId === selectedCalendar.id ? 'Predeterminado' : 'Establecer predeterminado'}
+              <span className={styles.dropdownButtonText}>
+                {selectedCalendar?.name || 'Selecciona un calendario'}
+              </span>
+              <ChevronDown
+                size={18}
+                className={`${styles.dropdownIcon} ${isCalendarDropdownOpen ? styles.dropdownIconOpen : ''}`}
+              />
             </button>
-          )}
+
+            {selectedCalendar && (
+              <button
+                className={styles.setDefaultLink}
+                onClick={handleSetDefaultCalendar}
+                disabled={defaultCalendarId === selectedCalendar.id}
+              >
+                {defaultCalendarId === selectedCalendar.id ? 'Predeterminado' : 'Establecer predeterminado'}
+              </button>
+            )}
+          </div>
 
           {isCalendarDropdownOpen && (
             <>

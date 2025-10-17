@@ -15,6 +15,9 @@
 
 .calendarSelector {
   position: relative;
+}
+
+.calendarSelectorRow {
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -110,14 +113,10 @@
   min-width: 280px;
   max-height: 320px;
   overflow-y: auto;
-  background-color: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background-color: var(--color-white);
   border: 1px solid var(--color-border);
-  border-radius: 12px;
-  box-shadow:
-    0 10px 25px rgba(0, 0, 0, 0.12),
-    0 4px 10px rgba(0, 0, 0, 0.06);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   z-index: 50;
   padding: 8px 12px;
   animation: dropdownSlideIn 0.15s ease-out;
@@ -386,12 +385,10 @@
   min-width: 140px;
   max-height: 280px;
   overflow-y: auto;
-  background-color: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background-color: var(--color-white);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   z-index: 50;
   padding: 0.5rem;
 }
@@ -466,19 +463,10 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: 0.5rem;
-  cursor: pointer;
-  transition: all 0.15s ease;
   position: relative;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  outline: none !important;
-}
-
-.dayCell:focus,
-.dayCell:focus-visible {
-  outline: none !important;
-  box-shadow: none !important;
 }
 
 .dayCellOther {
