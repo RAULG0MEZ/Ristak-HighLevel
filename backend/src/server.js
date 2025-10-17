@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import { logger } from './utils/logger.js'
 import { startMetaSyncCron } from './jobs/metaSync.cron.js'
-import { startInvoicesReconciliation } from './jobs/invoicesReconciliation.cron.js'
+// import { startInvoicesReconciliation } from './jobs/invoicesReconciliation.cron.js' // DESACTIVADO: Solo usar webhooks
 import { verifyAndUpdateWebhooks } from './startup/webhookVerification.js'
 
 // Routes
@@ -90,7 +90,7 @@ app.listen(PORT, async () => {
 
   // Iniciar cron jobs
   startMetaSyncCron()
-  startInvoicesReconciliation()
+  // startInvoicesReconciliation() // DESACTIVADO: Solo usar webhooks para sincronización en tiempo real
 })
 
 // Manejo de errores de proceso
