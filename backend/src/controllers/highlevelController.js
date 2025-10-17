@@ -1177,13 +1177,33 @@ export const saveStripeConfig = async (req, res) => {
   try {
     const { testSecretKey, liveSecretKey, mode } = req.body;
 
-    // Validaciones
+    // Validaciones básicas
     if (!mode || !['test', 'live'].includes(mode)) {
       return res.status(400).json({
         success: false,
         error: 'Modo inválido. Debe ser "test" o "live"'
       });
     }
+
+    // Obtener configuración actual con las keys existentes PRIMERO
+    let config;
+    try {
+      config = await db.get('SELECT id, location_id, stripe_test_secret_key_encrypted, stripe_live_secret_key_encrypted FROM highlevel_config LIMIT 1');
+    } catch (e) {
+      // Si falla (columnas no existen), obtener solo id y location_id
+      config = await db.get('SELECT id, location_id FROM highlevel_config LIMIT 1');
+    }
+
+    if (!config || !config.location_id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Primero debes configurar tu cuenta de HighLevel'
+      });
+    }
+
+    // Verificar si ya hay keys guardadas
+    const hasExistingTestKey = !!config.stripe_test_secret_key_encrypted;
+    const hasExistingLiveKey = !!config.stripe_live_secret_key_encrypted;
 
     // Validar que existan keys para el modo seleccionado
     // Si se están enviando keys nuevas, validar esas
@@ -1204,26 +1224,6 @@ export const saveStripeConfig = async (req, res) => {
         error: 'Se requiere la clave de producción para modo live. Guarda primero tu Live Secret Key.'
       });
     }
-
-    // Obtener configuración actual con las keys existentes
-    let config;
-    try {
-      config = await db.get('SELECT id, location_id, stripe_test_secret_key_encrypted, stripe_live_secret_key_encrypted FROM highlevel_config LIMIT 1');
-    } catch (e) {
-      // Si falla (columnas no existen), obtener solo id y location_id
-      config = await db.get('SELECT id, location_id FROM highlevel_config LIMIT 1');
-    }
-
-    if (!config || !config.location_id) {
-      return res.status(400).json({
-        success: false,
-        error: 'Primero debes configurar tu cuenta de HighLevel'
-      });
-    }
-
-    // Verificar si ya hay keys guardadas
-    const hasExistingTestKey = !!config.stripe_test_secret_key_encrypted;
-    const hasExistingLiveKey = !!config.stripe_live_secret_key_encrypted;
 
     // Encriptar claves solo si se envían
     const encryptedTestKey = testSecretKey ? encrypt(testSecretKey.trim()) : null;
