@@ -345,10 +345,13 @@
   font-weight: 600;
 }
 
+body.dark .summaryBadge,
 [data-theme="dark"] .summaryBadge {
-  background: rgba(var(--color-primary-rgb), 0.35);
-  color: #ffffff;
+  background: rgba(59, 130, 246, 0.25);
+  color: #60a5fa;
   font-weight: 700;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.3);
 }
 
 .summaryAmountBlock {
