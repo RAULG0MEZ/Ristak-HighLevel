@@ -25,6 +25,7 @@ export const PaymentsConfiguration: React.FC = () => {
   const [paymentNumberPrefix, setPaymentNumberPrefix] = useState('INV-')
   const [paymentDueDays, setPaymentDueDays] = useState(7)
   const [paymentTermsNotes, setPaymentTermsNotes] = useState('')
+  const [transferInfoUrl, setTransferInfoUrl] = useState('')
   const [loadingPaymentConfig, setLoadingPaymentConfig] = useState(false)
 
   useEffect(() => {
@@ -137,7 +138,6 @@ export const PaymentsConfiguration: React.FC = () => {
 
   const loadPaymentConfig = async () => {
     try {
-      // Por ahora temporal - después conectaremos con el backend
       const response = await fetch('/api/highlevel/config')
       const config = await response.json()
 
@@ -145,6 +145,7 @@ export const PaymentsConfiguration: React.FC = () => {
       if (config.invoiceNumberPrefix) setPaymentNumberPrefix(config.invoiceNumberPrefix)
       if (config.invoiceDueDays) setPaymentDueDays(config.invoiceDueDays)
       if (config.invoiceTermsNotes) setPaymentTermsNotes(config.invoiceTermsNotes)
+      if (config.transferInfoUrl) setTransferInfoUrl(config.transferInfoUrl)
     } catch (error) {
       // Error silencioso - usar valores por defecto
     }
@@ -162,7 +163,8 @@ export const PaymentsConfiguration: React.FC = () => {
           invoiceTitle: paymentTitle.trim(),
           invoiceNumberPrefix: paymentNumberPrefix.trim(),
           invoiceTermsNotes: paymentTermsNotes.trim() || null,
-          invoiceDueDays: paymentDueDays
+          invoiceDueDays: paymentDueDays,
+          transferInfoUrl: transferInfoUrl.trim() || null
         })
       })
 
@@ -464,6 +466,21 @@ export const PaymentsConfiguration: React.FC = () => {
               />
               <p className={styles.hint}>
                 Estos términos aparecerán al final del documento de pago
+              </p>
+            </div>
+
+            {/* URL con información para transferencias */}
+            <div className={styles.formField}>
+              <label className={styles.label}>URL con Información para Transferencias</label>
+              <input
+                type="url"
+                value={transferInfoUrl}
+                onChange={(e) => setTransferInfoUrl(e.target.value)}
+                placeholder="ej: https://tu-sitio.com/como-transferir"
+                className={styles.input}
+              />
+              <p className={styles.hint}>
+                Este enlace aparecerá en el registro de pagos manuales para que el cajero lo copie y envíe al cliente
               </p>
             </div>
           </div>

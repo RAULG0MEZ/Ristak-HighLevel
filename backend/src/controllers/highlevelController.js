@@ -200,7 +200,7 @@ export const getConfig = async (req, res) => {
     let config;
     try {
       config = await db.get(
-        'SELECT location_id, api_token, location_data, created_at, invoice_title, invoice_number_prefix, invoice_terms_notes, invoice_due_days FROM highlevel_config LIMIT 1'
+        'SELECT location_id, api_token, location_data, created_at, invoice_title, invoice_number_prefix, invoice_terms_notes, invoice_due_days, transfer_info_url FROM highlevel_config LIMIT 1'
       );
     } catch (selectError) {
       // Si falla (columnas no existen), usar SELECT básico
@@ -254,7 +254,8 @@ export const getConfig = async (req, res) => {
       invoiceTitle: config.invoice_title || 'PAGO',
       invoiceNumberPrefix: config.invoice_number_prefix || 'INV-',
       invoiceTermsNotes: config.invoice_terms_notes || null,
-      invoiceDueDays: config.invoice_due_days || 7
+      invoiceDueDays: config.invoice_due_days || 7,
+      transferInfoUrl: config.transfer_info_url || null
     });
 
   } catch (error) {
@@ -1407,7 +1408,7 @@ export const getStripeConfig = async (req, res) => {
  */
 export const saveInvoiceConfig = async (req, res) => {
   try {
-    const { invoiceTitle, invoiceNumberPrefix, invoiceTermsNotes, invoiceDueDays } = req.body;
+    const { invoiceTitle, invoiceNumberPrefix, invoiceTermsNotes, invoiceDueDays, transferInfoUrl } = req.body;
 
     // Validaciones básicas
     if (!invoiceTitle || !invoiceNumberPrefix) {
@@ -1440,7 +1441,8 @@ export const saveInvoiceConfig = async (req, res) => {
       SET invoice_title = ?,
           invoice_number_prefix = ?,
           invoice_terms_notes = ?,
-          invoice_due_days = ?
+          invoice_due_days = ?,
+          transfer_info_url = ?
       WHERE location_id = ?
     `;
 
@@ -1449,6 +1451,7 @@ export const saveInvoiceConfig = async (req, res) => {
       invoiceNumberPrefix.trim(),
       invoiceTermsNotes?.trim() || null,
       parseInt(invoiceDueDays),
+      transferInfoUrl?.trim() || null,
       config.location_id
     ];
 
@@ -1490,6 +1493,15 @@ export const saveInvoiceConfig = async (req, res) => {
         try {
           await db.run('ALTER TABLE highlevel_config ADD COLUMN invoice_due_days INTEGER DEFAULT 7');
           logger.success('✅ Columna invoice_due_days agregada');
+        } catch (e) {
+          if (!e.message.includes('duplicate column') && !e.message.includes('already exists')) {
+            throw e;
+          }
+        }
+
+        try {
+          await db.run('ALTER TABLE highlevel_config ADD COLUMN transfer_info_url TEXT');
+          logger.success('✅ Columna transfer_info_url agregada');
         } catch (e) {
           if (!e.message.includes('duplicate column') && !e.message.includes('already exists')) {
             throw e;
