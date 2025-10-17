@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Card, Button } from '@/components/common'
-import { CheckCircle, ExternalLink, ChevronDown, ChevronUp, AlertCircle, Info } from 'lucide-react'
+import { CheckCircle, ExternalLink, ChevronDown, ChevronUp, AlertCircle, Info, Facebook } from 'lucide-react'
 import styles from './HighLevelIntegration.module.css'
 
 export const MetaAdsIntegration: React.FC = () => {
@@ -18,10 +18,17 @@ export const MetaAdsIntegration: React.FC = () => {
           <div className={styles.headerContent}>
             <div className={styles.headerLeft}>
               <div className={styles.logoContainer}>
-                <svg width="60" height="40" viewBox="0 0 32 32" fill="none">
-                  <rect width="32" height="32" rx="8" fill="#0866FF"/>
-                  <path d="M20 9h-8C10.343 9 9 10.343 9 12v8c0 1.657 1.343 3 3 3h4l.001 3.002 3.999-3.002H20c1.657 0 3-1.343 3-3v-8c0-1.657-1.343-3-3-3z" fill="white"/>
-                </svg>
+                <div className={styles.iconWrapper} style={{
+                  backgroundColor: '#0866FF',
+                  borderRadius: '12px',
+                  width: '60px',
+                  height: '60px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <Facebook size={36} color="white" />
+                </div>
               </div>
               <p className={styles.pageSubtitle}>
                 Tutorial completo para conectar tus anuncios de Facebook con Ristak
@@ -65,6 +72,32 @@ export const MetaAdsIntegration: React.FC = () => {
               <div className={styles.checklistItem}>
                 <CheckCircle size={18} className={styles.checklistIcon} />
                 <span>Acceso a Meta Developers (gratis)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Scopes Requeridos */}
+        <div className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <h3 className={styles.sectionTitle}>Permisos (Scopes) que necesitarás</h3>
+          </div>
+          <div className={styles.sectionContent}>
+            <p className={styles.infoText}>
+              Cuando generes el Access Token en el Paso 2, necesitarás seleccionar estos permisos:
+            </p>
+            <div className={styles.checklistGrid}>
+              <div className={styles.checklistItem}>
+                <CheckCircle size={18} className={styles.checklistIcon} />
+                <span><code>ads_read</code> - Para leer datos de anuncios</span>
+              </div>
+              <div className={styles.checklistItem}>
+                <CheckCircle size={18} className={styles.checklistIcon} />
+                <span><code>ads_management</code> - Opcional, si quieres crear/editar campañas</span>
+              </div>
+              <div className={styles.checklistItem}>
+                <CheckCircle size={18} className={styles.checklistIcon} />
+                <span><code>business_management</code> - Para acceder a cuentas de anuncios</span>
               </div>
             </div>
           </div>
@@ -196,13 +229,7 @@ export const MetaAdsIntegration: React.FC = () => {
                         <li>Haz clic en el System User que acabas de crear</li>
                         <li>Haz clic en <strong>"Generar nuevo token"</strong> o <strong>"Generate New Token"</strong></li>
                         <li>En "App", selecciona la App que creaste en el Paso 1</li>
-                        <li>Selecciona los siguientes permisos:
-                          <ul>
-                            <li>✓ <code>ads_read</code> (para leer datos de anuncios)</li>
-                            <li>✓ <code>ads_management</code> (opcional, si quieres crear/editar campañas)</li>
-                            <li>✓ <code>business_management</code> (para acceder a cuentas de anuncios)</li>
-                          </ul>
-                        </li>
+                        <li>Selecciona los permisos que se mencionan arriba (<code>ads_read</code>, <code>ads_management</code>, <code>business_management</code>)</li>
                         <li>Duración: <strong>60 días o "Never expire"</strong></li>
                         <li>Haz clic en "Generar Token"</li>
                         <li className={styles.warningText}>
