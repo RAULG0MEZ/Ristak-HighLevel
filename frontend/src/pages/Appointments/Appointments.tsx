@@ -35,6 +35,7 @@ export const Appointments: React.FC = () => {
   const [calendars, setCalendars] = useState<Calendar[]>([]);
   const [selectedCalendar, setSelectedCalendar] = useState<Calendar | null>(null);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [upcomingEvents, setUpcomingEvents] = useState<CalendarEvent[]>([]); // Eventos próximos desde HOY
   const [stats, setStats] = useState<AppointmentStats>({
     pending: 0,
     cancelled: 0,
@@ -65,6 +66,13 @@ export const Appointments: React.FC = () => {
       loadEvents();
     }
   }, [selectedCalendar, currentDate, viewMode, locationId, accessToken]);
+
+  // Cargar próximas citas solo cuando cambie el calendario seleccionado
+  useEffect(() => {
+    if (selectedCalendar && locationId && accessToken) {
+      loadUpcomingEvents();
+    }
+  }, [selectedCalendar, locationId, accessToken]);
 
   // Cerrar dropdown al presionar Escape
   useEffect(() => {
@@ -123,6 +131,29 @@ export const Appointments: React.FC = () => {
       showToast('error', 'Error al cargar citas', 'No se pudieron obtener las citas del calendario.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Cargar eventos próximos desde HOY (independiente del calendario visible)
+  const loadUpcomingEvents = async () => {
+    if (!locationId || !accessToken || !selectedCalendar) return;
+
+    try {
+      const now = new Date();
+      const futureDate = new Date();
+      futureDate.setMonth(futureDate.getMonth() + 3); // Próximos 3 meses
+
+      const upcomingData = await calendarsService.getEvents(
+        locationId,
+        now.getTime(),
+        futureDate.getTime(),
+        accessToken,
+        selectedCalendar.id
+      );
+
+      setUpcomingEvents(upcomingData);
+    } catch (error) {
+      console.error('Error al cargar próximas citas:', error);
     }
   };
 
@@ -195,10 +226,10 @@ export const Appointments: React.FC = () => {
     return cells;
   }, [currentDate, events]);
 
-  // Próximas citas
+  // Próximas citas (siempre desde HOY, no del rango visible)
   const upcomingAppointments = useMemo(() => {
-    return calendarsService.getUpcomingAppointments(events, 8);
-  }, [events]);
+    return calendarsService.getUpcomingAppointments(upcomingEvents, 8);
+  }, [upcomingEvents]);
 
   // Navegación del calendario
   const handlePrev = () => {
