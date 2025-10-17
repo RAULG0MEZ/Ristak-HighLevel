@@ -744,7 +744,7 @@ export const Campaigns: React.FC = () => {
             icon={<Megaphone size={20} />}
           />
           <KpiCard
-            title="Retorno de Inversión Promedio"
+            title="Retorno de Inversión"
             value={formatRoas(avgRoas)}
             delta={campaignDeltas.roas}
             deltaLabel="vs periodo anterior"
