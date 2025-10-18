@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import { useDateRange } from '@/contexts/DateRangeContext'
 import { useLabels } from '@/contexts/LabelsContext'
-import { formatCurrency, formatRoas, formatChartDate, formatDateToISO, parseLocalDateString } from '@/utils/format'
+import { formatCurrency, formatRoas, formatChartDate, formatDateToISO, formatEndDateToISO, parseLocalDateString } from '@/utils/format'
 import { campaignsService, type CampaignContact } from '@/services/campaignsService'
 import { reportsService, type CampaignsReport } from '@/services/reportsService'
 import { useAppConfig } from '@/hooks'
@@ -100,7 +100,7 @@ export const Campaigns: React.FC = () => {
     try {
       setLoading(true)
       const startDate = formatDateToISO(dateRange.start)
-      const endDate = formatDateToISO(dateRange.end)
+      const endDate = formatEndDateToISO(dateRange.end) // Incluir día completo hasta 23:59:59
 
       const summaryPromise = reportsService
         .getCampaignsReport({ from: startDate, to: endDate })
@@ -261,7 +261,7 @@ export const Campaigns: React.FC = () => {
 
     try {
       const startDate = formatDateToISO(dateRange.start)
-      const endDate = formatDateToISO(dateRange.end)
+      const endDate = formatEndDateToISO(dateRange.end) // Incluir día completo
 
       const params: any = {
         type,

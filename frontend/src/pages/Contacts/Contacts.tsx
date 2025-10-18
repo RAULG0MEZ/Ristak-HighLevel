@@ -20,7 +20,7 @@ import {
 } from 'lucide-react'
 import { useDateRange } from '@/contexts/DateRangeContext'
 import { useLabels } from '@/contexts/LabelsContext'
-import { formatCurrency, formatDate, formatDateToISO, formatNumber, parseLocalDateString } from '@/utils/format'
+import { formatCurrency, formatDate, formatDateToISO, formatEndDateToISO, formatNumber, parseLocalDateString } from '@/utils/format'
 import { contactsService, type Contact, type ContactStats } from '@/services/contactsService'
 import { useNotification } from '@/contexts/NotificationContext'
 import styles from './Contacts.module.css'
@@ -67,7 +67,7 @@ export const Contacts: React.FC = () => {
         const start = dateRange.start instanceof Date ? dateRange.start : new Date(dateRange.start)
         const end = dateRange.end instanceof Date ? dateRange.end : new Date(dateRange.end)
         startDate = formatDateToISO(start)
-        endDate = formatDateToISO(end)
+        endDate = formatEndDateToISO(end) // Incluir día completo
       }
       // Si viewMode === 'all', no enviamos fechas para obtener TODOS los contactos
 

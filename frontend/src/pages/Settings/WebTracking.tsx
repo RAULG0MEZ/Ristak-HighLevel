@@ -14,6 +14,19 @@ import { useNotification } from '@/contexts/NotificationContext'
 import { useAppConfig } from '@/hooks'
 import styles from './HighLevelIntegration.module.css'
 
+const ANALYTICS_PREF_STORAGE_KEY = 'showAnalyticsPreference'
+const VISITOR_SOURCE_STORAGE_KEY = 'visitorSourcePreference'
+
+const persistAnalyticsPreference = (value: boolean) => {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(ANALYTICS_PREF_STORAGE_KEY, String(value))
+}
+
+const persistVisitorSourcePreference = (value: 'platform' | 'tracking') => {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(VISITOR_SOURCE_STORAGE_KEY, value)
+}
+
 export const WebTracking: React.FC = () => {
   const { showToast } = useNotification()
 
@@ -125,6 +138,7 @@ export const WebTracking: React.FC = () => {
     try {
       const newValue = !showAnalytics
       await setShowAnalytics(newValue)
+      persistAnalyticsPreference(newValue)
 
       showToast(
         'success',
@@ -147,6 +161,7 @@ export const WebTracking: React.FC = () => {
     try {
       const newValue = visitorSource === 'platform' ? 'tracking' : 'platform'
       await setVisitorSource(newValue)
+      persistVisitorSourcePreference(newValue)
 
       showToast(
         'success',

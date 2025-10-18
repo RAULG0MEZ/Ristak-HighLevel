@@ -22,7 +22,7 @@ import {
   Send
 } from 'lucide-react'
 import { useDateRange } from '@/contexts/DateRangeContext'
-import { formatCurrency, formatDate, formatDateToISO, formatNumber, parseLocalDateString } from '@/utils/format'
+import { formatCurrency, formatDate, formatDateToISO, formatEndDateToISO, formatNumber, parseLocalDateString } from '@/utils/format'
 import { transactionsService, type Transaction, type TransactionSummary } from '@/services/transactionsService'
 import styles from './Transactions.module.css'
 
@@ -69,7 +69,7 @@ export const Transactions: React.FC = () => {
         const start = dateRange.start instanceof Date ? dateRange.start : new Date(dateRange.start)
         const end = dateRange.end instanceof Date ? dateRange.end : new Date(dateRange.end)
         startDate = formatDateToISO(start)
-        endDate = formatDateToISO(end)
+        endDate = formatEndDateToISO(end) // Incluir día completo
       }
       // Si viewMode === 'all', no enviamos fechas para obtener TODOS los pagos
 

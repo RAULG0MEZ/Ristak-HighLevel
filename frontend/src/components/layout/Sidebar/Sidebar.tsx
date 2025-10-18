@@ -12,7 +12,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { Logo } from '@/components/common'
-import { checkTrackingStatus } from '@/services/analyticsService'
+import { useAppConfig } from '@/hooks'
 
 interface SidebarProps {
   onNavigate?: () => void
@@ -60,6 +60,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
     }
     return baseNavigation
   })
+  const [analyticsEnabled] = useAppConfig<boolean>('show_analytics', false)
 
   const persistPreference = useCallback((show: boolean) => {
     if (typeof window === 'undefined') return
@@ -75,34 +76,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
     setMounted(true)
   }, [])
 
-  // Verificar preferencia de Analytics del usuario
   useEffect(() => {
-    const checkTracking = async () => {
-      try {
-        const status = await checkTrackingStatus()
-        // Mostrar Analytics solo si el usuario activó el switch
-        if (status.showAnalytics) {
-          updateNavigation(true)
-        } else {
-          updateNavigation(false)
-        }
-      } catch (error) {
-        // Si falla, mantener preferencia almacenada o default base
-        const stored = getStoredAnalyticsPreference()
-        if (stored !== null) {
-          updateNavigation(stored)
-        } else {
-          updateNavigation(false)
-        }
-      }
-    }
+    updateNavigation(Boolean(analyticsEnabled))
+  }, [analyticsEnabled, updateNavigation])
 
-    checkTracking()
-
-    // Escuchar cambios en la preferencia de Analytics
+  useEffect(() => {
     const handleAnalyticsChange = (event: Event) => {
       const customEvent = event as CustomEvent<{ showAnalytics?: boolean }>
-      updateNavigation(Boolean(customEvent.detail?.showAnalytics))
+      if (typeof customEvent.detail?.showAnalytics === 'boolean') {
+        updateNavigation(customEvent.detail.showAnalytics)
+      }
     }
 
     window.addEventListener('analytics-preference-changed', handleAnalyticsChange)
