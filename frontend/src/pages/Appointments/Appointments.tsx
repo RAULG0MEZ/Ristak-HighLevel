@@ -988,14 +988,15 @@ export const Appointments: React.FC = () => {
                               {event.title || '(Sin título)'}
 
                               {/* Tooltip */}
-                              {hoveredEventId === event.id && tooltipPosition && (
+                              {hoveredEventId === event.id && tooltipPosition && createPortal(
                                 <div
                                   className={styles.eventTooltip}
                                   style={{
                                     position: 'fixed',
                                     top: `${tooltipPosition.top}px`,
                                     left: `${tooltipPosition.left}px`,
-                                    transform: 'translate(-50%, -100%)'
+                                    transform: 'translate(-50%, -100%)',
+                                    zIndex: 2147483647
                                   }}
                                 >
                                   <div className={styles.tooltipTitle}>
@@ -1017,7 +1018,8 @@ export const Appointments: React.FC = () => {
                                       {event.notes}
                                     </div>
                                   )}
-                                </div>
+                                </div>,
+                                document.body
                               )}
                             </div>
                           ))}
@@ -1133,14 +1135,15 @@ export const Appointments: React.FC = () => {
                               <div className={styles.weekEventTitle}>{event.title}</div>
 
                               {/* Tooltip */}
-                              {hoveredEventId === event.id && tooltipPosition && (
+                              {hoveredEventId === event.id && tooltipPosition && createPortal(
                                 <div
                                   className={styles.eventTooltip}
                                   style={{
                                     position: 'fixed',
                                     top: `${tooltipPosition.top}px`,
                                     left: `${tooltipPosition.left}px`,
-                                    transform: 'translate(-50%, -100%)'
+                                    transform: 'translate(-50%, -100%)',
+                                    zIndex: 2147483647
                                   }}
                                 >
                                   <div className={styles.tooltipTitle}>
@@ -1162,7 +1165,8 @@ export const Appointments: React.FC = () => {
                                       {event.notes}
                                     </div>
                                   )}
-                                </div>
+                                </div>,
+                                document.body
                               )}
                             </div>
                           );
