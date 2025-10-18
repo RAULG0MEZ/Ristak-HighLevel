@@ -18,7 +18,7 @@ export const Logo: React.FC<LogoProps> = ({ className = '', size = 'md' }) => {
   return (
     <div className={`${sizeClasses[size]} ${className}`}>
       <img
-        src="/logo.svg"
+        src="/logo.svg?v=2"
         alt="Ristak"
         className="w-full h-full object-contain"
       />
