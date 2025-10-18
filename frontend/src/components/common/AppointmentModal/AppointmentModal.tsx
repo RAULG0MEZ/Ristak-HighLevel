@@ -697,9 +697,38 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
             )}
 
             {/* Usuario asignado (solo en modo crear) */}
-            {isCreateMode && users.length > 0 && (() => {
+            {isCreateMode && (() => {
               const isRoundRobin = calendar?.calendarType === 'round_robin' ||
                                   calendar?.eventType?.includes('RoundRobin');
+
+              console.log('🔍 Renderizando selector de usuarios:', {
+                isCreateMode,
+                usersLength: users.length,
+                users,
+                isRoundRobin,
+                loadingUsers,
+                calendar: calendar ? {
+                  id: calendar.id,
+                  name: calendar.name,
+                  calendarType: calendar.calendarType,
+                  eventType: calendar.eventType,
+                  teamMembersCount: calendar.teamMembers?.length
+                } : null
+              });
+
+              if (users.length === 0 && !loadingUsers) {
+                return (
+                  <div className={styles.sectionBlock}>
+                    <p className={styles.helpText}>
+                      ⚠️ No se pudieron cargar los usuarios. Revisa la consola.
+                    </p>
+                  </div>
+                );
+              }
+
+              if (users.length === 0) {
+                return null;
+              }
 
               return (
                 <div className={styles.sectionBlock}>

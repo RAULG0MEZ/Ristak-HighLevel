@@ -8,10 +8,11 @@ export { PageContainer } from './PageContainer'
 
 // Componentes de datos
 export { KpiCard } from './KpiCard'
-export { LineChart } from './LineChart'
+export { LineChart} from './LineChart'
 export { AreaChart } from './AreaChart'
 export { Table } from './Table'
 export type { Column } from './Table'
+export { ChartContainer } from './ChartContainer'
 
 // Componentes de fecha
 export { DateRangePicker } from './DateRangePicker'
