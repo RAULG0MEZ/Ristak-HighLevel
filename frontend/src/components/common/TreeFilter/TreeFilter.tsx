@@ -492,15 +492,15 @@ export function TreeFilter({
                               >
                                 {/* Checkbox */}
                                 <div className={`
-                                  w-4 h-4 rounded border-2 transition-all duration-200
+                                  w-4 h-4 rounded transition-all duration-200
                                   flex items-center justify-center flex-shrink-0
                                   ${isSelected
-                                    ? 'bg-[var(--color-accent)] border-[var(--color-accent)]'
-                                    : 'bg-transparent border-[var(--color-text-primary)]/40 hover:border-[var(--color-text-primary)]'
+                                    ? 'bg-[var(--color-primary)] border-2 border-[var(--color-primary)]'
+                                    : 'bg-[var(--color-background-secondary)] border-2 border-[var(--color-border)] hover:border-[var(--color-primary)]'
                                   }
                                 `}>
                                   {isSelected && (
-                                    <Check className="w-2.5 h-2.5 text-white stroke-[3]" />
+                                    <Check className="w-3 h-3 stroke-[3]" style={{ color: '#ffffff' }} />
                                   )}
                                 </div>
 
@@ -570,15 +570,15 @@ export function TreeFilter({
                             >
                               {/* Checkbox */}
                               <div className={`
-                                w-4 h-4 rounded border-2 transition-all duration-200
+                                w-4 h-4 rounded transition-all duration-200
                                 flex items-center justify-center flex-shrink-0
                                 ${isSelected
-                                  ? 'bg-[var(--color-accent)] border-[var(--color-accent)]'
-                                  : 'bg-transparent border-[var(--color-text-primary)]/40 hover:border-[var(--color-text-primary)]'
+                                  ? 'bg-[var(--color-primary)] border-2 border-[var(--color-primary)]'
+                                  : 'bg-[var(--color-background-secondary)] border-2 border-[var(--color-border)] hover:border-[var(--color-primary)]'
                                 }
                               `}>
                                 {isSelected && (
-                                  <Check className="w-2.5 h-2.5 text-white stroke-[3]" />
+                                  <Check className="w-3 h-3 stroke-[3]" style={{ color: '#ffffff' }} />
                                 )}
                               </div>
 

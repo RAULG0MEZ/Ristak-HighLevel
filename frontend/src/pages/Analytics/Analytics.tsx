@@ -599,6 +599,121 @@ const Analytics: React.FC = () => {
     }
   }, [selectedFilters, allSessions])
 
+  // Efecto para recalcular visualizaciones cuando cambien las sesiones filtradas
+  useEffect(() => {
+    if (sessions.length === 0) return
+
+    // Recalcular stats para las cards
+    const browsers: { [key: string]: number } = {}
+    sessions.forEach((session: Session) => {
+      const browser = session.browser || 'Desconocido'
+      browsers[browser] = (browsers[browser] || 0) + 1
+    })
+    const browserStats = Object.entries(browsers)
+      .map(([browser, count]) => ({
+        name: browser,
+        users: count,
+        percentage: ((count / sessions.length) * 100).toFixed(1)
+      }))
+      .sort((a, b) => b.users - a.users)
+      .slice(0, 5)
+    setBrowserData(browserStats)
+
+    const platforms: { [key: string]: number } = {}
+    sessions.forEach((session: Session) => {
+      const platform = session.source_platform || session.utm_source || 'Directo'
+      platforms[platform] = (platforms[platform] || 0) + 1
+    })
+    const platformStats = Object.entries(platforms)
+      .map(([platform, count]) => ({
+        name: platform,
+        users: count,
+        percentage: ((count / sessions.length) * 100).toFixed(1)
+      }))
+      .sort((a, b) => b.users - a.users)
+      .slice(0, 5)
+    setPlatformsData(platformStats)
+
+    // Preparar datos para la dona de fuentes de tráfico
+    const colorMap: { [key: string]: string } = {
+      'facebook': '#1877f2',
+      'google': '#4285f4',
+      'instagram': '#c32aa3',
+      'tiktok': '#ee1d52',
+      'microsoft': '#00a4ef',
+      'twitter': '#1da1f2',
+      'linkedin': '#0a66c2',
+      'directo': '#6b7280'
+    }
+    const trafficSourcesData = Object.entries(platforms)
+      .map(([platform, count]) => ({
+        name: platform.charAt(0).toUpperCase() + platform.slice(1),
+        value: count,
+        color: colorMap[platform.toLowerCase()] || '#6b7280'
+      }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10)
+    setTrafficSources(trafficSourcesData)
+
+    const placements: { [key: string]: number } = {}
+    sessions.forEach((session: Session) => {
+      const placement = session.placement || 'Sin ubicación'
+      placements[placement] = (placements[placement] || 0) + 1
+    })
+    const placementStats = Object.entries(placements)
+      .map(([placement, count]) => ({
+        name: placement.replace(/_/g, ' '),
+        users: count,
+        percentage: ((count / sessions.length) * 100).toFixed(1)
+      }))
+      .sort((a, b) => b.users - a.users)
+      .slice(0, 5)
+    setPlacementsData(placementStats)
+
+    const devices: { [key: string]: number } = {}
+    sessions.forEach((session: Session) => {
+      const device = session.device_type || 'Desconocido'
+      devices[device] = (devices[device] || 0) + 1
+    })
+    const deviceStats = Object.entries(devices)
+      .map(([device, count]) => ({
+        name: device,
+        users: count,
+        percentage: ((count / sessions.length) * 100).toFixed(1)
+      }))
+      .sort((a, b) => b.users - a.users)
+      .slice(0, 5)
+    setDevicesData(deviceStats)
+
+    const operatingSystems: { [key: string]: number } = {}
+    sessions.forEach((session: Session) => {
+      const os = session.os || 'Desconocido'
+      operatingSystems[os] = (operatingSystems[os] || 0) + 1
+    })
+    const osStats = Object.entries(operatingSystems)
+      .map(([os, count]) => ({
+        name: os,
+        users: count,
+        percentage: ((count / sessions.length) * 100).toFixed(1)
+      }))
+      .sort((a, b) => b.users - a.users)
+      .slice(0, 5)
+    setOsData(osStats)
+
+    const visitorCounts: { [key: string]: number } = {}
+    sessions.forEach((s: Session) => {
+      visitorCounts[s.visitor_id] = (visitorCounts[s.visitor_id] || 0) + 1
+    })
+    const topVisitorsList = Object.entries(visitorCounts)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 5)
+      .map(([visitorId, count]) => ({
+        id: visitorId.substring(0, 24) + '...',
+        requests: count
+      }))
+    setTopVisitors(topVisitorsList)
+  }, [sessions])
+
   // Preparar métricas para KPICards
   const getTrend = (value: number): 'up' | 'down' | undefined => {
     return value > 0 ? 'up' : value < 0 ? 'down' : undefined
