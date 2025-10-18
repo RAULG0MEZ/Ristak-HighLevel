@@ -28,6 +28,56 @@ interface DayCell {
   events: CalendarEvent[];
 }
 
+const getTimeZoneParts = (date: Date, timeZone?: string) => {
+  if (!timeZone) return null;
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
+
+  const parts = formatter.formatToParts(date);
+  const result: Record<string, number> = {};
+  for (const part of parts) {
+    if (part.type !== 'literal') {
+      result[part.type] = Number(part.value);
+    }
+  }
+  return result;
+};
+
+const toDateInTimeZone = (value?: string | null, timeZone?: string): Date | null => {
+  if (!value) return null;
+  const base = new Date(value);
+  if (Number.isNaN(base.getTime())) return null;
+  if (!timeZone) return base;
+
+  const parts = getTimeZoneParts(base, timeZone);
+  if (!parts) return base;
+
+  return new Date(
+    parts.year ?? base.getFullYear(),
+    (parts.month ?? base.getMonth() + 1) - 1,
+    parts.day ?? base.getDate(),
+    parts.hour ?? base.getHours(),
+    parts.minute ?? base.getMinutes(),
+    parts.second ?? base.getSeconds()
+  );
+};
+
+const isSameDay = (a: Date, b: Date): boolean => {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+};
+
 export const Appointments: React.FC = () => {
   const { locationId, accessToken } = useAuth();
   const { showToast } = useNotification();
@@ -700,9 +750,11 @@ export const Appointments: React.FC = () => {
                   return Array.from({ length: 7 }).map((_, dayIndex) => {
                     const date = new Date(startOfWeek);
                     date.setDate(startOfWeek.getDate() + dayIndex);
-                    const dateStr = date.toISOString().split('T')[0];
-                    const dayEvents = eventsByDate[dateStr] || [];
                     const isToday = date.toDateString() === new Date().toDateString();
+                    const dayEvents = events.filter((event) => {
+                      const eventDate = toDateInTimeZone(event.startTime, event.timeZone) ?? new Date(event.startTime);
+                      return eventDate ? isSameDay(eventDate, date) : false;
+                    });
 
                     return (
                       <div key={dayIndex} className={`${styles.dayColumn} ${isToday ? styles.dayColumnToday : ''}`}>
@@ -713,8 +765,8 @@ export const Appointments: React.FC = () => {
 
                         {/* Eventos posicionados */}
                         {dayEvents.map((event) => {
-                          const startDate = new Date(event.startTime);
-                          const endDate = new Date(event.endTime);
+                          const startDate = toDateInTimeZone(event.startTime, event.timeZone) ?? new Date(event.startTime);
+                          const endDate = toDateInTimeZone(event.endTime, event.timeZone) ?? new Date(event.endTime);
                           const startHour = startDate.getHours() + startDate.getMinutes() / 60;
                           const endHour = endDate.getHours() + endDate.getMinutes() / 60;
                           const top = (startHour / 24) * 100;

@@ -1258,3 +1258,43 @@ body.dark .table tbody tr:hover {
   margin: var(--spacing-xs) 0 0 0;
   line-height: 1.6;
 }
+
+/* Code Block Wrapper con botón */
+.codeBlockWrapper {
+  position: relative;
+}
+
+.copyButton {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 5;
+  background: var(--color-white) !important;
+  border: 1px solid var(--color-border) !important;
+  box-shadow: var(--shadow-sm);
+}
+
+body.dark .copyButton {
+  background: var(--color-gray-800) !important;
+}
+
+.copyButton:hover {
+  background: var(--color-gray-50) !important;
+  border-color: var(--color-primary) !important;
+}
+
+body.dark .copyButton:hover {
+  background: var(--color-gray-700) !important;
+}
+
+/* Warning Box */
+.warningBox {
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+}
+
+body.dark .warningBox {
+  background: rgba(245, 158, 11, 0.12);
+}

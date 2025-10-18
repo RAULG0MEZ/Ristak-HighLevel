@@ -51,19 +51,87 @@ const INITIAL_FORM_STATE = {
   timeZone: DEFAULT_TIMEZONE
 };
 
-const toLocalInputValue = (value?: string | null): string => {
-  if (!value) return '';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return '';
-  const offset = parsed.getTimezoneOffset();
-  const local = new Date(parsed.getTime() - offset * 60000);
-  return local.toISOString().slice(0, 16);
+const getTimeZoneParts = (date: Date, timeZone: string) => {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
+
+  const parts = formatter.formatToParts(date);
+  const result: Record<string, number> = {};
+  for (const part of parts) {
+    if (part.type !== 'literal') {
+      result[part.type] = Number(part.value);
+    }
+  }
+  return result;
+};
+
+const toDateInTimeZone = (value?: string | null, timeZone?: string): Date | null => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  if (!timeZone) return date;
+
+  const parts = getTimeZoneParts(date, timeZone);
+
+  return new Date(
+    parts.year ?? date.getFullYear(),
+    (parts.month ?? date.getMonth() + 1) - 1,
+    parts.day ?? date.getDate(),
+    parts.hour ?? date.getHours(),
+    parts.minute ?? date.getMinutes(),
+    parts.second ?? date.getSeconds()
+  );
+};
+
+const toLocalInputValue = (value?: string | null, timeZone?: string): string => {
+  const zoned = toDateInTimeZone(value, timeZone);
+  if (!zoned) return '';
+
+  const year = zoned.getFullYear();
+  const month = String(zoned.getMonth() + 1).padStart(2, '0');
+  const day = String(zoned.getDate()).padStart(2, '0');
+  const hours = String(zoned.getHours()).padStart(2, '0');
+  const minutes = String(zoned.getMinutes()).padStart(2, '0');
+
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
 };
 
 const parseDateSafe = (value?: string | null): Date | null => {
   if (!value) return null;
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const convertLocalInputToISO = (value: string, timeZone: string): string | null => {
+  if (!value) return null;
+  const [datePart, timePart] = value.split('T');
+  if (!timePart) return null;
+  const [year, month, day] = datePart.split('-').map(Number);
+  const [hour, minute] = timePart.split(':').map(Number);
+
+  const baseUtc = new Date(Date.UTC(year, month - 1, day, hour, minute));
+  const offsetParts = getTimeZoneParts(baseUtc, timeZone);
+  const utcFromParts = Date.UTC(
+    offsetParts.year ?? year,
+    (offsetParts.month ?? month) - 1,
+    offsetParts.day ?? day,
+    offsetParts.hour ?? hour,
+    offsetParts.minute ?? minute,
+    offsetParts.second ?? 0
+  );
+
+  // Offset between timezone representation and UTC
+  const offset = utcFromParts - baseUtc.getTime();
+  const adjusted = new Date(baseUtc.getTime() - offset);
+  return adjusted.toISOString();
 };
 
 export const AppointmentModal: React.FC<AppointmentModalProps> = ({
@@ -81,14 +149,14 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
       setFormData({
         title: event.title || '',
         appointmentStatus: event.appointmentStatus || 'pending',
-        startTime: toLocalInputValue(event.startTime),
-        endTime: toLocalInputValue(event.endTime),
+        startTime: toLocalInputValue(event.startTime, event.timeZone),
+        endTime: toLocalInputValue(event.endTime, event.timeZone),
         notes: event.notes || '',
         address: event.address || '',
         timeZone:
           event.timeZone ||
-          (event as any).timeZone ||
-          (event as any).timezone ||
+          (event as any)?.timeZone ||
+          (event as any)?.timezone ||
           DEFAULT_TIMEZONE
       });
     } else if (!isOpen) {
@@ -106,19 +174,18 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
         title: formData.title.trim(),
         appointmentStatus: formData.appointmentStatus,
         notes: formData.notes,
-        address: formData.address
+        address: formData.address,
+        timeZone: formData.timeZone
       };
 
-      if (formData.timeZone) {
-        updates.timeZone = formData.timeZone;
-      }
-
       if (formData.startTime) {
-        updates.startTime = new Date(formData.startTime).toISOString();
+        const startIso = convertLocalInputToISO(formData.startTime, formData.timeZone);
+        if (startIso) updates.startTime = startIso;
       }
 
       if (formData.endTime) {
-        updates.endTime = new Date(formData.endTime).toISOString();
+        const endIso = convertLocalInputToISO(formData.endTime, formData.timeZone);
+        if (endIso) updates.endTime = endIso;
       }
 
       await onSave(event.id, updates);
@@ -154,9 +221,9 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
   const endDate = parseDateSafe(formData.endTime) ?? parseDateSafe(event.endTime);
   const selectedTimeZone =
     formData.timeZone ||
-    event.timeZone ||
-    (event as any).timeZone ||
-    (event as any).timezone ||
+    event?.timeZone ||
+    (event as any)?.timeZone ||
+    (event as any)?.timezone ||
     DEFAULT_TIMEZONE;
 
   const timeFormatter = new Intl.DateTimeFormat('es-MX', {
@@ -285,7 +352,24 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
                 id="timeZone"
                 className={styles.select}
                 value={formData.timeZone}
-                onChange={(e) => setFormData({ ...formData, timeZone: e.target.value })}
+                onChange={(e) => {
+                  const newZone = e.target.value;
+                  setFormData((prev) => {
+                    const startIso = prev.startTime
+                      ? convertLocalInputToISO(prev.startTime, prev.timeZone) ?? ''
+                      : '';
+                    const endIso = prev.endTime
+                      ? convertLocalInputToISO(prev.endTime, prev.timeZone) ?? ''
+                      : '';
+
+                    return {
+                      ...prev,
+                      timeZone: newZone,
+                      startTime: startIso ? toLocalInputValue(startIso, newZone) : '',
+                      endTime: endIso ? toLocalInputValue(endIso, newZone) : ''
+                    };
+                  });
+                }}
               >
                 {ALL_TIMEZONES.map((tz) => (
                   <option key={tz} value={tz}>

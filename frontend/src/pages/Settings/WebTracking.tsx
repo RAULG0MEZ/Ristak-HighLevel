@@ -168,9 +168,19 @@ export const WebTracking: React.FC = () => {
             <>
               {/* Instrucción importante: Usar subdominio collect */}
               {!trackingDomain.includes('collect') && (
-                <p className={styles.formHint} style={{ marginBottom: '20px' }}>
-                  ⚠️ Para configurar el tracking, accede usando el subdominio <code className={styles.codeInline}>collect.tudominio.com</code> (configura CNAME: collect → ristak-app.onrender.com)
-                </p>
+                <div className={styles.warningBox} style={{ marginBottom: '16px' }}>
+                  <div className={styles.infoBoxTitle}>
+                    <Info size={16} />
+                    <span>Configuración requerida</span>
+                  </div>
+                  <p className={styles.infoBoxText}>
+                    Para configurar el tracking, accede usando el subdominio{' '}
+                    <code className={styles.codeInline}>collect.tudominio.com</code>
+                  </p>
+                  <p className={styles.formHint} style={{ marginTop: '8px', marginBottom: 0 }}>
+                    Configura un CNAME en tu DNS: <code className={styles.codeInline}>collect</code> → <code className={styles.codeInline}>ristak-app.onrender.com</code>
+                  </p>
+                </div>
               )}
 
               {/* Dominio detectado */}
@@ -194,7 +204,11 @@ export const WebTracking: React.FC = () => {
                     <span>Tracking configurado</span>
                   </div>
                   <p className={styles.infoBoxText}>
-                    Usa <code className={styles.codeInline}>{'{{ custom_values.rstktrack }}'}</code> en el <code className={styles.codeInline}>&lt;head&gt;</code> de tu sitio
+                    Usa{' '}
+                    <code className={styles.codeInline}>{'{{ custom_values.rstktrack }}'}</code>
+                    {' '}en el{' '}
+                    <code className={styles.codeInline}>&lt;head&gt;</code>
+                    {' '}de tu sitio
                   </p>
                 </div>
               ) : (
@@ -204,7 +218,9 @@ export const WebTracking: React.FC = () => {
                     <span>Configuración pendiente</span>
                   </div>
                   <p className={styles.infoBoxText}>
-                    Sincroniza para crear/actualizar el custom value <code className={styles.codeInline}>rstktrack</code> en HighLevel
+                    Sincroniza para crear el custom value{' '}
+                    <code className={styles.codeInline}>rstktrack</code>
+                    {' '}en HighLevel
                   </p>
                 </div>
               )}
@@ -244,28 +260,30 @@ export const WebTracking: React.FC = () => {
               {trackingDomain && (
                 <div style={{ marginTop: '24px' }}>
                   <label className={styles.formLabel}>Código del pixel</label>
-                  <div className={styles.codeBlock}>
-                    <pre className={styles.codeContent}>
-                      {trackingService.generateSnippet(trackingDomain)}
-                    </pre>
+                  <div className={styles.codeBlockWrapper}>
                     <Button
                       variant="ghost"
                       size="small"
                       onClick={handleCopySnippet}
-                      style={{ marginTop: '12px' }}
+                      className={styles.copyButton}
                     >
                       {copied ? (
                         <>
-                          <Check size={16} />
+                          <Check size={14} />
                           Copiado
-                      </>
-                    ) : (
-                      <>
-                        <Copy size={16} />
-                        Copiar código
-                      </>
-                    )}
+                        </>
+                      ) : (
+                        <>
+                          <Copy size={14} />
+                          Copiar
+                        </>
+                      )}
                     </Button>
+                    <div className={styles.codeBlock}>
+                      <pre className={styles.codeContent}>
+                        {trackingService.generateSnippet(trackingDomain)}
+                      </pre>
+                    </div>
                   </div>
                 </div>
               )}
