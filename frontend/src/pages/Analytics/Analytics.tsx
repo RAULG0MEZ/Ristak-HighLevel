@@ -244,9 +244,23 @@ const Analytics: React.FC = () => {
             }
           })
 
-          // Preparar datos para gráfico de tráfico diario
+          // Preparar datos para gráfico de tráfico diario (incluyendo período anterior)
           const dailyStats: { [key: string]: { totalVisits: number, uniqueVisitors: Set<string> } } = {}
 
+          // Incluir sesiones del período anterior para contexto visual
+          prevSessions.forEach((session: Session) => {
+            const date = session.started_at.split('T')[0]
+            if (!dailyStats[date]) {
+              dailyStats[date] = {
+                totalVisits: 0,
+                uniqueVisitors: new Set()
+              }
+            }
+            dailyStats[date].totalVisits++
+            dailyStats[date].uniqueVisitors.add(session.visitor_id)
+          })
+
+          // Incluir sesiones del período actual
           currentSessions.forEach((session: Session) => {
             const date = session.started_at.split('T')[0]
             if (!dailyStats[date]) {
@@ -269,8 +283,21 @@ const Analytics: React.FC = () => {
 
           setDailyTraffic(chartData)
 
-          // Gráfico de conversiones (sesiones con contact_id agrupadas por día)
+          // Gráfico de conversiones (sesiones con contact_id agrupadas por día, incluyendo período anterior)
           const conversionStats: { [key: string]: Set<string> } = {}
+
+          // Incluir conversiones del período anterior para contexto visual
+          prevSessions.forEach((session: Session) => {
+            if (session.contact_id) {
+              const date = session.started_at.split('T')[0]
+              if (!conversionStats[date]) {
+                conversionStats[date] = new Set()
+              }
+              conversionStats[date].add(session.contact_id)
+            }
+          })
+
+          // Incluir conversiones del período actual
           currentSessions.forEach((session: Session) => {
             if (session.contact_id) {
               const date = session.started_at.split('T')[0]
