@@ -1,0 +1,12 @@
+{
+  "name": "ristak-high-level",
+  "version": "1.0.0",
+  "description": "Ristak - Dashboard de HighLevel + Meta Ads",
+  "scripts": {
+    "build": "cd frontend && npm install && npm run build",
+    "start": "cd backend && npm install && npm start"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

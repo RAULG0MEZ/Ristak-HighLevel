@@ -164,14 +164,14 @@ const convertLocalInputToISO = (value: string, timeZone: string): string | null 
   return `${year}-${month}-${day}T${hour}:${minute}:00${offsetStr}`;
 };
 
-// Helper para obtener el offset de timezone en minutos
+// Helper para obtener el offset de timezone en minutos (formato: -360 para -06:00)
 const getTimezoneOffset = (date: Date, timeZone: string): number => {
   // Crear dos versiones de la fecha: una en UTC y otra en la timezone especificada
   const utcDate = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' }));
   const tzDate = new Date(date.toLocaleString('en-US', { timeZone }));
 
-  // La diferencia en milisegundos nos da el offset
-  return (tzDate.getTime() - utcDate.getTime()) / (1000 * 60);
+  // La diferencia en milisegundos nos da el offset (invertido porque queremos UTC - TZ)
+  return (utcDate.getTime() - tzDate.getTime()) / (1000 * 60);
 };
 
 export const AppointmentModal: React.FC<AppointmentModalProps> = ({
