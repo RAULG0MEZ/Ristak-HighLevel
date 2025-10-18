@@ -300,8 +300,8 @@ VITE_API_URL=http://localhost:3001
 ### ✅ Componentes Activos y Funcionales
 - AppShell, Button, Card, Modal, TabList
 - KpiCard, LineChart, Table, SyncProgressBar
-- DateRangePicker, ContactDetailsModal, ContactSearchInput
-- ViewSelector, Icon, Toast, ToastContainer
+- DateRangePicker, DateTimePicker, ContactDetailsModal, ContactSearchInput
+- ViewSelector, Icon, Toast, ToastContainer, RecordPaymentModal, AppointmentModal
 
 ### ❌ Componentes Eliminados (NO RECREAR)
 - Badge, Select, Input, DatePicker
@@ -531,16 +531,20 @@ cd frontend && npm run build
 ## 📅 ÚLTIMA ACTUALIZACIÓN
 
 **Fecha**: 2025-10-18
-**Versión**: 1.11.0
+**Versión**: 1.12.0
 **Último cambio estructural**:
-- **Feature: Fechas de citas en modal de contactos**
-  - Agregados campos `firstAppointmentDate` y `nextAppointmentDate` al tipo Contact
-  - Backend calcula fechas desde tabla `appointments` de la BD local
-  - Primera cita: la más antigua del historial del contacto
-  - Próxima cita: la más cercana en el futuro que no esté cancelada
-  - Nueva sección "Citas" en modal de detalles de contacto (Contacts.tsx)
-  - Endpoint modificado: GET /api/contacts/:id (contactsController.js)
-  - Archivos: types/index.ts, Contacts.tsx, contactsController.js, highlevelController.js
+- **Feature: DateTimePicker personalizado para citas**
+  - Creado componente DateTimePicker para reemplazar input datetime-local nativo
+  - Calendario con vista mensual, navegación, resaltado de hoy y seleccionado
+  - Selector de hora con scroll (hora 1-12, minutos 00-55 cada 5min, AM/PM)
+  - Botones "Ahora" (establece fecha/hora actual) y "Listo" (cierra picker)
+  - Soporte para minDate (fecha fin no puede ser antes de fecha inicio)
+  - Botón clear (X) para borrar valor
+  - Diseño consistente con la app (dark mode incluido)
+  - Animación slideDown al abrir dropdown
+  - Reemplazado en AppointmentModal (fechas de inicio y fin)
+  - Archivos nuevos: DateTimePicker/ (tsx, css, index)
+  - Exportado desde components/common/index.ts
 
 ---
 
