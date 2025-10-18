@@ -349,7 +349,8 @@ export function TreeFilter({
       {/* Dropdown principal con menú tipo navegación */}
       {isOpen && (
         <div
-          className="absolute top-full left-0 mt-2 z-50 bg-[var(--color-background-primary)] border border-[var(--color-border)] rounded-lg shadow-xl animate-fadeIn flex"
+          className="absolute top-full left-0 mt-2 z-50 bg-[var(--color-background-primary)] rounded-lg shadow-xl animate-fadeIn flex"
+          style={{ border: '1px solid var(--color-border-subtle)' }}
           onMouseLeave={handleCategoryLeave}
         >
           {/* Panel izquierdo: Categorías principales */}

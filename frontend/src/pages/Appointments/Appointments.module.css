@@ -24,8 +24,8 @@
 .searchContainer {
   position: relative;
   flex: 0 1 auto;
-  min-width: 240px;
-  max-width: 320px;
+  min-width: 300px;
+  max-width: 450px;
 }
 
 .searchInputWrapper {
@@ -826,7 +826,7 @@
 /* Tooltip de eventos */
 .eventTooltip {
   position: fixed;
-  z-index: 9999;
+  z-index: 999999 !important;
   background-color: #1a1a1a !important;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: var(--radius-lg);
