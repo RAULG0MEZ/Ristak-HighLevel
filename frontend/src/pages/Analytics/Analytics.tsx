@@ -134,9 +134,8 @@ const Analytics: React.FC = () => {
         if (currentSessions.length > 0) {
           // Calcular métricas principales
           const uniqueVids = new Set(currentSessions.map((s: Session) => s.visitor_id)).size
-          const totalPageViews = currentSessions.reduce((acc: number, s: Session) =>
-            acc + (s.pageviews_count || 1), 0
-          )
+          // Usar 1 sesión = 1 page view (simplificado)
+          const totalPageViews = currentSessions.length
 
           // Registros = sesiones con contact_id
           const registros = new Set(
@@ -144,8 +143,8 @@ const Analytics: React.FC = () => {
           ).size
 
           const conversionRate = uniqueVids > 0 ? ((registros / uniqueVids) * 100) : 0
-          const bounceRate = currentSessions.length > 0 ?
-            ((currentSessions.filter((s: Session) => s.is_bounce === 1).length / currentSessions.length) * 100) : 0
+          // Sin datos de bounce, usar 0
+          const bounceRate = 0
 
           // Usuarios recurrentes
           const visitorCounts: { [key: string]: number } = {}
@@ -157,21 +156,17 @@ const Analytics: React.FC = () => {
           const avgPagePerSession = currentSessions.length > 0 ?
             (totalPageViews / currentSessions.length) : 0
 
-          // Duración promedio estimada
-          const avgDuration = currentSessions.length > 0 ?
-            Math.round(currentSessions.reduce((acc: number, s: Session) =>
-              acc + (s.events_count || 1) * 45, 0) / currentSessions.length) : 0
+          // Duración promedio estimada (45 segundos por sesión)
+          const avgDuration = 45
 
           // Calcular métricas del período anterior para trends
           const prevUniqueVids = prevSessions.length > 0 ?
             new Set(prevSessions.map((s: Session) => s.visitor_id)).size : 0
-          const prevTotalPageViews = prevSessions.length > 0 ?
-            prevSessions.reduce((acc: number, s: Session) => acc + (s.pageviews_count || 1), 0) : 0
+          const prevTotalPageViews = prevSessions.length
           const prevRegistros = prevSessions.length > 0 ?
             new Set(prevSessions.filter((s: Session) => s.contact_id).map((s: Session) => s.contact_id)).size : 0
           const prevConversionRate = prevUniqueVids > 0 ? ((prevRegistros / prevUniqueVids) * 100) : 0
-          const prevBounceRate = prevSessions.length > 0 ?
-            ((prevSessions.filter((s: Session) => s.is_bounce === 1).length / prevSessions.length) * 100) : 0
+          const prevBounceRate = 0
 
           const prevVisitorCounts: { [key: string]: number } = {}
           prevSessions.forEach((s: Session) => {
@@ -180,9 +175,7 @@ const Analytics: React.FC = () => {
           const prevReturningUsers = Object.values(prevVisitorCounts).filter(count => count > 1).length
           const prevAvgPagePerSession = prevSessions.length > 0 ?
             (prevTotalPageViews / prevSessions.length) : 0
-          const prevAvgDuration = prevSessions.length > 0 ?
-            Math.round(prevSessions.reduce((acc: number, s: Session) =>
-              acc + (s.events_count || 1) * 45, 0) / prevSessions.length) : 0
+          const prevAvgDuration = 45
 
           // Calcular trends
           const calculateTrend = (current: number, previous: number) => {
