@@ -170,12 +170,61 @@ export async function servePixel(req, res) {
     return cookies;
   }
 
+  // Detectar y guardar contact_id de HighLevel desde _ud
+  function syncHighLevelContact() {
+    try {
+      var udData = localStorage.getItem('_ud');
+      if (!udData) return null;
+
+      var userData = JSON.parse(udData);
+      var contactId = userData.customer_id || userData.id;
+
+      if (contactId) {
+        // Guardar en nuestra estructura ristak
+        var localData = getLocalData();
+
+        // Solo actualizar si cambió o es nuevo
+        if (localData.contact_id !== contactId) {
+          localData.contact_id = contactId;
+          localData.contact_email = userData.email || null;
+          localData.contact_name = userData.full_name || userData.name || null;
+          localData.contact_first_name = userData.first_name || null;
+          localData.contact_last_name = userData.last_name || null;
+          localData.contact_location_id = userData.location_id || null;
+          localData.contact_synced_at = new Date().toISOString();
+          setLocalData(localData);
+        }
+
+        return contactId;
+      }
+    } catch (e) {
+      // Ignore errors
+    }
+    return null;
+  }
+
+  // Obtener contact_id guardado
+  function getContactId() {
+    try {
+      var localData = getLocalData();
+      return localData.contact_id || null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   // Enviar evento al servidor
   function sendEvent(eventName, additionalData) {
     var visitorId = getVisitorId();
     var sessionId = getSessionId();
     var utmParams = extractUtmParams();
     var fbCookies = getFacebookCookies();
+
+    // Sincronizar contact_id de HighLevel (_ud)
+    var contactId = syncHighLevelContact();
+    if (!contactId) {
+      contactId = getContactId(); // Usar el guardado si no hay _ud
+    }
 
     var data = {
       url: window.location.href,
@@ -202,6 +251,7 @@ export async function servePixel(req, res) {
     var payload = {
       visitor_id: visitorId,
       session_id: sessionId,
+      contact_id: contactId, // Agregar contact_id de HighLevel
       event_name: eventName,
       ts: Date.now(),
       data: data
