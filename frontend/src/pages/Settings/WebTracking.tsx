@@ -8,7 +8,9 @@ import {
   Globe,
   Eye,
   TrendingUp,
-  MousePointer
+  MousePointer,
+  Loader2,
+  RefreshCw
 } from 'lucide-react'
 import { trackingService, TrackingSession } from '@/services/trackingService'
 import { useNotification } from '@/contexts/NotificationContext'
@@ -159,7 +161,7 @@ export const WebTracking: React.FC = () => {
 
           {loadingConfig ? (
             <div className={styles.loadingState}>
-              <Activity size={24} className={styles.spinIcon} />
+              <Loader2 size={24} className={styles.spinIcon} />
               <p>Cargando configuración...</p>
             </div>
           ) : (
@@ -229,7 +231,7 @@ export const WebTracking: React.FC = () => {
               >
                 {configuringTracking ? (
                   <>
-                    <Activity size={16} className={styles.spinIcon} />
+                    <Loader2 size={16} className={styles.spinIcon} />
                     Sincronizando...
                   </>
                 ) : (
@@ -327,7 +329,7 @@ export const WebTracking: React.FC = () => {
               onClick={loadRecentSessions}
               disabled={loadingSessions}
             >
-              <Activity size={16} />
+              <RefreshCw size={16} className={loadingSessions ? styles.spinIcon : ''} />
               {loadingSessions ? 'Cargando...' : 'Actualizar'}
             </Button>
           </div>
