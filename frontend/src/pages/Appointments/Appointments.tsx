@@ -105,6 +105,18 @@ export const Appointments: React.FC = () => {
   // Modal de cita
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [createDefaults, setCreateDefaults] = useState<{
+    start: string;
+    end: string;
+    timeZone: string;
+    title: string;
+  }>({
+    start: '',
+    end: '',
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+    title: ''
+  });
 
   // Dropdown de calendarios
   const [isCalendarDropdownOpen, setIsCalendarDropdownOpen] = useState(false);
@@ -202,7 +214,23 @@ export const Appointments: React.FC = () => {
       );
 
       setEvents(eventsData);
-      setStats(calendarsService.calculateStats(eventsData));
+
+      // Calcular estadísticas del mes visible
+      const monthStart = new Date(currentDate);
+      monthStart.setDate(1);
+      monthStart.setHours(0, 0, 0, 0);
+      const monthEnd = new Date(monthStart);
+      monthEnd.setMonth(monthEnd.getMonth() + 1);
+
+      const monthlyData = await calendarsService.getEvents(
+        locationId,
+        monthStart.getTime(),
+        monthEnd.getTime(),
+        accessToken,
+        selectedCalendar.id
+      );
+
+      setStats(calendarsService.calculateStats(monthlyData));
     } catch (error) {
       showToast('error', 'Error al cargar citas', 'No se pudieron obtener las citas del calendario.');
     } finally {
@@ -353,6 +381,67 @@ export const Appointments: React.FC = () => {
     localStorage.setItem('defaultCalendarId', selectedCalendar.id);
     setDefaultCalendarId(selectedCalendar.id);
     showToast('success', 'Calendario predeterminado', `"${selectedCalendar.name}" se estableció como predeterminado.`);
+  };
+
+  const openCreateModal = () => {
+    if (!selectedCalendar) {
+      showToast('warning', 'Selecciona un calendario', 'Debes elegir un calendario activo antes de programar una cita.');
+      return;
+    }
+
+    const baseDate = selectedDate ?? currentDate;
+    const now = new Date();
+    const reference = new Date(baseDate);
+    if (isSameDay(reference, now)) {
+      reference.setHours(now.getHours(), 0, 0, 0);
+    } else {
+      reference.setHours(9, 0, 0, 0);
+    }
+
+    const startISO = reference.toISOString().slice(0, 16);
+    const endRef = new Date(reference.getTime() + 60 * 60 * 1000);
+    const endISO = endRef.toISOString().slice(0, 16);
+
+    setCreateDefaults({
+      start: startISO,
+      end: endISO,
+      timeZone: selectedCalendar?.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+      title: selectedCalendar?.eventTitle || ''
+    });
+    setIsCreateModalOpen(true);
+  };
+
+  const handleCreateAppointment = async (payload: {
+    title: string;
+    appointmentStatus: CalendarEvent['appointmentStatus'];
+    startTime: string;
+    endTime: string;
+    notes: string;
+    address: string;
+    timeZone: string;
+    contactId?: string;
+  }) => {
+    if (!selectedCalendar || !locationId || !accessToken) return;
+
+    try {
+      setLoading(true);
+      await calendarsService.createAppointment(
+        {
+          calendarId: selectedCalendar.id,
+          locationId,
+          ...payload
+        },
+        accessToken
+      );
+      showToast('success', 'Cita programada', 'La nueva cita se creó correctamente.');
+      setIsCreateModalOpen(false);
+      await loadEvents();
+      await loadUpcomingEvents();
+    } catch (error) {
+      showToast('error', 'No se pudo crear la cita', 'Intenta nuevamente más tarde.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Manejar apertura del modal de cita
@@ -562,7 +651,7 @@ export const Appointments: React.FC = () => {
           <div className={styles.viewBar}>
             <Button
               variant="primary"
-              onClick={() => showToast('info', 'Próximamente', 'Esta función estará disponible pronto.')}
+              onClick={openCreateModal}
             >
               <Plus size={18} />
               Programar cita
@@ -963,6 +1052,15 @@ export const Appointments: React.FC = () => {
         event={selectedEvent}
         onSave={handleSaveAppointment}
         onDelete={handleDeleteAppointment}
+      />
+      <AppointmentModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        appointment={null}
+        mode="create"
+        defaultCalendarId={createDefaults?.calendarId}
+        defaultDate={createDefaults?.date}
+        onSave={handleCreateAppointment}
       />
     </PageContainer>
   );

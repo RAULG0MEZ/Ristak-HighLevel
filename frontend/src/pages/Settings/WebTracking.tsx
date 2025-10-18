@@ -134,6 +134,19 @@ export const WebTracking: React.FC = () => {
                 </p>
               </div>
             </div>
+            <div className={styles.headerRight}>
+              {loadingConfig ? (
+                <div className={styles.statusConnected}>
+                  <Loader2 size={16} className={styles.spinIcon} />
+                  <span>Verificando...</span>
+                </div>
+              ) : isConfigured ? (
+                <div className={styles.statusConnected}>
+                  <Check size={16} />
+                  <span>Configurado</span>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -143,135 +156,97 @@ export const WebTracking: React.FC = () => {
             <h3 className={styles.sectionTitle}>Configuración</h3>
           </div>
 
-          {loadingConfig ? (
-            <div className={styles.loadingState}>
-              <Loader2 size={24} className={styles.spinIcon} />
-              <p>Cargando configuración...</p>
+          {!hasHighLevel ? (
+            <div className={styles.infoBox}>
+              <div className={styles.infoBoxTitle}>
+                <Info size={16} />
+                <span>HighLevel requerido</span>
+              </div>
+              <div className={styles.infoBoxContent}>
+                Primero debes configurar tu integración con HighLevel
+              </div>
+            </div>
+          ) : !trackingDomain.includes('collect') ? (
+            <div className={styles.warningBox}>
+              <div className={styles.infoBoxTitle}>
+                <Info size={16} />
+                <span>Configuración requerida</span>
+              </div>
+              <div className={styles.infoBoxContent}>
+                Para configurar el tracking, accede usando el subdominio <code className={styles.codeInline}>collect.tudominio.com</code>
+              </div>
+              <div className={styles.infoBoxContent} style={{ marginTop: '8px' }}>
+                Configura un CNAME en tu DNS: <code className={styles.codeInline}>collect</code> → <code className={styles.codeInline}>ristak-app.onrender.com</code>
+              </div>
             </div>
           ) : (
             <>
-              {/* Instrucción importante: Usar subdominio collect */}
-              {!trackingDomain.includes('collect') && (
-                <div className={styles.warningBox} style={{ marginBottom: '16px' }}>
-                  <div className={styles.infoBoxTitle}>
-                    <Info size={16} />
-                    <span>Configuración requerida</span>
-                  </div>
-                  <div className={styles.infoBoxContent}>
-                    Para configurar el tracking, accede usando el subdominio <code className={styles.codeInline}>collect.tudominio.com</code>
-                  </div>
-                  <div className={styles.infoBoxContent} style={{ marginTop: '8px' }}>
-                    Configura un CNAME en tu DNS: <code className={styles.codeInline}>collect</code> → <code className={styles.codeInline}>ristak-app.onrender.com</code>
-                  </div>
-                </div>
-              )}
-
               {/* Dominio detectado */}
-              {trackingDomain && (
-                <div className={styles.infoBox} style={{ marginBottom: '16px' }}>
-                  <div className={styles.infoBoxTitle}>
-                    <Globe size={16} />
-                    <span>Dominio detectado</span>
-                  </div>
-                  <div className={styles.infoBoxContent}>
-                    <code className={styles.codeInline}>{trackingDomain}</code>
-                  </div>
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>
+                  <Globe size={16} />
+                  Dominio de tracking
+                </label>
+                <div className={styles.formInput} style={{ background: 'var(--color-gray-50)', cursor: 'default' }}>
+                  {trackingDomain}
                 </div>
-              )}
+              </div>
 
-              {/* Estado */}
-              {isConfigured ? (
-                <div className={styles.successBox} style={{ marginBottom: '16px' }}>
-                  <div className={styles.infoBoxTitle}>
-                    <Check size={16} />
-                    <span>Tracking configurado</span>
-                  </div>
-                  <div className={styles.infoBoxContent}>
-                    Usa <code className={styles.codeInline}>{'{{ custom_values.rstktrack }}'}</code> en el <code className={styles.codeInline}>&lt;head&gt;</code> de tu sitio
-                  </div>
-                </div>
-              ) : (
-                <div className={styles.infoBox} style={{ marginBottom: '16px' }}>
-                  <div className={styles.infoBoxTitle}>
-                    <Info size={16} />
-                    <span>Configuración pendiente</span>
-                  </div>
-                  <div className={styles.infoBoxContent}>
-                    Sincroniza para crear el custom value <code className={styles.codeInline}>rstktrack</code> en HighLevel
-                  </div>
-                </div>
-              )}
-
-              {/* Botón de sincronización - SIEMPRE visible */}
-              <Button
-                variant="primary"
-                onClick={handleConfigureTracking}
-                disabled={configuringTracking || !hasHighLevel || !trackingDomain.includes('collect')}
-              >
-                {configuringTracking ? (
-                  <>
-                    <Loader2 size={16} className={styles.spinIcon} />
-                    Sincronizando...
-                  </>
-                ) : (
-                  <>
-                    <Check size={16} />
-                    {isConfigured ? 'Volver a sincronizar' : 'Sincronizar con HighLevel'}
-                  </>
+              {/* Botón de sincronización */}
+              <div style={{ marginTop: '16px' }}>
+                <Button
+                  variant="primary"
+                  onClick={handleConfigureTracking}
+                  disabled={configuringTracking}
+                >
+                  {configuringTracking ? (
+                    <>
+                      <Loader2 size={16} className={styles.spinIcon} />
+                      Sincronizando...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw size={16} />
+                      {isConfigured ? 'Volver a sincronizar' : 'Sincronizar con HighLevel'}
+                    </>
+                  )}
+                </Button>
+                {isConfigured && (
+                  <p className={styles.formHint} style={{ marginTop: '8px' }}>
+                    El custom value <code className={styles.codeInline}>rstktrack</code> está configurado en HighLevel
+                  </p>
                 )}
-              </Button>
-
-              {/* Mensajes de ayuda */}
-              {!hasHighLevel && (
-                <p className={styles.formHint} style={{ marginTop: '8px', color: 'var(--color-warning)' }}>
-                  ⚠️ Primero configura HighLevel en Settings
-                </p>
-              )}
-              {hasHighLevel && !trackingDomain.includes('collect') && (
-                <p className={styles.formHint} style={{ marginTop: '8px', color: 'var(--color-warning)' }}>
-                  ⚠️ El dominio debe contener "collect" (ej: collect.tudominio.com)
-                </p>
-              )}
+              </div>
 
               {/* Código del pixel */}
-              {trackingDomain && (
-                <>
-                  <div style={{
-                    marginTop: '24px',
-                    marginBottom: '8px',
-                    fontSize: 'var(--font-size-sm)',
-                    fontWeight: 'var(--font-weight-medium)',
-                    color: 'var(--color-text-primary)'
-                  }}>
-                    Código del pixel
+              <div style={{ marginTop: '24px' }}>
+                <label className={styles.formLabel}>Código del pixel</label>
+                <div className={styles.codeBlockWrapper}>
+                  <Button
+                    variant="ghost"
+                    size="small"
+                    onClick={handleCopySnippet}
+                    className={styles.copyButton}
+                  >
+                    {copied ? (
+                      <>
+                        <Check size={14} />
+                        Copiado
+                      </>
+                    ) : (
+                      <>
+                        <Copy size={14} />
+                        Copiar
+                      </>
+                    )}
+                  </Button>
+                  <div className={styles.codeBlock}>
+                    <pre className={styles.codeContent}>
+                      {trackingService.generateSnippet(trackingDomain)}
+                    </pre>
                   </div>
-                  <div className={styles.codeBlockWrapper}>
-                    <Button
-                      variant="ghost"
-                      size="small"
-                      onClick={handleCopySnippet}
-                      className={styles.copyButton}
-                    >
-                      {copied ? (
-                        <>
-                          <Check size={14} />
-                          Copiado
-                        </>
-                      ) : (
-                        <>
-                          <Copy size={14} />
-                          Copiar
-                        </>
-                      )}
-                    </Button>
-                    <div className={styles.codeBlock}>
-                      <pre className={styles.codeContent}>
-                        {trackingService.generateSnippet(trackingDomain)}
-                      </pre>
-                    </div>
-                  </div>
-                </>
-              )}
+                </div>
+              </div>
             </>
           )}
         </div>
