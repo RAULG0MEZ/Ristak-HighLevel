@@ -675,3 +675,108 @@ export const getStorageStatus = async (req, res) => {
     });
   }
 };
+
+/**
+ * Obtiene datos de fuentes de tráfico para el gráfico de dona
+ */
+export const getTrafficSources = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query
+
+    // Query para obtener fuentes de tráfico de sessions
+    const query = `
+      SELECT 
+        COALESCE(source_platform, 'Directo') as name,
+        COUNT(*) as value
+      FROM sessions
+      WHERE DATE(started_at) >= DATE(?)
+        AND DATE(started_at) <= DATE(?)
+      GROUP BY source_platform
+      ORDER BY value DESC
+      LIMIT 10
+    `
+
+    const sources = await db.all(query, [startDate, endDate])
+
+    // Mapear colores por plataforma
+    const colorMap = {
+      'facebook': '#1877f2',
+      'google': '#4285f4',
+      'instagram': '#c32aa3',
+      'tiktok': '#ee1d52',
+      'microsoft': '#00a4ef',
+      'twitter': '#1da1f2',
+      'linkedin': '#0a66c2',
+      'Directo': '#6b7280'
+    }
+
+    const data = sources.map(source => ({
+      name: source.name.charAt(0).toUpperCase() + source.name.slice(1),
+      value: source.value,
+      color: colorMap[source.name.toLowerCase()] || '#6b7280'
+    }))
+
+    res.json({ success: true, data })
+  } catch (error) {
+    logger.error(`Error en getTrafficSources: ${error.message}`)
+    res.status(500).json({ success: false, error: 'Error al obtener fuentes de tráfico' })
+  }
+}
+
+/**
+ * Obtiene datos del funnel de conversión
+ */
+export const getFunnelData = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query
+
+    // Visitantes únicos (sessions)
+    const visitorsQuery = `
+      SELECT COUNT(DISTINCT visitor_id) as count
+      FROM sessions
+      WHERE DATE(started_at) >= DATE(?)
+        AND DATE(started_at) <= DATE(?)
+    `
+    const visitors = await db.get(visitorsQuery, [startDate, endDate])
+
+    // Leads (contactos creados)
+    const leadsQuery = `
+      SELECT COUNT(*) as count
+      FROM contacts
+      WHERE DATE(created_at) >= DATE(?)
+        AND DATE(created_at) <= DATE(?)
+    `
+    const leads = await db.get(leadsQuery, [startDate, endDate])
+
+    // Citas (appointments)
+    const appointmentsQuery = `
+      SELECT COUNT(DISTINCT contact_id) as count
+      FROM appointments
+      WHERE DATE(start_time) >= DATE(?)
+        AND DATE(start_time) <= DATE(?)
+    `
+    const appointments = await db.get(appointmentsQuery, [startDate, endDate])
+
+    // Clientes (contactos con compras)
+    const customersQuery = `
+      SELECT COUNT(DISTINCT contact_id) as count
+      FROM contacts
+      WHERE purchases_count > 0
+        AND DATE(created_at) >= DATE(?)
+        AND DATE(created_at) <= DATE(?)
+    `
+    const customers = await db.get(customersQuery, [startDate, endDate])
+
+    const data = [
+      { stage: 'Visitantes', value: visitors.count || 0 },
+      { stage: 'Leads', value: leads.count || 0 },
+      { stage: 'Citas', value: appointments.count || 0 },
+      { stage: 'Clientes', value: customers.count || 0 }
+    ]
+
+    res.json({ success: true, data })
+  } catch (error) {
+    logger.error(`Error en getFunnelData: ${error.message}`)
+    res.status(500).json({ success: false, error: 'Error al obtener datos del funnel' })
+  }
+}

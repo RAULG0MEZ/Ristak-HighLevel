@@ -1,0 +1,218 @@
+.container {
+  padding: 1.5rem;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-between;
+  margin-bottom: 2rem;
+}
+
+.title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.funnelContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.loadingList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.loadingItem {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.loadingIcon {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 0.75rem;
+  background-color: var(--color-background-secondary);
+  flex-shrink: 0;
+}
+
+.loadingContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.loadingBar {
+  height: 1rem;
+  background-color: var(--color-background-secondary);
+  border-radius: 0.25rem;
+  width: 6rem;
+}
+
+.loadingProgress {
+  height: 0.5rem;
+  background-color: var(--color-background-secondary);
+  border-radius: 0.25rem;
+  width: 100%;
+}
+
+.stageContainer {
+  position: relative;
+}
+
+.stageContent {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  transition: transform 0.2s;
+}
+
+.stageContent:hover {
+  transform: translateX(0.25rem);
+}
+
+.iconContainer {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 0.75rem;
+  background-color: var(--color-background-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--color-text-primary);
+}
+
+.stageInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.stageHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+  gap: 0.5rem;
+}
+
+.stageName {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stageValues {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+.stageValue {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.conversionRate {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-success-500);
+}
+
+.progressBar {
+  height: 1rem;
+  background-color: var(--color-background-secondary);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background-color: var(--color-text-secondary);
+  border-radius: 9999px;
+  transition: width 1s ease-out;
+}
+
+.connector {
+  position: absolute;
+  left: 1.5rem;
+  top: 3rem;
+  height: 0.75rem;
+  width: 1px;
+  background: linear-gradient(to bottom,
+    var(--color-border) 0%,
+    transparent 100%
+  );
+}
+
+.insights {
+  margin-top: 2rem;
+  padding: 1rem;
+  background-color: var(--color-background-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+}
+
+.insightItem {
+  min-width: 0;
+}
+
+.insightLabel {
+  font-size: 0.75rem;
+  color: var(--color-text-tertiary);
+  margin: 0 0 0.25rem 0;
+}
+
+.insightValue {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.insightHighlight {
+  color: var(--color-success-500);
+  font-size: 1rem;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: .5;
+  }
+}
+
+@media (max-width: 640px) {
+  .insights {
+    grid-template-columns: 1fr;
+  }
+
+  .stageValues {
+    flex-direction: column;
+    gap: 0.25rem;
+    align-items: flex-end;
+  }
+}

@@ -14,6 +14,7 @@ export { Table } from './Table'
 export type { Column } from './Table'
 export { ChartContainer } from './ChartContainer'
 export { TrafficSourcesChart } from './TrafficSourcesChart'
+export { ConversionFunnelChart } from './ConversionFunnelChart'
 
 // Componentes de fecha
 export { DateRangePicker } from './DateRangePicker'

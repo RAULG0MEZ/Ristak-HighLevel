@@ -1,5 +1,5 @@
 import express from 'express'
-import { getMetrics, getChartData, getRoasData, getNewCustomersData, getLeadsData, getAppointmentsData, getSalesData, getStorageStatus } from '../controllers/dashboardController.js'
+import { getMetrics, getChartData, getRoasData, getNewCustomersData, getLeadsData, getAppointmentsData, getSalesData, getStorageStatus, getTrafficSources, getFunnelData } from '../controllers/dashboardController.js'
 
 const router = express.Router()
 
@@ -11,5 +11,7 @@ router.get('/leads', getLeadsData)
 router.get('/appointments', getAppointmentsData)
 router.get('/sales', getSalesData)
 router.get('/storage-status', getStorageStatus)
+router.get('/traffic-sources', getTrafficSources)
+router.get('/funnel', getFunnelData)
 
 export default router
