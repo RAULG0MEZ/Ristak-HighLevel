@@ -193,22 +193,18 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
   const [formData, setFormData] = useState(INITIAL_FORM_STATE);
   const isCreateMode = mode === 'create';
 
-  // Contact search (ahora soporta múltiples)
+  // Contact search
   const [searchQuery, setSearchQuery] = useState('');
   const [searchingContact, setSearchingContact] = useState(false);
   const [contacts, setContacts] = useState<Contact[]>([]);
-  const [selectedContacts, setSelectedContacts] = useState<Contact[]>([]); // Cambio: array en vez de single
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [showContactDropdown, setShowContactDropdown] = useState(false);
 
-  // Users/Team Members (para Round Robin)
+  // Users (assigned users)
   const [users, setUsers] = useState<User[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
-  const [selectedTeamMembers, setSelectedTeamMembers] = useState<string[]>([]); // IDs de team members seleccionados
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isClient, setIsClient] = useState(false);
-
-  // Detectar si el calendario es Round Robin
-  const isRoundRobin = calendar?.calendarType === 'round_robin' || calendar?.eventType?.includes('RoundRobin');
 
   const loadUsers = async () => {
     setLoadingUsers(true);
@@ -246,23 +242,16 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
   };
 
   const handleSelectContact = (contact: Contact) => {
-    // Verificar si ya está seleccionado
-    if (selectedContacts.find(c => c.id === contact.id)) {
-      return; // Ya está seleccionado
-    }
-
-    setSelectedContacts([...selectedContacts, contact]);
+    setSelectedContact(contact);
+    setFormData({ ...formData, contactId: contact.id });
     setSearchQuery('');
     setShowContactDropdown(false);
     setContacts([]);
   };
 
-  const handleRemoveContact = (contactId: string) => {
-    setSelectedContacts(selectedContacts.filter(c => c.id !== contactId));
-  };
-
-  const handleClearAllContacts = () => {
-    setSelectedContacts([]);
+  const handleClearContact = () => {
+    setSelectedContact(null);
+    setFormData({ ...formData, contactId: '' });
     setSearchQuery('');
   };
 

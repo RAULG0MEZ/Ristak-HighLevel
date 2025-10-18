@@ -1,6 +1,6 @@
 import { logger } from '../utils/logger.js'
 import { createSession, getRecentSessions, linkVisitorToContact, getSessionsByDateRange } from '../services/trackingService.js'
-import { getHighLevelConfig, db } from '../config/database.js'
+import { getHighLevelConfig, getAppConfig, setAppConfig, db } from '../config/database.js'
 import fetch from 'node-fetch'
 
 /**
@@ -550,11 +550,15 @@ export async function getTrackingConfig(req, res) {
       }
     }
 
+    // Leer preferencia de Analytics desde app_config (independiente de HighLevel)
+    const showAnalyticsValue = await getAppConfig('show_analytics')
+    const showAnalytics = showAnalyticsValue === '1' || showAnalyticsValue === 1 || showAnalyticsValue === true
+
     res.json({
       trackingDomain,
       isConfigured,
       hasHighLevel: !!(ghlConfig && ghlConfig.location_id && ghlConfig.api_token),
-      showAnalytics: !!(ghlConfig && ghlConfig.show_analytics === 1)
+      showAnalytics
     })
   } catch (error) {
     logger.error('Error obteniendo configuración de tracking:', error)
@@ -705,18 +709,8 @@ export async function setAnalyticsPreference(req, res) {
       return res.status(400).json({ error: 'showAnalytics debe ser un booleano' })
     }
 
-    // Obtener config actual
-    const ghlConfig = await getHighLevelConfig()
-
-    if (!ghlConfig || !ghlConfig.location_id) {
-      return res.status(400).json({ error: 'No hay configuración de HighLevel' })
-    }
-
-    // Actualizar la preferencia
-    await db.run(
-      'UPDATE highlevel_config SET show_analytics = ? WHERE location_id = ?',
-      [showAnalytics ? 1 : 0, ghlConfig.location_id]
-    )
+    // Guardar en app_config (independiente de HighLevel)
+    await setAppConfig('show_analytics', showAnalytics ? '1' : '0')
 
     logger.info(`Preferencia de Analytics actualizada a: ${showAnalytics}`)
 

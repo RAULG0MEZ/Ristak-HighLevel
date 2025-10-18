@@ -155,6 +155,27 @@ async function initTables() {
       )
     `)
 
+    // Tabla de configuración global de la app (independiente de HighLevel)
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS app_config (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        config_key TEXT UNIQUE NOT NULL,
+        config_value TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
+    // Insertar configuración por defecto de Analytics (visible por defecto)
+    try {
+      await db.run(`
+        INSERT OR IGNORE INTO app_config (config_key, config_value)
+        VALUES ('show_analytics', '1')
+      `)
+    } catch (err) {
+      // Ignore si ya existe
+    }
+
     // Tabla de contactos
     await db.run(`
       CREATE TABLE IF NOT EXISTS contacts (
@@ -414,22 +435,6 @@ async function initTables() {
         }
       }
 
-      // Agregar preferencia para mostrar Analytics (DEFAULT 1 = visible por defecto)
-      try {
-        await db.run('ALTER TABLE highlevel_config ADD COLUMN show_analytics INTEGER DEFAULT 1')
-      } catch (err) {
-        if (!err.message.includes('duplicate column') && !err.message.includes('already exists')) {
-          throw err
-        }
-      }
-
-      // Actualizar registros existentes a show_analytics = 1 SOLO si es NULL (no tocar los que ya tienen valor)
-      try {
-        await db.run('UPDATE highlevel_config SET show_analytics = 1 WHERE show_analytics IS NULL')
-      } catch (err) {
-        // Ignore si falla
-      }
-
       // Agregar columnas de configuración de invoices/pagos
       try {
         await db.run('ALTER TABLE highlevel_config ADD COLUMN invoice_title TEXT DEFAULT \'PAGO\'')
@@ -595,6 +600,27 @@ await initTables()
  */
 export async function getHighLevelConfig() {
   return await db.get('SELECT * FROM highlevel_config LIMIT 1')
+}
+
+/**
+ * Obtiene un valor de configuración global de la app
+ */
+export async function getAppConfig(key) {
+  const row = await db.get('SELECT config_value FROM app_config WHERE config_key = ?', [key])
+  return row ? row.config_value : null
+}
+
+/**
+ * Guarda un valor de configuración global de la app
+ */
+export async function setAppConfig(key, value) {
+  await db.run(`
+    INSERT INTO app_config (config_key, config_value, updated_at)
+    VALUES (?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(config_key) DO UPDATE SET
+      config_value = excluded.config_value,
+      updated_at = CURRENT_TIMESTAMP
+  `, [key, value])
 }
 
 export { db }
