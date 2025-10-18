@@ -14,6 +14,7 @@ services:
     region: oregon
     plan: starter  # Plan de pago básico ($7/mes) - Mejor uptime y rendimiento que free tier
     buildCommand: npm install --prefix backend && npm install --include=dev --prefix frontend && NODE_ENV=production npm run build --prefix frontend
+    # Force rebuild: 2025-10-18-fix-formatDate
     startCommand: npm start --prefix backend
     envVars:
       - key: NODE_ENV
