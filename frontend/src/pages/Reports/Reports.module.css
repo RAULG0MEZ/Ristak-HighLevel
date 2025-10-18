@@ -376,3 +376,89 @@
 .secondaryText {
   color: var(--color-text-primary);
 }
+
+/* Visitors Modal Styles */
+.visitorsModal {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.modalLoading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-2xl);
+  gap: var(--spacing-md);
+  min-height: 200px;
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.visitorsTable {
+  margin-top: var(--spacing-md);
+}
+
+.visitorsCount {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--spacing-md);
+  padding: 0 var(--spacing-sm);
+}
+
+.contactInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.contactName {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+}
+
+.contactEmail {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+}
+
+.anonymousVisitor {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-tertiary);
+}
+
+.visitorId {
+  font-family: 'SF Mono', 'Consolas', 'Monaco', monospace;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+  background-color: var(--color-surface);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.clickableNumber {
+  cursor: pointer;
+  color: var(--color-text-primary);
+  text-decoration: underline;
+  transition: all var(--transition-fast);
+}
+
+.clickableNumber:hover {
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-semibold);
+}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { KpiCard, Card, Button, Table, DateRangePicker, PageContainer, TabList, Badge, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from '@/components/common'
 import type { Column, BadgeVariant } from '@/components/common'
@@ -35,6 +35,8 @@ export const Contacts: React.FC = () => {
   const [stats, setStats] = useState<ContactStats | null>(null)
   const [filter, setFilter] = useState('all')
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null)
+  const [selectedContactId, setSelectedContactId] = useState<string | null>(null)
+  const [contactDetailsLoading, setContactDetailsLoading] = useState(false)
   const [showNewContactModal, setShowNewContactModal] = useState(false)
   const [editingContact, setEditingContact] = useState<Contact | null>(null)
   const [deletingContact, setDeletingContact] = useState<Contact | null>(null)
@@ -42,10 +44,66 @@ export const Contacts: React.FC = () => {
   const [viewMode, setViewMode] = useState<'all' | 'by-date'>('all') // Por defecto 'all' (Todos)
   const [isClient, setIsClient] = useState(false)
 
+  const appointmentDateFormatter = useMemo(() => new Intl.DateTimeFormat('es-MX', {
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  }), [])
+
   const rangeStart = dateRange.start instanceof Date ? dateRange.start : new Date(dateRange.start)
   const rangeEnd = dateRange.end instanceof Date ? dateRange.end : new Date(dateRange.end)
   const spansMultipleYears = rangeStart.getFullYear() !== rangeEnd.getFullYear()
   const tableDateOptions = { includeYear: spansMultipleYears, referenceDate: rangeEnd }
+
+  const formatAppointmentDateTime = (value: string) => {
+    if (!value) return '—'
+    const parsed = new Date(value)
+    if (Number.isNaN(parsed.getTime())) return '—'
+    return appointmentDateFormatter.format(parsed)
+  }
+
+  const formatStatusText = (value: string) => {
+    return value
+      .toLowerCase()
+      .split(/[\s_]+/)
+      .filter(Boolean)
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ')
+  }
+
+  const getAppointmentStatusBadge = (status?: string | null): { label: string; variant: BadgeVariant } => {
+    if (!status) return { label: 'Reservado', variant: 'warning' }
+    const normalized = status.toLowerCase()
+
+    if (['confirmed', 'booked', 'scheduled'].includes(normalized)) {
+      return { label: 'Reservado', variant: 'warning' }
+    }
+    if (['completed', 'showed', 'attended', 'complete'].includes(normalized)) {
+      return { label: 'Asistió', variant: 'success' }
+    }
+    if (['cancelled', 'canceled', 'no_show', 'noshow', 'failed', 'missed'].includes(normalized)) {
+      return { label: 'Cancelado', variant: 'error' }
+    }
+    if (['pending', 'unconfirmed'].includes(normalized)) {
+      return { label: 'Pendiente', variant: 'warning' }
+    }
+    if (normalized === 'rescheduled') {
+      return { label: 'Reagendada', variant: 'info' }
+    }
+    return { label: formatStatusText(normalized), variant: 'neutral' }
+  }
+
+  const openContactModal = (contact: Contact) => {
+    setSelectedContact(contact)
+    setSelectedContactId(contact.id)
+  }
+
+  const closeContactModal = () => {
+    setSelectedContact(null)
+    setSelectedContactId(null)
+    setContactDetailsLoading(false)
+  }
+
+  const hasAppointmentsData = typeof selectedContact?.appointments !== 'undefined'
 
   useEffect(() => {
     fetchData()
@@ -54,6 +112,61 @@ export const Contacts: React.FC = () => {
   useEffect(() => {
     setIsClient(true)
   }, [])
+
+  useEffect(() => {
+    if (!selectedContactId) return
+    if (selectedContact?.id === selectedContactId && hasAppointmentsData) {
+      return
+    }
+
+    let isMounted = true
+
+    const loadContactDetails = async () => {
+      setContactDetailsLoading(true)
+      try {
+        const details = await contactsService.getContactDetails(selectedContactId)
+        if (!isMounted) {
+          return
+        }
+        setSelectedContact(prev => {
+          if (prev && prev.id === details.id) {
+            return { ...prev, ...details }
+          }
+          return details
+        })
+      } catch (error) {
+        if (isMounted) {
+          showToast('error', 'No se pudieron cargar los detalles del contacto', 'Intenta nuevamente.')
+        }
+      } finally {
+        if (isMounted) {
+          setContactDetailsLoading(false)
+        }
+      }
+    }
+
+    loadContactDetails()
+
+    return () => {
+      isMounted = false
+    }
+  }, [selectedContactId, selectedContact, hasAppointmentsData])
+
+  const contactAppointments = useMemo(() => {
+    if (!hasAppointmentsData || !selectedContact?.appointments) return []
+    return [...selectedContact.appointments].sort((a, b) =>
+      new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+    )
+  }, [hasAppointmentsData, selectedContact?.appointments])
+
+  const nextAppointmentTimestamp = useMemo(() => {
+    if (!selectedContact?.nextAppointmentDate) return null
+    const parsed = new Date(selectedContact.nextAppointmentDate)
+    if (Number.isNaN(parsed.getTime())) {
+      return null
+    }
+    return parsed.getTime()
+  }, [selectedContact?.nextAppointmentDate])
 
   const fetchData = async () => {
     setLoading(true)
@@ -122,7 +235,7 @@ export const Contacts: React.FC = () => {
       render: (value, item) => (
         <button
           className={styles.nameLink}
-          onClick={() => setSelectedContact(item)}
+          onClick={() => openContactModal(item)}
         >
           {value}
         </button>
@@ -190,7 +303,7 @@ export const Contacts: React.FC = () => {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 {/* Ver detalles */}
-                <DropdownMenuItem onClick={() => setSelectedContact(item)}>
+                <DropdownMenuItem onClick={() => openContactModal(item)}>
                   <Eye size={16} />
                   <span style={{ marginLeft: '8px' }}>Ver detalles</span>
                 </DropdownMenuItem>
@@ -341,13 +454,13 @@ export const Contacts: React.FC = () => {
       </Card>
 
       {isClient && selectedContact && createPortal(
-        <div className={styles.modalOverlay} onClick={() => setSelectedContact(null)}>
+        <div className={styles.modalOverlay} onClick={closeContactModal}>
           <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div className={styles.modalHeader}>
               <h2>Ficha de Contacto</h2>
               <button
                 className={styles.closeButton}
-                onClick={() => setSelectedContact(null)}
+                onClick={closeContactModal}
               >
                 <X size={20} />
               </button>
@@ -398,29 +511,80 @@ export const Contacts: React.FC = () => {
                 </div>
               </div>
 
-              {(selectedContact.firstAppointmentDate || selectedContact.nextAppointmentDate) && (
-                <div className={styles.infoSection}>
-                  <h3>Citas</h3>
-                  <div className={styles.infoGrid}>
-                    {selectedContact.firstAppointmentDate && (
-                      <div>
-                        <span className={styles.label}>Primera cita:</span>
-                        <span className={styles.value}>
-                          {formatDate(selectedContact.firstAppointmentDate, tableDateOptions)}
-                        </span>
+              {(selectedContact.firstAppointmentDate ||
+                selectedContact.nextAppointmentDate ||
+                contactAppointments.length > 0 ||
+                contactDetailsLoading) && (
+                  <div className={styles.infoSection}>
+                    <h3>Citas</h3>
+                    {(selectedContact.firstAppointmentDate || selectedContact.nextAppointmentDate) && (
+                      <div className={styles.infoGrid}>
+                        {selectedContact.firstAppointmentDate && (
+                          <div>
+                            <span className={styles.label}>Primera cita:</span>
+                            <span className={styles.value}>
+                              {formatDate(selectedContact.firstAppointmentDate, tableDateOptions)}
+                            </span>
+                          </div>
+                        )}
+                        {selectedContact.nextAppointmentDate && (
+                          <div>
+                            <span className={styles.label}>Próxima cita:</span>
+                            <span className={styles.value}>
+                              {formatDate(selectedContact.nextAppointmentDate, tableDateOptions)}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     )}
-                    {selectedContact.nextAppointmentDate && (
-                      <div>
-                        <span className={styles.label}>Próxima cita:</span>
-                        <span className={styles.value}>
-                          {formatDate(selectedContact.nextAppointmentDate, tableDateOptions)}
-                        </span>
-                      </div>
+
+                    {contactDetailsLoading && (
+                      <p className={styles.loadingState}>Cargando historial de citas...</p>
+                    )}
+
+                    {!contactDetailsLoading && hasAppointmentsData && contactAppointments.length === 0 && (
+                      <p className={styles.emptyState}>Este contacto no tiene citas registradas.</p>
+                    )}
+
+                    {contactAppointments.length > 0 && (
+                      <ul className={styles.appointmentsList}>
+                        {contactAppointments.map(appointment => {
+                          const statusValue = appointment.appointment_status || appointment.status
+                          const statusInfo = getAppointmentStatusBadge(statusValue)
+                          const appointmentDate = new Date(appointment.start_time)
+                          const normalizedStatus = statusValue ? statusValue.toLowerCase() : ''
+                          const isCancelled = ['cancelled', 'canceled', 'no_show', 'noshow', 'missed', 'failed'].includes(normalizedStatus)
+                          const appointmentTime = appointmentDate.getTime()
+                          const showUpcomingBadge = nextAppointmentTimestamp !== null
+                            ? appointmentTime === nextAppointmentTimestamp
+                            : appointmentTime >= Date.now() && !isCancelled
+
+                          return (
+                            <li key={appointment.id} className={styles.appointmentItem}>
+                              <div className={styles.appointmentInfo}>
+                                <span className={styles.appointmentDate}>
+                                  {formatAppointmentDateTime(appointment.start_time)}
+                                </span>
+                                {appointment.title && (
+                                  <span className={styles.appointmentTitle}>{appointment.title}</span>
+                                )}
+                                {appointment.notes && (
+                                  <span className={styles.appointmentNotes}>{appointment.notes}</span>
+                                )}
+                              </div>
+                              <div className={styles.appointmentBadges}>
+                                {showUpcomingBadge && (
+                                  <Badge variant="primary">Próxima</Badge>
+                                )}
+                                <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
+                              </div>
+                            </li>
+                          )
+                        })}
+                      </ul>
                     )}
                   </div>
-                </div>
-              )}
+                )}
 
               {(selectedContact.source || selectedContact.ad_name || selectedContact.ad_id) && (
                 <div className={styles.infoSection}>

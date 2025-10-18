@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState, useCallback } from 'react'
 import {
   Card,
   KpiCard,
@@ -7,6 +7,7 @@ import {
   DateRangePicker,
   Button,
   ContactDetailsModal,
+  Modal,
   ViewSelector,
   PageContainer
 } from '@/components/common'
@@ -32,7 +33,8 @@ import {
   Layers,
   MousePointerClick,
   Table as TableIcon,
-  BarChart3
+  BarChart3,
+  Loader2
 } from 'lucide-react'
 
 const monthNames = [
@@ -390,6 +392,12 @@ export const Reports: React.FC = () => {
     loading: false
   })
 
+  // Estado para modal de visitantes
+  const [isVisitorsModalOpen, setIsVisitorsModalOpen] = useState(false)
+  const [visitorsModalLoading, setVisitorsModalLoading] = useState(false)
+  const [visitorsData, setVisitorsData] = useState<any[]>([])
+  const [visitorsModalDate, setVisitorsModalDate] = useState('')
+
   const baseRange = {
     start: dateRange.start instanceof Date ? dateRange.start : new Date(dateRange.start),
     end: dateRange.end instanceof Date ? dateRange.end : new Date(dateRange.end)
@@ -721,7 +729,22 @@ export const Reports: React.FC = () => {
         header: 'Visitantes',
         sortable: true,
         visible: false,
-        render: (value: number) => <span>{formatNumber(value)}</span>
+        render: (value: number, item: TableRow) => {
+          const hasVisitors = (value || 0) > 0 && visitorSource === 'tracking'
+          return (
+            <span
+              className={hasVisitors ? styles.clickableNumber : ''}
+              onClick={(e) => {
+                if (hasVisitors) {
+                  e.stopPropagation()
+                  handleOpenVisitorsModal(item.date)
+                }
+              }}
+            >
+              {formatNumber(value)}
+            </span>
+          )
+        }
       },
       {
         key: 'cpv',
@@ -752,7 +775,7 @@ export const Reports: React.FC = () => {
         render: (value: number) => <span>{value.toFixed(1)}%</span>
       }
     ]
-  }, [reportType, viewType])
+  }, [reportType, viewType, visitorSource, handleOpenVisitorsModal])
 
   const summaryCards = summary ? [
     {
@@ -821,6 +844,35 @@ export const Reports: React.FC = () => {
 
   const metricsRangeLabel = formatRangeLabel(metricsRange)
   const closeModal = () => setModalState(prev => ({ ...prev, open: false }))
+
+  // Función para abrir modal de visitantes
+  const handleOpenVisitorsModal = useCallback(async (date: string) => {
+    setVisitorsModalLoading(true)
+    setIsVisitorsModalOpen(true)
+    setVisitorsModalDate(date)
+
+    try {
+      const response = await fetch(
+        `/api/tracking/visitors?` + new URLSearchParams({
+          startDate: date,
+          endDate: date
+        })
+      )
+
+      if (response.ok) {
+        const data = await response.json()
+        setVisitorsData(data.visitors || [])
+      } else {
+        setVisitorsData([])
+        showToast('error', 'No se pudieron cargar los visitantes', 'Intenta nuevamente')
+      }
+    } catch (error) {
+      setVisitorsData([])
+      showToast('error', 'Error al cargar visitantes', 'Verifica tu conexión')
+    } finally {
+      setVisitorsModalLoading(false)
+    }
+  }, [showToast])
 
   return (
     <PageContainer>
@@ -989,6 +1041,101 @@ export const Reports: React.FC = () => {
           loading={modalState.loading}
           type={modalState.type === 'customers' ? 'sales' : modalState.type === 'sales' ? 'sales' : modalState.type === 'appointments' ? 'appointments' : 'interesados'}
         />
+
+        {/* Modal de Visitantes */}
+        <Modal
+          isOpen={isVisitorsModalOpen}
+          onClose={() => setIsVisitorsModalOpen(false)}
+          title={`Visitantes del ${visitorsModalDate}`}
+          size="lg"
+        >
+          <div className={styles.visitorsModal}>
+            {visitorsModalLoading ? (
+              <div className={styles.modalLoading}>
+                <Loader2 size={32} className={styles.spinning} />
+                <span>Cargando visitantes...</span>
+              </div>
+            ) : visitorsData.length === 0 ? (
+              <div className={styles.emptyState}>
+                <Users size={48} />
+                <p>No hay visitantes para esta fecha</p>
+              </div>
+            ) : (
+              <>
+                <p className={styles.visitorsCount}>
+                  {visitorsData.length} {visitorsData.length === 1 ? 'visitante' : 'visitantes'}
+                </p>
+                <div className={styles.visitorsTable}>
+                  <Table
+                    initialColumns={[
+                      {
+                        key: 'contact',
+                        header: 'Contacto',
+                        sortable: false,
+                        render: (_: any, item: any) => {
+                          if (item.contact) {
+                            return (
+                              <div className={styles.contactInfo}>
+                                <span className={styles.contactName}>{item.contact.name}</span>
+                                <span className={styles.contactEmail}>{item.contact.email}</span>
+                              </div>
+                            )
+                          }
+                          return (
+                            <div className={styles.anonymousVisitor}>
+                              <Users size={14} />
+                              <span>Visitante anónimo</span>
+                              <span className={styles.visitorId}>
+                                {item.visitorId?.substring(0, 8)}...
+                              </span>
+                            </div>
+                          )
+                        }
+                      },
+                      {
+                        key: 'source',
+                        header: 'Fuente',
+                        sortable: false,
+                        render: (_: any, item: any) => (
+                          <span>{item.utmSource || '-'}</span>
+                        )
+                      },
+                      {
+                        key: 'device',
+                        header: 'Dispositivo',
+                        sortable: false,
+                        render: (_: any, item: any) => (
+                          <span>{item.deviceType || '-'}</span>
+                        )
+                      },
+                      {
+                        key: 'browser',
+                        header: 'Navegador',
+                        sortable: false,
+                        render: (_: any, item: any) => (
+                          <span>{item.browser || '-'}</span>
+                        )
+                      },
+                      {
+                        key: 'firstVisit',
+                        header: 'Primera visita',
+                        sortable: false,
+                        render: (_: any, item: any) => (
+                          <span>{formatDate(item.firstVisit)}</span>
+                        )
+                      }
+                    ]}
+                    data={visitorsData}
+                    keyExtractor={(item) => item.visitorId}
+                    loading={false}
+                    paginated={false}
+                    searchable={false}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        </Modal>
       </div>
     </PageContainer>
   )

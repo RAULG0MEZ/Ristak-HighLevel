@@ -1,4 +1,20 @@
-// Contact type
+export interface ContactPayment {
+  id: string
+  amount: number
+  status?: string | null
+  date: string
+}
+
+export interface ContactAppointment {
+  id: string
+  title?: string | null
+  status?: string | null
+  appointment_status?: string | null
+  start_time: string
+  end_time?: string | null
+  notes?: string | null
+}
+
 export interface Contact {
   id: string
   createdAt: string
@@ -18,6 +34,8 @@ export interface Contact {
   mergedContactIds?: string[]
   firstAppointmentDate?: string | null
   nextAppointmentDate?: string | null
+  payments?: ContactPayment[]
+  appointments?: ContactAppointment[]
 }
 
 // Transaction type
