@@ -145,7 +145,7 @@
 .sourceHeader {
   display: flex;
   align-items: center;
-  justify-between;
+  justify-content: space-between;
   margin-bottom: 0.5rem;
 }
 

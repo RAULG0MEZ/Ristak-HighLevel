@@ -209,6 +209,54 @@ class DashboardService {
     }
   }
 
+  async getTrafficSources(params: {
+    start: Date;
+    end: Date;
+  }): Promise<{ name: string; value: number; color: string }[]> {
+    try {
+      const queryParams = new URLSearchParams({
+        startDate: formatDateToISO(params.start),
+        endDate: formatDateToISO(params.end)
+      });
+
+      const response = await fetch(`${API_URL}/api/dashboard/traffic-sources?${queryParams}`);
+
+      if (!response.ok) {
+        return [];
+      }
+
+      const result = await response.json();
+      return result?.data || [];
+    } catch (error) {
+      // TODO: Implement proper logging service
+      return [];
+    }
+  }
+
+  async getFunnelData(params: {
+    start: Date;
+    end: Date;
+  }): Promise<{ stage: string; value: number }[]> {
+    try {
+      const queryParams = new URLSearchParams({
+        startDate: formatDateToISO(params.start),
+        endDate: formatDateToISO(params.end)
+      });
+
+      const response = await fetch(`${API_URL}/api/dashboard/funnel?${queryParams}`);
+
+      if (!response.ok) {
+        return [];
+      }
+
+      const result = await response.json();
+      return result?.data || [];
+    } catch (error) {
+      // TODO: Implement proper logging service
+      return [];
+    }
+  }
+
   private getDefaultMetrics(): DashboardMetrics {
     // Valores por defecto mientras no hay datos reales
     return {

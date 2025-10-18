@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { KpiCard, Card, DateRangePicker, AreaChart, PageContainer, ViewSelector } from '@/components/common'
+import { KpiCard, Card, DateRangePicker, AreaChart, PageContainer, ViewSelector, TrafficSourcesChart, ConversionFunnelChart } from '@/components/common'
 import {
   DollarSign,
   Megaphone,
@@ -47,6 +47,8 @@ export const Dashboard: React.FC = () => {
   const [leadsData, setLeadsData] = useState<{ label: string; value: number }[]>([])
   const [appointmentsData, setAppointmentsData] = useState<{ label: string; value: number }[]>([])
   const [salesData, setSalesData] = useState<{ label: string; value: number }[]>([])
+  const [trafficSources, setTrafficSources] = useState<{ name: string; value: number; color: string }[]>([])
+  const [funnelData, setFunnelData] = useState<{ stage: string; value: number }[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedChart, setSelectedChart] = useState<ChartView>('financial')
 
@@ -304,7 +306,7 @@ export const Dashboard: React.FC = () => {
         const twelveMonthsAgo = new Date(now)
         twelveMonthsAgo.setMonth(now.getMonth() - 12)
 
-        const [metricsData, chartDataResponse, customersData, leadsDataResponse, appointmentsDataResponse, salesDataResponse] = await Promise.all([
+        const [metricsData, chartDataResponse, customersData, leadsDataResponse, appointmentsDataResponse, salesDataResponse, trafficSourcesData, funnelDataResponse] = await Promise.all([
           dashboardService.getDashboardMetrics({
             start: dateRange.start,
             end: dateRange.end
@@ -332,6 +334,14 @@ export const Dashboard: React.FC = () => {
             start: twelveMonthsAgo,
             end: now,
             groupBy: 'day'
+          }),
+          dashboardService.getTrafficSources({
+            start: dateRange.start,
+            end: dateRange.end
+          }),
+          dashboardService.getFunnelData({
+            start: dateRange.start,
+            end: dateRange.end
           })
         ])
 
@@ -341,6 +351,8 @@ export const Dashboard: React.FC = () => {
         setLeadsData(leadsDataResponse)
         setAppointmentsData(appointmentsDataResponse)
         setSalesData(salesDataResponse)
+        setTrafficSources(trafficSourcesData)
+        setFunnelData(funnelDataResponse)
       } catch (error) {
         // TODO: add logging service
       } finally {
@@ -515,6 +527,17 @@ export const Dashboard: React.FC = () => {
               />
             </div>
           </Card>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <TrafficSourcesChart
+            data={trafficSources}
+            loading={loading}
+          />
+          <ConversionFunnelChart
+            data={funnelData}
+            loading={loading}
+          />
         </div>
       </div>
     </PageContainer>
