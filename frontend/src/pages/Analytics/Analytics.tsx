@@ -428,7 +428,7 @@ const Analytics: React.FC = () => {
 
           const platforms: { [key: string]: number } = {}
           currentSessions.forEach((session: Session) => {
-            const platform = session.source_platform || session.utm_source || 'Directo'
+            const platform = session.source_site_name || session.source_platform || session.utm_source || 'Directo'
             platforms[platform] = (platforms[platform] || 0) + 1
           })
           const platformStats = Object.entries(platforms)
@@ -672,7 +672,7 @@ const Analytics: React.FC = () => {
 
     const platforms: { [key: string]: number } = {}
     sessions.forEach((session: Session) => {
-      const platform = session.source_platform || session.utm_source || 'Directo'
+      const platform = session.source_site_name || session.source_platform || session.utm_source || 'Directo'
       platforms[platform] = (platforms[platform] || 0) + 1
     })
     const platformStats = Object.entries(platforms)
