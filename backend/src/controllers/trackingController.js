@@ -9,8 +9,9 @@ import fetch from 'node-fetch'
  */
 export async function servePixel(req, res) {
   try {
-    const protocol = req.protocol
+    // SIEMPRE usar HTTPS (excepto en localhost para desarrollo)
     const host = req.headers.host
+    const protocol = host.includes('localhost') ? 'http' : 'https'
     const BASE = `${protocol}://${host}`
     const ENDPOINT = `${BASE}/collect`
 
