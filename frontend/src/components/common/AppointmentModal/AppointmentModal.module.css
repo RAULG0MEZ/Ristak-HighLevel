@@ -180,6 +180,11 @@
   color: var(--color-text-secondary);
 }
 
+.required {
+  color: var(--color-error, #ef4444);
+  margin-left: 2px;
+}
+
 .input,
 .select,
 .textarea {

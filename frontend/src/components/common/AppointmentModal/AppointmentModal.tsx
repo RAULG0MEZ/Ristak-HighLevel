@@ -4,6 +4,7 @@ import { Modal } from '../Modal';
 import { Button } from '../Button';
 import { CalendarEvent, Calendar } from '@/services/calendarsService';
 import { formatDate } from '@/utils/format';
+import { useNotification } from '@/contexts/NotificationContext';
 import styles from './AppointmentModal.module.css';
 import { Trash2, Search, Loader2, X, UserPlus, Check } from 'lucide-react';
 
@@ -189,6 +190,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
   onSave,
   onDelete
 }) => {
+  const { showToast } = useNotification();
   const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState(INITIAL_FORM_STATE);
   const isCreateMode = mode === 'create';
@@ -380,6 +382,13 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
       setIsSaving(true);
 
       if (isCreateMode) {
+        // Validación: contacto es OBLIGATORIO en modo crear
+        if (!formData.contactId || !selectedContact) {
+          showToast('error', 'Contacto requerido', 'Debes seleccionar un contacto para crear la cita');
+          setIsSaving(false);
+          return;
+        }
+
         // Modo crear: enviar payload completo
         const payload: any = {
           title: formData.title.trim(),
@@ -388,13 +397,9 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
           address: formData.address,
           timeZone: formData.timeZone,
           startTime: '',
-          endTime: ''
+          endTime: '',
+          contactId: formData.contactId // SIEMPRE incluir contactId
         };
-
-        // Agregar contactId si está seleccionado
-        if (formData.contactId) {
-          payload.contactId = formData.contactId;
-        }
 
         // Agregar assignedUserId si está seleccionado
         if (formData.assignedUserId) {
@@ -542,7 +547,9 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
             {/* Búsqueda de contacto (solo en modo crear) */}
             {isCreateMode && (
               <div className={styles.sectionBlock}>
-                <label className={styles.label}>Cliente (opcional)</label>
+                <label className={styles.label}>
+                  Contacto <span className={styles.required}>*</span>
+                </label>
 
                 {selectedContact ? (
                   <div className={styles.selectedContact}>
