@@ -78,6 +78,27 @@ export async function createSession(sessionData) {
 
   const startedAt = new Date(ts).toISOString()
 
+  // Validar si el contact_id existe en la DB antes de insertarlo
+  let validContactId = null
+  let validFullName = null
+
+  if (contact_id) {
+    try {
+      const contact = await db.get(
+        'SELECT id, name FROM contacts WHERE id = ?',
+        [contact_id]
+      )
+      if (contact) {
+        validContactId = contact.id
+        validFullName = contact.name || full_name
+      } else {
+        logger.warn(`Contact ID ${contact_id} del localStorage no existe en DB - se guardará sin contact_id`)
+      }
+    } catch (err) {
+      logger.warn(`Error validando contact_id: ${err.message}`)
+    }
+  }
+
   try {
     await db.run(`
       INSERT INTO sessions (
@@ -122,8 +143,8 @@ export async function createSession(sessionData) {
     `, [
       session_id,
       visitor_id,
-      contact_id || null,
-      full_name || null,
+      validContactId,
+      validFullName,
       event_name,
       startedAt,
       startedAt,
@@ -155,7 +176,10 @@ export async function createSession(sessionData) {
       geoInfo.geo_city
     ])
 
-    logger.info(`Evento registrado: ${event_name} - visitor: ${visitor_id}`)
+    const logMsg = validContactId
+      ? `Evento registrado: ${event_name} - visitor: ${visitor_id} - contact: ${validContactId}`
+      : `Evento registrado: ${event_name} - visitor: ${visitor_id} (sin contact_id)`
+    logger.info(logMsg)
     return { success: true }
   } catch (error) {
     logger.error('Error creando registro de tracking:', error)
