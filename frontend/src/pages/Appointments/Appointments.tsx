@@ -8,6 +8,13 @@ import { calendarsService, type Calendar, type CalendarEvent, type AppointmentSt
 import { formatTime12h, formatDate } from '@/utils/format';
 import styles from './Appointments.module.css';
 
+const LAST_SELECTED_CALENDAR_KEY = 'lastSelectedCalendarId';
+
+const getStoredLastCalendarId = () => {
+  if (typeof window === 'undefined') return null;
+  return window.sessionStorage.getItem(LAST_SELECTED_CALENDAR_KEY);
+};
+
 const MONTH_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
@@ -126,6 +133,20 @@ export const Appointments: React.FC = () => {
     localStorage.getItem('defaultCalendarId')
   );
 
+  const persistLastSelectedCalendar = useCallback((calendarId: string | null) => {
+    if (typeof window === 'undefined') return;
+    if (calendarId) {
+      window.sessionStorage.setItem(LAST_SELECTED_CALENDAR_KEY, calendarId);
+    } else {
+      window.sessionStorage.removeItem(LAST_SELECTED_CALENDAR_KEY);
+    }
+  }, []);
+
+  const selectCalendar = useCallback((calendar: Calendar | null) => {
+    setSelectedCalendar(calendar);
+    persistLastSelectedCalendar(calendar?.id ?? null);
+  }, [persistLastSelectedCalendar]);
+
   // Dropdowns de navegación
   const [isMonthDropdownOpen, setIsMonthDropdownOpen] = useState(false);
   const [isYearDropdownOpen, setIsYearDropdownOpen] = useState(false);
@@ -194,11 +215,16 @@ export const Appointments: React.FC = () => {
       const calendarsData = await calendarsService.getCalendars(locationId, accessToken);
       setCalendars(calendarsData);
 
-      // Seleccionar calendario: predeterminado guardado > primer activo
+      // Seleccionar calendario: último usado en esta sesión > predeterminado > primer activo
       let calendarToSelect: Calendar | undefined;
 
+      const lastSelectedId = getStoredLastCalendarId();
+      if (lastSelectedId) {
+        calendarToSelect = calendarsData.find((cal) => cal.id === lastSelectedId && cal.isActive);
+      }
+
       if (defaultCalendarId) {
-        calendarToSelect = calendarsData.find((cal) => cal.id === defaultCalendarId && cal.isActive);
+        calendarToSelect = calendarToSelect ?? calendarsData.find((cal) => cal.id === defaultCalendarId && cal.isActive);
       }
 
       if (!calendarToSelect) {
@@ -206,7 +232,9 @@ export const Appointments: React.FC = () => {
       }
 
       if (calendarToSelect) {
-        setSelectedCalendar(calendarToSelect);
+        selectCalendar(calendarToSelect);
+      } else {
+        selectCalendar(null);
       }
     } catch (error) {
       showToast('error', 'Error al cargar calendarios', 'No se pudieron obtener los calendarios.');
@@ -214,7 +242,7 @@ export const Appointments: React.FC = () => {
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locationId, accessToken, defaultCalendarId]);
+  }, [locationId, accessToken, defaultCalendarId, selectCalendar]);
 
   const loadEvents = useCallback(async () => {
     if (!locationId || !accessToken || !selectedCalendar) return;
@@ -607,7 +635,7 @@ export const Appointments: React.FC = () => {
                       key={calendar.id}
                       className={`${styles.dropdownItem} ${selectedCalendar?.id === calendar.id ? styles.dropdownItemActive : ''}`}
                       onClick={() => {
-                        setSelectedCalendar(calendar);
+                        selectCalendar(calendar);
                         setIsCalendarDropdownOpen(false);
                       }}
                     >

@@ -437,7 +437,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
       // Modo crear: usar defaults
       setFormData({
         title: defaultTitle || '',
-        appointmentStatus: 'pending',
+        appointmentStatus: 'confirmed', // Estado predeterminado: Confirmada
         startTime: defaultStart ? toLocalInputValue(defaultStart, defaultTimeZone || DEFAULT_TIMEZONE) : '',
         endTime: defaultEnd ? toLocalInputValue(defaultEnd, defaultTimeZone || DEFAULT_TIMEZONE) : '',
         notes: '',

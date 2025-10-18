@@ -92,7 +92,9 @@ const Analytics: React.FC = () => {
     return value.toString()
   }
 
-  const formatTrafficTooltip = (value: number, _key: string) => value.toLocaleString('es-MX')
+  const formatTrafficTooltipValue = (value: number) => value.toLocaleString('es-MX')
+
+  const formatTrafficTooltip = (value: number, _key: string) => formatTrafficTooltipValue(value)
 
   // Cargar datos cuando cambie el rango de fechas
   useEffect(() => {
