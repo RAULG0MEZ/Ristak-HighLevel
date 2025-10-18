@@ -43,16 +43,20 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
     const checkTracking = async () => {
       try {
         const status = await checkTrackingStatus()
+        console.log('[Sidebar] checkTrackingStatus response:', status)
         // Mostrar Analytics solo si el usuario activó el switch
         if (status.showAnalytics) {
+          console.log('[Sidebar] Adding Analytics to navigation')
           setNavigation([
             ...baseNavigation,
             { name: 'Analíticas', href: '/analytics', icon: BarChart3 }
           ])
         } else {
+          console.log('[Sidebar] Hiding Analytics from navigation')
           setNavigation(baseNavigation)
         }
       } catch (error) {
+        console.error('[Sidebar] Error checking tracking status:', error)
         // Si falla, solo mostrar el menú base
         setNavigation(baseNavigation)
       }
