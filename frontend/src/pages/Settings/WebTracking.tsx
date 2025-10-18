@@ -254,146 +254,170 @@ export const WebTracking: React.FC = () => {
 
           {recentSessions.length > 0 ? (
             <div className={styles.tableContainer} style={{ overflowX: 'auto' }}>
-              <table className={styles.table} style={{ minWidth: '3000px' }}>
+              <table className={styles.table} style={{ tableLayout: 'fixed', width: '100%' }}>
                 <thead>
                   <tr>
                     {/* IDs y Timestamps */}
-                    <th>Session ID</th>
-                    <th>Visitor ID</th>
-                    <th>Contact ID</th>
-                    <th>Full Name</th>
-                    <th>Event Name</th>
-                    <th>Started At</th>
-                    <th>Last Event At</th>
-                    <th>Created At</th>
+                    <th style={{ width: '100px' }}>Session ID</th>
+                    <th style={{ width: '100px' }}>Visitor ID</th>
+                    <th style={{ width: '100px' }}>Contact ID</th>
+                    <th style={{ width: '120px' }}>Full Name</th>
+                    <th style={{ width: '100px' }}>Event Name</th>
+                    <th style={{ width: '120px' }}>Started At</th>
+                    <th style={{ width: '120px' }}>Last Event At</th>
+                    <th style={{ width: '120px' }}>Created At</th>
 
                     {/* URLs */}
-                    <th>Landing URL</th>
-                    <th>Referrer URL</th>
+                    <th style={{ width: '200px' }}>Landing URL</th>
+                    <th style={{ width: '150px' }}>Referrer URL</th>
 
                     {/* UTMs */}
-                    <th>UTM Source</th>
-                    <th>UTM Medium</th>
-                    <th>UTM Campaign</th>
-                    <th>UTM Term</th>
-                    <th>UTM Content</th>
+                    <th style={{ width: '120px' }}>UTM Source</th>
+                    <th style={{ width: '120px' }}>UTM Medium</th>
+                    <th style={{ width: '150px' }}>UTM Campaign</th>
+                    <th style={{ width: '120px' }}>UTM Term</th>
+                    <th style={{ width: '120px' }}>UTM Content</th>
 
                     {/* Click IDs */}
-                    <th>GCLID</th>
-                    <th>FBCLID</th>
-                    <th>FBC</th>
-                    <th>FBP</th>
-                    <th>WBRAID</th>
-                    <th>GBRAID</th>
-                    <th>MSCLKID</th>
-                    <th>TTCLID</th>
+                    <th style={{ width: '120px' }}>GCLID</th>
+                    <th style={{ width: '120px' }}>FBCLID</th>
+                    <th style={{ width: '120px' }}>FBC</th>
+                    <th style={{ width: '120px' }}>FBP</th>
+                    <th style={{ width: '100px' }}>WBRAID</th>
+                    <th style={{ width: '100px' }}>GBRAID</th>
+                    <th style={{ width: '100px' }}>MSCLKID</th>
+                    <th style={{ width: '100px' }}>TTCLID</th>
 
                     {/* Campaign Details */}
-                    <th>Channel</th>
-                    <th>Source Platform</th>
-                    <th>Campaign ID</th>
-                    <th>Adset ID</th>
-                    <th>Ad Group ID</th>
-                    <th>Ad ID</th>
-                    <th>Campaign Name</th>
-                    <th>Adset Name</th>
-                    <th>Ad Group Name</th>
-                    <th>Ad Name</th>
-                    <th>Placement</th>
-                    <th>Site Source Name</th>
-                    <th>Network</th>
-                    <th>Match Type</th>
-                    <th>Keyword</th>
-                    <th>Search Query</th>
-                    <th>Creative ID</th>
-                    <th>Ad Position</th>
+                    <th style={{ width: '100px' }}>Channel</th>
+                    <th style={{ width: '120px' }}>Source Platform</th>
+                    <th style={{ width: '120px' }}>Campaign ID</th>
+                    <th style={{ width: '120px' }}>Adset ID</th>
+                    <th style={{ width: '120px' }}>Ad Group ID</th>
+                    <th style={{ width: '120px' }}>Ad ID</th>
+                    <th style={{ width: '150px' }}>Campaign Name</th>
+                    <th style={{ width: '150px' }}>Adset Name</th>
+                    <th style={{ width: '150px' }}>Ad Group Name</th>
+                    <th style={{ width: '150px' }}>Ad Name</th>
+                    <th style={{ width: '120px' }}>Placement</th>
+                    <th style={{ width: '120px' }}>Site Source Name</th>
+                    <th style={{ width: '100px' }}>Network</th>
+                    <th style={{ width: '100px' }}>Match Type</th>
+                    <th style={{ width: '120px' }}>Keyword</th>
+                    <th style={{ width: '150px' }}>Search Query</th>
+                    <th style={{ width: '120px' }}>Creative ID</th>
+                    <th style={{ width: '100px' }}>Ad Position</th>
 
                     {/* Device & Browser */}
-                    <th>IP</th>
-                    <th>User Agent</th>
-                    <th>Device Type</th>
-                    <th>OS</th>
-                    <th>Browser</th>
-                    <th>Browser Version</th>
-                    <th>Language</th>
-                    <th>Timezone</th>
+                    <th style={{ width: '120px' }}>IP</th>
+                    <th style={{ width: '200px' }}>User Agent</th>
+                    <th style={{ width: '100px' }}>Device Type</th>
+                    <th style={{ width: '100px' }}>OS</th>
+                    <th style={{ width: '100px' }}>Browser</th>
+                    <th style={{ width: '100px' }}>Browser Version</th>
+                    <th style={{ width: '80px' }}>Language</th>
+                    <th style={{ width: '120px' }}>Timezone</th>
 
                     {/* Geo */}
-                    <th>Country</th>
-                    <th>Region</th>
-                    <th>City</th>
+                    <th style={{ width: '100px' }}>Country</th>
+                    <th style={{ width: '120px' }}>Region</th>
+                    <th style={{ width: '120px' }}>City</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {recentSessions.map((session: any) => (
-                    <tr key={session.session_id}>
-                      {/* IDs y Timestamps */}
-                      <td><code style={{ fontSize: '0.7rem' }}>{session.session_id?.substring(0, 8)}...</code></td>
-                      <td><code style={{ fontSize: '0.7rem' }}>{session.visitor_id?.substring(0, 8)}...</code></td>
-                      <td>{session.contact_id ? <code style={{ fontSize: '0.7rem' }}>{session.contact_id.substring(0, 8)}...</code> : '-'}</td>
-                      <td>{session.full_name || '-'}</td>
-                      <td>{session.event_name || '-'}</td>
-                      <td className={styles.tableDateCell}>{formatDate(session.started_at)}</td>
-                      <td>{session.last_event_at ? formatDate(session.last_event_at) : '-'}</td>
-                      <td>{session.created_at ? formatDate(session.created_at) : '-'}</td>
+                  {recentSessions.map((session: any) => {
+                    const cellStyle = {
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap' as const
+                    }
 
-                      {/* URLs */}
-                      <td style={{ maxWidth: '200px' }}><a href={session.landing_url} target="_blank" rel="noopener noreferrer">{session.landing_url}</a></td>
-                      <td style={{ maxWidth: '150px', fontSize: '0.75rem' }}>{session.referrer_url || '-'}</td>
+                    return (
+                      <tr key={session.session_id}>
+                        {/* IDs y Timestamps */}
+                        <td style={cellStyle} title={session.session_id}>
+                          <code style={{ fontSize: '0.7rem' }}>{session.session_id || '-'}</code>
+                        </td>
+                        <td style={cellStyle} title={session.visitor_id}>
+                          <code style={{ fontSize: '0.7rem' }}>{session.visitor_id || '-'}</code>
+                        </td>
+                        <td style={cellStyle} title={session.contact_id}>
+                          {session.contact_id ? <code style={{ fontSize: '0.7rem' }}>{session.contact_id}</code> : '-'}
+                        </td>
+                        <td style={cellStyle} title={session.full_name}>{session.full_name || '-'}</td>
+                        <td style={cellStyle} title={session.event_name}>{session.event_name || '-'}</td>
+                        <td style={cellStyle}>{formatDate(session.started_at)}</td>
+                        <td style={cellStyle}>{session.last_event_at ? formatDate(session.last_event_at) : '-'}</td>
+                        <td style={cellStyle}>{session.created_at ? formatDate(session.created_at) : '-'}</td>
 
-                      {/* UTMs */}
-                      <td>{session.utm_source || '-'}</td>
-                      <td>{session.utm_medium || '-'}</td>
-                      <td>{session.utm_campaign || '-'}</td>
-                      <td>{session.utm_term || '-'}</td>
-                      <td>{session.utm_content || '-'}</td>
+                        {/* URLs */}
+                        <td style={cellStyle} title={session.landing_url}>
+                          <a href={session.landing_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)' }}>
+                            {session.landing_url || '-'}
+                          </a>
+                        </td>
+                        <td style={{...cellStyle, fontSize: '0.75rem'}} title={session.referrer_url}>
+                          {session.referrer_url || '-'}
+                        </td>
 
-                      {/* Click IDs */}
-                      <td>{session.gclid ? <code style={{ fontSize: '0.7rem' }}>{session.gclid.substring(0, 10)}...</code> : '-'}</td>
-                      <td>{session.fbclid ? <code style={{ fontSize: '0.7rem' }}>{session.fbclid.substring(0, 10)}...</code> : '-'}</td>
-                      <td>{session.fbc || '-'}</td>
-                      <td>{session.fbp || '-'}</td>
-                      <td>{session.wbraid || '-'}</td>
-                      <td>{session.gbraid || '-'}</td>
-                      <td>{session.msclkid || '-'}</td>
-                      <td>{session.ttclid || '-'}</td>
+                        {/* UTMs */}
+                        <td style={cellStyle} title={session.utm_source}>{session.utm_source || '-'}</td>
+                        <td style={cellStyle} title={session.utm_medium}>{session.utm_medium || '-'}</td>
+                        <td style={cellStyle} title={session.utm_campaign}>{session.utm_campaign || '-'}</td>
+                        <td style={cellStyle} title={session.utm_term}>{session.utm_term || '-'}</td>
+                        <td style={cellStyle} title={session.utm_content}>{session.utm_content || '-'}</td>
 
-                      {/* Campaign Details */}
-                      <td>{session.channel || '-'}</td>
-                      <td>{session.source_platform || '-'}</td>
-                      <td>{session.campaign_id || '-'}</td>
-                      <td>{session.adset_id || '-'}</td>
-                      <td>{session.ad_group_id || '-'}</td>
-                      <td>{session.ad_id || '-'}</td>
-                      <td>{session.campaign_name || '-'}</td>
-                      <td>{session.adset_name || '-'}</td>
-                      <td>{session.ad_group_name || '-'}</td>
-                      <td>{session.ad_name || '-'}</td>
-                      <td>{session.placement || '-'}</td>
-                      <td>{session.site_source_name || '-'}</td>
-                      <td>{session.network || '-'}</td>
-                      <td>{session.match_type || '-'}</td>
-                      <td>{session.keyword || '-'}</td>
-                      <td>{session.search_query || '-'}</td>
-                      <td>{session.creative_id || '-'}</td>
-                      <td>{session.ad_position || '-'}</td>
+                        {/* Click IDs */}
+                        <td style={cellStyle} title={session.gclid}>
+                          {session.gclid ? <code style={{ fontSize: '0.7rem' }}>{session.gclid}</code> : '-'}
+                        </td>
+                        <td style={cellStyle} title={session.fbclid}>
+                          {session.fbclid ? <code style={{ fontSize: '0.7rem' }}>{session.fbclid}</code> : '-'}
+                        </td>
+                        <td style={cellStyle} title={session.fbc}>{session.fbc || '-'}</td>
+                        <td style={cellStyle} title={session.fbp}>{session.fbp || '-'}</td>
+                        <td style={cellStyle} title={session.wbraid}>{session.wbraid || '-'}</td>
+                        <td style={cellStyle} title={session.gbraid}>{session.gbraid || '-'}</td>
+                        <td style={cellStyle} title={session.msclkid}>{session.msclkid || '-'}</td>
+                        <td style={cellStyle} title={session.ttclid}>{session.ttclid || '-'}</td>
 
-                      {/* Device & Browser */}
-                      <td style={{ fontSize: '0.75rem' }}>{session.ip || '-'}</td>
-                      <td style={{ fontSize: '0.7rem', maxWidth: '200px' }}>{session.user_agent || '-'}</td>
-                      <td style={{ textTransform: 'capitalize' }}>{session.device_type || '-'}</td>
-                      <td>{session.os || '-'}</td>
-                      <td>{session.browser || '-'}</td>
-                      <td>{session.browser_version || '-'}</td>
-                      <td>{session.language || '-'}</td>
-                      <td>{session.timezone || '-'}</td>
+                        {/* Campaign Details */}
+                        <td style={cellStyle} title={session.channel}>{session.channel || '-'}</td>
+                        <td style={cellStyle} title={session.source_platform}>{session.source_platform || '-'}</td>
+                        <td style={cellStyle} title={session.campaign_id}>{session.campaign_id || '-'}</td>
+                        <td style={cellStyle} title={session.adset_id}>{session.adset_id || '-'}</td>
+                        <td style={cellStyle} title={session.ad_group_id}>{session.ad_group_id || '-'}</td>
+                        <td style={cellStyle} title={session.ad_id}>{session.ad_id || '-'}</td>
+                        <td style={cellStyle} title={session.campaign_name}>{session.campaign_name || '-'}</td>
+                        <td style={cellStyle} title={session.adset_name}>{session.adset_name || '-'}</td>
+                        <td style={cellStyle} title={session.ad_group_name}>{session.ad_group_name || '-'}</td>
+                        <td style={cellStyle} title={session.ad_name}>{session.ad_name || '-'}</td>
+                        <td style={cellStyle} title={session.placement}>{session.placement || '-'}</td>
+                        <td style={cellStyle} title={session.site_source_name}>{session.site_source_name || '-'}</td>
+                        <td style={cellStyle} title={session.network}>{session.network || '-'}</td>
+                        <td style={cellStyle} title={session.match_type}>{session.match_type || '-'}</td>
+                        <td style={cellStyle} title={session.keyword}>{session.keyword || '-'}</td>
+                        <td style={cellStyle} title={session.search_query}>{session.search_query || '-'}</td>
+                        <td style={cellStyle} title={session.creative_id}>{session.creative_id || '-'}</td>
+                        <td style={cellStyle} title={session.ad_position}>{session.ad_position || '-'}</td>
 
-                      {/* Geo */}
-                      <td>{session.geo_country || '-'}</td>
-                      <td>{session.geo_region || '-'}</td>
-                      <td>{session.geo_city || '-'}</td>
-                    </tr>
-                  ))}
+                        {/* Device & Browser */}
+                        <td style={{...cellStyle, fontSize: '0.75rem'}} title={session.ip}>{session.ip || '-'}</td>
+                        <td style={{...cellStyle, fontSize: '0.7rem'}} title={session.user_agent}>{session.user_agent || '-'}</td>
+                        <td style={{...cellStyle, textTransform: 'capitalize'}} title={session.device_type}>{session.device_type || '-'}</td>
+                        <td style={cellStyle} title={session.os}>{session.os || '-'}</td>
+                        <td style={cellStyle} title={session.browser}>{session.browser || '-'}</td>
+                        <td style={cellStyle} title={session.browser_version}>{session.browser_version || '-'}</td>
+                        <td style={cellStyle} title={session.language}>{session.language || '-'}</td>
+                        <td style={cellStyle} title={session.timezone}>{session.timezone || '-'}</td>
+
+                        {/* Geo */}
+                        <td style={cellStyle} title={session.geo_country}>{session.geo_country || '-'}</td>
+                        <td style={cellStyle} title={session.geo_region}>{session.geo_region || '-'}</td>
+                        <td style={cellStyle} title={session.geo_city}>{session.geo_city || '-'}</td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
