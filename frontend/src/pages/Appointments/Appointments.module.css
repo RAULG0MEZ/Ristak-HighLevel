@@ -582,9 +582,9 @@
   color: #1e3a8a;
 }
 
-[data-theme="dark"] .eventConfirmed {
+body.dark .eventConfirmed {
   border-color: #60a5fa;
-  background-color: rgba(96, 165, 250, 0.25);
+  background-color: rgba(59, 130, 246, 0.35);
   color: #ffffff;
   font-weight: 600;
 }
@@ -595,9 +595,9 @@
   color: #78350f;
 }
 
-[data-theme="dark"] .eventPending {
+body.dark .eventPending {
   border-color: #fbbf24;
-  background-color: rgba(251, 191, 36, 0.25);
+  background-color: rgba(245, 158, 11, 0.35);
   color: #ffffff;
   font-weight: 600;
 }
@@ -608,9 +608,9 @@
   color: #7f1d1d;
 }
 
-[data-theme="dark"] .eventCancelled {
+body.dark .eventCancelled {
   border-color: #f87171;
-  background-color: rgba(248, 113, 113, 0.25);
+  background-color: rgba(239, 68, 68, 0.35);
   color: #ffffff;
   font-weight: 600;
 }
@@ -621,9 +621,9 @@
   color: #064e3b;
 }
 
-[data-theme="dark"] .eventShowed {
+body.dark .eventShowed {
   border-color: #34d399;
-  background-color: rgba(52, 211, 153, 0.25);
+  background-color: rgba(16, 185, 129, 0.35);
   color: #ffffff;
   font-weight: 600;
 }
@@ -634,9 +634,9 @@
   color: #1f2937;
 }
 
-[data-theme="dark"] .eventNoshow {
+body.dark .eventNoshow {
   border-color: #9ca3af;
-  background-color: rgba(156, 163, 175, 0.25);
+  background-color: rgba(107, 114, 128, 0.35);
   color: #ffffff;
   font-weight: 600;
 }
@@ -647,9 +647,9 @@
   color: #4c1d95;
 }
 
-[data-theme="dark"] .eventRescheduled {
+body.dark .eventRescheduled {
   border-color: #a78bfa;
-  background-color: rgba(167, 139, 250, 0.25);
+  background-color: rgba(139, 92, 246, 0.35);
   color: #ffffff;
   font-weight: 600;
 }
@@ -660,9 +660,9 @@
   color: #374151;
 }
 
-[data-theme="dark"] .eventDefault {
+body.dark .eventDefault {
   border-color: #d1d5db;
-  background-color: rgba(209, 213, 219, 0.25);
+  background-color: rgba(156, 163, 175, 0.35);
   color: #ffffff;
   font-weight: 600;
 }
@@ -946,10 +946,11 @@
   border: 1px solid rgba(59, 130, 246, 0.28);
 }
 
-[data-theme="dark"] .dayHeaderChip {
-  background-color: rgba(59, 130, 246, 0.22);
-  color: #dbeafe;
-  border: 1px solid rgba(59, 130, 246, 0.5);
+body.dark .dayHeaderChip {
+  background-color: rgba(59, 130, 246, 0.35);
+  color: #ffffff;
+  border: 1px solid rgba(59, 130, 246, 0.6);
+  font-weight: 700;
 }
 
 .dayGrid {
@@ -1152,7 +1153,7 @@
 }
 
 /* Override para dark mode - hacer el texto más visible */
-[data-theme="dark"] .upcomingTime {
+body.dark .upcomingTime {
   font-weight: 700;
   color: #ffffff;
 }
