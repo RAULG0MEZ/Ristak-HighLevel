@@ -284,87 +284,169 @@ export const WebTracking: React.FC = () => {
           </div>
 
           {recentSessions.length > 0 ? (
-            <div className={styles.tableContainer}>
-              <table className={styles.table}>
+            <div className={styles.tableContainer} style={{ overflowX: 'auto' }}>
+              <table className={styles.table} style={{ minWidth: '3000px' }}>
                 <thead>
                   <tr>
+                    {/* IDs y Timestamps */}
                     <th>Session ID</th>
                     <th>Visitor ID</th>
                     <th>Contact ID</th>
-                    <th>Fecha</th>
+                    <th>Event Name</th>
+                    <th>Started At</th>
+                    <th>Last Event At</th>
+                    <th>Created At</th>
+
+                    {/* URLs */}
                     <th>Landing URL</th>
-                    <th>Referrer</th>
+                    <th>Referrer URL</th>
+
+                    {/* UTMs */}
                     <th>UTM Source</th>
                     <th>UTM Medium</th>
                     <th>UTM Campaign</th>
+                    <th>UTM Term</th>
+                    <th>UTM Content</th>
+
+                    {/* Click IDs */}
                     <th>GCLID</th>
                     <th>FBCLID</th>
-                    <th>Device</th>
+                    <th>FBC</th>
+                    <th>FBP</th>
+                    <th>WBRAID</th>
+                    <th>GBRAID</th>
+                    <th>MSCLKID</th>
+                    <th>TTCLID</th>
+
+                    {/* Campaign Details */}
+                    <th>Channel</th>
+                    <th>Source Platform</th>
+                    <th>Campaign ID</th>
+                    <th>Adset ID</th>
+                    <th>Ad Group ID</th>
+                    <th>Ad ID</th>
+                    <th>Campaign Name</th>
+                    <th>Adset Name</th>
+                    <th>Ad Group Name</th>
+                    <th>Ad Name</th>
+                    <th>Placement</th>
+                    <th>Site Source Name</th>
+                    <th>Network</th>
+                    <th>Match Type</th>
+                    <th>Keyword</th>
+                    <th>Search Query</th>
+                    <th>Creative ID</th>
+                    <th>Ad Position</th>
+
+                    {/* Device & Browser */}
                     <th>IP</th>
-                    <th>Páginas</th>
-                    <th>Eventos</th>
+                    <th>User Agent</th>
+                    <th>Device Type</th>
+                    <th>OS</th>
+                    <th>Browser</th>
+                    <th>Browser Version</th>
+                    <th>Language</th>
+                    <th>Timezone</th>
+
+                    {/* Geo */}
+                    <th>Country</th>
+                    <th>Region</th>
+                    <th>City</th>
+
+                    {/* Metrics */}
+                    <th>Pageviews</th>
+                    <th>Events</th>
+                    <th>Bounce</th>
+                    <th>Orders</th>
+                    <th>Revenue</th>
+                    <th>Currency</th>
+                    <th>Last Order ID</th>
+
+                    {/* Contact Info */}
+                    <th>Email</th>
+                    <th>Phone</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {recentSessions.map((session) => (
+                  {recentSessions.map((session: any) => (
                     <tr key={session.session_id}>
-                      <td>
-                        <code style={{ fontSize: '0.75rem' }}>
-                          {session.session_id?.substring(0, 8)}...
-                        </code>
-                      </td>
-                      <td>
-                        <code style={{ fontSize: '0.75rem' }}>
-                          {session.visitor_id?.substring(0, 8)}...
-                        </code>
-                      </td>
-                      <td>
-                        {session.contact_id ? (
-                          <code style={{ fontSize: '0.75rem' }}>
-                            {session.contact_id.substring(0, 8)}...
-                          </code>
-                        ) : '-'}
-                      </td>
-                      <td className={styles.tableDateCell}>
-                        {formatDate(session.started_at)}
-                      </td>
-                      <td className={styles.tableLinkCell} style={{ maxWidth: '200px' }}>
-                        <a href={session.landing_url} target="_blank" rel="noopener noreferrer">
-                          {session.landing_url}
-                        </a>
-                      </td>
-                      <td style={{ fontSize: '0.813rem', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {session.referrer_url || '-'}
-                      </td>
+                      {/* IDs y Timestamps */}
+                      <td><code style={{ fontSize: '0.7rem' }}>{session.session_id?.substring(0, 8)}...</code></td>
+                      <td><code style={{ fontSize: '0.7rem' }}>{session.visitor_id?.substring(0, 8)}...</code></td>
+                      <td>{session.contact_id ? <code style={{ fontSize: '0.7rem' }}>{session.contact_id.substring(0, 8)}...</code> : '-'}</td>
+                      <td>{session.event_name || '-'}</td>
+                      <td className={styles.tableDateCell}>{formatDate(session.started_at)}</td>
+                      <td>{session.last_event_at ? formatDate(session.last_event_at) : '-'}</td>
+                      <td>{session.created_at ? formatDate(session.created_at) : '-'}</td>
+
+                      {/* URLs */}
+                      <td style={{ maxWidth: '200px' }}><a href={session.landing_url} target="_blank" rel="noopener noreferrer">{session.landing_url}</a></td>
+                      <td style={{ maxWidth: '150px', fontSize: '0.75rem' }}>{session.referrer_url || '-'}</td>
+
+                      {/* UTMs */}
                       <td>{session.utm_source || '-'}</td>
                       <td>{session.utm_medium || '-'}</td>
                       <td>{session.utm_campaign || '-'}</td>
-                      <td>
-                        {session.gclid ? (
-                          <code style={{ fontSize: '0.75rem' }}>
-                            {session.gclid.substring(0, 8)}...
-                          </code>
-                        ) : '-'}
-                      </td>
-                      <td>
-                        {session.fbclid ? (
-                          <code style={{ fontSize: '0.75rem' }}>
-                            {session.fbclid.substring(0, 8)}...
-                          </code>
-                        ) : '-'}
-                      </td>
-                      <td style={{ textTransform: 'capitalize' }}>
-                        {session.device_type || '-'}
-                      </td>
-                      <td style={{ fontSize: '0.813rem' }}>
-                        {session.ip || '-'}
-                      </td>
-                      <td style={{ textAlign: 'center', fontWeight: 500 }}>
-                        {session.pageviews_count || 0}
-                      </td>
-                      <td style={{ textAlign: 'center', fontWeight: 500 }}>
-                        {session.events_count || 0}
-                      </td>
+                      <td>{session.utm_term || '-'}</td>
+                      <td>{session.utm_content || '-'}</td>
+
+                      {/* Click IDs */}
+                      <td>{session.gclid ? <code style={{ fontSize: '0.7rem' }}>{session.gclid.substring(0, 10)}...</code> : '-'}</td>
+                      <td>{session.fbclid ? <code style={{ fontSize: '0.7rem' }}>{session.fbclid.substring(0, 10)}...</code> : '-'}</td>
+                      <td>{session.fbc || '-'}</td>
+                      <td>{session.fbp || '-'}</td>
+                      <td>{session.wbraid || '-'}</td>
+                      <td>{session.gbraid || '-'}</td>
+                      <td>{session.msclkid || '-'}</td>
+                      <td>{session.ttclid || '-'}</td>
+
+                      {/* Campaign Details */}
+                      <td>{session.channel || '-'}</td>
+                      <td>{session.source_platform || '-'}</td>
+                      <td>{session.campaign_id || '-'}</td>
+                      <td>{session.adset_id || '-'}</td>
+                      <td>{session.ad_group_id || '-'}</td>
+                      <td>{session.ad_id || '-'}</td>
+                      <td>{session.campaign_name || '-'}</td>
+                      <td>{session.adset_name || '-'}</td>
+                      <td>{session.ad_group_name || '-'}</td>
+                      <td>{session.ad_name || '-'}</td>
+                      <td>{session.placement || '-'}</td>
+                      <td>{session.site_source_name || '-'}</td>
+                      <td>{session.network || '-'}</td>
+                      <td>{session.match_type || '-'}</td>
+                      <td>{session.keyword || '-'}</td>
+                      <td>{session.search_query || '-'}</td>
+                      <td>{session.creative_id || '-'}</td>
+                      <td>{session.ad_position || '-'}</td>
+
+                      {/* Device & Browser */}
+                      <td style={{ fontSize: '0.75rem' }}>{session.ip || '-'}</td>
+                      <td style={{ fontSize: '0.7rem', maxWidth: '200px' }}>{session.user_agent || '-'}</td>
+                      <td style={{ textTransform: 'capitalize' }}>{session.device_type || '-'}</td>
+                      <td>{session.os || '-'}</td>
+                      <td>{session.browser || '-'}</td>
+                      <td>{session.browser_version || '-'}</td>
+                      <td>{session.language || '-'}</td>
+                      <td>{session.timezone || '-'}</td>
+
+                      {/* Geo */}
+                      <td>{session.geo_country || '-'}</td>
+                      <td>{session.geo_region || '-'}</td>
+                      <td>{session.geo_city || '-'}</td>
+
+                      {/* Metrics */}
+                      <td style={{ textAlign: 'center', fontWeight: 500 }}>{session.pageviews_count || 0}</td>
+                      <td style={{ textAlign: 'center', fontWeight: 500 }}>{session.events_count || 0}</td>
+                      <td style={{ textAlign: 'center' }}>{session.is_bounce ? 'Sí' : 'No'}</td>
+                      <td style={{ textAlign: 'center' }}>{session.orders_count || 0}</td>
+                      <td style={{ textAlign: 'right' }}>${session.revenue_value || 0}</td>
+                      <td>{session.currency || 'MXN'}</td>
+                      <td>{session.last_order_id || '-'}</td>
+
+                      {/* Contact Info */}
+                      <td>{session.email || '-'}</td>
+                      <td>{session.phone_e164 || '-'}</td>
                     </tr>
                   ))}
                 </tbody>
