@@ -530,12 +530,12 @@ export const Dashboard: React.FC = () => {
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">
-          <TrafficSourcesChart
-            data={trafficSources}
-            loading={loading}
-          />
           <ConversionFunnelChart
             data={funnelData}
+            loading={loading}
+          />
+          <TrafficSourcesChart
+            data={trafficSources}
             loading={loading}
           />
         </div>
