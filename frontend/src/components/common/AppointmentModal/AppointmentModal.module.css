@@ -193,11 +193,11 @@
   font-size: 0.875rem;
   font-weight: 500;
   border-radius: var(--radius-md);
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  background-color: var(--color-background-tertiary);
+  border: 1px solid var(--color-border);
+  background-color: var(--color-background-secondary);
   color: var(--color-text-primary);
   outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
   font-family: inherit;
 }
 
@@ -210,7 +210,8 @@
 .input:hover,
 .select:hover,
 .textarea:hover {
-  border-color: rgba(71, 85, 105, 0.45);
+  border-color: var(--color-primary);
+  background-color: var(--color-background-tertiary);
 }
 
 .input:focus,
