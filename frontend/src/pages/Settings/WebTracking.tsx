@@ -183,10 +183,7 @@ export const WebTracking: React.FC = () => {
             <>
               {/* Dominio detectado */}
               <div className={styles.formGroup}>
-                <label className={styles.formLabel}>
-                  <Globe size={16} />
-                  Dominio de tracking
-                </label>
+                <label className={styles.formLabel}>Dominio de tracking</label>
                 <div className={styles.formInput} style={{ background: 'var(--color-gray-50)', cursor: 'default' }}>
                   {trackingDomain}
                 </div>
@@ -219,7 +216,7 @@ export const WebTracking: React.FC = () => {
               </div>
 
               {/* Código del pixel */}
-              <div style={{ marginTop: '24px' }}>
+              <div className={styles.formGroup} style={{ marginTop: '24px' }}>
                 <label className={styles.formLabel}>Código del pixel</label>
                 <div className={styles.codeBlockWrapper}>
                   <button
