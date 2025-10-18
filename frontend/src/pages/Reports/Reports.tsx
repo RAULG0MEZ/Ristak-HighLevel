@@ -598,6 +598,35 @@ export const Reports: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateRange])
 
+  // Función para abrir modal de visitantes
+  const handleOpenVisitorsModal = useCallback(async (date: string) => {
+    setVisitorsModalLoading(true)
+    setIsVisitorsModalOpen(true)
+    setVisitorsModalDate(date)
+
+    try {
+      const response = await fetch(
+        `/api/tracking/visitors?` + new URLSearchParams({
+          startDate: date,
+          endDate: date
+        })
+      )
+
+      if (response.ok) {
+        const data = await response.json()
+        setVisitorsData(data.visitors || [])
+      } else {
+        setVisitorsData([])
+        showToast('error', 'No se pudieron cargar los visitantes', 'Intenta nuevamente')
+      }
+    } catch (error) {
+      setVisitorsData([])
+      showToast('error', 'Error al cargar visitantes', 'Verifica tu conexión')
+    } finally {
+      setVisitorsModalLoading(false)
+    }
+  }, [showToast])
+
   const initialColumns: Column<TableRow>[] = useMemo(() => {
     const salesLabel = reportType === 'campaigns' ? 'Ventas' : 'Transacciones'
 
@@ -844,35 +873,6 @@ export const Reports: React.FC = () => {
 
   const metricsRangeLabel = formatRangeLabel(metricsRange)
   const closeModal = () => setModalState(prev => ({ ...prev, open: false }))
-
-  // Función para abrir modal de visitantes
-  const handleOpenVisitorsModal = useCallback(async (date: string) => {
-    setVisitorsModalLoading(true)
-    setIsVisitorsModalOpen(true)
-    setVisitorsModalDate(date)
-
-    try {
-      const response = await fetch(
-        `/api/tracking/visitors?` + new URLSearchParams({
-          startDate: date,
-          endDate: date
-        })
-      )
-
-      if (response.ok) {
-        const data = await response.json()
-        setVisitorsData(data.visitors || [])
-      } else {
-        setVisitorsData([])
-        showToast('error', 'No se pudieron cargar los visitantes', 'Intenta nuevamente')
-      }
-    } catch (error) {
-      setVisitorsData([])
-      showToast('error', 'Error al cargar visitantes', 'Verifica tu conexión')
-    } finally {
-      setVisitorsModalLoading(false)
-    }
-  }, [showToast])
 
   return (
     <PageContainer>
