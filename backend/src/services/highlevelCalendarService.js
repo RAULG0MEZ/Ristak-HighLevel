@@ -146,6 +146,45 @@ export async function getCalendarEvents(locationId, startTime, endTime, accessTo
 }
 
 /**
+ * Obtener detalles completos de una cita individual
+ * Este endpoint devuelve información completa incluyendo contactId y assignedUserId
+ * @param {string} eventId - ID del evento/cita
+ * @param {string} accessToken - Token de acceso OAuth
+ * @returns {Promise<Object>} Detalles completos de la cita
+ */
+export async function getAppointment(eventId, accessToken) {
+  try {
+    logger.info(`[HighLevel Calendar] Obteniendo detalles de cita: ${eventId}`);
+
+    const response = await fetch(
+      `${GHL_API_BASE}/calendars/events/appointments/${eventId}`,
+      {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Version': API_VERSION,
+          'Authorization': `Bearer ${accessToken}`
+        }
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error(`[HighLevel Calendar] Error al obtener cita: ${response.status} - ${errorText}`);
+      throw new Error(`Error al obtener cita: ${response.status}`);
+    }
+
+    const data = await response.json();
+    logger.info(`[HighLevel Calendar] Cita obtenida exitosamente: ${eventId} (contactId: ${data.contactId || 'N/A'}, assignedUserId: ${data.assignedUserId || 'N/A'})`);
+
+    return data;
+  } catch (error) {
+    logger.error(`[HighLevel Calendar] Error en getAppointment: ${error.message}`);
+    throw error;
+  }
+}
+
+/**
  * Obtener slots disponibles de un calendario
  * @param {string} calendarId - ID del calendario
  * @param {string} startDate - Fecha inicio (YYYY-MM-DD)
@@ -340,6 +379,7 @@ export default {
   getCalendars,
   getCalendar,
   getCalendarEvents,
+  getAppointment,
   getFreeSlots,
   createAppointment,
   updateAppointment,

@@ -103,6 +103,38 @@ export async function getEvents(req, res) {
 }
 
 /**
+ * GET /api/calendars/events/:eventId
+ * Obtener detalles completos de una cita individual
+ * Este endpoint devuelve el contactId y assignedUserId completos
+ */
+export async function getAppointment(req, res) {
+  try {
+    const { eventId } = req.params;
+    const { accessToken } = req.query;
+
+    if (!accessToken) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requiere accessToken'
+      });
+    }
+
+    const appointment = await calendarService.getAppointment(eventId, accessToken);
+
+    res.json({
+      success: true,
+      data: appointment
+    });
+  } catch (error) {
+    logger.error(`[Calendars Controller] Error en getAppointment: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}
+
+/**
  * GET /api/calendars/:id/free-slots
  * Obtener slots disponibles de un calendario
  */
@@ -242,6 +274,7 @@ export default {
   getCalendars,
   getCalendar,
   getEvents,
+  getAppointment,
   getFreeSlots,
   createAppointment,
   updateAppointment,

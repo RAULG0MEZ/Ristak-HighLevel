@@ -412,27 +412,103 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
 
   useEffect(() => {
     if (event && !isCreateMode) {
-      // Modo edición/vista: cargar datos del evento
-      setFormData({
-        title: event.title || '',
-        appointmentStatus: event.appointmentStatus || 'pending',
-        startTime: toLocalInputValue(event.startTime, event.timeZone),
-        endTime: toLocalInputValue(event.endTime, event.timeZone),
-        notes: event.notes || '',
-        address: event.address || '',
-        timeZone:
-          event.timeZone ||
-          (event as any)?.timeZone ||
-          (event as any)?.timezone ||
-          DEFAULT_TIMEZONE,
-        contactId: (event as any)?.contactId || '',
-        assignedUserId: (event as any)?.assignedUserId || ''
-      });
+      // Modo edición/vista: obtener detalles completos de la cita
+      const loadEventDetails = async () => {
+        try {
+          console.log('[AppointmentModal] Evento recibido:', event);
+          console.log('[AppointmentModal] Event ID:', event.id);
 
-      // Si hay contactId, cargar el contacto
-      if ((event as any)?.contactId) {
-        loadContactById((event as any).contactId);
-      }
+          const config = await highLevelService.getConfig();
+          console.log('[AppointmentModal] Config obtenida, accessToken presente:', !!config.accessToken);
+
+          if (!config.accessToken || !event.id) {
+            console.log('[AppointmentModal] Falta accessToken o event.id, usando datos básicos');
+            // Si no hay token o ID, usar los datos básicos del evento
+            setFormData({
+              title: event.title || '',
+              appointmentStatus: event.appointmentStatus || 'pending',
+              startTime: toLocalInputValue(event.startTime, event.timeZone),
+              endTime: toLocalInputValue(event.endTime, event.timeZone),
+              notes: event.notes || '',
+              address: event.address || '',
+              timeZone:
+                event.timeZone ||
+                (event as any)?.timeZone ||
+                (event as any)?.timezone ||
+                DEFAULT_TIMEZONE,
+              contactId: (event as any)?.contactId || '',
+              assignedUserId: (event as any)?.assignedUserId || ''
+            });
+            return;
+          }
+
+          // Obtener detalles completos de la cita (incluye contactId y assignedUserId)
+          console.log('[AppointmentModal] Llamando getAppointment con eventId:', event.id);
+          const fullEvent = await calendarsService.getAppointment(event.id, config.accessToken);
+          console.log('[AppointmentModal] Respuesta de getAppointment:', fullEvent);
+
+          if (fullEvent) {
+            console.log('[AppointmentModal] Evento completo obtenido, contactId:', fullEvent.contactId, 'assignedUserId:', fullEvent.assignedUserId);
+            setFormData({
+              title: fullEvent.title || '',
+              appointmentStatus: fullEvent.appointmentStatus || 'pending',
+              startTime: toLocalInputValue(fullEvent.startTime, fullEvent.timeZone),
+              endTime: toLocalInputValue(fullEvent.endTime, fullEvent.timeZone),
+              notes: fullEvent.notes || '',
+              address: fullEvent.address || '',
+              timeZone:
+                fullEvent.timeZone ||
+                (fullEvent as any)?.timeZone ||
+                (fullEvent as any)?.timezone ||
+                DEFAULT_TIMEZONE,
+              contactId: fullEvent.contactId || '',
+              assignedUserId: fullEvent.assignedUserId || ''
+            });
+
+            // Si hay contactId, cargar el contacto
+            if (fullEvent.contactId) {
+              loadContactById(fullEvent.contactId);
+            }
+          } else {
+            // Fallback: usar datos básicos si falla la carga completa
+            setFormData({
+              title: event.title || '',
+              appointmentStatus: event.appointmentStatus || 'pending',
+              startTime: toLocalInputValue(event.startTime, event.timeZone),
+              endTime: toLocalInputValue(event.endTime, event.timeZone),
+              notes: event.notes || '',
+              address: event.address || '',
+              timeZone:
+                event.timeZone ||
+                (event as any)?.timeZone ||
+                (event as any)?.timezone ||
+                DEFAULT_TIMEZONE,
+              contactId: (event as any)?.contactId || '',
+              assignedUserId: (event as any)?.assignedUserId || ''
+            });
+          }
+        } catch (error) {
+          console.error('Error al cargar detalles de la cita:', error);
+          // Fallback: usar datos básicos
+          setFormData({
+            title: event.title || '',
+            appointmentStatus: event.appointmentStatus || 'pending',
+            startTime: toLocalInputValue(event.startTime, event.timeZone),
+            endTime: toLocalInputValue(event.endTime, event.timeZone),
+            notes: event.notes || '',
+            address: event.address || '',
+            timeZone:
+              event.timeZone ||
+              (event as any)?.timeZone ||
+              (event as any)?.timezone ||
+              DEFAULT_TIMEZONE,
+            contactId: (event as any)?.contactId || '',
+            assignedUserId: (event as any)?.assignedUserId || ''
+          });
+        }
+      };
+
+      loadEventDetails();
     } else if (isCreateMode && isOpen) {
       // Modo crear: usar defaults
       setFormData({

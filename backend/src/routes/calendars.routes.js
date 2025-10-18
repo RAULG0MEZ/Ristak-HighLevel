@@ -14,6 +14,9 @@ router.get('/', calendarsController.getCalendars);
 // Obtener eventos/citas
 router.get('/events', calendarsController.getEvents);
 
+// Obtener detalles completos de una cita individual (con contactId y assignedUserId)
+router.get('/events/:eventId', calendarsController.getAppointment);
+
 // Crear nueva cita
 router.post('/appointments', calendarsController.createAppointment);
 
