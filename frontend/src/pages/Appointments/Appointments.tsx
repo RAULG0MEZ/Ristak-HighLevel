@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { KpiCard, Card, Button, PageContainer, AppointmentModal, TabList } from '@/components/common';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, ChevronDown, Check } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, ChevronDown, Check } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNotification } from '@/contexts/NotificationContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -657,25 +657,18 @@ export const Appointments: React.FC = () => {
         <KpiCard
           title="Citas pendientes · este mes"
           value={stats.pending}
-          icon={<CalendarIcon className="w-6 h-6" />}
         />
         <KpiCard
           title="Citas canceladas · este mes"
           value={stats.cancelled}
-          icon={<CalendarIcon className="w-6 h-6" />}
-          iconColorClassName="text-[var(--color-error-500)]"
         />
         <KpiCard
           title="Citas confirmadas · este mes"
           value={stats.confirmed}
-          icon={<CalendarIcon className="w-6 h-6" />}
-          iconColorClassName="text-[var(--color-success-500)]"
         />
         <KpiCard
           title="Citas reprogramadas · este mes"
           value={stats.rescheduled}
-          icon={<CalendarIcon className="w-6 h-6" />}
-          iconColorClassName="text-[var(--color-warning-500)]"
         />
       </div>
 
