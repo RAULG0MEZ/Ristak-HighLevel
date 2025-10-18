@@ -9,6 +9,23 @@ const GHL_API_BASE = 'https://services.leadconnectorhq.com';
 const API_VERSION = '2021-04-15';
 
 /**
+ * Mapear estado de cita del frontend al formato de HighLevel
+ * Frontend: pending, confirmed, cancelled, showed, noshow, rescheduled
+ * HighLevel: confirmed, cancelled, showed, noshow, invalid
+ */
+function mapAppointmentStatus(status) {
+  const statusMap = {
+    'pending': 'confirmed', // pending no existe en GHL, usar confirmed
+    'confirmed': 'confirmed',
+    'cancelled': 'cancelled',
+    'showed': 'showed',
+    'noshow': 'noshow',
+    'rescheduled': 'confirmed' // rescheduled no existe en GHL, usar confirmed
+  };
+  return statusMap[status] || 'confirmed';
+}
+
+/**
  * Obtener todos los calendarios de una ubicación
  * @param {string} locationId - ID de la ubicación en HighLevel
  * @param {string} accessToken - Token de acceso OAuth
@@ -184,9 +201,15 @@ export async function createAppointment(appointmentData, locationId, accessToken
     const payload = {
       calendarId: appointmentData.calendarId,
       locationId: locationId,
-      // startTime y endTime ya vienen en formato ISO desde el frontend
       startTime: appointmentData.startTime,
-      endTime: appointmentData.endTime
+      endTime: appointmentData.endTime,
+      // Campos requeridos por la API
+      ignoreFreeSlotValidation: true, // Evita error "Invalid slot range"
+      toNotify: false, // No enviar notificaciones automáticas
+      meetingLocationType: appointmentData.address ? 'custom' : 'zoom',
+      title: appointmentData.title || 'Nueva cita',
+      // Mapear status del frontend al formato de HighLevel
+      appointmentStatus: mapAppointmentStatus(appointmentData.appointmentStatus)
     };
 
     // Campos opcionales
@@ -198,23 +221,13 @@ export async function createAppointment(appointmentData, locationId, accessToken
       payload.assignedUserId = appointmentData.assignedUserId;
     }
 
-    if (appointmentData.title) {
-      payload.title = appointmentData.title;
-    }
-
-    if (appointmentData.appointmentStatus) {
-      payload.appointmentStatus = appointmentData.appointmentStatus;
-    }
-
     if (appointmentData.address) {
       payload.address = appointmentData.address;
     }
 
     if (appointmentData.notes) {
-      payload.notes = appointmentData.notes;
+      payload.description = appointmentData.notes; // HighLevel usa 'description' no 'notes'
     }
-
-    logger.info(`[HighLevel Calendar] Payload de cita: ${JSON.stringify(payload, null, 2)}`);
 
     const response = await fetch(
       `${GHL_API_BASE}/calendars/events/appointments`,

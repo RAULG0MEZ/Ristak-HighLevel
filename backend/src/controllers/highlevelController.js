@@ -1573,17 +1573,16 @@ export const saveInvoiceConfig = async (req, res) => {
  */
 export const getLocationUsers = async (req, res) => {
   try {
-    // Obtener configuración de HighLevel
+    const ghlClient = await getGHLClient();
     const config = await db.get('SELECT * FROM highlevel_config LIMIT 1');
 
-    if (!config || !config.location_id || !config.api_token_encrypted) {
+    if (!config || !config.location_id) {
       return res.status(400).json({
         success: false,
         error: 'No hay configuración de HighLevel activa'
       });
     }
 
-    const ghlClient = await getGHLClient();
     const users = await ghlClient.getLocationUsers(config.location_id);
 
     res.json({
