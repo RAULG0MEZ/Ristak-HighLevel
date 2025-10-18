@@ -6,7 +6,8 @@ import {
   KpiCard,
   DateRangePicker,
   LineChart,
-  TreeFilter
+  TreeFilter,
+  TrafficSourcesChart
 } from '../../components/common'
 import { Eye, Users, UserCheck, Target, Activity, Clock, RefreshCw, FileText, Smartphone, Monitor, Globe } from 'lucide-react'
 import { getSessionsByDateRange } from '../../services/analyticsService'
@@ -61,6 +62,7 @@ const Analytics: React.FC = () => {
   // Estado para visualizaciones
   const [dailyTraffic, setDailyTraffic] = useState<TrafficPoint[]>([])
   const [dailyConversions, setDailyConversions] = useState<any[]>([])
+  const [trafficSources, setTrafficSources] = useState<{ name: string; value: number; color: string }[]>([])
   const [platformsData, setPlatformsData] = useState<any[]>([])
   const [placementsData, setPlacementsData] = useState<any[]>([])
   const [devicesData, setDevicesData] = useState<any[]>([])
@@ -379,6 +381,27 @@ const Analytics: React.FC = () => {
             .slice(0, 5)
           setPlatformsData(platformStats)
 
+          // Preparar datos para la dona de fuentes de tráfico
+          const colorMap: { [key: string]: string } = {
+            'facebook': '#1877f2',
+            'google': '#4285f4',
+            'instagram': '#c32aa3',
+            'tiktok': '#ee1d52',
+            'microsoft': '#00a4ef',
+            'twitter': '#1da1f2',
+            'linkedin': '#0a66c2',
+            'directo': '#6b7280'
+          }
+          const trafficSourcesData = Object.entries(platforms)
+            .map(([platform, count]) => ({
+              name: platform.charAt(0).toUpperCase() + platform.slice(1),
+              value: count,
+              color: colorMap[platform.toLowerCase()] || '#6b7280'
+            }))
+            .sort((a, b) => b.value - a.value)
+            .slice(0, 10)
+          setTrafficSources(trafficSourcesData)
+
           const placements: { [key: string]: number } = {}
           currentSessions.forEach((session: Session) => {
             const placement = session.placement || 'Sin ubicación'
@@ -683,37 +706,44 @@ const Analytics: React.FC = () => {
           </div>
         </Card>
 
-        {/* Gráfica de Registros */}
-        <Card className="p-6">
-          <div className="mb-4">
-            <h3 className="text-lg font-semibold">Registros</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              Contactos identificados por día
-            </p>
-          </div>
+        {/* Gráfica de Registros y Fuentes de Tráfico */}
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card className="p-6">
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold">Registros</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Contactos identificados por día
+              </p>
+            </div>
 
-          <div className="h-[300px]">
-            {loading ? (
-              <div className="flex h-full items-center justify-center text-sm text-gray-500">
-                Cargando datos...
-              </div>
-            ) : dailyConversions.length > 0 ? (
-              <LineChart
-                data={dailyConversions}
-                height={300}
-                showGrid
-                color="#10b981"
-                showLegend={false}
-                formatValue={formatTrafficAxis}
-                formatTooltipValue={formatTrafficTooltip}
-              />
-            ) : (
-              <div className="flex h-full items-center justify-center rounded-xl border border-[rgba(148,163,184,0.18)] bg-[color-mix(in_srgb,var(--color-background-glass) 82%, transparent)] text-sm text-[var(--color-text-tertiary)]">
-                Sin datos de conversiones disponibles
-              </div>
-            )}
-          </div>
-        </Card>
+            <div className="h-[300px]">
+              {loading ? (
+                <div className="flex h-full items-center justify-center text-sm text-gray-500">
+                  Cargando datos...
+                </div>
+              ) : dailyConversions.length > 0 ? (
+                <LineChart
+                  data={dailyConversions}
+                  height={300}
+                  showGrid
+                  color="#10b981"
+                  showLegend={false}
+                  formatValue={formatTrafficAxis}
+                  formatTooltipValue={formatTrafficTooltip}
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center rounded-xl border border-[rgba(148,163,184,0.18)] bg-[color-mix(in_srgb,var(--color-background-glass) 82%, transparent)] text-sm text-[var(--color-text-tertiary)]">
+                  Sin datos de conversiones disponibles
+                </div>
+              )}
+            </div>
+          </Card>
+
+          <TrafficSourcesChart
+            data={trafficSources}
+            loading={loading}
+          />
+        </div>
 
         {/* Grid de stats cards */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
