@@ -322,13 +322,17 @@ export async function getTrackingConfig(req, res) {
     // Detectar dominio automáticamente
     let trackingDomain = null
 
-    // 1. Intentar desde RENDER_EXTERNAL_URL
-    if (process.env.RENDER_EXTERNAL_URL) {
-      trackingDomain = process.env.RENDER_EXTERNAL_URL.replace(/^https?:\/\//, '')
+    // PRIORIDAD 1: Variable de entorno custom (si el usuario lo configuró manualmente)
+    if (process.env.TRACKING_DOMAIN) {
+      trackingDomain = process.env.TRACKING_DOMAIN
     }
-    // 2. Si no, usar el host del request
+    // PRIORIDAD 2: Host del request (captura custom domains como collect.midominio.com)
     else if (req.headers.host) {
       trackingDomain = req.headers.host
+    }
+    // PRIORIDAD 3: RENDER_EXTERNAL_URL como último recurso
+    else if (process.env.RENDER_EXTERNAL_URL) {
+      trackingDomain = process.env.RENDER_EXTERNAL_URL.replace(/^https?:\/\//, '')
     }
 
     // Verificar si ya está configurado en HighLevel
@@ -384,13 +388,20 @@ export async function configureTracking(req, res) {
       })
     }
 
-    // Detectar dominio automáticamente
+    // Detectar dominio automáticamente (misma lógica que getTrackingConfig)
     let trackingDomain = null
 
-    if (process.env.RENDER_EXTERNAL_URL) {
-      trackingDomain = process.env.RENDER_EXTERNAL_URL.replace(/^https?:\/\//, '')
-    } else if (req.headers.host) {
+    // PRIORIDAD 1: Variable de entorno custom (si el usuario lo configuró manualmente)
+    if (process.env.TRACKING_DOMAIN) {
+      trackingDomain = process.env.TRACKING_DOMAIN
+    }
+    // PRIORIDAD 2: Host del request (captura custom domains como collect.midominio.com)
+    else if (req.headers.host) {
       trackingDomain = req.headers.host
+    }
+    // PRIORIDAD 3: RENDER_EXTERNAL_URL como fallback
+    else if (process.env.RENDER_EXTERNAL_URL) {
+      trackingDomain = process.env.RENDER_EXTERNAL_URL.replace(/^https?:\/\//, '')
     }
 
     if (!trackingDomain) {
@@ -417,8 +428,7 @@ export async function configureTracking(req, res) {
             'Version': '2021-07-28'
           },
           body: JSON.stringify({
-            id: 'rstktrack',
-            name: 'Código de Tracking Ristak',
+            name: 'rstktrack',
             value: snippet
           })
         }

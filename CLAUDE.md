@@ -220,11 +220,13 @@ POST   /api/calendars/appointments      # Crear nueva cita
 PUT    /api/calendars/appointments/:id  # Actualizar cita
 DELETE /api/calendars/events/:id        # Eliminar evento
 
-# Pixel de Tracking
+# Pixel de Tracking (Auto-configuración)
 GET    /snip.js                         # Pixel JavaScript (dinámico por dominio)
 POST   /collect                         # Recibir eventos del pixel
 GET    /api/tracking/sessions           # Obtener sesiones capturadas
 GET    /api/tracking/sessions/:id       # Obtener sesión específica
+GET    /api/tracking/config             # Detectar dominio automáticamente
+POST   /api/tracking/configure          # Guardar snippet en HighLevel
 
 # Webhooks
 POST   /webhook/highlevel               # Webhook de HighLevel
@@ -382,6 +384,10 @@ cd frontend && npm run build
   - Captura UTMs, click IDs (gclid, fbclid, msclkid, ttclid, wbraid, gbraid)
   - Cookies de Facebook (fbc, fbp), device info, referrer, IP
   - Tabla `sessions` con 50+ campos de atribución
+  - **Auto-configuración de 1 clic**: GET /api/tracking/config, POST /api/tracking/configure
+  - Detección automática de dominio personalizado (prioridad: TRACKING_DOMAIN env var > req.headers.host > RENDER_EXTERNAL_URL)
+  - Guarda snippet automáticamente en HighLevel custom value `rstktrack`
+  - Usuario solo agrega `{{ custom_values.rstktrack }}` en <head> de su sitio
   - Endpoints: GET /snip.js, POST /collect, GET /api/tracking/sessions
   - Backend: trackingController.js, trackingService.js, tracking.routes.js
   - Frontend: WebTracking.tsx (en Settings), trackingService.ts
@@ -419,24 +425,28 @@ cd frontend && npm run build
   - Tooltips ahora visibles al hacer hover sobre los gráficos
   - CSS mejorado para .recharts-tooltip-wrapper y .recharts-default-tooltip
   - Build exitoso sin errores de compilación
+- ✓ Tracking pixel: prioridad de detección de dominio corregida (2025-10-17):
+  - Bug: Detectaba ristak-app.onrender.com en vez de collect.midominio.com
+  - Fix: Cambió prioridad a TRACKING_DOMAIN env var > req.headers.host > RENDER_EXTERNAL_URL
+  - Ahora captura correctamente custom domains cuando el usuario accede vía CNAME
+  - Aplicado en getTrackingConfig y configureTracking
+  - Probado con curl -H "Host: collect.midominio.com" → funciona correctamente
 
 ---
 
 ## 📅 ÚLTIMA ACTUALIZACIÓN
 
 **Fecha**: 2025-10-17
-**Versión**: 1.7.1
+**Versión**: 1.7.2
 **Último cambio estructural**:
-- **Página de configuración de Pixel de Tracking agregada**
-  - Frontend: WebTracking.tsx en Settings con tab "Web Tracking"
-  - Servicio: trackingService.ts para comunicación con API
-  - Generador de snippet dinámico por dominio del cliente
-  - Vista de sesiones recientes capturadas (últimas 10)
-  - Estadísticas en tiempo real (total, con UTMs, gclid, fbclid)
-  - Tabla de sesiones con landing page, fuente, campaña, device, páginas vistas
-  - Links a documentación (TRACKING_PIXEL.md y PIXEL_SETUP.md)
-  - Ruta: /settings/tracking
-  - Integrado con el sistema de tabs de Settings
+- **Auto-configuración de Tracking Pixel completada**
+  - Endpoints GET /api/tracking/config y POST /api/tracking/configure
+  - Detección automática de dominio (prioridad: TRACKING_DOMAIN > req.headers.host > RENDER_EXTERNAL_URL)
+  - Guarda snippet en HighLevel custom value `rstktrack` con 1 clic
+  - Fix crítico: prioridad de dominio corregida (ahora detecta custom domains correctamente)
+  - Frontend actualizado con botón "Configurar" de 1 clic
+  - Usuario solo necesita agregar `{{ custom_values.rstktrack }}` en <head>
+  - Probado con curl y funcional
 
 ---
 
