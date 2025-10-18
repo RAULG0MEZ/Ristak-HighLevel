@@ -1,7 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { Modal } from '../Modal'
-import { Icon } from '../Icon'
-import { Badge, type BadgeVariant } from '../Badge'
+import { Modal, Icon, Badge, type BadgeVariant } from '@/components/common'
 import { formatDate } from '@/utils/format'
 import styles from './ContactDetailsModal.module.css'
 

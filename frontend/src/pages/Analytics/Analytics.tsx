@@ -5,8 +5,7 @@ import {
   PageContainer,
   Card,
   KpiCard,
-  DateRangePicker,
-  SmartRechartsTooltip
+  DateRangePicker
 } from '../../components/common'
 import { Eye, Users, UserCheck, Target, Activity, Clock, RefreshCw, FileText } from 'lucide-react'
 import { getSessionsByDateRange } from '../../services/analyticsService'

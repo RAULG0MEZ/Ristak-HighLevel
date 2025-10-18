@@ -1,0 +1,77 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+/* Variant: default */
+.default {
+  background-color: var(--color-gray-100);
+  color: var(--color-gray-800);
+}
+
+[data-theme="dark"] .default {
+  background-color: var(--color-gray-800);
+  color: var(--color-gray-200);
+}
+
+/* Variant: success */
+.success {
+  background-color: rgba(16, 185, 129, 0.12);
+  color: #064e3b;
+}
+
+[data-theme="dark"] .success {
+  background-color: rgba(16, 185, 129, 0.2);
+  color: #6ee7b7;
+}
+
+/* Variant: warning */
+.warning {
+  background-color: rgba(245, 158, 11, 0.12);
+  color: #78350f;
+}
+
+[data-theme="dark"] .warning {
+  background-color: rgba(245, 158, 11, 0.2);
+  color: #fcd34d;
+}
+
+/* Variant: error */
+.error {
+  background-color: rgba(239, 68, 68, 0.12);
+  color: #7f1d1d;
+}
+
+[data-theme="dark"] .error {
+  background-color: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+}
+
+/* Variant: info */
+.info {
+  background-color: rgba(59, 130, 246, 0.12);
+  color: #1e3a8a;
+}
+
+[data-theme="dark"] .info {
+  background-color: rgba(59, 130, 246, 0.2);
+  color: #93c5fd;
+}
+
+/* Variant: purple */
+.purple {
+  background-color: rgba(139, 92, 246, 0.12);
+  color: #4c1d95;
+}
+
+[data-theme="dark"] .purple {
+  background-color: rgba(139, 92, 246, 0.2);
+  color: #c4b5fd;
+}
