@@ -6,9 +6,6 @@ import {
   Check,
   Info,
   Globe,
-  Eye,
-  TrendingUp,
-  MousePointer,
   Loader2,
   RefreshCw
 } from 'lucide-react'
@@ -26,12 +23,6 @@ export const WebTracking: React.FC = () => {
   const [configuringTracking, setConfiguringTracking] = useState(false)
   const [isConfigured, setIsConfigured] = useState(false)
   const [hasHighLevel, setHasHighLevel] = useState(false)
-  const [stats, setStats] = useState({
-    total: 0,
-    withUtm: 0,
-    withGclid: 0,
-    withFbclid: 0
-  })
 
   useEffect(() => {
     loadTrackingConfig()
@@ -55,15 +46,8 @@ export const WebTracking: React.FC = () => {
   const loadRecentSessions = async () => {
     setLoadingSessions(true)
     try {
-      const sessions = await trackingService.getSessions(10)
+      const sessions = await trackingService.getSessions(50) // Aumentamos a 50 para ver más datos
       setRecentSessions(sessions)
-
-      const total = sessions.length
-      const withUtm = sessions.filter(s => s.utm_source).length
-      const withGclid = sessions.filter(s => s.gclid).length
-      const withFbclid = sessions.filter(s => s.fbclid).length
-
-      setStats({ total, withUtm, withGclid, withFbclid })
     } catch (error) {
       // Silent error
     } finally {
@@ -284,42 +268,10 @@ export const WebTracking: React.FC = () => {
           )}
         </div>
 
-        {/* Estadísticas */}
-        {stats.total > 0 && (
-          <div className={styles.section}>
-            <div className={styles.sectionHeader}>
-              <h3 className={styles.sectionTitle}>Estadísticas</h3>
-            </div>
-
-            <div className={styles.statsGrid}>
-              <div className={styles.statCard}>
-                <Eye size={20} className={styles.statIcon} style={{ color: 'var(--color-primary)' }} />
-                <div className={styles.statValue}>{stats.total}</div>
-                <div className={styles.statLabel}>Total sesiones</div>
-              </div>
-              <div className={styles.statCard}>
-                <TrendingUp size={20} className={styles.statIcon} style={{ color: 'var(--color-success)' }} />
-                <div className={styles.statValue}>{stats.withUtm}</div>
-                <div className={styles.statLabel}>Con UTMs</div>
-              </div>
-              <div className={styles.statCard}>
-                <MousePointer size={20} className={styles.statIcon} style={{ color: '#4285F4' }} />
-                <div className={styles.statValue}>{stats.withGclid}</div>
-                <div className={styles.statLabel}>Google Ads</div>
-              </div>
-              <div className={styles.statCard}>
-                <MousePointer size={20} className={styles.statIcon} style={{ color: '#1877F2' }} />
-                <div className={styles.statValue}>{stats.withFbclid}</div>
-                <div className={styles.statLabel}>Facebook Ads</div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Sesiones recientes */}
+        {/* Tabla de eventos de tracking */}
         <div className={styles.section}>
           <div className={styles.sectionHeader}>
-            <h3 className={styles.sectionTitle}>Sesiones recientes</h3>
+            <h3 className={styles.sectionTitle}>Eventos de Tracking</h3>
             <Button
               variant="ghost"
               size="small"
@@ -336,36 +288,82 @@ export const WebTracking: React.FC = () => {
               <table className={styles.table}>
                 <thead>
                   <tr>
+                    <th>Session ID</th>
+                    <th>Visitor ID</th>
+                    <th>Contact ID</th>
                     <th>Fecha</th>
-                    <th>Landing Page</th>
-                    <th>Fuente</th>
-                    <th>Campaña</th>
+                    <th>Landing URL</th>
+                    <th>Referrer</th>
+                    <th>UTM Source</th>
+                    <th>UTM Medium</th>
+                    <th>UTM Campaign</th>
+                    <th>GCLID</th>
+                    <th>FBCLID</th>
                     <th>Device</th>
-                    <th style={{ textAlign: 'center' }}>Páginas</th>
+                    <th>IP</th>
+                    <th>Páginas</th>
+                    <th>Eventos</th>
                   </tr>
                 </thead>
                 <tbody>
                   {recentSessions.map((session) => (
                     <tr key={session.session_id}>
+                      <td>
+                        <code style={{ fontSize: '0.75rem' }}>
+                          {session.session_id?.substring(0, 8)}...
+                        </code>
+                      </td>
+                      <td>
+                        <code style={{ fontSize: '0.75rem' }}>
+                          {session.visitor_id?.substring(0, 8)}...
+                        </code>
+                      </td>
+                      <td>
+                        {session.contact_id ? (
+                          <code style={{ fontSize: '0.75rem' }}>
+                            {session.contact_id.substring(0, 8)}...
+                          </code>
+                        ) : '-'}
+                      </td>
                       <td className={styles.tableDateCell}>
                         {formatDate(session.started_at)}
                       </td>
-                      <td className={styles.tableLinkCell}>
+                      <td className={styles.tableLinkCell} style={{ maxWidth: '200px' }}>
                         <a href={session.landing_url} target="_blank" rel="noopener noreferrer">
                           {session.landing_url}
                         </a>
                       </td>
+                      <td style={{ fontSize: '0.813rem', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {session.referrer_url || '-'}
+                      </td>
+                      <td>{session.utm_source || '-'}</td>
+                      <td>{session.utm_medium || '-'}</td>
+                      <td>{session.utm_campaign || '-'}</td>
                       <td>
-                        {session.utm_source || (session.gclid ? 'Google Ads' : session.fbclid ? 'Facebook Ads' : '-')}
+                        {session.gclid ? (
+                          <code style={{ fontSize: '0.75rem' }}>
+                            {session.gclid.substring(0, 8)}...
+                          </code>
+                        ) : '-'}
                       </td>
                       <td>
-                        {session.utm_campaign || '-'}
+                        {session.fbclid ? (
+                          <code style={{ fontSize: '0.75rem' }}>
+                            {session.fbclid.substring(0, 8)}...
+                          </code>
+                        ) : '-'}
                       </td>
                       <td style={{ textTransform: 'capitalize' }}>
                         {session.device_type || '-'}
                       </td>
+                      <td style={{ fontSize: '0.813rem' }}>
+                        {session.ip || '-'}
+                      </td>
                       <td style={{ textAlign: 'center', fontWeight: 500 }}>
-                        {session.pageviews_count}
+                        {session.pageviews_count || 0}
+                      </td>
+                      <td style={{ textAlign: 'center', fontWeight: 500 }}>
+                        {session.events_count || 0}
                       </td>
                     </tr>
                   ))}
@@ -375,7 +373,7 @@ export const WebTracking: React.FC = () => {
           ) : (
             <div className={styles.emptyState}>
               <Activity size={48} style={{ opacity: 0.3, marginBottom: '16px' }} />
-              <p>No hay sesiones capturadas</p>
+              <p>No hay eventos capturados</p>
               <p className={styles.emptyStateHint}>
                 Instala el pixel para empezar a capturar datos
               </p>
