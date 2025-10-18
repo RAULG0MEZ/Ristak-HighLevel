@@ -261,6 +261,7 @@ export const WebTracking: React.FC = () => {
                     <th>Session ID</th>
                     <th>Visitor ID</th>
                     <th>Contact ID</th>
+                    <th>Full Name</th>
                     <th>Event Name</th>
                     <th>Started At</th>
                     <th>Last Event At</th>
@@ -321,19 +322,6 @@ export const WebTracking: React.FC = () => {
                     <th>Country</th>
                     <th>Region</th>
                     <th>City</th>
-
-                    {/* Metrics */}
-                    <th>Pageviews</th>
-                    <th>Events</th>
-                    <th>Bounce</th>
-                    <th>Orders</th>
-                    <th>Revenue</th>
-                    <th>Currency</th>
-                    <th>Last Order ID</th>
-
-                    {/* Contact Info */}
-                    <th>Email</th>
-                    <th>Phone</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -343,6 +331,7 @@ export const WebTracking: React.FC = () => {
                       <td><code style={{ fontSize: '0.7rem' }}>{session.session_id?.substring(0, 8)}...</code></td>
                       <td><code style={{ fontSize: '0.7rem' }}>{session.visitor_id?.substring(0, 8)}...</code></td>
                       <td>{session.contact_id ? <code style={{ fontSize: '0.7rem' }}>{session.contact_id.substring(0, 8)}...</code> : '-'}</td>
+                      <td>{session.full_name || '-'}</td>
                       <td>{session.event_name || '-'}</td>
                       <td className={styles.tableDateCell}>{formatDate(session.started_at)}</td>
                       <td>{session.last_event_at ? formatDate(session.last_event_at) : '-'}</td>
@@ -403,19 +392,6 @@ export const WebTracking: React.FC = () => {
                       <td>{session.geo_country || '-'}</td>
                       <td>{session.geo_region || '-'}</td>
                       <td>{session.geo_city || '-'}</td>
-
-                      {/* Metrics */}
-                      <td style={{ textAlign: 'center', fontWeight: 500 }}>{session.pageviews_count || 0}</td>
-                      <td style={{ textAlign: 'center', fontWeight: 500 }}>{session.events_count || 0}</td>
-                      <td style={{ textAlign: 'center' }}>{session.is_bounce ? 'Sí' : 'No'}</td>
-                      <td style={{ textAlign: 'center' }}>{session.orders_count || 0}</td>
-                      <td style={{ textAlign: 'right' }}>${session.revenue_value || 0}</td>
-                      <td>{session.currency || 'MXN'}</td>
-                      <td>{session.last_order_id || '-'}</td>
-
-                      {/* Contact Info */}
-                      <td>{session.email || '-'}</td>
-                      <td>{session.phone_e164 || '-'}</td>
                     </tr>
                   ))}
                 </tbody>
