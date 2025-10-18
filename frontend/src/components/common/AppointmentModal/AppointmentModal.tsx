@@ -632,19 +632,19 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
               Asignación
             </h4>
 
-            {/* Búsqueda de contacto (solo en modo crear) */}
-            {isCreateMode && (
-              <div className={styles.sectionBlock}>
-                <label className={styles.label}>
-                  Contacto <span className={styles.required}>*</span>
-                </label>
+            {/* Contacto asignado */}
+            <div className={styles.sectionBlock}>
+              <label className={styles.label}>
+                Contacto {isCreateMode && <span className={styles.required}>*</span>}
+              </label>
 
-                {selectedContact ? (
-                  <div className={styles.selectedContact}>
-                    <div className={styles.contactInfo}>
-                      <p className={styles.contactName}>{selectedContact.name || 'Sin nombre'}</p>
-                      <p className={styles.contactDetail}>{selectedContact.email || selectedContact.phone}</p>
-                    </div>
+              {selectedContact ? (
+                <div className={styles.selectedContact}>
+                  <div className={styles.contactInfo}>
+                    <p className={styles.contactName}>{selectedContact.name || 'Sin nombre'}</p>
+                    <p className={styles.contactDetail}>{selectedContact.email || selectedContact.phone}</p>
+                  </div>
+                  {isCreateMode && (
                     <button
                       type="button"
                       onClick={handleClearContact}
@@ -653,51 +653,53 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
                     >
                       <X size={16} />
                     </button>
+                  )}
+                </div>
+              ) : isCreateMode ? (
+                <div className={styles.searchWrapper}>
+                  <div className={styles.searchInput}>
+                    <Search size={16} className={styles.searchIcon} />
+                    <input
+                      type="text"
+                      placeholder="Buscar por nombre, email o teléfono..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className={styles.input}
+                    />
+                    {searchingContact && <Loader2 size={16} className={styles.loadingIcon} />}
                   </div>
-                ) : (
-                  <div className={styles.searchWrapper}>
-                    <div className={styles.searchInput}>
-                      <Search size={16} className={styles.searchIcon} />
-                      <input
-                        type="text"
-                        placeholder="Buscar por nombre, email o teléfono..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className={styles.input}
-                      />
-                      {searchingContact && <Loader2 size={16} className={styles.loadingIcon} />}
+
+                  {showContactDropdown && (
+                    <div className={styles.dropdown}>
+                      {contacts.length > 0 ? (
+                        contacts.map((contact) => (
+                          <button
+                            key={contact.id}
+                            type="button"
+                            className={styles.dropdownItem}
+                            onClick={() => handleSelectContact(contact)}
+                          >
+                            <p className={styles.dropdownName}>{contact.name || 'Sin nombre'}</p>
+                            <p className={styles.dropdownDetail}>
+                              {contact.email || contact.phone || 'Sin información de contacto'}
+                            </p>
+                          </button>
+                        ))
+                      ) : (
+                        <div className={styles.dropdownEmpty}>
+                          No se encontraron contactos
+                        </div>
+                      )}
                     </div>
+                  )}
+                </div>
+              ) : (
+                <p className={styles.helpText}>Sin contacto asignado</p>
+              )}
+            </div>
 
-                    {showContactDropdown && (
-                      <div className={styles.dropdown}>
-                        {contacts.length > 0 ? (
-                          contacts.map((contact) => (
-                            <button
-                              key={contact.id}
-                              type="button"
-                              className={styles.dropdownItem}
-                              onClick={() => handleSelectContact(contact)}
-                            >
-                              <p className={styles.dropdownName}>{contact.name || 'Sin nombre'}</p>
-                              <p className={styles.dropdownDetail}>
-                                {contact.email || contact.phone || 'Sin información de contacto'}
-                              </p>
-                            </button>
-                          ))
-                        ) : (
-                          <div className={styles.dropdownEmpty}>
-                            No se encontraron contactos
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Usuario asignado (solo en modo crear) */}
-            {isCreateMode && (() => {
+            {/* Usuario asignado */}
+            {(() => {
               const isRoundRobin = calendar?.calendarType === 'round_robin' ||
                                   calendar?.eventType?.includes('RoundRobin');
 
@@ -707,6 +709,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
                 users,
                 isRoundRobin,
                 loadingUsers,
+                assignedUserId: formData.assignedUserId,
                 calendar: calendar ? {
                   id: calendar.id,
                   name: calendar.name,
@@ -716,54 +719,79 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
                 } : null
               });
 
-              if (users.length === 0 && !loadingUsers) {
+              // En modo view, si hay usuario asignado, buscarlo y mostrarlo
+              if (!isCreateMode && formData.assignedUserId && users.length > 0) {
+                const assignedUser = users.find(u => u.id === formData.assignedUserId);
+                if (assignedUser) {
+                  return (
+                    <div className={styles.sectionBlock}>
+                      <label className={styles.label}>
+                        {isRoundRobin ? 'Miembro del equipo' : 'Usuario asignado'}
+                      </label>
+                      <div className={styles.selectedContact}>
+                        <div className={styles.contactInfo}>
+                          <p className={styles.contactName}>{assignedUser.name || assignedUser.email || 'Usuario'}</p>
+                          <p className={styles.contactDetail}>{assignedUser.email || ''}</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+              }
+
+              // En modo crear, mostrar selector
+              if (isCreateMode) {
+                if (users.length === 0 && !loadingUsers) {
+                  return (
+                    <div className={styles.sectionBlock}>
+                      <p className={styles.helpText}>
+                        ⚠️ No se pudieron cargar los usuarios. Revisa la consola.
+                      </p>
+                    </div>
+                  );
+                }
+
+                if (users.length === 0) {
+                  return null;
+                }
+
                 return (
                   <div className={styles.sectionBlock}>
-                    <p className={styles.helpText}>
-                      ⚠️ No se pudieron cargar los usuarios. Revisa la consola.
-                    </p>
+                    <label className={styles.label} htmlFor="assignedUser">
+                      {isRoundRobin ? (
+                        <>
+                          Elegir miembro del equipo <span className={styles.required}>*</span>
+                        </>
+                      ) : (
+                        'Usuario asignado (opcional)'
+                      )}
+                    </label>
+
+                    {isRoundRobin && (
+                      <p className={styles.helpText}>
+                        Este calendario usa Round Robin. Selecciona el miembro del equipo para esta cita.
+                      </p>
+                    )}
+
+                    <select
+                      id="assignedUser"
+                      className={styles.select}
+                      value={formData.assignedUserId}
+                      onChange={(e) => setFormData({ ...formData, assignedUserId: e.target.value })}
+                      disabled={loadingUsers}
+                    >
+                      <option value="">Seleccionar...</option>
+                      {users.map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.name || user.email || `${user.firstName} ${user.lastName}`.trim()}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 );
               }
 
-              if (users.length === 0) {
-                return null;
-              }
-
-              return (
-                <div className={styles.sectionBlock}>
-                  <label className={styles.label} htmlFor="assignedUser">
-                    {isRoundRobin ? (
-                      <>
-                        Elegir miembro del equipo <span className={styles.required}>*</span>
-                      </>
-                    ) : (
-                      'Usuario asignado (opcional)'
-                    )}
-                  </label>
-
-                  {isRoundRobin && (
-                    <p className={styles.helpText}>
-                      Este calendario usa Round Robin. Selecciona el miembro del equipo para esta cita.
-                    </p>
-                  )}
-
-                  <select
-                    id="assignedUser"
-                    className={styles.select}
-                    value={formData.assignedUserId}
-                    onChange={(e) => setFormData({ ...formData, assignedUserId: e.target.value })}
-                    disabled={loadingUsers}
-                  >
-                    <option value="">Seleccionar...</option>
-                    {users.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.name || user.email || `${user.firstName} ${user.lastName}`.trim()}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              );
+              return null;
             })()}
           </div>
 
