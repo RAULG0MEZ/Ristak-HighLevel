@@ -260,17 +260,16 @@ export const WebTracking: React.FC = () => {
                     <pre className={styles.codeContent}>
                       {trackingService.generateSnippet(trackingDomain)}
                     </pre>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="small"
-                    onClick={handleCopySnippet}
-                    style={{ marginTop: '8px' }}
-                  >
-                    {copied ? (
-                      <>
-                        <Check size={16} />
-                        Copiado
+                    <Button
+                      variant="ghost"
+                      size="small"
+                      onClick={handleCopySnippet}
+                      style={{ marginTop: '12px' }}
+                    >
+                      {copied ? (
+                        <>
+                          <Check size={16} />
+                          Copiado
                       </>
                     ) : (
                       <>
@@ -278,7 +277,8 @@ export const WebTracking: React.FC = () => {
                         Copiar código
                       </>
                     )}
-                  </Button>
+                    </Button>
+                  </div>
                 </div>
               )}
             </>

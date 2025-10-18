@@ -976,25 +976,25 @@ body.dark .input:focus {
 /* Dark mode para warningBox */
 @media (prefers-color-scheme: dark) {
   .warningBox {
-    background: rgba(245, 158, 11, 0.15);
-    border-color: rgba(245, 158, 11, 0.4);
+    background: rgba(70, 130, 180, 0.12);
+    border-color: rgba(70, 130, 180, 0.35);
   }
 
   .warningBox svg {
-    color: #fbbf24;
+    color: rgba(135, 206, 250, 0.8);
   }
 
   .warningBox .infoBoxText {
-    color: rgba(255, 255, 255, 0.9);
+    color: rgba(230, 240, 250, 0.9);
   }
 
   .urlExampleBox {
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.15);
+    background: rgba(50, 80, 120, 0.2);
+    border-color: rgba(100, 150, 200, 0.3);
   }
 
   .urlExampleText {
-    color: #fbbf24;
+    color: rgba(180, 220, 255, 0.95);
   }
 }
 
