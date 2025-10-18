@@ -5,31 +5,20 @@ import {
   Card,
   KpiCard,
   DateRangePicker,
-  LineChart
+  LineChart,
+  TreeFilter
 } from '../../components/common'
-import { Eye, Users, UserCheck, Target, Activity, Clock, RefreshCw, FileText } from 'lucide-react'
+import { Eye, Users, UserCheck, Target, Activity, Clock, RefreshCw, FileText, Smartphone, Monitor, Globe } from 'lucide-react'
 import { getSessionsByDateRange } from '../../services/analyticsService'
+import { TrackingSession } from '../../services/trackingService'
 import { formatDate, formatDateToISO, parseLocalDateString } from '../../utils/format'
 
-interface Session {
-  session_id: string
-  visitor_id: string
-  contact_id?: string
-  created_at: string
-  landing_url?: string
-  utm_source?: string
-  utm_medium?: string
-  utm_campaign?: string
-  utm_content?: string
-  referrer_url?: string
+// Usar TrackingSession directamente
+type Session = TrackingSession & {
   browser?: string
-  device_type?: string
   os?: string
   placement?: string
   source_platform?: string
-  pageviews_count: number
-  events_count: number
-  is_bounce: number
 }
 
 interface Metrics {
@@ -62,7 +51,23 @@ type TrafficPoint = {
 const Analytics: React.FC = () => {
   const { dateRange, setDateRange } = useDateRange()
   const [loading, setLoading] = useState(false)
+
+  // Estado para filtros
+  const [selectedFilters, setSelectedFilters] = useState<Record<string, string[]>>({})
+  const [availableFilterData, setAvailableFilterData] = useState<any>({})
+  const [allSessions, setAllSessions] = useState<Session[]>([])
+  const [sessions, setSessions] = useState<Session[]>([])
+
+  // Estado para visualizaciones
   const [dailyTraffic, setDailyTraffic] = useState<TrafficPoint[]>([])
+  const [dailyConversions, setDailyConversions] = useState<any[]>([])
+  const [platformsData, setPlatformsData] = useState<any[]>([])
+  const [placementsData, setPlacementsData] = useState<any[]>([])
+  const [devicesData, setDevicesData] = useState<any[]>([])
+  const [osData, setOsData] = useState<any[]>([])
+  const [browserData, setBrowserData] = useState<any[]>([])
+  const [topVisitors, setTopVisitors] = useState<any[]>([])
+
   const [metrics, setMetrics] = useState<Metrics>({
     pageViews: 0,
     uniqueVisitors: 0,
@@ -208,7 +213,7 @@ const Analytics: React.FC = () => {
           const dailyStats: { [key: string]: { totalVisits: number, uniqueVisitors: Set<string> } } = {}
 
           currentSessions.forEach((session: Session) => {
-            const date = session.created_at.split('T')[0]
+            const date = session.started_at.split('T')[0]
             if (!dailyStats[date]) {
               dailyStats[date] = {
                 totalVisits: 0,
@@ -228,6 +233,99 @@ const Analytics: React.FC = () => {
             }))
 
           setDailyTraffic(chartData)
+
+          // Guardar todas las sesiones y sesiones filtradas
+          setAllSessions(currentSessions)
+          setSessions(currentSessions)
+
+          // Recopilar datos disponibles para el TreeFilter
+          const filterData: any = {
+            pages: [],
+            campaigns: [],
+            ads: [],
+            sources: [],
+            devices: [],
+            browsers: [],
+            os: [],
+            placements: []
+          }
+
+          // Páginas
+          const pageMap: { [key: string]: number } = {}
+          currentSessions.forEach((session: Session) => {
+            if (session.landing_url) {
+              const urlPath = session.landing_url.split('?')[0]
+              const pageName = urlPath.split('/').pop() || 'home'
+              pageMap[pageName] = (pageMap[pageName] || 0) + 1
+            }
+          })
+
+          filterData.pages = Object.entries(pageMap)
+            .map(([page, count]) => ({ page, count }))
+            .sort((a, b) => b.count - a.count)
+
+          // Campañas, Ads, Sources, etc.
+          const campaignsMap: { [key: string]: number } = {}
+          const adsMap: { [key: string]: number } = {}
+          const sourcesMap: { [key: string]: number } = {}
+          const devicesMap: { [key: string]: number } = {}
+          const browsersMap: { [key: string]: number } = {}
+          const osMap: { [key: string]: number } = {}
+          const placementsMap: { [key: string]: number } = {}
+
+          currentSessions.forEach((session: Session) => {
+            if (session.utm_campaign) {
+              campaignsMap[session.utm_campaign] = (campaignsMap[session.utm_campaign] || 0) + 1
+            }
+            if (session.utm_content) {
+              adsMap[session.utm_content] = (adsMap[session.utm_content] || 0) + 1
+            }
+            if (session.utm_source) {
+              sourcesMap[session.utm_source] = (sourcesMap[session.utm_source] || 0) + 1
+            }
+            if (session.device_type) {
+              devicesMap[session.device_type] = (devicesMap[session.device_type] || 0) + 1
+            }
+            if (session.browser) {
+              browsersMap[session.browser] = (browsersMap[session.browser] || 0) + 1
+            }
+            if (session.os) {
+              osMap[session.os] = (osMap[session.os] || 0) + 1
+            }
+            if (session.placement) {
+              placementsMap[session.placement] = (placementsMap[session.placement] || 0) + 1
+            }
+          })
+
+          filterData.campaigns = Object.entries(campaignsMap)
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => b.count - a.count)
+
+          filterData.ads = Object.entries(adsMap)
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => b.count - a.count)
+
+          filterData.sources = Object.entries(sourcesMap)
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => b.count - a.count)
+
+          filterData.devices = Object.entries(devicesMap)
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => b.count - a.count)
+
+          filterData.browsers = Object.entries(browsersMap)
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => b.count - a.count)
+
+          filterData.os = Object.entries(osMap)
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => b.count - a.count)
+
+          filterData.placements = Object.entries(placementsMap)
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => b.count - a.count)
+
+          setAvailableFilterData(filterData)
         } else {
           // Reset si no hay datos
           setMetrics({
@@ -339,17 +437,26 @@ const Analytics: React.FC = () => {
         {/* Header */}
         <div className="space-y-4">
           <h1 className="text-2xl font-bold">Analíticas</h1>
-          <DateRangePicker
-            startDate={formatDateToISO(dateRange.start)}
-            endDate={formatDateToISO(dateRange.end)}
-            onChange={(start, end) =>
-              setDateRange({
-                start: parseLocalDateString(start),
-                end: parseLocalDateString(end),
-                preset: 'custom'
-              })
-            }
-          />
+
+          {/* Selector de fechas y Filtro en árbol juntos */}
+          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+            <DateRangePicker
+              startDate={formatDateToISO(dateRange.start)}
+              endDate={formatDateToISO(dateRange.end)}
+              onChange={(start, end) =>
+                setDateRange({
+                  start: parseLocalDateString(start),
+                  end: parseLocalDateString(end),
+                  preset: 'custom'
+                })
+              }
+            />
+            <TreeFilter
+              availableData={availableFilterData}
+              selectedFilters={selectedFilters}
+              onFilterChange={setSelectedFilters}
+            />
+          </div>
         </div>
 
         {/* Métricas principales */}
