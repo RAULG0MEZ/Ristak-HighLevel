@@ -1,0 +1,259 @@
+.container {
+  padding: 1.5rem;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+
+.title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0 0 0.5rem 0;
+}
+
+.totalContainer {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.totalValue {
+  font-size: 1.875rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.totalLabel {
+  font-size: 0.875rem;
+  color: var(--color-text-tertiary);
+}
+
+.chartContainer {
+  height: 14rem;
+  position: relative;
+  margin-bottom: 1.5rem;
+}
+
+.loadingContainer,
+.emptyContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+.loadingText {
+  color: var(--color-text-tertiary);
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.emptyIcon {
+  width: 3rem;
+  height: 3rem;
+  color: var(--color-text-tertiary);
+  margin-bottom: 0.5rem;
+}
+
+.emptyText {
+  font-size: 0.875rem;
+  color: var(--color-text-tertiary);
+  margin: 0;
+}
+
+.emptySubtext {
+  font-size: 0.75rem;
+  color: var(--color-text-tertiary);
+  margin: 0.25rem 0 0 0;
+}
+
+.chartCell {
+  transition: opacity 0.2s;
+  cursor: pointer;
+}
+
+.chartCell:hover {
+  opacity: 0.8;
+}
+
+.centerLabel {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+}
+
+.centerValue {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.centerText {
+  font-size: 0.75rem;
+  color: var(--color-text-tertiary);
+}
+
+.sourcesList {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.loadingList {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.loadingItem {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.loadingDot {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  background-color: var(--color-background-secondary);
+  flex-shrink: 0;
+}
+
+.loadingBar {
+  flex: 1;
+  height: 0.5rem;
+  background-color: var(--color-background-secondary);
+  border-radius: 0.25rem;
+}
+
+.sourceItem {
+  transition: transform 0.2s;
+}
+
+.sourceItem:hover {
+  transform: scale(1.02);
+}
+
+.sourceHeader {
+  display: flex;
+  align-items: center;
+  justify-between;
+  margin-bottom: 0.5rem;
+}
+
+.sourceInfo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.sourceDot {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.sourceName {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sourcePercentage {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  padding: 0.125rem 0.5rem;
+  background-color: var(--color-background-secondary);
+  border-radius: 9999px;
+  flex-shrink: 0;
+}
+
+.sourceValue {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  flex-shrink: 0;
+}
+
+.progressBar {
+  height: 0.5rem;
+  background-color: var(--color-background-secondary);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: 9999px;
+  transition: width 1s ease-out;
+}
+
+.insights {
+  margin-top: 2rem;
+  padding: 1rem;
+  background-color: var(--color-background-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+}
+
+.insightItem {
+  min-width: 0;
+}
+
+.insightLabel {
+  font-size: 0.75rem;
+  color: var(--color-text-tertiary);
+  margin: 0 0 0.25rem 0;
+}
+
+.insightValue {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.insightHighlight {
+  color: var(--color-success-500);
+  margin-left: 0.5rem;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: .5;
+  }
+}
+
+@media (max-width: 640px) {
+  .insights {
+    grid-template-columns: 1fr;
+  }
+
+  .insightValue {
+    white-space: normal;
+  }
+}
