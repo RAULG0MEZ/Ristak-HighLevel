@@ -329,9 +329,10 @@ export function TreeFilter({
         className={`
           flex items-center gap-2 px-3 py-2
           rounded-lg transition-all duration-200
-          bg-[var(--color-background-secondary)] border border-[var(--color-border)]
+          bg-[var(--color-background-secondary)]
           ${isOpen ? 'ring-2 ring-[var(--color-accent)]/50' : 'hover:bg-[var(--color-background-tertiary)]'}
         `}
+        style={{ border: '1px solid var(--color-border-subtle)' }}
       >
         <Filter className="w-4 h-4 text-[var(--color-text-primary)]" />
         <span className="text-sm text-[var(--color-text-primary)]">

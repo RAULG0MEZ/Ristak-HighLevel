@@ -702,7 +702,14 @@ export const Contacts: React.FC = () => {
               </div>
 
               <div className={styles.infoSection}>
-                <h3>Historial de Compras</h3>
+                <h3>
+                  Historial de Compras
+                  {hasPaymentsData && (
+                    <span className={styles.sectionCount}>
+                      {paymentsCount} {paymentsCount === 1 ? 'pago' : 'pagos'}
+                    </span>
+                  )}
+                </h3>
                 <div className={styles.infoGrid}>
                   <div>
                     <span className={styles.label}>Total de compras:</span>
@@ -712,6 +719,12 @@ export const Contacts: React.FC = () => {
                     <span className={styles.label}>Pagos totales:</span>
                     <span className={styles.value}>{formatCurrency(contactData?.ltv ?? 0)}</span>
                   </div>
+                  {hasPaymentsData && (
+                    <div>
+                      <span className={styles.label}>Pagos registrados:</span>
+                      <span className={styles.value}>{paymentsCount}</span>
+                    </div>
+                  )}
                   {contactData?.lastPurchase && (
                     <div>
                       <span className={styles.label}>Última compra:</span>
@@ -721,6 +734,38 @@ export const Contacts: React.FC = () => {
                     </div>
                   )}
                 </div>
+
+                {contactDetailsLoading && !hasPaymentsData && (
+                  <p className={styles.loadingState}>Cargando historial de pagos...</p>
+                )}
+
+                {!contactDetailsLoading && hasPaymentsData && paymentsCount === 0 && (
+                  <p className={styles.emptyState}>Este contacto no tiene pagos registrados.</p>
+                )}
+
+                {paymentsCount > 0 && (
+                  <ul className={styles.paymentsList}>
+                    {contactPayments.map(payment => {
+                      const statusInfo = getPaymentStatusBadge(payment.status)
+                      const paymentId = payment.id ?? `${payment.date || 'sin-fecha'}-${payment.amount ?? 0}`
+                      const amountValue = Number(payment.amount ?? 0)
+
+                      return (
+                        <li key={paymentId} className={styles.paymentItem}>
+                          <div className={styles.paymentInfo}>
+                            <span className={styles.paymentAmount}>{formatCurrency(amountValue)}</span>
+                            <span className={styles.paymentDate}>
+                              {formatAppointmentDateTime(payment.date)}
+                            </span>
+                          </div>
+                          <div className={styles.paymentBadges}>
+                            <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
               </div>
 
               {(contactData?.firstAppointmentDate ||
@@ -729,9 +774,22 @@ export const Contacts: React.FC = () => {
                 contactAppointments.length > 0 ||
                 contactDetailsLoading) && (
                   <div className={styles.infoSection}>
-                    <h3>Citas</h3>
-                    {(contactData?.firstAppointmentDate || contactData?.nextAppointmentDate) && (
+                    <h3>
+                      Citas
+                      {hasAppointmentsData && (
+                        <span className={styles.sectionCount}>
+                          {appointmentsCount} {appointmentsCount === 1 ? 'cita' : 'citas'}
+                        </span>
+                      )}
+                    </h3>
+                    {(contactData?.firstAppointmentDate || contactData?.nextAppointmentDate || hasAppointmentsData) && (
                       <div className={styles.infoGrid}>
+                        {hasAppointmentsData && (
+                          <div>
+                            <span className={styles.label}>Citas registradas:</span>
+                            <span className={styles.value}>{appointmentsCount}</span>
+                          </div>
+                        )}
                         {contactData?.firstAppointmentDate && (
                           <div>
                             <span className={styles.label}>Primera cita:</span>
