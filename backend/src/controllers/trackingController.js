@@ -65,13 +65,13 @@ export async function servePixel(req, res) {
     try {
       var localData = getLocalData();
       if (!localData.visitor_id) {
-        localData.visitor_id = generateUUID();
+        localData.visitor_id = generateId(); // ID corto tipo HighLevel
         localData.first_visit = new Date().toISOString();
         setLocalData(localData);
       }
       return localData.visitor_id;
     } catch (e) {
-      return 'visitor_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      return generateId(); // Fallback también usa ID corto
     }
   }
 
@@ -106,7 +106,17 @@ export async function servePixel(req, res) {
     }
   }
 
-  // Generar UUID simple
+  // Generar ID al estilo HighLevel (20 caracteres alfanuméricos)
+  function generateId() {
+    var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    var id = '';
+    for (var i = 0; i < 20; i++) {
+      id += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return id;
+  }
+
+  // Generar UUID simple (para session_id)
   function generateUUID() {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
       return crypto.randomUUID();
@@ -188,11 +198,11 @@ export async function servePixel(req, res) {
           localData.contact_id = contactId;
           localData.contact_email = userData.email || null;
           localData.contact_name = userData.full_name || userData.name || null;
-          localData.contact_first_name = userData.first_name || null;
-          localData.contact_last_name = userData.last_name || null;
-          localData.contact_location_id = userData.location_id || null;
           localData.contact_synced_at = new Date().toISOString();
           setLocalData(localData);
+
+          // Enviar visitor_id a HighLevel como custom field
+          sendVisitorIdToHighLevel(localData.visitor_id, contactId);
         }
 
         return contactId;
@@ -201,6 +211,21 @@ export async function servePixel(req, res) {
       // Ignore errors
     }
     return null;
+  }
+
+  // Enviar visitor_id a HighLevel como custom field (rstk_vid)
+  function sendVisitorIdToHighLevel(visitorId, contactId) {
+    if (!visitorId || !contactId) return;
+
+    // Enviar al backend para que actualice el contacto en HighLevel
+    fetch(ENDPOINT.replace('/collect', '/sync-visitor'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ visitor_id: visitorId, contact_id: contactId }),
+      keepalive: true
+    }).catch(function(err) {
+      // Silently fail
+    });
   }
 
   // Obtener contact_id guardado
@@ -369,6 +394,62 @@ export async function collectEvent(req, res) {
   } catch (error) {
     logger.error('Error en /collect:', error)
     res.status(500).json({ error: 'Internal server error' })
+  }
+}
+
+/**
+ * Sincroniza visitor_id con contacto de HighLevel
+ * POST /sync-visitor
+ */
+export async function syncVisitorToHighLevel(req, res) {
+  try {
+    const { visitor_id, contact_id } = req.body
+
+    if (!visitor_id || !contact_id) {
+      return res.status(400).json({ error: 'Missing visitor_id or contact_id' })
+    }
+
+    // Obtener configuración de HighLevel
+    const config = await getHighLevelConfig()
+
+    if (!config || !config.location_id || !config.api_token) {
+      logger.warn('No hay configuración de HighLevel para sincronizar visitor_id')
+      return res.json({ ok: false, message: 'No HighLevel config' })
+    }
+
+    // Actualizar custom field rstk_vid en HighLevel
+    const response = await fetch(
+      `https://services.leadconnectorhq.com/contacts/${contact_id}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${config.api_token}`,
+          'Content-Type': 'application/json',
+          'Version': '2021-07-28'
+        },
+        body: JSON.stringify({
+          customFields: [
+            {
+              key: 'rstk_vid',
+              field_value: visitor_id
+            }
+          ]
+        })
+      }
+    )
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      logger.error(`Error actualizando rstk_vid en HighLevel: ${response.status} - ${errorText}`)
+      return res.json({ ok: false, message: 'HighLevel API error' })
+    }
+
+    logger.info(`✅ visitor_id ${visitor_id} sincronizado a contacto ${contact_id} en HighLevel`)
+    res.json({ ok: true })
+
+  } catch (error) {
+    logger.error('Error en /sync-visitor:', error)
+    res.json({ ok: false, message: error.message })
   }
 }
 

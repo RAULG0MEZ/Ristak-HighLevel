@@ -35,18 +35,23 @@ export const handleContactWebhook = async (req, res) => {
       || data.attributionSource
       || {};
 
+    // Extraer visitor_id (rstk_vid) del custom field
+    const visitorId = data.rstk_vid || null;
+
     const usePostgres = process.env.DATABASE_URL ? true : false;
 
     const query = usePostgres
       ? `INSERT INTO contacts (id, phone, email, full_name, first_name, last_name, source, created_at,
-          attribution_url, attribution_session_source, attribution_medium, attribution_ad_id, attribution_ad_name)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          attribution_url, attribution_session_source, attribution_medium, attribution_ad_id, attribution_ad_name, visitor_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
          ON CONFLICT (id) DO UPDATE SET
           phone = EXCLUDED.phone, email = EXCLUDED.email, full_name = EXCLUDED.full_name,
-          first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name, updated_at = CURRENT_TIMESTAMP`
+          first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name,
+          visitor_id = COALESCE(EXCLUDED.visitor_id, contacts.visitor_id),
+          updated_at = CURRENT_TIMESTAMP`
       : `INSERT OR REPLACE INTO contacts (id, phone, email, full_name, first_name, last_name, source, created_at,
-          attribution_url, attribution_session_source, attribution_medium, attribution_ad_id, attribution_ad_name)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+          attribution_url, attribution_session_source, attribution_medium, attribution_ad_id, attribution_ad_name, visitor_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
     await db.run(query, [
       contactId,
@@ -61,10 +66,25 @@ export const handleContactWebhook = async (req, res) => {
       attribution.utmSessionSource || attribution.sessionSource,
       attribution.medium,
       attribution.utmAdId || attribution.mediumId,
-      attribution.adName
+      attribution.adName,
+      visitorId
     ]);
 
-    logger.info(`✅ Contacto ${contactId} procesado exitosamente`);
+    // Si viene visitor_id, vincular histórico de sesiones
+    if (visitorId && contactId) {
+      const fullName = data.full_name || data.contactName || `${data.first_name || data.firstName || ''} ${data.last_name || data.lastName || ''}`.trim();
+
+      if (fullName && fullName !== 'Sin nombre') {
+        const { linkVisitorToContact } = await import('../services/trackingService.js');
+
+        // Ejecutar en background sin esperar
+        linkVisitorToContact(visitorId, contactId, fullName).catch(err => {
+          logger.error(`Error vinculando visitor ${visitorId} a contact ${contactId}:`, err);
+        });
+      }
+    }
+
+    logger.info(`✅ Contacto ${contactId} procesado exitosamente${visitorId ? ` (visitor_id: ${visitorId})` : ''}`);
     res.status(200).json({ success: true, message: 'Contacto procesado' });
 
   } catch (error) {

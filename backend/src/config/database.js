@@ -551,6 +551,19 @@ async function initTables() {
     await db.run('CREATE INDEX IF NOT EXISTS idx_sessions_geo ON sessions(geo_country, geo_region, geo_city)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_sessions_contact ON sessions(contact_id)')
 
+    // MIGRACIÓN: Agregar columna full_name en producción (PostgreSQL)
+    if (usePostgres) {
+      try {
+        await db.run('ALTER TABLE sessions ADD COLUMN full_name TEXT')
+        logger.success('✅ Migración: Columna full_name agregada a sessions (PostgreSQL)')
+      } catch (err) {
+        // Si falla es porque ya existe (código 42701 en PostgreSQL)
+        if (err.code !== '42701' && !err.message.includes('already exists')) {
+          logger.warn('Advertencia al agregar full_name:', err.message)
+        }
+      }
+    }
+
     logger.success('Todas las tablas inicializadas correctamente')
   } catch (error) {
     logger.error('Error inicializando tablas:', error)

@@ -2,6 +2,7 @@ import express from 'express'
 import {
   servePixel,
   collectEvent,
+  syncVisitorToHighLevel,
   getSessionsHandler,
   getSessionHandler,
   getTrackingConfig,
@@ -15,6 +16,9 @@ router.get('/snip.js', servePixel)
 
 // Recibir eventos del pixel
 router.post('/collect', collectEvent)
+
+// Sincronizar visitor_id con HighLevel
+router.post('/sync-visitor', syncVisitorToHighLevel)
 
 // Obtener sesiones (dashboard)
 router.get('/sessions', getSessionsHandler)
