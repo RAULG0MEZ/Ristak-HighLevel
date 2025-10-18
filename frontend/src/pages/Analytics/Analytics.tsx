@@ -60,6 +60,19 @@ const getDeviceIcon = (deviceName: string) => {
   return Smartphone
 }
 
+// Helper para obtener icono de ubicación (placement)
+const getPlacementIcon = (placementName: string) => {
+  const name = placementName.toLowerCase()
+  if (name.includes('facebook')) return FaFacebook
+  if (name.includes('instagram')) return FaInstagram
+  if (name.includes('tiktok')) return FaTiktok
+  if (name.includes('google')) return FaGoogle
+  if (name.includes('twitter')) return FaTwitter
+  if (name.includes('linkedin')) return FaLinkedin
+  if (name.includes('microsoft')) return FaMicrosoft
+  return Target
+}
+
 // Usar TrackingSession directamente
 type Session = TrackingSession & {
   browser?: string
@@ -784,23 +797,26 @@ const Analytics: React.FC = () => {
               <h3 className="text-sm font-semibold">Top Ubicaciones</h3>
             </div>
             <div className="p-5 space-y-4">
-              {placementsData.map((placement, index) => (
-                <div key={index} className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Target className="w-4 h-4 text-gray-500" />
-                      <span className="text-sm">{placement.name}</span>
+              {placementsData.map((placement, index) => {
+                const PlacementIcon = getPlacementIcon(placement.name)
+                return (
+                  <div key={index} className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <PlacementIcon className="w-4 h-4 text-gray-500" />
+                        <span className="text-sm">{placement.name}</span>
+                      </div>
+                      <span className="text-sm font-semibold">{placement.users}</span>
                     </div>
-                    <span className="text-sm font-semibold">{placement.users}</span>
+                    <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gray-500 dark:bg-gray-400 opacity-60 transition-all duration-500"
+                        style={{ width: `${placement.percentage}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-gray-500 dark:bg-gray-400 opacity-60 transition-all duration-500"
-                      style={{ width: `${placement.percentage}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </Card>
 
