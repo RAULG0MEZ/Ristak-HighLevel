@@ -319,6 +319,15 @@ async function initTables() {
 
     await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_contact ON whatsapp_attribution(contact_id)')
 
+    // Tabla de versiones de Meta API (para auto-actualización)
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS meta_api_version (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        version TEXT NOT NULL,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
     // Tabla de métodos de pago (tarjetas guardadas en Stripe)
     await db.run(`
       CREATE TABLE IF NOT EXISTS payment_methods (

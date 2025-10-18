@@ -13,7 +13,10 @@ import {
   getOAuthUrl,
   oauthCallback,
   getOAuthAdAccounts,
-  saveOAuthAccount
+  saveOAuthAccount,
+  getApiVersion,
+  checkLatestVersion,
+  forceUpdateVersion
 } from '../controllers/metaController.js'
 
 const router = express.Router()
@@ -39,5 +42,10 @@ router.post('/update-recent', updateRecent)
 router.get('/campaigns', getCampaigns)
 router.get('/spend-over-time', getSpendOverTime)
 router.get('/contacts', getContactsByType)
+
+// Versión de API (auto-actualización)
+router.get('/api-version', getApiVersion)               // Ver versión actual e historial
+router.get('/api-version/check', checkLatestVersion)    // Detectar si hay actualización
+router.post('/api-version/update', forceUpdateVersion)  // Forzar actualización manual
 
 export default router

@@ -3,6 +3,26 @@
 // URL pública del servidor para webhooks
 export const PUBLIC_URL = process.env.PUBLIC_URL || 'http://localhost:3002'
 
+// Versión de Meta API (se actualiza dinámicamente desde BD)
+// El cron job metaVersionCron.js actualiza esto cada 6 meses
+let META_API_VERSION = 'v23.0' // Fallback inicial
+
+/**
+ * Actualiza la versión de Meta API en memoria
+ * @param {string} version - Nueva versión (ej: "v24.0")
+ */
+export function setMetaApiVersion(version) {
+  META_API_VERSION = version
+}
+
+/**
+ * Obtiene la versión actual de Meta API
+ * @returns {string} Versión actual (ej: "v23.0")
+ */
+export function getMetaApiVersion() {
+  return META_API_VERSION
+}
+
 export const API_URLS = {
   // HighLevel API
   HIGHLEVEL_BASE: 'https://services.leadconnectorhq.com',
@@ -15,15 +35,15 @@ export const API_URLS = {
   HIGHLEVEL_CUSTOM_VALUES: (locationId) => `https://services.leadconnectorhq.com/locations/${locationId}/customValues`,
   HIGHLEVEL_CUSTOM_VALUE: (locationId, cvId) => `https://services.leadconnectorhq.com/locations/${locationId}/customValues/${cvId}`,
 
-  // Meta Graph API
-  META_GRAPH: 'https://graph.facebook.com/v23.0',
-  META_AD_INSIGHTS: (accountId) => `https://graph.facebook.com/v23.0/act_${accountId}/insights`,
+  // Meta Graph API (con versión dinámica)
+  get META_GRAPH() { return `https://graph.facebook.com/${META_API_VERSION}` },
+  META_AD_INSIGHTS: (accountId) => `https://graph.facebook.com/${META_API_VERSION}/act_${accountId}/insights`,
   META_TOKEN_DEBUG: 'https://graph.facebook.com/debug_token',
-  META_TOKEN_REFRESH: 'https://graph.facebook.com/v23.0/oauth/access_token',
-  META_OAUTH: 'https://www.facebook.com/v23.0/dialog/oauth',
-  META_OAUTH_TOKEN: 'https://graph.facebook.com/v23.0/oauth/access_token',
-  META_AD_ACCOUNTS: 'https://graph.facebook.com/v23.0/me/adaccounts',
-  META_BUSINESS_PORTFOLIOS: 'https://graph.facebook.com/v23.0/me/businesses'
+  get META_TOKEN_REFRESH() { return `https://graph.facebook.com/${META_API_VERSION}/oauth/access_token` },
+  get META_OAUTH() { return `https://www.facebook.com/${META_API_VERSION}/dialog/oauth` },
+  get META_OAUTH_TOKEN() { return `https://graph.facebook.com/${META_API_VERSION}/oauth/access_token` },
+  get META_AD_ACCOUNTS() { return `https://graph.facebook.com/${META_API_VERSION}/me/adaccounts` },
+  get META_BUSINESS_PORTFOLIOS() { return `https://graph.facebook.com/${META_API_VERSION}/me/businesses` }
 }
 
 export const CUSTOM_VALUE_KEYS = {

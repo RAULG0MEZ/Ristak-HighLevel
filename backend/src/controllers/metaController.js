@@ -16,6 +16,12 @@ import {
   saveOAuthConfig,
   getMetaUserInfo
 } from '../services/metaOAuthService.js';
+import {
+  getCurrentVersion,
+  getVersionHistory,
+  detectLatestVersion
+} from '../services/metaVersionService.js';
+import { forceMetaVersionUpdate } from '../jobs/metaVersionCron.js';
 import { resolveDateRange } from '../utils/dateUtils.js';
 
 /**
@@ -937,6 +943,94 @@ export const saveOAuthAccount = async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Error al guardar la configuración'
+    });
+  }
+};
+
+/**
+ * ============================================
+ * ENDPOINTS DE VERSIÓN DE API
+ * ============================================
+ */
+
+/**
+ * Obtiene la versión actual de Meta API
+ */
+export const getApiVersion = async (req, res) => {
+  try {
+    const currentVersion = await getCurrentVersion();
+    const history = await getVersionHistory(5);
+
+    res.json({
+      success: true,
+      version: currentVersion,
+      history
+    });
+  } catch (error) {
+    logger.error(`Error en getApiVersion: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: 'Error al obtener versión de API'
+    });
+  }
+};
+
+/**
+ * Detecta la versión más reciente disponible (sin guardarla)
+ */
+export const checkLatestVersion = async (req, res) => {
+  try {
+    const latestVersion = await detectLatestVersion();
+    const currentVersion = await getCurrentVersion();
+
+    res.json({
+      success: true,
+      currentVersion,
+      latestVersion,
+      updateAvailable: latestVersion !== currentVersion
+    });
+  } catch (error) {
+    logger.error(`Error en checkLatestVersion: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: 'Error al detectar versión más reciente'
+    });
+  }
+};
+
+/**
+ * Fuerza la actualización de la versión (para testing)
+ */
+export const forceUpdateVersion = async (req, res) => {
+  try {
+    logger.info('Forzando actualización manual de versión de Meta API...');
+
+    const result = await forceMetaVersionUpdate();
+
+    if (result.updated) {
+      res.json({
+        success: true,
+        message: 'Versión actualizada correctamente',
+        oldVersion: result.oldVersion,
+        newVersion: result.newVersion
+      });
+    } else if (result.error) {
+      res.status(500).json({
+        success: false,
+        error: result.error
+      });
+    } else {
+      res.json({
+        success: true,
+        message: 'Ya tienes la versión más reciente',
+        version: result.version
+      });
+    }
+  } catch (error) {
+    logger.error(`Error en forceUpdateVersion: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: 'Error al forzar actualización'
     });
   }
 };

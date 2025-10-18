@@ -14,10 +14,16 @@ import { useNotification } from '@/contexts/NotificationContext'
 import styles from './HighLevelIntegration.module.css'
 
 const SHOW_ANALYTICS_STORAGE_KEY = 'showAnalyticsPreference'
+const VISITOR_SOURCE_KEY = 'visitorSourcePreference'
 
 const persistAnalyticsPreference = (value: boolean) => {
   if (typeof window === 'undefined') return
   window.localStorage.setItem(SHOW_ANALYTICS_STORAGE_KEY, String(value))
+}
+
+const persistVisitorSourcePreference = (value: 'platform' | 'tracking') => {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(VISITOR_SOURCE_KEY, value)
 }
 
 export const WebTracking: React.FC = () => {
@@ -39,6 +45,14 @@ export const WebTracking: React.FC = () => {
     return true // visible por defecto
   })
   const [savingAnalyticsPref, setSavingAnalyticsPref] = useState(false)
+  const [visitorSource, setVisitorSource] = useState<'platform' | 'tracking'>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = window.localStorage.getItem(VISITOR_SOURCE_KEY) as 'platform' | 'tracking' | null
+      return stored || 'platform' // por defecto usa plataforma de anuncios
+    }
+    return 'platform'
+  })
+  const [savingVisitorPref, setSavingVisitorPref] = useState(false)
 
   useEffect(() => {
     loadTrackingConfig()
@@ -55,6 +69,11 @@ export const WebTracking: React.FC = () => {
       const analyticsEnabled = !!config.showAnalytics
       setShowAnalytics(analyticsEnabled)
       persistAnalyticsPreference(analyticsEnabled)
+
+      // Cargar preferencia de fuente de visitantes
+      const visitorSourceValue = config.visitorSource || 'platform'
+      setVisitorSource(visitorSourceValue)
+      persistVisitorSourcePreference(visitorSourceValue)
     } catch (error) {
       showToast('error', 'Error', 'No se pudo cargar la configuración del tracking')
     } finally {
@@ -158,6 +177,41 @@ export const WebTracking: React.FC = () => {
       showToast('error', 'Error', 'No se pudo guardar la preferencia')
     } finally {
       setSavingAnalyticsPref(false)
+    }
+  }
+
+  const handleToggleVisitorSource = async () => {
+    setSavingVisitorPref(true)
+    try {
+      const newValue = visitorSource === 'platform' ? 'tracking' : 'platform'
+      const response = await fetch('/api/tracking/visitor-source-preference', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ visitorSource: newValue })
+      })
+
+      if (!response.ok) {
+        throw new Error('Error al guardar preferencia')
+      }
+
+      setVisitorSource(newValue)
+      persistVisitorSourcePreference(newValue)
+      showToast(
+        'success',
+        'Guardado',
+        newValue === 'tracking'
+          ? 'Ahora se usan los visitantes del tracking interno'
+          : 'Ahora se usan los visitantes de las plataformas de anuncios'
+      )
+
+      // Disparar evento personalizado para que las páginas se actualicen
+      window.dispatchEvent(new CustomEvent('visitor-source-changed', {
+        detail: { visitorSource: newValue }
+      }))
+    } catch (error) {
+      showToast('error', 'Error', 'No se pudo guardar la preferencia')
+    } finally {
+      setSavingVisitorPref(false)
     }
   }
 
