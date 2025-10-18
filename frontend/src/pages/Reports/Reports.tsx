@@ -614,7 +614,7 @@ export const Reports: React.FC = () => {
 
       if (response.ok) {
         const data = await response.json()
-        setVisitorsData(data.visitors || [])
+        setVisitorsData(data.data || [])
       } else {
         setVisitorsData([])
         showToast('error', 'No se pudieron cargar los visitantes', 'Intenta nuevamente')

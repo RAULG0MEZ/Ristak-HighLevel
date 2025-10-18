@@ -513,6 +513,7 @@ export const Contacts: React.FC = () => {
 
               {(selectedContact.firstAppointmentDate ||
                 selectedContact.nextAppointmentDate ||
+                hasAppointmentsData ||
                 contactAppointments.length > 0 ||
                 contactDetailsLoading) && (
                   <div className={styles.infoSection}>

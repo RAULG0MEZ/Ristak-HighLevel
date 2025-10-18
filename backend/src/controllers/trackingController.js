@@ -1169,6 +1169,7 @@ export async function getVisitorsList(req, res) {
     const params = [startDate, endDateWithTime]
     let paramCount = 2
 
+    // Filtros opcionales por campaña/adset/ad
     if (ad_id) {
       paramCount++
       conditions.push(`s.ad_id = $${paramCount}`)
@@ -1181,9 +1182,8 @@ export async function getVisitorsList(req, res) {
       paramCount++
       conditions.push(`s.campaign_id = $${paramCount}`)
       params.push(campaign_id)
-    } else {
-      return res.status(400).json({ error: 'Se requiere ad_id, adset_id o campaign_id' })
     }
+    // Si no se proveen filtros de campaña, se devuelven todos los visitantes del período
 
     // Query principal: obtener visitantes únicos con sus datos de sesión
     const query = usePostgres
@@ -1261,6 +1261,7 @@ export async function getVisitorsList(req, res) {
       sessionId: v.session_id,
       contactId: v.contact_id,
       createdAt: v.created_at,
+      firstVisit: v.created_at, // Alias para compatibilidad con el frontend
       pageUrl: v.page_url,
       referrerUrl: v.referrer_url,
       utmSource: v.utm_source,
