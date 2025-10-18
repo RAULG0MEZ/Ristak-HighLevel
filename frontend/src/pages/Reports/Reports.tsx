@@ -602,13 +602,37 @@ export const Reports: React.FC = () => {
   const handleOpenVisitorsModal = useCallback(async (date: string) => {
     setVisitorsModalLoading(true)
     setIsVisitorsModalOpen(true)
-    setVisitorsModalDate(date)
+
+    // Manejar diferentes formatos de fecha según viewType
+    let startDate = date
+    let endDate = date
+    let displayDate = date
+
+    // Si es formato año-mes (2025-10) o solo año (2025)
+    if (date.match(/^\d{4}$/)) {
+      // Solo año: 2025 -> 2025-01-01 hasta 2025-12-31
+      startDate = `${date}-01-01`
+      endDate = `${date}-12-31`
+      displayDate = date
+    } else if (date.match(/^\d{4}-\d{2}$/)) {
+      // Año-mes: 2025-10 -> 2025-10-01 hasta 2025-10-31
+      const [year, month] = date.split('-')
+      startDate = `${date}-01`
+      const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate()
+      endDate = `${date}-${lastDay.toString().padStart(2, '0')}`
+      displayDate = `${monthNames[parseInt(month) - 1]} ${year}`
+    } else {
+      // Fecha completa: 2025-10-18
+      displayDate = new Date(date).toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: 'numeric' })
+    }
+
+    setVisitorsModalDate(displayDate)
 
     try {
       const response = await fetch(
         `/api/tracking/visitors?` + new URLSearchParams({
-          startDate: date,
-          endDate: date
+          startDate: startDate,
+          endDate: endDate
         })
       )
 
