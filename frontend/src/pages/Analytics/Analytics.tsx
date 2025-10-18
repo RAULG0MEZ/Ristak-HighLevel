@@ -9,7 +9,9 @@ import {
   TreeFilter,
   TrafficSourcesChart
 } from '../../components/common'
-import { Eye, Users, UserCheck, Target, Activity, Clock, RefreshCw, FileText, Smartphone, Monitor, Globe } from 'lucide-react'
+import { Eye, Users, UserCheck, Target, RefreshCw, FileText, Smartphone, Monitor, Tablet, Globe } from 'lucide-react'
+import { FaFacebook, FaGoogle, FaInstagram, FaTiktok, FaTwitter, FaLinkedin, FaMicrosoft, FaChrome, FaFirefox, FaSafari, FaEdge, FaOpera, FaApple, FaWindows, FaAndroid, FaLinux } from 'react-icons/fa'
+import { SiMacos, SiIos } from 'react-icons/si'
 import { getSessionsByDateRange } from '../../services/analyticsService'
 import { TrackingSession } from '../../services/trackingService'
 import { formatDate, formatDateToISO, parseLocalDateString } from '../../utils/format'

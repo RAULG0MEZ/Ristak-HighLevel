@@ -5,6 +5,34 @@ import { resolveDateRange } from '../utils/dateUtils.js'
 import { buildContactStats } from '../services/analyticsService.js'
 import { getGHLClient } from '../services/ghlClient.js'
 
+const normalizePhone = (phone) => {
+  if (!phone) return null
+  const digits = String(phone).replace(/\D/g, '')
+  if (digits.length < 7) return null
+  return digits.slice(-10)
+}
+
+const dedupeAppointments = (appointments = []) => {
+  const map = new Map()
+  for (const appointment of appointments) {
+    if (!appointment) continue
+    const key = appointment.id || `${appointment.start_time || ''}-${appointment.title || ''}`
+    if (!map.has(key)) {
+      map.set(key, appointment)
+    }
+  }
+  return Array.from(map.values())
+}
+
+const APPOINTMENT_CANCELED_STATUSES = new Set([
+  'cancelled',
+  'canceled',
+  'no_show',
+  'noshow',
+  'failed',
+  'missed'
+])
+
 /**
  * Obtiene todos los contactos con paginación y filtros
  */
@@ -237,39 +265,75 @@ export const getContactById = async (req, res) => {
     )
 
     // Obtener citas del contacto
-    const appointments = await db.all(
+    let appointments = await db.all(
       `SELECT * FROM appointments
        WHERE contact_id = ?
        ORDER BY start_time DESC`,
       [id]
     )
 
+    const normalizedPhone = normalizePhone(contact.phone)
+    let relatedContactIds = []
+
+    if (normalizedPhone) {
+      const relatedContacts = await db.all(
+        `SELECT id, phone
+         FROM contacts
+         WHERE id != ?
+           AND phone IS NOT NULL
+           AND phone != ''
+           AND phone LIKE ?`,
+        [id, `%${normalizedPhone}`]
+      )
+
+      relatedContactIds = relatedContacts
+        .filter(row => normalizePhone(row.phone) === normalizedPhone)
+        .map(row => row.id)
+    }
+
+    if (relatedContactIds.length > 0) {
+      const placeholders = relatedContactIds.map(() => '?').join(', ')
+      const relatedAppointments = await db.all(
+        `SELECT *
+         FROM appointments
+         WHERE contact_id IN (${placeholders})
+         ORDER BY start_time DESC`,
+        relatedContactIds
+      )
+      appointments = appointments.concat(relatedAppointments)
+    }
+
+    const dedupedAppointments = dedupeAppointments(appointments)
+    const sortedAppointmentsAsc = [...dedupedAppointments].sort((a, b) =>
+      new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+    )
+
     // Calcular primera cita y próxima cita
     let firstAppointmentDate = null
     let nextAppointmentDate = null
 
-    if (appointments.length > 0) {
-      // Ordenar por fecha (la más antigua primero)
-      const sortedAppointments = [...appointments].sort((a, b) =>
-        new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
-      )
+    if (sortedAppointmentsAsc.length > 0) {
+      firstAppointmentDate = sortedAppointmentsAsc[0].start_time
 
-      // Primera cita (la más antigua)
-      firstAppointmentDate = sortedAppointments[0].start_time
-
-      // Próxima cita (la más cercana en el futuro que no esté cancelada)
       const now = new Date()
-      const futureAppointments = sortedAppointments.filter(apt => {
+      const futureAppointments = sortedAppointmentsAsc.filter(apt => {
+        if (!apt?.start_time) return false
         const aptDate = new Date(apt.start_time)
-        const isFuture = aptDate > now
-        const isNotCancelled = apt.appointment_status !== 'cancelled'
-        return isFuture && isNotCancelled
+        if (Number.isNaN(aptDate.getTime()) || aptDate <= now) {
+          return false
+        }
+        const statusValue = String(apt.appointment_status || apt.status || '').toLowerCase()
+        return !APPOINTMENT_CANCELED_STATUSES.has(statusValue)
       })
 
       if (futureAppointments.length > 0) {
         nextAppointmentDate = futureAppointments[0].start_time
       }
     }
+
+    const appointmentsOrdered = dedupedAppointments.sort((a, b) =>
+      new Date(b.start_time).getTime() - new Date(a.start_time).getTime()
+    )
 
     // Determinar status basado en la actividad del contacto
     let status = 'lead'
@@ -295,7 +359,7 @@ export const getContactById = async (req, res) => {
       ad_id: contact.attribution_ad_id,
       notes: '',
       payments,
-      appointments,
+      appointments: appointmentsOrdered,
       firstAppointmentDate,
       nextAppointmentDate
     }
