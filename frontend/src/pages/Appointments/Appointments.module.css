@@ -826,21 +826,23 @@
 .eventTooltip {
   position: fixed;
   z-index: 9999;
-  background-color: #ffffff;
+  background-color: #ffffff !important;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: 0.75rem 1rem;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.05);
   min-width: 220px;
   max-width: 320px;
   pointer-events: none;
   animation: tooltipFadeIn 0.2s ease-out;
+  opacity: 1 !important;
+  backdrop-filter: none;
 }
 
 :global(body.dark) .eventTooltip {
-  background-color: #18181b;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
-  border-color: rgba(148, 163, 184, 0.25);
+  background-color: #18181b !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1);
+  border-color: rgba(148, 163, 184, 0.3);
 }
 
 @keyframes tooltipFadeIn {

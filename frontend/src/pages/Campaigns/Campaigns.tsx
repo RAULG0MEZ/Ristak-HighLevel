@@ -14,7 +14,7 @@ import {
 } from 'lucide-react'
 import { useDateRange } from '@/contexts/DateRangeContext'
 import { useLabels } from '@/contexts/LabelsContext'
-import { formatCurrency, formatRoas, formatChartDate, formatDateToISO, formatEndDateToISO, parseLocalDateString } from '@/utils/format'
+import { formatCurrency, formatRoas, formatChartDate, formatDate, formatDateToISO, formatEndDateToISO, parseLocalDateString } from '@/utils/format'
 import { campaignsService, type CampaignContact } from '@/services/campaignsService'
 import { reportsService, type CampaignsReport } from '@/services/reportsService'
 import { useAppConfig } from '@/hooks'
