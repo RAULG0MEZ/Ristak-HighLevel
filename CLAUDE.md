@@ -83,7 +83,8 @@ Backend:
 │   │   │   │   ├── PaymentsConfiguration.tsx
 │   │   │   │   └── WebTracking.tsx    # Página de configuración del pixel de tracking
 │   │   │   ├── Transactions/
-│   │   │   └── Appointments/  # Gestión de calendarios y citas de HighLevel
+│   │   │   ├── Appointments/  # Gestión de calendarios y citas de HighLevel
+│   │   │   └── Analytics/     # Página de analíticas (solo visible si tracking configurado)
 │   │   ├── services/          # Llamadas API
 │   │   │   ├── apiClient.ts
 │   │   │   ├── campaignsService.ts
@@ -92,8 +93,9 @@ Backend:
 │   │   │   ├── highLevelService.ts
 │   │   │   ├── reportsService.ts
 │   │   │   ├── transactionsService.ts
-│   │   │   ├── calendarsService.ts  # Servicio para Calendarios de HighLevel
-│   │   │   └── trackingService.ts   # Servicio para Pixel de Tracking
+│   │   │   ├── calendarsService.ts   # Servicio para Calendarios de HighLevel
+│   │   │   ├── trackingService.ts    # Servicio para Pixel de Tracking
+│   │   │   └── analyticsService.ts   # Servicio para Analíticas
 │   │   ├── styles/            # Estilos globales
 │   │   │   ├── index.css
 │   │   │   ├── theme.css
@@ -397,6 +399,24 @@ cd frontend && npm run build
   - Sin hardcodear dominios (detección dinámica por req.headers.host)
   - Funciona con SQLite y PostgreSQL
 
+- ✓ **Página de Analíticas implementada (2025-10-18)**:
+  - Página completa de analíticas basada en datos de la tabla `sessions`
+  - **Visibilidad condicional**: Solo aparece en el menú si el tracking está configurado en HighLevel
+  - 8 KPIs principales con tendencias vs período anterior:
+    - Visualizaciones de página, Visitantes únicos, Registros, Conversión
+    - Tasa de rebote, Duración promedio, Usuarios recurrentes, Páginas/sesión
+  - Gráfico de área dual: Visitas totales + Visitantes únicos por fecha
+  - Comparación automática con período anterior (mismo número de días hacia atrás)
+  - Cálculo de registros reales: contactos que aparecen tanto en `contacts` como en `sessions`
+  - Backend endpoints: GET /api/tracking/sessions?start=YYYY-MM-DD&end=YYYY-MM-DD
+  - Usa endpoint existente GET /api/tracking/config para detectar si tracking está activo
+  - Backend: trackingController.js (modificado), trackingService.js (getSessionsByDateRange agregado)
+  - Frontend: Analytics.tsx, analyticsService.ts
+  - Sidebar.tsx: Llama a checkTrackingStatus() y agrega "Analíticas" al menú solo si isConfigured === true
+  - Ruta: /analytics (solo accesible si tracking configurado)
+  - Diseño adaptado al estilo de la app (mismo patrón que Dashboard y otras páginas)
+  - Duración promedio estimada (events_count * 45 segundos) - No es tiempo real
+
 ### Resueltos
 - ✓ Lodash instalado como dependencia directa
 - ✓ 7 componentes huérfanos eliminados (Badge, Select, Input, DatePicker, SingleDatePicker, DateRangeInput, SyncProgressBanner)
@@ -436,17 +456,18 @@ cd frontend && npm run build
 
 ## 📅 ÚLTIMA ACTUALIZACIÓN
 
-**Fecha**: 2025-10-17
-**Versión**: 1.7.2
+**Fecha**: 2025-10-18
+**Versión**: 1.8.0
 **Último cambio estructural**:
-- **Auto-configuración de Tracking Pixel completada**
-  - Endpoints GET /api/tracking/config y POST /api/tracking/configure
-  - Detección automática de dominio (prioridad: TRACKING_DOMAIN > req.headers.host > RENDER_EXTERNAL_URL)
-  - Guarda snippet en HighLevel custom value `rstktrack` con 1 clic
-  - Fix crítico: prioridad de dominio corregida (ahora detecta custom domains correctamente)
-  - Frontend actualizado con botón "Configurar" de 1 clic
-  - Usuario solo necesita agregar `{{ custom_values.rstktrack }}` en <head>
-  - Probado con curl y funcional
+- **Página de Analíticas con visibilidad condicional**
+  - Nueva página /analytics basada en datos de tabla `sessions`
+  - Visibilidad condicional: Solo aparece en sidebar si tracking está configurado
+  - 8 KPIs con tendencias vs período anterior
+  - Gráfico de área dual para visitas y visitantes únicos
+  - Backend: getSessionsByDateRange() agregado a trackingService.js
+  - Frontend: Analytics.tsx, analyticsService.ts
+  - Sidebar.tsx modificado para detectar tracking automáticamente
+  - Compilado y probado exitosamente
 
 ---
 
