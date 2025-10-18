@@ -2,12 +2,14 @@ import React from 'react'
 import { Card } from '@/components/common'
 import { cn } from '@/utils/cn'
 
+type IconProp = React.ReactNode | React.ElementType<{ className?: string }>
+
 interface KpiCardProps {
   title: string
   value: string | number
   delta?: number
   deltaLabel?: string
-  icon?: React.ReactNode
+  icon?: IconProp
   iconColorClassName?: string
   className?: string
 }
@@ -39,7 +41,8 @@ export const KpiCard: React.FC<KpiCardProps> = ({
       })
     }
 
-    return icon
+    const IconComponent = icon as React.ElementType<{ className?: string }>
+    return <IconComponent className="h-6 w-6" />
   }
 
   return (
