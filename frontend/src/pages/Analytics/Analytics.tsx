@@ -601,7 +601,58 @@ const Analytics: React.FC = () => {
 
   // Efecto para recalcular visualizaciones cuando cambien las sesiones filtradas
   useEffect(() => {
-    if (sessions.length === 0) return
+    if (sessions.length === 0) {
+      // Si no hay sesiones filtradas, resetear todo a 0
+      setMetrics({
+        pageViews: 0,
+        uniqueVisitors: 0,
+        registros: 0,
+        conversionRate: 0,
+        returningUsers: 0,
+        avgPagePerSession: 0,
+        trends: {
+          pageViews: 0,
+          uniqueVisitors: 0,
+          registros: 0,
+          conversionRate: 0,
+          returningUsers: 0,
+          avgPagePerSession: 0
+        }
+      })
+      return
+    }
+
+    // Recalcular KPIs principales con las sesiones filtradas
+    const uniqueVids = new Set(sessions.map((s: Session) => s.visitor_id)).size
+    const totalPageViews = sessions.length
+
+    // Registros = sesiones con contact_id
+    const registros = new Set(
+      sessions.filter((s: Session) => s.contact_id).map((s: Session) => s.contact_id)
+    ).size
+
+    const conversionRate = uniqueVids > 0 ? ((registros / uniqueVids) * 100) : 0
+
+    // Usuarios recurrentes
+    const visitorCountsForMetrics: { [key: string]: number } = {}
+    sessions.forEach((s: Session) => {
+      visitorCountsForMetrics[s.visitor_id] = (visitorCountsForMetrics[s.visitor_id] || 0) + 1
+    })
+    const returningUsers = Object.values(visitorCountsForMetrics).filter(count => count > 1).length
+
+    const avgPagePerSession = sessions.length > 0 ?
+      (totalPageViews / sessions.length) : 0
+
+    // Actualizar métricas (sin trends, ya que los filtros no tienen período anterior)
+    setMetrics(prev => ({
+      pageViews: totalPageViews,
+      uniqueVisitors: uniqueVids,
+      registros,
+      conversionRate,
+      returningUsers,
+      avgPagePerSession,
+      trends: prev.trends // Mantener trends del período original
+    }))
 
     // Recalcular stats para las cards
     const browsers: { [key: string]: number } = {}
