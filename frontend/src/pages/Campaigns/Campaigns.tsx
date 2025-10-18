@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { KpiCard, Card, DateRangePicker, Table, Icon, LineChart, ContactDetailsModal, Modal, PageContainer } from '@/components/common'
+import { KpiCard, Card, DateRangePicker, Table, Icon, LineChart, ContactDetailsModal, PageContainer } from '@/components/common'
 import type { Column } from '@/components/common'
 import {
   RefreshCw,
@@ -940,78 +940,34 @@ export const Campaigns: React.FC = () => {
       />
 
       {/* Modal de visitantes */}
-      {isVisitorsModalOpen && (
-        <Modal
-          isOpen={isVisitorsModalOpen}
-          onClose={() => setIsVisitorsModalOpen(false)}
-          title={visitorsModalTitle}
-          size="lg"
-        >
-          <div className={styles.visitorsModal}>
-            {visitorsModalLoading ? (
-              <div className={styles.modalLoading}>
-                <Loader2 size={32} className={styles.spinIcon} />
-                <p>Cargando visitantes...</p>
-              </div>
-            ) : modalVisitors.length === 0 ? (
-              <div className={styles.emptyState}>
-                <Users size={48} />
-                <p>No hay visitantes en este período</p>
-              </div>
-            ) : (
-              <div className={styles.visitorsTable}>
-                <p className={styles.visitorsCount}>
-                  {modalVisitors.length} visitante{modalVisitors.length !== 1 ? 's' : ''} único{modalVisitors.length !== 1 ? 's' : ''}
-                </p>
-                <Table
-                  data={modalVisitors}
-                  columns={[
-                    {
-                      key: 'contact',
-                      header: 'Contacto',
-                      render: (_, visitor) => visitor.contact ? (
-                        <div className={styles.contactInfo}>
-                          <div className={styles.contactName}>{visitor.contact.name || 'Sin nombre'}</div>
-                          <div className={styles.contactEmail}>{visitor.contact.email || visitor.contact.phone || ''}</div>
-                        </div>
-                      ) : (
-                        <div className={styles.anonymousVisitor}>
-                          <span className={styles.visitorId}>Visitante {visitor.visitorId.slice(0, 8)}...</span>
-                        </div>
-                      )
-                    },
-                    {
-                      key: 'utmSource',
-                      header: 'Fuente',
-                      render: (value) => value || '—'
-                    },
-                    {
-                      key: 'deviceType',
-                      header: 'Dispositivo',
-                      render: (value) => value || '—'
-                    },
-                    {
-                      key: 'browser',
-                      header: 'Navegador',
-                      render: (value) => value || '—'
-                    },
-                    {
-                      key: 'createdAt',
-                      header: 'Primera visita',
-                      render: (value) => formatDate(value)
-                    }
-                  ]}
-                  keyExtractor={(visitor) => visitor.visitorId}
-                  searchable={false}
-                  paginated={true}
-                  pageSize={10}
-                  exportable={false}
-                />
-              </div>
-            )}
-          </div>
-        </Modal>
-      )}
+      <ContactDetailsModal
+        isOpen={isVisitorsModalOpen}
+        onClose={() => setIsVisitorsModalOpen(false)}
+        title="Visitantes"
+        subtitle={visitorsModalTitle}
+        data={modalVisitors.map(visitor => ({
+          id: visitor.visitorId,
+          name: visitor.contact ? visitor.contact.name : `Visitante anónimo`,
+          email: visitor.contact ? visitor.contact.email : '',
+          phone: visitor.contact ? visitor.contact.phone : '',
+          created_at: visitor.firstVisit || visitor.createdAt,
+          ltv: visitor.contact ? visitor.contact.ltv : 0,
+          payments: 0,
+          appointments: 0,
+          source: visitor.utmSource || visitor.referrerUrl || 'Directo',
+          ad_name: visitor.adName || visitor.utmCampaign || '',
+          ad_id: visitor.adId || '',
+          // Datos adicionales del visitante
+          deviceType: visitor.deviceType,
+          browser: visitor.browser,
+          os: visitor.os,
+          language: visitor.language,
+          gclid: visitor.gclid,
+          fbclid: visitor.fbclid
+        }))}
+        loading={visitorsModalLoading}
+        type="visitors"
+      />
       </div>
     </PageContainer>
   )

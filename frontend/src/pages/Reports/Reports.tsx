@@ -7,7 +7,6 @@ import {
   DateRangePicker,
   Button,
   ContactDetailsModal,
-  Modal,
   ViewSelector,
   PageContainer
 } from '@/components/common'
@@ -33,8 +32,7 @@ import {
   Layers,
   MousePointerClick,
   Table as TableIcon,
-  BarChart3,
-  Loader2
+  BarChart3
 } from 'lucide-react'
 
 const monthNames = [
@@ -828,7 +826,7 @@ export const Reports: React.FC = () => {
         render: (value: number) => <span>{value.toFixed(1)}%</span>
       }
     ]
-  }, [reportType, viewType, visitorSource, handleOpenVisitorsModal])
+  }, [reportType, viewType, visitorSource, handleOpenVisitorsModal, labels.lead, labels.leads])
 
   const summaryCards = summary ? [
     {
@@ -897,68 +895,6 @@ export const Reports: React.FC = () => {
 
   const metricsRangeLabel = formatRangeLabel(metricsRange)
   const closeModal = () => setModalState(prev => ({ ...prev, open: false }))
-
-  // Columnas para el modal de visitantes
-  const visitorsModalColumns = useMemo(() => [
-    {
-      key: 'contact',
-      header: 'Contacto',
-      sortable: false,
-      render: (_: any, item: any) => {
-        if (item.contact) {
-          return (
-            <div className={styles.contactInfo}>
-              <span className={styles.contactName}>{item.contact.name}</span>
-              <span className={styles.contactEmail}>{item.contact.email}</span>
-            </div>
-          )
-        }
-        return (
-          <div className={styles.anonymousVisitor}>
-            <Users size={14} />
-            <span>Visitante anónimo</span>
-            <span className={styles.visitorId}>
-              {item.visitorId?.substring(0, 8)}...
-            </span>
-          </div>
-        )
-      }
-    },
-    {
-      key: 'source',
-      header: 'Fuente',
-      sortable: false,
-      render: (_: any, item: any) => (
-        <span>{item.utmSource || '-'}</span>
-      )
-    },
-    {
-      key: 'device',
-      header: 'Dispositivo',
-      sortable: false,
-      render: (_: any, item: any) => (
-        <span>{item.deviceType || '-'}</span>
-      )
-    },
-    {
-      key: 'browser',
-      header: 'Navegador',
-      sortable: false,
-      render: (_: any, item: any) => (
-        <span>{item.browser || '-'}</span>
-      )
-    },
-    {
-      key: 'firstVisit',
-      header: 'Primera visita',
-      sortable: false,
-      render: (_: any, item: any) => {
-        if (!item.firstVisit) return <span>-</span>
-        const date = new Date(item.firstVisit)
-        return <span>{date.toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
-      }
-    }
-  ], [])
 
   return (
     <PageContainer>
@@ -1129,42 +1065,34 @@ export const Reports: React.FC = () => {
         />
 
         {/* Modal de Visitantes */}
-        <Modal
+        <ContactDetailsModal
           isOpen={isVisitorsModalOpen}
           onClose={() => setIsVisitorsModalOpen(false)}
-          title={`Visitantes del ${visitorsModalDate}`}
-          size="lg"
-        >
-          <div className={styles.visitorsModal}>
-            {visitorsModalLoading ? (
-              <div className={styles.modalLoading}>
-                <Loader2 size={32} className={styles.spinning} />
-                <span>Cargando visitantes...</span>
-              </div>
-            ) : visitorsData.length === 0 ? (
-              <div className={styles.emptyState}>
-                <Users size={48} />
-                <p>No hay visitantes para esta fecha</p>
-              </div>
-            ) : (
-              <>
-                <p className={styles.visitorsCount}>
-                  {visitorsData.length} {visitorsData.length === 1 ? 'visitante' : 'visitantes'}
-                </p>
-                <div className={styles.visitorsTable}>
-                  <Table
-                    initialColumns={visitorsModalColumns}
-                    data={visitorsData}
-                    keyExtractor={(item) => item.visitorId}
-                    loading={false}
-                    paginated={false}
-                    searchable={false}
-                  />
-                </div>
-              </>
-            )}
-          </div>
-        </Modal>
+          title="Visitantes"
+          subtitle={`Visitantes del ${visitorsModalDate}`}
+          data={visitorsData.map(visitor => ({
+            id: visitor.visitorId,
+            name: visitor.contact ? visitor.contact.name : `Visitante anónimo`,
+            email: visitor.contact ? visitor.contact.email : '',
+            phone: visitor.contact ? visitor.contact.phone : '',
+            created_at: visitor.firstVisit || visitor.createdAt,
+            ltv: visitor.contact ? visitor.contact.ltv : 0,
+            payments: 0,
+            appointments: 0,
+            source: visitor.utmSource || visitor.referrerUrl || 'Directo',
+            ad_name: visitor.adName || visitor.utmCampaign || '',
+            ad_id: visitor.adId || '',
+            // Datos adicionales del visitante
+            deviceType: visitor.deviceType,
+            browser: visitor.browser,
+            os: visitor.os,
+            language: visitor.language,
+            gclid: visitor.gclid,
+            fbclid: visitor.fbclid
+          }))}
+          loading={visitorsModalLoading}
+          type="visitors"
+        />
       </div>
     </PageContainer>
   )
