@@ -14,7 +14,7 @@ import { FaFacebook, FaGoogle, FaInstagram, FaTiktok, FaTwitter, FaLinkedin, FaM
 import { SiMacos, SiIos } from 'react-icons/si'
 import { getSessionsByDateRange } from '../../services/analyticsService'
 import { TrackingSession } from '../../services/trackingService'
-import { formatDate, formatDateToISO, parseLocalDateString } from '../../utils/format'
+import { formatDate, formatDateToISO, parseLocalDateString, formatUrlParameter } from '../../utils/format'
 
 // Helper para obtener icono de plataforma
 const getPlatformIcon = (platformName: string) => {
@@ -381,15 +381,15 @@ const Analytics: React.FC = () => {
           })
 
           filterData.campaigns = Object.entries(campaignsMap)
-            .map(([name, count]) => ({ name, count }))
+            .map(([name, count]) => ({ name: formatUrlParameter(name), count }))
             .sort((a, b) => b.count - a.count)
 
           filterData.ads = Object.entries(adsMap)
-            .map(([name, count]) => ({ name, count }))
+            .map(([name, count]) => ({ name: formatUrlParameter(name), count }))
             .sort((a, b) => b.count - a.count)
 
           filterData.sources = Object.entries(sourcesMap)
-            .map(([name, count]) => ({ name, count }))
+            .map(([name, count]) => ({ name: formatUrlParameter(name), count }))
             .sort((a, b) => b.count - a.count)
 
           filterData.devices = Object.entries(devicesMap)
@@ -405,7 +405,7 @@ const Analytics: React.FC = () => {
             .sort((a, b) => b.count - a.count)
 
           filterData.placements = Object.entries(placementsMap)
-            .map(([name, count]) => ({ name, count }))
+            .map(([name, count]) => ({ name: formatUrlParameter(name), count }))
             .sort((a, b) => b.count - a.count)
 
           setAvailableFilterData(filterData)
@@ -428,7 +428,8 @@ const Analytics: React.FC = () => {
 
           const platforms: { [key: string]: number } = {}
           currentSessions.forEach((session: Session) => {
-            const platform = session.source_site_name || session.source_platform || session.utm_source || 'Directo'
+            const rawPlatform = session.source_site_name || session.source_platform || session.utm_source || 'Directo'
+            const platform = formatUrlParameter(rawPlatform)
             platforms[platform] = (platforms[platform] || 0) + 1
           })
           const platformStats = Object.entries(platforms)
@@ -672,7 +673,8 @@ const Analytics: React.FC = () => {
 
     const platforms: { [key: string]: number } = {}
     sessions.forEach((session: Session) => {
-      const platform = session.source_site_name || session.source_platform || session.utm_source || 'Directo'
+      const rawPlatform = session.source_site_name || session.source_platform || session.utm_source || 'Directo'
+      const platform = formatUrlParameter(rawPlatform)
       platforms[platform] = (platforms[platform] || 0) + 1
     })
     const platformStats = Object.entries(platforms)
