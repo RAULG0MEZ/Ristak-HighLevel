@@ -718,9 +718,10 @@ export async function configureTracking(req, res) {
       })
     }
 
-    // Generar el snippet
+    // Generar el snippet con versión para evitar cache
+    const SNIPPET_VERSION = '2' // Incrementar cuando cambies el código del snippet
     const snippet = `<!-- Pixel de Tracking Ristak -->
-<script async src="https://${trackingDomain}/snip.js"></script>`
+<script async src="https://${trackingDomain}/snip.js?v=${SNIPPET_VERSION}"></script>`
 
     logger.info(`Configurando tracking en HighLevel para dominio: ${trackingDomain}`)
 
