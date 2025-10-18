@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { Modal, Icon, Badge, type BadgeVariant } from '@/components/common'
-import { formatDate } from '@/utils/format'
+import { formatDate, formatUrlParameter } from '@/utils/format'
 import styles from './VisitorDetailsModal.module.css'
 
 interface VisitorDetail {
@@ -122,6 +122,8 @@ export function VisitorDetailsModal({
     if (sourceLower.includes('google')) return 'success'
     if (sourceLower.includes('facebook') || sourceLower.includes('meta')) return 'info'
     if (sourceLower.includes('direct')) return 'neutral'
+    if (sourceLower.includes('instagram')) return 'purple'
+    if (sourceLower.includes('tiktok')) return 'error'
     return 'purple'
   }
 
@@ -140,8 +142,8 @@ export function VisitorDetailsModal({
   const getVisitorDescription = (visitor: VisitorDetail) => {
     if (visitor.contact?.email) return visitor.contact.email
     if (visitor.contact?.phone) return visitor.contact.phone
-    if (visitor.utmCampaign) return visitor.utmCampaign
-    if (visitor.utmSource) return `Desde ${visitor.utmSource}`
+    if (visitor.utmCampaign) return formatUrlParameter(visitor.utmCampaign)
+    if (visitor.utmSource) return `Desde ${formatUrlParameter(visitor.utmSource)}`
     return 'Visitante anónimo'
   }
 
@@ -375,7 +377,7 @@ export function VisitorDetailsModal({
                           <div>
                             <span className={styles.detailItemLabel}>Fuente:</span>
                             <Badge variant={getSourceBadgeVariant(selectedVisitor.utmSource)} className={styles.sourceBadge}>
-                              {selectedVisitor.utmSource}
+                              {formatUrlParameter(selectedVisitor.utmSource)}
                             </Badge>
                           </div>
                         </div>
@@ -385,7 +387,7 @@ export function VisitorDetailsModal({
                           <Icon name="megaphone" size={16} />
                           <div>
                             <span className={styles.detailItemLabel}>Campaña:</span>
-                            <span> {selectedVisitor.utmCampaign}</span>
+                            <span> {formatUrlParameter(selectedVisitor.utmCampaign)}</span>
                           </div>
                         </div>
                       )}
@@ -394,7 +396,7 @@ export function VisitorDetailsModal({
                           <Icon name="file-text" size={16} />
                           <div>
                             <span className={styles.detailItemLabel}>Anuncio:</span>
-                            <span> {selectedVisitor.adName}</span>
+                            <span> {formatUrlParameter(selectedVisitor.adName)}</span>
                           </div>
                         </div>
                       )}
@@ -403,7 +405,7 @@ export function VisitorDetailsModal({
                           <Icon name="share-2" size={16} />
                           <div>
                             <span className={styles.detailItemLabel}>Medio:</span>
-                            <span> {selectedVisitor.utmMedium}</span>
+                            <span> {formatUrlParameter(selectedVisitor.utmMedium)}</span>
                           </div>
                         </div>
                       )}

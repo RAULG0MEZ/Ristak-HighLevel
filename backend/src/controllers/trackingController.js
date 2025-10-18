@@ -505,7 +505,13 @@ export async function collectEvent(req, res) {
     }
 
     // Extraer IP y User-Agent del request
-    const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress || null
+    let ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress || null
+
+    // Limpiar prefijo IPv6 (::ffff:) de IPs mapeadas
+    if (ip && ip.startsWith('::ffff:')) {
+      ip = ip.substring(7) // Remover "::ffff:"
+    }
+
     const user_agent = req.headers['user-agent'] || null
 
     // Extraer full_name si viene en data.contact_name

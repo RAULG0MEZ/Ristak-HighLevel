@@ -40,6 +40,32 @@ const formatCompoundWord = (word: string): string => {
     .join('')
 }
 
+/**
+ * Formatea parámetros UTM y de campaña que vienen de URLs
+ * Convierte "Retargeting+-+Testimoniales" a "Retargeting Testimoniales"
+ * Limpia caracteres de codificación URL como +, -, %20, etc.
+ */
+export const formatUrlParameter = (value?: string | null): string => {
+  if (!value) return ''
+
+  return value
+    // Reemplazar + con espacio
+    .replace(/\+/g, ' ')
+    // Reemplazar múltiples guiones rodeados de espacios con un solo espacio
+    .replace(/\s*-+\s*/g, ' ')
+    // Decodificar URL encoding
+    .replace(/%20/g, ' ')
+    .replace(/%2B/g, '+')
+    .replace(/%2D/g, '-')
+    // Limpiar espacios múltiples
+    .replace(/\s+/g, ' ')
+    // Capitalizar primera letra de cada palabra
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ')
+    .trim()
+}
+
 export const formatName = (value?: string | null): string => {
   if (!value) return ''
   const trimmed = value.trim()
