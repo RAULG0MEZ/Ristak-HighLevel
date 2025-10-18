@@ -1100,8 +1100,9 @@ body.dark .codeInline {
   background: var(--color-gray-50);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  padding: var(--spacing-md);
+  padding: var(--spacing-lg) var(--spacing-md) var(--spacing-md) var(--spacing-md);
   overflow-x: auto;
+  min-height: 80px;
 }
 
 body.dark .codeBlock {
@@ -1262,16 +1263,19 @@ body.dark .table tbody tr:hover {
 /* Code Block Wrapper con botón */
 .codeBlockWrapper {
   position: relative;
+  width: 100%;
 }
 
 .copyButton {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 5;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
   background: var(--color-white) !important;
   border: 1px solid var(--color-border) !important;
   box-shadow: var(--shadow-sm);
+  padding: 6px 12px !important;
+  font-size: var(--font-size-sm);
 }
 
 body.dark .copyButton {

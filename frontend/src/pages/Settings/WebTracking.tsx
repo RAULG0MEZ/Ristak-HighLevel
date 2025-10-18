@@ -235,8 +235,16 @@ export const WebTracking: React.FC = () => {
 
               {/* Código del pixel */}
               {trackingDomain && (
-                <div style={{ marginTop: '24px' }}>
-                  <label className={styles.formLabel}>Código del pixel</label>
+                <>
+                  <div style={{
+                    marginTop: '24px',
+                    marginBottom: '8px',
+                    fontSize: 'var(--font-size-sm)',
+                    fontWeight: 'var(--font-weight-medium)',
+                    color: 'var(--color-text-primary)'
+                  }}>
+                    Código del pixel
+                  </div>
                   <div className={styles.codeBlockWrapper}>
                     <Button
                       variant="ghost"
@@ -262,7 +270,7 @@ export const WebTracking: React.FC = () => {
                       </pre>
                     </div>
                   </div>
-                </div>
+                </>
               )}
             </>
           )}
