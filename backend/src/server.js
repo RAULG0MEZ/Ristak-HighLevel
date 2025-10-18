@@ -6,6 +6,8 @@ import { dirname, join } from 'path'
 import { logger } from './utils/logger.js'
 import { startMetaSyncCron } from './jobs/metaSync.cron.js'
 import { startContactsSyncCron } from './jobs/contactsSync.cron.js'
+import { startMetaVersionCron } from './jobs/metaVersionCron.js'
+import { initializeVersion } from './services/metaVersionService.js'
 // import { startInvoicesReconciliation } from './jobs/invoicesReconciliation.cron.js' // DESACTIVADO: Solo usar webhooks
 import { verifyAndUpdateWebhooks } from './startup/webhookVerification.js'
 
@@ -93,12 +95,16 @@ app.listen(PORT, async () => {
   logger.success(`🚀 Servidor corriendo en puerto ${PORT}`)
   logger.info(`Entorno: ${process.env.NODE_ENV || 'development'}`)
 
+  // Inicializar versión de Meta API desde BD
+  await initializeVersion()
+
   // Verificar y actualizar webhooks en producción
   await verifyAndUpdateWebhooks()
 
   // Iniciar cron jobs
   startMetaSyncCron()
   startContactsSyncCron() // Sincroniza contactos cada hora de manera silenciosa
+  startMetaVersionCron() // Actualiza versión de Meta API cada 6 meses
   // startInvoicesReconciliation() // DESACTIVADO: Solo usar webhooks para sincronización en tiempo real
 })
 

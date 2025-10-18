@@ -324,7 +324,7 @@ async function initTables() {
       CREATE TABLE IF NOT EXISTS meta_api_version (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         version TEXT NOT NULL,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `)
 

@@ -748,18 +748,19 @@ export const getFunnelData = async (req, res) => {
     `
     const leads = await db.get(leadsQuery, [startDate, endDate])
 
-    // Citas (appointments)
+    // Citas (appointments) - usar COALESCE para manejar contact_id null
     const appointmentsQuery = `
-      SELECT COUNT(DISTINCT contact_id) as count
+      SELECT COUNT(DISTINCT COALESCE(contact_id, id)) as count
       FROM appointments
       WHERE DATE(start_time) >= DATE(?)
         AND DATE(start_time) <= DATE(?)
+        AND contact_id IS NOT NULL
     `
     const appointments = await db.get(appointmentsQuery, [startDate, endDate])
 
     // Clientes (contactos con compras)
     const customersQuery = `
-      SELECT COUNT(DISTINCT contact_id) as count
+      SELECT COUNT(DISTINCT id) as count
       FROM contacts
       WHERE purchases_count > 0
         AND DATE(created_at) >= DATE(?)
