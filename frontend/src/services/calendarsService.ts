@@ -88,6 +88,7 @@ export interface CalendarEvent {
   endTime: string;
   dateAdded: string;
   dateUpdated?: string;
+  timeZone?: string;
   isRecurring?: boolean;
   rrule?: string;
   assignedResources?: string[];
