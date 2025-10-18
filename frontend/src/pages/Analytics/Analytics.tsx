@@ -430,7 +430,7 @@ const Analytics: React.FC = () => {
                     domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.4)]}
                   />
 
-                  <Tooltip content={<CustomTooltip />} />
+                  <Tooltip content={CustomTooltip} />
 
                   <Area
                     type="monotone"
