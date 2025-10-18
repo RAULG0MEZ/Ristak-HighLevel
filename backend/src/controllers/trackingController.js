@@ -637,22 +637,34 @@ export async function getSessionsHandler(req, res) {
     const limit = parseInt(req.query.limit, 10) || 50
     const { start, end } = req.query
 
+    logger.info(`📊 GET /api/tracking/sessions - start: ${start}, end: ${end}, limit: ${limit}`)
+
     if (limit > 1000) {
+      logger.warn(`⚠️ Limit demasiado alto: ${limit}`)
       return res.status(400).json({ error: 'Limit too high (max 1000)' })
     }
 
     // Si hay fechas, usar filtro de rango
     if (start && end) {
+      logger.info(`🔍 Buscando sesiones entre ${start} y ${end}`)
       const sessions = await getSessionsByDateRange(start, end)
+      logger.info(`✅ Encontradas ${sessions.length} sesiones`)
       return res.json(sessions)
     }
 
     // Sin fechas, usar límite simple
+    logger.info(`🔍 Obteniendo últimas ${limit} sesiones`)
     const sessions = await getRecentSessions(limit)
+    logger.info(`✅ Encontradas ${sessions.sessions?.length || 0} sesiones`)
     res.json({ sessions })
   } catch (error) {
-    logger.error('Error obteniendo sesiones:', error)
-    res.status(500).json({ error: 'Internal server error' })
+    logger.error('❌ Error obteniendo sesiones:', error)
+    logger.error('Stack trace:', error.stack)
+    res.status(500).json({
+      error: 'Internal server error',
+      message: error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    })
   }
 }
 

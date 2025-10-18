@@ -443,7 +443,9 @@ export async function getRecentSessions(limit = 50) {
  */
 export async function getSessionsByDateRange(startDate, endDate) {
   try {
+    logger.info(`🔍 getSessionsByDateRange: ${startDate} to ${endDate}`)
     const usePostgres = Boolean(process.env.DATABASE_URL)
+    logger.info(`📊 Using database: ${usePostgres ? 'PostgreSQL' : 'SQLite'}`)
 
     let query, params
 
@@ -575,10 +577,15 @@ export async function getSessionsByDateRange(startDate, endDate) {
       params = [startDate, endDate]
     }
 
+    logger.info(`🔄 Ejecutando query con params: ${JSON.stringify(params)}`)
     const sessions = await db.all(query, params)
+    logger.info(`✅ Query exitoso, encontradas ${sessions.length} sesiones`)
     return sessions
   } catch (error) {
-    logger.error('Error obteniendo sesiones por rango:', error)
+    logger.error('❌ Error obteniendo sesiones por rango:', error)
+    logger.error('Query:', query?.substring(0, 200))
+    logger.error('Params:', params)
+    logger.error('Stack:', error.stack)
     throw error
   }
 }
