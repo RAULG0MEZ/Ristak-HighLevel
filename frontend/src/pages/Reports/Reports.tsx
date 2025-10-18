@@ -418,8 +418,8 @@ export const Reports: React.FC = () => {
           scope: scopeParam
         })
 
-        // Si estamos en modo tracking y mostrando campañas, obtener visitantes del tracking
-        if (visitorSource === 'tracking' && scopeParam === 'campaigns') {
+        // Si estamos en modo tracking, obtener visitantes del tracking
+        if (visitorSource === 'tracking') {
           try {
             const trackingResponse = await fetch(
               `/api/tracking/visitors-by-period?` + new URLSearchParams({
