@@ -244,16 +244,21 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
   const handleSelectContact = (contact: Contact) => {
     setSelectedContact(contact);
 
-    // Auto-rellenar título con el nombre del contacto
+    // Auto-rellenar título SIEMPRE con el contact.name real
     const contactName = contact.name ||
                        `${contact.firstName || ''} ${contact.lastName || ''}`.trim() ||
-                       contact.email ||
-                       'Cliente';
+                       contact.email;
+
+    // SIEMPRE debe tener un nombre válido
+    if (!contactName) {
+      console.error('Contacto sin nombre válido:', contact);
+      return;
+    }
 
     setFormData({
       ...formData,
       contactId: contact.id,
-      title: formData.title.trim() ? formData.title : `Cita con ${contactName}` // Solo auto-completar si está vacío
+      title: formData.title.trim() ? formData.title : contactName // Usar solo el nombre, sin "Cita con"
     });
 
     setSearchQuery('');

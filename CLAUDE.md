@@ -11,7 +11,12 @@
 5. **SIEMPRE actualizar este archivo** cuando cambies la estructura o agregues features
 6. **SIEMPRE limpiar imports no usados** y dependencias fantasma
 7. **NUNCA commitear console.logs** de debug en producción
-8. **🔴 BASE DE DATOS: PRODUCCIÓN = PostgreSQL (Render) - DESARROLLO = SQLite (local nos vale madres)**
+8. **🔴 ENTORNO DE TRABAJO: TODO ES RENDER (PRODUCCIÓN) - NUNCA SE USA LOCALHOST**
+   - El usuario NO trabaja en localhost/desarrollo local
+   - SIEMPRE commit + push después de cada cambio
+   - Los cambios se ven en Render (producción) directamente
+   - PostgreSQL es la ÚNICA base de datos (no SQLite)
+   - Render auto-deploya en cada push a main
 9. **❌ NUNCA usar alertas nativas del browser** (`alert()`, `confirm()`, `prompt()`) - SIEMPRE usar modales personalizados con Modal component y `createPortal` de React
 
 ### �� FILOSOFÍA DE CÓDIGO
