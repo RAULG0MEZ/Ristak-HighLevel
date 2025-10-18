@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import { Modal } from '../Modal';
 import { Button } from '../Button';
 import { CalendarEvent, Calendar, calendarsService } from '@/services/calendarsService';
-import { highLevelService } from '@/services/highLevelService';
 import { formatDate } from '@/utils/format';
 import { useNotification } from '@/contexts/NotificationContext';
 import styles from './AppointmentModal.module.css';
@@ -419,12 +418,9 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
           console.log('[AppointmentModal] Evento recibido:', event);
           console.log('[AppointmentModal] Event ID:', event.id);
 
-          const config = await highLevelService.getConfig();
-          console.log('[AppointmentModal] Config obtenida, accessToken presente:', !!config.accessToken);
-
-          if (!config.accessToken || !event.id) {
-            console.log('[AppointmentModal] Falta accessToken o event.id, usando datos básicos');
-            // Si no hay token o ID, usar los datos básicos del evento
+          if (!event.id) {
+            console.log('[AppointmentModal] Falta event.id, usando datos básicos');
+            // Si no hay ID, usar los datos básicos del evento
             setFormData({
               title: event.title || '',
               appointmentStatus: event.appointmentStatus || 'pending',
@@ -444,8 +440,9 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
           }
 
           // Obtener detalles completos de la cita (incluye contactId y assignedUserId)
+          // Ya no necesita accessToken - el backend lo obtiene automáticamente
           console.log('[AppointmentModal] Llamando getAppointment con eventId:', event.id);
-          const fullEvent = await calendarsService.getAppointment(event.id, config.accessToken);
+          const fullEvent = await calendarsService.getAppointment(event.id);
           console.log('[AppointmentModal] Respuesta de getAppointment:', fullEvent);
 
           if (fullEvent) {

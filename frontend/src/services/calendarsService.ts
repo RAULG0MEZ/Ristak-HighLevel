@@ -177,13 +177,12 @@ export const calendarsService = {
   /**
    * Obtener detalles completos de una cita individual
    * Este endpoint devuelve información completa incluyendo contactId y assignedUserId
+   * NO requiere accessToken - el backend lo obtiene automáticamente
    */
-  async getAppointment(eventId: string, accessToken: string): Promise<CalendarEvent | null> {
+  async getAppointment(eventId: string): Promise<CalendarEvent | null> {
     try {
       console.log('[calendarsService] Llamando GET /calendars/events/' + eventId);
-      const data = await apiClient.get<CalendarEvent>(`/calendars/events/${eventId}`, {
-        params: { accessToken }
-      });
+      const data = await apiClient.get<CalendarEvent>(`/calendars/events/${eventId}`);
       console.log('[calendarsService] Respuesta recibida:', data);
       return data;
     } catch (error) {

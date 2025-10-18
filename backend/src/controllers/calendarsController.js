@@ -1,5 +1,6 @@
 import * as calendarService from '../services/highlevelCalendarService.js';
 import { logger } from '../utils/logger.js';
+import { getGHLClient } from '../services/ghlClient.js';
 
 /**
  * Controlador para endpoints de Calendarios de HighLevel
@@ -106,24 +107,22 @@ export async function getEvents(req, res) {
  * GET /api/calendars/events/:eventId
  * Obtener detalles completos de una cita individual
  * Este endpoint devuelve el contactId y assignedUserId completos
+ * NO requiere accessToken - lo obtiene automáticamente de la configuración guardada
  */
 export async function getAppointment(req, res) {
   try {
     const { eventId } = req.params;
-    const { accessToken } = req.query;
 
-    if (!accessToken) {
-      return res.status(400).json({
-        success: false,
-        error: 'Se requiere accessToken'
-      });
-    }
+    // Obtener el GHL Client que ya tiene el accessToken configurado
+    const ghlClient = await getGHLClient();
 
-    const appointment = await calendarService.getAppointment(eventId, accessToken);
+    // Usar el método del ghlClient en vez de calendarService
+    // porque ghlClient ya tiene el token configurado
+    const response = await ghlClient.request(`/calendars/events/appointments/${eventId}`);
 
     res.json({
       success: true,
-      data: appointment
+      data: response
     });
   } catch (error) {
     logger.error(`[Calendars Controller] Error en getAppointment: ${error.message}`);
