@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { KpiCard, Card, Button, PageContainer, AppointmentModal, TabList } from '@/components/common';
-import { ChevronLeft, ChevronRight, Plus, ChevronDown, Check } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, ChevronDown, Check, Calendar as CalendarIcon } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNotification } from '@/contexts/NotificationContext';
 import { useTheme } from '@/contexts/ThemeContext';
