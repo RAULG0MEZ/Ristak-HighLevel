@@ -22,15 +22,54 @@ export async function servePixel(req, res) {
 
   var ENDPOINT = '${ENDPOINT}';
 
+  // Obtener datos de localStorage
+  function getLocalData() {
+    try {
+      var data = localStorage.getItem('ristak');
+      return data ? JSON.parse(data) : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  // Guardar datos en localStorage
+  function setLocalData(data) {
+    try {
+      localStorage.setItem('ristak', JSON.stringify(data));
+    } catch (e) {
+      // Ignore storage errors
+    }
+  }
+
+  // Obtener datos de sessionStorage
+  function getSessionData() {
+    try {
+      var data = sessionStorage.getItem('ristak');
+      return data ? JSON.parse(data) : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  // Guardar datos en sessionStorage
+  function setSessionData(data) {
+    try {
+      sessionStorage.setItem('ristak', JSON.stringify(data));
+    } catch (e) {
+      // Ignore storage errors
+    }
+  }
+
   // Obtener o crear visitor_id (persistente entre sesiones)
   function getVisitorId() {
     try {
-      var visitorId = localStorage.getItem('_visitor_id');
-      if (!visitorId) {
-        visitorId = generateUUID();
-        localStorage.setItem('_visitor_id', visitorId);
+      var localData = getLocalData();
+      if (!localData.visitor_id) {
+        localData.visitor_id = generateUUID();
+        localData.first_visit = new Date().toISOString();
+        setLocalData(localData);
       }
-      return visitorId;
+      return localData.visitor_id;
     } catch (e) {
       return 'visitor_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     }
@@ -39,13 +78,14 @@ export async function servePixel(req, res) {
   // Obtener o crear session_id (temporal, solo esta sesión)
   function getSessionId() {
     try {
-      var sessionId = sessionStorage.getItem('_session_id');
-      if (!sessionId) {
-        sessionId = generateUUID();
-        sessionStorage.setItem('_session_id', sessionId);
-        sessionStorage.setItem('_session_start', Date.now().toString());
+      var sessionData = getSessionData();
+      if (!sessionData.session_id) {
+        sessionData.session_id = generateUUID();
+        sessionData.session_start = Date.now();
+        sessionData.first_pv = true;
+        setSessionData(sessionData);
       }
-      return sessionId;
+      return sessionData.session_id;
     } catch (e) {
       return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     }
@@ -54,9 +94,10 @@ export async function servePixel(req, res) {
   // Verificar si es la primera vez en esta sesión
   function isFirstPageView() {
     try {
-      var flag = sessionStorage.getItem('_first_pv');
-      if (!flag) {
-        sessionStorage.setItem('_first_pv', '1');
+      var sessionData = getSessionData();
+      if (sessionData.first_pv) {
+        sessionData.first_pv = false;
+        setSessionData(sessionData);
         return true;
       }
       return false;
