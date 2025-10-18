@@ -50,22 +50,42 @@ const formatCompoundWord = (word: string): string => {
 export const formatUrlParameter = (value?: string | null): string => {
   if (!value) return ''
 
-  return value
-    // Reemplazar + con espacio
+  // Primero decodificar completamente la URL si está codificada
+  let decoded = value
+  try {
+    // Intentar decodificar si tiene caracteres encoded
+    if (value.includes('%')) {
+      decoded = decodeURIComponent(value)
+    }
+  } catch (e) {
+    // Si falla la decodificación, usar el valor original
+    decoded = value
+  }
+
+  // Ahora limpiar los caracteres especiales
+  return decoded
+    // Reemplazar + con espacio (los + son espacios en URLs)
     .replace(/\+/g, ' ')
-    // Reemplazar múltiples guiones rodeados de espacios con un solo espacio
+    // Reemplazar guiones múltiples o guiones con espacios alrededor
     .replace(/\s*-+\s*/g, ' ')
-    // Decodificar URL encoding
-    .replace(/%20/g, ' ')
-    .replace(/%2B/g, '+')
-    .replace(/%2D/g, '-')
+    // Reemplazar underscores con espacios
+    .replace(/_/g, ' ')
     // Limpiar espacios múltiples
     .replace(/\s+/g, ' ')
-    // Capitalizar primera letra de cada palabra
-    .split(' ')
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(' ')
+    // Trim espacios al inicio y final
     .trim()
+    // Capitalizar primera letra de cada palabra (opcional, puedes comentar si prefieres mantener el caso original)
+    .split(' ')
+    .map(word => {
+      if (!word) return ''
+      // Si la palabra es toda mayúsculas o toda minúsculas, capitalizar
+      // Si tiene mixed case, mantenerlo (ej: "iPhone" no se convierte a "Iphone")
+      if (word === word.toUpperCase() || word === word.toLowerCase()) {
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+      }
+      return word
+    })
+    .join(' ')
 }
 
 export const formatName = (value?: string | null): string => {
