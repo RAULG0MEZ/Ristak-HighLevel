@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Modal } from '../Modal';
 import { Button } from '../Button';
 import { CalendarEvent, Calendar, calendarsService } from '@/services/calendarsService';
-import highLevelService from '@/services/highLevelService';
+import { highLevelService } from '@/services/highLevelService';
 import { formatDate } from '@/utils/format';
 import { useNotification } from '@/contexts/NotificationContext';
 import styles from './AppointmentModal.module.css';
