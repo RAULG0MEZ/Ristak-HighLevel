@@ -414,6 +414,15 @@ async function initTables() {
         }
       }
 
+      // Agregar preferencia para mostrar Analytics
+      try {
+        await db.run('ALTER TABLE highlevel_config ADD COLUMN show_analytics INTEGER DEFAULT 0')
+      } catch (err) {
+        if (!err.message.includes('duplicate column') && !err.message.includes('already exists')) {
+          throw err
+        }
+      }
+
       // Agregar columnas de configuración de invoices/pagos
       try {
         await db.run('ALTER TABLE highlevel_config ADD COLUMN invoice_title TEXT DEFAULT \'PAGO\'')

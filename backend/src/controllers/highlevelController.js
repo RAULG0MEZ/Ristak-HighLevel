@@ -1186,6 +1186,38 @@ export const searchContacts = async (req, res) => {
 };
 
 /**
+ * Obtiene un contacto por ID de HighLevel
+ * GET /api/highlevel/contacts/:id
+ */
+export const getContactById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requiere el ID del contacto'
+      });
+    }
+
+    const ghlClient = await getGHLClient();
+    const contact = await ghlClient.get(`/contacts/${id}`);
+
+    res.json({
+      success: true,
+      contact: contact.contact || contact
+    });
+
+  } catch (error) {
+    logger.error(`Error en getContactById: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Error al obtener el contacto'
+    });
+  }
+};
+
+/**
  * Guarda la configuración de Stripe
  * POST /api/highlevel/stripe-config
  */
@@ -1531,6 +1563,39 @@ export const saveInvoiceConfig = async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message || 'Error guardando configuración de pagos'
+    });
+  }
+};
+
+/**
+ * Obtiene la lista de usuarios del location de HighLevel
+ * GET /api/highlevel/users
+ */
+export const getLocationUsers = async (req, res) => {
+  try {
+    // Obtener configuración de HighLevel
+    const config = await db.get('SELECT * FROM highlevel_config LIMIT 1');
+
+    if (!config || !config.location_id || !config.api_token_encrypted) {
+      return res.status(400).json({
+        success: false,
+        error: 'No hay configuración de HighLevel activa'
+      });
+    }
+
+    const ghlClient = await getGHLClient();
+    const users = await ghlClient.getLocationUsers(config.location_id);
+
+    res.json({
+      success: true,
+      users: users || []
+    });
+
+  } catch (error) {
+    logger.error(`Error en getLocationUsers: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Error al obtener usuarios del location'
     });
   }
 };

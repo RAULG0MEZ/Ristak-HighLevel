@@ -398,6 +398,31 @@ class GHLClient {
     }
     return `https://payments.leadconnectorhq.com/invoice/${invoiceId}`
   }
+
+  // ============================================
+  // USERS
+  // ============================================
+
+  async getLocationUsers(locationId) {
+    try {
+      logger.info(`[GHL Client] Obteniendo usuarios para locationId: ${locationId || this.locationId}`)
+
+      const data = await this.request('/users/', {
+        params: {
+          locationId: locationId || this.locationId,
+          limit: 100 // Máximo permitido por la API
+        }
+      })
+
+      const users = data.users || []
+      logger.info(`[GHL Client] Usuarios obtenidos: ${users.length}`)
+
+      return users
+    } catch (error) {
+      logger.error(`[GHL Client] Error al obtener usuarios: ${error.message}`)
+      throw error
+    }
+  }
 }
 
 /**
@@ -432,6 +457,16 @@ export async function getContactById(contactId) {
 export async function recordPayment(invoiceId, paymentData) {
   const client = await getGHLClient()
   return await client.post(`/invoices/${invoiceId}/record-payment`, paymentData)
+}
+
+/**
+ * Obtiene la lista de usuarios del location
+ * @param {string} locationId - ID del location
+ * @returns {Promise<Array>} - Lista de usuarios
+ */
+export async function getLocationUsers(locationId) {
+  const client = await getGHLClient()
+  return await client.getLocationUsers(locationId)
 }
 
 export default GHLClient

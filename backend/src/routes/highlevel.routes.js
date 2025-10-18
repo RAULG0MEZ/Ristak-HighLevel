@@ -21,9 +21,11 @@ import {
   getContactPaymentMethods,
   chargeSavedPaymentMethod,
   searchContacts,
+  getContactById,
   saveStripeConfig,
   getStripeConfig,
-  saveInvoiceConfig
+  saveInvoiceConfig,
+  getLocationUsers
 } from '../controllers/highlevelController.js'
 
 const router = express.Router()
@@ -45,6 +47,10 @@ router.post('/custom-labels', updateCustomLabels)
 
 // Contacts
 router.post('/contacts/search', searchContacts)
+router.get('/contacts/:id', getContactById)
+
+// Users
+router.get('/users', getLocationUsers)
 
 // Stripe Configuration
 router.post('/stripe-config', saveStripeConfig)

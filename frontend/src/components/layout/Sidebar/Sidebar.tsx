@@ -38,13 +38,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
     setMounted(true)
   }, [])
 
-  // Verificar si tiene HighLevel conectado para mostrar Analytics
+  // Verificar preferencia de Analytics del usuario
   useEffect(() => {
     const checkTracking = async () => {
       try {
         const status = await checkTrackingStatus()
-        // Mostrar Analytics si tiene HighLevel conectado (aunque no tenga el pixel configurado)
-        if (status.hasHighLevel) {
+        // Mostrar Analytics solo si el usuario activó el switch
+        if (status.showAnalytics) {
           setNavigation([
             ...baseNavigation,
             { name: 'Analíticas', href: '/analytics', icon: BarChart3 }

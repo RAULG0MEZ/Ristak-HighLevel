@@ -553,7 +553,8 @@ export async function getTrackingConfig(req, res) {
     res.json({
       trackingDomain,
       isConfigured,
-      hasHighLevel: !!(ghlConfig && ghlConfig.location_id && ghlConfig.api_token)
+      hasHighLevel: !!(ghlConfig && ghlConfig.location_id && ghlConfig.api_token),
+      showAnalytics: !!(ghlConfig && ghlConfig.show_analytics === 1)
     })
   } catch (error) {
     logger.error('Error obteniendo configuración de tracking:', error)
@@ -688,6 +689,40 @@ export async function configureTracking(req, res) {
     }
   } catch (error) {
     logger.error('Error configurando tracking:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+}
+
+/**
+ * Guardar preferencia de mostrar/ocultar Analytics
+ * POST /api/tracking/analytics-preference
+ */
+export async function setAnalyticsPreference(req, res) {
+  try {
+    const { showAnalytics } = req.body
+
+    if (typeof showAnalytics !== 'boolean') {
+      return res.status(400).json({ error: 'showAnalytics debe ser un booleano' })
+    }
+
+    // Obtener config actual
+    const ghlConfig = await getHighLevelConfig()
+
+    if (!ghlConfig || !ghlConfig.location_id) {
+      return res.status(400).json({ error: 'No hay configuración de HighLevel' })
+    }
+
+    // Actualizar la preferencia
+    await db.run(
+      'UPDATE highlevel_config SET show_analytics = ? WHERE location_id = ?',
+      [showAnalytics ? 1 : 0, ghlConfig.location_id]
+    )
+
+    logger.info(`Preferencia de Analytics actualizada a: ${showAnalytics}`)
+
+    res.json({ success: true, showAnalytics })
+  } catch (error) {
+    logger.error('Error guardando preferencia de Analytics:', error)
     res.status(500).json({ error: 'Internal server error' })
   }
 }

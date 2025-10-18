@@ -23,6 +23,8 @@ export const WebTracking: React.FC = () => {
   const [configuringTracking, setConfiguringTracking] = useState(false)
   const [isConfigured, setIsConfigured] = useState(false)
   const [hasHighLevel, setHasHighLevel] = useState(false)
+  const [showAnalytics, setShowAnalytics] = useState(false)
+  const [savingAnalyticsPref, setSavingAnalyticsPref] = useState(false)
 
   useEffect(() => {
     loadTrackingConfig()
@@ -36,6 +38,7 @@ export const WebTracking: React.FC = () => {
       setTrackingDomain(config.trackingDomain || '')
       setIsConfigured(config.isConfigured)
       setHasHighLevel(config.hasHighLevel)
+      setShowAnalytics(config.showAnalytics || false)
     } catch (error) {
       showToast('error', 'Error', 'No se pudo cargar la configuración del tracking')
     } finally {
@@ -104,6 +107,38 @@ export const WebTracking: React.FC = () => {
       setTimeout(() => setCopied(false), 2000)
     } catch (error) {
       showToast('error', 'Error', 'No se pudo copiar')
+    }
+  }
+
+  const handleToggleAnalytics = async () => {
+    setSavingAnalyticsPref(true)
+    try {
+      const newValue = !showAnalytics
+      const response = await fetch('/api/tracking/analytics-preference', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ showAnalytics: newValue })
+      })
+
+      if (!response.ok) {
+        throw new Error('Error al guardar preferencia')
+      }
+
+      setShowAnalytics(newValue)
+      showToast(
+        'success',
+        'Guardado',
+        newValue
+          ? 'La página de Analíticas ahora está visible en el menú'
+          : 'La página de Analíticas se ha ocultado del menú'
+      )
+
+      // Recargar la página para que el sidebar se actualice
+      setTimeout(() => window.location.reload(), 1000)
+    } catch (error) {
+      showToast('error', 'Error', 'No se pudo guardar la preferencia')
+    } finally {
+      setSavingAnalyticsPref(false)
     }
   }
 
@@ -231,6 +266,30 @@ export const WebTracking: React.FC = () => {
                       {trackingService.generateSnippet(trackingDomain)}
                     </pre>
                   </div>
+                </div>
+              </div>
+
+              {/* Switch para mostrar/ocultar Analytics */}
+              <div className={styles.formGroup} style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid var(--color-border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div>
+                    <label className={styles.formLabel} style={{ marginBottom: '4px' }}>
+                      Mostrar página de Analíticas
+                    </label>
+                    <p className={styles.formHint} style={{ marginTop: '4px' }}>
+                      Controla si la página de Analíticas aparece en el menú lateral
+                    </p>
+                  </div>
+                  <label className={styles.switchContainer} style={{ marginLeft: '16px' }}>
+                    <input
+                      type="checkbox"
+                      checked={showAnalytics}
+                      onChange={handleToggleAnalytics}
+                      disabled={savingAnalyticsPref}
+                      className={styles.switchInput}
+                    />
+                    <span className={styles.switchSlider}></span>
+                  </label>
                 </div>
               </div>
             </>

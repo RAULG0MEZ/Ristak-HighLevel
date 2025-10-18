@@ -4,7 +4,7 @@ import { Button } from '../Button';
 import { CalendarEvent } from '@/services/calendarsService';
 import { formatDate } from '@/utils/format';
 import styles from './AppointmentModal.module.css';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Search, Loader2, X } from 'lucide-react';
 
 interface AppointmentModalProps {
   isOpen: boolean;
@@ -17,6 +17,23 @@ interface AppointmentModalProps {
   defaultTitle?: string;
   onSave: (eventIdOrPayload: string | any, updates?: Partial<CalendarEvent>) => Promise<void>;
   onDelete?: (eventId: string) => Promise<void>;
+}
+
+interface Contact {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  firstName?: string;
+  lastName?: string;
+}
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  firstName?: string;
+  lastName?: string;
 }
 
 const STATUS_OPTIONS = [
@@ -53,7 +70,9 @@ const INITIAL_FORM_STATE = {
   endTime: '',
   notes: '',
   address: '',
-  timeZone: DEFAULT_TIMEZONE
+  timeZone: DEFAULT_TIMEZONE,
+  contactId: '',
+  assignedUserId: ''
 };
 
 const getTimeZoneParts = (date: Date, timeZone: string) => {
@@ -155,6 +174,124 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
   const [formData, setFormData] = useState(INITIAL_FORM_STATE);
   const isCreateMode = mode === 'create';
 
+  // DEBUG - Temporal
+  console.log('AppointmentModal - mode:', mode, 'isCreateMode:', isCreateMode, 'isOpen:', isOpen);
+
+  // Contact search
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchingContact, setSearchingContact] = useState(false);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [showContactDropdown, setShowContactDropdown] = useState(false);
+
+  // Users (assigned users)
+  const [users, setUsers] = useState<User[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+
+  const loadUsers = async () => {
+    setLoadingUsers(true);
+    try {
+      const response = await fetch('/api/highlevel/users');
+      if (!response.ok) throw new Error('Error al cargar usuarios');
+      const data = await response.json();
+      setUsers(data.users || []);
+    } catch (error) {
+      setUsers([]);
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  const loadContactById = async (contactId: string) => {
+    try {
+      const response = await fetch(`/api/highlevel/contacts/${contactId}`);
+      if (!response.ok) throw new Error('Error al cargar contacto');
+      const data = await response.json();
+      const contact = data.contact;
+      if (contact) {
+        setSelectedContact({
+          id: contact.id,
+          name: contact.name || 'Sin nombre',
+          email: contact.email || '',
+          phone: contact.phone || '',
+          firstName: contact.firstName || '',
+          lastName: contact.lastName || ''
+        });
+      }
+    } catch (error) {
+      // Error silencioso
+    }
+  };
+
+  const handleSelectContact = (contact: Contact) => {
+    setSelectedContact(contact);
+    setFormData({ ...formData, contactId: contact.id });
+    setSearchQuery('');
+    setShowContactDropdown(false);
+    setContacts([]);
+  };
+
+  const handleClearContact = () => {
+    setSelectedContact(null);
+    setFormData({ ...formData, contactId: '' });
+    setSearchQuery('');
+  };
+
+  // Cargar usuarios al abrir el modal en modo crear
+  useEffect(() => {
+    if (isOpen && isCreateMode) {
+      console.log('🔥 Cargando usuarios porque isOpen:', isOpen, 'isCreateMode:', isCreateMode);
+      loadUsers();
+    }
+  }, [isOpen, isCreateMode]);
+
+  // Búsqueda de contactos
+  useEffect(() => {
+    if (searchQuery.length < 2) {
+      setContacts([]);
+      setShowContactDropdown(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setSearchingContact(true);
+      try {
+        const response = await fetch('/api/highlevel/contacts/search', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            query: searchQuery,
+            limit: 10
+          })
+        });
+        if (!response.ok) {
+          throw new Error('Error al buscar contactos');
+        }
+        const data = await response.json();
+
+        const formattedContacts = (data.contacts || []).map((contact: any) => ({
+          id: contact.id,
+          name: contact.name || 'Sin nombre',
+          email: contact.email || '',
+          phone: contact.phone || '',
+          firstName: contact.firstName || '',
+          lastName: contact.lastName || ''
+        }));
+
+        setContacts(formattedContacts);
+        setShowContactDropdown(true);
+      } catch (error) {
+        setContacts([]);
+      } finally {
+        setSearchingContact(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   useEffect(() => {
     if (event && !isCreateMode) {
       // Modo edición/vista: cargar datos del evento
@@ -169,8 +306,15 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
           event.timeZone ||
           (event as any)?.timeZone ||
           (event as any)?.timezone ||
-          DEFAULT_TIMEZONE
+          DEFAULT_TIMEZONE,
+        contactId: (event as any)?.contactId || '',
+        assignedUserId: (event as any)?.assignedUserId || ''
       });
+
+      // Si hay contactId, cargar el contacto
+      if ((event as any)?.contactId) {
+        loadContactById((event as any).contactId);
+      }
     } else if (isCreateMode && isOpen) {
       // Modo crear: usar defaults
       setFormData({
@@ -180,10 +324,16 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
         endTime: defaultEnd ? toLocalInputValue(defaultEnd, defaultTimeZone || DEFAULT_TIMEZONE) : '',
         notes: '',
         address: '',
-        timeZone: defaultTimeZone || DEFAULT_TIMEZONE
+        timeZone: defaultTimeZone || DEFAULT_TIMEZONE,
+        contactId: '',
+        assignedUserId: ''
       });
+      setSelectedContact(null);
+      setSearchQuery('');
     } else if (!isOpen) {
       setFormData(INITIAL_FORM_STATE);
+      setSelectedContact(null);
+      setSearchQuery('');
     }
   }, [event, isOpen, isCreateMode, defaultStart, defaultEnd, defaultTimeZone, defaultTitle]);
 
@@ -193,7 +343,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
 
       if (isCreateMode) {
         // Modo crear: enviar payload completo
-        const payload = {
+        const payload: any = {
           title: formData.title.trim(),
           appointmentStatus: formData.appointmentStatus,
           notes: formData.notes,
@@ -202,6 +352,16 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
           startTime: '',
           endTime: ''
         };
+
+        // Agregar contactId si está seleccionado
+        if (formData.contactId) {
+          payload.contactId = formData.contactId;
+        }
+
+        // Agregar assignedUserId si está seleccionado
+        if (formData.assignedUserId) {
+          payload.assignedUserId = formData.assignedUserId;
+        }
 
         if (formData.startTime) {
           const startIso = convertLocalInputToISO(formData.startTime, formData.timeZone);
@@ -331,6 +491,91 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
         </div>
 
         <div className={styles.form}>
+          {/* Búsqueda de contacto (solo en modo crear) */}
+          {isCreateMode && (
+            <div className={styles.field}>
+              <label className={styles.label}>Cliente (opcional)</label>
+
+              {selectedContact ? (
+                <div className={styles.selectedContact}>
+                  <div className={styles.contactInfo}>
+                    <p className={styles.contactName}>{selectedContact.name || 'Sin nombre'}</p>
+                    <p className={styles.contactDetail}>{selectedContact.email || selectedContact.phone}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleClearContact}
+                    className={styles.clearButton}
+                    title="Cambiar contacto"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              ) : (
+                <div className={styles.searchWrapper}>
+                  <div className={styles.searchInput}>
+                    <Search size={16} className={styles.searchIcon} />
+                    <input
+                      type="text"
+                      placeholder="Buscar por nombre, email o teléfono..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className={styles.input}
+                    />
+                    {searchingContact && <Loader2 size={16} className={styles.loadingIcon} />}
+                  </div>
+
+                  {showContactDropdown && (
+                    <div className={styles.dropdown}>
+                      {contacts.length > 0 ? (
+                        contacts.map((contact) => (
+                          <button
+                            key={contact.id}
+                            type="button"
+                            className={styles.dropdownItem}
+                            onClick={() => handleSelectContact(contact)}
+                          >
+                            <p className={styles.dropdownName}>{contact.name || 'Sin nombre'}</p>
+                            <p className={styles.dropdownDetail}>
+                              {contact.email || contact.phone || 'Sin información de contacto'}
+                            </p>
+                          </button>
+                        ))
+                      ) : (
+                        <div className={styles.dropdownEmpty}>
+                          No se encontraron contactos
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Usuario asignado (solo en modo crear) */}
+          {isCreateMode && users.length > 0 && (
+            <div className={styles.field}>
+              <label className={styles.label} htmlFor="assignedUser">
+                Usuario asignado (opcional)
+              </label>
+              <select
+                id="assignedUser"
+                className={styles.select}
+                value={formData.assignedUserId}
+                onChange={(e) => setFormData({ ...formData, assignedUserId: e.target.value })}
+                disabled={loadingUsers}
+              >
+                <option value="">Sin asignar</option>
+                {users.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.name || user.email || `${user.firstName} ${user.lastName}`.trim()}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div className={styles.field}>
             <label className={styles.label} htmlFor="title">
               Título de la cita

@@ -220,9 +220,14 @@ GET    /api/calendars                   # Obtener todos los calendarios
 GET    /api/calendars/:id               # Obtener calendario específico
 GET    /api/calendars/events            # Obtener eventos/citas de un rango
 GET    /api/calendars/:id/free-slots    # Obtener slots disponibles
-POST   /api/calendars/appointments      # Crear nueva cita
+POST   /api/calendars/appointments      # Crear nueva cita (acepta contactId y assignedUserId opcionales)
 PUT    /api/calendars/appointments/:id  # Actualizar cita
 DELETE /api/calendars/events/:id        # Eliminar evento
+
+# Contactos y Usuarios (HighLevel)
+POST   /api/highlevel/contacts/search   # Buscar contactos en tiempo real
+GET    /api/highlevel/contacts/:id      # Obtener contacto por ID
+GET    /api/highlevel/users             # Obtener usuarios del location
 
 # Pixel de Tracking (Auto-configuración)
 GET    /snip.js                         # Pixel JavaScript (dinámico por dominio)
@@ -375,9 +380,15 @@ cd frontend && npm run build
   - KPIs de citas: pendientes, canceladas, confirmadas, reprogramadas
   - Lista de próximas citas ordenadas cronológicamente
   - Código de colores según estado de cita (confirmada, pendiente, cancelada, etc.)
+  - **Creación de citas con búsqueda de contacto y asignación de usuario**:
+    - Modal de creación con búsqueda en tiempo real de contactos (similar a RecordPaymentModal)
+    - Campo de búsqueda de contacto por nombre, email o teléfono
+    - Selector de usuario asignado (assignedUserId) - carga usuarios del location
+    - Ambos campos son opcionales (puedes crear citas sin contacto o sin asignar)
+    - Backend endpoints: GET /api/highlevel/contacts/:id, GET /api/highlevel/users
   - Integración completa con API de Calendarios de HighLevel
-  - Backend endpoints: GET /api/calendars, GET /api/calendars/:id, GET /api/calendars/events, GET /api/calendars/:id/free-slots
-  - Servicios: highlevelCalendarService.js (backend), calendarsService.ts (frontend)
+  - Backend endpoints: GET /api/calendars, GET /api/calendars/:id, GET /api/calendars/events, GET /api/calendars/:id/free-slots, POST /api/calendars/appointments (con contactId y assignedUserId opcionales)
+  - Servicios: highlevelCalendarService.js (backend), calendarsService.ts (frontend), ghlClient.js (método getLocationUsers)
   - Ruta: /appointments
   - ⚠️ Nota: Requiere locationId y accessToken de HighLevel configurados
   - ⚠️ Vista semana/día en desarrollo (placeholder implementado)
@@ -466,15 +477,20 @@ cd frontend && npm run build
 ## 📅 ÚLTIMA ACTUALIZACIÓN
 
 **Fecha**: 2025-10-18
-**Versión**: 1.8.3
+**Versión**: 1.9.0
 **Último cambio estructural**:
-- **Fix crítico: Visibilidad de chips y badges en dark mode con CSS Modules**
-  - Corregido selector CSS usando `:global(body.dark)` para funcionar con CSS Modules
-  - Los CSS Modules hashean las clases, por eso `body.dark .success` no funcionaba
-  - Ahora usa `:global(body.dark) .success` que compila a `body.dark ._success_hash`
-  - Aumentado contraste de fondos y texto blanco en dark mode
-  - Archivos: Badge.module.css, Appointments.module.css
-  - Ahora todos los chips son legibles en modo oscuro
+- **Feature: Creación de citas con contacto y usuario asignado**
+  - Agregada búsqueda de contactos en AppointmentModal (igual que RecordPaymentModal)
+  - Agregado selector de usuario asignado al crear citas
+  - Nuevo endpoint GET /api/highlevel/users para obtener usuarios del location
+  - Nuevo endpoint GET /api/highlevel/contacts/:id para obtener contacto individual
+  - Backend: highlevelController.js (getLocationUsers, getContactById)
+  - Backend: ghlClient.js (método getLocationUsers en clase GHLClient)
+  - Backend: calendars.routes.js actualizado para aceptar contactId y assignedUserId
+  - Frontend: AppointmentModal.tsx con campos de búsqueda y selección
+  - Frontend: AppointmentModal.module.css con estilos de búsqueda y dropdown
+  - Ambos campos son opcionales (API de HighLevel permite crear citas sin contacto)
+  - Archivos modificados: AppointmentModal.tsx, AppointmentModal.module.css, highlevelController.js, highlevel.routes.js, ghlClient.js
 
 ---
 

@@ -6,7 +6,8 @@ import {
   getSessionsHandler,
   getSessionHandler,
   getTrackingConfig,
-  configureTracking
+  configureTracking,
+  setAnalyticsPreference
 } from '../controllers/trackingController.js'
 
 const router = express.Router()
@@ -27,5 +28,8 @@ router.get('/sessions/:id', getSessionHandler)
 // Configuración automática
 router.get('/config', getTrackingConfig)
 router.post('/configure', configureTracking)
+
+// Preferencia de Analytics
+router.post('/analytics-preference', setAnalyticsPreference)
 
 export default router
