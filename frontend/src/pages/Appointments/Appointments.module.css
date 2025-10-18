@@ -1155,6 +1155,7 @@
   border: 1.5px solid var(--color-error-500);
   box-shadow: none;
   white-space: nowrap;
+  z-index: 11;
 }
 
 :global(body.dark) .currentTimeLabel {
