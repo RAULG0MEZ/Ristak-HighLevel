@@ -1112,13 +1112,57 @@ export const Appointments: React.FC = () => {
                                 top: `${top}%`,
                                 height: `${height}%`
                               }}
-                              title={`${event.title} - ${formatTime12h(event.startTime)} a ${formatTime12h(event.endTime)}`}
                               onClick={() => handleEventClick(event)}
+                              onMouseEnter={(e) => {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                setHoveredEventId(event.id);
+                                setTooltipPosition({
+                                  top: rect.top + window.scrollY - 8,
+                                  left: rect.left + rect.width / 2
+                                });
+                              }}
+                              onMouseLeave={() => {
+                                setHoveredEventId(null);
+                                setTooltipPosition(null);
+                              }}
                             >
                               <div className={styles.weekEventTime}>
                                 {formatTime12h(event.startTime)}
                               </div>
                               <div className={styles.weekEventTitle}>{event.title}</div>
+
+                              {/* Tooltip */}
+                              {hoveredEventId === event.id && tooltipPosition && (
+                                <div
+                                  className={styles.eventTooltip}
+                                  style={{
+                                    position: 'fixed',
+                                    top: `${tooltipPosition.top}px`,
+                                    left: `${tooltipPosition.left}px`,
+                                    transform: 'translate(-50%, -100%)'
+                                  }}
+                                >
+                                  <div className={styles.tooltipTitle}>
+                                    {event.title || '(Sin título)'}
+                                  </div>
+                                  <div className={styles.tooltipTime}>
+                                    {formatTime12h(event.startTime)} - {formatTime12h(event.endTime)}
+                                  </div>
+                                  <div className={styles.tooltipStatus}>
+                                    Estado: {event.appointmentStatus}
+                                  </div>
+                                  {event.address && (
+                                    <div className={styles.tooltipAddress}>
+                                      📍 {event.address}
+                                    </div>
+                                  )}
+                                  {event.notes && (
+                                    <div className={styles.tooltipNotes}>
+                                      {event.notes}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           );
                         })}
