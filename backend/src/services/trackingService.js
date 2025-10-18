@@ -177,16 +177,18 @@ export async function createSession(sessionData) {
   // Validar si el contact_id existe en la DB antes de insertarlo
   let validContactId = null
   let validFullName = null
+  let validEmail = null
 
   if (contact_id) {
     try {
       const contact = await db.get(
-        'SELECT id, full_name FROM contacts WHERE id = ?',
+        'SELECT id, full_name, email FROM contacts WHERE id = ?',
         [contact_id]
       )
       if (contact) {
         validContactId = contact.id
         validFullName = contact.full_name || full_name
+        validEmail = contact.email || null
       } else {
         logger.warn(`Contact ID ${contact_id} del localStorage no existe en DB - se guardará sin contact_id`)
       }
@@ -202,6 +204,7 @@ export async function createSession(sessionData) {
         visitor_id,
         contact_id,
         full_name,
+        email,
         event_name,
         started_at,
         last_event_at,
@@ -254,17 +257,19 @@ export async function createSession(sessionData) {
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?
+        ?, ?, ?, ?
       )
       ON CONFLICT (session_id) DO UPDATE SET
         last_event_at = EXCLUDED.last_event_at,
         contact_id = COALESCE(EXCLUDED.contact_id, sessions.contact_id),
-        full_name = COALESCE(EXCLUDED.full_name, sessions.full_name)
+        full_name = COALESCE(EXCLUDED.full_name, sessions.full_name),
+        email = COALESCE(EXCLUDED.email, sessions.email)
     `, [
       session_id,
       visitor_id,
       validContactId,
       validFullName,
+      validEmail,
       event_name,
       startedAt,
       startedAt,
@@ -331,13 +336,17 @@ export async function createSession(sessionData) {
  */
 export async function linkVisitorToContact(visitor_id, contact_id, full_name) {
   try {
+    // Obtener email del contacto
+    const contact = await db.get('SELECT email FROM contacts WHERE id = ?', [contact_id])
+    const email = contact?.email || null
+
     // 1. Actualizar TODOS los registros de sessions que tienen este visitor_id
-    // para agregarles el contact_id y full_name
+    // para agregarles el contact_id, full_name y email
     const result = await db.run(`
       UPDATE sessions
-      SET contact_id = ?, full_name = ?
+      SET contact_id = ?, full_name = ?, email = ?
       WHERE visitor_id = ? AND contact_id IS NULL
-    `, [contact_id, full_name, visitor_id])
+    `, [contact_id, full_name, email, visitor_id])
 
     logger.info(`Vinculados ${result.changes} registros históricos de visitor ${visitor_id} a contact ${contact_id}`)
 
