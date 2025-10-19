@@ -573,65 +573,23 @@ async function syncHighLevelAppointments(locationId, apiToken) {
 
   const progressUpdater = total => updateAppointments(0, total, 'running', `Obteniendo citas... ${total} encontradas`)
 
-  let fallbackNeeded = false
+  // El endpoint /calendars/calendar-events no existe en HighLevel API v2
+  // Usar directamente el método correcto: obtener calendarios primero
+  // y luego las citas de cada calendario usando /calendars/events con calendarId
 
-  try {
-    allEventsRaw = await collectPaginatedData({
-      initialUrl: buildHighLevelUrl('/calendars/calendar-events', {
-        locationId,
-        startTime,
-        endTime,
-        includeAll: 'true',
-        limit
-      }),
-      headers,
-      limit,
-      label: 'citas',
-      extractItems: data => Array.isArray(data.calendarEvents) ? data.calendarEvents : Array.isArray(data.events) ? data.events : [],
-      rewriteUrlWithToken: token => buildHighLevelUrl('/calendars/calendar-events', {
-        locationId,
-        startTime,
-        endTime,
-        includeAll: 'true',
-        limit,
-        pageToken: token
-      }),
-      rewriteUrlWithOffset: offset => buildHighLevelUrl('/calendars/calendar-events', {
-        locationId,
-        startTime,
-        endTime,
-        includeAll: 'true',
-        limit,
-        offset
-      }),
-      onPage: ({ page, pageItems, total }) => {
-        logger.info(`Página ${page}: ${pageItems.length} citas (total acumulado: ${total})`)
-        progressUpdater(total)
-      }
-    })
-  } catch (error) {
-    logger.warn(`No fue posible usar /calendars/calendar-events (${error.status || 'sin código'}): ${error.message}`)
-    fallbackNeeded = true
-  }
+  logger.info('Usando método correcto: obteniendo calendarios y luego sus eventos...')
 
-  if (!fallbackNeeded && allEventsRaw.length === 0) {
-    logger.warn('El endpoint /calendars/calendar-events no devolvió citas, intentando fallback por calendario...')
-    fallbackNeeded = true
-  }
-
-  if (fallbackNeeded) {
-    const fallback = await fetchCalendarEventsByCalendar({
-      locationId,
-      apiToken,
-      headers,
-      startTime,
-      endTime,
-      limit,
-      onProgress: progressUpdater,
-      initialTotal: allEventsRaw.length
-    })
-    allEventsRaw = fallback.events
-  }
+  const fetchResult = await fetchCalendarEventsByCalendar({
+    locationId,
+    apiToken,
+    headers,
+    startTime,
+    endTime,
+    limit,
+    onProgress: progressUpdater,
+    initialTotal: 0
+  })
+  allEventsRaw = fetchResult.events
 
   logger.info(`Total de citas obtenidas: ${allEventsRaw.length}`)
   updateAppointments(0, allEventsRaw.length, 'running', `Guardando ${allEventsRaw.length} citas en base de datos...`)

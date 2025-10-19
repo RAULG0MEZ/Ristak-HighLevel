@@ -440,25 +440,32 @@ export const getSpendOverTime = async (req, res) => {
       `;
     const spendParams = [start, end];
 
-    // Query de ingresos (adaptado a PostgreSQL o SQLite)
+    // Query de ingresos ATRIBUIDOS (solo contactos con ad_id)
+    // Necesitamos hacer JOIN con contacts para verificar que tienen ad_id
     const revenueQuery = usePostgres
       ? `
         SELECT
-          TO_CHAR(date::date, 'YYYY-MM-DD') as day,
-          SUM(amount) as revenue
-        FROM payments
-        WHERE status = 'succeeded'
-          AND date::date >= $1::date AND date::date < ($2::date + INTERVAL '1 day')
+          TO_CHAR(p.date::date, 'YYYY-MM-DD') as day,
+          SUM(p.amount) as revenue
+        FROM payments p
+        INNER JOIN contacts c ON p.contact_id = c.id
+        WHERE p.status = 'succeeded'
+          AND c.ad_id IS NOT NULL
+          AND c.ad_id != ''
+          AND p.date::date >= $1::date AND p.date::date < ($2::date + INTERVAL '1 day')
         GROUP BY day
         ORDER BY day ASC
       `
       : `
         SELECT
-          strftime('%Y-%m-%d', date) as day,
-          SUM(amount) as revenue
-        FROM payments
-        WHERE status = 'succeeded'
-          AND date >= ? AND date < DATE(?, '+1 day')
+          strftime('%Y-%m-%d', p.date) as day,
+          SUM(p.amount) as revenue
+        FROM payments p
+        INNER JOIN contacts c ON p.contact_id = c.id
+        WHERE p.status = 'succeeded'
+          AND c.ad_id IS NOT NULL
+          AND c.ad_id != ''
+          AND p.date >= ? AND p.date < DATE(?, '+1 day')
         GROUP BY day
         ORDER BY day ASC
       `;

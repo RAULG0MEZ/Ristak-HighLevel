@@ -1,11 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { KpiCard, Card, Button, Table, DateRangePicker, PageContainer, TabList, Badge, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, ContactDetailsModal } from '@/components/common'
 import type { Column, BadgeVariant } from '@/components/common'
 import {
-  Plus,
-  Info,
   Users,
-  Calendar,
   User,
   DollarSign,
   TrendingUp,
@@ -14,8 +12,7 @@ import {
   Trash2,
   MoreVertical,
   Eye,
-  Mail,
-  Tag
+  Mail
 } from 'lucide-react'
 import { useDateRange } from '@/contexts/DateRangeContext'
 import { useLabels } from '@/contexts/LabelsContext'
@@ -301,6 +298,24 @@ export const Contacts: React.FC = () => {
 
     const createdAt = contactData.createdAt ?? new Date().toISOString()
 
+    const payments = contactPayments.length > 0
+      ? contactPayments.map((payment, index) => ({
+        id: String(payment.id ?? `${contactData.id}-payment-${index}`),
+        amount: Number(payment.amount ?? 0),
+        status: payment.status ?? undefined,
+        date: payment.date ?? createdAt
+      }))
+      : undefined
+
+    const appointments = contactAppointments.length > 0
+      ? contactAppointments.map((appointment, index) => ({
+        id: String(appointment.id ?? `${contactData.id}-appointment-${index}`),
+        title: appointment.title ?? null,
+        status: appointment.appointment_status ?? appointment.status ?? null,
+        start_time: appointment.start_time
+      }))
+      : undefined
+
     return [{
       id: contactData.id,
       name: contactData.name,
@@ -309,18 +324,8 @@ export const Contacts: React.FC = () => {
       created_at: createdAt,
       ltv: contactData.ltv,
       purchases: contactData.purchases,
-      payments: contactPayments.map((payment, index) => ({
-        id: String(payment.id ?? `${contactData.id}-payment-${index}`),
-        amount: Number(payment.amount ?? 0),
-        status: payment.status ?? undefined,
-        date: payment.date ?? createdAt
-      })),
-      appointments: contactAppointments.map((appointment, index) => ({
-        id: String(appointment.id ?? `${contactData.id}-appointment-${index}`),
-        title: appointment.title ?? null,
-        status: appointment.appointment_status ?? appointment.status ?? null,
-        start_time: appointment.start_time
-      })),
+      payments,
+      appointments,
       source: contactData.source,
       ad_name: contactData.ad_name,
       ad_id: contactData.ad_id
