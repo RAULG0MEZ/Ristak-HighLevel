@@ -227,6 +227,7 @@ export const Campaigns: React.FC = () => {
 
       // Fetch funnel metrics
       const funnelMetricsRaw = await campaignsService.getFunnelMetrics(startDate, endDate)
+      console.log('Funnel metrics raw data:', funnelMetricsRaw)
 
       // Process funnel metrics into the format needed for each chart
       const formattedVisitorsData = funnelMetricsRaw.map((item, index) => ({
@@ -246,6 +247,10 @@ export const Campaigns: React.FC = () => {
         value: item.appointments,  // Citas
         value2: item.sales         // Ventas
       }))
+
+      console.log('Formatted visitors data:', formattedVisitorsData)
+      console.log('Formatted leads data:', formattedLeadsData)
+      console.log('Formatted appointments data:', formattedAppointmentsData)
 
       setVisitorsData(formattedVisitorsData || [])
       setLeadsData(formattedLeadsData || [])
