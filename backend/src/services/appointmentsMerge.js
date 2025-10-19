@@ -160,15 +160,15 @@ export async function loadAppointmentsFromDB(filters = {}) {
     const query = `
       SELECT
         id,
-        contact_id as contactId,
-        calendar_id as calendarId,
-        location_id as locationId,
+        contact_id as "contactId",
+        calendar_id as "calendarId",
+        location_id as "locationId",
         title,
         status,
-        start_time as startTime,
-        end_time as endTime,
-        date_added as dateAdded,
-        date_updated as dateUpdated
+        start_time as "startTime",
+        end_time as "endTime",
+        date_added as "dateAdded",
+        date_updated as "dateUpdated"
       FROM appointments
       ${whereClause}
     `
