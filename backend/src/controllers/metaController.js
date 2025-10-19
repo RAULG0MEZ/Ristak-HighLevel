@@ -528,28 +528,39 @@ export const getSpendOverTime = async (req, res) => {
 
     // Query de ingresos ATRIBUIDOS basado en fecha de CREACIÓN del contacto y su LTV total
     // Usamos la fecha cuando el contacto llegó (created_at) y sumamos su valor total acumulado (total_paid)
+    // VALIDACIÓN: Solo cuenta si el anuncio EXISTIÓ en Meta ese mismo día
     const revenueQuery = usePostgres
       ? `
         SELECT
-          TO_CHAR(created_at::date, 'YYYY-MM-DD') as day,
-          SUM(total_paid) as revenue
-        FROM contacts
-        WHERE attribution_ad_id IS NOT NULL
-          AND attribution_ad_id != ''
-          AND created_at::date >= $1::date
-          AND created_at::date < ($2::date + INTERVAL '1 day')
+          TO_CHAR(c.created_at::date, 'YYYY-MM-DD') as day,
+          SUM(c.total_paid) as revenue
+        FROM contacts c
+        WHERE c.attribution_ad_id IS NOT NULL
+          AND c.attribution_ad_id != ''
+          AND c.created_at::date >= $1::date
+          AND c.created_at::date < ($2::date + INTERVAL '1 day')
+          AND EXISTS (
+            SELECT 1 FROM meta_ads ma
+            WHERE ma.ad_id = c.attribution_ad_id
+              AND ma.date::date = c.created_at::date
+          )
         GROUP BY day
         ORDER BY day ASC
       `
       : `
         SELECT
-          strftime('%Y-%m-%d', created_at) as day,
-          SUM(total_paid) as revenue
-        FROM contacts
-        WHERE attribution_ad_id IS NOT NULL
-          AND attribution_ad_id != ''
-          AND date(created_at) >= date(?)
-          AND date(created_at) < date(?, '+1 day')
+          strftime('%Y-%m-%d', c.created_at) as day,
+          SUM(c.total_paid) as revenue
+        FROM contacts c
+        WHERE c.attribution_ad_id IS NOT NULL
+          AND c.attribution_ad_id != ''
+          AND date(c.created_at) >= date(?)
+          AND date(c.created_at) < date(?, '+1 day')
+          AND EXISTS (
+            SELECT 1 FROM meta_ads ma
+            WHERE ma.ad_id = c.attribution_ad_id
+              AND DATE(ma.date) = DATE(c.created_at)
+          )
         GROUP BY day
         ORDER BY day ASC
       `;
