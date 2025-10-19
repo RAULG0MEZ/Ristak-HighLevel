@@ -665,23 +665,47 @@ git log -1
   - ✅ **Funcionalidad**: Asignación funciona perfectamente aunque falte el nombre pretty
   - Archivos: ghlClient.js, highlevelController.js, highlevel.routes.js, AppointmentModal.tsx
   - Script de prueba: test-round-robin.js para debugging
+- ✓ **Modales con datos obsoletos al cambiar fechas (2025-10-18)**:
+  - Bug crítico: Al cambiar dateRange, los modales mantenían datos de fechas anteriores
+  - Root cause: Table.tsx cacheaba los primeros render callbacks de columnas (stale closures)
+  - Fix en `Table.tsx:89`: useEffect recomputa `processedColumns` cuando cambian `[columns, savedLayout]`
+  - Ahora los callbacks de modal se sincronizan con el estado actual automáticamente
+  - Afectaba: Campaigns.tsx y Reports.tsx (modales de contactos, visitantes, citas)
+  - Solución adicional: useEffect en páginas que limpia y recarga datos de modales al cambiar dateRange
+  - Archivos: Table.tsx, Campaigns.tsx, Reports.tsx
+  - Sin este fix: usuario cambia fechas → tabla actualiza números → click en número → modal muestra datos viejos
+- ✓ **Logs de debugging eliminados (2025-10-18)**:
+  - Removidos todos los logs con emojis (🔵, 🟡, 🟠, 🔴, 🟢) y prefijos de debug
+  - Archivos limpiados: analyticsService.js, metaController.js, trackingController.js
+  - Eliminados ~190 líneas de código de debugging
+  - Mantenido solo logger para errores y eventos importantes
+  - App ahora production-ready sin logs innecesarios
+- ✓ **Números en badges de modales eliminados (2025-10-18)**:
+  - Regla: Solo mostrar monto total pagado si es cliente, NUNCA otros números en badges
+  - ContactDetailsModal: Eliminado LTV de lista y tarjeta "Pagos" (mantenido "Valor Total")
+  - VisitorDetailsModal: Eliminado LTV de lista de visitantes
+  - Badges ahora solo muestran texto: "Cliente", "Agendó cita", "Lead"
+  - Únicos números permitidos: monto en pesos del cliente en sección de métricas/detalles
 
 ---
 
 ## 📅 ÚLTIMA ACTUALIZACIÓN
 
 **Fecha**: 2025-10-18
-**Versión**: 1.14.0
-**Último cambio estructural**:
-- **Sistema Híbrido de Configuración (cache + DB)**
-  - Implementado sistema centralizado para toda la configuración de la app
-  - LocalStorage como cache (lectura instantánea) + PostgreSQL como fuente de verdad
-  - Hooks: useAppConfig(), useAppConfigs(), useTableConfig()
-  - Endpoints: GET/POST/DELETE /api/config
-  - Migradas todas las preferencias al nuevo sistema
-  - Ventajas: rápido, persistente, sincronizado entre dispositivos, resiliente
-  - Deprecado: utils/tableStorage.ts (usar useTableConfig hook)
-  - Archivos: configController.js, config.routes.js, hooks/useAppConfig.ts
+**Versión**: 1.15.0
+**Últimos cambios críticos**:
+- **Fix: Modales con datos obsoletos al cambiar fechas**
+  - Problema: Table.tsx cacheaba render callbacks (stale closures)
+  - Solución: useEffect recomputa columnas cuando cambian dependencias
+  - Archivos: Table.tsx:89, Campaigns.tsx, Reports.tsx
+  - Impacto: Modales ahora muestran datos correctos sin reload
+- **Cleanup: Logs de debugging eliminados**
+  - Removidos ~190 líneas de logs con emojis y prefijos debug
+  - Archivos: analyticsService.js, metaController.js, trackingController.js
+- **UX: Badges sin números en modales**
+  - Regla: Solo mostrar monto total pagado en clientes
+  - Eliminado LTV y contadores de badges
+  - Archivos: ContactDetailsModal.tsx, VisitorDetailsModal.tsx
 
 ---
 
