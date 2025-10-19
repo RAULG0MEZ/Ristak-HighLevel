@@ -907,7 +907,11 @@ export const getContactsByType = async (req, res) => {
       const payments = paymentsMap.get(contact.id) || [];
       const appointments = appointmentsMap.get(contact.id) || [];
       const firstSession = firstSessionMap.get(contact.id) || null;
-      const totalFromPayments = payments.reduce((sum, payment) => sum + payment.amount, 0);
+      // CRÍTICO: Solo sumar pagos exitosos, NO incluir refunded/cancelled
+      const validStatuses = ['succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success'];
+      const totalFromPayments = payments
+        .filter(payment => validStatuses.includes(payment.status?.toLowerCase()))
+        .reduce((sum, payment) => sum + payment.amount, 0);
       const totalPaid = contact.total_paid ? Number(contact.total_paid) : totalFromPayments;
 
       return {

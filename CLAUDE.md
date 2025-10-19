@@ -29,6 +29,20 @@
    - ✅ En su lugar: Configuración manual con tokens de acceso propios de cada usuario
    - ✅ Documentación clara de cómo obtener sus propias credenciales
    - 🎯 Aplica a: Meta Ads, Google Ads, TikTok Ads, cualquier plataforma de anuncios
+11. **💰 NUNCA sumar pagos reembolsados o cancelados como ingresos** [CRÍTICO]
+   - ❌ PROHIBIDO: Sumar payments sin filtrar por status
+   - ❌ NO CONTAR: 'refunded', 'cancelled', 'void', 'failed', 'pending'
+   - ✅ SOLO CONTAR: 'succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success'
+   - 🎯 Filtrar en:
+     - Queries SQL: `WHERE LOWER(status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')`
+     - JavaScript/TypeScript: `.filter(p => validStatuses.includes(p.status?.toLowerCase()))`
+   - 📍 Aplica a:
+     - `total_paid` en contactos (tabla contacts y cálculos)
+     - LTV/Revenue en métricas y dashboards
+     - Totales en modales de contactos
+     - Reportes de transacciones
+     - Cualquier suma de amounts de pagos
+   - 🔧 Constante en backend: `SUCCESS_PAYMENT_STATUSES` (analyticsService.js:53)
 
 ### �� FILOSOFÍA DE CÓDIGO
 - **Limpio > Rápido**: Preferir código mantenible sobre optimizaciones prematuras
@@ -761,8 +775,23 @@ git log -1
 ## 📅 ÚLTIMA ACTUALIZACIÓN
 
 **Fecha**: 2025-10-19
-**Versión**: 1.19.0
+**Versión**: 1.20.0
 **Últimos cambios críticos**:
+- **Fix CRÍTICO: Pagos reembolsados/cancelados se sumaban como ingresos (2025-10-19)**
+  - **Bug crítico detectado**: Toda la app sumaba pagos sin filtrar por status
+  - **Problema**: Reembolsos y cancelaciones se contaban como ingresos, inflando métricas
+  - **Impacto**: LTV, Revenue, total_paid, métricas de campañas y modales mostraban datos incorrectos
+  - **Fix aplicado en 4 archivos**:
+    1. `invoicesSyncService.js`: Función updateContactStats() ahora filtra por status exitoso
+    2. `metaController.js`: totalFromPayments filtra por validStatuses antes de reduce
+    3. `analyticsService.js`: buildContactsList() filtra payments por status exitoso
+    4. `ContactDetailsModal.tsx`: payments y refunds separados correctamente por status
+  - **Regla agregada**: Mandamiento #11 en CLAUDE.md
+  - **Constante estandarizada**: SUCCESS_PAYMENT_STATUSES en analyticsService.js
+  - **Status válidos**: 'succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success'
+  - **Status excluidos**: 'refunded', 'cancelled', 'void', 'failed', 'pending'
+  - **Resultado**: Todas las métricas de dinero ahora son precisas y confiables
+
 - **Feature: Configuración de Calendarios para Atribución (2025-10-19)**
   - **Nueva funcionalidad**: Página de configuración en Settings para gestionar calendarios
   - **Calendario Predeterminado**: Se selecciona automáticamente al abrir Appointments

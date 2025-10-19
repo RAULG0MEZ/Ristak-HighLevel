@@ -234,13 +234,19 @@ export function ContactDetailsModal({
     [labels]
   )
 
-  // Separar pagos de reembolsos
+  // Separar pagos exitosos de reembolsos/cancelados
+  // CRÍTICO: Solo pagos con status exitoso, NO incluir refunded/cancelled
+  const validPaymentStatuses = ['succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success']
   const payments = useMemo(() => {
-    return selectedContact?.payments?.filter(p => p.amount > 0) || []
+    return selectedContact?.payments?.filter(p =>
+      p.amount > 0 && validPaymentStatuses.includes(p.status?.toLowerCase() || '')
+    ) || []
   }, [selectedContact])
 
   const refunds = useMemo(() => {
-    return selectedContact?.payments?.filter(p => p.amount < 0) || []
+    return selectedContact?.payments?.filter(p =>
+      p.amount < 0 || p.status?.toLowerCase() === 'refunded' || p.status?.toLowerCase() === 'cancelled'
+    ) || []
   }, [selectedContact])
 
   return (
