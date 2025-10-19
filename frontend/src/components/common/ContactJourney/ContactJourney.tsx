@@ -64,11 +64,18 @@ const getEventDescription = (event: JourneyEvent): string => {
   const { type, data } = event
 
   if (type === 'page_visit') {
-    // Solo mostrar la fuente/plataforma
-    if (data.source_platform || data.site_source_name) {
-      return data.source_platform || data.site_source_name
+    // Priorizar site_source_name (normalizado) sobre source_platform (crudo)
+    // Ejemplo: site_source_name="Facebook" vs source_platform="fb"
+    if (data.site_source_name) {
+      return data.site_source_name
     }
-    return 'Sitio web'
+    if (data.source_platform) {
+      return data.source_platform
+    }
+    if (data.utm_source) {
+      return data.utm_source
+    }
+    return 'Web'
   }
 
   if (type === 'whatsapp_message') {
