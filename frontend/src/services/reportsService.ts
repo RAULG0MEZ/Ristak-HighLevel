@@ -111,6 +111,28 @@ export interface ContactAppointmentDetail {
   start_time: string
 }
 
+export interface ContactFirstSessionDetail {
+  started_at: string
+  landing_url?: string
+  landing_page?: string
+  referrer_url?: string
+  utm_source?: string
+  utm_medium?: string
+  utm_campaign?: string
+  utm_content?: string
+  utm_term?: string
+  source_platform?: string
+  site_source_name?: string
+  campaign_name?: string
+  ad_name?: string
+  ad_id?: string
+  device_type?: string
+  browser?: string
+  geo_city?: string
+  geo_region?: string
+  geo_country?: string
+}
+
 export interface ContactListItem {
   id: string
   name: string
@@ -122,6 +144,7 @@ export interface ContactListItem {
   attributed: boolean
   payments?: ContactPaymentDetail[]
   appointments?: ContactAppointmentDetail[]
+  firstSession?: ContactFirstSessionDetail | null
   normalizedPhone?: string | null
   duplicateCount?: number
   mergedContactIds?: string[]

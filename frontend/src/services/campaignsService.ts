@@ -55,6 +55,36 @@ export interface CampaignContactPayment {
   date: string
 }
 
+export interface CampaignContactAppointment {
+  id: string
+  title: string
+  start_time: string
+  end_time: string
+  status: string
+}
+
+export interface CampaignContactFirstSession {
+  started_at: string
+  landing_url?: string
+  landing_page?: string
+  referrer_url?: string
+  utm_source?: string
+  utm_medium?: string
+  utm_campaign?: string
+  utm_content?: string
+  utm_term?: string
+  source_platform?: string
+  site_source_name?: string
+  campaign_name?: string
+  ad_name?: string
+  ad_id?: string
+  device_type?: string
+  browser?: string
+  geo_city?: string
+  geo_region?: string
+  geo_country?: string
+}
+
 export interface CampaignContact {
   id: string
   name: string
@@ -67,6 +97,8 @@ export interface CampaignContact {
   source?: string | null
   is_sale: boolean
   payments?: CampaignContactPayment[]
+  appointments?: CampaignContactAppointment[]
+  firstSession?: CampaignContactFirstSession | null
   normalizedPhone?: string | null
   duplicateCount?: number
   mergedContactIds?: string[]

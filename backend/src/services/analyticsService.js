@@ -1081,6 +1081,7 @@ export async function buildContactsList ({ startDate, endDate, type = 'interesad
   let contactIds = []
   let paymentsMap = new Map()
   let appointmentsMap = new Map()
+  let firstSessionMap = new Map()
 
   if (type === 'sales') {
     if (useContactAttribution) {
@@ -1256,6 +1257,68 @@ export async function buildContactsList ({ startDate, endDate, type = 'interesad
       if (type === 'appointments') {
         paymentsMap = await fetchPaymentsForContacts(contactIds, useContactAttribution ? undefined : range)
       }
+
+      // Obtener primera sesión (primera atribución) de cada contacto
+      if (contactIds.length > 0) {
+        const placeholders = contactIds.map(() => '?').join(',')
+        const firstSessionsQuery = `
+          SELECT
+            s1.contact_id,
+            s1.started_at,
+            s1.landing_url,
+            s1.landing_page,
+            s1.referrer_url,
+            s1.utm_source,
+            s1.utm_medium,
+            s1.utm_campaign,
+            s1.utm_content,
+            s1.utm_term,
+            s1.source_platform,
+            s1.site_source_name,
+            s1.campaign_name,
+            s1.ad_name,
+            s1.ad_id,
+            s1.device_type,
+            s1.browser,
+            s1.geo_city,
+            s1.geo_region,
+            s1.geo_country
+          FROM sessions s1
+          INNER JOIN (
+            SELECT contact_id, MIN(started_at) as first_started_at
+            FROM sessions
+            WHERE contact_id IN (${placeholders})
+            GROUP BY contact_id
+          ) s2 ON s1.contact_id = s2.contact_id AND s1.started_at = s2.first_started_at
+        `
+
+        const firstSessionRows = await db.all(firstSessionsQuery, contactIds)
+
+        firstSessionMap = firstSessionRows.reduce((map, session) => {
+          map.set(session.contact_id, {
+            started_at: session.started_at,
+            landing_url: session.landing_url,
+            landing_page: session.landing_page,
+            referrer_url: session.referrer_url,
+            utm_source: session.utm_source,
+            utm_medium: session.utm_medium,
+            utm_campaign: session.utm_campaign,
+            utm_content: session.utm_content,
+            utm_term: session.utm_term,
+            source_platform: session.source_platform,
+            site_source_name: session.site_source_name,
+            campaign_name: session.campaign_name,
+            ad_name: session.ad_name,
+            ad_id: session.ad_id,
+            device_type: session.device_type,
+            browser: session.browser,
+            geo_city: session.geo_city,
+            geo_region: session.geo_region,
+            geo_country: session.geo_country
+          })
+          return map
+        }, new Map())
+      }
     } else {
       contacts = []
     }
@@ -1264,6 +1327,7 @@ export async function buildContactsList ({ startDate, endDate, type = 'interesad
   const result = contacts.map(contact => {
     const payments = paymentsMap.get(contact.id) || []
     const appointments = appointmentsMap.get(contact.id) || []
+    const firstSession = firstSessionMap.get(contact.id) || null
     const totalFromPayments = payments.reduce((sum, payment) => sum + payment.amount, 0)
 
     // Para "customers" o vista "atribución", usar el LTV total histórico
@@ -1287,6 +1351,7 @@ export async function buildContactsList ({ startDate, endDate, type = 'interesad
       attributed: Boolean(contact.attribution_ad_id),
       payments,
       appointments,
+      firstSession,
       source: contact.source || null,
       ad_name: contact.attribution_ad_name || null,
       ad_id: contact.attribution_ad_id || null,

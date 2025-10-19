@@ -167,7 +167,25 @@ export const contactsService = {
   async getContactJourney(id: string): Promise<JourneyEvent[]> {
     try {
       const data = await apiClient.get<JourneyEvent[]>(`/contacts/${id}/journey`)
-      return Array.isArray(data) ? data : []
+
+      if (!Array.isArray(data)) {
+        return []
+      }
+
+      return data
+        .filter((event): event is JourneyEvent => {
+          return Boolean(
+            event &&
+            typeof event === 'object' &&
+            'type' in event &&
+            'date' in event
+          )
+        })
+        // Normalizar eventos incompletos para evitar errores en la UI
+        .map((event) => ({
+          ...event,
+          data: event && typeof event.data === 'object' && event.data !== null ? event.data : {}
+        }))
     } catch (error) {
       // TODO: Implement proper logging service
       return []
