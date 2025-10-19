@@ -112,7 +112,7 @@ export const Campaigns: React.FC = () => {
 
   // Estados para modal de contactos
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const [modalType, setModalType] = useState<'interesados' | 'sales'>('interesados')
+  const [modalType, setModalType] = useState<'interesados' | 'sales' | 'appointments'>('interesados')
   const [modalContacts, setModalContacts] = useState<CampaignContact[]>([])
   const [modalLoading, setModalLoading] = useState(false)
   const [modalTitle, setModalTitle] = useState('')
@@ -309,11 +309,11 @@ export const Campaigns: React.FC = () => {
     }
   }, [checkSyncStatus])
 
-  const handleOpenContactsModal = useCallback(async (item: any, type: 'interesados' | 'sales') => {
+  const handleOpenContactsModal = useCallback(async (item: any, type: 'interesados' | 'sales' | 'appointments') => {
     setModalLoading(true)
     setIsModalOpen(true)
     setModalType(type)
-    setModalTitle(`${type === 'interesados' ? labels.leads : 'Ventas'} - ${item.name}`)
+    setModalTitle(`${type === 'interesados' ? labels.leads : type === 'sales' ? 'Ventas' : 'Citas'} - ${item.name}`)
     setModalContacts([])
     setSelectedModalItem(item)
 
@@ -732,11 +732,25 @@ export const Campaigns: React.FC = () => {
           <div style={{ fontSize: '0.75em', opacity: 0.7 }}>(Primera)</div>
         </div>
       ),
-      visible: true, // Cambiado a visible para debug
+      visible: true,
       render: (value, item) => {
         if (item.showPlaceholder) return <span className={styles.placeholderText}>—</span>
-        console.log(`[CITAS DEBUG] Renderizando citas para ${item.name}: ${value}`)
-        return (value || 0).toLocaleString()
+
+        const hasAppointments = (value || 0) > 0
+
+        return (
+          <span
+            className={hasAppointments ? styles.clickableNumber : ''}
+            onClick={(e) => {
+              if (hasAppointments) {
+                e.stopPropagation()
+                handleOpenContactsModal(item, 'appointments')
+              }
+            }}
+          >
+            {(value || 0).toLocaleString()}
+          </span>
+        )
       },
       sortable: true,
       width: '7%'

@@ -513,74 +513,69 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
           const isDimmed = Boolean(draggingId) && draggingId !== item.id
 
           return (
-            <React.Fragment key={item.id}>
-              {isEditing && isDropTarget && (
-                <div className="relative flex h-3 items-center">
-                  <div className="h-[2px] w-full rounded-full bg-gradient-to-r from-transparent via-[rgba(148,163,184,0.8)] to-transparent animate-pulse" />
-                </div>
+            <Link
+              key={item.id}
+              to={item.href}
+              draggable={isPreparing || isDragging}
+              onClick={handleItemClick(item.id)}
+              onPointerDown={handlePointerDown(item.id)}
+              onPointerUp={handlePointerUp(item.id)}
+              onPointerLeave={handlePointerLeave}
+              onPointerCancel={handlePointerCancel}
+              onDragStart={handleDragStart(item.id)}
+              onDragEnd={handleDragEnd}
+              onDragOver={handleDragOver(item.id)}
+              onDragEnter={handleDragEnter(item.id)}
+              onDragLeave={handleDragLeave(item.id)}
+              onDrop={handleDrop(item.id)}
+              ref={(node) => {
+                if (node) {
+                  navItemRefs.current.set(item.id, node)
+                } else {
+                  navItemRefs.current.delete(item.id)
+                }
+              }}
+              className={cn(
+                'group flex items-center gap-3 rounded-lg py-2.5 pl-3 pr-3 text-sm font-medium transition-all duration-200 ease-out select-none',
+                isEditing ? 'pl-6' : '',
+                isDragging
+                  ? 'z-10 cursor-grabbing scale-[1.05] bg-white/[0.08] shadow-xl'
+                  : isPreparing
+                    ? 'cursor-grab scale-[1.03] bg-white/[0.06] shadow-lg'
+                    : 'cursor-pointer',
+                isDropTarget
+                  ? 'ring-2 ring-offset-0 ring-[rgba(148,163,184,0.55)] bg-white/[0.08] backdrop-blur-sm'
+                  : '',
+                isDimmed ? 'opacity-60' : '',
+                isActive
+                  ? 'glass text-[var(--color-text-primary)]'
+                  : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] glass-hover'
               )}
-              <Link
-                to={item.href}
-                draggable={isPreparing || isDragging}
-                onClick={handleItemClick(item.id)}
-                onPointerDown={handlePointerDown(item.id)}
-                onPointerUp={handlePointerUp(item.id)}
-                onPointerLeave={handlePointerLeave}
-                onPointerCancel={handlePointerCancel}
-                onDragStart={handleDragStart(item.id)}
-                onDragEnd={handleDragEnd}
-                onDragOver={handleDragOver(item.id)}
-                onDragEnter={handleDragEnter(item.id)}
-                onDragLeave={handleDragLeave(item.id)}
-                onDrop={handleDrop(item.id)}
-                ref={(node) => {
-                  if (node) {
-                    navItemRefs.current.set(item.id, node)
-                  } else {
-                    navItemRefs.current.delete(item.id)
-                  }
-                }}
+            >
+              <span
                 className={cn(
-                  'group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ease-out select-none',
-                  isDragging
-                    ? 'z-10 cursor-grabbing scale-[1.05] bg-white/[0.08] shadow-xl'
-                    : isPreparing
-                      ? 'cursor-grab scale-[1.03] bg-white/[0.06] shadow-lg'
-                      : 'cursor-pointer',
-                  isDropTarget
-                    ? 'ring-2 ring-offset-0 ring-[rgba(148,163,184,0.55)] bg-white/[0.08] backdrop-blur-sm'
-                    : '',
-                  isDimmed ? 'opacity-60' : '',
-                  isActive
-                    ? 'glass text-[var(--color-text-primary)]'
-                    : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] glass-hover'
+                  'flex h-5 w-5 items-center justify-center rounded-md border border-dashed border-transparent transition-all duration-200',
+                  isEditing ? 'border-[rgba(148,163,184,0.35)] bg-white/[0.04] opacity-100' : 'opacity-0'
                 )}
+                aria-hidden="true"
               >
-                <span
-                  className={cn(
-                    'flex h-8 w-6 items-center justify-center rounded-md border border-dashed border-transparent transition-all duration-200',
-                    isEditing ? 'border-[rgba(148,163,184,0.35)] bg-white/[0.04] opacity-100' : 'opacity-0'
-                  )}
-                  aria-hidden="true"
-                >
-                  <GripVertical className="h-4 w-4 text-[var(--color-text-secondary)]" />
-                </span>
-                <span className="flex items-center gap-3">
-                  <Icon className="h-5 w-5" />
-                  <span>{item.name}</span>
-                </span>
-                {isDragging && (
-                  <span className="ml-auto flex items-center gap-1 text-[10px] font-semibold tracking-[0.2em] text-[var(--color-text-secondary)]">
-                    MOVIENDO
-                    <span className="flex items-center gap-[2px]">
-                      <span className="h-1 w-1 rounded-full bg-[var(--color-text-secondary)] animate-pulse" />
-                      <span className="h-1 w-1 rounded-full bg-[var(--color-text-secondary)] animate-pulse [animation-delay:120ms]" />
-                      <span className="h-1 w-1 rounded-full bg-[var(--color-text-secondary)] animate-pulse [animation-delay:240ms]" />
-                    </span>
+                <GripVertical className="h-3.5 w-3.5 text-[var(--color-text-secondary)]" />
+              </span>
+              <span className="flex items-center gap-3">
+                <Icon className="h-5 w-5" />
+                <span>{item.name}</span>
+              </span>
+              {isDragging && (
+                <span className="ml-auto flex items-center gap-1 text-[10px] font-semibold tracking-[0.2em] text-[var(--color-text-secondary)]">
+                  MOVIENDO
+                  <span className="flex items-center gap-[2px]">
+                    <span className="h-1 w-1 rounded-full bg-[var(--color-text-secondary)] animate-pulse" />
+                    <span className="h-1 w-1 rounded-full bg-[var(--color-text-secondary)] animate-pulse [animation-delay:120ms]" />
+                    <span className="h-1 w-1 rounded-full bg-[var(--color-text-secondary)] animate-pulse [animation-delay:240ms]" />
                   </span>
-                )}
-              </Link>
-            </React.Fragment>
+                </span>
+              )}
+            </Link>
           )
         })}
       </nav>

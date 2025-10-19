@@ -795,27 +795,28 @@ export const getContactsByType = async (req, res) => {
     // Construir query de contactos
     const placeholders = adIdsList.map(() => '?').join(',');
     let contactsQuery = `
-      SELECT
-        id,
-        full_name,
-        email,
-        phone,
-        attribution_ad_id,
-        attribution_ad_name,
-        total_paid,
-        purchases_count,
-        created_at
-      FROM contacts
-      WHERE attribution_ad_id IN (${placeholders})
-      AND created_at >= ?
-      AND created_at <= ?
+      SELECT DISTINCT
+        c.id,
+        c.full_name,
+        c.email,
+        c.phone,
+        c.attribution_ad_id,
+        c.attribution_ad_name,
+        c.total_paid,
+        c.purchases_count,
+        c.created_at
+      FROM contacts c
+      ${type === 'appointments' ? 'INNER JOIN appointments a ON a.contact_id = c.id' : ''}
+      WHERE c.attribution_ad_id IN (${placeholders})
+      AND c.created_at >= ?
+      AND c.created_at <= ?
     `;
 
     if (type === 'sales') {
       contactsQuery += ' AND purchases_count > 0';
     }
 
-    contactsQuery += ' ORDER BY created_at DESC';
+    contactsQuery += ' ORDER BY c.created_at DESC';
 
     const contactsParams = [...adIdsList, range.startUtc, range.endUtc];
     const contacts = await db.all(contactsQuery, contactsParams);
