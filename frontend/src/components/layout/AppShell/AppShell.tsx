@@ -11,7 +11,7 @@ export const AppShell: React.FC = () => {
   const navigate = useNavigate()
   const { logout } = useAuth()
   const [syncProgressVisible, setSyncProgressVisible] = useState(false)
-  const [locationName, setLocationName] = useState<string>('Ristak')
+  const [locationName, setLocationName] = useState<string>('Mi Negocio')
   const [locationLogo, setLocationLogo] = useState<string | null>(null)
 
   // Obtener nombre y logo del location de HighLevel

@@ -336,7 +336,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
               className="max-w-full max-h-full object-contain"
             />
           </div>
-        ) : mounted && locationName && locationName !== 'Ristak' ? (
+        ) : mounted && locationName && locationName !== 'Mi Negocio' ? (
           <div className="w-full flex items-center justify-center px-2">
             <span className="text-lg font-bold text-[var(--color-text-primary)] truncate max-w-[180px] text-center">
               {locationName}

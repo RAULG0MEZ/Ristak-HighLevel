@@ -22,9 +22,9 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 const defaultUser: User = {
   id: '1',
   name: 'Usuario',
-  email: 'usuario@ristak.com',
+  email: 'usuario@ejemplo.com',
   role: 'admin',
-  tenant: 'ristak'
+  tenant: 'Mi Negocio'
 }
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -44,9 +44,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           setUser({
             id: locationData.id || '1',
             name: locationData.name || 'Usuario',
-            email: locationData.email || 'usuario@ristak.com',
+            email: locationData.email || 'usuario@ejemplo.com',
             role: 'admin',
-            tenant: locationData.name || 'ristak'
+            tenant: locationData.name || 'Mi Negocio'
           })
 
           // Guardar locationId y accessToken para usar en otras partes de la app
