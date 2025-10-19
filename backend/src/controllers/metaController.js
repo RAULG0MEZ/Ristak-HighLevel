@@ -13,6 +13,29 @@ import { resolveDateRange } from '../utils/dateUtils.js';
 import { getContactsWithAppointments } from '../services/appointmentsCache.js';
 
 /**
+ * Obtiene los calendarios configurados para atribución
+ * @returns {Promise<string[]|null>} Array de calendar IDs o null si no están configurados
+ */
+async function getAttributionCalendarIds() {
+  try {
+    const config = await db.get(
+      'SELECT value FROM app_config WHERE key = ?',
+      ['attribution_calendar_ids']
+    );
+
+    if (!config || !config.value) {
+      return null; // null = usar todos los calendarios
+    }
+
+    const calendarIds = JSON.parse(config.value);
+    return calendarIds.length > 0 ? calendarIds : null;
+  } catch (error) {
+    logger.warn(`Error al leer calendarios de atribución: ${error.message}`);
+    return null;
+  }
+}
+
+/**
  * Guarda la configuración de Meta Ads
  */
 export const saveConfig = async (req, res) => {
@@ -217,7 +240,8 @@ export const getCampaigns = async (req, res) => {
 
     logger.info(`📊 ${contactsWithAppointments.size} contactos con citas (método optimizado - Campaigns)`);
 
-    // PASO 2: Obtener métricas básicas de contactos
+    // PASO 2: Obtener métricas básicas de contactos CON validación de match en meta_ads
+    // IMPORTANTE: Solo contar contactos cuyo attribution_ad_id tenga registro en meta_ads en la misma fecha
     const contactsQuery = `
       SELECT
         c.attribution_ad_id as ad_id,
@@ -228,6 +252,11 @@ export const getCampaigns = async (req, res) => {
       WHERE c.attribution_ad_id IS NOT NULL
       AND c.created_at >= ?
       AND c.created_at <= ?
+      AND EXISTS (
+        SELECT 1 FROM meta_ads ma
+        WHERE ma.ad_id = c.attribution_ad_id
+          AND ma.date::date = c.created_at::date
+      )
     `;
 
     const contactsRaw = await db.all(contactsQuery, [
@@ -913,34 +942,70 @@ export const getLeadsOverTime = async (req, res) => {
          ORDER BY day`;
 
     // Query para obtener contactos únicos con citas por fecha de creación
-    const appointmentsQuery = usePostgres
-      ? `SELECT
-          TO_CHAR(c.created_at::date, 'YYYY-MM-DD') as day,
-          COUNT(DISTINCT c.id) as appointments
-         FROM contacts c
-         INNER JOIN appointments a ON c.id = a.contact_id
-         WHERE c.attribution_ad_id IS NOT NULL
-           AND c.attribution_ad_id != ''
-           AND c.created_at::date >= $1::date
-           AND c.created_at::date < ($2::date + INTERVAL '1 day')
-         GROUP BY day
-         ORDER BY day`
-      : `SELECT
-          DATE(c.created_at) as day,
-          COUNT(DISTINCT c.id) as appointments
-         FROM contacts c
-         INNER JOIN appointments a ON c.id = a.contact_id
-         WHERE c.attribution_ad_id IS NOT NULL
-           AND c.attribution_ad_id != ''
-           AND DATE(c.created_at) >= DATE(?)
-           AND DATE(c.created_at) <= DATE(?)
-         GROUP BY day
-         ORDER BY day`;
+    // Filtrar por calendarios de atribución configurados
+    const attributionCalendarIds = await getAttributionCalendarIds();
+    let appointmentsQuery;
+    let appointmentsParams = [startUtc, endUtc];
+
+    if (attributionCalendarIds && attributionCalendarIds.length > 0) {
+      const calendarPlaceholders = attributionCalendarIds.map((_, i) => usePostgres ? `$${i + 3}` : '?').join(',');
+      appointmentsQuery = usePostgres
+        ? `SELECT
+            TO_CHAR(c.created_at::date, 'YYYY-MM-DD') as day,
+            COUNT(DISTINCT c.id) as appointments
+           FROM contacts c
+           INNER JOIN appointments a ON c.id = a.contact_id
+           WHERE c.attribution_ad_id IS NOT NULL
+             AND c.attribution_ad_id != ''
+             AND c.created_at::date >= $1::date
+             AND c.created_at::date < ($2::date + INTERVAL '1 day')
+             AND a.calendar_id IN (${calendarPlaceholders})
+           GROUP BY day
+           ORDER BY day`
+        : `SELECT
+            DATE(c.created_at) as day,
+            COUNT(DISTINCT c.id) as appointments
+           FROM contacts c
+           INNER JOIN appointments a ON c.id = a.contact_id
+           WHERE c.attribution_ad_id IS NOT NULL
+             AND c.attribution_ad_id != ''
+             AND DATE(c.created_at) >= DATE(?)
+             AND DATE(c.created_at) <= DATE(?)
+             AND a.calendar_id IN (${calendarPlaceholders})
+           GROUP BY day
+           ORDER BY day`;
+      appointmentsParams = [...appointmentsParams, ...attributionCalendarIds];
+    } else {
+      // Sin filtro de calendario
+      appointmentsQuery = usePostgres
+        ? `SELECT
+            TO_CHAR(c.created_at::date, 'YYYY-MM-DD') as day,
+            COUNT(DISTINCT c.id) as appointments
+           FROM contacts c
+           INNER JOIN appointments a ON c.id = a.contact_id
+           WHERE c.attribution_ad_id IS NOT NULL
+             AND c.attribution_ad_id != ''
+             AND c.created_at::date >= $1::date
+             AND c.created_at::date < ($2::date + INTERVAL '1 day')
+           GROUP BY day
+           ORDER BY day`
+        : `SELECT
+            DATE(c.created_at) as day,
+            COUNT(DISTINCT c.id) as appointments
+           FROM contacts c
+           INNER JOIN appointments a ON c.id = a.contact_id
+           WHERE c.attribution_ad_id IS NOT NULL
+             AND c.attribution_ad_id != ''
+             AND DATE(c.created_at) >= DATE(?)
+             AND DATE(c.created_at) <= DATE(?)
+           GROUP BY day
+           ORDER BY day`;
+    }
 
     const params = [startUtc, endUtc];
     const [leadsData, appointmentsData] = await Promise.all([
       db.all(leadsQuery, params),
-      db.all(appointmentsQuery, params)
+      db.all(appointmentsQuery, appointmentsParams)
     ]);
 
     // Crear mapas para combinar los datos
@@ -996,29 +1061,65 @@ export const getAppointmentsOverTime = async (req, res) => {
     const endUtc = range.endZoned.toISODate();
 
     // Query para obtener contactos únicos con citas por fecha de creación
-    const appointmentsQuery = usePostgres
-      ? `SELECT
-          TO_CHAR(c.created_at::date, 'YYYY-MM-DD') as day,
-          COUNT(DISTINCT c.id) as appointments
-         FROM contacts c
-         INNER JOIN appointments a ON c.id = a.contact_id
-         WHERE c.attribution_ad_id IS NOT NULL
-           AND c.attribution_ad_id != ''
-           AND c.created_at::date >= $1::date
-           AND c.created_at::date < ($2::date + INTERVAL '1 day')
-         GROUP BY day
-         ORDER BY day`
-      : `SELECT
-          DATE(c.created_at) as day,
-          COUNT(DISTINCT c.id) as appointments
-         FROM contacts c
-         INNER JOIN appointments a ON c.id = a.contact_id
-         WHERE c.attribution_ad_id IS NOT NULL
-           AND c.attribution_ad_id != ''
-           AND DATE(c.created_at) >= DATE(?)
-           AND DATE(c.created_at) <= DATE(?)
-         GROUP BY day
-         ORDER BY day`;
+    // Filtrar por calendarios de atribución configurados
+    const attributionCalendarIds = await getAttributionCalendarIds();
+    let appointmentsQuery;
+    let appointmentsParams = [startUtc, endUtc];
+
+    if (attributionCalendarIds && attributionCalendarIds.length > 0) {
+      const calendarPlaceholders = attributionCalendarIds.map((_, i) => usePostgres ? `$${i + 3}` : '?').join(',');
+      appointmentsQuery = usePostgres
+        ? `SELECT
+            TO_CHAR(c.created_at::date, 'YYYY-MM-DD') as day,
+            COUNT(DISTINCT c.id) as appointments
+           FROM contacts c
+           INNER JOIN appointments a ON c.id = a.contact_id
+           WHERE c.attribution_ad_id IS NOT NULL
+             AND c.attribution_ad_id != ''
+             AND c.created_at::date >= $1::date
+             AND c.created_at::date < ($2::date + INTERVAL '1 day')
+             AND a.calendar_id IN (${calendarPlaceholders})
+           GROUP BY day
+           ORDER BY day`
+        : `SELECT
+            DATE(c.created_at) as day,
+            COUNT(DISTINCT c.id) as appointments
+           FROM contacts c
+           INNER JOIN appointments a ON c.id = a.contact_id
+           WHERE c.attribution_ad_id IS NOT NULL
+             AND c.attribution_ad_id != ''
+             AND DATE(c.created_at) >= DATE(?)
+             AND DATE(c.created_at) <= DATE(?)
+             AND a.calendar_id IN (${calendarPlaceholders})
+           GROUP BY day
+           ORDER BY day`;
+      appointmentsParams = [...appointmentsParams, ...attributionCalendarIds];
+    } else {
+      // Sin filtro de calendario
+      appointmentsQuery = usePostgres
+        ? `SELECT
+            TO_CHAR(c.created_at::date, 'YYYY-MM-DD') as day,
+            COUNT(DISTINCT c.id) as appointments
+           FROM contacts c
+           INNER JOIN appointments a ON c.id = a.contact_id
+           WHERE c.attribution_ad_id IS NOT NULL
+             AND c.attribution_ad_id != ''
+             AND c.created_at::date >= $1::date
+             AND c.created_at::date < ($2::date + INTERVAL '1 day')
+           GROUP BY day
+           ORDER BY day`
+        : `SELECT
+            DATE(c.created_at) as day,
+            COUNT(DISTINCT c.id) as appointments
+           FROM contacts c
+           INNER JOIN appointments a ON c.id = a.contact_id
+           WHERE c.attribution_ad_id IS NOT NULL
+             AND c.attribution_ad_id != ''
+             AND DATE(c.created_at) >= DATE(?)
+             AND DATE(c.created_at) <= DATE(?)
+           GROUP BY day
+           ORDER BY day`;
+    }
 
     // Query para obtener ventas (contactos con purchases_count > 0) por fecha de creación
     const salesQuery = usePostgres
@@ -1047,7 +1148,7 @@ export const getAppointmentsOverTime = async (req, res) => {
 
     const params = [startUtc, endUtc];
     const [appointmentsData, salesData] = await Promise.all([
-      db.all(appointmentsQuery, params),
+      db.all(appointmentsQuery, appointmentsParams),
       db.all(salesQuery, params)
     ]);
 
@@ -1260,37 +1361,81 @@ export const getFunnelMetrics = async (req, res) => {
          GROUP BY day`;
 
     // Query para contactos con citas CON attribution_ad_id validando que el anuncio existiera ese día
-    const appointmentsQuery = usePostgres
-      ? `SELECT
-          TO_CHAR(c.created_at::date, 'YYYY-MM-DD') as day,
-          COUNT(DISTINCT c.id) as appointments
-         FROM contacts c
-         INNER JOIN appointments a ON c.id = a.contact_id
-         WHERE c.attribution_ad_id IS NOT NULL
-           AND c.attribution_ad_id != ''
-           AND c.created_at::date >= $1::date
-           AND c.created_at::date < ($2::date + INTERVAL '1 day')
-           AND EXISTS (
-             SELECT 1 FROM meta_ads ma
-             WHERE ma.ad_id = c.attribution_ad_id
-               AND ma.date::date = c.created_at::date
-           )
-         GROUP BY day`
-      : `SELECT
-          DATE(c.created_at) as day,
-          COUNT(DISTINCT c.id) as appointments
-         FROM contacts c
-         INNER JOIN appointments a ON c.id = a.contact_id
-         WHERE c.attribution_ad_id IS NOT NULL
-           AND c.attribution_ad_id != ''
-           AND DATE(c.created_at) >= DATE(?)
-           AND DATE(c.created_at) <= DATE(?)
-           AND EXISTS (
-             SELECT 1 FROM meta_ads ma
-             WHERE ma.ad_id = c.attribution_ad_id
-               AND DATE(ma.date) = DATE(c.created_at)
-           )
-         GROUP BY day`;
+    // Filtrar por calendarios de atribución configurados
+    const attributionCalendarIds = await getAttributionCalendarIds();
+    let appointmentsQuery;
+    let appointmentsParams = [startUtc, endUtc];
+
+    if (attributionCalendarIds && attributionCalendarIds.length > 0) {
+      const calendarPlaceholders = attributionCalendarIds.map((_, i) => usePostgres ? `$${i + 3}` : '?').join(',');
+      appointmentsQuery = usePostgres
+        ? `SELECT
+            TO_CHAR(c.created_at::date, 'YYYY-MM-DD') as day,
+            COUNT(DISTINCT c.id) as appointments
+           FROM contacts c
+           INNER JOIN appointments a ON c.id = a.contact_id
+           WHERE c.attribution_ad_id IS NOT NULL
+             AND c.attribution_ad_id != ''
+             AND c.created_at::date >= $1::date
+             AND c.created_at::date < ($2::date + INTERVAL '1 day')
+             AND a.calendar_id IN (${calendarPlaceholders})
+             AND EXISTS (
+               SELECT 1 FROM meta_ads ma
+               WHERE ma.ad_id = c.attribution_ad_id
+                 AND ma.date::date = c.created_at::date
+             )
+           GROUP BY day`
+        : `SELECT
+            DATE(c.created_at) as day,
+            COUNT(DISTINCT c.id) as appointments
+           FROM contacts c
+           INNER JOIN appointments a ON c.id = a.contact_id
+           WHERE c.attribution_ad_id IS NOT NULL
+             AND c.attribution_ad_id != ''
+             AND DATE(c.created_at) >= DATE(?)
+             AND DATE(c.created_at) <= DATE(?)
+             AND a.calendar_id IN (${calendarPlaceholders})
+             AND EXISTS (
+               SELECT 1 FROM meta_ads ma
+               WHERE ma.ad_id = c.attribution_ad_id
+                 AND DATE(ma.date) = DATE(c.created_at)
+             )
+           GROUP BY day`;
+      appointmentsParams = [...appointmentsParams, ...attributionCalendarIds];
+    } else {
+      // Sin filtro de calendario
+      appointmentsQuery = usePostgres
+        ? `SELECT
+            TO_CHAR(c.created_at::date, 'YYYY-MM-DD') as day,
+            COUNT(DISTINCT c.id) as appointments
+           FROM contacts c
+           INNER JOIN appointments a ON c.id = a.contact_id
+           WHERE c.attribution_ad_id IS NOT NULL
+             AND c.attribution_ad_id != ''
+             AND c.created_at::date >= $1::date
+             AND c.created_at::date < ($2::date + INTERVAL '1 day')
+             AND EXISTS (
+               SELECT 1 FROM meta_ads ma
+               WHERE ma.ad_id = c.attribution_ad_id
+                 AND ma.date::date = c.created_at::date
+             )
+           GROUP BY day`
+        : `SELECT
+            DATE(c.created_at) as day,
+            COUNT(DISTINCT c.id) as appointments
+           FROM contacts c
+           INNER JOIN appointments a ON c.id = a.contact_id
+           WHERE c.attribution_ad_id IS NOT NULL
+             AND c.attribution_ad_id != ''
+             AND DATE(c.created_at) >= DATE(?)
+             AND DATE(c.created_at) <= DATE(?)
+             AND EXISTS (
+               SELECT 1 FROM meta_ads ma
+               WHERE ma.ad_id = c.attribution_ad_id
+                 AND DATE(ma.date) = DATE(c.created_at)
+             )
+           GROUP BY day`;
+    }
 
     // Query para ventas CON attribution_ad_id validando que el anuncio existiera ese día
     const salesQuery = usePostgres
@@ -1329,7 +1474,7 @@ export const getFunnelMetrics = async (req, res) => {
     const [visitorsData, leadsData, appointmentsData, salesData] = await Promise.all([
       db.all(visitorsQuery, params),
       db.all(leadsQuery, params),
-      db.all(appointmentsQuery, params),
+      db.all(appointmentsQuery, appointmentsParams),
       db.all(salesQuery, params)
     ]);
 
