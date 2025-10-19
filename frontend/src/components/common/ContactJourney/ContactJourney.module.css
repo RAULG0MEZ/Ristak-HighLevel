@@ -65,67 +65,45 @@
   position: relative;
   z-index: 3;
   transition: all 0.15s ease;
-  border: 3px solid var(--color-background-primary);
+  box-shadow: 0 0 0 4px var(--color-background-primary);
+}
+
+:global(body.light) .eventDot {
+  box-shadow: 0 0 0 4px #ffffff;
+}
+
+:global(body.dark) .eventDot {
+  box-shadow: 0 0 0 4px var(--color-background-primary);
 }
 
 .eventDot.blue {
-  background-color: rgba(59, 130, 246, 0.12);
-  color: #3b82f6;
-}
-
-:global(body.dark) .eventDot.blue {
-  background-color: rgba(59, 130, 246, 0.15);
-  color: #60a5fa;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: #ffffff;
 }
 
 .eventDot.green {
-  background-color: rgba(16, 185, 129, 0.12);
-  color: #10b981;
-}
-
-:global(body.dark) .eventDot.green {
-  background-color: rgba(16, 185, 129, 0.15);
-  color: #34d399;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff;
 }
 
 .eventDot.purple {
-  background-color: rgba(139, 92, 246, 0.12);
-  color: #8b5cf6;
-}
-
-:global(body.dark) .eventDot.purple {
-  background-color: rgba(139, 92, 246, 0.15);
-  color: #a78bfa;
+  background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
+  color: #ffffff;
 }
 
 .eventDot.orange {
-  background-color: rgba(245, 158, 11, 0.12);
-  color: #f59e0b;
-}
-
-:global(body.dark) .eventDot.orange {
-  background-color: rgba(245, 158, 11, 0.15);
-  color: #fbbf24;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: #ffffff;
 }
 
 .eventDot.success {
-  background-color: rgba(16, 185, 129, 0.12);
-  color: #10b981;
-}
-
-:global(body.dark) .eventDot.success {
-  background-color: rgba(16, 185, 129, 0.15);
-  color: #34d399;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff;
 }
 
 .eventDot.gray {
-  background-color: rgba(107, 114, 128, 0.12);
-  color: #6b7280;
-}
-
-:global(body.dark) .eventDot.gray {
-  background-color: rgba(107, 114, 128, 0.15);
-  color: #9ca3af;
+  background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+  color: #ffffff;
 }
 
 /* El conector ya no se usa - la línea es continua con ::before */

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { KpiCard, Card, DateRangePicker, Table, Icon, LineChart, ContactDetailsModal, VisitorDetailsModal, PageContainer, ViewSelector, AreaChart } from '@/components/common'
+import { KpiCard, Card, DateRangePicker, Table, Icon, ContactDetailsModal, VisitorDetailsModal, PageContainer, ViewSelector, AreaChart } from '@/components/common'
 import type { Column } from '@/components/common'
 import {
   RefreshCw,
@@ -137,37 +137,33 @@ export const Campaigns: React.FC = () => {
         .getCampaignsReport({ from: startDate, to: endDate })
         .catch(() => null as CampaignsReport | null)
 
+      const includeTrackingVisitors = analyticsEnabled && visitorSource === 'tracking'
+
       const promises = [
         campaignsService.getCampaigns(startDate, endDate),
         campaignsService.getSpendOverTime(startDate, endDate),
-        summaryPromise
+        summaryPromise,
+        includeTrackingVisitors
+          ? fetch(`/api/tracking/visitors-by-ad?startDate=${startDate}&endDate=${endDate}`)
+              .then(res => res.json())
+              .then(data => data.data || {})
+              .catch((error) => {
+                console.error('❌ Error fetching visitors:', error)
+                return {}
+              })
+          : Promise.resolve({})
       ]
 
-      // Si se usa tracking interno, obtener visitantes desde sessions
-      if (visitorSource === 'tracking') {
-        promises.push(
-          fetch(`/api/tracking/visitors-by-ad?startDate=${startDate}&endDate=${endDate}`)
-            .then(res => res.json())
-            .then(data => {
-              return data.data || {}
-            })
-            .catch((error) => {
-              console.error('❌ Error fetching visitors:', error)
-              return {}
-            })
-        )
-      } else {
-      }
-
       const results = await Promise.all(promises)
-      const [campaignsData, spendData, summaryReport, visitorsByAd] = results
+      const [campaignsData, spendData, summaryReport, visitorsByAdRaw] = results
+      const visitorsByAd = includeTrackingVisitors ? visitorsByAdRaw : {}
 
       // Transform the data to match our interface
       const transformedData = campaignsData.map(campaign => {
         // Calcular visitantes para esta campaña y sus ads
         let campaignVisitors = 0
 
-        if (visitorSource === 'tracking' && visitorsByAd) {
+        if (includeTrackingVisitors && visitorsByAd) {
           // Sumar visitantes de todos los ads de esta campaña
           campaign.adsets?.forEach((adset: any) => {
             adset.ads?.forEach((ad: any) => {
@@ -189,7 +185,7 @@ export const Campaigns: React.FC = () => {
           platform: 'Meta', // All campaigns from Meta
           adSets: campaign.adsets, // Map adsets to adSets for compatibility
           adsets: campaign.adsets, // Keep both for compatibility
-          visitors: visitorSource === 'tracking' ? campaignVisitors : (campaign.clicks || 0),
+          visitors: includeTrackingVisitors ? campaignVisitors : 0,
           revenue: campaign.revenue || 0,
           sales: campaign.sales || 0,
           leads: campaign.leads || 0,
@@ -233,12 +229,6 @@ export const Campaigns: React.FC = () => {
       const funnelMetricsRaw = await campaignsService.getFunnelMetrics(startDate, endDate)
 
       // Process funnel metrics into the format needed for each chart
-      const formattedVisitorsData = funnelMetricsRaw.map((item, index) => ({
-        label: formatChartDate(item.label, rangeInDays, index > 0 ? funnelMetricsRaw[index - 1].label : undefined),
-        value: item.visitors,  // Visitantes
-        value2: item.leads     // Leads
-      }))
-
       const formattedLeadsData = funnelMetricsRaw.map((item, index) => ({
         label: formatChartDate(item.label, rangeInDays, index > 0 ? funnelMetricsRaw[index - 1].label : undefined),
         value: item.leads,          // Leads
@@ -252,7 +242,16 @@ export const Campaigns: React.FC = () => {
       }))
 
 
-      setVisitorsData(formattedVisitorsData || [])
+      if (analyticsEnabled) {
+        const formattedVisitorsData = funnelMetricsRaw.map((item, index) => ({
+          label: formatChartDate(item.label, rangeInDays, index > 0 ? funnelMetricsRaw[index - 1].label : undefined),
+          value: item.visitors,  // Visitantes
+          value2: item.leads     // Leads
+        }))
+        setVisitorsData(formattedVisitorsData || [])
+      } else {
+        setVisitorsData([])
+      }
       setLeadsData(formattedLeadsData || [])
       setAppointmentsData(formattedAppointmentsData || [])
     } catch (error) {
@@ -263,15 +262,15 @@ export const Campaigns: React.FC = () => {
       setLeadsData([])
       setAppointmentsData([])
       setVisitorsData([])
-  } finally {
-    setLoading(false)
-  }
-  }, [dateRange.start, dateRange.end])
+    } finally {
+      setLoading(false)
+    }
+  }, [analyticsEnabled, dateRange.end, dateRange.start, visitorSource])
 
   // Fetch campaigns on mount and when date range or visitor source changes
   useEffect(() => {
     fetchCampaigns()
-  }, [fetchCampaigns, visitorSource])
+  }, [fetchCampaigns])
 
   const checkSyncStatus = useCallback(async () => {
     try {
@@ -388,6 +387,8 @@ export const Campaigns: React.FC = () => {
 
   // Limpiar datos del modal de visitantes cuando cambian las fechas
   useEffect(() => {
+    if (!analyticsEnabled) return
+
     if (isVisitorsModalOpen) {
       setModalVisitors([]) // Limpiar datos anteriores
       // Si el modal está abierto, recargar los datos con las nuevas fechas
@@ -422,7 +423,7 @@ export const Campaigns: React.FC = () => {
         loadVisitorsData()
       }
     }
-  }, [dateRange]) // Solo reaccionar a cambios de fecha
+  }, [analyticsEnabled, dateRange])
 
   const handleOpenVisitorsModal = useCallback(async (item: any) => {
     if (!analyticsEnabled) return
