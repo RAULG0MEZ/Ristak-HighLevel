@@ -59,25 +59,21 @@ function updateGlobalProgress() {
 function updateContacts(saved, total, status, message) {
   syncProgress.contacts = { saved, total, status, message }
   updateGlobalProgress()
-  logger.info(`Contactos: ${message}`)
 }
 
 function updateAppointments(saved, total, status, message) {
   syncProgress.appointments = { saved, total, status, message }
   updateGlobalProgress()
-  logger.info(`Citas: ${message}`)
 }
 
 function updatePayments(saved, total, status, message) {
   syncProgress.payments = { saved, total, status, message }
   updateGlobalProgress()
-  logger.info(`Pagos: ${message}`)
 }
 
 function updateMetaAds(synced, count, status, message, saved = 0, total = 0) {
   syncProgress.metaAds = { synced, count, saved, total, status, message }
   updateGlobalProgress()
-  logger.info(`Meta Ads: ${message}`)
 }
 
 function buildHighLevelUrl(pathOrUrl, params = {}) {
@@ -183,14 +179,12 @@ async function collectPaginatedData({
 
     // Si no se agregaron items nuevos, es porque son duplicados - detenerse
     if (newItemsCount === 0 && pageItems.length > 0) {
-      logger.info(`Se detuvo la paginación de ${label} en la página ${page} porque todos los items ya existían (duplicados detectados)`)
       break
     }
 
     // Verificar si ya tenemos todos según totalCount de la API
     const totalCount = data.totalCount || data.total || data.meta?.total
     if (totalCount && items.length >= totalCount) {
-      logger.info(`Se detuvo la paginación de ${label} porque ya se obtuvieron todos los registros (${items.length}/${totalCount})`)
       break
     }
 
@@ -361,8 +355,6 @@ async function fetchCalendarEventsByCalendar({
       limit
     }
 
-    logger.info(`Sincronizando citas del calendario ${calendar.name || calendar.id}...`)
-
     const calendarEvents = await collectPaginatedData({
       initialUrl: buildHighLevelUrl('/calendars/events', baseParams),
       headers,
@@ -373,7 +365,6 @@ async function fetchCalendarEventsByCalendar({
       rewriteUrlWithOffset: offset => buildHighLevelUrl('/calendars/events', { ...baseParams, offset }),
       onPage: ({ page, pageItems }) => {
         total += pageItems.length
-        logger.info(`Calendario ${calendar.name || calendar.id} - página ${page}: ${pageItems.length} citas (total acumulado: ${total})`)
         if (onProgress) onProgress(total)
       }
     })
@@ -442,7 +433,6 @@ async function ensureContactExists(contactId, apiToken, usePostgres) {
       contact.dateUpdated || contact.dateAdded || new Date().toISOString()
     ])
 
-    logger.info(`✅ Contacto ${contactId} creado/actualizado desde HighLevel`)
     return true
   } catch (error) {
     logger.error(`Error obteniendo contacto ${contactId}: ${error.message}`)
@@ -765,7 +755,6 @@ async function syncHighLevelPayments(locationId, apiToken) {
 
       // SKIP: No guardar pagos sin contactId (son transacciones de nivel location)
       if (!contactId || contactId === locationId) {
-        logger.warn(`⚠️  Pago ${normalized.id} sin contactId válido (contactId: ${contactId}), saltando...`)
         saved++ // Contar como procesado para no romper el progreso
         continue
       }
@@ -847,7 +836,6 @@ async function setupHighLevelWebhooks(locationId, apiToken, baseUrl) {
   if (getResponse.ok) {
     const getData = await getResponse.json()
     existingCustomValues = getData.customValues || []
-    logger.info(`✅ Encontrados ${existingCustomValues.length} custom values existentes`)
   } else {
     logger.warn('No se pudieron obtener custom values existentes, se crearán nuevos')
   }
@@ -877,7 +865,6 @@ async function setupHighLevelWebhooks(locationId, apiToken, baseUrl) {
         if (!updateResponse.ok) {
           logger.error(`❌ Error actualizando webhook ${name}: ${updateResponse.status} - ${JSON.stringify(updateData)}`)
         } else {
-          logger.info(`✅ Webhook actualizado: ${name} = ${value}`)
           logger.info(`   ID: ${updateData.customValue?.id}`)
         }
       } else {
@@ -899,7 +886,6 @@ async function setupHighLevelWebhooks(locationId, apiToken, baseUrl) {
         if (!createResponse.ok) {
           logger.error(`❌ Error creando webhook ${name}: ${createResponse.status} - ${JSON.stringify(createData)}`)
         } else {
-          logger.info(`✅ Webhook creado: ${name} = ${value}`)
           logger.info(`   ID creado: ${createData.customValue?.id}`)
         }
       }
@@ -957,7 +943,6 @@ async function fetchAndSaveMetaConfig(locationId, apiToken) {
     if (fbAdAccountId && fbAccessToken) {
       // Usar saveMetaConfig que encripta automáticamente
       await saveMetaConfig(fbAdAccountId, fbAccessToken, fbAppId, fbAppSecret)
-      logger.info('✅ Configuración de Meta obtenida desde HighLevel y guardada (encriptada)')
     } else {
       logger.info('No se encontró configuración completa de Meta en custom values')
     }
@@ -1018,7 +1003,6 @@ export async function syncHighLevelData(locationId, apiToken, triggerSource = 'm
     syncProgress.step = 'Actualizando estadísticas de contactos...'
     logger.info('Actualizando estadísticas de contactos basadas en pagos y citas...')
     await updateContactsStats()
-    logger.info('✅ Estadísticas de contactos actualizadas')
 
     // 5. Completado
     syncProgress.status = 'completed'
@@ -1033,7 +1017,6 @@ export async function syncHighLevelData(locationId, apiToken, triggerSource = 'm
     logger.info('===========================================')
 
     // PASO 5: Sincronizar anuncios de Meta (últimos 35 meses)
-    logger.info('📊 PASO 5: SINCRONIZACIÓN DE ANUNCIOS DE META')
     logger.info('===========================================')
 
     syncProgress.step = 'Sincronizando anuncios de Meta'
@@ -1047,7 +1030,6 @@ export async function syncHighLevelData(locationId, apiToken, triggerSource = 'm
       const metaConfig = await db.get('SELECT * FROM meta_config LIMIT 1')
 
       if (metaConfig && metaConfig.access_token) {
-        logger.info('✅ Configuración de Meta encontrada')
         logger.info(`Ad Account: ${metaConfig.ad_account_id}`)
 
         syncProgress.message = 'Sincronizando anuncios de Meta (últimos 35 meses)...'
@@ -1088,14 +1070,11 @@ export async function syncHighLevelData(locationId, apiToken, triggerSource = 'm
           }
 
           updateMetaAds(true, adsCount.count, 'completed', `${adsCount.count} anuncios sincronizados exitosamente`)
-          logger.info(`📊 Total de anuncios sincronizados: ${adsCount.count}`)
         } else {
-          logger.warn('⚠️ No se pudieron sincronizar los anuncios de Meta')
           metaAdsResult = { synced: false, message: 'Error en sincronización' }
           updateMetaAds(false, 0, 'error', 'Error en sincronización de anuncios')
         }
       } else {
-        logger.info('⚠️ No hay configuración de Meta - saltando sincronización de anuncios')
         logger.info('💡 Configure Meta primero para sincronizar anuncios publicitarios')
         updateMetaAds(false, 0, 'skipped', 'No hay configuración de Meta')
       }

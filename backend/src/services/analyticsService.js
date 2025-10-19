@@ -774,8 +774,6 @@ export async function buildReportMetrics ({ startDate, endDate, groupBy = 'day',
       ? await getContactsWithAppointmentsHybrid(config.location_id, config.api_token, attributionCalendarIds)
       : new Set()
 
-    logger.info(`📊 ${contactsWithAppointments.size} contactos con citas (híbrido DB + API - Reports atribución)`)
-
     contactsRaw.forEach(contact => {
       if (contactsWithAppointments.has(contact.contact_id)) {
         const bucket = ensureBucket(contact.period)
@@ -800,17 +798,12 @@ export async function buildReportMetrics ({ startDate, endDate, groupBy = 'day',
         : []
     ])
 
-    logger.info(`📊 Reports - DB appointments: ${dbAppointments.length}, API appointments: ${apiAppointments.length}`)
-    logger.info(`📊 Reports - Rango: ${range.startUtc} -> ${range.endUtc}`)
-
     // Combinar con deduplicación (tomar dateAdded más antiguo)
     const allAppointments = mergeAppointments(dbAppointments, apiAppointments, 'oldest_date')
-    logger.info(`📊 Reports - Total merged: ${allAppointments.length}`)
 
     // Filtrar por rango de fechas de dateAdded
     const appointmentsInRange = allAppointments.filter(apt => {
       if (!apt.dateAdded) {
-        logger.warn(`⚠️  Cita sin dateAdded: ${apt.id}`)
         return false
       }
       const dateAdded = new Date(apt.dateAdded)
@@ -818,12 +811,6 @@ export async function buildReportMetrics ({ startDate, endDate, groupBy = 'day',
       const end = new Date(range.endUtc)
       return dateAdded >= start && dateAdded <= end
     })
-
-    logger.info(`📊 Reports - En rango: ${appointmentsInRange.length}`)
-    if (appointmentsInRange.length > 0) {
-      logger.info(`📊 Reports - Ejemplo de cita: ${JSON.stringify(appointmentsInRange[0])}`)
-    }
-    logger.info(`📊 Reports - Total contactos en contactsRaw: ${contactsRaw.length}`)
 
     // Agrupar por período y deduplicar contactos
     let matchedContacts = 0
@@ -850,15 +837,8 @@ export async function buildReportMetrics ({ startDate, endDate, groupBy = 'day',
         bucket.appointmentsSet.add(baseKey)
       } else {
         unmatchedContacts++
-        if (unmatchedContacts <= 3) {
-          logger.warn(`⚠️  Cita ${apt.id} con contactId ${apt.contactId} no encontrado en contactsRaw`)
-        }
       }
     })
-
-    logger.info(`📊 Reports - Contactos matched: ${matchedContacts}, unmatched: ${unmatchedContacts}`)
-
-    logger.info(`📊 Appointments agrupados por dateAdded (híbrido DB + API - vista Todos - Reports tabla)`)
   }
 
   // Convertir sets a conteos
@@ -1188,8 +1168,6 @@ export async function buildContactsList ({ startDate, endDate, type = 'interesad
       const contactIdsSet = new Set(appointmentsInRange.map(apt => apt.contactId))
       contactIds = Array.from(contactIdsSet)
       appointmentsMap = await fetchAppointmentsForContacts(contactIds, range)
-
-      logger.info(`📊 ${contactIds.length} contactos con citas agendadas en el rango (híbrido DB + API - Reports modal)`)
     }
   }
 

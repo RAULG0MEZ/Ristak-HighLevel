@@ -111,7 +111,6 @@ async function findFallbackCandidates() {
   `;
 
   const rows = await db.all(query);
-  logger.info(`Encontrados ${rows.length} contactos candidatos para fallback`);
   return rows;
 }
 
@@ -121,8 +120,6 @@ async function findFallbackCandidates() {
  */
 export async function executeFallbackAttribution() {
   try {
-    logger.info('Iniciando Fallback Attribution...');
-
     // 1. Construir mapeo URL → ad_id dominante
     const urlMapping = await buildUrlToAdIdMapping();
 
@@ -154,7 +151,6 @@ export async function executeFallbackAttribution() {
 
       if (!isDateInRange(contact.contact_date, adDateRange)) {
         stats.date_mismatches++;
-        logger.warn(`Fecha no coincide para ${contact.full_name}: contacto ${contact.contact_date}, ad activo ${adDateRange?.first_date} - ${adDateRange?.last_date}`);
         continue;
       }
 
@@ -201,8 +197,6 @@ export async function executeFallbackAttribution() {
  */
 export async function previewFallbackAttribution() {
   try {
-    logger.info('Generando preview de Fallback Attribution...');
-
     const urlMapping = await buildUrlToAdIdMapping();
     const candidates = await findFallbackCandidates();
 
