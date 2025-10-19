@@ -14,7 +14,7 @@ const getEventIcon = (type: JourneyEvent['type']) => {
     case 'page_visit':
       return 'sparkles'
     case 'whatsapp_message':
-      return 'message-circle'
+      return 'whatsapp'
     case 'contact_created':
       return 'user'
     case 'appointment':
