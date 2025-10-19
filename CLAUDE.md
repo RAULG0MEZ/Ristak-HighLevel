@@ -700,21 +700,37 @@ git log -1
   - Ahora ambos gráficos muestran datos consistentes y legibles
   - Archivos: backend/src/utils/platformNormalizer.js, dashboardController.js
 
+- ✓ **Deduplicación mejorada: Email O Teléfono (2025-10-18)**:
+  - Problema: Deduplicación solo usaba teléfono en reportes
+  - **Casos no detectados**:
+    - Contacto cambia de teléfono pero mantiene email → contaba como 2 personas
+    - Contacto usa mismo email con teléfonos diferentes → contaba como 2 personas
+    - HighLevel crea múltiples IDs para misma persona (diferentes formularios)
+  - **Fix**: Deduplicación ahora usa email O teléfono
+  - Función `buildContactKey()` actualizada con prioridades:
+    1. Email (normalizado: lowercase + trim) → `email::usuario@dominio.com`
+    2. Teléfono (últimos 10 dígitos) → `phone::5512345678`
+    3. Contact ID (fallback) → `id::abc123`
+  - Prefijos en keys evitan colisiones entre diferentes tipos
+  - Query SQL incluye campo `email` en `buildReportMetrics`
+  - Afecta: Leads, Customers, Appointments en página de Reports
+  - Resultado: Métricas más precisas, menos duplicados inflados
+  - Archivo: backend/src/services/analyticsService.js
+
 ---
 
 ## 📅 ÚLTIMA ACTUALIZACIÓN
 
 **Fecha**: 2025-10-18
-**Versión**: 1.16.0
+**Versión**: 1.17.0
 **Últimos cambios críticos**:
-- **Fix: Unificación de fuentes de tráfico Dashboard vs Analytics**
-  - Problema: Dashboard y Analytics mostraban datos diferentes para el mismo gráfico
-  - Dashboard usaba solo `source_platform` sin normalizar (mostraba "fb", "ig")
-  - Analytics usaba cascada completa + normalización (mostraba "Facebook", "Instagram")
-  - Solución: Dashboard ahora usa la MISMA lógica que Analytics
-  - Nueva función: normalizePlatformName en backend (utils/platformNormalizer.js)
-  - Endpoint actualizado: /api/dashboard/traffic-sources con prioridad site_source_name → source_platform → utm_source
-  - Impacto: Ambos gráficos ahora muestran datos consistentes y nombres legibles
+- **Fix: Deduplicación mejorada en reportes (email O teléfono)**
+  - Problema: Solo deduplicaba por teléfono, perdía duplicados con mismo email
+  - HighLevel crea múltiples contact_id para misma persona (diferentes formularios)
+  - Solución: buildContactKey() ahora prioriza email > teléfono > ID
+  - Keys con prefijos: "email::", "phone::", "id::" para evitar colisiones
+  - Impacto: Leads, customers y appointments ahora detectan más duplicados
+  - Métricas más precisas, menos inflación de números
 
 ---
 
