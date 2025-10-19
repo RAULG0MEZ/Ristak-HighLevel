@@ -284,10 +284,10 @@ const MetricsGrid: React.FC<MetricsGridProps> = ({ metrics, loading, reportType 
         { label: labels.leads, value: formatNumber(totals.leads) },
         { label: `Costo por ${labels.lead}`, value: formatCurrency(cpl) },
         { label: 'EPA', value: formatCurrency(epl) },
-        { label: 'Cita (Primera)', value: formatNumber(totals.appointments) },
-        { label: `${labels.leads}→Cita %`, value: `${interesadoToAppt.toFixed(1)}%` },
+        { label: 'Citas (Primera)', value: formatNumber(totals.appointments) },
+        { label: `${labels.leads}→Citas %`, value: `${interesadoToAppt.toFixed(1)}%` },
         { label: reportType === 'campaigns' ? 'Ventas' : 'Transacciones', value: formatNumber(totals.sales) },
-        { label: 'Cita→Ventas %', value: `${apptToSale.toFixed(1)}%` }
+        { label: 'Citas→Ventas %', value: `${apptToSale.toFixed(1)}%` }
       ]
     },
     {
@@ -563,7 +563,7 @@ export const Reports: React.FC = () => {
           : type === 'sales'
             ? (currentReportType === 'campaigns' ? 'Ventas' : 'Transacciones')
             : type === 'appointments'
-              ? 'Cita (Primera)'
+              ? 'Citas (Primera)'
               : labels.customers),
       subtitle: `${formatPeriodLabel(from, 'day', { includeYear: true })} – ${formatPeriodLabel(to, 'day', { includeYear: true })}`,
       contacts: [],
@@ -706,7 +706,12 @@ export const Reports: React.FC = () => {
       },
       {
         key: 'new_customers',
-        header: `${labels.customers} Nuevos`,
+        header: (
+          <div style={{ textAlign: 'center', lineHeight: '1.2' }}>
+            <div>{labels.customers}</div>
+            <div style={{ fontSize: '0.75em', opacity: 0.7 }}>(Nuevos)</div>
+          </div>
+        ),
         sortable: true,
         render: (value: number, row) => {
           const hasValue = (value || 0) > 0
@@ -835,7 +840,7 @@ export const Reports: React.FC = () => {
         key: 'apptsToSalesRate',
         header: (
           <div style={{ textAlign: 'center', lineHeight: '1.2' }}>
-            <div>Cita→Ventas %</div>
+            <div>Citas→Ventas %</div>
             <div style={{ fontSize: '0.75em', opacity: 0.7 }}>(Primera)</div>
           </div>
         ),
