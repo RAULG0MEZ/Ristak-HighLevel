@@ -1287,48 +1287,58 @@ export const getFunnelMetrics = async (req, res) => {
     const startUtc = range.startZoned.toISODate();
     const endUtc = range.endZoned.toISODate();
 
-    // Query para visitantes únicos (SIN filtro de attribution_ad_id)
+    // Query para visitantes únicos CON attribution_ad_id
     const visitorsQuery = usePostgres
       ? `SELECT
           TO_CHAR(created_at::date, 'YYYY-MM-DD') as day,
           COUNT(DISTINCT visitor_id) as visitors
          FROM sessions
-         WHERE created_at::date >= $1::date
+         WHERE attribution_ad_id IS NOT NULL
+           AND attribution_ad_id != ''
+           AND created_at::date >= $1::date
            AND created_at::date < ($2::date + INTERVAL '1 day')
          GROUP BY day`
       : `SELECT
           DATE(created_at) as day,
           COUNT(DISTINCT visitor_id) as visitors
          FROM sessions
-         WHERE DATE(created_at) >= DATE(?)
+         WHERE attribution_ad_id IS NOT NULL
+           AND attribution_ad_id != ''
+           AND DATE(created_at) >= DATE(?)
            AND DATE(created_at) <= DATE(?)
          GROUP BY day`;
 
-    // Query para leads (todos los contactos SIN filtro de attribution_ad_id)
+    // Query para leads CON attribution_ad_id
     const leadsQuery = usePostgres
       ? `SELECT
           TO_CHAR(created_at::date, 'YYYY-MM-DD') as day,
           COUNT(DISTINCT id) as leads
          FROM contacts
-         WHERE created_at::date >= $1::date
+         WHERE attribution_ad_id IS NOT NULL
+           AND attribution_ad_id != ''
+           AND created_at::date >= $1::date
            AND created_at::date < ($2::date + INTERVAL '1 day')
          GROUP BY day`
       : `SELECT
           DATE(created_at) as day,
           COUNT(DISTINCT id) as leads
          FROM contacts
-         WHERE DATE(created_at) >= DATE(?)
+         WHERE attribution_ad_id IS NOT NULL
+           AND attribution_ad_id != ''
+           AND DATE(created_at) >= DATE(?)
            AND DATE(created_at) <= DATE(?)
          GROUP BY day`;
 
-    // Query para contactos con citas (SIN filtro de attribution_ad_id)
+    // Query para contactos con citas CON attribution_ad_id
     const appointmentsQuery = usePostgres
       ? `SELECT
           TO_CHAR(c.created_at::date, 'YYYY-MM-DD') as day,
           COUNT(DISTINCT c.id) as appointments
          FROM contacts c
          INNER JOIN appointments a ON c.id = a.contact_id
-         WHERE c.created_at::date >= $1::date
+         WHERE c.attribution_ad_id IS NOT NULL
+           AND c.attribution_ad_id != ''
+           AND c.created_at::date >= $1::date
            AND c.created_at::date < ($2::date + INTERVAL '1 day')
          GROUP BY day`
       : `SELECT
@@ -1336,17 +1346,21 @@ export const getFunnelMetrics = async (req, res) => {
           COUNT(DISTINCT c.id) as appointments
          FROM contacts c
          INNER JOIN appointments a ON c.id = a.contact_id
-         WHERE DATE(c.created_at) >= DATE(?)
+         WHERE c.attribution_ad_id IS NOT NULL
+           AND c.attribution_ad_id != ''
+           AND DATE(c.created_at) >= DATE(?)
            AND DATE(c.created_at) <= DATE(?)
          GROUP BY day`;
 
-    // Query para ventas (SIN filtro de attribution_ad_id)
+    // Query para ventas CON attribution_ad_id
     const salesQuery = usePostgres
       ? `SELECT
           TO_CHAR(created_at::date, 'YYYY-MM-DD') as day,
           COUNT(DISTINCT id) as sales
          FROM contacts
-         WHERE purchases_count > 0
+         WHERE attribution_ad_id IS NOT NULL
+           AND attribution_ad_id != ''
+           AND purchases_count > 0
            AND created_at::date >= $1::date
            AND created_at::date < ($2::date + INTERVAL '1 day')
          GROUP BY day`
@@ -1354,7 +1368,9 @@ export const getFunnelMetrics = async (req, res) => {
           DATE(created_at) as day,
           COUNT(DISTINCT id) as sales
          FROM contacts
-         WHERE purchases_count > 0
+         WHERE attribution_ad_id IS NOT NULL
+           AND attribution_ad_id != ''
+           AND purchases_count > 0
            AND DATE(created_at) >= DATE(?)
            AND DATE(created_at) <= DATE(?)
          GROUP BY day`;

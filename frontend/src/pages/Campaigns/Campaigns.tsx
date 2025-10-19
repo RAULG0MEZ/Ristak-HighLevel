@@ -728,7 +728,7 @@ export const Campaigns: React.FC = () => {
       key: 'appointments',
       header: (
         <div style={{ textAlign: 'center', lineHeight: '1.2' }}>
-          <div>Cita</div>
+          <div>Citas</div>
           <div style={{ fontSize: '0.75em', opacity: 0.7 }}>(Primera)</div>
         </div>
       ),
@@ -757,7 +757,7 @@ export const Campaigns: React.FC = () => {
       key: 'leadsToApptsRate',
       header: (
         <div style={{ textAlign: 'center', lineHeight: '1.2' }}>
-          <div>{`${labels.leads} → Cita %`}</div>
+          <div>{`${labels.leads} → Citas %`}</div>
           <div style={{ fontSize: '0.75em', opacity: 0.7 }}>(Primera)</div>
         </div>
       ),
@@ -775,7 +775,7 @@ export const Campaigns: React.FC = () => {
       key: 'apptsToSalesRate',
       header: (
         <div style={{ textAlign: 'center', lineHeight: '1.2' }}>
-          <div>{`Cita → ${labels.customers} %`}</div>
+          <div>{`Citas → ${labels.customers} %`}</div>
           <div style={{ fontSize: '0.75em', opacity: 0.7 }}>(Primera)</div>
         </div>
       ),
