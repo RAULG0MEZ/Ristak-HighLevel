@@ -702,21 +702,6 @@ export async function buildReportMetrics ({ startDate, endDate, groupBy = 'day',
   const contactWhere = contactConditions.length ? `WHERE ${contactConditions.join(' AND ')}` : ''
   const contactGroupExpr = getGroupExpression('contacts.created_at', groupBy)
 
-  // IMPORTANTE: Columna "appointments" cuenta contactos con AL MENOS 1 cita (métrica de atribución)
-  // Se agrupa por FECHA DE CREACIÓN DEL CONTACTO, no por fecha de cita:
-  // - Esto mide el impacto real de las campañas en generar leads que agendan citas
-  // - Si un contacto creado en enero agenda cita en febrero, se atribuye a enero
-  // - Un contacto con múltiples citas cuenta como 1 (métrica binaria: tiene o no tiene cita)
-  // - Se maneja deduplicación por teléfono para evitar contar el mismo contacto múltiples veces
-
-  // PASO 1: Cargar TODOS los eventos de calendarios (método optimizado)
-  const config = await db.get('SELECT location_id, api_token FROM highlevel_config LIMIT 1')
-  const contactsWithAppointments = config && config.api_token
-    ? await getContactsWithAppointments(config.location_id, config.api_token)
-    : new Set()
-
-  logger.info(`📊 ${contactsWithAppointments.size} contactos con citas (método optimizado - Reports)`)
-
   // PASO 2: Obtener contactos individuales con su período
   const contactsRawQuery = `
     SELECT
@@ -768,19 +753,80 @@ export async function buildReportMetrics ({ startDate, endDate, groupBy = 'day',
     if (contact.purchases_count > 0) {
       bucket.customersSet.add(baseKey)
     }
-
-    // Deduplicar appointments
-    if (contactsWithAppointments.has(contact.contact_id)) {
-      bucket.appointmentsSet.add(baseKey)
-    }
   })
+
+  // PASO 4: Procesar appointments según el scope
+  // Vista "Última atribución": Cuenta contactos con AL MENOS 1 cita (métrica de atribución)
+  // - Se agrupa por FECHA DE CREACIÓN DEL CONTACTO
+  // - Mide el impacto de las campañas en generar leads que agendan citas
+  // - Si un contacto creado en enero agenda cita en febrero, se atribuye a enero
+  // Vista "Todos": Agrupa por FECHA EN QUE SE AGENDÓ LA CITA
+  // - Se agrupa por appointments.created_at (cuando el contacto agendó)
+  // - Refleja el flujo real de citas día a día
+
+  if (useContactAttribution) {
+    // Vista "Última atribución": Usar fecha de creación del contacto
+    const config = await db.get('SELECT location_id, api_token FROM highlevel_config LIMIT 1')
+    const contactsWithAppointments = config && config.api_token
+      ? await getContactsWithAppointments(config.location_id, config.api_token)
+      : new Set()
+
+    logger.info(`📊 ${contactsWithAppointments.size} contactos con citas (método optimizado - Reports atribución)`)
+
+    contactsRaw.forEach(contact => {
+      if (contactsWithAppointments.has(contact.contact_id)) {
+        const bucket = ensureBucket(contact.period)
+        const baseKey = buildContactKey(contact) ?? `contact-${contactKeyFallback++}`
+        bucket.appointmentsSet.add(baseKey)
+      }
+    })
+  } else {
+    // Vista "Todos": Agrupar por fecha en que se agendó la cita
+    const appointmentParams = []
+    const appointmentConditions = buildRangeConditions('a.created_at', range, appointmentParams)
+
+    // Filtrar por calendarios de atribución configurados
+    const attributionCalendarIds = await getAttributionCalendarIds()
+    if (attributionCalendarIds && attributionCalendarIds.length > 0) {
+      const calendarPlaceholders = attributionCalendarIds.map(() => '?').join(',')
+      appointmentConditions.push(`a.calendar_id IN (${calendarPlaceholders})`)
+      appointmentParams.push(...attributionCalendarIds)
+    }
+
+    const appointmentWhere = appointmentConditions.length ? `WHERE ${appointmentConditions.join(' AND ')}` : ''
+    const appointmentGroupExpr = getGroupExpression('a.created_at', groupBy)
+    const contactDedupExpr = buildDedupExpression('c')
+
+    const appointmentsQuery = `
+      SELECT
+        ${appointmentGroupExpr} as period,
+        COUNT(DISTINCT ${contactDedupExpr}) as unique_appointments
+      FROM appointments a
+      LEFT JOIN contacts c ON c.id = a.contact_id
+      ${appointmentWhere}
+      GROUP BY period
+      ORDER BY period
+    `
+
+    const appointmentRows = await db.all(appointmentsQuery, appointmentParams)
+
+    appointmentRows.forEach(row => {
+      const bucket = ensureBucket(row.period)
+      bucket.appointments += Number(row.unique_appointments || 0)
+    })
+
+    logger.info(`📊 Appointments agrupados por fecha de agenda (vista Todos - Reports tabla)`)
+  }
 
   // Convertir sets a conteos
   periodMap.forEach((bucket) => {
     bucket.leads = bucket.leadsSet.size
     bucket.customers = bucket.customersSet.size
-    bucket.appointments = bucket.appointmentsSet.size
     bucket.new_customers = bucket.customersSet.size
+    // Para vista atribución, appointments ya fueron agregados en appointmentsSet
+    if (useContactAttribution) {
+      bucket.appointments = bucket.appointmentsSet.size
+    }
     // Limpiar sets temporales
     delete bucket.leadsSet
     delete bucket.customersSet
