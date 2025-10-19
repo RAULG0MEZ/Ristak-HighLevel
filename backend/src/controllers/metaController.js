@@ -440,8 +440,8 @@ export const getSpendOverTime = async (req, res) => {
       `;
     const spendParams = [start, end];
 
-    // Query de ingresos ATRIBUIDOS (solo contactos con ad_id)
-    // Necesitamos hacer JOIN con contacts para verificar que tienen ad_id
+    // Query de ingresos ATRIBUIDOS (solo contactos con attribution_ad_id)
+    // Necesitamos hacer JOIN con contacts para verificar que tienen attribution_ad_id
     const revenueQuery = usePostgres
       ? `
         SELECT
@@ -450,8 +450,8 @@ export const getSpendOverTime = async (req, res) => {
         FROM payments p
         INNER JOIN contacts c ON p.contact_id = c.id
         WHERE p.status = 'succeeded'
-          AND c.ad_id IS NOT NULL
-          AND c.ad_id != ''
+          AND c.attribution_ad_id IS NOT NULL
+          AND c.attribution_ad_id != ''
           AND p.date::date >= $1::date AND p.date::date < ($2::date + INTERVAL '1 day')
         GROUP BY day
         ORDER BY day ASC
@@ -463,8 +463,8 @@ export const getSpendOverTime = async (req, res) => {
         FROM payments p
         INNER JOIN contacts c ON p.contact_id = c.id
         WHERE p.status = 'succeeded'
-          AND c.ad_id IS NOT NULL
-          AND c.ad_id != ''
+          AND c.attribution_ad_id IS NOT NULL
+          AND c.attribution_ad_id != ''
           AND p.date >= ? AND p.date < DATE(?, '+1 day')
         GROUP BY day
         ORDER BY day ASC
