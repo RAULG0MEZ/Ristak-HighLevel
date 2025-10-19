@@ -1,7 +1,9 @@
 import React, { useMemo } from 'react'
-import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import { Card } from '../Card'
 import { Globe } from 'lucide-react'
+import { useChartHover } from '@/hooks/useChartHover'
+import { ChartTooltip } from '../ChartTooltip/ChartTooltip'
 import styles from './TrafficSourcesChart.module.css'
 
 interface TrafficData {
@@ -27,6 +29,8 @@ const DEFAULT_COLORS = [
 ]
 
 export const TrafficSourcesChart: React.FC<TrafficSourcesChartProps> = ({ data, loading = false }) => {
+  const { activePoint, pointPos, handleMouseMove, handleMouseLeave } = useChartHover()
+
   const chartData = useMemo(() => {
     return data.map((item, index) => ({
       ...item,
@@ -35,6 +39,12 @@ export const TrafficSourcesChart: React.FC<TrafficSourcesChartProps> = ({ data, 
   }, [data])
 
   const totalVisits = chartData.reduce((sum, item) => sum + item.value, 0)
+
+  // Formatear tooltip
+  const formatTooltipValue = (value: number) => {
+    const percentage = totalVisits > 0 ? ((value / totalVisits) * 100).toFixed(1) : '0'
+    return `${value.toLocaleString()} (${percentage}%)`
+  }
 
   return (
     <Card className={styles.container}>
@@ -58,7 +68,10 @@ export const TrafficSourcesChart: React.FC<TrafficSourcesChartProps> = ({ data, 
         ) : chartData.length > 0 ? (
           <>
             <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
+              <PieChart
+                onMouseMove={handleMouseMove}
+                onMouseLeave={handleMouseLeave}
+              >
                 <Pie
                   data={chartData}
                   cx="50%"
@@ -79,8 +92,17 @@ export const TrafficSourcesChart: React.FC<TrafficSourcesChartProps> = ({ data, 
                     />
                   ))}
                 </Pie>
+                <Tooltip content={() => null} cursor={false} />
               </PieChart>
             </ResponsiveContainer>
+
+            <ChartTooltip
+              active={activePoint !== null}
+              data={activePoint !== null ? { ...chartData[activePoint.dataIndex], label: chartData[activePoint.dataIndex].name } : null}
+              pointPos={pointPos}
+              series={[{ key: 'value', label: 'Visitantes', color: chartData[activePoint?.dataIndex ?? 0]?.color ?? '#3b82f6' }]}
+              formatValue={formatTooltipValue}
+            />
 
             <div className={styles.centerLabel}>
               <div className={styles.centerValue}>{chartData.length}</div>
