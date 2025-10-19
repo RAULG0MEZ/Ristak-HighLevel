@@ -215,12 +215,19 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
       // Detectar si es Round Robin
       const isRoundRobin = calendar?.calendarType === 'round_robin';
 
-      
+      console.log('🔍 DEBUG loadUsers:', {
+        hasCalendar: !!calendar,
+        calendarType: calendar?.calendarType,
+        isRoundRobin,
+        teamMembersCount: calendar?.teamMembers?.length || 0,
+        teamMembers: calendar?.teamMembers
+      });
 
       if (isRoundRobin && calendar?.teamMembers && calendar.teamMembers.length > 0) {
         // Para Round Robin: obtener usuarios específicos por sus IDs
         const teamMemberIds = calendar.teamMembers.map(tm => tm.userId);
 
+        console.log('📡 Obteniendo usuarios Round Robin por IDs:', teamMemberIds);
 
         try {
           const response = await fetch('/api/highlevel/users/by-ids', {
@@ -251,7 +258,11 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
           const data = await response.json();
           const fetchedUsers = data.users || [];
 
-          
+          console.log('✅ Round Robin - Usuarios obtenidos:', {
+            teamMemberIds,
+            fetchedCount: fetchedUsers.length,
+            fetchedUsers
+          });
 
           setUsers(fetchedUsers);
         } catch (error) {
@@ -268,12 +279,15 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
         }
       } else {
         // Para calendarios normales: cargar todos los usuarios del location
+        console.log('📡 Obteniendo todos los usuarios del location');
 
         const response = await fetch('/api/highlevel/users');
         if (!response.ok) throw new Error('Error al cargar usuarios');
         const data = await response.json();
 
-        
+        console.log('✅ Calendario normal - Todos los usuarios:', {
+          usersCount: data.users?.length || 0
+        });
 
         setUsers(data.users || []);
       }
@@ -291,6 +305,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
       if (!response.ok) throw new Error('Error al cargar contacto');
       const data = await response.json();
       const contact = data.contact;
+      console.log('[loadContactById] Contacto recibido:', contact);
       if (contact) {
         // Construir nombre: prioridad name > firstName+lastName > email > phone
         const fullName = contact.name ||
@@ -421,8 +436,11 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
       // Modo edición/vista: obtener detalles completos de la cita
       const loadEventDetails = async () => {
         try {
+          console.log('[AppointmentModal] Evento recibido:', event);
+          console.log('[AppointmentModal] Event ID:', event.id);
 
           if (!event.id) {
+            console.log('[AppointmentModal] Falta event.id, usando datos básicos');
             // Si no hay ID, usar los datos básicos del evento
             setFormData({
               title: event.title || '',
@@ -444,9 +462,12 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
 
           // Obtener detalles completos de la cita (incluye contactId y assignedUserId)
           // Ya no necesita accessToken - el backend lo obtiene automáticamente
+          console.log('[AppointmentModal] Llamando getAppointment con eventId:', event.id);
           const fullEvent = await calendarsService.getAppointment(event.id);
+          console.log('[AppointmentModal] Respuesta de getAppointment:', fullEvent);
 
           if (fullEvent) {
+            console.log('[AppointmentModal] Evento completo obtenido, contactId:', fullEvent.contactId, 'assignedUserId:', fullEvent.assignedUserId);
             setFormData({
               title: fullEvent.title || '',
               appointmentStatus: fullEvent.appointmentStatus || 'pending',
@@ -775,7 +796,20 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
             {(() => {
               const isRoundRobin = calendar?.calendarType === 'round_robin';
 
-              
+              console.log('🔍 Renderizando selector de usuarios:', {
+                isCreateMode,
+                usersLength: users.length,
+                users,
+                isRoundRobin,
+                loadingUsers,
+                assignedUserId: formData.assignedUserId,
+                calendar: calendar ? {
+                  id: calendar.id,
+                  name: calendar.name,
+                  calendarType: calendar.calendarType,
+                  teamMembersCount: calendar.teamMembers?.length
+                } : null
+              });
 
               // En modo view, si hay usuario asignado, buscarlo y mostrarlo
               if (!isCreateMode && formData.assignedUserId && users.length > 0) {

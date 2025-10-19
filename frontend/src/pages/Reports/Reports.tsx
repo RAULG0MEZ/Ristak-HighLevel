@@ -501,7 +501,6 @@ export const Reports: React.FC = () => {
         setLoadingSummary(true)
         const result = await reportsService.getSummary({ from: apiRange.from, to: apiRange.to, scope: scopeParam })
         setSummary(result)
-        console.log('[CITAS DEBUG] Reports data recibida:', result)
       } catch (error) {
         setSummary(null)
       } finally {
@@ -797,9 +796,8 @@ export const Reports: React.FC = () => {
           </div>
         ),
         sortable: true,
-        visible: true, // Cambiado a visible para debug
+        visible: true,
         render: (value: number, row) => {
-          console.log(`[CITAS DEBUG] Reports - Fecha: ${row.date}, Citas: ${value}`)
           const hasValue = (value || 0) > 0
           return hasValue ? (
             <button

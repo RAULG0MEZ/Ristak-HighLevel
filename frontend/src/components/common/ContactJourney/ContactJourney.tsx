@@ -61,8 +61,13 @@ const getEventColor = (type: JourneyEvent['type']) => {
   }
 }
 
-const getEventDescription = (event: JourneyEvent): string => {
-  const { type, data } = event
+const getEventDescription = (event?: JourneyEvent | null): string => {
+  if (!event) {
+    return ''
+  }
+
+  const { type } = event
+  const data = (event.data && typeof event.data === 'object') ? event.data : {}
 
   if (type === 'page_visit') {
     // Usar normalizador con prioridad: referrer_url → site_source_name → utm_source → source_platform
@@ -92,8 +97,13 @@ const getEventDescription = (event: JourneyEvent): string => {
   return ''
 }
 
-const getTooltipContent = (event: JourneyEvent) => {
-  const { type, data } = event
+const getTooltipContent = (event?: JourneyEvent | null) => {
+  if (!event) {
+    return []
+  }
+
+  const { type } = event
+  const data = (event.data && typeof event.data === 'object') ? event.data : {}
 
   const items: { label: string; value: string }[] = []
 
@@ -229,8 +239,18 @@ export const ContactJourney = ({ contactId }: ContactJourneyProps) => {
       <h4 className={styles.title}>Viaje del Cliente</h4>
       <div className={styles.timeline}>
         {journey.map((event, index) => {
-          const iconName = getEventIcon(event.type)
-          const color = getEventColor(event.type)
+          if (
+            !event ||
+            typeof event !== 'object' ||
+            !('type' in event) ||
+            typeof event.type !== 'string'
+          ) {
+            return null
+          }
+
+          const eventType = event.type as JourneyEvent['type']
+          const iconName = getEventIcon(eventType)
+          const color = getEventColor(eventType)
           const isLast = index === journey.length - 1
 
           const tooltipItems = getTooltipContent(event)
@@ -256,7 +276,7 @@ export const ContactJourney = ({ contactId }: ContactJourneyProps) => {
                   <Icon name={iconName as any} size={18} />
                 </div>
                 <div className={styles.eventContent}>
-                  <span className={styles.eventTitle}>{getEventTitle(event.type)}</span>
+                  <span className={styles.eventTitle}>{getEventTitle(eventType)}</span>
                   <span className={styles.eventDescription}>{getEventDescription(event)}</span>
                   <span className={styles.eventDate}>{formatDate(event.date, 'short')}</span>
                 </div>
@@ -274,7 +294,7 @@ export const ContactJourney = ({ contactId }: ContactJourneyProps) => {
                     zIndex: 2147483647
                   }}
                 >
-                  <div className={styles.tooltipTitle}>{getEventTitle(event.type)}</div>
+                  <div className={styles.tooltipTitle}>{getEventTitle(eventType)}</div>
                   <div className={styles.tooltipDate}>{formatDate(event.date, 'long')}</div>
                   {tooltipItems.map((item, idx) => (
                     <div key={idx} className={styles.tooltipItem}>
