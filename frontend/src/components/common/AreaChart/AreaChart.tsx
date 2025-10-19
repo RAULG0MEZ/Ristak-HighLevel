@@ -130,7 +130,7 @@ export const AreaChart: React.FC<AreaChartProps> = ({
 
       <div ref={chartRef} className="relative" style={{ height }}>
         <ResponsiveContainer width="100%" height="100%">
-          <RechartsAreaChart data={data} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+          <RechartsAreaChart data={data} margin={{ top: 10, right: 12, left: 0, bottom: 5 }}>
             <defs>
               {series.map((serie) => (
                 <linearGradient
@@ -158,6 +158,8 @@ export const AreaChart: React.FC<AreaChartProps> = ({
               tick={{ fill: 'var(--color-text-tertiary)', fontSize: 12 }}
               axisLine={{ stroke: 'var(--color-text-tertiary)', opacity: 0.2 }}
               tickLine={false}
+              padding={{ left: 0, right: 0 }}
+              scale="point"
             />
 
             <YAxis

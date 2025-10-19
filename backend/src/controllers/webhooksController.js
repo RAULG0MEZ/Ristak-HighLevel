@@ -36,7 +36,36 @@ export const handleContactWebhook = async (req, res) => {
       || {};
 
     // Extraer visitor_id del custom field (solo rkvi_id)
-    const visitorId = data.rkvi_id || null;
+    let visitorId = data.rkvi_id || null;
+
+    // Si NO viene visitor_id en el webhook, intentar buscarlo en sessions por email o teléfono
+    if (!visitorId && (email || phone)) {
+      try {
+        let sessionQuery = '';
+        let sessionParams = [];
+
+        if (email && phone) {
+          sessionQuery = 'SELECT visitor_id FROM sessions WHERE email = ? OR LOWER(REPLACE(REPLACE(REPLACE(phone, "+", ""), "-", ""), " ", "")) = LOWER(REPLACE(REPLACE(REPLACE(?, "+", ""), "-", ""), " ", "")) ORDER BY started_at ASC LIMIT 1';
+          sessionParams = [email, phone];
+        } else if (email) {
+          sessionQuery = 'SELECT visitor_id FROM sessions WHERE email = ? ORDER BY started_at ASC LIMIT 1';
+          sessionParams = [email];
+        } else if (phone) {
+          sessionQuery = 'SELECT visitor_id FROM sessions WHERE LOWER(REPLACE(REPLACE(REPLACE(phone, "+", ""), "-", ""), " ", "")) = LOWER(REPLACE(REPLACE(REPLACE(?, "+", ""), "-", ""), " ", "")) ORDER BY started_at ASC LIMIT 1';
+          sessionParams = [phone];
+        }
+
+        if (sessionQuery) {
+          const session = await db.get(sessionQuery, sessionParams);
+          if (session?.visitor_id) {
+            visitorId = session.visitor_id;
+            logger.info(`🔗 Visitor ID encontrado en sessions: ${visitorId} para contacto ${contactId}`);
+          }
+        }
+      } catch (err) {
+        logger.warn(`No se pudo buscar visitor_id en sessions: ${err.message}`);
+      }
+    }
 
     const usePostgres = process.env.DATABASE_URL ? true : false;
 

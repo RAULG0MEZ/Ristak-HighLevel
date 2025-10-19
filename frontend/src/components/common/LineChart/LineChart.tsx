@@ -147,7 +147,7 @@ export const LineChart: React.FC<LineChartProps> = ({
         style={{ minHeight: height, height }}
       >
         <ResponsiveContainer width="100%" height="100%">
-          <RechartsAreaChart data={data} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+          <RechartsAreaChart data={data} margin={{ top: 10, right: 12, left: 0, bottom: 5 }}>
             <defs>
               {series.map((serie) => (
                 <linearGradient
@@ -171,6 +171,8 @@ export const LineChart: React.FC<LineChartProps> = ({
               tick={{ fill: 'var(--color-text-tertiary)', fontSize: 13 }}
               axisLine={{ stroke: 'var(--color-border-subtle)', opacity: 0.2 }}
               tickLine={false}
+              padding={{ left: 0, right: 0 }}
+              scale="point"
             />
 
             <YAxis

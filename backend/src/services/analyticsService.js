@@ -26,6 +26,41 @@ const DEFAULT_NUMBER = {
   avg_ltv: 0
 }
 
+function normalizePhoneValue(phone) {
+  if (!phone) {
+    return null
+  }
+
+  const digits = String(phone).replace(/\D/g, '')
+
+  if (digits.length < 10) {
+    return null
+  }
+
+  return digits.slice(-10)
+}
+
+function buildContactKey(contact) {
+  // Prioridad 1: Email (más único y estable que teléfono)
+  const email = contact?.email?.toLowerCase().trim()
+  if (email && email.includes('@')) {
+    return `email::${email}`
+  }
+
+  // Prioridad 2: Teléfono (normalizado a últimos 10 dígitos)
+  const normalizedPhone = normalizePhoneValue(contact?.phone)
+  if (normalizedPhone) {
+    return `phone::${normalizedPhone}`
+  }
+
+  // Prioridad 3: Contact ID (fallback cuando no hay email ni teléfono)
+  if (contact?.contact_id != null) {
+    return `id::${String(contact.contact_id)}`
+  }
+
+  return null
+}
+
 async function fetchPreviousRange(range, fallbackStrategy) {
   if (range.startZoned && range.endZoned && range.providedStart) {
     const spanDays = Math.max(Math.round(range.endZoned.diff(range.startZoned, 'days').days) + 1, 1)
@@ -648,6 +683,7 @@ export async function buildReportMetrics ({ startDate, endDate, groupBy = 'day',
     SELECT
       ${contactGroupExpr} as period,
       contacts.id as contact_id,
+      contacts.email,
       contacts.phone,
       contacts.purchases_count,
       CASE WHEN a.contact_id IS NOT NULL THEN 1 ELSE 0 END as has_appointment_db
@@ -774,30 +810,24 @@ export async function buildReportMetrics ({ startDate, endDate, groupBy = 'day',
     return periodMap.get(period)
   }
 
+  let contactKeyFallback = 0
+
   // Procesar contactos con deduplicación por teléfono
   contactsRaw.forEach(contact => {
     const bucket = ensureBucket(contact.period)
+    const baseKey = buildContactKey(contact) ?? `contact-${contactKeyFallback++}`
 
     // Deduplicar leads
-    const leadKey = (contact.phone && contact.phone.length >= 10)
-      ? contact.phone.slice(-10)
-      : contact.contact_id
-    bucket.leadsSet.add(leadKey)
+    bucket.leadsSet.add(baseKey)
 
     // Deduplicar customers
     if (contact.purchases_count > 0) {
-      const customerKey = (contact.phone && contact.phone.length >= 10)
-        ? contact.phone.slice(-10)
-        : contact.contact_id
-      bucket.customersSet.add(customerKey)
+      bucket.customersSet.add(baseKey)
     }
 
     // Deduplicar appointments
     if (contactsWithAppointments.has(contact.contact_id)) {
-      const apptKey = (contact.phone && contact.phone.length >= 10)
-        ? contact.phone.slice(-10)
-        : contact.contact_id
-      bucket.appointmentsSet.add(apptKey)
+      bucket.appointmentsSet.add(baseKey)
     }
   })
 
