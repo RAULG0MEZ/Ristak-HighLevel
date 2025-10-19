@@ -757,26 +757,31 @@ export const getContactsByType = async (req, res) => {
     let adIdsList = [];
 
     // Obtener los ad_ids relevantes basándose en el filtro
+    // IMPORTANTE: Filtrar por rango de fechas para que coincida con los números de la tabla
     if (ad_id) {
-      // Si se especifica un ad_id directamente, usarlo sin filtrar por fechas en meta_ads
+      // Si se especifica un ad_id directamente, usarlo
       adIdsList = [ad_id];
     } else if (adset_id) {
-      // Si se especifica un adset_id, obtener todos los ads de ese adset (sin filtrar por fecha)
+      // Obtener ads del adset que tienen actividad en el rango de fechas
       const adIdsQuery = `
         SELECT DISTINCT ad_id
         FROM meta_ads
-        WHERE adset_id = ?
+        WHERE adset_id = $1
+        AND date >= $2
+        AND date <= $3
       `;
-      const adIds = await db.all(adIdsQuery, [adset_id]);
+      const adIds = await db.all(adIdsQuery, [adset_id, range.startUtc, range.endUtc]);
       adIdsList = adIds.map(row => row.ad_id);
     } else if (campaign_id) {
-      // Si se especifica un campaign_id, obtener todos los ads de esa campaña (sin filtrar por fecha)
+      // Obtener ads de la campaña que tienen actividad en el rango de fechas
       const adIdsQuery = `
         SELECT DISTINCT ad_id
         FROM meta_ads
-        WHERE campaign_id = ?
+        WHERE campaign_id = $1
+        AND date >= $2
+        AND date <= $3
       `;
-      const adIds = await db.all(adIdsQuery, [campaign_id]);
+      const adIds = await db.all(adIdsQuery, [campaign_id, range.startUtc, range.endUtc]);
       adIdsList = adIds.map(row => row.ad_id);
     } else {
       return res.status(400).json({
