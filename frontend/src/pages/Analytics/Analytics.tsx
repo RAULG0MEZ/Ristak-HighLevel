@@ -73,27 +73,105 @@ const getPlacementIcon = (placementName: string) => {
   return Target
 }
 
-// Helper para normalizar nombres de plataformas (expandir abreviaciones)
+// Helper para normalizar nombres de plataformas (expandir abreviaciones y variantes)
 const normalizePlatformName = (rawName: string): string => {
   if (!rawName) return 'Directo'
 
-  const name = rawName.toLowerCase().trim()
+  // Limpiar el nombre: lowercase, sin espacios extra, sin guiones/underscores
+  const name = rawName.toLowerCase().trim().replace(/[-_]/g, '')
 
-  // Mapeo de abreviaciones comunes
+  // Mapeo exhaustivo de variantes de plataformas
   const platformMap: { [key: string]: string } = {
+    // Facebook variantes
     'fb': 'Facebook',
-    'ig': 'Instagram',
     'facebook': 'Facebook',
+    'face book': 'Facebook',
+    'facebook.com': 'Facebook',
+    'fbig': 'Facebook',
+
+    // Instagram variantes
+    'ig': 'Instagram',
     'instagram': 'Instagram',
+    'insta': 'Instagram',
+    'instagram.com': 'Instagram',
+
+    // Google variantes
     'google': 'Google',
+    'google.com': 'Google',
+    'google ads': 'Google',
+    'googleads': 'Google',
+    'adwords': 'Google',
+    'gdn': 'Google',
+    'search': 'Google',
+
+    // TikTok variantes
     'tiktok': 'TikTok',
+    'tik tok': 'TikTok',
+    'tt': 'TikTok',
+    'tiktok.com': 'TikTok',
+
+    // Twitter/X variantes
     'twitter': 'Twitter',
+    'x.com': 'Twitter',
+    'x': 'Twitter',
+    'twitter.com': 'Twitter',
+
+    // LinkedIn variantes
     'linkedin': 'LinkedIn',
+    'linked in': 'LinkedIn',
+    'linkedin.com': 'LinkedIn',
+    'li': 'LinkedIn',
+
+    // Microsoft/Bing variantes
     'microsoft': 'Microsoft',
     'bing': 'Microsoft',
+    'bing.com': 'Microsoft',
+    'msn': 'Microsoft',
+
+    // YouTube variantes
     'youtube': 'YouTube',
+    'you tube': 'YouTube',
+    'youtube.com': 'YouTube',
+    'yt': 'YouTube',
+
+    // Messenger variantes
     'messenger': 'Messenger',
-    'whatsapp': 'WhatsApp'
+    'fb messenger': 'Messenger',
+    'facebook messenger': 'Messenger',
+    'm.me': 'Messenger',
+
+    // WhatsApp variantes
+    'whatsapp': 'WhatsApp',
+    'whats app': 'WhatsApp',
+    'wa': 'WhatsApp',
+    'whatsapp.com': 'WhatsApp',
+
+    // Snapchat variantes
+    'snapchat': 'Snapchat',
+    'snap': 'Snapchat',
+    'snapchat.com': 'Snapchat',
+
+    // Pinterest variantes
+    'pinterest': 'Pinterest',
+    'pin': 'Pinterest',
+    'pinterest.com': 'Pinterest',
+
+    // Reddit variantes
+    'reddit': 'Reddit',
+    'reddit.com': 'Reddit',
+
+    // Email variantes
+    'email': 'Email',
+    'correo': 'Email',
+    'newsletter': 'Email',
+
+    // Directo/Orgánico
+    'direct': 'Directo',
+    'directo': 'Directo',
+    'organic': 'Orgánico',
+    'organico': 'Orgánico',
+    '(none)': 'Directo',
+    'none': 'Directo'
   }
 
   // Buscar coincidencia exacta
@@ -108,8 +186,9 @@ const normalizePlatformName = (rawName: string): string => {
     }
   }
 
-  // Si no hay match, capitalizar primera letra
-  return rawName.charAt(0).toUpperCase() + rawName.slice(1)
+  // Si no hay match, capitalizar primera letra y limpiar
+  const cleaned = rawName.trim().replace(/[-_]/g, ' ')
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1)
 }
 
 // Usar TrackingSession directamente
@@ -510,7 +589,12 @@ const Analytics: React.FC = () => {
             'YouTube': '#ff0000',
             'Messenger': '#0084ff',
             'WhatsApp': '#25d366',
-            'Directo': '#6b7280'
+            'Snapchat': '#fffc00',
+            'Pinterest': '#e60023',
+            'Reddit': '#ff4500',
+            'Email': '#ea4335',
+            'Directo': '#6b7280',
+            'Orgánico': '#10b981'
           }
           const trafficSourcesData = Object.entries(platforms)
             .map(([platform, count]) => ({
@@ -764,7 +848,12 @@ const Analytics: React.FC = () => {
       'YouTube': '#ff0000',
       'Messenger': '#0084ff',
       'WhatsApp': '#25d366',
-      'Directo': '#6b7280'
+      'Snapchat': '#fffc00',
+      'Pinterest': '#e60023',
+      'Reddit': '#ff4500',
+      'Email': '#ea4335',
+      'Directo': '#6b7280',
+      'Orgánico': '#10b981'
     }
     const trafficSourcesData = Object.entries(platforms)
       .map(([platform, count]) => ({
