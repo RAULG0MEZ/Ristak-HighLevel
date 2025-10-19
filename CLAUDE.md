@@ -190,12 +190,22 @@ Backend:
 - **Estado**: Implementado y activo
 - **Archivos**: `backend/src/jobs/*.cron.js`
 - **Cron Jobs Activos**:
-  - `metaSync.cron.js`: Sincroniza anuncios de Meta cada hora (a las XX:00)
-  - `contactsSync.cron.js`: Sincroniza contactos, citas y pagos de HighLevel cada hora (a las XX:00)
-    - **Característica importante**: Este cron usa `triggerSource: 'cron'` para NO mostrar la barra lateral de progreso
-    - Solo las sincronizaciones manuales (desde Settings) muestran la barra lateral (`triggerSource: 'manual'`)
-    - Mantiene la base de datos actualizada automáticamente en caso de que se borren contactos externamente
-- **Configuración**: Se inician automáticamente al arrancar el servidor (`server.js`)
+  1. **`metaSync.cron.js`**: Sincroniza anuncios de Meta Ads cada hora (a las XX:00)
+     - Actualiza métricas de campañas publicitarias (gasto, clicks, alcance, impresiones)
+
+  2. **`highlevelSync.cron.js`**: Sincroniza TODO de HighLevel cada hora (a las XX:00)
+     - Sincroniza: **Contactos, Citas (Appointments), Pagos (Invoices/Transacciones)**
+     - **Característica importante**: Este cron usa `triggerSource: 'cron'` para NO mostrar la barra lateral de progreso
+     - Solo las sincronizaciones manuales (desde Settings) muestran la barra lateral (`triggerSource: 'manual'`)
+     - Mantiene la DB actualizada automáticamente en caso de cambios externos
+     - **Nota**: NO necesitas cron separado de invoices, este ya sincroniza pagos/invoices
+
+  3. **`metaVersionCron.js`**: Actualiza versión de Meta API cada 6 meses
+     - Se ejecuta día 1 y 15 de cada mes a las 3:00 AM (timezone: America/Mexico_City)
+     - Verifica si han pasado 6 meses desde la última actualización
+     - Detecta y actualiza a la versión más reciente de Meta API automáticamente
+
+- **Configuración**: Se inician automáticamente al arrancar el servidor (`server.js` líneas 117-119)
 
 ### Webhooks
 - **Estado**: Configurado

@@ -6,10 +6,9 @@ import { dirname, join } from 'path'
 import { logger } from './utils/logger.js'
 import { initializeMasterKey } from './utils/encryption.js'
 import { startMetaSyncCron } from './jobs/metaSync.cron.js'
-import { startContactsSyncCron } from './jobs/contactsSync.cron.js'
+import { startHighLevelSyncCron } from './jobs/highlevelSync.cron.js'
 import { startMetaVersionCron } from './jobs/metaVersionCron.js'
 import { initializeVersion } from './services/metaVersionService.js'
-// import { startInvoicesReconciliation } from './jobs/invoicesReconciliation.cron.js' // DESACTIVADO: Solo usar webhooks
 import { verifyAndUpdateWebhooks } from './startup/webhookVerification.js'
 
 // Force redeploy to ensure latest logs are active
@@ -115,10 +114,9 @@ app.listen(PORT, async () => {
   await verifyAndUpdateWebhooks()
 
   // Iniciar cron jobs
-  startMetaSyncCron()
-  startContactsSyncCron() // Sincroniza contactos cada hora de manera silenciosa
-  startMetaVersionCron() // Actualiza versión de Meta API cada 6 meses
-  // startInvoicesReconciliation() // DESACTIVADO: Solo usar webhooks para sincronización en tiempo real
+  startMetaSyncCron()              // Sincroniza anuncios de Meta Ads cada hora
+  startHighLevelSyncCron()         // Sincroniza contactos, citas y pagos de HighLevel cada hora (silencioso)
+  startMetaVersionCron()           // Actualiza versión de Meta API cada 6 meses
 })
 
 // Manejo de errores de proceso
