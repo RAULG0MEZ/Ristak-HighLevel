@@ -73,6 +73,32 @@ const getPlacementIcon = (placementName: string) => {
   return Target
 }
 
+// Helper para extraer el tipo de ubicación del placement (Feed, Reels, Stories, etc.)
+const extractPlacementType = (placement: string): string => {
+  if (!placement) return 'Desconocido'
+
+  const cleaned = placement.toLowerCase().trim()
+
+  // Extraer el tipo de ubicación del formato: "Instagram_Feed", "Facebook_Mobile_Reels", etc.
+  if (cleaned.includes('feed')) return 'Feed'
+  if (cleaned.includes('reel')) return 'Reels'
+  if (cleaned.includes('story') || cleaned.includes('stories')) return 'Stories'
+  if (cleaned.includes('right_column') || cleaned.includes('rightcolumn')) return 'Columna Derecha'
+  if (cleaned.includes('marketplace')) return 'Marketplace'
+  if (cleaned.includes('search')) return 'Búsqueda'
+  if (cleaned.includes('video')) return 'Video'
+  if (cleaned.includes('messenger')) return 'Messenger'
+  if (cleaned.includes('audience_network') || cleaned.includes('audiencenetwork')) return 'Audience Network'
+  if (cleaned.includes('instant_article')) return 'Artículo Instantáneo'
+  if (cleaned.includes('instream')) return 'In-Stream'
+  if (cleaned.includes('explore')) return 'Explorar'
+
+  // Si no hay match, capitalizar
+  return placement.replace(/_/g, ' ').split(' ').map(word =>
+    word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+  ).join(' ')
+}
+
 // Helper para normalizar nombres de plataformas (expandir abreviaciones y variantes)
 const normalizePlatformName = (rawName: string): string => {
   if (!rawName) return 'Directo'

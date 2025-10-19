@@ -204,6 +204,15 @@ export const Campaigns: React.FC = () => {
       setCampaigns(sortedData)
       setCampaignSummary(summaryReport?.summary ?? null)
 
+      // DEBUG: Ver datos de citas en campañas
+      console.log('[CITAS DEBUG] Campaigns data:', sortedData.map(c => ({
+        name: c.name,
+        appointments: c.appointments,
+        leads: c.leads,
+        sales: c.sales
+      })))
+      console.log('[CITAS DEBUG] Summary:', summaryReport?.summary)
+
       // Calcular rango en días
       const rangeInDays = Math.ceil((dateRange.end.getTime() - dateRange.start.getTime()) / (1000 * 60 * 60 * 24))
 
@@ -722,9 +731,10 @@ export const Campaigns: React.FC = () => {
           <div style={{ fontSize: '0.75em', opacity: 0.7 }}>(Primera)</div>
         </div>
       ),
-      visible: false,
+      visible: true, // Cambiado a visible para debug
       render: (value, item) => {
         if (item.showPlaceholder) return <span className={styles.placeholderText}>—</span>
+        console.log(`[CITAS DEBUG] Renderizando citas para ${item.name}: ${value}`)
         return (value || 0).toLocaleString()
       },
       sortable: true,
