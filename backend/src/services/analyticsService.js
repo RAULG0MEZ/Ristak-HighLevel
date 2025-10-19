@@ -978,11 +978,13 @@ export async function buildReportMetrics ({ startDate, endDate, groupBy = 'day',
   logger.info(`   Gasto: $${totals.spend.toFixed(2)}`)
   logger.info(`   Ingresos: $${totals.revenue.toFixed(2)}`)
 
-  if (metrics.length <= 10) {
+  if (metrics.length <= 100) {
     logger.info(`\n📋 DETALLE POR PERÍODO:`)
     metrics.forEach(m => {
       logger.info(`   ${m.period}: Leads=${m.leads}, Citas=${m.appointments}, Visitantes=${m.visitors}, Ventas=${m.sales}`)
     })
+  } else {
+    logger.info(`\n⚠️ Demasiados períodos (${metrics.length}), no se muestra detalle`)
   }
   logger.info(`🔵 ========== FIN [${requestId}] ==========\n`)
 
