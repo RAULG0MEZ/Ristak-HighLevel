@@ -6,7 +6,8 @@ import {
   getContactStats,
   syncContactsStats,
   updateContact,
-  deleteContact
+  deleteContact,
+  getContactJourney
 } from '../controllers/contactsController.js'
 
 const router = express.Router()
@@ -17,6 +18,7 @@ router.get('/search', searchContacts)
 router.get('/stats', getContactStats)
 router.post('/sync-stats', syncContactsStats)
 router.get('/:id', getContactById)
+router.get('/:id/journey', getContactJourney)
 router.put('/:id', updateContact)
 router.delete('/:id', deleteContact)
 

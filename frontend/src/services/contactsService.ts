@@ -18,6 +18,12 @@ export interface ContactStats {
   avgLtvPrev: number
 }
 
+export interface JourneyEvent {
+  type: 'first_visit' | 'whatsapp_message' | 'contact_created' | 'first_appointment' | 'first_payment'
+  date: string
+  data: Record<string, any>
+}
+
 const normalizeContact = <T extends Record<string, any>>(contact: T): T => {
   if (!contact || typeof contact !== 'object') {
     return contact
@@ -156,6 +162,16 @@ export const contactsService = {
   async getContactDetails(id: string): Promise<Contact> {
     const data = await apiClient.get<Contact>(`/contacts/${id}`)
     return normalizeContact(data)
+  },
+
+  async getContactJourney(id: string): Promise<JourneyEvent[]> {
+    try {
+      const data = await apiClient.get<JourneyEvent[]>(`/contacts/${id}/journey`)
+      return Array.isArray(data) ? data : []
+    } catch (error) {
+      // TODO: Implement proper logging service
+      return []
+    }
   },
 
   calculateDelta(current: number, previous: number): number {

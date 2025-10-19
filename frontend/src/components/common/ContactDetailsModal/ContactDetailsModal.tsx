@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { Modal, Icon, Badge, type BadgeVariant } from '@/components/common'
+import { ContactJourney } from '@/components/common/ContactJourney'
 import { formatDate } from '@/utils/format'
 import { useLabels } from '@/contexts/LabelsContext'
 import styles from './ContactDetailsModal.module.css'
@@ -603,6 +604,11 @@ export function ContactDetailsModal({
                     )}
                   </div>
                 )}
+
+                {/* Viaje del Cliente */}
+                <div className={styles.detailSection}>
+                  <ContactJourney contactId={selectedContact.id} />
+                </div>
               </div>
             </div>
           )}

@@ -26,6 +26,7 @@ export { TreeFilter } from './TreeFilter'
 // Componentes de contacto
 export { ContactDetailsModal } from './ContactDetailsModal'
 export { ContactSearchInput } from './ContactSearchInput/ContactSearchInput'
+export { ContactJourney } from './ContactJourney'
 export { VisitorDetailsModal } from './VisitorDetailsModal'
 
 // Componentes de pagos
