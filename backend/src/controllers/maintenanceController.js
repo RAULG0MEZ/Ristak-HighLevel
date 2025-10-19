@@ -24,72 +24,44 @@ export const fixVisitorIds = async (req, res) => {
 
     for (const contact of contacts) {
       try {
-        let sessionQuery = '';
-        let sessionParams = [];
+        // Buscar por email (sessions solo tiene email, NO phone)
+        let session = null;
 
-        // Buscar por email y teléfono
-        if (contact.email && contact.phone) {
-          sessionQuery = `
-            SELECT visitor_id
-            FROM sessions
-            WHERE email = ?
-              OR LOWER(REPLACE(REPLACE(REPLACE(phone, '+', ''), '-', ''), ' ', '')) = LOWER(REPLACE(REPLACE(REPLACE(?, '+', ''), '-', ''), ' ', ''))
-            ORDER BY started_at ASC
-            LIMIT 1
-          `;
-          sessionParams = [contact.email, contact.phone];
-        } else if (contact.email) {
-          sessionQuery = `
-            SELECT visitor_id
-            FROM sessions
-            WHERE email = ?
-            ORDER BY started_at ASC
-            LIMIT 1
-          `;
-          sessionParams = [contact.email];
-        } else if (contact.phone) {
-          sessionQuery = `
-            SELECT visitor_id
-            FROM sessions
-            WHERE LOWER(REPLACE(REPLACE(REPLACE(phone, '+', ''), '-', ''), ' ', '')) = LOWER(REPLACE(REPLACE(REPLACE(?, '+', ''), '-', ''), ' ', ''))
-            ORDER BY started_at ASC
-            LIMIT 1
-          `;
-          sessionParams = [contact.phone];
+        if (contact.email) {
+          session = await db.get(
+            'SELECT visitor_id FROM sessions WHERE email = ? ORDER BY started_at ASC LIMIT 1',
+            [contact.email]
+          );
         }
 
-        if (sessionQuery) {
-          const session = await db.get(sessionQuery, sessionParams);
+        if (session?.visitor_id) {
+          // Actualizar el contacto con el visitor_id encontrado
+          await db.run(`
+            UPDATE contacts
+            SET visitor_id = ?
+            WHERE id = ?
+          `, [session.visitor_id, contact.id]);
 
-          if (session?.visitor_id) {
-            // Actualizar el contacto con el visitor_id encontrado
-            await db.run(`
-              UPDATE contacts
-              SET visitor_id = ?
-              WHERE id = ?
-            `, [session.visitor_id, contact.id]);
+          // Actualizar también las sessions para vincularlas al contact_id
+          await db.run(`
+            UPDATE sessions
+            SET contact_id = ?
+            WHERE visitor_id = ? AND contact_id IS NULL
+          `, [contact.id, session.visitor_id]);
 
-            // Actualizar también las sessions para vincularlas al contact_id
-            await db.run(`
-              UPDATE sessions
-              SET contact_id = ?
-              WHERE visitor_id = ? AND contact_id IS NULL
-            `, [contact.id, session.visitor_id]);
-
-            updated++;
-            results.push({
-              contact_id: contact.id,
-              visitor_id: session.visitor_id,
-              status: 'updated'
-            });
-            logger.info(`✅ Actualizado contacto ${contact.id} con visitor_id ${session.visitor_id}`);
-          } else {
-            notFound++;
-            results.push({
-              contact_id: contact.id,
-              status: 'no_sessions'
-            });
-          }
+          updated++;
+          results.push({
+            contact_id: contact.id,
+            visitor_id: session.visitor_id,
+            status: 'updated'
+          });
+          logger.info(`✅ Actualizado contacto ${contact.id} con visitor_id ${session.visitor_id}`);
+        } else {
+          notFound++;
+          results.push({
+            contact_id: contact.id,
+            status: 'no_sessions'
+          });
         }
       } catch (err) {
         logger.error(`Error procesando contacto ${contact.id}: ${err.message}`);
