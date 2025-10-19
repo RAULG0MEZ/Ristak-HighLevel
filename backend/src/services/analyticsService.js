@@ -823,8 +823,11 @@ export async function buildReportMetrics ({ startDate, endDate, groupBy = 'day',
     if (appointmentsInRange.length > 0) {
       logger.info(`📊 Reports - Ejemplo de cita: ${JSON.stringify(appointmentsInRange[0])}`)
     }
+    logger.info(`📊 Reports - Total contactos en contactsRaw: ${contactsRaw.length}`)
 
     // Agrupar por período y deduplicar contactos
+    let matchedContacts = 0
+    let unmatchedContacts = 0
     appointmentsInRange.forEach(apt => {
       const dateAdded = new Date(apt.dateAdded)
       let periodKey
@@ -842,10 +845,18 @@ export async function buildReportMetrics ({ startDate, endDate, groupBy = 'day',
       // Buscar contacto para deduplicar
       const contact = contactsRaw.find(c => c.contact_id === apt.contactId)
       if (contact) {
+        matchedContacts++
         const baseKey = buildContactKey(contact) ?? `contact-${contactKeyFallback++}`
         bucket.appointmentsSet.add(baseKey)
+      } else {
+        unmatchedContacts++
+        if (unmatchedContacts <= 3) {
+          logger.warn(`⚠️  Cita ${apt.id} con contactId ${apt.contactId} no encontrado en contactsRaw`)
+        }
       }
     })
+
+    logger.info(`📊 Reports - Contactos matched: ${matchedContacts}, unmatched: ${unmatchedContacts}`)
 
     logger.info(`📊 Appointments agrupados por dateAdded (híbrido DB + API - vista Todos - Reports tabla)`)
   }
