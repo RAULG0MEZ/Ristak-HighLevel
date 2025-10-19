@@ -395,10 +395,10 @@ export function TreeFilter({
                       className={`
                         flex items-center justify-between px-3 py-2 cursor-pointer
                         transition-all duration-150
-                        ${index % 2 === 1 ? 'bg-[var(--color-background-secondary)]' : ''}
                         ${isHovered ? 'bg-[var(--color-background-tertiary)] !important' : 'hover:bg-[var(--color-background-tertiary)]'}
                         ${selectedCount > 0 ? 'text-[var(--color-accent)]' : 'text-[var(--color-text-primary)]'}
                       `}
+                      style={{ backgroundColor: index % 2 === 1 ? 'var(--table-row-even)' : undefined }}
                     >
                       <div className="flex items-center gap-2">
                         {Icon && <Icon className="w-4 h-4" />}
@@ -483,12 +483,12 @@ export function TreeFilter({
                                 className={`
                                   flex items-center gap-2 px-3 py-2 cursor-pointer
                                   transition-all duration-150
-                                  ${index % 2 === 1 ? 'bg-[var(--color-background-secondary)]' : ''}
                                   ${isSelected
                                     ? 'bg-[var(--color-accent)]/20 text-[var(--color-accent)] hover:bg-[var(--color-accent)]/25 !important'
                                     : 'hover:bg-[var(--color-background-tertiary)] text-[var(--color-text-primary)]'
                                   }
                                 `}
+                                style={{ backgroundColor: !isSelected && index % 2 === 1 ? 'var(--table-row-even)' : undefined }}
                               >
                                 {/* Checkbox */}
                                 <div className={`
@@ -561,12 +561,12 @@ export function TreeFilter({
                               className={`
                                 flex items-center gap-2 px-3 py-2 cursor-pointer
                                 transition-all duration-150
-                                ${index % 2 === 1 ? 'bg-[var(--color-background-secondary)]' : ''}
                                 ${isSelected
                                   ? 'bg-[var(--color-accent)]/20 text-[var(--color-accent)] hover:bg-[var(--color-accent)]/25 !important'
                                   : 'hover:bg-[var(--color-background-tertiary)] text-[var(--color-text-primary)]'
                                 }
                               `}
+                              style={{ backgroundColor: !isSelected && index % 2 === 1 ? 'var(--table-row-even)' : undefined }}
                             >
                               {/* Checkbox */}
                               <div className={`

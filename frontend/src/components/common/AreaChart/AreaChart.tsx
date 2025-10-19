@@ -219,14 +219,25 @@ export const AreaChart: React.FC<AreaChartProps> = ({
                           <circle
                             cx={props.cx}
                             cy={props.cy}
-                            r={isActive ? 7 : 3.5}
-                            fill={isActive ? 'var(--color-background-primary)' : serie.color}
-                            stroke={isActive ? serie.color : 'none'}
-                            strokeWidth={isActive ? 3 : 0}
-                            data-chart-interactive="true"
+                            r={showPoints ? (isActive ? 7 : 3.5) : 0}
+                            fill={
+                              showPoints
+                                ? isActive
+                                  ? 'var(--color-background-primary)'
+                                  : serie.color
+                                : 'transparent'
+                            }
+                            stroke={showPoints && isActive ? serie.color : 'none'}
+                            strokeWidth={showPoints && isActive ? 3 : 0}
+                            data-chart-index={props.index}
+                            data-chart-interactive={showPoints ? 'true' : undefined}
                             style={{
-                              transition: 'all 150ms ease-out',
-                              filter: isActive ? 'drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2))' : 'none'
+                              pointerEvents: showPoints ? 'auto' : 'none',
+                              transition: showPoints ? 'all 150ms ease-out' : undefined,
+                              filter:
+                                showPoints && isActive
+                                  ? 'drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2))'
+                                  : 'none'
                             }}
                           />
                         )
