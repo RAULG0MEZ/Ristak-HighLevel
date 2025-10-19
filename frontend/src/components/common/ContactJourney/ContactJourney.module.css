@@ -34,14 +34,13 @@
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 0 20px;
   position: relative;
   cursor: pointer;
   transition: transform 0.2s ease;
 }
 
 .event:hover {
-  transform: scale(1.08);
+  transform: scale(1.05);
 }
 
 /* Círculo del icono */
@@ -100,10 +99,20 @@
 /* Conector entre eventos - línea que toca los círculos */
 .connector {
   flex: 0 0 auto;
-  width: 40px;
+  width: 32px;
   height: 2px;
-  background: var(--color-border);
+  background: rgba(148, 163, 184, 0.3);
   margin: 0;
+  align-self: center;
+  margin-top: -65px;
+}
+
+:global(body.light) .connector {
+  background: rgba(148, 163, 184, 0.25);
+}
+
+:global(body.dark) .connector {
+  background: rgba(148, 163, 184, 0.3);
 }
 
 /* Contenido del evento (textos) */
@@ -113,8 +122,9 @@
   align-items: center;
   text-align: center;
   gap: 3px;
-  min-width: 90px;
-  max-width: 110px;
+  min-width: 80px;
+  max-width: 100px;
+  padding: 0 8px;
 }
 
 .eventTitle {

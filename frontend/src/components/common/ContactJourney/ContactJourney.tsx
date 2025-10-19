@@ -12,17 +12,17 @@ interface ContactJourneyProps {
 const getEventIcon = (type: JourneyEvent['type']) => {
   switch (type) {
     case 'page_visit':
-      return 'mouse-pointer-click'
+      return 'globe'
     case 'whatsapp_message':
-      return 'message-circle'
+      return 'message-square'
     case 'contact_created':
-      return 'user-plus'
+      return 'user'
     case 'appointment':
-      return 'calendar'
+      return 'calendar-check'
     case 'payment':
-      return 'circle-dollar-sign'
+      return 'dollar-sign'
     default:
-      return 'mouse-pointer-click'
+      return 'circle'
   }
 }
 
