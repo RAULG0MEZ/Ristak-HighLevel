@@ -436,6 +436,7 @@ export const getCampaigns = async (req, res) => {
           sales: 0,
           leads: 0,
           appointments: 0,
+          visitors: 0,
           adsets: {}
         };
       }
@@ -458,6 +459,7 @@ export const getCampaigns = async (req, res) => {
           sales: 0,
           leads: 0,
           appointments: 0,
+          visitors: 0,
           ads: []
         };
       }
@@ -547,25 +549,25 @@ export const getCampaigns = async (req, res) => {
 
     const totals = campaignsArray.reduce((sum, c) => ({
       spend: sum.spend + c.spend,
-      interesados: sum.interesados + c.interesados,
-      citas: sum.citas + c.citas,
-      ventas: sum.ventas + c.ventas,
-      visitors: sum.visitors + c.visitors,
+      leads: sum.leads + c.leads,
+      appointments: sum.appointments + c.appointments,
+      sales: sum.sales + c.sales,
+      visitors: sum.visitors + (c.visitors || 0),
       revenue: sum.revenue + c.revenue
-    }), { spend: 0, interesados: 0, citas: 0, ventas: 0, visitors: 0, revenue: 0 })
+    }), { spend: 0, leads: 0, appointments: 0, sales: 0, visitors: 0, revenue: 0 })
 
     logger.info(`\n💰 TOTALES GENERALES:`)
     logger.info(`   Gasto: $${totals.spend.toFixed(2)}`)
-    logger.info(`   Leads: ${totals.interesados}`)
-    logger.info(`   Citas: ${totals.citas}`)
+    logger.info(`   Leads: ${totals.leads}`)
+    logger.info(`   Citas: ${totals.appointments}`)
     logger.info(`   Visitantes: ${totals.visitors}`)
-    logger.info(`   Ventas: ${totals.ventas}`)
+    logger.info(`   Ventas: ${totals.sales}`)
     logger.info(`   Ingresos: $${totals.revenue.toFixed(2)}`)
 
     if (campaignsArray.length <= 10) {
       logger.info(`\n📋 DETALLE POR CAMPAÑA:`)
       campaignsArray.forEach(c => {
-        logger.info(`   ${c.name}: Leads=${c.interesados}, Citas=${c.citas}, Visitantes=${c.visitors}, Ventas=${c.ventas}`)
+        logger.info(`   ${c.name}: Leads=${c.leads}, Citas=${c.appointments}, Visitantes=${c.visitors || 0}, Ventas=${c.sales}`)
       })
     }
     logger.info(`🟡 ========== FIN [${requestId}] ==========\n`)
