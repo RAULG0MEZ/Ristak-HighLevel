@@ -18,7 +18,7 @@
   padding: 24px 0;
   position: relative;
   width: 100%;
-  row-gap: 32px;
+  row-gap: 48px;
 }
 
 /* Wrapper de cada evento */
@@ -34,21 +34,20 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   position: relative;
   cursor: pointer;
   transition: transform 0.2s ease;
-  margin-bottom: 12px;
 }
 
 .event:hover {
   transform: scale(1.05);
 }
 
-/* Círculo del icono */
+/* Círculo del icono - estilo de la app */
 .eventDot {
-  width: 48px;
-  height: 48px;
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -56,46 +55,67 @@
   flex-shrink: 0;
   position: relative;
   transition: all 0.2s ease;
-  border: 3px solid var(--color-background-primary);
 }
 
-:global(body.light) .eventDot {
-  border-color: #ffffff;
-}
-
-:global(body.dark) .eventDot {
-  border-color: var(--color-background-primary);
-}
-
-/* Colores de los dots con gradientes */
+/* Colores sutiles al estilo de la app */
 .eventDot.blue {
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-  color: #ffffff;
+  background-color: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+}
+
+:global(body.dark) .eventDot.blue {
+  background-color: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
 }
 
 .eventDot.green {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-  color: #ffffff;
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+:global(body.dark) .eventDot.green {
+  background-color: rgba(16, 185, 129, 0.2);
+  color: #34d399;
 }
 
 .eventDot.purple {
-  background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
-  color: #ffffff;
+  background-color: rgba(139, 92, 246, 0.15);
+  color: #8b5cf6;
+}
+
+:global(body.dark) .eventDot.purple {
+  background-color: rgba(139, 92, 246, 0.2);
+  color: #a78bfa;
 }
 
 .eventDot.orange {
-  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-  color: #ffffff;
+  background-color: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+:global(body.dark) .eventDot.orange {
+  background-color: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
 }
 
 .eventDot.success {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-  color: #ffffff;
+  background-color: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+:global(body.dark) .eventDot.success {
+  background-color: rgba(16, 185, 129, 0.2);
+  color: #34d399;
 }
 
 .eventDot.gray {
-  background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
-  color: #ffffff;
+  background-color: rgba(107, 114, 128, 0.15);
+  color: #6b7280;
+}
+
+:global(body.dark) .eventDot.gray {
+  background-color: rgba(107, 114, 128, 0.2);
+  color: #9ca3af;
 }
 
 /* Conector entre eventos - flecha */
@@ -104,13 +124,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-top: -80px;
-  color: rgba(148, 163, 184, 0.4);
-  padding: 0 4px;
+  margin-top: -92px;
+  color: rgba(148, 163, 184, 0.35);
+  padding: 0 8px;
 }
 
 :global(body.light) .connector {
-  color: rgba(148, 163, 184, 0.35);
+  color: rgba(148, 163, 184, 0.3);
 }
 
 :global(body.dark) .connector {
