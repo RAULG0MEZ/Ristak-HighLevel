@@ -13,11 +13,13 @@ interface FunnelStage {
 interface ConversionFunnelChartProps {
   data: FunnelStage[]
   loading?: boolean
+  showVisitors?: boolean
 }
 
 export const ConversionFunnelChart: React.FC<ConversionFunnelChartProps> = ({
   data = [],
-  loading = false
+  loading = false,
+  showVisitors = true
 }) => {
   const { labels } = useLabels()
 
@@ -40,7 +42,17 @@ export const ConversionFunnelChart: React.FC<ConversionFunnelChartProps> = ({
     return stageIconMap[normalized] ?? Users
   }
 
-  const safeData = (data.length > 0 ? data : DEFAULT_STAGES).map((item) => ({
+  const baseData = data.length > 0 ? data : DEFAULT_STAGES
+  const filteredData = showVisitors
+    ? baseData
+    : baseData.filter((item) => item.stage?.trim().toLowerCase() !== 'visitantes')
+  const displayData = filteredData.length > 0
+    ? filteredData
+    : (showVisitors
+      ? DEFAULT_STAGES
+      : DEFAULT_STAGES.filter((item) => item.stage?.trim().toLowerCase() !== 'visitantes'))
+
+  const safeData = displayData.map((item) => ({
     ...item,
     icon: getStageIcon(item.stage, item.icon)
   }))
@@ -110,7 +122,7 @@ export const ConversionFunnelChart: React.FC<ConversionFunnelChartProps> = ({
                   </div>
                 </div>
 
-                {index < data.length - 1 && (
+                {index < safeData.length - 1 && (
                   <div className={styles.connector} />
                 )}
               </div>

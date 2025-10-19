@@ -232,9 +232,10 @@ interface MetricsGridProps {
   metrics: ReportMetricRow[]
   loading: boolean
   reportType: ReportType
+  showVisitors: boolean
 }
 
-const MetricsGrid: React.FC<MetricsGridProps> = ({ metrics, loading, reportType }) => {
+const MetricsGrid: React.FC<MetricsGridProps> = ({ metrics, loading, reportType, showVisitors }) => {
   const { labels } = useLabels()
   const totals = metrics.reduce((acc, m) => ({
     spend: acc.spend + m.spend,
@@ -267,16 +268,23 @@ const MetricsGrid: React.FC<MetricsGridProps> = ({ metrics, loading, reportType 
   const interesadoToAppt = totals.leads > 0 ? (totals.appointments / totals.leads) * 100 : 0
   const apptToSale = totals.appointments > 0 ? (totals.sales / totals.appointments) * 100 : 0
 
+  const trafficItems = [
+    { label: 'Clicks', value: formatNumber(totals.clicks) },
+    { label: 'Costo por Clic', value: formatCurrency(cpc) },
+    { label: 'EPC', value: formatCurrency(epc) }
+  ]
+
+  if (showVisitors) {
+    trafficItems.push(
+      { label: 'Visitantes', value: formatNumber(totals.visitors) },
+      { label: `Web→${labels.leads} %`, value: `${webToInteresado.toFixed(1)}%` }
+    )
+  }
+
   const metricGroups = [
     {
       title: 'Tráfico',
-      items: [
-        { label: 'Clicks', value: formatNumber(totals.clicks) },
-        { label: 'Costo por Clic', value: formatCurrency(cpc) },
-        { label: 'EPC', value: formatCurrency(epc) },
-        { label: 'Visitantes', value: formatNumber(totals.visitors) },
-        { label: `Web→${labels.leads} %`, value: `${webToInteresado.toFixed(1)}%` }
-      ]
+      items: trafficItems
     },
     {
       title: 'Conversión',
@@ -352,6 +360,8 @@ export const Reports: React.FC = () => {
 
   // Sistema híbrido de configuración
   const [visitorSource] = useAppConfig<'platform' | 'tracking'>('visitor_source', 'platform')
+  const [showAnalyticsConfig] = useAppConfig<boolean>('show_analytics', true)
+  const analyticsEnabled = Boolean(showAnalyticsConfig)
 
   const [reportType, setReportType] = useState<ReportType>('cashflow')
   const reportTypeRef = React.useRef<ReportType>(reportType)
@@ -627,6 +637,8 @@ export const Reports: React.FC = () => {
 
   // Función para abrir modal de visitantes
   const handleOpenVisitorsModal = useCallback(async (date: string) => {
+    if (!analyticsEnabled) return
+
     setVisitorsModalLoading(true)
     setIsVisitorsModalOpen(true)
     setVisitorsModalRawDate(date) // Guardar la fecha original para recargar si es necesario
@@ -677,12 +689,12 @@ export const Reports: React.FC = () => {
     } finally {
       setVisitorsModalLoading(false)
     }
-  }, [showToast])
+  }, [analyticsEnabled, showToast])
 
   const initialColumns: Column<TableRow>[] = useMemo(() => {
     const salesLabel = reportType === 'campaigns' ? 'Ventas' : 'Transacciones'
 
-    return [
+    const columns: Column<TableRow>[] = [
       {
         key: 'date',
         header: viewType === 'year' ? 'Año' : viewType === 'month' ? 'Mes' : 'Fecha',
@@ -877,7 +889,12 @@ export const Reports: React.FC = () => {
         render: (value: number) => <span>{value.toFixed(1)}%</span>
       }
     ]
-  }, [reportType, viewType, visitorSource, handleOpenModal, handleOpenVisitorsModal, labels.lead, labels.leads])
+    if (!analyticsEnabled) {
+      const visitorKeys = new Set(['visitors', 'cpv', 'webToInteresadosRate'])
+      return columns.filter((column) => !visitorKeys.has(String(column.key)))
+    }
+    return columns
+  }, [reportType, viewType, visitorSource, handleOpenModal, handleOpenVisitorsModal, labels.lead, labels.leads, analyticsEnabled])
 
   const summaryCards = summary ? [
     {
@@ -1090,7 +1107,12 @@ export const Reports: React.FC = () => {
           />
         </Card>
       ) : (
-        <MetricsGrid metrics={metrics} loading={loadingMetrics} reportType={reportType} />
+        <MetricsGrid
+          metrics={metrics}
+          loading={loadingMetrics}
+          reportType={reportType}
+          showVisitors={analyticsEnabled}
+        />
       )}
 
         <ContactDetailsModal
@@ -1116,14 +1138,16 @@ export const Reports: React.FC = () => {
         />
 
         {/* Modal de Visitantes */}
-        <VisitorDetailsModal
-          isOpen={isVisitorsModalOpen}
-          onClose={() => setIsVisitorsModalOpen(false)}
-          title="Visitantes"
-          subtitle={`Visitantes del ${visitorsModalDate}`}
-          data={visitorsData}
-          loading={visitorsModalLoading}
-        />
+        {analyticsEnabled && (
+          <VisitorDetailsModal
+            isOpen={isVisitorsModalOpen}
+            onClose={() => setIsVisitorsModalOpen(false)}
+            title="Visitantes"
+            subtitle={`Visitantes del ${visitorsModalDate}`}
+            data={visitorsData}
+            loading={visitorsModalLoading}
+          />
+        )}
       </div>
     </PageContainer>
   )

@@ -95,6 +95,8 @@ export const Campaigns: React.FC = () => {
 
   // Sistema híbrido de configuración
   const [visitorSource] = useAppConfig<'platform' | 'tracking'>('visitor_source', 'platform')
+  const [showAnalyticsConfig] = useAppConfig<boolean>('show_analytics', true)
+  const analyticsEnabled = Boolean(showAnalyticsConfig)
 
   const [campaigns, setCampaigns] = useState<CampaignData[]>([])
   const [loading, setLoading] = useState(true)
@@ -423,6 +425,8 @@ export const Campaigns: React.FC = () => {
   }, [dateRange]) // Solo reaccionar a cambios de fecha
 
   const handleOpenVisitorsModal = useCallback(async (item: any) => {
+    if (!analyticsEnabled) return
+
     setVisitorsModalLoading(true)
     setIsVisitorsModalOpen(true)
     setVisitorsModalTitle(`Visitantes - ${item.name}`)
@@ -461,7 +465,7 @@ export const Campaigns: React.FC = () => {
     } finally {
       setVisitorsModalLoading(false)
     }
-  }, [dateRange])
+  }, [analyticsEnabled, dateRange])
 
   const handleExport = () => {
     // TODO: Implementar exportación
@@ -574,7 +578,7 @@ export const Campaigns: React.FC = () => {
     return flatData
   }
 
-  const columns: Column<any>[] = [
+  const baseColumns: Column<any>[] = [
     {
       key: 'name',
       header: 'Nombre',
@@ -882,6 +886,10 @@ export const Campaigns: React.FC = () => {
     }
   ]
 
+  const columns = analyticsEnabled
+    ? baseColumns
+    : baseColumns.filter((column) => column.key !== 'visitors')
+
   const totals = React.useMemo(() => {
     if (campaignSummary) {
       return {
@@ -908,12 +916,23 @@ export const Campaigns: React.FC = () => {
   }, [campaignSummary, totals.revenue, totals.spend])
 
   // Chart options configuration
-  const CHART_OPTIONS: Array<{ value: ChartView; label: string }> = [
-    { value: 'revenue', label: 'Ingresos vs Gastos' },
-    { value: 'visitors', label: `Visitantes vs ${labels.leads}` },
-    { value: 'leads', label: `${labels.leads} vs Citas` },
-    { value: 'appointments', label: 'Citas vs Ventas' }
-  ]
+  const chartOptions = React.useMemo(() => {
+    const options: Array<{ value: ChartView; label: string }> = [
+      { value: 'revenue', label: 'Ingresos vs Gastos' },
+      ...(analyticsEnabled ? [
+        { value: 'visitors', label: `Visitantes vs ${labels.leads}` }
+      ] : []),
+      { value: 'leads', label: `${labels.leads} vs Citas` },
+      { value: 'appointments', label: 'Citas vs Ventas' }
+    ]
+    return options
+  }, [analyticsEnabled, labels.leads])
+
+  useEffect(() => {
+    if (!analyticsEnabled && selectedChart === 'visitors') {
+      setSelectedChart('revenue')
+    }
+  }, [analyticsEnabled, selectedChart])
 
   // Chart configurations based on selected view
   const chartConfigs: Record<ChartView, ChartConfig> = React.useMemo(() => {
@@ -971,7 +990,7 @@ export const Campaigns: React.FC = () => {
   const selectedConfig = chartConfigs[selectedChart]
 
   const handleChartChange = (value: string) => {
-    if (CHART_OPTIONS.some(option => option.value === value)) {
+    if (chartOptions.some(option => option.value === value)) {
       setSelectedChart(value as ChartView)
     }
   }
@@ -1119,7 +1138,7 @@ export const Campaigns: React.FC = () => {
               </p>
             </div>
             <ViewSelector
-              options={CHART_OPTIONS}
+              options={chartOptions}
               value={selectedChart}
               onChange={handleChartChange}
             />
@@ -1183,14 +1202,16 @@ export const Campaigns: React.FC = () => {
       />
 
       {/* Modal de visitantes */}
-      <VisitorDetailsModal
-        isOpen={isVisitorsModalOpen}
-        onClose={() => setIsVisitorsModalOpen(false)}
-        title="Visitantes"
-        subtitle={visitorsModalTitle}
-        data={modalVisitors}
-        loading={visitorsModalLoading}
-      />
+      {analyticsEnabled && (
+        <VisitorDetailsModal
+          isOpen={isVisitorsModalOpen}
+          onClose={() => setIsVisitorsModalOpen(false)}
+          title="Visitantes"
+          subtitle={visitorsModalTitle}
+          data={modalVisitors}
+          loading={visitorsModalLoading}
+        />
+      )}
       </div>
     </PageContainer>
   )

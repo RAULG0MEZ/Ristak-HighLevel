@@ -14,9 +14,21 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0;
-  padding: 12px 0;
+  padding: 20px 0;
   position: relative;
   max-width: 100%;
+}
+
+.timeline::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--color-border);
+  transform: translateY(-50%);
+  z-index: 1;
 }
 
 .eventWrapper {
@@ -24,7 +36,7 @@
   align-items: center;
   flex-shrink: 0;
   position: relative;
-  margin: 0;
+  z-index: 2;
 }
 
 .event {
@@ -35,23 +47,25 @@
   position: relative;
   cursor: pointer;
   transition: transform 0.15s ease;
+  padding: 0 16px;
 }
 
 .event:hover {
-  transform: scale(1.05);
+  transform: scale(1.1);
 }
 
 .eventDot {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   position: relative;
-  z-index: 2;
+  z-index: 3;
   transition: all 0.15s ease;
+  border: 3px solid var(--color-background-primary);
 }
 
 .eventDot.blue {
@@ -114,18 +128,9 @@
   color: #9ca3af;
 }
 
+/* El conector ya no se usa - la línea es continua con ::before */
 .connector {
-  width: 32px;
-  height: 2px;
-  background: var(--color-border);
-  flex-shrink: 0;
-  position: relative;
-  z-index: 1;
-  margin: 0 -1px;
-}
-
-:global(body.dark) .connector {
-  background: var(--color-border);
+  display: none;
 }
 
 .eventContent {
