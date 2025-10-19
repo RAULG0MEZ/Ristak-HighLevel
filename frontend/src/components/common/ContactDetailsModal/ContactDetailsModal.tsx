@@ -434,8 +434,84 @@ export function ContactDetailsModal({
                   </div>
                 </div>
 
-                {/* Atribución */}
-                {(selectedContact.source || selectedContact.ad_name || selectedContact.ad_id) && (
+                {/* Primera Atribución (Primer Toque) */}
+                {selectedContact.firstSession && (
+                  <div className={styles.detailSection}>
+                    <h5 className={styles.detailSectionTitle}>
+                      Primera Atribución (Primer Toque)
+                    </h5>
+                    <div className={styles.detailSectionContent}>
+                      <div className={styles.detailItem}>
+                        <Icon name="calendar" size={16} />
+                        <div>
+                          <span className={styles.detailItemLabel}>Primera visita:</span>
+                          <span> {formatDate(selectedContact.firstSession.started_at)}</span>
+                        </div>
+                      </div>
+
+                      {(() => {
+                        const source = normalizeTrafficSource({
+                          site_source_name: selectedContact.firstSession.site_source_name,
+                          source_platform: selectedContact.firstSession.source_platform,
+                          utm_source: selectedContact.firstSession.utm_source,
+                          referrer_url: selectedContact.firstSession.referrer_url
+                        })
+                        return source && source !== 'Desconocido' ? (
+                          <div className={styles.detailItem}>
+                            <Icon name="globe" size={16} />
+                            <div>
+                              <span className={styles.detailItemLabel}>Fuente:</span>
+                              <span> {source}</span>
+                            </div>
+                          </div>
+                        ) : null
+                      })()}
+
+                      {(selectedContact.firstSession.campaign_name || selectedContact.firstSession.utm_campaign) && (
+                        <div className={styles.detailItem}>
+                          <Icon name="megaphone" size={16} />
+                          <div>
+                            <span className={styles.detailItemLabel}>Campaña:</span>
+                            <span> {selectedContact.firstSession.campaign_name || selectedContact.firstSession.utm_campaign}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {(selectedContact.firstSession.ad_name || selectedContact.firstSession.utm_content) && (
+                        <div className={styles.detailItem}>
+                          <Icon name="file-text" size={16} />
+                          <div>
+                            <span className={styles.detailItemLabel}>Anuncio:</span>
+                            <span> {selectedContact.firstSession.ad_name || selectedContact.firstSession.utm_content}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {selectedContact.firstSession.device_type && (
+                        <div className={styles.detailItem}>
+                          <Icon name="smartphone" size={16} />
+                          <div>
+                            <span className={styles.detailItemLabel}>Dispositivo:</span>
+                            <span> {selectedContact.firstSession.device_type}{selectedContact.firstSession.browser && ` · ${selectedContact.firstSession.browser}`}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {(selectedContact.firstSession.geo_city || selectedContact.firstSession.geo_country) && (
+                        <div className={styles.detailItem}>
+                          <Icon name="map-pin" size={16} />
+                          <div>
+                            <span className={styles.detailItemLabel}>Ubicación:</span>
+                            <span> {[selectedContact.firstSession.geo_city, selectedContact.firstSession.geo_country].filter(Boolean).join(', ')}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Atribución (solo si NO hay firstSession) */}
+                {!selectedContact.firstSession && (selectedContact.source || selectedContact.ad_name || selectedContact.ad_id) && (
                   <div className={styles.detailSection}>
                     <h5 className={styles.detailSectionTitle}>
                       De dónde llegó el contacto:
@@ -517,39 +593,40 @@ export function ContactDetailsModal({
                 {/* Pagos */}
                 {payments.length > 0 && (
                   <div className={styles.detailSection}>
-                    <button
-                      type="button"
-                      className={styles.toggleButton}
-                      onClick={() => setPaymentsExpanded(prev => !prev)}
-                    >
-                      <div className={styles.toggleLabel}>
-                        <Icon name={paymentsExpanded ? 'chevron-down' : 'chevron-right'} size={16} />
-                        <span>Pagos ({payments.length})</span>
-                      </div>
-                      <span className={styles.toggleValue}>
-                        {formatCurrency(payments.reduce((sum, payment) => sum + payment.amount, 0))}
-                      </span>
-                    </button>
+                    <h5 className={styles.detailSectionTitle}>
+                      Pagos ({payments.length}) · {formatCurrency(payments.reduce((sum, payment) => sum + payment.amount, 0))}
+                    </h5>
 
-                    {paymentsExpanded && (
-                      <ul className={styles.paymentList}>
-                        {payments.map(payment => {
-                          const statusInfo = getStatusLabel(payment.status)
-                          return (
-                            <li key={payment.id} className={styles.paymentItem}>
-                              <div>
-                                <p className={styles.paymentAmount}>{formatCurrency(payment.amount)}</p>
-                                {payment.status && statusInfo.text && (
-                                  <Badge variant={statusInfo.variant} className={styles.paymentStatus}>
-                                    {statusInfo.text}
-                                  </Badge>
-                                )}
-                              </div>
-                              <span className={styles.paymentDate}>{formatDate(payment.date)}</span>
-                            </li>
-                          )
-                        })}
-                      </ul>
+                    {/* Mostrar primeros 4 pagos siempre visibles */}
+                    <ul className={styles.paymentList}>
+                      {payments.slice(0, paymentsExpanded ? payments.length : 4).map(payment => {
+                        const statusInfo = getStatusLabel(payment.status)
+                        return (
+                          <li key={payment.id} className={styles.paymentItem}>
+                            <div>
+                              <p className={styles.paymentAmount}>{formatCurrency(payment.amount)}</p>
+                              {payment.status && statusInfo.text && (
+                                <Badge variant={statusInfo.variant} className={styles.paymentStatus}>
+                                  {statusInfo.text}
+                                </Badge>
+                              )}
+                            </div>
+                            <span className={styles.paymentDate}>{formatDate(payment.date)}</span>
+                          </li>
+                        )
+                      })}
+                    </ul>
+
+                    {/* Botón "Ver todos" solo si hay más de 4 */}
+                    {payments.length > 4 && (
+                      <button
+                        type="button"
+                        className={styles.showMoreButton}
+                        onClick={() => setPaymentsExpanded(prev => !prev)}
+                      >
+                        <Icon name={paymentsExpanded ? 'chevron-up' : 'chevron-down'} size={14} />
+                        {paymentsExpanded ? 'Ver menos' : `Ver todos los ${payments.length} pagos`}
+                      </button>
                     )}
                   </div>
                 )}
@@ -597,34 +674,38 @@ export function ContactDetailsModal({
                 {/* Citas */}
                 {selectedContact.appointments && selectedContact.appointments.length > 0 && (
                   <div className={styles.detailSection}>
-                    <button
-                      type="button"
-                      className={styles.toggleButton}
-                      onClick={() => setAppointmentsExpanded(prev => !prev)}
-                    >
-                      <div className={styles.toggleLabel}>
-                        <Icon name={appointmentsExpanded ? 'chevron-down' : 'chevron-right'} size={16} />
-                        <span>Citas ({selectedContact.appointments.length})</span>
-                      </div>
-                    </button>
+                    <h5 className={styles.detailSectionTitle}>
+                      Citas ({selectedContact.appointments.length})
+                    </h5>
 
-                    {appointmentsExpanded && (
-                      <ul className={styles.paymentList}>
-                        {selectedContact.appointments.map(appointment => {
-                          const statusInfo = getAppointmentStatusLabel(appointment.status)
-                          return (
-                            <li key={appointment.id} className={styles.paymentItem}>
-                              <div>
-                                <p className={styles.paymentAmount}>{appointment.title || 'Cita'}</p>
-                                <Badge variant={statusInfo.variant} className={styles.paymentStatus}>
-                                  {statusInfo.text}
-                                </Badge>
-                              </div>
-                              <span className={styles.paymentDate}>{formatDate(appointment.start_time)}</span>
-                            </li>
-                          )
-                        })}
-                      </ul>
+                    {/* Mostrar primeras 3 citas siempre visibles */}
+                    <ul className={styles.paymentList}>
+                      {selectedContact.appointments.slice(0, appointmentsExpanded ? selectedContact.appointments.length : 3).map(appointment => {
+                        const statusInfo = getAppointmentStatusLabel(appointment.status)
+                        return (
+                          <li key={appointment.id} className={styles.paymentItem}>
+                            <div>
+                              <p className={styles.paymentAmount}>{appointment.title || 'Cita'}</p>
+                              <Badge variant={statusInfo.variant} className={styles.paymentStatus}>
+                                {statusInfo.text}
+                              </Badge>
+                            </div>
+                            <span className={styles.paymentDate}>{formatDate(appointment.start_time)}</span>
+                          </li>
+                        )
+                      })}
+                    </ul>
+
+                    {/* Botón "Ver todos" solo si hay más de 3 */}
+                    {selectedContact.appointments.length > 3 && (
+                      <button
+                        type="button"
+                        className={styles.showMoreButton}
+                        onClick={() => setAppointmentsExpanded(prev => !prev)}
+                      >
+                        <Icon name={appointmentsExpanded ? 'chevron-up' : 'chevron-down'} size={14} />
+                        {appointmentsExpanded ? 'Ver menos' : `Ver todas las ${selectedContact.appointments.length} citas`}
+                      </button>
                     )}
                   </div>
                 )}
