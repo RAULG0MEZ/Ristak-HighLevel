@@ -80,10 +80,11 @@ interface SortableItemProps {
   item: NavItem
   isActive: boolean
   isDragging: boolean
+  isEditMode: boolean
   onNavigate?: () => void
 }
 
-const SortableItem: React.FC<SortableItemProps> = ({ item, isActive, isDragging, onNavigate }) => {
+const SortableItem: React.FC<SortableItemProps> = ({ item, isActive, isDragging, isEditMode, onNavigate }) => {
   const {
     attributes,
     listeners,
@@ -106,7 +107,7 @@ const SortableItem: React.FC<SortableItemProps> = ({ item, isActive, isDragging,
       <Link
         to={item.href}
         onClick={(e) => {
-          if (isDragging) {
+          if (isDragging || isEditMode) {
             e.preventDefault()
             return
           }
@@ -120,17 +121,19 @@ const SortableItem: React.FC<SortableItemProps> = ({ item, isActive, isDragging,
             : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] glass-hover'
         )}
       >
-        <button
-          type="button"
-          className={cn(
-            'cursor-grab active:cursor-grabbing p-0.5 rounded hover:bg-white/[0.1] transition-colors',
-            'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]'
-          )}
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="h-4 w-4" />
-        </button>
+        {isEditMode && (
+          <button
+            type="button"
+            className={cn(
+              'cursor-grab active:cursor-grabbing p-0.5 rounded hover:bg-white/[0.1] transition-colors',
+              'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]'
+            )}
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical className="h-4 w-4" />
+          </button>
+        )}
         <Icon className="h-5 w-5 flex-shrink-0" />
         <span>{item.name}</span>
       </Link>
@@ -145,6 +148,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
   const [sidebarOrder, setSidebarOrder] = useAppConfig<string[]>('sidebar_navigation_order', [])
   const [navigation, setNavigation] = useState<NavItem[]>(() => getNavigationItems(false))
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [isEditMode, setIsEditMode] = useState(false)
+  const longPressTimerRef = React.useRef<number | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -156,6 +161,28 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
       coordinateGetter: sortableKeyboardCoordinates
     })
   )
+
+  const startLongPress = () => {
+    longPressTimerRef.current = window.setTimeout(() => {
+      setIsEditMode(true)
+    }, 800) // 800ms para activar modo edición
+  }
+
+  const cancelLongPress = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+  }
+
+  // Limpiar timer cuando se desmonta
+  React.useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current)
+      }
+    }
+  }, [])
 
   // Aplicar orden guardado a los items
   const applyOrder = (items: NavItem[], order: string[]): NavItem[] => {
@@ -230,6 +257,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
     }
 
     setActiveId(null)
+    // Salir del modo edición después de arrastrar
+    setIsEditMode(false)
   }
 
   const handleNavigate = () => {
@@ -262,7 +291,21 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4 pt-3">
+      <nav className={cn(
+        "flex-1 p-4 pt-3 transition-all duration-200",
+        isEditMode && "bg-white/[0.02] mx-2 rounded-lg"
+      )}>
+        {isEditMode && (
+          <div className="mb-3 px-2 py-1.5 text-xs text-[var(--color-text-tertiary)] bg-white/[0.05] rounded-md border border-dashed border-[rgba(148,163,184,0.2)]">
+            <span className="flex items-center gap-2">
+              <span className="flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-1.5 w-1.5 rounded-full bg-[var(--color-accent-blue)] opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[var(--color-accent-blue)]"></span>
+              </span>
+              Modo edición - Arrastra para reordenar
+            </span>
+          </div>
+        )}
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -270,7 +313,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
           onDragEnd={handleDragEnd}
         >
           <SortableContext items={navigation.map(item => item.id)} strategy={verticalListSortingStrategy}>
-            <div className="space-y-1">
+            <div
+              className="space-y-1"
+              onPointerDown={startLongPress}
+              onPointerUp={cancelLongPress}
+              onPointerCancel={cancelLongPress}
+              onPointerLeave={cancelLongPress}
+            >
               {navigation.map((item) => {
                 const isActive = location.pathname.startsWith(item.href)
                 return (
@@ -279,6 +328,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
                     item={item}
                     isActive={isActive}
                     isDragging={!!activeId}
+                    isEditMode={isEditMode}
                     onNavigate={handleNavigate}
                   />
                 )
