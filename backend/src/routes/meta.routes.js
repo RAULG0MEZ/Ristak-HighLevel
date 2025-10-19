@@ -9,7 +9,10 @@ import {
   getSpendOverTime,
   getSyncStatus,
   getContactsByType,
-  verifyToken
+  verifyToken,
+  getLeadsOverTime,
+  getAppointmentsOverTime,
+  getVisitorsOverTime
 } from '../controllers/metaController.js'
 
 const router = express.Router()
@@ -29,5 +32,8 @@ router.post('/update-recent', updateRecent)
 router.get('/campaigns', getCampaigns)
 router.get('/spend-over-time', getSpendOverTime)
 router.get('/contacts', getContactsByType)
+router.get('/leads-over-time', getLeadsOverTime)
+router.get('/appointments-over-time', getAppointmentsOverTime)
+router.get('/visitors-over-time', getVisitorsOverTime)
 
 export default router

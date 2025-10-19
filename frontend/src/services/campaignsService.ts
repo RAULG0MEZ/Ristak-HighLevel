@@ -153,6 +153,39 @@ class CampaignsService {
       return { success: false, configured: false }
     }
   }
+
+  async getLeadsOverTime(startDate: string, endDate: string): Promise<{ label: string; value: number; value2: number }[]> {
+    try {
+      const data = await apiClient.get<{ label: string; value: number; value2: number }[]>('/meta/leads-over-time', {
+        params: { start: startDate, end: endDate }
+      })
+      return Array.isArray(data) ? data : []
+    } catch (error) {
+      return []
+    }
+  }
+
+  async getAppointmentsOverTime(startDate: string, endDate: string): Promise<{ label: string; value: number; value2: number }[]> {
+    try {
+      const data = await apiClient.get<{ label: string; value: number; value2: number }[]>('/meta/appointments-over-time', {
+        params: { start: startDate, end: endDate }
+      })
+      return Array.isArray(data) ? data : []
+    } catch (error) {
+      return []
+    }
+  }
+
+  async getVisitorsOverTime(startDate: string, endDate: string): Promise<{ label: string; value: number; value2: number }[]> {
+    try {
+      const data = await apiClient.get<{ label: string; value: number; value2: number }[]>('/meta/visitors-over-time', {
+        params: { start: startDate, end: endDate }
+      })
+      return Array.isArray(data) ? data : []
+    } catch (error) {
+      return []
+    }
+  }
 }
 
 export const campaignsService = new CampaignsService()

@@ -222,13 +222,43 @@ export const Campaigns: React.FC = () => {
         label: formatChartDate(item.label, rangeInDays, index > 0 ? spendData[index - 1].label : undefined)
       }))
 
-      // Use real spend data for chart with smart date formatting
-      setTimeSeriesData(formattedSpendData)
+      // Set data for revenue chart (default)
+      setRevenueData(formattedSpendData)
+
+      // Fetch other metrics data in parallel
+      const [leadsDataRaw, appointmentsDataRaw, visitorsDataRaw] = await Promise.all([
+        campaignsService.getLeadsOverTime(startDate, endDate),
+        campaignsService.getAppointmentsOverTime(startDate, endDate),
+        campaignsService.getVisitorsOverTime(startDate, endDate)
+      ])
+
+      // Format the fetched data with proper date formatting
+      const formattedLeadsData = leadsDataRaw.map((item, index) => ({
+        ...item,
+        label: formatChartDate(item.label, rangeInDays, index > 0 ? leadsDataRaw[index - 1].label : undefined)
+      }))
+
+      const formattedAppointmentsData = appointmentsDataRaw.map((item, index) => ({
+        ...item,
+        label: formatChartDate(item.label, rangeInDays, index > 0 ? appointmentsDataRaw[index - 1].label : undefined)
+      }))
+
+      const formattedVisitorsData = visitorsDataRaw.map((item, index) => ({
+        ...item,
+        label: formatChartDate(item.label, rangeInDays, index > 0 ? visitorsDataRaw[index - 1].label : undefined)
+      }))
+
+      setLeadsData(formattedLeadsData || [])
+      setAppointmentsData(formattedAppointmentsData || [])
+      setVisitorsData(formattedVisitorsData || [])
     } catch (error) {
       // Don't fall back to mock data - show empty state
       setCampaigns([])
       setCampaignSummary(null)
-      setTimeSeriesData([])
+      setRevenueData([])
+      setLeadsData([])
+      setAppointmentsData([])
+      setVisitorsData([])
   } finally {
     setLoading(false)
   }
@@ -769,6 +799,72 @@ export const Campaigns: React.FC = () => {
     return totals.spend > 0 ? totals.revenue / totals.spend : 0
   }, [campaignSummary, totals.revenue, totals.spend])
 
+  // Chart options configuration
+  const CHART_OPTIONS: Array<{ value: ChartView; label: string }> = [
+    { value: 'revenue', label: 'Ingresos vs Gastos' },
+    { value: 'leads', label: `${labels.leads} vs Gastos` },
+    { value: 'appointments', label: 'Citas vs Gastos' },
+    { value: 'visitors', label: 'Visitantes vs Gastos' }
+  ]
+
+  // Chart configurations based on selected view
+  const chartConfigs: Record<ChartView, ChartConfig> = React.useMemo(() => {
+    return {
+      revenue: {
+        title: 'Ingresos vs Gastos de Publicidad',
+        subtitle: 'Valor total acumulado de contactos por fecha de creación',
+        data: revenueData,
+        color: '#10b981',
+        color2: '#64748b',
+        showLegend: true,
+        legendLabels: { label1: 'Ingresos', label2: 'Gastos Publicidad' },
+        formatValue: (v) => `$${(v / 1000).toFixed(1)}k`,
+        emptyMessage: 'No hay datos de campañas para este período'
+      },
+      leads: {
+        title: `${labels.leads} vs Gastos de Publicidad`,
+        subtitle: 'Contactos únicos por fecha de creación',
+        data: leadsData,
+        color: '#3b82f6',
+        color2: '#64748b',
+        showLegend: true,
+        legendLabels: { label1: labels.leads, label2: 'Gastos Publicidad' },
+        formatValue: (v) => v < 1000 ? v.toString() : `${(v / 1000).toFixed(1)}k`,
+        emptyMessage: 'No hay datos de leads para este período'
+      },
+      appointments: {
+        title: 'Citas vs Gastos de Publicidad',
+        subtitle: 'Contactos con al menos una cita por fecha de creación',
+        data: appointmentsData,
+        color: '#8b5cf6',
+        color2: '#64748b',
+        showLegend: true,
+        legendLabels: { label1: 'Citas', label2: 'Gastos Publicidad' },
+        formatValue: (v) => v < 1000 ? v.toString() : `${(v / 1000).toFixed(1)}k`,
+        emptyMessage: 'No hay datos de citas para este período'
+      },
+      visitors: {
+        title: 'Visitantes vs Gastos de Publicidad',
+        subtitle: 'Visitantes únicos por fecha',
+        data: visitorsData,
+        color: '#f59e0b',
+        color2: '#64748b',
+        showLegend: true,
+        legendLabels: { label1: 'Visitantes', label2: 'Gastos Publicidad' },
+        formatValue: (v) => v < 1000 ? v.toString() : `${(v / 1000).toFixed(1)}k`,
+        emptyMessage: 'No hay datos de visitantes para este período'
+      }
+    }
+  }, [revenueData, leadsData, appointmentsData, visitorsData, labels])
+
+  const selectedConfig = chartConfigs[selectedChart]
+
+  const handleChartChange = (value: string) => {
+    if (CHART_OPTIONS.some(option => option.value === value)) {
+      setSelectedChart(value as ChartView)
+    }
+  }
+
   const calculateDelta = React.useCallback((current: number, previous: number) => {
     if (previous === 0) {
       return current > 0 ? 100 : 0
@@ -904,23 +1000,35 @@ export const Campaigns: React.FC = () => {
         </div>
 
         <Card variant="glass" className={styles.chartCard}>
-          <h2 className={styles.chartTitle}>Ingresos vs Gastos de Publicidad</h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
+            <div>
+              <h2 className={styles.chartTitle}>{selectedConfig.title}</h2>
+              <p style={{ fontSize: '14px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
+                {selectedConfig.subtitle}
+              </p>
+            </div>
+            <ViewSelector
+              options={CHART_OPTIONS}
+              value={selectedChart}
+              onChange={handleChartChange}
+            />
+          </div>
           <div style={{ height: 300 }}>
-            {timeSeriesData.length > 0 ? (
-              <LineChart
-                data={timeSeriesData}
+            {selectedConfig.data.length > 0 ? (
+              <AreaChart
+                data={selectedConfig.data}
                 height={300}
                 showGrid={true}
-                color="#10b981"
-                color2="#64748b"
-                formatValue={(v) => `$${(v / 1000).toFixed(1)}k`}
-                showLegend={true}
-                legendLabels={{ label1: 'Ingresos', label2: 'Gastos Publicidad' }}
+                color={selectedConfig.color}
+                color2={selectedConfig.color2}
+                formatValue={selectedConfig.formatValue}
+                showLegend={selectedConfig.showLegend}
+                legendLabels={selectedConfig.legendLabels}
               />
             ) : (
               <div className="flex h-full items-center justify-center rounded-xl border border-[rgba(148,163,184,0.18)] bg-[color-mix(in_srgb,var(--color-background-glass) 82%, transparent)] text-sm text-[var(--color-text-tertiary)]">
                 <div className="text-center">
-                  <p>No hay datos de campañas para este período</p>
+                  <p>{selectedConfig.emptyMessage}</p>
                   <p className="text-xs mt-2 opacity-75">Sincroniza tus campañas de Meta Ads para ver el gráfico</p>
                 </div>
               </div>
