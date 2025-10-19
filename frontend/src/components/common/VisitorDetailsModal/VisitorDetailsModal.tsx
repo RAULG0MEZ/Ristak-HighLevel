@@ -392,38 +392,40 @@ export function VisitorDetailsModal({
 
                     {appointmentsExpanded && (
                       <ul className={styles.paymentList}>
-                        {selectedVisitor.contact.appointments.map((appointment: any) => {
-                          const statusInfo = getAppointmentStatusLabel(appointment.status)
-                          const appointmentDate = new Date(appointment.start_time)
-                          const timeStr = appointmentDate.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: true })
+                        {selectedVisitor.contact.appointments
+                          .filter((appointment: any) => appointment && appointment.id && appointment.start_time)
+                          .map((appointment: any) => {
+                            const statusInfo = getAppointmentStatusLabel(appointment?.status)
+                            const appointmentDate = new Date(appointment.start_time)
+                            const timeStr = appointmentDate.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: true })
 
-                          return (
-                            <li key={appointment.id} className={styles.paymentItem}>
-                              <div className={styles.paymentItemContent}>
-                                <div className={styles.paymentItemHeader}>
-                                  <p className={styles.paymentAmount}>{appointment.title || 'Cita'}</p>
-                                  <Badge variant={statusInfo.variant} className={styles.paymentStatus}>
-                                    {statusInfo.text}
-                                  </Badge>
+                            return (
+                              <li key={appointment.id} className={styles.paymentItem}>
+                                <div className={styles.paymentItemContent}>
+                                  <div className={styles.paymentItemHeader}>
+                                    <p className={styles.paymentAmount}>{appointment.title || 'Cita'}</p>
+                                    <Badge variant={statusInfo.variant} className={styles.paymentStatus}>
+                                      {statusInfo.text}
+                                    </Badge>
+                                  </div>
+                                  <div className={styles.paymentItemDetails}>
+                                    <span className={styles.paymentDetailItem}>
+                                      <Icon name="calendar" size={12} />
+                                      {formatDate(appointment.start_time)}
+                                    </span>
+                                    <span className={styles.paymentDetailItem}>
+                                      <Icon name="clock" size={12} />
+                                      {timeStr}
+                                    </span>
+                                    <span className={styles.paymentDetailItem}>
+                                      <Icon name="hash" size={12} />
+                                      ID: {appointment.id.substring(0, 8)}...
+                                    </span>
+                                  </div>
                                 </div>
-                                <div className={styles.paymentItemDetails}>
-                                  <span className={styles.paymentDetailItem}>
-                                    <Icon name="calendar" size={12} />
-                                    {formatDate(appointment.start_time)}
-                                  </span>
-                                  <span className={styles.paymentDetailItem}>
-                                    <Icon name="clock" size={12} />
-                                    {timeStr}
-                                  </span>
-                                  <span className={styles.paymentDetailItem}>
-                                    <Icon name="hash" size={12} />
-                                    ID: {appointment.id.substring(0, 8)}...
-                                  </span>
-                                </div>
-                              </div>
-                            </li>
-                          )
-                        })}
+                              </li>
+                            )
+                          })}
                       </ul>
                     )}
                   </div>
