@@ -817,118 +817,87 @@ export const getContactJourney = async (req, res) => {
 
     const journey = []
 
-    // 1. PRIMER TOQUE: Buscar el evento más antiguo entre sessions y whatsapp_attribution
-    let firstTouchEvent = null
-    let firstTouchType = null
-
-    // Buscar primera session (por contact_id o visitor_id)
-    let firstSession = null
+    // 1. TODAS las visitas/sessions (por contact_id, visitor_id o email)
+    let sessions = []
 
     if (contact.visitor_id) {
-      // Si tiene visitor_id, buscar por contact_id O visitor_id
-      firstSession = await db.get(
-        `SELECT *
-         FROM sessions
+      sessions = await db.all(
+        `SELECT * FROM sessions
          WHERE contact_id = ? OR visitor_id = ?
-         ORDER BY started_at ASC
-         LIMIT 1`,
+         ORDER BY started_at ASC`,
         [id, contact.visitor_id]
       )
     } else {
-      // Si NO tiene visitor_id, solo buscar por contact_id
-      firstSession = await db.get(
-        `SELECT *
-         FROM sessions
+      sessions = await db.all(
+        `SELECT * FROM sessions
          WHERE contact_id = ?
-         ORDER BY started_at ASC
-         LIMIT 1`,
+         ORDER BY started_at ASC`,
         [id]
       )
     }
 
-    // Fallback: Si no encuentra por contact_id/visitor_id, buscar por email
-    // NOTA: sessions solo tiene email, NO tiene phone
-    if (!firstSession && contact.email) {
-      firstSession = await db.get(
-        `SELECT * FROM sessions WHERE email = ? ORDER BY started_at ASC LIMIT 1`,
+    // Fallback por email si no encontró sesiones
+    if (sessions.length === 0 && contact.email) {
+      sessions = await db.all(
+        `SELECT * FROM sessions WHERE email = ? ORDER BY started_at ASC`,
         [contact.email]
       )
-      if (firstSession) {
-        logger.info(`📍 Session encontrada por email para contacto ${id}`)
+      if (sessions.length > 0) {
+        logger.info(`📍 ${sessions.length} sessions encontradas por email para contacto ${id}`)
       }
     }
 
-    // Buscar primer mensaje de WhatsApp
-    const firstWhatsapp = await db.get(
-      `SELECT *
-       FROM whatsapp_attribution
+    // Agregar todas las visitas al journey
+    sessions.forEach(session => {
+      journey.push({
+        type: 'page_visit',
+        date: session.started_at,
+        data: {
+          landing_url: session.landing_url,
+          landing_page: session.landing_page,
+          referrer_url: session.referrer_url,
+          utm_source: session.utm_source,
+          utm_medium: session.utm_medium,
+          utm_campaign: session.utm_campaign,
+          utm_content: session.utm_content,
+          source_platform: session.source_platform,
+          site_source_name: session.site_source_name,
+          campaign_name: session.campaign_name,
+          ad_name: session.ad_name,
+          ad_id: session.ad_id,
+          device_type: session.device_type,
+          browser: session.browser,
+          geo_city: session.geo_city,
+          geo_region: session.geo_region,
+          geo_country: session.geo_country
+        }
+      })
+    })
+
+    // 2. TODOS los mensajes de WhatsApp
+    const whatsappMessages = await db.all(
+      `SELECT * FROM whatsapp_attribution
        WHERE contact_id = ?
-       ORDER BY created_at ASC
-       LIMIT 1`,
+       ORDER BY created_at ASC`,
       [id]
     )
 
-    // Determinar cuál fue el primer toque
-    if (firstSession && firstWhatsapp) {
-      // Comparar fechas para ver cuál fue primero
-      const sessionDate = new Date(firstSession.started_at).getTime()
-      const whatsappDate = new Date(firstWhatsapp.created_at).getTime()
+    whatsappMessages.forEach(msg => {
+      journey.push({
+        type: 'whatsapp_message',
+        date: msg.created_at,
+        data: {
+          phone: msg.phone,
+          referral_source_url: msg.referral_source_url,
+          referral_source_type: msg.referral_source_type,
+          referral_headline: msg.referral_headline,
+          referral_body: msg.referral_body,
+          referral_ctwa_clid: msg.referral_ctwa_clid
+        }
+      })
+    })
 
-      if (sessionDate <= whatsappDate) {
-        firstTouchEvent = firstSession
-        firstTouchType = 'first_visit'
-      } else {
-        firstTouchEvent = firstWhatsapp
-        firstTouchType = 'whatsapp_message'
-      }
-    } else if (firstSession) {
-      firstTouchEvent = firstSession
-      firstTouchType = 'first_visit'
-    } else if (firstWhatsapp) {
-      firstTouchEvent = firstWhatsapp
-      firstTouchType = 'whatsapp_message'
-    }
-
-    // Agregar el primer toque al journey
-    if (firstTouchEvent && firstTouchType) {
-      if (firstTouchType === 'first_visit') {
-        journey.push({
-          type: 'first_visit',
-          date: firstTouchEvent.started_at,
-          data: {
-            landing_url: firstTouchEvent.landing_url,
-            referrer_url: firstTouchEvent.referrer_url,
-            utm_source: firstTouchEvent.utm_source,
-            utm_medium: firstTouchEvent.utm_medium,
-            utm_campaign: firstTouchEvent.utm_campaign,
-            source_platform: firstTouchEvent.source_platform,
-            site_source_name: firstTouchEvent.site_source_name,
-            campaign_name: firstTouchEvent.campaign_name,
-            ad_name: firstTouchEvent.ad_name,
-            device_type: firstTouchEvent.device_type,
-            browser: firstTouchEvent.browser,
-            geo_city: firstTouchEvent.geo_city,
-            geo_region: firstTouchEvent.geo_region,
-            geo_country: firstTouchEvent.geo_country
-          }
-        })
-      } else {
-        journey.push({
-          type: 'whatsapp_message',
-          date: firstTouchEvent.created_at,
-          data: {
-            phone: firstTouchEvent.phone,
-            referral_source_url: firstTouchEvent.referral_source_url,
-            referral_source_type: firstTouchEvent.referral_source_type,
-            referral_headline: firstTouchEvent.referral_headline,
-            referral_body: firstTouchEvent.referral_body,
-            referral_ctwa_clid: firstTouchEvent.referral_ctwa_clid
-          }
-        })
-      }
-    }
-
-    // 2. Se convirtió en contacto
+    // 3. Contacto creado
     journey.push({
       type: 'contact_created',
       date: contact.created_at,
@@ -942,56 +911,54 @@ export const getContactJourney = async (req, res) => {
       }
     })
 
-    // 3. Primera cita agendada
-    const firstAppointment = await db.get(
-      `SELECT *
-       FROM appointments
+    // 4. TODAS las citas agendadas
+    const appointments = await db.all(
+      `SELECT * FROM appointments
        WHERE contact_id = ?
-       ORDER BY date_added ASC
-       LIMIT 1`,
+       ORDER BY date_added ASC`,
       [id]
     )
 
-    if (firstAppointment) {
+    appointments.forEach(appointment => {
       journey.push({
-        type: 'first_appointment',
-        date: firstAppointment.date_added,
+        type: 'appointment',
+        date: appointment.date_added,
         data: {
-          title: firstAppointment.title,
-          status: firstAppointment.appointment_status || firstAppointment.status,
-          start_time: firstAppointment.start_time,
-          end_time: firstAppointment.end_time,
-          address: firstAppointment.address
+          title: appointment.title,
+          status: appointment.appointment_status || appointment.status,
+          start_time: appointment.start_time,
+          end_time: appointment.end_time,
+          address: appointment.address,
+          notes: appointment.notes
         }
       })
-    }
+    })
 
-    // 4. Primera compra
-    const firstPayment = await db.get(
-      `SELECT *
-       FROM payments
+    // 5. TODOS los pagos exitosos
+    const payments = await db.all(
+      `SELECT * FROM payments
        WHERE contact_id = ?
          AND amount > 0
          AND LOWER(status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')
-       ORDER BY date ASC
-       LIMIT 1`,
+       ORDER BY date ASC`,
       [id]
     )
 
-    if (firstPayment) {
+    payments.forEach(payment => {
       journey.push({
-        type: 'first_payment',
-        date: firstPayment.date,
+        type: 'payment',
+        date: payment.date,
         data: {
-          amount: firstPayment.amount,
-          status: firstPayment.status,
-          title: firstPayment.title,
-          payment_provider: firstPayment.payment_provider
+          amount: payment.amount,
+          status: payment.status,
+          title: payment.title,
+          type: payment.type,
+          payment_provider: payment.payment_provider
         }
       })
-    }
+    })
 
-    // Ordenar el journey por fecha (aunque ya deberían estar en orden)
+    // Ordenar TODOS los eventos por fecha cronológica
     journey.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
 
     logger.info(`Journey obtenido para contacto ${id}: ${journey.length} eventos`)

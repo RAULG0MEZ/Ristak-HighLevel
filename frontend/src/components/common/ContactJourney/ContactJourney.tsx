@@ -11,15 +11,15 @@ interface ContactJourneyProps {
 
 const getEventIcon = (type: JourneyEvent['type']) => {
   switch (type) {
-    case 'first_visit':
+    case 'page_visit':
       return 'mouse-pointer-click'
     case 'whatsapp_message':
       return 'message-circle'
     case 'contact_created':
       return 'user-plus'
-    case 'first_appointment':
+    case 'appointment':
       return 'calendar'
-    case 'first_payment':
+    case 'payment':
       return 'circle-dollar-sign'
     default:
       return 'mouse-pointer-click'
@@ -28,16 +28,16 @@ const getEventIcon = (type: JourneyEvent['type']) => {
 
 const getEventTitle = (type: JourneyEvent['type']) => {
   switch (type) {
-    case 'first_visit':
-      return 'Primera visita'
+    case 'page_visit':
+      return 'Visita'
     case 'whatsapp_message':
       return 'WhatsApp'
     case 'contact_created':
       return 'Contacto'
-    case 'first_appointment':
-      return 'Primera cita'
-    case 'first_payment':
-      return 'Primera compra'
+    case 'appointment':
+      return 'Cita'
+    case 'payment':
+      return 'Compra'
     default:
       return 'Evento'
   }
@@ -45,15 +45,15 @@ const getEventTitle = (type: JourneyEvent['type']) => {
 
 const getEventColor = (type: JourneyEvent['type']) => {
   switch (type) {
-    case 'first_visit':
+    case 'page_visit':
       return 'blue'
     case 'whatsapp_message':
       return 'green'
     case 'contact_created':
       return 'purple'
-    case 'first_appointment':
+    case 'appointment':
       return 'orange'
-    case 'first_payment':
+    case 'payment':
       return 'success'
     default:
       return 'gray'
@@ -63,7 +63,10 @@ const getEventColor = (type: JourneyEvent['type']) => {
 const getEventDescription = (event: JourneyEvent): string => {
   const { type, data } = event
 
-  if (type === 'first_visit') {
+  if (type === 'page_visit') {
+    if (data.landing_page) {
+      return data.landing_page
+    }
     if (data.campaign_name || data.utm_campaign) {
       return data.campaign_name || data.utm_campaign
     }
@@ -84,11 +87,11 @@ const getEventDescription = (event: JourneyEvent): string => {
     return data.source || 'Se registró'
   }
 
-  if (type === 'first_appointment') {
+  if (type === 'appointment') {
     return data.title || 'Agendó cita'
   }
 
-  if (type === 'first_payment') {
+  if (type === 'payment') {
     return data.amount ? formatCurrency(data.amount) : 'Realizó compra'
   }
 
@@ -100,7 +103,10 @@ const getTooltipContent = (event: JourneyEvent) => {
 
   const items: { label: string; value: string }[] = []
 
-  if (type === 'first_visit') {
+  if (type === 'page_visit') {
+    if (data.landing_page) {
+      items.push({ label: 'Página', value: data.landing_page })
+    }
     if (data.site_source_name || data.source_platform) {
       items.push({ label: 'Fuente', value: data.site_source_name || data.source_platform })
     }
@@ -113,8 +119,15 @@ const getTooltipContent = (event: JourneyEvent) => {
     if (data.ad_id) {
       items.push({ label: 'ID Anuncio', value: data.ad_id })
     }
-    if (data.landing_page) {
-      items.push({ label: 'Página', value: data.landing_page })
+    if (data.device_type) {
+      items.push({ label: 'Dispositivo', value: data.device_type })
+    }
+    if (data.browser) {
+      items.push({ label: 'Navegador', value: data.browser })
+    }
+    if (data.geo_city || data.geo_region || data.geo_country) {
+      const location = [data.geo_city, data.geo_region, data.geo_country].filter(Boolean).join(', ')
+      items.push({ label: 'Ubicación', value: location })
     }
   }
 
@@ -125,32 +138,55 @@ const getTooltipContent = (event: JourneyEvent) => {
     if (data.referral_body) {
       items.push({ label: 'Contenido', value: data.referral_body })
     }
+    if (data.phone) {
+      items.push({ label: 'Teléfono', value: data.phone })
+    }
   }
 
   if (type === 'contact_created') {
     if (data.source) {
       items.push({ label: 'Fuente', value: data.source })
     }
+    if (data.attribution_ad_name) {
+      items.push({ label: 'Anuncio', value: data.attribution_ad_name })
+    }
+    if (data.attribution_ad_id) {
+      items.push({ label: 'ID Anuncio', value: data.attribution_ad_id })
+    }
   }
 
-  if (type === 'first_appointment') {
+  if (type === 'appointment') {
     if (data.title) {
       items.push({ label: 'Título', value: data.title })
-    }
-    if (data.calendar_name) {
-      items.push({ label: 'Calendario', value: data.calendar_name })
     }
     if (data.status) {
       items.push({ label: 'Estado', value: data.status })
     }
+    if (data.start_time && data.end_time) {
+      const start = new Date(data.start_time).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
+      const end = new Date(data.end_time).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
+      items.push({ label: 'Horario', value: `${start} - ${end}` })
+    }
+    if (data.address) {
+      items.push({ label: 'Ubicación', value: data.address })
+    }
+    if (data.notes) {
+      items.push({ label: 'Notas', value: data.notes })
+    }
   }
 
-  if (type === 'first_payment') {
+  if (type === 'payment') {
     if (data.amount) {
       items.push({ label: 'Monto', value: formatCurrency(data.amount) })
     }
+    if (data.title) {
+      items.push({ label: 'Concepto', value: data.title })
+    }
     if (data.type) {
       items.push({ label: 'Tipo', value: data.type })
+    }
+    if (data.payment_provider) {
+      items.push({ label: 'Proveedor', value: data.payment_provider })
     }
   }
 

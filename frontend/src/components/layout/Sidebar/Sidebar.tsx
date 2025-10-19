@@ -14,7 +14,6 @@ import {
 import { cn } from '@/utils/cn'
 import { Logo } from '@/components/common'
 import { useAppConfig } from '@/hooks'
-import type { SensorDescriptor } from '@dnd-kit/core'
 import {
   DndContext,
   closestCenter,
@@ -77,12 +76,40 @@ const getNavigationItems = (showAnalytics: boolean): NavItem[] => {
   ]
 }
 
+interface NavigationItemProps {
+  item: NavItem
+  isActive: boolean
+  onNavigate?: () => void
+}
+
 interface SortableItemProps {
   item: NavItem
   isActive: boolean
   isDragging: boolean
   isEditMode: boolean
   onNavigate?: () => void
+}
+
+const NavigationItem: React.FC<NavigationItemProps> = ({ item, isActive, onNavigate }) => {
+  const Icon = item.icon
+
+  return (
+    <Link
+      to={item.href}
+      onClick={() => {
+        onNavigate?.()
+      }}
+      className={cn(
+        'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200',
+        isActive
+          ? 'glass text-[var(--color-text-primary)]'
+          : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] glass-hover'
+      )}
+    >
+      <Icon className="h-5 w-5 flex-shrink-0" />
+      <span>{item.name}</span>
+    </Link>
+  )
 }
 
 const SortableItem: React.FC<SortableItemProps> = ({ item, isActive, isDragging, isEditMode, onNavigate }) => {
@@ -162,9 +189,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
       coordinateGetter: sortableKeyboardCoordinates
     })
   )
-
-  const disabledSensors = React.useMemo<SensorDescriptor<any>[]>(() => [], [])
-  const activeSensors = isEditMode ? sensors : disabledSensors
 
   const startLongPress = (e: React.PointerEvent) => {
     if (isEditMode) {
@@ -335,52 +359,37 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
                 <span className="animate-ping absolute inline-flex h-1.5 w-1.5 rounded-full bg-[var(--color-accent-blue)] opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[var(--color-accent-blue)]"></span>
               </span>
-              Modo edición - Arrastra para reordenar
-            </span>
-          </div>
-        )}
-        <DndContext
-          sensors={activeSensors}
-          collisionDetection={isEditMode ? closestCenter : undefined}
-          onDragStart={isEditMode ? handleDragStart : undefined}
-          onDragEnd={isEditMode ? handleDragEnd : undefined}
-        >
-          <SortableContext items={navigation.map(item => item.id)} strategy={verticalListSortingStrategy}>
-            <div
-              className="space-y-1"
-              onPointerDown={startLongPress}
-              onPointerMove={(e) => {
-                // Cancelar si se mueve durante el long press
-                if (longPressTimerRef.current && longPressStartPos.current) {
-                  const deltaX = Math.abs(e.clientX - longPressStartPos.current.x)
-                  const deltaY = Math.abs(e.clientY - longPressStartPos.current.y)
-                  if (deltaX > 10 || deltaY > 10) {
-                    cancelLongPress(e)
-                  }
-                }
-              }}
-              onPointerUp={(e) => cancelLongPress(e)}
-              onPointerCancel={(e) => cancelLongPress(e)}
-              onPointerLeave={(e) => cancelLongPress(e)}
-            >
-              {navigation.map((item) => {
-                const isActive = location.pathname.startsWith(item.href)
-                return (
-                  <SortableItem
-                    key={item.id}
-                    item={item}
-                    isActive={isActive}
-                    isDragging={!!activeId}
-                    isEditMode={isEditMode}
-                    onNavigate={handleNavigate}
-                  />
-                )
-              })}
-            </div>
-          </SortableContext>
+      Modo edición - Arrastra para reordenar
+    </span>
+  </div>
+)}
 
-          {/* Drag Overlay - Item que se muestra mientras arrastras */}
-          {isEditMode && (
+        {isEditMode ? (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext items={navigation.map(item => item.id)} strategy={verticalListSortingStrategy}>
+              <div className="space-y-1">
+                {navigation.map((item) => {
+                  const isActive = location.pathname.startsWith(item.href)
+                  return (
+                    <SortableItem
+                      key={item.id}
+                      item={item}
+                      isActive={isActive}
+                      isDragging={!!activeId}
+                      isEditMode={isEditMode}
+                      onNavigate={handleNavigate}
+                    />
+                  )
+                })}
+              </div>
+            </SortableContext>
+
+            {/* Drag Overlay - Item que se muestra mientras arrastras */}
             <DragOverlay>
               {activeItem ? (
                 <div className="glass rounded-lg px-3 py-2.5 flex items-center gap-3 shadow-lg">
@@ -390,8 +399,37 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
                 </div>
               ) : null}
             </DragOverlay>
-          )}
-        </DndContext>
+          </DndContext>
+        ) : (
+          <div
+            className="space-y-1"
+            onPointerDown={startLongPress}
+            onPointerMove={(e) => {
+              if (longPressTimerRef.current && longPressStartPos.current) {
+                const deltaX = Math.abs(e.clientX - longPressStartPos.current.x)
+                const deltaY = Math.abs(e.clientY - longPressStartPos.current.y)
+                if (deltaX > 10 || deltaY > 10) {
+                  cancelLongPress(e)
+                }
+              }
+            }}
+            onPointerUp={(e) => cancelLongPress(e)}
+            onPointerCancel={(e) => cancelLongPress(e)}
+            onPointerLeave={(e) => cancelLongPress(e)}
+          >
+            {navigation.map((item) => {
+              const isActive = location.pathname.startsWith(item.href)
+              return (
+                <NavigationItem
+                  key={item.id}
+                  item={item}
+                  isActive={isActive}
+                  onNavigate={handleNavigate}
+                />
+              )
+            })}
+          </div>
+        )}
       </nav>
 
       {/* Settings */}
