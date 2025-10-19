@@ -1388,28 +1388,38 @@ export const getFunnelMetrics = async (req, res) => {
            AND DATE(created_at) <= DATE(?)
          GROUP BY day`;
 
-    // Query para leads CON attribution_ad_id
+    // Query para leads CON attribution_ad_id validando que el anuncio existiera ese día en Meta
     const leadsQuery = usePostgres
       ? `SELECT
-          TO_CHAR(created_at::date, 'YYYY-MM-DD') as day,
-          COUNT(DISTINCT id) as leads
-         FROM contacts
-         WHERE attribution_ad_id IS NOT NULL
-           AND attribution_ad_id != ''
-           AND created_at::date >= $1::date
-           AND created_at::date < ($2::date + INTERVAL '1 day')
+          TO_CHAR(c.created_at::date, 'YYYY-MM-DD') as day,
+          COUNT(DISTINCT c.id) as leads
+         FROM contacts c
+         WHERE c.attribution_ad_id IS NOT NULL
+           AND c.attribution_ad_id != ''
+           AND c.created_at::date >= $1::date
+           AND c.created_at::date < ($2::date + INTERVAL '1 day')
+           AND EXISTS (
+             SELECT 1 FROM meta_ads ma
+             WHERE ma.ad_id = c.attribution_ad_id
+               AND ma.date::date = c.created_at::date
+           )
          GROUP BY day`
       : `SELECT
-          DATE(created_at) as day,
-          COUNT(DISTINCT id) as leads
-         FROM contacts
-         WHERE attribution_ad_id IS NOT NULL
-           AND attribution_ad_id != ''
-           AND DATE(created_at) >= DATE(?)
-           AND DATE(created_at) <= DATE(?)
+          DATE(c.created_at) as day,
+          COUNT(DISTINCT c.id) as leads
+         FROM contacts c
+         WHERE c.attribution_ad_id IS NOT NULL
+           AND c.attribution_ad_id != ''
+           AND DATE(c.created_at) >= DATE(?)
+           AND DATE(c.created_at) <= DATE(?)
+           AND EXISTS (
+             SELECT 1 FROM meta_ads ma
+             WHERE ma.ad_id = c.attribution_ad_id
+               AND DATE(ma.date) = DATE(c.created_at)
+           )
          GROUP BY day`;
 
-    // Query para contactos con citas CON attribution_ad_id
+    // Query para contactos con citas CON attribution_ad_id validando que el anuncio existiera ese día
     const appointmentsQuery = usePostgres
       ? `SELECT
           TO_CHAR(c.created_at::date, 'YYYY-MM-DD') as day,
@@ -1420,6 +1430,11 @@ export const getFunnelMetrics = async (req, res) => {
            AND c.attribution_ad_id != ''
            AND c.created_at::date >= $1::date
            AND c.created_at::date < ($2::date + INTERVAL '1 day')
+           AND EXISTS (
+             SELECT 1 FROM meta_ads ma
+             WHERE ma.ad_id = c.attribution_ad_id
+               AND ma.date::date = c.created_at::date
+           )
          GROUP BY day`
       : `SELECT
           DATE(c.created_at) as day,
@@ -1430,29 +1445,44 @@ export const getFunnelMetrics = async (req, res) => {
            AND c.attribution_ad_id != ''
            AND DATE(c.created_at) >= DATE(?)
            AND DATE(c.created_at) <= DATE(?)
+           AND EXISTS (
+             SELECT 1 FROM meta_ads ma
+             WHERE ma.ad_id = c.attribution_ad_id
+               AND DATE(ma.date) = DATE(c.created_at)
+           )
          GROUP BY day`;
 
-    // Query para ventas CON attribution_ad_id
+    // Query para ventas CON attribution_ad_id validando que el anuncio existiera ese día
     const salesQuery = usePostgres
       ? `SELECT
-          TO_CHAR(created_at::date, 'YYYY-MM-DD') as day,
-          COUNT(DISTINCT id) as sales
-         FROM contacts
-         WHERE attribution_ad_id IS NOT NULL
-           AND attribution_ad_id != ''
-           AND purchases_count > 0
-           AND created_at::date >= $1::date
-           AND created_at::date < ($2::date + INTERVAL '1 day')
+          TO_CHAR(c.created_at::date, 'YYYY-MM-DD') as day,
+          COUNT(DISTINCT c.id) as sales
+         FROM contacts c
+         WHERE c.attribution_ad_id IS NOT NULL
+           AND c.attribution_ad_id != ''
+           AND c.purchases_count > 0
+           AND c.created_at::date >= $1::date
+           AND c.created_at::date < ($2::date + INTERVAL '1 day')
+           AND EXISTS (
+             SELECT 1 FROM meta_ads ma
+             WHERE ma.ad_id = c.attribution_ad_id
+               AND ma.date::date = c.created_at::date
+           )
          GROUP BY day`
       : `SELECT
-          DATE(created_at) as day,
-          COUNT(DISTINCT id) as sales
-         FROM contacts
-         WHERE attribution_ad_id IS NOT NULL
-           AND attribution_ad_id != ''
-           AND purchases_count > 0
-           AND DATE(created_at) >= DATE(?)
-           AND DATE(created_at) <= DATE(?)
+          DATE(c.created_at) as day,
+          COUNT(DISTINCT c.id) as sales
+         FROM contacts c
+         WHERE c.attribution_ad_id IS NOT NULL
+           AND c.attribution_ad_id != ''
+           AND c.purchases_count > 0
+           AND DATE(c.created_at) >= DATE(?)
+           AND DATE(c.created_at) <= DATE(?)
+           AND EXISTS (
+             SELECT 1 FROM meta_ads ma
+             WHERE ma.ad_id = c.attribution_ad_id
+               AND DATE(ma.date) = DATE(c.created_at)
+           )
          GROUP BY day`;
 
     const params = [startUtc, endUtc];
