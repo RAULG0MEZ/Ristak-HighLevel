@@ -299,6 +299,13 @@
   gap: 0.25rem;
 }
 
+.contactBadge {
+  font-size: 0.6875rem;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.03em;
+  padding: 0.125rem 0.5rem;
+}
+
 .ltvValue {
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
@@ -347,11 +354,24 @@
   flex: 1;
 }
 
+.contactHeaderNameRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 .contactHeaderName {
   font-size: 1rem;
   font-weight: 600;
   color: var(--color-text-primary);
   margin: 0;
+}
+
+.contactHeaderBadge {
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.02em;
 }
 
 .contactHeaderEmail,

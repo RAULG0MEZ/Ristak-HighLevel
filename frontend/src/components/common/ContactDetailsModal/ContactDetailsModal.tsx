@@ -1,6 +1,7 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { Modal, Icon, Badge, type BadgeVariant } from '@/components/common'
 import { formatDate } from '@/utils/format'
+import { useLabels } from '@/contexts/LabelsContext'
 import styles from './ContactDetailsModal.module.css'
 
 interface ContactPaymentDetail {
@@ -58,6 +59,7 @@ export function ContactDetailsModal({
   const [paymentsExpanded, setPaymentsExpanded] = useState(false)
   const [refundsExpanded, setRefundsExpanded] = useState(false)
   const [appointmentsExpanded, setAppointmentsExpanded] = useState(false)
+  const { labels } = useLabels()
 
   // Seleccionar automáticamente el primer contacto cuando se abre el modal
   useEffect(() => {
@@ -148,6 +150,29 @@ export function ContactDetailsModal({
 
     return { text: formatStatusText(statusLower), variant: 'neutral' }
   }
+
+  const resolveContactBadge = useCallback(
+    (contact?: ContactDetail | null): { text: string; variant: BadgeVariant } | null => {
+      if (!contact) return null
+
+      const hasPurchases = (contact.purchases ?? 0) > 0 || (contact.ltv ?? 0) > 0 ||
+        (contact.payments ?? []).some(payment => payment.amount > 0)
+      const hasAppointments = (contact.appointments?.length ?? 0) > 0 ||
+        Boolean(contact.nextAppointmentDate) ||
+        Boolean(contact.firstAppointmentDate)
+
+      if (hasPurchases) {
+        return { text: labels.customer, variant: 'success' }
+      }
+
+      if (hasAppointments) {
+        return { text: 'Agendó cita', variant: 'purple' }
+      }
+
+      return { text: labels.lead, variant: 'default' }
+    },
+    [labels]
+  )
 
   // Separar pagos de reembolsos
   const payments = useMemo(() => {
@@ -262,6 +287,14 @@ export function ContactDetailsModal({
                       </div>
 
                       <div className={styles.contactIndicators}>
+                        {(() => {
+                          const badge = resolveContactBadge(contact)
+                          return badge ? (
+                            <Badge variant={badge.variant} className={styles.contactBadge}>
+                              {badge.text}
+                            </Badge>
+                          ) : null
+                        })()}
                         {type === 'sales' && contact.ltv && (
                           <span className={styles.ltvValue}>
                             {formatCurrency(contact.ltv)}
@@ -293,9 +326,19 @@ export function ContactDetailsModal({
                   <Icon name="user" size={20} />
                 </div>
                 <div className={styles.contactHeaderInfo}>
-                  <h4 className={styles.contactHeaderName}>
-                    {selectedContact.name || '—'}
-                  </h4>
+                  <div className={styles.contactHeaderNameRow}>
+                    <h4 className={styles.contactHeaderName}>
+                      {selectedContact.name || '—'}
+                    </h4>
+                    {(() => {
+                      const badge = resolveContactBadge(selectedContact)
+                      return badge ? (
+                        <Badge variant={badge.variant} className={styles.contactHeaderBadge}>
+                          {badge.text}
+                        </Badge>
+                      ) : null
+                    })()}
+                  </div>
                   {selectedContact.email && (
                     <p className={styles.contactHeaderEmail}>
                       {selectedContact.email}

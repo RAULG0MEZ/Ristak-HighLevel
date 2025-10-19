@@ -1461,14 +1461,14 @@ export const getFunnelMetrics = async (req, res) => {
     const startUtc = range.startZoned.toISODate();
     const endUtc = range.endZoned.toISODate();
 
-    // Query para visitantes únicos CON attribution_ad_id
+    // Query para visitantes únicos CON ad_id (columna correcta en sessions)
     const visitorsQuery = usePostgres
       ? `SELECT
           TO_CHAR(created_at::date, 'YYYY-MM-DD') as day,
           COUNT(DISTINCT visitor_id) as visitors
          FROM sessions
-         WHERE attribution_ad_id IS NOT NULL
-           AND attribution_ad_id != ''
+         WHERE ad_id IS NOT NULL
+           AND ad_id != ''
            AND created_at::date >= $1::date
            AND created_at::date < ($2::date + INTERVAL '1 day')
          GROUP BY day`
@@ -1476,8 +1476,8 @@ export const getFunnelMetrics = async (req, res) => {
           DATE(created_at) as day,
           COUNT(DISTINCT visitor_id) as visitors
          FROM sessions
-         WHERE attribution_ad_id IS NOT NULL
-           AND attribution_ad_id != ''
+         WHERE ad_id IS NOT NULL
+           AND ad_id != ''
            AND DATE(created_at) >= DATE(?)
            AND DATE(created_at) <= DATE(?)
          GROUP BY day`;
