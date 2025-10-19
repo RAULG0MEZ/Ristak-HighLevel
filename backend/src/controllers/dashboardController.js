@@ -509,6 +509,11 @@ export const getLeadsData = async (req, res) => {
  * Obtiene datos de citas programadas por periodo
  * IMPORTANTE: Cuenta contactos ÚNICOS con cita, agrupados por fecha de creación del contacto
  * Esto permite atribución correcta de marketing (qué día se creó el contacto que agendó cita)
+ *
+ * Sistema de FALLBACK:
+ * 1. Primero consulta tabla appointments en DB (rápido, cache local)
+ * 2. Si no encuentra citas, hace fallback a HighLevel API
+ * 3. Guarda citas encontradas en DB para futuros queries
  */
 export const getAppointmentsData = async (req, res) => {
   try {
@@ -518,45 +523,148 @@ export const getAppointmentsData = async (req, res) => {
       return res.status(400).json([]);
     }
 
-    let query;
-    let params;
-
     const usePostgres = Boolean(process.env.DATABASE_URL);
 
-    if (usePostgres) {
-      const dateFormat = groupBy === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM';
-      query = `
+    // PASO 1: Obtener contactos del rango y verificar cuáles tienen citas en DB
+    const contactsQuery = usePostgres
+      ? `
         SELECT
-          TO_CHAR(created_at::timestamp, '${dateFormat}') as periodo,
-          COUNT(DISTINCT id) as total
-        FROM contacts
-        WHERE appointment_date IS NOT NULL
-        AND created_at::timestamp >= $1::timestamp AND created_at::timestamp < ($2::timestamp + INTERVAL '1 day')
-        GROUP BY periodo
-        ORDER BY periodo
-      `;
-      params = [startDate, endDate];
-    } else {
-      const dateFormat = groupBy === 'day' ? '%Y-%m-%d' : '%Y-%m';
-      query = `
+          c.id as contact_id,
+          c.created_at,
+          CASE WHEN a.contact_id IS NOT NULL THEN 1 ELSE 0 END as has_appointment_db
+        FROM contacts c
+        LEFT JOIN (
+          SELECT DISTINCT contact_id
+          FROM appointments
+          WHERE contact_id IS NOT NULL
+        ) a ON a.contact_id = c.id
+        WHERE c.created_at::timestamp >= $1::timestamp
+          AND c.created_at::timestamp < ($2::timestamp + INTERVAL '1 day')
+      `
+      : `
         SELECT
-          strftime(?, created_at) as periodo,
-          COUNT(DISTINCT id) as total
-        FROM contacts
-        WHERE appointment_date IS NOT NULL
-        AND created_at >= ? AND created_at < DATE(?, '+1 day')
-        GROUP BY periodo
-        ORDER BY periodo
+          c.id as contact_id,
+          c.created_at,
+          CASE WHEN a.contact_id IS NOT NULL THEN 1 ELSE 0 END as has_appointment_db
+        FROM contacts c
+        LEFT JOIN (
+          SELECT DISTINCT contact_id
+          FROM appointments
+          WHERE contact_id IS NOT NULL
+        ) a ON a.contact_id = c.id
+        WHERE DATE(c.created_at) >= DATE(?)
+          AND DATE(c.created_at) <= DATE(?)
       `;
-      params = [dateFormat, startDate, endDate];
+
+    const contactsRaw = await db.all(contactsQuery, [startDate, endDate]);
+
+    // PASO 2: Para contactos sin citas en DB, verificar en HighLevel API (fallback)
+    const config = await db.get('SELECT location_id, api_token FROM highlevel_config LIMIT 1');
+    const contactsWithAppointments = new Set();
+
+    // Agregar contactos que ya tienen citas en DB
+    contactsRaw.forEach(c => {
+      if (c.has_appointment_db === 1) {
+        contactsWithAppointments.add(c.contact_id);
+      }
+    });
+
+    // Obtener contactos sin citas en DB para verificar en HighLevel
+    const contactsToCheck = contactsRaw.filter(c => c.has_appointment_db === 0);
+
+    if (config && config.api_token && contactsToCheck.length > 0) {
+      logger.info(`Verificando ${contactsToCheck.length} contactos en HighLevel API (fallback)`);
+
+      // Batch de 50 contactos simultáneos
+      const batchSize = 50;
+
+      for (let i = 0; i < contactsToCheck.length; i += batchSize) {
+        const batch = contactsToCheck.slice(i, i + batchSize);
+
+        const appointmentChecks = await Promise.all(
+          batch.map(async (contact) => {
+            try {
+              const response = await fetch(
+                `https://services.leadconnectorhq.com/contacts/${contact.contact_id}/appointments`,
+                {
+                  headers: {
+                    'Authorization': `Bearer ${config.api_token}`,
+                    'Version': '2021-07-28'
+                  }
+                }
+              );
+
+              if (response.ok) {
+                const data = await response.json();
+                if (data.events && data.events.length > 0) {
+                  // Cache appointments en DB para futuros queries
+                  for (const event of data.events) {
+                    await db.run(`
+                      INSERT INTO appointments (id, contact_id, calendar_id, location_id, title, status, start_time, end_time)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                      ON CONFLICT(id) DO UPDATE SET
+                        status = excluded.status,
+                        start_time = excluded.start_time,
+                        end_time = excluded.end_time
+                    `, [
+                      event.id,
+                      contact.contact_id,
+                      event.calendarId || '',
+                      event.locationId || config.location_id,
+                      event.title || '',
+                      event.status || 'scheduled',
+                      event.startTime || '',
+                      event.endTime || ''
+                    ]).catch(() => {});
+                  }
+
+                  return { contactId: contact.contact_id, hasAppointments: true };
+                }
+              }
+              return { contactId: contact.contact_id, hasAppointments: false };
+            } catch (error) {
+              return { contactId: contact.contact_id, hasAppointments: false };
+            }
+          })
+        );
+
+        // Actualizar set con contactos que tienen citas
+        appointmentChecks.forEach(result => {
+          if (result.hasAppointments) {
+            contactsWithAppointments.add(result.contactId);
+          }
+        });
+      }
     }
 
-    const data = await db.all(query, params);
+    // PASO 3: Agrupar contactos con citas por periodo (fecha de creación)
+    const periodMap = {};
 
-    const appointmentsData = data.map(row => ({
-      label: row.periodo,
-      value: parseInt(row.total)
-    }));
+    contactsRaw.forEach(contact => {
+      if (contactsWithAppointments.has(contact.contact_id)) {
+        const dateObj = new Date(contact.created_at);
+        let periodKey;
+
+        if (groupBy === 'month') {
+          periodKey = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
+        } else {
+          periodKey = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
+        }
+
+        if (!periodMap[periodKey]) {
+          periodMap[periodKey] = new Set();
+        }
+        periodMap[periodKey].add(contact.contact_id);
+      }
+    });
+
+    // Convertir a formato de respuesta
+    const appointmentsData = Object.keys(periodMap)
+      .sort()
+      .map(periodo => ({
+        label: periodo,
+        value: periodMap[periodo].size
+      }));
 
     res.json(appointmentsData);
 
