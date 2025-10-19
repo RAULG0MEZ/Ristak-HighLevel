@@ -802,9 +802,9 @@ export const Campaigns: React.FC = () => {
   // Chart options configuration
   const CHART_OPTIONS: Array<{ value: ChartView; label: string }> = [
     { value: 'revenue', label: 'Ingresos vs Gastos' },
-    { value: 'leads', label: `${labels.leads} vs Gastos` },
-    { value: 'appointments', label: 'Citas vs Gastos' },
-    { value: 'visitors', label: 'Visitantes vs Gastos' }
+    { value: 'visitors', label: `Visitantes vs ${labels.leads}` },
+    { value: 'leads', label: `${labels.leads} vs Citas` },
+    { value: 'appointments', label: 'Citas vs Ventas' }
   ]
 
   // Chart configurations based on selected view
@@ -821,38 +821,38 @@ export const Campaigns: React.FC = () => {
         formatValue: (v) => `$${(v / 1000).toFixed(1)}k`,
         emptyMessage: 'No hay datos de campañas para este período'
       },
+      visitors: {
+        title: `Visitantes vs ${labels.leads}`,
+        subtitle: 'Comparación de visitantes únicos y contactos registrados',
+        data: visitorsData,
+        color: '#f59e0b',
+        color2: '#3b82f6',
+        showLegend: true,
+        legendLabels: { label1: 'Visitantes', label2: labels.leads },
+        formatValue: (v) => v < 1000 ? v.toString() : `${(v / 1000).toFixed(1)}k`,
+        emptyMessage: 'No hay datos de visitantes para este período'
+      },
       leads: {
-        title: `${labels.leads} vs Gastos de Publicidad`,
-        subtitle: 'Contactos únicos por fecha de creación',
+        title: `${labels.leads} vs Citas`,
+        subtitle: 'Comparación de contactos registrados y citas agendadas',
         data: leadsData,
         color: '#3b82f6',
-        color2: '#64748b',
+        color2: '#8b5cf6',
         showLegend: true,
-        legendLabels: { label1: labels.leads, label2: 'Gastos Publicidad' },
+        legendLabels: { label1: labels.leads, label2: 'Citas' },
         formatValue: (v) => v < 1000 ? v.toString() : `${(v / 1000).toFixed(1)}k`,
         emptyMessage: 'No hay datos de leads para este período'
       },
       appointments: {
-        title: 'Citas vs Gastos de Publicidad',
-        subtitle: 'Contactos con al menos una cita por fecha de creación',
+        title: 'Citas vs Ventas',
+        subtitle: 'Comparación de citas agendadas y conversiones a venta',
         data: appointmentsData,
         color: '#8b5cf6',
-        color2: '#64748b',
+        color2: '#10b981',
         showLegend: true,
-        legendLabels: { label1: 'Citas', label2: 'Gastos Publicidad' },
+        legendLabels: { label1: 'Citas', label2: 'Ventas' },
         formatValue: (v) => v < 1000 ? v.toString() : `${(v / 1000).toFixed(1)}k`,
         emptyMessage: 'No hay datos de citas para este período'
-      },
-      visitors: {
-        title: 'Visitantes vs Gastos de Publicidad',
-        subtitle: 'Visitantes únicos por fecha',
-        data: visitorsData,
-        color: '#f59e0b',
-        color2: '#64748b',
-        showLegend: true,
-        legendLabels: { label1: 'Visitantes', label2: 'Gastos Publicidad' },
-        formatValue: (v) => v < 1000 ? v.toString() : `${(v / 1000).toFixed(1)}k`,
-        emptyMessage: 'No hay datos de visitantes para este período'
       }
     }
   }, [revenueData, leadsData, appointmentsData, visitorsData, labels])

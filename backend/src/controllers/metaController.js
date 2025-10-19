@@ -803,7 +803,7 @@ export const verifyToken = async (req, res) => {
 };
 
 /**
- * Obtiene leads agrupados por fecha de creación con gastos de publicidad
+ * Obtiene leads vs citas agrupados por fecha de creación
  */
 export const getLeadsOverTime = async (req, res) => {
   try {
@@ -835,29 +835,35 @@ export const getLeadsOverTime = async (req, res) => {
          GROUP BY day
          ORDER BY day`;
 
-    // Query para obtener gastos de publicidad
-    const spendQuery = usePostgres
+    // Query para obtener contactos únicos con citas por fecha de creación
+    const appointmentsQuery = usePostgres
       ? `SELECT
-          TO_CHAR(date::date, 'YYYY-MM-DD') as day,
-          SUM(spend) as spend
-         FROM ads_insights
-         WHERE date::date >= $1::date
-           AND date::date < ($2::date + INTERVAL '1 day')
+          TO_CHAR(c.created_at::date, 'YYYY-MM-DD') as day,
+          COUNT(DISTINCT c.id) as appointments
+         FROM contacts c
+         INNER JOIN appointments a ON c.id = a.contact_id
+         WHERE c.attribution_ad_id IS NOT NULL
+           AND c.attribution_ad_id != ''
+           AND c.created_at::date >= $1::date
+           AND c.created_at::date < ($2::date + INTERVAL '1 day')
          GROUP BY day
          ORDER BY day`
       : `SELECT
-          DATE(date) as day,
-          SUM(spend) as spend
-         FROM ads_insights
-         WHERE DATE(date) >= DATE(?)
-           AND DATE(date) <= DATE(?)
+          DATE(c.created_at) as day,
+          COUNT(DISTINCT c.id) as appointments
+         FROM contacts c
+         INNER JOIN appointments a ON c.id = a.contact_id
+         WHERE c.attribution_ad_id IS NOT NULL
+           AND c.attribution_ad_id != ''
+           AND DATE(c.created_at) >= DATE(?)
+           AND DATE(c.created_at) <= DATE(?)
          GROUP BY day
          ORDER BY day`;
 
     const params = [range.startUtc, range.endUtc];
-    const [leadsData, spendData] = await Promise.all([
+    const [leadsData, appointmentsData] = await Promise.all([
       db.all(leadsQuery, params),
-      db.all(spendQuery, params)
+      db.all(appointmentsQuery, params)
     ]);
 
     // Crear mapas para combinar los datos
@@ -866,20 +872,20 @@ export const getLeadsOverTime = async (req, res) => {
       leadsMap.set(row.day, parseInt(row.leads || 0));
     });
 
-    const spendMap = new Map();
-    spendData.forEach(row => {
-      spendMap.set(row.day, parseFloat(row.spend || 0));
+    const appointmentsMap = new Map();
+    appointmentsData.forEach(row => {
+      appointmentsMap.set(row.day, parseInt(row.appointments || 0));
     });
 
     // Combinar todas las fechas únicas
-    const allDates = new Set([...leadsMap.keys(), ...spendMap.keys()]);
+    const allDates = new Set([...leadsMap.keys(), ...appointmentsMap.keys()]);
     const sortedDates = Array.from(allDates).sort();
 
     // Mapear al formato esperado por frontend
     const mappedData = sortedDates.map(date => ({
       label: date,
-      value: leadsMap.get(date) || 0,  // Leads
-      value2: spendMap.get(date) || 0  // Gastos
+      value: leadsMap.get(date) || 0,       // Leads
+      value2: appointmentsMap.get(date) || 0 // Citas
     }));
 
     res.json({
@@ -891,13 +897,13 @@ export const getLeadsOverTime = async (req, res) => {
     logger.error(`Error en getLeadsOverTime: ${error.message}`);
     res.status(500).json({
       success: false,
-      error: 'Error al obtener leads por período'
+      error: 'Error al obtener leads vs citas por período'
     });
   }
 };
 
 /**
- * Obtiene citas (contactos únicos con al menos una cita) por fecha de creación con gastos
+ * Obtiene citas vs ventas agrupadas por fecha de creación
  */
 export const getAppointmentsOverTime = async (req, res) => {
   try {
@@ -931,29 +937,35 @@ export const getAppointmentsOverTime = async (req, res) => {
          GROUP BY day
          ORDER BY day`;
 
-    // Query para obtener gastos de publicidad
-    const spendQuery = usePostgres
+    // Query para obtener ventas (contactos con purchases_count > 0) por fecha de creación
+    const salesQuery = usePostgres
       ? `SELECT
-          TO_CHAR(date::date, 'YYYY-MM-DD') as day,
-          SUM(spend) as spend
-         FROM ads_insights
-         WHERE date::date >= $1::date
-           AND date::date < ($2::date + INTERVAL '1 day')
+          TO_CHAR(created_at::date, 'YYYY-MM-DD') as day,
+          COUNT(DISTINCT id) as sales
+         FROM contacts
+         WHERE attribution_ad_id IS NOT NULL
+           AND attribution_ad_id != ''
+           AND purchases_count > 0
+           AND created_at::date >= $1::date
+           AND created_at::date < ($2::date + INTERVAL '1 day')
          GROUP BY day
          ORDER BY day`
       : `SELECT
-          DATE(date) as day,
-          SUM(spend) as spend
-         FROM ads_insights
-         WHERE DATE(date) >= DATE(?)
-           AND DATE(date) <= DATE(?)
+          DATE(created_at) as day,
+          COUNT(DISTINCT id) as sales
+         FROM contacts
+         WHERE attribution_ad_id IS NOT NULL
+           AND attribution_ad_id != ''
+           AND purchases_count > 0
+           AND DATE(created_at) >= DATE(?)
+           AND DATE(created_at) <= DATE(?)
          GROUP BY day
          ORDER BY day`;
 
     const params = [range.startUtc, range.endUtc];
-    const [appointmentsData, spendData] = await Promise.all([
+    const [appointmentsData, salesData] = await Promise.all([
       db.all(appointmentsQuery, params),
-      db.all(spendQuery, params)
+      db.all(salesQuery, params)
     ]);
 
     // Crear mapas para combinar los datos
@@ -962,20 +974,20 @@ export const getAppointmentsOverTime = async (req, res) => {
       appointmentsMap.set(row.day, parseInt(row.appointments || 0));
     });
 
-    const spendMap = new Map();
-    spendData.forEach(row => {
-      spendMap.set(row.day, parseFloat(row.spend || 0));
+    const salesMap = new Map();
+    salesData.forEach(row => {
+      salesMap.set(row.day, parseInt(row.sales || 0));
     });
 
     // Combinar todas las fechas únicas
-    const allDates = new Set([...appointmentsMap.keys(), ...spendMap.keys()]);
+    const allDates = new Set([...appointmentsMap.keys(), ...salesMap.keys()]);
     const sortedDates = Array.from(allDates).sort();
 
     // Mapear al formato esperado por frontend
     const mappedData = sortedDates.map(date => ({
       label: date,
       value: appointmentsMap.get(date) || 0,  // Citas
-      value2: spendMap.get(date) || 0         // Gastos
+      value2: salesMap.get(date) || 0         // Ventas
     }));
 
     res.json({
@@ -987,13 +999,13 @@ export const getAppointmentsOverTime = async (req, res) => {
     logger.error(`Error en getAppointmentsOverTime: ${error.message}`);
     res.status(500).json({
       success: false,
-      error: 'Error al obtener citas por período'
+      error: 'Error al obtener citas vs ventas por período'
     });
   }
 };
 
 /**
- * Obtiene visitantes únicos por fecha con gastos de publicidad
+ * Obtiene visitantes vs leads agrupados por fecha
  */
 export const getVisitorsOverTime = async (req, res) => {
   try {
@@ -1025,29 +1037,33 @@ export const getVisitorsOverTime = async (req, res) => {
          GROUP BY day
          ORDER BY day`;
 
-    // Query para obtener gastos de publicidad
-    const spendQuery = usePostgres
+    // Query para obtener leads (contactos únicos) por fecha de creación
+    const leadsQuery = usePostgres
       ? `SELECT
-          TO_CHAR(date::date, 'YYYY-MM-DD') as day,
-          SUM(spend) as spend
-         FROM ads_insights
-         WHERE date::date >= $1::date
-           AND date::date < ($2::date + INTERVAL '1 day')
+          TO_CHAR(created_at::date, 'YYYY-MM-DD') as day,
+          COUNT(DISTINCT id) as leads
+         FROM contacts
+         WHERE attribution_ad_id IS NOT NULL
+           AND attribution_ad_id != ''
+           AND created_at::date >= $1::date
+           AND created_at::date < ($2::date + INTERVAL '1 day')
          GROUP BY day
          ORDER BY day`
       : `SELECT
-          DATE(date) as day,
-          SUM(spend) as spend
-         FROM ads_insights
-         WHERE DATE(date) >= DATE(?)
-           AND DATE(date) <= DATE(?)
+          DATE(created_at) as day,
+          COUNT(DISTINCT id) as leads
+         FROM contacts
+         WHERE attribution_ad_id IS NOT NULL
+           AND attribution_ad_id != ''
+           AND DATE(created_at) >= DATE(?)
+           AND DATE(created_at) <= DATE(?)
          GROUP BY day
          ORDER BY day`;
 
     const params = [range.startUtc, range.endUtc];
-    const [visitorsData, spendData] = await Promise.all([
+    const [visitorsData, leadsData] = await Promise.all([
       db.all(visitorsQuery, params),
-      db.all(spendQuery, params)
+      db.all(leadsQuery, params)
     ]);
 
     // Crear mapas para combinar los datos
@@ -1056,20 +1072,20 @@ export const getVisitorsOverTime = async (req, res) => {
       visitorsMap.set(row.day, parseInt(row.visitors || 0));
     });
 
-    const spendMap = new Map();
-    spendData.forEach(row => {
-      spendMap.set(row.day, parseFloat(row.spend || 0));
+    const leadsMap = new Map();
+    leadsData.forEach(row => {
+      leadsMap.set(row.day, parseInt(row.leads || 0));
     });
 
     // Combinar todas las fechas únicas
-    const allDates = new Set([...visitorsMap.keys(), ...spendMap.keys()]);
+    const allDates = new Set([...visitorsMap.keys(), ...leadsMap.keys()]);
     const sortedDates = Array.from(allDates).sort();
 
     // Mapear al formato esperado por frontend
     const mappedData = sortedDates.map(date => ({
       label: date,
       value: visitorsMap.get(date) || 0,   // Visitantes
-      value2: spendMap.get(date) || 0      // Gastos
+      value2: leadsMap.get(date) || 0      // Leads
     }));
 
     res.json({
@@ -1081,7 +1097,7 @@ export const getVisitorsOverTime = async (req, res) => {
     logger.error(`Error en getVisitorsOverTime: ${error.message}`);
     res.status(500).json({
       success: false,
-      error: 'Error al obtener visitantes por período'
+      error: 'Error al obtener visitantes vs leads por período'
     });
   }
 };
