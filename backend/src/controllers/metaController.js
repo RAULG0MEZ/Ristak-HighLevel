@@ -825,9 +825,15 @@ export const verifyToken = async (req, res) => {
 export const getLeadsOverTime = async (req, res) => {
   try {
     const { start, end, viewType = 'day' } = req.query;
-    const db = getConnection();
-    const usePostgres = db.getType() === 'postgres';
-    const range = getStartAndEndDates(start, end, viewType);
+    const usePostgres = true; // Render always uses PostgreSQL
+
+    // Parse dates properly, removing time if present
+    const startDate = start ? start.split(' ')[0].split('+')[0] : null;
+    const endDate = end ? end.split(' ')[0].split('+')[0] : null;
+
+    const range = resolveDateRange({ startDate, endDate });
+    const startUtc = range.startZoned.toISODate();
+    const endUtc = range.endZoned.toISODate();
 
     // Query para obtener leads (contactos únicos) por fecha de creación
     const leadsQuery = usePostgres
@@ -877,7 +883,7 @@ export const getLeadsOverTime = async (req, res) => {
          GROUP BY day
          ORDER BY day`;
 
-    const params = [range.startUtc, range.endUtc];
+    const params = [startUtc, endUtc];
     const [leadsData, appointmentsData] = await Promise.all([
       db.all(leadsQuery, params),
       db.all(appointmentsQuery, params)
@@ -925,9 +931,15 @@ export const getLeadsOverTime = async (req, res) => {
 export const getAppointmentsOverTime = async (req, res) => {
   try {
     const { start, end, viewType = 'day' } = req.query;
-    const db = getConnection();
-    const usePostgres = db.getType() === 'postgres';
-    const range = getStartAndEndDates(start, end, viewType);
+    const usePostgres = true; // Render always uses PostgreSQL
+
+    // Parse dates properly, removing time if present
+    const startDate = start ? start.split(' ')[0].split('+')[0] : null;
+    const endDate = end ? end.split(' ')[0].split('+')[0] : null;
+
+    const range = resolveDateRange({ startDate, endDate });
+    const startUtc = range.startZoned.toISODate();
+    const endUtc = range.endZoned.toISODate();
 
     // Query para obtener contactos únicos con citas por fecha de creación
     const appointmentsQuery = usePostgres
@@ -979,7 +991,7 @@ export const getAppointmentsOverTime = async (req, res) => {
          GROUP BY day
          ORDER BY day`;
 
-    const params = [range.startUtc, range.endUtc];
+    const params = [startUtc, endUtc];
     const [appointmentsData, salesData] = await Promise.all([
       db.all(appointmentsQuery, params),
       db.all(salesQuery, params)
@@ -1027,9 +1039,15 @@ export const getAppointmentsOverTime = async (req, res) => {
 export const getVisitorsOverTime = async (req, res) => {
   try {
     const { start, end, viewType = 'day' } = req.query;
-    const db = getConnection();
-    const usePostgres = db.getType() === 'postgres';
-    const range = getStartAndEndDates(start, end, viewType);
+    const usePostgres = true; // Render always uses PostgreSQL
+
+    // Parse dates properly, removing time if present
+    const startDate = start ? start.split(' ')[0].split('+')[0] : null;
+    const endDate = end ? end.split(' ')[0].split('+')[0] : null;
+
+    const range = resolveDateRange({ startDate, endDate });
+    const startUtc = range.startZoned.toISODate();
+    const endUtc = range.endZoned.toISODate();
 
     // Query para obtener visitantes únicos por fecha desde sessions
     const visitorsQuery = usePostgres
@@ -1077,7 +1095,7 @@ export const getVisitorsOverTime = async (req, res) => {
          GROUP BY day
          ORDER BY day`;
 
-    const params = [range.startUtc, range.endUtc];
+    const params = [startUtc, endUtc];
     const [visitorsData, leadsData] = await Promise.all([
       db.all(visitorsQuery, params),
       db.all(leadsQuery, params)
@@ -1125,9 +1143,15 @@ export const getVisitorsOverTime = async (req, res) => {
 export const getFunnelMetrics = async (req, res) => {
   try {
     const { start, end, viewType = 'day' } = req.query;
-    const db = getConnection();
-    const usePostgres = db.getType() === 'postgres';
-    const range = getStartAndEndDates(start, end, viewType);
+    const usePostgres = true; // Render always uses PostgreSQL
+
+    // Parse dates properly, removing time if present
+    const startDate = start ? start.split(' ')[0].split('+')[0] : null;
+    const endDate = end ? end.split(' ')[0].split('+')[0] : null;
+
+    const range = resolveDateRange({ startDate, endDate });
+    const startUtc = range.startZoned.toISODate();
+    const endUtc = range.endZoned.toISODate();
 
     // Query para visitantes únicos
     const visitorsQuery = usePostgres
@@ -1201,7 +1225,7 @@ export const getFunnelMetrics = async (req, res) => {
            AND DATE(created_at) <= DATE(?)
          GROUP BY day`;
 
-    const params = [range.startUtc, range.endUtc];
+    const params = [startUtc, endUtc];
     const [visitorsData, leadsData, appointmentsData, salesData] = await Promise.all([
       db.all(visitorsQuery, params),
       db.all(leadsQuery, params),

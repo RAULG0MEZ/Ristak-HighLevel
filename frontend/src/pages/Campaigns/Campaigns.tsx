@@ -140,14 +140,11 @@ export const Campaigns: React.FC = () => {
       ]
 
       // Si se usa tracking interno, obtener visitantes desde sessions
-      console.log('🔍 visitorSource:', visitorSource)
       if (visitorSource === 'tracking') {
-        console.log('📊 Fetching visitors from tracking, dates:', startDate, 'to', endDate)
         promises.push(
           fetch(`/api/tracking/visitors-by-ad?startDate=${startDate}&endDate=${endDate}`)
             .then(res => res.json())
             .then(data => {
-              console.log('✅ Visitors by ad received:', data.data)
               return data.data || {}
             })
             .catch((error) => {
@@ -156,7 +153,6 @@ export const Campaigns: React.FC = () => {
             })
         )
       } else {
-        console.log('📈 Using platform visitors (not tracking)')
       }
 
       const results = await Promise.all(promises)
@@ -168,25 +164,20 @@ export const Campaigns: React.FC = () => {
         let campaignVisitors = 0
 
         if (visitorSource === 'tracking' && visitorsByAd) {
-          console.log('🎯 Processing campaign:', campaign.name, 'with visitorsByAd keys:', Object.keys(visitorsByAd || {}))
           // Sumar visitantes de todos los ads de esta campaña
           campaign.adsets?.forEach((adset: any) => {
             adset.ads?.forEach((ad: any) => {
-              console.log('🔍 Looking for ad.id:', ad.id, 'in visitorsByAd')
               const adVisitorData = visitorsByAd[ad.id]
               if (adVisitorData) {
-                console.log('✅ Found visitors for ad', ad.id, ':', adVisitorData.uniqueVisitors)
                 ad.visitors = adVisitorData.uniqueVisitors
                 campaignVisitors += adVisitorData.uniqueVisitors
               } else {
-                console.log('❌ No visitors found for ad', ad.id)
                 ad.visitors = 0
               }
             })
             // Calcular visitantes del adset sumando sus ads
             adset.visitors = adset.ads?.reduce((sum: number, ad: any) => sum + (ad.visitors || 0), 0) || 0
           })
-          console.log('📊 Total campaign visitors:', campaignVisitors)
         }
 
         return {
@@ -227,7 +218,6 @@ export const Campaigns: React.FC = () => {
 
       // Fetch funnel metrics
       const funnelMetricsRaw = await campaignsService.getFunnelMetrics(startDate, endDate)
-      console.log('Funnel metrics raw data:', funnelMetricsRaw)
 
       // Process funnel metrics into the format needed for each chart
       const formattedVisitorsData = funnelMetricsRaw.map((item, index) => ({
@@ -248,9 +238,6 @@ export const Campaigns: React.FC = () => {
         value2: item.sales         // Ventas
       }))
 
-      console.log('Formatted visitors data:', formattedVisitorsData)
-      console.log('Formatted leads data:', formattedLeadsData)
-      console.log('Formatted appointments data:', formattedAppointmentsData)
 
       setVisitorsData(formattedVisitorsData || [])
       setLeadsData(formattedLeadsData || [])

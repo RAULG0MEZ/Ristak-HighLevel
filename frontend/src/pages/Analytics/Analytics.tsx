@@ -562,7 +562,6 @@ const Analytics: React.FC = () => {
 
             // Debug temporal
             if (rawPlatform === 'fb' || rawPlatform === 'ig') {
-              console.log(`🔍 Raw: "${rawPlatform}" → Normalized: "${platform}"`)
             }
 
             platforms[platform] = (platforms[platform] || 0) + 1
@@ -606,7 +605,6 @@ const Analytics: React.FC = () => {
             .slice(0, 10)
 
           // Debug: ver qué plataformas se están mostrando
-          console.log('📊 Traffic Sources Data:', trafficSourcesData)
 
           setTrafficSources(trafficSourcesData)
 
@@ -831,7 +829,6 @@ const Analytics: React.FC = () => {
 
       // Debug temporal
       if (rawPlatform === 'fb' || rawPlatform === 'ig') {
-        console.log(`🔍 [Filtros] Raw: "${rawPlatform}" → Normalized: "${platform}"`)
       }
 
       platforms[platform] = (platforms[platform] || 0) + 1
