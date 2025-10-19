@@ -1496,17 +1496,19 @@ export const getFunnelMetrics = async (req, res) => {
       salesMap.set(row.day, parseInt(row.sales || 0));
     });
 
-    // Combinar todas las fechas únicas
-    const allDates = new Set([
-      ...visitorsMap.keys(),
-      ...leadsMap.keys(),
-      ...appointmentsMap.keys(),
-      ...salesMap.keys()
-    ]);
-    const sortedDates = Array.from(allDates).sort();
+    // Generar TODAS las fechas del rango (incluso las que no tienen datos)
+    const allDates = [];
+    let currentDate = new Date(startUtc);
+    const endDateObj = new Date(endUtc);
+
+    while (currentDate <= endDateObj) {
+      const dateStr = currentDate.toISOString().split('T')[0];
+      allDates.push(dateStr);
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
 
     // Mapear al formato esperado con todas las métricas
-    const mappedData = sortedDates.map(date => ({
+    const mappedData = allDates.map(date => ({
       label: date,
       visitors: visitorsMap.get(date) || 0,
       leads: leadsMap.get(date) || 0,
