@@ -248,10 +248,15 @@ export const getCampaigns = async (req, res) => {
     const contactsToCheck = contactsRaw.filter(c => c.has_appointment_db === 0);
 
     if (config && config.api_token && contactsToCheck.length > 0) {
-      // Agrupar por batches para no hacer demasiadas llamadas
-      const batchSize = 10;
+      // Batch de 50 contactos simultáneos (HighLevel permite 200k requests/día)
+      // Con 50 paralelas, podemos verificar 3000 contactos por minuto sin problemas
+      const batchSize = 50;
+      logger.info(`[CITAS] Verificando ${contactsToCheck.length} contactos sin citas en DB...`);
+
       for (let i = 0; i < contactsToCheck.length; i += batchSize) {
         const batch = contactsToCheck.slice(i, i + batchSize);
+        const progress = Math.min(i + batchSize, contactsToCheck.length);
+        logger.info(`[CITAS] Procesando batch ${Math.floor(i/batchSize) + 1}: ${progress}/${contactsToCheck.length} contactos...`);
 
         // Hacer llamadas en paralelo para este batch
         const appointmentChecks = await Promise.all(
@@ -350,7 +355,15 @@ export const getCampaigns = async (req, res) => {
       revenue: metricsMap[ad_id].revenue
     }));
 
-    logger.info(`[CITAS DEBUG] Total contactos con citas encontrados: ${contactsWithAppointments.size}`);
+    logger.info(`[CITAS RESUMEN] Total contactos con citas: ${contactsWithAppointments.size}/${contactsRaw.length} (${Math.round(contactsWithAppointments.size * 100 / Math.max(contactsRaw.length, 1))}%)`);
+
+    // Log desglose por ad_id con citas
+    const adsWithAppointments = contactsData.filter(ad => ad.citas > 0);
+    if (adsWithAppointments.length > 0) {
+      logger.info(`[CITAS RESUMEN] ${adsWithAppointments.length} ads con citas:`,
+        adsWithAppointments.map(ad => `Ad ${ad.ad_id}: ${ad.citas} contactos con citas`).join(', ')
+      );
+    }
 
     // Obtener todos los ad_ids que tienen contactos en el período
     const adIdsWithContacts = contactsData.map(row => row.ad_id).filter(Boolean);
