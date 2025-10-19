@@ -721,6 +721,7 @@ export const getContactsByType = async (req, res) => {
     }
 
     // Construir query de contactos (sin JOIN de appointments, ahora usamos método optimizado)
+    // IMPORTANTE: Validar que attribution_ad_id exista en meta_ads con fecha coincidente
     const placeholders = adIdsList.map(() => '?').join(',');
     let contactsQuery = `
       SELECT DISTINCT
@@ -737,6 +738,11 @@ export const getContactsByType = async (req, res) => {
       WHERE c.attribution_ad_id IN (${placeholders})
       AND c.created_at >= ?
       AND c.created_at <= ?
+      AND EXISTS (
+        SELECT 1 FROM meta_ads ma
+        WHERE ma.ad_id = c.attribution_ad_id
+          AND ma.date::date = c.created_at::date
+      )
     `;
 
     if (type === 'sales') {
