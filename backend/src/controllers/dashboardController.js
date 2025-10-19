@@ -450,6 +450,63 @@ export const getNewCustomersData = async (req, res) => {
 };
 
 /**
+ * Obtiene datos de visitantes únicos desde sessions por periodo
+ */
+export const getVisitorsData = async (req, res) => {
+  try {
+    const { startDate, endDate, groupBy = 'day' } = req.query;
+
+    if (!startDate || !endDate) {
+      return res.status(400).json([]);
+    }
+
+    let query;
+    let params;
+
+    const usePostgres = Boolean(process.env.DATABASE_URL);
+
+    if (usePostgres) {
+      const dateFormat = groupBy === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM';
+      query = `
+        SELECT
+          TO_CHAR(started_at::timestamp, '${dateFormat}') as periodo,
+          COUNT(DISTINCT visitor_id) as total
+        FROM sessions
+        WHERE started_at::timestamp >= $1::timestamp AND started_at::timestamp < ($2::timestamp + INTERVAL '1 day')
+        GROUP BY periodo
+        ORDER BY periodo
+      `;
+      params = [startDate, endDate];
+    } else {
+      const dateFormat = groupBy === 'day' ? '%Y-%m-%d' : '%Y-%m';
+      query = `
+        SELECT
+          strftime(?, started_at) as periodo,
+          COUNT(DISTINCT visitor_id) as total
+        FROM sessions
+        WHERE started_at >= ? AND started_at < DATE(?, '+1 day')
+        GROUP BY periodo
+        ORDER BY periodo
+      `;
+      params = [dateFormat, startDate, endDate];
+    }
+
+    const data = await db.all(query, params);
+
+    const visitorsData = data.map(row => ({
+      label: row.periodo,
+      value: parseInt(row.total)
+    }));
+
+    res.json(visitorsData);
+
+  } catch (error) {
+    logger.error(`Error en getVisitorsData: ${error.message}`);
+    res.json([]);
+  }
+};
+
+/**
  * Obtiene datos de leads (todos los contactos nuevos) por periodo
  */
 export const getLeadsData = async (req, res) => {

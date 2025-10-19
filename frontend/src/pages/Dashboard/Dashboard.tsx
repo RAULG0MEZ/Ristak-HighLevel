@@ -210,8 +210,9 @@ export const Dashboard: React.FC = () => {
   // Formatear datos para diferentes vistas del gráfico
   const formatChartDataForView = React.useCallback(async (twelveMonthsAgo: Date, now: Date) => {
     try {
+      // Si analytics está habilitado, obtener visitantes desde sessions (tracking interno)
       const visitorsPromise = analyticsEnabled
-        ? dashboardService.getNewCustomersData({ start: twelveMonthsAgo, end: now, groupBy: 'month' })
+        ? dashboardService.getVisitorsData({ start: twelveMonthsAgo, end: now, groupBy: 'month' })
         : Promise.resolve<{ label: string; value: number }[]>([])
 
       const [visitorsData, leadsData, appointmentsData, salesData] = await Promise.all([
