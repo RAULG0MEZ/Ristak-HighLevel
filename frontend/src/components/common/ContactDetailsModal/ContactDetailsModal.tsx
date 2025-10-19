@@ -33,6 +33,11 @@ interface ContactDetail {
   source?: string
   ad_name?: string
   ad_id?: string
+  lifetimeLtv?: number
+  lifetimePurchases?: number
+  isCustomer?: boolean
+  hasAppointments?: boolean
+  is_sale?: boolean
 }
 
 interface ContactDetailsModalProps {
@@ -155,9 +160,21 @@ export function ContactDetailsModal({
     (contact?: ContactDetail | null): { text: string; variant: BadgeVariant } | null => {
       if (!contact) return null
 
-      const hasPurchases = (contact.purchases ?? 0) > 0 || (contact.ltv ?? 0) > 0 ||
+      const lifetimePurchases = contact.lifetimePurchases ?? (contact as any).purchasesLifetime ?? (contact as any).purchases_count ?? 0
+      const lifetimeLtv = contact.lifetimeLtv ?? (contact as any).totalPaid ?? (contact as any).total_paid ?? 0
+      const isCustomerFlag = contact.isCustomer ?? (contact as any).isCustomer ?? (contact as any).is_customer ?? contact.is_sale ?? (contact as any).isSale ?? false
+
+      const hasPurchases =
+        isCustomerFlag ||
+        (contact.purchases ?? 0) > 0 ||
+        lifetimePurchases > 0 ||
+        (contact.ltv ?? 0) > 0 ||
+        lifetimeLtv > 0 ||
         (contact.payments ?? []).some(payment => payment.amount > 0)
-      const hasAppointments = (contact.appointments?.length ?? 0) > 0 ||
+
+      const hasAppointments =
+        contact.hasAppointments ||
+        (contact.appointments?.length ?? 0) > 0 ||
         Boolean(contact.nextAppointmentDate) ||
         Boolean(contact.firstAppointmentDate)
 

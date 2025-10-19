@@ -1346,8 +1346,12 @@ export async function buildContactsList ({ startDate, endDate, type = 'interesad
     // Para "customers" o vista "atribución", usar el LTV total histórico
     // Para "sales" en vista "Todos", usar solo pagos del período
     const useTotalLtv = type === 'customers' || type === 'interesados' || useContactAttribution
-    const finalLtv = useTotalLtv ? (contact.total_paid ? Number(contact.total_paid) : totalFromPayments) : totalFromPayments
+    const lifetimeLtv = contact.total_paid ? Number(contact.total_paid) : totalFromPayments
+    const finalLtv = useTotalLtv ? lifetimeLtv : totalFromPayments
     const finalPurchases = useTotalLtv ? (contact.purchases_count || 0) : payments.length
+    const lifetimePurchases = contact.purchases_count || 0
+    const hasRangePayments = payments.some(payment => payment.amount > 0)
+    const isCustomer = lifetimeLtv > 0 || lifetimePurchases > 0 || hasRangePayments
 
     return {
       id: contact.id,
@@ -1362,7 +1366,11 @@ export async function buildContactsList ({ startDate, endDate, type = 'interesad
       appointments,
       source: contact.source || null,
       ad_name: contact.attribution_ad_name || null,
-      ad_id: contact.attribution_ad_id || null
+      ad_id: contact.attribution_ad_id || null,
+      lifetimeLtv,
+      lifetimePurchases,
+      isCustomer,
+      hasAppointments: appointments.length > 0
     }
   })
 

@@ -128,6 +128,10 @@ export interface ContactListItem {
   source?: string
   ad_name?: string
   ad_id?: string
+  lifetimeLtv?: number
+  lifetimePurchases?: number
+  isCustomer?: boolean
+  hasAppointments?: boolean
 }
 
 class ReportsService {

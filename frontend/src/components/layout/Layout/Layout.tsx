@@ -9,7 +9,7 @@ export const Layout: React.FC<LayoutProps> = ({ sidebar, children }) => {
   return (
     <div className="flex h-screen overflow-hidden bg-[var(--color-bg-primary)]">
       {/* Sidebar */}
-      <aside className="w-52 flex-shrink-0 border-r border-[rgba(148,163,184,0.12)]">
+      <aside className="w-56 flex-shrink-0 border-r border-[rgba(148,163,184,0.12)]">
         {sidebar}
       </aside>
 

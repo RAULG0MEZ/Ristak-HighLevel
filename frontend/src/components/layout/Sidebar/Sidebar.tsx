@@ -434,7 +434,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
         )}
 
         <div className="space-y-1">
-          {navigation.map((item) => {
+          {navigation.map((item, index) => {
             const Icon = item.icon
             const isActive = location.pathname.startsWith(item.href)
             const isPreparing = longPressId === item.id && !draggingId
@@ -443,6 +443,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
             const isDimmed = Boolean(draggingId) && draggingId !== item.id
 
             return (
+              <div key={item.id} className="relative">
+                {/* Indicador de posición para drop */}
+                {isDropTarget && draggingId && (
+                  <div className="absolute -top-0.5 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-[var(--color-accent-blue)] to-transparent opacity-80 animate-pulse" />
+                )}
+
               <Link
                 key={item.id}
                 to={item.href}
@@ -467,31 +473,31 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
                 }}
                 className={cn(
                   'group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium select-none',
-                  'transition-[transform,opacity,background-color] duration-200 ease-out',
+                  'transition-all duration-150 ease-out',
                   isDragging
-                    ? 'z-10 cursor-grabbing opacity-90 scale-[1.02] bg-white/[0.1] shadow-lg'
+                    ? 'z-20 cursor-grabbing opacity-50 scale-[0.95] blur-[1px]'
                     : isPreparing
-                      ? 'cursor-grab bg-white/[0.05]'
+                      ? 'cursor-grab bg-white/[0.08] scale-[1.02] shadow-md'
                       : 'cursor-pointer',
                   isDropTarget && !isDragging
-                    ? 'bg-white/[0.06] scale-[0.98]'
+                    ? 'bg-gradient-to-r from-white/[0.1] to-white/[0.05] scale-[1.01] shadow-sm'
                     : '',
-                  isDimmed ? 'opacity-40' : '',
-                  isActive
+                  isDimmed ? 'opacity-30 scale-[0.98]' : '',
+                  isActive && !isDragging && !isDropTarget
                     ? 'glass text-[var(--color-text-primary)]'
                     : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] glass-hover'
                 )}
               >
                 <span
                   className={cn(
-                    'pointer-events-none absolute left-3 top-1/2 flex h-5 w-5 -translate-x-full -translate-y-1/2 items-center justify-center rounded-md border border-dashed border-transparent transition-all duration-200',
+                    'pointer-events-none absolute -left-6 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded transition-all duration-200',
                     isEditing
-                      ? 'border-[rgba(148,163,184,0.35)] bg-white/[0.08] opacity-100'
-                      : 'opacity-0'
+                      ? 'opacity-60 bg-white/[0.05]'
+                      : 'opacity-0 scale-0'
                   )}
                   aria-hidden="true"
                 >
-                  <GripVertical className="h-3 w-3 text-[var(--color-text-secondary)]" />
+                  <GripVertical className="h-4 w-4 text-[var(--color-text-secondary)]" />
                 </span>
                 <Icon className="h-5 w-5 flex-shrink-0" />
                 <span>{item.name}</span>
@@ -506,6 +512,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
                   </span>
                 )}
               </Link>
+              </div>
             )
           })}
         </div>
