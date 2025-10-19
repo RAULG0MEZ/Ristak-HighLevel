@@ -100,6 +100,8 @@ const iconMap: Record<string, React.FC<any>> = {
   'chevron-up': LucideIcons.ChevronUp,
   'chevron-left': LucideIcons.ChevronLeft,
   'chevron-right': LucideIcons.ChevronRight,
+  'arrow-right': LucideIcons.ArrowRight,
+  'arrow-left': LucideIcons.ArrowLeft,
   'search': LucideIcons.Search,
   'filter': LucideIcons.Filter,
   'download': LucideIcons.Download,
@@ -111,18 +113,24 @@ const iconMap: Record<string, React.FC<any>> = {
   'info': LucideIcons.Info,
   'alert': LucideIcons.AlertCircle,
   'calendar': LucideIcons.Calendar,
+  'calendar-check': LucideIcons.CalendarCheck,
   'clock': LucideIcons.Clock,
   'megaphone': LucideIcons.Megaphone,
   'return': LucideIcons.RotateCcw,
   'doc': LucideIcons.FileText,
   'dollar': LucideIcons.DollarSign,
+  'dollar-sign': LucideIcons.DollarSign,
   'circle-dollar-sign': LucideIcons.CircleDollarSign,
   'mouse-pointer-click': LucideIcons.MousePointerClick,
+  'sparkles': LucideIcons.Sparkles,
+  'globe': LucideIcons.Globe,
+  'message-square': LucideIcons.MessageSquare,
   'facebook': LucideIcons.Facebook,
   'meta': MetaIcon as any,
   'whatsapp': WhatsAppIcon as any,
   'google': GoogleIcon as any,
-  'message-circle': LucideIcons.MessageCircle
+  'message-circle': LucideIcons.MessageCircle,
+  'circle': LucideIcons.Circle
 }
 
 export const Icon: React.FC<IconProps> = ({ name, size = 24, className = '', color = 'currentColor' }) => {
