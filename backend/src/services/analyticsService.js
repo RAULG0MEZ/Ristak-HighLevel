@@ -949,6 +949,40 @@ export async function buildReportMetrics ({ startDate, endDate, groupBy = 'day',
       profit: item.revenue - item.spend
     }))
 
+  // LOG CONSOLIDADO PARA DEBUGGING
+  const scopeLabel = scope === 'all' ? 'TODOS' : 'ÚLTIMA ATRIBUCIÓN'
+  logger.info(`\n========== REPORTS ${scopeLabel} - MÉTRICAS ==========`)
+  logger.info(`📅 Rango: ${range.startUtc} → ${range.endUtc}`)
+  logger.info(`📊 Agrupación: ${groupBy}`)
+  logger.info(`📈 Total períodos: ${metrics.length}`)
+
+  const totals = metrics.reduce((sum, m) => ({
+    leads: sum.leads + m.leads,
+    appointments: sum.appointments + m.appointments,
+    sales: sum.sales + m.sales,
+    visitors: sum.visitors + m.visitors,
+    customers: sum.customers + m.customers,
+    spend: sum.spend + m.spend,
+    revenue: sum.revenue + m.revenue
+  }), { leads: 0, appointments: 0, sales: 0, visitors: 0, customers: 0, spend: 0, revenue: 0 })
+
+  logger.info(`\n💰 TOTALES GENERALES:`)
+  logger.info(`   Leads: ${totals.leads}`)
+  logger.info(`   Citas: ${totals.appointments}`)
+  logger.info(`   Visitantes: ${totals.visitors}`)
+  logger.info(`   Ventas: ${totals.sales}`)
+  logger.info(`   Clientes: ${totals.customers}`)
+  logger.info(`   Gasto: $${totals.spend.toFixed(2)}`)
+  logger.info(`   Ingresos: $${totals.revenue.toFixed(2)}`)
+
+  if (metrics.length <= 10) {
+    logger.info(`\n📋 DETALLE POR PERÍODO:`)
+    metrics.forEach(m => {
+      logger.info(`   ${m.period}: Leads=${m.leads}, Citas=${m.appointments}, Visitantes=${m.visitors}, Ventas=${m.sales}`)
+    })
+  }
+  logger.info(`=================================================\n`)
+
   return {
     range,
     metrics
@@ -1326,6 +1360,31 @@ export async function buildContactsList ({ startDate, endDate, type = 'interesad
       ad_id: contact.attribution_ad_id || null
     }
   })
+
+  // LOG CONSOLIDADO PARA MODAL
+  const scopeLabel = scope === 'all' ? 'TODOS' : 'ÚLTIMA ATRIBUCIÓN'
+  logger.info(`\n========== MODAL ${type.toUpperCase()} - ${scopeLabel} ==========`)
+  logger.info(`📅 Rango: ${range.startUtc} → ${range.endUtc}`)
+  logger.info(`📊 Total contactos: ${result.length}`)
+
+  if (type === 'appointments') {
+    const withAppts = result.filter(c => c.appointments && c.appointments.length > 0).length
+    logger.info(`   Contactos con citas: ${withAppts}`)
+    logger.info(`   Contactos sin citas: ${result.length - withAppts}`)
+  } else if (type === 'sales') {
+    const withPayments = result.filter(c => c.payments && c.payments.length > 0).length
+    logger.info(`   Contactos con pagos: ${withPayments}`)
+  }
+
+  if (result.length <= 20) {
+    logger.info(`\n📋 LISTA DE CONTACTOS:`)
+    result.forEach((c, idx) => {
+      const apptCount = c.appointments?.length || 0
+      const paymentCount = c.payments?.length || 0
+      logger.info(`   ${idx + 1}. ${c.name} (${c.email}) - Citas: ${apptCount}, Pagos: ${paymentCount}`)
+    })
+  }
+  logger.info(`=================================================\n`)
 
   return {
     range,

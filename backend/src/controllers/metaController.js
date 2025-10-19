@@ -537,6 +537,36 @@ export const getCampaigns = async (req, res) => {
       };
     });
 
+    // LOG CONSOLIDADO PARA CAMPAIGNS
+    logger.info(`\n========== CAMPAIGNS - MÉTRICAS ==========`)
+    logger.info(`📅 Rango: ${adsStart} → ${adsEnd}`)
+    logger.info(`📊 Total campañas: ${campaignsArray.length}`)
+
+    const totals = campaignsArray.reduce((sum, c) => ({
+      spend: sum.spend + c.spend,
+      interesados: sum.interesados + c.interesados,
+      citas: sum.citas + c.citas,
+      ventas: sum.ventas + c.ventas,
+      visitors: sum.visitors + c.visitors,
+      revenue: sum.revenue + c.revenue
+    }), { spend: 0, interesados: 0, citas: 0, ventas: 0, visitors: 0, revenue: 0 })
+
+    logger.info(`\n💰 TOTALES GENERALES:`)
+    logger.info(`   Gasto: $${totals.spend.toFixed(2)}`)
+    logger.info(`   Leads: ${totals.interesados}`)
+    logger.info(`   Citas: ${totals.citas}`)
+    logger.info(`   Visitantes: ${totals.visitors}`)
+    logger.info(`   Ventas: ${totals.ventas}`)
+    logger.info(`   Ingresos: $${totals.revenue.toFixed(2)}`)
+
+    if (campaignsArray.length <= 10) {
+      logger.info(`\n📋 DETALLE POR CAMPAÑA:`)
+      campaignsArray.forEach(c => {
+        logger.info(`   ${c.name}: Leads=${c.interesados}, Citas=${c.citas}, Visitantes=${c.visitors}, Ventas=${c.ventas}`)
+      })
+    }
+    logger.info(`===========================================\n`)
+
     res.json({
       success: true,
       data: campaignsArray
@@ -990,6 +1020,30 @@ export const getContactsByType = async (req, res) => {
     logger.debug(
       `Contactos Meta ${type} (${adsStart} -> ${adsEnd}) -> ${mappedContacts.length} coincidencias`
     );
+
+    // LOG CONSOLIDADO PARA MODAL DE CAMPAIGNS
+    const levelLabel = ad_id ? 'AD' : adset_id ? 'ADSET' : campaign_id ? 'CAMPAIGN' : 'UNKNOWN'
+    const idLabel = ad_id || adset_id || campaign_id
+    logger.info(`\n========== MODAL CAMPAIGNS ${type.toUpperCase()} ==========`)
+    logger.info(`📅 Rango: ${adsStart} → ${adsEnd}`)
+    logger.info(`🎯 Nivel: ${levelLabel} (${idLabel})`)
+    logger.info(`📊 Total contactos: ${mappedContacts.length}`)
+
+    if (type === 'appointments') {
+      logger.info(`   (Todos tienen citas - filtrado por lógica híbrida)`)
+    } else if (type === 'sales') {
+      const withPurchases = mappedContacts.filter(c => c.is_sale).length
+      logger.info(`   Contactos con compras: ${withPurchases}`)
+    }
+
+    if (mappedContacts.length <= 20) {
+      logger.info(`\n📋 LISTA DE CONTACTOS:`)
+      mappedContacts.forEach((c, idx) => {
+        const paymentCount = c.payments?.length || 0
+        logger.info(`   ${idx + 1}. ${c.name} (${c.email}) - LTV: $${c.ltv}, Pagos: ${paymentCount}`)
+      })
+    }
+    logger.info(`===========================================\n`)
 
     res.json({
       success: true,
