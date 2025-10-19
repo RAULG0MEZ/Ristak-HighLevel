@@ -821,8 +821,8 @@ export const getContactJourney = async (req, res) => {
     let firstTouchEvent = null
     let firstTouchType = null
 
-    // Buscar primera session (por contact_id o visitor_id)
-    const firstSession = await db.get(
+    // Buscar primera session (por contact_id, visitor_id, email o teléfono)
+    let firstSession = await db.get(
       `SELECT *
        FROM sessions
        WHERE contact_id = ? OR (? IS NOT NULL AND visitor_id = ?)
@@ -830,6 +830,35 @@ export const getContactJourney = async (req, res) => {
        LIMIT 1`,
       [id, contact.visitor_id, contact.visitor_id]
     )
+
+    // Fallback: Si no encuentra por contact_id/visitor_id, buscar por email o teléfono
+    if (!firstSession && (contact.email || contact.phone)) {
+      let fallbackQuery = ''
+      let fallbackParams = []
+
+      if (contact.email && contact.phone) {
+        fallbackQuery = `SELECT * FROM sessions
+          WHERE email = ?
+             OR LOWER(REPLACE(REPLACE(REPLACE(phone, '+', ''), '-', ''), ' ', '')) = LOWER(REPLACE(REPLACE(REPLACE(?, '+', ''), '-', ''), ' ', ''))
+          ORDER BY started_at ASC LIMIT 1`
+        fallbackParams = [contact.email, contact.phone]
+      } else if (contact.email) {
+        fallbackQuery = `SELECT * FROM sessions WHERE email = ? ORDER BY started_at ASC LIMIT 1`
+        fallbackParams = [contact.email]
+      } else if (contact.phone) {
+        fallbackQuery = `SELECT * FROM sessions
+          WHERE LOWER(REPLACE(REPLACE(REPLACE(phone, '+', ''), '-', ''), ' ', '')) = LOWER(REPLACE(REPLACE(REPLACE(?, '+', ''), '-', ''), ' ', ''))
+          ORDER BY started_at ASC LIMIT 1`
+        fallbackParams = [contact.phone]
+      }
+
+      if (fallbackQuery) {
+        firstSession = await db.get(fallbackQuery, fallbackParams)
+        if (firstSession) {
+          logger.info(`📍 Session encontrada por email/teléfono para contacto ${id}`)
+        }
+      }
+    }
 
     // Buscar primer mensaje de WhatsApp
     const firstWhatsapp = await db.get(
