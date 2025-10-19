@@ -3,6 +3,7 @@ import { logger } from '../utils/logger.js';
 import { resolveDateRange } from '../utils/dateUtils.js';
 import { normalizePlatformName } from '../utils/platformNormalizer.js';
 import { DateTime } from 'luxon';
+import { getContactsWithAppointments } from '../services/appointmentsCache.js';
 
 const calculateDelta = (current, previous) => {
   if (previous === 0) {
@@ -510,10 +511,10 @@ export const getLeadsData = async (req, res) => {
  * IMPORTANTE: Cuenta contactos ÚNICOS con cita, agrupados por fecha de creación del contacto
  * Esto permite atribución correcta de marketing (qué día se creó el contacto que agendó cita)
  *
- * Sistema de FALLBACK:
- * 1. Primero consulta tabla appointments en DB (rápido, cache local)
- * 2. Si no encuentra citas, hace fallback a HighLevel API
- * 3. Guarda citas encontradas en DB para futuros queries
+ * Sistema OPTIMIZADO (método de Contacts):
+ * 1. Carga TODOS los eventos de calendarios (1-5 llamadas API)
+ * 2. Filtra contactos en memoria (rápido)
+ * 3. Agrupa por periodo
  */
 export const getAppointmentsData = async (req, res) => {
   try {
@@ -525,119 +526,34 @@ export const getAppointmentsData = async (req, res) => {
 
     const usePostgres = Boolean(process.env.DATABASE_URL);
 
-    // PASO 1: Obtener contactos del rango y verificar cuáles tienen citas en DB
+    // PASO 1: Obtener configuración de HighLevel
+    const config = await db.get('SELECT location_id, api_token FROM highlevel_config LIMIT 1');
+
+    // PASO 2: Cargar TODOS los eventos de calendarios (método eficiente)
+    const contactsWithAppointments = config && config.api_token
+      ? await getContactsWithAppointments(config.location_id, config.api_token)
+      : new Set();
+
+    logger.info(`📊 ${contactsWithAppointments.size} contactos con citas (método optimizado)`);
+
+    // PASO 3: Obtener contactos del rango de fechas
     const contactsQuery = usePostgres
       ? `
-        SELECT
-          c.id as contact_id,
-          c.created_at,
-          CASE WHEN a.contact_id IS NOT NULL THEN 1 ELSE 0 END as has_appointment_db
-        FROM contacts c
-        LEFT JOIN (
-          SELECT DISTINCT contact_id
-          FROM appointments
-          WHERE contact_id IS NOT NULL
-        ) a ON a.contact_id = c.id
-        WHERE c.created_at::timestamp >= $1::timestamp
-          AND c.created_at::timestamp < ($2::timestamp + INTERVAL '1 day')
+        SELECT id as contact_id, created_at
+        FROM contacts
+        WHERE created_at::timestamp >= $1::timestamp
+          AND created_at::timestamp < ($2::timestamp + INTERVAL '1 day')
       `
       : `
-        SELECT
-          c.id as contact_id,
-          c.created_at,
-          CASE WHEN a.contact_id IS NOT NULL THEN 1 ELSE 0 END as has_appointment_db
-        FROM contacts c
-        LEFT JOIN (
-          SELECT DISTINCT contact_id
-          FROM appointments
-          WHERE contact_id IS NOT NULL
-        ) a ON a.contact_id = c.id
-        WHERE DATE(c.created_at) >= DATE(?)
-          AND DATE(c.created_at) <= DATE(?)
+        SELECT id as contact_id, created_at
+        FROM contacts
+        WHERE DATE(created_at) >= DATE(?)
+          AND DATE(created_at) <= DATE(?)
       `;
 
     const contactsRaw = await db.all(contactsQuery, [startDate, endDate]);
 
-    // PASO 2: Para contactos sin citas en DB, verificar en HighLevel API (fallback)
-    const config = await db.get('SELECT location_id, api_token FROM highlevel_config LIMIT 1');
-    const contactsWithAppointments = new Set();
-
-    // Agregar contactos que ya tienen citas en DB
-    contactsRaw.forEach(c => {
-      if (c.has_appointment_db === 1) {
-        contactsWithAppointments.add(c.contact_id);
-      }
-    });
-
-    // Obtener contactos sin citas en DB para verificar en HighLevel
-    const contactsToCheck = contactsRaw.filter(c => c.has_appointment_db === 0);
-
-    if (config && config.api_token && contactsToCheck.length > 0) {
-      logger.info(`Verificando ${contactsToCheck.length} contactos en HighLevel API (fallback)`);
-
-      // Batch de 50 contactos simultáneos
-      const batchSize = 50;
-
-      for (let i = 0; i < contactsToCheck.length; i += batchSize) {
-        const batch = contactsToCheck.slice(i, i + batchSize);
-
-        const appointmentChecks = await Promise.all(
-          batch.map(async (contact) => {
-            try {
-              const response = await fetch(
-                `https://services.leadconnectorhq.com/contacts/${contact.contact_id}/appointments`,
-                {
-                  headers: {
-                    'Authorization': `Bearer ${config.api_token}`,
-                    'Version': '2021-07-28'
-                  }
-                }
-              );
-
-              if (response.ok) {
-                const data = await response.json();
-                if (data.events && data.events.length > 0) {
-                  // Cache appointments en DB para futuros queries
-                  for (const event of data.events) {
-                    await db.run(`
-                      INSERT INTO appointments (id, contact_id, calendar_id, location_id, title, status, start_time, end_time)
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                      ON CONFLICT(id) DO UPDATE SET
-                        status = excluded.status,
-                        start_time = excluded.start_time,
-                        end_time = excluded.end_time
-                    `, [
-                      event.id,
-                      contact.contact_id,
-                      event.calendarId || '',
-                      event.locationId || config.location_id,
-                      event.title || '',
-                      event.status || 'scheduled',
-                      event.startTime || '',
-                      event.endTime || ''
-                    ]).catch(() => {});
-                  }
-
-                  return { contactId: contact.contact_id, hasAppointments: true };
-                }
-              }
-              return { contactId: contact.contact_id, hasAppointments: false };
-            } catch (error) {
-              return { contactId: contact.contact_id, hasAppointments: false };
-            }
-          })
-        );
-
-        // Actualizar set con contactos que tienen citas
-        appointmentChecks.forEach(result => {
-          if (result.hasAppointments) {
-            contactsWithAppointments.add(result.contactId);
-          }
-        });
-      }
-    }
-
-    // PASO 3: Agrupar contactos con citas por periodo (fecha de creación)
+    // PASO 4: Agrupar contactos con citas por periodo (fecha de creación)
     const periodMap = {};
 
     contactsRaw.forEach(contact => {
