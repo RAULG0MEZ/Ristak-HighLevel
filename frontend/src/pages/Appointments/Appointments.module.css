@@ -1303,11 +1303,14 @@
   border-radius: var(--radius-full);
   font-size: 0.75rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   background-color: rgba(59, 130, 246, 0.24);
   color: #1e40af;
   border: 1px solid rgba(59, 130, 246, 0.45);
+  flex-shrink: 0;
+  min-width: fit-content;
+  white-space: nowrap;
 }
 
 :global(body.dark) .dayHeaderChip {
