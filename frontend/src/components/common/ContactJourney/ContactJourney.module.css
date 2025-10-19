@@ -12,7 +12,7 @@
 .timeline {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: center;
   gap: 0;
   padding: 12px 0;
   position: relative;
@@ -20,31 +20,30 @@
 
 .eventWrapper {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   flex-shrink: 0;
   position: relative;
-  padding-top: 0;
 }
 
 .event {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  min-width: 140px;
-  max-width: 180px;
+  gap: 10px;
+  width: 150px;
   position: relative;
   cursor: pointer;
   transition: transform 0.15s ease;
+  padding: 8px 12px;
 }
 
 .event:hover {
-  transform: translateY(-2px);
+  transform: translateY(-3px);
 }
 
 .eventDot {
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -116,13 +115,12 @@
 }
 
 .connector {
-  width: 40px;
+  width: 50px;
   height: 2px;
   background: var(--color-border);
   flex-shrink: 0;
   position: relative;
   z-index: 1;
-  margin-top: 22px;
 }
 
 :global(body.dark) .connector {
