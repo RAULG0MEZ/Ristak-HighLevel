@@ -639,17 +639,28 @@ export async function buildReportMetrics ({ startDate, endDate, groupBy = 'day',
     SELECT
       ${contactGroupExpr} as period,
       COUNT(DISTINCT CASE
-        WHEN phone IS NOT NULL AND LENGTH(phone) >= 10
-        THEN SUBSTR(phone, -10)
-        ELSE id
+        WHEN contacts.phone IS NOT NULL AND LENGTH(contacts.phone) >= 10
+        THEN SUBSTR(contacts.phone, -10)
+        ELSE contacts.id
       END) as leads,
       COUNT(DISTINCT CASE
-        WHEN purchases_count > 0 AND phone IS NOT NULL AND LENGTH(phone) >= 10
-        THEN SUBSTR(phone, -10)
-        WHEN purchases_count > 0
-        THEN id
-      END) as customers
+        WHEN contacts.purchases_count > 0 AND contacts.phone IS NOT NULL AND LENGTH(contacts.phone) >= 10
+        THEN SUBSTR(contacts.phone, -10)
+        WHEN contacts.purchases_count > 0
+        THEN contacts.id
+      END) as customers,
+      COUNT(DISTINCT CASE
+        WHEN a.contact_id IS NOT NULL AND contacts.phone IS NOT NULL AND LENGTH(contacts.phone) >= 10
+        THEN SUBSTR(contacts.phone, -10)
+        WHEN a.contact_id IS NOT NULL
+        THEN contacts.id
+      END) as appointments
     FROM contacts
+    LEFT JOIN (
+      SELECT DISTINCT contact_id
+      FROM appointments
+      WHERE contact_id IS NOT NULL
+    ) a ON a.contact_id = contacts.id
     ${contactWhere}
     GROUP BY period
     ORDER BY period
@@ -681,6 +692,7 @@ export async function buildReportMetrics ({ startDate, endDate, groupBy = 'day',
     const bucket = ensureBucket(period)
     bucket.leads += Number(row.leads || 0)
     bucket.customers += Number(row.customers || 0)
+    bucket.appointments += Number(row.appointments || 0)
     bucket.new_customers += Number(row.customers || 0)
   })
 
@@ -788,77 +800,8 @@ export async function buildReportMetrics ({ startDate, endDate, groupBy = 'day',
     bucket.visitors += Number(row.clicks || 0)
   })
 
-  if (!useContactAttribution) {
-    const appointmentParams = []
-    const appointmentConditions = buildRangeConditions('start_time', range, appointmentParams)
-
-    if (isAttributed) {
-      appointmentConditions.push(`contact_id IN (
-        SELECT c.id FROM contacts c
-        WHERE ${attributionMatchCondition('c')}
-      )`)
-    }
-
-    const appointmentWhere = appointmentConditions.length ? `WHERE ${appointmentConditions.join(' AND ')}` : ''
-    const appointmentGroupExpr = getGroupExpression('start_time', groupBy)
-
-    const appointmentsQuery = `
-      SELECT
-        ${appointmentGroupExpr} as period,
-        COUNT(DISTINCT CASE
-          WHEN c.phone IS NOT NULL AND LENGTH(c.phone) >= 10
-          THEN SUBSTR(c.phone, -10)
-          ELSE a.contact_id
-        END) as unique_appointments
-      FROM appointments a
-      LEFT JOIN contacts c ON c.id = a.contact_id
-      ${appointmentWhere.replace('start_time', 'a.start_time').replace('contact_id', 'a.contact_id')}
-      GROUP BY period
-      ORDER BY period
-    `
-
-    const appointmentRows = await db.all(appointmentsQuery, appointmentParams)
-
-    appointmentRows.forEach(row => {
-      const period = row.period
-      const bucket = ensureBucket(period)
-      bucket.appointments += Number(row.unique_appointments || 0)
-    })
-  } else {
-    const appointmentParams = []
-    const appointmentConditions = buildRangeConditions('c.created_at', range, appointmentParams)
-
-    if (isAttributed) {
-      appointmentConditions.push(attributionMatchCondition('c'))
-    }
-
-    const appointmentWhere = appointmentConditions.length ? `WHERE ${appointmentConditions.join(' AND ')}` : ''
-    const appointmentGroupExpr = getGroupExpression('c.created_at', groupBy)
-
-    const appointmentsQuery = `
-      SELECT
-        ${appointmentGroupExpr} as period,
-        COUNT(DISTINCT CASE
-          WHEN a.id IS NOT NULL AND c.phone IS NOT NULL AND LENGTH(c.phone) >= 10
-          THEN SUBSTR(c.phone, -10)
-          WHEN a.id IS NOT NULL
-          THEN c.id
-        END) as unique_appointments
-      FROM contacts c
-      LEFT JOIN appointments a ON a.contact_id = c.id
-      ${appointmentWhere}
-      GROUP BY period
-      ORDER BY period
-    `
-
-    const appointmentRows = await db.all(appointmentsQuery, appointmentParams)
-
-    appointmentRows.forEach(row => {
-      const period = row.period
-      const bucket = ensureBucket(period)
-      bucket.appointments += Number(row.unique_appointments || 0)
-    })
-  }
+  // Las citas ahora se cuentan basadas en la fecha de creación del contacto,
+  // no en la fecha de la cita, y ya se incluyen en el query de contactos arriba
 
   const metrics = Array.from(periodMap.values())
     .sort((a, b) => a.period.localeCompare(b.period))

@@ -12,7 +12,8 @@ import {
   verifyToken,
   getLeadsOverTime,
   getAppointmentsOverTime,
-  getVisitorsOverTime
+  getVisitorsOverTime,
+  getFunnelMetrics
 } from '../controllers/metaController.js'
 
 const router = express.Router()
@@ -35,5 +36,6 @@ router.get('/contacts', getContactsByType)
 router.get('/leads-over-time', getLeadsOverTime)
 router.get('/appointments-over-time', getAppointmentsOverTime)
 router.get('/visitors-over-time', getVisitorsOverTime)
+router.get('/funnel-metrics', getFunnelMetrics)
 
 export default router

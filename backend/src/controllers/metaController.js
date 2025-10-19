@@ -201,18 +201,24 @@ export const getCampaigns = async (req, res) => {
 
     logger.info(`Obteniendo campañas Meta - rango: ${adsStart} -> ${adsEnd}`);
 
-    // Primero obtener interesados y ventas por ad_id
+    // Primero obtener interesados, ventas y citas por ad_id
     const contactsQuery = `
       SELECT
-        attribution_ad_id as ad_id,
-        COUNT(*) as interesados,
-        COUNT(CASE WHEN purchases_count > 0 THEN 1 END) as ventas,
-        COALESCE(SUM(total_paid), 0) as revenue
-      FROM contacts
-      WHERE attribution_ad_id IS NOT NULL
-      AND created_at >= ?
-      AND created_at <= ?
-      GROUP BY attribution_ad_id
+        c.attribution_ad_id as ad_id,
+        COUNT(DISTINCT c.id) as interesados,
+        COUNT(DISTINCT CASE WHEN c.purchases_count > 0 THEN c.id END) as ventas,
+        COUNT(DISTINCT CASE WHEN a.contact_id IS NOT NULL THEN c.id END) as citas,
+        COALESCE(SUM(c.total_paid), 0) as revenue
+      FROM contacts c
+      LEFT JOIN (
+        SELECT DISTINCT contact_id
+        FROM appointments
+        WHERE contact_id IS NOT NULL
+      ) a ON a.contact_id = c.id
+      WHERE c.attribution_ad_id IS NOT NULL
+      AND c.created_at >= ?
+      AND c.created_at <= ?
+      GROUP BY c.attribution_ad_id
     `;
 
     const contactsData = await db.all(contactsQuery, [
@@ -248,12 +254,13 @@ export const getCampaigns = async (req, res) => {
 
     const rows = await db.all(aggregationQuery, aggregationParams);
 
-    // Crear un mapa de ad_id -> {interesados, ventas, revenue}
+    // Crear un mapa de ad_id -> {interesados, ventas, citas, revenue}
     const contactsMap = {};
     contactsData.forEach(row => {
       contactsMap[row.ad_id] = {
         interesados: parseInt(row.interesados) || 0,
         ventas: parseInt(row.ventas) || 0,
+        citas: parseInt(row.citas) || 0,
         revenue: parseFloat(row.revenue) || 0
       };
     });
@@ -277,6 +284,7 @@ export const getCampaigns = async (req, res) => {
           roas: 0,
           sales: 0,
           leads: 0,
+          appointments: 0,
           adsets: {}
         };
       }
@@ -298,6 +306,7 @@ export const getCampaigns = async (req, res) => {
           roas: 0,
           sales: 0,
           leads: 0,
+          appointments: 0,
           ads: []
         };
       }
@@ -305,7 +314,7 @@ export const getCampaigns = async (req, res) => {
       const adset = campaign.adsets[row.adset_id];
 
       // Obtener datos de contactos para este ad
-      const contactData = contactsMap[row.ad_id] || { interesados: 0, ventas: 0, revenue: 0 };
+      const contactData = contactsMap[row.ad_id] || { interesados: 0, ventas: 0, citas: 0, revenue: 0 };
 
       // Agregar ad
       adset.ads.push({
@@ -320,7 +329,8 @@ export const getCampaigns = async (req, res) => {
         revenue: contactData.revenue,
         roas: parseFloat(row.spend) > 0 ? contactData.revenue / parseFloat(row.spend) : 0,
         sales: contactData.ventas,
-        leads: contactData.interesados
+        leads: contactData.interesados,
+        appointments: contactData.citas
       });
 
       // Sumar a adset
@@ -330,6 +340,7 @@ export const getCampaigns = async (req, res) => {
       adset.revenue += contactData.revenue;
       adset.sales += contactData.ventas;
       adset.leads += contactData.interesados;
+      adset.appointments = (adset.appointments || 0) + contactData.citas;
 
       // Sumar a campaña
       campaign.spend += parseFloat(row.spend) || 0;
@@ -338,6 +349,7 @@ export const getCampaigns = async (req, res) => {
       campaign.revenue += contactData.revenue;
       campaign.sales += contactData.ventas;
       campaign.leads += contactData.interesados;
+      campaign.appointments = (campaign.appointments || 0) + contactData.citas;
     });
 
     // Convertir objetos a arrays y calcular promedios
@@ -1098,6 +1110,149 @@ export const getVisitorsOverTime = async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Error al obtener visitantes vs leads por período'
+    });
+  }
+};
+
+/**
+ * Obtiene todas las métricas del funnel agrupadas por fecha
+ */
+export const getFunnelMetrics = async (req, res) => {
+  try {
+    const { start, end, viewType = 'day' } = req.query;
+    const db = getConnection();
+    const usePostgres = db.getType() === 'postgres';
+    const range = getStartAndEndDates(start, end, viewType);
+
+    // Query para visitantes únicos
+    const visitorsQuery = usePostgres
+      ? `SELECT
+          TO_CHAR(created_at::date, 'YYYY-MM-DD') as day,
+          COUNT(DISTINCT visitor_id) as visitors
+         FROM sessions
+         WHERE created_at::date >= $1::date
+           AND created_at::date < ($2::date + INTERVAL '1 day')
+         GROUP BY day`
+      : `SELECT
+          DATE(created_at) as day,
+          COUNT(DISTINCT visitor_id) as visitors
+         FROM sessions
+         WHERE DATE(created_at) >= DATE(?)
+           AND DATE(created_at) <= DATE(?)
+         GROUP BY day`;
+
+    // Query para leads (todos los contactos)
+    const leadsQuery = usePostgres
+      ? `SELECT
+          TO_CHAR(created_at::date, 'YYYY-MM-DD') as day,
+          COUNT(DISTINCT id) as leads
+         FROM contacts
+         WHERE created_at::date >= $1::date
+           AND created_at::date < ($2::date + INTERVAL '1 day')
+         GROUP BY day`
+      : `SELECT
+          DATE(created_at) as day,
+          COUNT(DISTINCT id) as leads
+         FROM contacts
+         WHERE DATE(created_at) >= DATE(?)
+           AND DATE(created_at) <= DATE(?)
+         GROUP BY day`;
+
+    // Query para contactos con citas
+    const appointmentsQuery = usePostgres
+      ? `SELECT
+          TO_CHAR(c.created_at::date, 'YYYY-MM-DD') as day,
+          COUNT(DISTINCT c.id) as appointments
+         FROM contacts c
+         INNER JOIN appointments a ON c.id = a.contact_id
+         WHERE c.created_at::date >= $1::date
+           AND c.created_at::date < ($2::date + INTERVAL '1 day')
+         GROUP BY day`
+      : `SELECT
+          DATE(c.created_at) as day,
+          COUNT(DISTINCT c.id) as appointments
+         FROM contacts c
+         INNER JOIN appointments a ON c.id = a.contact_id
+         WHERE DATE(c.created_at) >= DATE(?)
+           AND DATE(c.created_at) <= DATE(?)
+         GROUP BY day`;
+
+    // Query para ventas
+    const salesQuery = usePostgres
+      ? `SELECT
+          TO_CHAR(created_at::date, 'YYYY-MM-DD') as day,
+          COUNT(DISTINCT id) as sales
+         FROM contacts
+         WHERE purchases_count > 0
+           AND created_at::date >= $1::date
+           AND created_at::date < ($2::date + INTERVAL '1 day')
+         GROUP BY day`
+      : `SELECT
+          DATE(created_at) as day,
+          COUNT(DISTINCT id) as sales
+         FROM contacts
+         WHERE purchases_count > 0
+           AND DATE(created_at) >= DATE(?)
+           AND DATE(created_at) <= DATE(?)
+         GROUP BY day`;
+
+    const params = [range.startUtc, range.endUtc];
+    const [visitorsData, leadsData, appointmentsData, salesData] = await Promise.all([
+      db.all(visitorsQuery, params),
+      db.all(leadsQuery, params),
+      db.all(appointmentsQuery, params),
+      db.all(salesQuery, params)
+    ]);
+
+    // Crear mapas para cada métrica
+    const visitorsMap = new Map();
+    visitorsData.forEach(row => {
+      visitorsMap.set(row.day, parseInt(row.visitors || 0));
+    });
+
+    const leadsMap = new Map();
+    leadsData.forEach(row => {
+      leadsMap.set(row.day, parseInt(row.leads || 0));
+    });
+
+    const appointmentsMap = new Map();
+    appointmentsData.forEach(row => {
+      appointmentsMap.set(row.day, parseInt(row.appointments || 0));
+    });
+
+    const salesMap = new Map();
+    salesData.forEach(row => {
+      salesMap.set(row.day, parseInt(row.sales || 0));
+    });
+
+    // Combinar todas las fechas únicas
+    const allDates = new Set([
+      ...visitorsMap.keys(),
+      ...leadsMap.keys(),
+      ...appointmentsMap.keys(),
+      ...salesMap.keys()
+    ]);
+    const sortedDates = Array.from(allDates).sort();
+
+    // Mapear al formato esperado con todas las métricas
+    const mappedData = sortedDates.map(date => ({
+      label: date,
+      visitors: visitorsMap.get(date) || 0,
+      leads: leadsMap.get(date) || 0,
+      appointments: appointmentsMap.get(date) || 0,
+      sales: salesMap.get(date) || 0
+    }));
+
+    res.json({
+      success: true,
+      data: mappedData
+    });
+
+  } catch (error) {
+    logger.error(`Error en getFunnelMetrics: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: 'Error al obtener métricas del funnel'
     });
   }
 };

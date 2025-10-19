@@ -225,32 +225,31 @@ export const Campaigns: React.FC = () => {
       // Set data for revenue chart (default)
       setRevenueData(formattedSpendData)
 
-      // Fetch other metrics data in parallel
-      const [leadsDataRaw, appointmentsDataRaw, visitorsDataRaw] = await Promise.all([
-        campaignsService.getLeadsOverTime(startDate, endDate),
-        campaignsService.getAppointmentsOverTime(startDate, endDate),
-        campaignsService.getVisitorsOverTime(startDate, endDate)
-      ])
+      // Fetch funnel metrics
+      const funnelMetricsRaw = await campaignsService.getFunnelMetrics(startDate, endDate)
 
-      // Format the fetched data with proper date formatting
-      const formattedLeadsData = leadsDataRaw.map((item, index) => ({
-        ...item,
-        label: formatChartDate(item.label, rangeInDays, index > 0 ? leadsDataRaw[index - 1].label : undefined)
+      // Process funnel metrics into the format needed for each chart
+      const formattedVisitorsData = funnelMetricsRaw.map((item, index) => ({
+        label: formatChartDate(item.label, rangeInDays, index > 0 ? funnelMetricsRaw[index - 1].label : undefined),
+        value: item.visitors,  // Visitantes
+        value2: item.leads     // Leads
       }))
 
-      const formattedAppointmentsData = appointmentsDataRaw.map((item, index) => ({
-        ...item,
-        label: formatChartDate(item.label, rangeInDays, index > 0 ? appointmentsDataRaw[index - 1].label : undefined)
+      const formattedLeadsData = funnelMetricsRaw.map((item, index) => ({
+        label: formatChartDate(item.label, rangeInDays, index > 0 ? funnelMetricsRaw[index - 1].label : undefined),
+        value: item.leads,          // Leads
+        value2: item.appointments   // Citas
       }))
 
-      const formattedVisitorsData = visitorsDataRaw.map((item, index) => ({
-        ...item,
-        label: formatChartDate(item.label, rangeInDays, index > 0 ? visitorsDataRaw[index - 1].label : undefined)
+      const formattedAppointmentsData = funnelMetricsRaw.map((item, index) => ({
+        label: formatChartDate(item.label, rangeInDays, index > 0 ? funnelMetricsRaw[index - 1].label : undefined),
+        value: item.appointments,  // Citas
+        value2: item.sales         // Ventas
       }))
 
+      setVisitorsData(formattedVisitorsData || [])
       setLeadsData(formattedLeadsData || [])
       setAppointmentsData(formattedAppointmentsData || [])
-      setVisitorsData(formattedVisitorsData || [])
     } catch (error) {
       // Don't fall back to mock data - show empty state
       setCampaigns([])

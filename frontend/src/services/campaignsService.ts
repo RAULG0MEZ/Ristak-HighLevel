@@ -186,6 +186,29 @@ class CampaignsService {
       return []
     }
   }
+
+  async getFunnelMetrics(startDate: string, endDate: string): Promise<{
+    label: string
+    visitors: number
+    leads: number
+    appointments: number
+    sales: number
+  }[]> {
+    try {
+      const data = await apiClient.get<{
+        label: string
+        visitors: number
+        leads: number
+        appointments: number
+        sales: number
+      }[]>('/meta/funnel-metrics', {
+        params: { start: startDate, end: endDate }
+      })
+      return Array.isArray(data) ? data : []
+    } catch (error) {
+      return []
+    }
+  }
 }
 
 export const campaignsService = new CampaignsService()
