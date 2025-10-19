@@ -773,19 +773,10 @@ export const getContactsByType = async (req, res) => {
 
     if (contactIds.length > 0) {
       const placeholders = contactIds.map(() => '?').join(',');
-      const paymentConditions = [`contact_id IN (${placeholders})`];
-      const paymentParams = [...contactIds];
 
-      if (range.startUtc) {
-        paymentConditions.push('date >= ?');
-        paymentParams.push(range.startUtc);
-      }
-
-      if (range.endUtc) {
-        paymentConditions.push('date <= ?');
-        paymentParams.push(range.endUtc);
-      }
-
+      // IMPORTANTE: NO filtrar pagos por rango de fechas
+      // El modal debe mostrar TODOS los pagos del cliente, independientemente del rango seleccionado
+      // El filtro de fechas solo aplica para determinar QUÉ contactos mostrar, no sus pagos completos
       const paymentsQuery = `
         SELECT
           id,
@@ -794,11 +785,11 @@ export const getContactsByType = async (req, res) => {
           status,
           date
         FROM payments
-        WHERE ${paymentConditions.join(' AND ')}
+        WHERE contact_id IN (${placeholders})
         ORDER BY date DESC
       `;
 
-      const paymentRows = await db.all(paymentsQuery, paymentParams);
+      const paymentRows = await db.all(paymentsQuery, contactIds);
 
       paymentsMap = paymentRows.reduce((map, payment) => {
         const list = map.get(payment.contact_id) || [];

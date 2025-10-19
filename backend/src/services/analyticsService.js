@@ -1004,27 +1004,18 @@ async function fetchPaymentsForContacts(contactIds, range = {}) {
   }
 
   const placeholders = contactIds.map(() => '?').join(',')
-  const conditions = [`contact_id IN (${placeholders})`]
-  const params = [...contactIds]
 
-  if (range?.startUtc) {
-    conditions.push('date >= ?')
-    params.push(range.startUtc)
-  }
-
-  if (range?.endUtc) {
-    conditions.push('date <= ?')
-    params.push(range.endUtc)
-  }
-
+  // IMPORTANTE: NO filtrar pagos por rango de fechas
+  // El modal debe mostrar TODOS los pagos del cliente, independientemente del rango seleccionado
+  // El filtro de fechas solo aplica para determinar QUÉ contactos mostrar, no sus pagos completos
   const paymentsQuery = `
     SELECT id, contact_id, amount, status, date
     FROM payments
-    WHERE ${conditions.join(' AND ')}
+    WHERE contact_id IN (${placeholders})
     ORDER BY date DESC
   `
 
-  const rows = await db.all(paymentsQuery, params)
+  const rows = await db.all(paymentsQuery, contactIds)
 
   return rows.reduce((map, row) => {
     const list = map.get(row.contact_id) || []
@@ -1045,31 +1036,25 @@ async function fetchAppointmentsForContacts(contactIds, range = {}) {
   }
 
   const placeholders = contactIds.map(() => '?').join(',')
-  const conditions = [`contact_id IN (${placeholders})`]
   const params = [...contactIds]
 
-  if (range?.startUtc) {
-    conditions.push('start_time >= ?')
-    params.push(range.startUtc)
-  }
-
-  if (range?.endUtc) {
-    conditions.push('start_time <= ?')
-    params.push(range.endUtc)
-  }
+  // IMPORTANTE: NO filtrar citas por rango de fechas (start_time)
+  // El modal debe mostrar TODAS las citas del cliente, independientemente del rango seleccionado
+  // El filtro de fechas solo aplica para determinar QUÉ contactos mostrar, no sus citas completas
 
   // Filtrar por calendarios de atribución configurados
   const attributionCalendarIds = await getAttributionCalendarIds()
+  let calendarCondition = ''
   if (attributionCalendarIds && attributionCalendarIds.length > 0) {
     const calendarPlaceholders = attributionCalendarIds.map(() => '?').join(',')
-    conditions.push(`calendar_id IN (${calendarPlaceholders})`)
+    calendarCondition = ` AND calendar_id IN (${calendarPlaceholders})`
     params.push(...attributionCalendarIds)
   }
 
   const appointmentsQuery = `
     SELECT id, contact_id, title, status, start_time
     FROM appointments
-    WHERE ${conditions.join(' AND ')}
+    WHERE contact_id IN (${placeholders})${calendarCondition}
     ORDER BY start_time DESC
   `
 
