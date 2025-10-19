@@ -548,21 +548,6 @@ export function ContactDetailsModal({
                   </div>
                 )}
 
-                {/* Métricas */}
-                {(selectedContact.ltv || 0) > 0 && (
-                  <div className={styles.detailSection}>
-                    <h5 className={styles.detailSectionTitle}>Métricas</h5>
-                    <div className={styles.metricsGrid}>
-                      <div className={styles.metricCard}>
-                        <p className={styles.metricLabel}>Valor Total</p>
-                        <p className={styles.metricValue}>
-                          {formatCurrency(selectedContact.ltv || 0)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
                 {/* Información de Citas */}
                 {(selectedContact.firstAppointmentDate || selectedContact.nextAppointmentDate) && (
                   <div className={styles.detailSection}>
