@@ -781,6 +781,7 @@ export const getContactsByType = async (req, res) => {
     const contactIds = contacts.map(contact => contact.id).filter(Boolean);
 
     let paymentsMap = new Map();
+    let appointmentsMap = new Map();
 
     if (contactIds.length > 0) {
       const placeholders = contactIds.map(() => '?').join(',');
@@ -813,10 +814,40 @@ export const getContactsByType = async (req, res) => {
         map.set(payment.contact_id, list);
         return map;
       }, new Map());
+
+      // Obtener TODAS las citas de estos contactos (sin filtrar por rango de fechas)
+      const appointmentsQuery = `
+        SELECT
+          id,
+          contact_id,
+          title,
+          start_time,
+          end_time,
+          status
+        FROM appointments
+        WHERE contact_id IN (${placeholders})
+        ORDER BY start_time DESC
+      `;
+
+      const appointmentRows = await db.all(appointmentsQuery, contactIds);
+
+      appointmentsMap = appointmentRows.reduce((map, appointment) => {
+        const list = map.get(appointment.contact_id) || [];
+        list.push({
+          id: appointment.id,
+          title: appointment.title,
+          start_time: appointment.start_time,
+          end_time: appointment.end_time,
+          status: appointment.status
+        });
+        map.set(appointment.contact_id, list);
+        return map;
+      }, new Map());
     }
 
     const mappedContacts = contacts.map(contact => {
       const payments = paymentsMap.get(contact.id) || [];
+      const appointments = appointmentsMap.get(contact.id) || [];
       const totalFromPayments = payments.reduce((sum, payment) => sum + payment.amount, 0);
       const totalPaid = contact.total_paid ? Number(contact.total_paid) : totalFromPayments;
 
@@ -830,7 +861,8 @@ export const getContactsByType = async (req, res) => {
         ad_id: contact.attribution_ad_id,
         ad_name: contact.attribution_ad_name,
         is_sale: contact.purchases_count > 0,
-        payments: payments
+        payments: payments,
+        appointments: appointments
       };
     });
 
