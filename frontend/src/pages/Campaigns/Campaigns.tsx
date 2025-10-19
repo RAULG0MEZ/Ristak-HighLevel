@@ -713,7 +713,7 @@ export const Campaigns: React.FC = () => {
       key: 'sales',
       header: (
         <div style={{ textAlign: 'center', lineHeight: '1.2' }}>
-          <div>{labels.customer}</div>
+          <div>{labels.customers}</div>
           <div style={{ fontSize: '0.75em', opacity: 0.7 }}>(Nuevos)</div>
         </div>
       ),
