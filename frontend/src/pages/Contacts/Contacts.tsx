@@ -368,7 +368,17 @@ export const Contacts: React.FC = () => {
       if (filter === 'all') return true
       if (filter === 'leads') return contact.status === 'lead'
       if (filter === 'customers') return contact.status === 'customer'
-      if (filter === 'appointments') return contact.status === 'appointment'
+
+      // Citados: Tienen cita pero NO son clientes
+      if (filter === 'appointments') {
+        const hasAppointments =
+          (contact.appointments && contact.appointments.length > 0) ||
+          contact.firstAppointmentDate !== null && contact.firstAppointmentDate !== undefined
+        const isNotCustomer = contact.status !== 'customer'
+
+        return hasAppointments && isNotCustomer
+      }
+
       return false
     })
   }, [contacts, filter])
