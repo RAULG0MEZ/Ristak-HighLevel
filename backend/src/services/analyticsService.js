@@ -866,10 +866,7 @@ export async function buildReportMetrics ({ startDate, endDate, groupBy = 'day',
     bucket.leads = bucket.leadsSet.size
     bucket.customers = bucket.customersSet.size
     bucket.new_customers = bucket.customersSet.size
-    // Para vista atribución, appointments ya fueron agregados en appointmentsSet
-    if (useContactAttribution) {
-      bucket.appointments = bucket.appointmentsSet.size
-    }
+    bucket.appointments = bucket.appointmentsSet.size  // ✅ Siempre convertir appointments
     // Limpiar sets temporales
     delete bucket.leadsSet
     delete bucket.customersSet
