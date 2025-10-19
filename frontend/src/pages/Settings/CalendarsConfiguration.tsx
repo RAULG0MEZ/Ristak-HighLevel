@@ -3,12 +3,13 @@ import { Card, Button } from '@/components/common'
 import { Calendar, Loader2, CheckCircle, XCircle, Info } from 'lucide-react'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useAppConfig } from '@/hooks'
-import { getCalendars } from '@/services/calendarsService'
-import type { Calendar as CalendarType } from '@/types'
+import { useAuth } from '@/contexts/AuthContext'
+import { calendarsService, type Calendar as CalendarType } from '@/services/calendarsService'
 import styles from './HighLevelIntegration.module.css'
 
 export const CalendarsConfiguration: React.FC = () => {
   const { showToast } = useNotification()
+  const { locationId, accessToken } = useAuth()
 
   // Estados de configuración (usa sistema híbrido)
   const [defaultCalendarId, setDefaultCalendarId] = useAppConfig<string>('default_calendar_id', '')
@@ -26,8 +27,10 @@ export const CalendarsConfiguration: React.FC = () => {
 
   // Cargar calendarios al montar
   useEffect(() => {
-    loadCalendars()
-  }, [])
+    if (locationId && accessToken) {
+      loadCalendars()
+    }
+  }, [locationId, accessToken])
 
   // Sincronizar estados temporales con los valores guardados
   useEffect(() => {
@@ -37,9 +40,13 @@ export const CalendarsConfiguration: React.FC = () => {
   }, [defaultCalendarId, attributionCalendarIds])
 
   const loadCalendars = async () => {
+    if (!locationId || !accessToken) {
+      return
+    }
+
     try {
       setLoadingCalendars(true)
-      const data = await getCalendars()
+      const data = await calendarsService.getCalendars(locationId, accessToken)
       setCalendars(data)
     } catch (error: any) {
       showToast('error', 'Error al cargar calendarios', error.message)
