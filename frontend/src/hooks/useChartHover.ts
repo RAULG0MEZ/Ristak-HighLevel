@@ -28,6 +28,21 @@ export const useChartHover = ({ data, enabled = true }: UseChartHoverProps) => {
 
     let animationFrame: number
 
+    const interactiveSelectors = [
+      '.recharts-area-curve',
+      '.recharts-area-area',
+      '.recharts-line-curve',
+      '.recharts-line-dots',
+      '.recharts-dot',
+      '.recharts-active-dot',
+      '[data-chart-interactive="true"]'
+    ]
+
+    const isInteractiveElement = (element: Element | null) => {
+      if (!element) return false
+      return interactiveSelectors.some(selector => element.closest(selector))
+    }
+
     const handleMouseMove = (e: MouseEvent) => {
       animationFrame = requestAnimationFrame(() => {
         const newMousePos = { x: e.clientX, y: e.clientY }
@@ -35,16 +50,18 @@ export const useChartHover = ({ data, enabled = true }: UseChartHoverProps) => {
         if (chartRef.current && data.length > 0) {
           const rect = chartRef.current.getBoundingClientRect()
           const hoveredElement = document.elementFromPoint(e.clientX, e.clientY)
-          const isTopMostChartElement =
+          const isTargetWithinChart =
             hoveredElement !== null && chartRef.current.contains(hoveredElement)
           const isPointerWithinBounds =
             e.clientX >= rect.left &&
             e.clientX <= rect.right &&
             e.clientY >= rect.top &&
             e.clientY <= rect.bottom
-          const isInChart = isPointerWithinBounds && isTopMostChartElement
+          const isOverInteractiveElement =
+            hoveredElement instanceof Element && isInteractiveElement(hoveredElement)
+          const isInActiveRegion = isPointerWithinBounds && isTargetWithinChart && isOverInteractiveElement
 
-          if (isInChart) {
+          if (isInActiveRegion) {
             // Calcular el índice del punto más cercano
             const relativeX = e.clientX - rect.left
             const chartWidth = rect.width

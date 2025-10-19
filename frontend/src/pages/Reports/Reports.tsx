@@ -877,7 +877,7 @@ export const Reports: React.FC = () => {
         render: (value: number) => <span>{value.toFixed(1)}%</span>
       }
     ]
-  }, [reportType, viewType, visitorSource, handleOpenVisitorsModal, labels.lead, labels.leads])
+  }, [reportType, viewType, visitorSource, handleOpenModal, handleOpenVisitorsModal, labels.lead, labels.leads])
 
   const summaryCards = summary ? [
     {

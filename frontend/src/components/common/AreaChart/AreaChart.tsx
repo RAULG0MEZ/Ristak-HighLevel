@@ -223,6 +223,7 @@ export const AreaChart: React.FC<AreaChartProps> = ({
                             fill={isActive ? 'var(--color-background-primary)' : serie.color}
                             stroke={isActive ? serie.color : 'none'}
                             strokeWidth={isActive ? 3 : 0}
+                            data-chart-interactive="true"
                             style={{
                               transition: 'all 150ms ease-out',
                               filter: isActive ? 'drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2))' : 'none'
