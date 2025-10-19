@@ -296,7 +296,9 @@ function normalizeAppointmentRecord(raw = {}, locationIdFallback) {
   const address = raw.address || raw.location || raw.addressLine || null
   const startTime = raw.startTime || raw.startDateTime || raw.startAt || raw.start
   const endTime = raw.endTime || raw.endDateTime || raw.endAt || raw.end
-  const dateAdded = raw.dateAdded || raw.createdAt || raw.createdOn || startTime || new Date().toISOString()
+  // IMPORTANTE: NO usar startTime como fallback, eso pone la fecha de la cita como fecha de creación
+  // Prioridad: dateAdded de GHL > createdAt > fecha actual (como última opción)
+  const dateAdded = raw.dateAdded || raw.createdAt || raw.createdOn || new Date().toISOString()
   const dateUpdated = raw.dateUpdated || raw.updatedAt || raw.updatedOn || dateAdded
 
   return {
