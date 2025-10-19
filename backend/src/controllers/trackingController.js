@@ -21,6 +21,8 @@ export async function servePixel(req, res) {
   'use strict';
 
   var ENDPOINT = '${ENDPOINT}';
+  var lastTrackedUrl = window.location.href;
+  var pageViewTimer = null;
 
   // Obtener datos de localStorage
   function getLocalData() {
@@ -420,6 +422,43 @@ export async function servePixel(req, res) {
     });
   }
 
+  function schedulePageView() {
+    if (pageViewTimer) {
+      clearTimeout(pageViewTimer);
+    }
+    pageViewTimer = setTimeout(trackPageView, 100);
+  }
+
+  function trackPageView() {
+    pageViewTimer = null;
+    var currentUrl = window.location.href;
+    if (currentUrl === lastTrackedUrl) return;
+    var previousUrl = lastTrackedUrl;
+    lastTrackedUrl = currentUrl;
+    var extraData = previousUrl ? { referrer: previousUrl } : undefined;
+    sendEvent('page_view', extraData);
+  }
+
+  function setupSpaNavigationTracking() {
+    var methods = ['pushState', 'replaceState'];
+    for (var i = 0; i < methods.length; i++) {
+      var method = methods[i];
+      var original = history[method];
+      if (typeof original === 'function') {
+        history[method] = (function(fn) {
+          return function() {
+            var result = fn.apply(this, arguments);
+            schedulePageView();
+            return result;
+          };
+        })(original);
+      }
+    }
+
+    window.addEventListener('popstate', schedulePageView);
+    window.addEventListener('hashchange', schedulePageView);
+  }
+
   // Inyectar visitor_id en URL si no está presente
   function injectVisitorIdToURL() {
     try {
@@ -442,18 +481,20 @@ export async function servePixel(req, res) {
 
   // Inyectar visitor_id en URL al cargar
   injectVisitorIdToURL();
+  lastTrackedUrl = window.location.href;
+  setupSpaNavigationTracking();
+
+  function emitInitialEvent() {
+    var eventName = isFirstPageView() ? 'session_start' : 'page_view';
+    sendEvent(eventName);
+    lastTrackedUrl = window.location.href;
+  }
 
   // Enviar page_view al cargar
   if (document.readyState === 'complete' || document.readyState === 'interactive') {
-    setTimeout(function() {
-      var eventName = isFirstPageView() ? 'session_start' : 'page_view';
-      sendEvent(eventName);
-    }, 0);
+    setTimeout(emitInitialEvent, 0);
   } else {
-    document.addEventListener('DOMContentLoaded', function() {
-      var eventName = isFirstPageView() ? 'session_start' : 'page_view';
-      sendEvent(eventName);
-    });
+    document.addEventListener('DOMContentLoaded', emitInitialEvent);
   }
 
   // Heartbeat cada 15 segundos (opcional, comentado por defecto)
