@@ -821,15 +821,30 @@ export const getContactJourney = async (req, res) => {
     let firstTouchEvent = null
     let firstTouchType = null
 
-    // Buscar primera session (por contact_id, visitor_id, email o teléfono)
-    let firstSession = await db.get(
-      `SELECT *
-       FROM sessions
-       WHERE contact_id = ? OR (? IS NOT NULL AND visitor_id = ?)
-       ORDER BY started_at ASC
-       LIMIT 1`,
-      [id, contact.visitor_id, contact.visitor_id]
-    )
+    // Buscar primera session (por contact_id o visitor_id)
+    let firstSession = null
+
+    if (contact.visitor_id) {
+      // Si tiene visitor_id, buscar por contact_id O visitor_id
+      firstSession = await db.get(
+        `SELECT *
+         FROM sessions
+         WHERE contact_id = ? OR visitor_id = ?
+         ORDER BY started_at ASC
+         LIMIT 1`,
+        [id, contact.visitor_id]
+      )
+    } else {
+      // Si NO tiene visitor_id, solo buscar por contact_id
+      firstSession = await db.get(
+        `SELECT *
+         FROM sessions
+         WHERE contact_id = ?
+         ORDER BY started_at ASC
+         LIMIT 1`,
+        [id]
+      )
+    }
 
     // Fallback: Si no encuentra por contact_id/visitor_id, buscar por email
     // NOTA: sessions solo tiene email, NO tiene phone
