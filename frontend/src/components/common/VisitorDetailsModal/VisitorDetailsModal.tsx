@@ -66,7 +66,37 @@ export function VisitorDetailsModal({
 }: VisitorDetailsModalProps) {
   const [selectedVisitor, setSelectedVisitor] = useState<VisitorDetail | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [appointmentsExpanded, setAppointmentsExpanded] = useState(false)
   const { labels } = useLabels()
+
+  // Helper para formatear texto de estado
+  const formatStatusText = (text: string): string => {
+    return text
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ')
+  }
+
+  // Función para obtener el label del estado de una cita
+  const getAppointmentStatusLabel = (status?: string | null): { text: string; variant: BadgeVariant } => {
+    if (!status) return { text: 'Reservado', variant: 'warning' }
+    const statusLower = status.toLowerCase()
+
+    if (['confirmed', 'booked', 'scheduled'].includes(statusLower)) {
+      return { text: 'Reservado', variant: 'warning' }
+    }
+    if (['completed', 'showed', 'attended'].includes(statusLower)) {
+      return { text: 'Asistió', variant: 'success' }
+    }
+    if (['cancelled', 'canceled', 'no_show', 'noshow'].includes(statusLower)) {
+      return { text: 'Cancelado', variant: 'error' }
+    }
+    if (['pending', 'unconfirmed'].includes(statusLower)) {
+      return { text: 'Pendiente', variant: 'warning' }
+    }
+
+    return { text: formatStatusText(statusLower), variant: 'neutral' }
+  }
 
   // Función para determinar el badge de prioridad del contacto
   const getContactBadge = (visitor: VisitorDetail): { label: string, variant: BadgeVariant } | null => {
@@ -343,6 +373,59 @@ export function VisitorDetailsModal({
                         </div>
                       )}
                     </div>
+                  </div>
+                )}
+
+                {/* Citas */}
+                {selectedVisitor.contact?.appointments && selectedVisitor.contact.appointments.length > 0 && (
+                  <div className={styles.detailSection}>
+                    <button
+                      type="button"
+                      className={styles.toggleButton}
+                      onClick={() => setAppointmentsExpanded(prev => !prev)}
+                    >
+                      <div className={styles.toggleLabel}>
+                        <Icon name={appointmentsExpanded ? 'chevron-down' : 'chevron-right'} size={16} />
+                        <span>Citas ({selectedVisitor.contact.appointments.length})</span>
+                      </div>
+                    </button>
+
+                    {appointmentsExpanded && (
+                      <ul className={styles.paymentList}>
+                        {selectedVisitor.contact.appointments.map((appointment: any) => {
+                          const statusInfo = getAppointmentStatusLabel(appointment.status)
+                          const appointmentDate = new Date(appointment.start_time)
+                          const timeStr = appointmentDate.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: true })
+
+                          return (
+                            <li key={appointment.id} className={styles.paymentItem}>
+                              <div className={styles.paymentItemContent}>
+                                <div className={styles.paymentItemHeader}>
+                                  <p className={styles.paymentAmount}>{appointment.title || 'Cita'}</p>
+                                  <Badge variant={statusInfo.variant} className={styles.paymentStatus}>
+                                    {statusInfo.text}
+                                  </Badge>
+                                </div>
+                                <div className={styles.paymentItemDetails}>
+                                  <span className={styles.paymentDetailItem}>
+                                    <Icon name="calendar" size={12} />
+                                    {formatDate(appointment.start_time)}
+                                  </span>
+                                  <span className={styles.paymentDetailItem}>
+                                    <Icon name="clock" size={12} />
+                                    {timeStr}
+                                  </span>
+                                  <span className={styles.paymentDetailItem}>
+                                    <Icon name="hash" size={12} />
+                                    ID: {appointment.id.substring(0, 8)}...
+                                  </span>
+                                </div>
+                              </div>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    )}
                   </div>
                 )}
 
