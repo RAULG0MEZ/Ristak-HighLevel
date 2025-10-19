@@ -12,13 +12,13 @@ interface ContactJourneyProps {
 const getEventIcon = (type: JourneyEvent['type']) => {
   switch (type) {
     case 'page_visit':
-      return 'globe'
+      return 'sparkles'
     case 'whatsapp_message':
-      return 'message-square'
+      return 'message-circle'
     case 'contact_created':
       return 'user'
     case 'appointment':
-      return 'calendar-check'
+      return 'calendar'
     case 'payment':
       return 'dollar-sign'
     default:
@@ -286,7 +286,11 @@ export const ContactJourney = ({ contactId }: ContactJourneyProps) => {
                 document.body
               )}
 
-              {!isLast && <div className={styles.connector} />}
+              {!isLast && (
+                <div className={styles.connector}>
+                  <Icon name="arrow-right" size={16} />
+                </div>
+              )}
             </div>
           )
         })}
