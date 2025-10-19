@@ -207,13 +207,15 @@ export const getCampaigns = async (req, res) => {
     // - Si un contacto se creó el 1-enero y agendó cita el 15-febrero, se atribuye al 1-enero
     // - Esto mide el impacto real de las campañas en generar citas (atribución correcta)
     // - Un contacto con 1000 citas cuenta como 1 solo contacto (métrica binaria: tiene o no tiene cita)
+
+    // PASO 1: Obtener métricas básicas y contactos que YA tienen citas en DB
     const contactsQuery = `
       SELECT
         c.attribution_ad_id as ad_id,
-        COUNT(DISTINCT c.id) as interesados,
-        COUNT(DISTINCT CASE WHEN c.purchases_count > 0 THEN c.id END) as ventas,
-        COUNT(DISTINCT CASE WHEN a.contact_id IS NOT NULL THEN c.id END) as citas,
-        COALESCE(SUM(c.total_paid), 0) as revenue
+        c.id as contact_id,
+        c.purchases_count,
+        c.total_paid,
+        CASE WHEN a.contact_id IS NOT NULL THEN 1 ELSE 0 END as has_appointment_db
       FROM contacts c
       LEFT JOIN (
         SELECT DISTINCT contact_id
@@ -223,13 +225,132 @@ export const getCampaigns = async (req, res) => {
       WHERE c.attribution_ad_id IS NOT NULL
       AND c.created_at >= ?
       AND c.created_at <= ?
-      GROUP BY c.attribution_ad_id
     `;
 
-    const contactsData = await db.all(contactsQuery, [
+    const contactsRaw = await db.all(contactsQuery, [
       range.startUtc,
       range.endUtc
     ]);
+
+    // PASO 2: Para contactos sin citas en DB, verificar en HighLevel API (fallback)
+    // Solo hacer esto si tenemos configuración de HighLevel
+    const config = await db.get('SELECT location_id, api_token FROM highlevel_config LIMIT 1');
+    const contactsWithAppointments = new Set();
+
+    // Primero agregar los que ya tienen citas en DB
+    contactsRaw.forEach(c => {
+      if (c.has_appointment_db === 1) {
+        contactsWithAppointments.add(c.contact_id);
+      }
+    });
+
+    // Obtener contactos que NO tienen citas en DB para verificar en HighLevel
+    const contactsToCheck = contactsRaw.filter(c => c.has_appointment_db === 0);
+
+    if (config && config.api_token && contactsToCheck.length > 0) {
+      // Agrupar por batches para no hacer demasiadas llamadas
+      const batchSize = 10;
+      for (let i = 0; i < contactsToCheck.length; i += batchSize) {
+        const batch = contactsToCheck.slice(i, i + batchSize);
+
+        // Hacer llamadas en paralelo para este batch
+        const appointmentChecks = await Promise.all(
+          batch.map(async (contact) => {
+            try {
+              const response = await fetch(
+                `https://services.leadconnectorhq.com/contacts/${contact.contact_id}/appointments`,
+                {
+                  headers: {
+                    'Authorization': `Bearer ${config.api_token}`,
+                    'Version': '2021-07-28'
+                  }
+                }
+              );
+
+              if (response.ok) {
+                const data = await response.json();
+                if (data.events && data.events.length > 0) {
+                  // Este contacto SÍ tiene citas en HighLevel
+                  logger.info(`[CITAS] Contacto ${contact.contact_id} tiene ${data.events.length} citas en HighLevel (no en DB)`);
+
+                  // Opcionalmente guardar en DB para cache futuro
+                  for (const event of data.events) {
+                    await db.run(`
+                      INSERT INTO appointments (id, contact_id, calendar_id, location_id, title, status, start_time, end_time)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                      ON CONFLICT(id) DO UPDATE SET
+                        status = excluded.status,
+                        start_time = excluded.start_time,
+                        end_time = excluded.end_time
+                    `, [
+                      event.id,
+                      contact.contact_id,
+                      event.calendarId || '',
+                      event.locationId || config.location_id,
+                      event.title || '',
+                      event.status || 'scheduled',
+                      event.startTime || '',
+                      event.endTime || ''
+                    ]).catch(err => {
+                      logger.error(`Error guardando cita ${event.id}:`, err);
+                    });
+                  }
+
+                  return { contactId: contact.contact_id, hasAppointments: true };
+                }
+              }
+              return { contactId: contact.contact_id, hasAppointments: false };
+            } catch (error) {
+              logger.error(`Error verificando citas para contacto ${contact.contact_id}:`, error);
+              return { contactId: contact.contact_id, hasAppointments: false };
+            }
+          })
+        );
+
+        // Actualizar el set con los contactos que tienen citas
+        appointmentChecks.forEach(result => {
+          if (result.hasAppointments) {
+            contactsWithAppointments.add(result.contactId);
+          }
+        });
+      }
+    }
+
+    // PASO 3: Agrupar métricas por ad_id
+    const metricsMap = {};
+    contactsRaw.forEach(c => {
+      if (!metricsMap[c.attribution_ad_id]) {
+        metricsMap[c.attribution_ad_id] = {
+          interesados: new Set(),
+          ventas: new Set(),
+          citas: new Set(),
+          revenue: 0
+        };
+      }
+
+      metricsMap[c.attribution_ad_id].interesados.add(c.contact_id);
+
+      if (c.purchases_count > 0) {
+        metricsMap[c.attribution_ad_id].ventas.add(c.contact_id);
+      }
+
+      if (contactsWithAppointments.has(c.contact_id)) {
+        metricsMap[c.attribution_ad_id].citas.add(c.contact_id);
+      }
+
+      metricsMap[c.attribution_ad_id].revenue += parseFloat(c.total_paid || 0);
+    });
+
+    // Convertir a formato esperado
+    const contactsData = Object.keys(metricsMap).map(ad_id => ({
+      ad_id,
+      interesados: metricsMap[ad_id].interesados.size,
+      ventas: metricsMap[ad_id].ventas.size,
+      citas: metricsMap[ad_id].citas.size,
+      revenue: metricsMap[ad_id].revenue
+    }));
+
+    logger.info(`[CITAS DEBUG] Total contactos con citas encontrados: ${contactsWithAppointments.size}`);
 
     // Obtener todos los ad_ids que tienen contactos en el período
     const adIdsWithContacts = contactsData.map(row => row.ad_id).filter(Boolean);

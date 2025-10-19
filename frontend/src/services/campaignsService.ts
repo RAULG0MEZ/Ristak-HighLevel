@@ -204,7 +204,6 @@ class CampaignsService {
       }[]>('/meta/funnel-metrics', {
         params: { start: startDate, end: endDate }
       })
-      console.log('Funnel metrics response:', data)
       return Array.isArray(data) ? data : []
     } catch (error) {
       console.error('Error fetching funnel metrics:', error)

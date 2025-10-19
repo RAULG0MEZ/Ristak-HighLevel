@@ -559,11 +559,6 @@ const Analytics: React.FC = () => {
           currentSessions.forEach((session: Session) => {
             const rawPlatform = session.source_site_name || session.source_platform || session.utm_source || 'Directo'
             const platform = normalizePlatformName(rawPlatform)
-
-            // Debug temporal
-            if (rawPlatform === 'fb' || rawPlatform === 'ig') {
-            }
-
             platforms[platform] = (platforms[platform] || 0) + 1
           })
           const platformStats = Object.entries(platforms)
@@ -576,8 +571,25 @@ const Analytics: React.FC = () => {
             .slice(0, 5)
           setPlatformsData(platformStats)
 
-          // Preparar datos para la dona de fuentes de tráfico
-          const colorMap: { [key: string]: string } = {
+          // Calcular placements PRIMERO (para usarlo en la dona)
+          const placements: { [key: string]: number } = {}
+          currentSessions.forEach((session: Session) => {
+            const rawPlacement = session.placement || 'Sin ubicación'
+            const placement = normalizePlatformName(rawPlacement)
+            placements[placement] = (placements[placement] || 0) + 1
+          })
+          const placementStats = Object.entries(placements)
+            .map(([placement, count]) => ({
+              name: placement,
+              users: count,
+              percentage: ((count / currentSessions.length) * 100).toFixed(1)
+            }))
+            .sort((a, b) => b.users - a.users)
+            .slice(0, 5)
+          setPlacementsData(placementStats)
+
+          // Preparar datos para la dona de fuentes de tráfico (usando placements)
+          const trafficColorMap: { [key: string]: string } = {
             'Facebook': '#1877f2',
             'Google': '#4285f4',
             'Instagram': '#c32aa3',
@@ -595,34 +607,15 @@ const Analytics: React.FC = () => {
             'Directo': '#6b7280',
             'Orgánico': '#10b981'
           }
-          const trafficSourcesData = Object.entries(platforms)
-            .map(([platform, count]) => ({
-              name: platform,
+          const trafficSourcesData = Object.entries(placements)
+            .map(([placement, count]) => ({
+              name: placement,
               value: count,
-              color: colorMap[platform] || '#6b7280'
+              color: trafficColorMap[placement] || '#6b7280'
             }))
             .sort((a, b) => b.value - a.value)
             .slice(0, 10)
-
-          // Debug: ver qué plataformas se están mostrando
-
           setTrafficSources(trafficSourcesData)
-
-          const placements: { [key: string]: number } = {}
-          currentSessions.forEach((session: Session) => {
-            const rawPlacement = session.placement || 'Sin ubicación'
-            const placement = normalizePlatformName(rawPlacement)
-            placements[placement] = (placements[placement] || 0) + 1
-          })
-          const placementStats = Object.entries(placements)
-            .map(([placement, count]) => ({
-              name: placement,
-              users: count,
-              percentage: ((count / currentSessions.length) * 100).toFixed(1)
-            }))
-            .sort((a, b) => b.users - a.users)
-            .slice(0, 5)
-          setPlacementsData(placementStats)
 
           const devices: { [key: string]: number } = {}
           currentSessions.forEach((session: Session) => {
@@ -843,8 +836,25 @@ const Analytics: React.FC = () => {
       .slice(0, 5)
     setPlatformsData(platformStats)
 
-    // Preparar datos para la dona de fuentes de tráfico
-    const colorMap: { [key: string]: string } = {
+    // Calcular placements PRIMERO (para usarlo en la dona)
+    const placements: { [key: string]: number } = {}
+    sessions.forEach((session: Session) => {
+      const rawPlacement = session.placement || 'Sin ubicación'
+      const placement = normalizePlatformName(rawPlacement)
+      placements[placement] = (placements[placement] || 0) + 1
+    })
+    const placementStats = Object.entries(placements)
+      .map(([placement, count]) => ({
+        name: placement,
+        users: count,
+        percentage: ((count / sessions.length) * 100).toFixed(1)
+      }))
+      .sort((a, b) => b.users - a.users)
+      .slice(0, 5)
+    setPlacementsData(placementStats)
+
+    // Preparar datos para la dona de fuentes de tráfico (usando placements)
+    const trafficColorMap: { [key: string]: string } = {
       'Facebook': '#1877f2',
       'Google': '#4285f4',
       'Instagram': '#c32aa3',
@@ -862,31 +872,15 @@ const Analytics: React.FC = () => {
       'Directo': '#6b7280',
       'Orgánico': '#10b981'
     }
-    const trafficSourcesData = Object.entries(platforms)
-      .map(([platform, count]) => ({
-        name: platform,
+    const trafficSourcesData = Object.entries(placements)
+      .map(([placement, count]) => ({
+        name: placement,
         value: count,
-        color: colorMap[platform] || '#6b7280'
+        color: trafficColorMap[placement] || '#6b7280'
       }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 10)
     setTrafficSources(trafficSourcesData)
-
-    const placements: { [key: string]: number } = {}
-    sessions.forEach((session: Session) => {
-      const rawPlacement = session.placement || 'Sin ubicación'
-      const placement = normalizePlatformName(rawPlacement)
-      placements[placement] = (placements[placement] || 0) + 1
-    })
-    const placementStats = Object.entries(placements)
-      .map(([placement, count]) => ({
-        name: placement,
-        users: count,
-        percentage: ((count / sessions.length) * 100).toFixed(1)
-      }))
-      .sort((a, b) => b.users - a.users)
-      .slice(0, 5)
-    setPlacementsData(placementStats)
 
     const devices: { [key: string]: number } = {}
     sessions.forEach((session: Session) => {
