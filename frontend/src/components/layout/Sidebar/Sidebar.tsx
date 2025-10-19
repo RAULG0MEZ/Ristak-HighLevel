@@ -470,10 +470,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center px-6 py-4 border-b border-[rgba(148,163,184,0.12)]">
+      <div className="flex items-center justify-center px-4 gap-2 border-b border-[rgba(148,163,184,0.12)]" style={{ height: 'var(--header-height)' }}>
         {mounted && locationLogo ? (
           // Si hay logo de HighLevel, mostrarlo
-          <div className="w-28 h-12 flex items-center">
+          <div className="w-24 h-10 flex items-center justify-center">
             <img
               src={locationLogo}
               alt={locationName || 'Logo'}
@@ -482,8 +482,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
           </div>
         ) : mounted && locationName && locationName !== 'Ristak' ? (
           // Si no hay logo pero sí nombre de HighLevel (no es "Ristak"), mostrar el nombre
-          <div className="flex items-center">
-            <span className="text-xl font-bold text-[var(--color-text-primary)] truncate">
+          <div className="w-full flex items-center justify-center px-2">
+            <span className="text-lg font-bold text-[var(--color-text-primary)] truncate max-w-[180px] text-center">
               {locationName}
             </span>
           </div>
@@ -495,9 +495,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
 
       <nav
         className={cn(
-          'relative flex-1 px-3 py-4 transition-all duration-200',
+          'relative flex-1 p-4 pt-3 transition-all duration-200',
           isEditing
-            ? 'bg-white/[0.02] mx-2 rounded-lg ring-1 ring-[rgba(148,163,184,0.15)] shadow-sm'
+            ? 'bg-white/[0.04] rounded-xl ring-1 ring-[rgba(148,163,184,0.35)] shadow-[0_12px_30px_-12px_rgba(15,23,42,0.45)]'
             : ''
         )}
         onDragOver={(event) => {
@@ -507,20 +507,20 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
         onDrop={handleContainerDrop}
       >
         {isEditing && (
-          <div className="pointer-events-none absolute inset-x-3 bottom-3 z-10 flex items-center justify-between gap-2 rounded-md border border-dashed border-[rgba(148,163,184,0.2)] bg-white/[0.04] px-3 py-1.5 text-[9px] font-medium tracking-wider text-[var(--color-text-tertiary)] uppercase">
-            <span className="flex items-center gap-1.5 text-[var(--color-text-secondary)]">
-              <span className="flex h-1.5 w-1.5 items-center justify-center">
-                <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent-green)] animate-ping" />
+          <div className="pointer-events-none absolute inset-x-4 bottom-4 z-10 flex items-center justify-between gap-3 rounded-lg border border-dashed border-[rgba(148,163,184,0.28)] bg-white/[0.08] px-3 py-2 text-[10px] font-semibold tracking-[0.28em] text-[var(--color-text-tertiary)] uppercase">
+            <span className="flex items-center gap-2 text-[var(--color-text-secondary)]">
+              <span className="flex h-2 w-2 items-center justify-center">
+                <span className="h-2 w-2 rounded-full bg-[var(--color-text-secondary)] animate-ping" />
               </span>
-              Editando
+              Modo edición activo
             </span>
             <span className="hidden text-[var(--color-text-tertiary)] sm:inline">
-              Arrastra para reordenar
+              Arrastra y suelta para reordenar
             </span>
           </div>
         )}
 
-        <div className="space-y-0.5">
+        <div className="space-y-1">
           {navigation.map((item) => {
             const Icon = item.icon
             const isActive = location.pathname.startsWith(item.href)
@@ -553,54 +553,41 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
                   }
                 }}
                 className={cn(
-                  'group relative flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-all duration-150 select-none',
+                  'group relative flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-all duration-200 ease-out select-none',
                   isDragging
-                    ? 'z-10 cursor-grabbing scale-[1.02] bg-white/[0.06] shadow-lg'
+                    ? 'z-10 cursor-grabbing scale-[1.05] bg-white/[0.08] shadow-xl'
                     : isPreparing
-                      ? 'cursor-grab bg-white/[0.04] shadow-md'
+                      ? 'cursor-grab scale-[1.03] bg-white/[0.06] shadow-lg'
                       : 'cursor-pointer',
                   isDropTarget
-                    ? 'ring-1 ring-[rgba(148,163,184,0.4)] bg-white/[0.05]'
+                    ? 'ring-2 ring-offset-0 ring-[rgba(148,163,184,0.55)] bg-white/[0.08] backdrop-blur-sm'
                     : '',
-                  isDimmed ? 'opacity-50' : '',
+                  isDimmed ? 'opacity-60' : '',
                   isActive
-                    ? 'bg-white/[0.08] text-[var(--color-text-primary)] shadow-sm'
-                    : 'text-[var(--color-text-tertiary)] hover:bg-white/[0.04] hover:text-[var(--color-text-secondary)]'
+                    ? 'glass text-[var(--color-text-primary)]'
+                    : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] glass-hover'
                 )}
               >
-                {/* Grip handle para modo edición */}
                 <span
                   className={cn(
-                    'pointer-events-none absolute -left-1 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded transition-all duration-200',
+                    'pointer-events-none absolute left-3 top-1/2 flex h-5 w-5 -translate-x-full -translate-y-1/2 items-center justify-center rounded-md border border-dashed border-transparent transition-all duration-200',
                     isEditing
-                      ? 'opacity-40'
+                      ? 'border-[rgba(148,163,184,0.35)] bg-white/[0.08] opacity-100'
                       : 'opacity-0'
                   )}
                   aria-hidden="true"
                 >
-                  <GripVertical className="h-3.5 w-3.5 text-[var(--color-text-tertiary)]" />
+                  <GripVertical className="h-3 w-3 text-[var(--color-text-secondary)]" />
                 </span>
-
-                {/* Icono y texto */}
-                <Icon className={cn(
-                  "h-5 w-5 flex-shrink-0 transition-colors",
-                  isActive ? "text-[var(--color-text-primary)]" : "",
-                  isEditing ? "ml-4" : ""
-                )} />
-                <span className="flex-1">{item.name}</span>
-
-                {/* Indicador activo */}
-                {isActive && !isEditing && (
-                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-[var(--color-accent-blue)] rounded-r" />
-                )}
-
-                {/* Estado arrastrando */}
+                <Icon className="h-5 w-5 flex-shrink-0" />
+                <span>{item.name}</span>
                 {isDragging && (
-                  <span className="ml-auto flex items-center gap-1">
-                    <span className="flex items-center gap-0.5">
-                      <span className="h-1 w-1 rounded-full bg-[var(--color-text-tertiary)] animate-pulse" />
-                      <span className="h-1 w-1 rounded-full bg-[var(--color-text-tertiary)] animate-pulse [animation-delay:100ms]" />
-                      <span className="h-1 w-1 rounded-full bg-[var(--color-text-tertiary)] animate-pulse [animation-delay:200ms]" />
+                  <span className="ml-auto flex items-center gap-1 text-[10px] font-semibold tracking-[0.2em] text-[var(--color-text-secondary)]">
+                    MOVIENDO
+                    <span className="flex items-center gap-[2px]">
+                      <span className="h-1 w-1 rounded-full bg-[var(--color-text-secondary)] animate-pulse" />
+                      <span className="h-1 w-1 rounded-full bg-[var(--color-text-secondary)] animate-pulse [animation-delay:120ms]" />
+                      <span className="h-1 w-1 rounded-full bg-[var(--color-text-secondary)] animate-pulse [animation-delay:240ms]" />
                     </span>
                   </span>
                 )}
@@ -610,22 +597,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
         </div>
       </nav>
 
-      <div className="mt-auto px-3 py-4 border-t border-[rgba(148,163,184,0.12)]">
+      <div className="mt-auto p-4 border-t border-[rgba(148,163,184,0.12)]">
         <Link
           to="/settings"
           onClick={handleNavigate}
           className={cn(
-            'relative flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all duration-150',
+            'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
             location.pathname.startsWith('/settings')
-              ? 'bg-white/[0.08] text-[var(--color-text-primary)] shadow-sm'
-              : 'text-[var(--color-text-tertiary)] hover:bg-white/[0.04] hover:text-[var(--color-text-secondary)]'
+              ? 'glass text-[var(--color-text-primary)]'
+              : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] glass-hover'
           )}
         >
-          <Settings className="w-5 h-5 flex-shrink-0" />
-          <span className="flex-1">Configuración</span>
-          {location.pathname.startsWith('/settings') && (
-            <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-[var(--color-accent-blue)] rounded-r" />
-          )}
+          <Settings className="w-5 h-5" />
+          Configuración
         </Link>
       </div>
     </div>
