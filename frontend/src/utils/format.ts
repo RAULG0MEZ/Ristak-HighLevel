@@ -306,3 +306,47 @@ export const formatTime12h = (dateStr: string): string => {
 
   return `${String(hours12).padStart(2, '0')}:${String(minutes).padStart(2, '0')} ${ampm}`;
 }
+
+/**
+ * Formatea números de manera inteligente para gráficas
+ * - Menos de 1,000: muestra el número completo
+ * - Entre 1,000 y 999,999: muestra en miles (K)
+ * - Más de 1,000,000: muestra en millones (M)
+ */
+export const formatChartNumber = (value: number): string => {
+  const absValue = Math.abs(value)
+
+  if (absValue >= 1_000_000) {
+    const millions = value / 1_000_000
+    return `${millions.toFixed(1)}M`
+  }
+
+  if (absValue >= 1_000) {
+    const thousands = value / 1_000
+    return `${thousands.toFixed(1)}K`
+  }
+
+  return Math.round(value).toString()
+}
+
+/**
+ * Formatea moneda de manera inteligente para gráficas
+ * - Menos de $10,000: muestra el número completo con formato de moneda
+ * - Entre $10,000 y $999,999: muestra en miles (K)
+ * - Más de $1,000,000: muestra en millones (M)
+ */
+export const formatChartCurrency = (value: number): string => {
+  const absValue = Math.abs(value)
+
+  if (absValue >= 1_000_000) {
+    const millions = value / 1_000_000
+    return `$${millions.toFixed(1)}M`
+  }
+
+  if (absValue >= 10_000) {
+    const thousands = value / 1_000
+    return `$${thousands.toFixed(1)}K`
+  }
+
+  return formatCurrency(value)
+}

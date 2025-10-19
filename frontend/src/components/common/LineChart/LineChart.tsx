@@ -7,7 +7,7 @@ import {
   CartesianGrid,
   ResponsiveContainer
 } from 'recharts'
-import { formatCurrency } from '@/utils/format'
+import { formatCurrency, formatChartCurrency } from '@/utils/format'
 import { useChartHover } from '@/hooks/useChartHover'
 import { ChartTooltip } from '../ChartTooltip/ChartTooltip'
 
@@ -44,15 +44,7 @@ interface SeriesDefinition {
 const DEFAULT_COLOR_PRIMARY = 'var(--color-accent-blue)'
 const DEFAULT_COLOR_SECONDARY = 'var(--color-accent-orange)'
 
-const defaultFormatAxis = (value: number): string => {
-  if (Math.abs(value) >= 1_000_000) {
-    return `$${Math.round(value / 1_000_000)}M`
-  }
-  if (Math.abs(value) >= 1_000) {
-    return `$${Math.round(value / 1_000)}k`
-  }
-  return `$${Math.round(value)}`
-}
+const defaultFormatAxis = (value: number): string => formatChartCurrency(value)
 
 const defaultFormatTooltip = (value: number): string => formatCurrency(value)
 

@@ -14,7 +14,7 @@ import { FaFacebook, FaGoogle, FaInstagram, FaTiktok, FaTwitter, FaLinkedin, FaM
 import { SiMacos, SiIos } from 'react-icons/si'
 import { getSessionsByDateRange } from '../../services/analyticsService'
 import { TrackingSession } from '../../services/trackingService'
-import { formatDate, formatDateToISO, parseLocalDateString, formatUrlParameter } from '../../utils/format'
+import { formatDate, formatDateToISO, parseLocalDateString, formatUrlParameter, formatChartNumber } from '../../utils/format'
 import { normalizeTrafficSource } from '../../utils/trafficSourceNormalizer'
 
 // Helper para obtener icono de plataforma
@@ -175,13 +175,7 @@ const Analytics: React.FC = () => {
     }
   })
 
-  const formatTrafficAxis = (value: number) => {
-    if (value >= 1000) {
-      const formatted = value / 1000
-      return `${formatted % 1 === 0 ? formatted.toFixed(0) : formatted.toFixed(1)}k`
-    }
-    return value.toString()
-  }
+  const formatTrafficAxis = (value: number) => formatChartNumber(value)
 
   const formatTrafficTooltipValue = (value: number) => value.toLocaleString('es-MX')
 

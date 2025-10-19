@@ -15,7 +15,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useLabels } from '@/contexts/LabelsContext'
 import { useAppConfig } from '@/hooks'
 import { dashboardService, type DashboardMetrics, type ChartData } from '@/services/dashboardService'
-import { formatCurrency, formatRoas, formatChartDate, formatDateToISO, parseLocalDateString } from '@/utils/format'
+import { formatCurrency, formatRoas, formatChartDate, formatDateToISO, parseLocalDateString, formatChartCurrency, formatChartNumber } from '@/utils/format'
 
 const parseAnalyticsFlag = (value: unknown) => {
   if (value === null || value === undefined) return false
@@ -88,15 +88,7 @@ export const Dashboard: React.FC = () => {
     }))
   }, [chartData])
 
-  const currencyAxisFormatter = React.useCallback((value: number) => {
-    if (Math.abs(value) >= 1_000_000) {
-      return `$${(value / 1_000_000).toFixed(1)}M`
-    }
-    if (Math.abs(value) >= 1_000) {
-      return `$${(value / 1_000).toFixed(0)}k`
-    }
-    return `$${Math.round(value)}`
-  }, [])
+  const currencyAxisFormatter = React.useCallback((value: number) => formatChartCurrency(value), [])
 
   // Configuración del gráfico según la vista seleccionada
   const chartConfig = React.useMemo(() => {
@@ -147,8 +139,8 @@ export const Dashboard: React.FC = () => {
           label2: labels.leads,
           color: '#3b82f6',
           color2: '#8b5cf6',
-          formatValue: (value: number) => value.toLocaleString(),
-          formatTooltipValue: (value: number) => value.toLocaleString()
+          formatValue: formatChartNumber,
+          formatTooltipValue: (value: number) => value.toLocaleString('es-MX')
         }
       case 'leads-appointments':
         return {
@@ -157,8 +149,8 @@ export const Dashboard: React.FC = () => {
           label2: 'Citas',
           color: '#8b5cf6',
           color2: '#ec4899',
-          formatValue: (value: number) => value.toLocaleString(),
-          formatTooltipValue: (value: number) => value.toLocaleString()
+          formatValue: formatChartNumber,
+          formatTooltipValue: (value: number) => value.toLocaleString('es-MX')
         }
       case 'appointments-sales':
         return {
@@ -167,8 +159,8 @@ export const Dashboard: React.FC = () => {
           label2: 'Ventas',
           color: '#ec4899',
           color2: '#10b981',
-          formatValue: (value: number) => value.toLocaleString(),
-          formatTooltipValue: (value: number) => value.toLocaleString()
+          formatValue: formatChartNumber,
+          formatTooltipValue: (value: number) => value.toLocaleString('es-MX')
         }
       default:
         return {

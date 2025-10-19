@@ -14,7 +14,7 @@ import {
 } from 'lucide-react'
 import { useDateRange } from '@/contexts/DateRangeContext'
 import { useLabels } from '@/contexts/LabelsContext'
-import { formatCurrency, formatRoas, formatChartDate, formatDate, formatDateToISO, formatEndDateToISO, parseLocalDateString } from '@/utils/format'
+import { formatCurrency, formatRoas, formatChartDate, formatDate, formatDateToISO, formatEndDateToISO, parseLocalDateString, formatChartCurrency, formatChartNumber } from '@/utils/format'
 import { campaignsService, type CampaignContact } from '@/services/campaignsService'
 import { reportsService, type CampaignsReport } from '@/services/reportsService'
 import { useAppConfig } from '@/hooks'
@@ -958,7 +958,8 @@ export const Campaigns: React.FC = () => {
         color2: '#64748b',
         showLegend: true,
         legendLabels: { label1: 'Ingresos', label2: 'Gastos Publicidad' },
-        formatValue: (v) => `$${(v / 1000).toFixed(1)}k`,
+        formatValue: formatChartCurrency,
+        formatTooltipValue: formatCurrency,
         emptyMessage: 'No hay datos de campañas para este período'
       },
       visitors: {
@@ -969,8 +970,8 @@ export const Campaigns: React.FC = () => {
         color2: '#3b82f6',
         showLegend: true,
         legendLabels: { label1: 'Visitantes', label2: labels.leads },
-        formatValue: (v) => v < 1000 ? v.toString() : `${(v / 1000).toFixed(1)}k`,
-        formatTooltipValue: (v: number) => v.toString(),
+        formatValue: formatChartNumber,
+        formatTooltipValue: (v: number) => v.toLocaleString('es-MX'),
         emptyMessage: 'No hay datos de visitantes para este período'
       },
       leads: {
@@ -981,8 +982,8 @@ export const Campaigns: React.FC = () => {
         color2: '#8b5cf6',
         showLegend: true,
         legendLabels: { label1: labels.leads, label2: 'Citas' },
-        formatValue: (v) => v < 1000 ? v.toString() : `${(v / 1000).toFixed(1)}k`,
-        formatTooltipValue: (v: number) => v.toString(),
+        formatValue: formatChartNumber,
+        formatTooltipValue: (v: number) => v.toLocaleString('es-MX'),
         emptyMessage: 'No hay datos de leads para este período'
       },
       appointments: {
@@ -993,8 +994,8 @@ export const Campaigns: React.FC = () => {
         color2: '#10b981',
         showLegend: true,
         legendLabels: { label1: 'Citas', label2: 'Ventas' },
-        formatValue: (v) => v < 1000 ? v.toString() : `${(v / 1000).toFixed(1)}k`,
-        formatTooltipValue: (v: number) => v.toString(),
+        formatValue: formatChartNumber,
+        formatTooltipValue: (v: number) => v.toLocaleString('es-MX'),
         emptyMessage: 'No hay datos de citas para este período'
       }
     }
