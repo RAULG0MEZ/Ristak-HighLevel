@@ -8,6 +8,7 @@ interface ChartTooltipProps {
   pointPos: { x: number; y: number } | null
   series: { key: string; label: string; color: string }[]
   formatValue: (value: number, key: string) => string
+  verticalOffset?: number
 }
 
 export const ChartTooltip: React.FC<ChartTooltipProps> = ({
@@ -15,7 +16,8 @@ export const ChartTooltip: React.FC<ChartTooltipProps> = ({
   data,
   pointPos,
   series,
-  formatValue
+  formatValue,
+  verticalOffset = 12
 }) => {
   const [shouldHide, setShouldHide] = useState(false)
 
@@ -58,14 +60,21 @@ export const ChartTooltip: React.FC<ChartTooltipProps> = ({
     return null
   }
 
-  const tooltipStyle: React.CSSProperties = {
+  type TooltipStyle = React.CSSProperties & { '--tooltip-gap'?: string }
+
+  const clampedOffset = Number.isFinite(verticalOffset)
+    ? Math.max(4, verticalOffset)
+    : 12
+
+  const tooltipStyle: TooltipStyle = {
     position: 'fixed',
     left: pointPos.x,
     top: pointPos.y,
-    transform: 'translate(-50%, calc(-100% - 8px))',
+    transform: 'translate(-50%, calc(-100% - var(--tooltip-gap)))',
     pointerEvents: 'none',
     zIndex: 9998,
-    transition: 'left 150ms ease-out, top 150ms ease-out'
+    transition: 'left 150ms ease-out, top 150ms ease-out',
+    '--tooltip-gap': `${clampedOffset}px`
   }
 
   const tooltipContent = (
