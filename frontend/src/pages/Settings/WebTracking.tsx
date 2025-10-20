@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { Card, Button } from '@/components/common'
-import { Activity, Copy, Check, Info, Loader2, RefreshCw } from 'lucide-react'
+import { Activity, Copy, Check, Info, Loader2, RefreshCw, Maximize2, Minimize2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { trackingService, TrackingSession } from '@/services/trackingService'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useTimezone } from '@/contexts/TimezoneContext'
@@ -23,6 +24,11 @@ export const WebTracking: React.FC = () => {
   const [configuringTracking, setConfiguringTracking] = useState(false)
   const [isConfigured, setIsConfigured] = useState(false)
   const [hasHighLevel, setHasHighLevel] = useState(false)
+
+  // Estados para paginación y vista expandida
+  const [currentPage, setCurrentPage] = useState(1)
+  const [isExpanded, setIsExpanded] = useState(false)
+  const ITEMS_PER_PAGE = 10
 
   useEffect(() => {
     loadTrackingConfig()
@@ -161,6 +167,27 @@ export const WebTracking: React.FC = () => {
       hour: '2-digit',
       minute: '2-digit'
     })
+  }
+
+  // Calcular sesiones paginadas
+  const paginatedSessions = useMemo(() => {
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
+    const endIndex = startIndex + ITEMS_PER_PAGE
+    return recentSessions.slice(startIndex, endIndex)
+  }, [recentSessions, currentPage, ITEMS_PER_PAGE])
+
+  const totalPages = Math.ceil(recentSessions.length / ITEMS_PER_PAGE)
+
+  const handlePreviousPage = () => {
+    setCurrentPage(prev => Math.max(1, prev - 1))
+  }
+
+  const handleNextPage = () => {
+    setCurrentPage(prev => Math.min(totalPages, prev + 1))
+  }
+
+  const handleToggleExpanded = () => {
+    setIsExpanded(prev => !prev)
   }
 
   return (
@@ -342,18 +369,66 @@ export const WebTracking: React.FC = () => {
         <div className={styles.section}>
           <div className={styles.sectionHeader}>
             <h3 className={styles.sectionTitle}>Eventos de Tracking</h3>
-            <Button
-              variant="ghost"
-              size="small"
-              onClick={loadRecentSessions}
-              disabled={loadingSessions}
-            >
-              <RefreshCw size={16} className={loadingSessions ? styles.spinIcon : ''} />
-              {loadingSessions ? 'Cargando...' : 'Actualizar'}
-            </Button>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <Button
+                variant="ghost"
+                size="small"
+                onClick={handleToggleExpanded}
+                title="Vista expandida"
+              >
+                <Maximize2 size={16} />
+              </Button>
+              <Button
+                variant="ghost"
+                size="small"
+                onClick={loadRecentSessions}
+                disabled={loadingSessions}
+              >
+                <RefreshCw size={16} className={loadingSessions ? styles.spinIcon : ''} />
+                {loadingSessions ? 'Cargando...' : 'Actualizar'}
+              </Button>
+            </div>
           </div>
 
           {recentSessions.length > 0 ? (
+            <>
+              {/* Información de paginación */}
+              <div style={{
+                padding: '12px 0',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                fontSize: '0.875rem',
+                color: 'var(--color-text-secondary)'
+              }}>
+                <span>
+                  Mostrando {((currentPage - 1) * ITEMS_PER_PAGE) + 1} - {Math.min(currentPage * ITEMS_PER_PAGE, recentSessions.length)} de {recentSessions.length} sesiones
+                </span>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <Button
+                    variant="ghost"
+                    size="small"
+                    onClick={handlePreviousPage}
+                    disabled={currentPage === 1}
+                  >
+                    <ChevronLeft size={16} />
+                    Anterior
+                  </Button>
+                  <span style={{ padding: '0 8px' }}>
+                    Página {currentPage} de {totalPages}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="small"
+                    onClick={handleNextPage}
+                    disabled={currentPage === totalPages}
+                  >
+                    Siguiente
+                    <ChevronRight size={16} />
+                  </Button>
+                </div>
+              </div>
+
             <div className={styles.tableContainer} style={{ overflowX: 'auto' }}>
               <table className={styles.table} style={{ tableLayout: 'fixed', width: '100%' }}>
                 <thead>
@@ -426,7 +501,7 @@ export const WebTracking: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {recentSessions.map((session: any) => {
+                  {paginatedSessions.map((session: any) => {
                     const cellStyle = {
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
@@ -522,6 +597,7 @@ export const WebTracking: React.FC = () => {
                 </tbody>
               </table>
             </div>
+            </>
           ) : (
             <div className={styles.emptyState}>
               <Activity size={48} style={{ opacity: 0.3, marginBottom: '16px' }} />
@@ -533,6 +609,270 @@ export const WebTracking: React.FC = () => {
           )}
         </div>
       </Card>
+
+      {/* Modal de vista expandida */}
+      {isExpanded && createPortal(
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'var(--color-background)',
+          zIndex: 9999,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden'
+        }}>
+          {/* Header del modal expandido */}
+          <div style={{
+            padding: '20px 24px',
+            borderBottom: '1px solid var(--color-border)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            backgroundColor: 'var(--color-surface)'
+          }}>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 600, margin: 0 }}>
+              Eventos de Tracking - Vista Completa
+            </h2>
+            <Button
+              variant="ghost"
+              size="small"
+              onClick={handleToggleExpanded}
+              title="Cerrar vista expandida"
+            >
+              <Minimize2 size={20} />
+            </Button>
+          </div>
+
+          {/* Controles de paginación superiores */}
+          <div style={{
+            padding: '16px 24px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            borderBottom: '1px solid var(--color-border)',
+            backgroundColor: 'var(--color-surface)'
+          }}>
+            <span style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)' }}>
+              Mostrando {((currentPage - 1) * ITEMS_PER_PAGE) + 1} - {Math.min(currentPage * ITEMS_PER_PAGE, recentSessions.length)} de {recentSessions.length} sesiones
+            </span>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <Button
+                variant="ghost"
+                size="small"
+                onClick={handlePreviousPage}
+                disabled={currentPage === 1}
+              >
+                <ChevronLeft size={16} />
+                Anterior
+              </Button>
+              <span style={{ padding: '0 8px', fontSize: '0.875rem' }}>
+                Página {currentPage} de {totalPages}
+              </span>
+              <Button
+                variant="ghost"
+                size="small"
+                onClick={handleNextPage}
+                disabled={currentPage === totalPages}
+              >
+                Siguiente
+                <ChevronRight size={16} />
+              </Button>
+            </div>
+          </div>
+
+          {/* Tabla expandida con scroll */}
+          <div style={{
+            flex: 1,
+            overflow: 'auto',
+            padding: '24px'
+          }}>
+            <div style={{
+              overflowX: 'auto',
+              backgroundColor: 'var(--color-surface)',
+              borderRadius: '8px',
+              border: '1px solid var(--color-border)'
+            }}>
+              <table style={{
+                width: '100%',
+                borderCollapse: 'collapse',
+                fontSize: '0.875rem'
+              }}>
+                <thead style={{
+                  backgroundColor: 'var(--color-gray-50)',
+                  position: 'sticky',
+                  top: 0,
+                  zIndex: 10
+                }}>
+                  <tr>
+                    {/* IDs y Timestamps */}
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '200px' }}>Session ID</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '200px' }}>Visitor ID</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '200px' }}>Contact ID</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '150px' }}>Full Name</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '120px' }}>Event Name</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '180px' }}>Started At</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '180px' }}>Last Event At</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '180px' }}>Created At</th>
+
+                    {/* URLs */}
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '300px' }}>Landing URL</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '300px' }}>Referrer URL</th>
+
+                    {/* UTMs */}
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '150px' }}>UTM Source</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '150px' }}>UTM Medium</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '200px' }}>UTM Campaign</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '150px' }}>UTM Term</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '150px' }}>UTM Content</th>
+
+                    {/* Click IDs */}
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '200px' }}>GCLID</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '200px' }}>FBCLID</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '200px' }}>FBC</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '200px' }}>FBP</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '150px' }}>WBRAID</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '150px' }}>GBRAID</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '150px' }}>MSCLKID</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '150px' }}>TTCLID</th>
+
+                    {/* Campaign Details */}
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '120px' }}>Channel</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '150px' }}>Source Platform</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '180px' }}>Campaign ID</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '180px' }}>Adset ID</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '180px' }}>Ad Group ID</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '180px' }}>Ad ID</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '200px' }}>Campaign Name</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '200px' }}>Adset Name</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '200px' }}>Ad Group Name</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '200px' }}>Ad Name</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '150px' }}>Placement</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '180px' }}>Site Source Name</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '120px' }}>Network</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '120px' }}>Match Type</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '150px' }}>Keyword</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '200px' }}>Search Query</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '150px' }}>Creative ID</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '120px' }}>Ad Position</th>
+
+                    {/* Device & Browser */}
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '150px' }}>IP</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '350px' }}>User Agent</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '120px' }}>Device Type</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '120px' }}>OS</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '120px' }}>Browser</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '150px' }}>Browser Version</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '100px' }}>Language</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '180px' }}>Timezone</th>
+
+                    {/* Geo */}
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '120px' }}>Country</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '150px' }}>Region</th>
+                    <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid var(--color-border)', minWidth: '150px' }}>City</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedSessions.map((session: any) => (
+                    <tr key={session.session_id} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                      {/* IDs y Timestamps */}
+                      <td style={{ padding: '12px 16px' }}>
+                        <code style={{ fontSize: '0.75rem', backgroundColor: 'var(--color-gray-50)', padding: '2px 6px', borderRadius: '4px' }}>
+                          {session.session_id || '-'}
+                        </code>
+                      </td>
+                      <td style={{ padding: '12px 16px' }}>
+                        <code style={{ fontSize: '0.75rem', backgroundColor: 'var(--color-gray-50)', padding: '2px 6px', borderRadius: '4px' }}>
+                          {session.visitor_id || '-'}
+                        </code>
+                      </td>
+                      <td style={{ padding: '12px 16px' }}>
+                        {session.contact_id ? (
+                          <code style={{ fontSize: '0.75rem', backgroundColor: 'var(--color-gray-50)', padding: '2px 6px', borderRadius: '4px' }}>
+                            {session.contact_id}
+                          </code>
+                        ) : '-'}
+                      </td>
+                      <td style={{ padding: '12px 16px' }}>{session.full_name || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.event_name || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{formatLocalDateTime(session.started_at)}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.last_event_at ? formatLocalDateTime(session.last_event_at) : '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.created_at ? formatLocalDateTime(session.created_at) : '-'}</td>
+
+                      {/* URLs */}
+                      <td style={{ padding: '12px 16px' }}>
+                        <a href={session.landing_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'none' }}>
+                          {session.landing_url || '-'}
+                        </a>
+                      </td>
+                      <td style={{ padding: '12px 16px', fontSize: '0.8rem' }}>{session.referrer_url || '-'}</td>
+
+                      {/* UTMs */}
+                      <td style={{ padding: '12px 16px' }}>{session.utm_source || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.utm_medium || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.utm_campaign || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.utm_term || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.utm_content || '-'}</td>
+
+                      {/* Click IDs */}
+                      <td style={{ padding: '12px 16px' }}>
+                        {session.gclid ? <code style={{ fontSize: '0.75rem' }}>{session.gclid}</code> : '-'}
+                      </td>
+                      <td style={{ padding: '12px 16px' }}>
+                        {session.fbclid ? <code style={{ fontSize: '0.75rem' }}>{session.fbclid}</code> : '-'}
+                      </td>
+                      <td style={{ padding: '12px 16px' }}>{session.fbc || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.fbp || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.wbraid || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.gbraid || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.msclkid || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.ttclid || '-'}</td>
+
+                      {/* Campaign Details */}
+                      <td style={{ padding: '12px 16px' }}>{session.channel || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.source_platform || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.campaign_id || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.adset_id || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.ad_group_id || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.ad_id || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.campaign_name || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.adset_name || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.ad_group_name || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.ad_name || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.placement || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.site_source_name || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.network || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.match_type || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.keyword || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.search_query || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.creative_id || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.ad_position || '-'}</td>
+
+                      {/* Device & Browser */}
+                      <td style={{ padding: '12px 16px', fontSize: '0.8rem' }}>{session.ip || '-'}</td>
+                      <td style={{ padding: '12px 16px', fontSize: '0.75rem' }}>{session.user_agent || '-'}</td>
+                      <td style={{ padding: '12px 16px', textTransform: 'capitalize' }}>{session.device_type || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.os || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.browser || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.browser_version || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.language || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.timezone || '-'}</td>
+
+                      {/* Geo */}
+                      <td style={{ padding: '12px 16px' }}>{session.geo_country || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.geo_region || '-'}</td>
+                      <td style={{ padding: '12px 16px' }}>{session.geo_city || '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   )
 }
