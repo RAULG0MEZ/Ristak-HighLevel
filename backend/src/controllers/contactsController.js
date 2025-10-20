@@ -1,7 +1,7 @@
 import { db } from '../config/database.js'
 import { logger } from '../utils/logger.js'
 import { updateContactsStats } from '../utils/updateContactsStats.js'
-import { resolveDateRange } from '../utils/dateUtils.js'
+import { resolveDateRange, resolveDateRangeWithGHLTimezone } from '../utils/dateUtils.js'
 import { buildContactStats } from '../services/analyticsService.js'
 import { getGHLClient } from '../services/ghlClient.js'
 import fetch from 'node-fetch'
@@ -53,7 +53,7 @@ export const getContacts = async (req, res) => {
     const limitNumber = Math.min(Number(limit) || 50, 500)
     const offset = Math.max((pageNumber - 1) * limitNumber, 0)
 
-    const range = resolveDateRange({ startDate, endDate })
+    const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate })
     const rangeLabel = range.isFiltered
       ? `${range.startUtc || '---'} -> ${range.endUtc || '---'}`
       : 'todos'

@@ -44,6 +44,7 @@ export const Dashboard: React.FC = () => {
   const [trafficSources, setTrafficSources] = useState<{ name: string; value: number; color: string }[]>([])
   const [funnelData, setFunnelData] = useState<{ stage: string; value: number }[]>([])
   const [funnelScope, setFunnelScope] = useState<'all' | 'attribution' | 'campaigns'>('all')
+  const [funnelLoading, setFunnelLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [selectedChartView, setSelectedChartView] = useState<'revenue-spend' | 'visitors-leads' | 'leads-appointments' | 'appointments-sales'>('revenue-spend')
 
@@ -301,7 +302,7 @@ export const Dashboard: React.FC = () => {
           dashboardService.getFunnelData({
             start: dateRange.start,
             end: dateRange.end,
-            scope: funnelScope
+            scope: 'all'
           })
         ])
 
@@ -319,7 +320,28 @@ export const Dashboard: React.FC = () => {
     }
 
     loadData()
-  }, [analyticsEnabled, dateRange, user, formatChartDataForView, funnelScope])
+  }, [analyticsEnabled, dateRange, user, formatChartDataForView])
+
+  // useEffect separado solo para el funnel (no recarga toda la página)
+  React.useEffect(() => {
+    const loadFunnelData = async () => {
+      setFunnelLoading(true)
+      try {
+        const funnelDataResponse = await dashboardService.getFunnelData({
+          start: dateRange.start,
+          end: dateRange.end,
+          scope: funnelScope
+        })
+        setFunnelData(funnelDataResponse)
+      } catch (error) {
+        // Error silencioso
+      } finally {
+        setFunnelLoading(false)
+      }
+    }
+
+    loadFunnelData()
+  }, [funnelScope, dateRange])
 
   if (loading || !metrics) {
     return null
@@ -441,7 +463,7 @@ export const Dashboard: React.FC = () => {
         <div className={chartsGridClass}>
           <ConversionFunnelChart
             data={funnelChartData}
-            loading={loading}
+            loading={funnelLoading}
             showVisitors={analyticsEnabled}
             scope={funnelScope}
             onScopeChange={setFunnelScope}

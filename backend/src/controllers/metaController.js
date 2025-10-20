@@ -9,7 +9,7 @@ import {
   getMetaConfig,
   verifyMetaToken
 } from '../services/metaAdsService.js';
-import { resolveDateRange } from '../utils/dateUtils.js';
+import { resolveDateRange, resolveDateRangeWithGHLTimezone } from '../utils/dateUtils.js';
 import { getContactsWithAppointmentsHybrid } from '../services/appointmentsMerge.js';
 import { fetchAndSaveMetaConfig } from '../services/highlevelSyncService.js';
 
@@ -212,7 +212,7 @@ export const getCampaigns = async (req, res) => {
       });
     }
 
-    const range = resolveDateRange({ startDate, endDate });
+    const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate });
 
     if (!range.startZoned || !range.endZoned) {
       return res.status(400).json({
@@ -489,7 +489,7 @@ export const getSpendOverTime = async (req, res) => {
       });
     }
 
-    const range = resolveDateRange({ startDate, endDate });
+    const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate });
 
     if (!range.startZoned || !range.endZoned) {
       return res.status(400).json({
@@ -677,7 +677,7 @@ export const getContactsByType = async (req, res) => {
       });
     }
 
-    const range = resolveDateRange({ startDate, endDate });
+    const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate });
 
     if (!range.startZoned || !range.endZoned) {
       return res.status(400).json({
@@ -1019,7 +1019,7 @@ export const getLeadsOverTime = async (req, res) => {
     const startDate = start ? start.split(' ')[0].split('+')[0] : null;
     const endDate = end ? end.split(' ')[0].split('+')[0] : null;
 
-    const range = resolveDateRange({ startDate, endDate });
+    const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate });
     const startUtc = range.startZoned.toISODate();
     const endUtc = range.endZoned.toISODate();
 
@@ -1161,7 +1161,7 @@ export const getAppointmentsOverTime = async (req, res) => {
     const startDate = start ? start.split(' ')[0].split('+')[0] : null;
     const endDate = end ? end.split(' ')[0].split('+')[0] : null;
 
-    const range = resolveDateRange({ startDate, endDate });
+    const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate });
     const startUtc = range.startZoned.toISODate();
     const endUtc = range.endZoned.toISODate();
 
@@ -1305,7 +1305,7 @@ export const getVisitorsOverTime = async (req, res) => {
     const startDate = start ? start.split(' ')[0].split('+')[0] : null;
     const endDate = end ? end.split(' ')[0].split('+')[0] : null;
 
-    const range = resolveDateRange({ startDate, endDate });
+    const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate });
     const startUtc = range.startZoned.toISODate();
     const endUtc = range.endZoned.toISODate();
 
@@ -1409,7 +1409,7 @@ export const getFunnelMetrics = async (req, res) => {
     const startDate = start ? start.split(' ')[0].split('+')[0] : null;
     const endDate = end ? end.split(' ')[0].split('+')[0] : null;
 
-    const range = resolveDateRange({ startDate, endDate });
+    const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate });
     const startUtc = range.startZoned.toISODate();
     const endUtc = range.endZoned.toISODate();
 

@@ -1,7 +1,6 @@
 import React from 'react'
 import { Card } from '../Card'
-import { TabList } from '../TabList'
-import { Users, UserCheck, Calendar, DollarSign, Layers, Target, MousePointerClick } from 'lucide-react'
+import { Users, UserCheck, Calendar, DollarSign } from 'lucide-react'
 import { useLabels } from '@/contexts/LabelsContext'
 import styles from './ConversionFunnelChart.module.css'
 
@@ -30,11 +29,11 @@ export const ConversionFunnelChart: React.FC<ConversionFunnelChartProps> = ({
 }) => {
   const { labels } = useLabels()
 
-  const scopeTabs = [
-    { value: 'all', label: 'Todos', icon: <Layers size={14} /> },
-    { value: 'attribution', label: 'Último toque', icon: <Target size={14} /> },
-    { value: 'campaigns', label: 'Último toque desde anuncio', icon: <MousePointerClick size={14} /> }
-  ]
+  const scopeOptions = [
+    { value: 'all', label: 'Todos' },
+    { value: 'attribution', label: 'Último toque' },
+    { value: 'campaigns', label: 'Desde anuncio' }
+  ] as const
 
   const DEFAULT_STAGES: FunnelStage[] = [
     { stage: 'Visitantes', value: 0, icon: Users },
@@ -78,16 +77,20 @@ export const ConversionFunnelChart: React.FC<ConversionFunnelChartProps> = ({
   return (
     <Card variant="glass" className={styles.container}>
       <div className={styles.header}>
-        <div>
-          <h3 className={styles.title}>Conversiones</h3>
-        </div>
+        <h3 className={styles.title}>Conversiones</h3>
         {onScopeChange && (
-          <TabList
-            tabs={scopeTabs}
-            activeTab={scope}
-            onTabChange={(value) => onScopeChange(value as ScopeType)}
-            variant="compact"
-          />
+          <div className={styles.scopeSelector}>
+            {scopeOptions.map((option) => (
+              <button
+                key={option.value}
+                className={`${styles.scopeButton} ${scope === option.value ? styles.scopeButtonActive : ''}`}
+                onClick={() => onScopeChange(option.value)}
+                disabled={loading}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
         )}
       </div>
 

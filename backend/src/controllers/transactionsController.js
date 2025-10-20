@@ -1,6 +1,6 @@
 import { db } from '../config/database.js'
 import { logger } from '../utils/logger.js'
-import { resolveDateRange } from '../utils/dateUtils.js'
+import { resolveDateRange, resolveDateRangeWithGHLTimezone } from '../utils/dateUtils.js'
 import { buildTransactionStats, buildTransactionSummary } from '../services/analyticsService.js'
 import { getGHLClient } from '../services/ghlClient.js'
 import { getHighLevelConfig } from '../config/database.js'
@@ -22,7 +22,7 @@ export const getTransactions = async (req, res) => {
       sync = 'false' // Por defecto NO sincroniza (más rápido)
     } = req.query
 
-    const range = resolveDateRange({ startDate, endDate })
+    const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate })
     const rangeLabel = range.isFiltered
       ? `${range.startUtc || '---'} -> ${range.endUtc || '---'}`
       : 'todos'

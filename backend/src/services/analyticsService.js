@@ -1,6 +1,6 @@
 import { db } from '../config/database.js'
 import { DateTime } from 'luxon'
-import { resolveDateRange } from '../utils/dateUtils.js'
+import { resolveDateRange, resolveDateRangeWithGHLTimezone } from '../utils/dateUtils.js'
 import { logger } from '../utils/logger.js'
 import { getContactsWithAppointmentsHybrid, loadAppointmentsFromDB, loadAppointmentsFromAPI, mergeAppointments } from './appointmentsMerge.js'
 
@@ -163,7 +163,7 @@ async function fetchPreviousRange(range, fallbackStrategy) {
 }
 
 export async function buildContactStats ({ startDate, endDate, scope = 'all' } = {}) {
-  const range = resolveDateRange({ startDate, endDate })
+  const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate })
   const scopeAttributed = scope === 'campaigns' || scope === 'attributed'
 
   const dedupExpr = buildDedupExpression('')
@@ -239,7 +239,7 @@ export async function buildContactStats ({ startDate, endDate, scope = 'all' } =
 }
 
 export async function buildContactTimeline ({ startDate, endDate, scope = 'all' } = {}, groupBy = 'day') {
-  const range = resolveDateRange({ startDate, endDate })
+  const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate })
   const scopeAttributed = scope === 'campaigns' || scope === 'attributed'
 
   const params = []
@@ -305,7 +305,7 @@ export async function buildContactTimeline ({ startDate, endDate, scope = 'all' 
 }
 
 export async function buildTransactionStats ({ startDate, endDate, scope = 'all' } = {}) {
-  const range = resolveDateRange({ startDate, endDate })
+  const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate })
   const scopeAttributed = scope === 'campaigns' || scope === 'attributed'
 
   const baseFilters = ['status = ?']
@@ -389,7 +389,7 @@ export async function buildTransactionStats ({ startDate, endDate, scope = 'all'
 }
 
 export async function buildTransactionSummary ({ startDate, endDate, scope = 'all' } = {}) {
-  const range = resolveDateRange({ startDate, endDate })
+  const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate })
   const scopeAttributed = scope === 'campaigns' || scope === 'attributed'
 
   const successFilters = ['status = ?']
@@ -493,7 +493,7 @@ export async function buildTransactionSummary ({ startDate, endDate, scope = 'al
 }
 
 export async function buildCampaignSummary ({ startDate, endDate } = {}) {
-  const range = resolveDateRange({ startDate, endDate })
+  const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate })
 
   const hasRange = Boolean(range.startZoned && range.endZoned)
   const dedupExpr = buildDedupExpression('')
@@ -684,7 +684,7 @@ function buildRangeConditions(column, range, params) {
 }
 
 export async function buildReportMetrics ({ startDate, endDate, groupBy = 'day', scope = 'all' } = {}) {
-  const range = resolveDateRange({ startDate, endDate })
+  const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate })
   // scope = 'all' → agrupa por fecha del evento (pagos, citas reales)
   // scope = 'attribution' → agrupa por fecha creación contacto (todos los contactos)
   // scope = 'campaigns' → agrupa por fecha creación contacto + filtro ad_id
@@ -1177,7 +1177,7 @@ async function fetchAppointmentsForContacts(contactIds, range = {}) {
 }
 
 export async function buildContactsList ({ startDate, endDate, type = 'interesados', scope = 'all' } = {}) {
-  const range = resolveDateRange({ startDate, endDate })
+  const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate })
   const scopeAttributed = scope === 'campaigns' || scope === 'attributed'
   const useContactAttribution = scope === 'campaigns' || scope === 'attributed' || scope === 'attribution'
   let contacts = []

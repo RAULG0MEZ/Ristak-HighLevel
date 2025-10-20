@@ -1,6 +1,6 @@
 import { db } from '../config/database.js';
 import { logger } from '../utils/logger.js';
-import { resolveDateRange } from '../utils/dateUtils.js';
+import { resolveDateRange, resolveDateRangeWithGHLTimezone } from '../utils/dateUtils.js';
 import { normalizeTrafficSource } from '../utils/trafficSourceNormalizer.js';
 import { DateTime } from 'luxon';
 import { getContactsWithAppointmentsHybrid } from '../services/appointmentsMerge.js';
@@ -120,7 +120,7 @@ export const getMetrics = async (req, res) => {
 
     logger.info(`Calculando métricas del dashboard desde ${startDate} hasta ${endDate}`);
 
-    const range = resolveDateRange({ startDate, endDate });
+    const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate });
 
     const spanDays = range.startZoned && range.endZoned
       ? Math.max(Math.round(range.endZoned.diff(range.startZoned, 'days').days) + 1, 1)

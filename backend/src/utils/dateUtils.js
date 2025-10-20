@@ -5,23 +5,47 @@ import { db } from '../config/database.js'
 
 const DEFAULT_TIMEZONE = 'America/Mexico_City'
 
+// Cache de timezone de HighLevel (se refresca cada hora)
+let cachedTimezone = null
+let cacheTimestamp = null
+const CACHE_TTL_MS = 60 * 60 * 1000 // 1 hora
+
 /**
  * Obtiene la zona horaria configurada en HighLevel.
  * Si no hay configuración, retorna la zona horaria por defecto.
+ * INCLUYE CACHE para evitar queries repetidas a la DB.
  */
 export async function getTimezoneFromGHL() {
   try {
+    // Si hay cache válido, usarlo
+    const now = Date.now()
+    if (cachedTimezone && cacheTimestamp && (now - cacheTimestamp) < CACHE_TTL_MS) {
+      return cachedTimezone
+    }
+
     const config = await db.get(
       'SELECT location_data FROM highlevel_config LIMIT 1'
     )
 
     if (config?.location_data) {
       const locationData = JSON.parse(config.location_data)
-      return locationData.timezone || DEFAULT_TIMEZONE
+      const timezone = locationData.timezone || DEFAULT_TIMEZONE
+
+      // Actualizar cache
+      cachedTimezone = timezone
+      cacheTimestamp = now
+
+      return timezone
     }
 
+    // Cachear default también
+    cachedTimezone = DEFAULT_TIMEZONE
+    cacheTimestamp = now
     return DEFAULT_TIMEZONE
   } catch (error) {
+    // En caso de error, usar default y cachearlo
+    cachedTimezone = DEFAULT_TIMEZONE
+    cacheTimestamp = Date.now()
     return DEFAULT_TIMEZONE
   }
 }
@@ -71,6 +95,24 @@ export function resolveDateRange ({ startDate, endDate, timezone = DEFAULT_TIMEZ
     providedStart,
     providedEnd
   }
+}
+
+/**
+ * Versión async de resolveDateRange que obtiene automáticamente el timezone de HighLevel.
+ * USAR ESTA FUNCIÓN en todos los controllers y services nuevos.
+ *
+ * @param {Object} params
+ * @param {string|undefined} params.startDate - Fecha inicial (YYYY-MM-DD)
+ * @param {string|undefined} params.endDate - Fecha final (YYYY-MM-DD)
+ * @param {string} [params.timezone] - Zona horaria (si no se pasa, se obtiene de GHL)
+ * @returns {Promise<{ startUtc: string|null, endUtc: string|null, appliedTimezone: string, isFiltered: boolean }>}
+ */
+export async function resolveDateRangeWithGHLTimezone ({ startDate, endDate, timezone } = {}) {
+  // Si no se pasó timezone, obtenerlo de HighLevel
+  const resolvedTimezone = timezone || await getTimezoneFromGHL()
+
+  // Llamar a la función sync con el timezone correcto
+  return resolveDateRange({ startDate, endDate, timezone: resolvedTimezone })
 }
 
 /**
