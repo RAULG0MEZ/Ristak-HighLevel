@@ -243,37 +243,44 @@ export const WebTracking: React.FC = () => {
     onResize: (key: string, width: number) => void
   }> = ({ columnKey, label, width, onResize }) => {
     const [isResizing, setIsResizing] = useState(false)
-    const [startX, setStartX] = useState(0)
-    const [startWidth, setStartWidth] = useState(0)
+    const [currentWidth, setCurrentWidth] = useState(width)
+    const startXRef = React.useRef(0)
+    const startWidthRef = React.useRef(0)
 
     const handleMouseDown = (e: React.MouseEvent) => {
       e.preventDefault()
+      e.stopPropagation()
       setIsResizing(true)
-      setStartX(e.clientX)
-      setStartWidth(width)
+      startXRef.current = e.clientX
+      startWidthRef.current = width
+      setCurrentWidth(width)
     }
 
     useEffect(() => {
       if (!isResizing) return
 
       const handleMouseMove = (e: MouseEvent) => {
-        const diff = e.clientX - startX
-        const newWidth = startWidth + diff
-        onResize(columnKey, newWidth)
+        e.preventDefault()
+        const diff = e.clientX - startXRef.current
+        const newWidth = Math.max(80, startWidthRef.current + diff)
+        setCurrentWidth(newWidth)
       }
 
       const handleMouseUp = () => {
         setIsResizing(false)
+        onResize(columnKey, currentWidth)
       }
 
-      document.addEventListener('mousemove', handleMouseMove)
+      document.addEventListener('mousemove', handleMouseMove, { passive: false })
       document.addEventListener('mouseup', handleMouseUp)
 
       return () => {
         document.removeEventListener('mousemove', handleMouseMove)
         document.removeEventListener('mouseup', handleMouseUp)
       }
-    }, [isResizing, startX, startWidth, columnKey, onResize])
+    }, [isResizing, columnKey, onResize, currentWidth])
+
+    const displayWidth = isResizing ? currentWidth : width
 
     return (
       <th
@@ -282,9 +289,9 @@ export const WebTracking: React.FC = () => {
           textAlign: 'left',
           fontWeight: 600,
           borderBottom: '2px solid var(--color-border)',
-          width: `${width}px`,
-          minWidth: `${width}px`,
-          maxWidth: `${width}px`,
+          width: `${displayWidth}px`,
+          minWidth: `${displayWidth}px`,
+          maxWidth: `${displayWidth}px`,
           position: 'relative',
           userSelect: 'none'
         }}
@@ -296,17 +303,20 @@ export const WebTracking: React.FC = () => {
           <div
             onMouseDown={handleMouseDown}
             style={{
-              width: '4px',
+              width: '8px',
               height: '100%',
               position: 'absolute',
-              right: 0,
+              right: '-4px',
               top: 0,
               cursor: 'col-resize',
               backgroundColor: isResizing ? 'var(--color-primary)' : 'transparent',
-              transition: 'background-color 0.2s'
+              transition: isResizing ? 'none' : 'background-color 0.2s',
+              zIndex: 10
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = 'var(--color-border)'
+              if (!isResizing) {
+                e.currentTarget.style.backgroundColor = 'var(--color-border)'
+              }
             }}
             onMouseLeave={(e) => {
               if (!isResizing) {
@@ -909,7 +919,7 @@ export const WebTracking: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredSessions.map((session: any) => {
+                  {filteredSessions.map((session: any, rowIndex: number) => {
                     const getCellValue = (key: string) => {
                       const value = session[key]
                       if (!value) return '-'
@@ -941,7 +951,7 @@ export const WebTracking: React.FC = () => {
                     }
 
                     return (
-                      <tr key={session.session_id} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                      <tr key={`${session.session_id}-${rowIndex}`} style={{ borderBottom: '1px solid var(--color-border)' }}>
                         {columns.map(col => {
                           const width = getColumnWidth(col.key)
                           return (
