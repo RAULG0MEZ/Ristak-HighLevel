@@ -81,7 +81,7 @@ export const saveConfig = async (req, res) => {
 export const getConfig = async (req, res) => {
   try {
     const config = await db.get(
-      'SELECT ad_account_id, access_token, app_id, app_secret, updated_at FROM meta_config LIMIT 1'
+      'SELECT ad_account_id, access_token, app_id, app_secret, timezone_id, timezone_name, timezone_offset_hours_utc, updated_at FROM meta_config LIMIT 1'
     );
 
     if (!config) {
@@ -106,7 +106,11 @@ export const getConfig = async (req, res) => {
         appSecret: config.app_secret ? '***' + config.app_secret.substring(config.app_secret.length - 8) : null,
         updatedAt: config.updated_at,
         isEncrypted: tokenEncrypted, // Mostrar si está encriptado
-        secretIsEncrypted: secretEncrypted
+        secretIsEncrypted: secretEncrypted,
+        // Timezone info
+        timezoneId: config.timezone_id,
+        timezoneName: config.timezone_name,
+        timezoneOffsetHoursUtc: config.timezone_offset_hours_utc
       }
     });
 

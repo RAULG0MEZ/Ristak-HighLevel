@@ -17,7 +17,7 @@ import { useLabels } from '@/contexts/LabelsContext'
 import { formatCurrency, formatRoas, formatChartDate, formatDate, formatDateToISO, formatEndDateToISO, parseLocalDateString, formatChartCurrency, formatChartNumber } from '@/utils/format'
 import { campaignsService, type CampaignContact } from '@/services/campaignsService'
 import { reportsService, type CampaignsReport } from '@/services/reportsService'
-import { useAppConfig } from '@/hooks'
+import { useAppConfig, useMetaTimezone } from '@/hooks'
 import styles from './Campaigns.module.css'
 
 interface AdData {
@@ -109,6 +109,9 @@ export const Campaigns: React.FC = () => {
   const [visitorSource] = useAppConfig<'platform' | 'tracking'>('visitor_source', 'platform')
   const [showAnalyticsConfig] = useAppConfig<string | number | boolean>('show_analytics', '1')
   const analyticsEnabled = parseAnalyticsFlag(showAnalyticsConfig)
+
+  // Detectar discrepancia de timezone
+  const timezoneInfo = useMetaTimezone()
 
   const [campaigns, setCampaigns] = useState<CampaignData[]>([])
   const [loading, setLoading] = useState(true)
@@ -1053,6 +1056,21 @@ export const Campaigns: React.FC = () => {
           </div>
         </div>
 
+        {/* Timezone Discrepancy Warning */}
+        {!timezoneInfo.isLoading && timezoneInfo.hasDiscrepancy && (
+          <div className={styles.timezoneWarning}>
+            <div className={styles.warningIcon}>⚠️</div>
+            <div className={styles.warningContent}>
+              <div className={styles.warningTitle}>Zona horaria diferente detectada</div>
+              <div className={styles.warningText}>
+                Tu cuenta de Meta está en <strong>{timezoneInfo.metaTimezoneName}</strong> (UTC{timezoneInfo.metaTimezoneOffset! >= 0 ? '+' : ''}{timezoneInfo.metaTimezoneOffset}h),
+                pero tu app usa <strong>{timezoneInfo.highLevelTimezoneName}</strong> (UTC{timezoneInfo.highLevelTimezoneOffset! >= 0 ? '+' : ''}{timezoneInfo.highLevelTimezoneOffset}h).
+                Hay una diferencia de <strong>{Math.round(timezoneInfo.discrepancyHours)} horas</strong>.
+                Las fechas de las campañas pueden verse diferentes a lo esperado.
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Sync Status Banner - Rediseñado */}
         {syncStatus && syncStatus.running && (

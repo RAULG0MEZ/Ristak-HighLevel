@@ -783,8 +783,32 @@ git log -1
 ## 📅 ÚLTIMA ACTUALIZACIÓN
 
 **Fecha**: 2025-10-19
-**Versión**: 1.22.0
+**Versión**: 1.23.0
 **Últimos cambios críticos**:
+- **Feature: Detección de Discrepancias de Timezone (2025-10-19)**
+  - **Nueva funcionalidad**: Frontend detecta y alerta cuando hay diferencias de timezone entre Meta y HighLevel
+  - **Hook personalizado**: `useMetaTimezone()`
+    - Obtiene timezone de Meta desde `/api/meta/config`
+    - Compara con timezone de HighLevel (TimezoneContext)
+    - Calcula discrepancia en horas
+    - Retorna: `{ metaTimezoneName, metaTimezoneOffset, highLevelTimezoneName, highLevelTimezoneOffset, hasDiscrepancy, discrepancyHours, isLoading }`
+  - **Alerta visual en Campaigns**:
+    - Banner naranja que aparece automáticamente si hay discrepancia
+    - Muestra ambos timezones y la diferencia en horas
+    - Ejemplo: "Tu cuenta de Meta está en America/Los_Angeles (UTC-8h), pero tu app usa America/Mexico_City (UTC-6h). Hay una diferencia de 2 horas."
+    - Estilos adaptados para dark mode
+  - **Mejora en endpoint backend**:
+    - `GET /api/meta/config` ahora devuelve `timezoneId`, `timezoneName`, `timezoneOffsetHoursUtc`
+    - Disponible para que frontend detecte discrepancias
+  - **Archivos creados/modificados**:
+    - Nuevo: `frontend/src/hooks/useMetaTimezone.ts`
+    - Modificado: `backend/src/controllers/metaController.js` (getConfig con timezone fields)
+    - Modificado: `frontend/src/services/campaignsService.ts` (getMetaConfig method)
+    - Modificado: `frontend/src/pages/Campaigns/Campaigns.tsx` (alerta visual)
+    - Modificado: `frontend/src/pages/Campaigns/Campaigns.module.css` (estilos de alerta)
+    - Modificado: `frontend/src/hooks/index.ts` (export del hook)
+  - **Beneficio**: Los usuarios ahora sabrán si sus fechas pueden verse incorrectas debido a diferencias de timezone
+
 - **Feature: Sistema de Timezone para Meta Ads (2025-10-19)**
   - **Nueva funcionalidad**: Al conectar cuenta de Meta, se obtiene automáticamente el timezone configurado
   - **Campos agregados a meta_config**:

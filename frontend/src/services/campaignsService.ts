@@ -240,6 +240,24 @@ class CampaignsService {
       return []
     }
   }
+
+  async getMetaConfig(): Promise<{
+    success: boolean
+    configured: boolean
+    config: {
+      adAccountId: string
+      timezoneId: number | null
+      timezoneName: string | null
+      timezoneOffsetHoursUtc: number | null
+    } | null
+  }> {
+    try {
+      const data = await apiClient.get('/meta/config')
+      return data
+    } catch (error) {
+      return { success: false, configured: false, config: null }
+    }
+  }
 }
 
 export const campaignsService = new CampaignsService()
