@@ -48,7 +48,7 @@ export function useMetaTimezone(): MetaTimezoneInfo {
       const now = new Date()
       const utcDate = new Date(now.toLocaleString('en-US', { timeZone: 'UTC' }))
       const tzDate = new Date(now.toLocaleString('en-US', { timeZone: tz }))
-      const offsetMs = utcDate.getTime() - tzDate.getTime()
+      const offsetMs = tzDate.getTime() - utcDate.getTime() // tzDate - utcDate para signo correcto
       return offsetMs / (1000 * 60 * 60) // Convertir a horas
     } catch {
       return 0
