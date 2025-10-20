@@ -1230,32 +1230,68 @@ export async function buildContactsList ({ startDate, endDate, type = 'interesad
       contactIds = Array.from(contactIdsSet)
     }
   } else if (type === 'interesados' || type === 'customers') {
-    const contactConditions = []
-    const contactParams = []
-    if (range.startUtc) {
-      contactConditions.push('created_at >= ?')
-      contactParams.push(range.startUtc)
-    }
-    if (range.endUtc) {
-      contactConditions.push('created_at <= ?')
-      contactParams.push(range.endUtc)
-    }
-    if (type === 'customers') {
-      contactConditions.push('purchases_count > 0')
-    }
-    if (scopeAttributed) {
-      contactConditions.push(attributionMatchCondition('contacts'))
-    }
+    if (type === 'customers' && !useContactAttribution) {
+      // Vista "Todos": Clientes nuevos = contactos cuyo PRIMER PAGO está en el rango
+      const firstPaymentSubquery = `
+        SELECT contact_id, MIN(date) as first_payment_date
+        FROM payments
+        WHERE LOWER(status) IN (${SUCCESS_PAYMENT_STATUSES.map(() => '?').join(',')})
+        GROUP BY contact_id
+      `
 
-    const contactWhere = contactConditions.length ? `WHERE ${contactConditions.join(' AND ')}` : ''
-    const contactsQuery = `
-      SELECT id
-      FROM contacts
-      ${contactWhere}
-    `
+      const firstPaymentsParams = [...SUCCESS_PAYMENT_STATUSES]
+      const firstPaymentsConditions = []
 
-    const contactsResult = await db.all(contactsQuery, contactParams)
-    contactIds = contactsResult.map(row => row.id)
+      if (range.startUtc) {
+        firstPaymentsConditions.push('first_p.first_payment_date >= ?')
+        firstPaymentsParams.push(range.startUtc)
+      }
+
+      if (range.endUtc) {
+        firstPaymentsConditions.push('first_p.first_payment_date <= ?')
+        firstPaymentsParams.push(range.endUtc)
+      }
+
+      const firstPaymentsWhere = firstPaymentsConditions.length ? `WHERE ${firstPaymentsConditions.join(' AND ')}` : ''
+
+      const firstPaymentsQuery = `
+        SELECT DISTINCT c.id
+        FROM contacts c
+        INNER JOIN (${firstPaymentSubquery}) first_p ON first_p.contact_id = c.id
+        ${firstPaymentsWhere}
+      `
+
+      const contactsResult = await db.all(firstPaymentsQuery, firstPaymentsParams)
+      contactIds = contactsResult.map(row => row.id)
+    } else {
+      // Vista "Último toque" / "Último toque desde anuncio": Usar created_at
+      const contactConditions = []
+      const contactParams = []
+      if (range.startUtc) {
+        contactConditions.push('created_at >= ?')
+        contactParams.push(range.startUtc)
+      }
+      if (range.endUtc) {
+        contactConditions.push('created_at <= ?')
+        contactParams.push(range.endUtc)
+      }
+      if (type === 'customers') {
+        contactConditions.push('purchases_count > 0')
+      }
+      if (scopeAttributed) {
+        contactConditions.push(attributionMatchCondition('contacts'))
+      }
+
+      const contactWhere = contactConditions.length ? `WHERE ${contactConditions.join(' AND ')}` : ''
+      const contactsQuery = `
+        SELECT id
+        FROM contacts
+        ${contactWhere}
+      `
+
+      const contactsResult = await db.all(contactsQuery, contactParams)
+      contactIds = contactsResult.map(row => row.id)
+    }
   }
 
   // ========================================
