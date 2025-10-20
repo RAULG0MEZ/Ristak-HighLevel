@@ -963,7 +963,7 @@ const Analytics: React.FC = () => {
         </div>
 
         {/* Gráfico de tráfico */}
-        <Card className="p-6">
+        <Card variant="glass" className="p-6">
           <div className="mb-4">
             <h3 className="text-lg font-semibold">Tráfico del Sitio</h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -971,7 +971,7 @@ const Analytics: React.FC = () => {
             </p>
           </div>
 
-          <div className="h-[300px]">
+          <div className="h-[280px]">
             {loading ? (
               <div className="flex h-full items-center justify-center text-sm text-gray-500">
                 Cargando datos...
@@ -979,7 +979,7 @@ const Analytics: React.FC = () => {
             ) : dailyTraffic.length > 0 ? (
               <LineChart
                 data={dailyTraffic}
-                height={300}
+                height={280}
                 showGrid
                 color="#8b5cf6"
                 color2="#3b82f6"
@@ -998,7 +998,7 @@ const Analytics: React.FC = () => {
 
         {/* Gráfica de Registros y Fuentes de Tráfico */}
         <div className="grid gap-4 lg:grid-cols-2">
-          <Card className="p-6">
+          <Card variant="glass" className="p-6">
             <div className="mb-4">
               <h3 className="text-lg font-semibold">Registros</h3>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -1006,7 +1006,7 @@ const Analytics: React.FC = () => {
               </p>
             </div>
 
-            <div className="h-[300px]">
+            <div className="h-[240px]">
               {loading ? (
                 <div className="flex h-full items-center justify-center text-sm text-gray-500">
                   Cargando datos...
@@ -1014,7 +1014,7 @@ const Analytics: React.FC = () => {
               ) : dailyConversions.length > 0 ? (
                 <LineChart
                   data={dailyConversions}
-                  height={300}
+                  height={240}
                   showGrid
                   color="#10b981"
                   showLegend={false}
@@ -1038,7 +1038,7 @@ const Analytics: React.FC = () => {
         {/* Grid de stats cards */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Top Plataformas */}
-          <Card>
+          <Card variant="glass">
             <div className="p-4 border-b border-[var(--color-border)]">
               <h3 className="text-sm font-semibold">Top Plataformas</h3>
             </div>
@@ -1067,7 +1067,7 @@ const Analytics: React.FC = () => {
           </Card>
 
           {/* Top Ubicaciones */}
-          <Card>
+          <Card variant="glass">
             <div className="p-4 border-b border-[var(--color-border)]">
               <h3 className="text-sm font-semibold">Top Ubicaciones</h3>
             </div>
@@ -1096,7 +1096,7 @@ const Analytics: React.FC = () => {
           </Card>
 
           {/* Top Dispositivos */}
-          <Card>
+          <Card variant="glass">
             <div className="p-4 border-b border-[var(--color-border)]">
               <h3 className="text-sm font-semibold">Top Dispositivos</h3>
             </div>
@@ -1125,7 +1125,7 @@ const Analytics: React.FC = () => {
           </Card>
 
           {/* Top Sistemas */}
-          <Card>
+          <Card variant="glass">
             <div className="p-4 border-b border-[var(--color-border)]">
               <h3 className="text-sm font-semibold">Top Sistemas</h3>
             </div>
@@ -1154,7 +1154,7 @@ const Analytics: React.FC = () => {
           </Card>
 
           {/* Top Navegadores */}
-          <Card>
+          <Card variant="glass">
             <div className="p-4 border-b border-[var(--color-border)]">
               <h3 className="text-sm font-semibold">Top Navegadores</h3>
             </div>
@@ -1183,7 +1183,7 @@ const Analytics: React.FC = () => {
           </Card>
 
           {/* Top Visitors */}
-          <Card>
+          <Card variant="glass">
             <div className="p-4 border-b border-[var(--color-border)]">
               <h3 className="text-sm font-semibold">Top Visitantes</h3>
             </div>
