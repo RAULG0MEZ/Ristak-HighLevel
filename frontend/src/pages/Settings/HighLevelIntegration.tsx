@@ -67,6 +67,7 @@ export const HighLevelIntegration: React.FC = () => {
   const [showHiddenContactsModal, setShowHiddenContactsModal] = useState(false)
   const [hiddenFilters, setHiddenFilters] = useState<HiddenFilter[]>([])
   const [newFilter, setNewFilter] = useState('')
+  const [newFilterType, setNewFilterType] = useState<'contains' | 'exact'>('contains')
   const [loadingFilters, setLoadingFilters] = useState(false)
   const [addingFilter, setAddingFilter] = useState(false)
 
@@ -280,10 +281,12 @@ export const HighLevelIntegration: React.FC = () => {
 
     setAddingFilter(true)
     try {
-      const filter = await hiddenContactsService.addFilter(newFilter.trim())
+      const filter = await hiddenContactsService.addFilter(newFilter.trim(), newFilterType)
       setHiddenFilters(prev => [filter, ...prev])
       setNewFilter('')
-      showToast('success', 'Filtro agregado', `Los contactos que contengan "${newFilter.trim()}" se ocultarán`)
+      setNewFilterType('contains')
+      const typeText = newFilterType === 'exact' ? 'exactamente igual a' : 'contengan'
+      showToast('success', 'Filtro agregado', `Los contactos ${typeText} "${newFilter.trim()}" se ocultarán`)
     } catch (error: any) {
       if (error.message?.includes('409') || error.message?.includes('existe')) {
         showToast('warning', 'Filtro duplicado', 'Este filtro ya existe')
@@ -777,20 +780,31 @@ export const HighLevelIntegration: React.FC = () => {
 
             <div className={styles.modalBody}>
               <p className={styles.modalDescription}>
-                Agrega palabras clave para ocultar contactos en todas las vistas. Los contactos que contengan
-                estos textos en su nombre, email, teléfono o ID serán filtrados automáticamente.
+                Agrega palabras clave para ocultar contactos en todas las vistas. Los contactos que coincidan
+                con estos textos en su nombre, email, teléfono o ID serán filtrados automáticamente.
               </p>
 
               <div className={styles.addFilterSection}>
-                <input
-                  type="text"
-                  className={styles.filterInput}
-                  placeholder="Ej: test, raul, 5512345678..."
-                  value={newFilter}
-                  onChange={(e) => setNewFilter(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleAddFilter()}
-                  disabled={addingFilter}
-                />
+                <div className={styles.filterInputGroup}>
+                  <input
+                    type="text"
+                    className={styles.filterInput}
+                    placeholder="Ej: test, raul, 5512345678..."
+                    value={newFilter}
+                    onChange={(e) => setNewFilter(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && handleAddFilter()}
+                    disabled={addingFilter}
+                  />
+                  <select
+                    className={styles.filterTypeSelect}
+                    value={newFilterType}
+                    onChange={(e) => setNewFilterType(e.target.value as 'contains' | 'exact')}
+                    disabled={addingFilter}
+                  >
+                    <option value="contains">Contiene</option>
+                    <option value="exact">Es exactamente</option>
+                  </select>
+                </div>
                 <Button
                   onClick={handleAddFilter}
                   disabled={addingFilter || !newFilter.trim()}
@@ -822,7 +836,10 @@ export const HighLevelIntegration: React.FC = () => {
                   <div className={styles.filterChips}>
                     {hiddenFilters.map((filter) => (
                       <div key={filter.id} className={styles.filterChip}>
-                        <span>{filter.filterText}</span>
+                        <span className={styles.chipText}>{filter.filterText}</span>
+                        <span className={styles.chipBadge} title={filter.matchType === 'exact' ? 'Coincidencia exacta' : 'Contiene'}>
+                          {filter.matchType === 'exact' ? '=' : '⊃'}
+                        </span>
                         <button
                           className={styles.chipDeleteButton}
                           onClick={() => handleDeleteFilter(filter.id, filter.filterText)}

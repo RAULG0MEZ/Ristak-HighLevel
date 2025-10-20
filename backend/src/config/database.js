@@ -630,6 +630,27 @@ async function initTables() {
 
     await db.run('CREATE INDEX IF NOT EXISTS idx_hidden_filters_text ON hidden_contact_filters(filter_text)')
 
+    // Migración: Agregar columna match_type a hidden_contact_filters
+    try {
+      if (usePostgres) {
+        await db.run(`
+          ALTER TABLE hidden_contact_filters
+          ADD COLUMN IF NOT EXISTS match_type VARCHAR(20) DEFAULT 'contains'
+        `)
+      } else {
+        // SQLite no soporta IF NOT EXISTS en ALTER TABLE, intentar y capturar error
+        await db.run(`
+          ALTER TABLE hidden_contact_filters
+          ADD COLUMN match_type VARCHAR(20) DEFAULT 'contains'
+        `)
+      }
+      logger.success('✅ Migración: Columna match_type agregada a hidden_contact_filters')
+    } catch (err) {
+      if (!err.message.includes('duplicate column') && !err.message.includes('already exists')) {
+        logger.warn('Advertencia al agregar match_type a hidden_contact_filters:', err.message)
+      }
+    }
+
     // MIGRACIONES PARA POSTGRESQL
     if (usePostgres) {
       // Migración 1: Agregar columna contact_id a appointments si no existe

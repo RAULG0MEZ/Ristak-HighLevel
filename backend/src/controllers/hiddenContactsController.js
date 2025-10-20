@@ -7,7 +7,7 @@ import { logger } from '../utils/logger.js'
 export const getHiddenFilters = async (req, res) => {
   try {
     const filters = await db.all(
-      'SELECT id, filter_text, created_at FROM hidden_contact_filters ORDER BY created_at DESC'
+      'SELECT id, filter_text, match_type, created_at FROM hidden_contact_filters ORDER BY created_at DESC'
     )
 
     res.json({
@@ -15,6 +15,7 @@ export const getHiddenFilters = async (req, res) => {
       data: filters.map(f => ({
         id: f.id.toString(),
         filterText: f.filter_text,
+        matchType: f.match_type || 'contains',
         createdAt: f.created_at
       }))
     })
@@ -32,7 +33,7 @@ export const getHiddenFilters = async (req, res) => {
  */
 export const addHiddenFilter = async (req, res) => {
   try {
-    const { filterText } = req.body
+    const { filterText, matchType = 'contains' } = req.body
 
     if (!filterText || typeof filterText !== 'string' || filterText.trim().length === 0) {
       return res.status(400).json({
@@ -41,12 +42,19 @@ export const addHiddenFilter = async (req, res) => {
       })
     }
 
+    if (!['contains', 'exact'].includes(matchType)) {
+      return res.status(400).json({
+        success: false,
+        error: 'El tipo de coincidencia debe ser "contains" o "exact"'
+      })
+    }
+
     const trimmedFilter = filterText.trim()
 
-    // Verificar si ya existe
+    // Verificar si ya existe el mismo filtro con el mismo tipo
     const existing = await db.get(
-      'SELECT id FROM hidden_contact_filters WHERE LOWER(filter_text) = LOWER(?)',
-      [trimmedFilter]
+      'SELECT id FROM hidden_contact_filters WHERE LOWER(filter_text) = LOWER(?) AND match_type = ?',
+      [trimmedFilter, matchType]
     )
 
     if (existing) {
@@ -58,22 +66,23 @@ export const addHiddenFilter = async (req, res) => {
 
     // Insertar nuevo filtro
     const result = await db.run(
-      'INSERT INTO hidden_contact_filters (filter_text) VALUES (?)',
-      [trimmedFilter]
+      'INSERT INTO hidden_contact_filters (filter_text, match_type) VALUES (?, ?)',
+      [trimmedFilter, matchType]
     )
 
     const newFilter = await db.get(
-      'SELECT id, filter_text, created_at FROM hidden_contact_filters WHERE id = ?',
+      'SELECT id, filter_text, match_type, created_at FROM hidden_contact_filters WHERE id = ?',
       [result.lastID]
     )
 
-    logger.info(`Filtro de contacto oculto agregado: "${trimmedFilter}"`)
+    logger.info(`Filtro de contacto oculto agregado: "${trimmedFilter}" (${matchType})`)
 
     res.json({
       success: true,
       data: {
         id: newFilter.id.toString(),
         filterText: newFilter.filter_text,
+        matchType: newFilter.match_type,
         createdAt: newFilter.created_at
       }
     })

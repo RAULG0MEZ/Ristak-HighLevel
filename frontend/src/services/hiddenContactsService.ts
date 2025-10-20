@@ -1,8 +1,11 @@
 import apiClient from './apiClient'
 
+export type MatchType = 'contains' | 'exact'
+
 export interface HiddenFilter {
   id: string
   filterText: string
+  matchType: MatchType
   createdAt: string
 }
 
@@ -17,8 +20,8 @@ export const hiddenContactsService = {
     }
   },
 
-  async addFilter(filterText: string): Promise<HiddenFilter> {
-    const data = await apiClient.post<HiddenFilter>('/hidden-contacts', { filterText })
+  async addFilter(filterText: string, matchType: MatchType = 'contains'): Promise<HiddenFilter> {
+    const data = await apiClient.post<HiddenFilter>('/hidden-contacts', { filterText, matchType })
     return data
   },
 

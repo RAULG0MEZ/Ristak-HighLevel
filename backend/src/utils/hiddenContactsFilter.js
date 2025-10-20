@@ -4,12 +4,15 @@ const isPostgres = Boolean(process.env.DATABASE_URL)
 
 /**
  * Obtiene todos los filtros activos de contactos ocultos
- * @returns {Promise<string[]>} Array de textos de filtro
+ * @returns {Promise<Array<{text: string, type: string}>>} Array de filtros con texto y tipo
  */
 export async function getHiddenContactFilters() {
   try {
-    const filters = await db.all('SELECT filter_text FROM hidden_contact_filters ORDER BY created_at DESC')
-    return filters.map(f => f.filter_text)
+    const filters = await db.all('SELECT filter_text, match_type FROM hidden_contact_filters ORDER BY created_at DESC')
+    return filters.map(f => ({
+      text: f.filter_text,
+      type: f.match_type || 'contains' // default a 'contains' para compatibilidad
+    }))
   } catch (error) {
     // Si hay error, devolver array vacío para no romper queries
     return []
@@ -18,7 +21,7 @@ export async function getHiddenContactFilters() {
 
 /**
  * Construye la condición SQL para excluir contactos ocultos
- * @param {string[]} filters - Array de textos de filtro
+ * @param {Array<{text: string, type: string}>} filters - Array de filtros con texto y tipo
  * @param {string} tableAlias - Alias de la tabla de contactos (ej: 'c', 'contacts')
  * @param {boolean} includeAND - Si true, incluye "AND" al inicio de la condición
  * @returns {string} Condición SQL para agregar al WHERE
@@ -29,17 +32,26 @@ export function buildHiddenContactsCondition(filters, tableAlias = 'c', includeA
   }
 
   const conditions = filters.map(filter => {
-    const escapedFilter = filter.replace(/'/g, "''") // Escape single quotes
-    const pattern = isPostgres
-      ? `%${escapedFilter}%`
-      : `%${escapedFilter}%`
+    const escapedFilter = filter.text.replace(/'/g, "''") // Escape single quotes
 
-    return `(
-      LOWER(${tableAlias}.full_name) LIKE LOWER('${pattern}') OR
-      LOWER(${tableAlias}.email) LIKE LOWER('${pattern}') OR
-      LOWER(${tableAlias}.phone) LIKE LOWER('${pattern}') OR
-      LOWER(${tableAlias}.id) LIKE LOWER('${pattern}')
-    )`
+    if (filter.type === 'exact') {
+      // Coincidencia exacta (ignorando mayúsculas)
+      return `(
+        LOWER(${tableAlias}.full_name) = LOWER('${escapedFilter}') OR
+        LOWER(${tableAlias}.email) = LOWER('${escapedFilter}') OR
+        LOWER(${tableAlias}.phone) = LOWER('${escapedFilter}') OR
+        LOWER(${tableAlias}.id) = LOWER('${escapedFilter}')
+      )`
+    } else {
+      // Coincidencia con "contiene" (default)
+      const pattern = `%${escapedFilter}%`
+      return `(
+        LOWER(${tableAlias}.full_name) LIKE LOWER('${pattern}') OR
+        LOWER(${tableAlias}.email) LIKE LOWER('${pattern}') OR
+        LOWER(${tableAlias}.phone) LIKE LOWER('${pattern}') OR
+        LOWER(${tableAlias}.id) LIKE LOWER('${pattern}')
+      )`
+    }
   })
 
   // NOT (...) para excluir los que coincidan
