@@ -480,10 +480,6 @@ export const Campaigns: React.FC = () => {
     }
   }, [analyticsEnabled, dateRange])
 
-  const handleExport = () => {
-    // TODO: Implementar exportación
-  }
-
   const toggleCampaign = useCallback((campaignId: string) => {
     // Asegurar que el ID sea string
     const id = String(campaignId)
@@ -1193,8 +1189,6 @@ export const Campaigns: React.FC = () => {
           searchPlaceholder="Buscar campañas..."
           paginated={true}
           pageSize={50}
-          exportable={true}
-          onExport={handleExport}
           tableId="campaigns"
         />
       </Card>

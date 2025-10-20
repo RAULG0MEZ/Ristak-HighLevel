@@ -693,8 +693,6 @@ export const Contacts: React.FC = () => {
           searchPlaceholder="Buscar contactos..."
           paginated={true}
           pageSize={20}
-          exportable={true}
-          onExport={() => {/* TODO: Implement export functionality */}}
           filters={filterOptions}
           activeFilter={filter}
           onFilterChange={setFilter}

@@ -3,7 +3,6 @@ import {
   Search,
   ChevronUp,
   ChevronDown,
-  Download,
   Settings,
   Check,
   GripVertical,
@@ -42,8 +41,6 @@ interface TableProps<T> {
   searchPlaceholder?: string
   paginated?: boolean
   pageSize?: number
-  exportable?: boolean
-  onExport?: () => void
   filters?: FilterOption[]
   activeFilter?: string
   onFilterChange?: (filter: string) => void
@@ -64,8 +61,6 @@ export function Table<T extends Record<string, any>>({
   searchPlaceholder = 'Buscar...',
   paginated = true,
   pageSize = 25,
-  exportable = true,
-  onExport,
   filters,
   activeFilter = 'all',
   onFilterChange,
@@ -317,15 +312,6 @@ export function Table<T extends Record<string, any>>({
             )}
           </button>
 
-          {exportable && (
-            <button
-              className={styles.actionButton}
-              onClick={onExport}
-              title="Exportar CSV"
-            >
-              <Download size={18} />
-            </button>
-          )}
         </div>
       </div>
 

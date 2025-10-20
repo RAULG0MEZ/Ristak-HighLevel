@@ -17,7 +17,6 @@ import {
   RotateCcw,
   MoreVertical,
   Eye,
-  Download,
   Link2,
   Send
 } from 'lucide-react'
@@ -186,11 +185,6 @@ export const Transactions: React.FC = () => {
     showToast('info', 'Ver recibo', 'Abriendo recibo en nueva pestaña...')
   }
 
-  const handleDownloadPDF = (transaction: Transaction) => {
-    // TODO: Implement PDF download
-    showToast('info', 'Descargar PDF', 'Descargando comprobante...')
-  }
-
   const handleSaveTransaction = async (formData: FormData) => {
     if (!modal.selectedContact) {
       showToast('error', 'Contacto no seleccionado', 'Necesitas buscar y seleccionar un contacto para asociar este pago')
@@ -348,11 +342,6 @@ export const Transactions: React.FC = () => {
           actions.push('mark-paid')
         }
 
-        // Descargar PDF - solo para pagados
-        if (item.status === 'paid') {
-          actions.push('download')
-        }
-
         // Anular - para draft, sent, pending, overdue (no para paid, void, refunded)
         if (['draft', 'sent', 'pending', 'overdue', 'partial'].includes(item.status)) {
           actions.push('void')
@@ -423,14 +412,6 @@ export const Transactions: React.FC = () => {
                   <DropdownMenuItem onClick={() => handleMarkAsPaid(item)}>
                     <CheckCircle size={16} />
                     <span style={{ marginLeft: '8px' }}>Marcar como pagado</span>
-                  </DropdownMenuItem>
-                )}
-
-                {/* Descargar PDF */}
-                {actions.includes('download') && (
-                  <DropdownMenuItem onClick={() => handleDownloadPDF(item)}>
-                    <Download size={16} />
-                    <span style={{ marginLeft: '8px' }}>Descargar PDF</span>
                   </DropdownMenuItem>
                 )}
 
