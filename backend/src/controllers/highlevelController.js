@@ -968,7 +968,8 @@ export const recordPayment = async (req, res) => {
             COUNT(*) as purchases_count,
             MAX(date) as last_purchase_date
            FROM payments
-           WHERE contact_id = ? AND status = 'paid'`,
+           WHERE contact_id = ?
+           AND LOWER(status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')`,
           [payment.contact_id]
         );
 

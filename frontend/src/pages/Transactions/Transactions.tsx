@@ -40,6 +40,7 @@ export const Transactions: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [summary, setSummary] = useState<TransactionSummary | null>(null)
   const [loading, setLoading] = useState(false)
+  const [syncing, setSyncing] = useState(false)
   const [modal, setModal] = useState<ModalData>({ type: null, selectedContact: null })
   const [viewMode, setViewMode] = useState<'all' | 'by-date'>('all') // Por defecto 'all' (Todos)
   const [showRecordPaymentModal, setShowRecordPaymentModal] = useState(false)
@@ -86,6 +87,37 @@ export const Transactions: React.FC = () => {
       showToast('error', 'No se pudieron cargar los pagos', 'Hubo un problema al obtener la información de pagos. Intenta refrescar la página.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleSync = async () => {
+    setSyncing(true)
+    try {
+      showToast('info', 'Sincronizando pagos', 'Obteniendo TODOS los pagos desde HighLevel...')
+
+      let startDate: string | undefined
+      let endDate: string | undefined
+
+      if (viewMode === 'by-date') {
+        const start = dateRange.start instanceof Date ? dateRange.start : new Date(dateRange.start)
+        const end = dateRange.end instanceof Date ? dateRange.end : new Date(dateRange.end)
+        startDate = formatDateToISO(start)
+        endDate = formatEndDateToISO(end)
+      }
+
+      // Llamar al endpoint con sync=true para sincronización completa
+      const [transactionsData, summaryData] = await Promise.all([
+        transactionsService.getTransactions(startDate, endDate, true), // sync=true
+        transactionsService.getSummary(startDate, endDate)
+      ])
+
+      setTransactions(transactionsData)
+      setSummary(summaryData)
+      showToast('success', 'Sincronización completa', 'Todos los pagos se han actualizado desde HighLevel')
+    } catch (error) {
+      showToast('error', 'Error en sincronización', 'No se pudo completar la sincronización. Intenta nuevamente.')
+    } finally {
+      setSyncing(false)
     }
   }
 
@@ -492,13 +524,23 @@ export const Transactions: React.FC = () => {
               />
             )}
           </div>
-          <Button
-            variant="secondary"
-            onClick={() => setShowRecordPaymentModal(true)}
-          >
-            <Plus size={16} />
-            Registrar pago
-          </Button>
+          <div className={styles.actions}>
+            <Button
+              variant="secondary"
+              onClick={handleSync}
+              disabled={syncing}
+            >
+              <RefreshCw size={16} className={syncing ? styles.spinning : ''} />
+              {syncing ? 'Sincronizando...' : 'Actualizar'}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => setShowRecordPaymentModal(true)}
+            >
+              <Plus size={16} />
+              Registrar pago
+            </Button>
+          </div>
         </div>
 
         <div className={styles.kpiRow}>

@@ -175,6 +175,182 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
 }
 
 /**
+ * Sincroniza TODOS los invoices desde HighLevel (con paginación completa)
+ * Esta función obtiene TODOS los invoices haciendo múltiples llamadas paginadas
+ *
+ * @param {Object} options - Opciones de sincronización
+ * @param {string} options.contactId - Filtrar por contacto específico (opcional)
+ * @returns {Promise<Object>} - Estadísticas de sincronización completa
+ */
+export async function syncAllInvoices({ contactId } = {}) {
+  try {
+    logger.info('🔄 Iniciando sincronización COMPLETA de invoices desde HighLevel...')
+
+    const ghlClient = await getGHLClient()
+    let allInvoices = []
+    let offset = 0
+    const limit = 100 // Tamaño de cada bloque
+    let hasMore = true
+    let totalFetched = 0
+
+    // Loop de paginación - obtener TODO
+    while (hasMore) {
+      logger.info(`📥 Obteniendo invoices - offset: ${offset}, limit: ${limit}`)
+
+      const response = await ghlClient.listInvoices({ limit, offset, contactId })
+      const invoices = response.invoices || response.data || []
+
+      allInvoices = allInvoices.concat(invoices)
+      totalFetched += invoices.length
+
+      logger.info(`   ✓ Obtenidos ${invoices.length} invoices (total acumulado: ${totalFetched})`)
+
+      // Si trajo menos de lo que pedimos, ya no hay más
+      if (invoices.length < limit) {
+        hasMore = false
+        logger.info(`✅ Paginación completa - total de invoices obtenidos: ${totalFetched}`)
+      } else {
+        offset += limit
+      }
+    }
+
+    logger.info(`📊 Procesando ${allInvoices.length} invoices en la base de datos...`)
+
+    // Procesar todos los invoices obtenidos
+    let created = 0
+    let updated = 0
+    let skipped = 0
+
+    for (const invoice of allInvoices) {
+      try {
+        const ghlInvoiceId = invoice.id || invoice._id
+
+        if (!ghlInvoiceId) {
+          skipped++
+          continue
+        }
+
+        // Verificar si ya existe en BD local
+        const existing = await db.get(
+          'SELECT id, status FROM payments WHERE ghl_invoice_id = ?',
+          [ghlInvoiceId]
+        )
+
+        const contactId = invoice.contactId
+
+        if (!contactId) {
+          skipped++
+          continue
+        }
+
+        // Datos comunes del invoice
+        const invoiceData = {
+          contact_id: contactId,
+          amount: invoice.total || invoice.amount || 0,
+          currency: invoice.currency || 'MXN',
+          status: mapInvoiceStatus(invoice.status),
+          payment_method: invoice.paymentMode || null,
+          reference: invoice.invoiceNumber || null,
+          description: invoice.title || invoice.name || 'Pago',
+          date: invoice.createdAt || invoice.issueDate || new Date().toISOString(),
+          ghl_invoice_id: ghlInvoiceId,
+          invoice_number: invoice.invoiceNumber || null,
+          due_date: invoice.dueDate || null,
+          sent_at: invoice.sentAt || null,
+        }
+
+        if (existing) {
+          // Actualizar solo si el status cambió
+          if (existing.status !== invoiceData.status) {
+            await db.run(
+              `UPDATE payments
+               SET status = ?, amount = ?, currency = ?, payment_method = ?,
+                   reference = ?, due_date = ?, sent_at = ?, updated_at = CURRENT_TIMESTAMP
+               WHERE ghl_invoice_id = ?`,
+              [
+                invoiceData.status,
+                invoiceData.amount,
+                invoiceData.currency,
+                invoiceData.payment_method,
+                invoiceData.reference,
+                invoiceData.due_date,
+                invoiceData.sent_at,
+                ghlInvoiceId
+              ]
+            )
+            updated++
+          } else {
+            skipped++
+          }
+        } else {
+          // Verificar si el contacto existe
+          if (invoiceData.contact_id) {
+            const contactExists = await db.get(
+              'SELECT id FROM contacts WHERE id = ?',
+              [invoiceData.contact_id]
+            )
+
+            if (!contactExists) {
+              skipped++
+              continue
+            }
+          }
+
+          // Crear nuevo invoice en BD
+          await db.run(
+            `INSERT INTO payments (
+              id, contact_id, amount, currency, status, payment_method,
+              reference, description, date, ghl_invoice_id, invoice_number,
+              due_date, sent_at, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+            [
+              ghlInvoiceId,
+              invoiceData.contact_id,
+              invoiceData.amount,
+              invoiceData.currency,
+              invoiceData.status,
+              invoiceData.payment_method,
+              invoiceData.reference,
+              invoiceData.description,
+              invoiceData.date,
+              invoiceData.ghl_invoice_id,
+              invoiceData.invoice_number,
+              invoiceData.due_date,
+              invoiceData.sent_at
+            ]
+          )
+          created++
+        }
+
+        // Si está pagado, actualizar estadísticas del contacto
+        if (invoiceData.status === 'paid' && invoiceData.contact_id) {
+          await updateContactStats(invoiceData.contact_id)
+        }
+
+      } catch (error) {
+        logger.error(`Error procesando invoice ${invoice.id}:`, error)
+        skipped++
+      }
+    }
+
+    const stats = {
+      totalFetched: allInvoices.length,
+      created,
+      updated,
+      skipped
+    }
+
+    logger.success(`✅ Sincronización completa finalizada: ${JSON.stringify(stats)}`)
+
+    return stats
+
+  } catch (error) {
+    logger.error('❌ Error en sincronización completa de invoices:', error)
+    throw error
+  }
+}
+
+/**
  * Mapea el status de HighLevel a nuestros estados internos
  * @param {string} ghlStatus - Status de HighLevel
  * @returns {string} - Status interno

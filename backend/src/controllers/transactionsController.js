@@ -4,7 +4,7 @@ import { resolveDateRange, resolveDateRangeWithGHLTimezone } from '../utils/date
 import { buildTransactionStats, buildTransactionSummary } from '../services/analyticsService.js'
 import { getGHLClient } from '../services/ghlClient.js'
 import { getHighLevelConfig } from '../config/database.js'
-import { syncInvoices, getInvoicesFromDB } from '../services/invoicesSyncService.js'
+import { syncInvoices, syncAllInvoices, getInvoicesFromDB } from '../services/invoicesSyncService.js'
 
 /**
  * Obtiene todas las transacciones/pagos con paginación y filtros
@@ -38,11 +38,11 @@ export const getTransactions = async (req, res) => {
     // Sincronizar invoices desde HighLevel antes de devolver datos
     if (sync !== 'false') {
       try {
-        logger.info('Sincronizando invoices desde HighLevel...')
-        await syncInvoices({ limit: 100 })
-        logger.success('Sincronización de invoices completada')
+        logger.info('🔄 Sincronizando TODOS los invoices desde HighLevel...')
+        const syncStats = await syncAllInvoices()
+        logger.success(`✅ Sincronización completa: ${syncStats.totalFetched} invoices obtenidos, ${syncStats.created} creados, ${syncStats.updated} actualizados`)
       } catch (syncError) {
-        logger.warn('Error en sincronización de invoices (continuando):', syncError.message)
+        logger.warn('⚠️ Error en sincronización de invoices (continuando):', syncError.message)
         // No fallar la request si la sincronización falla
       }
     }
