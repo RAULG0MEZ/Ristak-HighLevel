@@ -188,11 +188,9 @@ const Analytics: React.FC = () => {
     const fetchAnalytics = async () => {
       setLoading(true)
       try {
-        const adjustedEndDate = new Date(dateRange.end)
-        adjustedEndDate.setDate(adjustedEndDate.getDate() + 1)
-
+        // No agregar +1 día aquí, el backend ya lo maneja con INTERVAL '1 day'
         const startDate = dateRange.start.toISOString().split('T')[0]
-        const endDate = adjustedEndDate.toISOString().split('T')[0]
+        const endDate = dateRange.end.toISOString().split('T')[0]
 
         // Calcular período anterior para comparación
         const msPerDay = 24 * 60 * 60 * 1000
