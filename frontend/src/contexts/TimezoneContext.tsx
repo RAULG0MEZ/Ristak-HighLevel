@@ -95,7 +95,7 @@ export const TimezoneProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
   }
 
-  // Formatea una fecha UTC en formato corto: "16 oct 2025" (SIN hora)
+  // Formatea una fecha UTC en formato corto: "16 oct 2025" (SIN hora, SIEMPRE con año)
   const formatLocalDateShort = (utcDate: string | Date): string => {
     if (!utcDate) return '—'
 
@@ -104,16 +104,15 @@ export const TimezoneProvider: React.FC<{ children: ReactNode }> = ({ children }
       const day = date.getDate()
       const month = MONTHS_SHORT[date.getMonth()]
       const year = date.getFullYear()
-      const currentYear = new Date().getFullYear()
 
-      // Solo mostrar año si es diferente al actual
-      return year === currentYear ? `${day} ${month}` : `${day} ${month} ${year}`
+      // Siempre mostrar año
+      return `${day} ${month} ${year}`
     } catch (error) {
       return '—'
     }
   }
 
-  // Formatea una fecha UTC con hora: "16 oct 2025, 11:02 PM"
+  // Formatea una fecha UTC con hora: "16 oct 2025, 11:02 PM" (SIEMPRE con año)
   const formatLocalDateTime = (utcDate: string | Date): string => {
     if (!utcDate) return '—'
 
@@ -126,11 +125,9 @@ export const TimezoneProvider: React.FC<{ children: ReactNode }> = ({ children }
       const minutes = date.getMinutes().toString().padStart(2, '0')
       const ampm = hours >= 12 ? 'PM' : 'AM'
       const hours12 = hours % 12 || 12
-      const currentYear = new Date().getFullYear()
 
-      // Solo mostrar año si es diferente al actual
-      const dateStr = year === currentYear ? `${day} ${month}` : `${day} ${month} ${year}`
-      return `${dateStr}, ${hours12}:${minutes} ${ampm}`
+      // Siempre mostrar año
+      return `${day} ${month} ${year}, ${hours12}:${minutes} ${ampm}`
     } catch (error) {
       return '—'
     }
