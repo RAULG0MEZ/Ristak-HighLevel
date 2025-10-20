@@ -124,6 +124,7 @@ export const TrafficSourcesChart: React.FC<TrafficSourcesChartProps> = ({ data, 
                 }
               ]}
               formatValue={formatTooltipValue}
+              verticalOffset={45}
             />
 
             <div className={styles.centerLabel}>

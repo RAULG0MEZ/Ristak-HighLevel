@@ -1281,6 +1281,11 @@ export const Appointments: React.FC = () => {
                       const displayDescription =
                         rawDescription && rawDescription !== displayTitle ? rawDescription : '';
                       const statusLabel = getStatusLabel(event.appointmentStatus);
+                      const tooltipText = [
+                        displayTitle,
+                        `${formatTime12h(event.startTime)} - ${formatTime12h(event.endTime)}`,
+                        displayDescription
+                      ].filter(Boolean).join(' • ');
 
                       return (
                         <div
@@ -1290,7 +1295,7 @@ export const Appointments: React.FC = () => {
                             top: `${top}%`,
                             height: `${height}%`
                           }}
-                          title={`${displayTitle} - ${formatTime12h(event.startTime)} a ${formatTime12h(event.endTime)}`}
+                          title={tooltipText}
                           onClick={() => handleEventClick(event)}
                         >
                           <div className={styles.dayEventTime}>
