@@ -35,20 +35,20 @@ export function buildHiddenContactsCondition(filters, tableAlias = 'c', includeA
     const escapedFilter = filter.text.replace(/'/g, "''") // Escape single quotes
 
     if (filter.type === 'exact') {
-      // Coincidencia exacta (ignorando mayúsculas)
+      // Coincidencia exacta (ignorando mayúsculas) - usar COALESCE para manejar NULLs
       return `(
-        LOWER(${tableAlias}.full_name) = LOWER('${escapedFilter}') OR
-        LOWER(${tableAlias}.email) = LOWER('${escapedFilter}') OR
-        LOWER(${tableAlias}.phone) = LOWER('${escapedFilter}') OR
+        LOWER(COALESCE(${tableAlias}.full_name, '')) = LOWER('${escapedFilter}') OR
+        LOWER(COALESCE(${tableAlias}.email, '')) = LOWER('${escapedFilter}') OR
+        LOWER(COALESCE(${tableAlias}.phone, '')) = LOWER('${escapedFilter}') OR
         LOWER(${tableAlias}.id) = LOWER('${escapedFilter}')
       )`
     } else {
-      // Coincidencia con "contiene" (default)
+      // Coincidencia con "contiene" (default) - usar COALESCE para manejar NULLs
       const pattern = `%${escapedFilter}%`
       return `(
-        LOWER(${tableAlias}.full_name) LIKE LOWER('${pattern}') OR
-        LOWER(${tableAlias}.email) LIKE LOWER('${pattern}') OR
-        LOWER(${tableAlias}.phone) LIKE LOWER('${pattern}') OR
+        LOWER(COALESCE(${tableAlias}.full_name, '')) LIKE LOWER('${pattern}') OR
+        LOWER(COALESCE(${tableAlias}.email, '')) LIKE LOWER('${pattern}') OR
+        LOWER(COALESCE(${tableAlias}.phone, '')) LIKE LOWER('${pattern}') OR
         LOWER(${tableAlias}.id) LIKE LOWER('${pattern}')
       )`
     }
