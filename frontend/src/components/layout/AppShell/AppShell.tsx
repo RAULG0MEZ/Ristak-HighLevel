@@ -67,7 +67,7 @@ export const AppShell: React.FC = () => {
 
   const handleLogout = () => {
     logout()
-    navigate('/dashboard', { replace: true })
+    navigate('/login', { replace: true })
   }
 
   const handleProgressBarClose = () => {

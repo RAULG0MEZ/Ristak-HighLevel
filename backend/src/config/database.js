@@ -600,6 +600,25 @@ async function initTables() {
     await db.run('CREATE INDEX IF NOT EXISTS idx_sessions_geo ON sessions(geo_country, geo_region, geo_city)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_sessions_contact ON sessions(contact_id)')
 
+    // Tabla de usuarios (para autenticación)
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        email TEXT UNIQUE,
+        password_hash TEXT NOT NULL,
+        full_name TEXT,
+        role TEXT DEFAULT 'admin',
+        is_active INTEGER DEFAULT 1,
+        last_login DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
+    await db.run('CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)')
+    await db.run('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)')
+
     // MIGRACIONES PARA POSTGRESQL
     if (usePostgres) {
       // Migración 1: Agregar columna contact_id a appointments si no existe

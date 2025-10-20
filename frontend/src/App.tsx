@@ -1,6 +1,6 @@
 import React from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { AuthProvider } from '@/contexts/AuthContext'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { DateRangeProvider } from '@/contexts/DateRangeContext'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { NotificationProvider, useNotification } from '@/contexts/NotificationContext'
@@ -15,9 +15,38 @@ import { Contacts } from '@/pages/Contacts'
 import { Settings } from '@/pages/Settings'
 import { Appointments } from '@/pages/Appointments'
 import { Analytics } from '@/pages/Analytics'
+import { Login } from '@/pages/Login'
 import { ToastContainer } from '@/components/common/Toast'
 import { Modal } from '@/components/common/Modal'
 import { StorageAlert } from '@/components/common/StorageAlert'
+
+// Componente para proteger rutas que requieren autenticación
+const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isAuthenticated, isLoading } = useAuth()
+  const location = useLocation()
+
+  if (isLoading) {
+    // Mostrar loading mientras verificamos el token
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '100vh',
+        background: 'var(--color-background-primary)',
+        color: 'var(--color-text-primary)'
+      }}>
+        Cargando...
+      </div>
+    )
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" state={{ from: location }} replace />
+  }
+
+  return <>{children}</>
+}
 
 const AppWithNotifications: React.FC = () => {
   const { toasts, removeToast, modal, closeModal } = useNotification()
@@ -26,7 +55,15 @@ const AppWithNotifications: React.FC = () => {
     <>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<AppShell />}>
+          <Route path="/login" element={<Login />} />
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <AppShell />
+              </ProtectedRoute>
+            }
+          >
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="reports" element={<Reports />} />

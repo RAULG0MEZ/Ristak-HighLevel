@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import { logger } from './utils/logger.js'
 import { initializeMasterKey } from './utils/encryption.js'
+import { initializeDefaultUser } from './utils/auth.js'
 import { startMetaSyncCron } from './jobs/metaSync.cron.js'
 import { startHighLevelSyncCron } from './jobs/highlevelSync.cron.js'
 import { startMetaVersionCron } from './jobs/metaVersionCron.js'
@@ -30,6 +31,7 @@ import calendarsRoutes from './routes/calendars.routes.js'
 import trackingRoutes from './routes/tracking.routes.js'
 import configRoutes from './routes/config.routes.js'
 import maintenanceRoutes from './routes/maintenance.routes.js'
+import authRoutes from './routes/auth.routes.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -55,6 +57,7 @@ app.get('/api/health', (req, res) => {
 })
 
 // API Routes
+app.use('/api/auth', authRoutes)
 app.use('/api/reports', reportsRoutes)
 app.use('/api/highlevel', highlevelRoutes)
 app.use('/api/meta', metaRoutes)
@@ -106,6 +109,9 @@ app.listen(PORT, async () => {
 
   // Inicializar clave maestra de encriptación (DEBE ser lo primero)
   await initializeMasterKey()
+
+  // Crear usuario admin por defecto (admin/admin123)
+  await initializeDefaultUser()
 
   // Inicializar versión de Meta API desde BD
   await initializeVersion()
