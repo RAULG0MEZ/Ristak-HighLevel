@@ -989,22 +989,22 @@ export const Reports: React.FC = () => {
           <div className={styles.titleBlock}>
             <h1 className={styles.title}>Reportes</h1>
             {metricsRangeLabel && <span className={styles.rangeLabel}>{metricsRangeLabel}</span>}
-            {viewType === 'day' && (
-              <div className={styles.datePickerInline}>
-                <DateRangePicker
-                  startDate={toIsoDate(baseRange.start)}
-                  endDate={toIsoDate(baseRange.end)}
-                  onChange={(start, end) => setDateRange({
-                    start: parseLocalDateString(start),
-                    end: parseLocalDateString(end),
-                    preset: 'custom'
-                  })}
-                />
-              </div>
-            )}
           </div>
           <div className={styles.filtersRow}>
             <div className={styles.rangeControlsInline}>
+              {viewType === 'day' && (
+                <div className={styles.datePickerControl}>
+                  <DateRangePicker
+                    startDate={toIsoDate(baseRange.start)}
+                    endDate={toIsoDate(baseRange.end)}
+                    onChange={(start, end) => setDateRange({
+                      start: parseLocalDateString(start),
+                      end: parseLocalDateString(end),
+                      preset: 'custom'
+                    })}
+                  />
+                </div>
+              )}
               {viewType === 'month' && (
                 <>
                   <ViewSelector

@@ -49,8 +49,10 @@
   color: var(--color-text-tertiary);
 }
 
-.datePickerInline {
-  margin-top: var(--spacing-sm);
+.datePickerControl {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 .rangeControlsInline {

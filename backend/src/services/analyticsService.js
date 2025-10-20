@@ -631,7 +631,7 @@ export async function buildCampaignSummary ({ startDate, endDate } = {}) {
   }
 }
 
-function getGroupExpression(column, groupBy, timezone = 'America/Mexico_City') {
+export function getGroupExpression(column, groupBy, timezone = 'America/Mexico_City') {
   // Para SQLite, convertir timezone IANA a offset en horas
   // Nota: SQLite no soporta timezone names, solo offsets numéricos
   // Por ahora usamos el offset de Mexico City como default

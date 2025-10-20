@@ -2,6 +2,7 @@ import { db } from '../config/database.js';
 import { logger } from '../utils/logger.js';
 import { resolveDateRange, resolveDateRangeWithGHLTimezone } from '../utils/dateUtils.js';
 import { normalizeTrafficSource } from '../utils/trafficSourceNormalizer.js';
+import { getGroupExpression } from '../services/analyticsService.js';
 import { DateTime } from 'luxon';
 import { getContactsWithAppointmentsHybrid } from '../services/appointmentsMerge.js';
 
@@ -221,56 +222,55 @@ export const getChartData = async (req, res) => {
 
     logger.info(`Obteniendo datos de gráficas agrupados por ${groupBy}`);
 
-    // Determinar formato de fecha según el agrupamiento y la base de datos
+    // Obtener timezone dinámico de HighLevel
+    const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate });
+    const timezone = range.appliedTimezone;
+    const usePostgres = Boolean(process.env.DATABASE_URL);
+
+    // Usar getGroupExpression() con timezone dinámico
+    const dateExpression = getGroupExpression('date', groupBy, timezone);
+
     let ingresosQuery, gastosQuery;
     let ingresosParams, gastosParams;
 
-    const usePostgres = Boolean(process.env.DATABASE_URL);
-
     if (usePostgres) {
-      // PostgreSQL usa TO_CHAR
-      const dateFormat = groupBy === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM';
-
       ingresosQuery = `SELECT
-         TO_CHAR(date::timestamp, '${dateFormat}') as periodo,
+         ${dateExpression} as periodo,
          SUM(amount) as total_ingresos
        FROM payments
        WHERE status = 'succeeded'
-       AND date::timestamp >= $1::timestamp AND date::timestamp < ($2::timestamp + INTERVAL '1 day')
+       AND date >= $1 AND date <= $2
        GROUP BY periodo
        ORDER BY periodo`;
-      ingresosParams = [startDate, endDate];
+      ingresosParams = [range.startUtc, range.endUtc];
 
       gastosQuery = `SELECT
-         TO_CHAR(date::timestamp, '${dateFormat}') as periodo,
+         ${dateExpression} as periodo,
          SUM(spend) as total_gastos
        FROM meta_ads
-       WHERE date::timestamp >= $1::timestamp AND date::timestamp < ($2::timestamp + INTERVAL '1 day')
+       WHERE date >= $1 AND date <= $2
        GROUP BY periodo
        ORDER BY periodo`;
-      gastosParams = [startDate, endDate];
+      gastosParams = [range.startUtc, range.endUtc];
     } else {
-      // SQLite usa strftime
-      const dateFormat = groupBy === 'day' ? '%Y-%m-%d' : '%Y-%m';
-
       ingresosQuery = `SELECT
-         strftime(?, date) as periodo,
+         ${dateExpression} as periodo,
          SUM(amount) as total_ingresos
        FROM payments
        WHERE status = 'succeeded'
-       AND date >= ? AND date < DATE(?, '+1 day')
+       AND date >= ? AND date <= ?
        GROUP BY periodo
        ORDER BY periodo`;
-      ingresosParams = [dateFormat, startDate, endDate];
+      ingresosParams = [range.startUtc, range.endUtc];
 
       gastosQuery = `SELECT
-         strftime(?, date) as periodo,
+         ${dateExpression} as periodo,
          SUM(spend) as total_gastos
        FROM meta_ads
-       WHERE date >= ? AND date < DATE(?, '+1 day')
+       WHERE date >= ? AND date <= ?
        GROUP BY periodo
        ORDER BY periodo`;
-      gastosParams = [dateFormat, startDate, endDate];
+      gastosParams = [range.startUtc, range.endUtc];
     }
 
     // Obtener ingresos agrupados
@@ -337,42 +337,48 @@ export const getRoasData = async (req, res) => {
       return res.status(400).json([]);
     }
 
-    // Agrupar por mes - query según la base de datos
-    let query, params;
+    // Obtener timezone dinámico de HighLevel
+    const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate });
+    const timezone = range.appliedTimezone;
     const usePostgres = Boolean(process.env.DATABASE_URL);
+
+    // Agrupar por mes con timezone dinámico
+    const monthExpression = getGroupExpression('date', 'month', timezone);
+
+    let query, params;
 
     if (usePostgres) {
       query = `
         SELECT
-          TO_CHAR(i.date::timestamp, 'YYYY-MM') as periodo,
+          ${monthExpression} as periodo,
           COALESCE(SUM(i.amount), 0) as ingresos,
           COALESCE(SUM(g.spend), 0) as gastos
         FROM (
-          SELECT date, amount FROM payments WHERE status = 'succeeded' AND date::timestamp >= $1::timestamp AND date::timestamp < ($2::timestamp + INTERVAL '1 day')
+          SELECT date, amount FROM payments WHERE status = 'succeeded' AND date >= $1 AND date <= $2
         ) i
         LEFT JOIN (
-          SELECT date, spend FROM meta_ads WHERE date::timestamp >= $3::timestamp AND date::timestamp < ($4::timestamp + INTERVAL '1 day')
-        ) g ON TO_CHAR(i.date::timestamp, 'YYYY-MM') = TO_CHAR(g.date::timestamp, 'YYYY-MM')
+          SELECT date, spend FROM meta_ads WHERE date >= $3 AND date <= $4
+        ) g ON ${getGroupExpression('i.date', 'month', timezone)} = ${getGroupExpression('g.date', 'month', timezone)}
         GROUP BY periodo
         ORDER BY periodo
       `;
-      params = [startDate, endDate, startDate, endDate];
+      params = [range.startUtc, range.endUtc, range.startUtc, range.endUtc];
     } else {
       query = `
         SELECT
-          strftime('%Y-%m', i.date) as periodo,
+          ${monthExpression} as periodo,
           COALESCE(SUM(i.amount), 0) as ingresos,
           COALESCE(SUM(g.spend), 0) as gastos
         FROM (
-          SELECT date, amount FROM payments WHERE status = 'succeeded' AND date >= ? AND date < DATE(?, '+1 day')
+          SELECT date, amount FROM payments WHERE status = 'succeeded' AND date >= ? AND date <= ?
         ) i
         LEFT JOIN (
-          SELECT date, spend FROM meta_ads WHERE date >= ? AND date < DATE(?, '+1 day')
-        ) g ON strftime('%Y-%m', i.date) = strftime('%Y-%m', g.date)
+          SELECT date, spend FROM meta_ads WHERE date >= ? AND date <= ?
+        ) g ON ${getGroupExpression('i.date', 'month', timezone)} = ${getGroupExpression('g.date', 'month', timezone)}
         GROUP BY periodo
         ORDER BY periodo
       `;
-      params = [startDate, endDate, startDate, endDate];
+      params = [range.startUtc, range.endUtc, range.startUtc, range.endUtc];
     }
 
     const data = await db.all(query, params);
@@ -401,37 +407,41 @@ export const getNewCustomersData = async (req, res) => {
       return res.status(400).json([]);
     }
 
+    // Obtener timezone dinámico de HighLevel
+    const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate });
+    const timezone = range.appliedTimezone;
+    const usePostgres = Boolean(process.env.DATABASE_URL);
+
+    // Usar getGroupExpression() con timezone dinámico
+    const dateExpression = getGroupExpression('created_at', groupBy, timezone);
+
     let query;
     let params;
 
-    const usePostgres = Boolean(process.env.DATABASE_URL);
-
     if (usePostgres) {
-      const dateFormat = groupBy === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM';
       query = `
         SELECT
-          TO_CHAR(created_at::timestamp, '${dateFormat}') as periodo,
+          ${dateExpression} as periodo,
           COUNT(*) as total
         FROM contacts
         WHERE total_paid > 0
-        AND created_at::timestamp >= $1::timestamp AND created_at::timestamp < ($2::timestamp + INTERVAL '1 day')
+        AND created_at >= $1 AND created_at <= $2
         GROUP BY periodo
         ORDER BY periodo
       `;
-      params = [startDate, endDate];
+      params = [range.startUtc, range.endUtc];
     } else {
-      const dateFormat = groupBy === 'day' ? '%Y-%m-%d' : '%Y-%m';
       query = `
         SELECT
-          strftime(?, created_at) as periodo,
+          ${dateExpression} as periodo,
           COUNT(*) as total
         FROM contacts
         WHERE total_paid > 0
-        AND created_at >= ? AND created_at < DATE(?, '+1 day')
+        AND created_at >= ? AND created_at <= ?
         GROUP BY periodo
         ORDER BY periodo
       `;
-      params = [dateFormat, startDate, endDate];
+      params = [range.startUtc, range.endUtc];
     }
 
     const data = await db.all(query, params);
@@ -460,35 +470,39 @@ export const getVisitorsData = async (req, res) => {
       return res.status(400).json([]);
     }
 
+    // Obtener timezone dinámico de HighLevel
+    const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate });
+    const timezone = range.appliedTimezone;
+    const usePostgres = Boolean(process.env.DATABASE_URL);
+
+    // Usar getGroupExpression() con timezone dinámico
+    const dateExpression = getGroupExpression('started_at', groupBy, timezone);
+
     let query;
     let params;
 
-    const usePostgres = Boolean(process.env.DATABASE_URL);
-
     if (usePostgres) {
-      const dateFormat = groupBy === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM';
       query = `
         SELECT
-          TO_CHAR(started_at::timestamp, '${dateFormat}') as periodo,
+          ${dateExpression} as periodo,
           COUNT(DISTINCT visitor_id) as total
         FROM sessions
-        WHERE started_at::timestamp >= $1::timestamp AND started_at::timestamp < ($2::timestamp + INTERVAL '1 day')
+        WHERE started_at >= $1 AND started_at <= $2
         GROUP BY periodo
         ORDER BY periodo
       `;
-      params = [startDate, endDate];
+      params = [range.startUtc, range.endUtc];
     } else {
-      const dateFormat = groupBy === 'day' ? '%Y-%m-%d' : '%Y-%m';
       query = `
         SELECT
-          strftime(?, started_at) as periodo,
+          ${dateExpression} as periodo,
           COUNT(DISTINCT visitor_id) as total
         FROM sessions
-        WHERE started_at >= ? AND started_at < DATE(?, '+1 day')
+        WHERE started_at >= ? AND started_at <= ?
         GROUP BY periodo
         ORDER BY periodo
       `;
-      params = [dateFormat, startDate, endDate];
+      params = [range.startUtc, range.endUtc];
     }
 
     const data = await db.all(query, params);
@@ -517,35 +531,39 @@ export const getLeadsData = async (req, res) => {
       return res.status(400).json([]);
     }
 
+    // Obtener timezone dinámico de HighLevel
+    const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate });
+    const timezone = range.appliedTimezone;
+    const usePostgres = Boolean(process.env.DATABASE_URL);
+
+    // Usar getGroupExpression() con timezone dinámico
+    const dateExpression = getGroupExpression('created_at', groupBy, timezone);
+
     let query;
     let params;
 
-    const usePostgres = Boolean(process.env.DATABASE_URL);
-
     if (usePostgres) {
-      const dateFormat = groupBy === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM';
       query = `
         SELECT
-          TO_CHAR(created_at::timestamp, '${dateFormat}') as periodo,
+          ${dateExpression} as periodo,
           COUNT(*) as total
         FROM contacts
-        WHERE created_at::timestamp >= $1::timestamp AND created_at::timestamp < ($2::timestamp + INTERVAL '1 day')
+        WHERE created_at >= $1 AND created_at <= $2
         GROUP BY periodo
         ORDER BY periodo
       `;
-      params = [startDate, endDate];
+      params = [range.startUtc, range.endUtc];
     } else {
-      const dateFormat = groupBy === 'day' ? '%Y-%m-%d' : '%Y-%m';
       query = `
         SELECT
-          strftime(?, created_at) as periodo,
+          ${dateExpression} as periodo,
           COUNT(*) as total
         FROM contacts
-        WHERE created_at >= ? AND created_at < DATE(?, '+1 day')
+        WHERE created_at >= ? AND created_at <= ?
         GROUP BY periodo
         ORDER BY periodo
       `;
-      params = [dateFormat, startDate, endDate];
+      params = [range.startUtc, range.endUtc];
     }
 
     const data = await db.all(query, params);
@@ -581,6 +599,8 @@ export const getAppointmentsData = async (req, res) => {
       return res.status(400).json([]);
     }
 
+    // Obtener timezone dinámico de HighLevel
+    const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate });
     const usePostgres = Boolean(process.env.DATABASE_URL);
 
     // PASO 1: Obtener configuración de HighLevel
@@ -598,17 +618,15 @@ export const getAppointmentsData = async (req, res) => {
       ? `
         SELECT id as contact_id, created_at
         FROM contacts
-        WHERE created_at::timestamp >= $1::timestamp
-          AND created_at::timestamp < ($2::timestamp + INTERVAL '1 day')
+        WHERE created_at >= $1 AND created_at <= $2
       `
       : `
         SELECT id as contact_id, created_at
         FROM contacts
-        WHERE DATE(created_at) >= DATE(?)
-          AND DATE(created_at) <= DATE(?)
+        WHERE created_at >= ? AND created_at <= ?
       `;
 
-    const contactsRaw = await db.all(contactsQuery, [startDate, endDate]);
+    const contactsRaw = await db.all(contactsQuery, [range.startUtc, range.endUtc]);
 
     // PASO 4: Agrupar contactos con citas por periodo (fecha de creación)
     const periodMap = {};
@@ -658,37 +676,41 @@ export const getSalesData = async (req, res) => {
       return res.status(400).json([]);
     }
 
+    // Obtener timezone dinámico de HighLevel
+    const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate });
+    const timezone = range.appliedTimezone;
+    const usePostgres = Boolean(process.env.DATABASE_URL);
+
+    // Usar getGroupExpression() con timezone dinámico
+    const dateExpression = getGroupExpression('date', groupBy, timezone);
+
     let query;
     let params;
 
-    const usePostgres = Boolean(process.env.DATABASE_URL);
-
     if (usePostgres) {
-      const dateFormat = groupBy === 'day' ? 'YYYY-MM-DD' : 'YYYY-MM';
       query = `
         SELECT
-          TO_CHAR(date::timestamp, '${dateFormat}') as periodo,
+          ${dateExpression} as periodo,
           COUNT(*) as total
         FROM payments
         WHERE status = 'succeeded'
-        AND date::timestamp >= $1::timestamp AND date::timestamp < ($2::timestamp + INTERVAL '1 day')
+        AND date >= $1 AND date <= $2
         GROUP BY periodo
         ORDER BY periodo
       `;
-      params = [startDate, endDate];
+      params = [range.startUtc, range.endUtc];
     } else {
-      const dateFormat = groupBy === 'day' ? '%Y-%m-%d' : '%Y-%m';
       query = `
         SELECT
-          strftime(?, date) as periodo,
+          ${dateExpression} as periodo,
           COUNT(*) as total
         FROM payments
         WHERE status = 'succeeded'
-        AND date >= ? AND date < DATE(?, '+1 day')
+        AND date >= ? AND date <= ?
         GROUP BY periodo
         ORDER BY periodo
       `;
-      params = [dateFormat, startDate, endDate];
+      params = [range.startUtc, range.endUtc];
     }
 
     const data = await db.all(query, params);
@@ -772,6 +794,8 @@ export const getTrafficSources = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Se requieren startDate y endDate' })
     }
 
+    // Obtener timezone dinámico de HighLevel
+    const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate })
     const usePostgres = Boolean(process.env.DATABASE_URL)
 
     let query, params
@@ -786,12 +810,11 @@ export const getTrafficSources = async (req, res) => {
           source_platform,
           COUNT(*) as value
         FROM sessions
-        WHERE started_at::timestamp >= $1::timestamp
-          AND started_at::timestamp < ($2::timestamp + INTERVAL '1 day')
+        WHERE started_at >= $1 AND started_at <= $2
         GROUP BY referrer_url, site_source_name, utm_source, source_platform
         ORDER BY value DESC
       `
-      params = [startDate, endDate]
+      params = [range.startUtc, range.endUtc]
     } else {
       // SQLite query - Obtener todos los campos para normalización con prioridad 1-4
       query = `
@@ -802,12 +825,11 @@ export const getTrafficSources = async (req, res) => {
           source_platform,
           COUNT(*) as value
         FROM sessions
-        WHERE DATE(started_at) >= DATE(?)
-          AND DATE(started_at) <= DATE(?)
+        WHERE started_at >= ? AND started_at <= ?
         GROUP BY referrer_url, site_source_name, utm_source, source_platform
         ORDER BY value DESC
       `
-      params = [startDate, endDate]
+      params = [range.startUtc, range.endUtc]
     }
 
     const sources = await db.all(query, params)
@@ -886,29 +908,33 @@ export const getFinancialOverview = async (req, res) => {
       });
     }
 
+    // Obtener timezone dinámico de HighLevel
+    const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate });
+    const timezone = range.appliedTimezone;
     const usePostgres = Boolean(process.env.DATABASE_URL);
+
+    // Usar getGroupExpression() con timezone dinámico
+    const dayExpression = getGroupExpression('date', 'day', timezone);
 
     // Query para TODOS los ingresos (payments con status succeeded)
     const revenueQuery = usePostgres
       ? `
         SELECT
-          TO_CHAR(date::date, 'YYYY-MM-DD') as day,
+          ${dayExpression} as day,
           SUM(amount) as revenue
         FROM payments
         WHERE status = 'succeeded'
-          AND date::date >= $1::date
-          AND date::date < ($2::date + INTERVAL '1 day')
+          AND date >= $1 AND date <= $2
         GROUP BY day
         ORDER BY day ASC
       `
       : `
         SELECT
-          strftime('%Y-%m-%d', date) as day,
+          ${dayExpression} as day,
           SUM(amount) as revenue
         FROM payments
         WHERE status = 'succeeded'
-          AND date >= ?
-          AND date < DATE(?, '+1 day')
+          AND date >= ? AND date <= ?
         GROUP BY day
         ORDER BY day ASC
       `;
@@ -917,26 +943,24 @@ export const getFinancialOverview = async (req, res) => {
     const spendQuery = usePostgres
       ? `
         SELECT
-          TO_CHAR(date::date, 'YYYY-MM-DD') as day,
+          ${dayExpression} as day,
           SUM(spend) as spend
         FROM meta_ads
-        WHERE date::date >= $1::date
-          AND date::date < ($2::date + INTERVAL '1 day')
+        WHERE date >= $1 AND date <= $2
         GROUP BY day
         ORDER BY day ASC
       `
       : `
         SELECT
-          strftime('%Y-%m-%d', date) as day,
+          ${dayExpression} as day,
           SUM(spend) as spend
         FROM meta_ads
-        WHERE date >= ?
-          AND date < DATE(?, '+1 day')
+        WHERE date >= ? AND date <= ?
         GROUP BY day
         ORDER BY day ASC
       `;
 
-    const params = [startDate, endDate];
+    const params = [range.startUtc, range.endUtc];
 
     const [revenueData, spendData] = await Promise.all([
       db.all(revenueQuery, params),
@@ -1022,6 +1046,8 @@ export const getFunnelData = async (req, res) => {
       return res.status(400).json({ success: false, error: 'Se requieren startDate y endDate' })
     }
 
+    // Obtener timezone dinámico de HighLevel
+    const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate })
     const usePostgres = Boolean(process.env.DATABASE_URL)
     const isAttributed = scope === 'campaigns' || scope === 'attributed'
     const useContactAttribution = scope === 'campaigns' || scope === 'attributed' || scope === 'attribution'
@@ -1058,18 +1084,16 @@ export const getFunnelData = async (req, res) => {
         visitorsQuery = `
           SELECT COUNT(DISTINCT visitor_id) as count
           FROM sessions
-          WHERE started_at::timestamp >= $1::timestamp
-            AND started_at::timestamp < ($2::timestamp + INTERVAL '1 day')
+          WHERE started_at >= $1 AND started_at <= $2
         `
-        visitorsParams = [startDate, endDate]
+        visitorsParams = [range.startUtc, range.endUtc]
       } else {
         visitorsQuery = `
           SELECT COUNT(DISTINCT visitor_id) as count
           FROM sessions
-          WHERE DATE(started_at) >= DATE(?)
-            AND DATE(started_at) <= DATE(?)
+          WHERE started_at >= ? AND started_at <= ?
         `
-        visitorsParams = [startDate, endDate]
+        visitorsParams = [range.startUtc, range.endUtc]
       }
 
       const visitorsResult = await db.get(visitorsQuery, visitorsParams)
@@ -1084,29 +1108,27 @@ export const getFunnelData = async (req, res) => {
           SELECT COUNT(DISTINCT s.visitor_id) as count
           FROM sessions s
           INNER JOIN contacts c ON c.id = s.contact_id
-          WHERE c.created_at::timestamp >= $1::timestamp
-            AND c.created_at::timestamp < ($2::timestamp + INTERVAL '1 day')
-            ${isAttributed ? `AND c.attribution_ad_id IS NOT NULL AND EXISTS (
-              SELECT 1 FROM meta_ads ma
-              WHERE ma.ad_id = c.attribution_ad_id
-                AND (ma.date)::date = (c.created_at)::date
-            )` : ''}
-        `
-        visitorsParams = [startDate, endDate]
-      } else {
-        visitorsQuery = `
-          SELECT COUNT(DISTINCT s.visitor_id) as count
-          FROM sessions s
-          INNER JOIN contacts c ON c.id = s.contact_id
-          WHERE DATE(c.created_at) >= DATE(?)
-            AND DATE(c.created_at) <= DATE(?)
+          WHERE c.created_at >= $1 AND c.created_at <= $2
             ${isAttributed ? `AND c.attribution_ad_id IS NOT NULL AND EXISTS (
               SELECT 1 FROM meta_ads ma
               WHERE ma.ad_id = c.attribution_ad_id
                 AND DATE(ma.date) = DATE(c.created_at)
             )` : ''}
         `
-        visitorsParams = [startDate, endDate]
+        visitorsParams = [range.startUtc, range.endUtc]
+      } else {
+        visitorsQuery = `
+          SELECT COUNT(DISTINCT s.visitor_id) as count
+          FROM sessions s
+          INNER JOIN contacts c ON c.id = s.contact_id
+          WHERE c.created_at >= ? AND c.created_at <= ?
+            ${isAttributed ? `AND c.attribution_ad_id IS NOT NULL AND EXISTS (
+              SELECT 1 FROM meta_ads ma
+              WHERE ma.ad_id = c.attribution_ad_id
+                AND DATE(ma.date) = DATE(c.created_at)
+            )` : ''}
+        `
+        visitorsParams = [range.startUtc, range.endUtc]
       }
 
       const visitorsResult = await db.get(visitorsQuery, visitorsParams)
@@ -1122,28 +1144,26 @@ export const getFunnelData = async (req, res) => {
       leadsQuery = `
         SELECT COUNT(*) as count
         FROM contacts
-        WHERE created_at::timestamp >= $1::timestamp
-          AND created_at::timestamp < ($2::timestamp + INTERVAL '1 day')
-          ${isAttributed ? `AND attribution_ad_id IS NOT NULL AND EXISTS (
-            SELECT 1 FROM meta_ads ma
-            WHERE ma.ad_id = contacts.attribution_ad_id
-              AND (ma.date)::date = (contacts.created_at)::date
-          )` : ''}
-      `
-      leadsParams = [startDate, endDate]
-    } else {
-      leadsQuery = `
-        SELECT COUNT(*) as count
-        FROM contacts
-        WHERE DATE(created_at) >= DATE(?)
-          AND DATE(created_at) <= DATE(?)
+        WHERE created_at >= $1 AND created_at <= $2
           ${isAttributed ? `AND attribution_ad_id IS NOT NULL AND EXISTS (
             SELECT 1 FROM meta_ads ma
             WHERE ma.ad_id = contacts.attribution_ad_id
               AND DATE(ma.date) = DATE(contacts.created_at)
           )` : ''}
       `
-      leadsParams = [startDate, endDate]
+      leadsParams = [range.startUtc, range.endUtc]
+    } else {
+      leadsQuery = `
+        SELECT COUNT(*) as count
+        FROM contacts
+        WHERE created_at >= ? AND created_at <= ?
+          ${isAttributed ? `AND attribution_ad_id IS NOT NULL AND EXISTS (
+            SELECT 1 FROM meta_ads ma
+            WHERE ma.ad_id = contacts.attribution_ad_id
+              AND DATE(ma.date) = DATE(contacts.created_at)
+          )` : ''}
+      `
+      leadsParams = [range.startUtc, range.endUtc]
     }
 
     const leadsData = await db.get(leadsQuery, leadsParams)
@@ -1167,29 +1187,27 @@ export const getFunnelData = async (req, res) => {
         const contactsQuery = `
           SELECT id
           FROM contacts
-          WHERE created_at::timestamp >= $1::timestamp
-            AND created_at::timestamp < ($2::timestamp + INTERVAL '1 day')
-            ${isAttributed ? `AND attribution_ad_id IS NOT NULL AND EXISTS (
-              SELECT 1 FROM meta_ads ma
-              WHERE ma.ad_id = contacts.attribution_ad_id
-                AND (ma.date)::date = (contacts.created_at)::date
-            )` : ''}
-        `
-        const contactsRaw = await db.all(contactsQuery, [startDate, endDate])
-        appointmentsCount = contactsRaw.filter(c => contactsWithAppointments.has(c.id)).length
-      } else {
-        const contactsQuery = `
-          SELECT id
-          FROM contacts
-          WHERE DATE(created_at) >= DATE(?)
-            AND DATE(created_at) <= DATE(?)
+          WHERE created_at >= $1 AND created_at <= $2
             ${isAttributed ? `AND attribution_ad_id IS NOT NULL AND EXISTS (
               SELECT 1 FROM meta_ads ma
               WHERE ma.ad_id = contacts.attribution_ad_id
                 AND DATE(ma.date) = DATE(contacts.created_at)
             )` : ''}
         `
-        const contactsRaw = await db.all(contactsQuery, [startDate, endDate])
+        const contactsRaw = await db.all(contactsQuery, [range.startUtc, range.endUtc])
+        appointmentsCount = contactsRaw.filter(c => contactsWithAppointments.has(c.id)).length
+      } else {
+        const contactsQuery = `
+          SELECT id
+          FROM contacts
+          WHERE created_at >= ? AND created_at <= ?
+            ${isAttributed ? `AND attribution_ad_id IS NOT NULL AND EXISTS (
+              SELECT 1 FROM meta_ads ma
+              WHERE ma.ad_id = contacts.attribution_ad_id
+                AND DATE(ma.date) = DATE(contacts.created_at)
+            )` : ''}
+        `
+        const contactsRaw = await db.all(contactsQuery, [range.startUtc, range.endUtc])
         appointmentsCount = contactsRaw.filter(c => contactsWithAppointments.has(c.id)).length
       }
     } else {
@@ -1199,8 +1217,8 @@ export const getFunnelData = async (req, res) => {
       const [dbAppointments, apiAppointments] = await Promise.all([
         loadAppointmentsFromDB({
           calendarIds: attributionCalendarIds,
-          startDate: startDate,
-          endDate: endDate
+          startDate: range.startUtc,
+          endDate: range.endUtc
         }),
         hlConfig && hlConfig.api_token
           ? loadAppointmentsFromAPI(hlConfig.location_id, hlConfig.api_token, attributionCalendarIds)
@@ -1213,8 +1231,8 @@ export const getFunnelData = async (req, res) => {
       const appointmentsInRange = allAppointments.filter(apt => {
         if (!apt.dateAdded) return false
         const dateAdded = new Date(apt.dateAdded)
-        const start = new Date(startDate)
-        const end = new Date(endDate)
+        const start = new Date(range.startUtc)
+        const end = new Date(range.endUtc)
         return dateAdded >= start && dateAdded <= end
       })
 
@@ -1235,30 +1253,28 @@ export const getFunnelData = async (req, res) => {
           SELECT COUNT(DISTINCT id) as count
           FROM contacts
           WHERE purchases_count > 0
-            AND created_at::timestamp >= $1::timestamp
-            AND created_at::timestamp < ($2::timestamp + INTERVAL '1 day')
-            ${isAttributed ? `AND attribution_ad_id IS NOT NULL AND EXISTS (
-              SELECT 1 FROM meta_ads ma
-              WHERE ma.ad_id = contacts.attribution_ad_id
-                AND (ma.date)::date = (contacts.created_at)::date
-            )` : ''}
-        `
-        const customersData = await db.get(customersQuery, [startDate, endDate])
-        customersCount = parseInt(customersData?.count || 0)
-      } else {
-        const customersQuery = `
-          SELECT COUNT(DISTINCT id) as count
-          FROM contacts
-          WHERE purchases_count > 0
-            AND DATE(created_at) >= DATE(?)
-            AND DATE(created_at) <= DATE(?)
+            AND created_at >= $1 AND created_at <= $2
             ${isAttributed ? `AND attribution_ad_id IS NOT NULL AND EXISTS (
               SELECT 1 FROM meta_ads ma
               WHERE ma.ad_id = contacts.attribution_ad_id
                 AND DATE(ma.date) = DATE(contacts.created_at)
             )` : ''}
         `
-        const customersData = await db.get(customersQuery, [startDate, endDate])
+        const customersData = await db.get(customersQuery, [range.startUtc, range.endUtc])
+        customersCount = parseInt(customersData?.count || 0)
+      } else {
+        const customersQuery = `
+          SELECT COUNT(DISTINCT id) as count
+          FROM contacts
+          WHERE purchases_count > 0
+            AND created_at >= ? AND created_at <= ?
+            ${isAttributed ? `AND attribution_ad_id IS NOT NULL AND EXISTS (
+              SELECT 1 FROM meta_ads ma
+              WHERE ma.ad_id = contacts.attribution_ad_id
+                AND DATE(ma.date) = DATE(contacts.created_at)
+            )` : ''}
+        `
+        const customersData = await db.get(customersQuery, [range.startUtc, range.endUtc])
         customersCount = parseInt(customersData?.count || 0)
       }
     } else {
@@ -1276,10 +1292,10 @@ export const getFunnelData = async (req, res) => {
             WHERE LOWER(status) IN (${statusPlaceholders})
             GROUP BY contact_id
           ) first_p ON first_p.contact_id = c.id
-          WHERE first_p.first_payment_date::timestamp >= $${SUCCESS_PAYMENT_STATUSES.length + 1}::timestamp
-            AND first_p.first_payment_date::timestamp < ($${SUCCESS_PAYMENT_STATUSES.length + 2}::timestamp + INTERVAL '1 day')
+          WHERE first_p.first_payment_date >= $${SUCCESS_PAYMENT_STATUSES.length + 1}
+            AND first_p.first_payment_date <= $${SUCCESS_PAYMENT_STATUSES.length + 2}
         `
-        const firstPaymentParams = [...SUCCESS_PAYMENT_STATUSES, startDate, endDate]
+        const firstPaymentParams = [...SUCCESS_PAYMENT_STATUSES, range.startUtc, range.endUtc]
         const customersData = await db.get(firstPaymentQuery, firstPaymentParams)
         customersCount = parseInt(customersData?.count || 0)
       } else {
@@ -1292,10 +1308,10 @@ export const getFunnelData = async (req, res) => {
             WHERE LOWER(status) IN (${statusPlaceholders})
             GROUP BY contact_id
           ) first_p ON first_p.contact_id = c.id
-          WHERE DATE(first_p.first_payment_date) >= DATE(?)
-            AND DATE(first_p.first_payment_date) <= DATE(?)
+          WHERE first_p.first_payment_date >= ?
+            AND first_p.first_payment_date <= ?
         `
-        const firstPaymentParams = [...SUCCESS_PAYMENT_STATUSES, startDate, endDate]
+        const firstPaymentParams = [...SUCCESS_PAYMENT_STATUSES, range.startUtc, range.endUtc]
         const customersData = await db.get(firstPaymentQuery, firstPaymentParams)
         customersCount = parseInt(customersData?.count || 0)
       }
