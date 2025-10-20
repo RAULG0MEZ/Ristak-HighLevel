@@ -845,8 +845,8 @@ export async function buildReportMetrics ({ startDate, endDate, groupBy = 'day',
   }
 
   // PASO 5: Contar clientes nuevos según el scope
-  // Vista "Última atribución": Cliente nuevo = fecha de creación del contacto
-  // Vista "Todos": Cliente nuevo = fecha del PRIMER PAGO
+  // Vista "Última atribución": Cliente nuevo = contacto con purchases_count > 0, agrupado por fecha de creación del contacto
+  // Vista "Todos": Cliente nuevo = fecha del PRIMER PAGO (no fecha de creación)
   const newCustomersMap = new Map() // period -> Set de customer keys
 
   if (!useContactAttribution) {
@@ -899,17 +899,30 @@ export async function buildReportMetrics ({ startDate, endDate, groupBy = 'day',
       const baseKey = buildContactKey(row) ?? `contact-${row.contact_id}`
       customerSet.add(baseKey)
     })
+  } else {
+    // Vista "Última atribución" / "Último toque desde anuncio":
+    // Cliente nuevo = contacto con purchases_count > 0
+    // Agrupa por fecha de CREACIÓN del contacto (NO primer pago)
+    // Ya procesamos estos contactos en contactsRaw (PASO 2), solo necesitamos contarlos
+    contactsRaw.forEach(contact => {
+      if (contact.purchases_count > 0) {
+        const period = contact.period
+        if (!newCustomersMap.has(period)) {
+          newCustomersMap.set(period, new Set())
+        }
+        const customerSet = newCustomersMap.get(period)
+        const baseKey = buildContactKey(contact) ?? `contact-${contact.contact_id}`
+        customerSet.add(baseKey)
+      }
+    })
   }
 
   // Convertir sets a conteos
   periodMap.forEach((bucket) => {
     bucket.leads = bucket.leadsSet.size
     bucket.customers = bucket.customersSet.size
-    // Vista "Última atribución": usar customersSet (fecha creación contacto)
-    // Vista "Todos": usar newCustomersMap (fecha primer pago)
-    bucket.new_customers = useContactAttribution
-      ? bucket.customersSet.size
-      : (newCustomersMap.has(bucket.period) ? newCustomersMap.get(bucket.period).size : 0)
+    // new_customers siempre viene de newCustomersMap (ya procesado según el scope arriba)
+    bucket.new_customers = newCustomersMap.has(bucket.period) ? newCustomersMap.get(bucket.period).size : 0
     bucket.appointments = bucket.appointmentsSet.size  // ✅ Siempre convertir appointments
     // Limpiar sets temporales
     delete bucket.leadsSet
