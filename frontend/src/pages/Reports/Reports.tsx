@@ -75,12 +75,12 @@ type TableRow = {
 }
 
 // "Todos" agrupa por la fecha en que sucedió cada evento.
-// "Último toque" agrupa todo por fecha de creación del contacto (sin filtro de anuncios).
-// "Último toque desde anuncio" agrupa por fecha de creación + filtra solo contactos con ad_id.
+// "Al momento de registro" agrupa todo por fecha de creación del contacto (sin filtro de anuncios).
+// "Identificados de anuncios" agrupa por fecha de creación + filtra solo contactos con ad_id.
 const scopeTabs = [
   { value: 'cashflow', label: 'Todos', icon: <Layers size={16} /> },
-  { value: 'attribution', label: 'Último toque', icon: <Target size={16} /> },
-  { value: 'campaigns', label: 'Último toque desde anuncio', icon: <MousePointerClick size={16} /> }
+  { value: 'attribution', label: 'Al momento de registro', icon: <Target size={16} /> },
+  { value: 'campaigns', label: 'Identificados de anuncios', icon: <MousePointerClick size={16} /> }
 ]
 
 const viewTabs = [
