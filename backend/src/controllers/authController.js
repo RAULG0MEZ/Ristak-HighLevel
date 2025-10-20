@@ -278,3 +278,69 @@ export async function getMe(req, res) {
     })
   }
 }
+
+/**
+ * POST /api/auth/change-username
+ * Cambia el nombre de usuario del usuario autenticado
+ */
+export async function changeUsername(req, res) {
+  try {
+    const { token, newUsername } = req.body
+
+    if (!token || !newUsername) {
+      return res.status(400).json({
+        success: false,
+        message: 'Token y nuevo nombre de usuario son requeridos'
+      })
+    }
+
+    if (newUsername.length < 3) {
+      return res.status(400).json({
+        success: false,
+        message: 'El nombre de usuario debe tener al menos 3 caracteres'
+      })
+    }
+
+    const { verifyToken } = await import('../utils/auth.js')
+    const payload = verifyToken(token)
+
+    if (!payload) {
+      return res.status(401).json({
+        success: false,
+        message: 'Token inválido o expirado'
+      })
+    }
+
+    // Verificar que el nuevo username no esté en uso
+    const existingUser = await db.get(
+      'SELECT id FROM users WHERE username = ? AND id != ?',
+      [newUsername, payload.userId]
+    )
+
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        message: 'Este nombre de usuario ya está en uso'
+      })
+    }
+
+    // Actualizar username
+    await db.run(
+      'UPDATE users SET username = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [newUsername, payload.userId]
+    )
+
+    logger.success(`✅ Username actualizado a "${newUsername}" para usuario ID: ${payload.userId}`)
+
+    res.json({
+      success: true,
+      message: 'Nombre de usuario actualizado exitosamente'
+    })
+  } catch (error) {
+    logger.error('❌ Error cambiando username:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error en el servidor'
+    })
+  }
+}

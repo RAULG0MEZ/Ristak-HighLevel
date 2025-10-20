@@ -48,7 +48,10 @@ export const Header: React.FC<HeaderProps> = ({ onLogout }) => {
   const initials = getInitials(user?.name, user?.email)
 
   return (
-    <header className="glass border-b border-[rgba(148,163,184,0.12)] px-4 sm:px-6 flex items-center justify-between sticky top-0 z-20" style={{ height: 'var(--header-height)' }}>
+    <header
+      className="glass border-b border-[rgba(148,163,184,0.12)] px-4 sm:px-6 flex items-center justify-between sticky top-0 z-[var(--z-index-header)]"
+      style={{ height: 'var(--header-height)', zIndex: 'var(--z-index-header)' }}
+    >
       <div className="flex items-center gap-2 sm:gap-4 flex-1 max-w-xl ml-12 lg:ml-0">
         <div className="flex items-center gap-2 flex-1">
           <input

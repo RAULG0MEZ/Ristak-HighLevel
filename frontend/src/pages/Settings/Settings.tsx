@@ -1,11 +1,12 @@
 import React from 'react'
 import { Routes, Route, Navigate, NavLink } from 'react-router-dom'
-import { Send, CreditCard, Activity, Calendar } from 'lucide-react'
+import { Send, CreditCard, Activity, Calendar, UserCircle } from 'lucide-react'
 import { HighLevelIntegration } from './HighLevelIntegration'
 import { PaymentsConfiguration } from './PaymentsConfiguration'
 import { MetaAdsIntegration } from './MetaAdsIntegration'
 import { WebTracking } from './WebTracking'
 import { CalendarsConfiguration } from './CalendarsConfiguration'
+import { AccountSettings } from './AccountSettings'
 import styles from './Settings.module.css'
 
 export const Settings: React.FC = () => {
@@ -17,6 +18,13 @@ export const Settings: React.FC = () => {
       </div>
 
       <div className={styles.tabs}>
+        <NavLink
+          to="/settings/account"
+          className={({ isActive }) => `${styles.tab} ${isActive ? styles.tabActive : ''}`}
+        >
+          <UserCircle size={18} />
+          <span>Cuenta</span>
+        </NavLink>
         <NavLink
           to="/settings/highlevel"
           className={({ isActive }) => `${styles.tab} ${isActive ? styles.tabActive : ''}`}
@@ -60,7 +68,8 @@ export const Settings: React.FC = () => {
 
       <div className={styles.mainContent}>
         <Routes>
-          <Route index element={<Navigate to="highlevel" replace />} />
+          <Route index element={<Navigate to="account" replace />} />
+          <Route path="account" element={<AccountSettings />} />
           <Route path="highlevel" element={<HighLevelIntegration />} />
           <Route path="payments" element={<PaymentsConfiguration />} />
           <Route path="meta-ads" element={<MetaAdsIntegration />} />

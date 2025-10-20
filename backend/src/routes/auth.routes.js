@@ -1,5 +1,5 @@
 import express from 'express'
-import { login, verifyTokenEndpoint, changePassword, getMe } from '../controllers/authController.js'
+import { login, verifyTokenEndpoint, changePassword, changeUsername, getMe } from '../controllers/authController.js'
 
 const router = express.Router()
 
@@ -11,6 +11,9 @@ router.post('/verify', verifyTokenEndpoint)
 
 // POST /api/auth/change-password - Cambiar contraseña
 router.post('/change-password', changePassword)
+
+// POST /api/auth/change-username - Cambiar nombre de usuario
+router.post('/change-username', changeUsername)
 
 // GET /api/auth/me - Obtener información del usuario autenticado
 router.get('/me', getMe)
