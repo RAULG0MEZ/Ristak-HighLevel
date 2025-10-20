@@ -70,9 +70,9 @@ export const getTransactions = async (req, res) => {
       params.push(range.endUtc)
     }
 
-    // Filtrar pagos de contactos ocultos
+    // Agregar filtro de contactos ocultos (mostrar pagos sin contacto O con contacto NO oculto)
     if (hiddenCondition) {
-      filters.push(`p.contact_id IN (SELECT c.id FROM contacts c WHERE ${hiddenCondition})`)
+      filters.push(`(p.contact_id IS NULL OR p.contact_id IN (SELECT c.id FROM contacts c WHERE ${hiddenCondition}))`)
     }
 
     const whereClause = filters.length ? `WHERE ${filters.join(' AND ')}` : ''
@@ -179,8 +179,9 @@ export const getTransactionById = async (req, res) => {
     const hiddenCondition = buildHiddenContactsCondition(hiddenFilters, 'c', false)
 
     const conditions = ['p.id = ?']
+    // Filtrar contactos ocultos (permitir pagos sin contacto)
     if (hiddenCondition) {
-      conditions.push(hiddenCondition)
+      conditions.push(`(p.contact_id IS NULL OR ${hiddenCondition})`)
     }
 
     const transaction = await db.get(
