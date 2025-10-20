@@ -62,10 +62,9 @@ export const getContacts = async (req, res) => {
     logger.info(`Obteniendo contactos - página ${pageNumber}, límite ${limitNumber}, rango: ${rangeLabel}`)
 
     // Query base
-    let whereClause = ''
     const params = []
 
-    // Construir WHERE clause para filtros
+    // Construir WHERE clause para filtros (para COUNT query - sin alias)
     const conditions = []
 
     if (search) {
@@ -88,21 +87,46 @@ export const getContacts = async (req, res) => {
       params.push(range.endUtc)
     }
 
-    // Aplicar filtro de contactos ocultos
+    // Aplicar filtro de contactos ocultos (para COUNT - sin alias)
     const hiddenFilters = await getHiddenContactFilters()
     const hiddenCondition = buildHiddenContactsCondition(hiddenFilters, 'contacts', false)
     if (hiddenCondition) {
       conditions.push(hiddenCondition)
     }
 
-    if (conditions.length > 0) {
-      whereClause = `WHERE ${conditions.join(' AND ')}`
-    }
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
 
     // Obtener el total de contactos
     const countQuery = `SELECT COUNT(*) as total FROM contacts ${whereClause}`
     const countResult = await db.get(countQuery, params)
     const totalContacts = countResult.total
+
+    // Construir WHERE clause para query principal (con alias 'c')
+    const mainConditions = []
+
+    if (search) {
+      mainConditions.push(`(
+        LOWER(c.full_name) LIKE LOWER(?) OR
+        LOWER(c.email) LIKE LOWER(?) OR
+        c.phone LIKE ?
+      )`)
+    }
+
+    if (range.startUtc) {
+      mainConditions.push('c.created_at >= ?')
+    }
+
+    if (range.endUtc) {
+      mainConditions.push('c.created_at <= ?')
+    }
+
+    // Aplicar filtro de contactos ocultos (con alias 'c')
+    const hiddenConditionAlias = buildHiddenContactsCondition(hiddenFilters, 'c', false)
+    if (hiddenConditionAlias) {
+      mainConditions.push(hiddenConditionAlias)
+    }
+
+    const mainWhereClause = mainConditions.length > 0 ? `WHERE ${mainConditions.join(' AND ')}` : ''
 
     // Obtener los contactos
     const sortableColumns = new Set([
@@ -150,7 +174,7 @@ export const getContacts = async (req, res) => {
         (SELECT COUNT(*) > 0 FROM appointments WHERE contact_id = c.id) AS has_appointments
       FROM contacts c
       LEFT JOIN payment_stats ps ON ps.contact_id = c.id
-      ${whereClause}
+      ${mainWhereClause}
       ORDER BY ${safeSortBy} ${orderDirection}
       LIMIT ? OFFSET ?
     `

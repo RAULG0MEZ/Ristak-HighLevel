@@ -452,14 +452,6 @@ export const Appointments: React.FC = () => {
     setCurrentDate(new Date());
   };
 
-  const handleSetDefaultCalendar = () => {
-    if (!selectedCalendar) return;
-
-    localStorage.setItem('defaultCalendarId', selectedCalendar.id);
-    setDefaultCalendarId(selectedCalendar.id);
-    showToast('success', 'Calendario predeterminado', `"${selectedCalendar.name}" se estableció como predeterminado.`);
-  };
-
   // Búsqueda de citas
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
@@ -676,7 +668,6 @@ export const Appointments: React.FC = () => {
         <div className={styles.headerControls}>
           {/* Selector de calendarios */}
           <div className={styles.calendarSelector}>
-          <div className={styles.calendarSelectorRow}>
             <button
               className={styles.calendarDropdownButton}
               onClick={() => setIsCalendarDropdownOpen(!isCalendarDropdownOpen)}
@@ -690,17 +681,6 @@ export const Appointments: React.FC = () => {
                 className={`${styles.dropdownIcon} ${isCalendarDropdownOpen ? styles.dropdownIconOpen : ''}`}
               />
             </button>
-
-            {selectedCalendar && (
-              <button
-                className={styles.setDefaultLink}
-                onClick={handleSetDefaultCalendar}
-                disabled={defaultCalendarId === selectedCalendar.id}
-              >
-                {defaultCalendarId === selectedCalendar.id ? 'Predeterminado' : 'Establecer predeterminado'}
-              </button>
-            )}
-          </div>
 
           {isCalendarDropdownOpen && (
             <>
