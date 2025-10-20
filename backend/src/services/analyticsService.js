@@ -645,25 +645,27 @@ export async function buildCampaignSummary ({ startDate, endDate } = {}) {
   }
 }
 
-function getGroupExpression(column, groupBy) {
-  // America/Mexico_City timezone offset (UTC-6)
-  const tzOffset = '-6 hours'
+function getGroupExpression(column, groupBy, timezone = 'America/Mexico_City') {
+  // Para SQLite, convertir timezone IANA a offset en horas
+  // Nota: SQLite no soporta timezone names, solo offsets numéricos
+  // Por ahora usamos el offset de Mexico City como default
+  const tzOffset = '-6 hours' // TODO: calcular dinámicamente desde timezone IANA
 
   if (groupBy === 'year') {
     return isPostgres
-      ? `TO_CHAR(${column}::date, 'YYYY')`
+      ? `TO_CHAR((${column} AT TIME ZONE 'UTC' AT TIME ZONE '${timezone}')::date, 'YYYY')`
       : `strftime('%Y', datetime(${column}, '${tzOffset}'))`
   }
 
   if (groupBy === 'month') {
     return isPostgres
-      ? `TO_CHAR(${column}::date, 'YYYY-MM')`
+      ? `TO_CHAR((${column} AT TIME ZONE 'UTC' AT TIME ZONE '${timezone}')::date, 'YYYY-MM')`
       : `strftime('%Y-%m', datetime(${column}, '${tzOffset}'))`
   }
 
   // day
   return isPostgres
-    ? `TO_CHAR(${column}::date, 'YYYY-MM-DD')`
+    ? `TO_CHAR((${column} AT TIME ZONE 'UTC' AT TIME ZONE '${timezone}')::date, 'YYYY-MM-DD')`
     : `strftime('%Y-%m-%d', datetime(${column}, '${tzOffset}'))`
 }
 
@@ -700,6 +702,9 @@ export async function buildReportMetrics ({ startDate, endDate, groupBy = 'day',
 
   const periodMap = new Map()
 
+  // Timezone dinámico de HighLevel (ya resuelto en range.appliedTimezone)
+  const timezone = range.appliedTimezone
+
   const contactParams = []
   const contactConditions = buildRangeConditions('created_at', range, contactParams)
 
@@ -708,7 +713,7 @@ export async function buildReportMetrics ({ startDate, endDate, groupBy = 'day',
   }
 
   const contactWhere = contactConditions.length ? `WHERE ${contactConditions.join(' AND ')}` : ''
-  const contactGroupExpr = getGroupExpression('contacts.created_at', groupBy)
+  const contactGroupExpr = getGroupExpression('contacts.created_at', groupBy, timezone)
 
   // PASO 2: Obtener contactos individuales con su período
   const contactsRawQuery = `
@@ -878,7 +883,7 @@ export async function buildReportMetrics ({ startDate, endDate, groupBy = 'day',
     }
 
     const firstPaymentsWhere = firstPaymentsConditions.length ? `WHERE ${firstPaymentsConditions.join(' AND ')}` : ''
-    const firstPaymentGroupExpr = getGroupExpression('first_p.first_payment_date', groupBy)
+    const firstPaymentGroupExpr = getGroupExpression('first_p.first_payment_date', groupBy, timezone)
 
     // Query principal: obtener contactos con su fecha de primer pago
     const firstPaymentsQuery = `
@@ -945,7 +950,7 @@ export async function buildReportMetrics ({ startDate, endDate, groupBy = 'day',
     applySuccessStatusFilter(paymentConditions, paymentParams, 'p')
 
     const paymentWhere = paymentConditions.length ? `WHERE ${paymentConditions.join(' AND ')}` : ''
-    const paymentGroupExpr = getGroupExpression('p.date', groupBy)
+    const paymentGroupExpr = getGroupExpression('p.date', groupBy, timezone)
 
     const paymentsQuery = `
       SELECT
@@ -978,7 +983,7 @@ export async function buildReportMetrics ({ startDate, endDate, groupBy = 'day',
     applySuccessStatusFilter(paymentConditions, paymentParams, 'p')
 
     const paymentWhere = paymentConditions.length ? `WHERE ${paymentConditions.join(' AND ')}` : ''
-    const paymentGroupExpr = getGroupExpression('c.created_at', groupBy)
+    const paymentGroupExpr = getGroupExpression('c.created_at', groupBy, timezone)
 
     const paymentsQuery = `
       SELECT
@@ -1007,7 +1012,7 @@ export async function buildReportMetrics ({ startDate, endDate, groupBy = 'day',
   const spendParams = []
   const spendConditions = buildRangeConditions('date', range, spendParams)
   const spendWhere = spendConditions.length ? `WHERE ${spendConditions.join(' AND ')}` : ''
-  const spendGroupExpr = getGroupExpression('meta_ads.date', groupBy)
+  const spendGroupExpr = getGroupExpression('meta_ads.date', groupBy, timezone)
 
   const spendQuery = `
       SELECT
@@ -1039,7 +1044,7 @@ export async function buildReportMetrics ({ startDate, endDate, groupBy = 'day',
     const visitorsParams = []
     const visitorsConditions = buildRangeConditions('started_at', range, visitorsParams)
     const visitorsWhere = visitorsConditions.length ? `WHERE ${visitorsConditions.join(' AND ')}` : ''
-    const visitorsGroupExpr = getGroupExpression('started_at', groupBy)
+    const visitorsGroupExpr = getGroupExpression('started_at', groupBy, timezone)
 
     const visitorsQuery = `
       SELECT
@@ -1069,7 +1074,7 @@ export async function buildReportMetrics ({ startDate, endDate, groupBy = 'day',
     }
 
     const visitorsWhere = visitorsConditions.length ? `WHERE ${visitorsConditions.join(' AND ')}` : ''
-    const visitorsGroupExpr = getGroupExpression('c.created_at', groupBy)
+    const visitorsGroupExpr = getGroupExpression('c.created_at', groupBy, timezone)
 
     const visitorsQuery = `
       SELECT
