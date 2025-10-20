@@ -4,6 +4,7 @@ import { updateContactsStats } from '../utils/updateContactsStats.js'
 import { resolveDateRange, resolveDateRangeWithGHLTimezone } from '../utils/dateUtils.js'
 import { buildContactStats } from '../services/analyticsService.js'
 import { getGHLClient } from '../services/ghlClient.js'
+import { getHiddenContactFilters, buildHiddenContactsCondition } from '../utils/hiddenContactsFilter.js'
 import fetch from 'node-fetch'
 
 const normalizePhone = (phone) => {
@@ -87,6 +88,13 @@ export const getContacts = async (req, res) => {
       params.push(range.endUtc)
     }
 
+    // Aplicar filtro de contactos ocultos
+    const hiddenFilters = await getHiddenContactFilters()
+    const hiddenCondition = buildHiddenContactsCondition(hiddenFilters, 'c', false)
+    if (hiddenCondition) {
+      conditions.push(hiddenCondition)
+    }
+
     if (conditions.length > 0) {
       whereClause = `WHERE ${conditions.join(' AND ')}`
     }
@@ -138,7 +146,8 @@ export const getContacts = async (req, res) => {
         COALESCE(ps.purchases_count, c.purchases_count, 0) AS purchases_count,
         COALESCE(ps.last_purchase_date, c.last_purchase_date) AS last_purchase_date,
         c.appointment_date,
-        c.created_at
+        c.created_at,
+        (SELECT COUNT(*) > 0 FROM appointments WHERE contact_id = c.id) AS has_appointments
       FROM contacts c
       LEFT JOIN payment_stats ps ON ps.contact_id = c.id
       ${whereClause}
@@ -155,7 +164,7 @@ export const getContacts = async (req, res) => {
       let status = 'lead'
       if (c.purchases_count > 0) {
         status = 'customer'
-      } else if (c.appointment_date) {
+      } else if (c.has_appointments) {
         status = 'appointment'
       }
 
@@ -243,7 +252,8 @@ export const getContactById = async (req, res) => {
         COALESCE(ps.purchases_count, c.purchases_count, 0) AS purchases_count,
         COALESCE(ps.last_purchase_date, c.last_purchase_date) AS last_purchase_date,
         c.appointment_date,
-        c.created_at
+        c.created_at,
+        (SELECT COUNT(*) > 0 FROM appointments WHERE contact_id = c.id) AS has_appointments
       FROM contacts c
       LEFT JOIN payment_stats ps ON ps.contact_id = c.id
       WHERE c.id = ?`,
@@ -439,7 +449,7 @@ export const getContactById = async (req, res) => {
     let status = 'lead'
     if (contact.purchases_count > 0) {
       status = 'customer'
-    } else if (contact.appointment_date) {
+    } else if (contact.has_appointments) {
       status = 'appointment'
     }
 
@@ -583,7 +593,8 @@ export const searchContacts = async (req, res) => {
         c.created_at,
         c.source,
         c.attribution_ad_name,
-        c.attribution_ad_id
+        c.attribution_ad_id,
+        (SELECT COUNT(*) > 0 FROM appointments WHERE contact_id = c.id) AS has_appointments
       FROM contacts c
       LEFT JOIN payment_stats ps ON ps.contact_id = c.id
       WHERE
@@ -600,7 +611,7 @@ export const searchContacts = async (req, res) => {
       let status = 'lead'
       if (c.purchases_count > 0) {
         status = 'customer'
-      } else if (c.appointment_date) {
+      } else if (c.has_appointments) {
         status = 'appointment'
       }
 
