@@ -619,6 +619,17 @@ async function initTables() {
     await db.run('CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)')
 
+    // Tabla para filtros de contactos ocultos
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS hidden_contact_filters (
+        id ${usePostgres ? 'SERIAL PRIMARY KEY' : 'INTEGER PRIMARY KEY AUTOINCREMENT'},
+        filter_text VARCHAR(255) NOT NULL UNIQUE,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
+    await db.run('CREATE INDEX IF NOT EXISTS idx_hidden_filters_text ON hidden_contact_filters(filter_text)')
+
     // MIGRACIONES PARA POSTGRESQL
     if (usePostgres) {
       // Migración 1: Agregar columna contact_id a appointments si no existe

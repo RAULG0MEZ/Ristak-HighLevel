@@ -32,6 +32,7 @@ import trackingRoutes from './routes/tracking.routes.js'
 import configRoutes from './routes/config.routes.js'
 import maintenanceRoutes from './routes/maintenance.routes.js'
 import authRoutes from './routes/auth.routes.js'
+import hiddenContactsRoutes from './routes/hiddenContacts.routes.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -72,6 +73,7 @@ app.use('/api/payment-methods', paymentMethodsRoutes)
 app.use('/api/calendars', calendarsRoutes)
 app.use('/api/config', configRoutes)
 app.use('/api/maintenance', maintenanceRoutes)
+app.use('/api/hidden-contacts', hiddenContactsRoutes)
 app.use('/webhook', webhooksRoutes)
 app.use('/webhooks', webhooksRoutes) // Alias para webhooks con 's'
 
