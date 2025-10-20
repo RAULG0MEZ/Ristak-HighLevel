@@ -453,6 +453,15 @@ function isContactCandidate(value: unknown): value is ContactLike {
   if (!isPlainObject(value)) {
     return false
   }
+
+  // IMPORTANTE: Excluir transactions/payments de la deduplicación
+  // Los payments tienen campos: id, date, contactId, contactName, amount, method, status
+  // Si tiene 'amount' y 'status', probablemente es un payment, NO un contacto
+  const obj = value as Record<string, any>
+  if ('amount' in obj && 'status' in obj && 'date' in obj) {
+    return false // Es un payment/transaction, no deduplicar
+  }
+
   return Boolean(extractPhone(value as ContactLike))
 }
 

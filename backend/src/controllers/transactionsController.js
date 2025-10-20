@@ -137,7 +137,7 @@ export const getTransactions = async (req, res) => {
       `Transacciones obtenidas (${rangeLabel}) -> ${transactions.length} registros en esta página, ${totalTransactions} total`
     )
 
-    res.json({
+    const response = {
       success: true,
       data: mappedTransactions,
       pagination: {
@@ -148,7 +148,10 @@ export const getTransactions = async (req, res) => {
         hasNext: pageNumber < totalPages,
         hasPrev: pageNumber > 1
       }
-    })
+    }
+
+    logger.info(`🔍 DEBUG Response: ${mappedTransactions.length} transactions in data field`)
+    res.json(response)
 
   } catch (error) {
     logger.error(`Error obteniendo transacciones: ${error.message}`)
