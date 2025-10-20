@@ -73,7 +73,6 @@ export const ChartTooltip: React.FC<ChartTooltipProps> = ({
     transform: 'translate(-50%, calc(-100% - var(--tooltip-gap)))',
     pointerEvents: 'none',
     zIndex: 9998,
-    transition: 'left 150ms ease-out, top 150ms ease-out',
     '--tooltip-gap': `${clampedOffset}px`
   }
 

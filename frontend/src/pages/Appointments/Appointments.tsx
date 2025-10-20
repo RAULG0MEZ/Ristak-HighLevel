@@ -44,6 +44,8 @@ const STATUS_LABELS: Record<CalendarEvent['appointmentStatus'], string> = {
 const getStatusLabel = (status: CalendarEvent['appointmentStatus']): string =>
   STATUS_LABELS[status] ?? status;
 
+const MIN_DAY_EVENT_MINUTES = 45;
+
 interface DayCell {
   date: Date;
   isCurrentMonth: boolean;
@@ -1257,10 +1259,19 @@ export const Appointments: React.FC = () => {
                     return dayEvents.map((event) => {
                       const startDate = toDateInTimeZone(event.startTime, event.timeZone) ?? new Date(event.startTime);
                       const endDate = toDateInTimeZone(event.endTime, event.timeZone) ?? new Date(event.endTime);
-                      const startHour = startDate.getHours() + startDate.getMinutes() / 60;
-                      const endHour = endDate.getHours() + endDate.getMinutes() / 60;
-                      const top = (startHour / 24) * 100;
-                      const height = ((endHour - startHour) / 24) * 100;
+                      const totalMinutesInDay = 24 * 60;
+                      const startMinutes = startDate.getHours() * 60 + startDate.getMinutes();
+                      const rawDurationMinutes = Math.max(
+                        (endDate.getTime() - startDate.getTime()) / 60000,
+                        15
+                      );
+                      let adjustedDuration = Math.max(rawDurationMinutes, MIN_DAY_EVENT_MINUTES);
+                      if (startMinutes + adjustedDuration > totalMinutesInDay) {
+                        const availableMinutes = Math.max(totalMinutesInDay - startMinutes, 0);
+                        adjustedDuration = Math.max(rawDurationMinutes, availableMinutes || MIN_DAY_EVENT_MINUTES);
+                      }
+                      const top = (startMinutes / totalMinutesInDay) * 100;
+                      const height = (adjustedDuration / totalMinutesInDay) * 100;
                       const statusClass =
                         styles[`event${event.appointmentStatus.charAt(0).toUpperCase() + event.appointmentStatus.slice(1).toLowerCase()}`] ||
                         styles.eventDefault;
