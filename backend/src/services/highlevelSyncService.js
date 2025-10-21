@@ -929,7 +929,7 @@ export async function saveMetaCustomValues(locationId, apiToken, metaCredentials
     const fieldsToSave = [
       { key: 'adAccountId', name: 'Facebook - Ad Account ID', value: metaCredentials.adAccountId },
       { key: 'accessToken', name: 'Facebook - App Access Token', value: metaCredentials.accessToken },
-      { key: 'pixelId', name: 'pixel_id', value: metaCredentials.pixelId },
+      { key: 'pixelId', name: 'Facebook - Pixel ID', value: metaCredentials.pixelId },
       { key: 'appId', name: 'Facebook - App ID', value: metaCredentials.appId },
       { key: 'appSecret', name: 'Facebook - App Secret', value: metaCredentials.appSecret }
     ]
@@ -1047,7 +1047,9 @@ export async function fetchAndSaveMetaConfig(locationId, apiToken) {
     // Buscar los custom values de Facebook (con los nombres reales de HighLevel)
     const fbAdAccountId = customValues.find(cv => cv.name === 'Facebook - Ad Account ID')?.value
     const fbAccessToken = customValues.find(cv => cv.name === 'Facebook - App Access Token')?.value
-    const fbPixelId = customValues.find(cv => cv.name === 'pixel_id')?.value
+    // Soportar ambos nombres para pixel (nuevo: "Facebook - Pixel ID", legacy: "pixel_id")
+    const fbPixelId = customValues.find(cv => cv.name === 'Facebook - Pixel ID')?.value ||
+                      customValues.find(cv => cv.name === 'pixel_id')?.value
     const fbAppId = customValues.find(cv => cv.name === 'Facebook - App ID')?.value
     const fbAppSecret = customValues.find(cv => cv.name === 'Facebook - App Secret')?.value
 

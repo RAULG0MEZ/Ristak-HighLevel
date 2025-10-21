@@ -126,7 +126,7 @@ async function syncMetaCustomValues(adAccountId, accessToken, pixelId, appId, ap
     const customValues = {
       'Facebook - Ad Account ID': adAccountId,
       'Facebook - App Access Token': accessToken,
-      'pixel_id': pixelId || '',
+      'Facebook - Pixel ID': pixelId || '',
       'Facebook - App ID': appId || '',
       'Facebook - App Secret': appSecret || ''
     }
