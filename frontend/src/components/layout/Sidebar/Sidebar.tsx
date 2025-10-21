@@ -13,7 +13,8 @@ import {
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { Logo } from '@/components/common'
-import { useAppConfig } from '@/hooks'
+import { useAppConfig, useLogoContrast } from '@/hooks'
+import { useTheme } from '@/contexts/ThemeContext'
 import {
   DndContext,
   closestCenter,
@@ -170,6 +171,7 @@ const SortableItem: React.FC<SortableItemProps> = ({ item, isActive, isDragging,
 
 export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, locationLogo }) => {
   const location = useLocation()
+  const { theme } = useTheme()
   const [mounted, setMounted] = useState(false)
   const [analyticsEnabled] = useAppConfig<boolean>('show_analytics', false)
   const [sidebarOrder, setSidebarOrder] = useAppConfig<string[]>('sidebar_navigation_order', [])
@@ -178,6 +180,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
   const [isEditMode, setIsEditMode] = useState(false)
   const longPressTimerRef = React.useRef<number | null>(null)
   const longPressStartPos = React.useRef<{ x: number; y: number } | null>(null)
+
+  // Detectar si el logo necesita contraste en modo oscuro
+  const isDarkMode = theme === 'dark'
+  const { needsContrast } = useLogoContrast(locationLogo, isDarkMode)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -334,6 +340,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
               src={locationLogo}
               alt={locationName || 'Logo'}
               className="max-w-full max-h-full object-contain"
+              style={{
+                filter: needsContrast ? 'invert(1) brightness(1.2)' : undefined,
+                transition: 'filter 0.2s ease'
+              }}
             />
           </div>
         ) : mounted && locationName && locationName !== 'Mi Negocio' ? (
