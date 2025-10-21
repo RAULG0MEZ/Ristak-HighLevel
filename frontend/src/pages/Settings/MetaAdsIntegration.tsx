@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Card, Button } from '@/components/common'
-import { CheckCircle, ExternalLink, ChevronDown, ChevronUp, AlertCircle, Info, RefreshCw, X } from 'lucide-react'
+import { CheckCircle, ExternalLink, ChevronDown, ChevronUp, AlertCircle, Info, RefreshCw, Trash2 } from 'lucide-react'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { campaignsService } from '@/services/campaignsService'
@@ -313,7 +313,7 @@ export const MetaAdsIntegration: React.FC = () => {
                           className={styles.chipDeleteButton}
                           type="button"
                         >
-                          <X size={16} />
+                          <Trash2 size={16} style={{ color: '#ef4444' }} />
                         </button>
                       </div>
                     ) : (
@@ -365,7 +365,7 @@ export const MetaAdsIntegration: React.FC = () => {
                           className={styles.chipDeleteButton}
                           type="button"
                         >
-                          <X size={16} />
+                          <Trash2 size={16} style={{ color: '#ef4444' }} />
                         </button>
                       </div>
                     ) : adAccounts.length > 0 ? (
@@ -426,7 +426,7 @@ export const MetaAdsIntegration: React.FC = () => {
                           className={styles.chipDeleteButton}
                           type="button"
                         >
-                          <X size={16} />
+                          <Trash2 size={16} style={{ color: '#ef4444' }} />
                         </button>
                       </div>
                     ) : isLoadingPixels ? (
@@ -473,7 +473,7 @@ export const MetaAdsIntegration: React.FC = () => {
                           className={styles.chipDeleteButton}
                           type="button"
                         >
-                          <X size={16} />
+                          <Trash2 size={16} style={{ color: '#ef4444' }} />
                         </button>
                       </div>
                     ) : (
@@ -504,7 +504,7 @@ export const MetaAdsIntegration: React.FC = () => {
                         className={styles.chipDeleteButton}
                         type="button"
                       >
-                        <X size={16} />
+                        <Trash2 size={16} style={{ color: '#ef4444' }} />
                       </button>
                     </div>
                   ) : (
