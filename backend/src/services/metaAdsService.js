@@ -108,8 +108,121 @@ async function getAdAccountTimezone(adAccountId, accessToken) {
 }
 
 /**
+ * Sincroniza custom values de Meta en HighLevel
+ */
+async function syncMetaCustomValues(adAccountId, accessToken, appId, appSecret) {
+  try {
+    // Obtener configuración de HighLevel
+    const ghlConfig = await db.get('SELECT location_id, api_token FROM highlevel_config LIMIT 1')
+
+    if (!ghlConfig || !ghlConfig.location_id || !ghlConfig.api_token) {
+      logger.warn('⚠️ No hay configuración de HighLevel. Saltando sincronización de custom values de Meta.')
+      return { success: false, message: 'No HighLevel config' }
+    }
+
+    logger.info('📝 Sincronizando custom values de Meta en HighLevel...')
+
+    // Custom values a crear/actualizar
+    const customValues = {
+      'Facebook - Ad Account ID': adAccountId,
+      'Facebook - App Access Token': accessToken,
+      'Facebook - App ID': appId || '',
+      'Facebook - App Secret': appSecret || ''
+    }
+
+    // Obtener custom values existentes
+    const getResponse = await fetch(
+      `https://services.leadconnectorhq.com/locations/${ghlConfig.location_id}/customValues`,
+      {
+        headers: {
+          'Authorization': `Bearer ${ghlConfig.api_token}`,
+          'Version': '2021-07-28'
+        }
+      }
+    )
+
+    let existingCustomValues = []
+    if (getResponse.ok) {
+      const getData = await getResponse.json()
+      existingCustomValues = getData.customValues || []
+    }
+
+    const results = []
+
+    // Crear o actualizar cada custom value
+    for (const [name, value] of Object.entries(customValues)) {
+      try {
+        const existing = existingCustomValues.find(cv => cv.name === name)
+
+        if (existing) {
+          // Actualizar existente con PUT
+          logger.info(`  Actualizando: ${name}`)
+          const updateResponse = await fetch(
+            `https://services.leadconnectorhq.com/locations/${ghlConfig.location_id}/customValues/${existing.id}`,
+            {
+              method: 'PUT',
+              headers: {
+                'Authorization': `Bearer ${ghlConfig.api_token}`,
+                'Content-Type': 'application/json',
+                'Version': '2021-07-28'
+              },
+              body: JSON.stringify({ name, value })
+            }
+          )
+
+          if (updateResponse.ok) {
+            results.push({ name, status: 'updated' })
+            logger.info(`  ✅ ${name} actualizado`)
+          } else {
+            const errorData = await updateResponse.json()
+            results.push({ name, status: 'error', error: errorData })
+            logger.error(`  ❌ Error actualizando ${name}:`, errorData)
+          }
+        } else {
+          // Crear nuevo con POST
+          logger.info(`  Creando: ${name}`)
+          const createResponse = await fetch(
+            `https://services.leadconnectorhq.com/locations/${ghlConfig.location_id}/customValues`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${ghlConfig.api_token}`,
+                'Content-Type': 'application/json',
+                'Version': '2021-07-28'
+              },
+              body: JSON.stringify({ name, value })
+            }
+          )
+
+          if (createResponse.ok) {
+            results.push({ name, status: 'created' })
+            logger.info(`  ✅ ${name} creado`)
+          } else {
+            const errorData = await createResponse.json()
+            results.push({ name, status: 'error', error: errorData })
+            logger.error(`  ❌ Error creando ${name}:`, errorData)
+          }
+        }
+      } catch (err) {
+        results.push({ name, status: 'error', error: err.message })
+        logger.error(`Error configurando ${name}:`, err)
+      }
+    }
+
+    const successCount = results.filter(r => r.status === 'created' || r.status === 'updated').length
+    logger.success(`✅ Custom values de Meta sincronizados: ${successCount}/${results.length}`)
+
+    return { success: true, results }
+  } catch (error) {
+    logger.error('Error sincronizando custom values de Meta:', error.message)
+    return { success: false, error: error.message }
+  }
+}
+
+/**
  * Guarda la configuración de Meta en la base de datos
  * ENCRIPTA el access_token y app_secret antes de guardar
+ * CREA/ACTUALIZA custom values en HighLevel automáticamente
  */
 export async function saveMetaConfig(adAccountId, accessToken, appId = null, appSecret = null) {
   try {
@@ -165,7 +278,13 @@ export async function saveMetaConfig(adAccountId, accessToken, appId = null, app
       ])
     }
 
-    logger.success('Configuración de Meta guardada (encriptada con timezone)')
+    logger.success('Configuración de Meta guardada en BD local (encriptada con timezone)')
+
+    // Sincronizar custom values en HighLevel (no bloquear si falla)
+    syncMetaCustomValues(adAccountId, accessToken, appId, appSecret).catch(err => {
+      logger.warn('No se pudieron sincronizar custom values de Meta en HighLevel:', err.message)
+    })
+
     return { success: true }
   } catch (error) {
     logger.error('Error guardando configuración de Meta:', error.message)

@@ -199,6 +199,14 @@ Backend:
 - **Servicios**: `metaAdsService.js`, `campaignsService.ts`
 - **Cron Job**: Sincronización cada hora via `metaSync.cron.js`
 - **Funcionalidad**: Métricas de campañas publicitarias
+- **Auto-configuración de Custom Values**:
+  - Al conectar cuenta de Meta, se crean/actualizan automáticamente 4 custom values en HighLevel:
+    - `Facebook - Ad Account ID`: ID de la cuenta de anuncios
+    - `Facebook - App Access Token`: Token de acceso (sin encriptar en GHL)
+    - `Facebook - App ID`: App ID de Facebook (opcional)
+    - `Facebook - App Secret`: App Secret de Facebook (opcional, sin encriptar en GHL)
+  - Si no existe configuración de HighLevel, se salta este paso con warning
+  - La función `syncMetaCustomValues()` crea nuevos o actualiza existentes (POST/PUT automático)
 - **Timezone**:
   - Al conectar cuenta de Meta, se obtiene automáticamente `timezone_id`, `timezone_name`, `timezone_offset_hours_utc`
   - Ejemplo: timezone_name = "America/Los_Angeles", timezone_offset_hours_utc = -8
