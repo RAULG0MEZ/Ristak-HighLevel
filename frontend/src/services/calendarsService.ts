@@ -69,6 +69,10 @@ export interface Calendar {
   guestType?: string;
   consentLabel?: string;
   calendarCoverImage?: string;
+  lookBusyConfig?: {
+    enabled: boolean;
+    LookBusyPercentage: number;
+  };
 }
 
 export interface CalendarEvent {

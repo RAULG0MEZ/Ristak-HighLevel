@@ -123,8 +123,8 @@ export const CalendarsConfiguration: React.FC = () => {
 
     setSavingConfig(true)
     try {
-      // Construir payload con solo los campos editables
-      const updateData = {
+      // Construir payload con todos los campos editables
+      const updateData: any = {
         slotDuration: selectedCalendar.slotDuration,
         slotDurationUnit: selectedCalendar.slotDurationUnit,
         slotInterval: selectedCalendar.slotInterval,
@@ -139,6 +139,19 @@ export const CalendarsConfiguration: React.FC = () => {
         allowBookingForUnit: selectedCalendar.allowBookingForUnit || 'days',
         appoinmentPerSlot: selectedCalendar.appoinmentPerSlot,
         appoinmentPerDay: selectedCalendar.appoinmentPerDay
+      }
+
+      // Agregar lookBusyConfig si está configurado
+      if (selectedCalendar.lookBusyConfig) {
+        updateData.lookBusyConfig = {
+          enabled: selectedCalendar.lookBusyConfig.enabled,
+          LookBusyPercentage: selectedCalendar.lookBusyConfig.LookBusyPercentage
+        }
+      }
+
+      // Agregar availabilityType si está configurado
+      if (selectedCalendar.availabilityType !== undefined) {
+        updateData.availabilityType = selectedCalendar.availabilityType
       }
 
       await calendarsService.updateCalendar(selectedCalendar.id, updateData, accessToken)
@@ -434,193 +447,262 @@ export const CalendarsConfiguration: React.FC = () => {
           isOpen={showConfigModal}
           onClose={handleCloseConfigModal}
           title={`Configurar: ${selectedCalendar.name}`}
-          size="md"
+          size="lg"
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            {/* Duración de cita */}
-            <div>
-              <label className={styles.label}>Duración de cita</label>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '8px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', maxHeight: '70vh', overflowY: 'auto', padding: '4px' }}>
+            {/* COLUMNA IZQUIERDA */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {/* Duración de cita */}
+              <div>
+                <label className={styles.label}>Duración de cita</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '8px' }}>
+                  <input
+                    type="number"
+                    className={styles.input}
+                    value={selectedCalendar.slotDuration}
+                    onChange={(e) => setSelectedCalendar({...selectedCalendar, slotDuration: parseInt(e.target.value) || 0})}
+                    min="1"
+                  />
+                  <select
+                    className={styles.input}
+                    value={selectedCalendar.slotDurationUnit}
+                    onChange={(e) => setSelectedCalendar({...selectedCalendar, slotDurationUnit: e.target.value})}
+                  >
+                    <option value="mins">Minutos</option>
+                    <option value="hours">Horas</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Intervalo entre slots */}
+              <div>
+                <label className={styles.label}>Intervalo entre slots</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '8px' }}>
+                  <input
+                    type="number"
+                    className={styles.input}
+                    value={selectedCalendar.slotInterval}
+                    onChange={(e) => setSelectedCalendar({...selectedCalendar, slotInterval: parseInt(e.target.value) || 0})}
+                    min="1"
+                  />
+                  <select
+                    className={styles.input}
+                    value={selectedCalendar.slotIntervalUnit}
+                    onChange={(e) => setSelectedCalendar({...selectedCalendar, slotIntervalUnit: e.target.value})}
+                  >
+                    <option value="mins">Minutos</option>
+                    <option value="hours">Horas</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Pre-Buffer */}
+              <div>
+                <label className={styles.label}>Pre-Buffer (antes)</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '8px' }}>
+                  <input
+                    type="number"
+                    className={styles.input}
+                    value={selectedCalendar.preBuffer || 0}
+                    onChange={(e) => setSelectedCalendar({...selectedCalendar, preBuffer: parseInt(e.target.value) || 0})}
+                    min="0"
+                  />
+                  <select
+                    className={styles.input}
+                    value={selectedCalendar.preBufferUnit || 'mins'}
+                    onChange={(e) => setSelectedCalendar({...selectedCalendar, preBufferUnit: e.target.value})}
+                  >
+                    <option value="mins">Minutos</option>
+                    <option value="hours">Horas</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Slot Buffer */}
+              <div>
+                <label className={styles.label}>Slot Buffer (después)</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '8px' }}>
+                  <input
+                    type="number"
+                    className={styles.input}
+                    value={selectedCalendar.slotBuffer || 0}
+                    onChange={(e) => setSelectedCalendar({...selectedCalendar, slotBuffer: parseInt(e.target.value) || 0})}
+                    min="0"
+                  />
+                  <select
+                    className={styles.input}
+                    value={selectedCalendar.slotBufferUnit || 'mins'}
+                    onChange={(e) => setSelectedCalendar({...selectedCalendar, slotBufferUnit: e.target.value})}
+                  >
+                    <option value="mins">Minutos</option>
+                    <option value="hours">Horas</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Citas por slot */}
+              <div>
+                <label className={styles.label}>Citas por slot</label>
                 <input
                   type="number"
                   className={styles.input}
-                  value={selectedCalendar.slotDuration}
-                  onChange={(e) => setSelectedCalendar({...selectedCalendar, slotDuration: parseInt(e.target.value) || 0})}
+                  value={selectedCalendar.appoinmentPerSlot}
+                  onChange={(e) => setSelectedCalendar({...selectedCalendar, appoinmentPerSlot: parseInt(e.target.value) || 1})}
                   min="1"
                 />
-                <select
-                  className={styles.input}
-                  value={selectedCalendar.slotDurationUnit}
-                  onChange={(e) => setSelectedCalendar({...selectedCalendar, slotDurationUnit: e.target.value})}
-                >
-                  <option value="mins">Minutos</option>
-                  <option value="hours">Horas</option>
-                </select>
               </div>
-            </div>
 
-            {/* Intervalo entre slots */}
-            <div>
-              <label className={styles.label}>Intervalo entre slots disponibles</label>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '8px' }}>
+              {/* Citas por día */}
+              <div>
+                <label className={styles.label}>Citas por día (0 = sin límite)</label>
                 <input
                   type="number"
                   className={styles.input}
-                  value={selectedCalendar.slotInterval}
-                  onChange={(e) => setSelectedCalendar({...selectedCalendar, slotInterval: parseInt(e.target.value) || 0})}
-                  min="1"
-                />
-                <select
-                  className={styles.input}
-                  value={selectedCalendar.slotIntervalUnit}
-                  onChange={(e) => setSelectedCalendar({...selectedCalendar, slotIntervalUnit: e.target.value})}
-                >
-                  <option value="mins">Minutos</option>
-                  <option value="hours">Horas</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Pre-Buffer */}
-            <div>
-              <label className={styles.label}>Tiempo antes de la cita (Pre-Buffer)</label>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '8px' }}>
-                <input
-                  type="number"
-                  className={styles.input}
-                  value={selectedCalendar.preBuffer || 0}
-                  onChange={(e) => setSelectedCalendar({...selectedCalendar, preBuffer: parseInt(e.target.value) || 0})}
+                  value={selectedCalendar.appoinmentPerDay}
+                  onChange={(e) => setSelectedCalendar({...selectedCalendar, appoinmentPerDay: parseInt(e.target.value) || 0})}
                   min="0"
                 />
-                <select
-                  className={styles.input}
-                  value={selectedCalendar.preBufferUnit || 'mins'}
-                  onChange={(e) => setSelectedCalendar({...selectedCalendar, preBufferUnit: e.target.value})}
-                >
-                  <option value="mins">Minutos</option>
-                  <option value="hours">Horas</option>
-                </select>
               </div>
             </div>
 
-            {/* Slot Buffer */}
-            <div>
-              <label className={styles.label}>Tiempo después de la cita (Slot Buffer)</label>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '8px' }}>
-                <input
-                  type="number"
-                  className={styles.input}
-                  value={selectedCalendar.slotBuffer || 0}
-                  onChange={(e) => setSelectedCalendar({...selectedCalendar, slotBuffer: parseInt(e.target.value) || 0})}
-                  min="0"
-                />
-                <select
-                  className={styles.input}
-                  value={selectedCalendar.slotBufferUnit || 'mins'}
-                  onChange={(e) => setSelectedCalendar({...selectedCalendar, slotBufferUnit: e.target.value})}
-                >
-                  <option value="mins">Minutos</option>
-                  <option value="hours">Horas</option>
-                </select>
+            {/* COLUMNA DERECHA */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {/* Aviso mínimo para agendar */}
+              <div>
+                <label className={styles.label}>Aviso mínimo</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '8px' }}>
+                  <input
+                    type="number"
+                    className={styles.input}
+                    value={selectedCalendar.allowBookingAfter || 0}
+                    onChange={(e) => setSelectedCalendar({...selectedCalendar, allowBookingAfter: parseInt(e.target.value) || 0})}
+                    min="0"
+                  />
+                  <select
+                    className={styles.input}
+                    value={selectedCalendar.allowBookingAfterUnit || 'hours'}
+                    onChange={(e) => setSelectedCalendar({...selectedCalendar, allowBookingAfterUnit: e.target.value})}
+                  >
+                    <option value="hours">Horas</option>
+                    <option value="days">Días</option>
+                    <option value="weeks">Semanas</option>
+                    <option value="months">Meses</option>
+                  </select>
+                </div>
               </div>
-            </div>
 
-            {/* Mínimo aviso para agendar */}
-            <div>
-              <label className={styles.label}>Aviso mínimo para agendar</label>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '8px' }}>
-                <input
-                  type="number"
-                  className={styles.input}
-                  value={selectedCalendar.allowBookingAfter || 0}
-                  onChange={(e) => setSelectedCalendar({...selectedCalendar, allowBookingAfter: parseInt(e.target.value) || 0})}
-                  min="0"
-                />
-                <select
-                  className={styles.input}
-                  value={selectedCalendar.allowBookingAfterUnit || 'hours'}
-                  onChange={(e) => setSelectedCalendar({...selectedCalendar, allowBookingAfterUnit: e.target.value})}
-                >
-                  <option value="hours">Horas</option>
-                  <option value="days">Días</option>
-                  <option value="weeks">Semanas</option>
-                  <option value="months">Meses</option>
-                </select>
+              {/* Límite adelante */}
+              <div>
+                <label className={styles.label}>Límite adelante</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '8px' }}>
+                  <input
+                    type="number"
+                    className={styles.input}
+                    value={selectedCalendar.allowBookingFor || 30}
+                    onChange={(e) => setSelectedCalendar({...selectedCalendar, allowBookingFor: parseInt(e.target.value) || 1})}
+                    min="1"
+                  />
+                  <select
+                    className={styles.input}
+                    value={selectedCalendar.allowBookingForUnit || 'days'}
+                    onChange={(e) => setSelectedCalendar({...selectedCalendar, allowBookingForUnit: e.target.value})}
+                  >
+                    <option value="days">Días</option>
+                    <option value="weeks">Semanas</option>
+                    <option value="months">Meses</option>
+                  </select>
+                </div>
               </div>
-            </div>
 
-            {/* Límite de reserva anticipada */}
-            <div>
-              <label className={styles.label}>Hasta cuándo se puede agendar</label>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '8px' }}>
-                <input
-                  type="number"
-                  className={styles.input}
-                  value={selectedCalendar.allowBookingFor || 30}
-                  onChange={(e) => setSelectedCalendar({...selectedCalendar, allowBookingFor: parseInt(e.target.value) || 1})}
-                  min="1"
-                />
-                <select
-                  className={styles.input}
-                  value={selectedCalendar.allowBookingForUnit || 'days'}
-                  onChange={(e) => setSelectedCalendar({...selectedCalendar, allowBookingForUnit: e.target.value})}
-                >
-                  <option value="days">Días</option>
-                  <option value="weeks">Semanas</option>
-                  <option value="months">Meses</option>
-                </select>
-              </div>
-            </div>
+              {/* Look Busy - Parecer Ocupado */}
+              <div style={{ marginTop: '8px', padding: '16px', backgroundColor: 'var(--color-background-secondary)', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                  <input
+                    type="checkbox"
+                    id="lookBusyEnabled"
+                    checked={selectedCalendar.lookBusyConfig?.enabled || false}
+                    onChange={(e) => setSelectedCalendar({
+                      ...selectedCalendar,
+                      lookBusyConfig: {
+                        enabled: e.target.checked,
+                        LookBusyPercentage: selectedCalendar.lookBusyConfig?.LookBusyPercentage || 0
+                      }
+                    })}
+                    style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--color-primary)' }}
+                  />
+                  <label htmlFor="lookBusyEnabled" style={{ fontWeight: 500, cursor: 'pointer', fontSize: '14px' }}>
+                    Parecer ocupado (Look Busy)
+                  </label>
+                </div>
 
-            {/* Citas por slot */}
-            <div>
-              <label className={styles.label}>Citas por slot</label>
-              <input
-                type="number"
-                className={styles.input}
-                value={selectedCalendar.appoinmentPerSlot}
-                onChange={(e) => setSelectedCalendar({...selectedCalendar, appoinmentPerSlot: parseInt(e.target.value) || 1})}
-                min="1"
-              />
-              <p className={styles.hint}>Cuántas personas pueden agendar en el mismo horario</p>
-            </div>
-
-            {/* Citas por día */}
-            <div>
-              <label className={styles.label}>Citas por día</label>
-              <input
-                type="number"
-                className={styles.input}
-                value={selectedCalendar.appoinmentPerDay}
-                onChange={(e) => setSelectedCalendar({...selectedCalendar, appoinmentPerDay: parseInt(e.target.value) || 0})}
-                min="0"
-              />
-              <p className={styles.hint}>Límite total de citas en un día (0 = sin límite)</p>
-            </div>
-
-            {/* Botones */}
-            <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
-              <Button
-                onClick={handleSaveCalendarConfig}
-                disabled={savingConfig}
-              >
-                {savingConfig ? (
-                  <>
-                    <Loader2 size={18} className={styles.spinIcon} />
-                    Guardando...
-                  </>
-                ) : (
-                  'Guardar Cambios'
+                {selectedCalendar.lookBusyConfig?.enabled && (
+                  <div>
+                    <label className={styles.label} style={{ fontSize: '13px' }}>% de slots a ocultar</label>
+                    <input
+                      type="number"
+                      className={styles.input}
+                      value={selectedCalendar.lookBusyConfig?.LookBusyPercentage || 0}
+                      onChange={(e) => setSelectedCalendar({
+                        ...selectedCalendar,
+                        lookBusyConfig: {
+                          enabled: true,
+                          LookBusyPercentage: parseInt(e.target.value) || 0
+                        }
+                      })}
+                      min="0"
+                      max="100"
+                    />
+                    <p className={styles.hint} style={{ marginTop: '6px', fontSize: '12px' }}>
+                      Oculta algunos slots para que parezcas más ocupado
+                    </p>
+                  </div>
                 )}
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={handleCloseConfigModal}
-                disabled={savingConfig}
-              >
-                Cancelar
-              </Button>
+              </div>
+
+              {/* Tipo de Disponibilidad */}
+              <div>
+                <label className={styles.label}>Tipo de disponibilidad</label>
+                <select
+                  className={styles.input}
+                  value={selectedCalendar.availabilityType ?? ''}
+                  onChange={(e) => setSelectedCalendar({
+                    ...selectedCalendar,
+                    availabilityType: e.target.value === '' ? undefined : parseInt(e.target.value)
+                  })}
+                >
+                  <option value="">Ambos (custom + open hours)</option>
+                  <option value="0">Solo horarios abiertos</option>
+                  <option value="1">Solo disponibilidad custom</option>
+                </select>
+                <p className={styles.hint} style={{ marginTop: '6px' }}>
+                  Cómo determinar disponibilidad
+                </p>
+              </div>
             </div>
+          </div>
+
+          {/* Botones (span 2 columns) */}
+          <div style={{ display: 'flex', gap: '12px', marginTop: '24px', gridColumn: '1 / -1' }}>
+            <Button
+              onClick={handleSaveCalendarConfig}
+              disabled={savingConfig}
+            >
+              {savingConfig ? (
+                <>
+                  <Loader2 size={18} className={styles.spinIcon} />
+                  Guardando...
+                </>
+              ) : (
+                'Guardar Cambios'
+              )}
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={handleCloseConfigModal}
+              disabled={savingConfig}
+            >
+              Cancelar
+            </Button>
           </div>
         </Modal>,
         document.body
