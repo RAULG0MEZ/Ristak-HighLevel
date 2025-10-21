@@ -8,7 +8,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px;
+  gap: 12px; /* Espacio entre texto e icono */
+  padding: 10px 14px; /* Más padding a la derecha para el icono */
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 10px;
   font-size: 14px;
@@ -43,6 +44,7 @@
   color: var(--color-text-tertiary);
   transition: transform 0.2s ease;
   flex-shrink: 0;
+  margin-left: auto; /* Empuja el icono al extremo derecho */
 }
 
 .chevronOpen {

@@ -100,13 +100,13 @@
 /* Main content grid */
 .dropdownContent {
   display: grid;
-  grid-template-columns: 1fr 160px;
+  grid-template-columns: 1fr 130px;
   border-bottom: 1px solid var(--color-border);
 }
 
 /* Calendar */
 .calendar {
-  padding: 10px;
+  padding: 8px;
   border-right: 1px solid var(--color-border);
   min-width: 0;
 }
@@ -213,7 +213,7 @@
 
 /* Time Picker */
 .timePicker {
-  padding: 10px 8px;
+  padding: 8px 6px;
   display: flex;
   flex-direction: column;
   min-width: 0;

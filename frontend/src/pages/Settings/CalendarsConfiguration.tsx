@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { Card, Button, Modal } from '@/components/common'
+import { Card, Button, Modal, CustomSelect } from '@/components/common'
 import { Calendar, Loader2, CheckCircle, XCircle, Info, Settings } from 'lucide-react'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useAppConfig } from '@/hooks'
@@ -259,18 +259,18 @@ export const CalendarsConfiguration: React.FC = () => {
           <div className={styles.sectionContent}>
             <div className={styles.formField}>
               <label className={styles.label}>Selecciona un calendario</label>
-              <select
+              <CustomSelect
                 value={tempDefaultCalendar}
-                onChange={(e) => handleDefaultCalendarChange(e.target.value)}
-                className={styles.input}
-              >
-                <option value="">Ninguno (seleccionar manualmente)</option>
-                {calendars.map(calendar => (
-                  <option key={calendar.id} value={calendar.id}>
-                    {calendar.name}
-                  </option>
-                ))}
-              </select>
+                onChange={(value) => handleDefaultCalendarChange(value)}
+                options={[
+                  { value: '', label: 'Ninguno (seleccionar manualmente)' },
+                  ...calendars.map(calendar => ({
+                    value: calendar.id,
+                    label: calendar.name
+                  }))
+                ]}
+                placeholder="Selecciona un calendario"
+              />
               <p className={styles.hint}>
                 Si no seleccionas ninguno, tendrás que elegir el calendario cada vez que entres a la página de Citas
               </p>
@@ -463,15 +463,14 @@ export const CalendarsConfiguration: React.FC = () => {
                     onChange={(e) => setSelectedCalendar({...selectedCalendar, slotDuration: parseInt(e.target.value) || 0})}
                     min="1"
                   />
-                  <select
-                    className={styles.input}
+                  <CustomSelect
                     value={selectedCalendar.slotDurationUnit}
-                    onChange={(e) => setSelectedCalendar({...selectedCalendar, slotDurationUnit: e.target.value})}
-                    style={{ paddingRight: '32px' }}
-                  >
-                    <option value="mins">Minutos</option>
-                    <option value="hours">Horas</option>
-                  </select>
+                    onChange={(value) => setSelectedCalendar({...selectedCalendar, slotDurationUnit: value})}
+                    options={[
+                      { value: 'mins', label: 'Minutos' },
+                      { value: 'hours', label: 'Horas' }
+                    ]}
+                  />
                 </div>
                 <p className={styles.hint}>Ej: 30 minutos, 1 hora, etc.</p>
               </div>
@@ -487,15 +486,14 @@ export const CalendarsConfiguration: React.FC = () => {
                     onChange={(e) => setSelectedCalendar({...selectedCalendar, slotInterval: parseInt(e.target.value) || 0})}
                     min="1"
                   />
-                  <select
-                    className={styles.input}
+                  <CustomSelect
                     value={selectedCalendar.slotIntervalUnit}
-                    onChange={(e) => setSelectedCalendar({...selectedCalendar, slotIntervalUnit: e.target.value})}
-                    style={{ paddingRight: '32px' }}
-                  >
-                    <option value="mins">Minutos</option>
-                    <option value="hours">Horas</option>
-                  </select>
+                    onChange={(value) => setSelectedCalendar({...selectedCalendar, slotIntervalUnit: value})}
+                    options={[
+                      { value: 'mins', label: 'Minutos' },
+                      { value: 'hours', label: 'Horas' }
+                    ]}
+                  />
                 </div>
                 <p className={styles.hint}>Si pones 30 min, los horarios serán: 9:00, 9:30, 10:00...</p>
               </div>
@@ -511,15 +509,14 @@ export const CalendarsConfiguration: React.FC = () => {
                     onChange={(e) => setSelectedCalendar({...selectedCalendar, preBuffer: parseInt(e.target.value) || 0})}
                     min="0"
                   />
-                  <select
-                    className={styles.input}
+                  <CustomSelect
                     value={selectedCalendar.preBufferUnit || 'mins'}
-                    onChange={(e) => setSelectedCalendar({...selectedCalendar, preBufferUnit: e.target.value})}
-                    style={{ paddingRight: '32px' }}
-                  >
-                    <option value="mins">Minutos</option>
-                    <option value="hours">Horas</option>
-                  </select>
+                    onChange={(value) => setSelectedCalendar({...selectedCalendar, preBufferUnit: value})}
+                    options={[
+                      { value: 'mins', label: 'Minutos' },
+                      { value: 'hours', label: 'Horas' }
+                    ]}
+                  />
                 </div>
                 <p className={styles.hint}>Para prepararte antes de atender (revisar expediente, tomar café, etc.)</p>
               </div>
@@ -535,15 +532,14 @@ export const CalendarsConfiguration: React.FC = () => {
                     onChange={(e) => setSelectedCalendar({...selectedCalendar, slotBuffer: parseInt(e.target.value) || 0})}
                     min="0"
                   />
-                  <select
-                    className={styles.input}
+                  <CustomSelect
                     value={selectedCalendar.slotBufferUnit || 'mins'}
-                    onChange={(e) => setSelectedCalendar({...selectedCalendar, slotBufferUnit: e.target.value})}
-                    style={{ paddingRight: '32px' }}
-                  >
-                    <option value="mins">Minutos</option>
-                    <option value="hours">Horas</option>
-                  </select>
+                    onChange={(value) => setSelectedCalendar({...selectedCalendar, slotBufferUnit: value})}
+                    options={[
+                      { value: 'mins', label: 'Minutos' },
+                      { value: 'hours', label: 'Horas' }
+                    ]}
+                  />
                 </div>
                 <p className={styles.hint}>Para cerrar la cita sin apuros (hacer notas, responder dudas, etc.)</p>
               </div>
@@ -588,17 +584,16 @@ export const CalendarsConfiguration: React.FC = () => {
                     onChange={(e) => setSelectedCalendar({...selectedCalendar, allowBookingAfter: parseInt(e.target.value) || 0})}
                     min="0"
                   />
-                  <select
-                    className={styles.input}
+                  <CustomSelect
                     value={selectedCalendar.allowBookingAfterUnit || 'hours'}
-                    onChange={(e) => setSelectedCalendar({...selectedCalendar, allowBookingAfterUnit: e.target.value})}
-                    style={{ paddingRight: '32px' }}
-                  >
-                    <option value="hours">Horas</option>
-                    <option value="days">Días</option>
-                    <option value="weeks">Semanas</option>
-                    <option value="months">Meses</option>
-                  </select>
+                    onChange={(value) => setSelectedCalendar({...selectedCalendar, allowBookingAfterUnit: value})}
+                    options={[
+                      { value: 'hours', label: 'Horas' },
+                      { value: 'days', label: 'Días' },
+                      { value: 'weeks', label: 'Semanas' },
+                      { value: 'months', label: 'Meses' }
+                    ]}
+                  />
                 </div>
                 <p className={styles.hint}>
                   Mínimo de tiempo antes de la cita. Ej: 2 horas = no pueden agendar a última hora
@@ -616,16 +611,15 @@ export const CalendarsConfiguration: React.FC = () => {
                     onChange={(e) => setSelectedCalendar({...selectedCalendar, allowBookingFor: parseInt(e.target.value) || 1})}
                     min="1"
                   />
-                  <select
-                    className={styles.input}
+                  <CustomSelect
                     value={selectedCalendar.allowBookingForUnit || 'days'}
-                    onChange={(e) => setSelectedCalendar({...selectedCalendar, allowBookingForUnit: e.target.value})}
-                    style={{ paddingRight: '32px' }}
-                  >
-                    <option value="days">Días</option>
-                    <option value="weeks">Semanas</option>
-                    <option value="months">Meses</option>
-                  </select>
+                    onChange={(value) => setSelectedCalendar({...selectedCalendar, allowBookingForUnit: value})}
+                    options={[
+                      { value: 'days', label: 'Días' },
+                      { value: 'weeks', label: 'Semanas' },
+                      { value: 'months', label: 'Meses' }
+                    ]}
+                  />
                 </div>
                 <p className={styles.hint}>
                   Máximo de tiempo hacia adelante. Ej: 30 días = solo pueden agendar hasta 1 mes adelante
@@ -681,19 +675,18 @@ export const CalendarsConfiguration: React.FC = () => {
               {/* Tipo de Disponibilidad */}
               <div>
                 <label className={styles.label}>¿Cómo calcular los horarios disponibles?</label>
-                <select
-                  className={styles.input}
-                  value={selectedCalendar.availabilityType ?? ''}
-                  onChange={(e) => setSelectedCalendar({
+                <CustomSelect
+                  value={selectedCalendar.availabilityType !== undefined ? String(selectedCalendar.availabilityType) : ''}
+                  onChange={(value) => setSelectedCalendar({
                     ...selectedCalendar,
-                    availabilityType: e.target.value === '' ? undefined : parseInt(e.target.value)
+                    availabilityType: value === '' ? undefined : parseInt(value)
                   })}
-                  style={{ paddingRight: '32px' }}
-                >
-                  <option value="">Ambos (horarios abiertos + personalizado)</option>
-                  <option value="0">Solo horarios abiertos del calendario</option>
-                  <option value="1">Solo disponibilidad personalizada</option>
-                </select>
+                  options={[
+                    { value: '', label: 'Ambos (horarios abiertos + personalizado)' },
+                    { value: '0', label: 'Solo horarios abiertos del calendario' },
+                    { value: '1', label: 'Solo disponibilidad personalizada' }
+                  ]}
+                />
                 <p className={styles.hint} style={{ marginTop: '6px' }}>
                   Define si usar horarios fijos, personalizados, o combinar ambos
                 </p>
