@@ -668,16 +668,6 @@ export const Appointments: React.FC = () => {
         <h1 className={styles.title}>Calendarios</h1>
 
         <div className={styles.headerControls}>
-          {/* Botón de Configuración */}
-          <button
-            className={styles.settingsButton}
-            onClick={() => navigate('/settings/calendars')}
-            title="Configurar calendarios"
-          >
-            <Settings size={18} />
-            <span>Configuración</span>
-          </button>
-
           {/* Selector de calendarios */}
           <div className={styles.calendarSelector}>
             <button
@@ -807,6 +797,16 @@ export const Appointments: React.FC = () => {
               </>
             )}
           </div>
+
+          {/* Botón de Configuración */}
+          <button
+            className={styles.settingsButton}
+            onClick={() => navigate('/settings/calendars')}
+            title="Configurar calendarios"
+          >
+            <Settings size={18} />
+            <span>Configuración</span>
+          </button>
         </div>
       </div>
 
