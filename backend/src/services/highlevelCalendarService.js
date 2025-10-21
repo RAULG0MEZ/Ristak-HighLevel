@@ -294,8 +294,24 @@ export async function createAppointment(appointmentData, locationId, accessToken
       payload.contactId = appointmentData.contactId;
     }
 
+    // assignedUserId es OBLIGATORIO según HighLevel API
+    // Si no se proporciona, obtener del calendario
     if (appointmentData.assignedUserId) {
       payload.assignedUserId = appointmentData.assignedUserId;
+    } else {
+      // Obtener el calendario para extraer el primer team member
+      try {
+        const calendar = await getCalendar(appointmentData.calendarId, locationId, accessToken);
+        if (calendar && calendar.teamMembers && calendar.teamMembers.length > 0) {
+          // Usar el primer team member disponible
+          payload.assignedUserId = calendar.teamMembers[0].userId;
+          logger.info(`[HighLevel Calendar] assignedUserId no proporcionado, usando primer team member: ${payload.assignedUserId}`);
+        } else {
+          logger.warn(`[HighLevel Calendar] No se encontraron team members en el calendario ${appointmentData.calendarId}`);
+        }
+      } catch (error) {
+        logger.warn(`[HighLevel Calendar] No se pudo obtener team members del calendario: ${error.message}`);
+      }
     }
 
     if (appointmentData.address) {
