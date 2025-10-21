@@ -110,7 +110,7 @@ async function getAdAccountTimezone(adAccountId, accessToken) {
 /**
  * Sincroniza custom values de Meta en HighLevel
  */
-async function syncMetaCustomValues(adAccountId, accessToken, pixelId, appId, appSecret) {
+async function syncMetaCustomValues(adAccountId, accessToken, pixelId) {
   try {
     // Obtener configuración de HighLevel
     const ghlConfig = await db.get('SELECT location_id, api_token FROM highlevel_config LIMIT 1')
@@ -122,13 +122,11 @@ async function syncMetaCustomValues(adAccountId, accessToken, pixelId, appId, ap
 
     logger.info('📝 Sincronizando custom values de Meta en HighLevel...')
 
-    // Custom values a crear/actualizar
+    // Custom values a crear/actualizar (System User - no necesita App ID ni App Secret)
     const customValues = {
       'Facebook - Ad Account ID': adAccountId,
       'Facebook - App Access Token': accessToken,
-      'Facebook - Pixel ID': pixelId || '',
-      'Facebook - App ID': appId || '',
-      'Facebook - App Secret': appSecret || ''
+      'Facebook - Pixel ID': pixelId || ''
     }
 
     // Obtener custom values existentes
@@ -222,20 +220,21 @@ async function syncMetaCustomValues(adAccountId, accessToken, pixelId, appId, ap
 
 /**
  * Guarda la configuración de Meta en la base de datos
- * ENCRIPTA el access_token y app_secret antes de guardar
+ * ENCRIPTA el access_token y pixel_api_token antes de guardar
+ * USA System User Token (no requiere App ID ni App Secret)
  * CREA/ACTUALIZA custom values en HighLevel automáticamente
  */
-export async function saveMetaConfig(adAccountId, accessToken, pixelId = null, appId = null, appSecret = null) {
+export async function saveMetaConfig(adAccountId, accessToken, pixelId = null, pixelApiToken = null) {
   try {
     // Encriptar el access_token
     const encryptedToken = encrypt(accessToken)
     logger.info('Token de Meta encriptado correctamente')
 
-    // Encriptar app_secret si existe
-    let encryptedSecret = null
-    if (appSecret) {
-      encryptedSecret = encrypt(appSecret)
-      logger.info('App Secret de Meta encriptado correctamente')
+    // Encriptar pixel_api_token si existe (Conversions API Token)
+    let encryptedPixelApiToken = null
+    if (pixelApiToken) {
+      encryptedPixelApiToken = encrypt(pixelApiToken)
+      logger.info('Pixel API Token de Meta encriptado correctamente')
     }
 
     // Obtener timezone de la cuenta de Meta
@@ -255,25 +254,25 @@ export async function saveMetaConfig(adAccountId, accessToken, pixelId = null, a
       await db.run('DELETE FROM meta_config')
     }
 
-    // Insertar la nueva configuración
+    // Insertar la nueva configuración (System User - solo necesita access_token + ad_account_id)
     await db.run(`
-      INSERT INTO meta_config (ad_account_id, access_token, pixel_id, app_id, app_secret, timezone_id, timezone_name, timezone_offset_hours_utc)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO meta_config (ad_account_id, access_token, pixel_id, pixel_api_token, timezone_id, timezone_name, timezone_offset_hours_utc)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `, [
       adAccountId,
       encryptedToken,
       pixelId,
-      appId,
-      encryptedSecret,
+      encryptedPixelApiToken,
       timezoneData?.timezone_id,
       timezoneData?.timezone_name,
       timezoneData?.timezone_offset_hours_utc
     ])
 
-    logger.success('Configuración de Meta guardada en BD local (encriptada con timezone y pixel)')
+    logger.success('Configuración de Meta guardada en BD local (System User Token + Pixel)')
 
     // Sincronizar custom values en HighLevel (no bloquear si falla)
-    syncMetaCustomValues(adAccountId, accessToken, pixelId, appId, appSecret).catch(err => {
+    // Ya NO sincronizamos App ID ni App Secret (no se usan con System User)
+    syncMetaCustomValues(adAccountId, accessToken, pixelId).catch(err => {
       logger.warn('No se pudieron sincronizar custom values de Meta en HighLevel:', err.message)
     })
 

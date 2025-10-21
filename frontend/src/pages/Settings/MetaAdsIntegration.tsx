@@ -10,8 +10,7 @@ interface MetaCredentials {
   adAccountId: string
   accessToken: string
   pixelId: string
-  appId: string
-  appSecret: string
+  pixelApiToken: string
 }
 
 interface AdAccount {
@@ -38,8 +37,7 @@ export const MetaAdsIntegration: React.FC = () => {
     adAccountId: '',
     accessToken: '',
     pixelId: '',
-    appId: '',
-    appSecret: ''
+    pixelApiToken: ''
   })
 
   // Estados para dropdowns

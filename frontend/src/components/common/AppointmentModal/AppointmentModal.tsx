@@ -229,31 +229,14 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
   // Cargar slots disponibles desde la API de HighLevel
   const loadFreeSlots = async () => {
     if (!calendar?.id || !accessToken || scheduleMode !== 'default') {
-      console.log('❌ loadFreeSlots: Skipped', {
-        hasCalendar: !!calendar?.id,
-        hasToken: !!accessToken,
-        scheduleMode
-      });
       return;
     }
-
-    console.log('🔵 loadFreeSlots: Starting', {
-      calendarId: calendar.id,
-      calendarName: calendar.name,
-      scheduleMode,
-      timezone: formData.timeZone || DEFAULT_TIMEZONE
-    });
 
     setLoadingSlots(true);
     try {
       // Cargar slots para los próximos 30 días
       const today = new Date();
       const endDate = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
-
-      console.log('🔵 loadFreeSlots: Fetching slots', {
-        startDate: today.toISOString().split('T')[0],
-        endDate: endDate.toISOString().split('T')[0]
-      });
 
       const slots = await calendarsService.getFreeSlots(
         calendar.id,
@@ -263,14 +246,9 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
         formData.timeZone || DEFAULT_TIMEZONE
       );
 
-      console.log('✅ loadFreeSlots: Slots loaded', {
-        slotsCount: slots.length,
-        slots: slots.slice(0, 3) // Mostrar primeros 3 para debug
-      });
-
       setFreeSlots(slots);
     } catch (error) {
-      console.error('❌ loadFreeSlots: Error', error);
+      console.error('Error al cargar slots:', error);
       showToast('error', 'Error al cargar horarios', 'No se pudieron cargar los horarios disponibles');
       setFreeSlots([]);
     } finally {
@@ -439,14 +417,6 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
 
   // Cargar slots disponibles cuando se abre el modal en modo crear y scheduleMode es 'default'
   useEffect(() => {
-    console.log('🔵 useEffect loadFreeSlots triggered', {
-      isOpen,
-      isCreateMode,
-      scheduleMode,
-      calendarId: calendar?.id,
-      hasToken: !!accessToken
-    });
-
     if (isOpen && isCreateMode && scheduleMode === 'default') {
       loadFreeSlots();
     }
@@ -984,11 +954,11 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
               <div className={styles.field}>
                 <TabList
                   tabs={[
-                    { id: 'default', label: 'Por defecto' },
-                    { id: 'custom', label: 'Personalizado' }
+                    { value: 'default', label: 'Por defecto' },
+                    { value: 'custom', label: 'Personalizado' }
                   ]}
                   activeTab={scheduleMode}
-                  onChange={(id) => setScheduleMode(id as 'default' | 'custom')}
+                  onTabChange={(value) => setScheduleMode(value as 'default' | 'custom')}
                 />
               </div>
             )}
