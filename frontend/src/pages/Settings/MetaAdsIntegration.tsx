@@ -48,6 +48,9 @@ export const MetaAdsIntegration: React.FC = () => {
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(false)
   const [isLoadingPixels, setIsLoadingPixels] = useState(false)
 
+  // Token real (revelado) para llamadas a Meta API
+  const [realAccessToken, setRealAccessToken] = useState<string>('')
+
   const { showToast } = useNotification()
   const { theme } = useTheme()
 
@@ -89,6 +92,9 @@ export const MetaAdsIntegration: React.FC = () => {
               return
             }
           }
+
+          // Guardar el token real en estado separado
+          setRealAccessToken(tokenToUse)
 
           // Cargar cuentas de anuncios
           await fetchAdAccounts(tokenToUse, data.data.adAccountId)
@@ -198,8 +204,8 @@ export const MetaAdsIntegration: React.FC = () => {
     const accountIdWithoutPrefix = account.id.replace(/^act_/, '')
     setCredentials(prev => ({ ...prev, adAccountId: accountIdWithoutPrefix }))
     // Auto-cargar pixeles al seleccionar cuenta (Meta API necesita el "act_")
-    if (credentials.accessToken) {
-      fetchPixels(account.id, credentials.accessToken)
+    if (realAccessToken) {
+      fetchPixels(account.id, realAccessToken)
     }
   }
 
@@ -318,6 +324,7 @@ export const MetaAdsIntegration: React.FC = () => {
                         onBlur={(e) => {
                           // Auto-cargar cuentas cuando el usuario termina de escribir/pegar
                           if (e.target.value && e.target.value.length > 50) {
+                            setRealAccessToken(e.target.value) // Guardar token real
                             fetchAdAccounts(e.target.value)
                           }
                         }}
