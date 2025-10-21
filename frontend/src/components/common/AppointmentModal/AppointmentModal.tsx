@@ -210,10 +210,8 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isClient, setIsClient] = useState(false);
 
-  // Validación de slots disponibles
-  const [validatingSlot, setValidatingSlot] = useState(false);
-  const [slotValid, setSlotValid] = useState<boolean | null>(null);
-  const [slotError, setSlotError] = useState<string | null>(null);
+  // Validación de slots DESHABILITADA: Como admin, puedes agendar en cualquier horario
+  // La validación de slots solo aplica cuando clientes agendan vía formulario público
 
   const loadUsers = async () => {
     setLoadingUsers(true);
@@ -349,87 +347,10 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
     setSearchQuery('');
   };
 
-  // Validar si el slot está disponible
-  const validateSlot = async (startTime: string, endTime: string, calendarId: string, timeZone: string) => {
-    if (!startTime || !endTime || !calendarId) {
-      setSlotValid(null);
-      setSlotError(null);
-      return;
-    }
-
-    try {
-      setValidatingSlot(true);
-      setSlotValid(null);
-      setSlotError(null);
-
-      // Convertir a ISO para enviar al backend
-      const startIso = convertLocalInputToISO(startTime, timeZone);
-      const endIso = convertLocalInputToISO(endTime, timeZone);
-
-      if (!startIso || !endIso) {
-        setSlotValid(false);
-        setSlotError('Fecha u hora inválida');
-        return;
-      }
-
-      // Extraer fecha para consultar slots (formato YYYY-MM-DD)
-      const dateStr = startIso.split('T')[0];
-
-      // Obtener accessToken del localStorage (guardado en AuthContext)
-      const authData = localStorage.getItem('ghl_auth');
-      if (!authData) {
-        setSlotValid(false);
-        setSlotError('No se pudo verificar disponibilidad (sin acceso)');
-        return;
-      }
-
-      const { access_token } = JSON.parse(authData);
-
-      // Consultar slots disponibles del día
-      const freeSlots = await calendarsService.getFreeSlots(
-        calendarId,
-        dateStr,
-        dateStr,
-        access_token,
-        timeZone
-      );
-
-      if (!freeSlots || freeSlots.length === 0) {
-        setSlotValid(false);
-        setSlotError('No hay horarios disponibles para este día');
-        return;
-      }
-
-      // Extraer hora:minuto del startIso (formato: 2025-10-20T14:30:00-06:00)
-      const timeMatch = startIso.match(/T(\d{2}):(\d{2})/);
-      if (!timeMatch) {
-        setSlotValid(false);
-        setSlotError('Formato de hora inválido');
-        return;
-      }
-
-      const selectedTime = `${timeMatch[1]}:${timeMatch[2]}`;
-
-      // Verificar si el slot está disponible
-      const daySlots = freeSlots.find(slot => slot.date === dateStr);
-      const isAvailable = daySlots?.slots.includes(selectedTime);
-
-      if (isAvailable) {
-        setSlotValid(true);
-        setSlotError(null);
-      } else {
-        setSlotValid(false);
-        const availableTimesText = daySlots?.slots.slice(0, 3).join(', ') || 'ninguno';
-        setSlotError(`Este horario no está disponible. Horarios disponibles: ${availableTimesText}${(daySlots?.slots.length || 0) > 3 ? '...' : ''}`);
-      }
-    } catch (error: any) {
-      console.error('Error al validar slot:', error);
-      setSlotValid(false);
-      setSlotError('No se pudo verificar disponibilidad del horario');
-    } finally {
-      setValidatingSlot(false);
-    }
-  };
+  // VALIDACIÓN DE SLOTS ELIMINADA
+  // Razón: Como admin, NO necesitas validar horarios disponibles
+  // Puedes agendar citas en cualquier horario (ignoreFreeSlotValidation: true en backend)
+  // La validación de slots solo aplica cuando clientes agendan vía widget público
 
   // Cargar usuarios SOLO cuando sea necesario (Round Robin)
   useEffect(() => {
@@ -505,22 +426,8 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
   }, [searchQuery]);
 
   // Validar slot cuando cambien las fechas (solo en modo crear)
-  useEffect(() => {
-    if (!isCreateMode || !isOpen || !calendar?.id) return;
-
-    // Solo validar si hay fecha de inicio y fin
-    if (formData.startTime && formData.endTime) {
-      const timer = setTimeout(() => {
-        validateSlot(formData.startTime, formData.endTime, calendar.id, formData.timeZone);
-      }, 500); // Debounce de 500ms
-
-      return () => clearTimeout(timer);
-    } else {
-      // Limpiar validación si no hay fechas
-      setSlotValid(null);
-      setSlotError(null);
-    }
-  }, [formData.startTime, formData.endTime, formData.timeZone, calendar?.id, isCreateMode, isOpen]);
+  // useEffect de validación de slots ELIMINADO
+  // Ya no necesitamos validar horarios disponibles como admin
 
   useEffect(() => {
     if (event && !isCreateMode) {
@@ -1018,27 +925,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
               </div>
             </div>
 
-            {/* Indicador de validación de slot (solo en modo crear) */}
-            {isCreateMode && formData.startTime && formData.endTime && (
-              <div className={styles.slotValidation}>
-                {validatingSlot && (
-                  <p className={styles.slotValidating}>
-                    <Loader2 size={14} className={styles.spinnerIcon} />
-                    Verificando disponibilidad...
-                  </p>
-                )}
-                {!validatingSlot && slotValid === true && (
-                  <p className={styles.slotValid}>
-                    ✓ Horario disponible
-                  </p>
-                )}
-                {!validatingSlot && slotValid === false && slotError && (
-                  <p className={styles.slotInvalid}>
-                    ⚠ {slotError}
-                  </p>
-                )}
-              </div>
-            )}
+            {/* Validación de slots ELIMINADA - Como admin, puedes agendar en cualquier horario */}
 
             <div className={styles.field}>
               <label className={styles.label} htmlFor="timeZone">
@@ -1109,7 +996,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
           <Button
             variant="primary"
             onClick={handleSave}
-            disabled={isSaving || (isCreateMode && slotValid === false) || (isCreateMode && validatingSlot)}
+            disabled={isSaving}
           >
             {isSaving ? 'Guardando...' : isCreateMode ? 'Crear cita' : 'Guardar cambios'}
           </Button>

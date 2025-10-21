@@ -278,8 +278,51 @@ export const CalendarsConfiguration: React.FC = () => {
           </div>
         </div>
 
-        {/* Calendarios para Atribución */}
+        {/* Configuración de Calendarios Individuales */}
         <div className={styles.section}>
+          <h3 className={styles.sectionTitle}>Configuración Avanzada de Calendarios</h3>
+          <p className={styles.sectionDescription} style={{ marginBottom: '16px' }}>
+            Ajusta la configuración individual de cada calendario (horarios, duraciones, límites, etc.)
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {calendars.map(calendar => (
+              <div
+                key={calendar.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '16px',
+                  backgroundColor: 'var(--color-background-secondary)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: '8px'
+                }}
+              >
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: '4px' }}>
+                    {calendar.name}
+                  </div>
+                  <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                    Duración: {calendar.slotDuration} {calendar.slotDurationUnit} ·
+                    Intervalo: {calendar.slotInterval} {calendar.slotIntervalUnit}
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="small"
+                  onClick={() => handleOpenConfigModal(calendar)}
+                >
+                  <Settings size={16} />
+                  Configurar
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Calendarios para Atribución */}
+        <div className={styles.section} style={{ borderTop: '1px solid var(--color-border)', paddingTop: '24px' }}>
           <h3 className={styles.sectionTitle}>Calendarios para Atribución</h3>
           <p className={styles.sectionDescription} style={{ marginBottom: '16px' }}>
             Selecciona qué calendarios quieres usar para medir resultados en Reportes, Campañas y el Viaje del Cliente
@@ -367,49 +410,6 @@ export const CalendarsConfiguration: React.FC = () => {
                 Si no seleccionas ninguno, NO se mostrarán citas en los reportes ni en el viaje del cliente
               </p>
             </div>
-          </div>
-        </div>
-
-        {/* Configuración de Calendarios Individuales */}
-        <div className={styles.section} style={{ borderTop: '1px solid var(--color-border)', paddingTop: '24px' }}>
-          <h3 className={styles.sectionTitle}>Configuración Avanzada de Calendarios</h3>
-          <p className={styles.sectionDescription} style={{ marginBottom: '16px' }}>
-            Ajusta la configuración individual de cada calendario (horarios, duraciones, límites, etc.)
-          </p>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {calendars.map(calendar => (
-              <div
-                key={calendar.id}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '16px',
-                  backgroundColor: 'var(--color-background-secondary)',
-                  border: '1px solid var(--color-border)',
-                  borderRadius: '8px'
-                }}
-              >
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, color: 'var(--color-text-primary)', marginBottom: '4px' }}>
-                    {calendar.name}
-                  </div>
-                  <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                    Duración: {calendar.slotDuration} {calendar.slotDurationUnit} ·
-                    Intervalo: {calendar.slotInterval} {calendar.slotIntervalUnit}
-                  </div>
-                </div>
-                <Button
-                  variant="outline"
-                  size="small"
-                  onClick={() => handleOpenConfigModal(calendar)}
-                >
-                  <Settings size={16} />
-                  Configurar
-                </Button>
-              </div>
-            ))}
           </div>
         </div>
 
