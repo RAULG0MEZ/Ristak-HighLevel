@@ -225,50 +225,40 @@ export const MetaAdsIntegration: React.FC = () => {
               </div>
             ) : (
               <div style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {/* 1. App Access Token - CON BOTÓN PARA CARGAR CUENTAS */}
+                {/* 1. App Access Token */}
                 <div className={styles.formField}>
                   <label className={styles.formLabel}>
                     App Access Token <span style={{ color: 'var(--color-error)' }}>*</span>
                   </label>
                   {credentials.accessToken ? (
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      <div className={styles.filterChip} style={{ flex: 1 }}>
-                        <span className={styles.chipText}>{'*'.repeat(20)}...{credentials.accessToken.slice(-8)}</span>
-                        <button
-                          onClick={() => handleRemoveCredential('accessToken')}
-                          className={styles.chipDeleteButton}
-                          type="button"
-                        >
-                          <X size={16} />
-                        </button>
-                      </div>
-                      <Button
-                        onClick={() => fetchAdAccounts(credentials.accessToken)}
-                        disabled={isLoadingAccounts}
-                        variant="secondary"
-                        style={{ minWidth: '140px' }}
+                    <div className={styles.filterChip}>
+                      <span className={styles.chipText}>{'*'.repeat(20)}...{credentials.accessToken.slice(-8)}</span>
+                      <button
+                        onClick={() => handleRemoveCredential('accessToken')}
+                        className={styles.chipDeleteButton}
+                        type="button"
                       >
-                        {isLoadingAccounts ? 'Cargando...' : 'Cargar Cuentas'}
-                      </Button>
+                        <X size={16} />
+                      </button>
                     </div>
                   ) : (
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <input
-                        type="password"
-                        value={credentials.accessToken}
-                        onChange={(e) => handleInputChange('accessToken', e.target.value)}
-                        placeholder="EAAabcdef..."
-                        className={styles.formInput}
-                        style={{ flex: 1 }}
-                      />
-                      <Button
-                        onClick={() => fetchAdAccounts(credentials.accessToken)}
-                        disabled={!credentials.accessToken || isLoadingAccounts}
-                        variant="secondary"
-                        style={{ minWidth: '140px' }}
-                      >
-                        {isLoadingAccounts ? 'Cargando...' : 'Cargar Cuentas'}
-                      </Button>
+                    <input
+                      type="password"
+                      value={credentials.accessToken}
+                      onChange={(e) => handleInputChange('accessToken', e.target.value)}
+                      onBlur={(e) => {
+                        // Auto-cargar cuentas cuando el usuario termina de escribir/pegar
+                        if (e.target.value && e.target.value.length > 50) {
+                          fetchAdAccounts(e.target.value)
+                        }
+                      }}
+                      placeholder="EAAabcdef..."
+                      className={styles.formInput}
+                    />
+                  )}
+                  {isLoadingAccounts && (
+                    <div style={{ marginTop: '8px', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                      Cargando cuentas de anuncios...
                     </div>
                   )}
                 </div>
