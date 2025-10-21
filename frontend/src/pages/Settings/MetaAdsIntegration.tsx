@@ -10,6 +10,7 @@ interface MetaCredentials {
   adAccountId: string
   accessToken: string
   pixelId: string
+  pageId: string
   pixelApiToken: string
 }
 
@@ -37,6 +38,7 @@ export const MetaAdsIntegration: React.FC = () => {
     adAccountId: '',
     accessToken: '',
     pixelId: '',
+    pageId: '',
     pixelApiToken: ''
   })
 
@@ -415,7 +417,34 @@ export const MetaAdsIntegration: React.FC = () => {
                   )}
                 </div>
 
-                {/* 4. Pixel API Token (Conversions API) */}
+                {/* 4. Page ID de Facebook */}
+                <div className={styles.formField}>
+                  <label className={styles.formLabel}>
+                    Page ID de Facebook <span className={styles.formHint}>(opcional)</span>
+                  </label>
+                  {credentials.pageId ? (
+                    <div className={styles.filterChip}>
+                      <span className={styles.chipText}>{credentials.pageId}</span>
+                      <button
+                        onClick={() => handleRemoveCredential('pageId')}
+                        className={styles.chipDeleteButton}
+                        type="button"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  ) : (
+                    <input
+                      type="text"
+                      value={credentials.pageId}
+                      onChange={(e) => handleInputChange('pageId', e.target.value)}
+                      placeholder="1234567890123456"
+                      className={styles.formInput}
+                    />
+                  )}
+                </div>
+
+                {/* 5. Pixel API Token (Conversions API) */}
                 <div className={styles.formField}>
                   <label className={styles.formLabel}>
                     Pixel API Token <span className={styles.formHint}>(opcional)</span>

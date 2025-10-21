@@ -1726,6 +1726,7 @@ export const getMetaCustomValues = async (req, res) => {
           adAccountId: '',
           accessToken: '',
           pixelId: '',
+          pageId: '',
           pixelApiToken: ''
         }
       });
@@ -1751,7 +1752,7 @@ export const getMetaCustomValues = async (req, res) => {
  */
 export const saveAndSyncMeta = async (req, res) => {
   try {
-    const { adAccountId, accessToken, pixelId, pixelApiToken } = req.body;
+    const { adAccountId, accessToken, pixelId, pageId, pixelApiToken } = req.body;
 
     logger.info('Guardando credenciales de Meta en HighLevel...');
 
@@ -1776,11 +1777,12 @@ export const saveAndSyncMeta = async (req, res) => {
     // 3. Importar función de guardado
     const { saveMetaCustomValues } = await import('../services/highlevelSyncService.js');
 
-    // 4. Guardar en HighLevel Custom Values (System User - solo necesita Access Token + Ad Account + Pixel + Pixel API Token)
+    // 4. Guardar en HighLevel Custom Values (System User - solo necesita Access Token + Ad Account + Pixel + Page ID + Pixel API Token)
     const saveResult = await saveMetaCustomValues(hlConfig.location_id, hlConfig.api_token, {
       adAccountId,
       accessToken,
       pixelId: pixelId || '',
+      pageId: pageId || '',
       pixelApiToken: pixelApiToken || ''
     });
 

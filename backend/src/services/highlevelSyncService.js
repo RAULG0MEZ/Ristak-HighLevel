@@ -926,11 +926,12 @@ export async function saveMetaCustomValues(locationId, apiToken, metaCredentials
     const data = await getResponse.json()
     const existingCustomValues = data.customValues || []
 
-    // Mapeo de campos (System User - solo necesita Access Token + Ad Account + Pixel + Pixel API Token)
+    // Mapeo de campos (System User - solo necesita Access Token + Ad Account + Pixel + Page ID + Pixel API Token)
     const fieldsToSave = [
       { key: 'adAccountId', name: 'Facebook - Ad Account ID', value: metaCredentials.adAccountId },
       { key: 'accessToken', name: 'Facebook - App Access Token', value: metaCredentials.accessToken },
       { key: 'pixelId', name: 'Facebook - Pixel ID', value: metaCredentials.pixelId },
+      { key: 'pageId', name: 'Facebook - Page ID', value: metaCredentials.pageId },
       { key: 'pixelApiToken', name: 'Facebook - Pixel API Token', value: metaCredentials.pixelApiToken }
     ]
 
@@ -1047,16 +1048,17 @@ export async function fetchAndSaveMetaConfig(locationId, apiToken) {
     }
 
     // Buscar los custom values de Facebook (con los nombres reales de HighLevel)
-    // System User - solo necesita Access Token + Ad Account ID + Pixel ID + Pixel API Token
+    // System User - solo necesita Access Token + Ad Account ID + Pixel ID + Page ID + Pixel API Token
     const fbAdAccountId = customValues.find(cv => cv.name === 'Facebook - Ad Account ID')?.value
     const fbAccessToken = customValues.find(cv => cv.name === 'Facebook - App Access Token')?.value
     // Soportar ambos nombres para pixel (nuevo: "Facebook - Pixel ID", legacy: "pixel_id")
     const fbPixelId = customValues.find(cv => cv.name === 'Facebook - Pixel ID')?.value ||
                       customValues.find(cv => cv.name === 'pixel_id')?.value
+    const fbPageId = customValues.find(cv => cv.name === 'Facebook - Page ID')?.value
     const fbPixelApiToken = customValues.find(cv => cv.name === 'Facebook - Pixel API Token')?.value
 
     // Debug: Ver qué valores se encontraron
-    logger.info(`Valores encontrados - AdAccountId: ${fbAdAccountId ? 'SÍ' : 'NO'}, AccessToken: ${fbAccessToken ? 'SÍ' : 'NO'}, PixelId: ${fbPixelId ? 'SÍ' : 'NO'}, PixelApiToken: ${fbPixelApiToken ? 'SÍ' : 'NO'}`)
+    logger.info(`Valores encontrados - AdAccountId: ${fbAdAccountId ? 'SÍ' : 'NO'}, AccessToken: ${fbAccessToken ? 'SÍ' : 'NO'}, PixelId: ${fbPixelId ? 'SÍ' : 'NO'}, PageId: ${fbPageId ? 'SÍ' : 'NO'}, PixelApiToken: ${fbPixelApiToken ? 'SÍ' : 'NO'}`)
 
     // Devolver los valores encontrados (enmascarar tokens para seguridad)
     // Solo se muestran los últimos 8 caracteres, el resto se oculta con ***
@@ -1064,6 +1066,7 @@ export async function fetchAndSaveMetaConfig(locationId, apiToken) {
       adAccountId: fbAdAccountId || '',
       accessToken: fbAccessToken ? '***' + fbAccessToken.slice(-8) : '',
       pixelId: fbPixelId || '',
+      pageId: fbPageId || '',
       pixelApiToken: fbPixelApiToken ? '***' + fbPixelApiToken.slice(-8) : ''
     }
   } catch (error) {
