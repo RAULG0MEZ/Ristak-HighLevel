@@ -579,7 +579,7 @@ export const CalendarsConfiguration: React.FC = () => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
               {/* Aviso mínimo para agendar */}
               <div>
-                <label className={styles.label}>Aviso mínimo</label>
+                <label className={styles.label}>¿Con cuánta anticipación pueden agendar?</label>
                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '8px' }}>
                   <input
                     type="number"
@@ -592,6 +592,7 @@ export const CalendarsConfiguration: React.FC = () => {
                     className={styles.input}
                     value={selectedCalendar.allowBookingAfterUnit || 'hours'}
                     onChange={(e) => setSelectedCalendar({...selectedCalendar, allowBookingAfterUnit: e.target.value})}
+                    style={{ paddingRight: '32px' }}
                   >
                     <option value="hours">Horas</option>
                     <option value="days">Días</option>
@@ -599,11 +600,14 @@ export const CalendarsConfiguration: React.FC = () => {
                     <option value="months">Meses</option>
                   </select>
                 </div>
+                <p className={styles.hint}>
+                  Mínimo de tiempo antes de la cita. Ej: 2 horas = no pueden agendar a última hora
+                </p>
               </div>
 
               {/* Límite adelante */}
               <div>
-                <label className={styles.label}>Límite adelante</label>
+                <label className={styles.label}>¿Hasta cuándo pueden agendar?</label>
                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '8px' }}>
                   <input
                     type="number"
@@ -616,12 +620,16 @@ export const CalendarsConfiguration: React.FC = () => {
                     className={styles.input}
                     value={selectedCalendar.allowBookingForUnit || 'days'}
                     onChange={(e) => setSelectedCalendar({...selectedCalendar, allowBookingForUnit: e.target.value})}
+                    style={{ paddingRight: '32px' }}
                   >
                     <option value="days">Días</option>
                     <option value="weeks">Semanas</option>
                     <option value="months">Meses</option>
                   </select>
                 </div>
+                <p className={styles.hint}>
+                  Máximo de tiempo hacia adelante. Ej: 30 días = solo pueden agendar hasta 1 mes adelante
+                </p>
               </div>
 
               {/* Look Busy - Parecer Ocupado */}
@@ -641,13 +649,13 @@ export const CalendarsConfiguration: React.FC = () => {
                     style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--color-primary)' }}
                   />
                   <label htmlFor="lookBusyEnabled" style={{ fontWeight: 500, cursor: 'pointer', fontSize: '14px' }}>
-                    Parecer ocupado (Look Busy)
+                    Parecer ocupado
                   </label>
                 </div>
 
                 {selectedCalendar.lookBusyConfig?.enabled && (
                   <div>
-                    <label className={styles.label} style={{ fontSize: '13px' }}>% de slots a ocultar</label>
+                    <label className={styles.label} style={{ fontSize: '13px' }}>¿Qué porcentaje de horarios ocultar?</label>
                     <input
                       type="number"
                       className={styles.input}
@@ -661,9 +669,10 @@ export const CalendarsConfiguration: React.FC = () => {
                       })}
                       min="0"
                       max="100"
+                      placeholder="Ej: 30"
                     />
                     <p className={styles.hint} style={{ marginTop: '6px', fontSize: '12px' }}>
-                      Oculta algunos slots para que parezcas más ocupado
+                      Oculta horarios disponibles para dar sensación de alta demanda. Ej: 30% = oculta 3 de cada 10 horarios
                     </p>
                   </div>
                 )}
@@ -671,7 +680,7 @@ export const CalendarsConfiguration: React.FC = () => {
 
               {/* Tipo de Disponibilidad */}
               <div>
-                <label className={styles.label}>Tipo de disponibilidad</label>
+                <label className={styles.label}>¿Cómo calcular los horarios disponibles?</label>
                 <select
                   className={styles.input}
                   value={selectedCalendar.availabilityType ?? ''}
@@ -679,13 +688,14 @@ export const CalendarsConfiguration: React.FC = () => {
                     ...selectedCalendar,
                     availabilityType: e.target.value === '' ? undefined : parseInt(e.target.value)
                   })}
+                  style={{ paddingRight: '32px' }}
                 >
-                  <option value="">Ambos (custom + open hours)</option>
-                  <option value="0">Solo horarios abiertos</option>
-                  <option value="1">Solo disponibilidad custom</option>
+                  <option value="">Ambos (horarios abiertos + personalizado)</option>
+                  <option value="0">Solo horarios abiertos del calendario</option>
+                  <option value="1">Solo disponibilidad personalizada</option>
                 </select>
                 <p className={styles.hint} style={{ marginTop: '6px' }}>
-                  Cómo determinar disponibilidad
+                  Define si usar horarios fijos, personalizados, o combinar ambos
                 </p>
               </div>
             </div>
