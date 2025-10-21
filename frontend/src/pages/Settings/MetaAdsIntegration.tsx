@@ -37,9 +37,18 @@ export const MetaAdsIntegration: React.FC = () => {
   const [credentials, setCredentials] = useState<MetaCredentials>({
     adAccountId: '',
     accessToken: '',
+    pixelId: '',
     appId: '',
     appSecret: ''
   })
+
+  // Nuevos estados para dropdowns
+  const [tempAccessToken, setTempAccessToken] = useState('')
+  const [adAccounts, setAdAccounts] = useState<AdAccount[]>([])
+  const [pixels, setPixels] = useState<Pixel[]>([])
+  const [isLoadingAccounts, setIsLoadingAccounts] = useState(false)
+  const [isLoadingPixels, setIsLoadingPixels] = useState(false)
+
   const { showToast } = useNotification()
   const { theme } = useTheme()
 
@@ -60,12 +69,75 @@ export const MetaAdsIntegration: React.FC = () => {
 
       if (data.success && data.data) {
         setCredentials(data.data)
+        // Si ya hay un access token guardado, cargar cuentas automáticamente
+        if (data.data.accessToken) {
+          setTempAccessToken(data.data.accessToken)
+          await fetchAdAccounts(data.data.accessToken)
+        }
       }
     } catch (error) {
       console.error('Error cargando credenciales:', error)
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const fetchAdAccounts = async (token: string) => {
+    if (!token) {
+      showToast('error', 'Token requerido', 'Primero ingresa tu Access Token')
+      return
+    }
+
+    setIsLoadingAccounts(true)
+    try {
+      const result = await campaignsService.fetchAdAccounts(token)
+      if (result.success && result.adAccounts.length > 0) {
+        setAdAccounts(result.adAccounts)
+        showToast('success', 'Cuentas cargadas', `Se encontraron ${result.adAccounts.length} cuentas de anuncios`)
+      } else {
+        showToast('warning', 'Sin cuentas', 'No se encontraron cuentas de anuncios')
+        setAdAccounts([])
+      }
+    } catch (error) {
+      showToast('error', 'Error', 'No se pudieron cargar las cuentas')
+      setAdAccounts([])
+    } finally {
+      setIsLoadingAccounts(false)
+    }
+  }
+
+  const fetchPixels = async (adAccountId: string, token: string) => {
+    if (!adAccountId || !token) {
+      showToast('error', 'Datos requeridos', 'Primero selecciona una cuenta de anuncios')
+      return
+    }
+
+    setIsLoadingPixels(true)
+    try {
+      const result = await campaignsService.fetchPixels(adAccountId, token)
+      if (result.success && result.pixels.length > 0) {
+        setPixels(result.pixels)
+        showToast('success', 'Pixeles cargados', `Se encontraron ${result.pixels.length} pixeles`)
+      } else {
+        showToast('info', 'Sin pixeles', 'No se encontraron pixeles para esta cuenta')
+        setPixels([])
+      }
+    } catch (error) {
+      showToast('error', 'Error', 'No se pudieron cargar los pixeles')
+      setPixels([])
+    } finally {
+      setIsLoadingPixels(false)
+    }
+  }
+
+  const handleSelectAdAccount = (account: AdAccount) => {
+    setCredentials(prev => ({ ...prev, adAccountId: account.id, accessToken: tempAccessToken }))
+    // Auto-cargar pixeles al seleccionar cuenta
+    fetchPixels(account.id, tempAccessToken)
+  }
+
+  const handleSelectPixel = (pixel: Pixel) => {
+    setCredentials(prev => ({ ...prev, pixelId: pixel.id }))
   }
 
   const handleRemoveCredential = (field: keyof MetaCredentials) => {
@@ -152,9 +224,100 @@ export const MetaAdsIntegration: React.FC = () => {
                 Cargando credenciales...
               </div>
             ) : (
-              <div style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {/* Ad Account ID */}
-                <div className={styles.formField}>
+              <div style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                {/* SECCIÓN NUEVA: Selección Rápida con Dropdowns */}
+                <div style={{ backgroundColor: 'var(--card-secondary)', padding: '20px', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                  <h4 style={{ margin: '0 0 16px 0', fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                    ✨ Selección Rápida (Recomendado)
+                  </h4>
+                  <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                    Ingresa tu Access Token y selecciona tu cuenta y pixel de los dropdowns. Es más rápido y sin errores.
+                  </p>
+
+                  {/* Access Token Temporal */}
+                  <div className={styles.formField} style={{ marginBottom: '12px' }}>
+                    <label className={styles.formLabel}>Access Token</label>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <input
+                        type="password"
+                        value={tempAccessToken}
+                        onChange={(e) => setTempAccessToken(e.target.value)}
+                        placeholder="EAAabcdef..."
+                        className={styles.formInput}
+                        style={{ flex: 1 }}
+                      />
+                      <Button
+                        onClick={() => fetchAdAccounts(tempAccessToken)}
+                        disabled={!tempAccessToken || isLoadingAccounts}
+                        variant="secondary"
+                        style={{ minWidth: '140px' }}
+                      >
+                        {isLoadingAccounts ? 'Cargando...' : 'Cargar Cuentas'}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Dropdown de Cuentas */}
+                  {adAccounts.length > 0 && (
+                    <div className={styles.formField} style={{ marginBottom: '12px' }}>
+                      <label className={styles.formLabel}>Cuenta de Anuncios</label>
+                      <select
+                        className={styles.formInput}
+                        onChange={(e) => {
+                          const account = adAccounts.find(a => a.id === e.target.value)
+                          if (account) handleSelectAdAccount(account)
+                        }}
+                        value={credentials.adAccountId || ''}
+                      >
+                        <option value="">-- Selecciona una cuenta --</option>
+                        {adAccounts.map((account) => (
+                          <option key={account.id} value={account.id}>
+                            {account.name} ({account.id}) - {account.currency}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Dropdown de Pixeles */}
+                  {pixels.length > 0 && (
+                    <div className={styles.formField}>
+                      <label className={styles.formLabel}>Pixel de Meta (Opcional)</label>
+                      {isLoadingPixels ? (
+                        <div style={{ padding: '12px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13px' }}>
+                          Cargando pixeles...
+                        </div>
+                      ) : (
+                        <select
+                          className={styles.formInput}
+                          onChange={(e) => {
+                            const pixel = pixels.find(p => p.id === e.target.value)
+                            if (pixel) handleSelectPixel(pixel)
+                          }}
+                          value={credentials.pixelId || ''}
+                        >
+                          <option value="">-- Sin pixel (opcional) --</option>
+                          {pixels.map((pixel) => (
+                            <option key={pixel.id} value={pixel.id}>
+                              {pixel.name} ({pixel.id})
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Divider */}
+                <div style={{ borderBottom: '1px dashed var(--border-color)', margin: '8px 0' }}></div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)', fontStyle: 'italic' }}>
+                    O ingresa manualmente los datos:
+                  </p>
+
+                  {/* Ad Account ID */}
+                  <div className={styles.formField}>
                   <label className={styles.formLabel}>
                     Ad Account ID <span style={{ color: 'var(--color-error)' }}>*</span>
                   </label>
@@ -299,6 +462,7 @@ export const MetaAdsIntegration: React.FC = () => {
                     4. Inicia automáticamente la sincronización de tus anuncios de Meta
                   </div>
                 </div>
+                </div>  {/* Cierre del div "O ingresa manualmente" */}
               </div>
             )}
           </div>

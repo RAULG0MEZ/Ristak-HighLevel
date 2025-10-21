@@ -199,10 +199,22 @@ Backend:
 - **Servicios**: `metaAdsService.js`, `campaignsService.ts`
 - **Cron Job**: Sincronización cada hora via `metaSync.cron.js`
 - **Funcionalidad**: Métricas de campañas publicitarias
+- **🆕 Selección Automática de Cuentas y Pixeles (2025-10-20)**:
+  - **Nuevos endpoints**:
+    - `GET /api/meta/ad-accounts?accessToken=xxx`: Obtiene todas las cuentas de anuncios del usuario
+    - `GET /api/meta/pixels?adAccountId=act_xxx&accessToken=xxx`: Obtiene pixeles de una cuenta
+  - **Frontend mejorado** (MetaAdsIntegration.tsx):
+    - Sección "Selección Rápida" con dropdowns automáticos
+    - Usuario ingresa Access Token → click "Cargar Cuentas" → selecciona de dropdown
+    - Al seleccionar cuenta → auto-carga pixeles → selecciona de dropdown
+    - Información completa: nombre, ID, moneda, timezone de cada cuenta
+    - UX 1000% mejor: sin copiar/pegar, sin errores de tipeo
+  - **Almacenamiento de Pixel ID**: Nuevo campo `pixel_id` en tabla `meta_config`
 - **Auto-configuración de Custom Values**:
-  - Al conectar cuenta de Meta, se crean/actualizan automáticamente 4 custom values en HighLevel:
+  - Al conectar cuenta de Meta, se crean/actualizan automáticamente 5 custom values en HighLevel:
     - `Facebook - Ad Account ID`: ID de la cuenta de anuncios
     - `Facebook - App Access Token`: Token de acceso (sin encriptar en GHL)
+    - `Facebook - Pixel ID`: ID del pixel seleccionado (nuevo, opcional)
     - `Facebook - App ID`: App ID de Facebook (opcional)
     - `Facebook - App Secret`: App Secret de Facebook (opcional, sin encriptar en GHL)
   - Si no existe configuración de HighLevel, se salta este paso con warning
