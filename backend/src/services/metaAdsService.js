@@ -246,40 +246,29 @@ export async function saveMetaConfig(adAccountId, accessToken, pixelId = null, a
       logger.info(`Timezone detectado: ${timezoneData.timezone_name} (ID: ${timezoneData.timezone_id}, Offset: ${timezoneData.timezone_offset_hours_utc}h)`)
     }
 
-    const existing = await db.get('SELECT id FROM meta_config WHERE ad_account_id = ?', [adAccountId])
+    // IMPORTANTE: Solo permitir 1 configuración de Meta en la base de datos
+    // Eliminar cualquier configuración existente antes de insertar la nueva
+    const existingCount = await db.get('SELECT COUNT(*) as count FROM meta_config')
 
-    if (existing) {
-      await db.run(`
-        UPDATE meta_config
-        SET access_token = ?, pixel_id = ?, app_id = ?, app_secret = ?,
-            timezone_id = ?, timezone_name = ?, timezone_offset_hours_utc = ?,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE ad_account_id = ?
-      `, [
-        encryptedToken,
-        pixelId,
-        appId,
-        encryptedSecret,
-        timezoneData?.timezone_id,
-        timezoneData?.timezone_name,
-        timezoneData?.timezone_offset_hours_utc,
-        adAccountId
-      ])
-    } else {
-      await db.run(`
-        INSERT INTO meta_config (ad_account_id, access_token, pixel_id, app_id, app_secret, timezone_id, timezone_name, timezone_offset_hours_utc)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `, [
-        adAccountId,
-        encryptedToken,
-        pixelId,
-        appId,
-        encryptedSecret,
-        timezoneData?.timezone_id,
-        timezoneData?.timezone_name,
-        timezoneData?.timezone_offset_hours_utc
-      ])
+    if (existingCount && existingCount.count > 0) {
+      logger.info('Eliminando configuración de Meta existente (solo se permite 1)')
+      await db.run('DELETE FROM meta_config')
     }
+
+    // Insertar la nueva configuración
+    await db.run(`
+      INSERT INTO meta_config (ad_account_id, access_token, pixel_id, app_id, app_secret, timezone_id, timezone_name, timezone_offset_hours_utc)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      adAccountId,
+      encryptedToken,
+      pixelId,
+      appId,
+      encryptedSecret,
+      timezoneData?.timezone_id,
+      timezoneData?.timezone_name,
+      timezoneData?.timezone_offset_hours_utc
+    ])
 
     logger.success('Configuración de Meta guardada en BD local (encriptada con timezone y pixel)')
 
