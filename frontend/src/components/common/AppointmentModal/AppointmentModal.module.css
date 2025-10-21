@@ -3,7 +3,7 @@
   flex-direction: column;
   gap: 1.75rem;
   width: 100%;
-  max-width: 900px; /* Aumentado de 640px para acomodar 2 columnas */
+  max-width: 1000px; /* Aumentado para acomodar 2 columnas cómodamente */
   margin: 0 auto;
 }
 
@@ -103,9 +103,17 @@
 /* Layout de 2 columnas */
 .twoColumnLayout {
   display: grid;
-  grid-template-columns: 300px 1fr;
+  grid-template-columns: minmax(280px, 320px) 1fr;
   gap: 2rem;
   width: 100%;
+}
+
+/* En pantallas medianas, ajustar proporción de columnas */
+@media (max-width: 1024px) and (min-width: 769px) {
+  .twoColumnLayout {
+    grid-template-columns: 280px 1fr;
+    gap: 1.5rem;
+  }
 }
 
 .leftColumn {
@@ -147,7 +155,7 @@
 }
 
 /* Responsive: En pantallas pequeñas, las columnas se apilan */
-@media (max-width: 900px) {
+@media (max-width: 768px) {
   .twoColumnLayout {
     grid-template-columns: 1fr;
     gap: 1.5rem;
@@ -155,6 +163,7 @@
 
   .leftColumn {
     order: 2;
+    padding: 1.25rem; /* Reducir padding en móvil */
   }
 
   .rightColumn {

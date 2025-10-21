@@ -689,7 +689,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
 
   return (
     <>
-    <Modal isOpen={isOpen} onClose={onClose} title="" size="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title="" size="xl">
       <div className={styles.container}>
         <div className={styles.summary}>
           <div className={styles.summaryBody}>
