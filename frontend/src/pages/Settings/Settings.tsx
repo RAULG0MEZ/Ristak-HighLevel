@@ -7,9 +7,11 @@ import { MetaAdsIntegration } from './MetaAdsIntegration'
 import { WebTracking } from './WebTracking'
 import { CalendarsConfiguration } from './CalendarsConfiguration'
 import { AccountSettings } from './AccountSettings'
+import { useTheme } from '@/contexts/ThemeContext'
 import styles from './Settings.module.css'
 
 export const Settings: React.FC = () => {
+  const { theme } = useTheme()
   return (
     <div className={styles.container}>
       <div className={styles.header}>
@@ -30,7 +32,10 @@ export const Settings: React.FC = () => {
           className={({ isActive }) => `${styles.tab} ${isActive ? styles.tabActive : ''}`}
         >
           <img
-            src="https://img.icons8.com/ios-filled/150/meta.png"
+            src={theme === 'dark'
+              ? 'https://img.icons8.com/ios-filled/150/FFFFFF/meta.png'
+              : 'https://img.icons8.com/ios-filled/150/meta.png'
+            }
             alt="Meta"
             style={{ width: '18px', height: '18px' }}
           />
