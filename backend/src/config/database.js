@@ -665,6 +665,106 @@ async function initTables() {
     await db.run('CREATE INDEX IF NOT EXISTS idx_sessions_geo ON sessions(geo_country, geo_region, geo_city)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_sessions_contact ON sessions(contact_id)')
 
+    // Migrar datos de sessions_backup_2025 a sessions (si existe)
+    try {
+      const backupExists = usePostgres
+        ? await db.get("SELECT to_regclass('sessions_backup_2025') as exists")
+        : await db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='sessions_backup_2025'")
+
+      if ((usePostgres && backupExists?.exists) || (!usePostgres && backupExists)) {
+        logger.info('📦 Tabla sessions_backup_2025 detectada, migrando datos...')
+
+        // Contar registros en backup
+        const countResult = await db.get('SELECT COUNT(*) as count FROM sessions_backup_2025')
+        const totalRecords = countResult.count || 0
+        logger.info(`   → ${totalRecords} registros a migrar`)
+
+        if (totalRecords > 0) {
+          // Migrar datos (mapeo: landing_url → page_url, sin last_event_at)
+          if (usePostgres) {
+            await db.run(`
+              INSERT INTO sessions (
+                session_id, visitor_id, contact_id, full_name, email,
+                event_name, started_at, page_url, referrer_url,
+                utm_source, utm_medium, utm_campaign, utm_term, utm_content,
+                gclid, fbclid, fbc, fbp, wbraid, gbraid, msclkid, ttclid,
+                channel, source_platform,
+                campaign_id, adset_id, ad_group_id, ad_id,
+                campaign_name, adset_name, ad_group_name, ad_name,
+                placement, site_source_name, network, match_type,
+                keyword, search_query, creative_id, ad_position,
+                ip, user_agent, device_type, os, browser, browser_version,
+                language, timezone, geo_country, geo_region, geo_city
+              )
+              SELECT
+                session_id, visitor_id, contact_id, full_name, email,
+                event_name, started_at, landing_url as page_url, referrer_url,
+                utm_source, utm_medium, utm_campaign, utm_term, utm_content,
+                gclid, fbclid, fbc, fbp, wbraid, gbraid, msclkid, ttclid,
+                channel, source_platform,
+                campaign_id, adset_id, ad_group_id, ad_id,
+                campaign_name, adset_name, ad_group_name, ad_name,
+                placement, site_source_name, network, match_type,
+                keyword, search_query, creative_id, ad_position,
+                ip, user_agent, device_type, os, browser, browser_version,
+                language, timezone, geo_country, geo_region, geo_city
+              FROM sessions_backup_2025
+            `)
+          } else {
+            await db.run(`
+              INSERT INTO sessions (
+                session_id, visitor_id, contact_id, full_name, email,
+                event_name, started_at, page_url, referrer_url,
+                utm_source, utm_medium, utm_campaign, utm_term, utm_content,
+                gclid, fbclid, fbc, fbp, wbraid, gbraid, msclkid, ttclid,
+                channel, source_platform,
+                campaign_id, adset_id, ad_group_id, ad_id,
+                campaign_name, adset_name, ad_group_name, ad_name,
+                placement, site_source_name, network, match_type,
+                keyword, search_query, creative_id, ad_position,
+                ip, user_agent, device_type, os, browser, browser_version,
+                language, timezone, geo_country, geo_region, geo_city
+              )
+              SELECT
+                session_id, visitor_id, contact_id, full_name, email,
+                event_name, started_at, landing_url as page_url, referrer_url,
+                utm_source, utm_medium, utm_campaign, utm_term, utm_content,
+                gclid, fbclid, fbc, fbp, wbraid, gbraid, msclkid, ttclid,
+                channel, source_platform,
+                campaign_id, adset_id, ad_group_id, ad_id,
+                campaign_name, adset_name, ad_group_name, ad_name,
+                placement, site_source_name, network, match_type,
+                keyword, search_query, creative_id, ad_position,
+                ip, user_agent, device_type, os, browser, browser_version,
+                language, timezone, geo_country, geo_region, geo_city
+              FROM sessions_backup_2025
+            `)
+          }
+
+          // Verificar que la migración fue exitosa
+          const newCountResult = await db.get('SELECT COUNT(*) as count FROM sessions')
+          const migratedRecords = newCountResult.count || 0
+
+          if (migratedRecords >= totalRecords) {
+            logger.success(`✅ Migrados ${migratedRecords} registros exitosamente`)
+
+            // Eliminar tabla de backup
+            await db.run('DROP TABLE sessions_backup_2025')
+            logger.success('✅ Tabla sessions_backup_2025 eliminada')
+          } else {
+            logger.warn(`⚠️  Solo se migraron ${migratedRecords}/${totalRecords} registros. Backup NO eliminado por seguridad.`)
+          }
+        } else {
+          // Tabla backup vacía, eliminarla directamente
+          await db.run('DROP TABLE sessions_backup_2025')
+          logger.info('✅ Tabla sessions_backup_2025 vacía eliminada')
+        }
+      }
+    } catch (err) {
+      logger.warn('⚠️  Error migrando datos de backup:', err.message)
+      // No fallar el inicio del servidor por error de migración
+    }
+
     // Tabla de usuarios (para autenticación)
     await db.run(`
       CREATE TABLE IF NOT EXISTS users (
