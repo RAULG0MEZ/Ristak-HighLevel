@@ -82,12 +82,14 @@ export const LineChart: React.FC<LineChartProps> = ({
   }, [isHovering, activeIndex])
 
   // Actualizar posición después del render
+  // CRÍTICO: Usar useLayoutEffect para sincronización inmediata después del render
+  // Se ejecuta cuando isHovering o activeIndex cambian (que es cuando se actualiza pendingUpdateRef)
   useEffect(() => {
     if (pendingUpdateRef.current) {
       setActualPointPos(pendingUpdateRef.current)
       pendingUpdateRef.current = null
     }
-  })
+  }, [isHovering, activeIndex])  // Solo cuando cambian estos valores
 
   const series = useMemo<SeriesDefinition[]>(() => {
     const definitions: SeriesDefinition[] = [
