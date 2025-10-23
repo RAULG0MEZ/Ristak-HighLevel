@@ -213,12 +213,23 @@ const Analytics: React.FC = () => {
           getContactsByDate(prevStartDate, prevEndDate)
         ])
 
-        console.log('📊 DEBUG Analytics - currentSessions:', currentSessions)
-        console.log('📊 DEBUG Analytics - tipo:', Array.isArray(currentSessions) ? 'Array' : typeof currentSessions)
-        console.log('📊 DEBUG Analytics - length:', currentSessions?.length || 'N/A')
-        console.log('📊 DEBUG Analytics - primer elemento:', currentSessions?.[0])
+        console.log('📊 DEBUG Analytics - currentSessions length:', currentSessions?.length || 0)
         console.log('📊 DEBUG Analytics - contactsData:', contactsData)
-        console.log('📊 DEBUG Analytics - prevContactsData:', prevContactsData)
+
+        // Verificar qué campos tienen las sesiones
+        if (currentSessions.length > 0) {
+          const sample = currentSessions[0]
+          console.log('📊 DEBUG - Campos de sesión de ejemplo:')
+          console.log('  - visitor_id:', sample.visitor_id)
+          console.log('  - session_id:', sample.session_id)
+          console.log('  - device_type:', sample.device_type)
+          console.log('  - browser:', sample.browser)
+          console.log('  - os:', sample.os)
+          console.log('  - placement:', sample.placement)
+          console.log('  - source_platform:', sample.source_platform)
+          console.log('  - referrer_url:', sample.referrer_url)
+          console.log('  - page_url:', sample.page_url)
+        }
 
         if (currentSessions.length > 0) {
           // Calcular métricas principales
