@@ -47,7 +47,8 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend
+  Legend,
+  TooltipProps
 } from 'recharts'
 
 const monthNames = [
@@ -264,6 +265,79 @@ interface MetricsGridProps {
   viewType: ViewType
 }
 
+// Componente de tooltip personalizado para los gráficos
+interface CustomTooltipProps extends TooltipProps<number, string> {
+  formatter?: (value: number) => string
+}
+
+const CustomTooltip: React.FC<CustomTooltipProps> = ({ active, payload, label, formatter }) => {
+  if (!active || !payload || !payload.length) {
+    return null
+  }
+
+  return (
+    <div
+      style={{
+        backgroundColor: 'var(--color-surface)',
+        border: '1px solid var(--color-border)',
+        borderRadius: '8px',
+        padding: '12px',
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)'
+      }}
+    >
+      <p
+        style={{
+          margin: '0 0 8px 0',
+          fontSize: '12px',
+          fontWeight: 600,
+          color: 'var(--color-text-primary)'
+        }}
+      >
+        {label}
+      </p>
+      {payload.map((entry, index) => (
+        <div
+          key={`item-${index}`}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            marginTop: index > 0 ? '4px' : '0'
+          }}
+        >
+          <span
+            style={{
+              width: '10px',
+              height: '10px',
+              borderRadius: '50%',
+              backgroundColor: entry.color,
+              display: 'inline-block'
+            }}
+          />
+          <span
+            style={{
+              fontSize: '11px',
+              color: 'var(--color-text-secondary)',
+              marginRight: '4px'
+            }}
+          >
+            {entry.name}:
+          </span>
+          <span
+            style={{
+              fontSize: '12px',
+              fontWeight: 600,
+              color: 'var(--color-text-primary)'
+            }}
+          >
+            {formatter ? formatter(entry.value as number) : entry.value}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 const MetricsGrid: React.FC<MetricsGridProps> = ({ metrics, loading, reportType, showVisitors, viewType }) => {
   const { labels } = useLabels()
   const totals = metrics.reduce((acc, m) => ({
@@ -338,14 +412,7 @@ const MetricsGrid: React.FC<MetricsGridProps> = ({ metrics, loading, reportType,
             <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-subtle)" />
             <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="var(--color-text-tertiary)" />
             <YAxis tick={{ fontSize: 11 }} stroke="var(--color-text-tertiary)" />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: 'var(--color-surface)',
-                border: '1px solid var(--color-border)',
-                borderRadius: '8px',
-                fontSize: '12px'
-              }}
-            />
+            <Tooltip content={<CustomTooltip formatter={formatNumber} />} />
             <Legend wrapperStyle={{ fontSize: '12px' }} />
             <Line type="monotone" dataKey="clicks" stroke="#3b82f6" name="Clicks" strokeWidth={2} dot={{ r: 3 }} />
             {showVisitors && (
@@ -373,14 +440,7 @@ const MetricsGrid: React.FC<MetricsGridProps> = ({ metrics, loading, reportType,
             <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-subtle)" />
             <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="var(--color-text-tertiary)" />
             <YAxis tick={{ fontSize: 11 }} stroke="var(--color-text-tertiary)" />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: 'var(--color-surface)',
-                border: '1px solid var(--color-border)',
-                borderRadius: '8px',
-                fontSize: '12px'
-              }}
-            />
+            <Tooltip content={<CustomTooltip formatter={formatNumber} />} />
             <Legend wrapperStyle={{ fontSize: '12px' }} />
             <Line type="monotone" dataKey="leads" stroke="#10b981" name={labels.leads} strokeWidth={2} dot={{ r: 3 }} />
             <Line type="monotone" dataKey="appointments" stroke="#f59e0b" name="Citas" strokeWidth={2} dot={{ r: 3 }} />
@@ -405,14 +465,7 @@ const MetricsGrid: React.FC<MetricsGridProps> = ({ metrics, loading, reportType,
             <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-subtle)" />
             <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="var(--color-text-tertiary)" />
             <YAxis tick={{ fontSize: 11 }} stroke="var(--color-text-tertiary)" />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: 'var(--color-surface)',
-                border: '1px solid var(--color-border)',
-                borderRadius: '8px',
-                fontSize: '12px'
-              }}
-            />
+            <Tooltip content={<CustomTooltip formatter={formatNumber} />} />
             <Legend wrapperStyle={{ fontSize: '12px' }} />
             <Bar dataKey="new_customers" fill="#06b6d4" name="Clientes Nuevos" radius={[4, 4, 0, 0]} />
           </BarChart>
@@ -435,15 +488,7 @@ const MetricsGrid: React.FC<MetricsGridProps> = ({ metrics, loading, reportType,
             <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-subtle)" />
             <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="var(--color-text-tertiary)" />
             <YAxis tick={{ fontSize: 11 }} stroke="var(--color-text-tertiary)" />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: 'var(--color-surface)',
-                border: '1px solid var(--color-border)',
-                borderRadius: '8px',
-                fontSize: '12px'
-              }}
-              formatter={(value: number) => formatCurrency(value)}
-            />
+            <Tooltip content={<CustomTooltip formatter={formatCurrency} />} />
             <Legend wrapperStyle={{ fontSize: '12px' }} />
             <Area type="monotone" dataKey="revenue" stroke="#10b981" fill="#10b981" fillOpacity={0.3} name="Ingresos" />
             <Area type="monotone" dataKey="spend" stroke="#ef4444" fill="#ef4444" fillOpacity={0.3} name="Gastos" />
