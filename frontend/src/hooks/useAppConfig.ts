@@ -55,31 +55,52 @@ export function useAppConfig<T = string>(
   useEffect(() => {
     mountedRef.current = true
 
-    if (!syncOnMount) return
+    if (!syncOnMount) {
+      console.log(`🔵 [useAppConfig] ${key}: syncOnMount=false, saltando sync`)
+      return
+    }
 
     const syncFromDB = async () => {
       try {
+        console.log(`🔵 [useAppConfig] ${key}: Sincronizando desde DB...`)
         const response = await fetch(`/api/config?keys=${key}`)
-        if (!response.ok) throw new Error('Failed to fetch config')
+
+        if (!response.ok) {
+          console.error(`❌ [useAppConfig] ${key}: Error HTTP ${response.status}`)
+          throw new Error('Failed to fetch config')
+        }
 
         const data = await response.json()
+        console.log(`🟡 [useAppConfig] ${key}: Respuesta de DB:`, data)
+
         const dbValue = data.config?.[key]
+        console.log(`🟡 [useAppConfig] ${key}: Valor en DB:`, dbValue === null ? 'null' : dbValue)
 
         if (dbValue !== undefined && dbValue !== null && mountedRef.current) {
           const parsed = typeof defaultValue === 'string' ? dbValue : JSON.parse(dbValue)
+          console.log(`🟡 [useAppConfig] ${key}: Valor parseado:`, parsed)
 
           // Solo actualizar si es diferente del cache
           setValue((current) => {
-            if (JSON.stringify(current) !== JSON.stringify(parsed)) {
+            const currentStr = JSON.stringify(current)
+            const parsedStr = JSON.stringify(parsed)
+            console.log(`🟡 [useAppConfig] ${key}: Cache=${currentStr}, DB=${parsedStr}`)
+
+            if (currentStr !== parsedStr) {
+              console.log(`✅ [useAppConfig] ${key}: DB diferente del cache, actualizando...`)
               // Sincronizar cache con DB
               localStorage.setItem(`${CONFIG_PREFIX}${key}`, JSON.stringify(parsed))
               return parsed
+            } else {
+              console.log(`✅ [useAppConfig] ${key}: DB igual al cache, no actualizar`)
             }
             return current
           })
+        } else {
+          console.log(`⚠️ [useAppConfig] ${key}: No hay valor en DB (usando cache/default)`)
         }
       } catch (error) {
-        console.warn(`No se pudo sincronizar ${key} desde DB, usando cache:`, error)
+        console.warn(`❌ [useAppConfig] ${key}: No se pudo sincronizar desde DB, usando cache:`, error)
       }
     }
 
