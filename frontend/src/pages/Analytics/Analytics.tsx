@@ -332,7 +332,7 @@ const Analytics: React.FC = () => {
 
           // Gráfico de conversiones (registros reales de contactos por fecha de creación)
           // Combinar período actual y anterior para contexto visual
-          const allContactsData = [...prevContactsData, ...contactsData]
+          const allContactsData = [...(prevContactsData || []), ...(contactsData || [])]
 
           const conversionChartData = allContactsData
             .sort((a, b) => a.date.localeCompare(b.date))
