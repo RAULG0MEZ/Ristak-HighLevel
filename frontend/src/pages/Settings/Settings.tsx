@@ -29,13 +29,6 @@ export const Settings: React.FC = () => {
           <span>HighLevel</span>
         </NavLink>
         <NavLink
-          to="/settings/costs"
-          className={({ isActive }) => `${styles.tab} ${isActive ? styles.tabActive : ''}`}
-        >
-          <TrendingDown size={18} />
-          <span>Costos</span>
-        </NavLink>
-        <NavLink
           to="/settings/meta-ads"
           className={({ isActive }) => `${styles.tab} ${isActive ? styles.tabActive : ''}`}
         >
@@ -68,7 +61,14 @@ export const Settings: React.FC = () => {
           className={({ isActive }) => `${styles.tab} ${isActive ? styles.tabActive : ''}`}
         >
           <CreditCard size={18} />
-          <span>Configuración de Pagos</span>
+          <span>Pagos</span>
+        </NavLink>
+        <NavLink
+          to="/settings/costs"
+          className={({ isActive }) => `${styles.tab} ${isActive ? styles.tabActive : ''}`}
+        >
+          <TrendingDown size={18} />
+          <span>Costos</span>
         </NavLink>
         <NavLink
           to="/settings/account"
