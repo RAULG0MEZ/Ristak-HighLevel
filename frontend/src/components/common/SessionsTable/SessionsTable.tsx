@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '../Button/Button'
-import { RefreshCw, Maximize2, Minimize2, Search, ChevronLeft, ChevronRight, Activity } from 'lucide-react'
-import { trackingService, TrackingSession } from '@/services/trackingService'
+import { RefreshCw, Maximize2, Minimize2, Search, Edit, Trash2, X, Check } from 'lucide-react'
+import { trackingService, TrackingSession, SessionsResponse } from '@/services/trackingService'
 import { useTimezone } from '@/contexts/TimezoneContext'
+import { useNotification } from '@/contexts/NotificationContext'
 import styles from './SessionsTable.module.css'
 
 interface SessionsTableProps {
@@ -12,42 +13,100 @@ interface SessionsTableProps {
 
 export const SessionsTable: React.FC<SessionsTableProps> = ({ className }) => {
   const { formatLocalDateTime } = useTimezone()
+  const { showToast, showConfirm } = useNotification()
 
-  const [recentSessions, setRecentSessions] = useState<TrackingSession[]>([])
+  const [sessions, setSessions] = useState<TrackingSession[]>([])
   const [loadingSessions, setLoadingSessions] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [total, setTotal] = useState(0)
+  const [hasMore, setHasMore] = useState(true)
 
-  // Estados para paginación y vista expandida
-  const [currentPage, setCurrentPage] = useState(1)
+  // Estados para selección
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [editingSession, setEditingSession] = useState<TrackingSession | null>(null)
+
+  // Estados para vista expandida
   const [isExpanded, setIsExpanded] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchColumn, setSearchColumn] = useState<string>('all')
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>({})
-  const ITEMS_PER_PAGE = 10
   const DEFAULT_COLUMN_WIDTH = 150
 
+  // Ref para detectar scroll infinito
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const observerRef = useRef<IntersectionObserver | null>(null)
+  const loadMoreTriggerRef = useRef<HTMLDivElement>(null)
+
   useEffect(() => {
-    loadRecentSessions()
+    loadInitialSessions()
   }, [])
 
-  const loadRecentSessions = async () => {
+  // Configurar Intersection Observer para scroll infinito
+  useEffect(() => {
+    if (!isExpanded) return // Solo en vista expandida
+
+    const options = {
+      root: scrollContainerRef.current,
+      rootMargin: '200px', // Cargar cuando esté a 200px del final
+      threshold: 0.1
+    }
+
+    observerRef.current = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting && hasMore && !loadingMore) {
+        loadMoreSessions()
+      }
+    }, options)
+
+    if (loadMoreTriggerRef.current) {
+      observerRef.current.observe(loadMoreTriggerRef.current)
+    }
+
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect()
+      }
+    }
+  }, [isExpanded, hasMore, loadingMore, sessions.length])
+
+  const loadInitialSessions = async () => {
     setLoadingSessions(true)
     try {
-      const sessions = await trackingService.getSessions(50)
-      setRecentSessions(sessions)
+      const response: SessionsResponse = await trackingService.getSessionsPaginated(0, 50)
+      setSessions(response.sessions)
+      setTotal(response.total)
+      setHasMore(response.hasMore)
     } catch (error) {
-      // Silent error
+      showToast('error', 'Error', 'No se pudieron cargar las sesiones')
     } finally {
       setLoadingSessions(false)
     }
   }
 
+  const loadMoreSessions = async () => {
+    if (loadingMore || !hasMore) return
+
+    setLoadingMore(true)
+    try {
+      const offset = sessions.length
+      const response: SessionsResponse = await trackingService.getSessionsPaginated(offset, 50)
+
+      setSessions(prev => [...prev, ...response.sessions])
+      setHasMore(response.hasMore)
+    } catch (error) {
+      showToast('error', 'Error', 'No se pudieron cargar más sesiones')
+    } finally {
+      setLoadingMore(false)
+    }
+  }
+
   // Filtrar sesiones por búsqueda
   const filteredSessions = useMemo(() => {
-    if (!searchQuery.trim()) return recentSessions
+    if (!searchQuery.trim()) return sessions
 
     const query = searchQuery.toLowerCase()
 
-    return recentSessions.filter((session: any) => {
+    return sessions.filter((session: any) => {
       // Si busca en columna específica
       if (searchColumn !== 'all') {
         const value = session[searchColumn]
@@ -74,30 +133,14 @@ export const SessionsTable: React.FC<SessionsTableProps> = ({ className }) => {
         session.geo_city?.toLowerCase().includes(query)
       )
     })
-  }, [recentSessions, searchQuery, searchColumn])
-
-  // Calcular sesiones paginadas (solo para vista normal)
-  const paginatedSessions = useMemo(() => {
-    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
-    const endIndex = startIndex + ITEMS_PER_PAGE
-    return recentSessions.slice(startIndex, endIndex)
-  }, [recentSessions, currentPage, ITEMS_PER_PAGE])
-
-  const totalPages = Math.ceil(recentSessions.length / ITEMS_PER_PAGE)
-
-  const handlePreviousPage = () => {
-    setCurrentPage(prev => Math.max(1, prev - 1))
-  }
-
-  const handleNextPage = () => {
-    setCurrentPage(prev => Math.min(totalPages, prev + 1))
-  }
+  }, [sessions, searchQuery, searchColumn])
 
   const handleToggleExpanded = () => {
     setIsExpanded(prev => !prev)
     if (!isExpanded) {
       setSearchQuery('')
       setSearchColumn('all')
+      setSelectedIds(new Set())
     }
   }
 
@@ -110,6 +153,86 @@ export const SessionsTable: React.FC<SessionsTableProps> = ({ className }) => {
 
   const getColumnWidth = (columnKey: string) => {
     return columnWidths[columnKey] || DEFAULT_COLUMN_WIDTH
+  }
+
+  // Manejo de selección
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds(new Set(filteredSessions.map(s => s.id)))
+    } else {
+      setSelectedIds(new Set())
+    }
+  }
+
+  const handleSelectRow = (id: string, checked: boolean) => {
+    setSelectedIds(prev => {
+      const newSet = new Set(prev)
+      if (checked) {
+        newSet.add(id)
+      } else {
+        newSet.delete(id)
+      }
+      return newSet
+    })
+  }
+
+  const handleEditSelected = () => {
+    if (selectedIds.size !== 1) {
+      showToast('warning', 'Atención', 'Selecciona exactamente una sesión para editar')
+      return
+    }
+
+    const sessionId = Array.from(selectedIds)[0]
+    const session = sessions.find(s => s.id === sessionId)
+
+    if (session) {
+      setEditingSession(session)
+      setIsEditModalOpen(true)
+    }
+  }
+
+  const handleDeleteSelected = () => {
+    if (selectedIds.size === 0) {
+      showToast('warning', 'Atención', 'Selecciona al menos una sesión para eliminar')
+      return
+    }
+
+    showConfirm(
+      'Eliminar sesiones',
+      `¿Estás seguro de eliminar ${selectedIds.size} sesión(es)? Esta acción no se puede deshacer.`,
+      async () => {
+        try {
+          await trackingService.deleteSessions(Array.from(selectedIds))
+          showToast('success', 'Éxito', `${selectedIds.size} sesión(es) eliminadas correctamente`)
+
+          // Actualizar lista
+          setSessions(prev => prev.filter(s => !selectedIds.has(s.id)))
+          setSelectedIds(new Set())
+        } catch (error) {
+          showToast('error', 'Error', 'No se pudieron eliminar las sesiones')
+        }
+      },
+      'Eliminar',
+      'Cancelar'
+    )
+  }
+
+  const handleSaveEdit = async (updates: Partial<TrackingSession>) => {
+    if (!editingSession) return
+
+    try {
+      const updatedSession = await trackingService.updateSession(editingSession.id, updates)
+
+      // Actualizar en la lista
+      setSessions(prev => prev.map(s => s.id === updatedSession.id ? updatedSession : s))
+
+      showToast('success', 'Éxito', 'Sesión actualizada correctamente')
+      setIsEditModalOpen(false)
+      setEditingSession(null)
+      setSelectedIds(new Set())
+    } catch (error) {
+      showToast('error', 'Error', 'No se pudo actualizar la sesión')
+    }
   }
 
   // Componente para header resizable
@@ -263,12 +386,18 @@ export const SessionsTable: React.FC<SessionsTableProps> = ({ className }) => {
     { key: 'geo_city', label: 'City' }
   ]
 
+  const allSelected = filteredSessions.length > 0 && filteredSessions.every(s => selectedIds.has(s.id))
+  const someSelected = selectedIds.size > 0 && !allSelected
+
   return (
     <>
-      {/* Tabla de eventos de tracking */}
+      {/* Vista normal (compacta) */}
       <div className={`${styles.section} ${className}`}>
         <div className={styles.sectionHeader}>
-          <h3 className={styles.sectionTitle}>Eventos de Tracking</h3>
+          <h3 className={styles.sectionTitle}>
+            Eventos de Tracking
+            {total > 0 && <span style={{ fontWeight: 400, color: 'var(--color-text-secondary)', marginLeft: '8px' }}>({total} total)</span>}
+          </h3>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <Button
               variant="ghost"
@@ -277,11 +406,12 @@ export const SessionsTable: React.FC<SessionsTableProps> = ({ className }) => {
               title="Vista expandida"
             >
               <Maximize2 size={16} />
+              Expandir
             </Button>
             <Button
               variant="ghost"
               size="small"
-              onClick={loadRecentSessions}
+              onClick={loadInitialSessions}
               disabled={loadingSessions}
             >
               <RefreshCw size={16} className={loadingSessions ? styles.spinIcon : ''} />
@@ -290,98 +420,14 @@ export const SessionsTable: React.FC<SessionsTableProps> = ({ className }) => {
           </div>
         </div>
 
-        {recentSessions.length > 0 ? (
-          <>
-            {/* Información de paginación */}
-            <div style={{
-              padding: '12px 0',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              fontSize: '0.875rem',
-              color: 'var(--color-text-secondary)'
-            }}>
-              <span>
-                Mostrando {((currentPage - 1) * ITEMS_PER_PAGE) + 1} - {Math.min(currentPage * ITEMS_PER_PAGE, recentSessions.length)} de {recentSessions.length} sesiones
-              </span>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <Button
-                  variant="ghost"
-                  size="small"
-                  onClick={handlePreviousPage}
-                  disabled={currentPage === 1}
-                >
-                  <ChevronLeft size={16} />
-                  Anterior
-                </Button>
-                <span style={{ padding: '0 8px' }}>
-                  Página {currentPage} de {totalPages}
-                </span>
-                <Button
-                  variant="ghost"
-                  size="small"
-                  onClick={handleNextPage}
-                  disabled={currentPage === totalPages}
-                >
-                  Siguiente
-                  <ChevronRight size={16} />
-                </Button>
-              </div>
-            </div>
-
-            <div className={styles.tableContainer} style={{ overflowX: 'auto' }}>
-              <table className={styles.table} style={{ tableLayout: 'fixed', width: '100%' }}>
-                <thead>
-                  <tr>
-                    {/* Mostrar solo las columnas más importantes en vista normal */}
-                    <th style={{ width: '100px' }}>Session ID</th>
-                    <th style={{ width: '100px' }}>Visitor ID</th>
-                    <th style={{ width: '120px' }}>Full Name</th>
-                    <th style={{ width: '120px' }}>Started At</th>
-                    <th style={{ width: '200px' }}>Page URL</th>
-                    <th style={{ width: '120px' }}>UTM Source</th>
-                    <th style={{ width: '150px' }}>UTM Campaign</th>
-                    <th style={{ width: '100px' }}>Device Type</th>
-                    <th style={{ width: '100px' }}>Country</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paginatedSessions.map((session: any) => {
-                    const cellStyle = {
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap' as const
-                    }
-
-                    return (
-                      <tr key={session.session_id}>
-                        <td style={cellStyle} title={session.session_id}>
-                          <code style={{ fontSize: '0.7rem' }}>{session.session_id || '-'}</code>
-                        </td>
-                        <td style={cellStyle} title={session.visitor_id}>
-                          <code style={{ fontSize: '0.7rem' }}>{session.visitor_id || '-'}</code>
-                        </td>
-                        <td style={cellStyle} title={session.full_name}>{session.full_name || '-'}</td>
-                        <td style={cellStyle}>{formatLocalDateTime(session.started_at)}</td>
-                        <td style={cellStyle} title={session.page_url}>
-                          <a href={session.page_url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)' }}>
-                            {session.page_url || '-'}
-                          </a>
-                        </td>
-                        <td style={cellStyle} title={session.utm_source}>{session.utm_source || '-'}</td>
-                        <td style={cellStyle} title={session.utm_campaign}>{session.utm_campaign || '-'}</td>
-                        <td style={{...cellStyle, textTransform: 'capitalize'}} title={session.device_type}>{session.device_type || '-'}</td>
-                        <td style={cellStyle} title={session.geo_country}>{session.geo_country || '-'}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </>
+        {sessions.length > 0 ? (
+          <div className={styles.tableContainer} style={{ overflowX: 'auto' }}>
+            <p style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)', marginBottom: '12px' }}>
+              Mostrando las primeras {sessions.length} sesiones. Haz clic en "Expandir" para ver todas y gestionar.
+            </p>
+          </div>
         ) : (
           <div className={styles.emptyState}>
-            <Activity size={48} style={{ opacity: 0.3, marginBottom: '16px' }} />
             <p>No hay eventos capturados</p>
             <p className={styles.emptyStateHint}>
               Instala el pixel para empezar a capturar datos
@@ -415,6 +461,9 @@ export const SessionsTable: React.FC<SessionsTableProps> = ({ className }) => {
           }}>
             <h2 style={{ fontSize: '1.25rem', fontWeight: 600, margin: 0 }}>
               Eventos de Tracking - Vista Completa
+              <span style={{ fontWeight: 400, color: 'var(--color-text-secondary)', marginLeft: '12px' }}>
+                ({total} total)
+              </span>
             </h2>
             <Button
               variant="ghost"
@@ -426,7 +475,7 @@ export const SessionsTable: React.FC<SessionsTableProps> = ({ className }) => {
             </Button>
           </div>
 
-          {/* Buscador con filtros */}
+          {/* Barra de herramientas */}
           <div style={{
             padding: '16px 24px',
             display: 'flex',
@@ -527,16 +576,19 @@ export const SessionsTable: React.FC<SessionsTableProps> = ({ className }) => {
               </div>
             </div>
             <span style={{ fontSize: '0.875rem', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
-              {filteredSessions.length} {filteredSessions.length === 1 ? 'sesión' : 'sesiones'} {searchQuery.trim() && `(filtradas de ${recentSessions.length})`}
+              {filteredSessions.length} {filteredSessions.length === 1 ? 'sesión' : 'sesiones'} {searchQuery.trim() && `(filtradas de ${sessions.length})`}
             </span>
           </div>
 
-          {/* Tabla expandida con scroll y padding */}
-          <div style={{
-            flex: 1,
-            overflow: 'auto',
-            padding: '0 40px 20px 40px'
-          }}>
+          {/* Tabla expandida con scroll infinito */}
+          <div
+            ref={scrollContainerRef}
+            style={{
+              flex: 1,
+              overflow: 'auto',
+              padding: '0 40px 20px 40px'
+            }}
+          >
             <div style={{
               height: '100%',
               overflowX: 'auto',
@@ -554,6 +606,28 @@ export const SessionsTable: React.FC<SessionsTableProps> = ({ className }) => {
                   zIndex: 10
                 }}>
                   <tr>
+                    {/* Checkbox para seleccionar todo */}
+                    <th style={{
+                      width: '50px',
+                      padding: '12px 8px',
+                      backgroundColor: 'var(--color-surface)',
+                      borderBottom: '2px solid var(--color-border)',
+                      position: 'sticky',
+                      top: 0,
+                      zIndex: 11
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={allSelected}
+                        ref={input => {
+                          if (input) {
+                            input.indeterminate = someSelected
+                          }
+                        }}
+                        onChange={(e) => handleSelectAll(e.target.checked)}
+                        style={{ cursor: 'pointer' }}
+                      />
+                    </th>
                     {columns.map(col => (
                       <ResizableHeader
                         key={col.key}
@@ -567,6 +641,8 @@ export const SessionsTable: React.FC<SessionsTableProps> = ({ className }) => {
                 </thead>
                 <tbody>
                   {filteredSessions.map((session: any, rowIndex: number) => {
+                    const isSelected = selectedIds.has(session.id)
+
                     const getCellValue = (key: string) => {
                       const value = session[key]
                       if (!value) return '-'
@@ -598,7 +674,21 @@ export const SessionsTable: React.FC<SessionsTableProps> = ({ className }) => {
                     }
 
                     return (
-                      <tr key={`${session.session_id}-${rowIndex}`} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                      <tr
+                        key={`${session.session_id}-${rowIndex}`}
+                        style={{
+                          borderBottom: '1px solid var(--color-border)',
+                          backgroundColor: isSelected ? 'var(--color-primary-50)' : 'transparent'
+                        }}
+                      >
+                        <td style={{ padding: '8px' }}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => handleSelectRow(session.id, e.target.checked)}
+                            style={{ cursor: 'pointer' }}
+                          />
+                        </td>
                         {columns.map(col => {
                           const width = getColumnWidth(col.key)
                           return (
@@ -626,11 +716,397 @@ export const SessionsTable: React.FC<SessionsTableProps> = ({ className }) => {
                   })}
                 </tbody>
               </table>
+
+              {/* Trigger para scroll infinito */}
+              {hasMore && (
+                <div
+                  ref={loadMoreTriggerRef}
+                  style={{
+                    height: '100px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '0.875rem',
+                    color: 'var(--color-text-secondary)'
+                  }}
+                >
+                  {loadingMore ? (
+                    <>
+                      <RefreshCw size={16} className={styles.spinIcon} style={{ marginRight: '8px' }} />
+                      Cargando más sesiones...
+                    </>
+                  ) : (
+                    'Desplázate hacia abajo para cargar más'
+                  )}
+                </div>
+              )}
+
+              {!hasMore && sessions.length > 0 && (
+                <div style={{
+                  padding: '20px',
+                  textAlign: 'center',
+                  fontSize: '0.875rem',
+                  color: 'var(--color-text-secondary)'
+                }}>
+                  No hay más sesiones para mostrar
+                </div>
+              )}
             </div>
           </div>
+
+          {/* Barra de acciones flotante */}
+          {selectedIds.size > 0 && createPortal(
+            <div style={{
+              position: 'fixed',
+              bottom: '32px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              backgroundColor: 'var(--color-surface)',
+              border: '1px solid var(--color-border)',
+              borderRadius: '12px',
+              padding: '16px 24px',
+              display: 'flex',
+              gap: '12px',
+              alignItems: 'center',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+              zIndex: 10000
+            }}>
+              <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>
+                {selectedIds.size} {selectedIds.size === 1 ? 'sesión seleccionada' : 'sesiones seleccionadas'}
+              </span>
+              <div style={{ width: '1px', height: '24px', backgroundColor: 'var(--color-border)' }} />
+              <Button
+                variant="ghost"
+                size="small"
+                onClick={handleEditSelected}
+                disabled={selectedIds.size !== 1}
+                title={selectedIds.size !== 1 ? 'Selecciona exactamente una sesión para editar' : 'Editar sesión'}
+              >
+                <Edit size={16} />
+                Editar
+              </Button>
+              <Button
+                variant="ghost"
+                size="small"
+                onClick={handleDeleteSelected}
+              >
+                <Trash2 size={16} />
+                Eliminar
+              </Button>
+              <Button
+                variant="ghost"
+                size="small"
+                onClick={() => setSelectedIds(new Set())}
+                title="Deseleccionar todo"
+              >
+                <X size={16} />
+              </Button>
+            </div>,
+            document.body
+          )}
         </div>,
         document.body
       )}
+
+      {/* Modal de edición */}
+      {isEditModalOpen && editingSession && (
+        <EditSessionModal
+          session={editingSession}
+          onClose={() => {
+            setIsEditModalOpen(false)
+            setEditingSession(null)
+          }}
+          onSave={handleSaveEdit}
+        />
+      )}
     </>
+  )
+}
+
+// Modal de edición de sesión
+interface EditSessionModalProps {
+  session: TrackingSession
+  onClose: () => void
+  onSave: (updates: Partial<TrackingSession>) => void
+}
+
+const EditSessionModal: React.FC<EditSessionModalProps> = ({ session, onClose, onSave }) => {
+  const [formData, setFormData] = useState<Partial<TrackingSession>>({
+    full_name: session.full_name || '',
+    email: session.email || '',
+    utm_source: session.utm_source || '',
+    utm_medium: session.utm_medium || '',
+    utm_campaign: session.utm_campaign || '',
+    utm_term: session.utm_term || '',
+    utm_content: session.utm_content || '',
+    page_url: session.page_url || '',
+    referrer_url: session.referrer_url || '',
+    device_type: session.device_type || '',
+    browser: session.browser || '',
+    os: session.os || '',
+    geo_country: session.geo_country || '',
+    geo_city: session.geo_city || ''
+  })
+
+  const handleChange = (field: keyof TrackingSession, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }))
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    onSave(formData)
+  }
+
+  return createPortal(
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 10001,
+      padding: '20px'
+    }}>
+      <div style={{
+        backgroundColor: 'var(--color-surface)',
+        borderRadius: '12px',
+        width: '100%',
+        maxWidth: '700px',
+        maxHeight: '90vh',
+        overflow: 'auto',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: '24px',
+          borderBottom: '1px solid var(--color-border)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          position: 'sticky',
+          top: 0,
+          backgroundColor: 'var(--color-surface)',
+          zIndex: 1
+        }}>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 600, margin: 0 }}>
+            Editar Sesión
+          </h2>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'none',
+              border: 'none',
+              padding: '8px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: '6px',
+              color: 'var(--color-text-secondary)'
+            }}
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <form onSubmit={handleSubmit}>
+          <div style={{ padding: '24px' }}>
+            <div style={{ display: 'grid', gap: '16px' }}>
+              {/* Contacto */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '6px' }}>
+                  Nombre Completo
+                </label>
+                <input
+                  type="text"
+                  value={formData.full_name || ''}
+                  onChange={(e) => handleChange('full_name', e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: '6px',
+                    fontSize: '0.875rem',
+                    backgroundColor: 'var(--color-background)',
+                    color: 'var(--color-text)'
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '6px' }}>
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={formData.email || ''}
+                  onChange={(e) => handleChange('email', e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: '6px',
+                    fontSize: '0.875rem',
+                    backgroundColor: 'var(--color-background)',
+                    color: 'var(--color-text)'
+                  }}
+                />
+              </div>
+
+              {/* UTMs */}
+              <div style={{ marginTop: '12px' }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '12px' }}>UTM Parameters</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  {['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'].map((field) => (
+                    <div key={field}>
+                      <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '6px' }}>
+                        {field.replace('utm_', 'UTM ').replace(/^./, str => str.toUpperCase())}
+                      </label>
+                      <input
+                        type="text"
+                        value={(formData as any)[field] || ''}
+                        onChange={(e) => handleChange(field as keyof TrackingSession, e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '8px 10px',
+                          border: '1px solid var(--color-border)',
+                          borderRadius: '6px',
+                          fontSize: '0.875rem',
+                          backgroundColor: 'var(--color-background)',
+                          color: 'var(--color-text)'
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* URLs */}
+              <div>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '6px' }}>
+                  Page URL
+                </label>
+                <input
+                  type="text"
+                  value={formData.page_url || ''}
+                  onChange={(e) => handleChange('page_url', e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: '6px',
+                    fontSize: '0.875rem',
+                    backgroundColor: 'var(--color-background)',
+                    color: 'var(--color-text)'
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, marginBottom: '6px' }}>
+                  Referrer URL
+                </label>
+                <input
+                  type="text"
+                  value={formData.referrer_url || ''}
+                  onChange={(e) => handleChange('referrer_url', e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: '6px',
+                    fontSize: '0.875rem',
+                    backgroundColor: 'var(--color-background)',
+                    color: 'var(--color-text)'
+                  }}
+                />
+              </div>
+
+              {/* Device info */}
+              <div style={{ marginTop: '12px' }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '12px' }}>Device & Browser</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  {['device_type', 'browser', 'os'].map((field) => (
+                    <div key={field}>
+                      <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '6px', textTransform: 'capitalize' }}>
+                        {field.replace('_', ' ')}
+                      </label>
+                      <input
+                        type="text"
+                        value={(formData as any)[field] || ''}
+                        onChange={(e) => handleChange(field as keyof TrackingSession, e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '8px 10px',
+                          border: '1px solid var(--color-border)',
+                          borderRadius: '6px',
+                          fontSize: '0.875rem',
+                          backgroundColor: 'var(--color-background)',
+                          color: 'var(--color-text)'
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Geo */}
+              <div style={{ marginTop: '12px' }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '12px' }}>Geolocation</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  {['geo_country', 'geo_city'].map((field) => (
+                    <div key={field}>
+                      <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 500, marginBottom: '6px', textTransform: 'capitalize' }}>
+                        {field.replace('geo_', '')}
+                      </label>
+                      <input
+                        type="text"
+                        value={(formData as any)[field] || ''}
+                        onChange={(e) => handleChange(field as keyof TrackingSession, e.target.value)}
+                        style={{
+                          width: '100%',
+                          padding: '8px 10px',
+                          border: '1px solid var(--color-border)',
+                          borderRadius: '6px',
+                          fontSize: '0.875rem',
+                          backgroundColor: 'var(--color-background)',
+                          color: 'var(--color-text)'
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div style={{
+            padding: '16px 24px',
+            borderTop: '1px solid var(--color-border)',
+            display: 'flex',
+            gap: '12px',
+            justifyContent: 'flex-end',
+            position: 'sticky',
+            bottom: 0,
+            backgroundColor: 'var(--color-surface)'
+          }}>
+            <Button variant="ghost" size="medium" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button variant="primary" size="medium" type="submit">
+              <Check size={16} />
+              Guardar Cambios
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>,
+    document.body
   )
 }

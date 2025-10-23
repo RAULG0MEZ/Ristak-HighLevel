@@ -701,22 +701,24 @@ export async function linkVisitorToContactHandler(req, res) {
 }
 
 /**
- * Obtiene sesiones recientes para el dashboard
- * GET /api/tracking/sessions?limit=50
+ * Obtiene sesiones con soporte para paginación infinita
+ * GET /api/tracking/sessions?offset=0&limit=50
+ * GET /api/tracking/sessions?start=YYYY-MM-DD&end=YYYY-MM-DD (sin paginación)
  */
 export async function getSessionsHandler(req, res) {
   try {
     const limit = parseInt(req.query.limit, 10) || 50
+    const offset = parseInt(req.query.offset, 10) || 0
     const { start, end } = req.query
 
-    logger.info(`📊 GET /api/tracking/sessions - start: ${start}, end: ${end}, limit: ${limit}`)
+    logger.info(`📊 GET /api/tracking/sessions - start: ${start}, end: ${end}, limit: ${limit}, offset: ${offset}`)
 
     if (limit > 1000) {
       logger.warn(`⚠️ Limit demasiado alto: ${limit}`)
       return res.status(400).json({ error: 'Limit too high (max 1000)' })
     }
 
-    // Si hay fechas, usar filtro de rango
+    // Si hay fechas, usar filtro de rango (sin paginación, para Analytics)
     if (start && end) {
       logger.info(`🔍 Buscando sesiones entre ${start} y ${end}`)
       const sessions = await getSessionsByDateRange(start, end)
@@ -724,11 +726,37 @@ export async function getSessionsHandler(req, res) {
       return res.json(sessions)
     }
 
-    // Sin fechas, usar límite simple
-    logger.info(`🔍 Obteniendo últimas ${limit} sesiones`)
-    const sessions = await getRecentSessions(limit)
-    logger.info(`✅ Encontradas ${sessions.sessions?.length || 0} sesiones`)
-    res.json({ sessions })
+    // Sin fechas, usar paginación infinita
+    logger.info(`🔍 Obteniendo sesiones con offset ${offset} y limit ${limit}`)
+
+    const usePostgres = Boolean(process.env.DATABASE_URL)
+
+    // Query para obtener sesiones con paginación
+    const query = `
+      SELECT *
+      FROM sessions
+      ORDER BY created_at DESC
+      LIMIT ${usePostgres ? '$1' : '?'}
+      OFFSET ${usePostgres ? '$2' : '?'}
+    `
+
+    const sessions = await db.all(query, [limit, offset])
+
+    // Obtener total de sesiones para saber si hay más
+    const countQuery = 'SELECT COUNT(*) as total FROM sessions'
+    const countResult = await db.get(countQuery)
+    const total = countResult.total || 0
+    const hasMore = (offset + limit) < total
+
+    logger.info(`✅ Encontradas ${sessions.length} sesiones (total: ${total}, hasMore: ${hasMore})`)
+
+    res.json({
+      sessions,
+      total,
+      offset,
+      limit,
+      hasMore
+    })
   } catch (error) {
     logger.error('❌ Error obteniendo sesiones:', error)
     logger.error('Stack trace:', error.stack)
@@ -747,7 +775,9 @@ export async function getSessionsHandler(req, res) {
 export async function getSessionHandler(req, res) {
   try {
     const { id } = req.params
-    const session = await getSessionById(id)
+
+    const query = 'SELECT * FROM sessions WHERE id = ? LIMIT 1'
+    const session = await db.get(query, [id])
 
     if (!session) {
       return res.status(404).json({ error: 'Session not found' })
@@ -756,6 +786,122 @@ export async function getSessionHandler(req, res) {
     res.json({ session })
   } catch (error) {
     logger.error('Error obteniendo sesión:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+}
+
+/**
+ * Actualiza una sesión
+ * PUT /api/tracking/sessions/:id
+ */
+export async function updateSessionHandler(req, res) {
+  try {
+    const { id } = req.params
+    const updates = req.body
+
+    // Verificar que la sesión existe
+    const existingSession = await db.get('SELECT * FROM sessions WHERE id = ? LIMIT 1', [id])
+
+    if (!existingSession) {
+      return res.status(404).json({ error: 'Session not found' })
+    }
+
+    // Campos permitidos para actualizar (sin incluir id, created_at)
+    const allowedFields = [
+      'visitor_id', 'session_id', 'contact_id', 'full_name', 'email',
+      'page_url', 'referrer_url', 'event_name', 'started_at',
+      'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+      'gclid', 'fbclid', 'fbc', 'fbp', 'wbraid', 'gbraid', 'msclkid', 'ttclid',
+      'channel', 'source_platform',
+      'campaign_id', 'adset_id', 'ad_group_id', 'ad_id',
+      'campaign_name', 'adset_name', 'ad_group_name', 'ad_name',
+      'placement', 'site_source_name', 'network', 'match_type', 'keyword', 'search_query',
+      'creative_id', 'ad_position',
+      'ip', 'user_agent', 'device_type', 'os', 'browser', 'browser_version',
+      'language', 'timezone',
+      'geo_country', 'geo_region', 'geo_city', 'geo_postal_code', 'geo_lat', 'geo_lon'
+    ]
+
+    // Construir query de actualización solo con campos permitidos
+    const updateFields = []
+    const updateValues = []
+
+    Object.keys(updates).forEach(key => {
+      if (allowedFields.includes(key)) {
+        updateFields.push(`${key} = ?`)
+        updateValues.push(updates[key])
+      }
+    })
+
+    if (updateFields.length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update' })
+    }
+
+    // Agregar el ID al final de los valores
+    updateValues.push(id)
+
+    const updateQuery = `
+      UPDATE sessions
+      SET ${updateFields.join(', ')}
+      WHERE id = ?
+    `
+
+    await db.run(updateQuery, updateValues)
+
+    // Obtener sesión actualizada
+    const updatedSession = await db.get('SELECT * FROM sessions WHERE id = ? LIMIT 1', [id])
+
+    logger.info(`✅ Sesión ${id} actualizada exitosamente`)
+
+    res.json({
+      success: true,
+      message: 'Session updated successfully',
+      session: updatedSession
+    })
+  } catch (error) {
+    logger.error('Error actualizando sesión:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+}
+
+/**
+ * Elimina una o múltiples sesiones
+ * DELETE /api/tracking/sessions
+ * Body: { ids: [id1, id2, ...] }
+ */
+export async function deleteSessionsHandler(req, res) {
+  try {
+    const { ids } = req.body
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' })
+    }
+
+    if (ids.length > 100) {
+      return res.status(400).json({ error: 'Cannot delete more than 100 sessions at once' })
+    }
+
+    const usePostgres = Boolean(process.env.DATABASE_URL)
+
+    // Construir placeholders para la query
+    const placeholders = ids.map((_, i) => usePostgres ? `$${i + 1}` : '?').join(',')
+
+    const deleteQuery = `DELETE FROM sessions WHERE id IN (${placeholders})`
+
+    const result = await db.run(deleteQuery, ids)
+
+    // En PostgreSQL, result.changes no está disponible, usar rowCount
+    const deletedCount = result.changes || result.rowCount || 0
+
+    logger.info(`✅ ${deletedCount} sesiones eliminadas exitosamente`)
+
+    res.json({
+      success: true,
+      message: `${deletedCount} session(s) deleted successfully`,
+      deletedCount
+    })
+  } catch (error) {
+    logger.error('Error eliminando sesiones:', error)
     res.status(500).json({ error: 'Internal server error' })
   }
 }

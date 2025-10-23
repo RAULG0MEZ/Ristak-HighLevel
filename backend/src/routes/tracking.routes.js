@@ -6,6 +6,8 @@ import {
   linkVisitorToContactHandler,
   getSessionsHandler,
   getSessionHandler,
+  updateSessionHandler,
+  deleteSessionsHandler,
   getTrackingConfig,
   configureTracking,
   setAnalyticsPreference,
@@ -30,9 +32,11 @@ router.post('/sync-visitor', syncVisitorToHighLevel)
 // Vincular visitor_id histórico a contacto
 router.post('/link-visitor', linkVisitorToContactHandler)
 
-// Obtener sesiones (dashboard)
+// CRUD de sesiones
 router.get('/sessions', getSessionsHandler)
 router.get('/sessions/:id', getSessionHandler)
+router.put('/sessions/:id', updateSessionHandler)
+router.delete('/sessions', deleteSessionsHandler)
 
 // Configuración automática
 router.get('/config', getTrackingConfig)

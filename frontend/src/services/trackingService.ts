@@ -103,11 +103,30 @@ export interface TrackingConfig {
 }
 
 /**
- * Obtiene las sesiones recientes de tracking
+ * Respuesta de sesiones con paginación
+ */
+export interface SessionsResponse {
+  sessions: TrackingSession[]
+  total: number
+  offset: number
+  limit: number
+  hasMore: boolean
+}
+
+/**
+ * Obtiene las sesiones recientes de tracking (legacy - sin paginación)
  */
 export async function getSessions(limit: number = 50): Promise<TrackingSession[]> {
   const response = await apiClient.get<{ sessions: TrackingSession[] }>(`/api/tracking/sessions?limit=${limit}`)
   return response.sessions
+}
+
+/**
+ * Obtiene sesiones con paginación infinita
+ */
+export async function getSessionsPaginated(offset: number = 0, limit: number = 50): Promise<SessionsResponse> {
+  const response = await apiClient.get<SessionsResponse>(`/api/tracking/sessions?offset=${offset}&limit=${limit}`)
+  return response
 }
 
 /**
@@ -142,9 +161,28 @@ export async function configureTracking(): Promise<{ success: boolean; message: 
   return response
 }
 
+/**
+ * Actualiza una sesión
+ */
+export async function updateSession(id: string, updates: Partial<TrackingSession>): Promise<TrackingSession> {
+  const response = await apiClient.put<{ session: TrackingSession }>(`/api/tracking/sessions/${id}`, updates)
+  return response.session
+}
+
+/**
+ * Elimina una o múltiples sesiones
+ */
+export async function deleteSessions(ids: string[]): Promise<{ deletedCount: number }> {
+  const response = await apiClient.delete<{ deletedCount: number }>('/api/tracking/sessions', { ids })
+  return response
+}
+
 export const trackingService = {
   getSessions,
+  getSessionsPaginated,
   getSessionById,
+  updateSession,
+  deleteSessions,
   generateSnippet,
   getTrackingConfig,
   configureTracking
