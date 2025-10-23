@@ -257,6 +257,7 @@ export async function createSession(sessionData) {
   }
 
   try {
+    // CADA page_view crea un registro NUEVO (el id se genera automáticamente)
     await db.run(`
       INSERT INTO sessions (
         session_id,
@@ -266,8 +267,7 @@ export async function createSession(sessionData) {
         email,
         event_name,
         started_at,
-        last_event_at,
-        landing_url,
+        page_url,
         referrer_url,
         utm_source,
         utm_medium,
@@ -316,13 +316,8 @@ export async function createSession(sessionData) {
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?
+        ?, ?, ?
       )
-      ON CONFLICT (session_id) DO UPDATE SET
-        last_event_at = EXCLUDED.last_event_at,
-        contact_id = COALESCE(EXCLUDED.contact_id, sessions.contact_id),
-        full_name = COALESCE(EXCLUDED.full_name, sessions.full_name),
-        email = COALESCE(EXCLUDED.email, sessions.email)
     `, [
       session_id,
       visitor_id,
@@ -330,7 +325,6 @@ export async function createSession(sessionData) {
       validFullName,
       validEmail,
       event_name,
-      startedAt,
       startedAt,
       data.url || null,
       data.referrer || null,
@@ -378,9 +372,10 @@ export async function createSession(sessionData) {
       geoInfo.geo_city
     ])
 
+    const pageUrl = data.url || 'unknown'
     const logMsg = validContactId
-      ? `Evento registrado: ${event_name} - visitor: ${visitor_id} - contact: ${validContactId}`
-      : `Evento registrado: ${event_name} - visitor: ${visitor_id} (sin contact_id)`
+      ? `Page view: ${pageUrl} - visitor: ${visitor_id} - contact: ${validContactId}`
+      : `Page view: ${pageUrl} - visitor: ${visitor_id} (anónimo)`
     logger.info(logMsg)
     return { success: true }
   } catch (error) {
@@ -438,9 +433,8 @@ export async function getRecentSessions(limit = 50) {
         full_name,
         event_name,
         started_at,
-        last_event_at,
         created_at,
-        landing_url,
+        page_url,
         referrer_url,
         utm_source,
         utm_medium,
@@ -518,7 +512,7 @@ export async function getSessionsByDateRange(startDate, endDate) {
           s.full_name,
           s.event_name,
           s.started_at,
-          s.landing_url,
+          s.page_url,
           s.referrer_url,
           s.utm_source,
           s.utm_medium,
@@ -580,7 +574,7 @@ export async function getSessionsByDateRange(startDate, endDate) {
           s.full_name,
           s.event_name,
           s.started_at,
-          s.landing_url,
+          s.page_url,
           s.referrer_url,
           s.utm_source,
           s.utm_medium,

@@ -1490,7 +1490,7 @@ export async function getVisitorsList(req, res) {
         s.session_id,
         s.contact_id,
         s.created_at,
-        s.landing_url,
+        s.page_url,
         s.referrer_url,
         s.utm_source,
         s.utm_medium,
@@ -1632,7 +1632,7 @@ export async function getVisitorsList(req, res) {
       contactId: v.contact_id,
       createdAt: v.created_at,
       firstVisit: v.created_at, // Alias para compatibilidad con el frontend
-      pageUrl: v.landing_url,
+      pageUrl: v.page_url,
       referrerUrl: v.referrer_url,
       utmSource: v.utm_source,
       utmMedium: v.utm_medium,
