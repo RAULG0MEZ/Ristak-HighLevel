@@ -7,6 +7,6 @@
     "start": "cd backend && npm install && npm start"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": "22.x"
   }
 }
