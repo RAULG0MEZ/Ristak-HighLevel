@@ -305,7 +305,7 @@ const MetricsGrid: React.FC<MetricsGridProps> = ({ metrics, loading, reportType,
       items: [
         { label: labels.leads, value: formatNumber(totals.leads) },
         { label: `Costo por ${labels.lead}`, value: formatCurrency(cpl) },
-        { label: 'EPA', value: formatCurrency(epl) },
+        { label: `Ingreso por ${labels.lead}`, value: formatCurrency(epl) },
         { label: 'Citas (Primera)', value: formatNumber(totals.appointments) },
         { label: `${labels.leads}→Citas %`, value: `${interesadoToAppt.toFixed(1)}%` },
         { label: reportType === 'cashflow' ? 'Transacciones' : 'Ventas', value: formatNumber(totals.sales) },
@@ -327,37 +327,37 @@ const MetricsGrid: React.FC<MetricsGridProps> = ({ metrics, loading, reportType,
   ]
 
   return (
-    <Card className={styles.metricsTableCard}>
+    <div className={styles.metricsContainer}>
       {loading ? (
-        <p className={styles.metricsLoading}>Cargando métricas...</p>
+        <Card className={styles.metricsTableCard}>
+          <p className={styles.metricsLoading}>Cargando métricas...</p>
+        </Card>
       ) : (
-        <div className={styles.metricsTableWrapper}>
-          <table className={styles.metricsTable}>
-            <thead>
-              <tr>
-                <th>Descripción</th>
-                <th>Valor</th>
-              </tr>
-            </thead>
-            <tbody>
-              {metricGroups.map((group) => (
-                <React.Fragment key={group.title}>
-                  <tr className={styles.metricsSectionRow}>
-                    <th colSpan={2}>{group.title}</th>
+        metricGroups.map((group) => (
+          <Card key={group.title} className={styles.metricsCategoryCard}>
+            <h3 className={styles.metricsCategoryTitle}>{group.title}</h3>
+            <div className={styles.metricsTableWrapper}>
+              <table className={styles.metricsTable}>
+                <thead>
+                  <tr>
+                    <th>Descripción</th>
+                    <th>Valor</th>
                   </tr>
+                </thead>
+                <tbody>
                   {group.items.map((item) => (
                     <tr key={`${group.title}-${item.label}`} className={styles.metricsRow}>
                       <td className={styles.metricsLabelCell}>{item.label}</td>
                       <td className={styles.metricsValueCell}>{item.value}</td>
                     </tr>
                   ))}
-                </React.Fragment>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        ))
       )}
-    </Card>
+    </div>
   )
 }
 
