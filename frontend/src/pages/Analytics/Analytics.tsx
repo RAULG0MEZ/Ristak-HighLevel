@@ -8,7 +8,8 @@ import {
   DateRangePicker,
   LineChart,
   TreeFilter,
-  TrafficSourcesChart
+  TrafficSourcesChart,
+  SessionsTable
 } from '../../components/common'
 import { Eye, Users, UserCheck, Target, Smartphone, Monitor, Tablet, Globe } from 'lucide-react'
 import { FaFacebook, FaGoogle, FaInstagram, FaTiktok, FaTwitter, FaLinkedin, FaMicrosoft, FaChrome, FaFirefox, FaSafari, FaEdge, FaOpera, FaApple, FaWindows, FaAndroid, FaLinux } from 'react-icons/fa'
@@ -1200,6 +1201,9 @@ const Analytics: React.FC = () => {
             </div>
           </Card>
         </div>
+
+        {/* Tabla de sesiones de tracking */}
+        <SessionsTable />
       </div>
     </PageContainer>
   )
