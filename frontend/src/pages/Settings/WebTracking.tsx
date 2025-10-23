@@ -53,8 +53,25 @@ export const WebTracking: React.FC = () => {
       setIsConfigured(config.isConfigured)
       setHasHighLevel(config.hasHighLevel)
 
-      // Activación automática cuando NO es .onrender.com
-      if (!isOnRenderDomain && config.trackingDomain && !hasAutoActivated) {
+      // Si es .onrender.com → FORZAR analytics OFF y visitor source a 'platform'
+      if (isOnRenderDomain) {
+        if (showAnalytics !== false) {
+          await setShowAnalytics(false)
+        }
+        if (visitorSource !== 'platform') {
+          await setVisitorSource('platform')
+        }
+
+        // Disparar eventos para actualizar el sidebar
+        window.dispatchEvent(new CustomEvent('analytics-preference-changed', {
+          detail: { showAnalytics: false }
+        }))
+        window.dispatchEvent(new CustomEvent('visitor-source-changed', {
+          detail: { visitorSource: 'platform' }
+        }))
+      }
+      // Si NO es .onrender.com → Activación automática
+      else if (config.trackingDomain && !hasAutoActivated) {
         // Activar analytics y visitor tracking automáticamente
         if (!showAnalytics) {
           await setShowAnalytics(true)
