@@ -87,15 +87,27 @@ export const CalendarsConfiguration: React.FC = () => {
   }
 
   const handleSave = async () => {
+    console.log('🔵 [DEBUG] Intentando guardar configuración...')
+    console.log('🔵 [DEBUG] Calendario predeterminado:', tempDefaultCalendar)
+    console.log('🔵 [DEBUG] Calendarios de atribución:', tempAttributionCalendars)
+
     setSaving(true)
     try {
       // Guardar ambas configuraciones
+      console.log('🟡 [DEBUG] Guardando calendario predeterminado...')
       await setDefaultCalendarId(tempDefaultCalendar)
+      console.log('✅ [DEBUG] Calendario predeterminado guardado')
+
+      console.log('🟡 [DEBUG] Guardando calendarios de atribución...')
       await setAttributionCalendarIds(tempAttributionCalendars)
+      console.log('✅ [DEBUG] Calendarios de atribución guardados')
 
       showToast('success', 'Configuración de calendarios guardada exitosamente')
       setHasChanges(false)
+
+      console.log('🟢 [DEBUG] Todo guardado exitosamente')
     } catch (error: any) {
+      console.error('❌ [DEBUG] Error al guardar:', error)
       showToast('error', 'Error al guardar configuración', error.message)
     } finally {
       setSaving(false)

@@ -105,37 +105,49 @@ export function useAppConfig<T = string>(
 
   // Función para actualizar el valor
   const updateValue = useCallback(async (newValue: T) => {
+    console.log(`🔵 [useAppConfig] Guardando ${key}:`, newValue)
     setSyncing(true)
 
     try {
       // 1. Guardar en DB (source of truth)
+      const payload = {
+        key,
+        value: typeof newValue === 'string' ? newValue : JSON.stringify(newValue)
+      }
+      console.log(`🟡 [useAppConfig] Payload para ${key}:`, payload)
+
       const response = await fetch('/api/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          key,
-          value: typeof newValue === 'string' ? newValue : JSON.stringify(newValue)
-        })
+        body: JSON.stringify(payload)
       })
 
       if (!response.ok) {
-        throw new Error('Failed to save config')
+        const errorText = await response.text()
+        console.error(`❌ [useAppConfig] Error HTTP ${response.status} para ${key}:`, errorText)
+        throw new Error(`Failed to save config: ${response.status} ${errorText}`)
       }
+
+      const result = await response.json()
+      console.log(`✅ [useAppConfig] Respuesta del servidor para ${key}:`, result)
 
       // 2. Actualizar cache local
       localStorage.setItem(`${CONFIG_PREFIX}${key}`, JSON.stringify(newValue))
+      console.log(`💾 [useAppConfig] Cache actualizado para ${key}`)
 
       // 3. Actualizar estado local
       if (mountedRef.current) {
         setValue(newValue)
+        console.log(`🔄 [useAppConfig] Estado local actualizado para ${key}`)
       }
 
       // 4. Notificar a otros componentes
       window.dispatchEvent(new CustomEvent(SYNC_EVENT, {
         detail: { key, value: newValue }
       }))
+      console.log(`📢 [useAppConfig] Evento de sync emitido para ${key}`)
     } catch (error) {
-      console.error(`Error guardando configuración ${key}:`, error)
+      console.error(`❌ [useAppConfig] Error guardando configuración ${key}:`, error)
       throw error
     } finally {
       if (mountedRef.current) {
