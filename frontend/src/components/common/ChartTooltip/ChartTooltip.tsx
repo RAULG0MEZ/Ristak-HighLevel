@@ -91,8 +91,8 @@ export const ChartTooltip: React.FC<ChartTooltipProps> = ({
   // No mostrar tooltip si hay superposición activa que bloquearía la interacción
   const shouldRender = active && data && effectivePoint && !shouldHide
 
-  // IMPORTANTE: NO usar early return después de hooks para evitar error React #185
-  // Todos los hooks YA fueron llamados arriba, ahora calculamos el contenido
+  // IMPORTANTE: NUNCA usar early return - siempre renderizar el portal
+  // para evitar error React #185 (renders inconsistentes)
 
   type TooltipStyle = React.CSSProperties & { '--tooltip-gap'?: string }
 
@@ -100,49 +100,49 @@ export const ChartTooltip: React.FC<ChartTooltipProps> = ({
     ? Math.max(0, verticalOffset)
     : 12
 
-  // Renderizar condicionalmente SIN early return
-  if (!shouldRender || !effectivePoint) {
-    // Retornar null directamente - NO hay early return antes de este punto
-    return null
-  }
+  // Calcular contenido del tooltip (puede ser null si no debe mostrarse)
+  let tooltipContent: React.ReactNode = null
 
-  const tooltipStyle: TooltipStyle = {
-    position: 'fixed',
-    left: effectivePoint.x,
-    top: effectivePoint.y,
-    transform: 'translate(-50%, calc(-100% - var(--tooltip-gap)))',
-    pointerEvents: 'none',
-    zIndex: 9998,
-    '--tooltip-gap': `${clampedOffset}px`
-  }
+  if (shouldRender && effectivePoint) {
+    const tooltipStyle: TooltipStyle = {
+      position: 'fixed',
+      left: effectivePoint.x,
+      top: effectivePoint.y,
+      transform: 'translate(-50%, calc(-100% - var(--tooltip-gap)))',
+      pointerEvents: 'none',
+      zIndex: 9998,
+      '--tooltip-gap': `${clampedOffset}px`
+    }
 
-  const tooltipContent = (
-    <div style={tooltipStyle}>
-      <div className={styles.tooltip}>
-        {data.label && <p className={styles.tooltipLabel}>{data.label}</p>}
-        <div className={styles.seriesGroup}>
-          {series.map((serie) => {
-            const value = data[serie.key]
-            if (typeof value !== 'number') return null
+    tooltipContent = (
+      <div style={tooltipStyle}>
+        <div className={styles.tooltip}>
+          {data.label && <p className={styles.tooltipLabel}>{data.label}</p>}
+          <div className={styles.seriesGroup}>
+            {series.map((serie) => {
+              const value = data[serie.key]
+              if (typeof value !== 'number') return null
 
-            return (
-              <div key={serie.key} className={styles.seriesRow}>
-                <span
-                  className={styles.seriesColor}
-                  style={{ backgroundColor: serie.color }}
-                />
-                <span className={styles.seriesLabel}>{`${serie.label}:`}</span>
-                <span className={styles.seriesValue}>
-                  {formatValue(value, serie.key)}
-                </span>
-              </div>
-            )
-          })}
+              return (
+                <div key={serie.key} className={styles.seriesRow}>
+                  <span
+                    className={styles.seriesColor}
+                    style={{ backgroundColor: serie.color }}
+                  />
+                  <span className={styles.seriesLabel}>{`${serie.label}:`}</span>
+                  <span className={styles.seriesValue}>
+                    {formatValue(value, serie.key)}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
         </div>
       </div>
-    </div>
-  )
+    )
+  }
 
-  // Renderizar en portal para estar fuera de todos los contenedores
+  // SIEMPRE renderizar en portal (incluso si el contenido es null)
+  // Esto asegura que React siempre vea el mismo número de hooks
   return ReactDOM.createPortal(tooltipContent, document.body)
 }
