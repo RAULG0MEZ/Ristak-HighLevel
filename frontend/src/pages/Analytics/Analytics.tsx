@@ -483,9 +483,15 @@ const Analytics: React.FC = () => {
               // Obtener o crear adset/adgroup
               const adsetId = session.adset_id || session.ad_group_id || 'no_adset'
               if (!campaignNode.adsets.has(adsetId)) {
+                // Si tiene ad_id pero no tiene adset_name, mostrar el ID en vez de "orgánico"
+                const adsetName = session.adset_name || session.ad_group_name
+                const displayName = adsetName && adsetName !== 'null' && adsetName !== 'undefined'
+                  ? decodeAdName(adsetName)
+                  : `Conjunto ${adsetId.substring(0, 8)}...`
+
                 campaignNode.adsets.set(adsetId, {
                   id: adsetId,
-                  name: decodeAdName(session.adset_name || session.ad_group_name),
+                  name: displayName,
                   visitors: new Set(),
                   ads: new Map()
                 })
@@ -496,9 +502,15 @@ const Analytics: React.FC = () => {
               // Obtener o crear anuncio
               const adId = session.ad_id
               if (!adsetNode.ads.has(adId)) {
+                // Si tiene ad_id pero no tiene ad_name, mostrar el ID en vez de "orgánico"
+                const adName = session.ad_name
+                const displayName = adName && adName !== 'null' && adName !== 'undefined'
+                  ? decodeAdName(adName)
+                  : `Anuncio ${adId.substring(0, 8)}...`
+
                 adsetNode.ads.set(adId, {
                   id: adId,
-                  name: decodeAdName(session.ad_name),
+                  name: displayName,
                   visitors: new Set()
                 })
               }

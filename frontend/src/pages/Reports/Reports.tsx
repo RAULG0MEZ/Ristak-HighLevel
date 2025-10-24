@@ -692,20 +692,20 @@ const MetricsGrid: React.FC<MetricsGridProps> = ({ metrics, loading, reportType,
       )
     },
     {
-      title: 'Clientes',
+      title: labels.customers,
       icon: <UserCheck size={18} />,
       items: [
         { label: `${labels.customers} Nuevos`, value: formatNumber(totals.new_customers) },
         { label: `Costo por ${labels.customer}`, value: formatCurrency(cac) },
         { label: 'Total de Transacciones', value: formatNumber(totals.sales) },
-        { label: 'Transacciones por Cliente', value: transactionsPerCustomer.toFixed(1) },
+        { label: `Transacciones por ${labels.customer}`, value: transactionsPerCustomer.toFixed(1) },
         { label: 'Ticket Promedio', value: formatCurrency(aov) }
       ],
       chart: (
         <SimpleBarChart
           data={chartData}
           dataKey="new_customers"
-          label="Clientes Nuevos"
+          label={`${labels.customers} Nuevos`}
           color="#06b6d4"
           formatValue={(value) => formatNumber(value)}
         />
