@@ -166,6 +166,10 @@ export const Appointments: React.FC = () => {
   const [isCalendarDropdownOpen, setIsCalendarDropdownOpen] = useState(false);
   const [defaultCalendarId] = useAppConfig<string>('default_calendar_id', '');
 
+  // Drag & Drop state
+  const [draggedEvent, setDraggedEvent] = useState<CalendarEvent | null>(null);
+  const [dragOverDate, setDragOverDate] = useState<Date | null>(null);
+
   const persistLastSelectedCalendar = useCallback((calendarId: string | null) => {
     if (typeof window === 'undefined') return;
     if (calendarId) {
@@ -764,6 +768,62 @@ export const Appointments: React.FC = () => {
     }
   };
 
+  // Drag & Drop Handlers
+  const handleDragStart = (event: CalendarEvent) => (e: React.DragEvent) => {
+    setDraggedEvent(event);
+    e.dataTransfer.effectAllowed = 'move';
+    // Agregar clase visual al elemento arrastrado
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = '0.5';
+    }
+  };
+
+  const handleDragEnd = (e: React.DragEvent) => {
+    // Restaurar opacidad
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = '1';
+    }
+    setDraggedEvent(null);
+    setDragOverDate(null);
+  };
+
+  const handleDragOver = (date: Date) => (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverDate(date);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    setDragOverDate(null);
+  };
+
+  const handleDrop = (dropDate: Date) => async (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOverDate(null);
+
+    if (!draggedEvent) return;
+
+    // Calcular nueva fecha/hora manteniendo la hora original
+    const originalStart = new Date(draggedEvent.startTime);
+    const originalEnd = new Date(draggedEvent.endTime);
+
+    // Nueva fecha con la hora original
+    const newStart = new Date(dropDate);
+    newStart.setHours(originalStart.getHours(), originalStart.getMinutes(), 0, 0);
+
+    const duration = originalEnd.getTime() - originalStart.getTime();
+    const newEnd = new Date(newStart.getTime() + duration);
+
+    // Abrir modal con los datos actualizados
+    setSelectedEvent({
+      ...draggedEvent,
+      startTime: newStart.toISOString(),
+      endTime: newEnd.toISOString()
+    });
+    setIsModalOpen(true);
+    setDraggedEvent(null);
+  };
+
   // Color del evento según estado (compatible con dark mode)
   const getEventColor = (status: string) => {
     const isDark = theme === 'dark';
@@ -1111,11 +1171,17 @@ export const Appointments: React.FC = () => {
                       isToday ? styles.dayNumberToday : ''
                     ].filter(Boolean).join(' ');
 
+                    const isDragOver = dragOverDate && cell.date.toDateString() === dragOverDate.toDateString();
+                    const finalCellClasses = isDragOver ? `${cellClasses} ${styles.dayCellDragOver}` : cellClasses;
+
                     return (
                       <div
                         key={index}
-                        className={cellClasses}
+                        className={finalCellClasses}
                         onClick={() => setSelectedDate(cell.date)}
+                        onDragOver={handleDragOver(cell.date)}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop(cell.date)}
                       >
                         <div className={dayNumberClasses}>{cell.date.getDate()}</div>
                         <div className={styles.eventsContainer}>
@@ -1123,6 +1189,9 @@ export const Appointments: React.FC = () => {
                             <div
                               key={event.id}
                               className={`${styles.eventChip} ${styles[`event${event.appointmentStatus.charAt(0).toUpperCase() + event.appointmentStatus.slice(1).toLowerCase()}`] || styles.eventDefault}`}
+                              draggable
+                              onDragStart={handleDragStart(event)}
+                              onDragEnd={handleDragEnd}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleEventClick(event);

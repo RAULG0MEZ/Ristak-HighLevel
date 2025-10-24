@@ -793,6 +793,18 @@
   box-shadow: inset 0 0 0 2px rgba(148, 163, 184, 0.48);
 }
 
+/* Drag Over State */
+.dayCellDragOver {
+  background-color: rgba(59, 130, 246, 0.12) !important;
+  box-shadow: inset 0 0 0 2px rgba(59, 130, 246, 0.4) !important;
+  transition: all 0.15s ease;
+}
+
+:global(body.dark) .dayCellDragOver {
+  background-color: rgba(59, 130, 246, 0.2) !important;
+  box-shadow: inset 0 0 0 2px rgba(96, 165, 250, 0.5) !important;
+}
+
 .dayNumber {
   font-size: 0.75rem;
   font-weight: 600;
@@ -826,7 +838,7 @@
   line-height: 1.2;
   padding: 0.35rem 0.6rem 0.35rem 1rem;
   border-radius: 6px;
-  cursor: pointer;
+  cursor: grab;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -837,6 +849,10 @@
   background-color: rgba(148, 163, 184, 0.16);
   color: var(--color-text-primary);
   --event-chip-color: #64748b;
+}
+
+.eventChip:active {
+  cursor: grabbing;
 }
 
 :global(body.dark) .eventChip {
