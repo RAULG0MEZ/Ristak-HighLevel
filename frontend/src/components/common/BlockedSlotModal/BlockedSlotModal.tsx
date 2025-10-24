@@ -582,7 +582,7 @@ export const BlockedSlotModal: React.FC<BlockedSlotModalProps> = ({
         isOpen={isOpen}
         onClose={onClose}
         title={isCreateMode ? 'Bloquear horario' : 'Editar horario bloqueado'}
-        size="md"
+        size="sm"
         type="custom"
       >
         <div className={styles.modalContent}>
