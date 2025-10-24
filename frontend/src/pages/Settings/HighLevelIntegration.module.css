@@ -1618,19 +1618,21 @@ body.dark .warningBox {
   }
 }
 
-/* Switch Toggle */
+/* Switch Toggle - Rediseñado completamente */
 .switchContainer {
   position: relative;
   display: inline-block;
-  width: 52px;
-  height: 28px;
+  width: 48px;
+  height: 26px;
   flex-shrink: 0;
 }
 
 .switchInput {
+  position: absolute;
   opacity: 0;
   width: 0;
   height: 0;
+  pointer-events: none;
 }
 
 .switchSlider {
@@ -1640,34 +1642,45 @@ body.dark .warningBox {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: var(--color-gray-300);
-  transition: 0.3s;
-  border-radius: 28px;
+  background-color: #cbd5e1;
+  transition: background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 999px;
+  border: 2px solid transparent;
+}
+
+.switchSlider:hover {
+  background-color: #b0bcc9;
 }
 
 .switchSlider:before {
   position: absolute;
   content: "";
-  height: 20px;
-  width: 20px;
-  left: 4px;
-  bottom: 4px;
-  background-color: white;
-  transition: 0.3s;
+  height: 18px;
+  width: 18px;
+  left: 2px;
+  top: 2px;
+  background-color: #ffffff;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   border-radius: 50%;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+  will-change: transform;
 }
 
 .switchInput:checked + .switchSlider {
-  background-color: var(--color-primary);
+  background-color: #8b5cf6;
 }
 
-.switchInput:focus + .switchSlider {
-  box-shadow: 0 0 0 3px var(--color-primary-light);
+.switchInput:checked + .switchSlider:hover {
+  background-color: #7c3aed;
 }
 
 .switchInput:checked + .switchSlider:before {
-  transform: translateX(24px);
+  transform: translateX(22px);
+}
+
+.switchInput:focus-visible + .switchSlider {
+  outline: 2px solid #8b5cf6;
+  outline-offset: 2px;
 }
 
 .switchInput:disabled + .switchSlider {
@@ -1675,11 +1688,42 @@ body.dark .warningBox {
   cursor: not-allowed;
 }
 
-/* Dark mode adjustments */
+.switchInput:disabled + .switchSlider:hover {
+  background-color: #cbd5e1;
+}
+
+.switchInput:checked:disabled + .switchSlider:hover {
+  background-color: #8b5cf6;
+}
+
+/* Dark mode */
 body.dark .switchSlider {
-  background-color: var(--color-gray-600);
+  background-color: #475569;
+  border-color: #334155;
+}
+
+body.dark .switchSlider:hover {
+  background-color: #5a6c82;
 }
 
 body.dark .switchSlider:before {
-  background-color: var(--color-gray-200);
+  background-color: #e2e8f0;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+body.dark .switchInput:checked + .switchSlider {
+  background-color: #8b5cf6;
+  border-color: #7c3aed;
+}
+
+body.dark .switchInput:checked + .switchSlider:hover {
+  background-color: #7c3aed;
+}
+
+body.dark .switchInput:disabled + .switchSlider:hover {
+  background-color: #475569;
+}
+
+body.dark .switchInput:checked:disabled + .switchSlider:hover {
+  background-color: #8b5cf6;
 }
