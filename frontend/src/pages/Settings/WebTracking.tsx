@@ -1,18 +1,16 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Card, Button } from '@/components/common'
-import { Copy, Check, Info, Loader2, RefreshCw } from 'lucide-react'
+import { Copy, Check, Info, Loader2, RefreshCw, Activity } from 'lucide-react'
 import { trackingService } from '@/services/trackingService'
 import { useNotification } from '@/contexts/NotificationContext'
-import { useAppConfig } from '@/hooks'
+import { useAppConfig, useIsRenderDomain } from '@/hooks'
 import styles from './HighLevelIntegration.module.css'
 
 export const WebTracking: React.FC = () => {
   const { showToast} = useNotification()
 
   // Detectar si estamos en dominio .onrender.com
-  const isOnRenderDomain = useMemo(() => {
-    return window.location.hostname.includes('.onrender.com')
-  }, [])
+  const isOnRenderDomain = useIsRenderDomain()
 
   // Sistema híbrido de configuración (cache + DB)
   // Defaults: false y 'platform' hasta que se configure dominio personalizado

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { Navigate } from 'react-router-dom'
 import { useDateRange } from '../../contexts/DateRangeContext'
 import { useTimezone } from '../../contexts/TimezoneContext'
+import { useIsRenderDomain } from '../../hooks'
 import {
   PageContainer,
   Card,
@@ -142,9 +144,15 @@ type TrafficPoint = {
 }
 
 const Analytics: React.FC = () => {
+  const isRenderDomain = useIsRenderDomain()
   const { dateRange, setDateRange } = useDateRange()
   const { formatLocalDateShort } = useTimezone()
   const [loading, setLoading] = useState(false)
+
+  // Si estamos en dominio .onrender.com, redirigir al Dashboard
+  if (isRenderDomain) {
+    return <Navigate to="/dashboard" replace />
+  }
 
   // Estado para filtros
   const [selectedFilters, setSelectedFilters] = useState<Record<string, string[]>>({})
@@ -698,24 +706,23 @@ const Analytics: React.FC = () => {
 
   // Efecto para recalcular visualizaciones cuando cambien las sesiones filtradas
   useEffect(() => {
+    // No hacer nada si allSessions está vacío (aún no se han cargado los datos iniciales)
+    if (allSessions.length === 0) {
+      return
+    }
+
     if (sessions.length === 0) {
-      // Si no hay sesiones filtradas, resetear todo a 0
-      setMetrics({
+      // Si no hay sesiones filtradas, resetear solo métricas de sesiones
+      // NO resetear registros ni registrosChartData (vienen de contactsData)
+      setMetrics(prev => ({
         pageViews: 0,
         uniqueVisitors: 0,
-        registros: 0,
+        registros: prev.registros, // ← MANTENER valor de contactsData
         conversionRate: 0,
         returningUsers: 0,
         avgPagePerSession: 0,
-        trends: {
-          pageViews: 0,
-          uniqueVisitors: 0,
-          registros: 0,
-          conversionRate: 0,
-          returningUsers: 0,
-          avgPagePerSession: 0
-        }
-      })
+        trends: prev.trends // Mantener trends originales
+      }))
       setDailyTraffic([])
       setDailyConversions([])
       // NO resetear registrosChartData aquí - viene de contactsData, no de sessions
