@@ -5,14 +5,14 @@
   width: 100%;
   max-width: 1000px; /* Aumentado para acomodar 2 columnas cómodamente */
   margin: 0 auto;
-  padding: 2rem 2.5rem; /* Padding interno para que no toque los bordes */
+  /* NOTA: El padding lo maneja Modal.content (24px-32px según pantalla) */
+  /* NO agregamos padding aquí para no duplicar y mantener el scroll funcional */
 }
 
-/* En pantallas grandes, aumentar padding y ancho máximo */
+/* En pantallas grandes, aumentar ancho máximo */
 @media (min-width: 1920px) {
   .container {
     max-width: 1200px;
-    padding: 2.5rem 3rem;
   }
 }
 
@@ -171,10 +171,6 @@
 
 /* Tablets en modo portrait (iPad vertical) - Mantener 2 columnas pero más estrechas */
 @media (max-width: 900px) and (min-width: 769px) {
-  .container {
-    padding: 1.5rem 2rem;
-  }
-
   .twoColumnLayout {
     grid-template-columns: 260px 1fr;
     gap: 1.5rem;
@@ -187,10 +183,6 @@
 
 /* Responsive: En pantallas pequeñas, las columnas se apilan */
 @media (max-width: 768px) {
-  .container {
-    padding: 1.25rem 1.5rem;
-  }
-
   .twoColumnLayout {
     grid-template-columns: 1fr;
     gap: 1.5rem;
@@ -208,10 +200,6 @@
 
 /* Móviles pequeños */
 @media (max-width: 480px) {
-  .container {
-    padding: 1rem 1.25rem;
-  }
-
   .leftColumn {
     padding: 1rem 1.25rem;
   }
