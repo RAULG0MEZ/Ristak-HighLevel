@@ -51,7 +51,6 @@ export const MetaAdsIntegration: React.FC = () => {
   const [realAccessToken, setRealAccessToken] = useState<string>('')
 
   // Estado para el botón "Continuar" del Access Token
-  const [showContinueButton, setShowContinueButton] = useState(false)
   const [isSavingToken, setIsSavingToken] = useState(false)
 
   // Estado para guardar Pixel API Token
@@ -254,13 +253,6 @@ export const MetaAdsIntegration: React.FC = () => {
 
   const handleInputChange = (field: keyof MetaCredentials, value: string) => {
     setCredentials(prev => ({ ...prev, [field]: value }))
-
-    // Mostrar botón "Continuar" si está escribiendo en accessToken
-    if (field === 'accessToken' && value.length > 50) {
-      setShowContinueButton(true)
-    } else if (field === 'accessToken' && value.length <= 50) {
-      setShowContinueButton(false)
-    }
   }
 
   // Función para guardar Access Token y cargar cuentas
@@ -291,7 +283,6 @@ export const MetaAdsIntegration: React.FC = () => {
       if (data.success) {
         showToast('success', 'Token guardado', 'Cargando cuentas de anuncios...')
         setRealAccessToken(credentials.accessToken)
-        setShowContinueButton(false)
 
         // Cargar cuentas
         await fetchAdAccounts(credentials.accessToken)
@@ -601,11 +592,11 @@ export const MetaAdsIntegration: React.FC = () => {
                           placeholder="EAAabcdef..."
                           className={styles.formInput}
                         />
-                        {showContinueButton && !isLoadingAccounts && (
+                        {!realAccessToken && !isLoadingAccounts && (
                           <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'center' }}>
                             <Button
                               onClick={handleContinueWithToken}
-                              disabled={isSavingToken}
+                              disabled={isSavingToken || !credentials.accessToken || credentials.accessToken.length < 50}
                               style={{
                                 display: 'flex',
                                 alignItems: 'center',
@@ -616,8 +607,8 @@ export const MetaAdsIntegration: React.FC = () => {
                                 color: 'white',
                                 border: 'none',
                                 borderRadius: '6px',
-                                cursor: isSavingToken ? 'not-allowed' : 'pointer',
-                                opacity: isSavingToken ? 0.6 : 1
+                                cursor: (isSavingToken || !credentials.accessToken || credentials.accessToken.length < 50) ? 'not-allowed' : 'pointer',
+                                opacity: (isSavingToken || !credentials.accessToken || credentials.accessToken.length < 50) ? 0.6 : 1
                               }}
                             >
                               {isSavingToken ? 'Guardando...' : 'Continuar'}
