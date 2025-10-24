@@ -616,7 +616,12 @@ const MetricsGrid: React.FC<MetricsGridProps> = ({ metrics, loading, reportType,
   const apptToSale = totals.appointments > 0 ? (totals.sales / totals.appointments) * 100 : 0
 
   // Preparar datos para los gráficos (formato compatible con useChartHover)
-  const chartData = metrics.slice().reverse().map(m => ({
+  // Ordenar cronológicamente (fecha más antigua a la izquierda, más reciente a la derecha)
+  const chartData = metrics.slice().sort((a, b) => {
+    const dateA = new Date(a.date).getTime()
+    const dateB = new Date(b.date).getTime()
+    return dateA - dateB // Orden ascendente
+  }).map(m => ({
     label: formatPeriodLabel(m.date, viewType, { includeYear: false }),
     clicks: m.clicks,
     visitors: m.visitors,
