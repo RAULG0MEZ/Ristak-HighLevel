@@ -56,6 +56,9 @@ export const MetaAdsIntegration: React.FC = () => {
   // Estado para guardar Pixel API Token
   const [isSavingPixelToken, setIsSavingPixelToken] = useState(false)
 
+  // Estado para guardar Page ID
+  const [isSavingPageId, setIsSavingPageId] = useState(false)
+
   // Estado para re-sincronización al cambiar el switch
   const [isSyncingSnippet, setIsSyncingSnippet] = useState(false)
 
@@ -346,9 +349,14 @@ export const MetaAdsIntegration: React.FC = () => {
     }
   }
 
-  // Auto-guardar Page ID cuando termina de escribir
+  // Guardar Page ID con botón (igual que Pixel API Token)
   const handleSavePageId = async () => {
-    if (!credentials.pageId) return
+    if (!credentials.pageId) {
+      showToast('error', 'Page ID requerido', 'Ingresa el Page ID primero')
+      return
+    }
+
+    setIsSavingPageId(true)
 
     try {
       const response = await fetch('/api/meta/save-and-sync', {
@@ -367,11 +375,14 @@ export const MetaAdsIntegration: React.FC = () => {
 
       if (data.success) {
         showToast('success', 'Page ID guardado', 'Configuración actualizada')
+        await loadCredentials()  // Recargar para ver el chip
       } else {
         showToast('error', 'Error', data.error || 'No se pudo guardar el Page ID')
       }
     } catch (error) {
       showToast('error', 'Error', 'No se pudo guardar el Page ID')
+    } finally {
+      setIsSavingPageId(false)
     }
   }
 
@@ -664,7 +675,7 @@ export const MetaAdsIntegration: React.FC = () => {
                     <label className={styles.formLabel}>
                       Facebook Page ID <span className={styles.formHint}>(opcional)</span>
                     </label>
-                    {credentials.pageId ? (
+                    {credentials.pageId && credentials.pageId !== '' && credentials.pageId.length > 10 ? (
                       <div className={styles.filterChip}>
                         <span className={styles.chipText}>{credentials.pageId}</span>
                         <button
@@ -676,14 +687,37 @@ export const MetaAdsIntegration: React.FC = () => {
                         </button>
                       </div>
                     ) : (
-                      <input
-                        type="text"
-                        value={credentials.pageId}
-                        onChange={(e) => handleInputChange('pageId', e.target.value)}
-                        onBlur={handleSavePageId}
-                        placeholder="1234567890123456"
-                        className={styles.formInput}
-                      />
+                      <>
+                        <input
+                          type="text"
+                          value={credentials.pageId}
+                          onChange={(e) => handleInputChange('pageId', e.target.value)}
+                          placeholder="1234567890123456"
+                          className={styles.formInput}
+                        />
+                        <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'center' }}>
+                          <Button
+                            onClick={handleSavePageId}
+                            disabled={isSavingPageId || !credentials.pageId}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              padding: '10px 20px',
+                              fontSize: '14px',
+                              backgroundColor: '#10b981',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '6px',
+                              cursor: (isSavingPageId || !credentials.pageId) ? 'not-allowed' : 'pointer',
+                              opacity: (isSavingPageId || !credentials.pageId) ? 0.6 : 1
+                            }}
+                          >
+                            <RefreshCw size={16} className={isSavingPageId ? styles.spinning : ''} />
+                            {isSavingPageId ? 'Guardando...' : 'Guardar Page ID'}
+                          </Button>
+                        </div>
+                      </>
                     )}
                   </div>
                 )}
