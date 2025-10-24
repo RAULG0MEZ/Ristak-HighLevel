@@ -497,144 +497,77 @@ export async function getRecentSessions(limit = 50) {
 export async function getSessionsByDateRange(startDate, endDate) {
   try {
     logger.info(`🔍 getSessionsByDateRange: ${startDate} to ${endDate}`)
-    const usePostgres = Boolean(process.env.DATABASE_URL)
-    logger.info(`📊 Using database: ${usePostgres ? 'PostgreSQL' : 'SQLite'}`)
 
-    let query, params
+    // Usar timezone de HighLevel para consistencia con Dashboard
+    const { resolveDateRangeWithGHLTimezone } = await import('../utils/dateUtils.js')
+    const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate })
 
-    if (usePostgres) {
-      // PostgreSQL query con LEFT JOIN para traer created_at del contacto
-      // Incluye TODAS las columnas de la tabla sessions
-      query = `
-        SELECT
-          s.id,
-          s.session_id,
-          s.visitor_id,
-          s.contact_id,
-          s.full_name,
-          s.email,
-          s.event_name,
-          s.started_at,
-          s.created_at,
-          s.page_url,
-          s.referrer_url,
-          s.utm_source,
-          s.utm_medium,
-          s.utm_campaign,
-          s.utm_content,
-          s.utm_term,
-          s.gclid,
-          s.fbclid,
-          s.fbc,
-          s.fbp,
-          s.wbraid,
-          s.gbraid,
-          s.msclkid,
-          s.ttclid,
-          s.channel,
-          s.source_platform,
-          s.campaign_id,
-          s.adset_id,
-          s.ad_group_id,
-          s.ad_id,
-          s.campaign_name,
-          s.adset_name,
-          s.ad_group_name,
-          s.ad_name,
-          s.placement,
-          s.site_source_name,
-          s.network,
-          s.match_type,
-          s.keyword,
-          s.search_query,
-          s.creative_id,
-          s.ad_position,
-          s.device_type,
-          s.os,
-          s.browser,
-          s.browser_version,
-          s.language,
-          s.timezone,
-          s.geo_country,
-          s.geo_region,
-          s.geo_city,
-          s.ip,
-          s.user_agent,
-          c.created_at as contact_created_at
-        FROM sessions s
-        LEFT JOIN contacts c ON s.contact_id = c.id
-        WHERE s.started_at::timestamp >= $1::timestamp
-          AND s.started_at::timestamp < ($2::timestamp + INTERVAL '1 day')
-        ORDER BY s.started_at DESC
-      `
-      params = [startDate, endDate]
-    } else {
-      // SQLite query con LEFT JOIN para traer created_at del contacto
-      // Incluye TODAS las columnas de la tabla sessions
-      query = `
-        SELECT
-          s.id,
-          s.session_id,
-          s.visitor_id,
-          s.contact_id,
-          s.full_name,
-          s.email,
-          s.event_name,
-          s.started_at,
-          s.created_at,
-          s.page_url,
-          s.referrer_url,
-          s.utm_source,
-          s.utm_medium,
-          s.utm_campaign,
-          s.utm_content,
-          s.utm_term,
-          s.gclid,
-          s.fbclid,
-          s.fbc,
-          s.fbp,
-          s.wbraid,
-          s.gbraid,
-          s.msclkid,
-          s.ttclid,
-          s.channel,
-          s.source_platform,
-          s.campaign_id,
-          s.adset_id,
-          s.ad_group_id,
-          s.ad_id,
-          s.campaign_name,
-          s.adset_name,
-          s.ad_group_name,
-          s.ad_name,
-          s.placement,
-          s.site_source_name,
-          s.network,
-          s.match_type,
-          s.keyword,
-          s.search_query,
-          s.creative_id,
-          s.ad_position,
-          s.device_type,
-          s.os,
-          s.browser,
-          s.browser_version,
-          s.language,
-          s.timezone,
-          s.geo_country,
-          s.geo_region,
-          s.geo_city,
-          s.ip,
-          s.user_agent,
-          c.created_at as contact_created_at
-        FROM sessions s
-        LEFT JOIN contacts c ON s.contact_id = c.id
-        WHERE DATE(s.started_at) >= DATE(?)
-          AND DATE(s.started_at) <= DATE(?)
-        ORDER BY s.started_at DESC
-      `
-      params = [startDate, endDate]
-    }
+    logger.info(`🕐 Timezone range: ${range.startUtc} → ${range.endUtc}`)
+
+    // PostgreSQL query con LEFT JOIN para traer created_at del contacto
+    // Incluye TODAS las columnas de la tabla sessions
+    const query = `
+      SELECT
+        s.id,
+        s.session_id,
+        s.visitor_id,
+        s.contact_id,
+        s.full_name,
+        s.email,
+        s.event_name,
+        s.started_at,
+        s.created_at,
+        s.page_url,
+        s.referrer_url,
+        s.utm_source,
+        s.utm_medium,
+        s.utm_campaign,
+        s.utm_content,
+        s.utm_term,
+        s.gclid,
+        s.fbclid,
+        s.fbc,
+        s.fbp,
+        s.wbraid,
+        s.gbraid,
+        s.msclkid,
+        s.ttclid,
+        s.channel,
+        s.source_platform,
+        s.campaign_id,
+        s.adset_id,
+        s.ad_group_id,
+        s.ad_id,
+        s.campaign_name,
+        s.adset_name,
+        s.ad_group_name,
+        s.ad_name,
+        s.placement,
+        s.site_source_name,
+        s.network,
+        s.match_type,
+        s.keyword,
+        s.search_query,
+        s.creative_id,
+        s.ad_position,
+        s.device_type,
+        s.os,
+        s.browser,
+        s.browser_version,
+        s.language,
+        s.timezone,
+        s.geo_country,
+        s.geo_region,
+        s.geo_city,
+        s.ip,
+        s.user_agent,
+        c.created_at as contact_created_at
+      FROM sessions s
+      LEFT JOIN contacts c ON s.contact_id = c.id
+      WHERE s.started_at >= $1 AND s.started_at <= $2
+      ORDER BY s.started_at DESC
+    `
+    const params = [range.startUtc, range.endUtc]
 
     logger.info(`🔄 Ejecutando query con params: ${JSON.stringify(params)}`)
     const sessions = await db.all(query, params)
