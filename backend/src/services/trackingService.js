@@ -3,15 +3,31 @@ import { logger } from '../utils/logger.js'
 import fetch from 'node-fetch'
 
 /**
- * Extrae parámetros UTM de un objeto de datos
+ * Decodifica un valor UTM (convierte + a espacios y decodifica URL encoding)
+ */
+function decodeUtmValue(value) {
+  if (!value || value === 'null' || value === 'undefined') {
+    return null
+  }
+  try {
+    // Reemplazar + por espacios, luego decodificar URL encoding
+    return decodeURIComponent(value.replace(/\+/g, ' '))
+  } catch (err) {
+    // Si falla la decodificación, retornar el valor original
+    return value
+  }
+}
+
+/**
+ * Extrae parámetros UTM de un objeto de datos y los decodifica
  */
 function extractUtmParams(data) {
   return {
-    utm_source: data.utm_source || null,
-    utm_medium: data.utm_medium || null,
-    utm_campaign: data.utm_campaign || null,
-    utm_term: data.utm_term || null,
-    utm_content: data.utm_content || null
+    utm_source: decodeUtmValue(data.utm_source),
+    utm_medium: decodeUtmValue(data.utm_medium),
+    utm_campaign: decodeUtmValue(data.utm_campaign),
+    utm_term: decodeUtmValue(data.utm_term),
+    utm_content: decodeUtmValue(data.utm_content)
   }
 }
 
@@ -113,28 +129,28 @@ function extractGeoInfo(data) {
 }
 
 /**
- * Extrae parámetros de ads (Facebook, Google, etc.)
+ * Extrae parámetros de ads (Facebook, Google, etc.) y decodifica nombres
  */
 function extractAdsParams(data) {
   // Facebook Ads - parámetros directos de URL
   const campaign_id = data.campaign_id || null
   const adset_id = data.adset_id || null
   const ad_id = data.ad_id || null
-  const campaign_name = data.campaign_name || data.utm_campaign || null
-  const adset_name = data.adset_name || null
-  const ad_name = data.ad_name || data.utm_content || null
-  const placement = data.placement || data.site_source_name || null
+  const campaign_name = decodeUtmValue(data.campaign_name || data.utm_campaign)
+  const adset_name = decodeUtmValue(data.adset_name)
+  const ad_name = decodeUtmValue(data.ad_name || data.utm_content)
+  const placement = decodeUtmValue(data.placement || data.site_source_name)
 
   // Google Ads - parámetros con diferentes nombres
   const ad_group_id = data.adgroupid || null
-  const ad_group_name = data.ad_group_name || null
+  const ad_group_name = decodeUtmValue(data.ad_group_name)
   const creative_id = data.creative || null
-  const keyword = data.keyword || data.utm_term || null
+  const keyword = decodeUtmValue(data.keyword || data.utm_term)
   const match_type = data.matchtype || null
   const network = data.network || null
-  const search_query = data.search_query || null
+  const search_query = decodeUtmValue(data.search_query)
   const ad_position = data.ad_position || null
-  const site_source_name = data.site_source_name || null
+  const site_source_name = decodeUtmValue(data.site_source_name)
 
   return {
     campaign_id,
