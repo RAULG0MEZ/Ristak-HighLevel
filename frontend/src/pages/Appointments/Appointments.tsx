@@ -444,7 +444,7 @@ export const Appointments: React.FC = () => {
       window.addEventListener('mouseup', handleGlobalMouseUp);
       return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
     }
-  }, [isSelecting, selectionStart, selectionEnd]);
+  }, [isSelecting, handleTimeSelectionEnd]);
 
   // Eventos agrupados por fecha para reutilizar en todas las vistas
   const eventsByDate = useMemo(() => calendarsService.groupEventsByDate(events), [events]);
@@ -907,6 +907,34 @@ export const Appointments: React.FC = () => {
     };
   };
 
+  // Renderizar overlay de selección de tiempo
+  const renderTimeSelectionOverlay = (columnDate: Date) => {
+    if (!isSelecting || !selectionStart || !selectionEnd) return null;
+
+    // Solo mostrar si estamos seleccionando en esta columna
+    if (selectionStart.date.toDateString() !== columnDate.toDateString()) return null;
+
+    // Calcular posición y altura del overlay
+    const startMinutes = selectionStart.hour * 60 + selectionStart.minute;
+    const endMinutes = selectionEnd.hour * 60 + selectionEnd.minute;
+    const minMinutes = Math.min(startMinutes, endMinutes);
+    const maxMinutes = Math.max(startMinutes, endMinutes);
+
+    const totalMinutesInDay = 24 * 60;
+    const top = (minMinutes / totalMinutesInDay) * 100;
+    const height = ((maxMinutes - minMinutes) / totalMinutesInDay) * 100;
+
+    return (
+      <div
+        className={styles.timeSelectionOverlay}
+        style={{
+          top: `${top}%`,
+          height: `${Math.max(height, 1)}%`
+        }}
+      />
+    );
+  };
+
   const handleTimeSelectionStart = (date: Date) => (e: React.MouseEvent<HTMLDivElement>) => {
     if (!selectedCalendar) return;
     if (e.button !== 0) return; // Solo click izquierdo
@@ -928,8 +956,8 @@ export const Appointments: React.FC = () => {
     setSelectionEnd({ date, hour, minute });
   };
 
-  const handleTimeSelectionEnd = () => {
-    if (!isSelecting || !selectionStart || !selectionEnd) return;
+  const handleTimeSelectionEnd = useCallback(() => {
+    if (!isSelecting || !selectionStart || !selectionEnd || !selectedCalendar) return;
 
     setIsSelecting(false);
 
@@ -957,11 +985,11 @@ export const Appointments: React.FC = () => {
     setCreateDefaults({
       start: actualStart.toISOString(),
       end: actualEnd.toISOString(),
-      timeZone: selectedCalendar?.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-      title: selectedCalendar?.eventTitle || ''
+      timeZone: selectedCalendar.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+      title: selectedCalendar.eventTitle || ''
     });
     setIsCreateModalOpen(true);
-  };
+  }, [isSelecting, selectionStart, selectionEnd, selectedCalendar]);
 
   // Doble click en hora específica (vistas semana/día)
   const handleTimeDoubleClick = (date: Date) => (e: React.MouseEvent<HTMLDivElement>) => {
@@ -1511,11 +1539,20 @@ export const Appointments: React.FC = () => {
                     });
 
                     return (
-                      <div key={dayIndex} className={`${styles.dayColumn} ${isToday ? styles.dayColumnToday : ''}`}>
+                      <div
+                        key={dayIndex}
+                        className={`${styles.dayColumn} ${isToday ? styles.dayColumnToday : ''}`}
+                        onMouseDown={handleTimeSelectionStart(columnDate)}
+                        onMouseMove={handleTimeSelectionMove(columnDate)}
+                        onDoubleClick={handleTimeDoubleClick(columnDate)}
+                      >
                         {/* Líneas de hora */}
                         {Array.from({ length: 24 }).map((_, hour) => (
                           <div key={hour} className={styles.hourLine}></div>
                         ))}
+
+                        {/* Overlay de selección de tiempo */}
+                        {renderTimeSelectionOverlay(columnDate)}
 
                         {/* Eventos posicionados */}
                         {dayEvents.map((event) => {
@@ -1686,11 +1723,19 @@ export const Appointments: React.FC = () => {
                   ))}
                 </div>
 
-                <div className={styles.dayColumn}>
+                <div
+                  className={styles.dayColumn}
+                  onMouseDown={handleTimeSelectionStart(currentDate)}
+                  onMouseMove={handleTimeSelectionMove(currentDate)}
+                  onDoubleClick={handleTimeDoubleClick(currentDate)}
+                >
                   {/* Líneas de hora */}
                   {Array.from({ length: 24 }).map((_, hour) => (
                     <div key={hour} className={styles.hourLine}></div>
                   ))}
+
+                  {/* Overlay de selección de tiempo */}
+                  {renderTimeSelectionOverlay(currentDate)}
 
                   {/* Eventos del día */}
                   {(() => {

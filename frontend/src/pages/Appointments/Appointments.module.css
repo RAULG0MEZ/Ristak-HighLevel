@@ -987,6 +987,34 @@
   color: rgba(203, 213, 225, 0.75);
 }
 
+/* Time Selection Overlay (vistas semana/día) */
+.timeSelectionOverlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background-color: rgba(59, 130, 246, 0.2);
+  border: 2px solid rgba(59, 130, 246, 0.5);
+  border-radius: 6px;
+  pointer-events: none;
+  z-index: 5;
+  transition: none;
+  animation: selectionPulse 1.5s ease-in-out infinite;
+}
+
+:global(body.dark) .timeSelectionOverlay {
+  background-color: rgba(96, 165, 250, 0.25);
+  border-color: rgba(96, 165, 250, 0.6);
+}
+
+@keyframes selectionPulse {
+  0%, 100% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 /* Tooltip de eventos - sin sombra */
 .eventTooltip {
   position: fixed;
@@ -1312,6 +1340,12 @@
   position: relative;
   border-right: 1px solid var(--color-border);
   background-color: var(--color-white);
+  cursor: crosshair;
+  user-select: none;
+}
+
+.dayColumn:active {
+  cursor: grabbing;
 }
 
 .dayColumn:last-child {
