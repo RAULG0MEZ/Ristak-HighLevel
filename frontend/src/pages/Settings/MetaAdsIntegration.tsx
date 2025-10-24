@@ -31,7 +31,6 @@ interface Pixel {
 }
 
 export const MetaAdsIntegration: React.FC = () => {
-  const [isSyncing, setIsSyncing] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [credentials, setCredentials] = useState<MetaCredentials>({
     adAccountId: '',
@@ -49,6 +48,13 @@ export const MetaAdsIntegration: React.FC = () => {
 
   // Token real (revelado) para llamadas a Meta API
   const [realAccessToken, setRealAccessToken] = useState<string>('')
+
+  // Estado para el botón "Continuar" del Access Token
+  const [showContinueButton, setShowContinueButton] = useState(false)
+  const [isSavingToken, setIsSavingToken] = useState(false)
+
+  // Estado para guardar Pixel API Token
+  const [isSavingPixelToken, setIsSavingPixelToken] = useState(false)
 
   const { showToast } = useNotification()
   const { theme } = useTheme()
@@ -191,17 +197,13 @@ export const MetaAdsIntegration: React.FC = () => {
   }
 
   const handleSelectAdAccount = (account: AdAccount) => {
-    // Guardar sin el prefijo "act_" (para GHL custom values)
-    const accountIdWithoutPrefix = account.id.replace(/^act_/, '')
-    setCredentials(prev => ({ ...prev, adAccountId: accountIdWithoutPrefix }))
-    // Auto-cargar pixeles al seleccionar cuenta (Meta API necesita el "act_")
-    if (realAccessToken) {
-      fetchPixels(account.id, realAccessToken)
-    }
+    // Esta función ya no se usa, reemplazada por handleSelectAndSaveAccount
+    handleSelectAndSaveAccount(account)
   }
 
   const handleSelectPixel = (pixel: Pixel) => {
-    setCredentials(prev => ({ ...prev, pixelId: pixel.id }))
+    // Esta función ya no se usa, reemplazada por handleSelectAndSavePixel
+    handleSelectAndSavePixel(pixel)
   }
 
   const handleRemoveCredential = (field: keyof MetaCredentials) => {
@@ -242,39 +244,180 @@ export const MetaAdsIntegration: React.FC = () => {
 
   const handleInputChange = (field: keyof MetaCredentials, value: string) => {
     setCredentials(prev => ({ ...prev, [field]: value }))
+
+    // Mostrar botón "Continuar" si está escribiendo en accessToken
+    if (field === 'accessToken' && value.length > 50) {
+      setShowContinueButton(true)
+    } else if (field === 'accessToken' && value.length <= 50) {
+      setShowContinueButton(false)
+    }
   }
 
-  const handleSaveAndSync = async () => {
-    // Validar que al menos tengamos Ad Account ID y Access Token
-    if (!credentials.adAccountId.trim() || !credentials.accessToken.trim()) {
-      showToast('error', 'Campos requeridos', 'Ad Account ID y Access Token son obligatorios')
+  // Función para guardar Access Token y cargar cuentas
+  const handleContinueWithToken = async () => {
+    if (!credentials.accessToken || credentials.accessToken.length < 50) {
+      showToast('error', 'Token inválido', 'El Access Token parece estar incompleto')
       return
     }
 
-    setIsSyncing(true)
+    setIsSavingToken(true)
 
     try {
+      // Guardar el token en DB + Custom Values
       const response = await fetch('/api/meta/save-and-sync', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(credentials)
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adAccountId: '',  // Aún no hay cuenta
+          accessToken: credentials.accessToken,
+          pixelId: '',
+          pageId: '',
+          pixelApiToken: ''
+        })
       })
 
       const data = await response.json()
 
       if (data.success) {
-        showToast('success', 'Credenciales guardadas', data.message)
-        // Recargar credenciales para confirmar
-        await loadCredentials()
+        showToast('success', 'Token guardado', 'Cargando cuentas de anuncios...')
+        setRealAccessToken(credentials.accessToken)
+        setShowContinueButton(false)
+
+        // Cargar cuentas
+        await fetchAdAccounts(credentials.accessToken)
       } else {
-        showToast('error', 'Error al guardar', data.error)
+        showToast('error', 'Error', data.error || 'No se pudo guardar el token')
       }
     } catch (error) {
       showToast('error', 'Error', 'No se pudo conectar con el servidor')
     } finally {
-      setIsSyncing(false)
+      setIsSavingToken(false)
+    }
+  }
+
+  // Auto-guardar cuando selecciona cuenta
+  const handleSelectAndSaveAccount = async (account: AdAccount) => {
+    const accountIdWithoutPrefix = account.id.replace(/^act_/, '')
+    setCredentials(prev => ({ ...prev, adAccountId: accountIdWithoutPrefix }))
+
+    try {
+      // Guardar en DB + Custom Values
+      const response = await fetch('/api/meta/save-and-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adAccountId: accountIdWithoutPrefix,
+          accessToken: realAccessToken || credentials.accessToken,
+          pixelId: credentials.pixelId,
+          pageId: credentials.pageId,
+          pixelApiToken: ''  // No guardamos este aquí
+        })
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        showToast('success', 'Cuenta guardada', `${account.name} configurada`)
+        // Auto-cargar pixeles
+        if (realAccessToken) {
+          fetchPixels(account.id, realAccessToken)
+        }
+      } else {
+        showToast('error', 'Error', data.error || 'No se pudo guardar la cuenta')
+      }
+    } catch (error) {
+      showToast('error', 'Error', 'No se pudo guardar la cuenta')
+    }
+  }
+
+  // Auto-guardar cuando selecciona pixel
+  const handleSelectAndSavePixel = async (pixel: Pixel) => {
+    setCredentials(prev => ({ ...prev, pixelId: pixel.id }))
+
+    try {
+      const response = await fetch('/api/meta/save-and-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adAccountId: credentials.adAccountId,
+          accessToken: realAccessToken || credentials.accessToken,
+          pixelId: pixel.id,
+          pageId: credentials.pageId,
+          pixelApiToken: ''  // No guardamos este aquí
+        })
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        showToast('success', 'Pixel guardado', `${pixel.name} configurado`)
+      } else {
+        showToast('error', 'Error', data.error || 'No se pudo guardar el pixel')
+      }
+    } catch (error) {
+      showToast('error', 'Error', 'No se pudo guardar el pixel')
+    }
+  }
+
+  // Auto-guardar Page ID cuando termina de escribir
+  const handleSavePageId = async () => {
+    if (!credentials.pageId) return
+
+    try {
+      const response = await fetch('/api/meta/save-and-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adAccountId: credentials.adAccountId,
+          accessToken: realAccessToken || credentials.accessToken,
+          pixelId: credentials.pixelId,
+          pageId: credentials.pageId,
+          pixelApiToken: ''  // No guardamos este aquí
+        })
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        showToast('success', 'Page ID guardado', 'Configuración actualizada')
+      } else {
+        showToast('error', 'Error', data.error || 'No se pudo guardar el Page ID')
+      }
+    } catch (error) {
+      showToast('error', 'Error', 'No se pudo guardar el Page ID')
+    }
+  }
+
+  // Guardar SOLO Pixel API Token (separado)
+  const handleSavePixelApiToken = async () => {
+    if (!credentials.pixelApiToken) {
+      showToast('error', 'Token requerido', 'Ingresa el Pixel API Token primero')
+      return
+    }
+
+    setIsSavingPixelToken(true)
+
+    try {
+      const response = await fetch('/api/meta/save-pixel-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pixelApiToken: credentials.pixelApiToken
+        })
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        showToast('success', 'Pixel API Token guardado', 'Token guardado en DB y Custom Values')
+        await loadCredentials()  // Recargar para ver el token enmascarado
+      } else {
+        showToast('error', 'Error', data.error || 'No se pudo guardar el Pixel API Token')
+      }
+    } catch (error) {
+      showToast('error', 'Error', 'No se pudo conectar con el servidor')
+    } finally {
+      setIsSavingPixelToken(false)
     }
   }
 
@@ -407,20 +550,38 @@ export const MetaAdsIntegration: React.FC = () => {
                         </button>
                       </div>
                     ) : (
-                      <input
-                        type="text"
-                        value={credentials.accessToken}
-                        onChange={(e) => handleInputChange('accessToken', e.target.value)}
-                        onBlur={(e) => {
-                          // Auto-cargar cuentas cuando el usuario termina de escribir/pegar
-                          if (e.target.value && e.target.value.length > 50) {
-                            setRealAccessToken(e.target.value) // Guardar token real
-                            fetchAdAccounts(e.target.value)
-                          }
-                        }}
-                        placeholder="EAAabcdef..."
-                        className={styles.formInput}
-                      />
+                      <>
+                        <input
+                          type="text"
+                          value={credentials.accessToken}
+                          onChange={(e) => handleInputChange('accessToken', e.target.value)}
+                          placeholder="EAAabcdef..."
+                          className={styles.formInput}
+                        />
+                        {showContinueButton && !isLoadingAccounts && (
+                          <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'center' }}>
+                            <Button
+                              onClick={handleContinueWithToken}
+                              disabled={isSavingToken}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                padding: '10px 20px',
+                                fontSize: '14px',
+                                backgroundColor: '#0866FF',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '6px',
+                                cursor: isSavingToken ? 'not-allowed' : 'pointer',
+                                opacity: isSavingToken ? 0.6 : 1
+                              }}
+                            >
+                              {isSavingToken ? 'Guardando...' : 'Continuar'}
+                            </Button>
+                          </div>
+                        )}
+                      </>
                     )}
                   {isLoadingAccounts && (
                     <div style={{ marginTop: '8px', fontSize: '13px', color: 'var(--text-secondary)' }}>
@@ -543,41 +704,7 @@ export const MetaAdsIntegration: React.FC = () => {
                   </div>
                 )}
 
-                {/* 4. Pixel API Token - SOLO SI HAY PIXEL */}
-                {credentials.pixelId && (
-                  <div className={styles.formGroup}>
-                      <label className={styles.formLabel}>
-                        Pixel API Token <span className={styles.formHint}>(automático)</span>
-                      </label>
-                      {credentials.pixelApiToken && credentials.pixelApiToken.startsWith('***') ? (
-                        <div className={styles.filterChip}>
-                          <span className={styles.chipText}>{credentials.pixelApiToken}</span>
-                          <button
-                            onClick={() => handleRemoveCredential('pixelApiToken')}
-                            className={styles.chipDeleteButton}
-                            type="button"
-                          >
-                            <Trash2 size={16} style={{ color: '#ef4444' }} />
-                          </button>
-                        </div>
-                      ) : (
-                        <input
-                          type="text"
-                          value=""
-                          readOnly
-                          placeholder="Se generará automáticamente al guardar"
-                          className={styles.formInput}
-                          disabled
-                          style={{
-                            cursor: 'not-allowed',
-                            opacity: 0.5
-                          }}
-                        />
-                      )}
-                  </div>
-                )}
-
-                {/* 5. Page ID - SOLO SI HAY TOKEN */}
+                {/* 4. Page ID - SOLO SI HAY TOKEN */}
                 {(credentials.accessToken || realAccessToken) && (
                   <div className={styles.formGroup}>
                     <label className={styles.formLabel}>
@@ -599,42 +726,95 @@ export const MetaAdsIntegration: React.FC = () => {
                         type="text"
                         value={credentials.pageId}
                         onChange={(e) => handleInputChange('pageId', e.target.value)}
+                        onBlur={handleSavePageId}
                         placeholder="1234567890123456"
                         className={styles.formInput}
                       />
                     )}
                   </div>
                 )}
-
-                {/* Botón de Guardar y Sincronizar */}
-                <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'center' }}>
-                  <Button
-                    onClick={handleSaveAndSync}
-                    disabled={isSyncing}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      padding: '12px 24px',
-                      fontSize: '16px',
-                      backgroundColor: '#0866FF',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '8px',
-                      cursor: isSyncing ? 'not-allowed' : 'pointer',
-                      opacity: isSyncing ? 0.6 : 1
-                    }}
-                  >
-                    <RefreshCw size={18} className={isSyncing ? styles.spinning : ''} />
-                    {isSyncing ? 'Guardando y sincronizando...' : 'Guardar y Sincronizar'}
-                  </Button>
-                </div>
               </div>
             )}
           </div>
 
         </div>
         {/* FIN GRID 2 COLUMNAS */}
+
+        {/* SECCIÓN SEPARADA: Pixel API Token */}
+        {credentials.pixelId && (
+          <div className={styles.section} style={{ marginTop: 'var(--spacing-2xl)', borderTop: '2px solid var(--color-border)', paddingTop: 'var(--spacing-xl)' }}>
+            <div className={styles.sectionHeader}>
+              <h3 className={styles.sectionTitle}>Conversions API (Pixel API Token)</h3>
+            </div>
+            <div className={styles.sectionContent}>
+              <p className={styles.infoText} style={{ marginBottom: 'var(--spacing-lg)' }}>
+                Para usar la Conversions API de Meta, necesitas generar un token manualmente desde el Events Manager.
+                Este token es específico para el pixel y permite enviar eventos desde tu servidor.
+              </p>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>
+                  Pixel API Token <span className={styles.formHint}>(opcional)</span>
+                </label>
+                {credentials.pixelApiToken && credentials.pixelApiToken.startsWith('***') ? (
+                  <div className={styles.filterChip}>
+                    <span className={styles.chipText}>{credentials.pixelApiToken}</span>
+                    <button
+                      onClick={() => handleRemoveCredential('pixelApiToken')}
+                      className={styles.chipDeleteButton}
+                      type="button"
+                    >
+                      <Trash2 size={16} style={{ color: '#ef4444' }} />
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <input
+                      type="text"
+                      value={credentials.pixelApiToken}
+                      onChange={(e) => handleInputChange('pixelApiToken', e.target.value)}
+                      placeholder="Pega aquí el token generado desde Events Manager"
+                      className={styles.formInput}
+                    />
+                    <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'center' }}>
+                      <Button
+                        onClick={handleSavePixelApiToken}
+                        disabled={isSavingPixelToken || !credentials.pixelApiToken}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          padding: '10px 20px',
+                          fontSize: '14px',
+                          backgroundColor: '#10b981',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: (isSavingPixelToken || !credentials.pixelApiToken) ? 'not-allowed' : 'pointer',
+                          opacity: (isSavingPixelToken || !credentials.pixelApiToken) ? 0.6 : 1
+                        }}
+                      >
+                        <RefreshCw size={16} className={isSavingPixelToken ? styles.spinning : ''} />
+                        {isSavingPixelToken ? 'Guardando...' : 'Guardar Pixel API Token'}
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className={styles.infoBox} style={{ marginTop: 'var(--spacing-lg)' }}>
+                <p style={{ margin: 0, fontSize: '13px' }}>
+                  <strong>¿Cómo obtener este token?</strong><br />
+                  1. Ve a <a href="https://business.facebook.com/events_manager2" target="_blank" rel="noopener noreferrer" className={styles.link}>Events Manager</a><br />
+                  2. Selecciona tu Pixel<br />
+                  3. Ve a Settings → Conversions API<br />
+                  4. Click en "Generate Access Token"<br />
+                  5. Copia y pega el token aquí
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
       </Card>
     </div>

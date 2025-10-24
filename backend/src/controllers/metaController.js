@@ -1882,3 +1882,78 @@ export const getPixels = async (req, res) => {
   }
 };
 
+/**
+ * Guarda SOLO el Pixel API Token en la base de datos y en HighLevel Custom Values
+ * POST /api/meta/save-pixel-token
+ * Body: { pixelApiToken: 'xxx' }
+ */
+export const savePixelToken = async (req, res) => {
+  try {
+    const { pixelApiToken } = req.body;
+
+    if (!pixelApiToken || pixelApiToken.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requiere pixelApiToken'
+      });
+    }
+
+    logger.info('Guardando Pixel API Token...');
+
+    // 1. Verificar que exista configuración de Meta
+    const metaConfig = await getMetaConfig();
+
+    if (!metaConfig || !metaConfig.ad_account_id) {
+      return res.status(400).json({
+        success: false,
+        error: 'No hay configuración de Meta. Primero debes guardar Access Token y Ad Account.'
+      });
+    }
+
+    // 2. Actualizar SOLO el pixel_api_token en meta_config
+    await saveMetaConfig(
+      metaConfig.ad_account_id,
+      metaConfig.access_token, // Mantener el access_token existente
+      metaConfig.pixel_id || null,
+      pixelApiToken, // Actualizar solo este campo
+      metaConfig.page_id || null
+    );
+
+    logger.info('Pixel API Token guardado en base de datos local');
+
+    // 3. Actualizar en HighLevel Custom Values (si está configurado)
+    const hlConfig = await db.get('SELECT location_id, api_token FROM highlevel_config LIMIT 1');
+
+    if (hlConfig && hlConfig.location_id && hlConfig.api_token) {
+      try {
+        const { saveMetaCustomValues } = await import('../services/highlevelSyncService.js');
+
+        await saveMetaCustomValues(hlConfig.location_id, hlConfig.api_token, {
+          adAccountId: metaConfig.ad_account_id,
+          accessToken: metaConfig.access_token,
+          pixelId: metaConfig.pixel_id || '',
+          pageId: metaConfig.page_id || '',
+          pixelApiToken: pixelApiToken // Actualizar custom value con nuevo token
+        });
+
+        logger.info('Pixel API Token actualizado en HighLevel Custom Values');
+      } catch (hlError) {
+        logger.warn(`No se pudo actualizar Pixel API Token en HighLevel: ${hlError.message}`);
+        // No fallar si HighLevel falla, ya se guardó en DB
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Pixel API Token guardado exitosamente'
+    });
+
+  } catch (error) {
+    logger.error(`Error en savePixelToken: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: 'Error al guardar Pixel API Token'
+    });
+  }
+};
+

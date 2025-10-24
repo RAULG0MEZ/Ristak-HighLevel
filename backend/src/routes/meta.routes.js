@@ -19,7 +19,8 @@ import {
   getMetaCustomValues,
   saveAndSyncMeta,
   getAdAccounts,
-  getPixels
+  getPixels,
+  savePixelToken
 } from '../controllers/metaController.js'
 
 const router = express.Router()
@@ -37,6 +38,7 @@ router.get('/pixels', getPixels)
 // Custom Values de HighLevel
 router.get('/custom-values', getMetaCustomValues)
 router.post('/save-and-sync', saveAndSyncMeta)
+router.post('/save-pixel-token', savePixelToken)
 
 // Sincronización
 router.post('/sync', syncAds)
