@@ -378,9 +378,14 @@ const Analytics: React.FC = () => {
 
           setRegistrosChartData(registrosBarChartData)
 
-          // Guardar todas las sesiones y sesiones filtradas
-          setAllSessions(currentSessions)
-          setSessions(currentSessions)
+          // Guardar todas las sesiones y sesiones filtradas (ordenadas de más reciente a más vieja)
+          const sortedSessions = [...currentSessions].sort((a, b) => {
+            const dateA = new Date(a.started_at).getTime()
+            const dateB = new Date(b.started_at).getTime()
+            return dateB - dateA // DESC: más reciente primero
+          })
+          setAllSessions(sortedSessions)
+          setSessions(sortedSessions)
 
           // Recopilar datos disponibles para el TreeFilter
           const filterData: any = {
@@ -885,7 +890,14 @@ const Analytics: React.FC = () => {
         utm_campaign: s.utm_campaign,
         device_type: s.device_type
       })))
-      setSessions(filtered)
+
+      // Ordenar sesiones filtradas de más reciente a más vieja
+      const sortedFiltered = [...filtered].sort((a, b) => {
+        const dateA = new Date(a.started_at).getTime()
+        const dateB = new Date(b.started_at).getTime()
+        return dateB - dateA // DESC: más reciente primero
+      })
+      setSessions(sortedFiltered)
     }
     console.groupEnd()
   }, [selectedFilters, allSessions])
