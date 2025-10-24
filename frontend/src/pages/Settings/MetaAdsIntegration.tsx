@@ -255,7 +255,7 @@ export const MetaAdsIntegration: React.FC = () => {
     setCredentials(prev => ({ ...prev, [field]: value }))
   }
 
-  // Función para guardar Access Token y cargar cuentas
+  // Función para validar Access Token y cargar cuentas
   const handleContinueWithToken = async () => {
     if (!credentials.accessToken || credentials.accessToken.length < 50) {
       showToast('error', 'Token inválido', 'El Access Token parece estar incompleto')
@@ -265,32 +265,18 @@ export const MetaAdsIntegration: React.FC = () => {
     setIsSavingToken(true)
 
     try {
-      // Guardar el token en DB + Custom Values
-      const response = await fetch('/api/meta/save-and-sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          adAccountId: '',  // Aún no hay cuenta
-          accessToken: credentials.accessToken,
-          pixelId: '',
-          pageId: '',
-          pixelApiToken: ''
-        })
-      })
+      // Solo validar el token y cargar cuentas (NO guardamos aún en DB)
+      // El guardado ocurre cuando el usuario selecciona la cuenta
+      showToast('info', 'Validando token...', 'Cargando tus cuentas de anuncios')
+      setRealAccessToken(credentials.accessToken)
 
-      const data = await response.json()
+      // Cargar cuentas desde Meta API
+      await fetchAdAccounts(credentials.accessToken)
 
-      if (data.success) {
-        showToast('success', 'Token guardado', 'Cargando cuentas de anuncios...')
-        setRealAccessToken(credentials.accessToken)
-
-        // Cargar cuentas
-        await fetchAdAccounts(credentials.accessToken)
-      } else {
-        showToast('error', 'Error', data.error || 'No se pudo guardar el token')
-      }
+      showToast('success', 'Token válido', 'Selecciona tu cuenta de anuncios')
     } catch (error) {
-      showToast('error', 'Error', 'No se pudo conectar con el servidor')
+      showToast('error', 'Error', 'No se pudo validar el token o cargar las cuentas')
+      setRealAccessToken('') // Resetear si falla
     } finally {
       setIsSavingToken(false)
     }
