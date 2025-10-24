@@ -334,8 +334,9 @@ export const BlockedSlotModal: React.FC<BlockedSlotModalProps> = ({
         onClose={onClose}
         title={isCreateMode ? 'Bloquear horario' : 'Editar horario bloqueado'}
         size="md"
+        type="custom"
       >
-      <div className={styles.modalContent}>
+        <div className={styles.modalContent}>
         {/* Formulario */}
         <div className={styles.form}>
           {/* Título/Razón */}
@@ -417,7 +418,7 @@ export const BlockedSlotModal: React.FC<BlockedSlotModalProps> = ({
               Eliminar
             </Button>
           )}
-          <div className={styles.mainActions}>
+          <div className={styles.actionsRight}>
             <Button
               variant="secondary"
               size="md"
