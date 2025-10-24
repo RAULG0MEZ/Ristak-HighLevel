@@ -1697,45 +1697,22 @@ export async function getContactsByDate(req, res) {
 
     logger.info(`Obteniendo registros por fecha: ${start} a ${end}`)
 
-    const usePostgres = Boolean(process.env.DATABASE_URL)
-
     // Query SIMPLIFICADA: solo cuenta contactos que tienen visitor_id
     // (ya no necesita JOIN con sessions porque visitor_id ya está en contacts)
-    let query, params
-
-    if (usePostgres) {
-      // PostgreSQL query
-      query = `
-        SELECT
-          TO_CHAR(created_at::date, 'YYYY-MM-DD') as date,
-          COUNT(DISTINCT id) as count
-        FROM contacts
-        WHERE
-          created_at::date >= $1::date
-          AND created_at::date <= $2::date
-          AND visitor_id IS NOT NULL
-          AND visitor_id != ''
-        GROUP BY TO_CHAR(created_at::date, 'YYYY-MM-DD')
-        ORDER BY date ASC
-      `
-      params = [start, end]
-    } else {
-      // SQLite query
-      query = `
-        SELECT
-          DATE(created_at) as date,
-          COUNT(DISTINCT id) as count
-        FROM contacts
-        WHERE
-          DATE(created_at) >= DATE(?)
-          AND DATE(created_at) <= DATE(?)
-          AND visitor_id IS NOT NULL
-          AND visitor_id != ''
-        GROUP BY DATE(created_at)
-        ORDER BY date ASC
-      `
-      params = [start, end]
-    }
+    const query = `
+      SELECT
+        TO_CHAR(created_at::date, 'YYYY-MM-DD') as date,
+        COUNT(DISTINCT id) as count
+      FROM contacts
+      WHERE
+        created_at::date >= $1::date
+        AND created_at::date <= $2::date
+        AND visitor_id IS NOT NULL
+        AND visitor_id != ''
+      GROUP BY TO_CHAR(created_at::date, 'YYYY-MM-DD')
+      ORDER BY date ASC
+    `
+    const params = [start, end]
 
     const contactsByDate = await db.all(query, params)
 

@@ -341,6 +341,16 @@ const Analytics: React.FC = () => {
 
           setDailyConversions(conversionChartData)
 
+          // Preparar datos para el gráfico de barras de registros (solo período actual)
+          const registrosBarChartData = (contactsData || [])
+            .sort((a, b) => a.date.localeCompare(b.date))
+            .map(item => ({
+              name: formatLocalDateShort(item.date),
+              value: item.count
+            }))
+
+          setRegistrosChartData(registrosBarChartData)
+
           // Guardar todas las sesiones y sesiones filtradas
           setAllSessions(currentSessions)
           setSessions(currentSessions)
@@ -708,6 +718,7 @@ const Analytics: React.FC = () => {
       })
       setDailyTraffic([])
       setDailyConversions([])
+      setRegistrosChartData([])
       return
     }
 
@@ -1031,11 +1042,30 @@ const Analytics: React.FC = () => {
           </div>
         </Card>
 
-        {/* Gráfica de Fuentes de Tráfico */}
-        <TrafficSourcesChart
-          data={trafficSources}
-          loading={loading}
-        />
+        {/* Grid de Gráficas: Registros y Fuentes de Tráfico */}
+        <div className="grid gap-4 lg:grid-cols-2">
+          {/* Gráfico de Barras de Registros */}
+          <Card variant="glass" className="p-6">
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold">Registros por Fecha</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Contactos registrados en el período
+              </p>
+            </div>
+            <BarChart
+              data={registrosChartData}
+              loading={loading}
+              height={320}
+              formatTooltip={(value) => `${value} ${value === 1 ? 'registro' : 'registros'}`}
+            />
+          </Card>
+
+          {/* Gráfica de Fuentes de Tráfico */}
+          <TrafficSourcesChart
+            data={trafficSources}
+            loading={loading}
+          />
+        </div>
 
         {/* Grid de stats cards */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
