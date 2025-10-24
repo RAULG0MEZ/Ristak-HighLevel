@@ -19,12 +19,6 @@ export const CalendarsConfiguration: React.FC = () => {
   // Estados locales
   const [calendars, setCalendars] = useState<CalendarType[]>([])
   const [loadingCalendars, setLoadingCalendars] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [hasChanges, setHasChanges] = useState(false)
-
-  // Estados temporales para edición (antes de guardar)
-  const [tempDefaultCalendar, setTempDefaultCalendar] = useState<string>('')
-  const [tempAttributionCalendars, setTempAttributionCalendars] = useState<string[]>([])
 
   // Estados del modal de configuración
   const [showConfigModal, setShowConfigModal] = useState(false)
@@ -37,13 +31,6 @@ export const CalendarsConfiguration: React.FC = () => {
       loadCalendars()
     }
   }, [locationId, accessToken])
-
-  // Sincronizar estados temporales con los valores guardados
-  useEffect(() => {
-    setTempDefaultCalendar(defaultCalendarId)
-    setTempAttributionCalendars(attributionCalendarIds)
-    setHasChanges(false)
-  }, [defaultCalendarId, attributionCalendarIds])
 
   const loadCalendars = async () => {
     if (!locationId || !accessToken) {
@@ -61,51 +48,43 @@ export const CalendarsConfiguration: React.FC = () => {
     }
   }
 
-  const handleDefaultCalendarChange = (calendarId: string) => {
-    setTempDefaultCalendar(calendarId)
-    setHasChanges(true)
-  }
-
-  const handleAttributionToggle = (calendarId: string) => {
-    const newSelection = tempAttributionCalendars.includes(calendarId)
-      ? tempAttributionCalendars.filter(id => id !== calendarId)
-      : [...tempAttributionCalendars, calendarId]
-
-    setTempAttributionCalendars(newSelection)
-    setHasChanges(true)
-  }
-
-  const handleSelectAllAttribution = () => {
-    if (tempAttributionCalendars.length === calendars.length) {
-      // Si todos están seleccionados, deseleccionar todos
-      setTempAttributionCalendars([])
-    } else {
-      // Seleccionar todos
-      setTempAttributionCalendars(calendars.map(cal => cal.id))
-    }
-    setHasChanges(true)
-  }
-
-  const handleSave = async () => {
-    setSaving(true)
+  // Guardado automático: Calendario predeterminado
+  const handleDefaultCalendarChange = async (calendarId: string) => {
     try {
-      // Guardar ambas configuraciones
-      await setDefaultCalendarId(tempDefaultCalendar)
-      await setAttributionCalendarIds(tempAttributionCalendars)
-
-      showToast('success', 'Configuración de calendarios guardada exitosamente')
-      setHasChanges(false)
+      await setDefaultCalendarId(calendarId)
+      showToast('success', 'Calendario predeterminado guardado', calendarId ? 'Se seleccionará automáticamente al abrir Citas' : 'Deberás seleccionar manualmente')
     } catch (error: any) {
-      showToast('error', 'Error al guardar configuración', error.message)
-    } finally {
-      setSaving(false)
+      showToast('error', 'Error al guardar', error.message)
     }
   }
 
-  const handleReset = () => {
-    setTempDefaultCalendar(defaultCalendarId)
-    setTempAttributionCalendars(attributionCalendarIds)
-    setHasChanges(false)
+  // Guardado automático: Toggle individual de atribución
+  const handleAttributionToggle = async (calendarId: string) => {
+    const newSelection = attributionCalendarIds.includes(calendarId)
+      ? attributionCalendarIds.filter(id => id !== calendarId)
+      : [...attributionCalendarIds, calendarId]
+
+    try {
+      await setAttributionCalendarIds(newSelection)
+      showToast('success', 'Calendarios de atribución actualizados', `${newSelection.length} calendario${newSelection.length !== 1 ? 's' : ''} seleccionado${newSelection.length !== 1 ? 's' : ''}`)
+    } catch (error: any) {
+      showToast('error', 'Error al guardar', error.message)
+    }
+  }
+
+  // Guardado automático: Seleccionar/Deseleccionar todos
+  const handleSelectAllAttribution = async () => {
+    const newSelection = attributionCalendarIds.length === calendars.length
+      ? []  // Deseleccionar todos
+      : calendars.map(cal => cal.id)  // Seleccionar todos
+
+    try {
+      await setAttributionCalendarIds(newSelection)
+      const action = newSelection.length === 0 ? 'Todos deseleccionados' : 'Todos seleccionados'
+      showToast('success', 'Calendarios de atribución actualizados', action)
+    } catch (error: any) {
+      showToast('error', 'Error al guardar', error.message)
+    }
   }
 
   const handleOpenConfigModal = (calendar: CalendarType) => {
@@ -214,7 +193,7 @@ export const CalendarsConfiguration: React.FC = () => {
     )
   }
 
-  const allSelected = tempAttributionCalendars.length === calendars.length
+  const allSelected = attributionCalendarIds.length === calendars.length
 
   return (
     <div className={styles.integrationContainer}>
@@ -260,7 +239,7 @@ export const CalendarsConfiguration: React.FC = () => {
             <div className={styles.formField}>
               <label className={styles.label}>Selecciona un calendario</label>
               <CustomSelect
-                value={tempDefaultCalendar}
+                value={defaultCalendarId}
                 onChange={(value) => handleDefaultCalendarChange(value)}
                 options={[
                   { value: '', label: 'Ninguno (seleccionar manualmente)' },
@@ -346,7 +325,7 @@ export const CalendarsConfiguration: React.FC = () => {
             <div className={styles.formField}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                 <label className={styles.label} style={{ margin: 0 }}>
-                  Selecciona calendarios ({tempAttributionCalendars.length}/{calendars.length})
+                  Selecciona calendarios ({attributionCalendarIds.length}/{calendars.length})
                 </label>
                 <Button
                   variant="ghost"
@@ -359,7 +338,7 @@ export const CalendarsConfiguration: React.FC = () => {
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {calendars.map(calendar => {
-                  const isSelected = tempAttributionCalendars.includes(calendar.id)
+                  const isSelected = attributionCalendarIds.includes(calendar.id)
                   return (
                     <label
                       key={calendar.id}
@@ -405,33 +384,6 @@ export const CalendarsConfiguration: React.FC = () => {
               </p>
             </div>
           </div>
-        </div>
-
-        {/* Botones de acción */}
-        <div className={styles.actions} style={{ display: 'flex', gap: '12px' }}>
-          <Button
-            onClick={handleSave}
-            disabled={saving || !hasChanges}
-          >
-            {saving ? (
-              <>
-                <Loader2 size={18} className={styles.spinIcon} />
-                Guardando...
-              </>
-            ) : (
-              'Guardar Configuración'
-            )}
-          </Button>
-
-          {hasChanges && (
-            <Button
-              variant="ghost"
-              onClick={handleReset}
-              disabled={saving}
-            >
-              Cancelar
-            </Button>
-          )}
         </div>
       </Card>
 
