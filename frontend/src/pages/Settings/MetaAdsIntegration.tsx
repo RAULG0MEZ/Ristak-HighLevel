@@ -310,24 +310,29 @@ export const MetaAdsIntegration: React.FC = () => {
           </div>
         </div>
 
-        {/* Configuración de Credenciales - ARRIBA */}
-        <div className={styles.section}>
-          <div className={styles.sectionHeader}>
-            <h3 className={styles.sectionTitle}>Configurar Credenciales</h3>
-          </div>
-          <div className={styles.sectionContent}>
-            <p className={styles.infoText}>
-              Configura tus credenciales de Meta directamente aquí. Se guardarán en HighLevel automáticamente cuando hagas clic en "Guardar y Sincronizar".
-            </p>
+        {/* Layout 2 columnas: Formulario + Tutorial */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '400px 1fr',
+          gap: 'var(--spacing-2xl)',
+          alignItems: 'start'
+        }}
+        className={styles.twoColumnLayout}>
+
+          {/* COLUMNA IZQUIERDA: Formulario */}
+          <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <h3 className={styles.sectionTitle}>Configurar Credenciales</h3>
+            </div>
 
             {isLoading ? (
               <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>
                 Cargando credenciales...
               </div>
             ) : (
-              <div style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '600px', margin: '24px auto 0' }}>
+              <div style={{ marginTop: 'var(--spacing-lg)' }}>
                 {/* 1. App Access Token */}
-                <div className={styles.formField}>
+                <div className={styles.formGroup}>
                     <label className={styles.formLabel}>
                       App Access Token <span style={{ color: 'var(--color-error)' }}>*</span>
                     </label>
@@ -366,7 +371,7 @@ export const MetaAdsIntegration: React.FC = () => {
                 </div>
 
                 {/* 2. Cuenta de Anuncios */}
-                <div className={styles.formField}>
+                <div className={styles.formGroup}>
                     <label className={styles.formLabel}>
                       Cuenta de Anuncios <span style={{ color: 'var(--color-error)' }}>*</span>
                     </label>
@@ -428,7 +433,7 @@ export const MetaAdsIntegration: React.FC = () => {
                 </div>
 
                 {/* 3. Pixel de Meta */}
-                <div className={styles.formField}>
+                <div className={styles.formGroup}>
                     <label className={styles.formLabel}>
                       Pixel de Meta <span className={styles.formHint}>(opcional)</span>
                     </label>
@@ -488,7 +493,7 @@ export const MetaAdsIntegration: React.FC = () => {
                 </div>
 
                 {/* 4. Pixel API Token */}
-                <div className={styles.formField}>
+                <div className={styles.formGroup}>
                     <label className={styles.formLabel}>
                       Pixel API Token <span className={styles.formHint}>(automático)</span>
                     </label>
@@ -525,7 +530,7 @@ export const MetaAdsIntegration: React.FC = () => {
                 </div>
 
                 {/* 5. Page ID */}
-                <div className={styles.formField}>
+                <div className={styles.formGroup}>
                   <label className={styles.formLabel}>
                     Page ID de Facebook <span className={styles.formHint}>(opcional)</span>
                   </label>
@@ -597,10 +602,12 @@ export const MetaAdsIntegration: React.FC = () => {
               </div>
             )}
           </div>
-        </div>
 
-        {/* Introducción */}
-        <div className={styles.section}>
+          {/* COLUMNA DERECHA: Tutorial e Instrucciones */}
+          <div>
+
+            {/* Introducción */}
+            <div className={styles.section}>
           <div className={styles.sectionHeader}>
             <h3 className={styles.sectionTitle}>¿Para qué sirve esta integración?</h3>
           </div>
@@ -1113,6 +1120,13 @@ export const MetaAdsIntegration: React.FC = () => {
             </div>
           </div>
         </div>
+
+          </div>
+          {/* FIN COLUMNA DERECHA */}
+
+        </div>
+        {/* FIN GRID 2 COLUMNAS */}
+
       </Card>
     </div>
   )

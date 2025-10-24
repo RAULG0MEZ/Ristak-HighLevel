@@ -1596,3 +1596,17 @@ body.dark .warningBox {
     gap: 16px;
   }
 }
+
+/* Layout 2 columnas para Meta Ads */
+.twoColumnLayout {
+  display: grid;
+  grid-template-columns: 400px 1fr;
+  gap: var(--spacing-2xl);
+  align-items: start;
+}
+
+@media (max-width: 1024px) {
+  .twoColumnLayout {
+    grid-template-columns: 1fr;
+  }
+}
