@@ -493,6 +493,12 @@
   gap: 1rem;
 }
 
+.viewBarActions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
 .viewTabs {
   display: inline-flex;
   border-radius: var(--radius-lg);

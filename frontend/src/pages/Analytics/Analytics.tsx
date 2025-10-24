@@ -120,6 +120,17 @@ const formatPlacementName = (placement: string): string => {
 // Usar TrackingSession directamente (ya incluye todos los campos necesarios)
 type Session = TrackingSession
 
+// Helper para decodificar nombres URL-encoded (+ → espacio, %XX → carácter)
+const decodeAdName = (name: string | null): string => {
+  if (!name) return 'Sin nombre'
+  try {
+    // Reemplazar + por espacios, luego decodificar
+    return decodeURIComponent(name.replace(/\+/g, ' '))
+  } catch {
+    return name
+  }
+}
+
 interface Metrics {
   pageViews: number
   uniqueVisitors: number
@@ -389,7 +400,31 @@ const Analytics: React.FC = () => {
             .map(([page, count]) => ({ page, count }))
             .sort((a, b) => b.count - a.count)
 
-          // Campañas, Ads, Sources, etc. - Contar VISITANTES ÚNICOS por fuente
+          // JERARQUÍA DE ANUNCIOS: Platform → Campaign → Adset → Ad
+          interface AdHierarchy {
+            platform: string
+            platform_id: string
+            visitors: Set<string>
+            campaigns: Map<string, {
+              id: string
+              name: string
+              visitors: Set<string>
+              adsets: Map<string, {
+                id: string
+                name: string
+                visitors: Set<string>
+                ads: Map<string, {
+                  id: string
+                  name: string
+                  visitors: Set<string>
+                }>
+              }>
+            }>
+          }
+
+          const adsHierarchyMap = new Map<string, AdHierarchy>()
+
+          // Sources, etc. - Contar VISITANTES ÚNICOS por fuente
           const campaignsMap: { [key: string]: Set<string> } = {}
           const adsMap: { [key: string]: Set<string> } = {}
           const sourcesMap: { [key: string]: Set<string> } = {}
@@ -401,6 +436,69 @@ const Analytics: React.FC = () => {
           currentSessions.forEach((session: Session) => {
             const visitorId = session.visitor_id
 
+            // Construir jerarquía de anuncios (solo si tiene campaign_id y ad_id)
+            if (session.campaign_id && session.ad_id) {
+              // Normalizar plataforma
+              const platform = normalizeTrafficSource({
+                referrer_url: session.referrer_url,
+                site_source_name: session.site_source_name,
+                utm_source: session.utm_source,
+                source_platform: session.source_platform
+              })
+              const platformId = (session.source_platform || platform).toLowerCase()
+
+              // Obtener o crear entrada de plataforma
+              if (!adsHierarchyMap.has(platformId)) {
+                adsHierarchyMap.set(platformId, {
+                  platform,
+                  platform_id: platformId,
+                  visitors: new Set(),
+                  campaigns: new Map()
+                })
+              }
+              const platformNode = adsHierarchyMap.get(platformId)!
+              platformNode.visitors.add(visitorId)
+
+              // Obtener o crear campaña
+              const campaignId = session.campaign_id
+              if (!platformNode.campaigns.has(campaignId)) {
+                platformNode.campaigns.set(campaignId, {
+                  id: campaignId,
+                  name: decodeAdName(session.campaign_name),
+                  visitors: new Set(),
+                  adsets: new Map()
+                })
+              }
+              const campaignNode = platformNode.campaigns.get(campaignId)!
+              campaignNode.visitors.add(visitorId)
+
+              // Obtener o crear adset/adgroup
+              const adsetId = session.adset_id || session.ad_group_id || 'no_adset'
+              if (!campaignNode.adsets.has(adsetId)) {
+                campaignNode.adsets.set(adsetId, {
+                  id: adsetId,
+                  name: decodeAdName(session.adset_name || session.ad_group_name),
+                  visitors: new Set(),
+                  ads: new Map()
+                })
+              }
+              const adsetNode = campaignNode.adsets.get(adsetId)!
+              adsetNode.visitors.add(visitorId)
+
+              // Obtener o crear anuncio
+              const adId = session.ad_id
+              if (!adsetNode.ads.has(adId)) {
+                adsetNode.ads.set(adId, {
+                  id: adId,
+                  name: decodeAdName(session.ad_name),
+                  visitors: new Set()
+                })
+              }
+              const adNode = adsetNode.ads.get(adId)!
+              adNode.visitors.add(visitorId)
+            }
+
+            // Mantener mapeo plano para compatibilidad con TreeFilter antiguo
             if (session.utm_campaign) {
               if (!campaignsMap[session.utm_campaign]) campaignsMap[session.utm_campaign] = new Set()
               campaignsMap[session.utm_campaign].add(visitorId)
@@ -466,6 +564,30 @@ const Analytics: React.FC = () => {
           filterData.placements = Object.entries(placementsMap)
             .map(([name, visitorSet]) => ({ name, count: visitorSet.size }))
             .sort((a, b) => b.count - a.count)
+
+          // Convertir jerarquía de anuncios a formato compatible con TreeFilter
+          filterData.adsHierarchy = Array.from(adsHierarchyMap.values()).map(platformNode => ({
+            platform: platformNode.platform,
+            platform_id: platformNode.platform_id,
+            count: platformNode.visitors.size,
+            campaigns: Array.from(platformNode.campaigns.values()).map(campaignNode => ({
+              id: campaignNode.id,
+              name: campaignNode.name,
+              count: campaignNode.visitors.size,
+              adsets: Array.from(campaignNode.adsets.values()).map(adsetNode => ({
+                id: adsetNode.id,
+                name: adsetNode.name,
+                count: adsetNode.visitors.size,
+                ads: Array.from(adsetNode.ads.values()).map(adNode => ({
+                  id: adNode.id,
+                  name: adNode.name,
+                  count: adNode.visitors.size
+                })).sort((a, b) => b.count - a.count)
+              })).sort((a, b) => b.count - a.count)
+            })).sort((a, b) => b.count - a.count)
+          })).sort((a, b) => b.count - a.count)
+
+          console.log('📊 Jerarquía de anuncios construida:', filterData.adsHierarchy)
 
           setAvailableFilterData(filterData)
 
@@ -706,6 +828,24 @@ const Analytics: React.FC = () => {
                 const placementFormatted = formatPlacementName(session.placement || '')
                 console.log(`📍 Comparando placement: "${placementFormatted}" === "${value}"`, placementFormatted === value)
                 if (placementFormatted === value) fieldMatch = true
+                break
+              case 'ad_platform':
+                const sessionPlatform = (session.source_platform || '').toLowerCase()
+                console.log(`📱 Comparando plataforma: "${sessionPlatform}" === "${value}"`, sessionPlatform === value)
+                if (sessionPlatform === value) fieldMatch = true
+                break
+              case 'campaign_id':
+                console.log(`🎯 Comparando campaign_id: "${session.campaign_id}" === "${value}"`, session.campaign_id === value)
+                if (session.campaign_id === value) fieldMatch = true
+                break
+              case 'adset_id':
+                const sessionAdsetId = session.adset_id || session.ad_group_id
+                console.log(`📦 Comparando adset_id: "${sessionAdsetId}" === "${value}"`, sessionAdsetId === value)
+                if (sessionAdsetId === value) fieldMatch = true
+                break
+              case 'ad_id':
+                console.log(`📢 Comparando ad_id: "${session.ad_id}" === "${value}"`, session.ad_id === value)
+                if (session.ad_id === value) fieldMatch = true
                 break
             }
           }

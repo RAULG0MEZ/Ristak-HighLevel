@@ -36,6 +36,7 @@ export { RecordPaymentModal } from './RecordPaymentModal'
 
 // Componentes de citas
 export { AppointmentModal } from './AppointmentModal'
+export { BlockedSlotModal } from './BlockedSlotModal'
 
 // Componentes de UI
 export { ViewSelector } from './ViewSelector'

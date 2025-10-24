@@ -26,6 +26,27 @@ interface FilterNode {
   count?: number // Conteo de items con este filtro
 }
 
+interface AdHierarchyNode {
+  platform: string
+  platform_id: string
+  count: number
+  campaigns: Array<{
+    id: string
+    name: string
+    count: number
+    adsets: Array<{
+      id: string
+      name: string
+      count: number
+      ads: Array<{
+        id: string
+        name: string
+        count: number
+      }>
+    }>
+  }>
+}
+
 interface TreeFilterProps {
   // Datos disponibles para construir el árbol dinámicamente
   availableData?: {
@@ -39,6 +60,7 @@ interface TreeFilterProps {
     os?: Array<{ name: string; count: number }>
     countries?: Array<{ name: string; count: number }>
     placements?: Array<{ name: string; count: number }>
+    adsHierarchy?: Array<AdHierarchyNode>
   }
   selectedFilters: Record<string, string[]>
   onFilterChange: (filters: Record<string, string[]>) => void
@@ -115,8 +137,64 @@ export function TreeFilter({
       })
     }
 
-    // Categoría: Anuncios
-    if (availableData.ads?.length) {
+    // Categoría: Anuncios con jerarquía (Platform > Campaign > Adset > Ad)
+    if (availableData.adsHierarchy?.length) {
+      const adsChildren: FilterNode[] = []
+
+      availableData.adsHierarchy.forEach(platform => {
+        // Agregar opción para filtrar por plataforma completa
+        adsChildren.push({
+          id: `platform_${platform.platform_id}`,
+          label: `📱 ${platform.platform}`,
+          field: 'ad_platform',
+          value: platform.platform_id,
+          count: platform.count
+        })
+
+        platform.campaigns.forEach(campaign => {
+          // Agregar opción para filtrar por campaña completa
+          adsChildren.push({
+            id: `campaign_${campaign.id}`,
+            label: `  🎯 ${campaign.name}`,
+            field: 'campaign_id',
+            value: campaign.id,
+            count: campaign.count
+          })
+
+          campaign.adsets.forEach(adset => {
+            // Agregar opción para filtrar por conjunto completo
+            adsChildren.push({
+              id: `adset_${adset.id}`,
+              label: `    📦 ${adset.name}`,
+              field: 'adset_id',
+              value: adset.id,
+              count: adset.count
+            })
+
+            adset.ads.forEach(ad => {
+              // Agregar cada anuncio individual
+              adsChildren.push({
+                id: `ad_${ad.id}`,
+                label: `      📢 ${ad.name}`,
+                field: 'ad_id',
+                value: ad.id,
+                count: ad.count
+              })
+            })
+          })
+        })
+      })
+
+      if (adsChildren.length > 0) {
+        tree.push({
+          id: 'ads',
+          label: 'Anuncios',
+          icon: Image,
+          children: adsChildren
+        })
+      }
+    } else if (availableData.ads?.length) {
+      // Fallback a la lista plana si no hay jerarquía
       tree.push({
         id: 'ads',
         label: 'Anuncios',

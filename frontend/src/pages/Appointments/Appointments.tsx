@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { KpiCard, Card, Button, PageContainer, AppointmentModal, TabList } from '@/components/common';
-import { ChevronLeft, ChevronRight, Plus, ChevronDown, Check, Calendar as CalendarIcon, Search, X, Settings } from 'lucide-react';
+import { KpiCard, Card, Button, PageContainer, AppointmentModal, BlockedSlotModal, TabList } from '@/components/common';
+import { ChevronLeft, ChevronRight, Plus, ChevronDown, Check, Calendar as CalendarIcon, Search, X, Settings, Lock } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNotification } from '@/contexts/NotificationContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -146,6 +146,20 @@ export const Appointments: React.FC = () => {
     end: '',
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
     title: ''
+  });
+
+  // Modal de blocked slot
+  const [selectedBlockedSlot, setSelectedBlockedSlot] = useState<(BlockedSlot & { id?: string }) | null>(null);
+  const [isBlockedSlotModalOpen, setIsBlockedSlotModalOpen] = useState(false);
+  const [isCreateBlockedSlotMode, setIsCreateBlockedSlotMode] = useState(true);
+  const [blockedSlotDefaults, setBlockedSlotDefaults] = useState<{
+    start: string;
+    end: string;
+    timeZone: string;
+  }>({
+    start: '',
+    end: '',
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
   });
 
   // Dropdown de calendarios
@@ -652,6 +666,91 @@ export const Appointments: React.FC = () => {
     }
   };
 
+  // === BLOCKED SLOTS HANDLERS ===
+
+  // Abrir modal para crear blocked slot
+  const handleOpenCreateBlockedSlot = () => {
+    setIsCreateBlockedSlotMode(true);
+    setSelectedBlockedSlot(null);
+    setBlockedSlotDefaults({
+      start: '',
+      end: '',
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+    });
+    setIsBlockedSlotModalOpen(true);
+  };
+
+  // Crear nuevo blocked slot
+  const handleCreateBlockedSlot = async (payload: any) => {
+    if (!selectedCalendar || !locationId || !accessToken) return;
+
+    try {
+      setLoading(true);
+      await calendarsService.createBlockedSlot(
+        {
+          calendarId: selectedCalendar.id,
+          locationId,
+          ...payload
+        },
+        accessToken
+      );
+      showToast('success', 'Horario bloqueado', 'El horario se bloqueó correctamente.');
+      setIsBlockedSlotModalOpen(false);
+      await loadBlockedSlots();
+    } catch (error) {
+      showToast('error', 'No se pudo bloquear el horario', 'Intenta nuevamente más tarde.');
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Abrir modal para editar blocked slot
+  const handleBlockedSlotClick = (slot: BlockedSlot & { id?: string }) => {
+    setIsCreateBlockedSlotMode(false);
+    setSelectedBlockedSlot(slot);
+    setIsBlockedSlotModalOpen(true);
+  };
+
+  // Actualizar blocked slot
+  const handleUpdateBlockedSlot = async (payload: any, eventId?: string) => {
+    if (!accessToken || !eventId) return;
+
+    try {
+      await calendarsService.updateBlockedSlot(eventId, payload, accessToken);
+      showToast('success', 'Horario actualizado', 'Los cambios se guardaron correctamente.');
+      setIsBlockedSlotModalOpen(false);
+      await loadBlockedSlots();
+    } catch (error) {
+      showToast('error', 'Error al actualizar', 'No se pudo guardar el horario. Intenta nuevamente.');
+      throw error;
+    }
+  };
+
+  // Eliminar blocked slot
+  const handleDeleteBlockedSlot = async (eventId: string) => {
+    if (!accessToken) return;
+
+    try {
+      await calendarsService.deleteEvent(eventId, accessToken);
+      showToast('success', 'Bloqueo eliminado', 'El horario se desbloqueó correctamente.');
+      setIsBlockedSlotModalOpen(false);
+      await loadBlockedSlots();
+    } catch (error) {
+      showToast('error', 'Error al eliminar', 'No se pudo eliminar el bloqueo. Intenta nuevamente.');
+      throw error;
+    }
+  };
+
+  // Handler unificado para crear/actualizar blocked slot
+  const handleSaveBlockedSlot = async (payload: any, eventId?: string) => {
+    if (isCreateBlockedSlotMode) {
+      await handleCreateBlockedSlot(payload);
+    } else {
+      await handleUpdateBlockedSlot(payload, eventId);
+    }
+  };
+
   // Renderizar label según vista
   const renderLabel = () => {
     if (viewMode === 'month') {
@@ -874,13 +973,22 @@ export const Appointments: React.FC = () => {
           <div className={styles.calendarCardContent}>
           {/* Barra de vista */}
           <div className={styles.viewBar}>
-            <Button
-              variant="primary"
-              onClick={openCreateModal}
-            >
-              <Plus size={18} />
-              Programar cita
-            </Button>
+            <div className={styles.viewBarActions}>
+              <Button
+                variant="primary"
+                onClick={openCreateModal}
+              >
+                <Plus size={18} />
+                Programar cita
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={handleOpenCreateBlockedSlot}
+              >
+                <Lock size={18} />
+                Bloquear horario
+              </Button>
+            </div>
 
             <TabList
               tabs={viewTabs}
@@ -1252,7 +1360,8 @@ export const Appointments: React.FC = () => {
                                   top: `${top}%`,
                                   height: `${height}%`
                                 }}
-                                title={`Bloqueado: ${slot.reason || 'No disponible'}`}
+                                title={`Bloqueado: ${slot.reason || 'No disponible'} - Click para editar`}
+                                onClick={() => handleBlockedSlotClick(slot as any)}
                               >
                                 <div className={styles.blockedSlotLabel}>
                                   🔒 {slot.startTime} - {slot.endTime}
@@ -1418,7 +1527,8 @@ export const Appointments: React.FC = () => {
                             top: `${top}%`,
                             height: `${height}%`
                           }}
-                          title={`Bloqueado: ${slot.reason || 'No disponible'}`}
+                          onClick={() => handleBlockedSlotClick(slot as any)}
+                          title={`Bloqueado: ${slot.reason || 'No disponible'} - Click para editar`}
                         >
                           <div className={styles.blockedSlotLabel}>
                             🔒 {slot.startTime} - {slot.endTime}
@@ -1518,6 +1628,24 @@ export const Appointments: React.FC = () => {
         accessToken={accessToken}
         locationId={locationId}
         onSave={handleCreateAppointment}
+      />
+
+      {/* Modal de horario bloqueado */}
+      <BlockedSlotModal
+        isOpen={isBlockedSlotModalOpen}
+        onClose={() => {
+          setIsBlockedSlotModalOpen(false);
+          setSelectedBlockedSlot(null);
+        }}
+        calendar={selectedCalendar}
+        blockedSlot={selectedBlockedSlot}
+        mode={selectedBlockedSlot?.id ? 'edit' : 'create'}
+        defaultStart={createDefaults.start}
+        defaultEnd={createDefaults.end}
+        accessToken={accessToken}
+        locationId={locationId}
+        onSave={handleSaveBlockedSlot}
+        onDelete={handleDeleteBlockedSlot}
       />
     </PageContainer>
   );

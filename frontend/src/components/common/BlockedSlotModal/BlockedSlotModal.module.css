@@ -1,0 +1,180 @@
+/* Modal Content */
+.modalContent {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Form */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.required {
+  color: var(--color-error);
+}
+
+.input {
+  width: 100%;
+  padding: 0.625rem 0.875rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  background-color: var(--color-white);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  outline: none;
+  transition: all 0.15s ease;
+}
+
+.input:focus {
+  border-color: var(--color-primary-300);
+  background-color: var(--color-gray-50);
+}
+
+.input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+:global(body.dark) .input {
+  background-color: rgba(24, 24, 27, 0.7);
+  border-color: rgba(148, 163, 184, 0.18);
+}
+
+:global(body.dark) .input:focus {
+  background-color: rgba(30, 30, 32, 0.85);
+  border-color: var(--color-primary-300);
+}
+
+/* Loading Users */
+.loadingUsers {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.875rem;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  background-color: var(--color-gray-50);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+:global(body.dark) .loadingUsers {
+  background-color: rgba(24, 24, 27, 0.7);
+  border-color: rgba(148, 163, 184, 0.18);
+}
+
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* No Users */
+.noUsers {
+  padding: 0.625rem 0.875rem;
+  font-size: 0.875rem;
+  color: var(--color-text-tertiary);
+  background-color: var(--color-gray-50);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+:global(body.dark) .noUsers {
+  background-color: rgba(24, 24, 27, 0.7);
+  border-color: rgba(148, 163, 184, 0.18);
+}
+
+/* Actions */
+.actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--color-border);
+}
+
+:global(body.dark) .actions {
+  border-color: rgba(148, 163, 184, 0.18);
+}
+
+.mainActions {
+  display: flex;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+
+/* Modal de confirmación de eliminación */
+.deleteModalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2147483647;
+  padding: 1rem;
+}
+
+.deleteModal {
+  background-color: var(--color-white);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  max-width: 400px;
+  width: 100%;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+:global(body.dark) .deleteModal {
+  background-color: rgba(24, 24, 27, 0.95);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.deleteModalHeader {
+  margin-bottom: 1rem;
+}
+
+.deleteModalHeader h3 {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.deleteModal p {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+  margin: 0 0 1.5rem 0;
+}
+
+.deleteModalActions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
