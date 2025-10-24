@@ -174,7 +174,30 @@ export const BlockedSlotModal: React.FC<BlockedSlotModalProps> = ({
 
         if (teamMemberIds.length === 0) {
           console.log('🟡 [BlockedSlotModal] ⚠️ No hay team members en el calendario');
-          setUsers([]);
+          console.log('🔵 [BlockedSlotModal] Intentando obtener usuarios del location...');
+
+          // Si no hay team members, obtener usuarios del location
+          try {
+            const response = await fetch(`${import.meta.env.VITE_API_URL}/api/highlevel/users`, {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json'
+              }
+            });
+
+            if (response.ok) {
+              const result = await response.json();
+              const locationUsers = result.users || [];
+              console.log('🟢 [BlockedSlotModal] ✅ Usuarios del location obtenidos:', locationUsers);
+              setUsers(locationUsers);
+            } else {
+              console.log('🔴 [BlockedSlotModal] ❌ No se pudieron obtener usuarios del location');
+              setUsers([]);
+            }
+          } catch (error) {
+            console.log('🔴 [BlockedSlotModal] ❌ Error al obtener usuarios del location:', error);
+            setUsers([]);
+          }
           return;
         }
 
