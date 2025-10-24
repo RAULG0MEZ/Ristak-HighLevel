@@ -739,36 +739,65 @@ export const getTrafficSources = async (req, res) => {
     // Obtener timezone dinámico de HighLevel
     const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate })
 
-    // Contar visitantes únicos por fuente
+    // Normalizar PRIMERO en SQL, luego contar visitantes únicos
+    // Esto evita duplicados por pequeñas diferencias en referrer_url (ej: "/" al final)
     const query = `
+      WITH normalized_sessions AS (
+        SELECT
+          visitor_id,
+          CASE
+            -- Prioridad 1: Detectar por dominio de referrer_url
+            WHEN referrer_url LIKE '%facebook.com%' OR referrer_url LIKE '%fb.com%' OR referrer_url LIKE '%fb.me%' THEN 'Facebook'
+            WHEN referrer_url LIKE '%instagram.com%' THEN 'Instagram'
+            WHEN referrer_url LIKE '%google.com%' OR referrer_url LIKE '%google.%' THEN 'Google'
+            WHEN referrer_url LIKE '%tiktok.com%' THEN 'TikTok'
+            WHEN referrer_url LIKE '%twitter.com%' OR referrer_url LIKE '%x.com%' OR referrer_url LIKE '%t.co%' THEN 'Twitter'
+            WHEN referrer_url LIKE '%linkedin.com%' OR referrer_url LIKE '%lnkd.in%' THEN 'LinkedIn'
+            WHEN referrer_url LIKE '%youtube.com%' OR referrer_url LIKE '%youtu.be%' THEN 'YouTube'
+            WHEN referrer_url LIKE '%bing.com%' OR referrer_url LIKE '%msn.com%' THEN 'Bing'
+            WHEN referrer_url LIKE '%pinterest.com%' OR referrer_url LIKE '%pin.it%' THEN 'Pinterest'
+
+            -- Prioridad 2: site_source_name (códigos cortos)
+            WHEN LOWER(site_source_name) IN ('fb', 'facebook', 'meta') THEN 'Facebook'
+            WHEN LOWER(site_source_name) IN ('ig', 'instagram') THEN 'Instagram'
+            WHEN LOWER(site_source_name) IN ('google', 'ggl') THEN 'Google'
+            WHEN LOWER(site_source_name) IN ('tiktok', 'tt') THEN 'TikTok'
+            WHEN LOWER(site_source_name) IN ('twitter', 'x') THEN 'Twitter'
+            WHEN LOWER(site_source_name) IN ('linkedin', 'li') THEN 'LinkedIn'
+
+            -- Prioridad 3: utm_source
+            WHEN LOWER(utm_source) IN ('fb', 'facebook', 'meta', 'fb_ad', 'fb_ads') THEN 'Facebook'
+            WHEN LOWER(utm_source) IN ('ig', 'instagram', 'ig_ad', 'instagram_profile') THEN 'Instagram'
+            WHEN LOWER(utm_source) IN ('google', 'google_ads', 'adwords') THEN 'Google'
+            WHEN LOWER(utm_source) IN ('tiktok', 'tt') THEN 'TikTok'
+
+            -- Prioridad 4: source_platform
+            WHEN LOWER(source_platform) IN ('fb', 'facebook', 'meta') THEN 'Facebook'
+            WHEN LOWER(source_platform) IN ('ig', 'instagram') THEN 'Instagram'
+            WHEN LOWER(source_platform) = 'google' THEN 'Google'
+            WHEN LOWER(source_platform) = 'tiktok' THEN 'TikTok'
+
+            -- Fallback
+            ELSE 'Otro'
+          END as normalized_source
+        FROM sessions
+        WHERE started_at >= $1 AND started_at <= $2
+      )
       SELECT
-        referrer_url,
-        site_source_name,
-        utm_source,
-        source_platform,
+        normalized_source as name,
         COUNT(DISTINCT visitor_id) as value
-      FROM sessions
-      WHERE started_at >= $1 AND started_at <= $2
-      GROUP BY referrer_url, site_source_name, utm_source, source_platform
+      FROM normalized_sessions
+      GROUP BY normalized_source
       ORDER BY value DESC
     `
     const params = [range.startUtc, range.endUtc]
 
     const sources = await db.all(query, params)
 
-    // Normalizar nombres usando prioridad 1-4 y agrupar por plataforma normalizada
+    // Ya vienen normalizados desde SQL, solo mapear
     const sourcesMap = new Map()
-
     sources.forEach(source => {
-      // Usar normalizador con prioridad: referrer_url → site_source_name → utm_source → source_platform
-      const normalizedName = normalizeTrafficSource({
-        referrer_url: source.referrer_url,
-        site_source_name: source.site_source_name,
-        utm_source: source.utm_source,
-        source_platform: source.source_platform
-      })
-      const currentValue = sourcesMap.get(normalizedName) || 0
-      sourcesMap.set(normalizedName, currentValue + parseInt(source.value))
+      sourcesMap.set(source.name, parseInt(source.value))
     })
 
     // Mapear colores por plataforma
