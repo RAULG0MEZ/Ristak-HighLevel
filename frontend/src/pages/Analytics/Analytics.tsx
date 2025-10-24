@@ -237,13 +237,6 @@ const Analytics: React.FC = () => {
           // Registros = contactos con visitor_id creados en el período (con fallback a array vacío)
           const registros = (contactsData || []).reduce((sum, item) => sum + item.count, 0)
 
-          console.log('🔵 [Analytics] Datos de contactos recibidos:', {
-            contactsDataLength: contactsData?.length || 0,
-            contactsData: contactsData,
-            registrosCalculados: registros,
-            rangoFechas: { startDate, endDate }
-          })
-
           const conversionRate = uniqueVids > 0 ? ((registros / uniqueVids) * 100) : 0
 
           // Usuarios recurrentes: contar visitor_ids que tienen múltiples session_ids diferentes
@@ -363,12 +356,6 @@ const Analytics: React.FC = () => {
               name: formatLocalDateShort(item.date),
               value: item.count
             }))
-
-          console.log('📊 [Analytics] Datos del gráfico de barras:', {
-            registrosBarChartDataLength: registrosBarChartData.length,
-            registrosBarChartData: registrosBarChartData,
-            diasConDatos: registrosBarChartData.filter(d => d.value > 0).length
-          })
 
           setRegistrosChartData(registrosBarChartData)
 
@@ -719,33 +706,23 @@ const Analytics: React.FC = () => {
 
   // Efecto para recalcular visualizaciones cuando cambien las sesiones filtradas
   useEffect(() => {
-    console.log('🟡 [Analytics] Segundo useEffect ejecutándose:', {
-      allSessionsLength: allSessions.length,
-      sessionsLength: sessions.length
-    })
-
     // No hacer nada si allSessions está vacío (aún no se han cargado los datos iniciales)
     if (allSessions.length === 0) {
-      console.log('⚠️ [Analytics] allSessions vacío, esperando datos iniciales...')
       return
     }
 
     if (sessions.length === 0) {
-      console.log('🟠 [Analytics] sessions vacío, manteniendo registros previos')
       // Si no hay sesiones filtradas, resetear solo métricas de sesiones
       // NO resetear registros ni registrosChartData (vienen de contactsData)
-      setMetrics(prev => {
-        console.log('🔄 [Analytics] Actualizando metrics con prev.registros:', prev.registros)
-        return {
-          pageViews: 0,
-          uniqueVisitors: 0,
-          registros: prev.registros, // ← MANTENER valor de contactsData
-          conversionRate: 0,
-          returningUsers: 0,
-          avgPagePerSession: 0,
-          trends: prev.trends // Mantener trends originales
-        }
-      })
+      setMetrics(prev => ({
+        pageViews: 0,
+        uniqueVisitors: 0,
+        registros: prev.registros, // ← MANTENER valor de contactsData
+        conversionRate: 0,
+        returningUsers: 0,
+        avgPagePerSession: 0,
+        trends: prev.trends // Mantener trends originales
+      }))
       setDailyTraffic([])
       setDailyConversions([])
       // NO resetear registrosChartData aquí - viene de contactsData, no de sessions
@@ -788,10 +765,6 @@ const Analytics: React.FC = () => {
       (totalPageViews / uniqueSessionIds) : 0
 
     // Actualizar métricas (sin trends, ya que los filtros no tienen período anterior)
-    console.log('🟢 [Analytics] Actualizando metrics (con sesiones):', {
-      prevRegistros: metrics.registros,
-      mantenerRegistros: true
-    })
     setMetrics(prev => ({
       pageViews: totalPageViews,
       uniqueVisitors: uniqueVids,
@@ -1088,12 +1061,13 @@ const Analytics: React.FC = () => {
                 Contactos registrados en el período
               </p>
             </div>
-            <BarChart
-              data={registrosChartData}
-              loading={loading}
-              height={320}
-              formatTooltip={(value) => `${value} ${value === 1 ? 'registro' : 'registros'}`}
-            />
+            <div className="h-[320px]">
+              <BarChart
+                data={registrosChartData}
+                loading={loading}
+                formatTooltip={(value) => `${value} ${value === 1 ? 'registro' : 'registros'}`}
+              />
+            </div>
           </Card>
 
           {/* Gráfica de Fuentes de Tráfico */}

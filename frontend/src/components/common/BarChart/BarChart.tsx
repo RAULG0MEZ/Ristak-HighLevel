@@ -1,6 +1,5 @@
 import React from 'react'
-import { BarChart as RechartsBarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
-import { ChartTooltip } from '../ChartTooltip'
+import { BarChart as RechartsBarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from 'recharts'
 import styles from './BarChart.module.css'
 
 export interface BarChartData {
@@ -19,45 +18,54 @@ interface BarChartProps {
   formatXAxis?: (value: string) => string
 }
 
+// Tooltip personalizado que coincide con el diseño de LineChart
+const CustomTooltip = ({ active, payload, formatTooltip }: any) => {
+  if (!active || !payload || !payload.length) {
+    return null
+  }
+
+  const data = payload[0].payload
+  const value = payload[0].value
+
+  return (
+    <div className={styles.tooltip}>
+      <p className={styles.tooltipLabel}>{data.name}</p>
+      <div className={styles.tooltipValue}>
+        <span className={styles.tooltipDot} />
+        <span>{formatTooltip(value)}</span>
+      </div>
+    </div>
+  )
+}
+
 export const BarChart: React.FC<BarChartProps> = ({
   data,
   loading = false,
   height = 300,
-  color = 'var(--color-primary)',
+  color = '#10b981', // Verde por defecto
   xAxisLabel,
   yAxisLabel,
   formatTooltip = (value) => value.toString(),
   formatXAxis = (value) => value
 }) => {
-  console.log('📈 [BarChart] Renderizando con datos:', {
-    dataLength: data?.length || 0,
-    loading,
-    data: data,
-    diasConDatos: data?.filter(d => d.value > 0).length || 0
-  })
-
   if (loading) {
-    console.log('⏳ [BarChart] Mostrando estado de carga')
     return (
-      <div className={styles.loadingContainer} style={{ height }}>
+      <div className={styles.loadingContainer} style={{ height: '100%' }}>
         <div className={styles.loadingSpinner} />
       </div>
     )
   }
 
   if (!data || data.length === 0) {
-    console.log('❌ [BarChart] Sin datos, mostrando mensaje vacío')
     return (
-      <div className={styles.emptyContainer} style={{ height }}>
+      <div className={styles.emptyContainer} style={{ height: '100%' }}>
         <p className={styles.emptyMessage}>No hay datos disponibles para el período seleccionado</p>
       </div>
     )
   }
 
-  console.log('✅ [BarChart] Renderizando gráfico con', data.length, 'puntos de datos')
-
   return (
-    <div className={styles.container} style={{ height }}>
+    <div className={styles.container} style={{ height: '100%' }}>
       <ResponsiveContainer width="100%" height="100%">
         <RechartsBarChart
           data={data}
@@ -78,19 +86,29 @@ export const BarChart: React.FC<BarChartProps> = ({
           <YAxis
             stroke="var(--color-text-tertiary)"
             tick={{ fill: 'var(--color-text-secondary)', fontSize: 12 }}
+            allowDecimals={false}
             label={yAxisLabel ? { value: yAxisLabel, angle: -90, position: 'insideLeft', fill: 'var(--color-text-tertiary)' } : undefined}
           />
           <Tooltip
-            content={<ChartTooltip />}
-            cursor={{ fill: 'var(--color-primary-alpha-10)' }}
-            formatter={(value: number) => [formatTooltip(value), 'Registros']}
+            content={<CustomTooltip formatTooltip={formatTooltip} />}
+            cursor={{ fill: 'rgba(16, 185, 129, 0.1)' }}
+            isAnimationActive={false}
+            allowEscapeViewBox={{ x: false, y: true }}
           />
           <Bar
             dataKey="value"
-            fill={color}
             radius={[4, 4, 0, 0]}
             animationDuration={300}
-          />
+            isAnimationActive={true}
+          >
+            {data.map((entry, index) => (
+              <Cell
+                key={`cell-${index}`}
+                fill={entry.value > 0 ? color : 'transparent'}
+                style={{ cursor: entry.value > 0 ? 'pointer' : 'default' }}
+              />
+            ))}
+          </Bar>
         </RechartsBarChart>
       </ResponsiveContainer>
     </div>
