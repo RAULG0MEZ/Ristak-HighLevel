@@ -362,8 +362,10 @@ export const Appointments: React.FC = () => {
         accessToken
       );
 
+      console.log('[Appointments] Blocked slots cargados:', blockedSlotsData);
       setBlockedSlots(blockedSlotsData);
     } catch (error) {
+      console.error('[Appointments] Error cargando blocked slots:', error);
       // Error silencioso - si falla, simplemente no se muestran blocked slots
       setBlockedSlots([]);
     }
@@ -1187,11 +1189,12 @@ export const Appointments: React.FC = () => {
                             const dayBlockedSlots = blockedSlotsByDate[dateKey] || [];
                             if (dayBlockedSlots.length > 0) {
                               // Generar tooltip con info detallada de cada blocked slot
+                              // Formato: "10:00-11:30 (Título) | 14:00-15:00 (Título 2)"
                               const tooltipContent = dayBlockedSlots.map(slot => {
-                                const title = slot.reason || 'Horario bloqueado';
-                                const timeRange = `${slot.startTime} - ${slot.endTime}`;
-                                return `${title}\n${timeRange}`;
-                              }).join('\n\n');
+                                const title = slot.reason || 'Bloqueado';
+                                const timeRange = `${slot.startTime}-${slot.endTime}`;
+                                return `${timeRange} (${title})`;
+                              }).join(' | ');
 
                               return (
                                 <div
