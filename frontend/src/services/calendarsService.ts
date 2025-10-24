@@ -363,8 +363,10 @@ export const calendarsService = {
 
   /**
    * Calcular estadísticas de citas
+   * Nota: "pending" cuenta citas confirmadas que están próximas (futuras)
    */
   calculateStats(events: CalendarEvent[]): AppointmentStats {
+    const now = new Date();
     const stats: AppointmentStats = {
       pending: 0,
       cancelled: 0,
@@ -376,7 +378,13 @@ export const calendarsService = {
 
     events.forEach((event) => {
       const status = event.appointmentStatus?.toLowerCase();
-      if (status === 'pending') stats.pending++;
+      const eventDate = new Date(event.startTime);
+
+      // "pending" = citas confirmadas que están en el futuro
+      if (status === 'confirmed' && eventDate >= now) {
+        stats.pending++;
+      }
+      // El resto de stats se mantiene igual
       else if (status === 'cancelled') stats.cancelled++;
       else if (status === 'confirmed') stats.confirmed++;
       else if (status === 'rescheduled') stats.rescheduled++;

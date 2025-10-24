@@ -1207,16 +1207,12 @@ export const Appointments: React.FC = () => {
       {/* KPIs */}
       <div className={styles.statsGrid}>
         <KpiCard
-          title="Citas pendientes · mes seleccionado"
+          title="Citas próximas confirmadas · mes seleccionado"
           value={stats.pending}
         />
         <KpiCard
           title="Citas canceladas · mes seleccionado"
           value={stats.cancelled}
-        />
-        <KpiCard
-          title="Citas confirmadas · mes seleccionado"
-          value={stats.confirmed}
         />
         <KpiCard
           title="Citas reprogramadas · mes seleccionado"
