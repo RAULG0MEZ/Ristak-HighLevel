@@ -582,7 +582,7 @@ export const BlockedSlotModal: React.FC<BlockedSlotModalProps> = ({
         isOpen={isOpen}
         onClose={onClose}
         title={isCreateMode ? 'Bloquear horario' : 'Editar horario bloqueado'}
-        size="xl"
+        size="lg"
         type="custom"
       >
         <div className={styles.modalContent}>
@@ -680,10 +680,10 @@ export const BlockedSlotModal: React.FC<BlockedSlotModalProps> = ({
                   {showStart && (
                     <div className={styles.field}>
                       <DateTimePicker
-                        label="Inicio"
+                        label={showEnd ? "Inicio" : undefined} // Solo mostrar label "Inicio" si también hay campo de Fin
                         value={formData.startTime}
                         onChange={(value) => handleStartTimeChange(value)}
-                        placeholder="Selecciona fecha y hora de inicio"
+                        placeholder="Selecciona fecha y hora"
                       />
                     </div>
                   )}
