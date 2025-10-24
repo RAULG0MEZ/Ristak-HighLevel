@@ -58,6 +58,7 @@ export const MetaAdsIntegration: React.FC = () => {
 
   // Estado para guardar Page ID
   const [isSavingPageId, setIsSavingPageId] = useState(false)
+  const [savedPageId, setSavedPageId] = useState<string>('')  // Page ID que viene del backend (guardado)
 
   // Estado para re-sincronización al cambiar el switch
   const [isSyncingSnippet, setIsSyncingSnippet] = useState(false)
@@ -84,6 +85,11 @@ export const MetaAdsIntegration: React.FC = () => {
 
       if (data.success && data.data) {
         setCredentials(data.data)
+
+        // Guardar el Page ID que viene del backend
+        if (data.data.pageId) {
+          setSavedPageId(data.data.pageId)
+        }
 
         // Si hay access token guardado, cargar cuentas y pixeles
         if (data.data.accessToken) {
@@ -232,6 +238,7 @@ export const MetaAdsIntegration: React.FC = () => {
       setRealAccessToken('')
       setAdAccounts([])
       setPixels([])
+      setSavedPageId('')  // Limpiar Page ID guardado
     } else if (field === 'adAccountId') {
       // Si se elimina la cuenta, limpiar pixel y pixel token
       setCredentials(prev => ({
@@ -248,6 +255,10 @@ export const MetaAdsIntegration: React.FC = () => {
         pixelId: '',
         pixelApiToken: ''
       }))
+    } else if (field === 'pageId') {
+      // Si se elimina el Page ID, limpiar también el savedPageId
+      setCredentials(prev => ({ ...prev, pageId: '' }))
+      setSavedPageId('')
     } else {
       // Para otros campos, solo limpiar el campo actual
       setCredentials(prev => ({ ...prev, [field]: '' }))
@@ -375,6 +386,7 @@ export const MetaAdsIntegration: React.FC = () => {
 
       if (data.success) {
         showToast('success', 'Page ID guardado', 'Configuración actualizada')
+        setSavedPageId(credentials.pageId)  // Marcar como guardado
         await loadCredentials()  // Recargar para ver el chip
       } else {
         showToast('error', 'Error', data.error || 'No se pudo guardar el Page ID')
@@ -675,7 +687,7 @@ export const MetaAdsIntegration: React.FC = () => {
                     <label className={styles.formLabel}>
                       Facebook Page ID <span className={styles.formHint}>(opcional)</span>
                     </label>
-                    {credentials.pageId && credentials.pageId !== '' && credentials.pageId.length > 10 ? (
+                    {savedPageId && credentials.pageId === savedPageId ? (
                       <div className={styles.filterChip}>
                         <span className={styles.chipText}>{credentials.pageId}</span>
                         <button
