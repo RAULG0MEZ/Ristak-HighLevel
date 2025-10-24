@@ -444,16 +444,17 @@ const Analytics: React.FC = () => {
           currentSessions.forEach((session: Session) => {
             const visitorId = session.visitor_id
 
-            // Construir jerarquía de anuncios (solo si tiene campaign_id y ad_id)
-            if (session.campaign_id && session.ad_id) {
-              // Normalizar plataforma
+            // Construir jerarquía de anuncios usando UTMs (más confiable que campos específicos)
+            // Requerimos al menos utm_source y utm_campaign para construir la jerarquía
+            if (session.utm_source && session.utm_campaign) {
+              // Normalizar plataforma desde utm_source
               const platform = normalizeTrafficSource({
                 referrer_url: session.referrer_url,
                 site_source_name: session.site_source_name,
                 utm_source: session.utm_source,
                 source_platform: session.source_platform
               })
-              const platformId = (session.source_platform || platform).toLowerCase()
+              const platformId = session.utm_source.toLowerCase()
 
               // Obtener o crear entrada de plataforma
               if (!adsHierarchyMap.has(platformId)) {
@@ -467,12 +468,12 @@ const Analytics: React.FC = () => {
               const platformNode = adsHierarchyMap.get(platformId)!
               platformNode.visitors.add(visitorId)
 
-              // Obtener o crear campaña
-              const campaignId = session.campaign_id
+              // Obtener o crear campaña (usamos utm_campaign como ID único)
+              const campaignId = session.utm_campaign
               if (!platformNode.campaigns.has(campaignId)) {
                 platformNode.campaigns.set(campaignId, {
                   id: campaignId,
-                  name: decodeAdName(session.campaign_name),
+                  name: decodeAdName(session.utm_campaign), // utm_campaign ya tiene el nombre
                   visitors: new Set(),
                   adsets: new Map()
                 })
@@ -480,14 +481,12 @@ const Analytics: React.FC = () => {
               const campaignNode = platformNode.campaigns.get(campaignId)!
               campaignNode.visitors.add(visitorId)
 
-              // Obtener o crear adset/adgroup
-              const adsetId = session.adset_id || session.ad_group_id || 'no_adset'
+              // Obtener o crear adset desde utm_medium
+              const adsetId = session.utm_medium || 'sin_conjunto'
               if (!campaignNode.adsets.has(adsetId)) {
-                // Si tiene ad_id pero no tiene adset_name, mostrar el ID en vez de "orgánico"
-                const adsetName = session.adset_name || session.ad_group_name
-                const displayName = adsetName && adsetName !== 'null' && adsetName !== 'undefined'
-                  ? decodeAdName(adsetName)
-                  : `Conjunto ${adsetId.substring(0, 8)}...`
+                const displayName = session.utm_medium && session.utm_medium !== 'null' && session.utm_medium !== 'undefined'
+                  ? decodeAdName(session.utm_medium)
+                  : '(Sin conjunto de anuncios)'
 
                 campaignNode.adsets.set(adsetId, {
                   id: adsetId,
@@ -499,14 +498,12 @@ const Analytics: React.FC = () => {
               const adsetNode = campaignNode.adsets.get(adsetId)!
               adsetNode.visitors.add(visitorId)
 
-              // Obtener o crear anuncio
-              const adId = session.ad_id
+              // Obtener o crear anuncio desde utm_content
+              const adId = session.utm_content || 'sin_anuncio'
               if (!adsetNode.ads.has(adId)) {
-                // Si tiene ad_id pero no tiene ad_name, mostrar el ID en vez de "orgánico"
-                const adName = session.ad_name
-                const displayName = adName && adName !== 'null' && adName !== 'undefined'
-                  ? decodeAdName(adName)
-                  : `Anuncio ${adId.substring(0, 8)}...`
+                const displayName = session.utm_content && session.utm_content !== 'null' && session.utm_content !== 'undefined'
+                  ? decodeAdName(session.utm_content)
+                  : '(Sin nombre de anuncio)'
 
                 adsetNode.ads.set(adId, {
                   id: adId,
