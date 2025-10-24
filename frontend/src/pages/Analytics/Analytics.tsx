@@ -729,8 +729,8 @@ const Analytics: React.FC = () => {
     // Contar sesiones únicas (por session_id)
     const uniqueSessionIds = new Set(sessions.map((s: Session) => s.session_id)).size
 
-    // Registros = sesiones con contact_id
-    const registros = new Set(
+    // Registros = sesiones con contact_id (solo para cálculo interno, NO para KPI)
+    const registrosEnSesiones = new Set(
       sessions
         .filter((s: Session) => {
           if (!s.contact_id || !s.contact_created_at) return false
@@ -739,7 +739,9 @@ const Analytics: React.FC = () => {
         .map((s: Session) => s.contact_id)
     ).size
 
-    const conversionRate = uniqueVids > 0 ? ((registros / uniqueVids) * 100) : 0
+    // NOTA: NO sobrescribir metrics.registros aquí - viene de contactsData
+    // Solo usar registrosEnSesiones para cálculos internos si es necesario
+    const conversionRate = uniqueVids > 0 ? ((registrosEnSesiones / uniqueVids) * 100) : 0
 
     // Usuarios recurrentes: contar visitor_ids que tienen múltiples session_ids diferentes
     const visitorSessionMap: { [key: string]: Set<string> } = {}
@@ -759,7 +761,7 @@ const Analytics: React.FC = () => {
     setMetrics(prev => ({
       pageViews: totalPageViews,
       uniqueVisitors: uniqueVids,
-      registros,
+      registros: prev.registros, // MANTENER valor original de contactsData, NO sobrescribir
       conversionRate,
       returningUsers,
       avgPagePerSession,
