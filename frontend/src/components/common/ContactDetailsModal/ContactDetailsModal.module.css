@@ -15,6 +15,65 @@
   }
 }
 
+/* Tablets y pantallas medianas */
+@media (max-width: 1024px) {
+  .header {
+    padding: 1.5rem 2rem;
+  }
+
+  .searchContainer {
+    padding: 1rem 1.25rem;
+  }
+
+  .contactDetails {
+    padding: 1.25rem 1.5rem;
+  }
+}
+
+/* Tablets en modo portrait */
+@media (max-width: 768px) {
+  .modalContainer {
+    height: 90vh;
+    max-height: 800px;
+  }
+
+  .header {
+    padding: 1.25rem 1.5rem;
+  }
+
+  .searchContainer {
+    padding: 0.875rem 1rem;
+  }
+
+  .contactDetails {
+    padding: 1rem 1.25rem;
+  }
+}
+
+/* Móviles */
+@media (max-width: 640px) {
+  .modalContainer {
+    height: 92vh;
+    min-height: 500px;
+  }
+
+  .header {
+    padding: 1rem;
+  }
+
+  .searchContainer {
+    padding: 0.75rem 1rem;
+  }
+
+  .contactDetails {
+    padding: 1rem;
+  }
+
+  .statsGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .header {
   padding: 2rem 2.5rem;
   border-bottom: 1px solid rgba(148, 163, 184, 0.18);
