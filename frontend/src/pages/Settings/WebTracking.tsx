@@ -14,8 +14,8 @@ export const WebTracking: React.FC = () => {
 
   // Sistema híbrido de configuración (cache + DB)
   // Defaults: false y 'platform' hasta que se configure dominio personalizado
-  const [showAnalytics, setShowAnalytics, savingAnalyticsPref] = useAppConfig('show_analytics', false)
-  const [visitorSource, setVisitorSource, savingVisitorPref] = useAppConfig<'platform' | 'tracking'>('visitor_source', 'platform')
+  const [showAnalytics, setShowAnalytics] = useAppConfig('show_analytics', false)
+  const [visitorSource, setVisitorSource] = useAppConfig<'platform' | 'tracking'>('visitor_source', 'platform')
 
   const [trackingDomain, setTrackingDomain] = useState('')
   const [copied, setCopied] = useState(false)
@@ -77,6 +77,31 @@ export const WebTracking: React.FC = () => {
       showToast('error', 'Error', 'No se pudo cargar la configuración del tracking')
     } finally {
       setLoadingConfig(false)
+    }
+  }
+
+  const handleConfigureTracking = async () => {
+    setConfiguringTracking(true)
+    try {
+      await trackingService.configureTracking()
+      setIsConfigured(true)
+      showToast('success', 'Sincronización exitosa', 'El código del pixel se guardó en HighLevel como "rstktrack"')
+    } catch (error) {
+      showToast('error', 'Error al sincronizar', 'No se pudo guardar el código en HighLevel')
+    } finally {
+      setConfiguringTracking(false)
+    }
+  }
+
+  const handleCopySnippet = async () => {
+    try {
+      const snippet = trackingService.generateSnippet(trackingDomain)
+      await navigator.clipboard.writeText(snippet)
+      setCopied(true)
+      showToast('success', 'Copiado', 'El código se copió al portapapeles')
+      setTimeout(() => setCopied(false), 2000)
+    } catch (error) {
+      showToast('error', 'Error', 'No se pudo copiar el código')
     }
   }
 
