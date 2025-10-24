@@ -136,7 +136,7 @@ export function TreeFilter({
       tree.push({
         id: 'ads',
         label: 'Plataformas',
-        icon: Smartphone,
+        icon: Target,
         // No ponemos children aquí, se renderiza con lógica especial de cascada
       })
     } else if (availableData.ads?.length) {
@@ -144,7 +144,7 @@ export function TreeFilter({
       tree.push({
         id: 'ads',
         label: 'Plataformas',
-        icon: Smartphone,
+        icon: Target,
         children: availableData.ads.map(a => ({
           id: `ad_${a.name}`,
           label: a.name,

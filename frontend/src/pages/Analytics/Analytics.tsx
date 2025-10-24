@@ -452,14 +452,15 @@ const Analytics: React.FC = () => {
             // Construir jerarquía de anuncios usando UTMs (más confiable que campos específicos)
             // Requerimos al menos utm_source y utm_campaign para construir la jerarquía
             if (session.utm_source && session.utm_campaign) {
-              // Normalizar plataforma desde utm_source
+              // Normalizar plataforma desde utm_source (esto agrupa fb, facebook, Facebook)
               const platform = normalizeTrafficSource({
                 referrer_url: session.referrer_url,
                 site_source_name: session.site_source_name,
                 utm_source: session.utm_source,
                 source_platform: session.source_platform
               })
-              const platformId = session.utm_source.toLowerCase()
+              // Usar plataforma normalizada como ID para evitar duplicados
+              const platformId = platform.toLowerCase()
 
               // Obtener o crear entrada de plataforma
               if (!adsHierarchyMap.has(platformId)) {
@@ -473,12 +474,12 @@ const Analytics: React.FC = () => {
               const platformNode = adsHierarchyMap.get(platformId)!
               platformNode.visitors.add(visitorId)
 
-              // Obtener o crear campaña (usamos utm_campaign como ID único)
-              const campaignId = session.utm_campaign
+              // Obtener o crear campaña (decodificar para evitar formato +++)
+              const campaignId = decodeAdName(session.utm_campaign)
               if (!platformNode.campaigns.has(campaignId)) {
                 platformNode.campaigns.set(campaignId, {
                   id: campaignId,
-                  name: decodeAdName(session.utm_campaign), // utm_campaign ya tiene el nombre
+                  name: campaignId, // Ya está decodificado
                   visitors: new Set(),
                   adsets: new Map()
                 })
@@ -486,11 +487,14 @@ const Analytics: React.FC = () => {
               const campaignNode = platformNode.campaigns.get(campaignId)!
               campaignNode.visitors.add(visitorId)
 
-              // Obtener o crear adset desde utm_medium
-              const adsetId = session.utm_medium || 'sin_conjunto'
+              // Obtener o crear adset desde utm_medium (decodificar ID también)
+              const adsetId = session.utm_medium && session.utm_medium !== 'null' && session.utm_medium !== 'undefined'
+                ? decodeAdName(session.utm_medium)
+                : 'sin_conjunto'
+
               if (!campaignNode.adsets.has(adsetId)) {
                 const displayName = session.utm_medium && session.utm_medium !== 'null' && session.utm_medium !== 'undefined'
-                  ? decodeAdName(session.utm_medium)
+                  ? adsetId // Ya está decodificado
                   : '(Sin conjunto de anuncios)'
 
                 campaignNode.adsets.set(adsetId, {
@@ -503,11 +507,14 @@ const Analytics: React.FC = () => {
               const adsetNode = campaignNode.adsets.get(adsetId)!
               adsetNode.visitors.add(visitorId)
 
-              // Obtener o crear anuncio desde utm_content
-              const adId = session.utm_content || 'sin_anuncio'
+              // Obtener o crear anuncio desde utm_content (decodificar ID también)
+              const adId = session.utm_content && session.utm_content !== 'null' && session.utm_content !== 'undefined'
+                ? decodeAdName(session.utm_content)
+                : 'sin_anuncio'
+
               if (!adsetNode.ads.has(adId)) {
                 const displayName = session.utm_content && session.utm_content !== 'null' && session.utm_content !== 'undefined'
-                  ? decodeAdName(session.utm_content)
+                  ? adId // Ya está decodificado
                   : '(Sin nombre de anuncio)'
 
                 adsetNode.ads.set(adId, {
@@ -816,16 +823,22 @@ const Analytics: React.FC = () => {
                 }
                 break
               case 'utm_campaign':
-                console.log(`🎯 Comparando campaña: "${session.utm_campaign}" === "${value}"`, session.utm_campaign === value)
-                if (session.utm_campaign === value) fieldMatch = true
+                // Decodificar para comparar correctamente (evitar formato +++)
+                const decodedCampaign = decodeAdName(session.utm_campaign)
+                console.log(`🎯 Comparando campaña: "${decodedCampaign}" === "${value}"`, decodedCampaign === value)
+                if (decodedCampaign === value) fieldMatch = true
                 break
               case 'utm_medium':
-                console.log(`📦 Comparando adset (utm_medium): "${session.utm_medium}" === "${value}"`, session.utm_medium === value)
-                if (session.utm_medium === value) fieldMatch = true
+                // Decodificar para comparar correctamente (evitar formato +++)
+                const decodedMedium = session.utm_medium ? decodeAdName(session.utm_medium) : ''
+                console.log(`📦 Comparando adset (utm_medium): "${decodedMedium}" === "${value}"`, decodedMedium === value)
+                if (decodedMedium === value) fieldMatch = true
                 break
               case 'utm_content':
-                console.log(`📢 Comparando ad (utm_content): "${session.utm_content}" === "${value}"`, session.utm_content === value)
-                if (session.utm_content === value) fieldMatch = true
+                // Decodificar para comparar correctamente (evitar formato +++)
+                const decodedContent = session.utm_content ? decodeAdName(session.utm_content) : ''
+                console.log(`📢 Comparando ad (utm_content): "${decodedContent}" === "${value}"`, decodedContent === value)
+                if (decodedContent === value) fieldMatch = true
                 break
               case 'utm_source':
                 // Normalizar fuente con todas las prioridades para match correcto
@@ -835,8 +848,9 @@ const Analytics: React.FC = () => {
                   utm_source: session.utm_source,
                   source_platform: session.source_platform
                 })
-                console.log(`🌐 Comparando fuente: "${normalizedSource}" === "${value}"`, normalizedSource === value)
-                if (normalizedSource === value) fieldMatch = true
+                // Comparar en lowercase (platformId ahora es normalizado + lowercase)
+                console.log(`🌐 Comparando fuente: "${normalizedSource.toLowerCase()}" === "${value}"`, normalizedSource.toLowerCase() === value)
+                if (normalizedSource.toLowerCase() === value) fieldMatch = true
                 break
               case 'device_type':
                 console.log(`📱 Comparando dispositivo: "${session.device_type}" === "${value}"`, session.device_type === value)
