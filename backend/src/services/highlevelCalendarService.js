@@ -282,23 +282,29 @@ export async function getFreeSlots(calendarId, startDate, endDate, accessToken, 
  * @param {number} startTime - Timestamp inicio en milisegundos
  * @param {number} endTime - Timestamp fin en milisegundos
  * @param {string} accessToken - Token de acceso OAuth
+ * @param {string} calendarId - (Opcional) ID del calendario
  * @returns {Promise<Array>} Lista de horarios bloqueados
  */
-export async function getBlockedSlots(locationId, startTime, endTime, accessToken) {
+export async function getBlockedSlots(locationId, startTime, endTime, accessToken, calendarId = null) {
   try {
     logger.info(`[HighLevel Calendar] Obteniendo blocked slots para locationId: ${locationId}, rango: ${new Date(startTime).toISOString()} - ${new Date(endTime).toISOString()}`);
 
-    const response = await fetchWithTimeout(
-      `${GHL_API_BASE}/calendars/blocked-slots?locationId=${locationId}&startTime=${startTime}&endTime=${endTime}`,
-      {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'Version': API_VERSION,
-          'Authorization': `Bearer ${accessToken}`
-        }
+    // Construir URL con calendarId opcional
+    let url = `${GHL_API_BASE}/calendars/blocked-slots?locationId=${locationId}&startTime=${startTime}&endTime=${endTime}`;
+
+    if (calendarId) {
+      url += `&calendarId=${calendarId}`;
+      logger.info(`[HighLevel Calendar] Filtrando por calendario: ${calendarId}`);
+    }
+
+    const response = await fetchWithTimeout(url, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'Version': API_VERSION,
+        'Authorization': `Bearer ${accessToken}`
       }
-    );
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -368,40 +374,33 @@ export async function createBlockedSlot(blockData, locationId, accessToken) {
       throw new Error(`La fecha de fin debe ser posterior a la fecha de inicio`);
     }
 
-    // Si no se proporciona assignedUserId, obtener el usuario por defecto de la location
-    let assignedUserId = blockData.assignedUserId;
-
-    if (!assignedUserId) {
-      logger.info(`[HighLevel Calendar] No se proporcionó assignedUserId, obteniendo usuario por defecto del location`);
-
-      try {
-        // Usar ghlClient para obtener usuarios (ya incluye companyId)
-        const { GHLClient } = await import('./ghlClient.js');
-        const ghlClient = new GHLClient(accessToken, locationId);
-        const users = await ghlClient.getLocationUsers(locationId);
-
-        if (users && users.length > 0) {
-          // Usar el primer usuario como default
-          assignedUserId = users[0].id;
-          logger.info(`[HighLevel Calendar] Usando usuario por defecto: ${assignedUserId}`);
-        } else {
-          throw new Error('No se encontraron usuarios en el location para asignar el bloqueo');
-        }
-      } catch (userError) {
-        logger.error(`[HighLevel Calendar] Error al obtener usuario por defecto: ${userError.message}`);
-        throw new Error(`No se pudo asignar un usuario al bloqueo: ${userError.message}`);
-      }
+    // Validar que calendarId O assignedUserId estén presentes
+    if (!blockData.calendarId && !blockData.assignedUserId) {
+      throw new Error('Se requiere calendarId o assignedUserId para crear un blocked slot');
     }
 
     // Construir payload según documentación de HighLevel
+    // IMPORTANTE: HighLevel requiere EXACTAMENTE uno de estos: calendarId o assignedUserId
     const payload = {
       title: blockData.title || 'Horario bloqueado',
-      calendarId: blockData.calendarId,
-      assignedUserId: assignedUserId,
       locationId: locationId,
       startTime: blockData.startTime,
       endTime: blockData.endTime
     };
+
+    // Agregar calendarId si está presente (PRIORIDAD)
+    if (blockData.calendarId) {
+      payload.calendarId = blockData.calendarId;
+      logger.info(`[HighLevel Calendar] Usando calendarId: ${blockData.calendarId}`);
+    }
+
+    // Agregar assignedUserId si está presente
+    if (blockData.assignedUserId) {
+      payload.assignedUserId = blockData.assignedUserId;
+      logger.info(`[HighLevel Calendar] Usando assignedUserId: ${blockData.assignedUserId}`);
+    }
+
+    logger.info(`[HighLevel Calendar] Payload final: ${JSON.stringify(payload, null, 2)}`);
 
     const response = await fetchWithTimeout(
       `${GHL_API_BASE}/calendars/events/block-slots`,

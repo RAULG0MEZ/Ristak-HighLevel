@@ -194,7 +194,8 @@ export async function getBlockedSlots(req, res) {
       locationId,
       parseInt(startTime, 10),
       parseInt(endTime, 10),
-      accessToken
+      accessToken,
+      calendarId // Pasar el calendarId al servicio
     );
 
     res.json({
