@@ -1,10 +1,3 @@
-/* Sobrescribir tamaño del modal en pantallas grandes */
-@media (min-width: 1920px) {
-  :global(.backdrop) :global(.modal.lg.custom) {
-    max-width: 761px !important;
-  }
-}
-
 /* Modal Content - Tamaño moderado y responsive */
 .modalContent {
   display: flex;
