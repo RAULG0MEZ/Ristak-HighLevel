@@ -325,11 +325,9 @@ export const MetaAdsIntegration: React.FC = () => {
                 Cargando credenciales...
               </div>
             ) : (
-              <div style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                {/* Fila 1: Access Token y Ad Account (2 columnas) */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                  {/* 1. App Access Token */}
-                  <div className={styles.formField}>
+              <div style={{ marginTop: '24px', display: 'flex', flexDirection: 'column', gap: '20px', maxWidth: '600px', margin: '24px auto 0' }}>
+                {/* 1. App Access Token */}
+                <div className={styles.formField}>
                     <label className={styles.formLabel}>
                       App Access Token <span style={{ color: 'var(--color-error)' }}>*</span>
                     </label>
@@ -360,15 +358,15 @@ export const MetaAdsIntegration: React.FC = () => {
                         className={styles.formInput}
                       />
                     )}
-                    {isLoadingAccounts && (
-                      <div style={{ marginTop: '8px', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                        Cargando cuentas de anuncios...
-                      </div>
-                    )}
-                  </div>
+                  {isLoadingAccounts && (
+                    <div style={{ marginTop: '8px', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                      Cargando cuentas de anuncios...
+                    </div>
+                  )}
+                </div>
 
-                  {/* 2. Cuenta de Anuncios */}
-                  <div className={styles.formField}>
+                {/* 2. Cuenta de Anuncios */}
+                <div className={styles.formField}>
                     <label className={styles.formLabel}>
                       Cuenta de Anuncios <span style={{ color: 'var(--color-error)' }}>*</span>
                     </label>
@@ -427,13 +425,10 @@ export const MetaAdsIntegration: React.FC = () => {
                         }}
                       />
                     )}
-                  </div>
                 </div>
 
-                {/* Fila 2: Pixel ID y Pixel API Token (2 columnas) */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                  {/* 3. Pixel de Meta */}
-                  <div className={styles.formField}>
+                {/* 3. Pixel de Meta */}
+                <div className={styles.formField}>
                     <label className={styles.formLabel}>
                       Pixel de Meta <span className={styles.formHint}>(opcional)</span>
                     </label>
@@ -490,10 +485,10 @@ export const MetaAdsIntegration: React.FC = () => {
                         }}
                       />
                     )}
-                  </div>
+                </div>
 
-                  {/* 4. Pixel API Token */}
-                  <div className={styles.formField}>
+                {/* 4. Pixel API Token */}
+                <div className={styles.formField}>
                     <label className={styles.formLabel}>
                       Pixel API Token <span className={styles.formHint}>(automático)</span>
                     </label>
@@ -522,15 +517,14 @@ export const MetaAdsIntegration: React.FC = () => {
                         }}
                       />
                     )}
-                    {credentials.pixelId && (
-                      <div style={{ marginTop: '8px', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                        El token se genera automáticamente cuando guardas la configuración.
-                      </div>
-                    )}
-                  </div>
+                  {credentials.pixelId && (
+                    <div style={{ marginTop: '8px', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                      El token se genera automáticamente cuando guardas la configuración.
+                    </div>
+                  )}
                 </div>
 
-                {/* Fila 3: Page ID (ancho completo) */}
+                {/* 5. Page ID */}
                 <div className={styles.formField}>
                   <label className={styles.formLabel}>
                     Page ID de Facebook <span className={styles.formHint}>(opcional)</span>
@@ -554,7 +548,6 @@ export const MetaAdsIntegration: React.FC = () => {
                       placeholder={!credentials.accessToken && !realAccessToken ? 'Primero agrega el Access Token' : '1234567890123456'}
                       className={styles.formInput}
                       style={{
-                        maxWidth: '400px',
                         cursor: !credentials.accessToken && !realAccessToken ? 'not-allowed' : 'text',
                         opacity: !credentials.accessToken && !realAccessToken ? 0.5 : 1
                       }}
