@@ -343,6 +343,113 @@ export async function getBlockedSlots(locationId, startTime, endTime, accessToke
 }
 
 /**
+ * Crear un nuevo blocked slot (horario bloqueado)
+ * @param {Object} blockData - Datos del bloqueo
+ * @param {string} locationId - ID de la ubicación
+ * @param {string} accessToken - Token de acceso OAuth
+ * @returns {Promise<Object>} Blocked slot creado
+ */
+export async function createBlockedSlot(blockData, locationId, accessToken) {
+  try {
+    logger.info(`[HighLevel Calendar] Creando blocked slot para calendario: ${blockData.calendarId}`);
+
+    // Validaciones previas
+    const startDate = new Date(blockData.startTime);
+    const endDate = new Date(blockData.endTime);
+
+    if (isNaN(startDate.getTime())) {
+      throw new Error(`Fecha de inicio inválida: ${blockData.startTime}`);
+    }
+    if (isNaN(endDate.getTime())) {
+      throw new Error(`Fecha de fin inválida: ${blockData.endTime}`);
+    }
+
+    if (endDate <= startDate) {
+      throw new Error(`La fecha de fin debe ser posterior a la fecha de inicio`);
+    }
+
+    // Construir payload según documentación de HighLevel
+    const payload = {
+      title: blockData.title || 'Horario bloqueado',
+      calendarId: blockData.calendarId,
+      assignedUserId: blockData.assignedUserId,
+      locationId: locationId,
+      startTime: blockData.startTime,
+      endTime: blockData.endTime
+    };
+
+    const response = await fetchWithTimeout(
+      `${GHL_API_BASE}/calendars/events/block-slots`,
+      {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Version': API_VERSION,
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify(payload)
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error(`[HighLevel Calendar] Error al crear blocked slot: ${response.status} - ${errorText}`);
+      throw new Error(`Error al crear blocked slot: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    logger.info(`[HighLevel Calendar] Blocked slot creado exitosamente: ${data.id || 'N/A'}`);
+
+    return data;
+  } catch (error) {
+    logger.error(`[HighLevel Calendar] Error en createBlockedSlot: ${error.message}`);
+    throw error;
+  }
+}
+
+/**
+ * Actualizar un blocked slot existente
+ * @param {string} eventId - ID del evento/blocked slot
+ * @param {Object} updateData - Datos a actualizar
+ * @param {string} accessToken - Token de acceso OAuth
+ * @returns {Promise<Object>} Blocked slot actualizado
+ */
+export async function updateBlockedSlot(eventId, updateData, accessToken) {
+  try {
+    logger.info(`[HighLevel Calendar] Actualizando blocked slot: ${eventId}`);
+
+    const response = await fetchWithTimeout(
+      `${GHL_API_BASE}/calendars/events/block-slots/${eventId}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Version': API_VERSION,
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify(updateData)
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error(`[HighLevel Calendar] Error al actualizar blocked slot: ${response.status} - ${errorText}`);
+      throw new Error(`Error al actualizar blocked slot: ${response.status}`);
+    }
+
+    const data = await response.json();
+    logger.info(`[HighLevel Calendar] Blocked slot actualizado exitosamente: ${eventId}`);
+
+    return data;
+  } catch (error) {
+    logger.error(`[HighLevel Calendar] Error en updateBlockedSlot: ${error.message}`);
+    throw error;
+  }
+}
+
+/**
  * Crear una nueva cita en el calendario
  * @param {Object} appointmentData - Datos de la cita
  * @param {string} locationId - ID de la ubicación
@@ -575,6 +682,8 @@ export default {
   getAppointment,
   getFreeSlots,
   getBlockedSlots,
+  createBlockedSlot,
+  updateBlockedSlot,
   createAppointment,
   updateAppointment,
   updateCalendar,

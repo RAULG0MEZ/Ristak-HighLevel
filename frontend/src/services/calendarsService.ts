@@ -246,6 +246,40 @@ export const calendarsService = {
   },
 
   /**
+   * Crear un nuevo blocked slot
+   */
+  async createBlockedSlot(blockData: any, accessToken: string): Promise<any> {
+    try {
+      const data = await apiClient.post('/calendars/block-slots', {
+        ...blockData,
+        accessToken
+      });
+      return data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  /**
+   * Actualizar un blocked slot existente
+   */
+  async updateBlockedSlot(
+    eventId: string,
+    updateData: any,
+    accessToken: string
+  ): Promise<any> {
+    try {
+      const data = await apiClient.put(`/calendars/block-slots/${eventId}`, {
+        ...updateData,
+        accessToken
+      });
+      return data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  /**
    * Crear una nueva cita
    */
   async createAppointment(appointmentData: any, accessToken: string): Promise<CalendarEvent | null> {

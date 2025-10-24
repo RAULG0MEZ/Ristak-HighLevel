@@ -32,6 +32,12 @@ router.get('/:id/free-slots', calendarsController.getFreeSlots);
 // Obtener horarios bloqueados de un calendario
 router.get('/:calendarId/blocked-slots', calendarsController.getBlockedSlots);
 
+// Crear nuevo blocked slot
+router.post('/block-slots', calendarsController.createBlockedSlot);
+
+// Actualizar blocked slot existente
+router.put('/block-slots/:id', calendarsController.updateBlockedSlot);
+
 // Obtener un calendario específico
 router.get('/:id', calendarsController.getCalendar);
 

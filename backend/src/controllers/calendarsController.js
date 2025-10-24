@@ -211,6 +211,74 @@ export async function getBlockedSlots(req, res) {
 }
 
 /**
+ * POST /api/calendars/block-slots
+ * Crear un nuevo blocked slot (horario bloqueado)
+ */
+export async function createBlockedSlot(req, res) {
+  try {
+    const { accessToken, locationId, ...blockData } = req.body;
+
+    if (!accessToken) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requiere accessToken'
+      });
+    }
+
+    if (!locationId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requiere locationId'
+      });
+    }
+
+    const blockedSlot = await calendarService.createBlockedSlot(blockData, locationId, accessToken);
+
+    res.status(201).json({
+      success: true,
+      data: blockedSlot
+    });
+  } catch (error) {
+    logger.error(`[Calendars Controller] Error en createBlockedSlot: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}
+
+/**
+ * PUT /api/calendars/block-slots/:id
+ * Actualizar un blocked slot existente
+ */
+export async function updateBlockedSlot(req, res) {
+  try {
+    const { id } = req.params;
+    const { accessToken, ...updateData } = req.body;
+
+    if (!accessToken) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requiere accessToken'
+      });
+    }
+
+    const blockedSlot = await calendarService.updateBlockedSlot(id, updateData, accessToken);
+
+    res.json({
+      success: true,
+      data: blockedSlot
+    });
+  } catch (error) {
+    logger.error(`[Calendars Controller] Error en updateBlockedSlot: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}
+
+/**
  * POST /api/calendars/appointments
  * Crear una nueva cita
  */
@@ -347,6 +415,8 @@ export default {
   getAppointment,
   getFreeSlots,
   getBlockedSlots,
+  createBlockedSlot,
+  updateBlockedSlot,
   createAppointment,
   updateAppointment,
   updateCalendar,

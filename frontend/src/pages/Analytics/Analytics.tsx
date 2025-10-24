@@ -662,7 +662,8 @@ const Analytics: React.FC = () => {
 
           for (const value of values) {
             switch (field) {
-              case 'page_url':
+              case 'landing_url':  // TreeFilter usa 'landing_url' para páginas
+              case 'page_url':     // Mantener compatibilidad
                 if (session.page_url) {
                   const urlPath = session.page_url.split('?')[0]
                   const pageName = urlPath.split('/').pop() || 'home'
@@ -671,9 +672,11 @@ const Analytics: React.FC = () => {
                 }
                 break
               case 'utm_campaign':
+                console.log(`🎯 Comparando campaña: "${session.utm_campaign}" === "${value}"`, session.utm_campaign === value)
                 if (session.utm_campaign === value) fieldMatch = true
                 break
               case 'utm_content':
+                console.log(`📢 Comparando ad (utm_content): "${session.utm_content}" === "${value}"`, session.utm_content === value)
                 if (session.utm_content === value) fieldMatch = true
                 break
               case 'utm_source':
@@ -684,19 +687,25 @@ const Analytics: React.FC = () => {
                   utm_source: session.utm_source,
                   source_platform: session.source_platform
                 })
+                console.log(`🌐 Comparando fuente: "${normalizedSource}" === "${value}"`, normalizedSource === value)
                 if (normalizedSource === value) fieldMatch = true
                 break
               case 'device_type':
+                console.log(`📱 Comparando dispositivo: "${session.device_type}" === "${value}"`, session.device_type === value)
                 if (session.device_type === value) fieldMatch = true
                 break
               case 'browser':
+                console.log(`🌍 Comparando navegador: "${session.browser}" === "${value}"`, session.browser === value)
                 if (session.browser === value) fieldMatch = true
                 break
               case 'os':
+                console.log(`💻 Comparando OS: "${session.os}" === "${value}"`, session.os === value)
                 if (session.os === value) fieldMatch = true
                 break
               case 'placement':
-                if (formatPlacementName(session.placement || '') === value) fieldMatch = true
+                const placementFormatted = formatPlacementName(session.placement || '')
+                console.log(`📍 Comparando placement: "${placementFormatted}" === "${value}"`, placementFormatted === value)
+                if (placementFormatted === value) fieldMatch = true
                 break
             }
           }
