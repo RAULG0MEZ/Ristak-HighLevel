@@ -645,9 +645,15 @@ const Analytics: React.FC = () => {
 
   // Efecto para filtrar sesiones cuando cambian los filtros seleccionados
   useEffect(() => {
+    console.group('🔍 [ANALYTICS] Filtrado de Sesiones')
+    console.log('📊 Total sesiones sin filtrar:', allSessions.length)
+    console.log('🎯 Filtros seleccionados:', selectedFilters)
+
     if (Object.keys(selectedFilters).length === 0) {
+      console.log('✅ Sin filtros - Mostrando todas las sesiones')
       setSessions(allSessions)
     } else {
+      console.log('🔎 Aplicando filtros...')
       const filtered = allSessions.filter((session: Session) => {
         for (const [field, values] of Object.entries(selectedFilters)) {
           if (values.length === 0) continue
@@ -660,6 +666,7 @@ const Analytics: React.FC = () => {
                 if (session.page_url) {
                   const urlPath = session.page_url.split('?')[0]
                   const pageName = urlPath.split('/').pop() || 'home'
+                  console.log(`📄 Comparando página: "${pageName}" === "${value}"`, pageName === value)
                   if (pageName === value) fieldMatch = true
                 }
                 break
@@ -700,14 +707,27 @@ const Analytics: React.FC = () => {
         return true
       })
 
+      console.log('✅ Sesiones filtradas:', filtered.length)
+      console.log('📋 Primeras 3 sesiones filtradas:', filtered.slice(0, 3).map(s => ({
+        visitor_id: s.visitor_id,
+        contact_id: s.contact_id,
+        page_url: s.page_url,
+        utm_campaign: s.utm_campaign,
+        device_type: s.device_type
+      })))
       setSessions(filtered)
     }
+    console.groupEnd()
   }, [selectedFilters, allSessions])
 
   // Efecto para recalcular visualizaciones cuando cambien las sesiones filtradas
   useEffect(() => {
+    console.group('📊 [ANALYTICS] Recalculando Visualizaciones')
+
     // No hacer nada si allSessions está vacío (aún no se han cargado los datos iniciales)
     if (allSessions.length === 0) {
+      console.log('⏳ AllSessions vacío - esperando datos iniciales')
+      console.groupEnd()
       return
     }
 
@@ -715,7 +735,11 @@ const Analytics: React.FC = () => {
     const hasActiveFilters = Object.keys(selectedFilters).length > 0 &&
       Object.values(selectedFilters).some(arr => arr.length > 0)
 
+    console.log('🎯 Filtros activos:', hasActiveFilters)
+    console.log('📈 Sesiones a procesar:', sessions.length)
+
     if (sessions.length === 0) {
+      console.log('⚠️ No hay sesiones filtradas - Reseteando métricas')
       // Si no hay sesiones filtradas, resetear solo métricas de sesiones
       // NO resetear registros ni registrosChartData si no hay filtros (mantener originales)
       setMetrics(prev => ({
@@ -732,28 +756,46 @@ const Analytics: React.FC = () => {
       if (hasActiveFilters) {
         setRegistrosChartData([]) // Vaciar gráfico si hay filtro activo
       }
+      console.groupEnd()
       return
     }
 
     // Recalcular KPIs principales con las sesiones filtradas
+    console.log('🧮 Calculando KPIs...')
     const uniqueVids = new Set(sessions.map((s: Session) => s.visitor_id)).size
     const totalPageViews = sessions.length
 
     // Contar sesiones únicas (por session_id)
     const uniqueSessionIds = new Set(sessions.map((s: Session) => s.session_id)).size
 
+    console.log('👥 Visitantes únicos:', uniqueVids)
+    console.log('👁️ Visualizaciones de página:', totalPageViews)
+    console.log('🔑 Sesiones únicas:', uniqueSessionIds)
+
     // Registros = contactos únicos que aparecen en las sesiones filtradas
+    const sesionesConContacto = sessions.filter((s: Session) => {
+      if (!s.contact_id || !s.contact_created_at) return false
+      return new Date(s.started_at) >= new Date(s.contact_created_at)
+    })
+
+    console.log('📞 Sesiones con contact_id:', sesionesConContacto.length)
+    console.log('📋 Primeras 3 sesiones con contacto:', sesionesConContacto.slice(0, 3).map(s => ({
+      visitor_id: s.visitor_id,
+      contact_id: s.contact_id,
+      contact_created_at: s.contact_created_at,
+      started_at: s.started_at
+    })))
+
     const registrosEnSesiones = new Set(
-      sessions
-        .filter((s: Session) => {
-          if (!s.contact_id || !s.contact_created_at) return false
-          return new Date(s.started_at) >= new Date(s.contact_created_at)
-        })
-        .map((s: Session) => s.contact_id)
+      sesionesConContacto.map((s: Session) => s.contact_id)
     ).size
+
+    console.log('📝 Contactos únicos en sesiones filtradas:', registrosEnSesiones)
 
     // Si hay filtros activos, usar registrosEnSesiones; si no, mantener original
     const registrosValue = hasActiveFilters ? registrosEnSesiones : metrics.registros
+    console.log('✅ Valor final de Registros:', registrosValue, hasActiveFilters ? '(filtrado)' : '(original)')
+
     const conversionRate = uniqueVids > 0 ? ((registrosValue / uniqueVids) * 100) : 0
 
     // Usuarios recurrentes: contar visitor_ids que tienen múltiples session_ids diferentes
@@ -769,6 +811,10 @@ const Analytics: React.FC = () => {
     // Páginas por sesión = total de page_views / número de sesiones únicas
     const avgPagePerSession = uniqueSessionIds > 0 ?
       (totalPageViews / uniqueSessionIds) : 0
+
+    console.log('🔁 Usuarios recurrentes:', returningUsers)
+    console.log('📄 Páginas por sesión:', avgPagePerSession.toFixed(2))
+    console.log('🎯 Tasa de conversión:', conversionRate.toFixed(2) + '%')
 
     // Actualizar métricas (sin trends, ya que los filtros no tienen período anterior)
     setMetrics(prev => ({
@@ -806,8 +852,12 @@ const Analytics: React.FC = () => {
 
     setDailyTraffic(chartData)
 
+    console.log('📊 Gráfico de tráfico generado con', chartData.length, 'puntos')
+
     // Recalcular gráficos de registros SI hay filtros activos
     if (hasActiveFilters) {
+      console.log('📈 Recalculando gráfico de registros (filtros activos)...')
+
       // Agrupar contactos únicos por fecha de creación
       const registrosPorFecha: { [key: string]: Set<string> } = {}
 
@@ -827,6 +877,13 @@ const Analytics: React.FC = () => {
         }
       })
 
+      console.log('📅 Fechas con registros:', Object.keys(registrosPorFecha).length)
+      console.log('📋 Detalle por fecha:', Object.entries(registrosPorFecha).map(([date, contactSet]) => ({
+        fecha: date,
+        registros: contactSet.size,
+        contactos: Array.from(contactSet).slice(0, 3)
+      })))
+
       // Generar datos para el gráfico de barras (solo período actual filtrado)
       const filteredRegistrosChartData = Object.entries(registrosPorFecha)
         .sort(([a], [b]) => a.localeCompare(b))
@@ -835,6 +892,7 @@ const Analytics: React.FC = () => {
           value: contactSet.size
         }))
 
+      console.log('📊 Gráfico de barras de registros:', filteredRegistrosChartData)
       setRegistrosChartData(filteredRegistrosChartData)
 
       // Generar datos para el gráfico de conversiones (con período anterior incluido)
@@ -846,6 +904,8 @@ const Analytics: React.FC = () => {
         }))
 
       setDailyConversions(filteredConversionsData)
+    } else {
+      console.log('📊 Manteniendo gráfico de registros original (sin filtros)')
     }
     // Si NO hay filtros, mantener los datos originales (ya están seteados en el primer useEffect)
 
@@ -994,6 +1054,9 @@ const Analytics: React.FC = () => {
         requests: count
       }))
     setTopVisitors(topVisitorsList)
+
+    console.log('✅ Visualizaciones recalculadas exitosamente')
+    console.groupEnd()
   }, [sessions, selectedFilters, formatLocalDateShort])
 
   // Preparar métricas para KPICards
