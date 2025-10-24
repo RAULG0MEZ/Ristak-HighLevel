@@ -3,6 +3,7 @@ import { Card, Button } from '@/components/common'
 import { RefreshCw, Trash2 } from 'lucide-react'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useTheme } from '@/contexts/ThemeContext'
+import { useAppConfig, useIsRenderDomain } from '@/hooks'
 import { campaignsService } from '@/services/campaignsService'
 import styles from './HighLevelIntegration.module.css'
 
@@ -56,8 +57,17 @@ export const MetaAdsIntegration: React.FC = () => {
   // Estado para guardar Pixel API Token
   const [isSavingPixelToken, setIsSavingPixelToken] = useState(false)
 
+  // Estado para re-sincronización al cambiar el switch
+  const [isSyncingSnippet, setIsSyncingSnippet] = useState(false)
+
   const { showToast } = useNotification()
   const { theme } = useTheme()
+
+  // Detectar si estamos en dominio .onrender.com
+  const isRenderDomain = useIsRenderDomain()
+
+  // Switch para incluir Meta Pixel en snippet (default: true)
+  const [includeMetaPixel, setIncludeMetaPixel, savingPixelPref] = useAppConfig('include_meta_pixel', true)
 
   // Cargar credenciales al montar el componente
   useEffect(() => {
@@ -418,6 +428,39 @@ export const MetaAdsIntegration: React.FC = () => {
       showToast('error', 'Error', 'No se pudo conectar con el servidor')
     } finally {
       setIsSavingPixelToken(false)
+    }
+  }
+
+  // Toggle para incluir/excluir Meta Pixel en snippet de tracking
+  const handleToggleMetaPixel = async (newValue: boolean) => {
+    try {
+      // Guardar preferencia en DB (sistema híbrido)
+      await setIncludeMetaPixel(newValue)
+
+      // Re-sincronizar snippet automáticamente
+      setIsSyncingSnippet(true)
+      const response = await fetch('/api/tracking/configure', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        showToast(
+          'success',
+          'Snippet actualizado',
+          newValue
+            ? 'El snippet ahora incluye el Meta Pixel'
+            : 'El snippet ahora NO incluye el Meta Pixel'
+        )
+      } else {
+        showToast('error', 'Error', data.error || 'No se pudo sincronizar el snippet')
+      }
+    } catch (error) {
+      showToast('error', 'Error', 'No se pudo actualizar el snippet')
+    } finally {
+      setIsSyncingSnippet(false)
     }
   }
 
@@ -793,6 +836,53 @@ export const MetaAdsIntegration: React.FC = () => {
                         1. Ve a <a href="https://business.facebook.com/events_manager2" target="_blank" rel="noopener noreferrer" className={styles.link}>Events Manager</a><br />
                         2. Selecciona tu Pixel → Settings → Conversions API<br />
                         3. Click en "Generate Access Token" → Copia y pega aquí
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Switch para incluir Meta Pixel en snippet - SOLO si hay pixel configurado y dominio personalizado */}
+                {credentials.pixelId && !isRenderDomain && (
+                  <div className={styles.formGroup} style={{ marginTop: '32px', paddingTop: '32px', borderTop: '1px solid var(--color-border)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                      <div>
+                        <label className={styles.formLabel} style={{ marginBottom: '4px' }}>
+                          Incluir Meta Pixel en snippet de tracking
+                        </label>
+                        <p className={styles.formHint} style={{ margin: 0, fontSize: '0.875rem' }}>
+                          Cuando activo, el snippet de Web Tracking incluirá automáticamente el código del Meta Pixel
+                        </p>
+                      </div>
+                      <label className={styles.switchContainer}>
+                        <input
+                          type="checkbox"
+                          checked={includeMetaPixel === true}
+                          onChange={(e) => handleToggleMetaPixel(e.target.checked)}
+                          disabled={isSyncingSnippet || savingPixelPref}
+                          className={styles.switchInput}
+                        />
+                        <span className={styles.switchSlider}></span>
+                      </label>
+                    </div>
+                    {isSyncingSnippet && (
+                      <div style={{
+                        marginTop: '12px',
+                        padding: '12px',
+                        background: 'var(--color-warning-bg)',
+                        border: '1px solid var(--color-warning)',
+                        borderRadius: '6px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                      }}>
+                        <RefreshCw size={16} className={styles.spinning} />
+                        <span style={{ fontSize: '0.875rem' }}>Sincronizando snippet...</span>
+                      </div>
+                    )}
+                    <div className={styles.infoBox} style={{ marginTop: '12px' }}>
+                      <p style={{ margin: 0, fontSize: '12px' }}>
+                        <strong>💡 ¿Qué hace esto?</strong><br />
+                        Si está activo, cuando sincronices el snippet de Web Tracking, automáticamente incluirá el código del Meta Pixel junto con el tracking de Ristak. Así solo necesitas un snippet para ambos.
                       </p>
                     </div>
                   </div>

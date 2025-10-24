@@ -1034,13 +1034,20 @@ export async function configureTracking(req, res) {
     const metaConfig = await db.get('SELECT pixel_id FROM meta_config LIMIT 1')
     const hasMetaPixel = metaConfig && metaConfig.pixel_id
 
+    // Leer preferencia del usuario: ¿quiere incluir Meta Pixel en el snippet?
+    // Default: true (ON por default)
+    const includeMetaPixelPref = await getAppConfig('include_meta_pixel')
+    const includeMetaPixel = includeMetaPixelPref === null || includeMetaPixelPref === undefined
+      ? true // Default: ON
+      : (includeMetaPixelPref === '1' || includeMetaPixelPref === 1 || includeMetaPixelPref === true || includeMetaPixelPref === 'true')
+
     // Generar el snippet con versión para evitar cache
     const SNIPPET_VERSION = '8' // Incrementar cuando cambies el código del snippet
     let snippet = `<!-- Pixel de Tracking Ristak -->
 <script async src="https://${trackingDomain}/snip.js?v=${SNIPPET_VERSION}"></script>`
 
-    // Si hay Meta Pixel configurado, agregar el código del pixel
-    if (hasMetaPixel) {
+    // Si hay Meta Pixel configurado Y el usuario quiere incluirlo, agregar el código del pixel
+    if (hasMetaPixel && includeMetaPixel) {
       logger.info(`Agregando Meta Pixel (${metaConfig.pixel_id}) al snippet`)
       snippet += `
 
@@ -1063,7 +1070,16 @@ src="https://www.facebook.com/tr?id=${metaConfig.pixel_id}&ev=PageView&noscript=
 <!-- End Meta Pixel Code -->`
     }
 
-    logger.info(`Configurando tracking en HighLevel para dominio: ${trackingDomain}${hasMetaPixel ? ' (con Meta Pixel)' : ''}`)
+    // Log informativo
+    let logMsg = `Configurando tracking en HighLevel para dominio: ${trackingDomain}`
+    if (hasMetaPixel && includeMetaPixel) {
+      logMsg += ` (con Meta Pixel ${metaConfig.pixel_id})`
+    } else if (hasMetaPixel && !includeMetaPixel) {
+      logMsg += ` (Meta Pixel disponible pero DESACTIVADO por preferencia del usuario)`
+    } else {
+      logMsg += ` (sin Meta Pixel configurado)`
+    }
+    logger.info(logMsg)
 
     // Primero verificar si el custom value ya existe
     try {

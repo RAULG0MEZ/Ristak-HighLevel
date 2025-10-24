@@ -1650,32 +1650,45 @@ export const saveAndSyncMeta = async (req, res) => {
     // 8. Si tenemos dominio personalizado (NO estamos en .onrender.com), sincronizar snippet automáticamente
     const isRenderDomain = req.headers.host?.includes('onrender.com')
     if (!isRenderDomain && req.headers.host && pixelId) {
-      logger.info(`Dominio personalizado detectado (${req.headers.host}), sincronizando snippet con Meta Pixel ${pixelId}...`)
+      // Leer preferencia del usuario: ¿quiere incluir Meta Pixel en el snippet?
+      // Default: true (ON por default)
+      const { getAppConfig } = await import('../config/database.js')
+      const includeMetaPixelPref = await getAppConfig('include_meta_pixel')
+      const includeMetaPixel = includeMetaPixelPref === null || includeMetaPixelPref === undefined
+        ? true // Default: ON
+        : (includeMetaPixelPref === '1' || includeMetaPixelPref === 1 || includeMetaPixelPref === true || includeMetaPixelPref === 'true')
 
-      // Importar la función de configuración de tracking
-      const { configureTracking } = await import('./trackingController.js')
+      if (includeMetaPixel) {
+        logger.info(`Dominio personalizado detectado (${req.headers.host}), sincronizando snippet con Meta Pixel ${pixelId}...`)
 
-      // Crear un objeto de respuesta temporal (no queremos esperar ni que falle si hay error)
-      const tempRes = {
-        json: (data) => {
-          if (data.success) {
-            logger.info('✅ Snippet sincronizado automáticamente con Meta Pixel incluido')
-          } else {
-            logger.warn(`⚠️ No se pudo sincronizar snippet: ${data.error || 'unknown'}`)
+        // Importar la función de configuración de tracking
+        const { configureTracking } = await import('./trackingController.js')
+
+        // Crear un objeto de respuesta temporal (no queremos esperar ni que falle si hay error)
+        const tempRes = {
+          json: (data) => {
+            if (data.success) {
+              logger.info('✅ Snippet sincronizado automáticamente con Meta Pixel incluido')
+            } else {
+              logger.warn(`⚠️ No se pudo sincronizar snippet: ${data.error || 'unknown'}`)
+            }
+          },
+          status: (code) => {
+            if (code !== 200) {
+              logger.warn(`⚠️ Sincronización de snippet retornó status ${code}`)
+            }
+            return tempRes
           }
-        },
-        status: (code) => {
-          if (code !== 200) {
-            logger.warn(`⚠️ Sincronización de snippet retornó status ${code}`)
-          }
-          return tempRes
         }
-      }
 
-      // Ejecutar en background (no bloquear la respuesta)
-      configureTracking(req, tempRes).catch(err => {
-        logger.warn(`⚠️ Error sincronizando snippet automáticamente: ${err.message}`)
-      })
+        // Ejecutar en background (no bloquear la respuesta)
+        configureTracking(req, tempRes).catch(err => {
+          logger.warn(`⚠️ Error sincronizando snippet automáticamente: ${err.message}`)
+        })
+      } else {
+        logger.info(`Usuario configuró Meta Pixel (${pixelId}) pero tiene DESACTIVADA la inclusión en snippet (include_meta_pixel = false)`)
+        logger.info('NO se auto-sincronizará el snippet. El usuario puede activar el switch en Settings → Meta Ads')
+      }
     } else if (isRenderDomain) {
       logger.info('Dominio .onrender.com detectado, NO sincronizando snippet (requiere dominio personalizado)')
     } else if (!pixelId) {
