@@ -630,6 +630,7 @@ export const Appointments: React.FC = () => {
       timeZone: selectedCalendar?.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
       title: selectedCalendar?.eventTitle || ''
     });
+    setCreateScheduleMode('custom'); // Doble click en día usa modo personalizado
     setIsCreateModalOpen(true);
   };
 
@@ -978,6 +979,7 @@ export const Appointments: React.FC = () => {
       timeZone: selectedCalendar.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
       title: selectedCalendar.eventTitle || ''
     });
+    setCreateScheduleMode('custom'); // Selección de tiempo usa modo personalizado
     setIsCreateModalOpen(true);
   }, [isSelecting, selectionStart, selectionEnd, selectedCalendar]);
 
@@ -1015,6 +1017,7 @@ export const Appointments: React.FC = () => {
       timeZone: selectedCalendar?.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
       title: selectedCalendar?.eventTitle || ''
     });
+    setCreateScheduleMode('custom'); // Doble click en hora usa modo personalizado
     setIsCreateModalOpen(true);
   };
 
@@ -1928,6 +1931,7 @@ export const Appointments: React.FC = () => {
         defaultEnd={createDefaults.end}
         defaultTimeZone={createDefaults.timeZone}
         defaultTitle={createDefaults.title}
+        defaultScheduleMode={createScheduleMode}
         accessToken={accessToken}
         locationId={locationId}
         onSave={handleCreateAppointment}
