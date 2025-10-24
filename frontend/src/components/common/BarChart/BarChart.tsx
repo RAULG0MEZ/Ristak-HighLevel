@@ -29,7 +29,15 @@ export const BarChart: React.FC<BarChartProps> = ({
   formatTooltip = (value) => value.toString(),
   formatXAxis = (value) => value
 }) => {
+  console.log('📈 [BarChart] Renderizando con datos:', {
+    dataLength: data?.length || 0,
+    loading,
+    data: data,
+    diasConDatos: data?.filter(d => d.value > 0).length || 0
+  })
+
   if (loading) {
+    console.log('⏳ [BarChart] Mostrando estado de carga')
     return (
       <div className={styles.loadingContainer} style={{ height }}>
         <div className={styles.loadingSpinner} />
@@ -38,12 +46,15 @@ export const BarChart: React.FC<BarChartProps> = ({
   }
 
   if (!data || data.length === 0) {
+    console.log('❌ [BarChart] Sin datos, mostrando mensaje vacío')
     return (
       <div className={styles.emptyContainer} style={{ height }}>
         <p className={styles.emptyMessage}>No hay datos disponibles para el período seleccionado</p>
       </div>
     )
   }
+
+  console.log('✅ [BarChart] Renderizando gráfico con', data.length, 'puntos de datos')
 
   return (
     <div className={styles.container} style={{ height }}>
