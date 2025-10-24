@@ -176,7 +176,7 @@ export const BarChart: React.FC<BarChartProps> = ({
                       opacity={isActive ? 1 : 0.9}
                       style={{
                         transition: 'opacity 150ms ease-out',
-                        cursor: hasValue ? 'pointer' : 'default'
+                        cursor: 'default'
                       }}
                     />
                     {/* Área interactiva invisible SOLO si hay valor */}
@@ -189,7 +189,7 @@ export const BarChart: React.FC<BarChartProps> = ({
                         fill="transparent"
                         data-chart-index={index}
                         data-chart-interactive="true"
-                        style={{ pointerEvents: 'auto', cursor: 'crosshair' }}
+                        style={{ pointerEvents: 'auto', cursor: 'default' }}
                       />
                     )}
                   </g>
