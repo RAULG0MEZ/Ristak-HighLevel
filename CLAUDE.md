@@ -802,9 +802,26 @@ git log -1
 
 ## 📅 ÚLTIMA ACTUALIZACIÓN
 
-**Fecha**: 2025-10-19
-**Versión**: 1.23.0
+**Fecha**: 2025-10-24
+**Versión**: 1.23.1
 **Últimos cambios críticos**:
+- **Fix: Etiquetas personalizadas en Reports (Métricas) (2025-10-24)**
+  - **Problema detectado**: La página de Reports mostraba "Clientes" y "Transacciones por Cliente" hardcodeados, sin reflejar personalizaciones
+  - **Impacto**: Si un usuario renombraba "Cliente" → "Paciente", los labels en Reports no se actualizaban
+  - **Fix aplicado** (3 ubicaciones):
+    - Línea 695: `title: 'Clientes'` → `title: labels.customers` (título de tarjeta de métricas)
+    - Línea 701: `'Transacciones por Cliente'` → `` `Transacciones por ${labels.customer}` `` (item de métrica)
+    - Línea 708: `label="Clientes Nuevos"` → `label={\`${labels.customers} Nuevos\`}` (etiqueta de gráfico)
+  - **Verificado**:
+    - ✅ Columnas de tabla ya usaban `labels.leads` correctamente (línea 1177)
+    - ✅ Columnas de conversión ya usaban `labels.leads` correctamente (líneas 1308, 1317)
+    - ✅ Dashboard.tsx: No tiene problemas, usa labels.leads correctamente
+    - ✅ ContactDetailsModal.tsx: Usa labels.customer y labels.lead en badges
+  - **Resultado**: Ahora todos los labels en Reports se actualizan automáticamente cuando el usuario personaliza las etiquetas
+  - **Archivos modificados**:
+    - `frontend/src/pages/Reports/Reports.tsx`: 3 cambios
+    - `frontend/src/components/common/ContactDetailsModal/ContactDetailsModal.tsx`: Verificado (sin cambios necesarios)
+
 - **Feature: Detección de Discrepancias de Timezone (2025-10-19)**
   - **Nueva funcionalidad**: Frontend detecta y alerta cuando hay diferencias de timezone entre Meta y HighLevel
   - **Hook personalizado**: `useMetaTimezone()`
