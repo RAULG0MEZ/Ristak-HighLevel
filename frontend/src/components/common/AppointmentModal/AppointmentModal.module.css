@@ -5,6 +5,15 @@
   width: 100%;
   max-width: 1000px; /* Aumentado para acomodar 2 columnas cómodamente */
   margin: 0 auto;
+  padding: 2rem 2.5rem; /* Padding interno para que no toque los bordes */
+}
+
+/* En pantallas grandes, aumentar padding y ancho máximo */
+@media (min-width: 1920px) {
+  .container {
+    max-width: 1200px;
+    padding: 2.5rem 3rem;
+  }
 }
 
 .summary {
@@ -120,10 +129,16 @@
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
-  padding: 1.5rem;
+  padding: 1.75rem 2rem;
   background: var(--color-background-secondary);
   border-radius: var(--radius-lg);
   border: 1px solid var(--color-border);
+}
+
+@media (min-width: 1920px) {
+  .leftColumn {
+    padding: 2rem 2.5rem;
+  }
 }
 
 .rightColumn {
