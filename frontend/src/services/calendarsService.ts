@@ -117,6 +117,14 @@ export interface FreeSlot {
   slots: string[];
 }
 
+export interface BlockedSlot {
+  date: string;        // YYYY-MM-DD
+  startTime: string;   // HH:mm
+  endTime: string;     // HH:mm
+  reason?: string;
+  blockedBy?: string;
+}
+
 /**
  * Servicio para manejar Calendarios de HighLevel
  */
@@ -205,6 +213,31 @@ export const calendarsService = {
     try {
       const data = await apiClient.get<FreeSlot[]>(`/calendars/${calendarId}/free-slots`, {
         params: { startDate, endDate, timezone, accessToken }
+      });
+      return Array.isArray(data) ? data : [];
+    } catch (error) {
+      return [];
+    }
+  },
+
+  /**
+   * Obtener horarios bloqueados de un calendario
+   */
+  async getBlockedSlots(
+    calendarId: string,
+    locationId: string,
+    startTime: number,
+    endTime: number,
+    accessToken: string
+  ): Promise<BlockedSlot[]> {
+    try {
+      const data = await apiClient.get<BlockedSlot[]>(`/calendars/${calendarId}/blocked-slots`, {
+        params: {
+          locationId,
+          startTime: startTime.toString(),
+          endTime: endTime.toString(),
+          accessToken
+        }
       });
       return Array.isArray(data) ? data : [];
     } catch (error) {

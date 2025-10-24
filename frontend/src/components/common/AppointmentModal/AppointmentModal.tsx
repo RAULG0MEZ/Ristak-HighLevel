@@ -5,7 +5,7 @@ import { Button } from '../Button';
 import { TabList } from '../TabList';
 import { DateTimePicker } from '../DateTimePicker';
 import { CustomSelect } from '../CustomSelect';
-import { CalendarEvent, Calendar, calendarsService, FreeSlot } from '@/services/calendarsService';
+import { CalendarEvent, Calendar, calendarsService, FreeSlot, BlockedSlot } from '@/services/calendarsService';
 import { useNotification } from '@/contexts/NotificationContext';
 import { useTimezone } from '@/contexts/TimezoneContext';
 import { normalizeSearchText } from '@/utils/format';
@@ -622,6 +622,62 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
     }
   }, [event, isOpen, isCreateMode, defaultStart, defaultEnd, defaultTimeZone, defaultTitle]);
 
+  /**
+   * Verificar si el horario seleccionado está bloqueado
+   */
+  const checkIfTimeIsBlocked = async (startTime: string, endTime: string): Promise<BlockedSlot | null> => {
+    if (!calendar || !accessToken || !locationId) return null;
+
+    try {
+      // Obtener la fecha del horario seleccionado
+      const startDate = new Date(startTime);
+      const dateKey = startDate.toISOString().split('T')[0];
+      const startHour = startDate.getHours();
+      const startMinute = startDate.getMinutes();
+      const startTimeStr = `${String(startHour).padStart(2, '0')}:${String(startMinute).padStart(2, '0')}`;
+
+      const endDate = new Date(endTime);
+      const endHour = endDate.getHours();
+      const endMinute = endDate.getMinutes();
+      const endTimeStr = `${String(endHour).padStart(2, '0')}:${String(endMinute).padStart(2, '0')}`;
+
+      // Obtener blocked slots del día
+      const dayStart = new Date(startDate);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(startDate);
+      dayEnd.setHours(23, 59, 59, 999);
+
+      const blockedSlots = await calendarsService.getBlockedSlots(
+        calendar.id,
+        locationId,
+        dayStart.getTime(),
+        dayEnd.getTime(),
+        accessToken
+      );
+
+      // Verificar si hay conflicto con algún blocked slot
+      for (const slot of blockedSlots) {
+        if (slot.date !== dateKey) continue;
+
+        // Comparar horarios (formato "HH:mm")
+        const slotStart = slot.startTime;
+        const slotEnd = slot.endTime;
+
+        // Verificar si hay solapamiento
+        // El evento está bloqueado si:
+        // - Empieza antes del fin del slot Y termina después del inicio del slot
+        if (startTimeStr < slotEnd && endTimeStr > slotStart) {
+          return slot; // Hay conflicto
+        }
+      }
+
+      return null; // No hay conflicto
+    } catch (error) {
+      // Si hay error al cargar blocked slots, permitir la creación (silencioso)
+      return null;
+    }
+  };
+
   const handleSave = async () => {
     try {
       setIsSaving(true);
@@ -641,6 +697,25 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
           showToast('error', 'Team member requerido', 'Para calendarios Round Robin debes seleccionar un team member');
           setIsSaving(false);
           return;
+        }
+
+        // Validación: verificar si el horario está bloqueado
+        if (formData.startTime && formData.endTime) {
+          const startIso = convertLocalInputToISO(formData.startTime, formData.timeZone);
+          const endIso = convertLocalInputToISO(formData.endTime, formData.timeZone);
+
+          if (startIso && endIso) {
+            const blockedSlot = await checkIfTimeIsBlocked(startIso, endIso);
+            if (blockedSlot) {
+              showToast(
+                'error',
+                'Horario bloqueado',
+                `Este horario no está disponible. ${blockedSlot.reason ? `Razón: ${blockedSlot.reason}` : 'Por favor selecciona otro horario.'}`
+              );
+              setIsSaving(false);
+              return;
+            }
+          }
         }
 
         // Modo crear: enviar payload completo
@@ -674,6 +749,31 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
       } else {
         // Modo editar: enviar updates con eventId
         if (!event) return;
+
+        // Validación: verificar si el horario está bloqueado (solo si se cambió el horario)
+        if (formData.startTime && formData.endTime) {
+          const startIso = convertLocalInputToISO(formData.startTime, formData.timeZone);
+          const endIso = convertLocalInputToISO(formData.endTime, formData.timeZone);
+
+          if (startIso && endIso) {
+            // Solo validar si el horario cambió respecto al original
+            const originalStart = event.startTime;
+            const originalEnd = event.endTime;
+
+            if (startIso !== originalStart || endIso !== originalEnd) {
+              const blockedSlot = await checkIfTimeIsBlocked(startIso, endIso);
+              if (blockedSlot) {
+                showToast(
+                  'error',
+                  'Horario bloqueado',
+                  `Este horario no está disponible. ${blockedSlot.reason ? `Razón: ${blockedSlot.reason}` : 'Por favor selecciona otro horario.'}`
+                );
+                setIsSaving(false);
+                return;
+              }
+            }
+          }
+        }
 
         const updates: Partial<CalendarEvent> = {
           title: formData.title.trim(),

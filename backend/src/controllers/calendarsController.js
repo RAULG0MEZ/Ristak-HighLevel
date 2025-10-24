@@ -175,6 +175,42 @@ export async function getFreeSlots(req, res) {
 }
 
 /**
+ * GET /api/calendars/:calendarId/blocked-slots
+ * Obtener horarios bloqueados de un calendario
+ */
+export async function getBlockedSlots(req, res) {
+  try {
+    const { calendarId } = req.params;
+    const { locationId, startTime, endTime, accessToken } = req.query;
+
+    if (!locationId || !startTime || !endTime || !accessToken) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requiere locationId, startTime, endTime y accessToken'
+      });
+    }
+
+    const blockedSlots = await calendarService.getBlockedSlots(
+      locationId,
+      parseInt(startTime, 10),
+      parseInt(endTime, 10),
+      accessToken
+    );
+
+    res.json({
+      success: true,
+      data: blockedSlots
+    });
+  } catch (error) {
+    logger.error(`[Calendars Controller] Error en getBlockedSlots: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}
+
+/**
  * POST /api/calendars/appointments
  * Crear una nueva cita
  */
@@ -310,6 +346,7 @@ export default {
   getEvents,
   getAppointment,
   getFreeSlots,
+  getBlockedSlots,
   createAppointment,
   updateAppointment,
   updateCalendar,

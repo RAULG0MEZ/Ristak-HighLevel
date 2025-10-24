@@ -7,7 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useNotification } from '@/contexts/NotificationContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAppConfig } from '@/hooks';
-import { calendarsService, type Calendar, type CalendarEvent, type AppointmentStats } from '@/services/calendarsService';
+import { calendarsService, type Calendar, type CalendarEvent, type AppointmentStats, type BlockedSlot } from '@/services/calendarsService';
 import { formatTime12h } from '@/utils/format'
 import { useTimezone } from '@/contexts/TimezoneContext';
 import styles from './Appointments.module.css';
@@ -120,6 +120,7 @@ export const Appointments: React.FC = () => {
   const [calendars, setCalendars] = useState<Calendar[]>([]);
   const [selectedCalendar, setSelectedCalendar] = useState<Calendar | null>(null);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [blockedSlots, setBlockedSlots] = useState<BlockedSlot[]>([]);
   const [upcomingEvents, setUpcomingEvents] = useState<CalendarEvent[]>([]); // Eventos próximos desde HOY
   const [stats, setStats] = useState<AppointmentStats>({
     pending: 0,
@@ -331,6 +332,29 @@ export const Appointments: React.FC = () => {
     }
   }, [locationId, accessToken, selectedCalendar]);
 
+  // Cargar horarios bloqueados del calendario
+  const loadBlockedSlots = useCallback(async () => {
+    if (!locationId || !accessToken || !selectedCalendar) return;
+
+    try {
+      // Usar el mismo rango de fechas que loadEvents
+      const { startTime, endTime } = getDateRange();
+
+      const blockedSlotsData = await calendarsService.getBlockedSlots(
+        selectedCalendar.id,
+        locationId,
+        startTime,
+        endTime,
+        accessToken
+      );
+
+      setBlockedSlots(blockedSlotsData);
+    } catch (error) {
+      // Error silencioso - si falla, simplemente no se muestran blocked slots
+      setBlockedSlots([]);
+    }
+  }, [locationId, accessToken, selectedCalendar, getDateRange]);
+
   // useEffects - ejecutar después de declarar las funciones
   // Cargar calendarios al montar (incluye defaultCalendarId para reaccionar a cambios de configuración)
   useEffect(() => {
@@ -343,8 +367,9 @@ export const Appointments: React.FC = () => {
   useEffect(() => {
     if (selectedCalendar && locationId && accessToken) {
       loadEvents();
+      loadBlockedSlots(); // Cargar blocked slots en paralelo
     }
-  }, [selectedCalendar, currentDate, viewMode, locationId, accessToken, loadEvents]);
+  }, [selectedCalendar, currentDate, viewMode, locationId, accessToken, loadEvents, loadBlockedSlots]);
 
   // Cargar próximas citas solo cuando cambie el calendario seleccionado
   useEffect(() => {
@@ -387,6 +412,18 @@ export const Appointments: React.FC = () => {
 
   // Eventos agrupados por fecha para reutilizar en todas las vistas
   const eventsByDate = useMemo(() => calendarsService.groupEventsByDate(events), [events]);
+
+  // Agrupar blocked slots por fecha
+  const blockedSlotsByDate = useMemo(() => {
+    const grouped: Record<string, BlockedSlot[]> = {};
+    blockedSlots.forEach(slot => {
+      if (!grouped[slot.date]) {
+        grouped[slot.date] = [];
+      }
+      grouped[slot.date].push(slot);
+    });
+    return grouped;
+  }, [blockedSlots]);
 
   // Generar celdas del calendario mensual (SIEMPRE 4 semanas = 28 días)
   const monthCells = useMemo((): DayCell[] => {
@@ -1034,6 +1071,19 @@ export const Appointments: React.FC = () => {
                           {cell.events.length > 3 && (
                             <div className={styles.eventMore}>+{cell.events.length - 3} más</div>
                           )}
+                          {/* Indicador de slots bloqueados */}
+                          {(() => {
+                            const dateKey = cell.date.toISOString().split('T')[0];
+                            const dayBlockedSlots = blockedSlotsByDate[dateKey] || [];
+                            if (dayBlockedSlots.length > 0) {
+                              return (
+                                <div className={styles.blockedSlotsIndicator} title={`${dayBlockedSlots.length} horario${dayBlockedSlots.length > 1 ? 's' : ''} bloqueado${dayBlockedSlots.length > 1 ? 's' : ''}`}>
+                                  🔒 {dayBlockedSlots.length} bloqueado{dayBlockedSlots.length > 1 ? 's' : ''}
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
                         </div>
                       </div>
                     );
@@ -1180,6 +1230,43 @@ export const Appointments: React.FC = () => {
                           );
                         })}
 
+                        {/* Blocked slots posicionados */}
+                        {(() => {
+                          const dateKey = date.toISOString().split('T')[0];
+                          const dayBlockedSlots = blockedSlotsByDate[dateKey] || [];
+
+                          return dayBlockedSlots.map((slot, idx) => {
+                            // Parsear startTime y endTime (formato "HH:mm")
+                            const [startHour, startMinute] = slot.startTime.split(':').map(Number);
+                            const [endHour, endMinute] = slot.endTime.split(':').map(Number);
+                            const startHourDecimal = startHour + startMinute / 60;
+                            const endHourDecimal = endHour + endMinute / 60;
+                            const top = (startHourDecimal / 24) * 100;
+                            const height = ((endHourDecimal - startHourDecimal) / 24) * 100;
+
+                            return (
+                              <div
+                                key={`blocked-${idx}`}
+                                className={styles.blockedSlot}
+                                style={{
+                                  top: `${top}%`,
+                                  height: `${height}%`
+                                }}
+                                title={`Bloqueado: ${slot.reason || 'No disponible'}`}
+                              >
+                                <div className={styles.blockedSlotLabel}>
+                                  🔒 {slot.startTime} - {slot.endTime}
+                                </div>
+                                {slot.reason && (
+                                  <div className={styles.blockedSlotReason}>
+                                    {slot.reason}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          });
+                        })()}
+
                         {/* Indicador de hora actual */}
                         {(() => {
                           const now = new Date();
@@ -1301,6 +1388,45 @@ export const Appointments: React.FC = () => {
                           <div className={styles.dayEventTitle}>{displayTitle}</div>
                           {displayDescription && (
                             <div className={styles.dayEventDescription}>{displayDescription}</div>
+                          )}
+                        </div>
+                      );
+                    });
+                  })()}
+
+                  {/* Blocked slots del día */}
+                  {(() => {
+                    const dateKey = currentDate.toISOString().split('T')[0];
+                    const dayBlockedSlots = blockedSlotsByDate[dateKey] || [];
+
+                    return dayBlockedSlots.map((slot, idx) => {
+                      // Parsear startTime y endTime (formato "HH:mm")
+                      const [startHour, startMinute] = slot.startTime.split(':').map(Number);
+                      const [endHour, endMinute] = slot.endTime.split(':').map(Number);
+                      const totalMinutesInDay = 24 * 60;
+                      const startMinutes = startHour * 60 + startMinute;
+                      const endMinutes = endHour * 60 + endMinute;
+                      const durationMinutes = endMinutes - startMinutes;
+                      const top = (startMinutes / totalMinutesInDay) * 100;
+                      const height = (durationMinutes / totalMinutesInDay) * 100;
+
+                      return (
+                        <div
+                          key={`blocked-${idx}`}
+                          className={styles.blockedSlot}
+                          style={{
+                            top: `${top}%`,
+                            height: `${height}%`
+                          }}
+                          title={`Bloqueado: ${slot.reason || 'No disponible'}`}
+                        >
+                          <div className={styles.blockedSlotLabel}>
+                            🔒 {slot.startTime} - {slot.endTime}
+                          </div>
+                          {slot.reason && (
+                            <div className={styles.blockedSlotReason}>
+                              {slot.reason}
+                            </div>
                           )}
                         </div>
                       );

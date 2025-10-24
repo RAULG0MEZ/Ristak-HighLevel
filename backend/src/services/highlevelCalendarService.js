@@ -277,6 +277,72 @@ export async function getFreeSlots(calendarId, startDate, endDate, accessToken, 
 }
 
 /**
+ * Obtener horarios bloqueados de un calendario
+ * @param {string} locationId - ID de la ubicación
+ * @param {number} startTime - Timestamp inicio en milisegundos
+ * @param {number} endTime - Timestamp fin en milisegundos
+ * @param {string} accessToken - Token de acceso OAuth
+ * @returns {Promise<Array>} Lista de horarios bloqueados
+ */
+export async function getBlockedSlots(locationId, startTime, endTime, accessToken) {
+  try {
+    logger.info(`[HighLevel Calendar] Obteniendo blocked slots para locationId: ${locationId}, rango: ${new Date(startTime).toISOString()} - ${new Date(endTime).toISOString()}`);
+
+    const response = await fetchWithTimeout(
+      `${GHL_API_BASE}/calendars/blocked-slots?locationId=${locationId}&startTime=${startTime}&endTime=${endTime}`,
+      {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Version': API_VERSION,
+          'Authorization': `Bearer ${accessToken}`
+        }
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error(`[HighLevel Calendar] Error al obtener blocked slots: ${response.status} - ${errorText}`);
+      throw new Error(`Error al obtener blocked slots: ${response.status}`);
+    }
+
+    const data = await response.json();
+    logger.info(`[HighLevel Calendar] Blocked slots obtenidos exitosamente`);
+
+    // La API de HighLevel puede devolver diferentes formatos
+    // Normalizar la respuesta a un array consistente
+    const blockedSlots = data.blockedSlots || data.slots || [];
+
+    // Transformar a formato estándar si es necesario
+    const normalizedSlots = blockedSlots.map(slot => {
+      // Si el slot ya tiene el formato correcto, devolverlo tal cual
+      if (slot.date && slot.startTime && slot.endTime) {
+        return slot;
+      }
+
+      // Si viene en formato timestamp, convertir
+      const slotDate = new Date(slot.slot || slot.startTime);
+      const slotEndDate = new Date(slot.endTime || slotDate.getTime() + 30 * 60 * 1000); // +30 min por defecto
+
+      return {
+        date: slotDate.toISOString().split('T')[0], // YYYY-MM-DD
+        startTime: slotDate.toTimeString().slice(0, 5), // HH:mm
+        endTime: slotEndDate.toTimeString().slice(0, 5), // HH:mm
+        reason: slot.reason || slot.title || 'Bloqueado',
+        blockedBy: slot.blockedBy || slot.userId || null
+      };
+    });
+
+    logger.info(`[HighLevel Calendar] ${normalizedSlots.length} horarios bloqueados encontrados`);
+
+    return normalizedSlots;
+  } catch (error) {
+    logger.error(`[HighLevel Calendar] Error en getBlockedSlots: ${error.message}`);
+    throw error;
+  }
+}
+
+/**
  * Crear una nueva cita en el calendario
  * @param {Object} appointmentData - Datos de la cita
  * @param {string} locationId - ID de la ubicación
@@ -508,6 +574,7 @@ export default {
   getCalendarEvents,
   getAppointment,
   getFreeSlots,
+  getBlockedSlots,
   createAppointment,
   updateAppointment,
   updateCalendar,

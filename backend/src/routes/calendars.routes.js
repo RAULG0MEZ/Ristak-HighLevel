@@ -29,6 +29,9 @@ router.delete('/events/:id', calendarsController.deleteEvent);
 // Obtener slots disponibles de un calendario específico
 router.get('/:id/free-slots', calendarsController.getFreeSlots);
 
+// Obtener horarios bloqueados de un calendario
+router.get('/:calendarId/blocked-slots', calendarsController.getBlockedSlots);
+
 // Obtener un calendario específico
 router.get('/:id', calendarsController.getCalendar);
 
