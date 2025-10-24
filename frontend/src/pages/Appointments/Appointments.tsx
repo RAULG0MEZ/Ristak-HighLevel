@@ -381,7 +381,8 @@ export const Appointments: React.FC = () => {
   useEffect(() => {
     if (selectedCalendar && locationId && accessToken) {
       loadEvents();
-      loadBlockedSlots(); // Cargar blocked slots en paralelo
+      // DESACTIVADO TEMPORALMENTE - Blocked Slots
+      // loadBlockedSlots();
     }
   }, [selectedCalendar, currentDate, viewMode, locationId, accessToken, loadEvents, loadBlockedSlots]);
 
@@ -982,6 +983,7 @@ export const Appointments: React.FC = () => {
                 <Plus size={16} />
                 <span className={styles.buttonText}>Programar</span>
               </Button>
+              {/* DESACTIVADO TEMPORALMENTE - Blocked Slots
               <Button
                 variant="secondary"
                 onClick={handleOpenCreateBlockedSlot}
@@ -990,6 +992,7 @@ export const Appointments: React.FC = () => {
                 <Lock size={16} />
                 <span className={styles.buttonText}>Bloquear</span>
               </Button>
+              */}
             </div>
 
             <TabList
@@ -1181,7 +1184,7 @@ export const Appointments: React.FC = () => {
                           {cell.events.length > 3 && (
                             <div className={styles.eventMore}>+{cell.events.length - 3} más</div>
                           )}
-                          {/* Indicador de slots bloqueados */}
+                          {/* DESACTIVADO TEMPORALMENTE - Blocked Slots Indicator
                           {(() => {
                             const dateKey = cell.date.toISOString().split('T')[0];
                             const dayBlockedSlots = blockedSlotsByDate[dateKey] || [];
@@ -1207,6 +1210,7 @@ export const Appointments: React.FC = () => {
                             }
                             return null;
                           })()}
+                          */}
                         </div>
                       </div>
                     );
