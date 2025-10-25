@@ -1291,7 +1291,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
           ? (stripeConnected ? 'Elige cómo cobrar' : 'Registrar pago manual')
           : 'Registrar nuevo cobro'
       }
-      size="lg"
+      size="md"
       type="custom"
       showCloseButton={step !== 'processing'}
     >
