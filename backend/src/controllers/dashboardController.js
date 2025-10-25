@@ -32,6 +32,27 @@ const buildDateFilters = (range) => {
   return { filters, params };
 };
 
+// NUEVA: Filtros específicos para meta_ads (columna date es TEXT "YYYY-MM-DD")
+const buildMetaAdsDateFilters = (range) => {
+  const filters = [];
+  const params = [];
+
+  // IMPORTANTE: La columna 'date' en meta_ads es TEXT con formato "YYYY-MM-DD"
+  // Por eso usamos startZoned.toISODate() en vez de startUtc (que incluye hora)
+  // Si usamos startUtc (ej: "2025-10-01T05:00:00.000Z"), la comparación TEXT falla
+  if (range.startZoned) {
+    filters.push('date >= ?');
+    params.push(range.startZoned.toISODate());
+  }
+
+  if (range.endZoned) {
+    filters.push('date <= ?');
+    params.push(range.endZoned.toISODate());
+  }
+
+  return { filters, params };
+};
+
 const buildContactFilters = async (range) => {
   const filters = ['total_paid > 0'];
   const params = [];
@@ -78,7 +99,7 @@ const computeFinancialSnapshot = async (range) => {
 
   const gastosFilters = [];
   const gastosParams = [];
-  const { filters: spendDateFilters, params: spendDateParams } = buildDateFilters(range);
+  const { filters: spendDateFilters, params: spendDateParams } = buildMetaAdsDateFilters(range);
   if (spendDateFilters.length) {
     gastosFilters.push(...spendDateFilters);
     gastosParams.push(...spendDateParams);
@@ -299,7 +320,8 @@ export const getChartData = async (req, res) => {
      WHERE date >= $1 AND date <= $2
      GROUP BY periodo
      ORDER BY periodo`;
-    const gastosParams = [range.startUtc, range.endUtc];
+    // IMPORTANTE: meta_ads.date es TEXT "YYYY-MM-DD", usar startZoned.toISODate()
+    const gastosParams = [range.startZoned.toISODate(), range.endZoned.toISODate()];
 
     // Obtener ingresos agrupados
     const ingresosData = await db.all(ingresosQuery, ingresosParams);
@@ -391,7 +413,13 @@ export const getRoasData = async (req, res) => {
       GROUP BY periodo
       ORDER BY periodo
     `;
-    const params = [range.startUtc, range.endUtc, range.startUtc, range.endUtc];
+    // IMPORTANTE: meta_ads.date es TEXT "YYYY-MM-DD", payments.date es DATETIME
+    const params = [
+      range.startUtc,
+      range.endUtc,
+      range.startZoned.toISODate(),
+      range.endZoned.toISODate()
+    ];
 
     const data = await db.all(query, params);
 
@@ -894,11 +922,13 @@ export const getFinancialOverview = async (req, res) => {
       ORDER BY day ASC
     `;
 
-    const params = [range.startUtc, range.endUtc];
+    // IMPORTANTE: meta_ads.date es TEXT "YYYY-MM-DD", usar toISODate()
+    const spendParams = [range.startZoned.toISODate(), range.endZoned.toISODate()];
+    const revenueParams = [range.startUtc, range.endUtc];
 
     const [revenueData, spendData] = await Promise.all([
-      db.all(revenueQuery, params),
-      db.all(spendQuery, params)
+      db.all(revenueQuery, revenueParams),
+      db.all(spendQuery, spendParams)
     ]);
 
     logger.info(`Ingresos totales encontrados: ${revenueData.length} días con pagos`);
