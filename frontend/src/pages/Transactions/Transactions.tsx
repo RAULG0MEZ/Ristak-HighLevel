@@ -18,12 +18,15 @@ import {
   MoreVertical,
   Eye,
   Link2,
-  Send
+  Send,
+  Mail,
+  MessageCircle
 } from 'lucide-react'
 import { useDateRange } from '@/contexts/DateRangeContext'
 import { useTimezone } from '@/contexts/TimezoneContext'
 import { formatCurrency, formatDateToISO, formatEndDateToISO, formatNumber, parseLocalDateString, formatName } from '@/utils/format'
 import { transactionsService, type Transaction, type TransactionSummary } from '@/services/transactionsService'
+import { highLevelService } from '@/services/highLevelService'
 import styles from './Transactions.module.css'
 
 
@@ -204,10 +207,27 @@ export const Transactions: React.FC = () => {
     }
   }
 
-  const handleSendPayment = async (id: string) => {
+  const handleSendPayment = async (id: string, sendMethod: 'email' | 'sms' | 'both' = 'email') => {
     try {
-      await transactionsService.sendTransaction(id)
-      showToast('success', 'Pago enviado', 'Se envió el pago al cliente correctamente')
+      // Buscar el transaction para obtener el ghl_invoice_id
+      const transaction = transactions.find(t => t.id === id)
+      if (!transaction || !transaction.ghl_invoice_id) {
+        showToast('error', 'Error', 'No se pudo encontrar el invoice para enviar')
+        return
+      }
+
+      await highLevelService.sendInvoice(transaction.ghl_invoice_id, sendMethod)
+
+      let successMessage = 'Pago enviado al cliente correctamente'
+      if (sendMethod === 'email') {
+        successMessage = 'Pago enviado por email correctamente'
+      } else if (sendMethod === 'sms') {
+        successMessage = 'Pago enviado por WhatsApp correctamente'
+      } else if (sendMethod === 'both') {
+        successMessage = 'Pago enviado por email y WhatsApp correctamente'
+      }
+
+      showToast('success', 'Éxito', successMessage)
       fetchData()
     } catch (error) {
       showToast('error', 'Error al enviar pago', 'No se pudo enviar el pago al cliente')
@@ -429,10 +449,20 @@ export const Transactions: React.FC = () => {
 
                 {/* Enviar pago */}
                 {actions.includes('send') && (
-                  <DropdownMenuItem onClick={() => handleSendPayment(item.id)}>
-                    <Send size={16} />
-                    <span style={{ marginLeft: '8px' }}>Enviar pago</span>
-                  </DropdownMenuItem>
+                  <>
+                    <DropdownMenuItem onClick={() => handleSendPayment(item.id, 'email')}>
+                      <Mail size={16} />
+                      <span style={{ marginLeft: '8px' }}>Enviar por Email</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleSendPayment(item.id, 'sms')}>
+                      <MessageCircle size={16} />
+                      <span style={{ marginLeft: '8px' }}>Enviar por WhatsApp</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleSendPayment(item.id, 'both')}>
+                      <Send size={16} />
+                      <span style={{ marginLeft: '8px' }}>Enviar por Ambos</span>
+                    </DropdownMenuItem>
+                  </>
                 )}
 
                 {/* Editar */}

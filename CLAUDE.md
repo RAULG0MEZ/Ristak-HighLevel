@@ -530,10 +530,18 @@ git log -1
   - 2 tipos de cobro: directo (solo monto) o desde productos guardados
   - Permite personalizar monto del producto seleccionado
   - Crea invoice en HighLevel y lo marca como pagado automáticamente
-  - 3 opciones de pago: Enviar enlace, Cobrar tarjeta guardada (solo si Stripe está conectado), Registrar pago manual
+  - **Text2Pay implementado (2025-10-25)**: Envío de links de pago por Email, WhatsApp/SMS, o Ambos
+    - 3 botones separados en vez de solo "Enviar enlace"
+    - "Enviar por Email" → Envía invoice por correo electrónico
+    - "Enviar por WhatsApp" → Envía invoice por SMS/WhatsApp (según configuración de GHL)
+    - "Enviar por Ambos" → Envía por email Y WhatsApp simultáneamente
+    - HighLevel maneja el envío internamente (no requiere Twilio ni servicios externos)
+    - Método `sendInvoice()` acepta parámetro `sendMethod`: 'email' | 'sms' | 'both' | 'none'
+    - Respeta modo de Stripe (test/live) automáticamente
+  - 3 opciones de pago: Enviar enlace (con Text2Pay), Cobrar tarjeta guardada (solo si Stripe está conectado), Registrar pago manual
   - Detección automática de Stripe: Si no está configurado, solo muestra opciones de enlace y pago manual
   - Alerta visual cuando Stripe no está disponible con instrucciones para configurarlo
-  - Endpoints: GET /api/highlevel/products, GET /api/highlevel/products/:id/prices, POST /api/highlevel/invoices, POST /api/highlevel/invoices/:id/record-payment, GET /api/highlevel/stripe-config
+  - Endpoints: GET /api/highlevel/products, GET /api/highlevel/products/:id/prices, POST /api/highlevel/invoices, POST /api/highlevel/invoices/:id/send, POST /api/highlevel/invoices/:id/record-payment, POST /api/highlevel/text2pay, GET /api/highlevel/stripe-config
   - Integrado en página de Transactions con botón "+ Registrar pago"
   - ⚠️ Nota: Cargar productos requiere scope `products.readonly` en el token de HighLevel. El cobro directo funciona sin este scope.
 

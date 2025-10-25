@@ -327,11 +327,17 @@ class GHLClient {
   }
 
   async sendInvoice(invoiceId, options = {}) {
+    // Si sendMethod es 'none', no enviar nada (solo crear invoice)
+    if (options.sendMethod === 'none') {
+      logger.info(`Invoice ${invoiceId} creado pero NO enviado (sendMethod = none)`)
+      return { success: true, message: 'Invoice creado pero no enviado' }
+    }
+
     const body = {
       altId: this.locationId,
       altType: 'location',
-      action: 'email',
-      liveMode: true,
+      action: options.sendMethod || 'email',  // Acepta: 'email', 'sms', 'both', 'none'
+      liveMode: options.liveMode !== undefined ? options.liveMode : true,
     }
 
     // Usar userId o sentFrom (requerido por GHL API)
@@ -341,7 +347,7 @@ class GHLClient {
       body.sentFrom = options.sentFrom
     }
 
-    logger.info(`Enviando invoice: ${invoiceId}`)
+    logger.info(`Enviando invoice ${invoiceId} por ${body.action}`)
 
     return this.request(`/invoices/${invoiceId}/send`, {
       method: 'POST',
@@ -397,6 +403,30 @@ class GHLClient {
       return `https://${domain}/invoice/${invoiceId}`
     }
     return `https://payments.leadconnectorhq.com/invoice/${invoiceId}`
+  }
+
+  async text2Pay(data) {
+    const { contactId, amount, currency, message } = data
+
+    if (!contactId || !amount || !currency) {
+      throw new Error('contactId, amount y currency son requeridos para text2Pay')
+    }
+
+    logger.info(`Enviando Text2Pay a contacto ${contactId}: ${amount} ${currency}`)
+
+    const body = {
+      altId: this.locationId,
+      altType: 'location',
+      contactId,
+      amount,
+      currency,
+      ...(message && { message })
+    }
+
+    return this.request('/invoices/text2pay', {
+      method: 'POST',
+      body
+    })
   }
 
   // ============================================

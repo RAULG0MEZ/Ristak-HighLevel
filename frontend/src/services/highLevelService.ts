@@ -205,6 +205,55 @@ class HighLevelService {
     }
   }
 
+  // Enviar invoice por email, SMS/WhatsApp, o ambos
+  async sendInvoice(invoiceId: string, sendMethod: 'email' | 'sms' | 'both' | 'none' = 'email'): Promise<any> {
+    try {
+      const response = await fetch(`/api/highlevel/invoices/${invoiceId}/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ sendMethod })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Error al enviar invoice')
+      }
+
+      return await response.json()
+    } catch (error) {
+      throw error
+    }
+  }
+
+  // Enviar link de pago rápido por SMS/WhatsApp (Text2Pay)
+  async text2Pay(contactId: string, amount: number, currency: string, message?: string): Promise<any> {
+    try {
+      const response = await fetch('/api/highlevel/text2pay', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          contactId,
+          amount,
+          currency,
+          message
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Error al enviar link de pago')
+      }
+
+      return await response.json()
+    } catch (error) {
+      throw error
+    }
+  }
+
 }
 
 // Exportar instancia única

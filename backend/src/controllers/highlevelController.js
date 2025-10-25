@@ -811,6 +811,7 @@ export const createInvoice = async (req, res) => {
 export const sendInvoice = async (req, res) => {
   try {
     const { invoiceId } = req.params;
+    const { sendMethod = 'email' } = req.body;
 
     if (!invoiceId) {
       return res.status(400).json({
@@ -819,7 +820,7 @@ export const sendInvoice = async (req, res) => {
       });
     }
 
-    const config = await db.get('SELECT location_data FROM highlevel_config LIMIT 1');
+    const config = await db.get('SELECT location_data, stripe_mode FROM highlevel_config LIMIT 1');
     if (!config || !config.location_data) {
       return res.status(400).json({
         success: false,
@@ -840,12 +841,20 @@ export const sendInvoice = async (req, res) => {
       });
     }
 
+    // Obtener modo de Stripe (si está configurado)
+    let liveMode = true; // Default
+    if (config.stripe_mode) {
+      liveMode = config.stripe_mode === 'live';
+    }
+
     const ghlClient = await getGHLClient();
     await ghlClient.sendInvoice(invoiceId, {
       sentFrom: {
         fromName,
         fromEmail
-      }
+      },
+      sendMethod: sendMethod,
+      liveMode: liveMode
     });
 
     // Actualizar estado en BD local
@@ -865,9 +874,21 @@ export const sendInvoice = async (req, res) => {
     // Construir payment link usando el domain
     const paymentLink = buildInvoicePaymentUrl(domain, invoiceId);
 
+    // Mensaje personalizado según el método de envío
+    let message = '';
+    if (sendMethod === 'none') {
+      message = 'Invoice creado. Debes enviarlo manualmente al cliente.';
+    } else if (sendMethod === 'sms') {
+      message = 'Invoice enviado por WhatsApp';
+    } else if (sendMethod === 'both') {
+      message = 'Invoice enviado por email y WhatsApp';
+    } else {
+      message = 'Invoice enviado por email';
+    }
+
     res.json({
       success: true,
-      message: 'Enlace de pago enviado correctamente',
+      message: message,
       paymentLink
     });
   } catch (error) {
@@ -1003,6 +1024,49 @@ export const recordPayment = async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message || 'Error al registrar pago'
+    });
+  }
+};
+
+/**
+ * Envía un link de pago rápido por SMS/WhatsApp (Text2Pay)
+ * POST /api/highlevel/text2pay
+ * Body: { contactId, amount, currency, message }
+ */
+export const text2Pay = async (req, res) => {
+  try {
+    const { contactId, amount, currency, message } = req.body;
+
+    if (!contactId || !amount || !currency) {
+      return res.status(400).json({
+        success: false,
+        error: 'contactId, amount y currency son requeridos'
+      });
+    }
+
+    if (Number(amount) <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'El monto debe ser mayor a 0'
+      });
+    }
+
+    const ghlClient = await getGHLClient();
+    const result = await ghlClient.text2Pay({ contactId, amount, currency, message });
+
+    logger.success(`Text2Pay enviado a contacto: ${contactId} - Monto: ${amount} ${currency}`);
+
+    res.json({
+      success: true,
+      message: 'Link de pago enviado por WhatsApp correctamente',
+      data: result
+    });
+
+  } catch (error) {
+    logger.error(`Error en text2Pay: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Error al enviar link de pago'
     });
   }
 };

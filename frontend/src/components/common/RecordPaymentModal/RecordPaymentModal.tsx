@@ -11,11 +11,15 @@ import {
   Link as LinkIcon,
   CreditCard,
   Check,
-  AlertCircle
+  AlertCircle,
+  Mail,
+  MessageCircle,
+  Send
 } from 'lucide-react'
 import styles from './RecordPaymentModal.module.css'
 import { useNotification } from '@/contexts/NotificationContext'
 import { formatCurrency } from '@/utils/format'
+import { highLevelService } from '@/services/highLevelService'
 
 const IVA_RATE = 0.16
 
@@ -149,6 +153,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   const [invoicePayload, setInvoicePayload] = useState<Record<string, any> | null>(null)
   const [invoiceSummary, setInvoiceSummary] = useState<InvoiceSummary | null>(null)
   const [paymentOption, setPaymentOption] = useState<PaymentOption>('link')
+  const [sendMethod, setSendMethod] = useState<'email' | 'sms' | 'both'>('email')
   const [checkingCards, setCheckingCards] = useState(false)
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string | null>(null)
@@ -593,14 +598,18 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
 
       switch (paymentOption) {
         case 'link': {
-          const response = await fetch(`/api/highlevel/invoices/${invoiceId}/send`, {
-            method: 'POST'
-          })
-          const data = await response.json()
-          if (!response.ok) {
-            throw new Error(data.error || 'No se pudo enviar el enlace de pago')
+          await highLevelService.sendInvoice(invoiceId, sendMethod)
+
+          let successMessage = 'Enlace de pago enviado al cliente'
+          if (sendMethod === 'email') {
+            successMessage = 'Enlace enviado por email correctamente'
+          } else if (sendMethod === 'sms') {
+            successMessage = 'Enlace enviado por WhatsApp correctamente'
+          } else if (sendMethod === 'both') {
+            successMessage = 'Enlace enviado por email y WhatsApp correctamente'
           }
-          showToast('success', 'Éxito', 'Enlace de pago enviado al cliente')
+
+          showToast('success', 'Éxito', successMessage)
           break
         }
         case 'saved': {
@@ -1160,24 +1169,88 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
           >
             Regresar
           </Button>
-          <Button
-            variant="primary"
-            onClick={handleConfirm}
-            disabled={loading || (paymentOption === 'saved' && (!selectedPaymentMethod || checkingCards))}
-          >
-            {loading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Procesando...
-              </>
-            ) : (
-              <>
-                {paymentOption === 'link' && 'Enviar enlace'}
-                {paymentOption === 'saved' && 'Cobrar tarjeta'}
-                {paymentOption === 'manual' && 'Registrar pago'}
-              </>
-            )}
-          </Button>
+          {paymentOption === 'link' ? (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSendMethod('email')
+                  handleConfirm()
+                }}
+                disabled={loading}
+              >
+                {loading && sendMethod === 'email' ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Enviando...
+                  </>
+                ) : (
+                  <>
+                    <Mail size={16} style={{ marginRight: '6px' }} />
+                    Enviar por Email
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSendMethod('sms')
+                  handleConfirm()
+                }}
+                disabled={loading}
+              >
+                {loading && sendMethod === 'sms' ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Enviando...
+                  </>
+                ) : (
+                  <>
+                    <MessageCircle size={16} style={{ marginRight: '6px' }} />
+                    Enviar por WhatsApp
+                  </>
+                )}
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  setSendMethod('both')
+                  handleConfirm()
+                }}
+                disabled={loading}
+              >
+                {loading && sendMethod === 'both' ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Enviando...
+                  </>
+                ) : (
+                  <>
+                    <Send size={16} style={{ marginRight: '6px' }} />
+                    Enviar por Ambos
+                  </>
+                )}
+              </Button>
+            </div>
+          ) : (
+            <Button
+              variant="primary"
+              onClick={handleConfirm}
+              disabled={loading || (paymentOption === 'saved' && (!selectedPaymentMethod || checkingCards))}
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Procesando...
+                </>
+              ) : (
+                <>
+                  {paymentOption === 'saved' && 'Cobrar tarjeta'}
+                  {paymentOption === 'manual' && 'Registrar pago'}
+                </>
+              )}
+            </Button>
+          )}
         </div>
       )
     }
