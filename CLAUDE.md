@@ -810,9 +810,26 @@ git log -1
 
 ## 📅 ÚLTIMA ACTUALIZACIÓN
 
-**Fecha**: 2025-10-24
-**Versión**: 1.23.2
+**Fecha**: 2025-10-26
+**Versión**: 1.23.3
 **Últimos cambios críticos**:
+- **Feature: Indicador visual de timezone en fechas de Meta Ads (2025-10-26)**
+  - **Problema detectado**: Las fechas de Meta se muestran en su timezone original, no en el timezone de HighLevel
+    - Meta reporta "24 de octubre" en LA (UTC-8)
+    - HighLevel puede estar configurado en México (UTC-6)
+    - Usuario veía mismas fechas sin saber que representan períodos diferentes
+  - **Solución implementada**:
+    - Hook `useMetaTimezone` mejorado con función `adjustMetaDateToLocal()`
+    - Detecta automáticamente discrepancias entre timezones (tolerancia 30 minutos)
+    - Agrega indicador de timezone a fechas cuando hay discrepancia
+    - Ejemplo: "2025-10-24 (LA)" cuando Meta está en Los Angeles
+    - Abreviaciones inteligentes: LA, NY, CHI, CDMX, DEN, PHX, TOR, LON, PAR, MAD
+  - **Aplicado en**:
+    - **Campaigns**: Todos los gráficos (Revenue, Visitors, Leads, Appointments, Sales)
+    - **Reports**: Gráficos y tabla de métricas (columna de fecha)
+    - **Dashboard**: Hook disponible (vista mensual no requiere ajuste crítico)
+  - **Sin cambios visuales cuando**: Ambos timezones coinciden o diferencia < 30 minutos
+  - **Archivos modificados**: useMetaTimezone.ts, Campaigns.tsx, Reports.tsx, Dashboard.tsx
 - **Fix: Tooltips de gráficos en Reports + Layout 2x2 (2025-10-24)**
   - **Problema detectado**: Los tooltips en Reports no seguían el patrón profesional del Dashboard
     - No posicionaban el tooltip en el punto más alto cuando hay múltiples series
