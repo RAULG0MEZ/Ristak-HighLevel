@@ -85,7 +85,7 @@ export const handleContactWebhook = async (req, res) => {
       attribution.pageUrl || attribution.url || attributionSource.url,
       attribution.utmSessionSource || attribution.sessionSource || attributionSource.utmSessionSource || attributionSource.sessionSource,
       attribution.medium || attributionSource.medium,
-      attribution.utmAdId || attributionSource.adId,  // NUNCA usar lastAttributionSource ni mediumId
+      attribution.utmAdId || attributionSource.adId || attributionSource.mediumId,  // Si no hay adId, usar mediumId
       attribution.adName || attributionSource.adName,
       visitorId
     ]);

@@ -448,7 +448,7 @@ async function ensureContactExists(contactId, apiToken, usePostgres) {
       attribution.pageUrl || attribution.url || attributionSource.url,
       attribution.utmSessionSource || attributionSource.utmSessionSource,
       attribution.medium || attributionSource.medium,
-      attribution.utmAdId || attributionSource.adId,  // NUNCA usar lastAttributionSource ni mediumId
+      attribution.utmAdId || attributionSource.adId || attributionSource.mediumId,  // Si no hay adId, usar mediumId
       attribution.adName || attributionSource.adName,
       visitorId,
       contact.dateAdded || new Date().toISOString(),
@@ -560,7 +560,7 @@ async function syncHighLevelContacts(locationId, apiToken) {
         attribution.pageUrl || attribution.url || attributionSource.url,
         attribution.utmSessionSource || attributionSource.utmSessionSource,
         attribution.medium || attributionSource.medium,
-        attribution.utmAdId || attributionSource.adId,  // NUNCA usar lastAttributionSource ni mediumId
+        attribution.utmAdId || attributionSource.adId || attributionSource.mediumId,  // Si no hay adId, usar mediumId
         attribution.adName || attributionSource.adName,
         visitorId,
         contact.dateAdded || new Date().toISOString(),
