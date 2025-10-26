@@ -431,8 +431,18 @@ async function ensureContactExists(contactId, apiToken, usePostgres) {
           attribution_url, attribution_session_source, attribution_medium, attribution_ad_id, attribution_ad_name,
           visitor_id, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-         ON CONFLICT (id) DO NOTHING`
-      : `INSERT OR IGNORE INTO contacts (id, phone, email, full_name, first_name, last_name, source,
+         ON CONFLICT (id) DO UPDATE SET
+          phone = EXCLUDED.phone,
+          email = EXCLUDED.email,
+          full_name = EXCLUDED.full_name,
+          attribution_url = EXCLUDED.attribution_url,
+          attribution_session_source = EXCLUDED.attribution_session_source,
+          attribution_medium = EXCLUDED.attribution_medium,
+          attribution_ad_id = EXCLUDED.attribution_ad_id,
+          attribution_ad_name = EXCLUDED.attribution_ad_name,
+          visitor_id = COALESCE(EXCLUDED.visitor_id, contacts.visitor_id),
+          updated_at = EXCLUDED.updated_at`
+      : `INSERT OR REPLACE INTO contacts (id, phone, email, full_name, first_name, last_name, source,
           attribution_url, attribution_session_source, attribution_medium, attribution_ad_id, attribution_ad_name,
           visitor_id, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
@@ -542,6 +552,11 @@ async function syncHighLevelContacts(locationId, apiToken) {
             phone = EXCLUDED.phone,
             email = EXCLUDED.email,
             full_name = EXCLUDED.full_name,
+            attribution_url = EXCLUDED.attribution_url,
+            attribution_session_source = EXCLUDED.attribution_session_source,
+            attribution_medium = EXCLUDED.attribution_medium,
+            attribution_ad_id = EXCLUDED.attribution_ad_id,
+            attribution_ad_name = EXCLUDED.attribution_ad_name,
             visitor_id = COALESCE(EXCLUDED.visitor_id, contacts.visitor_id),
             updated_at = EXCLUDED.updated_at`
         : `INSERT OR REPLACE INTO contacts (id, phone, email, full_name, first_name, last_name, source,
