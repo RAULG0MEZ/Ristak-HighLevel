@@ -29,10 +29,12 @@ export const handleContactWebhook = async (req, res) => {
     }
 
     // Extraer datos de atribución (pueden venir en diferentes estructuras)
-    const attribution = data.attributions?.find(a => a.isFirst)
+    // HighLevel puede enviar atribución en attributions[] o attributionSource
+    const attribution = data.attributions?.find(a => a.isFirst) || {};
+    const attributionSource = data.attributionSource
       || data.contact?.attributionSource
       || data.contact?.lastAttributionSource
-      || data.attributionSource
+      || data.lastAttributionSource
       || {};
 
     // Extraer visitor_id del custom field (solo rkvi_id)
@@ -77,13 +79,13 @@ export const handleContactWebhook = async (req, res) => {
       data.full_name || data.contactName || `${data.first_name || data.firstName || ''} ${data.last_name || data.lastName || ''}`.trim() || 'Sin nombre',
       data.first_name || data.firstName,
       data.last_name || data.lastName,
-      data.source || attribution.sessionSource || 'gohighlevel',
+      data.source || attribution.sessionSource || attributionSource.sessionSource || 'gohighlevel',
       data.date_created || data.dateCreated || data.createdAt || new Date().toISOString(),
-      attribution.pageUrl || attribution.url,
-      attribution.utmSessionSource || attribution.sessionSource,
-      attribution.medium,
-      attribution.utmAdId || attribution.mediumId,
-      attribution.adName,
+      attribution.pageUrl || attribution.url || attributionSource.url,
+      attribution.utmSessionSource || attribution.sessionSource || attributionSource.utmSessionSource || attributionSource.sessionSource,
+      attribution.medium || attributionSource.medium,
+      attribution.utmAdId || attributionSource.adId || attribution.mediumId,
+      attribution.adName || attributionSource.adName,
       visitorId
     ]);
 

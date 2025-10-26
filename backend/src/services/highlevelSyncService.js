@@ -403,7 +403,10 @@ async function ensureContactExists(contactId, apiToken, usePostgres) {
 
     const contactData = await contactRes.json()
     const contact = contactData.contact || contactData
+
+    // HighLevel puede enviar atribución en dos lugares: attributions[] o attributionSource
     const attribution = contact.attributions?.find(a => a.isFirst) || {}
+    const attributionSource = contact.attributionSource || contact.lastAttributionSource || {}
 
     // Buscar visitor_id en sessions por email (si existe)
     let visitorId = null
@@ -441,11 +444,11 @@ async function ensureContactExists(contactId, apiToken, usePostgres) {
       contact.firstName,
       contact.lastName,
       contact.source || 'gohighlevel',
-      attribution.pageUrl || attribution.url,
-      attribution.utmSessionSource,
-      attribution.medium,
-      attribution.utmAdId,
-      attribution.adName,
+      attribution.pageUrl || attribution.url || attributionSource.url,
+      attribution.utmSessionSource || attributionSource.utmSessionSource,
+      attribution.medium || attributionSource.medium,
+      attribution.utmAdId || attributionSource.adId || attribution.mediumId,
+      attribution.adName || attributionSource.adName,
       visitorId,
       contact.dateAdded || new Date().toISOString(),
       contact.dateUpdated || contact.dateAdded || new Date().toISOString()
@@ -507,7 +510,9 @@ async function syncHighLevelContacts(locationId, apiToken) {
 
   for (const contact of allContacts) {
     try {
+      // HighLevel puede enviar atribución en dos lugares: attributions[] o attributionSource
       const attribution = contact.attributions?.find(a => a.isFirst) || {}
+      const attributionSource = contact.attributionSource || contact.lastAttributionSource || {}
 
       // Buscar visitor_id en sessions por email (si existe)
       let visitorId = null
@@ -550,11 +555,11 @@ async function syncHighLevelContacts(locationId, apiToken) {
         contact.firstName,
         contact.lastName,
         contact.source || 'gohighlevel',
-        attribution.pageUrl || attribution.url,
-        attribution.utmSessionSource,
-        attribution.medium,
-        attribution.utmAdId,
-        attribution.adName,
+        attribution.pageUrl || attribution.url || attributionSource.url,
+        attribution.utmSessionSource || attributionSource.utmSessionSource,
+        attribution.medium || attributionSource.medium,
+        attribution.utmAdId || attributionSource.adId || attribution.mediumId,
+        attribution.adName || attributionSource.adName,
         visitorId,
         contact.dateAdded || new Date().toISOString(),
         contact.dateUpdated || contact.dateAdded || new Date().toISOString()
