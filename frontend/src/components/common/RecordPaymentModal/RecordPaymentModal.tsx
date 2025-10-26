@@ -1276,25 +1276,45 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
           >
             Regresar
           </Button>
-          <Button
-            variant="primary"
-            onClick={handleConfirm}
-            disabled={loading || (paymentOption === 'saved' && (!selectedPaymentMethod || checkingCards))}
-          >
-            {loading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Procesando...
-              </>
-            ) : (
-              <>
-                {paymentOption === 'generate' && 'Generar enlace'}
-                {paymentOption === 'send' && 'Enviar enlace'}
-                {paymentOption === 'saved' && 'Cobrar tarjeta'}
-                {paymentOption === 'manual' && 'Registrar pago'}
-              </>
+          <div className={styles.confirmButtonWrapper}>
+            <Button
+              variant="primary"
+              onClick={handleConfirm}
+              disabled={
+                loading ||
+                (paymentOption === 'saved' && (!selectedPaymentMethod || checkingCards)) ||
+                (paymentOption === 'send' && (!selectedContact?.email && !selectedContact?.phone))
+              }
+              title={
+                paymentOption === 'send' && (!selectedContact?.email && !selectedContact?.phone)
+                  ? 'El contacto no tiene email ni teléfono para enviar el enlace'
+                  : paymentOption === 'saved' && !selectedPaymentMethod
+                  ? 'Selecciona una tarjeta para continuar'
+                  : undefined
+              }
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Procesando...
+                </>
+              ) : (
+                <>
+                  {paymentOption === 'generate' && 'Generar enlace'}
+                  {paymentOption === 'send' && 'Enviar enlace'}
+                  {paymentOption === 'saved' && 'Cobrar tarjeta'}
+                  {paymentOption === 'manual' && 'Registrar pago'}
+                </>
+              )}
+            </Button>
+            {/* Tooltip personalizado para mejor UX */}
+            {paymentOption === 'send' && (!selectedContact?.email && !selectedContact?.phone) && (
+              <div className={styles.tooltipInfo}>
+                <AlertCircle size={14} />
+                <span>El contacto necesita email o teléfono para enviar</span>
+              </div>
             )}
-          </Button>
+          </div>
         </div>
       )
     }
