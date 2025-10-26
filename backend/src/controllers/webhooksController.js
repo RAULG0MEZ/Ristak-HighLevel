@@ -30,10 +30,16 @@ export const handleContactWebhook = async (req, res) => {
 
     // Extraer datos de atribución (pueden venir en diferentes estructuras)
     // HighLevel puede enviar atribución en attributions[] o attributionSource
+    // IMPORTANTE: Siempre preferir FIRST attribution sobre LAST attribution
     const attribution = data.attributions?.find(a => a.isFirst) || {};
-    const attributionSource = data.attributionSource
-      || data.contact?.attributionSource
-      || data.contact?.lastAttributionSource
+
+    // Prioridad: attributionSource (first) > NO usar lastAttributionSource
+    const attributionSource = data.contact?.attributionSource
+      || data.attributionSource
+      || {};
+
+    // Solo como fallback si no hay first attribution
+    const lastAttributionSource = data.contact?.lastAttributionSource
       || data.lastAttributionSource
       || {};
 
@@ -81,11 +87,11 @@ export const handleContactWebhook = async (req, res) => {
       data.last_name || data.lastName,
       data.source || attribution.sessionSource || attributionSource.sessionSource || 'gohighlevel',
       data.date_created || data.dateCreated || data.createdAt || new Date().toISOString(),
-      attribution.pageUrl || attribution.url || attributionSource.url,
+      attribution.pageUrl || attribution.url || attributionSource.url || lastAttributionSource.url,
       attribution.utmSessionSource || attribution.sessionSource || attributionSource.utmSessionSource || attributionSource.sessionSource,
-      attribution.medium || attributionSource.medium,
-      attribution.utmAdId || attributionSource.adId || attribution.mediumId,
-      attribution.adName || attributionSource.adName,
+      attribution.medium || attributionSource.medium || lastAttributionSource.medium,
+      attribution.utmAdId || attributionSource.adId || lastAttributionSource.adId,  // NO usar mediumId (tiene valores incorrectos)
+      attribution.adName || attributionSource.adName || lastAttributionSource.adName,
       visitorId
     ]);
 
