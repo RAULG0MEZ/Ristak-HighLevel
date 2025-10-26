@@ -610,9 +610,15 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
           // Generar enlace sin enviar
           const response = await highLevelService.sendInvoice(invoiceId, 'none')
 
-          // Construir el enlace de pago
-          const paymentLink = `https://services.leadconnectorhq.com/payment/${invoiceId}`
-          setPaymentLink(paymentLink)
+          // Usar el paymentLink que viene del backend (con el domain correcto)
+          if (response?.paymentLink) {
+            setPaymentLink(response.paymentLink)
+          } else {
+            // Fallback solo si el backend no devuelve el link
+            const fallbackLink = `https://payments.msgsndr.com/invoice/${invoiceId}`
+            setPaymentLink(fallbackLink)
+          }
+
           setShowPaymentLinkDialog(true)
 
           // No cerrar el modal principal, solo mostrar el dialog del enlace
