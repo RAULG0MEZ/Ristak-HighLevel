@@ -810,9 +810,24 @@ git log -1
 
 ## 📅 ÚLTIMA ACTUALIZACIÓN
 
-**Fecha**: 2025-10-26
-**Versión**: 1.23.3
+**Fecha**: 2025-10-27
+**Versión**: 1.23.4
 **Últimos cambios críticos**:
+- **Fix: Agrupación inteligente de datos en gráficos de Campaigns (2025-10-27)**
+  - **Problema detectado**: Gráficos se quedaban en blanco con rangos largos (365+ días)
+    - Al seleccionar un año completo, intentaba renderizar 365 puntos diarios
+    - El gráfico se saturaba y no mostraba nada o era ilegible
+  - **Solución implementada**:
+    - Función `groupChartData()` agrupa datos dinámicamente según el rango
+    - Función `getGroupingType()` determina el tipo de agrupación:
+      - <= 30 días: Vista diaria (sin cambios)
+      - 31-90 días: Agrupa por semana (lunes como inicio)
+      - > 90 días: Agrupa por mes
+    - Aplicado a TODOS los gráficos: Revenue, Visitors, Leads, Appointments
+    - Los valores se suman correctamente al agrupar períodos
+  - **Resultado**: Los gráficos ahora funcionan perfectamente con cualquier rango de fechas
+  - **Archivo modificado**: `frontend/src/pages/Campaigns/Campaigns.tsx`
+
 - **Feature: Indicador visual de timezone en fechas de Meta Ads (2025-10-26)**
   - **Problema detectado**: Las fechas de Meta se muestran en su timezone original, no en el timezone de HighLevel
     - Meta reporta "24 de octubre" en LA (UTC-8)
