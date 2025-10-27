@@ -160,7 +160,28 @@ export const Campaigns: React.FC = () => {
     const grouped = new Map<string, any>()
 
     data.forEach(item => {
-      const date = new Date(item.label)
+      // Validar que tenemos un label y que se puede convertir a fecha
+      if (!item.label) return
+
+      // Intentar parsear la fecha de manera más robusta
+      let date: Date
+      try {
+        // Si el label ya es una fecha ISO (YYYY-MM-DD), parsearlo directamente
+        if (typeof item.label === 'string' && item.label.match(/^\d{4}-\d{2}-\d{2}/)) {
+          const [year, month, day] = item.label.split('-').map(Number)
+          date = new Date(year, month - 1, day)
+        } else {
+          date = new Date(item.label)
+        }
+
+        // Verificar que la fecha es válida
+        if (isNaN(date.getTime())) {
+          return
+        }
+      } catch (error) {
+        return
+      }
+
       let key: string
 
       if (groupBy === 'week') {
@@ -195,11 +216,12 @@ export const Campaigns: React.FC = () => {
 
   /**
    * Determina el tipo de agrupación basado en el rango de días
+   * Ajustado para mejor visualización de datos
    */
   const getGroupingType = (rangeInDays: number): 'day' | 'week' | 'month' => {
-    if (rangeInDays <= 30) return 'day'
-    if (rangeInDays <= 90) return 'week'
-    return 'month'
+    if (rangeInDays <= 45) return 'day'      // Hasta 45 días: vista diaria
+    if (rangeInDays <= 180) return 'week'    // 45-180 días (6 meses): vista semanal
+    return 'month'                            // Más de 6 meses: vista mensual
   }
 
   const fetchCampaigns = useCallback(async () => {
@@ -285,22 +307,27 @@ export const Campaigns: React.FC = () => {
       // Determinar tipo de agrupación
       const groupingType = getGroupingType(rangeInDays)
 
-      // Agrupar datos según el rango
-      const groupedSpendData = groupChartData(spendData, groupingType)
+      // Validar que tenemos datos antes de agrupar
+      if (!spendData || spendData.length === 0) {
+        setRevenueData([])
+      } else {
+        // Agrupar datos según el rango
+        const groupedSpendData = groupChartData(spendData, groupingType)
 
-      // Formatear fechas inteligentemente para el gráfico
-      const formattedSpendData = groupedSpendData.map((item: any, index: number) => ({
-        ...item,
-        // Primero ajustar la fecha con timezone de Meta, luego formatear para el gráfico
-        label: formatChartDate(
-          timezoneInfo.adjustMetaDateToLocal ? timezoneInfo.adjustMetaDateToLocal(item.label) : item.label,
-          rangeInDays,
-          index > 0 ? (timezoneInfo.adjustMetaDateToLocal ? timezoneInfo.adjustMetaDateToLocal(groupedSpendData[index - 1].label) : groupedSpendData[index - 1].label) : undefined
-        )
-      }))
+        // Formatear fechas inteligentemente para el gráfico
+        const formattedSpendData = groupedSpendData.map((item: any, index: number) => ({
+          ...item,
+          // Primero ajustar la fecha con timezone de Meta, luego formatear para el gráfico
+          label: formatChartDate(
+            timezoneInfo.adjustMetaDateToLocal ? timezoneInfo.adjustMetaDateToLocal(item.label) : item.label,
+            rangeInDays,
+            index > 0 ? (timezoneInfo.adjustMetaDateToLocal ? timezoneInfo.adjustMetaDateToLocal(groupedSpendData[index - 1].label) : groupedSpendData[index - 1].label) : undefined
+          )
+        }))
 
-      // Set data for revenue chart (default)
-      setRevenueData(formattedSpendData)
+        // Set data for revenue chart (default)
+        setRevenueData(formattedSpendData)
+      }
 
       // Fetch funnel metrics
       const funnelMetricsRaw = await campaignsService.getFunnelMetrics(startDate, endDate)
@@ -375,7 +402,7 @@ export const Campaigns: React.FC = () => {
     } finally {
       setLoading(false)
     }
-  }, [analyticsEnabled, dateRange.end, dateRange.start, visitorSource])
+  }, [analyticsEnabled, dateRange.end, dateRange.start, visitorSource, timezoneInfo])
 
   // Fetch campaigns on mount and when date range or visitor source changes
   useEffect(() => {
