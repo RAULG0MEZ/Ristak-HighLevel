@@ -565,15 +565,6 @@ export function ContactDetailsModal({
                           </div>
                         </div>
                       )}
-                      {selectedContact.ad_id && (
-                        <div className={styles.detailItem}>
-                          <Icon name="hash" size={16} />
-                          <div>
-                            <span className={styles.detailItemLabel}>ID del Anuncio:</span>
-                            <span> {selectedContact.ad_id}</span>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   </div>
                 )}
