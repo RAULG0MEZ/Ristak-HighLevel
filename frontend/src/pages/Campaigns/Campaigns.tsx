@@ -690,6 +690,10 @@ export const Campaigns: React.FC = () => {
   const getFlattenedData = () => {
     const flatData: any[] = []
 
+    if (!campaigns || campaigns.length === 0) {
+      return flatData
+    }
+
     campaigns.forEach(campaign => {
       // Convertir IDs a strings para consistencia
       const campaignId = String(campaign.id)
