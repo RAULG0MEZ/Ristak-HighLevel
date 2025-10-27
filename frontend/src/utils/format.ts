@@ -291,6 +291,66 @@ export const formatChartDate = (dateStr: string, rangeInDays: number, previousDa
 }
 
 /**
+ * Formatea fechas para gráficos después de agrupar datos
+ * @param dateStr Fecha en formato YYYY-MM-DD (posiblemente con ajuste de timezone como "2024-10-01 (LA)")
+ * @param groupBy Tipo de agrupación: 'day' | 'week' | 'month'
+ * @param previousDateStr Fecha anterior para detectar cambios de año
+ * @returns Fecha formateada según el tipo de agrupación
+ */
+export const formatGroupedChartDate = (
+  dateStr: string,
+  groupBy: 'day' | 'week' | 'month',
+  previousDateStr?: string
+): string => {
+  if (!dateStr) return ''
+
+  // Extraer la fecha base (remover indicadores de timezone como " (LA)")
+  const cleanDateStr = dateStr.split(' (')[0]
+
+  // Extraer el indicador de timezone si existe (ej: " (LA)")
+  const tzMatch = dateStr.match(/\s\(([^)]+)\)$/)
+  const tzIndicator = tzMatch ? ` (${tzMatch[1]})` : ''
+
+  // Parsear la fecha
+  const parsed = parseChartDateInput(cleanDateStr)
+  if (!parsed) return dateStr
+
+  const { date } = parsed
+  const monthIndex = date.getMonth()
+  const shortMonth = MONTHS_SHORT[monthIndex] ?? ''
+  const year = date.getFullYear()
+
+  // Detectar cambio de año
+  let yearChanged = false
+  if (previousDateStr) {
+    const prevCleanDateStr = previousDateStr.split(' (')[0]
+    const prevParsed = parseChartDateInput(prevCleanDateStr)
+    if (prevParsed && prevParsed.date.getFullYear() !== year) {
+      yearChanged = true
+    }
+  }
+
+  let formattedDate = ''
+
+  if (groupBy === 'month') {
+    // Vista mensual: "Oct", "Nov", "Dic" (con año solo cuando cambia)
+    const capitalizedMonth = capitalize(shortMonth)
+    formattedDate = yearChanged ? `${capitalizedMonth} ${year}` : capitalizedMonth
+  } else if (groupBy === 'week') {
+    // Vista semanal: "1 oct", "8 oct", "15 oct"
+    const day = date.getDate()
+    formattedDate = yearChanged ? `${day} ${shortMonth} ${year}` : `${day} ${shortMonth}`
+  } else {
+    // Vista diaria: "1 oct", "2 oct", "3 oct"
+    const day = date.getDate()
+    formattedDate = yearChanged ? `${day} ${shortMonth} ${year}` : `${day} ${shortMonth}`
+  }
+
+  // Agregar el indicador de timezone si existía
+  return formattedDate + tzIndicator
+}
+
+/**
  * Formatea una fecha/hora ISO a formato 12 horas (ej: "02:30 PM")
  */
 export const formatTime12h = (dateStr: string): string => {

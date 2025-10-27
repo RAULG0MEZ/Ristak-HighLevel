@@ -14,7 +14,7 @@ import {
 } from 'lucide-react'
 import { useDateRange } from '@/contexts/DateRangeContext'
 import { useLabels } from '@/contexts/LabelsContext'
-import { formatCurrency, formatRoas, formatChartDate, formatDate, formatDateToISO, formatEndDateToISO, parseLocalDateString, formatChartCurrency, formatChartNumber } from '@/utils/format'
+import { formatCurrency, formatRoas, formatDateToISO, formatEndDateToISO, parseLocalDateString, formatChartCurrency, formatChartNumber, formatGroupedChartDate } from '@/utils/format'
 import { campaignsService, type CampaignContact } from '@/services/campaignsService'
 import { reportsService, type CampaignsReport } from '@/services/reportsService'
 import { useAppConfig, useMetaTimezone, useIsRenderDomain } from '@/hooks'
@@ -323,19 +323,21 @@ export const Campaigns: React.FC = () => {
         // Agrupar datos según el rango
         const groupedSpendData = groupChartData(spendData, groupingType)
 
-        // Formatear fechas inteligentemente para el gráfico
-        const formattedSpendData = groupedSpendData.map((item: any, index: number) => ({
-          ...item,
-          // Primero ajustar la fecha con timezone de Meta, luego formatear para el gráfico
-          label: formatChartDate(
-            timezoneInfo.adjustMetaDateToLocal ? timezoneInfo.adjustMetaDateToLocal(item.label) : item.label,
-            rangeInDays,
-            index > 0 ? (timezoneInfo.adjustMetaDateToLocal ? timezoneInfo.adjustMetaDateToLocal(groupedSpendData[index - 1].label) : groupedSpendData[index - 1].label) : undefined
-          ),
-          // Asegurar que los valores sean números válidos
-          value: isNaN(item.value) || item.value === null || item.value === undefined ? 0 : Number(item.value),
-          value2: isNaN(item.value2) || item.value2 === null || item.value2 === undefined ? 0 : Number(item.value2)
-        })).filter(item => item.label && item.label !== '') // Filtrar items sin label válido
+        // Formatear fechas según el tipo de agrupación
+        const formattedSpendData = groupedSpendData.map((item: any, index: number) => {
+          // Primero ajustar la fecha con timezone de Meta si es necesario
+          const adjustedLabel = timezoneInfo.adjustMetaDateToLocal ? timezoneInfo.adjustMetaDateToLocal(item.label) : item.label
+          const prevAdjustedLabel = index > 0 && timezoneInfo.adjustMetaDateToLocal
+            ? timezoneInfo.adjustMetaDateToLocal(groupedSpendData[index - 1].label)
+            : (index > 0 ? groupedSpendData[index - 1].label : undefined)
+
+          return {
+            ...item,
+            label: formatGroupedChartDate(adjustedLabel, groupingType, prevAdjustedLabel),
+            value: isNaN(item.value) || item.value === null || item.value === undefined ? 0 : Number(item.value),
+            value2: isNaN(item.value2) || item.value2 === null || item.value2 === undefined ? 0 : Number(item.value2)
+          }
+        }).filter(item => item.label && item.label !== '')
 
         // Set data for revenue chart (default)
         setRevenueData(formattedSpendData)
@@ -358,15 +360,18 @@ export const Campaigns: React.FC = () => {
           value2: item.appointments || 0
         }))
         const groupedLeadsData = groupChartData(leadsChartData, groupingType)
-        const formattedLeadsData = groupedLeadsData.map((item: any, index: number) => ({
-          label: formatChartDate(
-            timezoneInfo.adjustMetaDateToLocal ? timezoneInfo.adjustMetaDateToLocal(item.label) : item.label,
-            rangeInDays,
-            index > 0 ? (timezoneInfo.adjustMetaDateToLocal ? timezoneInfo.adjustMetaDateToLocal(groupedLeadsData[index - 1].label) : groupedLeadsData[index - 1].label) : undefined
-          ),
-          value: isNaN(item.value) || item.value === null || item.value === undefined ? 0 : Number(item.value),
-          value2: isNaN(item.value2) || item.value2 === null || item.value2 === undefined ? 0 : Number(item.value2)
-        })).filter(item => item.label && item.label !== '')
+        const formattedLeadsData = groupedLeadsData.map((item: any, index: number) => {
+          const adjustedLabel = timezoneInfo.adjustMetaDateToLocal ? timezoneInfo.adjustMetaDateToLocal(item.label) : item.label
+          const prevAdjustedLabel = index > 0 && timezoneInfo.adjustMetaDateToLocal
+            ? timezoneInfo.adjustMetaDateToLocal(groupedLeadsData[index - 1].label)
+            : (index > 0 ? groupedLeadsData[index - 1].label : undefined)
+
+          return {
+            label: formatGroupedChartDate(adjustedLabel, groupingType, prevAdjustedLabel),
+            value: isNaN(item.value) || item.value === null || item.value === undefined ? 0 : Number(item.value),
+            value2: isNaN(item.value2) || item.value2 === null || item.value2 === undefined ? 0 : Number(item.value2)
+          }
+        }).filter(item => item.label && item.label !== '')
 
         // Preparar datos de citas con agrupación
         const appointmentsChartData = funnelMetricsRaw.map((item: any) => ({
@@ -375,15 +380,18 @@ export const Campaigns: React.FC = () => {
           value2: item.sales || 0
         }))
         const groupedAppointmentsData = groupChartData(appointmentsChartData, groupingType)
-        const formattedAppointmentsData = groupedAppointmentsData.map((item: any, index: number) => ({
-          label: formatChartDate(
-            timezoneInfo.adjustMetaDateToLocal ? timezoneInfo.adjustMetaDateToLocal(item.label) : item.label,
-            rangeInDays,
-            index > 0 ? (timezoneInfo.adjustMetaDateToLocal ? timezoneInfo.adjustMetaDateToLocal(groupedAppointmentsData[index - 1].label) : groupedAppointmentsData[index - 1].label) : undefined
-          ),
-          value: isNaN(item.value) || item.value === null || item.value === undefined ? 0 : Number(item.value),
-          value2: isNaN(item.value2) || item.value2 === null || item.value2 === undefined ? 0 : Number(item.value2)
-        })).filter(item => item.label && item.label !== '')
+        const formattedAppointmentsData = groupedAppointmentsData.map((item: any, index: number) => {
+          const adjustedLabel = timezoneInfo.adjustMetaDateToLocal ? timezoneInfo.adjustMetaDateToLocal(item.label) : item.label
+          const prevAdjustedLabel = index > 0 && timezoneInfo.adjustMetaDateToLocal
+            ? timezoneInfo.adjustMetaDateToLocal(groupedAppointmentsData[index - 1].label)
+            : (index > 0 ? groupedAppointmentsData[index - 1].label : undefined)
+
+          return {
+            label: formatGroupedChartDate(adjustedLabel, groupingType, prevAdjustedLabel),
+            value: isNaN(item.value) || item.value === null || item.value === undefined ? 0 : Number(item.value),
+            value2: isNaN(item.value2) || item.value2 === null || item.value2 === undefined ? 0 : Number(item.value2)
+          }
+        }).filter(item => item.label && item.label !== '')
 
         if (analyticsEnabled) {
           // Preparar datos de visitantes con agrupación
@@ -393,15 +401,18 @@ export const Campaigns: React.FC = () => {
             value2: item.leads || 0
           }))
           const groupedVisitorsData = groupChartData(visitorsChartData, groupingType)
-          const formattedVisitorsData = groupedVisitorsData.map((item: any, index: number) => ({
-            label: formatChartDate(
-              timezoneInfo.adjustMetaDateToLocal ? timezoneInfo.adjustMetaDateToLocal(item.label) : item.label,
-              rangeInDays,
-              index > 0 ? (timezoneInfo.adjustMetaDateToLocal ? timezoneInfo.adjustMetaDateToLocal(groupedVisitorsData[index - 1].label) : groupedVisitorsData[index - 1].label) : undefined
-            ),
-            value: isNaN(item.value) || item.value === null || item.value === undefined ? 0 : Number(item.value),
-            value2: isNaN(item.value2) || item.value2 === null || item.value2 === undefined ? 0 : Number(item.value2)
-          })).filter(item => item.label && item.label !== '')
+          const formattedVisitorsData = groupedVisitorsData.map((item: any, index: number) => {
+            const adjustedLabel = timezoneInfo.adjustMetaDateToLocal ? timezoneInfo.adjustMetaDateToLocal(item.label) : item.label
+            const prevAdjustedLabel = index > 0 && timezoneInfo.adjustMetaDateToLocal
+              ? timezoneInfo.adjustMetaDateToLocal(groupedVisitorsData[index - 1].label)
+              : (index > 0 ? groupedVisitorsData[index - 1].label : undefined)
+
+            return {
+              label: formatGroupedChartDate(adjustedLabel, groupingType, prevAdjustedLabel),
+              value: isNaN(item.value) || item.value === null || item.value === undefined ? 0 : Number(item.value),
+              value2: isNaN(item.value2) || item.value2 === null || item.value2 === undefined ? 0 : Number(item.value2)
+            }
+          }).filter(item => item.label && item.label !== '')
           setVisitorsData(formattedVisitorsData || [])
         } else {
           setVisitorsData([])
