@@ -6,6 +6,7 @@ import { Header } from '@/components/layout/Header'
 import { SyncProgressBar } from '@/components/common/SyncProgressBar'
 import { TestModeBanner } from '@/components/common/TestModeBanner'
 import { useAuth } from '@/contexts/AuthContext'
+import { useDomainFeatureSync } from '@/hooks'
 
 export const AppShell: React.FC = () => {
   const navigate = useNavigate()
@@ -13,6 +14,9 @@ export const AppShell: React.FC = () => {
   const [syncProgressVisible, setSyncProgressVisible] = useState(false)
   const [locationName, setLocationName] = useState<string>('Mi Negocio')
   const [locationLogo, setLocationLogo] = useState<string | null>(null)
+
+  // Asegurar que las configuraciones sensibles al dominio estén sincronizadas
+  useDomainFeatureSync()
 
   // Obtener nombre y logo del location de HighLevel
   useEffect(() => {
