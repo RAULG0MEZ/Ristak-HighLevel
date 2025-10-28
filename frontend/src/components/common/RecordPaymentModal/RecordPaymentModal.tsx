@@ -1130,13 +1130,13 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                   const hasPhone = selectedContact?.phone
 
                   if (hasPhone) {
-                    availableOptions.push({ value: 'sms', label: 'WhatsApp', icon: <MessageCircle size={14} /> })
+                    availableOptions.push({ value: 'sms', label: 'WhatsApp' })
                   }
                   if (hasEmail) {
-                    availableOptions.push({ value: 'email', label: 'Email', icon: <Mail size={14} /> })
+                    availableOptions.push({ value: 'email', label: 'Email' })
                   }
                   if (hasEmail && hasPhone) {
-                    availableOptions.push({ value: 'both', label: 'Email y WhatsApp', icon: <Send size={14} /> })
+                    availableOptions.push({ value: 'both', label: 'Email y WhatsApp' })
                   }
 
                   // Si no hay opciones disponibles, mostrar mensaje
