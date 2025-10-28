@@ -371,7 +371,15 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   }
 
   const handleSelectContact = (contact: Contact) => {
-    setSelectedContact(contact)
+    // Solo guardar los datos primitivos del contacto para evitar referencias circulares
+    setSelectedContact({
+      id: contact.id,
+      name: contact.name || '',
+      email: contact.email || '',
+      phone: contact.phone || '',
+      firstName: contact.firstName || '',
+      lastName: contact.lastName || ''
+    })
     setSearchQuery('')
     setShowContactDropdown(false)
     setContacts([])
@@ -382,7 +390,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     setSearchQuery('')
   }
 
-  const buildInvoicePayload = (preparedSubtotal: number, preparedTaxAmount: number, finalCurrency: string, contactName: string, items: any[]) => {
+  const buildInvoicePayload = (preparedSubtotal: number, preparedTaxAmount: number, finalCurrency: string, contactName: string, items: any[], contactId: string, contactEmail: string, contactPhone: string) => {
     const businessDetails: Record<string, any> = {
       name: businessName || 'Mi Negocio'
     }
@@ -413,10 +421,10 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       currency: finalCurrency,
       businessDetails,
       contactDetails: {
-        id: selectedContact?.id,
+        id: contactId,
         name: contactName,
-        email: selectedContact?.email || '',
-        phoneNo: selectedContact?.phone || ''
+        email: contactEmail || '',
+        phoneNo: contactPhone || ''
       },
       items,
       issueDate: new Date().toISOString().split('T')[0],
@@ -506,7 +514,16 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       const taxAmount = includeIVA ? normalizeAmount(subtotal * IVA_RATE) : 0
       const totalAmount = includeIVA ? normalizeAmount(subtotal + taxAmount) : subtotal
 
-      const payload = buildInvoicePayload(subtotal, taxAmount, finalCurrency, contactName, items)
+      const payload = buildInvoicePayload(
+        subtotal,
+        taxAmount,
+        finalCurrency,
+        contactName,
+        items,
+        selectedContact.id,
+        selectedContact.email || '',
+        selectedContact.phone || ''
+      )
 
       setInvoicePayload(payload)
       setInvoiceSummary({

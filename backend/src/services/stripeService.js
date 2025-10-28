@@ -17,7 +17,8 @@ export async function getStripeClient(locationId) {
     )
 
     if (!config) {
-      throw new Error('No se encontró configuración de Stripe para este location')
+      logger.warn('No se encontró configuración de Stripe para este location')
+      return null
     }
 
     // Elegir qué clave usar según el modo
@@ -27,7 +28,8 @@ export async function getStripeClient(locationId) {
       : config.stripe_test_secret_key_encrypted
 
     if (!encryptedKey) {
-      throw new Error(`No hay clave de Stripe configurada para modo ${config.stripe_mode}`)
+      logger.warn(`No hay clave de Stripe configurada para modo ${config.stripe_mode}`)
+      return null
     }
 
     // Desencriptar clave
@@ -38,8 +40,8 @@ export async function getStripeClient(locationId) {
       apiVersion: '2024-11-20.acacia'
     })
   } catch (error) {
-    logger.error('Error obteniendo cliente Stripe:', error)
-    throw error
+    logger.warn('Error obteniendo cliente Stripe:', error)
+    return null
   }
 }
 
@@ -49,6 +51,10 @@ export async function getStripeClient(locationId) {
 export async function findCustomerByEmail(locationId, email) {
   try {
     const stripe = await getStripeClient(locationId)
+
+    if (!stripe) {
+      return null
+    }
 
     const customers = await stripe.customers.list({
       email: email,
@@ -61,8 +67,8 @@ export async function findCustomerByEmail(locationId, email) {
 
     return customers.data[0]
   } catch (error) {
-    logger.error('Error buscando cliente por email:', error)
-    throw error
+    logger.warn('Error buscando cliente por email:', error)
+    return null
   }
 }
 
@@ -98,6 +104,10 @@ export async function listPaymentMethods(locationId, customerId) {
   try {
     const stripe = await getStripeClient(locationId)
 
+    if (!stripe) {
+      return []
+    }
+
     const paymentMethods = await stripe.paymentMethods.list({
       customer: customerId,
       type: 'card'
@@ -105,8 +115,8 @@ export async function listPaymentMethods(locationId, customerId) {
 
     return paymentMethods.data
   } catch (error) {
-    logger.error('Error listando métodos de pago:', error)
-    throw error
+    logger.warn('Error listando métodos de pago:', error)
+    return []
   }
 }
 
