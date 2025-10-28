@@ -767,7 +767,8 @@ export const getContactsByType = async (req, res) => {
         c.purchases_count,
         c.created_at,
         ma.campaign_name,
-        ma.adset_name
+        ma.adset_name,
+        ma.ad_name
       FROM contacts c
       LEFT JOIN meta_ads ma ON ma.ad_id = c.attribution_ad_id AND ma.date::date = c.created_at::date
       WHERE c.attribution_ad_id IN (${placeholders})
@@ -947,7 +948,7 @@ export const getContactsByType = async (req, res) => {
         created_at: contact.created_at,
         ltv: totalPaid,
         ad_id: contact.attribution_ad_id,
-        ad_name: contact.attribution_ad_name,
+        ad_name: contact.ad_name || contact.attribution_ad_name,
         campaign_name: contact.campaign_name,
         adset_name: contact.adset_name,
         is_sale: contact.purchases_count > 0,
