@@ -180,6 +180,7 @@ export const AreaChart: React.FC<AreaChartProps> = ({
               tick={{ fill: 'var(--color-text-tertiary)', fontSize: 12 }}
               axisLine={{ stroke: 'var(--color-text-tertiary)', opacity: 0.2 }}
               tickLine={false}
+              allowDuplicatedCategory
               padding={{ left: 0, right: 0 }}
               scale="point"
             />
