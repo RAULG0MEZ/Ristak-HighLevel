@@ -195,6 +195,7 @@ export const LineChart: React.FC<LineChartProps> = ({
               tick={{ fill: 'var(--color-text-tertiary)', fontSize: 13 }}
               axisLine={{ stroke: 'var(--color-border-subtle)', opacity: 0.2 }}
               tickLine={false}
+              allowDuplicatedCategory
               padding={{ left: 0, right: 0 }}
               scale="point"
             />
