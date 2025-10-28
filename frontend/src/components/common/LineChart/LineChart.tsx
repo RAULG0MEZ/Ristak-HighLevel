@@ -63,6 +63,8 @@ export const LineChart: React.FC<LineChartProps> = ({
   showLegend = false,
   legendLabels = { label1: 'Serie 1', label2: 'Serie 2' }
 }) => {
+  console.log('📈 LineChart data received:', data?.length, 'points')
+  console.log('📈 First data point:', data?.[0])
   const { chartRef, pointPos: _pointPos, isHovering, activeIndex, activeData } = useChartHover({ data })
   const [actualPointPos, setActualPointPos] = useState<{ x: number; y: number } | null>(null)
   const activePointRef = useRef<{ [key: string]: { x: number; y: number } }>({})
@@ -116,15 +118,18 @@ export const LineChart: React.FC<LineChartProps> = ({
 
   const yDomain = useMemo<[number, number]>(() => {
     if (numericValues.length === 0) {
+      console.log('📈 No numeric values, using default domain [0, 1]')
       return [0, 1]
     }
 
     const maxValue = Math.max(...numericValues)
+    console.log('📈 Max value:', maxValue, 'Numeric values:', numericValues.length)
     if (maxValue <= 0) {
       return [0, 1]
     }
 
     const paddedMax = Math.max(maxValue * 1.05, maxValue + 1)
+    console.log('📈 Y Domain:', [0, paddedMax])
     return [0, paddedMax]
   }, [numericValues])
 
@@ -191,7 +196,11 @@ export const LineChart: React.FC<LineChartProps> = ({
         }}
       >
         <ResponsiveContainer width="100%" height="100%">
-          <RechartsLineChart data={data} margin={{ top: 10, right: 12, left: 0, bottom: 5 }}>
+          <RechartsLineChart
+            data={data}
+            margin={{ top: 10, right: 12, left: 0, bottom: 5 }}
+            onMouseEnter={() => console.log('📈 Chart mouse enter')}
+            onMouseLeave={() => console.log('📈 Chart mouse leave')}>
             {showGrid && (
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-subtle)" opacity={0.5} />
             )}
