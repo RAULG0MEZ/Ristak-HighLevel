@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import React from 'react'
 import {
   LineChart as RechartsLineChart,
   Line,
@@ -6,9 +6,9 @@ import {
   YAxis,
   CartesianGrid,
   ResponsiveContainer,
-  Tooltip
+  Tooltip,
+  Legend
 } from 'recharts'
-import { formatCurrency, formatChartCurrency } from '@/utils/format'
 
 interface DataPoint {
   label: string
@@ -35,168 +35,74 @@ interface LineChartProps {
   legendLabels?: LegendLabels
 }
 
-interface SeriesDefinition {
-  key: 'value' | 'value2'
-  label: string
-  color: string
-}
-
-const DEFAULT_COLOR_PRIMARY = '#3b82f6'
-const DEFAULT_COLOR_SECONDARY = '#f59e0b'
-
-const defaultFormatAxis = (value: number): string => formatChartCurrency(value)
-
-const defaultFormatTooltip = (value: number): string => formatCurrency(value)
-
-
 export const LineChart: React.FC<LineChartProps> = ({
   data,
-  height = '100%',
-  minHeight,
+  height = 400,
+  minHeight = 320,
   showGrid = true,
-  color = DEFAULT_COLOR_PRIMARY,
-  color2 = DEFAULT_COLOR_SECONDARY,
+  color = '#8b5cf6',
+  color2 = '#3b82f6',
   showPoints = true,
-  formatValue = defaultFormatAxis,
-  formatTooltipValue = (value) => defaultFormatTooltip(value),
+  formatValue,
+  formatTooltipValue,
   showLegend = false,
   legendLabels = { label1: 'Serie 1', label2: 'Serie 2' }
 }) => {
-  console.log('📈 LineChart data received:', data?.length, 'points')
-  console.log('📈 First data point:', data?.[0])
-  console.log('📈 Colors:', color, color2)
-  const hasSecondSeries = data.some((d) => typeof d.value2 === 'number')
+  // Log para diagnóstico
+  console.log('📈 LineChart rendering with data:', data)
 
-  const series = useMemo<SeriesDefinition[]>(() => {
-    const definitions: SeriesDefinition[] = [
-      { key: 'value', label: legendLabels.label1, color }
-    ]
-
-    if (hasSecondSeries && legendLabels.label2) {
-      definitions.push({ key: 'value2', label: legendLabels.label2, color: color2 })
-    }
-
-    console.log('📈 Series definitions:', definitions)
-    return definitions
-  }, [color, color2, legendLabels.label1, legendLabels.label2, hasSecondSeries])
-
-  const numericValues = useMemo(() => {
-    const values: number[] = []
-    data.forEach((item) => {
-      if (typeof item.value === 'number') values.push(item.value)
-      if (typeof item.value2 === 'number') values.push(item.value2)
-    })
-    return values
-  }, [data])
-
-  const yDomain = useMemo<[number, number]>(() => {
-    if (numericValues.length === 0) {
-      console.log('📈 No numeric values, using default domain [0, 1]')
-      return [0, 1]
-    }
-
-    const maxValue = Math.max(...numericValues)
-    console.log('📈 Max value:', maxValue, 'Numeric values:', numericValues.length)
-    if (maxValue <= 0) {
-      return [0, 1]
-    }
-
-    const paddedMax = Math.max(maxValue * 1.05, maxValue + 1)
-    console.log('📈 Y Domain:', [0, paddedMax])
-    return [0, paddedMax]
-  }, [numericValues])
-
-  const axisFormatter = (value: number) => formatValue(value)
+  // Verificar si hay segunda serie
+  const hasSecondSeries = data.some(d => typeof d.value2 === 'number')
 
   return (
-    <div className="space-y-3">
-      {showLegend && (
-        <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-[var(--color-text-secondary)] mb-2">
-          {series.map((serie) => (
-            <div key={serie.key} className="inline-flex items-center gap-2">
-              <span
-                className="h-2.5 w-2.5 rounded-full"
-                style={{ backgroundColor: serie.color }}
-              />
-              <span className="font-medium">{serie.label}</span>
-            </div>
-          ))}
-        </div>
-      )}
+    <div style={{ width: '100%', height: height || 400 }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <RechartsLineChart
+          data={data}
+          margin={{ top: 10, right: 30, left: 30, bottom: 10 }}
+        >
+          {showGrid && (
+            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          )}
 
-      <div
-        className="relative"
-        style={{
-          height,
-          minHeight:
-            typeof minHeight !== 'undefined'
-              ? minHeight
-              : typeof height === 'number'
-                ? height
-                : 280
-        }}
-      >
-        <ResponsiveContainer width="100%" height="100%">
-          <RechartsLineChart
-            data={data}
-            margin={{ top: 10, right: 12, left: 10, bottom: 5 }}
-            onMouseEnter={() => console.log('📈 Chart mouse enter')}
-            onMouseLeave={() => console.log('📈 Chart mouse leave')}>
-            {showGrid && (
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" opacity={0.5} />
-            )}
+          <XAxis
+            dataKey="label"
+            stroke="#9ca3af"
+            tick={{ fill: '#9ca3af' }}
+          />
 
-            <XAxis
-              dataKey="label"
-              tick={{ fill: '#6b7280', fontSize: 13 }}
-              axisLine={{ stroke: '#e5e7eb', opacity: 0.2 }}
-              tickLine={false}
-              allowDuplicatedCategory
-              padding={{ left: 0, right: 0 }}
-              scale="point"
+          <YAxis
+            stroke="#9ca3af"
+            tick={{ fill: '#9ca3af' }}
+          />
+
+          <Tooltip />
+
+          {showLegend && <Legend />}
+
+          <Line
+            type="monotone"
+            dataKey="value"
+            stroke={color}
+            strokeWidth={2}
+            dot={showPoints}
+            name={legendLabels.label1}
+            isAnimationActive={false}
+          />
+
+          {hasSecondSeries && (
+            <Line
+              type="monotone"
+              dataKey="value2"
+              stroke={color2}
+              strokeWidth={2}
+              dot={showPoints}
+              name={legendLabels.label2}
+              isAnimationActive={false}
             />
-
-            <YAxis
-              domain={yDomain}
-              tick={{ fill: '#6b7280', fontSize: 13 }}
-              axisLine={{ stroke: '#e5e7eb', opacity: 0.2 }}
-              tickLine={false}
-              tickFormatter={axisFormatter}
-              allowDecimals={false}
-            />
-
-            {/* Tooltip nativo de Recharts habilitado temporalmente para diagnóstico */}
-            <Tooltip />
-
-            {series.map((serie) => (
-              <Line
-                key={serie.key}
-                name={serie.label}
-                type="monotone"
-                dataKey={serie.key}
-                stroke={serie.color}
-                strokeWidth={3}
-                dot={{ r: 4, fill: serie.color }}
-                activeDot={{ r: 6 }}
-                isAnimationActive={false}
-                connectNulls
-              />
-            ))}
-          </RechartsLineChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Nuestro tooltip flotante que aparece sobre el punto */}
-      {/* Temporalmente comentado para diagnóstico
-      <ChartTooltip
-        active={isHovering && Boolean(resolvedPointPos)}
-        data={activeData}
-        pointPos={resolvedPointPos}
-        series={series}
-        formatValue={tooltipFormatter}
-        verticalOffset={tooltipVerticalOffset}
-      />
-      */}
+          )}
+        </RechartsLineChart>
+      </ResponsiveContainer>
     </div>
   )
 }
