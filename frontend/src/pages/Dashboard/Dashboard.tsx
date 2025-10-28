@@ -57,6 +57,8 @@ export const Dashboard: React.FC = () => {
   const [funnelLoading, setFunnelLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [selectedChartView, setSelectedChartView] = useState<'revenue-spend' | 'visitors-leads' | 'leads-appointments' | 'appointments-sales'>('revenue-spend')
+  const [extendedChartDataLoaded, setExtendedChartDataLoaded] = useState(false)
+  const [extendedChartDataLoading, setExtendedChartDataLoading] = useState(false)
 
   const funnelChartData = React.useMemo(() => {
     if (analyticsEnabled) return funnelData

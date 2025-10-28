@@ -267,9 +267,6 @@ const Analytics: React.FC = () => {
           getContactsByDate(prevStartDate, prevEndDate)
         ])
 
-        console.log('📊 Sessions received:', currentSessions.length, 'sessions')
-        console.log('📊 First session:', currentSessions[0])
-
         if (currentSessions.length > 0) {
           // Calcular métricas principales
           const uniqueVids = new Set(currentSessions.map((s: Session) => s.visitor_id)).size
@@ -386,7 +383,6 @@ const Analytics: React.FC = () => {
             }))
 
           setDailyTraffic(chartData)
-          console.log('📊 Daily Traffic Data:', chartData)
 
           // Gráfico de conversiones (registros reales de contactos por fecha de creación)
           // Combinar período actual y anterior para contexto visual

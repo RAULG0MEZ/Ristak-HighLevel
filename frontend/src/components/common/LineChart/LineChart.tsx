@@ -1,14 +1,15 @@
-import React from 'react'
+import React, { useMemo, useRef, useState, useEffect } from 'react'
 import {
   LineChart as RechartsLineChart,
   Line,
   XAxis,
   YAxis,
   CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  Legend
+  ResponsiveContainer
 } from 'recharts'
+import { formatCurrency, formatChartCurrency } from '@/utils/format'
+import { useChartHover } from '@/hooks/useChartHover'
+import { ChartTooltip } from '../ChartTooltip/ChartTooltip'
 
 interface DataPoint {
   label: string
@@ -35,74 +36,270 @@ interface LineChartProps {
   legendLabels?: LegendLabels
 }
 
+interface SeriesDefinition {
+  key: 'value' | 'value2'
+  label: string
+  color: string
+}
+
+const DEFAULT_COLOR_PRIMARY = '#8b5cf6'
+const DEFAULT_COLOR_SECONDARY = '#3b82f6'
+
+const defaultFormatAxis = (value: number): string => formatChartCurrency(value)
+
+const defaultFormatTooltip = (value: number): string => formatCurrency(value)
+
+
 export const LineChart: React.FC<LineChartProps> = ({
   data,
-  height = 400,
-  minHeight = 320,
+  height = '100%',
+  minHeight,
   showGrid = true,
-  color = '#8b5cf6',
-  color2 = '#3b82f6',
+  color = DEFAULT_COLOR_PRIMARY,
+  color2 = DEFAULT_COLOR_SECONDARY,
   showPoints = true,
-  formatValue,
-  formatTooltipValue,
+  formatValue = defaultFormatAxis,
+  formatTooltipValue = (value) => defaultFormatTooltip(value),
   showLegend = false,
   legendLabels = { label1: 'Serie 1', label2: 'Serie 2' }
 }) => {
-  // Log para diagnóstico
-  console.log('📈 LineChart rendering with data:', data)
+  const { chartRef, pointPos: _pointPos, isHovering, activeIndex, activeData } = useChartHover({ data })
+  const [actualPointPos, setActualPointPos] = useState<{ x: number; y: number } | null>(null)
+  const activePointRef = useRef<{ [key: string]: { x: number; y: number } }>({})
+  const pendingUpdateRef = useRef<{ x: number; y: number } | null>(null)
+  const hasSecondSeries = data.some((d) => typeof d.value2 === 'number')
+  const isDarkMode = typeof document !== 'undefined' && document.body.classList.contains('dark')
 
-  // Verificar si hay segunda serie
-  const hasSecondSeries = data.some(d => typeof d.value2 === 'number')
+  // Resetear cuando cambia el índice o deja de hacer hover
+  useEffect(() => {
+    if (!isHovering) {
+      setActualPointPos(null)
+      activePointRef.current = {}
+      pendingUpdateRef.current = null
+    } else {
+      // Limpiar los puntos del índice anterior
+      activePointRef.current = {}
+      pendingUpdateRef.current = null
+    }
+  }, [isHovering, activeIndex])
+
+  // Actualizar posición después del render
+  useEffect(() => {
+    if (pendingUpdateRef.current) {
+      // Usar requestAnimationFrame para evitar setState durante render
+      requestAnimationFrame(() => {
+        setActualPointPos(pendingUpdateRef.current)
+        pendingUpdateRef.current = null
+      })
+    }
+  }, [isHovering, activeIndex])
+
+  const series = useMemo<SeriesDefinition[]>(() => {
+    const definitions: SeriesDefinition[] = [
+      { key: 'value', label: legendLabels.label1, color }
+    ]
+
+    if (hasSecondSeries && legendLabels.label2) {
+      definitions.push({ key: 'value2', label: legendLabels.label2, color: color2 })
+    }
+
+    return definitions
+  }, [color, color2, legendLabels.label1, legendLabels.label2, hasSecondSeries])
+
+  const numericValues = useMemo(() => {
+    const values: number[] = []
+    data.forEach((item) => {
+      if (typeof item.value === 'number') values.push(item.value)
+      if (typeof item.value2 === 'number') values.push(item.value2)
+    })
+    return values
+  }, [data])
+
+  const yDomain = useMemo<[number, number]>(() => {
+    if (numericValues.length === 0) {
+      return [0, 1]
+    }
+
+    const maxValue = Math.max(...numericValues)
+    if (maxValue <= 0) {
+      return [0, 1]
+    }
+
+    const paddedMax = Math.max(maxValue * 1.05, maxValue + 1)
+    return [0, paddedMax]
+  }, [numericValues])
+
+  const axisFormatter = (value: number) => formatValue(value)
+  const tooltipFormatter = (value: number, key: string) => formatTooltipValue(value, key)
+  const resolvedPointPos = actualPointPos ?? pendingUpdateRef.current ?? null
+  const tooltipAnchor = resolvedPointPos
+
+  const tooltipVerticalOffset = useMemo(() => {
+    if (!tooltipAnchor || !chartRef.current) {
+      return 22
+    }
+
+    const rect = chartRef.current.getBoundingClientRect()
+    const distanceFromTop = Math.max(0, tooltipAnchor.y - rect.top)
+    const normalized = rect.height > 0 ? Math.min(Math.max(distanceFromTop / rect.height, 0), 1) : 0.5
+
+    const IDEAL_MIN_GAP = 18
+    const IDEAL_MAX_GAP = 54
+    const TOP_CLEARANCE = 4
+
+    const availableGap = Math.max(distanceFromTop - TOP_CLEARANCE, 0)
+
+    if (availableGap <= IDEAL_MIN_GAP) {
+      return availableGap
+    }
+
+    const idealGap = IDEAL_MIN_GAP + normalized * (IDEAL_MAX_GAP - IDEAL_MIN_GAP)
+    const boundedGap = Math.min(
+      Math.max(IDEAL_MIN_GAP, idealGap),
+      Math.min(availableGap, IDEAL_MAX_GAP)
+    )
+
+    return boundedGap
+  }, [tooltipAnchor, chartRef])
 
   return (
-    <div style={{ width: '100%', height: height || 400 }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <RechartsLineChart
-          data={data}
-          margin={{ top: 10, right: 30, left: 30, bottom: 10 }}
-        >
-          {showGrid && (
-            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-          )}
+    <div className="space-y-3">
+      {showLegend && (
+        <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-[var(--color-text-secondary)] mb-2">
+          {series.map((serie) => (
+            <div key={serie.key} className="inline-flex items-center gap-2">
+              <span
+                className="h-2.5 w-2.5 rounded-full"
+                style={{ backgroundColor: serie.color }}
+              />
+              <span className="font-medium">{serie.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
-          <XAxis
-            dataKey="label"
-            stroke="#9ca3af"
-            tick={{ fill: '#9ca3af' }}
-          />
+      <div
+        ref={chartRef}
+        className="relative"
+        style={{
+          height,
+          minHeight:
+            typeof minHeight !== 'undefined'
+              ? minHeight
+              : typeof height === 'number'
+                ? height
+                : 280
+        }}
+      >
+        <ResponsiveContainer width="100%" height="100%">
+          <RechartsLineChart data={data} margin={{ top: 10, right: 12, left: 0, bottom: 5 }}>
+            {showGrid && (
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-subtle)" opacity={0.5} />
+            )}
 
-          <YAxis
-            stroke="#9ca3af"
-            tick={{ fill: '#9ca3af' }}
-          />
-
-          <Tooltip />
-
-          {showLegend && <Legend />}
-
-          <Line
-            type="monotone"
-            dataKey="value"
-            stroke={color}
-            strokeWidth={2}
-            dot={showPoints}
-            name={legendLabels.label1}
-            isAnimationActive={false}
-          />
-
-          {hasSecondSeries && (
-            <Line
-              type="monotone"
-              dataKey="value2"
-              stroke={color2}
-              strokeWidth={2}
-              dot={showPoints}
-              name={legendLabels.label2}
-              isAnimationActive={false}
+            <XAxis
+              dataKey="label"
+              tick={{ fill: 'var(--color-text-tertiary)', fontSize: 13 }}
+              axisLine={{ stroke: 'var(--color-border-subtle)', opacity: 0.2 }}
+              tickLine={false}
+              allowDuplicatedCategory
+              padding={{ left: 0, right: 0 }}
+              scale="point"
             />
-          )}
-        </RechartsLineChart>
-      </ResponsiveContainer>
+
+            <YAxis
+              domain={yDomain}
+              tick={{ fill: 'var(--color-text-tertiary)', fontSize: 13 }}
+              axisLine={{ stroke: 'var(--color-border-subtle)', opacity: 0.2 }}
+              tickLine={false}
+              tickFormatter={axisFormatter}
+              allowDecimals={false}
+            />
+
+            {/* Tooltip de Recharts deshabilitado - usamos nuestro FloatingTooltip */}
+
+            {series.map((serie) => (
+              <Line
+                key={serie.key}
+                name={serie.label}
+                type="monotone"
+                dataKey={serie.key}
+                stroke={serie.color}
+                strokeWidth={2.5}
+                dot={
+                  showPoints
+                    ? (props: any) => {
+                        const isActive = props.index === activeIndex
+
+                        // Capturar la posición real del punto cuando está activo
+                        if (isActive && props.cx && props.cy) {
+                          const rect = chartRef.current?.getBoundingClientRect()
+                          if (rect) {
+                            const pointX = rect.left + props.cx
+                            const pointY = rect.top + props.cy
+                            // Guardar la posición de este punto
+                            activePointRef.current[`${props.index}-${serie.key}`] = { x: pointX, y: pointY }
+
+                            // Guardar para actualizar después del render
+                            const allPoints = Object.values(activePointRef.current)
+                            if (allPoints.length > 0) {
+                              const highestPoint = allPoints.reduce((highest, current) =>
+                                current.y < highest.y ? current : highest
+                              )
+                              pendingUpdateRef.current = highestPoint
+                            }
+                          }
+                        }
+
+                        return (
+                          <circle
+                            cx={props.cx}
+                            cy={props.cy}
+                            r={showPoints ? (isActive ? 7 : 3.5) : 0}
+                            fill={
+                              showPoints
+                                ? isActive
+                                  ? 'var(--color-background-primary)'
+                                  : serie.color
+                                : 'transparent'
+                            }
+                            stroke={showPoints && isActive ? serie.color : 'none'}
+                            strokeWidth={showPoints && isActive ? 3 : 0}
+                            data-chart-index={props.index}
+                            data-chart-interactive={showPoints ? 'true' : undefined}
+                            style={{
+                              pointerEvents: showPoints ? 'auto' : 'none',
+                              transition: showPoints ? 'all 150ms ease-out' : undefined,
+                              filter:
+                                showPoints && isActive
+                                  ? 'drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2))'
+                                  : 'none'
+                            }}
+                          />
+                        )
+                      }
+                    : false
+                }
+                activeDot={false}
+                animationDuration={0}
+                animationBegin={0}
+                connectNulls
+                isAnimationActive={false}
+              />
+            ))}
+          </RechartsLineChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Nuestro tooltip flotante que aparece sobre el punto */}
+      <ChartTooltip
+        active={isHovering && Boolean(resolvedPointPos)}
+        data={activeData}
+        pointPos={resolvedPointPos}
+        series={series}
+        formatValue={tooltipFormatter}
+        verticalOffset={tooltipVerticalOffset}
+      />
     </div>
   )
 }
