@@ -240,6 +240,9 @@ export const Campaigns: React.FC = () => {
 
     // Convertir a array y formatear
     const sortedKeys = Array.from(grouped.keys()).sort()
+    const spansMultipleYears = groupBy === 'month'
+      ? new Set(sortedKeys.map(key => key.split('-')[0])).size > 1
+      : false
 
     return sortedKeys.map((key, index) => {
       const data = grouped.get(key)!
@@ -263,7 +266,11 @@ export const Campaigns: React.FC = () => {
 
       let formattedDate: string
       if (groupBy === 'month') {
-        formattedDate = yearChanged ? `${monthName} ${year}` : monthName
+        if (spansMultipleYears) {
+          formattedDate = `${monthName} ${year}`
+        } else {
+          formattedDate = yearChanged ? `${monthName} ${year}` : monthName
+        }
       } else {
         formattedDate = yearChanged ? `${day} ${monthName.toLowerCase()} ${year}` : `${day} ${monthName.toLowerCase()}`
       }
