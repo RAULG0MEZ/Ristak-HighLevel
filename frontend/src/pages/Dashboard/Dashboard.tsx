@@ -189,6 +189,9 @@ export const Dashboard: React.FC = () => {
     }
   }, [analyticsEnabled, selectedChartView, formattedFinancialData, visitorsLeadsData, leadsAppointmentsData, appointmentsSalesData, labels.leads, currencyAxisFormatter])
 
+  const isExtendedChartView = selectedChartView !== 'revenue-spend'
+  const isChartLoading = isExtendedChartView && extendedChartDataLoading
+
   const hasChartData = React.useMemo(
     () => chartConfig.data.some(item => (item.value ?? 0) !== 0 || (item.value2 ?? 0) !== 0),
     [chartConfig]
@@ -221,10 +224,18 @@ export const Dashboard: React.FC = () => {
     }
   }, [analyticsEnabled, selectedChartView])
 
-  // Formatear datos para diferentes vistas del gráfico
-  const formatChartDataForView = React.useCallback(async (twelveMonthsAgo: Date, now: Date) => {
+  // Cargar datasets extendidos del gráfico solo cuando sean necesarios
+  const loadExtendedChartData = React.useCallback(async () => {
+    if (!user || extendedChartDataLoading || extendedChartDataLoaded) {
+      return
+    }
+
+    setExtendedChartDataLoading(true)
     try {
-      // Si analytics está habilitado, obtener visitantes desde sessions (tracking interno)
+      const now = new Date()
+      const twelveMonthsAgo = new Date(now)
+      twelveMonthsAgo.setMonth(now.getMonth() - 12)
+
       const visitorsPromise = analyticsEnabled
         ? dashboardService.getVisitorsData({ start: twelveMonthsAgo, end: now, groupBy: 'month' })
         : Promise.resolve<{ label: string; value: number }[]>([])
@@ -236,13 +247,11 @@ export const Dashboard: React.FC = () => {
         dashboardService.getSalesData({ start: twelveMonthsAgo, end: now, groupBy: 'month' })
       ])
 
-      // Crear mapas por fecha
       const visitorsMap = new Map(visitorsData.map(d => [d.label, d.value]))
       const leadsMap = new Map(leadsData.map(d => [d.label, d.value]))
       const appointmentsMap = new Map(appointmentsData.map(d => [d.label, d.value]))
       const salesMap = new Map(salesData.map(d => [d.label, d.value]))
 
-      // Obtener todas las fechas únicas
       const allDates = new Set([
         ...visitorsData.map(d => d.label),
         ...leadsData.map(d => d.label),
@@ -250,21 +259,6 @@ export const Dashboard: React.FC = () => {
         ...salesData.map(d => d.label)
       ])
       const sortedDates = Array.from(allDates).sort()
-
-      // Visitantes vs Leads
-      // Leads vs Citas
-      const leadsAppointments = sortedDates.map(date => ({
-        label: date,
-        value: leadsMap.get(date) || 0,
-        value2: appointmentsMap.get(date) || 0
-      }))
-
-      // Citas vs Ventas
-      const appointmentsSales = sortedDates.map(date => ({
-        label: date,
-        value: appointmentsMap.get(date) || 0,
-        value2: salesMap.get(date) || 0
-      }))
 
       if (analyticsEnabled) {
         const visitorsLeads = sortedDates.map(date => ({
@@ -276,12 +270,43 @@ export const Dashboard: React.FC = () => {
       } else {
         setVisitorsLeadsData([])
       }
+
+      const leadsAppointments = sortedDates.map(date => ({
+        label: date,
+        value: leadsMap.get(date) || 0,
+        value2: appointmentsMap.get(date) || 0
+      }))
       setLeadsAppointmentsData(leadsAppointments)
+
+      const appointmentsSales = sortedDates.map(date => ({
+        label: date,
+        value: appointmentsMap.get(date) || 0,
+        value2: salesMap.get(date) || 0
+      }))
       setAppointmentsSalesData(appointmentsSales)
+
+      setExtendedChartDataLoaded(true)
     } catch (error) {
-      // Silently fail
+      // TODO: Integrate logging service
+      setExtendedChartDataLoaded(false)
+    } finally {
+      setExtendedChartDataLoading(false)
     }
-  }, [analyticsEnabled])
+  }, [analyticsEnabled, extendedChartDataLoaded, extendedChartDataLoading, user])
+
+  React.useEffect(() => {
+    setExtendedChartDataLoaded(false)
+    setExtendedChartDataLoading(false)
+    setVisitorsLeadsData([])
+    setLeadsAppointmentsData([])
+    setAppointmentsSalesData([])
+  }, [analyticsEnabled, dateRange.start, dateRange.end])
+
+  React.useEffect(() => {
+    if (selectedChartView === 'revenue-spend') return
+    if (!analyticsEnabled && selectedChartView === 'visitors-leads') return
+    void loadExtendedChartData()
+  }, [selectedChartView, analyticsEnabled, loadExtendedChartData])
 
   useEffect(() => {
     const loadData = async () => {
@@ -318,8 +343,6 @@ export const Dashboard: React.FC = () => {
           })
         ])
 
-        await formatChartDataForView(twelveMonthsAgo, now)
-
         setMetrics(metricsData)
         setChartData(chartDataResponse)
         setTrafficSources(analyticsEnabled ? trafficSourcesData : [])
@@ -332,7 +355,7 @@ export const Dashboard: React.FC = () => {
     }
 
     loadData()
-  }, [analyticsEnabled, dateRange, user, formatChartDataForView])
+  }, [analyticsEnabled, dateRange, user])
 
   // useEffect separado solo para el funnel (no recarga toda la página)
   React.useEffect(() => {
@@ -452,7 +475,11 @@ export const Dashboard: React.FC = () => {
             />
           </div>
           <div className="relative w-full" style={{ minHeight: chartHeight, height: chartHeight }}>
-            {hasChartData ? (
+            {isChartLoading ? (
+              <div className="flex h-full items-center justify-center rounded-xl border border-[rgba(148,163,184,0.18)] bg-[color-mix(in_srgb,var(--color-background-glass) 82%, transparent)] text-sm text-[var(--color-text-tertiary)]">
+                Cargando datos del gráfico...
+              </div>
+            ) : hasChartData ? (
               <AreaChart
                 data={chartConfig.data}
                 height={chartHeight}

@@ -165,7 +165,7 @@ export const LineChart: React.FC<LineChartProps> = ({
   return (
     <div className="space-y-3">
       {showLegend && (
-        <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-[var(--color-text-secondary)] mb-2">
+        <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-gray-500 dark:text-gray-400 mb-2">
           {series.map((serie) => (
             <div key={serie.key} className="inline-flex items-center gap-2">
               <span
@@ -194,13 +194,13 @@ export const LineChart: React.FC<LineChartProps> = ({
         <ResponsiveContainer width="100%" height="100%">
           <RechartsLineChart data={data} margin={{ top: 10, right: 12, left: 0, bottom: 5 }}>
             {showGrid && (
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-subtle)" opacity={0.5} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" opacity={0.5} />
             )}
 
             <XAxis
               dataKey="label"
-              tick={{ fill: 'var(--color-text-tertiary)', fontSize: 13 }}
-              axisLine={{ stroke: 'var(--color-border-subtle)', opacity: 0.2 }}
+              tick={{ fill: '#6b7280', fontSize: 13 }}
+              axisLine={{ stroke: '#e5e7eb', opacity: 0.2 }}
               tickLine={false}
               allowDuplicatedCategory
               padding={{ left: 0, right: 0 }}
@@ -209,8 +209,8 @@ export const LineChart: React.FC<LineChartProps> = ({
 
             <YAxis
               domain={yDomain}
-              tick={{ fill: 'var(--color-text-tertiary)', fontSize: 13 }}
-              axisLine={{ stroke: 'var(--color-border-subtle)', opacity: 0.2 }}
+              tick={{ fill: '#6b7280', fontSize: 13 }}
+              axisLine={{ stroke: '#e5e7eb', opacity: 0.2 }}
               tickLine={false}
               tickFormatter={axisFormatter}
               allowDecimals={false}
@@ -259,7 +259,7 @@ export const LineChart: React.FC<LineChartProps> = ({
                             fill={
                               showPoints
                                 ? isActive
-                                  ? 'var(--color-background-primary)'
+                                  ? (isDarkMode ? '#1a1a1a' : '#ffffff')
                                   : serie.color
                                 : 'transparent'
                             }
