@@ -1857,8 +1857,65 @@ export const getAdAccounts = async (req, res) => {
 
     logger.info('Obteniendo cuentas de anuncios de Meta...');
 
-    // Llamar a Meta Graph API para obtener ad accounts
-    const url = `${API_URLS.META_GRAPH}/me/adaccounts?fields=id,account_id,name,currency,timezone_name,account_status&access_token=${accessToken}`;
+    // IMPORTANTE: Primero verificar si es System User o User Token
+    // System Users NO pueden usar /me, necesitan usar /me/businesses o token debug
+
+    // 1. Detectar tipo de token
+    const debugUrl = `${API_URLS.META_GRAPH}/debug_token?input_token=${accessToken}&access_token=${accessToken}`;
+    const debugResponse = await fetch(debugUrl);
+    const debugData = await debugResponse.json();
+
+    if (debugData.error) {
+      logger.error('Error verificando token:', debugData.error.message);
+      return res.status(400).json({
+        success: false,
+        error: debugData.error.message || 'Token inválido'
+      });
+    }
+
+    const tokenType = debugData.data?.type;
+    const userId = debugData.data?.user_id;
+    logger.info(`Token type: ${tokenType}, User ID: ${userId}`);
+
+    let url;
+
+    if (tokenType === 'SYSTEM_USER') {
+      // Para System Users, primero obtenemos sus businesses
+      // y luego las ad accounts de esos businesses
+      const businessUrl = `${API_URLS.META_GRAPH}/${userId}/businesses?fields=id,name&access_token=${accessToken}`;
+      logger.info('System User detectado, obteniendo businesses...');
+
+      const businessResponse = await fetch(businessUrl);
+      const businessData = await businessResponse.json();
+
+      if (businessData.error) {
+        logger.error('Error obteniendo businesses:', businessData.error.message);
+        return res.status(400).json({
+          success: false,
+          error: businessData.error.message || 'Error obteniendo businesses'
+        });
+      }
+
+      const businesses = businessData.data || [];
+      logger.info(`Encontrados ${businesses.length} businesses`);
+
+      if (businesses.length === 0) {
+        return res.json({
+          success: true,
+          data: {
+            adAccounts: []
+          }
+        });
+      }
+
+      // Obtener ad accounts del primer business (o de todos si hay múltiples)
+      const businessId = businesses[0].id;
+      url = `${API_URLS.META_GRAPH}/${businessId}/owned_ad_accounts?fields=id,account_id,name,currency,timezone_name,account_status&access_token=${accessToken}`;
+      logger.info(`Obteniendo ad accounts del business ${businessId}...`);
+    } else {
+      // Para User Tokens normales, usar /me/adaccounts
+      url = `${API_URLS.META_GRAPH}/me/adaccounts?fields=id,account_id,name,currency,timezone_name,account_status&access_token=${accessToken}`;
+    }
 
     const response = await fetch(url);
     const data = await response.json();
@@ -1876,7 +1933,9 @@ export const getAdAccounts = async (req, res) => {
 
     res.json({
       success: true,
-      adAccounts: adAccounts
+      data: {
+        adAccounts: adAccounts
+      }
     });
 
   } catch (error) {
@@ -1924,7 +1983,9 @@ export const getPixels = async (req, res) => {
 
     res.json({
       success: true,
-      pixels: pixels
+      data: {
+        pixels: pixels
+      }
     });
 
   } catch (error) {
