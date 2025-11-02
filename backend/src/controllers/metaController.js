@@ -1856,47 +1856,27 @@ export const getAdAccounts = async (req, res) => {
       });
     }
 
-    console.log('🔍 ===== INICIO: Obtención de cuentas de Meta Ads =====');
-    console.log(`📝 Token recibido (primeros 20 chars): ${accessToken.substring(0, 20)}...`);
-    logger.info('🔍 ===== INICIO: Obtención de cuentas de Meta Ads =====');
-    logger.info(`📝 Token recibido (primeros 20 chars): ${accessToken.substring(0, 20)}...`);
+    logger.info('Obteniendo cuentas de Meta Ads');
 
     // VERIFICAR VERSIÓN ACTUAL EN MEMORIA
     const { getMetaApiVersion } = await import('../config/constants.js');
     const currentVersion = getMetaApiVersion();
-    console.log(`🔧 Versión de Meta API en memoria: ${currentVersion}`);
-    console.log(`🌐 URL base que se usará: https://graph.facebook.com/${currentVersion}`);
-    logger.info(`🔧 Versión de Meta API en memoria: ${currentVersion}`);
-    logger.info(`🌐 URL base que se usará: https://graph.facebook.com/${currentVersion}`);
 
     // FORZAR v23.0 SI ES NECESARIO
     if (currentVersion !== 'v23.0') {
-      console.log(`⚠️ VERSIÓN INCORRECTA DETECTADA: ${currentVersion}`);
-      console.log(`🔄 Forzando cambio a v23.0...`);
-      logger.warn(`⚠️ VERSIÓN INCORRECTA DETECTADA: ${currentVersion}`);
-      logger.warn(`🔄 Forzando cambio a v23.0...`);
+      logger.warn(`Versión incorrecta detectada: ${currentVersion}, forzando v23.0`);
       const { setMetaApiVersion } = await import('../config/constants.js');
       setMetaApiVersion('v23.0');
-      console.log(`✅ Versión actualizada a v23.0`);
-      logger.info(`✅ Versión actualizada a v23.0`);
     }
 
     // PASO 1: Verificar token y obtener user_id
     const debugUrl = `https://graph.facebook.com/v23.0/debug_token?input_token=${accessToken}&access_token=${accessToken}`;
-    console.log(`🔑 PASO 1: Verificando token con Meta API...`);
-    console.log(`   URL: https://graph.facebook.com/v23.0/debug_token`);
-    logger.info(`🔑 PASO 1: Verificando token con Meta API...`);
-    logger.info(`   URL: https://graph.facebook.com/v23.0/debug_token`);
 
     const debugResponse = await fetch(debugUrl);
     const debugData = await debugResponse.json();
 
-    console.log(`📦 Respuesta de debug_token:`, JSON.stringify(debugData, null, 2));
-    logger.info(`📦 Respuesta de debug_token:`, JSON.stringify(debugData, null, 2));
-
     if (debugData.error) {
-      console.log(`❌ Error en debug_token:`, JSON.stringify(debugData.error));
-      logger.error(`❌ Error en debug_token:`, debugData.error);
+      logger.error('Error verificando token:', debugData.error);
       return res.status(400).json({
         success: false,
         error: debugData.error.message || 'Token inválido'
@@ -1904,25 +1884,9 @@ export const getAdAccounts = async (req, res) => {
     }
 
     const userId = debugData.data?.user_id;
-    const tokenType = debugData.data?.type;
-    const appId = debugData.data?.app_id;
-    const isValid = debugData.data?.is_valid;
-    const scopes = debugData.data?.scopes || [];
-
-    console.log(`✅ Token válido: ${isValid}`);
-    console.log(`   - Tipo: ${tokenType}`);
-    console.log(`   - User ID: ${userId}`);
-    console.log(`   - App ID: ${appId}`);
-    console.log(`   - Scopes: ${scopes.join(', ')}`);
-    logger.info(`✅ Token válido: ${isValid}`);
-    logger.info(`   - Tipo: ${tokenType}`);
-    logger.info(`   - User ID: ${userId}`);
-    logger.info(`   - App ID: ${appId}`);
-    logger.info(`   - Scopes: ${scopes.join(', ')}`);
 
     if (!userId) {
-      console.log(`❌ No se pudo extraer user_id del token`);
-      logger.error(`❌ No se pudo extraer user_id del token`);
+      logger.error('No se pudo extraer user_id del token');
       return res.status(400).json({
         success: false,
         error: 'No se pudo obtener user_id del token'
@@ -1930,21 +1894,13 @@ export const getAdAccounts = async (req, res) => {
     }
 
     // PASO 2: Obtener ad accounts DIRECTAMENTE del System User (sin businesses)
-    console.log(`\n💼 PASO 2: Obteniendo ad accounts directamente del System User...`);
     const adAccountsUrl = `https://graph.facebook.com/v23.0/${userId}/adaccounts?fields=id,account_id,name,currency,timezone_name,account_status&access_token=${accessToken}`;
-    console.log(`   URL COMPLETA: ${adAccountsUrl.replace(accessToken, 'TOKEN_OCULTO')}`);
-    logger.info(`💼 PASO 2: Obteniendo ad accounts directamente del System User...`);
-    logger.info(`   URL COMPLETA: ${adAccountsUrl.replace(accessToken, 'TOKEN_OCULTO')}`);
 
     const adAccountsResponse = await fetch(adAccountsUrl);
     const adAccountsData = await adAccountsResponse.json();
 
-    console.log(`📦 Respuesta de adaccounts:`, JSON.stringify(adAccountsData, null, 2));
-    logger.info(`📦 Respuesta de adaccounts:`, JSON.stringify(adAccountsData, null, 2));
-
     if (adAccountsData.error) {
-      console.log(`❌ Error obteniendo ad accounts:`, JSON.stringify(adAccountsData.error));
-      logger.error(`❌ Error obteniendo ad accounts:`, adAccountsData.error);
+      logger.error('Error obteniendo ad accounts:', adAccountsData.error);
       return res.status(400).json({
         success: false,
         error: adAccountsData.error.message || 'Error obteniendo cuentas de anuncios'
@@ -1952,34 +1908,7 @@ export const getAdAccounts = async (req, res) => {
     }
 
     const uniqueAccounts = adAccountsData.data || [];
-    console.log(`✅ Encontradas ${uniqueAccounts.length} cuenta(s) de anuncios`);
-    logger.info(`✅ Encontradas ${uniqueAccounts.length} cuenta(s) de anuncios`);
-
-    console.log(`   Total después de deduplicar: ${uniqueAccounts.length}`);
-    logger.info(`   Total después de deduplicar: ${uniqueAccounts.length}`);
-
-    if (uniqueAccounts.length > 0) {
-      console.log(`\n✅ RESULTADO FINAL: ${uniqueAccounts.length} cuenta(s) única(s)`);
-      logger.info(`\n✅ RESULTADO FINAL: ${uniqueAccounts.length} cuenta(s) única(s)`);
-      uniqueAccounts.forEach((acc, idx) => {
-        console.log(`   ${idx + 1}. ${acc.name} (${acc.id}) - ${acc.currency} - ${acc.timezone_name}`);
-        logger.info(`   ${idx + 1}. ${acc.name} (${acc.id}) - ${acc.currency} - ${acc.timezone_name}`);
-      });
-    } else {
-      console.log(`\n⚠️ RESULTADO FINAL: NO se encontraron cuentas de anuncios`);
-      console.log(`   Posibles causas:`);
-      console.log(`   - El System User no tiene permisos sobre ninguna ad account`);
-      console.log(`   - Las ad accounts están en otro business no listado`);
-      console.log(`   - El token necesita más permisos (ads_management, ads_read)`);
-      logger.warn(`\n⚠️ RESULTADO FINAL: NO se encontraron cuentas de anuncios`);
-      logger.warn(`   Posibles causas:`);
-      logger.warn(`   - El System User no tiene permisos sobre ninguna ad account`);
-      logger.warn(`   - Las ad accounts están en otro business no listado`);
-      logger.warn(`   - El token necesita más permisos (ads_management, ads_read)`);
-    }
-
-    console.log(`🏁 ===== FIN: Obtención de cuentas de Meta Ads =====\n`);
-    logger.info(`🏁 ===== FIN: Obtención de cuentas de Meta Ads =====\n`);
+    logger.info(`Encontradas ${uniqueAccounts.length} cuenta(s) de anuncios`);
 
     res.json({
       success: true,
@@ -2063,8 +1992,7 @@ export const savePixelToken = async (req, res) => {
       });
     }
 
-    logger.info('Guardando Pixel API Token...');
-    logger.info(`Token recibido (primeros 20 chars): ${pixelApiToken.substring(0, 20)}...`);
+    logger.info('Guardando Pixel API Token');
 
     // 1. Verificar que exista configuración de Meta
     const metaConfig = await getMetaConfig();
@@ -2076,13 +2004,10 @@ export const savePixelToken = async (req, res) => {
       });
     }
 
-    logger.info(`Meta config encontrado: ad_account_id=${metaConfig.ad_account_id}, pixel_id=${metaConfig.pixel_id || 'ninguno'}`);
-
     // 2. Primero actualizar en HighLevel Custom Values (si está configurado)
     const hlConfig = await db.get('SELECT location_id, api_token FROM highlevel_config LIMIT 1');
 
     if (hlConfig && hlConfig.location_id && hlConfig.api_token) {
-      logger.info(`HighLevel configurado. Location ID: ${hlConfig.location_id}`);
 
       try {
         const { saveMetaCustomValues } = await import('../services/highlevelSyncService.js');
