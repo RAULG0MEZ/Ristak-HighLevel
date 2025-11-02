@@ -1859,10 +1859,25 @@ export const getAdAccounts = async (req, res) => {
     logger.info('🔍 ===== INICIO: Obtención de cuentas de Meta Ads =====');
     logger.info(`📝 Token recibido (primeros 20 chars): ${accessToken.substring(0, 20)}...`);
 
+    // VERIFICAR VERSIÓN ACTUAL EN MEMORIA
+    const { getMetaApiVersion } = await import('../config/constants.js');
+    const currentVersion = getMetaApiVersion();
+    logger.info(`🔧 Versión de Meta API en memoria: ${currentVersion}`);
+    logger.info(`🌐 URL base que se usará: https://graph.facebook.com/${currentVersion}`);
+
+    // FORZAR v23.0 SI ES NECESARIO
+    if (currentVersion !== 'v23.0') {
+      logger.warn(`⚠️ VERSIÓN INCORRECTA DETECTADA: ${currentVersion}`);
+      logger.warn(`🔄 Forzando cambio a v23.0...`);
+      const { setMetaApiVersion } = await import('../config/constants.js');
+      setMetaApiVersion('v23.0');
+      logger.info(`✅ Versión actualizada a v23.0`);
+    }
+
     // PASO 1: Verificar token y obtener user_id
-    const debugUrl = `${API_URLS.META_GRAPH}/debug_token?input_token=${accessToken}&access_token=${accessToken}`;
+    const debugUrl = `https://graph.facebook.com/v23.0/debug_token?input_token=${accessToken}&access_token=${accessToken}`;
     logger.info(`🔑 PASO 1: Verificando token con Meta API...`);
-    logger.info(`   URL: ${API_URLS.META_GRAPH}/debug_token`);
+    logger.info(`   URL: https://graph.facebook.com/v23.0/debug_token`);
 
     const debugResponse = await fetch(debugUrl);
     const debugData = await debugResponse.json();
@@ -1897,10 +1912,10 @@ export const getAdAccounts = async (req, res) => {
       });
     }
 
-    // PASO 2: Obtener businesses del System User
-    const businessUrl = `${API_URLS.META_GRAPH}/${userId}/businesses?fields=id,name&access_token=${accessToken}`;
+    // PASO 2: Obtener businesses del System User (FORZAR v23.0)
+    const businessUrl = `https://graph.facebook.com/v23.0/${userId}/businesses?fields=id,name&access_token=${accessToken}`;
     logger.info(`🏢 PASO 2: Obteniendo businesses del System User...`);
-    logger.info(`   URL: ${API_URLS.META_GRAPH}/${userId}/businesses`);
+    logger.info(`   URL COMPLETA: ${businessUrl.replace(accessToken, 'TOKEN_OCULTO')}`);
 
     const businessResponse = await fetch(businessUrl);
     const businessData = await businessResponse.json();
@@ -1939,10 +1954,10 @@ export const getAdAccounts = async (req, res) => {
       const business = businesses[i];
       logger.info(`\n📊 Business ${i + 1}/${businesses.length}: ${business.name} (${business.id})`);
 
-      // 3A: Owned accounts
-      const ownedUrl = `${API_URLS.META_GRAPH}/${business.id}/owned_ad_accounts?fields=id,account_id,name,currency,timezone_name,account_status&access_token=${accessToken}`;
+      // 3A: Owned accounts (FORZAR v23.0)
+      const ownedUrl = `https://graph.facebook.com/v23.0/${business.id}/owned_ad_accounts?fields=id,account_id,name,currency,timezone_name,account_status&access_token=${accessToken}`;
       logger.info(`   🔍 Buscando owned_ad_accounts...`);
-      logger.info(`      URL: ${API_URLS.META_GRAPH}/${business.id}/owned_ad_accounts`);
+      logger.info(`      URL COMPLETA: ${ownedUrl.replace(accessToken, 'TOKEN_OCULTO')}`);
 
       const ownedRes = await fetch(ownedUrl);
       const ownedData = await ownedRes.json();
@@ -1961,10 +1976,10 @@ export const getAdAccounts = async (req, res) => {
         logger.info(`   ℹ️ No hay owned accounts en este business`);
       }
 
-      // 3B: Client accounts
-      const clientUrl = `${API_URLS.META_GRAPH}/${business.id}/client_ad_accounts?fields=id,account_id,name,currency,timezone_name,account_status&access_token=${accessToken}`;
+      // 3B: Client accounts (FORZAR v23.0)
+      const clientUrl = `https://graph.facebook.com/v23.0/${business.id}/client_ad_accounts?fields=id,account_id,name,currency,timezone_name,account_status&access_token=${accessToken}`;
       logger.info(`   🔍 Buscando client_ad_accounts...`);
-      logger.info(`      URL: ${API_URLS.META_GRAPH}/${business.id}/client_ad_accounts`);
+      logger.info(`      URL COMPLETA: ${clientUrl.replace(accessToken, 'TOKEN_OCULTO')}`);
 
       const clientRes = await fetch(clientUrl);
       const clientData = await clientRes.json();
