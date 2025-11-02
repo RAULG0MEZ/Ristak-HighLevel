@@ -818,6 +818,63 @@ export const MetaAdsIntegration: React.FC = () => {
                   </div>
                 )}
 
+                {/* 5. Page ID - AL FINAL y completamente opcional */}
+                {credentials.adAccountId && (
+                  <div className={styles.formGroup} style={{ marginTop: '32px', paddingTop: '32px', borderTop: '1px solid var(--color-border)' }}>
+                    <label className={styles.formLabel}>
+                      Facebook Page ID <span className={styles.formHint}>(opcional)</span>
+                    </label>
+                    <p className={styles.formHint} style={{ marginBottom: '8px' }}>
+                      Solo necesario si usas funciones específicas de páginas de Facebook
+                    </p>
+                    {savedPageId && credentials.pageId === savedPageId ? (
+                      <div className={styles.filterChip}>
+                        <span className={styles.chipText}>{credentials.pageId}</span>
+                        <button
+                          onClick={() => handleRemoveCredential('pageId')}
+                          className={styles.chipDeleteButton}
+                          type="button"
+                        >
+                          <Trash2 size={16} style={{ color: '#ef4444' }} />
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <input
+                          type="text"
+                          value={credentials.pageId}
+                          onChange={(e) => handleInputChange('pageId', e.target.value)}
+                          placeholder="1234567890123456"
+                          className={styles.formInput}
+                        />
+                        <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'center' }}>
+                          <button
+                            type="button"
+                            onClick={handleSavePageId}
+                            disabled={isSavingPageId || !credentials.pageId}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              padding: '10px 20px',
+                              fontSize: '14px',
+                              backgroundColor: '#10b981',
+                              color: 'white',
+                              border: 'none',
+                              borderRadius: '6px',
+                              cursor: (isSavingPageId || !credentials.pageId) ? 'not-allowed' : 'pointer',
+                              opacity: (isSavingPageId || !credentials.pageId) ? 0.6 : 1
+                            }}
+                          >
+                            <RefreshCw size={16} className={isSavingPageId ? styles.spinning : ''} />
+                            {isSavingPageId ? 'Guardando...' : 'Guardar Page ID'}
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
                 {/* Sincronización manual de Meta Ads */}
                 {credentials.accessToken && credentials.adAccountId && (
                   <div className={styles.formGroup} style={{ marginTop: '32px', paddingTop: '32px', borderTop: '1px solid var(--color-border)' }}>
