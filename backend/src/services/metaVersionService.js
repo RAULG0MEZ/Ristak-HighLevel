@@ -106,15 +106,29 @@ export async function getVersionHistory(limit = 10) {
 
 /**
  * Inicializa la versión desde BD al arrancar el servidor
+ * Valida que la versión funcione antes de usarla
  */
 export async function initializeVersion() {
   try {
-    const currentVersion = await getCurrentVersion()
+    let currentVersion = await getCurrentVersion()
+
+    // Validar que la versión funciona
+    logger.info(`🔧 Verificando versión guardada: ${currentVersion}`)
+    const isValid = await testVersion(currentVersion)
+
+    if (!isValid) {
+      logger.warn(`⚠️ La versión ${currentVersion} no es válida, usando v23.0`)
+      currentVersion = 'v23.0'
+      await saveVersion(currentVersion)
+    }
+
     setMetaApiVersion(currentVersion)
-    logger.info(`🔧 Versión de Meta API inicializada: ${currentVersion}`)
+    logger.info(`✅ Versión de Meta API inicializada: ${currentVersion}`)
     return currentVersion
   } catch (error) {
     logger.error('Error inicializando versión:', error.message)
-    return 'v23.0'
+    const fallback = 'v23.0'
+    setMetaApiVersion(fallback)
+    return fallback
   }
 }
