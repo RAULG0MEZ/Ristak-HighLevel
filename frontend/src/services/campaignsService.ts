@@ -294,10 +294,10 @@ class CampaignsService {
     }[]
   }> {
     try {
+      // apiClient extrae automáticamente el campo "data" de la respuesta
       const data = await apiClient.get('/meta/ad-accounts', {
         params: { accessToken }
       }) as {
-        success: boolean
         adAccounts: {
           id: string
           account_id: string
@@ -307,7 +307,12 @@ class CampaignsService {
           account_status: number
         }[]
       }
-      return data
+
+      // Normalizar la respuesta agregando success: true
+      return {
+        success: true,
+        adAccounts: data.adAccounts || []
+      }
     } catch (error) {
       return { success: false, adAccounts: [] }
     }
@@ -323,10 +328,10 @@ class CampaignsService {
     }[]
   }> {
     try {
+      // apiClient extrae automáticamente el campo "data" de la respuesta
       const data = await apiClient.get('/meta/pixels', {
         params: { adAccountId, accessToken }
       }) as {
-        success: boolean
         pixels: {
           id: string
           name: string
@@ -334,7 +339,12 @@ class CampaignsService {
           last_fired_time: string
         }[]
       }
-      return data
+
+      // Normalizar la respuesta agregando success: true
+      return {
+        success: true,
+        pixels: data.pixels || []
+      }
     } catch (error) {
       return { success: false, pixels: [] }
     }
