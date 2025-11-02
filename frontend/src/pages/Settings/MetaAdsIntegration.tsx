@@ -360,10 +360,16 @@ export const MetaAdsIntegration: React.FC = () => {
     }
   }
 
-  // Guardar Page ID con botón (igual que Pixel API Token)
+  // Guardar Page ID con botón (independiente del flujo principal)
   const handleSavePageId = async () => {
     if (!credentials.pageId) {
       showToast('error', 'Page ID requerido', 'Ingresa el Page ID primero')
+      return
+    }
+
+    // NO requiere que estén configurados otros campos
+    if (!credentials.adAccountId) {
+      showToast('warning', 'Configura primero', 'Primero debes conectar tu cuenta de anuncios')
       return
     }
 
@@ -376,9 +382,9 @@ export const MetaAdsIntegration: React.FC = () => {
         body: JSON.stringify({
           adAccountId: credentials.adAccountId,
           accessToken: realAccessToken || credentials.accessToken,
-          pixelId: credentials.pixelId,
+          pixelId: credentials.pixelId || '',  // Puede estar vacío
           pageId: credentials.pageId,
-          pixelApiToken: ''  // No guardamos este aquí
+          pixelApiToken: credentials.pixelApiToken || ''
         })
       })
 
@@ -711,61 +717,7 @@ export const MetaAdsIntegration: React.FC = () => {
                   </div>
                 )}
 
-                {/* 4. Page ID */}
-                {realAccessToken && (
-                  <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>
-                      Facebook Page ID <span className={styles.formHint}>(opcional)</span>
-                    </label>
-                    {savedPageId && credentials.pageId === savedPageId ? (
-                      <div className={styles.filterChip}>
-                        <span className={styles.chipText}>{credentials.pageId}</span>
-                        <button
-                          onClick={() => handleRemoveCredential('pageId')}
-                          className={styles.chipDeleteButton}
-                          type="button"
-                        >
-                          <Trash2 size={16} style={{ color: '#ef4444' }} />
-                        </button>
-                      </div>
-                    ) : (
-                      <>
-                        <input
-                          type="text"
-                          value={credentials.pageId}
-                          onChange={(e) => handleInputChange('pageId', e.target.value)}
-                          placeholder="1234567890123456"
-                          className={styles.formInput}
-                        />
-                        <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'center' }}>
-                          <button
-                            type="button"
-                            onClick={handleSavePageId}
-                            disabled={isSavingPageId || !credentials.pageId}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '8px',
-                              padding: '10px 20px',
-                              fontSize: '14px',
-                              backgroundColor: '#10b981',
-                              color: 'white',
-                              border: 'none',
-                              borderRadius: '6px',
-                              cursor: (isSavingPageId || !credentials.pageId) ? 'not-allowed' : 'pointer',
-                              opacity: (isSavingPageId || !credentials.pageId) ? 0.6 : 1
-                            }}
-                          >
-                            <RefreshCw size={16} className={isSavingPageId ? styles.spinning : ''} />
-                            {isSavingPageId ? 'Guardando...' : 'Guardar Page ID'}
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-
-                {/* 5. Pixel API Token */}
+                {/* 4. Pixel API Token */}
                 {credentials.pixelId && (
                   <div className={styles.formGroup}>
                     <label className={styles.formLabel}>
