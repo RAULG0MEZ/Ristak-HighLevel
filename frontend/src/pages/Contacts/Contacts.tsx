@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { KpiCard, Card, Button, Table, DateRangePicker, PageContainer, TabList, Badge, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, ContactDetailsModal, BarChart } from '@/components/common'
+import { KpiCard, Card, Button, Table, DateRangePicker, PageContainer, TabList, Badge, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, ContactDetailsModal, BarChart, Loading } from '@/components/common'
 import type { Column, BadgeVariant, BarChartData } from '@/components/common'
 import {
   Users,
@@ -652,6 +652,10 @@ export const Contacts: React.FC = () => {
       // Error already shown to user via toast
       showToast('error', 'No se pudo crear el contacto', 'Hubo un problema al guardar el contacto. Verifica los datos e intenta nuevamente.')
     }
+  }
+
+  if (loading && contacts.length === 0) {
+    return <Loading message="Cargando contactos..." />
   }
 
   return (

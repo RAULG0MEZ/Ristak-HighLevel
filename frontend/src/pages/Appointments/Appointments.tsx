@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { KpiCard, Card, Button, PageContainer, AppointmentModal, BlockedSlotModal, TabList } from '@/components/common';
+import { KpiCard, Card, Button, PageContainer, AppointmentModal, BlockedSlotModal, TabList, Loading } from '@/components/common';
 import { ChevronLeft, ChevronRight, Plus, ChevronDown, Check, Calendar as CalendarIcon, Search, X, Settings, Lock } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNotification } from '@/contexts/NotificationContext';
@@ -1053,6 +1053,10 @@ export const Appointments: React.FC = () => {
         </div>
       </PageContainer>
     );
+  }
+
+  if (loading && calendars.length === 0) {
+    return <Loading message="Cargando calendarios..." />
   }
 
   return (

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { Card, Button, Modal, CustomSelect } from '@/components/common'
+import { Card, Button, Modal, CustomSelect, Loading } from '@/components/common'
 import { Calendar, Loader2, CheckCircle, XCircle, Info, Settings } from 'lucide-react'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useAppConfig } from '@/hooks'
@@ -146,18 +146,7 @@ export const CalendarsConfiguration: React.FC = () => {
   }
 
   if (loadingCalendars) {
-    return (
-      <div className={styles.integrationContainer}>
-        <Card className={styles.mainCard}>
-          <div style={{ padding: '48px', textAlign: 'center' }}>
-            <Loader2 size={32} className={styles.spinIcon} />
-            <p style={{ marginTop: '16px', color: 'var(--color-text-secondary)' }}>
-              Cargando calendarios...
-            </p>
-          </div>
-        </Card>
-      </div>
-    )
+    return <Loading message="Cargando calendarios..." />
   }
 
   if (calendars.length === 0) {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { KpiCard, Card, DateRangePicker, Table, Icon, ContactDetailsModal, VisitorDetailsModal, PageContainer, ViewSelector, AreaChart } from '@/components/common'
+import { KpiCard, Card, DateRangePicker, Table, Icon, ContactDetailsModal, VisitorDetailsModal, PageContainer, ViewSelector, AreaChart, Loading } from '@/components/common'
 import type { Column } from '@/components/common'
 import {
   RefreshCw,
@@ -1198,6 +1198,10 @@ export const Campaigns: React.FC = () => {
       leads: calculateDelta(campaignSummary.leads, campaignSummary.leadsPrev)
     }
   }, [campaignSummary, calculateDelta])
+
+  if (loading && campaigns.length === 0) {
+    return <Loading message="Cargando campañas..." />
+  }
 
   return (
     <PageContainer>

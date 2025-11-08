@@ -12,7 +12,8 @@ import {
   TreeFilter,
   TrafficSourcesChart,
   SessionsTable,
-  BarChart
+  BarChart,
+  Loading
 } from '../../components/common'
 import type { BarChartData } from '../../components/common'
 import { Eye, Users, UserCheck, Target, Smartphone, Monitor, Tablet, Globe } from 'lucide-react'
@@ -1247,6 +1248,10 @@ const Analytics: React.FC = () => {
       icon: Target
     }
   ]
+
+  if (loading && (!metrics || !chartData.length)) {
+    return <Loading message="Cargando analíticas..." />
+  }
 
   return (
     <PageContainer>

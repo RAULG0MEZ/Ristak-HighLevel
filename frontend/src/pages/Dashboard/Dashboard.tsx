@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { KpiCard, Card, DateRangePicker, AreaChart, PageContainer, TrafficSourcesChart, ConversionFunnelChart, ViewSelector } from '@/components/common'
+import { KpiCard, Card, DateRangePicker, AreaChart, PageContainer, TrafficSourcesChart, ConversionFunnelChart, ViewSelector, Loading } from '@/components/common'
 import {
   DollarSign,
   Megaphone,
@@ -379,7 +379,7 @@ export const Dashboard: React.FC = () => {
   }, [funnelScope, dateRange])
 
   if (loading || !metrics) {
-    return null
+    return <Loading message="Cargando dashboard..." />
   }
 
   return (

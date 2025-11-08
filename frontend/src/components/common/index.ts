@@ -46,6 +46,7 @@ export { Icon } from './Icon'
 export { Badge } from './Badge'
 export type { BadgeProps, BadgeVariant } from './Badge'
 export { CustomSelect } from './CustomSelect'
+export { Loading } from './Loading'
 export {
   DropdownMenu,
   DropdownMenuTrigger,

@@ -10,7 +10,8 @@ import {
   VisitorDetailsModal,
   TransactionsModal,
   ViewSelector,
-  PageContainer
+  PageContainer,
+  Loading
 } from '@/components/common'
 import type { Column } from '@/components/common'
 import { useDateRange } from '@/contexts/DateRangeContext'
@@ -1651,6 +1652,10 @@ export const Reports: React.FC = () => {
 
   const metricsRangeLabel = formatRangeLabel(metricsRange)
   const closeModal = () => setModalState(prev => ({ ...prev, open: false }))
+
+  if ((loadingMetrics || loadingSummary) && !metrics.length && !summary) {
+    return <Loading message="Cargando reportes..." />
+  }
 
   return (
     <PageContainer>
