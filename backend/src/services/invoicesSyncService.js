@@ -81,30 +81,26 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
         }
 
         if (existing) {
-          // Actualizar solo si el status cambió
-          if (existing.status !== invoiceData.status) {
-            await db.run(
-              `UPDATE payments
-               SET status = ?, amount = ?, currency = ?, payment_method = ?,
-                   reference = ?, description = ?, due_date = ?, sent_at = ?
-               WHERE ghl_invoice_id = ?`,
-              [
-                invoiceData.status,
-                invoiceData.amount,
-                invoiceData.currency,
-                invoiceData.payment_method,
-                invoiceData.reference,
-                invoiceData.description,
-                invoiceData.due_date,
-                invoiceData.sent_at,
-                ghlInvoiceId
-              ]
-            )
-            updated++
-            logger.info(`Invoice actualizado: ${ghlInvoiceId} (${existing.status} → ${invoiceData.status})`)
-          } else {
-            skipped++
-          }
+          // Actualizar SIEMPRE para mantener datos sincronizados (incluyendo descripción)
+          await db.run(
+            `UPDATE payments
+             SET status = ?, amount = ?, currency = ?, payment_method = ?,
+                 reference = ?, description = ?, due_date = ?, sent_at = ?, updated_at = CURRENT_TIMESTAMP
+             WHERE ghl_invoice_id = ?`,
+            [
+              invoiceData.status,
+              invoiceData.amount,
+              invoiceData.currency,
+              invoiceData.payment_method,
+              invoiceData.reference,
+              invoiceData.description,
+              invoiceData.due_date,
+              invoiceData.sent_at,
+              ghlInvoiceId
+            ]
+          )
+          updated++
+          logger.info(`Invoice actualizado: ${ghlInvoiceId}`)
         } else {
           // Verificar si el contacto existe antes de crear el invoice
           if (invoiceData.contact_id) {
@@ -261,28 +257,25 @@ export async function syncAllInvoices({ contactId } = {}) {
         }
 
         if (existing) {
-          // Actualizar solo si el status cambió
-          if (existing.status !== invoiceData.status) {
-            await db.run(
-              `UPDATE payments
-               SET status = ?, amount = ?, currency = ?, payment_method = ?,
-                   reference = ?, due_date = ?, sent_at = ?, updated_at = CURRENT_TIMESTAMP
-               WHERE ghl_invoice_id = ?`,
-              [
-                invoiceData.status,
-                invoiceData.amount,
-                invoiceData.currency,
-                invoiceData.payment_method,
-                invoiceData.reference,
-                invoiceData.due_date,
-                invoiceData.sent_at,
-                ghlInvoiceId
-              ]
-            )
-            updated++
-          } else {
-            skipped++
-          }
+          // Actualizar SIEMPRE para mantener datos sincronizados (incluyendo descripción)
+          await db.run(
+            `UPDATE payments
+             SET status = ?, amount = ?, currency = ?, payment_method = ?,
+                 reference = ?, description = ?, due_date = ?, sent_at = ?, updated_at = CURRENT_TIMESTAMP
+             WHERE ghl_invoice_id = ?`,
+            [
+              invoiceData.status,
+              invoiceData.amount,
+              invoiceData.currency,
+              invoiceData.payment_method,
+              invoiceData.reference,
+              invoiceData.description,
+              invoiceData.due_date,
+              invoiceData.sent_at,
+              ghlInvoiceId
+            ]
+          )
+          updated++
         } else {
           // Verificar si el contacto existe
           if (invoiceData.contact_id) {
