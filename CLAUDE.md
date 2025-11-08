@@ -43,8 +43,20 @@
      - Reportes de transacciones
      - Cualquier suma de amounts de pagos
    - 🔧 Constante en backend: `SUCCESS_PAYMENT_STATUSES` (analyticsService.js:53)
+12. **🔒 NUNCA borrar Custom Values en HighLevel al eliminar campos en Ristak** [SEGURIDAD]
+   - ❌ PROHIBIDO: Enviar valores vacíos (`''` o `null`) a HighLevel Custom Values
+   - ❌ PROHIBIDO: Hacer DELETE de Custom Values desde Ristak
+   - ✅ Al borrar un chip en UI: SOLO limpiar estado local + base de datos de Ristak
+   - ✅ Custom Values en HighLevel se mantienen INTACTOS cuando borras
+   - ✅ Custom Values solo se REEMPLAZAN cuando guardas un NUEVO valor válido
+   - 🎯 Implementado en:
+     - Frontend: `handleRemoveCredential()` solo limpia estado (MetaAdsIntegration.tsx:227)
+     - Backend: Filtro en `syncMetaCustomValues()` (metaAdsService.js:190)
+     - Backend: Filtro en `saveMetaCustomValues()` (highlevelSyncService.js:1007)
+   - 🔧 Filtro: `if (!value || value.trim() === '') continue` (NO envía a HighLevel)
+   - 📍 Razón: Protección contra borrado accidental de credenciales importantes en HighLevel
 
-### �� FILOSOFÍA DE CÓDIGO
+### 🎯 FILOSOFÍA DE CÓDIGO
 - **Limpio > Rápido**: Preferir código mantenible sobre optimizaciones prematuras
 - **Explícito > Implícito**: Nombres descriptivos, nada de magia negra
 - **Consistente > Creativo**: Seguir los patrones ya establecidos

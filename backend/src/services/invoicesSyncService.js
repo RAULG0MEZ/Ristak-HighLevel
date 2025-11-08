@@ -72,7 +72,7 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
           status: mapInvoiceStatus(invoice.status),
           payment_method: invoice.paymentMode || null,
           reference: invoice.invoiceNumber || null,
-          description: invoice.title || invoice.name || 'Pago',
+          description: invoice.invoiceItems?.[0]?.name || invoice.invoiceItems?.[0]?.description || invoice.title || invoice.name || 'Pago',
           date: invoice.createdAt || invoice.issueDate || new Date().toISOString(),
           ghl_invoice_id: ghlInvoiceId,
           invoice_number: invoice.invoiceNumber || null,
@@ -86,7 +86,7 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
             await db.run(
               `UPDATE payments
                SET status = ?, amount = ?, currency = ?, payment_method = ?,
-                   reference = ?, due_date = ?, sent_at = ?
+                   reference = ?, description = ?, due_date = ?, sent_at = ?
                WHERE ghl_invoice_id = ?`,
               [
                 invoiceData.status,
@@ -94,6 +94,7 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
                 invoiceData.currency,
                 invoiceData.payment_method,
                 invoiceData.reference,
+                invoiceData.description,
                 invoiceData.due_date,
                 invoiceData.sent_at,
                 ghlInvoiceId
@@ -251,7 +252,7 @@ export async function syncAllInvoices({ contactId } = {}) {
           status: mapInvoiceStatus(invoice.status),
           payment_method: invoice.paymentMode || null,
           reference: invoice.invoiceNumber || null,
-          description: invoice.title || invoice.name || 'Pago',
+          description: invoice.invoiceItems?.[0]?.name || invoice.invoiceItems?.[0]?.description || invoice.title || invoice.name || 'Pago',
           date: invoice.createdAt || invoice.issueDate || new Date().toISOString(),
           ghl_invoice_id: ghlInvoiceId,
           invoice_number: invoice.invoiceNumber || null,

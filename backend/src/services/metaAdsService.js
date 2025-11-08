@@ -184,6 +184,14 @@ async function syncMetaCustomValues(adAccountId, accessToken, pixelId, pixelApiT
 
     // Crear o actualizar cada custom value
     for (const [name, value] of Object.entries(customValues)) {
+      // 🔒 SEGURIDAD: NO enviar valores vacíos a HighLevel
+      // Si el usuario borra un campo en la UI, NO se sobrescribe en HighLevel
+      // Solo se actualiza cuando hay un NUEVO valor válido
+      if (!value || (typeof value === 'string' && value.trim() === '')) {
+        logger.info(`  Saltando ${name} (vacío) - NO se modifica en HighLevel`)
+        continue
+      }
+
       try {
         const existing = existingCustomValues.find(cv => cv.name === name)
 
