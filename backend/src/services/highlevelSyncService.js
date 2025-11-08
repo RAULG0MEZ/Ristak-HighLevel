@@ -750,12 +750,33 @@ async function syncHighLevelAppointments(locationId, apiToken) {
 }
 
 /**
- * Sincroniza pagos/transacciones desde HighLevel (con paginación)
- * Si un contacto no existe, lo obtiene de HighLevel y lo crea
+ * Sincroniza pagos/invoices desde HighLevel usando el servicio de invoices
+ * que SÍ obtiene las descripciones correctas de los productos
  */
 async function syncHighLevelPayments(locationId, apiToken) {
   logger.info('Sincronizando pagos desde HighLevel...')
 
+  // Importar el servicio de invoices que YA tiene el fix para las descripciones
+  const { syncAllInvoices } = await import('./invoicesSyncService.js')
+
+  updatePayments(0, 0, 'running', 'Obteniendo invoices de HighLevel...')
+
+  try {
+    // Usar el servicio de invoices que YA obtiene las descripciones de invoiceItems[0].name
+    const result = await syncAllInvoices()
+
+    logger.info(`✅ Sincronizados ${result.created + result.updated} invoices desde HighLevel`)
+    updatePayments(result.created + result.updated, result.totalFetched, 'completed', `${result.totalFetched} pagos sincronizados exitosamente`)
+
+    return { saved: result.created + result.updated, total: result.totalFetched, contactsCreated: 0 }
+  } catch (error) {
+    logger.error(`Error sincronizando invoices: ${error.message}`)
+    updatePayments(0, 0, 'failed', `Error: ${error.message}`)
+    throw error
+  }
+
+  // El código viejo ya no se usa - comentado para referencia
+  /*
   const limit = 200
   const headers = {
     'Authorization': `Bearer ${apiToken}`,
@@ -792,83 +813,7 @@ async function syncHighLevelPayments(locationId, apiToken) {
     logger.error(`Error paginando pagos: ${error.message}`)
     throw error
   }
-
-  const paymentsById = new Map()
-  for (const raw of paymentsRaw) {
-    const normalized = normalizePaymentRecord(raw)
-    if (!normalized.id) {
-      logger.warn('Pago recibido sin ID, se omite')
-      continue
-    }
-    if (!paymentsById.has(normalized.id)) {
-      paymentsById.set(normalized.id, { raw, normalized })
-    }
-  }
-
-  const allPayments = Array.from(paymentsById.values()).map(({ raw, normalized }) => ({ raw, normalized }))
-
-  logger.info(`Total de pagos obtenidos: ${allPayments.length}`)
-  updatePayments(0, allPayments.length, 'running', `Guardando ${allPayments.length} pagos en base de datos...`)
-
-  let saved = 0
-  let contactsCreated = 0
-  const usePostgres = Boolean(process.env.DATABASE_URL)
-
-  for (const { raw: payment, normalized } of allPayments) {
-    try {
-      const contactId = normalized.contactId
-
-      // SKIP: No guardar pagos sin contactId (son transacciones de nivel location)
-      if (!contactId || contactId === locationId) {
-        saved++ // Contar como procesado para no romper el progreso
-        continue
-      }
-
-      const createdContact = await ensureContactExists(contactId, apiToken, usePostgres)
-      if (createdContact) {
-        contactsCreated++
-      }
-
-      // Ahora guardar el pago
-      const query = usePostgres
-        ? `INSERT INTO payments (id, contact_id, amount, currency, status, payment_method, reference, date, created_at, description)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-           ON CONFLICT (id) DO UPDATE SET
-             amount = EXCLUDED.amount,
-             status = EXCLUDED.status,
-             payment_method = EXCLUDED.payment_method,
-             reference = EXCLUDED.reference,
-             description = EXCLUDED.description,
-             date = EXCLUDED.date`
-        : `INSERT OR REPLACE INTO payments (id, contact_id, amount, currency, status, payment_method, reference, date, created_at, description)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-
-      await db.run(query, [
-        normalized.id,
-        normalized.contactId,
-        normalized.amount,
-        normalized.currency,
-        normalized.status || payment.status || 'unknown',
-        normalized.paymentMethod || payment.paymentProviderType || 'manual',
-        normalized.reference || `${payment.entitySourceName || ''} - Invoice #${payment.entitySourceMeta?.invoiceNumber || ''}`.trim(),
-        normalized.date || payment.fulfilledAt || payment.createdAt,
-        normalized.createdAt,
-        normalized.description
-      ])
-      saved++
-
-      // Actualizar progreso cada 20 pagos o si es el último
-      if (saved % 20 === 0 || saved === allPayments.length) {
-        updatePayments(saved, allPayments.length, 'running', `Guardando pagos: ${saved}/${allPayments.length}`)
-      }
-    } catch (err) {
-      logger.error(`Error guardando pago ${normalized.id}: ${err.message}`)
-    }
-  }
-
-  logger.info(`✅ Sincronizados ${saved}/${allPayments.length} pagos desde HighLevel ${contactsCreated > 0 ? `(${contactsCreated} contactos creados)` : ''}`)
-  updatePayments(saved, allPayments.length, 'completed', `${saved} pagos sincronizados exitosamente`)
-  return { saved, total: allPayments.length, contactsCreated }
+  */
 }
 
 /**
