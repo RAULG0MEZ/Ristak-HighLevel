@@ -55,8 +55,8 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
           [ghlInvoiceId]
         )
 
-        // Validar que tenga contactId válido (NO usar altId que es el location ID)
-        const contactId = invoice.contactId
+        // Validar que tenga contactId válido (puede estar en contactDetails.id o contactId)
+        const contactId = invoice.contactDetails?.id || invoice.contactId
 
         if (!contactId) {
           logger.warn(`⚠️ Invoice ${ghlInvoiceId} sin contactId válido, saltando...`)
