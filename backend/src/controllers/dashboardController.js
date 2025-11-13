@@ -125,11 +125,26 @@ const computeFinancialSnapshot = async (range) => {
   const refundsRow = await db.get(refundsQuery, refundsParams);
   const reembolsos = parseFloat(refundsRow?.total || 0);
 
-  const { filters: contactFilters, params: contactParams } = await buildContactFilters(range);
-  const contactsWhere = contactFilters.length ? `WHERE ${contactFilters.join(' AND ')}` : '';
-  const ltvQuery = `SELECT COALESCE(AVG(total_paid), 0) as avg_ltv FROM contacts ${contactsWhere}`;
-  const ltvRow = await db.get(ltvQuery, contactParams);
-  const ltvPromedio = parseFloat(ltvRow?.avg_ltv || 0);
+  // Calcular promedio de pagos INDIVIDUALES (no total_paid de contactos)
+  // IMPORTANTE: Solo pagos exitosos según Mandamiento #11
+  const SUCCESS_PAYMENT_STATUSES = ['succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success'];
+  const statusPlaceholders = SUCCESS_PAYMENT_STATUSES.map((_, i) => `$${i + 1}`).join(',');
+
+  const paymentsAvgFilters = [`LOWER(status) IN (${statusPlaceholders})`];
+  const paymentsAvgParams = [...SUCCESS_PAYMENT_STATUSES];
+
+  const { filters: avgDateFilters, params: avgDateParams } = buildDateFilters(range);
+  paymentsAvgFilters.push(...avgDateFilters);
+  paymentsAvgParams.push(...avgDateParams);
+
+  // Filtrar payments de contactos ocultos
+  if (hiddenCondition) {
+    paymentsAvgFilters.push(`contact_id IN (SELECT c.id FROM contacts c WHERE ${hiddenCondition})`);
+  }
+
+  const avgPaymentQuery = `SELECT COALESCE(AVG(amount), 0) as avg_payment FROM payments WHERE ${paymentsAvgFilters.join(' AND ')}`;
+  const avgPaymentRow = await db.get(avgPaymentQuery, paymentsAvgParams);
+  const ltvPromedio = parseFloat(avgPaymentRow?.avg_payment || 0);
 
   const gananciaBruta = ingresosNetos - gastosPublicidad;
   const roas = gastosPublicidad > 0 ? ingresosNetos / gastosPublicidad : 0;
