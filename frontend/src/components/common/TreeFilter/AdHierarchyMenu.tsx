@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { Smartphone, Target, Layers, Image as ImageIcon, Check, ChevronRight } from 'lucide-react'
 
 interface AdHierarchyData {
@@ -50,6 +50,119 @@ export function AdHierarchyMenu({ adsHierarchy, selectedFilters, onFilterToggle 
     return selectedFilters.utm_content?.includes(adId)
   }
 
+  // Función helper para manejar selección/deselección jerárquica
+  const handleHierarchicalToggle = (level: 'platform' | 'campaign' | 'adset' | 'ad', value: string, parentIds?: { platform?: string; campaign?: string; adset?: string }) => {
+    const fieldsToToggle: { field: string; value: string }[] = []
+
+    // Determinar si estamos agregando o quitando
+    let isAdding = false
+
+    if (level === 'platform') {
+      const platformId = value.toLowerCase()
+      isAdding = !isPlatformSelected(value)
+
+      if (isAdding) {
+        // Solo agregar la plataforma
+        fieldsToToggle.push({ field: 'utm_source', value: platformId })
+      } else {
+        // Quitar plataforma y todos sus hijos
+        fieldsToToggle.push({ field: 'utm_source', value: platformId })
+
+        // Quitar todas las campañas, adsets y ads de esta plataforma
+        const platform = adsHierarchy.find(p => p.platform_id === value)
+        if (platform) {
+          platform.campaigns.forEach(campaign => {
+            fieldsToToggle.push({ field: 'utm_campaign', value: campaign.id })
+            campaign.adsets.forEach(adset => {
+              fieldsToToggle.push({ field: 'utm_medium', value: adset.id })
+              adset.ads.forEach(ad => {
+                fieldsToToggle.push({ field: 'utm_content', value: ad.id })
+              })
+            })
+          })
+        }
+      }
+    } else if (level === 'campaign') {
+      isAdding = !isCampaignSelected(value)
+
+      if (isAdding) {
+        // Agregar la campaña Y su plataforma padre
+        fieldsToToggle.push({ field: 'utm_campaign', value })
+        if (parentIds?.platform) {
+          // Solo agregar el padre si no está ya seleccionado
+          if (!isPlatformSelected(parentIds.platform)) {
+            fieldsToToggle.push({ field: 'utm_source', value: parentIds.platform.toLowerCase() })
+          }
+        }
+      } else {
+        // Quitar campaña y todos sus hijos
+        fieldsToToggle.push({ field: 'utm_campaign', value })
+
+        // Quitar todos los adsets y ads de esta campaña
+        const platform = adsHierarchy.find(p => p.platform_id === parentIds?.platform)
+        const campaign = platform?.campaigns.find(c => c.id === value)
+        if (campaign) {
+          campaign.adsets.forEach(adset => {
+            fieldsToToggle.push({ field: 'utm_medium', value: adset.id })
+            adset.ads.forEach(ad => {
+              fieldsToToggle.push({ field: 'utm_content', value: ad.id })
+            })
+          })
+        }
+      }
+    } else if (level === 'adset') {
+      isAdding = !isAdsetSelected(value)
+
+      if (isAdding) {
+        // Agregar el adset Y todos sus padres
+        fieldsToToggle.push({ field: 'utm_medium', value })
+        if (parentIds?.campaign && !isCampaignSelected(parentIds.campaign)) {
+          fieldsToToggle.push({ field: 'utm_campaign', value: parentIds.campaign })
+        }
+        if (parentIds?.platform && !isPlatformSelected(parentIds.platform)) {
+          fieldsToToggle.push({ field: 'utm_source', value: parentIds.platform.toLowerCase() })
+        }
+      } else {
+        // Quitar adset y todos sus hijos
+        fieldsToToggle.push({ field: 'utm_medium', value })
+
+        // Quitar todos los ads de este adset
+        const platform = adsHierarchy.find(p => p.platform_id === parentIds?.platform)
+        const campaign = platform?.campaigns.find(c => c.id === parentIds?.campaign)
+        const adset = campaign?.adsets.find(a => a.id === value)
+        if (adset) {
+          adset.ads.forEach(ad => {
+            fieldsToToggle.push({ field: 'utm_content', value: ad.id })
+          })
+        }
+      }
+    } else if (level === 'ad') {
+      isAdding = !isAdSelected(value)
+
+      if (isAdding) {
+        // Agregar el ad Y TODOS sus padres (la magia de la jerarquía!)
+        fieldsToToggle.push({ field: 'utm_content', value })
+        if (parentIds?.adset && !isAdsetSelected(parentIds.adset)) {
+          fieldsToToggle.push({ field: 'utm_medium', value: parentIds.adset })
+        }
+        if (parentIds?.campaign && !isCampaignSelected(parentIds.campaign)) {
+          fieldsToToggle.push({ field: 'utm_campaign', value: parentIds.campaign })
+        }
+        if (parentIds?.platform && !isPlatformSelected(parentIds.platform)) {
+          fieldsToToggle.push({ field: 'utm_source', value: parentIds.platform.toLowerCase() })
+        }
+      } else {
+        // Solo quitar el ad
+        fieldsToToggle.push({ field: 'utm_content', value })
+      }
+    }
+
+    // Aplicar todos los cambios
+    fieldsToToggle.forEach(({ field, value }) => {
+      onFilterToggle(field, value)
+    })
+  }
+
   // Obtener datos filtrados
   const activePlatform = adsHierarchy.find(p => p.platform_id === hoveredPlatform)
   const activeCampaign = activePlatform?.campaigns.find(c => c.id === hoveredCampaign)
@@ -71,7 +184,7 @@ export function AdHierarchyMenu({ adsHierarchy, selectedFilters, onFilterToggle 
               <div
                 key={platform.platform_id}
                 onMouseEnter={() => setHoveredPlatform(platform.platform_id)}
-                onClick={() => onFilterToggle('utm_source', platform.platform_id.toLowerCase())}
+                onClick={() => handleHierarchicalToggle('platform', platform.platform_id)}
                 className={`
                   flex items-center gap-2 px-3 py-2 cursor-pointer transition-all duration-150
                   ${isSelected
@@ -128,7 +241,7 @@ export function AdHierarchyMenu({ adsHierarchy, selectedFilters, onFilterToggle 
                 <div
                   key={campaign.id}
                   onMouseEnter={() => setHoveredCampaign(campaign.id)}
-                  onClick={() => onFilterToggle('utm_campaign', campaign.id)}
+                  onClick={() => handleHierarchicalToggle('campaign', campaign.id, { platform: hoveredPlatform || undefined })}
                   className={`
                     flex items-center gap-2 px-3 py-2 cursor-pointer transition-all duration-150
                     ${isSelected
@@ -179,7 +292,7 @@ export function AdHierarchyMenu({ adsHierarchy, selectedFilters, onFilterToggle 
                 <div
                   key={adset.id}
                   onMouseEnter={() => setHoveredAdset(adset.id)}
-                  onClick={() => onFilterToggle('utm_medium', adset.id)}
+                  onClick={() => handleHierarchicalToggle('adset', adset.id, { platform: hoveredPlatform || undefined, campaign: hoveredCampaign || undefined })}
                   className={`
                     flex items-center gap-2 px-3 py-2 cursor-pointer transition-all duration-150
                     ${isSelected
@@ -228,7 +341,7 @@ export function AdHierarchyMenu({ adsHierarchy, selectedFilters, onFilterToggle 
               return (
                 <div
                   key={ad.id}
-                  onClick={() => onFilterToggle('utm_content', ad.id)}
+                  onClick={() => handleHierarchicalToggle('ad', ad.id, { platform: hoveredPlatform || undefined, campaign: hoveredCampaign || undefined, adset: hoveredAdset || undefined })}
                   className={`
                     flex items-center gap-2 px-3 py-2 cursor-pointer transition-all duration-150
                     ${isSelected
