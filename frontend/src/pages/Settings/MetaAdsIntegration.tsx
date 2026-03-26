@@ -473,7 +473,7 @@ export const MetaAdsIntegration: React.FC = () => {
   // Sincronización manual de Meta Ads
   const handleSyncMetaAds = async () => {
     setIsSyncingMetaAds(true)
-    showToast('info', 'Sincronizando...', 'Obteniendo datos de Meta Ads (últimos 7 días)')
+    showToast('info', 'Sincronizando...', 'Iniciando sincronización de Meta Ads (últimos 35 meses)')
 
     try {
       const result = await campaignsService.syncMetaAds()
@@ -481,10 +481,8 @@ export const MetaAdsIntegration: React.FC = () => {
       if (result.success) {
         showToast(
           'success',
-          'Sincronización completada',
-          result.count
-            ? `${result.count} anuncios actualizados correctamente`
-            : 'Datos actualizados correctamente'
+          'Sincronización iniciada',
+          result.message || 'La sincronización de Meta Ads fue iniciada en segundo plano'
         )
       } else {
         showToast(
@@ -882,7 +880,7 @@ export const MetaAdsIntegration: React.FC = () => {
                       Sincronización manual
                     </label>
                     <p className={styles.formHint} style={{ marginBottom: '16px' }}>
-                      Sincroniza manualmente los datos de Meta Ads (últimos 7 días). La sincronización automática ocurre cada hora.
+                      Sincroniza manualmente los datos de Meta Ads (últimos 35 meses). La sincronización automática ocurre cada hora.
                     </p>
                     <div style={{ display: 'flex', justifyContent: 'center' }}>
                       <button
