@@ -5,7 +5,6 @@ import {
   saveMetaConfig,
   syncMetaAds,
   getMetaSyncProgress,
-  updateRecentAds,
   getMetaConfig,
   verifyMetaToken
 } from '../services/metaAdsService.js';
@@ -215,24 +214,31 @@ export const getSyncProgressEndpoint = async (req, res) => {
 };
 
 /**
- * Actualiza anuncios recientes (para cron job)
+ * Inicia sincronización manual de Meta Ads desde hace 35 meses (como HighLevel)
  */
 export const updateRecent = async (req, res) => {
   try {
-    logger.info('Actualizando anuncios recientes de Meta');
+    const startDate = new Date();
+    startDate.setMonth(startDate.getMonth() - 35);
+    const startDateStr = startDate.toISOString().split('T')[0];
 
-    await updateRecentAds();
+    logger.info(`Iniciando sincronización manual de Meta Ads (35 meses) desde: ${startDateStr}`);
+
+    // Iniciar en background para no bloquear la respuesta HTTP
+    syncMetaAds(startDateStr).catch(error => {
+      logger.error(`Error en sincronización manual de Meta Ads (35 meses): ${error.message}`);
+    });
 
     res.json({
       success: true,
-      message: 'Anuncios recientes actualizados exitosamente'
+      message: 'Sincronización de Meta Ads (últimos 35 meses) iniciada exitosamente'
     });
 
   } catch (error) {
     logger.error(`Error en updateRecent: ${error.message}`);
     res.status(500).json({
       success: false,
-      error: 'Error al actualizar anuncios recientes'
+      error: 'Error al iniciar la sincronización de Meta Ads'
     });
   }
 };
@@ -2065,4 +2071,3 @@ export const savePixelToken = async (req, res) => {
     });
   }
 };
-
