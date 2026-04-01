@@ -482,12 +482,7 @@ export const Dashboard: React.FC = () => {
               </h2>
               <p className="text-sm text-[var(--color-text-secondary)] mt-0.5">Últimos 12 meses</p>
             </div>
-            <div className="flex flex-col items-end gap-2">
-              <ViewSelector
-                options={chartViewOptions}
-                value={selectedChartView}
-                onChange={(value) => setSelectedChartView(value as any)}
-              />
+            <div className="flex items-end gap-4">
               {selectedChartView === 'revenue-spend' && (
                 <div className={funnelStyles.scopeSelector}>
                   {financialScopeOptions.map(({ value, label, icon: Icon }) => (
@@ -502,6 +497,11 @@ export const Dashboard: React.FC = () => {
                   ))}
                 </div>
               )}
+              <ViewSelector
+                options={chartViewOptions}
+                value={selectedChartView}
+                onChange={(value) => setSelectedChartView(value as any)}
+              />
             </div>
           </div>
           <div className="relative w-full" style={{ minHeight: chartHeight, height: chartHeight }}>
