@@ -223,9 +223,6 @@ export const Dashboard: React.FC = () => {
 
   const financialScopeOptions = React.useMemo(
     () => [
-      { value: 'all' as const, label: 'Todos', icon: Layers },
-      { value: 'attribution' as const, label: 'Al registro', icon: Target },
-      { value: 'campaigns' as const, label: 'Identificados de anuncios', icon: MousePointerClick }
     ],
     []
   )
@@ -488,27 +485,6 @@ export const Dashboard: React.FC = () => {
                 onChange={(value) => setSelectedChartView(value as any)}
               />
               {selectedChartView === 'revenue-spend' && (
-                <div className="flex items-center gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-background-secondary)] p-1">
-                  {financialScopeOptions.map((option) => {
-                    const Icon = option.icon
-                    const isActive = financialScope === option.value
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
-                          isActive
-                            ? 'bg-[#374151] text-white'
-                            : 'text-[var(--color-text-tertiary)] hover:bg-[var(--color-background-tertiary)] hover:text-[var(--color-text-secondary)]'
-                        }`}
-                        onClick={() => setFinancialScope(option.value)}
-                      >
-                        <Icon size={14} />
-                        <span>{option.label}</span>
-                      </button>
-                    )
-                  })}
-                </div>
               )}
             </div>
           </div>
