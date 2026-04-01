@@ -8,7 +8,9 @@ import {
   Receipt,
   Wallet,
   RotateCcw,
-  Users
+  Users,
+  Layers,
+  MousePointerClick
 } from 'lucide-react'
 import { useDateRange } from '@/contexts/DateRangeContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -221,9 +223,6 @@ export const Dashboard: React.FC = () => {
 
   const financialScopeOptions = React.useMemo(
     () => [
-      { value: 'all', label: 'Todos' },
-      { value: 'attribution', label: 'Al registro' },
-      { value: 'campaigns', label: 'Identificados de anuncios' }
     ],
     []
   )
@@ -486,11 +485,6 @@ export const Dashboard: React.FC = () => {
                 onChange={(value) => setSelectedChartView(value as any)}
               />
               {selectedChartView === 'revenue-spend' && (
-                <ViewSelector
-                  options={financialScopeOptions}
-                  value={financialScope}
-                  onChange={(value) => setFinancialScope(value as 'all' | 'attribution' | 'campaigns')}
-                />
               )}
             </div>
           </div>
