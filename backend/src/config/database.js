@@ -312,17 +312,12 @@ async function initTables() {
         referral_video_url TEXT,
         referral_thumbnail_url TEXT,
         referral_ctwa_clid TEXT,
-        ad_id_thru_message TEXT,
-        extracted_ad_id TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE CASCADE
       )
     `)
 
-    await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_contact ON whatsapp_attribution(contact_id)')
-    await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_extracted_ad ON whatsapp_attribution(extracted_ad_id)')
-
-    // Agregar columnas nuevas si no existen (para migración)
+    // Agregar columnas nuevas si no existen (para migración) - PRIMERO
     try {
       await db.run(`ALTER TABLE whatsapp_attribution ADD COLUMN ad_id_thru_message TEXT`)
     } catch (err) {
@@ -334,6 +329,10 @@ async function initTables() {
     } catch (err) {
       // Columna ya existe, ignorar
     }
+
+    // Crear índices DESPUÉS de asegurar que las columnas existen
+    await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_contact ON whatsapp_attribution(contact_id)')
+    await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_extracted_ad ON whatsapp_attribution(extracted_ad_id)')
 
     // Tabla de versiones de Meta API (para auto-actualización)
     await db.run(`
