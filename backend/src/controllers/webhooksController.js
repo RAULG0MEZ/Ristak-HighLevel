@@ -20,6 +20,63 @@ function extractAdIdFromMessage(message) {
 }
 
 /**
+ * Valida ad_ids contra meta_ads y retorna el más confiable que EXISTA
+ * Lógica inteligente:
+ * 1. Valida TODOS los candidatos contra meta_ads.ad_id
+ * 2. Si solo uno existe → usa ese
+ * 3. Si varios existen → usa por prioridad (utm > referral > message)
+ * 4. Si ninguno existe → retorna utm pero marcado como "no_validated"
+ */
+async function resolveAdIdWithValidation(utmAdId, referralSourceId, adIdThroughMessage) {
+  const candidates = {
+    utmAdId: { value: utmAdId, priority: 1 },
+    referralSourceId: { value: referralSourceId, priority: 2 },
+    adIdThroughMessage: { value: adIdThroughMessage, priority: 3 }
+  };
+
+  // Filtrar null/undefined
+  const validCandidates = Object.entries(candidates)
+    .filter(([_, data]) => data.value)
+    .map(([source, data]) => ({ source, ...data }));
+
+  if (validCandidates.length === 0) {
+    return { adId: null, source: null, validated: false };
+  }
+
+  // Validar cada candidato contra meta_ads
+  const validatedCandidates = [];
+
+  for (const candidate of validCandidates) {
+    try {
+      const existsInMetaAds = await db.get(
+        'SELECT ad_id FROM meta_ads WHERE ad_id = ? LIMIT 1',
+        [candidate.value]
+      );
+
+      if (existsInMetaAds) {
+        validatedCandidates.push({ ...candidate, validated: true });
+      } else {
+        validatedCandidates.push({ ...candidate, validated: false });
+      }
+    } catch (err) {
+      logger.warn(`Error validando ad_id ${candidate.value}: ${err.message}`);
+      validatedCandidates.push({ ...candidate, validated: false });
+    }
+  }
+
+  // Estrategia de selección:
+  // 1. Preferir los validados, ordenados por prioridad
+  const validated = validatedCandidates.filter(c => c.validated).sort((a, b) => a.priority - b.priority);
+  if (validated.length > 0) {
+    return { adId: validated[0].value, source: validated[0].source, validated: true };
+  }
+
+  // 2. Si ninguno está validado, retornar el de mayor prioridad (utm)
+  const sorted = validatedCandidates.sort((a, b) => a.priority - b.priority);
+  return { adId: sorted[0].value, source: sorted[0].source, validated: false };
+}
+
+/**
  * Procesa webhook de contacto nuevo o actualizado
  */
 export const handleContactWebhook = async (req, res) => {
@@ -571,8 +628,7 @@ export const handleWhatsAppAttributionWebhook = async (req, res) => {
       return res.status(200).json({ success: true, message: 'Webhook recibido' });
     }
 
-    // Extraer el primer mensaje del contacto (contiene el ad_id)
-    // IMPORTANTE: Para WhatsApp, el ad_id VIENE SOLO del mensaje, NO de atribuciones generales
+    // Extraer los 3 candidatos de ad_id
     const messageContent = data.ad_id_thru_message || data.first_message || customData.first_message || null;
     let adIdThroughMessage = null;
 
@@ -580,6 +636,26 @@ export const handleWhatsAppAttributionWebhook = async (req, res) => {
       adIdThroughMessage = extractAdIdFromMessage(messageContent);
       if (adIdThroughMessage) {
         logger.info(`🔍 Ad ID extraído del mensaje WhatsApp: ${adIdThroughMessage}`);
+      }
+    }
+
+    // Extraer referral_source_id
+    const referralSourceId = customData.source_id || data.referral_source_id || data.sourceId || data.source_id || null;
+
+    // Leer el utm_ad_id actual del contacto (si existe)
+    let utmAdId = null;
+    if (contactId) {
+      try {
+        const contact = await db.get(
+          'SELECT attribution_ad_id FROM contacts WHERE id = ?',
+          [contactId]
+        );
+        if (contact?.attribution_ad_id) {
+          utmAdId = contact.attribution_ad_id;
+          logger.info(`📋 UtmAdId actual del contacto ${contactId}: ${utmAdId}`);
+        }
+      } catch (err) {
+        logger.warn(`No se pudo leer utm_ad_id del contacto: ${err.message}`);
       }
     }
 
@@ -612,22 +688,44 @@ export const handleWhatsAppAttributionWebhook = async (req, res) => {
       adIdThroughMessage
     ]);
 
-    // IMPORTANTE: Para WhatsApp, SOLO usar ad_id del mensaje
-    // No considerar attribution.utmAdId ni otros campos (esos son para web)
-    if (adIdThroughMessage && contactId) {
+    // VALIDACIÓN INTELIGENTE: Comparar los 3 candidatos contra meta_ads
+    // Prioridad: utm > referral > message (pero solo si existen en meta_ads)
+    let finalAdId = null;
+    let adIdSource = null;
+    let adIdValidated = false;
+
+    if (utmAdId || referralSourceId || adIdThroughMessage) {
       try {
-        await db.run(
-          `UPDATE contacts SET attribution_ad_id = ? WHERE id = ?`,
-          [adIdThroughMessage, contactId]
-        );
-        logger.info(`✅ Ad ID de WhatsApp guardado en contacts para contacto ${contactId}: ${adIdThroughMessage}`);
+        const resolution = await resolveAdIdWithValidation(utmAdId, referralSourceId, adIdThroughMessage);
+        finalAdId = resolution.adId;
+        adIdSource = resolution.source;
+        adIdValidated = resolution.validated;
+
+        logger.info(`🔍 Validación de ad_id completada para ${contactId}:`);
+        logger.info(`   Candidatos: utm=${utmAdId}, referral=${referralSourceId}, message=${adIdThroughMessage}`);
+        logger.info(`   Resultado: ${finalAdId} (fuente: ${adIdSource}, validado: ${adIdValidated})`);
+
+        if (finalAdId && contactId) {
+          await db.run(
+            `UPDATE contacts SET attribution_ad_id = ? WHERE id = ?`,
+            [finalAdId, contactId]
+          );
+          logger.info(`✅ Ad ID guardado en contacts para ${contactId}: ${finalAdId} (${adIdValidated ? 'validado' : 'no validado'} en meta_ads)`);
+        }
       } catch (err) {
-        logger.warn(`No se pudo guardar ad_id WhatsApp en contacts: ${err.message}`);
+        logger.error(`Error en validación de ad_id: ${err.message}`);
       }
     }
 
-    logger.info(`✅ Atribución WhatsApp procesada para ${phone} (contacto ${contactId})${adIdThroughMessage ? ` - Ad ID: ${adIdThroughMessage}` : ''}`);
-    res.status(200).json({ success: true, message: 'Atribución procesada', ad_id_thru_message: adIdThroughMessage });
+    logger.info(`✅ Atribución WhatsApp procesada para ${phone} (contacto ${contactId}) - Ad ID final: ${finalAdId || 'ninguno'}`);
+    res.status(200).json({
+      success: true,
+      message: 'Atribución procesada',
+      ad_id_thru_message: adIdThroughMessage,
+      final_ad_id: finalAdId,
+      ad_id_source: adIdSource,
+      ad_id_validated: adIdValidated
+    });
 
   } catch (error) {
     logger.error(`Error en handleWhatsAppAttributionWebhook: ${error.message}`);
