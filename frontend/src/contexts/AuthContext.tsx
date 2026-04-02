@@ -15,10 +15,12 @@ interface AuthContextType {
   user: User | null
   isAuthenticated: boolean
   login: (username: string, password: string) => Promise<void>
+  setupAccount: (username: string, password: string) => Promise<void>
   logout: () => void
   locationId: string | null
   accessToken: string | null
   isLoading: boolean
+  needsSetup: boolean
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -28,6 +30,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [locationId, setLocationId] = useState<string | null>(null)
   const [accessToken, setAccessToken] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [needsSetup, setNeedsSetup] = useState(false)
 
   // Verificar si hay un token guardado al cargar la app
   useEffect(() => {
@@ -35,6 +38,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const token = localStorage.getItem('auth_token')
 
       if (!token) {
+        // Si no hay token, verificar si se necesita setup
+        try {
+          const response = await fetch(`${API_URL}/api/auth/setup`)
+          const data = await response.json()
+          setNeedsSetup(data.needsSetup || false)
+        } catch {
+          setNeedsSetup(false)
+        }
         setIsLoading(false)
         return
       }
@@ -59,14 +70,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               tenant: 'Ristak',
               username: data.user.username
             })
+            setNeedsSetup(false)
           } else {
             localStorage.removeItem('auth_token')
+            setNeedsSetup(false)
           }
         } else {
           localStorage.removeItem('auth_token')
+          setNeedsSetup(false)
         }
       } catch {
         localStorage.removeItem('auth_token')
+        setNeedsSetup(false)
       } finally {
         setIsLoading(false)
       }
@@ -133,6 +148,41 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         tenant: 'Ristak',
         username: data.user.username
       })
+      setNeedsSetup(false)
+    } catch (error) {
+      throw error
+    }
+  }
+
+  const setupAccount = async (username: string, password: string) => {
+    try {
+      const response = await fetch(`${API_URL}/api/auth/setup`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ username, password })
+      })
+
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Error al crear usuario')
+      }
+
+      // Guardar token en localStorage
+      localStorage.setItem('auth_token', data.token)
+
+      // Actualizar estado del usuario
+      setUser({
+        id: data.user.id,
+        name: data.user.fullName || data.user.username,
+        email: data.user.email || '',
+        role: 'admin',
+        tenant: 'Ristak',
+        username: data.user.username
+      })
+      setNeedsSetup(false)
     } catch (error) {
       throw error
     }
@@ -151,10 +201,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         user,
         isAuthenticated: !!user,
         login,
+        setupAccount,
         logout,
         locationId,
         accessToken,
-        isLoading
+        isLoading,
+        needsSetup
       }}
     >
       {children}

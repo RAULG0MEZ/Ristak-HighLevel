@@ -822,9 +822,58 @@ git log -1
 
 ## 📅 ÚLTIMA ACTUALIZACIÓN
 
-**Fecha**: 2025-10-27
-**Versión**: 1.24.0
+**Fecha**: 2026-04-01
+**Versión**: 1.25.0
 **Últimos cambios críticos**:
+- **Feature: Pantalla de Setup para crear el Primer Usuario (2026-04-01)** ⭐ NUEVO
+  - **Problema**: La app creaba un usuario "admin/admin123" por defecto automáticamente. Inseguro y poco profesional.
+  - **Solución**: Primera vez que se abre la app → mostrar pantalla "Configura tu acceso" → el usuario elige su propio usuario y contraseña.
+  - **Implementación**:
+    - **Backend**:
+      - `auth.js`: Función `initializeDefaultUser()` modificada → ya NO crea usuario admin por defecto
+      - `authController.js`: 2 nuevas funciones:
+        - `checkSetup(req, res)`: Verifica si existen usuarios. Retorna `{ needsSetup: true/false }`
+        - `setup(req, res)`: Crea el primer usuario. CRÍTICO: solo funciona si NO hay usuarios previos (403 si hay).
+      - `auth.routes.js`: Nuevas rutas:
+        - `GET /api/auth/setup` → llama checkSetup
+        - `POST /api/auth/setup` → llama setup (crea usuario + devuelve token JWT)
+    - **Frontend**:
+      - `AuthContext.tsx`: Agregado estado `needsSetup: boolean` + función `setupAccount(username, password)`
+        - Al iniciar sin token, verifica `GET /api/auth/setup` para saber si necesita setup
+      - Nuevo componente: `Setup.tsx` (en carpeta Login/ para reutilizar estilos de Login.module.css)
+        - UI idéntica a Login pero para crear usuario
+        - 3 inputs: usuario (min 3 chars), contraseña (min 6 chars), confirmar contraseña
+        - Botón "Crear mi acceso"
+        - Validaciones de entrada (lado cliente)
+        - Al crear exitosamente → login automático → redirige a /dashboard
+        - Si ya hay usuarios creados (`needsSetup === false`) → redirige a /login
+      - `App.tsx`: Agregada nueva ruta y componente `SetupRoute`
+        - Ruta `/setup` → muestra Setup component si `needsSetup === true`
+        - ProtectedRoute modificada: si `needsSetup === true` → redirige a /setup antes de pedir login
+  - **Flujo Completo**:
+    ```
+    1. App arranca sin token
+    2. AuthContext verifica: GET /api/auth/setup
+    3. ¿Hay usuarios? NO → needsSetup = true → redirige a /setup
+    4. Usuario llena formulario
+    5. POST /api/auth/setup → crea usuario + token
+    6. Login automático → /dashboard
+    7. Siguiente vez: /login normal con credenciales elegidas
+    ```
+  - **Seguridad**:
+    - `POST /api/auth/setup` devuelve 403 si ya existen usuarios (protección)
+    - Las contraseñas se hashean con PBKDF2 (100,000 iteraciones) antes de guardar
+    - Después de crear el primer usuario, la ruta /setup queda inactiva
+  - **Archivos modificados/creados**:
+    - Backend: `auth.js`, `authController.js`, `auth.routes.js`
+    - Frontend: `AuthContext.tsx`, `App.tsx`, ✨NEW: `Setup.tsx`
+  - **Verificación**: 
+    1. Borrar usuario de BD → app abre en /setup ✅
+    2. Llenar formulario → crea usuario + redirige a /dashboard ✅
+    3. Logout → va a /login (no a /setup) ✅
+    4. Intentar ir a /setup cuando hay usuarios → redirige a /login ✅
+
+- **Feature: Atribución de Ad ID desde Mensaje de WhatsApp (2025-10-27)**
 - **Feature: Atribución de Ad ID desde Mensaje de WhatsApp (2025-10-27)** ⭐ NUEVO
   - **Problema**: Click-to-WhatsApp no pasaba el ad_id de Facebook a HighLevel
   - **Solución**: Ad ID va incrustado en el primer mensaje con nomenclatura `<<ad_id>>`

@@ -1,7 +1,13 @@
 import express from 'express'
-import { login, verifyTokenEndpoint, changePassword, changeUsername, getMe } from '../controllers/authController.js'
+import { login, verifyTokenEndpoint, changePassword, changeUsername, getMe, checkSetup, setup } from '../controllers/authController.js'
 
 const router = express.Router()
+
+// GET /api/auth/setup - Verificar si se necesita setup
+router.get('/setup', checkSetup)
+
+// POST /api/auth/setup - Crear el primer usuario (solo si no existen usuarios)
+router.post('/setup', setup)
 
 // POST /api/auth/login - Autenticar usuario
 router.post('/login', login)

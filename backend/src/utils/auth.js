@@ -54,7 +54,8 @@ export function verifyPassword(password, storedHash) {
 }
 
 /**
- * Crea el usuario admin por defecto si no existe
+ * Verifica si existen usuarios en la base de datos
+ * NO crea usuario por defecto. El usuario debe usar la pantalla de Setup para crear su primer usuario.
  * @returns {Promise<void>}
  */
 export async function initializeDefaultUser() {
@@ -63,27 +64,13 @@ export async function initializeDefaultUser() {
     const existingUser = await db.get('SELECT id FROM users LIMIT 1')
 
     if (existingUser) {
-      logger.info('✅ Usuario admin ya existe')
+      logger.info('✅ Usuario ya existe. App lista para usar.')
       return
     }
 
-    // Crear usuario admin por defecto
-    const defaultUsername = 'admin'
-    const defaultPassword = 'admin123'
-    const passwordHash = hashPassword(defaultPassword)
-
-    await db.run(`
-      INSERT INTO users (username, password_hash, full_name, role, is_active)
-      VALUES (?, ?, ?, ?, ?)
-    `, [defaultUsername, passwordHash, 'Administrador', 'admin', 1])
-
-    logger.success('✅ Usuario admin creado exitosamente')
-    logger.info('   Username: admin')
-    logger.info('   Password: admin123')
-    logger.warn('   ⚠️  IMPORTANTE: Cambia la contraseña después del primer login')
+    logger.info('⚠️  No hay usuarios creados. El usuario debe usar la pantalla de Setup.')
   } catch (error) {
-    logger.error('❌ Error creando usuario admin:', error.message)
-    throw error
+    logger.error('❌ Error verificando usuarios:', error.message)
   }
 }
 

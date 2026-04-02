@@ -344,3 +344,117 @@ export async function changeUsername(req, res) {
     })
   }
 }
+
+/**
+ * GET /api/auth/setup
+ * Verifica si ya existen usuarios. Si no, permite crear el primer usuario.
+ */
+export async function checkSetup(req, res) {
+  try {
+    const existingUser = await db.get('SELECT id FROM users LIMIT 1')
+
+    res.json({
+      success: true,
+      needsSetup: !existingUser
+    })
+  } catch (error) {
+    logger.error('❌ Error verificando setup:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error en el servidor'
+    })
+  }
+}
+
+/**
+ * POST /api/auth/setup
+ * Crea el primer usuario. Solo funciona si NO existen usuarios previos.
+ */
+export async function setup(req, res) {
+  try {
+    const { username, password } = req.body
+
+    // Validación de entrada
+    if (!username || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Usuario y contraseña son requeridos'
+      })
+    }
+
+    if (username.length < 3) {
+      return res.status(400).json({
+        success: false,
+        message: 'El usuario debe tener al menos 3 caracteres'
+      })
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'La contraseña debe tener al menos 6 caracteres'
+      })
+    }
+
+    // CRÍTICO: Verificar que NO existan usuarios previos
+    const existingUser = await db.get('SELECT id FROM users LIMIT 1')
+
+    if (existingUser) {
+      logger.warn(`⚠️  Intento no autorizado de crear usuario cuando ya existen usuarios`)
+      return res.status(403).json({
+        success: false,
+        message: 'Ya existen usuarios registrados. No se puede crear más usuarios desde esta ruta.'
+      })
+    }
+
+    // Verificar que el username no esté en uso
+    const usernameTaken = await db.get('SELECT id FROM users WHERE username = ?', [username])
+
+    if (usernameTaken) {
+      return res.status(400).json({
+        success: false,
+        message: 'Este nombre de usuario ya está en uso'
+      })
+    }
+
+    // Crear el primer usuario
+    const { hashPassword, generateToken } = await import('../utils/auth.js')
+    const passwordHash = hashPassword(password)
+
+    const result = await db.run(
+      'INSERT INTO users (username, password_hash, full_name, role, is_active) VALUES (?, ?, ?, ?, ?)',
+      [username, passwordHash, username, 'admin', 1]
+    )
+
+    const userId = result.lastID
+
+    // Generar token JWT
+    const token = generateToken({
+      userId,
+      username,
+      email: '',
+      role: 'admin'
+    })
+
+    logger.success(`✅ Primer usuario creado: ${username}`)
+
+    res.json({
+      success: true,
+      message: 'Usuario creado exitosamente',
+      token,
+      user: {
+        id: userId,
+        username,
+        email: '',
+        fullName: username,
+        role: 'admin'
+      }
+    })
+  } catch (error) {
+    logger.error('❌ Error en setup:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error en el servidor'
+    })
+  }
+}

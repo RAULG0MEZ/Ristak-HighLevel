@@ -16,13 +16,41 @@ import { Settings } from '@/pages/Settings'
 import { Appointments } from '@/pages/Appointments'
 import { Analytics } from '@/pages/Analytics'
 import { Login } from '@/pages/Login'
+import { Setup } from '@/pages/Login/Setup'
 import { ToastContainer } from '@/components/common/Toast'
 import { Modal } from '@/components/common/Modal'
 import { StorageAlert } from '@/components/common/StorageAlert'
 
+// Componente para la ruta de setup (primera vez)
+const SetupRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { needsSetup, isLoading } = useAuth()
+  const location = useLocation()
+
+  if (isLoading) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '100vh',
+        background: 'var(--color-background-primary)',
+        color: 'var(--color-text-primary)'
+      }}>
+        Cargando...
+      </div>
+    )
+  }
+
+  if (!needsSetup) {
+    return <Navigate to="/login" state={{ from: location }} replace />
+  }
+
+  return <>{children}</>
+}
+
 // Componente para proteger rutas que requieren autenticación
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated, isLoading } = useAuth()
+  const { isAuthenticated, isLoading, needsSetup } = useAuth()
   const location = useLocation()
 
   if (isLoading) {
@@ -41,6 +69,10 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
     )
   }
 
+  if (needsSetup) {
+    return <Navigate to="/setup" state={{ from: location }} replace />
+  }
+
   if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />
   }
@@ -55,6 +87,7 @@ const AppWithNotifications: React.FC = () => {
     <>
       <BrowserRouter>
         <Routes>
+          <Route path="/setup" element={<SetupRoute><Setup /></SetupRoute>} />
           <Route path="/login" element={<Login />} />
           <Route
             path="/"
