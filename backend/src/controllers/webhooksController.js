@@ -659,6 +659,29 @@ export const handleWhatsAppAttributionWebhook = async (req, res) => {
       }
     }
 
+    // Verificar si ya existe registro para este contacto
+    // Si existe y tiene ad_id_thru_message, NO lo reemplazamos (solo si estaba vacío)
+    let finalAdIdThroughMessage = adIdThroughMessage;
+    if (contactId) {
+      try {
+        const existingRecord = await db.get(
+          'SELECT ad_id_thru_message FROM whatsapp_attribution WHERE contact_id = ? ORDER BY created_at DESC LIMIT 1',
+          [contactId]
+        );
+        if (existingRecord?.ad_id_thru_message && existingRecord.ad_id_thru_message.trim() !== '') {
+          // Ya tiene un valor no-vacío → mantener el anterior
+          finalAdIdThroughMessage = existingRecord.ad_id_thru_message;
+          logger.info(`📌 Ad ID del mensaje anterior mantiene su valor: ${existingRecord.ad_id_thru_message} (no se reemplaza)`);
+        } else if (!adIdThroughMessage && existingRecord?.ad_id_thru_message) {
+          // El nuevo está vacío pero el anterior tenía valor → mantener anterior
+          finalAdIdThroughMessage = existingRecord.ad_id_thru_message;
+          logger.info(`📌 Nuevo mensaje vacío, manteniendo anterior: ${existingRecord.ad_id_thru_message}`);
+        }
+      } catch (err) {
+        logger.warn(`No se pudo verificar ad_id_thru_message anterior: ${err.message}`);
+      }
+    }
+
     const usePostgres = process.env.DATABASE_URL ? true : false;
     const query = usePostgres
       ? `INSERT INTO whatsapp_attribution (
@@ -685,7 +708,7 @@ export const handleWhatsAppAttributionWebhook = async (req, res) => {
       customData.thumbnail_url || data.referral_thumbnail_url || data.thumbnailUrl || data.thumbnail_url,
       customData.ctwa_clid || data.referral_ctwa_clid || data.ctwa_clid || data.ctwaCLID,
       messageContent,
-      adIdThroughMessage
+      finalAdIdThroughMessage
     ]);
 
     // VALIDACIÓN INTELIGENTE: Comparar los 3 candidatos contra meta_ads
@@ -694,15 +717,15 @@ export const handleWhatsAppAttributionWebhook = async (req, res) => {
     let adIdSource = null;
     let adIdValidated = false;
 
-    if (utmAdId || referralSourceId || adIdThroughMessage) {
+    if (utmAdId || referralSourceId || finalAdIdThroughMessage) {
       try {
-        const resolution = await resolveAdIdWithValidation(utmAdId, referralSourceId, adIdThroughMessage);
+        const resolution = await resolveAdIdWithValidation(utmAdId, referralSourceId, finalAdIdThroughMessage);
         finalAdId = resolution.adId;
         adIdSource = resolution.source;
         adIdValidated = resolution.validated;
 
         logger.info(`🔍 Validación de ad_id completada para ${contactId}:`);
-        logger.info(`   Candidatos: utm=${utmAdId}, referral=${referralSourceId}, message=${adIdThroughMessage}`);
+        logger.info(`   Candidatos: utm=${utmAdId}, referral=${referralSourceId}, message=${finalAdIdThroughMessage}`);
         logger.info(`   Resultado: ${finalAdId} (fuente: ${adIdSource}, validado: ${adIdValidated})`);
 
         if (finalAdId && contactId) {
@@ -721,7 +744,7 @@ export const handleWhatsAppAttributionWebhook = async (req, res) => {
     res.status(200).json({
       success: true,
       message: 'Atribución procesada',
-      ad_id_thru_message: adIdThroughMessage,
+      ad_id_thru_message: finalAdIdThroughMessage,
       final_ad_id: finalAdId,
       ad_id_source: adIdSource,
       ad_id_validated: adIdValidated
