@@ -825,6 +825,34 @@ git log -1
 **Fecha**: 2026-04-01
 **Versión**: 1.25.0
 **Últimos cambios críticos**:
+- **Feature: Validación Inteligente de ad_id contra meta_ads (2026-04-01)** ⭐ NUEVO
+  - **Problema**: Los ad_ids podían venir incorrectos de HighLevel (utm_id falso), causando atribución a anuncios inexistentes
+  - **Solución**: Sistema de fallback inteligente que valida TODOS los candidatos contra `meta_ads` y usa el correcto
+  - **Implementación**:
+    - **Nueva función**: `resolveAdIdWithValidation(utmAdId, referralSourceId, adIdThroughMessage)`
+      - Recibe los 3 candidatos de ad_id (desde diferentes fuentes)
+      - Valida CADA UNO contra tabla `meta_ads` para verificar que exista
+      - Devuelve: `{ adId, source, validated }`
+    - **Lógica de selección** (inteligente, flexible):
+      1. Si solo 1 candidato existe en meta_ads → usa ese
+      2. Si varios existen → usa por prioridad: utm > referral > message
+      3. Si ninguno existe → retorna utm pero marcado como `validated: false`
+    - **Webhook de WhatsApp** mejorado (`handleWhatsAppAttributionWebhook`):
+      - Extrae los 3 candidatos: `utmAdId` (del contacto actual), `referralSourceId`, `adIdThroughMessage`
+      - Llama a `resolveAdIdWithValidation` para validar
+      - Actualiza `contacts.attribution_ad_id` con el resultado
+      - Devuelve response con detalles: `{ final_ad_id, ad_id_source, ad_id_validated }`
+    - **Logs detallados** para debugging:
+      - Qué candidatos se evaluaron
+      - Cuál existe en meta_ads
+      - Cuál se eligió y por qué
+  - **Resultado**: 
+    - ✅ Si utm_id viene incorrecto pero referral o message son válidos → usa el correcto
+    - ✅ Fallback automático sin perder atribución
+    - ✅ Logs claros para auditar decisiones
+  - **Archivo modificado**: `webhooksController.js`
+  - **Sin cambios en tablas**: Usa `meta_ads` existente para validar
+
 - **Feature: Pantalla de Setup para crear el Primer Usuario (2026-04-01)** ⭐ NUEVO
   - **Problema**: La app creaba un usuario "admin/admin123" por defecto automáticamente. Inseguro y poco profesional.
   - **Solución**: Primera vez que se abre la app → mostrar pantalla "Configura tu acceso" → el usuario elige su propio usuario y contraseña.
