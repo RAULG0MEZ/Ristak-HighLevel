@@ -781,6 +781,24 @@
   background-color: var(--color-background-tertiary);
 }
 
+.dayCellEmpty {
+  background-color: rgba(148, 163, 184, 0.08);
+  pointer-events: none;
+  cursor: default;
+}
+
+.dayCellEmpty:hover {
+  background-color: rgba(148, 163, 184, 0.08);
+}
+
+:global(body.dark) .dayCellEmpty {
+  background-color: rgba(45, 45, 48, 0.5);
+}
+
+:global(body.dark) .dayCellEmpty:hover {
+  background-color: rgba(45, 45, 48, 0.5);
+}
+
 .dayCellOther {
   background-color: rgba(148, 163, 184, 0.14);
 }
