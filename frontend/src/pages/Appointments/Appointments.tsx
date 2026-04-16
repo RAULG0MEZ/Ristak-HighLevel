@@ -450,43 +450,46 @@ export const Appointments: React.FC = () => {
     return grouped;
   }, [blockedSlots]);
 
-  // Generar celdas del calendario mensual cubriendo TODAS las semanas del mes
-  // (4, 5 o 6 semanas según el mes: 28, 35 o 42 celdas)
-  const monthCells = useMemo((): DayCell[] => {
+  // Generar celdas del calendario mensual: solo los días del mes actual.
+  // Las posiciones antes del día 1 y después del último día quedan vacías (null)
+  // para no mezclar días de otros meses.
+  const monthCells = useMemo((): (DayCell | null)[] => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
 
-    // Primer y último día del mes
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
 
-    // Lunes de la semana del primer día
-    const startDay = new Date(firstDay);
-    const firstDayOfWeek = (firstDay.getDay() + 6) % 7; // 0 = lunes
-    startDay.setDate(firstDay.getDate() - firstDayOfWeek);
+    const firstDayOfWeek = (firstDay.getDay() + 6) % 7; // 0 = lunes ... 6 = domingo
+    const daysInMonth = lastDay.getDate();
 
-    // Domingo de la semana del último día
-    const lastDayOfWeek = (lastDay.getDay() + 6) % 7; // 0 = lunes ... 6 = domingo
-    const daysToAdd = 6 - lastDayOfWeek;
+    const cells: (DayCell | null)[] = [];
 
-    // Calcular cuántas celdas totales (siempre múltiplo de 7)
-    const msPerDay = 1000 * 60 * 60 * 24;
-    const totalDays = Math.round((lastDay.getTime() - startDay.getTime()) / msPerDay) + 1 + daysToAdd;
+    // Celdas vacías antes del día 1 (para alinear a la columna del día de la semana)
+    for (let i = 0; i < firstDayOfWeek; i++) {
+      cells.push(null);
+    }
 
-    const cells: DayCell[] = [];
-
-    for (let i = 0; i < totalDays; i++) {
-      const date = new Date(startDay);
-      date.setDate(startDay.getDate() + i);
-
+    // Días del mes actual
+    for (let day = 1; day <= daysInMonth; day++) {
+      const date = new Date(year, month, day);
       const dateKey = date.toISOString().split('T')[0];
       const dayEvents = eventsByDate[dateKey] || [];
 
       cells.push({
         date,
-        isCurrentMonth: date.getMonth() === month,
+        isCurrentMonth: true,
         events: dayEvents
       });
+    }
+
+    // Celdas vacías para completar la última semana (grid de 7 columnas)
+    const remainder = cells.length % 7;
+    if (remainder !== 0) {
+      const trailing = 7 - remainder;
+      for (let i = 0; i < trailing; i++) {
+        cells.push(null);
+      }
     }
 
     return cells;
@@ -1371,10 +1374,19 @@ export const Appointments: React.FC = () => {
                 {(() => {
                   const todayString = new Date().toDateString();
                   return monthCells.map((cell, index) => {
+                    if (!cell) {
+                      return (
+                        <div
+                          key={`empty-${index}`}
+                          className={`${styles.dayCell} ${styles.dayCellEmpty}`}
+                          aria-hidden="true"
+                        />
+                      );
+                    }
+
                     const isToday = cell.date.toDateString() === todayString;
                     const cellClasses = [
                       styles.dayCell,
-                      !cell.isCurrentMonth ? styles.dayCellOther : '',
                       isToday ? styles.dayCellToday : ''
                     ].filter(Boolean).join(' ');
                     const dayNumberClasses = [
