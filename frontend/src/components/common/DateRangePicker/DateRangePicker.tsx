@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Calendar, ChevronLeft, ChevronRight, Clock, TrendingUp } from 'lucide-react'
+import { Calendar, ChevronDown, ChevronLeft, ChevronRight, Clock, TrendingUp } from 'lucide-react'
 import styles from './DateRangePicker.module.css'
 import { formatDateToISO } from '@/utils/format'
 
@@ -288,6 +288,14 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
     })
   }
 
+  const navigateToYear = (isLeft: boolean, year: number) => {
+    const setter = isLeft ? setLeftMonth : setRightMonth
+    setter(prev => new Date(year, prev.getMonth(), 1))
+  }
+
+  const currentYear = new Date().getFullYear()
+  const yearOptions = Array.from({ length: currentYear + 3 - 2018 + 1 }, (_, i) => 2018 + i)
+
   const handleDateClick = (date: Date) => {
     if (!selectingEndDate) {
       setTempStart(date)
@@ -442,7 +450,19 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
             <ChevronLeft size={16} />
           </button>
           <div className={styles.monthYear}>
-            {MONTHS[currentMonth.getMonth()]} {currentMonth.getFullYear()}
+            <span>{MONTHS[currentMonth.getMonth()]}</span>
+            <div className={styles.yearSelectWrapper}>
+              <select
+                className={styles.yearSelect}
+                value={currentMonth.getFullYear()}
+                onChange={(e) => navigateToYear(isLeftCalendar, Number(e.target.value))}
+              >
+                {yearOptions.map(year => (
+                  <option key={year} value={year}>{year}</option>
+                ))}
+              </select>
+              <ChevronDown size={11} className={styles.yearSelectArrow} />
+            </div>
           </div>
           <button
             className={styles.navButton}

@@ -216,6 +216,50 @@
   font-size: var(--font-size-base);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.yearSelectWrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.yearSelect {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px 18px 2px 4px;
+  border-radius: var(--radius-sm);
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+}
+
+.yearSelect:hover {
+  background: var(--color-background-tertiary);
+}
+
+.yearSelect:focus {
+  background: var(--color-background-tertiary);
+}
+
+:global(body.dark) .yearSelect {
+  color-scheme: dark;
+}
+
+.yearSelectArrow {
+  position: absolute;
+  right: 3px;
+  pointer-events: none;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
 }
 
 .weekDays {
