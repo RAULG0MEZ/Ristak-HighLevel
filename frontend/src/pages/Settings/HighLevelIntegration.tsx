@@ -237,8 +237,8 @@ export const HighLevelIntegration: React.FC = () => {
       } else {
         showToast('error', 'Error', result.error || 'No se pudo iniciar la sincronización')
       }
-    } catch (error) {
-      showToast('error', 'Error', 'Error al sincronizar los datos')
+    } catch (error: any) {
+      showToast('error', 'Error', error?.message || 'Error al sincronizar los datos')
     } finally {
       setCheckingStatus(false)
     }

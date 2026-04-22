@@ -197,7 +197,7 @@ class HighLevelService {
   // Obtener progreso de sincronización
   async getSyncProgress(): Promise<any> {
     try {
-      const response = await fetch('/api/highlevel/sync-progress')
+      const response = await fetch('/api/highlevel/sync/progress')
       return await response.json()
     } catch (error) {
       // TODO: Implement proper logging service
