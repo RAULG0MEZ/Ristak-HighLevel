@@ -500,7 +500,9 @@ async function syncHighLevelContacts(locationId, apiToken) {
     })
 
     if (!response.ok) {
-      throw new Error(`Error obteniendo contactos: ${response.statusText}`)
+      let errorBody = ''
+      try { errorBody = await response.text() } catch (_) {}
+      throw new Error(`Error ${response.status} obteniendo contactos: ${response.statusText}. Detalle: ${errorBody}`)
     }
 
     const data = await response.json()
