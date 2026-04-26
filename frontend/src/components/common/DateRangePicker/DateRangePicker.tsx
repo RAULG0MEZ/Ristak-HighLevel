@@ -234,15 +234,29 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
     setOpenDropdown(prev => (prev === key ? null : key))
   }
 
+  // Al elegir mes del dropdown → mueve la vista Y pre-selecciona todo ese mes
   const selectMonth = (isLeft: boolean, monthIdx: number) => {
+    const currentYear = isLeft ? leftMonth.getFullYear() : rightMonth.getFullYear()
     const setter = isLeft ? setLeftMonth : setRightMonth
-    setter(prev => new Date(prev.getFullYear(), monthIdx, 1))
+    setter(new Date(currentYear, monthIdx, 1))
+    const firstDay = new Date(currentYear, monthIdx, 1)
+    const lastDay = new Date(currentYear, monthIdx + 1, 0)
+    setTempStart(firstDay)
+    setTempEnd(lastDay)
+    setSelectingEndDate(false)
     setOpenDropdown(null)
   }
 
+  // Al elegir año del dropdown → mueve la vista Y pre-selecciona todo ese mes en el nuevo año
   const selectYear = (isLeft: boolean, year: number) => {
+    const currentMonth = isLeft ? leftMonth.getMonth() : rightMonth.getMonth()
     const setter = isLeft ? setLeftMonth : setRightMonth
-    setter(prev => new Date(year, prev.getMonth(), 1))
+    setter(new Date(year, currentMonth, 1))
+    const firstDay = new Date(year, currentMonth, 1)
+    const lastDay = new Date(year, currentMonth + 1, 0)
+    setTempStart(firstDay)
+    setTempEnd(lastDay)
+    setSelectingEndDate(false)
     setOpenDropdown(null)
   }
 
