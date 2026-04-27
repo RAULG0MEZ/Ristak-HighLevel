@@ -1646,83 +1646,90 @@ export const Reports: React.FC = () => {
             <h1 className={styles.title}>Reportes</h1>
             {metricsRangeLabel && <span className={styles.rangeLabel}>{metricsRangeLabel}</span>}
           </div>
-          <div className={styles.filtersRow}>
-            <div className={styles.rangeControlsInline}>
-              {viewType === 'day' && (
-                <div className={styles.datePickerControl}>
-                  <DateRangePicker
-                    variant="dual"
-                    startDate={toIsoDate(baseRange.start)}
-                    endDate={toIsoDate(baseRange.end)}
-                    onChange={(start, end) => setDateRange({
-                      start: parseLocalDateString(start),
-                      end: parseLocalDateString(end),
-                      preset: 'custom'
-                    })}
-                  />
-                </div>
-              )}
-              {viewType === 'month' && (
-                <>
+          <div className={styles.filtersArea}>
+            {/* Row 1: preset selector (left) + scope & display tabs (right) */}
+            <div className={styles.filtersTopRow}>
+              <div className={styles.presetArea}>
+                {viewType === 'month' && (
                   <ViewSelector
                     value={monthPreset}
                     options={monthRangeOptions}
                     onChange={handleMonthPresetChange}
                   />
-                  {monthPreset === 'custom' && (
-                    <div className={styles.datePickerControl}>
-                      <DateRangePicker
-                        variant="dual"
-                        startDate={toIsoDate(baseRange.start)}
-                        endDate={toIsoDate(baseRange.end)}
-                        onChange={(start, end) => setDateRange({
-                          start: parseLocalDateString(start),
-                          end: parseLocalDateString(end),
-                          preset: 'custom'
-                        })}
-                      />
-                    </div>
-                  )}
-                </>
-              )}
-            {viewType === 'year' && (
-              <div className={styles.yearControls}>
-                <div className={styles.yearControlGroup}>
-                  <span>Inicio</span>
-                  <div className={styles.yearButtons}>
-                    <Button variant="ghost" size="sm" onClick={() => handleYearRangeChange('start', -1)}>-</Button>
-                    <span>{yearRange.start}</span>
-                    <Button variant="ghost" size="sm" onClick={() => handleYearRangeChange('start', 1)}>+</Button>
-                  </div>
-                </div>
-                <div className={styles.yearControlGroup}>
-                  <span>Fin</span>
-                  <div className={styles.yearButtons}>
-                    <Button variant="ghost" size="sm" onClick={() => handleYearRangeChange('end', -1)}>-</Button>
-                    <span>{yearRange.end}</span>
-                    <Button variant="ghost" size="sm" onClick={() => handleYearRangeChange('end', 1)}>+</Button>
-                  </div>
-                </div>
+                )}
               </div>
-            )}
+              <div className={styles.tabsContainer}>
+                <TabList
+                  tabs={scopeTabs}
+                  activeTab={reportType}
+                  onTabChange={(value) => setReportType(value as ReportType)}
+                  variant="compact"
+                />
+                <TabList
+                  tabs={displayTabs}
+                  activeTab={displayMode}
+                  onTabChange={(value) => setDisplayMode(value as DisplayMode)}
+                  variant="compact"
+                />
+              </div>
             </div>
-            <div className={styles.tabsContainer}>
+
+            {/* Row 2: date inputs (left) + Día/Mes/Año tab (right) */}
+            <div className={styles.filtersBottomRow}>
+              <div className={styles.dateControlsArea}>
+                {viewType === 'day' && (
+                  <div className={styles.datePickerControl}>
+                    <DateRangePicker
+                      variant="dual"
+                      startDate={toIsoDate(baseRange.start)}
+                      endDate={toIsoDate(baseRange.end)}
+                      onChange={(start, end) => setDateRange({
+                        start: parseLocalDateString(start),
+                        end: parseLocalDateString(end),
+                        preset: 'custom'
+                      })}
+                    />
+                  </div>
+                )}
+                {viewType === 'month' && monthPreset === 'custom' && (
+                  <div className={styles.datePickerControl}>
+                    <DateRangePicker
+                      variant="dual"
+                      startDate={toIsoDate(baseRange.start)}
+                      endDate={toIsoDate(baseRange.end)}
+                      onChange={(start, end) => setDateRange({
+                        start: parseLocalDateString(start),
+                        end: parseLocalDateString(end),
+                        preset: 'custom'
+                      })}
+                    />
+                  </div>
+                )}
+                {viewType === 'year' && (
+                  <div className={styles.yearControls}>
+                    <div className={styles.yearControlGroup}>
+                      <span>Inicio</span>
+                      <div className={styles.yearButtons}>
+                        <Button variant="ghost" size="sm" onClick={() => handleYearRangeChange('start', -1)}>-</Button>
+                        <span>{yearRange.start}</span>
+                        <Button variant="ghost" size="sm" onClick={() => handleYearRangeChange('start', 1)}>+</Button>
+                      </div>
+                    </div>
+                    <div className={styles.yearControlGroup}>
+                      <span>Fin</span>
+                      <div className={styles.yearButtons}>
+                        <Button variant="ghost" size="sm" onClick={() => handleYearRangeChange('end', -1)}>-</Button>
+                        <span>{yearRange.end}</span>
+                        <Button variant="ghost" size="sm" onClick={() => handleYearRangeChange('end', 1)}>+</Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
               <TabList
                 tabs={viewTabs}
                 activeTab={viewType}
                 onTabChange={(value) => setViewType(value as ViewType)}
-                variant="compact"
-              />
-              <TabList
-                tabs={scopeTabs}
-                activeTab={reportType}
-                onTabChange={(value) => setReportType(value as ReportType)}
-                variant="compact"
-              />
-              <TabList
-                tabs={displayTabs}
-                activeTab={displayMode}
-                onTabChange={(value) => setDisplayMode(value as DisplayMode)}
                 variant="compact"
               />
             </div>
