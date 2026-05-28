@@ -369,6 +369,163 @@ export const handleAppointmentWebhook = async (req, res) => {
 };
 
 /**
+ * Procesa una señal explícita de HighLevel cuando el prospecto asistió a la cita
+ */
+export const handleAppointmentShowedWebhook = async (req, res) => {
+  try {
+    const data = req.body;
+    const calendar = data.calendar || {};
+    const appointment = data.appointment || {};
+
+    const appointmentId = calendar.appointmentId
+      || appointment.appointmentId
+      || data.appointmentId
+      || data.appointment_id
+      || data.eventId
+      || data.event_id
+      || data.id;
+
+    const contactId = data.contact_id
+      || data.contactId
+      || data.contact?.id
+      || appointment.contactId
+      || appointment.contact_id;
+
+    logger.info(`📥 Webhook de cita asistida recibido: ${appointmentId || 'sin ID'}${contactId ? ` (contacto ${contactId})` : ''}`);
+
+    if (!appointmentId && !contactId) {
+      logger.warn('Webhook de cita asistida sin appointmentId ni contactId, ignorando');
+      return res.status(200).json({ success: true, message: 'Webhook recibido' });
+    }
+
+    const usePostgres = process.env.DATABASE_URL ? true : false;
+
+    if (contactId) {
+      const contactExists = await db.get('SELECT id FROM contacts WHERE id = ?', [contactId]);
+      if (!contactExists) {
+        const contactQuery = usePostgres
+          ? `INSERT INTO contacts (id, full_name, phone, source, created_at) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING`
+          : `INSERT OR IGNORE INTO contacts (id, full_name, phone, source, created_at) VALUES (?, ?, ?, ?, ?)`;
+
+        await db.run(contactQuery, [
+          contactId,
+          data.full_name || data.contactName || data.contact?.name || 'Contacto sin nombre',
+          data.phone || data.contactPhone || data.contact?.phone || null,
+          'appointment-showed-webhook',
+          data.date_created || data.dateCreated || new Date().toISOString()
+        ]);
+      }
+    }
+
+    const startTime = calendar.startTime || appointment.startTime || data.startTime || data.start_time;
+    const endTime = calendar.endTime || appointment.endTime || data.endTime || data.end_time;
+    const dateUpdated = calendar.last_updated || appointment.last_updated || data.dateUpdated || data.date_updated || new Date().toISOString();
+    let updatedAppointmentId = appointmentId;
+
+    if (appointmentId) {
+      const query = usePostgres
+        ? `INSERT INTO appointments (id, calendar_id, contact_id, location_id, title, status,
+            appointment_status, assigned_user_id, notes, address, start_time, end_time, date_added, date_updated)
+           VALUES ($1, $2, $3, $4, $5, $6, 'showed', $7, $8, $9, $10, $11, $12, $13)
+           ON CONFLICT (id) DO UPDATE SET
+            calendar_id = COALESCE(EXCLUDED.calendar_id, appointments.calendar_id),
+            contact_id = COALESCE(EXCLUDED.contact_id, appointments.contact_id),
+            location_id = COALESCE(EXCLUDED.location_id, appointments.location_id),
+            title = COALESCE(EXCLUDED.title, appointments.title),
+            status = COALESCE(EXCLUDED.status, appointments.status),
+            appointment_status = 'showed',
+            assigned_user_id = COALESCE(EXCLUDED.assigned_user_id, appointments.assigned_user_id),
+            notes = COALESCE(EXCLUDED.notes, appointments.notes),
+            address = COALESCE(EXCLUDED.address, appointments.address),
+            start_time = COALESCE(EXCLUDED.start_time, appointments.start_time),
+            end_time = COALESCE(EXCLUDED.end_time, appointments.end_time),
+            date_added = COALESCE(appointments.date_added, EXCLUDED.date_added),
+            date_updated = EXCLUDED.date_updated`
+        : `INSERT INTO appointments (id, calendar_id, contact_id, location_id, title, status,
+            appointment_status, assigned_user_id, notes, address, start_time, end_time, date_added, date_updated)
+           VALUES (?, ?, ?, ?, ?, ?, 'showed', ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (id) DO UPDATE SET
+            calendar_id = COALESCE(EXCLUDED.calendar_id, appointments.calendar_id),
+            contact_id = COALESCE(EXCLUDED.contact_id, appointments.contact_id),
+            location_id = COALESCE(EXCLUDED.location_id, appointments.location_id),
+            title = COALESCE(EXCLUDED.title, appointments.title),
+            status = COALESCE(EXCLUDED.status, appointments.status),
+            appointment_status = 'showed',
+            assigned_user_id = COALESCE(EXCLUDED.assigned_user_id, appointments.assigned_user_id),
+            notes = COALESCE(EXCLUDED.notes, appointments.notes),
+            address = COALESCE(EXCLUDED.address, appointments.address),
+            start_time = COALESCE(EXCLUDED.start_time, appointments.start_time),
+            end_time = COALESCE(EXCLUDED.end_time, appointments.end_time),
+            date_added = COALESCE(appointments.date_added, EXCLUDED.date_added),
+            date_updated = EXCLUDED.date_updated`;
+
+      await db.run(query, [
+        appointmentId,
+        calendar.id || appointment.calendarId || data.calendarId || data.calendar_id,
+        contactId,
+        data.location?.id || data.locationId || data.location_id,
+        calendar.title || appointment.title || data.title || calendar.calendarName || 'Cita',
+        calendar.status || appointment.status || data.status || null,
+        calendar.created_by_user_id || appointment.assignedUserId || data.assignedUserId || data.assigned_user_id,
+        calendar.notes || appointment.notes || data.notes,
+        calendar.address || appointment.address || data.address || data.location?.fullAddress,
+        startTime,
+        endTime,
+        calendar.date_created || appointment.dateAdded || data.dateAdded || data.date_added || new Date().toISOString(),
+        dateUpdated
+      ]);
+    } else if (contactId) {
+      const existingAppointment = await db.get(
+        `SELECT id FROM appointments
+         WHERE contact_id = ?
+         ORDER BY
+          CASE WHEN start_time IS NULL THEN 1 ELSE 0 END,
+          start_time DESC,
+          date_added DESC
+         LIMIT 1`,
+        [contactId]
+      );
+
+      if (!existingAppointment) {
+        logger.warn(`Webhook showed sin appointmentId y sin cita existente para contacto ${contactId}`);
+        return res.status(200).json({ success: true, message: 'Cita asistida recibida sin cita local' });
+      }
+
+      updatedAppointmentId = existingAppointment.id;
+      await db.run(
+        `UPDATE appointments
+         SET appointment_status = 'showed',
+             status = COALESCE(status, 'showed'),
+             date_updated = ?
+         WHERE id = ?`,
+        [dateUpdated, updatedAppointmentId]
+      );
+    }
+
+    if (contactId && startTime) {
+      await db.run(`
+        UPDATE contacts
+        SET appointment_date = COALESCE(appointment_date, ?)
+        WHERE id = ?
+      `, [startTime, contactId]);
+    }
+
+    logger.info(`✅ Cita marcada como asistida: ${updatedAppointmentId || 'sin ID'}${contactId ? ` para contacto ${contactId}` : ''}`);
+    res.status(200).json({
+      success: true,
+      message: 'Cita marcada como asistida',
+      appointment_id: updatedAppointmentId,
+      contact_id: contactId
+    });
+
+  } catch (error) {
+    logger.error(`Error en handleAppointmentShowedWebhook: ${error.message}`);
+    // Siempre devolver 200 para que HighLevel no reintente
+    res.status(200).json({ success: true, message: 'Webhook recibido' });
+  }
+};
+
+/**
  * Procesa webhook de reembolso
  */
 export const handleRefundWebhook = async (req, res) => {

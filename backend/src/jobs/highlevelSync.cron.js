@@ -49,5 +49,5 @@ export function startHighLevelSyncCron() {
     }
   })
 
-  logger.success('✅ Cron job de HighLevel configurado (cada hora a las XX:00)')
+  logger.success('✅ Cron job de HighLevel configurado (cada hora a las XX:17)')
 }

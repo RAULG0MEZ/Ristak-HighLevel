@@ -1,207 +1,176 @@
-# 📅 Módulo de Calendarios y Citas
+# Módulo Frontend De Citas
 
-> **Sección aislada**: Este módulo puede eliminarse completo sin afectar el resto de la aplicación.
+Documentación real de:
 
-## 📁 Ubicación de Archivos
+- `frontend/src/pages/Appointments/Appointments.tsx`
+- `frontend/src/pages/Appointments/Appointments.module.css`
+- `frontend/src/services/calendarsService.ts`
+- `frontend/src/components/common/AppointmentModal/AppointmentModal.tsx`
+- `frontend/src/components/common/BlockedSlotModal/BlockedSlotModal.tsx`
 
-```
-📦 FRONTEND
-├── src/pages/Appointments/
-│   ├── Appointments.tsx          # Componente principal
-│   ├── Appointments.module.css   # Estilos
-│   ├── index.ts                  # Exportación
-│   └── README.md                 # Este archivo
-│
-├── src/services/
-│   └── calendarsService.ts       # Servicio API de calendarios
-│
-├── src/utils/format.ts           # Función formatTime12h() agregada
-│
-├── src/App.tsx                   # Ruta /appointments agregada
-│
-└── src/components/layout/Sidebar/
-    └── Sidebar.tsx               # Ítem de menú "Citas" agregado
+## Ruta
 
-📦 BACKEND
-├── src/controllers/
-│   └── calendarsController.js    # Controlador de calendarios
-│
-├── src/routes/
-│   └── calendars.routes.js       # Rutas API
-│
-├── src/services/
-│   └── highlevelCalendarService.js  # Servicio para API de HighLevel
-│
-└── src/server.js                 # Import y uso de calendars.routes.js
+```txt
+/appointments
 ```
 
-## 🎯 Funcionalidad
+Registrada en `frontend/src/App.tsx` dentro de `ProtectedRoute`.
 
-### Vista Principal
-- **Navegación entre calendarios**: Permite cambiar entre múltiples calendarios de HighLevel
-- **Vista mensual**: Calendario completo con eventos agrupados por día
-- **KPIs de citas**:
-  - Pendientes
-  - Canceladas
-  - Confirmadas
-  - Reprogramadas
-- **Próximas citas**: Lista ordenada de las siguientes 8 citas
-- **Colores por estado**: Cada estado de cita tiene un color distintivo
+El item de menú vive en `frontend/src/components/layout/Sidebar/Sidebar.tsx` como **Citas**.
 
-### Integraciones
-- **API de Calendarios de HighLevel**: Integración completa usando OAuth 2.0
-- **Endpoints utilizados**:
-  - `GET https://services.leadconnectorhq.com/calendars/` - Listar calendarios
-  - `GET https://services.leadconnectorhq.com/calendars/:id` - Detalles de calendario
-  - `GET https://services.leadconnectorhq.com/calendars/events` - Eventos/citas
-  - `GET https://services.leadconnectorhq.com/calendars/:id/free-slots` - Slots disponibles
+## Qué Hace
 
-## 🔌 Endpoints Backend
+- Lista calendarios activos de HighLevel.
+- Selecciona calendario por prioridad:
+  1. último calendario usado en la sesión,
+  2. `default_calendar_id` desde `useAppConfig`,
+  3. primer calendario activo.
+- Muestra vistas de mes, semana y día.
+- Carga eventos por rango visible.
+- Carga citas futuras para la lista lateral.
+- Calcula KPIs mensuales.
+- Permite crear, editar y eliminar citas.
+- Permite crear, editar y eliminar horarios bloqueados.
+- Permite abrir configuración de calendarios desde el botón de Settings.
 
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| GET | `/api/calendars` | Obtener todos los calendarios |
-| GET | `/api/calendars/:id` | Obtener calendario específico |
-| GET | `/api/calendars/events` | Obtener eventos/citas de un rango |
-| GET | `/api/calendars/:id/free-slots` | Obtener slots disponibles |
-| POST | `/api/calendars/appointments` | Crear nueva cita |
-| PUT | `/api/calendars/appointments/:id` | Actualizar cita |
-| DELETE | `/api/calendars/events/:id` | Eliminar evento |
+## Estado Global Usado
 
-## 📊 Estados de Citas
+- `AuthContext`: `locationId` y `accessToken`.
+- `NotificationContext`: toasts y feedback.
+- `useAppConfig`: `default_calendar_id`.
+- `sessionStorage`: último calendario seleccionado.
 
-| Estado | Color | Descripción |
-|--------|-------|-------------|
-| `confirmed` | Verde | Cita confirmada |
-| `pending` | Amarillo | Pendiente de confirmación |
-| `cancelled` | Rojo | Cita cancelada |
-| `showed` | Azul | Contacto asistió |
-| `noshow` | Gris | Contacto no asistió |
-| `rescheduled` | Morado | Cita reprogramada |
+## Vistas
 
-## ⚙️ Configuración Requerida
+### Mes
 
-Para que este módulo funcione, se requiere:
+Muestra días del mes actual, eventos agrupados por fecha y señal de horarios bloqueados.
 
-1. **HighLevel configurado** en Settings → Integraciones
-2. **Location ID** válido
-3. **Access Token** con permisos de calendarios
-4. **Scopes necesarios**:
-   - `calendars.readonly` - Ver calendarios y eventos
-   - `calendars.write` - Crear/editar citas (opcional)
+### Semana
 
-## 🚀 Cómo Usar
+Muestra grilla horaria de 7 días con eventos posicionados por hora y bloques editables.
 
-### Frontend
+### Día
+
+Muestra una columna horaria del día actual seleccionado con eventos y bloqueos.
+
+## Flujos De Citas
+
+Crear cita:
+
 ```typescript
-import { Appointments } from '@/pages/Appointments';
-
-// Acceder vía ruta
-navigate('/appointments');
+calendarsService.createAppointment(payload, accessToken)
 ```
 
-### Backend
-```javascript
-import calendarsService from './services/highlevelCalendarService.js';
+Actualizar cita:
 
-// Obtener calendarios
-const calendars = await calendarsService.getCalendars(locationId, accessToken);
-
-// Obtener eventos
-const events = await calendarsService.getCalendarEvents(
-  locationId,
-  startTime,
-  endTime,
-  accessToken
-);
-```
-
-## 🗑️ Cómo Eliminar Este Módulo
-
-Si decides remover esta funcionalidad:
-
-### 1. Eliminar archivos Frontend
-```bash
-# Página
-rm -rf frontend/src/pages/Appointments/
-
-# Servicio
-rm frontend/src/services/calendarsService.ts
-```
-
-### 2. Eliminar archivos Backend
-```bash
-# Controlador
-rm backend/src/controllers/calendarsController.js
-
-# Rutas
-rm backend/src/routes/calendars.routes.js
-
-# Servicio
-rm backend/src/services/highlevelCalendarService.js
-```
-
-### 3. Limpiar imports y rutas
-
-**frontend/src/App.tsx**
 ```typescript
-// ELIMINAR:
-import { Appointments } from '@/pages/Appointments'
-// ...
-<Route path="appointments" element={<Appointments />} />
+calendarsService.updateAppointment(eventId, updates, accessToken)
 ```
 
-**frontend/src/components/layout/Sidebar/Sidebar.tsx**
+Eliminar cita:
+
 ```typescript
-// ELIMINAR del array navigation:
-{ name: 'Citas', href: '/appointments', icon: Calendar }
-
-// ELIMINAR del import:
-Calendar
+calendarsService.deleteEvent(eventId, accessToken)
 ```
 
-**backend/src/server.js**
-```javascript
-// ELIMINAR:
-import calendarsRoutes from './routes/calendars.routes.js'
-// ...
-app.use('/api/calendars', calendarsRoutes)
-```
+`AppointmentModal` maneja contacto, usuario asignado, título, estado, fechas, ubicación y notas.
 
-**frontend/src/utils/format.ts**
+## Flujos De Horarios Bloqueados
+
+Crear:
+
 ```typescript
-// OPCIONAL: Eliminar función formatTime12h() si no se usa en otro lugar
+calendarsService.createBlockedSlot(payload, accessToken)
 ```
 
-### 4. Actualizar CLAUDE.md
-- Remover referencias a Appointments/ en estructura de carpetas
-- Remover calendarsService.ts de la lista de servicios
-- Remover endpoints /api/calendars/* de la lista de API
-- Remover la sección de funcionalidad de Citas
+Actualizar:
 
-## 🎨 Diseño
+```typescript
+calendarsService.updateBlockedSlot(eventId, payload, accessToken)
+```
 
-El diseño sigue los patrones establecidos en el resto de la app:
-- **CSS Modules** para estilos aislados
-- **Variables CSS** del design system
-- **Componentes comunes** reutilizados (KpiCard, Card, Button, PageContainer)
-- **Responsive** adaptado a diferentes pantallas
+Eliminar:
 
-## 📝 Notas Técnicas
+```typescript
+calendarsService.deleteBlockedSlot(blockedSlotId, accessToken)
+```
 
-- **AuthContext** se usa para obtener locationId y accessToken
-- **NotificationContext** para mostrar errores y mensajes
-- Las fechas se manejan como timestamps en milisegundos para los rangos
-- La vista semanal/día está en desarrollo (placeholder implementado)
-- Los colores de eventos usan variables CSS del theme
+`BlockedSlotModal` soporta bloqueo de calendario completo o bloqueo por usuario, siguiendo la lógica XOR requerida por HighLevel.
 
-## 🔮 Próximas Mejoras (Pendientes)
+## Servicio API Frontend
 
-- [ ] Vista de semana funcional
-- [ ] Vista de día funcional
-- [ ] Modal para crear citas desde la interfaz
-- [ ] Edición de citas existentes
-- [ ] Visualización de horarios disponibles
-- [ ] Configuración avanzada de calendarios
-- [ ] Sincronización automática de eventos
-- [ ] Webhooks para eventos de calendario
+`frontend/src/services/calendarsService.ts` expone:
+
+- `getCalendars`
+- `getCalendar`
+- `getEvents`
+- `getAppointment`
+- `getFreeSlots`
+- `getBlockedSlots`
+- `createBlockedSlot`
+- `updateBlockedSlot`
+- `deleteBlockedSlot`
+- `createAppointment`
+- `updateAppointment`
+- `deleteEvent`
+- `updateCalendar`
+- `calculateStats`
+- `groupEventsByDate`
+- `getUpcomingAppointments`
+- `getTodayUpcomingAppointments`
+- `getFutureAppointments`
+- `parseOpenHours`
+
+## Endpoints Backend Usados
+
+| Método | Ruta |
+| --- | --- |
+| GET | `/api/calendars` |
+| GET | `/api/calendars/:id` |
+| PUT | `/api/calendars/:id` |
+| GET | `/api/calendars/events` |
+| GET | `/api/calendars/events/:eventId` |
+| POST | `/api/calendars/appointments` |
+| PUT | `/api/calendars/appointments/:id` |
+| DELETE | `/api/calendars/events/:id` |
+| GET | `/api/calendars/:id/free-slots` |
+| GET | `/api/calendars/:calendarId/blocked-slots` |
+| POST | `/api/calendars/block-slots` |
+| PUT | `/api/calendars/block-slots/:id` |
+| DELETE | `/api/calendars/block-slots/:id` |
+
+También usa:
+
+- `GET /api/highlevel/users`
+- `POST /api/highlevel/users/by-ids`
+- `POST /api/highlevel/contacts/search`
+
+## Estados De Citas
+
+Frontend:
+
+- `confirmed`
+- `pending`
+- `cancelled`
+- `showed`
+- `noshow`
+- `rescheduled`
+
+El backend mapea `pending` y `rescheduled` a `confirmed` cuando HighLevel no acepta esos estados directamente.
+
+## Configuración Relacionada
+
+En `/settings/calendars`:
+
+- `default_calendar_id`: calendario seleccionado por defecto en `/appointments`.
+- `attribution_calendar_ids`: calendarios que cuentan para atribución/marketing.
+
+Si no hay calendarios de atribución configurados, backend usa todos como fallback.
+
+## Notas Técnicas
+
+- Las fechas para llamadas de eventos se envían como timestamps en milisegundos.
+- La grilla horaria calcula posiciones visuales por hora/minuto.
+- Los modales usan portal con componentes comunes; no deben usar `alert`, `confirm` ni `prompt`.
+- La página requiere HighLevel configurado; si no hay `locationId`/`accessToken`, muestra estado de configuración pendiente.

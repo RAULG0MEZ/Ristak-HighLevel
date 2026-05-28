@@ -1,232 +1,144 @@
-# 🚀 Guía de Deploy en Render
+# Deploy En Render
 
-Esta guía te explica cómo deployar tu propia instancia de Ristak en Render en **menos de 5 minutos**.
+Esta guía refleja el `render.yaml` actual del repo. No hay cron jobs separados en Render: las sincronizaciones automáticas corren dentro del backend con `node-cron`.
 
-## 📋 Requisitos Previos
+## Requisitos
 
-1. Una cuenta de Render (gratis o de pago) - [Crear cuenta aquí](https://render.com)
-2. Eso es todo 😎
+- Cuenta de Render.
+- Repo conectado a Render como Blueprint.
+- Para producción real, usa instancia web y Postgres de pago o al menos entiende los límites del plan free. Render documenta que las bases Postgres free expiran después de 30 días y no tienen backups.
 
----
+Referencias oficiales:
+- [Render Blueprint YAML Reference](https://render.com/docs/blueprint-spec)
+- [Render environment variables](https://render.com/docs/configure-environment-variables/)
+- [Render free limits](https://render.com/docs/free)
 
-## ⚡ Deploy en 1 Click
+## Deploy Con Blueprint
 
-### Opción 1: Botón Deploy to Render (MÁS FÁCIL)
+1. En Render, ve a **New +** -> **Blueprint**.
+2. Conecta este repositorio.
+3. Render detecta `render.yaml`.
+4. Click en **Apply**.
 
-1. **Haz click en este botón:**
+Render creará:
+- Web service `ristak-app`.
+- PostgreSQL `ristak-db`.
+- `DATABASE_URL` apuntando a la base creada.
+- `JWT_SECRET` generado por Render desde el Blueprint.
 
-   [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/RAULG0MEZ/Ristak-HighLevel)
+## Qué Hace El Build
 
-2. **Render te va a pedir:**
-   - Conectar con tu cuenta (si no lo has hecho)
-   - Nombre para tu servicio (ej: "ristak-mi-negocio")
-   - Región (elige la más cercana a ti)
+`render.yaml` ejecuta:
 
-3. **Click en "Apply"**
-
-4. **Espera 5-10 minutos** mientras Render:
-   - Crea tu base de datos PostgreSQL
-   - Deploya el backend + frontend
-   - Configura todo automáticamente
-
-5. **¡Listo!** Render te dará una URL como: `https://ristak-mi-negocio.onrender.com`
-
----
-
-## 🎯 Opción 2: Deploy Manual (si prefieres más control)
-
-1. Ve a [Render Dashboard](https://dashboard.render.com)
-2. Click en **"New +"** → **"Blueprint"**
-3. En el campo **"Public Git Repository"**, pega: `https://github.com/RAULG0MEZ/Ristak-HighLevel`
-4. Click en **"Apply"**
-
-Render va a leer el archivo `render.yaml` y va a:
-
-- ✅ Crear automáticamente una base de datos PostgreSQL
-- ✅ Crear el servicio web (backend + frontend)
-- ✅ Configurar todas las variables de entorno necesarias
-- ✅ Hacer el primer deploy
-
-**IMPORTANTE**: El deploy tarda entre 5-10 minutos la primera vez.
-
----
-
-## 🔄 Cómo Recibir Actualizaciones
-
-**IMPORTANTE**: Como usas el repositorio original (sin fork), necesitas configurar auto-updates:
-
-1. Ve a tu servicio en Render Dashboard
-2. **Settings** → **Build & Deploy**
-3. En **"Auto-Deploy"**, asegúrate que esté **ON** (activado)
-4. Branch: **main**
-
-**Ahora, cada vez que haya una actualización:**
-- Render detectará el nuevo commit automáticamente
-- Hará auto-deploy de la nueva versión (2-3 minutos)
-- Tu app se actualiza sin que hagas nada 🎉
-
-### Ver qué cambió:
-
-Puedes ver el historial de actualizaciones en:
-- GitHub: https://github.com/RAULG0MEZ/Ristak-HighLevel/commits/main
-- Render Dashboard → Events (verás cada deploy)
-
----
-
-## 🔐 Configuración de Seguridad (AUTOMÁTICA)
-
-### Clave de Encriptación
-
-**NO necesitas configurar nada**. La app genera automáticamente una clave maestra de encriptación al primer deploy y la guarda en la base de datos.
-
-Esta clave se usa para proteger tus tokens de Meta Ads y otros datos sensibles.
-
-**📝 Nota**: Si por alguna razón quieres usar tu propia clave:
-
-1. Ve a **Environment** en Render
-2. Agrega una variable: `ENCRYPTION_MASTER_KEY`
-3. Genera una clave con este comando:
-   ```bash
-   node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))"
-   ```
-4. Guarda el valor generado
-
-### URL del Backend (AUTOMÁTICA)
-
-**NO necesitas configurar nada**. Durante el build en Render:
-
-1. El script detecta automáticamente la URL de tu servicio usando `$RENDER_EXTERNAL_HOSTNAME`
-2. Crea el archivo `frontend/.env.production` con tu URL específica
-3. El frontend se conectará SOLO a TU propio backend
-
-**Ejemplo**: Si tu servicio se llama `mi-ristak`, la URL será:
-```
-VITE_API_URL=https://mi-ristak.onrender.com
+```bash
+npm install --prefix backend &&
+rm -rf frontend/node_modules frontend/.vite &&
+npm cache clean --force &&
+npm install --include=dev --prefix frontend &&
+echo "VITE_API_URL=https://$RENDER_EXTERNAL_HOSTNAME" > frontend/.env.production &&
+NODE_ENV=production npm run build --prefix frontend
 ```
 
-**⚠️ IMPORTANTE**: NUNCA uses la URL de otra persona. Cada instalación tiene su propia base de datos y backend.
+Puntos importantes:
+- El frontend queda compilado en `frontend/dist`.
+- `VITE_API_URL` apunta al mismo servicio Render.
+- El backend sirve `frontend/dist` cuando `NODE_ENV=production`.
+- No edites manualmente `frontend/.env.production` en Render; se genera durante el build.
 
----
+## Start Command
 
-## ✅ Paso 3: Verificar que Funciona
-
-### A. Revisar los Logs
-
-1. En Render Dashboard, ve a tu servicio
-2. Click en **"Logs"**
-3. Busca estos mensajes de éxito:
-
-```
-✅ ENCRYPTION_MASTER_KEY cargada desde base de datos
-✅ Nueva ENCRYPTION_MASTER_KEY generada y guardada en DB
-🚀 Servidor corriendo en puerto 3001
+```bash
+npm start --prefix backend
 ```
 
-### B. Abrir la App
+El backend arranca `backend/src/server.js`, registra las rutas API, sirve el frontend en producción y activa estos jobs internos:
 
-1. Render te da una URL como: `https://tu-app.onrender.com`
-2. Abre esa URL en tu navegador
-3. Deberías ver la pantalla de login/configuración
+- `metaSync.cron.js`: cada hora en minuto `7`.
+- `highlevelSync.cron.js`: cada hora en minuto `17`.
+- `metaVersionCron.js`: días 1 y 15 a las 03:00, timezone `America/Mexico_City`.
 
----
+## Variables De Entorno
 
-## 🔗 Paso 4: Conectar HighLevel
+Definidas por el Blueprint:
 
-1. Ve a **HighLevel** (app.gohighlevel.com) y obtén:
-   - Tu **Access Token** (Settings → Integrations → API Key)
-   - Tu **Location ID** (Settings → Company)
+```bash
+NODE_ENV=production
+DATABASE_URL=<connection string de ristak-db>
+JWT_SECRET=<generado por Render>
+```
 
-2. En Ristak, ve a **Settings** → **HighLevel Integration**:
-   - Pega tu Access Token
-   - Pega tu Location ID
-   - Click en **"Guardar y Sincronizar"**
+Render también expone variables runtime como `PORT`, `RENDER_EXTERNAL_HOSTNAME` y `RENDER_EXTERNAL_URL`.
 
-3. La app va a:
-   - Guardar tus credenciales de forma segura (encriptadas)
-   - Sincronizar tus contactos, pagos y citas automáticamente
+Opcionales:
 
----
+```bash
+ENCRYPTION_MASTER_KEY=<hex de 32 bytes o más>
+TRACKING_DOMAIN=<dominio personalizado, sin https://>
+```
 
-## 📊 Paso 5: Conectar Meta Ads (Opcional)
+Normalmente no necesitas declarar credenciales de HighLevel, Meta Ads o Stripe en Render. La app las guarda desde Settings.
 
-Si quieres trackear tus campañas de Facebook/Instagram:
+## Primer Acceso
 
-### EN HIGHLEVEL (no en Ristak):
+1. Abre la URL del servicio, por ejemplo `https://ristak-app.onrender.com`.
+2. Si no hay usuarios, la app redirige a `/setup`.
+3. Crea el primer usuario.
+4. Entra a **Configuración -> HighLevel** y guarda `Access Token` + `Location ID`.
+5. Conecta Meta Ads, pagos, calendarios y tracking desde las pestañas de Settings.
 
-1. Ve a **Settings → Meta Ads** en Ristak para ver el **tutorial completo paso a paso**
-2. Sigue las instrucciones para:
-   - Crear una App en Meta Developers
-   - Generar un System User Token (nunca caduca)
-   - Obtener tu Ad Account ID
+## HighLevel
 
-3. **Guarda estos 4 valores en HighLevel Custom Values:**
-   - `Facebook - Ad Account ID`
-   - `Facebook - App Access Token`
-   - `Facebook - App ID`
-   - `Facebook - App Secret`
+La integración HighLevel se guarda desde UI. Al sincronizar:
 
-### EN RISTAK:
+- Contactos se guardan en `contacts`.
+- Citas se guardan en `appointments`.
+- Invoices/pagos se guardan en `payments`.
+- Webhooks se verifican/actualizan en producción cuando existe `RENDER_EXTERNAL_URL`.
 
-4. Ve a **Settings → HighLevel** y haz clic en **"Sincronizar"**
-5. Ristak traerá automáticamente la configuración de Meta desde HighLevel
-6. Ve a **Publicidad** y haz clic en **"Sincronizar Meta Ads"**
+## Meta Ads
 
-La app sincronizará automáticamente tus métricas de anuncios cada hora.
+En **Configuración -> Meta Ads** puedes:
 
----
+- Guardar token, cuenta de anuncios, app id/secret opcionales y pixel id.
+- Cargar cuentas y pixels desde Meta.
+- Sincronizar ads manualmente.
+- Dejar que el cron actualice datos recientes cada hora.
 
-## 🆘 Solución de Problemas
+La app no usa OAuth centralizado. Cada instancia debe usar credenciales propias del usuario.
 
-### Error: "Master key no inicializada"
+## Tracking Web
 
-**Solución**: Reinicia el servicio en Render:
-- Dashboard → tu servicio → **Manual Deploy** → **"Clear build cache & deploy"**
+Para tracking en producción:
 
-### La app no sincroniza datos
+1. Usa dominio personalizado o CNAME que apunte al servicio Render.
+2. Abre Ristak desde ese dominio.
+3. Ve a **Configuración -> Rastreo Web**.
+4. Sincroniza el snippet `rstktrack` hacia HighLevel o copia el `<script>`.
 
-**Verifica**:
-1. Que tu Access Token de HighLevel sea válido
-2. Que tu Location ID sea correcto
-3. Revisa los logs en Render para ver errores específicos
+Más detalle: [docs/TRACKING_PIXEL.md](./docs/TRACKING_PIXEL.md)
 
-### "Error al desencriptar datos"
+## Troubleshooting
 
-**Causa**: Cambiaste de base de datos o perdiste la encryption key
+### Build falla en frontend
 
-**Solución**:
-1. Ve a Settings → HighLevel Integration
-2. Vuelve a guardar tu Access Token
-3. Esto re-encriptará con la nueva clave
+Revisa logs de Render. El build real corre `npm install --include=dev --prefix frontend` y luego `npm run build --prefix frontend`.
 
----
+### La app no conecta con la DB
 
-## 🔄 Actualizaciones
+Verifica que `DATABASE_URL` exista y venga de `ristak-db` en el Blueprint.
 
-Cuando salgan nuevas versiones de Ristak:
+### Login vuelve a setup
 
-1. En tu fork de GitHub, click en **"Sync fork"**
-2. Render detectará los cambios automáticamente
-3. Hará auto-deploy de la nueva versión (2-3 minutos)
+Significa que no hay usuarios en la tabla `users`. Crea el primer usuario en `/setup`.
 
----
+### Error de desencriptado
 
-## 💡 Tips de Seguridad
+La clave de cifrado cambió o la DB no conserva la clave en `app_config`. Vuelve a guardar tokens desde Settings. Para respaldo estable, define `ENCRYPTION_MASTER_KEY`.
 
-✅ **NUNCA** compartas tu Access Token de HighLevel
-✅ **NUNCA** compartas tu Meta Access Token
-✅ Usa el plan de pago de Render para mejor uptime
-✅ Haz backups de tu base de datos regularmente
+### Webhooks usan URL local
 
----
+En Render debe existir `RENDER_EXTERNAL_URL`. Si estás local, el backend usa `http://localhost:3001`.
 
-## 📞 Soporte
+## Actualizaciones
 
-Si tienes problemas con el deploy:
-
-1. Revisa los **Logs** en Render Dashboard
-2. Verifica que todas las variables de entorno estén configuradas
-3. Contacta a soporte técnico si el problema persiste
-
----
-
-**¡Listo!** Tu app ya está corriendo en producción 🎉
+Con auto-deploy activo, cada push a la rama conectada dispara build y deploy. Si usas fork, sincroniza tu fork antes de hacer push.

@@ -114,7 +114,7 @@ app.listen(PORT, async () => {
   // Inicializar clave maestra de encriptación (DEBE ser lo primero)
   await initializeMasterKey()
 
-  // Crear usuario admin por defecto (admin/admin123)
+  // Verificar si existe usuario; si no, la app muestra /setup para crear el primero.
   await initializeDefaultUser()
 
   // Inicializar versión de Meta API desde BD

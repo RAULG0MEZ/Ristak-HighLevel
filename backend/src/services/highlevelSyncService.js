@@ -860,6 +860,7 @@ async function setupHighLevelWebhooks(locationId, apiToken, baseUrl) {
     'webhook_payments': `${baseUrl}/webhook/payment`,
     'webhook_refunds': `${baseUrl}/webhook/refund`,
     'webhook_appointments': `${baseUrl}/webhook/appointment`,
+    'webhook_appointment_showed': `${baseUrl}/webhook/appointment/showed`,
     'webhook_whatsapp_attribution': `${baseUrl}/webhook/whatsapp/attribution`
   }
 

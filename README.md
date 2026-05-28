@@ -1,101 +1,106 @@
-# Ristak - High Level
+# Ristak - HighLevel + Meta Ads
 
-Dashboard de marketing que integra **HighLevel CRM** con **Meta Ads** para visualizar métricas financieras y rendimiento de campañas.
+Ristak es una app full-stack para operar un dashboard de marketing y ventas conectado a HighLevel, Meta Ads, calendarios, pagos y un pixel propio de tracking web.
 
-## 🚀 Deploy Rápido
+## Stack Real
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/RAULG0MEZ/Ristak-HighLevel)
+Frontend:
+- React 19 + TypeScript 5.7
+- Vite 5
+- React Router 7
+- Recharts
+- CSS Modules + Tailwind utilities
 
-**Haz click en el botón de arriba para deployar tu propia instancia en 5 minutos.**
+Backend:
+- Node.js 20+ / 22 en Render
+- Express 4
+- SQLite en desarrollo local cuando no existe `DATABASE_URL`
+- PostgreSQL en Render cuando existe `DATABASE_URL`
+- `node-cron` para sincronizaciones internas
 
----
+Deploy:
+- Render Blueprint (`render.yaml`)
+- Un solo web service sirve API + frontend compilado
+- Postgres administrado por Render
 
-## 📖 Documentación Completa
+## Funcionalidad Principal
 
-**Toda la documentación técnica, arquitectura, instrucciones de deployment y reglas del proyecto están en:**
+- Dashboard financiero y de marketing
+- Contactos, pagos, reportes y campañas
+- Sincronización con HighLevel: contactos, citas e invoices/pagos
+- Integración Meta Ads: cuentas, pixels, campañas, creatividades y métricas
+- Calendarios HighLevel: vistas mes/semana/día, citas, usuarios y horarios bloqueados
+- Pixel propio: `/snip.js`, `/collect` y API de sesiones
+- Analíticas con datos del tracking interno
+- Configuración persistente en `app_config` con cache en `localStorage`
+- Autenticación propia con setup inicial del primer usuario
 
-👉 **[CLAUDE.md](./CLAUDE.md)** 👈
+## Desarrollo Local
 
-Este archivo contiene:
-- ✅ Arquitectura completa del proyecto
-- ✅ Stack tecnológico
-- ✅ Instrucciones de deployment en Render
-- ✅ Reglas críticas de desarrollo
-- ✅ API endpoints
-- ✅ Integraciones (HighLevel, Meta Ads, Tracking Pixel)
-- ✅ Troubleshooting y problemas resueltos
+Instala dependencias una vez:
 
----
+```bash
+npm install --prefix backend
+npm install --prefix frontend
+```
 
-## 🚀 Stack Tecnológico
+Arranca todo desde la raíz:
 
-**Frontend:**
-- React 19 + TypeScript
-- Vite
-- Recharts (gráficas)
+```bash
+bash start-local.sh
+```
 
-**Backend:**
-- Node.js + Express
-- PostgreSQL
-- Node-cron (tareas programadas)
+URLs locales:
+- Frontend: `http://localhost:3000`
+- Backend/API: `http://localhost:3001`
+- Health check: `http://localhost:3001/api/health`
 
-**Hosting:**
-- Render (auto-deploy en cada push a main)
+El script libera los puertos `3000` y `3001`, carga `backend/.env` si existe, inicia el backend y luego Vite.
 
----
+## Deploy En Render
 
-## 📦 Deployment
+El deploy actual usa `render.yaml` en la raíz:
 
-Este proyecto se deploya automáticamente en **Render**.
+- Build: instala backend, limpia frontend, instala frontend y ejecuta `vite build`.
+- Durante el build crea `frontend/.env.production` con `VITE_API_URL=https://$RENDER_EXTERNAL_HOSTNAME`.
+- Start: `npm start --prefix backend`.
+- Render crea `DATABASE_URL` desde la base `ristak-db`.
+- Los cron jobs viven dentro del proceso backend, no como servicios cron separados de Render.
 
-**Flujo:**
-1. Hacer cambios en el código
-2. `git add . && git commit -m "descripción"`
-3. `git push origin main`
-4. Render auto-deploya en ~3-5 minutos
+Guía detallada: [DEPLOYMENT.md](./DEPLOYMENT.md)
 
-**Ver [CLAUDE.md](./CLAUDE.md) para detalles completos de configuración.**
+## Documentación Técnica
 
----
+- [CLAUDE.md](./CLAUDE.md): arquitectura viva, reglas de desarrollo, rutas y modelo de datos.
+- [DEPLOYMENT.md](./DEPLOYMENT.md): deploy actual en Render.
+- [docs/TRACKING_PIXEL.md](./docs/TRACKING_PIXEL.md): comportamiento real del pixel y tabla `sessions`.
+- [docs/PIXEL_SETUP.md](./docs/PIXEL_SETUP.md): guía simple para instalar el pixel.
+- [WHATSAPP_AD_ATTRIBUTION.md](./WHATSAPP_AD_ATTRIBUTION.md): atribución WhatsApp según el webhook actual.
+- [backend/src/services/README_CALENDARS.md](./backend/src/services/README_CALENDARS.md): servicio backend de calendarios.
+- [frontend/src/pages/Appointments/README.md](./frontend/src/pages/Appointments/README.md): módulo frontend de citas.
 
-## 🔌 Integraciones
+## Scripts
 
-- **HighLevel CRM**: Sincronización de contactos, pagos y citas
-- **Meta Ads**: Métricas de campañas publicitarias
-- **Pixel de Tracking**: Sistema de atribución propio (same-origin)
-- **Webhooks**: Actualizaciones en tiempo real
+Raíz:
+- `npm run build`: instala dependencias del frontend y compila `frontend/dist`.
+- `npm start`: instala dependencias del backend y arranca `backend/src/server.js`.
 
----
+Backend:
+- `npm start`: arranca Express.
+- `npm run dev`: arranca Express con `node --watch`.
 
-## 🔄 Actualizaciones Automáticas
+Frontend:
+- `npm run dev`: Vite en puerto `3000`.
+- `npm run build`: build de producción.
+- `npm run preview`: preview de Vite.
 
-**¿Dónde se crea mi base de datos?**
-- ✅ En **TU cuenta de Render** (no la mía)
-- ✅ Solo tú tienes acceso a tus datos
-- ✅ Tú pagas tu propia cuenta de Render (~$14/mes)
-- ✅ Datos 100% privados e aislados
+## Seguridad
 
-**¿Recibiré actualizaciones?**
-- ✅ **SÍ** - Tu app se actualiza automáticamente con cada mejora
-- ✅ Fixes de bugs y nuevas features sin hacer nada
-- ✅ Render detecta los cambios y deploya automáticamente
-- ✅ Ver historial de cambios en [Commits](https://github.com/RAULG0MEZ/Ristak-HighLevel/commits/main)
+- El primer usuario se crea desde `/setup`; ya no existe usuario admin por defecto.
+- `ENCRYPTION_MASTER_KEY` se lee de env si existe o se genera y guarda en DB.
+- `JWT_SECRET` debe existir en producción para no usar el fallback de desarrollo.
+- Tokens de HighLevel, Meta y Stripe se configuran desde Settings, no desde `.env` en uso normal.
 
-**¿Quién tiene acceso a mis datos?**
-- ✅ **Solo tú** - Cada instalación es completamente independiente
-- ❌ El desarrollador NO tiene acceso a tu base de datos
-- ❌ Otros usuarios NO pueden ver tus datos
+## Licencia
 
----
-
-## 📝 Licencia
-
-MIT License - Libre para uso comercial
-
----
-
-## 🆘 Soporte
-
-- **Documentación completa**: [CLAUDE.md](./CLAUDE.md)
-- **Guía de deployment**: [DEPLOYMENT.md](./DEPLOYMENT.md)
-- **Issues**: [GitHub Issues](https://github.com/RAULG0MEZ/Ristak-HighLevel/issues)
+MIT.

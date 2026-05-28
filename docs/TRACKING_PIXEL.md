@@ -1,284 +1,215 @@
-# 🎯 PIXEL DE TRACKING - RISTAK
+# Pixel De Tracking Ristak
 
-Sistema de tracking minimalista con pixel JavaScript que captura visitas, UTMs, click IDs (gclid, fbclid, etc) y los guarda en tu base de datos.
+Esta documentación describe el comportamiento real del código en:
 
-## 📋 ¿Qué hace esto?
+- `backend/src/controllers/trackingController.js`
+- `backend/src/services/trackingService.js`
+- `backend/src/routes/tracking.routes.js`
+- `frontend/src/pages/Settings/WebTracking.tsx`
+- `frontend/src/services/trackingService.ts`
 
-Permite a tus clientes meter un simple `<script>` en su sitio web y automáticamente capturar:
+## Resumen
 
-- ✅ Visitas a páginas
-- ✅ UTMs (utm_source, utm_medium, utm_campaign, etc)
-- ✅ Click IDs de anuncios (gclid, fbclid, msclkid, ttclid, wbraid, gbraid)
-- ✅ Cookies de Facebook (fbc, fbp)
-- ✅ Información del navegador (device_type, idioma, timezone)
-- ✅ Referrer (de dónde viene el visitante)
-- ✅ IP y User-Agent
+El backend sirve un pixel JavaScript dinámico en `GET /snip.js`. Ese pixel envía eventos a `POST /collect` en el mismo host donde se cargó el script.
 
-Todo se guarda en la tabla `sessions` de tu base de datos.
+Cada evento recibido se inserta como una fila nueva en la tabla `sessions`. No es una tabla agregada por sesión: `session_start`, `page_view`, `session_end` y eventos custom pueden compartir `session_id`, pero cada evento tiene su propio `id`.
 
----
+## Datos Que Captura
 
-## 🚀 CÓMO USAR (Para tus clientes)
+- `visitor_id` persistente en `localStorage` con formato de 20 caracteres alfanuméricos.
+- `session_id` temporal en `sessionStorage`.
+- URL actual, referrer y título.
+- UTMs: `utm_source`, `utm_medium`, `utm_campaign`, `utm_term`, `utm_content`.
+- Click IDs: `gclid`, `fbclid`, `msclkid`, `ttclid`, `wbraid`, `gbraid`.
+- Cookies Facebook: `_fbc`, `_fbp`.
+- Parámetros Meta/Google Ads: campaign/adset/ad ids, names, placement, keyword, network, etc.
+- Device, OS, browser, browser version, idioma y timezone.
+- IP real desde headers proxy (`x-forwarded-for`, `cf-connecting-ip`) o socket.
+- Geo por IP usando `ip-api.com`, excepto IPs locales/privadas.
+- `contact_id` cuando el sitio HighLevel expone datos en `localStorage._ud`.
 
-### Paso 1: Configurar CNAME
+## Endpoints
 
-El cliente debe crear un **CNAME** en su DNS apuntando a tu app:
+El router se monta dos veces:
 
-**Ejemplo en Cloudflare:**
-```
-Tipo: CNAME
-Nombre: collect
-Destino: tu-app.onrender.com (o el dominio de tu servidor)
-Proxy: ON (Opcional, pero recomendado)
-```
+- En `/`, para el pixel: `/snip.js`, `/collect`, `/sync-visitor`, `/link-visitor`.
+- En `/api/tracking`, para la app: `/api/tracking/sessions`, `/api/tracking/config`, etc.
 
-Esto crea la URL: `https://collect.su-dominio.com`
+### `GET /snip.js`
 
-**Ejemplo en Squarespace/GoDaddy:**
-```
-Host: collect
-Apunta a: tu-app.onrender.com
-TTL: Automático
-```
+Devuelve JavaScript con `Content-Type: application/javascript` y cache de 1 hora.
 
-### Paso 2: Insertar el script en su sitio
+El endpoint interno se genera desde `req.headers.host`:
 
-El cliente debe pegar esto **ANTES de `</body>`** en TODAS las páginas de su sitio:
+- `localhost` usa `http`.
+- cualquier otro host usa `https`.
 
-```html
-<!-- Pixel de Tracking Ristak -->
-<script async src="https://collect.su-dominio.com/snip.js"></script>
-```
-
-**Eso es todo.** El pixel empezará a capturar automáticamente.
-
----
-
-## 🧪 PROBAR EN DESARROLLO LOCAL
-
-### 1. Arrancar la app
-
-```bash
-cd /Users/raulgomez/Desktop/Ristak\ -\ High\ Level
-bash start-local.sh
-```
-
-### 2. Ver el código del pixel
+Ejemplo:
 
 ```bash
 curl http://localhost:3001/snip.js
 ```
 
-Deberías ver el código JavaScript con `ENDPOINT = 'http://localhost:3001/collect'`
+### `POST /collect`
 
-### 3. Enviar un evento de prueba
+Recibe eventos del pixel. Límite real: 50 KB por request validado con `content-length`.
 
-```bash
-curl -X POST http://localhost:3001/collect \
-  -H "Content-Type: application/json" \
-  -d '{
-    "visitor_id": "test-visitor-001",
-    "session_id": "test-session-001",
-    "event_name": "page_view",
-    "ts": 1729206000000,
-    "data": {
-      "url": "https://ejemplo.com/producto",
-      "referrer": "https://google.com/search?q=zapatos",
-      "title": "Zapatos deportivos - Mi Tienda",
-      "utm_source": "google",
-      "utm_medium": "cpc",
-      "utm_campaign": "zapatos_verano",
-      "gclid": "CjwKCAiA_test",
-      "device_type": "desktop",
-      "language": "es-MX",
-      "timezone": "America/Mexico_City"
-    }
-  }'
-```
+Body mínimo:
 
-Respuesta esperada: `{"ok":true}`
-
-### 4. Consultar las sesiones guardadas
-
-```bash
-curl 'http://localhost:3001/api/tracking/sessions?limit=10' | python3 -m json.tool
-```
-
-### 5. Ver una sesión específica
-
-```bash
-curl 'http://localhost:3001/api/tracking/sessions/test-session-001' | python3 -m json.tool
-```
-
----
-
-## 📊 ENDPOINTS DISPONIBLES
-
-### 1. `GET /snip.js`
-
-**Descripción:** Sirve el código JavaScript del pixel
-
-**Headers de respuesta:**
-- `Content-Type: application/javascript`
-- `Cache-Control: public, max-age=3600`
-
-**Ejemplo:**
-```bash
-curl http://localhost:3001/snip.js
-```
-
-**Nota:** El ENDPOINT dentro del JS se genera dinámicamente según el dominio de la petición. Si el cliente accede desde `https://collect.midominio.com/snip.js`, el pixel apuntará a `https://collect.midominio.com/collect`.
-
----
-
-### 2. `POST /collect`
-
-**Descripción:** Recibe eventos del pixel y los guarda en la base de datos
-
-**Body (JSON):**
 ```json
 {
-  "visitor_id": "uuid-del-visitante",
-  "session_id": "uuid-de-la-sesion",
+  "visitor_id": "abc123",
+  "session_id": "f9e3c5c7-1c5f-4c62-bf7b-8fb0f3dca1d5",
   "event_name": "page_view",
   "ts": 1729206000000,
   "data": {
     "url": "https://ejemplo.com/pagina",
     "referrer": "https://google.com",
-    "title": "Título de la página",
     "utm_source": "google",
     "utm_medium": "cpc",
-    "utm_campaign": "verano2024",
-    "utm_term": "zapatos deportivos",
-    "utm_content": "anuncio-azul",
-    "gclid": "CjwKCAiA...",
-    "fbclid": "IwAR...",
-    "msclkid": "...",
-    "ttclid": "...",
-    "wbraid": "...",
-    "gbraid": "...",
-    "fbc": "fb.1.1234567890.IwAR...",
-    "fbp": "fb.1.1234567890.1234567890",
-    "device_type": "desktop",
-    "language": "es-MX",
-    "timezone": "America/Mexico_City"
+    "utm_campaign": "campana",
+    "gclid": "CjwK..."
   }
 }
 ```
 
-**Respuesta:**
+Campos requeridos:
+
+- `visitor_id`
+- `session_id`
+- `event_name`
+- `ts`
+
+Respuesta exitosa:
+
 ```json
-{"ok": true}
+{ "ok": true }
 ```
 
-**Límites:**
-- Máximo 50 KB por request
-- Si excede, responde con `413 Payload Too Large`
+### `POST /sync-visitor`
 
-**Validaciones:**
-- `visitor_id`, `session_id`, `event_name`, `ts` son obligatorios
-- Si falta alguno, responde con `400 Bad Request`
+Usado por el pixel cuando detecta contacto HighLevel en `_ud`. Actualiza el custom field `rkvi_id` en HighLevel para guardar el `visitor_id`.
 
----
+### `POST /link-visitor`
 
-### 3. `GET /api/tracking/sessions?limit=50`
+Vincula sesiones históricas de un `visitor_id` a un `contact_id`.
 
-**Descripción:** Obtiene las sesiones más recientes
+### `GET /api/tracking/sessions`
 
-**Query params:**
-- `limit` (opcional): Número de sesiones a devolver (default: 50, max: 1000)
+Sin fechas, devuelve paginación:
 
-**Ejemplo:**
 ```bash
-curl 'http://localhost:3001/api/tracking/sessions?limit=10'
+curl 'http://localhost:3001/api/tracking/sessions?offset=0&limit=50'
 ```
 
-**Respuesta:**
+Respuesta:
+
 ```json
 {
-  "sessions": [
-    {
-      "session_id": "abc-123",
-      "visitor_id": "xyz-456",
-      "contact_id": null,
-      "landing_url": "https://ejemplo.com/producto",
-      "referrer_url": "https://google.com",
-      "utm_source": "google",
-      "utm_medium": "cpc",
-      "utm_campaign": "verano2024",
-      "gclid": "CjwKCAiA...",
-      "fbclid": null,
-      "msclkid": null,
-      "ttclid": null,
-      "device_type": "desktop",
-      "pageviews_count": 3,
-      "events_count": 5,
-      "is_bounce": 0,
-      "started_at": "2024-10-17T23:00:00.000Z",
-      "last_event_at": "2024-10-17T23:05:30.000Z"
-    }
-  ]
+  "sessions": [],
+  "total": 0,
+  "offset": 0,
+  "limit": 50,
+  "hasMore": false
 }
 ```
 
----
+Con `start` y `end`, devuelve un array directo para la página Analytics:
 
-### 4. `GET /api/tracking/sessions/:id`
-
-**Descripción:** Obtiene una sesión específica con todos sus datos
-
-**Ejemplo:**
 ```bash
-curl 'http://localhost:3001/api/tracking/sessions/abc-123'
+curl 'http://localhost:3001/api/tracking/sessions?start=2026-05-01&end=2026-05-28'
 ```
 
-**Respuesta:**
+El rango se resuelve con el timezone configurado en HighLevel usando `resolveDateRangeWithGHLTimezone()`.
+
+### `GET /api/tracking/sessions/:id`
+
+Busca por la columna primaria `sessions.id`, no por `session_id`.
+
+```bash
+curl 'http://localhost:3001/api/tracking/sessions/<id>'
+```
+
+Respuesta:
+
 ```json
 {
   "session": {
-    "session_id": "abc-123",
-    "visitor_id": "xyz-456",
-    "contact_id": null,
-    "event_name": "page_view",
-    "started_at": "2024-10-17T23:00:00.000Z",
-    "last_event_at": "2024-10-17T23:05:30.000Z",
-    "landing_url": "https://ejemplo.com/producto",
-    "referrer_url": "https://google.com",
-    "utm_source": "google",
-    "utm_medium": "cpc",
-    "utm_campaign": "verano2024",
-    "gclid": "CjwKCAiA...",
-    "device_type": "desktop",
-    "ip": "192.168.1.100",
-    "user_agent": "Mozilla/5.0...",
-    "pageviews_count": 3,
-    "events_count": 5,
-    "is_bounce": 0
+    "id": "...",
+    "session_id": "...",
+    "visitor_id": "...",
+    "event_name": "page_view"
   }
 }
 ```
 
----
+### `PUT /api/tracking/sessions/:id`
 
-## 🗄️ TABLA EN BASE DE DATOS
+Actualiza campos permitidos de una fila de `sessions`.
 
-Todos los datos se guardan en la tabla `sessions`:
+### `DELETE /api/tracking/sessions`
+
+Elimina hasta 100 filas por request.
+
+Body:
+
+```json
+{ "ids": ["id1", "id2"] }
+```
+
+### Configuración
+
+- `GET /api/tracking/config`
+- `POST /api/tracking/configure`
+- `POST /api/tracking/analytics-preference`
+- `POST /api/tracking/visitor-source-preference`
+- `GET /api/tracking/visitors-by-ad`
+- `GET /api/tracking/visitors-by-period`
+- `GET /api/tracking/visitors`
+- `GET /api/tracking/contacts-by-date`
+
+`configure` crea o actualiza el custom value `rstktrack` en HighLevel. Si hay Meta Pixel y la preferencia `include_meta_pixel` está activa, el snippet también incluye Meta Pixel.
+
+## Flujo Del Pixel
+
+1. Carga `https://dominio/snip.js`.
+2. Genera o reutiliza `visitor_id`.
+3. Genera o reutiliza `session_id`.
+4. Inyecta `rkvi_id` en la URL si no existe.
+5. Envía `session_start` en la primera vista de la sesión.
+6. Detecta navegación SPA con `pushState`, `replaceState`, `popstate` y `hashchange`.
+7. Envía `page_view` cuando cambia la URL.
+8. Envía `session_end` en `beforeunload`.
+9. Expone `window.ristakTrack(eventName, data)`.
+
+Ejemplo de evento custom:
+
+```javascript
+window.ristakTrack('form_submit', {
+  form_name: 'contacto',
+  email: 'cliente@ejemplo.com'
+})
+```
+
+## Tabla `sessions`
+
+Schema creado por `backend/src/config/database.js`:
 
 ```sql
-CREATE TABLE sessions (
-  session_id TEXT PRIMARY KEY,
+CREATE TABLE IF NOT EXISTS sessions (
+  id UUID_OR_TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
   visitor_id TEXT NOT NULL,
   contact_id TEXT,
+  full_name TEXT,
+  email TEXT,
   event_name TEXT NOT NULL DEFAULT 'page_view',
-  started_at TIMESTAMP NOT NULL,
-  last_event_at TIMESTAMP,
+  started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-  -- URLs
-  landing_url TEXT,
+  page_url TEXT,
   referrer_url TEXT,
 
-  -- Atribución (UTMs + Click IDs)
   utm_source TEXT,
   utm_medium TEXT,
   utm_campaign TEXT,
@@ -293,381 +224,161 @@ CREATE TABLE sessions (
   msclkid TEXT,
   ttclid TEXT,
 
-  -- Dispositivo y navegador
+  channel TEXT,
+  source_platform TEXT,
+  campaign_id TEXT,
+  adset_id TEXT,
+  ad_group_id TEXT,
+  ad_id TEXT,
+  campaign_name TEXT,
+  adset_name TEXT,
+  ad_group_name TEXT,
+  ad_name TEXT,
+  placement TEXT,
+  site_source_name TEXT,
+  network TEXT,
+  match_type TEXT,
+  keyword TEXT,
+  search_query TEXT,
+  creative_id TEXT,
+  ad_position TEXT,
+
   ip TEXT,
   user_agent TEXT,
   device_type TEXT,
+  os TEXT,
+  browser TEXT,
+  browser_version TEXT,
   language TEXT,
   timezone TEXT,
 
-  -- Geo (opcional)
   geo_country TEXT,
   geo_region TEXT,
   geo_city TEXT,
 
-  -- Métricas
-  pageviews_count INTEGER DEFAULT 0,
-  events_count INTEGER DEFAULT 0,
-  is_bounce INTEGER DEFAULT 0,
-
-  -- Conversión (opcional)
-  orders_count INTEGER DEFAULT 0,
-  revenue_value REAL DEFAULT 0,
-  currency TEXT DEFAULT 'MXN',
-
-  -- Identidad (opcional)
-  email TEXT,
-  phone_e164 TEXT
+  FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE SET NULL
 );
 ```
 
-**Índices creados:**
-```sql
-CREATE INDEX idx_sessions_visitor ON sessions(visitor_id);
-CREATE INDEX idx_sessions_started_at ON sessions(started_at);
-CREATE INDEX idx_sessions_utm ON sessions(utm_source, utm_medium, utm_campaign);
-CREATE INDEX idx_sessions_ids ON sessions(gclid, fbclid, msclkid, ttclid);
-CREATE INDEX idx_sessions_geo ON sessions(geo_country, geo_region, geo_city);
-```
-
----
-
-## 🔄 FLUJO DE TRACKING
-
-### Primera visita del usuario:
-
-1. Usuario entra a `https://cliente.com/producto?utm_source=google&gclid=abc123`
-2. El pixel carga desde `https://collect.cliente.com/snip.js`
-3. El pixel:
-   - Crea un `visitor_id` único (localStorage, permanente)
-   - Crea un `session_id` único (sessionStorage, temporal)
-   - Captura la URL, UTMs, gclid, referrer, device_type, etc.
-   - Envía POST a `https://collect.cliente.com/collect`
-4. El backend:
-   - Detecta que es una sesión nueva
-   - Crea fila en tabla `sessions` con todos los datos
-   - Responde `{"ok": true}`
-
-### Segunda visita en la misma sesión:
-
-1. Usuario navega a `https://cliente.com/contacto`
-2. El pixel:
-   - Reutiliza el mismo `visitor_id` y `session_id`
-   - Captura la nueva URL
-   - Envía POST a `/collect`
-3. El backend:
-   - Detecta que la sesión ya existe
-   - Actualiza `last_event_at`
-   - Incrementa `pageviews_count` y `events_count`
-   - Responde `{"ok": true}`
-
-### Cierre de sesión:
-
-1. Usuario cierra el tab o navega fuera del sitio
-2. El pixel envía evento `session_end` con `beforeunload`
-3. El backend:
-   - Calcula si fue bounce (1 página y < 30 segundos)
-   - Actualiza `is_bounce` si aplica
-
----
-
-## 🎨 EVENTOS PERSONALIZADOS
-
-El pixel expone una función global `window.ristakTrack()` para enviar eventos custom:
-
-```javascript
-// Ejemplo: Rastrear cuando un usuario hace clic en "Comprar"
-document.querySelector('#btn-comprar').addEventListener('click', function() {
-  window.ristakTrack('button_click', {
-    button_id: 'btn-comprar',
-    product_id: '12345'
-  });
-});
-
-// Ejemplo: Rastrear un formulario enviado
-window.ristakTrack('form_submit', {
-  form_name: 'contacto',
-  email: 'usuario@ejemplo.com'
-});
-```
-
-Todos los datos adicionales se guardarán en la tabla `sessions` junto con la sesión.
-
----
-
-## ⚙️ CONFIGURACIÓN AVANZADA
-
-### Heartbeat (pulso cada 15s)
-
-Por defecto está **desactivado** para no saturar. Si quieres activarlo, edita el pixel en:
-
-**Archivo:** `backend/src/controllers/trackingController.js`
-
-**Buscar:**
-```javascript
-// Heartbeat cada 15 segundos (opcional, comentado por defecto)
-// setInterval(function() {
-//   sendEvent('heartbeat');
-// }, 15000);
-```
-
-**Descomentar:**
-```javascript
-// Heartbeat cada 15 segundos
-setInterval(function() {
-  sendEvent('heartbeat');
-}, 15000);
-```
-
-Esto enviará un evento `heartbeat` cada 15 segundos mientras el usuario tenga la página abierta.
-
-### Bounce Detection
-
-Un usuario se marca como "bounce" si:
-- Solo ve 1 página (`pageviews_count = 1`)
-- Y dura menos de 30 segundos en el sitio
-
-Esto se calcula automáticamente cuando el pixel envía `session_end`.
-
----
-
-## 🔒 SEGURIDAD
-
-### Límites:
-- ✅ Máximo 50 KB por request
-- ✅ Validaciones básicas de campos requeridos
-- ✅ Sanitización automática (SQLite/Postgres previene injection)
-
-### Same-Origin:
-- ✅ El pixel y el endpoint `/collect` se sirven desde el **mismo host** (collect.cliente.com)
-- ✅ Cumple con políticas CSP (Content Security Policy)
-- ✅ No hay CORS issues porque el origen es el mismo
-
-### No hardcodeamos dominios:
-- ✅ Todo se detecta dinámicamente desde `req.headers.host`
-- ✅ Funciona con cualquier CNAME sin cambiar código
-- ✅ En local usa `localhost:3001`, en producción usa el CNAME real
-
----
-
-## 📊 CONSULTAS ÚTILES
-
-### Ver sesiones de hoy:
+Índices:
 
 ```sql
-SELECT * FROM sessions
-WHERE DATE(started_at) = DATE('now')
-ORDER BY started_at DESC;
+CREATE INDEX IF NOT EXISTS idx_sessions_session_id ON sessions(session_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_visitor ON sessions(visitor_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_started_at ON sessions(started_at);
+CREATE INDEX IF NOT EXISTS idx_sessions_utm ON sessions(utm_source, utm_medium, utm_campaign);
+CREATE INDEX IF NOT EXISTS idx_sessions_ids ON sessions(gclid, fbclid, msclkid, ttclid);
+CREATE INDEX IF NOT EXISTS idx_sessions_campaign ON sessions(campaign_id, adset_id, ad_group_id, ad_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_geo ON sessions(geo_country, geo_region, geo_city);
+CREATE INDEX IF NOT EXISTS idx_sessions_contact ON sessions(contact_id);
 ```
 
-### Top fuentes de tráfico (UTM Source):
+Campos que ya no existen y no debes usar en consultas:
+
+- `landing_url`
+- `last_event_at`
+- `pageviews_count`
+- `events_count`
+- `is_bounce`
+- `orders_count`
+- `revenue_value`
+
+## Consultas Útiles
+
+Sesiones/eventos recientes:
 
 ```sql
-SELECT utm_source, COUNT(*) as sessions
+SELECT id, session_id, visitor_id, event_name, page_url, started_at
 FROM sessions
-WHERE utm_source IS NOT NULL
-GROUP BY utm_source
-ORDER BY sessions DESC;
+ORDER BY started_at DESC
+LIMIT 50;
 ```
 
-### Sesiones con gclid (Google Ads):
+Visitantes únicos por fuente:
 
 ```sql
-SELECT session_id, landing_url, gclid, started_at
+SELECT COALESCE(source_platform, utm_source, 'direct') AS source, COUNT(DISTINCT visitor_id) AS visitors
+FROM sessions
+GROUP BY source
+ORDER BY visitors DESC;
+```
+
+Eventos con `gclid`:
+
+```sql
+SELECT id, visitor_id, page_url, gclid, started_at
 FROM sessions
 WHERE gclid IS NOT NULL
 ORDER BY started_at DESC;
 ```
 
-### Sesiones que rebotaron:
+Eventos por ad:
 
 ```sql
-SELECT session_id, landing_url, pageviews_count, started_at
+SELECT ad_id, COUNT(DISTINCT visitor_id) AS visitors, COUNT(*) AS events
 FROM sessions
-WHERE is_bounce = 1
-ORDER BY started_at DESC;
+WHERE ad_id IS NOT NULL
+GROUP BY ad_id
+ORDER BY visitors DESC;
 ```
 
-### Duración promedio de sesiones:
+## Desarrollo Local
 
-```sql
-SELECT
-  AVG((julianday(last_event_at) - julianday(started_at)) * 86400) as avg_duration_seconds
-FROM sessions
-WHERE last_event_at IS NOT NULL;
-```
-
----
-
-## 🐛 TROUBLESHOOTING
-
-### El pixel no carga
-
-**Problema:** El cliente puso `<script src="https://collect.midominio.com/snip.js"></script>` pero no carga.
-
-**Solución:**
-1. Verificar que el CNAME esté configurado correctamente:
-   ```bash
-   nslookup collect.midominio.com
-   ```
-   Debería resolver a tu servidor.
-
-2. Verificar que el servidor responda:
-   ```bash
-   curl https://collect.midominio.com/snip.js
-   ```
-   Debería devolver el código JavaScript.
-
-3. Verificar en el navegador (DevTools > Network):
-   - Buscar la request a `snip.js`
-   - Ver si responde 200 OK
-   - Ver si hay errores de CORS o CSP
-
----
-
-### Los eventos no se guardan
-
-**Problema:** El pixel carga pero los eventos no aparecen en la base de datos.
-
-**Solución:**
-1. Verificar que `/collect` responda:
-   ```bash
-   curl -X POST https://collect.midominio.com/collect \
-     -H "Content-Type: application/json" \
-     -d '{"visitor_id":"test","session_id":"test","event_name":"test","ts":1234567890,"data":{}}'
-   ```
-   Debería responder `{"ok":true}`.
-
-2. Ver logs del backend:
-   ```bash
-   # En producción (Render)
-   Ir a Dashboard > Logs
-
-   # En local
-   Ver la terminal donde corre el backend
-   ```
-
-3. Verificar que la tabla `sessions` exista:
-   ```bash
-   sqlite3 ristak.db "SELECT name FROM sqlite_master WHERE type='table' AND name='sessions';"
-   ```
-
----
-
-### El ENDPOINT está hardcodeado
-
-**Problema:** El pixel tiene `ENDPOINT = 'http://localhost:3001/collect'` en producción.
-
-**Causa:** El servidor no está detectando correctamente el host.
-
-**Solución:**
-1. Verificar headers:
-   ```bash
-   curl -H "Host: collect.midominio.com" https://tu-app.onrender.com/snip.js
-   ```
-   Debería generar `ENDPOINT = 'https://collect.midominio.com/collect'`.
-
-2. Si usa proxy (Cloudflare), asegurarse que pase el header `Host` correcto.
-
-3. En Render, verificar que no haya configuración que sobrescriba el host.
-
----
-
-## 🚀 DEPLOY A PRODUCCIÓN (RENDER)
-
-### 1. Push a GitHub
+Desde la raíz:
 
 ```bash
-git add .
-git commit -m "Agregar pixel de tracking con /snip.js y /collect"
-git push origin main
+npm install --prefix backend
+npm install --prefix frontend
+bash start-local.sh
 ```
 
-### 2. En Render
-
-El deploy es automático. Render detectará los cambios y:
-- Instalará dependencias
-- Ejecutará migraciones (crea tabla `sessions`)
-- Reiniciará el servidor
-
-### 3. Configurar dominio custom (opcional)
-
-Si quieres que sea `collect.tudominio.com` en lugar de `tu-app.onrender.com`:
-
-1. En Render > Settings > Custom Domains
-2. Agregar `collect.tudominio.com`
-3. En tu DNS, crear CNAME:
-   ```
-   Nombre: collect
-   Destino: tu-app.onrender.com
-   ```
-
-### 4. Probar en producción
+Probar pixel:
 
 ```bash
-curl https://collect.tudominio.com/snip.js
+curl http://localhost:3001/snip.js
 ```
 
-Debería devolver el código JavaScript con `ENDPOINT = 'https://collect.tudominio.com/collect'`.
+Enviar evento:
 
----
-
-## 📝 NOTAS IMPORTANTES
-
-1. **Single-tenant:** Esta implementación NO usa `tenant_id`. Todas las sesiones van a una sola base de datos. Si necesitas multi-tenant después, solo agrega una columna `client_id` o `location_id`.
-
-2. **No enriquecimiento de IP:** No se hace lookup de geolocalización por IP. Si el cliente quiere eso, necesitarás integrar un servicio como MaxMind GeoIP (de pago).
-
-3. **Cookies de terceros:** El pixel captura cookies de Facebook (`_fbc`, `_fbp`) si existen. Estas ayudan con la atribución de campañas de Facebook Ads.
-
-4. **Privacidad:** Este sistema captura IPs y User-Agents. Asegúrate de tener un Privacy Policy claro si operas en Europa (GDPR) o California (CCPA).
-
-5. **Performance:** SQLite funciona bien hasta ~100k sesiones. Si creces más, considera migrar a PostgreSQL (ya está soportado en `database.js`).
-
----
-
-## 📚 ARCHIVOS CREADOS
-
-```
-backend/src/
-├── config/
-│   └── database.js              ← Tabla sessions agregada
-├── controllers/
-│   └── trackingController.js    ← Lógica de endpoints
-├── services/
-│   └── trackingService.js       ← CRUD de sesiones
-├── routes/
-│   └── tracking.routes.js       ← Rutas del pixel
-└── server.js                    ← Rutas registradas
-
-Documentación:
-└── TRACKING_PIXEL.md            ← Este archivo
+```bash
+curl -X POST http://localhost:3001/collect \
+  -H "Content-Type: application/json" \
+  -d '{
+    "visitor_id": "test-visitor-001",
+    "session_id": "test-session-001",
+    "event_name": "page_view",
+    "ts": 1729206000000,
+    "data": {
+      "url": "https://ejemplo.com/producto",
+      "utm_source": "google",
+      "utm_medium": "cpc",
+      "utm_campaign": "zapatos",
+      "device_type": "desktop"
+    }
+  }'
 ```
 
----
+Consultar:
 
-## ✅ CHECKLIST DE IMPLEMENTACIÓN
+```bash
+curl 'http://localhost:3001/api/tracking/sessions?limit=10'
+```
 
-Para que un cliente use el pixel:
+## Producción
 
-- [ ] Configurar CNAME en su DNS (`collect.sudominio.com` → `tu-app.onrender.com`)
-- [ ] Insertar `<script async src="https://collect.sudominio.com/snip.js"></script>` en su sitio
-- [ ] Probar que cargue: abrir su sitio y buscar en DevTools > Network el request a `snip.js`
-- [ ] Probar que envíe: abrir DevTools > Network > XHR y ver requests a `/collect`
-- [ ] Verificar en Ristak: consultar `/api/tracking/sessions` y ver las sesiones
+Para same-origin real, usa un dominio o CNAME que llegue al mismo servicio donde vive Ristak.
 
----
+Ejemplo:
 
-## 🎉 ¡LISTO!
+```html
+<script async src="https://collect.tudominio.com/snip.js"></script>
+```
 
-Ya tienes un sistema de tracking completo que:
+Si el sitio es HighLevel, puedes guardar el snippet con **Configuración -> Rastreo Web -> Sincronizar** y luego usar el custom value `rstktrack`.
 
-✅ Captura visitas, UTMs, click IDs, referrers
-✅ Se sirve same-origin (cumple CSP)
-✅ Funciona con cualquier CNAME sin hardcodear dominios
-✅ Guarda todo en tu BD (SQLite/Postgres)
-✅ Expone APIs para consultar sesiones
+## Notas De Seguridad Y Privacidad
 
-Si necesitas agregar features (como eventos custom, conversiones, o linkear con contactos de HighLevel), ya tienes la base sólida.
-
-**¡Chingón!** 🚀
+- Captura IP, user-agent, cookies de Facebook y datos de navegación.
+- Debe existir aviso de privacidad adecuado para la jurisdicción del negocio.
+- `ip-api.com` se usa para geolocalización básica de IPs públicas.
+- No hay `tenant_id`; la app es single-tenant por instancia/base de datos.
