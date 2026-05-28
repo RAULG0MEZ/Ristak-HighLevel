@@ -35,7 +35,7 @@ const parseAnalyticsFlag = (value: unknown) => {
 
 type FunnelStageKind = 'visitors' | 'leads' | 'appointments' | 'attendances' | 'customers'
 type ContactModalType = 'interesados' | 'sales' | 'appointments' | 'attendances'
-type ChartView = 'revenue-spend' | 'visitors-leads' | 'leads-appointments' | 'appointments-attendances' | 'appointments-sales'
+type ChartView = 'revenue-spend' | 'visitors-leads' | 'leads-appointments' | 'appointments-attendances' | 'attendances-sales' | 'appointments-sales'
 
 export const Dashboard: React.FC = () => {
   const { dateRange, setDateRange } = useDateRange()
@@ -59,6 +59,7 @@ export const Dashboard: React.FC = () => {
   const [visitorsLeadsData, setVisitorsLeadsData] = useState<{ label: string; value: number; value2: number }[]>([])
   const [leadsAppointmentsData, setLeadsAppointmentsData] = useState<{ label: string; value: number; value2: number }[]>([])
   const [appointmentsAttendancesData, setAppointmentsAttendancesData] = useState<{ label: string; value: number; value2: number }[]>([])
+  const [attendancesSalesData, setAttendancesSalesData] = useState<{ label: string; value: number; value2: number }[]>([])
   const [appointmentsSalesData, setAppointmentsSalesData] = useState<{ label: string; value: number; value2: number }[]>([])
   const [trafficSources, setTrafficSources] = useState<{ name: string; value: number; color: string }[]>([])
   const [funnelData, setFunnelData] = useState<{ stage: string; value: number }[]>([])
@@ -197,6 +198,16 @@ export const Dashboard: React.FC = () => {
           formatValue: formatChartNumber,
           formatTooltipValue: (value: number) => value.toLocaleString('es-MX')
         }
+      case 'attendances-sales':
+        return {
+          data: formatData(attendancesSalesData),
+          label1: 'Asistencias',
+          label2: 'Ventas',
+          color: '#f59e0b',
+          color2: '#10b981',
+          formatValue: formatChartNumber,
+          formatTooltipValue: (value: number) => value.toLocaleString('es-MX')
+        }
       case 'appointments-sales':
         return {
           data: formatData(appointmentsSalesData),
@@ -218,7 +229,7 @@ export const Dashboard: React.FC = () => {
           formatTooltipValue: (value: number) => formatCurrency(value)
         }
     }
-  }, [analyticsEnabled, selectedChartView, formattedFinancialData, visitorsLeadsData, leadsAppointmentsData, appointmentsAttendancesData, appointmentsSalesData, labels.leads, currencyAxisFormatter])
+  }, [analyticsEnabled, selectedChartView, formattedFinancialData, visitorsLeadsData, leadsAppointmentsData, appointmentsAttendancesData, attendancesSalesData, appointmentsSalesData, labels.leads, currencyAxisFormatter])
 
   const isExtendedChartView = selectedChartView !== 'revenue-spend'
   const isChartLoading = isExtendedChartView && extendedChartDataLoading
@@ -235,6 +246,7 @@ export const Dashboard: React.FC = () => {
       { value: 'revenue-spend', label: 'Ingresos vs Gastos' },
       { value: 'leads-appointments', label: `${labels.leads} vs Citas` },
       { value: 'appointments-attendances', label: 'Citas vs Asistencias' },
+      { value: 'attendances-sales', label: 'Asistencias vs Ventas' },
       { value: 'appointments-sales', label: 'Citas vs Ventas' }
     ]
 
@@ -415,6 +427,13 @@ export const Dashboard: React.FC = () => {
       }))
       setAppointmentsAttendancesData(appointmentsAttendances)
 
+      const attendancesSales = sortedDates.map(date => ({
+        label: date,
+        value: attendancesMap.get(date) || 0,
+        value2: salesMap.get(date) || 0
+      }))
+      setAttendancesSalesData(attendancesSales)
+
       const appointmentsSales = sortedDates.map(date => ({
         label: date,
         value: appointmentsMap.get(date) || 0,
@@ -437,6 +456,7 @@ export const Dashboard: React.FC = () => {
     setVisitorsLeadsData([])
     setLeadsAppointmentsData([])
     setAppointmentsAttendancesData([])
+    setAttendancesSalesData([])
     setAppointmentsSalesData([])
   }, [analyticsEnabled, dateRange.start, dateRange.end])
 
