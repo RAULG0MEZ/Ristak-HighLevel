@@ -19,7 +19,7 @@ import { useLabels } from '@/contexts/LabelsContext'
 import { useAppConfig, useIsRenderDomain, useMetaTimezone } from '@/hooks'
 import { dashboardService, type DashboardMetrics, type ChartData, type DashboardVisitorDetail } from '@/services/dashboardService'
 import { reportsService, type ContactListItem } from '@/services/reportsService'
-import { formatCurrency, formatRoas, formatChartDate, formatDateToISO, parseLocalDateString, formatChartCurrency, formatChartNumber } from '@/utils/format'
+import { formatCurrency, formatRoas, formatChartDate, formatDateToISO, formatEndDateToISO, parseLocalDateString, formatChartCurrency, formatChartNumber } from '@/utils/format'
 
 const parseAnalyticsFlag = (value: unknown) => {
   if (value === null || value === undefined) return false
