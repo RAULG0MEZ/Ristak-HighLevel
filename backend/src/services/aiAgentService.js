@@ -201,6 +201,80 @@ function parseJsonObject(text) {
   }
 }
 
+function getDefaultRiskPlan(runtimeContext) {
+  return {
+    assumptions: [
+      'Se revisan riesgos recientes de este mes porque el usuario no especificó rango.'
+    ],
+    queries: [
+      {
+        name: 'pagos_pendientes',
+        purpose: 'Detectar dinero pendiente o pagos abiertos.',
+        sql: `
+          SELECT
+            COALESCE(status, 'sin_estado') AS status,
+            COUNT(*) AS pagos,
+            COALESCE(SUM(amount), 0) AS monto
+          FROM payments
+          WHERE COALESCE(date, created_at) >= ?
+          GROUP BY COALESCE(status, 'sin_estado')
+          ORDER BY monto DESC
+        `,
+        params: [runtimeContext.monthStart]
+      },
+      {
+        name: 'citas_por_estado',
+        purpose: 'Detectar cancelaciones, no shows o citas sin seguimiento.',
+        sql: `
+          SELECT
+            COALESCE(appointment_status, status, 'sin_estado') AS status,
+            COUNT(*) AS citas
+          FROM appointments
+          WHERE COALESCE(start_time, date_added) >= ?
+          GROUP BY COALESCE(appointment_status, status, 'sin_estado')
+          ORDER BY citas DESC
+        `,
+        params: [runtimeContext.monthStart]
+      },
+      {
+        name: 'campanas_gasto_resultado',
+        purpose: 'Detectar campañas con gasto alto y poca respuesta.',
+        sql: `
+          SELECT
+            COALESCE(campaign_name, campaign_id) AS campaign,
+            COALESCE(SUM(spend), 0) AS spend,
+            COALESCE(SUM(clicks), 0) AS clicks,
+            COALESCE(SUM(reach), 0) AS reach,
+            COALESCE(AVG(ctr), 0) AS ctr,
+            COALESCE(AVG(cpc), 0) AS cpc
+          FROM meta_ads
+          WHERE date >= ?
+          GROUP BY campaign_id, campaign_name
+          ORDER BY spend DESC
+          LIMIT 10
+        `,
+        params: [runtimeContext.monthStart]
+      },
+      {
+        name: 'prospectos_por_fuente',
+        purpose: 'Ver si el riesgo viene de caída o concentración por canal.',
+        sql: `
+          SELECT
+            COALESCE(NULLIF(source, ''), NULLIF(attribution_session_source, ''), 'sin_fuente') AS source,
+            COUNT(*) AS prospectos,
+            COALESCE(SUM(total_paid), 0) AS ingresos
+          FROM contacts
+          WHERE created_at >= ?
+          GROUP BY COALESCE(NULLIF(source, ''), NULLIF(attribution_session_source, ''), 'sin_fuente')
+          ORDER BY prospectos DESC
+          LIMIT 10
+        `,
+        params: [runtimeContext.monthStart]
+      }
+    ]
+  }
+}
+
 async function callOpenAIResponse(apiKey, { instructions, input, maxOutputTokens = 1200 }) {
   const response = await fetchWithTimeout(`${OPENAI_API_URL}/responses`, {
     method: 'POST',
@@ -373,20 +447,33 @@ async function createQueryPlan(apiKey, { messages, viewContext, runtimeContext }
     'Genera las consultas SQL necesarias para contestar el último mensaje del usuario.'
   ].join('\n')
 
-  const { text } = await callOpenAIResponse(apiKey, {
-    instructions,
-    input,
-    maxOutputTokens: 1800
-  })
+  try {
+    const { text } = await callOpenAIResponse(apiKey, {
+      instructions,
+      input,
+      maxOutputTokens: 1200
+    })
 
-  const plan = parseJsonObject(text)
-  const queries = Array.isArray(plan.queries) ? plan.queries.slice(0, MAX_AGENT_QUERIES) : []
-  const assumptions = Array.isArray(plan.assumptions) ? plan.assumptions.map(item => cleanText(String(item), 300)).filter(Boolean) : []
+    const plan = parseJsonObject(text)
+    const queries = Array.isArray(plan.queries) ? plan.queries.slice(0, MAX_AGENT_QUERIES) : []
+    const assumptions = Array.isArray(plan.assumptions) ? plan.assumptions.map(item => cleanText(String(item), 300)).filter(Boolean) : []
 
-  return {
-    assumptions,
-    queries
+    if (queries.length > 0) {
+      return {
+        assumptions,
+        queries
+      }
+    }
+  } catch (error) {
+    return {
+      ...getDefaultRiskPlan(runtimeContext),
+      assumptions: [
+        'No pude leer bien el plan automático de investigación, así que revisé los riesgos principales del mes en pagos, citas y campañas.'
+      ]
+    }
   }
+
+  return getDefaultRiskPlan(runtimeContext)
 }
 
 async function executeQueryPlan(plan) {
