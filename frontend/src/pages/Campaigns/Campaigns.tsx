@@ -48,6 +48,7 @@ interface AdData {
 }
 
 interface CreativePreviewData {
+  adId: string | null
   creativeId: string | null
   name: string
   type: 'image' | 'video' | 'html'
@@ -487,10 +488,64 @@ export const Campaigns: React.FC = () => {
       return
     }
 
+    const shouldFetchAdMedia = Boolean(
+      selectedCreative.adId &&
+      !selectedCreative.creativeId &&
+      !selectedCreative.thumbnailUrl &&
+      !selectedCreative.imageUrl &&
+      !selectedCreative.videoUrl &&
+      !selectedCreative.previewUrl
+    )
+
+    if (shouldFetchAdMedia) {
+      setCreativePreviewLoading(true)
+      campaignsService.getAdCreativeMedia(selectedCreative.adId as string)
+        .then((media) => {
+          if (cancelled) return
+
+          if (!media?.creativeId) {
+            setCreativePreviewError('Meta no regresó media para este anuncio.')
+            return
+          }
+
+          const nextThumbnailUrl = media.creativeThumbnailUrl || media.creativeImageUrl || null
+          const nextImageUrl = media.creativeImageUrl || media.creativeThumbnailUrl || null
+          const nextVideoUrl = media.creativeVideoUrl || null
+          const nextPreviewUrl = media.creativePreviewUrl || null
+          const nextType = media.creativeType === 'video' || nextVideoUrl
+            ? 'video'
+            : (nextImageUrl || nextThumbnailUrl ? 'image' : 'html')
+
+          setSelectedCreative((current) => current ? {
+            ...current,
+            creativeId: media.creativeId || current.creativeId,
+            type: nextType,
+            thumbnailUrl: nextThumbnailUrl,
+            imageUrl: nextImageUrl,
+            videoUrl: nextVideoUrl,
+            previewUrl: nextPreviewUrl
+          } : current)
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setCreativePreviewError('No se pudo cargar la media del anuncio.')
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setCreativePreviewLoading(false)
+          }
+        })
+
+      return () => {
+        cancelled = true
+      }
+    }
+
     const shouldFetchMetaPreview = Boolean(
       selectedCreative.creativeId &&
       !selectedCreative.videoUrl &&
-      (selectedCreative.type === 'video' || !selectedCreative.imageUrl)
+      (selectedCreative.type === 'video' || (!selectedCreative.imageUrl && !selectedCreative.thumbnailUrl))
     )
 
     if (!shouldFetchMetaPreview) {
@@ -865,6 +920,7 @@ export const Campaigns: React.FC = () => {
   const getCreativePreviewData = React.useCallback((item: any): CreativePreviewData | null => {
     if (item.level !== 'ad') return null
 
+    const adId = item.id ? String(item.id) : null
     const creativeId = item.creativeId || null
     const thumbnailUrl = item.creativeThumbnailUrl || item.creativeImageUrl || null
     const imageUrl = item.creativeImageUrl || item.creativeThumbnailUrl || null
@@ -872,13 +928,14 @@ export const Campaigns: React.FC = () => {
     const previewUrl = item.creativePreviewUrl || null
     const type = item.creativeType === 'video' || videoUrl
       ? 'video'
-      : (imageUrl || thumbnailUrl ? 'image' : (creativeId ? 'html' : null))
+      : (imageUrl || thumbnailUrl ? 'image' : 'html')
 
-    if (!type || (!thumbnailUrl && !imageUrl && !videoUrl && !previewUrl && !creativeId)) {
+    if (!adId && !creativeId && !thumbnailUrl && !imageUrl && !videoUrl && !previewUrl) {
       return null
     }
 
     return {
+      adId,
       creativeId,
       name: item.name || 'Anuncio',
       type,

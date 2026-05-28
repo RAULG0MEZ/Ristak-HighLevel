@@ -309,6 +309,15 @@ async function fetchMetaCreativesForAds(adIds, accessToken, accountId = null) {
   return creativeMediaByAdId
 }
 
+export async function fetchMetaCreativeMediaForAds(adIds, accessToken, accountId = null) {
+  return fetchMetaCreativesForAds(adIds, accessToken, accountId)
+}
+
+export async function fetchMetaCreativeMediaForAd(adId, accessToken, accountId = null) {
+  const mediaByAdId = await fetchMetaCreativesForAds([adId], accessToken, accountId)
+  return mediaByAdId.get(String(adId)) || null
+}
+
 /**
  * Obtiene la configuración de Meta desde la base de datos
  * DESENCRIPTA el access_token antes de devolverlo

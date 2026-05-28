@@ -6,7 +6,9 @@ import {
   syncMetaAds,
   getMetaSyncProgress,
   getMetaConfig,
-  verifyMetaToken
+  verifyMetaToken,
+  fetchMetaCreativeMediaForAds,
+  fetchMetaCreativeMediaForAd
 } from '../services/metaAdsService.js';
 import { resolveDateRange, resolveDateRangeWithGHLTimezone } from '../utils/dateUtils.js';
 import { getContactsWithAppointmentsHybrid } from '../services/appointmentsMerge.js';
@@ -35,6 +37,87 @@ async function getAttributionCalendarIds() {
   } catch (error) {
     logger.warn(`Error al leer calendarios de atribución: ${error.message}`);
     return null;
+  }
+}
+
+function toCreativeResponse(media = {}) {
+  return {
+    creativeId: media.creative_id || null,
+    creativeType: media.creative_type || null,
+    creativeThumbnailUrl: media.creative_thumbnail_url || null,
+    creativeImageUrl: media.creative_image_url || null,
+    creativeVideoId: media.creative_video_id || null,
+    creativeVideoUrl: media.creative_video_url || null,
+    creativePreviewUrl: media.creative_preview_url || null
+  };
+}
+
+async function cacheCreativeMedia(adId, adAccountId, media = {}) {
+  if (!adId || !adAccountId || !media.creative_id) return;
+
+  await db.run(
+    `UPDATE meta_ads
+     SET creative_id = COALESCE(?, creative_id),
+         creative_type = COALESCE(?, creative_type),
+         creative_thumbnail_url = COALESCE(?, creative_thumbnail_url),
+         creative_image_url = COALESCE(?, creative_image_url),
+         creative_video_id = COALESCE(?, creative_video_id),
+         creative_video_url = COALESCE(?, creative_video_url),
+         creative_preview_url = COALESCE(?, creative_preview_url),
+         updated_at = CURRENT_TIMESTAMP
+     WHERE ad_id = ? AND ad_account_id = ?`,
+    [
+      media.creative_id || null,
+      media.creative_type || null,
+      media.creative_thumbnail_url || null,
+      media.creative_image_url || null,
+      media.creative_video_id || null,
+      media.creative_video_url || null,
+      media.creative_preview_url || null,
+      adId,
+      adAccountId
+    ]
+  );
+}
+
+async function hydrateMissingCreativeMedia(rows = []) {
+  const rowsMissingMedia = rows.filter(row =>
+    row.ad_id &&
+    (
+      !row.creative_id ||
+      (!row.creative_thumbnail_url && !row.creative_image_url && !row.creative_video_url && !row.creative_preview_url)
+    )
+  );
+
+  if (rowsMissingMedia.length === 0) return;
+
+  try {
+    const metaConfig = await getMetaConfig();
+    if (!metaConfig?.access_token || !metaConfig?.ad_account_id) return;
+
+    const missingAdIds = [...new Set(rowsMissingMedia.map(row => String(row.ad_id)).filter(Boolean))];
+    const creativeMediaByAdId = await fetchMetaCreativeMediaForAds(
+      missingAdIds,
+      metaConfig.access_token,
+      metaConfig.ad_account_id
+    );
+
+    for (const row of rowsMissingMedia) {
+      const media = creativeMediaByAdId.get(String(row.ad_id));
+      if (!media) continue;
+
+      row.creative_id = media.creative_id || row.creative_id || null;
+      row.creative_type = media.creative_type || row.creative_type || null;
+      row.creative_thumbnail_url = media.creative_thumbnail_url || row.creative_thumbnail_url || null;
+      row.creative_image_url = media.creative_image_url || row.creative_image_url || null;
+      row.creative_video_id = media.creative_video_id || row.creative_video_id || null;
+      row.creative_video_url = media.creative_video_url || row.creative_video_url || null;
+      row.creative_preview_url = media.creative_preview_url || row.creative_preview_url || null;
+
+      await cacheCreativeMedia(row.ad_id, metaConfig.ad_account_id, media);
+    }
+  } catch (error) {
+    logger.warn(`No se pudieron hidratar previews de anuncios al vuelo: ${error.message}`);
   }
 }
 
@@ -298,6 +381,58 @@ export const getCreativePreview = async (req, res) => {
 };
 
 /**
+ * Busca media de un anuncio por ad_id directamente en Meta.
+ * Sirve como fallback cuando la DB todavía no tiene creative_* poblado.
+ */
+export const getAdCreativeMedia = async (req, res) => {
+  try {
+    const adId = String(req.params.adId || '').trim();
+
+    if (!/^[0-9]+$/.test(adId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'adId inválido'
+      });
+    }
+
+    const metaConfig = await getMetaConfig();
+    if (!metaConfig?.access_token || !metaConfig?.ad_account_id) {
+      return res.status(404).json({
+        success: false,
+        error: 'No hay configuración de Meta guardada'
+      });
+    }
+
+    const media = await fetchMetaCreativeMediaForAd(
+      adId,
+      metaConfig.access_token,
+      metaConfig.ad_account_id
+    );
+
+    if (!media?.creative_id) {
+      return res.status(404).json({
+        success: false,
+        error: 'Meta no regresó creative para este anuncio'
+      });
+    }
+
+    await cacheCreativeMedia(adId, metaConfig.ad_account_id, media);
+
+    res.json({
+      success: true,
+      adId,
+      creative: toCreativeResponse(media)
+    });
+  } catch (error) {
+    logger.error(`Error en getAdCreativeMedia: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: 'Error al obtener media del anuncio'
+    });
+  }
+};
+
+/**
  * Inicia sincronización manual de Meta Ads desde hace 35 meses (como HighLevel)
  */
 export const updateRecent = async (req, res) => {
@@ -466,6 +601,7 @@ export const getCampaigns = async (req, res) => {
     ];
 
     const rows = await db.all(aggregationQuery, aggregationParams);
+    await hydrateMissingCreativeMedia(rows);
 
     // Crear un mapa de ad_id -> {interesados, ventas, citas, revenue}
     const contactsMap = {};

@@ -117,6 +117,20 @@ export interface CreativePreviewResponse {
   body: string
 }
 
+export interface AdCreativeMediaResponse {
+  success: boolean
+  adId: string
+  creative: Pick<Ad,
+    'creativeId' |
+    'creativeType' |
+    'creativeThumbnailUrl' |
+    'creativeImageUrl' |
+    'creativeVideoId' |
+    'creativeVideoUrl' |
+    'creativePreviewUrl'
+  >
+}
+
 class CampaignsService {
   async getCampaigns(startDate: string, endDate: string): Promise<Campaign[]> {
     try {
@@ -153,6 +167,15 @@ class CampaignsService {
       return await apiClient.get<CreativePreviewResponse>(`/meta/creative-preview/${encodeURIComponent(creativeId)}`, {
         params: { adFormat }
       })
+    } catch (error) {
+      return null
+    }
+  }
+
+  async getAdCreativeMedia(adId: string): Promise<AdCreativeMediaResponse['creative'] | null> {
+    try {
+      const data = await apiClient.get<AdCreativeMediaResponse>(`/meta/ad-creative-media/${encodeURIComponent(adId)}`)
+      return data?.creative || null
     } catch (error) {
       return null
     }
