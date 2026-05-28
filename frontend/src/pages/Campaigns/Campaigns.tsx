@@ -176,6 +176,7 @@ export const Campaigns: React.FC = () => {
   const [creativePreviewHtml, setCreativePreviewHtml] = useState<string | null>(null)
   const [creativePreviewLoading, setCreativePreviewLoading] = useState(false)
   const [creativePreviewError, setCreativePreviewError] = useState<string | null>(null)
+  const [creativeFrameSize, setCreativeFrameSize] = useState<{ width: number; height: number } | null>(null)
 
   /**
    * Agrupa datos de gráfico por semana o mes según el rango
@@ -482,6 +483,7 @@ export const Campaigns: React.FC = () => {
 
     setCreativePreviewHtml(null)
     setCreativePreviewError(null)
+    setCreativeFrameSize(null)
 
     if (!selectedCreative) {
       setCreativePreviewLoading(false)
@@ -579,6 +581,42 @@ export const Campaigns: React.FC = () => {
       cancelled = true
     }
   }, [selectedCreative])
+
+  const handleCreativeFrameLoad = React.useCallback((event: React.SyntheticEvent<HTMLIFrameElement>) => {
+    try {
+      const frame = event.currentTarget
+      const frameDocument = frame.contentDocument || frame.contentWindow?.document
+
+      if (!frameDocument) return
+
+      const body = frameDocument.body
+      const html = frameDocument.documentElement
+      const measuredWidth = Math.max(
+        body?.scrollWidth || 0,
+        body?.offsetWidth || 0,
+        html?.scrollWidth || 0,
+        html?.offsetWidth || 0
+      )
+      const measuredHeight = Math.max(
+        body?.scrollHeight || 0,
+        body?.offsetHeight || 0,
+        html?.scrollHeight || 0,
+        html?.offsetHeight || 0
+      )
+
+      if (!measuredWidth || !measuredHeight) return
+
+      const viewportWidth = window.innerWidth || 1024
+      const viewportHeight = window.innerHeight || 768
+
+      setCreativeFrameSize({
+        width: Math.min(Math.max(measuredWidth, 320), viewportWidth - 48, 720),
+        height: Math.min(Math.max(measuredHeight, 420), viewportHeight - 164, 820)
+      })
+    } catch {
+      setCreativeFrameSize(null)
+    }
+  }, [])
 
   const checkSyncStatus = useCallback(async () => {
     try {
@@ -1976,6 +2014,8 @@ export const Campaigns: React.FC = () => {
                   className={styles.creativeModalFrame}
                   srcDoc={creativePreviewHtml}
                   title={`Preview de ${selectedCreative.name}`}
+                  style={creativeFrameSize ? { width: creativeFrameSize.width, height: creativeFrameSize.height } : undefined}
+                  onLoad={handleCreativeFrameLoad}
                   sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
                   allow="autoplay; encrypted-media; picture-in-picture"
                 />
@@ -1984,6 +2024,8 @@ export const Campaigns: React.FC = () => {
                   className={styles.creativeModalFrame}
                   src={selectedCreative.previewUrl}
                   title={`Preview de ${selectedCreative.name}`}
+                  style={creativeFrameSize ? { width: creativeFrameSize.width, height: creativeFrameSize.height } : undefined}
+                  onLoad={handleCreativeFrameLoad}
                   allow="autoplay; encrypted-media; picture-in-picture"
                 />
               ) : selectedCreative.imageUrl || selectedCreative.thumbnailUrl ? (

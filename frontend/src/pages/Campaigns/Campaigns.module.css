@@ -864,7 +864,9 @@
 }
 
 .creativeModal {
-  width: min(960px, 100%);
+  width: fit-content;
+  min-width: min(420px, calc(100vw - 48px));
+  max-width: min(960px, calc(100vw - 48px));
   max-height: min(86vh, 820px);
   background: var(--color-background);
   border: 1px solid var(--color-border-subtle);
@@ -923,6 +925,9 @@
 .creativeModalBody {
   background: #0f172a;
   min-height: 260px;
+  min-width: min(420px, calc(100vw - 48px));
+  width: fit-content;
+  max-width: 100%;
   max-height: calc(86vh - 132px);
   display: flex;
   align-items: center;
@@ -931,20 +936,21 @@
 }
 
 .creativeModalVideo,
-.creativeModalImage,
-.creativeModalFrame {
-  width: 100%;
+.creativeModalImage {
+  width: auto;
+  height: auto;
+  max-width: min(900px, calc(100vw - 48px));
   max-height: calc(86vh - 132px);
   display: block;
-}
-
-.creativeModalVideo,
-.creativeModalImage {
   object-fit: contain;
 }
 
 .creativeModalFrame {
-  min-height: 640px;
+  width: min(540px, calc(100vw - 48px));
+  height: min(720px, calc(86vh - 132px));
+  max-width: min(720px, calc(100vw - 48px));
+  max-height: calc(86vh - 132px);
+  display: block;
   border: 0;
   background: white;
 }
@@ -989,20 +995,27 @@
   }
 
   .creativeModal {
+    width: calc(100vw - 24px);
+    min-width: 0;
     max-height: 90vh;
   }
 
   .creativeModalBody {
+    width: 100%;
+    min-width: 0;
     max-height: calc(90vh - 132px);
   }
 
   .creativeModalVideo,
-  .creativeModalImage,
-  .creativeModalFrame {
+  .creativeModalImage {
+    max-width: calc(100vw - 24px);
     max-height: calc(90vh - 132px);
   }
 
   .creativeModalFrame {
-    min-height: 520px;
+    width: 100%;
+    height: min(620px, calc(90vh - 132px));
+    max-width: 100%;
+    max-height: calc(90vh - 132px);
   }
 }
