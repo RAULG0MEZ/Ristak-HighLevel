@@ -271,6 +271,31 @@ class DashboardService {
     }
   }
 
+  async getAttendancesData(params: {
+    start: Date;
+    end: Date;
+    groupBy?: 'day' | 'month';
+  }): Promise<{ label: string; value: number }[]> {
+    try {
+      const queryParams = new URLSearchParams({
+        startDate: formatDateToISO(params.start),
+        endDate: formatEndDateToISO(params.end),
+        groupBy: params.groupBy || 'day'
+      });
+
+      const response = await fetch(`${API_URL}/api/dashboard/attendances?${queryParams}`);
+
+      if (!response.ok) {
+        return [];
+      }
+
+      return await response.json();
+    } catch (error) {
+      // TODO: Implement proper logging service
+      return [];
+    }
+  }
+
   async getSalesData(params: {
     start: Date;
     end: Date;

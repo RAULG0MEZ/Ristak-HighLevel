@@ -35,6 +35,7 @@ const parseAnalyticsFlag = (value: unknown) => {
 
 type FunnelStageKind = 'visitors' | 'leads' | 'appointments' | 'attendances' | 'customers'
 type ContactModalType = 'interesados' | 'sales' | 'appointments' | 'attendances'
+type ChartView = 'revenue-spend' | 'visitors-leads' | 'leads-appointments' | 'appointments-attendances' | 'appointments-sales'
 
 export const Dashboard: React.FC = () => {
   const { dateRange, setDateRange } = useDateRange()
@@ -57,6 +58,7 @@ export const Dashboard: React.FC = () => {
   const [chartData, setChartData] = useState<ChartData[]>([])
   const [visitorsLeadsData, setVisitorsLeadsData] = useState<{ label: string; value: number; value2: number }[]>([])
   const [leadsAppointmentsData, setLeadsAppointmentsData] = useState<{ label: string; value: number; value2: number }[]>([])
+  const [appointmentsAttendancesData, setAppointmentsAttendancesData] = useState<{ label: string; value: number; value2: number }[]>([])
   const [appointmentsSalesData, setAppointmentsSalesData] = useState<{ label: string; value: number; value2: number }[]>([])
   const [trafficSources, setTrafficSources] = useState<{ name: string; value: number; color: string }[]>([])
   const [funnelData, setFunnelData] = useState<{ stage: string; value: number }[]>([])
@@ -64,7 +66,7 @@ export const Dashboard: React.FC = () => {
   const [financialScope, setFinancialScope] = useState<'all' | 'attribution' | 'campaigns'>('all')
   const [funnelLoading, setFunnelLoading] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [selectedChartView, setSelectedChartView] = useState<'revenue-spend' | 'visitors-leads' | 'leads-appointments' | 'appointments-sales'>('revenue-spend')
+  const [selectedChartView, setSelectedChartView] = useState<ChartView>('revenue-spend')
   const [extendedChartDataLoaded, setExtendedChartDataLoaded] = useState(false)
   const [extendedChartDataLoading, setExtendedChartDataLoading] = useState(false)
   const [contactModalOpen, setContactModalOpen] = useState(false)
@@ -185,6 +187,16 @@ export const Dashboard: React.FC = () => {
           formatValue: formatChartNumber,
           formatTooltipValue: (value: number) => value.toLocaleString('es-MX')
         }
+      case 'appointments-attendances':
+        return {
+          data: formatData(appointmentsAttendancesData),
+          label1: 'Citas',
+          label2: 'Asistencias',
+          color: '#ec4899',
+          color2: '#f59e0b',
+          formatValue: formatChartNumber,
+          formatTooltipValue: (value: number) => value.toLocaleString('es-MX')
+        }
       case 'appointments-sales':
         return {
           data: formatData(appointmentsSalesData),
@@ -206,7 +218,7 @@ export const Dashboard: React.FC = () => {
           formatTooltipValue: (value: number) => formatCurrency(value)
         }
     }
-  }, [analyticsEnabled, selectedChartView, formattedFinancialData, visitorsLeadsData, leadsAppointmentsData, appointmentsSalesData, labels.leads, currencyAxisFormatter])
+  }, [analyticsEnabled, selectedChartView, formattedFinancialData, visitorsLeadsData, leadsAppointmentsData, appointmentsAttendancesData, appointmentsSalesData, labels.leads, currencyAxisFormatter])
 
   const isExtendedChartView = selectedChartView !== 'revenue-spend'
   const isChartLoading = isExtendedChartView && extendedChartDataLoading
@@ -219,9 +231,10 @@ export const Dashboard: React.FC = () => {
   const chartHeight = 340
 
   const chartViewOptions = React.useMemo(() => {
-    const options: Array<{ value: 'revenue-spend' | 'visitors-leads' | 'leads-appointments' | 'appointments-sales'; label: string }> = [
+    const options: Array<{ value: ChartView; label: string }> = [
       { value: 'revenue-spend', label: 'Ingresos vs Gastos' },
       { value: 'leads-appointments', label: `${labels.leads} vs Citas` },
+      { value: 'appointments-attendances', label: 'Citas vs Asistencias' },
       { value: 'appointments-sales', label: 'Citas vs Ventas' }
     ]
 
@@ -354,22 +367,25 @@ export const Dashboard: React.FC = () => {
         ? dashboardService.getVisitorsData({ start: twelveMonthsAgo, end: now, groupBy: 'month' })
         : Promise.resolve<{ label: string; value: number }[]>([])
 
-      const [visitorsData, leadsData, appointmentsData, salesData] = await Promise.all([
+      const [visitorsData, leadsData, appointmentsData, attendancesData, salesData] = await Promise.all([
         visitorsPromise,
         dashboardService.getLeadsData({ start: twelveMonthsAgo, end: now, groupBy: 'month' }),
         dashboardService.getAppointmentsData({ start: twelveMonthsAgo, end: now, groupBy: 'month' }),
+        dashboardService.getAttendancesData({ start: twelveMonthsAgo, end: now, groupBy: 'month' }),
         dashboardService.getSalesData({ start: twelveMonthsAgo, end: now, groupBy: 'month' })
       ])
 
       const visitorsMap = new Map(visitorsData.map(d => [d.label, d.value]))
       const leadsMap = new Map(leadsData.map(d => [d.label, d.value]))
       const appointmentsMap = new Map(appointmentsData.map(d => [d.label, d.value]))
+      const attendancesMap = new Map(attendancesData.map(d => [d.label, d.value]))
       const salesMap = new Map(salesData.map(d => [d.label, d.value]))
 
       const allDates = new Set([
         ...visitorsData.map(d => d.label),
         ...leadsData.map(d => d.label),
         ...appointmentsData.map(d => d.label),
+        ...attendancesData.map(d => d.label),
         ...salesData.map(d => d.label)
       ])
       const sortedDates = Array.from(allDates).sort()
@@ -392,6 +408,13 @@ export const Dashboard: React.FC = () => {
       }))
       setLeadsAppointmentsData(leadsAppointments)
 
+      const appointmentsAttendances = sortedDates.map(date => ({
+        label: date,
+        value: appointmentsMap.get(date) || 0,
+        value2: attendancesMap.get(date) || 0
+      }))
+      setAppointmentsAttendancesData(appointmentsAttendances)
+
       const appointmentsSales = sortedDates.map(date => ({
         label: date,
         value: appointmentsMap.get(date) || 0,
@@ -413,6 +436,7 @@ export const Dashboard: React.FC = () => {
     setExtendedChartDataLoading(false)
     setVisitorsLeadsData([])
     setLeadsAppointmentsData([])
+    setAppointmentsAttendancesData([])
     setAppointmentsSalesData([])
   }, [analyticsEnabled, dateRange.start, dateRange.end])
 
@@ -602,7 +626,7 @@ export const Dashboard: React.FC = () => {
               <ViewSelector
                 options={chartViewOptions}
                 value={selectedChartView}
-                onChange={(value) => setSelectedChartView(value as any)}
+                onChange={(value) => setSelectedChartView(value as ChartView)}
               />
             </div>
           </div>

@@ -1,5 +1,5 @@
 import express from 'express'
-import { getMetrics, getChartData, getRoasData, getNewCustomersData, getVisitorsData, getLeadsData, getAppointmentsData, getSalesData, getStorageStatus, getTrafficSources, getFunnelData, getFinancialOverview } from '../controllers/dashboardController.js'
+import { getMetrics, getChartData, getRoasData, getNewCustomersData, getVisitorsData, getLeadsData, getAppointmentsData, getAttendancesData, getSalesData, getStorageStatus, getTrafficSources, getFunnelData, getFinancialOverview } from '../controllers/dashboardController.js'
 
 const router = express.Router()
 
@@ -11,6 +11,7 @@ router.get('/new-customers', getNewCustomersData)
 router.get('/visitors', getVisitorsData) // Visitantes únicos desde sessions
 router.get('/leads', getLeadsData)
 router.get('/appointments', getAppointmentsData)
+router.get('/attendances', getAttendancesData)
 router.get('/sales', getSalesData)
 router.get('/storage-status', getStorageStatus)
 router.get('/traffic-sources', getTrafficSources)

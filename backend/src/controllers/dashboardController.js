@@ -617,6 +617,8 @@ export const getAppointmentsData = async (req, res) => {
 
     // Obtener timezone dinámico de HighLevel
     const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate });
+    const timezone = range.appliedTimezone;
+    const dateExpression = getGroupExpression('created_at', groupBy, timezone);
 
     // PASO 1: Obtener configuración de HighLevel
     const config = await db.get('SELECT location_id, api_token FROM highlevel_config LIMIT 1');
@@ -633,7 +635,9 @@ export const getAppointmentsData = async (req, res) => {
     const hiddenCondition = buildHiddenContactsCondition(hiddenFilters, 'contacts', false);
 
     const contactsQuery = `
-      SELECT id as contact_id, created_at
+      SELECT
+        id as contact_id,
+        ${dateExpression} as periodo
       FROM contacts
       WHERE created_at >= $1 AND created_at <= $2
         ${hiddenCondition ? `AND ${hiddenCondition}` : ''}
@@ -646,14 +650,7 @@ export const getAppointmentsData = async (req, res) => {
 
     contactsRaw.forEach(contact => {
       if (contactsWithAppointments.has(contact.contact_id)) {
-        const dateObj = new Date(contact.created_at);
-        let periodKey;
-
-        if (groupBy === 'month') {
-          periodKey = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
-        } else {
-          periodKey = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
-        }
+        const periodKey = contact.periodo;
 
         if (!periodMap[periodKey]) {
           periodMap[periodKey] = new Set();
@@ -674,6 +671,75 @@ export const getAppointmentsData = async (req, res) => {
 
   } catch (error) {
     logger.error(`Error en getAppointmentsData: ${error.message}`);
+    res.json([]);
+  }
+};
+
+/**
+ * Obtiene datos de asistencias por periodo.
+ * IMPORTANTE: Cuenta contactos ÚNICOS con asistencia, agrupados por fecha de creación del contacto.
+ * La fecha de asistencia no se usa para esta gráfica porque aquí medimos atribución.
+ */
+export const getAttendancesData = async (req, res) => {
+  try {
+    const { startDate, endDate, groupBy = 'day' } = req.query;
+
+    if (!startDate || !endDate) {
+      return res.status(400).json([]);
+    }
+
+    const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate });
+    const timezone = range.appliedTimezone;
+    const dateExpression = getGroupExpression('c.created_at', groupBy, timezone);
+
+    const hiddenFilters = await getHiddenContactFilters();
+    const hiddenCondition = buildHiddenContactsCondition(hiddenFilters, 'c', false);
+    const attributionCalendarIds = await getAttributionCalendarIds();
+    const config = await db.get('SELECT location_id, api_token FROM highlevel_config LIMIT 1');
+    const contactsWithAttendances = await getContactsWithShowedAppointmentsHybrid(
+      config?.location_id,
+      config?.api_token,
+      attributionCalendarIds
+    );
+
+    if (contactsWithAttendances.size === 0) {
+      return res.json([]);
+    }
+
+    const conditions = ['c.created_at >= $1', 'c.created_at <= $2'];
+    if (hiddenCondition) conditions.push(hiddenCondition);
+
+    const contactsQuery = `
+      SELECT
+        c.id as contact_id,
+        ${dateExpression} as periodo
+      FROM contacts c
+      WHERE ${conditions.join(' AND ')}
+    `;
+
+    const contactsRaw = await db.all(contactsQuery, [range.startUtc, range.endUtc]);
+    const periodMap = {};
+
+    contactsRaw.forEach(contact => {
+      if (!contactsWithAttendances.has(contact.contact_id)) return;
+
+      if (!periodMap[contact.periodo]) {
+        periodMap[contact.periodo] = new Set();
+      }
+
+      periodMap[contact.periodo].add(contact.contact_id);
+    });
+
+    const attendancesData = Object.keys(periodMap)
+      .sort()
+      .map(periodo => ({
+        label: periodo,
+        value: periodMap[periodo].size
+      }));
+
+    res.json(attendancesData);
+  } catch (error) {
+    logger.error(`Error en getAttendancesData: ${error.message}`);
     res.json([]);
   }
 };
