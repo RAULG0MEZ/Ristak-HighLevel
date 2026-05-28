@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { KpiCard, Card, Button, Table, DateRangePicker, PageContainer, TabList, Badge, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, ContactDetailsModal, BarChart, Loading } from '@/components/common'
-import type { Column, BadgeVariant, BarChartData } from '@/components/common'
+import type { Column, BarChartData } from '@/components/common'
 import {
   Users,
   User,
@@ -25,6 +25,7 @@ import { useNotification } from '@/contexts/NotificationContext'
 import { useAuth } from '@/contexts/AuthContext'
 import styles from './Contacts.module.css'
 import { dedupeContacts } from '@/utils/contactDedup'
+import { getContactStageBadge, isAttendedAppointmentStatus } from '@/utils/contactStageBadge'
 
 const APPOINTMENT_CANCELED_STATUSES = new Set([
   'cancelled',
@@ -34,9 +35,6 @@ const APPOINTMENT_CANCELED_STATUSES = new Set([
   'failed',
   'missed'
 ])
-
-const isShowedAppointmentStatus = (status?: string | null) =>
-  String(status || '').trim().toLowerCase() === 'showed'
 
 const STATUS_PRIORITY: Record<Contact['status'], number> = {
   lead: 0,
@@ -86,7 +84,7 @@ const mergeContactDetailRecords = (
     if (!appointment) return
     const key = appointment.id ?? `${appointment.start_time}-${appointment.title ?? ''}`
     appointmentMap.set(key, appointment)
-    if (isShowedAppointmentStatus(appointment.appointment_status || appointment.status)) {
+    if (isAttendedAppointmentStatus(appointment.appointment_status || appointment.status)) {
       merged.hasShowedAppointment = true
       merged.hasAttendedAppointment = true
     }
@@ -138,7 +136,7 @@ const mergeContactDetailRecords = (
       if (!appointmentMap.has(key)) {
         appointmentMap.set(key, appointment)
       }
-      if (isShowedAppointmentStatus(appointment.appointment_status || appointment.status)) {
+      if (isAttendedAppointmentStatus(appointment.appointment_status || appointment.status)) {
         merged.hasShowedAppointment = true
         merged.hasAttendedAppointment = true
       }
@@ -487,12 +485,12 @@ export const Contacts: React.FC = () => {
 
         const hasShowedInCalendar = allEvents.some(event =>
           event.contactId === contact.id &&
-          isShowedAppointmentStatus(event.appointmentStatus || (event as any).status)
+          isAttendedAppointmentStatus(event.appointmentStatus || (event as any).status)
         )
         const hasShowedAppointment =
           contact.hasShowedAppointment ||
           contact.appointments?.some(appointment =>
-            isShowedAppointmentStatus(appointment.appointment_status || appointment.status)
+            isAttendedAppointmentStatus(appointment.appointment_status || appointment.status)
           )
 
         return hasShowedInCalendar || Boolean(hasShowedAppointment)
@@ -535,29 +533,23 @@ export const Contacts: React.FC = () => {
     { label: labels.customers, value: 'customers' }
   ]
 
-  const statusConfig: Record<Contact['status'], { label: string; variant: BadgeVariant }> = {
-    lead: { label: labels.lead, variant: 'neutral' },
-    appointment: { label: 'Agendó cita', variant: 'success' },
-    customer: { label: labels.customer, variant: 'primary' }
-  }
-
   const hasAttendedAppointment = (contact: Contact) =>
     Boolean(contact.hasShowedAppointment || contact.hasAttendedAppointment) ||
     Boolean(allEvents.some(event =>
       event.contactId === contact.id &&
-      isShowedAppointmentStatus(event.appointmentStatus || (event as any).status)
+      isAttendedAppointmentStatus(event.appointmentStatus || (event as any).status)
     )) ||
     Boolean(contact.appointments?.some(appointment =>
-      isShowedAppointmentStatus(appointment.appointment_status || appointment.status)
+      isAttendedAppointmentStatus(appointment.appointment_status || appointment.status)
     ))
 
   const getStatusBadge = (contact: Contact) => {
-    if (contact.status !== 'customer' && hasAttendedAppointment(contact)) {
-      return <Badge variant="success">Asistió a Cita</Badge>
-    }
+    const badge = getContactStageBadge({
+      ...contact,
+      hasAttendedAppointment: hasAttendedAppointment(contact)
+    }, labels)
 
-    const config = statusConfig[contact.status] ?? { label: contact.status, variant: 'neutral' as BadgeVariant }
-    return <Badge variant={config.variant}>{config.label}</Badge>
+    return badge ? <Badge variant={badge.variant}>{badge.text}</Badge> : null
   }
 
   const columns: Column<Contact>[] = [

@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { Modal, Icon, Badge, type BadgeVariant } from '@/components/common'
-import { formatDate, formatUrlParameter } from '@/utils/format'
+import { formatUrlParameter } from '@/utils/format'
+import { CONTACT_STAGE_BADGE_VARIANTS, getContactStageBadge } from '@/utils/contactStageBadge'
 import { useLabels } from '@/contexts/LabelsContext'
 import { useTimezone } from '@/contexts/TimezoneContext'
 import styles from './VisitorDetailsModal.module.css'
@@ -91,7 +92,7 @@ export function VisitorDetailsModal({
       return { text: 'Reservado', variant: 'warning' }
     }
     if (['completed', 'showed', 'attended'].includes(statusLower)) {
-      return { text: 'Asistió', variant: 'success' }
+      return { text: 'Asistió', variant: CONTACT_STAGE_BADGE_VARIANTS.attended }
     }
     if (['cancelled', 'canceled', 'no_show', 'noshow'].includes(statusLower)) {
       return { text: 'Cancelado', variant: 'error' }
@@ -104,37 +105,8 @@ export function VisitorDetailsModal({
   }
 
   // Función para determinar el badge de prioridad del contacto
-  const getContactBadge = (visitor: VisitorDetail): { label: string, variant: BadgeVariant } | null => {
-    if (!visitor.contact) return null
-
-    const hasPurchases = (visitor.contact.purchases || 0) > 0
-    const hasAppointments = visitor.contact.appointments && visitor.contact.appointments.length > 0
-    const hasAttendedAppointment =
-      Boolean(visitor.contact.hasAttendedAppointment) ||
-      (visitor.contact.appointments || []).some((appointment: any) => {
-        const rawStatus = appointment?.appointmentStatus ?? appointment?.appointment_status ?? appointment?.status
-        const status = String(rawStatus || '').trim().toLowerCase()
-        return ['completed', 'showed', 'attended'].includes(status)
-      })
-
-    // Prioridad 1: Cliente (tiene compras)
-    if (hasPurchases) {
-      return { label: labels.customer, variant: 'success' }
-    }
-
-    // Prioridad 2: Asistió a cita (sin ser cliente)
-    if (hasAttendedAppointment) {
-      return { label: 'Asistió a Cita', variant: 'success' }
-    }
-
-    // Prioridad 3: Agendó cita (tiene citas pero no es cliente)
-    if (hasAppointments) {
-      return { label: 'Agendó cita', variant: 'purple' }
-    }
-
-    // Prioridad 4: Lead (solo contacto, sin citas ni compras)
-    return { label: labels.lead, variant: 'default' }
-  }
+  const getContactBadge = (visitor: VisitorDetail) =>
+    getContactStageBadge(visitor.contact, labels)
 
   const normalizedData = useMemo<VisitorDetail[]>(() => {
     if (Array.isArray(data)) {
@@ -315,7 +287,7 @@ export function VisitorDetailsModal({
                         {(() => {
                           const badge = getContactBadge(visitor)
                           return badge ? (
-                            <Badge variant={badge.variant}>{badge.label}</Badge>
+                            <Badge variant={badge.variant}>{badge.text}</Badge>
                           ) : null
                         })()}
                         {visitor.deviceType && (

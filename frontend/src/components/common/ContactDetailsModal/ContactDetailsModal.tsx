@@ -1,8 +1,8 @@
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Modal, Icon, Badge, type BadgeVariant } from '@/components/common'
 import { ContactJourney } from '@/components/common/ContactJourney'
-import { formatDate } from '@/utils/format'
 import { normalizeTrafficSource } from '@/utils/trafficSourceNormalizer'
+import { CONTACT_STAGE_BADGE_VARIANTS, getContactStageBadge } from '@/utils/contactStageBadge'
 import { useLabels } from '@/contexts/LabelsContext'
 import { useTimezone } from '@/contexts/TimezoneContext'
 import styles from './ContactDetailsModal.module.css'
@@ -177,7 +177,7 @@ export function ContactDetailsModal({
       return { text: 'Reservado', variant: 'warning' }
     }
     if (['completed', 'showed', 'attended'].includes(statusLower)) {
-      return { text: 'Asistió', variant: 'success' }
+      return { text: 'Asistió', variant: CONTACT_STAGE_BADGE_VARIANTS.attended }
     }
     if (['cancelled', 'canceled', 'no_show', 'noshow'].includes(statusLower)) {
       return { text: 'Cancelado', variant: 'error' }
@@ -189,73 +189,8 @@ export function ContactDetailsModal({
     return { text: formatStatusText(statusLower), variant: 'neutral' }
   }
 
-  const resolveContactBadge = useCallback(
-    (contact?: ContactDetail | null): { text: string; variant: BadgeVariant } | null => {
-      if (!contact) return null
-
-      const lifetimePurchases = contact.lifetimePurchases ?? (contact as any).purchasesLifetime ?? (contact as any).purchases_count ?? 0
-      const lifetimeLtv = contact.lifetimeLtv ?? (contact as any).totalPaid ?? (contact as any).total_paid ?? 0
-      const isCustomerFlag = contact.isCustomer ?? (contact as any).isCustomer ?? (contact as any).is_customer ?? contact.is_sale ?? (contact as any).isSale ?? false
-      const rawStatus = (contact as any).status ?? (contact as any).customerStatus ?? (contact as any).stage ?? (contact as any).lifecycleStage ?? ''
-      const normalizedStatus = typeof rawStatus === 'string' ? rawStatus.toLowerCase() : ''
-      const tagsRaw = (contact as any).tags ?? (contact as any).labels ?? (contact as any).tagList ?? (contact as any).contactTags
-      const normalizedTags: string[] = Array.isArray(tagsRaw)
-        ? (tagsRaw as unknown[]).filter((tag): tag is string => typeof tag === 'string')
-        : typeof tagsRaw === 'string'
-          ? tagsRaw.split(',').map(tag => tag.trim())
-          : []
-      const normalizeTag = (tag: string) => tag.toLowerCase()
-      const CUSTOMER_KEYWORDS = ['customer', 'cliente', 'sale', 'ventas', 'sold', 'converted', 'paid', 'pagó', 'compró', 'closed-won', 'won', 'compra', 'pago']
-      const APPOINTMENT_KEYWORDS = ['appointment', 'cita', 'agend', 'booked', 'scheduled', 'confirmado', 'reserva', 'reservo', 'calendar']
-      const ATTENDANCE_KEYWORDS = ['asist', 'showed', 'attended', 'completed']
-      const statusMatches = (keywords: string[]) => keywords.some(keyword => normalizedStatus.includes(keyword))
-      const tagsMatch = (keywords: string[]) =>
-        normalizedTags.some(tag => keywords.some(keyword => normalizeTag(tag).includes(keyword)))
-
-      const hasPurchases =
-        isCustomerFlag ||
-        (contact.purchases ?? 0) > 0 ||
-        lifetimePurchases > 0 ||
-        (contact.ltv ?? 0) > 0 ||
-        lifetimeLtv > 0 ||
-        (contact.payments ?? []).some(payment => payment.amount > 0) ||
-        statusMatches(CUSTOMER_KEYWORDS) ||
-        tagsMatch(CUSTOMER_KEYWORDS)
-
-      const hasAppointments =
-        contact.hasAppointments ||
-        (contact.appointments?.length ?? 0) > 0 ||
-        Boolean(contact.nextAppointmentDate) ||
-        Boolean(contact.firstAppointmentDate) ||
-        statusMatches(APPOINTMENT_KEYWORDS) ||
-        tagsMatch(APPOINTMENT_KEYWORDS)
-
-      const hasAttendedAppointment =
-        Boolean((contact as any).hasShowedAppointment || (contact as any).hasAttendedAppointment) ||
-        (contact.appointments ?? []).some(appointment => {
-          const rawAppointmentStatus = (appointment as any).appointmentStatus ?? (appointment as any).appointment_status ?? appointment.status
-          const status = String(rawAppointmentStatus || '').trim().toLowerCase()
-          return ['completed', 'showed', 'attended'].includes(status)
-        }) ||
-        statusMatches(ATTENDANCE_KEYWORDS) ||
-        tagsMatch(ATTENDANCE_KEYWORDS)
-
-      if (hasPurchases) {
-        return { text: labels.customer, variant: 'success' }
-      }
-
-      if (hasAttendedAppointment) {
-        return { text: 'Asistió a Cita', variant: 'success' }
-      }
-
-      if (hasAppointments) {
-        return { text: 'Agendó cita', variant: 'purple' }
-      }
-
-      return { text: labels.lead, variant: 'default' }
-    },
-    [labels]
-  )
+  const resolveContactBadge = (contact?: ContactDetail | null) =>
+    getContactStageBadge(contact, labels)
 
   // Separar pagos exitosos de reembolsos/cancelados
   // CRÍTICO: Solo pagos con status exitoso, NO incluir refunded/cancelled
