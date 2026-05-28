@@ -167,6 +167,17 @@ async function initTables() {
       )
     `)
 
+    // Tabla de configuración del agente AI
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS ai_agent_config (
+        id ${usePostgres ? 'SERIAL PRIMARY KEY' : 'INTEGER PRIMARY KEY AUTOINCREMENT'},
+        openai_api_key_encrypted TEXT,
+        model TEXT DEFAULT 'gpt-5.2',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
     // Insertar configuración por defecto de Analytics (visible por defecto)
     // Usar INSERT con ON CONFLICT para compatibilidad SQLite/PostgreSQL
     try {

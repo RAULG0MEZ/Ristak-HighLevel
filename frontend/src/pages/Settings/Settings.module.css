@@ -33,6 +33,7 @@
   gap: 4px;
   border-bottom: 1px solid var(--color-border);
   margin-bottom: 24px;
+  overflow-x: auto;
 }
 
 .tab {
@@ -49,6 +50,7 @@
   cursor: pointer;
   position: relative;
   margin-bottom: -1px;
+  white-space: nowrap;
 }
 
 .tab:hover {

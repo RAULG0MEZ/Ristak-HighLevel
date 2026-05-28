@@ -2,10 +2,11 @@ import React from 'react'
 
 interface LayoutProps {
   sidebar: React.ReactNode
+  rightSidebar?: React.ReactNode
   children: React.ReactNode
 }
 
-export const Layout: React.FC<LayoutProps> = ({ sidebar, children }) => {
+export const Layout: React.FC<LayoutProps> = ({ sidebar, rightSidebar, children }) => {
   return (
     <div className="flex h-screen overflow-hidden bg-[var(--color-bg-primary)]">
       {/* Sidebar */}
@@ -14,9 +15,15 @@ export const Layout: React.FC<LayoutProps> = ({ sidebar, children }) => {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 min-w-0 overflow-auto">
         {children}
       </main>
+
+      {rightSidebar && (
+        <aside className="w-[clamp(320px,26vw,390px)] flex-shrink-0 border-l border-[rgba(148,163,184,0.12)] max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:z-[1300] max-md:w-[min(100vw,380px)]">
+          {rightSidebar}
+        </aside>
+      )}
     </div>
   )
 }

@@ -5,8 +5,10 @@ import { Sidebar } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
 import { SyncProgressBar } from '@/components/common/SyncProgressBar'
 import { TestModeBanner } from '@/components/common/TestModeBanner'
+import { AIAgentPanel } from '@/components/ai'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDomainFeatureSync } from '@/hooks'
+import { aiAgentService, type AIAgentConfigStatus } from '@/services/aiAgentService'
 
 export const AppShell: React.FC = () => {
   const navigate = useNavigate()
@@ -14,6 +16,7 @@ export const AppShell: React.FC = () => {
   const [syncProgressVisible, setSyncProgressVisible] = useState(false)
   const [locationName, setLocationName] = useState<string>('Mi Negocio')
   const [locationLogo, setLocationLogo] = useState<string | null>(null)
+  const [aiAgentConfigured, setAiAgentConfigured] = useState(false)
 
   // Asegurar que las configuraciones sensibles al dominio estén sincronizadas
   useDomainFeatureSync()
@@ -39,6 +42,36 @@ export const AppShell: React.FC = () => {
     }
 
     fetchLocationData()
+  }, [])
+
+  useEffect(() => {
+    let mounted = true
+
+    const loadAIAgentStatus = async () => {
+      try {
+        const status = await aiAgentService.getConfig()
+        if (mounted) {
+          setAiAgentConfigured(Boolean(status.configured))
+        }
+      } catch {
+        if (mounted) {
+          setAiAgentConfigured(false)
+        }
+      }
+    }
+
+    const handleConfigChange = (event: Event) => {
+      const customEvent = event as CustomEvent<AIAgentConfigStatus>
+      setAiAgentConfigured(Boolean(customEvent.detail?.configured))
+    }
+
+    loadAIAgentStatus()
+    window.addEventListener('ai-agent-config-changed', handleConfigChange)
+
+    return () => {
+      mounted = false
+      window.removeEventListener('ai-agent-config-changed', handleConfigChange)
+    }
   }, [])
 
   // Detectar cuando el panel de progreso está activo
@@ -83,7 +116,10 @@ export const AppShell: React.FC = () => {
       {syncProgressVisible && <SyncProgressBar onClose={handleProgressBarClose} />}
 
       <div className="relative transition-all duration-300 ease-in-out">
-        <Layout sidebar={<Sidebar locationName={locationName} locationLogo={locationLogo} />}>
+        <Layout
+          sidebar={<Sidebar locationName={locationName} locationLogo={locationLogo} />}
+          rightSidebar={aiAgentConfigured ? <AIAgentPanel /> : undefined}
+        >
           <div className="flex flex-col min-h-full">
             <TestModeBanner />
             <Header onLogout={handleLogout} />
