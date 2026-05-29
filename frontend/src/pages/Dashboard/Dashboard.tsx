@@ -45,7 +45,7 @@ const parseAnalyticsFlag = (value: unknown) => {
 
 type FunnelStageKind = 'visitors' | 'leads' | 'appointments' | 'attendances' | 'customers'
 type ContactModalType = 'interesados' | 'sales' | 'appointments' | 'attendances'
-type ChartView = 'revenue-spend' | 'visitors-leads' | 'leads-appointments' | 'appointments-attendances' | 'attendances-sales' | 'appointments-sales'
+type ChartView = 'revenue-spend' | 'visitors-leads' | 'leads-appointments' | 'appointments-attendances' | 'attendances-sales'
 type ChartSeriesKey = 'value' | 'value2'
 
 interface DashboardChartPoint {
@@ -209,7 +209,6 @@ export const Dashboard: React.FC = () => {
   const [leadsAppointmentsData, setLeadsAppointmentsData] = useState<{ label: string; value: number; value2: number }[]>([])
   const [appointmentsAttendancesData, setAppointmentsAttendancesData] = useState<{ label: string; value: number; value2: number }[]>([])
   const [attendancesSalesData, setAttendancesSalesData] = useState<{ label: string; value: number; value2: number }[]>([])
-  const [appointmentsSalesData, setAppointmentsSalesData] = useState<{ label: string; value: number; value2: number }[]>([])
   const [trafficSources, setTrafficSources] = useState<{ name: string; value: number; color: string }[]>([])
   const [funnelData, setFunnelData] = useState<{ stage: string; value: number }[]>([])
   const [funnelScope, setFunnelScope] = useState<'all' | 'attribution' | 'campaigns'>('all')
@@ -362,16 +361,6 @@ export const Dashboard: React.FC = () => {
           formatValue: formatChartNumber,
           formatTooltipValue: (value: number) => value.toLocaleString('es-MX')
         }
-      case 'appointments-sales':
-        return {
-          data: formatData(appointmentsSalesData),
-          label1: 'Citas',
-          label2: 'Ventas',
-          color: 'var(--design-chart-warning, #f59e0b)',
-          color2: 'var(--design-chart-primary, #10b981)',
-          formatValue: formatChartNumber,
-          formatTooltipValue: (value: number) => value.toLocaleString('es-MX')
-        }
       default:
         return {
           data: formattedFinancialData,
@@ -383,7 +372,7 @@ export const Dashboard: React.FC = () => {
           formatTooltipValue: (value: number) => formatCurrency(value)
         }
     }
-  }, [analyticsEnabled, selectedChartView, formattedFinancialData, visitorsLeadsData, leadsAppointmentsData, appointmentsAttendancesData, attendancesSalesData, appointmentsSalesData, labels.leads, currencyAxisFormatter, last12MonthKeys])
+  }, [analyticsEnabled, selectedChartView, formattedFinancialData, visitorsLeadsData, leadsAppointmentsData, appointmentsAttendancesData, attendancesSalesData, labels.leads, currencyAxisFormatter, last12MonthKeys])
 
   const isExtendedChartView = selectedChartView !== 'revenue-spend'
   const isChartLoading = isExtendedChartView && extendedChartDataLoading
@@ -400,8 +389,7 @@ export const Dashboard: React.FC = () => {
       { value: 'revenue-spend', label: 'Ingresos vs Gastos' },
       { value: 'leads-appointments', label: `${labels.leads} vs Citas` },
       { value: 'appointments-attendances', label: 'Citas vs Asistencias' },
-      { value: 'attendances-sales', label: 'Asistencias vs Ventas' },
-      { value: 'appointments-sales', label: 'Citas vs Ventas' }
+      { value: 'attendances-sales', label: 'Asistencias vs Ventas' }
     ]
 
     if (analyticsEnabled) {
@@ -603,13 +591,6 @@ export const Dashboard: React.FC = () => {
       }))
       setAttendancesSalesData(attendancesSales)
 
-      const appointmentsSales = sortedDates.map(date => ({
-        label: date,
-        value: appointmentsMap.get(date) || 0,
-        value2: salesMap.get(date) || 0
-      }))
-      setAppointmentsSalesData(appointmentsSales)
-
       setExtendedChartDataLoaded(true)
     } catch (error) {
       // TODO: Integrate logging service
@@ -626,7 +607,6 @@ export const Dashboard: React.FC = () => {
     setLeadsAppointmentsData([])
     setAppointmentsAttendancesData([])
     setAttendancesSalesData([])
-    setAppointmentsSalesData([])
   }, [analyticsEnabled, dateRange.start, dateRange.end])
 
   React.useEffect(() => {
@@ -1125,30 +1105,6 @@ export const Dashboard: React.FC = () => {
             metricValue1,
             'Sin asistencias registradas en este mes.',
             mapContactsToInsightItems(attendances, 'attendance')
-          ),
-          buildInsightColumn(
-            'sales',
-            'Clientes que pagaron',
-            chartConfig.label2,
-            metricValue2,
-            'Sin clientes con pago en este mes.',
-            mapContactsToInsightItems(payingContacts, 'payment')
-          )
-        ]
-      } else if (selectedChartView === 'appointments-sales') {
-        const [appointments, payingContacts] = await Promise.all([
-          fetchContactsForInsight('appointments', periodStart, periodEnd),
-          fetchContactsForInsight('sales', periodStart, periodEnd)
-        ])
-
-        columns = [
-          buildInsightColumn(
-            'appointments',
-            'Citados',
-            chartConfig.label1,
-            metricValue1,
-            'Sin citas registradas en este mes.',
-            mapContactsToInsightItems(appointments, 'appointment')
           ),
           buildInsightColumn(
             'sales',
