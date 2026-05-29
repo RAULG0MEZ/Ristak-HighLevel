@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { KpiCard, Card, DateRangePicker, AreaChart, PageContainer, TrafficSourcesChart, ConversionFunnelChart, ViewSelector, Loading, ContactDetailsModal, VisitorDetailsModal, HelpTooltip } from '@/components/common'
 import funnelStyles from '@/components/common/ConversionFunnelChart/ConversionFunnelChart.module.css'
 import {
@@ -11,15 +12,23 @@ import {
   RotateCcw,
   Users,
   Layers,
-  MousePointerClick
+  MousePointerClick,
+  CalendarClock,
+  ArrowRight,
+  UserPlus,
+  Clock3,
+  Banknote
 } from 'lucide-react'
 import { useDateRange } from '@/contexts/DateRangeContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { useLabels } from '@/contexts/LabelsContext'
+import { useTimezone } from '@/contexts/TimezoneContext'
 import { useAppConfig, useIsRenderDomain, useMetaTimezone } from '@/hooks'
 import { dashboardService, type DashboardMetrics, type ChartData, type DashboardVisitorDetail } from '@/services/dashboardService'
 import { reportsService, type ContactListItem } from '@/services/reportsService'
-import { formatCurrency, formatRoas, formatChartDate, formatDateToISO, formatEndDateToISO, parseLocalDateString, formatChartCurrency, formatChartNumber } from '@/utils/format'
+import { transactionsService, type Transaction } from '@/services/transactionsService'
+import { calendarsService, type CalendarEvent } from '@/services/calendarsService'
+import { formatCurrency, formatRoas, formatChartDate, formatDateToISO, formatEndDateToISO, parseLocalDateString, formatChartCurrency, formatChartNumber, formatDate } from '@/utils/format'
 
 const parseAnalyticsFlag = (value: unknown) => {
   if (value === null || value === undefined) return false
@@ -37,10 +46,60 @@ type FunnelStageKind = 'visitors' | 'leads' | 'appointments' | 'attendances' | '
 type ContactModalType = 'interesados' | 'sales' | 'appointments' | 'attendances'
 type ChartView = 'revenue-spend' | 'visitors-leads' | 'leads-appointments' | 'appointments-attendances' | 'attendances-sales' | 'appointments-sales'
 
+const TRANSACTION_STATUS_LABELS: Record<Transaction['status'], string> = {
+  draft: 'Borrador',
+  sent: 'Enviado',
+  paid: 'Pagado',
+  pending: 'Pendiente',
+  overdue: 'Vencido',
+  partial: 'Parcial',
+  void: 'Anulado',
+  refunded: 'Reembolsado',
+  failed: 'Fallido',
+  deleted: 'Eliminado'
+}
+
+const APPOINTMENT_STATUS_LABELS: Record<CalendarEvent['appointmentStatus'], string> = {
+  confirmed: 'Confirmada',
+  pending: 'Pendiente',
+  cancelled: 'Cancelada',
+  showed: 'Asistió',
+  noshow: 'No asistió',
+  rescheduled: 'Reagendada'
+}
+
+const getTimeValue = (date?: string | null) => {
+  if (!date) return 0
+  const time = new Date(date).getTime()
+  return Number.isNaN(time) ? 0 : time
+}
+
+const getTransactionDate = (transaction: Transaction) => (
+  transaction.date || transaction.createdAt || transaction.sentAt || transaction.updatedAt || ''
+)
+
+const getContactCreatedAt = (contact: ContactListItem) => (
+  contact.created_at || (contact as any).createdAt || ''
+)
+
+const getContactName = (contact: ContactListItem) => (
+  contact.name || contact.email || contact.phone || 'Contacto sin nombre'
+)
+
+const getAppointmentTitle = (appointment: CalendarEvent) => (
+  appointment.title || appointment.description || 'Cita sin título'
+)
+
+const isUpcomingAppointment = (appointment: CalendarEvent, now: number) => {
+  const appointmentTime = getTimeValue(appointment.startTime)
+  return appointmentTime >= now && appointment.appointmentStatus !== 'cancelled'
+}
+
 export const Dashboard: React.FC = () => {
   const { dateRange, setDateRange } = useDateRange()
-  const { user } = useAuth()
+  const { user, locationId, accessToken } = useAuth()
   const { labels } = useLabels()
+  const { formatLocalDateTime } = useTimezone()
 
   // Detectar discrepancia de timezone con Meta
   const timezoneInfo = useMetaTimezone()
@@ -81,6 +140,10 @@ export const Dashboard: React.FC = () => {
   const [visitorsModalSubtitle, setVisitorsModalSubtitle] = useState('')
   const [visitorsModalLoading, setVisitorsModalLoading] = useState(false)
   const [visitorsModalData, setVisitorsModalData] = useState<DashboardVisitorDetail[]>([])
+  const [operationsLoading, setOperationsLoading] = useState(false)
+  const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([])
+  const [upcomingAppointments, setUpcomingAppointments] = useState<CalendarEvent[]>([])
+  const [recentContacts, setRecentContacts] = useState<ContactListItem[]>([])
 
   const funnelChartData = React.useMemo(() => {
     if (analyticsEnabled) return funnelData
@@ -531,6 +594,79 @@ export const Dashboard: React.FC = () => {
     loadData()
   }, [analyticsEnabled, dateRange, financialScope, user])
 
+  useEffect(() => {
+    if (!user) return
+
+    let mounted = true
+
+    const loadOperationalSnapshot = async () => {
+      setOperationsLoading(true)
+
+      const from = formatDateToISO(dateRange.start)
+      const to = formatEndDateToISO(dateRange.end)
+      const now = new Date()
+      const twoWeeksFromNow = new Date(now)
+      twoWeeksFromNow.setDate(now.getDate() + 14)
+
+      const appointmentsPromise = locationId && accessToken
+        ? calendarsService.getEvents(
+            locationId,
+            now.getTime(),
+            twoWeeksFromNow.getTime(),
+            accessToken
+          )
+        : Promise.resolve<CalendarEvent[]>([])
+
+      try {
+        const [transactionsData, contactsResult, appointmentsData] = await Promise.all([
+          transactionsService.getTransactions(from, to),
+          reportsService.getContactsList({
+            from,
+            to,
+            type: 'interesados',
+            scope: 'all'
+          }).then(result => result.contacts).catch(() => [] as ContactListItem[]),
+          appointmentsPromise
+        ])
+
+        if (!mounted) return
+
+        const sortedTransactions = [...transactionsData]
+          .sort((a, b) => getTimeValue(getTransactionDate(b)) - getTimeValue(getTransactionDate(a)))
+          .slice(0, 5)
+
+        const sortedContacts = [...contactsResult]
+          .sort((a, b) => getTimeValue(getContactCreatedAt(b)) - getTimeValue(getContactCreatedAt(a)))
+          .slice(0, 5)
+
+        const nowTime = now.getTime()
+        const sortedAppointments = [...appointmentsData]
+          .filter(appointment => isUpcomingAppointment(appointment, nowTime))
+          .sort((a, b) => getTimeValue(a.startTime) - getTimeValue(b.startTime))
+          .slice(0, 5)
+
+        setRecentTransactions(sortedTransactions)
+        setRecentContacts(sortedContacts)
+        setUpcomingAppointments(sortedAppointments)
+      } catch {
+        if (!mounted) return
+        setRecentTransactions([])
+        setRecentContacts([])
+        setUpcomingAppointments([])
+      } finally {
+        if (mounted) {
+          setOperationsLoading(false)
+        }
+      }
+    }
+
+    loadOperationalSnapshot()
+
+    return () => {
+      mounted = false
+    }
+  }, [accessToken, dateRange.end, dateRange.start, locationId, user])
+
   // useEffect separado solo para el funnel (no recarga toda la página)
   React.useEffect(() => {
     const loadFunnelData = async () => {
@@ -551,6 +687,42 @@ export const Dashboard: React.FC = () => {
 
     loadFunnelData()
   }, [funnelScope, dateRange])
+
+  const renderOperationsLoadingRows = (count = 4) => (
+    Array.from({ length: count }).map((_, index) => (
+      <div key={`operations-loading-${index}`} className="flex items-center justify-between gap-4 border-b border-[rgba(148,163,184,0.12)] py-3 last:border-b-0">
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className="h-3.5 w-2/3 animate-pulse rounded bg-[color-mix(in_srgb,var(--color-text-primary)_9%,transparent)]" />
+          <div className="h-3 w-1/2 animate-pulse rounded bg-[color-mix(in_srgb,var(--color-text-primary)_7%,transparent)]" />
+        </div>
+        <div className="h-6 w-20 animate-pulse rounded-full bg-[color-mix(in_srgb,var(--color-text-primary)_7%,transparent)]" />
+      </div>
+    ))
+  )
+
+  const renderEmptyOperationsState = (message: string) => (
+    <div className="flex min-h-[156px] items-center justify-center rounded-xl border border-dashed border-[rgba(148,163,184,0.2)] px-4 text-center text-sm text-[var(--color-text-tertiary)]">
+      {message}
+    </div>
+  )
+
+  const getStatusClassName = (status?: string | null) => {
+    const normalized = status?.toLowerCase()
+
+    if (normalized === 'paid' || normalized === 'confirmed' || normalized === 'showed') {
+      return 'border-[rgba(16,185,129,0.34)] text-[var(--color-status-success)]'
+    }
+
+    if (normalized === 'pending' || normalized === 'sent' || normalized === 'partial' || normalized === 'rescheduled') {
+      return 'border-[rgba(245,158,11,0.34)] text-[var(--color-status-warning)]'
+    }
+
+    if (normalized === 'failed' || normalized === 'overdue' || normalized === 'refunded' || normalized === 'void' || normalized === 'cancelled' || normalized === 'noshow') {
+      return 'border-[rgba(220,38,38,0.34)] text-[var(--color-status-error)]'
+    }
+
+    return 'border-[rgba(148,163,184,0.22)] text-[var(--color-text-secondary)]'
+  }
 
   if (loading || !metrics) {
     return <Loading message="Cargando dashboard..." />
@@ -714,6 +886,153 @@ export const Dashboard: React.FC = () => {
             />
           )}
         </div>
+
+        <section data-dashboard-operations className="grid gap-4 xl:grid-cols-3">
+          <Card variant="glass" className="flex min-h-[320px] flex-col gap-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="mb-2 flex items-center gap-2 text-[var(--color-text-tertiary)]">
+                  <Banknote className="h-4 w-4" />
+                  <span className="text-xs font-semibold uppercase tracking-[0.08em]">Pagos</span>
+                </div>
+                <h3 className="m-0 text-lg font-semibold text-[var(--color-text-primary)]">Últimos pagos</h3>
+                <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Movimientos del rango activo</p>
+              </div>
+              <Link
+                to="/transactions"
+                className="inline-flex flex-shrink-0 items-center gap-1 text-sm font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+              >
+                Ver
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+
+            <div className="flex-1">
+              {operationsLoading ? renderOperationsLoadingRows() : recentTransactions.length > 0 ? (
+                <div className="divide-y divide-[rgba(148,163,184,0.12)]">
+                  {recentTransactions.map((transaction) => (
+                    <div key={transaction.id} className="flex items-center justify-between gap-4 py-3">
+                      <div className="min-w-0">
+                        <p className="m-0 truncate text-sm font-semibold text-[var(--color-text-primary)]">
+                          {transaction.contactName || transaction.email || 'Cliente sin nombre'}
+                        </p>
+                        <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">
+                          {formatDate(getTransactionDate(transaction), { includeYear: true })}
+                        </p>
+                      </div>
+                      <div className="flex flex-shrink-0 flex-col items-end gap-1">
+                        <span className="text-sm font-semibold text-[var(--color-text-primary)]">
+                          {formatCurrency(transaction.amount)}
+                        </span>
+                        <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${getStatusClassName(transaction.status)}`}>
+                          {TRANSACTION_STATUS_LABELS[transaction.status] ?? transaction.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                renderEmptyOperationsState('Sin pagos registrados en este rango.')
+              )}
+            </div>
+          </Card>
+
+          <Card variant="glass" className="flex min-h-[320px] flex-col gap-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="mb-2 flex items-center gap-2 text-[var(--color-text-tertiary)]">
+                  <CalendarClock className="h-4 w-4" />
+                  <span className="text-xs font-semibold uppercase tracking-[0.08em]">Citas</span>
+                </div>
+                <h3 className="m-0 text-lg font-semibold text-[var(--color-text-primary)]">Próximas citas</h3>
+                <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Agenda de los siguientes 14 días</p>
+              </div>
+              <Link
+                to="/appointments"
+                className="inline-flex flex-shrink-0 items-center gap-1 text-sm font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+              >
+                Ver
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+
+            <div className="flex-1">
+              {operationsLoading ? renderOperationsLoadingRows() : upcomingAppointments.length > 0 ? (
+                <div className="divide-y divide-[rgba(148,163,184,0.12)]">
+                  {upcomingAppointments.map((appointment) => (
+                    <div key={appointment.id} className="flex items-start justify-between gap-4 py-3">
+                      <div className="min-w-0">
+                        <p className="m-0 truncate text-sm font-semibold text-[var(--color-text-primary)]">
+                          {getAppointmentTitle(appointment)}
+                        </p>
+                        <p className="mt-1 flex items-center gap-1 text-xs text-[var(--color-text-tertiary)]">
+                          <Clock3 className="h-3.5 w-3.5" />
+                          {formatLocalDateTime(appointment.startTime)}
+                        </p>
+                      </div>
+                      <span className={`flex-shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${getStatusClassName(appointment.appointmentStatus)}`}>
+                        {APPOINTMENT_STATUS_LABELS[appointment.appointmentStatus] ?? appointment.appointmentStatus}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                renderEmptyOperationsState(locationId && accessToken ? 'No hay citas próximas en los siguientes 14 días.' : 'Conecta HighLevel para ver próximas citas aquí.')
+              )}
+            </div>
+          </Card>
+
+          <Card variant="glass" className="flex min-h-[320px] flex-col gap-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="mb-2 flex items-center gap-2 text-[var(--color-text-tertiary)]">
+                  <UserPlus className="h-4 w-4" />
+                  <span className="text-xs font-semibold uppercase tracking-[0.08em]">Contactos</span>
+                </div>
+                <h3 className="m-0 text-lg font-semibold text-[var(--color-text-primary)]">Nuevos contactos</h3>
+                <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Registros recientes del rango activo</p>
+              </div>
+              <Link
+                to="/contacts"
+                className="inline-flex flex-shrink-0 items-center gap-1 text-sm font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
+              >
+                Ver
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+
+            <div className="flex-1">
+              {operationsLoading ? renderOperationsLoadingRows() : recentContacts.length > 0 ? (
+                <div className="divide-y divide-[rgba(148,163,184,0.12)]">
+                  {recentContacts.map((contact) => (
+                    <div key={contact.id} className="flex items-center justify-between gap-4 py-3">
+                      <div className="min-w-0">
+                        <p className="m-0 truncate text-sm font-semibold text-[var(--color-text-primary)]">
+                          {getContactName(contact)}
+                        </p>
+                        <p className="mt-1 truncate text-xs text-[var(--color-text-tertiary)]">
+                          {contact.email || contact.phone || 'Sin datos de contacto'}
+                        </p>
+                      </div>
+                      <div className="flex flex-shrink-0 flex-col items-end gap-1 text-right">
+                        <span className="text-xs text-[var(--color-text-tertiary)]">
+                          {formatDate(getContactCreatedAt(contact), { includeYear: true })}
+                        </span>
+                        {contact.ltv > 0 && (
+                          <span className="text-xs font-semibold text-[var(--color-text-secondary)]">
+                            {formatCurrency(contact.ltv)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                renderEmptyOperationsState('Sin contactos nuevos en este rango.')
+              )}
+            </div>
+          </Card>
+        </section>
       </div>
       </PageContainer>
 
