@@ -10,7 +10,9 @@ const REQUEST_TIMEOUT_MS = 45000
 const BUSINESS_CONTEXT_LIMIT = 12000
 const VIEW_CONTEXT_LIMIT = 6000
 const MESSAGE_HISTORY_LIMIT = 12
-const MAX_AGENT_QUERIES = 6
+const MAX_MODEL_QUERIES = 6
+const MAX_AGENT_QUERIES = 10
+const MAX_REPAIR_QUERIES = 4
 const MAX_AGENT_ROWS = 200
 const isPostgres = Boolean(process.env.DATABASE_URL)
 
@@ -363,12 +365,61 @@ function sqlMonthExpression(column, timezone = 'UTC') {
   return `TO_CHAR(((${column})::timestamptz AT TIME ZONE 'UTC' AT TIME ZONE '${safeTimezone}'), 'YYYY-MM')`
 }
 
-function detectAutonomousResearchNeeds(messages) {
-  const latestMessage = normalizeText(getLatestUserMessage(messages))
+async function buildDatabaseValueMapQuery() {
+  const hiddenCondition = await getHiddenContactsWhere('c')
+  const contactWhere = ['c.created_at IS NOT NULL']
+
+  if (hiddenCondition) {
+    contactWhere.push(hiddenCondition)
+  }
 
   return {
-    historical: /(histor|inicios?|desde\s+el\s+inicio|arranque|desde\s+que\s+empez|meses?\s+pasad|desde\s+el\s+primer|primer\s+pago|tendenc|evolucion|subiend|crecim|compar|versus|vs|predic|pronostic|proyecc|proxim|siguientes?\s+\d+\s+mes|ultim[oa]s?\s+\d+\s+(dia|dias|semana|semanas|mes|meses|ano|anos|año|años))/.test(latestMessage),
-    attribution: /(facebook|meta|instagram|campan|anunci|adset|fuente|origen|canal|utm|rentab|roas|publicidad)/.test(latestMessage)
+    name: 'mapa_valores_db',
+    purpose: 'Dar al agente valores reales comunes de estados, fuentes y canales para planear mejor cualquier pregunta.',
+    sql: `
+      SELECT
+        'payment_status' AS category,
+        COALESCE(NULLIF(status, ''), 'sin_estado') AS value,
+        COUNT(*) AS records,
+        COALESCE(SUM(amount), 0) AS amount
+      FROM payments
+      GROUP BY COALESCE(NULLIF(status, ''), 'sin_estado')
+
+      UNION ALL
+
+      SELECT
+        'appointment_status' AS category,
+        COALESCE(NULLIF(COALESCE(appointment_status, status), ''), 'sin_estado') AS value,
+        COUNT(*) AS records,
+        0 AS amount
+      FROM appointments
+      GROUP BY COALESCE(NULLIF(COALESCE(appointment_status, status), ''), 'sin_estado')
+
+      UNION ALL
+
+      SELECT
+        'contact_source' AS category,
+        COALESCE(NULLIF(c.source, ''), NULLIF(c.attribution_session_source, ''), 'sin_fuente') AS value,
+        COUNT(*) AS records,
+        COALESCE(SUM(c.total_paid), 0) AS amount
+      FROM contacts c
+      WHERE ${contactWhere.join(' AND ')}
+      GROUP BY COALESCE(NULLIF(c.source, ''), NULLIF(c.attribution_session_source, ''), 'sin_fuente')
+
+      UNION ALL
+
+      SELECT
+        'traffic_channel' AS category,
+        COALESCE(NULLIF(channel, ''), NULLIF(source_platform, ''), 'sin_canal') AS value,
+        COUNT(*) AS records,
+        0 AS amount
+      FROM sessions
+      GROUP BY COALESCE(NULLIF(channel, ''), NULLIF(source_platform, ''), 'sin_canal')
+
+      ORDER BY category ASC, records DESC
+      LIMIT 80
+    `,
+    params: []
   }
 }
 
@@ -533,71 +584,20 @@ async function buildHistoricalResearchQueries(runtimeContext) {
   ]
 }
 
-async function buildAttributionResearchQueries(runtimeContext) {
-  const hiddenCondition = await getHiddenContactsWhere('c')
-  const contactWhere = ['c.created_at IS NOT NULL']
-  const contactMonth = sqlMonthExpression('c.created_at', runtimeContext.timezone)
-
-  if (hiddenCondition) {
-    contactWhere.push(hiddenCondition)
-  }
-
+async function buildCoreResearchQueries(runtimeContext) {
   return [
-    {
-      name: 'historico_fuentes_prospectos',
-      purpose: 'Ver de dónde vienen los prospectos y clientes históricamente.',
-      sql: `
-        SELECT
-          COALESCE(NULLIF(c.source, ''), NULLIF(c.attribution_session_source, ''), 'sin_fuente') AS fuente,
-          COUNT(DISTINCT c.id) AS prospectos,
-          COUNT(DISTINCT CASE WHEN COALESCE(c.total_paid, 0) > 0 OR COALESCE(c.purchases_count, 0) > 0 THEN c.id END) AS clientes,
-          COALESCE(SUM(c.total_paid), 0) AS total_pagado_contactos
-        FROM contacts c
-        WHERE ${contactWhere.join(' AND ')}
-        GROUP BY COALESCE(NULLIF(c.source, ''), NULLIF(c.attribution_session_source, ''), 'sin_fuente')
-        ORDER BY prospectos DESC
-        LIMIT 20
-      `,
-      params: []
-    },
-    {
-      name: 'historico_fuentes_por_mes',
-      purpose: 'Detectar si Facebook/Meta u otra fuente viene subiendo o bajando por mes.',
-      sql: `
-        SELECT
-          ${contactMonth} AS month,
-          COALESCE(NULLIF(c.source, ''), NULLIF(c.attribution_session_source, ''), 'sin_fuente') AS fuente,
-          COUNT(DISTINCT c.id) AS prospectos,
-          COUNT(DISTINCT CASE WHEN COALESCE(c.total_paid, 0) > 0 OR COALESCE(c.purchases_count, 0) > 0 THEN c.id END) AS clientes,
-          COALESCE(SUM(c.total_paid), 0) AS total_pagado_contactos
-        FROM contacts c
-        WHERE ${contactWhere.join(' AND ')}
-        GROUP BY ${contactMonth}, COALESCE(NULLIF(c.source, ''), NULLIF(c.attribution_session_source, ''), 'sin_fuente')
-        ORDER BY month ASC, prospectos DESC
-      `,
-      params: []
-    }
+    ...await buildHistoricalResearchQueries(runtimeContext),
+    await buildDatabaseValueMapQuery()
   ]
 }
 
-async function augmentQueryPlanWithAutomaticResearch(plan, { messages, runtimeContext }) {
-  const needs = detectAutonomousResearchNeeds(messages)
-  const automaticQueries = []
-  const automaticAssumptions = []
-
-  if (needs.historical) {
-    automaticQueries.push(...await buildHistoricalResearchQueries(runtimeContext))
-    automaticAssumptions.push('Se revisó la serie histórica mensual de la DB porque la pregunta pide tendencia, comparación o predicción.')
-  }
-
-  if (needs.attribution) {
-    automaticQueries.push(...await buildAttributionResearchQueries(runtimeContext))
-    automaticAssumptions.push('Se revisaron fuentes/canales porque la pregunta puede depender de atribución.')
-  }
-
-  if (!automaticQueries.length) {
-    return plan
-  }
+async function augmentQueryPlanWithAutomaticResearch(plan, { runtimeContext, coreQueries } = {}) {
+  const automaticQueries = Array.isArray(coreQueries)
+    ? coreQueries
+    : await buildCoreResearchQueries(runtimeContext)
+  const automaticAssumptions = [
+    'Se consultó un mapa base de la DB antes de responder para no depender sólo del texto visible del dashboard.'
+  ]
 
   const seenNames = new Set()
   const queries = []
@@ -690,17 +690,18 @@ async function executeAgentQuery(query) {
   }
 }
 
-async function createQueryPlan(apiKey, { messages, viewContext, runtimeContext }) {
+async function createQueryPlan(apiKey, { messages, viewContext, runtimeContext, databaseContextResults = [] }) {
   const instructions = [
     'Eres un analista senior de datos para Ristak.',
     'Tu trabajo es decidir qué consultas SQL de sólo lectura necesitas para responder la última pregunta del usuario.',
     'No respondas la pregunta todavía. Sólo devuelve JSON válido.',
     'Puedes investigar con criterio propio: fechas raras, comparativos, cohorts, fuentes como Facebook/Meta, embudos, CAC, ROAS, inversión, asistencia, ventas, etc.',
     'No uses presets rígidos. Si el usuario pide algo ambiguo, haz la interpretación más útil según las definiciones del dashboard y deja la suposición en assumptions.',
-    'Si la pregunta menciona históricos, meses pasados, tendencia, predicción, crecimiento o "desde el primer pago", consulta datos por mes desde el primer dato disponible; no uses sólo el periodo visible del frontend.',
-    'Si el usuario pregunta por próximos meses, genera las consultas históricas necesarias para que la respuesta pueda proyectar con base en datos reales.',
+    'Ya se ejecutó un mapa base de la DB con rangos, histórico mensual y valores comunes. Úsalo para decidir consultas específicas sin repetir lo que ya está cubierto.',
+    'Genera consultas específicas para la pregunta aunque el usuario use palabras raras, incompletas o casuales. Traduce intención de negocio a datos.',
+    'Si una fecha es relativa o rara, conviértela tú a fechas absolutas usando la fecha actual. Nunca dejes params como start_date, end_date, start_ts o placeholders similares.',
     'Mantén el SQL compacto y evita columnas que no ayuden a responder.',
-    'Máximo 6 consultas. Cada consulta debe ser necesaria.',
+    `Máximo ${MAX_MODEL_QUERIES} consultas. Cada consulta debe ser necesaria.`,
     'Devuelve exactamente este JSON: {"assumptions":["..."],"queries":[{"name":"...","purpose":"...","sql":"SELECT ...","params":["..."]}]}',
     'No incluyas markdown ni texto fuera del JSON.'
   ].join('\n')
@@ -715,6 +716,9 @@ async function createQueryPlan(apiKey, { messages, viewContext, runtimeContext }
     ANALYST_SCHEMA,
     '',
     BUSINESS_DEFINITIONS,
+    '',
+    'Resultados base de DB ya consultados:',
+    JSON.stringify(databaseContextResults, null, 2),
     '',
     'Contexto de vista actual:',
     JSON.stringify(buildSafeViewContext(viewContext), null, 2),
@@ -733,7 +737,7 @@ async function createQueryPlan(apiKey, { messages, viewContext, runtimeContext }
     })
 
     const plan = parseJsonObject(text)
-    const queries = Array.isArray(plan.queries) ? plan.queries.slice(0, MAX_AGENT_QUERIES) : []
+    const queries = Array.isArray(plan.queries) ? plan.queries.slice(0, MAX_MODEL_QUERIES) : []
     const assumptions = Array.isArray(plan.assumptions) ? plan.assumptions.map(item => cleanText(String(item), 300)).filter(Boolean) : []
 
     if (queries.length > 0) {
@@ -752,6 +756,110 @@ async function createQueryPlan(apiKey, { messages, viewContext, runtimeContext }
   }
 
   return getDefaultRiskPlan(runtimeContext)
+}
+
+function getQueryName(query) {
+  return cleanText(query?.name || 'consulta', 80)
+}
+
+function filterNewQueries(queries, existingNames, limit) {
+  const nextQueries = []
+
+  for (const query of Array.isArray(queries) ? queries : []) {
+    const name = getQueryName(query)
+    if (!name || existingNames.has(name)) continue
+
+    existingNames.add(name)
+    nextQueries.push({ ...query, name })
+
+    if (nextQueries.length >= limit) break
+  }
+
+  return nextQueries
+}
+
+async function createRepairQueryPlan(apiKey, { messages, viewContext, runtimeContext, plan, queryResults }) {
+  const failedResults = (Array.isArray(queryResults) ? queryResults : []).filter(result => result?.error)
+
+  if (!failedResults.length) {
+    return {
+      assumptions: [],
+      queries: []
+    }
+  }
+
+  const successfulResults = (Array.isArray(queryResults) ? queryResults : [])
+    .filter(result => !result?.error)
+    .map(result => ({
+      name: result.name,
+      purpose: result.purpose,
+      rowCount: result.rowCount,
+      sampleRows: Array.isArray(result.rows) ? result.rows.slice(0, 5) : []
+    }))
+
+  const instructions = [
+    'Eres un reparador de planes SQL de sólo lectura para el Agente AI de Ristak.',
+    'Algunas consultas fallaron. Genera consultas nuevas que corrijan o completen lo necesario para responder al usuario.',
+    'No respondas al usuario. Sólo devuelve JSON válido.',
+    'Usa sólo SELECT o WITH ... SELECT, placeholders ? y params reales.',
+    'Convierte fechas relativas a fechas absolutas. Nunca uses params como start_date, end_date, start_ts, end_ts ni placeholders textuales.',
+    'No repitas consultas exitosas ni queries que ya fallaron igual.',
+    `Máximo ${MAX_REPAIR_QUERIES} consultas nuevas.`,
+    'Devuelve exactamente este JSON: {"assumptions":["..."],"queries":[{"name":"...","purpose":"...","sql":"SELECT ...","params":["..."]}]}',
+    'No incluyas markdown ni texto fuera del JSON.'
+  ].join('\n')
+
+  const input = [
+    `Fecha/hora actual local: ${runtimeContext.nowIso}`,
+    `Timezone del negocio: ${runtimeContext.timezone}`,
+    `Hoy: ${runtimeContext.today}`,
+    '',
+    ANALYST_SCHEMA,
+    '',
+    BUSINESS_DEFINITIONS,
+    '',
+    'Plan original:',
+    JSON.stringify(plan, null, 2),
+    '',
+    'Consultas exitosas disponibles:',
+    JSON.stringify(successfulResults, null, 2),
+    '',
+    'Consultas fallidas que debes reparar o sustituir:',
+    JSON.stringify(failedResults, null, 2),
+    '',
+    'Contexto de vista actual:',
+    JSON.stringify(buildSafeViewContext(viewContext), null, 2),
+    '',
+    'Conversación:',
+    buildConversationText(messages) || 'Sin mensajes previos.',
+    '',
+    'Genera sólo las consultas nuevas necesarias para recuperar el análisis.'
+  ].join('\n')
+
+  try {
+    const { text } = await callOpenAIResponse(apiKey, {
+      instructions,
+      input,
+      maxOutputTokens: 1600
+    })
+
+    const repairPlan = parseJsonObject(text)
+    const existingNames = new Set((Array.isArray(plan?.queries) ? plan.queries : []).map(getQueryName))
+    const queries = filterNewQueries(repairPlan.queries, existingNames, MAX_REPAIR_QUERIES)
+    const assumptions = Array.isArray(repairPlan.assumptions)
+      ? repairPlan.assumptions.map(item => cleanText(String(item), 300)).filter(Boolean)
+      : []
+
+    return {
+      assumptions,
+      queries
+    }
+  } catch {
+    return {
+      assumptions: [],
+      queries: []
+    }
+  }
 }
 
 async function executeQueryPlan(plan) {
@@ -1507,22 +1615,65 @@ function buildModelInput(messages, viewContext, databaseContext, directFacts) {
 
 export async function createAgentReply({ apiKey, messages, viewContext }) {
   const runtimeContext = await getAgentRuntimeContext()
+  const coreQueries = await buildCoreResearchQueries(runtimeContext)
+  const corePlan = {
+    assumptions: [
+      'Se consultó un mapa base de la DB antes de planear la respuesta.'
+    ],
+    queries: coreQueries
+  }
+  const coreResults = await executeQueryPlan(corePlan)
   const modelPlan = await createQueryPlan(apiKey, {
     messages,
     viewContext: viewContext || {},
-    runtimeContext
+    runtimeContext,
+    databaseContextResults: coreResults
   })
   const plan = await augmentQueryPlanWithAutomaticResearch(modelPlan, {
-    messages,
-    runtimeContext
+    runtimeContext,
+    coreQueries
   })
 
-  const queryResults = await executeQueryPlan(plan)
+  const coreQueryNames = new Set(coreQueries.map(getQueryName))
+  const modelQueries = plan.queries.filter(query => !coreQueryNames.has(getQueryName(query)))
+  const modelResults = await executeQueryPlan({
+    assumptions: modelPlan.assumptions || [],
+    queries: modelQueries
+  })
+
+  let finalPlan = plan
+  let queryResults = [...coreResults, ...modelResults]
+
+  if (queryResults.some(result => result?.error)) {
+    const repairPlan = await createRepairQueryPlan(apiKey, {
+      messages,
+      viewContext: viewContext || {},
+      runtimeContext,
+      plan: finalPlan,
+      queryResults
+    })
+
+    if (repairPlan.queries.length) {
+      const repairResults = await executeQueryPlan(repairPlan)
+      finalPlan = {
+        assumptions: [
+          ...(Array.isArray(finalPlan.assumptions) ? finalPlan.assumptions : []),
+          ...(Array.isArray(repairPlan.assumptions) ? repairPlan.assumptions : [])
+        ],
+        queries: [
+          ...(Array.isArray(finalPlan.queries) ? finalPlan.queries : []),
+          ...repairPlan.queries
+        ]
+      }
+      queryResults = [...queryResults, ...repairResults]
+    }
+  }
+
   const result = await createAutonomousDatabaseReply(apiKey, {
     messages,
     viewContext: viewContext || {},
     runtimeContext,
-    plan,
+    plan: finalPlan,
     queryResults
   })
 
