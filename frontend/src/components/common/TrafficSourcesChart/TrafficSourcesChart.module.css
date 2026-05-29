@@ -120,13 +120,7 @@
   transform: translate(-50%, -50%);
   text-align: center;
   pointer-events: none;
-  width: 5.8rem;
-  max-width: 42%;
-  border-radius: var(--design-control-radius, 999px);
-  padding: 0.45rem 0.55rem;
-  background: color-mix(in srgb, var(--design-chart-panel-bg, var(--color-background-primary)) 92%, transparent);
-  border: 1px solid var(--design-table-border, transparent);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+  max-width: 52%;
 }
 
 .centerValue {
@@ -134,16 +128,6 @@
   line-height: 1.1;
   font-weight: 700;
   color: var(--color-text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.centerText {
-  font-size: 0.75rem;
-  color: var(--color-text-tertiary);
-  line-height: 1.2;
-  margin-top: 0.2rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

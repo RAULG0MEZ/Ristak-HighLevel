@@ -282,9 +282,6 @@ export const TrafficSourcesChart: React.FC<TrafficSourcesChartProps> = ({ data, 
               <div className={styles.centerValue}>
                 {(activeSource?.value ?? totalVisits).toLocaleString('es-MX')}
               </div>
-              <div className={styles.centerText}>
-                {activeSource?.name ?? 'visitantes'}
-              </div>
             </div>
           </div>
         ) : (
