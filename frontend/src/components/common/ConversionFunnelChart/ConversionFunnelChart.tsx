@@ -234,13 +234,6 @@ export const ConversionFunnelChart: React.FC<ConversionFunnelChartProps> = ({
               </span>
             </p>
           </div>
-          <div className={styles.insightItem}>
-            <p className={styles.insightLabel}>Oportunidades perdidas</p>
-            <p className={styles.insightValue}>
-              {leadsValue > 0 ? (leadsValue - appointmentsValue).toLocaleString() : '0'}
-              <span className={styles.insightSubtext}> {labels.leads} sin cita</span>
-            </p>
-          </div>
         </div>
       )}
     </Card>
