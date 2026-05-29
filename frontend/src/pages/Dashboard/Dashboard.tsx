@@ -90,11 +90,6 @@ const getAppointmentTitle = (appointment: CalendarEvent) => (
   appointment.title || appointment.description || 'Cita sin título'
 )
 
-const isUpcomingAppointment = (appointment: CalendarEvent, now: number) => {
-  const appointmentTime = getTimeValue(appointment.startTime)
-  return appointmentTime >= now && appointment.appointmentStatus !== 'cancelled'
-}
-
 export const Dashboard: React.FC = () => {
   const { dateRange, setDateRange } = useDateRange()
   const { user, locationId, accessToken } = useAuth()
@@ -142,7 +137,7 @@ export const Dashboard: React.FC = () => {
   const [visitorsModalData, setVisitorsModalData] = useState<DashboardVisitorDetail[]>([])
   const [operationsLoading, setOperationsLoading] = useState(false)
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([])
-  const [upcomingAppointments, setUpcomingAppointments] = useState<CalendarEvent[]>([])
+  const [recentAppointments, setRecentAppointments] = useState<CalendarEvent[]>([])
   const [recentContacts, setRecentContacts] = useState<ContactListItem[]>([])
 
   const funnelChartData = React.useMemo(() => {
@@ -604,17 +599,48 @@ export const Dashboard: React.FC = () => {
 
       const from = formatDateToISO(dateRange.start)
       const to = formatEndDateToISO(dateRange.end)
-      const now = new Date()
-      const twoWeeksFromNow = new Date(now)
-      twoWeeksFromNow.setDate(now.getDate() + 14)
+      const rangeStart = new Date(dateRange.start)
+      rangeStart.setHours(0, 0, 0, 0)
+      const rangeEnd = new Date(dateRange.end)
+      rangeEnd.setHours(23, 59, 59, 999)
 
       const appointmentsPromise = locationId && accessToken
-        ? calendarsService.getEvents(
-            locationId,
-            now.getTime(),
-            twoWeeksFromNow.getTime(),
-            accessToken
-          )
+        ? (async () => {
+            const calendars = await calendarsService.getCalendars(locationId, accessToken)
+            const activeCalendars = calendars.filter(calendar => calendar.isActive)
+
+            if (!activeCalendars.length) {
+              return calendarsService.getEvents(
+                locationId,
+                rangeStart.getTime(),
+                rangeEnd.getTime(),
+                accessToken
+              )
+            }
+
+            const results = await Promise.allSettled(
+              activeCalendars.map(calendar => calendarsService.getEvents(
+                locationId,
+                rangeStart.getTime(),
+                rangeEnd.getTime(),
+                accessToken,
+                calendar.id
+              ))
+            )
+
+            const uniqueEvents = new Map<string, CalendarEvent>()
+
+            results.forEach(result => {
+              if (result.status !== 'fulfilled') return
+
+              result.value.forEach(event => {
+                const eventKey = event.id || `${event.calendarId}-${event.startTime}-${event.title}`
+                uniqueEvents.set(eventKey, event)
+              })
+            })
+
+            return Array.from(uniqueEvents.values())
+          })()
         : Promise.resolve<CalendarEvent[]>([])
 
       try {
@@ -639,20 +665,18 @@ export const Dashboard: React.FC = () => {
           .sort((a, b) => getTimeValue(getContactCreatedAt(b)) - getTimeValue(getContactCreatedAt(a)))
           .slice(0, 5)
 
-        const nowTime = now.getTime()
         const sortedAppointments = [...appointmentsData]
-          .filter(appointment => isUpcomingAppointment(appointment, nowTime))
-          .sort((a, b) => getTimeValue(a.startTime) - getTimeValue(b.startTime))
+          .sort((a, b) => getTimeValue(b.startTime) - getTimeValue(a.startTime))
           .slice(0, 5)
 
         setRecentTransactions(sortedTransactions)
         setRecentContacts(sortedContacts)
-        setUpcomingAppointments(sortedAppointments)
+        setRecentAppointments(sortedAppointments)
       } catch {
         if (!mounted) return
         setRecentTransactions([])
         setRecentContacts([])
-        setUpcomingAppointments([])
+        setRecentAppointments([])
       } finally {
         if (mounted) {
           setOperationsLoading(false)
@@ -944,8 +968,8 @@ export const Dashboard: React.FC = () => {
                   <CalendarClock className="h-4 w-4" />
                   <span className="text-xs font-semibold uppercase tracking-[0.08em]">Citas</span>
                 </div>
-                <h3 className="m-0 text-lg font-semibold text-[var(--color-text-primary)]">Próximas citas</h3>
-                <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Agenda de los siguientes 14 días</p>
+                <h3 className="m-0 text-lg font-semibold text-[var(--color-text-primary)]">Últimas citas</h3>
+                <p className="mt-1 text-sm text-[var(--color-text-secondary)]">Eventos del rango activo</p>
               </div>
               <Link
                 to="/appointments"
@@ -957,9 +981,9 @@ export const Dashboard: React.FC = () => {
             </div>
 
             <div className="flex-1">
-              {operationsLoading ? renderOperationsLoadingRows() : upcomingAppointments.length > 0 ? (
+              {operationsLoading ? renderOperationsLoadingRows() : recentAppointments.length > 0 ? (
                 <div className="divide-y divide-[rgba(148,163,184,0.12)]">
-                  {upcomingAppointments.map((appointment) => (
+                  {recentAppointments.map((appointment) => (
                     <div key={appointment.id} className="flex items-start justify-between gap-4 py-3">
                       <div className="min-w-0">
                         <p className="m-0 truncate text-sm font-semibold text-[var(--color-text-primary)]">
@@ -977,7 +1001,7 @@ export const Dashboard: React.FC = () => {
                   ))}
                 </div>
               ) : (
-                renderEmptyOperationsState(locationId && accessToken ? 'No hay citas próximas en los siguientes 14 días.' : 'Conecta HighLevel para ver próximas citas aquí.')
+                renderEmptyOperationsState(locationId && accessToken ? 'No hay citas en el rango activo.' : 'Conecta HighLevel para ver citas aquí.')
               )}
             </div>
           </Card>
