@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Send, Moon, Sun, ChevronDown, Settings as SettingsIcon, LogOut } from 'lucide-react'
+import { Send, Moon, Sun, ChevronDown, Settings as SettingsIcon, LogOut, Palette, Check } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { useTheme } from '@/contexts/ThemeContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -25,7 +25,7 @@ const getInitials = (name?: string, email?: string) => {
 }
 
 export const Header: React.FC<HeaderProps> = ({ onLogout }) => {
-  const { theme, toggleTheme, themeSource } = useTheme()
+  const { theme, toggleTheme, themeSource, designPreset, setDesignPreset, designPresets } = useTheme()
   const { user } = useAuth()
   const [showUserMenu, setShowUserMenu] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -64,6 +64,7 @@ export const Header: React.FC<HeaderProps> = ({ onLogout }) => {
 
   return (
     <header
+      data-ristak-header
       className={cn(
         "glass border-b border-[rgba(148,163,184,0.12)] px-4 sm:px-6 flex items-center justify-between sticky top-0",
         "transition-transform duration-300 ease-in-out",
@@ -116,7 +117,10 @@ export const Header: React.FC<HeaderProps> = ({ onLogout }) => {
           </button>
 
           {showUserMenu && (
-            <div className="absolute right-0 mt-2 w-64 glass rounded-xl border border-[rgba(148,163,184,0.18)] shadow-xl z-50 overflow-hidden">
+            <div
+              data-ristak-user-menu
+              className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-1rem)] glass rounded-xl border border-[rgba(148,163,184,0.18)] shadow-xl z-50 overflow-hidden"
+            >
               <div className="p-4 border-b border-[rgba(148,163,184,0.1)]">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full glass border border-[rgba(148,163,184,0.2)] flex items-center justify-center">
@@ -130,6 +134,42 @@ export const Header: React.FC<HeaderProps> = ({ onLogout }) => {
               </div>
 
               <div className="py-2">
+                <div className="px-4 py-2">
+                  <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--color-text-tertiary)]">
+                    <Palette className="h-3.5 w-3.5" />
+                    Diseño de app
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {designPresets.map((preset) => {
+                      const isActive = preset.id === designPreset
+
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          title={preset.description}
+                          onClick={() => setDesignPreset(preset.id)}
+                          className={cn(
+                            'flex min-h-[58px] items-center gap-2 rounded-lg border border-[rgba(148,163,184,0.14)] px-2.5 py-2 text-left text-sm text-[var(--color-text-primary)] transition-colors hover:glass-hover',
+                            isActive && 'bg-[rgba(var(--color-primary-rgb),0.12)] border-[rgba(var(--color-primary-rgb),0.28)]'
+                          )}
+                          aria-pressed={isActive}
+                        >
+                          <span
+                            className="design-preset-preview"
+                            data-preset={preset.id}
+                            aria-hidden="true"
+                          />
+                          <span className="min-w-0 flex-1 truncate font-medium">{preset.label}</span>
+                          {isActive && <Check className="h-4 w-4 flex-shrink-0 text-[var(--color-status-success)]" />}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div className="my-2 mx-4 border-t border-[rgba(148,163,184,0.12)]" />
+
                 <Link
                   to="/settings"
                   onClick={() => setShowUserMenu(false)}

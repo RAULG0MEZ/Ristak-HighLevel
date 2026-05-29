@@ -152,8 +152,8 @@ export const Dashboard: React.FC = () => {
           data: formattedFinancialData,
           label1: 'Ingresos',
           label2: 'Gastos',
-          color: '#10b981',
-          color2: '#64748b',
+          color: 'var(--design-chart-primary, #10b981)',
+          color2: 'var(--design-chart-secondary, #64748b)',
           formatValue: currencyAxisFormatter,
           formatTooltipValue: (value: number) => formatCurrency(value)
         }
@@ -163,8 +163,8 @@ export const Dashboard: React.FC = () => {
             data: formatData([]),
             label1: 'Ingresos',
             label2: 'Gastos',
-            color: '#10b981',
-            color2: '#64748b',
+            color: 'var(--design-chart-primary, #10b981)',
+            color2: 'var(--design-chart-secondary, #64748b)',
             formatValue: currencyAxisFormatter,
             formatTooltipValue: (value: number) => formatCurrency(value)
           }
@@ -223,8 +223,8 @@ export const Dashboard: React.FC = () => {
           data: formattedFinancialData,
           label1: 'Ingresos',
           label2: 'Gastos',
-          color: '#10b981',
-          color2: '#64748b',
+          color: 'var(--design-chart-primary, #10b981)',
+          color2: 'var(--design-chart-secondary, #64748b)',
           formatValue: currencyAxisFormatter,
           formatTooltipValue: (value: number) => formatCurrency(value)
         }
@@ -544,12 +544,11 @@ export const Dashboard: React.FC = () => {
   return (
     <>
       <PageContainer>
-      <div className="flex flex-col" style={{ gap: '18px' }}>
-        <div className="flex flex-col items-start gap-1">
-          <h1 className="m-0 text-[24px] font-bold text-[var(--color-text-primary)]">Dashboard</h1>
-        </div>
-
-        <div className="flex items-center justify-between">
+      <div data-ristak-dashboard className="flex flex-col" style={{ gap: '18px' }}>
+        <div data-dashboard-topbar className="flex flex-col items-start justify-between gap-3 md:flex-row md:items-end">
+          <div data-dashboard-heading className="flex flex-col items-start gap-1">
+            <h1 className="m-0 text-[24px] font-bold text-[var(--color-text-primary)]">Dashboard</h1>
+          </div>
           <DateRangePicker
             startDate={formatDateToISO(dateRange.start)}
             endDate={formatDateToISO(dateRange.end)}
@@ -561,7 +560,7 @@ export const Dashboard: React.FC = () => {
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 sm:gap-5 xl:grid-cols-4">
+        <div data-dashboard-kpi-grid className="grid grid-cols-2 gap-4 sm:grid-cols-2 sm:gap-5 xl:grid-cols-4">
           <KpiCard
             title="Ingresos Netos"
             value={formatCurrency(metrics.ingresosNetos.value)}
@@ -620,7 +619,7 @@ export const Dashboard: React.FC = () => {
         />
         </div>
 
-        <Card variant="glass" className="space-y-5">
+        <Card data-dashboard-chart-card variant="glass" className="space-y-5">
           <div className="flex items-start justify-between">
             <div className="space-y-1">
               <h2 className="text-xl font-semibold text-[var(--color-text-primary)]">

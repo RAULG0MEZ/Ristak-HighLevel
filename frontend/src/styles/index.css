@@ -1,4 +1,5 @@
 @import './tooltip-override.css';
+@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -7,6 +8,11 @@
 :root {
   /* Layout */
   --header-height: 84px;
+  --font-app: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  --font-display: var(--font-app);
+  --font-mono: 'SF Mono', 'Consolas', 'Monaco', monospace;
+  --color-bg-primary: var(--color-background-primary);
 
   /* Default (fallback) to dark theme tokens */
   --color-background-primary: #0a0b0d;
@@ -130,8 +136,8 @@ body.light {
     margin: 0;
     padding: 0;
     min-height: 100vh;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-      'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+    font-family: var(--font-app);
+    letter-spacing: var(--design-letter-spacing, 0);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     transition: background-color 0.3s ease, color 0.3s ease;
@@ -737,4 +743,532 @@ label:has(> input[type="radio"]) {
   gap: 12px;
   cursor: pointer;
   user-select: none;
+}
+
+/* ============================================
+   PRESETS DE DISEÑO
+   ============================================ */
+
+.design-preset-preview {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 10px;
+  background: var(--color-background-secondary);
+}
+
+.design-preset-preview::before,
+.design-preset-preview::after {
+  content: '';
+  position: absolute;
+  border-radius: inherit;
+}
+
+.design-preset-preview::before {
+  inset: 6px 5px auto;
+  height: 7px;
+  background: rgba(148, 163, 184, 0.42);
+}
+
+.design-preset-preview::after {
+  left: 6px;
+  right: 6px;
+  bottom: 6px;
+  height: 12px;
+  background: rgba(var(--color-primary-rgb), 0.28);
+}
+
+.design-preset-preview[data-preset='classic'] {
+  background: linear-gradient(135deg, #ffffff, #eef2f7);
+}
+
+.design-preset-preview[data-preset='atelier'] {
+  background: linear-gradient(135deg, #f4f1eb, #ffffff);
+}
+
+.design-preset-preview[data-preset='atelier']::after {
+  background: #2f7d5b;
+}
+
+.design-preset-preview[data-preset='editorial'] {
+  border-radius: 7px;
+  background: #fbfaf7;
+}
+
+.design-preset-preview[data-preset='editorial']::before {
+  height: 1px;
+  background: #1d1b18;
+}
+
+.design-preset-preview[data-preset='editorial']::after {
+  height: 1px;
+  bottom: 12px;
+  background: #1d1b18;
+}
+
+.design-preset-preview[data-preset='bento'] {
+  border-radius: 14px;
+  background: linear-gradient(135deg, #e8f3ef, #ffffff);
+}
+
+.design-preset-preview[data-preset='bento']::before {
+  width: 9px;
+  height: 9px;
+  border-radius: 4px;
+  background: #2f7d5b;
+}
+
+.design-preset-preview[data-preset='bento']::after {
+  left: 17px;
+  right: 6px;
+  height: 16px;
+  border-radius: 7px;
+  background: #d8e8e1;
+}
+
+body [data-ristak-user-menu] {
+  background: color-mix(in srgb, var(--color-background-secondary) 94%, transparent) !important;
+  backdrop-filter: blur(18px) saturate(1.12);
+  border-radius: 0.9rem !important;
+}
+
+body [data-ristak-user-menu] button[aria-pressed] {
+  border-radius: 0.75rem !important;
+}
+
+body.dark [data-ristak-user-menu] {
+  background: rgba(17, 18, 22, 0.96) !important;
+}
+
+body.light [data-ristak-user-menu] {
+  background: rgba(255, 255, 255, 0.96) !important;
+}
+
+body[data-design-preset] {
+  --design-border: rgba(148, 163, 184, 0.18);
+  --design-card-bg: var(--effect-glassMorphism-background);
+  --design-card-border: rgba(148, 163, 184, 0.18);
+  --design-card-shadow: none;
+  --design-card-radius: 0.75rem;
+  --design-control-radius: 0.75rem;
+  --design-header-bg: var(--effect-glassMorphism-background);
+  --design-sidebar-bg: var(--color-background-secondary);
+  --design-page-max: 80rem;
+  --design-kpi-min-height: 128px;
+  --design-kpi-label-size: 0.875rem;
+  --design-kpi-label-transform: none;
+  --design-kpi-label-spacing: 0;
+  --design-kpi-value-size: 1.5rem;
+  --design-chart-primary: var(--color-status-success);
+  --design-chart-secondary: #64748b;
+  --color-bg-primary: var(--color-background-primary);
+  background: var(--color-background-primary);
+}
+
+body.light[data-design-preset='atelier'] {
+  --font-app: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SF Mono', Consolas, monospace;
+  --color-background-primary: #f3f2ef;
+  --color-background-secondary: #fffefa;
+  --color-background-tertiary: #f7f5f0;
+  --color-background-glass: rgba(255, 253, 248, 0.86);
+  --color-text-primary: #1c1b18;
+  --color-text-secondary: #595750;
+  --color-text-tertiary: #87857c;
+  --color-primary: #2f7d5b;
+  --color-primary-rgb: 47, 125, 91;
+  --color-primary-hover: #266a4d;
+  --color-primary-light: rgba(47, 125, 91, 0.14);
+  --color-primary-alpha: rgba(47, 125, 91, 0.26);
+  --color-status-success: #2f7d5b;
+  --effect-glassMorphism-background: rgba(255, 253, 248, 0.88);
+  --effect-glassMorphism-backdropFilter: blur(14px) saturate(1.12);
+  --effect-glassMorphism-border: 1px solid rgba(28, 27, 24, 0.08);
+  --design-sidebar-bg: linear-gradient(180deg, #fffefa 0%, #fffefa 48%, rgba(47, 125, 91, 0.09) 170%);
+  --design-header-bg: color-mix(in srgb, #f3f2ef 84%, transparent);
+  --design-card-bg: #fffefa;
+  --design-card-border: rgba(28, 27, 24, 0.08);
+  --design-card-shadow: 0 18px 42px -32px rgba(28, 27, 24, 0.32);
+  --design-card-radius: 1rem;
+  --design-control-radius: 999px;
+  --design-page-max: 82rem;
+  --design-kpi-label-size: 0.7rem;
+  --design-kpi-label-transform: uppercase;
+  --design-kpi-label-spacing: 0.12em;
+  --design-kpi-value-size: 1.68rem;
+  --design-chart-primary: #2f7d5b;
+  --design-chart-secondary: #9b988f;
+}
+
+body.dark[data-design-preset='atelier'] {
+  --font-app: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SF Mono', Consolas, monospace;
+  --color-background-primary: #0d0d0b;
+  --color-background-secondary: #171713;
+  --color-background-tertiary: #1e1d19;
+  --color-background-glass: rgba(23, 23, 19, 0.78);
+  --color-text-primary: #f4f2ec;
+  --color-text-secondary: #c3c0b8;
+  --color-text-tertiary: #8d8a80;
+  --color-primary: #64b98e;
+  --color-primary-rgb: 100, 185, 142;
+  --color-primary-hover: #7bc79f;
+  --color-primary-light: rgba(100, 185, 142, 0.16);
+  --color-primary-alpha: rgba(100, 185, 142, 0.24);
+  --color-status-success: #64b98e;
+  --effect-glassMorphism-background: rgba(23, 23, 19, 0.78);
+  --effect-glassMorphism-backdropFilter: blur(18px) saturate(1.12);
+  --effect-glassMorphism-border: 1px solid rgba(255, 255, 255, 0.08);
+  --design-sidebar-bg: linear-gradient(180deg, #10100e 0%, #151511 58%, rgba(100, 185, 142, 0.12) 180%);
+  --design-header-bg: rgba(13, 13, 11, 0.78);
+  --design-card-bg: rgba(23, 23, 19, 0.86);
+  --design-card-border: rgba(255, 255, 255, 0.08);
+  --design-card-shadow: 0 18px 48px -28px rgba(0, 0, 0, 0.78);
+  --design-card-radius: 1rem;
+  --design-control-radius: 999px;
+  --design-page-max: 82rem;
+  --design-kpi-label-size: 0.7rem;
+  --design-kpi-label-transform: uppercase;
+  --design-kpi-label-spacing: 0.12em;
+  --design-kpi-value-size: 1.68rem;
+  --design-chart-primary: #64b98e;
+  --design-chart-secondary: #8d8a80;
+}
+
+body.light[data-design-preset='editorial'] {
+  --font-app: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Sora', 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SF Mono', Consolas, monospace;
+  --color-background-primary: #f7f6f2;
+  --color-background-secondary: #fffefa;
+  --color-background-tertiary: #efeee9;
+  --color-background-glass: rgba(255, 254, 250, 0.92);
+  --color-text-primary: #171511;
+  --color-text-secondary: #58554e;
+  --color-text-tertiary: #858176;
+  --color-primary: #2d6f58;
+  --color-primary-rgb: 45, 111, 88;
+  --color-primary-hover: #215640;
+  --color-primary-light: rgba(45, 111, 88, 0.14);
+  --color-primary-alpha: rgba(45, 111, 88, 0.22);
+  --color-status-success: #2d6f58;
+  --effect-glassMorphism-background: rgba(255, 254, 250, 0.92);
+  --effect-glassMorphism-backdropFilter: none;
+  --effect-glassMorphism-border: 1px solid rgba(23, 21, 17, 0.1);
+  --design-sidebar-bg: #fffefa;
+  --design-header-bg: rgba(247, 246, 242, 0.92);
+  --design-card-bg: #fffefa;
+  --design-card-border: rgba(23, 21, 17, 0.1);
+  --design-card-shadow: 0 12px 34px -32px rgba(23, 21, 17, 0.42);
+  --design-card-radius: 0.9rem;
+  --design-control-radius: 0.75rem;
+  --design-page-max: 76rem;
+  --design-kpi-label-size: 0.68rem;
+  --design-kpi-label-transform: uppercase;
+  --design-kpi-label-spacing: 0.12em;
+  --design-kpi-value-size: 1.8rem;
+  --design-chart-primary: #2d6f58;
+  --design-chart-secondary: #77736a;
+}
+
+body.dark[data-design-preset='editorial'] {
+  --font-app: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Sora', 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SF Mono', Consolas, monospace;
+  --color-background-primary: #10100e;
+  --color-background-secondary: #181712;
+  --color-background-tertiary: #211f19;
+  --color-background-glass: rgba(24, 23, 18, 0.9);
+  --color-text-primary: #f6f1e6;
+  --color-text-secondary: #c5bfb0;
+  --color-text-tertiary: #8a8374;
+  --color-primary: #78b899;
+  --color-primary-rgb: 120, 184, 153;
+  --color-primary-hover: #8bc5a7;
+  --color-primary-light: rgba(120, 184, 153, 0.16);
+  --color-primary-alpha: rgba(120, 184, 153, 0.24);
+  --color-status-success: #78b899;
+  --effect-glassMorphism-background: rgba(24, 23, 18, 0.9);
+  --effect-glassMorphism-backdropFilter: none;
+  --effect-glassMorphism-border: 1px solid rgba(255, 255, 255, 0.08);
+  --design-sidebar-bg: #15140f;
+  --design-header-bg: rgba(16, 16, 14, 0.9);
+  --design-card-bg: #181712;
+  --design-card-border: rgba(255, 255, 255, 0.08);
+  --design-card-shadow: none;
+  --design-card-radius: 0.9rem;
+  --design-control-radius: 0.75rem;
+  --design-page-max: 76rem;
+  --design-kpi-label-size: 0.68rem;
+  --design-kpi-label-transform: uppercase;
+  --design-kpi-label-spacing: 0.12em;
+  --design-kpi-value-size: 1.8rem;
+  --design-chart-primary: #78b899;
+  --design-chart-secondary: #8a8374;
+}
+
+body.light[data-design-preset='bento'] {
+  --font-app: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SF Mono', Consolas, monospace;
+  --color-background-primary: #f1f4f2;
+  --color-background-secondary: #ffffff;
+  --color-background-tertiary: #e8efeb;
+  --color-background-glass: rgba(255, 255, 255, 0.84);
+  --color-text-primary: #17201c;
+  --color-text-secondary: #56615c;
+  --color-text-tertiary: #7b8781;
+  --color-primary: #28775a;
+  --color-primary-rgb: 40, 119, 90;
+  --color-primary-hover: #206247;
+  --color-primary-light: rgba(40, 119, 90, 0.14);
+  --color-primary-alpha: rgba(40, 119, 90, 0.24);
+  --color-status-success: #28775a;
+  --effect-glassMorphism-background: rgba(255, 255, 255, 0.84);
+  --effect-glassMorphism-backdropFilter: blur(16px) saturate(1.1);
+  --effect-glassMorphism-border: 1px solid rgba(23, 32, 28, 0.08);
+  --design-sidebar-bg: linear-gradient(180deg, #ffffff 0%, #ffffff 55%, rgba(40, 119, 90, 0.1) 190%);
+  --design-header-bg: rgba(241, 244, 242, 0.84);
+  --design-card-bg: rgba(255, 255, 255, 0.9);
+  --design-card-border: rgba(23, 32, 28, 0.08);
+  --design-card-shadow: 0 22px 50px -34px rgba(23, 32, 28, 0.4);
+  --design-card-radius: 1.15rem;
+  --design-control-radius: 0.95rem;
+  --design-page-max: 84rem;
+  --design-kpi-min-height: 132px;
+  --design-kpi-label-size: 0.72rem;
+  --design-kpi-label-transform: uppercase;
+  --design-kpi-label-spacing: 0.1em;
+  --design-kpi-value-size: 1.65rem;
+  --design-chart-primary: #28775a;
+  --design-chart-secondary: #68736d;
+}
+
+body.dark[data-design-preset='bento'] {
+  --font-app: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SF Mono', Consolas, monospace;
+  --color-background-primary: #0b1110;
+  --color-background-secondary: #121a18;
+  --color-background-tertiary: #18231f;
+  --color-background-glass: rgba(18, 26, 24, 0.8);
+  --color-text-primary: #eef7f2;
+  --color-text-secondary: #bdd0c6;
+  --color-text-tertiary: #7f9188;
+  --color-primary: #6ac89d;
+  --color-primary-rgb: 106, 200, 157;
+  --color-primary-hover: #82d3ad;
+  --color-primary-light: rgba(106, 200, 157, 0.16);
+  --color-primary-alpha: rgba(106, 200, 157, 0.24);
+  --color-status-success: #6ac89d;
+  --effect-glassMorphism-background: rgba(18, 26, 24, 0.8);
+  --effect-glassMorphism-backdropFilter: blur(18px) saturate(1.12);
+  --effect-glassMorphism-border: 1px solid rgba(255, 255, 255, 0.08);
+  --design-sidebar-bg: linear-gradient(180deg, #0d1513 0%, #121a18 55%, rgba(106, 200, 157, 0.12) 190%);
+  --design-header-bg: rgba(11, 17, 16, 0.82);
+  --design-card-bg: rgba(18, 26, 24, 0.88);
+  --design-card-border: rgba(255, 255, 255, 0.08);
+  --design-card-shadow: 0 22px 56px -30px rgba(0, 0, 0, 0.82);
+  --design-card-radius: 1.15rem;
+  --design-control-radius: 0.95rem;
+  --design-page-max: 84rem;
+  --design-kpi-min-height: 132px;
+  --design-kpi-label-size: 0.72rem;
+  --design-kpi-label-transform: uppercase;
+  --design-kpi-label-spacing: 0.1em;
+  --design-kpi-value-size: 1.65rem;
+  --design-chart-primary: #6ac89d;
+  --design-chart-secondary: #7f9188;
+}
+
+body[data-design-preset] [data-ristak-layout] {
+  background: var(--color-background-primary) !important;
+}
+
+body[data-design-preset]:not([data-design-preset='classic']) [data-ristak-layout-sidebar],
+body[data-design-preset]:not([data-design-preset='classic']) [data-ristak-layout-right-sidebar] {
+  border-color: var(--design-border) !important;
+}
+
+body[data-design-preset]:not([data-design-preset='classic']) [data-ristak-layout-sidebar],
+body[data-design-preset]:not([data-design-preset='classic']) [data-ristak-sidebar] {
+  background: var(--design-sidebar-bg);
+}
+
+body[data-design-preset]:not([data-design-preset='classic']) [data-ristak-header] {
+  background: var(--design-header-bg) !important;
+  backdrop-filter: var(--effect-glassMorphism-backdropFilter);
+  border-color: var(--design-border) !important;
+  border-radius: 0 !important;
+}
+
+body[data-design-preset]:not([data-design-preset='classic']) [data-ristak-page] {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--color-primary) 4%, transparent), transparent 260px),
+    var(--color-background-primary);
+}
+
+body[data-design-preset]:not([data-design-preset='classic']) [data-ristak-page-inner] {
+  max-width: var(--design-page-max) !important;
+}
+
+body[data-design-preset]:not([data-design-preset='classic']) h1,
+body[data-design-preset]:not([data-design-preset='classic']) h2,
+body[data-design-preset]:not([data-design-preset='classic']) h3,
+body[data-design-preset]:not([data-design-preset='classic']) [data-dashboard-heading] h1 {
+  font-family: var(--font-display);
+}
+
+body[data-design-preset]:not([data-design-preset='classic']) [data-dashboard-topbar] {
+  margin-bottom: 0.25rem;
+}
+
+body[data-design-preset]:not([data-design-preset='classic']) [data-dashboard-heading] h1 {
+  font-size: clamp(1.75rem, 2.6vw, 2.35rem);
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+body[data-design-preset]:not([data-design-preset='classic']) [data-ristak-card] {
+  overflow: hidden;
+  border-color: var(--design-card-border) !important;
+  border-radius: var(--design-card-radius) !important;
+  background: var(--design-card-bg) !important;
+  box-shadow: var(--design-card-shadow) !important;
+}
+
+body[data-design-preset]:not([data-design-preset='classic']) [data-ristak-kpi-card] {
+  min-height: var(--design-kpi-min-height);
+}
+
+body[data-design-preset]:not([data-design-preset='classic']) [data-ristak-kpi-card] p:first-child {
+  font-family: var(--font-mono);
+  font-size: var(--design-kpi-label-size);
+  letter-spacing: var(--design-kpi-label-spacing);
+  text-transform: var(--design-kpi-label-transform);
+}
+
+body[data-design-preset]:not([data-design-preset='classic']) [data-ristak-kpi-card] p:nth-child(2) {
+  font-family: var(--font-display);
+  font-size: var(--design-kpi-value-size);
+  letter-spacing: 0;
+}
+
+body[data-design-preset]:not([data-design-preset='classic']) input,
+body[data-design-preset]:not([data-design-preset='classic']) select,
+body[data-design-preset]:not([data-design-preset='classic']) textarea,
+body[data-design-preset]:not([data-design-preset='classic']) button,
+body[data-design-preset]:not([data-design-preset='classic']) .glass {
+  border-radius: var(--design-control-radius);
+}
+
+body[data-design-preset='atelier'] [data-dashboard-kpi-grid] [data-ristak-kpi-card]:first-child,
+body[data-design-preset='bento'] [data-dashboard-kpi-grid] [data-ristak-kpi-card]:first-child {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--color-primary) 12%, transparent), transparent 92%),
+    var(--design-card-bg) !important;
+}
+
+body[data-design-preset='editorial'] [data-dashboard-kpi-grid] {
+  gap: 0 !important;
+  overflow: hidden;
+  border: 1px solid var(--design-card-border);
+  border-radius: var(--design-card-radius);
+  background: var(--design-card-bg);
+  box-shadow: var(--design-card-shadow);
+}
+
+body[data-design-preset='editorial'] [data-dashboard-kpi-grid] [data-ristak-kpi-card] {
+  min-height: 126px;
+  border: 0 !important;
+  border-right: 1px solid var(--design-card-border) !important;
+  border-bottom: 1px solid var(--design-card-border) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+body[data-design-preset='editorial'] [data-dashboard-kpi-grid] [data-ristak-kpi-card]:nth-child(4n) {
+  border-right: 0 !important;
+}
+
+body[data-design-preset='editorial'] [data-dashboard-kpi-grid] [data-ristak-kpi-card]:nth-last-child(-n + 4) {
+  border-bottom: 0 !important;
+}
+
+body[data-design-preset='editorial'] [data-dashboard-heading] h1,
+body[data-design-preset='editorial'] [data-dashboard-chart-card] h2,
+body[data-design-preset='editorial'] [data-ristak-card] h3 {
+  font-weight: 600;
+}
+
+body[data-design-preset='editorial'] [class*='scopeSelector'] {
+  width: fit-content;
+  max-width: 100%;
+  border-radius: 0.75rem !important;
+  background: color-mix(in srgb, var(--color-background-secondary) 86%, transparent) !important;
+}
+
+body[data-design-preset='editorial'] [class*='scopeButton'] {
+  border-radius: 0.5rem !important;
+}
+
+body[data-design-preset='editorial'] [class*='scopeButtonActive'] {
+  background: rgba(var(--color-primary-rgb), 0.18) !important;
+  border-color: rgba(var(--color-primary-rgb), 0.32) !important;
+}
+
+body[data-design-preset='bento'] [data-dashboard-kpi-grid] {
+  grid-auto-rows: minmax(130px, auto);
+}
+
+body[data-design-preset='bento'] [data-dashboard-kpi-grid] [data-ristak-kpi-card]:first-child {
+  grid-column: span 2 / span 2;
+  min-height: 156px;
+}
+
+body[data-design-preset='bento'] [data-dashboard-kpi-grid] [data-ristak-kpi-card]:first-child::after {
+  content: '';
+  position: absolute;
+  left: 1rem;
+  right: 1rem;
+  bottom: 1rem;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--color-primary), transparent);
+  opacity: 0.36;
+}
+
+@media (max-width: 1279px) {
+  body[data-design-preset='editorial'] [data-dashboard-kpi-grid] [data-ristak-kpi-card]:nth-child(4n) {
+    border-right: 1px solid var(--design-card-border) !important;
+  }
+
+  body[data-design-preset='editorial'] [data-dashboard-kpi-grid] [data-ristak-kpi-card]:nth-child(2n) {
+    border-right: 0 !important;
+  }
+
+  body[data-design-preset='editorial'] [data-dashboard-kpi-grid] [data-ristak-kpi-card]:nth-last-child(-n + 4) {
+    border-bottom: 1px solid var(--design-card-border) !important;
+  }
+
+  body[data-design-preset='editorial'] [data-dashboard-kpi-grid] [data-ristak-kpi-card]:nth-last-child(-n + 2) {
+    border-bottom: 0 !important;
+  }
+}
+
+@media (max-width: 640px) {
+  body[data-design-preset]:not([data-design-preset='classic']) [data-ristak-page] {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  body[data-design-preset='bento'] [data-dashboard-kpi-grid] [data-ristak-kpi-card]:first-child {
+    grid-column: span 2 / span 2;
+  }
 }

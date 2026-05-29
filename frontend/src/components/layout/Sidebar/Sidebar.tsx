@@ -351,7 +351,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
   const activeItem = activeId ? navigation.find(item => item.id === activeId) : null
 
   return (
-    <div className="flex flex-col h-full">
+    <div data-ristak-sidebar className="flex flex-col h-full">
       {/* Header con logo */}
       <div className="flex items-center justify-center px-4 gap-2 border-b border-[rgba(148,163,184,0.12)]" style={{ height: 'var(--header-height)' }}>
         {mounted && locationLogo ? (

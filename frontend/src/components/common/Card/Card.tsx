@@ -32,6 +32,7 @@ export const Card: React.FC<CardProps> = ({
 }) => {
   return (
     <div
+      data-ristak-card
       className={cn(
         'relative rounded-xl transition-colors duration-300',
         variantClasses[variant],

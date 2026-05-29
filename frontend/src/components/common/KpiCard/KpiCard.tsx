@@ -47,6 +47,7 @@ export const KpiCard: React.FC<KpiCardProps> = ({
 
   return (
     <Card
+      data-ristak-kpi-card
       variant="glass"
       padding="sm"
       className={cn('overflow-hidden', className)}

@@ -3,6 +3,36 @@ import { themes, sharedTokens } from '@/theme/tokens'
 
 type ThemeMode = 'light' | 'dark'
 type ThemeSource = 'system' | 'manual'
+export type DesignPreset = 'classic' | 'atelier' | 'editorial' | 'bento'
+
+export const DESIGN_PRESETS: Array<{
+  id: DesignPreset
+  label: string
+  description: string
+}> = [
+  {
+    id: 'classic',
+    label: 'Actual',
+    description: 'Diseño base de Ristak'
+  },
+  {
+    id: 'atelier',
+    label: 'Atelier',
+    description: 'Suave, moderno y espacioso'
+  },
+  {
+    id: 'editorial',
+    label: 'Línea',
+    description: 'Contenedores unidos con tipografía moderna'
+  },
+  {
+    id: 'bento',
+    label: 'Bento',
+    description: 'Tarjetas amplias y más visuales'
+  }
+]
+
+const DESIGN_PRESET_STORAGE_KEY = 'ristak-design-preset'
 
 interface ThemeContextType {
   theme: ThemeMode
@@ -12,6 +42,9 @@ interface ThemeContextType {
   themeSource: ThemeSource
   resetToSystem: () => void
   isSystemTheme: boolean
+  designPreset: DesignPreset
+  setDesignPreset: (preset: DesignPreset) => void
+  designPresets: typeof DESIGN_PRESETS
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
@@ -21,6 +54,23 @@ const getSystemPreference = (): ThemeMode => {
     return 'dark'
   }
   return 'light'
+}
+
+const isDesignPreset = (value: string | null): value is DesignPreset => {
+  return Boolean(value && DESIGN_PRESETS.some((preset) => preset.id === value))
+}
+
+const getStoredDesignPreset = (): DesignPreset => {
+  if (typeof window === 'undefined') {
+    return 'classic'
+  }
+
+  try {
+    const storedPreset = window.localStorage.getItem(DESIGN_PRESET_STORAGE_KEY)
+    return isDesignPreset(storedPreset) ? storedPreset : 'classic'
+  } catch {
+    return 'classic'
+  }
 }
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -35,11 +85,21 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [themeSource, setThemeSource] = useState<ThemeSource>(() => {
     return sessionStorage.getItem('manualTheme') ? 'manual' : 'system'
   })
+  const [designPreset, setDesignPresetState] = useState<DesignPreset>(getStoredDesignPreset)
 
   const setTheme = (newTheme: ThemeMode) => {
     setThemeState(newTheme)
     setThemeSource('manual')
     sessionStorage.setItem('manualTheme', newTheme)
+  }
+
+  const setDesignPreset = (preset: DesignPreset) => {
+    setDesignPresetState(preset)
+    try {
+      window.localStorage.setItem(DESIGN_PRESET_STORAGE_KEY, preset)
+    } catch {
+      // Keep the selected preset in memory when localStorage is unavailable.
+    }
   }
 
   const toggleTheme = () => {
@@ -99,6 +159,12 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     document.body.classList.add(theme)
   }, [theme])
 
+  useEffect(() => {
+    const root = document.documentElement
+    root.dataset.designPreset = designPreset
+    document.body.dataset.designPreset = designPreset
+  }, [designPreset])
+
   const themeData = { ...themes[theme], ...sharedTokens }
   const isSystemTheme = themeSource === 'system'
 
@@ -111,7 +177,10 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setTheme,
         themeSource,
         resetToSystem,
-        isSystemTheme
+        isSystemTheme,
+        designPreset,
+        setDesignPreset,
+        designPresets: DESIGN_PRESETS
       }}
     >
       {children}

@@ -180,6 +180,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
   const [hoveredDate, setHoveredDate] = useState<Date | null>(null)
   const [selectingEndDate, setSelectingEndDate] = useState(false)
   const [openDropdown, setOpenDropdown] = useState<string | null>(null)
+  const [alignDropdownRight, setAlignDropdownRight] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -275,6 +276,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
       setActiveField(null)
       return
     }
+    updateDropdownAlignment()
     const parsedStart = parseLocalDate(startDate)
     const parsedEnd = parseLocalDate(endDate)
     setTempStart(parsedStart)
@@ -286,6 +288,24 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
     setActiveField(field)
     setSelectingEndDate(field === 'end')
     setIsOpen(true)
+  }
+
+  const updateDropdownAlignment = () => {
+    if (typeof window === 'undefined' || !containerRef.current) {
+      setAlignDropdownRight(false)
+      return
+    }
+
+    const rect = containerRef.current.getBoundingClientRect()
+    const dropdownWidth = Math.min(680, window.innerWidth - 32)
+    setAlignDropdownRight(rect.left + dropdownWidth > window.innerWidth - 16)
+  }
+
+  const handleSingleOpen = () => {
+    if (!isOpen) {
+      updateDropdownAlignment()
+    }
+    setIsOpen(!isOpen)
   }
 
   const formatDateRange = () => {
@@ -584,7 +604,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
       ) : (
         <button
           className={styles.input}
-          onClick={() => setIsOpen(!isOpen)}
+          onClick={handleSingleOpen}
           type="button"
         >
           <Calendar size={16} className={styles.icon} />
@@ -595,7 +615,7 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({
       )}
 
       {isOpen && (
-        <div className={styles.dropdown}>
+        <div className={`${styles.dropdown} ${alignDropdownRight ? styles.dropdownAlignRight : ''}`}>
           <div className={styles.sidebar}>
             <h4 className={styles.sidebarTitle}>Seleccionar fechas</h4>
             <div className={styles.presetList}>

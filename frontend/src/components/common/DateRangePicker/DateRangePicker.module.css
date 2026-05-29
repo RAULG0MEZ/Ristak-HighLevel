@@ -59,6 +59,11 @@
   overflow: hidden;
 }
 
+.dropdownAlignRight {
+  left: auto;
+  right: 0;
+}
+
 [data-theme="dark"] .dropdown {
   box-shadow: 0 30px 60px -28px rgba(0, 0, 0, 0.65);
 }
@@ -561,6 +566,7 @@
     min-width: auto;
     width: calc(100vw - 2 * var(--spacing-md));
     left: 50%;
+    right: auto;
     transform: translateX(-50%);
     flex-direction: column;
   }
