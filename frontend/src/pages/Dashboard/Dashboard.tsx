@@ -1196,7 +1196,7 @@ export const Dashboard: React.FC = () => {
   )
 
   if (loading || !metrics) {
-    return <Loading message="Cargando dashboard..." />
+    return <Loading message="Cargando dashboard..." kpiLayout="joined" />
   }
 
   return (

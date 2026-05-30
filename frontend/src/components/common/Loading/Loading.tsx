@@ -7,13 +7,15 @@ interface LoadingProps {
   fullScreen?: boolean
   size?: 'sm' | 'md' | 'lg'
   variant?: 'skeleton' | 'spinner'
+  kpiLayout?: 'cards' | 'joined'
 }
 
 export const Loading: React.FC<LoadingProps> = ({
   message = 'Cargando',
   fullScreen = false,
   size = 'md',
-  variant = 'skeleton'
+  variant = 'skeleton',
+  kpiLayout = 'cards'
 }) => {
   const sizeClasses = {
     sm: 'w-6 h-6',
@@ -23,6 +25,9 @@ export const Loading: React.FC<LoadingProps> = ({
 
   const shouldRenderSpinner = fullScreen || variant === 'spinner'
   const containerClass = fullScreen ? styles.fullScreenContainer : styles.container
+  const skeletonKpiGridClassName = kpiLayout === 'joined'
+    ? `${styles.skeletonKpiGrid} ${styles.skeletonKpiGridJoined}`
+    : styles.skeletonKpiGrid
 
   if (!shouldRenderSpinner) {
     return (
@@ -36,7 +41,7 @@ export const Loading: React.FC<LoadingProps> = ({
             <div className={`${styles.skeletonBlock} ${styles.skeletonControl}`} />
           </div>
 
-          <div className={styles.skeletonKpiGrid}>
+          <div className={skeletonKpiGridClassName}>
             {Array.from({ length: 8 }).map((_, index) => (
               <div className={styles.skeletonCard} key={`kpi-${index}`}>
                 <div className={styles.skeletonCardTop}>

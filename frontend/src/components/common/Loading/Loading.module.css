@@ -134,6 +134,15 @@
   gap: 1rem;
 }
 
+:global(body[data-design-preset='editorial']) .skeletonKpiGridJoined {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--design-card-border);
+  border-radius: var(--design-card-radius);
+  background: var(--design-card-bg);
+  box-shadow: var(--design-card-shadow);
+}
+
 .skeletonCard,
 .skeletonPanel {
   border: 1px solid var(--skeleton-border);
@@ -145,6 +154,25 @@
 .skeletonCard {
   min-height: 118px;
   padding: 1rem;
+}
+
+:global(body[data-design-preset='editorial']) .skeletonKpiGridJoined .skeletonCard {
+  min-height: 126px;
+  border: 0;
+  border-right: 1px solid var(--design-card-border);
+  border-bottom: 1px solid var(--design-card-border);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+:global(body[data-design-preset='editorial']) .skeletonKpiGridJoined .skeletonCard:nth-child(2n) {
+  border-right: 0;
+}
+
+:global(body[data-design-preset='editorial']) .skeletonKpiGridJoined .skeletonCard:nth-last-child(-n + 2) {
+  border-bottom: 0;
 }
 
 .skeletonCardTop {
@@ -345,6 +373,18 @@
   .skeletonKpiGrid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
+
+  :global(body[data-design-preset='editorial']) .skeletonKpiGridJoined .skeletonCard:nth-child(2n) {
+    border-right: 1px solid var(--design-card-border);
+  }
+
+  :global(body[data-design-preset='editorial']) .skeletonKpiGridJoined .skeletonCard:nth-child(4n) {
+    border-right: 0;
+  }
+
+  :global(body[data-design-preset='editorial']) .skeletonKpiGridJoined .skeletonCard:nth-last-child(-n + 4) {
+    border-bottom: 0;
+  }
 }
 
 @media (max-width: 900px) {
@@ -379,6 +419,18 @@
 
   .skeletonKpiGrid {
     grid-template-columns: 1fr;
+  }
+
+  :global(body[data-design-preset='editorial']) .skeletonKpiGridJoined .skeletonCard {
+    border-right: 0;
+  }
+
+  :global(body[data-design-preset='editorial']) .skeletonKpiGridJoined .skeletonCard:nth-last-child(-n + 2) {
+    border-bottom: 1px solid var(--design-card-border);
+  }
+
+  :global(body[data-design-preset='editorial']) .skeletonKpiGridJoined .skeletonCard:last-child {
+    border-bottom: 0;
   }
 
   .skeletonChart {
