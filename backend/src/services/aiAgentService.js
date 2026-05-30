@@ -729,9 +729,194 @@ async function buildHistoricalResearchQueries(runtimeContext) {
   ]
 }
 
+async function buildCampaignPerformanceQueries(runtimeContext) {
+  const hiddenCondition = await getHiddenContactsWhere('c')
+  const contactWhere = [
+    "c.attribution_ad_id IS NOT NULL",
+    "c.attribution_ad_id != ''"
+  ]
+
+  if (hiddenCondition) {
+    contactWhere.push(hiddenCondition)
+  }
+
+  const attributedContactMonth = sqlMonthExpression('contactos_atribuidos.created_at', runtimeContext.timezone)
+  const metaMonth = sqlMonthExpression('m.date', runtimeContext.timezone)
+
+  // Frontera rolling de ~90 días en el timezone del negocio (formato YYYY-MM-DD).
+  const ninetyDaysAgo = DateTime.fromISO(runtimeContext.today, { zone: runtimeContext.timezone })
+    .minus({ days: 90 })
+    .toISODate()
+
+  return [
+    {
+      name: 'campañas_ultimos_90_dias',
+      purpose: 'Rentabilidad por campaña en los últimos ~90 días (rolling) con la misma atribución de Publicidad: contactos únicos donde contacts.attribution_ad_id = meta_ads.ad_id y el anuncio existía el día de creación del contacto. Trae gasto, leads, citas, asistencias, ventas, ingresos atribuidos, utilidad y ROAS YA calculados.',
+      sql: `
+        WITH gasto_camp AS (
+          SELECT
+            m.campaign_id AS campaign_id,
+            MAX(m.campaign_name) AS campaign_name,
+            COALESCE(SUM(m.spend), 0) AS gasto,
+            COALESCE(SUM(m.clicks), 0) AS clicks,
+            COALESCE(SUM(m.reach), 0) AS alcance
+          FROM meta_ads m
+          WHERE m.date >= ?
+          GROUP BY m.campaign_id
+        ),
+        contactos_atribuidos AS (
+          SELECT DISTINCT
+            ma.campaign_id AS campaign_id,
+            c.id AS contact_id,
+            c.created_at AS created_at,
+            COALESCE(c.purchases_count, 0) AS purchases_count,
+            COALESCE(c.total_paid, 0) AS total_paid
+          FROM contacts c
+          JOIN meta_ads ma
+            ON ma.ad_id = c.attribution_ad_id
+           AND DATE(ma.date) = DATE(c.created_at)
+          WHERE ${contactWhere.join(' AND ')}
+            AND DATE(c.created_at) >= ?
+        ),
+        ingresos_camp AS (
+          SELECT
+            ca.campaign_id AS campaign_id,
+            COUNT(DISTINCT ca.contact_id) AS leads,
+            COUNT(DISTINCT CASE WHEN EXISTS (
+              SELECT 1 FROM appointments a WHERE a.contact_id = ca.contact_id
+            ) THEN ca.contact_id END) AS citas,
+            COUNT(DISTINCT CASE WHEN
+              EXISTS (
+                SELECT 1
+                FROM appointment_attendance_signals aas
+                WHERE aas.contact_id = ca.contact_id
+              )
+              OR EXISTS (
+                SELECT 1
+                FROM appointments a2
+                WHERE a2.contact_id = ca.contact_id
+                  AND LOWER(COALESCE(a2.appointment_status, a2.status, '')) IN ('showed', 'attended', 'completed', 'complete')
+              )
+              OR ca.purchases_count > 0
+              OR ca.total_paid > 0
+            THEN ca.contact_id END) AS asistencias,
+            COUNT(DISTINCT CASE WHEN ca.purchases_count > 0 OR ca.total_paid > 0 THEN ca.contact_id END) AS ventas,
+            COALESCE(SUM(ca.total_paid), 0) AS ingresos_atribuidos
+          FROM contactos_atribuidos ca
+          GROUP BY ca.campaign_id
+        )
+        SELECT
+          g.campaign_id AS campaign_id,
+          g.campaign_name AS campana,
+          COALESCE(i.leads, 0) AS leads,
+          COALESCE(i.citas, 0) AS citas,
+          COALESCE(i.asistencias, 0) AS asistencias,
+          COALESCE(i.ventas, 0) AS ventas,
+          COALESCE(i.ingresos_atribuidos, 0) AS ingresos_atribuidos,
+          g.gasto AS gasto,
+          COALESCE(i.ingresos_atribuidos, 0) - g.gasto AS utilidad,
+          CASE WHEN g.gasto > 0
+            THEN COALESCE(i.ingresos_atribuidos, 0) / g.gasto
+            ELSE NULL
+          END AS roas
+        FROM gasto_camp g
+        LEFT JOIN ingresos_camp i ON i.campaign_id = g.campaign_id
+        ORDER BY utilidad DESC
+        LIMIT 100
+      `,
+      params: [ninetyDaysAgo, ninetyDaysAgo]
+    },
+    {
+      name: 'campañas_por_mes',
+      purpose: 'Desempeño por campaña y por mes en todo el histórico usando la atribución oficial de Publicidad: contacto creado + ad_id activo ese mismo día. Trae gasto, leads, citas, asistencias, ventas, ingresos atribuidos y utilidad para comparar cualquier rango.',
+      sql: `
+        WITH gasto_cm AS (
+          SELECT
+            m.campaign_id AS campaign_id,
+            ${metaMonth} AS month,
+            COALESCE(SUM(m.spend), 0) AS gasto
+          FROM meta_ads m
+          WHERE m.date IS NOT NULL
+          GROUP BY m.campaign_id, ${metaMonth}
+        ),
+        nombres AS (
+          SELECT m.campaign_id AS campaign_id, MAX(m.campaign_name) AS campaign_name
+          FROM meta_ads m
+          GROUP BY m.campaign_id
+        ),
+        contactos_atribuidos AS (
+          SELECT DISTINCT
+            ma.campaign_id AS campaign_id,
+            c.id AS contact_id,
+            c.created_at AS created_at,
+            COALESCE(c.purchases_count, 0) AS purchases_count,
+            COALESCE(c.total_paid, 0) AS total_paid
+          FROM contacts c
+          JOIN meta_ads ma
+            ON ma.ad_id = c.attribution_ad_id
+           AND DATE(ma.date) = DATE(c.created_at)
+          WHERE ${contactWhere.join(' AND ')}
+        ),
+        ingresos_cm AS (
+          SELECT
+            contactos_atribuidos.campaign_id AS campaign_id,
+            ${attributedContactMonth} AS month,
+            COUNT(DISTINCT contactos_atribuidos.contact_id) AS leads,
+            COUNT(DISTINCT CASE WHEN EXISTS (
+              SELECT 1 FROM appointments a WHERE a.contact_id = contactos_atribuidos.contact_id
+            ) THEN contactos_atribuidos.contact_id END) AS citas,
+            COUNT(DISTINCT CASE WHEN
+              EXISTS (
+                SELECT 1
+                FROM appointment_attendance_signals aas
+                WHERE aas.contact_id = contactos_atribuidos.contact_id
+              )
+              OR EXISTS (
+                SELECT 1
+                FROM appointments a2
+                WHERE a2.contact_id = contactos_atribuidos.contact_id
+                  AND LOWER(COALESCE(a2.appointment_status, a2.status, '')) IN ('showed', 'attended', 'completed', 'complete')
+              )
+              OR contactos_atribuidos.purchases_count > 0
+              OR contactos_atribuidos.total_paid > 0
+            THEN contactos_atribuidos.contact_id END) AS asistencias,
+            COUNT(DISTINCT CASE WHEN contactos_atribuidos.purchases_count > 0 OR contactos_atribuidos.total_paid > 0 THEN contactos_atribuidos.contact_id END) AS ventas,
+            COALESCE(SUM(contactos_atribuidos.total_paid), 0) AS ingresos_atribuidos
+          FROM contactos_atribuidos
+          GROUP BY contactos_atribuidos.campaign_id, ${attributedContactMonth}
+        ),
+        spine AS (
+          SELECT campaign_id, month FROM gasto_cm
+          UNION
+          SELECT campaign_id, month FROM ingresos_cm
+        )
+        SELECT
+          spine.month AS mes,
+          nombres.campaign_name AS campana,
+          COALESCE(ingresos_cm.leads, 0) AS leads,
+          COALESCE(ingresos_cm.citas, 0) AS citas,
+          COALESCE(ingresos_cm.asistencias, 0) AS asistencias,
+          COALESCE(ingresos_cm.ventas, 0) AS ventas,
+          COALESCE(ingresos_cm.ingresos_atribuidos, 0) AS ingresos_atribuidos,
+          COALESCE(gasto_cm.gasto, 0) AS gasto,
+          COALESCE(ingresos_cm.ingresos_atribuidos, 0) - COALESCE(gasto_cm.gasto, 0) AS utilidad
+        FROM spine
+        LEFT JOIN gasto_cm ON gasto_cm.campaign_id = spine.campaign_id AND gasto_cm.month = spine.month
+        LEFT JOIN ingresos_cm ON ingresos_cm.campaign_id = spine.campaign_id AND ingresos_cm.month = spine.month
+        LEFT JOIN nombres ON nombres.campaign_id = spine.campaign_id
+        WHERE spine.month IS NOT NULL
+        ORDER BY spine.month ASC, ingresos_atribuidos DESC
+        LIMIT 200
+      `,
+      params: []
+    }
+  ]
+}
+
 async function buildCoreResearchQueries(runtimeContext) {
   return [
     ...await buildHistoricalResearchQueries(runtimeContext),
+    ...await buildCampaignPerformanceQueries(runtimeContext),
     await buildDatabaseValueMapQuery()
   ]
 }
@@ -842,9 +1027,9 @@ async function createQueryPlan(apiKey, { messages, viewContext, runtimeContext, 
     'No respondas la pregunta todavía. Sólo devuelve JSON válido.',
     'Puedes investigar con criterio propio: fechas raras, comparativos, cohorts, fuentes como Facebook/Meta, embudos, CAC, ROAS, inversión, asistencia, ventas, etc.',
     'No uses presets rígidos. Si el usuario pide algo ambiguo, haz la interpretación más útil según las definiciones del dashboard y deja la suposición en assumptions.',
-    'Ya se ejecutó un mapa base de la DB con rangos, histórico mensual y valores comunes. Úsalo para decidir consultas específicas sin repetir lo que ya está cubierto.',
+    'Ya se ejecutó un mapa base de la DB con rangos, histórico mensual, rentabilidad por campaña (campañas_ultimos_90_dias y campañas_por_mes) y valores comunes. Úsalo para decidir consultas específicas sin repetir lo que ya está cubierto.',
     'Para medir resultados de una campaña o anuncio (leads, citas, asistencias, ventas, ingresos, ROAS), usa el modelo de atribución de Publicidad: une contacts.attribution_ad_id con meta_ads.ad_id, atribuye por contacts.created_at, valida que el anuncio existiera ese día (EXISTS en meta_ads con la misma fecha) y suma contacts.total_paid como ingreso. No uses payments.date ni ventanas de pago para atribuir a campañas.',
-    'Si la pregunta es sobre campañas/anuncios o su rendimiento (ROAS, retorno, rentabilidad, cuál jala, cuál escalar), genera consultas que cubran el rango COMPLETO pedido (ej. 90 días = 90 días, NO solo el mes actual ni el snapshot) y que traigan por campaña: (a) gasto = SUM(meta_ads.spend) agrupado por campaign_name, y (b) leads, ventas e ingresos atribuidos (modelo de atribución) agrupados por campaign_name. Con eso se calculan ROAS y utilidad por campaña. Nunca dejes que la respuesta concluya con solo el mes actual cuando el usuario pidió un rango mayor.',
+    'Si la pregunta es sobre campañas/anuncios o su rendimiento (ROAS, retorno, rentabilidad, cuál jala, cuál escalar): el mapa base YA trae campañas_ultimos_90_dias (gasto, leads, citas, asistencias, ventas, ingresos atribuidos, utilidad y ROAS de los últimos ~90 días) y campañas_por_mes (lo mismo desglosado por mes para todo el histórico). NO repitas esas consultas. Sólo genera SQL extra si el usuario pide un corte que esas no cubren (ej. una campaña específica por nombre, un rango exacto de fechas distinto, o desglose por adset/anuncio); en ese caso usa el modelo de atribución: gasto = SUM(meta_ads.spend), leads/citas/asistencias/ventas/ingresos atribuidos por contacts.created_at y validación de meta_ads por el mismo ad_id y la misma fecha. Nunca dejes que la respuesta concluya con solo el mes actual cuando el usuario pidió un rango mayor.',
     'Genera consultas específicas para la pregunta aunque el usuario use palabras raras, incompletas o casuales. Traduce intención de negocio a datos.',
     'Usa el contexto del negocio para interpretar mercado, nicho, cliente ideal, zona, competidores y prioridades del usuario.',
     'Si una fecha es relativa o rara, conviértela tú a fechas absolutas usando la fecha actual. Nunca dejes params como start_date, end_date, start_ts o placeholders similares.',
@@ -1043,7 +1228,12 @@ function isSuccessfulQueryResult(result) {
 }
 
 function isCoreHistoricalResult(result) {
-  return ['historico_rango_disponible', 'historico_negocio_por_mes'].includes(result?.name)
+  return [
+    'historico_rango_disponible',
+    'historico_negocio_por_mes',
+    'campañas_ultimos_90_dias',
+    'campañas_por_mes'
+  ].includes(result?.name)
 }
 
 function prepareQueryResultsForReply(queryResults) {
@@ -1088,6 +1278,7 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
     'Usa la busqueda web SOLO cuando el usuario pida explicitamente ideas o contexto externo: estrategia de mercado, benchmarks de la industria, tendencias del sector, contexto social, cultural, politico, geografico, regulatorio, competidores externos, noticias o temporada. Si tienes duda, asume que es pregunta interna y no busques.',
     'Cuando uses informacion externa, cita los enlaces dentro del texto de la respuesta (no como lista al final) y conectalos con los datos internos del negocio.',
     'Si los resultados incluyen historico_negocio_por_mes o historico_rango_disponible, sí tienes datos históricos de la DB. No digas que sólo tienes el snapshot, la vista o el mes actual.',
+    'Si los resultados incluyen campañas_ultimos_90_dias o campañas_por_mes, YA tienes la rentabilidad por campaña calculada desde la DB con la lógica de Publicidad (gasto, leads, citas, asistencias, ventas, ingresos atribuidos, utilidad y ROAS). Úsalos directo. NUNCA digas "no la puedo sacar", "solo tengo el corte del mes" ni que falta el rango completo: para los últimos ~90 días usa campañas_ultimos_90_dias (ya viene ordenado por utilidad) y para cualquier otro rango suma los meses pedidos de campañas_por_mes.',
     'Si el usuario pide comparación histórica, explica la evolución con los meses reales disponibles y menciona desde qué mes arranca el dato.',
     'Si el usuario pregunta cómo le ha ido desde los inicios, responde con el histórico completo disponible. No le pidas elegir "mes a mes" o "últimos 12 meses" antes de contestar.',
     'Si el usuario pide predicción de próximos meses, usa la tendencia mensual histórica para dar una proyección simple. No pidas meta o ticket promedio antes de contestar; si ayuda, ofrécelos como ajuste posterior.',
