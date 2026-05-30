@@ -8,6 +8,9 @@ import {
   Card,
   KpiCard,
   DateRangePicker,
+  ViewSelector,
+  TabList,
+  Button,
   AreaChart,
   TreeFilter,
   TrafficSourcesChart,
@@ -16,13 +19,78 @@ import {
   Loading
 } from '../../components/common'
 import type { BarChartData } from '../../components/common'
-import { Eye, Users, UserCheck, Target, Smartphone, Monitor, Tablet, Globe } from 'lucide-react'
-import { FaFacebook, FaGoogle, FaInstagram, FaTiktok, FaTwitter, FaLinkedin, FaMicrosoft, FaChrome, FaFirefox, FaSafari, FaEdge, FaOpera, FaApple, FaWindows, FaAndroid, FaLinux } from 'react-icons/fa'
+import { Eye, Users, UserCheck, Target, Smartphone, Monitor, Tablet, Globe, Minus, Plus } from 'lucide-react'
+import { FaFacebook, FaGoogle, FaInstagram, FaTiktok, FaTwitter, FaLinkedin, FaMicrosoft, FaChrome, FaFirefox, FaSafari, FaEdge, FaOpera, FaWindows, FaAndroid, FaLinux } from 'react-icons/fa'
 import { SiMacos, SiIos } from 'react-icons/si'
-import { getSessionsByDateRange, getContactsByDate } from '../../services/analyticsService'
+import { getSessionsByDateRange, getContactsByDate, type ContactsByDate } from '../../services/analyticsService'
 import { TrackingSession } from '../../services/trackingService'
-import { formatDate, formatDateToISO, parseLocalDateString, formatUrlParameter, formatChartNumber } from '../../utils/format'
+import { formatDateToISO, parseLocalDateString, formatUrlParameter, formatChartNumber } from '../../utils/format'
 import { normalizeTrafficSource } from '../../utils/trafficSourceNormalizer'
+
+type ViewType = 'day' | 'month' | 'year'
+type MonthPreset = 'last12' | 'thisYear' | 'custom'
+
+const monthNamesShort = [
+  'ene', 'feb', 'mar', 'abr', 'may', 'jun',
+  'jul', 'ago', 'sept', 'oct', 'nov', 'dic'
+]
+
+const viewTabs = [
+  { value: 'day', label: 'Día' },
+  { value: 'month', label: 'Mes' },
+  { value: 'year', label: 'Año' }
+]
+
+const monthRangeOptions = [
+  { value: 'last12', label: 'Últimos 12 meses' },
+  { value: 'thisYear', label: 'Este año' },
+  { value: 'custom', label: 'Rango personalizado' }
+]
+
+const now = new Date()
+const currentYear = now.getFullYear()
+const defaultYearRange = { start: currentYear - 2, end: currentYear }
+
+const startOfMonth = (year: number, monthIndex: number) => new Date(year, monthIndex, 1, 0, 0, 0)
+const endOfMonth = (year: number, monthIndex: number) => new Date(year, monthIndex + 1, 0, 23, 59, 59)
+const startOfYear = (year: number) => new Date(year, 0, 1, 0, 0, 0)
+const endOfYear = (year: number) => new Date(year, 11, 31, 23, 59, 59)
+
+const computeRangeForView = (
+  viewType: ViewType,
+  baseRange: { start: Date; end: Date },
+  monthPreset: MonthPreset,
+  yearRange: { start: number; end: number }
+) => {
+  if (viewType === 'day') {
+    return {
+      from: formatDateToISO(baseRange.start),
+      to: formatDateToISO(baseRange.end)
+    }
+  }
+
+  if (viewType === 'month') {
+    if (monthPreset === 'thisYear') {
+      const start = startOfYear(currentYear)
+      const end = endOfMonth(currentYear, now.getMonth())
+      return { from: formatDateToISO(start), to: formatDateToISO(end) }
+    }
+
+    if (monthPreset === 'custom') {
+      const start = startOfMonth(baseRange.start.getFullYear(), baseRange.start.getMonth())
+      const end = endOfMonth(baseRange.end.getFullYear(), baseRange.end.getMonth())
+      return { from: formatDateToISO(start), to: formatDateToISO(end) }
+    }
+
+    const end = endOfMonth(now.getFullYear(), now.getMonth())
+    const start = startOfMonth(now.getFullYear(), now.getMonth() - 11)
+    return { from: formatDateToISO(start), to: formatDateToISO(end) }
+  }
+
+  const start = startOfYear(yearRange.start)
+  const end = endOfYear(yearRange.end)
+  return { from: formatDateToISO(start), to: formatDateToISO(end) }
+}
 
 // Helper para obtener icono de plataforma
 const getPlatformIcon = (platformName: string) => {
@@ -231,16 +299,107 @@ const parseTimestamp = (timestamp?: string | null): Date | null => {
   return null
 }
 
-const getDateKeyFromTimestamp = (timestamp?: string | null): string | null => {
+const formatPeriodLabel = (period: string, viewType: ViewType): string => {
+  if (!period) return ''
+
+  if (viewType === 'year') {
+    return period
+  }
+
+  if (viewType === 'month') {
+    const [year, month] = period.split('-')
+    const monthIndex = Number(month) - 1
+    if (!year || Number.isNaN(monthIndex)) return period
+    return `${monthNamesShort[monthIndex] || month} ${year}`
+  }
+
+  const date = parseLocalDateString(period.includes('T') ? period.split('T')[0] : period)
+  if (Number.isNaN(date.getTime())) return period
+  return `${date.getDate()} ${monthNamesShort[date.getMonth()]} ${date.getFullYear()}`
+}
+
+const getPeriodKeyFromDate = (date: Date, viewType: ViewType): string => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+
+  if (viewType === 'year') {
+    return String(year)
+  }
+
+  if (viewType === 'month') {
+    return `${year}-${month}`
+  }
+
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const getPeriodKeyFromTimestamp = (
+  timestamp: string | null | undefined,
+  viewType: ViewType,
+  convertToLocalTime: (utcDate: string | Date) => Date
+): string | null => {
   const parsed = parseTimestamp(timestamp)
   if (!parsed) return null
-  return parsed.toISOString().split('T')[0]
+  const localDate = convertToLocalTime(parsed)
+  if (Number.isNaN(localDate.getTime())) return null
+  return getPeriodKeyFromDate(localDate, viewType)
+}
+
+const buildTrafficChartData = (
+  sessions: Session[],
+  viewType: ViewType,
+  convertToLocalTime: (utcDate: string | Date) => Date
+): TrafficPoint[] => {
+  const stats: Record<string, { totalVisits: number; uniqueVisitors: Set<string> }> = {}
+
+  sessions.forEach((session: Session) => {
+    const periodKey = getPeriodKeyFromTimestamp(session.started_at, viewType, convertToLocalTime)
+    if (!periodKey) return
+
+    if (!stats[periodKey]) {
+      stats[periodKey] = {
+        totalVisits: 0,
+        uniqueVisitors: new Set()
+      }
+    }
+
+    stats[periodKey].totalVisits++
+    stats[periodKey].uniqueVisitors.add(session.visitor_id)
+  })
+
+  return Object.entries(stats)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([period, item]) => ({
+      label: formatPeriodLabel(period, viewType),
+      value: item.totalVisits,
+      value2: item.uniqueVisitors.size
+    }))
+}
+
+const aggregateContactsByPeriod = (
+  contacts: ContactsByDate[],
+  viewType: ViewType
+) => {
+  const totals = new Map<string, number>()
+
+  contacts.forEach((item) => {
+    const date = parseLocalDateString(item.date)
+    if (Number.isNaN(date.getTime())) return
+
+    const periodKey = getPeriodKeyFromDate(date, viewType)
+    totals.set(periodKey, (totals.get(periodKey) || 0) + item.count)
+  })
+
+  return Array.from(totals.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([period, count]) => ({ period, count }))
 }
 
 const Analytics: React.FC = () => {
   const isRenderDomain = useIsRenderDomain()
   const { dateRange, setDateRange } = useDateRange()
-  const { formatLocalDateShort } = useTimezone()
+  const { convertToLocalTime } = useTimezone()
   const [loading, setLoading] = useState(false)
 
   // Si estamos en dominio .onrender.com, redirigir al Dashboard
@@ -265,6 +424,9 @@ const Analytics: React.FC = () => {
   const [osData, setOsData] = useState<any[]>([])
   const [browserData, setBrowserData] = useState<any[]>([])
   const [topVisitors, setTopVisitors] = useState<any[]>([])
+  const [viewType, setViewType] = useState<ViewType>('day')
+  const [monthPreset, setMonthPreset] = useState<MonthPreset>('last12')
+  const [yearRange, setYearRange] = useState(defaultYearRange)
 
   // Guardar el valor ORIGINAL de registros para restaurar al quitar filtros
   const [originalRegistros, setOriginalRegistros] = useState<number>(0)
@@ -293,25 +455,34 @@ const Analytics: React.FC = () => {
 
   const formatTrafficTooltip = useCallback((value: number, _key: string) => formatTrafficTooltipValue(value), [formatTrafficTooltipValue])
 
+  const baseRange = {
+    start: dateRange.start instanceof Date ? dateRange.start : new Date(dateRange.start),
+    end: dateRange.end instanceof Date ? dateRange.end : new Date(dateRange.end)
+  }
+
+  const apiRange = computeRangeForView(viewType, baseRange, monthPreset, yearRange)
+
   // Cargar datos cuando cambie el rango de fechas
   useEffect(() => {
     const fetchAnalytics = async () => {
       setLoading(true)
       try {
         // No agregar +1 día aquí, el backend ya lo maneja con INTERVAL '1 day'
-        const startDate = dateRange.start.toISOString().split('T')[0]
-        const endDate = dateRange.end.toISOString().split('T')[0]
+        const startDate = apiRange.from
+        const endDate = apiRange.to
 
         // Calcular período anterior para comparación
         const msPerDay = 24 * 60 * 60 * 1000
-        const periodLength = Math.round((dateRange.end.getTime() - dateRange.start.getTime()) / msPerDay)
-        const previousEnd = new Date(dateRange.start)
+        const currentStart = parseLocalDateString(startDate)
+        const currentEnd = parseLocalDateString(endDate)
+        const periodLength = Math.round((currentEnd.getTime() - currentStart.getTime()) / msPerDay)
+        const previousEnd = new Date(currentStart)
         previousEnd.setDate(previousEnd.getDate() - 1)
         const previousStart = new Date(previousEnd)
         previousStart.setDate(previousStart.getDate() - periodLength)
 
-        const prevStartDate = previousStart.toISOString().split('T')[0]
-        const prevEndDate = previousEnd.toISOString().split('T')[0]
+        const prevStartDate = formatDateToISO(previousStart)
+        const prevEndDate = formatDateToISO(previousEnd)
 
         // Fetch datos del período actual y anterior
         const [currentSessions, prevSessions, contactsData, prevContactsData] = await Promise.all([
@@ -397,65 +568,29 @@ const Analytics: React.FC = () => {
             }
           })
 
-          // Preparar datos para gráfico de tráfico diario (incluyendo período anterior)
-          const dailyStats: { [key: string]: { totalVisits: number, uniqueVisitors: Set<string> } } = {}
-
-          // Incluir sesiones del período anterior para contexto visual
-          prevSessions.forEach((session: Session) => {
-            const dateKey = getDateKeyFromTimestamp(session.started_at)
-            if (!dateKey) return
-            if (!dailyStats[dateKey]) {
-              dailyStats[dateKey] = {
-                totalVisits: 0,
-                uniqueVisitors: new Set()
-              }
-            }
-            dailyStats[dateKey].totalVisits++
-            dailyStats[dateKey].uniqueVisitors.add(session.visitor_id)
-          })
-
-          // Incluir sesiones del período actual
-          currentSessions.forEach((session: Session) => {
-            const dateKey = getDateKeyFromTimestamp(session.started_at)
-            if (!dateKey) return
-            if (!dailyStats[dateKey]) {
-              dailyStats[dateKey] = {
-                totalVisits: 0,
-                uniqueVisitors: new Set()
-              }
-            }
-            dailyStats[dateKey].totalVisits++
-            dailyStats[dateKey].uniqueVisitors.add(session.visitor_id)
-          })
-
-          const chartData = Object.entries(dailyStats)
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([date, stats]) => ({
-              label: formatLocalDateShort(date),
-              value: stats.totalVisits,
-              value2: stats.uniqueVisitors.size
-            }))
-
-          setDailyTraffic(chartData)
+          // Preparar datos para gráfico de tráfico por período (incluyendo período anterior)
+          setDailyTraffic(buildTrafficChartData(
+            [...prevSessions, ...currentSessions],
+            viewType,
+            convertToLocalTime
+          ))
 
           // Gráfico de conversiones (registros reales de contactos por fecha de creación)
           // Combinar período actual y anterior para contexto visual
           const allContactsData = [...(prevContactsData || []), ...(contactsData || [])]
 
-          const conversionChartData = allContactsData
-            .sort((a, b) => a.date.localeCompare(b.date))
+          const conversionChartData = aggregateContactsByPeriod(allContactsData, viewType)
             .map(item => ({
-              label: formatLocalDateShort(item.date),
+              label: formatPeriodLabel(item.period, viewType),
               value: item.count
             }))
 
           setDailyConversions(conversionChartData)
 
           // Preparar datos para el gráfico de barras de registros (solo período actual)
-          const registrosBarChartData = (contactsData || [])
-            .sort((a, b) => a.date.localeCompare(b.date))
+          const registrosBarChartData = aggregateContactsByPeriod(contactsData || [], viewType)
             .map(item => ({
-              name: formatLocalDateShort(item.date),
+              name: formatPeriodLabel(item.period, viewType),
               value: item.count
             }))
 
@@ -901,7 +1036,7 @@ const Analytics: React.FC = () => {
     }
 
     fetchAnalytics()
-  }, [dateRange])
+  }, [apiRange.from, apiRange.to, viewType, convertToLocalTime])
 
   // Efecto para filtrar sesiones cuando cambian los filtros seleccionados
   useEffect(() => {
@@ -1085,31 +1220,8 @@ const Analytics: React.FC = () => {
       trends: prev.trends // Mantener trends del período original
     }))
 
-    // Recalcular gráfico de tráfico diario con sesiones filtradas
-    const dailyStats: { [key: string]: { totalVisits: number, uniqueVisitors: Set<string> } } = {}
-
-    sessionsToProcess.forEach((session: Session) => {
-      const dateKey = getDateKeyFromTimestamp(session.started_at)
-      if (!dateKey) return
-      if (!dailyStats[dateKey]) {
-        dailyStats[dateKey] = {
-          totalVisits: 0,
-          uniqueVisitors: new Set()
-        }
-      }
-      dailyStats[dateKey].totalVisits++
-      dailyStats[dateKey].uniqueVisitors.add(session.visitor_id)
-    })
-
-    const chartData = Object.entries(dailyStats)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, stats]) => ({
-        label: formatLocalDateShort(date),
-        value: stats.totalVisits,
-        value2: stats.uniqueVisitors.size
-      }))
-
-    setDailyTraffic(chartData)
+    // Recalcular gráfico de tráfico con sesiones filtradas
+    setDailyTraffic(buildTrafficChartData(sessionsToProcess, viewType, convertToLocalTime))
 
     // Recalcular gráficos de registros SI hay filtros activos
     if (hasActiveFilters) {
@@ -1125,20 +1237,20 @@ const Analytics: React.FC = () => {
             return
           }
 
-          const dateKey = getDateKeyFromTimestamp(session.contact_created_at)
-          if (!dateKey) return
-          if (!registrosPorFecha[dateKey]) {
-            registrosPorFecha[dateKey] = new Set()
+          const periodKey = getPeriodKeyFromTimestamp(session.contact_created_at, viewType, convertToLocalTime)
+          if (!periodKey) return
+          if (!registrosPorFecha[periodKey]) {
+            registrosPorFecha[periodKey] = new Set()
           }
-          registrosPorFecha[dateKey].add(session.contact_id)
+          registrosPorFecha[periodKey].add(session.contact_id)
         }
       })
 
       // Generar datos para el gráfico de barras (solo período actual filtrado)
       const filteredRegistrosChartData = Object.entries(registrosPorFecha)
         .sort(([a], [b]) => a.localeCompare(b))
-        .map(([date, contactSet]) => ({
-          name: formatLocalDateShort(date),
+        .map(([period, contactSet]) => ({
+          name: formatPeriodLabel(period, viewType),
           value: contactSet.size
         }))
 
@@ -1147,8 +1259,8 @@ const Analytics: React.FC = () => {
       // Generar datos para el gráfico de conversiones (con período anterior incluido)
       const filteredConversionsData = Object.entries(registrosPorFecha)
         .sort(([a], [b]) => a.localeCompare(b))
-        .map(([date, contactSet]) => ({
-          label: formatLocalDateShort(date),
+        .map(([period, contactSet]) => ({
+          label: formatPeriodLabel(period, viewType),
           value: contactSet.size
         }))
 
@@ -1303,7 +1415,7 @@ const Analytics: React.FC = () => {
       }))
     setTopVisitors(topVisitorsList)
 
-  }, [sessions, allSessions, selectedFilters, formatLocalDateShort])
+  }, [sessions, allSessions, selectedFilters, viewType, convertToLocalTime])
 
   // Preparar métricas para KPICards
   const mainMetrics = [
@@ -1333,6 +1445,22 @@ const Analytics: React.FC = () => {
     }
   ]
 
+  const handleMonthPresetChange = (value: string) => {
+    setMonthPreset(value as MonthPreset)
+  }
+
+  const handleYearRangeChange = (key: 'start' | 'end', delta: number) => {
+    setYearRange(prev => {
+      const updated = { ...prev, [key]: prev[key] + delta }
+      if (updated.start > updated.end) {
+        return prev
+      }
+      return updated
+    })
+  }
+
+  const periodLabel = viewType === 'year' ? 'año' : viewType === 'month' ? 'mes' : 'fecha'
+
   if (loading && (!metrics || !dailyTraffic.length)) {
     return <Loading message="Cargando analíticas..." />
   }
@@ -1344,24 +1472,99 @@ const Analytics: React.FC = () => {
         <div className="space-y-4">
           <h1 className="text-2xl font-bold">Analíticas</h1>
 
-          {/* Filtro en árbol y Selector de fechas juntos */}
-          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-            <TreeFilter
-              availableData={availableFilterData}
-              selectedFilters={selectedFilters}
-              onFilterChange={setSelectedFilters}
-            />
-            <DateRangePicker
-              startDate={formatDateToISO(dateRange.start)}
-              endDate={formatDateToISO(dateRange.end)}
-              onChange={(start, end) =>
-                setDateRange({
-                  start: parseLocalDateString(start),
-                  end: parseLocalDateString(end),
-                  preset: 'custom'
-                })
-              }
-            />
+          {/* Filtro en árbol, selector de fechas y vista */}
+          <div className="flex flex-col gap-3">
+            {viewType === 'month' && monthPreset === 'custom' && (
+              <div className="flex flex-wrap items-center gap-3">
+                <ViewSelector
+                  value={monthPreset}
+                  options={monthRangeOptions}
+                  onChange={handleMonthPresetChange}
+                />
+              </div>
+            )}
+
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex flex-wrap items-center gap-3">
+                <TreeFilter
+                  availableData={availableFilterData}
+                  selectedFilters={selectedFilters}
+                  onFilterChange={setSelectedFilters}
+                />
+
+                {viewType === 'day' && (
+                  <DateRangePicker
+                    startDate={formatDateToISO(baseRange.start)}
+                    endDate={formatDateToISO(baseRange.end)}
+                    onChange={(start, end) =>
+                      setDateRange({
+                        start: parseLocalDateString(start),
+                        end: parseLocalDateString(end),
+                        preset: 'custom'
+                      })
+                    }
+                  />
+                )}
+
+                {viewType === 'month' && monthPreset !== 'custom' && (
+                  <ViewSelector
+                    value={monthPreset}
+                    options={monthRangeOptions}
+                    onChange={handleMonthPresetChange}
+                  />
+                )}
+
+                {viewType === 'month' && monthPreset === 'custom' && (
+                  <DateRangePicker
+                    startDate={formatDateToISO(baseRange.start)}
+                    endDate={formatDateToISO(baseRange.end)}
+                    onChange={(start, end) =>
+                      setDateRange({
+                        start: parseLocalDateString(start),
+                        end: parseLocalDateString(end),
+                        preset: 'custom'
+                      })
+                    }
+                  />
+                )}
+
+                {viewType === 'year' && (
+                  <div className="flex flex-wrap items-center gap-3 rounded-xl border border-[rgba(148,163,184,0.18)] bg-[rgba(148,163,184,0.06)] p-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-[var(--color-text-tertiary)]">Inicio</span>
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="sm" aria-label="Disminuir año de inicio" onClick={() => handleYearRangeChange('start', -1)}>
+                          <Minus size={16} />
+                        </Button>
+                        <span className="min-w-12 text-center text-sm font-semibold">{yearRange.start}</span>
+                        <Button variant="ghost" size="sm" aria-label="Aumentar año de inicio" onClick={() => handleYearRangeChange('start', 1)}>
+                          <Plus size={16} />
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-[var(--color-text-tertiary)]">Fin</span>
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="sm" aria-label="Disminuir año de fin" onClick={() => handleYearRangeChange('end', -1)}>
+                          <Minus size={16} />
+                        </Button>
+                        <span className="min-w-12 text-center text-sm font-semibold">{yearRange.end}</span>
+                        <Button variant="ghost" size="sm" aria-label="Aumentar año de fin" onClick={() => handleYearRangeChange('end', 1)}>
+                          <Plus size={16} />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <TabList
+                tabs={viewTabs}
+                activeTab={viewType}
+                onTabChange={(value) => setViewType(value as ViewType)}
+                variant="compact"
+              />
+            </div>
           </div>
         </div>
 
@@ -1384,7 +1587,7 @@ const Analytics: React.FC = () => {
           <div className="mb-4">
             <h3 className="text-lg font-semibold">Tráfico del Sitio</h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              Visualizaciones de página y visitantes únicos
+              Visualizaciones de página y visitantes únicos por {periodLabel}
             </p>
           </div>
 
@@ -1421,9 +1624,9 @@ const Analytics: React.FC = () => {
             className="p-6 h-full [&>[data-ristak-card-content]]:flex [&>[data-ristak-card-content]]:h-full [&>[data-ristak-card-content]]:flex-col"
           >
             <div className="mb-4 flex-shrink-0">
-              <h3 className="text-lg font-semibold">Registros por Fecha</h3>
+              <h3 className="text-lg font-semibold">Registros por {periodLabel}</h3>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                Contactos registrados en el período
+                Contactos registrados por {periodLabel}
               </p>
             </div>
             <div className="relative w-full flex-1 min-h-[320px]">
