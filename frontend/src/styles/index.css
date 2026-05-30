@@ -13,6 +13,8 @@
   --font-display: var(--font-app);
   --font-mono: 'SF Mono', 'Consolas', 'Monaco', monospace;
   --color-bg-primary: var(--color-background-primary);
+  --app-page-max: 104rem;
+  --app-page-wide-max: var(--app-page-max);
 
   /* Default (fallback) to dark theme tokens */
   --color-background-primary: #0a0b0d;
@@ -849,7 +851,7 @@ body[data-design-preset] {
   --design-table-radius: var(--design-card-radius);
   --design-header-bg: var(--effect-glassMorphism-background);
   --design-sidebar-bg: var(--color-background-secondary);
-  --design-page-max: 80rem;
+  --design-page-max: var(--app-page-max);
   --design-kpi-min-height: 128px;
   --design-kpi-label-size: 0.875rem;
   --design-kpi-label-transform: none;
@@ -912,7 +914,6 @@ body.light[data-design-preset='atelier'] {
   --design-card-shadow: 0 18px 42px -32px rgba(28, 27, 24, 0.32);
   --design-card-radius: 1rem;
   --design-control-radius: 999px;
-  --design-page-max: 82rem;
   --design-kpi-label-size: 0.7rem;
   --design-kpi-label-transform: uppercase;
   --design-kpi-label-spacing: 0.12em;
@@ -972,7 +973,6 @@ body.dark[data-design-preset='atelier'] {
   --design-card-shadow: 0 18px 48px -28px rgba(0, 0, 0, 0.78);
   --design-card-radius: 1rem;
   --design-control-radius: 999px;
-  --design-page-max: 82rem;
   --design-kpi-label-size: 0.7rem;
   --design-kpi-label-transform: uppercase;
   --design-kpi-label-spacing: 0.12em;
@@ -1032,7 +1032,6 @@ body.light[data-design-preset='editorial'] {
   --design-card-shadow: 0 12px 34px -32px rgba(23, 21, 17, 0.42);
   --design-card-radius: 0.9rem;
   --design-control-radius: 0.75rem;
-  --design-page-max: 76rem;
   --design-kpi-label-size: 0.68rem;
   --design-kpi-label-transform: uppercase;
   --design-kpi-label-spacing: 0.12em;
@@ -1092,7 +1091,6 @@ body.dark[data-design-preset='editorial'] {
   --design-card-shadow: none;
   --design-card-radius: 0.9rem;
   --design-control-radius: 0.75rem;
-  --design-page-max: 76rem;
   --design-kpi-label-size: 0.68rem;
   --design-kpi-label-transform: uppercase;
   --design-kpi-label-spacing: 0.12em;
