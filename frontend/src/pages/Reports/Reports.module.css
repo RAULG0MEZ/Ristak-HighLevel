@@ -5,6 +5,14 @@
   padding-bottom: 4rem;
 }
 
+.reportsPage :global([data-ristak-page-inner]) {
+  max-width: min(104rem, calc(100vw - 5rem)) !important;
+}
+
+:global(body[data-design-preset]:not([data-design-preset='classic'])) .reportsPage :global([data-ristak-page-inner]) {
+  max-width: min(104rem, calc(100vw - 5rem)) !important;
+}
+
 .header {
   display: flex;
   flex-direction: column;
