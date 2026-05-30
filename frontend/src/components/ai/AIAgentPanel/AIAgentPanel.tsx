@@ -267,13 +267,39 @@ function renderMarkdownTable(lines: string[], keyPrefix: string) {
 }
 
 function getKeyValueParts(line: string) {
-  const match = line.match(/^\s*(?:\*\*)?([^:*|\n]{2,46})(?:\*\*)?:\s+(.+)$/)
+  const match = line.match(/^\s*(?:\*\*)?([^:*|\n]{2,54})(?::\*\*|\*\*:|:)\s+(.+)$/)
   if (!match) return null
 
   return {
     label: match[1].trim(),
     value: match[2].trim()
   }
+}
+
+function isOrderedListLine(line: string) {
+  return /^\d+[\.)]\s+/.test(line.trim())
+}
+
+function normalizeOrderedListLine(line: string) {
+  return line.trim().replace(/^\d+[\.)]\s+/, '')
+}
+
+function isSectionTitle(line: string) {
+  const trimmed = line.trim()
+  const plainTitle = trimmed.replace(/^\*\*/, '').replace(/\*\*$/, '')
+
+  return (
+    plainTitle.length <= 72 &&
+    !plainTitle.includes(':') &&
+    (
+      /^🏆/.test(plainTitle) ||
+      /^(ranking|resumen|ganadora|ganador|métricas|metricas|detalle|comparativo|periodo|resultado)/i.test(plainTitle)
+    )
+  )
+}
+
+function isInsightLabel(label: string) {
+  return /^(conclusión|conclusion|qué significa|que significa|qué significa para el negocio|que significa para el negocio|lectura de negocio|siguiente acción|siguiente accion|acción recomendada|accion recomendada)$/i.test(label.replace(/\*/g, '').trim())
 }
 
 function renderMessageContent(content: string) {
@@ -303,11 +329,38 @@ function renderMessageContent(content: string) {
       continue
     }
 
-    if (/^\d+\.\s+/.test(trimmed)) {
+    if (isSectionTitle(trimmed)) {
+      const titleClassName = /^🏆/.test(trimmed) ? styles.winnerTitle : styles.sectionTitle
+
+      nodes.push(
+        <div className={titleClassName} key={`section-${index}`}>
+          {renderInlineMarkdown(trimmed, `section-${index}`)}
+        </div>
+      )
+      index += 1
+      continue
+    }
+
+    const insightParts = getKeyValueParts(line)
+
+    if (insightParts && isInsightLabel(insightParts.label)) {
+      nodes.push(
+        <div className={styles.insightBlock} key={`insight-${index}`}>
+          <span className={styles.insightTitle}>{insightParts.label}</span>
+          <span className={styles.insightText}>
+            {renderInlineMarkdown(insightParts.value, `insight-${index}`)}
+          </span>
+        </div>
+      )
+      index += 1
+      continue
+    }
+
+    if (isOrderedListLine(trimmed)) {
       const items: string[] = []
 
-      while (index < lines.length && /^\d+\.\s+/.test(lines[index].trim())) {
-        items.push(lines[index].trim().replace(/^\d+\.\s+/, ''))
+      while (index < lines.length && isOrderedListLine(lines[index])) {
+        items.push(normalizeOrderedListLine(lines[index]))
         index += 1
       }
 
@@ -347,14 +400,23 @@ function renderMessageContent(content: string) {
     let keyValueIndex = index
 
     while (keyValueIndex < lines.length) {
+      if (!lines[keyValueIndex].trim() && keyValueRows.length > 0) {
+        const nextParts = lines[keyValueIndex + 1] ? getKeyValueParts(lines[keyValueIndex + 1]) : null
+        if (nextParts && !isInsightLabel(nextParts.label)) {
+          keyValueIndex += 1
+          continue
+        }
+        break
+      }
+
       const parts = getKeyValueParts(lines[keyValueIndex])
-      if (!parts) break
+      if (!parts || isInsightLabel(parts.label)) break
 
       keyValueRows.push(parts)
       keyValueIndex += 1
     }
 
-    if (keyValueRows.length >= 2) {
+    if (keyValueRows.length >= 1) {
       nodes.push(
         <div className={styles.kvGrid} key={`kv-${index}`}>
           {keyValueRows.map((row, rowIndex) => (

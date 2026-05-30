@@ -59,8 +59,8 @@
   bottom: 76px;
   display: flex;
   flex-direction: column;
-  width: min(520px, calc(100vw - 32px));
-  height: min(720px, calc(100vh - 116px));
+  width: min(640px, calc(100vw - 32px));
+  height: min(760px, calc(100vh - 116px));
   min-height: 560px;
   overflow: hidden;
   border: 1px solid rgba(148, 163, 184, 0.22);
@@ -293,14 +293,14 @@
 .messages {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 18px;
 }
 
 .message {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  max-width: 92%;
+  gap: 8px;
+  max-width: 88%;
 }
 
 .messageUser {
@@ -309,6 +309,7 @@
 
 .messageAssistant {
   align-self: flex-start;
+  max-width: 100%;
 }
 
 .messageLabel {
@@ -325,10 +326,10 @@
 }
 
 .bubble {
-  padding: 13px 15px;
-  border-radius: 12px;
+  padding: 16px 17px;
+  border-radius: 14px;
   font-size: 15px;
-  line-height: 1.6;
+  line-height: 1.62;
   overflow-wrap: anywhere;
 }
 
@@ -339,8 +340,9 @@
 
 .messageAssistant .bubble {
   color: var(--color-text-primary);
-  background: rgba(148, 163, 184, 0.08);
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: color-mix(in srgb, var(--color-background-primary) 72%, var(--color-background-secondary) 28%);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  box-shadow: 0 12px 34px rgba(15, 23, 42, 0.08);
 }
 
 .optionButtons {
@@ -389,7 +391,7 @@
 .richContent {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
 }
 
 .richParagraph,
@@ -400,7 +402,31 @@
 
 .contentLead {
   font-size: 15px;
-  line-height: 1.58;
+  line-height: 1.66;
+}
+
+.sectionTitle,
+.winnerTitle {
+  color: var(--color-text-primary);
+  font-weight: 820;
+  line-height: 1.25;
+}
+
+.sectionTitle {
+  margin-top: 2px;
+  padding-top: 2px;
+  font-size: 15px;
+}
+
+.winnerTitle {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 9px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  background: rgba(16, 185, 129, 0.08);
+  font-size: 16px;
 }
 
 .inlineStrong {
@@ -410,8 +436,11 @@
 
 .metricTableWrap {
   width: 100%;
-  margin: 2px 0;
+  margin: 0;
   overflow-x: auto;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 12px;
+  background: rgba(148, 163, 184, 0.045);
 }
 
 .metricTable {
@@ -425,7 +454,7 @@
 }
 
 .metricTable th {
-  padding: 4px 4px 7px;
+  padding: 10px 12px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.18);
   color: var(--color-text-primary);
   font-weight: 800;
@@ -438,7 +467,7 @@
 }
 
 .metricTable td {
-  padding: 6px 4px;
+  padding: 8px 12px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.1);
   color: var(--color-text-secondary);
   vertical-align: top;
@@ -455,18 +484,24 @@
 
 .kvGrid {
   display: grid;
-  gap: 5px;
-  padding: 10px 11px;
-  border-radius: 10px;
-  background: rgba(148, 163, 184, 0.07);
-  border: 1px solid rgba(148, 163, 184, 0.13);
+  gap: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  background: rgba(148, 163, 184, 0.055);
+  border: 1px solid rgba(148, 163, 184, 0.14);
 }
 
 .kvRow {
   display: grid;
-  grid-template-columns: minmax(96px, 0.42fr) minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: minmax(130px, 0.42fr) minmax(0, 1fr);
+  gap: 14px;
   align-items: start;
+  padding: 9px 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.kvRow:last-child {
+  border-bottom: 0;
 }
 
 .kvKey {
@@ -482,16 +517,41 @@
   font-weight: 560;
 }
 
+.insightBlock {
+  display: grid;
+  gap: 5px;
+  padding: 12px 13px;
+  border-left: 3px solid rgba(16, 185, 129, 0.65);
+  border-radius: 12px;
+  background: rgba(16, 185, 129, 0.07);
+}
+
+.insightTitle {
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 820;
+  letter-spacing: 0.02em;
+}
+
+.insightText {
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
 .orderedList,
 .bulletList {
   margin: 0;
-  padding-left: 20px;
+  padding: 10px 12px 10px 30px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(148, 163, 184, 0.045);
   color: var(--color-text-secondary);
 }
 
 .orderedList li,
 .bulletList li {
-  margin: 3px 0;
+  margin: 5px 0;
   padding-left: 2px;
 }
 
