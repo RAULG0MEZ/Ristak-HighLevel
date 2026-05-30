@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useDateRange } from '../../contexts/DateRangeContext'
 import { useTimezone } from '../../contexts/TimezoneContext'
+import { useLabels } from '../../contexts/LabelsContext'
 import { useIsRenderDomain } from '../../hooks'
 import {
   PageContainer,
@@ -257,11 +258,11 @@ type ChartMetricConfig = {
 
 type ConversionStage = 'prospect' | 'appointment_scheduled' | 'appointment_attended' | 'customer'
 
-const CONVERSION_FILTERS: Array<{ stage: ConversionStage; label: string }> = [
-  { stage: 'prospect', label: 'Prospecto' },
-  { stage: 'appointment_scheduled', label: 'Agendaron cita' },
-  { stage: 'appointment_attended', label: 'Citas asistidas' },
-  { stage: 'customer', label: 'Clientes' }
+const CONVERSION_STAGES: ConversionStage[] = [
+  'prospect',
+  'appointment_scheduled',
+  'appointment_attended',
+  'customer'
 ]
 
 const distributionColors = [
@@ -613,7 +614,22 @@ const Analytics: React.FC = () => {
   const isRenderDomain = useIsRenderDomain()
   const { dateRange, setDateRange } = useDateRange()
   const { convertToLocalTime } = useTimezone()
+  const { labels: appLabels } = useLabels()
   const [loading, setLoading] = useState(false)
+
+  const leadLabel = appLabels.lead?.trim() || 'Prospecto'
+  const leadsLabel = appLabels.leads?.trim() || `${leadLabel}s`
+  const customerLabel = appLabels.customer?.trim() || 'Cliente'
+  const customersLabel = appLabels.customers?.trim() || `${customerLabel}s`
+  const leadsLabelLower = leadsLabel.toLocaleLowerCase('es-MX')
+  const customersLabelLower = customersLabel.toLocaleLowerCase('es-MX')
+
+  const conversionFilters = React.useMemo<Array<{ stage: ConversionStage; label: string }>>(() => [
+    { stage: 'prospect', label: leadsLabel },
+    { stage: 'appointment_scheduled', label: 'Agendaron cita' },
+    { stage: 'appointment_attended', label: 'Citas asistidas' },
+    { stage: 'customer', label: customersLabel }
+  ], [customersLabel, leadsLabel])
 
   // Si estamos en dominio .onrender.com, redirigir al Dashboard
   if (isRenderDomain) {
@@ -867,8 +883,8 @@ const Analytics: React.FC = () => {
           const browsersMap: { [key: string]: Set<string> } = {}
           const osMap: { [key: string]: Set<string> } = {}
           const placementsMap: { [key: string]: Set<string> } = {}
-          const conversionsMap = CONVERSION_FILTERS.reduce<Record<ConversionStage, Set<string>>>((acc, item) => {
-            acc[item.stage] = new Set()
+          const conversionsMap = CONVERSION_STAGES.reduce<Record<ConversionStage, Set<string>>>((acc, stage) => {
+            acc[stage] = new Set()
             return acc
           }, {} as Record<ConversionStage, Set<string>>)
 
@@ -1025,7 +1041,7 @@ const Analytics: React.FC = () => {
             .map(([name, visitorSet]) => ({ name, count: visitorSet.size }))
             .sort((a, b) => b.count - a.count)
 
-          filterData.conversions = CONVERSION_FILTERS.map(item => ({
+          filterData.conversions = conversionFilters.map(item => ({
             stage: item.stage,
             name: item.label,
             count: conversionsMap[item.stage].size
@@ -1238,7 +1254,7 @@ const Analytics: React.FC = () => {
     }
 
     fetchAnalytics()
-  }, [apiRange.from, apiRange.to, viewType, convertToLocalTime])
+  }, [apiRange.from, apiRange.to, viewType, convertToLocalTime, conversionFilters])
 
   // Efecto para filtrar sesiones cuando cambian los filtros seleccionados
   useEffect(() => {
@@ -1659,10 +1675,10 @@ const Analytics: React.FC = () => {
   ], [])
 
   const conversionChartOptions = React.useMemo<Array<{ value: AnalyticsConversionChartView; label: string }>>(() => [
-    { value: 'registrations-customers', label: 'Registros vs Clientes' },
+    { value: 'registrations-customers', label: `Registros vs ${customersLabel}` },
     { value: 'appointments-attendances', label: 'Citas vs Asistencias' },
-    { value: 'prospects-customers', label: 'Prospectos vs Clientes' }
-  ], [])
+    { value: 'prospects-customers', label: `${leadsLabel} vs ${customersLabel}` }
+  ], [customersLabel, leadsLabel])
 
   const distributionOptions = React.useMemo<Array<{ value: AnalyticsDistributionView; label: string }>>(() => [
     { value: 'sources', label: 'Fuentes' },
@@ -1748,29 +1764,29 @@ const Analytics: React.FC = () => {
         }
       case 'prospects-customers':
         return {
-          title: 'Prospectos vs Clientes',
-          description: `Compara contactos en etapa inicial contra clientes por ${periodLabel}`,
-          label1: 'Prospectos',
-          label2: 'Clientes',
+          title: `${leadsLabel} vs ${customersLabel}`,
+          description: `Compara ${leadsLabelLower} en etapa inicial contra ${customersLabelLower} por ${periodLabel}`,
+          label1: leadsLabel,
+          label2: customersLabel,
           color: 'var(--design-chart-accent, #8b5cf6)',
           color2: 'var(--design-chart-primary, #10b981)',
           data: mapTrendToChartData(conversionTrendData, 'prospects', 'customers'),
-          emptyMessage: 'Sin prospectos o clientes disponibles'
+          emptyMessage: `Sin ${leadsLabelLower} o ${customersLabelLower} disponibles`
         }
       case 'registrations-customers':
       default:
         return {
-          title: 'Registros vs Clientes',
-          description: `Mide cuántos registros terminan siendo clientes por ${periodLabel}`,
+          title: `Registros vs ${customersLabel}`,
+          description: `Mide cuántos registros terminan siendo ${customersLabelLower} por ${periodLabel}`,
           label1: 'Registros',
-          label2: 'Clientes',
+          label2: customersLabel,
           color: 'var(--design-chart-accent, #8b5cf6)',
           color2: 'var(--design-chart-primary, #10b981)',
           data: mapTrendToChartData(conversionTrendData, 'registrations', 'customers'),
-          emptyMessage: 'Sin registros o clientes disponibles'
+          emptyMessage: `Sin registros o ${customersLabelLower} disponibles`
         }
     }
-  }, [conversionTrendData, periodLabel, selectedConversionChartView])
+  }, [conversionTrendData, customersLabel, customersLabelLower, leadsLabel, leadsLabelLower, periodLabel, selectedConversionChartView])
 
   const distributionConfig = React.useMemo(() => {
     switch (selectedDistributionView) {
