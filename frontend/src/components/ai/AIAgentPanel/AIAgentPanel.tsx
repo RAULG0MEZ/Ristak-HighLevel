@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Bot, Eraser, KeyRound, MessageCircle, SendHorizonal, Sparkles, X } from 'lucide-react'
-import { aiAgentService, type AIAgentConfigInput, type AIAgentConfigStatus, type AIAgentMessage, type AIAgentViewContext } from '@/services/aiAgentService'
+import { aiAgentService, type AIAgentClarificationOption, type AIAgentConfigInput, type AIAgentConfigStatus, type AIAgentMessage, type AIAgentViewContext } from '@/services/aiAgentService'
 import styles from './AIAgentPanel.module.css'
 
 const AI_AGENT_FLOATING_OPEN_KEY = 'ristak.aiAgentFloating.open'
@@ -119,6 +119,11 @@ function getStoredMessages(): AIAgentMessage[] {
         role: message.role,
         content: message.content,
         sources: Array.isArray(message.sources) ? message.sources : undefined,
+        clarificationOptions: Array.isArray(message.clarificationOptions)
+          ? message.clarificationOptions
+              .filter((option) => option && typeof option.label === 'string' && typeof option.value === 'string')
+              .slice(0, 8)
+          : undefined,
         createdAt: typeof message.createdAt === 'string' ? message.createdAt : new Date().toISOString()
       }))
   } catch {
@@ -135,12 +140,18 @@ function saveMessages(messages: AIAgentMessage[]) {
   }
 }
 
-function createMessage(role: AIAgentMessage['role'], content: string, sources?: AIAgentMessage['sources']): AIAgentMessage {
+function createMessage(
+  role: AIAgentMessage['role'],
+  content: string,
+  sources?: AIAgentMessage['sources'],
+  clarificationOptions?: AIAgentClarificationOption[]
+): AIAgentMessage {
   return {
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     role,
     content,
     sources,
+    clarificationOptions,
     createdAt: new Date().toISOString()
   }
 }
@@ -577,7 +588,7 @@ export const AIAgentPanel: React.FC = () => {
       const result = await aiAgentService.sendMessage(nextMessages, getViewContext())
       setMessages((current) => [
         ...current,
-        createMessage('assistant', result.reply, result.sources)
+        createMessage('assistant', result.reply, result.sources, result.clarificationOptions)
       ])
     } catch (error: any) {
       setMessages((current) => [
@@ -711,6 +722,24 @@ export const AIAgentPanel: React.FC = () => {
                       {message.role === 'user' ? 'Tú' : 'Agente'}
                     </span>
                     <div className={styles.bubble}>{renderMessageContent(message.content)}</div>
+                    {message.role === 'assistant' && Boolean(message.clarificationOptions?.length) && (
+                      <div className={styles.optionButtons} aria-label="Opciones para aclarar la pregunta">
+                        {message.clarificationOptions?.map((option) => (
+                          <button
+                            key={`${message.id}-${option.value}`}
+                            type="button"
+                            className={styles.optionButton}
+                            onClick={() => sendMessage(option.value)}
+                            disabled={sending || savingConfig}
+                          >
+                            <span className={styles.optionLabel}>{option.label}</span>
+                            {option.description && (
+                              <span className={styles.optionDescription}>{option.description}</span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     {message.role === 'assistant' && Boolean(message.sources?.length) && (
                       <div className={styles.sources}>
                         <span className={styles.sourcesLabel}>Fuentes</span>

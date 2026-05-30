@@ -8,7 +8,14 @@ export interface AIAgentMessage {
     title: string
     url: string
   }>
+  clarificationOptions?: AIAgentClarificationOption[]
   createdAt?: string
+}
+
+export interface AIAgentClarificationOption {
+  label: string
+  value: string
+  description?: string
 }
 
 export interface AIAgentConfigStatus {
@@ -52,6 +59,7 @@ export interface AIAgentChatResult {
     title: string
     url: string
   }>
+  clarificationOptions?: AIAgentClarificationOption[]
   usage?: unknown
 }
 

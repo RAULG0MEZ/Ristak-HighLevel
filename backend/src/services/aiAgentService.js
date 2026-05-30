@@ -16,6 +16,7 @@ const MAX_REPAIR_QUERIES = 4
 const MAX_AGENT_ROWS = 200
 const BUSINESS_PROFILE_LIMIT = 6000
 const WEB_SEARCH_DOMAIN_LIMIT = 20
+const CLARIFICATION_OPTION_LIMIT = 5
 const isPostgres = Boolean(process.env.DATABASE_URL)
 
 const paidStatuses = "('paid','succeeded','success','completed','complete')"
@@ -1170,6 +1171,319 @@ function getLatestUserMessage(messages) {
   return ''
 }
 
+function detectClarificationEntity(question) {
+  const normalized = normalizeText(question)
+
+  if (/(anuncio|ad\b|creative|creativo)/.test(normalized)) return 'ad'
+  if (/(adset|conjunto)/.test(normalized)) return 'adset'
+  if (/(campan|publicidad|meta ads|facebook|instagram)/.test(normalized)) return 'campaign'
+  if (/(cita|agenda|appointment|show|asistencia)/.test(normalized)) return 'appointment'
+  if (/(pago|venta|compra|transaccion|factura|invoice|recibo)/.test(normalized)) return 'payment'
+  if (/(contacto|prospect|lead|interesad|cliente|paciente|persona)/.test(normalized)) return 'contact'
+  if (/(fuente|canal|origen|trafico|traffic)/.test(normalized)) return 'source'
+
+  return null
+}
+
+function isClarificationSelection(question) {
+  const normalized = normalizeText(question)
+  return /(me refiero|selecciono|escojo|elige esta|esta opcion|opcion seleccionada)/.test(normalized)
+}
+
+function isBroadComparisonQuestion(question) {
+  const normalized = normalizeText(question)
+  return /(mas rentable|mejor|peor|ranking|top|compar|todas|todos|general|resumen|total|cuant|cuanto|inverti|gaste|gasto|ingreso|ventas totales)/.test(normalized)
+}
+
+function looksAmbiguousForEntity(question) {
+  const normalized = normalizeText(question)
+
+  return /(ultim|recient|esa|ese|esta|este|aquel|aquella|como le fue|que tal|revisa|analiza|info|informacion|datos|resultado|rendimiento)/.test(normalized)
+}
+
+function hasLikelySpecificEntityReference(question) {
+  const normalized = normalizeText(question)
+    .replace(/\b(campan\w*|publicidad|meta|facebook|instagram|ads?|anuncio\w*|adset|conjunto\w*|cita\w*|agenda\w*|appointment\w*|pago\w*|venta\w*|compra\w*|transaccion\w*|factura\w*|contacto\w*|prospect\w*|lead\w*|interesad\w*|cliente\w*|paciente\w*|persona\w*|fuente\w*|canal\w*|origen\w*|trafico)\b/g, ' ')
+    .replace(/\b(como|cual|que|tal|fue|va|van|del|de|la|el|los|las|mis|mi|un|una|unos|unas|este|esta|ese|esa|aquel|aquella|ultimo|ultima|ultimos|ultimas|reciente|recientes|info|informacion|datos|resultado|rendimiento|revisa|analiza|quiero|dame|dime|ver|saber|sobre|para|por|con|sin|hoy|ayer|semana|mes|ano|anio|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\b/g, ' ')
+
+  const specificTokens = normalized
+    .split(/[^a-z0-9]+/)
+    .map(token => token.trim())
+    .filter(token => token.length >= 4)
+
+  return specificTokens.length > 0
+}
+
+function questionMentionsOption(question, options) {
+  const normalized = normalizeText(question)
+
+  return options.some((option) => {
+    const label = normalizeText(option.label)
+    const id = normalizeText(option.id || '')
+
+    return (label.length >= 4 && normalized.includes(label)) || (id.length >= 4 && normalized.includes(id))
+  })
+}
+
+function formatOptionDate(value, runtimeContext) {
+  if (!value) return ''
+
+  const date = DateTime.fromISO(String(value), { zone: runtimeContext.timezone })
+  if (!date.isValid) return cleanText(String(value), 30)
+
+  return date.setLocale('es').toFormat('d LLL yyyy')
+}
+
+function cleanOption(value, maxLength = 90) {
+  return cleanText(String(value || ''), maxLength)
+}
+
+async function getCampaignClarificationOptions(runtimeContext) {
+  const since = DateTime.fromISO(runtimeContext.today, { zone: runtimeContext.timezone })
+    .minus({ days: 90 })
+    .toISODate()
+
+  const rows = await safeAll(`
+    SELECT
+      COALESCE(NULLIF(campaign_name, ''), NULLIF(campaign_id, ''), 'Campaña sin nombre') AS label,
+      COALESCE(NULLIF(campaign_id, ''), NULLIF(campaign_name, '')) AS id,
+      MAX(date) AS last_date,
+      COALESCE(SUM(spend), 0) AS spend
+    FROM meta_ads
+    WHERE date >= ?
+    GROUP BY campaign_id, campaign_name
+    ORDER BY last_date DESC, spend DESC
+    LIMIT ${CLARIFICATION_OPTION_LIMIT}
+  `, [since])
+
+  return rows.map((row) => ({
+    id: row.id,
+    label: cleanOption(row.label),
+    description: [
+      row.last_date ? `Último dato: ${formatOptionDate(row.last_date, runtimeContext)}` : '',
+      Number(row.spend || 0) > 0 ? `Inversión: ${formatCurrency(row.spend)}` : ''
+    ].filter(Boolean).join(' · '),
+    value: `Me refiero a la campaña "${cleanOption(row.label, 140)}"${row.id ? ` (ID: ${cleanOption(row.id, 80)})` : ''}. Responde mi pregunta anterior usando esa campaña.`
+  })).filter(option => option.label)
+}
+
+async function getAdsetClarificationOptions(runtimeContext) {
+  const since = DateTime.fromISO(runtimeContext.today, { zone: runtimeContext.timezone })
+    .minus({ days: 90 })
+    .toISODate()
+
+  const rows = await safeAll(`
+    SELECT
+      COALESCE(NULLIF(adset_name, ''), NULLIF(adset_id, ''), 'Conjunto sin nombre') AS label,
+      COALESCE(NULLIF(adset_id, ''), NULLIF(adset_name, '')) AS id,
+      MAX(campaign_name) AS campaign_name,
+      MAX(date) AS last_date,
+      COALESCE(SUM(spend), 0) AS spend
+    FROM meta_ads
+    WHERE date >= ?
+    GROUP BY adset_id, adset_name
+    ORDER BY last_date DESC, spend DESC
+    LIMIT ${CLARIFICATION_OPTION_LIMIT}
+  `, [since])
+
+  return rows.map((row) => ({
+    id: row.id,
+    label: cleanOption(row.label),
+    description: [
+      row.campaign_name ? `Campaña: ${cleanOption(row.campaign_name, 45)}` : '',
+      row.last_date ? `Último dato: ${formatOptionDate(row.last_date, runtimeContext)}` : ''
+    ].filter(Boolean).join(' · '),
+    value: `Me refiero al conjunto de anuncios "${cleanOption(row.label, 140)}"${row.id ? ` (ID: ${cleanOption(row.id, 80)})` : ''}. Responde mi pregunta anterior usando ese conjunto.`
+  })).filter(option => option.label)
+}
+
+async function getAdClarificationOptions(runtimeContext) {
+  const since = DateTime.fromISO(runtimeContext.today, { zone: runtimeContext.timezone })
+    .minus({ days: 90 })
+    .toISODate()
+
+  const rows = await safeAll(`
+    SELECT
+      COALESCE(NULLIF(ad_name, ''), NULLIF(ad_id, ''), 'Anuncio sin nombre') AS label,
+      COALESCE(NULLIF(ad_id, ''), NULLIF(ad_name, '')) AS id,
+      MAX(campaign_name) AS campaign_name,
+      MAX(date) AS last_date,
+      COALESCE(SUM(spend), 0) AS spend
+    FROM meta_ads
+    WHERE date >= ?
+    GROUP BY ad_id, ad_name
+    ORDER BY last_date DESC, spend DESC
+    LIMIT ${CLARIFICATION_OPTION_LIMIT}
+  `, [since])
+
+  return rows.map((row) => ({
+    id: row.id,
+    label: cleanOption(row.label),
+    description: [
+      row.campaign_name ? `Campaña: ${cleanOption(row.campaign_name, 45)}` : '',
+      row.last_date ? `Último dato: ${formatOptionDate(row.last_date, runtimeContext)}` : ''
+    ].filter(Boolean).join(' · '),
+    value: `Me refiero al anuncio "${cleanOption(row.label, 140)}"${row.id ? ` (ID: ${cleanOption(row.id, 80)})` : ''}. Responde mi pregunta anterior usando ese anuncio.`
+  })).filter(option => option.label)
+}
+
+async function getContactClarificationOptions(runtimeContext) {
+  const hiddenCondition = await getHiddenContactsWhere('c')
+  const where = ['c.created_at IS NOT NULL']
+  if (hiddenCondition) where.push(hiddenCondition)
+
+  const rows = await safeAll(`
+    SELECT
+      c.id AS id,
+      COALESCE(
+        NULLIF(c.full_name, ''),
+        NULLIF(TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')), ''),
+        NULLIF(c.phone, ''),
+        NULLIF(c.email, ''),
+        c.id
+      ) AS label,
+      c.created_at AS created_at,
+      COALESCE(NULLIF(c.source, ''), NULLIF(c.attribution_session_source, ''), 'sin fuente') AS source,
+      COALESCE(c.total_paid, 0) AS total_paid
+    FROM contacts c
+    WHERE ${where.join(' AND ')}
+    ORDER BY c.created_at DESC
+    LIMIT ${CLARIFICATION_OPTION_LIMIT}
+  `)
+
+  return rows.map((row) => ({
+    id: row.id,
+    label: cleanOption(row.label),
+    description: [
+      row.created_at ? `Entró: ${formatOptionDate(row.created_at, runtimeContext)}` : '',
+      row.source ? `Fuente: ${cleanOption(row.source, 35)}` : '',
+      Number(row.total_paid || 0) > 0 ? `Pagó: ${formatCurrency(row.total_paid)}` : ''
+    ].filter(Boolean).join(' · '),
+    value: `Me refiero al contacto "${cleanOption(row.label, 140)}"${row.id ? ` (ID: ${cleanOption(row.id, 80)})` : ''}. Responde mi pregunta anterior usando ese contacto.`
+  })).filter(option => option.label)
+}
+
+async function getAppointmentClarificationOptions(runtimeContext) {
+  const rows = await safeAll(`
+    SELECT
+      a.id AS id,
+      COALESCE(NULLIF(a.title, ''), NULLIF(c.full_name, ''), 'Cita sin título') AS label,
+      COALESCE(a.start_time, a.date_added) AS appointment_date,
+      COALESCE(NULLIF(a.appointment_status, ''), NULLIF(a.status, ''), 'sin estado') AS status
+    FROM appointments a
+    LEFT JOIN contacts c ON c.id = a.contact_id
+    WHERE COALESCE(a.start_time, a.date_added) IS NOT NULL
+    ORDER BY COALESCE(a.start_time, a.date_added) DESC
+    LIMIT ${CLARIFICATION_OPTION_LIMIT}
+  `)
+
+  return rows.map((row) => ({
+    id: row.id,
+    label: cleanOption(row.label),
+    description: [
+      row.appointment_date ? `Fecha: ${formatOptionDate(row.appointment_date, runtimeContext)}` : '',
+      row.status ? `Estado: ${cleanOption(row.status, 35)}` : ''
+    ].filter(Boolean).join(' · '),
+    value: `Me refiero a la cita "${cleanOption(row.label, 140)}"${row.id ? ` (ID: ${cleanOption(row.id, 80)})` : ''}. Responde mi pregunta anterior usando esa cita.`
+  })).filter(option => option.label)
+}
+
+async function getPaymentClarificationOptions(runtimeContext) {
+  const rows = await safeAll(`
+    SELECT
+      p.id AS id,
+      COALESCE(NULLIF(c.full_name, ''), NULLIF(p.reference, ''), p.id) AS label,
+      COALESCE(p.date, p.created_at) AS payment_date,
+      COALESCE(p.amount, 0) AS amount,
+      COALESCE(NULLIF(p.status, ''), 'sin estado') AS status
+    FROM payments p
+    LEFT JOIN contacts c ON c.id = p.contact_id
+    WHERE COALESCE(p.date, p.created_at) IS NOT NULL
+    ORDER BY COALESCE(p.date, p.created_at) DESC
+    LIMIT ${CLARIFICATION_OPTION_LIMIT}
+  `)
+
+  return rows.map((row) => ({
+    id: row.id,
+    label: `${cleanOption(row.label, 56)} · ${formatCurrency(row.amount)}`,
+    description: [
+      row.payment_date ? `Fecha: ${formatOptionDate(row.payment_date, runtimeContext)}` : '',
+      row.status ? `Estado: ${cleanOption(row.status, 35)}` : ''
+    ].filter(Boolean).join(' · '),
+    value: `Me refiero al pago de ${formatCurrency(row.amount)} asociado a "${cleanOption(row.label, 140)}"${row.id ? ` (ID: ${cleanOption(row.id, 80)})` : ''}. Responde mi pregunta anterior usando ese pago.`
+  })).filter(option => option.label)
+}
+
+async function getSourceClarificationOptions() {
+  const rows = await safeAll(`
+    SELECT
+      COALESCE(NULLIF(source, ''), NULLIF(attribution_session_source, ''), 'sin fuente') AS label,
+      COUNT(*) AS records,
+      COALESCE(SUM(total_paid), 0) AS amount
+    FROM contacts
+    GROUP BY COALESCE(NULLIF(source, ''), NULLIF(attribution_session_source, ''), 'sin fuente')
+    ORDER BY records DESC
+    LIMIT ${CLARIFICATION_OPTION_LIMIT}
+  `)
+
+  return rows.map((row) => ({
+    id: row.label,
+    label: cleanOption(row.label),
+    description: `${formatNumber(row.records)} contactos${Number(row.amount || 0) > 0 ? ` · ${formatCurrency(row.amount)}` : ''}`,
+    value: `Me refiero a la fuente "${cleanOption(row.label, 140)}". Responde mi pregunta anterior usando esa fuente.`
+  })).filter(option => option.label)
+}
+
+async function getClarificationOptions(entity, runtimeContext) {
+  if (entity === 'campaign') return getCampaignClarificationOptions(runtimeContext)
+  if (entity === 'adset') return getAdsetClarificationOptions(runtimeContext)
+  if (entity === 'ad') return getAdClarificationOptions(runtimeContext)
+  if (entity === 'contact') return getContactClarificationOptions(runtimeContext)
+  if (entity === 'appointment') return getAppointmentClarificationOptions(runtimeContext)
+  if (entity === 'payment') return getPaymentClarificationOptions(runtimeContext)
+  if (entity === 'source') return getSourceClarificationOptions()
+
+  return []
+}
+
+function getClarificationLabel(entity) {
+  return {
+    campaign: 'campaña',
+    adset: 'conjunto de anuncios',
+    ad: 'anuncio',
+    contact: 'contacto',
+    appointment: 'cita',
+    payment: 'pago',
+    source: 'fuente'
+  }[entity] || 'opción'
+}
+
+async function createClarificationReply({ messages, runtimeContext }) {
+  const question = getLatestUserMessage(messages)
+  if (!question || isClarificationSelection(question) || isBroadComparisonQuestion(question)) return null
+
+  const entity = detectClarificationEntity(question)
+  if (!entity || !looksAmbiguousForEntity(question)) return null
+  if (hasLikelySpecificEntityReference(question)) return null
+
+  const options = await getClarificationOptions(entity, runtimeContext)
+  if (options.length < 2 || questionMentionsOption(question, options)) return null
+
+  const entityLabel = getClarificationLabel(entity)
+
+  return {
+    reply: `¿A cuál ${entityLabel} te refieres? Encontré estas opciones en tu base de datos:`,
+    model: 'local-clarification',
+    usage: null,
+    sources: [],
+    clarificationOptions: options.map(({ label, value, description }) => ({ label, value, description })),
+    debug: {
+      clarificationEntity: entity,
+      optionCount: options.length
+    }
+  }
+}
+
 async function resolveQuestionRange(question) {
   const normalized = normalizeText(question)
   const timezoneRange = await resolveDateRangeWithGHLTimezone({})
@@ -1885,6 +2199,15 @@ function buildModelInput(messages, viewContext, databaseContext, directFacts) {
 
 export async function createAgentReply({ apiKey, messages, viewContext }) {
   const runtimeContext = await getAgentRuntimeContext()
+  const clarificationReply = await createClarificationReply({
+    messages,
+    runtimeContext
+  })
+
+  if (clarificationReply) {
+    return clarificationReply
+  }
+
   const agentConfig = await getAIAgentConfig()
   const coreQueries = await buildCoreResearchQueries(runtimeContext)
   const corePlan = {
