@@ -5,6 +5,8 @@ import { aiAgentService, type AIAgentConfigInput, type AIAgentConfigStatus, type
 import styles from './AIAgentPanel.module.css'
 
 const AI_AGENT_FLOATING_OPEN_KEY = 'ristak.aiAgentFloating.open'
+const AI_AGENT_MESSAGES_KEY = 'ristak.aiAgentFloating.messages'
+const MAX_STORED_MESSAGES = 80
 
 const suggestions = [
   'Dime que debería revisar hoy del negocio.',
@@ -96,6 +98,43 @@ function saveOpenState(open: boolean) {
   }
 }
 
+function getStoredMessages(): AIAgentMessage[] {
+  try {
+    const rawMessages = window.localStorage.getItem(AI_AGENT_MESSAGES_KEY)
+    if (!rawMessages) return []
+
+    const parsedMessages = JSON.parse(rawMessages)
+    if (!Array.isArray(parsedMessages)) return []
+
+    return parsedMessages
+      .filter((message) => (
+        message &&
+        (message.role === 'user' || message.role === 'assistant') &&
+        typeof message.content === 'string' &&
+        message.content.trim()
+      ))
+      .slice(-MAX_STORED_MESSAGES)
+      .map((message) => ({
+        id: typeof message.id === 'string' ? message.id : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        role: message.role,
+        content: message.content,
+        sources: Array.isArray(message.sources) ? message.sources : undefined,
+        createdAt: typeof message.createdAt === 'string' ? message.createdAt : new Date().toISOString()
+      }))
+  } catch {
+    return []
+  }
+}
+
+function saveMessages(messages: AIAgentMessage[]) {
+  try {
+    const messagesToStore = messages.slice(-MAX_STORED_MESSAGES)
+    window.localStorage.setItem(AI_AGENT_MESSAGES_KEY, JSON.stringify(messagesToStore))
+  } catch {
+    // localStorage can fail in private or restricted browser contexts.
+  }
+}
+
 function createMessage(role: AIAgentMessage['role'], content: string, sources?: AIAgentMessage['sources']): AIAgentMessage {
   return {
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -154,7 +193,7 @@ export const AIAgentPanel: React.FC = () => {
   const [open, setOpen] = useState(getStoredOpenState)
   const [status, setStatus] = useState<AIAgentConfigStatus>(emptyStatus)
   const [form, setForm] = useState<AIAgentConfigInput>(emptyForm)
-  const [messages, setMessages] = useState<AIAgentMessage[]>([])
+  const [messages, setMessages] = useState<AIAgentMessage[]>(getStoredMessages)
   const [input, setInput] = useState('')
   const [apiKeyInput, setApiKeyInput] = useState('')
   const [loadingConfig, setLoadingConfig] = useState(true)
@@ -217,6 +256,10 @@ export const AIAgentPanel: React.FC = () => {
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [messages, sending, savingConfig, open])
+
+  useEffect(() => {
+    saveMessages(messages)
+  }, [messages])
 
   useEffect(() => {
     if (loadingConfig || askedOnboardingRef.current || businessContextLoaded) return
@@ -373,6 +416,11 @@ export const AIAgentPanel: React.FC = () => {
     }
   }
 
+  const clearChat = () => {
+    askedOnboardingRef.current = businessContextLoaded
+    setMessages([])
+  }
+
   return (
     <div className={styles.floatingRoot}>
       {open && (
@@ -395,7 +443,7 @@ export const AIAgentPanel: React.FC = () => {
               <button
                 type="button"
                 className={styles.iconButton}
-                onClick={() => setMessages([])}
+                onClick={clearChat}
                 disabled={!messages.length || sending || savingConfig}
                 aria-label="Limpiar chat"
                 title="Limpiar chat"
@@ -542,7 +590,8 @@ export const AIAgentPanel: React.FC = () => {
         onClick={() => setOpenState(!open)}
         aria-label={open ? 'Cerrar agente AI' : 'Abrir agente AI'}
       >
-        {open ? <X size={22} /> : <MessageCircle size={24} />}
+        {open ? <X size={19} /> : <MessageCircle size={20} />}
+        <span className={styles.floatingButtonLabel}>{open ? 'Cerrar chat' : 'Chat AI'}</span>
         {!status.configured && <span className={styles.setupBadge} />}
         {status.configured && <CheckCircle className={styles.connectedBadge} size={16} />}
       </button>

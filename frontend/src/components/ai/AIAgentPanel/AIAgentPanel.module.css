@@ -11,11 +11,12 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 60px;
-  height: 60px;
-  padding: 0;
+  gap: 9px;
+  min-width: 134px;
+  height: 54px;
+  padding: 0 18px;
   border: 1px solid rgba(148, 163, 184, 0.28);
-  border-radius: 999px;
+  border-radius: 16px;
   color: var(--color-background-primary);
   background: var(--color-text-primary);
   box-shadow: 0 18px 48px rgba(15, 23, 42, 0.28);
@@ -28,10 +29,21 @@
   box-shadow: 0 22px 56px rgba(15, 23, 42, 0.34);
 }
 
+.floatingButton svg {
+  flex-shrink: 0;
+}
+
+.floatingButtonLabel {
+  font-size: 14px;
+  font-weight: 750;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 .setupBadge {
   position: absolute;
-  right: 6px;
-  top: 6px;
+  right: 9px;
+  top: 7px;
   width: 13px;
   height: 13px;
   border: 2px solid var(--color-background-primary);
@@ -41,8 +53,8 @@
 
 .connectedBadge {
   position: absolute;
-  right: 3px;
-  top: 3px;
+  right: 8px;
+  top: 7px;
   color: var(--color-status-success);
   background: var(--color-background-primary);
   border-radius: 999px;
@@ -469,5 +481,11 @@
 
   .setupButton {
     width: 100%;
+  }
+
+  .floatingButton {
+    min-width: 126px;
+    height: 52px;
+    padding: 0 15px;
   }
 }
