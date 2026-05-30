@@ -1573,7 +1573,7 @@ export const Dashboard: React.FC = () => {
 
         <Card data-dashboard-chart-card variant="glass" className="space-y-5">
           <div className="flex flex-col gap-3">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
               <h2 className="m-0 text-xl font-semibold text-[var(--color-text-primary)] sm:whitespace-nowrap">
                 {activeChartLabel}
               </h2>
