@@ -404,6 +404,18 @@ export const Dashboard: React.FC = () => {
     return active?.label ?? 'Ingresos vs Gastos'
   }, [chartViewOptions, selectedChartView])
 
+  const chartLegendItems = React.useMemo(() => {
+    const items = [
+      { key: 'value', label: chartConfig.label1, color: chartConfig.color }
+    ]
+
+    if (chartConfig.label2) {
+      items.push({ key: 'value2', label: chartConfig.label2, color: chartConfig.color2 })
+    }
+
+    return items
+  }, [chartConfig.color, chartConfig.color2, chartConfig.label1, chartConfig.label2])
+
   const selectedRangeLabel = React.useMemo(() => {
     const from = formatDateToISO(dateRange.start)
     const to = formatDateToISO(dateRange.end)
@@ -1266,14 +1278,25 @@ export const Dashboard: React.FC = () => {
         </div>
 
         <Card data-dashboard-chart-card variant="glass" className="space-y-5">
-          <div className="flex items-start justify-between">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div className="space-y-1">
               <h2 className="text-xl font-semibold text-[var(--color-text-primary)]">
                 {activeChartLabel}
               </h2>
               <p className="text-sm text-[var(--color-text-secondary)] mt-0.5">Últimos 12 meses</p>
             </div>
-            <div className="flex items-end gap-4">
+            <div className="flex flex-wrap items-center gap-3 xl:justify-end">
+              <div className="flex flex-wrap items-center gap-4 text-xs text-[var(--color-text-secondary)]">
+                {chartLegendItems.map((item) => (
+                  <div key={item.key} className="inline-flex items-center gap-2">
+                    <span
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{ backgroundColor: item.color }}
+                    />
+                    <span className="font-medium">{item.label}</span>
+                  </div>
+                ))}
+              </div>
               {selectedChartView === 'revenue-spend' && (
                 <div className={funnelStyles.scopeSelector} data-ristak-scope-selector>
                   {financialScopeOptions.map(({ value, label, icon: Icon, description }) => {
@@ -1318,8 +1341,6 @@ export const Dashboard: React.FC = () => {
                   color2={chartConfig.color2}
                   formatValue={chartConfig.formatValue}
                   formatTooltipValue={chartConfig.formatTooltipValue}
-                  showLegend
-                  legendLabels={{ label1: chartConfig.label1, label2: chartConfig.label2 }}
                   onPointClick={handleChartPointClick}
                 />
             ) : (
