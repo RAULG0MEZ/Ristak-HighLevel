@@ -82,6 +82,21 @@ const onboardingQuestions: Array<{
   }
 ]
 
+type VisualChartType = 'bar' | 'line'
+
+type VisualChartItem = {
+  label: string
+  value: number
+  rawValue: string
+  highlighted: boolean
+}
+
+type VisualChart = {
+  type: VisualChartType
+  title: string
+  items: VisualChartItem[]
+}
+
 function getStoredOpenState() {
   try {
     return window.localStorage.getItem(AI_AGENT_FLOATING_OPEN_KEY) === 'true'
@@ -266,6 +281,140 @@ function renderMarkdownTable(lines: string[], keyPrefix: string) {
   )
 }
 
+function parseChartNumber(value: string) {
+  const normalized = value.replace(/,/g, '').replace(/\$/g, '')
+  const match = normalized.match(/-?\d+(?:\.\d+)?/)
+
+  return match ? Number(match[0]) : Number.NaN
+}
+
+function parseVisualChart(lines: string[]): VisualChart | null {
+  let type: VisualChartType = 'bar'
+  let title = ''
+  const items: VisualChartItem[] = []
+
+  lines.forEach((line) => {
+    const trimmed = line.trim()
+    if (!trimmed) return
+
+    const configMatch = trimmed.match(/^(type|title):\s*(.+)$/i)
+
+    if (configMatch) {
+      const key = configMatch[1].toLowerCase()
+      const value = configMatch[2].trim()
+
+      if (key === 'type' && /^(bar|line)$/i.test(value)) {
+        type = value.toLowerCase() as VisualChartType
+      }
+
+      if (key === 'title') {
+        title = value
+      }
+
+      return
+    }
+
+    const parts = trimmed.split('|').map((part) => part.trim()).filter(Boolean)
+    if (parts.length < 2) return
+
+    const numericValue = parseChartNumber(parts[1])
+    if (!Number.isFinite(numericValue)) return
+
+    items.push({
+      label: parts[0],
+      value: numericValue,
+      rawValue: parts[1],
+      highlighted: parts.slice(2).some((part) => /^(highlight|destacar|clave)$/i.test(part))
+    })
+  })
+
+  if (items.length < 2) return null
+
+  return {
+    type,
+    title,
+    items: items.slice(0, 8)
+  }
+}
+
+function renderVisualChart(chart: VisualChart, keyPrefix: string) {
+  const values = chart.items.map((item) => item.value)
+  const minValue = Math.min(...values)
+  const maxValue = Math.max(...values)
+  const spread = maxValue - minValue || 1
+
+  if (chart.type === 'line') {
+    const width = 320
+    const height = 138
+    const paddingX = 22
+    const paddingY = 18
+    const pointGap = chart.items.length > 1 ? (width - paddingX * 2) / (chart.items.length - 1) : 0
+    const points = chart.items.map((item, index) => {
+      const x = paddingX + pointGap * index
+      const y = height - paddingY - ((item.value - minValue) / spread) * (height - paddingY * 2)
+
+      return { ...item, x, y }
+    })
+    const path = points.map((point) => `${point.x},${point.y}`).join(' ')
+
+    return (
+      <div className={styles.visualChart} key={keyPrefix}>
+        {chart.title && <div className={styles.visualChartTitle}>{chart.title}</div>}
+        <svg className={styles.lineChart} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={chart.title || 'Gráfica lineal'}>
+          <polyline className={styles.lineChartPath} points={path} />
+          {points.map((point, index) => (
+            <g key={`${keyPrefix}-point-${index}`}>
+              <circle
+                className={point.highlighted ? styles.lineChartPointHighlight : styles.lineChartPoint}
+                cx={point.x}
+                cy={point.y}
+                r={point.highlighted ? 6 : 4}
+              />
+              {point.highlighted && (
+                <text className={styles.lineChartValue} x={point.x} y={Math.max(12, point.y - 12)} textAnchor="middle">
+                  {point.rawValue}
+                </text>
+              )}
+            </g>
+          ))}
+        </svg>
+        <div className={styles.chartLabels}>
+          {chart.items.map((item, index) => (
+            <span className={item.highlighted ? styles.chartLabelHighlight : styles.chartLabel} key={`${keyPrefix}-label-${index}`}>
+              {item.label}
+            </span>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  const maxAbsValue = Math.max(...chart.items.map((item) => Math.abs(item.value)), 1)
+
+  return (
+    <div className={styles.visualChart} key={keyPrefix}>
+      {chart.title && <div className={styles.visualChartTitle}>{chart.title}</div>}
+      <div className={styles.barChart}>
+        {chart.items.map((item, index) => {
+          const width = `${Math.max(6, (Math.abs(item.value) / maxAbsValue) * 100)}%`
+
+          return (
+            <div className={`${styles.barChartRow} ${item.highlighted ? styles.barChartRowHighlight : ''}`} key={`${keyPrefix}-bar-${index}`}>
+              <div className={styles.barChartMeta}>
+                <span className={styles.barChartLabel}>{item.label}</span>
+                <span className={styles.barChartValue}>{item.rawValue}</span>
+              </div>
+              <div className={styles.barTrack}>
+                <span className={styles.barFill} style={{ width }} />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function getKeyValueParts(line: string) {
   const match = line.match(/^\s*(?:\*\*)?([^:*|\n]{2,54})(?::\*\*|\*\*:|:)\s+(.+)$/)
   if (!match) return null
@@ -313,6 +462,26 @@ function renderMessageContent(content: string) {
 
     if (!trimmed) {
       index += 1
+      continue
+    }
+
+    if (/^```ristak-chart\s*$/i.test(trimmed)) {
+      const chartLines: string[] = []
+      index += 1
+
+      while (index < lines.length && lines[index].trim() !== '```') {
+        chartLines.push(lines[index])
+        index += 1
+      }
+
+      if (index < lines.length && lines[index].trim() === '```') {
+        index += 1
+      }
+
+      const chart = parseVisualChart(chartLines)
+      if (chart) {
+        nodes.push(renderVisualChart(chart, `chart-${index}`))
+      }
       continue
     }
 
@@ -699,9 +868,7 @@ export const AIAgentPanel: React.FC = () => {
     setMessages([])
   }
 
-  const floatingButtonClassName = open
-    ? styles.floatingButtonOpen
-    : `${styles.floatingButton} ${unreadReplies ? styles.floatingButtonUnread : ''}`
+  const floatingButtonClassName = `${styles.floatingButton} ${unreadReplies ? styles.floatingButtonUnread : ''}`
   const closedButtonLabel = unreadReplies
     ? `Abrir agente AI, ${unreadReplies} respuesta nueva`
     : 'Abrir agente AI'
@@ -887,13 +1054,13 @@ export const AIAgentPanel: React.FC = () => {
         </section>
       )}
 
-      <button
-        type="button"
-        className={floatingButtonClassName}
-        onClick={() => setOpenState(!open)}
-        aria-label={open ? 'Cerrar agente AI' : closedButtonLabel}
-      >
-        {open ? <X size={18} /> : (
+      {!open && (
+        <button
+          type="button"
+          className={floatingButtonClassName}
+          onClick={() => setOpenState(true)}
+          aria-label={closedButtonLabel}
+        >
           <>
             <MessageCircle size={18} />
             <span className={styles.floatingButtonLabel}>Chat AI</span>
@@ -904,8 +1071,8 @@ export const AIAgentPanel: React.FC = () => {
               </span>
             )}
           </>
-        )}
-      </button>
+        </button>
+      )}
     </div>
   )
 }

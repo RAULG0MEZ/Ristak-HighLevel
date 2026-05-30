@@ -1,13 +1,12 @@
 .floatingRoot {
   position: fixed;
   right: 24px;
-  bottom: 24px;
+  bottom: 22px;
   z-index: 2200;
   pointer-events: none;
 }
 
-.floatingButton,
-.floatingButtonOpen {
+.floatingButton {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -32,21 +31,12 @@
   box-shadow: 0 8px 32px rgba(15, 23, 42, 0.28);
 }
 
-.floatingButtonOpen {
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  border-radius: 50%;
-}
-
-.floatingButton:hover,
-.floatingButtonOpen:hover {
+.floatingButton:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 28px rgba(15, 23, 42, 0.26);
 }
 
-.floatingButton svg,
-.floatingButtonOpen svg {
+.floatingButton svg {
   flex-shrink: 0;
 }
 
@@ -93,12 +83,12 @@
 .window {
   position: absolute;
   right: 0;
-  bottom: 76px;
+  bottom: 0;
   display: flex;
   flex-direction: column;
-  width: min(760px, calc(100vw - 40px));
-  height: min(820px, calc(100vh - 104px));
-  min-height: min(620px, calc(100vh - 104px));
+  width: min(840px, calc(100vw - 40px));
+  height: calc(100vh - 48px);
+  min-height: min(680px, calc(100vh - 48px));
   overflow: hidden;
   border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: 14px;
@@ -377,9 +367,11 @@
 
 .messageAssistant .bubble {
   color: var(--color-text-primary);
-  background: color-mix(in srgb, var(--color-background-primary) 72%, var(--color-background-secondary) 28%);
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  box-shadow: 0 12px 34px rgba(15, 23, 42, 0.08);
+  padding: 2px 0;
+  border-radius: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
 }
 
 .optionButtons {
@@ -557,10 +549,8 @@
 .insightBlock {
   display: grid;
   gap: 5px;
-  padding: 12px 13px;
-  border-left: 3px solid rgba(16, 185, 129, 0.65);
-  border-radius: 12px;
-  background: rgba(16, 185, 129, 0.07);
+  padding: 3px 0 3px 12px;
+  border-left: 2px solid rgba(239, 68, 68, 0.72);
 }
 
 .insightTitle {
@@ -579,10 +569,7 @@
 .orderedList,
 .bulletList {
   margin: 0;
-  padding: 10px 12px 10px 30px;
-  border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  background: rgba(148, 163, 184, 0.045);
+  padding: 0 0 0 22px;
   color: var(--color-text-secondary);
 }
 
@@ -599,6 +586,148 @@
 
 .bulletList li::marker {
   color: var(--color-text-tertiary);
+}
+
+.visualChart {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(148, 163, 184, 0.06), rgba(148, 163, 184, 0.025)),
+    var(--color-background-primary);
+}
+
+.visualChartTitle {
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 820;
+}
+
+.barChart {
+  display: grid;
+  gap: 12px;
+}
+
+.barChartRow {
+  display: grid;
+  gap: 6px;
+}
+
+.barChartMeta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.barChartLabel {
+  min-width: 0;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.barChartValue {
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 820;
+}
+
+.barTrack {
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.14);
+}
+
+.barFill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #334155, #64748b);
+}
+
+.barChartRowHighlight .barChartLabel {
+  color: var(--color-text-primary);
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-color: #ef4444;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 4px;
+}
+
+.barChartRowHighlight .barChartValue {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 8px;
+  border: 2px solid rgba(239, 68, 68, 0.78);
+  border-radius: 999px;
+}
+
+.barChartRowHighlight .barFill {
+  background: linear-gradient(90deg, #ef4444, #f97316);
+}
+
+.lineChart {
+  width: 100%;
+  min-height: 150px;
+  overflow: visible;
+}
+
+.lineChartPath {
+  fill: none;
+  stroke: #334155;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.lineChartPoint {
+  fill: var(--color-background-primary);
+  stroke: #334155;
+  stroke-width: 3;
+}
+
+.lineChartPointHighlight {
+  fill: #fff;
+  stroke: #ef4444;
+  stroke-width: 3;
+}
+
+.lineChartValue {
+  fill: #ef4444;
+  font-size: 12px;
+  font-weight: 820;
+}
+
+.chartLabels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 8px;
+}
+
+.chartLabel,
+.chartLabelHighlight {
+  min-width: 0;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.chartLabelHighlight {
+  color: var(--color-text-primary);
+  font-weight: 780;
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-color: #ef4444;
+  text-underline-offset: 4px;
 }
 
 .messageUser .metricTable th,
@@ -738,10 +867,11 @@
 
   .window {
     right: -4px;
-    bottom: 74px;
+    bottom: -4px;
     width: calc(100vw - 24px);
-    height: min(720px, calc(100vh - 104px));
+    height: calc(100vh - 24px);
     min-height: 0;
+    max-height: none;
   }
 
   .setupForm {
@@ -757,8 +887,4 @@
     padding: 0 15px;
   }
 
-  .floatingButtonOpen {
-    width: 42px;
-    height: 42px;
-  }
 }
