@@ -40,6 +40,58 @@ function normalizeStripeObjectId(value) {
   return value.id || value._id || null;
 }
 
+function extractPaymentWebhookPayload(data) {
+  return data.payment || data.paymentData || data.data?.payment || data.data || data.resource || data.object || {};
+}
+
+function sourceTypeIndicatesInvoice(value) {
+  return typeof value === 'string' && value.toLowerCase().includes('invoice');
+}
+
+function extractPaymentWebhookInvoiceId(data, payment) {
+  const invoice = payment.invoice || data.invoice || data.invoiceData || {};
+  const sourceMeta = payment.entitySourceMeta || payment.entity_source_meta || data.entitySourceMeta || data.entity_source_meta || {};
+  const sourceType = firstValue(
+    payment.entitySourceType,
+    payment.entity_source_type,
+    payment.sourceType,
+    payment.source_type,
+    data.entitySourceType,
+    data.entity_source_type,
+    sourceMeta.type,
+    sourceMeta.entityType
+  );
+
+  return firstValue(
+    payment.invoiceId,
+    payment.invoice_id,
+    payment.invoiceID,
+    data.invoiceId,
+    data.invoice_id,
+    invoice.id,
+    invoice._id,
+    invoice.invoiceId,
+    invoice.invoice_id,
+    sourceMeta.invoiceId,
+    sourceMeta.invoice_id,
+    sourceMeta.invoiceID,
+    sourceTypeIndicatesInvoice(sourceType)
+      ? firstValue(
+          payment.entitySourceId,
+          payment.entity_source_id,
+          payment.entityId,
+          payment.entity_id,
+          data.entitySourceId,
+          data.entity_source_id,
+          sourceMeta.id,
+          sourceMeta._id,
+          sourceMeta.entityId,
+          sourceMeta.entity_id
+        )
+      : null
+  );
+}
+
 /**
  * Procesa webhook de contacto nuevo o actualizado
  */
@@ -172,11 +224,21 @@ export const handleContactWebhook = async (req, res) => {
 export const handlePaymentWebhook = async (req, res) => {
   try {
     const data = req.body;
-    const payment = data.payment || {};
+    const payment = extractPaymentWebhookPayload(data);
 
     // HighLevel manda el ID en payment.transaction_id
-    const paymentId = payment.transaction_id || payment._id || payment.id || data.id;
-    const contactId = data.contact_id || data.contactId || payment.customer?.id;
+    const paymentId = payment.transaction_id || payment.transactionId || payment._id || payment.id || data.id;
+    const contactId = firstValue(
+      data.contact_id,
+      data.contactId,
+      payment.contact_id,
+      payment.contactId,
+      payment.customer?.id,
+      payment.contact?.id,
+      payment.invoice?.contactId,
+      payment.invoice?.contactDetails?.id
+    );
+    const invoiceId = extractPaymentWebhookInvoiceId(data, payment);
 
     logger.info(`📥 Webhook de pago recibido: ${paymentId || 'sin ID'}`);
 
@@ -205,23 +267,12 @@ export const handlePaymentWebhook = async (req, res) => {
       ]);
     }
 
-    const query = usePostgres
-      ? `INSERT INTO payments (id, contact_id, amount, currency, status, payment_method, reference, description, date, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-         ON CONFLICT (id) DO UPDATE SET
-           amount = EXCLUDED.amount,
-           status = EXCLUDED.status,
-           payment_method = EXCLUDED.payment_method,
-           reference = EXCLUDED.reference,
-           description = EXCLUDED.description`
-      : `INSERT OR REPLACE INTO payments (id, contact_id, amount, currency, status, payment_method, reference, description, date, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-
     // Extraer método de pago
-    const paymentMethod = payment.method || payment.gateway || payment.payment_method || 'manual';
+    const paymentMethod = payment.method || payment.gateway || payment.payment_method || payment.paymentMethod || null;
 
     // Crear referencia con el número de factura
-    const invoiceNumber = payment.invoice?.number || payment.entitySourceMeta?.invoiceNumber || '';
+    const sourceMeta = payment.entitySourceMeta || payment.entity_source_meta || {};
+    const invoiceNumber = payment.invoice?.number || payment.invoice?.invoiceNumber || sourceMeta.invoiceNumber || sourceMeta.invoice_number || '';
     const reference = invoiceNumber
       ? `Invoice #${invoiceNumber}`
       : payment.reference || paymentId;
@@ -235,21 +286,108 @@ export const handlePaymentWebhook = async (req, res) => {
       || payment.description
       || null;
 
-    await db.run(query, [
-      paymentId,
-      contactId,
-      payment.total_amount || payment.amount || 0, // HighLevel envía el monto directo, NO en centavos
-      payment.currency_code || payment.currency || 'MXN',
-      payment.payment_status || payment.status || 'succeeded',
-      paymentMethod,
-      reference,
-      description,
-      payment.created_at || payment.fulfilledAt || payment.date || payment.createdAt || new Date().toISOString(),
-      payment.created_at || payment.createdAt || new Date().toISOString()
-    ]);
+    const amount = payment.total_amount || payment.totalAmount || payment.amount || 0; // HighLevel envía el monto directo, NO en centavos
+    const currency = payment.currency_code || payment.currencyCode || payment.currency || 'MXN';
+    const status = payment.payment_status || payment.paymentStatus || payment.status || 'succeeded';
+    const paymentDate = payment.created_at || payment.fulfilledAt || payment.date || payment.createdAt || new Date().toISOString();
+    const createdAt = payment.created_at || payment.createdAt || new Date().toISOString();
+    const existingInvoicePayment = invoiceId
+      ? await db.get(
+          'SELECT id, contact_id FROM payments WHERE ghl_invoice_id = ? OR id = ? LIMIT 1',
+          [invoiceId, invoiceId]
+        )
+      : null;
+
+    if (existingInvoicePayment) {
+      await db.run(
+        `UPDATE payments
+         SET contact_id = COALESCE(contact_id, ?),
+             amount = CASE WHEN amount IS NULL OR amount = 0 THEN ? ELSE amount END,
+             currency = COALESCE(currency, ?),
+             status = ?,
+             payment_method = COALESCE(?, payment_method, 'manual'),
+             reference = COALESCE(reference, ?),
+             description = COALESCE(description, ?),
+             date = COALESCE(date, ?),
+             invoice_number = COALESCE(invoice_number, ?),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [
+          contactId,
+          amount,
+          currency,
+          status,
+          paymentMethod,
+          reference,
+          description,
+          paymentDate,
+          invoiceNumber || null,
+          existingInvoicePayment.id
+        ]
+      );
+
+      if (paymentId !== existingInvoicePayment.id) {
+        await db.run(
+          `DELETE FROM payments
+           WHERE id = ?
+             AND (ghl_invoice_id IS NULL OR ghl_invoice_id = '')`,
+          [paymentId]
+        );
+      }
+    } else {
+      const rowId = invoiceId || paymentId;
+      const query = usePostgres
+        ? `INSERT INTO payments (
+             id, contact_id, amount, currency, status, payment_method,
+             reference, description, date, created_at, ghl_invoice_id, invoice_number
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+           ON CONFLICT (id) DO UPDATE SET
+             amount = EXCLUDED.amount,
+             status = EXCLUDED.status,
+             payment_method = EXCLUDED.payment_method,
+             reference = EXCLUDED.reference,
+             description = EXCLUDED.description,
+             ghl_invoice_id = COALESCE(payments.ghl_invoice_id, EXCLUDED.ghl_invoice_id),
+             invoice_number = COALESCE(payments.invoice_number, EXCLUDED.invoice_number),
+             updated_at = CURRENT_TIMESTAMP`
+        : `INSERT INTO payments (
+             id, contact_id, amount, currency, status, payment_method,
+             reference, description, date, created_at, ghl_invoice_id, invoice_number
+           )
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             amount = excluded.amount,
+             status = excluded.status,
+             payment_method = excluded.payment_method,
+             reference = excluded.reference,
+             description = excluded.description,
+             ghl_invoice_id = COALESCE(ghl_invoice_id, excluded.ghl_invoice_id),
+             invoice_number = COALESCE(invoice_number, excluded.invoice_number),
+             updated_at = CURRENT_TIMESTAMP`;
+
+      await db.run(query, [
+        rowId,
+        contactId,
+        amount,
+        currency,
+        status,
+        paymentMethod || 'manual',
+        reference,
+        description,
+        paymentDate,
+        createdAt,
+        invoiceId || null,
+        invoiceNumber || null
+      ]);
+    }
 
     // Actualizar estadísticas del contacto
     await updateSingleContactStats(contactId);
+
+    if (invoiceId && ['paid', 'succeeded', 'completed'].includes(String(status).toLowerCase())) {
+      await markPaymentFlowInvoicePaid(invoiceId);
+    }
 
     // Guardar payment method si viene info de Stripe en el webhook
     try {
