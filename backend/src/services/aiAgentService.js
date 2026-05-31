@@ -1363,6 +1363,10 @@ function extractPaymentContactHintFromConversation(messages) {
 
   const plainConversationText = conversationText.replace(/[*_`]/g, '')
   const assistantContactPatterns = [
+    /\b(?:identifiqu[eé]|encontr[eé]|resolv[ií])\s+a\s+([^,\n:]+?)(?:\.|\n|$)/i,
+    /\bflujo\s+(?:para|de)\s+([^,\n:]+?)(?:\.|\n|$)/i,
+    /\b(?:contacto|cliente)\s+(?:exacto|correcto|seleccionado|resuelto)\s*[:：]\s*([^(\n,]+)(?:\(|,|\n|$)/i,
+    /\bpara\s+([^,\n:]+?)\s+(?:queda|qued[oó]|ser[ií]a|seria|hago|har[eé]|crear[eé]|creo|preparo|prepar[eé])/i,
     /\ba\s+([^,\n:]+?)\s+le\s+(?:preparo|prepare|prepar[eé]|voy|vamos|cobro|cobra|cobrar|programo|programar)/i,
     /\b([^,\n:]+?)\s+s[ií]\s+tiene\s+tarjeta\s+guardada/i
   ]
@@ -1576,12 +1580,80 @@ function requiresPaymentExecutionConfirmation(call = {}) {
   return PAYMENT_MUTATION_TOOL_NAMES.has(call.name) || isHighLevelPaymentRestMutation(call)
 }
 
-function buildPaymentConfirmationOptions(actionLabel = 'esta acción de pago') {
+function getPaymentSummaryContact(summary = {}) {
+  const contact = summary.contact || summary.customer || summary.client || {}
+  if (!contact || typeof contact !== 'object') return null
+
+  const id = cleanText(contact.id || contact.contactId || contact.contact_id || '', 160)
+  if (!id) return null
+
+  return {
+    id,
+    name: cleanText(contact.name || contact.fullName || contact.full_name || '', 180),
+    email: cleanText(contact.email || '', 180),
+    phone: cleanText(contact.phone || '', 80)
+  }
+}
+
+function normalizeOperationalContact(contact = {}) {
+  if (!contact || typeof contact !== 'object') return null
+
+  const id = cleanText(contact.id || contact.contactId || contact.contact_id || '', 160)
+  if (!id) return null
+
+  return {
+    id,
+    name: cleanText(contact.name || contact.fullName || contact.full_name || contact.label || '', 180),
+    email: cleanText(contact.email || '', 180),
+    phone: cleanText(contact.phone || '', 80),
+    firstName: cleanText(contact.firstName || contact.first_name || '', 80),
+    lastName: cleanText(contact.lastName || contact.last_name || '', 80),
+    createdAt: contact.createdAt || contact.created_at || null,
+    totalPaid: Number(contact.totalPaid || contact.total_paid || 0)
+  }
+}
+
+function getPaymentContactFromToolOutput(output = {}) {
+  return normalizeOperationalContact(output.contact) ||
+    normalizeOperationalContact(output.summary?.contact) ||
+    normalizeOperationalContact(output.resolved?.contact) ||
+    normalizeOperationalContact(output.customer) ||
+    normalizeOperationalContact(output.client)
+}
+
+function buildPaymentContactMemoryText(contact = {}) {
+  if (!contact?.id) return ''
+
+  return [
+    'Contacto confirmado:',
+    contact.name ? ` ${contact.name}` : '',
+    ` (ID: ${contact.id}`,
+    contact.email ? `, email: ${contact.email}` : '',
+    contact.phone ? `, tel: ${contact.phone}` : '',
+    ').'
+  ].join('')
+}
+
+function attachPaymentContactMemoryToOptions(options = [], summary = {}) {
+  const contact = getPaymentSummaryContact(summary)
+  const memoryText = buildPaymentContactMemoryText(contact)
+
+  if (!memoryText) return options
+
+  return options.map((option) => ({
+    ...option,
+    value: `${option.value || option.label || ''} ${memoryText}`.trim()
+  }))
+}
+
+function buildPaymentConfirmationOptions(actionLabel = 'esta acción de pago', summary = {}) {
+  const contactMemoryText = buildPaymentContactMemoryText(getPaymentSummaryContact(summary))
+
   return [
     {
       label: 'Confirmar',
       description: `Autoriza ejecutar ${actionLabel} con los datos resumidos.`,
-      value: `Confirmo y autorizo ejecutar ${actionLabel} con los datos resumidos.`
+      value: `Confirmo y autorizo ejecutar ${actionLabel} con los datos resumidos.${contactMemoryText ? ` ${contactMemoryText}` : ''}`
     },
     {
       label: 'Cancelar',
@@ -1598,7 +1670,7 @@ function buildPaymentConfirmationRequiredOutput({ action, summary = {}, clarific
     confirmationRequired: true,
     action,
     summary,
-    clarificationOptions,
+    clarificationOptions: attachPaymentContactMemoryToOptions(clarificationOptions, summary),
     confirmationPrompt: [
       'No ejecutes la acción todavía.',
       'Antes de tocar dinero, resume contacto, monto, concepto, método, fechas y qué pasará si no hay tarjeta guardada.',
@@ -1671,27 +1743,28 @@ function shouldAskStoredCardChoice({ remainingAutomatic, storedCardStatus, first
   return AI_OFFLINE_PAYMENT_METHODS.has(firstPayment.method || '')
 }
 
-function buildStoredCardChoiceOptions(storedCardStatus = {}) {
+function buildStoredCardChoiceOptions(storedCardStatus = {}, contact = {}) {
   const cardLabel = [
     storedCardStatus.brand || 'tarjeta',
     storedCardStatus.last4 ? `terminación ${storedCardStatus.last4}` : ''
   ].filter(Boolean).join(' ')
+  const contactMemoryText = buildPaymentContactMemoryText(contact)
 
   return [
     {
       label: 'Usar tarjeta guardada',
       description: `Programa el cobro con la ${cardLabel}.`,
-      value: 'Usa la tarjeta guardada para este pago programado.'
+      value: `Usa la tarjeta guardada para este pago programado.${contactMemoryText ? ` ${contactMemoryText}` : ''}`
     },
     {
       label: 'Usar otra tarjeta',
       description: 'Manda link de autorización y programa cuando esa tarjeta quede confirmada.',
-      value: 'No uses la tarjeta guardada. Manda link para autorizar otra tarjeta y programa el pago cuando se confirme.'
+      value: `No uses la tarjeta guardada. Manda link para autorizar otra tarjeta y programa el pago cuando se confirme.${contactMemoryText ? ` ${contactMemoryText}` : ''}`
     },
     {
       label: 'Cancelar',
       description: 'No programa ni envía ningún cobro.',
-      value: 'Cancela este pago programado.'
+      value: `Cancela este pago programado.${contactMemoryText ? ` ${contactMemoryText}` : ''}`
     }
   ]
 }
@@ -2459,6 +2532,11 @@ async function resolveContextualPaymentContact(args = {}, context = {}, options 
 
 async function resolvePaymentContact(args, context = {}) {
   const contactArg = args.contact && typeof args.contact === 'object' ? args.contact : {}
+  const rememberedContact = normalizeOperationalContact(
+    context.resolvedPaymentContact ||
+    context.paymentContact ||
+    context.operationalMemory?.paymentContact
+  )
   const contactId = cleanText(
     args.contactId ||
     contactArg.id ||
@@ -2496,6 +2574,16 @@ async function resolvePaymentContact(args, context = {}) {
 
   if (!lookupHint && Array.isArray(context.messages)) {
     lookupHint = normalizeContactLookupHint(extractPaymentContactHintFromConversation(context.messages))
+  }
+
+  if (rememberedContact?.id) {
+    const contactTokens = getContactLookupTokens(lookupHint)
+    const lookupMatchesRememberedContact = lookupHint &&
+      (contactMatchesExactly(rememberedContact, lookupHint) || contactNameContainsLookup(rememberedContact, contactTokens))
+
+    if (!lookupHint || lookupMatchesRememberedContact) {
+      return { contact: rememberedContact, source: 'operational_memory' }
+    }
   }
 
   if (!lookupHint) {
@@ -3763,6 +3851,26 @@ async function buildOperationalReferenceContext({ runtimeContext = {}, viewConte
   }
 }
 
+async function buildPaymentOperationalMemory({ messages = [], highLevelConnection = {} } = {}) {
+  const contactId = getRecentConversationContactId(messages)
+  const contact = contactId ? await getPaymentContactById(contactId) : null
+  const contactHint = extractPaymentContactHintFromConversation(messages)
+
+  return {
+    contactHint: contactHint || null,
+    resolvedContact: contact?.id
+      ? {
+          id: contact.id,
+          name: contact.name,
+          email: contact.email || null,
+          phone: contact.phone || null,
+          storedCard: await getStoredCardSummary(contact.id, highLevelConnection)
+        }
+      : null,
+    rule: 'Si resolvedContact existe y el usuario sigue hablando del mismo pago, usa ese contactId. Si sólo hay contactHint, busca coincidencias reales en DB/GHL antes de pedir más datos.'
+  }
+}
+
 function resolveFirstPayment(args, totalAmount, timezone = DEFAULT_PAYMENT_TIMEZONE) {
   const aliasPayment = args.downPayment && typeof args.downPayment === 'object'
     ? args.downPayment
@@ -4028,9 +4136,15 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
     return {
       ok: false,
       error: `Faltan datos para crear el plan: ${missingFields.join(', ')}.`,
+      contact: {
+        id: contact.id,
+        name: contact.name,
+        email: contact.email || null,
+        phone: contact.phone || null
+      },
       missingFields,
       clarificationOptions: missingFields.includes('método del primer pago')
-        ? buildFirstPaymentMethodClarificationOptions()
+        ? attachPaymentContactMemoryToOptions(buildFirstPaymentMethodClarificationOptions(), { contact })
         : []
     }
   }
@@ -4045,8 +4159,14 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
     return {
       ok: false,
       error: 'No detecté tarjeta guardada/autorizada para este contacto. Antes de armar el plan necesito que elijas cómo manejar el primer pago.',
+      contact: {
+        id: contact.id,
+        name: contact.name,
+        email: contact.email || null,
+        phone: contact.phone || null
+      },
       missingFields: ['método del primer pago'],
-      clarificationOptions: buildFirstPaymentMethodClarificationOptions()
+      clarificationOptions: attachPaymentContactMemoryToOptions(buildFirstPaymentMethodClarificationOptions(), { contact })
     }
   }
 
@@ -4060,13 +4180,19 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
       ok: false,
       error: 'Este contacto ya tiene una tarjeta guardada/autorizada. Antes de programar el cobro necesito saber si uso esa misma tarjeta o si mando un link para autorizar otra.',
       missingFields: ['preferencia de tarjeta guardada'],
+      contact: {
+        id: contact.id,
+        name: contact.name,
+        email: contact.email || null,
+        phone: contact.phone || null
+      },
       storedCard: {
         available: true,
         paymentMode: storedCardStatus.paymentMode,
         brand: storedCardStatus.brand,
         last4: storedCardStatus.last4
       },
-      clarificationOptions: buildStoredCardChoiceOptions(storedCardStatus)
+      clarificationOptions: buildStoredCardChoiceOptions(storedCardStatus, contact)
     }
   }
 
@@ -4709,7 +4835,7 @@ function buildHighLevelTools(highLevelConnection, options = {}) {
     {
       type: 'function',
       name: 'create_installment_payment_flow',
-      description: 'Crea un cobro por parcialidades, domiciliación o cargos automáticos futuros usando la lógica interna segura de Ristak. Úsala para planes con o sin primer pago, cargos programados a tarjeta guardada, pagos programados únicos con fecha futura, órdenes de domiciliar el resto o cargos futuros como "el 10 de junio cobra 100" o "en un año cobra X y tres meses después Y". Si el usuario dice "10 ahorita y luego el mismo día durante los siguientes 3 meses", eso es firstPayment hoy por 10 y remainingPayments mensuales futuros, no 3 cobros hoy. Si dice "espera un mes y luego cobra", salta ese periodo con afterMonths/afterPeriods; no crees pagos de 0. Esta herramienta detecta tarjeta guardada en Ristak/GoHighLevel; si hay tarjeta guardada y no se eligió, devuelve opciones para usar esa tarjeta o mandar link para otra. Nunca se ejecuta sin confirmación explícita previa del usuario.',
+      description: 'Crea un cobro por parcialidades, domiciliación o cargos automáticos futuros usando la lógica interna segura de Ristak. Úsala para planes con o sin primer pago, cargos programados a tarjeta guardada, pagos programados únicos con fecha futura, órdenes de domiciliar el resto o cargos futuros como "el 10 de junio cobra 100" o "en un año cobra X y tres meses después Y". Si el usuario dice "10 ahorita y luego el mismo día durante los siguientes 3 meses", eso es firstPayment hoy por 10 y remainingPayments mensuales futuros, no 3 cobros hoy. Si dice "espera un mes y luego cobra", salta ese periodo con afterMonths/afterPeriods; no crees pagos de 0. Si el usuario pide "hacer una nueva" en un hilo donde ya se resolvió contacto, reutiliza el contactId de la memoria operacional. Esta herramienta detecta tarjeta guardada en Ristak/GoHighLevel; si hay tarjeta guardada y no se eligió, devuelve opciones para usar esa tarjeta o mandar link para otra. Nunca se ejecuta sin confirmación explícita previa del usuario.',
       parameters: {
         type: 'object',
         properties: {
@@ -5162,12 +5288,19 @@ async function callOpenAIResponseWithActionTools(apiKey, {
   highLevelConnection,
   runtimeContext = {},
   viewContext = {},
-  messages = []
+  messages = [],
+  initialOperationalMemory = {}
 }) {
   let currentInput = input
   let previousResponseId = null
   let latestData = null
   let latestClarificationOptions = []
+  const operationalMemory = {
+    paymentContact: normalizeOperationalContact(initialOperationalMemory.paymentContact) ||
+      (getRecentConversationContactId(messages)
+        ? await getRecentConversationContact(messages)
+        : null)
+  }
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
     latestData = await callOpenAIResponseRaw(apiKey, {
@@ -5234,7 +5367,9 @@ async function callOpenAIResponseWithActionTools(apiKey, {
           output = await executeLookupContactPaymentProfile(call.arguments, highLevelConnection, {
             runtimeContext,
             viewContext,
-            messages
+            messages,
+            operationalMemory,
+            resolvedPaymentContact: operationalMemory.paymentContact
           })
         } else if (call.name === 'lookup_highlevel_products') {
           output = await executeLookupHighLevelProducts(call.arguments, highLevelConnection)
@@ -5268,13 +5403,29 @@ async function callOpenAIResponseWithActionTools(apiKey, {
         } else if (call.name === 'highlevel_rest_request') {
           output = await executeHighLevelRestRequest(call.arguments, highLevelConnection)
         } else if (call.name === 'create_single_payment_link') {
-          output = await executeCreateSinglePaymentLink(call.arguments, highLevelConnection, { messages })
+          output = await executeCreateSinglePaymentLink(call.arguments, highLevelConnection, {
+            messages,
+            operationalMemory,
+            resolvedPaymentContact: operationalMemory.paymentContact
+          })
         } else if (call.name === 'create_installment_payment_flow') {
-          output = await executeCreateInstallmentPaymentFlow(call.arguments, highLevelConnection, { messages })
+          output = await executeCreateInstallmentPaymentFlow(call.arguments, highLevelConnection, {
+            messages,
+            operationalMemory,
+            resolvedPaymentContact: operationalMemory.paymentContact
+          })
         } else if (call.name === 'record_contact_payment') {
-          output = await executeRecordContactPayment(call.arguments, highLevelConnection, { messages })
+          output = await executeRecordContactPayment(call.arguments, highLevelConnection, {
+            messages,
+            operationalMemory,
+            resolvedPaymentContact: operationalMemory.paymentContact
+          })
         } else if (call.name === 'record_invoice_payment') {
-          output = await executeRecordInvoicePayment(call.arguments, highLevelConnection, { messages })
+          output = await executeRecordInvoicePayment(call.arguments, highLevelConnection, {
+            messages,
+            operationalMemory,
+            resolvedPaymentContact: operationalMemory.paymentContact
+          })
         } else {
           output = {
             ok: false,
@@ -5290,6 +5441,11 @@ async function callOpenAIResponseWithActionTools(apiKey, {
 
       if (Array.isArray(output?.clarificationOptions) && output.clarificationOptions.length) {
         latestClarificationOptions = output.clarificationOptions
+      }
+
+      const outputPaymentContact = getPaymentContactFromToolOutput(output)
+      if (outputPaymentContact?.id) {
+        operationalMemory.paymentContact = outputPaymentContact
       }
 
       outputs.push({
@@ -5486,6 +5642,7 @@ const UNIFIED_CAPABILITY_PROMPT = [
   '- Para pagos, links, invoices, parcialidades, pagos manuales, tarjeta guardada o domiciliación usa las herramientas internas de Ristak porque replican la lógica real del backend. No uses MCP como atajo para mutaciones de dinero.',
   '- En planes de pago, "ahorita/hoy y luego el mismo día durante los siguientes N meses" significa primer pago hoy y pagos mensuales futuros; no lo conviertas en N cobros hoy.',
   '- Si el plan dice "espera un mes y luego cobra", representa el mes sin cobro saltando el periodo; no crees parcialidades de $0.',
+  '- Si el usuario dice "haz una nueva", "crea otra" o "no borres nada" dentro de un hilo de pago, crea un nuevo flujo con el contacto ya resuelto en la memoria operacional; no vuelvas a pedir email/teléfono/ID si ya existe contactId.',
   '- Para contactos no hagas búsquedas preventivas. Busca contacto sólo si el usuario pide un contacto/persona/cliente/lead o si una acción necesita identificar exactamente a alguien.',
   '- Nunca pases la frase completa del usuario como contactName/contactHint. Extrae sólo nombre, email, teléfono o ID; si no existe un dato limpio, pregunta por el dato que falta.',
   '- Para media storage, archivos o imágenes de HighLevel no busques contactos. Usa las herramientas de HighLevel y devuelve URLs directas o enlaces Markdown si aparecen.',
@@ -6497,6 +6654,12 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
         highLevelConnection
       })
     : null
+  const paymentOperationalMemory = agentRoute?.requiresPaymentTools
+    ? await buildPaymentOperationalMemory({
+        messages,
+        highLevelConnection
+      })
+    : null
 
   if (metaAdsOperationalIntent) {
     return buildMetaAdsOperationsUnavailableReply()
@@ -6519,6 +6682,9 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
     '',
     'Contexto operacional para referencias del usuario:',
     operationalReferenceContext ? JSON.stringify(operationalReferenceContext, null, 2) : 'No aplica para esta ruta.',
+    '',
+    'Memoria operacional de pagos:',
+    paymentOperationalMemory ? JSON.stringify(paymentOperationalMemory, null, 2) : 'No aplica para esta ruta.',
     '',
     'Estado de Meta Ads operativo en la app:',
     buildMetaAdsOperationsContext(),
@@ -6571,7 +6737,10 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
           highLevelConnection,
           runtimeContext,
           viewContext,
-          messages
+          messages,
+          initialOperationalMemory: {
+            paymentContact: paymentOperationalMemory?.resolvedContact || null
+          }
         })
       : await callOpenAIResponse(apiKey, {
           model,
