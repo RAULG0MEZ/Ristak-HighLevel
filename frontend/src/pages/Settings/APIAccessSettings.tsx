@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
-import { Copy, KeyRound, RefreshCw, Trash2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { ArrowRight, BookOpen, Copy, KeyRound, RefreshCw, Trash2 } from 'lucide-react'
 import { Button, Card } from '@/components/common'
 import { useAuth } from '@/contexts/AuthContext'
 import { useNotification } from '@/contexts/NotificationContext'
@@ -227,6 +228,36 @@ export const APIAccessSettings: React.FC = () => {
               Revocar
             </Button>
           </div>
+
+          <Link
+            to="/settings/api-docs"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '1rem',
+              marginTop: '1.25rem',
+              padding: '0.875rem 1rem',
+              borderRadius: '0.75rem',
+              border: '1px solid rgba(148, 163, 184, 0.18)',
+              background: 'rgba(148, 163, 184, 0.06)',
+              color: 'var(--color-text-primary)',
+              textDecoration: 'none'
+            }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
+              <BookOpen size={18} style={{ flexShrink: 0, color: 'var(--color-primary)' }} />
+              <span style={{ minWidth: 0 }}>
+                <span style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600 }}>
+                  Documentación API
+                </span>
+                <span style={{ display: 'block', fontSize: '0.75rem', color: 'var(--color-text-tertiary)', marginTop: '0.125rem' }}>
+                  Endpoints, autenticación y conexión MCP
+                </span>
+              </span>
+            </span>
+            <ArrowRight size={18} style={{ flexShrink: 0 }} />
+          </Link>
         </Card>
       </div>
     </div>
