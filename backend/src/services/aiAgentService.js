@@ -5746,10 +5746,18 @@ function requiresStrictNameContains(tokens = []) {
 }
 
 function contactNameContainsLookup(contact, tokens = []) {
-  const name = normalizeSearchText(contact.name || contact.label || '', 240)
-  const lookupPhrase = getMeaningfulContactNameTokens(tokens).join(' ')
+  const searchable = normalizeSearchText([
+    contact.name,
+    contact.label,
+    contact.email,
+    contact.phone,
+    contact.id
+  ].filter(Boolean).join(' '), 500)
+  const lookupTokens = getMeaningfulContactNameTokens(tokens)
+  const lookupPhrase = lookupTokens.join(' ')
 
-  return lookupPhrase.length >= 3 && name.includes(lookupPhrase)
+  if (lookupPhrase.length >= 3 && searchable.includes(lookupPhrase)) return true
+  return lookupTokens.length >= 2 && lookupTokens.every(token => searchable.includes(token))
 }
 
 function shouldAttemptContactLookup(question) {
@@ -5804,14 +5812,25 @@ async function searchHighLevelLookupContacts(term) {
   try {
     const ghlClient = await getGHLClient()
     const digits = normalizePhoneDigits(hint)
-    const response = await ghlClient.searchContacts({
-      query: hint,
-      email: hint.includes('@') ? hint : undefined,
-      phone: digits.length >= 7 ? hint : undefined,
-      limit: 10
-    })
+    const nameTokens = getMeaningfulContactNameTokens(getContactLookupTokens(hint))
+    const queryTerms = [
+      hint,
+      ...(nameTokens.length >= 2 ? [nameTokens[0], nameTokens[nameTokens.length - 1]] : [])
+    ].filter((value, index, list) => value && list.indexOf(value) === index)
+    const results = []
 
-    return (response.contacts || []).map(mapGhlContactLookup).filter(contact => contact.id)
+    for (const query of queryTerms) {
+      const response = await ghlClient.searchContacts({
+        query,
+        email: hint.includes('@') ? hint : undefined,
+        phone: digits.length >= 7 ? hint : undefined,
+        limit: 10
+      })
+
+      results.push(...(response.contacts || []).map(mapGhlContactLookup).filter(contact => contact.id))
+    }
+
+    return dedupeContacts(results)
   } catch {
     return []
   }
@@ -5850,12 +5869,9 @@ async function searchMentionedContacts(question, runtimeContext) {
   const tokenCondition = extraTokenParams.length
     ? ` OR (${buildFoldedTokenCondition(fullNameExpression, extraTokenParams.length)})`
     : ''
-  const hiddenCondition = await getHiddenContactsWhere('c')
   const where = [
     `(${buildContactSearchCondition('c')}${tokenCondition})`
   ]
-
-  if (hiddenCondition) where.push(hiddenCondition)
 
   const rows = await safeAll(`
     SELECT
@@ -5933,6 +5949,119 @@ function buildContactLookupQueryResult(contactResolution) {
       last_purchase_date: contact.lastPurchaseDate
     }]
   }
+}
+
+
+function buildResolvedContactResearchQueries(contactResolution) {
+  const contactId = cleanText(contactResolution?.contact?.id || '', 160)
+  if (!contactId) return []
+
+  return [
+    {
+      name: 'contacto_resuelto_detalle',
+      purpose: 'Detalle completo del contacto resuelto por nombre/email/teléfono/ID.',
+      sql: `
+        SELECT
+          c.id,
+          c.full_name,
+          c.first_name,
+          c.last_name,
+          c.email,
+          c.phone,
+          c.source,
+          c.created_at,
+          c.updated_at,
+          c.total_paid,
+          c.purchases_count,
+          c.last_purchase_date,
+          c.appointment_date,
+          c.attribution_session_source,
+          c.attribution_medium,
+          c.attribution_ad_name,
+          c.attribution_ad_id
+        FROM contacts c
+        WHERE c.id = ?
+        LIMIT 1
+      `,
+      params: [contactId]
+    },
+    {
+      name: 'contacto_resuelto_pagos',
+      purpose: 'Pagos recientes asociados al contacto resuelto.',
+      sql: `
+        SELECT
+          p.id,
+          p.amount,
+          p.currency,
+          p.status,
+          p.payment_method,
+          p.reference,
+          p.description,
+          p.date,
+          p.due_date,
+          p.ghl_invoice_id,
+          p.invoice_number,
+          p.payment_mode,
+          p.created_at,
+          p.updated_at
+        FROM payments p
+        WHERE p.contact_id = ?
+        ORDER BY COALESCE(p.date, p.created_at) DESC
+        LIMIT 20
+      `,
+      params: [contactId]
+    },
+    {
+      name: 'contacto_resuelto_citas',
+      purpose: 'Citas recientes asociadas al contacto resuelto.',
+      sql: `
+        SELECT
+          a.id,
+          a.calendar_id,
+          a.title,
+          a.status,
+          a.appointment_status,
+          a.assigned_user_id,
+          a.start_time,
+          a.end_time,
+          a.date_added,
+          a.date_updated
+        FROM appointments a
+        WHERE a.contact_id = ?
+        ORDER BY COALESCE(a.start_time, a.date_added, a.date_updated) DESC
+        LIMIT 20
+      `,
+      params: [contactId]
+    },
+    {
+      name: 'contacto_resuelto_tarjeta_guardada',
+      purpose: 'Estado de tarjeta guardada/autorizada para el contacto resuelto.',
+      sql: `
+        SELECT
+          pf.id,
+          pf.total_amount,
+          pf.currency,
+          pf.concept,
+          pf.payment_type,
+          pf.current_state,
+          pf.card_setup_status,
+          pf.ghl_customer_id,
+          pf.ghl_payment_method_id,
+          pf.ghl_payment_method_type,
+          pf.ghl_card_brand,
+          pf.ghl_card_last4,
+          pf.ghl_payment_live_mode,
+          pf.card_authorized_at,
+          pf.created_at,
+          pf.updated_at
+        FROM payment_flows pf
+        WHERE pf.contact_id = ?
+        ORDER BY COALESCE(pf.card_authorized_at, pf.updated_at, pf.created_at) DESC
+        LIMIT 5
+      `,
+      params: [contactId]
+    }
+  ]
 }
 
 async function resolveMentionedContactForAgent({ messages, runtimeContext }) {
@@ -7186,18 +7315,38 @@ export async function createAgentReply({ apiKey, messages, viewContext }) {
   }
 
   const runDatabaseResearch = !metaAdsDbResearchSkipped && shouldRunDatabaseResearchForRoute(supervisorRoute)
-  const coreQueries = runDatabaseResearch ? await buildCoreResearchQueries(runtimeContext) : []
+  const contactResolution = await resolveMentionedContactForAgent({ messages, runtimeContext })
+  if (contactResolution?.clarificationReply) {
+    return contactResolution.clarificationReply
+  }
+
+  const contactLookupResult = contactResolution?.queryResult || null
+  const contactResearchQueries = runDatabaseResearch
+    ? buildResolvedContactResearchQueries(contactResolution)
+    : []
+  const coreQueries = runDatabaseResearch
+    ? [
+        ...contactResearchQueries,
+        ...await buildCoreResearchQueries(runtimeContext)
+      ]
+    : []
   const corePlan = {
     assumptions: [
+      contactLookupResult
+        ? `Se resolvió el contacto "${contactResolution.term}" antes de planear la respuesta; las consultas deben usar ese contact_id exacto.`
+        : '',
       metaAdsDbResearchSkipped
         ? 'Solicitud operativa/inventario de Meta Ads: se omitió el mapa base de DB para no confundir públicos o configuración real de Ads Manager con cohortes internas.'
         : runDatabaseResearch
           ? 'Se consultó un mapa base de la DB antes de planear la respuesta.'
           : `El gerente interno enrutó a ${supervisorRoute.specialist}; se omitió investigación SQL general para no contaminar una acción operativa.`
-    ],
+    ].filter(Boolean),
     queries: coreQueries
   }
   const coreResults = await executeQueryPlan(corePlan)
+  const databaseContextResults = contactLookupResult
+    ? [contactLookupResult, ...coreResults]
+    : coreResults
   const modelPlan = metaAdsDbResearchSkipped || !runDatabaseResearch
     ? {
         assumptions: [
@@ -7211,7 +7360,7 @@ export async function createAgentReply({ apiKey, messages, viewContext }) {
         messages,
         viewContext: viewContext || {},
         runtimeContext,
-        databaseContextResults: coreResults,
+        databaseContextResults,
         agentConfig,
         supervisorRoute
       })
@@ -7230,7 +7379,7 @@ export async function createAgentReply({ apiKey, messages, viewContext }) {
   })
 
   let finalPlan = plan
-  let queryResults = [...coreResults, ...modelResults]
+  let queryResults = [...databaseContextResults, ...modelResults]
 
   if (queryResults.some(result => result?.error)) {
     const repairPlan = await createRepairQueryPlan(apiKey, {
