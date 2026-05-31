@@ -325,7 +325,7 @@ class GHLClient {
     return response
   }
 
-  async recordPayment(invoiceId, { amount, currency, fulfilledAt, note, mode = 'cash' }) {
+  async recordPayment(invoiceId, { amount, currency, fulfilledAt, note, mode = 'cash', liveMode = true }) {
     const body = {
       altId: this.locationId,
       altType: 'location',
@@ -334,6 +334,7 @@ class GHLClient {
       notes: note || '',
       fulfilledAt: fulfilledAt || new Date().toISOString(),
       mode,
+      liveMode,
     }
 
     logger.info(`Registrando pago para invoice: ${invoiceId} - Monto: ${amount}`)

@@ -4,6 +4,8 @@ import { resolveDateRangeWithGHLTimezone } from '../utils/dateUtils.js'
 import { buildHiddenContactsCondition, getHiddenContactFilters } from '../utils/hiddenContactsFilter.js'
 import { getGHLClient } from './ghlClient.js'
 import { createInstallmentPaymentFlow, createSinglePaymentLink } from './paymentFlowService.js'
+import { PAYMENT_MODE_LIVE, PAYMENT_MODE_TEST, normalizePaymentMode } from '../utils/paymentMode.js'
+import { updateSingleContactStats } from '../utils/updateContactsStats.js'
 import { DateTime } from 'luxon'
 
 const OPENAI_API_URL = 'https://api.openai.com/v1'
@@ -468,13 +470,15 @@ function appendQueryParams(url, query = {}) {
 
 async function getHighLevelAgentConnection() {
   const config = await getHighLevelConfig()
+  const paymentMode = normalizePaymentMode(config?.ghl_invoice_mode, PAYMENT_MODE_LIVE)
 
   if (!config?.api_token || !config?.location_id) {
     return {
       configured: false,
       token: null,
       locationId: null,
-      locationData: null
+      locationData: null,
+      paymentMode
     }
   }
 
@@ -482,8 +486,19 @@ async function getHighLevelAgentConnection() {
     configured: true,
     token: String(config.api_token).trim(),
     locationId: String(config.location_id).trim(),
-    locationData: parseLocationData(config.location_data)
+    locationData: parseLocationData(config.location_data),
+    paymentMode
   }
+}
+
+function getPaymentModeWarning(paymentMode) {
+  return paymentMode === PAYMENT_MODE_TEST
+    ? 'MODO PRUEBA ACTIVO: este cobro se ejecutó con liveMode desactivado y no debe contarse como ingreso real.'
+    : null
+}
+
+function getPaymentLiveMode(highLevelConnection) {
+  return normalizePaymentMode(highLevelConnection?.paymentMode, PAYMENT_MODE_LIVE) === PAYMENT_MODE_LIVE
 }
 
 function buildHighLevelToolContext(highLevelConnection) {
@@ -496,6 +511,8 @@ function buildHighLevelToolContext(highLevelConnection) {
     locationId: highLevelConnection.locationId,
     locationName: highLevelConnection.locationData?.name || highLevelConnection.locationData?.business?.name || null,
     timezone: highLevelConnection.locationData?.timezone || null,
+    paymentMode: highLevelConnection.paymentMode,
+    paymentModeNotice: getPaymentModeWarning(highLevelConnection.paymentMode),
     mcpServer: HIGHLEVEL_MCP_SERVER_URL,
     restBaseUrl: HIGHLEVEL_API_BASE_URL,
     token: 'configurado_no_mostrar'
@@ -1070,6 +1087,8 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
   return {
     ok: true,
     action: 'create_installment_payment_flow',
+    paymentMode: highLevelConnection.paymentMode,
+    paymentModeWarning: getPaymentModeWarning(highLevelConnection.paymentMode),
     message: 'Flujo de parcialidades creado con la lógica interna de Ristak.',
     summary: {
       contact: {
@@ -1080,6 +1099,7 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
       },
       totalAmount,
       currency,
+      paymentMode: highLevelConnection.paymentMode,
       firstPayment: {
         amount: firstPayment.amount,
         method: firstPayment.method,
@@ -1149,6 +1169,8 @@ async function executeCreateSinglePaymentLink(args = {}, highLevelConnection) {
   return {
     ok: true,
     action: 'create_single_payment_link',
+    paymentMode: highLevelConnection.paymentMode,
+    paymentModeWarning: getPaymentModeWarning(highLevelConnection.paymentMode),
     message: result.sendMethod === 'none'
       ? 'Link de pago creado con la lógica interna de Ristak.'
       : 'Link de pago creado y enviado con la lógica interna de Ristak.',
@@ -1163,7 +1185,129 @@ async function executeCreateSinglePaymentLink(args = {}, highLevelConnection) {
       currency,
       dueDate,
       delivery: result.sendMethod,
-      paymentLink: result.paymentLink
+      paymentLink: result.paymentLink,
+      paymentMode: highLevelConnection.paymentMode
+    },
+    result
+  }
+}
+
+async function executeRecordInvoicePayment(args = {}, highLevelConnection) {
+  if (!highLevelConnection?.configured) {
+    return {
+      ok: false,
+      error: 'HighLevel no está configurado. Configura primero la integración de Go High Level.'
+    }
+  }
+
+  const invoiceId = cleanText(args.invoiceId || args.ghlInvoiceId || args.invoice_id || '', 160)
+  const amount = normalizePaymentAmount(args.amount || args.totalAmount || args.total)
+  const currency = cleanText(args.currency || DEFAULT_PAYMENT_CURRENCY, 12).toUpperCase() || DEFAULT_PAYMENT_CURRENCY
+
+  if (!invoiceId) {
+    return {
+      ok: false,
+      error: 'Falta el ID del invoice para registrar el pago.',
+      missingFields: ['invoiceId']
+    }
+  }
+
+  if (amount <= 0) {
+    return {
+      ok: false,
+      error: 'Falta el monto a registrar o el monto no es válido.',
+      missingFields: ['amount']
+    }
+  }
+
+  const normalizedMethod = normalizePaymentMethod(args.paymentMethod || args.method || 'cash') || 'cash'
+  const methodMap = {
+    cash: 'cash',
+    transfer: 'bank_transfer',
+    bank_transfer: 'bank_transfer',
+    deposit: 'bank_transfer',
+    check: 'check',
+    card: 'card',
+    manual: 'other',
+    offline: 'other',
+    other: 'other'
+  }
+  const methodLabels = {
+    cash: 'Efectivo',
+    transfer: 'Transferencia',
+    bank_transfer: 'Transferencia',
+    deposit: 'Depósito',
+    card: 'Tarjeta',
+    check: 'Cheque',
+    manual: 'Manual',
+    offline: 'Offline',
+    other: 'Otro'
+  }
+  const paymentDate = args.paymentDate || args.fulfilledAt || args.date || new Date().toISOString()
+  const paymentMode = normalizePaymentMode(highLevelConnection.paymentMode, PAYMENT_MODE_LIVE)
+  const liveMode = getPaymentLiveMode(highLevelConnection)
+  const noteParts = [
+    'Pago registrado desde el Agente AI de Ristak',
+    `Método: ${methodLabels[normalizedMethod] || normalizedMethod}`,
+    paymentMode === PAYMENT_MODE_TEST ? 'Modo: prueba' : '',
+    args.reference ? `Referencia: ${cleanText(args.reference, 160)}` : '',
+    args.notes ? `Notas: ${cleanText(args.notes, 500)}` : ''
+  ].filter(Boolean)
+
+  const ghlClient = await getGHLClient()
+  const result = await ghlClient.recordPayment(invoiceId, {
+    amount,
+    currency,
+    fulfilledAt: paymentDate,
+    note: noteParts.join('\n'),
+    mode: methodMap[normalizedMethod] || 'cash',
+    liveMode
+  })
+
+  const existingPayment = await safeGet(
+    'SELECT contact_id FROM payments WHERE ghl_invoice_id = ? OR id = ? LIMIT 1',
+    [invoiceId, invoiceId],
+    null
+  )
+
+  await db.run(
+    `UPDATE payments
+     SET status = 'paid',
+         payment_method = ?,
+         payment_mode = ?,
+         reference = ?,
+         date = ?,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE ghl_invoice_id = ? OR id = ?`,
+    [
+      normalizedMethod,
+      paymentMode,
+      cleanText(args.reference || '', 160) || null,
+      paymentDate,
+      invoiceId,
+      invoiceId
+    ]
+  )
+
+  if (existingPayment?.contact_id) {
+    await updateSingleContactStats(existingPayment.contact_id)
+  }
+
+  return {
+    ok: true,
+    action: 'record_invoice_payment',
+    paymentMode,
+    paymentModeWarning: getPaymentModeWarning(paymentMode),
+    message: paymentMode === PAYMENT_MODE_TEST
+      ? 'Pago registrado en modo prueba con la configuración actual de Ristak.'
+      : 'Pago registrado con la configuración actual de Ristak.',
+    summary: {
+      invoiceId,
+      amount,
+      currency,
+      paymentDate,
+      paymentMethod: normalizedMethod,
+      paymentMode
     },
     result
   }
@@ -1295,6 +1439,25 @@ function buildHighLevelTools(highLevelConnection) {
     },
     {
       type: 'function',
+      name: 'record_invoice_payment',
+      description: 'Registra un pago manual/offline sobre un invoice existente usando la configuración de pagos de Ristak. Úsala para órdenes como "registra este pago", "marca el invoice como pagado" o "ya pagó por transferencia". Respeta automáticamente modo prueba/en vivo.',
+      parameters: {
+        type: 'object',
+        properties: {
+          invoiceId: { type: ['string', 'null'], description: 'ID exacto del invoice de HighLevel o ID local del pago si ya se conoce.' },
+          amount: { type: ['number', 'null'], description: 'Monto pagado.' },
+          currency: { type: ['string', 'null'], description: 'Moneda, normalmente MXN.' },
+          paymentDate: { type: ['string', 'null'], description: 'Fecha del pago o timestamp ISO. Si es hoy, usa la fecha local actual.' },
+          paymentMethod: { type: ['string', 'null'], enum: ['cash', 'transfer', 'bank_transfer', 'deposit', 'card', 'manual', 'offline', 'check', 'other', null] },
+          reference: { type: ['string', 'null'], description: 'Referencia bancaria, folio o comprobante.' },
+          notes: { type: ['string', 'null'], description: 'Notas internas del pago.' }
+        },
+        additionalProperties: true
+      },
+      strict: false
+    },
+    {
+      type: 'function',
       name: 'highlevel_rest_request',
       description: 'Fallback para ejecutar endpoints REST documentados de HighLevel cuando el MCP oficial no exponga la acción necesaria. Usa sólo paths bajo services.leadconnectorhq.com, por ejemplo /contacts/, /contacts/search, /conversations/messages, /calendars/events/appointments, /products/, /invoices/. Puede leer y modificar HighLevel si el token tiene scope.',
       parameters: {
@@ -1351,6 +1514,13 @@ async function executeHighLevelRestRequest(args = {}, highLevelConnection) {
   appendQueryParams(url, args.query)
 
   const body = args.body === undefined ? null : args.body
+  const forcePaymentMode = method !== 'GET' && /^\/(?:invoices|payments)\b/i.test(cleanPath)
+  const requestBody = forcePaymentMode && body && typeof body === 'object' && !Array.isArray(body)
+    ? {
+        ...body,
+        liveMode: getPaymentLiveMode(highLevelConnection)
+      }
+    : body
   const headers = {
     Accept: 'application/json',
     Authorization: `Bearer ${highLevelConnection.token}`,
@@ -1364,7 +1534,7 @@ async function executeHighLevelRestRequest(args = {}, highLevelConnection) {
   const response = await fetchWithTimeout(url.toString(), {
     method,
     headers,
-    body: method === 'GET' ? undefined : JSON.stringify(body || {})
+    body: method === 'GET' ? undefined : JSON.stringify(requestBody || {})
   })
 
   const contentType = response.headers.get('content-type') || ''
@@ -1385,6 +1555,8 @@ async function executeHighLevelRestRequest(args = {}, highLevelConnection) {
     status: response.status,
     method,
     path: cleanPath,
+    paymentMode: forcePaymentMode ? highLevelConnection.paymentMode : undefined,
+    paymentModeWarning: forcePaymentMode ? getPaymentModeWarning(highLevelConnection.paymentMode) : null,
     response: payload,
     error: response.ok ? null : cleanText(typeof payload === 'string' ? payload : safeStringify(payload), 4000)
   }
@@ -1633,6 +1805,8 @@ async function callOpenAIResponseWithActionTools(apiKey, {
           output = await executeCreateSinglePaymentLink(call.arguments, highLevelConnection)
         } else if (call.name === 'create_installment_payment_flow') {
           output = await executeCreateInstallmentPaymentFlow(call.arguments, highLevelConnection)
+        } else if (call.name === 'record_invoice_payment') {
+          output = await executeRecordInvoicePayment(call.arguments, highLevelConnection)
         } else {
           output = {
             ok: false,

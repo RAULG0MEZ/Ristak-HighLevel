@@ -930,7 +930,7 @@ export async function createInstallmentPaymentFlow(payload) {
   const firstPaymentDate = firstPaymentEnabled ? (firstPayment.date || todayDateOnly()) : null
   const firstPaymentIsOffline = firstPaymentEnabled && OFFLINE_METHODS.has(firstPaymentMethod)
   const firstPaymentIsCard = firstPaymentEnabled && CARD_METHODS.has(firstPaymentMethod)
-  const { cardSetupAmount } = await getPaymentFlowConfig()
+  const { cardSetupAmount, liveMode } = await getPaymentFlowConfig()
   const authorizedCard = remainingAutomatic ? await getAuthorizedPaymentMethod(contact) : null
   const alreadyHasAuthorizedCard = Boolean(authorizedCard)
   const cardSetupRequired = remainingAutomatic && !alreadyHasAuthorizedCard && (!firstPaymentEnabled || firstPaymentIsOffline)
@@ -984,6 +984,7 @@ export async function createInstallmentPaymentFlow(payload) {
   const response = {
     flowId,
     currentState: PAYMENT_FLOW_STATES.DRAFT,
+    paymentMode: liveMode ? 'live' : 'test',
     firstPaymentInvoiceId: null,
     firstPaymentLink: null,
     cardSetupInvoiceId: null,
@@ -1028,7 +1029,8 @@ export async function createInstallmentPaymentFlow(payload) {
       ].filter(Boolean).join('\n'),
       mode: firstPaymentMethod === 'bank_transfer' || firstPaymentMethod === 'transfer' || firstPaymentMethod === 'deposit'
         ? 'bank_transfer'
-        : firstPaymentMethod
+        : firstPaymentMethod,
+      liveMode
     })
 
     await db.run(

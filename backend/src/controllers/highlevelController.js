@@ -758,7 +758,9 @@ export const listPrices = async (req, res) => {
 export const createInvoice = async (req, res) => {
   try {
     const invoiceData = req.body;
-    invoiceData.liveMode = await getGhlInvoiceLiveMode();
+    const liveMode = await getGhlInvoiceLiveMode();
+    const paymentMode = liveMode ? 'live' : 'test';
+    invoiceData.liveMode = liveMode;
 
     // PASO 1: Crear invoice en HighLevel
     const ghlClient = await getGHLClient();
@@ -785,10 +787,10 @@ export const createInvoice = async (req, res) => {
 
       await db.run(
         `INSERT INTO payments (
-          id, contact_id, amount, currency, status, payment_method,
+          id, contact_id, amount, currency, status, payment_method, payment_mode,
           reference, description, date, ghl_invoice_id, invoice_number,
           due_date, sent_at, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
         [
           ghlInvoiceId,
           contactId || null, // Guardar contactId aunque no exista en contacts table
@@ -796,6 +798,7 @@ export const createInvoice = async (req, res) => {
           createdInvoice.currency || 'MXN',
           'draft', // Inicialmente siempre es draft
           null, // payment_method (se llena cuando se pague)
+          paymentMode,
           createdInvoice.invoiceNumber || null,
           createdInvoice.name || createdInvoice.title || 'Pago',
           createdInvoice.issueDate || createdInvoice.createdAt || new Date().toISOString(),
@@ -966,10 +969,13 @@ export const recordPayment = async (req, res) => {
 
     const normalizedMethod = paymentMethod || 'cash';
     const mode = methodMap[normalizedMethod] || 'cash';
+    const liveMode = await getGhlInvoiceLiveMode();
+    const paymentMode = liveMode ? 'live' : 'test';
 
     const noteParts = [
       `Pago registrado desde Ristak`,
       `Método: ${methodLabels[normalizedMethod] || normalizedMethod}`,
+      paymentMode === 'test' ? 'Modo: prueba' : '',
       reference ? `Referencia: ${reference}` : '',
       notes ? `Notas: ${notes}` : ''
     ].filter(Boolean);
@@ -980,16 +986,17 @@ export const recordPayment = async (req, res) => {
       currency,
       fulfilledAt: paymentDate || new Date().toISOString(),
       note: noteParts.join('\n'),
-      mode
+      mode,
+      liveMode
     });
 
     // Actualizar estado en BD local
     try {
       await db.run(
         `UPDATE payments
-         SET status = 'paid', payment_method = ?, reference = ?
+         SET status = 'paid', payment_method = ?, reference = ?, payment_mode = ?, updated_at = CURRENT_TIMESTAMP
          WHERE ghl_invoice_id = ?`,
-        [normalizedMethod, reference || null, invoiceId]
+        [normalizedMethod, reference || null, paymentMode, invoiceId]
       );
       logger.success(`Estado actualizado a 'paid' para invoice: ${invoiceId}`);
 
