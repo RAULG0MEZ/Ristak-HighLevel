@@ -1345,6 +1345,97 @@ function sanitizeInvoiceSchedulePayload(payload = {}) {
   return sanitized;
 }
 
+export const createInvoiceSchedule = async (req, res) => {
+  try {
+    const rawPayload = req.body?.payload && typeof req.body.payload === 'object'
+      ? req.body.payload
+      : req.body;
+    const liveMode = await getGhlInvoiceLiveMode();
+    const payload = sanitizeInvoiceSchedulePayload({
+      ...rawPayload,
+      liveMode: rawPayload?.liveMode !== undefined ? rawPayload.liveMode : liveMode
+    });
+    const shouldSchedule = req.body?.scheduleNow !== false;
+
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Payload inválido para crear plan de pago'
+      });
+    }
+
+    if (!payload.contactDetails?.id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Selecciona un contacto para crear el plan de pago'
+      });
+    }
+
+    if (!payload.total || Number(payload.total) <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Monto inválido para crear plan de pago'
+      });
+    }
+
+    if (!payload.schedule?.executeAt && !payload.schedule?.rrule?.startDate) {
+      return res.status(400).json({
+        success: false,
+        error: 'Fecha de programación requerida'
+      });
+    }
+
+    const ghlClient = await getGHLClient();
+    const createResponse = await ghlClient.createInvoiceSchedule(payload);
+    let schedule = extractScheduleFromResponse(createResponse);
+    let scheduleId = firstDefined(
+      schedule?.id,
+      schedule?._id,
+      schedule?.scheduleId,
+      schedule?.schedule_id,
+      createResponse?.id,
+      createResponse?._id,
+      createResponse?.scheduleId,
+      createResponse?.schedule_id,
+      createResponse?.data?.id,
+      createResponse?.data?._id,
+      createResponse?.schedule?.id,
+      createResponse?.invoiceSchedule?.id
+    );
+
+    if (!scheduleId) {
+      throw new Error('HighLevel no devolvió ID del plan de pago creado');
+    }
+
+    if (shouldSchedule) {
+      await ghlClient.scheduleInvoiceSchedule(scheduleId, {
+        liveMode: payload.liveMode
+      });
+
+      try {
+        const detailResponse = await ghlClient.getInvoiceSchedule(scheduleId);
+        schedule = extractScheduleFromResponse(detailResponse) || schedule;
+      } catch (detailError) {
+        logger.warn(`Plan ${scheduleId} creado, pero no se pudo refrescar detalle: ${detailError.message}`);
+      }
+    }
+
+    res.json({
+      success: true,
+      data: normalizeInvoiceSchedule(schedule || {
+        ...payload,
+        id: scheduleId
+      })
+    });
+  } catch (error) {
+    logger.error(`Error creando invoice schedule: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Error al crear plan de pago'
+    });
+  }
+};
+
 export const listInvoiceSchedules = async (req, res) => {
   try {
     const activeOnly = req.query.activeOnly === 'true';

@@ -146,6 +146,14 @@ export const transactionsService = {
     return data
   },
 
+  async createPaymentPlan(payload: Record<string, any>): Promise<PaymentPlan> {
+    const data = await apiClient.post<PaymentPlan>('/highlevel/invoices/schedules', {
+      payload,
+      scheduleNow: true
+    })
+    return data
+  },
+
   async updatePaymentPlan(id: string, payload: Record<string, any>): Promise<PaymentPlan> {
     const data = await apiClient.put<PaymentPlan>(`/highlevel/invoices/schedules/${id}`, {
       payload,

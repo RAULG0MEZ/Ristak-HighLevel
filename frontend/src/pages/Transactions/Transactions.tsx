@@ -47,6 +47,12 @@ interface PaymentPlanModalData {
   rawJson: string
 }
 
+interface PaymentPlanCreateModalData {
+  open: boolean
+  selectedContact: Contact | null
+  saving: boolean
+}
+
 const toDateInputValue = (value?: string | null): string => {
   if (!value) return formatDateToISO(new Date())
   return String(value).split('T')[0]
@@ -73,6 +79,63 @@ const getPlanTermsNotes = (plan: PaymentPlan | null): string => {
   return String(payload.termsNotes || payload.terms || payload.notes || '')
 }
 
+const getDefaultScheduleTime = () => '09:00'
+
+const normalizeScheduleTime = (value: string) => {
+  const time = value || getDefaultScheduleTime()
+  return time.length === 5 ? `${time}:00` : time
+}
+
+const getDayOfWeekCode = (date: Date) => {
+  const codes = ['su', 'mo', 'tu', 'we', 'th', 'fr', 'sa']
+  return codes[date.getDay()]
+}
+
+const getMonthOfYearCode = (date: Date) => {
+  const codes = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+  return codes[date.getMonth()]
+}
+
+const isLastDayOfMonth = (date: Date) => {
+  return date.getDate() === new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()
+}
+
+const buildPaymentPlanSchedule = (startDate: string, startTime: string, frequency: string, count: number) => {
+  const localStart = new Date(`${startDate}T${startTime || getDefaultScheduleTime()}`)
+  const dateOnly = new Date(`${startDate}T00:00:00`)
+  const normalizedFrequency = frequency === 'biweekly' ? 'weekly' : frequency
+  const interval = frequency === 'biweekly' ? 2 : 1
+  const rrule: Record<string, any> = {
+    intervalType: normalizedFrequency,
+    interval,
+    startDate,
+    startTime: normalizeScheduleTime(startTime),
+    endType: 'count',
+    count
+  }
+
+  if (normalizedFrequency === 'weekly') {
+    rrule.dayOfWeek = getDayOfWeekCode(dateOnly)
+  }
+
+  if (normalizedFrequency === 'monthly' || normalizedFrequency === 'yearly') {
+    if (isLastDayOfMonth(dateOnly)) {
+      rrule.dayOfMonth = -1
+    } else if (dateOnly.getDate() <= 28) {
+      rrule.dayOfMonth = dateOnly.getDate()
+    }
+  }
+
+  if (normalizedFrequency === 'yearly') {
+    rrule.monthOfYear = getMonthOfYearCode(dateOnly)
+  }
+
+  return {
+    executeAt: localStart.toISOString(),
+    rrule
+  }
+}
+
 export const Transactions: React.FC = () => {
   const { dateRange, setDateRange } = useDateRange()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -90,6 +153,11 @@ export const Transactions: React.FC = () => {
     loading: false,
     saving: false,
     rawJson: ''
+  })
+  const [paymentPlanCreateModal, setPaymentPlanCreateModal] = useState<PaymentPlanCreateModalData>({
+    open: false,
+    selectedContact: null,
+    saving: false
   })
   const [paymentTableTab, setPaymentTableTab] = useState<PaymentsTableTab>('transactions')
   const [viewMode, setViewMode] = useState<'all' | 'by-date'>('all') // Por defecto 'all' (Todos)
@@ -231,6 +299,22 @@ export const Transactions: React.FC = () => {
     })
   }
 
+  const openPaymentPlanCreateModal = () => {
+    setPaymentPlanCreateModal({
+      open: true,
+      selectedContact: null,
+      saving: false
+    })
+  }
+
+  const closePaymentPlanCreateModal = () => {
+    setPaymentPlanCreateModal({
+      open: false,
+      selectedContact: null,
+      saving: false
+    })
+  }
+
   const handleOpenPaymentPlan = async (plan: PaymentPlan) => {
     setPaymentPlanModal({
       plan,
@@ -300,6 +384,103 @@ export const Transactions: React.FC = () => {
     } catch (error: any) {
       setPaymentPlanModal(prev => ({ ...prev, saving: false }))
       showToast('error', 'No se pudo guardar el plan', error?.message || 'HighLevel rechazó la actualización del plan de pago.')
+    }
+  }
+
+  const handleCreatePaymentPlan = async (formData: FormData) => {
+    const contact = paymentPlanCreateModal.selectedContact
+
+    if (!contact) {
+      showToast('error', 'Selecciona un contacto', 'Necesitas elegir a quién se le va a programar el plan de pago.')
+      return
+    }
+
+    if (!contact.email && !contact.phone) {
+      showToast('error', 'Contacto sin canal de envío', 'El contacto necesita email o teléfono para programar la factura recurrente.')
+      return
+    }
+
+    const amount = parseFloat(String(formData.get('total') || '').replace(/[^0-9.-]/g, ''))
+    const count = parseInt(String(formData.get('count') || ''), 10)
+    const startDate = String(formData.get('startDate') || '').trim()
+    const startTime = String(formData.get('startTime') || getDefaultScheduleTime()).trim()
+    const frequency = String(formData.get('frequency') || 'monthly')
+    const currency = String(formData.get('currency') || 'MXN').trim().toUpperCase()
+    const title = String(formData.get('title') || 'PLAN DE PAGO').trim()
+    const rawName = String(formData.get('name') || '').trim()
+    const description = String(formData.get('description') || '').trim()
+    const termsNotes = String(formData.get('termsNotes') || '').trim()
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      showToast('error', 'Monto inválido', 'El monto por cobro debe ser mayor a cero.')
+      return
+    }
+
+    if (!Number.isFinite(count) || count < 1) {
+      showToast('error', 'Número de cobros inválido', 'Pon al menos un cobro para programar el plan.')
+      return
+    }
+
+    if (!startDate) {
+      showToast('error', 'Fecha requerida', 'Elige cuándo debe iniciar el plan de pago.')
+      return
+    }
+
+    const contactName = formatName(contact.name || contact.email || contact.phone || 'Cliente')
+    const name = rawName || `${description || 'Plan de pago'} - ${contactName}`
+    const schedule = buildPaymentPlanSchedule(startDate, startTime, frequency, count)
+    const email = contact.email || ''
+    const phone = contact.phone || ''
+
+    const payload = {
+      name,
+      title,
+      currency,
+      total: amount,
+      termsNotes: termsNotes || null,
+      contactDetails: {
+        id: contact.id,
+        name: contactName,
+        email,
+        phoneNo: phone
+      },
+      sentTo: {
+        email: email ? [email] : [],
+        phoneNo: phone ? [phone] : []
+      },
+      schedule,
+      items: [
+        {
+          name: description || name,
+          description: description || name,
+          amount,
+          qty: 1,
+          currency,
+          type: 'one_time'
+        }
+      ],
+      discount: {
+        value: 0,
+        type: 'percentage'
+      },
+      paymentMethods: {
+        stripe: {
+          enableBankDebitOnly: false
+        }
+      }
+    }
+
+    setPaymentPlanCreateModal(prev => ({ ...prev, saving: true }))
+
+    try {
+      const createdPlan = await transactionsService.createPaymentPlan(payload)
+      setPaymentPlans(prev => [createdPlan, ...prev])
+      closePaymentPlanCreateModal()
+      showToast('success', 'Plan programado', 'El plan de pago quedó programado en HighLevel.')
+      fetchPaymentPlans()
+    } catch (error: any) {
+      setPaymentPlanCreateModal(prev => ({ ...prev, saving: false }))
+      showToast('error', 'No se pudo programar el plan', error?.message || 'HighLevel rechazó la creación del plan de pago.')
     }
   }
 
@@ -910,6 +1091,15 @@ export const Transactions: React.FC = () => {
                 Registrar pago
               </Button>
             )}
+            {paymentTableTab === 'payment-plans' && (
+              <Button
+                variant="secondary"
+                onClick={openPaymentPlanCreateModal}
+              >
+                <Plus size={16} />
+                Programar plan
+              </Button>
+            )}
           </div>
         </div>
 
@@ -1103,6 +1293,159 @@ export const Transactions: React.FC = () => {
                 </Button>
                 <Button type="submit">
                   {modal.type === 'create' ? 'Crear' : 'Guardar'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {isClient && paymentPlanCreateModal.open && createPortal(
+        <div className={styles.modalOverlay} onClick={closePaymentPlanCreateModal}>
+          <div className={`${styles.modal} ${styles.paymentPlanModal}`} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.modalHeader}>
+              <div>
+                <h2>Programar plan de pago</h2>
+                <p className={styles.modalSubtitle}>Crea una factura recurrente y déjala programada en HighLevel.</p>
+              </div>
+              <button
+                className={styles.closeButton}
+                type="button"
+                onClick={closePaymentPlanCreateModal}
+                title="Cerrar"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form className={styles.form} onSubmit={(e) => {
+              e.preventDefault()
+              handleCreatePaymentPlan(new FormData(e.currentTarget))
+            }}>
+              <div className={styles.formGroup}>
+                <ContactSearchInput
+                  value={paymentPlanCreateModal.selectedContact}
+                  onChange={(contact) => setPaymentPlanCreateModal(prev => ({ ...prev, selectedContact: contact }))}
+                  placeholder="Buscar contacto por nombre, email o teléfono"
+                  required
+                />
+              </div>
+
+              <div className={styles.formGrid}>
+                <div className={styles.formGroup}>
+                  <label>Nombre del plan</label>
+                  <input
+                    name="name"
+                    type="text"
+                    placeholder="Plan mensual"
+                  />
+                </div>
+                <div className={styles.formGroup}>
+                  <label>Título de factura</label>
+                  <input
+                    name="title"
+                    type="text"
+                    defaultValue="PLAN DE PAGO"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className={styles.formGrid}>
+                <div className={styles.formGroup}>
+                  <label>Monto por cobro</label>
+                  <div className={styles.inputWithIcon}>
+                    <span className={styles.inputIcon}>$</span>
+                    <input
+                      name="total"
+                      type="text"
+                      pattern="[0-9]*[.]?[0-9]+"
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      required
+                      className={styles.amountInput}
+                    />
+                  </div>
+                </div>
+                <div className={styles.formGroup}>
+                  <label>Moneda</label>
+                  <select name="currency" defaultValue="MXN">
+                    <option value="MXN">MXN</option>
+                    <option value="USD">USD</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className={styles.formGrid}>
+                <div className={styles.formGroup}>
+                  <label>Recurrencia</label>
+                  <select name="frequency" defaultValue="monthly">
+                    <option value="weekly">Semanal</option>
+                    <option value="biweekly">Quincenal</option>
+                    <option value="monthly">Mensual</option>
+                    <option value="yearly">Anual</option>
+                  </select>
+                </div>
+                <div className={styles.formGroup}>
+                  <label>Número de cobros</label>
+                  <input
+                    name="count"
+                    type="number"
+                    min="1"
+                    max="240"
+                    defaultValue="12"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className={styles.formGrid}>
+                <div className={styles.formGroup}>
+                  <label>Fecha de inicio</label>
+                  <input
+                    name="startDate"
+                    type="date"
+                    defaultValue={formatDateToISO(new Date())}
+                    required
+                  />
+                </div>
+                <div className={styles.formGroup}>
+                  <label>Hora de envío</label>
+                  <input
+                    name="startTime"
+                    type="time"
+                    defaultValue={getDefaultScheduleTime()}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className={styles.formGroup}>
+                <label>Concepto / descripción</label>
+                <input
+                  name="description"
+                  type="text"
+                  placeholder="Mensualidad, asesoría, mantenimiento..."
+                  required
+                />
+              </div>
+
+              <div className={styles.formGroup}>
+                <label>Términos / notas</label>
+                <textarea
+                  name="termsNotes"
+                  rows={4}
+                  placeholder="Notas que irán en la factura recurrente"
+                />
+              </div>
+
+              <div className={styles.formActions}>
+                <Button type="button" variant="ghost" onClick={closePaymentPlanCreateModal}>
+                  Cancelar
+                </Button>
+                <Button type="submit" loading={paymentPlanCreateModal.saving}>
+                  Crear y programar
                 </Button>
               </div>
             </form>

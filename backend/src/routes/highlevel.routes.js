@@ -16,6 +16,7 @@ import {
   listProducts,
   listPrices,
   createInvoice,
+  createInvoiceSchedule,
   listInvoiceSchedules,
   getInvoiceSchedule,
   updateInvoiceSchedule,
@@ -72,6 +73,7 @@ router.get('/products', listProducts)
 router.get('/products/:productId/prices', listPrices)
 router.post('/invoices', createInvoice)
 router.get('/invoices/schedules', listInvoiceSchedules)
+router.post('/invoices/schedules', createInvoiceSchedule)
 router.get('/invoices/schedules/:scheduleId', getInvoiceSchedule)
 router.put('/invoices/schedules/:scheduleId', updateInvoiceSchedule)
 router.post('/payment-flows/installments', createInstallmentFlow)
