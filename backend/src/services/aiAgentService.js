@@ -2666,6 +2666,11 @@ function buildContactActionOptions(contacts, { actionText = 'la acción solicita
 
 async function resolveHighLevelContactForAgent(args = {}, context = {}, options = {}) {
   const contactArg = args.contact && typeof args.contact === 'object' ? args.contact : {}
+  const rememberedContact = normalizeOperationalContact(
+    context.resolvedCrmContact ||
+    context.crmContact ||
+    context.operationalMemory?.crmContact
+  )
   const contactId = cleanText(
     args.contactId ||
     args.contact_id ||
@@ -2725,6 +2730,16 @@ async function resolveHighLevelContactForAgent(args = {}, context = {}, options 
 
   if (!lookupHint && Array.isArray(context.messages)) {
     lookupHint = normalizeContactLookupHint(extractPaymentContactHintFromConversation(context.messages))
+  }
+
+  if (rememberedContact?.id) {
+    const contactTokens = getContactLookupTokens(lookupHint)
+    const lookupMatchesRememberedContact = lookupHint &&
+      (contactMatchesExactly(rememberedContact, lookupHint) || contactNameContainsLookup(rememberedContact, contactTokens))
+
+    if (!lookupHint || lookupMatchesRememberedContact) {
+      return { contact: rememberedContact, source: 'operational_memory' }
+    }
   }
 
   if (!lookupHint) {
@@ -4024,7 +4039,7 @@ async function buildOperationalReferenceContext({ runtimeContext = {}, viewConte
 
   return {
     generatedAt: runtimeContext.nowIso || DateTime.now().toISO(),
-    rule: 'Si el usuario dice "el de la ultima cita", "la proxima cita", "este contacto" o algo contextual, usa estos IDs o llama lookup_business_reference antes de ejecutar la accion.',
+    rule: 'Si el usuario dice "el de la ultima cita", "la proxima cita", "este contacto" o algo contextual, usa estos IDs o llama lookup_business_reference antes de ejecutar la accion. Si el usuario da un nombre propio distinto, no uses estas referencias: resuelve ese nombre contra contactos.',
     appointmentReferences: appointmentContext,
     currentViewContact: currentContact?.id
       ? {
@@ -4055,6 +4070,61 @@ async function buildPaymentOperationalMemory({ messages = [], highLevelConnectio
         }
       : null,
     rule: 'Si resolvedContact existe y el usuario sigue hablando del mismo pago, usa ese contactId. Si sólo hay contactHint, busca coincidencias reales en DB/GHL antes de pedir más datos.'
+  }
+}
+
+function shouldResolveCrmContactFromLatestMessage(message = '') {
+  const normalized = normalizeText(message)
+  if (!normalized) return false
+
+  const crmActionIntent = /(agenda|agendar|agendarme|programa|programame|prográmame|calendariza|crea|mete|meter|manda|envia|envía|actualiza|cambia|modifica|busca|revisa|trae|tráeme|workflow|flujo|oportunidad|pipeline|cita|appointment|calendario|contacto|cliente|lead|persona)/.test(normalized)
+  const hasExplicitNameSignal = extractContactLookupTerm(message) ||
+    /\b(?:a|al|para|con)\s+[\p{L}][\p{L}'._+-]+(?:\s+[\p{L}][\p{L}'._+-]+)+/iu.test(message) ||
+    /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(message) ||
+    normalizePhoneDigits(message).length >= 7
+
+  return crmActionIntent && Boolean(hasExplicitNameSignal)
+}
+
+async function buildCrmOperationalMemory({ messages = [], viewContext = {}, highLevelConnection = {} } = {}) {
+  const latestUserMessage = getLatestUserMessage(messages)
+
+  if (!highLevelConnection?.configured || !shouldResolveCrmContactFromLatestMessage(latestUserMessage)) {
+    return null
+  }
+
+  const contactHint = normalizeContactLookupHint(extractContactLookupTerm(latestUserMessage))
+
+  if (!contactHint) {
+    return null
+  }
+
+  const resolvedContact = await resolveHighLevelContactForAgent(
+    { contactHint },
+    {
+      messages: [{ role: 'user', content: latestUserMessage }],
+      viewContext
+    },
+    {
+      actionText: 'ejecutar la acción solicitada',
+      ambiguousContactError: 'Encontré varios contactos posibles con ese nombre. Necesito elegir el correcto antes de ejecutar la acción.'
+    }
+  )
+
+  return {
+    contactHint,
+    resolvedContact: resolvedContact.contact?.id
+      ? {
+          id: resolvedContact.contact.id,
+          name: resolvedContact.contact.name,
+          email: resolvedContact.contact.email || null,
+          phone: resolvedContact.contact.phone || null,
+          storedCard: await getStoredCardSummary(resolvedContact.contact.id, highLevelConnection)
+        }
+      : null,
+    error: resolvedContact.contact ? null : resolvedContact.error || 'No se pudo resolver el contacto por nombre.',
+    clarificationOptions: resolvedContact.clarificationOptions || [],
+    rule: 'Para acciones de CRM sobre personas (citas, workflows, oportunidades, mensajes o cambios), si resolvedContact existe usa ese contactId. No pidas ID/correo/teléfono cuando ya se resolvió desde DB/GHL.'
   }
 }
 
@@ -4994,7 +5064,7 @@ function buildHighLevelTools(highLevelConnection, options = {}) {
     {
       type: 'function',
       name: 'lookup_business_reference',
-      description: 'Resuelve referencias contextuales del negocio antes de ejecutar acciones: "el de la última cita", "la próxima cita", "este contacto", "el contacto actual". Devuelve IDs exactos de cita/contacto desde la DB local y señales útiles como email, teléfono y tarjeta guardada. Úsala antes de pagos, workflows, citas, oportunidades, mensajes o modificaciones cuando el usuario no dé un contacto/registro literal sino una referencia contextual.',
+      description: 'Resuelve referencias contextuales del negocio antes de ejecutar acciones: "el de la última cita", "la próxima cita", "este contacto", "el contacto actual". Devuelve IDs exactos de cita/contacto desde la DB local y señales útiles como email, teléfono y tarjeta guardada. Úsala antes de pagos, workflows, citas, oportunidades, mensajes o modificaciones cuando el usuario no dé un contacto/registro literal sino una referencia contextual. Si el usuario sí dio un nombre propio, usa lookup_highlevel_contact o Memoria operacional CRM, no esta referencia contextual.',
       parameters: {
         type: 'object',
         properties: {
@@ -5014,7 +5084,7 @@ function buildHighLevelTools(highLevelConnection, options = {}) {
     {
       type: 'function',
       name: 'lookup_highlevel_contact',
-      description: 'Busca un contacto por nombre/email/teléfono/ID, hace GET real del contacto en GoHighLevel y devuelve el rawContact completo junto con la lista de campos estándar y custom fields de la location. Úsala antes de cambiar datos de contacto o cuando el usuario pida ver la data/campos del contacto.',
+      description: 'Busca un contacto por nombre/email/teléfono/ID, hace GET real del contacto en GoHighLevel y devuelve el rawContact completo junto con la lista de campos estándar y custom fields de la location. Úsala antes de cualquier acción de CRM sobre una persona: agendar cita, meter a workflow, crear oportunidad, mandar mensaje, cambiar datos de contacto o ver campos/data. Si el usuario dio nombre limpio, búscalo; no pidas ID/correo/teléfono sin intentar lookup.',
       parameters: {
         type: 'object',
         properties: {
@@ -5387,6 +5457,31 @@ async function executeHighLevelRestRequest(args = {}, highLevelConnection) {
   }
 }
 
+function attachResolvedCrmContactToHighLevelRequest(args = {}, contact = null) {
+  const crmContact = normalizeOperationalContact(contact)
+  if (!crmContact?.id) return args
+
+  const method = String(args.method || 'GET').toUpperCase()
+  if (method === 'GET') return args
+
+  const cleanPath = cleanHighLevelPath(args.path || '')
+  const shouldAttachContact = /^\/(?:calendars?|appointments?|opportunities|conversations|contacts)\b/i.test(cleanPath)
+
+  if (!shouldAttachContact || !args.body || typeof args.body !== 'object' || Array.isArray(args.body)) {
+    return args
+  }
+
+  const body = { ...args.body }
+  if (!body.contactId && !body.contact_id && !body.contact?.id) {
+    body.contactId = crmContact.id
+  }
+
+  return {
+    ...args,
+    body
+  }
+}
+
 function parseJsonObject(text) {
   const raw = String(text || '').trim()
 
@@ -5606,7 +5701,9 @@ async function callOpenAIResponseWithActionTools(apiKey, {
     paymentContact: normalizeOperationalContact(initialOperationalMemory.paymentContact) ||
       (getRecentConversationContactId(messages)
         ? await getRecentConversationContact(messages)
-        : null)
+        : null),
+    crmContact: normalizeOperationalContact(initialOperationalMemory.crmContact),
+    crmContactLocked: Boolean(normalizeOperationalContact(initialOperationalMemory.crmContact)?.id)
   }
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
@@ -5656,19 +5753,25 @@ async function callOpenAIResponseWithActionTools(apiKey, {
           output = await executeLookupBusinessReference(call.arguments, {
             runtimeContext,
             viewContext,
-            highLevelConnection
+            highLevelConnection,
+            operationalMemory,
+            resolvedCrmContact: operationalMemory.crmContact
           })
         } else if (call.name === 'lookup_highlevel_contact') {
           output = await executeLookupHighLevelContact(call.arguments, highLevelConnection, {
             runtimeContext,
             viewContext,
-            messages
+            messages,
+            operationalMemory,
+            resolvedCrmContact: operationalMemory.crmContact
           })
         } else if (call.name === 'update_highlevel_contact_field') {
           output = await executeUpdateHighLevelContactField(call.arguments, highLevelConnection, {
             runtimeContext,
             viewContext,
-            messages
+            messages,
+            operationalMemory,
+            resolvedCrmContact: operationalMemory.crmContact
           })
         } else if (call.name === 'lookup_contact_payment_profile') {
           output = await executeLookupContactPaymentProfile(call.arguments, highLevelConnection, {
@@ -5708,7 +5811,10 @@ async function callOpenAIResponseWithActionTools(apiKey, {
             payload: call.arguments?.body || null
           })
         } else if (call.name === 'highlevel_rest_request') {
-          output = await executeHighLevelRestRequest(call.arguments, highLevelConnection)
+          output = await executeHighLevelRestRequest(
+            attachResolvedCrmContactToHighLevelRequest(call.arguments, operationalMemory.crmContact),
+            highLevelConnection
+          )
         } else if (call.name === 'create_single_payment_link') {
           output = await executeCreateSinglePaymentLink(call.arguments, highLevelConnection, {
             messages,
@@ -5753,6 +5859,9 @@ async function callOpenAIResponseWithActionTools(apiKey, {
       const outputPaymentContact = getPaymentContactFromToolOutput(output)
       if (outputPaymentContact?.id) {
         operationalMemory.paymentContact = outputPaymentContact
+        if (!operationalMemory.crmContactLocked) {
+          operationalMemory.crmContact = outputPaymentContact
+        }
       }
 
       outputs.push({
@@ -5897,6 +6006,8 @@ function buildUnifiedAgentRoute({ messages = [], latestUserMessage = '' } = {}) 
   const paymentBackendOnly = shouldUsePaymentBackendForLatestMessage(messages)
   const contactMutationSafety = shouldUseContactMutationSafety(latestUserMessage)
   const requiresDbResearch = !paymentBackendOnly && shouldUseInternalDatabaseContext(latestUserMessage, messages)
+  const highLevelOperationalIntent = !paymentBackendOnly && !requiresDbResearch &&
+    /(workflow|flujo|automatizacion|automatización|cita|calendario|appointment|oportunidad|pipeline|mensaje|conversacion|conversación|media storage|archivo|imagen|folder|tag|producto|precio|contacto|cliente|lead|campo personalizado|custom field).*(busca|revisa|analiza|cambia|actualiza|modifica|mete|saca|crea|agenda|agenda[r]?|calendariza|manda|envia|envía|haz|hacer)|(?:busca|revisa|analiza|cambia|actualiza|modifica|mete|saca|crea|agenda|agendar|calendariza|manda|envia|envía|haz|hacer).*(workflow|flujo|automatizacion|automatización|cita|calendario|appointment|oportunidad|pipeline|mensaje|conversacion|conversación|media storage|archivo|imagen|folder|tag|producto|precio|contacto|cliente|lead|campo personalizado|custom field)/.test(normalized)
   const mutationIntent = paymentBackendOnly ||
     contactMutationSafety ||
     /(agrega|actualiza|modifica|cambia|crea|genera|registra|agenda|cancela|manda|envia|mete|saca|pausa|reactiva|send|create|update|delete|programa|domicili|ejecuta|hazlo)/.test(normalized)
@@ -5909,7 +6020,7 @@ function buildUnifiedAgentRoute({ messages = [], latestUserMessage = '' } = {}) 
     action: mutationIntent ? 'mutate' : readIntent ? 'read' : 'answer',
     continuation: isConversationalFollowUp(messages),
     requiresDbResearch,
-    requiresHighLevelTools: paymentBackendOnly || contactMutationSafety,
+    requiresHighLevelTools: paymentBackendOnly || contactMutationSafety || highLevelOperationalIntent,
     requiresPaymentTools: paymentBackendOnly,
     paymentBackendOnly,
     contactMutationSafety,
@@ -5946,6 +6057,8 @@ const UNIFIED_CAPABILITY_PROMPT = [
   '- Para conversación normal, ideas, redacción, chistes o preguntas generales que no requieren datos privados ni acciones externas, responde sin llamar herramientas.',
   '- Para analítica interna del negocio usa la DB de Ristak y los resultados SQL disponibles. Esto incluye campañas/anuncios sincronizados, ROAS, utilidad, pagos, citas, contactos, ventas, fuentes, cohortes e históricos.',
   '- Para GoHighLevel usa HighLevel MCP o highlevel_rest_request cuando el usuario pida recursos/acciones de CRM: media storage, imágenes, archivos, workflows, calendarios, citas, conversaciones, oportunidades, productos, tags, custom fields, usuarios o ubicaciones.',
+  '- Si una acción de CRM menciona un nombre de persona/contacto, primero resuelve ese nombre contra DB/GHL y usa el contactId real. No le pidas ID, correo o teléfono al usuario si Memoria operacional CRM ya trae resolvedContact.',
+  '- Para agendar citas, meter a workflow, crear oportunidades o mandar mensajes a una persona, usa el contactId resuelto por lookup_highlevel_contact o Memoria operacional CRM; no confundas ese nombre con la última/próxima cita de otro contacto.',
   '- Para pagos, links, invoices, parcialidades, pagos manuales, tarjeta guardada o domiciliación usa las herramientas internas de Ristak porque replican la lógica real del backend. No uses MCP como atajo para mutaciones de dinero.',
   '- Para links/invoices con tarjeta o domiciliación no inventes canal de envío. Si el usuario no eligió todos/correo/WhatsApp/SMS, la herramienta debe pedirlo antes de crear/enviar para no dejar invoices en borrador.',
   '- Para transferencia, depósito, efectivo o manual registra el pago offline con la herramienta interna. Si además hay parcialidades automáticas y falta tarjeta guardada, el backend debe enviar link de domiciliación por el canal confirmado; si ya hay tarjeta guardada, no mandes domiciliación salvo que pidan otra tarjeta.',
@@ -5966,6 +6079,7 @@ const NON_NEGOTIABLE_SAFETY_PROMPT = [
   '- No cobres, envíes links, registres pagos, programes domiciliaciones ni modifiques dinero sin confirmación explícita cuando la herramienta la requiera.',
   '- No modifiques contactos en GoHighLevel sin identificar el contacto exacto, mostrar el campo exacto con valor actual/nuevo y pedir confirmación explícita.',
   '- Para acciones sobre personas, pagos, workflows, citas u oportunidades, identifica el registro correcto antes de ejecutar.',
+  '- Si el usuario dio un nombre propio como "Raúl Gómez", busca/resuelve ese contacto. No uses como excusa que el contexto trae otra cita reciente o próxima.',
   '- Si el usuario usa una referencia contextual ("el de la última cita", "este contacto", "la próxima cita"), usa el contexto operacional o lookup_business_reference antes de llamar herramientas que muten datos.',
   '- Si una herramienta devuelve opciones o pide confirmación, respétalo y muéstralo claro.'
 ].join('\n')
@@ -6969,6 +7083,13 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
         highLevelConnection
       })
     : null
+  const crmOperationalMemory = agentRoute?.requiresHighLevelTools
+    ? await buildCrmOperationalMemory({
+        messages,
+        viewContext,
+        highLevelConnection
+      })
+    : null
 
   if (metaAdsOperationalIntent) {
     return buildMetaAdsOperationsUnavailableReply()
@@ -6994,6 +7115,9 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
     '',
     'Memoria operacional de pagos:',
     paymentOperationalMemory ? JSON.stringify(paymentOperationalMemory, null, 2) : 'No aplica para esta ruta.',
+    '',
+    'Memoria operacional CRM:',
+    crmOperationalMemory ? JSON.stringify(crmOperationalMemory, null, 2) : 'No aplica para esta ruta.',
     '',
     'Estado de Meta Ads operativo en la app:',
     buildMetaAdsOperationsContext(),
@@ -7048,7 +7172,8 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
           viewContext,
           messages,
           initialOperationalMemory: {
-            paymentContact: paymentOperationalMemory?.resolvedContact || null
+            paymentContact: paymentOperationalMemory?.resolvedContact || null,
+            crmContact: crmOperationalMemory?.resolvedContact || null
           }
         })
       : await callOpenAIResponse(apiKey, {
@@ -7207,15 +7332,15 @@ const CONTACT_LOOKUP_STOP_WORDS = new Set([
   'clientes', 'cita', 'citas', 'cobra', 'cobrale', 'cobrar', 'cobrarle', 'cobre', 'cobrele', 'cobro', 'cobros', 'como',
   'con', 'contacto', 'contactos', 'correo', 'cual', 'cuando', 'cuanto', 'cuantos',
   'cambia', 'cambiar', 'cambiale', 'cámbiale', 'actualiza', 'actualizar', 'actualizale', 'actualízale',
-  'dame', 'dato', 'datos', 'de', 'del', 'desde', 'despues', 'después', 'dime', 'donde', 'dolar', 'dolares', 'durante', 'el', 'ella',
+  'dame', 'dato', 'datos', 'de', 'del', 'desde', 'despues', 'después', 'dia', 'día', 'dime', 'domingo', 'donde', 'dolar', 'dolares', 'durante', 'el', 'ella',
   'ejecuta', 'ejecutalo', 'ejecútalo', 'ejecutar', 'ejecuto',
   'en', 'encuentra', 'encuentrame', 'ese', 'esa', 'esperar', 'esta', 'este', 'factura', 'facturas', 'fecha',
   'hacer', 'haz', 'hoy',
-  'info', 'informacion', 'la', 'las', 'lead', 'leads', 'le', 'les', 'link', 'lo',
+  'info', 'informacion', 'jueves', 'la', 'las', 'lead', 'leads', 'le', 'les', 'link', 'lo', 'lunes',
   'listo', 'los', 'luego', 'manda', 'mandale', 'mandar', 'me', 'mes', 'meses', 'mete', 'meter', 'metele', 'métele', 'mi', 'mis', 'misma', 'mismo', 'modifica', 'modificar', 'modificale', 'modifícale', 'mxn', 'necesito', 'nombre',
-  'numero', 'oye', 'paciente', 'pacientes', 'pago', 'pagos', 'para', 'apra', 'plan', 'planes', 'peso', 'pesos', 'persona', 'personas',
+  'martes', 'miercoles', 'miércoles', 'numero', 'oye', 'paciente', 'pacientes', 'pago', 'pagos', 'para', 'apra', 'plan', 'planes', 'peso', 'pesos', 'persona', 'personas',
   'podria', 'podría', 'podrias', 'podrías', 'por', 'producto', 'programa', 'programale', 'prospecto', 'prospectos', 'que', 'quien', 'registra', 'registrar', 'registrale', 'regístrale', 'registrame', 'regístrame', 'revisa', 'saber', 'siguiente', 'sobre', 'sucesivamente',
-  'si', 'sí', 'su', 'sus', 'telefono', 'tiene', 'tienen', 'tres', 'tuvo', 'un', 'una', 'uno', 'usd', 'venta', 'ventas',
+  'si', 'sí', 'sabado', 'sábado', 'su', 'sus', 'tarde', 'telefono', 'tiene', 'tienen', 'tres', 'tuvo', 'un', 'una', 'uno', 'usd', 'venta', 'ventas', 'viernes',
   'vamos', 'ver', 'quiero', 'anticipo', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
   'agosto', 'septiembre', 'setiembre', 'octubre', 'noviembre', 'diciembre'
 ])
@@ -7247,7 +7372,7 @@ const CONTACT_LOOKUP_COMMAND_WORDS = [
 ].map(word => normalizeSearchText(word, 40))
 
 const CONTACT_LOOKUP_LEADING_WORDS_PATTERN = /^(?:a|al|el|la|los|las|contacto|cliente|lead|prospecto|paciente|persona|para|apra)\s+/i
-const CONTACT_LOOKUP_TRAILING_WORDS_PATTERN = /\s+(?:y|para|que|cobrale|cobrarle|cobrele|cobra|cobrar|manda|mandale|enviar|enviale|hazle|programale|ponle|agendale|creale|generale|registra|registrale|ahora|ahorita|hoy|manana|mañana|durante|por|cada|desde|hasta)\b.*$/i
+const CONTACT_LOOKUP_TRAILING_WORDS_PATTERN = /\s+(?:y|para|que|cobrale|cobrarle|cobrele|cobra|cobrar|manda|mandale|enviar|enviale|hazle|programale|ponle|agendale|agenda|agendar|creale|generale|registra|registrale|ahora|ahorita|hoy|manana|mañana|el\s+d[ií]a|d[ií]a|a\s+las|las\s+\d|hora|lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|durante|por|cada|desde|hasta)\b.*$/i
 
 function getBoundedEditDistance(left, right, maxDistance = 2) {
   const a = normalizeSearchText(left, 80)
@@ -7315,7 +7440,7 @@ function extractContactLookupTerm(question) {
     /\b(?:hacer|haz|arma|armar|crea|crear|genera|generar|prepara|preparar)\s+(?:(?:un|una)\s+)?(?:plan\s+de\s+pagos|plan\s+de\s+cobros|payment\s+plan|plan)\s+(?:(?:a|al|para|apra|de)\s+)?(.+?)(?=\s+(?:le\s+vamos|vamos|le\s+voy|voy|le\s+van|van|le\s+cobr|cobr|con|por|de\s+\d|\d|\$|mxn|usd|peso|pesos|dolar|dolares|hoy|ahora|ahorita|manana|mañana|luego|despues|después|y\s+luego|y\s+despues|y\s+después)\b|$)/i,
     /\b(?:plan\s+de\s+pagos|plan\s+de\s+cobros|payment\s+plan)\s+(?:(?:a|al|para|apra|de)\s+)?(.+?)(?=\s+(?:le\s+vamos|vamos|le\s+voy|voy|le\s+van|van|le\s+cobr|cobr|con|por|de\s+\d|\d|\$|mxn|usd|peso|pesos|dolar|dolares|hoy|ahora|ahorita|manana|mañana|luego|despues|después|y\s+luego|y\s+despues|y\s+después)\b|$)/i,
     /\b(?:buscame|busca|buscar|encuentrame|encuentra|revisa|dame)\s+(.+?)(?=\s+(?:y|para|con|que|cobrale|cobrarle|cobrele|cobra|mandale|enviale|hazle|programale|agendale|creale|generale|registrale|registra|actualizale|actualiza|cambiale|cambia|modificale|modifica|metele|mete)\b|$)/i,
-    /\b(?:programa|programale|agendale|agenda|calendariza)\s+(?:(?:un|una)\s+)?(?:(?:pago|cobro|invoice|factura|link)\s+)?(?:(?:a|al|para|apra)\s+)?(.+?)(?=\s+(?:\d|\$|mxn|usd|peso|pesos|dolar|dolares|hoy|ahora|ahorita|manana|mañana|el\s+\d|durante|por|cada|desde|hasta|del\s+producto|producto|concepto)\b|$)/i,
+    /\b(?:programa|programame|progr[aá]mame|programale|progr[aá]male|agendale|ag[eé]ndale|agenda|agendar|agendarme|ag[eé]ndame|calendariza)\s+(?:(?:un|una)\s+)?(?:(?:pago|cobro|invoice|factura|link|cita|appointment|consulta|reuni[oó]n)\s+)?(?:(?:a|al|para|apra|con)\s+)?(.+?)(?=\s+(?:\d|\$|mxn|usd|peso|pesos|dolar|dolares|hoy|ahora|ahorita|manana|mañana|el\s+\d|el\s+d[ií]a|d[ií]a|a\s+las|las\s+\d|lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|durante|por|cada|desde|hasta|del\s+producto|producto|concepto)\b|$)/i,
     /\b(?:cobrale|cobrarle|cobrele|cobra|mandale|enviale|hazle|programale|agendale|creale|generale|registrale|registra|actualizale|actualiza|cambiale|cambia|modificale|modifica|metele|mete)\s+(?:(?:un|una|el|la)\s+)?(?:(?:pago|cobro|invoice|factura|link|workflow|flujo|campo|dato)\s+)?(?:(?:a|al|para|apra|de)\s+)?(.+?)(?=\s+(?:\d|\$|mxn|usd|peso|pesos|dolar|dolares|hoy|ahora|ahorita|manana|mañana|el\s+\d|durante|por|cada|desde|hasta|con\s+valor|a\s+valor)\b|$)/i,
     /\b(?:contacto|cliente|lead|prospecto|paciente|persona)\s+(?:de\s+|llamad[oa]\s+|con\s+nombre\s+)?(.+?)(?=\s+(?:y|para|con|que|cobrale|cobrarle|cobrele|cobra|mandale|enviale|hazle|programale|agendale|registrale|registra|actualizale|actualiza|cambiale|cambia|modificale|modifica|metele|mete|\d|\$|mxn|usd|peso|pesos)\b|$)/i
   ]
