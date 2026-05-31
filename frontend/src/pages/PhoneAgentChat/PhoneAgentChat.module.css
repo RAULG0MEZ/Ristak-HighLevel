@@ -1,5 +1,8 @@
 .mobilePage {
   position: relative;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
   width: 100%;
   height: 100dvh;
   min-height: 100dvh;
@@ -99,6 +102,15 @@
 
 .dashboardLink:hover {
   opacity: 0.88;
+}
+
+@media (min-width: 768px) {
+  .mobilePage {
+    padding: clamp(16px, 2.8vw, 28px);
+    background:
+      linear-gradient(180deg, rgba(148, 163, 184, 0.08), transparent 48%),
+      var(--color-background-primary);
+  }
 }
 
 @keyframes spin {

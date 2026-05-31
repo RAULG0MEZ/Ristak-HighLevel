@@ -4,46 +4,48 @@ import { MonitorX } from 'lucide-react'
 import { AIAgentPanel } from '@/components/ai'
 import styles from './PhoneAgentChat.module.css'
 
-const PHONE_WIDTH_QUERY = '(max-width: 767px)'
+const PORTABLE_WIDTH_QUERY = '(max-width: 1366px)'
 const COARSE_POINTER_QUERY = '(pointer: coarse)'
-const MOBILE_USER_AGENT_PATTERN = /Android|iPhone|iPod|IEMobile|Opera Mini|Mobile/i
+const MOBILE_OR_TABLET_USER_AGENT_PATTERN = /Android|iPad|iPhone|iPod|IEMobile|Opera Mini|Mobile|Tablet/i
 
 type AccessState = 'checking' | 'allowed' | 'blocked'
 
-function hasPhoneAccess() {
+function hasPortableAccess() {
   if (typeof window === 'undefined') return false
 
-  const phoneViewport = window.matchMedia(PHONE_WIDTH_QUERY).matches
+  const portableViewport = window.matchMedia(PORTABLE_WIDTH_QUERY).matches
   const coarsePointer = window.matchMedia(COARSE_POINTER_QUERY).matches
-  const mobileUserAgent = MOBILE_USER_AGENT_PATTERN.test(navigator.userAgent || '')
+  const userAgent = navigator.userAgent || ''
+  const mobileOrTabletUserAgent = MOBILE_OR_TABLET_USER_AGENT_PATTERN.test(userAgent)
+  const iPadDesktopMode = /Macintosh/i.test(userAgent) && navigator.maxTouchPoints > 1
 
-  return phoneViewport && (mobileUserAgent || coarsePointer)
+  return portableViewport && (mobileOrTabletUserAgent || iPadDesktopMode || coarsePointer)
 }
 
 function getAccessState(): AccessState {
   if (typeof window === 'undefined') return 'checking'
-  return hasPhoneAccess() ? 'allowed' : 'blocked'
+  return hasPortableAccess() ? 'allowed' : 'blocked'
 }
 
 export const PhoneAgentChat: React.FC = () => {
   const [accessState, setAccessState] = useState<AccessState>(getAccessState)
 
   useEffect(() => {
-    document.title = 'Agente AI movil | Ristak'
+    document.title = 'Agente AI movil y tablet | Ristak'
 
     const updateAccess = () => setAccessState(getAccessState())
-    const phoneMedia = window.matchMedia(PHONE_WIDTH_QUERY)
+    const portableMedia = window.matchMedia(PORTABLE_WIDTH_QUERY)
     const pointerMedia = window.matchMedia(COARSE_POINTER_QUERY)
 
     updateAccess()
-    phoneMedia.addEventListener('change', updateAccess)
+    portableMedia.addEventListener('change', updateAccess)
     pointerMedia.addEventListener('change', updateAccess)
     window.addEventListener('resize', updateAccess)
     window.addEventListener('orientationchange', updateAccess)
     window.visualViewport?.addEventListener('resize', updateAccess)
 
     return () => {
-      phoneMedia.removeEventListener('change', updateAccess)
+      portableMedia.removeEventListener('change', updateAccess)
       pointerMedia.removeEventListener('change', updateAccess)
       window.removeEventListener('resize', updateAccess)
       window.removeEventListener('orientationchange', updateAccess)
@@ -68,9 +70,9 @@ export const PhoneAgentChat: React.FC = () => {
           </div>
           <div className={styles.blockedCopy}>
             <p className={styles.eyebrow}>Ruta bloqueada</p>
-            <h1 id="phone-agent-blocked-title">Solo en celular</h1>
+            <h1 id="phone-agent-blocked-title">Solo en móvil o tablet</h1>
             <p>
-              Esta pantalla del agente AI esta cerrada para computadora. Abrela desde un telefono para usar el chat en modo movil.
+              Esta pantalla del agente AI está cerrada para computadora. Ábrela desde un teléfono o una tablet para usar el chat en modo portátil.
             </p>
           </div>
           <Link className={styles.dashboardLink} to="/dashboard">
@@ -82,7 +84,7 @@ export const PhoneAgentChat: React.FC = () => {
   }
 
   return (
-    <main className={styles.mobilePage} aria-label="Chat movil del agente AI">
+    <main className={styles.mobilePage} aria-label="Chat movil y tablet del agente AI">
       <AIAgentPanel variant="embedded" />
     </main>
   )
