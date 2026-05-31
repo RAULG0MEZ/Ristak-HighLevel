@@ -12,6 +12,25 @@ import { db } from '../config/database.js'
 import { getGHLClient } from './ghlClient.js'
 import { logger } from '../utils/logger.js'
 import { getInvoicePaymentMode, nonTestPaymentCondition } from '../utils/paymentMode.js'
+import { markPaymentFlowInvoicePaid } from './paymentFlowService.js'
+
+const PAID_INVOICE_STATUSES = new Set(['paid', 'succeeded', 'completed'])
+
+async function activatePaymentFlowFromPaidInvoice(invoiceId, invoiceData) {
+  if (!invoiceId || !PAID_INVOICE_STATUSES.has(invoiceData.status) || !invoiceData.contact_id) {
+    return
+  }
+
+  try {
+    await markPaymentFlowInvoicePaid(invoiceId, {
+      contactId: invoiceData.contact_id,
+      amount: invoiceData.amount,
+      description: invoiceData.description
+    })
+  } catch (error) {
+    logger.error(`No se pudo activar flujo de parcialidades desde invoice sincronizado ${invoiceId}: ${error.message}`)
+  }
+}
 
 /**
  * Sincroniza invoices desde HighLevel a BD local
@@ -151,6 +170,8 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
         if (invoiceData.status === 'paid' && invoiceData.contact_id) {
           await updateContactStats(invoiceData.contact_id)
         }
+
+        await activatePaymentFlowFromPaidInvoice(ghlInvoiceId, invoiceData)
 
       } catch (error) {
         logger.error(`Error procesando invoice ${invoice.id}:`, error)
@@ -328,6 +349,8 @@ export async function syncAllInvoices({ contactId } = {}) {
           await updateContactStats(invoiceData.contact_id)
         }
 
+        await activatePaymentFlowFromPaidInvoice(ghlInvoiceId, invoiceData)
+
       } catch (error) {
         logger.error(`Error procesando invoice ${invoice.id}:`, error)
         skipped++
@@ -453,6 +476,8 @@ export async function syncSingleInvoice(invoiceId) {
     if (['paid', 'succeeded', 'completed'].includes(invoiceData.status) && invoiceData.contact_id) {
       await updateContactStats(invoiceData.contact_id)
     }
+
+    await activatePaymentFlowFromPaidInvoice(ghlInvoiceId, invoiceData)
 
     return { success: true, invoiceId: ghlInvoiceId, status: invoiceData.status }
   } catch (error) {

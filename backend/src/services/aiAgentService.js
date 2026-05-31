@@ -4,7 +4,7 @@ import { resolveDateRangeWithGHLTimezone } from '../utils/dateUtils.js'
 import { buildHiddenContactsCondition, getHiddenContactFilters } from '../utils/hiddenContactsFilter.js'
 import { getGHLClient } from './ghlClient.js'
 import { createInstallmentPaymentFlow, createSinglePaymentLink } from './paymentFlowService.js'
-import { PAYMENT_MODE_LIVE, PAYMENT_MODE_TEST, normalizePaymentMode } from '../utils/paymentMode.js'
+import { PAYMENT_MODE_LIVE, PAYMENT_MODE_TEST, normalizePaymentMode, nonTestPaymentCondition } from '../utils/paymentMode.js'
 import { updateSingleContactStats } from '../utils/updateContactsStats.js'
 import { DateTime } from 'luxon'
 
@@ -46,7 +46,7 @@ contacts:
 payments:
   id, contact_id, amount, currency, status, payment_method, reference,
   description, date, due_date, sent_at, ghl_invoice_id, invoice_number,
-  created_at, updated_at
+  payment_mode, created_at, updated_at
 
 appointments:
   id, calendar_id, contact_id, location_id, title, status,
@@ -87,7 +87,8 @@ const BUSINESS_DEFINITIONS = `
 Definiciones del dashboard:
 - Prospectos, leads o interesados: contactos nuevos creados en el rango solicitado.
 - Clientes nuevos: contactos con purchases_count > 0 o total_paid > 0. Si se pregunta por "nuevos", normalmente filtra por contacts.created_at salvo que el usuario pida fecha de pago.
-- Ventas o ingresos: payments.amount con status pagado/completado. Estados pagados: paid, succeeded, success, completed, complete.
+- Ventas o ingresos reales: payments.amount con status pagado/completado y payment_mode distinto de "test". Estados pagados: paid, succeeded, success, completed, complete.
+- Pagos en modo prueba: payment_mode = "test". No los cuentes como ingreso real, venta real, ROAS real ni LTV real salvo que el usuario pida explícitamente pruebas/sandbox.
 - Inversión o gasto publicitario: SUM(meta_ads.spend), filtrado por meta_ads.date.
 - Facebook/Meta: normalmente meta_ads y contactos con attribution_ad_id; también puedes revisar source, attribution_session_source, utm_source, channel o source_platform cuando el usuario pregunte por origen.
 - Citas agendadas del funnel: contactos únicos con al menos una cita. Para contar citas operativas, cuenta appointments.id.
@@ -1313,18 +1314,31 @@ async function executeRecordInvoicePayment(args = {}, highLevelConnection) {
   }
 }
 
-function buildHighLevelTools(highLevelConnection) {
+function isPaymentActionRequest(question) {
+  const normalized = normalizeText(question)
+  const mentionsPayment = /(pago|cobro|cobra|factura|invoice|recibo|link de pago|parcialidad|domicili|tarjeta|transferencia)/.test(normalized)
+  const mentionsMutation = /(registr|marca|cobr|gener|crea|manda|envia|program|domicili|charge|record|send|create)/.test(normalized)
+
+  return mentionsPayment && mentionsMutation
+}
+
+function buildHighLevelTools(highLevelConnection, options = {}) {
   if (!highLevelConnection?.configured) return []
 
-  return [
-    {
+  const tools = []
+
+  if (!options.paymentActionRequest) {
+    tools.push({
       type: 'mcp',
       server_label: 'highlevel',
-      server_description: 'Official HighLevel MCP server for CRM, contacts, conversations, calendars, opportunities, payments, locations, social posting, blogs, email templates and related operations.',
+      server_description: 'Official HighLevel MCP server for CRM, contacts, conversations, calendars, opportunities, locations, social posting, blogs, email templates and related operations. For payment or invoice mutations, use the internal Ristak payment tools instead.',
       server_url: HIGHLEVEL_MCP_SERVER_URL,
       authorization: highLevelConnection.token,
       require_approval: 'never'
-    },
+    })
+  }
+
+  tools.push(
     {
       type: 'function',
       name: 'create_single_payment_link',
@@ -1491,7 +1505,9 @@ function buildHighLevelTools(highLevelConnection) {
       },
       strict: false
     }
-  ]
+  )
+
+  return tools
 }
 
 async function executeHighLevelRestRequest(args = {}, highLevelConnection) {
@@ -1591,11 +1607,12 @@ function getDefaultRiskPlan(runtimeContext) {
         sql: `
           SELECT
             COALESCE(status, 'sin_estado') AS status,
+            COALESCE(payment_mode, '${PAYMENT_MODE_LIVE}') AS payment_mode,
             COUNT(*) AS pagos,
             COALESCE(SUM(amount), 0) AS monto
           FROM payments
           WHERE COALESCE(date, created_at) >= ?
-          GROUP BY COALESCE(status, 'sin_estado')
+          GROUP BY COALESCE(status, 'sin_estado'), COALESCE(payment_mode, '${PAYMENT_MODE_LIVE}')
           ORDER BY monto DESC
         `,
         params: [runtimeContext.monthStart]
@@ -1931,6 +1948,16 @@ async function buildDatabaseValueMapQuery() {
       UNION ALL
 
       SELECT
+        'payment_mode' AS category,
+        COALESCE(NULLIF(payment_mode, ''), '${PAYMENT_MODE_LIVE}') AS value,
+        COUNT(*) AS records,
+        COALESCE(SUM(amount), 0) AS amount
+      FROM payments
+      GROUP BY COALESCE(NULLIF(payment_mode, ''), '${PAYMENT_MODE_LIVE}')
+
+      UNION ALL
+
+      SELECT
         'appointment_status' AS category,
         COALESCE(NULLIF(COALESCE(appointment_status, status), ''), 'sin_estado') AS value,
         COUNT(*) AS records,
@@ -1990,11 +2017,11 @@ async function buildHistoricalResearchQueries(runtimeContext) {
         SELECT
           (SELECT MIN(c.created_at) FROM contacts c WHERE ${contactWhere.join(' AND ')}) AS primer_prospecto,
           (SELECT MAX(c.created_at) FROM contacts c WHERE ${contactWhere.join(' AND ')}) AS ultimo_prospecto,
-          (SELECT MIN(${paymentDate}) FROM payments p WHERE LOWER(COALESCE(p.status, '')) IN ${paidStatuses}) AS primer_pago_pagado,
-          (SELECT MAX(${paymentDate}) FROM payments p WHERE LOWER(COALESCE(p.status, '')) IN ${paidStatuses}) AS ultimo_pago_pagado,
+          (SELECT MIN(${paymentDate}) FROM payments p WHERE LOWER(COALESCE(p.status, '')) IN ${paidStatuses} AND ${nonTestPaymentCondition('p')}) AS primer_pago_pagado,
+          (SELECT MAX(${paymentDate}) FROM payments p WHERE LOWER(COALESCE(p.status, '')) IN ${paidStatuses} AND ${nonTestPaymentCondition('p')}) AS ultimo_pago_pagado,
           (SELECT COUNT(*) FROM contacts c WHERE ${contactWhere.join(' AND ')}) AS prospectos_historicos,
-          (SELECT COUNT(*) FROM payments p WHERE LOWER(COALESCE(p.status, '')) IN ${paidStatuses}) AS pagos_pagados_historicos,
-          (SELECT COALESCE(SUM(p.amount), 0) FROM payments p WHERE LOWER(COALESCE(p.status, '')) IN ${paidStatuses}) AS ingresos_historicos,
+          (SELECT COUNT(*) FROM payments p WHERE LOWER(COALESCE(p.status, '')) IN ${paidStatuses} AND ${nonTestPaymentCondition('p')}) AS pagos_pagados_historicos,
+          (SELECT COALESCE(SUM(p.amount), 0) FROM payments p WHERE LOWER(COALESCE(p.status, '')) IN ${paidStatuses} AND ${nonTestPaymentCondition('p')}) AS ingresos_historicos,
           (SELECT MIN(m.date) FROM meta_ads m WHERE COALESCE(m.spend, 0) > 0) AS primer_dia_con_anuncios,
           (SELECT MAX(m.date) FROM meta_ads m WHERE COALESCE(m.spend, 0) > 0) AS ultimo_dia_con_anuncios
       `,
@@ -2015,6 +2042,7 @@ async function buildHistoricalResearchQueries(runtimeContext) {
           SELECT ${paymentMonth} AS month
           FROM payments p
           WHERE ${paymentDate} IS NOT NULL
+            AND ${nonTestPaymentCondition('p')}
           GROUP BY ${paymentMonth}
 
           UNION
@@ -2058,6 +2086,7 @@ async function buildHistoricalResearchQueries(runtimeContext) {
           FROM payments p
           WHERE ${paymentDate} IS NOT NULL
             AND LOWER(COALESCE(p.status, '')) IN ${paidStatuses}
+            AND ${nonTestPaymentCondition('p')}
           GROUP BY ${paymentMonth}
         ),
         appointments_by_month AS (
@@ -2649,7 +2678,10 @@ function prepareQueryResultsForReply(queryResults) {
 async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, runtimeContext, plan, queryResults, agentConfig, highLevelConnection }) {
   const modelQueryResults = prepareQueryResultsForReply(queryResults)
   const webSearchTools = buildWebSearchTools(agentConfig, runtimeContext)
-  const highLevelTools = buildHighLevelTools(highLevelConnection)
+  const latestUserMessage = getLatestUserMessage(messages)
+  const highLevelTools = buildHighLevelTools(highLevelConnection, {
+    paymentActionRequest: isPaymentActionRequest(latestUserMessage)
+  })
   const agentTools = [...webSearchTools, ...highLevelTools]
   const instructions = [
     'Eres el Agente AI interno de Ristak.',
@@ -3033,7 +3065,8 @@ async function getPaymentClarificationOptions(runtimeContext) {
       COALESCE(NULLIF(c.full_name, ''), NULLIF(p.reference, ''), p.id) AS label,
       COALESCE(p.date, p.created_at) AS payment_date,
       COALESCE(p.amount, 0) AS amount,
-      COALESCE(NULLIF(p.status, ''), 'sin estado') AS status
+      COALESCE(NULLIF(p.status, ''), 'sin estado') AS status,
+      COALESCE(NULLIF(p.payment_mode, ''), '${PAYMENT_MODE_LIVE}') AS payment_mode
     FROM payments p
     LEFT JOIN contacts c ON c.id = p.contact_id
     WHERE COALESCE(p.date, p.created_at) IS NOT NULL
@@ -3046,7 +3079,8 @@ async function getPaymentClarificationOptions(runtimeContext) {
     label: `${cleanOption(row.label, 56)} · ${formatCurrency(row.amount)}`,
     description: [
       row.payment_date ? `Fecha: ${formatOptionDate(row.payment_date, runtimeContext)}` : '',
-      row.status ? `Estado: ${cleanOption(row.status, 35)}` : ''
+      row.status ? `Estado: ${cleanOption(row.status, 35)}` : '',
+      row.payment_mode === PAYMENT_MODE_TEST ? 'Modo prueba' : ''
     ].filter(Boolean).join(' · '),
     value: `Me refiero al pago de ${formatCurrency(row.amount)} asociado a "${cleanOption(row.label, 140)}"${row.id ? ` (ID: ${cleanOption(row.id, 80)})` : ''}. Responde mi pregunta anterior usando ese pago.`
   })).filter(option => option.label)
@@ -3248,6 +3282,7 @@ async function getSalesInRange(range) {
     WHERE date >= ?
       AND date <= ?
       AND LOWER(COALESCE(status, '')) IN ${paidStatuses}
+      AND ${nonTestPaymentCondition()}
   `, [range.startUtc, range.endUtc])
 
   return {
@@ -3651,11 +3686,13 @@ async function buildDatabaseContext() {
   const payments = await safeGet(`
     SELECT
       COUNT(*) AS total_payments,
-      COALESCE(SUM(CASE WHEN LOWER(COALESCE(status, '')) IN ${paidStatuses} THEN amount ELSE 0 END), 0) AS revenue_total,
-      COALESCE(SUM(CASE WHEN LOWER(COALESCE(status, '')) IN ${paidStatuses} AND date >= ? THEN amount ELSE 0 END), 0) AS revenue_30d,
-      COALESCE(SUM(CASE WHEN LOWER(COALESCE(status, '')) IN ${paidStatuses} AND date >= ? THEN amount ELSE 0 END), 0) AS revenue_7d,
-      COALESCE(SUM(CASE WHEN LOWER(COALESCE(status, '')) IN ${pendingStatuses} THEN amount ELSE 0 END), 0) AS pending_amount,
-      SUM(CASE WHEN LOWER(COALESCE(status, '')) IN ${pendingStatuses} THEN 1 ELSE 0 END) AS pending_count
+      COALESCE(SUM(CASE WHEN LOWER(COALESCE(status, '')) IN ${paidStatuses} AND ${nonTestPaymentCondition()} THEN amount ELSE 0 END), 0) AS revenue_total,
+      COALESCE(SUM(CASE WHEN LOWER(COALESCE(status, '')) IN ${paidStatuses} AND ${nonTestPaymentCondition()} AND date >= ? THEN amount ELSE 0 END), 0) AS revenue_30d,
+      COALESCE(SUM(CASE WHEN LOWER(COALESCE(status, '')) IN ${paidStatuses} AND ${nonTestPaymentCondition()} AND date >= ? THEN amount ELSE 0 END), 0) AS revenue_7d,
+      COALESCE(SUM(CASE WHEN LOWER(COALESCE(status, '')) IN ${pendingStatuses} AND ${nonTestPaymentCondition()} THEN amount ELSE 0 END), 0) AS pending_amount,
+      SUM(CASE WHEN LOWER(COALESCE(status, '')) IN ${pendingStatuses} AND ${nonTestPaymentCondition()} THEN 1 ELSE 0 END) AS pending_count,
+      SUM(CASE WHEN COALESCE(payment_mode, '${PAYMENT_MODE_LIVE}') = '${PAYMENT_MODE_TEST}' THEN 1 ELSE 0 END) AS test_payments,
+      COALESCE(SUM(CASE WHEN LOWER(COALESCE(status, '')) IN ${paidStatuses} AND COALESCE(payment_mode, '${PAYMENT_MODE_LIVE}') = '${PAYMENT_MODE_TEST}' THEN amount ELSE 0 END), 0) AS test_revenue_excluded
     FROM payments
   `, [since30d, since7d])
 
@@ -3693,10 +3730,11 @@ async function buildDatabaseContext() {
   const paymentStatus = await safeAll(`
     SELECT
       COALESCE(NULLIF(status, ''), 'Sin estado') AS status,
+      COALESCE(NULLIF(payment_mode, ''), '${PAYMENT_MODE_LIVE}') AS payment_mode,
       COUNT(*) AS count,
       COALESCE(SUM(amount), 0) AS amount
     FROM payments
-    GROUP BY status
+    GROUP BY status, payment_mode
     ORDER BY count DESC
     LIMIT 8
   `)
@@ -3741,6 +3779,7 @@ async function buildDatabaseContext() {
       p.amount,
       p.currency,
       p.status,
+      p.payment_mode,
       p.date,
       p.description,
       c.full_name,

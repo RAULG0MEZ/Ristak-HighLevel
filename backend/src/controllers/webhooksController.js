@@ -7,7 +7,7 @@ import {
   activatePendingPaymentFlowsForContact,
   markPaymentFlowInvoicePaid
 } from '../services/paymentFlowService.js';
-import { getWebhookPaymentMode } from '../utils/paymentMode.js';
+import { PAYMENT_MODE_LIVE, getWebhookPaymentMode, normalizePaymentMode } from '../utils/paymentMode.js';
 
 function firstValue(...values) {
   return values.find(value => value !== undefined && value !== null && value !== '');
@@ -45,13 +45,27 @@ function extractPaymentWebhookPayload(data) {
   return data.payment || data.paymentData || data.data?.payment || data.data || data.resource || data.object || {};
 }
 
+function maybeJsonObject(value) {
+  if (!value) return {};
+  if (typeof value === 'object') return value;
+  if (typeof value !== 'string') return {};
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+}
+
 function sourceTypeIndicatesInvoice(value) {
   return typeof value === 'string' && value.toLowerCase().includes('invoice');
 }
 
 function extractPaymentWebhookInvoiceId(data, payment) {
   const invoice = payment.invoice || data.invoice || data.invoiceData || {};
-  const sourceMeta = payment.entitySourceMeta || payment.entity_source_meta || data.entitySourceMeta || data.entity_source_meta || {};
+  const entitySource = maybeJsonObject(payment.entitySource || payment.entity_source || data.entitySource || data.entity_source);
+  const sourceMeta = maybeJsonObject(payment.entitySourceMeta || payment.entity_source_meta || data.entitySourceMeta || data.entity_source_meta);
+  const chargeSnapshot = maybeJsonObject(payment.chargeSnapshot || payment.charge_snapshot || data.chargeSnapshot || data.charge_snapshot);
+  const chargeMetadata = maybeJsonObject(chargeSnapshot.metadata);
   const sourceType = firstValue(
     payment.entitySourceType,
     payment.entity_source_type,
@@ -73,9 +87,15 @@ function extractPaymentWebhookInvoiceId(data, payment) {
     invoice._id,
     invoice.invoiceId,
     invoice.invoice_id,
+    entitySource.invoiceId,
+    entitySource.invoice_id,
+    entitySource.id,
+    entitySource._id,
     sourceMeta.invoiceId,
     sourceMeta.invoice_id,
     sourceMeta.invoiceID,
+    chargeMetadata.invoiceId,
+    chargeMetadata.invoice_id,
     sourceTypeIndicatesInvoice(sourceType)
       ? firstValue(
           payment.entitySourceId,
@@ -91,6 +111,15 @@ function extractPaymentWebhookInvoiceId(data, payment) {
         )
       : null
   );
+}
+
+async function getConfiguredPaymentModeFallback() {
+  try {
+    const config = await db.get('SELECT ghl_invoice_mode FROM highlevel_config LIMIT 1');
+    return normalizePaymentMode(config?.ghl_invoice_mode, PAYMENT_MODE_LIVE);
+  } catch {
+    return PAYMENT_MODE_LIVE;
+  }
 }
 
 function normalizePaymentAmount(value) {
@@ -141,7 +170,7 @@ async function findExistingInvoicePayment({ invoiceId, paymentId, contactId, amo
   const cleanDescription = normalizeLookupText(description);
   if (!contactId || amount <= 0 || !cleanDescription) return null;
 
-  return await db.get(
+  const invoiceBackedMatch = await db.get(
     `SELECT id, contact_id, ghl_invoice_id, payment_mode
      FROM payments
      WHERE contact_id = ?
@@ -151,6 +180,26 @@ async function findExistingInvoicePayment({ invoiceId, paymentId, contactId, amo
        AND (ghl_invoice_id IS NOT NULL OR invoice_number IS NOT NULL)
      ORDER BY
        CASE WHEN status IN ('draft', 'sent', 'payment_processing', 'pending') THEN 0 ELSE 1 END,
+       created_at DESC
+    LIMIT 1`,
+    [contactId, paymentId, amount, cleanDescription]
+  );
+
+  if (invoiceBackedMatch) return invoiceBackedMatch;
+
+  if (!cleanDescription.toLowerCase().includes('primer pago')) return null;
+
+  return await db.get(
+    `SELECT id, contact_id, ghl_invoice_id, payment_mode
+     FROM payments
+     WHERE contact_id = ?
+       AND id != ?
+       AND ABS(COALESCE(amount, 0) - ?) < 0.01
+       AND LOWER(COALESCE(description, '')) = LOWER(?)
+       AND status IN ('draft', 'sent', 'payment_processing', 'pending', 'paid', 'succeeded', 'completed')
+     ORDER BY
+       CASE WHEN ghl_invoice_id IS NOT NULL AND ghl_invoice_id != '' THEN 0 ELSE 1 END,
+       CASE WHEN COALESCE(payment_mode, 'live') = 'test' THEN 0 ELSE 1 END,
        created_at DESC
      LIMIT 1`,
     [contactId, paymentId, amount, cleanDescription]
@@ -362,7 +411,7 @@ export const handlePaymentWebhook = async (req, res) => {
     const paymentMethod = payment.method || payment.gateway || payment.payment_method || payment.paymentMethod || null;
 
     // Crear referencia con el número de factura
-    const sourceMeta = payment.entitySourceMeta || payment.entity_source_meta || {};
+    const sourceMeta = maybeJsonObject(payment.entitySourceMeta || payment.entity_source_meta);
     const invoiceNumber = payment.invoice?.number || payment.invoice?.invoiceNumber || sourceMeta.invoiceNumber || sourceMeta.invoice_number || '';
     const reference = invoiceNumber
       ? `Invoice #${invoiceNumber}`
@@ -392,7 +441,8 @@ export const handlePaymentWebhook = async (req, res) => {
       reference
     });
     const effectiveInvoiceId = invoiceId || existingInvoicePayment?.ghl_invoice_id || existingInvoicePayment?.id;
-    const paymentMode = getWebhookPaymentMode(data, payment, existingInvoicePayment?.payment_mode || 'live');
+    const configuredPaymentMode = await getConfiguredPaymentModeFallback();
+    const paymentMode = getWebhookPaymentMode(data, payment, existingInvoicePayment?.payment_mode || configuredPaymentMode);
 
     if (existingInvoicePayment) {
       await db.run(
@@ -487,8 +537,19 @@ export const handlePaymentWebhook = async (req, res) => {
     // Actualizar estadísticas del contacto
     await updateSingleContactStats(contactId);
 
-    if (effectiveInvoiceId && ['paid', 'succeeded', 'completed'].includes(String(status).toLowerCase())) {
-      await markPaymentFlowInvoicePaid(effectiveInvoiceId);
+    if (['paid', 'succeeded', 'completed'].includes(String(status).toLowerCase())) {
+      const flow = await markPaymentFlowInvoicePaid(effectiveInvoiceId, {
+        contactId,
+        amount,
+        description
+      });
+
+      if (!flow) {
+        const activatedFlows = await activatePendingPaymentFlowsForContact(contactId);
+        if (activatedFlows > 0) {
+          logger.info(`✅ ${activatedFlows} flujo(s) de parcialidades activado(s) por pago webhook para contacto ${contactId}`);
+        }
+      }
     }
 
     // Guardar payment method si viene info de Stripe en el webhook
@@ -992,7 +1053,7 @@ export const handleInvoiceWebhook = async (req, res) => {
 
       if (paymentModeSignal !== undefined) {
         setFields.push('payment_mode = ?');
-        values.push(getWebhookPaymentMode(data, { invoice: invoicePayload }));
+        values.push(getWebhookPaymentMode(data, { invoice: invoicePayload }, await getConfiguredPaymentModeFallback()));
       }
 
       values.push(invoiceId);

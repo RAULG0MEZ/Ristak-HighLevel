@@ -180,6 +180,9 @@ export const PaymentsConfiguration: React.FC = () => {
       }
 
       showToast('success', 'Configuración de pagos guardada exitosamente')
+      window.dispatchEvent(new CustomEvent('ristak-payment-config-changed', {
+        detail: { ghlInvoiceMode }
+      }))
       await loadPaymentConfig() // Recargar configuración
     } catch (error: any) {
       showToast('error', error.message || 'Error al guardar configuración de pagos')

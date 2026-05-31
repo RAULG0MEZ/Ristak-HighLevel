@@ -48,6 +48,18 @@
   letter-spacing: -0.01em;
 }
 
+.floatingPaymentModeDot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--color-background-primary);
+  border-radius: 999px;
+  background: #ef4444;
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.18);
+}
+
 .unreadIndicator {
   display: inline-flex;
   align-items: center;
@@ -145,6 +157,7 @@
   margin-top: 3px;
   font-size: 12px;
   color: var(--color-text-tertiary);
+  flex-wrap: wrap;
 }
 
 .statusDot,
@@ -161,6 +174,32 @@
 
 .statusDotMuted {
   background: var(--color-status-warning, #f59e0b);
+}
+
+.paymentModeBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 20px;
+  padding: 0 7px;
+  border: 1px solid rgba(239, 68, 68, 0.24);
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.08);
+  color: #dc2626;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.paymentModeBadgeDot,
+.paymentModeNoticeDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #ef4444;
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.16);
+  flex-shrink: 0;
 }
 
 .headerActions {
@@ -269,6 +308,21 @@
   margin-top: 1px;
   color: var(--color-status-success);
   flex-shrink: 0;
+}
+
+.paymentModeNotice {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 12px 14px 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 10px;
+  background: rgba(239, 68, 68, 0.07);
+  color: #b91c1c;
+  font-size: 12px;
+  font-weight: 720;
+  line-height: 1.4;
 }
 
 .body {

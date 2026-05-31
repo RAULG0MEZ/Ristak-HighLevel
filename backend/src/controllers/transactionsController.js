@@ -595,14 +595,21 @@ export const updateTransaction = async (req, res) => {
       await ghlClient.updateInvoice(invoiceId, payload)
     }
 
+    let recordedPaymentMode = transaction.payment_mode || 'live'
+
     if (invoiceId && statusChanged && nextStatus === 'paid') {
       const ghlClient = await getGHLClient()
+      const liveMode = await getGhlInvoiceLiveMode()
+      recordedPaymentMode = liveMode ? 'live' : 'test'
       await ghlClient.recordPayment(invoiceId, {
         amount: updates.amount ?? transaction.amount,
         currency: updates.currency || transaction.currency || 'MXN',
         fulfilledAt: updates.date || transaction.date || new Date().toISOString(),
         mode: PAYMENT_METHOD_TO_GHL_MODE[updates.method || transaction.payment_method] || 'cash',
-        note: 'Pago registrado desde edición de Ristak'
+        note: recordedPaymentMode === 'test'
+          ? 'Pago registrado desde edición de Ristak\nModo: prueba'
+          : 'Pago registrado desde edición de Ristak',
+        liveMode
       })
     }
 
@@ -620,11 +627,14 @@ export const updateTransaction = async (req, res) => {
     const finalDescription = updates.description ?? transaction.description
     const finalDate = updates.date ?? transaction.date
     const finalDueDate = updates.dueDate ?? transaction.due_date
+    const finalPaymentMode = statusChanged && nextStatus === 'paid'
+      ? recordedPaymentMode
+      : (transaction.payment_mode || 'live')
 
     await db.run(
       `UPDATE payments
        SET contact_id = ?, amount = ?, currency = ?, status = ?, payment_method = ?,
-           reference = ?, description = ?, date = ?, due_date = ?, updated_at = CURRENT_TIMESTAMP
+           reference = ?, description = ?, date = ?, due_date = ?, payment_mode = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
       [
         finalContactId,
@@ -636,6 +646,7 @@ export const updateTransaction = async (req, res) => {
         finalDescription,
         finalDate,
         finalDueDate,
+        finalPaymentMode,
         id
       ]
     )
@@ -768,6 +779,9 @@ export const recordPayment = async (req, res) => {
     }
 
     // Marcar como pagado en HighLevel si tiene invoice asociado
+    const liveMode = await getGhlInvoiceLiveMode()
+    const paymentMode = liveMode ? 'live' : 'test'
+
     if (transaction.ghl_invoice_id) {
       const ghlClient = await getGHLClient()
       await ghlClient.recordPayment(transaction.ghl_invoice_id, {
@@ -775,14 +789,15 @@ export const recordPayment = async (req, res) => {
         currency: transaction.currency || 'MXN',
         fulfilledAt: paymentDate || new Date().toISOString(),
         mode: paymentMethod || 'cash',
-        note: 'Pago registrado manualmente'
+        note: paymentMode === 'test' ? 'Pago registrado manualmente\nModo: prueba' : 'Pago registrado manualmente',
+        liveMode
       })
     }
 
     // Actualizar estado en BD
     await db.run(
-      'UPDATE payments SET status = ?, amount = ?, payment_method = ?, date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      ['paid', amount || transaction.amount, paymentMethod || transaction.payment_method, paymentDate || transaction.date, id]
+      'UPDATE payments SET status = ?, amount = ?, payment_method = ?, payment_mode = ?, date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      ['paid', amount || transaction.amount, paymentMethod || transaction.payment_method, paymentMode, paymentDate || transaction.date, id]
     )
     if (transaction.contact_id) {
       await updateSingleContactStats(transaction.contact_id)

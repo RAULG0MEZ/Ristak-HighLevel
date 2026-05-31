@@ -3,6 +3,8 @@ import * as stripeService from '../services/stripeService.js'
 import * as ghlService from '../services/ghlClient.js'
 import { logger } from '../utils/logger.js'
 
+const normalizeGhlInvoiceMode = mode => mode === 'test' ? 'test' : 'live'
+
 /**
  * GET /api/payment-methods/contact/:contactId
  * Obtiene todas las tarjetas guardadas de un contacto
@@ -21,7 +23,6 @@ export async function getContactPaymentMethods(req, res) {
     }
 
     const locationId = config.location_id
-
     // 1. Obtener datos del contacto desde GHL
     let contact
     try {
@@ -123,7 +124,7 @@ export async function chargePaymentMethod(req, res) {
     }
 
     // Obtener location_id
-    const config = await db.get('SELECT location_id FROM highlevel_config LIMIT 1')
+    const config = await db.get('SELECT location_id, ghl_invoice_mode FROM highlevel_config LIMIT 1')
     if (!config || !config.location_id) {
       return res.status(400).json({
         success: false,
@@ -132,6 +133,7 @@ export async function chargePaymentMethod(req, res) {
     }
 
     const locationId = config.location_id
+    const liveMode = normalizeGhlInvoiceMode(config.ghl_invoice_mode) === 'live'
 
     // Obtener datos del contacto
     const response = await ghlService.getContactById(contactId)
@@ -171,8 +173,14 @@ export async function chargePaymentMethod(req, res) {
     if (invoiceId && paymentIntent.status === 'succeeded') {
       try {
         await ghlService.recordPayment(invoiceId, {
-          amount: amount,
-          paymentMode: 'Stripe'
+          amount,
+          currency,
+          fulfilledAt: new Date().toISOString(),
+          note: liveMode
+            ? `Pago automático con tarjeta guardada (${paymentMethodId})`
+            : `Pago automático con tarjeta guardada (${paymentMethodId})\nModo: prueba`,
+          mode: 'card',
+          liveMode
         })
         logger.info('Pago registrado en invoice GHL:', invoiceId)
       } catch (error) {

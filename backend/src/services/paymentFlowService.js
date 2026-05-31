@@ -95,6 +95,10 @@ function normalizeText(value) {
   return String(value).trim().toLowerCase()
 }
 
+function amountsMatch(left, right, tolerance = 0.01) {
+  return Math.abs(normalizeAmount(left) - normalizeAmount(right)) <= tolerance
+}
+
 function normalizeOptionalBoolean(value) {
   if (typeof value === 'boolean') return value
   if (value === undefined || value === null || value === '') return null
@@ -756,6 +760,8 @@ async function scheduleAutomaticInstallmentsForFlow(flow, paymentMethod, existin
   const autoPayment = buildAutoPayment(paymentMethod)
   const scheduled = []
 
+  logger.info(`Programando ${installments.length} parcialidad(es) automáticas para flujo ${flow.id}`)
+
   for (const installment of installments) {
     let scheduleId = installment.ghl_schedule_id
 
@@ -811,6 +817,7 @@ async function scheduleAutomaticInstallmentsForFlow(flow, paymentMethod, existin
         [installment.id]
       )
 
+      logger.error(`Falló programación GHL para flujo ${flow.id}, parcialidad ${installment.sequence}: ${error.message}`)
       throw new Error(`No se pudo programar la parcialidad ${installment.sequence} en HighLevel: ${error.message}`)
     }
   }
@@ -1183,6 +1190,7 @@ async function activateFlowIfReady(flow) {
   const authorizedCard = await getAuthorizedPaymentMethod(flow, { ghlClient })
 
   if (!authorizedCard) {
+    logger.warn(`Flujo ${flow.id} todavía no tiene paymentMethod autorizado en GHL`)
     return false
   }
 
@@ -1204,20 +1212,87 @@ async function activateFlowIfReady(flow) {
   return true
 }
 
-export async function markPaymentFlowInvoicePaid(invoiceId) {
-  const flow = await db.get(
+async function findPaymentFlowPaidTarget(invoiceId, paymentSignal = {}) {
+  if (invoiceId) {
+    const flow = await db.get(
+      `SELECT *
+       FROM payment_flows
+       WHERE first_payment_invoice_id = ? OR card_setup_invoice_id = ?
+       LIMIT 1`,
+      [invoiceId, invoiceId]
+    )
+
+    if (flow) {
+      return {
+        flow,
+        target: flow.first_payment_invoice_id === invoiceId ? 'first_payment' : 'card_setup'
+      }
+    }
+  }
+
+  const contactId = paymentSignal.contactId || paymentSignal.contact_id
+  const amount = normalizeAmount(paymentSignal.amount)
+  const description = normalizeText(paymentSignal.description)
+
+  if (!contactId || amount <= 0) return null
+
+  const flows = await db.all(
     `SELECT *
      FROM payment_flows
-     WHERE first_payment_invoice_id = ? OR card_setup_invoice_id = ?
-     LIMIT 1`,
-    [invoiceId, invoiceId]
+     WHERE contact_id = ?
+       AND remaining_automatic = 1
+       AND current_state IN (?, ?, ?)
+     ORDER BY created_at DESC
+     LIMIT 10`,
+    [
+      contactId,
+      PAYMENT_FLOW_STATES.WAITING_CARD_AUTHORIZATION,
+      PAYMENT_FLOW_STATES.CARD_SETUP_LINK_SENT,
+      PAYMENT_FLOW_STATES.FIRST_PAYMENT_PENDING
+    ]
   )
+
+  const cardSetupFlow = flows.find((flow) => (
+    flow.card_setup_invoice_id &&
+    flow.card_setup_status !== 'paid' &&
+    amountsMatch(flow.card_setup_amount, amount) &&
+    (description.includes('domicili') || description.includes('autoriz') || description.includes('tarjeta'))
+  ))
+
+  if (cardSetupFlow) {
+    logger.warn(`Webhook de pago sin invoiceId exacto; emparejado con domiciliación del flujo ${cardSetupFlow.id}`)
+    return { flow: cardSetupFlow, target: 'card_setup' }
+  }
+
+  const firstPaymentFlow = flows.find((flow) => {
+    const concept = normalizeText(flow.concept)
+    return (
+      flow.first_payment_invoice_id &&
+      flow.first_payment_status !== 'paid' &&
+      CARD_METHODS.has(flow.first_payment_method) &&
+      amountsMatch(flow.first_payment_amount, amount) &&
+      (description.includes('primer pago') || description.includes('tarjeta') || (concept && description.includes(concept)))
+    )
+  })
+
+  if (firstPaymentFlow) {
+    logger.warn(`Webhook de pago sin invoiceId exacto; emparejado con primer pago del flujo ${firstPaymentFlow.id}`)
+    return { flow: firstPaymentFlow, target: 'first_payment' }
+  }
+
+  return null
+}
+
+export async function markPaymentFlowInvoicePaid(invoiceId, paymentSignal = {}) {
+  const matched = await findPaymentFlowPaidTarget(invoiceId, paymentSignal)
+  const flow = matched?.flow
 
   if (!flow) {
     return null
   }
 
-  const firstPaymentWasPaid = flow.first_payment_invoice_id === invoiceId
+  const firstPaymentWasPaid = matched.target === 'first_payment'
+  const cardSetupWasPaid = matched.target === 'card_setup'
 
   if (firstPaymentWasPaid) {
     await db.run(
@@ -1228,7 +1303,7 @@ export async function markPaymentFlowInvoicePaid(invoiceId) {
     )
   }
 
-  if (flow.card_setup_invoice_id === invoiceId) {
+  if (cardSetupWasPaid) {
     await db.run(
       `UPDATE payment_flows
        SET card_setup_status = 'paid', updated_at = CURRENT_TIMESTAMP
@@ -1238,6 +1313,7 @@ export async function markPaymentFlowInvoicePaid(invoiceId) {
   }
 
   const refreshed = await db.get('SELECT * FROM payment_flows WHERE id = ?', [flow.id])
+  logger.info(`Invoice de flujo pagado: flujo=${flow.id}, target=${matched.target}, invoice=${invoiceId || 'fallback'}`)
 
   if (firstPaymentWasPaid && !Number(refreshed.remaining_automatic)) {
     const currentHistory = safeJsonParse(refreshed.state_history, [])
@@ -1254,7 +1330,13 @@ export async function markPaymentFlowInvoicePaid(invoiceId) {
     return refreshed
   }
 
-  await activateFlowIfReady(refreshed)
+  try {
+    await activateFlowIfReady(refreshed)
+  } catch (error) {
+    logger.error(`No se pudo activar flujo ${refreshed.id} después de pago confirmado: ${error.message}`)
+    throw error
+  }
+
   return refreshed
 }
 

@@ -616,7 +616,7 @@ class GHLClient {
   }
 
   async text2Pay(data) {
-    const { contactId, amount, currency, message } = data
+    const { contactId, amount, currency, message, liveMode = true } = data
 
     if (!contactId || !amount || !currency) {
       throw new Error('contactId, amount y currency son requeridos para text2Pay')
@@ -630,6 +630,7 @@ class GHLClient {
       contactId,
       amount,
       currency,
+      liveMode,
       ...(message && { message })
     }
 

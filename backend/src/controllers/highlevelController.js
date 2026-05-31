@@ -1098,8 +1098,9 @@ export const text2Pay = async (req, res) => {
       });
     }
 
+    const liveMode = await getGhlInvoiceLiveMode();
     const ghlClient = await getGHLClient();
-    const result = await ghlClient.text2Pay({ contactId, amount, currency, message });
+    const result = await ghlClient.text2Pay({ contactId, amount, currency, message, liveMode });
 
     logger.success(`Text2Pay enviado a contacto: ${contactId} - Monto: ${amount} ${currency}`);
 
@@ -1240,12 +1241,16 @@ export const chargeSavedPaymentMethod = async (req, res) => {
 
     if (invoiceId) {
       try {
+        const liveMode = await getGhlInvoiceLiveMode();
         await ghlClient.recordPayment(invoiceId, {
           amount,
           currency,
           fulfilledAt: new Date().toISOString(),
-          note: `Pago automático con tarjeta guardada (${paymentMethodId})`,
-          mode: 'card'
+          note: liveMode
+            ? `Pago automático con tarjeta guardada (${paymentMethodId})`
+            : `Pago automático con tarjeta guardada (${paymentMethodId})\nModo: prueba`,
+          mode: 'card',
+          liveMode
         });
       } catch (recordError) {
         logger.warn(`No se pudo registrar el pago en GHL: ${recordError.message}`);
