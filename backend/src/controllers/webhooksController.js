@@ -92,6 +92,96 @@ function extractPaymentWebhookInvoiceId(data, payment) {
   );
 }
 
+function normalizePaymentAmount(value) {
+  const amount = Number(value || 0);
+  return Number.isFinite(amount) ? Math.round(amount * 100) / 100 : 0;
+}
+
+function normalizeLookupText(value) {
+  return String(value || '').trim();
+}
+
+function parseInvoiceNumberFromReference(reference) {
+  const match = normalizeLookupText(reference).match(/invoice\s*#?\s*([A-Za-z0-9-]+)/i);
+  return match?.[1] || null;
+}
+
+async function findExistingInvoicePayment({ invoiceId, paymentId, contactId, amount, description, invoiceNumber, reference }) {
+  if (invoiceId) {
+    const existing = await db.get(
+      'SELECT id, contact_id, ghl_invoice_id FROM payments WHERE ghl_invoice_id = ? OR id = ? LIMIT 1',
+      [invoiceId, invoiceId]
+    );
+
+    if (existing) return existing;
+  }
+
+  const resolvedInvoiceNumber = invoiceNumber || parseInvoiceNumberFromReference(reference);
+  if (contactId && resolvedInvoiceNumber) {
+    const existingByNumber = await db.get(
+      `SELECT id, contact_id, ghl_invoice_id
+       FROM payments
+       WHERE contact_id = ?
+         AND (
+           invoice_number = ?
+           OR reference = ?
+           OR reference = ?
+         )
+         AND (ghl_invoice_id IS NOT NULL OR invoice_number IS NOT NULL)
+         AND id != ?
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [contactId, resolvedInvoiceNumber, resolvedInvoiceNumber, `Invoice #${resolvedInvoiceNumber}`, paymentId]
+    );
+
+    if (existingByNumber) return existingByNumber;
+  }
+
+  const cleanDescription = normalizeLookupText(description);
+  if (!contactId || amount <= 0 || !cleanDescription) return null;
+
+  return await db.get(
+    `SELECT id, contact_id, ghl_invoice_id
+     FROM payments
+     WHERE contact_id = ?
+       AND id != ?
+       AND ABS(COALESCE(amount, 0) - ?) < 0.01
+       AND LOWER(COALESCE(description, '')) = LOWER(?)
+       AND (ghl_invoice_id IS NOT NULL OR invoice_number IS NOT NULL)
+     ORDER BY
+       CASE WHEN status IN ('draft', 'sent', 'payment_processing', 'pending') THEN 0 ELSE 1 END,
+       created_at DESC
+     LIMIT 1`,
+    [contactId, paymentId, amount, cleanDescription]
+  );
+}
+
+async function deleteDuplicateWebhookPaymentRows({ paymentId, existingPaymentId, contactId, amount, description }) {
+  if (paymentId && paymentId !== existingPaymentId) {
+    await db.run(
+      `DELETE FROM payments
+       WHERE id = ?
+         AND (ghl_invoice_id IS NULL OR ghl_invoice_id = '')`,
+      [paymentId]
+    );
+  }
+
+  if (!contactId || amount <= 0 || !normalizeLookupText(description).toLowerCase().includes('primer pago')) {
+    return;
+  }
+
+  await db.run(
+    `DELETE FROM payments
+     WHERE id != ?
+       AND contact_id = ?
+       AND (ghl_invoice_id IS NULL OR ghl_invoice_id = '')
+       AND ABS(COALESCE(amount, 0) - ?) < 0.01
+       AND LOWER(COALESCE(description, '')) = LOWER(?)
+       AND status IN ('paid', 'succeeded', 'completed')`,
+    [existingPaymentId, contactId, amount, normalizeLookupText(description)]
+  );
+}
+
 /**
  * Procesa webhook de contacto nuevo o actualizado
  */
@@ -280,23 +370,27 @@ export const handlePaymentWebhook = async (req, res) => {
     // Extraer descripción del pago (título del invoice, nombre del producto, etc)
     const description = payment.invoice?.title
       || payment.invoice?.name
-      || payment.entitySourceMeta?.name
+      || sourceMeta.name
       || payment.title
       || payment.name
       || payment.description
       || null;
 
-    const amount = payment.total_amount || payment.totalAmount || payment.amount || 0; // HighLevel envía el monto directo, NO en centavos
+    const amount = normalizePaymentAmount(payment.total_amount || payment.totalAmount || payment.amount || 0); // HighLevel envía el monto directo, NO en centavos
     const currency = payment.currency_code || payment.currencyCode || payment.currency || 'MXN';
     const status = payment.payment_status || payment.paymentStatus || payment.status || 'succeeded';
     const paymentDate = payment.created_at || payment.fulfilledAt || payment.date || payment.createdAt || new Date().toISOString();
     const createdAt = payment.created_at || payment.createdAt || new Date().toISOString();
-    const existingInvoicePayment = invoiceId
-      ? await db.get(
-          'SELECT id, contact_id FROM payments WHERE ghl_invoice_id = ? OR id = ? LIMIT 1',
-          [invoiceId, invoiceId]
-        )
-      : null;
+    const existingInvoicePayment = await findExistingInvoicePayment({
+      invoiceId,
+      paymentId,
+      contactId,
+      amount,
+      description,
+      invoiceNumber,
+      reference
+    });
+    const effectiveInvoiceId = invoiceId || existingInvoicePayment?.ghl_invoice_id || existingInvoicePayment?.id;
 
     if (existingInvoicePayment) {
       await db.run(
@@ -309,6 +403,7 @@ export const handlePaymentWebhook = async (req, res) => {
              reference = COALESCE(reference, ?),
              description = COALESCE(description, ?),
              date = COALESCE(date, ?),
+             ghl_invoice_id = COALESCE(ghl_invoice_id, ?),
              invoice_number = COALESCE(invoice_number, ?),
              updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
@@ -321,21 +416,21 @@ export const handlePaymentWebhook = async (req, res) => {
           reference,
           description,
           paymentDate,
+          effectiveInvoiceId || null,
           invoiceNumber || null,
           existingInvoicePayment.id
         ]
       );
 
-      if (paymentId !== existingInvoicePayment.id) {
-        await db.run(
-          `DELETE FROM payments
-           WHERE id = ?
-             AND (ghl_invoice_id IS NULL OR ghl_invoice_id = '')`,
-          [paymentId]
-        );
-      }
+      await deleteDuplicateWebhookPaymentRows({
+        paymentId,
+        existingPaymentId: existingInvoicePayment.id,
+        contactId,
+        amount,
+        description
+      });
     } else {
-      const rowId = invoiceId || paymentId;
+      const rowId = effectiveInvoiceId || paymentId;
       const query = usePostgres
         ? `INSERT INTO payments (
              id, contact_id, amount, currency, status, payment_method,
@@ -377,7 +472,7 @@ export const handlePaymentWebhook = async (req, res) => {
         description,
         paymentDate,
         createdAt,
-        invoiceId || null,
+        effectiveInvoiceId || null,
         invoiceNumber || null
       ]);
     }
@@ -385,8 +480,8 @@ export const handlePaymentWebhook = async (req, res) => {
     // Actualizar estadísticas del contacto
     await updateSingleContactStats(contactId);
 
-    if (invoiceId && ['paid', 'succeeded', 'completed'].includes(String(status).toLowerCase())) {
-      await markPaymentFlowInvoicePaid(invoiceId);
+    if (effectiveInvoiceId && ['paid', 'succeeded', 'completed'].includes(String(status).toLowerCase())) {
+      await markPaymentFlowInvoicePaid(effectiveInvoiceId);
     }
 
     // Guardar payment method si viene info de Stripe en el webhook

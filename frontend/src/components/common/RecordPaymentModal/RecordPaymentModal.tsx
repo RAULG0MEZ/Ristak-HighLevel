@@ -1521,12 +1521,13 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                       </div>
                     </div>
                     <div className={styles.manualField}>
-                      <label>Fecha</label>
+                      <label>Fecha límite</label>
                       <div className={styles.dateInput}>
                         <Calendar size={16} className={styles.dollarIcon} />
                         <input
                           type="date"
                           value={firstPaymentDate}
+                          min={toDateInputValue(new Date())}
                           onChange={(e) => setFirstPaymentDate(e.target.value)}
                           className={styles.input}
                         />

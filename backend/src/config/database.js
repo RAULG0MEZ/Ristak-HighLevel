@@ -770,6 +770,27 @@ async function initTables() {
           throw err
         }
       }
+
+      try {
+        await db.run(`
+          DELETE FROM payments
+          WHERE (ghl_invoice_id IS NULL OR ghl_invoice_id = '')
+            AND status IN ('paid', 'succeeded', 'completed')
+            AND LOWER(COALESCE(description, '')) LIKE '%primer pago%'
+            AND EXISTS (
+              SELECT 1
+              FROM payments invoice_payment
+              WHERE invoice_payment.id != payments.id
+                AND invoice_payment.ghl_invoice_id IS NOT NULL
+                AND invoice_payment.contact_id = payments.contact_id
+                AND ABS(COALESCE(invoice_payment.amount, 0) - COALESCE(payments.amount, 0)) < 0.01
+                AND LOWER(COALESCE(invoice_payment.description, '')) = LOWER(COALESCE(payments.description, ''))
+                AND invoice_payment.status IN ('paid', 'succeeded', 'completed')
+            )
+        `)
+      } catch (err) {
+        logger.warn('No se pudo limpiar duplicados históricos de primer pago:', err.message)
+      }
     } catch (error) {
       logger.warn('Error agregando columnas opcionales:', error.message)
     }

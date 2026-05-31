@@ -44,8 +44,23 @@ function normalizeAmount(value) {
 }
 
 function normalizeDateOnly(value) {
-  if (!value) return new Date().toISOString().split('T')[0]
+  if (!value) return DateTime.now().setZone(DEFAULT_PAYMENT_TIMEZONE).toISODate()
   return String(value).split('T')[0]
+}
+
+function todayDateOnly(timezone = DEFAULT_PAYMENT_TIMEZONE) {
+  const zone = resolveScheduleTimezone(timezone)
+  return DateTime.now().setZone(zone).toISODate()
+}
+
+function resolveInvoiceDates(dueDate, fallbackDueDate, timezone = DEFAULT_PAYMENT_TIMEZONE) {
+  const issueDate = todayDateOnly(timezone)
+  const requestedDueDate = normalizeDateOnly(dueDate || fallbackDueDate || issueDate)
+
+  return {
+    issueDate,
+    dueDate: requestedDueDate < issueDate ? issueDate : requestedDueDate
+  }
 }
 
 function addState(history, state) {
@@ -177,6 +192,7 @@ function buildInvoicePayload({ basePayload, contact, amount, currency, concept, 
   const contactName = contact.name || contact.email || contact.phone || 'Cliente'
   const businessDetails = basePayload?.businessDetails || { name: 'Mi Negocio' }
   const termsNotes = basePayload?.termsNotes
+  const invoiceDates = resolveInvoiceDates(dueDate, basePayload?.dueDate, basePayload?.timezone)
 
   return {
     name: concept || title || 'Pago',
@@ -198,8 +214,8 @@ function buildInvoicePayload({ basePayload, contact, amount, currency, concept, 
         currency
       }
     ],
-    issueDate: new Date().toISOString().split('T')[0],
-    dueDate: normalizeDateOnly(dueDate || basePayload?.dueDate),
+    issueDate: invoiceDates.issueDate,
+    dueDate: invoiceDates.dueDate,
     liveMode: basePayload?.liveMode !== undefined ? basePayload.liveMode : true,
     sentTo: {
       email: contact.email ? [contact.email] : [],
@@ -258,8 +274,12 @@ async function insertLocalInvoicePayment({ invoice, contactId, fallbackAmount, f
 }
 
 async function createInvoice({ ghlClient, basePayload, contact, amount, currency, concept, title, dueDate }) {
+  const context = await getInvoiceSendContext()
   const payload = buildInvoicePayload({
-    basePayload,
+    basePayload: {
+      ...(basePayload || {}),
+      timezone: basePayload?.timezone || context.timezone
+    },
     contact,
     amount,
     currency,
@@ -267,7 +287,6 @@ async function createInvoice({ ghlClient, basePayload, contact, amount, currency
     title,
     dueDate
   })
-  const context = await getInvoiceSendContext()
 
   if (!basePayload?.businessDetails) {
     payload.businessDetails = context.businessDetails
@@ -613,7 +632,7 @@ export async function createInstallmentPaymentFlow(payload) {
   const flowId = createId('flow')
   const firstPaymentType = firstPaymentEnabled ? (firstPayment.type || 'amount') : 'none'
   const firstPaymentValue = firstPaymentEnabled ? Number(firstPayment.value || firstPaymentAmount) : 0
-  const firstPaymentDate = firstPaymentEnabled ? (firstPayment.date || new Date().toISOString().split('T')[0]) : null
+  const firstPaymentDate = firstPaymentEnabled ? (firstPayment.date || todayDateOnly()) : null
   const firstPaymentIsOffline = firstPaymentEnabled && OFFLINE_METHODS.has(firstPaymentMethod)
   const firstPaymentIsCard = firstPaymentEnabled && CARD_METHODS.has(firstPaymentMethod)
   const { cardSetupAmount } = await getPaymentFlowConfig()
@@ -782,7 +801,7 @@ export async function createInstallmentPaymentFlow(payload) {
       currency,
       concept: 'Domiciliación de tarjeta',
       title: 'Autorización de tarjeta',
-      dueDate: new Date().toISOString().split('T')[0]
+      dueDate: todayDateOnly()
     })
     const invoiceId = invoice.id || invoice._id
     const sent = await sendInvoice({
