@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react'
 
-export type DatePreset =
+type DatePreset =
   | 'today'
   | 'yesterday'
   | 'last7days'

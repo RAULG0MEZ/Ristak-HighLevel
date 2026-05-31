@@ -23,7 +23,7 @@ import { useDateRange } from '@/contexts/DateRangeContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { useLabels } from '@/contexts/LabelsContext'
 import { useTimezone } from '@/contexts/TimezoneContext'
-import { useAppConfig, useIsRenderDomain, useMetaTimezone } from '@/hooks'
+import { useAppConfig, useIsRenderDomain } from '@/hooks'
 import { dashboardService, type DashboardMetrics, type ChartData, type DashboardVisitorDetail } from '@/services/dashboardService'
 import { reportsService, type ContactListItem } from '@/services/reportsService'
 import { transactionsService, type Transaction } from '@/services/transactionsService'
@@ -458,9 +458,6 @@ export const Dashboard: React.FC = () => {
   const { user, locationId, accessToken } = useAuth()
   const { labels } = useLabels()
   const { formatLocalDateTime } = useTimezone()
-
-  // Detectar discrepancia de timezone con Meta
-  const timezoneInfo = useMetaTimezone()
 
   // Detectar si estamos en dominio .onrender.com
   const isRenderDomain = useIsRenderDomain()

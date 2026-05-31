@@ -7,8 +7,7 @@ import {
   CreditCard,
   Loader2,
   Megaphone,
-  Users,
-  X
+  Users
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 

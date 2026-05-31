@@ -4,7 +4,7 @@
  */
 
 import fetch from 'node-fetch'
-import { db } from '../config/database.js'
+import { db, setAppConfig } from '../config/database.js'
 import { logger } from '../utils/logger.js'
 import { syncMetaAds } from './metaAdsService.js'
 import { updateContactsStats } from '../utils/updateContactsStats.js'
@@ -975,7 +975,8 @@ export async function saveMetaCustomValues(locationId, apiToken, metaCredentials
       { key: 'accessToken', name: 'Facebook - App Access Token', value: metaCredentials.accessToken },
       { key: 'pixelId', name: 'Facebook - Pixel ID', value: metaCredentials.pixelId },
       { key: 'pageId', name: 'Facebook - Page ID', value: metaCredentials.pageId },
-      { key: 'pixelApiToken', name: 'Facebook - Pixel API Token', value: metaCredentials.pixelApiToken }
+      { key: 'pixelApiToken', name: 'Facebook - Pixel API Token', value: metaCredentials.pixelApiToken },
+      { key: 'whatsappBusinessAccountId', name: 'Facebook - WhatsApp Business Account ID', value: metaCredentials.whatsappBusinessAccountId }
     ]
 
     const results = []
@@ -1099,9 +1100,16 @@ export async function fetchAndSaveMetaConfig(locationId, apiToken) {
                       customValues.find(cv => cv.name === 'pixel_id')?.value
     const fbPageId = customValues.find(cv => cv.name === 'Facebook - Page ID')?.value
     const fbPixelApiToken = customValues.find(cv => cv.name === 'Facebook - Pixel API Token')?.value
+    const fbWhatsappBusinessAccountId = customValues.find(cv => cv.name === 'Facebook - WhatsApp Business Account ID')?.value ||
+                                        customValues.find(cv => cv.name === 'WhatsApp Business Account ID')?.value ||
+                                        customValues.find(cv => cv.name === 'WABA ID')?.value
 
     // Debug: Ver qué valores se encontraron
-    logger.info(`Valores encontrados - AdAccountId: ${fbAdAccountId ? 'SÍ' : 'NO'}, AccessToken: ${fbAccessToken ? 'SÍ' : 'NO'}, PixelId: ${fbPixelId ? 'SÍ' : 'NO'}, PageId: ${fbPageId ? 'SÍ' : 'NO'}, PixelApiToken: ${fbPixelApiToken ? 'SÍ' : 'NO'}`)
+    logger.info(`Valores encontrados - AdAccountId: ${fbAdAccountId ? 'SÍ' : 'NO'}, AccessToken: ${fbAccessToken ? 'SÍ' : 'NO'}, PixelId: ${fbPixelId ? 'SÍ' : 'NO'}, PageId: ${fbPageId ? 'SÍ' : 'NO'}, PixelApiToken: ${fbPixelApiToken ? 'SÍ' : 'NO'}, WABA: ${fbWhatsappBusinessAccountId ? 'SÍ' : 'NO'}`)
+
+    if (fbWhatsappBusinessAccountId) {
+      await setAppConfig('meta_whatsapp_business_account_id', fbWhatsappBusinessAccountId)
+    }
 
     // Devolver los valores encontrados (enmascarar tokens para seguridad)
     // Solo se muestran los últimos 8 caracteres, el resto se oculta con ***
@@ -1110,7 +1118,8 @@ export async function fetchAndSaveMetaConfig(locationId, apiToken) {
       accessToken: fbAccessToken ? '***' + fbAccessToken.slice(-8) : '',
       pixelId: fbPixelId || '',
       pageId: fbPageId || '',
-      pixelApiToken: fbPixelApiToken ? '***' + fbPixelApiToken.slice(-8) : ''
+      pixelApiToken: fbPixelApiToken ? '***' + fbPixelApiToken.slice(-8) : '',
+      whatsappBusinessAccountId: fbWhatsappBusinessAccountId || ''
     }
   } catch (error) {
     logger.error('Error obteniendo config de Meta desde HighLevel:', error.message)

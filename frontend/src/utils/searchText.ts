@@ -12,7 +12,7 @@ const SPECIAL_CHARACTER_REPLACEMENTS: Record<string, string> = {
   þ: 'th'
 }
 
-export const normalizeSearchText = (value: unknown): string => {
+const normalizeSearchText = (value: unknown): string => {
   return String(value ?? '')
     .normalize('NFD')
     .replace(COMBINING_MARKS_PATTERN, '')

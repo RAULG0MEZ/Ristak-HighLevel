@@ -59,102 +59,11 @@
   background: rgba(var(--color-error-rgb, 239, 68, 68), 0.1);
 }
 
-/* SubTrigger */
-.subTrigger {
-  position: relative;
-  display: flex;
-  cursor: default;
-  user-select: none;
-  align-items: center;
-  border-radius: var(--radius-sm);
-  padding: var(--spacing-xs) var(--spacing-sm);
-  font-size: var(--font-size-sm);
-  outline: none;
-  transition: all var(--transition-base);
-}
-
-.subTrigger:hover {
-  background: var(--color-background-secondary);
-}
-
-.subTrigger[data-state="open"] {
-  background: var(--color-background-secondary);
-}
-
-.chevron {
-  margin-left: auto;
-  height: 1rem;
-  width: 1rem;
-}
-
-/* CheckboxItem and RadioItem */
-.checkboxItem,
-.radioItem {
-  position: relative;
-  display: flex;
-  cursor: default;
-  user-select: none;
-  align-items: center;
-  border-radius: var(--radius-sm);
-  padding: var(--spacing-xs) var(--spacing-sm);
-  padding-left: 2rem;
-  font-size: var(--font-size-sm);
-  outline: none;
-  transition: all var(--transition-base);
-}
-
-.checkboxItem:hover,
-.radioItem:hover {
-  background: var(--color-background-secondary);
-}
-
-.checkboxItem[data-disabled],
-.radioItem[data-disabled] {
-  pointer-events: none;
-  opacity: 0.5;
-}
-
-.itemIndicator {
-  position: absolute;
-  left: 0.5rem;
-  display: flex;
-  height: 0.875rem;
-  width: 0.875rem;
-  align-items: center;
-  justify-content: center;
-}
-
-.check {
-  height: 1rem;
-  width: 1rem;
-}
-
-.circle {
-  height: 0.5rem;
-  width: 0.5rem;
-  fill: currentColor;
-}
-
-/* Label */
-.label {
-  padding: var(--spacing-xs) var(--spacing-sm);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-}
-
 /* Separator */
 .separator {
   margin: var(--spacing-xs) -var(--spacing-xs);
   height: 1px;
   background: var(--color-border);
-}
-
-/* Shortcut */
-.shortcut {
-  margin-left: auto;
-  font-size: var(--font-size-xs);
-  letter-spacing: 0.05em;
-  opacity: 0.6;
 }
 
 /* Inset modifier */

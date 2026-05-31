@@ -520,5 +520,3 @@ export const calendarsService = {
     return parsed;
   }
 };
-
-export default calendarsService;

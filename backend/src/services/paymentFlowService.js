@@ -437,6 +437,18 @@ function hasExplicitChannelSelection(channels = {}) {
   ))
 }
 
+function assertAiAgentSendablePaymentChannel(payload = {}, contact = {}, actionLabel = 'el cobro') {
+  if (payload.source !== 'ai_agent') return
+
+  if (!hasExplicitChannelSelection(payload.channels)) {
+    throw new Error(`Antes de crear ${actionLabel}, el Agente AI debe pedir y recibir un canal de envío real: correo, WhatsApp, SMS o todos.`)
+  }
+
+  if (pickSendMethod(contact, payload.channels) === 'none') {
+    throw new Error(`No se puede crear ${actionLabel} desde el Agente AI sin un correo o teléfono válido para enviar el enlace.`)
+  }
+}
+
 async function getInvoiceSendContext() {
   const config = await db.get(`
     SELECT location_data, ghl_invoice_mode, invoice_title, invoice_terms_notes, invoice_number_prefix
@@ -858,6 +870,8 @@ export async function createSinglePaymentLink(payload) {
     throw new Error('El monto del link de pago debe ser mayor a 0')
   }
 
+  assertAiAgentSendablePaymentChannel(payload, contact, 'el link de pago')
+
   const ghlClient = await getGHLClient()
   const invoice = await createInvoice({
     ghlClient,
@@ -896,6 +910,7 @@ function normalizeOfflineRecordMethod(value) {
 
   if (/(transfer|spei|bank|banco)/.test(normalized)) return 'bank_transfer'
   if (/(deposit|deposito)/.test(normalized)) return 'deposit'
+  if (/(card|tarjeta|saved_card|stored_card|direct_card)/.test(normalized)) return 'card'
   if (/(cheque|check)/.test(normalized)) return 'check'
   if (/(manual|offline)/.test(normalized)) return 'manual'
   if (/(otro|other)/.test(normalized)) return 'other'
@@ -938,6 +953,7 @@ export async function createOfflineContactPayment(payload) {
     cash: 'Efectivo',
     bank_transfer: 'Transferencia',
     deposit: 'Depósito',
+    card: 'Tarjeta',
     check: 'Cheque',
     manual: 'Manual',
     other: 'Otro'
@@ -1697,10 +1713,29 @@ export async function createInstallmentPaymentFlow(payload) {
   const forceNewCardAuthorization = remainingAutomatic && shouldForceNewCardAuthorization(payload) && !firstPaymentIsCard
   const authorizedCard = remainingAutomatic && !forceNewCardAuthorization ? await getAuthorizedPaymentMethod(contact) : null
   const alreadyHasAuthorizedCard = Boolean(authorizedCard)
+  const firstPaymentUsesStoredCard = firstPaymentIsCard &&
+    remainingAutomatic &&
+    alreadyHasAuthorizedCard &&
+    payload.useStoredCard === true &&
+    !forceNewCardAuthorization
+  const firstPaymentStoredCardShouldRecordNow = firstPaymentUsesStoredCard &&
+    normalizeDateOnly(firstPaymentDate) <= todayDateOnly()
   const cardSetupRequired = remainingAutomatic && !firstPaymentIsCard && (
     forceNewCardAuthorization ||
     (!alreadyHasAuthorizedCard && (!firstPaymentEnabled || firstPaymentIsOffline))
   )
+
+  if (firstPaymentUsesStoredCard && !firstPaymentStoredCardShouldRecordNow) {
+    throw new Error('Para programar un primer pago futuro con tarjeta guardada, envíalo como pago automático restante, no como primer pago inmediato.')
+  }
+
+  if ((firstPaymentIsCard && !firstPaymentUsesStoredCard) || cardSetupRequired) {
+    assertAiAgentSendablePaymentChannel(
+      payload,
+      contact,
+      firstPaymentIsCard ? 'el primer pago con tarjeta' : 'la domiciliación de tarjeta'
+    )
+  }
 
   let stateHistory = addState([], PAYMENT_FLOW_STATES.DRAFT)
 
@@ -1835,7 +1870,54 @@ export async function createInstallmentPaymentFlow(payload) {
     response.stateHistory = stateHistory
   }
 
-  if (firstPaymentEnabled && firstPaymentIsCard) {
+  if (firstPaymentEnabled && firstPaymentIsCard && firstPaymentStoredCardShouldRecordNow) {
+    const invoice = await createInvoice({
+      ghlClient,
+      basePayload: payload.invoicePayload,
+      contact,
+      amount: firstPaymentAmount,
+      currency,
+      concept: `${concept} - primer pago con tarjeta guardada`,
+      title: 'Primer pago con tarjeta guardada',
+      dueDate: firstPaymentDate,
+      summaryDetails: planSummary
+    })
+    const invoiceId = invoice.id || invoice._id
+
+    await ghlClient.recordPayment(invoiceId, {
+      amount: firstPaymentAmount,
+      currency,
+      fulfilledAt: firstPaymentDate || new Date().toISOString(),
+      note: [
+        'Primer pago parcial registrado desde Ristak con tarjeta guardada',
+        authorizedCard.brand || authorizedCard.last4
+          ? `Tarjeta: ${authorizedCard.brand || 'card'} ${authorizedCard.last4 || '****'}`
+          : '',
+        firstPayment.reference ? `Referencia: ${firstPayment.reference}` : '',
+        firstPayment.notes ? `Notas: ${firstPayment.notes}` : ''
+      ].filter(Boolean).join('\n'),
+      mode: 'card',
+      liveMode
+    })
+
+    await db.run(
+      `UPDATE payments
+       SET status = 'paid', payment_method = 'card', reference = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE ghl_invoice_id = ?`,
+      [firstPayment.reference || null, invoiceId]
+    )
+
+    await persistGhlPaymentMethodForFlow(flowId, authorizedCard)
+    stateHistory = addState(stateHistory, PAYMENT_FLOW_STATES.FIRST_PAYMENT_REGISTERED)
+    await updateFlowState(flowId, PAYMENT_FLOW_STATES.FIRST_PAYMENT_REGISTERED, stateHistory, {
+      first_payment_status: 'registered',
+      first_payment_invoice_id: invoiceId
+    })
+
+    response.firstPaymentInvoiceId = invoiceId
+    response.currentState = PAYMENT_FLOW_STATES.FIRST_PAYMENT_REGISTERED
+    response.stateHistory = stateHistory
+  } else if (firstPaymentEnabled && firstPaymentIsCard) {
     const invoice = await createInvoice({
       ghlClient,
       basePayload: payload.invoicePayload,
@@ -1867,7 +1949,7 @@ export async function createInstallmentPaymentFlow(payload) {
     response.stateHistory = stateHistory
   }
 
-  if (remainingAutomatic && firstPaymentIsCard) {
+  if (remainingAutomatic && firstPaymentIsCard && !firstPaymentUsesStoredCard) {
     stateHistory = addState(stateHistory, PAYMENT_FLOW_STATES.WAITING_CARD_AUTHORIZATION)
     await updateFlowState(flowId, PAYMENT_FLOW_STATES.WAITING_CARD_AUTHORIZATION, stateHistory)
     response.currentState = PAYMENT_FLOW_STATES.WAITING_CARD_AUTHORIZATION
@@ -1915,7 +1997,7 @@ export async function createInstallmentPaymentFlow(payload) {
     response.stateHistory = stateHistory
   }
 
-  if (remainingAutomatic && alreadyHasAuthorizedCard && !firstPaymentIsCard) {
+  if (remainingAutomatic && alreadyHasAuthorizedCard && (firstPaymentUsesStoredCard || !firstPaymentIsCard)) {
     await persistGhlPaymentMethodForFlow(flowId, authorizedCard)
     const createdFlow = await db.get('SELECT * FROM payment_flows WHERE id = ?', [flowId])
     const installmentSchedules = await scheduleAutomaticInstallmentsForFlow(createdFlow, authorizedCard, ghlClient)

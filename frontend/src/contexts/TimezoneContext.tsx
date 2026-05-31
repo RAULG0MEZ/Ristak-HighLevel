@@ -24,21 +24,6 @@ export const useTimezone = () => {
   return context
 }
 
-// Lista de zonas horarias comunes
-export const TIMEZONES = [
-  { value: 'America/Mexico_City', label: 'Ciudad de México (GMT-6)' },
-  { value: 'America/Tijuana', label: 'Tijuana (GMT-8)' },
-  { value: 'America/Cancun', label: 'Cancún (GMT-5)' },
-  { value: 'America/New_York', label: 'Nueva York (GMT-5)' },
-  { value: 'America/Los_Angeles', label: 'Los Ángeles (GMT-8)' },
-  { value: 'America/Chicago', label: 'Chicago (GMT-6)' },
-  { value: 'Europe/London', label: 'Londres (GMT+0)' },
-  { value: 'Europe/Paris', label: 'París (GMT+1)' },
-  { value: 'Europe/Madrid', label: 'Madrid (GMT+1)' },
-  { value: 'Asia/Tokyo', label: 'Tokio (GMT+9)' },
-  { value: 'UTC', label: 'UTC (GMT+0)' }
-]
-
 const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
 export const TimezoneProvider: React.FC<{ children: ReactNode }> = ({ children }) => {

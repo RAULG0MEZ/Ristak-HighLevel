@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { KpiCard, Card, Button, PageContainer, AppointmentModal, BlockedSlotModal, TabList, Loading } from '@/components/common';
-import { ChevronLeft, ChevronRight, Plus, ChevronDown, Check, Calendar as CalendarIcon, Search, X, Settings, Lock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, ChevronDown, Check, Calendar as CalendarIcon, Search, X, Settings } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNotification } from '@/contexts/NotificationContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -175,15 +175,6 @@ export const Appointments: React.FC = () => {
   const [selectedBlockedSlot, setSelectedBlockedSlot] = useState<(BlockedSlot & { id?: string }) | null>(null);
   const [isBlockedSlotModalOpen, setIsBlockedSlotModalOpen] = useState(false);
   const [isCreateBlockedSlotMode, setIsCreateBlockedSlotMode] = useState(true);
-  const [blockedSlotDefaults, setBlockedSlotDefaults] = useState<{
-    start: string;
-    end: string;
-    timeZone: string;
-  }>({
-    start: '',
-    end: '',
-    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-  });
 
   // Dropdown de calendarios
   const [isCalendarDropdownOpen, setIsCalendarDropdownOpen] = useState(false);
@@ -815,18 +806,6 @@ export const Appointments: React.FC = () => {
 
   // === BLOCKED SLOTS HANDLERS ===
 
-  // Abrir modal para crear blocked slot
-  const handleOpenCreateBlockedSlot = () => {
-    setIsCreateBlockedSlotMode(true);
-    setSelectedBlockedSlot(null);
-    setBlockedSlotDefaults({
-      start: '',
-      end: '',
-      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-    });
-    setIsBlockedSlotModalOpen(true);
-  };
-
   // Crear nuevo blocked slot
   const handleCreateBlockedSlot = async (payload: any) => {
     if (!selectedCalendar || !locationId || !accessToken) return;
@@ -898,18 +877,6 @@ export const Appointments: React.FC = () => {
     }
   };
 
-  // Renderizar label según vista
-  const renderLabel = () => {
-    if (viewMode === 'month') {
-      return `${MONTH_NAMES[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
-    } else if (viewMode === 'week') {
-      return `${MONTH_NAMES[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
-    } else {
-      const dayName = DAYS_SHORT[(currentDate.getDay() + 6) % 7];
-      return `${dayName} ${currentDate.getDate()} · ${MONTH_NAMES[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
-    }
-  };
-
   // Drag & Drop Handlers
   const handleDragStart = (event: CalendarEvent) => (e: React.DragEvent) => {
     setDraggedEvent(event);
@@ -935,7 +902,7 @@ export const Appointments: React.FC = () => {
     setDragOverDate(date);
   };
 
-  const handleDragLeave = (e: React.DragEvent) => {
+  const handleDragLeave = () => {
     setDragOverDate(null);
   };
 
@@ -986,8 +953,7 @@ export const Appointments: React.FC = () => {
   // Time Selection Handlers (vistas semana/día)
   const calculateTimeFromPosition = (
     e: React.MouseEvent,
-    dayColumn: HTMLElement,
-    date: Date
+    dayColumn: HTMLElement
   ): { hour: number; minute: number } => {
     const rect = dayColumn.getBoundingClientRect();
     const y = e.clientY - rect.top;
@@ -1034,7 +1000,7 @@ export const Appointments: React.FC = () => {
     if (e.button !== 0) return; // Solo click izquierdo
 
     const dayColumn = e.currentTarget;
-    const { hour, minute } = calculateTimeFromPosition(e, dayColumn, date);
+    const { hour, minute } = calculateTimeFromPosition(e, dayColumn);
 
     setIsSelecting(true);
     setSelectionStart({ date, hour, minute });
@@ -1045,7 +1011,7 @@ export const Appointments: React.FC = () => {
     if (!isSelecting || !selectionStart) return;
 
     const dayColumn = e.currentTarget;
-    const { hour, minute } = calculateTimeFromPosition(e, dayColumn, date);
+    const { hour, minute } = calculateTimeFromPosition(e, dayColumn);
 
     setSelectionEnd({ date, hour, minute });
   };
@@ -1106,7 +1072,7 @@ export const Appointments: React.FC = () => {
     }
 
     const dayColumn = e.currentTarget;
-    const { hour, minute } = calculateTimeFromPosition(e, dayColumn, date);
+    const { hour, minute } = calculateTimeFromPosition(e, dayColumn);
 
     const startTime = new Date(date);
     startTime.setHours(hour, minute, 0, 0);

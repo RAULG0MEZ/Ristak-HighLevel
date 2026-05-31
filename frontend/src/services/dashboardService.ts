@@ -27,7 +27,7 @@ export interface ChartData {
   ganancia?: number;
 }
 
-export type DashboardFunnelScope = 'all' | 'attribution' | 'campaigns';
+type DashboardFunnelScope = 'all' | 'attribution' | 'campaigns';
 
 export interface DashboardVisitorDetail {
   visitorId: string;

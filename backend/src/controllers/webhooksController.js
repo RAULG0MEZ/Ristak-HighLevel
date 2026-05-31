@@ -7,6 +7,11 @@ import {
   markPaymentFlowInvoicePaid
 } from '../services/paymentFlowService.js';
 import { PAYMENT_MODE_LIVE, getWebhookPaymentMode, normalizePaymentMode } from '../utils/paymentMode.js';
+import {
+  isSuccessfulPaymentStatus,
+  triggerWhatsappAppointmentBookedEvent,
+  triggerWhatsappFirstPurchaseEvent
+} from '../services/metaWhatsappEventsService.js';
 
 function firstValue(...values) {
   return values.find(value => value !== undefined && value !== null && value !== '');
@@ -536,7 +541,7 @@ export const handlePaymentWebhook = async (req, res) => {
     // Actualizar estadísticas del contacto
     await updateSingleContactStats(contactId);
 
-    if (['paid', 'succeeded', 'completed'].includes(String(status).toLowerCase())) {
+    if (isSuccessfulPaymentStatus(status)) {
       const flow = await markPaymentFlowInvoicePaid(effectiveInvoiceId, {
         contactId,
         amount,
@@ -550,6 +555,12 @@ export const handlePaymentWebhook = async (req, res) => {
           logger.info(`✅ ${activatedFlows} flujo(s) de parcialidades activado(s) por pago webhook para contacto ${contactId}`);
         }
       }
+
+      await triggerWhatsappFirstPurchaseEvent(contactId, {
+        amount,
+        currency,
+        paymentMode
+      });
     }
 
     logger.info(`✅ Pago ${paymentId} procesado exitosamente para contacto ${contactId}`);
@@ -655,6 +666,17 @@ export const handleAppointmentWebhook = async (req, res) => {
         WHERE id = ?
         AND (appointment_date IS NULL OR appointment_date > ?)
       `, [startTime, contactId, startTime]);
+    }
+
+    const appointmentStatus = calendar.appoinmentStatus || calendar.appointmentStatus || data.appointment_status || calendar.status || data.status;
+    const appointmentStatusNormalized = String(appointmentStatus || '').toLowerCase();
+    const isCancelledAppointment = appointmentStatusNormalized.includes('cancel') ||
+      appointmentStatusNormalized.includes('no-show') ||
+      appointmentStatusNormalized.includes('noshow') ||
+      appointmentStatusNormalized.includes('deleted');
+
+    if (contactId && !isCancelledAppointment) {
+      await triggerWhatsappAppointmentBookedEvent(contactId);
     }
 
     logger.info(`✅ Cita ${appointmentId} procesada exitosamente para contacto ${contactId}`);
@@ -1005,13 +1027,21 @@ export const handleInvoiceWebhook = async (req, res) => {
       // Si fue pagado, actualizar estadísticas del contacto
       if (newStatus === 'paid') {
         const payment = await db.get(
-          'SELECT contact_id FROM payments WHERE ghl_invoice_id = ?',
+          'SELECT contact_id, amount, currency, status, payment_mode FROM payments WHERE ghl_invoice_id = ?',
           [invoiceId]
         );
 
         if (payment && payment.contact_id) {
           await updateSingleContactStats(payment.contact_id);
           logger.success(`Estadísticas actualizadas para contacto: ${payment.contact_id}`);
+
+          if (isSuccessfulPaymentStatus(payment.status || newStatus)) {
+            await triggerWhatsappFirstPurchaseEvent(payment.contact_id, {
+              amount: payment.amount,
+              currency: payment.currency,
+              paymentMode: payment.payment_mode
+            });
+          }
         }
 
         await markPaymentFlowInvoicePaid(invoiceId);
@@ -1058,21 +1088,25 @@ export const handleWhatsAppAttributionWebhook = async (req, res) => {
       return res.status(200).json({ success: true, message: 'Webhook recibido' });
     }
 
-    // Extraer referral_source_id (fuente de atribución)
+    // Extraer datos de atribución de Click-to-WhatsApp
     const referralSourceId = customData.source_id || data.referral_source_id || data.sourceId || data.source_id || null;
+    const referralCtwaClid = customData.ctwa_clid || data.referral_ctwa_clid || data.ctwa_clid || data.ctwaCLID || null;
+    const adIdThruMessage = customData.ad_id || customData.adId || data.ad_id || data.adId || null;
+    const messageContent = customData.message_content || customData.messageContent || data.message_content || data.messageContent || data.message || null;
+    const referralHeadline = customData.headline || data.referral_headline || data.headline || null;
 
     const usePostgres = process.env.DATABASE_URL ? true : false;
     const query = usePostgres
       ? `INSERT INTO whatsapp_attribution (
           contact_id, phone, referral_source_url, referral_source_type, referral_source_id,
           referral_headline, referral_body, referral_image_url, referral_video_url,
-          referral_thumbnail_url, referral_ctwa_clid
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
+          referral_thumbnail_url, referral_ctwa_clid, message_content, ad_id_thru_message
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`
       : `INSERT INTO whatsapp_attribution (
           contact_id, phone, referral_source_url, referral_source_type, referral_source_id,
           referral_headline, referral_body, referral_image_url, referral_video_url,
-          referral_thumbnail_url, referral_ctwa_clid
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+          referral_thumbnail_url, referral_ctwa_clid, message_content, ad_id_thru_message
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
     await db.run(query, [
       contactId,
@@ -1080,23 +1114,55 @@ export const handleWhatsAppAttributionWebhook = async (req, res) => {
       customData.source_url || data.referral_source_url || data.sourceUrl || data.source_url,
       customData.source_type || data.referral_source_type || data.sourceType || data.source_type,
       referralSourceId,
-      customData.headline || data.referral_headline || data.headline,
+      referralHeadline,
       customData.body || data.referral_body || data.body,
       customData.image_url || data.referral_image_url || data.imageUrl || data.image_url,
       customData.video_url || data.referral_video_url || data.videoUrl || data.video_url,
       customData.thumbnail_url || data.referral_thumbnail_url || data.thumbnailUrl || data.thumbnail_url,
-      customData.ctwa_clid || data.referral_ctwa_clid || data.ctwa_clid || data.ctwaCLID
+      referralCtwaClid,
+      messageContent,
+      adIdThruMessage
     ]);
 
     // Usar referral_source_id como ad_id si viene disponible
-    let finalAdId = referralSourceId || null;
+    let finalAdId = referralSourceId || adIdThruMessage || null;
+
+    if (contactId) {
+      const contactUpdates = [];
+      const contactParams = [];
+
+      if (finalAdId) {
+        contactUpdates.push('attribution_ad_id = ?');
+        contactParams.push(finalAdId);
+      }
+
+      if (referralCtwaClid) {
+        contactUpdates.push('attribution_ctwa_clid = ?');
+        contactParams.push(referralCtwaClid);
+      }
+
+      if (referralHeadline) {
+        contactUpdates.push('attribution_ad_name = ?');
+        contactParams.push(referralHeadline);
+      }
+
+      if (contactUpdates.length > 0) {
+        contactUpdates.push('updated_at = CURRENT_TIMESTAMP');
+        contactParams.push(contactId);
+
+        await db.run(
+          `UPDATE contacts SET ${contactUpdates.join(', ')} WHERE id = ?`,
+          contactParams
+        );
+      }
+    }
 
     if (finalAdId && contactId) {
-      await db.run(
-        `UPDATE contacts SET attribution_ad_id = ? WHERE id = ?`,
-        [finalAdId, contactId]
-      );
       logger.info(`✅ Ad ID guardado en contacts para ${contactId}: ${finalAdId}`);
+    }
+
+    if (referralCtwaClid && contactId) {
+      logger.info(`✅ CTWA CLID guardado en contacts para ${contactId}`);
     }
 
     logger.info(`✅ Atribución WhatsApp procesada para ${phone} (contacto ${contactId}) - Ad ID final: ${finalAdId || 'ninguno'}`);

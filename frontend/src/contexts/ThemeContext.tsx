@@ -3,9 +3,9 @@ import { themes, sharedTokens } from '@/theme/tokens'
 
 type ThemeMode = 'light' | 'dark'
 type ThemeSource = 'system' | 'manual'
-export type DesignPreset = 'classic' | 'atelier' | 'editorial'
+type DesignPreset = 'classic' | 'atelier' | 'editorial'
 
-export const DESIGN_PRESETS: Array<{
+const DESIGN_PRESETS: Array<{
   id: DesignPreset
   label: string
   description: string

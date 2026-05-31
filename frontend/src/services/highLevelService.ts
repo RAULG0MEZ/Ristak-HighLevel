@@ -1,6 +1,6 @@
 // Servicio de GoHighLevel para manejar configuración
 
-export interface HighLevelConfig {
+interface HighLevelConfig {
   configured: boolean
   locationId?: string
   hasToken?: boolean

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Calendar, ChevronLeft, ChevronRight, Clock, X } from 'lucide-react'
 import styles from './DateTimePicker.module.css'
 

@@ -7,7 +7,7 @@ import {
   CartesianGrid,
   ResponsiveContainer
 } from 'recharts'
-import { formatCurrency, formatNumber, formatChartCurrency } from '@/utils/format'
+import { formatCurrency, formatChartCurrency } from '@/utils/format'
 import { useChartHover } from '@/hooks/useChartHover'
 import { ChartTooltip } from '../ChartTooltip/ChartTooltip'
 

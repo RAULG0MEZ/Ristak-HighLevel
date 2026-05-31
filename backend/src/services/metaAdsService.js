@@ -365,6 +365,27 @@ export async function getMetaConfig() {
       }
     }
 
+    if (config.pixel_api_token) {
+      try {
+        if (isEncrypted(config.pixel_api_token)) {
+          config.pixel_api_token = decrypt(config.pixel_api_token)
+        } else {
+          logger.warn('⚠️ Pixel API Token de Meta NO estaba encriptado. Encriptando ahora...')
+          const plainPixelApiToken = config.pixel_api_token
+          const encryptedPixelApiToken = encrypt(plainPixelApiToken)
+
+          await db.run(
+            'UPDATE meta_config SET pixel_api_token = ? WHERE id = ?',
+            [encryptedPixelApiToken, config.id]
+          )
+
+          config.pixel_api_token = plainPixelApiToken
+        }
+      } catch (error) {
+        logger.warn('No se pudo desencriptar pixel_api_token:', error.message)
+      }
+    }
+
     return config
   } catch (error) {
     logger.error('Error obteniendo configuración de Meta:', error.message)

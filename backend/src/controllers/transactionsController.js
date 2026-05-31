@@ -7,6 +7,7 @@ import { getHighLevelConfig } from '../config/database.js'
 import { syncInvoices, syncAllInvoices, getInvoicesFromDB } from '../services/invoicesSyncService.js'
 import { getHiddenContactFilters, buildHiddenContactsCondition } from '../utils/hiddenContactsFilter.js'
 import { updateSingleContactStats } from '../utils/updateContactsStats.js'
+import { triggerWhatsappFirstPurchaseEvent } from '../services/metaWhatsappEventsService.js'
 
 const SUCCESS_PAYMENT_STATUSES = new Set(['succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success'])
 const VALID_TRANSACTION_STATUSES = new Set([
@@ -653,6 +654,14 @@ export const updateTransaction = async (req, res) => {
     const statsContacts = new Set([transaction.contact_id, finalContactId].filter(Boolean))
     await Promise.all([...statsContacts].map(contact => updateSingleContactStats(contact)))
 
+    if (finalContactId && statusChanged && SUCCESS_PAYMENT_STATUSES.has(finalStatus)) {
+      await triggerWhatsappFirstPurchaseEvent(finalContactId, {
+        amount: finalAmount,
+        currency: finalCurrency,
+        paymentMode: finalPaymentMode
+      })
+    }
+
     const updatedTransaction = await getTransactionByIdForResponse(id)
 
     logger.success(`Transacción actualizada: ${id}`)
@@ -800,6 +809,11 @@ export const recordPayment = async (req, res) => {
     )
     if (transaction.contact_id) {
       await updateSingleContactStats(transaction.contact_id)
+      await triggerWhatsappFirstPurchaseEvent(transaction.contact_id, {
+        amount: amount || transaction.amount,
+        currency: transaction.currency || 'MXN',
+        paymentMode
+      })
     }
 
     logger.success(`Pago registrado para transacción: ${id}`)

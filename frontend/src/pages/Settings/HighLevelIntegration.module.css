@@ -498,6 +498,52 @@ body.dark .dropdownMenu {
   margin: 0;
 }
 
+.whatsappEventsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
+}
+
+.whatsappEventsTitleGroup {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.whatsappEventsIcon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  background: #25d366;
+  flex-shrink: 0;
+}
+
+.whatsappEventsList {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--color-border);
+}
+
+.whatsappEventRow {
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-xl);
+  padding: var(--spacing-lg) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.whatsappEventRow:last-child {
+  border-bottom: 0;
+}
+
 .savingIndicator {
   display: flex;
   align-items: center;
@@ -533,6 +579,11 @@ body.dark .dropdownMenu {
 
   .labelsGrid {
     grid-template-columns: 1fr;
+  }
+
+  .whatsappEventRow {
+    align-items: flex-start;
+    gap: var(--spacing-md);
   }
 }
 

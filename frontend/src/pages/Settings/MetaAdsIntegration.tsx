@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Card, Button } from '@/components/common'
-import { RefreshCw, Trash2 } from 'lucide-react'
+import { RefreshCw, Save, Trash2 } from 'lucide-react'
+import { SiWhatsapp } from 'react-icons/si'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { useAppConfig, useIsRenderDomain } from '@/hooks'
@@ -13,6 +14,7 @@ interface MetaCredentials {
   pixelId: string
   pageId: string
   pixelApiToken: string
+  whatsappBusinessAccountId?: string
 }
 
 interface AdAccount {
@@ -59,6 +61,7 @@ export const MetaAdsIntegration: React.FC = () => {
   // Estado para guardar Page ID
   const [isSavingPageId, setIsSavingPageId] = useState(false)
   const [savedPageId, setSavedPageId] = useState<string>('')  // Page ID que viene del backend (guardado)
+  const [whatsappBusinessAccountIdDraft, setWhatsappBusinessAccountIdDraft] = useState('')
 
   // Estado para re-sincronización al cambiar el switch
   const [isSyncingSnippet, setIsSyncingSnippet] = useState(false)
@@ -74,11 +77,18 @@ export const MetaAdsIntegration: React.FC = () => {
 
   // Switch para incluir Meta Pixel en snippet (default: true)
   const [includeMetaPixel, setIncludeMetaPixel, savingPixelPref] = useAppConfig('include_meta_pixel', true)
+  const [whatsappScheduleEventEnabled, setWhatsappScheduleEventEnabled, savingWhatsappScheduleEvent] = useAppConfig('meta_whatsapp_schedule_enabled', false)
+  const [whatsappPurchaseEventEnabled, setWhatsappPurchaseEventEnabled, savingWhatsappPurchaseEvent] = useAppConfig('meta_whatsapp_purchase_enabled', false)
+  const [whatsappBusinessAccountId, setWhatsappBusinessAccountId, savingWhatsappBusinessAccountId] = useAppConfig('meta_whatsapp_business_account_id', '')
 
   // Cargar credenciales al montar el componente
   useEffect(() => {
     loadCredentials()
   }, [])
+
+  useEffect(() => {
+    setWhatsappBusinessAccountIdDraft(whatsappBusinessAccountId || '')
+  }, [whatsappBusinessAccountId])
 
   const loadCredentials = async () => {
     setIsLoading(true)
@@ -467,6 +477,48 @@ export const MetaAdsIntegration: React.FC = () => {
       showToast('error', 'Error', 'No se pudo actualizar el snippet')
     } finally {
       setIsSyncingSnippet(false)
+    }
+  }
+
+  const handleToggleWhatsappScheduleEvent = async (newValue: boolean) => {
+    try {
+      await setWhatsappScheduleEventEnabled(newValue)
+      showToast(
+        'success',
+        'Evento de cita actualizado',
+        newValue ? 'LeadSubmitted se enviará cuando aplique' : 'LeadSubmitted quedó apagado'
+      )
+    } catch {
+      showToast('error', 'Error', 'No se pudo actualizar el evento de cita')
+    }
+  }
+
+  const handleToggleWhatsappPurchaseEvent = async (newValue: boolean) => {
+    try {
+      await setWhatsappPurchaseEventEnabled(newValue)
+      showToast(
+        'success',
+        'Evento de pago actualizado',
+        newValue ? 'Purchase se enviará cuando aplique' : 'Purchase quedó apagado'
+      )
+    } catch {
+      showToast('error', 'Error', 'No se pudo actualizar el evento de pago')
+    }
+  }
+
+  const handleSaveWhatsappBusinessAccountId = async () => {
+    const normalizedValue = whatsappBusinessAccountIdDraft.trim()
+
+    if (!normalizedValue) {
+      showToast('error', 'WABA ID requerido', 'Ingresa el WhatsApp Business Account ID')
+      return
+    }
+
+    try {
+      await setWhatsappBusinessAccountId(normalizedValue)
+      showToast('success', 'WABA ID guardado', 'WhatsApp Business listo para CAPI')
+    } catch {
+      showToast('error', 'Error', 'No se pudo guardar el WABA ID')
     }
   }
 
@@ -911,6 +963,104 @@ export const MetaAdsIntegration: React.FC = () => {
                 )}
             </div>
           )}
+        </div>
+
+        <div className={styles.section}>
+          <div className={styles.whatsappEventsHeader}>
+            <div className={styles.whatsappEventsTitleGroup}>
+              <span className={styles.whatsappEventsIcon} aria-hidden="true">
+                <SiWhatsapp size={24} />
+              </span>
+              <div>
+                <h3 className={styles.sectionTitle}>Eventos personalizados de WhatsApp</h3>
+                <p className={styles.sectionDescription}>
+                  Conversiones server-side para citas agendadas y primeros pagos.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className={styles.whatsappEventsList}>
+            <div className={styles.whatsappEventRow} style={{ alignItems: 'flex-start', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label className={styles.formLabel} style={{ marginBottom: '4px' }}>
+                  WhatsApp Business Account ID
+                </label>
+                <p className={styles.formHint} style={{ margin: 0 }}>
+                  Se envía como whatsapp_business_account_id en los eventos de Meta.
+                </p>
+              </div>
+              <div className={styles.inputGroup} style={{ width: '100%' }}>
+                <input
+                  type="text"
+                  value={whatsappBusinessAccountIdDraft}
+                  onChange={(e) => setWhatsappBusinessAccountIdDraft(e.target.value)}
+                  placeholder="123456789012345"
+                  className={styles.formInput}
+                />
+                <Button
+                  type="button"
+                  onClick={handleSaveWhatsappBusinessAccountId}
+                  disabled={
+                    savingWhatsappBusinessAccountId ||
+                    !whatsappBusinessAccountIdDraft.trim() ||
+                    whatsappBusinessAccountIdDraft.trim() === whatsappBusinessAccountId
+                  }
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  <Save size={16} />
+                  {savingWhatsappBusinessAccountId ? 'Guardando...' : 'Guardar'}
+                </Button>
+              </div>
+            </div>
+
+            <div className={styles.whatsappEventRow}>
+              <div>
+                <label className={styles.formLabel} style={{ marginBottom: '4px' }}>
+                  Activar evento de cita agendada
+                </label>
+                <p className={styles.formHint} style={{ margin: 0 }}>
+                  Envía LeadSubmitted una sola vez por contacto.
+                </p>
+              </div>
+              <label className={styles.switchContainer}>
+                <input
+                  type="checkbox"
+                  checked={whatsappScheduleEventEnabled === true}
+                  onChange={(e) => handleToggleWhatsappScheduleEvent(e.target.checked)}
+                  disabled={savingWhatsappScheduleEvent}
+                  className={styles.switchInput}
+                />
+                <span className={styles.switchSlider}></span>
+              </label>
+            </div>
+
+            <div className={styles.whatsappEventRow}>
+              <div>
+                <label className={styles.formLabel} style={{ marginBottom: '4px' }}>
+                  Activar evento de pago recibido
+                </label>
+                <p className={styles.formHint} style={{ margin: 0 }}>
+                  Envía Purchase una sola vez por contacto.
+                </p>
+              </div>
+              <label className={styles.switchContainer}>
+                <input
+                  type="checkbox"
+                  checked={whatsappPurchaseEventEnabled === true}
+                  onChange={(e) => handleToggleWhatsappPurchaseEvent(e.target.checked)}
+                  disabled={savingWhatsappPurchaseEvent}
+                  className={styles.switchInput}
+                />
+                <span className={styles.switchSlider}></span>
+              </label>
+            </div>
+          </div>
         </div>
 
       </Card>

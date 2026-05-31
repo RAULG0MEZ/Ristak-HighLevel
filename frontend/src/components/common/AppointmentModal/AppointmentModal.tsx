@@ -8,7 +8,6 @@ import { CustomSelect } from '../CustomSelect';
 import { CalendarEvent, Calendar, calendarsService, FreeSlot, BlockedSlot } from '@/services/calendarsService';
 import { useNotification } from '@/contexts/NotificationContext';
 import { useTimezone } from '@/contexts/TimezoneContext';
-import { normalizeSearchText } from '@/utils/format';
 import styles from './AppointmentModal.module.css';
 import { Trash2, Search, Loader2, X, UserPlus } from 'lucide-react';
 
@@ -72,19 +71,6 @@ const ALL_TIMEZONES: string[] =
       ];
 
 const DEFAULT_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-
-/**
- * Formatea hora ISO a formato 12 horas con AM/PM
- * Ej: "2025-10-22T15:30:00-06:00" → "3:30 PM"
- */
-const formatTimeTo12Hour = (isoTime: string): string => {
-  const date = new Date(isoTime);
-  return date.toLocaleTimeString('es-MX', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true
-  }).toUpperCase();
-};
 
 /**
  * Formatea slot completo con duración

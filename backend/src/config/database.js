@@ -262,6 +262,12 @@ async function initTables() {
         purchases_count INTEGER DEFAULT 0,
         last_purchase_date DATETIME,
         appointment_date DATETIME,
+        meta_schedule_event_sent INTEGER DEFAULT 0,
+        meta_schedule_event_sent_at DATETIME,
+        meta_schedule_event_id TEXT,
+        meta_purchase_event_sent INTEGER DEFAULT 0,
+        meta_purchase_event_sent_at DATETIME,
+        meta_purchase_event_id TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
@@ -271,6 +277,14 @@ async function initTables() {
     await db.run('CREATE INDEX IF NOT EXISTS idx_contacts_phone ON contacts(phone)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_contacts_email ON contacts(email)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_contacts_ad_id ON contacts(attribution_ad_id)')
+    try {
+      await db.run('CREATE INDEX IF NOT EXISTS idx_contacts_meta_schedule_sent ON contacts(meta_schedule_event_sent)')
+      await db.run('CREATE INDEX IF NOT EXISTS idx_contacts_meta_purchase_sent ON contacts(meta_purchase_event_sent)')
+    } catch (err) {
+      if (!err.message.includes('no such column') && !err.message.includes('does not exist')) {
+        throw err
+      }
+    }
 
     // Tabla de pagos
     await db.run(`
@@ -385,6 +399,26 @@ async function initTables() {
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `)
+
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS meta_conversion_event_logs (
+        id ${usePostgres ? 'SERIAL PRIMARY KEY' : 'INTEGER PRIMARY KEY AUTOINCREMENT'},
+        contact_id TEXT,
+        event_type TEXT NOT NULL,
+        meta_event_name TEXT NOT NULL,
+        event_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        request_payload TEXT,
+        response_payload TEXT,
+        error_message TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE SET NULL
+      )
+    `)
+
+    await db.run('CREATE INDEX IF NOT EXISTS idx_meta_conversion_logs_contact ON meta_conversion_event_logs(contact_id)')
+    await db.run('CREATE INDEX IF NOT EXISTS idx_meta_conversion_logs_event ON meta_conversion_event_logs(event_type, event_id)')
+    await db.run('CREATE INDEX IF NOT EXISTS idx_meta_conversion_logs_created ON meta_conversion_event_logs(created_at)')
 
     // Tabla de ads de Meta
     await db.run(`
@@ -640,6 +674,34 @@ async function initTables() {
         await db.run('ALTER TABLE contacts ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP')
       } catch (err) {
         if (!err.message.includes('duplicate column name') && !err.message.includes('already exists')) {
+          throw err
+        }
+      }
+
+      const contactMetaEventColumns = [
+        ['meta_schedule_event_sent', 'INTEGER DEFAULT 0'],
+        ['meta_schedule_event_sent_at', 'DATETIME'],
+        ['meta_schedule_event_id', 'TEXT'],
+        ['meta_purchase_event_sent', 'INTEGER DEFAULT 0'],
+        ['meta_purchase_event_sent_at', 'DATETIME'],
+        ['meta_purchase_event_id', 'TEXT']
+      ]
+
+      for (const [columnName, columnType] of contactMetaEventColumns) {
+        try {
+          await db.run(`ALTER TABLE contacts ADD COLUMN ${columnName} ${columnType}`)
+        } catch (err) {
+          if (!err.message.includes('duplicate column') && !err.message.includes('already exists')) {
+            throw err
+          }
+        }
+      }
+
+      try {
+        await db.run('CREATE INDEX IF NOT EXISTS idx_contacts_meta_schedule_sent ON contacts(meta_schedule_event_sent)')
+        await db.run('CREATE INDEX IF NOT EXISTS idx_contacts_meta_purchase_sent ON contacts(meta_purchase_event_sent)')
+      } catch (err) {
+        if (!err.message.includes('already exists') && !err.message.includes('no such column') && !err.message.includes('does not exist')) {
           throw err
         }
       }

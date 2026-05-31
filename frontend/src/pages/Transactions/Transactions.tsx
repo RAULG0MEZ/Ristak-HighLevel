@@ -291,11 +291,6 @@ export const Transactions: React.FC = () => {
   const [isClient, setIsClient] = useState(false)
   const handledOpenPaymentRef = useRef<string | null>(null)
 
-  const rangeStart = dateRange.start instanceof Date ? dateRange.start : new Date(dateRange.start)
-  const rangeEnd = dateRange.end instanceof Date ? dateRange.end : new Date(dateRange.end)
-  const spansMultipleYears = rangeStart.getFullYear() !== rangeEnd.getFullYear()
-  const tableDateOptions = { includeYear: spansMultipleYears, referenceDate: rangeEnd }
-
   useEffect(() => {
     if (paymentTableTab === 'transactions') {
       fetchData()
@@ -395,10 +390,6 @@ export const Transactions: React.FC = () => {
     } finally {
       setSyncing(false)
     }
-  }
-
-  const handleCreate = () => {
-    setModal({ type: 'create', selectedContact: null })
   }
 
   const handleEdit = (transaction: Transaction) => {
@@ -846,7 +837,7 @@ export const Transactions: React.FC = () => {
     }
   }
 
-  const handleViewReceipt = (transaction: Transaction) => {
+  const handleViewReceipt = (_transaction: Transaction) => {
     // TODO: Implement view receipt - open payment link in new tab
     showToast('info', 'Ver recibo', 'Abriendo recibo en nueva pestaña...')
   }
@@ -1004,7 +995,7 @@ export const Transactions: React.FC = () => {
     {
       key: 'id',
       header: 'Acciones',
-      render: (value, item) => {
+      render: (_value, item) => {
         // Contar acciones disponibles según el estado
         const actions = []
 
