@@ -214,7 +214,7 @@ function buildPaymentPlanSummary(flow, installments = [], options = {}) {
         amount: installment.amount,
         totalAmount
       }),
-      date: installment.due_date || installment.dueDate
+      date: getInstallmentDueDateValue(installment)
     })
   }
 
@@ -869,8 +869,59 @@ function getScheduleStart(dueDate, timezone = DEFAULT_PAYMENT_TIMEZONE) {
   }
 }
 
+function addMonthsClamped(date, months) {
+  return date.plus({ months }).startOf('day')
+}
+
+function getInstallmentDueDateValue(installment) {
+  return installment.effective_due_date || installment.effectiveDueDate || installment.due_date || installment.dueDate
+}
+
+function getEffectiveInstallmentDueDate(flow, installment, timezone = DEFAULT_PAYMENT_TIMEZONE) {
+  const frequency = normalizeText(installment.frequency || safeJsonParse(flow?.metadata, {}).remainingFrequency || 'custom')
+  const sequence = Number(installment.sequence || 1)
+  const zone = resolveScheduleTimezone(timezone)
+  const firstPaymentDate = flow?.first_payment_date || flow?.firstPaymentDate
+
+  if (!hasFirstPlanPayment(flow) || !firstPaymentDate || sequence <= 0) {
+    return normalizeDateOnly(installment.due_date || installment.dueDate)
+  }
+
+  const baseDate = DateTime.fromISO(normalizeDateOnly(firstPaymentDate), { zone }).startOf('day')
+  if (!baseDate.isValid) return normalizeDateOnly(installment.due_date || installment.dueDate)
+
+  if (frequency === 'monthly') {
+    return addMonthsClamped(baseDate, sequence).toISODate()
+  }
+
+  if (frequency === 'weekly') {
+    return baseDate.plus({ days: 7 * sequence }).toISODate()
+  }
+
+  if (frequency === 'biweekly') {
+    return baseDate.plus({ days: 14 * sequence }).toISODate()
+  }
+
+  if (frequency === 'daily') {
+    return baseDate.plus({ days: sequence }).toISODate()
+  }
+
+  if (frequency === 'yearly') {
+    return addMonthsClamped(baseDate, 12 * sequence).toISODate()
+  }
+
+  return normalizeDateOnly(installment.due_date || installment.dueDate)
+}
+
+function withEffectiveInstallmentDates(flow, installments, timezone = DEFAULT_PAYMENT_TIMEZONE) {
+  return installments.map(installment => ({
+    ...installment,
+    effective_due_date: getEffectiveInstallmentDueDate(flow, installment, timezone)
+  }))
+}
+
 function parseInstallmentDate(installment, timezone = DEFAULT_PAYMENT_TIMEZONE) {
-  const rawDate = installment.due_date || installment.dueDate
+  const rawDate = getInstallmentDueDateValue(installment)
   if (!rawDate) return null
 
   const date = DateTime.fromISO(normalizeDateOnly(rawDate), {
@@ -988,7 +1039,7 @@ function createSingleInstallmentScheduleGroup(installment, timezone = DEFAULT_PA
     frequency: installment.frequency || 'custom',
     recurrence: null,
     schedule: {
-      executeAt: buildScheduleExecuteAt(installment.due_date, timezone)
+      executeAt: buildScheduleExecuteAt(getInstallmentDueDateValue(installment), timezone)
     }
   }
 }
@@ -1002,7 +1053,7 @@ function createStoredInstallmentScheduleGroup(installments, timezone = DEFAULT_P
     frequency: firstInstallment.frequency || 'custom',
     recurrence: null,
     schedule: {
-      executeAt: buildScheduleExecuteAt(firstInstallment.due_date, timezone)
+      executeAt: buildScheduleExecuteAt(getInstallmentDueDateValue(firstInstallment), timezone)
     },
     scheduleId: firstInstallment.ghl_schedule_id
   }
@@ -1010,7 +1061,7 @@ function createStoredInstallmentScheduleGroup(installments, timezone = DEFAULT_P
 
 function createRecurringInstallmentScheduleGroup(installments, recurrence, timezone = DEFAULT_PAYMENT_TIMEZONE) {
   const firstInstallment = installments[0]
-  const start = getScheduleStart(firstInstallment.due_date, timezone)
+  const start = getScheduleStart(getInstallmentDueDateValue(firstInstallment), timezone)
 
   return {
     installments,
@@ -1268,7 +1319,7 @@ async function scheduleAutomaticInstallmentsForFlow(flow, paymentMethod, existin
 
   if (installments.length === 0) return []
 
-  const allFlowInstallments = await db.all(
+  const allFlowInstallmentsRaw = await db.all(
     `SELECT *
      FROM installment_payments
      WHERE flow_id = ?
@@ -1278,12 +1329,14 @@ async function scheduleAutomaticInstallmentsForFlow(flow, paymentMethod, existin
 
   const ghlClient = existingClient || await getGHLClient()
   const context = await getInvoiceSendContext()
+  const effectiveInstallments = withEffectiveInstallmentDates(flow, installments, context.timezone)
+  const allFlowInstallments = withEffectiveInstallmentDates(flow, allFlowInstallmentsRaw, context.timezone)
   const planSummary = buildPaymentPlanSummary(flow, allFlowInstallments, {
     timezone: context.timezone
   })
   const scheduled = []
   const resolvedAutoPaymentType = resolveAutoPaymentType(paymentMethod)
-  const scheduleGroups = buildNewInstallmentScheduleGroups(installments, context.timezone)
+  const scheduleGroups = buildNewInstallmentScheduleGroups(effectiveInstallments, context.timezone)
 
   logger.info(`Programando ${installments.length} parcialidad(es) automática(s) en ${scheduleGroups.length} schedule(s) GHL para flujo ${flow.id}`)
   logger.info(`Autopago GHL para flujo ${flow.id}: customer=${maskIdentifier(paymentMethod.customerId)}, method=${maskIdentifier(paymentMethod.paymentMethodId)}, type=${resolvedAutoPaymentType}, rawType=${paymentMethod.type || 'n/a'}, card=${paymentMethod.brand || 'card'} ${paymentMethod.last4 || '****'}, live=${context.liveMode}`)
@@ -1544,7 +1597,8 @@ export async function createInstallmentPaymentFlow(payload) {
      ORDER BY sequence ASC`,
     [flowId]
   )
-  const planSummary = buildPaymentPlanSummary(flowForSummary, installmentsForSummary, {
+  const installmentsForSummaryWithDates = withEffectiveInstallmentDates(flowForSummary, installmentsForSummary)
+  const planSummary = buildPaymentPlanSummary(flowForSummary, installmentsForSummaryWithDates, {
     frequency: payload.remainingFrequency || 'custom'
   })
 

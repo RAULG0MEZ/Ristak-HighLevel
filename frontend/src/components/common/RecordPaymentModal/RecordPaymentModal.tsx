@@ -182,7 +182,11 @@ const addDays = (date: Date, days: number) => {
 
 const addMonths = (date: Date, months: number) => {
   const next = new Date(date)
+  const originalDay = next.getDate()
+  next.setDate(1)
   next.setMonth(next.getMonth() + months)
+  const lastDayOfTargetMonth = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate()
+  next.setDate(Math.min(originalDay, lastDayOfTargetMonth))
   return next
 }
 
