@@ -19,6 +19,13 @@ import { nonTestPaymentCondition } from '../utils/paymentMode.js'
 import { logger } from '../utils/logger.js'
 
 const router = express.Router()
+const HIGHLEVEL_MCP_SERVER_URL = process.env.GHL_MCP_SERVER_URL || 'https://services.leadconnectorhq.com/mcp/'
+const GHL_MCP_TOOL_PREFIX = 'ghl_mcp__'
+const MCP_PROTOCOL_VERSION = '2025-06-18'
+const HIGHLEVEL_MCP_TIMEOUT_MS = 15000
+const SECRET_KEY_PATTERN = /(token|secret|password|authorization|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|database[_-]?url|encrypted|hash)/i
+const SENSITIVE_TABLE_PATTERN = /^(highlevel_config|meta_config|ai_agent_config|app_config|oauth_clients|oauth_authorization_codes|oauth_refresh_tokens)$/i
+const SAFE_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 function originFor(req) {
   const proto = req.get('x-forwarded-proto') || req.protocol || 'https'
@@ -64,7 +71,7 @@ function jsonRpcError(id, code, message) {
 }
 
 function sanitizeForExternal(value, key = '') {
-  if (/(token|secret|password|authorization|api[_-]?key|access[_-]?key|client[_-]?secret|database[_-]?url)/i.test(key)) {
+  if (SECRET_KEY_PATTERN.test(String(key || ''))) {
     return '[redacted]'
   }
 
@@ -95,66 +102,6 @@ function textResult(payload) {
     ]
   }
 }
-
-const SAFE_TABLES = {
-  contacts: {
-    columns: ['id', 'phone', 'email', 'full_name', 'first_name', 'last_name', 'source', 'visitor_id', 'attribution_url', 'attribution_session_source', 'attribution_medium', 'attribution_ctwa_clid', 'attribution_ad_name', 'attribution_ad_id', 'total_paid', 'purchases_count', 'last_purchase_date', 'appointment_date', 'created_at', 'updated_at'],
-    defaultOrder: 'created_at',
-    searchColumns: ['id', 'phone', 'email', 'full_name', 'first_name', 'last_name', 'source', 'attribution_ad_name', 'attribution_ad_id']
-  },
-  payments: {
-    columns: ['id', 'contact_id', 'amount', 'currency', 'status', 'payment_method', 'payment_mode', 'reference', 'description', 'date', 'ghl_invoice_id', 'invoice_number', 'due_date', 'sent_at', 'created_at', 'updated_at'],
-    defaultOrder: 'date',
-    searchColumns: ['id', 'contact_id', 'status', 'payment_method', 'reference', 'description', 'ghl_invoice_id', 'invoice_number']
-  },
-  payment_plans: {
-    columns: ['id', 'ghl_schedule_id', 'contact_id', 'contact_name', 'email', 'phone', 'name', 'title', 'status', 'total', 'currency', 'description', 'recurrence_label', 'start_date', 'next_run_at', 'end_date', 'live_mode', 'item_count', 'source', 'last_synced_at', 'created_at', 'updated_at'],
-    defaultOrder: 'updated_at',
-    searchColumns: ['id', 'ghl_schedule_id', 'contact_id', 'contact_name', 'email', 'phone', 'name', 'title', 'status']
-  },
-  appointments: {
-    columns: ['id', 'calendar_id', 'contact_id', 'location_id', 'title', 'status', 'appointment_status', 'assigned_user_id', 'notes', 'address', 'start_time', 'end_time', 'date_added', 'date_updated'],
-    defaultOrder: 'start_time',
-    searchColumns: ['id', 'calendar_id', 'contact_id', 'title', 'status', 'appointment_status', 'assigned_user_id', 'notes']
-  },
-  appointment_attendance_signals: {
-    columns: ['contact_id', 'appointment_id', 'source', 'first_seen_at', 'updated_at'],
-    defaultOrder: 'updated_at',
-    searchColumns: ['contact_id', 'appointment_id', 'source']
-  },
-  meta_ads: {
-    columns: ['id', 'date', 'ad_account_id', 'campaign_id', 'campaign_name', 'adset_id', 'adset_name', 'ad_id', 'ad_name', 'creative_id', 'creative_type', 'creative_thumbnail_url', 'creative_image_url', 'creative_video_id', 'creative_video_url', 'creative_preview_url', 'spend', 'reach', 'clicks', 'cpc', 'cpm', 'ctr', 'created_at', 'updated_at'],
-    defaultOrder: 'date',
-    searchColumns: ['campaign_id', 'campaign_name', 'adset_id', 'adset_name', 'ad_id', 'ad_name', 'creative_id', 'creative_type']
-  },
-  whatsapp_attribution: {
-    columns: ['id', 'contact_id', 'phone', 'referral_source_url', 'referral_source_type', 'referral_source_id', 'referral_headline', 'referral_body', 'referral_image_url', 'referral_video_url', 'referral_thumbnail_url', 'referral_ctwa_clid', 'created_at'],
-    defaultOrder: 'created_at',
-    searchColumns: ['contact_id', 'phone', 'referral_source_type', 'referral_source_id', 'referral_headline', 'referral_ctwa_clid']
-  },
-  payment_flows: {
-    columns: ['id', 'contact_id', 'contact_name', 'contact_email', 'contact_phone', 'total_amount', 'currency', 'concept', 'payment_type', 'first_payment_amount', 'first_payment_type', 'first_payment_value', 'first_payment_date', 'first_payment_method', 'first_payment_status', 'first_payment_invoice_id', 'remaining_automatic', 'card_setup_required', 'card_setup_amount', 'card_setup_status', 'card_setup_invoice_id', 'current_state', 'state_history', 'card_authorized_at', 'installment_plan_created_at', 'installment_plan_active_at', 'created_at', 'updated_at'],
-    defaultOrder: 'created_at',
-    searchColumns: ['id', 'contact_id', 'contact_name', 'contact_email', 'contact_phone', 'concept', 'current_state']
-  },
-  installment_payments: {
-    columns: ['id', 'flow_id', 'sequence', 'amount', 'percentage', 'due_date', 'frequency', 'payment_method', 'automatic', 'status', 'ghl_invoice_id', 'ghl_schedule_id', 'ghl_schedule_status', 'notes', 'created_at', 'updated_at'],
-    defaultOrder: 'due_date',
-    searchColumns: ['id', 'flow_id', 'status', 'ghl_invoice_id', 'ghl_schedule_id', 'notes']
-  },
-  sessions: {
-    columns: ['id', 'session_id', 'visitor_id', 'contact_id', 'full_name', 'email', 'event_name', 'started_at', 'created_at', 'page_url', 'referrer_url', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid', 'fbclid', 'msclkid', 'ttclid', 'channel', 'source_platform', 'campaign_id', 'adset_id', 'ad_group_id', 'ad_id', 'campaign_name', 'adset_name', 'ad_group_name', 'ad_name', 'placement', 'site_source_name', 'network', 'match_type', 'keyword', 'search_query', 'creative_id', 'ad_position', 'device_type', 'os', 'browser', 'browser_version', 'language', 'timezone', 'geo_country', 'geo_region', 'geo_city'],
-    defaultOrder: 'started_at',
-    searchColumns: ['session_id', 'visitor_id', 'contact_id', 'full_name', 'email', 'event_name', 'page_url', 'utm_source', 'utm_campaign', 'ad_id', 'ad_name']
-  },
-  costs: {
-    columns: ['id', 'name', 'type', 'calculation_type', 'value', 'applies_to', 'is_active', 'created_at', 'updated_at'],
-    defaultOrder: 'created_at',
-    searchColumns: ['id', 'name', 'type', 'calculation_type', 'applies_to']
-  }
-}
-
-const GHL_SAFE_PATH_PATTERN = /^\/(?:contacts|calendars|invoices|products|payments|users|locations|opportunities|pipelines|tasks|conversations|workflows|forms|surveys|customFields|tags)(?:\/|$)/i
 
 const toolDefinitions = [
   {
@@ -216,18 +163,18 @@ const toolDefinitions = [
   {
     name: 'list_data_tables',
     title: 'List Ristak data tables',
-    description: 'Lists Ristak database tables available to external systems. Secret/config tables are intentionally excluded.',
+    description: 'Lists every Ristak database table and column exposed to external systems. Secret/config tables are blocked and secret-like columns are redacted.',
     inputSchema: { type: 'object', properties: {} },
     annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false }
   },
   {
     name: 'query_data_table',
     title: 'Query Ristak data table',
-    description: 'Reads rows from an allowlisted Ristak database table. Secret columns and config tables are not accessible.',
+    description: 'Reads individual rows from any exposed Ristak database table with pagination, filtering, search, and ordering. Secret/config tables are blocked and secret-like columns are redacted.',
     inputSchema: {
       type: 'object',
       properties: {
-        table: { type: 'string', enum: Object.keys(SAFE_TABLES) },
+        table: { type: 'string' },
         limit: { type: 'integer', minimum: 1, maximum: 100, default: 25 },
         offset: { type: 'integer', minimum: 0, default: 0 },
         search: { type: 'string' },
@@ -396,7 +343,7 @@ const toolDefinitions = [
   {
     name: 'ghl_api_request',
     title: 'GoHighLevel API request',
-    description: 'Fallback request to selected GoHighLevel API paths through Ristak. Mutating methods require confirm=true.',
+    description: 'Fallback request to any GoHighLevel API path through Ristak. Mutating methods require confirm=true.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -408,6 +355,20 @@ const toolDefinitions = [
         confirm: { type: 'boolean' }
       },
       required: ['path']
+    },
+    annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: true }
+  },
+  {
+    name: 'ghl_mcp_call_tool',
+    title: 'Call GoHighLevel MCP tool',
+    description: 'Calls any tool exposed by the official GoHighLevel MCP through Ristak. Use tools/list to discover prefixed GoHighLevel tools when available.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        toolName: { type: 'string', description: 'Original GoHighLevel MCP tool name, without the ghl_mcp__ prefix.' },
+        arguments: { type: 'object', additionalProperties: true, default: {} }
+      },
+      required: ['toolName']
     },
     annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: true }
   }
@@ -576,22 +537,146 @@ function clampLimit(value, max = 100, fallback = 25) {
   return Math.min(Math.max(Number(value) || fallback, 1), max)
 }
 
-function listDataTables() {
+function isSafeIdentifier(value) {
+  return SAFE_IDENTIFIER_PATTERN.test(String(value || ''))
+}
+
+function quoteIdentifier(value) {
+  if (!isSafeIdentifier(value)) {
+    throw new Error(`Identificador inválido: ${value}`)
+  }
+
+  return `"${value.replace(/"/g, '""')}"`
+}
+
+function isSensitiveTable(name) {
+  return SENSITIVE_TABLE_PATTERN.test(String(name || ''))
+}
+
+function isSecretColumn(name) {
+  return SECRET_KEY_PATTERN.test(String(name || ''))
+}
+
+async function getDatabaseTableNames() {
+  try {
+    const rows = await db.all(`
+      SELECT table_name AS name
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+        AND table_type = 'BASE TABLE'
+      ORDER BY table_name
+    `)
+
+    if (Array.isArray(rows)) {
+      return rows.map(row => row.name).filter(Boolean)
+    }
+  } catch (error) {
+    // SQLite does not have information_schema; fall back below.
+  }
+
+  const rows = await db.all(`
+    SELECT name
+    FROM sqlite_master
+    WHERE type = 'table'
+      AND name NOT LIKE 'sqlite_%'
+    ORDER BY name
+  `)
+
+  return rows.map(row => row.name).filter(Boolean)
+}
+
+async function getDatabaseColumns(table) {
+  if (!isSafeIdentifier(table)) {
+    throw new Error('Tabla inválida')
+  }
+
+  try {
+    const rows = await db.all(
+      `SELECT column_name AS name, data_type AS type
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = ?
+       ORDER BY ordinal_position`,
+      [table]
+    )
+
+    if (Array.isArray(rows)) {
+      return rows.map(row => ({
+        name: row.name,
+        type: row.type || null,
+        redacted: isSecretColumn(row.name)
+      }))
+    }
+  } catch (error) {
+    // SQLite does not have information_schema; fall back below.
+  }
+
+  const rows = await db.all(`PRAGMA table_info(${quoteIdentifier(table)})`)
+  return rows.map(row => ({
+    name: row.name,
+    type: row.type || null,
+    redacted: isSecretColumn(row.name)
+  }))
+}
+
+async function getAccessibleDatabaseSchema() {
+  const tableNames = await getDatabaseTableNames()
+  const tables = []
+
+  for (const tableName of tableNames) {
+    if (!isSafeIdentifier(tableName) || isSensitiveTable(tableName)) continue
+
+    const columns = await getDatabaseColumns(tableName)
+    if (!columns.length) continue
+
+    tables.push({
+      name: tableName,
+      columns,
+      queryableColumns: columns.map(column => column.name),
+      exposedColumns: columns.filter(column => !column.redacted).map(column => column.name),
+      redactedColumns: columns.filter(column => column.redacted).map(column => column.name)
+    })
+  }
+
+  return tables
+}
+
+async function resolveAccessibleTable(table) {
+  const tableName = String(table || '').trim()
+
+  if (!isSafeIdentifier(tableName) || isSensitiveTable(tableName)) {
+    throw new Error('Tabla no permitida')
+  }
+
+  const schema = await getAccessibleDatabaseSchema()
+  const config = schema.find(item => item.name === tableName)
+
+  if (!config) {
+    throw new Error('Tabla no encontrada o no permitida')
+  }
+
+  return config
+}
+
+async function listDataTables() {
+  const tables = await getAccessibleDatabaseSchema()
+
   return {
-    tables: Object.entries(SAFE_TABLES).map(([name, config]) => ({
-      name,
-      columns: config.columns
-    }))
+    tables: tables.map(table => ({
+      name: table.name,
+      columns: table.columns,
+      queryableColumns: table.queryableColumns,
+      redactedColumns: table.redactedColumns
+    })),
+    blockedTables: ['highlevel_config', 'meta_config', 'ai_agent_config', 'app_config', 'oauth_clients', 'oauth_authorization_codes', 'oauth_refresh_tokens'],
+    note: 'Se exponen todas las tablas de datos detectadas; las tablas de configuración sensible se bloquean y las columnas tipo token/password/secret/hash se redactan.'
   }
 }
 
 async function queryDataTable(args = {}) {
   const table = String(args.table || '').trim()
-  const config = SAFE_TABLES[table]
-
-  if (!config) {
-    throw new Error('Tabla no permitida')
-  }
+  const config = await resolveAccessibleTable(table)
+  const exposedColumns = config.exposedColumns
 
   const limit = clampLimit(args.limit, 100, 25)
   const offset = Math.max(Number(args.offset) || 0, 0)
@@ -602,37 +687,45 @@ async function queryDataTable(args = {}) {
     : {}
 
   for (const [key, value] of Object.entries(filters)) {
-    if (!config.columns.includes(key)) continue
+    if (!exposedColumns.includes(key)) continue
     if (value === null) {
-      conditions.push(`${key} IS NULL`)
+      conditions.push(`${quoteIdentifier(key)} IS NULL`)
     } else {
-      conditions.push(`${key} = ?`)
+      conditions.push(`${quoteIdentifier(key)} = ?`)
       params.push(value)
     }
   }
 
   const search = String(args.search || '').trim()
-  if (search && config.searchColumns.length) {
-    conditions.push(`(${config.searchColumns.map(column => `${column} LIKE ?`).join(' OR ')})`)
-    params.push(...config.searchColumns.map(() => `%${search}%`))
+  const searchColumns = exposedColumns
+  if (search && searchColumns.length) {
+    conditions.push(`(${searchColumns.map(column => `CAST(${quoteIdentifier(column)} AS TEXT) LIKE ?`).join(' OR ')})`)
+    params.push(...searchColumns.map(() => `%${search}%`))
   }
 
-  const orderBy = config.columns.includes(args.orderBy) ? args.orderBy : config.defaultOrder
+  const sortableColumns = exposedColumns.length ? exposedColumns : config.queryableColumns
+  const fallbackOrder = sortableColumns.includes('created_at')
+    ? 'created_at'
+    : sortableColumns.includes('updated_at')
+      ? 'updated_at'
+      : sortableColumns[0]
+  const orderBy = sortableColumns.includes(args.orderBy) ? args.orderBy : fallbackOrder
   const orderDirection = String(args.orderDirection || 'DESC').toUpperCase() === 'ASC' ? 'ASC' : 'DESC'
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+  const selectedColumns = config.queryableColumns
 
   const [rows, countRow] = await Promise.all([
     db.all(
-      `SELECT ${config.columns.join(', ')}
-       FROM ${table}
+      `SELECT ${selectedColumns.map(quoteIdentifier).join(', ')}
+       FROM ${quoteIdentifier(table)}
        ${whereClause}
-       ORDER BY ${orderBy} ${orderDirection}
+       ORDER BY ${quoteIdentifier(orderBy)} ${orderDirection}
        LIMIT ? OFFSET ?`,
       [...params, limit, offset]
     ),
     db.get(
       `SELECT COUNT(*) AS total
-       FROM ${table}
+       FROM ${quoteIdentifier(table)}
        ${whereClause}`,
       params
     )
@@ -640,7 +733,8 @@ async function queryDataTable(args = {}) {
 
   return {
     table,
-    columns: config.columns,
+    columns: selectedColumns,
+    redactedColumns: config.redactedColumns,
     rows,
     pagination: {
       limit,
@@ -920,13 +1014,19 @@ async function ghlCreateInstallmentPlan(args = {}) {
   })
 }
 
+function normalizeGhlApiPath(path) {
+  const normalizedPath = String(path || '').trim()
+
+  if (!normalizedPath.startsWith('/') || normalizedPath.startsWith('//') || normalizedPath.includes('..') || /^https?:\/\//i.test(normalizedPath)) {
+    throw new Error('Path de GoHighLevel inválido')
+  }
+
+  return normalizedPath
+}
+
 async function ghlApiRequest(args = {}) {
   const method = String(args.method || 'GET').toUpperCase()
-  const path = String(args.path || '').trim()
-
-  if (!path.startsWith('/') || !GHL_SAFE_PATH_PATTERN.test(path)) {
-    throw new Error('Path de GoHighLevel no permitido')
-  }
+  const path = normalizeGhlApiPath(args.path)
 
   if (method !== 'GET') {
     assertConfirmed(args, `Ejecutar ${method} ${path} en GoHighLevel`)
@@ -941,12 +1041,227 @@ async function ghlApiRequest(args = {}) {
   })
 }
 
+function parseMcpResponseText(text, targetId) {
+  const trimmed = String(text || '').trim()
+  if (!trimmed) return null
+
+  try {
+    return JSON.parse(trimmed)
+  } catch (error) {
+    // Streamable HTTP MCP servers may answer with text/event-stream.
+  }
+
+  const messages = []
+  let eventLines = []
+
+  for (const line of trimmed.split(/\r?\n/)) {
+    if (line.startsWith('data:')) {
+      eventLines.push(line.slice(5).trimStart())
+      continue
+    }
+
+    if (line.trim() === '' && eventLines.length) {
+      const data = eventLines.join('\n').trim()
+      eventLines = []
+
+      if (data && data !== '[DONE]') {
+        try {
+          messages.push(JSON.parse(data))
+        } catch (error) {
+          messages.push({ raw: data })
+        }
+      }
+    }
+  }
+
+  if (eventLines.length) {
+    const data = eventLines.join('\n').trim()
+    if (data && data !== '[DONE]') {
+      try {
+        messages.push(JSON.parse(data))
+      } catch (error) {
+        messages.push({ raw: data })
+      }
+    }
+  }
+
+  return messages.find(message => message?.id === targetId) || messages.at(-1) || null
+}
+
+function mcpErrorMessage(response) {
+  if (!response?.error) return ''
+  const error = response.error
+  return error.message || JSON.stringify(error)
+}
+
+async function postHighLevelMcpMessage(config, message, sessionId = null) {
+  if (!config?.api_token) {
+    throw new Error('HighLevel no está configurado en Ristak')
+  }
+
+  const response = await fetch(HIGHLEVEL_MCP_SERVER_URL, {
+    method: 'POST',
+    signal: AbortSignal.timeout(HIGHLEVEL_MCP_TIMEOUT_MS),
+    headers: {
+      Authorization: `Bearer ${config.api_token}`,
+      Accept: 'application/json, text/event-stream',
+      'Content-Type': 'application/json',
+      'MCP-Protocol-Version': MCP_PROTOCOL_VERSION,
+      ...(sessionId ? { 'MCP-Session-Id': sessionId } : {})
+    },
+    body: JSON.stringify(message)
+  })
+
+  const text = await response.text()
+  const parsed = parseMcpResponseText(text, message?.id)
+  const nextSessionId = response.headers.get('mcp-session-id') || response.headers.get('Mcp-Session-Id') || sessionId
+
+  if (!response.ok) {
+    const details = parsed?.error ? mcpErrorMessage(parsed) : text.slice(0, 500)
+    throw new Error(`HighLevel MCP Error (${response.status}): ${details || response.statusText}`)
+  }
+
+  return {
+    message: parsed,
+    sessionId: nextSessionId
+  }
+}
+
+async function initializeHighLevelMcp(config) {
+  const id = `hl-init-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const initialized = await postHighLevelMcpMessage(config, {
+    jsonrpc: '2.0',
+    id,
+    method: 'initialize',
+    params: {
+      protocolVersion: MCP_PROTOCOL_VERSION,
+      capabilities: {},
+      clientInfo: {
+        name: 'ristak-mcp-proxy',
+        version: '1.0.0'
+      }
+    }
+  })
+
+  if (initialized.message?.error) {
+    throw new Error(`HighLevel MCP initialize falló: ${mcpErrorMessage(initialized.message)}`)
+  }
+
+  if (initialized.sessionId) {
+    try {
+      await postHighLevelMcpMessage(config, {
+        jsonrpc: '2.0',
+        method: 'notifications/initialized',
+        params: {}
+      }, initialized.sessionId)
+    } catch (error) {
+      logger.warn('HighLevel MCP initialized notification falló:', error.message)
+    }
+  }
+
+  return initialized.sessionId || null
+}
+
+async function requestHighLevelMcp(method, params = {}) {
+  const config = await getHighLevelConfig()
+  if (!config?.api_token) {
+    throw new Error('HighLevel no está configurado en Ristak')
+  }
+
+  let sessionId = null
+
+  try {
+    sessionId = await initializeHighLevelMcp(config)
+  } catch (error) {
+    logger.warn('No se pudo inicializar HighLevel MCP; se intentará request directo:', error.message)
+  }
+
+  const id = `hl-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const response = await postHighLevelMcpMessage(config, {
+    jsonrpc: '2.0',
+    id,
+    method,
+    params
+  }, sessionId)
+
+  if (response.message?.error) {
+    throw new Error(`HighLevel MCP ${method} falló: ${mcpErrorMessage(response.message)}`)
+  }
+
+  return response.message?.result || {}
+}
+
+function toProxiedHighLevelTool(tool) {
+  const originalName = String(tool?.name || '').trim()
+  if (!originalName) return null
+
+  return {
+    ...sanitizeForExternal(tool),
+    name: `${GHL_MCP_TOOL_PREFIX}${originalName}`,
+    title: tool.title ? `GoHighLevel: ${tool.title}` : `GoHighLevel: ${originalName}`,
+    description: [
+      `Proxied official GoHighLevel MCP tool. Original tool: ${originalName}.`,
+      tool.description || ''
+    ].filter(Boolean).join(' '),
+    annotations: {
+      ...(tool.annotations || {}),
+      openWorldHint: true
+    }
+  }
+}
+
+async function listHighLevelMcpTools() {
+  try {
+    const config = await getHighLevelConfig()
+    if (!config?.api_token) return []
+
+    const result = await requestHighLevelMcp('tools/list', {})
+    return (Array.isArray(result.tools) ? result.tools : [])
+      .map(toProxiedHighLevelTool)
+      .filter(Boolean)
+  } catch (error) {
+    logger.warn('No se pudieron listar tools del MCP oficial de HighLevel:', error.message)
+    return []
+  }
+}
+
+function normalizeToolResult(result) {
+  const sanitized = sanitizeForExternal(result)
+
+  if (sanitized && typeof sanitized === 'object' && (Array.isArray(sanitized.content) || sanitized.structuredContent)) {
+    return sanitized
+  }
+
+  return textResult(sanitized || {})
+}
+
+async function callHighLevelMcpTool(toolName, args = {}) {
+  const originalName = String(toolName || '').replace(new RegExp(`^${GHL_MCP_TOOL_PREFIX}`), '').trim()
+  if (!originalName) throw new Error('toolName requerido')
+
+  const result = await requestHighLevelMcp('tools/call', {
+    name: originalName,
+    arguments: args && typeof args === 'object' ? args : {}
+  })
+
+  return normalizeToolResult(result)
+}
+
+async function getCombinedToolDefinitions() {
+  const highLevelTools = await listHighLevelMcpTools()
+  return [...toolDefinitions, ...highLevelTools]
+}
+
 async function callTool(name, args) {
+  if (String(name || '').startsWith(GHL_MCP_TOOL_PREFIX)) {
+    return callHighLevelMcpTool(name, args)
+  }
+
   if (name === 'get_summary') return textResult(await getSummary(args))
   if (name === 'search_contacts') return textResult(await searchContacts(args))
   if (name === 'get_contact') return textResult(await getContact(args))
   if (name === 'list_transactions') return textResult(await listTransactions(args))
-  if (name === 'list_data_tables') return textResult(listDataTables())
+  if (name === 'list_data_tables') return textResult(await listDataTables())
   if (name === 'query_data_table') return textResult(await queryDataTable(args))
   if (name === 'get_meta_ads_summary') return textResult(await getMetaAdsSummary(args))
   if (name === 'ghl_search_contacts') return textResult(await ghlSearchContacts(args))
@@ -958,6 +1273,7 @@ async function callTool(name, args) {
   if (name === 'ghl_record_offline_payment') return textResult(await ghlRecordOfflinePayment(args))
   if (name === 'ghl_create_installment_plan') return textResult(await ghlCreateInstallmentPlan(args))
   if (name === 'ghl_api_request') return textResult(await ghlApiRequest(args))
+  if (name === 'ghl_mcp_call_tool') return callHighLevelMcpTool(args?.toolName, args?.arguments || {})
   throw new Error(`Tool no soportada: ${name}`)
 }
 
@@ -974,7 +1290,7 @@ async function handleMessage(message) {
 
   if (method === 'initialize') {
     return jsonRpcResult(id, {
-      protocolVersion: '2025-06-18',
+      protocolVersion: MCP_PROTOCOL_VERSION,
       capabilities: {
         tools: {}
       },
@@ -988,7 +1304,7 @@ async function handleMessage(message) {
 
   if (method === 'tools/list') {
     return jsonRpcResult(id, {
-      tools: toolDefinitions
+      tools: await getCombinedToolDefinitions()
     })
   }
 
@@ -1003,11 +1319,13 @@ async function handleMessage(message) {
   return jsonRpcError(id, -32601, `Método no soportado: ${method}`)
 }
 
-router.get('/', requireMcpAuth, (req, res) => {
+router.get('/', requireMcpAuth, async (req, res) => {
+  const tools = await getCombinedToolDefinitions()
+
   res.json({
     name: 'ristak',
-    protocolVersion: '2025-06-18',
-    tools: toolDefinitions.map(tool => tool.name)
+    protocolVersion: MCP_PROTOCOL_VERSION,
+    tools: tools.map(tool => tool.name)
   })
 })
 
