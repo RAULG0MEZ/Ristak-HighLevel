@@ -11,6 +11,7 @@ import {
   ChevronRight
 } from 'lucide-react'
 import { useTableConfig } from '@/hooks'
+import { searchTextIncludes } from '@/utils/searchText'
 import { TabList } from '../TabList'
 import styles from './Table.module.css'
 
@@ -325,7 +326,7 @@ export function Table<T extends Record<string, any>>({
     if (searchTerm) {
       filtered = filtered.filter(item =>
         Object.values(item).some(value =>
-          String(value).toLowerCase().includes(searchTerm.toLowerCase())
+          searchTextIncludes(value, searchTerm)
         )
       )
     }

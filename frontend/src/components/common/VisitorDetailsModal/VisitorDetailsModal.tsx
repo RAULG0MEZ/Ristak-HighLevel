@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { Modal, Icon, Badge, type BadgeVariant } from '@/components/common'
 import { formatUrlParameter } from '@/utils/format'
 import { CONTACT_STAGE_BADGE_VARIANTS, getContactStageBadge } from '@/utils/contactStageBadge'
+import { someSearchTextIncludes } from '@/utils/searchText'
 import { useLabels } from '@/contexts/LabelsContext'
 import { useTimezone } from '@/contexts/TimezoneContext'
 import styles from './VisitorDetailsModal.module.css'
@@ -134,14 +135,15 @@ export function VisitorDetailsModal({
   const filteredData = useMemo(() => {
     if (!searchQuery) return normalizedData
 
-    const query = searchQuery.toLowerCase()
     return normalizedData.filter(visitor =>
-      visitor.contact?.name?.toLowerCase().includes(query) ||
-      visitor.contact?.email?.toLowerCase().includes(query) ||
-      visitor.contact?.phone?.toLowerCase().includes(query) ||
-      visitor.visitorId?.toLowerCase().includes(query) ||
-      visitor.utmSource?.toLowerCase().includes(query) ||
-      visitor.utmCampaign?.toLowerCase().includes(query)
+      someSearchTextIncludes([
+        visitor.contact?.name,
+        visitor.contact?.email,
+        visitor.contact?.phone,
+        visitor.visitorId,
+        visitor.utmSource,
+        visitor.utmCampaign
+      ], searchQuery)
     )
   }, [normalizedData, searchQuery])
 

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { AdHierarchyMenu } from './AdHierarchyMenu'
 import { HelpTooltip } from '../HelpTooltip'
+import { searchTextIncludes } from '@/utils/searchText'
 
 // Estructura del árbol de filtros con todas las categorías disponibles
 interface FilterNode {
@@ -358,9 +359,8 @@ export function TreeFilter({
     if (!node.children) return []
     if (!searchTerm) return node.children
 
-    const searchLower = searchTerm.toLowerCase()
     return node.children.filter(child =>
-      child.label.toLowerCase().includes(searchLower)
+      searchTextIncludes(child.label, searchTerm)
     )
   }
 
@@ -368,14 +368,13 @@ export function TreeFilter({
   const getGlobalSearchResults = () => {
     if (!searchTerm) return []
 
-    const searchLower = searchTerm.toLowerCase()
     const results: { category: FilterNode; items: FilterNode[] }[] = []
 
     filterTree.forEach(category => {
       if (!category.children) return
 
       const matchingItems = category.children.filter(item =>
-        item.label.toLowerCase().includes(searchLower)
+        searchTextIncludes(item.label, searchTerm)
       )
 
       if (matchingItems.length > 0) {

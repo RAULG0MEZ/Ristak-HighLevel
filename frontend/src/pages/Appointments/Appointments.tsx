@@ -9,6 +9,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useAppConfig } from '@/hooks';
 import { calendarsService, type Calendar, type CalendarEvent, type AppointmentStats, type BlockedSlot } from '@/services/calendarsService';
 import { formatTime12h } from '@/utils/format'
+import { searchTextIncludes } from '@/utils/searchText'
 import { useTimezone } from '@/contexts/TimezoneContext';
 import styles from './Appointments.module.css';
 
@@ -555,7 +556,6 @@ export const Appointments: React.FC = () => {
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
 
-    const query = searchQuery.toLowerCase().trim();
     const allEvents = [...events, ...upcomingEvents];
 
     // Eliminar duplicados por ID
@@ -566,23 +566,23 @@ export const Appointments: React.FC = () => {
     return uniqueEvents
       .filter((event) => {
         // Buscar por título (nombre del contacto)
-        if (event.title?.toLowerCase().includes(query)) return true;
+        if (searchTextIncludes(event.title, searchQuery)) return true;
 
         // Buscar por estado de cita
-        if (event.appointmentStatus?.toLowerCase().includes(query)) return true;
-        if (getStatusLabel(event.appointmentStatus).toLowerCase().includes(query)) return true;
+        if (searchTextIncludes(event.appointmentStatus, searchQuery)) return true;
+        if (searchTextIncludes(getStatusLabel(event.appointmentStatus), searchQuery)) return true;
 
         // Buscar por fecha (formato: "15 enero", "15/01", "enero 2025", etc)
         const eventDate = new Date(event.startTime);
-        const dateStr = formatLocalDateShort(eventDate).toLowerCase();
-        const monthName = MONTH_NAMES[eventDate.getMonth()].toLowerCase();
+        const dateStr = formatLocalDateShort(eventDate);
+        const monthName = MONTH_NAMES[eventDate.getMonth()];
         const dayMonth = `${eventDate.getDate()} ${monthName}`;
         const yearStr = eventDate.getFullYear().toString();
 
-        if (dateStr.includes(query)) return true;
-        if (monthName.includes(query)) return true;
-        if (dayMonth.includes(query)) return true;
-        if (yearStr.includes(query)) return true;
+        if (searchTextIncludes(dateStr, searchQuery)) return true;
+        if (searchTextIncludes(monthName, searchQuery)) return true;
+        if (searchTextIncludes(dayMonth, searchQuery)) return true;
+        if (searchTextIncludes(yearStr, searchQuery)) return true;
 
         return false;
       })

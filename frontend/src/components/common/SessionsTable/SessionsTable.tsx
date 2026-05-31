@@ -5,6 +5,7 @@ import { RefreshCw, Maximize2, Minimize2, Search, Edit, Trash2, X, Check } from 
 import { trackingService, TrackingSession, SessionsResponse } from '@/services/trackingService'
 import { useTimezone } from '@/contexts/TimezoneContext'
 import { useNotification } from '@/contexts/NotificationContext'
+import { searchTextIncludes, someSearchTextIncludes } from '@/utils/searchText'
 import styles from './SessionsTable.module.css'
 
 interface SessionsTableProps {
@@ -121,34 +122,32 @@ export const SessionsTable: React.FC<SessionsTableProps> = ({
   const searchFilteredSessions = useMemo(() => {
     if (!searchQuery.trim()) return sessions
 
-    const query = searchQuery.toLowerCase()
-
     return sessions.filter((session: any) => {
       // Si busca en columna específica
       if (searchColumn !== 'all') {
         const value = session[searchColumn]
-        return value ? String(value).toLowerCase().includes(query) : false
+        return searchTextIncludes(value, searchQuery)
       }
 
       // Si busca en todas las columnas
-      return (
-        session.session_id?.toLowerCase().includes(query) ||
-        session.visitor_id?.toLowerCase().includes(query) ||
-        session.contact_id?.toLowerCase().includes(query) ||
-        session.full_name?.toLowerCase().includes(query) ||
-        session.email?.toLowerCase().includes(query) ||
-        session.utm_source?.toLowerCase().includes(query) ||
-        session.utm_medium?.toLowerCase().includes(query) ||
-        session.utm_campaign?.toLowerCase().includes(query) ||
-        session.page_url?.toLowerCase().includes(query) ||
-        session.referrer_url?.toLowerCase().includes(query) ||
-        session.ip?.toLowerCase().includes(query) ||
-        session.device_type?.toLowerCase().includes(query) ||
-        session.browser?.toLowerCase().includes(query) ||
-        session.os?.toLowerCase().includes(query) ||
-        session.geo_country?.toLowerCase().includes(query) ||
-        session.geo_city?.toLowerCase().includes(query)
-      )
+      return someSearchTextIncludes([
+        session.session_id,
+        session.visitor_id,
+        session.contact_id,
+        session.full_name,
+        session.email,
+        session.utm_source,
+        session.utm_medium,
+        session.utm_campaign,
+        session.page_url,
+        session.referrer_url,
+        session.ip,
+        session.device_type,
+        session.browser,
+        session.os,
+        session.geo_country,
+        session.geo_city
+      ], searchQuery)
     })
   }, [sessions, searchQuery, searchColumn])
 

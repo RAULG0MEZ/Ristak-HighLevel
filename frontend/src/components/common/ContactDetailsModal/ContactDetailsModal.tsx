@@ -3,6 +3,7 @@ import { Modal, Icon, Badge, type BadgeVariant } from '@/components/common'
 import { ContactJourney } from '@/components/common/ContactJourney'
 import { normalizeTrafficSource } from '@/utils/trafficSourceNormalizer'
 import { CONTACT_STAGE_BADGE_VARIANTS, getContactStageBadge } from '@/utils/contactStageBadge'
+import { someSearchTextIncludes } from '@/utils/searchText'
 import { useLabels } from '@/contexts/LabelsContext'
 import { useTimezone } from '@/contexts/TimezoneContext'
 import styles from './ContactDetailsModal.module.css'
@@ -124,12 +125,8 @@ export function ContactDetailsModal({
   const filteredData = useMemo(() => {
     if (!searchQuery) return data
 
-    const query = searchQuery.toLowerCase()
     return data.filter(contact =>
-      contact.name?.toLowerCase().includes(query) ||
-      contact.email?.toLowerCase().includes(query) ||
-      contact.phone?.toLowerCase().includes(query) ||
-      contact.id?.toLowerCase().includes(query)
+      someSearchTextIncludes([contact.name, contact.email, contact.phone, contact.id], searchQuery)
     )
   }, [data, searchQuery])
 

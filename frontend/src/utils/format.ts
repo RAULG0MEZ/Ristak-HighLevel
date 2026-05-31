@@ -1,6 +1,8 @@
 const MONTHS_SHORT = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sept', 'oct', 'nov', 'dic'] as const
 const MONTHS_LONG = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'] as const
 
+export { normalizeSearchText, searchTextIncludes, someSearchTextIncludes } from './searchText'
+
 const capitalize = (value: string): string => {
   if (!value) return ''
   return value.charAt(0).toUpperCase() + value.slice(1)
