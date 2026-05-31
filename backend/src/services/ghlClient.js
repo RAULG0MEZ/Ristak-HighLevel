@@ -538,12 +538,12 @@ class GHLClient {
       altType: 'location'
     }
 
-    logger.info(`Activando invoice schedule: ${scheduleId} (Version ${GHL_INVOICE_SCHEDULE_AUTOPAY_API_VERSION})`)
+    logger.info(`Activando invoice schedule: ${scheduleId} (Version ${GHL_INVOICE_SCHEDULE_API_VERSION})`)
 
     return this.request(`/invoices/schedule/${scheduleId}/schedule`, {
       method: 'POST',
       body,
-      version: GHL_INVOICE_SCHEDULE_AUTOPAY_API_VERSION
+      version: GHL_INVOICE_SCHEDULE_API_VERSION
     })
   }
 

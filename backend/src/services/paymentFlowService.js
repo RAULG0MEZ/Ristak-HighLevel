@@ -723,7 +723,7 @@ function resolveAutoPaymentType(paymentMethod = {}) {
   const hasCardFingerprint = Boolean(paymentMethod.cardId || paymentMethod.brand || paymentMethod.last4 || String(paymentMethod.paymentMethodId || '').startsWith('pm_'))
 
   if (['card', 'credit_card', 'creditcard'].includes(rawType) || hasCardFingerprint) {
-    return 'card'
+    return 'customer_card'
   }
 
   const typeMap = {
@@ -738,10 +738,10 @@ function resolveAutoPaymentType(paymentMethod = {}) {
     becs_direct_debit: 'becs_debit'
   }
 
-  return typeMap[rawType] || 'card'
+  return typeMap[rawType] || 'customer_card'
 }
 
-function buildAutoPayment(paymentMethod) {
+function buildAutoPayment(paymentMethod, options = {}) {
   const type = resolveAutoPaymentType(paymentMethod)
   const autoPayment = {
     enable: true,
@@ -750,7 +750,15 @@ function buildAutoPayment(paymentMethod) {
     customerId: paymentMethod.customerId,
   }
 
-  if (type === 'card') {
+  if (options.amount !== undefined) {
+    autoPayment.amount = normalizeAmount(options.amount)
+  }
+
+  if (options.currency) {
+    autoPayment.currency = options.currency
+  }
+
+  if (type === 'customer_card') {
     autoPayment.card = {
       brand: paymentMethod.brand || 'card',
       last4: paymentMethod.last4 || '****'
@@ -837,14 +845,18 @@ async function scheduleAutomaticInstallmentsForFlow(flow, paymentMethod, existin
 
   const ghlClient = existingClient || await getGHLClient()
   const context = await getInvoiceSendContext()
-  const autoPayment = buildAutoPayment(paymentMethod)
   const scheduled = []
+  const resolvedAutoPaymentType = resolveAutoPaymentType(paymentMethod)
 
   logger.info(`Programando ${installments.length} parcialidad(es) automáticas para flujo ${flow.id}`)
-  logger.info(`Autopago GHL para flujo ${flow.id}: customer=${maskIdentifier(paymentMethod.customerId)}, method=${maskIdentifier(paymentMethod.paymentMethodId)}, type=${autoPayment.type}, rawType=${paymentMethod.type || 'n/a'}, card=${paymentMethod.brand || 'card'} ${paymentMethod.last4 || '****'}, live=${context.liveMode}`)
+  logger.info(`Autopago GHL para flujo ${flow.id}: customer=${maskIdentifier(paymentMethod.customerId)}, method=${maskIdentifier(paymentMethod.paymentMethodId)}, type=${resolvedAutoPaymentType}, rawType=${paymentMethod.type || 'n/a'}, card=${paymentMethod.brand || 'card'} ${paymentMethod.last4 || '****'}, live=${context.liveMode}`)
 
   for (const installment of installments) {
     let scheduleId = installment.ghl_schedule_id
+    const autoPayment = buildAutoPayment(paymentMethod, {
+      amount: installment.amount,
+      currency: flow.currency || CURRENCY_DEFAULT
+    })
 
     try {
       if (!scheduleId) {
@@ -865,11 +877,6 @@ async function scheduleAutomaticInstallmentsForFlow(flow, paymentMethod, existin
         )
         logger.info(`Schedule GHL creado para flujo ${flow.id}, parcialidad ${installment.sequence}: ${scheduleId}`)
       }
-
-      await ghlClient.manageInvoiceScheduleAutoPayment(scheduleId, {
-        liveMode: context.liveMode,
-        autoPayment
-      })
 
       await ghlClient.scheduleInvoiceSchedule(scheduleId, {
         liveMode: context.liveMode,
