@@ -1,11 +1,14 @@
 import { db } from '../config/database.js'
 import { logger } from '../utils/logger.js'
+import {
+  buildContactSearchClause,
+  containsPattern,
+  textFoldExpression
+} from '../utils/searchText.js'
 
 const CATEGORY_LIMIT = 6
 
 const safeText = (value) => (value === null || value === undefined ? '' : String(value))
-const normalizedPhoneExpression = (column) =>
-  `REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(${column}, ''), ' ', ''), '-', ''), '(', ''), ')', ''), '+', '')`
 
 const formatDate = (value) => {
   if (!value) return ''
@@ -65,9 +68,12 @@ export const globalSearch = async (req, res) => {
     }
 
     const like = `%${rawQuery}%`
-    const lowerLike = `%${rawQuery.toLowerCase()}%`
-    const digits = rawQuery.replace(/\D/g, '')
-    const phoneLike = digits ? `%${digits}%` : like
+    const foldedLike = containsPattern(rawQuery) || '__no_text_match__'
+    const contactSearchClause = buildContactSearchClause('c', rawQuery, {
+      includeSource: true,
+      includeAdName: true
+    })
+    const basicContactSearchClause = buildContactSearchClause('c', rawQuery)
 
     const [
       contacts,
@@ -91,17 +97,10 @@ export const globalSearch = async (req, res) => {
           c.purchases_count,
           (SELECT COUNT(*) > 0 FROM appointments WHERE contact_id = c.id) AS has_appointments
         FROM contacts c
-        WHERE
-          LOWER(COALESCE(c.full_name, '')) LIKE ? OR
-          LOWER(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')) LIKE ? OR
-          LOWER(COALESCE(c.email, '')) LIKE ? OR
-          COALESCE(c.phone, '') LIKE ? OR
-          ${normalizedPhoneExpression('c.phone')} LIKE ? OR
-          LOWER(COALESCE(c.source, '')) LIKE ? OR
-          LOWER(COALESCE(c.attribution_ad_name, '')) LIKE ?
+        WHERE ${contactSearchClause.condition}
         ORDER BY c.created_at DESC
         LIMIT ?`,
-        [lowerLike, lowerLike, lowerLike, like, phoneLike, lowerLike, lowerLike, CATEGORY_LIMIT]
+        [...contactSearchClause.params, CATEGORY_LIMIT]
       )),
       runCategoryQuery('citas', () => db.all(
         `SELECT
@@ -121,18 +120,14 @@ export const globalSearch = async (req, res) => {
         FROM appointments a
         LEFT JOIN contacts c ON c.id = a.contact_id
         WHERE
-          LOWER(COALESCE(a.title, '')) LIKE ? OR
-          LOWER(COALESCE(a.status, '')) LIKE ? OR
-          LOWER(COALESCE(a.appointment_status, '')) LIKE ? OR
-          LOWER(COALESCE(c.full_name, '')) LIKE ? OR
-          LOWER(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')) LIKE ? OR
-          LOWER(COALESCE(c.email, '')) LIKE ? OR
-          COALESCE(c.phone, '') LIKE ? OR
-          ${normalizedPhoneExpression('c.phone')} LIKE ? OR
+          ${textFoldExpression('a.title')} LIKE ? OR
+          ${textFoldExpression('a.status')} LIKE ? OR
+          ${textFoldExpression('a.appointment_status')} LIKE ? OR
+          ${basicContactSearchClause.condition} OR
           CAST(a.start_time AS TEXT) LIKE ?
         ORDER BY a.start_time DESC
         LIMIT ?`,
-        [lowerLike, lowerLike, lowerLike, lowerLike, lowerLike, lowerLike, like, phoneLike, like, CATEGORY_LIMIT]
+        [foldedLike, foldedLike, foldedLike, ...basicContactSearchClause.params, like, CATEGORY_LIMIT]
       )),
       runCategoryQuery('pagos', () => db.all(
         `SELECT
@@ -153,20 +148,16 @@ export const globalSearch = async (req, res) => {
         FROM payments p
         LEFT JOIN contacts c ON c.id = p.contact_id
         WHERE
-          LOWER(COALESCE(c.full_name, '')) LIKE ? OR
-          LOWER(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')) LIKE ? OR
-          LOWER(COALESCE(c.email, '')) LIKE ? OR
-          COALESCE(c.phone, '') LIKE ? OR
-          ${normalizedPhoneExpression('c.phone')} LIKE ? OR
-          LOWER(COALESCE(p.status, '')) LIKE ? OR
-          LOWER(COALESCE(p.payment_method, '')) LIKE ? OR
-          LOWER(COALESCE(p.reference, '')) LIKE ? OR
-          LOWER(COALESCE(p.description, '')) LIKE ? OR
+          ${basicContactSearchClause.condition} OR
+          ${textFoldExpression('p.status')} LIKE ? OR
+          ${textFoldExpression('p.payment_method')} LIKE ? OR
+          ${textFoldExpression('p.reference')} LIKE ? OR
+          ${textFoldExpression('p.description')} LIKE ? OR
           CAST(p.amount AS TEXT) LIKE ? OR
           CAST(p.date AS TEXT) LIKE ?
         ORDER BY p.date DESC
         LIMIT ?`,
-        [lowerLike, lowerLike, lowerLike, like, phoneLike, lowerLike, lowerLike, lowerLike, lowerLike, like, like, CATEGORY_LIMIT]
+        [...basicContactSearchClause.params, foldedLike, foldedLike, foldedLike, foldedLike, like, like, CATEGORY_LIMIT]
       )),
       runCategoryQuery('campañas', () => db.all(
         `SELECT
@@ -177,12 +168,12 @@ export const globalSearch = async (req, res) => {
           COALESCE(SUM(clicks), 0) AS clicks
         FROM meta_ads
         WHERE
-          LOWER(COALESCE(campaign_name, '')) LIKE ? OR
-          LOWER(COALESCE(campaign_id, '')) LIKE ?
+          ${textFoldExpression('campaign_name')} LIKE ? OR
+          ${textFoldExpression('campaign_id')} LIKE ?
         GROUP BY campaign_id
         ORDER BY MAX(date) DESC
         LIMIT ?`,
-        [lowerLike, lowerLike, CATEGORY_LIMIT]
+        [foldedLike, foldedLike, CATEGORY_LIMIT]
       )),
       runCategoryQuery('conjuntos', () => db.all(
         `SELECT
@@ -195,12 +186,12 @@ export const globalSearch = async (req, res) => {
           COALESCE(SUM(clicks), 0) AS clicks
         FROM meta_ads
         WHERE
-          LOWER(COALESCE(adset_name, '')) LIKE ? OR
-          LOWER(COALESCE(adset_id, '')) LIKE ?
+          ${textFoldExpression('adset_name')} LIKE ? OR
+          ${textFoldExpression('adset_id')} LIKE ?
         GROUP BY campaign_id, adset_id
         ORDER BY MAX(date) DESC
         LIMIT ?`,
-        [lowerLike, lowerLike, CATEGORY_LIMIT]
+        [foldedLike, foldedLike, CATEGORY_LIMIT]
       )),
       runCategoryQuery('anuncios', () => db.all(
         `SELECT
@@ -215,12 +206,12 @@ export const globalSearch = async (req, res) => {
           COALESCE(SUM(clicks), 0) AS clicks
         FROM meta_ads
         WHERE
-          LOWER(COALESCE(ad_name, '')) LIKE ? OR
-          LOWER(COALESCE(ad_id, '')) LIKE ?
+          ${textFoldExpression('ad_name')} LIKE ? OR
+          ${textFoldExpression('ad_id')} LIKE ?
         GROUP BY campaign_id, adset_id, ad_id
         ORDER BY MAX(date) DESC
         LIMIT ?`,
-        [lowerLike, lowerLike, CATEGORY_LIMIT]
+        [foldedLike, foldedLike, CATEGORY_LIMIT]
       ))
     ])
 
