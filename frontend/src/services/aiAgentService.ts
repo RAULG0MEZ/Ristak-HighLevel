@@ -1,6 +1,7 @@
 export type AIAgentRole = 'user' | 'assistant'
 export type AIAgentResponseStyle = 'direct' | 'balanced' | 'advisor'
 export type AIAgentRecommendationMode = 'on_request' | 'when_useful' | 'proactive'
+export type AIAgentAttachmentKind = 'image' | 'video' | 'pdf' | 'text' | 'file'
 export type AIAgentBusinessContextField =
   | 'businessContext'
   | 'marketContext'
@@ -9,10 +10,22 @@ export type AIAgentBusinessContextField =
   | 'competitorsContext'
   | 'brandVoice'
 
+export interface AIAgentAttachment {
+  id: string
+  name: string
+  mimeType: string
+  size: number
+  kind: AIAgentAttachmentKind
+  dataUrl?: string
+  text?: string
+  thumbnailDataUrl?: string
+}
+
 export interface AIAgentMessage {
   id?: string
   role: AIAgentRole
   content: string
+  attachments?: AIAgentAttachment[]
   sources?: Array<{
     title: string
     url: string

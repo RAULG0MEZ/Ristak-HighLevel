@@ -135,11 +135,13 @@ export async function chat(req, res) {
 
     const messages = Array.isArray(req.body?.messages) ? req.body.messages : []
     const lastMessage = messages[messages.length - 1]
+    const hasMessageText = Boolean(lastMessage?.content && typeof lastMessage.content === 'string')
+    const hasAttachments = Array.isArray(lastMessage?.attachments) && lastMessage.attachments.length > 0
 
-    if (!lastMessage?.content || typeof lastMessage.content !== 'string') {
+    if (!hasMessageText && !hasAttachments) {
       return res.status(400).json({
         success: false,
-        error: 'Envía un mensaje para el agente'
+        error: 'Envía un mensaje o archivo para el agente'
       })
     }
 

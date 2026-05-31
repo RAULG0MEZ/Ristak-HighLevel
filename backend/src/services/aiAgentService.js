@@ -44,6 +44,9 @@ const CLARIFICATION_OPTION_LIMIT = 5
 const PRODUCT_LOOKUP_LIMIT = 50
 const PRODUCT_PRICE_OPTION_LIMIT = 5
 const MAX_TOOL_ROUNDS = 6
+const MAX_CHAT_ATTACHMENTS = 8
+const MAX_ATTACHMENT_DATA_CHARS = 12_000_000
+const MAX_ATTACHMENT_TEXT_CHARS = 18_000
 const DEFAULT_PAYMENT_CURRENCY = 'MXN'
 const DEFAULT_PAYMENT_TIMEZONE = 'America/Mexico_City'
 const DEFAULT_AI_RESPONSE_STYLE = 'direct'
@@ -1079,6 +1082,182 @@ function getMessageText(message) {
   }
 
   return String(message.content || '')
+}
+
+function normalizeAttachmentKind(value) {
+  const kind = normalizeText(value)
+  return ['image', 'video', 'pdf', 'text', 'file'].includes(kind) ? kind : 'file'
+}
+
+function isDataUrl(value) {
+  return typeof value === 'string' &&
+    value.startsWith('data:') &&
+    value.includes(';base64,') &&
+    value.length <= MAX_ATTACHMENT_DATA_CHARS
+}
+
+function normalizeChatAttachment(attachment) {
+  if (!attachment || typeof attachment !== 'object') return null
+
+  const name = cleanText(attachment.name || 'archivo', 180)
+  const mimeType = cleanText(attachment.mimeType || attachment.type || 'application/octet-stream', 120)
+  const size = Number(attachment.size || 0)
+  const kind = normalizeAttachmentKind(attachment.kind || mimeType.split('/')[0])
+  const normalized = {
+    id: cleanText(attachment.id || name, 120),
+    name,
+    mimeType,
+    size: Number.isFinite(size) && size > 0 ? size : 0,
+    kind
+  }
+
+  if (isDataUrl(attachment.dataUrl)) {
+    normalized.dataUrl = attachment.dataUrl
+  }
+
+  if (isDataUrl(attachment.thumbnailDataUrl)) {
+    normalized.thumbnailDataUrl = attachment.thumbnailDataUrl
+  }
+
+  if (typeof attachment.text === 'string' && attachment.text.trim()) {
+    normalized.text = attachment.text.slice(0, MAX_ATTACHMENT_TEXT_CHARS)
+  }
+
+  return normalized
+}
+
+function getMessageAttachments(message) {
+  if (!Array.isArray(message?.attachments)) return []
+
+  return message.attachments
+    .slice(0, MAX_CHAT_ATTACHMENTS)
+    .map(normalizeChatAttachment)
+    .filter(Boolean)
+}
+
+function getLatestUserMessageObject(messages) {
+  if (!Array.isArray(messages)) return null
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role !== 'assistant') return messages[index]
+  }
+
+  return null
+}
+
+function buildAttachmentSummary(attachment, includeText = false) {
+  const base = [
+    `- ${attachment.name}`,
+    `tipo=${attachment.mimeType || attachment.kind}`,
+    attachment.size ? `tamano=${attachment.size} bytes` : '',
+    attachment.kind === 'video' && attachment.thumbnailDataUrl ? 'miniatura_visual=disponible' : '',
+    attachment.dataUrl ? 'contenido_binario=disponible' : '',
+    attachment.text ? 'texto_extraido=disponible' : ''
+  ].filter(Boolean).join('; ')
+
+  if (!includeText || !attachment.text) return base
+  return `${base}\n  Texto extraido:\n${String(attachment.text).slice(0, MAX_ATTACHMENT_TEXT_CHARS)}`
+}
+
+function buildAttachmentsText(attachments, includeText = false) {
+  if (!attachments.length) return ''
+
+  return [
+    'Archivos adjuntos del usuario:',
+    ...attachments.map((attachment) => buildAttachmentSummary(attachment, includeText))
+  ].join('\n')
+}
+
+function attachmentToInputParts(attachment) {
+  const parts = []
+  const summary = buildAttachmentSummary(attachment, false)
+
+  if (attachment.kind === 'image' && attachment.dataUrl) {
+    parts.push({
+      type: 'input_image',
+      image_url: attachment.dataUrl,
+      detail: 'auto'
+    })
+  } else if (attachment.kind === 'video' && attachment.thumbnailDataUrl) {
+    parts.push({
+      type: 'input_text',
+      text: `${summary}\nEste video se envio con una miniatura visual para analizar el encuadre/contenido visible.`
+    })
+    parts.push({
+      type: 'input_image',
+      image_url: attachment.thumbnailDataUrl,
+      detail: 'auto'
+    })
+  } else if (attachment.kind === 'text' && attachment.text) {
+    parts.push({
+      type: 'input_text',
+      text: `${summary}\nContenido del archivo ${attachment.name}:\n${String(attachment.text).slice(0, MAX_ATTACHMENT_TEXT_CHARS)}`
+    })
+  } else if (attachment.dataUrl) {
+    parts.push({
+      type: 'input_file',
+      filename: attachment.name,
+      file_data: attachment.dataUrl
+    })
+  } else {
+    parts.push({
+      type: 'input_text',
+      text: summary
+    })
+  }
+
+  return parts
+}
+
+function buildFinalResponseInput(inputText, messages) {
+  const latestUserMessage = getLatestUserMessageObject(messages)
+  const attachments = getMessageAttachments(latestUserMessage)
+
+  if (!attachments.length) return inputText
+
+  return [{
+    role: 'user',
+    content: [
+      {
+        type: 'input_text',
+        text: [
+          inputText,
+          '',
+          buildAttachmentsText(attachments, false),
+          '',
+          'Usa los archivos adjuntos para contestar el ultimo mensaje. Si un archivo viene como video con miniatura, analiza lo visible y aclara cualquier limite necesario sin inventar contenido fuera del frame.'
+        ].join('\n')
+      },
+      ...attachments.flatMap(attachmentToInputParts)
+    ]
+  }]
+}
+
+function hasAttachmentInputPayload(input) {
+  if (!Array.isArray(input)) return false
+
+  return input.some(item => Array.isArray(item?.content) && item.content.some(part =>
+    ['input_image', 'input_file'].includes(part?.type)
+  ))
+}
+
+function buildAttachmentFallbackInput(inputText, messages) {
+  const latestUserMessage = getLatestUserMessageObject(messages)
+  const attachments = getMessageAttachments(latestUserMessage)
+
+  if (!attachments.length) return inputText
+
+  return [
+    inputText,
+    '',
+    'No se pudo enviar todo el contenido binario al modelo en este intento. Responde con lo que si esta disponible en texto/metadata y pide un formato compatible si necesitas mas detalle.',
+    buildAttachmentsText(attachments, true)
+  ].join('\n')
+}
+
+function isAttachmentInputError(error) {
+  const message = normalizeText(error?.message || '')
+  return /(input_file|input_image|file_data|image_url|unsupported|archivo|mime|base64|invalid file|invalid image|too large|payload|contenido del archivo)/.test(message)
 }
 
 function findLatestUserMessageIndex(messages) {
@@ -3996,7 +4175,9 @@ function buildConversationText(messages) {
   return safeMessages
     .map((message) => {
       const role = message?.role === 'assistant' ? 'Agente' : 'Usuario'
-      return `${role}: ${cleanText(String(message?.content || ''), 1800)}`
+      const text = cleanText(String(message?.content || ''), 1800)
+      const attachmentsText = buildAttachmentsText(getMessageAttachments(message), false)
+      return `${role}: ${text}${attachmentsText ? `\n${attachmentsText}` : ''}`
     })
     .filter(Boolean)
     .join('\n\n')
@@ -4324,6 +4505,7 @@ function buildSpecialistAgentInstructions(agentConfig, latestUserMessage, route)
     buildResponseBehaviorInstructions(agentConfig, latestUserMessage),
     buildSupervisorSpecialistInstructions(route),
     SOURCE_ROUTING_PROMPT,
+    'Si una herramienta de HighLevel, Meta o DB devuelve URLs de imagen, video o archivo, incluyelas en la respuesta como enlace Markdown o URL directa en linea propia para que el dashboard pueda previsualizarlas.',
     NON_NEGOTIABLE_SAFETY_PROMPT
   ].join('\n\n')
 }
@@ -5278,17 +5460,24 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
     'Contesta el último mensaje del usuario.'
   ].join('\n')
 
-  let response
-
-  try {
-    response = toolsRequireActionLoop
+  const responseInput = buildFinalResponseInput(input, messages)
+  const attachmentFallbackInput = buildAttachmentFallbackInput(input, messages)
+  const callAgentModel = async ({
+    inputValue,
+    instructionsValue = instructions,
+    toolsValue = agentTools,
+    includeValue = webSearchTools.length ? ['web_search_call.action.sources'] : [],
+    needsActionLoop = toolsRequireActionLoop,
+    maxOutputTokens = webSearchTools.length ? 2200 : 1800
+  }) => {
+    return needsActionLoop
       ? await callOpenAIResponseWithActionTools(apiKey, {
           model,
-          instructions,
-          input,
-          maxOutputTokens: webSearchTools.length ? 2200 : 1800,
-          tools: agentTools,
-          include: webSearchTools.length ? ['web_search_call.action.sources'] : [],
+          instructions: instructionsValue,
+          input: inputValue,
+          maxOutputTokens,
+          tools: toolsValue,
+          include: includeValue,
           highLevelConnection,
           runtimeContext,
           viewContext,
@@ -5296,12 +5485,36 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
         })
       : await callOpenAIResponse(apiKey, {
           model,
-          instructions,
-          input,
-          maxOutputTokens: webSearchTools.length ? 1800 : 1400,
-          tools: agentTools,
-          include: webSearchTools.length ? ['web_search_call.action.sources'] : []
+          instructions: instructionsValue,
+          input: inputValue,
+          maxOutputTokens,
+          tools: toolsValue,
+          include: includeValue
         })
+  }
+  const callAgentModelWithAttachmentFallback = async (options) => {
+    try {
+      return await callAgentModel(options)
+    } catch (error) {
+      if (hasAttachmentInputPayload(options.inputValue) && isAttachmentInputError(error)) {
+        logger.warn(`Reintentando agente sin binarios adjuntos: ${error.message}`)
+        return await callAgentModel({
+          ...options,
+          inputValue: attachmentFallbackInput
+        })
+      }
+
+      throw error
+    }
+  }
+
+  let response
+
+  try {
+    response = await callAgentModelWithAttachmentFallback({
+      inputValue: responseInput,
+      maxOutputTokens: webSearchTools.length ? 2200 : 1800
+    })
   } catch (error) {
     if (metaAdsOperationalIntent) {
       return {
@@ -5326,25 +5539,14 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
 
     if (!metaAdsTools.length && !webSearchTools.length) throw error
 
-    response = fallbackNeedsActionLoop
-      ? await callOpenAIResponseWithActionTools(apiKey, {
-          model,
-          instructions: fallbackInstructions,
-          input,
-          maxOutputTokens: 1800,
-          tools: fallbackTools,
-          highLevelConnection,
-          runtimeContext,
-          viewContext,
-          messages
-        })
-      : await callOpenAIResponse(apiKey, {
-          model,
-          instructions: fallbackInstructions,
-          input,
-          maxOutputTokens: 1400,
-          tools: fallbackTools
-        })
+    response = await callAgentModelWithAttachmentFallback({
+      inputValue: responseInput,
+      instructionsValue: fallbackInstructions,
+      toolsValue: fallbackTools,
+      includeValue: [],
+      needsActionLoop: fallbackNeedsActionLoop,
+      maxOutputTokens: fallbackNeedsActionLoop ? 1800 : 1400
+    })
   }
 
   const { text, data, sources, clarificationOptions } = response

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { ArrowUp, Bot, Eraser, KeyRound, MessageCircle, Mic, Pause, SendHorizonal, Sparkles, X } from 'lucide-react'
-import { aiAgentService, type AIAgentBusinessContextField, type AIAgentClarificationOption, type AIAgentConfigInput, type AIAgentConfigStatus, type AIAgentMessage, type AIAgentViewContext } from '@/services/aiAgentService'
+import { ArrowUp, Bot, Eraser, File as FileIcon, FileText, Image as ImageIcon, KeyRound, MessageCircle, Mic, Paperclip, Pause, SendHorizonal, Sparkles, Video as VideoIcon, X } from 'lucide-react'
+import { aiAgentService, type AIAgentAttachment, type AIAgentAttachmentKind, type AIAgentBusinessContextField, type AIAgentClarificationOption, type AIAgentConfigInput, type AIAgentConfigStatus, type AIAgentMessage, type AIAgentViewContext } from '@/services/aiAgentService'
 import styles from './AIAgentPanel.module.css'
 
 const AI_AGENT_FLOATING_OPEN_KEY = 'ristak.aiAgentFloating.open'
@@ -10,9 +10,43 @@ const VOICE_WAVE_BAR_COUNT = 128
 const VOICE_WAVE_MIN_HEIGHT = 4
 const VOICE_WAVE_MAX_HEIGHT = 30
 const DEFAULT_AI_MODEL = 'gpt-5.5'
+const MAX_ATTACHMENTS = 8
+const MAX_DIRECT_ATTACHMENT_BYTES = 8 * 1024 * 1024
+const MAX_ATTACHMENT_TOTAL_BYTES = 18 * 1024 * 1024
+const MAX_TEXT_ATTACHMENT_BYTES = 1.5 * 1024 * 1024
+const TEXT_ATTACHMENT_CHAR_LIMIT = 18000
+const FILE_INPUT_ACCEPT = [
+  'image/*',
+  'video/*',
+  'application/pdf',
+  'text/*',
+  '.csv',
+  '.json',
+  '.md',
+  '.txt',
+  '.log',
+  '.html',
+  '.xml',
+  '.js',
+  '.jsx',
+  '.ts',
+  '.tsx',
+  '.css',
+  '.py',
+  '.sql',
+  '.doc',
+  '.docx',
+  '.xls',
+  '.xlsx',
+  '.ppt',
+  '.pptx'
+].join(',')
 
 type VoiceCaptureState = 'idle' | 'recording' | 'finalizing'
 type VoiceEndAction = 'draft' | 'send'
+type AIAgentAttachmentDraft = AIAgentAttachment & {
+  previewUrl?: string
+}
 
 const suggestions = [
   'Dime que debería revisar hoy del negocio.',
@@ -141,12 +175,14 @@ function createMessage(
   role: AIAgentMessage['role'],
   content: string,
   sources?: AIAgentMessage['sources'],
-  clarificationOptions?: AIAgentClarificationOption[]
+  clarificationOptions?: AIAgentClarificationOption[],
+  attachments?: AIAgentAttachment[]
 ): AIAgentMessage {
   return {
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     role,
     content,
+    ...(attachments?.length ? { attachments } : {}),
     sources,
     clarificationOptions,
     createdAt: new Date().toISOString()
@@ -230,12 +266,278 @@ function getVoiceMimeType() {
   ].find((type) => MediaRecorder.isTypeSupported(type)) || ''
 }
 
+function formatFileSize(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 KB'
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
+  return `${(bytes / 1024 / 1024).toFixed(bytes >= 10 * 1024 * 1024 ? 0 : 1)} MB`
+}
+
+function getAttachmentKind(file: File): AIAgentAttachmentKind {
+  const mimeType = file.type.toLowerCase()
+  const extension = file.name.split('.').pop()?.toLowerCase() || ''
+
+  if (mimeType.startsWith('image/')) return 'image'
+  if (mimeType.startsWith('video/')) return 'video'
+  if (mimeType === 'application/pdf' || extension === 'pdf') return 'pdf'
+  if (mimeType.startsWith('text/') || isTextLikeExtension(extension)) return 'text'
+  return 'file'
+}
+
+function isTextLikeExtension(extension: string) {
+  return [
+    'txt',
+    'csv',
+    'tsv',
+    'json',
+    'md',
+    'markdown',
+    'log',
+    'html',
+    'htm',
+    'xml',
+    'yaml',
+    'yml',
+    'js',
+    'jsx',
+    'ts',
+    'tsx',
+    'css',
+    'scss',
+    'py',
+    'sql',
+    'env'
+  ].includes(extension)
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error || new Error('No pude leer el archivo.'))
+    reader.readAsDataURL(file)
+  })
+}
+
+function readFileAsText(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error || new Error('No pude leer el archivo.'))
+    reader.readAsText(file)
+  })
+}
+
+function createVideoThumbnail(file: File) {
+  return new Promise<string>((resolve) => {
+    const video = document.createElement('video')
+    const objectUrl = URL.createObjectURL(file)
+    let settled = false
+
+    const finish = (value: string) => {
+      if (settled) return
+      settled = true
+      URL.revokeObjectURL(objectUrl)
+      resolve(value)
+    }
+
+    const drawFrame = () => {
+      try {
+        const canvas = document.createElement('canvas')
+        const width = video.videoWidth || 640
+        const height = video.videoHeight || 360
+        canvas.width = Math.min(width, 960)
+        canvas.height = Math.max(1, Math.round((canvas.width / width) * height))
+        const context = canvas.getContext('2d')
+
+        if (!context) {
+          finish('')
+          return
+        }
+
+        context.drawImage(video, 0, 0, canvas.width, canvas.height)
+        finish(canvas.toDataURL('image/jpeg', 0.82))
+      } catch {
+        finish('')
+      }
+    }
+
+    video.preload = 'metadata'
+    video.muted = true
+    video.playsInline = true
+    video.crossOrigin = 'anonymous'
+    video.onloadeddata = () => {
+      const seekTo = Number.isFinite(video.duration) && video.duration > 1 ? 0.8 : 0
+      if (seekTo > 0) {
+        video.currentTime = seekTo
+      } else {
+        drawFrame()
+      }
+    }
+    video.onseeked = drawFrame
+    video.onerror = () => finish('')
+    video.src = objectUrl
+  })
+}
+
+async function createAttachmentFromFile(file: File): Promise<AIAgentAttachmentDraft> {
+  const kind = getAttachmentKind(file)
+  const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  const mimeType = file.type || 'application/octet-stream'
+  const extension = file.name.split('.').pop()?.toLowerCase() || ''
+  const attachment: AIAgentAttachmentDraft = {
+    id,
+    name: file.name,
+    mimeType,
+    size: file.size,
+    kind
+  }
+
+  if (kind === 'video') {
+    attachment.previewUrl = URL.createObjectURL(file)
+    attachment.thumbnailDataUrl = await createVideoThumbnail(file)
+    return attachment
+  }
+
+  if (kind === 'text' && file.size <= MAX_TEXT_ATTACHMENT_BYTES) {
+    const text = await readFileAsText(file)
+    attachment.text = text.length > TEXT_ATTACHMENT_CHAR_LIMIT
+      ? `${text.slice(0, TEXT_ATTACHMENT_CHAR_LIMIT)}\n\n[Archivo truncado para el agente: ${formatFileSize(file.size)}]`
+      : text
+    return attachment
+  }
+
+  if (file.size <= MAX_DIRECT_ATTACHMENT_BYTES) {
+    attachment.dataUrl = await readFileAsDataUrl(file)
+  }
+
+  if (kind === 'image') {
+    attachment.previewUrl = attachment.dataUrl
+  } else if (isTextLikeExtension(extension) && file.size <= MAX_TEXT_ATTACHMENT_BYTES) {
+    const text = await readFileAsText(file)
+    attachment.text = text.length > TEXT_ATTACHMENT_CHAR_LIMIT
+      ? `${text.slice(0, TEXT_ATTACHMENT_CHAR_LIMIT)}\n\n[Archivo truncado para el agente: ${formatFileSize(file.size)}]`
+      : text
+  }
+
+  return attachment
+}
+
+function revokeAttachmentPreview(attachment: AIAgentAttachment | AIAgentAttachmentDraft) {
+  const previewUrl = (attachment as AIAgentAttachmentDraft).previewUrl
+  if (previewUrl?.startsWith('blob:')) {
+    URL.revokeObjectURL(previewUrl)
+  }
+}
+
+function sanitizeAttachmentForApi(attachment: AIAgentAttachment | AIAgentAttachmentDraft): AIAgentAttachment {
+  const { previewUrl: _previewUrl, ...safeAttachment } = attachment as AIAgentAttachmentDraft
+  return safeAttachment
+}
+
+function stripAttachmentPayload(attachment: AIAgentAttachment | AIAgentAttachmentDraft): AIAgentAttachment {
+  const safeAttachment = sanitizeAttachmentForApi(attachment)
+  const { dataUrl: _dataUrl, text: _text, thumbnailDataUrl: _thumbnailDataUrl, ...metadata } = safeAttachment
+  return metadata
+}
+
+function prepareMessagesForApi(messages: AIAgentMessage[]): AIAgentMessage[] {
+  const latestUserIndex = [...messages].map((message, index) => ({ message, index })).reverse().find((item) => item.message.role === 'user')?.index ?? -1
+
+  return messages.map((message, index) => {
+    if (!message.attachments?.length) return message
+
+    return {
+      ...message,
+      attachments: message.attachments.map((attachment) => (
+        index === latestUserIndex ? sanitizeAttachmentForApi(attachment) : stripAttachmentPayload(attachment)
+      ))
+    }
+  })
+}
+
+function buildAttachmentPrompt(attachments: AIAgentAttachment[]) {
+  if (!attachments.length) return ''
+  const files = attachments.length === 1 ? 'este archivo adjunto' : 'estos archivos adjuntos'
+  return `Analiza ${files} y dime qué ves.`
+}
+
+function getAttachmentIcon(kind: AIAgentAttachmentKind) {
+  if (kind === 'image') return <ImageIcon size={16} />
+  if (kind === 'video') return <VideoIcon size={16} />
+  if (kind === 'pdf' || kind === 'text') return <FileText size={16} />
+  return <FileIcon size={16} />
+}
+
 function getNextOnboardingQuestion(form: AIAgentConfigInput) {
   return onboardingQuestions.find((item) => !String(form[item.field] || '').trim()) || null
 }
 
+function normalizeHttpUrl(value: string) {
+  const trimmed = value.trim().replace(/[),.;:!?]+$/g, '')
+  const candidate = trimmed.startsWith('www.') ? `https://${trimmed}` : trimmed
+
+  try {
+    const url = new URL(candidate)
+    return ['http:', 'https:'].includes(url.protocol) ? url.toString() : ''
+  } catch {
+    return ''
+  }
+}
+
+function isLikelyImageUrl(url: string) {
+  try {
+    const parsed = new URL(url)
+    return /\.(png|jpe?g|gif|webp|avif|svg)$/i.test(parsed.pathname)
+  } catch {
+    return false
+  }
+}
+
+function isLikelyVideoUrl(url: string) {
+  try {
+    const parsed = new URL(url)
+    return /\.(mp4|webm|mov|m4v|ogg)$/i.test(parsed.pathname)
+  } catch {
+    return false
+  }
+}
+
+function isLikelyMediaUrl(url: string) {
+  return isLikelyImageUrl(url) || isLikelyVideoUrl(url)
+}
+
+function renderMediaUrlPreview(rawUrl: string, label: string, keyPrefix: string) {
+  const url = normalizeHttpUrl(rawUrl)
+  if (!url) return null
+  const title = label.trim() || url
+
+  if (isLikelyImageUrl(url)) {
+    return (
+      <figure className={styles.mediaPreview} key={keyPrefix}>
+        <a href={url} target="_blank" rel="noreferrer">
+          <img src={url} alt={title} loading="lazy" referrerPolicy="no-referrer" />
+        </a>
+        <figcaption>{title}</figcaption>
+      </figure>
+    )
+  }
+
+  if (isLikelyVideoUrl(url)) {
+    return (
+      <figure className={styles.mediaPreview} key={keyPrefix}>
+        <video src={url} controls preload="metadata" />
+        <figcaption>
+          <a href={url} target="_blank" rel="noreferrer">{title}</a>
+        </figcaption>
+      </figure>
+    )
+  }
+
+  return null
+}
+
 function renderInlineMarkdown(text: string, keyPrefix: string) {
-  const parts = text.split(/(\*\*[^*]+\*\*)/g)
+  const parts = text.split(/(!\[[^\]]*]\([^)]+\)|\[[^\]]+]\([^)]+\)|\*\*[^*]+\*\*|https?:\/\/[^\s<>()]+|www\.[^\s<>()]+)/g)
 
   return parts.map((part, index) => {
     if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
@@ -244,6 +546,41 @@ function renderInlineMarkdown(text: string, keyPrefix: string) {
           {part.slice(2, -2)}
         </strong>
       )
+    }
+
+    const imageMatch = part.match(/^!\[([^\]]*)]\(([^)]+)\)$/)
+    if (imageMatch) {
+      const url = normalizeHttpUrl(imageMatch[2])
+      if (url) {
+        return (
+          <a key={`${keyPrefix}-image-link-${index}`} className={styles.inlineLink} href={url} target="_blank" rel="noreferrer">
+            {imageMatch[1] || 'Imagen'}
+          </a>
+        )
+      }
+    }
+
+    const linkMatch = part.match(/^\[([^\]]+)]\(([^)]+)\)$/)
+    if (linkMatch) {
+      const url = normalizeHttpUrl(linkMatch[2])
+      if (url) {
+        return (
+          <a key={`${keyPrefix}-link-${index}`} className={styles.inlineLink} href={url} target="_blank" rel="noreferrer">
+            {linkMatch[1]}
+          </a>
+        )
+      }
+    }
+
+    if (/^(https?:\/\/|www\.)/i.test(part)) {
+      const url = normalizeHttpUrl(part)
+      if (url) {
+        return (
+          <a key={`${keyPrefix}-url-${index}`} className={styles.inlineLink} href={url} target="_blank" rel="noreferrer">
+            {part.replace(/[),.;:!?]+$/g, '')}
+          </a>
+        )
+      }
     }
 
     return <React.Fragment key={`${keyPrefix}-text-${index}`}>{part}</React.Fragment>
@@ -485,6 +822,31 @@ function renderMessageContent(content: string) {
       continue
     }
 
+    const standaloneImage = trimmed.match(/^!\[([^\]]*)]\(([^)]+)\)$/)
+    if (standaloneImage) {
+      const mediaNode = renderMediaUrlPreview(standaloneImage[2], standaloneImage[1] || 'Imagen adjunta', `media-image-${index}`)
+      if (mediaNode) {
+        nodes.push(mediaNode)
+        index += 1
+        continue
+      }
+    }
+
+    const standaloneLink = trimmed.match(/^(?:\[([^\]]+)]\(([^)]+)\)|(https?:\/\/\S+|www\.\S+))$/)
+    if (standaloneLink) {
+      const url = standaloneLink[2] || standaloneLink[3] || ''
+      const label = standaloneLink[1] || url
+      const normalizedUrl = normalizeHttpUrl(url)
+      if (normalizedUrl && isLikelyMediaUrl(normalizedUrl)) {
+        const mediaNode = renderMediaUrlPreview(normalizedUrl, label, `media-url-${index}`)
+        if (mediaNode) {
+          nodes.push(mediaNode)
+          index += 1
+          continue
+        }
+      }
+    }
+
     if (/^```ristak-chart\s*$/i.test(trimmed)) {
       const chartLines: string[] = []
       index += 1
@@ -644,6 +1006,63 @@ function renderMessageContent(content: string) {
   return <div className={styles.richContent}>{nodes}</div>
 }
 
+function renderAttachmentPreview(
+  attachment: AIAgentAttachment | AIAgentAttachmentDraft,
+  options: {
+    removable?: boolean
+    onRemove?: (id: string) => void
+  } = {}
+) {
+  const imageSrc = attachment.kind === 'image'
+    ? attachment.dataUrl || attachment.thumbnailDataUrl || (attachment as AIAgentAttachmentDraft).previewUrl
+    : attachment.thumbnailDataUrl
+  const videoSrc = attachment.kind === 'video' ? (attachment as AIAgentAttachmentDraft).previewUrl || attachment.dataUrl : ''
+  const title = `${attachment.name} · ${formatFileSize(attachment.size)}`
+
+  return (
+    <div className={`${styles.attachmentCard} ${imageSrc ? styles.attachmentCardVisual : ''}`} key={attachment.id} title={title}>
+      {imageSrc ? (
+        <img className={styles.attachmentThumb} src={imageSrc} alt={attachment.name} />
+      ) : videoSrc ? (
+        <video className={styles.attachmentThumb} src={videoSrc} preload="metadata" muted />
+      ) : (
+        <span className={styles.attachmentIcon}>{getAttachmentIcon(attachment.kind)}</span>
+      )}
+      <span className={styles.attachmentMeta}>
+        <span className={styles.attachmentName}>{attachment.name}</span>
+        <span className={styles.attachmentSize}>{formatFileSize(attachment.size)}</span>
+      </span>
+      {options.removable && (
+        <button
+          type="button"
+          className={styles.attachmentRemove}
+          onClick={() => options.onRemove?.(attachment.id)}
+          aria-label={`Quitar ${attachment.name}`}
+          title="Quitar archivo"
+        >
+          <X size={14} />
+        </button>
+      )}
+    </div>
+  )
+}
+
+function renderAttachmentList(
+  attachments: Array<AIAgentAttachment | AIAgentAttachmentDraft>,
+  options: {
+    removable?: boolean
+    onRemove?: (id: string) => void
+  } = {}
+) {
+  if (!attachments.length) return null
+
+  return (
+    <div className={styles.attachmentsList}>
+      {attachments.map((attachment) => renderAttachmentPreview(attachment, options))}
+    </div>
+  )
+}
+
 export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating' }) => {
   const location = useLocation()
   const embedded = variant === 'embedded'
@@ -652,6 +1071,8 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
   const [form, setForm] = useState<AIAgentConfigInput>(emptyForm)
   const [messages, setMessages] = useState<AIAgentMessage[]>([])
   const [input, setInput] = useState('')
+  const [attachments, setAttachments] = useState<AIAgentAttachmentDraft[]>([])
+  const [attachmentError, setAttachmentError] = useState('')
   const [apiKeyInput, setApiKeyInput] = useState('')
   const [loadingConfig, setLoadingConfig] = useState(true)
   const [savingConfig, setSavingConfig] = useState(false)
@@ -669,6 +1090,8 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
   const previousMessageCountRef = useRef(messages.length)
   const endRef = useRef<HTMLDivElement | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const attachmentsRef = useRef(attachments)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -790,6 +1213,10 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
   }, [messages])
 
   useEffect(() => {
+    attachmentsRef.current = attachments
+  }, [attachments])
+
+  useEffect(() => {
     if (loadingConfig || askedOnboardingRef.current || businessContextLoaded || !status.configured) return
 
     askedOnboardingRef.current = true
@@ -811,6 +1238,66 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
     routeLabel: getRouteLabel(location.pathname),
     visibleText: collectVisibleText()
   })
+
+  const openFilePicker = () => {
+    if (savingConfig || voiceIsActive) return
+    fileInputRef.current?.click()
+  }
+
+  const removeAttachment = (id: string) => {
+    setAttachments((current) => {
+      const removed = current.find((attachment) => attachment.id === id)
+      if (removed) revokeAttachmentPreview(removed)
+      return current.filter((attachment) => attachment.id !== id)
+    })
+  }
+
+  const handleFileSelection = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(event.target.files || [])
+    event.target.value = ''
+
+    if (!selectedFiles.length) return
+
+    const currentAttachments = attachmentsRef.current
+    const availableSlots = Math.max(0, MAX_ATTACHMENTS - currentAttachments.length)
+    const files = selectedFiles.slice(0, availableSlots)
+    const currentTotalSize = currentAttachments.reduce((sum, attachment) => sum + attachment.size, 0)
+    let nextTotalSize = currentTotalSize
+    const rejectedMessages: string[] = []
+
+    if (!availableSlots) {
+      setAttachmentError(`Máximo ${MAX_ATTACHMENTS} archivos por mensaje.`)
+      return
+    }
+
+    if (selectedFiles.length > files.length) {
+      rejectedMessages.push(`Sólo agregué ${files.length} de ${selectedFiles.length} archivos.`)
+    }
+
+    const nextAttachments: AIAgentAttachmentDraft[] = []
+
+    for (const file of files) {
+      if (nextTotalSize + file.size > MAX_ATTACHMENT_TOTAL_BYTES) {
+        rejectedMessages.push(`${file.name} excede el límite total de ${formatFileSize(MAX_ATTACHMENT_TOTAL_BYTES)}.`)
+        continue
+      }
+
+      try {
+        const attachment = await createAttachmentFromFile(file)
+        nextAttachments.push(attachment)
+        nextTotalSize += file.size
+      } catch {
+        rejectedMessages.push(`No pude leer ${file.name}.`)
+      }
+    }
+
+    if (nextAttachments.length) {
+      setAttachments((current) => [...current, ...nextAttachments])
+      window.requestAnimationFrame(() => textareaRef.current?.focus())
+    }
+
+    setAttachmentError(rejectedMessages.join(' '))
+  }
 
   const saveAgentConfig = async (nextConfig: AIAgentConfigInput, apiKey?: string) => {
     const nextStatus = await aiAgentService.saveConfig({
@@ -890,12 +1377,21 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
   }
 
   const sendMessage = async (overrideText?: string) => {
+    const messageAttachments = overrideText === undefined ? [...attachmentsRef.current] : []
     const text = (overrideText ?? input).trim()
+    const messageText = text || buildAttachmentPrompt(messageAttachments)
 
-    if (!text || savingConfig) return
+    if ((!messageText && !messageAttachments.length) || savingConfig) return
 
-    const userMessage = createMessage('user', text)
+    if (nextOnboardingQuestion && messageAttachments.length) {
+      setAttachmentError('Primero responde el contexto en texto; los archivos los analizamos después.')
+      return
+    }
+
+    const userMessage = createMessage('user', messageText, undefined, undefined, messageAttachments)
     setInput('')
+    setAttachments([])
+    setAttachmentError('')
     focusComposer()
 
     if (!status.configured) {
@@ -909,7 +1405,7 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
     }
 
     if (nextOnboardingQuestion) {
-      await saveOnboardingAnswer(text, userMessage)
+      await saveOnboardingAnswer(messageText, userMessage)
       return
     }
 
@@ -926,7 +1422,7 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
     setSending(true)
 
     try {
-      const result = await aiAgentService.sendMessage(nextMessages, getViewContext(), {
+      const result = await aiAgentService.sendMessage(prepareMessagesForApi(nextMessages), getViewContext(), {
         signal: controller.signal
       })
 
@@ -1181,6 +1677,8 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
       }
       mediaRecorderRef.current = null
       stopVoiceMeter()
+      attachmentsRef.current.forEach(revokeAttachmentPreview)
+      messagesRef.current.forEach((message) => message.attachments?.forEach(revokeAttachmentPreview))
     }
   }, [])
 
@@ -1196,7 +1694,9 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
     activeChatRequestRef.current = null
     setSending(false)
     askedOnboardingRef.current = businessContextLoaded
+    messagesRef.current.forEach((message) => message.attachments?.forEach(revokeAttachmentPreview))
     setMessages([])
+    setAttachmentError('')
     focusComposer()
   }
 
@@ -1206,6 +1706,9 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
     : 'Abrir agente AI'
   const rootClassName = embedded ? styles.embeddedRoot : styles.floatingRoot
   const windowClassName = embedded ? `${styles.window} ${styles.embeddedWindow}` : styles.window
+  const textComposerClassName = attachments.length
+    ? `${styles.textComposer} ${styles.textComposerWithAttachments}`
+    : styles.textComposer
   const panelTitle = embedded ? 'Ristak AI' : 'Agente AI'
   const statusLabel = status.configured
     ? embedded ? 'Listo para ayudarte' : 'Conectado a OpenAI'
@@ -1321,6 +1824,7 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
                     <span className={styles.messageLabel}>
                       {message.role === 'user' ? 'Tú' : 'Agente'}
                     </span>
+                    {Boolean(message.attachments?.length) && renderAttachmentList(message.attachments || [])}
                     <div className={styles.bubble}>{renderMessageContent(message.content)}</div>
                     {message.role === 'assistant' && Boolean(message.clarificationOptions?.length) && (
                       <div className={styles.optionButtons} aria-label="Opciones para aclarar la pregunta">
@@ -1344,15 +1848,17 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
                       <div className={styles.sources}>
                         <span className={styles.sourcesLabel}>Fuentes</span>
                         {message.sources?.map((source) => (
-                          <a
-                            key={source.url}
-                            href={source.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className={styles.sourceLink}
-                          >
-                            {source.title || source.url}
-                          </a>
+                          <React.Fragment key={source.url}>
+                            <a
+                              href={source.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className={styles.sourceLink}
+                            >
+                              {source.title || source.url}
+                            </a>
+                            {isLikelyMediaUrl(normalizeHttpUrl(source.url)) && renderMediaUrlPreview(source.url, source.title || source.url, `${message.id}-${source.url}`)}
+                          </React.Fragment>
                         ))}
                       </div>
                     )}
@@ -1421,7 +1927,21 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
                 </button>
               </div>
             ) : (
-              <div className={styles.textComposer}>
+              <div className={textComposerClassName}>
+                {attachments.length > 0 && renderAttachmentList(attachments, {
+                  removable: true,
+                  onRemove: removeAttachment
+                })}
+                <button
+                  type="button"
+                  className={styles.uploadButton}
+                  onClick={openFilePicker}
+                  disabled={savingConfig}
+                  aria-label="Agregar imagen, video o archivo"
+                  title="Agregar archivo"
+                >
+                  <Paperclip size={18} />
+                </button>
                 <button
                   type="button"
                   className={styles.micButton}
@@ -1436,7 +1956,7 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
                   ref={textareaRef}
                   className={styles.textarea}
                   value={input}
-                  placeholder={nextOnboardingQuestion ? 'Responde para guardar contexto...' : status.configured ? 'Pregunta algo del negocio...' : 'Pega el token arriba o cuéntame del negocio...'}
+                  placeholder={status.configured && nextOnboardingQuestion ? 'Responde para guardar contexto...' : status.configured ? 'Pregunta algo del negocio...' : 'Pega el token arriba o cuéntame del negocio...'}
                   onChange={(event) => setInput(event.target.value)}
                   onKeyDown={handleKeyDown}
                   disabled={savingConfig}
@@ -1446,16 +1966,26 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
                   type="button"
                   className={styles.sendButton}
                   onClick={() => sendMessage()}
-                  disabled={!input.trim() || savingConfig}
+                  disabled={(!input.trim() && !attachments.length) || savingConfig}
                   aria-label="Enviar mensaje"
+                  title="Enviar mensaje"
                 >
-                  {embedded ? <ArrowUp size={20} /> : <SendHorizonal size={17} />}
+                  <ArrowUp size={20} />
                 </button>
+                <input
+                  ref={fileInputRef}
+                  className={styles.fileInput}
+                  type="file"
+                  multiple
+                  accept={FILE_INPUT_ACCEPT}
+                  onChange={handleFileSelection}
+                  tabIndex={-1}
+                />
               </div>
             )}
-            {voiceError && (
+            {(voiceError || attachmentError) && (
               <div className={styles.voiceError} role="status">
-                {voiceError}
+                {voiceError || attachmentError}
               </div>
             )}
           </footer>

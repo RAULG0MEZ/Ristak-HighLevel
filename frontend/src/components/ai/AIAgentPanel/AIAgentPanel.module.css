@@ -45,7 +45,7 @@
   font-weight: 600;
   line-height: 1;
   white-space: nowrap;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
 }
 
 .unreadIndicator {
@@ -467,6 +467,43 @@
   color: inherit;
 }
 
+.inlineLink {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 38%, transparent);
+  text-underline-offset: 3px;
+}
+
+.inlineLink:hover {
+  text-decoration-color: currentColor;
+}
+
+.mediaPreview {
+  display: grid;
+  gap: 7px;
+  width: min(100%, 420px);
+  margin: 0;
+}
+
+.mediaPreview img,
+.mediaPreview video {
+  display: block;
+  width: 100%;
+  max-height: 280px;
+  object-fit: contain;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: var(--color-background-primary);
+}
+
+.mediaPreview figcaption,
+.mediaPreview figcaption a {
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .metricTableWrap {
   width: 100%;
   margin: 0;
@@ -784,6 +821,15 @@
   color: var(--color-text-primary);
 }
 
+.sources .mediaPreview {
+  width: 100%;
+}
+
+.sources .mediaPreview img,
+.sources .mediaPreview video {
+  max-height: 220px;
+}
+
 .thinkingMessage {
   align-self: flex-start;
   display: inline-flex;
@@ -881,35 +927,63 @@
 .composer {
   display: grid;
   gap: 8px;
-  padding: 14px;
+  padding: 14px 16px 16px;
   border-top: 1px solid rgba(148, 163, 184, 0.16);
+  background: color-mix(in srgb, var(--color-background-secondary) 92%, var(--color-background-primary) 8%);
 }
 
 .textComposer {
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: 40px 40px minmax(0, 1fr) 40px;
+  grid-template-areas: "upload mic input send";
+  align-items: center;
+  gap: 8px;
+  width: 100%;
   min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 26px;
+  background: color-mix(in srgb, var(--color-background-primary) 94%, var(--color-background-tertiary) 6%);
+  box-shadow: 0 12px 36px rgba(15, 23, 42, 0.08);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.textComposerWithAttachments {
+  grid-template-areas:
+    "attachments attachments attachments attachments"
+    "upload mic input send";
+}
+
+.textComposer:focus-within {
+  border-color: rgba(100, 116, 139, 0.36);
+  background: var(--color-background-primary);
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.11);
 }
 
 .textarea {
-  flex: 1;
-  min-height: 50px;
+  grid-area: input;
+  width: 100%;
+  min-height: 40px;
   max-height: 160px;
   resize: none;
-  padding: 12px 14px;
-  border-radius: 9px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  background: var(--color-background-primary);
+  padding: 9px 2px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--color-text-primary);
   font-size: 15px;
-  line-height: 1.5;
+  line-height: 1.45;
   outline: none;
+  align-self: center;
 }
 
 .textarea:focus {
-  border-color: rgba(100, 116, 139, 0.55);
-  box-shadow: 0 0 0 3px rgba(100, 116, 139, 0.12);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.textarea::placeholder {
+  color: color-mix(in srgb, var(--color-text-tertiary) 72%, transparent);
 }
 
 .textarea:disabled {
@@ -917,36 +991,174 @@
   opacity: 0.7;
 }
 
+.fileInput {
+  display: none;
+}
+
+.attachmentsList {
+  grid-area: attachments;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.messageUser .attachmentsList {
+  justify-content: flex-end;
+}
+
+.attachmentCard {
+  position: relative;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: min(100%, 180px);
+  max-width: min(100%, 260px);
+  padding: 7px 32px 7px 7px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 12px;
+  background: rgba(148, 163, 184, 0.07);
+  color: var(--color-text-primary);
+}
+
+.attachmentCardVisual {
+  grid-template-columns: 46px minmax(0, 1fr);
+}
+
+.attachmentThumb {
+  width: 46px;
+  height: 38px;
+  border-radius: 9px;
+  object-fit: cover;
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.attachmentIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-background-primary) 78%, transparent);
+  color: var(--color-text-secondary);
+}
+
+.attachmentMeta {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.attachmentName {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 760;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachmentSize {
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  line-height: 1.15;
+}
+
+.attachmentRemove {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.08);
+  color: var(--color-text-secondary);
+}
+
+.attachmentRemove:hover {
+  background: rgba(15, 23, 42, 0.14);
+  color: var(--color-text-primary);
+}
+
+.messageUser .attachmentCard {
+  background: var(--color-text-primary);
+  color: var(--color-background-primary);
+  border-color: color-mix(in srgb, var(--color-background-primary) 18%, transparent);
+}
+
+.messageUser .attachmentSize {
+  color: color-mix(in srgb, var(--color-background-primary) 68%, transparent);
+}
+
+.messageUser .attachmentIcon {
+  background: color-mix(in srgb, var(--color-background-primary) 14%, transparent);
+  color: var(--color-background-primary);
+}
+
+.uploadButton,
 .micButton,
 .sendButton {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 50px;
-  height: 50px;
+  width: 40px;
+  height: 40px;
   padding: 0;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 9px;
-  background: var(--color-text-primary);
-  color: var(--color-background-primary);
+  border: 0;
+  border-radius: 999px;
   flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
 
-.micButton {
-  background: var(--color-background-primary);
+.uploadButton {
+  grid-area: upload;
+  background: transparent;
   color: var(--color-text-secondary);
 }
 
+.micButton {
+  grid-area: mic;
+  background: transparent;
+  color: var(--color-text-secondary);
+}
+
+.uploadButton:hover:not(:disabled),
 .micButton:hover:not(:disabled) {
   color: var(--color-text-primary);
-  border-color: rgba(100, 116, 139, 0.42);
   background: rgba(148, 163, 184, 0.08);
 }
 
+.sendButton {
+  grid-area: send;
+  background: var(--color-text-primary);
+  color: var(--color-background-primary);
+}
+
+.sendButton:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.uploadButton:disabled,
 .micButton:disabled,
 .sendButton:disabled {
   cursor: not-allowed;
   opacity: 0.5;
+}
+
+.sendButton:disabled {
+  opacity: 1;
+  background: rgba(148, 163, 184, 0.22);
+  color: var(--color-text-tertiary);
 }
 
 .voiceComposer {
@@ -1097,13 +1309,19 @@
   }
 
   .textComposer {
+    grid-template-columns: 38px 38px minmax(0, 1fr) 40px;
     gap: 8px;
   }
 
+  .uploadButton,
   .micButton,
   .sendButton {
-    width: 46px;
-    height: 46px;
+    width: 38px;
+    height: 38px;
+  }
+
+  .attachmentCard {
+    max-width: 100%;
   }
 
   .voiceComposer {
@@ -1164,11 +1382,9 @@
 
 .embeddedWindow .textComposer {
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) 40px;
-  grid-template-rows: minmax(34px, auto) 40px;
-  grid-template-areas:
-    "input input input"
-    "mic . send";
+  grid-template-columns: 40px 40px minmax(0, 1fr) 40px;
+  grid-template-rows: minmax(40px, auto);
+  grid-template-areas: "upload mic input send";
   gap: 4px 8px;
   align-items: center;
   width: 100%;
@@ -1178,6 +1394,12 @@
   border-radius: 28px;
   background: color-mix(in srgb, var(--color-background-primary) 92%, var(--color-background-tertiary) 8%);
   box-shadow: 0 8px 28px rgba(15, 23, 42, 0.08);
+}
+
+.embeddedWindow .textComposerWithAttachments {
+  grid-template-areas:
+    "attachments attachments attachments attachments"
+    "upload mic input send";
 }
 
 .embeddedWindow .textComposer:focus-within {
@@ -1210,6 +1432,7 @@
   color: color-mix(in srgb, var(--color-text-tertiary) 72%, transparent);
 }
 
+.embeddedWindow .uploadButton,
 .embeddedWindow .micButton,
 .embeddedWindow .sendButton {
   width: 40px;
@@ -1218,12 +1441,19 @@
   border-radius: 999px;
 }
 
+.embeddedWindow .uploadButton {
+  grid-area: upload;
+  background: transparent;
+  color: var(--color-text-secondary);
+}
+
 .embeddedWindow .micButton {
   grid-area: mic;
   background: transparent;
   color: var(--color-text-secondary);
 }
 
+.embeddedWindow .uploadButton:hover:not(:disabled),
 .embeddedWindow .micButton:hover:not(:disabled) {
   background: rgba(148, 163, 184, 0.1);
 }
@@ -1240,6 +1470,7 @@
   color: var(--color-text-tertiary);
 }
 
+.embeddedWindow .uploadButton svg,
 .embeddedWindow .micButton svg,
 .embeddedWindow .sendButton svg {
   width: 20px;
@@ -1326,12 +1557,18 @@
   }
 
   .embeddedWindow .textComposer {
-    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    grid-template-columns: 44px 44px minmax(0, 1fr) 44px;
     grid-template-rows: minmax(44px, auto);
-    grid-template-areas: "mic input send";
+    grid-template-areas: "upload mic input send";
     gap: 10px;
     padding: 8px;
-    border-radius: 999px;
+    border-radius: 28px;
+  }
+
+  .embeddedWindow .textComposerWithAttachments {
+    grid-template-areas:
+      "attachments attachments attachments attachments"
+      "upload mic input send";
   }
 
   .embeddedWindow .textarea {
@@ -1341,6 +1578,7 @@
     line-height: 1.42;
   }
 
+  .embeddedWindow .uploadButton,
   .embeddedWindow .micButton,
   .embeddedWindow .sendButton {
     width: 44px;
