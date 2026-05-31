@@ -16,6 +16,9 @@ import {
   listProducts,
   listPrices,
   createInvoice,
+  listInvoiceSchedules,
+  getInvoiceSchedule,
+  updateInvoiceSchedule,
   createInstallmentFlow,
   recordPayment,
   sendInvoice,
@@ -68,6 +71,9 @@ router.post('/invoice-config', saveInvoiceConfig)
 router.get('/products', listProducts)
 router.get('/products/:productId/prices', listPrices)
 router.post('/invoices', createInvoice)
+router.get('/invoices/schedules', listInvoiceSchedules)
+router.get('/invoices/schedules/:scheduleId', getInvoiceSchedule)
+router.put('/invoices/schedules/:scheduleId', updateInvoiceSchedule)
 router.post('/payment-flows/installments', createInstallmentFlow)
 router.post('/invoices/:invoiceId/send', sendInvoice)
 router.post('/invoices/:invoiceId/record-payment', recordPayment)

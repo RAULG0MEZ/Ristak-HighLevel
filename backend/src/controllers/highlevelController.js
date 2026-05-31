@@ -15,6 +15,19 @@ import {
 import { createInstallmentPaymentFlow } from '../services/paymentFlowService.js';
 
 const normalizeGhlInvoiceMode = (mode) => mode === 'test' ? 'test' : 'live';
+const INACTIVE_INVOICE_SCHEDULE_STATUSES = new Set([
+  'cancelled',
+  'canceled',
+  'complete',
+  'completed',
+  'deleted',
+  'draft',
+  'expired',
+  'failed',
+  'inactive',
+  'paused',
+  'void'
+]);
 
 async function getGhlInvoiceMode() {
   try {
@@ -1071,6 +1084,397 @@ export const createInstallmentFlow = async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message || 'No se pudo crear el flujo de parcialidades'
+    });
+  }
+};
+
+function firstDefined(...values) {
+  return values.find(value => value !== undefined && value !== null && value !== '');
+}
+
+function toArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function extractScheduleList(response) {
+  if (Array.isArray(response)) return response;
+
+  const candidates = [
+    response?.schedules,
+    response?.invoiceSchedules,
+    response?.invoice_schedules,
+    response?.data?.schedules,
+    response?.data?.invoiceSchedules,
+    response?.data?.invoice_schedules,
+    response?.data,
+    response?.items,
+    response?.results
+  ];
+
+  return candidates.find(Array.isArray) || [];
+}
+
+function extractScheduleFromResponse(response) {
+  if (!response) return null;
+  if (Array.isArray(response)) return response[0] || null;
+
+  const candidate = firstDefined(
+    response.schedule,
+    response.invoiceSchedule,
+    response.invoice_schedule,
+    response.data?.schedule,
+    response.data?.invoiceSchedule,
+    response.data?.invoice_schedule,
+    response.data,
+    response
+  );
+
+  if (Array.isArray(candidate)) return candidate[0] || null;
+  return candidate && typeof candidate === 'object' ? candidate : null;
+}
+
+function combineRruleStart(rrule = {}) {
+  if (!rrule || typeof rrule !== 'object') return null;
+  if (!rrule.startDate) return null;
+
+  if (!rrule.startTime) return rrule.startDate;
+
+  const time = String(rrule.startTime);
+  return `${rrule.startDate}T${time.length === 5 ? `${time}:00` : time}`;
+}
+
+function resolveScheduleObject(schedule = {}) {
+  return schedule.schedule && typeof schedule.schedule === 'object'
+    ? schedule.schedule
+    : {};
+}
+
+function resolveScheduleRecurrence(schedule = {}) {
+  const scheduleConfig = resolveScheduleObject(schedule);
+  return firstDefined(
+    scheduleConfig.rrule,
+    schedule.rrule,
+    schedule.recurrence,
+    schedule.recurring,
+    scheduleConfig.recurrence
+  ) || null;
+}
+
+function resolveSchedulePrimaryDate(schedule = {}) {
+  const scheduleConfig = resolveScheduleObject(schedule);
+  const rrule = resolveScheduleRecurrence(schedule);
+
+  return firstDefined(
+    schedule.nextRunAt,
+    schedule.next_run_at,
+    schedule.nextInvoiceDate,
+    schedule.next_invoice_date,
+    schedule.nextExecutionAt,
+    schedule.next_execution_at,
+    schedule.nextScheduleAt,
+    schedule.next_schedule_at,
+    schedule.nextDate,
+    schedule.next_date,
+    scheduleConfig.executeAt,
+    scheduleConfig.execute_at,
+    combineRruleStart(rrule),
+    schedule.startDate,
+    schedule.start_date,
+    schedule.dueDate,
+    schedule.due_date,
+    schedule.updatedAt,
+    schedule.updated_at,
+    schedule.createdAt,
+    schedule.created_at
+  ) || null;
+}
+
+function timestamp(value) {
+  if (!value) return 0;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function numberOrNull(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function resolveScheduleTotal(schedule = {}) {
+  const direct = numberOrNull(firstDefined(
+    schedule.total,
+    schedule.amount,
+    schedule.grandTotal,
+    schedule.grand_total,
+    schedule.invoiceTotal,
+    schedule.invoice_total,
+    schedule.balance
+  ));
+
+  if (direct !== null) return direct;
+
+  const items = toArray(firstDefined(schedule.items, schedule.invoiceItems, schedule.lineItems));
+  const itemsTotal = items.reduce((sum, item) => {
+    const amount = numberOrNull(firstDefined(item.amount, item.price, item.unitAmount, item.unit_amount)) || 0;
+    const qty = numberOrNull(firstDefined(item.qty, item.quantity)) || 1;
+    return sum + amount * qty;
+  }, 0);
+
+  return itemsTotal > 0 ? Math.round(itemsTotal * 100) / 100 : 0;
+}
+
+function resolveContactDetails(schedule = {}) {
+  return firstDefined(
+    schedule.contactDetails,
+    schedule.contact,
+    schedule.customer,
+    schedule.client
+  ) || {};
+}
+
+function resolveContactName(contact = {}) {
+  return firstDefined(
+    contact.name,
+    contact.fullName,
+    contact.full_name,
+    [contact.firstName, contact.lastName].filter(Boolean).join(' ').trim(),
+    contact.email,
+    contact.phone,
+    ''
+  );
+}
+
+function resolveRecurrenceLabel(schedule = {}) {
+  const recurrence = resolveScheduleRecurrence(schedule);
+  const intervalType = recurrence?.intervalType || recurrence?.frequency || schedule.frequency || schedule.intervalType;
+  const interval = recurrence?.interval || schedule.interval || 1;
+
+  if (!intervalType) return 'Sin recurrencia';
+
+  const labels = {
+    daily: 'Diario',
+    weekly: 'Semanal',
+    monthly: 'Mensual',
+    yearly: 'Anual',
+    custom: 'Personalizado'
+  };
+
+  const baseLabel = labels[String(intervalType).toLowerCase()] || String(intervalType);
+  return Number(interval) > 1 ? `${baseLabel} cada ${interval}` : baseLabel;
+}
+
+function normalizeScheduleStatus(value) {
+  return value ? String(value).toLowerCase() : 'active';
+}
+
+function isActiveInvoiceSchedule(schedule = {}) {
+  const status = normalizeScheduleStatus(firstDefined(
+    schedule.status,
+    schedule.scheduleStatus,
+    schedule.schedule_status,
+    schedule.state
+  ));
+
+  return !INACTIVE_INVOICE_SCHEDULE_STATUSES.has(status);
+}
+
+function normalizeInvoiceSchedule(schedule = {}) {
+  const id = firstDefined(schedule.id, schedule._id, schedule.scheduleId, schedule.schedule_id);
+  const contact = resolveContactDetails(schedule);
+  const scheduleConfig = resolveScheduleObject(schedule);
+  const recurrence = resolveScheduleRecurrence(schedule);
+  const primaryDate = resolveSchedulePrimaryDate(schedule);
+  const items = toArray(firstDefined(schedule.items, schedule.invoiceItems, schedule.lineItems));
+  const status = normalizeScheduleStatus(firstDefined(
+    schedule.status,
+    schedule.scheduleStatus,
+    schedule.schedule_status,
+    schedule.state
+  ));
+
+  return {
+    id,
+    name: firstDefined(schedule.name, schedule.title, schedule.invoiceName, schedule.invoice_name, 'Plan de pago'),
+    title: firstDefined(schedule.title, schedule.name, 'Plan de pago'),
+    status,
+    total: resolveScheduleTotal(schedule),
+    currency: firstDefined(schedule.currency, scheduleConfig.currency, 'MXN'),
+    contactId: firstDefined(contact.id, contact._id, schedule.contactId, schedule.contact_id),
+    contactName: resolveContactName(contact),
+    email: firstDefined(contact.email, schedule.email, ''),
+    phone: firstDefined(contact.phoneNo, contact.phone, schedule.phone, ''),
+    description: firstDefined(
+      items[0]?.description,
+      items[0]?.name,
+      schedule.description,
+      schedule.termsNotes,
+      ''
+    ),
+    startDate: firstDefined(
+      schedule.startDate,
+      schedule.start_date,
+      scheduleConfig.startDate,
+      recurrence?.startDate,
+      combineRruleStart(recurrence)
+    ),
+    nextRunAt: primaryDate,
+    endDate: firstDefined(
+      schedule.endDate,
+      schedule.end_date,
+      scheduleConfig.endDate,
+      recurrence?.endDate
+    ),
+    recurrenceLabel: resolveRecurrenceLabel(schedule),
+    liveMode: schedule.liveMode,
+    itemCount: items.length,
+    createdAt: firstDefined(schedule.createdAt, schedule.created_at),
+    updatedAt: firstDefined(schedule.updatedAt, schedule.updated_at),
+    sortDate: primaryDate || firstDefined(schedule.updatedAt, schedule.updated_at, schedule.createdAt, schedule.created_at),
+    raw: schedule
+  };
+}
+
+function sanitizeInvoiceSchedulePayload(payload = {}) {
+  const sanitized = { ...payload };
+  delete sanitized.raw;
+  delete sanitized.sortDate;
+  delete sanitized.recurrenceLabel;
+  delete sanitized.itemCount;
+  delete sanitized.statusLabel;
+  return sanitized;
+}
+
+export const listInvoiceSchedules = async (req, res) => {
+  try {
+    const includeInactive = req.query.includeInactive === 'true';
+    const requestedLimit = Number(req.query.limit);
+    const singlePage = Number.isFinite(requestedLimit) && requestedLimit > 0;
+    const limit = Math.min(singlePage ? requestedLimit : 100, 100);
+    let offset = Math.max(Number(req.query.offset) || 0, 0);
+    const maxPages = singlePage ? 1 : 10;
+    const schedules = [];
+
+    const ghlClient = await getGHLClient();
+
+    for (let page = 0; page < maxPages; page += 1) {
+      const response = await ghlClient.listInvoiceSchedules({ limit, offset });
+      const pageSchedules = extractScheduleList(response);
+      schedules.push(...pageSchedules);
+
+      if (pageSchedules.length < limit) break;
+      offset += limit;
+    }
+
+    const data = schedules
+      .filter(schedule => includeInactive || isActiveInvoiceSchedule(schedule))
+      .map(normalizeInvoiceSchedule)
+      .filter(schedule => schedule.id)
+      .sort((left, right) => timestamp(right.sortDate) - timestamp(left.sortDate));
+
+    res.json({
+      success: true,
+      data
+    });
+  } catch (error) {
+    logger.error(`Error listando invoice schedules: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Error al obtener planes de pago'
+    });
+  }
+};
+
+export const getInvoiceSchedule = async (req, res) => {
+  try {
+    const { scheduleId } = req.params;
+
+    if (!scheduleId) {
+      return res.status(400).json({
+        success: false,
+        error: 'scheduleId requerido'
+      });
+    }
+
+    const ghlClient = await getGHLClient();
+    const response = await ghlClient.getInvoiceSchedule(scheduleId);
+    const schedule = extractScheduleFromResponse(response);
+
+    if (!schedule) {
+      return res.status(404).json({
+        success: false,
+        error: 'Plan de pago no encontrado'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: normalizeInvoiceSchedule(schedule)
+    });
+  } catch (error) {
+    logger.error(`Error obteniendo invoice schedule ${req.params.scheduleId}: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Error al obtener plan de pago'
+    });
+  }
+};
+
+export const updateInvoiceSchedule = async (req, res) => {
+  try {
+    const { scheduleId } = req.params;
+    const rawPayload = req.body?.payload && typeof req.body.payload === 'object'
+      ? req.body.payload
+      : req.body;
+    const payload = sanitizeInvoiceSchedulePayload(rawPayload);
+    const shouldUpdateScheduled = req.body?.updateAndSchedule !== false;
+
+    if (!scheduleId) {
+      return res.status(400).json({
+        success: false,
+        error: 'scheduleId requerido'
+      });
+    }
+
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload) || Object.keys(payload).length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Payload inválido para actualizar plan de pago'
+      });
+    }
+
+    const ghlClient = await getGHLClient();
+    let response;
+
+    try {
+      response = shouldUpdateScheduled
+        ? await ghlClient.updateAndScheduleInvoiceSchedule(scheduleId, payload)
+        : await ghlClient.updateInvoiceSchedule(scheduleId, payload);
+    } catch (scheduledError) {
+      if (!shouldUpdateScheduled) {
+        throw scheduledError;
+      }
+
+      logger.warn(`No se pudo usar updateAndSchedule para ${scheduleId}; intentando PUT normal: ${scheduledError.message}`);
+      response = await ghlClient.updateInvoiceSchedule(scheduleId, payload);
+    }
+
+    let schedule = extractScheduleFromResponse(response);
+
+    if (!schedule) {
+      const detailResponse = await ghlClient.getInvoiceSchedule(scheduleId);
+      schedule = extractScheduleFromResponse(detailResponse);
+    }
+
+    res.json({
+      success: true,
+      data: normalizeInvoiceSchedule(schedule || payload)
+    });
+  } catch (error) {
+    logger.error(`Error actualizando invoice schedule ${req.params.scheduleId}: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Error al actualizar plan de pago'
     });
   }
 };

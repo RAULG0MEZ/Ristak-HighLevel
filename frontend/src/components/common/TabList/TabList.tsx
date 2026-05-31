@@ -37,6 +37,7 @@ export const TabList: React.FC<TabListProps> = ({
 
         const button = (
           <button
+            type="button"
             onClick={() => onTabChange(tab.value)}
             data-ristak-tablist-tab
             data-active={isActive ? 'true' : undefined}

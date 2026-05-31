@@ -52,6 +52,22 @@
   gap: var(--spacing-xs);
 }
 
+.nameButton {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--color-primary);
+  font: inherit;
+  font-weight: var(--font-weight-medium);
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.nameButton:hover {
+  text-decoration: underline;
+}
+
 .statusCell {
   display: flex;
   align-items: center;
@@ -128,11 +144,87 @@
   overflow-y: auto;
 }
 
+.paymentPlanModal {
+  max-width: 760px;
+}
+
+.modalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+}
+
 .modal h2 {
   font-size: var(--font-size-xl);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text-primary);
-  margin: 0 0 var(--spacing-lg) 0;
+  margin: 0;
+}
+
+.modalSubtitle {
+  margin: var(--spacing-xs) 0 0 0;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+  overflow-wrap: anywhere;
+}
+
+.closeButton {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-xs);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.closeButton:hover {
+  color: var(--color-text-primary);
+  background-color: var(--color-surface);
+}
+
+.modalLoading {
+  min-height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+}
+
+.planSummaryGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-sm);
+}
+
+.planSummaryItem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background-color: var(--color-surface);
+  min-width: 0;
+}
+
+.planSummaryItem span {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+.planSummaryItem strong {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  overflow-wrap: anywhere;
 }
 
 .form {
@@ -155,6 +247,7 @@
 
 .formGroup > input,
 .formGroup > select,
+.formGroup > textarea,
 .formGroup .inputWithIcon input {
   padding: var(--spacing-sm) var(--spacing-md);
   border: 1px solid var(--color-border);
@@ -162,13 +255,23 @@
   background-color: var(--color-background);
   color: var(--color-text-primary);
   font-size: var(--font-size-base);
+  font-family: inherit;
 }
 
 .formGroup > input:focus,
 .formGroup > select:focus,
+.formGroup > textarea:focus,
 .formGroup .inputWithIcon input:focus {
   outline: none;
   border-color: var(--color-primary);
+}
+
+.rawJsonTextarea {
+  min-height: 260px;
+  resize: vertical;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace) !important;
+  font-size: var(--font-size-xs) !important;
+  line-height: 1.5;
 }
 
 .lockedContact {
@@ -264,6 +367,10 @@
 
   .modal {
     padding: var(--spacing-lg);
+  }
+
+  .planSummaryGrid {
+    grid-template-columns: 1fr;
   }
 }
 

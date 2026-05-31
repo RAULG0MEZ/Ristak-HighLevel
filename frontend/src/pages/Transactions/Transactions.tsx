@@ -21,12 +21,13 @@ import {
   Link2,
   Send,
   Mail,
-  MessageCircle
+  MessageCircle,
+  X
 } from 'lucide-react'
 import { useDateRange } from '@/contexts/DateRangeContext'
 import { useTimezone } from '@/contexts/TimezoneContext'
 import { formatCurrency, formatDateToISO, formatEndDateToISO, formatNumber, parseLocalDateString, formatName } from '@/utils/format'
-import { transactionsService, type Transaction, type TransactionSummary } from '@/services/transactionsService'
+import { transactionsService, type Transaction, type TransactionSummary, type PaymentPlan } from '@/services/transactionsService'
 import { highLevelService } from '@/services/highLevelService'
 import styles from './Transactions.module.css'
 
@@ -37,9 +38,39 @@ interface ModalData {
   selectedContact?: Contact | null
 }
 
+type PaymentsTableTab = 'transactions' | 'payment-plans'
+
+interface PaymentPlanModalData {
+  plan: PaymentPlan | null
+  loading: boolean
+  saving: boolean
+  rawJson: string
+}
+
 const toDateInputValue = (value?: string | null): string => {
   if (!value) return formatDateToISO(new Date())
   return String(value).split('T')[0]
+}
+
+const toDateTimeInputValue = (value?: string | null): string => {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${year}-${month}-${day}T${hours}:${minutes}`
+}
+
+const getPlanPayload = (plan: PaymentPlan): Record<string, any> => {
+  return plan.raw && typeof plan.raw === 'object' ? plan.raw : { ...plan }
+}
+
+const getPlanTermsNotes = (plan: PaymentPlan | null): string => {
+  const payload = plan ? getPlanPayload(plan) : {}
+  return String(payload.termsNotes || payload.terms || payload.notes || '')
 }
 
 export const Transactions: React.FC = () => {
@@ -48,10 +79,19 @@ export const Transactions: React.FC = () => {
   const { formatLocalDateShort } = useTimezone()
   const { showConfirm, showToast } = useNotification()
   const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [paymentPlans, setPaymentPlans] = useState<PaymentPlan[]>([])
   const [summary, setSummary] = useState<TransactionSummary | null>(null)
   const [loading, setLoading] = useState(false)
+  const [paymentPlansLoading, setPaymentPlansLoading] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [modal, setModal] = useState<ModalData>({ type: null, selectedContact: null })
+  const [paymentPlanModal, setPaymentPlanModal] = useState<PaymentPlanModalData>({
+    plan: null,
+    loading: false,
+    saving: false,
+    rawJson: ''
+  })
+  const [paymentTableTab, setPaymentTableTab] = useState<PaymentsTableTab>('transactions')
   const [viewMode, setViewMode] = useState<'all' | 'by-date'>('all') // Por defecto 'all' (Todos)
   const [showRecordPaymentModal, setShowRecordPaymentModal] = useState(false)
   const [isClient, setIsClient] = useState(false)
@@ -63,8 +103,16 @@ export const Transactions: React.FC = () => {
   const tableDateOptions = { includeYear: spansMultipleYears, referenceDate: rangeEnd }
 
   useEffect(() => {
-    fetchData()
-  }, [dateRange, viewMode])
+    if (paymentTableTab === 'transactions') {
+      fetchData()
+    }
+  }, [dateRange, viewMode, paymentTableTab])
+
+  useEffect(() => {
+    if (paymentTableTab === 'payment-plans') {
+      fetchPaymentPlans()
+    }
+  }, [paymentTableTab])
 
   useEffect(() => {
     setIsClient(true)
@@ -101,9 +149,32 @@ export const Transactions: React.FC = () => {
     }
   }
 
+  const fetchPaymentPlans = async () => {
+    setPaymentPlansLoading(true)
+    try {
+      const plans = await transactionsService.getPaymentPlans()
+      setPaymentPlans(plans)
+    } catch (error) {
+      showToast('error', 'No se pudieron cargar los planes de pago', 'HighLevel no devolvió la lista de facturas recurrentes. Intenta actualizar de nuevo.')
+    } finally {
+      setPaymentPlansLoading(false)
+    }
+  }
+
+  const handlePaymentTableTabChange = (value: string) => {
+    setPaymentTableTab(value as PaymentsTableTab)
+  }
+
   const handleSync = async () => {
     setSyncing(true)
     try {
+      if (paymentTableTab === 'payment-plans') {
+        showToast('info', 'Actualizando planes de pago', 'Consultando facturas recurrentes activas en HighLevel...')
+        await fetchPaymentPlans()
+        showToast('success', 'Planes actualizados', 'La lista de planes de pago se actualizó desde HighLevel')
+        return
+      }
+
       showToast('info', 'Sincronizando pagos', 'Obteniendo TODOS los pagos desde HighLevel...')
 
       let startDate: string | undefined
@@ -149,6 +220,87 @@ export const Transactions: React.FC = () => {
       purchases: 0
     }
     setModal({ type: 'edit', transaction, selectedContact: mockContact })
+  }
+
+  const closePaymentPlanModal = () => {
+    setPaymentPlanModal({
+      plan: null,
+      loading: false,
+      saving: false,
+      rawJson: ''
+    })
+  }
+
+  const handleOpenPaymentPlan = async (plan: PaymentPlan) => {
+    setPaymentPlanModal({
+      plan,
+      loading: true,
+      saving: false,
+      rawJson: JSON.stringify(getPlanPayload(plan), null, 2)
+    })
+
+    try {
+      const detailedPlan = await transactionsService.getPaymentPlan(plan.id)
+      setPaymentPlanModal({
+        plan: detailedPlan,
+        loading: false,
+        saving: false,
+        rawJson: JSON.stringify(getPlanPayload(detailedPlan), null, 2)
+      })
+    } catch (error) {
+      setPaymentPlanModal(prev => ({ ...prev, loading: false }))
+      showToast('error', 'No se pudo cargar el detalle', 'Se abrió la información disponible de la tabla, pero HighLevel no devolvió el detalle completo.')
+    }
+  }
+
+  const handleSavePaymentPlan = async (formData: FormData) => {
+    if (!paymentPlanModal.plan) return
+
+    let payload: Record<string, any>
+    try {
+      payload = JSON.parse(paymentPlanModal.rawJson || '{}')
+    } catch {
+      showToast('error', 'JSON inválido', 'Revisa el bloque de datos avanzados del plan antes de guardar.')
+      return
+    }
+
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      showToast('error', 'Datos inválidos', 'La plantilla del plan debe ser un objeto JSON.')
+      return
+    }
+
+    const name = String(formData.get('name') || '').trim()
+    const title = String(formData.get('title') || '').trim()
+    const currency = String(formData.get('currency') || '').trim().toUpperCase()
+    const amount = parseFloat(String(formData.get('total') || ''))
+    const executeAt = String(formData.get('executeAt') || '').trim()
+    const termsNotes = String(formData.get('termsNotes') || '').trim()
+
+    if (name) payload.name = name
+    if (title) payload.title = title
+    if (currency) payload.currency = currency
+    if (Number.isFinite(amount) && amount > 0) payload.total = amount
+    payload.termsNotes = termsNotes || null
+
+    if (executeAt) {
+      payload.schedule = payload.schedule && typeof payload.schedule === 'object'
+        ? payload.schedule
+        : {}
+      payload.schedule.executeAt = new Date(executeAt).toISOString()
+    }
+
+    setPaymentPlanModal(prev => ({ ...prev, saving: true }))
+
+    try {
+      const updatedPlan = await transactionsService.updatePaymentPlan(paymentPlanModal.plan.id, payload)
+      setPaymentPlans(prev => prev.map(plan => plan.id === updatedPlan.id ? updatedPlan : plan))
+      closePaymentPlanModal()
+      showToast('success', 'Plan de pago actualizado', 'La factura recurrente se actualizó en HighLevel.')
+      fetchPaymentPlans()
+    } catch (error: any) {
+      setPaymentPlanModal(prev => ({ ...prev, saving: false }))
+      showToast('error', 'No se pudo guardar el plan', error?.message || 'HighLevel rechazó la actualización del plan de pago.')
+    }
   }
 
   useEffect(() => {
@@ -593,6 +745,92 @@ export const Transactions: React.FC = () => {
     }
   ]
 
+  const planStatusBadges: Record<string, { label: string; variant: BadgeVariant }> = {
+    active: { label: 'Activo', variant: 'success' },
+    scheduled: { label: 'Programado', variant: 'info' },
+    pending: { label: 'Pendiente', variant: 'warning' },
+    sent: { label: 'Enviado', variant: 'info' },
+    draft: { label: 'Borrador', variant: 'neutral' },
+    paused: { label: 'Pausado', variant: 'warning' },
+    cancelled: { label: 'Cancelado', variant: 'error' },
+    canceled: { label: 'Cancelado', variant: 'error' },
+    completed: { label: 'Completado', variant: 'success' },
+    failed: { label: 'Fallido', variant: 'error' }
+  }
+
+  const getPlanStatusBadge = (status?: string) => {
+    const normalized = String(status || 'active').toLowerCase()
+    const config = planStatusBadges[normalized] ?? { label: normalized, variant: 'neutral' as BadgeVariant }
+    return <Badge variant={config.variant}>{config.label}</Badge>
+  }
+
+  const paymentTableTabs = [
+    { label: 'Transacciones', value: 'transactions' },
+    { label: 'Planes de pago', value: 'payment-plans' }
+  ]
+
+  const paymentPlanColumns: Column<PaymentPlan>[] = [
+    {
+      key: 'sortDate',
+      header: 'Fecha',
+      render: (_value, item) => formatLocalDateShort(item.sortDate || item.nextRunAt || item.updatedAt || item.createdAt || ''),
+      sortable: true
+    },
+    {
+      key: 'status',
+      header: 'Estado',
+      render: (value) => getPlanStatusBadge(value),
+      sortable: true
+    },
+    {
+      key: 'total',
+      header: 'Monto',
+      render: (value) => formatCurrency(Number(value || 0)),
+      sortable: true
+    },
+    {
+      key: 'name',
+      header: 'Plan',
+      render: (value, item) => (
+        <button
+          className={styles.nameButton}
+          onClick={(event) => {
+            event.stopPropagation()
+            handleOpenPaymentPlan(item)
+          }}
+        >
+          {value || item.title || 'Plan de pago'}
+        </button>
+      ),
+      sortable: true
+    },
+    {
+      key: 'contactName',
+      header: 'Contacto',
+      render: (value) => value ? formatName(value) : '-',
+      sortable: true
+    },
+    {
+      key: 'recurrenceLabel',
+      header: 'Recurrencia',
+      render: (value) => value || '-',
+      sortable: true
+    },
+    {
+      key: 'description',
+      header: 'Descripción',
+      render: (value) => value || '-',
+      sortable: false,
+      visible: false
+    },
+    {
+      key: 'email',
+      header: 'Email',
+      sortable: true,
+      visible: false
+    }
+  ]
+
   const totals = {
     ingresos: summary?.totalRevenue || 0,
     completados: summary?.completedPayments || 0,
@@ -604,7 +842,7 @@ export const Transactions: React.FC = () => {
     reembolsosChange: summary ? transactionsService.calculateDelta(summary.refunds, summary.refundsPrev) : 0
   }
 
-  if (loading && transactions.length === 0) {
+  if (paymentTableTab === 'transactions' && loading && transactions.length === 0) {
     return <Loading message="Cargando pagos..." kpiCount={4} />
   }
 
@@ -620,52 +858,58 @@ export const Transactions: React.FC = () => {
         </div>
 
         <div className={styles.controlsRow}>
-          <div className={styles.dateFilters}>
-            <TabList
-              tabs={[
-                {
-                  value: 'all',
-                  label: 'Todos',
-                  description: 'Muestra todos los pagos, sin limitar por rango de fechas.'
-                },
-                {
-                  value: 'by-date',
-                  label: 'Por fecha',
-                  description: 'Activa el calendario para revisar pagos de un periodo específico.'
-                }
-              ]}
-              activeTab={viewMode}
-              onTabChange={(value) => setViewMode(value as 'all' | 'by-date')}
-              variant="compact"
-            />
-            {viewMode === 'by-date' && (
-              <DateRangePicker
-                startDate={formatDateToISO(dateRange.start)}
-                endDate={formatDateToISO(dateRange.end)}
-                onChange={(start, end) => setDateRange({
-                  start: parseLocalDateString(start),
-                  end: parseLocalDateString(end),
-                  preset: 'custom'
-                })}
+          {paymentTableTab === 'transactions' ? (
+            <div className={styles.dateFilters}>
+              <TabList
+                tabs={[
+                  {
+                    value: 'all',
+                    label: 'Todos',
+                    description: 'Muestra todos los pagos, sin limitar por rango de fechas.'
+                  },
+                  {
+                    value: 'by-date',
+                    label: 'Por fecha',
+                    description: 'Activa el calendario para revisar pagos de un periodo específico.'
+                  }
+                ]}
+                activeTab={viewMode}
+                onTabChange={(value) => setViewMode(value as 'all' | 'by-date')}
+                variant="compact"
               />
-            )}
-          </div>
+              {viewMode === 'by-date' && (
+                <DateRangePicker
+                  startDate={formatDateToISO(dateRange.start)}
+                  endDate={formatDateToISO(dateRange.end)}
+                  onChange={(start, end) => setDateRange({
+                    start: parseLocalDateString(start),
+                    end: parseLocalDateString(end),
+                    preset: 'custom'
+                  })}
+                />
+              )}
+            </div>
+          ) : (
+            <div className={styles.dateFilters} />
+          )}
           <div className={styles.actions}>
             <Button
               variant="secondary"
               onClick={handleSync}
-              disabled={syncing}
+              disabled={syncing || paymentPlansLoading}
             >
-              <RefreshCw size={16} className={syncing ? styles.spinning : ''} />
-              {syncing ? 'Sincronizando...' : 'Actualizar'}
+              <RefreshCw size={16} className={syncing || paymentPlansLoading ? styles.spinning : ''} />
+              {syncing || paymentPlansLoading ? 'Actualizando...' : 'Actualizar'}
             </Button>
-            <Button
-              variant="secondary"
-              onClick={() => setShowRecordPaymentModal(true)}
-            >
-              <Plus size={16} />
-              Registrar pago
-            </Button>
+            {paymentTableTab === 'transactions' && (
+              <Button
+                variant="secondary"
+                onClick={() => setShowRecordPaymentModal(true)}
+              >
+                <Plus size={16} />
+                Registrar pago
+              </Button>
+            )}
           </div>
         </div>
 
@@ -701,18 +945,46 @@ export const Transactions: React.FC = () => {
         </div>
 
       <Card padding="none">
-        <Table
-          key="transactions_table"
-          initialColumns={columns}
-          data={transactions}
-          keyExtractor={(item) => item.id}
-          emptyMessage="No hay pagos disponibles"
-          loading={loading}
-          searchable={true}
-          searchPlaceholder="Buscar pagos..."
-          paginated={true}
-          pageSize={20}
-        />
+        {paymentTableTab === 'transactions' ? (
+          <Table
+            key="transactions_table"
+            initialColumns={columns}
+            data={transactions}
+            keyExtractor={(item) => item.id}
+            emptyMessage="No hay pagos disponibles"
+            loading={loading}
+            searchable={true}
+            searchPlaceholder="Buscar pagos..."
+            paginated={true}
+            pageSize={20}
+            filters={paymentTableTabs}
+            activeFilter={paymentTableTab}
+            onFilterChange={handlePaymentTableTabChange}
+            tableId="transactions"
+            initialSortBy="date"
+            initialSortOrder="desc"
+          />
+        ) : (
+          <Table
+            key="payment_plans_table"
+            initialColumns={paymentPlanColumns}
+            data={paymentPlans}
+            keyExtractor={(item) => item.id}
+            onRowClick={handleOpenPaymentPlan}
+            emptyMessage="No hay planes de pago activos"
+            loading={paymentPlansLoading}
+            searchable={true}
+            searchPlaceholder="Buscar planes de pago..."
+            paginated={true}
+            pageSize={20}
+            filters={paymentTableTabs}
+            activeFilter={paymentTableTab}
+            onFilterChange={handlePaymentTableTabChange}
+            tableId="payment_plans"
+            initialSortBy="sortDate"
+            initialSortOrder="desc"
+          />
+        )}
       </Card>
 
       {isClient && modal.type && createPortal(
@@ -834,6 +1106,127 @@ export const Transactions: React.FC = () => {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {isClient && paymentPlanModal.plan && createPortal(
+        <div className={styles.modalOverlay} onClick={closePaymentPlanModal}>
+          <div className={`${styles.modal} ${styles.paymentPlanModal}`} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.modalHeader}>
+              <div>
+                <h2>Plan de pago</h2>
+                <p className={styles.modalSubtitle}>{paymentPlanModal.plan.id}</p>
+              </div>
+              <button
+                className={styles.closeButton}
+                type="button"
+                onClick={closePaymentPlanModal}
+                title="Cerrar"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {paymentPlanModal.loading ? (
+              <div className={styles.modalLoading}>Cargando detalle del plan...</div>
+            ) : (
+              <form className={styles.form} onSubmit={(e) => {
+                e.preventDefault()
+                handleSavePaymentPlan(new FormData(e.currentTarget))
+              }}>
+                <div className={styles.planSummaryGrid}>
+                  <div className={styles.planSummaryItem}>
+                    <span>Estado</span>
+                    <strong>{getPlanStatusBadge(paymentPlanModal.plan.status)}</strong>
+                  </div>
+                  <div className={styles.planSummaryItem}>
+                    <span>Monto</span>
+                    <strong>{formatCurrency(Number(paymentPlanModal.plan.total || 0))}</strong>
+                  </div>
+                  <div className={styles.planSummaryItem}>
+                    <span>Contacto</span>
+                    <strong>{paymentPlanModal.plan.contactName ? formatName(paymentPlanModal.plan.contactName) : 'Sin contacto'}</strong>
+                  </div>
+                  <div className={styles.planSummaryItem}>
+                    <span>Recurrencia</span>
+                    <strong>{paymentPlanModal.plan.recurrenceLabel || 'Sin recurrencia'}</strong>
+                  </div>
+                </div>
+
+                <div className={styles.formGroup}>
+                  <label>Nombre del plan</label>
+                  <input
+                    name="name"
+                    type="text"
+                    defaultValue={paymentPlanModal.plan.name || paymentPlanModal.plan.title || ''}
+                  />
+                </div>
+                <div className={styles.formGroup}>
+                  <label>Título de factura</label>
+                  <input
+                    name="title"
+                    type="text"
+                    defaultValue={paymentPlanModal.plan.title || paymentPlanModal.plan.name || ''}
+                  />
+                </div>
+                <div className={styles.formGroup}>
+                  <label>Monto</label>
+                  <div className={styles.inputWithIcon}>
+                    <span className={styles.inputIcon}>$</span>
+                    <input
+                      name="total"
+                      type="text"
+                      pattern="[0-9]*[.]?[0-9]+"
+                      inputMode="decimal"
+                      defaultValue={paymentPlanModal.plan.total}
+                      className={styles.amountInput}
+                    />
+                  </div>
+                </div>
+                <div className={styles.formGroup}>
+                  <label>Moneda</label>
+                  <select name="currency" defaultValue={paymentPlanModal.plan.currency || 'MXN'}>
+                    <option value="MXN">MXN</option>
+                    <option value="USD">USD</option>
+                  </select>
+                </div>
+                <div className={styles.formGroup}>
+                  <label>Próximo cobro / ejecución</label>
+                  <input
+                    name="executeAt"
+                    type="datetime-local"
+                    defaultValue={toDateTimeInputValue(paymentPlanModal.plan.nextRunAt || paymentPlanModal.plan.startDate)}
+                  />
+                </div>
+                <div className={styles.formGroup}>
+                  <label>Términos / notas</label>
+                  <textarea
+                    name="termsNotes"
+                    rows={4}
+                    defaultValue={getPlanTermsNotes(paymentPlanModal.plan)}
+                  />
+                </div>
+                <div className={styles.formGroup}>
+                  <label>Datos avanzados de la plantilla</label>
+                  <textarea
+                    className={styles.rawJsonTextarea}
+                    value={paymentPlanModal.rawJson}
+                    onChange={(event) => setPaymentPlanModal(prev => ({ ...prev, rawJson: event.target.value }))}
+                    spellCheck={false}
+                  />
+                </div>
+                <div className={styles.formActions}>
+                  <Button type="button" variant="ghost" onClick={closePaymentPlanModal}>
+                    Cancelar
+                  </Button>
+                  <Button type="submit" loading={paymentPlanModal.saving}>
+                    Guardar plan
+                  </Button>
+                </div>
+              </form>
+            )}
           </div>
         </div>,
         document.body

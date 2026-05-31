@@ -547,6 +547,72 @@ class GHLClient {
     })
   }
 
+  async listInvoiceSchedules({ limit = 100, offset = 0 } = {}) {
+    return this.request('/invoices/schedule', {
+      params: {
+        altId: this.locationId,
+        altType: 'location',
+        limit,
+        offset: offset || 0
+      },
+      version: GHL_INVOICE_SCHEDULE_API_VERSION
+    })
+  }
+
+  async getInvoiceSchedule(scheduleId) {
+    if (!scheduleId) {
+      throw new Error('scheduleId requerido para obtener schedule')
+    }
+
+    return this.request(`/invoices/schedule/${scheduleId}`, {
+      params: {
+        altId: this.locationId,
+        altType: 'location'
+      },
+      version: GHL_INVOICE_SCHEDULE_API_VERSION
+    })
+  }
+
+  async updateInvoiceSchedule(scheduleId, data) {
+    if (!scheduleId) {
+      throw new Error('scheduleId requerido para actualizar schedule')
+    }
+
+    const body = {
+      ...normalizeInvoicePayload(data),
+      altId: this.locationId,
+      altType: 'location'
+    }
+
+    logger.info(`Actualizando invoice schedule: ${scheduleId}`)
+
+    return this.request(`/invoices/schedule/${scheduleId}`, {
+      method: 'PUT',
+      body,
+      version: GHL_INVOICE_SCHEDULE_API_VERSION
+    })
+  }
+
+  async updateAndScheduleInvoiceSchedule(scheduleId, data) {
+    if (!scheduleId) {
+      throw new Error('scheduleId requerido para actualizar schedule activo')
+    }
+
+    const body = {
+      ...normalizeInvoicePayload(data),
+      altId: this.locationId,
+      altType: 'location'
+    }
+
+    logger.info(`Actualizando recurring invoice schedule activo: ${scheduleId}`)
+
+    return this.request(`/invoices/schedule/${scheduleId}/updateAndSchedule`, {
+      method: 'POST',
+      body,
+      version: GHL_INVOICE_SCHEDULE_API_VERSION
+    })
+  }
+
   async getInvoice(invoiceId) {
     return this.request(`/invoices/${invoiceId}`, {
       params: {

@@ -33,6 +33,30 @@ export interface TransactionSummary {
   refundsPrev: number
 }
 
+export interface PaymentPlan {
+  id: string
+  name: string
+  title?: string
+  status: string
+  total: number
+  currency?: string
+  contactId?: string
+  contactName?: string
+  email?: string
+  phone?: string
+  description?: string
+  startDate?: string
+  nextRunAt?: string
+  endDate?: string
+  recurrenceLabel?: string
+  liveMode?: boolean
+  itemCount?: number
+  createdAt?: string
+  updatedAt?: string
+  sortDate?: string
+  raw?: Record<string, any>
+}
+
 export const transactionsService = {
   async getTransactions(startDate?: string, endDate?: string, forceSync?: boolean): Promise<Transaction[]> {
     try {
@@ -110,6 +134,24 @@ export const transactionsService = {
   async getPaymentLink(id: string): Promise<string> {
     const response = await apiClient.get<{ link: string }>(`/transactions/${id}/payment-link`)
     return response.link
+  },
+
+  async getPaymentPlans(): Promise<PaymentPlan[]> {
+    const data = await apiClient.get<PaymentPlan[]>('/highlevel/invoices/schedules')
+    return data
+  },
+
+  async getPaymentPlan(id: string): Promise<PaymentPlan> {
+    const data = await apiClient.get<PaymentPlan>(`/highlevel/invoices/schedules/${id}`)
+    return data
+  },
+
+  async updatePaymentPlan(id: string, payload: Record<string, any>): Promise<PaymentPlan> {
+    const data = await apiClient.put<PaymentPlan>(`/highlevel/invoices/schedules/${id}`, {
+      payload,
+      updateAndSchedule: true
+    })
+    return data
   },
 
   calculateDelta(current: number, previous: number): number {
