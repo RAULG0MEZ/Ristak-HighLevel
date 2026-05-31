@@ -25,7 +25,7 @@ import {
   type ReportRange,
   type ManualBusinessExpense
 } from '@/services/reportsService'
-import { formatCurrency, formatNumber, formatRoas, formatDate, formatDateToISO, parseLocalDateString } from '@/utils/format'
+import { formatCurrency, formatNumber, formatDate, formatDateToISO, parseLocalDateString } from '@/utils/format'
 import { useAppConfig, useChartHover, useIsRenderDomain, useMetaTimezone, useTableConfig } from '@/hooks'
 import { DEFAULT_BAR_RADIUS, getTopRoundedBarPath } from '@/components/common/chartShapes'
 import { ChartTooltip } from '@/components/common/ChartTooltip/ChartTooltip'
@@ -41,8 +41,6 @@ import {
   BarChart3
 } from 'lucide-react'
 import {
-  LineChart,
-  Line,
   BarChart,
   Bar,
   AreaChart,
@@ -412,7 +410,6 @@ const SimpleLineChart: React.FC<SimpleLineChartProps> = ({ data, dataKeys, forma
   const [actualPointPos, setActualPointPos] = React.useState<{ x: number; y: number } | null>(null)
   const activePointRef = React.useRef<{ [key: string]: { x: number; y: number } }>({})
   const gradientIdPrefix = React.useId().replace(/:/g, '')
-  const isDarkMode = typeof document !== 'undefined' && document.body.classList.contains('dark')
 
   // Resetear cuando cambia el índice o deja de hacer hover
   React.useEffect(() => {
@@ -713,7 +710,6 @@ const SimpleAreaChart: React.FC<SimpleAreaChartProps> = ({ data, dataKeys, forma
   const [actualPointPos, setActualPointPos] = React.useState<{ x: number; y: number } | null>(null)
   const activePointRef = React.useRef<{ [key: string]: { x: number; y: number } }>({})
   const gradientIdPrefix = React.useId().replace(/:/g, '')
-  const isDarkMode = typeof document !== 'undefined' && document.body.classList.contains('dark')
 
   // Resetear cuando cambia el índice o deja de hacer hover
   React.useEffect(() => {
@@ -1229,7 +1225,6 @@ export const Reports: React.FC = () => {
   const [visitorsModalLoading, setVisitorsModalLoading] = useState(false)
   const [visitorsData, setVisitorsData] = useState<any[]>([])
   const [visitorsModalDate, setVisitorsModalDate] = useState('')
-  const [visitorsModalRawDate, setVisitorsModalRawDate] = useState('') // Para guardar la fecha original
 
   // Estado para modal de transacciones
   const [transactionsModalState, setTransactionsModalState] = useState<{
@@ -1622,7 +1617,6 @@ export const Reports: React.FC = () => {
 
     setVisitorsModalLoading(true)
     setIsVisitorsModalOpen(true)
-    setVisitorsModalRawDate(date) // Guardar la fecha original para recargar si es necesario
 
     // Manejar diferentes formatos de fecha según viewType
     let startDate = date
@@ -2243,5 +2237,3 @@ export const Reports: React.FC = () => {
     </PageContainer>
   )
 }
-
-export default Reports

@@ -260,7 +260,6 @@ export const Campaigns: React.FC = () => {
         const dateStr = adjustDateFn ? adjustDateFn(item.label) : item.label
         const cleanDate = dateStr.split(' (')[0] // Remover timezone indicator si existe
         const [year, month, day] = cleanDate.split('-').map(Number)
-        const date = new Date(year, month - 1, day)
 
         // Detectar cambio de año
         let yearChanged = false
@@ -336,7 +335,6 @@ export const Campaigns: React.FC = () => {
       const dateStr = adjustDateFn ? adjustDateFn(key) : key
       const cleanDate = dateStr.split(' (')[0]
       const [year, month, day] = cleanDate.split('-').map(Number)
-      const date = new Date(year, month - 1, day)
 
       // Detectar cambio de año
       let yearChanged = false
@@ -1693,7 +1691,7 @@ export const Campaigns: React.FC = () => {
       key: 'cpl',
       header: `Costo por ${labels.lead}`,
       visible: false,
-      render: (value, item) => {
+      render: (_value, item) => {
         if (item.showPlaceholder) return <span className={styles.placeholderText}>—</span>
         const cpl = (item.leads || 0) > 0 ? item.spend / item.leads : 0
         return formatCurrency(cpl)
@@ -1705,7 +1703,7 @@ export const Campaigns: React.FC = () => {
       key: 'cac',
       header: `Costo por ${labels.customer}`,
       visible: false,
-      render: (value, item) => {
+      render: (_value, item) => {
         if (item.showPlaceholder) return <span className={styles.placeholderText}>—</span>
         const cac = (item.sales || 0) > 0 ? item.spend / item.sales : 0
         return formatCurrency(cac)
@@ -1717,7 +1715,7 @@ export const Campaigns: React.FC = () => {
       key: 'cpa',
       header: 'Costo por Cita',
       visible: false,
-      render: (value, item) => {
+      render: (_value, item) => {
         if (item.showPlaceholder) return <span className={styles.placeholderText}>—</span>
         const cpa = (item.appointments || 0) > 0 ? item.spend / item.appointments : 0
         return formatCurrency(cpa)
@@ -1786,7 +1784,7 @@ export const Campaigns: React.FC = () => {
       key: 'webToLeadsRate',
       header: `Alcance → ${labels.leads} %`,
       visible: false,
-      render: (value, item) => {
+      render: (_value, item) => {
         if (item.showPlaceholder) return <span className={styles.placeholderText}>—</span>
         const rate = (item.reach || 0) > 0 ? ((item.leads || 0) / item.reach) * 100 : 0
         return <span>{rate.toFixed(1)}%</span>
@@ -1803,7 +1801,7 @@ export const Campaigns: React.FC = () => {
         </div>
       ),
       visible: false,
-      render: (value, item) => {
+      render: (_value, item) => {
         if (item.showPlaceholder) return <span className={styles.placeholderText}>—</span>
         const appointments = item.appointments || 0
         const rate = (item.leads || 0) > 0 ? (appointments / item.leads) * 100 : 0
@@ -1821,7 +1819,7 @@ export const Campaigns: React.FC = () => {
         </div>
       ),
       visible: false,
-      render: (value, item) => {
+      render: (_value, item) => {
         if (item.showPlaceholder) return <span className={styles.placeholderText}>—</span>
         const appointments = item.appointments || 0
         const rate = appointments > 0 ? ((item.sales || 0) / appointments) * 100 : 0

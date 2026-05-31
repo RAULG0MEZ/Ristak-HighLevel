@@ -4,8 +4,8 @@ import { X, Info, AlertCircle, ShieldAlert } from 'lucide-react'
 import { Button } from '../Button'
 import styles from './Modal.module.css'
 
-export type ModalType = 'confirm' | 'alert' | 'info' | 'custom'
-export type ModalSize = 'sm' | 'md' | 'lg' | 'xl'
+type ModalType = 'confirm' | 'alert' | 'info' | 'custom'
+type ModalSize = 'sm' | 'md' | 'lg' | 'xl'
 
 interface ModalProps {
   isOpen: boolean

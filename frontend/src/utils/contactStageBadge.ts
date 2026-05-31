@@ -1,13 +1,13 @@
 import type { BadgeVariant } from '@/components/common/Badge'
 
-export type ContactStage = 'lead' | 'appointment' | 'attended' | 'customer'
+type ContactStage = 'lead' | 'appointment' | 'attended' | 'customer'
 
-export interface ContactStageLabels {
+interface ContactStageLabels {
   lead: string
   customer: string
 }
 
-export interface ContactStageBadge {
+interface ContactStageBadge {
   stage: ContactStage
   text: string
   variant: BadgeVariant

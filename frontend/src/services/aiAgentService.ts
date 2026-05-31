@@ -79,7 +79,7 @@ export interface AIAgentViewContext {
   visibleText: string
 }
 
-export interface AIAgentChatResult {
+interface AIAgentChatResult {
   reply: string
   model: string
   sources?: Array<{
@@ -90,12 +90,12 @@ export interface AIAgentChatResult {
   usage?: unknown
 }
 
-export interface AIAgentTranscriptionResult {
+interface AIAgentTranscriptionResult {
   text: string
   model: string
 }
 
-export interface AIAgentBusinessContextAnswerResult {
+interface AIAgentBusinessContextAnswerResult {
   field: AIAgentBusinessContextField
   text: string
   status: AIAgentConfigStatus

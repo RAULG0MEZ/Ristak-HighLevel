@@ -2,7 +2,7 @@ import React, { useEffect } from 'react'
 import { X, CheckCircle2, XCircle, Info, AlertTriangle } from 'lucide-react'
 import styles from './Toast.module.css'
 
-export type ToastType = 'success' | 'error' | 'info' | 'warning'
+type ToastType = 'success' | 'error' | 'info' | 'warning'
 
 export interface ToastProps {
   id: string

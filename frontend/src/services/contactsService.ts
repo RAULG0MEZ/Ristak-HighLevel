@@ -24,7 +24,7 @@ export interface JourneyEvent {
   data: Record<string, any>
 }
 
-export interface ContactChartData {
+interface ContactChartData {
   date: string
   count: number
 }

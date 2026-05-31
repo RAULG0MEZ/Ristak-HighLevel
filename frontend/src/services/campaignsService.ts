@@ -37,7 +37,7 @@ export interface AdSet {
   ads?: Ad[]
 }
 
-export interface Ad {
+interface Ad {
   id: string
   name: string
   creativeId?: string | null
@@ -118,14 +118,14 @@ export interface CampaignContact {
   hasAttendedAppointment?: boolean
 }
 
-export interface CreativePreviewResponse {
+interface CreativePreviewResponse {
   success: boolean
   creativeId: string
   adFormat: string
   body: string
 }
 
-export interface AdCreativeMediaResponse {
+interface AdCreativeMediaResponse {
   success: boolean
   adId: string
   creative: Pick<Ad,

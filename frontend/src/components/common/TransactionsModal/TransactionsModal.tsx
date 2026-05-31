@@ -1,7 +1,6 @@
 import React from 'react'
 import { Modal } from '../Modal'
 import { formatCurrency, formatDate } from '@/utils/format'
-import { X } from 'lucide-react'
 import styles from './TransactionsModal.module.css'
 
 interface Transaction {
@@ -149,5 +148,3 @@ export const TransactionsModal: React.FC<TransactionsModalProps> = ({
     </Modal>
   )
 }
-
-export default TransactionsModal

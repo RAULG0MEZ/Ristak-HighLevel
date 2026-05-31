@@ -17,7 +17,7 @@ export interface GlobalSearchCategory {
   items: GlobalSearchItem[]
 }
 
-export interface GlobalSearchResponse {
+interface GlobalSearchResponse {
   categories: GlobalSearchCategory[]
   total: number
 }

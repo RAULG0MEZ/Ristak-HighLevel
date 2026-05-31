@@ -18,7 +18,7 @@ import {
 import { useDateRange } from '@/contexts/DateRangeContext'
 import { useTimezone } from '@/contexts/TimezoneContext'
 import { useLabels } from '@/contexts/LabelsContext'
-import { formatCurrency, formatDate, formatDateToISO, formatEndDateToISO, formatNumber, formatUrlParameter, parseLocalDateString } from '@/utils/format'
+import { formatCurrency, formatDateToISO, formatEndDateToISO, formatNumber, formatUrlParameter, parseLocalDateString } from '@/utils/format'
 import { contactsService, type Contact, type ContactStats } from '@/services/contactsService'
 import { calendarsService, type CalendarEvent } from '@/services/calendarsService'
 import type { ContactAppointment, ContactPayment } from '@/types'
@@ -286,7 +286,6 @@ export const Contacts: React.FC = () => {
   const rangeStart = dateRange.start instanceof Date ? dateRange.start : new Date(dateRange.start)
   const rangeEnd = dateRange.end instanceof Date ? dateRange.end : new Date(dateRange.end)
   const spansMultipleYears = rangeStart.getFullYear() !== rangeEnd.getFullYear()
-  const tableDateOptions = { includeYear: spansMultipleYears, referenceDate: rangeEnd }
 
   const openContactModal = (contact: Contact) => {
     setSelectedContact(contact)
@@ -1403,5 +1402,3 @@ export const Contacts: React.FC = () => {
     </PageContainer>
   )
 }
-
-export default Contacts

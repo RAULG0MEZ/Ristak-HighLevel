@@ -715,7 +715,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     onClose()
   }
 
-  const buildInvoicePayload = (preparedSubtotal: number, preparedTaxAmount: number, finalCurrency: string, contactName: string, items: any[], contactId: string, contactEmail: string, contactPhone: string) => {
+  const buildInvoicePayload = (preparedTaxAmount: number, finalCurrency: string, contactName: string, items: any[], contactId: string, contactEmail: string, contactPhone: string) => {
     const businessDetails: Record<string, any> = {
       name: businessName || 'Mi Negocio'
     }
@@ -877,7 +877,6 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       const totalAmount = includeIVA ? normalizeAmount(subtotal + taxAmount) : subtotal
 
       const payload = buildInvoicePayload(
-        subtotal,
         taxAmount,
         finalCurrency,
         contactName,

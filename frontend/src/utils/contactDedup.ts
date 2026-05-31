@@ -19,13 +19,13 @@ const SUCCESS_STATUSES = new Set([
 
 const REFUND_STATUSES = new Set(['refunded', 'refund'])
 
-export interface DedupedMetadata {
+interface DedupedMetadata {
   normalizedPhone?: string | null
   duplicateCount?: number
   mergedContactIds?: string[]
 }
 
-export type ContactLike = {
+type ContactLike = {
   id?: string | number | null
   phone?: string | null
   name?: string | null
@@ -427,7 +427,7 @@ export function dedupeContacts<T extends ContactLike>(contacts: T[]): Array<With
     }
   })
 
-  groups.forEach(({ items, firstIndex }, dedupKey) => {
+  groups.forEach(({ items, firstIndex }) => {
     // Extraer normalizedPhone del primero para mantener compatibilidad
     const normalizedPhone = normalizePhone(extractPhone(items[0]))
     const aggregated = aggregateGroup(items, normalizedPhone)

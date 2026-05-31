@@ -357,25 +357,3 @@ export function normalizeTrafficSource(data: {
   // Fallback
   return 'Otro'
 }
-
-/**
- * Normaliza un código/nombre de fuente directamente (para retrocompatibilidad)
- */
-export function normalizeSourceCode(source: string): string {
-  if (!source) return 'Desconocido'
-
-  const normalized = source.toLowerCase().trim()
-
-  // Verificar si es dominio
-  if (REFERRER_DOMAIN_MAP[normalized]) {
-    return REFERRER_DOMAIN_MAP[normalized]
-  }
-
-  // Verificar si es código
-  if (SOURCE_CODE_MAP[normalized]) {
-    return SOURCE_CODE_MAP[normalized]
-  }
-
-  // Capitalizar primera letra si no encontró match
-  return source.charAt(0).toUpperCase() + source.slice(1)
-}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Card, Button } from '@/components/common'
-import { Copy, Check, Info, Loader2, RefreshCw, Activity } from 'lucide-react'
+import { Check, Info, Loader2, RefreshCw, Activity } from 'lucide-react'
 import { trackingService } from '@/services/trackingService'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useAppConfig, useIsRenderDomain } from '@/hooks'
@@ -18,7 +18,6 @@ export const WebTracking: React.FC = () => {
   const [visitorSource, setVisitorSource] = useAppConfig<'platform' | 'tracking'>('visitor_source', 'platform')
 
   const [trackingDomain, setTrackingDomain] = useState('')
-  const [copied, setCopied] = useState(false)
   const [loadingConfig, setLoadingConfig] = useState(true)
   const [configuringTracking, setConfiguringTracking] = useState(false)
   const [isConfigured, setIsConfigured] = useState(false)
@@ -90,18 +89,6 @@ export const WebTracking: React.FC = () => {
       showToast('error', 'Error al sincronizar', 'No se pudo guardar el código en HighLevel')
     } finally {
       setConfiguringTracking(false)
-    }
-  }
-
-  const handleCopySnippet = async () => {
-    try {
-      const snippet = trackingService.generateSnippet(trackingDomain)
-      await navigator.clipboard.writeText(snippet)
-      setCopied(true)
-      showToast('success', 'Copiado', 'El código se copió al portapapeles')
-      setTimeout(() => setCopied(false), 2000)
-    } catch (error) {
-      showToast('error', 'Error', 'No se pudo copiar el código')
     }
   }
 

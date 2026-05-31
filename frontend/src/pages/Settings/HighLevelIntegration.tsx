@@ -14,7 +14,6 @@ import {
   Trash2,
   Loader2,
   Info,
-  Type,
   ChevronDown,
   X,
   Plus,
@@ -644,7 +643,7 @@ export const HighLevelIntegration: React.FC = () => {
                 <button
                   type="button"
                   className={styles.dropdownTrigger}
-                  onClick={(e) => {
+                  onClick={() => {
                     setOpenDropdown(openDropdown === 'customer' ? null : 'customer')
                   }}
                 >
@@ -680,7 +679,7 @@ export const HighLevelIntegration: React.FC = () => {
                 <button
                   type="button"
                   className={styles.dropdownTrigger}
-                  onClick={(e) => {
+                  onClick={() => {
                     setOpenDropdown(openDropdown === 'lead' ? null : 'lead')
                   }}
                 >

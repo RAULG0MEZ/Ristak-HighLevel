@@ -1,8 +1,8 @@
 import React from 'react'
 import { cn } from '@/utils/cn'
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'outline'
-export type ButtonSize = 'sm' | 'md' | 'lg' | 'small' | 'medium' | 'large'
+type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'outline'
+type ButtonSize = 'sm' | 'md' | 'lg' | 'small' | 'medium' | 'large'
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant

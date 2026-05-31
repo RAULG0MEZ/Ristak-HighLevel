@@ -7,7 +7,6 @@ import {
   Check,
   FileText,
   Target,
-  Image,
   Share2,
   Smartphone,
   Globe,
@@ -84,13 +83,6 @@ export function TreeFilter({
   const [showSearchResults, setShowSearchResults] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // Estado para rastrear la ruta en la jerarquía de ads (Platform > Campaign > Adset > Ad)
-  const [hoveredAdsPath, setHoveredAdsPath] = useState<{
-    platformId?: string
-    campaignId?: string
-    adsetId?: string
-  }>({})
 
   // Cerrar dropdown cuando se hace click afuera
   useEffect(() => {

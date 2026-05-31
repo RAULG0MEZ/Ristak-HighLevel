@@ -1,7 +1,6 @@
 // Hooks personalizados de la app
-export { useAppConfig, useAppConfigs, useTableConfig } from './useAppConfig'
+export { useAppConfig, useTableConfig } from './useAppConfig'
 export { useChartHover } from './useChartHover'
-export { useChartPoint } from './useChartPoint'
 export { useMetaTimezone } from './useMetaTimezone'
 export { useLogoContrast } from './useLogoContrast'
 export { useIsRenderDomain } from './useIsRenderDomain'

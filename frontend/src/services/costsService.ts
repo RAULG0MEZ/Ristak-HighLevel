@@ -12,7 +12,7 @@ export interface Cost {
   updated_at: string
 }
 
-export interface CostCalculation {
+interface CostCalculation {
   revenue: number
   total_costs: number
   net_profit: number
@@ -34,7 +34,7 @@ export interface CreateCostDto {
   applies_to?: 'revenue' | 'profit' | null
 }
 
-export interface UpdateCostDto extends Partial<CreateCostDto> {
+interface UpdateCostDto extends Partial<CreateCostDto> {
   is_active?: boolean
 }
 

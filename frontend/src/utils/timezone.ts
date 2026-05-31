@@ -8,90 +8,6 @@
  * - Al mostrar, convertimos de UTC a la zona horaria del usuario
  */
 
-// Mapa de zonas horarias de Meta Ads a zonas horarias IANA
-const META_TIMEZONE_MAP: Record<number, string> = {
-  // América
-  1: 'America/Los_Angeles',      // Pacific Time
-  2: 'America/Denver',           // Mountain Time
-  3: 'America/Chicago',          // Central Time
-  4: 'America/New_York',         // Eastern Time
-  5: 'America/Anchorage',        // Alaska
-  6: 'Pacific/Honolulu',         // Hawaii
-  47: 'America/Mexico_City',     // Ciudad de México
-  48: 'America/Cancun',          // Cancún
-  49: 'America/Tijuana',         // Tijuana
-  50: 'America/Argentina/Buenos_Aires', // Buenos Aires
-  51: 'America/Sao_Paulo',       // São Paulo
-  52: 'America/Santiago',        // Santiago
-  53: 'America/Bogota',          // Bogotá
-  54: 'America/Lima',            // Lima
-
-  // Europa
-  7: 'Europe/London',            // Londres
-  8: 'Europe/Paris',             // París/Madrid
-  9: 'Europe/Berlin',            // Berlín
-  10: 'Europe/Rome',             // Roma
-  11: 'Europe/Moscow',           // Moscú
-
-  // Asia
-  12: 'Asia/Tokyo',              // Tokio
-  13: 'Asia/Shanghai',           // China
-  14: 'Asia/Hong_Kong',          // Hong Kong
-  15: 'Asia/Singapore',          // Singapur
-  16: 'Asia/Dubai',              // Dubai
-  17: 'Asia/Tel_Aviv',           // Tel Aviv
-  18: 'Asia/Seoul',              // Seúl
-  19: 'Asia/Kolkata',            // India
-
-  // Oceanía
-  20: 'Australia/Sydney',        // Sydney
-  21: 'Australia/Melbourne',     // Melbourne
-  22: 'Pacific/Auckland',        // Auckland
-}
-
-/**
- * Convierte una fecha de la zona horaria de Meta a UTC
- * @param date Fecha en string o Date
- * @param metaTimezoneId ID de zona horaria de Meta (del Ad Account)
- * @returns Fecha en UTC
- */
-export function convertMetaDateToUTC(date: string | Date, metaTimezoneId: number): Date {
-  const timezone = META_TIMEZONE_MAP[metaTimezoneId] || 'UTC'
-  const dateObj = typeof date === 'string' ? new Date(date) : date
-
-  // Usar Intl.DateTimeFormat para obtener el offset
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  })
-
-  // Obtener las partes de la fecha en la zona horaria específica
-  const parts = formatter.formatToParts(dateObj)
-  const dateParts: any = {}
-  parts.forEach(part => {
-    dateParts[part.type] = part.value
-  })
-
-  // Crear fecha en la zona horaria local
-  const localDate = new Date(
-    `${dateParts.year}-${dateParts.month}-${dateParts.day}T${dateParts.hour}:${dateParts.minute}:${dateParts.second}`
-  )
-
-  // Calcular el offset en minutos
-  const tzOffset = getTimezoneOffset(timezone, dateObj)
-
-  // Convertir a UTC sumando el offset
-  const utcTime = localDate.getTime() + (tzOffset * 60 * 1000)
-
-  return new Date(utcTime)
-}
-
 /**
  * Obtiene el offset de una zona horaria en minutos
  */
@@ -164,61 +80,9 @@ export function formatInTimezone(
 }
 
 /**
- * Obtiene la zona horaria actual del navegador
- */
-export function getBrowserTimezone(): string {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone
-}
-
-/**
- * Valida si una fecha está en UTC
- */
-export function isUTC(date: string): boolean {
-  return date.endsWith('Z') || date.includes('+00:00')
-}
-
-/**
  * Asegura que una fecha esté en formato UTC
  */
 export function ensureUTC(date: string | Date): string {
   const dateObj = typeof date === 'string' ? new Date(date) : date
   return dateObj.toISOString()
 }
-
-/**
- * Calcula la diferencia de horas entre dos zonas horarias
- */
-export function getTimezoneOffsetDifference(tz1: string, tz2: string, date = new Date()): number {
-  const offset1 = getTimezoneOffset(tz1, date)
-  const offset2 = getTimezoneOffset(tz2, date)
-  return (offset1 - offset2) / 60 // Retorna en horas
-}
-
-/**
- * Lista de zonas horarias comunes para México y LATAM
- */
-export const COMMON_TIMEZONES = [
-  // México
-  { value: 'America/Mexico_City', label: 'Ciudad de México (GMT-6)', metaId: 47 },
-  { value: 'America/Tijuana', label: 'Tijuana (GMT-8)', metaId: 49 },
-  { value: 'America/Cancun', label: 'Cancún (GMT-5)', metaId: 48 },
-
-  // LATAM
-  { value: 'America/Bogota', label: 'Bogotá (GMT-5)', metaId: 53 },
-  { value: 'America/Lima', label: 'Lima (GMT-5)', metaId: 54 },
-  { value: 'America/Santiago', label: 'Santiago (GMT-3)', metaId: 52 },
-  { value: 'America/Buenos_Aires', label: 'Buenos Aires (GMT-3)', metaId: 50 },
-  { value: 'America/Sao_Paulo', label: 'São Paulo (GMT-3)', metaId: 51 },
-
-  // USA
-  { value: 'America/New_York', label: 'Nueva York (GMT-5)', metaId: 4 },
-  { value: 'America/Los_Angeles', label: 'Los Ángeles (GMT-8)', metaId: 1 },
-  { value: 'America/Chicago', label: 'Chicago (GMT-6)', metaId: 3 },
-
-  // Europa
-  { value: 'Europe/Madrid', label: 'Madrid (GMT+1)', metaId: 8 },
-  { value: 'Europe/London', label: 'Londres (GMT+0)', metaId: 7 },
-
-  // UTC
-  { value: 'UTC', label: 'UTC (GMT+0)', metaId: 0 }
-]
