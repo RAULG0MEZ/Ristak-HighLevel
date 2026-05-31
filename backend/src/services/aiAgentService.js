@@ -1141,8 +1141,9 @@ function getLatestUserText(messages) {
 }
 
 function userRequestedImmediateCardCharge(messages) {
-  const normalized = normalizeText(getLatestUserText(messages))
-  return /\b(cobra|cobrar|cobrale|cobrarle|cobralo|cobrarlo|cargo|cargar|charge)\b/.test(normalized)
+  const normalized = normalizeText(getPaymentConversationText(messages))
+  return /\b(cobra|cobrar|cobrale|cobrarle|cobralo|cobrarlo|cobro|cargo|cargar|charge)\b/.test(normalized) &&
+    /\b(ahora|ahorita|hoy|inmediato|inmediatamente)\b/.test(normalized)
 }
 
 function userExplicitlyNamedPaymentMethod(messages) {
@@ -1171,8 +1172,42 @@ const PAYMENT_MONTHS = {
   diciembre: 12
 }
 
+function isPaymentTaskText(value) {
+  const normalized = normalizeText(value)
+
+  return /(pago|pagos|cobr|invoice|factura|recibo|link de pago|parcial|parcialidad|parcialidades|plan de pagos|plan de cobros|domicili|tarjeta|transfer|deposit|efectivo|mensualidad|cargo|cargos|monto|mxn|\$\s*\d)/.test(normalized)
+}
+
+function getPaymentRelevantMessages(messages, limit = MESSAGE_HISTORY_LIMIT) {
+  const safeMessages = Array.isArray(messages) ? messages : []
+  const latestUserIndex = findLatestUserMessageIndex(safeMessages)
+  if (latestUserIndex < 0) return safeMessages.slice(-limit)
+
+  const lowerBound = Math.max(0, latestUserIndex - limit + 1)
+  let startIndex = lowerBound
+  let foundPaymentStart = false
+
+  for (let index = latestUserIndex; index >= lowerBound; index -= 1) {
+    const message = safeMessages[index]
+    const text = getMessageText(message)
+
+    if (message?.role !== 'assistant' && isPaymentTaskText(text) && !isAffirmativeExecutionIntent(text)) {
+      startIndex = index
+      foundPaymentStart = true
+      continue
+    }
+
+    if (index < latestUserIndex && message?.role !== 'assistant' && isExplicitNonPaymentTopicSwitchText(text) && !isPaymentContextText(text)) {
+      if (!foundPaymentStart) startIndex = index + 1
+      break
+    }
+  }
+
+  return safeMessages.slice(startIndex, latestUserIndex + 1).slice(-limit)
+}
+
 function getPaymentConversationText(messages, limit = MESSAGE_HISTORY_LIMIT) {
-  const safeMessages = Array.isArray(messages) ? messages.slice(-limit) : []
+  const safeMessages = getPaymentRelevantMessages(messages, limit)
 
   return safeMessages
     .map((message) => `${message?.role === 'assistant' ? 'Agente' : 'Usuario'}: ${getMessageText(message)}`)
@@ -1267,22 +1302,76 @@ function extractPaymentConceptFromText(text) {
   const quotedMatch = rawText.match(/concepto\s+[“"']([^"'\n”]+)[”"']/i)
   if (quotedMatch?.[1]) return cleanText(quotedMatch[1], 180)
 
+  const explicitDescriptionMatch = rawText.match(/(?:descripci[oó]n|descripcion|description)\s*[:：]\s*[`“"']?([^`"'\n”]+)[`”"']?/i)
+  if (explicitDescriptionMatch?.[1]) return cleanText(explicitDescriptionMatch[1], 180)
+
+  const descriptionMatch = rawText.match(/(?:descripci[oó]n|descripcion|concepto)\s+(?:es\s+|de\s+|como\s+|con\s+)?[“"']?([^"'\n.,;”]+)[”"']?/i)
+  if (descriptionMatch?.[1]) return cleanText(descriptionMatch[1], 180)
+
+  const putDescriptionMatch = rawText.match(/pon(?:le)?\s+(?:la\s+)?(?:descripci[oó]n|descripcion|concepto)\s+[“"']?([^"'\n.,;”]+)[”"']?/i)
+  if (putDescriptionMatch?.[1]) return cleanText(putDescriptionMatch[1], 180)
+
   return 'Cobro programado'
 }
 
+function hasUsablePaymentContactHint(value) {
+  const hint = cleanText(value, 220)
+  if (!hint) return false
+  if (extractContactIdFromText(hint)) return true
+  if (/@/.test(hint)) return true
+  if (normalizePhoneDigits(hint).length >= 7) return true
+
+  return getContactLookupTokens(hint).length >= 2
+}
+
+function extractPaymentContactHintFromText(text) {
+  const directTerm = extractContactLookupTerm(text)
+  if (hasUsablePaymentContactHint(directTerm)) return directTerm
+
+  const rawText = String(text || '')
+  const answerPatterns = [
+    /\b(?:ser[ií]a|seria|es|ser[íi]a\s+para|seria\s+para|es\s+para|ser[íi]a\s+a|seria\s+a)\s+(?:a|al|para)?\s*([^.,;\n]+)[.,;]?\s*$/i,
+    /\b(?:cliente|contacto|persona|lead|prospecto)\s+(?:es|ser[ií]a|seria)\s+([^.,;\n]+)[.,;]?\s*$/i,
+    /\b(?:a nombre de|para el contacto|para la persona|para el cliente)\s+([^.,;\n]+)[.,;]?\s*$/i
+  ]
+
+  for (const pattern of answerPatterns) {
+    const match = rawText.match(pattern)
+    const term = cleanContactLookupTerm(match?.[1] || '')
+    if (hasUsablePaymentContactHint(term)) return getContactLookupTokens(term).join(' ')
+  }
+
+  return ''
+}
+
 function extractPaymentContactHintFromConversation(messages) {
-  const safeMessages = Array.isArray(messages) ? messages : []
+  const safeMessages = getPaymentRelevantMessages(messages)
 
   for (let index = safeMessages.length - 1; index >= 0; index -= 1) {
     if (safeMessages[index]?.role === 'assistant') continue
 
-    const term = extractContactLookupTerm(getMessageText(safeMessages[index]))
+    const term = extractPaymentContactHintFromText(getMessageText(safeMessages[index]))
     if (term) return term
   }
 
-  const conversationText = getPaymentConversationText(messages)
+  const conversationText = getPaymentConversationText(safeMessages)
   const contactSummaryMatch = conversationText.match(/contacto\s*[:：]\s*([^(\n,]+)(?:\(|,|\n|$)/i)
-  if (contactSummaryMatch?.[1]) return cleanContactLookupTerm(contactSummaryMatch[1])
+  if (contactSummaryMatch?.[1]) {
+    const term = cleanContactLookupTerm(contactSummaryMatch[1])
+    if (hasUsablePaymentContactHint(term)) return getContactLookupTokens(term).join(' ')
+  }
+
+  const plainConversationText = conversationText.replace(/[*_`]/g, '')
+  const assistantContactPatterns = [
+    /\ba\s+([^,\n:]+?)\s+le\s+(?:preparo|prepare|prepar[eé]|voy|vamos|cobro|cobra|cobrar|programo|programar)/i,
+    /\b([^,\n:]+?)\s+s[ií]\s+tiene\s+tarjeta\s+guardada/i
+  ]
+
+  for (const pattern of assistantContactPatterns) {
+    const match = plainConversationText.match(pattern)
+    const term = cleanContactLookupTerm(match?.[1] || '')
+    if (hasUsablePaymentContactHint(term)) return getContactLookupTokens(term).join(' ')
+  }
 
   return ''
 }
@@ -1472,44 +1561,6 @@ function enrichInstallmentPaymentArgs(inputArgs = {}, messages = [], timezone = 
   }
 
   return args
-}
-
-function buildConfirmedScheduledPaymentArgsFromConversation(messages = [], runtimeContext = {}) {
-  const timezone = runtimeContext.timezone || DEFAULT_PAYMENT_TIMEZONE
-  const conversationText = getPaymentConversationText(messages)
-  const amount = extractPaymentAmountFromText(conversationText)
-  const dueDate = parseNaturalPaymentDateFromText(conversationText, timezone)
-  const contactHint = extractPaymentContactHintFromConversation(messages)
-  const cardPreference = getStoredCardPreferenceFromConversation(messages)
-
-  if (!amount || !dueDate || !contactHint || !hasAutomaticStoredCardPaymentIntent(conversationText)) {
-    return null
-  }
-
-  return {
-    contactName: contactHint,
-    totalAmount: amount,
-    currency: extractPaymentCurrencyFromText(conversationText),
-    concept: extractPaymentConceptFromText(conversationText),
-    firstPayment: { enabled: false },
-    remainingAutomatic: true,
-    remainingFrequency: 'custom',
-    remainingStartDate: dueDate,
-    remainingPayments: [
-      {
-        sequence: 1,
-        type: 'amount',
-        amount,
-        dueDate
-      }
-    ],
-    ...(cardPreference && {
-      cardAuthorizationPreference: cardPreference,
-      useStoredCard: cardPreference === 'stored_card',
-      forceCardSetup: cardPreference === 'new_card'
-    }),
-    deliveryMode: 'send'
-  }
 }
 
 function isHighLevelPaymentRestMutation(call = {}) {
@@ -4494,103 +4545,6 @@ async function executeRecordInvoicePayment(args = {}, highLevelConnection, conte
   }
 }
 
-function formatContactSummary(contact = {}) {
-  return [
-    contact.name || contact.id || 'Contacto',
-    contact.email || '',
-    contact.phone || ''
-  ].filter(Boolean).join(' | ')
-}
-
-function formatScheduledPaymentExecutionReply(output = {}) {
-  const summary = output.summary || {}
-  const result = output.result || {}
-  const firstPayment = summary.firstPayment || {}
-  const remainingPayments = Array.isArray(summary.remainingPayments) ? summary.remainingPayments : []
-  const firstScheduledPayment = remainingPayments[0] || {}
-  const card = summary.storedCard || {}
-  const cardLabel = card.available
-    ? [card.brand || 'tarjeta', card.last4 ? `****${card.last4}` : ''].filter(Boolean).join(' ')
-    : 'tarjeta/autorización pendiente'
-  const scheduleIds = Array.isArray(result.installmentSchedules)
-    ? result.installmentSchedules.map((schedule) => schedule.scheduleId).filter(Boolean)
-    : []
-  const currentState = result.currentState || 'creado'
-  const statusLabel = currentState === 'installment_plan_active'
-    ? 'programado y activo'
-    : currentState === 'waiting_card_authorization'
-      ? 'creado, esperando autorización de tarjeta'
-      : currentState
-  const lines = [
-    'Listo. Ya ejecuté el flujo real de pagos en Ristak/HighLevel.',
-    '',
-    `Contacto: ${formatContactSummary(summary.contact)}`,
-    `Monto: ${formatPaymentMoney(summary.totalAmount || firstScheduledPayment.amount || firstPayment.amount, summary.currency || DEFAULT_PAYMENT_CURRENCY)}`,
-    `Fecha: ${firstScheduledPayment.dueDate || firstPayment.date || 'sin fecha'}`,
-    `Método: ${summary.remainingAutomatic ? `cargo automático con ${cardLabel}` : firstPayment.method || 'manual'}`,
-    `Estado: ${statusLabel}`,
-    result.flowId ? `Flow ID: ${result.flowId}` : '',
-    scheduleIds.length ? `Schedule GHL: ${scheduleIds.join(', ')}` : '',
-    result.cardSetupPaymentLink ? `Link de autorización: ${result.cardSetupPaymentLink}` : '',
-    output.paymentModeWarning || ''
-  ].filter(Boolean)
-
-  return lines.join('\n')
-}
-
-function formatPaymentExecutionFailureReply(output = {}) {
-  const lines = [
-    `No ejecuté el cobro todavía: ${output.error || 'faltan datos para ejecutar el pago.'}`
-  ]
-
-  if (Array.isArray(output.missingFields) && output.missingFields.length) {
-    lines.push(`Falta: ${output.missingFields.join(', ')}.`)
-  }
-
-  return lines.join('\n')
-}
-
-async function tryExecuteConfirmedScheduledPaymentFromConversation({ messages, highLevelConnection, runtimeContext }) {
-  if (!highLevelConnection?.configured) return null
-  if (!hasExplicitPaymentExecutionConfirmation(messages)) return null
-
-  const args = buildConfirmedScheduledPaymentArgsFromConversation(messages, runtimeContext)
-  if (!args) return null
-
-  try {
-    const output = await executeCreateInstallmentPaymentFlow(args, highLevelConnection, { messages })
-
-    return {
-      reply: output.ok
-        ? formatScheduledPaymentExecutionReply(output)
-        : formatPaymentExecutionFailureReply(output),
-      model: 'local-payment-executor',
-      usage: null,
-      sources: [],
-      clarificationOptions: Array.isArray(output.clarificationOptions) ? output.clarificationOptions : [],
-      debug: {
-        paymentDirectExecution: true,
-        action: output.action || 'create_installment_payment_flow',
-        ok: Boolean(output.ok)
-      }
-    }
-  } catch (error) {
-    logger.error(`Error ejecutando pago confirmado desde conversación: ${error.message}`)
-    return {
-      reply: `No pude ejecutar el cobro confirmado: ${error.message || 'error desconocido'}`,
-      model: 'local-payment-executor',
-      usage: null,
-      sources: [],
-      clarificationOptions: [],
-      debug: {
-        paymentDirectExecution: true,
-        action: 'create_installment_payment_flow',
-        ok: false
-      }
-    }
-  }
-}
-
 function buildHighLevelTools(highLevelConnection, options = {}) {
   if (!highLevelConnection?.configured) return []
 
@@ -4755,7 +4709,7 @@ function buildHighLevelTools(highLevelConnection, options = {}) {
     {
       type: 'function',
       name: 'create_installment_payment_flow',
-      description: 'Crea un cobro por parcialidades, domiciliación o cargos automáticos futuros usando la lógica interna segura de Ristak. Úsala para planes con o sin primer pago, cargos programados a tarjeta guardada, pagos programados únicos con fecha futura, órdenes de domiciliar el resto o cargos futuros como "el 10 de junio cobra 100" o "en un año cobra X y tres meses después Y". Esta herramienta detecta tarjeta guardada en Ristak/GoHighLevel; si hay tarjeta guardada y no se eligió, devuelve opciones para usar esa tarjeta o mandar link para otra. Nunca se ejecuta sin confirmación explícita previa del usuario.',
+      description: 'Crea un cobro por parcialidades, domiciliación o cargos automáticos futuros usando la lógica interna segura de Ristak. Úsala para planes con o sin primer pago, cargos programados a tarjeta guardada, pagos programados únicos con fecha futura, órdenes de domiciliar el resto o cargos futuros como "el 10 de junio cobra 100" o "en un año cobra X y tres meses después Y". Si el usuario dice "10 ahorita y luego el mismo día durante los siguientes 3 meses", eso es firstPayment hoy por 10 y remainingPayments mensuales futuros, no 3 cobros hoy. Si dice "espera un mes y luego cobra", salta ese periodo con afterMonths/afterPeriods; no crees pagos de 0. Esta herramienta detecta tarjeta guardada en Ristak/GoHighLevel; si hay tarjeta guardada y no se eligió, devuelve opciones para usar esa tarjeta o mandar link para otra. Nunca se ejecuta sin confirmación explícita previa del usuario.',
       parameters: {
         type: 'object',
         properties: {
@@ -5431,12 +5385,40 @@ function shouldUseContactMutationSafety(question) {
   return /(contacto|cliente|lead|prospecto|persona|campo personalizado|custom field|campo|dato).*(actualiza|modifica|cambia|editar|cambiale|actualizale|modificale|ponle|quitale)|(?:actualiza|modifica|cambia|editar|cambiale|actualizale|modificale|ponle|quitale).*(contacto|cliente|lead|prospecto|persona|campo personalizado|custom field|campo|dato|nombre|email|correo|telefono|ciudad|pagos totales|total paid)/.test(normalized)
 }
 
-function shouldUseInternalDatabaseContext(question) {
+function getRecentConversationTextBeforeLatestUser(messages = [], limit = 8) {
+  if (!Array.isArray(messages)) return ''
+
+  const latestUserIndex = findLatestUserMessageIndex(messages)
+  const endIndex = latestUserIndex >= 0 ? latestUserIndex : messages.length
+  return messages
+    .slice(Math.max(0, endIndex - limit), endIndex)
+    .map(message => getMessageText(message))
+    .filter(Boolean)
+    .join('\n')
+}
+
+function isShortDatabaseFollowUp(question) {
+  const normalized = normalizeText(question)
+  if (!normalized || normalized.length > 160) return false
+
+  return /^(?:y\s+)?(?:en|para|de|del|desde|ahora|tambien|también)?\s*(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre|20\d{2}|ayer|hoy|este mes|mes pasado|semana pasada|ultim|últim)\b/.test(normalized) ||
+    /^(?:y|tambien|también|ahora)\b/.test(normalized) ||
+    /(no adivines|sin adivinar|lo que te pregunte|lo que te pregunté|solo dame|sólo dame|dame lo que|intenta de nuevo|otra vez|recalcula)/.test(normalized)
+}
+
+function hasRecentDatabaseAnalysisContext(messages = []) {
+  const previousText = normalizeText(getRecentConversationTextBeforeLatestUser(messages))
+
+  return /(campan|anunci|adset|publicidad|meta ads|facebook|instagram|lead|leads|prospect|contacto|contactos|cliente|clientes|cita|citas|appointment|pago|pagos|payment|venta|ventas|ingreso|ingresos|gasto|roas|utilidad|rentab|fuente|canal|cohorte|ticket|ltv|cac|conversion|embudo|sesion|sesiones|trafico|asistencia|show|reporte|dashboard|base de datos|db)/.test(previousText)
+}
+
+function shouldUseInternalDatabaseContext(question, messages = []) {
   const normalized = normalizeText(question)
   if (!normalized) return false
 
   if (shouldSkipDbResearchForMetaAds(question)) return false
   if (isMetaAdsBusinessMetricRequest(question) && isMetaAdsEntityRequest(question)) return true
+  if (isShortDatabaseFollowUp(question) && hasRecentDatabaseAnalysisContext(messages)) return true
 
   const explicitDatabaseRequest = /(db|base de datos|database|sql|datos internos|dashboard|ristak|reporte|reportes|tabla|tablas)/.test(normalized)
   if (explicitDatabaseRequest) return true
@@ -5451,7 +5433,7 @@ function buildUnifiedAgentRoute({ messages = [], latestUserMessage = '' } = {}) 
   const normalized = normalizeText(latestUserMessage)
   const paymentBackendOnly = shouldUsePaymentBackendForLatestMessage(messages)
   const contactMutationSafety = shouldUseContactMutationSafety(latestUserMessage)
-  const requiresDbResearch = shouldUseInternalDatabaseContext(latestUserMessage)
+  const requiresDbResearch = !paymentBackendOnly && shouldUseInternalDatabaseContext(latestUserMessage, messages)
   const mutationIntent = paymentBackendOnly ||
     contactMutationSafety ||
     /(agrega|actualiza|modifica|cambia|crea|genera|registra|agenda|cancela|manda|envia|mete|saca|pausa|reactiva|send|create|update|delete|programa|domicili|ejecuta|hazlo)/.test(normalized)
@@ -5502,6 +5484,8 @@ const UNIFIED_CAPABILITY_PROMPT = [
   '- Para analítica interna del negocio usa la DB de Ristak y los resultados SQL disponibles. Esto incluye campañas/anuncios sincronizados, ROAS, utilidad, pagos, citas, contactos, ventas, fuentes, cohortes e históricos.',
   '- Para GoHighLevel usa HighLevel MCP o highlevel_rest_request cuando el usuario pida recursos/acciones de CRM: media storage, imágenes, archivos, workflows, calendarios, citas, conversaciones, oportunidades, productos, tags, custom fields, usuarios o ubicaciones.',
   '- Para pagos, links, invoices, parcialidades, pagos manuales, tarjeta guardada o domiciliación usa las herramientas internas de Ristak porque replican la lógica real del backend. No uses MCP como atajo para mutaciones de dinero.',
+  '- En planes de pago, "ahorita/hoy y luego el mismo día durante los siguientes N meses" significa primer pago hoy y pagos mensuales futuros; no lo conviertas en N cobros hoy.',
+  '- Si el plan dice "espera un mes y luego cobra", representa el mes sin cobro saltando el periodo; no crees parcialidades de $0.',
   '- Para contactos no hagas búsquedas preventivas. Busca contacto sólo si el usuario pide un contacto/persona/cliente/lead o si una acción necesita identificar exactamente a alguien.',
   '- Nunca pases la frase completa del usuario como contactName/contactHint. Extrae sólo nombre, email, teléfono o ID; si no existe un dato limpio, pregunta por el dato que falta.',
   '- Para media storage, archivos o imágenes de HighLevel no busques contactos. Usa las herramientas de HighLevel y devuelve URLs directas o enlaces Markdown si aparecen.',
@@ -8091,15 +8075,6 @@ export async function createAgentReply({ apiKey, messages, viewContext }) {
 
   const agentConfig = await getAIAgentConfig()
   const highLevelConnection = await getHighLevelAgentConnection()
-
-  const confirmedPaymentExecution = await tryExecuteConfirmedScheduledPaymentFromConversation({
-    messages,
-    highLevelConnection,
-    runtimeContext
-  })
-  if (confirmedPaymentExecution) {
-    return confirmedPaymentExecution
-  }
 
   if (metaAdsOperationalIntent) {
     return buildMetaAdsOperationsUnavailableReply()
