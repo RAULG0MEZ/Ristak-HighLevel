@@ -1,11 +1,14 @@
-import React, { useEffect, useState } from 'react'
-import { Bot, CheckCircle, Database, Eye, EyeOff, Globe2, KeyRound, Megaphone, MessageCircle, Save, Sparkles, Trash2, XCircle } from 'lucide-react'
+import React, { useEffect, useRef, useState } from 'react'
+import { Bot, CheckCircle, Eye, EyeOff, Globe2, Trash2, XCircle } from 'lucide-react'
 import { Button, Card } from '@/components/common'
 import { useNotification } from '@/contexts/NotificationContext'
 import { aiAgentService, type AIAgentConfigStatus, type AIAgentRecommendationMode, type AIAgentResponseStyle } from '@/services/aiAgentService'
 import styles from './AIAgentSettings.module.css'
 
 const DEFAULT_AI_MODEL = 'gpt-5.5'
+const AUTOSAVE_DELAY_MS = 900
+
+type SaveState = 'idle' | 'pending' | 'saving' | 'saved' | 'error'
 
 const emptyStatus: AIAgentConfigStatus = {
   configured: false,
@@ -134,6 +137,41 @@ function getKnownModel(value?: string | null) {
   return modelOptions.some((option) => option.value === value) ? String(value) : DEFAULT_AI_MODEL
 }
 
+function statusToForm(status: AIAgentConfigStatus) {
+  return {
+    model: getKnownModel(status.model),
+    businessContext: status.businessContext || '',
+    marketContext: status.marketContext || '',
+    idealCustomer: status.idealCustomer || '',
+    locationContext: status.locationContext || '',
+    competitorsContext: status.competitorsContext || '',
+    brandVoice: status.brandVoice || '',
+    researchDomains: status.researchDomains || '',
+    responseStyle: status.responseStyle || 'direct',
+    recommendationMode: status.recommendationMode || 'on_request',
+    webSearchEnabled: Boolean(status.webSearchEnabled)
+  }
+}
+
+function normalizeStatus(status: AIAgentConfigStatus): AIAgentConfigStatus {
+  return {
+    ...status,
+    model: getKnownModel(status.model)
+  }
+}
+
+function getConfigSignature(form: typeof emptyForm, apiKey: string) {
+  return JSON.stringify({
+    ...form,
+    apiKey: apiKey.trim()
+  })
+}
+
+function isApiKeyReady(apiKey: string) {
+  const trimmed = apiKey.trim()
+  return !trimmed || (trimmed.startsWith('sk-') && trimmed.length >= 30)
+}
+
 const responseStyleOptions: Array<{
   value: AIAgentResponseStyle
   label: string
@@ -186,7 +224,13 @@ export const AIAgentSettings: React.FC = () => {
   const [showApiKey, setShowApiKey] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [saveState, setSaveState] = useState<SaveState>('idle')
+  const [saveError, setSaveError] = useState('')
   const [disconnecting, setDisconnecting] = useState(false)
+  const hydratedRef = useRef(false)
+  const autosaveTimerRef = useRef<number | null>(null)
+  const activeSaveIdRef = useRef(0)
+  const lastSavedSignatureRef = useRef(getConfigSignature(emptyForm, ''))
 
   const emitConfigChange = (nextStatus: AIAgentConfigStatus) => {
     window.dispatchEvent(new CustomEvent('ai-agent-config-changed', {
@@ -195,31 +239,21 @@ export const AIAgentSettings: React.FC = () => {
   }
 
   const loadStatus = async () => {
+    hydratedRef.current = false
     setLoading(true)
     try {
-      const nextStatus = await aiAgentService.getConfig()
-      const normalizedModel = getKnownModel(nextStatus.model)
-      setStatus({
-        ...nextStatus,
-        model: normalizedModel
-      })
-      setForm({
-        model: normalizedModel,
-        businessContext: nextStatus.businessContext || '',
-        marketContext: nextStatus.marketContext || '',
-        idealCustomer: nextStatus.idealCustomer || '',
-        locationContext: nextStatus.locationContext || '',
-        competitorsContext: nextStatus.competitorsContext || '',
-        brandVoice: nextStatus.brandVoice || '',
-        researchDomains: nextStatus.researchDomains || '',
-        responseStyle: nextStatus.responseStyle || 'direct',
-        recommendationMode: nextStatus.recommendationMode || 'on_request',
-        webSearchEnabled: Boolean(nextStatus.webSearchEnabled)
-      })
+      const nextStatus = normalizeStatus(await aiAgentService.getConfig())
+      const nextForm = statusToForm(nextStatus)
+      setStatus(nextStatus)
+      setForm(nextForm)
+      lastSavedSignatureRef.current = getConfigSignature(nextForm, '')
+      setSaveState('saved')
+      setSaveError('')
     } catch (error: any) {
       showToast('error', 'Error', error?.message || 'No se pudo cargar el estado del agente AI')
     } finally {
       setLoading(false)
+      hydratedRef.current = true
     }
   }
 
@@ -235,29 +269,100 @@ export const AIAgentSettings: React.FC = () => {
   }
 
   const selectedModel = modelOptions.find((option) => option.value === form.model) || modelOptions[0]
+  const apiKeyNeedsMore = Boolean(apiKey.trim() && !isApiKeyReady(apiKey))
+  const saveStatusText = loading
+    ? 'Cargando...'
+    : saveState === 'saving'
+      ? 'Guardando...'
+      : apiKeyNeedsMore
+        ? 'Completa el token para guardarlo'
+        : saveState === 'pending'
+          ? 'Guardando en automático...'
+          : saveState === 'error'
+            ? saveError || 'No se pudo guardar'
+            : 'Guardado automático'
 
-  const handleSave = async () => {
-    setSaving(true)
-    try {
-      const nextStatus = await aiAgentService.saveConfig({
-        apiKey: apiKey.trim() || undefined,
-        ...form
-      })
-      setStatus(nextStatus)
-      setApiKey('')
-      setShowApiKey(false)
-      emitConfigChange(nextStatus)
-      showToast(
-        'success',
-        'Agente AI actualizado',
-        nextStatus.configured ? 'El agente ya usará el contexto del negocio.' : 'Contexto guardado. Agrega el token para activar el chat con IA.'
-      )
-    } catch (error: any) {
-      showToast('error', 'No se pudo guardar', error?.message || 'Revisa la configuración del agente')
-    } finally {
-      setSaving(false)
+  useEffect(() => {
+    return () => {
+      if (autosaveTimerRef.current !== null) {
+        window.clearTimeout(autosaveTimerRef.current)
+      }
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    if (!hydratedRef.current || loading || disconnecting) return
+
+    if (autosaveTimerRef.current !== null) {
+      window.clearTimeout(autosaveTimerRef.current)
+      autosaveTimerRef.current = null
+    }
+
+    const trimmedApiKey = apiKey.trim()
+    const apiKeyReady = isApiKeyReady(trimmedApiKey)
+    const apiKeyForSave = apiKeyReady ? trimmedApiKey : ''
+    const signature = getConfigSignature(form, apiKeyForSave)
+
+    if (trimmedApiKey && !apiKeyReady && signature === lastSavedSignatureRef.current) {
+      setSaveState('pending')
+      setSaveError('')
+      return
+    }
+
+    if (signature === lastSavedSignatureRef.current) {
+      setSaveState('saved')
+      setSaveError('')
+      return
+    }
+
+    const saveId = activeSaveIdRef.current + 1
+    activeSaveIdRef.current = saveId
+    setSaveState('pending')
+    setSaveError('')
+
+    autosaveTimerRef.current = window.setTimeout(async () => {
+      setSaving(true)
+      setSaveState('saving')
+
+      try {
+        const nextStatus = normalizeStatus(await aiAgentService.saveConfig({
+          apiKey: apiKeyForSave || undefined,
+          ...form
+        }))
+
+        if (activeSaveIdRef.current !== saveId) return
+
+        const nextForm = statusToForm(nextStatus)
+        setStatus(nextStatus)
+        emitConfigChange(nextStatus)
+        lastSavedSignatureRef.current = getConfigSignature(nextForm, '')
+        setSaveState('saved')
+
+        if (apiKeyForSave) {
+          setApiKey('')
+          setShowApiKey(false)
+        }
+      } catch (error: any) {
+        if (activeSaveIdRef.current !== saveId) return
+
+        const message = error?.message || 'Revisa la configuración del agente'
+        setSaveState('error')
+        setSaveError(message)
+        showToast('error', 'No se pudo guardar', message)
+      } finally {
+        if (activeSaveIdRef.current === saveId) {
+          setSaving(false)
+        }
+      }
+    }, AUTOSAVE_DELAY_MS)
+
+    return () => {
+      if (autosaveTimerRef.current !== null) {
+        window.clearTimeout(autosaveTimerRef.current)
+        autosaveTimerRef.current = null
+      }
+    }
+  }, [apiKey, form, loading, disconnecting, showToast])
 
   const disconnect = async () => {
     setDisconnecting(true)
@@ -266,6 +371,9 @@ export const AIAgentSettings: React.FC = () => {
       setStatus(emptyStatus)
       setForm(emptyForm)
       setApiKey('')
+      lastSavedSignatureRef.current = getConfigSignature(emptyForm, '')
+      setSaveState('saved')
+      setSaveError('')
       emitConfigChange(emptyStatus)
       showToast('success', 'Agente AI desconectado', 'El chat seguirá visible para volver a configurarlo cuando quieras.')
     } catch (error: any) {
@@ -296,331 +404,25 @@ export const AIAgentSettings: React.FC = () => {
             <div>
               <h2 className={styles.title}>Agente AI</h2>
               <p className={styles.description}>
-                Conecta OpenAI para activar el chat flotante con lectura segura de la DB, contexto de la vista actual y acciones externas bajo confirmación.
+                Token, modelo y contexto del negocio. Todo se guarda solo.
               </p>
             </div>
           </div>
 
-          {status.configured ? (
-            <div className={styles.statusConnected}>
-              <CheckCircle size={15} />
-              Conectado
-            </div>
-          ) : (
-            <div className={styles.statusDisconnected}>
-              <XCircle size={15} />
-              No configurado
-            </div>
-          )}
-        </div>
-
-        <div className={styles.section} style={{ marginTop: 20 }}>
-          <h3 className={styles.sectionTitle}>Credenciales de OpenAI</h3>
-          <div className={styles.field}>
-            <label className={styles.label}>API Token</label>
-            <div className={styles.inputRow}>
-              <div className={styles.inputWrap}>
-                <input
-                  className={styles.input}
-                  type={showApiKey ? 'text' : 'password'}
-                  value={apiKey}
-                  placeholder={status.configured ? 'Pega una nueva key para reemplazar la actual' : 'sk-...'}
-                  autoComplete="off"
-                  onChange={(event) => setApiKey(event.target.value)}
-                  disabled={saving || loading}
-                />
-                <button
-                  type="button"
-                  className={styles.iconButton}
-                  onClick={() => setShowApiKey((current) => !current)}
-                  aria-label={showApiKey ? 'Ocultar token' : 'Mostrar token'}
-                >
-                  {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
+          <div className={styles.headerActions}>
+            {status.configured ? (
+              <div className={styles.statusConnected}>
+                <CheckCircle size={15} />
+                Conectado
               </div>
-              <Button onClick={handleSave} loading={saving} disabled={loading || saving}>
-                <KeyRound size={16} />
-                Guardar configuración
-              </Button>
-            </div>
-            <p className={styles.helper}>
-              El token se valida con OpenAI y se guarda cifrado en el backend. Nunca se manda de regreso al navegador.
-            </p>
-          </div>
-        </div>
-
-        <div className={styles.section} style={{ marginTop: 22 }}>
-          <h3 className={styles.sectionTitle}>Modelo de ChatGPT</h3>
-          <div className={styles.modelGrid}>
-            <div className={styles.field}>
-              <label className={styles.label}>Modelo principal</label>
-              <select
-                className={styles.select}
-                value={form.model}
-                onChange={(event) => updateField('model', event.target.value)}
-                disabled={saving || loading}
-              >
-                {modelOptionGroups.map((group) => (
-                  <optgroup key={group.label} label={group.label}>
-                    {group.options.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-              <p className={styles.helper}>
-                {selectedModel.description}
-              </p>
-            </div>
-            <p className={styles.helper}>
-              Incluye las versiones oficiales de texto, ChatGPT, razonamiento, Codex, búsqueda y legacy que aplican para este agente. No hay modelo personalizado.
-            </p>
-          </div>
-        </div>
-
-        <div className={styles.section} style={{ marginTop: 22 }}>
-          <h3 className={styles.sectionTitle}>Contexto del negocio</h3>
-          <div className={styles.contextGrid}>
-            <div className={styles.fieldWide}>
-              <label className={styles.label}>Detalles del negocio</label>
-              <textarea
-                className={styles.textarea}
-                value={form.businessContext}
-                placeholder="Qué vendes, cómo operas, ticket promedio, promesas, diferenciadores, restricciones importantes..."
-                onChange={(event) => updateField('businessContext', event.target.value)}
-                disabled={saving || loading}
-                rows={4}
-              />
-            </div>
-
-            <div className={styles.field}>
-              <label className={styles.label}>Mercado o nicho</label>
-              <textarea
-                className={styles.textarea}
-                value={form.marketContext}
-                placeholder="Ej. clínica estética, educación, real estate, consultoría, servicios locales..."
-                onChange={(event) => updateField('marketContext', event.target.value)}
-                disabled={saving || loading}
-                rows={3}
-              />
-            </div>
-
-            <div className={styles.field}>
-              <label className={styles.label}>Cliente ideal</label>
-              <textarea
-                className={styles.textarea}
-                value={form.idealCustomer}
-                placeholder="Quién compra, qué le duele, objeciones, nivel económico, edad, ubicación, motivaciones..."
-                onChange={(event) => updateField('idealCustomer', event.target.value)}
-                disabled={saving || loading}
-                rows={3}
-              />
-            </div>
-
-            <div className={styles.field}>
-              <label className={styles.label}>Zona geográfica</label>
-              <textarea
-                className={styles.textarea}
-                value={form.locationContext}
-                placeholder="Ciudad, país, colonias, contexto local, temporadas, cultura, limitaciones geográficas..."
-                onChange={(event) => updateField('locationContext', event.target.value)}
-                disabled={saving || loading}
-                rows={3}
-              />
-            </div>
-
-            <div className={styles.field}>
-              <label className={styles.label}>Competidores o referencias</label>
-              <textarea
-                className={styles.textarea}
-                value={form.competitorsContext}
-                placeholder="Competidores, marcas de referencia, sitios, cuentas, ventajas o desventajas que conozcas..."
-                onChange={(event) => updateField('competitorsContext', event.target.value)}
-                disabled={saving || loading}
-                rows={3}
-              />
-            </div>
-
-            <div className={styles.fieldWide}>
-              <label className={styles.label}>Tono, prioridades y reglas</label>
-              <textarea
-                className={styles.textarea}
-                value={form.brandVoice}
-                placeholder="Cómo quieres que recomiende: agresivo, conservador, premium, familiar; qué evitar; qué metas importan más..."
-                onChange={(event) => updateField('brandVoice', event.target.value)}
-                disabled={saving || loading}
-                rows={3}
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className={styles.section} style={{ marginTop: 22 }}>
-          <h3 className={styles.sectionTitle}>Comportamiento de respuestas</h3>
-          <div className={styles.behaviorGrid}>
-            <div className={styles.field}>
-              <label className={styles.label}>Estilo por defecto</label>
-              <div className={styles.optionGroup}>
-                {responseStyleOptions.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    className={`${styles.optionButton} ${form.responseStyle === option.value ? styles.optionButtonActive : ''}`}
-                    onClick={() => updateField('responseStyle', option.value)}
-                    disabled={saving || loading}
-                  >
-                    <span className={styles.optionLabel}>{option.label}</span>
-                    <span className={styles.optionDescription}>{option.description}</span>
-                  </button>
-                ))}
+            ) : (
+              <div className={styles.statusDisconnected}>
+                <XCircle size={15} />
+                No configurado
               </div>
-            </div>
+            )}
 
-            <div className={styles.field}>
-              <label className={styles.label}>Recomendaciones</label>
-              <div className={styles.optionGroup}>
-                {recommendationModeOptions.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    className={`${styles.optionButton} ${form.recommendationMode === option.value ? styles.optionButtonActive : ''}`}
-                    onClick={() => updateField('recommendationMode', option.value)}
-                    disabled={saving || loading}
-                  >
-                    <span className={styles.optionLabel}>{option.label}</span>
-                    <span className={styles.optionDescription}>{option.description}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-          <p className={styles.helper}>
-            En modo directo, si preguntas “cuál campaña es más rentable”, el agente responde el dato y las métricas necesarias. Sólo se pone consultor si se lo pides.
-          </p>
-        </div>
-
-        <div className={styles.section} style={{ marginTop: 22 }}>
-          <h3 className={styles.sectionTitle}>Investigación online</h3>
-          <label className={styles.toggleRow}>
-            <input
-              type="checkbox"
-              checked={form.webSearchEnabled}
-              onChange={(event) => updateField('webSearchEnabled', event.target.checked)}
-              disabled={saving || loading}
-            />
-            <span>
-              <Globe2 size={16} />
-              Permitir que la IA investigue en internet cuando el contexto externo pueda mejorar la recomendación.
-            </span>
-          </label>
-
-          <div className={styles.field}>
-            <label className={styles.label}>Dominios preferidos u obligatorios</label>
-            <textarea
-              className={styles.textarea}
-              value={form.researchDomains}
-              placeholder="Opcional. Un dominio por línea o separados por coma. Ej. inegi.org.mx, statista.com, gob.mx"
-              onChange={(event) => updateField('researchDomains', event.target.value)}
-              disabled={saving || loading || !form.webSearchEnabled}
-              rows={3}
-            />
-            <p className={styles.helper}>
-              Si lo dejas vacío, la IA podrá buscar abierto. Si pones dominios, se limitará a esas fuentes.
-            </p>
-          </div>
-
-          <div className={styles.actions}>
-            <Button onClick={handleSave} loading={saving} disabled={loading || saving}>
-              <Save size={16} />
-              Guardar contexto
-            </Button>
-          </div>
-        </div>
-
-        {status.configured && (
-          <div className={styles.section} style={{ marginTop: 22 }}>
-            <h3 className={styles.sectionTitle}>Configuración actual</h3>
-            <div className={styles.detailsGrid}>
-              <div className={styles.detailItem}>
-                <span className={styles.detailLabel}>Token</span>
-                <span className={styles.detailValue}>{status.tokenPreview || 'Configurado'}</span>
-              </div>
-              <div className={styles.detailItem}>
-                <span className={styles.detailLabel}>Modelo</span>
-                <span className={styles.detailValue}>{status.model}</span>
-              </div>
-              <div className={styles.detailItem}>
-                <span className={styles.detailLabel}>Chat</span>
-                <span className={styles.detailValue}>
-                  <MessageCircle size={15} />
-                  Visible en la app
-                </span>
-              </div>
-              <div className={styles.detailItem}>
-                <span className={styles.detailLabel}>Investigación online</span>
-                <span className={styles.detailValue}>
-                  <Globe2 size={15} />
-                  {status.webSearchEnabled ? 'Activada' : 'Desactivada'}
-                </span>
-              </div>
-              <div className={styles.detailItem}>
-                <span className={styles.detailLabel}>Meta Ads MCP</span>
-                <span className={styles.detailValue}>
-                  <Megaphone size={15} />
-                  {status.metaAdsMcp?.configured ? 'Conectado' : status.metaAdsMcp?.enabled === false ? 'Desactivado' : 'Sin token'}
-                </span>
-              </div>
-              <div className={styles.detailItem}>
-                <span className={styles.detailLabel}>Respuesta</span>
-                <span className={styles.detailValue}>
-                  {status.responseStyle === 'advisor' ? 'Asesor' : status.responseStyle === 'balanced' ? 'Balanceado' : 'Directo'}
-                </span>
-              </div>
-              <div className={styles.detailItem}>
-                <span className={styles.detailLabel}>Recomendaciones</span>
-                <span className={styles.detailValue}>
-                  {status.recommendationMode === 'proactive' ? 'Proactivas' : status.recommendationMode === 'when_useful' ? 'Si son importantes' : 'Sólo si las pides'}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-      </Card>
-
-      <Card>
-        <div className={styles.section}>
-          <h3 className={styles.sectionTitle}>Qué puede hacer</h3>
-          <div className={styles.capabilities}>
-            <div className={styles.capability}>
-              <Database size={16} />
-              Lee un resumen seguro de contactos, pagos, citas, campañas, sesiones web y fuentes de tráfico.
-            </div>
-            <div className={styles.capability}>
-              <MessageCircle size={16} />
-              Usa la ruta y el texto visible de la pantalla actual para explicar lo que estás viendo.
-            </div>
-            <div className={styles.capability}>
-              <Sparkles size={16} />
-              Combina los números internos con el contexto del mercado, cliente ideal y zona geográfica.
-            </div>
-            <div className={styles.capability}>
-              <Globe2 size={16} />
-              Puede investigar online para traer contexto social, cultural, político, histórico o competitivo cuando aporte valor.
-            </div>
-            <div className={styles.capability}>
-              <Megaphone size={16} />
-              Usa Meta Ads MCP para operar Ads Manager bajo confirmación: campañas, presupuestos, anuncios, públicos, exclusiones y diagnósticos.
-            </div>
-            <div className={styles.capability}>
-              <CheckCircle size={16} />
-              La DB sigue siendo solo lectura y es la fuente real para leads, citas, ventas, ingresos, ROAS y rentabilidad.
-            </div>
-          </div>
-
-          {status.configured && (
-            <div className={styles.actions}>
+            {status.configured && (
               <Button
                 variant="danger"
                 onClick={handleDisconnect}
@@ -630,6 +432,200 @@ export const AIAgentSettings: React.FC = () => {
                 <Trash2 size={16} />
                 Desconectar
               </Button>
+            )}
+          </div>
+        </div>
+
+        <div className={`${styles.saveStatus} ${saveState === 'error' ? styles.saveStatusError : saving || saveState === 'pending' || apiKeyNeedsMore ? styles.saveStatusWorking : styles.saveStatusSaved}`}>
+          <span className={styles.saveDot} />
+          {saveStatusText}
+        </div>
+
+        <div className={styles.settingsGrid}>
+          <div className={styles.field}>
+            <label className={styles.label}>API Token</label>
+            <div className={styles.inputWrap}>
+              <input
+                className={styles.input}
+                type={showApiKey ? 'text' : 'password'}
+                value={apiKey}
+                placeholder={status.configured ? 'Nueva key para reemplazar' : 'sk-...'}
+                autoComplete="off"
+                onChange={(event) => setApiKey(event.target.value)}
+                disabled={loading || disconnecting}
+              />
+              <button
+                type="button"
+                className={styles.iconButton}
+                onClick={() => setShowApiKey((current) => !current)}
+                aria-label={showApiKey ? 'Ocultar token' : 'Mostrar token'}
+                disabled={loading || disconnecting}
+              >
+                {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+            <p className={styles.helper}>
+              {status.tokenPreview ? `Actual: ${status.tokenPreview}` : 'Se guarda al completar la key.'}
+            </p>
+          </div>
+
+          <div className={styles.field}>
+            <label className={styles.label}>Modelo</label>
+            <select
+              className={styles.select}
+              value={form.model}
+              onChange={(event) => updateField('model', event.target.value)}
+              disabled={loading || disconnecting}
+            >
+              {modelOptionGroups.map((group) => (
+                <optgroup key={group.label} label={group.label}>
+                  {group.options.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            <p className={styles.helper}>{selectedModel.description}</p>
+          </div>
+
+          <div className={styles.field}>
+            <label className={styles.label}>Respuesta</label>
+            <select
+              className={styles.select}
+              value={form.responseStyle}
+              onChange={(event) => updateField('responseStyle', event.target.value as AIAgentResponseStyle)}
+              disabled={loading || disconnecting}
+            >
+              {responseStyleOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className={styles.field}>
+            <label className={styles.label}>Recomendaciones</label>
+            <select
+              className={styles.select}
+              value={form.recommendationMode}
+              onChange={(event) => updateField('recommendationMode', event.target.value as AIAgentRecommendationMode)}
+              disabled={loading || disconnecting}
+            >
+              {recommendationModeOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className={styles.section}>
+          <h3 className={styles.sectionTitle}>Contexto del negocio</h3>
+          <div className={styles.contextGrid}>
+            <div className={styles.fieldWide}>
+              <label className={styles.label}>Detalles del negocio</label>
+              <textarea
+                className={styles.textarea}
+                value={form.businessContext}
+                placeholder="Qué vendes, cómo operas, ticket promedio, diferenciadores..."
+                onChange={(event) => updateField('businessContext', event.target.value)}
+                disabled={loading || disconnecting}
+                rows={4}
+              />
+            </div>
+
+            <div className={styles.field}>
+              <label className={styles.label}>Mercado o nicho</label>
+              <textarea
+                className={styles.textarea}
+                value={form.marketContext}
+                placeholder="Nicho, industria, tipo de servicio..."
+                onChange={(event) => updateField('marketContext', event.target.value)}
+                disabled={loading || disconnecting}
+                rows={3}
+              />
+            </div>
+
+            <div className={styles.field}>
+              <label className={styles.label}>Cliente ideal</label>
+              <textarea
+                className={styles.textarea}
+                value={form.idealCustomer}
+                placeholder="Quién compra, dolores, objeciones, motivaciones..."
+                onChange={(event) => updateField('idealCustomer', event.target.value)}
+                disabled={loading || disconnecting}
+                rows={3}
+              />
+            </div>
+
+            <div className={styles.field}>
+              <label className={styles.label}>Zona geográfica</label>
+              <textarea
+                className={styles.textarea}
+                value={form.locationContext}
+                placeholder="Ciudad, país, zonas, temporadas, contexto local..."
+                onChange={(event) => updateField('locationContext', event.target.value)}
+                disabled={loading || disconnecting}
+                rows={3}
+              />
+            </div>
+
+            <div className={styles.field}>
+              <label className={styles.label}>Competidores o referencias</label>
+              <textarea
+                className={styles.textarea}
+                value={form.competitorsContext}
+                placeholder="Competidores, marcas de referencia, ventajas/desventajas..."
+                onChange={(event) => updateField('competitorsContext', event.target.value)}
+                disabled={loading || disconnecting}
+                rows={3}
+              />
+            </div>
+
+            <div className={styles.fieldWide}>
+              <label className={styles.label}>Tono, prioridades y reglas</label>
+              <textarea
+                className={styles.textarea}
+                value={form.brandVoice}
+                placeholder="Tono, prioridades, reglas y cosas que debe evitar..."
+                onChange={(event) => updateField('brandVoice', event.target.value)}
+                disabled={loading || disconnecting}
+                rows={3}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className={styles.section}>
+          <h3 className={styles.sectionTitle}>Investigación online</h3>
+          <label className={styles.inlineToggle}>
+            <input
+              type="checkbox"
+              checked={form.webSearchEnabled}
+              onChange={(event) => updateField('webSearchEnabled', event.target.checked)}
+              disabled={loading || disconnecting}
+            />
+            <span>
+              <Globe2 size={16} />
+              Permitir búsqueda web cuando aporte contexto.
+            </span>
+          </label>
+
+          {form.webSearchEnabled && (
+            <div className={styles.field}>
+              <label className={styles.label}>Dominios preferidos</label>
+              <textarea
+                className={styles.textarea}
+                value={form.researchDomains}
+                placeholder="Opcional: inegi.org.mx, gob.mx, statista.com..."
+                onChange={(event) => updateField('researchDomains', event.target.value)}
+                disabled={loading || disconnecting}
+                rows={3}
+              />
             </div>
           )}
         </div>

@@ -19,6 +19,14 @@
   gap: 14px;
 }
 
+.headerActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .iconBox {
   display: flex;
   align-items: center;
@@ -76,6 +84,7 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
+  margin-top: 24px;
 }
 
 .sectionTitle {
@@ -83,17 +92,6 @@
   font-size: 14px;
   font-weight: 700;
   color: var(--color-text-primary);
-}
-
-.inputRow {
-  display: flex;
-  align-items: stretch;
-  gap: 12px;
-}
-
-.inputRow .inputWrap {
-  flex: 1;
-  min-width: 0;
 }
 
 .field {
@@ -216,6 +214,43 @@
   color: var(--color-text-tertiary);
 }
 
+.saveStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  margin-top: 14px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--color-text-tertiary);
+}
+
+.saveDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.saveStatusSaved {
+  color: var(--color-status-success);
+}
+
+.saveStatusWorking {
+  color: var(--color-text-tertiary);
+}
+
+.saveStatusError {
+  color: var(--color-status-error);
+}
+
+.settingsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
 .detailsGrid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -315,6 +350,30 @@
   flex-shrink: 0;
 }
 
+.inlineToggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}
+
+.inlineToggle input {
+  width: 16px;
+  height: 16px;
+}
+
+.inlineToggle span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inlineToggle svg {
+  color: var(--color-status-success);
+  flex-shrink: 0;
+}
+
 .detailItem {
   padding: 14px;
   border-radius: 8px;
@@ -377,12 +436,12 @@
     align-items: stretch;
   }
 
-  .inputRow {
-    flex-direction: column;
-    align-items: stretch;
+  .headerActions {
+    justify-content: flex-start;
   }
 
   .detailsGrid,
+  .settingsGrid,
   .contextGrid,
   .modelGrid,
   .behaviorGrid,
