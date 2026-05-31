@@ -712,7 +712,10 @@ function buildScheduleExecuteAt(dueDate, timezone = DEFAULT_PAYMENT_TIMEZONE) {
     ? scheduledAt
     : minimumFutureAt
 
-  return executeAt.toISO({ suppressMilliseconds: false })
+  return executeAt
+    .toUTC()
+    .set({ millisecond: 0 })
+    .toFormat("yyyy-MM-dd'T'HH:mm:ss'Z'")
 }
 
 function buildAutoPayment(paymentMethod) {
