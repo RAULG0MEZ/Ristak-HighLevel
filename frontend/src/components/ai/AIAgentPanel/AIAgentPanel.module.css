@@ -896,51 +896,55 @@
   align-self: flex-start;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   width: fit-content;
   max-width: 88%;
-  padding: 4px 0;
+  padding: 6px 0;
 }
 
-.thinkingAura {
-  display: none;
+.thinkingText {
+  display: inline-flex;
+  min-width: 0;
+  background:
+    linear-gradient(
+      105deg,
+      color-mix(in srgb, var(--color-text-tertiary) 78%, transparent) 0%,
+      var(--color-text-primary) 28%,
+      #06b6d4 42%,
+      rgba(255, 255, 255, 0.95) 51%,
+      #8b5cf6 62%,
+      var(--color-text-primary) 82%,
+      color-mix(in srgb, var(--color-text-tertiary) 78%, transparent) 100%
+    );
+  background-clip: text;
+  background-size: 260% 100%;
+  color: transparent;
+  font-size: 13px;
+  font-weight: 820;
+  letter-spacing: 0;
+  line-height: 1.2;
+  -webkit-background-clip: text;
+  animation: thinkingTextShimmer 1.75s ease-in-out infinite;
 }
 
-.thinkingAura::after {
-  content: none;
-}
-
-.thinkingBubble {
-  position: relative;
+.thinkingDots {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: 30px;
-  padding: 9px 13px;
-  overflow: hidden;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-background-secondary) 88%, var(--color-background-primary) 12%);
-  box-shadow: none;
-}
-
-.thinkingBubble::before {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  content: '';
-  background: linear-gradient(90deg, transparent, rgba(var(--color-primary-rgb), 0.08), transparent);
-  opacity: 0;
-  animation: thinkingSweep 1.8s ease-in-out infinite;
+  gap: 5px;
+  flex-shrink: 0;
 }
 
 .thinkingDot {
   position: relative;
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 999px;
-  background: var(--color-primary);
-  animation: thinkingDotPulse 1.15s ease-in-out infinite;
+  background: linear-gradient(135deg, #06b6d4 0%, #8b5cf6 38%, #f97316 70%, #22c55e 100%);
+  background-size: 240% 240%;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--color-primary) 35%, transparent);
+  animation:
+    thinkingDotPulse 1.15s ease-in-out infinite,
+    thinkingDotGradient 1.6s linear infinite;
 }
 
 .thinkingDot:nth-child(2) {
@@ -965,25 +969,28 @@
   }
 }
 
-@keyframes thinkingSweep {
+@keyframes thinkingDotGradient {
   0% {
-    opacity: 0;
-    transform: translateX(-65%);
+    background-position: 0% 50%;
   }
 
-  45% {
-    opacity: 1;
+  50% {
+    background-position: 100% 50%;
   }
 
   100% {
-    opacity: 0;
-    transform: translateX(65%);
+    background-position: 0% 50%;
   }
 }
 
-:global(body.dark) .thinkingBubble {
-  border-color: rgba(148, 163, 184, 0.16);
-  background: color-mix(in srgb, var(--color-background-secondary) 84%, var(--color-background-primary) 16%);
+@keyframes thinkingTextShimmer {
+  0% {
+    background-position: 130% 50%;
+  }
+
+  100% {
+    background-position: -130% 50%;
+  }
 }
 
 .composer {

@@ -129,6 +129,19 @@ const onboardingQuestions: Array<{
   }
 ]
 
+const defaultThinkingActions = [
+  'Pensando',
+  'Comprobando datos',
+  'Leyendo contexto',
+  'Preparando respuesta'
+]
+
+const savingThinkingActions = [
+  'Guardando configuración',
+  'Validando contexto',
+  'Actualizando agente'
+]
+
 type VisualChartType = 'bar' | 'line'
 
 type VisualChartItem = {
@@ -194,6 +207,62 @@ function createMessage(
 function getRouteLabel(pathname: string) {
   const match = Object.entries(routeLabels).find(([path]) => pathname.startsWith(path))
   return match?.[1] || pathname
+}
+
+function getLatestUserText(messages: AIAgentMessage[]) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role === 'user') {
+      return messages[index].content
+    }
+  }
+
+  return ''
+}
+
+function addThinkingAction(actions: string[], action: string) {
+  if (!actions.includes(action)) {
+    actions.push(action)
+  }
+}
+
+function getThinkingActions(messages: AIAgentMessage[], pathname: string, savingConfig: boolean) {
+  if (savingConfig) {
+    return savingThinkingActions
+  }
+
+  const latestUserText = getLatestUserText(messages).toLowerCase()
+  const routeLabel = getRouteLabel(pathname).toLowerCase()
+  const source = `${latestUserText} ${routeLabel}`
+  const actions = ['Pensando']
+
+  if (/(contacto|contactos|lead|leads|cliente|clientes|prospecto|prospectos|crm)/.test(source)) {
+    addThinkingAction(actions, 'Buscando contactos')
+    addThinkingAction(actions, 'Cruzando historial')
+  }
+
+  if (/(pago|pagos|cobro|cobrar|venta|ventas|ingreso|ingresos|factura|facturar|link)/.test(source)) {
+    const isPaymentMutation = /(crea|crear|genera|generar|manda|mandar|envia|enviar|registra|registrar|programa|programar|cobra|cobrar)/.test(source)
+    addThinkingAction(actions, isPaymentMutation ? 'Creando pago' : 'Revisando pagos')
+    addThinkingAction(actions, 'Validando montos')
+  }
+
+  if (/(cita|citas|agenda|appointment|asistencia|asistieron|showed)/.test(source)) {
+    addThinkingAction(actions, 'Revisando citas')
+    addThinkingAction(actions, 'Comprobando asistencia')
+  }
+
+  if (/(campana|campaña|campanas|campañas|meta|facebook|ads|anuncio|anuncios|adset|publicidad|roas)/.test(source)) {
+    addThinkingAction(actions, 'Analizando campañas')
+    addThinkingAction(actions, 'Midiendo rendimiento')
+  }
+
+  if (/(dashboard|reporte|reportes|analitica|analiticas|analytics|metrica|metricas|datos)/.test(source)) {
+    addThinkingAction(actions, 'Comprobando métricas')
+  }
+
+  addThinkingAction(actions, 'Preparando respuesta')
+
+  return actions.length > 1 ? actions : defaultThinkingActions
 }
 
 function collectVisibleText() {
@@ -1231,6 +1300,13 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
   const voiceIsActive = voiceState !== 'idle'
   const formattedVoiceElapsed = useMemo(() => formatVoiceDuration(voiceElapsed), [voiceElapsed])
   const visible = embedded || open
+  const thinkingActions = useMemo(
+    () => getThinkingActions(messages, location.pathname, savingConfig),
+    [location.pathname, messages, savingConfig]
+  )
+  const thinkingActionKey = thinkingActions.join('|')
+  const [thinkingActionIndex, setThinkingActionIndex] = useState(0)
+  const thinkingAction = thinkingActions[thinkingActionIndex % thinkingActions.length] || 'Pensando'
 
   const focusComposer = () => {
     window.requestAnimationFrame(() => textareaRef.current?.focus())
@@ -1296,6 +1372,20 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [messages, sending, savingConfig, visible])
+
+  useEffect(() => {
+    if (!sending && !savingConfig) {
+      setThinkingActionIndex(0)
+      return
+    }
+
+    setThinkingActionIndex(0)
+    const interval = window.setInterval(() => {
+      setThinkingActionIndex((current) => current + 1)
+    }, 1450)
+
+    return () => window.clearInterval(interval)
+  }, [sending, savingConfig, thinkingActionKey])
 
   useEffect(() => {
     onOpenChange?.(visible)
@@ -2046,13 +2136,14 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
                   <div
                     className={styles.thinkingMessage}
                     role="status"
-                    aria-label={savingConfig ? 'Guardando configuración' : 'Ristak AI está pensando'}
-                    title={savingConfig ? 'Guardando configuración' : 'Pensando'}
+                    aria-live="polite"
+                    aria-label={thinkingAction}
+                    title={thinkingAction}
                   >
-                    <span className={styles.thinkingAura} aria-hidden="true">
-                      <Sparkles size={13} />
+                    <span className={styles.thinkingText}>
+                      {thinkingAction}
                     </span>
-                    <span className={styles.thinkingBubble} aria-hidden="true">
+                    <span className={styles.thinkingDots} aria-hidden="true">
                       <span className={styles.thinkingDot} />
                       <span className={styles.thinkingDot} />
                       <span className={styles.thinkingDot} />
