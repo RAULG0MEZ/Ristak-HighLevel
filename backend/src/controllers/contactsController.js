@@ -161,6 +161,7 @@ export const getContacts = async (req, res) => {
         c.first_name,
         c.last_name,
         c.source,
+        c.visitor_id,
         c.attribution_ad_name,
         c.attribution_ad_id,
         COALESCE(ps.total_paid, c.total_paid, 0) AS total_paid,
@@ -193,8 +194,91 @@ export const getContacts = async (req, res) => {
     const contactsParams = [...params, limitNumber, offset]
     const contacts = await db.all(contactsQuery, contactsParams)
 
+    const firstSessionsByContact = new Map()
+    const firstSessionsByVisitor = new Map()
+    const firstSessionsByEmail = new Map()
+    const contactIds = Array.from(new Set(contacts.map(c => c.id).filter(Boolean)))
+    const visitorIds = Array.from(new Set(contacts.map(c => c.visitor_id).filter(Boolean)))
+    const emails = Array.from(new Set(
+      contacts
+        .map(c => c.email)
+        .filter(Boolean)
+        .map(email => String(email).toLowerCase())
+    ))
+
+    if (contactIds.length > 0 || visitorIds.length > 0 || emails.length > 0) {
+      const sessionConditions = []
+      const sessionParams = []
+
+      const addInCondition = (field, values) => {
+        if (!values.length) return
+        sessionConditions.push(`${field} IN (${values.map(() => '?').join(', ')})`)
+        sessionParams.push(...values)
+      }
+
+      addInCondition('contact_id', contactIds)
+      addInCondition('visitor_id', visitorIds)
+      addInCondition('LOWER(email)', emails)
+
+      const firstSessions = await db.all(`
+        SELECT
+          id,
+          contact_id,
+          visitor_id,
+          email,
+          started_at,
+          created_at,
+          page_url,
+          referrer_url,
+          utm_source,
+          utm_medium,
+          utm_campaign,
+          utm_content,
+          utm_term,
+          source_platform,
+          site_source_name,
+          campaign_name,
+          adset_name,
+          ad_name,
+          ad_id,
+          device_type,
+          browser,
+          os,
+          placement,
+          geo_city,
+          geo_region,
+          geo_country
+        FROM sessions
+        WHERE ${sessionConditions.join(' OR ')}
+        ORDER BY started_at ASC, created_at ASC, id ASC
+      `, sessionParams)
+
+      firstSessions.forEach(session => {
+        if (session.contact_id && !firstSessionsByContact.has(session.contact_id)) {
+          firstSessionsByContact.set(session.contact_id, session)
+        }
+        if (session.visitor_id && !firstSessionsByVisitor.has(session.visitor_id)) {
+          firstSessionsByVisitor.set(session.visitor_id, session)
+        }
+        if (session.email) {
+          const emailKey = String(session.email).toLowerCase()
+          if (!firstSessionsByEmail.has(emailKey)) {
+            firstSessionsByEmail.set(emailKey, session)
+          }
+        }
+      })
+    }
+
+    const getFirstSessionForContact = (contact) =>
+      firstSessionsByContact.get(contact.id) ||
+      (contact.visitor_id ? firstSessionsByVisitor.get(contact.visitor_id) : null) ||
+      (contact.email ? firstSessionsByEmail.get(String(contact.email).toLowerCase()) : null) ||
+      null
+
     // Mapear campos de base de datos a nombres esperados por frontend
     const mappedContacts = contacts.map(c => {
+      const firstSession = getFirstSessionForContact(c)
+
       // Determinar status basado en la actividad del contacto
       let status = 'lead'
       if (c.purchases_count > 0) {
@@ -218,6 +302,30 @@ export const getContacts = async (req, res) => {
         source: c.source,
         ad_name: c.attribution_ad_name,
         ad_id: c.attribution_ad_id,
+        firstSession: firstSession ? {
+          started_at: firstSession.started_at,
+          page_url: firstSession.page_url,
+          landing_page: firstSession.page_url,
+          referrer_url: firstSession.referrer_url,
+          utm_source: firstSession.utm_source,
+          utm_medium: firstSession.utm_medium,
+          utm_campaign: firstSession.utm_campaign,
+          utm_content: firstSession.utm_content,
+          utm_term: firstSession.utm_term,
+          source_platform: firstSession.source_platform,
+          site_source_name: firstSession.site_source_name,
+          campaign_name: firstSession.campaign_name,
+          adset_name: firstSession.adset_name,
+          ad_name: firstSession.ad_name,
+          ad_id: firstSession.ad_id,
+          device_type: firstSession.device_type,
+          browser: firstSession.browser,
+          os: firstSession.os,
+          placement: firstSession.placement,
+          geo_city: firstSession.geo_city,
+          geo_region: firstSession.geo_region,
+          geo_country: firstSession.geo_country
+        } : null,
         notes: ''
       }
     })
@@ -286,6 +394,7 @@ export const getContactById = async (req, res) => {
         c.first_name,
         c.last_name,
         c.source,
+        c.visitor_id,
         c.attribution_ad_name,
         c.attribution_ad_id,
         COALESCE(ps.total_paid, c.total_paid, 0) AS total_paid,
@@ -586,10 +695,13 @@ export const getContactById = async (req, res) => {
         source_platform: firstSession.source_platform,
         site_source_name: firstSession.site_source_name,
         campaign_name: firstSession.campaign_name,
+        adset_name: firstSession.adset_name,
         ad_name: firstSession.ad_name,
         ad_id: firstSession.ad_id,
         device_type: firstSession.device_type,
         browser: firstSession.browser,
+        os: firstSession.os,
+        placement: firstSession.placement,
         geo_city: firstSession.geo_city,
         geo_region: firstSession.geo_region,
         geo_country: firstSession.geo_country

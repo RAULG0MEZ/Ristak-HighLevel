@@ -17,6 +17,31 @@ export interface ContactAppointment {
   notes?: string | null
 }
 
+export interface ContactFirstSession {
+  started_at?: string | null
+  page_url?: string | null
+  landing_page?: string | null
+  referrer_url?: string | null
+  utm_source?: string | null
+  utm_medium?: string | null
+  utm_campaign?: string | null
+  utm_content?: string | null
+  utm_term?: string | null
+  source_platform?: string | null
+  site_source_name?: string | null
+  campaign_name?: string | null
+  adset_name?: string | null
+  ad_name?: string | null
+  ad_id?: string | null
+  device_type?: string | null
+  browser?: string | null
+  os?: string | null
+  placement?: string | null
+  geo_city?: string | null
+  geo_region?: string | null
+  geo_country?: string | null
+}
+
 export interface Contact {
   id: string
   createdAt: string
@@ -40,6 +65,7 @@ export interface Contact {
   hasAttendedAppointment?: boolean
   payments?: ContactPayment[]
   appointments?: ContactAppointment[]
+  firstSession?: ContactFirstSession | null
 }
 
 // Transaction type

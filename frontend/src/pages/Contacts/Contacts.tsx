@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useSearchParams } from 'react-router-dom'
-import { KpiCard, Card, Button, Table, DateRangePicker, PageContainer, TabList, Badge, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, ContactDetailsModal, BarChart, Loading } from '@/components/common'
+import { KpiCard, Card, Button, Table, DateRangePicker, PageContainer, TabList, Badge, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, ContactDetailsModal, BarChart, Loading, TreeFilter } from '@/components/common'
 import type { Column, BarChartData } from '@/components/common'
 import {
   Users,
@@ -18,7 +18,7 @@ import {
 import { useDateRange } from '@/contexts/DateRangeContext'
 import { useTimezone } from '@/contexts/TimezoneContext'
 import { useLabels } from '@/contexts/LabelsContext'
-import { formatCurrency, formatDate, formatDateToISO, formatEndDateToISO, formatNumber, parseLocalDateString } from '@/utils/format'
+import { formatCurrency, formatDate, formatDateToISO, formatEndDateToISO, formatNumber, formatUrlParameter, parseLocalDateString } from '@/utils/format'
 import { contactsService, type Contact, type ContactStats } from '@/services/contactsService'
 import { calendarsService, type CalendarEvent } from '@/services/calendarsService'
 import type { ContactAppointment, ContactPayment } from '@/types'
@@ -27,6 +27,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import styles from './Contacts.module.css'
 import { dedupeContacts } from '@/utils/contactDedup'
 import { getContactStageBadge, isAttendedAppointmentStatus } from '@/utils/contactStageBadge'
+import { normalizeTrafficSource } from '@/utils/trafficSourceNormalizer'
 
 const APPOINTMENT_CANCELED_STATUSES = new Set([
   'cancelled',
@@ -41,6 +42,84 @@ const STATUS_PRIORITY: Record<Contact['status'], number> = {
   lead: 0,
   appointment: 1,
   customer: 2
+}
+
+const decodeAdName = (name: string | null | undefined): string => {
+  if (!name || name === 'null' || name === 'undefined') {
+    return '(Tráfico orgánico)'
+  }
+  try {
+    return decodeURIComponent(name.replace(/\+/g, ' '))
+  } catch {
+    return name
+  }
+}
+
+const formatPlacementName = (placement: string): string => {
+  if (!placement || placement === 'Sin ubicación') return 'Sin ubicación'
+
+  const cleaned = placement.toLowerCase().trim()
+
+  if (cleaned.includes('facebook') && cleaned.includes('feed')) return 'Facebook Feed'
+  if (cleaned.includes('facebook') && cleaned.includes('reel')) return 'Facebook Reels'
+  if (cleaned.includes('facebook') && cleaned.includes('story')) return 'Facebook Stories'
+  if (cleaned.includes('facebook') && cleaned.includes('right_column')) return 'Facebook Columna Derecha'
+  if (cleaned.includes('facebook') && cleaned.includes('video')) return 'Facebook Video'
+  if (cleaned.includes('facebook') && cleaned.includes('marketplace')) return 'Facebook Marketplace'
+  if (cleaned.includes('facebook') && cleaned.includes('search')) return 'Facebook Búsqueda'
+
+  if (cleaned.includes('instagram') && cleaned.includes('feed')) return 'Instagram Feed'
+  if (cleaned.includes('instagram') && cleaned.includes('reel')) return 'Instagram Reels'
+  if (cleaned.includes('instagram') && cleaned.includes('story')) return 'Instagram Stories'
+  if (cleaned.includes('instagram') && cleaned.includes('explore')) return 'Instagram Explorar'
+  if (cleaned.includes('instagram') && cleaned.includes('profile')) return 'Instagram Perfil'
+  if (cleaned.includes('instagram') && cleaned.includes('search')) return 'Instagram Búsqueda'
+
+  if (cleaned.includes('messenger')) return 'Messenger'
+  if (cleaned.includes('audience_network')) return 'Audience Network'
+  if (cleaned.includes('instant_article')) return 'Artículo Instantáneo'
+  if (cleaned.includes('instream')) return 'In-Stream Video'
+  if (cleaned === 'fb') return 'Facebook'
+  if (cleaned === 'ig') return 'Instagram'
+
+  return placement.replace(/_/g, ' ').split(' ').map(word =>
+    word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+  ).join(' ')
+}
+
+const isUsableTrackingValue = (value: string | null | undefined) => {
+  if (!value) return false
+  const normalized = value.trim().toLowerCase()
+  return normalized.length > 0 && normalized !== 'null' && normalized !== 'undefined'
+}
+
+const getContactPageName = (pageUrl?: string | null) => {
+  if (!pageUrl) return null
+  const urlPath = pageUrl.split('?')[0]
+  return urlPath.split('/').pop() || 'home'
+}
+
+const getContactTrackingData = (contact: Contact) => {
+  const firstSession = contact.firstSession
+
+  return {
+    page_url: firstSession?.page_url || firstSession?.landing_page || null,
+    referrer_url: firstSession?.referrer_url || null,
+    utm_source: firstSession?.utm_source || contact.source || null,
+    utm_medium: firstSession?.utm_medium || null,
+    utm_campaign: firstSession?.utm_campaign || null,
+    utm_content: firstSession?.utm_content || null,
+    source_platform: firstSession?.source_platform || null,
+    site_source_name: firstSession?.site_source_name || null,
+    campaign_name: firstSession?.campaign_name || null,
+    adset_name: firstSession?.adset_name || null,
+    ad_name: firstSession?.ad_name || contact.ad_name || null,
+    ad_id: firstSession?.ad_id || contact.ad_id || null,
+    device_type: firstSession?.device_type || null,
+    browser: firstSession?.browser || null,
+    os: firstSession?.os || null,
+    placement: firstSession?.placement || null
+  }
 }
 
 const mergeContactDetailRecords = (
@@ -187,6 +266,7 @@ export const Contacts: React.FC = () => {
   const [contacts, setContacts] = useState<Contact[]>([])
   const [stats, setStats] = useState<ContactStats | null>(null)
   const [filter, setFilter] = useState('all')
+  const [selectedFilters, setSelectedFilters] = useState<Record<string, string[]>>({})
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null)
   const [selectedContactDetails, setSelectedContactDetails] = useState<Contact | null>(null)
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null)
@@ -527,8 +607,211 @@ export const Contacts: React.FC = () => {
     }
   }
 
+  const availableFilterData = useMemo(() => {
+    const filterData: any = {
+      pages: [],
+      ads: [],
+      sources: [],
+      devices: [],
+      browsers: [],
+      os: [],
+      placements: [],
+      adsHierarchy: []
+    }
+
+    interface AdHierarchy {
+      platform: string
+      platform_id: string
+      contacts: Set<string>
+      campaigns: Map<string, {
+        id: string
+        name: string
+        contacts: Set<string>
+        adsets: Map<string, {
+          id: string
+          name: string
+          contacts: Set<string>
+          ads: Map<string, {
+            id: string
+            name: string
+            contacts: Set<string>
+          }>
+        }>
+      }>
+    }
+
+    const adsHierarchyMap = new Map<string, AdHierarchy>()
+    const pageMap: Record<string, Set<string>> = {}
+    const adsMap: Record<string, Set<string>> = {}
+    const sourcesMap: Record<string, Set<string>> = {}
+    const devicesMap: Record<string, Set<string>> = {}
+    const browsersMap: Record<string, Set<string>> = {}
+    const osMap: Record<string, Set<string>> = {}
+    const placementsMap: Record<string, Set<string>> = {}
+
+    const addContactToMap = (map: Record<string, Set<string>>, key: string | null | undefined, contactId: string) => {
+      if (!key) return
+      if (!map[key]) map[key] = new Set()
+      map[key].add(contactId)
+    }
+
+    contacts.forEach((contact) => {
+      const tracking = getContactTrackingData(contact)
+      const contactId = contact.id
+      const pageName = getContactPageName(tracking.page_url)
+
+      addContactToMap(pageMap, pageName, contactId)
+
+      const normalizedSource = normalizeTrafficSource({
+        referrer_url: tracking.referrer_url,
+        site_source_name: tracking.site_source_name,
+        utm_source: tracking.utm_source,
+        source_platform: tracking.source_platform
+      })
+
+      if (normalizedSource && normalizedSource !== 'Desconocido' && normalizedSource !== 'Otro') {
+        addContactToMap(sourcesMap, normalizedSource, contactId)
+      }
+
+      addContactToMap(devicesMap, tracking.device_type, contactId)
+      addContactToMap(browsersMap, tracking.browser, contactId)
+      addContactToMap(osMap, tracking.os, contactId)
+
+      if (tracking.placement) {
+        addContactToMap(placementsMap, formatPlacementName(tracking.placement), contactId)
+      }
+
+      const campaignValue = tracking.utm_campaign || tracking.campaign_name
+      const adValue = tracking.utm_content || tracking.ad_name
+      if (adValue) {
+        addContactToMap(adsMap, formatUrlParameter(adValue), contactId)
+      }
+
+      if (!isUsableTrackingValue(tracking.utm_source) || !isUsableTrackingValue(campaignValue)) {
+        return
+      }
+
+      const platform = normalizedSource
+      const platformId = platform.toLowerCase()
+
+      if (!adsHierarchyMap.has(platformId)) {
+        adsHierarchyMap.set(platformId, {
+          platform,
+          platform_id: platformId,
+          contacts: new Set(),
+          campaigns: new Map()
+        })
+      }
+
+      const platformNode = adsHierarchyMap.get(platformId)!
+      platformNode.contacts.add(contactId)
+
+      const campaignId = decodeAdName(campaignValue)
+      if (!platformNode.campaigns.has(campaignId)) {
+        platformNode.campaigns.set(campaignId, {
+          id: campaignId,
+          name: campaignId,
+          contacts: new Set(),
+          adsets: new Map()
+        })
+      }
+
+      const campaignNode = platformNode.campaigns.get(campaignId)!
+      campaignNode.contacts.add(contactId)
+
+      const adsetValue = tracking.utm_medium || tracking.adset_name
+      const adsetId = isUsableTrackingValue(adsetValue)
+        ? decodeAdName(adsetValue)
+        : 'sin_conjunto'
+      const adsetName = isUsableTrackingValue(adsetValue)
+        ? adsetId
+        : '(Sin conjunto de anuncios)'
+
+      if (!campaignNode.adsets.has(adsetId)) {
+        campaignNode.adsets.set(adsetId, {
+          id: adsetId,
+          name: adsetName,
+          contacts: new Set(),
+          ads: new Map()
+        })
+      }
+
+      const adsetNode = campaignNode.adsets.get(adsetId)!
+      adsetNode.contacts.add(contactId)
+
+      const adId = isUsableTrackingValue(adValue)
+        ? decodeAdName(adValue)
+        : 'sin_anuncio'
+      const adName = isUsableTrackingValue(adValue)
+        ? adId
+        : '(Sin nombre de anuncio)'
+
+      if (!adsetNode.ads.has(adId)) {
+        adsetNode.ads.set(adId, {
+          id: adId,
+          name: adName,
+          contacts: new Set()
+        })
+      }
+
+      const adNode = adsetNode.ads.get(adId)!
+      adNode.contacts.add(contactId)
+    })
+
+    filterData.pages = Object.entries(pageMap)
+      .map(([page, contactSet]) => ({ page, count: contactSet.size }))
+      .sort((a, b) => b.count - a.count)
+
+    filterData.ads = Object.entries(adsMap)
+      .map(([name, contactSet]) => ({ name, count: contactSet.size }))
+      .sort((a, b) => b.count - a.count)
+
+    filterData.sources = Object.entries(sourcesMap)
+      .map(([name, contactSet]) => ({ name, count: contactSet.size }))
+      .sort((a, b) => b.count - a.count)
+
+    filterData.devices = Object.entries(devicesMap)
+      .map(([name, contactSet]) => ({ name, count: contactSet.size }))
+      .sort((a, b) => b.count - a.count)
+
+    filterData.browsers = Object.entries(browsersMap)
+      .map(([name, contactSet]) => ({ name, count: contactSet.size }))
+      .sort((a, b) => b.count - a.count)
+
+    filterData.os = Object.entries(osMap)
+      .map(([name, contactSet]) => ({ name, count: contactSet.size }))
+      .sort((a, b) => b.count - a.count)
+
+    filterData.placements = Object.entries(placementsMap)
+      .map(([name, contactSet]) => ({ name, count: contactSet.size }))
+      .sort((a, b) => b.count - a.count)
+
+    filterData.adsHierarchy = Array.from(adsHierarchyMap.values()).map(platformNode => ({
+      platform: platformNode.platform,
+      platform_id: platformNode.platform_id,
+      count: platformNode.contacts.size,
+      campaigns: Array.from(platformNode.campaigns.values()).map(campaignNode => ({
+        id: campaignNode.id,
+        name: campaignNode.name,
+        count: campaignNode.contacts.size,
+        adsets: Array.from(campaignNode.adsets.values()).map(adsetNode => ({
+          id: adsetNode.id,
+          name: adsetNode.name,
+          count: adsetNode.contacts.size,
+          ads: Array.from(adsetNode.ads.values()).map(adNode => ({
+            id: adNode.id,
+            name: adNode.name,
+            count: adNode.contacts.size
+          })).sort((a, b) => b.count - a.count)
+        })).sort((a, b) => b.count - a.count)
+      })).sort((a, b) => b.count - a.count)
+    })).sort((a, b) => b.count - a.count)
+
+    return filterData
+  }, [contacts])
+
   const filteredContacts = useMemo(() => {
-    return contacts.filter(contact => {
+    const stageFilteredContacts = contacts.filter(contact => {
       if (filter === 'all') return true
       if (filter === 'leads') return contact.status === 'lead'
       if (filter === 'customers') return contact.status === 'customer'
@@ -577,7 +860,83 @@ export const Contacts: React.FC = () => {
 
       return false
     })
-  }, [contacts, filter, allEvents])
+
+    const hasActiveTreeFilters = Object.values(selectedFilters).some(values => values.length > 0)
+    if (!hasActiveTreeFilters) {
+      return stageFilteredContacts
+    }
+
+    return stageFilteredContacts.filter(contact => {
+      const tracking = getContactTrackingData(contact)
+
+      for (const [field, values] of Object.entries(selectedFilters)) {
+        if (values.length === 0) continue
+
+        let fieldMatch = false
+
+        for (const value of values) {
+          switch (field) {
+            case 'landing_url':
+            case 'page_url': {
+              const pageName = getContactPageName(tracking.page_url)
+              if (pageName === value) fieldMatch = true
+              break
+            }
+            case 'utm_campaign': {
+              const campaignValue = tracking.utm_campaign || tracking.campaign_name
+              if (decodeAdName(campaignValue) === value) fieldMatch = true
+              break
+            }
+            case 'utm_medium': {
+              const adsetValue = tracking.utm_medium || tracking.adset_name
+              const decodedAdset = isUsableTrackingValue(adsetValue)
+                ? decodeAdName(adsetValue)
+                : 'sin_conjunto'
+              if (decodedAdset === value) fieldMatch = true
+              break
+            }
+            case 'utm_content': {
+              const adValue = tracking.utm_content || tracking.ad_name
+              const decodedAd = isUsableTrackingValue(adValue)
+                ? decodeAdName(adValue)
+                : 'sin_anuncio'
+              if (decodedAd === value) fieldMatch = true
+              break
+            }
+            case 'utm_source': {
+              const normalizedSource = normalizeTrafficSource({
+                referrer_url: tracking.referrer_url,
+                site_source_name: tracking.site_source_name,
+                utm_source: tracking.utm_source,
+                source_platform: tracking.source_platform
+              })
+              if (normalizedSource.toLowerCase() === value.toLowerCase()) fieldMatch = true
+              break
+            }
+            case 'device_type':
+              if (tracking.device_type === value) fieldMatch = true
+              break
+            case 'browser':
+              if (tracking.browser === value) fieldMatch = true
+              break
+            case 'os':
+              if (tracking.os === value) fieldMatch = true
+              break
+            case 'placement':
+              if (formatPlacementName(tracking.placement || '') === value) fieldMatch = true
+              break
+            case 'ad_id':
+              if (tracking.ad_id === value) fieldMatch = true
+              break
+          }
+        }
+
+        if (!fieldMatch) return false
+      }
+
+      return true
+    })
+  }, [contacts, filter, allEvents, selectedFilters])
 
   const filterOptions = [
     { label: 'Todos', value: 'all' },
@@ -766,6 +1125,11 @@ export const Contacts: React.FC = () => {
 
         <div className={styles.controlsRow}>
           <div className={styles.dateFilters}>
+            <TreeFilter
+              availableData={availableFilterData}
+              selectedFilters={selectedFilters}
+              onFilterChange={setSelectedFilters}
+            />
             <TabList
               tabs={[
                 {

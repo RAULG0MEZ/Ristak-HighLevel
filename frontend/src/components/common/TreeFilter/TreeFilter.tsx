@@ -326,9 +326,12 @@ export function TreeFilter({
     return Object.values(selectedFilters).reduce((acc, values) => acc + values.length, 0)
   }, [selectedFilters])
   const hasActiveFilters = activeFiltersCount > 0
+  const availableFilterLabels = filterTree.map(node => node.label.toLocaleLowerCase('es-MX')).join(', ')
   const filterTooltip = activeFiltersCount > 0
-    ? 'Abre el panel para revisar, sumar o quitar filtros activos de analíticas.'
-    : 'Sin filtros aplicados. Abre para filtrar por conversión, páginas, anuncios, fuentes, dispositivos, navegadores y ubicaciones.'
+    ? 'Abre el panel para revisar, sumar o quitar filtros activos.'
+    : availableFilterLabels
+      ? `Sin filtros aplicados. Abre para filtrar por ${availableFilterLabels}.`
+      : 'Sin filtros aplicados.'
 
   const handleClearAllFilters = () => {
     onFilterChange({})
