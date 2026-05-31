@@ -237,6 +237,14 @@ function buildPaymentPlanSummary(flow, installments = [], options = {}) {
   return [...header, ...detailLines].join('\n')
 }
 
+function hasFirstPlanPayment(flow) {
+  return normalizeAmount(flow?.first_payment_amount) > 0 && flow?.first_payment_status !== 'not_required'
+}
+
+function getInstallmentPaymentNumber(flow, installment) {
+  return Number(installment.sequence || 1) + (hasFirstPlanPayment(flow) ? 1 : 0)
+}
+
 function normalizeOptionalBoolean(value) {
   if (typeof value === 'boolean') return value
   if (value === undefined || value === null || value === '') return null
@@ -908,14 +916,16 @@ function buildInstallmentSchedulePayload({ flow, installment, context, planSumma
   const currency = flow.currency || CURRENCY_DEFAULT
   const concept = flow.concept || 'Plan de parcialidades'
   const sequence = Number(installment.sequence || 1)
+  const paymentNumber = getInstallmentPaymentNumber(flow, installment)
+  const paymentLabel = `Pago ${paymentNumber}`
   const amount = normalizeAmount(installment.amount)
   const description = combineTextSections(
-    `${concept} - parcialidad ${sequence}`,
+    `${concept} - ${paymentLabel}`,
     planSummary
   )
 
   return {
-    name: `${concept} - parcialidad ${sequence}`,
+    name: `${concept} - ${paymentLabel}`,
     title: 'PAGO PROGRAMADO',
     currency,
     total: amount,
@@ -938,7 +948,7 @@ function buildInstallmentSchedulePayload({ flow, installment, context, planSumma
     liveMode: context.liveMode,
     items: [
       {
-        name: `Parcialidad ${sequence}`,
+        name: paymentLabel,
         description,
         amount,
         qty: 1,
@@ -985,6 +995,36 @@ async function createDraftInstallmentSchedule({ ghlClient, flow, installment, co
   return scheduleId
 }
 
+async function markInstallmentScheduleMissing(installment, scheduleId) {
+  await db.run(
+    `UPDATE installment_payments
+     SET status = 'cancelled',
+         automatic = 0,
+         ghl_schedule_id = NULL,
+         ghl_schedule_status = 'not_found',
+         notes = ?,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`,
+    [`GHL schedule ${scheduleId || 'sin_id'} no existe; se detuvo reintento automático`, installment.id]
+  )
+}
+
+async function getAutomaticInstallmentCounts(flowId) {
+  const row = await db.get(
+    `SELECT
+       SUM(CASE WHEN automatic = 1 AND status = 'scheduled' AND ghl_schedule_status = 'scheduled' THEN 1 ELSE 0 END) AS scheduled_count,
+       SUM(CASE WHEN automatic = 1 AND status IN ('pending_card_authorization', 'scheduled', 'schedule_failed') THEN 1 ELSE 0 END) AS active_count
+     FROM installment_payments
+     WHERE flow_id = ?`,
+    [flowId]
+  )
+
+  return {
+    scheduled: Number(row?.scheduled_count || 0),
+    active: Number(row?.active_count || 0)
+  }
+}
+
 async function scheduleAutomaticInstallmentsForFlow(flow, paymentMethod, existingClient = null) {
   if (!Number(flow.remaining_automatic)) return []
 
@@ -1026,7 +1066,7 @@ async function scheduleAutomaticInstallmentsForFlow(flow, paymentMethod, existin
 
   for (const installment of installments) {
     let scheduleId = installment.ghl_schedule_id
-    let recreatedMissingSchedule = false
+    const hadStoredScheduleId = Boolean(scheduleId)
     const autoPayment = buildAutoPayment(paymentMethod, {
       amount: installment.amount,
       currency: flow.currency || CURRENCY_DEFAULT
@@ -1037,28 +1077,19 @@ async function scheduleAutomaticInstallmentsForFlow(flow, paymentMethod, existin
         scheduleId = await createDraftInstallmentSchedule({ ghlClient, flow, installment, context, planSummary })
       }
 
-      while (true) {
-        try {
-          await ghlClient.scheduleInvoiceSchedule(scheduleId, {
-            liveMode: context.liveMode,
-            autoPayment
-          })
-          break
-        } catch (error) {
-          if (!isGhlScheduleNotFoundError(error) || recreatedMissingSchedule) {
-            throw error
-          }
-
-          recreatedMissingSchedule = true
-          logger.warn(`Schedule GHL ${scheduleId} ya no existe para flujo ${flow.id}, parcialidad ${installment.sequence}; recreando`)
-          await db.run(
-            `UPDATE installment_payments
-             SET ghl_schedule_id = NULL, ghl_schedule_status = 'schedule_failed', notes = ?, updated_at = CURRENT_TIMESTAMP
-             WHERE id = ?`,
-            ['GHL schedule missing; recreating draft', installment.id]
-          )
-          scheduleId = await createDraftInstallmentSchedule({ ghlClient, flow, installment, context, planSummary })
+      try {
+        await ghlClient.scheduleInvoiceSchedule(scheduleId, {
+          liveMode: context.liveMode,
+          autoPayment
+        })
+      } catch (error) {
+        if (isGhlScheduleNotFoundError(error) && hadStoredScheduleId) {
+          await markInstallmentScheduleMissing(installment, scheduleId)
+          logger.warn(`Schedule GHL ${scheduleId} ya no existe para flujo ${flow.id}, parcialidad ${installment.sequence}; se limpió y no se reintentará`)
+          continue
         }
+
+        throw error
       }
 
       await db.run(
@@ -1092,6 +1123,13 @@ async function scheduleAutomaticInstallmentsForFlow(flow, paymentMethod, existin
   }
 
   return scheduled
+}
+
+async function cancelFlowWithoutAutomaticInstallments(flow) {
+  const currentHistory = safeJsonParse(flow.state_history, [])
+  const stateHistory = addState(currentHistory, PAYMENT_FLOW_STATES.CANCELLED)
+  await updateFlowState(flow.id, PAYMENT_FLOW_STATES.CANCELLED, stateHistory)
+  logger.warn(`Flujo ${flow.id} quedó sin parcialidades automáticas activas; marcado como cancelado para no reintentarlo`)
 }
 
 async function updateFlowState(flowId, state, stateHistory, fields = {}) {
@@ -1487,6 +1525,17 @@ async function activateFlowIfReady(flow) {
   }
 
   await scheduleAutomaticInstallmentsForFlow(flow, authorizedCard, ghlClient)
+
+  const installmentCounts = await getAutomaticInstallmentCounts(flow.id)
+  if (installmentCounts.scheduled === 0 && installmentCounts.active === 0) {
+    await cancelFlowWithoutAutomaticInstallments(flow)
+    return false
+  }
+
+  if (installmentCounts.scheduled === 0) {
+    logger.warn(`Flujo ${flow.id} no tiene parcialidades programadas todavía; se queda pendiente`)
+    return false
+  }
 
   const currentHistory = safeJsonParse(flow.state_history, [])
   let stateHistory = addState(currentHistory, PAYMENT_FLOW_STATES.CARD_AUTHORIZED)
