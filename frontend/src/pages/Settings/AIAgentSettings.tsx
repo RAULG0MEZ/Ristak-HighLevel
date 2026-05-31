@@ -24,13 +24,6 @@ const emptyStatus: AIAgentConfigStatus = {
   responseStyle: 'direct',
   recommendationMode: 'on_request',
   webSearchEnabled: false,
-  metaAdsMcp: {
-    enabled: true,
-    configured: false,
-    serverUrl: 'https://mcp.facebook.com/ads',
-    adAccountId: null,
-    tokenSource: null
-  },
   updatedAt: null
 }
 

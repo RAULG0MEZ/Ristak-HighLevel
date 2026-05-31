@@ -54,13 +54,6 @@ export interface AIAgentConfigStatus {
   responseStyle: AIAgentResponseStyle
   recommendationMode: AIAgentRecommendationMode
   webSearchEnabled: boolean
-  metaAdsMcp?: {
-    enabled: boolean
-    configured: boolean
-    serverUrl: string
-    adAccountId: string | null
-    tokenSource: string | null
-  }
   updatedAt: string | null
 }
 

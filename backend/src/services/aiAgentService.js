@@ -3,7 +3,6 @@ import { decrypt, encrypt } from '../utils/encryption.js'
 import { resolveDateRangeWithGHLTimezone } from '../utils/dateUtils.js'
 import { buildHiddenContactsCondition, getHiddenContactFilters } from '../utils/hiddenContactsFilter.js'
 import { getGHLClient } from './ghlClient.js'
-import { getMetaConfig } from './metaAdsService.js'
 import { createInstallmentPaymentFlow, createOfflineContactPayment, createSinglePaymentLink } from './paymentFlowService.js'
 import { PAYMENT_MODE_LIVE, PAYMENT_MODE_TEST, normalizePaymentMode, nonTestPaymentCondition } from '../utils/paymentMode.js'
 import { logger } from '../utils/logger.js'
@@ -25,7 +24,6 @@ import { DateTime } from 'luxon'
 const OPENAI_API_URL = 'https://api.openai.com/v1'
 const HIGHLEVEL_API_BASE_URL = process.env.GHL_API_BASE_URL || 'https://services.leadconnectorhq.com'
 const HIGHLEVEL_MCP_SERVER_URL = process.env.GHL_MCP_SERVER_URL || 'https://services.leadconnectorhq.com/mcp/'
-const META_ADS_MCP_SERVER_URL = process.env.META_ADS_MCP_SERVER_URL || 'https://mcp.facebook.com/ads'
 const HIGHLEVEL_API_VERSION = process.env.GHL_API_VERSION || '2021-07-28'
 const DEFAULT_MODEL = process.env.OPENAI_AGENT_MODEL || 'gpt-5.5'
 const SUPERVISOR_MODEL = process.env.OPENAI_AGENT_ROUTER_MODEL || 'gpt-5-nano'
@@ -52,7 +50,6 @@ const DEFAULT_PAYMENT_TIMEZONE = 'America/Mexico_City'
 const DEFAULT_AI_RESPONSE_STYLE = 'direct'
 const DEFAULT_AI_RECOMMENDATION_MODE = 'on_request'
 const AI_MODEL_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,99}$/
-const META_ADS_MCP_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.META_ADS_MCP_ENABLED || 'true'))
 const isPostgres = Boolean(process.env.DATABASE_URL)
 
 const AGENT_SUPERVISOR_DOMAINS = new Set([
@@ -80,40 +77,6 @@ const HIGHLEVEL_AGENT_DOMAINS = new Set([
   'messages',
   'products'
 ])
-
-const META_ADS_MCP_READ_ONLY_TOOL_NAMES = [
-  'ads_get_ad_accounts',
-  'ads_get_ad_entities',
-  'ads_get_audiences',
-  'ads_get_custom_audience',
-  'ads_get_custom_audience_details',
-  'ads_get_custom_audiences',
-  'ads_get_lookalike_audiences',
-  'ads_get_pages_for_business',
-  'ads_get_saved_audiences',
-  'ads_get_targeting',
-  'ads_get_targeting_search',
-  'ads_catalog_get_catalogs',
-  'ads_catalog_get_details',
-  'ads_catalog_get_diagnostics',
-  'ads_catalog_get_feed_rules',
-  'ads_catalog_get_product_details',
-  'ads_catalog_get_product_feed_details',
-  'ads_catalog_get_product_set_products',
-  'ads_catalog_get_product_sets',
-  'ads_catalog_get_products',
-  'ads_get_dataset_details',
-  'ads_get_dataset_quality',
-  'ads_get_dataset_stats',
-  'ads_get_errors',
-  'ads_insights_advertiser_context',
-  'ads_insights_anomaly_signal',
-  'ads_insights_auction_ranking_benchmarks',
-  'ads_insights_industry_benchmark',
-  'ads_insights_performance_trend',
-  'ads_get_opportunity_score',
-  'ads_get_help_article'
-]
 
 const paidStatuses = "('paid','succeeded','success','completed','complete')"
 const pendingStatuses = "('pending','unpaid','sent','open','draft')"
@@ -592,24 +555,6 @@ function extractMcpApprovalRequests(responseData) {
     }))
 }
 
-function isMetaAdsMcpApprovalRequest(request = {}) {
-  return normalizeText(request.serverLabel) === 'meta_ads'
-}
-
-function isLikelyReadOnlyMetaAdsToolName(toolName) {
-  const normalized = normalizeText(toolName)
-  if (!normalized) return false
-
-  if (/(create|update|delete|remove|add|set|pause|resume|enable|disable|duplicate|copy|upload|mutate|edit|modify|exclude|include|attach|detach|assign|unassign|replace|publish|archive)/.test(normalized)) {
-    return false
-  }
-
-  return /^(ads_)?(get|list|search|read|fetch|find|check|inspect|diagnos|preview|describe|insight|benchmark)/.test(normalized) ||
-    normalized.includes('insights') ||
-    normalized.includes('diagnostic') ||
-    normalized.includes('benchmark')
-}
-
 const AFFIRMATIVE_INTENT_STEMS = [
   'si',
   'sip',
@@ -731,53 +676,6 @@ function isConversationalFollowUp(messages) {
     /\b(eso|ese|esa|esto|esta|este|lo anterior|lo mismo|de nuevo|otra vez|reintenta|intenta|vuelve|ahora si|sigue|continua|mas bien|mejor)\b/.test(latestUserText)
 }
 
-function hasExplicitMetaAdsExecutionConfirmation(messages) {
-  return hasUserConfirmedExecution(messages, {
-    contextPattern: /(meta|ads|anuncio|anuncios|campana|campanas|campaign|adset|conjunto|audiencia|publico|público|presupuesto|budget|pausar|apagar|reactivar|crear|editar|modificar)/
-  })
-}
-
-function buildMetaAdsApprovalOptions(requests = []) {
-  const actionLabel = requests.length === 1
-    ? `la acción ${requests[0].name} en Meta Ads`
-    : `${requests.length} acciones en Meta Ads`
-
-  return [
-    {
-      label: 'Confirmar',
-      description: 'Autoriza ejecutar el cambio real en Meta Ads Manager.',
-      value: `Confirmo y autorizo ejecutar ${actionLabel}.`
-    },
-    {
-      label: 'Cancelar',
-      description: 'No toca campañas, audiencias, anuncios ni presupuestos.',
-      value: 'No, cancela esta acción de Meta Ads.'
-    }
-  ]
-}
-
-function buildMetaAdsApprovalText(requests = []) {
-  const lines = [
-    'Antes de tocar Meta Ads necesito confirmación explícita.',
-    '',
-    'Acción pendiente:'
-  ]
-
-  requests.slice(0, 5).forEach((request, index) => {
-    lines.push(`${index + 1}. ${request.name}`)
-    const args = cleanText(safeStringify(request.arguments || {}, 1200), 1200)
-    if (args && args !== '{}') {
-      lines.push(`   Datos: ${args}`)
-    }
-  })
-
-  lines.push('')
-  lines.push('No voy a usar Meta para reportar leads, citas, ventas, ingresos, ROAS o rentabilidad. Esa decisión sale de Ristak/DB.')
-  lines.push('Si está correcto, responde con una aprobación clara. No necesitas usar una frase exacta.')
-
-  return lines.join('\n')
-}
-
 function isMetaAdsBusinessMetricRequest(question) {
   const normalized = normalizeText(question)
 
@@ -841,16 +739,12 @@ function shouldSkipDbResearchForMetaAds(question) {
     !needsRistakCohortForMetaAdsOperation(question)
 }
 
-function buildMetaAdsMcpUnavailableReply(metaAdsConnection = {}) {
-  const reason = metaAdsConnection?.enabled === false
-    ? 'Meta Ads MCP está desactivado por configuración.'
-    : 'Meta Ads MCP no está conectado o no tiene token utilizable.'
-
+function buildMetaAdsOperationsUnavailableReply() {
   return {
     reply: [
-      'Eso se tiene que consultar directo en Meta Ads Manager mediante el MCP.',
+      'Las operaciones directas de Meta Ads Manager no están disponibles dentro de esta app.',
       '',
-      reason,
+      'Puedes revisar resultados históricos sincronizados de campañas desde Ristak, pero públicos, campañas activas, presupuestos, estados y cambios operativos deben hacerse directamente en Meta Ads Manager.',
       '',
       'No voy a inventar públicos personalizados usando GHL, fuentes, sesiones o cohortes de la DB, porque eso no son públicos reales de Meta.'
     ].join('\n'),
@@ -860,8 +754,7 @@ function buildMetaAdsMcpUnavailableReply(metaAdsConnection = {}) {
     clarificationOptions: [],
     debug: {
       metaAdsOperationalIntent: true,
-      metaAdsMcpEnabled: Boolean(metaAdsConnection?.enabled),
-      metaAdsMcpConfigured: Boolean(metaAdsConnection?.configured)
+      metaAdsOperationsEnabled: false
     }
   }
 }
@@ -961,99 +854,8 @@ function buildHighLevelToolContext(highLevelConnection) {
   }, 3000)
 }
 
-async function getMetaAdsAgentConnection() {
-  if (!META_ADS_MCP_ENABLED) {
-    return {
-      configured: false,
-      enabled: false,
-      serverUrl: META_ADS_MCP_SERVER_URL,
-      token: null,
-      adAccountId: null,
-      pixelId: null,
-      pageId: null,
-      tokenSource: null
-    }
-  }
-
-  let metaConfig = null
-
-  try {
-    metaConfig = await getMetaConfig()
-  } catch (error) {
-    logger.warn(`No se pudo leer la configuración de Meta Ads para MCP: ${error.message}`)
-  }
-
-  const envToken = cleanText(process.env.META_ADS_MCP_ACCESS_TOKEN || '', 4096)
-  const token = envToken || cleanText(metaConfig?.access_token || '', 4096)
-
-  if (!token) {
-    return {
-      configured: false,
-      enabled: true,
-      serverUrl: META_ADS_MCP_SERVER_URL,
-      token: null,
-      adAccountId: metaConfig?.ad_account_id || null,
-      pixelId: metaConfig?.pixel_id || null,
-      pageId: metaConfig?.page_id || null,
-      tokenSource: null
-    }
-  }
-
-  return {
-    configured: true,
-    enabled: true,
-    serverUrl: META_ADS_MCP_SERVER_URL,
-    token,
-    adAccountId: metaConfig?.ad_account_id || null,
-    pixelId: metaConfig?.pixel_id || null,
-    pageId: metaConfig?.page_id || null,
-    timezoneName: metaConfig?.timezone_name || null,
-    tokenSource: envToken ? 'env' : 'meta_config'
-  }
-}
-
-function buildMetaAdsToolContext(metaAdsConnection) {
-  if (!META_ADS_MCP_ENABLED) {
-    return 'Meta Ads MCP está desactivado por META_ADS_MCP_ENABLED=false.'
-  }
-
-  if (!metaAdsConnection?.configured) {
-    return 'Meta Ads MCP no está conectado. Configura Meta Ads o define META_ADS_MCP_ACCESS_TOKEN para usar el servidor https://mcp.facebook.com/ads.'
-  }
-
-  return safeStringify({
-    connected: true,
-    serverUrl: metaAdsConnection.serverUrl,
-    adAccountId: metaAdsConnection.adAccountId,
-    pixelId: metaAdsConnection.pixelId || null,
-    pageId: metaAdsConnection.pageId || null,
-    timezoneName: metaAdsConnection.timezoneName || null,
-    tokenSource: metaAdsConnection.tokenSource,
-    token: 'configurado_no_mostrar',
-    purpose: 'Herramienta operativa para Ads Manager: crear, editar, pausar, reactivar o duplicar campañas/adsets/anuncios; administrar presupuestos, públicos personalizados, exclusiones, catálogos, datasets, diagnósticos, delivery y benchmarks de Meta.',
-    businessResultsSource: 'DB_Ristak'
-  }, 3000)
-}
-
-function buildMetaAdsTools(metaAdsConnection) {
-  if (!metaAdsConnection?.configured) return []
-
-  return [{
-    type: 'mcp',
-    server_label: 'meta_ads',
-    server_description: [
-      'Official Meta Ads MCP server for operational control of Meta Ads Manager.',
-      'Use it to create, edit, pause/resume or duplicate campaigns, ad sets and ads; change budgets/status; manage custom audiences, lookalikes, inclusions/exclusions, catalogs, datasets, delivery diagnostics and Meta-native benchmarks.',
-      'Do not use Meta Ads MCP as the source for Ristak business results such as leads, appointments, sales, revenue, attributed ROAS or profitability; those must come from the Ristak database.'
-    ].join(' '),
-    server_url: metaAdsConnection.serverUrl,
-    authorization: metaAdsConnection.token,
-    require_approval: {
-      never: {
-        tool_names: META_ADS_MCP_READ_ONLY_TOOL_NAMES
-      }
-    }
-  }]
+function buildMetaAdsOperationsContext() {
+  return 'Operaciones directas de Meta Ads Manager deshabilitadas en esta app. Usa sólo la DB de Ristak para métricas históricas sincronizadas; no intentes consultar ni modificar públicos, campañas activas, presupuestos, estados o configuración operativa desde el agente.'
 }
 
 const PAYMENT_MUTATION_TOOL_NAMES = new Set([
@@ -5414,20 +5216,6 @@ async function callOpenAIResponseWithActionTools(apiKey, {
 
     const functionCalls = extractFunctionCalls(latestData)
     const mcpApprovalRequests = extractMcpApprovalRequests(latestData)
-    const unsafeMetaAdsApprovalRequests = mcpApprovalRequests.filter((request) =>
-      isMetaAdsMcpApprovalRequest(request) && !isLikelyReadOnlyMetaAdsToolName(request.name)
-    )
-
-    if (unsafeMetaAdsApprovalRequests.length && !hasExplicitMetaAdsExecutionConfirmation(messages)) {
-      const clarificationOptions = buildMetaAdsApprovalOptions(unsafeMetaAdsApprovalRequests)
-
-      return {
-        text: buildMetaAdsApprovalText(unsafeMetaAdsApprovalRequests),
-        data: latestData,
-        sources: extractResponseSources(latestData),
-        clarificationOptions
-      }
-    }
 
     if (!functionCalls.length && !mcpApprovalRequests.length) {
       const text = extractResponseText(latestData)
@@ -5450,9 +5238,7 @@ async function callOpenAIResponseWithActionTools(apiKey, {
       outputs.push({
         type: 'mcp_approval_response',
         approval_request_id: request.id,
-        approve: !isMetaAdsMcpApprovalRequest(request) ||
-          isLikelyReadOnlyMetaAdsToolName(request.name) ||
-          hasExplicitMetaAdsExecutionConfirmation(messages)
+        approve: true
       })
     }
 
@@ -5743,7 +5529,7 @@ async function createSupervisorRoute(apiKey, { messages, viewContext, runtimeCon
     'appointments: citas, calendarios, reagendar, cancelar o programar citas.',
     'workflows: meter/sacar contactos de workflows o revisar automatizaciones.',
     'campaigns: resultados internos de publicidad, ROAS, inversión, rentabilidad, leads, citas o ventas atribuidas. Preguntas como "mejor campaña", "peor campaña", "top campañas", "ranking", "cuál campaña conviene escalar/cortar" van aquí porque requieren DB de Ristak.',
-    'meta_ads_operations: inventario o cambios reales en Ads Manager como públicos, audiencias, campañas activas, presupuestos, pausar/reactivar/crear anuncios. No uses este dominio para rendimiento/rentabilidad aunque mencione campañas.',
+    'meta_ads_operations: solicitudes de inventario o cambios reales en Ads Manager como públicos, audiencias, campañas activas, presupuestos, pausar/reactivar/crear anuncios. Este dominio responde que la operación directa no está disponible en la app; no lo uses para rendimiento/rentabilidad aunque mencione campañas.',
     'web_research: contexto externo, mercado, cultura, política, geografía, noticias, competidores o benchmarks externos.',
     'Si el usuario dice algo como "sí pero mejor...", "más bien...", "entonces hazlo...", "intenta de nuevo", "ahora el 10 de junio", interprétalo contra el mensaje anterior. No lo conviertas en nombre de contacto.',
     'Si el usuario pide una acción sobre "el de la última cita", "la próxima cita", "este contacto" o una referencia parecida, enruta al dominio de la acción (pagos, citas, workflows, mensajes, oportunidades) y marca requiresHighLevelTools=true.',
@@ -5806,9 +5592,9 @@ const SOURCE_ROUTING_PROMPT = [
   'Fuentes de verdad:',
   '- DB de Ristak: análisis de negocio, históricos, pagos registrados, citas, contactos, tracking, campañas sincronizadas, ROAS/utilidad e ingresos atribuidos.',
   '- HighLevel/GHL: acciones reales de CRM como contactos, mensajes, workflows, citas, oportunidades, productos, invoices y pagos cuando corresponda.',
-  '- Meta Ads MCP: inventario y operación real de Ads Manager como públicos, campañas/adsets/anuncios activos, presupuestos, estados, diagnósticos y cambios operativos.',
+  '- Meta Ads operativo: deshabilitado dentro de esta app. No consultes ni modifiques públicos, campañas activas, presupuestos, estados ni configuración real de Ads Manager desde el agente.',
   '- Web search: sólo cuando el usuario pida contexto externo, mercado, tendencias, competidores, cultura, geografía, política, noticias o benchmarks.',
-  'No mezcles fuentes: rentabilidad publicitaria sale de DB con atribución interna; públicos y configuración real de Ads Manager salen de Meta Ads MCP.'
+  'No mezcles fuentes: rentabilidad publicitaria sale de DB con atribución interna; inventario y configuración real de Ads Manager no se reemplazan con datos internos.'
 ].join('\n')
 
 const NON_NEGOTIABLE_SAFETY_PROMPT = [
@@ -5835,13 +5621,13 @@ const SPECIALIST_PROMPTS = {
     'Si el usuario pide anuncio/ad/anunciación específico, usa resultados por ad_id/ad_name; no contestes con campaign_name aunque tenga nombre parecido.',
     'CPC, CPM, CTR, clicks y alcance son diagnósticos, no veredicto de rentabilidad.',
     'Si el usuario pide meses específicos por nombre, responde con ese rango calendario exacto; no uses últimos 90 días como sustituto.',
-    'Si piden públicos, campañas activas, presupuestos o configuración real de Ads Manager, eso no es analítica: debe ir por Meta Ads MCP.'
+    'Si piden públicos, campañas activas, presupuestos o configuración real de Ads Manager, aclara que esa operación directa no está disponible dentro de esta app.'
   ].join('\n'),
   meta_ads_operations: [
     'Especialista Meta Ads Operativo:',
-    'Usa Meta Ads MCP para inventario/configuración/cambios reales en Ads Manager: públicos, audiencias, campañas, adsets, anuncios, presupuestos, estados, diagnósticos y delivery.',
-    'No uses DB como sustituto de Ads Manager para inventario operativo.',
-    'Si la acción cambia algo real, espera la confirmación/approval que el sistema requiera.'
+    'Las operaciones directas de Ads Manager están deshabilitadas dentro de esta app.',
+    'No intentes consultar ni modificar públicos, audiencias, campañas activas, adsets, anuncios, presupuestos, estados, diagnósticos o delivery desde el agente.',
+    'No uses DB como sustituto de Ads Manager para inventario operativo; sólo puede usarse para métricas históricas sincronizadas.'
   ].join('\n'),
   payments: [
     'Especialista Pagos:',
@@ -6880,7 +6666,7 @@ function prepareQueryResultsForReply(queryResults) {
   return successfulResults
 }
 
-async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, runtimeContext, plan, queryResults, agentConfig, highLevelConnection, metaAdsConnection, supervisorRoute, metaAdsOperationalIntent = false, metaAdsDbResearchSkipped = false }) {
+async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, runtimeContext, plan, queryResults, agentConfig, highLevelConnection, supervisorRoute, metaAdsOperationalIntent = false, metaAdsDbResearchSkipped = false }) {
   const model = normalizeAIAgentModel(agentConfig?.model)
   const modelQueryResults = metaAdsDbResearchSkipped ? [] : prepareQueryResultsForReply(queryResults)
   const webSearchTools = metaAdsOperationalIntent ? [] : buildWebSearchTools(agentConfig, runtimeContext)
@@ -6895,9 +6681,8 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
         paymentActionRequest,
         contactActionRequest
       })
-  const metaAdsTools = buildMetaAdsTools(metaAdsConnection)
-  const agentTools = [...webSearchTools, ...highLevelTools, ...metaAdsTools]
-  const toolsRequireActionLoop = highLevelTools.length > 0 || metaAdsTools.length > 0
+  const agentTools = [...webSearchTools, ...highLevelTools]
+  const toolsRequireActionLoop = highLevelTools.length > 0
   const operationalReferenceContext = supervisorRoute?.requiresHighLevelTools || supervisorRoute?.requiresPaymentTools
     ? await buildOperationalReferenceContext({
         runtimeContext,
@@ -6906,8 +6691,8 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
       })
     : null
 
-  if (metaAdsOperationalIntent && !metaAdsTools.length) {
-    return buildMetaAdsMcpUnavailableReply(metaAdsConnection)
+  if (metaAdsOperationalIntent) {
+    return buildMetaAdsOperationsUnavailableReply()
   }
 
   const instructions = buildSpecialistAgentInstructions(agentConfig, latestUserMessage, supervisorRoute)
@@ -6928,8 +6713,8 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
     'Contexto operacional para referencias del usuario:',
     operationalReferenceContext ? JSON.stringify(operationalReferenceContext, null, 2) : 'No aplica para esta ruta.',
     '',
-    'Conexión Meta Ads MCP para operaciones en Ads Manager:',
-    buildMetaAdsToolContext(metaAdsConnection),
+    'Estado de Meta Ads operativo en la app:',
+    buildMetaAdsOperationsContext(),
     '',
     'Definiciones de negocio usadas:',
     BUSINESS_DEFINITIONS,
@@ -6939,15 +6724,15 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
       metaAdsOperationalIntent,
       dbResearchSkipped: metaAdsDbResearchSkipped,
       rule: metaAdsOperationalIntent
-        ? 'Usar Meta Ads MCP para inventario/operación. No usar DB/GHL como sustituto de Ads Manager.'
-        : 'Usar DB para resultados de negocio; usar Meta MCP sólo si hace falta operación/diagnóstico de Ads Manager.'
+        ? 'Operación directa de Ads Manager deshabilitada en esta app.'
+        : 'Usar DB para resultados históricos de negocio; no usar herramientas externas para inventario/configuración de Ads Manager.'
     }, null, 2),
     '',
     'Plan de investigación de la IA:',
     JSON.stringify(plan, null, 2),
     '',
     'Resultados de consultas ejecutadas en DB:',
-    metaAdsDbResearchSkipped ? 'Omitidos: solicitud operativa/inventario de Meta Ads. Consultar Meta Ads MCP.' : JSON.stringify(modelQueryResults, null, 2),
+    metaAdsDbResearchSkipped ? 'Omitidos: solicitud operativa/inventario de Meta Ads. Operación directa deshabilitada en esta app.' : JSON.stringify(modelQueryResults, null, 2),
     '',
     'Contexto de vista actual:',
     JSON.stringify(buildSafeViewContext(viewContext), null, 2),
@@ -7014,28 +6799,14 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
       maxOutputTokens: webSearchTools.length ? 2200 : 1800
     })
   } catch (error) {
-    if (metaAdsOperationalIntent) {
-      return {
-        ...buildMetaAdsMcpUnavailableReply(metaAdsConnection),
-        reply: [
-          'No pude consultar Meta Ads MCP en este intento.',
-          '',
-          cleanText(error.message || 'Error desconocido al llamar Meta Ads MCP.', 300),
-          '',
-          'No voy a reemplazar esa consulta con datos de GHL o DB, porque públicos personalizados y configuración de Ads Manager tienen que salir directo de Meta.'
-        ].join('\n')
-      }
-    }
-
     const fallbackTools = [...highLevelTools]
     const fallbackNeedsActionLoop = highLevelTools.length > 0
     const fallbackInstructions = [
       instructions,
-      metaAdsTools.length ? `Meta Ads MCP no estuvo disponible en este intento (${cleanText(error.message, 300)}). Responde con DB y, si el usuario pidió una acción de Meta Ads, di que no se pudo ejecutar ahora por conexión/autorización MCP.` : '',
       webSearchTools.length ? 'La busqueda online no estuvo disponible en este intento. Responde sin inventar contexto externo.' : ''
     ].filter(Boolean).join('\n')
 
-    if (!metaAdsTools.length && !webSearchTools.length) throw error
+    if (!webSearchTools.length) throw error
 
     response = await callAgentModelWithAttachmentFallback({
       inputValue: responseInput,
@@ -7058,7 +6829,7 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
     debug: {
       queryCount: queryResults.length,
       highLevelToolsEnabled: highLevelTools.length > 0,
-      metaAdsMcpEnabled: metaAdsTools.length > 0,
+      metaAdsOperationsEnabled: false,
       supervisorRoute: supervisorRoute || null
     }
   }
@@ -8403,21 +8174,8 @@ export async function getAIAgentConfig() {
   `)
 }
 
-async function getMetaAdsMcpStatus() {
-  const connection = await getMetaAdsAgentConnection()
-
-  return {
-    enabled: Boolean(connection.enabled),
-    configured: Boolean(connection.configured),
-    serverUrl: connection.serverUrl || META_ADS_MCP_SERVER_URL,
-    adAccountId: connection.adAccountId || null,
-    tokenSource: connection.tokenSource || null
-  }
-}
-
 export async function getAIAgentStatus() {
   const config = await getAIAgentConfig()
-  const metaAdsMcp = await getMetaAdsMcpStatus()
 
   if (!config?.openai_api_key_encrypted) {
     return {
@@ -8434,7 +8192,6 @@ export async function getAIAgentStatus() {
       responseStyle: normalizeAIAgentResponseStyle(config?.response_style),
       recommendationMode: normalizeAIAgentRecommendationMode(config?.recommendation_mode),
       webSearchEnabled: toBooleanValue(config?.web_search_enabled),
-      metaAdsMcp,
       updatedAt: config?.updated_at || null
     }
   }
@@ -8461,7 +8218,6 @@ export async function getAIAgentStatus() {
     responseStyle: normalizeAIAgentResponseStyle(config.response_style),
     recommendationMode: normalizeAIAgentRecommendationMode(config.recommendation_mode),
     webSearchEnabled: toBooleanValue(config.web_search_enabled),
-    metaAdsMcp,
     updatedAt: config.updated_at || null
   }
 }
@@ -8995,10 +8751,8 @@ export async function createAgentReply({ apiKey, messages, viewContext }) {
     return confirmedPaymentExecution
   }
 
-  const metaAdsConnection = await getMetaAdsAgentConnection()
-
-  if (metaAdsOperationalIntent && !metaAdsConnection?.configured) {
-    return buildMetaAdsMcpUnavailableReply(metaAdsConnection)
+  if (metaAdsOperationalIntent) {
+    return buildMetaAdsOperationsUnavailableReply()
   }
 
   const runDatabaseResearch = !metaAdsDbResearchSkipped && shouldRunDatabaseResearchForRoute(supervisorRoute)
@@ -9027,7 +8781,7 @@ export async function createAgentReply({ apiKey, messages, viewContext }) {
         ? `Se resolvió el contacto "${contactResolution.term}" antes de planear la respuesta; las consultas deben usar ese contact_id exacto.`
         : '',
       metaAdsDbResearchSkipped
-        ? 'Solicitud operativa/inventario de Meta Ads: se omitió el mapa base de DB para no confundir públicos o configuración real de Ads Manager con cohortes internas.'
+        ? 'Solicitud operativa/inventario de Meta Ads: operación directa deshabilitada dentro de esta app.'
         : runDatabaseResearch
           ? 'Se consultó un mapa base de la DB antes de planear la respuesta.'
           : `El gerente interno enrutó a ${supervisorRoute.specialist}; se omitió investigación SQL general para no contaminar una acción operativa.`
@@ -9042,7 +8796,7 @@ export async function createAgentReply({ apiKey, messages, viewContext }) {
     ? {
         assumptions: [
           metaAdsDbResearchSkipped
-            ? 'La pregunta debe contestarse con Meta Ads MCP, no con SQL.'
+            ? 'La pregunta es operativa de Meta Ads y la operación directa está deshabilitada dentro de esta app.'
             : `La pregunta debe contestarse con el especialista ${supervisorRoute.specialist}; no requiere plan SQL general.`
         ],
         queries: []
@@ -9106,7 +8860,6 @@ export async function createAgentReply({ apiKey, messages, viewContext }) {
     queryResults,
     agentConfig,
     highLevelConnection,
-    metaAdsConnection,
     supervisorRoute,
     metaAdsOperationalIntent,
     metaAdsDbResearchSkipped
