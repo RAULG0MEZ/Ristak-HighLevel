@@ -103,6 +103,8 @@ export interface ContactPaymentDetail {
   amount: number
   status: string
   date: string
+  payment_mode?: 'live' | 'test'
+  paymentMode?: 'live' | 'test'
 }
 
 export interface ContactAppointmentDetail {

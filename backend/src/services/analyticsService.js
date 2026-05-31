@@ -10,6 +10,7 @@ import {
   mergeAppointments
 } from './appointmentsMerge.js'
 import { getHiddenContactFilters, buildHiddenContactsCondition } from '../utils/hiddenContactsFilter.js'
+import { nonTestPaymentCondition } from '../utils/paymentMode.js'
 
 const isPostgres = Boolean(process.env.DATABASE_URL)
 
@@ -139,6 +140,7 @@ function applySuccessStatusFilter(conditions, params, alias = 'p') {
   const placeholders = SUCCESS_PAYMENT_STATUSES.map(() => '?').join(',')
   conditions.push(`LOWER(${alias}.status) IN (${placeholders})`)
   params.push(...SUCCESS_PAYMENT_STATUSES)
+  conditions.push(nonTestPaymentCondition(alias))
 }
 
 async function fetchPreviousRange(range, fallbackStrategy) {
@@ -324,7 +326,7 @@ export async function buildTransactionStats ({ startDate, endDate, scope = 'all'
   const hiddenFilters = await getHiddenContactFilters()
   const hiddenCondition = buildHiddenContactsCondition(hiddenFilters, 'c', true)
 
-  const baseFilters = ['status = ?']
+  const baseFilters = ['status = ?', nonTestPaymentCondition()]
   const baseParams = ['succeeded']
 
   if (range.startUtc) {
@@ -367,6 +369,7 @@ export async function buildTransactionStats ({ startDate, endDate, scope = 'all'
 
   const statusFilters = []
   const statusParams = []
+  statusFilters.push(nonTestPaymentCondition())
 
   if (range.startUtc) {
     statusFilters.push('date >= ?')
@@ -434,7 +437,7 @@ export async function buildTransactionSummary ({ startDate, endDate, scope = 'al
 
   // Usar TODOS los status válidos de pago (no solo 'succeeded')
   const statusPlaceholders = SUCCESS_PAYMENT_STATUSES.map(() => '?').join(', ')
-  const successFilters = [`status IN (${statusPlaceholders})`]
+  const successFilters = [`status IN (${statusPlaceholders})`, nonTestPaymentCondition()]
   const successParams = [...SUCCESS_PAYMENT_STATUSES]
 
   if (range.startUtc) {
@@ -460,7 +463,7 @@ export async function buildTransactionSummary ({ startDate, endDate, scope = 'al
     successParams
   )
 
-  const refundsFilters = ['status = ?']
+  const refundsFilters = ['status = ?', nonTestPaymentCondition()]
   const refundsParams = ['refunded']
 
   if (range.startUtc) {
@@ -493,7 +496,7 @@ export async function buildTransactionSummary ({ startDate, endDate, scope = 'al
 
   if (previousRange) {
     const prevStatusPlaceholders = SUCCESS_PAYMENT_STATUSES.map(() => '?').join(', ')
-    const prevSuccessFilters = [`status IN (${prevStatusPlaceholders})`, 'date BETWEEN ? AND ?']
+    const prevSuccessFilters = [`status IN (${prevStatusPlaceholders})`, nonTestPaymentCondition(), 'date BETWEEN ? AND ?']
     const prevSuccessParams = [...SUCCESS_PAYMENT_STATUSES, previousRange.startUtc, previousRange.endUtc]
     if (contactConditions.length > 0) {
       prevSuccessFilters.push(`contact_id IN (
@@ -506,7 +509,7 @@ export async function buildTransactionSummary ({ startDate, endDate, scope = 'al
       prevSuccessParams
     ) || { count: 0, total: 0, average: 0 }
 
-    const prevRefundFilters = ['status = ?', 'date BETWEEN ? AND ?']
+    const prevRefundFilters = ['status = ?', nonTestPaymentCondition(), 'date BETWEEN ? AND ?']
     const prevRefundParams = ['refunded', previousRange.startUtc, previousRange.endUtc]
     if (contactConditions.length > 0) {
       prevRefundFilters.push(`contact_id IN (
@@ -954,6 +957,7 @@ export async function buildReportMetrics ({ startDate, endDate, groupBy = 'day',
       SELECT contact_id, MIN(date) as first_payment_date
       FROM payments
       WHERE LOWER(status) IN (${SUCCESS_PAYMENT_STATUSES.map(() => '?').join(',')})
+        AND ${nonTestPaymentCondition()}
       GROUP BY contact_id
     `
 
@@ -1246,7 +1250,7 @@ async function fetchPaymentsForContacts(contactIds, range = {}) {
   // El modal debe mostrar TODOS los pagos del cliente, independientemente del rango seleccionado
   // El filtro de fechas solo aplica para determinar QUÉ contactos mostrar, no sus pagos completos
   const paymentsQuery = `
-    SELECT id, contact_id, amount, status, date
+    SELECT id, contact_id, amount, status, payment_mode, date
     FROM payments
     WHERE contact_id IN (${placeholders})
     ORDER BY date DESC
@@ -1260,6 +1264,7 @@ async function fetchPaymentsForContacts(contactIds, range = {}) {
       id: row.id,
       amount: Number(row.amount || 0),
       status: row.status,
+      payment_mode: row.payment_mode || 'live',
       date: row.date
     })
     map.set(row.contact_id, list)
@@ -1475,6 +1480,7 @@ export async function buildContactsList ({ startDate, endDate, type = 'interesad
         SELECT contact_id, MIN(date) as first_payment_date
         FROM payments
         WHERE LOWER(status) IN (${SUCCESS_PAYMENT_STATUSES.map(() => '?').join(',')})
+          AND ${nonTestPaymentCondition()}
         GROUP BY contact_id
       `
 
@@ -1686,7 +1692,7 @@ export async function buildContactsList ({ startDate, endDate, type = 'interesad
     // CRÍTICO: Solo sumar pagos exitosos, NO incluir refunded/cancelled
     const validStatuses = ['succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success']
     const totalFromPayments = payments
-      .filter(payment => validStatuses.includes(payment.status?.toLowerCase()))
+      .filter(payment => validStatuses.includes(payment.status?.toLowerCase()) && payment.payment_mode !== 'test')
       .reduce((sum, payment) => sum + payment.amount, 0)
 
     // Para "customers" o vista "atribución", usar el LTV total histórico
@@ -1694,9 +1700,11 @@ export async function buildContactsList ({ startDate, endDate, type = 'interesad
     const useTotalLtv = type === 'customers' || type === 'interesados' || useContactAttribution
     const lifetimeLtv = contact.total_paid ? Number(contact.total_paid) : totalFromPayments
     const finalLtv = useTotalLtv ? lifetimeLtv : totalFromPayments
-    const finalPurchases = useTotalLtv ? (contact.purchases_count || 0) : payments.length
+    const finalPurchases = useTotalLtv
+      ? (contact.purchases_count || 0)
+      : payments.filter(payment => validStatuses.includes(payment.status?.toLowerCase()) && payment.payment_mode !== 'test').length
     const lifetimePurchases = contact.purchases_count || 0
-    const hasRangePayments = payments.some(payment => payment.amount > 0)
+    const hasRangePayments = payments.some(payment => payment.amount > 0 && payment.payment_mode !== 'test')
     const isCustomer = lifetimeLtv > 0 || lifetimePurchases > 0 || hasRangePayments
 
     return {

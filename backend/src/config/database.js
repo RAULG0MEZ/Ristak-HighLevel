@@ -257,6 +257,7 @@ async function initTables() {
         currency TEXT DEFAULT 'MXN',
         status TEXT,
         payment_method TEXT,
+        payment_mode TEXT DEFAULT 'live',
         reference TEXT,
         description TEXT,
         date DATETIME,
@@ -464,6 +465,15 @@ async function initTables() {
         card_setup_status TEXT,
         card_setup_invoice_id TEXT,
         card_setup_payment_link TEXT,
+        ghl_customer_id TEXT,
+        ghl_payment_method_id TEXT,
+        ghl_payment_method_type TEXT,
+        ghl_card_brand TEXT,
+        ghl_card_last4 TEXT,
+        ghl_card_authorization_invoice_id TEXT,
+        ghl_payment_provider_type TEXT,
+        ghl_payment_provider_account TEXT,
+        ghl_payment_live_mode INTEGER,
         current_state TEXT NOT NULL,
         state_history TEXT,
         card_authorized_at DATETIME,
@@ -549,6 +559,23 @@ async function initTables() {
         await db.run('ALTER TABLE payments ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP')
       } catch (err) {
         if (!err.message.includes('duplicate column name') && !err.message.includes('already exists')) {
+          throw err
+        }
+      }
+
+      // Agregar payment_mode para separar pagos reales de modo prueba/test
+      try {
+        await db.run('ALTER TABLE payments ADD COLUMN payment_mode TEXT DEFAULT \'live\'')
+      } catch (err) {
+        if (!err.message.includes('duplicate column name') && !err.message.includes('already exists')) {
+          throw err
+        }
+      }
+
+      try {
+        await db.run('CREATE INDEX IF NOT EXISTS idx_payments_payment_mode ON payments(payment_mode)')
+      } catch (err) {
+        if (!err.message.includes('already exists') && !err.message.includes('no such column')) {
           throw err
         }
       }
@@ -734,6 +761,44 @@ async function initTables() {
         await db.run('ALTER TABLE highlevel_config ADD COLUMN ghl_invoice_mode TEXT DEFAULT \'live\'')
       } catch (err) {
         if (!err.message.includes('duplicate column') && !err.message.includes('already exists')) {
+          throw err
+        }
+      }
+
+      const paymentFlowColumns = [
+        ['ghl_customer_id', 'TEXT'],
+        ['ghl_payment_method_id', 'TEXT'],
+        ['ghl_payment_method_type', 'TEXT'],
+        ['ghl_card_brand', 'TEXT'],
+        ['ghl_card_last4', 'TEXT'],
+        ['ghl_card_authorization_invoice_id', 'TEXT'],
+        ['ghl_payment_provider_type', 'TEXT'],
+        ['ghl_payment_provider_account', 'TEXT'],
+        ['ghl_payment_live_mode', 'INTEGER']
+      ]
+
+      for (const [column, type] of paymentFlowColumns) {
+        try {
+          await db.run(`ALTER TABLE payment_flows ADD COLUMN ${column} ${type}`)
+        } catch (err) {
+          if (!err.message.includes('duplicate column') && !err.message.includes('already exists')) {
+            throw err
+          }
+        }
+      }
+
+      try {
+        await db.run('CREATE INDEX IF NOT EXISTS idx_payment_flows_ghl_payment_method ON payment_flows(ghl_payment_method_id)')
+      } catch (err) {
+        if (!err.message.includes('already exists') && !err.message.includes('no such column') && !err.message.includes('does not exist')) {
+          throw err
+        }
+      }
+
+      try {
+        await db.run('CREATE INDEX IF NOT EXISTS idx_payment_flows_ghl_authorization_invoice ON payment_flows(ghl_card_authorization_invoice_id)')
+      } catch (err) {
+        if (!err.message.includes('already exists') && !err.message.includes('no such column') && !err.message.includes('does not exist')) {
           throw err
         }
       }

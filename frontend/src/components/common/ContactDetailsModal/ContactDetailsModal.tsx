@@ -12,6 +12,8 @@ interface ContactPaymentDetail {
   amount: number
   status?: string
   date: string
+  payment_mode?: 'live' | 'test'
+  paymentMode?: 'live' | 'test'
 }
 
 interface ContactAppointmentDetail {
@@ -195,15 +197,18 @@ export function ContactDetailsModal({
   // Separar pagos exitosos de reembolsos/cancelados
   // CRÍTICO: Solo pagos con status exitoso, NO incluir refunded/cancelled
   const validPaymentStatuses = ['succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success']
+  const isTestPayment = (payment: ContactPaymentDetail) => (
+    payment.paymentMode === 'test' || payment.payment_mode === 'test'
+  )
   const payments = useMemo(() => {
     return selectedContact?.payments?.filter(p =>
-      p.amount > 0 && validPaymentStatuses.includes(p.status?.toLowerCase() || '')
+      p.amount > 0 && !isTestPayment(p) && validPaymentStatuses.includes(p.status?.toLowerCase() || '')
     ) || []
   }, [selectedContact])
 
   const refunds = useMemo(() => {
     return selectedContact?.payments?.filter(p =>
-      p.amount < 0 || p.status?.toLowerCase() === 'refunded' || p.status?.toLowerCase() === 'cancelled'
+      !isTestPayment(p) && (p.amount < 0 || p.status?.toLowerCase() === 'refunded' || p.status?.toLowerCase() === 'cancelled')
     ) || []
   }, [selectedContact])
 

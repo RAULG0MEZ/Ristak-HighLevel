@@ -5,6 +5,7 @@ import { resolveDateRange, resolveDateRangeWithGHLTimezone } from '../utils/date
 import { buildContactStats } from '../services/analyticsService.js'
 import { getGHLClient } from '../services/ghlClient.js'
 import { getHiddenContactFilters, buildHiddenContactsCondition } from '../utils/hiddenContactsFilter.js'
+import { nonTestPaymentCondition } from '../utils/paymentMode.js'
 import fetch from 'node-fetch'
 
 const normalizePhone = (phone) => {
@@ -146,12 +147,15 @@ export const getContacts = async (req, res) => {
           contact_id,
           SUM(CASE
                 WHEN amount > 0 AND LOWER(status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')
+                AND ${nonTestPaymentCondition()}
                 THEN amount ELSE 0 END) AS total_paid,
           SUM(CASE
                 WHEN amount > 0 AND LOWER(status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')
+                AND ${nonTestPaymentCondition()}
                 THEN 1 ELSE 0 END) AS purchases_count,
           MAX(CASE
                 WHEN amount > 0 AND LOWER(status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')
+                AND ${nonTestPaymentCondition()}
                 THEN date ELSE NULL END) AS last_purchase_date
         FROM payments
         GROUP BY contact_id
@@ -267,12 +271,15 @@ export const getContactById = async (req, res) => {
           contact_id,
           SUM(CASE
                 WHEN amount > 0 AND LOWER(status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')
+                AND ${nonTestPaymentCondition()}
                 THEN amount ELSE 0 END) AS total_paid,
           SUM(CASE
                 WHEN amount > 0 AND LOWER(status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')
+                AND ${nonTestPaymentCondition()}
                 THEN 1 ELSE 0 END) AS purchases_count,
           MAX(CASE
                 WHEN amount > 0 AND LOWER(status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')
+                AND ${nonTestPaymentCondition()}
                 THEN date ELSE NULL END) AS last_purchase_date
         FROM payments
         WHERE contact_id = ?
@@ -632,12 +639,15 @@ export const searchContacts = async (req, res) => {
           contact_id,
           SUM(CASE
                 WHEN amount > 0 AND LOWER(status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')
+                AND ${nonTestPaymentCondition()}
                 THEN amount ELSE 0 END) AS total_paid,
           SUM(CASE
                 WHEN amount > 0 AND LOWER(status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')
+                AND ${nonTestPaymentCondition()}
                 THEN 1 ELSE 0 END) AS purchases_count,
           MAX(CASE
                 WHEN amount > 0 AND LOWER(status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')
+                AND ${nonTestPaymentCondition()}
                 THEN date ELSE NULL END) AS last_purchase_date
         FROM payments
         GROUP BY contact_id
@@ -1209,6 +1219,7 @@ export const getContactJourney = async (req, res) => {
        WHERE contact_id = ?
          AND amount > 0
          AND LOWER(status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')
+         AND ${nonTestPaymentCondition()}
        ORDER BY date ASC`,
       [id]
     )

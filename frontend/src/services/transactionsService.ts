@@ -11,6 +11,7 @@ export interface Transaction {
   currency?: string
   method: 'card' | 'transfer' | 'cash' | 'paypal' | 'stripe' | 'other' | 'bank_transfer' | 'check'
   status: 'draft' | 'sent' | 'paid' | 'pending' | 'overdue' | 'partial' | 'void' | 'refunded' | 'failed' | 'deleted'
+  paymentMode?: 'live' | 'test'
   reference?: string
   description?: string
   createdAt?: string

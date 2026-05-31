@@ -6,6 +6,7 @@ import { getGroupExpression } from '../services/analyticsService.js';
 import { DateTime } from 'luxon';
 import { getContactsWithAppointmentsHybrid, getContactsWithShowedAppointmentsHybrid } from '../services/appointmentsMerge.js';
 import { getHiddenContactFilters, buildHiddenContactsCondition } from '../utils/hiddenContactsFilter.js';
+import { nonTestPaymentCondition } from '../utils/paymentMode.js';
 
 const calculateDelta = (current, previous) => {
   if (previous === 0) {
@@ -82,7 +83,7 @@ const computeFinancialSnapshot = async (range) => {
   const hiddenFilters = await getHiddenContactFilters();
   const hiddenCondition = buildHiddenContactsCondition(hiddenFilters, 'c', false);
 
-  const paymentsFilters = ['status = ?'];
+  const paymentsFilters = ['status = ?', nonTestPaymentCondition()];
   const paymentsParams = ['succeeded'];
   const { filters: dateFilters, params: dateParams } = buildDateFilters(range);
   paymentsFilters.push(...dateFilters);
@@ -110,7 +111,7 @@ const computeFinancialSnapshot = async (range) => {
   const gastosRow = await db.get(gastosQuery, gastosParams);
   const gastosPublicidad = parseFloat(gastosRow?.total || 0);
 
-  const refundsFilters = ['status = ?'];
+  const refundsFilters = ['status = ?', nonTestPaymentCondition()];
   const refundsParams = ['refunded'];
   const { filters: refundDateFilters, params: refundDateParams } = buildDateFilters(range);
   refundsFilters.push(...refundDateFilters);
@@ -130,7 +131,7 @@ const computeFinancialSnapshot = async (range) => {
   const SUCCESS_PAYMENT_STATUSES = ['succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success'];
   const statusPlaceholders = SUCCESS_PAYMENT_STATUSES.map(() => '?').join(',');
 
-  const paymentsAvgFilters = [`LOWER(status) IN (${statusPlaceholders})`];
+  const paymentsAvgFilters = [`LOWER(status) IN (${statusPlaceholders})`, nonTestPaymentCondition()];
   const paymentsAvgParams = [...SUCCESS_PAYMENT_STATUSES];
 
   const { filters: avgDateFilters, params: avgDateParams } = buildDateFilters(range);
@@ -322,6 +323,7 @@ export const getChartData = async (req, res) => {
        SUM(amount) as total_ingresos
      FROM payments
      WHERE status = 'succeeded'
+     AND ${nonTestPaymentCondition()}
      AND date >= $1 AND date <= $2
      ${hiddenCondition ? `AND contact_id IN (SELECT c.id FROM contacts c WHERE ${hiddenCondition})` : ''}
      GROUP BY periodo
@@ -419,7 +421,7 @@ export const getRoasData = async (req, res) => {
         COALESCE(SUM(i.amount), 0) as ingresos,
         COALESCE(SUM(g.spend), 0) as gastos
       FROM (
-        SELECT date, amount FROM payments WHERE status = 'succeeded' AND date >= $1 AND date <= $2
+        SELECT date, amount FROM payments WHERE status = 'succeeded' AND ${nonTestPaymentCondition()} AND date >= $1 AND date <= $2
         ${hiddenCondition ? `AND contact_id IN (SELECT c.id FROM contacts c WHERE ${hiddenCondition})` : ''}
       ) i
       LEFT JOIN (
@@ -772,6 +774,7 @@ export const getSalesData = async (req, res) => {
         COUNT(*) as total
       FROM payments
       WHERE status = 'succeeded'
+      AND ${nonTestPaymentCondition()}
       AND date >= $1 AND date <= $2
       ${hiddenCondition ? `AND contact_id IN (SELECT c.id FROM contacts c WHERE ${hiddenCondition})` : ''}
       GROUP BY periodo
@@ -974,6 +977,7 @@ export const getFinancialOverview = async (req, res) => {
         FROM payments p
         LEFT JOIN contacts c ON c.id = p.contact_id
         WHERE p.status = 'succeeded'
+          AND ${nonTestPaymentCondition('p')}
           AND p.date >= $1 AND p.date <= $2
           ${hiddenCondition ? `AND ${hiddenCondition}` : ''}
         GROUP BY day
@@ -990,6 +994,7 @@ export const getFinancialOverview = async (req, res) => {
         LEFT JOIN payments p
           ON p.contact_id = c.id
           AND p.status = 'succeeded'
+          AND ${nonTestPaymentCondition('p')}
         WHERE c.created_at >= $1 AND c.created_at <= $2
           ${isAttributed ? `AND c.attribution_ad_id IS NOT NULL AND EXISTS (
             SELECT 1 FROM meta_ads ma
@@ -1316,6 +1321,7 @@ export const getFunnelData = async (req, res) => {
           SELECT contact_id, MIN(date) as first_payment_date
           FROM payments
           WHERE LOWER(status) IN (${statusPlaceholders})
+          AND ${nonTestPaymentCondition()}
           GROUP BY contact_id
         ) first_p ON first_p.contact_id = c.id
         WHERE ${conditions.join(' AND ')}

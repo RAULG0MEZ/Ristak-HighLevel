@@ -3,11 +3,8 @@ import { DateTime } from 'luxon'
 import { db } from '../config/database.js'
 import { getGHLClient } from './ghlClient.js'
 import { buildInvoicePaymentUrl } from '../utils/paymentUrl.js'
+import { getInvoicePaymentMode } from '../utils/paymentMode.js'
 import { logger } from '../utils/logger.js'
-import {
-  findCustomerByEmail as stripeFindCustomerByEmail,
-  listPaymentMethods as stripeListPaymentMethods
-} from './stripeService.js'
 
 export const PAYMENT_FLOW_STATES = {
   DRAFT: 'draft',
@@ -83,6 +80,132 @@ function safeJsonParse(value, fallback) {
   }
 }
 
+function maybeJsonObject(value) {
+  if (!value) return {}
+  if (typeof value === 'object') return value
+  if (typeof value !== 'string') return {}
+  return safeJsonParse(value, {})
+}
+
+function normalizeText(value) {
+  if (value === undefined || value === null) return ''
+  if (typeof value === 'object') {
+    return String(value.status || value.value || value.name || '').trim().toLowerCase()
+  }
+  return String(value).trim().toLowerCase()
+}
+
+function normalizeOptionalBoolean(value) {
+  if (typeof value === 'boolean') return value
+  if (value === undefined || value === null || value === '') return null
+  const normalized = String(value).trim().toLowerCase()
+  if (['true', '1', 'live', 'production', 'prod'].includes(normalized)) return true
+  if (['false', '0', 'test', 'testing', 'sandbox'].includes(normalized)) return false
+  return null
+}
+
+function normalizeTransactionList(response) {
+  if (Array.isArray(response)) return response
+  if (Array.isArray(response?.data)) return response.data
+  if (Array.isArray(response?.transactions)) return response.transactions
+  if (Array.isArray(response?.payments)) return response.payments
+  return []
+}
+
+function getTransactionInvoiceId(transaction, chargeSnapshot = {}) {
+  const entitySource = maybeJsonObject(transaction.entitySource || transaction.entity_source)
+  const entitySourceMeta = maybeJsonObject(transaction.entitySourceMeta || transaction.entity_source_meta)
+  const metadata = maybeJsonObject(chargeSnapshot.metadata)
+
+  return (
+    transaction.invoiceId ||
+    transaction.invoice_id ||
+    transaction.entitySourceId ||
+    transaction.entity_source_id ||
+    transaction.entityId ||
+    transaction.entity_id ||
+    entitySource.id ||
+    entitySource.invoiceId ||
+    entitySourceMeta.invoiceId ||
+    metadata.invoiceId ||
+    metadata.invoice_id ||
+    null
+  )
+}
+
+function isSuccessfulGhlTransaction(transaction, chargeSnapshot = {}) {
+  const transactionStatus = normalizeText(transaction.status)
+  const chargeStatus = normalizeText(chargeSnapshot.status)
+
+  if (['failed', 'declined', 'canceled', 'cancelled', 'void', 'refunded'].includes(transactionStatus)) {
+    return false
+  }
+
+  if (['paid', 'succeeded', 'captured', 'complete', 'completed', 'success'].includes(transactionStatus)) {
+    return true
+  }
+
+  return ['paid', 'succeeded', 'captured', 'complete', 'completed', 'success'].includes(chargeStatus)
+}
+
+function extractGhlPaymentMethodFromTransaction(transaction, authorizationInvoiceId = null) {
+  if (!transaction) return null
+
+  const chargeSnapshot = maybeJsonObject(transaction.chargeSnapshot || transaction.charge_snapshot)
+  if (!isSuccessfulGhlTransaction(transaction, chargeSnapshot)) return null
+
+  const rawPaymentMethod = (
+    chargeSnapshot.payment_method ||
+    chargeSnapshot.paymentMethod ||
+    transaction.payment_method ||
+    transaction.paymentMethod
+  )
+  const paymentMethodSnapshot = typeof rawPaymentMethod === 'string'
+    ? { id: rawPaymentMethod }
+    : maybeJsonObject(rawPaymentMethod)
+  const transactionPaymentMethod = maybeJsonObject(transaction.paymentMethod || transaction.payment_method)
+  const card = maybeJsonObject(paymentMethodSnapshot.card || transactionPaymentMethod.card || chargeSnapshot.payment_method_details?.card)
+  const paymentMethodId = (
+    paymentMethodSnapshot.id ||
+    chargeSnapshot.payment_method_id ||
+    chargeSnapshot.paymentMethodId ||
+    transaction.paymentMethodId ||
+    transaction.payment_method_id ||
+    transaction.cardId ||
+    null
+  )
+  const customerId = (
+    paymentMethodSnapshot.customer ||
+    chargeSnapshot.customer ||
+    transaction.customerId ||
+    transaction.customer_id ||
+    transaction.customer?.id ||
+    null
+  )
+
+  if (!paymentMethodId || !customerId) return null
+
+  const liveMode = normalizeOptionalBoolean(
+    transaction.liveMode ??
+    transaction.live_mode ??
+    chargeSnapshot.livemode ??
+    chargeSnapshot.liveMode ??
+    paymentMethodSnapshot.livemode
+  )
+
+  return {
+    customerId,
+    paymentMethodId,
+    type: paymentMethodSnapshot.type || transactionPaymentMethod.type || 'card',
+    brand: card.brand || transactionPaymentMethod.card?.brand || 'card',
+    last4: card.last4 || transactionPaymentMethod.card?.last4 || '****',
+    authorizationInvoiceId,
+    providerType: transaction.paymentProviderType || transaction.payment_provider_type || transaction.paymentProvider?.type || null,
+    providerAccount: transaction.paymentProviderConnectedAccount || transaction.payment_provider_connected_account || transaction.paymentProvider?.connectedAccount?.accountId || transaction.paymentProvider?.connectedAccount?._id || null,
+    liveMode
+  }
+}
+
 function pickSendMethod(contact, channels = {}) {
   const wantsEmail = channels.email !== false
   const wantsSms = channels.sms !== false
@@ -136,56 +259,166 @@ async function getInvoiceSendContext() {
 }
 
 async function getPaymentFlowConfig() {
-  const config = await db.get('SELECT location_id, card_setup_amount FROM highlevel_config LIMIT 1')
+  const config = await db.get('SELECT location_id, card_setup_amount, ghl_invoice_mode FROM highlevel_config LIMIT 1')
   const cardSetupAmount = normalizeAmount(config?.card_setup_amount || DEFAULT_CARD_SETUP_AMOUNT)
 
   return {
     locationId: config?.location_id || null,
-    cardSetupAmount: cardSetupAmount > 0 ? cardSetupAmount : DEFAULT_CARD_SETUP_AMOUNT
+    cardSetupAmount: cardSetupAmount > 0 ? cardSetupAmount : DEFAULT_CARD_SETUP_AMOUNT,
+    liveMode: normalizeGhlInvoiceMode(config?.ghl_invoice_mode) === 'live'
   }
 }
 
-async function getAuthorizedPaymentMethod(contactOrFlow) {
-  const contactId = contactOrFlow.contact_id || contactOrFlow.id
-  const contactEmail = contactOrFlow.contact_email || contactOrFlow.email
-  const { locationId } = await getPaymentFlowConfig()
+function getStoredGhlPaymentMethod(flow) {
+  if (!flow?.ghl_customer_id || !flow?.ghl_payment_method_id) return null
 
-  if (contactId) {
-    const localMethod = await db.get(
-      `SELECT stripe_customer_id, stripe_payment_method_id, brand, last4
-       FROM payment_methods
-       WHERE contact_id = ? AND is_active = 1
-       ORDER BY is_default DESC, last_used_at DESC, created_at DESC
-       LIMIT 1`,
-      [contactId]
-    )
+  return {
+    customerId: flow.ghl_customer_id,
+    paymentMethodId: flow.ghl_payment_method_id,
+    type: flow.ghl_payment_method_type || 'card',
+    brand: flow.ghl_card_brand || 'card',
+    last4: flow.ghl_card_last4 || '****',
+    authorizationInvoiceId: flow.ghl_card_authorization_invoice_id || null,
+    providerType: flow.ghl_payment_provider_type || null,
+    providerAccount: flow.ghl_payment_provider_account || null,
+    liveMode: normalizeOptionalBoolean(flow.ghl_payment_live_mode)
+  }
+}
 
-    if (localMethod?.stripe_customer_id && localMethod?.stripe_payment_method_id) {
-      return {
-        customerId: localMethod.stripe_customer_id,
-        paymentMethodId: localMethod.stripe_payment_method_id,
-        brand: localMethod.brand || 'card',
-        last4: localMethod.last4 || '****'
-      }
+async function persistGhlPaymentMethodForFlow(flowId, paymentMethod) {
+  if (!flowId || !paymentMethod?.customerId || !paymentMethod?.paymentMethodId) return
+
+  await db.run(
+    `UPDATE payment_flows
+     SET ghl_customer_id = ?,
+         ghl_payment_method_id = ?,
+         ghl_payment_method_type = ?,
+         ghl_card_brand = ?,
+         ghl_card_last4 = ?,
+         ghl_card_authorization_invoice_id = ?,
+         ghl_payment_provider_type = ?,
+         ghl_payment_provider_account = ?,
+         ghl_payment_live_mode = ?,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`,
+    [
+      paymentMethod.customerId,
+      paymentMethod.paymentMethodId,
+      paymentMethod.type || 'card',
+      paymentMethod.brand || 'card',
+      paymentMethod.last4 || '****',
+      paymentMethod.authorizationInvoiceId || null,
+      paymentMethod.providerType || null,
+      paymentMethod.providerAccount || null,
+      paymentMethod.liveMode === null || paymentMethod.liveMode === undefined ? null : (paymentMethod.liveMode ? 1 : 0),
+      flowId
+    ]
+  )
+}
+
+function getPaidAuthorizationInvoiceId(flow) {
+  const firstPaymentMethod = flow.first_payment_method || flow.firstPaymentMethod
+  const firstPaymentStatus = flow.first_payment_status || flow.firstPaymentStatus
+  const firstPaymentInvoiceId = flow.first_payment_invoice_id || flow.firstPaymentInvoiceId
+  const cardSetupStatus = flow.card_setup_status || flow.cardSetupStatus
+  const cardSetupInvoiceId = flow.card_setup_invoice_id || flow.cardSetupInvoiceId
+
+  if (cardSetupInvoiceId && cardSetupStatus === 'paid') {
+    return cardSetupInvoiceId
+  }
+
+  if (firstPaymentInvoiceId && firstPaymentStatus === 'paid' && CARD_METHODS.has(firstPaymentMethod)) {
+    return firstPaymentInvoiceId
+  }
+
+  return null
+}
+
+async function findGhlPaymentMethodFromInvoice({ ghlClient, invoiceId, contactId }) {
+  if (!invoiceId) return null
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const response = await ghlClient.listPaymentTransactions({
+      entityId: invoiceId,
+      ...(contactId ? { contactId } : {}),
+      limit: 20,
+      offset: 0
+    })
+    const transactions = normalizeTransactionList(response)
+    const invoiceTransactions = transactions.filter((transaction) => {
+      const chargeSnapshot = maybeJsonObject(transaction.chargeSnapshot || transaction.charge_snapshot)
+      const transactionInvoiceId = getTransactionInvoiceId(transaction, chargeSnapshot)
+      return !transactionInvoiceId || transactionInvoiceId === invoiceId
+    })
+    const candidates = invoiceTransactions.length > 0 ? invoiceTransactions : transactions
+
+    candidates.sort((a, b) => {
+      const aTime = Date.parse(a.fulfilledAt || a.createdAt || a.updatedAt || 0) || 0
+      const bTime = Date.parse(b.fulfilledAt || b.createdAt || b.updatedAt || 0) || 0
+      return bTime - aTime
+    })
+
+    for (const transaction of candidates) {
+      const method = extractGhlPaymentMethodFromTransaction(transaction, invoiceId)
+      if (method) return method
+    }
+
+    if (attempt < 2) {
+      await new Promise(resolve => setTimeout(resolve, 1500))
     }
   }
 
-  if (!locationId || !contactEmail) return null
+  return null
+}
 
-  const stripeCustomer = await stripeFindCustomerByEmail(locationId, contactEmail)
-  if (!stripeCustomer) return null
+async function findStoredGhlPaymentMethodForContact(contactId, expectedLiveMode) {
+  if (!contactId) return null
 
-  const methods = await stripeListPaymentMethods(locationId, stripeCustomer.id)
-  const method = methods[0]
+  const row = await db.get(
+    `SELECT ghl_customer_id, ghl_payment_method_id, ghl_payment_method_type,
+            ghl_card_brand, ghl_card_last4, ghl_card_authorization_invoice_id,
+            ghl_payment_provider_type, ghl_payment_provider_account, ghl_payment_live_mode
+     FROM payment_flows
+     WHERE contact_id = ?
+       AND ghl_customer_id IS NOT NULL
+       AND ghl_payment_method_id IS NOT NULL
+       AND (ghl_payment_live_mode IS NULL OR ghl_payment_live_mode = ?)
+     ORDER BY card_authorized_at DESC, updated_at DESC
+     LIMIT 1`,
+    [contactId, expectedLiveMode ? 1 : 0]
+  )
 
-  if (!method) return null
+  return getStoredGhlPaymentMethod(row)
+}
 
-  return {
-    customerId: stripeCustomer.id,
-    paymentMethodId: method.id,
-    brand: method.card?.brand || 'card',
-    last4: method.card?.last4 || '****'
+async function getAuthorizedPaymentMethod(contactOrFlow, options = {}) {
+  const isFlow = Boolean(contactOrFlow.contact_id || contactOrFlow.first_payment_invoice_id || contactOrFlow.card_setup_invoice_id)
+  const flowId = isFlow ? contactOrFlow.id : contactOrFlow.flow_id
+  const contactId = contactOrFlow.contact_id || contactOrFlow.id
+  const storedMethod = getStoredGhlPaymentMethod(contactOrFlow)
+
+  if (storedMethod) return storedMethod
+
+  const { liveMode } = await getPaymentFlowConfig()
+  const authorizationInvoiceId = getPaidAuthorizationInvoiceId(contactOrFlow)
+
+  if (authorizationInvoiceId) {
+    const ghlClient = options.ghlClient || await getGHLClient()
+    const paymentMethod = await findGhlPaymentMethodFromInvoice({
+      ghlClient,
+      invoiceId: authorizationInvoiceId,
+      contactId
+    })
+
+    if (paymentMethod) {
+      await persistGhlPaymentMethodForFlow(flowId, paymentMethod)
+      return paymentMethod
+    }
+
+    logger.warn(`GHL no devolvió paymentMethod autorizado para invoice ${authorizationInvoiceId}`)
   }
+
+  return await findStoredGhlPaymentMethodForContact(contactId, liveMode)
 }
 
 function buildInvoicePayload({ basePayload, contact, amount, currency, concept, title, dueDate }) {
@@ -230,24 +463,26 @@ function buildInvoicePayload({ basePayload, contact, amount, currency, concept, 
   }
 }
 
-async function insertLocalInvoicePayment({ invoice, contactId, fallbackAmount, fallbackCurrency, fallbackDescription, sentAt = null, status = 'draft' }) {
+async function insertLocalInvoicePayment({ invoice, contactId, fallbackAmount, fallbackCurrency, fallbackDescription, sentAt = null, status = 'draft', paymentMode = 'live' }) {
   const ghlInvoiceId = invoice.id || invoice._id
   const items = invoice.items || invoice.invoiceItems || []
   const subtotal = items.reduce((sum, item) => sum + Number(item.amount || 0) * Number(item.qty || 1), 0)
   const taxAmount = Number(invoice.tax?.amount || 0)
   const total = normalizeAmount(invoice.total || invoice.amount || subtotal + taxAmount || fallbackAmount)
+  const resolvedPaymentMode = getInvoicePaymentMode(invoice, paymentMode)
 
   await db.run(
     `INSERT INTO payments (
-      id, contact_id, amount, currency, status, payment_method,
+      id, contact_id, amount, currency, status, payment_method, payment_mode,
       reference, description, date, ghl_invoice_id, invoice_number,
       due_date, sent_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     ON CONFLICT(id) DO UPDATE SET
       contact_id = excluded.contact_id,
       amount = excluded.amount,
       currency = excluded.currency,
       status = excluded.status,
+      payment_mode = excluded.payment_mode,
       reference = excluded.reference,
       description = excluded.description,
       due_date = excluded.due_date,
@@ -262,6 +497,7 @@ async function insertLocalInvoicePayment({ invoice, contactId, fallbackAmount, f
       invoice.currency || fallbackCurrency || CURRENCY_DEFAULT,
       status,
       null,
+      resolvedPaymentMode,
       invoice.invoiceNumber || null,
       invoice.name || invoice.title || fallbackDescription || 'Pago',
       invoice.issueDate || invoice.createdAt || new Date().toISOString(),
@@ -316,7 +552,8 @@ async function createInvoice({ ghlClient, basePayload, contact, amount, currency
     fallbackAmount: amount,
     fallbackCurrency: currency,
     fallbackDescription: concept,
-    status: 'draft'
+    status: 'draft',
+    paymentMode: context.liveMode ? 'live' : 'test'
   })
 
   return invoice
@@ -424,9 +661,9 @@ function buildScheduleExecuteAt(dueDate, timezone = DEFAULT_PAYMENT_TIMEZONE) {
 }
 
 function buildAutoPayment(paymentMethod) {
-  return {
+  const autoPayment = {
     enable: true,
-    type: 'card',
+    type: paymentMethod.type || 'card',
     paymentMethodId: paymentMethod.paymentMethodId,
     customerId: paymentMethod.customerId,
     card: {
@@ -434,6 +671,12 @@ function buildAutoPayment(paymentMethod) {
       last4: paymentMethod.last4 || '****'
     }
   }
+
+  if (paymentMethod.cardId) {
+    autoPayment.cardId = paymentMethod.cardId
+  }
+
+  return autoPayment
 }
 
 function buildInstallmentSchedulePayload({ flow, installment, context }) {
@@ -485,6 +728,10 @@ function buildInstallmentSchedulePayload({ flow, installment, context }) {
 
 async function scheduleAutomaticInstallmentsForFlow(flow, paymentMethod, existingClient = null) {
   if (!Number(flow.remaining_automatic)) return []
+
+  if (!paymentMethod?.customerId || !paymentMethod?.paymentMethodId) {
+    throw new Error('No hay tarjeta autorizada de GoHighLevel para programar autopagos')
+  }
 
   const installments = await db.all(
     `SELECT *
@@ -878,6 +1125,7 @@ export async function createInstallmentPaymentFlow(payload) {
   }
 
   if (remainingAutomatic && alreadyHasAuthorizedCard && !firstPaymentIsCard) {
+    await persistGhlPaymentMethodForFlow(flowId, authorizedCard)
     const createdFlow = await db.get('SELECT * FROM payment_flows WHERE id = ?', [flowId])
     const installmentSchedules = await scheduleAutomaticInstallmentsForFlow(createdFlow, authorizedCard, ghlClient)
 
@@ -924,13 +1172,14 @@ export async function createInstallmentPaymentFlow(payload) {
 }
 
 async function activateFlowIfReady(flow) {
-  const authorizedCard = await getAuthorizedPaymentMethod(flow)
+  const ghlClient = await getGHLClient()
+  const authorizedCard = await getAuthorizedPaymentMethod(flow, { ghlClient })
 
   if (!authorizedCard) {
     return false
   }
 
-  await scheduleAutomaticInstallmentsForFlow(flow, authorizedCard)
+  await scheduleAutomaticInstallmentsForFlow(flow, authorizedCard, ghlClient)
 
   const currentHistory = safeJsonParse(flow.state_history, [])
   let stateHistory = addState(currentHistory, PAYMENT_FLOW_STATES.CARD_AUTHORIZED)

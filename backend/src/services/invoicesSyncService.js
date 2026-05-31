@@ -11,6 +11,7 @@
 import { db } from '../config/database.js'
 import { getGHLClient } from './ghlClient.js'
 import { logger } from '../utils/logger.js'
+import { getInvoicePaymentMode, nonTestPaymentCondition } from '../utils/paymentMode.js'
 
 /**
  * Sincroniza invoices desde HighLevel a BD local
@@ -51,7 +52,7 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
 
         // Verificar si ya existe en BD local
         const existing = await db.get(
-          'SELECT id, status FROM payments WHERE ghl_invoice_id = ?',
+          'SELECT id, status, payment_mode FROM payments WHERE ghl_invoice_id = ?',
           [ghlInvoiceId]
         )
 
@@ -71,6 +72,7 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
           currency: invoice.currency || 'MXN',
           status: mapInvoiceStatus(invoice.status),
           payment_method: invoice.paymentMode || null,
+          payment_mode: getInvoicePaymentMode(invoice, existing?.payment_mode || 'live'),
           reference: invoice.invoiceNumber || null,
           description: invoice.invoiceItems?.[0]?.name || invoice.invoiceItems?.[0]?.description || invoice.title || invoice.name || 'Pago',
           date: invoice.createdAt || invoice.issueDate || new Date().toISOString(),
@@ -85,13 +87,14 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
           await db.run(
             `UPDATE payments
              SET status = ?, amount = ?, currency = ?, payment_method = ?,
-                 reference = ?, description = ?, due_date = ?, sent_at = ?, updated_at = CURRENT_TIMESTAMP
+                 payment_mode = ?, reference = ?, description = ?, due_date = ?, sent_at = ?, updated_at = CURRENT_TIMESTAMP
              WHERE ghl_invoice_id = ?`,
             [
               invoiceData.status,
               invoiceData.amount,
               invoiceData.currency,
               invoiceData.payment_method,
+              invoiceData.payment_mode,
               invoiceData.reference,
               invoiceData.description,
               invoiceData.due_date,
@@ -119,10 +122,10 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
           // Crear nuevo invoice en BD
           await db.run(
             `INSERT INTO payments (
-              id, contact_id, amount, currency, status, payment_method,
+              id, contact_id, amount, currency, status, payment_method, payment_mode,
               reference, description, date, ghl_invoice_id, invoice_number,
               due_date, sent_at, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
             [
               ghlInvoiceId, // Usar mismo ID que en HighLevel
               invoiceData.contact_id,
@@ -130,6 +133,7 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
               invoiceData.currency,
               invoiceData.status,
               invoiceData.payment_method,
+              invoiceData.payment_mode,
               invoiceData.reference,
               invoiceData.description,
               invoiceData.date,
@@ -229,7 +233,7 @@ export async function syncAllInvoices({ contactId } = {}) {
 
         // Verificar si ya existe en BD local
         const existing = await db.get(
-          'SELECT id, status FROM payments WHERE ghl_invoice_id = ?',
+          'SELECT id, status, payment_mode FROM payments WHERE ghl_invoice_id = ?',
           [ghlInvoiceId]
         )
 
@@ -247,6 +251,7 @@ export async function syncAllInvoices({ contactId } = {}) {
           currency: invoice.currency || 'MXN',
           status: mapInvoiceStatus(invoice.status),
           payment_method: invoice.paymentMode || null,
+          payment_mode: getInvoicePaymentMode(invoice, existing?.payment_mode || 'live'),
           reference: invoice.invoiceNumber || null,
           description: invoice.invoiceItems?.[0]?.name || invoice.invoiceItems?.[0]?.description || invoice.title || invoice.name || 'Pago',
           date: invoice.createdAt || invoice.issueDate || new Date().toISOString(),
@@ -261,13 +266,14 @@ export async function syncAllInvoices({ contactId } = {}) {
           await db.run(
             `UPDATE payments
              SET status = ?, amount = ?, currency = ?, payment_method = ?,
-                 reference = ?, description = ?, due_date = ?, sent_at = ?, updated_at = CURRENT_TIMESTAMP
+                 payment_mode = ?, reference = ?, description = ?, due_date = ?, sent_at = ?, updated_at = CURRENT_TIMESTAMP
              WHERE ghl_invoice_id = ?`,
             [
               invoiceData.status,
               invoiceData.amount,
               invoiceData.currency,
               invoiceData.payment_method,
+              invoiceData.payment_mode,
               invoiceData.reference,
               invoiceData.description,
               invoiceData.due_date,
@@ -293,10 +299,10 @@ export async function syncAllInvoices({ contactId } = {}) {
           // Crear nuevo invoice en BD
           await db.run(
             `INSERT INTO payments (
-              id, contact_id, amount, currency, status, payment_method,
+              id, contact_id, amount, currency, status, payment_method, payment_mode,
               reference, description, date, ghl_invoice_id, invoice_number,
               due_date, sent_at, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
             [
               ghlInvoiceId,
               invoiceData.contact_id,
@@ -304,6 +310,7 @@ export async function syncAllInvoices({ contactId } = {}) {
               invoiceData.currency,
               invoiceData.status,
               invoiceData.payment_method,
+              invoiceData.payment_mode,
               invoiceData.reference,
               invoiceData.description,
               invoiceData.date,
@@ -366,6 +373,10 @@ export async function syncSingleInvoice(invoiceId) {
     const contactId = invoice.contactDetails?.id || invoice.contactId
 
     const ghlStatus = mapInvoiceStatus(invoice.status)
+    const existing = await db.get(
+      'SELECT id, status, payment_mode FROM payments WHERE ghl_invoice_id = ?',
+      [ghlInvoiceId]
+    )
 
     const invoiceData = {
       contact_id: contactId || null,
@@ -373,6 +384,7 @@ export async function syncSingleInvoice(invoiceId) {
       currency: invoice.currency || 'MXN',
       status: ghlStatus,
       payment_method: invoice.paymentMode || null,
+      payment_mode: getInvoicePaymentMode(invoice, existing?.payment_mode || 'live'),
       reference: invoice.invoiceNumber || null,
       description:
         invoice.invoiceItems?.[0]?.name ||
@@ -384,12 +396,6 @@ export async function syncSingleInvoice(invoiceId) {
       sent_at: invoice.sentAt || null,
     }
 
-    // Verificar si ya existe en BD local
-    const existing = await db.get(
-      'SELECT id, status FROM payments WHERE ghl_invoice_id = ?',
-      [ghlInvoiceId]
-    )
-
     if (existing) {
       // Protección anti-race condition: si local ya tiene 'paid' y GHL aún no lo refleja,
       // conservar 'paid' y solo actualizar los demás campos.
@@ -398,7 +404,7 @@ export async function syncSingleInvoice(invoiceId) {
       await db.run(
         `UPDATE payments
          SET status = ?, amount = ?, currency = ?, payment_method = ?,
-             reference = ?, description = ?, due_date = ?, sent_at = ?,
+             payment_mode = ?, reference = ?, description = ?, due_date = ?, sent_at = ?,
              updated_at = CURRENT_TIMESTAMP
          WHERE ghl_invoice_id = ?`,
         [
@@ -406,6 +412,7 @@ export async function syncSingleInvoice(invoiceId) {
           invoiceData.amount,
           invoiceData.currency,
           invoiceData.payment_method,
+          invoiceData.payment_mode,
           invoiceData.reference,
           invoiceData.description,
           invoiceData.due_date,
@@ -418,10 +425,10 @@ export async function syncSingleInvoice(invoiceId) {
       // No existe en BD — insertar. Si el contacto no existe en contacts, guardarlo igual con contact_id null.
       await db.run(
         `INSERT INTO payments (
-          id, contact_id, amount, currency, status, payment_method,
+          id, contact_id, amount, currency, status, payment_method, payment_mode,
           reference, description, date, ghl_invoice_id, invoice_number,
           due_date, sent_at, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
         [
           ghlInvoiceId,
           invoiceData.contact_id,
@@ -429,6 +436,7 @@ export async function syncSingleInvoice(invoiceId) {
           invoiceData.currency,
           invoiceData.status,
           invoiceData.payment_method,
+          invoiceData.payment_mode,
           invoiceData.reference,
           invoiceData.description,
           invoiceData.date,
@@ -492,7 +500,8 @@ async function updateContactStats(contactId) {
        FROM payments
        WHERE contact_id = ?
        AND amount > 0
-       AND LOWER(status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')`,
+       AND LOWER(status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')
+       AND ${nonTestPaymentCondition()}`,
       [contactId]
     )
 

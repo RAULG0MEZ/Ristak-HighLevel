@@ -3,6 +3,8 @@ export interface ContactPayment {
   amount: number
   status?: string | null
   date: string
+  payment_mode?: 'live' | 'test'
+  paymentMode?: 'live' | 'test'
 }
 
 export interface ContactAppointment {

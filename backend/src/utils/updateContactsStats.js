@@ -1,5 +1,6 @@
 import { db } from '../config/database.js'
 import { logger } from './logger.js'
+import { nonTestPaymentCondition } from './paymentMode.js'
 
 /**
  * Actualiza las estadísticas de un contacto específico
@@ -15,6 +16,7 @@ export async function updateSingleContactStats(contactId) {
           WHERE payments.contact_id = ?
           AND payments.amount > 0
           AND LOWER(payments.status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')
+          AND ${nonTestPaymentCondition('payments')}
         ), 0),
         purchases_count = COALESCE((
           SELECT COUNT(*)
@@ -22,6 +24,7 @@ export async function updateSingleContactStats(contactId) {
           WHERE payments.contact_id = ?
           AND payments.amount > 0
           AND LOWER(payments.status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')
+          AND ${nonTestPaymentCondition('payments')}
         ), 0),
         last_purchase_date = (
           SELECT MAX(date)
@@ -29,6 +32,7 @@ export async function updateSingleContactStats(contactId) {
           WHERE payments.contact_id = ?
           AND payments.amount > 0
           AND LOWER(payments.status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')
+          AND ${nonTestPaymentCondition('payments')}
         )
       WHERE id = ?
     `
@@ -58,6 +62,7 @@ export async function updateContactsStats() {
           WHERE payments.contact_id = contacts.id
           AND payments.amount > 0
           AND LOWER(payments.status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')
+          AND ${nonTestPaymentCondition('payments')}
         ), 0),
         purchases_count = COALESCE((
           SELECT COUNT(*)
@@ -65,6 +70,7 @@ export async function updateContactsStats() {
           WHERE payments.contact_id = contacts.id
           AND payments.amount > 0
           AND LOWER(payments.status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')
+          AND ${nonTestPaymentCondition('payments')}
         ), 0),
         last_purchase_date = (
           SELECT MAX(date)
@@ -72,6 +78,7 @@ export async function updateContactsStats() {
           WHERE payments.contact_id = contacts.id
           AND payments.amount > 0
           AND LOWER(payments.status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')
+          AND ${nonTestPaymentCondition('payments')}
         )
     `
 

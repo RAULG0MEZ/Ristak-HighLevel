@@ -386,6 +386,8 @@ export const Transactions: React.FC = () => {
     return <Badge variant={config.variant}>{config.label}</Badge>
   }
 
+  const isTestPayment = (transaction: Transaction) => transaction.paymentMode === 'test'
+
   const columns: Column<Transaction>[] = [
     {
       key: 'date',
@@ -403,6 +405,16 @@ export const Transactions: React.FC = () => {
       key: 'amount',
       header: 'Monto',
       render: (value) => formatCurrency(value),
+      sortable: true
+    },
+    {
+      key: 'paymentMode',
+      header: 'Modo',
+      render: (_value, item) => (
+        isTestPayment(item)
+          ? <Badge variant="warning" className={styles.testModeBadge}>Prueba</Badge>
+          : <span className={styles.liveModePlaceholder}>-</span>
+      ),
       sortable: true
     },
     {

@@ -348,6 +348,19 @@ class GHLClient {
     return response
   }
 
+  async listPaymentTransactions(params = {}) {
+    return this.request('/payments/transactions', {
+      params: {
+        altId: this.locationId,
+        altType: 'location',
+        limit: 20,
+        offset: 0,
+        ...params
+      },
+      version: GHL_INVOICE_SCHEDULE_API_VERSION
+    })
+  }
+
   async sendInvoice(invoiceId, options = {}) {
     // Si sendMethod es 'none', no enviar nada (solo crear invoice)
     if (options.sendMethod === 'none') {

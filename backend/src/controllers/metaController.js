@@ -1089,6 +1089,7 @@ export const getContactsByType = async (req, res) => {
           contact_id,
           amount,
           status,
+          payment_mode,
           date
         FROM payments
         WHERE contact_id IN (${placeholders})
@@ -1103,6 +1104,7 @@ export const getContactsByType = async (req, res) => {
           id: payment.id,
           amount: Number(payment.amount || 0),
           status: payment.status,
+          payment_mode: payment.payment_mode || 'live',
           date: payment.date
         });
         map.set(payment.contact_id, list);
@@ -1204,7 +1206,7 @@ export const getContactsByType = async (req, res) => {
       // CRÍTICO: Solo sumar pagos exitosos, NO incluir refunded/cancelled
       const validStatuses = ['succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success'];
       const totalFromPayments = payments
-        .filter(payment => validStatuses.includes(payment.status?.toLowerCase()))
+        .filter(payment => validStatuses.includes(payment.status?.toLowerCase()) && payment.payment_mode !== 'test')
         .reduce((sum, payment) => sum + payment.amount, 0);
       const totalPaid = contact.total_paid ? Number(contact.total_paid) : totalFromPayments;
 

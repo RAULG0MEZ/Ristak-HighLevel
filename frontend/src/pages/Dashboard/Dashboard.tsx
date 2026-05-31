@@ -187,6 +187,10 @@ const isSuccessfulPaymentStatus = (status?: string | null) => (
   SUCCESS_PAYMENT_STATUSES.has(status?.trim().toLowerCase() ?? '')
 )
 
+const isTestPaymentRecord = (payment?: { paymentMode?: string | null; payment_mode?: string | null }) => (
+  payment?.paymentMode === 'test' || payment?.payment_mode === 'test'
+)
+
 const normalizeChartPeriodPreference = (value: unknown): ChartPeriodPreference => (
   typeof value === 'string' && VALID_CHART_PERIODS.has(value as ChartPeriodPreference)
     ? value as ChartPeriodPreference
@@ -1041,6 +1045,7 @@ export const Dashboard: React.FC = () => {
         if (!mounted) return
 
         const sortedTransactions = [...transactionsData]
+          .filter(transaction => !isTestPaymentRecord(transaction))
           .sort((a, b) => getTimeValue(getTransactionDate(b)) - getTimeValue(getTransactionDate(a)))
           .slice(0, 5)
 
@@ -1155,7 +1160,7 @@ export const Dashboard: React.FC = () => {
     const getPrimaryDate = (contact: ContactListItem) => {
       if (context === 'payment') {
         const payment = [...(contact.payments ?? [])]
-          .filter(paymentItem => isSuccessfulPaymentStatus(paymentItem.status))
+          .filter(paymentItem => isSuccessfulPaymentStatus(paymentItem.status) && !isTestPaymentRecord(paymentItem))
           .sort((a, b) => getTimeValue(b.date) - getTimeValue(a.date))[0]
         return payment?.date || getContactCreatedAt(contact)
       }
@@ -1173,7 +1178,7 @@ export const Dashboard: React.FC = () => {
       .sort((a, b) => getTimeValue(getPrimaryDate(b)) - getTimeValue(getPrimaryDate(a)))
       .map(contact => {
         const successfulPayments = [...(contact.payments ?? [])]
-          .filter(payment => isSuccessfulPaymentStatus(payment.status))
+          .filter(payment => isSuccessfulPaymentStatus(payment.status) && !isTestPaymentRecord(payment))
           .sort((a, b) => getTimeValue(b.date) - getTimeValue(a.date))
         const primaryPayment = successfulPayments[0]
         const paymentTotal = successfulPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0)

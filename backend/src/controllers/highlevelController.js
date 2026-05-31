@@ -1007,7 +1007,8 @@ export const recordPayment = async (req, res) => {
             MAX(date) as last_purchase_date
            FROM payments
            WHERE contact_id = ?
-           AND LOWER(status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')`,
+           AND LOWER(status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')
+           AND COALESCE(payment_mode, 'live') != 'test'`,
           [payment.contact_id]
         );
 

@@ -7,6 +7,7 @@ import {
   activatePendingPaymentFlowsForContact,
   markPaymentFlowInvoicePaid
 } from '../services/paymentFlowService.js';
+import { getWebhookPaymentMode } from '../utils/paymentMode.js';
 
 function firstValue(...values) {
   return values.find(value => value !== undefined && value !== null && value !== '');
@@ -109,7 +110,7 @@ function parseInvoiceNumberFromReference(reference) {
 async function findExistingInvoicePayment({ invoiceId, paymentId, contactId, amount, description, invoiceNumber, reference }) {
   if (invoiceId) {
     const existing = await db.get(
-      'SELECT id, contact_id, ghl_invoice_id FROM payments WHERE ghl_invoice_id = ? OR id = ? LIMIT 1',
+      'SELECT id, contact_id, ghl_invoice_id, payment_mode FROM payments WHERE ghl_invoice_id = ? OR id = ? LIMIT 1',
       [invoiceId, invoiceId]
     );
 
@@ -119,7 +120,7 @@ async function findExistingInvoicePayment({ invoiceId, paymentId, contactId, amo
   const resolvedInvoiceNumber = invoiceNumber || parseInvoiceNumberFromReference(reference);
   if (contactId && resolvedInvoiceNumber) {
     const existingByNumber = await db.get(
-      `SELECT id, contact_id, ghl_invoice_id
+      `SELECT id, contact_id, ghl_invoice_id, payment_mode
        FROM payments
        WHERE contact_id = ?
          AND (
@@ -141,7 +142,7 @@ async function findExistingInvoicePayment({ invoiceId, paymentId, contactId, amo
   if (!contactId || amount <= 0 || !cleanDescription) return null;
 
   return await db.get(
-    `SELECT id, contact_id, ghl_invoice_id
+    `SELECT id, contact_id, ghl_invoice_id, payment_mode
      FROM payments
      WHERE contact_id = ?
        AND id != ?
@@ -391,6 +392,7 @@ export const handlePaymentWebhook = async (req, res) => {
       reference
     });
     const effectiveInvoiceId = invoiceId || existingInvoicePayment?.ghl_invoice_id || existingInvoicePayment?.id;
+    const paymentMode = getWebhookPaymentMode(data, payment, existingInvoicePayment?.payment_mode || 'live');
 
     if (existingInvoicePayment) {
       await db.run(
@@ -400,6 +402,7 @@ export const handlePaymentWebhook = async (req, res) => {
              currency = COALESCE(currency, ?),
              status = ?,
              payment_method = COALESCE(?, payment_method, 'manual'),
+             payment_mode = COALESCE(?, payment_mode, 'live'),
              reference = COALESCE(reference, ?),
              description = COALESCE(description, ?),
              date = COALESCE(date, ?),
@@ -413,6 +416,7 @@ export const handlePaymentWebhook = async (req, res) => {
           currency,
           status,
           paymentMethod,
+          paymentMode,
           reference,
           description,
           paymentDate,
@@ -433,28 +437,30 @@ export const handlePaymentWebhook = async (req, res) => {
       const rowId = effectiveInvoiceId || paymentId;
       const query = usePostgres
         ? `INSERT INTO payments (
-             id, contact_id, amount, currency, status, payment_method,
+             id, contact_id, amount, currency, status, payment_method, payment_mode,
              reference, description, date, created_at, ghl_invoice_id, invoice_number
            )
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
            ON CONFLICT (id) DO UPDATE SET
              amount = EXCLUDED.amount,
              status = EXCLUDED.status,
              payment_method = EXCLUDED.payment_method,
+             payment_mode = EXCLUDED.payment_mode,
              reference = EXCLUDED.reference,
              description = EXCLUDED.description,
              ghl_invoice_id = COALESCE(payments.ghl_invoice_id, EXCLUDED.ghl_invoice_id),
              invoice_number = COALESCE(payments.invoice_number, EXCLUDED.invoice_number),
              updated_at = CURRENT_TIMESTAMP`
         : `INSERT INTO payments (
-             id, contact_id, amount, currency, status, payment_method,
+             id, contact_id, amount, currency, status, payment_method, payment_mode,
              reference, description, date, created_at, ghl_invoice_id, invoice_number
            )
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
              amount = excluded.amount,
              status = excluded.status,
              payment_method = excluded.payment_method,
+             payment_mode = excluded.payment_mode,
              reference = excluded.reference,
              description = excluded.description,
              ghl_invoice_id = COALESCE(ghl_invoice_id, excluded.ghl_invoice_id),
@@ -468,6 +474,7 @@ export const handlePaymentWebhook = async (req, res) => {
         currency,
         status,
         paymentMethod || 'manual',
+        paymentMode,
         reference,
         description,
         paymentDate,
@@ -959,6 +966,19 @@ export const handleInvoiceWebhook = async (req, res) => {
       // Construir query de actualización
       const setFields = [`status = ?`];
       const values = [newStatus];
+      const paymentModeSignal = firstValue(
+        data.liveMode,
+        data.live_mode,
+        data.livemode,
+        data.testMode,
+        data.test_mode,
+        invoicePayload.liveMode,
+        invoicePayload.live_mode,
+        invoicePayload.livemode,
+        invoicePayload.testMode,
+        invoicePayload.test_mode,
+        invoicePayload.environment
+      );
 
       if (updateFields.sent_at) {
         setFields.push('sent_at = ?');
@@ -968,6 +988,11 @@ export const handleInvoiceWebhook = async (req, res) => {
       if (updateFields.payment_method) {
         setFields.push('payment_method = ?');
         values.push(updateFields.payment_method);
+      }
+
+      if (paymentModeSignal !== undefined) {
+        setFields.push('payment_mode = ?');
+        values.push(getWebhookPaymentMode(data, { invoice: invoicePayload }));
       }
 
       values.push(invoiceId);

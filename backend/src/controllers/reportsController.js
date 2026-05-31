@@ -8,6 +8,7 @@ import {
   buildReportMetrics,
   buildContactsList
 } from '../services/analyticsService.js'
+import { nonTestPaymentCondition } from '../utils/paymentMode.js'
 
 const buildRangePayload = (range) => ({
   start: range.startUtc,
@@ -211,6 +212,7 @@ export const getTransactionsList = async (req, res) => {
     ]
     const statusPlaceholders = SUCCESS_PAYMENT_STATUSES.map(() => '?').join(',')
     conditions.push(`LOWER(p.status) IN (${statusPlaceholders})`)
+    conditions.push(nonTestPaymentCondition('p'))
     params.push(...SUCCESS_PAYMENT_STATUSES)
 
     if (range.startUtc) {
