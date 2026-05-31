@@ -5446,6 +5446,39 @@ function toBooleanValue(value) {
   return value === true || value === 1 || value === '1' || value === 'true'
 }
 
+const BUSINESS_CONTEXT_FIELD_DEFINITIONS = {
+  businessContext: {
+    label: 'Detalles del negocio',
+    dbField: 'business_context',
+    instruction: 'Resume qué vende el negocio, cómo opera, cómo gana dinero, ticket, promesa, diferenciadores y restricciones importantes.'
+  },
+  marketContext: {
+    label: 'Mercado o nicho',
+    dbField: 'market_context',
+    instruction: 'Describe el nicho, industria, tipo de servicio, dinámica del mercado y contexto competitivo general.'
+  },
+  idealCustomer: {
+    label: 'Cliente ideal',
+    dbField: 'ideal_customer',
+    instruction: 'Describe quién compra, dolores, motivaciones, objeciones, nivel económico, urgencia y criterios de decisión.'
+  },
+  locationContext: {
+    label: 'Zona geográfica',
+    dbField: 'location_context',
+    instruction: 'Describe ciudad, país, zonas relevantes, temporadas, cultura local y límites geográficos.'
+  },
+  competitorsContext: {
+    label: 'Competidores o referencias',
+    dbField: 'competitors_context',
+    instruction: 'Describe competidores, marcas de referencia, alternativas, ventajas, desventajas y comparaciones relevantes.'
+  },
+  brandVoice: {
+    label: 'Tono, prioridades y reglas',
+    dbField: 'brand_voice',
+    instruction: 'Describe tono deseado, prioridades, metas, reglas, cosas que debe evitar y estilo de recomendación.'
+  }
+}
+
 export async function getAIAgentConfig() {
   return await db.get(`
     SELECT
@@ -5595,6 +5628,78 @@ export async function saveAIAgentConfig({
   ])
 
   return getAIAgentStatus()
+}
+
+export async function saveRefinedAIAgentBusinessContextAnswer({ field, answer } = {}) {
+  const fieldDefinition = BUSINESS_CONTEXT_FIELD_DEFINITIONS[field]
+
+  if (!fieldDefinition) {
+    throw new Error('Campo de contexto del negocio no válido')
+  }
+
+  const apiKey = await getOpenAIApiKey()
+
+  if (!apiKey) {
+    throw new Error('Primero configura una API Key válida de OpenAI')
+  }
+
+  const rawAnswer = cleanConfigText(answer, 1800)
+
+  if (!rawAnswer) {
+    throw new Error('Escribe una respuesta para guardar el contexto')
+  }
+
+  const config = await getAIAgentConfig()
+  const existingText = cleanConfigText(config?.[fieldDefinition.dbField] || '', 1800)
+  const { text } = await callOpenAIResponse(apiKey, {
+    model: normalizeAIAgentModel(config?.model),
+    maxOutputTokens: 650,
+    instructions: [
+      'Eres editor de contexto de negocio para un agente AI dentro de Ristak.',
+      'Tu trabajo es convertir la respuesta cruda del usuario en texto claro, profesional y útil para guardar en configuración.',
+      'No inventes datos. No agregues números, ciudades, competidores, promesas ni públicos que el usuario no haya mencionado.',
+      'Puedes ordenar, corregir redacción, quitar muletillas y unir con el texto existente si aporta continuidad.',
+      'Si el dato nuevo contradice el texto existente, prioriza el dato nuevo sin hacer drama.',
+      'Devuelve solamente el texto final para guardar. No uses título, saludo, explicación ni markdown decorativo.',
+      'Mantén el texto en español, directo, natural y fácil de leer para que otro agente pueda usarlo como memoria del negocio.'
+    ].join('\n'),
+    input: JSON.stringify({
+      campo: fieldDefinition.label,
+      objetivoDelCampo: fieldDefinition.instruction,
+      textoExistente: existingText,
+      respuestaNuevaDelUsuario: rawAnswer
+    }, null, 2)
+  })
+
+  const refinedText = cleanConfigText(text, 3000)
+
+  if (!refinedText) {
+    throw new Error('OpenAI no devolvió texto útil para guardar')
+  }
+
+  const nextConfig = {
+    businessContext: config?.business_context || '',
+    marketContext: config?.market_context || '',
+    idealCustomer: config?.ideal_customer || '',
+    locationContext: config?.location_context || '',
+    competitorsContext: config?.competitors_context || '',
+    brandVoice: config?.brand_voice || '',
+    researchDomains: config?.research_domains || '',
+    responseStyle: config?.response_style,
+    model: config?.model,
+    recommendationMode: config?.recommendation_mode,
+    webSearchEnabled: toBooleanValue(config?.web_search_enabled)
+  }
+
+  nextConfig[field] = refinedText
+
+  const status = await saveAIAgentConfig(nextConfig)
+
+  return {
+    field,
+    text: refinedText,
+    status
+  }
 }
 
 export async function deleteAIAgentConfig() {

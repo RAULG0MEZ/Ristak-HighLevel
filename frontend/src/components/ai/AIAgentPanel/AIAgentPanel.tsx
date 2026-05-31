@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { ArrowUp, Bot, Eraser, KeyRound, MessageCircle, Mic, Pause, SendHorizonal, Sparkles, X } from 'lucide-react'
-import { aiAgentService, type AIAgentClarificationOption, type AIAgentConfigInput, type AIAgentConfigStatus, type AIAgentMessage, type AIAgentViewContext } from '@/services/aiAgentService'
+import { aiAgentService, type AIAgentBusinessContextField, type AIAgentClarificationOption, type AIAgentConfigInput, type AIAgentConfigStatus, type AIAgentMessage, type AIAgentViewContext } from '@/services/aiAgentService'
 import styles from './AIAgentPanel.module.css'
 
 const AI_AGENT_FLOATING_OPEN_KEY = 'ristak.aiAgentFloating.open'
@@ -65,7 +65,7 @@ const emptyForm: AIAgentConfigInput = {
 }
 
 const onboardingQuestions: Array<{
-  field: keyof Pick<AIAgentConfigInput, 'businessContext' | 'marketContext' | 'idealCustomer' | 'locationContext' | 'competitorsContext' | 'brandVoice'>
+  field: AIAgentBusinessContextField
   question: string
 }> = [
   {
@@ -790,20 +790,20 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
   }, [messages])
 
   useEffect(() => {
-    if (loadingConfig || askedOnboardingRef.current || businessContextLoaded) return
+    if (loadingConfig || askedOnboardingRef.current || businessContextLoaded || !status.configured) return
 
     askedOnboardingRef.current = true
     const firstQuestion = getNextOnboardingQuestion(form)
     if (!firstQuestion) return
 
     setMessages((current) => {
-      if (current.length) return current
       return [
-        createMessage('assistant', 'Antes de que me des detalles sobre tu negocio, necesito hacerte unas preguntas para guardarlas en el sistema. Con esa base podré darte mejores consejos y recomendaciones, apoyándome tanto en tu data como en el contexto general del mercado y el mundo.'),
+        ...current,
+        createMessage('assistant', 'Ya con OpenAI conectado, te haré unas preguntas del negocio. Tú escríbelo como te salga; yo lo redacto bien y lo guardo en Configuración.'),
         createMessage('assistant', firstQuestion.question)
       ]
     })
-  }, [businessContextLoaded, form, loadingConfig])
+  }, [businessContextLoaded, form, loadingConfig, status.configured])
 
   const getViewContext = (): AIAgentViewContext => ({
     path: location.pathname,
@@ -854,19 +854,17 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
 
   const saveOnboardingAnswer = async (text: string, userMessage: AIAgentMessage) => {
     const currentQuestion = getNextOnboardingQuestion(form)
-    if (!currentQuestion) return false
+    if (!currentQuestion || !status.configured) return false
 
-    const nextForm = {
-      ...form,
-      [currentQuestion.field]: text
-    }
-
-    setForm(nextForm)
     setMessages((current) => [...current, userMessage])
     setSending(true)
 
     try {
-      await saveAgentConfig(nextForm)
+      const result = await aiAgentService.saveBusinessContextAnswer(currentQuestion.field, text)
+      const nextStatus = result.status
+      const nextForm = statusToForm(nextStatus)
+      applyStatus(nextStatus)
+      emitConfigChange(nextStatus)
       const followingQuestion = getNextOnboardingQuestion(nextForm)
 
       setMessages((current) => [
@@ -874,10 +872,8 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
         createMessage(
           'assistant',
           followingQuestion
-            ? followingQuestion.question
-            : status.configured
-              ? 'Perfecto, ya guardé el contexto del negocio. Ahora sí puedo darte recomendaciones con más criterio.'
-              : 'Perfecto, ya guardé el contexto del negocio. Para activar análisis con IA, pega tu API key de OpenAI en la tarjeta de arriba.'
+            ? `Listo, lo redacté y lo guardé en Configuración.\n\n${followingQuestion.question}`
+            : 'Perfecto, ya redacté y guardé el contexto del negocio. Ahora sí puedo darte recomendaciones con más criterio.'
         )
       ])
     } catch (error: any) {
@@ -902,18 +898,18 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
     setInput('')
     focusComposer()
 
-    if (nextOnboardingQuestion) {
-      await saveOnboardingAnswer(text, userMessage)
-      return
-    }
-
     if (!status.configured) {
       setMessages((current) => [
         ...current,
         userMessage,
-        createMessage('assistant', 'Ya puedo guardar contexto del negocio, pero para responder con IA necesito que pegues tu API key de OpenAI en la tarjeta de configuración.')
+        createMessage('assistant', 'Primero conecta tu API key de OpenAI. Después te hago las preguntas del negocio y yo mismo redacto bien tus respuestas para guardarlas en Configuración.')
       ])
       focusComposer()
+      return
+    }
+
+    if (nextOnboardingQuestion) {
+      await saveOnboardingAnswer(text, userMessage)
       return
     }
 
@@ -1282,10 +1278,10 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
             </div>
           )}
 
-          {!businessContextLoaded && !loadingConfig && (
+          {status.configured && !businessContextLoaded && !loadingConfig && (
             <div className={styles.contextNotice}>
               <Sparkles size={15} />
-              Falta contexto del negocio. Respóndeme estas preguntas y lo guardaré automáticamente en Configuración.
+              Falta contexto del negocio. Respóndeme estas preguntas y yo lo redacto antes de guardarlo en Configuración.
             </div>
           )}
 

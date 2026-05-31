@@ -4,6 +4,7 @@ import {
   deleteAIAgentConfig,
   getAIAgentStatus,
   getOpenAIApiKey,
+  saveRefinedAIAgentBusinessContextAnswer,
   saveAIAgentConfig,
   transcribeVoiceAudio,
   verifyOpenAIApiKey
@@ -90,6 +91,33 @@ export async function deleteConfig(req, res) {
     res.status(500).json({
       success: false,
       error: 'Error al desconectar el agente AI'
+    })
+  }
+}
+
+export async function saveBusinessContextAnswer(req, res) {
+  try {
+    const result = await saveRefinedAIAgentBusinessContextAnswer({
+      field: req.body?.field,
+      answer: req.body?.answer
+    })
+
+    res.json({
+      success: true,
+      message: 'Contexto del negocio redactado y guardado',
+      data: result
+    })
+  } catch (error) {
+    logger.error('Error guardando respuesta de contexto del agente AI:', error)
+    const statusCode = error.message?.includes('API Key')
+      ? 409
+      : error.message?.includes('no válido') || error.message?.includes('respuesta')
+        ? 400
+        : 500
+
+    res.status(statusCode).json({
+      success: false,
+      error: error.message || 'Error al guardar el contexto del negocio'
     })
   }
 }

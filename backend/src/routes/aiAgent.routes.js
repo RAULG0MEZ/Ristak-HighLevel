@@ -1,5 +1,5 @@
 import express from 'express'
-import { chat, deleteConfig, getConfig, saveConfig, transcribeVoice } from '../controllers/aiAgentController.js'
+import { chat, deleteConfig, getConfig, saveBusinessContextAnswer, saveConfig, transcribeVoice } from '../controllers/aiAgentController.js'
 import { requireAuth } from '../middleware/authMiddleware.js'
 
 const router = express.Router()
@@ -13,6 +13,7 @@ router.use(requireAuth)
 router.get('/config', getConfig)
 router.post('/config', saveConfig)
 router.delete('/config', deleteConfig)
+router.post('/business-context-answer', saveBusinessContextAnswer)
 router.post('/transcribe', rawAudioBody, transcribeVoice)
 router.post('/chat', chat)
 

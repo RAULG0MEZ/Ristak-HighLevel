@@ -1,6 +1,13 @@
 export type AIAgentRole = 'user' | 'assistant'
 export type AIAgentResponseStyle = 'direct' | 'balanced' | 'advisor'
 export type AIAgentRecommendationMode = 'on_request' | 'when_useful' | 'proactive'
+export type AIAgentBusinessContextField =
+  | 'businessContext'
+  | 'marketContext'
+  | 'idealCustomer'
+  | 'locationContext'
+  | 'competitorsContext'
+  | 'brandVoice'
 
 export interface AIAgentMessage {
   id?: string
@@ -82,6 +89,12 @@ export interface AIAgentTranscriptionResult {
   model: string
 }
 
+export interface AIAgentBusinessContextAnswerResult {
+  field: AIAgentBusinessContextField
+  text: string
+  status: AIAgentConfigStatus
+}
+
 type AIAgentRequestOptions = {
   signal?: AbortSignal
 }
@@ -136,6 +149,16 @@ export const aiAgentService = {
   async deleteConfig(): Promise<void> {
     await request('/config', {
       method: 'DELETE'
+    })
+  },
+
+  saveBusinessContextAnswer(
+    field: AIAgentBusinessContextField,
+    answer: string
+  ): Promise<AIAgentBusinessContextAnswerResult> {
+    return request<AIAgentBusinessContextAnswerResult>('/business-context-answer', {
+      method: 'POST',
+      body: JSON.stringify({ field, answer })
     })
   },
 
