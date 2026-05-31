@@ -7,6 +7,11 @@ import {
   markPaymentFlowInvoicePaid
 } from '../services/paymentFlowService.js';
 import { PAYMENT_MODE_LIVE, getWebhookPaymentMode, normalizePaymentMode } from '../utils/paymentMode.js';
+import {
+  isSuccessfulPaymentStatus,
+  triggerWhatsappAppointmentBookedEvent,
+  triggerWhatsappFirstPurchaseEvent
+} from '../services/metaWhatsappEventsService.js';
 
 function firstValue(...values) {
   return values.find(value => value !== undefined && value !== null && value !== '');
@@ -536,7 +541,7 @@ export const handlePaymentWebhook = async (req, res) => {
     // Actualizar estadísticas del contacto
     await updateSingleContactStats(contactId);
 
-    if (['paid', 'succeeded', 'completed'].includes(String(status).toLowerCase())) {
+    if (isSuccessfulPaymentStatus(status)) {
       const flow = await markPaymentFlowInvoicePaid(effectiveInvoiceId, {
         contactId,
         amount,
@@ -550,6 +555,12 @@ export const handlePaymentWebhook = async (req, res) => {
           logger.info(`✅ ${activatedFlows} flujo(s) de parcialidades activado(s) por pago webhook para contacto ${contactId}`);
         }
       }
+
+      await triggerWhatsappFirstPurchaseEvent(contactId, {
+        amount,
+        currency,
+        paymentMode
+      });
     }
 
     logger.info(`✅ Pago ${paymentId} procesado exitosamente para contacto ${contactId}`);
@@ -655,6 +666,17 @@ export const handleAppointmentWebhook = async (req, res) => {
         WHERE id = ?
         AND (appointment_date IS NULL OR appointment_date > ?)
       `, [startTime, contactId, startTime]);
+    }
+
+    const appointmentStatus = calendar.appoinmentStatus || calendar.appointmentStatus || data.appointment_status || calendar.status || data.status;
+    const appointmentStatusNormalized = String(appointmentStatus || '').toLowerCase();
+    const isCancelledAppointment = appointmentStatusNormalized.includes('cancel') ||
+      appointmentStatusNormalized.includes('no-show') ||
+      appointmentStatusNormalized.includes('noshow') ||
+      appointmentStatusNormalized.includes('deleted');
+
+    if (contactId && !isCancelledAppointment) {
+      await triggerWhatsappAppointmentBookedEvent(contactId);
     }
 
     logger.info(`✅ Cita ${appointmentId} procesada exitosamente para contacto ${contactId}`);
@@ -1005,13 +1027,21 @@ export const handleInvoiceWebhook = async (req, res) => {
       // Si fue pagado, actualizar estadísticas del contacto
       if (newStatus === 'paid') {
         const payment = await db.get(
-          'SELECT contact_id FROM payments WHERE ghl_invoice_id = ?',
+          'SELECT contact_id, amount, currency, status, payment_mode FROM payments WHERE ghl_invoice_id = ?',
           [invoiceId]
         );
 
         if (payment && payment.contact_id) {
           await updateSingleContactStats(payment.contact_id);
           logger.success(`Estadísticas actualizadas para contacto: ${payment.contact_id}`);
+
+          if (isSuccessfulPaymentStatus(payment.status || newStatus)) {
+            await triggerWhatsappFirstPurchaseEvent(payment.contact_id, {
+              amount: payment.amount,
+              currency: payment.currency,
+              paymentMode: payment.payment_mode
+            });
+          }
         }
 
         await markPaymentFlowInvoicePaid(invoiceId);

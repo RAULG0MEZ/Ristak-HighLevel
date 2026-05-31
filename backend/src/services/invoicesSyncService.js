@@ -13,6 +13,10 @@ import { getGHLClient } from './ghlClient.js'
 import { logger } from '../utils/logger.js'
 import { getInvoicePaymentMode, nonTestPaymentCondition } from '../utils/paymentMode.js'
 import { markPaymentFlowInvoicePaid } from './paymentFlowService.js'
+import {
+  isSuccessfulPaymentStatus,
+  triggerWhatsappFirstPurchaseEvent
+} from './metaWhatsappEventsService.js'
 
 const PAID_INVOICE_STATUSES = new Set(['paid', 'succeeded', 'completed'])
 
@@ -172,6 +176,19 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
         }
 
         await activatePaymentFlowFromPaidInvoice(ghlInvoiceId, invoiceData)
+
+        const transitionedToPaid = invoiceData.contact_id &&
+          isSuccessfulPaymentStatus(invoiceData.status) &&
+          existing &&
+          !isSuccessfulPaymentStatus(existing.status)
+
+        if (transitionedToPaid) {
+          await triggerWhatsappFirstPurchaseEvent(invoiceData.contact_id, {
+            amount: invoiceData.amount,
+            currency: invoiceData.currency,
+            paymentMode: invoiceData.payment_mode
+          })
+        }
 
       } catch (error) {
         logger.error(`Error procesando invoice ${invoice.id}:`, error)
@@ -351,6 +368,19 @@ export async function syncAllInvoices({ contactId } = {}) {
 
         await activatePaymentFlowFromPaidInvoice(ghlInvoiceId, invoiceData)
 
+        const transitionedToPaid = invoiceData.contact_id &&
+          isSuccessfulPaymentStatus(invoiceData.status) &&
+          existing &&
+          !isSuccessfulPaymentStatus(existing.status)
+
+        if (transitionedToPaid) {
+          await triggerWhatsappFirstPurchaseEvent(invoiceData.contact_id, {
+            amount: invoiceData.amount,
+            currency: invoiceData.currency,
+            paymentMode: invoiceData.payment_mode
+          })
+        }
+
       } catch (error) {
         logger.error(`Error procesando invoice ${invoice.id}:`, error)
         skipped++
@@ -478,6 +508,19 @@ export async function syncSingleInvoice(invoiceId) {
     }
 
     await activatePaymentFlowFromPaidInvoice(ghlInvoiceId, invoiceData)
+
+    const transitionedToPaid = invoiceData.contact_id &&
+      isSuccessfulPaymentStatus(invoiceData.status) &&
+      existing &&
+      !isSuccessfulPaymentStatus(existing.status)
+
+    if (transitionedToPaid) {
+      await triggerWhatsappFirstPurchaseEvent(invoiceData.contact_id, {
+        amount: invoiceData.amount,
+        currency: invoiceData.currency,
+        paymentMode: invoiceData.payment_mode
+      })
+    }
 
     return { success: true, invoiceId: ghlInvoiceId, status: invoiceData.status }
   } catch (error) {

@@ -2,6 +2,7 @@ import * as calendarService from '../services/highlevelCalendarService.js';
 import { logger } from '../utils/logger.js';
 import { getGHLClient } from '../services/ghlClient.js';
 import { db } from '../config/database.js';
+import { triggerWhatsappAppointmentBookedEvent } from '../services/metaWhatsappEventsService.js';
 
 /**
  * Controlador para endpoints de Calendarios de HighLevel
@@ -386,6 +387,11 @@ export async function createAppointment(req, res) {
     }
 
     const appointment = await calendarService.createAppointment(appointmentData, locationId, accessToken);
+    const contactId = appointmentData.contactId || appointmentData.contact_id || appointment?.contactId || appointment?.contact_id;
+
+    if (contactId) {
+      await triggerWhatsappAppointmentBookedEvent(contactId);
+    }
 
     res.status(201).json({
       success: true,
