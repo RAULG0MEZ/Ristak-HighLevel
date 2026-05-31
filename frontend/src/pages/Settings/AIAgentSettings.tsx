@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Bot, CheckCircle, Database, Eye, EyeOff, Globe2, KeyRound, MessageCircle, Save, Sparkles, Trash2, XCircle } from 'lucide-react'
+import { Bot, CheckCircle, Database, Eye, EyeOff, Globe2, KeyRound, Megaphone, MessageCircle, Save, Sparkles, Trash2, XCircle } from 'lucide-react'
 import { Button, Card } from '@/components/common'
 import { useNotification } from '@/contexts/NotificationContext'
 import { aiAgentService, type AIAgentConfigStatus, type AIAgentRecommendationMode, type AIAgentResponseStyle } from '@/services/aiAgentService'
@@ -21,6 +21,13 @@ const emptyStatus: AIAgentConfigStatus = {
   responseStyle: 'direct',
   recommendationMode: 'on_request',
   webSearchEnabled: false,
+  metaAdsMcp: {
+    enabled: true,
+    configured: false,
+    serverUrl: 'https://mcp.facebook.com/ads',
+    adAccountId: null,
+    tokenSource: null
+  },
   updatedAt: null
 }
 
@@ -220,7 +227,7 @@ export const AIAgentSettings: React.FC = () => {
             <div>
               <h2 className={styles.title}>Agente AI</h2>
               <p className={styles.description}>
-                Conecta OpenAI para activar el chat flotante con acceso de solo lectura al contexto del negocio y a la vista actual de la interfaz.
+                Conecta OpenAI para activar el chat flotante con lectura segura de la DB, contexto de la vista actual y acciones externas bajo confirmación.
               </p>
             </div>
           </div>
@@ -504,6 +511,13 @@ export const AIAgentSettings: React.FC = () => {
                 </span>
               </div>
               <div className={styles.detailItem}>
+                <span className={styles.detailLabel}>Meta Ads MCP</span>
+                <span className={styles.detailValue}>
+                  <Megaphone size={15} />
+                  {status.metaAdsMcp?.configured ? 'Conectado' : status.metaAdsMcp?.enabled === false ? 'Desactivado' : 'Sin token'}
+                </span>
+              </div>
+              <div className={styles.detailItem}>
                 <span className={styles.detailLabel}>Respuesta</span>
                 <span className={styles.detailValue}>
                   {status.responseStyle === 'advisor' ? 'Asesor' : status.responseStyle === 'balanced' ? 'Balanceado' : 'Directo'}
@@ -541,8 +555,12 @@ export const AIAgentSettings: React.FC = () => {
               Puede investigar online para traer contexto social, cultural, político, histórico o competitivo cuando aporte valor.
             </div>
             <div className={styles.capability}>
+              <Megaphone size={16} />
+              Usa Meta Ads MCP para operar Ads Manager bajo confirmación: campañas, presupuestos, anuncios, públicos, exclusiones y diagnósticos.
+            </div>
+            <div className={styles.capability}>
               <CheckCircle size={16} />
-              Funciona como asesor de negocio, no como editor de datos: el acceso a la DB es de solo lectura.
+              La DB sigue siendo solo lectura y es la fuente real para leads, citas, ventas, ingresos, ROAS y rentabilidad.
             </div>
           </div>
 

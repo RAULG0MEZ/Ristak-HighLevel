@@ -6,6 +6,7 @@ import { getGHLClient } from './ghlClient.js'
 import { getMetaConfig } from './metaAdsService.js'
 import { createInstallmentPaymentFlow, createSinglePaymentLink } from './paymentFlowService.js'
 import { PAYMENT_MODE_LIVE, PAYMENT_MODE_TEST, normalizePaymentMode, nonTestPaymentCondition } from '../utils/paymentMode.js'
+import { logger } from '../utils/logger.js'
 import {
   buildContactSearchCondition,
   buildContactSearchClause,
@@ -48,7 +49,7 @@ const AI_MODEL_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,99}$/
 const META_ADS_MCP_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.META_ADS_MCP_ENABLED || 'true'))
 const isPostgres = Boolean(process.env.DATABASE_URL)
 
-const DEFAULT_META_ADS_MCP_ALLOWED_TOOLS = [
+const META_ADS_MCP_READ_ONLY_TOOL_NAMES = [
   'ads_get_ad_accounts',
   'ads_get_ad_entities',
   'ads_get_pages_for_business',
@@ -469,6 +470,112 @@ function extractFunctionCalls(responseData) {
     .filter((call) => call.callId)
 }
 
+function parseToolArguments(value) {
+  if (!value) return {}
+
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value)
+    } catch {
+      return { raw: value }
+    }
+  }
+
+  return typeof value === 'object' ? value : {}
+}
+
+function extractMcpApprovalRequests(responseData) {
+  if (!Array.isArray(responseData?.output)) return []
+
+  return responseData.output
+    .filter((item) => item?.type === 'mcp_approval_request' && (item.id || item.approval_request_id) && item.name)
+    .map((item) => ({
+      id: item.id || item.approval_request_id,
+      name: item.name,
+      serverLabel: item.server_label || item.serverLabel || '',
+      arguments: parseToolArguments(item.arguments),
+      rawArguments: typeof item.arguments === 'string' ? item.arguments : safeStringify(item.arguments || {})
+    }))
+}
+
+function isMetaAdsMcpApprovalRequest(request = {}) {
+  return normalizeText(request.serverLabel) === 'meta_ads'
+}
+
+function isLikelyReadOnlyMetaAdsToolName(toolName) {
+  const normalized = normalizeText(toolName)
+  if (!normalized) return false
+
+  if (/(create|update|delete|remove|add|set|pause|resume|enable|disable|duplicate|copy|upload|mutate|edit|modify|exclude|include|attach|detach|assign|unassign|replace|publish|archive)/.test(normalized)) {
+    return false
+  }
+
+  return /^(ads_)?(get|list|search|read|fetch|find|check|inspect|diagnos|preview|describe|insight|benchmark)/.test(normalized) ||
+    normalized.includes('insights') ||
+    normalized.includes('diagnostic') ||
+    normalized.includes('benchmark')
+}
+
+function hasExplicitMetaAdsExecutionConfirmation(messages) {
+  const latestUserIndex = findLatestUserMessageIndex(messages)
+  if (latestUserIndex < 0) return false
+
+  const latestUserText = normalizeText(getMessageText(messages[latestUserIndex]))
+  const previousAssistantText = normalizeText(getPreviousAssistantMessageText(messages, latestUserIndex))
+
+  if (/(no|cancel|cancela|espera|aguanta|deten|detener|no lo hagas|no procedas)/.test(latestUserText)) {
+    return false
+  }
+
+  const assistantAskedForMetaAdsConfirmation = /(confirm|autoriz|procedo|confirmas|confirma)/.test(previousAssistantText) &&
+    /(meta|ads|anuncio|anuncios|campana|campanas|campaign|adset|conjunto|audiencia|publico|público|presupuesto|budget|pausar|apagar|reactivar|crear|editar|modificar)/.test(previousAssistantText)
+
+  if (!assistantAskedForMetaAdsConfirmation) return false
+
+  return /(\bconfirmo\b|\bconfirmado\b|\bautorizo\b|\bautorizado\b|\bsi\b.*\b(hazlo|procede|procedele|apaga|pausa|crea|modifica|actualiza|edita)\b|\bsí\b.*\b(hazlo|procede|procédele|apaga|pausa|crea|modifica|actualiza|edita)\b|\badelante\b|\bdale\b|\bprocede\b|\bprocedele\b|\bva\b)/.test(latestUserText)
+}
+
+function buildMetaAdsApprovalOptions(requests = []) {
+  const actionLabel = requests.length === 1
+    ? `la acción ${requests[0].name} en Meta Ads`
+    : `${requests.length} acciones en Meta Ads`
+
+  return [
+    {
+      label: 'Confirmar',
+      description: 'Autoriza ejecutar el cambio real en Meta Ads Manager.',
+      value: `Confirmo y autorizo ejecutar ${actionLabel}.`
+    },
+    {
+      label: 'Cancelar',
+      description: 'No toca campañas, audiencias, anuncios ni presupuestos.',
+      value: 'No, cancela esta acción de Meta Ads.'
+    }
+  ]
+}
+
+function buildMetaAdsApprovalText(requests = []) {
+  const lines = [
+    'Antes de tocar Meta Ads necesito confirmación explícita.',
+    '',
+    'Acción pendiente:'
+  ]
+
+  requests.slice(0, 5).forEach((request, index) => {
+    lines.push(`${index + 1}. ${request.name}`)
+    const args = cleanText(safeStringify(request.arguments || {}, 1200), 1200)
+    if (args && args !== '{}') {
+      lines.push(`   Datos: ${args}`)
+    }
+  })
+
+  lines.push('')
+  lines.push('No voy a usar Meta para reportar leads, citas, ventas, ingresos, ROAS o rentabilidad. Esa decisión sale de Ristak/DB.')
+  lines.push('Si está correcto, responde: "Confirmo y autorizo ejecutar esta acción de Meta Ads."')
+
+  return lines.join('\n')
+}
+
 function cleanHighLevelPath(path) {
   const value = String(path || '').trim()
 
@@ -562,6 +669,102 @@ function buildHighLevelToolContext(highLevelConnection) {
     restBaseUrl: HIGHLEVEL_API_BASE_URL,
     token: 'configurado_no_mostrar'
   }, 3000)
+}
+
+async function getMetaAdsAgentConnection() {
+  if (!META_ADS_MCP_ENABLED) {
+    return {
+      configured: false,
+      enabled: false,
+      serverUrl: META_ADS_MCP_SERVER_URL,
+      token: null,
+      adAccountId: null,
+      pixelId: null,
+      pageId: null,
+      tokenSource: null
+    }
+  }
+
+  let metaConfig = null
+
+  try {
+    metaConfig = await getMetaConfig()
+  } catch (error) {
+    logger.warn(`No se pudo leer la configuración de Meta Ads para MCP: ${error.message}`)
+  }
+
+  const envToken = cleanText(process.env.META_ADS_MCP_ACCESS_TOKEN || '', 4096)
+  const token = envToken || cleanText(metaConfig?.access_token || '', 4096)
+
+  if (!token) {
+    return {
+      configured: false,
+      enabled: true,
+      serverUrl: META_ADS_MCP_SERVER_URL,
+      token: null,
+      adAccountId: metaConfig?.ad_account_id || null,
+      pixelId: metaConfig?.pixel_id || null,
+      pageId: metaConfig?.page_id || null,
+      tokenSource: null
+    }
+  }
+
+  return {
+    configured: true,
+    enabled: true,
+    serverUrl: META_ADS_MCP_SERVER_URL,
+    token,
+    adAccountId: metaConfig?.ad_account_id || null,
+    pixelId: metaConfig?.pixel_id || null,
+    pageId: metaConfig?.page_id || null,
+    timezoneName: metaConfig?.timezone_name || null,
+    tokenSource: envToken ? 'env' : 'meta_config'
+  }
+}
+
+function buildMetaAdsToolContext(metaAdsConnection) {
+  if (!META_ADS_MCP_ENABLED) {
+    return 'Meta Ads MCP está desactivado por META_ADS_MCP_ENABLED=false.'
+  }
+
+  if (!metaAdsConnection?.configured) {
+    return 'Meta Ads MCP no está conectado. Configura Meta Ads o define META_ADS_MCP_ACCESS_TOKEN para usar el servidor https://mcp.facebook.com/ads.'
+  }
+
+  return safeStringify({
+    connected: true,
+    serverUrl: metaAdsConnection.serverUrl,
+    adAccountId: metaAdsConnection.adAccountId,
+    pixelId: metaAdsConnection.pixelId || null,
+    pageId: metaAdsConnection.pageId || null,
+    timezoneName: metaAdsConnection.timezoneName || null,
+    tokenSource: metaAdsConnection.tokenSource,
+    token: 'configurado_no_mostrar',
+    purpose: 'Herramienta operativa para Ads Manager: crear, editar, pausar, reactivar o duplicar campañas/adsets/anuncios; administrar presupuestos, públicos personalizados, exclusiones, catálogos, datasets, diagnósticos, delivery y benchmarks de Meta.',
+    businessResultsSource: 'DB_Ristak'
+  }, 3000)
+}
+
+function buildMetaAdsTools(metaAdsConnection) {
+  if (!metaAdsConnection?.configured) return []
+
+  return [{
+    type: 'mcp',
+    server_label: 'meta_ads',
+    server_description: [
+      'Official Meta Ads MCP server for operational control of Meta Ads Manager.',
+      'Use it to create, edit, pause/resume or duplicate campaigns, ad sets and ads; change budgets/status; manage custom audiences, lookalikes, inclusions/exclusions, catalogs, datasets, delivery diagnostics and Meta-native benchmarks.',
+      'Do not use Meta Ads MCP as the source for Ristak business results such as leads, appointments, sales, revenue, attributed ROAS or profitability; those must come from the Ristak database.'
+    ].join(' '),
+    server_url: metaAdsConnection.serverUrl,
+    authorization: metaAdsConnection.token,
+    require_approval: {
+      never: {
+        tool_names: META_ADS_MCP_READ_ONLY_TOOL_NAMES
+      }
+    },
+    defer_loading: true
+  }]
 }
 
 const PAYMENT_MUTATION_TOOL_NAMES = new Set([
@@ -1034,7 +1237,7 @@ function buildPaymentContactOptions(contacts) {
 }
 
 async function searchLocalPaymentContacts(hint) {
-  const cleanHint = cleanText(hint, 160)
+  const cleanHint = cleanText(extractContactLookupTerm(hint) || hint, 160)
   if (!cleanHint) return []
 
   const searchClause = buildContactSearchClause('contacts', cleanHint)
@@ -1054,7 +1257,8 @@ async function searchLocalPaymentContacts(hint) {
 }
 
 async function searchHighLevelPaymentContacts(args) {
-  const hint = cleanText(args.contactHint || args.contactName || args.contactEmail || args.contactPhone || '', 160)
+  const rawHint = args.contactHint || args.contactName || args.contactEmail || args.contactPhone || ''
+  const hint = cleanText(extractContactLookupTerm(rawHint) || rawHint, 160)
   if (!hint) return []
 
   try {
@@ -1119,8 +1323,9 @@ async function resolvePaymentContact(args) {
     '',
     160
   )
+  const lookupHint = cleanText(extractContactLookupTerm(hint) || hint, 160)
 
-  if (!hint) {
+  if (!lookupHint) {
     return {
       error: 'Falta identificar el contacto.',
       missingFields: ['contacto']
@@ -1128,27 +1333,31 @@ async function resolvePaymentContact(args) {
   }
 
   const contacts = dedupeContacts([
-    ...await searchLocalPaymentContacts(hint),
+    ...await searchLocalPaymentContacts(lookupHint),
     ...await searchHighLevelPaymentContacts({
       ...args,
-      contactHint: hint
+      contactHint: lookupHint
     })
   ])
 
   if (contacts.length === 0) {
     return {
-      error: `No encontré contactos para "${hint}".`,
+      error: `No encontré contactos para "${lookupHint}".`,
       missingFields: ['contacto']
     }
   }
 
-  const exactMatches = contacts.filter(contact => contactMatchesExactly(contact, hint))
+  const exactMatches = contacts.filter(contact => contactMatchesExactly(contact, lookupHint))
   if (exactMatches.length === 1) return { contact: exactMatches[0] }
   if (contacts.length === 1) return { contact: contacts[0] }
 
+  const contactTokens = getContactLookupTokens(lookupHint)
+  const strictNameMatches = contacts.filter(contact => contactMatchesAllNameTokens(contact, contactTokens))
+  if (strictNameMatches.length === 1) return { contact: strictNameMatches[0] }
+
   return {
     error: 'Encontré varios contactos posibles. Necesito que elijas uno antes de crear el cobro.',
-    clarificationOptions: buildPaymentContactOptions(contacts)
+    clarificationOptions: buildPaymentContactOptions(strictNameMatches.length ? strictNameMatches : contacts)
   }
 }
 
@@ -2311,8 +2520,23 @@ async function callOpenAIResponseWithActionTools(apiKey, {
     })
 
     const functionCalls = extractFunctionCalls(latestData)
+    const mcpApprovalRequests = extractMcpApprovalRequests(latestData)
+    const unsafeMetaAdsApprovalRequests = mcpApprovalRequests.filter((request) =>
+      isMetaAdsMcpApprovalRequest(request) && !isLikelyReadOnlyMetaAdsToolName(request.name)
+    )
 
-    if (!functionCalls.length) {
+    if (unsafeMetaAdsApprovalRequests.length && !hasExplicitMetaAdsExecutionConfirmation(messages)) {
+      const clarificationOptions = buildMetaAdsApprovalOptions(unsafeMetaAdsApprovalRequests)
+
+      return {
+        text: buildMetaAdsApprovalText(unsafeMetaAdsApprovalRequests),
+        data: latestData,
+        sources: extractResponseSources(latestData),
+        clarificationOptions
+      }
+    }
+
+    if (!functionCalls.length && !mcpApprovalRequests.length) {
       const text = extractResponseText(latestData)
 
       if (!text) {
@@ -2328,6 +2552,16 @@ async function callOpenAIResponseWithActionTools(apiKey, {
     }
 
     const outputs = []
+
+    for (const request of mcpApprovalRequests) {
+      outputs.push({
+        type: 'mcp_approval_response',
+        approval_request_id: request.id,
+        approve: !isMetaAdsMcpApprovalRequest(request) ||
+          isLikelyReadOnlyMetaAdsToolName(request.name) ||
+          hasExplicitMetaAdsExecutionConfirmation(messages)
+      })
+    }
 
     for (const call of functionCalls) {
       let output
@@ -2378,7 +2612,7 @@ async function callOpenAIResponseWithActionTools(apiKey, {
     currentInput = outputs
   }
 
-  throw new Error('El agente excedió el límite de acciones contra HighLevel.')
+  throw new Error('El agente excedió el límite de acciones contra herramientas externas.')
 }
 
 async function getAgentRuntimeContext() {
@@ -3286,7 +3520,7 @@ function prepareQueryResultsForReply(queryResults) {
   return successfulResults
 }
 
-async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, runtimeContext, plan, queryResults, agentConfig, highLevelConnection }) {
+async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, runtimeContext, plan, queryResults, agentConfig, highLevelConnection, metaAdsConnection }) {
   const model = normalizeAIAgentModel(agentConfig?.model)
   const modelQueryResults = prepareQueryResultsForReply(queryResults)
   const webSearchTools = buildWebSearchTools(agentConfig, runtimeContext)
@@ -3294,7 +3528,9 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
   const highLevelTools = buildHighLevelTools(highLevelConnection, {
     paymentActionRequest: isPaymentActionRequest(latestUserMessage)
   })
-  const agentTools = [...webSearchTools, ...highLevelTools]
+  const metaAdsTools = buildMetaAdsTools(metaAdsConnection)
+  const agentTools = [...webSearchTools, ...highLevelTools, ...metaAdsTools]
+  const toolsRequireActionLoop = highLevelTools.length > 0 || metaAdsTools.length > 0
   const responseBehaviorInstructions = buildResponseBehaviorInstructions(agentConfig, latestUserMessage)
   const instructions = [
     'Eres el Agente AI interno de Ristak.',
@@ -3328,6 +3564,10 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
     'Sé coherente en toda la conversación: usa el mismo criterio (ROAS/utilidad) siempre y no te contradigas. Si en un mensaje anterior juzgaste una campaña con datos parciales o con una métrica secundaria (ej. CPC), y ahora tienes datos completos, corrige explícito y re-evalúa por ROAS/utilidad.',
     'No concluyas ni recomiendes con datos parciales. Si el usuario pidió un rango (ej. últimos 90 días), responde con TODO ese rango, no solo el mes actual. Si te falta data para decidir, consíguela antes de recomendar; no inventes ni des veredictos a medias.',
     'Sé decisivo con los datos: cuando pregunten por campañas, entrega de una vez el ranking por ROAS con ingresos atribuidos. Da acciones como escalar/cortar presupuesto sólo si el usuario pregunta qué hacer, pide recomendaciones o el modo de recomendaciones lo permite.',
+    'Meta Ads MCP está permitido SOLO para operación y diagnóstico de Ads Manager: crear, duplicar, editar, pausar, reactivar o apagar campañas/adsets/anuncios; modificar presupuestos; crear/editar públicos personalizados, similares, inclusiones, exclusiones; revisar problemas de entrega, catálogos, datasets, políticas, learning, subasta, benchmarks y oportunidades de Meta.',
+    'PROHIBIDO usar Meta Ads MCP como fuente de resultados de negocio. Nunca reportes desde MCP cifras de leads, prospectos, citas, asistencias, ventas, ingresos, ROAS atribuido, utilidad, CAC, clientes o rentabilidad. Esas métricas SIEMPRE salen de la DB de Ristak y del modelo de atribución interno.',
+    'Si una herramienta de Meta devuelve métricas de resultados, ignóralas para la respuesta de negocio. Puedes usar sólo contexto operativo no disponible en la DB: errores, estado de entrega, learning phase, pacing, limitaciones de presupuesto, calidad, políticas, audiencia, solapamiento, subasta, benchmark externo o diagnóstico de cuenta.',
+    'Antes de ejecutar cambios reales en Meta Ads (crear, editar, pausar, apagar, reactivar, duplicar, cambiar presupuesto, agregar/quitar/excluir públicos, modificar audiencia o publicar), pide confirmación explícita si el sistema te la solicita. No digas que ejecutaste una acción si sólo está pendiente de confirmación.',
     'NO uses la herramienta de busqueda web cuando la pregunta sea analisis interno del negocio: ventas, campanas, pagos, citas, contactos, ROAS, rentabilidad, conteos, tendencias o cualquier cosa que se pueda contestar con la DB. En esos casos responde solo con la data interna y sin citar enlaces externos.',
     'Usa la busqueda web SOLO cuando el usuario pida explicitamente ideas o contexto externo: estrategia de mercado, benchmarks de la industria, tendencias del sector, contexto social, cultural, politico, geografico, regulatorio, competidores externos, noticias o temporada. Si tienes duda, asume que es pregunta interna y no busques.',
     'Cuando uses informacion externa, cita los enlaces dentro del texto de la respuesta (no como lista al final) y conectalos con los datos internos del negocio.',
@@ -3381,6 +3621,9 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
     'Conexión HighLevel para acciones en CRM:',
     buildHighLevelToolContext(highLevelConnection),
     '',
+    'Conexión Meta Ads MCP para operaciones en Ads Manager:',
+    buildMetaAdsToolContext(metaAdsConnection),
+    '',
     'Definiciones de negocio usadas:',
     BUSINESS_DEFINITIONS,
     '',
@@ -3402,7 +3645,7 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
   let response
 
   try {
-    response = highLevelTools.length
+    response = toolsRequireActionLoop
       ? await callOpenAIResponseWithActionTools(apiKey, {
           model,
           instructions,
@@ -3422,29 +3665,32 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
           include: webSearchTools.length ? ['web_search_call.action.sources'] : []
         })
   } catch (error) {
-    if (!webSearchTools.length) throw error
+    const fallbackTools = [...highLevelTools]
+    const fallbackNeedsActionLoop = highLevelTools.length > 0
+    const fallbackInstructions = [
+      instructions,
+      metaAdsTools.length ? `Meta Ads MCP no estuvo disponible en este intento (${cleanText(error.message, 300)}). Responde con DB y, si el usuario pidió una acción de Meta Ads, di que no se pudo ejecutar ahora por conexión/autorización MCP.` : '',
+      webSearchTools.length ? 'La busqueda online no estuvo disponible en este intento. Responde sin inventar contexto externo.' : ''
+    ].filter(Boolean).join('\n')
 
-    response = highLevelTools.length
+    if (!metaAdsTools.length && !webSearchTools.length) throw error
+
+    response = fallbackNeedsActionLoop
       ? await callOpenAIResponseWithActionTools(apiKey, {
           model,
-          instructions: [
-            instructions,
-            'La busqueda online no estuvo disponible en este intento. Responde con DB, vista actual, contexto configurado y herramientas de HighLevel, sin inventar contexto externo.'
-          ].join('\n'),
+          instructions: fallbackInstructions,
           input,
           maxOutputTokens: 1800,
-          tools: highLevelTools,
+          tools: fallbackTools,
           highLevelConnection,
           messages
         })
       : await callOpenAIResponse(apiKey, {
           model,
-          instructions: [
-            instructions,
-            'La busqueda online no estuvo disponible en este intento. Responde con DB, vista actual y contexto configurado, sin inventar contexto externo.'
-          ].join('\n'),
+          instructions: fallbackInstructions,
           input,
-          maxOutputTokens: 1400
+          maxOutputTokens: 1400,
+          tools: fallbackTools
         })
   }
 
@@ -3458,7 +3704,8 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
     clarificationOptions: Array.isArray(clarificationOptions) ? clarificationOptions : [],
     debug: {
       queryCount: queryResults.length,
-      highLevelToolsEnabled: highLevelTools.length > 0
+      highLevelToolsEnabled: highLevelTools.length > 0,
+      metaAdsMcpEnabled: metaAdsTools.length > 0
     }
   }
 }
@@ -3544,18 +3791,61 @@ function cleanOption(value, maxLength = 90) {
 }
 
 const CONTACT_LOOKUP_STOP_WORDS = new Set([
-  'a', 'al', 'algo', 'alguna', 'alguno', 'ante', 'ayer', 'busca', 'buscar', 'cliente',
-  'clientes', 'cita', 'citas', 'cobra', 'cobrar', 'cobre', 'cobro', 'cobros', 'como',
+  'a', 'ahora', 'ahorita', 'al', 'algo', 'alguna', 'alguno', 'ante', 'ayer',
+  'busca', 'buscalo', 'buscame', 'buscar', 'cliente',
+  'clientes', 'cita', 'citas', 'cobra', 'cobrale', 'cobrar', 'cobrarle', 'cobre', 'cobrele', 'cobro', 'cobros', 'como',
   'con', 'contacto', 'contactos', 'correo', 'cual', 'cuando', 'cuanto', 'cuantos',
-  'dame', 'dato', 'datos', 'de', 'del', 'desde', 'dime', 'donde', 'el', 'ella',
-  'en', 'encuentra', 'ese', 'esa', 'esta', 'este', 'factura', 'facturas', 'hoy',
+  'dame', 'dato', 'datos', 'de', 'del', 'desde', 'dime', 'donde', 'dolar', 'dolares', 'durante', 'el', 'ella',
+  'en', 'encuentra', 'encuentrame', 'ese', 'esa', 'esta', 'este', 'factura', 'facturas',
+  'hoy',
   'info', 'informacion', 'la', 'las', 'lead', 'leads', 'le', 'les', 'link', 'lo',
-  'los', 'manda', 'mandale', 'mandar', 'me', 'mi', 'mis', 'necesito', 'nombre',
-  'numero', 'paciente', 'pacientes', 'pago', 'pagos', 'para', 'persona', 'personas',
+  'los', 'manda', 'mandale', 'mandar', 'me', 'mes', 'meses', 'mi', 'mis', 'mxn', 'necesito', 'nombre',
+  'numero', 'paciente', 'pacientes', 'pago', 'pagos', 'para', 'peso', 'pesos', 'persona', 'personas',
   'por', 'prospecto', 'prospectos', 'que', 'quien', 'revisa', 'saber', 'sobre',
-  'su', 'sus', 'telefono', 'tiene', 'tienen', 'tuvo', 'un', 'una', 'venta', 'ventas',
-  'ver', 'quiero'
+  'su', 'sus', 'telefono', 'tiene', 'tienen', 'tuvo', 'un', 'una', 'usd', 'venta', 'ventas',
+  'ver', 'quiero', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
+  'agosto', 'septiembre', 'setiembre', 'octubre', 'noviembre', 'diciembre'
 ])
+
+const CONTACT_LOOKUP_LEADING_WORDS_PATTERN = /^(?:a|al|el|la|los|las|contacto|cliente|lead|prospecto|paciente|persona)\s+/i
+const CONTACT_LOOKUP_TRAILING_WORDS_PATTERN = /\s+(?:y|para|que|cobrale|cobrarle|cobrele|cobra|cobrar|manda|mandale|enviar|enviale|hazle|programale|ponle|agendale|creale|generale|registra|registrale|ahora|ahorita|hoy|manana|mañana|durante|por|cada|desde|hasta)\b.*$/i
+
+function cleanContactLookupTerm(value) {
+  let term = normalizeSearchText(value, 180)
+    .replace(/\b\d+(?:[.,]\d+)?\b.*$/g, '')
+    .replace(/\b(?:mxn|usd|peso|pesos|dolar|dolares)\b.*$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  while (CONTACT_LOOKUP_LEADING_WORDS_PATTERN.test(term)) {
+    term = term.replace(CONTACT_LOOKUP_LEADING_WORDS_PATTERN, '').trim()
+  }
+
+  term = term.replace(CONTACT_LOOKUP_TRAILING_WORDS_PATTERN, '').trim()
+
+  return term
+}
+
+function extractContactLookupTerm(question) {
+  const normalizedQuestion = normalizeSearchText(question, 360)
+  const patterns = [
+    /\b(?:buscame|busca|buscar|encuentrame|encuentra|revisa|dame)\s+(.+?)(?=\s+(?:y|para|con|que|cobrale|cobrarle|cobrele|cobra|mandale|enviale|hazle|programale|agendale|creale|generale|registrale)\b|$)/i,
+    /\b(?:cobrale|cobrarle|cobrele|cobra|mandale|enviale|hazle|programale|agendale|creale|generale|registrale)\s+(.+?)(?=\s+(?:\d|\$|mxn|usd|peso|pesos|dolar|dolares|hoy|ahora|ahorita|manana|mañana|el\s+\d|durante|por|cada|desde|hasta)\b|$)/i,
+    /\b(?:contacto|cliente|lead|prospecto|paciente|persona)\s+(?:de\s+|llamad[oa]\s+|con\s+nombre\s+)?(.+?)(?=\s+(?:y|para|con|que|cobrale|cobrarle|cobrele|cobra|mandale|enviale|hazle|programale|agendale|\d|\$|mxn|usd|peso|pesos)\b|$)/i
+  ]
+
+  for (const pattern of patterns) {
+    const match = normalizedQuestion.match(pattern)
+    const term = cleanContactLookupTerm(match?.[1] || '')
+    const tokens = getContactLookupTokens(term)
+
+    if (tokens.length >= 2 || tokens.some(token => token.includes('@') || normalizePhoneDigits(token).length >= 7)) {
+      return tokens.join(' ')
+    }
+  }
+
+  return ''
+}
 
 function getContactLookupTokens(question) {
   const matches = cleanText(question, 360).match(/[\p{L}\p{N}@._+-]+/gu) || []
@@ -3587,6 +3877,15 @@ function getContactLookupTokens(question) {
   return tokens.slice(0, 6)
 }
 
+function contactMatchesAllNameTokens(contact, tokens = []) {
+  const name = normalizeSearchText(contact.name || contact.label || '', 240)
+  const meaningfulTokens = tokens
+    .map(token => normalizeSearchText(token, 80))
+    .filter(token => token.length >= 2 && !token.includes('@') && !/^\d+$/.test(token))
+
+  return meaningfulTokens.length >= 2 && meaningfulTokens.every(token => name.includes(token))
+}
+
 function shouldAttemptContactLookup(question) {
   const entity = detectClarificationEntity(question)
   if (['campaign', 'adset', 'ad', 'source'].includes(entity)) return false
@@ -3615,6 +3914,43 @@ function mapContactLookupRow(row = {}) {
   }
 }
 
+function mapGhlContactLookup(contact = {}) {
+  const normalized = normalizeGhlContact(contact)
+
+  return {
+    id: normalized.id,
+    label: normalized.name || normalized.email || normalized.phone || normalized.id,
+    name: normalized.name || normalized.email || normalized.phone || 'Sin nombre',
+    email: normalized.email || '',
+    phone: normalized.phone || '',
+    source: '',
+    createdAt: null,
+    totalPaid: 0,
+    purchasesCount: 0,
+    lastPurchaseDate: null
+  }
+}
+
+async function searchHighLevelLookupContacts(term) {
+  const hint = cleanText(term, 160)
+  if (!hint) return []
+
+  try {
+    const ghlClient = await getGHLClient()
+    const digits = normalizePhoneDigits(hint)
+    const response = await ghlClient.searchContacts({
+      query: hint,
+      email: hint.includes('@') ? hint : undefined,
+      phone: digits.length >= 7 ? hint : undefined,
+      limit: 10
+    })
+
+    return (response.contacts || []).map(mapGhlContactLookup).filter(contact => contact.id)
+  } catch {
+    return []
+  }
+}
+
 function buildContactClarificationOptionsFromContacts(contacts, runtimeContext) {
   return contacts.slice(0, CLARIFICATION_OPTION_LIMIT).map((contact) => ({
     id: contact.id,
@@ -3633,7 +3969,8 @@ function buildContactClarificationOptionsFromContacts(contacts, runtimeContext) 
 async function searchMentionedContacts(question, runtimeContext) {
   if (!shouldAttemptContactLookup(question)) return null
 
-  const tokens = getContactLookupTokens(question)
+  const explicitTerm = extractContactLookupTerm(question)
+  const tokens = getContactLookupTokens(explicitTerm || question)
   if (!tokens.length) return null
 
   const term = cleanText(tokens.join(' '), 160)
@@ -3691,13 +4028,17 @@ async function searchMentionedContacts(question, runtimeContext) {
     phoneLike
   ])
 
-  const contacts = rows.map(mapContactLookupRow).filter(contact => contact.id)
+  const contacts = dedupeContacts([
+    ...rows.map(mapContactLookupRow).filter(contact => contact.id),
+    ...await searchHighLevelLookupContacts(term)
+  ])
   if (!contacts.length) return { term, contacts: [] }
+  const strictNameMatches = contacts.filter(contact => contactMatchesAllNameTokens(contact, tokens))
 
   return {
     term,
-    contacts,
-    options: buildContactClarificationOptionsFromContacts(contacts, runtimeContext)
+    contacts: strictNameMatches.length ? strictNameMatches : contacts,
+    options: buildContactClarificationOptionsFromContacts(strictNameMatches.length ? strictNameMatches : contacts, runtimeContext)
   }
 }
 
@@ -4336,8 +4677,21 @@ export async function getAIAgentConfig() {
   `)
 }
 
+async function getMetaAdsMcpStatus() {
+  const connection = await getMetaAdsAgentConnection()
+
+  return {
+    enabled: Boolean(connection.enabled),
+    configured: Boolean(connection.configured),
+    serverUrl: connection.serverUrl || META_ADS_MCP_SERVER_URL,
+    adAccountId: connection.adAccountId || null,
+    tokenSource: connection.tokenSource || null
+  }
+}
+
 export async function getAIAgentStatus() {
   const config = await getAIAgentConfig()
+  const metaAdsMcp = await getMetaAdsMcpStatus()
 
   if (!config?.openai_api_key_encrypted) {
     return {
@@ -4354,6 +4708,7 @@ export async function getAIAgentStatus() {
       responseStyle: normalizeAIAgentResponseStyle(config?.response_style),
       recommendationMode: normalizeAIAgentRecommendationMode(config?.recommendation_mode),
       webSearchEnabled: toBooleanValue(config?.web_search_enabled),
+      metaAdsMcp,
       updatedAt: config?.updated_at || null
     }
   }
@@ -4380,6 +4735,7 @@ export async function getAIAgentStatus() {
     responseStyle: normalizeAIAgentResponseStyle(config.response_style),
     recommendationMode: normalizeAIAgentRecommendationMode(config.recommendation_mode),
     webSearchEnabled: toBooleanValue(config.web_search_enabled),
+    metaAdsMcp,
     updatedAt: config.updated_at || null
   }
 }
@@ -4821,6 +5177,7 @@ export async function createAgentReply({ apiKey, messages, viewContext }) {
 
   const agentConfig = await getAIAgentConfig()
   const highLevelConnection = await getHighLevelAgentConnection()
+  const metaAdsConnection = await getMetaAdsAgentConnection()
   const coreQueries = await buildCoreResearchQueries(runtimeContext)
   const corePlan = {
     assumptions: [
@@ -4888,7 +5245,8 @@ export async function createAgentReply({ apiKey, messages, viewContext }) {
     plan: finalPlan,
     queryResults,
     agentConfig,
-    highLevelConnection
+    highLevelConnection,
+    metaAdsConnection
   })
 
   if (!result.reply) {

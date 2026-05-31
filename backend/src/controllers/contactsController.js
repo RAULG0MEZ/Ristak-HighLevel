@@ -6,6 +6,7 @@ import { buildContactStats } from '../services/analyticsService.js'
 import { getGHLClient } from '../services/ghlClient.js'
 import { getHiddenContactFilters, buildHiddenContactsCondition } from '../utils/hiddenContactsFilter.js'
 import { nonTestPaymentCondition } from '../utils/paymentMode.js'
+import { buildContactSearchClause } from '../utils/searchText.js'
 import fetch from 'node-fetch'
 
 const normalizePhone = (phone) => {
@@ -69,13 +70,9 @@ export const getContacts = async (req, res) => {
     const conditions = []
 
     if (search) {
-      conditions.push(`(
-        LOWER(full_name) LIKE LOWER(?) OR
-        LOWER(email) LIKE LOWER(?) OR
-        phone LIKE ?
-      )`)
-      const searchTerm = `%${search}%`
-      params.push(searchTerm, searchTerm, searchTerm)
+      const searchClause = buildContactSearchClause('contacts', search)
+      conditions.push(searchClause.condition)
+      params.push(...searchClause.params)
     }
 
     if (range.startUtc) {
@@ -106,11 +103,7 @@ export const getContacts = async (req, res) => {
     const mainConditions = []
 
     if (search) {
-      mainConditions.push(`(
-        LOWER(c.full_name) LIKE LOWER(?) OR
-        LOWER(c.email) LIKE LOWER(?) OR
-        c.phone LIKE ?
-      )`)
+      mainConditions.push(buildContactSearchClause('c', search).condition)
     }
 
     if (range.startUtc) {
@@ -631,7 +624,7 @@ export const searchContacts = async (req, res) => {
       })
     }
 
-    const searchTerm = `%${q}%`
+    const searchClause = buildContactSearchClause('c', q)
 
     const contacts = await db.all(
       `WITH payment_stats AS (
@@ -682,12 +675,9 @@ export const searchContacts = async (req, res) => {
         ) AS has_showed_appointment
       FROM contacts c
       LEFT JOIN payment_stats ps ON ps.contact_id = c.id
-      WHERE
-        LOWER(c.full_name) LIKE LOWER(?) OR
-        LOWER(c.email) LIKE LOWER(?) OR
-        c.phone LIKE ?
+      WHERE ${searchClause.condition}
       LIMIT 20`,
-      [searchTerm, searchTerm, searchTerm]
+      searchClause.params
     )
 
     // Mapear campos de base de datos a nombres esperados por frontend
