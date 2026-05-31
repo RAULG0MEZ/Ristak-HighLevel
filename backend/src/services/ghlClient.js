@@ -19,6 +19,91 @@ const RETRY_DELAY = 1000 // 1 segundo
 const MAX_429_RETRIES = 5
 const DEFAULT_429_WAIT_MS = 60000 // 60s si no hay Retry-After header
 
+function cleanString(value) {
+  return String(value || '').trim()
+}
+
+function normalizeCountryCode(value) {
+  const normalized = cleanString(value).toUpperCase()
+  if (!normalized) return ''
+
+  const aliases = {
+    MEXICO: 'MX',
+    MEX: 'MX',
+    MXN: 'MX',
+    'ESTADOS UNIDOS': 'US',
+    'UNITED STATES': 'US',
+    USA: 'US',
+    EEUU: 'US',
+    US: 'US'
+  }
+
+  return aliases[normalized] || normalized.slice(0, 2)
+}
+
+function normalizeInvoiceAddress(address = {}, fallback = {}) {
+  const rawAddress = typeof address === 'string'
+    ? { addressLine1: address }
+    : address && typeof address === 'object'
+      ? address
+      : {}
+
+  const addressLine1 = cleanString(
+    rawAddress.addressLine1 ||
+    rawAddress.line1 ||
+    rawAddress.street ||
+    rawAddress.address ||
+    fallback.addressLine1 ||
+    fallback.line1 ||
+    fallback.address
+  )
+  const addressLine2 = cleanString(rawAddress.addressLine2 || rawAddress.line2 || fallback.addressLine2 || fallback.line2)
+  const city = cleanString(rawAddress.city || fallback.city)
+  const state = cleanString(rawAddress.state || rawAddress.region || fallback.state || fallback.region)
+  const countryCode = normalizeCountryCode(rawAddress.countryCode || rawAddress.country || fallback.countryCode || fallback.country)
+  const postalCode = cleanString(rawAddress.postalCode || rawAddress.zip || rawAddress.zipCode || fallback.postalCode || fallback.zip || fallback.zipCode)
+
+  const normalized = {}
+  if (addressLine1) normalized.addressLine1 = addressLine1
+  if (addressLine2) normalized.addressLine2 = addressLine2
+  if (city) normalized.city = city
+  if (state) normalized.state = state
+  if (countryCode) normalized.countryCode = countryCode
+  if (postalCode) normalized.postalCode = postalCode
+
+  return Object.keys(normalized).length ? normalized : null
+}
+
+function normalizeInvoiceBusinessDetails(businessDetails = {}) {
+  const normalized = { ...businessDetails }
+  const phoneNo = cleanString(normalized.phoneNo || normalized.phone)
+  const address = normalizeInvoiceAddress(normalized.address, normalized)
+
+  delete normalized.phone
+
+  if (phoneNo) normalized.phoneNo = phoneNo
+  if (address) {
+    normalized.address = address
+  } else {
+    delete normalized.address
+  }
+
+  for (const key of ['addressLine1', 'addressLine2', 'line1', 'line2', 'street', 'city', 'state', 'region', 'country', 'countryCode', 'postalCode', 'zip', 'zipCode']) {
+    delete normalized[key]
+  }
+
+  return normalized
+}
+
+function normalizeInvoicePayload(data = {}) {
+  return {
+    ...data,
+    ...(data.businessDetails && {
+      businessDetails: normalizeInvoiceBusinessDetails(data.businessDetails)
+    })
+  }
+}
+
 class GHLClient {
   constructor(apiToken, locationId) {
     this.apiToken = apiToken
@@ -308,7 +393,7 @@ class GHLClient {
   async createInvoice(data) {
     // Agregar altId en el body para POST requests
     const bodyWithLocation = {
-      ...data,
+      ...normalizeInvoicePayload(data),
       altId: this.locationId,
       altType: 'location',
     }
@@ -318,6 +403,7 @@ class GHLClient {
     const response = await this.request('/invoices/', {
       method: 'POST',
       body: bodyWithLocation,
+      version: GHL_INVOICE_SCHEDULE_API_VERSION
     })
 
     logger.success(`Invoice creado: ${response.invoice?.id || response.invoice?._id}`)
@@ -401,7 +487,7 @@ class GHLClient {
 
   async createInvoiceSchedule(data) {
     const body = {
-      ...data,
+      ...normalizeInvoicePayload(data),
       altId: this.locationId,
       altType: 'location',
     }

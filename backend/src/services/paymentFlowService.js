@@ -241,7 +241,12 @@ async function getInvoiceSendContext() {
     name: fromName || 'Mi Negocio',
     phoneNo: business.phone || locationData?.phone || '',
     website: business.website || locationData?.website || '',
-    ...(business.address && { address: business.address })
+    address: business.address || locationData?.address || '',
+    city: business.city || locationData?.city || '',
+    state: business.state || locationData?.state || '',
+    country: business.country || locationData?.country || '',
+    countryCode: business.countryCode || locationData?.countryCode || '',
+    postalCode: business.postalCode || locationData?.postalCode || ''
   }
 
   return {
