@@ -3,7 +3,6 @@ import { Modal } from '../Modal'
 import { Button } from '../Button'
 import { TabList } from '../TabList'
 import { CustomSelect } from '../CustomSelect'
-import { PaymentLinkDialog } from '../PaymentLinkDialog'
 import {
   Search,
   Loader2,
@@ -39,7 +38,7 @@ const normalizeAmount = (value: string | number): number => {
   return Math.round(parsed * 100) / 100
 }
 
-type PaymentOption = 'generate' | 'send' | 'saved' | 'manual'
+type PaymentOption = 'send' | 'saved' | 'manual'
 type PaymentMode = 'single' | 'partial'
 type InstallmentValueType = 'percentage' | 'amount'
 type FirstPaymentMethod = 'cash' | 'bank_transfer' | 'deposit' | 'card'
@@ -327,7 +326,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   // Payment options
   const [invoicePayload, setInvoicePayload] = useState<Record<string, any> | null>(null)
   const [invoiceSummary, setInvoiceSummary] = useState<InvoiceSummary | null>(null)
-  const [paymentOption, setPaymentOption] = useState<PaymentOption>('generate')
+  const [paymentOption, setPaymentOption] = useState<PaymentOption>('send')
   const [sendMethod, setSendMethod] = useState<SendMethod>('whatsapp')
   const [checkingCards, setCheckingCards] = useState(false)
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([])
@@ -335,8 +334,6 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   const [customerId, setCustomerId] = useState<string | null>(null)
   const [manualPaymentData, setManualPaymentData] = useState<ManualPaymentData>(defaultManualPaymentData)
   const [transferInfoUrl, setTransferInfoUrl] = useState<string | null>(null)
-  const [showPaymentLinkDialog, setShowPaymentLinkDialog] = useState(false)
-  const [paymentLink, setPaymentLink] = useState<string>('')
 
   // Stripe connection status
   const [stripeConnected, setStripeConnected] = useState(false)
@@ -415,15 +412,13 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     setCustomAmount('')
     setInvoicePayload(null)
     setInvoiceSummary(null)
-    setPaymentOption('generate')
+    setPaymentOption('send')
     setSendMethod('whatsapp')
     setCheckingCards(false)
     setPaymentMethods([])
     setSelectedPaymentMethod(null)
     setCustomerId(null)
     setManualPaymentData(defaultManualPaymentData())
-    setShowPaymentLinkDialog(false)
-    setPaymentLink('')
   }
 
   const loadConfig = async () => {
@@ -725,8 +720,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   const submitPartialFlow = async (
     payload: Record<string, any>,
     summary: InvoiceSummary,
-    channels: Record<string, boolean>,
-    deliveryMode: PaymentOption
+    channels: Record<string, boolean>
   ) => {
     const response = await fetch('/api/highlevel/payment-flows/installments', {
       method: 'POST',
@@ -744,14 +738,6 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       : 'Parcialidades creadas correctamente.'
 
     showToast('success', 'Éxito', statusMessage)
-
-    const linkToShow = data.firstPaymentLink || data.cardSetupPaymentLink
-    if (deliveryMode === 'generate' && linkToShow) {
-      setPaymentLink(linkToShow)
-      setShowPaymentLinkDialog(true)
-      setStep('form')
-      return
-    }
 
     onSuccess?.()
     onClose()
@@ -945,7 +931,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       setInvoiceSummary(summary)
 
       if (paymentMode === 'partial') {
-        setPaymentOption('generate')
+        setPaymentOption('send')
         setStep('options')
         return
       }
@@ -959,7 +945,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       if (!stripeConnected) {
         setPaymentOption('manual')
       } else {
-        setPaymentOption('generate')
+        setPaymentOption('send')
       }
 
       setStep('options')
@@ -1026,7 +1012,13 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
 
     try {
       if (paymentMode === 'partial') {
-        const channels = paymentOption === 'send'
+        const channels = partialUsesSavedCardWithoutLink
+          ? {
+              email: false,
+              sms: false,
+              whatsapp: false
+            }
+          : paymentOption === 'send'
           ? {
               email: EMAIL_SEND_METHODS.has(effectiveSendMethod),
               sms: SMS_SEND_METHODS.has(effectiveSendMethod),
@@ -1038,7 +1030,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
               whatsapp: false
             }
 
-        await submitPartialFlow(invoicePayload, invoiceSummary, channels, paymentOption)
+        await submitPartialFlow(invoicePayload, invoiceSummary, channels)
         return
       }
 
@@ -1115,29 +1107,6 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       }
 
       switch (paymentOption) {
-        case 'generate': {
-          // Generar enlace sin enviar
-          const response = await highLevelService.sendInvoice(invoiceId, 'none')
-
-          // Usar el paymentLink que viene del backend (con el domain correcto)
-          if (response?.paymentLink) {
-            setPaymentLink(response.paymentLink)
-          } else {
-            // Fallback solo si el backend no devuelve el link
-            const fallbackLink = `https://payments.msgsndr.com/invoice/${invoiceId}`
-            setPaymentLink(fallbackLink)
-          }
-
-          setShowPaymentLinkDialog(true)
-
-          // Sincronizar el invoice en segundo plano para que aparezca en transacciones
-          fetch(`/api/highlevel/invoices/${invoiceId}/sync`, { method: 'POST' }).catch(() => {})
-
-          // No cerrar el modal principal, solo mostrar el dialog del enlace
-          setStep('form')
-          return // No ejecutar onSuccess ni cerrar el modal
-        }
-
         case 'send': {
           if (PHONE_SEND_METHODS.has(effectiveSendMethod) && !selectedContact?.phone) {
             throw new Error(`El contacto no tiene teléfono registrado. No se puede enviar por ${getSendMethodLabel(effectiveSendMethod)}.`)
@@ -1740,23 +1709,6 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
             </div>
           ) : (
             <div className={styles.paymentOptions}>
-              <button
-                type="button"
-                className={`${styles.optionButton} ${paymentOption === 'generate' ? styles.optionButtonActive : ''}`}
-                onClick={() => setPaymentOption('generate')}
-              >
-                <div className={styles.optionInfo}>
-                  <div className={styles.optionIcon}>
-                    <LinkIcon size={18} />
-                  </div>
-                  <div>
-                    <p>Generar enlace</p>
-                    <span>Copia el enlace de primer pago o domiciliación</span>
-                  </div>
-                </div>
-                {paymentOption === 'generate' && <Check size={18} className={styles.optionCheck} />}
-              </button>
-
               <div
                 className={`${styles.optionButton} ${paymentOption === 'send' ? styles.optionButtonActive : ''}`}
                 onClick={() => setPaymentOption('send')}
@@ -1850,25 +1802,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
         </div>
 
         <div className={styles.paymentOptions}>
-          {/* Opción 1: Generar enlace de pago */}
-          <button
-            type="button"
-            className={`${styles.optionButton} ${paymentOption === 'generate' ? styles.optionButtonActive : ''}`}
-            onClick={() => setPaymentOption('generate')}
-          >
-            <div className={styles.optionInfo}>
-              <div className={styles.optionIcon}>
-                <LinkIcon size={18} />
-              </div>
-              <div>
-                <p>Generar enlace de pago</p>
-                <span>Copia el enlace para enviarlo tú mismo</span>
-              </div>
-            </div>
-            {paymentOption === 'generate' && <Check size={18} className={styles.optionCheck} />}
-          </button>
-
-          {/* Opción 2: Enviar enlace de pago por... (con selector integrado) */}
+          {/* Enviar enlace de pago por... (con selector integrado) */}
           <div
             className={`${styles.optionButton} ${paymentOption === 'send' ? styles.optionButtonActive : ''}`}
             onClick={() => setPaymentOption('send')}
@@ -1911,7 +1845,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
             )}
           </div>
 
-          {/* Opción 3: Cobrar tarjeta guardada */}
+          {/* Cobrar tarjeta guardada */}
           {stripeConnected && (
             <button
               type="button"
@@ -1940,7 +1874,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
             </button>
           )}
 
-          {/* Opción 4: Registrar pago manual */}
+          {/* Registrar pago manual */}
           <button
             type="button"
             className={`${styles.optionButton} ${paymentOption === 'manual' ? styles.optionButtonActive : ''}`}
@@ -2087,6 +2021,17 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     }
 
     if (step === 'options') {
+      const isPartialSavedCardPlan = paymentMode === 'partial' && partialUsesSavedCardWithoutLink
+      const requiresDeliveryChannel = paymentOption === 'send' && !isPartialSavedCardPlan
+      const lacksDeliveryChannel = requiresDeliveryChannel && !selectedContact?.email && !selectedContact?.phone
+      const confirmLabel = isPartialSavedCardPlan
+        ? 'Crear plan'
+        : paymentOption === 'send'
+          ? paymentMode === 'partial' ? 'Crear y enviar enlace' : 'Enviar enlace'
+          : paymentOption === 'saved'
+            ? 'Cobrar tarjeta'
+            : 'Registrar pago'
+
       return (
         <div className={styles.footer}>
           <Button
@@ -2095,7 +2040,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
               setStep('form')
               setInvoicePayload(null)
               setInvoiceSummary(null)
-              setPaymentOption('generate')
+              setPaymentOption('send')
               setPaymentMethods([])
               setSelectedPaymentMethod(null)
               setCustomerId(null)
@@ -2111,10 +2056,10 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
               disabled={
                 loading ||
                 (paymentOption === 'saved' && (!selectedPaymentMethod || checkingCards)) ||
-                (paymentOption === 'send' && (!selectedContact?.email && !selectedContact?.phone))
+                lacksDeliveryChannel
               }
               title={
-                paymentOption === 'send' && (!selectedContact?.email && !selectedContact?.phone)
+                lacksDeliveryChannel
                   ? 'El contacto no tiene email ni teléfono para enviar el enlace'
                   : paymentOption === 'saved' && !selectedPaymentMethod
                   ? 'Selecciona una tarjeta para continuar'
@@ -2127,18 +2072,11 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                   Procesando...
                 </>
               ) : (
-                <>
-                  {paymentOption === 'generate' && (paymentMode === 'partial'
-                    ? partialUsesSavedCardWithoutLink ? 'Crear plan' : 'Crear y generar enlace'
-                    : 'Generar enlace')}
-                  {paymentOption === 'send' && (paymentMode === 'partial' ? 'Crear y enviar enlace' : 'Enviar enlace')}
-                  {paymentOption === 'saved' && 'Cobrar tarjeta'}
-                  {paymentOption === 'manual' && 'Registrar pago'}
-                </>
+                confirmLabel
               )}
             </Button>
             {/* Tooltip personalizado para mejor UX */}
-            {paymentOption === 'send' && (!selectedContact?.email && !selectedContact?.phone) && (
+            {lacksDeliveryChannel && (
               <div className={styles.tooltipInfo}>
                 <AlertCircle size={14} />
                 <span>El contacto necesita email o teléfono para enviar</span>
@@ -2177,7 +2115,6 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   }
 
   return (
-    <>
     <Modal
       isOpen={isOpen}
       onClose={onClose}
@@ -2195,19 +2132,5 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       {step === 'options' && renderPaymentOptions()}
       {renderFooter()}
     </Modal>
-
-    {/* Dialog para mostrar el enlace de pago generado */}
-    <PaymentLinkDialog
-      isOpen={showPaymentLinkDialog}
-      onClose={() => {
-        setShowPaymentLinkDialog(false)
-        resetForm()
-        onClose()
-        onSuccess?.()
-      }}
-      paymentLink={paymentLink}
-      contactName={invoiceSummary?.contactName}
-    />
-    </>
   )
 }
