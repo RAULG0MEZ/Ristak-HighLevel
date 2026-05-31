@@ -388,6 +388,15 @@ export const Transactions: React.FC = () => {
 
   const isTestPayment = (transaction: Transaction) => transaction.paymentMode === 'test'
 
+  const getStatusCell = (transaction: Transaction) => (
+    <div className={styles.statusCell}>
+      {getStatusBadge(transaction.status)}
+      {isTestPayment(transaction) && (
+        <Badge variant="warning" className={styles.testModeBadge}>Prueba</Badge>
+      )}
+    </div>
+  )
+
   const columns: Column<Transaction>[] = [
     {
       key: 'date',
@@ -398,23 +407,13 @@ export const Transactions: React.FC = () => {
     {
       key: 'status',
       header: 'Estado',
-      render: (value) => getStatusBadge(value as Transaction['status']),
+      render: (_value, item) => getStatusCell(item),
       sortable: true
     },
     {
       key: 'amount',
       header: 'Monto',
       render: (value) => formatCurrency(value),
-      sortable: true
-    },
-    {
-      key: 'paymentMode',
-      header: 'Modo',
-      render: (_value, item) => (
-        isTestPayment(item)
-          ? <Badge variant="warning" className={styles.testModeBadge}>Prueba</Badge>
-          : <span className={styles.liveModePlaceholder}>-</span>
-      ),
       sortable: true
     },
     {
