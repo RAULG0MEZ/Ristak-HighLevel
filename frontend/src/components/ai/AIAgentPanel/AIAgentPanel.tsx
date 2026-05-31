@@ -1,11 +1,56 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { Bot, Eraser, KeyRound, MessageCircle, SendHorizonal, Sparkles, X } from 'lucide-react'
+import { Bot, Eraser, KeyRound, MessageCircle, Mic, Pause, SendHorizonal, Sparkles, X } from 'lucide-react'
 import { aiAgentService, type AIAgentClarificationOption, type AIAgentConfigInput, type AIAgentConfigStatus, type AIAgentMessage, type AIAgentViewContext } from '@/services/aiAgentService'
 import styles from './AIAgentPanel.module.css'
 
 const AI_AGENT_FLOATING_OPEN_KEY = 'ristak.aiAgentFloating.open'
 const LEGACY_AI_AGENT_MESSAGES_KEY = 'ristak.aiAgentFloating.messages'
+const VOICE_WAVE_BAR_COUNT = 64
+const VOICE_WAVE_MIN_HEIGHT = 4
+const VOICE_WAVE_MAX_HEIGHT = 30
+
+type VoiceCaptureState = 'idle' | 'recording' | 'finalizing'
+
+type BrowserSpeechRecognitionAlternative = {
+  transcript: string
+}
+
+type BrowserSpeechRecognitionResult = {
+  isFinal: boolean
+  length: number
+  [index: number]: BrowserSpeechRecognitionAlternative | undefined
+}
+
+type BrowserSpeechRecognitionResultList = {
+  length: number
+  [index: number]: BrowserSpeechRecognitionResult | undefined
+}
+
+type BrowserSpeechRecognitionEvent = Event & {
+  resultIndex: number
+  results: BrowserSpeechRecognitionResultList
+}
+
+type BrowserSpeechRecognitionErrorEvent = Event & {
+  error: string
+  message?: string
+}
+
+type BrowserSpeechRecognition = {
+  continuous: boolean
+  interimResults: boolean
+  lang: string
+  maxAlternatives: number
+  onend: (() => void) | null
+  onerror: ((event: BrowserSpeechRecognitionErrorEvent) => void) | null
+  onresult: ((event: BrowserSpeechRecognitionEvent) => void) | null
+  abort: () => void
+  start: () => void
+  stop: () => void
+}
+
+type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition
 
 const suggestions = [
   'Dime que debería revisar hoy del negocio.',
@@ -173,6 +218,37 @@ function hasBusinessContext(form: AIAgentConfigInput) {
     form.competitorsContext.trim() ||
     form.brandVoice.trim()
   )
+}
+
+function createInitialVoiceBars() {
+  return Array.from({ length: VOICE_WAVE_BAR_COUNT }, (_, index) => {
+    const wave = Math.sin(index * 0.75) * 0.5 + 0.5
+    return Math.round(VOICE_WAVE_MIN_HEIGHT + wave * 8)
+  })
+}
+
+function formatVoiceDuration(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
+function getSpeechRecognitionConstructor() {
+  const speechWindow = window as Window & {
+    SpeechRecognition?: BrowserSpeechRecognitionConstructor
+    webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor
+  }
+
+  return speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition || null
+}
+
+function getAudioContextConstructor() {
+  const audioWindow = window as Window & {
+    webkitAudioContext?: typeof AudioContext
+  }
+
+  return audioWindow.AudioContext || audioWindow.webkitAudioContext || null
 }
 
 function getNextOnboardingQuestion(form: AIAgentConfigInput) {
@@ -588,13 +664,33 @@ export const AIAgentPanel: React.FC = () => {
   const [savingConfig, setSavingConfig] = useState(false)
   const [sending, setSending] = useState(false)
   const [unreadReplies, setUnreadReplies] = useState(0)
+  const [voiceState, setVoiceState] = useState<VoiceCaptureState>('idle')
+  const [voiceBars, setVoiceBars] = useState<number[]>(createInitialVoiceBars)
+  const [voiceElapsed, setVoiceElapsed] = useState(0)
+  const [voiceTranscript, setVoiceTranscript] = useState('')
+  const [voiceError, setVoiceError] = useState('')
   const askedOnboardingRef = useRef(false)
+  const messagesRef = useRef(messages)
   const previousMessageCountRef = useRef(messages.length)
   const endRef = useRef<HTMLDivElement | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null)
+  const mediaStreamRef = useRef<MediaStream | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const audioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
+  const analyserRef = useRef<AnalyserNode | null>(null)
+  const voiceAnimationFrameRef = useRef<number | null>(null)
+  const voiceFinalTranscriptRef = useRef('')
+  const voiceInterimTranscriptRef = useRef('')
+  const voiceEndActionRef = useRef<'draft' | 'send' | null>(null)
+  const voiceHadErrorRef = useRef(false)
+  const voiceIgnoreEndRef = useRef(false)
+  const lastVoiceWaveUpdateRef = useRef(0)
 
   const nextOnboardingQuestion = useMemo(() => getNextOnboardingQuestion(form), [form])
   const businessContextLoaded = hasBusinessContext(form)
+  const voiceIsActive = voiceState !== 'idle'
+  const formattedVoiceElapsed = useMemo(() => formatVoiceDuration(voiceElapsed), [voiceElapsed])
 
   const emitConfigChange = (nextStatus: AIAgentConfigStatus) => {
     window.dispatchEvent(new CustomEvent('ai-agent-config-changed', {
@@ -669,6 +765,10 @@ export const AIAgentPanel: React.FC = () => {
 
     previousMessageCountRef.current = messages.length
   }, [messages, open])
+
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
 
   useEffect(() => {
     if (loadingConfig || askedOnboardingRef.current || businessContextLoaded) return
@@ -796,7 +896,7 @@ export const AIAgentPanel: React.FC = () => {
       return
     }
 
-    const nextMessages = [...messages, userMessage]
+    const nextMessages = [...messagesRef.current, userMessage]
 
     setMessages(nextMessages)
     setSending(true)
@@ -817,6 +917,220 @@ export const AIAgentPanel: React.FC = () => {
       textareaRef.current?.focus()
     }
   }
+
+  const stopVoiceMeter = () => {
+    if (voiceAnimationFrameRef.current !== null) {
+      window.cancelAnimationFrame(voiceAnimationFrameRef.current)
+      voiceAnimationFrameRef.current = null
+    }
+
+    audioSourceRef.current?.disconnect()
+    audioSourceRef.current = null
+    analyserRef.current = null
+
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => undefined)
+      audioContextRef.current = null
+    }
+
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
+    mediaStreamRef.current = null
+  }
+
+  const startVoiceMeter = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error('Tu navegador no permite usar el micrófono desde esta pantalla.')
+    }
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    mediaStreamRef.current = stream
+
+    const AudioContextConstructor = getAudioContextConstructor()
+    if (!AudioContextConstructor) return
+
+    const audioContext = new AudioContextConstructor()
+    const analyser = audioContext.createAnalyser()
+    const source = audioContext.createMediaStreamSource(stream)
+
+    analyser.fftSize = 256
+    analyser.smoothingTimeConstant = 0.72
+    const samples = new Uint8Array(analyser.fftSize)
+    source.connect(analyser)
+
+    audioContextRef.current = audioContext
+    audioSourceRef.current = source
+    analyserRef.current = analyser
+
+    const drawWave = (timestamp: number) => {
+      if (!analyserRef.current) return
+
+      if (timestamp - lastVoiceWaveUpdateRef.current > 55) {
+        analyserRef.current.getByteTimeDomainData(samples)
+        const average = samples.reduce((sum, value) => sum + Math.abs(value - 128), 0) / samples.length
+        const normalized = Math.min(1, average / 34)
+        const nextHeight = Math.round(VOICE_WAVE_MIN_HEIGHT + normalized * (VOICE_WAVE_MAX_HEIGHT - VOICE_WAVE_MIN_HEIGHT))
+
+        setVoiceBars((current) => [...current.slice(1), nextHeight])
+        lastVoiceWaveUpdateRef.current = timestamp
+      }
+
+      voiceAnimationFrameRef.current = window.requestAnimationFrame(drawWave)
+    }
+
+    voiceAnimationFrameRef.current = window.requestAnimationFrame(drawWave)
+  }
+
+  const setVoiceErrorMessage = (message: string) => {
+    voiceHadErrorRef.current = Boolean(message)
+    setVoiceError(message)
+  }
+
+  const completeVoiceCapture = (action: 'draft' | 'send') => {
+    const transcript = `${voiceFinalTranscriptRef.current} ${voiceInterimTranscriptRef.current}`.replace(/\s+/g, ' ').trim()
+
+    recognitionRef.current = null
+    voiceEndActionRef.current = null
+    stopVoiceMeter()
+    setVoiceState('idle')
+    setVoiceElapsed(0)
+    setVoiceTranscript('')
+    setVoiceBars(createInitialVoiceBars())
+
+    if (!transcript) {
+      if (!voiceHadErrorRef.current) {
+        setVoiceErrorMessage('No alcancé a transcribir audio. Inténtalo otra vez.')
+      }
+      textareaRef.current?.focus()
+      return
+    }
+
+    setVoiceErrorMessage('')
+
+    if (action === 'send') {
+      sendMessage(transcript)
+      return
+    }
+
+    setInput((current) => {
+      if (!current.trim()) return transcript
+      return `${current}${/\s$/.test(current) ? '' : ' '}${transcript}`
+    })
+
+    window.requestAnimationFrame(() => textareaRef.current?.focus())
+  }
+
+  const startVoiceRecording = async () => {
+    if (voiceIsActive || sending || savingConfig) return
+
+    const SpeechRecognitionConstructor = getSpeechRecognitionConstructor()
+    if (!SpeechRecognitionConstructor) {
+      setVoiceErrorMessage('Tu navegador no soporta dictado por voz. Usa Chrome o Edge para esta función.')
+      return
+    }
+
+    voiceFinalTranscriptRef.current = ''
+    voiceInterimTranscriptRef.current = ''
+    voiceEndActionRef.current = 'draft'
+    voiceHadErrorRef.current = false
+    voiceIgnoreEndRef.current = false
+    setVoiceError('')
+    setVoiceTranscript('')
+    setVoiceElapsed(0)
+    setVoiceBars(createInitialVoiceBars())
+
+    const recognition = new SpeechRecognitionConstructor()
+    recognition.continuous = true
+    recognition.interimResults = true
+    recognition.lang = 'es-MX'
+    recognition.maxAlternatives = 1
+
+    recognition.onresult = (event) => {
+      let finalTranscript = ''
+      let interimTranscript = ''
+
+      for (let index = 0; index < event.results.length; index += 1) {
+        const result = event.results[index]
+        const transcript = result?.[0]?.transcript || ''
+
+        if (result?.isFinal) {
+          finalTranscript = `${finalTranscript} ${transcript}`
+        } else {
+          interimTranscript = `${interimTranscript} ${transcript}`
+        }
+      }
+
+      voiceFinalTranscriptRef.current = finalTranscript.trim()
+      voiceInterimTranscriptRef.current = interimTranscript.trim()
+      setVoiceTranscript(`${voiceFinalTranscriptRef.current} ${voiceInterimTranscriptRef.current}`.replace(/\s+/g, ' ').trim())
+    }
+
+    recognition.onerror = (event) => {
+      if (event.error === 'aborted') return
+
+      const errorMessages: Record<string, string> = {
+        'no-speech': 'No escuché audio claro. Inténtalo otra vez.',
+        'not-allowed': 'El navegador bloqueó el micrófono. Revisa permisos y vuelve a intentar.',
+        'service-not-allowed': 'El navegador no permitió usar el servicio de dictado.',
+        network: 'Falló el servicio de dictado del navegador. Inténtalo de nuevo.'
+      }
+
+      setVoiceErrorMessage(errorMessages[event.error] || event.message || 'No pude transcribir el audio.')
+    }
+
+    recognition.onend = () => {
+      if (voiceIgnoreEndRef.current) return
+      completeVoiceCapture(voiceEndActionRef.current || 'draft')
+    }
+
+    recognitionRef.current = recognition
+
+    try {
+      await startVoiceMeter()
+      setVoiceState('recording')
+      recognition.start()
+    } catch (error: any) {
+      recognitionRef.current = null
+      voiceEndActionRef.current = null
+      stopVoiceMeter()
+      setVoiceState('idle')
+      setVoiceErrorMessage(error?.message || 'No pude acceder al micrófono.')
+    }
+  }
+
+  const finishVoiceRecording = (action: 'draft' | 'send') => {
+    if (!voiceIsActive || voiceState === 'finalizing') return
+
+    voiceEndActionRef.current = action
+    setVoiceState('finalizing')
+    stopVoiceMeter()
+
+    try {
+      recognitionRef.current?.stop()
+    } catch {
+      completeVoiceCapture(action)
+    }
+  }
+
+  useEffect(() => {
+    if (voiceState !== 'recording') return
+
+    const startedAt = Date.now()
+    const timer = window.setInterval(() => {
+      setVoiceElapsed(Math.floor((Date.now() - startedAt) / 1000))
+    }, 250)
+
+    return () => window.clearInterval(timer)
+  }, [voiceState])
+
+  useEffect(() => {
+    return () => {
+      voiceIgnoreEndRef.current = true
+      voiceEndActionRef.current = null
+      recognitionRef.current?.abort()
+      recognitionRef.current = null
+      stopVoiceMeter()
+    }
+  }, [])
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -993,25 +1307,82 @@ export const AIAgentPanel: React.FC = () => {
           </div>
 
           <footer className={styles.composer}>
-            <textarea
-              ref={textareaRef}
-              className={styles.textarea}
-              value={input}
-              placeholder={nextOnboardingQuestion ? 'Responde para guardar contexto...' : status.configured ? 'Pregunta algo del negocio...' : 'Pega el token arriba o cuéntame del negocio...'}
-              onChange={(event) => setInput(event.target.value)}
-              onKeyDown={handleKeyDown}
-              disabled={sending || savingConfig}
-              rows={1}
-            />
-            <button
-              type="button"
-              className={styles.sendButton}
-              onClick={() => sendMessage()}
-              disabled={!input.trim() || sending || savingConfig}
-              aria-label="Enviar mensaje"
-            >
-              <SendHorizonal size={17} />
-            </button>
+            {voiceIsActive ? (
+              <div className={styles.voiceComposer} aria-label="Grabación de voz en curso">
+                <div className={styles.voiceWaveArea}>
+                  <div className={styles.voiceWaveform} aria-hidden="true">
+                    {voiceBars.map((height, index) => (
+                      <span
+                        key={`voice-bar-${index}`}
+                        className={styles.voiceBar}
+                        style={{ '--voice-bar-height': `${height}px` } as React.CSSProperties}
+                      />
+                    ))}
+                  </div>
+                  <span className={styles.voiceTranscriptPreview} aria-live="polite">
+                    {voiceTranscript || (voiceState === 'finalizing' ? 'Terminando transcripción...' : 'Escuchando...')}
+                  </span>
+                </div>
+                <span className={styles.voiceTimer}>{formattedVoiceElapsed}</span>
+                <button
+                  type="button"
+                  className={styles.voicePauseButton}
+                  onClick={() => finishVoiceRecording('draft')}
+                  disabled={voiceState === 'finalizing'}
+                  aria-label="Pausar y pasar texto al mensaje"
+                  title="Pausar y editar texto"
+                >
+                  <Pause size={15} />
+                </button>
+                <button
+                  type="button"
+                  className={styles.voiceSendButton}
+                  onClick={() => finishVoiceRecording('send')}
+                  disabled={voiceState === 'finalizing'}
+                  aria-label="Enviar transcripción al agente"
+                  title="Enviar transcripción"
+                >
+                  <SendHorizonal size={17} />
+                </button>
+              </div>
+            ) : (
+              <div className={styles.textComposer}>
+                <button
+                  type="button"
+                  className={styles.micButton}
+                  onClick={startVoiceRecording}
+                  disabled={sending || savingConfig}
+                  aria-label="Dictar mensaje por voz"
+                  title="Dictar mensaje por voz"
+                >
+                  <Mic size={17} />
+                </button>
+                <textarea
+                  ref={textareaRef}
+                  className={styles.textarea}
+                  value={input}
+                  placeholder={nextOnboardingQuestion ? 'Responde para guardar contexto...' : status.configured ? 'Pregunta algo del negocio...' : 'Pega el token arriba o cuéntame del negocio...'}
+                  onChange={(event) => setInput(event.target.value)}
+                  onKeyDown={handleKeyDown}
+                  disabled={sending || savingConfig}
+                  rows={1}
+                />
+                <button
+                  type="button"
+                  className={styles.sendButton}
+                  onClick={() => sendMessage()}
+                  disabled={!input.trim() || sending || savingConfig}
+                  aria-label="Enviar mensaje"
+                >
+                  <SendHorizonal size={17} />
+                </button>
+              </div>
+            )}
+            {voiceError && (
+              <div className={styles.voiceError} role="status">
+                {voiceError}
+              </div>
+            )}
           </footer>
         </section>
       )}
