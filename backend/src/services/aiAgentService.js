@@ -9,6 +9,7 @@ const HIGHLEVEL_API_BASE_URL = process.env.GHL_API_BASE_URL || 'https://services
 const HIGHLEVEL_MCP_SERVER_URL = process.env.GHL_MCP_SERVER_URL || 'https://services.leadconnectorhq.com/mcp/'
 const HIGHLEVEL_API_VERSION = process.env.GHL_API_VERSION || '2021-07-28'
 const DEFAULT_MODEL = process.env.OPENAI_AGENT_MODEL || 'gpt-5.2'
+const DEFAULT_TRANSCRIPTION_MODEL = process.env.OPENAI_TRANSCRIPTION_MODEL || 'gpt-4o-mini-transcribe'
 const REQUEST_TIMEOUT_MS = 45000
 const BUSINESS_CONTEXT_LIMIT = 12000
 const VIEW_CONTEXT_LIMIT = 6000
@@ -182,6 +183,17 @@ function getOpenAIErrorMessage(data, fallback) {
   if (data?.error?.message) return data.error.message
   if (typeof data?.message === 'string') return data.message
   return fallback
+}
+
+function getAudioExtension(mimeType = '') {
+  const normalized = mimeType.split(';')[0].toLowerCase()
+
+  if (normalized.includes('mp4')) return 'mp4'
+  if (normalized.includes('mpeg') || normalized.includes('mp3')) return 'mp3'
+  if (normalized.includes('wav')) return 'wav'
+  if (normalized.includes('m4a')) return 'm4a'
+
+  return 'webm'
 }
 
 async function fetchWithTimeout(url, options = {}) {
@@ -2487,6 +2499,53 @@ export async function verifyOpenAIApiKey(apiKey) {
   }
 
   return { valid: true }
+}
+
+export async function transcribeVoiceAudio({ apiKey, audioBuffer, mimeType = 'audio/webm' }) {
+  if (!audioBuffer?.length) {
+    throw new Error('No llegó audio para transcribir.')
+  }
+
+  const normalizedMimeType = String(mimeType || 'audio/webm').split(';')[0] || 'audio/webm'
+  const formData = new FormData()
+  const audioBlob = new Blob([audioBuffer], { type: normalizedMimeType })
+
+  formData.append('file', audioBlob, `voice-message.${getAudioExtension(normalizedMimeType)}`)
+  formData.append('model', DEFAULT_TRANSCRIPTION_MODEL)
+  formData.append('language', 'es')
+  formData.append('response_format', 'json')
+  formData.append('prompt', 'Mensaje de voz en español mexicano para un agente de negocio de Ristak. Puede mencionar ventas, citas, campañas, Meta Ads, HighLevel, pagos, leads, ROAS o clientes.')
+
+  const response = await fetchWithTimeout(`${OPENAI_API_URL}/audio/transcriptions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`
+    },
+    body: formData
+  })
+
+  let data = null
+
+  try {
+    data = await response.json()
+  } catch {
+    data = null
+  }
+
+  if (!response.ok) {
+    throw new Error(getOpenAIErrorMessage(data, 'No se pudo transcribir el audio con OpenAI.'))
+  }
+
+  const text = cleanText(data?.text || data?.transcript || '', 12000)
+
+  if (!text) {
+    throw new Error('OpenAI no devolvió texto para este audio.')
+  }
+
+  return {
+    text,
+    model: DEFAULT_TRANSCRIPTION_MODEL
+  }
 }
 
 async function buildDatabaseContext() {

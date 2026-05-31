@@ -63,13 +63,18 @@ export interface AIAgentChatResult {
   usage?: unknown
 }
 
+export interface AIAgentTranscriptionResult {
+  text: string
+  model: string
+}
+
 const API_BASE_URL = import.meta.env.VITE_API_URL || ''
 
-function getAuthHeaders(): HeadersInit {
+function getAuthHeaders(includeContentType = true): HeadersInit {
   const token = localStorage.getItem('auth_token')
 
   return {
-    'Content-Type': 'application/json',
+    ...(includeContentType ? { 'Content-Type': 'application/json' } : {}),
     ...(token ? { Authorization: `Bearer ${token}` } : {})
   }
 }
@@ -121,5 +126,30 @@ export const aiAgentService = {
       method: 'POST',
       body: JSON.stringify({ messages, viewContext })
     })
+  },
+
+  async transcribeVoice(audioBlob: Blob): Promise<AIAgentTranscriptionResult> {
+    const response = await fetch(`${API_BASE_URL}/api/ai-agent/transcribe`, {
+      method: 'POST',
+      headers: {
+        ...getAuthHeaders(false),
+        'Content-Type': audioBlob.type || 'audio/webm'
+      },
+      body: audioBlob
+    })
+
+    let payload: any = null
+
+    try {
+      payload = await response.json()
+    } catch {
+      payload = null
+    }
+
+    if (!response.ok) {
+      throw new Error(payload?.error || payload?.message || 'Error al transcribir el audio')
+    }
+
+    return (payload?.data ?? payload) as AIAgentTranscriptionResult
   }
 }

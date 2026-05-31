@@ -5,6 +5,7 @@ import {
   getAIAgentStatus,
   getOpenAIApiKey,
   saveAIAgentConfig,
+  transcribeVoiceAudio,
   verifyOpenAIApiKey
 } from '../services/aiAgentService.js'
 
@@ -126,6 +127,45 @@ export async function chat(req, res) {
     res.status(500).json({
       success: false,
       error: error.message || 'Error al generar respuesta del agente AI'
+    })
+  }
+}
+
+export async function transcribeVoice(req, res) {
+  try {
+    const apiKey = await getOpenAIApiKey()
+
+    if (!apiKey) {
+      return res.status(409).json({
+        success: false,
+        error: 'Primero configura una API Key válida de OpenAI'
+      })
+    }
+
+    const audioBuffer = Buffer.isBuffer(req.body) ? req.body : null
+
+    if (!audioBuffer?.length) {
+      return res.status(400).json({
+        success: false,
+        error: 'Envía audio para transcribir'
+      })
+    }
+
+    const result = await transcribeVoiceAudio({
+      apiKey,
+      audioBuffer,
+      mimeType: req.headers['content-type'] || 'audio/webm'
+    })
+
+    res.json({
+      success: true,
+      data: result
+    })
+  } catch (error) {
+    logger.error('Error transcribiendo voz del agente AI:', error)
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Error al transcribir el audio'
     })
   }
 }

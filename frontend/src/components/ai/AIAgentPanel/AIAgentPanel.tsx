@@ -11,46 +11,7 @@ const VOICE_WAVE_MIN_HEIGHT = 4
 const VOICE_WAVE_MAX_HEIGHT = 30
 
 type VoiceCaptureState = 'idle' | 'recording' | 'finalizing'
-
-type BrowserSpeechRecognitionAlternative = {
-  transcript: string
-}
-
-type BrowserSpeechRecognitionResult = {
-  isFinal: boolean
-  length: number
-  [index: number]: BrowserSpeechRecognitionAlternative | undefined
-}
-
-type BrowserSpeechRecognitionResultList = {
-  length: number
-  [index: number]: BrowserSpeechRecognitionResult | undefined
-}
-
-type BrowserSpeechRecognitionEvent = Event & {
-  resultIndex: number
-  results: BrowserSpeechRecognitionResultList
-}
-
-type BrowserSpeechRecognitionErrorEvent = Event & {
-  error: string
-  message?: string
-}
-
-type BrowserSpeechRecognition = {
-  continuous: boolean
-  interimResults: boolean
-  lang: string
-  maxAlternatives: number
-  onend: (() => void) | null
-  onerror: ((event: BrowserSpeechRecognitionErrorEvent) => void) | null
-  onresult: ((event: BrowserSpeechRecognitionEvent) => void) | null
-  abort: () => void
-  start: () => void
-  stop: () => void
-}
-
-type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition
+type VoiceEndAction = 'draft' | 'send'
 
 const suggestions = [
   'Dime que debería revisar hoy del negocio.',
@@ -234,21 +195,25 @@ function formatVoiceDuration(totalSeconds: number) {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`
 }
 
-function getSpeechRecognitionConstructor() {
-  const speechWindow = window as Window & {
-    SpeechRecognition?: BrowserSpeechRecognitionConstructor
-    webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor
-  }
-
-  return speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition || null
-}
-
 function getAudioContextConstructor() {
   const audioWindow = window as Window & {
     webkitAudioContext?: typeof AudioContext
   }
 
   return audioWindow.AudioContext || audioWindow.webkitAudioContext || null
+}
+
+function getVoiceMimeType() {
+  if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
+    return ''
+  }
+
+  return [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/mp4',
+    'audio/mpeg'
+  ].find((type) => MediaRecorder.isTypeSupported(type)) || ''
 }
 
 function getNextOnboardingQuestion(form: AIAgentConfigInput) {
@@ -674,15 +639,14 @@ export const AIAgentPanel: React.FC = () => {
   const previousMessageCountRef = useRef(messages.length)
   const endRef = useRef<HTMLDivElement | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
-  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const audioContextRef = useRef<AudioContext | null>(null)
   const audioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
   const analyserRef = useRef<AnalyserNode | null>(null)
   const voiceAnimationFrameRef = useRef<number | null>(null)
-  const voiceFinalTranscriptRef = useRef('')
-  const voiceInterimTranscriptRef = useRef('')
-  const voiceEndActionRef = useRef<'draft' | 'send' | null>(null)
+  const voiceAudioChunksRef = useRef<Blob[]>([])
+  const voiceEndActionRef = useRef<VoiceEndAction | null>(null)
   const voiceHadErrorRef = useRef(false)
   const voiceIgnoreEndRef = useRef(false)
   const lastVoiceWaveUpdateRef = useRef(0)
@@ -946,7 +910,7 @@ export const AIAgentPanel: React.FC = () => {
     mediaStreamRef.current = stream
 
     const AudioContextConstructor = getAudioContextConstructor()
-    if (!AudioContextConstructor) return
+    if (!AudioContextConstructor) return stream
 
     const audioContext = new AudioContextConstructor()
     const analyser = audioContext.createAnalyser()
@@ -978,6 +942,8 @@ export const AIAgentPanel: React.FC = () => {
     }
 
     voiceAnimationFrameRef.current = window.requestAnimationFrame(drawWave)
+
+    return stream
   }
 
   const setVoiceErrorMessage = (message: string) => {
@@ -985,16 +951,42 @@ export const AIAgentPanel: React.FC = () => {
     setVoiceError(message)
   }
 
-  const completeVoiceCapture = (action: 'draft' | 'send') => {
-    const transcript = `${voiceFinalTranscriptRef.current} ${voiceInterimTranscriptRef.current}`.replace(/\s+/g, ' ').trim()
-
-    recognitionRef.current = null
+  const resetVoiceCapture = () => {
+    mediaRecorderRef.current = null
     voiceEndActionRef.current = null
     stopVoiceMeter()
     setVoiceState('idle')
     setVoiceElapsed(0)
     setVoiceTranscript('')
     setVoiceBars(createInitialVoiceBars())
+  }
+
+  const completeVoiceCapture = async (audioBlob: Blob, action: VoiceEndAction) => {
+    setVoiceTranscript('Transcribiendo audio...')
+    stopVoiceMeter()
+
+    if (!audioBlob.size) {
+      resetVoiceCapture()
+      if (!voiceHadErrorRef.current) {
+        setVoiceErrorMessage('No alcancé a grabar audio. Inténtalo otra vez.')
+      }
+      textareaRef.current?.focus()
+      return
+    }
+
+    let transcript = ''
+
+    try {
+      const result = await aiAgentService.transcribeVoice(audioBlob)
+      transcript = result.text.trim()
+    } catch (error: any) {
+      resetVoiceCapture()
+      setVoiceErrorMessage(error?.message || 'No pude transcribir el audio.')
+      textareaRef.current?.focus()
+      return
+    }
+
+    resetVoiceCapture()
 
     if (!transcript) {
       if (!voiceHadErrorRef.current) {
@@ -1022,14 +1014,17 @@ export const AIAgentPanel: React.FC = () => {
   const startVoiceRecording = async () => {
     if (voiceIsActive || sending || savingConfig) return
 
-    const SpeechRecognitionConstructor = getSpeechRecognitionConstructor()
-    if (!SpeechRecognitionConstructor) {
-      setVoiceErrorMessage('Tu navegador no soporta dictado por voz. Usa Chrome o Edge para esta función.')
+    if (!status.configured) {
+      setVoiceErrorMessage('Conecta OpenAI para transcribir mensajes de voz.')
       return
     }
 
-    voiceFinalTranscriptRef.current = ''
-    voiceInterimTranscriptRef.current = ''
+    if (typeof MediaRecorder === 'undefined') {
+      setVoiceErrorMessage('Tu navegador no permite grabar audio desde esta pantalla.')
+      return
+    }
+
+    voiceAudioChunksRef.current = []
     voiceEndActionRef.current = 'draft'
     voiceHadErrorRef.current = false
     voiceIgnoreEndRef.current = false
@@ -1038,58 +1033,35 @@ export const AIAgentPanel: React.FC = () => {
     setVoiceElapsed(0)
     setVoiceBars(createInitialVoiceBars())
 
-    const recognition = new SpeechRecognitionConstructor()
-    recognition.continuous = true
-    recognition.interimResults = true
-    recognition.lang = 'es-MX'
-    recognition.maxAlternatives = 1
+    try {
+      const stream = await startVoiceMeter()
+      const mimeType = getVoiceMimeType()
+      const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
 
-    recognition.onresult = (event) => {
-      let finalTranscript = ''
-      let interimTranscript = ''
-
-      for (let index = 0; index < event.results.length; index += 1) {
-        const result = event.results[index]
-        const transcript = result?.[0]?.transcript || ''
-
-        if (result?.isFinal) {
-          finalTranscript = `${finalTranscript} ${transcript}`
-        } else {
-          interimTranscript = `${interimTranscript} ${transcript}`
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          voiceAudioChunksRef.current.push(event.data)
         }
       }
 
-      voiceFinalTranscriptRef.current = finalTranscript.trim()
-      voiceInterimTranscriptRef.current = interimTranscript.trim()
-      setVoiceTranscript(`${voiceFinalTranscriptRef.current} ${voiceInterimTranscriptRef.current}`.replace(/\s+/g, ' ').trim())
-    }
-
-    recognition.onerror = (event) => {
-      if (event.error === 'aborted') return
-
-      const errorMessages: Record<string, string> = {
-        'no-speech': 'No escuché audio claro. Inténtalo otra vez.',
-        'not-allowed': 'El navegador bloqueó el micrófono. Revisa permisos y vuelve a intentar.',
-        'service-not-allowed': 'El navegador no permitió usar el servicio de dictado.',
-        network: 'Falló el servicio de dictado del navegador. Inténtalo de nuevo.'
+      mediaRecorder.onerror = () => {
+        setVoiceErrorMessage('No pude grabar el audio del micrófono.')
       }
 
-      setVoiceErrorMessage(errorMessages[event.error] || event.message || 'No pude transcribir el audio.')
-    }
+      mediaRecorder.onstop = () => {
+        if (voiceIgnoreEndRef.current) return
 
-    recognition.onend = () => {
-      if (voiceIgnoreEndRef.current) return
-      completeVoiceCapture(voiceEndActionRef.current || 'draft')
-    }
+        const audioType = mediaRecorder.mimeType || mimeType || 'audio/webm'
+        const audioBlob = new Blob(voiceAudioChunksRef.current, { type: audioType })
+        completeVoiceCapture(audioBlob, voiceEndActionRef.current || 'draft')
+      }
 
-    recognitionRef.current = recognition
-
-    try {
-      await startVoiceMeter()
+      mediaRecorderRef.current = mediaRecorder
       setVoiceState('recording')
-      recognition.start()
+      setVoiceTranscript('Grabando audio...')
+      mediaRecorder.start()
     } catch (error: any) {
-      recognitionRef.current = null
+      mediaRecorderRef.current = null
       voiceEndActionRef.current = null
       stopVoiceMeter()
       setVoiceState('idle')
@@ -1102,12 +1074,18 @@ export const AIAgentPanel: React.FC = () => {
 
     voiceEndActionRef.current = action
     setVoiceState('finalizing')
-    stopVoiceMeter()
+    setVoiceTranscript('Preparando transcripción...')
 
     try {
-      recognitionRef.current?.stop()
+      if (mediaRecorderRef.current?.state === 'recording') {
+        mediaRecorderRef.current.stop()
+      } else {
+        const audioBlob = new Blob(voiceAudioChunksRef.current, { type: mediaRecorderRef.current?.mimeType || 'audio/webm' })
+        completeVoiceCapture(audioBlob, action)
+      }
     } catch {
-      completeVoiceCapture(action)
+      const audioBlob = new Blob(voiceAudioChunksRef.current, { type: mediaRecorderRef.current?.mimeType || 'audio/webm' })
+      completeVoiceCapture(audioBlob, action)
     }
   }
 
@@ -1126,8 +1104,10 @@ export const AIAgentPanel: React.FC = () => {
     return () => {
       voiceIgnoreEndRef.current = true
       voiceEndActionRef.current = null
-      recognitionRef.current?.abort()
-      recognitionRef.current = null
+      if (mediaRecorderRef.current?.state === 'recording') {
+        mediaRecorderRef.current.stop()
+      }
+      mediaRecorderRef.current = null
       stopVoiceMeter()
     }
   }, [])
