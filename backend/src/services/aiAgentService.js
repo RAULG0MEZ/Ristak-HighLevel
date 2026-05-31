@@ -28,6 +28,7 @@ const HIGHLEVEL_MCP_SERVER_URL = process.env.GHL_MCP_SERVER_URL || 'https://serv
 const META_ADS_MCP_SERVER_URL = process.env.META_ADS_MCP_SERVER_URL || 'https://mcp.facebook.com/ads'
 const HIGHLEVEL_API_VERSION = process.env.GHL_API_VERSION || '2021-07-28'
 const DEFAULT_MODEL = process.env.OPENAI_AGENT_MODEL || 'gpt-5.5'
+const SUPERVISOR_MODEL = process.env.OPENAI_AGENT_ROUTER_MODEL || 'gpt-5-nano'
 const DEFAULT_TRANSCRIPTION_MODEL = process.env.OPENAI_TRANSCRIPTION_MODEL || 'gpt-4o-mini-transcribe'
 const REQUEST_TIMEOUT_MS = 45000
 const BUSINESS_CONTEXT_LIMIT = 12000
@@ -50,6 +51,32 @@ const DEFAULT_AI_RECOMMENDATION_MODE = 'on_request'
 const AI_MODEL_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,99}$/
 const META_ADS_MCP_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.META_ADS_MCP_ENABLED || 'true'))
 const isPostgres = Boolean(process.env.DATABASE_URL)
+
+const AGENT_SUPERVISOR_DOMAINS = new Set([
+  'analytics',
+  'payments',
+  'contacts',
+  'appointments',
+  'workflows',
+  'opportunities',
+  'messages',
+  'products',
+  'campaigns',
+  'meta_ads_operations',
+  'business_context',
+  'web_research',
+  'general'
+])
+
+const HIGHLEVEL_AGENT_DOMAINS = new Set([
+  'payments',
+  'contacts',
+  'appointments',
+  'workflows',
+  'opportunities',
+  'messages',
+  'products'
+])
 
 const META_ADS_MCP_READ_ONLY_TOOL_NAMES = [
   'ads_get_ad_accounts',
@@ -652,8 +679,12 @@ function isConversationalFollowUp(messages) {
     return true
   }
 
+  if (/^(?:si|no|ok|okay|sale|dale|va|a ver|aver)?\s*(?:pero|mas bien|mejor|entonces|ahora|solo que)\b/.test(latestUserText)) {
+    return true
+  }
+
   return latestUserText.length <= 90 &&
-    /\b(eso|ese|esa|esto|esta|este|lo anterior|lo mismo|de nuevo|otra vez|reintenta|intenta|vuelve|ahora si|sigue|continua)\b/.test(latestUserText)
+    /\b(eso|ese|esa|esto|esta|este|lo anterior|lo mismo|de nuevo|otra vez|reintenta|intenta|vuelve|ahora si|sigue|continua|mas bien|mejor)\b/.test(latestUserText)
 }
 
 function hasExplicitMetaAdsExecutionConfirmation(messages) {
@@ -3526,6 +3557,228 @@ function buildSafeViewContext(viewContext) {
   }
 }
 
+function normalizeSupervisorDomain(value, fallback = 'analytics') {
+  const domain = normalizeText(value)
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+
+  if (AGENT_SUPERVISOR_DOMAINS.has(domain)) return domain
+  return AGENT_SUPERVISOR_DOMAINS.has(fallback) ? fallback : 'analytics'
+}
+
+function getSupervisorSpecialistLabel(domain) {
+  return {
+    analytics: 'Analista de negocio y DB',
+    payments: 'Especialista en pagos, invoices y parcialidades',
+    contacts: 'Especialista en contactos y CRM',
+    appointments: 'Especialista en citas y calendarios',
+    workflows: 'Especialista en workflows y automatizaciones',
+    opportunities: 'Especialista en oportunidades y pipelines',
+    messages: 'Especialista en conversaciones y mensajes',
+    products: 'Especialista en productos y precios',
+    campaigns: 'Especialista en publicidad y rentabilidad',
+    meta_ads_operations: 'Especialista operativo de Meta Ads',
+    business_context: 'Especialista en contexto del negocio',
+    web_research: 'Especialista en investigación externa',
+    general: 'Agente general'
+  }[domain] || 'Agente general'
+}
+
+function hasPreviousPaymentContext(messages) {
+  const latestUserIndex = findLatestUserMessageIndex(messages)
+  if (latestUserIndex < 0) return false
+
+  const previousAssistantText = normalizeText(getPreviousAssistantMessageText(messages, latestUserIndex))
+  return /(pago|cobr|invoice|factura|tarjeta|domicili|payment_flow|payment_live_mode|confirmas que quieres|link de pago|parcialidad|mxn)/.test(previousAssistantText)
+}
+
+function isPaymentConversationContinuation(messages) {
+  const latestUserIndex = findLatestUserMessageIndex(messages)
+  if (latestUserIndex < 0 || !hasPreviousPaymentContext(messages)) return false
+
+  const latestUserText = normalizeText(getMessageText(messages[latestUserIndex]))
+  return isConversationalFollowUp(messages) ||
+    /(cobr|pago|program|agenda|fecha|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|enero|febrero|marzo|abril|mayo|domicili|tarjeta|link|transfer|deposit|efectivo|parcial|difer|mensual|semanal|\b\d{1,2}\b)/.test(latestUserText)
+}
+
+function buildLocalSupervisorRoute(messages) {
+  const latestUserMessage = getLatestUserMessage(messages)
+  const normalized = normalizeText(latestUserMessage)
+  const continuation = isConversationalFollowUp(messages)
+  const paymentContinuation = isPaymentConversationContinuation(messages)
+  const paymentIntent = isPaymentActionRequest(latestUserMessage) || paymentContinuation
+  const highLevelActionIntent = isHighLevelActionRequest(latestUserMessage)
+  const mutationIntent = /(agrega|actualiza|modifica|cambia|edita|borra|elimina|quita|crea|registra|agenda|cancela|reagenda|reprograma|programa|asigna|mueve|manda|envia|mete|saca|inscribe|suscribe|marca|pausa|reactiva|cobr|domicili|link|charge|send|create|update|delete|schedule|cancel)/.test(normalized)
+
+  let domain = 'analytics'
+
+  if (isMetaAdsOperationalRequest(latestUserMessage)) domain = 'meta_ads_operations'
+  else if (paymentIntent) domain = 'payments'
+  else if (/(workflow|workflows|flujo|automatizacion|automatización)/.test(normalized)) domain = 'workflows'
+  else if (/(cita|citas|agenda|calendario|appointment|appointments|reagenda|reprograma)/.test(normalized)) domain = 'appointments'
+  else if (/(oportunidad|oportunidades|opportunity|pipeline|deal)/.test(normalized)) domain = 'opportunities'
+  else if (/(mensaje|mensajes|conversacion|conversación|sms|whatsapp|email|correo)/.test(normalized) && mutationIntent) domain = 'messages'
+  else if (/(producto|productos|precio|precios|servicio|servicios)/.test(normalized)) domain = 'products'
+  else if (/(contacto|contactos|cliente|clientes|lead|leads|prospecto|prospectos|paciente|persona)/.test(normalized) && (highLevelActionIntent || mutationIntent)) domain = 'contacts'
+  else if (/(campan|anuncio|adset|meta ads|facebook|instagram|roas|publicidad|rentab)/.test(normalized)) domain = 'campaigns'
+  else if (/(mercado|tendencia|noticia|competidor|competencia|cultural|politic|geografic|industria|nicho|online|internet|investiga en linea)/.test(normalized)) domain = 'web_research'
+  else if (/(negocio|cliente ideal|mercado|tono|contexto del negocio|competidores)/.test(normalized)) domain = 'business_context'
+  else if (continuation && hasPreviousPaymentContext(messages)) domain = 'payments'
+
+  const action = mutationIntent || paymentIntent || highLevelActionIntent
+    ? 'mutate'
+    : continuation
+      ? 'continue'
+      : /(cual|cuanto|cuantos|dame|muestra|busca|revisa|analiza|info|informacion|datos|estado|tiene|hay)/.test(normalized)
+        ? 'read'
+        : 'answer'
+
+  return normalizeSupervisorRoute({
+    domain,
+    action,
+    continuation,
+    requiresPaymentTools: domain === 'payments',
+    requiresHighLevelTools: HIGHLEVEL_AGENT_DOMAINS.has(domain) || highLevelActionIntent || paymentIntent,
+    requiresDbResearch: !(domain === 'payments' && action === 'mutate') &&
+      !(['workflows', 'appointments', 'contacts', 'opportunities', 'messages'].includes(domain) && action === 'mutate') &&
+      domain !== 'meta_ads_operations',
+    metaAdsOperationalIntent: domain === 'meta_ads_operations',
+    skipLocalShortcuts: continuation || paymentIntent || (HIGHLEVEL_AGENT_DOMAINS.has(domain) && action === 'mutate'),
+    confidence: paymentContinuation ? 0.95 : 0.65,
+    reason: 'Ruta local de respaldo.'
+  })
+}
+
+function normalizeSupervisorRoute(route = {}, fallback = {}) {
+  const domain = normalizeSupervisorDomain(route.domain || route.specialist || fallback.domain)
+  const action = normalizeText(route.action || fallback.action || 'answer')
+  const normalizedAction = ['read', 'mutate', 'answer', 'continue', 'clarify'].includes(action) ? action : 'answer'
+  const continuation = route.continuation === true || fallback.continuation === true
+  const requiresPaymentTools = route.requiresPaymentTools === true || fallback.requiresPaymentTools === true || domain === 'payments'
+  const requiresHighLevelTools = route.requiresHighLevelTools === true || fallback.requiresHighLevelTools === true || HIGHLEVEL_AGENT_DOMAINS.has(domain)
+  const metaAdsOperationalIntent = route.metaAdsOperationalIntent === true || fallback.metaAdsOperationalIntent === true || domain === 'meta_ads_operations'
+  const defaultDbResearch = !metaAdsOperationalIntent && !(requiresHighLevelTools && normalizedAction === 'mutate')
+  const requiresDbResearch = route.requiresDbResearch === false
+    ? false
+    : route.requiresDbResearch === true
+      ? true
+      : fallback.requiresDbResearch === false
+        ? false
+        : fallback.requiresDbResearch === true || defaultDbResearch
+  const skipLocalShortcuts = route.skipLocalShortcuts === true ||
+    fallback.skipLocalShortcuts === true ||
+    continuation ||
+    requiresPaymentTools ||
+    (requiresHighLevelTools && normalizedAction === 'mutate')
+  const confidence = Number(route.confidence ?? fallback.confidence ?? 0)
+
+  return {
+    domain,
+    specialist: getSupervisorSpecialistLabel(domain),
+    action: normalizedAction,
+    continuation,
+    requiresDbResearch,
+    requiresHighLevelTools,
+    requiresPaymentTools,
+    metaAdsOperationalIntent,
+    skipLocalShortcuts,
+    confidence: Number.isFinite(confidence) ? Math.max(0, Math.min(1, confidence)) : 0,
+    reason: cleanText(route.reason || fallback.reason || '', 240)
+  }
+}
+
+async function createSupervisorRoute(apiKey, { messages, viewContext, runtimeContext }) {
+  const fallbackRoute = buildLocalSupervisorRoute(messages)
+  const instructions = [
+    'Eres el gerente/router interno del Agente AI de Ristak.',
+    'Tu única tarea es decidir a qué especialista debe ir el último mensaje del usuario. No respondas al usuario.',
+    'Usa TODO el contexto de conversación. Si el último mensaje corrige, confirma o cambia algo anterior, marca continuation=true y conserva el dominio anterior si sigue aplicando.',
+    'Dominios válidos: analytics, payments, contacts, appointments, workflows, opportunities, messages, products, campaigns, meta_ads_operations, business_context, web_research, general.',
+    'payments: cobros, links de pago, invoices, recibos, parcialidades, domiciliación, tarjeta guardada, transferencias y cambios a una instrucción de pago previa.',
+    'contacts: buscar, crear, editar o revisar contactos/personas/leads.',
+    'appointments: citas, calendarios, reagendar, cancelar o programar citas.',
+    'workflows: meter/sacar contactos de workflows o revisar automatizaciones.',
+    'campaigns: resultados internos de publicidad, ROAS, inversión, rentabilidad, leads, citas o ventas atribuidas.',
+    'meta_ads_operations: inventario o cambios reales en Ads Manager como públicos, campañas activas, presupuestos, pausar/reactivar/crear anuncios.',
+    'web_research: contexto externo, mercado, cultura, política, geografía, noticias, competidores o benchmarks externos.',
+    'Si el usuario dice algo como "sí pero mejor...", "más bien...", "entonces hazlo...", "intenta de nuevo", "ahora el 10 de junio", interprétalo contra el mensaje anterior. No lo conviertas en nombre de contacto.',
+    'Devuelve sólo JSON válido con esta forma: {"domain":"payments","action":"mutate","continuation":true,"requiresDbResearch":false,"requiresHighLevelTools":true,"requiresPaymentTools":true,"metaAdsOperationalIntent":false,"skipLocalShortcuts":true,"confidence":0.95,"reason":"..."}'
+  ].join('\n')
+  const input = [
+    `Fecha local actual: ${runtimeContext.nowIso}`,
+    `Timezone del negocio: ${runtimeContext.timezone}`,
+    '',
+    'Contexto de vista actual:',
+    JSON.stringify(buildSafeViewContext(viewContext), null, 2),
+    '',
+    'Conversación completa reciente:',
+    buildConversationText(messages) || 'Sin mensajes previos.',
+    '',
+    'Ruta local tentativa:',
+    JSON.stringify(fallbackRoute, null, 2),
+    '',
+    'Clasifica sólo el último mensaje del usuario.'
+  ].join('\n')
+
+  try {
+    const { text, data } = await callOpenAIResponse(apiKey, {
+      model: SUPERVISOR_MODEL,
+      instructions,
+      input,
+      maxOutputTokens: 450
+    })
+    const route = normalizeSupervisorRoute(parseJsonObject(text), fallbackRoute)
+
+    return {
+      ...route,
+      model: data?.model || SUPERVISOR_MODEL,
+      fallback: false
+    }
+  } catch (error) {
+    return {
+      ...fallbackRoute,
+      model: SUPERVISOR_MODEL,
+      fallback: true,
+      reason: fallbackRoute.reason || cleanText(error.message || 'No se pudo clasificar con el supervisor.', 240)
+    }
+  }
+}
+
+function shouldRunDatabaseResearchForRoute(route) {
+  if (!route) return true
+  return route.requiresDbResearch !== false
+}
+
+function buildSupervisorSpecialistInstructions(route = {}) {
+  const domain = route.domain || 'analytics'
+  const lines = [
+    `Gerente interno: especialista activo="${route.specialist || getSupervisorSpecialistLabel(domain)}"; dominio=${domain}; accion=${route.action || 'answer'}; continuidad=${route.continuation ? 'si' : 'no'}.`,
+    'Respeta esta ruta. Usa la conversación previa como memoria inmediata de trabajo y no reinicies la intención sólo por el último texto.'
+  ]
+
+  if (domain === 'payments') {
+    lines.push(
+      'Especialista de pagos: enfócate en cobros, invoices, links de pago, domiciliación, tarjeta guardada, pagos manuales, parcialidades y cambios de fecha/método/monto sobre una instrucción anterior.',
+      'Si el usuario modifica una orden previa ("sí pero mejor el 10 de junio"), conserva contacto, monto, moneda y contexto anterior; sólo cambia lo que el usuario corrigió.',
+      'Nunca mandes una frase de seguimiento como contactName/contactHint. Extrae el contacto desde la conversación anterior si el último mensaje no lo repite.'
+    )
+  } else if (domain === 'contacts') {
+    lines.push('Especialista de contactos: resuelve personas/leads por nombre, email, teléfono o ID, y antes de modificar confirma identidad cuando haya ambigüedad.')
+  } else if (domain === 'appointments') {
+    lines.push('Especialista de citas: conserva contacto/calendario de la conversación previa si el usuario sólo cambia fecha, hora o condición de la cita.')
+  } else if (domain === 'workflows') {
+    lines.push('Especialista de workflows: separa contacto y workflow por nombre limpio; busca opciones reales si falta ID o hay varias coincidencias.')
+  } else if (domain === 'campaigns') {
+    lines.push('Especialista de campañas: usa DB y modelo de atribución interno para rentabilidad, ROAS, gasto, leads, citas, ventas e ingresos atribuidos.')
+  } else if (domain === 'meta_ads_operations') {
+    lines.push('Especialista operativo de Meta Ads: usa MCP para inventario y cambios reales en Ads Manager; no sustituyas inventario operativo con DB.')
+  } else if (domain === 'web_research') {
+    lines.push('Especialista de investigación externa: usa búsqueda web sólo para contexto externo y conecta lo encontrado con los datos internos cuando existan.')
+  }
+
+  return lines.join('\n')
+}
+
 function normalizeAIAgentResponseStyle(value) {
   const normalized = normalizeText(value)
   if (['direct', 'balanced', 'advisor'].includes(normalized)) return normalized
@@ -4161,12 +4414,13 @@ async function executeAgentQuery(query) {
   }
 }
 
-async function createQueryPlan(apiKey, { messages, viewContext, runtimeContext, databaseContextResults = [], agentConfig }) {
+async function createQueryPlan(apiKey, { messages, viewContext, runtimeContext, databaseContextResults = [], agentConfig, supervisorRoute }) {
   const model = normalizeAIAgentModel(agentConfig?.model)
   const instructions = [
     'Eres un analista senior de datos para Ristak.',
     'Tu trabajo es decidir qué consultas SQL de sólo lectura necesitas para responder la última pregunta del usuario.',
     'No respondas la pregunta todavía. Sólo devuelve JSON válido.',
+    'El gerente interno ya clasificó la conversación por especialidad. Respeta esa ruta y no trates un seguimiento corto como una entidad nueva.',
     'Puedes investigar con criterio propio: fechas raras, comparativos, cohorts, fuentes como Facebook/Meta, embudos, CAC, ROAS, inversión, asistencia, ventas, etc.',
     'No uses presets rígidos. Si el usuario pide algo ambiguo, haz la interpretación más útil según las definiciones del dashboard y deja la suposición en assumptions.',
     'Si el último mensaje es un seguimiento corto como "intenta de nuevo", "otra vez", "ahora sí", "dale", "continúa" o similar, interpreta la intención usando la conversación anterior. No lo trates como una búsqueda nueva, nombre de contacto o entidad nueva.',
@@ -4197,6 +4451,9 @@ async function createQueryPlan(apiKey, { messages, viewContext, runtimeContext, 
     '',
     'Contexto configurado del negocio:',
     buildBusinessProfileContext(agentConfig),
+    '',
+    'Ruta del gerente interno:',
+    JSON.stringify(supervisorRoute || {}, null, 2),
     '',
     'Resultados base de DB ya consultados:',
     JSON.stringify(databaseContextResults, null, 2),
@@ -4396,12 +4653,14 @@ function prepareQueryResultsForReply(queryResults) {
   return successfulResults
 }
 
-async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, runtimeContext, plan, queryResults, agentConfig, highLevelConnection, metaAdsConnection, metaAdsOperationalIntent = false, metaAdsDbResearchSkipped = false }) {
+async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, runtimeContext, plan, queryResults, agentConfig, highLevelConnection, metaAdsConnection, supervisorRoute, metaAdsOperationalIntent = false, metaAdsDbResearchSkipped = false }) {
   const model = normalizeAIAgentModel(agentConfig?.model)
   const modelQueryResults = metaAdsDbResearchSkipped ? [] : prepareQueryResultsForReply(queryResults)
   const webSearchTools = metaAdsOperationalIntent ? [] : buildWebSearchTools(agentConfig, runtimeContext)
   const latestUserMessage = getLatestUserMessage(messages)
-  const paymentActionRequest = isPaymentActionRequest(latestUserMessage)
+  const paymentActionRequest = Boolean(supervisorRoute?.requiresPaymentTools) ||
+    supervisorRoute?.domain === 'payments' ||
+    isPaymentActionRequest(latestUserMessage)
   const highLevelTools = metaAdsOperationalIntent
     ? []
     : buildHighLevelTools(highLevelConnection, {
@@ -4421,6 +4680,7 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
     'Responde como analista senior de crecimiento y rentabilidad que asesora al dueño del negocio, pero no conviertas cada respuesta en asesoría si el usuario sólo pidió un dato.',
     'Si el último mensaje del usuario es un seguimiento corto como "intenta de nuevo", "otra vez", "ahora sí", "dale", "continúa" o similar, usa la conversación previa para saber qué dato o acción quiere reintentar. No lo interpretes como nombre de contacto, campaña, pago o búsqueda nueva.',
     responseBehaviorInstructions,
+    buildSupervisorSpecialistInstructions(supervisorRoute),
     'Tu respuesta debe ser friendly, directa y visual: una idea por bloque, líneas cortas, aire entre secciones y cero datos amontonados en un párrafo largo.',
     'Empieza con la respuesta concreta en lenguaje natural. Si hay métricas importantes o comparativos, muéstralas en tabla. Sólo explica qué significa o recomienda una acción cuando el usuario haya pedido criterio, análisis o recomendaciones.',
     'Evita jerga técnica. Si usas ROAS, CAC, atribución, cohort o términos parecidos, explícalos en palabras simples o usa una frase equivalente.',
@@ -4517,6 +4777,9 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
     '',
     'Contexto configurado del negocio:',
     buildBusinessProfileContext(agentConfig),
+    '',
+    'Ruta del gerente interno:',
+    JSON.stringify(supervisorRoute || {}, null, 2),
     '',
     'Conexión HighLevel para acciones en CRM:',
     buildHighLevelToolContext(highLevelConnection),
@@ -4627,7 +4890,8 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
     debug: {
       queryCount: queryResults.length,
       highLevelToolsEnabled: highLevelTools.length > 0,
-      metaAdsMcpEnabled: metaAdsTools.length > 0
+      metaAdsMcpEnabled: metaAdsTools.length > 0,
+      supervisorRoute: supervisorRoute || null
     }
   }
 }
@@ -6215,11 +6479,18 @@ function buildModelInput(messages, viewContext, databaseContext, directFacts) {
 export async function createAgentReply({ apiKey, messages, viewContext }) {
   const runtimeContext = await getAgentRuntimeContext()
   const latestUserMessage = getLatestUserMessage(messages)
-  const metaAdsOperationalIntent = isMetaAdsOperationalRequest(latestUserMessage)
-  const metaAdsDbResearchSkipped = shouldSkipDbResearchForMetaAds(latestUserMessage)
+  const supervisorRoute = await createSupervisorRoute(apiKey, {
+    messages,
+    viewContext: viewContext || {},
+    runtimeContext
+  })
+  const metaAdsOperationalIntent = Boolean(supervisorRoute.metaAdsOperationalIntent) || isMetaAdsOperationalRequest(latestUserMessage)
+  const metaAdsDbResearchSkipped = supervisorRoute.domain === 'meta_ads_operations' || shouldSkipDbResearchForMetaAds(latestUserMessage)
+  const paymentActionRequest = Boolean(supervisorRoute.requiresPaymentTools) || isPaymentActionRequest(latestUserMessage)
   const highLevelActionRequest = isHighLevelActionRequest(latestUserMessage)
   const conversationalFollowUp = isConversationalFollowUp(messages)
-  const mentionedContact = metaAdsDbResearchSkipped || highLevelActionRequest || conversationalFollowUp
+  const skipLocalShortcuts = Boolean(supervisorRoute.skipLocalShortcuts) || paymentActionRequest || highLevelActionRequest || conversationalFollowUp
+  const mentionedContact = metaAdsDbResearchSkipped || skipLocalShortcuts
     ? null
     : await resolveMentionedContactForAgent({
         messages,
@@ -6230,7 +6501,7 @@ export async function createAgentReply({ apiKey, messages, viewContext }) {
     return mentionedContact.clarificationReply
   }
 
-  const clarificationReply = metaAdsDbResearchSkipped || highLevelActionRequest || conversationalFollowUp
+  const clarificationReply = metaAdsDbResearchSkipped || skipLocalShortcuts
     ? null
     : await createClarificationReply({
         messages,
@@ -6249,12 +6520,15 @@ export async function createAgentReply({ apiKey, messages, viewContext }) {
     return buildMetaAdsMcpUnavailableReply(metaAdsConnection)
   }
 
-  const coreQueries = metaAdsDbResearchSkipped ? [] : await buildCoreResearchQueries(runtimeContext)
+  const runDatabaseResearch = !metaAdsDbResearchSkipped && shouldRunDatabaseResearchForRoute(supervisorRoute)
+  const coreQueries = runDatabaseResearch ? await buildCoreResearchQueries(runtimeContext) : []
   const corePlan = {
     assumptions: [
       metaAdsDbResearchSkipped
         ? 'Solicitud operativa/inventario de Meta Ads: se omitió el mapa base de DB para no confundir públicos o configuración real de Ads Manager con cohortes internas.'
-        : 'Se consultó un mapa base de la DB antes de planear la respuesta.'
+        : runDatabaseResearch
+          ? 'Se consultó un mapa base de la DB antes de planear la respuesta.'
+          : `El gerente interno enrutó a ${supervisorRoute.specialist}; se omitió investigación SQL general para no contaminar una acción operativa.`
     ],
     queries: coreQueries
   }
@@ -6263,10 +6537,12 @@ export async function createAgentReply({ apiKey, messages, viewContext }) {
     ...contactLookupResults,
     ...await executeQueryPlan(corePlan)
   ]
-  const modelPlan = metaAdsDbResearchSkipped
+  const modelPlan = metaAdsDbResearchSkipped || !runDatabaseResearch
     ? {
         assumptions: [
-          'La pregunta debe contestarse con Meta Ads MCP, no con SQL.'
+          metaAdsDbResearchSkipped
+            ? 'La pregunta debe contestarse con Meta Ads MCP, no con SQL.'
+            : `La pregunta debe contestarse con el especialista ${supervisorRoute.specialist}; no requiere plan SQL general.`
         ],
         queries: []
       }
@@ -6275,9 +6551,10 @@ export async function createAgentReply({ apiKey, messages, viewContext }) {
         viewContext: viewContext || {},
         runtimeContext,
         databaseContextResults: coreResults,
-        agentConfig
+        agentConfig,
+        supervisorRoute
       })
-  const plan = metaAdsDbResearchSkipped
+  const plan = metaAdsDbResearchSkipped || !runDatabaseResearch
     ? modelPlan
     : await augmentQueryPlanWithAutomaticResearch(modelPlan, {
         runtimeContext,
@@ -6329,6 +6606,7 @@ export async function createAgentReply({ apiKey, messages, viewContext }) {
     agentConfig,
     highLevelConnection,
     metaAdsConnection,
+    supervisorRoute,
     metaAdsOperationalIntent,
     metaAdsDbResearchSkipped
   })
