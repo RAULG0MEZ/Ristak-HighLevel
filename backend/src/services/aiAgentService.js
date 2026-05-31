@@ -940,7 +940,7 @@ function hasExplicitPaymentExecutionConfirmation(messages) {
     return false
   }
 
-  return /(\bconfirmo\b|\bconfirmado\b|\bautorizo\b|\bautorizado\b|\bsi\b.*\b(hazlo|procede|procedele|cobralo|cobrale|programalo|registralo|envialo)\b|\bsí\b.*\b(hazlo|procede|procédele|cóbralo|cóbrale|prográmalo|regístralo|envíalo)\b|\badelante\b|\bdale\b|\bprocede\b|\bprocedele\b|\bva\b)/.test(latestUserText)
+  return /(\bconfirmo\b|\bconfirmado\b|\bautorizo\b|\bautorizado\b|\bsi\b|\bsip\b|\bsimon\b|\bsale\b|\bok\b|\bokay\b|\bva\b|\bdale\b|\badelante\b|\bprocede\b|\bprocedele\b|\bsi\b.*\b(hazlo|procede|procedele|cobralo|cobrale|programalo|registralo|envialo)\b)/.test(latestUserText)
 }
 
 function getLatestUserText(messages) {
