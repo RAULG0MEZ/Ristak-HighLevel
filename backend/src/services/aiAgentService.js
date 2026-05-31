@@ -2157,6 +2157,348 @@ async function executeLookupContactPaymentProfile(args = {}, highLevelConnection
   }
 }
 
+function mapAppointmentReferenceRow(row = {}) {
+  const contactName = row.contact_full_name || `${row.contact_first_name || ''} ${row.contact_last_name || ''}`.trim()
+
+  return {
+    appointment: {
+      id: row.appointment_id || '',
+      calendarId: row.calendar_id || null,
+      contactId: row.contact_id || null,
+      locationId: row.location_id || null,
+      title: row.title || null,
+      status: row.status || null,
+      appointmentStatus: row.appointment_status || null,
+      assignedUserId: row.assigned_user_id || null,
+      startTime: row.start_time || null,
+      endTime: row.end_time || null,
+      dateAdded: row.date_added || null,
+      dateUpdated: row.date_updated || null
+    },
+    contact: row.contact_id
+      ? {
+          id: row.contact_id,
+          name: contactName || row.contact_email || row.contact_phone || row.contact_id,
+          email: row.contact_email || null,
+          phone: row.contact_phone || null,
+          totalPaid: Number(row.total_paid || 0),
+          purchasesCount: Number(row.purchases_count || 0)
+        }
+      : null
+  }
+}
+
+function buildAppointmentReferenceSelect(whereSql, orderSql) {
+  return `
+    SELECT
+      a.id AS appointment_id,
+      a.calendar_id,
+      a.contact_id,
+      a.location_id,
+      a.title,
+      a.status,
+      a.appointment_status,
+      a.assigned_user_id,
+      a.start_time,
+      a.end_time,
+      a.date_added,
+      a.date_updated,
+      c.full_name AS contact_full_name,
+      c.first_name AS contact_first_name,
+      c.last_name AS contact_last_name,
+      c.email AS contact_email,
+      c.phone AS contact_phone,
+      c.total_paid,
+      c.purchases_count
+    FROM appointments a
+    LEFT JOIN contacts c ON c.id = a.contact_id
+    WHERE a.contact_id IS NOT NULL
+      AND a.contact_id != ''
+      AND ${whereSql}
+    ORDER BY ${orderSql}
+    LIMIT 1
+  `
+}
+
+async function getAppointmentReferenceCandidates(runtimeContext = {}) {
+  const nowIso = runtimeContext.nowIso || DateTime.now().toISO()
+  const queries = [
+    {
+      key: 'lastStartedAppointment',
+      label: 'Ultima cita iniciada',
+      row: await safeGet(buildAppointmentReferenceSelect(
+        'a.start_time IS NOT NULL AND a.start_time <= ?',
+        'a.start_time DESC'
+      ), [nowIso], null)
+    },
+    {
+      key: 'nextScheduledAppointment',
+      label: 'Proxima cita agendada',
+      row: await safeGet(buildAppointmentReferenceSelect(
+        'a.start_time IS NOT NULL AND a.start_time >= ?',
+        'a.start_time ASC'
+      ), [nowIso], null)
+    },
+    {
+      key: 'latestUpdatedAppointment',
+      label: 'Cita mas reciente por sincronizacion',
+      row: await safeGet(buildAppointmentReferenceSelect(
+        'COALESCE(a.date_updated, a.date_added, a.start_time) IS NOT NULL',
+        'COALESCE(a.date_updated, a.date_added, a.start_time) DESC'
+      ), [], null)
+    },
+    {
+      key: 'latestCalendarAppointment',
+      label: 'Ultima cita en calendario',
+      row: await safeGet(buildAppointmentReferenceSelect(
+        'a.start_time IS NOT NULL',
+        'a.start_time DESC'
+      ), [], null)
+    }
+  ]
+
+  const seen = new Set()
+  const candidates = []
+
+  for (const query of queries) {
+    if (!query.row?.appointment_id) continue
+
+    const mapped = mapAppointmentReferenceRow(query.row)
+    const key = mapped.appointment.id || `${mapped.appointment.startTime}:${mapped.contact?.id || ''}`
+    if (seen.has(key)) continue
+
+    seen.add(key)
+    candidates.push({
+      key: query.key,
+      label: query.label,
+      ...mapped
+    })
+  }
+
+  return candidates
+}
+
+function chooseAppointmentReferenceCandidate(candidates = [], referenceText = '', referenceType = '') {
+  const normalized = normalizeText(`${referenceType} ${referenceText}`)
+  const byKey = (key) => candidates.find(candidate => candidate.key === key)
+
+  if (/(proxim|siguient|futur|pendient|planead|agendad|programad)/.test(normalized)) {
+    return byKey('nextScheduledAppointment') || byKey('lastStartedAppointment') || candidates[0] || null
+  }
+
+  if (/(recien|sincron|actualiz|cread|ultima\s+que\s+se\s+agend)/.test(normalized)) {
+    return byKey('latestUpdatedAppointment') || byKey('lastStartedAppointment') || candidates[0] || null
+  }
+
+  return byKey('lastStartedAppointment') ||
+    byKey('latestUpdatedAppointment') ||
+    byKey('nextScheduledAppointment') ||
+    candidates[0] ||
+    null
+}
+
+function buildAppointmentReferenceClarificationOptions(candidates = [], runtimeContext = {}) {
+  return candidates.slice(0, CLARIFICATION_OPTION_LIMIT).map((candidate) => {
+    const contact = candidate.contact || {}
+    const appointment = candidate.appointment || {}
+    const label = cleanOption(contact.name || appointment.title || appointment.id || candidate.label)
+    const description = [
+      candidate.label ? cleanOption(candidate.label, 32) : '',
+      appointment.startTime ? `Fecha: ${formatOptionDate(appointment.startTime, runtimeContext)}` : '',
+      contact.email ? `Email: ${cleanOption(contact.email, 42)}` : '',
+      contact.phone ? `Tel: ${cleanOption(contact.phone, 28)}` : '',
+      appointment.status || appointment.appointmentStatus ? `Estado: ${cleanOption(appointment.appointmentStatus || appointment.status, 35)}` : ''
+    ].filter(Boolean).join(' · ')
+
+    return {
+      label,
+      description,
+      value: `Usa el contacto "${label}" (ID: ${contact.id || appointment.contactId || ''}) de la cita ${appointment.id || ''} para la accion que te pedi.`
+    }
+  }).filter(option => option.label)
+}
+
+async function getCurrentViewContact(viewContext = {}) {
+  const path = cleanText(viewContext?.path || '', 500)
+  const routeLabel = cleanText(viewContext?.routeLabel || '', 250)
+  const visibleText = cleanText(viewContext?.visibleText || '', VIEW_CONTEXT_LIMIT)
+  const pathMatch = path.match(/\/(?:contacts?|clientes?|leads?|personas?)\/([A-Za-z0-9_-]{6,})/i)
+  const looksLikeContactPage = /(contact|cliente|lead|persona|paciente)/.test(normalizeText(`${path} ${routeLabel}`))
+  const visibleId = looksLikeContactPage ? extractContactIdFromText(visibleText) : ''
+  const visibleEmails = looksLikeContactPage
+    ? Array.from(new Set(visibleText.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || []))
+    : []
+  const contactId = cleanText(pathMatch?.[1] || visibleId || '', 160)
+
+  if (contactId) {
+    const contact = await getPaymentContactById(contactId)
+    if (contact?.id) return contact
+  }
+
+  if (visibleEmails.length === 1) {
+    const resolved = await resolvePaymentContact({ contactEmail: visibleEmails[0] })
+    if (resolved.contact?.id) return resolved.contact
+  }
+
+  return null
+}
+
+async function getStoredCardSummary(contactId, highLevelConnection = {}) {
+  if (!contactId) return null
+
+  const paymentMode = normalizePaymentMode(highLevelConnection?.paymentMode, PAYMENT_MODE_LIVE)
+  const status = await getStoredCardStatusForContact(contactId, paymentMode)
+
+  return {
+    available: status.hasAuthorizedCard,
+    paymentMode: status.paymentMode,
+    brand: status.brand || null,
+    last4: status.last4 || null
+  }
+}
+
+function normalizeBusinessReferenceKind(args = {}) {
+  const text = normalizeText([
+    args.referenceType,
+    args.referenceText,
+    args.reference,
+    args.hint,
+    args.entity,
+    args.targetEntity
+  ].filter(Boolean).join(' '))
+
+  if (/(este|esta|actual|pantalla|vista)\s+(contacto|cliente|lead|persona)/.test(text)) return 'current_contact'
+  if (/(proxim|siguient|futur|pendient|planead|agendad|programad).*(cita|agenda|appointment)|(?:cita|agenda|appointment).*(proxim|siguient|futur|pendient|planead|agendad|programad)/.test(text)) return 'next_appointment_contact'
+  if (/(ultima|ultimo|recient|pasad|anterior).*(cita|agenda|appointment)|(?:cita|agenda|appointment).*(ultima|ultimo|recient|pasad|anterior)/.test(text)) return 'latest_appointment_contact'
+  if (/(cita|agenda|appointment)/.test(text)) return 'latest_appointment_contact'
+
+  return cleanText(args.referenceType || args.entity || 'business_reference', 80)
+}
+
+async function executeLookupBusinessReference(args = {}, context = {}) {
+  const runtimeContext = context.runtimeContext || {}
+  const viewContext = context.viewContext || {}
+  const highLevelConnection = context.highLevelConnection || {}
+  const referenceText = cleanText(args.referenceText || args.reference || args.hint || '', 260)
+  const referenceType = normalizeBusinessReferenceKind(args)
+
+  if (referenceType === 'current_contact') {
+    const contact = await getCurrentViewContact(viewContext)
+
+    if (!contact?.id) {
+      return {
+        ok: false,
+        action: 'lookup_business_reference',
+        referenceType,
+        error: 'No pude resolver el contacto actual desde la vista. Necesito nombre, email, teléfono o ID del contacto.'
+      }
+    }
+
+    return {
+      ok: true,
+      action: 'lookup_business_reference',
+      referenceType,
+      referenceText,
+      resolved: {
+        entity: 'contact',
+        contact: {
+          id: contact.id,
+          name: contact.name,
+          email: contact.email || null,
+          phone: contact.phone || null
+        },
+        storedCard: await getStoredCardSummary(contact.id, highLevelConnection)
+      }
+    }
+  }
+
+  if (/appointment|cita|agenda/.test(referenceType)) {
+    const candidates = await getAppointmentReferenceCandidates(runtimeContext)
+    const selected = chooseAppointmentReferenceCandidate(candidates, referenceText, referenceType)
+
+    if (!selected?.appointment?.id) {
+      return {
+        ok: false,
+        action: 'lookup_business_reference',
+        referenceType,
+        referenceText,
+        error: 'No encontré citas con contacto asociado para resolver esa referencia.'
+      }
+    }
+
+    if (!selected.contact?.id) {
+      return {
+        ok: false,
+        action: 'lookup_business_reference',
+        referenceType,
+        referenceText,
+        error: 'Encontré la cita, pero no tiene contacto asociado. No puedo ejecutar una acción sobre una persona sin contact_id.',
+        appointment: selected.appointment
+      }
+    }
+
+    return {
+      ok: true,
+      action: 'lookup_business_reference',
+      referenceType,
+      referenceText,
+      resolved: {
+        entity: 'appointment_contact',
+        selectedKey: selected.key,
+        selectedLabel: selected.label,
+        appointment: selected.appointment,
+        contact: selected.contact,
+        storedCard: await getStoredCardSummary(selected.contact.id, highLevelConnection)
+      },
+      candidates: candidates.map(candidate => ({
+        key: candidate.key,
+        label: candidate.label,
+        appointment: candidate.appointment,
+        contact: candidate.contact
+      })),
+      clarificationOptions: buildAppointmentReferenceClarificationOptions(candidates, runtimeContext)
+    }
+  }
+
+  return {
+    ok: false,
+    action: 'lookup_business_reference',
+    referenceType,
+    referenceText,
+    error: 'No tengo un resolvedor local para esa referencia. Usa MCP/HighLevel para buscar la entidad exacta antes de modificarla.'
+  }
+}
+
+async function buildOperationalReferenceContext({ runtimeContext = {}, viewContext = {}, highLevelConnection = {} } = {}) {
+  const [appointmentCandidates, currentContact] = await Promise.all([
+    getAppointmentReferenceCandidates(runtimeContext),
+    getCurrentViewContact(viewContext)
+  ])
+  const appointmentContext = appointmentCandidates.reduce((acc, candidate) => {
+    acc[candidate.key] = {
+      label: candidate.label,
+      appointment: candidate.appointment,
+      contact: candidate.contact
+    }
+    return acc
+  }, {})
+
+  return {
+    generatedAt: runtimeContext.nowIso || DateTime.now().toISO(),
+    rule: 'Si el usuario dice "el de la ultima cita", "la proxima cita", "este contacto" o algo contextual, usa estos IDs o llama lookup_business_reference antes de ejecutar la accion.',
+    appointmentReferences: appointmentContext,
+    currentViewContact: currentContact?.id
+      ? {
+          id: currentContact.id,
+          name: currentContact.name,
+          email: currentContact.email || null,
+          phone: currentContact.phone || null,
+          storedCard: await getStoredCardSummary(currentContact.id, highLevelConnection)
+        }
+      : null
+  }
+}
+
 function resolveFirstPayment(args, totalAmount, timezone = DEFAULT_PAYMENT_TIMEZONE) {
   const aliasPayment = args.downPayment && typeof args.downPayment === 'object'
     ? args.downPayment
@@ -2956,6 +3298,26 @@ function buildHighLevelTools(highLevelConnection, options = {}) {
   tools.push(
     {
       type: 'function',
+      name: 'lookup_business_reference',
+      description: 'Resuelve referencias contextuales del negocio antes de ejecutar acciones: "el de la última cita", "la próxima cita", "este contacto", "el contacto actual". Devuelve IDs exactos de cita/contacto desde la DB local y señales útiles como email, teléfono y tarjeta guardada. Úsala antes de pagos, workflows, citas, oportunidades, mensajes o modificaciones cuando el usuario no dé un contacto/registro literal sino una referencia contextual.',
+      parameters: {
+        type: 'object',
+        properties: {
+          referenceType: {
+            type: ['string', 'null'],
+            enum: ['latest_appointment_contact', 'next_appointment_contact', 'current_contact', 'business_reference', null],
+            description: 'Tipo de referencia a resolver. Usa latest_appointment_contact para "el de la última cita"; next_appointment_contact para "próxima/agendada/planeada"; current_contact para "este contacto".'
+          },
+          referenceText: { type: ['string', 'null'], description: 'La frase contextual limpia del usuario, por ejemplo "el de la última cita". No metas toda la instrucción de cobro.' },
+          entity: { type: ['string', 'null'], description: 'Entidad objetivo si ayuda: contact, appointment, workflow, opportunity, conversation.' },
+          targetEntity: { type: ['string', 'null'], description: 'Entidad final sobre la que vas a actuar, por ejemplo contact para cobrar o meter a workflow.' }
+        },
+        additionalProperties: true
+      },
+      strict: false
+    },
+    {
+      type: 'function',
       name: 'lookup_contact_payment_profile',
       description: 'Busca un contacto por nombre/email/teléfono/ID y devuelve su perfil de pagos en Ristak, incluyendo si tiene tarjeta guardada/autorizada para el modo de pago actual. Úsala para preguntas como "¿Raúl Gómez tiene tarjeta guardada?" o antes de decidir si un pago futuro puede ir con tarjeta guardada.',
       parameters: {
@@ -3485,6 +3847,8 @@ async function callOpenAIResponseWithActionTools(apiKey, {
   tools = [],
   include = [],
   highLevelConnection,
+  runtimeContext = {},
+  viewContext = {},
   messages = []
 }) {
   let currentInput = input
@@ -3551,7 +3915,13 @@ async function callOpenAIResponseWithActionTools(apiKey, {
       let output
 
       try {
-        if (call.name === 'lookup_contact_payment_profile') {
+        if (call.name === 'lookup_business_reference') {
+          output = await executeLookupBusinessReference(call.arguments, {
+            runtimeContext,
+            viewContext,
+            highLevelConnection
+          })
+        } else if (call.name === 'lookup_contact_payment_profile') {
           output = await executeLookupContactPaymentProfile(call.arguments, highLevelConnection)
         } else if (call.name === 'lookup_highlevel_products') {
           output = await executeLookupHighLevelProducts(call.arguments, highLevelConnection)
@@ -3791,6 +4161,7 @@ async function createSupervisorRoute(apiKey, { messages, viewContext, runtimeCon
     'meta_ads_operations: inventario o cambios reales en Ads Manager como públicos, campañas activas, presupuestos, pausar/reactivar/crear anuncios.',
     'web_research: contexto externo, mercado, cultura, política, geografía, noticias, competidores o benchmarks externos.',
     'Si el usuario dice algo como "sí pero mejor...", "más bien...", "entonces hazlo...", "intenta de nuevo", "ahora el 10 de junio", interprétalo contra el mensaje anterior. No lo conviertas en nombre de contacto.',
+    'Si el usuario pide una acción sobre "el de la última cita", "la próxima cita", "este contacto" o una referencia parecida, enruta al dominio de la acción (pagos, citas, workflows, mensajes, oportunidades) y marca requiresHighLevelTools=true.',
     'Devuelve sólo JSON válido con esta forma: {"domain":"payments","action":"mutate","continuation":true,"requiresDbResearch":false,"requiresHighLevelTools":true,"requiresPaymentTools":true,"metaAdsOperationalIntent":false,"skipLocalShortcuts":true,"confidence":0.95,"reason":"..."}'
   ].join('\n')
   const input = [
@@ -3840,6 +4211,7 @@ const BASE_SPECIALIST_PROMPT = [
   'El usuario ve un solo chat, pero internamente trabajas como un especialista elegido por el gerente.',
   'Usa la conversación completa, la vista actual, la DB y las herramientas disponibles. No reinicies contexto por mirar sólo el último mensaje.',
   'Piensa con criterio propio: si el usuario pide datos, investiga; si pide una acción, identifica registros exactos; si falta algo indispensable, pregunta sólo eso.',
+  'Entiende referencias humanas normales: "el de la última cita", "la próxima cita", "este contacto", "ese workflow", "la conversación anterior" no son nombres literales. Resuelve primero la entidad real y luego ejecuta.',
   'Responde en español natural, directo y útil para un dueño de negocio.',
   'No uses tablas, contenedores, bloques tipo ficha ni gráficos para aclaraciones normales, preguntas de confirmación, explicaciones cortas o respuestas conversacionales.',
   'Usa tablas/gráficos sólo cuando el usuario pida data o cuando haya varias métricas/registros/comparativos difíciles de leer en texto: contactos, citas, pagos, campañas, rankings, históricos o listas repetidas.'
@@ -3860,6 +4232,7 @@ const NON_NEGOTIABLE_SAFETY_PROMPT = [
   '- Nunca ejecutes SQL destructivo; sólo usa SELECT/WITH SELECT.',
   '- No cobres, envíes links, registres pagos, programes domiciliaciones ni modifiques dinero sin confirmación explícita cuando la herramienta la requiera.',
   '- Para acciones sobre personas, pagos, workflows, citas u oportunidades, identifica el registro correcto antes de ejecutar.',
+  '- Si el usuario usa una referencia contextual ("el de la última cita", "este contacto", "la próxima cita"), usa el contexto operacional o lookup_business_reference antes de llamar herramientas que muten datos.',
   '- Si una herramienta devuelve opciones o pide confirmación, respétalo y muéstralo claro.'
 ].join('\n')
 
@@ -3887,6 +4260,7 @@ const SPECIALIST_PROMPTS = {
     'Maneja links de pago, invoices, pagos manuales, parcialidades, domiciliación, tarjeta guardada y cambios a un plan previo.',
     'Si el usuario corrige una orden previa ("sí, pero el 10 de junio"), conserva contacto, monto, moneda y concepto anteriores; cambia sólo lo nuevo.',
     'Si el usuario pregunta si un contacto tiene tarjeta guardada, o si una continuación depende de tarjeta guardada, usa lookup_contact_payment_profile con el contacto limpio antes de responder. No contestes "sí" o "no" de memoria.',
+    'Si pide cobrarle "al de la última cita", "a la próxima cita", "al contacto actual" o similar, usa lookup_business_reference o el contexto operacional para obtener contact_id exacto; no busques esa frase como nombre.',
     'Para pagos únicos inmediatos usa create_single_payment_link. Para fechas futuras, parcialidades, domiciliación o cargos automáticos usa create_installment_payment_flow. Para pagos offline usa record_contact_payment o record_invoice_payment.',
     'No mandes frases de seguimiento como contactName/contactHint; extrae el contacto limpio desde el mensaje actual o desde la conversación anterior.'
   ].join('\n'),
@@ -3899,12 +4273,14 @@ const SPECIALIST_PROMPTS = {
   appointments: [
     'Especialista Citas:',
     'Agenda, reagenda, cancela o consulta citas/calendarios. Si el usuario sólo cambia fecha u hora, conserva contacto y calendario del contexto previo.',
+    'Para "la última cita", "la próxima cita", "esta cita" o "la cita agendada", resuelve primero la cita/contacto con lookup_business_reference o con el contexto operacional.',
     'Valida contacto, calendario y fecha/hora antes de ejecutar cambios reales.'
   ].join('\n'),
   workflows: [
     'Especialista Workflows:',
     'Mete o saca contactos de workflows, revisa automatizaciones y busca workflows por nombre limpio.',
-    'Separa siempre contacto y workflow; no pases la instrucción completa como nombre.'
+    'Si el contacto viene como "este contacto", "el de la última cita" o parecido, resuelve primero ese contacto con lookup_business_reference.',
+    'Separa siempre contacto y workflow; no pases la instrucción completa como nombre. Busca el workflow por nombre limpio en HighLevel/MCP y pregunta sólo si hay varios.'
   ].join('\n'),
   opportunities: [
     'Especialista Oportunidades:',
@@ -4842,6 +5218,13 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
   const metaAdsTools = buildMetaAdsTools(metaAdsConnection)
   const agentTools = [...webSearchTools, ...highLevelTools, ...metaAdsTools]
   const toolsRequireActionLoop = highLevelTools.length > 0 || metaAdsTools.length > 0
+  const operationalReferenceContext = supervisorRoute?.requiresHighLevelTools || supervisorRoute?.requiresPaymentTools
+    ? await buildOperationalReferenceContext({
+        runtimeContext,
+        viewContext,
+        highLevelConnection
+      })
+    : null
 
   if (metaAdsOperationalIntent && !metaAdsTools.length) {
     return buildMetaAdsMcpUnavailableReply(metaAdsConnection)
@@ -4861,6 +5244,9 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
     '',
     'Conexión HighLevel para acciones en CRM:',
     buildHighLevelToolContext(highLevelConnection),
+    '',
+    'Contexto operacional para referencias del usuario:',
+    operationalReferenceContext ? JSON.stringify(operationalReferenceContext, null, 2) : 'No aplica para esta ruta.',
     '',
     'Conexión Meta Ads MCP para operaciones en Ads Manager:',
     buildMetaAdsToolContext(metaAdsConnection),
@@ -4904,6 +5290,8 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
           tools: agentTools,
           include: webSearchTools.length ? ['web_search_call.action.sources'] : [],
           highLevelConnection,
+          runtimeContext,
+          viewContext,
           messages
         })
       : await callOpenAIResponse(apiKey, {
@@ -4946,6 +5334,8 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
           maxOutputTokens: 1800,
           tools: fallbackTools,
           highLevelConnection,
+          runtimeContext,
+          viewContext,
           messages
         })
       : await callOpenAIResponse(apiKey, {
