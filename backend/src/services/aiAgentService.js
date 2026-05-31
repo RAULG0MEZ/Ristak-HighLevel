@@ -2508,9 +2508,112 @@ async function getPaymentContactById(contactId) {
   return row?.id ? normalizeDbContact(row) : null
 }
 
-async function resolvePaymentContact(args) {
+function isContextualContactReference(value) {
+  const normalized = normalizeText(value)
+
+  return Boolean(
+    /\b(este|esta|ese|esa|aquel|aquella|mismo|misma|actual)\s+(contacto|cliente|lead|prospecto|paciente|persona)\b/.test(normalized) ||
+    /\b(contacto|cliente|lead|prospecto|paciente|persona)\s+(actual|de la pantalla|en pantalla)\b/.test(normalized) ||
+    /\b(esta persona|este cliente|este contacto|este lead|ese cliente|esa persona|ese contacto|el mismo|la misma|current_contact)\b/.test(normalized) ||
+    (/\b(aqui|en esta pantalla|de esta pantalla|en esta vista|de esta vista)\b/.test(normalized) &&
+      /(contacto|cliente|lead|prospecto|paciente|persona|pago|pagos|cita|datos|campo|historial)/.test(normalized))
+  )
+}
+
+function hasUsableContactLookupHint(value) {
+  const hint = cleanText(value, 220)
+  if (!hint) return false
+  if (extractContactIdFromText(hint)) return true
+  if (/@/.test(hint)) return true
+  if (normalizePhoneDigits(hint).length >= 7) return true
+
+  return getContactLookupTokens(hint).length > 0
+}
+
+function normalizeContactLookupHint(rawHint) {
+  const raw = cleanText(rawHint, 260)
+  if (!raw) return ''
+
+  const explicitId = extractContactIdFromText(raw)
+  if (explicitId) return raw
+
+  const extracted = extractContactLookupTerm(raw)
+  const cleaned = cleanText(cleanContactLookupTerm(extracted || raw), 180)
+
+  if (isContextualContactReference(raw) && !hasUsableContactLookupHint(cleaned)) {
+    return ''
+  }
+
+  return cleaned
+}
+
+function getRecentConversationContactId(messages = []) {
+  const safeMessages = Array.isArray(messages) ? messages.slice(-8).reverse() : []
+
+  for (const message of safeMessages) {
+    const textId = extractContactIdFromText(getMessageText(message))
+    if (textId) return textId
+
+    const options = Array.isArray(message?.clarificationOptions) ? message.clarificationOptions : []
+    for (const option of options) {
+      const optionId = extractContactIdFromText([
+        option?.value,
+        option?.description,
+        option?.label
+      ].filter(Boolean).join(' '))
+      if (optionId) return optionId
+    }
+  }
+
+  return ''
+}
+
+async function getRecentConversationContact(messages = []) {
+  const contactId = getRecentConversationContactId(messages)
+  if (!contactId) return null
+
+  return getPaymentContactById(contactId)
+}
+
+async function resolveContextualPaymentContact(args = {}, context = {}, options = {}) {
+  const latestUserText = getLatestUserMessage(context.messages)
+  const referenceText = [
+    args.referenceType,
+    args.referenceText,
+    args.reference,
+    args.contactHint,
+    args.hint,
+    latestUserText
+  ].filter(Boolean).join(' ')
+  const wantsContextual = isContextualContactReference(referenceText)
+
+  if (wantsContextual || options.allowCurrentViewFallback) {
+    const currentContact = await getCurrentViewContact(context.viewContext || {})
+    if (currentContact?.id) return currentContact
+  }
+
+  if (wantsContextual || options.allowConversationFallback) {
+    const recentContact = await getRecentConversationContact(context.messages)
+    if (recentContact?.id) return recentContact
+  }
+
+  return null
+}
+
+async function resolvePaymentContact(args, context = {}) {
   const contactArg = args.contact && typeof args.contact === 'object' ? args.contact : {}
-  const contactId = cleanText(args.contactId || contactArg.id || extractContactIdFromText(args.contactHint), 120)
+  const contactId = cleanText(
+    args.contactId ||
+    contactArg.id ||
+    extractContactIdFromText([
+      args.contactHint,
+      args.contactName,
+      args.hint,
+      args.referenceText,
+      getLatestUserMessage(context.messages)
+    ].filter(Boolean).join(' ')),
+    120
+  )
 
   if (contactId) {
     const contact = await getPaymentContactById(contactId)
@@ -2521,7 +2624,7 @@ async function resolvePaymentContact(args) {
     }
   }
 
-  const hint = cleanText(
+  const rawHint = cleanText(
     args.contactName ||
     contactArg.name ||
     args.contactEmail ||
@@ -2532,9 +2635,15 @@ async function resolvePaymentContact(args) {
     '',
     160
   )
-  const lookupHint = cleanText(hint, 160)
+  const lookupHint = normalizeContactLookupHint(rawHint)
 
   if (!lookupHint) {
+    const contextualContact = await resolveContextualPaymentContact(args, context, {
+      allowCurrentViewFallback: true,
+      allowConversationFallback: true
+    })
+    if (contextualContact?.id) return { contact: contextualContact }
+
     return {
       error: 'Falta identificar el contacto.',
       missingFields: ['contacto']
@@ -2611,7 +2720,13 @@ async function resolveHighLevelContactForAgent(args = {}, context = {}, options 
     args.contactId ||
     args.contact_id ||
     contactArg.id ||
-    extractContactIdFromText(args.contactHint || args.referenceText || ''),
+    extractContactIdFromText([
+      args.contactHint,
+      args.contactName,
+      args.hint,
+      args.referenceText,
+      getLatestUserMessage(context.messages)
+    ].filter(Boolean).join(' ')),
     160
   )
 
@@ -2630,16 +2745,20 @@ async function resolveHighLevelContactForAgent(args = {}, context = {}, options 
     args.referenceText,
     args.reference,
     args.contactHint,
-    args.hint
+    args.hint,
+    getLatestUserMessage(context.messages)
   ].filter(Boolean).join(' '))
   const wantsCurrentContact = /(este|esta|actual|pantalla|vista)\s+(contacto|cliente|lead|persona)|current_contact/.test(referenceText)
 
   if (wantsCurrentContact) {
     const currentContact = await getCurrentViewContact(context.viewContext || {})
     if (currentContact?.id) return { contact: currentContact }
+
+    const recentContact = await getRecentConversationContact(context.messages)
+    if (recentContact?.id) return { contact: recentContact }
   }
 
-  const hint = cleanText(
+  const rawHint = cleanText(
     args.contactName ||
     contactArg.name ||
     args.contactEmail ||
@@ -2652,9 +2771,15 @@ async function resolveHighLevelContactForAgent(args = {}, context = {}, options 
     '',
     180
   )
-  const lookupHint = cleanText(hint, 180)
+  const lookupHint = normalizeContactLookupHint(rawHint)
 
   if (!lookupHint) {
+    const contextualContact = await resolveContextualPaymentContact(args, context, {
+      allowCurrentViewFallback: true,
+      allowConversationFallback: true
+    })
+    if (contextualContact?.id) return { contact: contextualContact }
+
     return {
       error: options.missingContactError || 'Falta identificar el contacto con nombre, email, teléfono o ID.',
       missingFields: ['contacto']
@@ -3391,7 +3516,7 @@ async function getStoredCardStatusForContact(contactId, paymentMode = PAYMENT_MO
   }
 }
 
-async function executeLookupContactPaymentProfile(args = {}, highLevelConnection = {}) {
+async function executeLookupContactPaymentProfile(args = {}, highLevelConnection = {}, context = {}) {
   if (!highLevelConnection?.configured) {
     return {
       ok: false,
@@ -3399,7 +3524,7 @@ async function executeLookupContactPaymentProfile(args = {}, highLevelConnection
     }
   }
 
-  const resolvedContact = await resolvePaymentContact(args)
+  const resolvedContact = await resolvePaymentContact(args, context)
   if (!resolvedContact.contact) {
     return {
       ok: false,
@@ -3971,7 +4096,7 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
   const paymentTimezone = highLevelConnection.locationData?.timezone || DEFAULT_PAYMENT_TIMEZONE
   args = enrichInstallmentPaymentArgs(args, context.messages, paymentTimezone)
 
-  const resolvedContact = await resolvePaymentContact(args)
+  const resolvedContact = await resolvePaymentContact(args, context)
   if (!resolvedContact.contact) {
     return {
       ok: false,
@@ -4201,7 +4326,7 @@ async function executeCreateSinglePaymentLink(args = {}, highLevelConnection, co
     }
   }
 
-  const resolvedContact = await resolvePaymentContact(args)
+  const resolvedContact = await resolvePaymentContact(args, context)
   if (!resolvedContact.contact) {
     return {
       ok: false,
@@ -4327,7 +4452,7 @@ async function executeRecordContactPayment(args = {}, highLevelConnection, conte
     }
   }
 
-  const resolvedContact = await resolvePaymentContact(args)
+  const resolvedContact = await resolvePaymentContact(args, context)
   if (!resolvedContact.contact) {
     return {
       ok: false,
@@ -5344,7 +5469,8 @@ async function callOpenAIResponseWithActionTools(apiKey, {
         } else if (call.name === 'lookup_highlevel_contact') {
           output = await executeLookupHighLevelContact(call.arguments, highLevelConnection, {
             runtimeContext,
-            viewContext
+            viewContext,
+            messages
           })
         } else if (call.name === 'update_highlevel_contact_field') {
           output = await executeUpdateHighLevelContactField(call.arguments, highLevelConnection, {
@@ -5353,7 +5479,11 @@ async function callOpenAIResponseWithActionTools(apiKey, {
             messages
           })
         } else if (call.name === 'lookup_contact_payment_profile') {
-          output = await executeLookupContactPaymentProfile(call.arguments, highLevelConnection)
+          output = await executeLookupContactPaymentProfile(call.arguments, highLevelConnection, {
+            runtimeContext,
+            viewContext,
+            messages
+          })
         } else if (call.name === 'lookup_highlevel_products') {
           output = await executeLookupHighLevelProducts(call.arguments, highLevelConnection)
         } else if (call.name === 'highlevel_rest_request' && requiresPaymentExecutionConfirmation(call) && !hasExplicitPaymentExecutionConfirmation(messages)) {
@@ -5511,11 +5641,15 @@ function buildLocalSupervisorRoute(messages) {
   const normalized = normalizeText(latestUserMessage)
   const continuation = isConversationalFollowUp(messages)
   const paymentContinuation = isPaymentConversationContinuation(messages)
-  const paymentIntent = paymentContinuation || /(pago|cobr|invoice|factura|link|parcial|domicili|tarjeta|transfer)/.test(normalized)
+  const contactMutationIntent = /(contacto|cliente|lead|prospecto|persona|campo personalizado|custom field|campo|dato).*(actualiza|modifica|cambia|editar|cambiale|actualizale|modificale|ponle|quítale|quitale)|(?:actualiza|modifica|cambia|editar|cambiale|actualizale|modificale|ponle|quítale|quitale).*(contacto|cliente|lead|prospecto|persona|campo personalizado|custom field|campo|dato|nombre|email|correo|telefono|teléfono|ciudad|pagos totales|total paid)/.test(normalized)
+  const paymentIntent = !contactMutationIntent && (paymentContinuation || /(pago|cobr|invoice|factura|link|parcial|domicili|tarjeta|transfer)/.test(normalized))
+  const mutationIntent = contactMutationIntent || /(agrega|actualiza|modifica|cambia|crea|genera|registra|registrale|agenda|cancela|manda|mandale|envia|enviale|mete|saca|pausa|reactiva|send|create|update|delete|cobra|cobrale|cobrarle|cobrele|cobrar|programa|programale|domicili|link de pago|plan de pagos|plan de cobros|parcialidad|parcialidades|haz.*pago|hacer.*pago)/.test(normalized)
+  const readIntent = /(cual|cuál|cuanto|cuánto|cuantos|cuántos|dame|muestra|busca|revisa|analiza|info|informacion|información|datos|ultimo|último|reciente|historial|tuvo|tiene|existe|aparece)/.test(normalized)
 
   let domain = 'analytics'
 
   if (isMetaAdsOperationalRequest(latestUserMessage) && !(isMetaAdsBusinessMetricRequest(latestUserMessage) && !isMetaAdsMutationVerb(latestUserMessage))) domain = 'meta_ads_operations'
+  else if (contactMutationIntent) domain = 'contacts'
   else if (paymentIntent) domain = 'payments'
   else if (/(workflow|flujo|automatizacion|automatización)/.test(normalized)) domain = 'workflows'
   else if (/(cita|agenda|calendario|appointment)/.test(normalized)) domain = 'appointments'
@@ -5524,11 +5658,11 @@ function buildLocalSupervisorRoute(messages) {
   else if (/(mercado|tendencia|competidor|competencia|noticia|online|internet)/.test(normalized)) domain = 'web_research'
   else if (continuation && hasPreviousPaymentContext(messages)) domain = 'payments'
 
-  const action = paymentIntent || /(agrega|actualiza|modifica|cambia|crea|registra|agenda|cancela|manda|envia|mete|saca|pausa|reactiva|send|create|update|delete)/.test(normalized)
+  const action = mutationIntent
     ? 'mutate'
     : continuation
       ? 'continue'
-      : /(cual|cuanto|cuantos|dame|muestra|busca|revisa|analiza|info|informacion|datos)/.test(normalized)
+      : readIntent
         ? 'read'
         : 'answer'
 
@@ -5699,6 +5833,7 @@ const SPECIALIST_PROMPTS = {
     'Especialista Publicidad Analítica:',
     'Evalúa campañas por utilidad y ROAS: ingresos atribuidos dividido entre gasto, usando attribution_ad_id + fecha de creación del contacto contra meta_ads.ad_id/date.',
     'CPC, CPM, CTR, clicks y alcance son diagnósticos, no veredicto de rentabilidad.',
+    'Si el usuario pide meses específicos por nombre, responde con ese rango calendario exacto; no uses últimos 90 días como sustituto.',
     'Si piden públicos, campañas activas, presupuestos o configuración real de Ads Manager, eso no es analítica: debe ir por Meta Ads MCP.'
   ].join('\n'),
   meta_ads_operations: [
@@ -6436,6 +6571,7 @@ async function createQueryPlan(apiKey, { messages, viewContext, runtimeContext, 
     'Cuando necesites buscar un contacto por nombre y no tengas contact_id, usa busqueda tipo contiene y tolerante a acentos: compara contra full_name, first_name + last_name, email, phone e id. Si salen varios contactos plausibles, pregunta cuál es antes de responder o ejecutar acciones.',
     'Para medir resultados de una campaña o anuncio (leads, citas, asistencias, ventas, ingresos, ROAS), usa el modelo de atribución de Publicidad: une contacts.attribution_ad_id con meta_ads.ad_id, atribuye por contacts.created_at, valida que el anuncio existiera ese día (EXISTS en meta_ads con la misma fecha) y suma contacts.total_paid como ingreso. No uses payments.date ni ventanas de pago para atribuir a campañas.',
     'Si la pregunta es sobre campañas/anuncios o su rendimiento (ROAS, retorno, rentabilidad, cuál jala, cuál escalar): el mapa base YA trae campañas_ultimos_90_dias (gasto, leads, citas, asistencias, ventas, ingresos atribuidos, utilidad y ROAS de los últimos ~90 días) y campañas_por_mes (lo mismo desglosado por mes para todo el histórico). NO repitas esas consultas. Sólo genera SQL extra si el usuario pide un corte que esas no cubren (ej. una campaña específica por nombre, un rango exacto de fechas distinto, o desglose por adset/anuncio); en ese caso usa el modelo de atribución: gasto = SUM(meta_ads.spend), leads/citas/asistencias/ventas/ingresos atribuidos por contacts.created_at y validación de meta_ads por el mismo ad_id y la misma fecha. Nunca dejes que la respuesta concluya con solo el mes actual cuando el usuario pidió un rango mayor.',
+    'Si el usuario menciona meses por nombre ("febrero y marzo", "desde febrero", "marzo a mayo"), eso es un rango calendario explícito del año aplicable; no lo sustituyas por últimos 90 días. Usa campañas_por_mes si alcanza o genera SQL con fechas absolutas de esos meses.',
     'Genera consultas específicas para la pregunta aunque el usuario use palabras raras, incompletas o casuales. Traduce intención de negocio a datos.',
     'Usa el contexto del negocio para interpretar mercado, nicho, cliente ideal, zona, competidores y prioridades del usuario.',
     'Si una fecha es relativa o rara, conviértela tú a fechas absolutas usando la fecha actual. Nunca dejes params como start_date, end_date, start_ts o placeholders similares.',
@@ -6929,26 +7065,38 @@ const CONTACT_LOOKUP_STOP_WORDS = new Set([
   'busca', 'buscalo', 'buscame', 'buscar', 'cliente',
   'clientes', 'cita', 'citas', 'cobra', 'cobrale', 'cobrar', 'cobrarle', 'cobre', 'cobrele', 'cobro', 'cobros', 'como',
   'con', 'contacto', 'contactos', 'correo', 'cual', 'cuando', 'cuanto', 'cuantos',
-  'dame', 'dato', 'datos', 'de', 'del', 'desde', 'dime', 'donde', 'dolar', 'dolares', 'durante', 'el', 'ella',
-  'en', 'encuentra', 'encuentrame', 'ese', 'esa', 'esta', 'este', 'factura', 'facturas',
-  'hoy',
+  'cambia', 'cambiar', 'cambiale', 'cámbiale', 'actualiza', 'actualizar', 'actualizale', 'actualízale',
+  'dame', 'dato', 'datos', 'de', 'del', 'desde', 'despues', 'después', 'dime', 'donde', 'dolar', 'dolares', 'durante', 'el', 'ella',
+  'en', 'encuentra', 'encuentrame', 'ese', 'esa', 'esperar', 'esta', 'este', 'factura', 'facturas', 'fecha',
+  'hacer', 'haz', 'hoy',
   'info', 'informacion', 'la', 'las', 'lead', 'leads', 'le', 'les', 'link', 'lo',
-  'los', 'manda', 'mandale', 'mandar', 'me', 'mes', 'meses', 'mi', 'mis', 'mxn', 'necesito', 'nombre',
-  'numero', 'paciente', 'pacientes', 'pago', 'pagos', 'para', 'apra', 'peso', 'pesos', 'persona', 'personas',
-  'por', 'producto', 'programa', 'programale', 'prospecto', 'prospectos', 'que', 'quien', 'revisa', 'saber', 'sobre',
-  'su', 'sus', 'telefono', 'tiene', 'tienen', 'tuvo', 'un', 'una', 'usd', 'venta', 'ventas',
-  'ver', 'quiero', 'anticipo', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
+  'los', 'luego', 'manda', 'mandale', 'mandar', 'me', 'mes', 'meses', 'mete', 'meter', 'metele', 'métele', 'mi', 'mis', 'misma', 'mismo', 'modifica', 'modificar', 'modificale', 'modifícale', 'mxn', 'necesito', 'nombre',
+  'numero', 'oye', 'paciente', 'pacientes', 'pago', 'pagos', 'para', 'apra', 'plan', 'planes', 'peso', 'pesos', 'persona', 'personas',
+  'podria', 'podría', 'podrias', 'podrías', 'por', 'producto', 'programa', 'programale', 'prospecto', 'prospectos', 'que', 'quien', 'registra', 'registrar', 'registrale', 'regístrale', 'registrame', 'regístrame', 'revisa', 'saber', 'siguiente', 'sobre', 'sucesivamente',
+  'su', 'sus', 'telefono', 'tiene', 'tienen', 'tres', 'tuvo', 'un', 'una', 'uno', 'usd', 'venta', 'ventas',
+  'vamos', 'ver', 'quiero', 'anticipo', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
   'agosto', 'septiembre', 'setiembre', 'octubre', 'noviembre', 'diciembre'
 ])
 
 const CONTACT_LOOKUP_COMMAND_WORDS = [
+  'actualiza',
+  'arma',
   'busca',
   'buscame',
   'buscar',
+  'cambia',
+  'crea',
   'encuentra',
   'encuentrame',
+  'hacer',
+  'haz',
+  'mete',
+  'modifica',
+  'prepara',
   'revisa',
   'dame',
+  'registra',
+  'registrame',
   'muestrame',
   'muestreame',
   'ensename',
@@ -7022,10 +7170,12 @@ function cleanContactLookupTerm(value) {
 function extractContactLookupTerm(question) {
   const normalizedQuestion = normalizeSearchText(question, 360)
   const patterns = [
-    /\b(?:buscame|busca|buscar|encuentrame|encuentra|revisa|dame)\s+(.+?)(?=\s+(?:y|para|con|que|cobrale|cobrarle|cobrele|cobra|mandale|enviale|hazle|programale|agendale|creale|generale|registrale)\b|$)/i,
+    /\b(?:hacer|haz|arma|armar|crea|crear|genera|generar|prepara|preparar)\s+(?:(?:un|una)\s+)?(?:plan\s+de\s+pagos|plan\s+de\s+cobros|payment\s+plan|plan)\s+(?:(?:a|al|para|apra|de)\s+)?(.+?)(?=\s+(?:le\s+vamos|vamos|le\s+voy|voy|le\s+van|van|le\s+cobr|cobr|con|por|de\s+\d|\d|\$|mxn|usd|peso|pesos|dolar|dolares|hoy|ahora|ahorita|manana|mañana|luego|despues|después|y\s+luego|y\s+despues|y\s+después)\b|$)/i,
+    /\b(?:plan\s+de\s+pagos|plan\s+de\s+cobros|payment\s+plan)\s+(?:(?:a|al|para|apra|de)\s+)?(.+?)(?=\s+(?:le\s+vamos|vamos|le\s+voy|voy|le\s+van|van|le\s+cobr|cobr|con|por|de\s+\d|\d|\$|mxn|usd|peso|pesos|dolar|dolares|hoy|ahora|ahorita|manana|mañana|luego|despues|después|y\s+luego|y\s+despues|y\s+después)\b|$)/i,
+    /\b(?:buscame|busca|buscar|encuentrame|encuentra|revisa|dame)\s+(.+?)(?=\s+(?:y|para|con|que|cobrale|cobrarle|cobrele|cobra|mandale|enviale|hazle|programale|agendale|creale|generale|registrale|registra|actualizale|actualiza|cambiale|cambia|modificale|modifica|metele|mete)\b|$)/i,
     /\b(?:programa|programale|agendale|agenda|calendariza)\s+(?:(?:un|una)\s+)?(?:(?:pago|cobro|invoice|factura|link)\s+)?(?:(?:a|al|para|apra)\s+)?(.+?)(?=\s+(?:\d|\$|mxn|usd|peso|pesos|dolar|dolares|hoy|ahora|ahorita|manana|mañana|el\s+\d|durante|por|cada|desde|hasta|del\s+producto|producto|concepto)\b|$)/i,
-    /\b(?:cobrale|cobrarle|cobrele|cobra|mandale|enviale|hazle|programale|agendale|creale|generale|registrale)\s+(?:(?:a|al|para|apra)\s+)?(.+?)(?=\s+(?:\d|\$|mxn|usd|peso|pesos|dolar|dolares|hoy|ahora|ahorita|manana|mañana|el\s+\d|durante|por|cada|desde|hasta)\b|$)/i,
-    /\b(?:contacto|cliente|lead|prospecto|paciente|persona)\s+(?:de\s+|llamad[oa]\s+|con\s+nombre\s+)?(.+?)(?=\s+(?:y|para|con|que|cobrale|cobrarle|cobrele|cobra|mandale|enviale|hazle|programale|agendale|\d|\$|mxn|usd|peso|pesos)\b|$)/i
+    /\b(?:cobrale|cobrarle|cobrele|cobra|mandale|enviale|hazle|programale|agendale|creale|generale|registrale|registra|actualizale|actualiza|cambiale|cambia|modificale|modifica|metele|mete)\s+(?:(?:un|una|el|la)\s+)?(?:(?:pago|cobro|invoice|factura|link|workflow|flujo|campo|dato)\s+)?(?:(?:a|al|para|apra|de)\s+)?(.+?)(?=\s+(?:\d|\$|mxn|usd|peso|pesos|dolar|dolares|hoy|ahora|ahorita|manana|mañana|el\s+\d|durante|por|cada|desde|hasta|con\s+valor|a\s+valor)\b|$)/i,
+    /\b(?:contacto|cliente|lead|prospecto|paciente|persona)\s+(?:de\s+|llamad[oa]\s+|con\s+nombre\s+)?(.+?)(?=\s+(?:y|para|con|que|cobrale|cobrarle|cobrele|cobra|mandale|enviale|hazle|programale|agendale|registrale|registra|actualizale|actualiza|cambiale|cambia|modificale|modifica|metele|mete|\d|\$|mxn|usd|peso|pesos)\b|$)/i
   ]
 
   for (const pattern of patterns) {
@@ -7468,9 +7618,44 @@ function buildResolvedContactResearchQueries(contactResolution) {
   ]
 }
 
-async function resolveMentionedContactForAgent({ messages, runtimeContext }) {
+async function resolveMentionedContactForAgent({ messages, runtimeContext, viewContext }) {
   const question = getLatestUserMessage(messages)
-  if (!question || isClarificationSelection(question) || isConversationalFollowUp(messages)) return null
+  if (!question) return null
+
+  const explicitContactId = extractContactIdFromText(question)
+  if (explicitContactId) {
+    const contact = await getPaymentContactById(explicitContactId)
+    if (contact?.id) {
+      return {
+        term: explicitContactId,
+        contact,
+        queryResult: buildContactLookupQueryResult({
+          term: explicitContactId,
+          contact
+        })
+      }
+    }
+  }
+
+  if (isContextualContactReference(question)) {
+    const contact = await resolveContextualPaymentContact({}, { messages, viewContext }, {
+      allowCurrentViewFallback: true,
+      allowConversationFallback: true
+    })
+
+    if (contact?.id) {
+      return {
+        term: 'contacto contextual',
+        contact,
+        queryResult: buildContactLookupQueryResult({
+          term: 'contacto contextual',
+          contact
+        })
+      }
+    }
+  }
+
+  if (isClarificationSelection(question) || isConversationalFollowUp(messages)) return null
 
   const lookup = await searchMentionedContacts(question, runtimeContext)
   if (!lookup) return null
@@ -8729,7 +8914,11 @@ export async function createAgentReply({ apiKey, messages, viewContext }) {
   }
 
   const runDatabaseResearch = !metaAdsDbResearchSkipped && shouldRunDatabaseResearchForRoute(supervisorRoute)
-  const contactResolution = await resolveMentionedContactForAgent({ messages, runtimeContext })
+  const contactResolution = await resolveMentionedContactForAgent({
+    messages,
+    runtimeContext,
+    viewContext: viewContext || {}
+  })
   if (contactResolution?.clarificationReply) {
     return contactResolution.clarificationReply
   }
