@@ -95,6 +95,10 @@ function normalizeText(value) {
   return String(value).trim().toLowerCase()
 }
 
+function normalizeLookupText(value) {
+  return String(value || '').trim()
+}
+
 function amountsMatch(left, right, tolerance = 0.01) {
   return Math.abs(normalizeAmount(left) - normalizeAmount(right)) <= tolerance
 }
@@ -1231,6 +1235,45 @@ async function findPaymentFlowPaidTarget(invoiceId, paymentSignal = {}) {
   }
 
   const contactId = paymentSignal.contactId || paymentSignal.contact_id
+  const invoiceNumber = normalizeLookupText(paymentSignal.invoiceNumber || paymentSignal.invoice_number)
+
+  if (invoiceNumber) {
+    const paymentRow = await db.get(
+      `SELECT id, ghl_invoice_id
+       FROM payments
+       WHERE (? IS NULL OR contact_id = ?)
+         AND (
+           invoice_number = ?
+           OR reference = ?
+           OR reference = ?
+         )
+       ORDER BY
+         CASE WHEN ghl_invoice_id IS NOT NULL AND ghl_invoice_id != '' THEN 0 ELSE 1 END,
+         created_at DESC
+       LIMIT 1`,
+      [contactId || null, contactId || null, invoiceNumber, invoiceNumber, `Invoice #${invoiceNumber}`]
+    )
+
+    const resolvedInvoiceId = paymentRow?.ghl_invoice_id || paymentRow?.id
+    if (resolvedInvoiceId) {
+      const flow = await db.get(
+        `SELECT *
+         FROM payment_flows
+         WHERE first_payment_invoice_id = ? OR card_setup_invoice_id = ?
+         LIMIT 1`,
+        [resolvedInvoiceId, resolvedInvoiceId]
+      )
+
+      if (flow) {
+        logger.info(`Invoice de flujo reconocido por número de factura ${invoiceNumber}: flujo=${flow.id}`)
+        return {
+          flow,
+          target: flow.first_payment_invoice_id === resolvedInvoiceId ? 'first_payment' : 'card_setup'
+        }
+      }
+    }
+  }
+
   const amount = normalizeAmount(paymentSignal.amount)
   const description = normalizeText(paymentSignal.description)
 

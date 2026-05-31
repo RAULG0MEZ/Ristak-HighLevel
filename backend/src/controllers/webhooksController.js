@@ -132,7 +132,13 @@ function normalizeLookupText(value) {
 }
 
 function parseInvoiceNumberFromReference(reference) {
-  const match = normalizeLookupText(reference).match(/invoice\s*#?\s*([A-Za-z0-9-]+)/i);
+  const cleanReference = normalizeLookupText(reference);
+  const match = cleanReference.match(/invoice\s*#?\s*([A-Za-z0-9-]+)/i);
+  if (match?.[1]) return match[1];
+
+  const standaloneInvoiceNumber = cleanReference.match(/\b((?:FACTURA|FACT|FAC|INV)[-\s#]*[A-Za-z0-9-]+)\b/i);
+  if (standaloneInvoiceNumber?.[1]) return standaloneInvoiceNumber[1].replace(/[\s#]+/g, '-');
+
   return match?.[1] || null;
 }
 
@@ -541,7 +547,8 @@ export const handlePaymentWebhook = async (req, res) => {
       const flow = await markPaymentFlowInvoicePaid(effectiveInvoiceId, {
         contactId,
         amount,
-        description
+        description,
+        invoiceNumber
       });
 
       if (!flow) {
