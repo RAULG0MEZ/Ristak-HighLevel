@@ -99,6 +99,13 @@ function normalizeLookupText(value) {
   return String(value || '').trim()
 }
 
+function maskIdentifier(value) {
+  if (!value) return null
+  const text = String(value)
+  if (text.length <= 10) return text
+  return `${text.slice(0, 6)}...${text.slice(-4)}`
+}
+
 function amountsMatch(left, right, tolerance = 0.01) {
   return Math.abs(normalizeAmount(left) - normalizeAmount(right)) <= tolerance
 }
@@ -242,7 +249,7 @@ function pickSendMethod(contact, channels = {}) {
 
 async function getInvoiceSendContext() {
   const config = await db.get(`
-    SELECT location_data, ghl_invoice_mode, invoice_title, invoice_terms_notes
+    SELECT location_data, ghl_invoice_mode, invoice_title, invoice_terms_notes, invoice_number_prefix
     FROM highlevel_config
     LIMIT 1
   `)
@@ -276,6 +283,7 @@ async function getInvoiceSendContext() {
     timezone: locationData?.timezone || DEFAULT_PAYMENT_TIMEZONE,
     invoiceTitle: config.invoice_title || 'PAGO',
     termsNotes: config.invoice_terms_notes || null,
+    invoiceNumberPrefix: config.invoice_number_prefix || null,
     businessDetails,
     sentFrom: {
       fromName,
@@ -731,11 +739,15 @@ function buildInstallmentSchedulePayload({ flow, installment, context }) {
   const currency = flow.currency || CURRENCY_DEFAULT
   const concept = flow.concept || 'Plan de parcialidades'
   const sequence = Number(installment.sequence || 1)
+  const amount = normalizeAmount(installment.amount)
 
   return {
     name: `${concept} - parcialidad ${sequence}`,
     title: 'PAGO PROGRAMADO',
     currency,
+    total: amount,
+    termsNotes: context.termsNotes || '',
+    ...(context.invoiceNumberPrefix && { invoiceNumberPrefix: context.invoiceNumberPrefix }),
     businessDetails: context.businessDetails,
     contactDetails: {
       id: flow.contact_id,
@@ -755,7 +767,7 @@ function buildInstallmentSchedulePayload({ flow, installment, context }) {
       {
         name: `Parcialidad ${sequence}`,
         description: concept,
-        amount: normalizeAmount(installment.amount),
+        amount,
         qty: 1,
         currency,
         type: 'one_time'
@@ -799,15 +811,16 @@ async function scheduleAutomaticInstallmentsForFlow(flow, paymentMethod, existin
   const scheduled = []
 
   logger.info(`Programando ${installments.length} parcialidad(es) automáticas para flujo ${flow.id}`)
+  logger.info(`Autopago GHL para flujo ${flow.id}: customer=${maskIdentifier(paymentMethod.customerId)}, method=${maskIdentifier(paymentMethod.paymentMethodId)}, card=${paymentMethod.brand || 'card'} ${paymentMethod.last4 || '****'}, live=${context.liveMode}`)
 
   for (const installment of installments) {
     let scheduleId = installment.ghl_schedule_id
 
     try {
       if (!scheduleId) {
-        const schedule = await ghlClient.createInvoiceSchedule(
-          buildInstallmentSchedulePayload({ flow, installment, context })
-        )
+        const schedulePayload = buildInstallmentSchedulePayload({ flow, installment, context })
+        logger.info(`Creando schedule GHL para flujo ${flow.id}, parcialidad ${installment.sequence}: amount=${schedulePayload.total}, executeAt=${schedulePayload.schedule?.executeAt}, live=${schedulePayload.liveMode}`)
+        const schedule = await ghlClient.createInvoiceSchedule(schedulePayload)
         scheduleId = extractScheduleId(schedule)
 
         if (!scheduleId) {
@@ -820,6 +833,7 @@ async function scheduleAutomaticInstallmentsForFlow(flow, paymentMethod, existin
            WHERE id = ?`,
           [scheduleId, installment.id]
         )
+        logger.info(`Schedule GHL creado para flujo ${flow.id}, parcialidad ${installment.sequence}: ${scheduleId}`)
       }
 
       await ghlClient.manageInvoiceScheduleAutoPayment(scheduleId, {
@@ -847,12 +861,14 @@ async function scheduleAutomaticInstallmentsForFlow(flow, paymentMethod, existin
         sequence: installment.sequence
       })
     } catch (error) {
+      const scheduleError = `GHL schedule failed: ${error.message}`.slice(0, 800)
       await db.run(
         `UPDATE installment_payments
          SET ghl_schedule_status = 'schedule_failed',
+             notes = ?,
              updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
-        [installment.id]
+        [scheduleError, installment.id]
       )
 
       logger.error(`Falló programación GHL para flujo ${flow.id}, parcialidad ${installment.sequence}: ${error.message}`)
@@ -1228,6 +1244,7 @@ export async function createInstallmentPaymentFlow(payload) {
 
 async function activateFlowIfReady(flow) {
   const ghlClient = await getGHLClient()
+  logger.info(`Intentando activar flujo de parcialidades ${flow.id}: firstInvoice=${maskIdentifier(flow.first_payment_invoice_id)}, cardSetupInvoice=${maskIdentifier(flow.card_setup_invoice_id)}, firstStatus=${flow.first_payment_status}, cardSetupStatus=${flow.card_setup_status}`)
   const authorizedCard = await getAuthorizedPaymentMethod(flow, { ghlClient })
 
   if (!authorizedCard) {

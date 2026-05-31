@@ -820,6 +820,14 @@ async function initTables() {
       }
 
       try {
+        await db.run('ALTER TABLE installment_payments ADD COLUMN notes TEXT')
+      } catch (err) {
+        if (!err.message.includes('duplicate column') && !err.message.includes('already exists')) {
+          throw err
+        }
+      }
+
+      try {
         await db.run('CREATE INDEX IF NOT EXISTS idx_installment_payments_schedule ON installment_payments(ghl_schedule_id)')
       } catch (err) {
         if (!err.message.includes('already exists') && !err.message.includes('no such column') && !err.message.includes('does not exist')) {
