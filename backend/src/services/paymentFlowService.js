@@ -429,6 +429,14 @@ function pickSendMethod(contact, channels = {}) {
   return 'none'
 }
 
+function hasExplicitChannelSelection(channels = {}) {
+  if (!channels || typeof channels !== 'object') return false
+
+  return ['email', 'sms', 'whatsapp'].some((channel) => (
+    channels[channel] === true || channels[channel] === false
+  ))
+}
+
 async function getInvoiceSendContext() {
   const config = await db.get(`
     SELECT location_data, ghl_invoice_mode, invoice_title, invoice_terms_notes, invoice_number_prefix
@@ -1887,7 +1895,7 @@ export async function createInstallmentPaymentFlow(payload) {
       invoiceId,
       contact,
       channels: payload.channels || {},
-      forceAllAvailable: true
+      forceAllAvailable: !hasExplicitChannelSelection(payload.channels)
     })
 
     stateHistory = addState(stateHistory, PAYMENT_FLOW_STATES.CARD_SETUP_LINK_SENT)

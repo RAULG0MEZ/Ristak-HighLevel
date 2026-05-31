@@ -875,6 +875,7 @@ const CONTACT_MUTATION_TOOL_NAMES = new Set([
 ])
 const CONTACT_REST_MUTATION_PATH_PATTERN = /^\/contacts\b/i
 const AI_OFFLINE_PAYMENT_METHODS = new Set(['cash', 'bank_transfer', 'transfer', 'deposit', 'manual', 'offline', 'check', 'other'])
+const AI_CARD_PAYMENT_METHODS = new Set(['card', 'payment_link', 'direct_card', 'saved_card'])
 
 const STANDARD_CONTACT_FIELD_DEFINITIONS = [
   { type: 'standard', key: 'name', label: 'Nombre completo', aliases: ['nombre', 'nombre completo', 'full name', 'fullName'] },
@@ -1673,7 +1674,7 @@ function buildPaymentConfirmationRequiredOutput({ action, summary = {}, clarific
     clarificationOptions: attachPaymentContactMemoryToOptions(clarificationOptions, summary),
     confirmationPrompt: [
       'No ejecutes la acción todavía.',
-      'Antes de tocar dinero, resume contacto, monto, concepto, método, fechas y qué pasará si no hay tarjeta guardada.',
+      'Antes de tocar dinero, resume contacto, monto, concepto, método, fechas, canal de envío si aplica y qué pasará si no hay tarjeta guardada.',
       'El contacto debe mostrarse con nombre y email o teléfono cuando existan; si no hay email/teléfono, muestra el ID.',
       'Pide una confirmación explícita sin imponer una frase exacta; una aprobación clara después del resumen es suficiente.',
       'Si falta método o no está claro si será transferencia, depósito, registro manual, link de pago o domiciliación, pregunta eso antes de confirmar.'
@@ -3360,22 +3361,208 @@ async function executeUpdateHighLevelContactField(args = {}, highLevelConnection
   }
 }
 
-function buildPaymentChannels(args = {}) {
-  const deliveryMode = normalizeText(args.deliveryMode || args.linkDeliveryMode || '')
+function normalizePaymentDeliveryMethod(value = '') {
+  const normalized = normalizeText(value)
 
-  if (deliveryMode === 'generate' || /(solo generar|generar link|copiar)/.test(deliveryMode)) {
-    return { email: false, sms: false, whatsapp: false }
+  if (!normalized) return ''
+  if (/^(none|no_send|sin_envio|sin_envío|generate|generated|copy)$/.test(normalized) || /(solo\s+gener|generar\s+(?:solo\s+)?(?:el\s+)?link|copiar\s+(?:el\s+)?link|no\s+(?:lo\s+)?env[ií]es|sin\s+enviar)/.test(normalized)) return 'none'
+  if (/^(all|both|sms_and_email|email_sms|email_whatsapp)$/.test(normalized) || /(todos|todas\s+partes|todos\s+los\s+canales|all|ambos|ambas|email\s*\+\s*(?:whats|sms)|correo\s*\+\s*(?:whats|sms)|whats.*(?:correo|email)|(?:correo|email).*whats|sms.*(?:correo|email)|(?:correo|email).*sms)/.test(normalized)) return 'all'
+  if (/(whatsapp|whats|wa\b)/.test(normalized)) return 'whatsapp'
+  if (/(sms|mensaje\s+de\s+texto|texto)/.test(normalized)) return 'sms'
+  if (/(correo|email|e-mail|mail)/.test(normalized)) return 'email'
+
+  return ''
+}
+
+function getPaymentDeliveryMethodFromArgs(args = {}) {
+  const candidates = [
+    args.deliveryChannel,
+    args.sendChannel,
+    args.deliveryMethod,
+    args.sendMethod,
+    args.sendVia,
+    args.channel,
+    args.invoiceSendMethod,
+    args.linkSendMethod,
+    args.linkDeliveryChannel,
+    args.linkDeliveryMethod
+  ]
+
+  for (const candidate of candidates) {
+    const method = normalizePaymentDeliveryMethod(candidate)
+    if (method) return method
   }
+
+  const deliveryMode = normalizePaymentDeliveryMethod(args.deliveryMode || args.linkDeliveryMode || '')
+  return deliveryMode === 'none' ? deliveryMode : ''
+}
+
+function extractPaymentDeliveryMethodFromText(text = '') {
+  const rawText = String(text || '')
+  const normalized = normalizeText(text)
+
+  if (!normalized) return ''
+
+  const explicitChannelMatch = rawText.match(/canal\s+de\s+env[ií]o\s+confirmado\s*[:：]\s*([^.\n,]+)/i)
+  const explicitMethod = normalizePaymentDeliveryMethod(explicitChannelMatch?.[1] || '')
+  if (explicitMethod) return explicitMethod
+
+  const prepositionMatch = rawText.match(/\b(?:por|v[ií]a|mediante|a\s+trav[eé]s\s+de|en)\s+(todos(?:\s+los\s+canales)?|todas\s+partes|whats(?:app)?|wa|sms|mensaje\s+de\s+texto|correo|email|e-mail|mail)\b/i)
+  if (prepositionMatch) return normalizePaymentDeliveryMethod(rawText)
+
+  const sendVerbMatch = rawText.match(/\b(?:env[ií]a(?:lo|selo|rselo|rlo)?|m[aá]nda(?:lo|selo|rselo|rlo)?|mandar|enviar)\b[^.\n]*(todos(?:\s+los\s+canales)?|todas\s+partes|whats(?:app)?|wa|sms|mensaje\s+de\s+texto|correo|email|e-mail|mail|solo\s+generar|generar\s+link|no\s+(?:lo\s+)?env[ií]es|sin\s+enviar)/i)
+  if (sendVerbMatch) return normalizePaymentDeliveryMethod(rawText)
+
+  if (/(solo\s+gener|generar\s+(?:solo\s+)?(?:el\s+)?link|copiar\s+(?:el\s+)?link|no\s+(?:lo\s+)?env[ií]es|sin\s+enviar)/.test(normalized)) {
+    return 'none'
+  }
+
+  return ''
+}
+
+function extractPaymentDeliveryMethodFromConversation(messages = []) {
+  const safeMessages = Array.isArray(messages) ? messages.slice(-8).reverse() : []
+
+  for (const message of safeMessages) {
+    if (message?.role === 'assistant') continue
+
+    const method = extractPaymentDeliveryMethodFromText(getMessageText(message))
+    if (method) return method
+  }
+
+  return ''
+}
+
+function buildPaymentChannelsFromDeliveryMethod(method = '') {
+  switch (method) {
+    case 'none':
+      return { email: false, sms: false, whatsapp: false }
+    case 'email':
+      return { email: true, sms: false, whatsapp: false }
+    case 'sms':
+      return { email: false, sms: true, whatsapp: false }
+    case 'whatsapp':
+      return { email: false, sms: false, whatsapp: true }
+    case 'all':
+      return { email: true, sms: true, whatsapp: true }
+    default:
+      return null
+  }
+}
+
+function buildPaymentChannels(args = {}, messages = []) {
+  const explicitMethod = getPaymentDeliveryMethodFromArgs(args) ||
+    extractPaymentDeliveryMethodFromConversation(messages)
+  const explicitChannels = buildPaymentChannelsFromDeliveryMethod(explicitMethod)
+
+  if (explicitChannels) return explicitChannels
 
   if (args.channels && typeof args.channels === 'object') {
     return {
-      email: args.channels.email !== false,
-      sms: args.channels.sms !== false,
-      whatsapp: args.channels.whatsapp !== false
+      email: args.channels.email === true,
+      sms: args.channels.sms === true,
+      whatsapp: args.channels.whatsapp === true
     }
   }
 
   return {}
+}
+
+function resolvePaymentDeliverySelection(args = {}, context = {}) {
+  const method = getPaymentDeliveryMethodFromArgs(args) ||
+    extractPaymentDeliveryMethodFromConversation(context.messages)
+
+  if (!method) {
+    return {
+      method: '',
+      channels: null
+    }
+  }
+
+  return {
+    method,
+    channels: buildPaymentChannelsFromDeliveryMethod(method)
+  }
+}
+
+function getPaymentDeliveryLabel(method = '') {
+  const labels = {
+    all: 'todos los canales disponibles',
+    email: 'correo',
+    sms: 'SMS',
+    whatsapp: 'WhatsApp',
+    none: 'solo generar link'
+  }
+
+  return labels[method] || ''
+}
+
+function getPaymentDeliveryMissingDestination(method = '', contact = {}) {
+  if (!method || method === 'none') return ''
+
+  const needsEmail = method === 'email'
+  const needsPhone = method === 'sms' || method === 'whatsapp'
+  const wantsAll = method === 'all'
+  const hasEmail = Boolean(contact.email)
+  const hasPhone = Boolean(contact.phone)
+
+  if (wantsAll && !hasEmail && !hasPhone) return 'El contacto no tiene correo ni teléfono para enviar el enlace.'
+  if (needsEmail && !hasEmail) return 'El contacto no tiene correo para enviar el enlace.'
+  if (needsPhone && !hasPhone) return 'El contacto no tiene teléfono para enviar el enlace.'
+
+  return ''
+}
+
+function buildPaymentDeliveryClarificationOptions(contact = {}) {
+  const normalizedContact = normalizeOperationalContact(contact) || contact
+  const hasEmail = Boolean(normalizedContact.email)
+  const hasPhone = Boolean(normalizedContact.phone)
+  const contactMemoryText = buildPaymentContactMemoryText(normalizedContact)
+  const options = []
+  const addOption = (label, description, method, valueText) => {
+    options.push({
+      label,
+      description,
+      value: `${valueText} Canal de envío confirmado: ${method}.${contactMemoryText ? ` ${contactMemoryText}` : ''}`
+    })
+  }
+
+  if (hasEmail && hasPhone) {
+    addOption('Todos', 'Envía por correo y teléfono si HighLevel lo permite.', 'all', 'Envíalo por todos los canales disponibles.')
+  }
+
+  if (hasPhone) {
+    addOption('WhatsApp', 'Envía el enlace al teléfono del contacto.', 'whatsapp', 'Envíalo por WhatsApp.')
+    addOption('SMS', 'Envía el enlace por mensaje de texto.', 'sms', 'Envíalo por SMS.')
+  }
+
+  if (hasEmail) {
+    addOption('Correo', 'Envía el enlace al email del contacto.', 'email', 'Envíalo por correo.')
+  }
+
+  return options
+}
+
+function buildPaymentDeliveryRequiredOutput({ contact, action, reason, summary = {} } = {}) {
+  const options = buildPaymentDeliveryClarificationOptions(contact)
+
+  return {
+    ok: false,
+    error: options.length
+      ? 'Antes de crear/enviar este invoice necesito que elijas por dónde enviar el enlace de pago.'
+      : 'El contacto no tiene correo ni teléfono para enviar el enlace de pago.',
+    action,
+    missingFields: ['canal de envío'],
+    contact: {
+      id: contact.id,
+      name: contact.name,
+      email: contact.email || null,
+      phone: contact.phone || null
+    },
+    reason,
+    summary,
+    clarificationOptions: options
+  }
 }
 
 function getProductPaymentAmount(args = {}) {
@@ -4099,6 +4286,7 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
     ? await getStoredCardStatusForContact(contact.id, highLevelConnection.paymentMode)
     : { hasAuthorizedCard: false, paymentMode: normalizePaymentMode(highLevelConnection.paymentMode, PAYMENT_MODE_LIVE) }
   const storedCardPreference = normalizeStoredCardPreference(args)
+  const forceNewCardAuthorization = storedCardPreference === 'new_card'
 
   if (
     firstPayment.enabled &&
@@ -4112,6 +4300,18 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
     firstPayment.methodProvided = true
     firstPayment.methodInferredFromStoredCard = true
   }
+
+  const firstPaymentIsCard = firstPayment.enabled && AI_CARD_PAYMENT_METHODS.has(firstPayment.method)
+  const firstPaymentIsOffline = firstPayment.enabled && AI_OFFLINE_PAYMENT_METHODS.has(firstPayment.method)
+  const cardSetupWillBeRequired = remainingAutomatic && !firstPaymentIsCard && (
+    forceNewCardAuthorization ||
+    (!storedCardStatus.hasAuthorizedCard && (!firstPayment.enabled || firstPaymentIsOffline))
+  )
+  const deliveryRequired = firstPaymentIsCard || cardSetupWillBeRequired
+  const deliverySelection = resolvePaymentDeliverySelection(args, context)
+  const deliveryMissingDestination = deliveryRequired
+    ? getPaymentDeliveryMissingDestination(deliverySelection.method, contact)
+    : ''
 
   const missingFields = []
 
@@ -4196,6 +4396,53 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
     }
   }
 
+  if (deliveryRequired && !deliverySelection.method) {
+    return buildPaymentDeliveryRequiredOutput({
+      contact,
+      action: 'create_installment_payment_flow',
+      reason: firstPaymentIsCard
+        ? 'El primer pago con tarjeta/link crea un invoice que debe enviarse por un canal explícito para no quedarse como borrador.'
+        : 'El primer pago offline se registra, pero falta enviar enlace de domiciliación porque no hay tarjeta guardada/autorizada.',
+      summary: {
+        totalAmount,
+        currency,
+        concept,
+        firstPayment: firstPayment.enabled
+          ? {
+              amount: firstPayment.amount,
+              method: firstPayment.method,
+              date: firstPayment.date
+            }
+          : null,
+        storedCard: {
+          available: storedCardStatus.hasAuthorizedCard,
+          paymentMode: storedCardStatus.paymentMode,
+          brand: storedCardStatus.brand,
+          last4: storedCardStatus.last4,
+          preference: storedCardPreference || null
+        },
+        cardSetupWillBeRequired
+      }
+    })
+  }
+
+  if (deliveryRequired && deliveryMissingDestination) {
+    return {
+      ok: false,
+      error: deliveryMissingDestination,
+      action: 'create_installment_payment_flow',
+      missingFields: ['canal de envío'],
+      contact: {
+        id: contact.id,
+        name: contact.name,
+        email: contact.email || null,
+        phone: contact.phone || null
+      },
+      selectedDelivery: getPaymentDeliveryLabel(deliverySelection.method),
+      clarificationOptions: buildPaymentDeliveryClarificationOptions(contact)
+    }
+  }
+
   if (!hasExplicitPaymentExecutionConfirmation(context.messages)) {
     return buildPaymentConfirmationRequiredOutput({
       action: 'create_installment_payment_flow',
@@ -4230,6 +4477,8 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
           : storedCardPreference === 'stored_card'
             ? 'Se usará la tarjeta guardada/autorizada para programar el cobro automático.'
             : null,
+        delivery: deliveryRequired ? getPaymentDeliveryLabel(deliverySelection.method) : 'no requiere envío de link',
+        cardSetupWillBeRequired,
         remainingAutomatic,
         remainingPayments: remaining.payments.map((payment) => ({
           sequence: payment.sequence,
@@ -4255,9 +4504,11 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
     remainingAutomatic,
     remainingFrequency: remaining.frequency,
     remainingPayments: remaining.payments,
-    channels: buildPaymentChannels(args),
+    channels: deliveryRequired
+      ? deliverySelection.channels
+      : buildPaymentChannels(args, context.messages),
     useStoredCard: storedCardPreference === 'stored_card' ? true : undefined,
-    forceCardSetup: storedCardPreference === 'new_card',
+    forceCardSetup: forceNewCardAuthorization,
     cardAuthorizationPreference: storedCardPreference || undefined,
     source: 'ai_agent'
   })
@@ -4297,6 +4548,8 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
         : storedCardPreference === 'stored_card'
           ? 'Se programó usando la tarjeta guardada.'
           : null,
+      delivery: deliveryRequired ? getPaymentDeliveryLabel(deliverySelection.method) : null,
+      cardSetupWillBeRequired,
       remainingAutomatic,
       remainingPayments: remaining.payments.map((payment) => ({
         sequence: payment.sequence,
@@ -4347,6 +4600,25 @@ async function executeCreateSinglePaymentLink(args = {}, highLevelConnection, co
     DateTime.now().setZone(paymentTimezone).toISODate()
   const dueDateIsFuture = DateTime.fromISO(dueDate, { zone: paymentTimezone }).startOf('day') >
     DateTime.now().setZone(paymentTimezone).startOf('day')
+  const requestedPaymentMethod = normalizePaymentMethod(args.paymentMethod || args.method || args.payMethod || '')
+  const deliverySelection = resolvePaymentDeliverySelection(args, context)
+  const deliveryMissingDestination = getPaymentDeliveryMissingDestination(deliverySelection.method, contact)
+
+  if (AI_OFFLINE_PAYMENT_METHODS.has(requestedPaymentMethod)) {
+    return {
+      ok: false,
+      error: 'La instrucción habla de un pago offline/manual. No crees link de tarjeta; registra el pago con record_contact_payment usando la lógica interna de Ristak.',
+      redirectTool: 'record_contact_payment',
+      suggestedArguments: {
+        contactId: contact.id,
+        amount,
+        currency,
+        concept,
+        paymentDate: dueDate,
+        paymentMethod: requestedPaymentMethod
+      }
+    }
+  }
 
   if (dueDateIsFuture && userRequestedScheduledPayment(context.messages)) {
     return {
@@ -4374,6 +4646,37 @@ async function executeCreateSinglePaymentLink(args = {}, highLevelConnection, co
     }
   }
 
+  if (!deliverySelection.method) {
+    return buildPaymentDeliveryRequiredOutput({
+      contact,
+      action: 'create_single_payment_link',
+      reason: 'Los links/invoices de tarjeta deben enviarse explícitamente por un canal elegido antes de ejecutar el cobro; si no, el invoice puede quedarse como borrador.',
+      summary: {
+        amount,
+        currency,
+        concept,
+        dueDate
+      }
+    })
+  }
+
+  if (deliveryMissingDestination) {
+    return {
+      ok: false,
+      error: deliveryMissingDestination,
+      action: 'create_single_payment_link',
+      missingFields: ['canal de envío'],
+      contact: {
+        id: contact.id,
+        name: contact.name,
+        email: contact.email || null,
+        phone: contact.phone || null
+      },
+      selectedDelivery: getPaymentDeliveryLabel(deliverySelection.method),
+      clarificationOptions: buildPaymentDeliveryClarificationOptions(contact)
+    }
+  }
+
   if (!hasExplicitPaymentExecutionConfirmation(context.messages)) {
     return buildPaymentConfirmationRequiredOutput({
       action: 'create_single_payment_link',
@@ -4389,7 +4692,7 @@ async function executeCreateSinglePaymentLink(args = {}, highLevelConnection, co
         currency,
         concept,
         dueDate,
-        deliveryMode: args.deliveryMode || args.linkDeliveryMode || 'send_or_generate'
+        delivery: getPaymentDeliveryLabel(deliverySelection.method)
       },
       clarificationOptions: buildPaymentConfirmationOptions('este cobro o link de pago')
     })
@@ -4403,7 +4706,7 @@ async function executeCreateSinglePaymentLink(args = {}, highLevelConnection, co
     concept,
     title: cleanText(args.title || concept, 180),
     dueDate,
-    channels: buildPaymentChannels(args),
+    channels: deliverySelection.channels || buildPaymentChannels(args, context.messages),
     forceAllAvailable: args.forceAllAvailable === true,
     source: 'ai_agent'
   })
@@ -4794,7 +5097,7 @@ function buildHighLevelTools(highLevelConnection, options = {}) {
     {
       type: 'function',
       name: 'create_single_payment_link',
-      description: 'Crea y opcionalmente envía un link de pago único usando la lógica interna de Ristak/HighLevel. Úsala para órdenes como "mándale link de pago", "cóbrale X", "genera invoice por X" sólo cuando sea cobro inmediato o link normal. No la uses para pagos programados con fecha futura; ahí usa create_installment_payment_flow.',
+      description: 'Crea y envía un link de pago único usando la lógica interna de Ristak/HighLevel. Úsala para órdenes como "mándale link de pago", "cóbrale X", "genera invoice por X" sólo cuando sea cobro inmediato o link normal. Si el usuario no eligió canal de envío (all/email/sms/whatsapp) la herramienta debe preguntar antes de crear/enviar, porque un invoice de tarjeta no debe quedarse como borrador por accidente. No la uses para pagos programados con fecha futura; ahí usa create_installment_payment_flow.',
       parameters: {
         type: 'object',
         properties: {
@@ -4818,6 +5121,8 @@ function buildHighLevelTools(highLevelConnection, options = {}) {
           chargeAfterWeeks: { type: ['number', 'null'], description: 'Usa esto si el usuario dice que el pago se cobrará en N semanas.' },
           chargeAfterMonths: { type: ['number', 'null'], description: 'Usa esto si el usuario dice que el pago se cobrará en N meses.' },
           deliveryMode: { type: ['string', 'null'], enum: ['send', 'generate', null], description: 'send para enviar al cliente. generate para sólo generar link.' },
+          deliveryChannel: { type: ['string', 'null'], enum: ['all', 'email', 'sms', 'whatsapp', 'none', null], description: 'Canal explícito elegido por el usuario para enviar el enlace. No lo inventes: usa all/email/sms/whatsapp sólo si el usuario lo dijo o eligió una opción.' },
+          sendMethod: { type: ['string', 'null'], enum: ['all', 'email', 'sms', 'whatsapp', 'none', null], description: 'Alias de deliveryChannel.' },
           channels: {
             type: ['object', 'null'],
             properties: {
@@ -4835,7 +5140,7 @@ function buildHighLevelTools(highLevelConnection, options = {}) {
     {
       type: 'function',
       name: 'create_installment_payment_flow',
-      description: 'Crea un cobro por parcialidades, domiciliación o cargos automáticos futuros usando la lógica interna segura de Ristak. Úsala para planes con o sin primer pago, cargos programados a tarjeta guardada, pagos programados únicos con fecha futura, órdenes de domiciliar el resto o cargos futuros como "el 10 de junio cobra 100" o "en un año cobra X y tres meses después Y". Si el usuario dice "10 ahorita y luego el mismo día durante los siguientes 3 meses", eso es firstPayment hoy por 10 y remainingPayments mensuales futuros, no 3 cobros hoy. Si dice "espera un mes y luego cobra", salta ese periodo con afterMonths/afterPeriods; no crees pagos de 0. Si el usuario pide "hacer una nueva" en un hilo donde ya se resolvió contacto, reutiliza el contactId de la memoria operacional. Esta herramienta detecta tarjeta guardada en Ristak/GoHighLevel; si hay tarjeta guardada y no se eligió, devuelve opciones para usar esa tarjeta o mandar link para otra. Nunca se ejecuta sin confirmación explícita previa del usuario.',
+      description: 'Crea un cobro por parcialidades, domiciliación o cargos automáticos futuros usando la lógica interna segura de Ristak. Úsala para planes con o sin primer pago, cargos programados a tarjeta guardada, pagos programados únicos con fecha futura, órdenes de domiciliar el resto o cargos futuros como "el 10 de junio cobra 100" o "en un año cobra X y tres meses después Y". Si el usuario dice "10 ahorita y luego el mismo día durante los siguientes 3 meses", eso es firstPayment hoy por 10 y remainingPayments mensuales futuros, no 3 cobros hoy. Si dice "espera un mes y luego cobra", salta ese periodo con afterMonths/afterPeriods; no crees pagos de 0. Si el usuario pide "hacer una nueva" en un hilo donde ya se resolvió contacto, reutiliza el contactId de la memoria operacional. Esta herramienta detecta tarjeta guardada en Ristak/GoHighLevel; si el primer pago es transferencia/depósito/manual lo registra offline, y si el resto es automático y falta tarjeta, envía domiciliación. Si hay tarjeta guardada no manda domiciliación salvo que el usuario pida otra tarjeta. Si se necesita enviar link de primer pago o domiciliación y el usuario no eligió canal, pregunta all/email/sms/whatsapp antes de ejecutar. Nunca se ejecuta sin confirmación explícita previa del usuario.',
       parameters: {
         type: 'object',
         properties: {
@@ -4917,6 +5222,8 @@ function buildHighLevelTools(highLevelConnection, options = {}) {
             }
           },
           deliveryMode: { type: ['string', 'null'], enum: ['send', 'generate', null], description: 'send para enviar links al cliente. generate para sólo generar link.' },
+          deliveryChannel: { type: ['string', 'null'], enum: ['all', 'email', 'sms', 'whatsapp', 'none', null], description: 'Canal explícito elegido por el usuario para el primer pago con tarjeta o la domiciliación. No lo inventes: si falta, la herramienta preguntará.' },
+          sendMethod: { type: ['string', 'null'], enum: ['all', 'email', 'sms', 'whatsapp', 'none', null], description: 'Alias de deliveryChannel.' },
           channels: {
             type: ['object', 'null'],
             properties: {
@@ -5640,6 +5947,8 @@ const UNIFIED_CAPABILITY_PROMPT = [
   '- Para analítica interna del negocio usa la DB de Ristak y los resultados SQL disponibles. Esto incluye campañas/anuncios sincronizados, ROAS, utilidad, pagos, citas, contactos, ventas, fuentes, cohortes e históricos.',
   '- Para GoHighLevel usa HighLevel MCP o highlevel_rest_request cuando el usuario pida recursos/acciones de CRM: media storage, imágenes, archivos, workflows, calendarios, citas, conversaciones, oportunidades, productos, tags, custom fields, usuarios o ubicaciones.',
   '- Para pagos, links, invoices, parcialidades, pagos manuales, tarjeta guardada o domiciliación usa las herramientas internas de Ristak porque replican la lógica real del backend. No uses MCP como atajo para mutaciones de dinero.',
+  '- Para links/invoices con tarjeta o domiciliación no inventes canal de envío. Si el usuario no eligió todos/correo/WhatsApp/SMS, la herramienta debe pedirlo antes de crear/enviar para no dejar invoices en borrador.',
+  '- Para transferencia, depósito, efectivo o manual registra el pago offline con la herramienta interna. Si además hay parcialidades automáticas y falta tarjeta guardada, el backend debe enviar link de domiciliación por el canal confirmado; si ya hay tarjeta guardada, no mandes domiciliación salvo que pidan otra tarjeta.',
   '- En planes de pago, "ahorita/hoy y luego el mismo día durante los siguientes N meses" significa primer pago hoy y pagos mensuales futuros; no lo conviertas en N cobros hoy.',
   '- Si el plan dice "espera un mes y luego cobra", representa el mes sin cobro saltando el periodo; no crees parcialidades de $0.',
   '- Si el usuario dice "haz una nueva", "crea otra" o "no borres nada" dentro de un hilo de pago, crea un nuevo flujo con el contacto ya resuelto en la memoria operacional; no vuelvas a pedir email/teléfono/ID si ya existe contactId.',
