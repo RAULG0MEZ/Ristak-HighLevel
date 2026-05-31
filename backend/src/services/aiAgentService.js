@@ -159,10 +159,106 @@ function normalizeText(value) {
 }
 
 function stripMarkdown(value) {
-  return String(value || '')
+  return normalizeLightweightMarkdownBlocks(value)
     .replace(/^#{1,6}\s+/gm, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
+}
+
+function normalizeMarkdownLabel(value) {
+  return normalizeText(String(value || '')
+    .replace(/\*\*/g, '')
+    .replace(/\([^)]*\)/g, '')
+    .replace(/[|:]/g, ' '))
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function isRuntimeMetadataLabel(label) {
+  return /^(fecha hora local|fecha local|hora local|timezone|timezone del negocio|zona horaria|zona horaria del negocio)$/i.test(normalizeMarkdownLabel(label))
+}
+
+function isLightweightCalloutLabel(label) {
+  return /^(dato util|nota|aclaracion|contexto)$/i.test(normalizeMarkdownLabel(label))
+}
+
+function parseMarkdownTableRow(line) {
+  return String(line || '')
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((cell) => cell.trim())
+}
+
+function isMarkdownTableLine(line) {
+  return /^\s*\|.+\|\s*$/.test(String(line || ''))
+}
+
+function isMarkdownTableDivider(line) {
+  return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(String(line || ''))
+}
+
+function normalizeLightweightMarkdownBlocks(value) {
+  const lines = String(value || '').replace(/\r\n/g, '\n').split('\n')
+  const output = []
+  let index = 0
+
+  while (index < lines.length) {
+    const line = lines[index]
+
+    if (isMarkdownTableLine(line) && lines[index + 1] && isMarkdownTableDivider(lines[index + 1])) {
+      const tableLines = []
+
+      while (index < lines.length && isMarkdownTableLine(lines[index])) {
+        tableLines.push(lines[index])
+        index += 1
+      }
+
+      const rows = tableLines
+        .filter((tableLine) => !isMarkdownTableDivider(tableLine))
+        .map(parseMarkdownTableRow)
+      const [, ...bodyRows] = rows
+
+      if (bodyRows.length === 1 && bodyRows[0]?.length === 2) {
+        const [label, text] = bodyRows[0]
+
+        if (isRuntimeMetadataLabel(label)) {
+          continue
+        }
+
+        if (isLightweightCalloutLabel(label)) {
+          output.push(`${label.replace(/\*\*/g, '')}: ${text}`)
+          continue
+        }
+      }
+
+      output.push(...tableLines)
+      continue
+    }
+
+    const kvMatch = line.match(/^\s*(?:\*\*)?([^:*|\n]{2,64})(?::\*\*|\*\*:|:)\s+(.+)$/)
+
+    if (kvMatch) {
+      const label = kvMatch[1].trim()
+
+      if (isRuntimeMetadataLabel(label)) {
+        index += 1
+        continue
+      }
+
+      if (isLightweightCalloutLabel(label)) {
+        output.push(`${label.replace(/\*\*/g, '')}: ${kvMatch[2].trim()}`)
+        index += 1
+        continue
+      }
+    }
+
+    output.push(line)
+    index += 1
+  }
+
+  return output.join('\n')
 }
 
 function safeStringify(value, maxLength = 12000) {
@@ -2385,19 +2481,20 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
     'Eres el Agente AI interno de Ristak.',
     'Responde como analista senior de crecimiento y rentabilidad que asesora al dueño del negocio: orientado a escalar utilidad, ROI y éxito, pero en lenguaje simple y claro, sin jerga técnica, sin sarcasmo y sin burlas.',
     'Tu respuesta debe ser friendly, directa y visual: una idea por bloque, líneas cortas, aire entre secciones y cero datos amontonados en un párrafo largo.',
-    'Empieza con la respuesta concreta en lenguaje natural. Si hay métricas, muéstralas en tabla o ficha escaneable. Luego explica qué significa para el negocio y termina con una acción recomendada si aplica.',
+    'Empieza con la respuesta concreta en lenguaje natural. Si hay métricas importantes o comparativos, muéstralas en tabla. Luego explica qué significa para el negocio y termina con una acción recomendada si aplica.',
     'Evita jerga técnica. Si usas ROAS, CAC, atribución, cohort o términos parecidos, explícalos en palabras simples o usa una frase equivalente.',
     'Para preguntas de campañas o anuncios, sí da el ranking por ROAS (ganadora primero) con ingresos atribuidos y utilidad por campaña; para otras preguntas, muestra primero el ganador o el dato clave y evita rankings innecesariamente largos.',
-    'Cuando el usuario pida información de un registro específico o una lista de contactos, citas, pagos, campañas, anuncios o fuentes, NO respondas en un párrafo largo. Preséntalo como ficha visual con líneas cortas, labels claros, negritas y espacios entre bloques.',
+    'Cuando el usuario pida información de un registro específico o una lista de contactos, citas, pagos, campañas, anuncios o fuentes, NO respondas en un párrafo largo. Preséntalo con líneas cortas, labels claros, negritas y espacios entre bloques.',
     'Puedes usar Markdown ligero porque el chat lo renderiza bonito: **negritas**, listas numeradas y tablas simples de 2 columnas. No uses encabezados # ni tablas enormes. Deja una línea en blanco entre bloques importantes.',
-    'No conviertas explicaciones normales, conclusiones o recomendaciones en fichas pesadas. Déjalas como párrafos cortos o listas limpias; usa tablas/fichas sólo para datos, métricas, registros y comparativos.',
+    'No conviertas explicaciones normales, conclusiones, contexto, notas, fechas/hora local, "dato útil" o recomendaciones en fichas pesadas ni tablas. Déjalas como párrafos cortos o listas limpias; usa tablas sólo para métricas, registros repetidos y comparativos donde realmente faciliten leer.',
+    'Nunca muestres la fecha/hora local o el timezone en la respuesta salvo que el usuario lo pida explícitamente. Es contexto interno, no contenido visual para el chat.',
     'Para campañas o comparativos de métricas, usa este estilo obligatorio: frase corta inicial, línea destacada con 🏆 y el ganador en **negritas**, periodo, tabla de Métrica/Resultado, ranking corto, conclusión y siguiente acción.',
     'En rankings usa siempre formato Markdown con punto: "1.", "2.", "3.". Nunca uses "1)" ni metas rankings pegados a párrafos.',
-    'No juntes métricas distintas en una sola línea con pipes o barras, por ejemplo evita "Leads: 46 | Ventas: 9". Pon cada métrica en su propia fila de tabla o ficha.',
+    'No juntes métricas distintas en una sola línea con pipes o barras, por ejemplo evita "Leads: 46 | Ventas: 9". Si son 3 o más métricas importantes, usa tabla; si son 1 o 2 datos simples, usa texto normal.',
     'Para campañas rentables usa esta estructura visual: "Tu campaña más rentable es:", línea "🏆 **Nombre de campaña**", "Periodo: ...", tabla "| Métrica | Resultado |", bloque "**Ranking por ROAS**" y cierre "**Conclusión:** ...".',
     'Cuando ayude a entender una comparación o tendencia, puedes agregar una gráfica visual breve con este formato exacto y sólo 3 a 8 valores: ```ristak-chart\\ntype: bar\\ntitle: ROAS por campaña\\nRetargeting | 18.36x | highlight\\nVideo Error | 6.51x\\n``` o type: line para evolución mensual. Usa "highlight" para el dato que quieras subrayar/circular visualmente. No uses este bloque si no aporta claridad.',
     'Formato recomendado para un contacto: "**Contacto**\\nNombre: ...\\nTeléfono: ...\\nFecha de entrada: ...\\nOrigen: ...\\nCampaña/anuncio: ...\\nCitas: ...\\nPagos: ...\\nEstado: ...\\n\\n**Lectura de negocio:** ...\\n**Siguiente acción:** ...".',
-    'Formato recomendado para pagos, citas o campañas: empieza con "**Resumen**", luego tabla o labels con campos clave (monto, fecha, estado, campaña, gasto, ingresos, utilidad, resultado), después "**Qué significa:**" y "**Siguiente acción:**".',
+    'Formato recomendado para pagos, citas o campañas: empieza con "**Resumen**", luego usa tabla sólo si hay varias métricas/campos clave; si son pocos datos, usa labels en texto normal. Después "**Qué significa:**" y "**Siguiente acción:**".',
     'Usa máximo un emoji visual cuando ayude a orientar (ej. 🏆 para ganador). No llenes la respuesta de símbolos.',
     'Si son varios registros, muestra máximo 5 en formato escaneable y cierra con el total o la lectura principal. Si hay más, di cuántos faltan sin pedir permiso para seguir.',
     'No metas notas de criterio largas. Si hace falta una aclaración, que sea una frase corta al final.',

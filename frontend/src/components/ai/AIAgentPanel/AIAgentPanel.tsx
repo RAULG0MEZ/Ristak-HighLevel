@@ -591,7 +591,7 @@ function renderMessageContent(content: string) {
       keyValueIndex += 1
     }
 
-    if (keyValueRows.length >= 1) {
+    if (keyValueRows.length >= 2) {
       nodes.push(
         <div className={styles.kvGrid} key={`kv-${index}`}>
           {keyValueRows.map((row, rowIndex) => (
@@ -601,6 +601,19 @@ function renderMessageContent(content: string) {
             </div>
           ))}
         </div>
+      )
+      index = keyValueIndex
+      continue
+    }
+
+    if (keyValueRows.length === 1) {
+      const row = keyValueRows[0]
+
+      nodes.push(
+        <p className={nodes.length === 0 ? styles.contentLead : styles.richParagraph} key={`kv-single-${index}`}>
+          <strong className={styles.inlineStrong}>{row.label}:</strong>{' '}
+          {renderInlineMarkdown(row.value, `kv-single-${index}`)}
+        </p>
       )
       index = keyValueIndex
       continue
