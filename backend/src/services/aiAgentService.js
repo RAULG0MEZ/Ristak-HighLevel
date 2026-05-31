@@ -664,6 +664,10 @@ function isConversationalFollowUp(messages) {
 
   if (!latestUserText || !previousAssistantText || latestUserText.length > 140) return false
 
+  if (isAffirmativeExecutionIntent(latestUserText) && assistantAskedForExecutionConfirmation(previousAssistantText)) {
+    return true
+  }
+
   if (/^(?:a\s+)?(?:ve|ver|va|ok|okay|dale|arre|sale|listo|sigue|continua|continuemos|prosigue|hazlo|intenta|intentalo|intentale|reintenta|prueba|vuelve)(?:\s+(?:de\s+nuevo|otra\s+vez|otra|nuevo|ahora|ahora\s+si|si|porfa|por\s+favor|bien|asi|eso))*$/.test(latestUserText)) {
     return true
   }
@@ -2437,7 +2441,11 @@ async function resolvePaymentContact(args, context = {}) {
     '',
     160
   )
-  const lookupHint = normalizeContactLookupHint(rawHint)
+  let lookupHint = normalizeContactLookupHint(rawHint)
+
+  if (!lookupHint && Array.isArray(context.messages)) {
+    lookupHint = normalizeContactLookupHint(extractPaymentContactHintFromConversation(context.messages))
+  }
 
   if (!lookupHint) {
     const contextualContact = await resolveContextualPaymentContact(args, context, {
@@ -2573,7 +2581,11 @@ async function resolveHighLevelContactForAgent(args = {}, context = {}, options 
     '',
     180
   )
-  const lookupHint = normalizeContactLookupHint(rawHint)
+  let lookupHint = normalizeContactLookupHint(rawHint)
+
+  if (!lookupHint && Array.isArray(context.messages)) {
+    lookupHint = normalizeContactLookupHint(extractPaymentContactHintFromConversation(context.messages))
+  }
 
   if (!lookupHint) {
     const contextualContact = await resolveContextualPaymentContact(args, context, {
@@ -5419,7 +5431,51 @@ function isPaymentConversationContinuation(messages) {
 
   const latestUserText = normalizeText(getMessageText(messages[latestUserIndex]))
   return isConversationalFollowUp(messages) ||
-    /(cobr|pago|program|agenda|fecha|concepto|descripcion|descripción|prueba|test|modo|confirm|autoriz|guardad|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|enero|febrero|marzo|abril|mayo|domicili|tarjeta|link|transfer|deposit|efectivo|parcial|difer|mensual|semanal|\b\d{1,2}\b)/.test(latestUserText)
+    /(cobr|pago|program|agenda|fecha|dia|día|mismo|ajust|ultimo dia|último día|fin de mes|concepto|descripcion|descripción|prueba|test|modo|confirm|autoriz|ejecut|guardad|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|enero|febrero|marzo|abril|mayo|domicili|tarjeta|link|transfer|deposit|efectivo|parcial|difer|mensual|semanal|\b\d{1,2}\b)/.test(latestUserText)
+}
+
+function shouldForcePaymentConversationRoute(messages) {
+  if (isPaymentConversationContinuation(messages)) return true
+  if (!hasPreviousPaymentContext(messages)) return false
+
+  const latestUserIndex = findLatestUserMessageIndex(messages)
+  if (latestUserIndex < 0) return false
+
+  const latestUserText = normalizeText(getMessageText(messages[latestUserIndex]))
+  return isAffirmativeExecutionIntent(latestUserText)
+}
+
+function forcePaymentConversationRoute(route = {}, messages = []) {
+  if (!shouldForcePaymentConversationRoute(messages)) return route
+
+  const latestUserIndex = findLatestUserMessageIndex(messages)
+  const latestUserText = latestUserIndex >= 0 ? normalizeText(getMessageText(messages[latestUserIndex])) : ''
+  const action = isAffirmativeExecutionIntent(latestUserText) || /(cobr|pago|program|agenda|ejecut|confirm|autoriz)/.test(latestUserText)
+    ? 'mutate'
+    : 'continue'
+
+  return normalizeSupervisorRoute({
+    ...route,
+    domain: 'payments',
+    action,
+    continuation: true,
+    requiresDbResearch: false,
+    requiresHighLevelTools: true,
+    requiresPaymentTools: true,
+    metaAdsOperationalIntent: false,
+    skipLocalShortcuts: true,
+    confidence: 0.98,
+    reason: 'Continuación de conversación de pagos; se conserva el hilo y se bloquea routing a Meta/contact lookup.'
+  }, {
+    domain: 'payments',
+    action,
+    continuation: true,
+    requiresDbResearch: false,
+    requiresHighLevelTools: true,
+    requiresPaymentTools: true,
+    metaAdsOperationalIntent: false,
+    skipLocalShortcuts: true
+  })
 }
 
 function buildLocalSupervisorRoute(messages) {
@@ -6917,18 +6973,20 @@ function cleanOption(value, maxLength = 90) {
 
 const CONTACT_LOOKUP_STOP_WORDS = new Set([
   'a', 'ahora', 'ahorita', 'al', 'algo', 'alguna', 'alguno', 'ante', 'ayer',
+  'autoriza', 'autorizo', 'autorizado', 'autorizada',
   'busca', 'buscalo', 'buscame', 'buscar', 'cliente',
   'clientes', 'cita', 'citas', 'cobra', 'cobrale', 'cobrar', 'cobrarle', 'cobre', 'cobrele', 'cobro', 'cobros', 'como',
   'con', 'contacto', 'contactos', 'correo', 'cual', 'cuando', 'cuanto', 'cuantos',
   'cambia', 'cambiar', 'cambiale', 'cámbiale', 'actualiza', 'actualizar', 'actualizale', 'actualízale',
   'dame', 'dato', 'datos', 'de', 'del', 'desde', 'despues', 'después', 'dime', 'donde', 'dolar', 'dolares', 'durante', 'el', 'ella',
+  'ejecuta', 'ejecutalo', 'ejecútalo', 'ejecutar', 'ejecuto',
   'en', 'encuentra', 'encuentrame', 'ese', 'esa', 'esperar', 'esta', 'este', 'factura', 'facturas', 'fecha',
   'hacer', 'haz', 'hoy',
   'info', 'informacion', 'la', 'las', 'lead', 'leads', 'le', 'les', 'link', 'lo',
-  'los', 'luego', 'manda', 'mandale', 'mandar', 'me', 'mes', 'meses', 'mete', 'meter', 'metele', 'métele', 'mi', 'mis', 'misma', 'mismo', 'modifica', 'modificar', 'modificale', 'modifícale', 'mxn', 'necesito', 'nombre',
+  'listo', 'los', 'luego', 'manda', 'mandale', 'mandar', 'me', 'mes', 'meses', 'mete', 'meter', 'metele', 'métele', 'mi', 'mis', 'misma', 'mismo', 'modifica', 'modificar', 'modificale', 'modifícale', 'mxn', 'necesito', 'nombre',
   'numero', 'oye', 'paciente', 'pacientes', 'pago', 'pagos', 'para', 'apra', 'plan', 'planes', 'peso', 'pesos', 'persona', 'personas',
   'podria', 'podría', 'podrias', 'podrías', 'por', 'producto', 'programa', 'programale', 'prospecto', 'prospectos', 'que', 'quien', 'registra', 'registrar', 'registrale', 'regístrale', 'registrame', 'regístrame', 'revisa', 'saber', 'siguiente', 'sobre', 'sucesivamente',
-  'su', 'sus', 'telefono', 'tiene', 'tienen', 'tres', 'tuvo', 'un', 'una', 'uno', 'usd', 'venta', 'ventas',
+  'si', 'sí', 'su', 'sus', 'telefono', 'tiene', 'tienen', 'tres', 'tuvo', 'un', 'una', 'uno', 'usd', 'venta', 'ventas',
   'vamos', 'ver', 'quiero', 'anticipo', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
   'agosto', 'septiembre', 'setiembre', 'octubre', 'noviembre', 'diciembre'
 ])
@@ -8717,6 +8775,7 @@ export async function createAgentReply({ apiKey, messages, viewContext }) {
     viewContext: viewContext || {},
     runtimeContext
   })
+  supervisorRoute = forcePaymentConversationRoute(supervisorRoute, messages)
   const metaAdsBusinessMetricIntent = isMetaAdsBusinessMetricRequest(latestUserMessage)
   const metaAdsMutationIntent = isMetaAdsMutationVerb(latestUserMessage)
 
@@ -8734,9 +8793,11 @@ export async function createAgentReply({ apiKey, messages, viewContext }) {
     }
   }
 
-  const metaAdsOperationalIntent = (Boolean(supervisorRoute.metaAdsOperationalIntent) || isMetaAdsOperationalRequest(latestUserMessage)) &&
+  const metaAdsOperationalIntent = !supervisorRoute.requiresPaymentTools &&
+    (Boolean(supervisorRoute.metaAdsOperationalIntent) || isMetaAdsOperationalRequest(latestUserMessage)) &&
     !(metaAdsBusinessMetricIntent && !metaAdsMutationIntent)
-  const metaAdsDbResearchSkipped = !metaAdsBusinessMetricIntent &&
+  const metaAdsDbResearchSkipped = !supervisorRoute.requiresPaymentTools &&
+    !metaAdsBusinessMetricIntent &&
     (supervisorRoute.domain === 'meta_ads_operations' || shouldSkipDbResearchForMetaAds(latestUserMessage))
 
   const agentConfig = await getAIAgentConfig()
@@ -8756,11 +8817,16 @@ export async function createAgentReply({ apiKey, messages, viewContext }) {
   }
 
   const runDatabaseResearch = !metaAdsDbResearchSkipped && shouldRunDatabaseResearchForRoute(supervisorRoute)
-  const contactResolution = await resolveMentionedContactForAgent({
-    messages,
-    runtimeContext,
-    viewContext: viewContext || {}
-  })
+  const allowLocalContactShortcut = runDatabaseResearch &&
+    supervisorRoute?.skipLocalShortcuts !== true &&
+    supervisorRoute?.requiresPaymentTools !== true
+  const contactResolution = allowLocalContactShortcut
+    ? await resolveMentionedContactForAgent({
+        messages,
+        runtimeContext,
+        viewContext: viewContext || {}
+      })
+    : null
   if (contactResolution?.clarificationReply) {
     return contactResolution.clarificationReply
   }
