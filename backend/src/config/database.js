@@ -962,6 +962,29 @@ async function initTables() {
     await db.run('CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)')
 
+    const userApiTokenColumns = [
+      ['api_token_hash', 'TEXT'],
+      ['api_token_prefix', 'TEXT'],
+      ['api_token_last_four', 'TEXT'],
+      ['api_token_created_at', 'DATETIME'],
+      ['api_token_last_used_at', 'DATETIME'],
+      ['api_token_revoked_at', 'DATETIME']
+    ]
+
+    for (const [columnName, columnType] of userApiTokenColumns) {
+      try {
+        if (usePostgres) {
+          await db.run(`ALTER TABLE users ADD COLUMN IF NOT EXISTS ${columnName} ${columnType}`)
+        } else {
+          await db.run(`ALTER TABLE users ADD COLUMN ${columnName} ${columnType}`)
+        }
+      } catch (err) {
+        // Ignore if the column already exists.
+      }
+    }
+
+    await db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_api_token_hash ON users(api_token_hash)')
+
     // Tabla para filtros de contactos ocultos
     await db.run(`
       CREATE TABLE IF NOT EXISTS hidden_contact_filters (

@@ -1,6 +1,11 @@
 import { db } from '../config/database.js'
 import { logger } from '../utils/logger.js'
 import { hashPassword, verifyPassword, generateToken } from '../utils/auth.js'
+import {
+  getApiTokenMetadataForUser,
+  revokeApiTokenForUser,
+  rotateApiTokenForUser
+} from '../utils/apiTokens.js'
 
 /**
  * POST /api/auth/login
@@ -71,6 +76,7 @@ export async function login(req, res) {
       success: true,
       message: 'Login exitoso',
       token,
+      apiTokenMetadata: await getApiTokenMetadataForUser(user.id),
       user: {
         id: user.id,
         username: user.username,
@@ -280,6 +286,76 @@ export async function getMe(req, res) {
 }
 
 /**
+ * GET /api/auth/api-token
+ * Devuelve metadatos del API token del usuario autenticado sin exponer el token plano
+ */
+export async function getApiToken(req, res) {
+  try {
+    const metadata = await getApiTokenMetadataForUser(req.user.userId)
+
+    res.json({
+      success: true,
+      apiToken: metadata
+    })
+  } catch (error) {
+    logger.error('❌ Error obteniendo API token:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error en el servidor'
+    })
+  }
+}
+
+/**
+ * POST /api/auth/api-token/rotate
+ * Genera un nuevo API token. El token plano se muestra una sola vez.
+ */
+export async function rotateApiToken(req, res) {
+  try {
+    const { token, metadata } = await rotateApiTokenForUser(req.user.userId)
+
+    logger.success(`✅ API token rotado para usuario ID: ${req.user.userId}`)
+
+    res.json({
+      success: true,
+      message: 'API token generado exitosamente',
+      apiToken: token,
+      apiTokenMetadata: metadata
+    })
+  } catch (error) {
+    logger.error('❌ Error rotando API token:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error en el servidor'
+    })
+  }
+}
+
+/**
+ * DELETE /api/auth/api-token
+ * Revoca el API token del usuario autenticado
+ */
+export async function revokeApiToken(req, res) {
+  try {
+    const metadata = await revokeApiTokenForUser(req.user.userId)
+
+    logger.success(`✅ API token revocado para usuario ID: ${req.user.userId}`)
+
+    res.json({
+      success: true,
+      message: 'API token revocado exitosamente',
+      apiToken: metadata
+    })
+  } catch (error) {
+    logger.error('❌ Error revocando API token:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error en el servidor'
+    })
+  }
+}
+
+/**
  * POST /api/auth/change-username
  * Cambia el nombre de usuario del usuario autenticado
  */
@@ -426,7 +502,17 @@ export async function setup(req, res) {
       [username, passwordHash, username, 'admin', 1]
     )
 
-    const userId = result.lastID
+    let userId = result.lastID
+    if (!userId) {
+      const createdUser = await db.get('SELECT id FROM users WHERE username = ?', [username])
+      userId = createdUser?.id
+    }
+
+    if (!userId) {
+      throw new Error('No se pudo resolver el ID del usuario creado')
+    }
+
+    const { token: apiToken, metadata: apiTokenMetadata } = await rotateApiTokenForUser(userId)
 
     // Generar token JWT
     const token = generateToken({
@@ -442,6 +528,8 @@ export async function setup(req, res) {
       success: true,
       message: 'Usuario creado exitosamente',
       token,
+      apiToken,
+      apiTokenMetadata,
       user: {
         id: userId,
         username,

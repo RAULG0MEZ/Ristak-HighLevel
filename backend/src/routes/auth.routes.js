@@ -1,5 +1,17 @@
 import express from 'express'
-import { login, verifyTokenEndpoint, changePassword, changeUsername, getMe, checkSetup, setup } from '../controllers/authController.js'
+import {
+  login,
+  verifyTokenEndpoint,
+  changePassword,
+  changeUsername,
+  getMe,
+  checkSetup,
+  setup,
+  getApiToken,
+  rotateApiToken,
+  revokeApiToken
+} from '../controllers/authController.js'
+import { requireAuth } from '../middleware/authMiddleware.js'
 
 const router = express.Router()
 
@@ -23,5 +35,14 @@ router.post('/change-username', changeUsername)
 
 // GET /api/auth/me - Obtener información del usuario autenticado
 router.get('/me', getMe)
+
+// GET /api/auth/api-token - Obtener metadatos del API token autenticado
+router.get('/api-token', requireAuth, getApiToken)
+
+// POST /api/auth/api-token/rotate - Rotar/generar API token del usuario autenticado
+router.post('/api-token/rotate', requireAuth, rotateApiToken)
+
+// DELETE /api/auth/api-token - Revocar API token del usuario autenticado
+router.delete('/api-token', requireAuth, revokeApiToken)
 
 export default router

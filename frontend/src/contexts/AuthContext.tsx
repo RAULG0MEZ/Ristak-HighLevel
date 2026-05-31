@@ -138,6 +138,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       // Guardar token en localStorage
       localStorage.setItem('auth_token', data.token)
+      if (data.apiToken) {
+        sessionStorage.setItem('ristak_latest_api_token', data.apiToken)
+      }
 
       // Actualizar estado del usuario
       setUser({
