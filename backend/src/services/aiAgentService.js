@@ -637,6 +637,25 @@ function hasUserConfirmedExecution(messages, { contextPattern } = {}) {
   return isAffirmativeExecutionIntent(latestUserText)
 }
 
+function isConversationalFollowUp(messages) {
+  const latestUserIndex = findLatestUserMessageIndex(messages)
+  if (latestUserIndex < 0) return false
+
+  const latestUserText = normalizeText(getMessageText(messages[latestUserIndex]))
+    .replace(/\s+/g, ' ')
+    .trim()
+  const previousAssistantText = normalizeText(getPreviousAssistantMessageText(messages, latestUserIndex))
+
+  if (!latestUserText || !previousAssistantText || latestUserText.length > 140) return false
+
+  if (/^(?:a\s+)?(?:ve|ver|va|ok|okay|dale|arre|sale|listo|sigue|continua|continuemos|prosigue|hazlo|intenta|intentalo|intentale|reintenta|prueba|vuelve)(?:\s+(?:de\s+nuevo|otra\s+vez|otra|nuevo|ahora|ahora\s+si|si|porfa|por\s+favor|bien|asi|eso))*$/.test(latestUserText)) {
+    return true
+  }
+
+  return latestUserText.length <= 90 &&
+    /\b(eso|ese|esa|esto|esta|este|lo anterior|lo mismo|de nuevo|otra vez|reintenta|intenta|vuelve|ahora si|sigue|continua)\b/.test(latestUserText)
+}
+
 function hasExplicitMetaAdsExecutionConfirmation(messages) {
   return hasUserConfirmedExecution(messages, {
     contextPattern: /(meta|ads|anuncio|anuncios|campana|campanas|campaign|adset|conjunto|audiencia|publico|público|presupuesto|budget|pausar|apagar|reactivar|crear|editar|modificar)/
@@ -2814,6 +2833,14 @@ function isPaymentActionRequest(question) {
   return mentionsPayment && mentionsMutation
 }
 
+function isHighLevelActionRequest(question) {
+  const normalized = normalizeText(question)
+  const mentionsMutation = /(?:\b|^)(agrega|agregale|anade|anadele|actualiza|actualizale|modifica|modificale|cambia|cambiale|edita|editale|borra|elimina|quita|quitale|crea|crear|creale|registra|registrale|agenda|agendar|agendale|cancela|cancelar|reagenda|reagendar|reagendale|reprograma|reprogramar|programa|programar|programale|asigna|asignar|asignale|mueve|mover|muevelo|manda|mandale|mandalo|enviar|envia|enviale|envialo|mete|meter|metele|saca|sacar|sacale|pon|ponle|inscribe|inscribir|inscribelo|suscribe|suscribir|desuscribe|desuscribir|marca|marcar|marcale|pausa|pausar|reactiva|reactivar|start|stop|send|create|update|delete|schedule|cancel|reschedule|assign|add|remove)\b/.test(normalized)
+  const mentionsHighLevelEntity = /(ghl|highlevel|go high level|crm|contacto|contactos|cliente|clientes|lead|leads|prospecto|prospectos|paciente|persona|workflow|workflows|flujo|flujos|automatizacion|automatización|cita|citas|agenda|calendario|appointment|appointments|evento|eventos|oportunidad|oportunidades|opportunity|pipeline|deal|tag|tags|etiqueta|etiquetas|campo|custom field|nota|notas|tarea|task|mensaje|mensajes|conversacion|conversación|sms|email|correo|whatsapp|producto|productos|invoice|factura|pago|pagos|recibo|formulario|form|survey|encuesta|usuario|user|location|ubicacion|ubicación)/.test(normalized)
+
+  return mentionsMutation && mentionsHighLevelEntity
+}
+
 function buildHighLevelTools(highLevelConnection, options = {}) {
   if (!highLevelConnection?.configured) return []
 
@@ -3034,7 +3061,7 @@ function buildHighLevelTools(highLevelConnection, options = {}) {
     {
       type: 'function',
       name: 'highlevel_rest_request',
-      description: 'Fallback para ejecutar endpoints REST documentados de HighLevel cuando el MCP oficial no exponga la acción necesaria. Usa sólo paths bajo services.leadconnectorhq.com, por ejemplo /contacts/, /contacts/search, /conversations/messages, /calendars/events/appointments, /products/, /invoices/. Puede leer y modificar HighLevel si el token tiene scope.',
+      description: 'Fallback para ejecutar endpoints REST documentados de HighLevel cuando el MCP oficial no exponga la acción necesaria. Usa sólo paths bajo services.leadconnectorhq.com. Sirve para contactos, workflows, calendarios/citas, conversaciones/mensajes, oportunidades/pipelines, tags, custom fields, tareas, productos, forms/surveys, usuarios, ubicaciones, invoices/pagos y demás endpoints oficiales disponibles por token. Puede leer y modificar HighLevel si el token tiene scope.',
       parameters: {
         type: 'object',
         properties: {
@@ -4142,6 +4169,7 @@ async function createQueryPlan(apiKey, { messages, viewContext, runtimeContext, 
     'No respondas la pregunta todavía. Sólo devuelve JSON válido.',
     'Puedes investigar con criterio propio: fechas raras, comparativos, cohorts, fuentes como Facebook/Meta, embudos, CAC, ROAS, inversión, asistencia, ventas, etc.',
     'No uses presets rígidos. Si el usuario pide algo ambiguo, haz la interpretación más útil según las definiciones del dashboard y deja la suposición en assumptions.',
+    'Si el último mensaje es un seguimiento corto como "intenta de nuevo", "otra vez", "ahora sí", "dale", "continúa" o similar, interpreta la intención usando la conversación anterior. No lo trates como una búsqueda nueva, nombre de contacto o entidad nueva.',
     'Ya se ejecutó un mapa base de la DB con rangos, histórico mensual, rentabilidad por campaña (campañas_ultimos_90_dias y campañas_por_mes) y valores comunes. Úsalo para decidir consultas específicas sin repetir lo que ya está cubierto.',
     'Si los resultados base incluyen contacto_resuelto_por_nombre, usa ese contact_id exacto para cualquier consulta del contacto. No vuelvas a buscar por nombre ni elijas otro contacto.',
     'Cuando necesites buscar un contacto por nombre y no tengas contact_id, usa busqueda tipo contiene y tolerante a acentos: compara contra full_name, first_name + last_name, email, phone e id. Si salen varios contactos plausibles, pregunta cuál es antes de responder o ejecutar acciones.',
@@ -4391,6 +4419,7 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
   const instructions = [
     'Eres el Agente AI interno de Ristak.',
     'Responde como analista senior de crecimiento y rentabilidad que asesora al dueño del negocio, pero no conviertas cada respuesta en asesoría si el usuario sólo pidió un dato.',
+    'Si el último mensaje del usuario es un seguimiento corto como "intenta de nuevo", "otra vez", "ahora sí", "dale", "continúa" o similar, usa la conversación previa para saber qué dato o acción quiere reintentar. No lo interpretes como nombre de contacto, campaña, pago o búsqueda nueva.',
     responseBehaviorInstructions,
     'Tu respuesta debe ser friendly, directa y visual: una idea por bloque, líneas cortas, aire entre secciones y cero datos amontonados en un párrafo largo.',
     'Empieza con la respuesta concreta en lenguaje natural. Si hay métricas importantes o comparativos, muéstralas en tabla. Sólo explica qué significa o recomienda una acción cuando el usuario haya pedido criterio, análisis o recomendaciones.',
@@ -4431,6 +4460,10 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
     'Cuando uses informacion externa, cita los enlaces dentro del texto de la respuesta (no como lista al final) y conectalos con los datos internos del negocio.',
     'También puedes controlar Go High Level directamente cuando el usuario pida acciones de CRM. Usa primero el MCP oficial de HighLevel; si no existe herramienta MCP para algo, usa highlevel_rest_request con endpoints oficiales documentados.',
     'HighLevel puede hacer lecturas y cambios reales según los scopes del token configurado: contactos, tags, custom fields, conversaciones/mensajes, workflows, calendarios/citas, oportunidades, productos, pagos, invoices, usuarios, ubicaciones, social posting, blogs, plantillas y cualquier endpoint disponible por API.',
+    'Para CUALQUIER acción de HighLevel, entiende la intención completa del usuario y separa campos semánticamente: contacto, workflow, calendario, cita, oportunidad, tags, custom fields, nota, mensaje, monto, método, fechas y canales. No pases la frase completa del usuario como nombre, contacto, workflow, calendario, concepto o ID.',
+    'Cuando el usuario mencione una persona, workflow, calendario, cita, oportunidad, producto, tag o campo por nombre, usa sólo el nombre limpio en el campo correspondiente. Ejemplos: "manda a Raúl Gómez al workflow Reactivación" => contacto="Raúl Gómez", workflow="Reactivación"; "reagenda la cita de Raúl Gómez para mañana" => contacto="Raúl Gómez", acción=reagendar, fecha=mañana.',
+    'Si una acción de HighLevel requiere ID y el usuario dio nombre natural, primero busca el registro con MCP/REST usando ese nombre limpio. Si hay varios candidatos reales, pregunta cuál mostrando email, teléfono, fecha, calendario, pipeline u otro dato útil. No ejecutes sobre coincidencias ambiguas.',
+    'Para acciones de contactos en HighLevel (crear, actualizar, borrar, tags, custom fields, notas, tareas, workflows, mensajes, citas u oportunidades), no uses heurísticas locales para cortar nombres. Deja que el modelo extraiga los campos y que las herramientas confirmen por ID exacto antes de modificar.',
     'Respeta SIEMPRE la configuración de pagos de Ristak incluida en "Conexión HighLevel para acciones en CRM". Si paymentMode es "test", toda acción de pago debe ejecutarse en modo prueba/liveMode false y debes avisar en la respuesta con una frase corta: "Modo prueba activo: este pago no es real". Si paymentMode es "live", no metas advertencias de modo.',
     'Cuando una herramienta devuelva paymentModeWarning, incluye esa advertencia de forma visible y breve en tu respuesta final. No la ocultes.',
     'Regla de seguridad absoluta para dinero: NUNCA ejecutes cobros, registros de pago, links enviados, domiciliaciones, invoices o planes en la primera respuesta del usuario. Una orden como "cóbrale a Raúl..." expresa intención, NO autorización final. Primero prepara el resumen y pide confirmación explícita; después acepta una aprobación natural y clara del usuario sin exigir una frase exacta.',
@@ -4969,7 +5002,7 @@ function buildContactLookupQueryResult(contactResolution) {
 
 async function resolveMentionedContactForAgent({ messages, runtimeContext }) {
   const question = getLatestUserMessage(messages)
-  if (!question || isClarificationSelection(question)) return null
+  if (!question || isClarificationSelection(question) || isConversationalFollowUp(messages)) return null
 
   const lookup = await searchMentionedContacts(question, runtimeContext)
   if (!lookup) return null
@@ -6184,8 +6217,9 @@ export async function createAgentReply({ apiKey, messages, viewContext }) {
   const latestUserMessage = getLatestUserMessage(messages)
   const metaAdsOperationalIntent = isMetaAdsOperationalRequest(latestUserMessage)
   const metaAdsDbResearchSkipped = shouldSkipDbResearchForMetaAds(latestUserMessage)
-  const paymentActionRequest = isPaymentActionRequest(latestUserMessage)
-  const mentionedContact = metaAdsDbResearchSkipped || paymentActionRequest
+  const highLevelActionRequest = isHighLevelActionRequest(latestUserMessage)
+  const conversationalFollowUp = isConversationalFollowUp(messages)
+  const mentionedContact = metaAdsDbResearchSkipped || highLevelActionRequest || conversationalFollowUp
     ? null
     : await resolveMentionedContactForAgent({
         messages,
@@ -6196,7 +6230,7 @@ export async function createAgentReply({ apiKey, messages, viewContext }) {
     return mentionedContact.clarificationReply
   }
 
-  const clarificationReply = metaAdsDbResearchSkipped || paymentActionRequest
+  const clarificationReply = metaAdsDbResearchSkipped || highLevelActionRequest || conversationalFollowUp
     ? null
     : await createClarificationReply({
         messages,
