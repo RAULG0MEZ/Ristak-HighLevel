@@ -3,14 +3,28 @@ import { decrypt, encrypt } from '../utils/encryption.js'
 import { resolveDateRangeWithGHLTimezone } from '../utils/dateUtils.js'
 import { buildHiddenContactsCondition, getHiddenContactFilters } from '../utils/hiddenContactsFilter.js'
 import { getGHLClient } from './ghlClient.js'
+import { getMetaConfig } from './metaAdsService.js'
 import { createInstallmentPaymentFlow, createSinglePaymentLink } from './paymentFlowService.js'
 import { PAYMENT_MODE_LIVE, PAYMENT_MODE_TEST, normalizePaymentMode, nonTestPaymentCondition } from '../utils/paymentMode.js'
+import {
+  buildContactSearchCondition,
+  buildContactSearchClause,
+  buildContactSearchParams,
+  buildFoldedTokenCondition,
+  buildFoldedTokenParams,
+  containsPattern,
+  normalizePhoneDigits,
+  normalizeSearchText,
+  textFoldExpression,
+  phoneDigitsExpression
+} from '../utils/searchText.js'
 import { updateSingleContactStats } from '../utils/updateContactsStats.js'
 import { DateTime } from 'luxon'
 
 const OPENAI_API_URL = 'https://api.openai.com/v1'
 const HIGHLEVEL_API_BASE_URL = process.env.GHL_API_BASE_URL || 'https://services.leadconnectorhq.com'
 const HIGHLEVEL_MCP_SERVER_URL = process.env.GHL_MCP_SERVER_URL || 'https://services.leadconnectorhq.com/mcp/'
+const META_ADS_MCP_SERVER_URL = process.env.META_ADS_MCP_SERVER_URL || 'https://mcp.facebook.com/ads'
 const HIGHLEVEL_API_VERSION = process.env.GHL_API_VERSION || '2021-07-28'
 const DEFAULT_MODEL = process.env.OPENAI_AGENT_MODEL || 'gpt-5.5'
 const DEFAULT_TRANSCRIPTION_MODEL = process.env.OPENAI_TRANSCRIPTION_MODEL || 'gpt-4o-mini-transcribe'
@@ -31,7 +45,34 @@ const DEFAULT_PAYMENT_TIMEZONE = 'America/Mexico_City'
 const DEFAULT_AI_RESPONSE_STYLE = 'direct'
 const DEFAULT_AI_RECOMMENDATION_MODE = 'on_request'
 const AI_MODEL_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,99}$/
+const META_ADS_MCP_ENABLED = !/^(0|false|off|no)$/i.test(String(process.env.META_ADS_MCP_ENABLED || 'true'))
 const isPostgres = Boolean(process.env.DATABASE_URL)
+
+const DEFAULT_META_ADS_MCP_ALLOWED_TOOLS = [
+  'ads_get_ad_accounts',
+  'ads_get_ad_entities',
+  'ads_get_pages_for_business',
+  'ads_catalog_get_catalogs',
+  'ads_catalog_get_details',
+  'ads_catalog_get_diagnostics',
+  'ads_catalog_get_feed_rules',
+  'ads_catalog_get_product_details',
+  'ads_catalog_get_product_feed_details',
+  'ads_catalog_get_product_set_products',
+  'ads_catalog_get_product_sets',
+  'ads_catalog_get_products',
+  'ads_get_dataset_details',
+  'ads_get_dataset_quality',
+  'ads_get_dataset_stats',
+  'ads_get_errors',
+  'ads_insights_advertiser_context',
+  'ads_insights_anomaly_signal',
+  'ads_insights_auction_ranking_benchmarks',
+  'ads_insights_industry_benchmark',
+  'ads_insights_performance_trend',
+  'ads_get_opportunity_score',
+  'ads_get_help_article'
+]
 
 const paidStatuses = "('paid','succeeded','success','completed','complete')"
 const pendingStatuses = "('pending','unpaid','sent','open','draft')"
@@ -146,7 +187,7 @@ Reglas SQL:
 - Si consultas contactos y quieres respetar ocultos, puedes excluirlos con hidden_contact_filters. Si no es práctico, dilo en assumptions.
 `
 
-const BANNED_SQL_PATTERN = /\b(insert|update|delete|drop|alter|create|truncate|replace|pragma|attach|detach|vacuum|reindex|grant|revoke|copy|execute|merge|call)\b/i
+const BANNED_SQL_PATTERN = /\b(insert|update|delete|drop|alter|create|truncate|pragma|attach|detach|vacuum|reindex|grant|revoke|copy|execute|merge|call)\b/i
 const BANNED_DATA_PATTERN = /\b(highlevel_config|ai_agent_config|meta_config|app_config|users|payment_methods|api_token|access_token|password|secret|encrypted|openai|stripe)\b/i
 const UNRESOLVED_DATE_PARAM_PATTERN = /^(start|end|from|to|inicio|fin)_(date|ts|timestamp|fecha)$/i
 
@@ -523,6 +564,152 @@ function buildHighLevelToolContext(highLevelConnection) {
   }, 3000)
 }
 
+const PAYMENT_MUTATION_TOOL_NAMES = new Set([
+  'create_single_payment_link',
+  'create_installment_payment_flow',
+  'record_invoice_payment'
+])
+
+const PAYMENT_REST_MUTATION_PATH_PATTERN = /^\/(?:invoices|payments)\b/i
+
+function getMessageText(message) {
+  if (!message) return ''
+  if (typeof message.content === 'string') return message.content
+
+  if (Array.isArray(message.content)) {
+    return message.content
+      .map((part) => {
+        if (typeof part === 'string') return part
+        if (typeof part?.text === 'string') return part.text
+        if (typeof part?.content === 'string') return part.content
+        return ''
+      })
+      .filter(Boolean)
+      .join(' ')
+  }
+
+  return String(message.content || '')
+}
+
+function findLatestUserMessageIndex(messages) {
+  if (!Array.isArray(messages)) return -1
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role !== 'assistant') return index
+  }
+
+  return -1
+}
+
+function getPreviousAssistantMessageText(messages, beforeIndex) {
+  if (!Array.isArray(messages)) return ''
+
+  for (let index = beforeIndex - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === 'assistant') {
+      return getMessageText(messages[index])
+    }
+  }
+
+  return ''
+}
+
+function hasExplicitPaymentExecutionConfirmation(messages) {
+  const latestUserIndex = findLatestUserMessageIndex(messages)
+  if (latestUserIndex < 0) return false
+
+  const latestUserText = normalizeText(getMessageText(messages[latestUserIndex]))
+  const previousAssistantText = normalizeText(getPreviousAssistantMessageText(messages, latestUserIndex))
+
+  const assistantAskedForConfirmation = /(confirm|autoriz|procedo|antes de cobrar|antes de registrar|antes de programar|confirmas|confirma)/.test(previousAssistantText)
+  if (!assistantAskedForConfirmation) return false
+
+  if (/(no|cancel|cancela|espera|aguanta|deten|detener|no lo hagas|no procedas)/.test(latestUserText)) {
+    return false
+  }
+
+  return /(\bconfirmo\b|\bconfirmado\b|\bautorizo\b|\bautorizado\b|\bsi\b.*\b(hazlo|procede|procedele|cobralo|cobrale|programalo|registralo|envialo)\b|\bsí\b.*\b(hazlo|procede|procédele|cóbralo|cóbrale|prográmalo|regístralo|envíalo)\b|\badelante\b|\bdale\b|\bprocede\b|\bprocedele\b|\bva\b)/.test(latestUserText)
+}
+
+function getLatestUserText(messages) {
+  const latestUserIndex = findLatestUserMessageIndex(messages)
+  return latestUserIndex >= 0 ? getMessageText(messages[latestUserIndex]) : ''
+}
+
+function userRequestedImmediateCardCharge(messages) {
+  const normalized = normalizeText(getLatestUserText(messages))
+  return /\b(cobra|cobrar|cobrale|cobrarle|cobralo|cobrarlo|cargo|cargar|charge)\b/.test(normalized)
+}
+
+function userExplicitlyNamedPaymentMethod(messages) {
+  const normalized = normalizeText(getLatestUserText(messages))
+  return /(tarjeta|card|link de pago|payment link|transfer|transferencia|spei|deposit|deposito|efectivo|cash|manual|offline|cheque|check|domicili)/.test(normalized)
+}
+
+function isHighLevelPaymentRestMutation(call = {}) {
+  if (call.name !== 'highlevel_rest_request') return false
+
+  const method = String(call.arguments?.method || 'GET').toUpperCase()
+  if (method === 'GET') return false
+
+  return PAYMENT_REST_MUTATION_PATH_PATTERN.test(cleanHighLevelPath(call.arguments?.path || ''))
+}
+
+function requiresPaymentExecutionConfirmation(call = {}) {
+  return PAYMENT_MUTATION_TOOL_NAMES.has(call.name) || isHighLevelPaymentRestMutation(call)
+}
+
+function buildPaymentConfirmationOptions(actionLabel = 'esta acción de pago') {
+  return [
+    {
+      label: 'Confirmar',
+      description: `Autoriza ejecutar ${actionLabel} con los datos resumidos.`,
+      value: `Confirmo y autorizo ejecutar ${actionLabel} con los datos resumidos.`
+    },
+    {
+      label: 'Cancelar',
+      description: 'No ejecuta ningún cobro, registro ni programación.',
+      value: 'No, cancela esta acción de pago.'
+    }
+  ]
+}
+
+function buildPaymentConfirmationRequiredOutput({ action, summary = {}, clarificationOptions = [] } = {}) {
+  return {
+    ok: false,
+    error: 'Se requiere confirmación explícita del usuario antes de ejecutar cualquier cobro, registro, link de pago, domiciliación o plan de pagos.',
+    confirmationRequired: true,
+    action,
+    summary,
+    clarificationOptions,
+    confirmationPrompt: [
+      'No ejecutes la acción todavía.',
+      'Antes de tocar dinero, resume contacto, monto, concepto, método, fechas y qué pasará si no hay tarjeta guardada.',
+      'Pide una confirmación explícita tipo "Confirmo y autorizo ejecutar este cobro/plan".',
+      'Si falta método o no está claro si será transferencia, depósito, registro manual, link de pago o domiciliación, pregunta eso antes de confirmar.'
+    ].join(' ')
+  }
+}
+
+function buildFirstPaymentMethodClarificationOptions() {
+  return [
+    {
+      label: 'Cobrar con link',
+      description: 'Envía el primer pago; al pagarse y autorizar tarjeta, Ristak programa lo restante.',
+      value: 'Manda link de pago para el primer pago y programa lo restante cuando se confirme la tarjeta.'
+    },
+    {
+      label: 'Registrar transferencia',
+      description: 'Registra el primer pago offline y manda domiciliación si falta tarjeta.',
+      value: 'Registra el primer pago como transferencia y manda domiciliación si falta tarjeta.'
+    },
+    {
+      label: 'Registrar depósito/manual',
+      description: 'Registra el primer pago offline y deja el plan esperando autorización de tarjeta.',
+      value: 'Registra el primer pago como depósito/manual y manda domiciliación si falta tarjeta.'
+    }
+  ]
+}
+
 function normalizePaymentAmount(value) {
   const amount = Number(String(value ?? '').replace(/[^0-9.-]/g, ''))
   if (!Number.isFinite(amount)) return 0
@@ -850,22 +1037,18 @@ async function searchLocalPaymentContacts(hint) {
   const cleanHint = cleanText(hint, 160)
   if (!cleanHint) return []
 
-  const like = `%${cleanHint}%`
-  const digits = cleanHint.replace(/\D/g, '')
-  const phoneLike = digits ? `%${digits}%` : '__no_phone_match__'
+  const searchClause = buildContactSearchClause('contacts', cleanHint)
 
   const rows = await safeAll(`
     SELECT id, full_name, first_name, last_name, email, phone, created_at, total_paid
     FROM contacts
     WHERE id = ?
-       OR LOWER(COALESCE(full_name, '')) LIKE LOWER(?)
-       OR LOWER(COALESCE(email, '')) LIKE LOWER(?)
-       OR REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone, ''), ' ', ''), '-', ''), '(', ''), ')', '') LIKE ?
+       OR ${searchClause.condition}
     ORDER BY
       CASE WHEN id = ? THEN 0 ELSE 1 END,
       COALESCE(updated_at, created_at) DESC
     LIMIT 8
-  `, [cleanHint, like, like, phoneLike, cleanHint])
+  `, [cleanHint, ...searchClause.params, cleanHint])
 
   return rows.map(normalizeDbContact)
 }
@@ -985,6 +1168,38 @@ function buildPaymentChannels(args = {}) {
   }
 
   return {}
+}
+
+async function getStoredCardStatusForContact(contactId, paymentMode = PAYMENT_MODE_LIVE) {
+  if (!contactId) {
+    return {
+      hasAuthorizedCard: false,
+      paymentMode: normalizePaymentMode(paymentMode, PAYMENT_MODE_LIVE)
+    }
+  }
+
+  const normalizedMode = normalizePaymentMode(paymentMode, PAYMENT_MODE_LIVE)
+  const expectedLiveMode = normalizedMode === PAYMENT_MODE_LIVE ? 1 : 0
+  const row = await safeGet(
+    `SELECT ghl_customer_id, ghl_payment_method_id, ghl_payment_method_type,
+            ghl_card_brand, ghl_card_last4, ghl_payment_live_mode
+     FROM payment_flows
+     WHERE contact_id = ?
+       AND ghl_customer_id IS NOT NULL
+       AND ghl_payment_method_id IS NOT NULL
+       AND (ghl_payment_live_mode IS NULL OR ghl_payment_live_mode = ?)
+     ORDER BY card_authorized_at DESC, updated_at DESC
+     LIMIT 1`,
+    [contactId, expectedLiveMode],
+    null
+  )
+
+  return {
+    hasAuthorizedCard: Boolean(row?.ghl_customer_id && row?.ghl_payment_method_id),
+    paymentMode: normalizedMode,
+    brand: row?.ghl_card_brand || null,
+    last4: row?.ghl_card_last4 || null
+  }
 }
 
 function resolveFirstPayment(args, totalAmount, timezone = DEFAULT_PAYMENT_TIMEZONE) {
@@ -1174,7 +1389,7 @@ function resolveRemainingPayments(args, totalAmount, firstPayment, timezone = DE
   return { payments, frequency, missingDates: [] }
 }
 
-async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnection) {
+async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnection, context = {}) {
   if (!highLevelConnection?.configured) {
     return {
       ok: false,
@@ -1205,6 +1420,26 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
 
   const paymentTimezone = highLevelConnection.locationData?.timezone || DEFAULT_PAYMENT_TIMEZONE
   const firstPayment = resolveFirstPayment(args, totalAmount, paymentTimezone)
+  const contact = resolvedContact.contact
+  const concept = cleanText(args.concept || args.description || `Pago parcializado - ${contact.name}`, 240)
+  const remainingAutomatic = args.remainingAutomatic === false || args.automatic === false ? false : true
+  const storedCardStatus = remainingAutomatic
+    ? await getStoredCardStatusForContact(contact.id, highLevelConnection.paymentMode)
+    : { hasAuthorizedCard: false, paymentMode: normalizePaymentMode(highLevelConnection.paymentMode, PAYMENT_MODE_LIVE) }
+
+  if (
+    firstPayment.enabled &&
+    !firstPayment.methodProvided &&
+    remainingAutomatic &&
+    storedCardStatus.hasAuthorizedCard &&
+    userRequestedImmediateCardCharge(context.messages) &&
+    !userExplicitlyNamedPaymentMethod(context.messages)
+  ) {
+    firstPayment.method = 'card'
+    firstPayment.methodProvided = true
+    firstPayment.methodInferredFromStoredCard = true
+  }
+
   const missingFields = []
 
   if (firstPayment.enabled && firstPayment.amount <= 0) {
@@ -1228,13 +1463,69 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
     return {
       ok: false,
       error: `Faltan datos para crear el plan: ${missingFields.join(', ')}.`,
-      missingFields
+      missingFields,
+      clarificationOptions: missingFields.includes('método del primer pago')
+        ? buildFirstPaymentMethodClarificationOptions()
+        : []
     }
   }
 
-  const contact = resolvedContact.contact
-  const concept = cleanText(args.concept || args.description || `Pago parcializado - ${contact.name}`, 240)
-  const remainingAutomatic = args.remainingAutomatic === false || args.automatic === false ? false : true
+  if (
+    firstPayment.enabled &&
+    firstPayment.method === 'card' &&
+    remainingAutomatic &&
+    !storedCardStatus.hasAuthorizedCard &&
+    !userExplicitlyNamedPaymentMethod(context.messages)
+  ) {
+    return {
+      ok: false,
+      error: 'No detecté tarjeta guardada/autorizada para este contacto. Antes de armar el plan necesito que elijas cómo manejar el primer pago.',
+      missingFields: ['método del primer pago'],
+      clarificationOptions: buildFirstPaymentMethodClarificationOptions()
+    }
+  }
+
+  if (!hasExplicitPaymentExecutionConfirmation(context.messages)) {
+    return buildPaymentConfirmationRequiredOutput({
+      action: 'create_installment_payment_flow',
+      summary: {
+        contact: {
+          id: contact.id,
+          name: contact.name,
+          email: contact.email || null,
+          phone: contact.phone || null
+        },
+        totalAmount,
+        currency,
+        concept,
+        firstPayment: firstPayment.enabled
+          ? {
+              amount: firstPayment.amount,
+              method: firstPayment.method,
+              date: firstPayment.date,
+              methodInferredFromStoredCard: Boolean(firstPayment.methodInferredFromStoredCard)
+            }
+          : null,
+        storedCard: {
+          available: storedCardStatus.hasAuthorizedCard,
+          paymentMode: storedCardStatus.paymentMode,
+          brand: storedCardStatus.brand,
+          last4: storedCardStatus.last4
+        },
+        remainingAutomatic,
+        remainingPayments: remaining.payments.map((payment) => ({
+          sequence: payment.sequence,
+          amount: payment.amount,
+          dueDate: payment.dueDate,
+          automatic: remainingAutomatic
+        })),
+        noStoredCardBehavior: remainingAutomatic
+          ? 'Si no existe tarjeta guardada/autorizada y el primer pago no es offline, Ristak enviará el link del primer pago; si el primer pago es transferencia/depósito/manual, registrará ese pago y enviará domiciliación. Los cobros restantes se programan hasta confirmar pago/autorización.'
+          : null
+      },
+      clarificationOptions: buildPaymentConfirmationOptions('este plan de pagos')
+    })
+  }
 
   const result = await createInstallmentPaymentFlow({
     contact,
@@ -1269,7 +1560,14 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
       firstPayment: {
         amount: firstPayment.amount,
         method: firstPayment.method,
-        date: firstPayment.date
+        date: firstPayment.date,
+        methodInferredFromStoredCard: Boolean(firstPayment.methodInferredFromStoredCard)
+      },
+      storedCard: {
+        available: storedCardStatus.hasAuthorizedCard,
+        paymentMode: storedCardStatus.paymentMode,
+        brand: storedCardStatus.brand,
+        last4: storedCardStatus.last4
       },
       remainingAutomatic,
       remainingPayments: remaining.payments.map((payment) => ({
@@ -1283,7 +1581,7 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
   }
 }
 
-async function executeCreateSinglePaymentLink(args = {}, highLevelConnection) {
+async function executeCreateSinglePaymentLink(args = {}, highLevelConnection, context = {}) {
   if (!highLevelConnection?.configured) {
     return {
       ok: false,
@@ -1318,6 +1616,26 @@ async function executeCreateSinglePaymentLink(args = {}, highLevelConnection) {
   const dueDate = normalizeDateOnlyInput(args.dueDate || args.paymentDate || args.chargeDate) ||
     resolveOffsetDate(args, DateTime.now().setZone(paymentTimezone).toISODate(), paymentTimezone) ||
     DateTime.now().setZone(paymentTimezone).toISODate()
+
+  if (!hasExplicitPaymentExecutionConfirmation(context.messages)) {
+    return buildPaymentConfirmationRequiredOutput({
+      action: 'create_single_payment_link',
+      summary: {
+        contact: {
+          id: contact.id,
+          name: contact.name,
+          email: contact.email || null,
+          phone: contact.phone || null
+        },
+        amount,
+        currency,
+        concept,
+        dueDate,
+        deliveryMode: args.deliveryMode || args.linkDeliveryMode || 'send_or_generate'
+      },
+      clarificationOptions: buildPaymentConfirmationOptions('este cobro o link de pago')
+    })
+  }
 
   const result = await createSinglePaymentLink({
     contact,
@@ -1358,7 +1676,7 @@ async function executeCreateSinglePaymentLink(args = {}, highLevelConnection) {
   }
 }
 
-async function executeRecordInvoicePayment(args = {}, highLevelConnection) {
+async function executeRecordInvoicePayment(args = {}, highLevelConnection, context = {}) {
   if (!highLevelConnection?.configured) {
     return {
       ok: false,
@@ -1419,6 +1737,22 @@ async function executeRecordInvoicePayment(args = {}, highLevelConnection) {
     args.reference ? `Referencia: ${cleanText(args.reference, 160)}` : '',
     args.notes ? `Notas: ${cleanText(args.notes, 500)}` : ''
   ].filter(Boolean)
+
+  if (!hasExplicitPaymentExecutionConfirmation(context.messages)) {
+    return buildPaymentConfirmationRequiredOutput({
+      action: 'record_invoice_payment',
+      summary: {
+        invoiceId,
+        amount,
+        currency,
+        paymentDate,
+        paymentMethod: normalizedMethod,
+        reference: cleanText(args.reference || '', 160) || null,
+        paymentMode
+      },
+      clarificationOptions: buildPaymentConfirmationOptions('este registro de pago')
+    })
+  }
 
   const ghlClient = await getGHLClient()
   const result = await ghlClient.recordPayment(invoiceId, {
@@ -1540,7 +1874,7 @@ function buildHighLevelTools(highLevelConnection, options = {}) {
     {
       type: 'function',
       name: 'create_installment_payment_flow',
-      description: 'Crea un cobro por parcialidades, domiciliación o cargos automáticos futuros usando la lógica interna segura de Ristak. Úsala para planes con o sin primer pago, cargos programados a tarjeta guardada, órdenes de domiciliar el resto o cargos futuros como "en un año cobra X y tres meses después Y". Esta herramienta detecta si hay tarjeta guardada; si no hay, genera/envía link de domiciliación y sólo programa cobros automáticos cuando la tarjeta queda autorizada.',
+      description: 'Crea un cobro por parcialidades, domiciliación o cargos automáticos futuros usando la lógica interna segura de Ristak. Úsala para planes con o sin primer pago, cargos programados a tarjeta guardada, órdenes de domiciliar el resto o cargos futuros como "en un año cobra X y tres meses después Y". Esta herramienta detecta tarjeta guardada en Ristak/GoHighLevel; si falta método del primer pago o no hay tarjeta para un cobro inmediato ambiguo, devuelve opciones antes de ejecutar. Nunca se ejecuta sin confirmación explícita previa del usuario.',
       parameters: {
         type: 'object',
         properties: {
@@ -1551,7 +1885,7 @@ function buildHighLevelTools(highLevelConnection, options = {}) {
           concept: { type: ['string', 'null'], description: 'Concepto del cobro/invoice.' },
           firstPayment: {
             type: ['object', 'null'],
-            description: 'Primer pago o anticipo.',
+            description: 'Primer pago o anticipo. No inventes method: card sólo porque el usuario dijo "cóbrale"; si no mencionó tarjeta/link/transferencia/depósito/manual, deja method vacío para que Ristak detecte tarjeta guardada o pida el método.',
             properties: {
               enabled: { type: ['boolean', 'null'] },
               type: { type: ['string', 'null'], enum: ['percentage', 'amount', null] },
@@ -1957,7 +2291,8 @@ async function callOpenAIResponseWithActionTools(apiKey, {
   maxOutputTokens = 1800,
   tools = [],
   include = [],
-  highLevelConnection
+  highLevelConnection,
+  messages = []
 }) {
   let currentInput = input
   let previousResponseId = null
@@ -1998,14 +2333,23 @@ async function callOpenAIResponseWithActionTools(apiKey, {
       let output
 
       try {
-        if (call.name === 'highlevel_rest_request') {
+        if (call.name === 'highlevel_rest_request' && requiresPaymentExecutionConfirmation(call) && !hasExplicitPaymentExecutionConfirmation(messages)) {
+          output = buildPaymentConfirmationRequiredOutput({
+            action: 'highlevel_rest_request',
+            summary: {
+              method: call.arguments?.method || 'GET',
+              path: cleanHighLevelPath(call.arguments?.path || '')
+            },
+            clarificationOptions: buildPaymentConfirmationOptions('esta acción de pago en HighLevel')
+          })
+        } else if (call.name === 'highlevel_rest_request') {
           output = await executeHighLevelRestRequest(call.arguments, highLevelConnection)
         } else if (call.name === 'create_single_payment_link') {
-          output = await executeCreateSinglePaymentLink(call.arguments, highLevelConnection)
+          output = await executeCreateSinglePaymentLink(call.arguments, highLevelConnection, { messages })
         } else if (call.name === 'create_installment_payment_flow') {
-          output = await executeCreateInstallmentPaymentFlow(call.arguments, highLevelConnection)
+          output = await executeCreateInstallmentPaymentFlow(call.arguments, highLevelConnection, { messages })
         } else if (call.name === 'record_invoice_payment') {
-          output = await executeRecordInvoicePayment(call.arguments, highLevelConnection)
+          output = await executeRecordInvoicePayment(call.arguments, highLevelConnection, { messages })
         } else {
           output = {
             ok: false,
@@ -2717,6 +3061,8 @@ async function createQueryPlan(apiKey, { messages, viewContext, runtimeContext, 
     'Puedes investigar con criterio propio: fechas raras, comparativos, cohorts, fuentes como Facebook/Meta, embudos, CAC, ROAS, inversión, asistencia, ventas, etc.',
     'No uses presets rígidos. Si el usuario pide algo ambiguo, haz la interpretación más útil según las definiciones del dashboard y deja la suposición en assumptions.',
     'Ya se ejecutó un mapa base de la DB con rangos, histórico mensual, rentabilidad por campaña (campañas_ultimos_90_dias y campañas_por_mes) y valores comunes. Úsalo para decidir consultas específicas sin repetir lo que ya está cubierto.',
+    'Si los resultados base incluyen contacto_resuelto_por_nombre, usa ese contact_id exacto para cualquier consulta del contacto. No vuelvas a buscar por nombre ni elijas otro contacto.',
+    'Cuando necesites buscar un contacto por nombre y no tengas contact_id, usa busqueda tipo contiene y tolerante a acentos: compara contra full_name, first_name + last_name, email, phone e id. Si salen varios contactos plausibles, pregunta cuál es antes de responder o ejecutar acciones.',
     'Para medir resultados de una campaña o anuncio (leads, citas, asistencias, ventas, ingresos, ROAS), usa el modelo de atribución de Publicidad: une contacts.attribution_ad_id con meta_ads.ad_id, atribuye por contacts.created_at, valida que el anuncio existiera ese día (EXISTS en meta_ads con la misma fecha) y suma contacts.total_paid como ingreso. No uses payments.date ni ventanas de pago para atribuir a campañas.',
     'Si la pregunta es sobre campañas/anuncios o su rendimiento (ROAS, retorno, rentabilidad, cuál jala, cuál escalar): el mapa base YA trae campañas_ultimos_90_dias (gasto, leads, citas, asistencias, ventas, ingresos atribuidos, utilidad y ROAS de los últimos ~90 días) y campañas_por_mes (lo mismo desglosado por mes para todo el histórico). NO repitas esas consultas. Sólo genera SQL extra si el usuario pide un corte que esas no cubren (ej. una campaña específica por nombre, un rango exacto de fechas distinto, o desglose por adset/anuncio); en ese caso usa el modelo de atribución: gasto = SUM(meta_ads.spend), leads/citas/asistencias/ventas/ingresos atribuidos por contacts.created_at y validación de meta_ads por el mismo ad_id y la misma fecha. Nunca dejes que la respuesta concluya con solo el mes actual cuando el usuario pidió un rango mayor.',
     'Genera consultas específicas para la pregunta aunque el usuario use palabras raras, incompletas o casuales. Traduce intención de negocio a datos.',
@@ -2968,6 +3314,8 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
     'Para campañas rentables usa esta estructura visual: "Tu campaña más rentable es:", línea "🏆 **Nombre de campaña**", "Periodo: ...", tabla "| Métrica | Resultado |" y bloque "**Ranking por ROAS**" si hay varias campañas. No agregues cierre de recomendación si no lo pidió.',
     'Cuando ayude a entender una comparación o tendencia, puedes agregar una gráfica visual breve con este formato exacto y sólo 3 a 8 valores: ```ristak-chart\\ntype: bar\\ntitle: ROAS por campaña\\nRetargeting | 18.36x | highlight\\nVideo Error | 6.51x\\n``` o type: line para evolución mensual. Usa "highlight" para el dato que quieras subrayar/circular visualmente. No uses este bloque si no aporta claridad.',
     'Formato recomendado para un contacto: "**Contacto**\\nNombre: ...\\nTeléfono: ...\\nFecha de entrada: ...\\nOrigen: ...\\nCampaña/anuncio: ...\\nCitas: ...\\nPagos: ...\\nEstado: ...". Agrega lectura o siguiente acción sólo si el usuario lo pidió.',
+    'Si los resultados incluyen contacto_resuelto_por_nombre, ese es el contacto exacto que mencionó el usuario. Usa su contact_id y no mezcles datos de homónimos.',
+    'Si detectas varios contactos plausibles para el mismo nombre y no hay contact_id resuelto, pregunta cuál es mostrando email, teléfono o datos disponibles. No inventes cuál era.',
     'Formato recomendado para pagos, citas o campañas: empieza con "**Resumen**", luego usa tabla sólo si hay varias métricas/campos clave; si son pocos datos, usa labels en texto normal. Agrega "**Qué significa:**" o "**Siguiente acción:**" sólo cuando se pida análisis/recomendación.',
     'Usa máximo un emoji visual cuando ayude a orientar (ej. 🏆 para ganador). No llenes la respuesta de símbolos.',
     'Si son varios registros, muestra máximo 5 en formato escaneable y cierra con el total o la lectura principal. Si hay más, di cuántos faltan sin pedir permiso para seguir.',
@@ -2987,6 +3335,10 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
     'HighLevel puede hacer lecturas y cambios reales según los scopes del token configurado: contactos, tags, custom fields, conversaciones/mensajes, workflows, calendarios/citas, oportunidades, productos, pagos, invoices, usuarios, ubicaciones, social posting, blogs, plantillas y cualquier endpoint disponible por API.',
     'Respeta SIEMPRE la configuración de pagos de Ristak incluida en "Conexión HighLevel para acciones en CRM". Si paymentMode es "test", toda acción de pago debe ejecutarse en modo prueba/liveMode false y debes avisar en la respuesta con una frase corta: "Modo prueba activo: este pago no es real". Si paymentMode es "live", no metas advertencias de modo.',
     'Cuando una herramienta devuelva paymentModeWarning, incluye esa advertencia de forma visible y breve en tu respuesta final. No la ocultes.',
+    'Regla de seguridad absoluta para dinero: NUNCA ejecutes cobros, registros de pago, links enviados, domiciliaciones, invoices o planes en la primera respuesta del usuario. Una orden como "cóbrale a Raúl..." expresa intención, NO autorización final. Primero prepara el resumen y pide confirmación explícita; sólo después de que el usuario responda algo como "Confirmo y autorizo..." puedes ejecutar la herramienta.',
+    'Si una herramienta de pagos devuelve confirmationRequired, NO digas que ya cobraste, enviaste, registraste o programaste. Presenta el resumen con contacto, monto, concepto, método, fechas, modo prueba/en vivo y consecuencias si no hay tarjeta guardada; luego pide confirmación.',
+    'Si el usuario pide "cóbrale ahorita" y NO especifica método, no inventes transferencia ni tarjeta. Usa create_installment_payment_flow con el método vacío cuando hay plan futuro: si Ristak detecta tarjeta guardada, asumirá tarjeta para el primer cobro; si no detecta tarjeta, te devolverá opciones para preguntar si manda link, registra transferencia/depósito/manual o cancela.',
+    'Si el usuario sí especifica método, respétalo: tarjeta/link significa cobrar o enviar primer pago para autorizar tarjeta; transferencia/depósito/efectivo/manual significa registrar el primer pago offline y mandar domiciliación cuando haya pagos automáticos restantes.',
     'Para links o pagos únicos inmediatos, NO uses MCP ni highlevel_rest_request directamente. Usa create_single_payment_link. Ejemplos: "mándale link de pago", "cóbrale 30,000", "genera invoice por 15 mil". Si el usuario dice "mándale", deliveryMode=send; si dice "solo genera", deliveryMode=generate.',
     'Para cobros por parcialidades, pagos iniciales, domiciliación, cargos automáticos futuros o cualquier plan que dependa de tarjeta guardada, NO uses MCP ni highlevel_rest_request directamente. Usa siempre la herramienta create_installment_payment_flow porque esa respeta la lógica interna de Ristak.',
     'Para registrar un pago manual/offline sobre un invoice existente, NO uses MCP ni highlevel_rest_request directamente. Usa record_invoice_payment porque fuerza el modo de pagos configurado en Ristak.',
@@ -3001,6 +3353,7 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
     'Para planes equitativos usa remainingPaymentCount. Ejemplo: "100,000, 20,000 ahorita por transferencia y el resto en 6 meses" = total 100000, firstPayment amount 20000, method bank_transfer, remainingPaymentCount 6, remainingFrequency monthly, remainingAutomatic true. El backend divide 80,000 entre 6 y ajusta centavos en el último pago.',
     'Para mezclas de pagos personalizados y saldo dividido usa splitRemainingPaymentCount. Ejemplo: "50,000 ahorita, un mes sin cobro, luego 25% y el saldo en 3 pagos iguales" = firstPayment 50000, primer pago restante {type:"percentage", value:25, afterMonths:2}, splitRemainingPaymentCount 3.',
     'Para cargos automáticos futuros sin primer pago usa create_installment_payment_flow, no create_single_payment_link. Ejemplo: "a este cliente cóbrale 12,000 dentro de un año y tres meses después 8,000" = totalAmount 20000, firstPayment {enabled:false}, remainingAutomatic true, remainingFrequency monthly, remainingPayments [{type:"amount", amount:12000, afterMonths:12}, {type:"amount", amount:8000, afterMonths:15}].',
+    'Ejemplo de lenguaje natural: "cóbrale a Raúl Gómez 200 pesos ahorita y prográmale 400 pesos 1 vez cada mes a partir de julio hasta octubre" = plan de parcialidades, totalAmount 1800, firstPayment amount 200 con método vacío si el usuario no dijo método, remainingAutomatic true, remainingFrequency monthly y cuatro pagos restantes de 400 en julio, agosto, septiembre y octubre. Antes de ejecutar, pide confirmación.',
     'Cuando el usuario diga "en N meses" o "diferido a N meses", si todos los pagos restantes son iguales usa deferMonths/skipFirstPeriods/collectInLastPeriods; si hay montos o porcentajes distintos usa remainingPayments con afterMonths/afterPeriods. Calcula fechas usando la fecha local actual del negocio.',
     'Si el usuario da un plan de pago suficientemente claro, calcula montos, porcentajes, fechas y número de parcialidades sin preguntarle otra vez. Pregunta sólo cuando falte algo indispensable como contacto exacto, total, método del primer pago o una fecha/cantidad imposible de inferir.',
     'Antes de ejecutar un cobro, identifica el contacto exacto. Si create_single_payment_link o create_installment_payment_flow devuelve opciones de contacto, pregunta cuál es y muestra esas opciones como botones. Si faltan monto total, método del primer pago, número de parcialidades o fechas indispensables, pregunta sólo eso.',
@@ -3057,7 +3410,8 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
           maxOutputTokens: webSearchTools.length ? 2200 : 1800,
           tools: agentTools,
           include: webSearchTools.length ? ['web_search_call.action.sources'] : [],
-          highLevelConnection
+          highLevelConnection,
+          messages
         })
       : await callOpenAIResponse(apiKey, {
           model,
@@ -3080,7 +3434,8 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
           input,
           maxOutputTokens: 1800,
           tools: highLevelTools,
-          highLevelConnection
+          highLevelConnection,
+          messages
         })
       : await callOpenAIResponse(apiKey, {
           model,
@@ -3188,6 +3543,230 @@ function cleanOption(value, maxLength = 90) {
   return cleanText(String(value || ''), maxLength)
 }
 
+const CONTACT_LOOKUP_STOP_WORDS = new Set([
+  'a', 'al', 'algo', 'alguna', 'alguno', 'ante', 'ayer', 'busca', 'buscar', 'cliente',
+  'clientes', 'cita', 'citas', 'cobra', 'cobrar', 'cobre', 'cobro', 'cobros', 'como',
+  'con', 'contacto', 'contactos', 'correo', 'cual', 'cuando', 'cuanto', 'cuantos',
+  'dame', 'dato', 'datos', 'de', 'del', 'desde', 'dime', 'donde', 'el', 'ella',
+  'en', 'encuentra', 'ese', 'esa', 'esta', 'este', 'factura', 'facturas', 'hoy',
+  'info', 'informacion', 'la', 'las', 'lead', 'leads', 'le', 'les', 'link', 'lo',
+  'los', 'manda', 'mandale', 'mandar', 'me', 'mi', 'mis', 'necesito', 'nombre',
+  'numero', 'paciente', 'pacientes', 'pago', 'pagos', 'para', 'persona', 'personas',
+  'por', 'prospecto', 'prospectos', 'que', 'quien', 'revisa', 'saber', 'sobre',
+  'su', 'sus', 'telefono', 'tiene', 'tienen', 'tuvo', 'un', 'una', 'venta', 'ventas',
+  'ver', 'quiero'
+])
+
+function getContactLookupTokens(question) {
+  const matches = cleanText(question, 360).match(/[\p{L}\p{N}@._+-]+/gu) || []
+  const tokens = []
+
+  for (const rawToken of matches) {
+    const token = rawToken.trim()
+    const normalized = normalizeSearchText(token, 80)
+    const digits = normalizePhoneDigits(token)
+
+    if (!normalized) continue
+    if (token.includes('@')) {
+      tokens.push(token)
+      continue
+    }
+
+    if (digits.length >= 7) {
+      tokens.push(token)
+      continue
+    }
+
+    if (/^\d+$/.test(token)) continue
+    if (normalized.length < 2) continue
+    if (CONTACT_LOOKUP_STOP_WORDS.has(normalized)) continue
+
+    tokens.push(token)
+  }
+
+  return tokens.slice(0, 6)
+}
+
+function shouldAttemptContactLookup(question) {
+  const entity = detectClarificationEntity(question)
+  if (['campaign', 'adset', 'ad', 'source'].includes(entity)) return false
+
+  const normalized = normalizeText(question)
+  return Boolean(
+    hasLikelySpecificEntityReference(question) ||
+    /(busca|buscar|encuentra|contacto|cliente|lead|prospect|paciente|persona|correo|telefono|cobr|pago|cita)/.test(normalized)
+  )
+}
+
+function mapContactLookupRow(row = {}) {
+  const name = row.full_name || `${row.first_name || ''} ${row.last_name || ''}`.trim()
+
+  return {
+    id: row.id,
+    label: name || row.email || row.phone || row.id,
+    name: name || row.email || row.phone || 'Sin nombre',
+    email: row.email || '',
+    phone: row.phone || '',
+    source: row.source || '',
+    createdAt: row.created_at || null,
+    totalPaid: Number(row.total_paid || 0),
+    purchasesCount: Number(row.purchases_count || 0),
+    lastPurchaseDate: row.last_purchase_date || null
+  }
+}
+
+function buildContactClarificationOptionsFromContacts(contacts, runtimeContext) {
+  return contacts.slice(0, CLARIFICATION_OPTION_LIMIT).map((contact) => ({
+    id: contact.id,
+    label: cleanOption(contact.label || contact.name || contact.email || contact.phone || contact.id),
+    description: [
+      contact.email ? `Email: ${cleanOption(contact.email, 42)}` : '',
+      contact.phone ? `Tel: ${cleanOption(contact.phone, 28)}` : '',
+      contact.source ? `Fuente: ${cleanOption(contact.source, 35)}` : '',
+      contact.createdAt ? `Entró: ${formatOptionDate(contact.createdAt, runtimeContext)}` : '',
+      Number(contact.totalPaid || 0) > 0 ? `Pagó: ${formatCurrency(contact.totalPaid)}` : ''
+    ].filter(Boolean).join(' · '),
+    value: `Me refiero al contacto "${cleanOption(contact.label || contact.name, 140)}"${contact.id ? ` (ID: ${cleanOption(contact.id, 80)})` : ''}. Responde mi pregunta anterior usando ese contacto.`
+  })).filter(option => option.label)
+}
+
+async function searchMentionedContacts(question, runtimeContext) {
+  if (!shouldAttemptContactLookup(question)) return null
+
+  const tokens = getContactLookupTokens(question)
+  if (!tokens.length) return null
+
+  const term = cleanText(tokens.join(' '), 160)
+  const foldedTerm = normalizeSearchText(term, 160)
+  const textLike = containsPattern(term, 160) || '__no_text_match__'
+  const phoneLike = normalizePhoneDigits(term) ? `%${normalizePhoneDigits(term)}%` : '__no_phone_match__'
+  const tokenParams = buildFoldedTokenParams(tokens)
+  const extraTokenParams = tokenParams.length >= 2 ? tokenParams : []
+  const fullNameExpression = `COALESCE(c.full_name, '') || ' ' || COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')`
+  const foldedFullName = textFoldExpression(fullNameExpression)
+  const tokenCondition = extraTokenParams.length
+    ? ` OR (${buildFoldedTokenCondition(fullNameExpression, extraTokenParams.length)})`
+    : ''
+  const hiddenCondition = await getHiddenContactsWhere('c')
+  const where = [
+    `(${buildContactSearchCondition('c')}${tokenCondition})`
+  ]
+
+  if (hiddenCondition) where.push(hiddenCondition)
+
+  const rows = await safeAll(`
+    SELECT
+      c.id,
+      c.full_name,
+      c.first_name,
+      c.last_name,
+      c.email,
+      c.phone,
+      c.source,
+      c.created_at,
+      c.total_paid,
+      c.purchases_count,
+      c.last_purchase_date
+    FROM contacts c
+    WHERE ${where.join(' AND ')}
+    ORDER BY
+      CASE
+        WHEN c.id = ? THEN 0
+        WHEN ${foldedFullName} = ? THEN 1
+        WHEN ${foldedFullName} LIKE ? THEN 2
+        WHEN ${textFoldExpression('c.email')} = ? THEN 3
+        WHEN ${phoneDigitsExpression('c.phone')} LIKE ? THEN 4
+        ELSE 5
+      END,
+      COALESCE(c.total_paid, 0) DESC,
+      COALESCE(c.updated_at, c.created_at) DESC
+    LIMIT 10
+  `, [
+    ...buildContactSearchParams(term),
+    ...extraTokenParams,
+    term,
+    foldedTerm,
+    textLike,
+    foldedTerm,
+    phoneLike
+  ])
+
+  const contacts = rows.map(mapContactLookupRow).filter(contact => contact.id)
+  if (!contacts.length) return { term, contacts: [] }
+
+  return {
+    term,
+    contacts,
+    options: buildContactClarificationOptionsFromContacts(contacts, runtimeContext)
+  }
+}
+
+function buildContactLookupQueryResult(contactResolution) {
+  const contact = contactResolution?.contact
+  if (!contact?.id) return null
+
+  return {
+    name: 'contacto_resuelto_por_nombre',
+    purpose: `Contacto resuelto con busqueda "contiene" sin sensibilidad a acentos para "${contactResolution.term}". Usa contact_id como identificador exacto en las consultas siguientes.`,
+    sql: 'local_contact_lookup',
+    params: [contactResolution.term],
+    rowCount: 1,
+    rows: [{
+      contact_id: contact.id,
+      full_name: contact.name,
+      email: contact.email,
+      phone: contact.phone,
+      source: contact.source,
+      created_at: contact.createdAt,
+      total_paid: contact.totalPaid,
+      purchases_count: contact.purchasesCount,
+      last_purchase_date: contact.lastPurchaseDate
+    }]
+  }
+}
+
+async function resolveMentionedContactForAgent({ messages, runtimeContext }) {
+  const question = getLatestUserMessage(messages)
+  if (!question || isClarificationSelection(question)) return null
+
+  const lookup = await searchMentionedContacts(question, runtimeContext)
+  if (!lookup?.contacts?.length) return null
+
+  const exactMatches = lookup.contacts.filter(contact => contactMatchesExactly(contact, lookup.term))
+  const contacts = exactMatches.length ? exactMatches : lookup.contacts
+
+  if (contacts.length === 1) {
+    return {
+      term: lookup.term,
+      contact: contacts[0],
+      queryResult: buildContactLookupQueryResult({
+        term: lookup.term,
+        contact: contacts[0]
+      })
+    }
+  }
+
+  return {
+    term: lookup.term,
+    clarificationReply: {
+      reply: `Encontré varios contactos que pueden ser "${lookup.term}". ¿Cuál es el correcto?`,
+      model: 'local-contact-lookup',
+      usage: null,
+      sources: [],
+      clarificationOptions: buildContactClarificationOptionsFromContacts(contacts, runtimeContext).map(({ label, value, description }) => ({
+        label,
+        value,
+        description
+      })),
+      debug: {
+        clarificationEntity: 'contact',
+        optionCount: contacts.length,
+        searchTerm: lookup.term
+      }
+    }
+  }
+}
+
 async function getCampaignClarificationOptions(runtimeContext) {
   const since = DateTime.fromISO(runtimeContext.today, { zone: runtimeContext.timezone })
     .minus({ days: 90 })
@@ -3292,6 +3871,8 @@ async function getContactClarificationOptions(runtimeContext) {
         NULLIF(c.email, ''),
         c.id
       ) AS label,
+      c.email AS email,
+      c.phone AS phone,
       c.created_at AS created_at,
       COALESCE(NULLIF(c.source, ''), NULLIF(c.attribution_session_source, ''), 'sin fuente') AS source,
       COALESCE(c.total_paid, 0) AS total_paid
@@ -3305,6 +3886,8 @@ async function getContactClarificationOptions(runtimeContext) {
     id: row.id,
     label: cleanOption(row.label),
     description: [
+      row.email ? `Email: ${cleanOption(row.email, 42)}` : '',
+      row.phone ? `Tel: ${cleanOption(row.phone, 28)}` : '',
       row.created_at ? `Entró: ${formatOptionDate(row.created_at, runtimeContext)}` : '',
       row.source ? `Fuente: ${cleanOption(row.source, 35)}` : '',
       Number(row.total_paid || 0) > 0 ? `Pagó: ${formatCurrency(row.total_paid)}` : ''
@@ -4218,6 +4801,15 @@ function buildModelInput(messages, viewContext, databaseContext, directFacts) {
 
 export async function createAgentReply({ apiKey, messages, viewContext }) {
   const runtimeContext = await getAgentRuntimeContext()
+  const mentionedContact = await resolveMentionedContactForAgent({
+    messages,
+    runtimeContext
+  })
+
+  if (mentionedContact?.clarificationReply) {
+    return mentionedContact.clarificationReply
+  }
+
   const clarificationReply = await createClarificationReply({
     messages,
     runtimeContext
@@ -4236,7 +4828,11 @@ export async function createAgentReply({ apiKey, messages, viewContext }) {
     ],
     queries: coreQueries
   }
-  const coreResults = await executeQueryPlan(corePlan)
+  const contactLookupResults = mentionedContact?.queryResult ? [mentionedContact.queryResult] : []
+  const coreResults = [
+    ...contactLookupResults,
+    ...await executeQueryPlan(corePlan)
+  ]
   const modelPlan = await createQueryPlan(apiKey, {
     messages,
     viewContext: viewContext || {},
