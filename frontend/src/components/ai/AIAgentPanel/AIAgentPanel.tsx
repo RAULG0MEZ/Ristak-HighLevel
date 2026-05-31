@@ -21,6 +21,7 @@ const suggestions = [
 ]
 
 const routeLabels: Record<string, string> = {
+  '/phone/agent-chat': 'Agente AI movil',
   '/dashboard': 'Dashboard',
   '/reports': 'Reportes',
   '/campaigns': 'Publicidad',
@@ -100,6 +101,10 @@ type VisualChart = {
   type: VisualChartType
   title: string
   items: VisualChartItem[]
+}
+
+type AIAgentPanelProps = {
+  variant?: 'floating' | 'embedded'
 }
 
 function getStoredOpenState() {
@@ -630,9 +635,10 @@ function renderMessageContent(content: string) {
   return <div className={styles.richContent}>{nodes}</div>
 }
 
-export const AIAgentPanel: React.FC = () => {
+export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating' }) => {
   const location = useLocation()
-  const [open, setOpen] = useState(getStoredOpenState)
+  const embedded = variant === 'embedded'
+  const [open, setOpen] = useState(() => embedded || getStoredOpenState())
   const [status, setStatus] = useState<AIAgentConfigStatus>(emptyStatus)
   const [form, setForm] = useState<AIAgentConfigInput>(emptyForm)
   const [messages, setMessages] = useState<AIAgentMessage[]>([])
@@ -668,6 +674,7 @@ export const AIAgentPanel: React.FC = () => {
   const businessContextLoaded = hasBusinessContext(form)
   const voiceIsActive = voiceState !== 'idle'
   const formattedVoiceElapsed = useMemo(() => formatVoiceDuration(voiceElapsed), [voiceElapsed])
+  const visible = embedded || open
 
   const emitConfigChange = (nextStatus: AIAgentConfigStatus) => {
     window.dispatchEvent(new CustomEvent('ai-agent-config-changed', {
@@ -676,6 +683,12 @@ export const AIAgentPanel: React.FC = () => {
   }
 
   const setOpenState = (nextOpen: boolean) => {
+    if (embedded) {
+      setOpen(true)
+      setUnreadReplies(0)
+      return
+    }
+
     setOpen(nextOpen)
     if (nextOpen) {
       setUnreadReplies(0)
@@ -722,9 +735,15 @@ export const AIAgentPanel: React.FC = () => {
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [messages, sending, savingConfig, open])
+  }, [messages, sending, savingConfig, visible])
 
   useEffect(() => {
+    if (embedded) {
+      setUnreadReplies(0)
+      previousMessageCountRef.current = messages.length
+      return
+    }
+
     if (open) {
       setUnreadReplies(0)
       previousMessageCountRef.current = messages.length
@@ -741,7 +760,7 @@ export const AIAgentPanel: React.FC = () => {
     }
 
     previousMessageCountRef.current = messages.length
-  }, [messages, open])
+  }, [embedded, messages, open])
 
   useEffect(() => {
     messagesRef.current = messages
@@ -1141,11 +1160,13 @@ export const AIAgentPanel: React.FC = () => {
   const closedButtonLabel = unreadReplies
     ? `Abrir agente AI, ${unreadReplies} respuesta nueva`
     : 'Abrir agente AI'
+  const rootClassName = embedded ? styles.embeddedRoot : styles.floatingRoot
+  const windowClassName = embedded ? `${styles.window} ${styles.embeddedWindow}` : styles.window
 
   return (
-    <div className={styles.floatingRoot}>
-      {open && (
-        <section className={styles.window} aria-label="Agente AI">
+    <div className={rootClassName}>
+      {visible && (
+        <section className={windowClassName} aria-label="Agente AI">
           <header className={styles.header}>
             <div className={styles.identity}>
               <div className={styles.avatar}>
@@ -1171,15 +1192,17 @@ export const AIAgentPanel: React.FC = () => {
               >
                 <Eraser size={16} />
               </button>
-              <button
-                type="button"
-                className={styles.iconButton}
-                onClick={() => setOpenState(false)}
-                aria-label="Cerrar chat"
-                title="Cerrar chat"
-              >
-                <X size={17} />
-              </button>
+              {!embedded && (
+                <button
+                  type="button"
+                  className={styles.iconButton}
+                  onClick={() => setOpenState(false)}
+                  aria-label="Cerrar chat"
+                  title="Cerrar chat"
+                >
+                  <X size={17} />
+                </button>
+              )}
             </div>
           </header>
 
@@ -1380,7 +1403,7 @@ export const AIAgentPanel: React.FC = () => {
         </section>
       )}
 
-      {!open && (
+      {!embedded && !open && (
         <button
           type="button"
           className={floatingButtonClassName}

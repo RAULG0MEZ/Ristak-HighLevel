@@ -15,6 +15,7 @@ import { Contacts } from '@/pages/Contacts'
 import { Settings } from '@/pages/Settings'
 import { Appointments } from '@/pages/Appointments'
 import { Analytics } from '@/pages/Analytics'
+import { PhoneAgentChat } from '@/pages/PhoneAgentChat'
 import { Login } from '@/pages/Login'
 import { Setup } from '@/pages/Login/Setup'
 import { ToastContainer } from '@/components/common/Toast'
@@ -89,6 +90,14 @@ const AppWithNotifications: React.FC = () => {
         <Routes>
           <Route path="/setup" element={<SetupRoute><Setup /></SetupRoute>} />
           <Route path="/login" element={<Login />} />
+          <Route
+            path="/phone/agent-chat"
+            element={
+              <ProtectedRoute>
+                <PhoneAgentChat />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/"
             element={
