@@ -5,8 +5,7 @@ import { aiAgentService, type AIAgentClarificationOption, type AIAgentConfigInpu
 import styles from './AIAgentPanel.module.css'
 
 const AI_AGENT_FLOATING_OPEN_KEY = 'ristak.aiAgentFloating.open'
-const AI_AGENT_MESSAGES_KEY = 'ristak.aiAgentFloating.messages'
-const MAX_STORED_MESSAGES = 80
+const LEGACY_AI_AGENT_MESSAGES_KEY = 'ristak.aiAgentFloating.messages'
 
 const suggestions = [
   'Dime que debería revisar hoy del negocio.',
@@ -113,43 +112,9 @@ function saveOpenState(open: boolean) {
   }
 }
 
-function getStoredMessages(): AIAgentMessage[] {
+function clearLegacyStoredMessages() {
   try {
-    const rawMessages = window.localStorage.getItem(AI_AGENT_MESSAGES_KEY)
-    if (!rawMessages) return []
-
-    const parsedMessages = JSON.parse(rawMessages)
-    if (!Array.isArray(parsedMessages)) return []
-
-    return parsedMessages
-      .filter((message) => (
-        message &&
-        (message.role === 'user' || message.role === 'assistant') &&
-        typeof message.content === 'string' &&
-        message.content.trim()
-      ))
-      .slice(-MAX_STORED_MESSAGES)
-      .map((message) => ({
-        id: typeof message.id === 'string' ? message.id : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        role: message.role,
-        content: message.content,
-        sources: Array.isArray(message.sources) ? message.sources : undefined,
-        clarificationOptions: Array.isArray(message.clarificationOptions)
-          ? message.clarificationOptions
-              .filter((option) => option && typeof option.label === 'string' && typeof option.value === 'string')
-              .slice(0, 8)
-          : undefined,
-        createdAt: typeof message.createdAt === 'string' ? message.createdAt : new Date().toISOString()
-      }))
-  } catch {
-    return []
-  }
-}
-
-function saveMessages(messages: AIAgentMessage[]) {
-  try {
-    const messagesToStore = messages.slice(-MAX_STORED_MESSAGES)
-    window.localStorage.setItem(AI_AGENT_MESSAGES_KEY, JSON.stringify(messagesToStore))
+    window.localStorage.removeItem(LEGACY_AI_AGENT_MESSAGES_KEY)
   } catch {
     // localStorage can fail in private or restricted browser contexts.
   }
@@ -616,7 +581,7 @@ export const AIAgentPanel: React.FC = () => {
   const [open, setOpen] = useState(getStoredOpenState)
   const [status, setStatus] = useState<AIAgentConfigStatus>(emptyStatus)
   const [form, setForm] = useState<AIAgentConfigInput>(emptyForm)
-  const [messages, setMessages] = useState<AIAgentMessage[]>(getStoredMessages)
+  const [messages, setMessages] = useState<AIAgentMessage[]>([])
   const [input, setInput] = useState('')
   const [apiKeyInput, setApiKeyInput] = useState('')
   const [loadingConfig, setLoadingConfig] = useState(true)
@@ -663,6 +628,7 @@ export const AIAgentPanel: React.FC = () => {
   }
 
   useEffect(() => {
+    clearLegacyStoredMessages()
     loadStatus()
 
     const handleConfigChange = (event: Event) => {
@@ -703,10 +669,6 @@ export const AIAgentPanel: React.FC = () => {
 
     previousMessageCountRef.current = messages.length
   }, [messages, open])
-
-  useEffect(() => {
-    saveMessages(messages)
-  }, [messages])
 
   useEffect(() => {
     if (loadingConfig || askedOnboardingRef.current || businessContextLoaded) return
