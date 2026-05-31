@@ -93,6 +93,18 @@ payments:
   description, date, due_date, sent_at, ghl_invoice_id, invoice_number,
   payment_mode, created_at, updated_at
 
+payment_flows:
+  id, contact_id, total_amount, currency, concept, payment_type,
+  first_payment_amount, first_payment_date, first_payment_method,
+  first_payment_status, remaining_automatic, card_setup_required,
+  card_setup_status, current_state, ghl_customer_id, ghl_payment_method_id,
+  ghl_payment_method_type, ghl_card_brand, ghl_card_last4,
+  ghl_payment_live_mode, card_authorized_at, created_at, updated_at
+
+installment_payments:
+  id, flow_id, sequence, amount, currency, due_date, frequency,
+  payment_method, automatic, status, ghl_schedule_id, created_at, updated_at
+
 appointments:
   id, calendar_id, contact_id, location_id, title, status,
   appointment_status, assigned_user_id, notes, address, start_time,
@@ -134,6 +146,7 @@ Definiciones del dashboard:
 - Clientes nuevos: contactos con purchases_count > 0 o total_paid > 0. Si se pregunta por "nuevos", normalmente filtra por contacts.created_at salvo que el usuario pida fecha de pago.
 - Ventas o ingresos reales: payments.amount con status pagado/completado y payment_mode distinto de "test". Estados pagados: paid, succeeded, success, completed, complete.
 - Pagos en modo prueba: payment_mode = "test". No los cuentes como ingreso real, venta real, ROAS real ni LTV real salvo que el usuario pida explícitamente pruebas/sandbox.
+- Tarjeta guardada/autorizada: NO se infiere desde payments. Se confirma con payment_flows donde contact_id coincide y existen ghl_customer_id + ghl_payment_method_id. Usa ghl_card_brand/ghl_card_last4 para describirla; respeta ghl_payment_live_mode contra modo prueba/en vivo cuando aplique.
 - Inversión o gasto publicitario: SUM(meta_ads.spend), filtrado por meta_ads.date.
 - Facebook/Meta: normalmente meta_ads y contactos con attribution_ad_id; también puedes revisar source, attribution_session_source, utm_source, channel o source_platform cuando el usuario pregunte por origen.
 - Citas agendadas del funnel: contactos únicos con al menos una cita. Para contar citas operativas, cuenta appointments.id.
@@ -774,6 +787,7 @@ const PAYMENT_MUTATION_TOOL_NAMES = new Set([
 ])
 
 const PAYMENT_REST_MUTATION_PATH_PATTERN = /^\/(?:invoices|payments)\b/i
+const AI_OFFLINE_PAYMENT_METHODS = new Set(['cash', 'bank_transfer', 'transfer', 'deposit', 'manual', 'offline', 'check', 'other'])
 
 function getMessageText(message) {
   if (!message) return ''
@@ -848,6 +862,11 @@ function userExplicitlyNamedPaymentMethod(messages) {
   return /(tarjeta|card|link de pago|payment link|transfer|transferencia|spei|deposit|deposito|efectivo|cash|manual|offline|cheque|check|domicili)/.test(normalized)
 }
 
+function userRequestedScheduledPayment(messages) {
+  const normalized = normalizeText(getLatestUserText(messages))
+  return /(programa|programale|prográmale|agenda|agendale|agéndale|calendariza|scheduled|schedule|para el|el \d{1,2} de|dentro de|a partir de|hasta)/.test(normalized)
+}
+
 function isHighLevelPaymentRestMutation(call = {}) {
   if (call.name !== 'highlevel_rest_request') return false
 
@@ -909,6 +928,73 @@ function buildFirstPaymentMethodClarificationOptions() {
       label: 'Registrar depósito/manual',
       description: 'Registra el primer pago offline y deja el plan esperando autorización de tarjeta.',
       value: 'Registra el primer pago como depósito/manual y manda domiciliación si falta tarjeta.'
+    }
+  ]
+}
+
+function normalizeStoredCardPreference(args = {}) {
+  const rawPreference = args.cardAuthorizationPreference ||
+    args.cardPreference ||
+    args.storedCardPreference ||
+    args.paymentCardPreference ||
+    args.savedCardPreference ||
+    ''
+  const normalized = normalizeText(rawPreference)
+
+  if (args.useStoredCard === true || args.useSavedCard === true || args.useExistingCard === true) {
+    return 'stored_card'
+  }
+
+  if (
+    args.useStoredCard === false ||
+    args.useSavedCard === false ||
+    args.useExistingCard === false ||
+    args.forceCardSetup === true ||
+    args.requireNewCard === true ||
+    args.newCard === true
+  ) {
+    return 'new_card'
+  }
+
+  if (/(otra|nueva|nuevo|diferente|link|domicili|autoriza|authorization|setup)/.test(normalized)) {
+    return 'new_card'
+  }
+
+  if (/(misma|guardad|actual|existente|saved|stored|default)/.test(normalized)) {
+    return 'stored_card'
+  }
+
+  return ''
+}
+
+function shouldAskStoredCardChoice({ remainingAutomatic, storedCardStatus, firstPayment, cardPreference }) {
+  if (!remainingAutomatic || !storedCardStatus?.hasAuthorizedCard || cardPreference) return false
+  if (!firstPayment?.enabled) return true
+
+  return AI_OFFLINE_PAYMENT_METHODS.has(firstPayment.method || '')
+}
+
+function buildStoredCardChoiceOptions(storedCardStatus = {}) {
+  const cardLabel = [
+    storedCardStatus.brand || 'tarjeta',
+    storedCardStatus.last4 ? `terminación ${storedCardStatus.last4}` : ''
+  ].filter(Boolean).join(' ')
+
+  return [
+    {
+      label: 'Usar tarjeta guardada',
+      description: `Programa el cobro con la ${cardLabel}.`,
+      value: 'Usa la tarjeta guardada para este pago programado.'
+    },
+    {
+      label: 'Usar otra tarjeta',
+      description: 'Manda link de autorización y programa cuando esa tarjeta quede confirmada.',
+      value: 'No uses la tarjeta guardada. Manda link para autorizar otra tarjeta y programa el pago cuando se confirme.'
+    },
+    {
+      label: 'Cancelar',
+      description: 'No programa ni envía ningún cobro.',
+      value: 'Cancela este pago programado.'
     }
   ]
 }
@@ -1635,6 +1721,7 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
   const storedCardStatus = remainingAutomatic
     ? await getStoredCardStatusForContact(contact.id, highLevelConnection.paymentMode)
     : { hasAuthorizedCard: false, paymentMode: normalizePaymentMode(highLevelConnection.paymentMode, PAYMENT_MODE_LIVE) }
+  const storedCardPreference = normalizeStoredCardPreference(args)
 
   if (
     firstPayment.enabled &&
@@ -1694,6 +1781,26 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
     }
   }
 
+  if (shouldAskStoredCardChoice({
+    remainingAutomatic,
+    storedCardStatus,
+    firstPayment,
+    cardPreference: storedCardPreference
+  })) {
+    return {
+      ok: false,
+      error: 'Este contacto ya tiene una tarjeta guardada/autorizada. Antes de programar el cobro necesito saber si uso esa misma tarjeta o si mando un link para autorizar otra.',
+      missingFields: ['preferencia de tarjeta guardada'],
+      storedCard: {
+        available: true,
+        paymentMode: storedCardStatus.paymentMode,
+        brand: storedCardStatus.brand,
+        last4: storedCardStatus.last4
+      },
+      clarificationOptions: buildStoredCardChoiceOptions(storedCardStatus)
+    }
+  }
+
   if (!hasExplicitPaymentExecutionConfirmation(context.messages)) {
     return buildPaymentConfirmationRequiredOutput({
       action: 'create_installment_payment_flow',
@@ -1719,8 +1826,14 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
           available: storedCardStatus.hasAuthorizedCard,
           paymentMode: storedCardStatus.paymentMode,
           brand: storedCardStatus.brand,
-          last4: storedCardStatus.last4
+          last4: storedCardStatus.last4,
+          preference: storedCardPreference || null
         },
+        cardAuthorizationBehavior: storedCardPreference === 'new_card'
+          ? 'No se usará la tarjeta guardada; Ristak enviará link de autorización/domiciliación y programará el cobro cuando esa nueva tarjeta quede confirmada.'
+          : storedCardPreference === 'stored_card'
+            ? 'Se usará la tarjeta guardada/autorizada para programar el cobro automático.'
+            : null,
         remainingAutomatic,
         remainingPayments: remaining.payments.map((payment) => ({
           sequence: payment.sequence,
@@ -1747,6 +1860,9 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
     remainingFrequency: remaining.frequency,
     remainingPayments: remaining.payments,
     channels: buildPaymentChannels(args),
+    useStoredCard: storedCardPreference === 'stored_card' ? true : undefined,
+    forceCardSetup: storedCardPreference === 'new_card',
+    cardAuthorizationPreference: storedCardPreference || undefined,
     source: 'ai_agent'
   })
 
@@ -1776,8 +1892,14 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
         available: storedCardStatus.hasAuthorizedCard,
         paymentMode: storedCardStatus.paymentMode,
         brand: storedCardStatus.brand,
-        last4: storedCardStatus.last4
+        last4: storedCardStatus.last4,
+        preference: storedCardPreference || null
       },
+      cardAuthorizationBehavior: storedCardPreference === 'new_card'
+        ? 'Se envió/creó autorización para otra tarjeta antes de programar el cobro.'
+        : storedCardPreference === 'stored_card'
+          ? 'Se programó usando la tarjeta guardada.'
+          : null,
       remainingAutomatic,
       remainingPayments: remaining.payments.map((payment) => ({
         sequence: payment.sequence,
@@ -1825,6 +1947,33 @@ async function executeCreateSinglePaymentLink(args = {}, highLevelConnection, co
   const dueDate = normalizeDateOnlyInput(args.dueDate || args.paymentDate || args.chargeDate) ||
     resolveOffsetDate(args, DateTime.now().setZone(paymentTimezone).toISODate(), paymentTimezone) ||
     DateTime.now().setZone(paymentTimezone).toISODate()
+  const dueDateIsFuture = DateTime.fromISO(dueDate, { zone: paymentTimezone }).startOf('day') >
+    DateTime.now().setZone(paymentTimezone).startOf('day')
+
+  if (dueDateIsFuture && userRequestedScheduledPayment(context.messages)) {
+    return {
+      ok: false,
+      error: 'Un pago con fecha futura debe programarse con create_installment_payment_flow para respetar tarjeta guardada, domiciliación y autopago. No uses link único para esta intención.',
+      redirectTool: 'create_installment_payment_flow',
+      suggestedArguments: {
+        contactId: contact.id,
+        totalAmount: amount,
+        currency,
+        concept,
+        firstPayment: { enabled: false },
+        remainingAutomatic: true,
+        remainingFrequency: 'custom',
+        remainingPayments: [
+          {
+            type: 'amount',
+            amount,
+            dueDate
+          }
+        ],
+        deliveryMode: args.deliveryMode || args.linkDeliveryMode || 'send'
+      }
+    }
+  }
 
   if (!hasExplicitPaymentExecutionConfirmation(context.messages)) {
     return buildPaymentConfirmationRequiredOutput({
@@ -2050,7 +2199,7 @@ function buildHighLevelTools(highLevelConnection, options = {}) {
     {
       type: 'function',
       name: 'create_single_payment_link',
-      description: 'Crea y opcionalmente envía un link de pago único usando la lógica interna de Ristak/HighLevel. Úsala para órdenes como "mándale link de pago", "cóbrale X", "genera invoice por X" cuando NO sea plan de parcialidades.',
+      description: 'Crea y opcionalmente envía un link de pago único usando la lógica interna de Ristak/HighLevel. Úsala para órdenes como "mándale link de pago", "cóbrale X", "genera invoice por X" sólo cuando sea cobro inmediato o link normal. No la uses para pagos programados con fecha futura; ahí usa create_installment_payment_flow.',
       parameters: {
         type: 'object',
         properties: {
@@ -2083,7 +2232,7 @@ function buildHighLevelTools(highLevelConnection, options = {}) {
     {
       type: 'function',
       name: 'create_installment_payment_flow',
-      description: 'Crea un cobro por parcialidades, domiciliación o cargos automáticos futuros usando la lógica interna segura de Ristak. Úsala para planes con o sin primer pago, cargos programados a tarjeta guardada, órdenes de domiciliar el resto o cargos futuros como "en un año cobra X y tres meses después Y". Esta herramienta detecta tarjeta guardada en Ristak/GoHighLevel; si falta método del primer pago o no hay tarjeta para un cobro inmediato ambiguo, devuelve opciones antes de ejecutar. Nunca se ejecuta sin confirmación explícita previa del usuario.',
+      description: 'Crea un cobro por parcialidades, domiciliación o cargos automáticos futuros usando la lógica interna segura de Ristak. Úsala para planes con o sin primer pago, cargos programados a tarjeta guardada, pagos programados únicos con fecha futura, órdenes de domiciliar el resto o cargos futuros como "el 10 de junio cobra 100" o "en un año cobra X y tres meses después Y". Esta herramienta detecta tarjeta guardada en Ristak/GoHighLevel; si hay tarjeta guardada y no se eligió, devuelve opciones para usar esa tarjeta o mandar link para otra. Nunca se ejecuta sin confirmación explícita previa del usuario.',
       parameters: {
         type: 'object',
         properties: {
@@ -2113,6 +2262,9 @@ function buildHighLevelTools(highLevelConnection, options = {}) {
           initialPaymentAmount: { type: ['number', 'null'], description: 'Alias de firstPayment.amount.' },
           initialPaymentPercentage: { type: ['number', 'null'], description: 'Alias de firstPayment.percentage.' },
           remainingAutomatic: { type: ['boolean', 'null'], description: 'true si el resto debe domiciliarse/cobrarse automático. No preguntes si hay tarjeta guardada; el backend la busca y si no existe manda domiciliación.' },
+          cardAuthorizationPreference: { type: ['string', 'null'], enum: ['stored_card', 'new_card', null], description: 'stored_card para usar la tarjeta guardada. new_card para no usarla y mandar link de autorización/domiciliación de otra tarjeta.' },
+          useStoredCard: { type: ['boolean', 'null'], description: 'true si el usuario eligió usar la tarjeta guardada; false si eligió autorizar otra tarjeta.' },
+          forceCardSetup: { type: ['boolean', 'null'], description: 'true para forzar link de domiciliación/autorización aunque ya exista tarjeta guardada.' },
           remainingFrequency: { type: ['string', 'null'], enum: ['weekly', 'biweekly', 'monthly', 'custom', null] },
           remainingIntervalUnit: { type: ['string', 'null'], enum: ['days', 'weeks', 'months', null], description: 'Unidad entre cobros restantes cuando el usuario diga cada N días/semanas/meses.' },
           remainingIntervalCount: { type: ['number', 'null'], description: 'Cantidad de unidades entre cobros restantes.' },
@@ -3577,14 +3729,15 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
     'Cuando una herramienta devuelva paymentModeWarning, incluye esa advertencia de forma visible y breve en tu respuesta final. No la ocultes.',
     'Regla de seguridad absoluta para dinero: NUNCA ejecutes cobros, registros de pago, links enviados, domiciliaciones, invoices o planes en la primera respuesta del usuario. Una orden como "cóbrale a Raúl..." expresa intención, NO autorización final. Primero prepara el resumen y pide confirmación explícita; sólo después de que el usuario responda algo como "Confirmo y autorizo..." puedes ejecutar la herramienta.',
     'Si una herramienta de pagos devuelve confirmationRequired, NO digas que ya cobraste, enviaste, registraste o programaste. Presenta el resumen con contacto, monto, concepto, método, fechas, modo prueba/en vivo y consecuencias si no hay tarjeta guardada; luego pide confirmación.',
-    'Si el usuario pide "cóbrale ahorita" y NO especifica método, no inventes transferencia ni tarjeta. Usa create_installment_payment_flow con el método vacío cuando hay plan futuro: si Ristak detecta tarjeta guardada, asumirá tarjeta para el primer cobro; si no detecta tarjeta, te devolverá opciones para preguntar si manda link, registra transferencia/depósito/manual o cancela.',
+    'Si el usuario pide "cóbrale ahorita" y NO especifica método, no inventes transferencia ni tarjeta. Usa create_installment_payment_flow con el método vacío cuando hay plan futuro: si Ristak detecta tarjeta guardada, te devolverá opciones para elegir misma tarjeta u otra; si no detecta tarjeta, te devolverá opciones para preguntar si manda link, registra transferencia/depósito/manual o cancela.',
     'Si el usuario sí especifica método, respétalo: tarjeta/link significa cobrar o enviar primer pago para autorizar tarjeta; transferencia/depósito/efectivo/manual significa registrar el primer pago offline y mandar domiciliación cuando haya pagos automáticos restantes.',
-    'Para links o pagos únicos inmediatos, NO uses MCP ni highlevel_rest_request directamente. Usa create_single_payment_link. Ejemplos: "mándale link de pago", "cóbrale 30,000", "genera invoice por 15 mil". Si el usuario dice "mándale", deliveryMode=send; si dice "solo genera", deliveryMode=generate.',
+    'Para links o pagos únicos inmediatos sin fecha futura, NO uses MCP ni highlevel_rest_request directamente. Usa create_single_payment_link. Ejemplos: "mándale link de pago", "cóbrale 30,000", "genera invoice por 15 mil". Si el usuario dice "mándale", deliveryMode=send; si dice "solo genera", deliveryMode=generate. Si el usuario dice "programa", "agenda", "para el día X", "el 10 de junio", "dentro de N días/semanas/meses" o cualquier fecha futura, NO uses create_single_payment_link: usa create_installment_payment_flow.',
     'Para cobros por parcialidades, pagos iniciales, domiciliación, cargos automáticos futuros o cualquier plan que dependa de tarjeta guardada, NO uses MCP ni highlevel_rest_request directamente. Usa siempre la herramienta create_installment_payment_flow porque esa respeta la lógica interna de Ristak.',
     'Para registrar un pago manual/offline sobre un invoice existente, NO uses MCP ni highlevel_rest_request directamente. Usa record_invoice_payment porque fuerza el modo de pagos configurado en Ristak.',
     'Regla de parcialidades de Ristak: si el primer pago es transferencia/efectivo/manual, se crea invoice del primer pago, se registra como pagado manualmente y se envía/genera un link separado de domiciliación de tarjeta. Ese link de domiciliación no reduce el saldo del plan. Los cobros automáticos restantes sólo se programan cuando el webhook confirme tarjeta autorizada.',
     'Si el primer pago es tarjeta/link, ese primer pago autoriza la tarjeta y el plan automático se activa sólo después de confirmarse el pago y guardarse la tarjeta. Si el contacto ya tiene tarjeta guardada, el plan puede quedar programado directo.',
-    'Nunca le preguntes al usuario si el contacto tiene tarjeta guardada para un plan automático. Tú manda remainingAutomatic true y deja que el backend de Ristak busque la última tarjeta guardada en GoHighLevel. Si no existe tarjeta autorizada, Ristak manda automáticamente el link/cobro de domiciliación; si existe, programa los invoices con autopago.',
+    'Nunca le preguntes al usuario si el contacto tiene tarjeta guardada para un plan automático. Tú manda remainingAutomatic true y deja que el backend de Ristak busque la última tarjeta guardada en GoHighLevel/Ristak. Si no existe tarjeta autorizada, Ristak manda automáticamente el link/cobro de domiciliación; si existe tarjeta y el usuario no eligió, pregunta si usar la misma tarjeta guardada o mandar link para autorizar otra antes de programar.',
+    'Si el usuario pregunta si un contacto tiene tarjeta guardada, revisa payment_flows: tarjeta válida requiere ghl_customer_id y ghl_payment_method_id para ese contact_id. No uses pagos reales, pagos de prueba ni payment_method como evidencia de tarjeta guardada.',
     'Si el usuario pide "dómiciliale", "guárdale tarjeta", "este cliente no tiene tarjeta", o "necesito cobrarle automáticamente después", interpreta que quiere autorización de tarjeta para un plan/cobro futuro. Si no hay cobro inicial, usa firstPayment.enabled=false y pon los cargos futuros como remainingPayments; Ristak enviará domiciliación si hace falta.',
     'Cuando el usuario pida parcialidades en lenguaje natural, primero convierte mentalmente el plan a una tabla interna: total, primer pago, método del primer pago, pagos restantes reales, fecha relativa o absoluta de cada pago, frecuencia y remainingAutomatic. Luego llama create_installment_payment_flow con datos ya calculados.',
     'Los porcentajes de parcialidades se calculan sobre el TOTAL del plan salvo que el usuario diga explícitamente "del saldo/restante". Ejemplo: 78,500 con 40/30/30 = 31,400 hoy, 23,550 en un mes, 23,550 en dos meses. Para eso usa firstPayment percentage 40 y remainingPercentages [30,30] o remainingPayments explícitos.',
@@ -3593,6 +3746,7 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
     'Para planes equitativos usa remainingPaymentCount. Ejemplo: "100,000, 20,000 ahorita por transferencia y el resto en 6 meses" = total 100000, firstPayment amount 20000, method bank_transfer, remainingPaymentCount 6, remainingFrequency monthly, remainingAutomatic true. El backend divide 80,000 entre 6 y ajusta centavos en el último pago.',
     'Para mezclas de pagos personalizados y saldo dividido usa splitRemainingPaymentCount. Ejemplo: "50,000 ahorita, un mes sin cobro, luego 25% y el saldo en 3 pagos iguales" = firstPayment 50000, primer pago restante {type:"percentage", value:25, afterMonths:2}, splitRemainingPaymentCount 3.',
     'Para cargos automáticos futuros sin primer pago usa create_installment_payment_flow, no create_single_payment_link. Ejemplo: "a este cliente cóbrale 12,000 dentro de un año y tres meses después 8,000" = totalAmount 20000, firstPayment {enabled:false}, remainingAutomatic true, remainingFrequency monthly, remainingPayments [{type:"amount", amount:12000, afterMonths:12}, {type:"amount", amount:8000, afterMonths:15}].',
+    'Ejemplo de pago programado único: "programa un pago para ese contacto para el 10 de junio de $100" = create_installment_payment_flow con totalAmount 100, firstPayment {enabled:false}, remainingAutomatic true, remainingFrequency custom, remainingPayments [{type:"amount", amount:100, dueDate:"2026-06-10"}]. Si hay tarjeta guardada, primero elige misma tarjeta u otra; después pide confirmación explícita.',
     'Ejemplo de lenguaje natural: "cóbrale a Raúl Gómez 200 pesos ahorita y prográmale 400 pesos 1 vez cada mes a partir de julio hasta octubre" = plan de parcialidades, totalAmount 1800, firstPayment amount 200 con método vacío si el usuario no dijo método, remainingAutomatic true, remainingFrequency monthly y cuatro pagos restantes de 400 en julio, agosto, septiembre y octubre. Antes de ejecutar, pide confirmación.',
     'Cuando el usuario diga "en N meses" o "diferido a N meses", si todos los pagos restantes son iguales usa deferMonths/skipFirstPeriods/collectInLastPeriods; si hay montos o porcentajes distintos usa remainingPayments con afterMonths/afterPeriods. Calcula fechas usando la fecha local actual del negocio.',
     'Si el usuario da un plan de pago suficientemente claro, calcula montos, porcentajes, fechas y número de parcialidades sin preguntarle otra vez. Pregunta sólo cuando falte algo indispensable como contacto exacto, total, método del primer pago o una fecha/cantidad imposible de inferir.',

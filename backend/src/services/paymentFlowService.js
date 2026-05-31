@@ -124,6 +124,22 @@ function normalizeText(value) {
   return String(value).trim().toLowerCase()
 }
 
+function shouldForceNewCardAuthorization(payload = {}) {
+  const preference = normalizeText(
+    payload.cardAuthorizationPreference ||
+    payload.cardPreference ||
+    payload.storedCardPreference ||
+    payload.paymentCardPreference ||
+    payload.savedCardPreference ||
+    ''
+  )
+
+  if (payload.useStoredCard === false || payload.useSavedCard === false || payload.useExistingCard === false) return true
+  if (payload.forceCardSetup === true || payload.requireNewCard === true || payload.newCard === true) return true
+
+  return /(new_card|nueva|nuevo|otra|otro|different|link|domicili|autoriza|authorization|setup)/.test(preference)
+}
+
 function normalizeLookupText(value) {
   return String(value || '').trim()
 }
@@ -1572,9 +1588,13 @@ export async function createInstallmentPaymentFlow(payload) {
   const firstPaymentIsOffline = firstPaymentEnabled && OFFLINE_METHODS.has(firstPaymentMethod)
   const firstPaymentIsCard = firstPaymentEnabled && CARD_METHODS.has(firstPaymentMethod)
   const { cardSetupAmount, liveMode } = await getPaymentFlowConfig()
-  const authorizedCard = remainingAutomatic ? await getAuthorizedPaymentMethod(contact) : null
+  const forceNewCardAuthorization = remainingAutomatic && shouldForceNewCardAuthorization(payload) && !firstPaymentIsCard
+  const authorizedCard = remainingAutomatic && !forceNewCardAuthorization ? await getAuthorizedPaymentMethod(contact) : null
   const alreadyHasAuthorizedCard = Boolean(authorizedCard)
-  const cardSetupRequired = remainingAutomatic && !alreadyHasAuthorizedCard && (!firstPaymentEnabled || firstPaymentIsOffline)
+  const cardSetupRequired = remainingAutomatic && !firstPaymentIsCard && (
+    forceNewCardAuthorization ||
+    (!alreadyHasAuthorizedCard && (!firstPaymentEnabled || firstPaymentIsOffline))
+  )
 
   let stateHistory = addState([], PAYMENT_FLOW_STATES.DRAFT)
 
@@ -1611,6 +1631,8 @@ export async function createInstallmentPaymentFlow(payload) {
         channels: payload.channels || {},
         remainingFrequency: payload.remainingFrequency || 'custom',
         installmentFeePercentage: payload.installmentFeePercentage ?? payload.paymentPlanFeePercentage ?? payload.planFeePercentage ?? payload.financingPercentage ?? payload.surchargePercentage,
+        cardAuthorizationPreference: forceNewCardAuthorization ? 'new_card' : payload.cardAuthorizationPreference || null,
+        forceCardSetup: forceNewCardAuthorization,
         source: payload.source || 'record_payment_modal'
       })
     ]
