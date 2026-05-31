@@ -1,4 +1,4 @@
-import { db } from '../config/database.js';
+import { db, setAppConfig } from '../config/database.js';
 import { logger } from '../utils/logger.js';
 import { isEncrypted } from '../utils/encryption.js';
 import {
@@ -1821,7 +1821,8 @@ export const getMetaCustomValues = async (req, res) => {
           accessToken: '',
           pixelId: '',
           pageId: '',
-          pixelApiToken: ''
+          pixelApiToken: '',
+          whatsappBusinessAccountId: ''
         }
       });
     }
@@ -1846,7 +1847,7 @@ export const getMetaCustomValues = async (req, res) => {
  */
 export const saveAndSyncMeta = async (req, res) => {
   try {
-    const { adAccountId, accessToken, pixelId, pageId, pixelApiToken } = req.body;
+    const { adAccountId, accessToken, pixelId, pageId, pixelApiToken, whatsappBusinessAccountId } = req.body;
 
     logger.info('Guardando credenciales de Meta en HighLevel...');
 
@@ -1877,7 +1878,8 @@ export const saveAndSyncMeta = async (req, res) => {
       accessToken,
       pixelId: pixelId || '',
       pageId: pageId || '',
-      pixelApiToken: pixelApiToken || ''
+      pixelApiToken: pixelApiToken || '',
+      whatsappBusinessAccountId: whatsappBusinessAccountId || ''
     });
 
     if (!saveResult.success) {
@@ -1897,6 +1899,10 @@ export const saveAndSyncMeta = async (req, res) => {
       pixelApiToken || null,
       pageId || null
     );
+
+    if (whatsappBusinessAccountId) {
+      await setAppConfig('meta_whatsapp_business_account_id', whatsappBusinessAccountId);
+    }
 
     logger.info('Credenciales guardadas en base de datos local');
 
@@ -2043,6 +2049,9 @@ export const syncFromHighLevel = async (req, res) => {
     const fbPixelId = customValues.find(cv => cv.name === 'Facebook - Pixel ID')?.value;
     const fbPageId = customValues.find(cv => cv.name === 'Facebook - Page ID')?.value;
     const fbPixelApiToken = customValues.find(cv => cv.name === 'Facebook - Pixel API Token')?.value;
+    const fbWhatsappBusinessAccountId = customValues.find(cv => cv.name === 'Facebook - WhatsApp Business Account ID')?.value ||
+      customValues.find(cv => cv.name === 'WhatsApp Business Account ID')?.value ||
+      customValues.find(cv => cv.name === 'WABA ID')?.value;
 
     // Guardar en DB local (tokens SIN enmascarar)
     if (fbAdAccountId && fbAccessToken) {
@@ -2054,6 +2063,11 @@ export const syncFromHighLevel = async (req, res) => {
         fbPageId || null
       );
       logger.info('Credenciales de Meta guardadas en base de datos local');
+    }
+
+    if (fbWhatsappBusinessAccountId) {
+      await setAppConfig('meta_whatsapp_business_account_id', fbWhatsappBusinessAccountId);
+      logger.info('WhatsApp Business Account ID guardado en app_config');
     }
 
     // 4. Verificar si se guardaron las credenciales

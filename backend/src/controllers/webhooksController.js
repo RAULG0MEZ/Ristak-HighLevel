@@ -1088,21 +1088,25 @@ export const handleWhatsAppAttributionWebhook = async (req, res) => {
       return res.status(200).json({ success: true, message: 'Webhook recibido' });
     }
 
-    // Extraer referral_source_id (fuente de atribución)
+    // Extraer datos de atribución de Click-to-WhatsApp
     const referralSourceId = customData.source_id || data.referral_source_id || data.sourceId || data.source_id || null;
+    const referralCtwaClid = customData.ctwa_clid || data.referral_ctwa_clid || data.ctwa_clid || data.ctwaCLID || null;
+    const adIdThruMessage = customData.ad_id || customData.adId || data.ad_id || data.adId || null;
+    const messageContent = customData.message_content || customData.messageContent || data.message_content || data.messageContent || data.message || null;
+    const referralHeadline = customData.headline || data.referral_headline || data.headline || null;
 
     const usePostgres = process.env.DATABASE_URL ? true : false;
     const query = usePostgres
       ? `INSERT INTO whatsapp_attribution (
           contact_id, phone, referral_source_url, referral_source_type, referral_source_id,
           referral_headline, referral_body, referral_image_url, referral_video_url,
-          referral_thumbnail_url, referral_ctwa_clid
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
+          referral_thumbnail_url, referral_ctwa_clid, message_content, ad_id_thru_message
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`
       : `INSERT INTO whatsapp_attribution (
           contact_id, phone, referral_source_url, referral_source_type, referral_source_id,
           referral_headline, referral_body, referral_image_url, referral_video_url,
-          referral_thumbnail_url, referral_ctwa_clid
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+          referral_thumbnail_url, referral_ctwa_clid, message_content, ad_id_thru_message
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
     await db.run(query, [
       contactId,
@@ -1110,23 +1114,55 @@ export const handleWhatsAppAttributionWebhook = async (req, res) => {
       customData.source_url || data.referral_source_url || data.sourceUrl || data.source_url,
       customData.source_type || data.referral_source_type || data.sourceType || data.source_type,
       referralSourceId,
-      customData.headline || data.referral_headline || data.headline,
+      referralHeadline,
       customData.body || data.referral_body || data.body,
       customData.image_url || data.referral_image_url || data.imageUrl || data.image_url,
       customData.video_url || data.referral_video_url || data.videoUrl || data.video_url,
       customData.thumbnail_url || data.referral_thumbnail_url || data.thumbnailUrl || data.thumbnail_url,
-      customData.ctwa_clid || data.referral_ctwa_clid || data.ctwa_clid || data.ctwaCLID
+      referralCtwaClid,
+      messageContent,
+      adIdThruMessage
     ]);
 
     // Usar referral_source_id como ad_id si viene disponible
-    let finalAdId = referralSourceId || null;
+    let finalAdId = referralSourceId || adIdThruMessage || null;
+
+    if (contactId) {
+      const contactUpdates = [];
+      const contactParams = [];
+
+      if (finalAdId) {
+        contactUpdates.push('attribution_ad_id = ?');
+        contactParams.push(finalAdId);
+      }
+
+      if (referralCtwaClid) {
+        contactUpdates.push('attribution_ctwa_clid = ?');
+        contactParams.push(referralCtwaClid);
+      }
+
+      if (referralHeadline) {
+        contactUpdates.push('attribution_ad_name = ?');
+        contactParams.push(referralHeadline);
+      }
+
+      if (contactUpdates.length > 0) {
+        contactUpdates.push('updated_at = CURRENT_TIMESTAMP');
+        contactParams.push(contactId);
+
+        await db.run(
+          `UPDATE contacts SET ${contactUpdates.join(', ')} WHERE id = ?`,
+          contactParams
+        );
+      }
+    }
 
     if (finalAdId && contactId) {
-      await db.run(
-        `UPDATE contacts SET attribution_ad_id = ? WHERE id = ?`,
-        [finalAdId, contactId]
-      );
       logger.info(`✅ Ad ID guardado en contacts para ${contactId}: ${finalAdId}`);
+    }
+
+    if (referralCtwaClid && contactId) {
+      logger.info(`✅ CTWA CLID guardado en contacts para ${contactId}`);
     }
 
     logger.info(`✅ Atribución WhatsApp procesada para ${phone} (contacto ${contactId}) - Ad ID final: ${finalAdId || 'ninguno'}`);

@@ -11,7 +11,8 @@ const CONFIG_KEYS = {
   purchaseEnabled: 'meta_whatsapp_purchase_enabled',
   scheduleEventName: 'meta_whatsapp_schedule_event_name',
   purchaseEventName: 'meta_whatsapp_purchase_event_name',
-  testEventCode: 'meta_test_event_code'
+  testEventCode: 'meta_test_event_code',
+  whatsappBusinessAccountId: 'meta_whatsapp_business_account_id'
 }
 
 const EVENT_TYPES = {
@@ -124,6 +125,69 @@ function buildUserData(contact) {
   )
 }
 
+function normalizeBusinessMessagingEventName(value) {
+  const eventName = cleanString(value)
+  const aliases = {
+    lead: 'LeadSubmitted',
+    schedule: 'LeadSubmitted'
+  }
+
+  return aliases[eventName.toLowerCase()] || eventName
+}
+
+function buildBusinessMessagingUserData(contact, metaConfig, whatsappAttribution) {
+  const userData = buildUserData(contact)
+  const ctwaClid = cleanString(contact.attribution_ctwa_clid || whatsappAttribution?.referral_ctwa_clid)
+  const pageId = cleanString(metaConfig?.pageId)
+  const whatsappBusinessAccountId = cleanString(metaConfig?.whatsappBusinessAccountId)
+
+  if (ctwaClid) {
+    userData.ctwa_clid = ctwaClid
+  }
+
+  if (pageId) {
+    userData.page_id = pageId
+  }
+
+  if (whatsappBusinessAccountId) {
+    userData.whatsapp_business_account_id = whatsappBusinessAccountId
+  }
+
+  return userData
+}
+
+function buildBusinessMessagingCustomData(customData, contact, whatsappAttribution) {
+  const enrichedData = { ...customData }
+  const adId = cleanString(
+    contact.attribution_ad_id ||
+    whatsappAttribution?.referral_source_id ||
+    whatsappAttribution?.ad_id_thru_message
+  )
+  const adName = cleanString(contact.attribution_ad_name || whatsappAttribution?.referral_headline)
+  const referralSourceType = cleanString(whatsappAttribution?.referral_source_type)
+  const referralSourceUrl = cleanString(whatsappAttribution?.referral_source_url)
+
+  if (adId) {
+    enrichedData.ad_id = adId
+  }
+
+  if (adName) {
+    enrichedData.ad_name = adName
+  }
+
+  if (referralSourceType) {
+    enrichedData.referral_source_type = referralSourceType
+  }
+
+  if (referralSourceUrl) {
+    enrichedData.referral_source_url = referralSourceUrl
+  }
+
+  return Object.fromEntries(
+    Object.entries(enrichedData).filter(([, value]) => value !== null && value !== undefined && value !== '')
+  )
+}
+
 async function getConfigBoolean(key, defaultValue = false) {
   const value = await getAppConfig(key)
   return parseBoolean(value, defaultValue)
@@ -131,7 +195,7 @@ async function getConfigBoolean(key, defaultValue = false) {
 
 async function getConfiguredEventName(key, fallback) {
   const value = cleanString(await getAppConfig(key))
-  return value || fallback
+  return normalizeBusinessMessagingEventName(value || fallback)
 }
 
 async function getMetaCapiConfig() {
@@ -158,10 +222,26 @@ async function getMetaCapiConfig() {
     process.env.META_TEST_EVENT_CODE
   )
 
+  const pageId = cleanString(
+    metaConfig?.page_id ||
+    process.env.META_PAGE_ID ||
+    process.env.FACEBOOK_PAGE_ID
+  )
+
+  const whatsappBusinessAccountId = cleanString(
+    await getAppConfig(CONFIG_KEYS.whatsappBusinessAccountId) ||
+    process.env.META_WHATSAPP_BUSINESS_ACCOUNT_ID ||
+    process.env.WHATSAPP_BUSINESS_ACCOUNT_ID ||
+    process.env.META_WABA_ID ||
+    process.env.WABA_ID
+  )
+
   return {
     datasetId,
     accessToken,
-    testEventCode
+    testEventCode,
+    pageId,
+    whatsappBusinessAccountId
   }
 }
 
@@ -176,6 +256,9 @@ async function getContactForMetaEvent(contactId) {
        full_name,
        first_name,
        last_name,
+       attribution_ctwa_clid,
+       attribution_ad_id,
+       attribution_ad_name,
        COALESCE(meta_schedule_event_sent, 0) as meta_schedule_event_sent,
        meta_schedule_event_sent_at,
        meta_schedule_event_id,
@@ -185,6 +268,41 @@ async function getContactForMetaEvent(contactId) {
      FROM contacts
      WHERE id = ?`,
     [contactId]
+  )
+}
+
+async function getLatestWhatsappAttribution(contact) {
+  if (!contact?.id) return null
+
+  const phoneCandidates = [
+    cleanString(contact.phone),
+    normalizePhoneForHash(contact.phone)
+  ].filter(Boolean)
+
+  if (phoneCandidates[1]) {
+    phoneCandidates.push(`+${phoneCandidates[1]}`)
+  }
+
+  const uniquePhoneCandidates = [...new Set(phoneCandidates)]
+  const phoneFilter = uniquePhoneCandidates.length
+    ? ` OR phone IN (${uniquePhoneCandidates.map(() => '?').join(', ')})`
+    : ''
+
+  return db.get(
+    `SELECT
+       referral_ctwa_clid,
+       referral_source_id,
+       referral_source_type,
+       referral_source_url,
+       referral_headline,
+       ad_id_thru_message
+     FROM whatsapp_attribution
+     WHERE contact_id = ?${phoneFilter}
+     ORDER BY
+       CASE WHEN COALESCE(referral_ctwa_clid, '') != '' THEN 0 ELSE 1 END,
+       created_at DESC
+     LIMIT 1`,
+    [contact.id, ...uniquePhoneCandidates]
   )
 }
 
@@ -306,19 +424,7 @@ async function sendMetaWhatsappEvent({
     return { sent: false, reason: 'already_sent' }
   }
 
-  const userData = buildUserData(contact)
-  if (!userData.ph || !userData.external_id) {
-    await logMetaEvent({
-      contactId,
-      eventType,
-      metaEventName,
-      eventId,
-      status: 'skipped',
-      errorMessage: 'user_data insuficiente para Meta'
-    })
-    return { sent: false, reason: 'insufficient_user_data' }
-  }
-
+  const whatsappAttribution = await getLatestWhatsappAttribution(contact)
   const metaConfig = await getMetaCapiConfig()
   if (!metaConfig.datasetId || !metaConfig.accessToken) {
     await logMetaEvent({
@@ -332,15 +438,54 @@ async function sendMetaWhatsappEvent({
     return { sent: false, reason: 'missing_meta_config' }
   }
 
+  const userData = buildBusinessMessagingUserData(contact, metaConfig, whatsappAttribution)
+  if (!userData.ph || !userData.external_id) {
+    await logMetaEvent({
+      contactId,
+      eventType,
+      metaEventName,
+      eventId,
+      status: 'skipped',
+      errorMessage: 'user_data insuficiente para Meta'
+    })
+    return { sent: false, reason: 'insufficient_user_data' }
+  }
+
+  if (!userData.ctwa_clid) {
+    await logMetaEvent({
+      contactId,
+      eventType,
+      metaEventName,
+      eventId,
+      status: 'skipped',
+      errorMessage: 'Falta ctwa_clid para atribuir el evento de WhatsApp'
+    })
+    return { sent: false, reason: 'missing_ctwa_clid' }
+  }
+
+  if (!userData.whatsapp_business_account_id) {
+    await logMetaEvent({
+      contactId,
+      eventType,
+      metaEventName,
+      eventId,
+      status: 'skipped',
+      errorMessage: 'Falta WhatsApp Business Account ID para Meta Business Messaging'
+    })
+    return { sent: false, reason: 'missing_whatsapp_business_account_id' }
+  }
+
+  const enrichedCustomData = buildBusinessMessagingCustomData(customData, contact, whatsappAttribution)
   const payload = {
     data: [
       {
         event_name: metaEventName,
         event_time: Math.floor(Date.now() / 1000),
         action_source: 'business_messaging',
+        messaging_channel: 'whatsapp',
         event_id: eventId,
         user_data: userData,
-        custom_data: customData
+        custom_data: enrichedCustomData
       }
     ]
   }
@@ -399,7 +544,7 @@ export async function triggerWhatsappAppointmentBookedEvent(contactId) {
     return { sent: false, reason: 'missing_contact_id' }
   }
 
-  const metaEventName = await getConfiguredEventName(CONFIG_KEYS.scheduleEventName, 'Schedule')
+  const metaEventName = await getConfiguredEventName(CONFIG_KEYS.scheduleEventName, 'LeadSubmitted')
   const eventId = `schedule_contact_${contactId}`
 
   return sendMetaWhatsappEvent({
