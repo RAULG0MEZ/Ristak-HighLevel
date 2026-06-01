@@ -1507,8 +1507,11 @@ function userExplicitlyNamedPaymentMethod(messages) {
 }
 
 function userRequestedScheduledPayment(messages) {
-  const normalized = normalizeText(getLatestUserText(messages))
-  return /(programa|programale|prográmale|agenda|agendale|agéndale|calendariza|scheduled|schedule|para el|el \d{1,2} de|dentro de|a partir de|hasta)/.test(normalized)
+  const latest = normalizeText(getLatestUserText(messages))
+  const paymentThread = normalizeText(getPaymentConversationText(messages))
+  const scheduledPattern = /(programa|programale|prográmale|agenda|agendale|agéndale|calendariza|scheduled|schedule|para el|el \d{1,2} de|dentro de|a partir de|hasta)/
+
+  return scheduledPattern.test(latest) || scheduledPattern.test(paymentThread)
 }
 
 function isOperationalPaymentRequest(messages = []) {
@@ -1517,6 +1520,7 @@ function isOperationalPaymentRequest(messages = []) {
   if (isReadOnlyHighLevelPaymentApiRequest(latest)) return false
 
   return hasExplicitPaymentExecutionConfirmation(messages) ||
+    isPaymentConversationContinuation(messages) ||
     /(pago|pagos|payment|payments|charge|charges|cobr|cobra|cóbra|cargo|cargar|registra|registrar|manda|mandar|envia|envía|enviar|genera|generar|crea|crear|haz|hacer|prepara|preparar|factura|invoice|invoices|recibo|programa|programar|subscription|subscriptions|transaction|transactions|domicili|parcialidad|parcialidades|plan de pagos|link de pago|payment link|enlace de pago|tarjeta guardada|tarjeta nueva|transfer|transferencia|deposit|depósito|deposito|efectivo)/.test(latest)
 }
 
@@ -1770,15 +1774,13 @@ function getStoredCardPreferenceFromConversation(messages = []) {
 
   for (let index = safeMessages.length - 1; index >= 0; index -= 1) {
     const message = safeMessages[index]
+    if (message?.role === 'assistant') continue
+
     const text = getMessageText(message)
     const preference = getStoredCardPreferenceFromText(text)
     if (!preference) continue
 
-    if (message?.role !== 'assistant') return preference
-
-    const normalized = normalizeText(text)
-    const looksLikeChoiceList = /(usar otra tarjeta|opcion|opción|elige|elijas|respóndeme|respondeme|1, 2 o 3)/.test(normalized)
-    if (!looksLikeChoiceList) return preference
+    return preference
   }
 
   return null
@@ -6643,7 +6645,7 @@ function buildHighLevelTools(highLevelConnection, options = {}) {
     {
       type: 'function',
       name: 'lookup_contact_payment_profile',
-      description: 'Busca un contacto por nombre/email/teléfono/ID y devuelve su perfil de pagos en Ristak, incluyendo si tiene tarjeta guardada/autorizada para el modo de pago actual. Úsala para preguntas como "¿Raúl Gómez tiene tarjeta guardada?" o antes de decidir si un pago futuro puede ir con tarjeta guardada.',
+      description: 'Busca un contacto por nombre/email/teléfono/ID y devuelve su perfil de pagos en Ristak, incluyendo si tiene tarjeta guardada/autorizada para el modo de pago actual. Úsala para preguntas como "¿Raúl Gómez tiene tarjeta guardada?". En una solicitud de cobro no es paso final: después de resolver contacto/monto/fecha debes llamar create_single_payment_link o create_installment_payment_flow para que el backend pida tarjeta guardada vs nueva tarjeta, canal y confirmación.',
       parameters: {
         type: 'object',
         properties: {
@@ -7494,6 +7496,12 @@ function isPaymentConversationContinuation(messages) {
 
   const latestUserText = normalizeText(getMessageText(messages[latestUserIndex]))
   if (isExplicitNonPaymentTopicSwitchText(latestUserText)) return false
+  const previousAssistantText = normalizeText(getPreviousAssistantMessageText(messages, latestUserIndex))
+  const previousAskedForPaymentContactChoice = /(cual|cuál|elige|selecciona|escoge|opciones|estos|estas).*(contacto|cliente|persona|raul|raúl|cobr|pago|program|link)|(?:contacto|cliente|persona|raul|raúl).*(cual|cuál|elige|selecciona|escoge|opciones|cobr|pago|program|link)/.test(previousAssistantText)
+  const latestLooksLikeContactChoice = /^\s*(?:\d{1,2}|[a-z0-9@._+\-\s]{2,120})\s*$/.test(latestUserText) &&
+    (/^\d{1,2}$/.test(latestUserText) || getContactLookupTokens(latestUserText).length > 0)
+
+  if (previousAskedForPaymentContactChoice && latestLooksLikeContactChoice) return true
 
   return isConversationalFollowUp(messages) ||
     /(cobr|pago|program|agenda|fecha|dia|día|mismo|ajust|ultimo dia|último día|fin de mes|concepto|descripcion|descripción|prueba|test|modo|confirm|autoriz|ejecut|guardad|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|enero|febrero|marzo|abril|mayo|domicili|tarjeta|link|email|correo|sms|whatsapp|mandalo|mándalo|envialo|envíalo|transfer|deposit|efectivo|parcial|difer|mensual|semanal|\b\d{1,2}\b)/.test(latestUserText)
@@ -7734,6 +7742,8 @@ const PAYMENT_WORKFLOW_PROMPT = [
   '- Esa regla de envío NO aplica cuando se cobra o programa una tarjeta guardada/autorizada existente: ahí no hay link que enviar.',
   '- No uses highlevel_rest_request para crear invoices, enviar invoices, registrar pagos, schedules ni payments. Las únicas herramientas válidas para mutar dinero son create_single_payment_link, create_installment_payment_flow, record_contact_payment y record_invoice_payment.',
   '- Si el usuario ya dio todos los datos, usa las herramientas internas y avanza; no repitas preguntas nomás por protocolo.',
+  '- Si el usuario acaba de elegir el contacto en un flujo de cobro, no cierres con un resumen textual. Vuelve a llamar create_single_payment_link o create_installment_payment_flow con el contacto confirmado para que el backend decida tarjeta guardada, link, canal y confirmación.',
+  '- lookup_contact_payment_profile sólo sirve para consultar perfil de pago; no es respuesta final suficiente para un cobro. Después de identificar contacto y monto/fecha, usa la herramienta de creación/programación correspondiente.',
   '- Si falta algo indispensable, pregunta una sola cosa a la vez. No hagas listas de varias preguntas pendientes.',
   '- Cuando el usuario elija una opción/botón del flujo, trátala como respuesta válida al paso actual. Avanza con una respuesta corta y no vuelvas a pegar el resumen completo salvo que sea la confirmación final obligatoria.',
   '- En planes de parcialidades, cobros programados o calendarios raros, el resumen de confirmación debe incluir una tabla Markdown compacta con cada cobro: #, fecha exacta, monto, método/acción y estado/envío. Esto sí es excepción a la regla general de evitar tablas.',
