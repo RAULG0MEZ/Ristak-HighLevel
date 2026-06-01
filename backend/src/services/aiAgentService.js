@@ -4505,8 +4505,9 @@ function buildPaymentChannelsFromDeliveryMethod(method = '') {
 }
 
 function buildPaymentChannels(args = {}, messages = []) {
-  const explicitMethod = getPaymentDeliveryMethodFromArgs(args) ||
-    extractPaymentDeliveryMethodFromConversation(messages)
+  const conversationMethod = extractPaymentDeliveryMethodFromConversation(messages)
+  const hasConversationContext = Array.isArray(messages) && messages.length > 0
+  const explicitMethod = conversationMethod || (hasConversationContext ? '' : getPaymentDeliveryMethodFromArgs(args))
   const explicitChannels = buildPaymentChannelsFromDeliveryMethod(explicitMethod)
 
   if (explicitChannels) return explicitChannels
@@ -4523,8 +4524,9 @@ function buildPaymentChannels(args = {}, messages = []) {
 }
 
 function resolvePaymentDeliverySelection(args = {}, context = {}) {
-  const method = getPaymentDeliveryMethodFromArgs(args) ||
-    extractPaymentDeliveryMethodFromConversation(context.messages)
+  const conversationMethod = extractPaymentDeliveryMethodFromConversation(context.messages)
+  const hasConversationContext = Array.isArray(context.messages) && context.messages.length > 0
+  const method = conversationMethod || (hasConversationContext ? '' : getPaymentDeliveryMethodFromArgs(args))
 
   if (!method) {
     return {
@@ -6314,7 +6316,8 @@ async function executeCreateSinglePaymentLink(args = {}, highLevelConnection, co
       amount,
       currency,
       dueDate,
-      delivery: result.sendMethod,
+      delivery: getPaymentDeliveryLabel(deliverySelection.method),
+      sendMethod: result.sendMethod,
       paymentLink: result.paymentLink,
       paymentMode: highLevelConnection.paymentMode
     },
@@ -7765,6 +7768,7 @@ const PAYMENT_WORKFLOW_PROMPT = [
   '- Sigue el mismo contrato del modal/backend de pagos: contacto exacto, tipo de cobro (único, parcialidades, programado o manual/offline), monto/moneda, concepto, método, fechas, tarjeta guardada, canal de envío si aplica y revisión final.',
   '- El modal no completa un invoice/link de tarjeta sin envío. Para pago con tarjeta, link de pago, primer pago con tarjeta o domiciliación/autorización, siempre debe existir canal real: todos, correo, WhatsApp o SMS. "Solo generar", "none" o "sin enviar" no cuenta como acción válida.',
   '- Esa regla de envío NO aplica cuando se cobra o programa una tarjeta guardada/autorizada existente: ahí no hay link que enviar.',
+  '- Cuando la herramienta regrese summary.delivery, usa ese canal como el canal visible para el usuario. Si result.sendMethod dice sms pero summary.delivery dice WhatsApp, sms es sólo el valor técnico de HighLevel para envío al teléfono; no cambies el canal confirmado por el usuario.',
   '- No uses highlevel_rest_request para crear invoices, enviar invoices, registrar pagos, schedules ni payments. Las únicas herramientas válidas para mutar dinero son create_single_payment_link, create_installment_payment_flow, record_contact_payment y record_invoice_payment.',
   '- Si el usuario ya dio todos los datos, usa las herramientas internas y avanza; no repitas preguntas nomás por protocolo.',
   '- Si el usuario acaba de elegir el contacto en un flujo de cobro, no cierres con un resumen textual. Vuelve a llamar create_single_payment_link o create_installment_payment_flow con el contacto confirmado para que el backend decida tarjeta guardada, link, canal y confirmación.',
