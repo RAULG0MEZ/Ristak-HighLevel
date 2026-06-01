@@ -542,9 +542,59 @@
   color: var(--color-text-primary);
 }
 
+.customFieldsToggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.customFieldsToggle:hover {
+  color: var(--color-text-primary);
+}
+
+.customFieldsToggleLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.customFieldsToggleLabel svg {
+  flex-shrink: 0;
+}
+
+.customFieldsToggleMeta {
+  flex-shrink: 0;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  padding: 0 0.5rem;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .customFieldsList {
-  display: grid;
-  gap: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
 }
 
 .emptyText {
@@ -553,93 +603,64 @@
   color: var(--color-text-tertiary);
 }
 
-.customFieldItem {
-  padding: 0.625rem 0.75rem;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--color-background-glass) 58%, transparent);
-}
-
-.customFieldHeader {
+.customFieldRow {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.customFieldTitleGroup {
+  flex-direction: column;
+  gap: 0.375rem;
   min-width: 0;
-  display: grid;
-  gap: 0.125rem;
 }
 
 .customFieldLabel {
-  font-size: 0.8125rem;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  min-width: 0;
+  font-size: 0.6875rem;
   font-weight: 600;
-  color: var(--color-text-primary);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   line-height: 1.35;
+}
+
+.customFieldLabel span {
+  min-width: 0;
   overflow-wrap: anywhere;
 }
 
 .customFieldKey {
-  font-size: 0.6875rem;
   color: var(--color-text-tertiary);
-  line-height: 1.25;
-  overflow-wrap: anywhere;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
-.customFieldActions {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  flex-shrink: 0;
-}
-
-.iconActionButton {
-  width: 1.75rem;
-  height: 1.75rem;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--color-text-secondary);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.iconActionButton:hover:not(:disabled) {
-  color: var(--color-text-primary);
-  border-color: rgba(var(--color-primary-rgb), 0.35);
-  background: rgba(var(--color-primary-rgb), 0.08);
-}
-
-.iconActionButton:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.customFieldValue {
-  margin: 0.375rem 0 0 0;
-  font-size: 0.8125rem;
-  line-height: 1.45;
-  color: var(--color-text-secondary);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+.customFieldInputGroup {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: start;
 }
 
 .customFieldInput,
 .customFieldTextarea {
   width: 100%;
-  margin-top: 0.5rem;
-  padding: 0.5rem 0.625rem;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--color-background-glass) 78%, transparent);
+  box-sizing: border-box;
+  padding: 9px 12px;
+  border: 1px solid var(--color-border, rgba(148, 163, 184, 0.22));
+  border-radius: 6px;
+  background: var(--color-background, rgba(148, 163, 184, 0.06));
   color: var(--color-text-primary);
-  font-size: 0.8125rem;
-  line-height: 1.4;
+  font-family: inherit;
+  font-size: 0.875rem;
+  line-height: 1.35;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.customFieldInput {
+  height: 38px;
 }
 
 .customFieldTextarea {
@@ -651,8 +672,39 @@
 .customFieldInput:focus,
 .customFieldTextarea:focus {
   outline: none;
-  border-color: rgba(var(--color-primary-rgb), 0.45);
-  box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb), 0.08);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb), 0.12);
+}
+
+.customFieldInput[readonly],
+.customFieldTextarea[readonly] {
+  color: var(--color-text-secondary);
+  cursor: default;
+}
+
+.customFieldSaveButton {
+  height: 38px;
+  padding: 0 0.875rem;
+  border: 1px solid rgba(var(--color-primary-rgb), 0.34);
+  border-radius: 6px;
+  background: rgba(var(--color-primary-rgb), 0.08);
+  color: var(--color-primary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  font-family: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.customFieldSaveButton:hover:not(:disabled) {
+  border-color: rgba(var(--color-primary-rgb), 0.5);
+  background: rgba(var(--color-primary-rgb), 0.14);
+}
+
+.customFieldSaveButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .customFieldError {
@@ -953,5 +1005,13 @@
 
   .stats {
     gap: 0.375rem;
+  }
+
+  .customFieldInputGroup {
+    grid-template-columns: 1fr;
+  }
+
+  .customFieldSaveButton {
+    justify-self: flex-end;
   }
 }

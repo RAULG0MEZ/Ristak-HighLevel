@@ -100,18 +100,24 @@ const isObjectValue = (value: ContactCustomFieldValue | undefined): value is Rec
 const isComplexCustomField = (field: ContactCustomField) =>
   Array.isArray(field.value) || isObjectValue(field.value)
 
-const formatCustomFieldValue = (value: ContactCustomFieldValue | undefined) => {
-  if (value === null || value === undefined || value === '') return 'Sin valor'
-  if (Array.isArray(value)) return value.length ? value.join(', ') : 'Sin valor'
-  if (isObjectValue(value)) return JSON.stringify(value, null, 2)
-  if (typeof value === 'boolean') return value ? 'Si' : 'No'
-  return String(value)
-}
-
 const formatCustomFieldDraft = (value: ContactCustomFieldValue | undefined) => {
   if (value === null || value === undefined) return ''
   if (Array.isArray(value) || isObjectValue(value)) return JSON.stringify(value, null, 2)
   return String(value)
+}
+
+const buildCustomFieldDrafts = (fields: ContactCustomField[] = []) =>
+  fields.reduce<Record<string, string>>((drafts, field, index) => {
+    drafts[getCustomFieldIdentity(field, index)] = formatCustomFieldDraft(field.value)
+    return drafts
+  }, {})
+
+const parseJsonDraft = (draft: string) => {
+  try {
+    return JSON.parse(draft)
+  } catch {
+    throw new Error('Ese campo espera JSON valido.')
+  }
 }
 
 const parseCustomFieldDraft = (draft: string, field: ContactCustomField): ContactCustomFieldValue => {
@@ -120,13 +126,13 @@ const parseCustomFieldDraft = (draft: string, field: ContactCustomField): Contac
 
   if (Array.isArray(field.value) || dataType.includes('multi') || dataType.includes('checkbox')) {
     if (!trimmed) return []
-    if (trimmed.startsWith('[')) return JSON.parse(trimmed)
+    if (trimmed.startsWith('[')) return parseJsonDraft(trimmed) as ContactCustomFieldValue
     return trimmed.split(',').map(item => item.trim()).filter(Boolean)
   }
 
   if (isObjectValue(field.value) || dataType.includes('file')) {
     if (!trimmed) return {}
-    return JSON.parse(trimmed)
+    return parseJsonDraft(trimmed) as ContactCustomFieldValue
   }
 
   if (typeof field.value === 'boolean' || dataType.includes('bool')) {
@@ -160,7 +166,7 @@ export function ContactDetailsModal({
   const [paymentsExpanded, setPaymentsExpanded] = useState(false)
   const [refundsExpanded, setRefundsExpanded] = useState(false)
   const [appointmentsExpanded, setAppointmentsExpanded] = useState(false)
-  const [editingCustomField, setEditingCustomField] = useState<string | null>(null)
+  const [customFieldsExpanded, setCustomFieldsExpanded] = useState(false)
   const [customFieldDrafts, setCustomFieldDrafts] = useState<Record<string, string>>({})
   const [savingCustomField, setSavingCustomField] = useState<string | null>(null)
   const [customFieldError, setCustomFieldError] = useState<string | null>(null)
@@ -177,7 +183,7 @@ export function ContactDetailsModal({
       setPaymentsExpanded(false)
       setRefundsExpanded(false)
       setAppointmentsExpanded(false)
-      setEditingCustomField(null)
+      setCustomFieldsExpanded(false)
       setCustomFieldDrafts({})
       setSavingCustomField(null)
       setCustomFieldError(null)
@@ -188,11 +194,16 @@ export function ContactDetailsModal({
     setPaymentsExpanded(false)
     setRefundsExpanded(false)
     setAppointmentsExpanded(false)
-    setEditingCustomField(null)
-    setCustomFieldDrafts({})
+    setCustomFieldsExpanded(false)
+    setCustomFieldDrafts(buildCustomFieldDrafts(selectedContact?.customFields || []))
     setSavingCustomField(null)
     setCustomFieldError(null)
   }, [selectedContact?.id])
+
+  useEffect(() => {
+    if (!selectedContact) return
+    setCustomFieldDrafts(buildCustomFieldDrafts(selectedContact.customFields || []))
+  }, [selectedContact?.id, selectedContact?.customFields])
 
   // Filtrar contactos según búsqueda
   const filteredData = useMemo(() => {
@@ -264,21 +275,20 @@ export function ContactDetailsModal({
   const resolveContactBadge = (contact?: ContactDetail | null) =>
     getContactStageBadge(contact, labels)
 
-  const beginEditCustomField = (field: ContactCustomField, index: number) => {
+  const updateCustomFieldDraft = (field: ContactCustomField, index: number, value: string) => {
     const identity = getCustomFieldIdentity(field, index)
-    setEditingCustomField(identity)
-    setCustomFieldError(null)
     setCustomFieldDrafts(prev => ({
       ...prev,
-      [identity]: formatCustomFieldDraft(field.value)
+      [identity]: value
     }))
+    setCustomFieldError(null)
   }
 
   const saveCustomField = async (field: ContactCustomField, index: number) => {
     if (!selectedContact || !onUpdateCustomFields) return
 
     const identity = getCustomFieldIdentity(field, index)
-    const draft = customFieldDrafts[identity] ?? ''
+    const draft = customFieldDrafts[identity] ?? formatCustomFieldDraft(field.value)
 
     try {
       const value = parseCustomFieldDraft(draft, field)
@@ -289,7 +299,7 @@ export function ContactDetailsModal({
 
       const customFields = await onUpdateCustomFields(selectedContact.id, [updatedField])
       setSelectedContact(prev => prev?.id === selectedContact.id ? { ...prev, customFields } : prev)
-      setEditingCustomField(null)
+      setCustomFieldDrafts(buildCustomFieldDrafts(customFields))
     } catch (error) {
       const message = error instanceof Error ? error.message : 'No se pudo guardar el campo personalizado.'
       setCustomFieldError(message)
@@ -511,103 +521,86 @@ export function ContactDetailsModal({
                 </div>
 
                 <div className={styles.detailSection}>
-                  <h5 className={styles.detailSectionTitle}>
-                    Campos personalizados
-                  </h5>
-                  <div className={styles.customFieldsList}>
-                    {(selectedContact.customFields || []).length === 0 ? (
-                      <p className={styles.emptyText}>Sin campos personalizados</p>
-                    ) : (
-                      selectedContact.customFields?.map((field, index) => {
-                        const identity = getCustomFieldIdentity(field, index)
-                        const isEditing = editingCustomField === identity
-                        const isSaving = savingCustomField === identity
-                        const isComplex = isComplexCustomField(field)
+                  <button
+                    type="button"
+                    className={styles.customFieldsToggle}
+                    onClick={() => setCustomFieldsExpanded(prev => !prev)}
+                    aria-expanded={customFieldsExpanded}
+                  >
+                    <span className={styles.customFieldsToggleLabel}>
+                      <Icon name={customFieldsExpanded ? 'chevron-down' : 'chevron-right'} size={14} />
+                      Campos personalizados
+                    </span>
+                    <span className={styles.customFieldsToggleMeta}>
+                      {(selectedContact.customFields || []).length}
+                    </span>
+                  </button>
 
-                        return (
-                          <div key={identity} className={styles.customFieldItem}>
-                            <div className={styles.customFieldHeader}>
-                              <div className={styles.customFieldTitleGroup}>
-                                <span className={styles.customFieldLabel}>
-                                  {getCustomFieldLabel(field, index)}
-                                </span>
+                  {customFieldsExpanded && (
+                    <div className={styles.customFieldsList}>
+                      {(selectedContact.customFields || []).length === 0 ? (
+                        <p className={styles.emptyText}>Sin campos personalizados</p>
+                      ) : (
+                        selectedContact.customFields?.map((field, index) => {
+                          const identity = getCustomFieldIdentity(field, index)
+                          const isSaving = savingCustomField === identity
+                          const isComplex = isComplexCustomField(field)
+                          const fieldInputId = `custom-field-${selectedContact.id}-${index}`
+                          const fieldValue = customFieldDrafts[identity] ?? formatCustomFieldDraft(field.value)
+
+                          return (
+                            <div key={identity} className={styles.customFieldRow}>
+                              <label className={styles.customFieldLabel} htmlFor={fieldInputId}>
+                                <span>{getCustomFieldLabel(field, index)}</span>
                                 {(field.key || field.fieldKey || field.id) && (
                                   <span className={styles.customFieldKey}>
                                     {field.key || field.fieldKey || field.id}
                                   </span>
                                 )}
-                              </div>
-                              {onUpdateCustomFields && (
-                                <div className={styles.customFieldActions}>
-                                  {isEditing ? (
-                                    <>
-                                      <button
-                                        type="button"
-                                        className={styles.iconActionButton}
-                                        onClick={() => {
-                                          setEditingCustomField(null)
-                                          setCustomFieldError(null)
-                                        }}
-                                        disabled={isSaving}
-                                        aria-label="Cancelar"
-                                      >
-                                        <Icon name="x" size={14} />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className={styles.iconActionButton}
-                                        onClick={() => saveCustomField(field, index)}
-                                        disabled={isSaving}
-                                        aria-label="Guardar"
-                                      >
-                                        <Icon name={isSaving ? 'refresh' : 'check'} size={14} className={isSaving ? styles.spinIcon : undefined} />
-                                      </button>
-                                    </>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      className={styles.iconActionButton}
-                                      onClick={() => beginEditCustomField(field, index)}
-                                      aria-label="Editar"
-                                    >
-                                      <Icon name="edit" size={14} />
-                                    </button>
-                                  )}
-                                </div>
-                              )}
-                            </div>
+                              </label>
 
-                            {isEditing ? (
-                              isComplex ? (
-                                <textarea
-                                  className={styles.customFieldTextarea}
-                                  value={customFieldDrafts[identity] ?? ''}
-                                  onChange={(event) => setCustomFieldDrafts(prev => ({
-                                    ...prev,
-                                    [identity]: event.target.value
-                                  }))}
-                                  rows={4}
-                                />
-                              ) : (
-                                <input
-                                  className={styles.customFieldInput}
-                                  value={customFieldDrafts[identity] ?? ''}
-                                  onChange={(event) => setCustomFieldDrafts(prev => ({
-                                    ...prev,
-                                    [identity]: event.target.value
-                                  }))}
-                                />
-                              )
-                            ) : (
-                              <p className={styles.customFieldValue}>
-                                {formatCustomFieldValue(field.value)}
-                              </p>
-                            )}
-                          </div>
-                        )
-                      })
-                    )}
-                  </div>
+                              <div className={styles.customFieldInputGroup}>
+                                {isComplex ? (
+                                  <textarea
+                                    id={fieldInputId}
+                                    className={styles.customFieldTextarea}
+                                    value={fieldValue}
+                                    onChange={(event) => updateCustomFieldDraft(field, index, event.target.value)}
+                                    rows={4}
+                                    readOnly={!onUpdateCustomFields}
+                                  />
+                                ) : (
+                                  <input
+                                    id={fieldInputId}
+                                    className={styles.customFieldInput}
+                                    value={fieldValue}
+                                    onChange={(event) => updateCustomFieldDraft(field, index, event.target.value)}
+                                    onKeyDown={(event) => {
+                                      if (event.key === 'Enter') {
+                                        event.preventDefault()
+                                        saveCustomField(field, index)
+                                      }
+                                    }}
+                                    readOnly={!onUpdateCustomFields}
+                                  />
+                                )}
+                                {onUpdateCustomFields && (
+                                  <button
+                                    type="button"
+                                    className={styles.customFieldSaveButton}
+                                    onClick={() => saveCustomField(field, index)}
+                                    disabled={isSaving}
+                                  >
+                                    {isSaving ? 'Guardando...' : 'Guardar'}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })
+                      )}
+                    </div>
+                  )}
                   {customFieldError && (
                     <p className={styles.customFieldError}>{customFieldError}</p>
                   )}
