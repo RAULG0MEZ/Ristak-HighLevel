@@ -11729,6 +11729,43 @@ function shouldLookupContactBeforeCustomActionReadiness(messages = [], latestUse
   return Boolean(getCustomActionContactLookupHint(messages, latestUserText))
 }
 
+function isPersonScopedActionText(value = '') {
+  const normalized = normalizeText(value)
+  if (!normalized) return false
+
+  const mentionsPerson = /(contacto|cliente|lead|prospecto|paciente|persona|alguien|miembro|usuario)/.test(normalized)
+  const actionAffectsPerson = /(acceso|programa|workflow|flujo|automatizacion|automatización|cita|calendario|appointment|oportunidad|pipeline|mensaje|conversacion|conversación|tag|nota|campo|dato|suscripcion|suscripción|pago|cobr|meter|mete|metele|mételo|agrega|agregar|anade|añade|quita|saca|actualiza|modifica|cambia|restaura|reactiva|manda|envia|envía|agenda|registra|inscrib|alta|baja|nuevamente|otra vez)/.test(normalized)
+
+  return mentionsPerson && actionAffectsPerson
+}
+
+function latestMessageUsesGenericPersonTarget(value = '') {
+  const normalized = normalizeText(value)
+
+  return /\b(?:una persona|un contacto|una contacto|un cliente|una cliente|un lead|una lead|alguien|alguna persona|otra persona|otro contacto|otra contacto|otro cliente|otra cliente)\b/.test(normalized)
+}
+
+function shouldAskContactBeforeCustomActionReadiness({
+  messages = [],
+  latestUserMessage = '',
+  verifiedContact = null
+} = {}) {
+  const latestUserIndex = findLatestUserMessageIndex(messages)
+  const latestMessage = latestUserIndex >= 0 ? messages[latestUserIndex] : null
+  const latestUserText = latestUserMessage || getMessageText(latestMessage)
+
+  if (!isPersonScopedActionText(latestUserText)) return false
+  if (messageHasSelectedClarificationOption(latestMessage)) return false
+  if (normalizeOperationalContact(verifiedContact)?.id) return false
+  if (getCustomActionContactLookupHint(messages, latestUserText)) return false
+  if (isContextualContactReference(latestUserText)) return false
+
+  const hasReusableContact = Boolean(getRecentCrmConversationContactId(messages) || getRecentAgentMemoryContactId(messages))
+  if (hasReusableContact && !latestMessageUsesGenericPersonTarget(latestUserText)) return false
+
+  return true
+}
+
 function buildContactLookupFirstReply(resolvedContact = {}, lookupHint = '') {
   const contacts = dedupeContacts(resolvedContact.contacts || [])
   const fallbackLine = 'Si no es ninguno, pásame su email, celular o ID de HighLevel y lo busco más fino.'
@@ -12118,6 +12155,7 @@ async function evaluateCustomActionReadiness(apiKey, {
         'Lee la personalización como instrucciones operativas. Si la regla dice que sin cierto dato se debe preguntar antes de cualquier acción, debes bloquear herramientas.',
         'Esto aplica a todo el catálogo de HighLevel: contactos, citas, pagos, suscripciones, formularios, surveys, funnels, blogs, campañas, anuncios, widgets, productos, oportunidades, usuarios, workflows, media storage, etc.',
         'Orden obligatorio cuando la acción involucra contacto/persona: si el usuario ya dio una pista de contacto, primero debe buscarse y verificarse el contacto. No bloquees por cantidad, fecha u otro dato hasta que el contacto esté resuelto o descartado.',
+        'Si la acción involucra una persona/contacto pero el usuario sólo dijo "una persona", "alguien", "un contacto", "un cliente" o no dio ninguna persona exacta ni referencia contextual resoluble, el primer dato faltante es contacto. No preguntes meses, workflow, campo, monto ni otro dato antes del contacto.',
         'Nunca pidas "nombre completo, ID, teléfono o correo" como primer paso si ya hay una pista como nombre parcial. Primero deja que herramientas/API busquen coincidencias y muestren recomendaciones.',
         'Si el usuario pide "cuáles tienes", "cuáles hay", "investiga", "búscalo en GHL" o pide opciones disponibles dentro de un flujo activo, NO bloquees con la misma pregunta faltante. Marca ready=true para que las herramientas investiguen/listen opciones reales.',
         'Usa la conversación completa. Si el usuario dio el dato en un seguimiento como "solo 1 mes", considéralo presente.',
@@ -14986,6 +15024,27 @@ export async function createAgentReply({ apiKey, messages, viewContext, userId =
       }
 
       customActionVerifiedContact = normalizeOperationalContact(resolvedContact.contact) || customActionVerifiedContact
+    }
+
+    if (shouldAskContactBeforeCustomActionReadiness({
+      messages,
+      latestUserMessage,
+      verifiedContact: customActionVerifiedContact
+    })) {
+      return {
+        reply: '¿A qué persona o contacto se lo hago?',
+        model: normalizeAIAgentModel(agentConfig?.model),
+        sources: [],
+        clarificationOptions: [],
+        usage: null,
+        debug: {
+          queryCount: 0,
+          highLevelToolsEnabled: Boolean(highLevelConnection?.configured),
+          metaAdsOperationsEnabled: false,
+          agentRoute,
+          customActionMissingContactFirst: true
+        }
+      }
     }
 
     const skipPreflightForDiscovery = userRequestsOperationalDiscovery(latestUserMessage) &&
