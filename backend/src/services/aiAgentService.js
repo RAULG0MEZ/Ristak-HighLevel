@@ -537,6 +537,77 @@ function extractMcpApprovalRequests(responseData) {
     }))
 }
 
+function compactActionEvidenceValue(value, maxLength = 1400) {
+  if (value === undefined || value === null || value === '') return null
+  if (typeof value === 'string') return cleanText(value, maxLength)
+  return cleanText(safeStringify(value, maxLength), maxLength)
+}
+
+function buildFunctionToolEvidence(call = {}, output = {}) {
+  const args = call.arguments || {}
+
+  return {
+    type: 'function',
+    tool: call.name || 'unknown_tool',
+    ok: output?.ok === true,
+    action: output?.action || null,
+    confirmationRequired: Boolean(output?.confirmationRequired),
+    missingFields: Array.isArray(output?.missingFields) ? output.missingFields : [],
+    error: output?.error || null,
+    status: output?.status || null,
+    method: output?.method || args.method || null,
+    path: output?.path || args.path || null,
+    contact: output?.contact || output?.summary?.contact || null,
+    summary: output?.summary || null,
+    response: compactActionEvidenceValue(output?.response || output?.result, 1800)
+  }
+}
+
+function extractMcpToolEvidence(responseData) {
+  if (!Array.isArray(responseData?.output)) return []
+
+  return responseData.output
+    .filter((item) => {
+      const type = String(item?.type || '')
+      return type.includes('mcp') &&
+        type !== 'mcp_approval_request' &&
+        type !== 'mcp_approval_response'
+    })
+    .map((item) => ({
+      type: item.type || 'mcp',
+      id: item.id || item.call_id || null,
+      tool: item.name || item.tool_name || item.action || 'mcp_tool',
+      serverLabel: item.server_label || item.serverLabel || '',
+      ok: !(item.error || item.status === 'failed'),
+      status: item.status || null,
+      error: item.error || null,
+      arguments: item.arguments ? parseToolArguments(item.arguments) : null,
+      response: compactActionEvidenceValue(
+        item.output || item.result || item.content || item.response || item,
+        1800
+      )
+    }))
+}
+
+function appendUniqueActionEvidence(evidenceList, seenIds, evidence) {
+  if (!evidence) return
+
+  const key = evidence.id ||
+    [
+      evidence.type,
+      evidence.tool,
+      evidence.method,
+      evidence.path,
+      evidence.action,
+      evidence.status,
+      evidence.response || evidence.error || ''
+    ].map(value => cleanText(String(value || ''), 120)).join('|')
+
+  if (seenIds.has(key)) return
+  seenIds.add(key)
+  evidenceList.push(evidence)
+}
+
 const AFFIRMATIVE_INTENT_STEMS = [
   'si',
   'sip',
@@ -6813,6 +6884,8 @@ async function callOpenAIResponseWithActionTools(apiKey, {
   let previousResponseId = null
   let latestData = null
   let latestClarificationOptions = []
+  const actionEvidence = []
+  const seenActionEvidence = new Set()
   const operationalMemory = {
     paymentContact: normalizeOperationalContact(initialOperationalMemory.paymentContact) ||
       (getRecentPaymentConversationContactId(messages)
@@ -6836,6 +6909,9 @@ async function callOpenAIResponseWithActionTools(apiKey, {
 
     const functionCalls = extractFunctionCalls(latestData)
     const mcpApprovalRequests = extractMcpApprovalRequests(latestData)
+    for (const evidence of extractMcpToolEvidence(latestData)) {
+      appendUniqueActionEvidence(actionEvidence, seenActionEvidence, evidence)
+    }
 
     if (!functionCalls.length && !mcpApprovalRequests.length) {
       const text = extractResponseText(latestData)
@@ -6848,7 +6924,8 @@ async function callOpenAIResponseWithActionTools(apiKey, {
         text,
         data: latestData,
         sources: extractResponseSources(latestData),
-        clarificationOptions: latestClarificationOptions
+        clarificationOptions: latestClarificationOptions,
+        actionEvidence
       }
     }
 
@@ -6988,6 +7065,8 @@ async function callOpenAIResponseWithActionTools(apiKey, {
       } else if (output?.ok === true || output?.action || output?.missingFields || output?.redirectTool) {
         latestClarificationOptions = []
       }
+
+      appendUniqueActionEvidence(actionEvidence, seenActionEvidence, buildFunctionToolEvidence(call, output))
 
       const outputContact = getPaymentContactFromToolOutput(output)
       if (outputContact?.id) {
@@ -7325,6 +7404,8 @@ function buildActionCustomizationInstructions(agentConfig) {
     'Cómo aplicar estas reglas:',
     `- Úsalas como playbook operativo para cualquier recurso de HighLevel, no sólo contactos. Catálogo cubierto: ${HIGHLEVEL_API_RESOURCE_CATALOG_TEXT}.`,
     '- Interpreta la intención en lenguaje humano: extrae entidad objetivo, recurso, acción, datos requeridos y pasos. No trates la regla como texto técnico para recitarle al usuario.',
+    '- Si una regla implica varios pasos, conviértela en checklist interno y ejecuta/valida cada paso con herramienta/API. No cierres con "listo" si sólo se completó una parte.',
+    '- En la respuesta final, sólo afirma como completado lo que tenga evidencia de herramienta/API de este turno. Si un paso no tiene respuesta de API, dilo como pendiente/no confirmado y no lo inventes.',
     '- Si la regla menciona tokens tipo {{contact.campo}} o cualquier identificador técnico, úsalo para buscar/operar internamente; no lo muestres salvo que el usuario pida detalles técnicos.',
     '- Si la acción involucra contacto, cita, pago, suscripción, formulario, survey, funnel, blog, campaña, anuncio, widget, conversación, oportunidad, producto, tienda, workflow, media, usuario u otro recurso, resuelve primero el registro exacto en GoHighLevel/API. Si salen varios, pide que elija.',
     '- Si falta un dato indispensable indicado por la regla (cantidad, fecha, estado, producto, formulario, workflow, etc.), pregunta sólo ese dato antes de cualquier escritura. Nunca sustituyas un dato faltante por vacío, null, cero, borrar o quitar.',
@@ -7345,6 +7426,56 @@ function buildSpecialistAgentInstructions(agentConfig, latestUserMessage) {
     'Si una herramienta de HighLevel, Meta o DB devuelve URLs de imagen, video o archivo, incluyelas en la respuesta como enlace Markdown o URL directa en linea propia para que el dashboard pueda previsualizarlas.',
     NON_NEGOTIABLE_SAFETY_PROMPT
   ].join('\n\n')
+}
+
+async function groundCustomActionReply(apiKey, {
+  model,
+  reply,
+  actionEvidence = [],
+  agentConfig,
+  messages = [],
+  runtimeContext = {}
+} = {}) {
+  if (!Array.isArray(actionEvidence) || !actionEvidence.length) return reply
+
+  try {
+    const { text } = await callOpenAIResponse(apiKey, {
+      model,
+      maxOutputTokens: 900,
+      instructions: [
+        'Eres verificador de respuestas para acciones personalizadas en GoHighLevel dentro de Ristak.',
+        'Tu trabajo es reescribir la respuesta final usando SOLO la evidencia de herramientas/API del turno actual.',
+        'No agregues acciones nuevas, no inventes tags, workflows, pagos, formularios, campañas, anuncios, widgets ni ningún recurso.',
+        'Si la personalización pedía varios pasos, separa lo confirmado de lo pendiente/no confirmado.',
+        'Un paso sólo está confirmado si hay evidencia con ok=true o una respuesta/status exitoso de herramienta/API.',
+        'Si una herramienta pidió confirmación o reportó missingFields, ese paso NO está ejecutado.',
+        'Mantén español conversacional, corto y claro. No muestres endpoints, payloads, IDs o field keys salvo que el usuario pida detalles técnicos.',
+        'Devuelve sólo la respuesta corregida para el usuario.'
+      ].join('\n'),
+      input: [
+        `Fecha/hora local: ${runtimeContext.nowIso || ''}`,
+        '',
+        'Personalización de acciones configurada:',
+        getConfiguredActionCustomizations(agentConfig) || 'No disponible.',
+        '',
+        'Conversación:',
+        buildConversationText(messages) || 'Sin mensajes previos.',
+        '',
+        'Respuesta redactada por el agente antes de verificar:',
+        reply || '',
+        '',
+        'Evidencia real de herramientas/API en este turno:',
+        JSON.stringify(actionEvidence, null, 2),
+        '',
+        'Reescribe la respuesta sin afirmar nada que no esté en la evidencia.'
+      ].join('\n')
+    })
+
+    return cleanText(text, 2500) || reply
+  } catch (error) {
+    logger.warn(`No se pudo verificar respuesta de acción personalizada: ${error.message}`)
+    return reply
+  }
 }
 
 function normalizeAIAgentResponseStyle(value) {
@@ -8505,10 +8636,20 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
     })
   }
 
-  const { text, data, sources, clarificationOptions } = response
+  const { text, data, sources, clarificationOptions, actionEvidence } = response
+  const groundedText = agentRoute?.customActionIntent
+    ? await groundCustomActionReply(apiKey, {
+        model,
+        reply: text,
+        actionEvidence,
+        agentConfig,
+        messages,
+        runtimeContext
+      })
+    : text
 
   return {
-    reply: stripMarkdown(text),
+    reply: stripMarkdown(groundedText),
     model: data?.model || model,
     usage: data?.usage || null,
     sources,
