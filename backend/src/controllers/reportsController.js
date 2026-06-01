@@ -9,6 +9,11 @@ import {
   buildReportMetrics,
   buildContactsList
 } from '../services/analyticsService.js'
+import {
+  MANUAL_BUSINESS_EXPENSE_PERIODS,
+  normalizeManualBusinessExpensePeriodStart,
+  normalizeManualBusinessExpenseRow
+} from '../services/manualBusinessExpensesService.js'
 import { nonTestPaymentCondition } from '../utils/paymentMode.js'
 
 const buildRangePayload = (range) => ({
@@ -16,39 +21,6 @@ const buildRangePayload = (range) => ({
   end: range.endUtc,
   timezone: range.appliedTimezone,
   filtered: range.isFiltered
-})
-
-const MANUAL_BUSINESS_EXPENSE_PERIODS = new Set(['day', 'month', 'year'])
-
-const normalizeManualBusinessExpensePeriodStart = (periodType, periodStart) => {
-  const raw = String(periodStart || '').trim()
-
-  if (periodType === 'day') {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null
-    return raw
-  }
-
-  if (periodType === 'month') {
-    const match = raw.match(/^(\d{4})-(\d{2})(?:-\d{2})?$/)
-    if (!match) return null
-    const month = Number(match[2])
-    if (month < 1 || month > 12) return null
-    return `${match[1]}-${match[2]}-01`
-  }
-
-  if (periodType === 'year') {
-    const match = raw.match(/^(\d{4})(?:-\d{2}-\d{2})?$/)
-    if (!match) return null
-    return `${match[1]}-01-01`
-  }
-
-  return null
-}
-
-const normalizeManualBusinessExpenseRow = (row) => ({
-  period_type: row.period_type,
-  period_start: row.period_start,
-  amount: Number(row.amount || 0)
 })
 
 export const getContactsReport = async (req, res) => {

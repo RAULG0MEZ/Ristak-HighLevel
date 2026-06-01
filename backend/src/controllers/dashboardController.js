@@ -3,6 +3,7 @@ import { logger } from '../utils/logger.js';
 import { resolveDateRange, resolveDateRangeWithGHLTimezone } from '../utils/dateUtils.js';
 import { normalizeTrafficSource } from '../utils/trafficSourceNormalizer.js';
 import { getGroupExpression } from '../services/analyticsService.js';
+import { getManualBusinessExpensesTotalForRange } from '../services/manualBusinessExpensesService.js';
 import { DateTime } from 'luxon';
 import { getContactsWithAppointmentsHybrid, getContactsWithShowedAppointmentsHybrid } from '../services/appointmentsMerge.js';
 import { getHiddenContactFilters, buildHiddenContactsCondition } from '../utils/hiddenContactsFilter.js';
@@ -52,6 +53,35 @@ const buildMetaAdsDateFilters = (range) => {
   }
 
   return { filters, params };
+};
+
+const coerceZonedDateTime = (value, fallbackUtc, zone) => {
+  if (value?.isValid) return value;
+
+  if (typeof value === 'string') {
+    const parsed = DateTime.fromISO(value, { zone });
+    if (parsed.isValid) return parsed;
+  }
+
+  if (fallbackUtc) {
+    const parsed = DateTime.fromISO(fallbackUtc, { zone: 'utc' }).setZone(zone);
+    if (parsed.isValid) return parsed;
+  }
+
+  return null;
+};
+
+const getLocalDateRange = (range) => {
+  const zone = range.appliedTimezone || 'UTC';
+  const start = coerceZonedDateTime(range.startZoned, range.startUtc, zone);
+  const end = coerceZonedDateTime(range.endZoned, range.endUtc, zone);
+
+  if (!start || !end) return null;
+
+  return {
+    from: start.toISODate(),
+    to: end.toISODate()
+  };
 };
 
 const buildContactFilters = async (range) => {
@@ -176,6 +206,17 @@ const computeFinancialSnapshot = async (range) => {
     totalCostos = ingresosNetos * 0.16;
   }
 
+  try {
+    const localDateRange = getLocalDateRange(range);
+    const manualBusinessExpenses = localDateRange
+      ? await getManualBusinessExpensesTotalForRange(localDateRange)
+      : 0;
+
+    totalCostos += manualBusinessExpenses;
+  } catch (error) {
+    logger.warn('Error calculando costos variables manuales:', error.message);
+  }
+
   const gananciaNeta = gananciaBruta - totalCostos;
 
   return {
@@ -219,7 +260,11 @@ export const getMetrics = async (req, res) => {
       const prevStart = prevEnd.minus({ days: spanDays - 1 }).startOf('day');
       previousRange = {
         startUtc: prevStart.toUTC().toISO({ suppressMilliseconds: false }),
-        endUtc: prevEnd.toUTC().toISO({ suppressMilliseconds: false })
+        endUtc: prevEnd.toUTC().toISO({ suppressMilliseconds: false }),
+        appliedTimezone: range.appliedTimezone,
+        isFiltered: true,
+        startZoned: prevStart,
+        endZoned: prevEnd
       };
     } else {
       const zone = range.appliedTimezone;
@@ -229,7 +274,11 @@ export const getMetrics = async (req, res) => {
       const previousMonthEnd = currentMonthStart.minus({ days: 1 }).endOf('day');
       previousRange = {
         startUtc: previousMonthStart.toUTC().toISO({ suppressMilliseconds: false }),
-        endUtc: previousMonthEnd.toUTC().toISO({ suppressMilliseconds: false })
+        endUtc: previousMonthEnd.toUTC().toISO({ suppressMilliseconds: false }),
+        appliedTimezone: zone,
+        isFiltered: true,
+        startZoned: previousMonthStart,
+        endZoned: previousMonthEnd
       };
     }
 
