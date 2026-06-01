@@ -4030,10 +4030,17 @@ function estimateMinimumPaymentChargeCountFromText(value) {
   }
 
   const afterSeriesText = lastSeriesEnd >= 0 ? normalized.slice(lastSeriesEnd) : normalized
-  const laterChargeMatches = [...afterSeriesText.matchAll(/\b(?:le\s+)?(?:vuelves?|vuelve|volver(?:as)?|otra vez|de nuevo)(?=.{0,60}\b(?:cobr|cubr)\w*)/g)]
-  expectedCount += laterChargeMatches.length
+  const laterChargePatterns = [
+    /\b(?:le\s+)?(?:vuelves?|vuelve|volver(?:as)?|otra vez|de nuevo)(?=.{0,60}\b(?:cobr|cubr)\w*)/g,
+    /\b(?:luego|despues|después|posteriormente|entonces|al final|mas tarde|más tarde)(?=.{0,90}\b(?:cobr|cubr|cargo|pago|program)\w*)/g
+  ]
 
-  return expectedCount >= 4 ? expectedCount : 0
+  for (const pattern of laterChargePatterns) {
+    const matches = [...afterSeriesText.matchAll(pattern)]
+    expectedCount += matches.length
+  }
+
+  return expectedCount >= 2 ? expectedCount : 0
 }
 
 function estimateMinimumPaymentChargeCount(messages = []) {
@@ -8719,15 +8726,51 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
     (firstPayment.enabled ? firstPayment.amount : 0) +
     remaining.payments.reduce((sum, payment) => sum + normalizePaymentAmount(payment.amount), 0)
   )
-  const previewScheduleIsComplete =
-    !(previewExpectedChargeCount > 0 && previewActualChargeCount < previewExpectedChargeCount) &&
-    !(previewPlannedTotal > 0 && totalAmount > 0 && Math.abs(previewPlannedTotal - totalAmount) >= 0.01)
-  const planPreviewWillFire = previewActualChargeCount >= 2 &&
-    previewScheduleIsComplete &&
+  const previewHasExpectedCountMismatch = previewExpectedChargeCount > 0 &&
+    previewActualChargeCount < previewExpectedChargeCount
+  const previewHasTotalMismatch = previewPlannedTotal > 0 &&
+    totalAmount > 0 &&
+    Math.abs(previewPlannedTotal - totalAmount) >= 0.01
+  const schedulePreviewRequired = previewActualChargeCount > 0 && (
+    previewActualChargeCount >= 2 ||
+    userRequestedScheduledPayment(context.messages) ||
+    paymentConversationRequiresInstallmentFlow(context.messages)
+  )
+  const planPreviewWillFire = schedulePreviewRequired &&
+    !previewHasExpectedCountMismatch &&
+    !previewHasTotalMismatch &&
     !hasExplicitPaymentExecutionConfirmation(context.messages)
   const blockingMissingFields = planPreviewWillFire
     ? missingFields.filter(field => field !== 'método del primer pago')
     : missingFields
+
+  if (previewHasExpectedCountMismatch) {
+    return buildPaymentScheduleIncompleteOutput({
+      contact,
+      totalAmount,
+      currency,
+      firstPayment,
+      remainingPayments: remaining.payments,
+      expectedChargeCount: previewExpectedChargeCount,
+      actualChargeCount: previewActualChargeCount,
+      plannedTotal: previewPlannedTotal,
+      reason: `La instrucción original sugiere al menos ${previewExpectedChargeCount} cobros reales, pero el plan armado trae ${previewActualChargeCount}.`
+    })
+  }
+
+  if (previewHasTotalMismatch) {
+    return buildPaymentScheduleIncompleteOutput({
+      contact,
+      totalAmount,
+      currency,
+      firstPayment,
+      remainingPayments: remaining.payments,
+      expectedChargeCount: previewExpectedChargeCount || previewActualChargeCount,
+      actualChargeCount: previewActualChargeCount,
+      plannedTotal: previewPlannedTotal,
+      reason: `La suma de los cobros (${previewPlannedTotal} ${currency}) no coincide con el total declarado (${totalAmount} ${currency}).`
+    })
+  }
 
   if (blockingMissingFields.length) {
     const nextMissingField = blockingMissingFields[0]
