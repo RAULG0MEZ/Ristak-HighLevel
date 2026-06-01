@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Bot, CheckCircle, Eye, EyeOff, Globe2, Trash2, XCircle } from 'lucide-react'
+import { Bot, CheckCircle, Eye, EyeOff, Globe2, ListChecks, Trash2, XCircle } from 'lucide-react'
 import { Button, Card } from '@/components/common'
 import { useNotification } from '@/contexts/NotificationContext'
 import { aiAgentService, type AIAgentConfigStatus, type AIAgentRecommendationMode, type AIAgentResponseStyle } from '@/services/aiAgentService'
@@ -20,6 +20,7 @@ const emptyStatus: AIAgentConfigStatus = {
   locationContext: '',
   competitorsContext: '',
   brandVoice: '',
+  actionCustomizations: '',
   researchDomains: '',
   responseStyle: 'direct',
   recommendationMode: 'on_request',
@@ -35,6 +36,7 @@ const emptyForm = {
   locationContext: '',
   competitorsContext: '',
   brandVoice: '',
+  actionCustomizations: '',
   researchDomains: '',
   responseStyle: 'direct' as AIAgentResponseStyle,
   recommendationMode: 'on_request' as AIAgentRecommendationMode,
@@ -139,6 +141,7 @@ function statusToForm(status: AIAgentConfigStatus) {
     locationContext: status.locationContext || '',
     competitorsContext: status.competitorsContext || '',
     brandVoice: status.brandVoice || '',
+    actionCustomizations: status.actionCustomizations || '',
     researchDomains: status.researchDomains || '',
     responseStyle: status.responseStyle || 'direct',
     recommendationMode: status.recommendationMode || 'on_request',
@@ -674,6 +677,27 @@ export const AIAgentSettings: React.FC = () => {
                 rows={3}
               />
             </div>
+          </div>
+        </div>
+
+        <div className={styles.section}>
+          <div className={styles.sectionHeading}>
+            <ListChecks size={17} />
+            <h3 className={styles.sectionTitle}>Personalización de acciones</h3>
+          </div>
+          <div className={styles.fieldWide}>
+            <label className={styles.label}>Instrucciones para ejecuciones</label>
+            <textarea
+              className={`${styles.textarea} ${styles.actionTextarea}`}
+              value={form.actionCustomizations}
+              placeholder={'Ejemplo: Cuando pidan darle tiempo extra a un contacto, busca el campo {{contact.tiempo_extra_en_el_programa}}, guarda sólo el número de meses y agrégalo al workflow "Tiempo extra".'}
+              onChange={(event) => updateField('actionCustomizations', event.target.value)}
+              disabled={loading || disconnecting}
+              rows={7}
+            />
+            <p className={styles.helper}>
+              El agente usa estas reglas cuando detecta una acción operativa antes de llamar herramientas.
+            </p>
           </div>
         </div>
 

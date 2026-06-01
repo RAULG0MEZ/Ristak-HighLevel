@@ -12,7 +12,7 @@ import {
 
 export async function getConfig(req, res) {
   try {
-    const status = await getAIAgentStatus()
+    const status = await getAIAgentStatus({ userId: req.user?.userId })
 
     res.json({
       success: true,
@@ -50,6 +50,7 @@ export async function saveConfig(req, res) {
     }
 
     const status = await saveAIAgentConfig({
+      userId: req.user?.userId,
       apiKey: apiKey || null,
       businessContext: req.body?.businessContext,
       marketContext: req.body?.marketContext,
@@ -57,6 +58,7 @@ export async function saveConfig(req, res) {
       locationContext: req.body?.locationContext,
       competitorsContext: req.body?.competitorsContext,
       brandVoice: req.body?.brandVoice,
+      actionCustomizations: req.body?.actionCustomizations,
       researchDomains: req.body?.researchDomains,
       model: req.body?.model,
       responseStyle: req.body?.responseStyle,
@@ -80,7 +82,7 @@ export async function saveConfig(req, res) {
 
 export async function deleteConfig(req, res) {
   try {
-    await deleteAIAgentConfig()
+    await deleteAIAgentConfig({ userId: req.user?.userId })
 
     res.json({
       success: true,
@@ -148,7 +150,8 @@ export async function chat(req, res) {
     const result = await createAgentReply({
       apiKey,
       messages,
-      viewContext: req.body?.viewContext || {}
+      viewContext: req.body?.viewContext || {},
+      userId: req.user?.userId
     })
 
     res.json({

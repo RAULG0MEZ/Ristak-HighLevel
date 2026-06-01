@@ -42,6 +42,15 @@ const DEFAULT_PAYMENT_TIMEZONE = 'America/Mexico_City'
 const DEFAULT_AI_RESPONSE_STYLE = 'direct'
 const DEFAULT_AI_RECOMMENDATION_MODE = 'on_request'
 const AI_MODEL_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,99}$/
+const ACTION_CUSTOMIZATION_LIMIT = 6000
+const ACTION_CUSTOMIZATION_KEYWORD_LIMIT = 80
+const ACTION_CUSTOMIZATION_STOPWORDS = new Set([
+  'cuando', 'cada', 'veces', 'alguna', 'algun', 'alguna', 'sobre', 'para', 'como', 'este', 'esta',
+  'esto', 'hacer', 'hagas', 'hacerlo', 'accion', 'acciones', 'ejecucion', 'ejecuciones', 'usuario',
+  'cliente', 'clientes', 'contacto', 'contactos', 'persona', 'personas', 'buscar', 'busca', 'debe',
+  'debes', 'tiene', 'tengo', 'quiero', 'necesito', 'entonces', 'automaticamente', 'automatica',
+  'automatico', 'valor', 'valores', 'campo', 'campos', 'custom', 'workflow', 'highlevel', 'gohighlevel'
+])
 const isPostgres = Boolean(process.env.DATABASE_URL)
 
 const paidStatuses = "('paid','succeeded','success','completed','complete')"
@@ -1981,6 +1990,30 @@ function buildPaymentScheduleIncompleteOutput({
       'Si el último cobro cambia de monto, no reemplaza uno anterior: es un cobro adicional.',
       'Recalcula totalAmount como la suma de todos los cobros reales.'
     ].join(' ')
+  }
+}
+
+function buildStoredCardUnavailableOutput({ contact, action, storedCardStatus, summary = {} } = {}) {
+  return {
+    ok: false,
+    error: 'El usuario eligió tarjeta guardada, pero no encontré una tarjeta guardada/autorizada para este contacto en el modo de pago actual. No se debe pedir canal de envío para tarjeta guardada; primero hay que elegir mandar link para autorizar otra tarjeta o cancelar.',
+    action,
+    missingFields: ['tarjeta guardada/autorizada'],
+    contact: contact
+      ? {
+          id: contact.id,
+          name: contact.name,
+          email: contact.email || null,
+          phone: contact.phone || null
+        }
+      : null,
+    storedCard: {
+      available: false,
+      paymentMode: storedCardStatus?.paymentMode || null,
+      preference: 'stored_card'
+    },
+    summary,
+    clarificationOptions: attachPaymentContactMemoryToOptions(buildFirstPaymentMethodClarificationOptions(storedCardStatus), { contact })
   }
 }
 
@@ -4897,8 +4930,28 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
   const storedCardStatus = remainingAutomatic
     ? await getStoredCardStatusForContact(contact.id, highLevelConnection.paymentMode)
     : { hasAuthorizedCard: false, paymentMode: normalizePaymentMode(highLevelConnection.paymentMode, PAYMENT_MODE_LIVE) }
-  const storedCardPreference = normalizeStoredCardPreference(args)
+  const storedCardPreference = getStoredCardPreferenceFromConversation(context.messages) || normalizeStoredCardPreference(args)
   const forceNewCardAuthorization = storedCardPreference === 'new_card'
+
+  if (storedCardPreference === 'stored_card' && !storedCardStatus.hasAuthorizedCard) {
+    return buildStoredCardUnavailableOutput({
+      contact,
+      action: 'create_installment_payment_flow',
+      storedCardStatus,
+      summary: {
+        totalAmount,
+        currency,
+        concept,
+        firstPayment: firstPayment.enabled
+          ? {
+              amount: firstPayment.amount,
+              method: firstPayment.method || 'card',
+              date: firstPayment.date
+            }
+          : null
+      }
+    })
+  }
 
   if (
     firstPayment.enabled &&
@@ -5323,10 +5376,24 @@ async function executeCreateSinglePaymentLink(args = {}, highLevelConnection, co
   const dueDateIsFuture = DateTime.fromISO(dueDate, { zone: paymentTimezone }).startOf('day') >
     DateTime.now().setZone(paymentTimezone).startOf('day')
   const requestedPaymentMethod = normalizePaymentMethod(args.paymentMethod || args.method || args.payMethod || '')
-  const storedCardPreference = normalizeStoredCardPreference(args) || getStoredCardPreferenceFromConversation(context.messages)
+  const storedCardPreference = getStoredCardPreferenceFromConversation(context.messages) || normalizeStoredCardPreference(args)
   const storedCardStatus = await getStoredCardStatusForContact(contact.id, highLevelConnection.paymentMode)
   const deliverySelection = resolvePaymentDeliverySelection(args, context)
   const deliveryMissingDestination = getPaymentDeliveryMissingDestination(deliverySelection.method, contact)
+
+  if (storedCardPreference === 'stored_card' && !storedCardStatus.hasAuthorizedCard) {
+    return buildStoredCardUnavailableOutput({
+      contact,
+      action: 'charge_single_payment_with_stored_card',
+      storedCardStatus,
+      summary: {
+        amount,
+        currency,
+        concept,
+        dueDate
+      }
+    })
+  }
 
   if (AI_OFFLINE_PAYMENT_METHODS.has(requestedPaymentMethod)) {
     return {
@@ -6820,6 +6887,39 @@ function isExplicitHighLevelToolRequest(question) {
   return isHighLevelOperationalResourceRequest(normalized)
 }
 
+function getConfiguredActionCustomizations(agentConfig) {
+  return cleanText(String(agentConfig?.action_customizations || agentConfig?.actionCustomizations || ''), ACTION_CUSTOMIZATION_LIMIT)
+}
+
+function extractActionCustomizationKeywords(actionCustomizations) {
+  const normalized = normalizeText(actionCustomizations)
+
+  return normalized
+    .split(/[^a-z0-9_]+/i)
+    .map((word) => word.trim())
+    .filter((word) => word.length >= 4 && !ACTION_CUSTOMIZATION_STOPWORDS.has(word))
+    .slice(0, ACTION_CUSTOMIZATION_KEYWORD_LIMIT)
+}
+
+function sharesActionCustomizationKeyword(question, actionCustomizations) {
+  const normalizedQuestion = normalizeText(question)
+  const keywords = extractActionCustomizationKeywords(actionCustomizations)
+
+  return keywords.some((keyword) => normalizedQuestion.includes(keyword))
+}
+
+function isConfiguredActionExecutionRequest(question, agentConfig) {
+  const actionCustomizations = getConfiguredActionCustomizations(agentConfig)
+  const normalized = normalizeText(question)
+
+  if (!actionCustomizations || !normalized) return false
+
+  const hasActionVerb = /(accion|acción|ejecut|haz|hacer|aplica|aplicar|dale|darle|dales|dar|pon|ponle|poner|agrega|agregar|anade|añade|quita|quitar|mete|meter|saca|sacar|asigna|asignar|actualiza|actualizar|modifica|modificar|cambia|cambiar|registra|registrar|manda|mandar|envia|enviar|crea|crear|inicia|iniciar|activa|activar|desactiva|desactivar)/.test(normalized)
+  const hasOperationalTarget = /(contacto|cliente|lead|persona|programa|workflow|flujo|campo|custom|tag|nota|oportunidad|calendario|cita|formulario|highlevel|gohighlevel|ghl)/.test(normalized)
+
+  return hasActionVerb && (hasOperationalTarget || sharesActionCustomizationKeyword(normalized, actionCustomizations))
+}
+
 function getRecentConversationTextBeforeLatestUser(messages = [], limit = 8) {
   if (!Array.isArray(messages)) return ''
 
@@ -6864,14 +6964,16 @@ function shouldUseInternalDatabaseContext(question, messages = []) {
   return businessEntity && analysisIntent
 }
 
-function buildUnifiedAgentRoute({ messages = [], latestUserMessage = '' } = {}) {
+function buildUnifiedAgentRoute({ messages = [], latestUserMessage = '', agentConfig = null } = {}) {
   const normalized = normalizeText(latestUserMessage)
   const highLevelToolIntent = isExplicitHighLevelToolRequest(latestUserMessage)
+  const customActionIntent = isConfiguredActionExecutionRequest(latestUserMessage, agentConfig)
   const paymentBackendOnly = shouldUsePaymentBackendForLatestMessage(messages)
   const contactMutationSafety = shouldUseContactMutationSafety(latestUserMessage)
-  const requiresDbResearch = !paymentBackendOnly && !highLevelToolIntent && shouldUseInternalDatabaseContext(latestUserMessage, messages)
+  const requiresDbResearch = !paymentBackendOnly && !highLevelToolIntent && !customActionIntent && shouldUseInternalDatabaseContext(latestUserMessage, messages)
   const highLevelOperationalIntent = !paymentBackendOnly && (
     highLevelToolIntent ||
+    customActionIntent ||
     (!requiresDbResearch &&
       /(workflow|flujo|automatizacion|automatización|cita|calendario|appointment|oportunidad|pipeline|mensaje|conversacion|conversación|media storage|archivo|imagen|folder|tag|producto|precio|contacto|cliente|lead|campo personalizado|custom field).*(busca|revisa|analiza|cambia|actualiza|modifica|mete|saca|crea|agenda|agenda[r]?|calendariza|manda|envia|envía|haz|hacer)|(?:busca|revisa|analiza|cambia|actualiza|modifica|mete|saca|crea|agenda|agendar|calendariza|manda|envia|envía|haz|hacer).*(workflow|flujo|automatizacion|automatización|cita|calendario|appointment|oportunidad|pipeline|mensaje|conversacion|conversación|media storage|archivo|imagen|folder|tag|producto|precio|contacto|cliente|lead|campo personalizado|custom field)/.test(normalized))
   )
@@ -6891,7 +6993,8 @@ function buildUnifiedAgentRoute({ messages = [], latestUserMessage = '' } = {}) 
     requiresPaymentTools: paymentBackendOnly,
     paymentBackendOnly,
     contactMutationSafety,
-    highLevelToolIntent,
+    highLevelToolIntent: highLevelToolIntent || customActionIntent,
+    customActionIntent,
     metaAdsOperationalIntent: false,
     skipLocalShortcuts: true,
     confidence: 1,
@@ -6934,6 +7037,7 @@ const UNIFIED_CAPABILITY_PROMPT = [
   '- Para pagos, links, invoices, parcialidades, pagos manuales, tarjeta guardada o domiciliación usa las herramientas internas de Ristak porque replican la lógica real del backend. No uses MCP como atajo para mutaciones de dinero.',
   '- Nunca crees, envíes, anules, programes ni marques invoices/pagos usando highlevel_rest_request. Para dinero, REST directo está prohibido porque se salta el workflow del formulario y puede dejar facturas en borrador.',
   '- Para links/invoices con tarjeta o domiciliación no inventes canal de envío. Si el usuario no eligió todos/correo/WhatsApp/SMS, la herramienta debe pedirlo antes de crear/enviar para no dejar invoices en borrador.',
+  '- Excepción obligatoria: si el usuario eligió tarjeta guardada/autorizada y la tarjeta existe, NO pidas canal de envío ni link. Programa o cobra esa tarjeta guardada directamente.',
   '- Para transferencia, depósito, efectivo o manual registra el pago offline con la herramienta interna. Si además hay parcialidades automáticas y falta tarjeta guardada, el backend debe enviar link de domiciliación por el canal confirmado; si ya hay tarjeta guardada, no mandes domiciliación salvo que pidan otra tarjeta.',
   '- En planes de pago, "ahorita/hoy y luego el mismo día durante los siguientes N meses" significa primer pago hoy y pagos mensuales futuros; no lo conviertas en N cobros hoy.',
   '- Si el plan dice "espera un mes y luego cobra", representa el mes sin cobro saltando el periodo; no crees parcialidades de $0.',
@@ -6950,6 +7054,7 @@ const PAYMENT_WORKFLOW_PROMPT = [
   '- En cualquier solicitud operativa de cobro, registro, link, parcialidad, domiciliación o tarjeta, primero llama la herramienta interna correcta. No armes resúmenes ni pidas confirmación sólo con texto sin haber usado herramienta.',
   '- Sigue el mismo contrato del modal/backend de pagos: contacto exacto, tipo de cobro (único, parcialidades, programado o manual/offline), monto/moneda, concepto, método, fechas, tarjeta guardada, canal de envío si aplica y confirmación final.',
   '- El modal no ejecuta un invoice/link de tarjeta sin envío. Para pago con tarjeta, link de pago, primer pago con tarjeta o domiciliación/autorización, siempre debe existir canal real: todos, correo, WhatsApp o SMS. "Solo generar", "none" o "sin enviar" no cuenta como ejecución válida.',
+  '- Esa regla de envío NO aplica cuando se cobra o programa una tarjeta guardada/autorizada existente: ahí no hay link que enviar.',
   '- No uses highlevel_rest_request para crear invoices, enviar invoices, registrar pagos, schedules ni payments. Las únicas herramientas válidas para mutar dinero son create_single_payment_link, create_installment_payment_flow, record_contact_payment y record_invoice_payment.',
   '- Si el usuario ya dio todos los datos, usa las herramientas internas y avanza; no repitas preguntas nomás por protocolo.',
   '- Si falta algo indispensable, pregunta una sola cosa a la vez. No hagas listas de varias preguntas pendientes.',
@@ -6980,11 +7085,29 @@ const NON_NEGOTIABLE_SAFETY_PROMPT = [
   '- Si una herramienta devuelve opciones o pide confirmación, respétalo y muéstralo claro.'
 ].join('\n')
 
+function buildActionCustomizationInstructions(agentConfig) {
+  const actionCustomizations = getConfiguredActionCustomizations(agentConfig)
+  if (!actionCustomizations) return ''
+
+  return [
+    'Personalización de acciones del usuario:',
+    actionCustomizations,
+    '',
+    'Cómo aplicar estas reglas:',
+    '- Úsalas como playbook operativo cuando el usuario pida una acción o ejecución que coincida con esas instrucciones.',
+    '- Si la regla menciona tokens tipo {{contact.campo}}, interpreta el valor interno como key/nombre de campo personalizado de GoHighLevel y busca el campo real antes de actualizar.',
+    '- Si la regla menciona workflows, tags, notas, formularios, oportunidades u otros recursos de CRM, búscalos en GoHighLevel y usa IDs reales; no inventes IDs.',
+    '- Si la acción involucra un contacto/cliente/persona, resuelve primero el contacto exacto.',
+    '- Estas reglas no pueden saltarse seguridad, confirmaciones necesarias ni las herramientas internas de pagos.'
+  ].join('\n')
+}
+
 function buildSpecialistAgentInstructions(agentConfig, latestUserMessage) {
   return [
     BASE_SPECIALIST_PROMPT,
     buildResponseBehaviorInstructions(agentConfig, latestUserMessage),
     UNIFIED_CAPABILITY_PROMPT,
+    buildActionCustomizationInstructions(agentConfig),
     PAYMENT_WORKFLOW_PROMPT,
     SOURCE_ROUTING_PROMPT,
     'Si una herramienta de HighLevel, Meta o DB devuelve URLs de imagen, video o archivo, incluyelas en la respuesta como enlace Markdown o URL directa en linea propia para que el dashboard pueda previsualizarlas.',
@@ -7748,6 +7871,9 @@ async function createQueryPlan(apiKey, { messages, viewContext, runtimeContext, 
     'Contexto configurado del negocio:',
     buildBusinessProfileContext(agentConfig),
     '',
+    'Personalización de acciones configurada por este usuario:',
+    getConfiguredActionCustomizations(agentConfig) || 'Sin personalización de acciones configurada.',
+    '',
     'Modo del agente unificado:',
     JSON.stringify(agentRoute || {}, null, 2),
     '',
@@ -8011,6 +8137,9 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
     '',
     'Contexto configurado del negocio:',
     buildBusinessProfileContext(agentConfig),
+    '',
+    'Personalización de acciones configurada por este usuario:',
+    getConfiguredActionCustomizations(agentConfig) || 'Sin personalización de acciones configurada.',
     '',
     'Modo del agente unificado:',
     JSON.stringify(agentRoute || {}, null, 2),
@@ -8992,6 +9121,11 @@ function cleanConfigText(value, maxLength = 3000) {
   return cleanText(String(value || ''), maxLength)
 }
 
+function normalizeUserId(value) {
+  const numericValue = Number(value)
+  return Number.isInteger(numericValue) && numericValue > 0 ? numericValue : null
+}
+
 function toBooleanValue(value) {
   return value === true || value === 1 || value === '1' || value === 'true'
 }
@@ -9029,8 +9163,44 @@ const BUSINESS_CONTEXT_FIELD_DEFINITIONS = {
   }
 }
 
-export async function getAIAgentConfig() {
-  return await db.get(`
+async function getAIAgentUserPreferences(userId) {
+  const normalizedUserId = normalizeUserId(userId)
+  if (!normalizedUserId) return null
+
+  try {
+    return await db.get(`
+      SELECT action_customizations
+      FROM ai_agent_user_preferences
+      WHERE user_id = ?
+      LIMIT 1
+    `, [normalizedUserId])
+  } catch {
+    return null
+  }
+}
+
+async function saveAIAgentUserPreferences({ userId, actionCustomizations } = {}) {
+  const normalizedUserId = normalizeUserId(userId)
+  if (!normalizedUserId) return
+
+  await db.run(`
+    INSERT INTO ai_agent_user_preferences (
+      user_id,
+      action_customizations,
+      updated_at
+    )
+    VALUES (?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(user_id) DO UPDATE SET
+      action_customizations = excluded.action_customizations,
+      updated_at = CURRENT_TIMESTAMP
+  `, [
+    normalizedUserId,
+    cleanConfigText(actionCustomizations, ACTION_CUSTOMIZATION_LIMIT)
+  ])
+}
+
+export async function getAIAgentConfig({ userId } = {}) {
+  const config = await db.get(`
     SELECT
       openai_api_key_encrypted,
       model,
@@ -9049,10 +9219,16 @@ export async function getAIAgentConfig() {
     ORDER BY id ASC
     LIMIT 1
   `)
+  const preferences = await getAIAgentUserPreferences(userId)
+
+  return {
+    ...(config || {}),
+    action_customizations: preferences?.action_customizations || ''
+  }
 }
 
-export async function getAIAgentStatus() {
-  const config = await getAIAgentConfig()
+export async function getAIAgentStatus({ userId } = {}) {
+  const config = await getAIAgentConfig({ userId })
 
   if (!config?.openai_api_key_encrypted) {
     return {
@@ -9065,6 +9241,7 @@ export async function getAIAgentStatus() {
       locationContext: config?.location_context || '',
       competitorsContext: config?.competitors_context || '',
       brandVoice: config?.brand_voice || '',
+      actionCustomizations: config?.action_customizations || '',
       researchDomains: config?.research_domains || '',
       responseStyle: normalizeAIAgentResponseStyle(config?.response_style),
       recommendationMode: normalizeAIAgentRecommendationMode(config?.recommendation_mode),
@@ -9091,6 +9268,7 @@ export async function getAIAgentStatus() {
     locationContext: config.location_context || '',
     competitorsContext: config.competitors_context || '',
     brandVoice: config.brand_voice || '',
+    actionCustomizations: config.action_customizations || '',
     researchDomains: config.research_domains || '',
     responseStyle: normalizeAIAgentResponseStyle(config.response_style),
     recommendationMode: normalizeAIAgentRecommendationMode(config.recommendation_mode),
@@ -9100,6 +9278,7 @@ export async function getAIAgentStatus() {
 }
 
 export async function saveAIAgentConfig({
+  userId,
   apiKey,
   businessContext,
   marketContext,
@@ -9107,6 +9286,7 @@ export async function saveAIAgentConfig({
   locationContext,
   competitorsContext,
   brandVoice,
+  actionCustomizations,
   researchDomains,
   responseStyle,
   model,
@@ -9162,7 +9342,12 @@ export async function saveAIAgentConfig({
     webSearchEnabled ? 1 : 0
   ])
 
-  return getAIAgentStatus()
+  await saveAIAgentUserPreferences({
+    userId,
+    actionCustomizations
+  })
+
+  return getAIAgentStatus({ userId })
 }
 
 export async function saveRefinedAIAgentBusinessContextAnswer({ field, answer } = {}) {
@@ -9237,8 +9422,12 @@ export async function saveRefinedAIAgentBusinessContextAnswer({ field, answer } 
   }
 }
 
-export async function deleteAIAgentConfig() {
+export async function deleteAIAgentConfig({ userId } = {}) {
   await db.run('DELETE FROM ai_agent_config')
+  const normalizedUserId = normalizeUserId(userId)
+  if (normalizedUserId) {
+    await db.run('DELETE FROM ai_agent_user_preferences WHERE user_id = ?', [normalizedUserId])
+  }
 }
 
 export async function getOpenAIApiKey() {
@@ -9586,17 +9775,18 @@ function buildModelInput(messages, viewContext, databaseContext, directFacts) {
   ].join('\n')
 }
 
-export async function createAgentReply({ apiKey, messages, viewContext }) {
+export async function createAgentReply({ apiKey, messages, viewContext, userId = null }) {
   const runtimeContext = await getAgentRuntimeContext()
   const latestUserMessage = getLatestUserMessage(messages)
+  const agentConfig = await getAIAgentConfig({ userId })
   const agentRoute = buildUnifiedAgentRoute({
     messages,
-    latestUserMessage
+    latestUserMessage,
+    agentConfig
   })
   const metaAdsOperationalIntent = shouldSkipDbResearchForMetaAds(latestUserMessage)
   const metaAdsDbResearchSkipped = metaAdsOperationalIntent
 
-  const agentConfig = await getAIAgentConfig()
   const highLevelConnection = await getHighLevelAgentConnection()
 
   if (metaAdsOperationalIntent) {

@@ -1034,6 +1034,19 @@ async function initTables() {
     await db.run('CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)')
 
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS ai_agent_user_preferences (
+        id ${usePostgres ? 'SERIAL PRIMARY KEY' : 'INTEGER PRIMARY KEY AUTOINCREMENT'},
+        user_id INTEGER NOT NULL UNIQUE,
+        action_customizations TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `)
+
+    await db.run('CREATE INDEX IF NOT EXISTS idx_ai_agent_user_preferences_user_id ON ai_agent_user_preferences(user_id)')
+
     const userApiTokenColumns = [
       ['api_token_hash', 'TEXT'],
       ['api_token_prefix', 'TEXT'],

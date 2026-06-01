@@ -94,6 +94,18 @@
   color: var(--color-text-primary);
 }
 
+.sectionHeading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-primary);
+}
+
+.sectionHeading svg {
+  color: var(--color-status-success);
+  flex-shrink: 0;
+}
+
 .field {
   display: flex;
   flex-direction: column;
@@ -202,6 +214,10 @@
 .textarea:disabled {
   cursor: not-allowed;
   opacity: 0.72;
+}
+
+.actionTextarea {
+  min-height: 168px;
 }
 
 .iconButton {

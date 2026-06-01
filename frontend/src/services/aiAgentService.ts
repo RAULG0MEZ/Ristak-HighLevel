@@ -58,6 +58,7 @@ export interface AIAgentConfigStatus {
   locationContext: string
   competitorsContext: string
   brandVoice: string
+  actionCustomizations: string
   researchDomains: string
   responseStyle: AIAgentResponseStyle
   recommendationMode: AIAgentRecommendationMode
@@ -74,6 +75,7 @@ export interface AIAgentConfigInput {
   locationContext: string
   competitorsContext: string
   brandVoice: string
+  actionCustomizations: string
   researchDomains: string
   responseStyle: AIAgentResponseStyle
   recommendationMode: AIAgentRecommendationMode
