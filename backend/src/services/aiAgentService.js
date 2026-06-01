@@ -2671,7 +2671,7 @@ function buildPaymentConfirmationRequiredOutput({ action, summary = {}, clarific
     clarificationOptions: attachPaymentContactMemoryToOptions(clarificationOptions, summary),
     confirmationPrompt: [
       'No hagas el cobro, registro, link ni programación todavía.',
-      'Antes de tocar dinero, resume contacto, monto, concepto, método, fechas, canal de envío si aplica y qué pasará si no hay tarjeta guardada.',
+      'Antes de tocar dinero, verifica que el checklist indispensable del tipo de pago está completo y resume contacto, monto o producto/precio, concepto, método, fechas/recurrencia si aplica, canal de envío si aplica y qué pasará si no hay tarjeta guardada.',
       'Si es plan de parcialidades, cobros programados o fechas raras, muestra una tabla Markdown compacta con columnas: #, fecha exacta, monto, método/acción y estado/envío. No uses fechas relativas como "en un mes" si puedes resolver la fecha.',
       'El contacto debe mostrarse con nombre y email o teléfono cuando existan; si no hay email/teléfono, muestra el ID.',
       'Pide confirmación con tono amigable y corto. No uses frases como "confirmación explícita", "ejecutar", "autorizar" o "proceder". Cierra con algo como: "Entonces, solo para confirmar, ¿quieres que lo deje así?"',
@@ -6022,7 +6022,7 @@ async function buildPaymentProductSelectionRequiredOutput({ highLevelConnection,
   return {
     ok: false,
     action: 'lookup_highlevel_products',
-    error: lookupError || 'Falta elegir qué producto se va a cobrar antes de hablar de tarjeta, link o confirmación.',
+    error: lookupError || 'Falta elegir qué producto se va a cobrar.',
     missingFields: ['producto'],
     askOneAtATime: true,
     contact: contact ? {
@@ -6052,6 +6052,22 @@ function shouldAskForProductPaymentTiming(args = {}, messages = [], timezone = D
     !hasExplicitPaymentTiming(args, messages, timezone)
 }
 
+function hasScheduledPaymentIntentText(messages = []) {
+  const normalized = normalizeText(getPaymentConversationText(messages))
+
+  return /(programa|programale|prográmale|programar|programado|agenda|agendale|agéndale|calendariza|schedule|scheduled|cobro programado|pago programado|cargo futuro|cobro futuro)/.test(normalized)
+}
+
+function shouldAskForScheduledPaymentTiming(args = {}, messages = [], timezone = DEFAULT_PAYMENT_TIMEZONE) {
+  return hasScheduledPaymentIntentText(messages) &&
+    !hasExplicitPaymentTiming(args, messages, timezone)
+}
+
+function shouldAskForPaymentTimingCompleteness(args = {}, messages = [], timezone = DEFAULT_PAYMENT_TIMEZONE) {
+  return shouldAskForProductPaymentTiming(args, messages, timezone) ||
+    shouldAskForScheduledPaymentTiming(args, messages, timezone)
+}
+
 function buildPaymentTimingRequiredOutput({ contact = null, product = null, amount = 0, currency = DEFAULT_PAYMENT_CURRENCY } = {}) {
   const contactMemoryText = buildPaymentContactMemoryText(contact)
   const productName = cleanText(product?.name || product?.productName || '', 80)
@@ -6060,7 +6076,7 @@ function buildPaymentTimingRequiredOutput({ contact = null, product = null, amou
   return {
     ok: false,
     action: 'payment_detail_clarification',
-    error: 'Falta definir cuándo se va a cobrar este producto antes de elegir tarjeta o enviar link.',
+    error: 'Falta definir cuándo se va a cobrar este pago.',
     missingFields: ['fecha de cobro'],
     askOneAtATime: true,
     contact,
@@ -8008,7 +8024,7 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
     }
   }
 
-  if (shouldAskForProductPaymentTiming(args, context.messages, paymentTimezone)) {
+  if (shouldAskForPaymentTimingCompleteness(args, context.messages, paymentTimezone)) {
     return buildPaymentTimingRequiredOutput({
       contact: resolvedContact.contact,
       product: productSummary,
@@ -8530,7 +8546,7 @@ async function executeCreateSinglePaymentLink(args = {}, highLevelConnection, co
   }
 
   const contact = resolvedContact.contact
-  if (shouldAskForProductPaymentTiming(args, context.messages, paymentTimezone)) {
+  if (shouldAskForPaymentTimingCompleteness(args, context.messages, paymentTimezone)) {
     return buildPaymentTimingRequiredOutput({
       contact,
       product: productSummary,
@@ -9588,7 +9604,7 @@ function buildHighLevelTools(highLevelConnection, options = {}) {
     {
       type: 'function',
       name: 'create_single_payment_link',
-      description: 'Crea y envía un link de pago único usando la lógica interna de Ristak/HighLevel, o cobra tarjeta guardada si el usuario eligió esa opción. Úsala para órdenes como "mándale link de pago", "cóbrale X", "genera invoice por X" sólo cuando sea cobro inmediato o link normal. Si el cobro es de producto y falta producto, precio o fecha/momento, la herramienta preguntará ese dato antes de tarjeta/canal. Si el usuario pide tarjeta directa y el contacto tiene tarjeta guardada, la herramienta preguntará si cobra la guardada o manda link; si no tiene tarjeta, el link es obligatorio. Si el usuario no eligió canal de envío (all/email/sms/whatsapp) la herramienta debe preguntar antes de crear/enviar, porque un invoice de tarjeta no debe quedarse como borrador por accidente. No uses generate/none para links de tarjeta: el formulario real requiere envío por canal. No la uses para pagos programados con fecha futura; ahí usa create_installment_payment_flow.',
+      description: 'Crea y envía un link de pago único usando la lógica interna de Ristak/HighLevel, o cobra tarjeta guardada si el usuario eligió esa opción. Úsala para órdenes como "mándale link de pago", "cóbrale X", "genera invoice por X" sólo cuando sea cobro inmediato o link normal. Si el cobro es de producto y falta producto, precio o fecha/momento, la herramienta preguntará el dato faltante y conservará lo ya dicho. Si el usuario pide tarjeta directa y el contacto tiene tarjeta guardada, la herramienta preguntará si cobra la guardada o manda link; si no tiene tarjeta, el link es obligatorio. Si el usuario no eligió canal de envío (all/email/sms/whatsapp) la herramienta debe preguntar antes de crear/enviar, porque un invoice de tarjeta no debe quedarse como borrador por accidente. No uses generate/none para links de tarjeta: el formulario real requiere envío por canal. No la uses para pagos programados con fecha futura; ahí usa create_installment_payment_flow.',
       parameters: {
         type: 'object',
         properties: {
@@ -9636,7 +9652,7 @@ function buildHighLevelTools(highLevelConnection, options = {}) {
     {
       type: 'function',
       name: 'create_installment_payment_flow',
-      description: 'Crea un cobro por parcialidades, domiciliación o cargos automáticos futuros usando la lógica interna segura de Ristak. Úsala para planes con o sin primer pago, cargos programados a tarjeta guardada, pagos programados únicos con fecha futura, órdenes de domiciliar el resto o cargos futuros como "el 10 de junio cobra 100" o "en un año cobra X y tres meses después Y". Si el cobro es de producto y falta producto, precio o fecha/momento, la herramienta preguntará ese dato antes de tarjeta/canal. Si el usuario dice "10 ahorita y luego el mismo día durante los siguientes 3 meses", eso es firstPayment hoy por 10 y remainingPayments mensuales futuros, no 3 cobros hoy. Si dice "espera un mes y luego cobra", salta ese periodo con afterMonths/afterPeriods; no crees pagos de 0. En instrucciones compuestas, cuenta cada tramo: "por dos meses" son 2 cobros reales y cada "le vuelves a cobrar" posterior es otro cobro adicional; si el último dice "esta vez 20", ese 20 no reemplaza el mes anterior, es el último cobro extra. Si el usuario pide "hacer una nueva" en un hilo donde ya se resolvió contacto, reutiliza el contactId de la memoria operacional. Esta herramienta detecta tarjeta guardada en Ristak/GoHighLevel; si el primer pago es transferencia/depósito/manual lo registra offline, y si el resto es automático y falta tarjeta, envía domiciliación. Si hay tarjeta guardada no manda domiciliación salvo que el usuario pida otra tarjeta. Si se necesita enviar link de primer pago o domiciliación y el usuario no eligió canal, pregunta all/email/sms/whatsapp antes de completar el cobro. generate/none no es válido para domiciliación o tarjeta porque el formulario real requiere envío. Nunca completa el cobro sin que el usuario diga que sí al resumen.',
+      description: 'Crea un cobro por parcialidades, domiciliación o cargos automáticos futuros usando la lógica interna segura de Ristak. Úsala para planes con o sin primer pago, cargos programados a tarjeta guardada, pagos programados únicos con fecha futura, órdenes de domiciliar el resto o cargos futuros como "el 10 de junio cobra 100" o "en un año cobra X y tres meses después Y". Si el cobro es de producto y falta producto, precio o fecha/momento, la herramienta preguntará el dato faltante y conservará lo ya dicho. Si el usuario dice "10 ahorita y luego el mismo día durante los siguientes 3 meses", eso es firstPayment hoy por 10 y remainingPayments mensuales futuros, no 3 cobros hoy. Si dice "espera un mes y luego cobra", salta ese periodo con afterMonths/afterPeriods; no crees pagos de 0. En instrucciones compuestas, cuenta cada tramo: "por dos meses" son 2 cobros reales y cada "le vuelves a cobrar" posterior es otro cobro adicional; si el último dice "esta vez 20", ese 20 no reemplaza el mes anterior, es el último cobro extra. Si el usuario pide "hacer una nueva" en un hilo donde ya se resolvió contacto, reutiliza el contactId de la memoria operacional. Esta herramienta detecta tarjeta guardada en Ristak/GoHighLevel; si el primer pago es transferencia/depósito/manual lo registra offline, y si el resto es automático y falta tarjeta, envía domiciliación. Si hay tarjeta guardada no manda domiciliación salvo que el usuario pida otra tarjeta. Si se necesita enviar link de primer pago o domiciliación y el usuario no eligió canal, pregunta all/email/sms/whatsapp antes de completar el cobro. generate/none no es válido para domiciliación o tarjeta porque el formulario real requiere envío. Nunca completa el cobro sin que el usuario diga que sí al resumen.',
       parameters: {
         type: 'object',
         properties: {
@@ -11108,7 +11124,7 @@ const PAYMENT_WORKFLOW_PROMPT = [
   'Workflow obligatorio para cobros desde gente/contactos:',
   '- En cualquier solicitud operativa de cobro, registro, link, parcialidad, domiciliación o tarjeta, primero llama la herramienta interna correcta. No armes resúmenes ni pidas permiso sólo con texto sin haber usado herramienta.',
   '- Esto aplica a mutaciones de dinero. Si el usuario sólo pide ver/listar/hacer GET de invoices, payments, subscriptions, transactions o schedules en HighLevel, no lo metas al flujo de cobro: usa lookup_highlevel_endpoint + highlevel_rest_request GET.',
-  '- Sigue el mismo contrato del modal/backend de pagos: contacto exacto, tipo de cobro (único, parcialidades, programado o manual/offline), monto/moneda, concepto, método, fechas, tarjeta guardada, canal de envío si aplica y revisión final.',
+  '- Sigue el mismo contrato del modal/backend de pagos: contacto exacto, tipo de cobro (único, parcialidades, programado o manual/offline), monto/moneda o producto/precio, concepto, método, fechas si aplica, tarjeta guardada, canal de envío si aplica y revisión final.',
   '- El modal no completa un invoice/link de tarjeta sin envío. Para pago con tarjeta, link de pago, primer pago con tarjeta o domiciliación/autorización, siempre debe existir canal real: todos, correo, WhatsApp o SMS. "Solo generar", "none" o "sin enviar" no cuenta como acción válida.',
   '- Esa regla de envío NO aplica cuando se cobra o programa una tarjeta guardada/autorizada existente: ahí no hay link que enviar.',
   '- Cuando la herramienta regrese summary.delivery, usa ese canal como el canal visible para el usuario. Si result.sendMethod dice sms pero summary.delivery dice WhatsApp, sms es sólo el valor técnico de HighLevel para envío al teléfono; no cambies el canal confirmado por el usuario.',
@@ -11116,7 +11132,9 @@ const PAYMENT_WORKFLOW_PROMPT = [
   '- Si el usuario ya dio todos los datos, usa las herramientas internas y avanza; no repitas preguntas nomás por protocolo.',
   '- Si el usuario acaba de elegir el contacto en un flujo de cobro, no cierres con un resumen textual. Vuelve a llamar create_single_payment_link o create_installment_payment_flow con el contacto confirmado para que el backend decida tarjeta guardada, link, canal y confirmación.',
   '- lookup_contact_payment_profile sólo sirve para consultar perfil de pago; no es respuesta final suficiente para un cobro. Después de identificar contacto y monto/fecha, usa la herramienta de creación/programación correspondiente.',
-  '- Orden obligatorio para cobrar productos: contacto exacto -> producto exacto -> precio/monto -> fecha o momento de cobro -> método/tarjeta/canal -> resumen final. No preguntes tarjeta guardada vs link si todavía no existe producto, precio y cuándo se va a cobrar.',
+  '- No hay orden obligatorio de preguntas. Lo obligatorio es validar completitud antes de confirmar o tocar dinero: contacto exacto, tipo de pago, producto/precio o monto, fechas/recurrencia cuando aplique, método/tarjeta, canal si se enviará link, concepto/descripción y resumen final. El usuario puede dar esos datos en cualquier orden; conserva lo ya dicho y pregunta sólo el siguiente dato faltante.',
+  '- Para productos, no basta con saber que es "un producto": debe existir producto exacto y precio/monto definido por selección, precio guardado o monto personalizado antes del resumen final.',
+  '- Para pagos programados, no asumas hoy si el usuario dijo programar/agendar/cargo futuro y no dio fecha; pregunta la fecha exacta.',
   '- Si el usuario menciona "producto de X", "producto X" o corrige "no, el producto...", conserva contacto/fechas/monto y resuelve ese producto de HighLevel antes de pedir tarjeta o confirmación final. La búsqueda de producto no es el final del flujo.',
   '- Si el usuario dice sólo "un producto" o "cóbrale un producto" sin decir cuál, primero muestra/pide el producto. No hables de tarjeta, link ni canal todavía.',
   '- Si el usuario elige "otro precio" o da un monto personalizado para un producto, usa ese producto con el monto personalizado y continúa con create_single_payment_link o create_installment_payment_flow; no te quedes sólo en lookup_highlevel_products.',
