@@ -2364,7 +2364,7 @@ function extractPaymentWaitSegment(text, startIndex = 0) {
   const monthNames = Object.keys(PAYMENT_MONTHS).join('|')
   const candidates = []
   const patterns = [
-    new RegExp(`\\b(?:te\\s+)?(?:vas\\s+a\\s+)?esper(?:a|as|ar|ate|amos|en)?(?:\\s+a)?\\s+(?:por\\s+)?${PAYMENT_COUNT_TOKEN}\\s+${PAYMENT_PERIOD_UNIT_TOKEN}\\b`, 'gi'),
+    new RegExp(`\\b(?:te\\s+)?(?:vas\\s+a\\s+)?esper(?:a|as|es|ar|ate|amos|en)?(?:\\s+a)?\\s+(?:por\\s+)?${PAYMENT_COUNT_TOKEN}\\s+${PAYMENT_PERIOD_UNIT_TOKEN}\\b`, 'gi'),
     new RegExp(`\\b${PAYMENT_COUNT_TOKEN}\\s+${PAYMENT_PERIOD_UNIT_TOKEN}\\s+(?:sin\\s+(?:cobro|pago|cargo)|no\\s+(?:se\\s+)?(?:cobra|cobras|cobrar|cobre))\\b`, 'gi')
   ]
 
@@ -2384,7 +2384,7 @@ function extractPaymentWaitSegment(text, startIndex = 0) {
     }
   }
 
-  const monthWaitPattern = new RegExp(`\\b(?:te\\s+)?(?:vas\\s+a\\s+)?esper(?:a|as|ar|ate)?\\s+(${monthNames})\\b.{0,90}\\bno\\s+(?:se\\s+)?(?:cobra|cobras|cobrar|cobre)\\b`, 'gi')
+  const monthWaitPattern = new RegExp(`\\b(?:te\\s+)?(?:vas\\s+a\\s+)?esper(?:a|as|es|ar|ate)?\\s+(${monthNames})\\b.{0,90}\\bno\\s+(?:se\\s+)?(?:cobra|cobras|cobrar|cobre)\\b`, 'gi')
   let monthMatch
   while ((monthMatch = monthWaitPattern.exec(searchText)) !== null) {
     candidates.push({
@@ -2431,6 +2431,28 @@ function resolveExplicitFinalDateAfterWait(text, waitEnd, lastChargeDate, timezo
   return explicitDateTime.isValid && lastDateTime.isValid && explicitDateTime > lastDateTime
     ? explicitDate
     : null
+}
+
+function getFinalPaymentDateAfterWait({
+  text,
+  waitSegment,
+  waitEnd = 0,
+  anchorDate,
+  lastChargeDate,
+  primaryInterval,
+  periodOffset = 0,
+  timezone = DEFAULT_PAYMENT_TIMEZONE
+} = {}) {
+  const waitMatchesCadence = waitSegment?.unit === primaryInterval?.unit
+  const afterWaitText = normalizeText(text).slice(waitEnd, waitEnd + 140)
+  const chargeFollowingPeriod = waitMatchesCadence &&
+    (periodOffset > 0 || waitSegment.unit === 'months' || /\bsiguiente\b/.test(afterWaitText))
+
+  if (chargeFollowingPeriod) {
+    return addIntervalToDate(anchorDate, primaryInterval, periodOffset + waitSegment.count + 1, timezone)
+  }
+
+  return addIntervalToDate(lastChargeDate, { unit: waitSegment.unit, count: waitSegment.count }, 1, timezone)
 }
 
 function extractIrregularPaymentScheduleFromText(text, timezone = DEFAULT_PAYMENT_TIMEZONE) {
@@ -2488,10 +2510,16 @@ function extractIrregularPaymentScheduleFromText(text, timezone = DEFAULT_PAYMEN
 
   if (finalAmount > 0) {
     const explicitFinalDate = resolveExplicitFinalDateAfterWait(normalized, waitSegment.end, lastChargeDate, timezone)
-    const waitMatchesCadence = waitSegment.unit === primaryInterval.unit
-    const finalDate = explicitFinalDate || (waitMatchesCadence && periodOffset > 0
-      ? addIntervalToDate(anchorDate, primaryInterval, periodOffset + waitSegment.count + 1, timezone)
-      : addIntervalToDate(lastChargeDate, { unit: waitSegment.unit, count: waitSegment.count }, 1, timezone))
+    const finalDate = explicitFinalDate || getFinalPaymentDateAfterWait({
+      text: normalized,
+      waitSegment,
+      waitEnd: waitSegment.end,
+      anchorDate,
+      lastChargeDate,
+      primaryInterval,
+      periodOffset,
+      timezone
+    })
 
     remainingPayments.push({
       sequence: remainingPayments.length + 1,
