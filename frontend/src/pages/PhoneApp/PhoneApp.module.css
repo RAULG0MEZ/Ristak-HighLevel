@@ -2,10 +2,13 @@
   position: fixed;
   inset: 0;
   display: flex;
+  align-items: stretch;
   justify-content: center;
-  width: 100vw;
+  width: 100%;
+  max-width: 100%;
   height: 100dvh;
   min-height: 100dvh;
+  max-height: 100dvh;
   color: var(--color-text-primary);
   background:
     linear-gradient(180deg, rgba(16, 185, 129, 0.08), transparent 34%),
@@ -17,22 +20,48 @@
 
 .phoneFrame {
   display: grid;
-  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
-  width: min(100vw, 720px);
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  width: min(100%, 430px);
   height: 100dvh;
   min-height: 100dvh;
+  max-height: 100dvh;
   background: color-mix(in srgb, var(--color-background-primary) 92%, #ffffff 8%);
-  border-inline: 1px solid rgba(148, 163, 184, 0.14);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.22);
+  border-inline: 1px solid rgba(148, 163, 184, 0.1);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.18);
+  contain: size layout paint;
   overflow: hidden;
 }
 
+.deviceChrome {
+  grid-row: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  min-height: max(28px, env(safe-area-inset-top));
+  padding-top: max(6px, calc(env(safe-area-inset-top) * 0.36));
+  pointer-events: none;
+  background: color-mix(in srgb, var(--color-background-primary) 92%, transparent);
+}
+
+.dynamicIsland {
+  display: block;
+  width: 116px;
+  height: 26px;
+  border-radius: 999px;
+  background: #030712;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 8px 20px rgba(0, 0, 0, 0.2);
+}
+
 .header {
+  grid-row: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: max(14px, env(safe-area-inset-top)) 16px 12px;
+  min-width: 0;
+  padding: 10px 14px 12px;
   background: color-mix(in srgb, var(--color-background-primary) 88%, transparent);
   backdrop-filter: blur(16px);
   border-bottom: 1px solid rgba(148, 163, 184, 0.12);
@@ -50,8 +79,8 @@
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  width: 38px;
-  height: 38px;
+  width: 44px;
+  height: 44px;
   border-radius: 8px;
   color: #ffffff;
   background: #111827;
@@ -63,9 +92,11 @@
 .headerMain h1 {
   margin: 2px 0 0;
   color: var(--color-text-primary);
-  font-size: 22px;
+  font-size: clamp(24px, 7vw, 32px);
   font-weight: 850;
   line-height: 1.08;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
 }
 
 .eyebrow {
@@ -89,8 +120,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 8px;
   color: var(--color-text-primary);
@@ -110,16 +141,18 @@
 }
 
 .periodPanel {
+  grid-row: 3;
   display: grid;
   gap: 10px;
-  padding: 12px 16px;
+  min-width: 0;
+  padding: 12px 14px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.1);
 }
 
 .periodCopy {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: baseline;
-  justify-content: space-between;
   gap: 12px;
   min-width: 0;
 }
@@ -133,11 +166,13 @@
 .periodCopy strong {
   min-width: 0;
   color: var(--color-text-secondary);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 750;
   line-height: 1.2;
   text-align: right;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .periodControls {
@@ -165,11 +200,15 @@
 }
 
 .sectionTabs {
+  grid-row: 4;
   display: flex;
   gap: 8px;
-  padding: 10px 16px 11px;
+  min-width: 0;
+  padding: 10px 14px 11px;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
   scrollbar-width: none;
+  touch-action: pan-x;
   border-bottom: 1px solid rgba(148, 163, 184, 0.1);
 }
 
@@ -183,7 +222,7 @@
   flex: 0 0 auto;
   gap: 7px;
   min-height: 36px;
-  padding: 0 11px;
+  padding: 0 10px;
   border: 1px solid rgba(148, 163, 184, 0.14);
   border-radius: 8px;
   color: var(--color-text-secondary);
@@ -200,8 +239,7 @@
 }
 
 .errorBanner {
-  grid-row: 4;
-  margin: 10px 16px 0;
+  margin: 0 0 12px;
   padding: 10px 12px;
   border: 1px solid rgba(239, 68, 68, 0.24);
   border-radius: 8px;
@@ -214,9 +252,11 @@
 .content {
   grid-row: 5;
   min-height: 0;
-  padding: 14px 16px 18px;
+  padding: 14px 14px max(20px, env(safe-area-inset-bottom));
   overflow-y: auto;
+  overflow-x: hidden;
   overscroll-behavior: contain;
+  touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -611,46 +651,6 @@
   text-align: center;
 }
 
-.bottomNav {
-  grid-row: 6;
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 2px;
-  padding: 8px 8px max(8px, env(safe-area-inset-bottom));
-  border-top: 1px solid rgba(148, 163, 184, 0.14);
-  background: color-mix(in srgb, var(--color-background-primary) 92%, transparent);
-  backdrop-filter: blur(18px);
-}
-
-.bottomNavItem {
-  display: grid;
-  justify-items: center;
-  align-content: center;
-  min-width: 0;
-  min-height: 52px;
-  gap: 4px;
-  padding: 5px 2px;
-  border: 0;
-  border-radius: 8px;
-  color: var(--color-text-tertiary);
-  background: transparent;
-  font-size: 9.5px;
-  font-weight: 800;
-  line-height: 1;
-}
-
-.bottomNavItem span {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.bottomNavItemActive {
-  color: var(--color-text-primary);
-  background: color-mix(in srgb, var(--color-background-tertiary) 78%, #3b82f6 16%);
-}
-
 .loadingPage,
 .blockedPage {
   display: grid;
@@ -765,37 +765,101 @@
   height: 168px;
 }
 
+.settingsShell {
+  display: grid;
+  gap: 12px;
+}
+
+.settingsSwitcher {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 0 0 4px;
+  background: color-mix(in srgb, var(--color-background-primary) 92%, transparent);
+}
+
+.settingsSwitchButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 40px;
+  gap: 7px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  color: var(--color-text-secondary);
+  background: color-mix(in srgb, var(--color-background-secondary) 88%, transparent);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.settingsSwitchButtonActive {
+  color: var(--color-text-primary);
+  border-color: rgba(16, 185, 129, 0.42);
+  background: color-mix(in srgb, var(--color-background-tertiary) 76%, #10b981 18%);
+}
+
+.embeddedSettings {
+  min-width: 0;
+}
+
+.embeddedSettings :global(.space-y-6),
+.embeddedSettings :global(.space-y-8) {
+  gap: 12px;
+}
+
+.embeddedSettings :global(button),
+.embeddedSettings :global(input),
+.embeddedSettings :global(select),
+.embeddedSettings :global(textarea) {
+  max-width: 100%;
+}
+
 @media (max-width: 390px) {
   .header {
-    padding-inline: 12px;
+    gap: 9px;
+    padding-inline: 10px;
+  }
+
+  .brandMark {
+    width: 40px;
+    height: 40px;
+  }
+
+  .headerActions {
+    gap: 6px;
+  }
+
+  .iconButton {
+    width: 40px;
+    height: 40px;
   }
 
   .periodPanel,
   .sectionTabs,
   .content {
-    padding-inline: 12px;
+    padding-inline: 10px;
   }
 
   .metricTile {
     padding: 11px;
   }
 
-  .bottomNav {
-    padding-inline: 5px;
-  }
-
-  .bottomNavItem {
-    font-size: 8.5px;
+  .periodButton {
+    padding-inline: 4px;
   }
 }
 
 @media (min-width: 768px) {
   .phoneFrame {
-    width: min(100vw, 760px);
+    width: min(100%, 430px);
   }
 
   .metricGrid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

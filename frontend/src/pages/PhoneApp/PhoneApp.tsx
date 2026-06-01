@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
+import { Link, Navigate, useParams } from 'react-router-dom'
 import {
   Activity,
   BarChart3,
   Bot,
   CalendarDays,
   ChevronRight,
+  Cog,
   CreditCard,
   Gauge,
   LineChart,
@@ -18,6 +19,8 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDateRange } from '@/contexts/DateRangeContext'
+import { AccountSettings } from '@/pages/Settings/AccountSettings'
+import { AIAgentSettings } from '@/pages/Settings/AIAgentSettings'
 import { calendarsService, type AppointmentStats, type Calendar, type CalendarEvent } from '@/services/calendarsService'
 import { campaignsService, type Campaign } from '@/services/campaignsService'
 import { contactsService, type ContactStats } from '@/services/contactsService'
@@ -31,6 +34,8 @@ const PORTABLE_WIDTH_QUERY = '(max-width: 1366px)'
 const PHONE_WIDTH_QUERY = '(max-width: 900px)'
 const COARSE_POINTER_QUERY = '(pointer: coarse)'
 const MOBILE_OR_TABLET_USER_AGENT_PATTERN = /Android|iPad|iPhone|iPod|IEMobile|Opera Mini|Mobile|Tablet/i
+const SCROLLABLE_PHONE_SELECTOR = '[data-phone-scrollable="true"]'
+const SCROLLABLE_PHONE_NAV_SELECTOR = '[data-phone-nav-scrollable="true"]'
 
 const PHONE_SECTION_IDS = [
   'dashboard',
@@ -39,7 +44,8 @@ const PHONE_SECTION_IDS = [
   'contacts',
   'campaigns',
   'reports',
-  'analytics'
+  'analytics',
+  'settings'
 ] as const
 
 type PhoneSectionId = typeof PHONE_SECTION_IDS[number]
@@ -54,7 +60,6 @@ type PeriodOption = {
 interface PhoneSectionConfig {
   id: PhoneSectionId
   label: string
-  shortLabel: string
   Icon: LucideIcon
 }
 
@@ -80,13 +85,14 @@ interface PhoneAppData {
 }
 
 const PHONE_SECTIONS: PhoneSectionConfig[] = [
-  { id: 'dashboard', label: 'Dashboard', shortLabel: 'Inicio', Icon: Gauge },
-  { id: 'appointments', label: 'Citas', shortLabel: 'Citas', Icon: CalendarDays },
-  { id: 'transactions', label: 'Pagos', shortLabel: 'Pagos', Icon: CreditCard },
-  { id: 'contacts', label: 'Contactos', shortLabel: 'Contactos', Icon: Users },
-  { id: 'campaigns', label: 'Publicidad', shortLabel: 'Ads', Icon: Megaphone },
-  { id: 'reports', label: 'Reportes', shortLabel: 'Reportes', Icon: BarChart3 },
-  { id: 'analytics', label: 'Analíticas', shortLabel: 'Analítica', Icon: LineChart }
+  { id: 'dashboard', label: 'Dashboard', Icon: Gauge },
+  { id: 'appointments', label: 'Citas', Icon: CalendarDays },
+  { id: 'transactions', label: 'Pagos', Icon: CreditCard },
+  { id: 'contacts', label: 'Contactos', Icon: Users },
+  { id: 'campaigns', label: 'Publicidad', Icon: Megaphone },
+  { id: 'reports', label: 'Reportes', Icon: BarChart3 },
+  { id: 'analytics', label: 'Analíticas', Icon: LineChart },
+  { id: 'settings', label: 'Configuración', Icon: Cog }
 ]
 
 const PERIOD_OPTIONS: PeriodOption[] = [
@@ -338,7 +344,6 @@ function toTrendFromReports(data: ReportMetricRow[], key: keyof ReportMetricRow,
 
 export const PhoneApp: React.FC = () => {
   const params = useParams()
-  const navigate = useNavigate()
   const { locationId, accessToken } = useAuth()
   const { dateRange, setPreset } = useDateRange()
   const [accessState, setAccessState] = useState<AccessState>(getAccessState)
@@ -395,6 +400,8 @@ export const PhoneApp: React.FC = () => {
     const previousBodyOverflow = body.style.overflow
     const previousBodyHeight = body.style.height
     const previousBodyOverscroll = body.style.overscrollBehavior
+    let startX = 0
+    let startY = 0
 
     if (viewportMeta && !previousViewportContent.includes('viewport-fit=cover')) {
       viewportMeta.setAttribute('content', `${previousViewportContent}, viewport-fit=cover`)
@@ -407,7 +414,67 @@ export const PhoneApp: React.FC = () => {
     body.style.height = '100%'
     body.style.overscrollBehavior = 'none'
 
+    const getScrollableElement = (target: EventTarget | null) => {
+      if (!(target instanceof Element)) return null
+      const scrollable = target.closest(SCROLLABLE_PHONE_SELECTOR)
+      return scrollable instanceof HTMLElement ? scrollable : null
+    }
+
+    const getScrollableNav = (target: EventTarget | null) => {
+      if (!(target instanceof Element)) return null
+      const scrollable = target.closest(SCROLLABLE_PHONE_NAV_SELECTOR)
+      return scrollable instanceof HTMLElement ? scrollable : null
+    }
+
+    const handleTouchStart = (event: TouchEvent) => {
+      startX = event.touches[0]?.clientX || 0
+      startY = event.touches[0]?.clientY || 0
+    }
+
+    const handleTouchMove = (event: TouchEvent) => {
+      const currentX = event.touches[0]?.clientX || startX
+      const currentY = event.touches[0]?.clientY || startY
+      const deltaX = currentX - startX
+      const deltaY = currentY - startY
+      const horizontalIntent = Math.abs(deltaX) > Math.abs(deltaY)
+      const nav = getScrollableNav(event.target)
+
+      if (nav) {
+        const canScrollX = nav.scrollWidth > nav.clientWidth + 1
+        const atLeft = nav.scrollLeft <= 0
+        const atRight = nav.scrollLeft + nav.clientWidth >= nav.scrollWidth - 1
+
+        if (horizontalIntent && canScrollX && !((atLeft && deltaX > 0) || (atRight && deltaX < 0))) {
+          return
+        }
+
+        event.preventDefault()
+        return
+      }
+
+      const scrollable = getScrollableElement(event.target)
+
+      if (!scrollable) {
+        event.preventDefault()
+        return
+      }
+
+      const canScroll = scrollable.scrollHeight > scrollable.clientHeight + 1
+      const atTop = scrollable.scrollTop <= 0
+      const atBottom = scrollable.scrollTop + scrollable.clientHeight >= scrollable.scrollHeight - 1
+
+      if (!canScroll || (atTop && deltaY > 0) || (atBottom && deltaY < 0)) {
+        event.preventDefault()
+      }
+    }
+
+    window.addEventListener('touchstart', handleTouchStart, { passive: false })
+    window.addEventListener('touchmove', handleTouchMove, { passive: false })
+
     return () => {
+      window.removeEventListener('touchstart', handleTouchStart)
+      window.removeEventListener('touchmove', handleTouchMove)
+
       if (viewportMeta) {
         viewportMeta.setAttribute('content', previousViewportContent)
       }
@@ -423,6 +490,11 @@ export const PhoneApp: React.FC = () => {
 
   useEffect(() => {
     if (accessState !== 'allowed' || !activeSectionId) return
+    if (activeSectionId === 'settings') {
+      setLoading(false)
+      setLoadError(null)
+      return
+    }
 
     let cancelled = false
 
@@ -671,6 +743,10 @@ export const PhoneApp: React.FC = () => {
   return (
     <main className={styles.phonePage} aria-label="Aplicación móvil de Ristak">
       <div className={styles.phoneFrame}>
+        <div className={styles.deviceChrome} aria-hidden="true">
+          <span className={styles.dynamicIsland} />
+        </div>
+
         <header className={styles.header}>
           <div className={styles.headerMain}>
             <span className={styles.brandMark}>R</span>
@@ -695,26 +771,28 @@ export const PhoneApp: React.FC = () => {
           </div>
         </header>
 
-        <section className={styles.periodPanel} aria-label="Rango de fechas">
-          <div className={styles.periodCopy}>
-            <span>Periodo</span>
-            <strong>{formatPeriodLabel(startDate, endDate)}</strong>
-          </div>
-          <div className={styles.periodControls}>
-            {PERIOD_OPTIONS.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                className={`${styles.periodButton} ${dateRange.preset === option.id ? styles.periodButtonActive : ''}`}
-                onClick={() => setPreset(option.id)}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </section>
+        {activeSectionId !== 'settings' && (
+          <section className={styles.periodPanel} aria-label="Rango de fechas">
+            <div className={styles.periodCopy}>
+              <span>Periodo</span>
+              <strong>{formatPeriodLabel(startDate, endDate)}</strong>
+            </div>
+            <div className={styles.periodControls}>
+              {PERIOD_OPTIONS.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  className={`${styles.periodButton} ${dateRange.preset === option.id ? styles.periodButtonActive : ''}`}
+                  onClick={() => setPreset(option.id)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
 
-        <nav className={styles.sectionTabs} aria-label="Secciones móviles">
+        <nav className={styles.sectionTabs} aria-label="Secciones móviles" data-phone-nav-scrollable="true">
           {PHONE_SECTIONS.map((section) => {
             const Icon = section.Icon
             const isActive = section.id === activeSectionId
@@ -731,13 +809,13 @@ export const PhoneApp: React.FC = () => {
           })}
         </nav>
 
-        {loadError && (
-          <div className={styles.errorBanner} role="status">
-            {loadError}
-          </div>
-        )}
-
         <section className={styles.content} data-phone-scrollable="true">
+          {loadError && (
+            <div className={styles.errorBanner} role="status">
+              {loadError}
+            </div>
+          )}
+
           {loading ? (
             <PhoneSkeleton />
           ) : (
@@ -799,29 +877,13 @@ export const PhoneApp: React.FC = () => {
                   conversion={analyticsConversion}
                 />
               )}
+
+              {activeSectionId === 'settings' && (
+                <SettingsSection />
+              )}
             </>
           )}
         </section>
-
-        <nav className={styles.bottomNav} aria-label="Navegación principal móvil">
-          {PHONE_SECTIONS.map((section) => {
-            const Icon = section.Icon
-            const isActive = section.id === activeSectionId
-            return (
-              <button
-                key={section.id}
-                type="button"
-                className={`${styles.bottomNavItem} ${isActive ? styles.bottomNavItemActive : ''}`}
-                onClick={() => navigate(`/phone/${section.id}`)}
-                aria-label={section.label}
-                aria-current={isActive ? 'page' : undefined}
-              >
-                <Icon size={18} />
-                <span>{section.shortLabel}</span>
-              </button>
-            )
-          })}
-        </nav>
       </div>
     </main>
   )
@@ -1091,6 +1153,43 @@ function AnalyticsSection({ visitorsTrend, leadsTrend, salesTrend, conversion }:
       <Panel title="Leads vs ventas" actionLabel="Conversión">
         <DualTrend data={mergeTrendSeries(leadsTrend, salesTrend)} labelA="Leads" labelB="Ventas" formatValue={formatCompactNumber} />
       </Panel>
+    </div>
+  )
+}
+
+type SettingsPanelId = 'account' | 'agent'
+
+function SettingsSection() {
+  const [activePanel, setActivePanel] = useState<SettingsPanelId>('account')
+
+  return (
+    <div className={styles.settingsShell}>
+      <div className={styles.settingsSwitcher} role="tablist" aria-label="Configuración móvil">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activePanel === 'account'}
+          className={`${styles.settingsSwitchButton} ${activePanel === 'account' ? styles.settingsSwitchButtonActive : ''}`}
+          onClick={() => setActivePanel('account')}
+        >
+          <Users size={16} />
+          Cuenta
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activePanel === 'agent'}
+          className={`${styles.settingsSwitchButton} ${activePanel === 'agent' ? styles.settingsSwitchButtonActive : ''}`}
+          onClick={() => setActivePanel('agent')}
+        >
+          <Bot size={16} />
+          Agente IA
+        </button>
+      </div>
+
+      <div className={styles.embeddedSettings}>
+        {activePanel === 'account' ? <AccountSettings /> : <AIAgentSettings />}
+      </div>
     </div>
   )
 }

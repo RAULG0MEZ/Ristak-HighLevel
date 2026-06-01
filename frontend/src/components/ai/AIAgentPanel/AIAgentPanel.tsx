@@ -88,6 +88,7 @@ const routeLabels: Record<string, string> = {
   '/phone/campaigns': 'Publicidad movil',
   '/phone/reports': 'Reportes movil',
   '/phone/analytics': 'Analíticas movil',
+  '/phone/settings': 'Configuración movil',
   '/dashboard': 'Dashboard',
   '/reports': 'Reportes',
   '/campaigns': 'Publicidad',
