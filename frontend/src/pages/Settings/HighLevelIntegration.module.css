@@ -2448,3 +2448,12 @@ textarea.input {
     gap: 12px;
   }
 }
+
+.setupFormActions {
+  justify-content: center !important;
+  margin-top: 18px;
+}
+
+.setupFormActions > button {
+  min-width: 220px;
+}

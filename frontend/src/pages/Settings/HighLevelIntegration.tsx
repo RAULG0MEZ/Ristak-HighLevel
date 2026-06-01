@@ -537,7 +537,7 @@ export const HighLevelIntegration: React.FC = () => {
             </div>
           </div>
 
-          <div className={styles.formActions}>
+          <div className={`${styles.formActions} ${styles.setupFormActions}`}>
             {isEditMode && (
               <Button
                 variant="ghost"
