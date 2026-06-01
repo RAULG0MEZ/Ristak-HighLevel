@@ -22,8 +22,8 @@ const emptyStatus: AIAgentConfigStatus = {
   brandVoice: '',
   actionCustomizations: '',
   researchDomains: '',
-  responseStyle: 'direct',
-  recommendationMode: 'on_request',
+  responseStyle: 'advisor',
+  recommendationMode: 'when_useful',
   webSearchEnabled: false,
   updatedAt: null
 }
@@ -38,8 +38,8 @@ const emptyForm = {
   brandVoice: '',
   actionCustomizations: '',
   researchDomains: '',
-  responseStyle: 'direct' as AIAgentResponseStyle,
-  recommendationMode: 'on_request' as AIAgentRecommendationMode,
+  responseStyle: 'advisor' as AIAgentResponseStyle,
+  recommendationMode: 'when_useful' as AIAgentRecommendationMode,
   webSearchEnabled: false
 }
 
@@ -174,8 +174,8 @@ function statusToForm(status: AIAgentConfigStatus) {
     brandVoice: '',
     actionCustomizations: status.actionCustomizations || '',
     researchDomains: status.researchDomains || '',
-    responseStyle: status.responseStyle || 'direct',
-    recommendationMode: status.recommendationMode || 'on_request',
+    responseStyle: status.responseStyle || 'advisor',
+    recommendationMode: status.recommendationMode || 'when_useful',
     webSearchEnabled: Boolean(status.webSearchEnabled)
   }
 }

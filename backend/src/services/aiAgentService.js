@@ -10623,17 +10623,67 @@ function buildWebSearchTools(config, runtimeContext) {
   return [tool]
 }
 
+function hasOpenAIResponseTuning(body = {}) {
+  return body.temperature !== undefined || body.top_p !== undefined || Boolean(body.reasoning)
+}
+
+function isUnsupportedOpenAIResponseTuningError(message = '') {
+  const normalized = String(message || '').toLowerCase()
+  if (!/(temperature|top_p|reasoning|effort)/.test(normalized)) return false
+
+  return /(unsupported|unknown|unrecognized|not supported|invalid parameter|unknown parameter|invalid field|unrecognized request argument)/.test(normalized)
+}
+
+function buildAgentResponseTuning({ usesActionTools = false, latestMessageFromButton = false } = {}) {
+  return {
+    temperature: usesActionTools || latestMessageFromButton
+      ? ACTION_AGENT_TEMPERATURE
+      : DEFAULT_AGENT_TEMPERATURE,
+    topP: usesActionTools || latestMessageFromButton
+      ? ACTION_AGENT_TOP_P
+      : DEFAULT_AGENT_TOP_P,
+    reasoning: {
+      effort: DEFAULT_AGENT_REASONING_EFFORT
+    }
+  }
+}
+
 function normalizeAIAgentModel(value) {
   const model = cleanText(String(value || ''), 100).trim()
   return AI_MODEL_ID_PATTERN.test(model) ? model : DEFAULT_MODEL
 }
 
-async function callOpenAIResponseRaw(apiKey, { model = DEFAULT_MODEL, instructions, input, maxOutputTokens = 1200, tools = [], include = [], previousResponseId = null, toolChoice = 'auto' }) {
+async function callOpenAIResponseRaw(apiKey, {
+  model = DEFAULT_MODEL,
+  instructions,
+  input,
+  maxOutputTokens = 1200,
+  tools = [],
+  include = [],
+  previousResponseId = null,
+  toolChoice = 'auto',
+  temperature = null,
+  topP = null,
+  reasoning = null,
+  retryWithoutResponseTuning = true
+}) {
   const body = {
     model: normalizeAIAgentModel(model),
     instructions,
     input,
     max_output_tokens: maxOutputTokens
+  }
+
+  if (Number.isFinite(temperature)) {
+    body.temperature = temperature
+  }
+
+  if (Number.isFinite(topP)) {
+    body.top_p = topP
+  }
+
+  if (reasoning && typeof reasoning === 'object') {
+    body.reasoning = reasoning
   }
 
   if (previousResponseId) {
@@ -10669,20 +10719,53 @@ async function callOpenAIResponseRaw(apiKey, { model = DEFAULT_MODEL, instructio
   }
 
   if (!response.ok) {
-    throw new Error(getOpenAIErrorMessage(data, 'OpenAI no pudo generar la respuesta'))
+    const errorMessage = getOpenAIErrorMessage(data, 'OpenAI no pudo generar la respuesta')
+
+    if (retryWithoutResponseTuning && hasOpenAIResponseTuning(body) && isUnsupportedOpenAIResponseTuningError(errorMessage)) {
+      logger.warn(`OpenAI rechazó tuning de respuesta; reintentando sin temperature/top_p/reasoning: ${errorMessage}`)
+      return callOpenAIResponseRaw(apiKey, {
+        model,
+        instructions,
+        input,
+        maxOutputTokens,
+        tools,
+        include,
+        previousResponseId,
+        toolChoice,
+        temperature: null,
+        topP: null,
+        reasoning: null,
+        retryWithoutResponseTuning: false
+      })
+    }
+
+    throw new Error(errorMessage)
   }
 
   return data
 }
 
-async function callOpenAIResponse(apiKey, { model = DEFAULT_MODEL, instructions, input, maxOutputTokens = 1200, tools = [], include = [] }) {
+async function callOpenAIResponse(apiKey, {
+  model = DEFAULT_MODEL,
+  instructions,
+  input,
+  maxOutputTokens = 1200,
+  tools = [],
+  include = [],
+  temperature = null,
+  topP = null,
+  reasoning = null
+}) {
   const data = await callOpenAIResponseRaw(apiKey, {
     model,
     instructions,
     input,
     maxOutputTokens,
     tools,
-    include
+    include,
+    temperature,
+    topP,
+    reasoning
   })
 
   const text = extractResponseText(data)
@@ -10705,6 +10788,9 @@ async function callOpenAIResponseWithActionTools(apiKey, {
   maxOutputTokens = 1800,
   tools = [],
   include = [],
+  temperature = null,
+  topP = null,
+  reasoning = null,
   highLevelConnection,
   runtimeContext = {},
   viewContext = {},
@@ -10739,7 +10825,10 @@ async function callOpenAIResponseWithActionTools(apiKey, {
       tools,
       include,
       previousResponseId,
-      toolChoice: round === 0 && forceInitialToolCall ? 'required' : 'auto'
+      toolChoice: round === 0 && forceInitialToolCall ? 'required' : 'auto',
+      temperature,
+      topP,
+      reasoning
     })
 
     const functionCalls = extractFunctionCalls(latestData)
@@ -11439,6 +11528,18 @@ const BASE_SPECIALIST_PROMPT = [
   'Usa tablas/gráficos sólo cuando el usuario pida data o cuando haya varias métricas/registros/comparativos difíciles de leer en texto: contactos, citas, pagos, campañas, rankings, históricos o listas repetidas.'
 ].join('\n')
 
+const CRITICAL_THINKING_PROMPT = [
+  'Pensamiento crítico y adaptación:',
+  '- No operes como árbol rígido de frases. Interpreta intención, contexto, tono, errores de escritura, referencias implícitas y objetivo de negocio antes de decidir si respondes, investigas o accionas.',
+  '- Antes de responder, haz una revisión interna breve: qué quiere lograr el usuario, qué datos son evidencia, qué estás asumiendo, qué riesgo hay si actúas, qué alternativa razonable existe y cuál es el siguiente paso útil.',
+  '- No muestres cadena de pensamiento interna. Si una suposición afecta la respuesta, dilo en una frase corta: "Estoy asumiendo X por Y".',
+  '- Si el usuario pide algo ambiguo pero de bajo riesgo, toma la interpretación más útil y avanza. Si la ambigüedad cambia dinero, datos de contactos, citas, workflows, campañas, mensajes o cualquier escritura real, pregunta una sola cosa concreta.',
+  '- Si el usuario pide algo que parece contraproducente, incompleto o riesgoso, dilo claro y ofrece la ruta segura; no obedezcas mecánicamente una instrucción mala.',
+  '- Si hay evidencia contradictoria entre conversación, DB, vista o herramienta, prioriza la fuente de verdad correcta y menciona la discrepancia sin hacer drama.',
+  '- Varía estructura y lenguaje según el caso. Evita respuestas calcadas, plantillas repetidas y cierres genéricos cuando el usuario necesita criterio real.',
+  '- Para solicitudes de acción, no te quedes en explicación si ya hay datos suficientes y una herramienta segura disponible. Ejecuta el flujo permitido; si falta algo indispensable, pregunta sólo eso.'
+].join('\n')
+
 const SOURCE_ROUTING_PROMPT = [
   'Fuentes de verdad:',
   '- DB de Ristak: análisis de negocio, históricos, pagos registrados, citas, contactos, tracking, campañas sincronizadas, ROAS/utilidad e ingresos atribuidos.',
@@ -11582,6 +11683,7 @@ function buildActionCustomizationInstructions(agentConfig) {
 function buildSpecialistAgentInstructions(agentConfig, latestUserMessage) {
   return [
     BASE_SPECIALIST_PROMPT,
+    CRITICAL_THINKING_PROMPT,
     buildResponseBehaviorInstructions(agentConfig, latestUserMessage),
     UNIFIED_CAPABILITY_PROMPT,
     EXECUTION_PREFLIGHT_PROMPT,
@@ -11757,36 +11859,36 @@ function buildResponseBehaviorInstructions(config, latestUserMessage = '') {
   const recommendationRequested = isRecommendationRequest(latestUserMessage)
   const lines = [
     `Configuración de respuesta del usuario: estilo=${responseStyle}; recomendaciones=${recommendationMode}.`,
-    'Regla principal: responde exactamente lo que el usuario preguntó. La calidad, tamaño y profundidad de la respuesta deben seguir la calidad, tamaño y profundidad de la pregunta.',
-    'Si el usuario pide un dato específico, entrega ese dato primero y no agregues secciones extra de negocio, moralejas, consejos ni siguientes acciones.'
+    'Regla principal: responde primero a la intención real del usuario, no sólo a las palabras literales. La calidad, tamaño y profundidad de la respuesta deben seguir la calidad, tamaño y profundidad de la solicitud.',
+    'Si el usuario pide un dato específico, entrega ese dato primero. Después agrega criterio sólo si ayuda a evitar una mala decisión, revela un riesgo, destraba una acción o el usuario pidió análisis.'
   ]
 
   if (responseStyle === 'direct') {
     lines.push(
-      'Modo Directo: usa respuestas cortas. Para una métrica o ganador: 1 frase inicial + tabla compacta sólo si hay varias métricas reales + una observación máxima si evita malinterpretar el dato.',
-      'No uses "Qué significa", "Siguiente acción", "Acción recomendada", planes, recomendaciones ni contexto amplio salvo que el usuario lo pida explícitamente.'
+      'Modo Directo: usa respuestas cortas sin apagar el criterio crítico. Para una métrica o ganador: 1 frase inicial + tabla compacta sólo si hay varias métricas reales + una observación máxima si evita malinterpretar el dato.',
+      'Evita planes largos y secciones extra salvo que el usuario lo pida o haya una alerta crítica.'
     )
   } else if (responseStyle === 'balanced') {
     lines.push(
-      'Modo Balanceado: responde el dato y agrega una lectura breve sólo cuando aporte claridad. Mantén máximo una recomendación corta si el usuario pidió criterio o si hay un riesgo evidente.'
+      'Modo Balanceado: responde el dato y agrega una lectura breve cuando aporte claridad. Mantén máximo una recomendación corta si el usuario pidió criterio o si hay un riesgo/oportunidad evidente.'
     )
   } else {
     lines.push(
-      'Modo Asesor estratégico: puedes explicar más, conectar con contexto del negocio y recomendar acciones, pero sin ignorar la pregunta concreta.'
+      'Modo Asesor estratégico: explica el razonamiento útil, conecta con contexto del negocio, detecta riesgos/oportunidades y recomienda acciones sin ignorar la pregunta concreta.'
     )
   }
 
   if (recommendationMode === 'on_request' && !recommendationRequested) {
-    lines.push('Recomendaciones bloqueadas para esta respuesta: el usuario no las pidió explícitamente. Puedes usar "Observación:" sólo si hay una alerta crítica o una aclaración indispensable.')
+    lines.push('No des recomendaciones por rutina si el usuario no las pidió. Sí puedes agregar una observación crítica si evita perder dinero, tocar el contacto equivocado, interpretar mal una métrica o ejecutar una acción incompleta.')
   } else if (recommendationMode === 'when_useful' && !recommendationRequested) {
-    lines.push('No des recomendaciones por rutina. Sólo agrega una acción si detectas un riesgo alto, una oportunidad muy clara o un error que pueda costar dinero.')
+    lines.push('Agrega criterio o una siguiente acción cuando detectes un riesgo claro, una oportunidad aprovechable, una ambigüedad importante o un error que pueda costar dinero/tiempo.')
   } else if (recommendationMode === 'proactive') {
-    lines.push('Puedes agregar recomendaciones proactivas cuando ayuden, pero primero responde el dato pedido y manténlas breves.')
+    lines.push('Puedes agregar recomendaciones proactivas cuando ayuden, pero primero responde el dato pedido y manténlas accionables.')
   } else {
     lines.push('El usuario pidió criterio/recomendación: puedes incluir lectura, recomendaciones y siguiente acción, manteniendo claridad y sin alargar de más.')
   }
 
-  lines.push('Para preguntas como "cuál campaña fue más rentable", responde la ganadora y el ranking/métricas necesarias. No recomiendes escalar, pausar o cortar presupuesto salvo que pregunte qué hacer.')
+  lines.push('Para preguntas como "cuál campaña fue más rentable", responde la ganadora y el ranking/métricas necesarias. Si el modo de recomendaciones lo permite o el usuario pidió criterio, agrega una acción concreta basada en ROAS/utilidad; si no, limita la recomendación a una observación crítica.')
   lines.push('Formato visual: no uses tablas para decir "sí", confirmar entendimiento, pedir método/concepto, preguntar si usa tarjeta guardada o explicar una decisión simple. Excepción: en planes de parcialidades o cobros programados, usa tabla compacta para fechas exactas y montos.')
 
   return lines.join('\n')
@@ -12734,6 +12836,10 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
   }
 
   const instructions = buildSpecialistAgentInstructions(agentConfig, latestUserMessage)
+  const responseTuning = buildAgentResponseTuning({
+    usesActionTools: highLevelTools.length > 0,
+    latestMessageFromButton
+  })
 
   const input = [
     `Fecha/hora actual local: ${runtimeContext.nowIso}`,
@@ -12831,6 +12937,7 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
           viewContext,
           messages,
           agentRoute,
+          ...responseTuning,
           initialOperationalMemory: {
             paymentContact: paymentOperationalMemory?.resolvedContact || crmOperationalMemory?.resolvedContact || null,
             crmContact: crmOperationalMemory?.resolvedContact || paymentOperationalMemory?.resolvedContact || null
@@ -12843,7 +12950,8 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
           input: inputValue,
           maxOutputTokens,
           tools: toolsValue,
-          include: includeValue
+          include: includeValue,
+          ...responseTuning
         })
   }
   const callAgentModelWithAttachmentFallback = async (options) => {
@@ -14400,6 +14508,7 @@ function buildInstructions() {
   return [
     'Eres el Agente AI interno de Ristak, una app para administrar un negocio con datos de HighLevel, pagos, citas, contactos, publicidad, tracking web y reportes.',
     'Tu trabajo es ayudar a administrar mejor el negocio: analizar datos, explicar lo que el usuario está viendo, detectar riesgos, encontrar oportunidades y proponer acciones concretas.',
+    CRITICAL_THINKING_PROMPT,
     'Responde siempre en español claro, directo y accionable.',
     'No uses Markdown pesado: sin encabezados con # ni negritas con **. Evita tablas salvo cuando haya varias métricas/registros o cuando un plan de parcialidades/cobros programados necesite fechas exactas y montos.',
     'Cuando haya CONSULTAS DIRECTAS A DB, usa esas cifras como fuente principal porque vienen de SQL ejecutado para la pregunta del usuario.',
