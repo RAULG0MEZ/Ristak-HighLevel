@@ -485,6 +485,10 @@ body.dark .select:focus {
   padding: 24px !important;
 }
 
+.variablesCard {
+  margin-top: 18px;
+}
+
 .header {
   align-items: flex-start;
   gap: 18px;
@@ -535,6 +539,10 @@ body.dark .iconWrapper {
   background: rgba(148, 163, 184, 0.055);
 }
 
+.variablesCard .manualReportToggle {
+  margin-bottom: 0;
+}
+
 .manualReportToggleTitle {
   font-size: 13px;
   font-weight: 700;
@@ -545,15 +553,47 @@ body.dark .iconWrapper {
 }
 
 .switchControl {
-  width: 44px;
-  height: 24px;
+  width: 46px;
+  min-width: 46px;
+  height: 26px;
+}
+
+.switchControl > input[type="checkbox"] {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  z-index: 2;
+}
+
+.switchControl > input[type="checkbox"]::after {
+  content: none !important;
+}
+
+.switchControl > .switchTrack {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  flex: 0 0 100%;
+  overflow: hidden;
 }
 
 .switchTrack::before {
   top: 4px;
   left: 4px;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
 }
 
 .switchControl input:checked + .switchTrack::before {

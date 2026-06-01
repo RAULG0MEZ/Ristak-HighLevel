@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
+import { useNavigate } from 'react-router-dom'
 import { Card, Button } from '@/components/common'
 import { Plus, X, Pencil, DollarSign, Loader2, TrendingDown } from 'lucide-react'
 import { useNotification } from '@/contexts/NotificationContext'
@@ -86,6 +87,7 @@ const setManualExpenseColumnVisibilityInConfig = (
 
 export const Costs: React.FC = () => {
   const { showToast, showConfirm } = useNotification()
+  const navigate = useNavigate()
 
   const [costs, setCosts] = useState<Cost[]>([])
   const [loading, setLoading] = useState(false)
@@ -171,11 +173,25 @@ export const Costs: React.FC = () => {
       await updateManualExpenseColumnVisibility(checked)
       await setManualBusinessExpensesEnabled(checked ? '1' : '0')
       setManualExpenseColumnVisible(checked)
+      return true
     } catch (error: any) {
       showToast('error', 'No se pudo guardar la configuración', error?.message || 'Intenta nuevamente')
+      return false
     } finally {
       setSavingManualExpenseToggle(false)
     }
+  }
+
+  const manualReportCostsActive = parseConfigFlag(manualBusinessExpensesEnabled) && manualExpenseColumnVisible
+  const manualReportCostsBusy = syncingManualBusinessExpenses || savingManualExpenseToggle
+
+  const handleOpenVariableCostsReport = async () => {
+    if (!manualReportCostsActive) {
+      const activated = await handleManualBusinessExpensesToggle(true)
+      if (!activated) return
+    }
+
+    navigate('/reports')
   }
 
   const loadCosts = async () => {
@@ -296,9 +312,9 @@ export const Costs: React.FC = () => {
               <TrendingDown size={24} />
             </div>
             <div>
-              <h2 className={styles.title}>Gestión de Costos</h2>
+              <h2 className={styles.title}>Gestión de Costos (fijos)</h2>
               <p className={styles.subtitle}>
-                Configura impuestos, comisiones y gastos fijos que se restarán de tus ingresos
+                Configura impuestos, comisiones y gastos fijos que se reflejan como gastos fijos en reportes
               </p>
             </div>
           </div>
@@ -311,24 +327,6 @@ export const Costs: React.FC = () => {
             <Plus size={18} />
             Agregar costo
           </Button>
-        </div>
-
-        <div className={styles.manualReportToggle}>
-          <div className={styles.manualReportToggleText}>
-            <span className={styles.manualReportToggleTitle}>Costos manuales en reporte</span>
-            <span className={styles.manualReportToggleState}>
-              {parseConfigFlag(manualBusinessExpensesEnabled) && manualExpenseColumnVisible ? 'Activo' : 'Inactivo'}
-            </span>
-          </div>
-          <label className={styles.switchControl}>
-            <input
-              type="checkbox"
-              checked={parseConfigFlag(manualBusinessExpensesEnabled) && manualExpenseColumnVisible}
-              disabled={syncingManualBusinessExpenses || savingManualExpenseToggle}
-              onChange={(event) => handleManualBusinessExpensesToggle(event.target.checked)}
-            />
-            <span className={styles.switchTrack} />
-          </label>
         </div>
 
         {loading ? (
@@ -396,6 +394,49 @@ export const Costs: React.FC = () => {
             ))}
           </div>
         )}
+      </Card>
+
+      <Card className={`${styles.card} ${styles.variablesCard}`}>
+        <div className={styles.header}>
+          <div className={styles.titleSection}>
+            <div className={styles.iconWrapper}>
+              <DollarSign size={24} />
+            </div>
+            <div>
+              <h2 className={styles.title}>Gestión de Costos variables</h2>
+              <p className={styles.subtitle}>
+                Activa la columna de reportes para capturar manualmente los costos variables por día, mes o año
+              </p>
+            </div>
+          </div>
+
+          <Button
+            onClick={handleOpenVariableCostsReport}
+            variant={manualReportCostsActive ? 'secondary' : 'primary'}
+            disabled={manualReportCostsBusy}
+          >
+            <Plus size={18} />
+            {manualReportCostsActive ? 'Abrir Reportes' : 'Activar y abrir Reportes'}
+          </Button>
+        </div>
+
+        <div className={styles.manualReportToggle}>
+          <div className={styles.manualReportToggleText}>
+            <span className={styles.manualReportToggleTitle}>Costos manuales en reporte</span>
+            <span className={styles.manualReportToggleState}>
+              {manualReportCostsActive ? 'Activo' : 'Inactivo'}
+            </span>
+          </div>
+          <label className={styles.switchControl}>
+            <input
+              type="checkbox"
+              checked={manualReportCostsActive}
+              disabled={manualReportCostsBusy}
+              onChange={(event) => handleManualBusinessExpensesToggle(event.target.checked)}
+            />
+            <span className={styles.switchTrack} />
+          </label>
+        </div>
       </Card>
 
       {/* Modal para crear/editar costo */}

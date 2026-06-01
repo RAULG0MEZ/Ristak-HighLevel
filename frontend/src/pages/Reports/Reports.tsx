@@ -25,6 +25,7 @@ import {
   type ReportRange,
   type ManualBusinessExpense
 } from '@/services/reportsService'
+import { costsService, type Cost } from '@/services/costsService'
 import { formatCurrency, formatNumber, formatDate, formatDateToISO, parseLocalDateString } from '@/utils/format'
 import { useAppConfig, useChartHover, useIsRenderDomain, useMetaTimezone, useTableConfig } from '@/hooks'
 import { DEFAULT_BAR_RADIUS, getTopRoundedBarPath } from '@/components/common/chartShapes'
@@ -61,6 +62,7 @@ const monthNamesShort = [
 ]
 
 const MANUAL_BUSINESS_EXPENSES_COLUMN_KEY = 'businessExpenses'
+const FIXED_BUSINESS_EXPENSES_COLUMN_KEY = 'fixedBusinessExpenses'
 const MANUAL_BUSINESS_EXPENSES_CONFIG_KEY = 'report_manual_business_expenses_enabled'
 const MS_PER_DAY = 24 * 60 * 60 * 1000
 
@@ -78,6 +80,7 @@ type TableRow = {
   revenue: number
   spend: number
   businessExpenses: number
+  fixedBusinessExpenses: number
   sales: number
   transactions: number
   new_customers: number
@@ -296,6 +299,69 @@ const getManualExpenseRange = (expense: ManualBusinessExpense) => {
 
 const roundCurrencyValue = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100
 
+const getRangeOverlapDays = (
+  targetRange: { from: string; to: string },
+  sourceRange: { from: string; to: string }
+) => {
+  const targetStart = toUtcDayIndex(targetRange.from)
+  const targetEnd = toUtcDayIndex(targetRange.to)
+  const sourceStart = toUtcDayIndex(sourceRange.from)
+  const sourceEnd = toUtcDayIndex(sourceRange.to)
+
+  if (
+    targetStart === null ||
+    targetEnd === null ||
+    sourceStart === null ||
+    sourceEnd === null ||
+    targetEnd < targetStart ||
+    sourceEnd < sourceStart
+  ) {
+    return { overlapDays: 0, sourceDays: 0 }
+  }
+
+  const overlapStart = Math.max(targetStart, sourceStart)
+  const overlapEnd = Math.min(targetEnd, sourceEnd)
+
+  if (overlapEnd < overlapStart) {
+    return { overlapDays: 0, sourceDays: sourceEnd - sourceStart + 1 }
+  }
+
+  return {
+    overlapDays: overlapEnd - overlapStart + 1,
+    sourceDays: sourceEnd - sourceStart + 1
+  }
+}
+
+const calculateConfiguredBusinessCostsForRange = (
+  targetRange: { from: string; to: string },
+  costs: Cost[],
+  sourceRange: { from: string; to: string },
+  revenue: number
+) => {
+  const { overlapDays, sourceDays } = getRangeOverlapDays(targetRange, sourceRange)
+
+  if (overlapDays <= 0 || sourceDays <= 0) return 0
+
+  const total = costs.reduce((sum, cost) => {
+    if (Number(cost.is_active) === 0) return sum
+
+    const value = Number(cost.value || 0)
+    if (!Number.isFinite(value) || value <= 0) return sum
+
+    if (cost.calculation_type === 'fixed') {
+      return sum + (value * overlapDays) / sourceDays
+    }
+
+    if (cost.calculation_type === 'percentage' && cost.applies_to === 'revenue') {
+      return sum + (revenue * value) / 100
+    }
+
+    return sum
+  }, 0)
+
+  return roundCurrencyValue(total)
+}
+
 const calculateManualBusinessExpensesForRange = (
   targetRange: { from: string; to: string },
   expenses: ManualBusinessExpense[]
@@ -389,7 +455,9 @@ interface MetricsGridProps {
   showVisitors: boolean
   viewType: ViewType
   businessExpensesByPeriod?: Record<string, number>
+  fixedBusinessExpensesByPeriod?: Record<string, number>
   applyManualBusinessExpenses?: boolean
+  applyFixedBusinessExpenses?: boolean
 }
 
 // Componentes de gráfico personalizados con tooltip del Dashboard
@@ -852,17 +920,21 @@ const MetricsGrid: React.FC<MetricsGridProps> = ({
   showVisitors,
   viewType,
   businessExpensesByPeriod = {},
-  applyManualBusinessExpenses = false
+  fixedBusinessExpensesByPeriod = {},
+  applyManualBusinessExpenses = false,
+  applyFixedBusinessExpenses = false
 }) => {
   const timezoneInfo = useMetaTimezone()
   const { labels } = useLabels()
   const totals = metrics.reduce((acc, m) => {
     const businessExpenses = applyManualBusinessExpenses ? (businessExpensesByPeriod[m.date] || 0) : 0
+    const fixedBusinessExpenses = applyFixedBusinessExpenses ? (fixedBusinessExpensesByPeriod[m.date] || 0) : 0
 
     return {
       spend: acc.spend + m.spend,
       revenue: acc.revenue + m.revenue,
       businessExpenses: acc.businessExpenses + businessExpenses,
+      fixedBusinessExpenses: acc.fixedBusinessExpenses + fixedBusinessExpenses,
       leads: acc.leads + m.leads,
       sales: acc.sales + m.sales,
       clicks: acc.clicks + m.clicks,
@@ -875,6 +947,7 @@ const MetricsGrid: React.FC<MetricsGridProps> = ({
     spend: 0,
     revenue: 0,
     businessExpenses: 0,
+    fixedBusinessExpenses: 0,
     leads: 0,
     sales: 0,
     clicks: 0,
@@ -884,7 +957,7 @@ const MetricsGrid: React.FC<MetricsGridProps> = ({
     new_customers: 0
   })
 
-  const profit = totals.revenue - totals.spend - totals.businessExpenses
+  const profit = totals.revenue - totals.spend - totals.businessExpenses - totals.fixedBusinessExpenses
   const roas = totals.spend > 0 ? totals.revenue / totals.spend : 0
   const roi = totals.spend > 0 ? (profit / totals.spend) * 100 : 0
   const cpc = totals.clicks > 0 ? totals.spend / totals.clicks : 0
@@ -912,6 +985,7 @@ const MetricsGrid: React.FC<MetricsGridProps> = ({
       return dateA - dateB // Orden ascendente
     }).map(m => {
       const businessExpenses = applyManualBusinessExpenses ? (businessExpensesByPeriod[m.date] || 0) : 0
+      const fixedBusinessExpenses = applyFixedBusinessExpenses ? (fixedBusinessExpensesByPeriod[m.date] || 0) : 0
 
       return {
         // Ajustar fecha con timezone de Meta si hay discrepancia
@@ -930,10 +1004,11 @@ const MetricsGrid: React.FC<MetricsGridProps> = ({
         revenue: m.revenue,
         spend: m.spend,
         businessExpenses,
-        profit: m.revenue - m.spend - businessExpenses
+        fixedBusinessExpenses,
+        profit: m.revenue - m.spend - businessExpenses - fixedBusinessExpenses
       }
     })
-  }, [metrics, timezoneInfo, viewType, businessExpensesByPeriod, applyManualBusinessExpenses])
+  }, [metrics, timezoneInfo, viewType, businessExpensesByPeriod, fixedBusinessExpensesByPeriod, applyManualBusinessExpenses, applyFixedBusinessExpenses])
 
   const trafficItems = [
     { label: 'Clicks', value: formatNumber(totals.clicks) },
@@ -1024,7 +1099,8 @@ const MetricsGrid: React.FC<MetricsGridProps> = ({
       items: [
         { label: 'Ingresos', value: formatCurrency(totals.revenue) },
         { label: 'Gasto en Anuncios', value: formatCurrency(totals.spend) },
-        ...(applyManualBusinessExpenses ? [{ label: 'Gastos de negocio', value: formatCurrency(totals.businessExpenses) }] : []),
+        ...(applyFixedBusinessExpenses ? [{ label: 'Gastos fijos', value: formatCurrency(totals.fixedBusinessExpenses) }] : []),
+        ...(applyManualBusinessExpenses ? [{ label: 'Costos variables', value: formatCurrency(totals.businessExpenses) }] : []),
         { label: 'Ganancias Netas', value: formatCurrency(profit) },
         { label: 'Transacciones', value: formatNumber(totals.sales) },
         { label: 'Retorno de Inversión', value: `${roas.toFixed(2)}x` },
@@ -1042,7 +1118,7 @@ const MetricsGrid: React.FC<MetricsGridProps> = ({
         />
       )
     }
-  ], [chartData, trafficItems, trafficKeys, labels, totals, reportType, profit, roas, roi, cac, aov, transactionsPerCustomer, cpl, epl, cpa, cpaAttendance, interesadoToAppt, apptToAttendance, attendanceToSale, attendanceToCustomer, salesLabel, applyManualBusinessExpenses])
+  ], [chartData, trafficItems, trafficKeys, labels, totals, reportType, profit, roas, roi, cac, aov, transactionsPerCustomer, cpl, epl, cpa, cpaAttendance, interesadoToAppt, apptToAttendance, attendanceToSale, attendanceToCustomer, salesLabel, applyManualBusinessExpenses, applyFixedBusinessExpenses])
 
   // Filtrar la tarjeta de "Tráfico" si showVisitors es false (dominio .onrender.com)
   const metricGroups = showVisitors
@@ -1097,6 +1173,13 @@ const mapContactsToModalData = (contacts: ContactListItem[]): ContactListItem[] 
     ...contact,
     created_at: contact.created_at || (contact as any).createdAt
   }))
+
+const StackedColumnHeader = ({ title, subtitle }: { title: string; subtitle: string }) => (
+  <div style={{ textAlign: 'center', lineHeight: '1.2' }}>
+    <div>{title}</div>
+    <div style={{ fontSize: '0.75em', opacity: 0.7 }}>({subtitle})</div>
+  </div>
+)
 
 interface BusinessExpenseCellProps {
   value: number
@@ -1267,9 +1350,16 @@ export const Reports: React.FC = () => {
     const columnConfig = reportsTableConfig.find((column) => column.id === MANUAL_BUSINESS_EXPENSES_COLUMN_KEY)
     return Boolean(columnConfig?.visible)
   }, [reportsTableConfig])
+  const fixedBusinessExpensesColumnVisible = useMemo(() => {
+    if (!Array.isArray(reportsTableConfig)) return true
+    const columnConfig = reportsTableConfig.find((column) => column.id === FIXED_BUSINESS_EXPENSES_COLUMN_KEY)
+    return columnConfig ? columnConfig.visible !== false : true
+  }, [reportsTableConfig])
   const applyManualBusinessExpenses = manualBusinessExpensesEnabled && manualBusinessExpensesColumnVisible
+  const applyFixedBusinessExpenses = fixedBusinessExpensesColumnVisible
 
   const [manualBusinessExpenses, setManualBusinessExpenses] = useState<ManualBusinessExpense[]>([])
+  const [configuredCosts, setConfiguredCosts] = useState<Cost[]>([])
   const [savingManualBusinessExpenseKey, setSavingManualBusinessExpenseKey] = useState<string | null>(null)
 
   useEffect(() => {
@@ -1360,6 +1450,19 @@ export const Reports: React.FC = () => {
     loadManualBusinessExpenses()
   }, [loadManualBusinessExpenses])
 
+  const loadConfiguredCosts = useCallback(async () => {
+    try {
+      const costs = await costsService.getAllCosts()
+      setConfiguredCosts(costs)
+    } catch {
+      setConfiguredCosts([])
+    }
+  }, [])
+
+  useEffect(() => {
+    loadConfiguredCosts()
+  }, [loadConfiguredCosts])
+
   useEffect(() => {
     setModalState(prev => ({
       ...prev,
@@ -1386,9 +1489,29 @@ export const Reports: React.FC = () => {
     return expensesByPeriod
   }, [metrics, viewType, manualBusinessExpenses])
 
+  const fixedBusinessExpensesByPeriod = useMemo(() => {
+    const expensesByPeriod: Record<string, number> = {}
+
+    metrics.forEach((item) => {
+      expensesByPeriod[item.date] = calculateConfiguredBusinessCostsForRange(
+        resolvePeriodRange(item.date, viewType),
+        configuredCosts,
+        apiRange,
+        item.revenue
+      )
+    })
+
+    return expensesByPeriod
+  }, [metrics, viewType, configuredCosts, apiRange])
+
   const manualBusinessExpensesTotalForRange = useMemo(() => (
     calculateManualBusinessExpensesForRange(apiRange, manualBusinessExpenses)
   ), [apiRange, manualBusinessExpenses])
+
+  const fixedBusinessExpensesTotalForRange = useMemo(() => {
+    const revenue = summary?.payments.totalRevenue ?? metrics.reduce((sum, item) => sum + item.revenue, 0)
+    return calculateConfiguredBusinessCostsForRange(apiRange, configuredCosts, apiRange, revenue)
+  }, [apiRange, configuredCosts, summary?.payments.totalRevenue, metrics])
 
   const handleSaveBusinessExpense = useCallback(async (row: TableRow, rawValue: string): Promise<number | null> => {
     const amount = parseManualExpenseInput(rawValue)
@@ -1433,7 +1556,11 @@ export const Reports: React.FC = () => {
   const tableData: TableRow[] = useMemo(() => (
     metrics.map((item, index) => {
       const businessExpenses = businessExpensesByPeriod[item.date] || 0
-      const profit = item.revenue - item.spend - (applyManualBusinessExpenses ? businessExpenses : 0)
+      const fixedBusinessExpenses = fixedBusinessExpensesByPeriod[item.date] || 0
+      const profit = item.revenue -
+        item.spend -
+        (applyManualBusinessExpenses ? businessExpenses : 0) -
+        (applyFixedBusinessExpenses ? fixedBusinessExpenses : 0)
       const cpc = item.clicks > 0 ? item.spend / item.clicks : 0
       const cpv = item.visitors > 0 ? item.spend / item.visitors : 0
       const cpl = item.leads > 0 ? item.spend / item.leads : 0
@@ -1460,6 +1587,7 @@ export const Reports: React.FC = () => {
         revenue: item.revenue,
         spend: item.spend,
         businessExpenses,
+        fixedBusinessExpenses,
         sales: item.sales,
         transactions: item.sales, // En vista "Todos" sales es el conteo de transacciones
         new_customers: item.new_customers,
@@ -1488,7 +1616,7 @@ export const Reports: React.FC = () => {
       const dateB = new Date(b.date).getTime()
       return dateB - dateA
     })
-  ), [metrics, viewType, includeYearForTable, timezoneInfo, businessExpensesByPeriod, applyManualBusinessExpenses])
+  ), [metrics, viewType, includeYearForTable, timezoneInfo, businessExpensesByPeriod, fixedBusinessExpensesByPeriod, applyManualBusinessExpenses, applyFixedBusinessExpenses])
 
   const handleOpenModal = React.useCallback(async (
     type: ModalType,
@@ -1679,8 +1807,16 @@ export const Reports: React.FC = () => {
         render: (_value, row) => <span className={styles.dateCell}>{row.displayDate}</span>
       },
       {
+        key: FIXED_BUSINESS_EXPENSES_COLUMN_KEY,
+        header: <StackedColumnHeader title="Gastos de negocio" subtitle="Gastos fijos" />,
+        sortable: true,
+        visible: true,
+        width: '160px',
+        render: (value: number) => <span className={styles.secondaryText}>{formatCurrency(value)}</span>
+      },
+      {
         key: MANUAL_BUSINESS_EXPENSES_COLUMN_KEY,
-        header: 'Gastos de negocio',
+        header: <StackedColumnHeader title="Gastos de negocio" subtitle="Costos variables" />,
         sortable: true,
         visible: false,
         width: '160px',
@@ -1984,8 +2120,9 @@ export const Reports: React.FC = () => {
   }, [reportType, viewType, visitorSource, handleOpenModal, handleOpenVisitorsModal, handleOpenTransactionsModal, handleSaveBusinessExpense, savingManualBusinessExpenseKey, labels.lead, labels.leads, labels.customer, labels.customers, analyticsEnabled])
 
   const appliedManualBusinessExpensesTotal = applyManualBusinessExpenses ? manualBusinessExpensesTotalForRange : 0
+  const appliedFixedBusinessExpensesTotal = applyFixedBusinessExpenses ? fixedBusinessExpensesTotalForRange : 0
   const summaryProfit = summary
-    ? summary.payments.totalRevenue - summary.campaigns.spend - appliedManualBusinessExpensesTotal
+    ? summary.payments.totalRevenue - summary.campaigns.spend - appliedManualBusinessExpensesTotal - appliedFixedBusinessExpensesTotal
     : 0
 
   const summaryCards = summary ? [
@@ -2186,7 +2323,9 @@ export const Reports: React.FC = () => {
           showVisitors={analyticsEnabled}
           viewType={viewType}
           businessExpensesByPeriod={businessExpensesByPeriod}
+          fixedBusinessExpensesByPeriod={fixedBusinessExpensesByPeriod}
           applyManualBusinessExpenses={applyManualBusinessExpenses}
+          applyFixedBusinessExpenses={applyFixedBusinessExpenses}
         />
       )}
 
