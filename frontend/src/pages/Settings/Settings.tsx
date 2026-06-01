@@ -1,10 +1,12 @@
 import React from 'react'
 import { Routes, Route, Navigate, NavLink } from 'react-router-dom'
 import { Send, CreditCard, Activity, Calendar, UserCircle, TrendingDown, Bot, KeyRound } from 'lucide-react'
+import { SiWhatsapp } from 'react-icons/si'
 import { HighLevelIntegration } from './HighLevelIntegration'
 import { Costs } from './Costs'
 import { PaymentsConfiguration } from './PaymentsConfiguration'
 import { MetaAdsIntegration } from './MetaAdsIntegration'
+import { WhatsAppCoexistence } from './WhatsAppCoexistence'
 import { WebTracking } from './WebTracking'
 import { CalendarsConfiguration } from './CalendarsConfiguration'
 import { AccountSettings } from './AccountSettings'
@@ -43,6 +45,13 @@ export const Settings: React.FC = () => {
             style={{ width: '18px', height: '18px' }}
           />
           <span>Meta Ads</span>
+        </NavLink>
+        <NavLink
+          to="/settings/whatsapp-coexistence"
+          className={({ isActive }) => `${styles.tab} ${isActive ? styles.tabActive : ''}`}
+        >
+          <SiWhatsapp size={18} />
+          <span>WhatsApp API</span>
         </NavLink>
         <NavLink
           to="/settings/calendars"
@@ -101,6 +110,7 @@ export const Settings: React.FC = () => {
           <Route path="highlevel" element={<HighLevelIntegration />} />
           <Route path="costs" element={<Costs />} />
           <Route path="meta-ads" element={<MetaAdsIntegration />} />
+          <Route path="whatsapp-coexistence" element={<WhatsAppCoexistence />} />
           <Route path="calendars" element={<CalendarsConfiguration />} />
           <Route path="tracking" element={<WebTracking />} />
           <Route path="payments" element={<PaymentsConfiguration />} />
