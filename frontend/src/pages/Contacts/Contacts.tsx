@@ -21,7 +21,7 @@ import { useLabels } from '@/contexts/LabelsContext'
 import { formatCurrency, formatDateToISO, formatEndDateToISO, formatNumber, formatUrlParameter, parseLocalDateString } from '@/utils/format'
 import { contactsService, type Contact, type ContactStats } from '@/services/contactsService'
 import { calendarsService, type CalendarEvent } from '@/services/calendarsService'
-import type { ContactAppointment, ContactPayment } from '@/types'
+import type { ContactAppointment, ContactCustomField, ContactPayment } from '@/types'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useAuth } from '@/contexts/AuthContext'
 import styles from './Contacts.module.css'
@@ -122,6 +122,27 @@ const getContactTrackingData = (contact: Contact) => {
   }
 }
 
+const getCustomFieldIdentity = (field: ContactCustomField, index: number) =>
+  field.id || field.key || field.fieldKey || field.label || field.name || `custom-field-${index}`
+
+const mergeCustomFields = (baseFields: ContactCustomField[] = [], nextFields: ContactCustomField[] = []) => {
+  const fieldMap = new Map<string, ContactCustomField>()
+
+  baseFields.forEach((field, index) => {
+    fieldMap.set(getCustomFieldIdentity(field, index), field)
+  })
+
+  nextFields.forEach((field, index) => {
+    const identity = getCustomFieldIdentity(field, index)
+    fieldMap.set(identity, {
+      ...(fieldMap.get(identity) || {}),
+      ...field
+    })
+  })
+
+  return Array.from(fieldMap.values())
+}
+
 const mergeContactDetailRecords = (
   baseContact: Contact | null,
   detailContacts: Contact[],
@@ -184,6 +205,7 @@ const mergeContactDetailRecords = (
     if (!merged.source && contact.source) merged.source = contact.source
     if (!merged.ad_name && contact.ad_name) merged.ad_name = contact.ad_name
     if (!merged.ad_id && contact.ad_id) merged.ad_id = contact.ad_id
+    merged.customFields = mergeCustomFields(merged.customFields, contact.customFields)
 
     merged.purchases = Math.max(merged.purchases ?? 0, contact.purchases ?? 0)
     merged.ltv = Math.max(merged.ltv ?? 0, contact.ltv ?? 0)
@@ -537,9 +559,38 @@ export const Contacts: React.FC = () => {
       status: contactData.status,
       source: contactData.source,
       ad_name: contactData.ad_name,
-      ad_id: contactData.ad_id
+      ad_id: contactData.ad_id,
+      customFields: contactData.customFields || []
     }]
   }, [contactAppointments, contactData, contactPayments])
+
+  const handleUpdateContactCustomFields = async (contactId: string, customFields: ContactCustomField[]) => {
+    try {
+      const updatedContact = await contactsService.updateContact(contactId, { customFields } as Partial<Contact>)
+      const nextCustomFields = Array.isArray(updatedContact.customFields)
+        ? updatedContact.customFields
+        : mergeCustomFields(contactData?.customFields, customFields)
+
+      setSelectedContactDetails(prev => prev?.id === contactId
+        ? { ...prev, customFields: nextCustomFields }
+        : prev
+      )
+      setSelectedContact(prev => prev?.id === contactId
+        ? { ...prev, customFields: nextCustomFields }
+        : prev
+      )
+      setContacts(prev => prev.map(contact => contact.id === contactId
+        ? { ...contact, customFields: nextCustomFields }
+        : contact
+      ))
+
+      showToast('success', 'Campo actualizado', 'El cambio se sincronizó con GoHighLevel.')
+      return nextCustomFields
+    } catch (error) {
+      showToast('error', 'No se pudo actualizar', 'GoHighLevel no aceptó el cambio. Revisa el valor e intenta de nuevo.')
+      throw error
+    }
+  }
 
   const fetchChartData = async () => {
     // Solo mostrar gráfico en modo 'by-date'
@@ -1236,6 +1287,7 @@ export const Contacts: React.FC = () => {
           data={modalData}
           loading={contactDetailsLoading}
           type={null}
+          onUpdateCustomFields={handleUpdateContactCustomFields}
         />
       )}
 

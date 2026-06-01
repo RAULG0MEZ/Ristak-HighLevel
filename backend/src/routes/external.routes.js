@@ -30,6 +30,12 @@ import {
 import { requireApiToken } from '../middleware/apiTokenMiddleware.js'
 import { getExternalApiAppId } from '../utils/apiTokens.js'
 import { getGHLClient } from '../services/ghlClient.js'
+import {
+  hasContactCustomFieldsPayload,
+  normalizeContactCustomFields,
+  parseContactCustomFields,
+  serializeContactCustomFieldsForDb
+} from '../utils/contactCustomFields.js'
 
 const router = express.Router()
 const SECRET_KEY_PATTERN = /(token|secret|password|authorization|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|database[_-]?url|encrypted|hash)/i
@@ -224,12 +230,20 @@ async function upsertLocalContact(contact = {}) {
   const firstName = contact.firstName || contact.first_name || splitName(contact.name || contact.full_name).firstName
   const lastName = contact.lastName || contact.last_name || splitName(contact.name || contact.full_name).lastName
   const fullName = contact.full_name || contact.name || [firstName, lastName].filter(Boolean).join(' ')
+  const customFieldsJson = hasContactCustomFieldsPayload(contact)
+    ? serializeContactCustomFieldsForDb(normalizeContactCustomFields(contact))
+    : contact.custom_fields !== undefined
+      ? serializeContactCustomFieldsForDb(parseContactCustomFields(contact.custom_fields))
+      : null
+  const customFieldsValueSql = process.env.DATABASE_URL
+    ? "COALESCE(?::jsonb, '[]'::jsonb)"
+    : "COALESCE(?, '[]')"
 
   await db.run(
     `INSERT INTO contacts (
        id, phone, email, full_name, first_name, last_name, source,
-       attribution_ad_name, attribution_ad_id, created_at, updated_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP)
+       attribution_ad_name, attribution_ad_id, custom_fields, created_at, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ${customFieldsValueSql}, COALESCE(?, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP)
      ON CONFLICT (id) DO UPDATE SET
        phone = excluded.phone,
        email = excluded.email,
@@ -239,6 +253,7 @@ async function upsertLocalContact(contact = {}) {
        source = excluded.source,
        attribution_ad_name = COALESCE(excluded.attribution_ad_name, contacts.attribution_ad_name),
        attribution_ad_id = COALESCE(excluded.attribution_ad_id, contacts.attribution_ad_id),
+       custom_fields = COALESCE(excluded.custom_fields, contacts.custom_fields),
        updated_at = CURRENT_TIMESTAMP`,
     [
       id,
@@ -250,6 +265,7 @@ async function upsertLocalContact(contact = {}) {
       contact.source || 'external_api',
       contact.attribution_ad_name || null,
       contact.attribution_ad_id || null,
+      customFieldsJson,
       contact.createdAt || contact.dateAdded || contact.created_at || null
     ]
   )
@@ -929,6 +945,7 @@ async function updateExternalContact(req, res) {
       ...existing,
       ...payload,
       ...ghlContact,
+      ...(source.customFields !== undefined ? { customFields: source.customFields } : {}),
       id
     })
 

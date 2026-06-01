@@ -42,6 +42,26 @@ export interface ContactFirstSession {
   geo_country?: string | null
 }
 
+export type ContactCustomFieldValue =
+  | string
+  | number
+  | boolean
+  | null
+  | unknown[]
+  | Record<string, unknown>
+
+export interface ContactCustomField {
+  id?: string | null
+  key?: string | null
+  fieldKey?: string | null
+  label?: string | null
+  name?: string | null
+  dataType?: string | null
+  value?: ContactCustomFieldValue
+  options?: unknown[]
+  model?: string | null
+}
+
 export interface Contact {
   id: string
   createdAt: string
@@ -66,4 +86,5 @@ export interface Contact {
   payments?: ContactPayment[]
   appointments?: ContactAppointment[]
   firstSession?: ContactFirstSession | null
+  customFields?: ContactCustomField[]
 }

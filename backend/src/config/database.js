@@ -292,6 +292,7 @@ async function initTables() {
         meta_purchase_event_sent INTEGER DEFAULT 0,
         meta_purchase_event_sent_at DATETIME,
         meta_purchase_event_id TEXT,
+        custom_fields ${usePostgres ? "JSONB DEFAULT '[]'::jsonb" : "TEXT DEFAULT '[]'"},
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
@@ -727,6 +728,14 @@ async function initTables() {
           if (!err.message.includes('duplicate column') && !err.message.includes('already exists')) {
             throw err
           }
+        }
+      }
+
+      try {
+        await db.run(`ALTER TABLE contacts ADD COLUMN custom_fields ${usePostgres ? "JSONB DEFAULT '[]'::jsonb" : "TEXT DEFAULT '[]'"}`)
+      } catch (err) {
+        if (!err.message.includes('duplicate column') && !err.message.includes('already exists')) {
+          throw err
         }
       }
 

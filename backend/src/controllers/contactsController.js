@@ -7,6 +7,12 @@ import { getGHLClient } from '../services/ghlClient.js'
 import { getHiddenContactFilters, buildHiddenContactsCondition } from '../utils/hiddenContactsFilter.js'
 import { nonTestPaymentCondition } from '../utils/paymentMode.js'
 import { buildContactSearchClause } from '../utils/searchText.js'
+import {
+  buildHighLevelCustomFieldsPayload,
+  mergeContactCustomFields,
+  parseContactCustomFields,
+  serializeContactCustomFieldsForDb
+} from '../utils/contactCustomFields.js'
 import fetch from 'node-fetch'
 
 const normalizePhone = (phone) => {
@@ -164,6 +170,7 @@ export const getContacts = async (req, res) => {
         c.visitor_id,
         c.attribution_ad_name,
         c.attribution_ad_id,
+        c.custom_fields,
         COALESCE(ps.total_paid, c.total_paid, 0) AS total_paid,
         COALESCE(ps.purchases_count, c.purchases_count, 0) AS purchases_count,
         COALESCE(ps.last_purchase_date, c.last_purchase_date) AS last_purchase_date,
@@ -675,6 +682,7 @@ export const getContactById = async (req, res) => {
       source: contact.source,
       ad_name: contact.attribution_ad_name,
       ad_id: contact.attribution_ad_id,
+      customFields: parseContactCustomFields(contact.custom_fields),
       notes: '',
       payments,
       appointments: appointmentsOrdered,
@@ -909,13 +917,25 @@ export const updateContact = async (req, res) => {
     } = req.body
 
     // Verificar que el contacto existe
-    const existing = await db.get('SELECT id FROM contacts WHERE id = ?', [id])
+    const existing = await db.get('SELECT id, custom_fields FROM contacts WHERE id = ?', [id])
     if (!existing) {
       return res.status(404).json({
         success: false,
         error: 'Contacto no encontrado'
       })
     }
+
+    const hasCustomFieldsUpdate = customFields !== undefined
+    if (hasCustomFieldsUpdate && !Array.isArray(customFields)) {
+      return res.status(400).json({
+        success: false,
+        error: 'customFields debe ser un arreglo'
+      })
+    }
+
+    const highLevelCustomFields = hasCustomFieldsUpdate
+      ? buildHighLevelCustomFieldsPayload(customFields)
+      : null
 
     // Construir query de actualización solo con campos permitidos
     const updates = []
@@ -946,7 +966,7 @@ export const updateContact = async (req, res) => {
       params.push(attribution_ad_id)
     }
 
-    if (updates.length === 0 && !tags && !customFields && dnd === undefined) {
+    if (updates.length === 0 && tags === undefined && !hasCustomFieldsUpdate && dnd === undefined) {
       return res.status(400).json({
         success: false,
         error: 'No hay campos para actualizar'
@@ -954,6 +974,7 @@ export const updateContact = async (req, res) => {
     }
 
     // Actualizar en HighLevel (el id del contacto ES el id de HighLevel)
+    let mergedCustomFields = null
     try {
       const ghlClient = await getGHLClient()
       const ghlUpdateData = {}
@@ -962,8 +983,8 @@ export const updateContact = async (req, res) => {
       if (email) ghlUpdateData.email = email
       if (phone) ghlUpdateData.phone = phone
       if (source) ghlUpdateData.source = source
-      if (tags) ghlUpdateData.tags = tags
-      if (customFields) ghlUpdateData.customFields = customFields
+      if (tags !== undefined) ghlUpdateData.tags = tags
+      if (hasCustomFieldsUpdate) ghlUpdateData.customFields = highLevelCustomFields
       if (dnd !== undefined) {
         ghlUpdateData.dnd = dnd
         if (dndSettings) ghlUpdateData.dndSettings = dndSettings
@@ -974,8 +995,25 @@ export const updateContact = async (req, res) => {
         logger.info(`Contacto actualizado en HighLevel: ${id}`)
       }
     } catch (error) {
+      if (hasCustomFieldsUpdate) {
+        logger.warn(`No se pudieron actualizar custom fields en HighLevel para ${id}: ${error.message}`)
+        return res.status(502).json({
+          success: false,
+          error: 'No se pudieron sincronizar los campos personalizados con GoHighLevel'
+        })
+      }
+
       logger.warn(`No se pudo actualizar el contacto en HighLevel: ${error.message}`)
       // Continuar con la actualización local aunque falle en GHL
+    }
+
+    if (hasCustomFieldsUpdate) {
+      mergedCustomFields = mergeContactCustomFields(
+        parseContactCustomFields(existing.custom_fields),
+        customFields
+      )
+      updates.push(`custom_fields = ${process.env.DATABASE_URL ? '?::jsonb' : '?'}`)
+      params.push(serializeContactCustomFieldsForDb(mergedCustomFields))
     }
 
     // Actualizar en la base de datos local
@@ -993,12 +1031,16 @@ export const updateContact = async (req, res) => {
       `SELECT * FROM contacts WHERE id = ?`,
       [id]
     )
+    const updatedData = {
+      ...updated,
+      customFields: parseContactCustomFields(updated.custom_fields)
+    }
 
     logger.info(`Contacto actualizado: ${id}`)
 
     res.json({
       success: true,
-      data: updated
+      data: updatedData
     })
 
   } catch (error) {

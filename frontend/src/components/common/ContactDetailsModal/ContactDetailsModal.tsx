@@ -6,6 +6,7 @@ import { CONTACT_STAGE_BADGE_VARIANTS, getContactStageBadge } from '@/utils/cont
 import { someSearchTextIncludes } from '@/utils/searchText'
 import { useLabels } from '@/contexts/LabelsContext'
 import { useTimezone } from '@/contexts/TimezoneContext'
+import type { ContactCustomField, ContactCustomFieldValue } from '@/types'
 import styles from './ContactDetailsModal.module.css'
 
 interface ContactPaymentDetail {
@@ -73,6 +74,7 @@ interface ContactDetail {
   hasAttendedAppointment?: boolean
   is_sale?: boolean
   firstSession?: ContactFirstSession | null
+  customFields?: ContactCustomField[]
 }
 
 interface ContactDetailsModalProps {
@@ -83,6 +85,64 @@ interface ContactDetailsModalProps {
   data: ContactDetail[]
   loading: boolean
   type?: 'interesados' | 'sales' | 'appointments' | 'attendances' | null
+  onUpdateCustomFields?: (contactId: string, customFields: ContactCustomField[]) => Promise<ContactCustomField[]>
+}
+
+const getCustomFieldIdentity = (field: ContactCustomField, index: number) =>
+  field.id || field.key || field.fieldKey || field.label || field.name || `custom-field-${index}`
+
+const getCustomFieldLabel = (field: ContactCustomField, index: number) =>
+  field.label || field.name || field.key || field.fieldKey || field.id || `Campo personalizado ${index + 1}`
+
+const isObjectValue = (value: ContactCustomFieldValue | undefined): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+
+const isComplexCustomField = (field: ContactCustomField) =>
+  Array.isArray(field.value) || isObjectValue(field.value)
+
+const formatCustomFieldValue = (value: ContactCustomFieldValue | undefined) => {
+  if (value === null || value === undefined || value === '') return 'Sin valor'
+  if (Array.isArray(value)) return value.length ? value.join(', ') : 'Sin valor'
+  if (isObjectValue(value)) return JSON.stringify(value, null, 2)
+  if (typeof value === 'boolean') return value ? 'Si' : 'No'
+  return String(value)
+}
+
+const formatCustomFieldDraft = (value: ContactCustomFieldValue | undefined) => {
+  if (value === null || value === undefined) return ''
+  if (Array.isArray(value) || isObjectValue(value)) return JSON.stringify(value, null, 2)
+  return String(value)
+}
+
+const parseCustomFieldDraft = (draft: string, field: ContactCustomField): ContactCustomFieldValue => {
+  const trimmed = draft.trim()
+  const dataType = String(field.dataType || '').toLowerCase()
+
+  if (Array.isArray(field.value) || dataType.includes('multi') || dataType.includes('checkbox')) {
+    if (!trimmed) return []
+    if (trimmed.startsWith('[')) return JSON.parse(trimmed)
+    return trimmed.split(',').map(item => item.trim()).filter(Boolean)
+  }
+
+  if (isObjectValue(field.value) || dataType.includes('file')) {
+    if (!trimmed) return {}
+    return JSON.parse(trimmed)
+  }
+
+  if (typeof field.value === 'boolean' || dataType.includes('bool')) {
+    return ['true', '1', 'si', 'sí', 'yes'].includes(trimmed.toLowerCase())
+  }
+
+  if (typeof field.value === 'number' || dataType.includes('number') || dataType.includes('numeric') || dataType.includes('monet')) {
+    if (!trimmed) return null
+    const numericValue = Number(trimmed)
+    if (Number.isNaN(numericValue)) {
+      throw new Error('Ese campo espera un numero valido.')
+    }
+    return numericValue
+  }
+
+  return draft
 }
 
 export function ContactDetailsModal({
@@ -92,13 +152,18 @@ export function ContactDetailsModal({
   subtitle,
   data,
   loading,
-  type
+  type,
+  onUpdateCustomFields
 }: ContactDetailsModalProps) {
   const [selectedContact, setSelectedContact] = useState<ContactDetail | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [paymentsExpanded, setPaymentsExpanded] = useState(false)
   const [refundsExpanded, setRefundsExpanded] = useState(false)
   const [appointmentsExpanded, setAppointmentsExpanded] = useState(false)
+  const [editingCustomField, setEditingCustomField] = useState<string | null>(null)
+  const [customFieldDrafts, setCustomFieldDrafts] = useState<Record<string, string>>({})
+  const [savingCustomField, setSavingCustomField] = useState<string | null>(null)
+  const [customFieldError, setCustomFieldError] = useState<string | null>(null)
   const { labels } = useLabels()
   const { formatLocalDateShort, formatLocalDateTime } = useTimezone()
 
@@ -112,6 +177,10 @@ export function ContactDetailsModal({
       setPaymentsExpanded(false)
       setRefundsExpanded(false)
       setAppointmentsExpanded(false)
+      setEditingCustomField(null)
+      setCustomFieldDrafts({})
+      setSavingCustomField(null)
+      setCustomFieldError(null)
     }
   }, [isOpen, data])
 
@@ -119,6 +188,10 @@ export function ContactDetailsModal({
     setPaymentsExpanded(false)
     setRefundsExpanded(false)
     setAppointmentsExpanded(false)
+    setEditingCustomField(null)
+    setCustomFieldDrafts({})
+    setSavingCustomField(null)
+    setCustomFieldError(null)
   }, [selectedContact?.id])
 
   // Filtrar contactos según búsqueda
@@ -190,6 +263,40 @@ export function ContactDetailsModal({
 
   const resolveContactBadge = (contact?: ContactDetail | null) =>
     getContactStageBadge(contact, labels)
+
+  const beginEditCustomField = (field: ContactCustomField, index: number) => {
+    const identity = getCustomFieldIdentity(field, index)
+    setEditingCustomField(identity)
+    setCustomFieldError(null)
+    setCustomFieldDrafts(prev => ({
+      ...prev,
+      [identity]: formatCustomFieldDraft(field.value)
+    }))
+  }
+
+  const saveCustomField = async (field: ContactCustomField, index: number) => {
+    if (!selectedContact || !onUpdateCustomFields) return
+
+    const identity = getCustomFieldIdentity(field, index)
+    const draft = customFieldDrafts[identity] ?? ''
+
+    try {
+      const value = parseCustomFieldDraft(draft, field)
+      const updatedField: ContactCustomField = { ...field, value }
+
+      setSavingCustomField(identity)
+      setCustomFieldError(null)
+
+      const customFields = await onUpdateCustomFields(selectedContact.id, [updatedField])
+      setSelectedContact(prev => prev?.id === selectedContact.id ? { ...prev, customFields } : prev)
+      setEditingCustomField(null)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'No se pudo guardar el campo personalizado.'
+      setCustomFieldError(message)
+    } finally {
+      setSavingCustomField(null)
+    }
+  }
 
   // Separar pagos exitosos de reembolsos/cancelados
   // CRÍTICO: Solo pagos con status exitoso, NO incluir refunded/cancelled
@@ -401,6 +508,109 @@ export function ContactDetailsModal({
                       <span>{formatLocalDateShort(selectedContact.created_at)}</span>
                     </div>
                   </div>
+                </div>
+
+                <div className={styles.detailSection}>
+                  <h5 className={styles.detailSectionTitle}>
+                    Campos personalizados
+                  </h5>
+                  <div className={styles.customFieldsList}>
+                    {(selectedContact.customFields || []).length === 0 ? (
+                      <p className={styles.emptyText}>Sin campos personalizados</p>
+                    ) : (
+                      selectedContact.customFields?.map((field, index) => {
+                        const identity = getCustomFieldIdentity(field, index)
+                        const isEditing = editingCustomField === identity
+                        const isSaving = savingCustomField === identity
+                        const isComplex = isComplexCustomField(field)
+
+                        return (
+                          <div key={identity} className={styles.customFieldItem}>
+                            <div className={styles.customFieldHeader}>
+                              <div className={styles.customFieldTitleGroup}>
+                                <span className={styles.customFieldLabel}>
+                                  {getCustomFieldLabel(field, index)}
+                                </span>
+                                {(field.key || field.fieldKey || field.id) && (
+                                  <span className={styles.customFieldKey}>
+                                    {field.key || field.fieldKey || field.id}
+                                  </span>
+                                )}
+                              </div>
+                              {onUpdateCustomFields && (
+                                <div className={styles.customFieldActions}>
+                                  {isEditing ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        className={styles.iconActionButton}
+                                        onClick={() => {
+                                          setEditingCustomField(null)
+                                          setCustomFieldError(null)
+                                        }}
+                                        disabled={isSaving}
+                                        aria-label="Cancelar"
+                                      >
+                                        <Icon name="x" size={14} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className={styles.iconActionButton}
+                                        onClick={() => saveCustomField(field, index)}
+                                        disabled={isSaving}
+                                        aria-label="Guardar"
+                                      >
+                                        <Icon name={isSaving ? 'refresh' : 'check'} size={14} className={isSaving ? styles.spinIcon : undefined} />
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className={styles.iconActionButton}
+                                      onClick={() => beginEditCustomField(field, index)}
+                                      aria-label="Editar"
+                                    >
+                                      <Icon name="edit" size={14} />
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+
+                            {isEditing ? (
+                              isComplex ? (
+                                <textarea
+                                  className={styles.customFieldTextarea}
+                                  value={customFieldDrafts[identity] ?? ''}
+                                  onChange={(event) => setCustomFieldDrafts(prev => ({
+                                    ...prev,
+                                    [identity]: event.target.value
+                                  }))}
+                                  rows={4}
+                                />
+                              ) : (
+                                <input
+                                  className={styles.customFieldInput}
+                                  value={customFieldDrafts[identity] ?? ''}
+                                  onChange={(event) => setCustomFieldDrafts(prev => ({
+                                    ...prev,
+                                    [identity]: event.target.value
+                                  }))}
+                                />
+                              )
+                            ) : (
+                              <p className={styles.customFieldValue}>
+                                {formatCustomFieldValue(field.value)}
+                              </p>
+                            )}
+                          </div>
+                        )
+                      })
+                    )}
+                  </div>
+                  {customFieldError && (
+                    <p className={styles.customFieldError}>{customFieldError}</p>
+                  )}
                 </div>
 
                 {/* Primera Atribución (Primer Toque) */}

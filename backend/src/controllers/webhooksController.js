@@ -12,6 +12,12 @@ import {
   triggerWhatsappAppointmentBookedEvent,
   triggerWhatsappFirstPurchaseEvent
 } from '../services/metaWhatsappEventsService.js';
+import { fetchHighLevelContactCustomFieldDefinitions } from '../services/highlevelCustomFieldsService.js';
+import {
+  hasContactCustomFieldsPayload,
+  normalizeContactCustomFields,
+  serializeContactCustomFieldsForDb
+} from '../utils/contactCustomFields.js';
 
 function firstValue(...values) {
   return values.find(value => value !== undefined && value !== null && value !== '');
@@ -344,20 +350,55 @@ export const handleContactWebhook = async (req, res) => {
       }
     }
 
+    const hasCustomFields = hasContactCustomFieldsPayload(data);
+    let customFieldsJson = null;
+    if (hasCustomFields) {
+      const config = await db.get('SELECT location_id, api_token FROM highlevel_config LIMIT 1');
+      const customFieldDefinitions = await fetchHighLevelContactCustomFieldDefinitions({
+        apiToken: config?.api_token,
+        locationId: config?.location_id || data.locationId || data.location_id
+      });
+      customFieldsJson = serializeContactCustomFieldsForDb(
+        normalizeContactCustomFields(data, customFieldDefinitions)
+      );
+    }
+
     const usePostgres = process.env.DATABASE_URL ? true : false;
 
     const query = usePostgres
       ? `INSERT INTO contacts (id, phone, email, full_name, first_name, last_name, source, created_at,
-          attribution_url, attribution_session_source, attribution_medium, attribution_ad_id, attribution_ad_name, visitor_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          attribution_url, attribution_session_source, attribution_medium, attribution_ad_id, attribution_ad_name, visitor_id, custom_fields)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, COALESCE($15::jsonb, '[]'::jsonb))
          ON CONFLICT (id) DO UPDATE SET
           phone = EXCLUDED.phone, email = EXCLUDED.email, full_name = EXCLUDED.full_name,
           first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name,
+          source = EXCLUDED.source,
+          attribution_url = EXCLUDED.attribution_url,
+          attribution_session_source = EXCLUDED.attribution_session_source,
+          attribution_medium = EXCLUDED.attribution_medium,
+          attribution_ad_id = EXCLUDED.attribution_ad_id,
+          attribution_ad_name = EXCLUDED.attribution_ad_name,
           visitor_id = COALESCE(EXCLUDED.visitor_id, contacts.visitor_id),
+          custom_fields = COALESCE(EXCLUDED.custom_fields, contacts.custom_fields),
           updated_at = CURRENT_TIMESTAMP`
-      : `INSERT OR REPLACE INTO contacts (id, phone, email, full_name, first_name, last_name, source, created_at,
-          attribution_url, attribution_session_source, attribution_medium, attribution_ad_id, attribution_ad_name, visitor_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+      : `INSERT INTO contacts (id, phone, email, full_name, first_name, last_name, source, created_at,
+          attribution_url, attribution_session_source, attribution_medium, attribution_ad_id, attribution_ad_name, visitor_id, custom_fields)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, '[]'))
+         ON CONFLICT (id) DO UPDATE SET
+          phone = excluded.phone,
+          email = excluded.email,
+          full_name = excluded.full_name,
+          first_name = excluded.first_name,
+          last_name = excluded.last_name,
+          source = excluded.source,
+          attribution_url = excluded.attribution_url,
+          attribution_session_source = excluded.attribution_session_source,
+          attribution_medium = excluded.attribution_medium,
+          attribution_ad_id = excluded.attribution_ad_id,
+          attribution_ad_name = excluded.attribution_ad_name,
+          visitor_id = COALESCE(excluded.visitor_id, contacts.visitor_id),
+          custom_fields = COALESCE(excluded.custom_fields, contacts.custom_fields),
+          updated_at = CURRENT_TIMESTAMP`;
 
     await db.run(query, [
       contactId,
@@ -373,7 +414,8 @@ export const handleContactWebhook = async (req, res) => {
       attribution.medium || attributionSource.medium,
       attribution.utmAdId || attributionSource.adId || attributionSource.mediumId,  // Si no hay adId, usar mediumId
       attribution.adName || attributionSource.adName,
-      visitorId
+      visitorId,
+      customFieldsJson
     ]);
 
     // Si viene visitor_id, vincular histórico de sesiones

@@ -8,6 +8,12 @@ import { db, setAppConfig } from '../config/database.js'
 import { logger } from '../utils/logger.js'
 import { syncMetaAds } from './metaAdsService.js'
 import { updateContactsStats } from '../utils/updateContactsStats.js'
+import { fetchHighLevelContactCustomFieldDefinitions } from './highlevelCustomFieldsService.js'
+import {
+  hasContactCustomFieldsPayload,
+  normalizeContactCustomFields,
+  serializeContactCustomFieldsForDb
+} from '../utils/contactCustomFields.js'
 
 const HIGHLEVEL_BASE_URL = 'https://services.leadconnectorhq.com'
 const HIGHLEVEL_API_VERSION = '2021-07-28'
@@ -375,7 +381,7 @@ async function fetchCalendarEventsByCalendar({
   return { events, total }
 }
 
-async function ensureContactExists(contactId, apiToken, usePostgres) {
+async function ensureContactExists(contactId, apiToken, usePostgres, locationId) {
   if (!contactId) {
     return false
   }
@@ -403,6 +409,16 @@ async function ensureContactExists(contactId, apiToken, usePostgres) {
 
     const contactData = await contactRes.json()
     const contact = contactData.contact || contactData
+    const hasCustomFields = hasContactCustomFieldsPayload(contact)
+    const customFieldDefinitions = hasCustomFields
+      ? await fetchHighLevelContactCustomFieldDefinitions({
+          apiToken,
+          locationId: locationId || contact.locationId || contact.location_id || ''
+        })
+      : []
+    const customFieldsJson = hasCustomFields
+      ? serializeContactCustomFieldsForDb(normalizeContactCustomFields(contact, customFieldDefinitions))
+      : null
 
     // HighLevel puede enviar atribución en dos lugares: attributions[] o attributionSource
     // IMPORTANTE: SIEMPRE usar FIRST attribution, NUNCA lastAttributionSource
@@ -429,8 +445,8 @@ async function ensureContactExists(contactId, apiToken, usePostgres) {
     const query = usePostgres
       ? `INSERT INTO contacts (id, phone, email, full_name, first_name, last_name, source,
           attribution_url, attribution_session_source, attribution_medium, attribution_ad_id, attribution_ad_name,
-          visitor_id, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+          visitor_id, custom_fields, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14::jsonb, '[]'::jsonb), $15, $16)
          ON CONFLICT (id) DO UPDATE SET
           phone = EXCLUDED.phone,
           email = EXCLUDED.email,
@@ -444,11 +460,27 @@ async function ensureContactExists(contactId, apiToken, usePostgres) {
           attribution_ad_id = EXCLUDED.attribution_ad_id,
           attribution_ad_name = EXCLUDED.attribution_ad_name,
           visitor_id = COALESCE(EXCLUDED.visitor_id, contacts.visitor_id),
+          custom_fields = COALESCE(EXCLUDED.custom_fields, contacts.custom_fields),
           updated_at = EXCLUDED.updated_at`
-      : `INSERT OR REPLACE INTO contacts (id, phone, email, full_name, first_name, last_name, source,
+      : `INSERT INTO contacts (id, phone, email, full_name, first_name, last_name, source,
           attribution_url, attribution_session_source, attribution_medium, attribution_ad_id, attribution_ad_name,
-          visitor_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          visitor_id, custom_fields, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, '[]'), ?, ?)
+         ON CONFLICT (id) DO UPDATE SET
+          phone = excluded.phone,
+          email = excluded.email,
+          full_name = excluded.full_name,
+          first_name = excluded.first_name,
+          last_name = excluded.last_name,
+          source = excluded.source,
+          attribution_url = excluded.attribution_url,
+          attribution_session_source = excluded.attribution_session_source,
+          attribution_medium = excluded.attribution_medium,
+          attribution_ad_id = excluded.attribution_ad_id,
+          attribution_ad_name = excluded.attribution_ad_name,
+          visitor_id = COALESCE(excluded.visitor_id, contacts.visitor_id),
+          custom_fields = COALESCE(excluded.custom_fields, contacts.custom_fields),
+          updated_at = excluded.updated_at`
 
     await db.run(query, [
       contact.id,
@@ -464,6 +496,7 @@ async function ensureContactExists(contactId, apiToken, usePostgres) {
       attribution.utmAdId || attributionSource.adId || attributionSource.mediumId,  // Si no hay adId, usar mediumId
       attribution.adName || attributionSource.adName,
       visitorId,
+      customFieldsJson,
       contact.dateAdded || new Date().toISOString(),
       contact.dateUpdated || contact.dateAdded || new Date().toISOString()
     ])
@@ -552,6 +585,7 @@ async function syncHighLevelContacts(locationId, apiToken) {
 
   let saved = 0
   const usePostgres = process.env.DATABASE_URL ? true : false
+  const customFieldDefinitions = await fetchHighLevelContactCustomFieldDefinitions({ apiToken, locationId })
 
   for (const contact of allContacts) {
     try {
@@ -559,6 +593,10 @@ async function syncHighLevelContacts(locationId, apiToken) {
       // IMPORTANTE: SIEMPRE usar FIRST attribution, NUNCA lastAttributionSource
       const attribution = contact.attributions?.find(a => a.isFirst) || {}
       const attributionSource = contact.attributionSource || {}  // Solo FIRST attribution
+      const hasCustomFields = hasContactCustomFieldsPayload(contact)
+      const customFieldsJson = hasCustomFields
+        ? serializeContactCustomFieldsForDb(normalizeContactCustomFields(contact, customFieldDefinitions))
+        : null
 
       // Buscar visitor_id en sessions por email (si existe)
       let visitorId = null
@@ -580,8 +618,8 @@ async function syncHighLevelContacts(locationId, apiToken) {
       const query = usePostgres
         ? `INSERT INTO contacts (id, phone, email, full_name, first_name, last_name, source,
             attribution_url, attribution_session_source, attribution_medium, attribution_ad_id, attribution_ad_name,
-            visitor_id, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            visitor_id, custom_fields, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14::jsonb, '[]'::jsonb), $15, $16)
            ON CONFLICT (id) DO UPDATE SET
             phone = EXCLUDED.phone,
             email = EXCLUDED.email,
@@ -595,11 +633,27 @@ async function syncHighLevelContacts(locationId, apiToken) {
             attribution_ad_id = EXCLUDED.attribution_ad_id,
             attribution_ad_name = EXCLUDED.attribution_ad_name,
             visitor_id = COALESCE(EXCLUDED.visitor_id, contacts.visitor_id),
+            custom_fields = COALESCE(EXCLUDED.custom_fields, contacts.custom_fields),
             updated_at = EXCLUDED.updated_at`
-        : `INSERT OR REPLACE INTO contacts (id, phone, email, full_name, first_name, last_name, source,
+        : `INSERT INTO contacts (id, phone, email, full_name, first_name, last_name, source,
             attribution_url, attribution_session_source, attribution_medium, attribution_ad_id, attribution_ad_name,
-            visitor_id, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            visitor_id, custom_fields, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, '[]'), ?, ?)
+           ON CONFLICT (id) DO UPDATE SET
+            phone = excluded.phone,
+            email = excluded.email,
+            full_name = excluded.full_name,
+            first_name = excluded.first_name,
+            last_name = excluded.last_name,
+            source = excluded.source,
+            attribution_url = excluded.attribution_url,
+            attribution_session_source = excluded.attribution_session_source,
+            attribution_medium = excluded.attribution_medium,
+            attribution_ad_id = excluded.attribution_ad_id,
+            attribution_ad_name = excluded.attribution_ad_name,
+            visitor_id = COALESCE(excluded.visitor_id, contacts.visitor_id),
+            custom_fields = COALESCE(excluded.custom_fields, contacts.custom_fields),
+            updated_at = excluded.updated_at`
 
       await db.run(query, [
         contact.id,
@@ -615,6 +669,7 @@ async function syncHighLevelContacts(locationId, apiToken) {
         attribution.utmAdId || attributionSource.adId || attributionSource.mediumId,  // Si no hay adId, usar mediumId
         attribution.adName || attributionSource.adName,
         visitorId,
+        customFieldsJson,
         contact.dateAdded || new Date().toISOString(),
         contact.dateUpdated || contact.dateAdded || new Date().toISOString()
       ])
@@ -705,7 +760,7 @@ async function syncHighLevelAppointments(locationId, apiToken) {
   for (const { normalized } of uniqueEvents) {
     try {
       // Verificar si el contacto existe
-      const createdContact = await ensureContactExists(normalized.contactId, apiToken, usePostgres)
+      const createdContact = await ensureContactExists(normalized.contactId, apiToken, usePostgres, locationId)
       if (createdContact) {
         contactsCreated++
       }
