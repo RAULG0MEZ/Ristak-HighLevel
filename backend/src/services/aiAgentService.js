@@ -1534,9 +1534,13 @@ function userExplicitlyNamedPaymentMethod(messages) {
 function userRequestedScheduledPayment(messages) {
   const latest = normalizeText(getLatestUserText(messages))
   const paymentThread = normalizeText(getPaymentConversationText(messages))
-  const scheduledPattern = /(programa|programale|prográmale|agenda|agendale|agéndale|calendariza|scheduled|schedule|para el|el \d{1,2} de|dentro de|a partir de|hasta)/
+  const scheduledPattern = /(programa|programale|prográmale|agenda|agendale|agéndale|calendariza|scheduled|schedule|para el|el \d{1,2} de|en (?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre|ene|feb|mar|abr|jun|jul|ago|sep|sept|set|oct|octu|nov|dic)|dentro de|a partir de|hasta)/
+  const scheduledDate = parseNaturalPaymentDateFromText(paymentThread)
+  const scheduledDateIsFuture = scheduledDate
+    ? DateTime.fromISO(scheduledDate).startOf('day') > DateTime.now().startOf('day')
+    : false
 
-  return scheduledPattern.test(latest) || scheduledPattern.test(paymentThread)
+  return scheduledPattern.test(latest) || scheduledPattern.test(paymentThread) || scheduledDateIsFuture
 }
 
 function isOperationalPaymentRequest(messages = []) {
@@ -1558,18 +1562,32 @@ function paymentConversationRequiresInstallmentFlow(messages = []) {
 
 const PAYMENT_MONTHS = {
   enero: 1,
+  ene: 1,
   febrero: 2,
+  feb: 2,
   marzo: 3,
+  mar: 3,
   abril: 4,
+  abr: 4,
   mayo: 5,
   junio: 6,
+  jun: 6,
   julio: 7,
+  jul: 7,
   agosto: 8,
+  ago: 8,
   septiembre: 9,
+  sept: 9,
+  sep: 9,
   setiembre: 9,
+  set: 9,
   octubre: 10,
+  oct: 10,
+  octu: 10,
   noviembre: 11,
-  diciembre: 12
+  nov: 11,
+  diciembre: 12,
+  dic: 12
 }
 
 function isPaymentTaskText(value) {
@@ -1654,6 +1672,22 @@ function parseNaturalPaymentDateFromText(text, timezone = DEFAULT_PAYMENT_TIMEZO
 
   for (let index = naturalMatches.length - 1; index >= 0; index -= 1) {
     const [, dayText, monthName, yearText] = naturalMatches[index]
+    const year = yearText ? Number(yearText) : today.year
+    let date = DateTime.fromObject({
+      year,
+      month: PAYMENT_MONTHS[monthName],
+      day: Number(dayText)
+    }, { zone }).startOf('day')
+
+    if (!yearText && date.isValid && date < today) date = date.plus({ years: 1 })
+    if (date.isValid) return date.toISODate()
+  }
+
+  const monthFirstDatePattern = new RegExp(`\\b(${monthNames})\\s+(\\d{1,2})(?:\\s+(?:de|del)?\\s*(20\\d{2}))?\\b`, 'g')
+  const monthFirstMatches = [...normalized.matchAll(monthFirstDatePattern)]
+
+  for (let index = monthFirstMatches.length - 1; index >= 0; index -= 1) {
+    const [, monthName, dayText, yearText] = monthFirstMatches[index]
     const year = yearText ? Number(yearText) : today.year
     let date = DateTime.fromObject({
       year,
@@ -2291,6 +2325,18 @@ function buildPaymentContactMemoryText(contact = {}) {
   ].join('')
 }
 
+function buildPaymentContextMemoryText(context = {}) {
+  const amount = normalizePaymentAmount(context.amount || context.totalAmount || context.total)
+  const currency = cleanText(String(context.currency || DEFAULT_PAYMENT_CURRENCY), 12).toUpperCase()
+  const dueDate = normalizeDateOnlyInput(context.dueDate || context.paymentDate || context.chargeDate || '')
+  const lines = []
+
+  if (amount > 0) lines.push(`Monto confirmado: ${amount} ${currency || DEFAULT_PAYMENT_CURRENCY}.`)
+  if (dueDate) lines.push(`Fecha de cobro confirmada: ${dueDate}.`)
+
+  return lines.join(' ')
+}
+
 function attachPaymentContactMemoryToOptions(options = [], summary = {}) {
   const contact = getPaymentSummaryContact(summary)
   const memoryText = buildPaymentContactMemoryText(contact)
@@ -2455,23 +2501,32 @@ function buildFirstPaymentMethodClarificationOptions(storedCardStatus = {}) {
   return options
 }
 
-function buildSingleCardPaymentChoiceOptions(storedCardStatus = {}, contact = {}) {
+function buildSingleCardPaymentChoiceOptions(storedCardStatus = {}, contact = {}, paymentContext = {}) {
   const cardLabel = [
     storedCardStatus.brand || 'tarjeta',
     storedCardStatus.last4 ? `terminación ${storedCardStatus.last4}` : ''
   ].filter(Boolean).join(' ')
   const contactMemoryText = buildPaymentContactMemoryText(contact)
+  const paymentMemoryText = buildPaymentContextMemoryText(paymentContext)
+  const dueDate = normalizeDateOnlyInput(paymentContext.dueDate || '')
+  const isScheduled = Boolean(dueDate)
+  const storedCardDescription = isScheduled
+    ? `Programa el cobro con la ${cardLabel} en la fecha indicada.`
+    : `Programa el cargo inmediato con la ${cardLabel}.`
+  const storedCardValue = isScheduled
+    ? 'Programa este pago con la tarjeta guardada en la fecha confirmada.'
+    : 'Cobra este pago con la tarjeta guardada.'
 
   return [
     {
       label: 'Cobrar tarjeta guardada',
-      description: `Programa el cargo inmediato con la ${cardLabel}.`,
-      value: `Cobra este pago con la tarjeta guardada.${contactMemoryText ? ` ${contactMemoryText}` : ''}`
+      description: storedCardDescription,
+      value: `${storedCardValue}${contactMemoryText ? ` ${contactMemoryText}` : ''}${paymentMemoryText ? ` ${paymentMemoryText}` : ''}`
     },
     {
       label: 'Enviar link',
       description: 'Manda enlace para que el cliente pague con otra tarjeta.',
-      value: `No cobres la tarjeta guardada. Manda link de pago al cliente.${contactMemoryText ? ` ${contactMemoryText}` : ''}`
+      value: `No cobres la tarjeta guardada. Manda link de pago al cliente.${contactMemoryText ? ` ${contactMemoryText}` : ''}${paymentMemoryText ? ` ${paymentMemoryText}` : ''}`
     },
     {
       label: 'Cancelar',
@@ -2556,23 +2611,24 @@ function shouldAskSingleCardChoice({ storedCardStatus, cardPreference, requested
   return userRequestedDirectCardPayment(messages)
 }
 
-function buildStoredCardChoiceOptions(storedCardStatus = {}, contact = {}) {
+function buildStoredCardChoiceOptions(storedCardStatus = {}, contact = {}, paymentContext = {}) {
   const cardLabel = [
     storedCardStatus.brand || 'tarjeta',
     storedCardStatus.last4 ? `terminación ${storedCardStatus.last4}` : ''
   ].filter(Boolean).join(' ')
   const contactMemoryText = buildPaymentContactMemoryText(contact)
+  const paymentMemoryText = buildPaymentContextMemoryText(paymentContext)
 
   return [
     {
       label: 'Usar tarjeta guardada',
       description: `Programa el cobro con la ${cardLabel}.`,
-      value: `Usa la tarjeta guardada para este pago programado.${contactMemoryText ? ` ${contactMemoryText}` : ''}`
+      value: `Usa la tarjeta guardada para este pago programado.${contactMemoryText ? ` ${contactMemoryText}` : ''}${paymentMemoryText ? ` ${paymentMemoryText}` : ''}`
     },
     {
       label: 'Usar otra tarjeta',
       description: 'Manda enlace de pago/autorización para cobrar o domiciliar con otra tarjeta.',
-      value: `No uses la tarjeta guardada. Manda enlace de pago/autorización para que pague o domicilie con otra tarjeta ahora o antes de la fecha límite, y programa el cobro cuando esa tarjeta quede confirmada.${contactMemoryText ? ` ${contactMemoryText}` : ''}`
+      value: `No uses la tarjeta guardada. Manda enlace de pago/autorización para que pague o domicilie con otra tarjeta ahora o antes de la fecha límite, y programa el cobro cuando esa tarjeta quede confirmada.${contactMemoryText ? ` ${contactMemoryText}` : ''}${paymentMemoryText ? ` ${paymentMemoryText}` : ''}`
     },
     {
       label: 'Cancelar',
@@ -5886,7 +5942,11 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
         brand: storedCardStatus.brand,
         last4: storedCardStatus.last4
       },
-      clarificationOptions: buildStoredCardChoiceOptions(storedCardStatus, contact)
+      clarificationOptions: buildStoredCardChoiceOptions(storedCardStatus, contact, {
+        amount: firstPayment.amount,
+        currency,
+        dueDate: firstPayment.date
+      })
     }
   }
 
@@ -5896,6 +5956,8 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
     firstPayment,
     cardPreference: storedCardPreference
   })) {
+    const firstScheduledPayment = remaining.payments[0] || {}
+
     return {
       ok: false,
       error: 'Este contacto ya tiene una tarjeta guardada/autorizada. Antes de programar el cobro necesito saber si uso esa misma tarjeta o si mando un link para autorizar otra.',
@@ -5912,7 +5974,11 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
         brand: storedCardStatus.brand,
         last4: storedCardStatus.last4
       },
-      clarificationOptions: buildStoredCardChoiceOptions(storedCardStatus, contact)
+      clarificationOptions: buildStoredCardChoiceOptions(storedCardStatus, contact, {
+        amount: firstPayment.enabled ? firstPayment.amount : firstScheduledPayment.amount || totalAmount,
+        currency,
+        dueDate: firstPayment.date || firstScheduledPayment.dueDate
+      })
     }
   }
 
@@ -6184,7 +6250,8 @@ async function executeCreateSinglePaymentLink(args = {}, highLevelConnection, co
   const paymentTimezone = highLevelConnection.locationData?.timezone || DEFAULT_PAYMENT_TIMEZONE
   const contact = resolvedContact.contact
   const concept = buildProductConcept(args, `Pago - ${contact.name}`)
-  const dueDate = normalizeDateOnlyInput(args.dueDate || args.paymentDate || args.chargeDate) ||
+  const dueDate = getTopLevelScheduledPaymentDate(args, context.messages, paymentTimezone) ||
+    normalizeDateOnlyInput(args.dueDate || args.paymentDate || args.chargeDate) ||
     resolveOffsetDate(args, DateTime.now().setZone(paymentTimezone).toISODate(), paymentTimezone) ||
     DateTime.now().setZone(paymentTimezone).toISODate()
   const dueDateIsFuture = DateTime.fromISO(dueDate, { zone: paymentTimezone }).startOf('day') >
@@ -6271,7 +6338,11 @@ async function executeCreateSinglePaymentLink(args = {}, highLevelConnection, co
     }
   }
 
-  if (dueDateIsFuture && userRequestedScheduledPayment(context.messages)) {
+  if (
+    dueDateIsFuture &&
+    userRequestedScheduledPayment(context.messages) &&
+    !(storedCardPreference === 'stored_card' && storedCardStatus.hasAuthorizedCard)
+  ) {
     return {
       ok: false,
       error: 'Un pago con fecha futura debe programarse con create_installment_payment_flow para respetar tarjeta guardada, domiciliación y autopago. No uses link único para esta intención.',
@@ -6319,7 +6390,11 @@ async function executeCreateSinglePaymentLink(args = {}, highLevelConnection, co
         brand: storedCardStatus.brand,
         last4: storedCardStatus.last4
       },
-      clarificationOptions: buildSingleCardPaymentChoiceOptions(storedCardStatus, contact)
+      clarificationOptions: buildSingleCardPaymentChoiceOptions(storedCardStatus, contact, {
+        amount,
+        currency,
+        dueDate
+      })
     }
   }
 
@@ -8131,6 +8206,7 @@ const PAYMENT_WORKFLOW_PROMPT = [
   '- Si el usuario ya eligió producto y luego corrige "no, cóbraselo por 20 pesos" o "mejor otro precio", conserva contacto, fecha y producto; sólo cambia el monto/precio a personalizado y sigue el flujo de tarjeta/envío que toque.',
   '- Sólo haz el cambio/cobro cuando el último mensaje sea un sí limpio sobre el resumen vigente, por ejemplo "sí, así está bien", "sí, dale", "confirmo" o el botón de confirmación, sin cambios extra. Si el usuario ya confirmó desde botón, continúa sin pedir otra frase.',
   '- Cobro único con tarjeta: si no hay tarjeta guardada/autorizada, el link de pago es obligatorio y debes pedir canal de envío si falta. Si sí hay tarjeta guardada, pregunta una sola vez si se cobra la tarjeta guardada o se manda link.',
+  '- Cobro único con fecha futura y tarjeta guardada: NO registres/cobres hoy. Debe quedar programado como schedule/autopago usando la misma lógica de parcialidades, con firstPayment desactivado y un remainingPayment en la fecha exacta.',
   '- Cobro único offline/manual por transferencia, depósito, efectivo, cheque u otro: registra el pago offline con record_contact_payment. No mandes link.',
   '- Parcialidades con primer pago offline y resto automático/domiciliado: registra el primer pago offline y, si falta tarjeta guardada, manda link de domiciliación/autorización; nunca dejes el plan automático sólo registrado offline sin tarjeta.',
   '- Parcialidades con tarjeta guardada: si el primer pago es hoy/ahorita, regístralo como pagado con método card y programa sólo los restantes con la tarjeta guardada; si el primer pago es futuro, prográmalo con la tarjeta guardada. No mandes link salvo que el usuario pida usar otra tarjeta.',
