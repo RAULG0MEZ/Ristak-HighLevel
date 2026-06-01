@@ -6727,6 +6727,184 @@ async function executeLookupHighLevelContact(args = {}, highLevelConnection = {}
   }
 }
 
+function escapeMarkdownTableCell(value) {
+  return String(value ?? '')
+    .replace(/\r?\n/g, ' ')
+    .replace(/\|/g, '\\|')
+    .trim()
+}
+
+function buildReadOnlyContactLookupReply(resolvedContact = {}, lookupHint = '') {
+  const contacts = dedupeContacts(resolvedContact.contacts || [])
+  const fallbackLine = 'Si no es ninguno, pásame su email, celular o ID de HighLevel y lo busco más fino.'
+
+  if (contacts.length > 1) {
+    return [
+      `Encontré estos contactos parecidos a "${cleanText(lookupHint, 80)}". Elige cuál quieres revisar y te listo sus campos personalizados.`,
+      '',
+      fallbackLine
+    ].join('\n')
+  }
+
+  if (contacts.length === 1) {
+    const contact = contacts[0]
+    const identity = [
+      contact.email ? `correo ${contact.email}` : '',
+      contact.phone ? `teléfono ${contact.phone}` : ''
+    ].filter(Boolean).join(' y ')
+
+    return [
+      `Encontré a ${contact.name || 'este contacto'}${identity ? ` con ${identity}` : ''}. Confírmame si es la persona correcta y te listo sus campos personalizados.`,
+      '',
+      fallbackLine
+    ].join('\n')
+  }
+
+  return [
+    resolvedContact.error || `Busqué contactos parecidos a "${cleanText(lookupHint, 80)}", pero no encontré coincidencias claras.`,
+    'Pásame su email, celular o ID de HighLevel y lo busco más fino.'
+  ].join('\n')
+}
+
+function buildContactCustomFieldsReply({ contact = {}, fields = [], customFieldsError = null } = {}) {
+  const customFields = fields.filter(field => field?.type === 'custom')
+  const contactLabel = contact.name || contact.email || contact.phone || contact.id || 'el contacto'
+
+  if (!customFields.length) {
+    return [
+      `Encontré a ${contactLabel}, pero no trae campos personalizados cargados en GoHighLevel.`,
+      customFieldsError ? `Nota: HighLevel devolvió este detalle al leer definiciones: ${cleanText(customFieldsError, 240)}` : ''
+    ].filter(Boolean).join('\n')
+  }
+
+  const rows = customFields.map((field, index) => {
+    const key = field.fieldKey || field.key || field.id || ''
+    return `| ${index + 1} | ${escapeMarkdownTableCell(field.label || field.name || key || `Campo ${index + 1}`)} | ${escapeMarkdownTableCell(key)} | ${escapeMarkdownTableCell(formatContactFieldValue(field.value))} |`
+  })
+
+  return [
+    `Encontré a ${contactLabel}. Estos son sus campos personalizados en GoHighLevel:`,
+    '',
+    '| # | Campo | Key | Valor actual |',
+    '|---:|---|---|---|',
+    ...rows,
+    customFieldsError ? '' : null,
+    customFieldsError ? `Nota: HighLevel devolvió este detalle al leer definiciones: ${cleanText(customFieldsError, 240)}` : null
+  ].filter(line => line !== null).join('\n')
+}
+
+async function createReadOnlyContactFieldsReplyIfApplicable({
+  latestUserMessage = '',
+  messages = [],
+  viewContext = {},
+  runtimeContext = {},
+  agentConfig = null,
+  highLevelConnection = {},
+  agentRoute = null
+} = {}) {
+  if (!isReadOnlyHighLevelContactFieldRequest(latestUserMessage)) return null
+
+  const model = normalizeAIAgentModel(agentConfig?.model)
+
+  if (!highLevelConnection?.configured) {
+    return {
+      reply: 'HighLevel no está configurado. Conecta GoHighLevel primero para poder leer campos personalizados del contacto.',
+      model,
+      sources: [],
+      clarificationOptions: [],
+      usage: null,
+      agentMemory: null,
+      debug: {
+        queryCount: 0,
+        highLevelToolsEnabled: false,
+        metaAdsOperationsEnabled: false,
+        agentRoute
+      }
+    }
+  }
+
+  const lookupHint = normalizeContactLookupHint(extractContactLookupTerm(latestUserMessage)) ||
+    extractExplicitContactIdentifier(latestUserMessage)
+  const contactArgs = lookupHint
+    ? { contactHint: lookupHint }
+    : {
+        referenceType: isContextualContactReference(latestUserMessage) ? 'current_contact' : null,
+        referenceText: latestUserMessage
+      }
+  const resolvedContact = await resolveHighLevelContactForAgent(
+    contactArgs,
+    { messages, viewContext },
+    {
+      actionText: 'revisar sus campos personalizados',
+      ambiguousContactError: 'Encontré varios contactos parecidos. Elige cuál quieres revisar en GoHighLevel.'
+    }
+  )
+
+  if (!resolvedContact.contact) {
+    return {
+      reply: buildReadOnlyContactLookupReply(resolvedContact, lookupHint),
+      model,
+      sources: [],
+      clarificationOptions: Array.isArray(resolvedContact.clarificationOptions)
+        ? resolvedContact.clarificationOptions
+        : [],
+      usage: null,
+      agentMemory: null,
+      debug: {
+        queryCount: 0,
+        highLevelToolsEnabled: Boolean(highLevelConnection?.configured),
+        metaAdsOperationsEnabled: false,
+        agentRoute,
+        readOnlyContactFieldLookup: {
+          lookupHint,
+          contactLookupAttempted: Boolean(resolvedContact.contactLookupAttempted)
+        }
+      }
+    }
+  }
+
+  const bundle = await loadFullHighLevelContactBundle(resolvedContact.contact.id)
+  const memoryContact = normalizeOperationalContact({
+    id: bundle.contact.id,
+    name: bundle.contact.name,
+    email: bundle.contact.email || null,
+    phone: bundle.contact.phone || null
+  })
+
+  return {
+    reply: buildContactCustomFieldsReply({
+      contact: bundle.contact,
+      fields: bundle.fieldCatalog,
+      customFieldsError: bundle.customFieldsError
+    }),
+    model,
+    sources: [],
+    clarificationOptions: [],
+    usage: null,
+    agentMemory: memoryContact?.id
+      ? {
+          version: 1,
+          generatedAt: runtimeContext.nowIso || DateTime.now().toISO(),
+          activeContact: memoryContact,
+          contacts: [memoryContact],
+          activeProduct: null,
+          products: []
+        }
+      : null,
+    debug: {
+      queryCount: 0,
+      highLevelToolsEnabled: true,
+      metaAdsOperationsEnabled: false,
+      agentRoute,
+      readOnlyContactFieldLookup: {
+        lookupHint,
+        contactId: bundle.contact.id,
+        customFieldCount: bundle.fieldCatalog.filter(field => field?.type === 'custom').length
+      }
+    }
+  }
+}
+
 async function executeUpdateHighLevelContactField(args = {}, highLevelConnection = {}, context = {}) {
   if (!highLevelConnection?.configured) {
     return {
@@ -12333,6 +12511,20 @@ function isExplicitHighLevelToolRequest(question) {
   return isHighLevelOperationalResourceRequest(normalized)
 }
 
+function isReadOnlyHighLevelContactFieldRequest(question = '') {
+  const normalized = normalizeText(question)
+  if (!normalized) return false
+
+  const mentionsContactScope = /\b(?:contacto|contactos|cliente|clientes|lead|leads|prospecto|prospectos|paciente|pacientes|persona|personas)\b/.test(normalized)
+  const mentionsFieldScope = /\b(?:campo|campos|dato|datos|custom field|custom fields|campos personalizados|campo personalizado)\b/.test(normalized)
+  const readIntent = /\b(?:dame|muestra|mu[eé]strame|lista|listar|listame|l[ií]stame|trae|tr[aá]eme|revisa|consulta|consultar|busca|buscar|ver|lee|leer|ense[nñ]a|ense[nñ]ame|cuales|cu[aá]les|que|qu[eé])\b/.test(normalized)
+  const highLevelScope = mentionsHighLevel(normalized) || /\b(?:ghl|gohighlevel|go high level|highlevel)\b/.test(normalized)
+  const writesContactData = /\b(?:actualiza|actualizar|modifica|modificar|cambia|cambiar|ponle|poner|quita|quitar|agrega|agregar|crea|crear|manda|mandar|envia|enviar|agenda|agendar|cobra|cobrar|registra|registrar|elimina|eliminar|borra|borrar)\b/.test(normalized) ||
+    /\b(?:mete|meter|metele|m[eé]tele|saca|sacar)\s+(?:a|al|del|de)\b/.test(normalized)
+
+  return mentionsContactScope && mentionsFieldScope && readIntent && highLevelScope && !writesContactData
+}
+
 function getConfiguredActionCustomizations(agentConfig) {
   return cleanText(String(agentConfig?.action_customizations || agentConfig?.actionCustomizations || ''), ACTION_CUSTOMIZATION_LIMIT)
 }
@@ -12614,13 +12806,15 @@ function shouldUseInternalDatabaseContext(question, messages = []) {
 
 function buildUnifiedAgentRoute({ messages = [], latestUserMessage = '', agentConfig = null } = {}) {
   const normalized = normalizeText(latestUserMessage)
+  const readOnlyContactFieldRequest = isReadOnlyHighLevelContactFieldRequest(latestUserMessage)
   const highLevelRestReadIntent = isHighLevelRestReadCatalogRequest(latestUserMessage, messages)
   const highLevelContinuation = isHighLevelOperationalConversationContinuation(messages)
   const contactMutationContinuation = isContactMutationConversationContinuation(messages)
-  const highLevelToolIntent = highLevelRestReadIntent || isExplicitHighLevelToolRequest(latestUserMessage) || highLevelContinuation
+  const highLevelToolIntent = readOnlyContactFieldRequest || highLevelRestReadIntent || isExplicitHighLevelToolRequest(latestUserMessage) || highLevelContinuation
   const paymentBackendOnly = shouldUsePaymentBackendForLatestMessage(messages)
-  const latestCustomActionExecution = isConfiguredActionExecutionRequest(latestUserMessage, agentConfig)
+  const latestCustomActionExecution = !readOnlyContactFieldRequest && isConfiguredActionExecutionRequest(latestUserMessage, agentConfig)
   const customActionContinuation = !paymentBackendOnly &&
+    !readOnlyContactFieldRequest &&
     !isExplicitLatestMessageTopicSwitch(latestUserMessage) &&
     isConfiguredActionConversationContinuation(messages, agentConfig)
   const customActionIntent = latestCustomActionExecution || customActionContinuation
@@ -12632,12 +12826,13 @@ function buildUnifiedAgentRoute({ messages = [], latestUserMessage = '', agentCo
     (!requiresDbResearch &&
       /(workflow|flujo|automatizacion|automatización|cita|calendario|appointment|oportunidad|pipeline|mensaje|conversacion|conversación|media storage|archivo|imagen|folder|tag|producto|precio|contacto|cliente|lead|campo personalizado|custom field).*(busca|revisa|analiza|cambia|actualiza|modifica|mete|saca|crea|agenda|agenda[r]?|calendariza|manda|envia|envía|haz|hacer)|(?:busca|revisa|analiza|cambia|actualiza|modifica|mete|saca|crea|agenda|agendar|calendariza|manda|envia|envía|haz|hacer).*(workflow|flujo|automatizacion|automatización|cita|calendario|appointment|oportunidad|pipeline|mensaje|conversacion|conversación|media storage|archivo|imagen|folder|tag|producto|precio|contacto|cliente|lead|campo personalizado|custom field)/.test(normalized))
   )
-  const mutationIntent = paymentBackendOnly ||
+  const mutationIntent = !readOnlyContactFieldRequest && (paymentBackendOnly ||
     (!highLevelRestReadIntent && (
       contactMutationSafety ||
       /(agrega|actualiza|modifica|cambia|crea|genera|registra|agenda|cancela|manda|envia|mete|saca|pausa|reactiva|send|create|update|delete|programa|domicili|ejecuta|hazlo)/.test(normalized)
-    ))
+    )))
   const readIntent = requiresDbResearch ||
+    readOnlyContactFieldRequest ||
     highLevelRestReadIntent ||
     /(cual|cuál|cuanto|cuánto|cuantos|cuántos|dame|muestra|busca|revisa|analiza|info|informacion|información|datos|ultimo|último|reciente|historial|tuvo|tiene|existe|aparece|trae|tráeme)/.test(normalized)
 
@@ -12653,6 +12848,7 @@ function buildUnifiedAgentRoute({ messages = [], latestUserMessage = '', agentCo
     contactMutationSafety,
     highLevelRestReadIntent,
     highLevelToolIntent: highLevelToolIntent || customActionIntent,
+    readOnlyContactFieldRequest,
     customActionIntent,
     highLevelContinuation,
     metaAdsOperationalIntent: false,
@@ -14316,13 +14512,15 @@ const CONTACT_LOOKUP_STOP_WORDS = new Set([
   'en', 'encuentra', 'encuentrame', 'ese', 'esa', 'esperar', 'esta', 'este', 'factura', 'facturas', 'fecha',
   'extra', 'favor', 'hacer', 'haz', 'hoy',
   'info', 'informacion', 'jueves', 'la', 'las', 'lead', 'leads', 'le', 'les', 'link', 'lo', 'lunes',
-  'listo', 'los', 'luego', 'manda', 'mandale', 'mandar', 'me', 'mes', 'meses', 'mete', 'meter', 'metele', 'métele', 'mi', 'mis', 'misma', 'mismo', 'modifica', 'modificar', 'modificale', 'modifícale', 'mxn', 'necesito', 'nombre',
+  'lista', 'listar', 'listame', 'lístame', 'listo', 'los', 'luego', 'manda', 'mandale', 'mandar', 'me', 'mes', 'meses', 'mete', 'meter', 'metele', 'métele', 'mi', 'mis', 'misma', 'mismo', 'modifica', 'modificar', 'modificale', 'modifícale', 'mxn', 'necesito', 'nombre',
   'martes', 'miercoles', 'miércoles', 'numero', 'oye', 'paciente', 'pacientes', 'pago', 'pagos', 'para', 'apra', 'plan', 'planes', 'peso', 'pesos', 'persona', 'personas',
   'nuevo', 'nueva', 'nuevamente',
   'podria', 'podría', 'podrias', 'podrías', 'por', 'porfa', 'porfavor', 'producto', 'programa', 'programale', 'prospecto', 'prospectos', 'que', 'quien', 'registra', 'registrar', 'registrale', 'regístrale', 'registrame', 'regístrame', 'restaura', 'restaurar', 'revisa', 'saber', 'siguiente', 'sobre', 'solamente', 'solo', 'sucesivamente',
-  'si', 'sí', 'sabado', 'sábado', 'su', 'sus', 'tarde', 'telefono', 'tiene', 'tienen', 'tres', 'tuvo', 'un', 'una', 'uno', 'usd', 'venta', 'ventas', 'viernes',
+  'si', 'sí', 'sabado', 'sábado', 'su', 'sus', 'tarde', 'telefono', 'tiene', 'tienen', 'todos', 'todas', 'tres', 'tuvo', 'un', 'una', 'uno', 'usd', 'venta', 'ventas', 'viernes',
   'vamos', 'ver', 'quiero', 'anticipo', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
-  'agosto', 'septiembre', 'setiembre', 'octubre', 'noviembre', 'diciembre'
+  'agosto', 'septiembre', 'setiembre', 'octubre', 'noviembre', 'diciembre',
+  'campo', 'campos', 'custom', 'field', 'fields', 'personalizado', 'personalizados', 'personalizada', 'personalizadas',
+  'flow', 'flujo', 'gohighlevel', 'highlevel', 'ghl', 'high', 'level'
 ])
 
 const CONTACT_LOOKUP_COMMAND_WORDS = [
@@ -14403,6 +14601,7 @@ function isLikelyContactLookupCommandToken(normalizedToken, rawIndex, acceptedTo
 
 function cleanContactLookupTerm(value) {
   let term = normalizeSearchText(value, 180)
+    .replace(/\s+(?:en|dentro\s+de)\s+(?:go\s+high\s+level|go\s*highlevel|gohighlevel|high\s+level|highlevel|ghl)\b.*$/i, '')
     .replace(/\b\d+(?:[.,]\d+)?\b.*$/g, '')
     .replace(/\b(?:mxn|usd|peso|pesos|dolar|dolares)\b.*$/g, '')
     .replace(/\s+/g, ' ')
@@ -15750,6 +15949,19 @@ export async function createAgentReply({ apiKey, messages, viewContext, userId =
   })
   const highLevelConnection = await getHighLevelAgentConnection()
   let customActionVerifiedContact = null
+  const readOnlyContactFieldsReply = await createReadOnlyContactFieldsReplyIfApplicable({
+    latestUserMessage,
+    messages,
+    viewContext,
+    runtimeContext,
+    agentConfig,
+    highLevelConnection,
+    agentRoute
+  })
+
+  if (readOnlyContactFieldsReply) {
+    return readOnlyContactFieldsReply
+  }
 
   if (agentRoute?.customActionIntent) {
     const latestUserIndex = findLatestUserMessageIndex(messages)
