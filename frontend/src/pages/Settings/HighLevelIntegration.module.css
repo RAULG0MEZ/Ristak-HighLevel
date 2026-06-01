@@ -1997,6 +1997,13 @@ body.dark .switchInput:checked:disabled + .switchSlider:hover {
   box-shadow: 0 0 0 3px rgba(100, 116, 139, 0.12);
 }
 
+.readonlyValue {
+  display: flex;
+  align-items: center;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
 textarea.formInput,
 textarea.input {
   min-height: 92px;

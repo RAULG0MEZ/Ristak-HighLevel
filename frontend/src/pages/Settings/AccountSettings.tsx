@@ -1,25 +1,99 @@
-import React, { useState } from 'react'
-import { CheckCircle, Lock, Save, User } from 'lucide-react'
+import React, { useRef, useState } from 'react'
+import { CheckCircle, Lock, Save, Upload, User, X } from 'lucide-react'
 import { Button, Card } from '@/components/common'
 import { useAuth } from '@/contexts/AuthContext'
 import { useNotification } from '@/contexts/NotificationContext'
+import { useAppConfig } from '@/hooks'
 import styles from './Settings.module.css'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
+const PROFILE_PHOTO_KEY = 'admin_profile_photo'
+const MAX_PROFILE_PHOTO_SIZE = 1.5 * 1024 * 1024
 
 export const AccountSettings: React.FC = () => {
   const { user, logout } = useAuth()
   const { showToast } = useNotification()
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
-  // Estado para cambiar username
+  const [profilePhoto, setProfilePhoto, savingProfilePhoto] = useAppConfig<string>(PROFILE_PHOTO_KEY, '')
+  const [profilePhotoDraft, setProfilePhotoDraft] = useState('')
+  const [isEditingPhoto, setIsEditingPhoto] = useState(false)
+
   const [newUsername, setNewUsername] = useState('')
+  const [isEditingUsername, setIsEditingUsername] = useState(false)
   const [isChangingUsername, setIsChangingUsername] = useState(false)
 
-  // Estado para cambiar contraseña
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [isEditingPassword, setIsEditingPassword] = useState(false)
   const [isChangingPassword, setIsChangingPassword] = useState(false)
+
+  const currentUsername = user?.username || 'admin'
+  const visibleProfilePhoto = isEditingPhoto ? profilePhotoDraft : profilePhoto
+  const usernameChanged = newUsername.trim() && newUsername.trim() !== currentUsername
+
+  const handleStartPhotoEdit = () => {
+    setProfilePhotoDraft(profilePhoto || '')
+    setIsEditingPhoto(true)
+  }
+
+  const handleCancelPhotoEdit = () => {
+    setProfilePhotoDraft(profilePhoto || '')
+    setIsEditingPhoto(false)
+  }
+
+  const handleProfilePhotoChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+
+    if (!file) return
+
+    if (!file.type.startsWith('image/')) {
+      showToast('error', 'Archivo inválido', 'Sube una imagen en formato JPG, PNG o WebP.')
+      return
+    }
+
+    if (file.size > MAX_PROFILE_PHOTO_SIZE) {
+      showToast('error', 'Imagen muy pesada', 'La foto debe pesar máximo 1.5 MB.')
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setProfilePhotoDraft(reader.result)
+      }
+    }
+    reader.onerror = () => {
+      showToast('error', 'No se pudo leer', 'Intenta subir la foto otra vez.')
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const handleSaveProfilePhoto = async () => {
+    try {
+      await setProfilePhoto(profilePhotoDraft)
+      setIsEditingPhoto(false)
+      showToast(
+        'success',
+        profilePhotoDraft ? 'Foto actualizada' : 'Foto eliminada',
+        profilePhotoDraft ? 'La foto del administrador quedó guardada.' : 'Se quitó la foto del administrador.'
+      )
+    } catch (error: any) {
+      showToast('error', 'Error', error?.message || 'No se pudo guardar la foto')
+    }
+  }
+
+  const handleStartUsernameEdit = () => {
+    setNewUsername(currentUsername)
+    setIsEditingUsername(true)
+  }
+
+  const handleCancelUsernameEdit = () => {
+    setNewUsername('')
+    setIsEditingUsername(false)
+  }
 
   const handleChangeUsername = async () => {
     if (!newUsername.trim()) {
@@ -27,7 +101,7 @@ export const AccountSettings: React.FC = () => {
       return
     }
 
-    if (newUsername.trim() === user?.username) {
+    if (newUsername.trim() === currentUsername) {
       showToast('warning', 'Atención', 'El nuevo nombre de usuario es igual al actual')
       return
     }
@@ -52,7 +126,6 @@ export const AccountSettings: React.FC = () => {
 
       showToast('success', 'Usuario actualizado', 'Debes volver a iniciar sesión con tu nuevo nombre de usuario')
 
-      // Cerrar sesión después de 2 segundos
       setTimeout(() => {
         logout()
         window.location.href = '/login'
@@ -64,8 +137,21 @@ export const AccountSettings: React.FC = () => {
     }
   }
 
+  const handleStartPasswordEdit = () => {
+    setCurrentPassword('')
+    setNewPassword('')
+    setConfirmPassword('')
+    setIsEditingPassword(true)
+  }
+
+  const handleCancelPasswordEdit = () => {
+    setCurrentPassword('')
+    setNewPassword('')
+    setConfirmPassword('')
+    setIsEditingPassword(false)
+  }
+
   const handleChangePassword = async () => {
-    // Validaciones
     if (!currentPassword || !newPassword || !confirmPassword) {
       showToast('error', 'Error', 'Todos los campos son requeridos')
       return
@@ -105,11 +191,7 @@ export const AccountSettings: React.FC = () => {
       }
 
       showToast('success', 'Contraseña actualizada', 'Tu contraseña ha sido cambiada exitosamente')
-
-      // Limpiar campos
-      setCurrentPassword('')
-      setNewPassword('')
-      setConfirmPassword('')
+      handleCancelPasswordEdit()
     } catch (error: any) {
       showToast('error', 'Error', error.message || 'No se pudo cambiar la contraseña')
     } finally {
@@ -128,7 +210,7 @@ export const AccountSettings: React.FC = () => {
             <div>
               <h2 className={styles.panelTitle}>Cuenta</h2>
               <p className={styles.panelDescription}>
-                Gestiona tu nombre de usuario y contraseña
+                Administra perfil, usuario y contraseña con cambios explícitos.
               </p>
             </div>
           </div>
@@ -141,267 +223,225 @@ export const AccountSettings: React.FC = () => {
         </div>
 
         <div className={styles.panelSection}>
-          {/* Información actual */}
-          <div style={{ marginBottom: '2rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
-              <div style={{
-                width: '48px',
-                height: '48px',
-                borderRadius: '50%',
-                background: 'linear-gradient(135deg, rgba(100, 116, 139, 0.15) 0%, rgba(30, 41, 59, 0.12) 100%)',
-                border: '1px solid rgba(148, 163, 184, 0.2)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'var(--color-text-secondary)'
-              }}>
-                <User size={24} />
-              </div>
-              <div>
-                <h3 style={{
-                  fontSize: '1.125rem',
-                  fontWeight: 600,
-                  color: 'var(--color-text-primary)',
-                  margin: 0
-                }}>
-                  {user?.name || 'Usuario'}
-                </h3>
-                <p style={{
-                  fontSize: '0.875rem',
-                  color: 'var(--color-text-tertiary)',
-                  margin: '0.25rem 0 0 0'
-                }}>
-                  @{user?.username || 'admin'}
-                </p>
-              </div>
-            </div>
-            <div style={{
-              padding: '0.75rem 1rem',
-              background: 'rgba(148, 163, 184, 0.08)',
-              borderRadius: '0.75rem',
-              border: '1px solid rgba(148, 163, 184, 0.15)'
-            }}>
-              <p style={{
-                fontSize: '0.875rem',
-                color: 'var(--color-text-secondary)',
-                margin: 0
-              }}>
-                <strong>Rol:</strong> Administrador
-              </p>
-            </div>
-          </div>
-
-          {/* Separador */}
-          <div style={{
-            height: '1px',
-            background: 'linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.2), transparent)',
-            margin: '2rem 0'
-          }} />
-
-          {/* Cambiar nombre de usuario */}
-          <div style={{ marginBottom: '2rem' }}>
-            <div style={{ marginBottom: '1.25rem' }}>
-              <h3 style={{
-                fontSize: '1rem',
-                fontWeight: 600,
-                color: 'var(--color-text-primary)',
-                margin: '0 0 0.5rem 0',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem'
-              }}>
-                <User size={18} />
-                Cambiar nombre de usuario
-              </h3>
-              <p style={{
-                fontSize: '0.875rem',
-                color: 'var(--color-text-tertiary)',
-                margin: 0
-              }}>
-                Deberás volver a iniciar sesión después del cambio
-              </p>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div>
-                <label style={{
-                  display: 'block',
-                  fontSize: '0.875rem',
-                  fontWeight: 500,
-                  color: 'var(--color-text-secondary)',
-                  marginBottom: '0.5rem'
-                }}>
-                  Nuevo nombre de usuario
-                </label>
-                <input
-                  type="text"
-                  value={newUsername}
-                  onChange={(e) => setNewUsername(e.target.value)}
-                  placeholder={user?.username || 'admin'}
-                  disabled={isChangingUsername}
-                  style={{
-                    width: '100%',
-                    height: '2.75rem',
-                    padding: '0 1rem',
-                    background: 'rgba(148, 163, 184, 0.06)',
-                    border: '1px solid rgba(148, 163, 184, 0.18)',
-                    borderRadius: '0.75rem',
-                    color: 'var(--color-text-primary)',
-                    fontSize: '0.9375rem',
-                    transition: 'all 150ms ease'
-                  }}
-                />
+          <div className={styles.accountGrid}>
+            <section className={styles.accountSection}>
+              <div className={styles.accountSectionHeader}>
+                <div>
+                  <h3 className={styles.accountSectionTitle}>Perfil administrador</h3>
+                  <p className={styles.accountSectionDescription}>
+                    Foto visible para identificar la cuenta interna.
+                  </p>
+                </div>
               </div>
 
-              <Button
-                variant="primary"
-                onClick={handleChangeUsername}
-                loading={isChangingUsername}
-                disabled={!newUsername.trim() || isChangingUsername}
-                style={{ width: 'fit-content' }}
-              >
-                <Save size={18} />
-                Guardar cambios
-              </Button>
-            </div>
-          </div>
-
-          {/* Separador */}
-          <div style={{
-            height: '1px',
-            background: 'linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.2), transparent)',
-            margin: '2rem 0'
-          }} />
-
-          {/* Cambiar contraseña */}
-          <div>
-            <div style={{ marginBottom: '1.25rem' }}>
-              <h3 style={{
-                fontSize: '1rem',
-                fontWeight: 600,
-                color: 'var(--color-text-primary)',
-                margin: '0 0 0.5rem 0',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem'
-              }}>
-                <Lock size={18} />
-                Cambiar contraseña
-              </h3>
-              <p style={{
-                fontSize: '0.875rem',
-                color: 'var(--color-text-tertiary)',
-                margin: 0
-              }}>
-                La nueva contraseña debe tener al menos 6 caracteres
-              </p>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div>
-                <label style={{
-                  display: 'block',
-                  fontSize: '0.875rem',
-                  fontWeight: 500,
-                  color: 'var(--color-text-secondary)',
-                  marginBottom: '0.5rem'
-                }}>
-                  Contraseña actual
-                </label>
-                <input
-                  type="password"
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  placeholder="••••••••"
-                  disabled={isChangingPassword}
-                  autoComplete="current-password"
-                  style={{
-                    width: '100%',
-                    height: '2.75rem',
-                    padding: '0 1rem',
-                    background: 'rgba(148, 163, 184, 0.06)',
-                    border: '1px solid rgba(148, 163, 184, 0.18)',
-                    borderRadius: '0.75rem',
-                    color: 'var(--color-text-primary)',
-                    fontSize: '0.9375rem',
-                    transition: 'all 150ms ease'
-                  }}
-                />
+              <div className={styles.profileSummary}>
+                <div className={styles.profileIdentity}>
+                  <div className={styles.profileAvatar}>
+                    {visibleProfilePhoto ? (
+                      <img
+                        src={visibleProfilePhoto}
+                        alt="Foto del administrador"
+                        className={styles.profileAvatarImage}
+                      />
+                    ) : (
+                      <User size={26} />
+                    )}
+                  </div>
+                  <div className={styles.profileText}>
+                    <strong>{user?.name || 'Usuario'}</strong>
+                    <span>@{currentUsername}</span>
+                  </div>
+                </div>
+                <span className={styles.adminRole}>Administrador</span>
               </div>
 
-              <div>
-                <label style={{
-                  display: 'block',
-                  fontSize: '0.875rem',
-                  fontWeight: 500,
-                  color: 'var(--color-text-secondary)',
-                  marginBottom: '0.5rem'
-                }}>
-                  Nueva contraseña
-                </label>
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="••••••••"
-                  disabled={isChangingPassword}
-                  autoComplete="new-password"
-                  style={{
-                    width: '100%',
-                    height: '2.75rem',
-                    padding: '0 1rem',
-                    background: 'rgba(148, 163, 184, 0.06)',
-                    border: '1px solid rgba(148, 163, 184, 0.18)',
-                    borderRadius: '0.75rem',
-                    color: 'var(--color-text-primary)',
-                    fontSize: '0.9375rem',
-                    transition: 'all 150ms ease'
-                  }}
-                />
+              <input
+                ref={fileInputRef}
+                className={styles.hiddenFileInput}
+                type="file"
+                accept="image/*"
+                onChange={handleProfilePhotoChange}
+              />
+
+              <div className={styles.sectionActions}>
+                {!isEditingPhoto ? (
+                  <Button variant="secondary" onClick={handleStartPhotoEdit}>
+                    <Upload size={16} />
+                    Cambiar
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      variant="secondary"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={savingProfilePhoto}
+                    >
+                      <Upload size={16} />
+                      Subir foto
+                    </Button>
+                    {profilePhotoDraft && (
+                      <Button
+                        variant="ghost"
+                        onClick={() => setProfilePhotoDraft('')}
+                        disabled={savingProfilePhoto}
+                      >
+                        <X size={16} />
+                        Quitar
+                      </Button>
+                    )}
+                    <Button
+                      variant="primary"
+                      onClick={handleSaveProfilePhoto}
+                      loading={savingProfilePhoto}
+                    >
+                      <Save size={16} />
+                      Guardar
+                    </Button>
+                    <Button variant="ghost" onClick={handleCancelPhotoEdit} disabled={savingProfilePhoto}>
+                      Cancelar
+                    </Button>
+                  </>
+                )}
+              </div>
+            </section>
+
+            <section className={styles.accountSection}>
+              <div className={styles.accountSectionHeader}>
+                <div>
+                  <h3 className={styles.accountSectionTitle}>Nombre de usuario</h3>
+                  <p className={styles.accountSectionDescription}>
+                    Al cambiarlo tendrás que iniciar sesión otra vez.
+                  </p>
+                </div>
               </div>
 
-              <div>
-                <label style={{
-                  display: 'block',
-                  fontSize: '0.875rem',
-                  fontWeight: 500,
-                  color: 'var(--color-text-secondary)',
-                  marginBottom: '0.5rem'
-                }}>
-                  Confirmar nueva contraseña
-                </label>
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="••••••••"
-                  disabled={isChangingPassword}
-                  autoComplete="new-password"
-                  style={{
-                    width: '100%',
-                    height: '2.75rem',
-                    padding: '0 1rem',
-                    background: 'rgba(148, 163, 184, 0.06)',
-                    border: '1px solid rgba(148, 163, 184, 0.18)',
-                    borderRadius: '0.75rem',
-                    color: 'var(--color-text-primary)',
-                    fontSize: '0.9375rem',
-                    transition: 'all 150ms ease'
-                  }}
-                />
+              <div className={styles.lockedFieldRow}>
+                <div className={styles.field}>
+                  <label className={styles.label}>Usuario</label>
+                  <input
+                    className={`${styles.input} ${!isEditingUsername ? styles.inputReadOnly : ''}`}
+                    type="text"
+                    value={isEditingUsername ? newUsername : currentUsername}
+                    onChange={(event) => {
+                      if (isEditingUsername) {
+                        setNewUsername(event.target.value)
+                      }
+                    }}
+                    readOnly={!isEditingUsername}
+                    disabled={isChangingUsername}
+                    autoComplete="username"
+                  />
+                </div>
+                {!isEditingUsername ? (
+                  <Button variant="secondary" onClick={handleStartUsernameEdit}>
+                    Cambiar
+                  </Button>
+                ) : (
+                  <Button
+                    variant="primary"
+                    onClick={handleChangeUsername}
+                    loading={isChangingUsername}
+                    disabled={!usernameChanged || isChangingUsername}
+                  >
+                    <Save size={16} />
+                    Guardar
+                  </Button>
+                )}
               </div>
 
-              <Button
-                variant="primary"
-                onClick={handleChangePassword}
-                loading={isChangingPassword}
-                disabled={!currentPassword || !newPassword || !confirmPassword || isChangingPassword}
-                style={{ width: 'fit-content' }}
-              >
-                <Lock size={18} />
-                Cambiar contraseña
-              </Button>
-            </div>
+              {isEditingUsername && (
+                <div className={styles.sectionActions}>
+                  <Button variant="ghost" onClick={handleCancelUsernameEdit} disabled={isChangingUsername}>
+                    Cancelar
+                  </Button>
+                </div>
+              )}
+            </section>
+
+            <section className={`${styles.accountSection} ${styles.accountSectionWide}`}>
+              <div className={styles.accountSectionHeader}>
+                <div>
+                  <h3 className={styles.accountSectionTitle}>Contraseña</h3>
+                  <p className={styles.accountSectionDescription}>
+                    La nueva contraseña debe tener al menos 6 caracteres.
+                  </p>
+                </div>
+              </div>
+
+              {!isEditingPassword ? (
+                <div className={styles.lockedFieldRow}>
+                  <div className={styles.field}>
+                    <label className={styles.label}>Contraseña actual</label>
+                    <input
+                      className={`${styles.input} ${styles.inputReadOnly}`}
+                      type="password"
+                      value="password-guardado"
+                      readOnly
+                      autoComplete="current-password"
+                    />
+                  </div>
+                  <Button variant="secondary" onClick={handleStartPasswordEdit}>
+                    <Lock size={16} />
+                    Cambiar
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <div className={styles.passwordGrid}>
+                    <div className={styles.field}>
+                      <label className={styles.label}>Contraseña actual</label>
+                      <input
+                        className={styles.input}
+                        type="password"
+                        value={currentPassword}
+                        onChange={(event) => setCurrentPassword(event.target.value)}
+                        disabled={isChangingPassword}
+                        autoComplete="current-password"
+                      />
+                    </div>
+
+                    <div className={styles.field}>
+                      <label className={styles.label}>Nueva contraseña</label>
+                      <input
+                        className={styles.input}
+                        type="password"
+                        value={newPassword}
+                        onChange={(event) => setNewPassword(event.target.value)}
+                        disabled={isChangingPassword}
+                        autoComplete="new-password"
+                      />
+                    </div>
+
+                    <div className={styles.field}>
+                      <label className={styles.label}>Confirmar nueva contraseña</label>
+                      <input
+                        className={styles.input}
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(event) => setConfirmPassword(event.target.value)}
+                        disabled={isChangingPassword}
+                        autoComplete="new-password"
+                      />
+                    </div>
+                  </div>
+
+                  <div className={styles.sectionActions}>
+                    <Button
+                      variant="primary"
+                      onClick={handleChangePassword}
+                      loading={isChangingPassword}
+                      disabled={!currentPassword || !newPassword || !confirmPassword || isChangingPassword}
+                    >
+                      <Save size={16} />
+                      Guardar
+                    </Button>
+                    <Button variant="ghost" onClick={handleCancelPasswordEdit} disabled={isChangingPassword}>
+                      Cancelar
+                    </Button>
+                  </div>
+                </>
+              )}
+            </section>
           </div>
         </div>
       </Card>

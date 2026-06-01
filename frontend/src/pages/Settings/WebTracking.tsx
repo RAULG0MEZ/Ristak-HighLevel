@@ -309,7 +309,7 @@ export const WebTracking: React.FC = () => {
                 <label className={styles.formLabel}>
                   Paso 1: Dominio configurado
                 </label>
-                <div className={styles.formInput} style={{ cursor: 'default' }}>
+                <div className={`${styles.formInput} ${styles.readonlyValue}`} style={{ cursor: 'default' }}>
                   {trackingDomain}
                 </div>
               </div>
