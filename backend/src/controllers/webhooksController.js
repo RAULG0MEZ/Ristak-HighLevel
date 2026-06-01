@@ -140,7 +140,47 @@ function parseInvoiceNumberFromReference(reference) {
   return match?.[1] || null;
 }
 
-async function findExistingInvoicePayment({ invoiceId, paymentId, contactId, amount, description, invoiceNumber, reference }) {
+const RECENT_WEBHOOK_MATCH_WINDOW_MS = 6 * 60 * 60 * 1000;
+
+function getTimestamp(value) {
+  if (!value) return null;
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function isRecentWebhookCandidate(row, paymentDate) {
+  const paymentTimestamp = getTimestamp(paymentDate) || Date.now();
+  const rowTimestamps = [row.updated_at, row.created_at, row.date]
+    .map(getTimestamp)
+    .filter(Boolean);
+
+  return rowTimestamps.some(timestamp => Math.abs(paymentTimestamp - timestamp) <= RECENT_WEBHOOK_MATCH_WINDOW_MS);
+}
+
+async function findUniqueRecentInvoicePayment({ paymentId, contactId, amount, paymentDate }) {
+  if (!contactId || amount <= 0) return null;
+
+  const candidates = await db.all(
+    `SELECT id, contact_id, ghl_invoice_id, payment_mode, status, description, created_at, updated_at, date
+     FROM payments
+     WHERE contact_id = ?
+       AND id != ?
+       AND ABS(COALESCE(amount, 0) - ?) < 0.01
+       AND (ghl_invoice_id IS NOT NULL OR invoice_number IS NOT NULL)
+       AND status IN ('draft', 'sent', 'payment_processing', 'pending', 'paid', 'succeeded', 'completed')
+     ORDER BY
+       CASE WHEN status IN ('draft', 'sent', 'payment_processing', 'pending') THEN 0 ELSE 1 END,
+       updated_at DESC,
+       created_at DESC
+     LIMIT 5`,
+    [contactId, paymentId, amount]
+  );
+
+  const recentCandidates = candidates.filter(candidate => isRecentWebhookCandidate(candidate, paymentDate));
+  return recentCandidates.length === 1 ? recentCandidates[0] : null;
+}
+
+async function findExistingInvoicePayment({ invoiceId, paymentId, contactId, amount, description, invoiceNumber, reference, paymentDate }) {
   if (invoiceId) {
     const existing = await db.get(
       'SELECT id, contact_id, ghl_invoice_id, payment_mode FROM payments WHERE ghl_invoice_id = ? OR id = ? LIMIT 1',
@@ -172,24 +212,29 @@ async function findExistingInvoicePayment({ invoiceId, paymentId, contactId, amo
   }
 
   const cleanDescription = normalizeLookupText(description);
-  if (!contactId || amount <= 0 || !cleanDescription) return null;
+  if (!contactId || amount <= 0) return null;
 
-  const invoiceBackedMatch = await db.get(
-    `SELECT id, contact_id, ghl_invoice_id, payment_mode
-     FROM payments
-     WHERE contact_id = ?
-       AND id != ?
-       AND ABS(COALESCE(amount, 0) - ?) < 0.01
-       AND LOWER(COALESCE(description, '')) = LOWER(?)
-       AND (ghl_invoice_id IS NOT NULL OR invoice_number IS NOT NULL)
-     ORDER BY
-       CASE WHEN status IN ('draft', 'sent', 'payment_processing', 'pending') THEN 0 ELSE 1 END,
-       created_at DESC
-    LIMIT 1`,
-    [contactId, paymentId, amount, cleanDescription]
-  );
+  if (cleanDescription) {
+    const invoiceBackedMatch = await db.get(
+      `SELECT id, contact_id, ghl_invoice_id, payment_mode
+       FROM payments
+       WHERE contact_id = ?
+         AND id != ?
+         AND ABS(COALESCE(amount, 0) - ?) < 0.01
+         AND LOWER(COALESCE(description, '')) = LOWER(?)
+         AND (ghl_invoice_id IS NOT NULL OR invoice_number IS NOT NULL)
+       ORDER BY
+         CASE WHEN status IN ('draft', 'sent', 'payment_processing', 'pending') THEN 0 ELSE 1 END,
+         created_at DESC
+      LIMIT 1`,
+      [contactId, paymentId, amount, cleanDescription]
+    );
 
-  if (invoiceBackedMatch) return invoiceBackedMatch;
+    if (invoiceBackedMatch) return invoiceBackedMatch;
+  }
+
+  const recentUniqueMatch = await findUniqueRecentInvoicePayment({ paymentId, contactId, amount, paymentDate });
+  if (recentUniqueMatch) return recentUniqueMatch;
 
   if (!cleanDescription.toLowerCase().includes('primer pago')) return null;
 
@@ -415,8 +460,32 @@ export const handlePaymentWebhook = async (req, res) => {
     const paymentMethod = payment.method || payment.gateway || payment.payment_method || payment.paymentMethod || null;
 
     // Crear referencia con el número de factura
-    const sourceMeta = maybeJsonObject(payment.entitySourceMeta || payment.entity_source_meta);
-    const invoiceNumber = payment.invoice?.number || payment.invoice?.invoiceNumber || sourceMeta.invoiceNumber || sourceMeta.invoice_number || '';
+    const sourceMeta = maybeJsonObject(payment.entitySourceMeta || payment.entity_source_meta || data.entitySourceMeta || data.entity_source_meta);
+    const chargeSnapshot = maybeJsonObject(payment.chargeSnapshot || payment.charge_snapshot || data.chargeSnapshot || data.charge_snapshot);
+    const chargeMetadata = maybeJsonObject(chargeSnapshot.metadata);
+    const invoiceNumber = firstValue(
+      payment.invoice?.number,
+      payment.invoice?.invoiceNumber,
+      payment.invoice?.invoice_number,
+      payment.invoice?.invoiceNo,
+      payment.invoice?.invoice_no,
+      payment.invoiceNumber,
+      payment.invoice_number,
+      payment.invoiceNo,
+      payment.invoice_no,
+      data.invoiceNumber,
+      data.invoice_number,
+      data.invoiceNo,
+      data.invoice_no,
+      sourceMeta.invoiceNumber,
+      sourceMeta.invoice_number,
+      sourceMeta.invoiceNo,
+      sourceMeta.invoice_no,
+      chargeMetadata.invoiceNumber,
+      chargeMetadata.invoice_number,
+      chargeMetadata.invoiceNo,
+      chargeMetadata.invoice_no
+    ) || '';
     const reference = invoiceNumber
       ? `Invoice #${invoiceNumber}`
       : payment.reference || paymentId;
@@ -442,7 +511,8 @@ export const handlePaymentWebhook = async (req, res) => {
       amount,
       description,
       invoiceNumber,
-      reference
+      reference,
+      paymentDate
     });
     const effectiveInvoiceId = invoiceId || existingInvoicePayment?.ghl_invoice_id || existingInvoicePayment?.id;
     const configuredPaymentMode = await getConfiguredPaymentModeFallback();

@@ -20,6 +20,52 @@ import {
 
 const PAID_INVOICE_STATUSES = new Set(['paid', 'succeeded', 'completed'])
 
+function getInvoiceItems(invoice = {}) {
+  for (const source of [invoice.invoiceItems, invoice.items, invoice.lineItems]) {
+    if (Array.isArray(source) && source.length > 0) return source
+  }
+
+  return []
+}
+
+function getInvoiceDisplayDescription(invoice = {}) {
+  const firstItem = getInvoiceItems(invoice)[0] || {}
+
+  return (
+    firstItem.description ||
+    firstItem.name ||
+    invoice.description ||
+    invoice.title ||
+    invoice.name ||
+    'Pago'
+  )
+}
+
+async function findExistingPaymentForInvoice({ invoiceId, contactId, invoiceNumber }) {
+  const existingByInvoiceId = await db.get(
+    'SELECT id, status, payment_mode, ghl_invoice_id FROM payments WHERE ghl_invoice_id = ? OR id = ? LIMIT 1',
+    [invoiceId, invoiceId]
+  )
+
+  if (existingByInvoiceId) return existingByInvoiceId
+
+  if (!contactId || !invoiceNumber) return null
+
+  return await db.get(
+    `SELECT id, status, payment_mode, ghl_invoice_id
+     FROM payments
+     WHERE contact_id = ?
+       AND (
+         invoice_number = ?
+         OR reference = ?
+         OR reference = ?
+       )
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [contactId, invoiceNumber, invoiceNumber, `Invoice #${invoiceNumber}`]
+  )
+}
+
 async function activatePaymentFlowFromPaidInvoice(invoiceId, invoiceData) {
   if (!invoiceId || !PAID_INVOICE_STATUSES.has(invoiceData.status) || !invoiceData.contact_id) {
     return
@@ -73,12 +119,6 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
           continue
         }
 
-        // Verificar si ya existe en BD local
-        const existing = await db.get(
-          'SELECT id, status, payment_mode FROM payments WHERE ghl_invoice_id = ?',
-          [ghlInvoiceId]
-        )
-
         // Validar que tenga contactId válido (puede estar en contactDetails.id o contactId)
         const contactId = invoice.contactDetails?.id || invoice.contactId
 
@@ -88,6 +128,13 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
           continue
         }
 
+        const invoiceNumber = invoice.invoiceNumber || null
+        const existing = await findExistingPaymentForInvoice({
+          invoiceId: ghlInvoiceId,
+          contactId,
+          invoiceNumber
+        })
+
         // Datos comunes del invoice
         const invoiceData = {
           contact_id: contactId,
@@ -96,11 +143,11 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
           status: mapInvoiceStatus(invoice.status),
           payment_method: invoice.paymentMode || null,
           payment_mode: getInvoicePaymentMode(invoice, existing?.payment_mode || 'live'),
-          reference: invoice.invoiceNumber || null,
-          description: invoice.invoiceItems?.[0]?.name || invoice.invoiceItems?.[0]?.description || invoice.title || invoice.name || 'Pago',
+          reference: invoiceNumber,
+          description: getInvoiceDisplayDescription(invoice),
           date: invoice.createdAt || invoice.issueDate || new Date().toISOString(),
           ghl_invoice_id: ghlInvoiceId,
-          invoice_number: invoice.invoiceNumber || null,
+          invoice_number: invoiceNumber,
           due_date: invoice.dueDate || null,
           sent_at: invoice.sentAt || null,
         }
@@ -110,8 +157,10 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
           await db.run(
             `UPDATE payments
              SET status = ?, amount = ?, currency = ?, payment_method = ?,
-                 payment_mode = ?, reference = ?, description = ?, due_date = ?, sent_at = ?, updated_at = CURRENT_TIMESTAMP
-             WHERE ghl_invoice_id = ?`,
+                 payment_mode = ?, reference = ?, description = ?, contact_id = ?,
+                 ghl_invoice_id = ?, invoice_number = ?, due_date = ?, sent_at = ?,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?`,
             [
               invoiceData.status,
               invoiceData.amount,
@@ -120,9 +169,12 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
               invoiceData.payment_mode,
               invoiceData.reference,
               invoiceData.description,
+              invoiceData.contact_id,
+              invoiceData.ghl_invoice_id,
+              invoiceData.invoice_number,
               invoiceData.due_date,
               invoiceData.sent_at,
-              ghlInvoiceId
+              existing.id
             ]
           )
           updated++
@@ -270,12 +322,14 @@ export async function syncAllInvoices({ contactId } = {}) {
         }
 
         // Verificar si ya existe en BD local
-        const existing = await db.get(
-          'SELECT id, status, payment_mode FROM payments WHERE ghl_invoice_id = ?',
-          [ghlInvoiceId]
-        )
-
         const contactId = invoice.contactId
+
+        const invoiceNumber = invoice.invoiceNumber || null
+        const existing = await findExistingPaymentForInvoice({
+          invoiceId: ghlInvoiceId,
+          contactId,
+          invoiceNumber
+        })
 
         if (!contactId) {
           skipped++
@@ -290,11 +344,11 @@ export async function syncAllInvoices({ contactId } = {}) {
           status: mapInvoiceStatus(invoice.status),
           payment_method: invoice.paymentMode || null,
           payment_mode: getInvoicePaymentMode(invoice, existing?.payment_mode || 'live'),
-          reference: invoice.invoiceNumber || null,
-          description: invoice.invoiceItems?.[0]?.name || invoice.invoiceItems?.[0]?.description || invoice.title || invoice.name || 'Pago',
+          reference: invoiceNumber,
+          description: getInvoiceDisplayDescription(invoice),
           date: invoice.createdAt || invoice.issueDate || new Date().toISOString(),
           ghl_invoice_id: ghlInvoiceId,
-          invoice_number: invoice.invoiceNumber || null,
+          invoice_number: invoiceNumber,
           due_date: invoice.dueDate || null,
           sent_at: invoice.sentAt || null,
         }
@@ -304,8 +358,10 @@ export async function syncAllInvoices({ contactId } = {}) {
           await db.run(
             `UPDATE payments
              SET status = ?, amount = ?, currency = ?, payment_method = ?,
-                 payment_mode = ?, reference = ?, description = ?, due_date = ?, sent_at = ?, updated_at = CURRENT_TIMESTAMP
-             WHERE ghl_invoice_id = ?`,
+                 payment_mode = ?, reference = ?, description = ?, contact_id = ?,
+                 ghl_invoice_id = ?, invoice_number = ?, due_date = ?, sent_at = ?,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?`,
             [
               invoiceData.status,
               invoiceData.amount,
@@ -314,9 +370,12 @@ export async function syncAllInvoices({ contactId } = {}) {
               invoiceData.payment_mode,
               invoiceData.reference,
               invoiceData.description,
+              invoiceData.contact_id,
+              invoiceData.ghl_invoice_id,
+              invoiceData.invoice_number,
               invoiceData.due_date,
               invoiceData.sent_at,
-              ghlInvoiceId
+              existing.id
             ]
           )
           updated++
@@ -426,10 +485,12 @@ export async function syncSingleInvoice(invoiceId) {
     const contactId = invoice.contactDetails?.id || invoice.contactId
 
     const ghlStatus = mapInvoiceStatus(invoice.status)
-    const existing = await db.get(
-      'SELECT id, status, payment_mode FROM payments WHERE ghl_invoice_id = ?',
-      [ghlInvoiceId]
-    )
+    const invoiceNumber = invoice.invoiceNumber || null
+    const existing = await findExistingPaymentForInvoice({
+      invoiceId: ghlInvoiceId,
+      contactId,
+      invoiceNumber
+    })
 
     const invoiceData = {
       contact_id: contactId || null,
@@ -438,13 +499,10 @@ export async function syncSingleInvoice(invoiceId) {
       status: ghlStatus,
       payment_method: invoice.paymentMode || null,
       payment_mode: getInvoicePaymentMode(invoice, existing?.payment_mode || 'live'),
-      reference: invoice.invoiceNumber || null,
-      description:
-        invoice.invoiceItems?.[0]?.name ||
-        invoice.invoiceItems?.[0]?.description ||
-        invoice.title || invoice.name || 'Pago',
+      reference: invoiceNumber,
+      description: getInvoiceDisplayDescription(invoice),
       date: invoice.createdAt || invoice.issueDate || new Date().toISOString(),
-      invoice_number: invoice.invoiceNumber || null,
+      invoice_number: invoiceNumber,
       due_date: invoice.dueDate || null,
       sent_at: invoice.sentAt || null,
     }
@@ -457,9 +515,10 @@ export async function syncSingleInvoice(invoiceId) {
       await db.run(
         `UPDATE payments
          SET status = ?, amount = ?, currency = ?, payment_method = ?,
-             payment_mode = ?, reference = ?, description = ?, due_date = ?, sent_at = ?,
+             payment_mode = ?, reference = ?, description = ?, contact_id = ?,
+             ghl_invoice_id = ?, invoice_number = ?, due_date = ?, sent_at = ?,
              updated_at = CURRENT_TIMESTAMP
-         WHERE ghl_invoice_id = ?`,
+         WHERE id = ?`,
         [
           statusToSave,
           invoiceData.amount,
@@ -468,9 +527,12 @@ export async function syncSingleInvoice(invoiceId) {
           invoiceData.payment_mode,
           invoiceData.reference,
           invoiceData.description,
+          invoiceData.contact_id,
+          ghlInvoiceId,
+          invoiceData.invoice_number,
           invoiceData.due_date,
           invoiceData.sent_at,
-          ghlInvoiceId
+          existing.id
         ]
       )
       logger.info(`Invoice actualizado desde GHL: ${ghlInvoiceId} (${statusToSave})`)

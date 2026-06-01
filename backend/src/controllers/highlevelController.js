@@ -37,6 +37,39 @@ async function getGhlInvoiceLiveMode() {
   return (await getGhlInvoiceMode()) === 'live';
 }
 
+function getInvoiceItems(invoice = {}, fallbackInvoice = {}) {
+  const itemSources = [
+    invoice.invoiceItems,
+    invoice.items,
+    invoice.lineItems,
+    fallbackInvoice.invoiceItems,
+    fallbackInvoice.items,
+    fallbackInvoice.lineItems
+  ];
+
+  for (const source of itemSources) {
+    if (Array.isArray(source) && source.length > 0) return source;
+  }
+
+  return [];
+}
+
+function getInvoiceDisplayDescription(invoice = {}, fallbackInvoice = {}) {
+  const firstItem = getInvoiceItems(invoice, fallbackInvoice)[0] || {};
+
+  return firstDefined(
+    firstItem.description,
+    firstItem.name,
+    invoice.description,
+    fallbackInvoice.description,
+    invoice.name,
+    invoice.title,
+    fallbackInvoice.name,
+    fallbackInvoice.title,
+    'Pago'
+  );
+}
+
 async function getGhlInvoiceScheduleContext() {
   const config = await db.get(`
     SELECT location_data, ghl_invoice_mode, invoice_title, invoice_terms_notes, invoice_number_prefix
@@ -834,12 +867,27 @@ export const createInvoice = async (req, res) => {
       const taxAmount = createdInvoice.tax?.amount || 0;
       const total = createdInvoice.total || createdInvoice.amount || (subtotal + taxAmount);
 
+      const displayDescription = getInvoiceDisplayDescription(createdInvoice, invoiceData);
+
       await db.run(
         `INSERT INTO payments (
           id, contact_id, amount, currency, status, payment_method, payment_mode,
           reference, description, date, ghl_invoice_id, invoice_number,
           due_date, sent_at, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(id) DO UPDATE SET
+          contact_id = excluded.contact_id,
+          amount = excluded.amount,
+          currency = excluded.currency,
+          status = excluded.status,
+          payment_mode = excluded.payment_mode,
+          reference = excluded.reference,
+          description = excluded.description,
+          date = excluded.date,
+          ghl_invoice_id = excluded.ghl_invoice_id,
+          invoice_number = excluded.invoice_number,
+          due_date = excluded.due_date,
+          updated_at = CURRENT_TIMESTAMP`,
         [
           ghlInvoiceId,
           contactId || null, // Guardar contactId aunque no exista en contacts table
@@ -849,7 +897,7 @@ export const createInvoice = async (req, res) => {
           null, // payment_method (se llena cuando se pague)
           paymentMode,
           createdInvoice.invoiceNumber || null,
-          createdInvoice.name || createdInvoice.title || 'Pago',
+          displayDescription,
           createdInvoice.issueDate || createdInvoice.createdAt || new Date().toISOString(),
           ghlInvoiceId,
           createdInvoice.invoiceNumber || null,

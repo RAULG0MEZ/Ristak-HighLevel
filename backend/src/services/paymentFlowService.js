@@ -766,6 +766,7 @@ function buildInvoicePayload({ basePayload, contact, amount, currency, concept, 
 async function insertLocalInvoicePayment({ invoice, contactId, fallbackAmount, fallbackCurrency, fallbackDescription, sentAt = null, status = 'draft', paymentMode = 'live' }) {
   const ghlInvoiceId = invoice.id || invoice._id
   const items = invoice.items || invoice.invoiceItems || []
+  const firstItem = items[0] || {}
   const subtotal = items.reduce((sum, item) => sum + Number(item.amount || 0) * Number(item.qty || 1), 0)
   const taxAmount = Number(invoice.tax?.amount || 0)
   const total = normalizeAmount(invoice.total || invoice.amount || subtotal + taxAmount || fallbackAmount)
@@ -799,7 +800,7 @@ async function insertLocalInvoicePayment({ invoice, contactId, fallbackAmount, f
       null,
       resolvedPaymentMode,
       invoice.invoiceNumber || null,
-      invoice.name || invoice.title || fallbackDescription || 'Pago',
+      firstItem.description || firstItem.name || invoice.description || fallbackDescription || invoice.name || invoice.title || 'Pago',
       invoice.issueDate || invoice.createdAt || new Date().toISOString(),
       ghlInvoiceId,
       invoice.invoiceNumber || null,

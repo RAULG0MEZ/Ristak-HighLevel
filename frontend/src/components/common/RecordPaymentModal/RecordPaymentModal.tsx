@@ -24,6 +24,7 @@ import { formatCurrency as formatMxCurrency } from '@/utils/format'
 import { highLevelService } from '@/services/highLevelService'
 
 const IVA_RATE = 0.16
+const DEFAULT_INVOICE_TITLE = 'Pago'
 
 const formatCurrency = (value: number, _currency = 'MXN'): string => formatMxCurrency(value)
 
@@ -283,6 +284,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
 
   // Direct charge
   const [amount, setAmount] = useState('')
+  const [paymentTitle, setPaymentTitle] = useState('')
   const [description, setDescription] = useState('')
   const [currency, setCurrency] = useState('MXN')
   const [includeIVA, setIncludeIVA] = useState(false)
@@ -310,7 +312,6 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   const [businessCountry, setBusinessCountry] = useState('')
   const [businessPostalCode, setBusinessPostalCode] = useState('')
   const [businessWebsite, setBusinessWebsite] = useState('')
-  const [invoiceTitle, setInvoiceTitle] = useState('PAGO')
   const [invoiceTermsNotes, setInvoiceTermsNotes] = useState<string | null>(null)
   const [invoiceDueDays, setInvoiceDueDays] = useState(7)
   const [cardSetupAmount, setCardSetupAmount] = useState(25)
@@ -392,6 +393,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     setShowContactDropdown(false)
     setChargeType('direct')
     setAmount('')
+    setPaymentTitle('')
     setDescription('')
     setCurrency('MXN')
     setIncludeIVA(false)
@@ -438,7 +440,6 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       setBusinessCountry(business.country || locationData?.country || '')
       setBusinessPostalCode(business.postalCode || locationData?.postalCode || '')
       setBusinessWebsite(config.companyWebsite || business.website || locationData?.website || config.domain || '')
-      setInvoiceTitle(config.invoiceTitle || 'PAGO')
       setInvoiceTermsNotes(config.invoiceTermsNotes || null)
       setInvoiceDueDays(config.invoiceDueDays || 7)
       setCardSetupAmount(config.cardSetupAmount || 25)
@@ -719,7 +720,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     onClose()
   }
 
-  const buildInvoicePayload = (preparedTaxAmount: number, finalCurrency: string, contactName: string, items: any[], contactId: string, contactEmail: string, contactPhone: string) => {
+  const buildInvoicePayload = (preparedTaxAmount: number, finalCurrency: string, contactName: string, invoiceTitle: string, items: any[], contactId: string, contactEmail: string, contactPhone: string) => {
     const businessDetails: Record<string, any> = {
       name: businessName || 'Mi Negocio'
     }
@@ -745,8 +746,8 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       .split('T')[0]
 
     return {
-      name: description || `Pago de ${contactName}`,
-      title: invoiceTitle || 'PAGO',
+      name: invoiceTitle,
+      title: invoiceTitle,
       currency: finalCurrency,
       businessDetails,
       contactDetails: {
@@ -846,6 +847,8 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       let items: any[] = []
       let finalCurrency = currency
       let subtotal = 0
+      const resolvedTitle = paymentTitle.trim() || DEFAULT_INVOICE_TITLE
+      const resolvedDescription = description.trim()
 
       if (chargeType === 'product' && selectedProduct && selectedPrice) {
         const parsedAmount = normalizeAmount(customAmount)
@@ -855,7 +858,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
         items = [
           {
             name: selectedProduct.name,
-            description: selectedProduct.description || selectedPrice.name || 'Producto',
+            description: resolvedDescription || selectedProduct.description || selectedPrice.name || selectedProduct.name || resolvedTitle,
             priceId: selectedPrice.id || selectedPrice._id,
             productId: selectedProduct.id || selectedProduct._id,
             amount: parsedAmount,
@@ -868,8 +871,8 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
         subtotal = parsedAmount
         items = [
           {
-            name: description || 'Pago',
-            description: description || 'Pago',
+            name: resolvedTitle,
+            description: resolvedDescription || resolvedTitle,
             amount: parsedAmount,
             qty: 1,
             currency
@@ -884,6 +887,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
         taxAmount,
         finalCurrency,
         contactName,
+        resolvedTitle,
         items,
         selectedContact.id,
         selectedContact.email || '',
@@ -899,7 +903,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
         taxAmount,
         includesTax: includeIVA,
         currency: finalCurrency,
-        description: description || (chargeType === 'product' && selectedProduct ? selectedProduct.name : 'Pago')
+        description: resolvedDescription || (chargeType === 'product' && selectedProduct ? selectedProduct.name : resolvedTitle)
       }
 
       setInvoicePayload(payload)
@@ -1301,7 +1305,18 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
         )}
 
         <div className={styles.field}>
-          <label className={styles.label}>Descripción (opcional)</label>
+          <label className={styles.label}>Título de factura</label>
+          <input
+            type="text"
+            placeholder={DEFAULT_INVOICE_TITLE}
+            value={paymentTitle}
+            onChange={(e) => setPaymentTitle(e.target.value)}
+            className={styles.input}
+          />
+        </div>
+
+        <div className={styles.field}>
+          <label className={styles.label}>Descripción del producto / detalle</label>
           <input
             type="text"
             placeholder="Ej: Pago de servicios, consulta, etc."
