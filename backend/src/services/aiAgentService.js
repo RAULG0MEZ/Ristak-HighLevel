@@ -3,7 +3,7 @@ import { decrypt, encrypt } from '../utils/encryption.js'
 import { resolveDateRangeWithGHLTimezone } from '../utils/dateUtils.js'
 import { buildHiddenContactsCondition, getHiddenContactFilters } from '../utils/hiddenContactsFilter.js'
 import { getGHLClient } from './ghlClient.js'
-import { createInstallmentPaymentFlow, createOfflineContactPayment, createSinglePaymentLink } from './paymentFlowService.js'
+import { cancelScheduledInstallmentPayment, createInstallmentPaymentFlow, createOfflineContactPayment, createSinglePaymentLink, updateScheduledInstallmentPayment } from './paymentFlowService.js'
 import { PAYMENT_MODE_LIVE, PAYMENT_MODE_TEST, normalizePaymentMode, nonTestPaymentCondition } from '../utils/paymentMode.js'
 import { logger } from '../utils/logger.js'
 import {
@@ -1181,6 +1181,7 @@ function buildMetaAdsOperationsContext() {
 const PAYMENT_MUTATION_TOOL_NAMES = new Set([
   'create_single_payment_link',
   'create_installment_payment_flow',
+  'modify_scheduled_payment_flow',
   'record_contact_payment',
   'record_invoice_payment'
 ])
@@ -2286,6 +2287,7 @@ const PAYMENT_CONTACT_TOOL_NAMES = new Set([
   'lookup_contact_payment_profile',
   'create_single_payment_link',
   'create_installment_payment_flow',
+  'modify_scheduled_payment_flow',
   'record_contact_payment',
   'record_invoice_payment'
 ])
@@ -2383,6 +2385,184 @@ function buildPaymentConfirmationRequiredOutput({ action, summary = {}, clarific
       'Si falta método o no está claro si será transferencia, depósito, registro manual, link de pago o domiciliación, pregunta eso antes de confirmar.',
       'Si faltan varios datos, pregunta sólo el siguiente dato indispensable; no hagas un cuestionario completo.'
     ].join(' ')
+  }
+}
+
+function getScheduledPaymentChangeIntent(messages = []) {
+  const text = normalizeText(getLatestUserText(messages))
+  if (!text) return ''
+
+  if (/(crea|crear|haz|hacer).*(nuevo|nueva|otro|otra)|deja.*(?:existente|actual)|sin\s+(?:mover|tocar|cambiar).*(?:actual|existente)/.test(text)) {
+    return 'create_new'
+  }
+
+  if (/(modifica|modificar|cambia|cambiar|mueve|mover|reprograma|reprogramar|actualiza|actualizar).*(existente|actual|programad|schedule|cobro)|\bmodifica(?:lo|la)?\b|\bcambial[oa]\b|\bcámbial[oa]\b/.test(text)) {
+    return 'modify_existing'
+  }
+
+  if (/(cancela|cancelar|elimina|eliminar|borra|borrar).*(cobro|pago|schedule|programad|existente|actual)/.test(text)) {
+    return 'cancel_existing'
+  }
+
+  if (/(no\s+hagas|no\s+lo\s+hagas|no\s+muevas|espera)/.test(text)) {
+    return 'cancel_change'
+  }
+
+  return ''
+}
+
+function hasScheduledPaymentCorrectionIntent(messages = []) {
+  const latestText = getLatestUserText(messages)
+  const normalized = normalizeText(latestText)
+  if (!normalized) return false
+
+  const hasCorrectionLanguage = /(sabes que|mejor|corrige|corrígelo|cambia|cámbialo|modifica|mueve|pásalo|pasalo|reprograma|arrepent|en vez|perd[oó]n)/.test(normalized)
+  const hasDate = Boolean(parseNaturalPaymentDateFromText(latestText))
+  const previousText = normalizeText(getRecentConversationTextBeforeLatestUser(messages, 8))
+  const hasRecentScheduledPayment = /(program[oó]|programad|schedule|tarjeta guardada|fecha indicada|no lleva link|cobro).*(pago|cobro|mxn|\$)|flow|parcialidad/.test(previousText)
+
+  return hasCorrectionLanguage && hasDate && hasRecentScheduledPayment
+}
+
+function normalizeScheduledPaymentCandidate(row = {}) {
+  if (!row?.installment_id) return null
+
+  return {
+    flowId: row.flow_id,
+    installmentId: row.installment_id,
+    scheduleId: row.ghl_schedule_id,
+    sequence: Number(row.sequence || 1),
+    amount: normalizePaymentAmount(row.amount),
+    currency: cleanText(row.currency || DEFAULT_PAYMENT_CURRENCY, 12).toUpperCase() || DEFAULT_PAYMENT_CURRENCY,
+    concept: cleanText(row.concept || 'Pago programado', 240),
+    dueDate: normalizeDateOnlyInput(row.due_date || row.effective_due_date || ''),
+    status: row.status || null,
+    scheduleStatus: row.ghl_schedule_status || null,
+    contact: {
+      id: row.contact_id,
+      name: row.contact_name || null,
+      email: row.contact_email || null,
+      phone: row.contact_phone || null
+    },
+    storedCard: {
+      brand: row.ghl_card_brand || null,
+      last4: row.ghl_card_last4 || null
+    },
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || null
+  }
+}
+
+async function findScheduledPaymentCandidates({ contactId, amount = 0, timezone = DEFAULT_PAYMENT_TIMEZONE } = {}) {
+  if (!contactId) return []
+
+  const today = DateTime.now().setZone(timezone).toISODate()
+  const rows = await safeAll(
+    `SELECT i.id AS installment_id,
+            i.flow_id,
+            i.sequence,
+            i.amount,
+            i.due_date,
+            i.frequency,
+            i.status,
+            i.ghl_schedule_id,
+            i.ghl_schedule_status,
+            i.created_at,
+            i.updated_at,
+            f.contact_id,
+            f.contact_name,
+            f.contact_email,
+            f.contact_phone,
+            f.currency,
+            f.concept,
+            f.ghl_card_brand,
+            f.ghl_card_last4
+     FROM installment_payments i
+     JOIN payment_flows f ON f.id = i.flow_id
+     WHERE f.contact_id = ?
+       AND i.automatic = 1
+       AND i.ghl_schedule_id IS NOT NULL
+       AND LOWER(COALESCE(i.status, '')) IN ('scheduled', 'pending_card_authorization', 'schedule_failed')
+     ORDER BY datetime(COALESCE(i.updated_at, i.created_at)) DESC,
+              datetime(COALESCE(f.updated_at, f.created_at)) DESC
+     LIMIT 10`,
+    [contactId]
+  )
+  const normalized = rows.map(normalizeScheduledPaymentCandidate).filter(Boolean)
+  const futureOrUndated = normalized.filter((candidate) => (
+    !candidate.dueDate || candidate.dueDate >= today
+  ))
+  const amountFiltered = amount > 0
+    ? futureOrUndated.filter(candidate => Math.abs(candidate.amount - amount) < 0.01)
+    : futureOrUndated
+
+  return (amountFiltered.length ? amountFiltered : futureOrUndated).slice(0, 5)
+}
+
+function buildScheduledPaymentChoiceOptions({ candidate, newDueDate, amount, currency, contact } = {}) {
+  const contactMemoryText = buildPaymentContactMemoryText(contact || candidate?.contact)
+  const paymentMemoryText = buildPaymentContextMemoryText({
+    amount: amount || candidate?.amount,
+    currency: currency || candidate?.currency,
+    dueDate: newDueDate
+  })
+  const scheduleText = [
+    candidate?.flowId ? `Flow ID: ${candidate.flowId}.` : '',
+    candidate?.installmentId ? `Installment ID: ${candidate.installmentId}.` : '',
+    candidate?.scheduleId ? `Schedule ID: ${candidate.scheduleId}.` : ''
+  ].filter(Boolean).join(' ')
+
+  return [
+    {
+      label: 'Modificar existente',
+      description: `Cambia el cobro actual del ${candidate?.dueDate || 'día programado'} al ${newDueDate}.`,
+      value: `Sí, modifica el cobro programado existente. ${scheduleText} Nueva fecha confirmada: ${newDueDate}.${contactMemoryText ? ` ${contactMemoryText}` : ''}${paymentMemoryText ? ` ${paymentMemoryText}` : ''}`
+    },
+    {
+      label: 'Crear otro',
+      description: 'Deja el cobro actual igual y crea un cobro nuevo.',
+      value: `Sí, crea un nuevo cobro programado y deja el cobro existente sin cambios. Nueva fecha confirmada: ${newDueDate}.${contactMemoryText ? ` ${contactMemoryText}` : ''}${paymentMemoryText ? ` ${paymentMemoryText}` : ''}`
+    },
+    {
+      label: 'No mover nada',
+      description: 'No modifica ni crea cobros.',
+      value: `No muevas nada de este cobro programado.${contactMemoryText ? ` ${contactMemoryText}` : ''}`
+    }
+  ]
+}
+
+function buildScheduledPaymentModificationChoiceOutput({ candidate, candidates = [], newDueDate, amount, currency, contact } = {}) {
+  const selectedCandidate = candidate || candidates[0]
+  const safeCandidates = candidates.length ? candidates : selectedCandidate ? [selectedCandidate] : []
+
+  return {
+    ok: false,
+    action: 'modify_scheduled_payment_flow',
+    modifyOrCreateRequired: true,
+    error: 'Ya hay un cobro programado relacionado. Antes de mover dinero necesito saber si quieres modificar ese cobro o crear otro nuevo.',
+    missingFields: ['modificar existente o crear nuevo'],
+    askOneAtATime: true,
+    contact: contact || selectedCandidate?.contact || null,
+    existingScheduledPayments: safeCandidates.map((item) => ({
+      flowId: item.flowId,
+      installmentId: item.installmentId,
+      scheduleId: item.scheduleId,
+      amount: item.amount,
+      currency: item.currency,
+      dueDate: item.dueDate,
+      status: item.status,
+      scheduleStatus: item.scheduleStatus
+    })),
+    newDueDate,
+    clarificationOptions: selectedCandidate
+      ? buildScheduledPaymentChoiceOptions({
+          candidate: selectedCandidate,
+          newDueDate,
+          amount,
+          currency,
+          contact
+        })
+      : []
   }
 }
 
@@ -5863,10 +6043,73 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
   const currency = getProductPaymentCurrency(args)
 
   if (totalAmount <= 0) {
+    if (hasScheduledPaymentCorrectionIntent(context.messages)) {
+      const newDueDate = getTopLevelScheduledPaymentDate(args, context.messages, paymentTimezone)
+      const candidates = await findScheduledPaymentCandidates({
+        contactId: resolvedContact.contact.id,
+        timezone: paymentTimezone
+      })
+      const candidate = candidates[0]
+
+      if (candidate && newDueDate) {
+        return buildScheduledPaymentModificationChoiceOutput({
+          candidate,
+          candidates,
+          newDueDate,
+          amount: candidate.amount,
+          currency: candidate.currency,
+          contact: resolvedContact.contact
+        })
+      }
+    }
+
     return {
       ok: false,
       error: 'Falta el total a cobrar o el monto no es válido.',
       missingFields: ['totalAmount']
+    }
+  }
+
+  const scheduleChangeIntent = getScheduledPaymentChangeIntent(context.messages)
+  if (
+    (hasScheduledPaymentCorrectionIntent(context.messages) || scheduleChangeIntent === 'modify_existing') &&
+    scheduleChangeIntent !== 'create_new'
+  ) {
+    const newDueDate = getTopLevelScheduledPaymentDate(args, context.messages, paymentTimezone)
+    const candidates = await findScheduledPaymentCandidates({
+      contactId: resolvedContact.contact.id,
+      amount: totalAmount,
+      timezone: paymentTimezone
+    })
+    const candidate = candidates[0]
+
+    if (candidate && newDueDate) {
+      if (scheduleChangeIntent === 'modify_existing') {
+        return {
+          ok: false,
+          action: 'modify_scheduled_payment_flow',
+          redirectTool: 'modify_scheduled_payment_flow',
+          error: 'El usuario eligió modificar el cobro programado existente. No crees uno nuevo; usa modify_scheduled_payment_flow.',
+          suggestedArguments: {
+            contactId: resolvedContact.contact.id,
+            installmentId: candidate.installmentId,
+            scheduleId: candidate.scheduleId,
+            amount: totalAmount || candidate.amount,
+            currency: currency || candidate.currency,
+            newDueDate,
+            action: 'modify_existing'
+          }
+        }
+      }
+
+      return buildScheduledPaymentModificationChoiceOutput({
+        candidate,
+        candidates,
+        newDueDate,
+        amount: totalAmount,
+        currency,
+        contact: resolvedContact.contact
+      })
     }
   }
 
@@ -6687,6 +6930,238 @@ async function executeCreateSinglePaymentLink(args = {}, highLevelConnection, co
   }
 }
 
+async function executeModifyScheduledPaymentFlow(args = {}, highLevelConnection, context = {}) {
+  if (!highLevelConnection?.configured) {
+    return {
+      ok: false,
+      error: 'HighLevel no está configurado. Configura primero la integración de Go High Level.'
+    }
+  }
+
+  const paymentTimezone = highLevelConnection.locationData?.timezone || DEFAULT_PAYMENT_TIMEZONE
+  const resolvedContact = await resolvePaymentContact(args, context)
+  const newDueDate = normalizeDateOnlyInput(args.newDueDate || args.dueDate || args.paymentDate || args.chargeDate) ||
+    parseNaturalPaymentDateFromText(getLatestUserText(context.messages), paymentTimezone) ||
+    getTopLevelScheduledPaymentDate(args, context.messages, paymentTimezone)
+  const amount = normalizePaymentAmount(args.amount || args.totalAmount || args.total)
+  const currency = getProductPaymentCurrency(args)
+  const action = normalizeText(
+    args.action ||
+    args.mode ||
+    args.updateMode ||
+    args.changeType ||
+    getScheduledPaymentChangeIntent(context.messages)
+  )
+
+  if (!resolvedContact.contact) {
+    return {
+      ok: false,
+      action: 'modify_scheduled_payment_flow',
+      error: resolvedContact.error || 'Falta identificar el contacto del cobro programado.',
+      missingFields: resolvedContact.missingFields || ['contacto'],
+      clarificationOptions: resolvedContact.clarificationOptions || []
+    }
+  }
+
+  if (!newDueDate) {
+    return {
+      ok: false,
+      action: 'modify_scheduled_payment_flow',
+      error: 'Falta la nueva fecha para el cobro programado.',
+      missingFields: ['nueva fecha']
+    }
+  }
+
+  const candidates = await findScheduledPaymentCandidates({
+    contactId: resolvedContact.contact.id,
+    amount,
+    timezone: paymentTimezone
+  })
+  const requestedInstallmentId = cleanText(args.installmentId || args.installment_id || '', 180)
+  const requestedScheduleId = cleanText(args.scheduleId || args.ghlScheduleId || args.ghl_schedule_id || '', 180)
+  const candidate = candidates.find((item) => (
+    (requestedInstallmentId && item.installmentId === requestedInstallmentId) ||
+    (requestedScheduleId && item.scheduleId === requestedScheduleId)
+  )) || candidates[0]
+
+  if (!candidate) {
+    return {
+      ok: false,
+      action: 'modify_scheduled_payment_flow',
+      error: 'No encontré un cobro programado activo para modificar. Si quieres, puedo crear uno nuevo con esa fecha.',
+      missingFields: ['cobro programado existente'],
+      suggestedArguments: {
+        contactId: resolvedContact.contact.id,
+        totalAmount: amount || null,
+        currency,
+        firstPayment: { enabled: false },
+        remainingAutomatic: true,
+        remainingFrequency: 'custom',
+        remainingPayments: amount > 0
+          ? [{ type: 'amount', amount, dueDate: newDueDate }]
+          : []
+      }
+    }
+  }
+
+  if (!['modify_existing', 'create_new', 'cancel_change', 'cancel_existing'].includes(action)) {
+    return buildScheduledPaymentModificationChoiceOutput({
+      candidate,
+      candidates,
+      newDueDate,
+      amount: amount || candidate.amount,
+      currency: currency || candidate.currency,
+      contact: resolvedContact.contact
+    })
+  }
+
+  if (action === 'cancel_change') {
+    return {
+      ok: false,
+      action: 'modify_scheduled_payment_flow',
+      cancelled: true,
+      message: 'No se modificó ni se creó ningún cobro programado.',
+      summary: {
+        contact: resolvedContact.contact,
+        existingPayment: candidate,
+        requestedDueDate: newDueDate
+      }
+    }
+  }
+
+  if (action === 'create_new') {
+    return {
+      ok: false,
+      action: 'create_installment_payment_flow',
+      redirectTool: 'create_installment_payment_flow',
+      error: 'El usuario eligió crear un cobro nuevo y dejar el existente sin cambios. Usa create_installment_payment_flow con estos datos.',
+      suggestedArguments: {
+        contactId: resolvedContact.contact.id,
+        totalAmount: amount || candidate.amount,
+        currency: currency || candidate.currency,
+        concept: candidate.concept,
+        firstPayment: { enabled: false },
+        remainingAutomatic: true,
+        remainingFrequency: 'custom',
+        cardAuthorizationPreference: 'stored_card',
+        useStoredCard: true,
+        remainingPayments: [
+          {
+            type: 'amount',
+            amount: amount || candidate.amount,
+            dueDate: newDueDate
+          }
+        ]
+      }
+    }
+  }
+
+  if (action === 'cancel_existing') {
+    if (!hasExplicitPaymentExecutionConfirmation(context.messages)) {
+      return buildPaymentConfirmationRequiredOutput({
+        action: 'modify_scheduled_payment_flow',
+        summary: {
+          contact: resolvedContact.contact,
+          existingPayment: {
+            flowId: candidate.flowId,
+            installmentId: candidate.installmentId,
+            scheduleId: candidate.scheduleId,
+            amount: candidate.amount,
+            currency: candidate.currency,
+            dueDate: candidate.dueDate
+          },
+          behavior: 'Se cancelará el schedule existente en HighLevel; no se creará otro cobro.'
+        },
+        clarificationOptions: buildPaymentConfirmationOptions('la cancelación del cobro programado')
+      })
+    }
+
+    const result = await cancelScheduledInstallmentPayment({
+      installmentId: requestedInstallmentId || candidate.installmentId,
+      scheduleId: requestedScheduleId || candidate.scheduleId,
+      source: 'ai_agent'
+    })
+
+    return {
+      ok: true,
+      action: 'modify_scheduled_payment_flow',
+      paymentMode: highLevelConnection.paymentMode,
+      paymentModeWarning: getPaymentModeWarning(highLevelConnection.paymentMode),
+      message: 'Cobro programado cancelado con la lógica interna de Ristak.',
+      summary: {
+        contact: result.contact,
+        flowId: result.flowId,
+        installmentId: result.installmentId,
+        scheduleId: result.scheduleId,
+        amount: result.amount,
+        currency: result.currency,
+        oldDueDate: result.oldDueDate,
+        behavior: 'Se canceló el schedule existente en HighLevel.'
+      },
+      result
+    }
+  }
+
+  if (!hasExplicitPaymentExecutionConfirmation(context.messages)) {
+    return buildPaymentConfirmationRequiredOutput({
+      action: 'modify_scheduled_payment_flow',
+      summary: {
+        contact: resolvedContact.contact,
+        existingPayment: {
+          flowId: candidate.flowId,
+          installmentId: candidate.installmentId,
+          scheduleId: candidate.scheduleId,
+          amount: candidate.amount,
+          currency: candidate.currency,
+          dueDate: candidate.dueDate
+        },
+        change: {
+          oldDueDate: candidate.dueDate,
+          newDueDate,
+          amount: amount || candidate.amount,
+          currency: currency || candidate.currency
+        },
+        behavior: 'Se modificará el schedule existente en HighLevel; no se creará otro cobro.'
+      },
+      clarificationOptions: buildPaymentConfirmationOptions('esta modificación del cobro programado')
+    })
+  }
+
+  const result = await updateScheduledInstallmentPayment({
+    installmentId: requestedInstallmentId || candidate.installmentId,
+    scheduleId: requestedScheduleId || candidate.scheduleId,
+    newDueDate,
+    amount: amount || candidate.amount,
+    source: 'ai_agent'
+  })
+
+  return {
+    ok: true,
+    action: 'modify_scheduled_payment_flow',
+    paymentMode: highLevelConnection.paymentMode,
+    paymentModeWarning: getPaymentModeWarning(highLevelConnection.paymentMode),
+    message: 'Cobro programado modificado con la lógica interna de Ristak.',
+    summary: {
+      contact: result.contact,
+      flowId: result.flowId,
+      installmentId: result.installmentId,
+      scheduleId: result.scheduleId,
+      amount: result.amount,
+      currency: result.currency,
+      oldDueDate: result.oldDueDate,
+      newDueDate: result.newDueDate,
+      storedCard: result.paymentMethod?.brand || result.paymentMethod?.last4
+        ? {
+            brand: result.paymentMethod.brand,
+            last4: result.paymentMethod.last4
+          }
+        : null,
+      behavior: 'Se actualizó el schedule existente; no se creó un cobro nuevo.'
+    },
+    result
+  }
+}
+
 async function executeRecordContactPayment(args = {}, highLevelConnection, context = {}) {
   if (!highLevelConnection?.configured) {
     return {
@@ -7211,6 +7686,31 @@ function buildHighLevelTools(highLevelConnection, options = {}) {
             },
             additionalProperties: false
           }
+        },
+        additionalProperties: true
+      },
+      strict: false
+    },
+    {
+      type: 'function',
+      name: 'modify_scheduled_payment_flow',
+      description: 'Modifica o cancela un cobro programado existente creado por Ristak/HighLevel en vez de crear otro. Úsala cuando el usuario corrige una fecha, monto o dice "mejor para..." después de haber programado un pago. Primero pregunta si quiere modificar el cobro existente o crear uno nuevo; si elige modificar, actualiza el invoice schedule existente con updateAndSchedule/update schedule y conserva autopago/tarjeta guardada. Si pide cancelar, usa cancel schedule. No uses create_installment_payment_flow para correcciones hasta resolver modificar vs crear nuevo.',
+      parameters: {
+        type: 'object',
+        properties: {
+          contactId: { type: ['string', 'null'], description: 'ID del contacto si ya está en memoria.' },
+          contactName: { type: ['string', 'null'], description: 'Nombre limpio del contacto si aplica.' },
+          contactHint: { type: ['string', 'null'], description: 'Pista limpia del contacto.' },
+          flowId: { type: ['string', 'null'], description: 'ID local del payment_flow si ya se conoce.' },
+          installmentId: { type: ['string', 'null'], description: 'ID local de la parcialidad/cobro programado a modificar.' },
+          scheduleId: { type: ['string', 'null'], description: 'ID de invoice schedule en HighLevel.' },
+          amount: { type: ['number', 'null'], description: 'Monto del cobro, si se conoce o cambia.' },
+          currency: { type: ['string', 'null'], description: 'Moneda, normalmente MXN.' },
+          newDueDate: { type: ['string', 'null'], description: 'Nueva fecha YYYY-MM-DD para el cobro programado.' },
+          dueDate: { type: ['string', 'null'], description: 'Alias de newDueDate.' },
+          paymentDate: { type: ['string', 'null'], description: 'Alias de newDueDate.' },
+          action: { type: ['string', 'null'], enum: ['modify_existing', 'create_new', 'cancel_change', 'cancel_existing', null], description: 'modify_existing si el usuario eligió modificar el cobro existente; create_new si eligió dejar el anterior y crear otro; cancel_existing si quiere cancelar el schedule; cancel_change para no mover nada.' },
+          mode: { type: ['string', 'null'], enum: ['modify_existing', 'create_new', 'cancel_change', 'cancel_existing', null], description: 'Alias de action.' }
         },
         additionalProperties: true
       },
@@ -7852,7 +8352,7 @@ async function callOpenAIResponseWithActionTools(apiKey, {
           if (isHighLevelPaymentRestMutation(restCall)) {
             output = {
               ok: false,
-              error: 'No se permite mutar invoices, pagos o cobros por REST directo desde el agente. Usa las herramientas internas de Ristak para replicar el formulario: create_single_payment_link, create_installment_payment_flow, record_contact_payment o record_invoice_payment.',
+              error: 'No se permite mutar invoices, pagos o cobros por REST directo desde el agente. Usa las herramientas internas de Ristak para replicar el formulario: create_single_payment_link, create_installment_payment_flow, modify_scheduled_payment_flow, record_contact_payment o record_invoice_payment.',
               redirectTool: 'internal_ristak_payment_tool',
               blockedPath: cleanHighLevelPath(restArguments?.path || ''),
               reason: 'Las herramientas internas aplican contacto exacto, método, tarjeta guardada, canal de envío, confirmación, modo live/test y sincronización local. REST directo puede dejar facturas en borrador o desalineadas.'
@@ -7900,6 +8400,12 @@ async function callOpenAIResponseWithActionTools(apiKey, {
           })
         } else if (call.name === 'create_installment_payment_flow') {
           output = await executeCreateInstallmentPaymentFlow(call.arguments, highLevelConnection, {
+            messages,
+            operationalMemory,
+            resolvedPaymentContact: operationalMemory.paymentContact
+          })
+        } else if (call.name === 'modify_scheduled_payment_flow') {
+          output = await executeModifyScheduledPaymentFlow(call.arguments, highLevelConnection, {
             messages,
             operationalMemory,
             resolvedPaymentContact: operationalMemory.paymentContact
@@ -8343,6 +8849,7 @@ const UNIFIED_CAPABILITY_PROMPT = [
   '- Nunca crees, envíes, anules, programes ni marques invoices/pagos usando highlevel_rest_request. Para dinero, REST directo está prohibido porque se salta el workflow del formulario y puede dejar facturas en borrador.',
   '- Para links/invoices con tarjeta o domiciliación no inventes canal de envío. Si el usuario no eligió todos/correo/WhatsApp/SMS, la herramienta debe pedirlo antes de crear/enviar para no dejar invoices en borrador.',
   '- Excepción obligatoria: si el usuario eligió tarjeta guardada/autorizada y la tarjeta existe, NO pidas canal de envío ni link. Programa o cobra esa tarjeta guardada directamente.',
+  '- Si el usuario corrige o cancela un cobro ya programado, primero resuelve si va a modificar/cancelar el schedule existente o crear uno nuevo. No dupliques cobros por una corrección de fecha/monto.',
   '- Para transferencia, depósito, efectivo o manual registra el pago offline con la herramienta interna. Si además hay parcialidades automáticas y falta tarjeta guardada, el backend debe enviar link de domiciliación por el canal confirmado; si ya hay tarjeta guardada, no mandes domiciliación salvo que pidan otra tarjeta.',
   '- En planes de pago, "ahorita/hoy y luego el mismo día durante los siguientes N meses" significa primer pago hoy y pagos mensuales futuros; no lo conviertas en N cobros hoy.',
   '- Si el plan dice "espera un mes y luego cobra", representa el mes sin cobro saltando el periodo; no crees parcialidades de $0.',
@@ -8361,7 +8868,7 @@ const PAYMENT_WORKFLOW_PROMPT = [
   '- El modal no completa un invoice/link de tarjeta sin envío. Para pago con tarjeta, link de pago, primer pago con tarjeta o domiciliación/autorización, siempre debe existir canal real: todos, correo, WhatsApp o SMS. "Solo generar", "none" o "sin enviar" no cuenta como acción válida.',
   '- Esa regla de envío NO aplica cuando se cobra o programa una tarjeta guardada/autorizada existente: ahí no hay link que enviar.',
   '- Cuando la herramienta regrese summary.delivery, usa ese canal como el canal visible para el usuario. Si result.sendMethod dice sms pero summary.delivery dice WhatsApp, sms es sólo el valor técnico de HighLevel para envío al teléfono; no cambies el canal confirmado por el usuario.',
-  '- No uses highlevel_rest_request para crear invoices, enviar invoices, registrar pagos, schedules ni payments. Las únicas herramientas válidas para mutar dinero son create_single_payment_link, create_installment_payment_flow, record_contact_payment y record_invoice_payment.',
+  '- No uses highlevel_rest_request para crear invoices, enviar invoices, registrar pagos, schedules ni payments. Las únicas herramientas válidas para mutar dinero son create_single_payment_link, create_installment_payment_flow, modify_scheduled_payment_flow, record_contact_payment y record_invoice_payment.',
   '- Si el usuario ya dio todos los datos, usa las herramientas internas y avanza; no repitas preguntas nomás por protocolo.',
   '- Si el usuario acaba de elegir el contacto en un flujo de cobro, no cierres con un resumen textual. Vuelve a llamar create_single_payment_link o create_installment_payment_flow con el contacto confirmado para que el backend decida tarjeta guardada, link, canal y confirmación.',
   '- lookup_contact_payment_profile sólo sirve para consultar perfil de pago; no es respuesta final suficiente para un cobro. Después de identificar contacto y monto/fecha, usa la herramienta de creación/programación correspondiente.',
@@ -8372,6 +8879,7 @@ const PAYMENT_WORKFLOW_PROMPT = [
   '- Descompón la frase del usuario por tramos temporales. "Por N meses" crea N cobros; si después dice "te esperas un mes, le vuelves a cobrar" eso agrega otro cobro; y si luego dice "te esperas otro mes y le vuelves a cobrar, pero esta vez 20" agrega otro cobro final de 20. No mezcles el cobro final con el último mes de la serie.',
   '- Si create_installment_payment_flow devuelve scheduleIncomplete, NO muestres ese plan ni pidas confirmación. Corrige la lista de cobros y vuelve a llamar la herramienta con todos los cobros reales y el total recalculado.',
   '- Si después del resumen el usuario responde afirmativamente pero agrega cambios como "pero", "solo pon", "cambia", "agrega descripción", "mejor por WhatsApp", "con tarjeta guardada", etc., eso NO es permiso final. Actualiza el plan con la herramienta interna y vuelve a pedir permiso con el resumen nuevo.',
+  '- Si el usuario ya programó un cobro y luego dice "sabes qué", "mejor para otra fecha", "cámbialo", "mueve la fecha" o corrige monto/fecha, NO crees otro cobro automáticamente. Usa modify_scheduled_payment_flow para preguntar si modifica el schedule existente o si crea uno nuevo dejando el anterior intacto. Si pide cancelar el programado, usa esa misma herramienta con cancel_existing.',
   '- Si el usuario ya eligió producto y luego corrige "no, cóbraselo por 20 pesos" o "mejor otro precio", conserva contacto, fecha y producto; sólo cambia el monto/precio a personalizado y sigue el flujo de tarjeta/envío que toque.',
   '- Sólo haz el cambio/cobro cuando el último mensaje sea un sí limpio sobre el resumen vigente, por ejemplo "sí, así está bien", "sí, dale", "confirmo" o el botón de confirmación, sin cambios extra. Si el usuario ya confirmó desde botón, continúa sin pedir otra frase.',
   '- Cobro único con tarjeta: si no hay tarjeta guardada/autorizada, el link de pago es obligatorio y debes pedir canal de envío si falta. Si sí hay tarjeta guardada, pregunta una sola vez si se cobra la tarjeta guardada o se manda link.',

@@ -2042,6 +2042,263 @@ export async function createInstallmentPaymentFlow(payload) {
   return response
 }
 
+export async function updateScheduledInstallmentPayment(payload = {}) {
+  const installmentId = payload.installmentId || payload.installment_id
+  const scheduleId = payload.scheduleId || payload.ghlScheduleId || payload.ghl_schedule_id
+  const rawNewDueDate = payload.newDueDate || payload.dueDate || payload.paymentDate
+
+  if (!installmentId && !scheduleId) {
+    throw new Error('Falta identificar el cobro programado a modificar')
+  }
+
+  if (!rawNewDueDate) {
+    throw new Error('Falta la nueva fecha del cobro programado')
+  }
+
+  const newDueDate = normalizeDateOnly(rawNewDueDate)
+
+  if (!newDueDate) {
+    throw new Error('Falta la nueva fecha del cobro programado')
+  }
+
+  const installment = await db.get(
+    `SELECT i.*, f.contact_id, f.contact_name, f.contact_email, f.contact_phone,
+            f.total_amount, f.currency, f.concept, f.remaining_automatic,
+            f.ghl_customer_id, f.ghl_payment_method_id, f.ghl_payment_method_type,
+            f.ghl_card_brand, f.ghl_card_last4, f.ghl_card_authorization_invoice_id,
+            f.ghl_payment_provider_type, f.ghl_payment_provider_account,
+            f.ghl_payment_live_mode, f.first_payment_amount, f.first_payment_date,
+            f.first_payment_status, f.metadata
+     FROM installment_payments i
+     JOIN payment_flows f ON f.id = i.flow_id
+     WHERE (? IS NOT NULL AND i.id = ?)
+        OR (? IS NOT NULL AND i.ghl_schedule_id = ?)
+     ORDER BY i.updated_at DESC
+     LIMIT 1`,
+    [installmentId || null, installmentId || null, scheduleId || null, scheduleId || null]
+  )
+
+  if (!installment?.id) {
+    throw new Error('No encontré ese cobro programado en Ristak')
+  }
+
+  const effectiveScheduleId = scheduleId || installment.ghl_schedule_id
+  if (!effectiveScheduleId) {
+    throw new Error('Este cobro todavía no tiene schedule de HighLevel para modificar')
+  }
+
+  const linkedInstallments = await db.all(
+    `SELECT *
+     FROM installment_payments
+     WHERE flow_id = ?
+       AND ghl_schedule_id = ?
+     ORDER BY sequence ASC`,
+    [installment.flow_id, effectiveScheduleId]
+  )
+
+  if (linkedInstallments.length > 1) {
+    throw new Error('Ese schedule agrupa varios cobros. Para evitar mover cobros equivocados, modifica ese plan desde la pantalla de pagos por ahora.')
+  }
+
+  const newAmount = normalizeAmount(payload.amount || installment.amount)
+  if (newAmount <= 0) {
+    throw new Error('El monto del cobro programado debe ser mayor a 0')
+  }
+
+  const flow = await db.get('SELECT * FROM payment_flows WHERE id = ?', [installment.flow_id])
+  if (!flow?.id) {
+    throw new Error('No encontré el flujo de pagos asociado')
+  }
+
+  const ghlClient = await getGHLClient()
+  const context = await getInvoiceSendContext()
+  const authorizedCard = await getAuthorizedPaymentMethod(flow, { ghlClient })
+
+  if (!authorizedCard?.customerId || !authorizedCard?.paymentMethodId) {
+    throw new Error('No hay tarjeta autorizada disponible para reprogramar este cobro')
+  }
+
+  const allFlowInstallmentsRaw = await db.all(
+    `SELECT *
+     FROM installment_payments
+     WHERE flow_id = ?
+     ORDER BY sequence ASC`,
+    [flow.id]
+  )
+  const updatedInstallments = allFlowInstallmentsRaw.map((row) => (
+    row.id === installment.id
+      ? {
+          ...row,
+          amount: newAmount,
+          due_date: newDueDate,
+          effective_due_date: newDueDate
+        }
+      : row
+  ))
+  const updatedFlow = {
+    ...flow,
+    total_amount: allFlowInstallmentsRaw.length === 1
+      ? newAmount
+      : normalizeAmount((Number(flow.first_payment_amount || 0)) + updatedInstallments.reduce((sum, row) => sum + normalizeAmount(row.amount), 0))
+  }
+  const planSummary = buildPaymentPlanSummary(updatedFlow, withEffectiveInstallmentDates(updatedFlow, updatedInstallments, context.timezone), {
+    timezone: context.timezone
+  })
+  const group = createSingleInstallmentScheduleGroup({
+    ...installment,
+    amount: newAmount,
+    due_date: newDueDate,
+    effective_due_date: newDueDate,
+    frequency: 'custom'
+  }, context.timezone)
+  const schedulePayload = buildInstallmentSchedulePayload({
+    flow: updatedFlow,
+    group,
+    context,
+    planSummary
+  })
+  const autoPayment = buildAutoPayment(authorizedCard, {
+    amount: newAmount,
+    currency: updatedFlow.currency || CURRENCY_DEFAULT
+  })
+
+  let response
+  try {
+    response = await ghlClient.updateAndScheduleInvoiceSchedule(effectiveScheduleId, {
+      ...schedulePayload,
+      liveMode: context.liveMode,
+      autoPayment
+    })
+  } catch (error) {
+    logger.warn(`No se pudo usar updateAndSchedule para ${effectiveScheduleId}; intentando update + schedule: ${error.message}`)
+    response = await ghlClient.updateInvoiceSchedule(effectiveScheduleId, schedulePayload)
+    await ghlClient.scheduleInvoiceSchedule(effectiveScheduleId, {
+      liveMode: context.liveMode,
+      autoPayment
+    })
+  }
+
+  await db.run(
+    `UPDATE installment_payments
+     SET amount = ?,
+         due_date = ?,
+         frequency = 'custom',
+         status = 'scheduled',
+         ghl_schedule_status = 'scheduled',
+         notes = ?,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`,
+    [
+      newAmount,
+      newDueDate,
+      [
+        installment.notes || '',
+        `Reprogramado por Agente AI de ${installment.due_date || 'fecha previa'} a ${newDueDate}`
+      ].filter(Boolean).join('\n').slice(0, 1000),
+      installment.id
+    ]
+  )
+
+  await db.run(
+    `UPDATE payment_flows
+     SET total_amount = ?,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`,
+    [updatedFlow.total_amount, flow.id]
+  )
+
+  return {
+    flowId: flow.id,
+    installmentId: installment.id,
+    scheduleId: effectiveScheduleId,
+    oldDueDate: installment.due_date,
+    newDueDate,
+    amount: newAmount,
+    currency: updatedFlow.currency || CURRENCY_DEFAULT,
+    contact: {
+      id: flow.contact_id,
+      name: flow.contact_name,
+      email: flow.contact_email,
+      phone: flow.contact_phone
+    },
+    paymentMethod: {
+      type: authorizedCard.type || 'card',
+      brand: authorizedCard.brand || null,
+      last4: authorizedCard.last4 || null
+    },
+    response
+  }
+}
+
+export async function cancelScheduledInstallmentPayment(payload = {}) {
+  const installmentId = payload.installmentId || payload.installment_id
+  const scheduleId = payload.scheduleId || payload.ghlScheduleId || payload.ghl_schedule_id
+
+  if (!installmentId && !scheduleId) {
+    throw new Error('Falta identificar el cobro programado a cancelar')
+  }
+
+  const installment = await db.get(
+    `SELECT i.*, f.contact_id, f.contact_name, f.contact_email, f.contact_phone,
+            f.currency, f.concept
+     FROM installment_payments i
+     JOIN payment_flows f ON f.id = i.flow_id
+     WHERE (? IS NOT NULL AND i.id = ?)
+        OR (? IS NOT NULL AND i.ghl_schedule_id = ?)
+     ORDER BY i.updated_at DESC
+     LIMIT 1`,
+    [installmentId || null, installmentId || null, scheduleId || null, scheduleId || null]
+  )
+
+  if (!installment?.id) {
+    throw new Error('No encontré ese cobro programado en Ristak')
+  }
+
+  const effectiveScheduleId = scheduleId || installment.ghl_schedule_id
+  if (!effectiveScheduleId) {
+    throw new Error('Este cobro todavía no tiene schedule de HighLevel para cancelar')
+  }
+
+  const ghlClient = await getGHLClient()
+  const context = await getInvoiceSendContext()
+  const response = await ghlClient.cancelInvoiceSchedule(effectiveScheduleId, {
+    liveMode: context.liveMode
+  })
+
+  await db.run(
+    `UPDATE installment_payments
+     SET status = 'cancelled',
+         automatic = 0,
+         ghl_schedule_status = 'cancelled',
+         notes = ?,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE ghl_schedule_id = ?`,
+    [
+      [
+        installment.notes || '',
+        `Cancelado por Agente AI el ${new Date().toISOString()}`
+      ].filter(Boolean).join('\n').slice(0, 1000),
+      effectiveScheduleId
+    ]
+  )
+
+  return {
+    flowId: installment.flow_id,
+    installmentId: installment.id,
+    scheduleId: effectiveScheduleId,
+    oldDueDate: installment.due_date,
+    amount: normalizeAmount(installment.amount),
+    currency: installment.currency || CURRENCY_DEFAULT,
+    contact: {
+      id: installment.contact_id,
+      name: installment.contact_name,
+      email: installment.contact_email,
+      phone: installment.contact_phone
+    },
+    response
+  }
+}
+
 async function activateFlowIfReady(flow) {
   const ghlClient = await getGHLClient()
   logger.info(`Intentando activar flujo de parcialidades ${flow.id}: firstInvoice=${maskIdentifier(flow.first_payment_invoice_id)}, cardSetupInvoice=${maskIdentifier(flow.card_setup_invoice_id)}, firstStatus=${flow.first_payment_status}, cardSetupStatus=${flow.card_setup_status}`)
