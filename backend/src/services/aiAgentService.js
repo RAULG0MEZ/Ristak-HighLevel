@@ -1810,6 +1810,13 @@ function getStoredCardPreferenceFromConversation(messages = []) {
   return null
 }
 
+function resolveStoredCardPreference(args = {}, messages = []) {
+  const conversationPreference = getStoredCardPreferenceFromConversation(messages)
+  const hasConversationContext = Array.isArray(messages) && messages.length > 0
+
+  return conversationPreference || (hasConversationContext ? '' : normalizeStoredCardPreference(args))
+}
+
 function hasAutomaticStoredCardPaymentIntent(text) {
   const normalized = normalizeText(text)
   return /(automatic|automatico|automático|domicili|tarjeta guardada|tarjeta ya guardada|cargo automatic|cargar a tarjeta|usar tarjeta|usa la tarjeta|visa\s+\d{4}|mastercard\s+\d{4})/.test(normalized)
@@ -1900,7 +1907,7 @@ function enrichInstallmentPaymentArgs(inputArgs = {}, messages = [], timezone = 
   const totalAmount = normalizePaymentAmount(args.totalAmount || args.amount || args.total || getProductPaymentAmount(args) || conversationAmount)
   const firstPaymentAmount = getFirstPaymentAmountFromArgs(args)
   const remainingAmount = normalizePaymentAmount(totalAmount - firstPaymentAmount)
-  const cardPreference = normalizeStoredCardPreference(args) || getStoredCardPreferenceFromConversation(messages)
+  const cardPreference = resolveStoredCardPreference(args, messages)
   const contactHint = extractPaymentContactHintFromConversation(messages)
 
   if (!args.totalAmount && !args.total && !args.amount && conversationAmount > 0) {
@@ -2563,8 +2570,8 @@ function buildStoredCardChoiceOptions(storedCardStatus = {}, contact = {}) {
     },
     {
       label: 'Usar otra tarjeta',
-      description: 'Manda link de autorización y programa cuando esa tarjeta quede confirmada.',
-      value: `No uses la tarjeta guardada. Manda link para autorizar otra tarjeta y programa el pago cuando se confirme.${contactMemoryText ? ` ${contactMemoryText}` : ''}`
+      description: 'Manda enlace de pago/autorización para cobrar o domiciliar con otra tarjeta.',
+      value: `No uses la tarjeta guardada. Manda enlace de pago/autorización para que pague o domicilie con otra tarjeta ahora o antes de la fecha límite, y programa el cobro cuando esa tarjeta quede confirmada.${contactMemoryText ? ` ${contactMemoryText}` : ''}`
     },
     {
       label: 'Cancelar',
@@ -3655,12 +3662,148 @@ function buildContactActionOptions(contacts, { actionText = 'la acción solicita
   })
 }
 
+function contactIdentifierAppearsInText(value = '', contact = {}) {
+  const text = cleanText(value, 1400)
+  if (!text || !contact?.id) return false
+
+  const normalizedText = normalizeText(text)
+  const normalizedId = normalizeText(contact.id)
+  if (normalizedId && normalizedText.includes(normalizedId)) return true
+
+  const email = cleanText(contact.email || '', 180).toLowerCase()
+  if (email && text.toLowerCase().includes(email)) return true
+
+  const contactDigits = normalizePhoneDigits(contact.phone || '')
+  const textDigits = normalizePhoneDigits(text)
+  if (contactDigits.length >= 7 && textDigits.includes(contactDigits.slice(-7))) return true
+
+  return false
+}
+
+function messageExplicitlyReferencesContact(message = {}, contact = {}) {
+  const selectedOption = getSelectedClarificationOption(message)
+  const combinedText = [
+    getMessageText(message),
+    selectedOption?.label,
+    selectedOption?.description,
+    selectedOption?.value
+  ].filter(Boolean).join(' ')
+
+  return contactIdentifierAppearsInText(combinedText, contact)
+}
+
+function previousAssistantOptionsReferenceContact(messages = [], userIndex = -1, contact = {}) {
+  if (userIndex <= 0 || !contact?.id) return false
+
+  for (let index = userIndex - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message?.role !== 'assistant') continue
+
+    const optionsText = Array.isArray(message.clarificationOptions)
+      ? message.clarificationOptions
+          .map(option => [
+            option?.label,
+            option?.description,
+            option?.value
+          ].filter(Boolean).join(' '))
+          .join('\n')
+      : ''
+
+    return contactIdentifierAppearsInText(optionsText, contact)
+  }
+
+  return false
+}
+
+function userExplicitlySelectedContact(messages = [], contact = {}, { allowRecentSelection = true } = {}) {
+  const latestUserIndex = findLatestUserMessageIndex(messages)
+  if (latestUserIndex < 0 || !contact?.id) return false
+
+  const latestMessage = messages[latestUserIndex]
+  if (messageExplicitlyReferencesContact(latestMessage, contact)) return true
+
+  const latestUserText = getMessageText(latestMessage)
+  if (
+    isAffirmativeExecutionIntent(latestUserText) &&
+    previousAssistantOptionsReferenceContact(messages, latestUserIndex, contact)
+  ) {
+    return true
+  }
+
+  if (!allowRecentSelection) return false
+
+  const firstRecentIndex = Math.max(0, latestUserIndex - 10)
+  for (let index = latestUserIndex - 1; index >= firstRecentIndex; index -= 1) {
+    const message = messages[index]
+    if (message?.role !== 'user') continue
+    if (messageExplicitlyReferencesContact(message, contact)) return true
+  }
+
+  return false
+}
+
+function hasUnverifiedContactLookupHint(value = '', contact = {}) {
+  const text = cleanText(value, 260)
+  if (!text || contactIdentifierAppearsInText(text, contact)) return false
+
+  const tokens = getMeaningfulContactNameTokens(getContactLookupTokens(text))
+  return tokens.length > 0
+}
+
+function shouldAllowPriorContactVerification(messages = [], explicitLookupHint = '') {
+  const latestUserIndex = findLatestUserMessageIndex(messages)
+  if (latestUserIndex < 0) return false
+
+  const latestMessage = messages[latestUserIndex]
+  const latestUserText = getMessageText(latestMessage)
+  if (messageHasSelectedClarificationOption(latestMessage)) return true
+  if (isAffirmativeExecutionIntent(latestUserText)) return true
+
+  return !hasUnverifiedContactLookupHint(explicitLookupHint || latestUserText)
+}
+
+function buildContactVerificationRequiredOutput({ contacts = [], actionText = 'hacer esta acción' } = {}) {
+  const safeContacts = dedupeContacts(contacts.filter(Boolean))
+
+  return {
+    ok: false,
+    action: 'verify_contact_before_action',
+    contactVerificationRequired: true,
+    error: 'Antes de tocar GoHighLevel necesito confirmar el contacto exacto.',
+    missingFields: ['contacto confirmado'],
+    contacts: safeContacts,
+    responseGuidance: [
+      'No ejecutes nada todavía.',
+      'Pregunta de forma conversacional cuál contacto es.',
+      'Muestra nombre, apellido, correo o teléfono cuando existan.',
+      'No digas que ya actualizaste, agregaste, metiste a workflow, taggeaste o ejecutaste algo.'
+    ].join(' '),
+    clarificationOptions: buildContactActionOptions(safeContacts, {
+      actionText,
+      includeUpdateLanguage: true
+    })
+  }
+}
+
 async function resolveHighLevelContactForAgent(args = {}, context = {}, options = {}) {
   const contactArg = args.contact && typeof args.contact === 'object' ? args.contact : {}
   const rememberedContact = normalizeOperationalContact(
     context.resolvedCrmContact ||
     context.crmContact ||
     context.operationalMemory?.crmContact
+  )
+  const explicitContactLookupHint = cleanText(
+    args.contactName ||
+    contactArg.name ||
+    args.contactEmail ||
+    contactArg.email ||
+    args.contactPhone ||
+    contactArg.phone ||
+    args.contactHint ||
+    args.hint ||
+    args.query ||
+    '',
+    180
   )
   const contactId = cleanText(
     args.contactId ||
@@ -3678,7 +3821,21 @@ async function resolveHighLevelContactForAgent(args = {}, context = {}, options 
 
   if (contactId) {
     const contact = await getPaymentContactById(contactId)
-    if (contact?.id) return { contact }
+    if (contact?.id) {
+      if (
+        options.requireContactVerification &&
+        !userExplicitlySelectedContact(context.messages, contact, {
+          allowRecentSelection: shouldAllowPriorContactVerification(context.messages, explicitContactLookupHint)
+        })
+      ) {
+        return buildContactVerificationRequiredOutput({
+          contacts: [contact],
+          actionText: options.actionText || 'hacer esta acción'
+        })
+      }
+
+      return { contact }
+    }
 
     return {
       error: `No encontré un contacto con ID ${contactId}.`,
@@ -3704,19 +3861,7 @@ async function resolveHighLevelContactForAgent(args = {}, context = {}, options 
     if (recentContact?.id) return { contact: recentContact }
   }
 
-  const rawHint = cleanText(
-    args.contactName ||
-    contactArg.name ||
-    args.contactEmail ||
-    contactArg.email ||
-    args.contactPhone ||
-    contactArg.phone ||
-    args.contactHint ||
-    args.hint ||
-    args.query ||
-    '',
-    180
-  )
+  const rawHint = explicitContactLookupHint
   let lookupHint = normalizeContactLookupHint(rawHint)
 
   if (!lookupHint && Array.isArray(context.messages)) {
@@ -3729,6 +3874,18 @@ async function resolveHighLevelContactForAgent(args = {}, context = {}, options 
       (contactMatchesExactly(rememberedContact, lookupHint) || contactNameContainsLookup(rememberedContact, contactTokens))
 
     if (!lookupHint || lookupMatchesRememberedContact) {
+      if (
+        options.requireContactVerification &&
+        !userExplicitlySelectedContact(context.messages, rememberedContact, {
+          allowRecentSelection: shouldAllowPriorContactVerification(context.messages, lookupHint)
+        })
+      ) {
+        return buildContactVerificationRequiredOutput({
+          contacts: [rememberedContact],
+          actionText: options.actionText || 'hacer esta acción'
+        })
+      }
+
       return { contact: rememberedContact, source: 'operational_memory' }
     }
   }
@@ -3738,7 +3895,21 @@ async function resolveHighLevelContactForAgent(args = {}, context = {}, options 
       allowCurrentViewFallback: true,
       allowConversationFallback: true
     })
-    if (contextualContact?.id) return { contact: contextualContact }
+    if (contextualContact?.id) {
+      if (
+        options.requireContactVerification &&
+        !userExplicitlySelectedContact(context.messages, contextualContact, {
+          allowRecentSelection: shouldAllowPriorContactVerification(context.messages, '')
+        })
+      ) {
+        return buildContactVerificationRequiredOutput({
+          contacts: [contextualContact],
+          actionText: options.actionText || 'hacer esta acción'
+        })
+      }
+
+      return { contact: contextualContact }
+    }
 
     return {
       error: options.missingContactError || 'Falta identificar el contacto con nombre, email, teléfono o ID.',
@@ -3763,14 +3934,42 @@ async function resolveHighLevelContactForAgent(args = {}, context = {}, options 
 
   const contactTokens = getContactLookupTokens(lookupHint)
   const exactMatches = contacts.filter(contact => contactMatchesExactly(contact, lookupHint))
-  if (exactMatches.length === 1) return { contact: exactMatches[0] }
+  if (exactMatches.length === 1) {
+    if (
+      options.requireContactVerification &&
+      !userExplicitlySelectedContact(context.messages, exactMatches[0], {
+        allowRecentSelection: shouldAllowPriorContactVerification(context.messages, lookupHint)
+      })
+    ) {
+      return buildContactVerificationRequiredOutput({
+        contacts: exactMatches,
+        actionText: options.actionText || 'hacer esta acción'
+      })
+    }
+
+    return { contact: exactMatches[0] }
+  }
 
   const strictNameMatches = contacts.filter(contact => contactNameContainsLookup(contact, contactTokens))
   const candidates = requiresStrictNameContains(contactTokens)
     ? strictNameMatches
     : strictNameMatches.length ? strictNameMatches : contacts
 
-  if (candidates.length === 1) return { contact: candidates[0] }
+  if (candidates.length === 1) {
+    if (
+      options.requireContactVerification &&
+      !userExplicitlySelectedContact(context.messages, candidates[0], {
+        allowRecentSelection: shouldAllowPriorContactVerification(context.messages, lookupHint)
+      })
+    ) {
+      return buildContactVerificationRequiredOutput({
+        contacts: candidates,
+        actionText: options.actionText || 'hacer esta acción'
+      })
+    }
+
+    return { contact: candidates[0] }
+  }
 
   if (!candidates.length) {
     return {
@@ -4279,15 +4478,19 @@ async function executeLookupHighLevelContact(args = {}, highLevelConnection = {}
 
   const resolvedContact = await resolveHighLevelContactForAgent(args, context, {
     actionText: 'revisar ese contacto',
-    ambiguousContactError: 'Encontré varios contactos posibles. Elige cuál quieres revisar en GoHighLevel.'
+    ambiguousContactError: 'Encontré varios contactos posibles. Elige cuál quieres revisar en GoHighLevel.',
+    requireContactVerification: Boolean(context.agentRoute?.customActionIntent)
   })
 
   if (!resolvedContact.contact) {
     return {
       ok: false,
       action: 'lookup_highlevel_contact',
+      contactVerificationRequired: Boolean(resolvedContact.contactVerificationRequired),
       error: resolvedContact.error || 'Falta identificar el contacto.',
       missingFields: resolvedContact.missingFields || [],
+      contacts: resolvedContact.contacts || [],
+      responseGuidance: resolvedContact.responseGuidance || null,
       clarificationOptions: resolvedContact.clarificationOptions || []
     }
   }
@@ -4324,15 +4527,19 @@ async function executeUpdateHighLevelContactField(args = {}, highLevelConnection
   const resolvedContact = await resolveHighLevelContactForAgent(args, context, {
     actionText: 'modificar ese contacto',
     includeUpdateLanguage: true,
-    ambiguousContactError: 'Encontré varios contactos posibles. Necesito que elijas cuál antes de actualizar datos en GoHighLevel.'
+    ambiguousContactError: 'Encontré varios contactos posibles. Necesito que elijas cuál antes de actualizar datos en GoHighLevel.',
+    requireContactVerification: Boolean(context.agentRoute?.customActionIntent)
   })
 
   if (!resolvedContact.contact) {
     return {
       ok: false,
       action: 'update_highlevel_contact_field',
+      contactVerificationRequired: Boolean(resolvedContact.contactVerificationRequired),
       error: resolvedContact.error || 'Falta identificar el contacto.',
       missingFields: resolvedContact.missingFields || [],
+      contacts: resolvedContact.contacts || [],
+      responseGuidance: resolvedContact.responseGuidance || null,
       clarificationOptions: resolvedContact.clarificationOptions || []
     }
   }
@@ -5534,7 +5741,7 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
   const storedCardStatus = remainingAutomatic
     ? await getStoredCardStatusForContact(contact.id, highLevelConnection.paymentMode)
     : { hasAuthorizedCard: false, paymentMode: normalizePaymentMode(highLevelConnection.paymentMode, PAYMENT_MODE_LIVE) }
-  const storedCardPreference = getStoredCardPreferenceFromConversation(context.messages) || normalizeStoredCardPreference(args)
+  const storedCardPreference = resolveStoredCardPreference(args, context.messages)
   const forceNewCardAuthorization = storedCardPreference === 'new_card'
 
   if (storedCardPreference === 'stored_card' && !storedCardStatus.hasAuthorizedCard) {
@@ -5982,7 +6189,7 @@ async function executeCreateSinglePaymentLink(args = {}, highLevelConnection, co
   const dueDateIsFuture = DateTime.fromISO(dueDate, { zone: paymentTimezone }).startOf('day') >
     DateTime.now().setZone(paymentTimezone).startOf('day')
   const requestedPaymentMethod = normalizePaymentMethod(args.paymentMethod || args.method || args.payMethod || '')
-  const storedCardPreference = getStoredCardPreferenceFromConversation(context.messages) || normalizeStoredCardPreference(args)
+  const storedCardPreference = resolveStoredCardPreference(args, context.messages)
   const storedCardStatus = await getStoredCardStatusForContact(contact.id, highLevelConnection.paymentMode)
   const deliverySelection = resolvePaymentDeliverySelection(args, context)
   const deliveryMissingDestination = getPaymentDeliveryMissingDestination(deliverySelection.method, contact)
@@ -6597,7 +6804,7 @@ function buildHighLevelTools(highLevelConnection, options = {}) {
       server_description: 'Official HighLevel MCP server for CRM operations: contacts, conversations, calendars, appointments, opportunities, workflows, media storage, files/images/assets, locations, social posting, blogs, email templates and related operations. For payment or invoice mutations, use the internal Ristak payment tools instead.',
       server_url: HIGHLEVEL_MCP_SERVER_URL,
       authorization: highLevelConnection.token,
-      require_approval: 'never'
+      require_approval: options.customActionIntent ? 'always' : 'never'
     })
   }
 
@@ -7038,6 +7245,76 @@ function attachResolvedCrmContactToHighLevelRequest(args = {}, contact = null) {
   }
 }
 
+function getContactIdFromHighLevelPayload(value = {}) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return ''
+
+  const direct = cleanText(
+    value.contactId ||
+    value.contact_id ||
+    value.contactID ||
+    value.customerId ||
+    value.customer_id ||
+    value.personId ||
+    value.person_id ||
+    '',
+    180
+  )
+  if (direct) return direct
+
+  const nestedContact = value.contact && typeof value.contact === 'object' ? value.contact : null
+  if (nestedContact) {
+    const nested = cleanText(
+      nestedContact.id ||
+      nestedContact.contactId ||
+      nestedContact.contact_id ||
+      '',
+      180
+    )
+    if (nested) return nested
+  }
+
+  return ''
+}
+
+function extractContactIdFromHighLevelRestArgs(args = {}) {
+  const body = args.body && typeof args.body === 'object' && !Array.isArray(args.body) ? args.body : {}
+  const query = args.query && typeof args.query === 'object' && !Array.isArray(args.query) ? args.query : {}
+  const cleanPath = cleanHighLevelPath(args.path || '')
+  const pathContactId = [
+    cleanPath.match(/^\/contacts\/([^/?#]+)/i)?.[1],
+    cleanPath.match(/\/contacts\/([^/?#]+)/i)?.[1],
+    cleanPath.match(/^\/workflows\/[^/?#]+\/contacts\/([^/?#]+)/i)?.[1],
+    cleanPath.match(/^\/contacts\/([^/?#]+)\/workflows?\b/i)?.[1]
+  ].find(Boolean)
+
+  return cleanText(
+    getContactIdFromHighLevelPayload(body) ||
+    getContactIdFromHighLevelPayload(query) ||
+    pathContactId ||
+    '',
+    180
+  )
+}
+
+async function buildContactVerificationForHighLevelRestMutation(args = {}, context = {}) {
+  const contactId = extractContactIdFromHighLevelRestArgs(args)
+  if (!contactId) return null
+
+  const contact = await getPaymentContactById(contactId)
+  if (!contact?.id) return null
+
+  if (userExplicitlySelectedContact(context.messages, contact, {
+    allowRecentSelection: shouldAllowPriorContactVerification(context.messages, '')
+  })) {
+    return null
+  }
+
+  return buildContactVerificationRequiredOutput({
+    contacts: [contact],
+    actionText: 'hacer este cambio en GoHighLevel'
+  })
+}
+
 function parseJsonObject(text) {
   const raw = String(text || '').trim()
 
@@ -7337,6 +7614,7 @@ async function callOpenAIResponseWithActionTools(apiKey, {
             runtimeContext,
             viewContext,
             messages,
+            agentRoute,
             operationalMemory,
             resolvedCrmContact: operationalMemory.crmContact
           })
@@ -7345,6 +7623,7 @@ async function callOpenAIResponseWithActionTools(apiKey, {
             runtimeContext,
             viewContext,
             messages,
+            agentRoute,
             operationalMemory,
             resolvedCrmContact: operationalMemory.crmContact
           })
@@ -7358,44 +7637,56 @@ async function callOpenAIResponseWithActionTools(apiKey, {
           })
         } else if (call.name === 'lookup_highlevel_products') {
           output = await executeLookupHighLevelProducts(call.arguments, highLevelConnection)
-        } else if (call.name === 'highlevel_rest_request' && isHighLevelPaymentRestMutation(call)) {
-          output = {
-            ok: false,
-            error: 'No se permite mutar invoices, pagos o cobros por REST directo desde el agente. Usa las herramientas internas de Ristak para replicar el formulario: create_single_payment_link, create_installment_payment_flow, record_contact_payment o record_invoice_payment.',
-            redirectTool: 'internal_ristak_payment_tool',
-            blockedPath: cleanHighLevelPath(call.arguments?.path || ''),
-            reason: 'Las herramientas internas aplican contacto exacto, método, tarjeta guardada, canal de envío, confirmación, modo live/test y sincronización local. REST directo puede dejar facturas en borrador o desalineadas.'
-          }
-        } else if (
-          call.name === 'highlevel_rest_request' &&
-          Boolean(agentRoute?.customActionIntent) &&
-          isHighLevelRestMutation(call) &&
-          !hasExplicitHighLevelActionConfirmation(messages)
-        ) {
-          output = buildHighLevelActionConfirmationRequiredOutput(call)
-        } else if (call.name === 'highlevel_rest_request' && requiresContactUpdateConfirmation(call) && !hasExplicitContactUpdateConfirmation(messages)) {
-          output = buildContactUpdateConfirmationRequiredOutput({
-            contact: {
-              id: cleanText(call.arguments?.path || '', 180).replace(/^\/contacts\/?/i, '') || null,
-              name: 'Contacto de GoHighLevel',
-              email: null,
-              phone: null
-            },
-            field: {
-              type: 'standard',
-              key: 'highlevel_rest_request',
-              label: 'Actualización REST de contacto',
-              value: null
-            },
-            oldValue: null,
-            newValue: call.arguments?.body || null,
-            payload: call.arguments?.body || null
-          })
         } else if (call.name === 'highlevel_rest_request') {
-          output = await executeHighLevelRestRequest(
-            attachResolvedCrmContactToHighLevelRequest(call.arguments, operationalMemory.crmContact),
-            highLevelConnection
-          )
+          const restArguments = attachResolvedCrmContactToHighLevelRequest(call.arguments, operationalMemory.crmContact)
+          const restCall = {
+            ...call,
+            arguments: restArguments
+          }
+
+          if (isHighLevelPaymentRestMutation(restCall)) {
+            output = {
+              ok: false,
+              error: 'No se permite mutar invoices, pagos o cobros por REST directo desde el agente. Usa las herramientas internas de Ristak para replicar el formulario: create_single_payment_link, create_installment_payment_flow, record_contact_payment o record_invoice_payment.',
+              redirectTool: 'internal_ristak_payment_tool',
+              blockedPath: cleanHighLevelPath(restArguments?.path || ''),
+              reason: 'Las herramientas internas aplican contacto exacto, método, tarjeta guardada, canal de envío, confirmación, modo live/test y sincronización local. REST directo puede dejar facturas en borrador o desalineadas.'
+            }
+          } else {
+            const contactVerificationOutput = Boolean(agentRoute?.customActionIntent) && isHighLevelRestMutation(restCall)
+              ? await buildContactVerificationForHighLevelRestMutation(restArguments, { messages })
+              : null
+
+            if (contactVerificationOutput) {
+              output = contactVerificationOutput
+            } else if (
+              Boolean(agentRoute?.customActionIntent) &&
+              isHighLevelRestMutation(restCall) &&
+              !hasExplicitHighLevelActionConfirmation(messages)
+            ) {
+              output = buildHighLevelActionConfirmationRequiredOutput(restCall)
+            } else if (requiresContactUpdateConfirmation(restCall) && !hasExplicitContactUpdateConfirmation(messages)) {
+              output = buildContactUpdateConfirmationRequiredOutput({
+                contact: {
+                  id: cleanText(restArguments?.path || '', 180).replace(/^\/contacts\/?/i, '') || null,
+                  name: 'Contacto de GoHighLevel',
+                  email: null,
+                  phone: null
+                },
+                field: {
+                  type: 'standard',
+                  key: 'highlevel_rest_request',
+                  label: 'Actualización REST de contacto',
+                  value: null
+                },
+                oldValue: null,
+                newValue: restArguments?.body || null,
+                payload: restArguments?.body || null
+              })
+            } else {
+              output = await executeHighLevelRestRequest(restArguments, highLevelConnection)
+            }
+          }
         } else if (call.name === 'create_single_payment_link') {
           output = await executeCreateSinglePaymentLink(call.arguments, highLevelConnection, {
             messages,
@@ -7449,10 +7740,16 @@ async function callOpenAIResponseWithActionTools(apiKey, {
             operationalMemory.crmContact = outputContact
           }
         } else if (isCrmContactToolName(call.name)) {
-          operationalMemory.crmContact = outputContact
-          operationalMemory.crmContactLocked = true
-          if (!operationalMemory.paymentContact?.id) {
-            operationalMemory.paymentContact = outputContact
+          const canLockCrmContact = !agentRoute?.customActionIntent ||
+            call.name !== 'lookup_highlevel_contact' ||
+            userExplicitlySelectedContact(messages, outputContact)
+
+          if (canLockCrmContact) {
+            operationalMemory.crmContact = outputContact
+            operationalMemory.crmContactLocked = true
+            if (!operationalMemory.paymentContact?.id) {
+              operationalMemory.paymentContact = outputContact
+            }
           }
         }
       }
@@ -7796,6 +8093,7 @@ const NON_NEGOTIABLE_SAFETY_PROMPT = [
   '- Nunca ejecutes SQL destructivo; sólo usa SELECT/WITH SELECT.',
   '- No cobres, envíes links, registres pagos, programes domiciliaciones ni modifiques dinero sin que el usuario diga que sí cuando la herramienta lo requiera.',
   '- No modifiques contactos en GoHighLevel sin identificar el contacto exacto, explicar el dato a cambiar en lenguaje humano, mostrar valor actual/nuevo si aplica y pedir un sí claro.',
+  '- Si cualquier escritura en GoHighLevel usa contactId o afecta a una persona, aunque sea workflow, cita, oportunidad, conversación, tag, nota, pago o suscripción, primero verifica con el usuario el contacto exacto usando nombre completo, email o teléfono disponible.',
   '- No modifiques ningún elemento de GoHighLevel sin identificar el recurso exacto y pedir un sí claro cuando sea una acción destructiva o de escritura.',
   '- Para acciones sobre personas, pagos, suscripciones, formularios, surveys, funnels, blogs, campañas, anuncios, widgets, workflows, citas, oportunidades, productos, stores, conversaciones, media storage, usuarios u otros recursos del catálogo, identifica el registro correcto antes de hacer cambios.',
   '- Si el usuario dio un nombre propio como "Raúl Gómez", busca/resuelve ese contacto. No uses como excusa que el contexto trae otra cita reciente o próxima.',
@@ -7818,6 +8116,7 @@ function buildActionCustomizationInstructions(agentConfig) {
     '- En la respuesta final, sólo afirma como completado lo que tenga evidencia de herramienta/API de este turno. Si un paso no tiene respuesta de API, dilo como pendiente/no confirmado y no lo inventes.',
     '- Si la regla menciona tokens tipo {{contact.campo}} o cualquier identificador técnico, úsalo para buscar/operar internamente; no lo muestres salvo que el usuario pida detalles técnicos.',
     '- Si la acción involucra contacto, cita, pago, suscripción, formulario, survey, funnel, blog, campaña, anuncio, widget, conversación, oportunidad, producto, tienda, workflow, media, usuario u otro recurso, resuelve primero el registro exacto en GoHighLevel/API. Si salen varios, pide que elija.',
+    '- Para cualquier escritura que use contactId, no basta con encontrar "Raúl" o una coincidencia única por nombre corto: confirma el contacto exacto antes de actualizar campos, meter a workflows, agendar, taggear, crear oportunidades, mandar mensajes o tocar pagos/suscripciones.',
     '- Si falta un dato indispensable indicado por la regla (cantidad, fecha, estado, producto, formulario, workflow, etc.), pregunta sólo ese dato antes de cualquier escritura. Nunca sustituyas un dato faltante por vacío, null, cero, borrar o quitar.',
     '- Antes de modificar cualquier recurso por una acción personalizada, pide permiso en modo conversacional con el plan completo: qué encontraste, qué está actualmente si aplica y qué vas a dejar. Evita payloads, endpoints, IDs y field keys si no son necesarios.',
     '- Para respuestas al usuario habla natural: "Ahorita tiene 3 meses; lo dejaría en 5 y luego lo metería al workflow", no "campo X / valor actual / valor nuevo".',
@@ -8933,7 +9232,8 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
     : buildHighLevelTools(highLevelConnection, {
         paymentActionRequest,
         contactActionRequest,
-        highLevelToolIntent
+        highLevelToolIntent,
+        customActionIntent: Boolean(agentRoute?.customActionIntent)
       })
   const highLevelTools = paymentOperationRequest
     ? rawHighLevelTools.filter(tool => tool?.type === 'function' && PAYMENT_OPERATION_TOOL_NAMES.has(tool.name))

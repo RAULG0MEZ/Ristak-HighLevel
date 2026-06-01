@@ -19,6 +19,8 @@
 }
 
 .phoneFrame {
+  position: relative;
+  isolation: isolate;
   display: grid;
   grid-template-rows: auto auto auto minmax(0, 1fr);
   width: 100%;
@@ -33,16 +35,28 @@
   overflow: hidden;
 }
 
+.phoneFrame::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: calc(env(safe-area-inset-top) + 92px);
+  background: color-mix(in srgb, var(--color-background-secondary) 96%, var(--color-background-primary) 4%);
+  pointer-events: none;
+  z-index: 0;
+}
+
 .header {
+  position: relative;
   grid-row: 1;
+  z-index: 2;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
   gap: 12px;
   min-width: 0;
   min-height: calc(74px + env(safe-area-inset-top));
   padding: calc(env(safe-area-inset-top) + 14px) 14px 12px;
-  background: color-mix(in srgb, var(--color-background-secondary) 94%, var(--color-background-primary) 6%);
+  background: transparent;
   backdrop-filter: blur(16px);
   border-bottom: 1px solid rgba(148, 163, 184, 0.12);
 }
@@ -128,7 +142,9 @@
 }
 
 .periodPanel {
+  position: relative;
   grid-row: 2;
+  z-index: 1;
   display: grid;
   gap: 10px;
   min-width: 0;
@@ -187,7 +203,9 @@
 }
 
 .sectionTabs {
+  position: relative;
   grid-row: 3;
+  z-index: 1;
   display: flex;
   gap: 8px;
   min-width: 0;
@@ -237,7 +255,9 @@
 }
 
 .content {
+  position: relative;
   grid-row: 4;
+  z-index: 1;
   min-height: 0;
   padding: 14px 14px max(20px, env(safe-area-inset-bottom));
   overflow-y: auto;

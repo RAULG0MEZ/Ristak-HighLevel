@@ -107,6 +107,8 @@ body.dark .modal {
   padding: 24px 32px;
   overflow-y: auto;
   max-height: calc(90vh - 160px);
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Modal size lg tiene más altura disponible y siempre con scroll */
@@ -335,7 +337,12 @@ body.dark .modal {
 /* Móviles (iPhone, Android) */
 @media (max-width: 640px) {
   .backdrop {
-    padding: var(--spacing-sm);
+    align-items: stretch;
+    padding: max(var(--spacing-sm), env(safe-area-inset-top)) var(--spacing-sm) max(var(--spacing-sm), env(safe-area-inset-bottom));
+  }
+
+  .modal {
+    max-height: calc(100dvh - max(20px, env(safe-area-inset-top)) - max(20px, env(safe-area-inset-bottom)));
   }
 
   .modal.sm {

@@ -474,6 +474,15 @@ export const MetaAdsIntegration: React.FC = () => {
   }
 
   const handleToggleWhatsappScheduleEvent = async (newValue: boolean) => {
+    if (newValue && !savedPageId) {
+      showToast(
+        'warning',
+        'Page ID requerido',
+        'Primero guarda el Facebook Page ID en el paso 5 para activar eventos personalizados de WhatsApp'
+      )
+      return
+    }
+
     try {
       await setWhatsappScheduleEventEnabled(newValue)
       showToast(
@@ -487,6 +496,15 @@ export const MetaAdsIntegration: React.FC = () => {
   }
 
   const handleToggleWhatsappPurchaseEvent = async (newValue: boolean) => {
+    if (newValue && !savedPageId) {
+      showToast(
+        'warning',
+        'Page ID requerido',
+        'Primero guarda el Facebook Page ID en el paso 5 para activar eventos personalizados de WhatsApp'
+      )
+      return
+    }
+
     try {
       await setWhatsappPurchaseEventEnabled(newValue)
       showToast(
@@ -528,6 +546,25 @@ export const MetaAdsIntegration: React.FC = () => {
   }
 
   const isMetaConfigured = Boolean(credentials.accessToken && credentials.adAccountId)
+  const hasAccessToken = Boolean(realAccessToken || credentials.accessToken?.startsWith('***'))
+  const hasAdAccount = Boolean(credentials.adAccountId)
+  const hasPixel = Boolean(credentials.pixelId)
+  const hasPixelApiToken = Boolean(credentials.pixelApiToken)
+  const hasPageId = Boolean(savedPageId)
+  const metaSetupSteps = [
+    { title: 'Access Token', completed: hasAccessToken, unlocked: true },
+    { title: 'Cuenta de anuncios', completed: hasAdAccount, unlocked: hasAccessToken },
+    { title: 'Meta Pixel', completed: hasPixel, unlocked: hasAdAccount },
+    { title: 'Pixel API Token', completed: hasPixelApiToken, unlocked: hasPixel },
+    { title: 'Facebook Page ID', completed: hasPageId, unlocked: hasAdAccount }
+  ]
+  const completedMetaSetupSteps = metaSetupSteps.filter(step => step.completed).length
+  const isMetaOnboardingComplete = metaSetupSteps.slice(0, 4).every(step => step.completed)
+  const getMetaStepClassName = (stepIndex: number) => [
+    styles.metaSetupStep,
+    metaSetupSteps[stepIndex]?.completed ? styles.metaSetupStepDone : '',
+    !metaSetupSteps[stepIndex]?.unlocked ? styles.metaSetupStepLocked : ''
+  ].filter(Boolean).join(' ')
 
   return (
     <div className={styles.integrationContainer}>
@@ -568,243 +605,479 @@ export const MetaAdsIntegration: React.FC = () => {
           </div>
         </div>
 
-        {/* Formulario simple */}
-        <div className={styles.section}>
-          <div className={styles.sectionHeader}>
-            <h3 className={styles.sectionTitle}>Configuración</h3>
-          </div>
+        <div className={styles.metaWorkspace}>
+          <div className={styles.metaPrimaryColumn}>
+            <div className={`${styles.section} ${styles.metaConfigSection}`}>
+              <div className={styles.sectionHeader}>
+                <div>
+                  <h3 className={styles.sectionTitle}>Flujo de configuración</h3>
+                  <p className={styles.sectionDescription}>
+                    Se van desbloqueando campos conforme conectas Meta.
+                  </p>
+                </div>
+                <span className={styles.metaSetupCount}>
+                  {completedMetaSetupSteps}/5 listo
+                </span>
+              </div>
 
-          {isLoading ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-              Cargando credenciales...
-            </div>
-          ) : (
-            <div className={styles.sectionContent}>
-                {/* 1. App Access Token */}
-                <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>
-                      Access Token <span style={{ color: 'var(--color-error)' }}>*</span>
-                    </label>
-                    <p className={styles.formHint} style={{ marginBottom: '8px' }}>
-                      Genera un token desde{' '}
-                      <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener noreferrer" className={styles.link}>
-                        business.facebook.com
-                      </a>
-                      {' '}con permisos <code className={styles.codeInline}>ads_read</code>
-                    </p>
-                    {credentials.accessToken && credentials.accessToken.startsWith('***') ? (
-                      <div className={styles.filterChip}>
-                        <span className={styles.chipText}>{credentials.accessToken}</span>
-                        <button
-                          onClick={() => handleRemoveCredential('accessToken')}
-                          className={styles.chipDeleteButton}
-                          type="button"
-                        >
-                          <Trash2 size={16} style={{ color: '#ef4444' }} />
-                        </button>
+              <div className={styles.metaProgressList} aria-label="Progreso de configuración de Meta">
+                {metaSetupSteps.map((step, index) => (
+                  <div
+                    key={step.title}
+                    className={[
+                      styles.metaProgressItem,
+                      step.completed ? styles.metaProgressDone : '',
+                      !step.unlocked ? styles.metaProgressLocked : ''
+                    ].filter(Boolean).join(' ')}
+                  >
+                    <span className={styles.metaProgressDot}>
+                      {step.completed ? <CheckCircle size={13} /> : index + 1}
+                    </span>
+                    <span className={styles.metaProgressLabel}>{step.title}</span>
+                    <span className={styles.metaProgressStatus}>
+                      {step.completed ? 'Listo' : step.unlocked ? 'Siguiente' : 'Después'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {isLoading ? (
+                <div className={styles.metaLoadingState}>
+                  Cargando credenciales...
+                </div>
+              ) : (
+                <div className={[
+                  styles.metaSetupFlow,
+                  isMetaOnboardingComplete ? styles.metaSetupFlowComplete : ''
+                ].filter(Boolean).join(' ')}>
+                  <div className={getMetaStepClassName(0)}>
+                    <div className={styles.metaStepMarker}>
+                      {metaSetupSteps[0].completed ? <CheckCircle size={16} /> : '1'}
+                    </div>
+                    <div className={styles.metaStepContent}>
+                      <div className={styles.metaStepHeader}>
+                        <div>
+                          <h4 className={styles.metaStepTitle}>Access Token</h4>
+                          <p className={styles.formHint}>
+                            Genera un token desde{' '}
+                            <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener noreferrer" className={styles.link}>
+                              business.facebook.com
+                            </a>
+                            {' '}con permisos <code className={styles.codeInline}>ads_read</code>
+                          </p>
+                        </div>
+                        <span className={styles.metaStepBadge}>
+                          Requerido
+                        </span>
                       </div>
-                    ) : (
-                      <>
-                        <input
-                          type="text"
-                          value={credentials.accessToken}
-                          onChange={(e) => handleInputChange('accessToken', e.target.value)}
-                          placeholder="EAAabcdef..."
-                          className={styles.formInput}
-                        />
-                        {!realAccessToken && !isLoadingAccounts && (
-                          <div className={styles.formActions}>
-                            <Button
+
+                      <div className={styles.formGroup}>
+                        {credentials.accessToken && credentials.accessToken.startsWith('***') ? (
+                          <div className={styles.filterChip}>
+                            <span className={styles.chipText}>{credentials.accessToken}</span>
+                            <button
+                              onClick={() => handleRemoveCredential('accessToken')}
+                              className={styles.chipDeleteButton}
                               type="button"
-                              variant="primary"
-                              onClick={handleContinueWithToken}
-                              disabled={isSavingToken || !credentials.accessToken || credentials.accessToken.length < 50}
+                              aria-label="Eliminar Access Token"
                             >
-                              {isSavingToken ? 'Guardando...' : 'Continuar'}
-                            </Button>
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className={styles.metaInputActionRow}>
+                            <input
+                              type="text"
+                              value={credentials.accessToken}
+                              onChange={(e) => handleInputChange('accessToken', e.target.value)}
+                              placeholder="EAAabcdef..."
+                              className={styles.formInput}
+                            />
+                            {!realAccessToken && !isLoadingAccounts && (
+                              <Button
+                                type="button"
+                                variant="primary"
+                                onClick={handleContinueWithToken}
+                                disabled={isSavingToken || !credentials.accessToken || credentials.accessToken.length < 50}
+                              >
+                                {isSavingToken ? 'Guardando...' : 'Continuar'}
+                              </Button>
+                            )}
                           </div>
                         )}
-                      </>
-                    )}
-                  {isLoadingAccounts && (
-                    <div style={{ marginTop: '8px', fontSize: '13px', color: 'var(--text-secondary)' }}>
-                      Cargando cuentas de anuncios...
+                        {isLoadingAccounts && (
+                          <div className={styles.metaInlineStatus}>
+                            <RefreshCw size={14} className={styles.spinning} />
+                            Cargando cuentas de anuncios...
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {realAccessToken && (
+                    <div className={getMetaStepClassName(1)}>
+                      <div className={styles.metaStepMarker}>
+                        {metaSetupSteps[1].completed ? <CheckCircle size={16} /> : '2'}
+                      </div>
+                      <div className={styles.metaStepContent}>
+                        <div className={styles.metaStepHeader}>
+                          <div>
+                            <h4 className={styles.metaStepTitle}>Cuenta de anuncios</h4>
+                            <p className={styles.formHint}>
+                              Selecciona la cuenta que alimentará campañas, reportes y costos.
+                            </p>
+                          </div>
+                          <span className={styles.metaStepBadge}>
+                            Requerido
+                          </span>
+                        </div>
+
+                        <div className={styles.formGroup}>
+                          {credentials.adAccountId ? (
+                            <div className={styles.filterChip}>
+                              <span className={styles.chipText}>
+                                {(() => {
+                                  const normalizedId = credentials.adAccountId.replace(/^act_/, '')
+                                  const matchingAccount = adAccounts.find(acc =>
+                                    acc.id.replace(/^act_/, '') === normalizedId
+                                  )
+                                  return matchingAccount
+                                    ? `${matchingAccount.name} (${normalizedId})`
+                                    : normalizedId
+                                })()}
+                              </span>
+                              <button
+                                onClick={() => {
+                                  handleRemoveCredential('adAccountId')
+                                  setPixels([])
+                                }}
+                                className={styles.chipDeleteButton}
+                                type="button"
+                                aria-label="Eliminar cuenta de anuncios"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          ) : adAccounts.length > 0 ? (
+                            <select
+                              className={styles.formInput}
+                              onChange={(e) => {
+                                const account = adAccounts.find(a => a.id === e.target.value)
+                                if (account) handleSelectAdAccount(account)
+                              }}
+                              value={credentials.adAccountId || ''}
+                            >
+                              <option value="">-- Selecciona una cuenta --</option>
+                              {adAccounts.map((account) => (
+                                <option key={account.id} value={account.id}>
+                                  {account.name} ({account.id}) - {account.currency}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              value={credentials.adAccountId}
+                              onChange={(e) => handleInputChange('adAccountId', e.target.value)}
+                              placeholder="act_123456789012345"
+                              className={styles.formInput}
+                            />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {credentials.adAccountId && (
+                    <div className={getMetaStepClassName(2)}>
+                      <div className={styles.metaStepMarker}>
+                        {metaSetupSteps[2].completed ? <CheckCircle size={16} /> : '3'}
+                      </div>
+                      <div className={styles.metaStepContent}>
+                        <div className={styles.metaStepHeader}>
+                          <div>
+                            <h4 className={styles.metaStepTitle}>Meta Pixel</h4>
+                            <p className={styles.formHint}>
+                              Conecta el pixel para completar medición web y conversiones.
+                            </p>
+                          </div>
+                          <span className={styles.metaStepBadge}>
+                            Opcional
+                          </span>
+                        </div>
+
+                        <div className={styles.formGroup}>
+                          {credentials.pixelId ? (
+                            <div className={styles.filterChip}>
+                              <span className={styles.chipText}>
+                                {(() => {
+                                  const matchingPixel = pixels.find(p => p.id === credentials.pixelId)
+                                  return matchingPixel
+                                    ? `${matchingPixel.name} (${credentials.pixelId})`
+                                    : credentials.pixelId
+                                })()}
+                              </span>
+                              <button
+                                onClick={() => handleRemoveCredential('pixelId')}
+                                className={styles.chipDeleteButton}
+                                type="button"
+                                aria-label="Eliminar Meta Pixel"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          ) : isLoadingPixels ? (
+                            <div className={styles.metaInlineStatus}>
+                              <RefreshCw size={14} className={styles.spinning} />
+                              Cargando pixeles...
+                            </div>
+                          ) : pixels.length > 0 ? (
+                            <select
+                              className={styles.formInput}
+                              onChange={(e) => {
+                                const pixel = pixels.find(p => p.id === e.target.value)
+                                if (pixel) handleSelectPixel(pixel)
+                              }}
+                              value={credentials.pixelId || ''}
+                            >
+                              <option value="">-- Sin pixel (opcional) --</option>
+                              {pixels.map((pixel) => (
+                                <option key={pixel.id} value={pixel.id}>
+                                  {pixel.name} ({pixel.id})
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              value={credentials.pixelId}
+                              onChange={(e) => handleInputChange('pixelId', e.target.value)}
+                              placeholder="1234567890123456"
+                              className={styles.formInput}
+                            />
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {credentials.pixelId && (
+                    <div className={getMetaStepClassName(3)}>
+                      <div className={styles.metaStepMarker}>
+                        {metaSetupSteps[3].completed ? <CheckCircle size={16} /> : '4'}
+                      </div>
+                      <div className={styles.metaStepContent}>
+                        <div className={styles.metaStepHeader}>
+                          <div>
+                            <h4 className={styles.metaStepTitle}>Pixel API Token</h4>
+                            <p className={styles.formHint}>
+                              Solo si usas Conversions API. Genera desde{' '}
+                              <a href="https://business.facebook.com/events_manager2" target="_blank" rel="noopener noreferrer" className={styles.link}>
+                                Events Manager
+                              </a>
+                            </p>
+                          </div>
+                          <span className={styles.metaStepBadge}>
+                            CAPI
+                          </span>
+                        </div>
+
+                        <div className={styles.formGroup}>
+                          {credentials.pixelApiToken && credentials.pixelApiToken.startsWith('***') ? (
+                            <div className={styles.filterChip}>
+                              <span className={styles.chipText}>{credentials.pixelApiToken}</span>
+                              <button
+                                onClick={() => handleRemoveCredential('pixelApiToken')}
+                                className={styles.chipDeleteButton}
+                                type="button"
+                                aria-label="Eliminar Pixel API Token"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className={styles.metaInputActionRow}>
+                              <input
+                                type="text"
+                                value={credentials.pixelApiToken}
+                                onChange={(e) => handleInputChange('pixelApiToken', e.target.value)}
+                                placeholder="Pega aquí el token generado desde Events Manager"
+                                className={styles.formInput}
+                              />
+                              <Button
+                                type="button"
+                                variant="primary"
+                                onClick={handleSavePixelApiToken}
+                                disabled={isSavingPixelToken || !credentials.pixelApiToken}
+                              >
+                                <RefreshCw size={16} className={isSavingPixelToken ? styles.spinning : ''} />
+                                {isSavingPixelToken ? 'Guardando...' : 'Guardar Pixel API Token'}
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {credentials.adAccountId && (
+                    <div className={getMetaStepClassName(4)}>
+                      <div className={styles.metaStepMarker}>
+                        {metaSetupSteps[4].completed ? <CheckCircle size={16} /> : '5'}
+                      </div>
+                      <div className={styles.metaStepContent}>
+                        <div className={styles.metaStepHeader}>
+                          <div>
+                            <h4 className={styles.metaStepTitle}>Facebook Page ID</h4>
+                            <p className={styles.formHint}>
+                              Es opcional para Meta Ads, pero requerido si vas a activar los eventos personalizados de WhatsApp. Lo encuentras en{' '}
+                              <a href="https://business.facebook.com/latest/settings/pages" target="_blank" rel="noopener noreferrer" className={styles.link}>
+                                Configuración del portafolio comercial
+                              </a>
+                              {' '}en Meta Business.
+                            </p>
+                          </div>
+                          <span className={styles.metaStepBadge}>
+                            WhatsApp
+                          </span>
+                        </div>
+
+                        <div className={styles.formGroup}>
+                          {savedPageId && credentials.pageId === savedPageId ? (
+                            <div className={styles.filterChip}>
+                              <span className={styles.chipText}>{credentials.pageId}</span>
+                              <button
+                                onClick={() => handleRemoveCredential('pageId')}
+                                className={styles.chipDeleteButton}
+                                type="button"
+                                aria-label="Eliminar Page ID"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className={styles.metaInputActionRow}>
+                              <input
+                                type="text"
+                                value={credentials.pageId}
+                                onChange={(e) => handleInputChange('pageId', e.target.value)}
+                                placeholder="1234567890123456"
+                                className={styles.formInput}
+                              />
+                              <Button
+                                type="button"
+                                variant="primary"
+                                onClick={handleSavePageId}
+                                disabled={isSavingPageId || !credentials.pageId}
+                              >
+                                <RefreshCw size={16} className={isSavingPageId ? styles.spinning : ''} />
+                                {isSavingPageId ? 'Guardando...' : 'Guardar Page ID'}
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
+              )}
+            </div>
+          </div>
 
-                {/* 2. Cuenta de Anuncios */}
-                {realAccessToken && (
-                  <div className={styles.formGroup}>
-                      <label className={styles.formLabel}>
-                        Cuenta de anuncios <span style={{ color: 'var(--color-error)' }}>*</span>
-                      </label>
-                      {credentials.adAccountId ? (
-                        <div className={styles.filterChip}>
-                          <span className={styles.chipText}>
-                            {(() => {
-                              const normalizedId = credentials.adAccountId.replace(/^act_/, '')
-                              const matchingAccount = adAccounts.find(acc =>
-                                acc.id.replace(/^act_/, '') === normalizedId
-                              )
-                              return matchingAccount
-                                ? `${matchingAccount.name} (${normalizedId})`
-                                : normalizedId
-                            })()}
-                          </span>
-                          <button
-                            onClick={() => {
-                              handleRemoveCredential('adAccountId')
-                              setPixels([])
-                            }}
-                            className={styles.chipDeleteButton}
-                            type="button"
-                          >
-                            <Trash2 size={16} style={{ color: '#ef4444' }} />
-                          </button>
-                        </div>
-                      ) : adAccounts.length > 0 ? (
-                        <select
-                          className={styles.formInput}
-                          onChange={(e) => {
-                            const account = adAccounts.find(a => a.id === e.target.value)
-                            if (account) handleSelectAdAccount(account)
-                          }}
-                          value={credentials.adAccountId || ''}
-                        >
-                          <option value="">-- Selecciona una cuenta --</option>
-                          {adAccounts.map((account) => (
-                            <option key={account.id} value={account.id}>
-                              {account.name} ({account.id}) - {account.currency}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <input
-                          type="text"
-                          value={credentials.adAccountId}
-                          onChange={(e) => handleInputChange('adAccountId', e.target.value)}
-                          placeholder="act_123456789012345"
-                          className={styles.formInput}
-                        />
-                      )}
-                  </div>
-                )}
-
-                {/* 3. Pixel de Meta */}
-                {credentials.adAccountId && (
-                  <div className={styles.formGroup}>
-                      <label className={styles.formLabel}>
-                        Meta Pixel <span className={styles.formHint}>(opcional)</span>
-                      </label>
-                      {credentials.pixelId ? (
-                        <div className={styles.filterChip}>
-                          <span className={styles.chipText}>
-                            {(() => {
-                              const matchingPixel = pixels.find(p => p.id === credentials.pixelId)
-                              return matchingPixel
-                                ? `${matchingPixel.name} (${credentials.pixelId})`
-                                : credentials.pixelId
-                            })()}
-                          </span>
-                          <button
-                            onClick={() => handleRemoveCredential('pixelId')}
-                            className={styles.chipDeleteButton}
-                            type="button"
-                          >
-                            <Trash2 size={16} style={{ color: '#ef4444' }} />
-                          </button>
-                        </div>
-                      ) : isLoadingPixels ? (
-                        <div style={{ padding: '12px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13px' }}>
-                          Cargando pixeles...
-                        </div>
-                      ) : pixels.length > 0 ? (
-                        <select
-                          className={styles.formInput}
-                          onChange={(e) => {
-                            const pixel = pixels.find(p => p.id === e.target.value)
-                            if (pixel) handleSelectPixel(pixel)
-                          }}
-                          value={credentials.pixelId || ''}
-                        >
-                          <option value="">-- Sin pixel (opcional) --</option>
-                          {pixels.map((pixel) => (
-                            <option key={pixel.id} value={pixel.id}>
-                              {pixel.name} ({pixel.id})
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <input
-                          type="text"
-                          value={credentials.pixelId}
-                          onChange={(e) => handleInputChange('pixelId', e.target.value)}
-                          placeholder="1234567890123456"
-                          className={styles.formInput}
-                        />
-                      )}
-                  </div>
-                )}
-
-                {/* 4. Pixel API Token */}
-                {credentials.pixelId && (
-                  <div className={styles.formGroup}>
-                    <label className={styles.formLabel}>
-                      Pixel API Token <span className={styles.formHint}>(opcional)</span>
-                    </label>
-                    <p className={styles.formHint} style={{ marginBottom: '8px' }}>
-                      Solo si usas Conversions API. Genera desde{' '}
-                      <a href="https://business.facebook.com/events_manager2" target="_blank" rel="noopener noreferrer" className={styles.link}>
-                        Events Manager
-                      </a>
+          <div className={styles.metaSideColumn}>
+            <div className={`${styles.section} ${styles.metaWhatsAppSection}`}>
+              <div className={styles.whatsappEventsHeader}>
+                <div className={styles.whatsappEventsTitleGroup}>
+                  <span className={styles.whatsappEventsIcon} aria-hidden="true">
+                    <SiWhatsapp size={24} />
+                  </span>
+                  <div>
+                    <h3 className={styles.sectionTitle}>Eventos personalizados de WhatsApp</h3>
+                    <p className={styles.sectionDescription}>
+                      Requieren el Facebook Page ID guardado en el paso 5.
                     </p>
-                    {credentials.pixelApiToken && credentials.pixelApiToken.startsWith('***') ? (
-                      <div className={styles.filterChip}>
-                        <span className={styles.chipText}>{credentials.pixelApiToken}</span>
-                        <button
-                          onClick={() => handleRemoveCredential('pixelApiToken')}
-                          className={styles.chipDeleteButton}
-                          type="button"
-                        >
-                          <Trash2 size={16} style={{ color: '#ef4444' }} />
-                        </button>
-                      </div>
-                    ) : (
-                      <>
-                        <input
-                          type="text"
-                          value={credentials.pixelApiToken}
-                          onChange={(e) => handleInputChange('pixelApiToken', e.target.value)}
-                          placeholder="Pega aquí el token generado desde Events Manager"
-                          className={styles.formInput}
-                        />
-                        <div className={styles.formActions}>
-                          <Button
-                            type="button"
-                            variant="primary"
-                            onClick={handleSavePixelApiToken}
-                            disabled={isSavingPixelToken || !credentials.pixelApiToken}
-                          >
-                            <RefreshCw size={16} className={isSavingPixelToken ? styles.spinning : ''} />
-                            {isSavingPixelToken ? 'Guardando...' : 'Guardar Pixel API Token'}
-                          </Button>
-                        </div>
-                      </>
+                  </div>
+                </div>
+              </div>
+
+              <div className={styles.whatsappEventsList}>
+                <div className={[
+                  styles.whatsappEventRow,
+                  !hasPageId ? styles.whatsappEventRowLocked : ''
+                ].filter(Boolean).join(' ')}>
+                  <div>
+                    <label className={styles.formLabel}>
+                      Activar evento de cita agendada
+                    </label>
+                    <p className={styles.formHint}>
+                      Envía LeadSubmitted una sola vez por contacto.
+                    </p>
+                    {!hasPageId && (
+                      <span className={styles.metaRequirementPill}>Requiere Page ID</span>
                     )}
                   </div>
-                )}
+                  <label className={styles.switchContainer}>
+                    <input
+                      type="checkbox"
+                      checked={whatsappScheduleEventEnabled === true}
+                      onChange={(e) => handleToggleWhatsappScheduleEvent(e.target.checked)}
+                      disabled={savingWhatsappScheduleEvent}
+                      className={styles.switchInput}
+                    />
+                    <span className={styles.switchSlider}></span>
+                  </label>
+                </div>
 
-                {/* Switch para incluir Meta Pixel en snippet */}
+                <div className={[
+                  styles.whatsappEventRow,
+                  !hasPageId ? styles.whatsappEventRowLocked : ''
+                ].filter(Boolean).join(' ')}>
+                  <div>
+                    <label className={styles.formLabel}>
+                      Activar evento de pago recibido
+                    </label>
+                    <p className={styles.formHint}>
+                      Envía Purchase una sola vez por contacto.
+                    </p>
+                    {!hasPageId && (
+                      <span className={styles.metaRequirementPill}>Requiere Page ID</span>
+                    )}
+                  </div>
+                  <label className={styles.switchContainer}>
+                    <input
+                      type="checkbox"
+                      checked={whatsappPurchaseEventEnabled === true}
+                      onChange={(e) => handleToggleWhatsappPurchaseEvent(e.target.checked)}
+                      disabled={savingWhatsappPurchaseEvent}
+                      className={styles.switchInput}
+                    />
+                    <span className={styles.switchSlider}></span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div className={styles.section}>
+              <div className={styles.sectionHeader}>
+                <div>
+                  <h3 className={styles.sectionTitle}>Extras de Meta</h3>
+                  <p className={styles.sectionDescription}>
+                    Opcionales y acciones de operación.
+                  </p>
+                </div>
+              </div>
+
+              <div className={styles.metaSideList}>
                 {credentials.pixelId && !isRenderDomain && (
-                  <div className={styles.formGroup} style={{ marginTop: '32px', paddingTop: '32px', borderTop: '1px solid var(--color-border)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                  <div className={styles.metaSideBlock}>
+                    <div className={styles.metaSwitchRow}>
                       <div>
-                        <label className={styles.formLabel} style={{ marginBottom: '4px' }}>
+                        <label className={styles.formLabel}>
                           Incluir en snippet de tracking
                         </label>
-                        <p className={styles.formHint} style={{ margin: 0, fontSize: '0.875rem' }}>
-                          El snippet de Web Tracking incluirá automáticamente el código del Meta Pixel
+                        <p className={styles.formHint}>
+                          El snippet de Web Tracking incluirá automáticamente el código del Meta Pixel.
                         </p>
                       </div>
                       <label className={styles.switchContainer}>
@@ -819,75 +1092,20 @@ export const MetaAdsIntegration: React.FC = () => {
                       </label>
                     </div>
                     {isSyncingSnippet && (
-                      <div style={{
-                        marginTop: '12px',
-                        padding: '12px',
-                        background: 'var(--color-warning-bg)',
-                        border: '1px solid var(--color-warning)',
-                        borderRadius: '6px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px'
-                      }}>
+                      <div className={styles.metaInlineStatus}>
                         <RefreshCw size={16} className={styles.spinning} />
-                        <span style={{ fontSize: '0.875rem' }}>Sincronizando snippet...</span>
+                        Sincronizando snippet...
                       </div>
                     )}
                   </div>
                 )}
 
-                {/* 5. Page ID - AL FINAL y completamente opcional */}
-                {credentials.adAccountId && (
-                  <div className={styles.formGroup} style={{ marginTop: '32px', paddingTop: '32px', borderTop: '1px solid var(--color-border)' }}>
-                    <label className={styles.formLabel}>
-                      Facebook Page ID <span className={styles.formHint}>(opcional)</span>
-                    </label>
-                    <p className={styles.formHint} style={{ marginBottom: '8px' }}>
-                      Solo necesario si usas funciones específicas de páginas de Facebook
-                    </p>
-                    {savedPageId && credentials.pageId === savedPageId ? (
-                      <div className={styles.filterChip}>
-                        <span className={styles.chipText}>{credentials.pageId}</span>
-                        <button
-                          onClick={() => handleRemoveCredential('pageId')}
-                          className={styles.chipDeleteButton}
-                          type="button"
-                        >
-                          <Trash2 size={16} style={{ color: '#ef4444' }} />
-                        </button>
-                      </div>
-                    ) : (
-                      <>
-                        <input
-                          type="text"
-                          value={credentials.pageId}
-                          onChange={(e) => handleInputChange('pageId', e.target.value)}
-                          placeholder="1234567890123456"
-                          className={styles.formInput}
-                        />
-                        <div className={styles.formActions}>
-                          <Button
-                            type="button"
-                            variant="primary"
-                            onClick={handleSavePageId}
-                            disabled={isSavingPageId || !credentials.pageId}
-                          >
-                            <RefreshCw size={16} className={isSavingPageId ? styles.spinning : ''} />
-                            {isSavingPageId ? 'Guardando...' : 'Guardar Page ID'}
-                          </Button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-
-                {/* Sincronización manual de Meta Ads */}
                 {credentials.accessToken && credentials.adAccountId && (
-                  <div className={styles.formGroup} style={{ marginTop: '32px', paddingTop: '32px', borderTop: '1px solid var(--color-border)' }}>
-                    <label className={styles.formLabel} style={{ marginBottom: '8px' }}>
+                  <div className={styles.metaSideBlock}>
+                    <label className={styles.formLabel}>
                       Sincronización manual
                     </label>
-                    <p className={styles.formHint} style={{ marginBottom: '16px' }}>
+                    <p className={styles.formHint}>
                       Sincroniza manualmente los datos de Meta Ads (últimos 35 meses). La sincronización automática ocurre cada hora.
                     </p>
                     <div className={styles.formActions}>
@@ -903,66 +1121,13 @@ export const MetaAdsIntegration: React.FC = () => {
                     </div>
                   </div>
                 )}
-            </div>
-          )}
-        </div>
 
-        <div className={styles.section}>
-          <div className={styles.whatsappEventsHeader}>
-            <div className={styles.whatsappEventsTitleGroup}>
-              <span className={styles.whatsappEventsIcon} aria-hidden="true">
-                <SiWhatsapp size={24} />
-              </span>
-              <div>
-                <h3 className={styles.sectionTitle}>Eventos personalizados de WhatsApp</h3>
-                <p className={styles.sectionDescription}>
-                  Conversiones server-side para citas agendadas y primeros pagos.
-                </p>
+                {(!credentials.pixelId || isRenderDomain) && !(credentials.accessToken && credentials.adAccountId) && (
+                  <p className={styles.metaEmptySideText}>
+                    Completa primero el flujo principal para activar estas acciones.
+                  </p>
+                )}
               </div>
-            </div>
-          </div>
-
-          <div className={styles.whatsappEventsList}>
-            <div className={styles.whatsappEventRow}>
-              <div>
-                <label className={styles.formLabel} style={{ marginBottom: '4px' }}>
-                  Activar evento de cita agendada
-                </label>
-                <p className={styles.formHint} style={{ margin: 0 }}>
-                  Envía LeadSubmitted una sola vez por contacto.
-                </p>
-              </div>
-              <label className={styles.switchContainer}>
-                <input
-                  type="checkbox"
-                  checked={whatsappScheduleEventEnabled === true}
-                  onChange={(e) => handleToggleWhatsappScheduleEvent(e.target.checked)}
-                  disabled={savingWhatsappScheduleEvent}
-                  className={styles.switchInput}
-                />
-                <span className={styles.switchSlider}></span>
-              </label>
-            </div>
-
-            <div className={styles.whatsappEventRow}>
-              <div>
-                <label className={styles.formLabel} style={{ marginBottom: '4px' }}>
-                  Activar evento de pago recibido
-                </label>
-                <p className={styles.formHint} style={{ margin: 0 }}>
-                  Envía Purchase una sola vez por contacto.
-                </p>
-              </div>
-              <label className={styles.switchContainer}>
-                <input
-                  type="checkbox"
-                  checked={whatsappPurchaseEventEnabled === true}
-                  onChange={(e) => handleToggleWhatsappPurchaseEvent(e.target.checked)}
-                  disabled={savingWhatsappPurchaseEvent}
-                  className={styles.switchInput}
-                />
-                <span className={styles.switchSlider}></span>
-              </label>
             </div>
           </div>
         </div>

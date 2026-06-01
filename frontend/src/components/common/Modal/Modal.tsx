@@ -68,7 +68,7 @@ export const Modal: React.FC<ModalProps> = ({
   }
 
   const modalContent = (
-    <div className={styles.backdrop} onClick={handleBackdropClick}>
+    <div className={styles.backdrop} onClick={handleBackdropClick} data-phone-modal-root="true">
       <div className={`${styles.modal} ${styles[type]} ${styles[size]}`}>
         {/* Solo mostrar header si hay título o botón de cerrar */}
         {(title || showCloseButton) && (
@@ -94,7 +94,7 @@ export const Modal: React.FC<ModalProps> = ({
         )}
 
         {(message || children) && (
-          <div className={styles.content}>
+          <div className={styles.content} data-phone-scrollable="true">
             {message && <p className={styles.message}>{message}</p>}
             {children}
           </div>
