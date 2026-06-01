@@ -204,6 +204,14 @@ function clearLegacyStoredMessages() {
   }
 }
 
+function stripCitationArtifacts(value: string) {
+  return String(value || '')
+    .replace(/\s*\uE200cite[^\uE201]*\uE201/g, '')
+    .replace(/\s*\u3010[^\u3011]*\u2020[^\u3011]*\u3011/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\s+([.,;:!?])/g, '$1')
+}
+
 function createMessage(
   role: AIAgentMessage['role'],
   content: string,
@@ -216,7 +224,7 @@ function createMessage(
   return {
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     role,
-    content,
+    content: role === 'assistant' ? stripCitationArtifacts(content) : content,
     ...(attachments?.length ? { attachments } : {}),
     ...(agentMemory ? { agentMemory } : {}),
     ...(selectedClarificationOption ? { selectedClarificationOption } : {}),
@@ -668,7 +676,8 @@ function buildChatTranscript(
   messages.forEach((message, index) => {
     const roleLabel = message.role === 'user' ? 'Usuario' : 'Agente AI'
     const timestamp = formatTranscriptTimestamp(message.createdAt)
-    const content = message.content.trim() || '[Mensaje vacío]'
+    const rawContent = message.content.trim()
+    const content = (message.role === 'assistant' ? stripCitationArtifacts(rawContent) : rawContent) || '[Mensaje vacío]'
 
     lines.push(
       '',
