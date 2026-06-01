@@ -6759,6 +6759,8 @@ async function callOpenAIResponseWithActionTools(apiKey, {
 
       if (Array.isArray(output?.clarificationOptions) && output.clarificationOptions.length) {
         latestClarificationOptions = output.clarificationOptions
+      } else if (output?.ok === true || output?.action || output?.missingFields || output?.redirectTool) {
+        latestClarificationOptions = []
       }
 
       const outputContact = getPaymentContactFromToolOutput(output)

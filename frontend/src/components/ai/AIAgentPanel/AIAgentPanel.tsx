@@ -81,6 +81,13 @@ const quickActions = [
 
 const routeLabels: Record<string, string> = {
   '/phone/agent-chat': 'Agente AI movil',
+  '/phone/dashboard': 'Dashboard movil',
+  '/phone/appointments': 'Citas movil',
+  '/phone/transactions': 'Pagos movil',
+  '/phone/contacts': 'Contactos movil',
+  '/phone/campaigns': 'Publicidad movil',
+  '/phone/reports': 'Reportes movil',
+  '/phone/analytics': 'Analíticas movil',
   '/dashboard': 'Dashboard',
   '/reports': 'Reportes',
   '/campaigns': 'Publicidad',

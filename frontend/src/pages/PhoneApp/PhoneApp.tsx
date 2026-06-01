@@ -1,0 +1,1320 @@
+import React, { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
+import {
+  Activity,
+  BarChart3,
+  Bot,
+  CalendarDays,
+  ChevronRight,
+  CreditCard,
+  Gauge,
+  LineChart,
+  Megaphone,
+  MonitorX,
+  RefreshCw,
+  TrendingUp,
+  Users,
+  type LucideIcon
+} from 'lucide-react'
+import { useAuth } from '@/contexts/AuthContext'
+import { useDateRange } from '@/contexts/DateRangeContext'
+import { calendarsService, type AppointmentStats, type Calendar, type CalendarEvent } from '@/services/calendarsService'
+import { campaignsService, type Campaign } from '@/services/campaignsService'
+import { contactsService, type ContactStats } from '@/services/contactsService'
+import { dashboardService, type ChartData, type DashboardMetrics } from '@/services/dashboardService'
+import { reportsService, type ContactListItem, type ReportMetricRow, type ReportsSummary } from '@/services/reportsService'
+import { transactionsService, type Transaction, type TransactionSummary } from '@/services/transactionsService'
+import { formatCurrency, formatDate, formatDateToISO, formatNumber, formatRoas } from '@/utils/format'
+import styles from './PhoneApp.module.css'
+
+const PORTABLE_WIDTH_QUERY = '(max-width: 1366px)'
+const PHONE_WIDTH_QUERY = '(max-width: 900px)'
+const COARSE_POINTER_QUERY = '(pointer: coarse)'
+const MOBILE_OR_TABLET_USER_AGENT_PATTERN = /Android|iPad|iPhone|iPod|IEMobile|Opera Mini|Mobile|Tablet/i
+
+const PHONE_SECTION_IDS = [
+  'dashboard',
+  'appointments',
+  'transactions',
+  'contacts',
+  'campaigns',
+  'reports',
+  'analytics'
+] as const
+
+type PhoneSectionId = typeof PHONE_SECTION_IDS[number]
+type AccessState = 'checking' | 'allowed' | 'blocked'
+type TrendPoint = { label: string; value: number; value2?: number }
+
+type PeriodOption = {
+  id: 'today' | 'last7days' | 'thisMonth' | 'last30days' | 'last90days'
+  label: string
+}
+
+interface PhoneSectionConfig {
+  id: PhoneSectionId
+  label: string
+  shortLabel: string
+  Icon: LucideIcon
+}
+
+interface PhoneAppData {
+  dashboardMetrics: DashboardMetrics
+  financialChart: ChartData[]
+  funnelData: Array<{ stage: string; value: number }>
+  trafficSources: Array<{ name: string; value: number; color?: string }>
+  visitorsData: Array<{ label: string; value: number }>
+  leadsData: Array<{ label: string; value: number }>
+  appointmentsData: Array<{ label: string; value: number }>
+  salesData: Array<{ label: string; value: number }>
+  transactionSummary: TransactionSummary
+  transactions: Transaction[]
+  contactStats: ContactStats
+  contacts: ContactListItem[]
+  campaigns: Campaign[]
+  reportMetrics: ReportMetricRow[]
+  reportsSummary: ReportsSummary | null
+  calendars: Calendar[]
+  appointmentEvents: CalendarEvent[]
+  appointmentStats: AppointmentStats
+}
+
+const PHONE_SECTIONS: PhoneSectionConfig[] = [
+  { id: 'dashboard', label: 'Dashboard', shortLabel: 'Inicio', Icon: Gauge },
+  { id: 'appointments', label: 'Citas', shortLabel: 'Citas', Icon: CalendarDays },
+  { id: 'transactions', label: 'Pagos', shortLabel: 'Pagos', Icon: CreditCard },
+  { id: 'contacts', label: 'Contactos', shortLabel: 'Contactos', Icon: Users },
+  { id: 'campaigns', label: 'Publicidad', shortLabel: 'Ads', Icon: Megaphone },
+  { id: 'reports', label: 'Reportes', shortLabel: 'Reportes', Icon: BarChart3 },
+  { id: 'analytics', label: 'Analíticas', shortLabel: 'Analítica', Icon: LineChart }
+]
+
+const PERIOD_OPTIONS: PeriodOption[] = [
+  { id: 'today', label: 'Hoy' },
+  { id: 'last7days', label: '7d' },
+  { id: 'thisMonth', label: 'Mes' },
+  { id: 'last30days', label: '30d' },
+  { id: 'last90days', label: '90d' }
+]
+
+const STATUS_LABELS: Record<string, string> = {
+  confirmed: 'Confirmada',
+  pending: 'Pendiente',
+  cancelled: 'Cancelada',
+  showed: 'Asistió',
+  noshow: 'No asistió',
+  rescheduled: 'Reprogramada',
+  paid: 'Pagado',
+  sent: 'Enviado',
+  overdue: 'Vencido',
+  refunded: 'Reembolso',
+  failed: 'Fallido',
+  draft: 'Borrador'
+}
+
+const SECTION_BY_ID = PHONE_SECTIONS.reduce((acc, section) => {
+  acc[section.id] = section
+  return acc
+}, {} as Record<PhoneSectionId, PhoneSectionConfig>)
+
+function createEmptyDashboardMetrics(): DashboardMetrics {
+  return {
+    ingresosNetos: { value: 0, variation: 0 },
+    gastosPublicidad: { value: 0, variation: 0 },
+    gananciaBruta: { value: 0, variation: 0 },
+    roas: { value: 0, variation: 0 },
+    totalCostos: { value: 0, variation: 0 },
+    gananciaNeta: { value: 0, variation: 0 },
+    reembolsos: { value: 0, variation: 0 },
+    ltvPromedio: { value: 0, variation: 0 }
+  }
+}
+
+function createEmptyTransactionSummary(): TransactionSummary {
+  return {
+    totalRevenue: 0,
+    totalRevenuePrev: 0,
+    completedPayments: 0,
+    completedPaymentsPrev: 0,
+    averageTicket: 0,
+    averageTicketPrev: 0,
+    refunds: 0,
+    refundsPrev: 0
+  }
+}
+
+function createEmptyContactStats(): ContactStats {
+  return {
+    total: 0,
+    totalPrev: 0,
+    withAppointments: 0,
+    withAppointmentsPrev: 0,
+    customers: 0,
+    customersPrev: 0,
+    ltvTotal: 0,
+    ltvTotalPrev: 0,
+    avgLtv: 0,
+    avgLtvPrev: 0
+  }
+}
+
+function createEmptyAppointmentStats(): AppointmentStats {
+  return {
+    pending: 0,
+    cancelled: 0,
+    confirmed: 0,
+    rescheduled: 0,
+    showed: 0,
+    noshow: 0
+  }
+}
+
+function createEmptyPhoneData(): PhoneAppData {
+  return {
+    dashboardMetrics: createEmptyDashboardMetrics(),
+    financialChart: [],
+    funnelData: [],
+    trafficSources: [],
+    visitorsData: [],
+    leadsData: [],
+    appointmentsData: [],
+    salesData: [],
+    transactionSummary: createEmptyTransactionSummary(),
+    transactions: [],
+    contactStats: createEmptyContactStats(),
+    contacts: [],
+    campaigns: [],
+    reportMetrics: [],
+    reportsSummary: null,
+    calendars: [],
+    appointmentEvents: [],
+    appointmentStats: createEmptyAppointmentStats()
+  }
+}
+
+function hasPortableAccess() {
+  if (typeof window === 'undefined') return false
+
+  const portableViewport = window.matchMedia(PORTABLE_WIDTH_QUERY).matches
+  const phoneViewport = window.matchMedia(PHONE_WIDTH_QUERY).matches
+  const coarsePointer = window.matchMedia(COARSE_POINTER_QUERY).matches
+  const userAgent = navigator.userAgent || ''
+  const mobileOrTabletUserAgent = MOBILE_OR_TABLET_USER_AGENT_PATTERN.test(userAgent)
+  const iPadDesktopMode = /Macintosh/i.test(userAgent) && navigator.maxTouchPoints > 1
+
+  return phoneViewport || (portableViewport && (mobileOrTabletUserAgent || iPadDesktopMode || coarsePointer))
+}
+
+function getAccessState(): AccessState {
+  if (typeof window === 'undefined') return 'checking'
+  return hasPortableAccess() ? 'allowed' : 'blocked'
+}
+
+function isPhoneSectionId(value?: string): value is PhoneSectionId {
+  return PHONE_SECTION_IDS.includes(value as PhoneSectionId)
+}
+
+async function safe<T>(promise: Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await promise
+  } catch {
+    return fallback
+  }
+}
+
+function getInclusiveEnd(date: Date) {
+  const end = new Date(date)
+  end.setHours(23, 59, 59, 999)
+  return end
+}
+
+function getDaysBetween(start: Date, end: Date) {
+  const diff = getInclusiveEnd(end).getTime() - start.getTime()
+  return Math.max(1, Math.ceil(diff / 86_400_000))
+}
+
+function normalizeNumber(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+function calculateDelta(current: number, previous: number) {
+  if (!previous) return current > 0 ? 100 : 0
+  return ((current - previous) / previous) * 100
+}
+
+function formatCompactCurrency(value: number) {
+  return new Intl.NumberFormat('es-MX', {
+    style: 'currency',
+    currency: 'MXN',
+    notation: 'compact',
+    maximumFractionDigits: 1
+  }).format(normalizeNumber(value))
+}
+
+function formatCompactNumber(value: number) {
+  return new Intl.NumberFormat('es-MX', {
+    notation: 'compact',
+    maximumFractionDigits: 1
+  }).format(normalizeNumber(value))
+}
+
+function formatPercent(value: number) {
+  return `${normalizeNumber(value).toFixed(1)}%`
+}
+
+function formatSignedPercent(value: number) {
+  const normalized = normalizeNumber(value)
+  const sign = normalized > 0 ? '+' : ''
+  return `${sign}${normalized.toFixed(1)}%`
+}
+
+function getStatusLabel(status?: string | null) {
+  if (!status) return 'Sin estado'
+  return STATUS_LABELS[status.toLowerCase()] || status
+}
+
+function getContactLabel(contact: ContactListItem) {
+  return contact.name || contact.email || contact.phone || 'Contacto sin nombre'
+}
+
+function normalizeCalendarEvent(event: any, fallbackId: string): CalendarEvent {
+  return {
+    ...event,
+    id: String(event?.id || fallbackId),
+    title: event?.title || event?.name || event?.contactName || '(Sin título)',
+    calendarId: event?.calendarId || event?.calendar_id || '',
+    locationId: event?.locationId || event?.location_id || '',
+    contactId: event?.contactId || event?.contact_id,
+    appointmentStatus: (event?.appointmentStatus || event?.appointment_status || event?.status || 'confirmed') as CalendarEvent['appointmentStatus'],
+    startTime: event?.startTime || event?.start_time || event?.start || '',
+    endTime: event?.endTime || event?.end_time || event?.end || event?.startTime || event?.start_time || '',
+    dateAdded: event?.dateAdded || event?.date_added || '',
+    dateUpdated: event?.dateUpdated || event?.date_updated
+  }
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return 'Sin fecha'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Sin fecha'
+
+  return new Intl.DateTimeFormat('es-MX', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(date)
+}
+
+function formatPeriodLabel(start: Date, end: Date) {
+  if (formatDateToISO(start) === formatDateToISO(end)) {
+    return formatDate(start, { includeYear: true })
+  }
+
+  return `${formatDate(start, { includeYear: true })} - ${formatDate(end, { includeYear: true })}`
+}
+
+function toTrendFromSingle(data: Array<{ label?: string; date?: string; value: number }>, limit = 8): TrendPoint[] {
+  return data.slice(-limit).map((item) => ({
+    label: formatDate(item.label || item.date || ''),
+    value: normalizeNumber(item.value)
+  }))
+}
+
+function toTrendFromFinancial(data: ChartData[], limit = 8): TrendPoint[] {
+  return data.slice(-limit).map((item) => ({
+    label: formatDate(item.date),
+    value: normalizeNumber(item.ingresos),
+    value2: normalizeNumber(item.gastado)
+  }))
+}
+
+function toTrendFromReports(data: ReportMetricRow[], key: keyof ReportMetricRow, limit = 8): TrendPoint[] {
+  return data.slice(-limit).map((item) => ({
+    label: formatDate(item.date),
+    value: normalizeNumber(item[key])
+  }))
+}
+
+export const PhoneApp: React.FC = () => {
+  const params = useParams()
+  const navigate = useNavigate()
+  const { locationId, accessToken } = useAuth()
+  const { dateRange, setPreset } = useDateRange()
+  const [accessState, setAccessState] = useState<AccessState>(getAccessState)
+  const [phoneData, setPhoneData] = useState<PhoneAppData>(() => createEmptyPhoneData())
+  const [loading, setLoading] = useState(true)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  const activeSectionId = isPhoneSectionId(params.section) ? params.section : null
+  const activeSection = activeSectionId ? SECTION_BY_ID[activeSectionId] : SECTION_BY_ID.dashboard
+  const startDate = dateRange.start instanceof Date ? dateRange.start : new Date(dateRange.start)
+  const endDate = dateRange.end instanceof Date ? dateRange.end : new Date(dateRange.end)
+  const startIso = formatDateToISO(startDate)
+  const endIso = formatDateToISO(endDate)
+
+  useEffect(() => {
+    document.title = `${activeSection.label} móvil | Ristak`
+  }, [activeSection.label])
+
+  useEffect(() => {
+    const updateAccess = () => setAccessState(getAccessState())
+    const portableMedia = window.matchMedia(PORTABLE_WIDTH_QUERY)
+    const phoneMedia = window.matchMedia(PHONE_WIDTH_QUERY)
+    const pointerMedia = window.matchMedia(COARSE_POINTER_QUERY)
+
+    updateAccess()
+    portableMedia.addEventListener('change', updateAccess)
+    phoneMedia.addEventListener('change', updateAccess)
+    pointerMedia.addEventListener('change', updateAccess)
+    window.addEventListener('resize', updateAccess)
+    window.addEventListener('orientationchange', updateAccess)
+    window.visualViewport?.addEventListener('resize', updateAccess)
+
+    return () => {
+      portableMedia.removeEventListener('change', updateAccess)
+      phoneMedia.removeEventListener('change', updateAccess)
+      pointerMedia.removeEventListener('change', updateAccess)
+      window.removeEventListener('resize', updateAccess)
+      window.removeEventListener('orientationchange', updateAccess)
+      window.visualViewport?.removeEventListener('resize', updateAccess)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (accessState !== 'allowed' || !activeSectionId) return
+
+    const html = document.documentElement
+    const body = document.body
+    const viewportMeta = document.querySelector<HTMLMetaElement>('meta[name="viewport"]')
+    const previousViewportContent = viewportMeta?.getAttribute('content') || ''
+    const previousHtmlOverflow = html.style.overflow
+    const previousHtmlHeight = html.style.height
+    const previousHtmlOverscroll = html.style.overscrollBehavior
+    const previousBodyOverflow = body.style.overflow
+    const previousBodyHeight = body.style.height
+    const previousBodyOverscroll = body.style.overscrollBehavior
+
+    if (viewportMeta && !previousViewportContent.includes('viewport-fit=cover')) {
+      viewportMeta.setAttribute('content', `${previousViewportContent}, viewport-fit=cover`)
+    }
+
+    html.style.overflow = 'hidden'
+    html.style.height = '100%'
+    html.style.overscrollBehavior = 'none'
+    body.style.overflow = 'hidden'
+    body.style.height = '100%'
+    body.style.overscrollBehavior = 'none'
+
+    return () => {
+      if (viewportMeta) {
+        viewportMeta.setAttribute('content', previousViewportContent)
+      }
+
+      html.style.overflow = previousHtmlOverflow
+      html.style.height = previousHtmlHeight
+      html.style.overscrollBehavior = previousHtmlOverscroll
+      body.style.overflow = previousBodyOverflow
+      body.style.height = previousBodyHeight
+      body.style.overscrollBehavior = previousBodyOverscroll
+    }
+  }, [accessState])
+
+  useEffect(() => {
+    if (accessState !== 'allowed') return
+
+    let cancelled = false
+
+    const loadPhoneData = async () => {
+      setLoading(true)
+      setLoadError(null)
+
+      const groupBy = getDaysBetween(startDate, endDate) > 95 ? 'month' : 'day'
+      const inclusiveEnd = getInclusiveEnd(endDate)
+
+      try {
+        const [
+          dashboardMetrics,
+          financialChart,
+          funnelData,
+          trafficSources,
+          visitorsData,
+          leadsData,
+          appointmentsData,
+          salesData,
+          transactionSummary,
+          transactions,
+          contactStats,
+          contactsResponse,
+          campaigns,
+          reportsMetricsResponse,
+          reportsSummary
+        ] = await Promise.all([
+          safe(dashboardService.getDashboardMetrics({ start: startDate, end: endDate }), createEmptyDashboardMetrics()),
+          safe(dashboardService.getFinancialChart({ start: startDate, end: endDate, scope: 'all' }), [] as ChartData[]),
+          safe(dashboardService.getFunnelData({ start: startDate, end: endDate, scope: 'all' }), [] as Array<{ stage: string; value: number }>),
+          safe(dashboardService.getTrafficSources({ start: startDate, end: endDate }), [] as Array<{ name: string; value: number; color?: string }>),
+          safe(dashboardService.getVisitorsData({ start: startDate, end: endDate, groupBy }), [] as Array<{ label: string; value: number }>),
+          safe(dashboardService.getLeadsData({ start: startDate, end: endDate, groupBy }), [] as Array<{ label: string; value: number }>),
+          safe(dashboardService.getAppointmentsData({ start: startDate, end: endDate, groupBy }), [] as Array<{ label: string; value: number }>),
+          safe(dashboardService.getSalesData({ start: startDate, end: endDate, groupBy }), [] as Array<{ label: string; value: number }>),
+          safe(transactionsService.getSummary(startIso, endIso), createEmptyTransactionSummary()),
+          safe(transactionsService.getTransactions(startIso, endIso), [] as Transaction[]),
+          safe(contactsService.getStats(startIso, endIso), createEmptyContactStats()),
+          safe(
+            reportsService.getContactsList({ from: startIso, to: endIso, scope: 'all' }),
+            { contacts: [], range: { start: startIso, end: endIso, timezone: '', filtered: true } }
+          ),
+          safe(campaignsService.getCampaigns(startIso, endIso), [] as Campaign[]),
+          safe(reportsService.getMetrics({ from: startIso, to: endIso, groupBy, scope: 'all' }), {
+            metrics: [],
+            range: { start: startIso, end: endIso, timezone: '', filtered: true }
+          }),
+          safe(reportsService.getSummary({ from: startIso, to: endIso, scope: 'all' }), null)
+        ])
+
+        let calendars: Calendar[] = []
+        let appointmentEvents: CalendarEvent[] = []
+
+        if (locationId && accessToken) {
+          calendars = await safe(calendarsService.getCalendars(locationId, accessToken), [] as Calendar[])
+          const rawEvents = await safe(
+            calendarsService.getEvents(locationId, startDate.getTime(), inclusiveEnd.getTime(), accessToken),
+            [] as CalendarEvent[]
+          )
+          appointmentEvents = rawEvents.map((event, index) => normalizeCalendarEvent(event, `event-${index}`))
+        }
+
+        if (cancelled) return
+
+        setPhoneData({
+          dashboardMetrics,
+          financialChart,
+          funnelData,
+          trafficSources,
+          visitorsData,
+          leadsData,
+          appointmentsData,
+          salesData,
+          transactionSummary,
+          transactions,
+          contactStats,
+          contacts: contactsResponse.contacts || [],
+          campaigns,
+          reportMetrics: reportsMetricsResponse.metrics || [],
+          reportsSummary,
+          calendars,
+          appointmentEvents,
+          appointmentStats: calendarsService.calculateStats(appointmentEvents)
+        })
+      } catch {
+        if (!cancelled) {
+          setLoadError('No se pudieron cargar todas las métricas móviles.')
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    }
+
+    loadPhoneData()
+
+    return () => {
+      cancelled = true
+    }
+  }, [accessState, accessToken, activeSectionId, endDate, endIso, locationId, refreshKey, startDate, startIso])
+
+  const dashboardTiles = useMemo(() => {
+    const metrics = phoneData.dashboardMetrics
+    return [
+      {
+        label: 'Ingresos',
+        value: formatCompactCurrency(metrics.ingresosNetos.value),
+        detail: formatCurrency(metrics.ingresosNetos.value),
+        delta: metrics.ingresosNetos.variation,
+        tone: 'green' as const
+      },
+      {
+        label: 'Gasto ads',
+        value: formatCompactCurrency(metrics.gastosPublicidad.value),
+        detail: formatCurrency(metrics.gastosPublicidad.value),
+        delta: metrics.gastosPublicidad.variation,
+        tone: 'orange' as const
+      },
+      {
+        label: 'Ganancia neta',
+        value: formatCompactCurrency(metrics.gananciaNeta.value),
+        detail: formatCurrency(metrics.gananciaNeta.value),
+        delta: metrics.gananciaNeta.variation,
+        tone: 'blue' as const
+      },
+      {
+        label: 'ROAS',
+        value: formatRoas(metrics.roas.value),
+        detail: 'Retorno de publicidad',
+        delta: metrics.roas.variation,
+        tone: 'purple' as const
+      }
+    ]
+  }, [phoneData.dashboardMetrics])
+
+  const financeTrend = useMemo(() => toTrendFromFinancial(phoneData.financialChart), [phoneData.financialChart])
+  const visitorsTrend = useMemo(() => toTrendFromSingle(phoneData.visitorsData), [phoneData.visitorsData])
+  const leadsTrend = useMemo(() => toTrendFromSingle(phoneData.leadsData), [phoneData.leadsData])
+  const appointmentsTrend = useMemo(() => toTrendFromSingle(phoneData.appointmentsData), [phoneData.appointmentsData])
+  const salesTrend = useMemo(() => toTrendFromSingle(phoneData.salesData), [phoneData.salesData])
+  const profitTrend = useMemo(() => toTrendFromReports(phoneData.reportMetrics, 'profit'), [phoneData.reportMetrics])
+
+  const campaignTotals = useMemo(() => {
+    return phoneData.campaigns.reduce(
+      (acc, campaign) => {
+        acc.spend += normalizeNumber(campaign.spend)
+        acc.revenue += normalizeNumber(campaign.revenue)
+        acc.clicks += normalizeNumber(campaign.clicks)
+        acc.leads += normalizeNumber(campaign.leads)
+        acc.sales += normalizeNumber(campaign.sales)
+        return acc
+      },
+      { spend: 0, revenue: 0, clicks: 0, leads: 0, sales: 0 }
+    )
+  }, [phoneData.campaigns])
+
+  const topCampaigns = useMemo(() => {
+    return phoneData.campaigns
+      .slice()
+      .sort((a, b) => normalizeNumber(b.revenue) - normalizeNumber(a.revenue))
+      .slice(0, 5)
+  }, [phoneData.campaigns])
+
+  const upcomingAppointments = useMemo(() => {
+    const now = new Date()
+    return phoneData.appointmentEvents
+      .filter((event) => new Date(event.startTime) >= now)
+      .sort((a, b) => a.startTime.localeCompare(b.startTime))
+      .slice(0, 5)
+  }, [phoneData.appointmentEvents])
+
+  const recentTransactions = useMemo(() => {
+    return phoneData.transactions
+      .slice()
+      .sort((a, b) => (b.date || b.createdAt || '').localeCompare(a.date || a.createdAt || ''))
+      .slice(0, 5)
+  }, [phoneData.transactions])
+
+  const recentContacts = useMemo(() => phoneData.contacts.slice(0, 5), [phoneData.contacts])
+
+  const reportTotals = useMemo(() => {
+    return phoneData.reportMetrics.reduce(
+      (acc, row) => {
+        acc.revenue += normalizeNumber(row.revenue)
+        acc.spend += normalizeNumber(row.spend)
+        acc.profit += normalizeNumber(row.profit)
+        acc.visitors += normalizeNumber(row.visitors)
+        acc.leads += normalizeNumber(row.leads)
+        acc.customers += normalizeNumber(row.customers)
+        return acc
+      },
+      { revenue: 0, spend: 0, profit: 0, visitors: 0, leads: 0, customers: 0 }
+    )
+  }, [phoneData.reportMetrics])
+
+  const analyticsConversion = useMemo(() => {
+    const visitors = visitorsTrend.reduce((total, item) => total + item.value, 0)
+    const leads = leadsTrend.reduce((total, item) => total + item.value, 0)
+    const appointments = appointmentsTrend.reduce((total, item) => total + item.value, 0)
+    const sales = salesTrend.reduce((total, item) => total + item.value, 0)
+
+    return [
+      { label: 'Visitantes', value: visitors, percent: 100 },
+      { label: 'Leads', value: leads, percent: visitors ? (leads / visitors) * 100 : 0 },
+      { label: 'Citas', value: appointments, percent: leads ? (appointments / leads) * 100 : 0 },
+      { label: 'Ventas', value: sales, percent: leads ? (sales / leads) * 100 : 0 }
+    ]
+  }, [appointmentsTrend, leadsTrend, salesTrend, visitorsTrend])
+
+  if (!activeSectionId) {
+    return <Navigate to="/phone/dashboard" replace />
+  }
+
+  if (accessState === 'checking') {
+    return (
+      <main className={styles.loadingPage}>
+        <span className={styles.loadingDot} />
+      </main>
+    )
+  }
+
+  if (accessState === 'blocked') {
+    return (
+      <main className={styles.blockedPage}>
+        <section className={styles.blockedPanel} aria-labelledby="phone-app-blocked-title">
+          <div className={styles.blockedIcon} aria-hidden="true">
+            <MonitorX size={28} />
+          </div>
+          <div className={styles.blockedCopy}>
+            <p className={styles.eyebrow}>Ruta phone</p>
+            <h1 id="phone-app-blocked-title">Solo en móvil o tablet</h1>
+            <p>
+              Esta vista está optimizada para analizar Ristak desde teléfono o tablet. Ábrela desde un dispositivo portátil para ver el dashboard móvil completo.
+            </p>
+          </div>
+          <Link className={styles.dashboardLink} to="/dashboard">
+            Volver al dashboard
+          </Link>
+        </section>
+      </main>
+    )
+  }
+
+  return (
+    <main className={styles.phonePage} aria-label="Aplicación móvil de Ristak">
+      <div className={styles.phoneFrame}>
+        <header className={styles.header}>
+          <div className={styles.headerMain}>
+            <span className={styles.brandMark}>R</span>
+            <div>
+              <p className={styles.eyebrow}>Ristak Phone</p>
+              <h1>{activeSection.label}</h1>
+            </div>
+          </div>
+          <div className={styles.headerActions}>
+            <button
+              type="button"
+              className={styles.iconButton}
+              onClick={() => setRefreshKey((value) => value + 1)}
+              aria-label="Actualizar métricas"
+              title="Actualizar métricas"
+            >
+              <RefreshCw size={18} className={loading ? styles.spinIcon : undefined} />
+            </button>
+            <Link className={styles.iconButton} to="/phone/agent-chat" aria-label="Abrir agente AI" title="Abrir agente AI">
+              <Bot size={18} />
+            </Link>
+          </div>
+        </header>
+
+        <section className={styles.periodPanel} aria-label="Rango de fechas">
+          <div className={styles.periodCopy}>
+            <span>Periodo</span>
+            <strong>{formatPeriodLabel(startDate, endDate)}</strong>
+          </div>
+          <div className={styles.periodControls}>
+            {PERIOD_OPTIONS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                className={`${styles.periodButton} ${dateRange.preset === option.id ? styles.periodButtonActive : ''}`}
+                onClick={() => setPreset(option.id)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <nav className={styles.sectionTabs} aria-label="Secciones móviles">
+          {PHONE_SECTIONS.map((section) => {
+            const Icon = section.Icon
+            const isActive = section.id === activeSectionId
+            return (
+              <Link
+                key={section.id}
+                to={`/phone/${section.id}`}
+                className={`${styles.sectionTab} ${isActive ? styles.sectionTabActive : ''}`}
+              >
+                <Icon size={16} />
+                <span>{section.label}</span>
+              </Link>
+            )
+          })}
+        </nav>
+
+        {loadError && (
+          <div className={styles.errorBanner} role="status">
+            {loadError}
+          </div>
+        )}
+
+        <section className={styles.content} data-phone-scrollable="true">
+          {loading ? (
+            <PhoneSkeleton />
+          ) : (
+            <>
+              {activeSectionId === 'dashboard' && (
+                <DashboardSection
+                  tiles={dashboardTiles}
+                  financeTrend={financeTrend}
+                  funnelData={phoneData.funnelData}
+                  trafficSources={phoneData.trafficSources}
+                />
+              )}
+
+              {activeSectionId === 'appointments' && (
+                <AppointmentsSection
+                  stats={phoneData.appointmentStats}
+                  events={upcomingAppointments}
+                  calendars={phoneData.calendars}
+                  trend={appointmentsTrend}
+                />
+              )}
+
+              {activeSectionId === 'transactions' && (
+                <TransactionsSection
+                  summary={phoneData.transactionSummary}
+                  transactions={recentTransactions}
+                />
+              )}
+
+              {activeSectionId === 'contacts' && (
+                <ContactsSection
+                  stats={phoneData.contactStats}
+                  contacts={recentContacts}
+                  leadsTrend={leadsTrend}
+                />
+              )}
+
+              {activeSectionId === 'campaigns' && (
+                <CampaignsSection
+                  totals={campaignTotals}
+                  campaigns={topCampaigns}
+                />
+              )}
+
+              {activeSectionId === 'reports' && (
+                <ReportsSection
+                  totals={reportTotals}
+                  reportsSummary={phoneData.reportsSummary}
+                  profitTrend={profitTrend}
+                  rows={phoneData.reportMetrics.slice(-6).reverse()}
+                />
+              )}
+
+              {activeSectionId === 'analytics' && (
+                <AnalyticsSection
+                  visitorsTrend={visitorsTrend}
+                  leadsTrend={leadsTrend}
+                  salesTrend={salesTrend}
+                  conversion={analyticsConversion}
+                />
+              )}
+            </>
+          )}
+        </section>
+
+        <nav className={styles.bottomNav} aria-label="Navegación principal móvil">
+          {PHONE_SECTIONS.map((section) => {
+            const Icon = section.Icon
+            const isActive = section.id === activeSectionId
+            return (
+              <button
+                key={section.id}
+                type="button"
+                className={`${styles.bottomNavItem} ${isActive ? styles.bottomNavItemActive : ''}`}
+                onClick={() => navigate(`/phone/${section.id}`)}
+                aria-label={section.label}
+                aria-current={isActive ? 'page' : undefined}
+              >
+                <Icon size={18} />
+                <span>{section.shortLabel}</span>
+              </button>
+            )
+          })}
+        </nav>
+      </div>
+    </main>
+  )
+}
+
+interface DashboardSectionProps {
+  tiles: Array<{
+    label: string
+    value: string
+    detail: string
+    delta: number
+    tone: 'green' | 'orange' | 'blue' | 'purple'
+  }>
+  financeTrend: TrendPoint[]
+  funnelData: Array<{ stage: string; value: number }>
+  trafficSources: Array<{ name: string; value: number; color?: string }>
+}
+
+function DashboardSection({ tiles, financeTrend, funnelData, trafficSources }: DashboardSectionProps) {
+  return (
+    <div className={styles.sectionStack}>
+      <div className={styles.metricGrid}>
+        {tiles.map((tile) => (
+          <MetricTile key={tile.label} {...tile} />
+        ))}
+      </div>
+
+      <Panel title="Ingresos vs ads" actionLabel="Finanzas">
+        <DualTrend data={financeTrend} labelA="Ingresos" labelB="Ads" formatValue={formatCompactCurrency} />
+      </Panel>
+
+      <Panel title="Embudo" actionLabel="Conversión">
+        <ProgressList
+          items={funnelData.map((item) => ({ label: item.stage, value: item.value }))}
+          formatValue={formatNumber}
+        />
+      </Panel>
+
+      <Panel title="Fuentes de tráfico" actionLabel="Canales">
+        <ProgressList
+          items={trafficSources.map((source) => ({ label: source.name, value: source.value, color: source.color }))}
+          formatValue={formatNumber}
+        />
+      </Panel>
+    </div>
+  )
+}
+
+interface AppointmentsSectionProps {
+  stats: AppointmentStats
+  events: CalendarEvent[]
+  calendars: Calendar[]
+  trend: TrendPoint[]
+}
+
+function AppointmentsSection({ stats, events, calendars, trend }: AppointmentsSectionProps) {
+  return (
+    <div className={styles.sectionStack}>
+      <div className={styles.metricGrid}>
+        <MetricTile label="Próximas" value={formatNumber(stats.pending)} detail="Confirmadas futuras" tone="blue" />
+        <MetricTile label="Asistieron" value={formatNumber(stats.showed)} detail="Citas completadas" tone="green" />
+        <MetricTile label="No asistió" value={formatNumber(stats.noshow)} detail="Seguimiento" tone="orange" />
+        <MetricTile label="Calendarios" value={formatNumber(calendars.length)} detail="Activos en HighLevel" tone="purple" />
+      </div>
+
+      <Panel title="Citas por periodo" actionLabel="Actividad">
+        <MiniBars data={trend} formatValue={formatNumber} />
+      </Panel>
+
+      <Panel title="Agenda inmediata" actionLabel={`${events.length} citas`}>
+        <ListStack emptyLabel="Sin citas próximas en el rango.">
+          {events.map((event) => (
+            <ListItem
+              key={event.id}
+              title={event.title}
+              meta={`${formatDateTime(event.startTime)} · ${getStatusLabel(event.appointmentStatus)}`}
+              value={event.appointmentStatus === 'showed' ? 'OK' : ''}
+            />
+          ))}
+        </ListStack>
+      </Panel>
+    </div>
+  )
+}
+
+interface TransactionsSectionProps {
+  summary: TransactionSummary
+  transactions: Transaction[]
+}
+
+function TransactionsSection({ summary, transactions }: TransactionsSectionProps) {
+  const revenueDelta = calculateDelta(summary.totalRevenue, summary.totalRevenuePrev)
+  const paidDelta = calculateDelta(summary.completedPayments, summary.completedPaymentsPrev)
+
+  return (
+    <div className={styles.sectionStack}>
+      <div className={styles.metricGrid}>
+        <MetricTile label="Cobrado" value={formatCompactCurrency(summary.totalRevenue)} detail={formatCurrency(summary.totalRevenue)} delta={revenueDelta} tone="green" />
+        <MetricTile label="Pagos" value={formatNumber(summary.completedPayments)} detail="Completados" delta={paidDelta} tone="blue" />
+        <MetricTile label="Ticket" value={formatCompactCurrency(summary.averageTicket)} detail="Promedio" tone="purple" />
+        <MetricTile label="Reembolsos" value={formatCompactCurrency(summary.refunds)} detail="Del periodo" tone="orange" />
+      </div>
+
+      <Panel title="Pagos recientes" actionLabel={`${transactions.length} visibles`}>
+        <ListStack emptyLabel="No hay pagos recientes para este periodo.">
+          {transactions.map((transaction) => (
+            <ListItem
+              key={transaction.id}
+              title={transaction.contactName || transaction.email || 'Cliente'}
+              meta={`${formatDateTime(transaction.date || transaction.createdAt)} · ${getStatusLabel(transaction.status)}`}
+              value={formatCompactCurrency(transaction.amount)}
+            />
+          ))}
+        </ListStack>
+      </Panel>
+    </div>
+  )
+}
+
+interface ContactsSectionProps {
+  stats: ContactStats
+  contacts: ContactListItem[]
+  leadsTrend: TrendPoint[]
+}
+
+function ContactsSection({ stats, contacts, leadsTrend }: ContactsSectionProps) {
+  return (
+    <div className={styles.sectionStack}>
+      <div className={styles.metricGrid}>
+        <MetricTile label="Contactos" value={formatNumber(stats.total)} detail="Registrados" delta={calculateDelta(stats.total, stats.totalPrev)} tone="blue" />
+        <MetricTile label="Con cita" value={formatNumber(stats.withAppointments)} detail="Agendados" delta={calculateDelta(stats.withAppointments, stats.withAppointmentsPrev)} tone="purple" />
+        <MetricTile label="Clientes" value={formatNumber(stats.customers)} detail="Compradores" delta={calculateDelta(stats.customers, stats.customersPrev)} tone="green" />
+        <MetricTile label="LTV prom." value={formatCompactCurrency(stats.avgLtv)} detail="Valor promedio" tone="orange" />
+      </div>
+
+      <Panel title="Leads nuevos" actionLabel="Tendencia">
+        <MiniBars data={leadsTrend} formatValue={formatNumber} />
+      </Panel>
+
+      <Panel title="Contactos recientes" actionLabel={`${contacts.length} visibles`}>
+        <ListStack emptyLabel="No hay contactos en este periodo.">
+          {contacts.map((contact) => (
+            <ListItem
+              key={contact.id}
+              title={getContactLabel(contact)}
+              meta={`${contact.email || contact.phone || 'Sin contacto'} · ${formatDate(contact.created_at, { includeYear: true })}`}
+              value={formatCompactCurrency(contact.ltv || contact.lifetimeLtv || 0)}
+            />
+          ))}
+        </ListStack>
+      </Panel>
+    </div>
+  )
+}
+
+interface CampaignsSectionProps {
+  totals: {
+    spend: number
+    revenue: number
+    clicks: number
+    leads: number
+    sales: number
+  }
+  campaigns: Campaign[]
+}
+
+function CampaignsSection({ totals, campaigns }: CampaignsSectionProps) {
+  const roas = totals.spend > 0 ? totals.revenue / totals.spend : 0
+
+  return (
+    <div className={styles.sectionStack}>
+      <div className={styles.metricGrid}>
+        <MetricTile label="Inversión" value={formatCompactCurrency(totals.spend)} detail={formatCurrency(totals.spend)} tone="orange" />
+        <MetricTile label="Revenue" value={formatCompactCurrency(totals.revenue)} detail={formatCurrency(totals.revenue)} tone="green" />
+        <MetricTile label="ROAS" value={formatRoas(roas)} detail="Publicidad" tone="purple" />
+        <MetricTile label="Leads" value={formatNumber(totals.leads)} detail={`${formatNumber(totals.clicks)} clics`} tone="blue" />
+      </div>
+
+      <Panel title="Campañas top" actionLabel={`${campaigns.length} campañas`}>
+        <ListStack emptyLabel="No hay campañas con datos en este periodo.">
+          {campaigns.map((campaign) => (
+            <ListItem
+              key={campaign.id}
+              title={campaign.name}
+              meta={`${formatCompactCurrency(campaign.spend)} invertidos · ${formatNumber(campaign.leads || 0)} leads`}
+              value={formatRoas(campaign.roas || (campaign.spend ? (campaign.revenue || 0) / campaign.spend : 0))}
+            />
+          ))}
+        </ListStack>
+      </Panel>
+    </div>
+  )
+}
+
+interface ReportsSectionProps {
+  totals: {
+    revenue: number
+    spend: number
+    profit: number
+    visitors: number
+    leads: number
+    customers: number
+  }
+  reportsSummary: ReportsSummary | null
+  profitTrend: TrendPoint[]
+  rows: ReportMetricRow[]
+}
+
+function ReportsSection({ totals, reportsSummary, profitTrend, rows }: ReportsSectionProps) {
+  const summaryRoas = reportsSummary?.campaigns?.roas || (totals.spend > 0 ? totals.revenue / totals.spend : 0)
+
+  return (
+    <div className={styles.sectionStack}>
+      <div className={styles.metricGrid}>
+        <MetricTile label="Ingresos" value={formatCompactCurrency(totals.revenue)} detail={formatCurrency(totals.revenue)} tone="green" />
+        <MetricTile label="Gasto" value={formatCompactCurrency(totals.spend)} detail={formatCurrency(totals.spend)} tone="orange" />
+        <MetricTile label="Profit" value={formatCompactCurrency(totals.profit)} detail={formatCurrency(totals.profit)} tone="blue" />
+        <MetricTile label="ROAS" value={formatRoas(summaryRoas)} detail="Reporte" tone="purple" />
+      </div>
+
+      <Panel title="Profit por periodo" actionLabel="Reporte">
+        <MiniBars data={profitTrend} formatValue={formatCompactCurrency} />
+      </Panel>
+
+      <Panel title="Corte rápido" actionLabel={`${rows.length} filas`}>
+        <ListStack emptyLabel="No hay filas de reporte en este periodo.">
+          {rows.map((row) => (
+            <ListItem
+              key={row.date}
+              title={formatDate(row.date, { includeYear: true })}
+              meta={`${formatNumber(row.visitors)} visitas · ${formatNumber(row.leads)} leads · ${formatNumber(row.customers)} clientes`}
+              value={formatCompactCurrency(row.profit)}
+            />
+          ))}
+        </ListStack>
+      </Panel>
+    </div>
+  )
+}
+
+interface AnalyticsSectionProps {
+  visitorsTrend: TrendPoint[]
+  leadsTrend: TrendPoint[]
+  salesTrend: TrendPoint[]
+  conversion: Array<{ label: string; value: number; percent: number }>
+}
+
+function AnalyticsSection({ visitorsTrend, leadsTrend, salesTrend, conversion }: AnalyticsSectionProps) {
+  return (
+    <div className={styles.sectionStack}>
+      <div className={styles.metricGrid}>
+        {conversion.map((item) => (
+          <MetricTile
+            key={item.label}
+            label={item.label}
+            value={formatCompactNumber(item.value)}
+            detail={item.label === 'Visitantes' ? 'Base del embudo' : `${formatPercent(item.percent)} conversión`}
+            tone={item.label === 'Ventas' ? 'green' : item.label === 'Citas' ? 'purple' : item.label === 'Leads' ? 'blue' : 'orange'}
+          />
+        ))}
+      </div>
+
+      <Panel title="Visitantes" actionLabel="Tráfico">
+        <MiniBars data={visitorsTrend} formatValue={formatNumber} />
+      </Panel>
+
+      <Panel title="Leads vs ventas" actionLabel="Conversión">
+        <DualTrend data={mergeTrendSeries(leadsTrend, salesTrend)} labelA="Leads" labelB="Ventas" formatValue={formatCompactNumber} />
+      </Panel>
+    </div>
+  )
+}
+
+function mergeTrendSeries(primary: TrendPoint[], secondary: TrendPoint[]): TrendPoint[] {
+  const maxLength = Math.max(primary.length, secondary.length)
+  const result: TrendPoint[] = []
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const first = primary[index]
+    const second = secondary[index]
+    result.push({
+      label: first?.label || second?.label || '',
+      value: first?.value || 0,
+      value2: second?.value || 0
+    })
+  }
+
+  return result
+}
+
+interface MetricTileProps {
+  label: string
+  value: string
+  detail: string
+  delta?: number
+  tone: 'green' | 'orange' | 'blue' | 'purple'
+}
+
+function MetricTile({ label, value, detail, delta, tone }: MetricTileProps) {
+  const deltaTone = typeof delta === 'number' && delta < 0 ? styles.deltaDown : styles.deltaUp
+
+  return (
+    <article className={`${styles.metricTile} ${styles[`tone${tone}`]}`}>
+      <span className={styles.metricLabel}>{label}</span>
+      <strong>{value}</strong>
+      <span className={styles.metricDetail}>{detail}</span>
+      {typeof delta === 'number' && (
+        <span className={`${styles.deltaBadge} ${deltaTone}`}>
+          {formatSignedPercent(delta)}
+        </span>
+      )}
+    </article>
+  )
+}
+
+interface PanelProps {
+  title: string
+  actionLabel?: string
+  children: ReactNode
+}
+
+function Panel({ title, actionLabel, children }: PanelProps) {
+  return (
+    <section className={styles.panel}>
+      <header className={styles.panelHeader}>
+        <h2>{title}</h2>
+        {actionLabel && (
+          <span className={styles.panelAction}>
+            {actionLabel}
+            <ChevronRight size={14} aria-hidden="true" />
+          </span>
+        )}
+      </header>
+      {children}
+    </section>
+  )
+}
+
+interface MiniBarsProps {
+  data: TrendPoint[]
+  formatValue: (value: number) => string
+}
+
+function MiniBars({ data, formatValue }: MiniBarsProps) {
+  const maxValue = Math.max(1, ...data.map((item) => item.value))
+
+  if (!data.length) {
+    return <EmptyState label="No hay datos de tendencia para este periodo." />
+  }
+
+  return (
+    <div className={styles.miniBars}>
+      {data.map((item, index) => (
+        <div key={`${item.label}-${index}`} className={styles.miniBarColumn}>
+          <span className={styles.miniBarValue}>{formatValue(item.value)}</span>
+          <span className={styles.miniBarTrack}>
+            <span className={styles.miniBarFill} style={{ height: `${Math.max(8, (item.value / maxValue) * 100)}%` }} />
+          </span>
+          <span className={styles.miniBarLabel}>{item.label}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+interface DualTrendProps {
+  data: TrendPoint[]
+  labelA: string
+  labelB: string
+  formatValue: (value: number) => string
+}
+
+function DualTrend({ data, labelA, labelB, formatValue }: DualTrendProps) {
+  const maxValue = Math.max(1, ...data.flatMap((item) => [item.value, item.value2 || 0]))
+  const latest = data[data.length - 1]
+
+  if (!data.length) {
+    return <EmptyState label="No hay datos comparativos para este periodo." />
+  }
+
+  return (
+    <div className={styles.dualTrend}>
+      <div className={styles.dualLegend}>
+        <span><i className={styles.legendGreen} />{labelA}</span>
+        <span><i className={styles.legendOrange} />{labelB}</span>
+      </div>
+      <div className={styles.dualChart}>
+        {data.map((item, index) => (
+          <div key={`${item.label}-${index}`} className={styles.dualColumn}>
+            <span className={styles.dualPill} style={{ height: `${Math.max(8, (item.value / maxValue) * 100)}%` }} />
+            <span className={styles.dualPillAlt} style={{ height: `${Math.max(8, ((item.value2 || 0) / maxValue) * 100)}%` }} />
+          </div>
+        ))}
+      </div>
+      {latest && (
+        <div className={styles.dualSummary}>
+          <span>{latest.label}</span>
+          <strong>{formatValue(latest.value)} / {formatValue(latest.value2 || 0)}</strong>
+        </div>
+      )}
+    </div>
+  )
+}
+
+interface ProgressListProps {
+  items: Array<{ label: string; value: number; color?: string }>
+  formatValue: (value: number) => string
+}
+
+function ProgressList({ items, formatValue }: ProgressListProps) {
+  const maxValue = Math.max(1, ...items.map((item) => item.value))
+
+  if (!items.length) {
+    return <EmptyState label="No hay datos disponibles para este periodo." />
+  }
+
+  return (
+    <div className={styles.progressList}>
+      {items.slice(0, 6).map((item, index) => (
+        <div key={`${item.label}-${index}`} className={styles.progressItem}>
+          <div className={styles.progressMeta}>
+            <span>{item.label}</span>
+            <strong>{formatValue(item.value)}</strong>
+          </div>
+          <span className={styles.progressTrack}>
+            <span
+              className={styles.progressFill}
+              style={{
+                width: `${Math.max(4, (item.value / maxValue) * 100)}%`,
+                background: item.color || undefined
+              }}
+            />
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+interface ListStackProps {
+  children: ReactNode
+  emptyLabel: string
+}
+
+function ListStack({ children, emptyLabel }: ListStackProps) {
+  const count = React.Children.count(children)
+
+  if (!count) {
+    return <EmptyState label={emptyLabel} />
+  }
+
+  return <div className={styles.listStack}>{children}</div>
+}
+
+interface ListItemProps {
+  title: string
+  meta: string
+  value?: string
+}
+
+function ListItem({ title, meta, value }: ListItemProps) {
+  return (
+    <article className={styles.listItem}>
+      <div>
+        <strong>{title}</strong>
+        <span>{meta}</span>
+      </div>
+      {value && <em>{value}</em>}
+    </article>
+  )
+}
+
+function EmptyState({ label }: { label: string }) {
+  return (
+    <div className={styles.emptyState}>
+      <Activity size={18} />
+      <span>{label}</span>
+    </div>
+  )
+}
+
+function PhoneSkeleton() {
+  return (
+    <div className={styles.skeletonStack} aria-label="Cargando métricas móviles">
+      <div className={styles.skeletonGrid}>
+        <span />
+        <span />
+        <span />
+        <span />
+      </div>
+      <span className={styles.skeletonPanel} />
+      <span className={styles.skeletonPanel} />
+      <span className={styles.skeletonPanelShort} />
+    </div>
+  )
+}
