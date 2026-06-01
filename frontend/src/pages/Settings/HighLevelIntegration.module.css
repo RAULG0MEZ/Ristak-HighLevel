@@ -544,52 +544,6 @@ body.dark .dropdownMenu {
   margin: 0;
 }
 
-.whatsappEventsHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-lg);
-  margin-bottom: var(--spacing-lg);
-}
-
-.whatsappEventsTitleGroup {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-md);
-}
-
-.whatsappEventsIcon {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-md);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: #ffffff;
-  background: #25d366;
-  flex-shrink: 0;
-}
-
-.whatsappEventsList {
-  display: flex;
-  flex-direction: column;
-  border-top: 1px solid var(--color-border);
-}
-
-.whatsappEventRow {
-  min-height: 72px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-xl);
-  padding: var(--spacing-lg) 0;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.whatsappEventRow:last-child {
-  border-bottom: 0;
-}
-
 .savingIndicator {
   display: flex;
   align-items: center;
@@ -627,10 +581,6 @@ body.dark .dropdownMenu {
     grid-template-columns: 1fr;
   }
 
-  .whatsappEventRow {
-    align-items: flex-start;
-    gap: var(--spacing-md);
-  }
 }
 
 /* Toggle de modo de pagos */
@@ -1952,8 +1902,7 @@ body.dark .switchInput:checked:disabled + .switchSlider:hover {
   overflow: visible;
 }
 
-.sectionHeader,
-.whatsappEventsHeader {
+.sectionHeader {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -2349,33 +2298,6 @@ textarea.input {
   transform: translateX(20px);
 }
 
-.whatsappEventsHeader {
-  margin-bottom: 0;
-}
-
-.whatsappEventsTitleGroup {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.whatsappEventsIcon {
-  width: 42px;
-  height: 42px;
-  border-radius: 8px;
-}
-
-.whatsappEventsList {
-  border-top: 1px solid rgba(148, 163, 184, 0.16);
-}
-
-.whatsappEventRow {
-  min-height: 64px;
-  padding: 14px 0;
-  gap: 14px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
-}
-
 .metaWorkspace {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(340px, 0.85fr);
@@ -2391,8 +2313,7 @@ textarea.input {
   min-width: 0;
 }
 
-.metaConfigSection,
-.metaWhatsAppSection {
+.metaConfigSection {
   margin-top: 0;
 }
 
@@ -2642,27 +2563,6 @@ textarea.input {
   line-height: 1.5;
 }
 
-.whatsappEventRowLocked {
-  color: var(--color-text-tertiary);
-}
-
-.metaRequirementPill {
-  display: inline-flex;
-  align-items: center;
-  width: fit-content;
-  min-height: 22px;
-  margin-top: 8px;
-  padding: 0 8px;
-  border: 1px solid rgba(245, 158, 11, 0.24);
-  border-radius: 999px;
-  color: var(--color-status-warning);
-  background: rgba(245, 158, 11, 0.08);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
 .calendarConfigGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2701,9 +2601,7 @@ textarea.input {
 
 @media (max-width: 900px) {
   .headerContent,
-  .sectionHeader,
-  .whatsappEventsHeader,
-  .whatsappEventRow {
+  .sectionHeader {
     flex-direction: column;
     align-items: stretch;
   }
