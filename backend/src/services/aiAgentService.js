@@ -5402,6 +5402,52 @@ async function executeCreateSinglePaymentLink(args = {}, highLevelConnection, co
     })
   }
 
+  if (
+    dueDateIsFuture &&
+    userRequestedScheduledPayment(context.messages) &&
+    storedCardStatus.hasAuthorizedCard &&
+    !storedCardPreference &&
+    !userRequestedPaymentLink(context.messages)
+  ) {
+    return {
+      ok: false,
+      action: 'create_installment_payment_flow',
+      error: 'Este contacto ya tiene una tarjeta guardada/autorizada. Antes de programar el cobro necesito saber si uso esa tarjeta guardada o si mando link para autorizar una tarjeta nueva.',
+      missingFields: ['preferencia de tarjeta guardada'],
+      askOneAtATime: true,
+      contact: {
+        id: contact.id,
+        name: contact.name,
+        email: contact.email || null,
+        phone: contact.phone || null
+      },
+      storedCard: {
+        available: true,
+        paymentMode: storedCardStatus.paymentMode,
+        brand: storedCardStatus.brand,
+        last4: storedCardStatus.last4
+      },
+      suggestedArguments: {
+        contactId: contact.id,
+        totalAmount: amount,
+        currency,
+        concept,
+        product: productSummary,
+        firstPayment: { enabled: false },
+        remainingAutomatic: true,
+        remainingFrequency: 'custom',
+        remainingPayments: [
+          {
+            type: 'amount',
+            amount,
+            dueDate
+          }
+        ]
+      },
+      clarificationOptions: buildStoredCardChoiceOptions(storedCardStatus, contact)
+    }
+  }
+
   if (AI_OFFLINE_PAYMENT_METHODS.has(requestedPaymentMethod)) {
     return {
       ok: false,
@@ -5438,8 +5484,7 @@ async function executeCreateSinglePaymentLink(args = {}, highLevelConnection, co
             amount,
             dueDate
           }
-        ],
-        deliveryMode: args.deliveryMode || args.linkDeliveryMode || 'send'
+        ]
       }
     }
   }
