@@ -3412,6 +3412,41 @@ function buildInstallmentPlanScheduleRows({ firstPayment = {}, remainingPayments
   return rows
 }
 
+function buildPendingInstallmentPlanSummary(args = {}, timezone = DEFAULT_PAYMENT_TIMEZONE) {
+  const totalAmount = normalizePaymentAmount(args.totalAmount || args.amount || args.total || getProductPaymentAmount(args))
+  if (totalAmount <= 0) return null
+
+  const firstPayment = resolveFirstPayment(args, totalAmount, timezone)
+  const remaining = resolveRemainingPayments(args, totalAmount, firstPayment, timezone)
+  const schedule = buildInstallmentPlanScheduleRows({
+    firstPayment,
+    remainingPayments: remaining.payments
+  })
+
+  if (!schedule.length) return null
+
+  return {
+    totalAmount,
+    currency: getProductPaymentCurrency(args),
+    product: getPaymentProductSummary(args),
+    schedule,
+    firstPayment: firstPayment.enabled
+      ? {
+          amount: firstPayment.amount,
+          method: firstPayment.method || null,
+          date: firstPayment.date
+        }
+      : null,
+    remainingPayments: remaining.payments.map((payment) => ({
+      sequence: payment.sequence,
+      amount: payment.amount,
+      dueDate: payment.dueDate,
+      notes: payment.notes || null
+    })),
+    semanticInstruction: 'Usa este calendario ya interpretado si mencionas el plan; no lo simplifiques ni cambies esperas/saltos sin cobro.'
+  }
+}
+
 function buildInstallmentPlanPreviewOutput({ contact = {}, totalAmount, currency, concept, product = null, firstPayment = {}, remainingPayments = [] } = {}) {
   const schedule = buildInstallmentPlanScheduleRows({ firstPayment, remainingPayments })
 
@@ -8888,11 +8923,22 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
 
   const resolvedContact = await resolvePaymentContact(args, context)
   if (!resolvedContact.contact) {
+    const pendingPlanSummary = buildPendingInstallmentPlanSummary(args, paymentTimezone)
+
     return {
       ok: false,
       error: resolvedContact.error || 'Falta identificar el contacto.',
       missingFields: resolvedContact.missingFields || [],
-      clarificationOptions: resolvedContact.clarificationOptions || []
+      clarificationOptions: resolvedContact.clarificationOptions || [],
+      summary: pendingPlanSummary
+        ? {
+            ...pendingPlanSummary,
+            contact: null
+          }
+        : null,
+      responseInstructions: pendingPlanSummary
+        ? 'Pregunta sólo cuál contacto es. Si mencionas el plan pendiente, usa summary.schedule exactamente; no cambies fechas, no quites el primer pago de hoy y no conviertas los periodos de espera en cobros.'
+        : ''
     }
   }
 
@@ -10626,7 +10672,7 @@ function buildHighLevelTools(highLevelConnection, options = {}) {
     {
       type: 'function',
       name: 'create_installment_payment_flow',
-      description: 'Crea un cobro por parcialidades, domiciliación o cargos automáticos futuros usando la lógica interna segura de Ristak. Úsala para planes con o sin primer pago, cargos programados a tarjeta guardada, pagos programados únicos con fecha futura, órdenes de domiciliar el resto o cargos futuros como "el 10 de junio cobra 100" o "en un año cobra X y tres meses después Y". Si el cobro es de producto y falta producto, precio o fecha/momento, la herramienta preguntará el dato faltante y conservará lo ya dicho. Si el usuario dice "10 ahorita y luego el mismo día durante los siguientes 3 meses", eso es firstPayment hoy por 10 y remainingPayments mensuales futuros, no 3 cobros hoy. Si dice "espera un mes/dos semanas y luego cobra", ese intervalo es sin cobro: salta el periodo o fecha correspondiente con afterMonths/afterWeeks/afterDays/afterPeriods; no crees pagos de 0. En instrucciones compuestas, cuenta cada tramo: "por dos meses" son 2 cobros reales y cada "le vuelves a cobrar" posterior es otro cobro adicional; si el último dice "esta vez 20", ese 20 no reemplaza el mes anterior, es el último cobro extra. Si el usuario pide "hacer una nueva" en un hilo donde ya se resolvió contacto, reutiliza el contactId de la memoria operacional. Esta herramienta detecta tarjeta guardada en Ristak/GoHighLevel; si el primer pago es transferencia/depósito/manual lo registra offline, y si el resto es automático y falta tarjeta, envía domiciliación. Si hay tarjeta guardada no manda domiciliación salvo que el usuario pida otra tarjeta. Si se necesita enviar link de primer pago o domiciliación y el usuario no eligió canal, pregunta all/email/sms/whatsapp antes de completar el cobro. generate/none no es válido para domiciliación o tarjeta porque el formulario real requiere envío. Nunca completa el cobro sin que el usuario diga que sí al resumen.',
+      description: 'Crea un cobro por parcialidades, domiciliación o cargos automáticos futuros usando la lógica interna segura de Ristak. Úsala para planes con o sin primer pago, cargos programados a tarjeta guardada, pagos programados únicos con fecha futura, órdenes de domiciliar el resto o cargos futuros como "el 10 de junio cobra 100" o "en un año cobra X y tres meses después Y". Interpreta intención humana, no sólo texto literal: "ahorita 50, te esperes un mes y luego en el siguiente cobras otra vez 50" significa primer pago hoy, un mes sin cobro y otro cargo real en el periodo posterior. Si el cobro es de producto y falta producto, precio o fecha/momento, la herramienta preguntará el dato faltante y conservará lo ya dicho. Si el usuario dice "10 ahorita y luego el mismo día durante los siguientes 3 meses", eso es firstPayment hoy por 10 y remainingPayments mensuales futuros, no 3 cobros hoy. Si dice "espera un mes/dos semanas y luego cobra", ese intervalo es sin cobro: salta el periodo o fecha correspondiente con afterMonths/afterWeeks/afterDays/afterPeriods; no crees pagos de 0. En instrucciones compuestas, cuenta cada tramo: "por dos meses" son 2 cobros reales y cada "le vuelves a cobrar" posterior es otro cobro adicional; si el último dice "esta vez 20", ese 20 no reemplaza el mes anterior, es el último cobro extra. Si el usuario pide "hacer una nueva" en un hilo donde ya se resolvió contacto, reutiliza el contactId de la memoria operacional. Esta herramienta detecta tarjeta guardada en Ristak/GoHighLevel; si el primer pago es transferencia/depósito/manual lo registra offline, y si el resto es automático y falta tarjeta, envía domiciliación. Si hay tarjeta guardada no manda domiciliación salvo que el usuario pida otra tarjeta. Si se necesita enviar link de primer pago o domiciliación y el usuario no eligió canal, pregunta all/email/sms/whatsapp antes de completar el cobro. generate/none no es válido para domiciliación o tarjeta porque el formulario real requiere envío. Nunca completa el cobro sin que el usuario diga que sí al resumen.',
       parameters: {
         type: 'object',
         properties: {
@@ -12315,6 +12361,7 @@ const UNIFIED_CAPABILITY_PROMPT = [
   '- Si Memoria operacional de producto/precio trae activeProduct y el usuario corrige sólo monto/precio, conserva ese producto como concepto/producto activo. No reinicies contacto ni producto por una corrección corta.',
   '- Para agendar citas, meter a workflow, crear oportunidades o mandar mensajes a una persona, usa el contactId resuelto por lookup_highlevel_contact, manage_highlevel_appointment o Memoria operacional CRM; no confundas ese nombre con la última/próxima cita de otro contacto.',
   '- Para cualquier acción sobre una persona/contacto (pagos, citas, workflows, oportunidades, mensajes, tags, notas, campos, suscripciones o conversaciones), el último resumen confirmado es sólo una propuesta. Si el usuario corrige o agrega algo antes de la ejecución, reconstruye la propuesta completa y vuelve a preguntar. No ejecutes con una confirmación anterior.',
+  '- Para acciones sobre contactos, interpreta la intención humana completa antes de escoger herramienta: conserva entidad, cambios, fechas, esperas, condiciones, canal y método ya dichos. No reduzcas una corrección corta a un comando aislado si depende del plan anterior.',
   '- Para crear, enviar, cobrar, programar, cancelar o modificar pagos, links, invoices, parcialidades, pagos manuales, tarjeta guardada o domiciliación usa las herramientas internas de Ristak porque replican la lógica real del backend. No uses MCP como atajo para mutaciones de dinero.',
   '- Excepción de sólo lectura: si el usuario pide ver/listar/GET invoices, payments, subscriptions, transactions o schedules de HighLevel, usa REST GET documentado. Eso no toca dinero y no requiere confirmación.',
   '- Nunca crees, envíes, anules, programes ni marques invoices/pagos usando highlevel_rest_request. Para dinero, REST directo está prohibido porque se salta el workflow del formulario y puede dejar facturas en borrador.',
@@ -12358,6 +12405,8 @@ const PAYMENT_WORKFLOW_PROMPT = [
   '- Cuando la herramienta regrese summary.delivery, usa ese canal como el canal visible para el usuario. Si result.sendMethod dice sms pero summary.delivery dice WhatsApp, sms es sólo el valor técnico de HighLevel para envío al teléfono; no cambies el canal confirmado por el usuario.',
   '- No uses highlevel_rest_request para crear invoices, enviar invoices, registrar pagos, schedules ni payments. Las únicas herramientas válidas para mutar dinero son create_single_payment_link, create_installment_payment_flow, modify_scheduled_payment_flow, record_contact_payment y record_invoice_payment.',
   '- Si el usuario ya dio todos los datos, usa las herramientas internas y avanza; no repitas preguntas nomás por protocolo.',
+  '- Entiende el plan como intención de calendario, no como palabras sueltas. "Ahorita" es un cobro hoy; "espera/espérate/te esperes N meses/semanas/días" es un hueco sin cobro; "luego", "en el siguiente", "otra vez" o "hasta X" retoman el siguiente cobro real después de ese hueco.',
+  '- Si falta elegir contacto y la herramienta devuelve summary.schedule, no reformules el plan desde memoria ni lo resumas de forma distinta. Pregunta sólo cuál contacto es y, si mencionas el plan, usa esas fechas/montos exactamente.',
   '- Si el usuario corrige un resumen de pago con "sí, solo que...", "nomás que...", "espera...", "también cóbrale...", "agrégale otro pago" o similar, no reemplaces el plan completo salvo que lo diga explícitamente. Conserva los cobros ya propuestos, aplica el cambio o adición semántica, recalcula total/fechas y pide confirmación otra vez.',
   '- Si el usuario acaba de elegir el contacto en un flujo de cobro, no cierres con un resumen textual. Vuelve a llamar create_single_payment_link o create_installment_payment_flow con el contacto confirmado para que el backend decida tarjeta guardada, link, canal y confirmación.',
   '- lookup_contact_payment_profile sólo sirve para consultar perfil de pago; no es respuesta final suficiente para un cobro. Después de identificar contacto y monto/fecha, usa la herramienta de creación/programación correspondiente.',
@@ -12374,6 +12423,7 @@ const PAYMENT_WORKFLOW_PROMPT = [
   '- En un plan de parcialidades, el primer paso después de armar el plan es especificarle al usuario cómo queda (tabla con #, fecha exacta y monto, más el total) y pedir que confirme el plan. No preguntes método de pago, tarjeta guardada ni canal de envío hasta que el plan esté confirmado. Si la herramienta devuelve planPreviewConfirmationRequired, muestra el plan y pide confirmarlo sin preguntar todavía por la tarjeta.',
   '- Para parcialidades nunca respondas sólo "hoy, en 1 mes y en 2 meses"; calcula y muestra fechas absolutas usando la fecha/hora local disponible.',
   '- Descompón la frase del usuario por tramos temporales. "Por N meses" crea N cobros; si después dice "te esperas un mes, le vuelves a cobrar" eso agrega otro cobro; y si luego dice "te esperas otro mes y le vuelves a cobrar, pero esta vez 20" agrega otro cobro final de 20. No mezcles el cobro final con el último mes de la serie.',
+  '- En cadencia mensual, "ahorita 50, te esperes un mes y luego en el siguiente cobras otra vez 50" significa: hoy 50, el siguiente mes queda sin cobro, y el otro mes cobra 50. No lo conviertas en dos cobros futuros.',
   '- Si create_installment_payment_flow devuelve scheduleIncomplete, NO muestres ese plan ni pidas confirmación. Corrige la lista de cobros y vuelve a llamar la herramienta con todos los cobros reales y el total recalculado.',
   '- Si después del resumen el usuario responde afirmativamente pero agrega cambios como "pero", "solo pon", "cambia", "agrega descripción", "mejor por WhatsApp", "con tarjeta guardada", etc., eso NO es permiso final. Actualiza el plan con la herramienta interna y vuelve a pedir permiso con el resumen nuevo.',
   '- Si el usuario ya programó un cobro y luego dice "sabes qué", "mejor para otra fecha", "cámbialo", "mueve la fecha" o corrige monto/fecha/recurrencia/descripción/notas/términos/texto, NO crees otro cobro automáticamente. Usa modify_scheduled_payment_flow para modificar el schedule existente o preguntar si quiere crear otro dejando el anterior intacto cuando haya ambigüedad. Si sólo cambia el mes ("mejor para octubre"), conserva el día y año del schedule actual salvo que el usuario diga otro día/año. Si pide cancelar o eliminar el programado, usa esa misma herramienta con cancel_existing o delete_existing.',
