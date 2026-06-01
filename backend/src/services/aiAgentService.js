@@ -19,6 +19,7 @@ import { DateTime } from 'luxon'
 import {
   addHighLevelEndpointQueryDefaults,
   compactHighLevelEndpoint,
+  expandHighLevelEndpointSearchQuery,
   findHighLevelEndpoint,
   getHighLevelEndpointCatalogSummary,
   getUnresolvedHighLevelPathParams,
@@ -833,7 +834,9 @@ const HIGHLEVEL_API_RESOURCE_ALIASES = [
   'forms', 'form', 'formularios', 'formulario', 'form submissions', 'respuestas de formulario', 'envios de formulario',
   'surveys', 'survey', 'encuestas', 'encuesta',
   'funnels', 'funnel', 'embudos', 'embudo', 'funnel pages', 'paginas de embudo',
-  'invoice', 'invoices', 'facturas',
+  'invoice', 'invoices', 'facturas', 'invoice schedules', 'schedules de invoice', 'schedules de invoices',
+  'cobros programados', 'pagos programados', 'cobros recurrentes', 'pagos recurrentes',
+  'facturas programadas', 'facturas recurrentes', 'recurrentes', 'recurrencias', 'autopagos',
   'knowledge base', 'base de conocimiento',
   'trigger links', 'trigger link', 'links disparadores', 'enlaces disparadores',
   'locations', 'location', 'sub account', 'sub-account', 'ubicacion', 'ubicaciones', 'location custom values',
@@ -867,6 +870,11 @@ const HIGHLEVEL_OPERATION_WORD_PATTERN = /\b(?:busca|buscar|buscame|encuentra|re
 const HIGHLEVEL_PAYMENT_RESOURCE_PATTERN = /\b(?:payment|payments|invoice|invoices|subscription|subscriptions|transaction|transactions|pago|pagos|factura|facturas|recibo|recibos)\b/
 const HIGHLEVEL_READ_OPERATION_WORD_PATTERN = /\b(?:busca|buscar|buscame|encuentra|revisa|consulta|consultar|muestra|listar|lista|trae|traeme|tráeme|obten|obtiene|obtener|get|lee|leer|ver)\b/
 const HIGHLEVEL_PAYMENT_MUTATION_WORD_PATTERN = /\b(?:post|put|patch|delete|crea|crear|actualiza|modifica|cambia|manda|envia|envía|agenda|agendar|calendariza|ejecuta|haz|hacer|agrega|agregar|quita|quitar|remueve|remover|elimina|eliminar|cobra|cobrar|cobrale|charge|registra|registrar|programa|programar|domicili)\b/
+const HIGHLEVEL_REST_READ_RESOURCE_PATTERN = /\b(?:recurrente|recurrentes|recurrencia|recurrencias|recurring|schedule|schedules|programad[oa]s?|calendarizad[oa]s?|autopago|autopagos|auto\s*payment|auto\s*payments|facturas?\s+(?:programad|recurrent)|invoices?\s+(?:schedule|schedules|recurring)|cobros?\s+(?:programad|recurrent)|pagos?\s+(?:programad|recurrent)|cargos?\s+(?:programad|recurrent)|formularios?|forms?|submissions?|respuestas?|envios?|envíos?|campos?\s+personalizados?|custom\s+fields?|valores?\s+personalizados?|custom\s+values?|embudos?|funnels?|archivos?|imagenes?|imágenes?|carpetas?|media|oportunidades?|pipelines?|conversaciones?|mensajes?|productos?|precios?|tiendas?|stores?|usuarios?)\b/
+const HIGHLEVEL_REST_API_STYLE_PATTERN = /\b(?:get|api|endpoint|endpoints|rest|path|ruta|highlevel|go\s*high\s*level|gohighlevel|ghl)\b/
+const HIGHLEVEL_REST_READ_WORD_PATTERN = /\b(?:busca|buscar|buscame|búscame|encuentra|revisa|consulta|consultar|muestra|muéstrame|mostrar|listar|lista|listame|lístame|trae|traeme|tráeme|obten|obtiene|obtener|get|lee|leer|ver|ensena|enseña|enséñame|dame|todas|todos|cuantos|cuántos|cuales|cuáles)\b/
+const HIGHLEVEL_REST_INVENTORY_WORD_PATTERN = /\b(?:busca|buscar|buscame|búscame|encuentra|revisa|consulta|consultar|muestra|muéstrame|mostrar|listar|lista|listame|lístame|trae|traeme|tráeme|obten|obtiene|obtener|get|lee|leer|ver|ensena|enseña|enséñame|dame|todas|todos)\b/
+const HIGHLEVEL_REST_WRITE_WORD_PATTERN = /\b(?:post|put|patch|delete|crea|crear|actualiza|modifica|cambia|manda|envia|envía|agenda|agendar|calendariza|agrega|quitar|quita|remueve|elimina|cobra|cobrar|cobrale|charge|registra|registrar|programa|programar|domicili|cancela|cancelar)\b/
 
 function mentionsHighLevelResource(question) {
   return HIGHLEVEL_API_RESOURCE_PATTERN.test(normalizeText(question))
@@ -886,10 +894,38 @@ function isHighLevelOperationalResourceRequest(question) {
 function isReadOnlyHighLevelPaymentApiRequest(question) {
   const normalized = normalizeText(question)
 
-  return mentionsHighLevel(normalized) &&
+  return (mentionsHighLevel(normalized) || HIGHLEVEL_REST_API_STYLE_PATTERN.test(normalized)) &&
     HIGHLEVEL_PAYMENT_RESOURCE_PATTERN.test(normalized) &&
     HIGHLEVEL_READ_OPERATION_WORD_PATTERN.test(normalized) &&
     !HIGHLEVEL_PAYMENT_MUTATION_WORD_PATTERN.test(normalized)
+}
+
+function hasRecentHighLevelPaymentScheduleContext(messages = []) {
+  const previousText = normalizeText(getRecentConversationTextBeforeLatestUser(messages, 12))
+
+  return /(highlevel|ghl|invoice|factura|schedule|programad|recurrent|recurr|cobro|pago|tarjeta guardada|autopago|domicili)/.test(previousText)
+}
+
+function isHighLevelRestReadCatalogRequest(question, messages = []) {
+  const normalized = normalizeText(question)
+  if (!normalized) return false
+
+  const explicitGet = /\bget\b/.test(normalized)
+  const hasReadWord = explicitGet || HIGHLEVEL_REST_READ_WORD_PATTERN.test(normalized)
+  if (!hasReadWord) return false
+
+  const hasHumanEndpointResource = HIGHLEVEL_REST_READ_RESOURCE_PATTERN.test(normalized)
+  const hasCatalogResource = mentionsHighLevelResource(normalized) || hasHumanEndpointResource
+  const hasApiStyle = mentionsHighLevel(normalized) || HIGHLEVEL_REST_API_STYLE_PATTERN.test(normalized)
+  const readFromPreviousHighLevelPaymentContext = hasApiStyle && hasRecentHighLevelPaymentScheduleContext(messages)
+  const hasInventoryWord = explicitGet || HIGHLEVEL_REST_INVENTORY_WORD_PATTERN.test(normalized)
+  const looksLikeWrite = HIGHLEVEL_REST_WRITE_WORD_PATTERN.test(normalized) && !explicitGet
+
+  return !looksLikeWrite && (
+    (hasApiStyle && hasCatalogResource) ||
+    (hasHumanEndpointResource && hasInventoryWord) ||
+    readFromPreviousHighLevelPaymentContext
+  )
 }
 
 function isExplicitNonPaymentTopicSwitchText(value) {
@@ -1190,6 +1226,37 @@ function buildHighLevelToolContext(highLevelConnection) {
     restBaseUrl: HIGHLEVEL_API_BASE_URL,
     token: 'configurado_no_mostrar'
   }, 3000)
+}
+
+function buildHighLevelEndpointIntentHint({ latestUserMessage = '', messages = [], agentRoute = null } = {}) {
+  if (!agentRoute?.requiresHighLevelTools && !agentRoute?.highLevelRestReadIntent) {
+    return 'No aplica para esta ruta.'
+  }
+
+  const queryText = expandHighLevelEndpointSearchQuery([
+    latestUserMessage,
+    agentRoute?.highLevelRestReadIntent && hasRecentHighLevelPaymentScheduleContext(messages)
+      ? 'invoice schedule recurring invoices scheduled payments'
+      : ''
+  ].filter(Boolean).join(' '))
+  const method = agentRoute?.highLevelRestReadIntent ? 'GET' : null
+  const suggestions = searchHighLevelEndpoints({
+    query: queryText,
+    method,
+    limit: 8
+  })
+
+  return safeStringify({
+    humanRequest: cleanText(latestUserMessage, 800),
+    readOnlyRestIntent: Boolean(agentRoute?.highLevelRestReadIntent),
+    expandedQuery: queryText,
+    rule: [
+      'Si readOnlyRestIntent=true, usa lookup_highlevel_endpoint y highlevel_rest_request con GET.',
+      'No pidas contacto si el endpoint sugerido no tiene contactId como path param.',
+      'Para "recurrentes", "cobros programados", "pagos recurrentes", "facturas programadas" o "invoices schedules", el endpoint esperado normalmente es GET /invoices/schedule.'
+    ].join(' '),
+    suggestions
+  }, 5000)
 }
 
 function buildMetaAdsOperationsContext() {
@@ -1722,6 +1789,54 @@ function parseNaturalPaymentDateFromText(text, timezone = DEFAULT_PAYMENT_TIMEZO
   if (/\bhoy\b|\bahora\b|\bahorita\b/.test(normalized)) return today.toISODate()
 
   return null
+}
+
+function parsePaymentMonthOnlyFromText(text, timezone = DEFAULT_PAYMENT_TIMEZONE) {
+  const normalized = normalizeText(text)
+  if (!normalized) return null
+
+  const zone = DateTime.now().setZone(timezone).isValid ? timezone : DEFAULT_PAYMENT_TIMEZONE
+  const today = DateTime.now().setZone(zone).startOf('day')
+  const monthNames = Object.keys(PAYMENT_MONTHS).join('|')
+  const monthPattern = new RegExp(`(?:\\b(?:para|en|a|al|de|del)\\s+)?\\b(${monthNames})(?:\\s+(?:de|del)?\\s*(20\\d{2}))?\\b`, 'g')
+  const matches = [...normalized.matchAll(monthPattern)]
+
+  for (let index = matches.length - 1; index >= 0; index -= 1) {
+    const match = matches[index]
+    const before = normalized.slice(Math.max(0, match.index - 8), match.index)
+    if (/\d{1,2}\s+(?:de\s+)?$/.test(before)) continue
+
+    return {
+      month: PAYMENT_MONTHS[match[1]],
+      year: match[2] ? Number(match[2]) : null,
+      today
+    }
+  }
+
+  return null
+}
+
+function resolveMonthOnlyPaymentDate(monthInfo, candidate, timezone = DEFAULT_PAYMENT_TIMEZONE) {
+  if (!monthInfo?.month) return null
+
+  const zone = DateTime.now().setZone(timezone).isValid ? timezone : DEFAULT_PAYMENT_TIMEZONE
+  const today = DateTime.now().setZone(zone).startOf('day')
+  const candidateDate = normalizeDateOnlyInput(candidate?.dueDate || '')
+    ? DateTime.fromISO(candidate.dueDate, { zone }).startOf('day')
+    : null
+  const requestedYear = monthInfo.year || (candidateDate?.isValid ? candidateDate.year : today.year)
+  const requestedDay = candidateDate?.isValid ? candidateDate.day : today.day
+  const monthStart = DateTime.fromObject({ year: requestedYear, month: monthInfo.month, day: 1 }, { zone }).startOf('day')
+  if (!monthStart.isValid) return null
+
+  const safeDay = Math.min(requestedDay, monthStart.endOf('month').day)
+  let date = DateTime.fromObject({ year: requestedYear, month: monthInfo.month, day: safeDay }, { zone }).startOf('day')
+
+  if (!monthInfo.year && !candidateDate?.isValid && date < today) {
+    date = date.plus({ years: 1 })
+  }
+
+  return date.isValid ? date.toISODate() : null
 }
 
 function extractPaymentAmountFromText(text) {
@@ -2415,11 +2530,15 @@ function getScheduledPaymentChangeIntent(messages = []) {
     return 'create_new'
   }
 
+  if (/(elimina|eliminar|borra|borrar|delete).*(cobro|pago|schedule|programad|existente|actual|lo|la)|\b(eliminal[oa]|elimínal[oa]|borral[oa]|bórral[oa])\b/.test(text)) {
+    return 'delete_existing'
+  }
+
   if (/(modifica|modificar|cambia|cambiar|mueve|mover|reprograma|reprogramar|actualiza|actualizar).*(existente|actual|programad|schedule|cobro)|\bmodifica(?:lo|la)?\b|\bcambial[oa]\b|\bcámbial[oa]\b/.test(text)) {
     return 'modify_existing'
   }
 
-  if (/(cancela|cancelar|elimina|eliminar|borra|borrar).*(cobro|pago|schedule|programad|existente|actual)/.test(text)) {
+  if (/(cancela|cancelar).*(cobro|pago|schedule|programad|existente|actual|lo|la)|\bcancelal[oa]\b|\bcancélal[oa]\b/.test(text)) {
     return 'cancel_existing'
   }
 
@@ -2435,12 +2554,15 @@ function hasScheduledPaymentCorrectionIntent(messages = []) {
   const normalized = normalizeText(latestText)
   if (!normalized) return false
 
-  const hasCorrectionLanguage = /(sabes que|mejor|corrige|corrígelo|cambia|cámbialo|modifica|mueve|pásalo|pasalo|reprograma|arrepent|en vez|perd[oó]n)/.test(normalized)
-  const hasDate = Boolean(parseNaturalPaymentDateFromText(latestText))
+  const hasCorrectionLanguage = /(sabes que|mejor|corrige|corrígelo|cambia|cámbialo|modifica|mueve|pásalo|pasalo|reprograma|arrepent|en vez|perd[oó]n|ponle|agrega|quita|elimina|borra|cancela)/.test(normalized)
+  const hasDate = Boolean(parseNaturalPaymentDateFromText(latestText) || parsePaymentMonthOnlyFromText(latestText))
+  const hasEditableField = hasDate ||
+    extractPaymentAmountFromText(latestText) > 0 ||
+    /(descripci[oó]n|descripcion|concepto|nota|notas|terminos|t[eé]rminos|condiciones|texto|monto|cantidad|recurrencia|recurrente|frecuencia|cada\s+\d*|mensual|semanal|quincenal|diario|anual|eliminal|elimínal|borral|bórral|cancelal|cancélal)/.test(normalized)
   const previousText = normalizeText(getRecentConversationTextBeforeLatestUser(messages, 8))
   const hasRecentScheduledPayment = /(program[oó]|programad|schedule|tarjeta guardada|fecha indicada|no lleva link|cobro).*(pago|cobro|mxn|\$)|flow|parcialidad/.test(previousText)
 
-  return hasCorrectionLanguage && hasDate && hasRecentScheduledPayment
+  return hasCorrectionLanguage && hasEditableField && hasRecentScheduledPayment
 }
 
 function normalizeScheduledPaymentCandidate(row = {}) {
@@ -2472,11 +2594,201 @@ function normalizeScheduledPaymentCandidate(row = {}) {
   }
 }
 
+function firstDefinedValue(...values) {
+  return values.find(value => value !== undefined && value !== null && value !== '')
+}
+
+function getGhlScheduleList(response) {
+  if (Array.isArray(response)) return response
+
+  const candidates = [
+    response?.schedules,
+    response?.invoiceSchedules,
+    response?.invoice_schedules,
+    response?.data?.schedules,
+    response?.data?.invoiceSchedules,
+    response?.data?.invoice_schedules,
+    response?.data,
+    response?.items,
+    response?.results
+  ]
+
+  return candidates.find(Array.isArray) || []
+}
+
+function resolveGhlScheduleObject(schedule = {}) {
+  return schedule.schedule && typeof schedule.schedule === 'object'
+    ? schedule.schedule
+    : {}
+}
+
+function resolveGhlScheduleRecurrence(schedule = {}) {
+  const scheduleConfig = resolveGhlScheduleObject(schedule)
+  return firstDefinedValue(
+    scheduleConfig.rrule,
+    schedule.rrule,
+    schedule.recurrence,
+    schedule.recurring,
+    scheduleConfig.recurrence
+  ) || null
+}
+
+function combineGhlRruleStart(rrule = {}) {
+  if (!rrule?.startDate) return null
+  if (!rrule.startTime) return rrule.startDate
+  const time = String(rrule.startTime)
+  return `${rrule.startDate}T${time.length === 5 ? `${time}:00` : time}`
+}
+
+function resolveGhlSchedulePrimaryDate(schedule = {}) {
+  const scheduleConfig = resolveGhlScheduleObject(schedule)
+  const rrule = resolveGhlScheduleRecurrence(schedule)
+
+  return firstDefinedValue(
+    schedule.nextRunAt,
+    schedule.next_run_at,
+    schedule.nextInvoiceDate,
+    schedule.next_invoice_date,
+    schedule.nextExecutionAt,
+    schedule.next_execution_at,
+    schedule.nextScheduleAt,
+    schedule.next_schedule_at,
+    schedule.nextDate,
+    schedule.next_date,
+    scheduleConfig.executeAt,
+    scheduleConfig.execute_at,
+    combineGhlRruleStart(rrule),
+    schedule.startDate,
+    schedule.start_date,
+    schedule.dueDate,
+    schedule.due_date
+  )
+}
+
+function resolveGhlScheduleContact(schedule = {}) {
+  return firstDefinedValue(
+    schedule.contactDetails,
+    schedule.contact,
+    schedule.customer,
+    schedule.client
+  ) || {}
+}
+
+function resolveGhlScheduleAmount(schedule = {}) {
+  const direct = normalizePaymentAmount(firstDefinedValue(
+    schedule.total,
+    schedule.amount,
+    schedule.grandTotal,
+    schedule.grand_total,
+    schedule.invoiceTotal,
+    schedule.invoice_total,
+    schedule.balance
+  ))
+  if (direct > 0) return direct
+
+  const items = Array.isArray(firstDefinedValue(schedule.items, schedule.invoiceItems, schedule.lineItems))
+    ? firstDefinedValue(schedule.items, schedule.invoiceItems, schedule.lineItems)
+    : []
+
+  return normalizePaymentAmount(items.reduce((sum, item) => {
+    const amount = normalizePaymentAmount(firstDefinedValue(item.amount, item.price, item.unitAmount, item.unit_amount))
+    const qty = Number(firstDefinedValue(item.qty, item.quantity, 1)) || 1
+    return sum + amount * qty
+  }, 0))
+}
+
+function normalizeGhlScheduleStatus(value) {
+  return cleanText(String(value || 'active'), 80).toLowerCase() || 'active'
+}
+
+function isActiveScheduledPaymentStatus(status) {
+  return !['cancelled', 'canceled', 'deleted', 'void', 'voided', 'failed', 'completed', 'complete', 'paid', 'expired', 'inactive'].includes(normalizeGhlScheduleStatus(status))
+}
+
+function normalizeGhlScheduleCandidate(schedule = {}, source = 'ghl') {
+  const scheduleId = firstDefinedValue(schedule.id, schedule._id, schedule.scheduleId, schedule.schedule_id, schedule.ghl_schedule_id)
+  if (!scheduleId) return null
+
+  const contact = resolveGhlScheduleContact(schedule)
+  const dueDate = normalizeDateOnlyInput(String(resolveGhlSchedulePrimaryDate(schedule) || '').slice(0, 10))
+  const items = Array.isArray(firstDefinedValue(schedule.items, schedule.invoiceItems, schedule.lineItems))
+    ? firstDefinedValue(schedule.items, schedule.invoiceItems, schedule.lineItems)
+    : []
+  const description = firstDefinedValue(items[0]?.description, items[0]?.name, schedule.description, schedule.termsNotes, schedule.name, schedule.title, 'Pago programado')
+
+  return {
+    source,
+    flowId: schedule.flow_id || null,
+    installmentId: schedule.installment_id || null,
+    scheduleId,
+    sequence: Number(schedule.sequence || 1),
+    amount: resolveGhlScheduleAmount(schedule),
+    currency: cleanText(firstDefinedValue(schedule.currency, resolveGhlScheduleObject(schedule).currency, DEFAULT_PAYMENT_CURRENCY), 12).toUpperCase() || DEFAULT_PAYMENT_CURRENCY,
+    concept: cleanText(description, 240),
+    dueDate,
+    status: normalizeGhlScheduleStatus(firstDefinedValue(schedule.status, schedule.scheduleStatus, schedule.schedule_status, schedule.state)),
+    scheduleStatus: normalizeGhlScheduleStatus(firstDefinedValue(schedule.scheduleStatus, schedule.schedule_status, schedule.status, schedule.state)),
+    contact: {
+      id: firstDefinedValue(contact.id, contact._id, schedule.contactId, schedule.contact_id),
+      name: firstDefinedValue(contact.name, contact.fullName, contact.full_name, [contact.firstName, contact.lastName].filter(Boolean).join(' ').trim(), schedule.contactName, schedule.contact_name) || null,
+      email: firstDefinedValue(contact.email, schedule.email) || null,
+      phone: firstDefinedValue(contact.phoneNo, contact.phone, schedule.phone) || null
+    },
+    storedCard: null,
+    createdAt: firstDefinedValue(schedule.createdAt, schedule.created_at) || null,
+    updatedAt: firstDefinedValue(schedule.updatedAt, schedule.updated_at) || null
+  }
+}
+
+function normalizePaymentPlanCandidate(row = {}) {
+  return normalizeGhlScheduleCandidate({
+    id: row.ghl_schedule_id || row.id,
+    contactId: row.contact_id,
+    contactName: row.contact_name,
+    email: row.email,
+    phone: row.phone,
+    name: row.name,
+    title: row.title,
+    status: row.status,
+    total: row.total,
+    currency: row.currency,
+    description: row.description,
+    nextRunAt: row.next_run_at,
+    startDate: row.start_date,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    schedule: row.schedule_json ? parseToolArguments(row.schedule_json) : {}
+  }, 'payment_plan_cache')
+}
+
+function filterScheduledPaymentCandidates(candidates = [], { amount = 0, today } = {}) {
+  const deduped = []
+  const seen = new Set()
+
+  for (const candidate of candidates) {
+    if (!candidate) continue
+    const key = candidate.scheduleId || candidate.installmentId || `${candidate.source}:${candidate.dueDate}:${candidate.amount}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    deduped.push(candidate)
+  }
+
+  const active = deduped.filter(candidate => isActiveScheduledPaymentStatus(candidate.scheduleStatus || candidate.status))
+  const futureOrUndated = active.filter((candidate) => (
+    !candidate.dueDate || !today || candidate.dueDate >= today
+  ))
+  const amountFiltered = amount > 0
+    ? futureOrUndated.filter(candidate => Math.abs(candidate.amount - amount) < 0.01)
+    : futureOrUndated
+
+  return (amountFiltered.length ? amountFiltered : futureOrUndated).slice(0, 5)
+}
+
 async function findScheduledPaymentCandidates({ contactId, amount = 0, timezone = DEFAULT_PAYMENT_TIMEZONE } = {}) {
   if (!contactId) return []
 
   const today = DateTime.now().setZone(timezone).toISODate()
-  const rows = await safeAll(
+  const installmentRows = await safeAll(
     `SELECT i.id AS installment_id,
             i.flow_id,
             i.sequence,
@@ -2500,31 +2812,232 @@ async function findScheduledPaymentCandidates({ contactId, amount = 0, timezone 
      JOIN payment_flows f ON f.id = i.flow_id
      WHERE f.contact_id = ?
        AND i.automatic = 1
-       AND i.ghl_schedule_id IS NOT NULL
-       AND LOWER(COALESCE(i.status, '')) IN ('scheduled', 'pending_card_authorization', 'schedule_failed')
+       AND (
+         i.ghl_schedule_id IS NOT NULL OR
+         LOWER(COALESCE(i.status, '')) IN ('scheduled', 'pending_card_authorization', 'schedule_failed', 'manual_pending')
+       )
      ORDER BY datetime(COALESCE(i.updated_at, i.created_at)) DESC,
               datetime(COALESCE(f.updated_at, f.created_at)) DESC
-     LIMIT 10`,
+     LIMIT 15`,
     [contactId]
   )
-  const normalized = rows.map(normalizeScheduledPaymentCandidate).filter(Boolean)
-  const futureOrUndated = normalized.filter((candidate) => (
-    !candidate.dueDate || candidate.dueDate >= today
-  ))
-  const amountFiltered = amount > 0
-    ? futureOrUndated.filter(candidate => Math.abs(candidate.amount - amount) < 0.01)
-    : futureOrUndated
+  const paymentPlanRows = await safeAll(
+    `SELECT *
+     FROM payment_plans
+     WHERE contact_id = ?
+       AND LOWER(COALESCE(status, 'active')) NOT IN ('cancelled', 'canceled', 'deleted', 'void', 'voided', 'failed', 'completed', 'complete', 'paid', 'expired', 'inactive')
+     ORDER BY datetime(COALESCE(next_run_at, updated_at, created_at)) DESC
+     LIMIT 15`,
+    [contactId]
+  )
+  const localCandidates = [
+    ...installmentRows.map(normalizeScheduledPaymentCandidate),
+    ...paymentPlanRows.map(normalizePaymentPlanCandidate)
+  ].filter(Boolean)
+  let candidates = filterScheduledPaymentCandidates(localCandidates, { amount, today })
 
-  return (amountFiltered.length ? amountFiltered : futureOrUndated).slice(0, 5)
+  if (candidates.length) return candidates
+
+  try {
+    const ghlClient = await getGHLClient()
+    const ghlResponse = await ghlClient.listInvoiceSchedules({ limit: 100, offset: 0 })
+    const ghlCandidates = getGhlScheduleList(ghlResponse)
+      .map(schedule => normalizeGhlScheduleCandidate(schedule, 'ghl'))
+      .filter(candidate => candidate?.contact?.id === contactId)
+
+    candidates = filterScheduledPaymentCandidates(ghlCandidates, { amount, today })
+  } catch (error) {
+    logger.warn(`No se pudieron buscar schedules de HighLevel para el agente: ${error.message}`)
+  }
+
+  return candidates
 }
 
-function buildScheduledPaymentChoiceOptions({ candidate, newDueDate, amount, currency, contact } = {}) {
+function parseSmallSpanishNumber(value) {
+  const normalized = normalizeText(value)
+  const words = {
+    un: 1,
+    uno: 1,
+    una: 1,
+    dos: 2,
+    tres: 3,
+    cuatro: 4,
+    cinco: 5,
+    seis: 6,
+    siete: 7,
+    ocho: 8,
+    nueve: 9,
+    diez: 10,
+    once: 11,
+    doce: 12
+  }
+  const direct = Number(normalized)
+  if (Number.isFinite(direct) && direct > 0) return Math.round(direct)
+  return words[normalized] || 0
+}
+
+function parseScheduleRecurrenceFromText(text = '') {
+  const normalized = normalizeText(text)
+  if (!normalized) return null
+
+  let intervalType = ''
+  let interval = 1
+  const everyMatch = normalized.match(/\bcada\s+(\d+|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce)?\s*(d[ií]as?|semanas?|quincenas?|mes(?:es)?|a[nñ]os?|years?|months?|weeks?|days?)\b/)
+
+  if (everyMatch) {
+    const unit = normalizeText(everyMatch[2])
+    interval = parseSmallSpanishNumber(everyMatch[1]) || 1
+    if (/d[ií]a|day/.test(unit)) intervalType = 'daily'
+    else if (/semana|week/.test(unit)) intervalType = 'weekly'
+    else if (/quincena/.test(unit)) {
+      intervalType = 'weekly'
+      interval = 2
+    } else if (/mes|month/.test(unit)) intervalType = 'monthly'
+    else if (/a[nñ]o|year/.test(unit)) intervalType = 'yearly'
+  } else if (/\bquincenal\b/.test(normalized)) {
+    intervalType = 'weekly'
+    interval = 2
+  } else if (/\bsemanal\b/.test(normalized)) {
+    intervalType = 'weekly'
+  } else if (/\bmensual\b/.test(normalized)) {
+    intervalType = 'monthly'
+  } else if (/\bdiari[oa]\b/.test(normalized)) {
+    intervalType = 'daily'
+  } else if (/\banual\b/.test(normalized)) {
+    intervalType = 'yearly'
+  }
+
+  if (!intervalType) return null
+
+  const recurrence = { intervalType, interval }
+  const countMatch = normalized.match(/\b(?:por|durante)\s+(\d+|un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce)\s+(?:cobros?|pagos?|veces|meses|semanas|quincenas|a[nñ]os)\b/)
+  const count = parseSmallSpanishNumber(countMatch?.[1])
+  if (count > 0) {
+    recurrence.count = count
+    recurrence.endType = 'count'
+  }
+
+  return recurrence
+}
+
+function extractScheduledPaymentTextUpdatesFromText(text = '') {
+  const rawText = String(text || '')
+  const updates = {}
+  const descriptionPatterns = [
+    /(?:descripci[oó]n|descripcion|concepto)\s*[:：]\s*[`“"']?([^`"'\n”]+)[`”"']?/i,
+    /(?:pon(?:le)?|agrega|cambia)\s+(?:la\s+)?(?:descripci[oó]n|descripcion|concepto)\s+(?:a|por|como|de\s+)?[`“"']?([^`"'\n.,;”]+)[`”"']?/i
+  ]
+  const notesPatterns = [
+    /(?:notas?|notes?)\s*[:：]\s*[`“"']?([^`"'\n”]+)[`”"']?/i,
+    /(?:pon(?:le)?|agrega|cambia)\s+(?:las?\s+)?notas?\s+(?:a|por|como|de\s+)?[`“"']?([^`"'\n.,;”]+)[`”"']?/i
+  ]
+  const termsPatterns = [
+    /(?:t[eé]rminos|terminos|condiciones|terms)\s*[:：]\s*[`“"']?([^`"'\n”]+)[`”"']?/i,
+    /(?:pon(?:le)?|agrega|cambia)\s+(?:los?\s+)?(?:t[eé]rminos|terminos|condiciones)\s+(?:a|por|como|de\s+)?[`“"']?([^`"'\n.,;”]+)[`”"']?/i
+  ]
+
+  for (const pattern of descriptionPatterns) {
+    const match = rawText.match(pattern)
+    if (match?.[1]) {
+      updates.description = cleanText(match[1], 500)
+      updates.concept = cleanText(match[1], 180)
+      break
+    }
+  }
+
+  for (const pattern of notesPatterns) {
+    const match = rawText.match(pattern)
+    if (match?.[1]) {
+      updates.notes = cleanText(match[1], 500)
+      break
+    }
+  }
+
+  for (const pattern of termsPatterns) {
+    const match = rawText.match(pattern)
+    if (match?.[1]) {
+      updates.termsNotes = cleanText(match[1], 800)
+      break
+    }
+  }
+
+  return updates
+}
+
+function resolveScheduledPaymentChangeDate(args = {}, messages = [], timezone = DEFAULT_PAYMENT_TIMEZONE, candidate = null) {
+  const latestText = getLatestUserText(messages)
+  const directDate = normalizeDateOnlyInput(args.newDueDate || args.dueDate || args.paymentDate || args.chargeDate)
+  if (directDate) return directDate
+
+  const latestDate = parseNaturalPaymentDateFromText(latestText, timezone)
+  if (latestDate) return latestDate
+
+  const monthOnlyDate = resolveMonthOnlyPaymentDate(
+    parsePaymentMonthOnlyFromText(latestText, timezone),
+    candidate,
+    timezone
+  )
+  if (monthOnlyDate) return monthOnlyDate
+
+  return null
+}
+
+function getScheduledPaymentChangeSet(args = {}, messages = [], timezone = DEFAULT_PAYMENT_TIMEZONE, candidate = null) {
+  const latestText = getLatestUserText(messages)
+  const textUpdates = extractScheduledPaymentTextUpdatesFromText(latestText)
+  const recurrence = args.recurrence && typeof args.recurrence === 'object'
+    ? args.recurrence
+    : parseScheduleRecurrenceFromText(latestText)
+  const amount = normalizePaymentAmount(args.amount || args.newAmount || args.totalAmount || args.total)
+  const newDueDate = resolveScheduledPaymentChangeDate(args, messages, timezone, candidate)
+  const changes = {
+    newDueDate,
+    amount: amount > 0 ? amount : null,
+    currency: getProductPaymentCurrency(args) || candidate?.currency || DEFAULT_PAYMENT_CURRENCY,
+    concept: cleanText(args.concept || textUpdates.concept || '', 240),
+    description: cleanText(args.description || textUpdates.description || '', 800),
+    title: cleanText(args.title || '', 180),
+    termsNotes: cleanText(args.termsNotes || args.terms || textUpdates.termsNotes || '', 1000),
+    notes: cleanText(args.notes || textUpdates.notes || '', 1000),
+    recurrence
+  }
+
+  changes.hasChanges = Boolean(
+    changes.newDueDate ||
+    changes.amount ||
+    changes.concept ||
+    changes.description ||
+    changes.title ||
+    changes.termsNotes ||
+    changes.notes ||
+    changes.recurrence
+  )
+
+  return changes
+}
+
+function buildScheduledPaymentChangeText(changes = {}, candidate = {}) {
+  const parts = []
+  if (changes.newDueDate) parts.push(`fecha: ${candidate?.dueDate || 'actual'} -> ${changes.newDueDate}`)
+  if (changes.amount) parts.push(`monto: ${changes.amount} ${changes.currency || candidate?.currency || DEFAULT_PAYMENT_CURRENCY}`)
+  if (changes.description || changes.concept) parts.push(`descripción: ${changes.description || changes.concept}`)
+  if (changes.title) parts.push(`título: ${changes.title}`)
+  if (changes.termsNotes) parts.push('términos/condiciones actualizados')
+  if (changes.notes) parts.push('notas actualizadas')
+  if (changes.recurrence) {
+    parts.push(`recurrencia: ${changes.recurrence.intervalType || changes.recurrence.frequency || 'personalizada'} cada ${changes.recurrence.interval || 1}`)
+  }
+  return parts.join(' · ') || 'cambio solicitado'
+}
+
+function buildScheduledPaymentChoiceOptions({ candidate, changes = {}, newDueDate, amount, currency, contact } = {}) {
   const contactMemoryText = buildPaymentContactMemoryText(contact || candidate?.contact)
   const paymentMemoryText = buildPaymentContextMemoryText({
-    amount: amount || candidate?.amount,
+    amount: changes.amount || amount || candidate?.amount,
     currency: currency || candidate?.currency,
-    dueDate: newDueDate
+    dueDate: changes.newDueDate || newDueDate
   })
+  const changeText = buildScheduledPaymentChangeText(changes, candidate)
   const scheduleText = [
     candidate?.flowId ? `Flow ID: ${candidate.flowId}.` : '',
     candidate?.installmentId ? `Installment ID: ${candidate.installmentId}.` : '',
@@ -2534,13 +3047,13 @@ function buildScheduledPaymentChoiceOptions({ candidate, newDueDate, amount, cur
   return [
     {
       label: 'Modificar existente',
-      description: `Cambia el cobro actual del ${candidate?.dueDate || 'día programado'} al ${newDueDate}.`,
-      value: `Sí, modifica el cobro programado existente. ${scheduleText} Nueva fecha confirmada: ${newDueDate}.${contactMemoryText ? ` ${contactMemoryText}` : ''}${paymentMemoryText ? ` ${paymentMemoryText}` : ''}`
+      description: `Cambia el cobro actual: ${changeText}.`,
+      value: `Sí, modifica el cobro programado existente. ${scheduleText} Cambios confirmados: ${changeText}.${contactMemoryText ? ` ${contactMemoryText}` : ''}${paymentMemoryText ? ` ${paymentMemoryText}` : ''}`
     },
     {
       label: 'Crear otro',
       description: 'Deja el cobro actual igual y crea un cobro nuevo.',
-      value: `Sí, crea un nuevo cobro programado y deja el cobro existente sin cambios. Nueva fecha confirmada: ${newDueDate}.${contactMemoryText ? ` ${contactMemoryText}` : ''}${paymentMemoryText ? ` ${paymentMemoryText}` : ''}`
+      value: `Sí, crea un nuevo cobro programado y deja el cobro existente sin cambios. Cambios para el nuevo cobro: ${changeText}.${contactMemoryText ? ` ${contactMemoryText}` : ''}${paymentMemoryText ? ` ${paymentMemoryText}` : ''}`
     },
     {
       label: 'No mover nada',
@@ -2550,15 +3063,21 @@ function buildScheduledPaymentChoiceOptions({ candidate, newDueDate, amount, cur
   ]
 }
 
-function buildScheduledPaymentModificationChoiceOutput({ candidate, candidates = [], newDueDate, amount, currency, contact } = {}) {
+function buildScheduledPaymentModificationChoiceOutput({ candidate, candidates = [], newDueDate, amount, currency, contact, changes = {} } = {}) {
   const selectedCandidate = candidate || candidates[0]
   const safeCandidates = candidates.length ? candidates : selectedCandidate ? [selectedCandidate] : []
+  const resolvedChanges = {
+    ...changes,
+    newDueDate: changes.newDueDate || newDueDate || null,
+    amount: changes.amount || amount || null,
+    currency: changes.currency || currency || selectedCandidate?.currency || DEFAULT_PAYMENT_CURRENCY
+  }
 
   return {
     ok: false,
     action: 'modify_scheduled_payment_flow',
     modifyOrCreateRequired: true,
-    error: 'Ya hay un cobro programado relacionado. Antes de mover dinero necesito saber si quieres modificar ese cobro o crear otro nuevo.',
+    error: 'Ya hay un cobro programado relacionado. Necesito saber si quieres modificar ese mismo cobro o crear otro nuevo.',
     missingFields: ['modificar existente o crear nuevo'],
     askOneAtATime: true,
     contact: contact || selectedCandidate?.contact || null,
@@ -2572,12 +3091,14 @@ function buildScheduledPaymentModificationChoiceOutput({ candidate, candidates =
       status: item.status,
       scheduleStatus: item.scheduleStatus
     })),
-    newDueDate,
+    requestedChanges: resolvedChanges,
+    newDueDate: resolvedChanges.newDueDate,
     clarificationOptions: selectedCandidate
       ? buildScheduledPaymentChoiceOptions({
           candidate: selectedCandidate,
-          newDueDate,
-          amount,
+          changes: resolvedChanges,
+          newDueDate: resolvedChanges.newDueDate,
+          amount: resolvedChanges.amount,
           currency,
           contact
         })
@@ -7050,21 +7571,22 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
 
   if (totalAmount <= 0) {
     if (hasScheduledPaymentCorrectionIntent(context.messages)) {
-      const newDueDate = getTopLevelScheduledPaymentDate(args, context.messages, paymentTimezone)
       const candidates = await findScheduledPaymentCandidates({
         contactId: resolvedContact.contact.id,
         timezone: paymentTimezone
       })
       const candidate = candidates[0]
+      const changes = getScheduledPaymentChangeSet(args, context.messages, paymentTimezone, candidate)
 
-      if (candidate && newDueDate) {
+      if (candidate && (changes.hasChanges || ['cancel_existing', 'delete_existing'].includes(getScheduledPaymentChangeIntent(context.messages)))) {
         return buildScheduledPaymentModificationChoiceOutput({
           candidate,
           candidates,
-          newDueDate,
+          newDueDate: changes.newDueDate,
           amount: candidate.amount,
           currency: candidate.currency,
-          contact: resolvedContact.contact
+          contact: resolvedContact.contact,
+          changes
         })
       }
     }
@@ -7081,29 +7603,35 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
     (hasScheduledPaymentCorrectionIntent(context.messages) || scheduleChangeIntent === 'modify_existing') &&
     scheduleChangeIntent !== 'create_new'
   ) {
-    const newDueDate = getTopLevelScheduledPaymentDate(args, context.messages, paymentTimezone)
     const candidates = await findScheduledPaymentCandidates({
       contactId: resolvedContact.contact.id,
       amount: totalAmount,
       timezone: paymentTimezone
     })
     const candidate = candidates[0]
+    const changes = getScheduledPaymentChangeSet(args, context.messages, paymentTimezone, candidate)
 
-    if (candidate && newDueDate) {
-      if (scheduleChangeIntent === 'modify_existing') {
+    if (candidate && (changes.hasChanges || ['modify_existing', 'cancel_existing', 'delete_existing'].includes(scheduleChangeIntent))) {
+      if (['modify_existing', 'cancel_existing', 'delete_existing'].includes(scheduleChangeIntent)) {
         return {
           ok: false,
           action: 'modify_scheduled_payment_flow',
           redirectTool: 'modify_scheduled_payment_flow',
-          error: 'El usuario eligió modificar el cobro programado existente. No crees uno nuevo; usa modify_scheduled_payment_flow.',
+          error: 'El usuario eligió cambiar/cancelar/eliminar el cobro programado existente. No crees uno nuevo; usa modify_scheduled_payment_flow.',
           suggestedArguments: {
             contactId: resolvedContact.contact.id,
             installmentId: candidate.installmentId,
             scheduleId: candidate.scheduleId,
-            amount: totalAmount || candidate.amount,
+            amount: changes.amount || totalAmount || candidate.amount,
             currency: currency || candidate.currency,
-            newDueDate,
-            action: 'modify_existing'
+            newDueDate: changes.newDueDate,
+            description: changes.description || undefined,
+            concept: changes.concept || undefined,
+            title: changes.title || undefined,
+            termsNotes: changes.termsNotes || undefined,
+            notes: changes.notes || undefined,
+            recurrence: changes.recurrence || undefined,
+            action: scheduleChangeIntent
           }
         }
       }
@@ -7111,10 +7639,11 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
       return buildScheduledPaymentModificationChoiceOutput({
         candidate,
         candidates,
-        newDueDate,
+        newDueDate: changes.newDueDate,
         amount: totalAmount,
         currency,
-        contact: resolvedContact.contact
+        contact: resolvedContact.contact,
+        changes
       })
     }
   }
@@ -7946,9 +8475,6 @@ async function executeModifyScheduledPaymentFlow(args = {}, highLevelConnection,
 
   const paymentTimezone = highLevelConnection.locationData?.timezone || DEFAULT_PAYMENT_TIMEZONE
   const resolvedContact = await resolvePaymentContact(args, context)
-  const newDueDate = normalizeDateOnlyInput(args.newDueDate || args.dueDate || args.paymentDate || args.chargeDate) ||
-    parseNaturalPaymentDateFromText(getLatestUserText(context.messages), paymentTimezone) ||
-    getTopLevelScheduledPaymentDate(args, context.messages, paymentTimezone)
   const amount = normalizePaymentAmount(args.amount || args.totalAmount || args.total)
   const currency = getProductPaymentCurrency(args)
   const action = normalizeText(
@@ -7969,15 +8495,6 @@ async function executeModifyScheduledPaymentFlow(args = {}, highLevelConnection,
     }
   }
 
-  if (!newDueDate) {
-    return {
-      ok: false,
-      action: 'modify_scheduled_payment_flow',
-      error: 'Falta la nueva fecha para el cobro programado.',
-      missingFields: ['nueva fecha']
-    }
-  }
-
   const candidates = await findScheduledPaymentCandidates({
     contactId: resolvedContact.contact.id,
     amount,
@@ -7989,6 +8506,8 @@ async function executeModifyScheduledPaymentFlow(args = {}, highLevelConnection,
     (requestedInstallmentId && item.installmentId === requestedInstallmentId) ||
     (requestedScheduleId && item.scheduleId === requestedScheduleId)
   )) || candidates[0]
+  const changes = getScheduledPaymentChangeSet(args, context.messages, paymentTimezone, candidate)
+  const newDueDate = changes.newDueDate
 
   if (!candidate) {
     return {
@@ -7998,26 +8517,47 @@ async function executeModifyScheduledPaymentFlow(args = {}, highLevelConnection,
       missingFields: ['cobro programado existente'],
       suggestedArguments: {
         contactId: resolvedContact.contact.id,
-        totalAmount: amount || null,
+        totalAmount: changes.amount || amount || null,
         currency,
         firstPayment: { enabled: false },
         remainingAutomatic: true,
         remainingFrequency: 'custom',
-        remainingPayments: amount > 0
-          ? [{ type: 'amount', amount, dueDate: newDueDate }]
+        remainingPayments: (changes.amount || amount) > 0 && newDueDate
+          ? [{ type: 'amount', amount: changes.amount || amount, dueDate: newDueDate }]
           : []
       }
     }
   }
 
-  if (!['modify_existing', 'create_new', 'cancel_change', 'cancel_existing'].includes(action)) {
+  if (!changes.hasChanges && !['cancel_existing', 'delete_existing', 'cancel_change'].includes(action)) {
+    return {
+      ok: false,
+      action: 'modify_scheduled_payment_flow',
+      error: 'Ya ubiqué el cobro programado, pero me falta qué quieres cambiarle: fecha, monto, recurrencia, descripción, notas, términos o si quieres cancelarlo.',
+      missingFields: ['cambio solicitado'],
+      askOneAtATime: true,
+      existingScheduledPayments: [{
+        flowId: candidate.flowId,
+        installmentId: candidate.installmentId,
+        scheduleId: candidate.scheduleId,
+        amount: candidate.amount,
+        currency: candidate.currency,
+        dueDate: candidate.dueDate,
+        status: candidate.status,
+        scheduleStatus: candidate.scheduleStatus
+      }]
+    }
+  }
+
+  if (!['modify_existing', 'create_new', 'cancel_change', 'cancel_existing', 'delete_existing'].includes(action)) {
     return buildScheduledPaymentModificationChoiceOutput({
       candidate,
       candidates,
       newDueDate,
-      amount: amount || candidate.amount,
+      amount: changes.amount || amount || candidate.amount,
       currency: currency || candidate.currency,
-      contact: resolvedContact.contact
+      contact: resolvedContact.contact,
+      changes
     })
   }
 
@@ -8030,7 +8570,7 @@ async function executeModifyScheduledPaymentFlow(args = {}, highLevelConnection,
       summary: {
         contact: resolvedContact.contact,
         existingPayment: candidate,
-        requestedDueDate: newDueDate
+        requestedChanges: changes
       }
     }
   }
@@ -8043,7 +8583,7 @@ async function executeModifyScheduledPaymentFlow(args = {}, highLevelConnection,
       error: 'El usuario eligió crear un cobro nuevo y dejar el existente sin cambios. Usa create_installment_payment_flow con estos datos.',
       suggestedArguments: {
         contactId: resolvedContact.contact.id,
-        totalAmount: amount || candidate.amount,
+        totalAmount: changes.amount || amount || candidate.amount,
         currency: currency || candidate.currency,
         concept: candidate.concept,
         firstPayment: { enabled: false },
@@ -8054,7 +8594,7 @@ async function executeModifyScheduledPaymentFlow(args = {}, highLevelConnection,
         remainingPayments: [
           {
             type: 'amount',
-            amount: amount || candidate.amount,
+            amount: changes.amount || amount || candidate.amount,
             dueDate: newDueDate
           }
         ]
@@ -8062,7 +8602,7 @@ async function executeModifyScheduledPaymentFlow(args = {}, highLevelConnection,
     }
   }
 
-  if (action === 'cancel_existing') {
+  if (action === 'cancel_existing' || action === 'delete_existing') {
     if (!hasExplicitPaymentExecutionConfirmation(context.messages)) {
       return buildPaymentConfirmationRequiredOutput({
         action: 'modify_scheduled_payment_flow',
@@ -8076,15 +8616,20 @@ async function executeModifyScheduledPaymentFlow(args = {}, highLevelConnection,
             currency: candidate.currency,
             dueDate: candidate.dueDate
           },
-          behavior: 'Se cancelará el schedule existente en HighLevel; no se creará otro cobro.'
+          behavior: action === 'delete_existing'
+            ? 'Se eliminará el schedule existente en HighLevel; no se creará otro cobro.'
+            : 'Se cancelará el schedule existente en HighLevel; no se creará otro cobro.'
         },
-        clarificationOptions: buildPaymentConfirmationOptions('la cancelación del cobro programado')
+        clarificationOptions: buildPaymentConfirmationOptions(action === 'delete_existing'
+          ? 'la eliminación del cobro programado'
+          : 'la cancelación del cobro programado')
       })
     }
 
     const result = await cancelScheduledInstallmentPayment({
       installmentId: requestedInstallmentId || candidate.installmentId,
       scheduleId: requestedScheduleId || candidate.scheduleId,
+      deleteSchedule: action === 'delete_existing',
       source: 'ai_agent'
     })
 
@@ -8093,7 +8638,9 @@ async function executeModifyScheduledPaymentFlow(args = {}, highLevelConnection,
       action: 'modify_scheduled_payment_flow',
       paymentMode: highLevelConnection.paymentMode,
       paymentModeWarning: getPaymentModeWarning(highLevelConnection.paymentMode),
-      message: 'Cobro programado cancelado con la lógica interna de Ristak.',
+      message: action === 'delete_existing'
+        ? 'Cobro programado eliminado con la lógica interna de Ristak.'
+        : 'Cobro programado cancelado con la lógica interna de Ristak.',
       summary: {
         contact: result.contact,
         flowId: result.flowId,
@@ -8102,7 +8649,9 @@ async function executeModifyScheduledPaymentFlow(args = {}, highLevelConnection,
         amount: result.amount,
         currency: result.currency,
         oldDueDate: result.oldDueDate,
-        behavior: 'Se canceló el schedule existente en HighLevel.'
+        behavior: action === 'delete_existing'
+          ? 'Se eliminó el schedule existente en HighLevel.'
+          : 'Se canceló el schedule existente en HighLevel.'
       },
       result
     }
@@ -8124,8 +8673,13 @@ async function executeModifyScheduledPaymentFlow(args = {}, highLevelConnection,
         change: {
           oldDueDate: candidate.dueDate,
           newDueDate,
-          amount: amount || candidate.amount,
-          currency: currency || candidate.currency
+          amount: changes.amount || amount || candidate.amount,
+          currency: currency || candidate.currency,
+          description: changes.description || changes.concept || null,
+          title: changes.title || null,
+          termsNotes: changes.termsNotes || null,
+          notes: changes.notes || null,
+          recurrence: changes.recurrence || null
         },
         behavior: 'Se modificará el schedule existente en HighLevel; no se creará otro cobro.'
       },
@@ -8137,7 +8691,14 @@ async function executeModifyScheduledPaymentFlow(args = {}, highLevelConnection,
     installmentId: requestedInstallmentId || candidate.installmentId,
     scheduleId: requestedScheduleId || candidate.scheduleId,
     newDueDate,
-    amount: amount || candidate.amount,
+    amount: changes.amount || amount || candidate.amount,
+    currency: currency || candidate.currency,
+    concept: changes.concept || undefined,
+    description: changes.description || undefined,
+    title: changes.title || undefined,
+    termsNotes: changes.termsNotes || undefined,
+    notes: changes.notes || undefined,
+    recurrence: changes.recurrence || undefined,
     source: 'ai_agent'
   })
 
@@ -8156,6 +8717,7 @@ async function executeModifyScheduledPaymentFlow(args = {}, highLevelConnection,
       currency: result.currency,
       oldDueDate: result.oldDueDate,
       newDueDate: result.newDueDate,
+      updatedFields: result.updatedFields || null,
       storedCard: result.paymentMethod?.brand || result.paymentMethod?.last4
         ? {
             brand: result.paymentMethod.brand,
@@ -8433,7 +8995,7 @@ function buildHighLevelTools(highLevelConnection, options = {}) {
 
   const tools = []
 
-  if (!options.paymentActionRequest && (!options.contactActionRequest || options.highLevelToolIntent)) {
+  if (!options.restReadIntent && !options.paymentActionRequest && (!options.contactActionRequest || options.highLevelToolIntent)) {
     tools.push({
       type: 'mcp',
       server_label: 'highlevel',
@@ -8742,7 +9304,7 @@ function buildHighLevelTools(highLevelConnection, options = {}) {
     {
       type: 'function',
       name: 'modify_scheduled_payment_flow',
-      description: 'Modifica o cancela un cobro programado existente creado por Ristak/HighLevel en vez de crear otro. Úsala cuando el usuario corrige una fecha, monto o dice "mejor para..." después de haber programado un pago. Primero pregunta si quiere modificar el cobro existente o crear uno nuevo; si elige modificar, actualiza el invoice schedule existente con updateAndSchedule/update schedule y conserva autopago/tarjeta guardada. Si pide cancelar, usa cancel schedule. No uses create_installment_payment_flow para correcciones hasta resolver modificar vs crear nuevo.',
+      description: 'Modifica, cancela o elimina un cobro programado existente creado por Ristak/HighLevel en vez de crear otro. Úsala cuando el usuario corrige fecha, monto, recurrencia, descripción, concepto, notas, términos, texto o dice "mejor..." después de haber programado un pago. Primero resuelve si quiere modificar el cobro existente o crear otro; si elige modificar, actualiza el invoice schedule existente con updateAndSchedule/update schedule y conserva autopago/tarjeta guardada. Si pide cancelar/eliminar, usa cancel/delete schedule. No uses create_installment_payment_flow para correcciones hasta resolver modificar vs crear nuevo.',
       parameters: {
         type: 'object',
         properties: {
@@ -8753,12 +9315,27 @@ function buildHighLevelTools(highLevelConnection, options = {}) {
           installmentId: { type: ['string', 'null'], description: 'ID local de la parcialidad/cobro programado a modificar.' },
           scheduleId: { type: ['string', 'null'], description: 'ID de invoice schedule en HighLevel.' },
           amount: { type: ['number', 'null'], description: 'Monto del cobro, si se conoce o cambia.' },
+          newAmount: { type: ['number', 'null'], description: 'Nuevo monto si el usuario está cambiando el importe.' },
           currency: { type: ['string', 'null'], description: 'Moneda, normalmente MXN.' },
           newDueDate: { type: ['string', 'null'], description: 'Nueva fecha YYYY-MM-DD para el cobro programado.' },
           dueDate: { type: ['string', 'null'], description: 'Alias de newDueDate.' },
           paymentDate: { type: ['string', 'null'], description: 'Alias de newDueDate.' },
-          action: { type: ['string', 'null'], enum: ['modify_existing', 'create_new', 'cancel_change', 'cancel_existing', null], description: 'modify_existing si el usuario eligió modificar el cobro existente; create_new si eligió dejar el anterior y crear otro; cancel_existing si quiere cancelar el schedule; cancel_change para no mover nada.' },
-          mode: { type: ['string', 'null'], enum: ['modify_existing', 'create_new', 'cancel_change', 'cancel_existing', null], description: 'Alias de action.' }
+          description: { type: ['string', 'null'], description: 'Nueva descripción del invoice/schedule si el usuario la cambia.' },
+          concept: { type: ['string', 'null'], description: 'Nuevo concepto del cobro si el usuario lo cambia.' },
+          title: { type: ['string', 'null'], description: 'Nuevo título visible del invoice/schedule si aplica.' },
+          termsNotes: { type: ['string', 'null'], description: 'Nuevos términos, condiciones o texto de términos del invoice.' },
+          notes: { type: ['string', 'null'], description: 'Notas nuevas o actualizadas para el invoice/schedule.' },
+          recurrence: {
+            type: ['object', 'null'],
+            description: 'Nueva recurrencia si el usuario cambia frecuencia: intervalType daily/weekly/monthly/yearly, interval, count/endDate si aplica.',
+            additionalProperties: true
+          },
+          recurrenceFrequency: { type: ['string', 'null'], description: 'Alias de recurrence.intervalType: daily, weekly, monthly, yearly, quincenal, mensual, etc.' },
+          recurrenceInterval: { type: ['number', 'null'], description: 'Cada cuántas unidades se repite.' },
+          recurrenceCount: { type: ['number', 'null'], description: 'Número de cobros/ocurrencias si el usuario lo cambia.' },
+          recurrenceEndDate: { type: ['string', 'null'], description: 'Fecha final de recurrencia si aplica.' },
+          action: { type: ['string', 'null'], enum: ['modify_existing', 'create_new', 'cancel_change', 'cancel_existing', 'delete_existing', null], description: 'modify_existing si el usuario eligió modificar el cobro existente; create_new si eligió dejar el anterior y crear otro; cancel_existing si quiere cancelar; delete_existing si quiere eliminar; cancel_change para no mover nada.' },
+          mode: { type: ['string', 'null'], enum: ['modify_existing', 'create_new', 'cancel_change', 'cancel_existing', 'delete_existing', null], description: 'Alias de action.' }
         },
         additionalProperties: true
       },
@@ -9694,6 +10271,7 @@ function shouldUsePaymentBackendForLatestMessage(messages = []) {
   const normalized = normalizeText(latestUserMessage)
 
   if (!normalized || isExplicitNonPaymentTopicSwitchText(latestUserMessage)) return false
+  if (isHighLevelRestReadCatalogRequest(latestUserMessage, messages)) return false
   if (isReadOnlyHighLevelPaymentApiRequest(latestUserMessage)) return false
 
   return isPaymentConversationContinuation(messages) ||
@@ -9943,7 +10521,8 @@ function shouldUseInternalDatabaseContext(question, messages = []) {
 
 function buildUnifiedAgentRoute({ messages = [], latestUserMessage = '', agentConfig = null } = {}) {
   const normalized = normalizeText(latestUserMessage)
-  const highLevelToolIntent = isExplicitHighLevelToolRequest(latestUserMessage)
+  const highLevelRestReadIntent = isHighLevelRestReadCatalogRequest(latestUserMessage, messages)
+  const highLevelToolIntent = highLevelRestReadIntent || isExplicitHighLevelToolRequest(latestUserMessage)
   const paymentBackendOnly = shouldUsePaymentBackendForLatestMessage(messages)
   const latestCustomActionExecution = isConfiguredActionExecutionRequest(latestUserMessage, agentConfig)
   const customActionContinuation = !paymentBackendOnly &&
@@ -9959,9 +10538,12 @@ function buildUnifiedAgentRoute({ messages = [], latestUserMessage = '', agentCo
       /(workflow|flujo|automatizacion|automatización|cita|calendario|appointment|oportunidad|pipeline|mensaje|conversacion|conversación|media storage|archivo|imagen|folder|tag|producto|precio|contacto|cliente|lead|campo personalizado|custom field).*(busca|revisa|analiza|cambia|actualiza|modifica|mete|saca|crea|agenda|agenda[r]?|calendariza|manda|envia|envía|haz|hacer)|(?:busca|revisa|analiza|cambia|actualiza|modifica|mete|saca|crea|agenda|agendar|calendariza|manda|envia|envía|haz|hacer).*(workflow|flujo|automatizacion|automatización|cita|calendario|appointment|oportunidad|pipeline|mensaje|conversacion|conversación|media storage|archivo|imagen|folder|tag|producto|precio|contacto|cliente|lead|campo personalizado|custom field)/.test(normalized))
   )
   const mutationIntent = paymentBackendOnly ||
-    contactMutationSafety ||
-    /(agrega|actualiza|modifica|cambia|crea|genera|registra|agenda|cancela|manda|envia|mete|saca|pausa|reactiva|send|create|update|delete|programa|domicili|ejecuta|hazlo)/.test(normalized)
+    (!highLevelRestReadIntent && (
+      contactMutationSafety ||
+      /(agrega|actualiza|modifica|cambia|crea|genera|registra|agenda|cancela|manda|envia|mete|saca|pausa|reactiva|send|create|update|delete|programa|domicili|ejecuta|hazlo)/.test(normalized)
+    ))
   const readIntent = requiresDbResearch ||
+    highLevelRestReadIntent ||
     /(cual|cuál|cuanto|cuánto|cuantos|cuántos|dame|muestra|busca|revisa|analiza|info|informacion|información|datos|ultimo|último|reciente|historial|tuvo|tiene|existe|aparece|trae|tráeme)/.test(normalized)
 
   return {
@@ -9974,6 +10556,7 @@ function buildUnifiedAgentRoute({ messages = [], latestUserMessage = '', agentCo
     requiresPaymentTools: paymentBackendOnly,
     paymentBackendOnly,
     contactMutationSafety,
+    highLevelRestReadIntent,
     highLevelToolIntent: highLevelToolIntent || customActionIntent,
     customActionIntent,
     metaAdsOperationalIntent: false,
@@ -10019,6 +10602,8 @@ const UNIFIED_CAPABILITY_PROMPT = [
   '- Si el último mensaje menciona explícitamente GoHighLevel, GoHi Level, HighLevel o GHL y pide buscar, consultar, hacer GET/POST/PUT/PATCH/DELETE, crear o actualizar algo, usa herramientas reales de HighLevel en ese turno. Si el usuario no dice HighLevel pero pide de forma operativa un recurso claramente propio del catálogo (form submissions, custom values, trigger links, media storage, blogs, funnels, surveys, store, workflows, tasks, notes, tags, etc.), también usa HighLevel.',
   '- Prioriza HighLevel MCP porque lista y llama tools oficiales. Si el MCP no expone lo necesario, usa lookup_highlevel_endpoint para encontrar el método/path documentado y luego highlevel_rest_request. No contestes desde la DB local salvo que el usuario pida Ristak/DB/reportes.',
   '- highlevel_rest_request rechaza rutas que no estén en el catálogo Sub-Account; si devuelve sugerencias, elige una ruta sugerida o pregunta el dato faltante.',
+  '- Para usuarios no técnicos, traduce lenguaje humano a recursos HighLevel: "recurrentes", "cobros programados", "pagos recurrentes", "facturas programadas" o "invoices schedules" significan normalmente invoice schedules; busca GET /invoices/schedule. "Respuestas de formulario" significa form submissions; "archivos/imágenes/carpetas" significa media storage; "campos/valores personalizados" significa custom fields/custom values.',
+  '- Si el usuario pide listar, ver, revisar, buscar, traer o hacer GET de un recurso de HighLevel, es lectura. Ejecuta lookup_highlevel_endpoint y luego highlevel_rest_request GET. No pidas contacto, email, teléfono ni ID salvo que el endpoint elegido tenga contactId u otro ID obligatorio en el path.',
   '- Para citas/calendarios operativos usa manage_highlevel_appointment antes que MCP o highlevel_rest_request. Operaciones: lookup_slots, create, reschedule, cancel, confirm, showed, noshow y delete.',
   '- Contrato de citas GHL: agendar = POST /calendars/events/appointments; reprogramar/confirmar/cancelar/showed/noshow = PUT /calendars/events/appointments/:eventId con appointmentStatus o startTime/endTime; eliminar de verdad = DELETE /calendars/events/:eventId.',
   '- Si el usuario pide agendar y no dio hora exacta, primero busca disponibilidad con lookup_slots. Si no dio calendarId, usa el calendario predeterminado de Ristak; si hay varios y no hay default, pide que elija.',
@@ -10026,7 +10611,8 @@ const UNIFIED_CAPABILITY_PROMPT = [
   '- Si Memoria operacional CRM o de pagos trae resolvedContact y el último mensaje no introduce un contacto distinto, úsalo como la persona activa para cualquier acción nueva: pagos, workflows, citas, mensajes, oportunidades, campos, notas o tags.',
   '- Si Memoria operacional de producto/precio trae activeProduct y el usuario corrige sólo monto/precio, conserva ese producto como concepto/producto activo. No reinicies contacto ni producto por una corrección corta.',
   '- Para agendar citas, meter a workflow, crear oportunidades o mandar mensajes a una persona, usa el contactId resuelto por lookup_highlevel_contact, manage_highlevel_appointment o Memoria operacional CRM; no confundas ese nombre con la última/próxima cita de otro contacto.',
-  '- Para pagos, links, invoices, parcialidades, pagos manuales, tarjeta guardada o domiciliación usa las herramientas internas de Ristak porque replican la lógica real del backend. No uses MCP como atajo para mutaciones de dinero.',
+  '- Para crear, enviar, cobrar, programar, cancelar o modificar pagos, links, invoices, parcialidades, pagos manuales, tarjeta guardada o domiciliación usa las herramientas internas de Ristak porque replican la lógica real del backend. No uses MCP como atajo para mutaciones de dinero.',
+  '- Excepción de sólo lectura: si el usuario pide ver/listar/GET invoices, payments, subscriptions, transactions o schedules de HighLevel, usa REST GET documentado. Eso no toca dinero y no requiere confirmación.',
   '- Nunca crees, envíes, anules, programes ni marques invoices/pagos usando highlevel_rest_request. Para dinero, REST directo está prohibido porque se salta el workflow del formulario y puede dejar facturas en borrador.',
   '- Para links/invoices con tarjeta o domiciliación no inventes canal de envío. Si el usuario no eligió todos/correo/WhatsApp/SMS, la herramienta debe pedirlo antes de crear/enviar para no dejar invoices en borrador.',
   '- Excepción obligatoria: si el usuario eligió tarjeta guardada/autorizada y la tarjeta existe, NO pidas canal de envío ni link. Programa o cobra esa tarjeta guardada directamente.',
@@ -10045,6 +10631,7 @@ const UNIFIED_CAPABILITY_PROMPT = [
 const PAYMENT_WORKFLOW_PROMPT = [
   'Workflow obligatorio para cobros desde gente/contactos:',
   '- En cualquier solicitud operativa de cobro, registro, link, parcialidad, domiciliación o tarjeta, primero llama la herramienta interna correcta. No armes resúmenes ni pidas permiso sólo con texto sin haber usado herramienta.',
+  '- Esto aplica a mutaciones de dinero. Si el usuario sólo pide ver/listar/hacer GET de invoices, payments, subscriptions, transactions o schedules en HighLevel, no lo metas al flujo de cobro: usa lookup_highlevel_endpoint + highlevel_rest_request GET.',
   '- Sigue el mismo contrato del modal/backend de pagos: contacto exacto, tipo de cobro (único, parcialidades, programado o manual/offline), monto/moneda, concepto, método, fechas, tarjeta guardada, canal de envío si aplica y revisión final.',
   '- El modal no completa un invoice/link de tarjeta sin envío. Para pago con tarjeta, link de pago, primer pago con tarjeta o domiciliación/autorización, siempre debe existir canal real: todos, correo, WhatsApp o SMS. "Solo generar", "none" o "sin enviar" no cuenta como acción válida.',
   '- Esa regla de envío NO aplica cuando se cobra o programa una tarjeta guardada/autorizada existente: ahí no hay link que enviar.',
@@ -10060,7 +10647,7 @@ const PAYMENT_WORKFLOW_PROMPT = [
   '- Descompón la frase del usuario por tramos temporales. "Por N meses" crea N cobros; si después dice "te esperas un mes, le vuelves a cobrar" eso agrega otro cobro; y si luego dice "te esperas otro mes y le vuelves a cobrar, pero esta vez 20" agrega otro cobro final de 20. No mezcles el cobro final con el último mes de la serie.',
   '- Si create_installment_payment_flow devuelve scheduleIncomplete, NO muestres ese plan ni pidas confirmación. Corrige la lista de cobros y vuelve a llamar la herramienta con todos los cobros reales y el total recalculado.',
   '- Si después del resumen el usuario responde afirmativamente pero agrega cambios como "pero", "solo pon", "cambia", "agrega descripción", "mejor por WhatsApp", "con tarjeta guardada", etc., eso NO es permiso final. Actualiza el plan con la herramienta interna y vuelve a pedir permiso con el resumen nuevo.',
-  '- Si el usuario ya programó un cobro y luego dice "sabes qué", "mejor para otra fecha", "cámbialo", "mueve la fecha" o corrige monto/fecha, NO crees otro cobro automáticamente. Usa modify_scheduled_payment_flow para preguntar si modifica el schedule existente o si crea uno nuevo dejando el anterior intacto. Si pide cancelar el programado, usa esa misma herramienta con cancel_existing.',
+  '- Si el usuario ya programó un cobro y luego dice "sabes qué", "mejor para otra fecha", "cámbialo", "mueve la fecha" o corrige monto/fecha/recurrencia/descripción/notas/términos/texto, NO crees otro cobro automáticamente. Usa modify_scheduled_payment_flow para modificar el schedule existente o preguntar si quiere crear otro dejando el anterior intacto cuando haya ambigüedad. Si sólo cambia el mes ("mejor para octubre"), conserva el día y año del schedule actual salvo que el usuario diga otro día/año. Si pide cancelar o eliminar el programado, usa esa misma herramienta con cancel_existing o delete_existing.',
   '- Si el usuario ya eligió producto y luego corrige "no, cóbraselo por 20 pesos" o "mejor otro precio", conserva contacto, fecha y producto; sólo cambia el monto/precio a personalizado y sigue el flujo de tarjeta/envío que toque.',
   '- Sólo haz el cambio/cobro cuando el último mensaje sea un sí limpio sobre el resumen vigente, por ejemplo "sí, así está bien", "sí, dale", "confirmo" o el botón de confirmación, sin cambios extra. Si el usuario ya confirmó desde botón, continúa sin pedir otra frase.',
   '- Cobro único con tarjeta: si no hay tarjeta guardada/autorizada, el link de pago es obligatorio y debes pedir canal de envío si falta. Si sí hay tarjeta guardada, pregunta una sola vez si se cobra la tarjeta guardada o se manda link.',
@@ -11222,7 +11809,8 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
         paymentActionRequest,
         contactActionRequest,
         highLevelToolIntent,
-        customActionIntent: Boolean(agentRoute?.customActionIntent)
+        customActionIntent: Boolean(agentRoute?.customActionIntent),
+        restReadIntent: Boolean(agentRoute?.highLevelRestReadIntent)
       })
   const highLevelTools = paymentOperationRequest
     ? rawHighLevelTools.filter(tool => tool?.type === 'function' && PAYMENT_OPERATION_TOOL_NAMES.has(tool.name))
@@ -11278,6 +11866,9 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
     'Catálogo HighLevel que debe enrutar a MCP/REST cuando el usuario lo pida:',
     HIGHLEVEL_API_RESOURCE_CATALOG_TEXT,
     HIGHLEVEL_ENDPOINT_CATALOG_SUMMARY,
+    '',
+    'Sugerencias de endpoint HighLevel para el último mensaje:',
+    buildHighLevelEndpointIntentHint({ latestUserMessage, messages, agentRoute }),
     '',
     'Contexto operacional para referencias del usuario:',
     operationalReferenceContext ? JSON.stringify(operationalReferenceContext, null, 2) : 'No aplica para esta ruta.',

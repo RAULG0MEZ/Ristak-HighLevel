@@ -118,6 +118,14 @@ function maybeJsonObject(value) {
   return safeJsonParse(value, {})
 }
 
+function firstDefined(...values) {
+  return values.find(value => value !== undefined && value !== null && value !== '')
+}
+
+function toArray(value) {
+  return Array.isArray(value) ? value : []
+}
+
 function normalizeText(value) {
   if (value === undefined || value === null) return ''
   if (typeof value === 'object') {
@@ -624,6 +632,42 @@ function extractScheduleId(response) {
     response?.data?.id ||
     null
   )
+}
+
+function extractScheduleFromResponse(response) {
+  if (!response) return null
+  if (Array.isArray(response)) return response[0] || null
+
+  const candidate = firstDefined(
+    response.schedule,
+    response.invoiceSchedule,
+    response.invoice_schedule,
+    response.data?.schedule,
+    response.data?.invoiceSchedule,
+    response.data?.invoice_schedule,
+    response.data,
+    response
+  )
+
+  if (Array.isArray(candidate)) return candidate[0] || null
+  return candidate && typeof candidate === 'object' ? candidate : null
+}
+
+function resolveScheduleObject(schedule = {}) {
+  return schedule.schedule && typeof schedule.schedule === 'object'
+    ? schedule.schedule
+    : {}
+}
+
+function resolveScheduleRecurrence(schedule = {}) {
+  const scheduleConfig = resolveScheduleObject(schedule)
+  return firstDefined(
+    scheduleConfig.rrule,
+    schedule.rrule,
+    schedule.recurrence,
+    schedule.recurring,
+    scheduleConfig.recurrence
+  ) || null
 }
 
 async function findStoredGhlPaymentMethodForContact(contactId, expectedLiveMode) {
@@ -2042,6 +2086,328 @@ export async function createInstallmentPaymentFlow(payload) {
   return response
 }
 
+function normalizeScheduleRecurrenceInput(payload = {}) {
+  const rawFrequency = normalizeText(
+    payload.recurrenceFrequency ||
+    payload.frequency ||
+    payload.remainingFrequency ||
+    payload.intervalType ||
+    payload.recurrence?.intervalType ||
+    payload.recurrence?.frequency
+  )
+  const intervalTypeMap = {
+    daily: 'daily',
+    dia: 'daily',
+    dias: 'daily',
+    diaria: 'daily',
+    diario: 'daily',
+    weekly: 'weekly',
+    semana: 'weekly',
+    semanas: 'weekly',
+    semanal: 'weekly',
+    biweekly: 'weekly',
+    quincenal: 'weekly',
+    monthly: 'monthly',
+    mes: 'monthly',
+    meses: 'monthly',
+    mensual: 'monthly',
+    yearly: 'yearly',
+    ano: 'yearly',
+    años: 'yearly',
+    anio: 'yearly',
+    anual: 'yearly'
+  }
+  const intervalType = intervalTypeMap[rawFrequency] || intervalTypeMap[rawFrequency.replace(/s$/, '')] || null
+
+  if (!intervalType && !payload.recurrence) return null
+
+  const rawInterval = Number(
+    payload.recurrenceInterval ||
+    payload.interval ||
+    payload.intervalCount ||
+    payload.recurrence?.interval ||
+    (rawFrequency === 'biweekly' || rawFrequency === 'quincenal' ? 2 : 1)
+  )
+  const recurrence = {
+    ...(payload.recurrence && typeof payload.recurrence === 'object' ? payload.recurrence : {}),
+    intervalType: intervalType || payload.recurrence?.intervalType || 'monthly',
+    interval: Number.isFinite(rawInterval) && rawInterval > 0 ? rawInterval : 1
+  }
+
+  const count = Number(payload.recurrenceCount || payload.count || payload.recurrence?.count)
+  if (Number.isFinite(count) && count > 0) {
+    recurrence.count = Math.round(count)
+    recurrence.endType = 'count'
+  }
+
+  const endDate = normalizeDateOnly(payload.recurrenceEndDate || payload.endDate || payload.recurrence?.endDate || '')
+  if (endDate) {
+    recurrence.endDate = endDate
+    recurrence.endType = 'date'
+  }
+
+  return recurrence
+}
+
+function hasSchedulePayloadChanges(payload = {}) {
+  return Boolean(
+    payload.newDueDate || payload.dueDate || payload.paymentDate ||
+    payload.amount || payload.newAmount || payload.totalAmount ||
+    payload.description || payload.concept || payload.title ||
+    payload.termsNotes || payload.terms || payload.notes ||
+    payload.recurrence || payload.recurrenceFrequency || payload.frequency ||
+    payload.recurrenceInterval || payload.interval || payload.recurrenceCount ||
+    payload.recurrenceEndDate || payload.endDate
+  )
+}
+
+function getScheduleTextUpdates(payload = {}) {
+  return {
+    concept: cleanText(payload.concept || '', 240),
+    description: formatInvoiceMultilineText(payload.description || ''),
+    title: cleanText(payload.title || '', 180),
+    termsNotes: formatInvoiceMultilineText(payload.termsNotes || payload.terms || ''),
+    notes: formatInvoiceMultilineText(payload.notes || '')
+  }
+}
+
+function applyScheduleTextUpdates(schedulePayload, textUpdates = {}) {
+  const payload = { ...schedulePayload }
+  const items = toArray(payload.items || payload.invoiceItems).map(item => ({ ...item }))
+  const description = textUpdates.description || textUpdates.concept || ''
+  const title = textUpdates.title || textUpdates.concept || ''
+  const termsNotes = combineTextSections(textUpdates.termsNotes, textUpdates.notes)
+
+  if (title) {
+    payload.name = title
+    payload.title = title
+  }
+
+  if (termsNotes) {
+    payload.termsNotes = payload.termsNotes
+      ? combineTextSections(payload.termsNotes, termsNotes)
+      : termsNotes
+  }
+
+  if (items.length && description) {
+    items[0].description = description
+    if (textUpdates.concept) items[0].name = textUpdates.concept
+    payload.items = items
+    payload.invoiceItems = items
+  }
+
+  return payload
+}
+
+function recurrenceToFrequency(recurrence) {
+  const intervalType = normalizeText(recurrence?.intervalType || recurrence?.frequency)
+  const interval = Number(recurrence?.interval || 1)
+
+  if (intervalType === 'weekly' && interval === 2) return 'biweekly'
+  if (['daily', 'weekly', 'monthly', 'yearly'].includes(intervalType)) return intervalType
+  return 'custom'
+}
+
+function addRecurrenceInterval(date, recurrence, index) {
+  const interval = Math.max(1, Number(recurrence?.interval || 1))
+  const intervalType = normalizeText(recurrence?.intervalType || recurrence?.frequency || 'monthly')
+
+  if (intervalType === 'daily') return date.plus({ days: interval * index })
+  if (intervalType === 'weekly') return date.plus({ weeks: interval * index })
+  if (intervalType === 'yearly') return date.plus({ years: interval * index })
+  return date.plus({ months: interval * index })
+}
+
+function rebuildInstallmentDates(installments, { newDueDate, recurrence, timezone }) {
+  const zone = resolveScheduleTimezone(timezone)
+  const firstDate = DateTime.fromISO(normalizeDateOnly(newDueDate || installments[0]?.due_date, timezone), { zone }).startOf('day')
+  if (!firstDate.isValid) return installments
+
+  if (recurrence) {
+    return installments.map((installment, index) => ({
+      ...installment,
+      due_date: addRecurrenceInterval(firstDate, recurrence, index).toISODate(),
+      effective_due_date: addRecurrenceInterval(firstDate, recurrence, index).toISODate(),
+      frequency: recurrenceToFrequency(recurrence)
+    }))
+  }
+
+  if (!newDueDate || installments.length < 2) {
+    return installments.map((installment, index) => index === 0
+      ? {
+          ...installment,
+          due_date: firstDate.toISODate(),
+          effective_due_date: firstDate.toISODate()
+        }
+      : installment)
+  }
+
+  const originalFirst = DateTime.fromISO(normalizeDateOnly(installments[0]?.due_date, timezone), { zone }).startOf('day')
+  if (!originalFirst.isValid) return installments
+  const diffDays = Math.round(firstDate.diff(originalFirst, 'days').days)
+
+  return installments.map((installment) => {
+    const current = DateTime.fromISO(normalizeDateOnly(installment.due_date, timezone), { zone }).startOf('day')
+    const shifted = current.isValid ? current.plus({ days: diffDays }) : firstDate
+    return {
+      ...installment,
+      due_date: shifted.toISODate(),
+      effective_due_date: shifted.toISODate()
+    }
+  })
+}
+
+function buildGroupForScheduleUpdate(installments, recurrence, timezone = DEFAULT_PAYMENT_TIMEZONE) {
+  if (recurrence && installments.length > 1) {
+    return createRecurringInstallmentScheduleGroup(installments, recurrence, timezone)
+  }
+
+  if (installments.length > 1) {
+    const inferredRecurrence = buildRecurrenceFromDates(installments, installments[0]?.frequency, timezone)
+    if (inferredRecurrence) {
+      return createRecurringInstallmentScheduleGroup(installments, inferredRecurrence, timezone)
+    }
+  }
+
+  return createSingleInstallmentScheduleGroup(installments[0], timezone)
+}
+
+function mergeDirectGhlSchedulePayload(schedule = {}, payload = {}, timezone = DEFAULT_PAYMENT_TIMEZONE) {
+  const scheduleConfig = resolveScheduleObject(schedule)
+  const items = toArray(firstDefined(schedule.items, schedule.invoiceItems, schedule.lineItems)).map(item => ({ ...item }))
+  const amount = normalizeAmount(payload.amount || payload.newAmount || payload.totalAmount || firstDefined(schedule.total, schedule.amount))
+  const newDueDate = payload.newDueDate ? normalizeDateOnly(payload.newDueDate, timezone) : null
+  const recurrence = normalizeScheduleRecurrenceInput(payload) || resolveScheduleRecurrence(schedule)
+  const start = newDueDate ? getScheduleStart(newDueDate, timezone) : null
+  const textUpdates = getScheduleTextUpdates(payload)
+  const mergedSchedule = { ...scheduleConfig }
+
+  if (recurrence) {
+    const existingRrule = typeof recurrence === 'object' ? recurrence : {}
+    mergedSchedule.rrule = {
+      ...existingRrule,
+      ...(start
+        ? {
+            startDate: start.startDate,
+            startTime: start.startTime
+          }
+        : {})
+    }
+    delete mergedSchedule.executeAt
+  } else if (start) {
+    mergedSchedule.executeAt = start.executeAt
+    delete mergedSchedule.rrule
+  }
+
+  const mergedItems = items.length ? items : [{ name: schedule.name || schedule.title || 'Pago programado', qty: 1 }]
+  if (amount > 0) {
+    mergedItems[0].amount = amount
+    mergedItems[0].currency = schedule.currency || CURRENCY_DEFAULT
+  }
+
+  let updated = {
+    ...schedule,
+    id: firstDefined(schedule.id, schedule._id, payload.scheduleId, payload.ghlScheduleId),
+    name: schedule.name || schedule.title || 'Pago programado',
+    title: schedule.title || schedule.name || 'PAGO PROGRAMADO',
+    currency: schedule.currency || CURRENCY_DEFAULT,
+    total: amount > 0 ? amount : normalizeAmount(firstDefined(schedule.total, schedule.amount)),
+    schedule: mergedSchedule,
+    items: mergedItems,
+    invoiceItems: mergedItems
+  }
+
+  updated = applyScheduleTextUpdates(updated, textUpdates)
+  return updated
+}
+
+async function updateLocalPaymentPlanFromSchedule(scheduleId, fields = {}) {
+  if (!scheduleId) return
+
+  const setFields = ['updated_at = CURRENT_TIMESTAMP', 'last_synced_at = CURRENT_TIMESTAMP']
+  const values = []
+
+  const allowed = {
+    status: 'status',
+    total: 'total',
+    currency: 'currency',
+    description: 'description',
+    startDate: 'start_date',
+    nextRunAt: 'next_run_at',
+    rawJson: 'raw_json',
+    scheduleJson: 'schedule_json'
+  }
+
+  for (const [key, column] of Object.entries(allowed)) {
+    if (fields[key] === undefined) continue
+    setFields.push(`${column} = ?`)
+    values.push(fields[key])
+  }
+
+  if (!values.length) return
+  values.push(scheduleId, scheduleId)
+
+  await db.run(
+    `UPDATE payment_plans
+     SET ${setFields.join(', ')}
+     WHERE id = ? OR ghl_schedule_id = ?`,
+    values
+  )
+}
+
+async function updateDirectGhlSchedule({ scheduleId, payload = {}, context }) {
+  const ghlClient = await getGHLClient()
+  const detailResponse = await ghlClient.getInvoiceSchedule(scheduleId)
+  const existingSchedule = extractScheduleFromResponse(detailResponse)
+
+  if (!existingSchedule) {
+    throw new Error('No encontré ese schedule en HighLevel para modificar')
+  }
+
+  const schedulePayload = mergeDirectGhlSchedulePayload(existingSchedule, payload, context.timezone)
+  let response
+
+  try {
+    response = await ghlClient.updateAndScheduleInvoiceSchedule(scheduleId, {
+      ...schedulePayload,
+      liveMode: context.liveMode
+    })
+  } catch (error) {
+    logger.warn(`No se pudo usar updateAndSchedule directo para ${scheduleId}; intentando update + schedule: ${error.message}`)
+    response = await ghlClient.updateInvoiceSchedule(scheduleId, schedulePayload)
+    await ghlClient.scheduleInvoiceSchedule(scheduleId, {
+      liveMode: context.liveMode
+    })
+  }
+
+  const nextRunAt = schedulePayload.schedule?.executeAt ||
+    (schedulePayload.schedule?.rrule?.startDate
+      ? `${schedulePayload.schedule.rrule.startDate}${schedulePayload.schedule.rrule.startTime ? `T${schedulePayload.schedule.rrule.startTime}` : ''}`
+      : null)
+
+  await updateLocalPaymentPlanFromSchedule(scheduleId, {
+    total: schedulePayload.total,
+    currency: schedulePayload.currency,
+    description: schedulePayload.items?.[0]?.description || schedulePayload.name,
+    nextRunAt,
+    rawJson: JSON.stringify(schedulePayload),
+    scheduleJson: JSON.stringify(schedulePayload.schedule || {})
+  })
+
+  return {
+    flowId: null,
+    installmentId: null,
+    scheduleId,
+    oldDueDate: null,
+    newDueDate: normalizeDateOnly(payload.newDueDate || payload.dueDate || payload.paymentDate || ''),
+    amount: normalizeAmount(payload.amount || payload.newAmount || payload.totalAmount || schedulePayload.total),
+    currency: schedulePayload.currency || CURRENCY_DEFAULT,
+    contact: schedulePayload.contactDetails || null,
+    paymentMethod: null,
+    response
+  }
+}
+
 export async function updateScheduledInstallmentPayment(payload = {}) {
   const installmentId = payload.installmentId || payload.installment_id
   const scheduleId = payload.scheduleId || payload.ghlScheduleId || payload.ghl_schedule_id
@@ -2051,14 +2417,8 @@ export async function updateScheduledInstallmentPayment(payload = {}) {
     throw new Error('Falta identificar el cobro programado a modificar')
   }
 
-  if (!rawNewDueDate) {
-    throw new Error('Falta la nueva fecha del cobro programado')
-  }
-
-  const newDueDate = normalizeDateOnly(rawNewDueDate)
-
-  if (!newDueDate) {
-    throw new Error('Falta la nueva fecha del cobro programado')
+  if (!hasSchedulePayloadChanges(payload)) {
+    throw new Error('Falta decir qué quieres cambiar del cobro programado')
   }
 
   const installment = await db.get(
@@ -2079,6 +2439,18 @@ export async function updateScheduledInstallmentPayment(payload = {}) {
   )
 
   if (!installment?.id) {
+    if (scheduleId) {
+      const context = await getInvoiceSendContext()
+      return updateDirectGhlSchedule({
+        scheduleId,
+        payload: {
+          ...payload,
+          newDueDate: rawNewDueDate ? normalizeDateOnly(rawNewDueDate, context.timezone) : null
+        },
+        context
+      })
+    }
+
     throw new Error('No encontré ese cobro programado en Ristak')
   }
 
@@ -2096,11 +2468,9 @@ export async function updateScheduledInstallmentPayment(payload = {}) {
     [installment.flow_id, effectiveScheduleId]
   )
 
-  if (linkedInstallments.length > 1) {
-    throw new Error('Ese schedule agrupa varios cobros. Para evitar mover cobros equivocados, modifica ese plan desde la pantalla de pagos por ahora.')
-  }
-
-  const newAmount = normalizeAmount(payload.amount || installment.amount)
+  const context = await getInvoiceSendContext()
+  const newDueDate = rawNewDueDate ? normalizeDateOnly(rawNewDueDate, context.timezone) : null
+  const newAmount = normalizeAmount(payload.amount || payload.newAmount || payload.totalAmount || installment.amount)
   if (newAmount <= 0) {
     throw new Error('El monto del cobro programado debe ser mayor a 0')
   }
@@ -2111,12 +2481,7 @@ export async function updateScheduledInstallmentPayment(payload = {}) {
   }
 
   const ghlClient = await getGHLClient()
-  const context = await getInvoiceSendContext()
   const authorizedCard = await getAuthorizedPaymentMethod(flow, { ghlClient })
-
-  if (!authorizedCard?.customerId || !authorizedCard?.paymentMethodId) {
-    throw new Error('No hay tarjeta autorizada disponible para reprogramar este cobro')
-  }
 
   const allFlowInstallmentsRaw = await db.all(
     `SELECT *
@@ -2125,18 +2490,27 @@ export async function updateScheduledInstallmentPayment(payload = {}) {
      ORDER BY sequence ASC`,
     [flow.id]
   )
+  const targetInstallments = (linkedInstallments.length ? linkedInstallments : [installment])
+    .map(row => ({
+      ...row,
+      amount: newAmount
+    }))
+  const recurrence = normalizeScheduleRecurrenceInput(payload)
+  const rebuiltTargetInstallments = rebuildInstallmentDates(targetInstallments, {
+    newDueDate,
+    recurrence,
+    timezone: context.timezone
+  })
+  const rebuiltById = new Map(rebuiltTargetInstallments.map(row => [row.id, row]))
   const updatedInstallments = allFlowInstallmentsRaw.map((row) => (
-    row.id === installment.id
-      ? {
-          ...row,
-          amount: newAmount,
-          due_date: newDueDate,
-          effective_due_date: newDueDate
-        }
+    rebuiltById.has(row.id)
+      ? rebuiltById.get(row.id)
       : row
   ))
+  const textUpdates = getScheduleTextUpdates(payload)
   const updatedFlow = {
     ...flow,
+    concept: textUpdates.concept || flow.concept,
     total_amount: allFlowInstallmentsRaw.length === 1
       ? newAmount
       : normalizeAmount((Number(flow.first_payment_amount || 0)) + updatedInstallments.reduce((sum, row) => sum + normalizeAmount(row.amount), 0))
@@ -2144,67 +2518,73 @@ export async function updateScheduledInstallmentPayment(payload = {}) {
   const planSummary = buildPaymentPlanSummary(updatedFlow, withEffectiveInstallmentDates(updatedFlow, updatedInstallments, context.timezone), {
     timezone: context.timezone
   })
-  const group = createSingleInstallmentScheduleGroup({
-    ...installment,
-    amount: newAmount,
-    due_date: newDueDate,
-    effective_due_date: newDueDate,
-    frequency: 'custom'
-  }, context.timezone)
-  const schedulePayload = buildInstallmentSchedulePayload({
+  const group = buildGroupForScheduleUpdate(rebuiltTargetInstallments, recurrence, context.timezone)
+  let schedulePayload = buildInstallmentSchedulePayload({
     flow: updatedFlow,
     group,
     context,
     planSummary
   })
-  const autoPayment = buildAutoPayment(authorizedCard, {
-    amount: newAmount,
-    currency: updatedFlow.currency || CURRENCY_DEFAULT
-  })
+  schedulePayload = applyScheduleTextUpdates(schedulePayload, textUpdates)
+  const autoPayment = authorizedCard?.customerId && authorizedCard?.paymentMethodId
+    ? buildAutoPayment(authorizedCard, {
+        amount: newAmount,
+        currency: updatedFlow.currency || CURRENCY_DEFAULT
+      })
+    : null
 
   let response
   try {
     response = await ghlClient.updateAndScheduleInvoiceSchedule(effectiveScheduleId, {
       ...schedulePayload,
       liveMode: context.liveMode,
-      autoPayment
+      ...(autoPayment ? { autoPayment } : {})
     })
   } catch (error) {
     logger.warn(`No se pudo usar updateAndSchedule para ${effectiveScheduleId}; intentando update + schedule: ${error.message}`)
     response = await ghlClient.updateInvoiceSchedule(effectiveScheduleId, schedulePayload)
-    await ghlClient.scheduleInvoiceSchedule(effectiveScheduleId, {
-      liveMode: context.liveMode,
-      autoPayment
-    })
+    if (autoPayment) {
+      await ghlClient.scheduleInvoiceSchedule(effectiveScheduleId, {
+        liveMode: context.liveMode,
+        autoPayment
+      })
+    }
   }
 
-  await db.run(
-    `UPDATE installment_payments
-     SET amount = ?,
-         due_date = ?,
-         frequency = 'custom',
-         status = 'scheduled',
-         ghl_schedule_status = 'scheduled',
-         notes = ?,
-         updated_at = CURRENT_TIMESTAMP
-     WHERE id = ?`,
-    [
-      newAmount,
-      newDueDate,
+  for (const updatedInstallment of rebuiltTargetInstallments) {
+    await db.run(
+      `UPDATE installment_payments
+       SET amount = ?,
+           due_date = ?,
+           frequency = ?,
+           status = 'scheduled',
+           ghl_schedule_status = 'scheduled',
+           notes = ?,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
       [
-        installment.notes || '',
-        `Reprogramado por Agente AI de ${installment.due_date || 'fecha previa'} a ${newDueDate}`
-      ].filter(Boolean).join('\n').slice(0, 1000),
-      installment.id
-    ]
-  )
+        normalizeAmount(updatedInstallment.amount),
+        updatedInstallment.due_date || updatedInstallment.effective_due_date,
+        updatedInstallment.frequency || recurrenceToFrequency(recurrence) || 'custom',
+        [
+          updatedInstallment.notes || '',
+          newDueDate ? `Reprogramado por Agente AI de ${installment.due_date || 'fecha previa'} a ${newDueDate}` : '',
+          textUpdates.description ? `Descripción actualizada por Agente AI: ${textUpdates.description}` : '',
+          textUpdates.termsNotes ? 'Términos/notas actualizados por Agente AI' : '',
+          recurrence ? `Recurrencia actualizada por Agente AI: ${recurrence.intervalType} cada ${recurrence.interval || 1}` : ''
+        ].filter(Boolean).join('\n').slice(0, 1000),
+        updatedInstallment.id
+      ]
+    )
+  }
 
   await db.run(
     `UPDATE payment_flows
      SET total_amount = ?,
+         concept = ?,
          updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`,
-    [updatedFlow.total_amount, flow.id]
+    [updatedFlow.total_amount, updatedFlow.concept, flow.id]
   )
 
   return {
@@ -2212,7 +2592,7 @@ export async function updateScheduledInstallmentPayment(payload = {}) {
     installmentId: installment.id,
     scheduleId: effectiveScheduleId,
     oldDueDate: installment.due_date,
-    newDueDate,
+    newDueDate: newDueDate || rebuiltTargetInstallments[0]?.due_date || installment.due_date,
     amount: newAmount,
     currency: updatedFlow.currency || CURRENCY_DEFAULT,
     contact: {
@@ -2221,10 +2601,17 @@ export async function updateScheduledInstallmentPayment(payload = {}) {
       email: flow.contact_email,
       phone: flow.contact_phone
     },
-    paymentMethod: {
+    paymentMethod: authorizedCard ? {
       type: authorizedCard.type || 'card',
       brand: authorizedCard.brand || null,
       last4: authorizedCard.last4 || null
+    } : null,
+    updatedFields: {
+      dueDate: Boolean(newDueDate),
+      amount: Boolean(payload.amount || payload.newAmount || payload.totalAmount),
+      description: Boolean(textUpdates.description || textUpdates.concept || textUpdates.title),
+      termsNotes: Boolean(textUpdates.termsNotes || textUpdates.notes),
+      recurrence: Boolean(recurrence)
     },
     response
   }
@@ -2233,6 +2620,7 @@ export async function updateScheduledInstallmentPayment(payload = {}) {
 export async function cancelScheduledInstallmentPayment(payload = {}) {
   const installmentId = payload.installmentId || payload.installment_id
   const scheduleId = payload.scheduleId || payload.ghlScheduleId || payload.ghl_schedule_id
+  const deleteSchedule = payload.deleteSchedule === true || payload.deleteExisting === true
 
   if (!installmentId && !scheduleId) {
     throw new Error('Falta identificar el cobro programado a cancelar')
@@ -2251,6 +2639,30 @@ export async function cancelScheduledInstallmentPayment(payload = {}) {
   )
 
   if (!installment?.id) {
+    if (scheduleId) {
+      const ghlClient = await getGHLClient()
+      const context = await getInvoiceSendContext()
+      const response = deleteSchedule
+        ? await ghlClient.deleteInvoiceSchedule(scheduleId)
+        : await ghlClient.cancelInvoiceSchedule(scheduleId, { liveMode: context.liveMode })
+
+      await updateLocalPaymentPlanFromSchedule(scheduleId, {
+        status: deleteSchedule ? 'deleted' : 'cancelled'
+      })
+
+      return {
+        flowId: null,
+        installmentId: null,
+        scheduleId,
+        oldDueDate: null,
+        amount: 0,
+        currency: CURRENCY_DEFAULT,
+        contact: null,
+        deleted: deleteSchedule,
+        response
+      }
+    }
+
     throw new Error('No encontré ese cobro programado en Ristak')
   }
 
@@ -2261,26 +2673,33 @@ export async function cancelScheduledInstallmentPayment(payload = {}) {
 
   const ghlClient = await getGHLClient()
   const context = await getInvoiceSendContext()
-  const response = await ghlClient.cancelInvoiceSchedule(effectiveScheduleId, {
-    liveMode: context.liveMode
-  })
+  const response = deleteSchedule
+    ? await ghlClient.deleteInvoiceSchedule(effectiveScheduleId)
+    : await ghlClient.cancelInvoiceSchedule(effectiveScheduleId, {
+        liveMode: context.liveMode
+      })
 
   await db.run(
     `UPDATE installment_payments
      SET status = 'cancelled',
          automatic = 0,
-         ghl_schedule_status = 'cancelled',
+         ghl_schedule_status = ?,
          notes = ?,
          updated_at = CURRENT_TIMESTAMP
      WHERE ghl_schedule_id = ?`,
     [
+      deleteSchedule ? 'deleted' : 'cancelled',
       [
         installment.notes || '',
-        `Cancelado por Agente AI el ${new Date().toISOString()}`
+        `${deleteSchedule ? 'Eliminado' : 'Cancelado'} por Agente AI el ${new Date().toISOString()}`
       ].filter(Boolean).join('\n').slice(0, 1000),
       effectiveScheduleId
     ]
   )
+
+  await updateLocalPaymentPlanFromSchedule(effectiveScheduleId, {
+    status: deleteSchedule ? 'deleted' : 'cancelled'
+  })
 
   return {
     flowId: installment.flow_id,
@@ -2295,6 +2714,7 @@ export async function cancelScheduledInstallmentPayment(payload = {}) {
       email: installment.contact_email,
       phone: installment.contact_phone
     },
+    deleted: deleteSchedule,
     response
   }
 }
