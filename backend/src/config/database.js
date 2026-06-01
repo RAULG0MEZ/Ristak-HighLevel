@@ -167,6 +167,30 @@ async function initTables() {
       )
     `)
 
+    try {
+      if (usePostgres) {
+        await db.run(`
+          DELETE FROM app_config a
+          USING app_config b
+          WHERE a.config_key = b.config_key
+            AND a.id < b.id
+        `)
+      } else {
+        await db.run(`
+          DELETE FROM app_config
+          WHERE id NOT IN (
+            SELECT MAX(id)
+            FROM app_config
+            GROUP BY config_key
+          )
+        `)
+      }
+
+      await db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_app_config_config_key ON app_config(config_key)')
+    } catch (err) {
+      logger.warn('Advertencia al asegurar unicidad de app_config.config_key:', err.message)
+    }
+
     // Tabla de configuración del agente AI
     await db.run(`
       CREATE TABLE IF NOT EXISTS ai_agent_config (
@@ -1233,13 +1257,19 @@ export async function getAppConfig(key) {
  * Guarda un valor de configuración global de la app
  */
 export async function setAppConfig(key, value) {
+  const normalizedValue = value === null || value === undefined
+    ? null
+    : typeof value === 'string'
+      ? value
+      : JSON.stringify(value)
+
   await db.run(`
     INSERT INTO app_config (config_key, config_value, updated_at)
     VALUES (?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(config_key) DO UPDATE SET
       config_value = excluded.config_value,
       updated_at = CURRENT_TIMESTAMP
-  `, [key, value])
+  `, [key, normalizedValue])
 }
 
 export { db }

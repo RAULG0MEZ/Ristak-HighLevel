@@ -9,6 +9,63 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 
 const CONFIG_PREFIX = 'rstk_config_'
 const SYNC_EVENT = 'config-sync'
+const API_URL = import.meta.env.VITE_API_URL || ''
+
+const serializeConfigValue = (value: unknown) => (
+  value === null || value === undefined
+    ? null
+    : typeof value === 'string'
+      ? value
+      : JSON.stringify(value)
+)
+
+const parseStoredConfigValue = <T,>(storedValue: unknown, defaultValue: T): T => {
+  if (storedValue === null || storedValue === undefined) return defaultValue
+
+  const rawValue = typeof storedValue === 'string'
+    ? storedValue
+    : JSON.stringify(storedValue)
+
+  if (typeof defaultValue === 'string') {
+    return rawValue as T
+  }
+
+  if (typeof defaultValue === 'boolean') {
+    const normalized = rawValue.trim().toLowerCase()
+    if (['1', 'true', 'yes', 'on'].includes(normalized)) return true as T
+    if (['0', 'false', 'no', 'off', ''].includes(normalized)) return false as T
+  }
+
+  if (typeof defaultValue === 'number') {
+    const numericValue = Number(rawValue)
+    return (Number.isFinite(numericValue) ? numericValue : defaultValue) as T
+  }
+
+  try {
+    return JSON.parse(rawValue) as T
+  } catch {
+    return rawValue as T
+  }
+}
+
+const getConfigHeaders = () => {
+  let token: string | null = null
+
+  try {
+    token = localStorage.getItem('auth_token')
+  } catch {
+    token = null
+  }
+
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {})
+  }
+}
+
+const buildConfigUrl = (params?: URLSearchParams) => (
+  `${API_URL}/api/config${params ? `?${params.toString()}` : ''}`
+)
 
 interface ConfigOptions {
   syncOnMount?: boolean // Sincronizar con DB al montar (default: true)
@@ -50,29 +107,72 @@ export function useAppConfig<T = string>(
 
   const [syncing, setSyncing] = useState(false)
   const mountedRef = useRef(true)
+  const defaultValueRef = useRef(defaultValue)
+  const valueVersionRef = useRef(0)
+  const pendingOperationsRef = useRef(0)
+
+  useEffect(() => {
+    defaultValueRef.current = defaultValue
+  }, [defaultValue])
+
+  const beginSync = useCallback(() => {
+    pendingOperationsRef.current += 1
+    if (mountedRef.current) {
+      setSyncing(true)
+    }
+  }, [])
+
+  const finishSync = useCallback(() => {
+    pendingOperationsRef.current = Math.max(0, pendingOperationsRef.current - 1)
+    if (mountedRef.current && pendingOperationsRef.current === 0) {
+      setSyncing(false)
+    }
+  }, [])
 
   // Sincronizar con la DB al montar
   useEffect(() => {
     mountedRef.current = true
 
-    if (!syncOnMount) return
+    if (!syncOnMount) {
+      return () => {
+        mountedRef.current = false
+      }
+    }
+
+    let cancelled = false
 
     const syncFromDB = async () => {
+      const requestVersion = valueVersionRef.current
+      beginSync()
+
       try {
-        const response = await fetch(`/api/config?keys=${key}`)
+        const params = new URLSearchParams({ keys: key })
+        const response = await fetch(buildConfigUrl(params), {
+          headers: getConfigHeaders()
+        })
         if (!response.ok) throw new Error('Failed to fetch config')
 
         const data = await response.json()
         const dbValue = data.config?.[key]
 
-        if (dbValue !== undefined && dbValue !== null && mountedRef.current) {
-          const parsed = typeof defaultValue === 'string' ? dbValue : JSON.parse(dbValue)
+        if (
+          dbValue !== undefined &&
+          dbValue !== null &&
+          !cancelled &&
+          mountedRef.current &&
+          valueVersionRef.current === requestVersion
+        ) {
+          const parsed = parseStoredConfigValue(dbValue, defaultValueRef.current)
 
           // Solo actualizar si es diferente del cache
           setValue((current) => {
             if (JSON.stringify(current) !== JSON.stringify(parsed)) {
               if (cacheFirst) {
-                localStorage.setItem(`${CONFIG_PREFIX}${key}`, JSON.stringify(parsed))
+                try {
+                  localStorage.setItem(`${CONFIG_PREFIX}${key}`, JSON.stringify(parsed))
+                } catch {
+                  // La DB sigue siendo la fuente de verdad si localStorage falla.
+                }
               }
               return parsed
             }
@@ -81,15 +181,18 @@ export function useAppConfig<T = string>(
         }
       } catch {
         // Keep cached value when DB sync fails
+      } finally {
+        finishSync()
       }
     }
 
     syncFromDB()
 
     return () => {
+      cancelled = true
       mountedRef.current = false
     }
-  }, [key, syncOnMount, cacheFirst]) // Removido defaultValue de deps
+  }, [key, syncOnMount, cacheFirst, beginSync, finishSync])
 
   // Escuchar cambios desde otros componentes
   useEffect(() => {
@@ -106,16 +209,17 @@ export function useAppConfig<T = string>(
 
   // Función para actualizar el valor
   const updateValue = useCallback(async (newValue: T) => {
-    setSyncing(true)
+    valueVersionRef.current += 1
+    beginSync()
 
     try {
       // 1. Guardar en DB (source of truth)
-      const response = await fetch('/api/config', {
+      const response = await fetch(buildConfigUrl(), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getConfigHeaders(),
         body: JSON.stringify({
           key,
-          value: typeof newValue === 'string' ? newValue : JSON.stringify(newValue)
+          value: serializeConfigValue(newValue)
         })
       })
 
@@ -125,7 +229,11 @@ export function useAppConfig<T = string>(
 
       // 2. Actualizar cache local si esta config lo permite
       if (cacheFirst) {
-        localStorage.setItem(`${CONFIG_PREFIX}${key}`, JSON.stringify(newValue))
+        try {
+          localStorage.setItem(`${CONFIG_PREFIX}${key}`, JSON.stringify(newValue))
+        } catch {
+          // La DB ya fue actualizada; el cache local es opcional.
+        }
       }
 
       // 3. Actualizar estado local
@@ -140,11 +248,9 @@ export function useAppConfig<T = string>(
     } catch (error) {
       throw error
     } finally {
-      if (mountedRef.current) {
-        setSyncing(false)
-      }
+      finishSync()
     }
-  }, [key, cacheFirst])
+  }, [key, cacheFirst, beginSync, finishSync])
 
   return [value, updateValue, syncing]
 }
