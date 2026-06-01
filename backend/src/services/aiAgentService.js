@@ -721,13 +721,24 @@ function claimsPaymentWasCompleted(reply = '') {
     /(pago|cobro|invoice|factura|flujo|link|enlace|tarjeta|program)/.test(normalized)
 }
 
-function buildPaymentNotCompletedGuardReply(actionEvidence = []) {
+function buildPaymentNotCompletedGuardReply(actionEvidence = [], messages = []) {
   const latestEvidence = getLatestPaymentToolEvidence(actionEvidence)
   const latestMissingField = Array.isArray(latestEvidence?.missingFields)
     ? cleanText(latestEvidence.missingFields[0], 80)
     : ''
+  const latestUserText = getLatestUserText(messages)
+  const latestUserRejectedOrChanged = userRejectedOrDeferredExecution(latestUserText) ||
+    /(esta mal|está mal|no esta bien|no está bien|no te esperaste|no esperaste|corrige|corregir|recalcula|recalcular)/.test(normalizeText(latestUserText))
+
+  if (latestUserRejectedOrChanged && !latestEvidence) {
+    return 'No lo dejo así. El plan necesita corregirse y volver a mostrarse con los huecos sin cobro antes de confirmar.'
+  }
 
   if (latestEvidence?.confirmationRequired) {
+    if (latestUserRejectedOrChanged) {
+      return 'No lo dejo así. El plan necesita corregirse y volver a mostrarse con los huecos sin cobro antes de confirmar.'
+    }
+
     return 'Todavía no quedó creado. Entonces, solo para confirmar, ¿quieres que lo deje así?'
   }
 
@@ -2325,6 +2336,9 @@ function extractImmediatePaymentFromText(text, timezone = DEFAULT_PAYMENT_TIMEZO
   let match
 
   while ((match = immediatePattern.exec(normalized)) !== null) {
+    const beforeMarker = normalized.slice(Math.max(0, match.index - 20), match.index)
+    if (/ahora/.test(match[0]) && /\bpero\s*$/.test(beforeMarker)) continue
+
     const windowStart = Math.max(0, match.index - 120)
     const windowEnd = Math.min(normalized.length, match.index + match[0].length + 120)
     const windowText = normalized.slice(windowStart, windowEnd)
@@ -2417,7 +2431,7 @@ function extractRelativePaymentSegmentsBeforeWait(text, waitIndex = 0) {
     })
   }
 
-  const nextPeriodPattern = new RegExp(`\\b(?:el|al|en)?\\s*(?:proximo|siguiente)\\s+${PAYMENT_PERIOD_UNIT_TOKEN}\\b`, 'gi')
+  const nextPeriodPattern = new RegExp(`\\b(?:el|al|en|la)?\\s*(?:proximo|proxima|siguiente)\\s+${PAYMENT_PERIOD_UNIT_TOKEN}\\b`, 'gi')
   let nextMatch
   while ((nextMatch = nextPeriodPattern.exec(searchText)) !== null) {
     addSegment({
@@ -3744,7 +3758,7 @@ function buildPaymentConfirmationRequiredOutput({ action, summary = {}, clarific
     confirmationPrompt: [
       'No hagas el cobro, registro, link ni programación todavía.',
       'Antes de tocar dinero, verifica que el checklist indispensable del tipo de pago está completo y resume contacto, monto o producto/precio, concepto, método, fechas/recurrencia si aplica, canal de envío si aplica y qué pasará si no hay tarjeta guardada.',
-      'Si es plan de parcialidades, cobros programados o fechas raras, muestra una tabla Markdown compacta con columnas: #, fecha exacta, monto, método/acción y estado/envío. No uses fechas relativas como "en un mes" si puedes resolver la fecha.',
+      'Si es plan de parcialidades, cobros programados o fechas raras, muestra una tabla Markdown compacta con columnas: #, fecha escrita, monto, método/acción y estado/envío. Usa displayDate/amountLabel del summary.schedule cuando existan, incluye también las filas type="no_charge" como "Sin cobro" y no muestres fechas numéricas tipo 2026-06-08.',
       'El contacto debe mostrarse con nombre y email o teléfono cuando existan; si no hay email/teléfono, muestra el ID.',
       'Pide confirmación con tono amigable y corto. No uses frases como "confirmación explícita", "ejecutar", "autorizar" o "proceder". Cierra con algo como: "Entonces, solo para confirmar, ¿quieres que lo deje así?"',
       'Si falta método o no está claro si será transferencia, depósito, registro manual, link de pago o domiciliación, pregunta eso antes de confirmar.',
@@ -3753,24 +3767,156 @@ function buildPaymentConfirmationRequiredOutput({ action, summary = {}, clarific
   }
 }
 
-function buildInstallmentPlanScheduleRows({ firstPayment = {}, remainingPayments = [] } = {}) {
+function formatPaymentDisplayDate(value, timezone = DEFAULT_PAYMENT_TIMEZONE) {
+  const date = normalizeDateOnlyInput(value)
+  if (!date) return null
+
+  const zone = DateTime.now().setZone(timezone).isValid ? timezone : DEFAULT_PAYMENT_TIMEZONE
+  const parsed = DateTime.fromISO(date, { zone }).setLocale('es-MX')
+  return parsed.isValid ? parsed.toFormat("d 'de' LLLL 'de' yyyy") : null
+}
+
+function formatPaymentDisplayDateRange(startDate, endDate, timezone = DEFAULT_PAYMENT_TIMEZONE) {
+  const start = formatPaymentDisplayDate(startDate, timezone)
+  const end = formatPaymentDisplayDate(endDate, timezone)
+
+  if (start && end && start !== end) return `${start} al ${end}`
+  return start || end || null
+}
+
+function formatPaymentAmountLabel(amount, currency = DEFAULT_PAYMENT_CURRENCY) {
+  const normalizedAmount = normalizePaymentAmount(amount)
+  const normalizedCurrency = cleanText(String(currency || DEFAULT_PAYMENT_CURRENCY), 12).toUpperCase() || DEFAULT_PAYMENT_CURRENCY
+  const amountText = normalizedAmount.toLocaleString('es-MX', {
+    minimumFractionDigits: Number.isInteger(normalizedAmount) ? 0 : 2,
+    maximumFractionDigits: 2
+  })
+
+  return `$${amountText} ${normalizedCurrency}`
+}
+
+function parsePaymentWaitNote(note = '') {
+  const match = normalizeText(note).match(/esperar\s+(\d+)\s+(dia|dias|semana|semanas|mes|meses)/)
+  if (!match) return null
+
+  const count = normalizeInteger(match[1])
+  if (count <= 0) return null
+
+  return {
+    count,
+    unit: getPaymentPeriodUnit(match[2])
+  }
+}
+
+function buildNoChargeScheduleRows({ previousChargeDate, note, currency = DEFAULT_PAYMENT_CURRENCY, timezone = DEFAULT_PAYMENT_TIMEZONE } = {}) {
+  const wait = parsePaymentWaitNote(note)
+  const previousDate = normalizeDateOnlyInput(previousChargeDate)
+  const safeNote = cleanText(note || 'Periodo de espera sin cobro.', 240) || 'Periodo de espera sin cobro.'
+  if (!wait || !previousDate) {
+    return [{
+      type: 'no_charge',
+      charge: false,
+      sequence: null,
+      rowLabel: '-',
+      date: null,
+      displayDate: null,
+      amount: null,
+      amountLabel: 'Sin cobro',
+      currency,
+      status: 'Sin cobro',
+      notes: safeNote
+    }]
+  }
+
+  if (wait.unit === 'days') {
+    const startDate = addIntervalToDate(previousDate, { unit: 'days', count: 1 }, 1, timezone)
+    const endDate = addIntervalToDate(previousDate, { unit: 'days', count: wait.count }, 1, timezone)
+
+    return [{
+      type: 'no_charge',
+      charge: false,
+      sequence: null,
+      rowLabel: '-',
+      date: endDate,
+      displayDate: wait.count > 1
+        ? formatPaymentDisplayDateRange(startDate, endDate, timezone)
+        : formatPaymentDisplayDate(endDate, timezone),
+      amount: null,
+      amountLabel: 'Sin cobro',
+      currency,
+      status: 'Sin cobro',
+      notes: safeNote
+    }]
+  }
+
+  return Array.from({ length: wait.count }, (_, index) => {
+    const date = addIntervalToDate(previousDate, { unit: wait.unit, count: 1 }, index + 1, timezone)
+
+    return {
+      type: 'no_charge',
+      charge: false,
+      sequence: null,
+      rowLabel: '-',
+      date,
+      displayDate: formatPaymentDisplayDate(date, timezone),
+      amount: null,
+      amountLabel: 'Sin cobro',
+      currency,
+      status: 'Sin cobro',
+      notes: safeNote
+    }
+  })
+}
+
+function buildInstallmentPlanScheduleRows({ firstPayment = {}, remainingPayments = [], currency = DEFAULT_PAYMENT_CURRENCY, timezone = DEFAULT_PAYMENT_TIMEZONE } = {}) {
   const rows = []
+  const normalizedCurrency = cleanText(String(currency || DEFAULT_PAYMENT_CURRENCY), 12).toUpperCase() || DEFAULT_PAYMENT_CURRENCY
+  let previousChargeDate = null
+  let chargeSequence = 0
 
   if (firstPayment?.enabled) {
+    chargeSequence += 1
+    previousChargeDate = firstPayment.date || null
     rows.push({
-      sequence: 1,
+      type: 'charge',
+      charge: true,
+      sequence: chargeSequence,
+      rowLabel: String(chargeSequence),
       date: firstPayment.date || null,
+      displayDate: formatPaymentDisplayDate(firstPayment.date || null, timezone),
       amount: normalizePaymentAmount(firstPayment.amount),
+      amountLabel: formatPaymentAmountLabel(firstPayment.amount, normalizedCurrency),
+      currency: normalizedCurrency,
+      status: 'Cobro',
       notes: cleanText(firstPayment.notes || '', 240) || null
     })
   }
 
   for (const payment of Array.isArray(remainingPayments) ? remainingPayments : []) {
+    const notes = cleanText(payment?.notes || '', 240) || null
+    if (notes && /sin cobro/i.test(notes)) {
+      rows.push(...buildNoChargeScheduleRows({
+        previousChargeDate,
+        note: notes,
+        currency: normalizedCurrency,
+        timezone
+      }))
+    }
+
+    chargeSequence += 1
+    previousChargeDate = payment?.dueDate || null
     rows.push({
-      sequence: rows.length + 1,
+      type: 'charge',
+      charge: true,
+      sequence: chargeSequence,
+      rowLabel: String(chargeSequence),
       date: payment?.dueDate || null,
+      displayDate: formatPaymentDisplayDate(payment?.dueDate || null, timezone),
       amount: normalizePaymentAmount(payment?.amount),
-      notes: cleanText(payment?.notes || '', 240) || null
+      amountLabel: formatPaymentAmountLabel(payment?.amount, normalizedCurrency),
+      currency: normalizedCurrency,
+      status: 'Cobro',
+      notes
     })
   }
 
@@ -3783,16 +3929,20 @@ function buildPendingInstallmentPlanSummary(args = {}, timezone = DEFAULT_PAYMEN
 
   const firstPayment = resolveFirstPayment(args, totalAmount, timezone)
   const remaining = resolveRemainingPayments(args, totalAmount, firstPayment, timezone)
+  const currency = getProductPaymentCurrency(args)
   const schedule = buildInstallmentPlanScheduleRows({
     firstPayment,
-    remainingPayments: remaining.payments
+    remainingPayments: remaining.payments,
+    currency,
+    timezone
   })
 
   if (!schedule.length) return null
 
   return {
     totalAmount,
-    currency: getProductPaymentCurrency(args),
+    currency,
+    totalAmountLabel: formatPaymentAmountLabel(totalAmount, currency),
     product: getPaymentProductSummary(args),
     schedule,
     firstPayment: firstPayment.enabled
@@ -3812,8 +3962,8 @@ function buildPendingInstallmentPlanSummary(args = {}, timezone = DEFAULT_PAYMEN
   }
 }
 
-function buildInstallmentPlanPreviewOutput({ contact = {}, totalAmount, currency, concept, product = null, firstPayment = {}, remainingPayments = [] } = {}) {
-  const schedule = buildInstallmentPlanScheduleRows({ firstPayment, remainingPayments })
+function buildInstallmentPlanPreviewOutput({ contact = {}, totalAmount, currency, concept, product = null, firstPayment = {}, remainingPayments = [], timezone = DEFAULT_PAYMENT_TIMEZONE } = {}) {
+  const schedule = buildInstallmentPlanScheduleRows({ firstPayment, remainingPayments, currency, timezone })
 
   return {
     ok: false,
@@ -3830,14 +3980,16 @@ function buildInstallmentPlanPreviewOutput({ contact = {}, totalAmount, currency
       },
       product,
       totalAmount,
+      totalAmountLabel: formatPaymentAmountLabel(totalAmount, currency),
       currency,
       concept,
       schedule
     },
     confirmationPrompt: [
       'Todavía NO preguntes método de pago, tarjeta guardada ni canal de envío, y no crees ni programes nada.',
-      'Primero especifica cómo queda el plan de pagos: muestra una tabla Markdown compacta con columnas #, fecha exacta y monto, usando fechas absolutas (nunca "en un mes" ni "hoy" sin fecha), y debajo el total del plan.',
-      'Si el plan trae notas de espera o saltos sin cobro, menciónalas en una línea corta debajo de la tabla; nunca las conviertas en una parcialidad de $0.',
+      'Primero especifica cómo queda el plan de pagos: muestra una tabla Markdown compacta con columnas #, fecha escrita, monto y estado, usando summary.schedule exactamente, y debajo el total del plan.',
+      'Usa displayDate para la fecha y amountLabel para el monto cuando existan; no muestres fechas numéricas tipo 2026-06-08.',
+      'Incluye también las filas type="no_charge" como periodos "Sin cobro" dentro de la tabla; nunca las ocultes ni las conviertas en parcialidad de $0.',
       'El contacto va con nombre y email o teléfono cuando existan; si no hay ninguno, muestra su ID.',
       'Cierra pidiendo que confirme el plan con tono amigable y corto, por ejemplo: "¿Así te late el plan o le movemos algo?". No uses palabras como "ejecutar", "autorizar" ni "proceder".',
       'Sólo cuando el usuario confirme el plan seguimos con el método de pago (tarjeta guardada o link).'
@@ -9488,7 +9640,7 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
           }
         : null,
       responseInstructions: pendingPlanSummary
-        ? 'Pregunta sólo cuál contacto es. Si mencionas el plan pendiente, muéstralo en tabla Markdown compacta usando summary.schedule exactamente; no cambies fechas, no quites el primer pago de hoy y no conviertas los periodos de espera en cobros.'
+        ? 'Pregunta sólo cuál contacto es. Si mencionas el plan pendiente, muéstralo en tabla Markdown compacta usando summary.schedule exactamente, incluyendo filas type="no_charge" como "Sin cobro"; usa displayDate, no fechas numéricas; no cambies fechas, no quites el primer pago de hoy y no conviertas los periodos de espera en cobros.'
         : ''
     }
   }
@@ -9756,7 +9908,8 @@ async function executeCreateInstallmentPaymentFlow(args = {}, highLevelConnectio
       concept,
       product: productSummary,
       firstPayment,
-      remainingPayments: remaining.payments
+      remainingPayments: remaining.payments,
+      timezone: paymentTimezone
     })
   }
 
@@ -13116,8 +13269,8 @@ const PAYMENT_WORKFLOW_PROMPT = [
   '- Nunca digas "listo", "quedó", "se creó", "se programó", "se envió" o "se cobró" si la última herramienta de pago no devolvió ok:true de una mutación real. Si sólo hubo búsqueda, aclaración o error, di que todavía no quedó creado y pregunta el siguiente dato.',
   '- Si falta algo indispensable, pregunta una sola cosa a la vez. No hagas listas de varias preguntas pendientes.',
   '- Cuando el usuario elija una opción/botón del flujo, trátala como respuesta válida al paso actual. Avanza con una respuesta corta y no vuelvas a pegar el resumen completo salvo que sea la revisión final.',
-  '- En planes de parcialidades, cobros programados o calendarios raros, el resumen de confirmación debe incluir una tabla Markdown compacta con cada cobro: #, fecha exacta, monto, método/acción y estado/envío. Esto sí es excepción a la regla general de evitar tablas.',
-  '- En un plan de parcialidades, el primer paso después de armar el plan es especificarle al usuario cómo queda (tabla con #, fecha exacta y monto, más el total) y pedir que confirme el plan. No uses lista numerada ni texto corrido para visualizar el calendario. No preguntes método de pago, tarjeta guardada ni canal de envío hasta que el plan esté confirmado. Si la herramienta devuelve planPreviewConfirmationRequired, muestra el plan y pide confirmarlo sin preguntar todavía por la tarjeta.',
+  '- En planes de parcialidades, cobros programados o calendarios raros, el resumen de confirmación debe incluir una tabla Markdown compacta con cada fila de summary.schedule: #, fecha escrita, monto, método/acción y estado/envío. Usa displayDate/amountLabel si existen, no fechas numéricas tipo 2026-06-08. Incluye filas type="no_charge" como "Sin cobro" para que los huecos se vean.',
+  '- En un plan de parcialidades, el primer paso después de armar el plan es especificarle al usuario cómo queda (tabla con #, fecha escrita, monto, estado y filas de hueco/sin cobro, más el total) y pedir que confirme el plan. No uses lista numerada ni texto corrido para visualizar el calendario. No preguntes método de pago, tarjeta guardada ni canal de envío hasta que el plan esté confirmado. Si la herramienta devuelve planPreviewConfirmationRequired, muestra el plan y pide confirmarlo sin preguntar todavía por la tarjeta.',
   '- Para parcialidades nunca respondas sólo "hoy, en 1 mes y en 2 meses"; calcula y muestra fechas absolutas usando la fecha/hora local disponible.',
   '- Descompón la frase del usuario por tramos temporales. "Por N meses" crea N cobros; si después dice "te esperas un mes, le vuelves a cobrar" eso agrega otro cobro; y si luego dice "te esperas otro mes y le vuelves a cobrar, pero esta vez 20" agrega otro cobro final de 20. No mezcles el cobro final con el último mes de la serie.',
   '- En cadencia mensual, "ahorita 50, te esperes un mes y luego en el siguiente cobras otra vez 50" significa: hoy 50, el siguiente mes queda sin cobro, y el otro mes cobra 50. No lo conviertas en dos cobros futuros.',
@@ -13125,6 +13278,7 @@ const PAYMENT_WORKFLOW_PROMPT = [
   '- En planes con varios tramos, procesa en orden. Ejemplo: "próximo mes 20, esperas un mes, vuelves a cobrar 20 durante dos meses, esperas un mes, y el siguiente 50" es: 20, hueco, 20, 20, hueco, 50.',
   '- Si create_installment_payment_flow devuelve scheduleIncomplete, NO muestres ese plan ni pidas confirmación. Corrige la lista de cobros y vuelve a llamar la herramienta con todos los cobros reales y el total recalculado.',
   '- Si después del resumen el usuario responde afirmativamente pero agrega cambios como "pero", "solo pon", "cambia", "agrega descripción", "mejor por WhatsApp", "con tarjeta guardada", etc., eso NO es permiso final. Actualiza el plan con la herramienta interna y vuelve a pedir permiso con el resumen nuevo.',
+  '- Si después de mostrar un plan el usuario dice "no", "está mal", "no está bien", "no te esperaste", o corrige fechas/montos/huecos, NO pidas confirmación y NO uses la respuesta genérica de pendiente. Vuelve a llamar la herramienta interna con la corrección, muestra otra tabla con huecos visibles y pide confirmación del plan corregido.',
   '- Si el usuario ya programó un cobro y luego dice "sabes qué", "mejor para otra fecha", "cámbialo", "mueve la fecha" o corrige monto/fecha/recurrencia/descripción/notas/términos/texto, NO crees otro cobro automáticamente. Usa modify_scheduled_payment_flow para modificar el schedule existente o preguntar si quiere crear otro dejando el anterior intacto cuando haya ambigüedad. Si sólo cambia el mes ("mejor para octubre"), conserva el día y año del schedule actual salvo que el usuario diga otro día/año. Si pide cancelar o eliminar el programado, usa esa misma herramienta con cancel_existing o delete_existing.',
   '- Si el usuario ya eligió producto y luego corrige "no, cóbraselo por 20 pesos" o "mejor otro precio", conserva contacto, fecha y producto; sólo cambia el monto/precio a personalizado y sigue el flujo de tarjeta/envío que toque.',
   '- Sólo haz el cambio/cobro cuando el último mensaje sea un sí limpio sobre el resumen vigente, por ejemplo "sí, así está bien", "sí, dale", "confirmo" o el botón de confirmación, sin cambios extra. Si el usuario ya confirmó desde botón, continúa sin pedir otra frase.',
@@ -14532,7 +14686,7 @@ async function createAutonomousDatabaseReply(apiKey, { messages, viewContext, ru
 
   return {
     reply: blockUnsupportedPaymentCompletion
-      ? buildPaymentNotCompletedGuardReply(actionEvidence)
+      ? buildPaymentNotCompletedGuardReply(actionEvidence, messages)
       : blockUnsupportedCrmCompletion
         ? buildActionNotCompletedGuardReply(actionEvidence)
       : softenedReply,
