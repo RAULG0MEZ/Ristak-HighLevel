@@ -23,6 +23,7 @@ import { hiddenContactsService, type HiddenFilter } from '@/services/hiddenConta
 import { useNotification } from '@/contexts/NotificationContext'
 import { useLabels } from '@/contexts/LabelsContext'
 import { useTheme } from '@/contexts/ThemeContext'
+import { requestAIAgentClose } from '@/utils/aiAgentEvents'
 import styles from './HighLevelIntegration.module.css'
 
 interface IntegrationStatus {
@@ -192,6 +193,7 @@ export const HighLevelIntegration: React.FC = () => {
   }
 
   const handleRefreshStatus = async () => {
+    requestAIAgentClose()
     setCheckingStatus(true)
     try {
       // Ejecutar sincronización completa (igual que cuando conectas por primera vez)

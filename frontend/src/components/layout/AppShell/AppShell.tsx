@@ -7,6 +7,7 @@ import { SyncProgressBar } from '@/components/common/SyncProgressBar'
 import { AIAgentPanel } from '@/components/ai'
 import { useAuth } from '@/contexts/AuthContext'
 import { useAppConfig, useDomainFeatureSync } from '@/hooks'
+import { requestAIAgentClose } from '@/utils/aiAgentEvents'
 import styles from './AppShell.module.css'
 
 const AI_AGENT_FLOATING_OPEN_KEY = 'ristak.aiAgentFloating.open'
@@ -118,6 +119,13 @@ export const AppShell: React.FC = () => {
 
     return () => clearInterval(interval)
   }, [])
+
+  useEffect(() => {
+    if (syncProgressVisible && aiAgentOpen) {
+      setAIAgentOpen(false)
+      requestAIAgentClose()
+    }
+  }, [aiAgentOpen, syncProgressVisible])
 
   useEffect(() => {
     const handleResize = () => {

@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { ArrowUp, Bot, CalendarPlus, Check, Copy, CreditCard, Eraser, File as FileIcon, FileText, GitBranch, Image as ImageIcon, KeyRound, MessageCircle, Mic, Paperclip, Pause, SendHorizonal, Sparkles, TrendingUp, Video as VideoIcon, X } from 'lucide-react'
 import { aiAgentService, type AIAgentAttachment, type AIAgentAttachmentKind, type AIAgentBusinessContextField, type AIAgentClarificationOption, type AIAgentConfigInput, type AIAgentConfigStatus, type AIAgentMessage, type AIAgentViewContext } from '@/services/aiAgentService'
 import { useNotification } from '@/contexts/NotificationContext'
+import { AI_AGENT_CLOSE_REQUEST_EVENT } from '@/utils/aiAgentEvents'
 import styles from './AIAgentPanel.module.css'
 
 const AI_AGENT_FLOATING_OPEN_KEY = 'ristak.aiAgentFloating.open'
@@ -1527,7 +1528,7 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
     }))
   }
 
-  const setOpenState = (nextOpen: boolean) => {
+  const setOpenState = useCallback((nextOpen: boolean) => {
     if (embedded) {
       setOpen(true)
       setUnreadReplies(0)
@@ -1539,7 +1540,7 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
       setUnreadReplies(0)
     }
     saveOpenState(nextOpen)
-  }
+  }, [embedded])
 
   const applyStatus = (nextStatus: AIAgentConfigStatus) => {
     setStatus(nextStatus)
@@ -1577,6 +1578,19 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
       window.removeEventListener('ai-agent-config-changed', handleConfigChange)
     }
   }, [])
+
+  useEffect(() => {
+    if (embedded) return
+
+    const handleCloseRequest = () => {
+      setOpenState(false)
+    }
+
+    window.addEventListener(AI_AGENT_CLOSE_REQUEST_EVENT, handleCloseRequest)
+    return () => {
+      window.removeEventListener(AI_AGENT_CLOSE_REQUEST_EVENT, handleCloseRequest)
+    }
+  }, [embedded, setOpenState])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
