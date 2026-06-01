@@ -297,6 +297,7 @@ async function initTables() {
         payment_method TEXT,
         payment_mode TEXT DEFAULT 'live',
         reference TEXT,
+        title TEXT,
         description TEXT,
         date DATETIME,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -636,6 +637,14 @@ async function initTables() {
       // Agregar payment_mode para separar pagos reales de modo prueba/test
       try {
         await db.run('ALTER TABLE payments ADD COLUMN payment_mode TEXT DEFAULT \'live\'')
+      } catch (err) {
+        if (!err.message.includes('duplicate column name') && !err.message.includes('already exists')) {
+          throw err
+        }
+      }
+
+      try {
+        await db.run('ALTER TABLE payments ADD COLUMN title TEXT')
       } catch (err) {
         if (!err.message.includes('duplicate column name') && !err.message.includes('already exists')) {
           throw err

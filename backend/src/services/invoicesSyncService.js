@@ -41,6 +41,18 @@ function getInvoiceDisplayDescription(invoice = {}) {
   )
 }
 
+function getInvoiceDisplayTitle(invoice = {}) {
+  const firstItem = getInvoiceItems(invoice)[0] || {}
+
+  return (
+    invoice.title ||
+    invoice.name ||
+    firstItem.name ||
+    firstItem.description ||
+    'Pago'
+  )
+}
+
 async function findExistingPaymentForInvoice({ invoiceId, contactId, invoiceNumber }) {
   const existingByInvoiceId = await db.get(
     'SELECT id, status, payment_mode, ghl_invoice_id FROM payments WHERE ghl_invoice_id = ? OR id = ? LIMIT 1',
@@ -144,6 +156,7 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
           payment_method: invoice.paymentMode || null,
           payment_mode: getInvoicePaymentMode(invoice, existing?.payment_mode || 'live'),
           reference: invoiceNumber,
+          title: getInvoiceDisplayTitle(invoice),
           description: getInvoiceDisplayDescription(invoice),
           date: invoice.createdAt || invoice.issueDate || new Date().toISOString(),
           ghl_invoice_id: ghlInvoiceId,
@@ -157,7 +170,7 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
           await db.run(
             `UPDATE payments
              SET status = ?, amount = ?, currency = ?, payment_method = ?,
-                 payment_mode = ?, reference = ?, description = ?, contact_id = ?,
+                 payment_mode = ?, reference = ?, title = ?, description = ?, contact_id = ?,
                  ghl_invoice_id = ?, invoice_number = ?, due_date = ?, sent_at = ?,
                  updated_at = CURRENT_TIMESTAMP
              WHERE id = ?`,
@@ -168,6 +181,7 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
               invoiceData.payment_method,
               invoiceData.payment_mode,
               invoiceData.reference,
+              invoiceData.title,
               invoiceData.description,
               invoiceData.contact_id,
               invoiceData.ghl_invoice_id,
@@ -198,9 +212,9 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
           await db.run(
             `INSERT INTO payments (
               id, contact_id, amount, currency, status, payment_method, payment_mode,
-              reference, description, date, ghl_invoice_id, invoice_number,
+              reference, title, description, date, ghl_invoice_id, invoice_number,
               due_date, sent_at, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
             [
               ghlInvoiceId, // Usar mismo ID que en HighLevel
               invoiceData.contact_id,
@@ -210,6 +224,7 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
               invoiceData.payment_method,
               invoiceData.payment_mode,
               invoiceData.reference,
+              invoiceData.title,
               invoiceData.description,
               invoiceData.date,
               invoiceData.ghl_invoice_id,
@@ -345,6 +360,7 @@ export async function syncAllInvoices({ contactId } = {}) {
           payment_method: invoice.paymentMode || null,
           payment_mode: getInvoicePaymentMode(invoice, existing?.payment_mode || 'live'),
           reference: invoiceNumber,
+          title: getInvoiceDisplayTitle(invoice),
           description: getInvoiceDisplayDescription(invoice),
           date: invoice.createdAt || invoice.issueDate || new Date().toISOString(),
           ghl_invoice_id: ghlInvoiceId,
@@ -358,7 +374,7 @@ export async function syncAllInvoices({ contactId } = {}) {
           await db.run(
             `UPDATE payments
              SET status = ?, amount = ?, currency = ?, payment_method = ?,
-                 payment_mode = ?, reference = ?, description = ?, contact_id = ?,
+                 payment_mode = ?, reference = ?, title = ?, description = ?, contact_id = ?,
                  ghl_invoice_id = ?, invoice_number = ?, due_date = ?, sent_at = ?,
                  updated_at = CURRENT_TIMESTAMP
              WHERE id = ?`,
@@ -369,6 +385,7 @@ export async function syncAllInvoices({ contactId } = {}) {
               invoiceData.payment_method,
               invoiceData.payment_mode,
               invoiceData.reference,
+              invoiceData.title,
               invoiceData.description,
               invoiceData.contact_id,
               invoiceData.ghl_invoice_id,
@@ -397,9 +414,9 @@ export async function syncAllInvoices({ contactId } = {}) {
           await db.run(
             `INSERT INTO payments (
               id, contact_id, amount, currency, status, payment_method, payment_mode,
-              reference, description, date, ghl_invoice_id, invoice_number,
+              reference, title, description, date, ghl_invoice_id, invoice_number,
               due_date, sent_at, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
             [
               ghlInvoiceId,
               invoiceData.contact_id,
@@ -409,6 +426,7 @@ export async function syncAllInvoices({ contactId } = {}) {
               invoiceData.payment_method,
               invoiceData.payment_mode,
               invoiceData.reference,
+              invoiceData.title,
               invoiceData.description,
               invoiceData.date,
               invoiceData.ghl_invoice_id,
@@ -500,6 +518,7 @@ export async function syncSingleInvoice(invoiceId) {
       payment_method: invoice.paymentMode || null,
       payment_mode: getInvoicePaymentMode(invoice, existing?.payment_mode || 'live'),
       reference: invoiceNumber,
+      title: getInvoiceDisplayTitle(invoice),
       description: getInvoiceDisplayDescription(invoice),
       date: invoice.createdAt || invoice.issueDate || new Date().toISOString(),
       invoice_number: invoiceNumber,
@@ -515,7 +534,7 @@ export async function syncSingleInvoice(invoiceId) {
       await db.run(
         `UPDATE payments
          SET status = ?, amount = ?, currency = ?, payment_method = ?,
-             payment_mode = ?, reference = ?, description = ?, contact_id = ?,
+             payment_mode = ?, reference = ?, title = ?, description = ?, contact_id = ?,
              ghl_invoice_id = ?, invoice_number = ?, due_date = ?, sent_at = ?,
              updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
@@ -526,6 +545,7 @@ export async function syncSingleInvoice(invoiceId) {
           invoiceData.payment_method,
           invoiceData.payment_mode,
           invoiceData.reference,
+          invoiceData.title,
           invoiceData.description,
           invoiceData.contact_id,
           ghlInvoiceId,
@@ -541,9 +561,9 @@ export async function syncSingleInvoice(invoiceId) {
       await db.run(
         `INSERT INTO payments (
           id, contact_id, amount, currency, status, payment_method, payment_mode,
-          reference, description, date, ghl_invoice_id, invoice_number,
+          reference, title, description, date, ghl_invoice_id, invoice_number,
           due_date, sent_at, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
         [
           ghlInvoiceId,
           invoiceData.contact_id,
@@ -553,6 +573,7 @@ export async function syncSingleInvoice(invoiceId) {
           invoiceData.payment_method,
           invoiceData.payment_mode,
           invoiceData.reference,
+          invoiceData.title,
           invoiceData.description,
           invoiceData.date,
           ghlInvoiceId,

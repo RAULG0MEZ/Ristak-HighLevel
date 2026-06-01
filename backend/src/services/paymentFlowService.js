@@ -775,9 +775,9 @@ async function insertLocalInvoicePayment({ invoice, contactId, fallbackAmount, f
   await db.run(
     `INSERT INTO payments (
       id, contact_id, amount, currency, status, payment_method, payment_mode,
-      reference, description, date, ghl_invoice_id, invoice_number,
+      reference, title, description, date, ghl_invoice_id, invoice_number,
       due_date, sent_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     ON CONFLICT(id) DO UPDATE SET
       contact_id = excluded.contact_id,
       amount = excluded.amount,
@@ -785,6 +785,7 @@ async function insertLocalInvoicePayment({ invoice, contactId, fallbackAmount, f
       status = excluded.status,
       payment_mode = excluded.payment_mode,
       reference = excluded.reference,
+      title = excluded.title,
       description = excluded.description,
       due_date = excluded.due_date,
       sent_at = excluded.sent_at,
@@ -800,6 +801,7 @@ async function insertLocalInvoicePayment({ invoice, contactId, fallbackAmount, f
       null,
       resolvedPaymentMode,
       invoice.invoiceNumber || null,
+      invoice.title || invoice.name || firstItem.name || fallbackDescription || 'Pago',
       firstItem.description || firstItem.name || invoice.description || fallbackDescription || invoice.name || invoice.title || 'Pago',
       invoice.issueDate || invoice.createdAt || new Date().toISOString(),
       ghlInvoiceId,

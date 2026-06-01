@@ -140,6 +140,14 @@ function parseInvoiceNumberFromReference(reference) {
   return match?.[1] || null;
 }
 
+function getFirstInvoiceItem(invoice = {}) {
+  const sources = [invoice.invoiceItems, invoice.items, invoice.lineItems];
+  for (const source of sources) {
+    if (Array.isArray(source) && source.length > 0) return source[0] || {};
+  }
+  return {};
+}
+
 const RECENT_WEBHOOK_MATCH_WINDOW_MS = 6 * 60 * 60 * 1000;
 
 function getTimestamp(value) {
@@ -490,13 +498,22 @@ export const handlePaymentWebhook = async (req, res) => {
       ? `Invoice #${invoiceNumber}`
       : payment.reference || paymentId;
 
-    // Extraer descripción del pago (título del invoice, nombre del producto, etc)
-    const description = payment.invoice?.title
+    const firstInvoiceItem = getFirstInvoiceItem(payment.invoice || {});
+    const title = payment.invoice?.title
       || payment.invoice?.name
       || sourceMeta.name
       || payment.title
       || payment.name
+      || firstInvoiceItem.name
       || payment.description
+      || null;
+
+    const description = firstInvoiceItem.description
+      || firstInvoiceItem.name
+      || payment.invoice?.description
+      || sourceMeta.description
+      || payment.description
+      || title
       || null;
 
     const amount = normalizePaymentAmount(payment.total_amount || payment.totalAmount || payment.amount || 0); // HighLevel envía el monto directo, NO en centavos
@@ -528,6 +545,7 @@ export const handlePaymentWebhook = async (req, res) => {
              payment_method = COALESCE(?, payment_method, 'manual'),
              payment_mode = COALESCE(?, payment_mode, 'live'),
              reference = COALESCE(reference, ?),
+             title = COALESCE(title, ?),
              description = COALESCE(description, ?),
              date = COALESCE(date, ?),
              ghl_invoice_id = COALESCE(ghl_invoice_id, ?),
@@ -542,6 +560,7 @@ export const handlePaymentWebhook = async (req, res) => {
           paymentMethod,
           paymentMode,
           reference,
+          title,
           description,
           paymentDate,
           effectiveInvoiceId || null,
@@ -562,30 +581,32 @@ export const handlePaymentWebhook = async (req, res) => {
       const query = usePostgres
         ? `INSERT INTO payments (
              id, contact_id, amount, currency, status, payment_method, payment_mode,
-             reference, description, date, created_at, ghl_invoice_id, invoice_number
+             reference, title, description, date, created_at, ghl_invoice_id, invoice_number
            )
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
            ON CONFLICT (id) DO UPDATE SET
              amount = EXCLUDED.amount,
              status = EXCLUDED.status,
              payment_method = EXCLUDED.payment_method,
              payment_mode = EXCLUDED.payment_mode,
              reference = EXCLUDED.reference,
+             title = EXCLUDED.title,
              description = EXCLUDED.description,
              ghl_invoice_id = COALESCE(payments.ghl_invoice_id, EXCLUDED.ghl_invoice_id),
              invoice_number = COALESCE(payments.invoice_number, EXCLUDED.invoice_number),
              updated_at = CURRENT_TIMESTAMP`
         : `INSERT INTO payments (
              id, contact_id, amount, currency, status, payment_method, payment_mode,
-             reference, description, date, created_at, ghl_invoice_id, invoice_number
+             reference, title, description, date, created_at, ghl_invoice_id, invoice_number
            )
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
              amount = excluded.amount,
              status = excluded.status,
              payment_method = excluded.payment_method,
              payment_mode = excluded.payment_mode,
              reference = excluded.reference,
+             title = excluded.title,
              description = excluded.description,
              ghl_invoice_id = COALESCE(ghl_invoice_id, excluded.ghl_invoice_id),
              invoice_number = COALESCE(invoice_number, excluded.invoice_number),
@@ -600,6 +621,7 @@ export const handlePaymentWebhook = async (req, res) => {
         paymentMethod || 'manual',
         paymentMode,
         reference,
+        title,
         description,
         paymentDate,
         createdAt,

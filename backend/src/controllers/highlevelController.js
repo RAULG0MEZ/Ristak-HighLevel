@@ -70,6 +70,20 @@ function getInvoiceDisplayDescription(invoice = {}, fallbackInvoice = {}) {
   );
 }
 
+function getInvoiceDisplayTitle(invoice = {}, fallbackInvoice = {}) {
+  const firstItem = getInvoiceItems(invoice, fallbackInvoice)[0] || {};
+
+  return firstDefined(
+    invoice.title,
+    invoice.name,
+    fallbackInvoice.title,
+    fallbackInvoice.name,
+    firstItem.name,
+    firstItem.description,
+    'Pago'
+  );
+}
+
 async function getGhlInvoiceScheduleContext() {
   const config = await db.get(`
     SELECT location_data, ghl_invoice_mode, invoice_title, invoice_terms_notes, invoice_number_prefix
@@ -867,14 +881,15 @@ export const createInvoice = async (req, res) => {
       const taxAmount = createdInvoice.tax?.amount || 0;
       const total = createdInvoice.total || createdInvoice.amount || (subtotal + taxAmount);
 
+      const displayTitle = getInvoiceDisplayTitle(createdInvoice, invoiceData);
       const displayDescription = getInvoiceDisplayDescription(createdInvoice, invoiceData);
 
       await db.run(
         `INSERT INTO payments (
           id, contact_id, amount, currency, status, payment_method, payment_mode,
-          reference, description, date, ghl_invoice_id, invoice_number,
+          reference, title, description, date, ghl_invoice_id, invoice_number,
           due_date, sent_at, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(id) DO UPDATE SET
           contact_id = excluded.contact_id,
           amount = excluded.amount,
@@ -882,6 +897,7 @@ export const createInvoice = async (req, res) => {
           status = excluded.status,
           payment_mode = excluded.payment_mode,
           reference = excluded.reference,
+          title = excluded.title,
           description = excluded.description,
           date = excluded.date,
           ghl_invoice_id = excluded.ghl_invoice_id,
@@ -897,6 +913,7 @@ export const createInvoice = async (req, res) => {
           null, // payment_method (se llena cuando se pague)
           paymentMode,
           createdInvoice.invoiceNumber || null,
+          displayTitle,
           displayDescription,
           createdInvoice.issueDate || createdInvoice.createdAt || new Date().toISOString(),
           ghlInvoiceId,

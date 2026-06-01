@@ -13,6 +13,7 @@ export interface Transaction {
   status: 'draft' | 'sent' | 'paid' | 'pending' | 'overdue' | 'partial' | 'void' | 'refunded' | 'failed' | 'deleted'
   paymentMode?: 'live' | 'test'
   reference?: string
+  title?: string
   description?: string
   createdAt?: string
   updatedAt?: string

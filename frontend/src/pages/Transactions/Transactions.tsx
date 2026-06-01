@@ -869,6 +869,7 @@ export const Transactions: React.FC = () => {
       method: formData.get('method') as any,
       status: formData.get('status') as any,
       reference: formData.get('reference') as string,
+      title: formData.get('title') as string,
       description: formData.get('description') as string,
       dueDate: (formData.get('dueDate') as string) || undefined
     }
@@ -981,10 +982,11 @@ export const Transactions: React.FC = () => {
       sortable: true
     },
     {
-      key: 'description',
-      header: 'Descripción',
+      key: 'title',
+      header: 'Título',
       sortable: false,
-      visible: true
+      visible: true,
+      render: (value, item) => value || item.description || 'Pago'
     },
     {
       key: 'email',
@@ -1677,7 +1679,16 @@ export const Transactions: React.FC = () => {
                 />
               </div>
               <div className={styles.formGroup}>
-                <label>Descripción</label>
+                <label>Título de factura</label>
+                <input
+                  name="title"
+                  type="text"
+                  placeholder="Pago"
+                  defaultValue={modal.transaction?.title || modal.transaction?.description || ''}
+                />
+              </div>
+              <div className={styles.formGroup}>
+                <label>Descripción del producto / detalle</label>
                 <input
                   name="description"
                   type="text"

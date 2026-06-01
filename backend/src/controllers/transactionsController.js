@@ -78,6 +78,7 @@ const mapTransactionRow = (t) => ({
   status: normalizeStatus(t.status),
   paymentMode: t.payment_mode || 'live',
   reference: t.reference,
+  title: t.title || t.description || 'Pago',
   description: t.description,
   createdAt: t.created_at,
   updatedAt: t.updated_at,
@@ -95,11 +96,11 @@ const getInvoiceItems = (invoice) => {
   return []
 }
 
-const buildInvoiceItemsForAmount = ({ invoice, amount, currency, description }) => {
+const buildInvoiceItemsForAmount = ({ invoice, amount, currency, title, description }) => {
   const items = getInvoiceItems(invoice)
   const firstItem = items[0] || {}
-  const itemName = formatInvoiceSingleLineText(description || firstItem.name || invoice.name || invoice.title || 'Pago') || 'Pago'
-  const itemDescription = formatInvoiceMultilineText(description || firstItem.description || firstItem.name || invoice.name || invoice.title || 'Pago') || itemName
+  const itemName = formatInvoiceSingleLineText(title || firstItem.name || invoice.name || invoice.title || 'Pago') || 'Pago'
+  const itemDescription = formatInvoiceMultilineText(description || firstItem.description || firstItem.name || itemName) || itemName
   const rawTaxRate = Number(invoice.tax?.rate || 0)
   const taxRate = Number.isFinite(rawTaxRate) && rawTaxRate > 0 ? rawTaxRate : 0
   const subtotal = taxRate > 0
@@ -131,17 +132,19 @@ const buildInvoiceItemsForAmount = ({ invoice, amount, currency, description }) 
 const buildInvoiceUpdatePayload = ({ invoice, transaction, updates }) => {
   const amount = updates.amount ?? Number(transaction.amount || invoice.total || invoice.amount || 0)
   const currency = updates.currency || transaction.currency || invoice.currency || 'MXN'
-  const rawDescription = updates.description ?? transaction.description ?? invoice.name ?? invoice.title ?? 'Pago'
+  const firstItem = getInvoiceItems(invoice)[0] || {}
+  const rawTitle = updates.title ?? transaction.title ?? invoice.title ?? invoice.name ?? firstItem.name ?? 'Pago'
+  const rawDescription = updates.description ?? transaction.description ?? firstItem.description ?? firstItem.name ?? rawTitle
+  const title = formatInvoiceSingleLineText(rawTitle) || 'Pago'
   const description = formatInvoiceMultilineText(rawDescription) || 'Pago'
-  const invoiceName = formatInvoiceSingleLineText(rawDescription) || 'Pago'
   const issueDate = toDateOnly(updates.date || transaction.date || invoice.issueDate || invoice.createdAt)
   const dueDate = toDateOnly(updates.dueDate || transaction.due_date || invoice.dueDate)
   const currentItems = getInvoiceItems(invoice)
-  const invoiceItemData = buildInvoiceItemsForAmount({ invoice, amount, currency, description })
+  const invoiceItemData = buildInvoiceItemsForAmount({ invoice, amount, currency, title, description })
 
   const payload = {
-    name: invoiceName,
-    title: formatInvoiceSingleLineText(invoice.title || invoiceName) || invoiceName,
+    name: title,
+    title,
     currency,
     contactDetails: {
       ...(invoice.contactDetails || {}),
@@ -164,7 +167,7 @@ const buildInvoiceUpdatePayload = ({ invoice, transaction, updates }) => {
     payload.items = currentItems.map((item, index) => index === 0
       ? {
           ...item,
-          name: formatInvoiceSingleLineText(rawDescription || item.name) || item.name,
+          name: formatInvoiceSingleLineText(item.name || title) || title,
           description: description || formatInvoiceMultilineText(item.description || item.name),
           currency: item.currency || currency
         }
@@ -192,6 +195,7 @@ const getTransactionByIdForResponse = async (id) => {
       p.payment_mode,
       p.payment_method,
       p.reference,
+      p.title,
       p.description,
       p.date,
       p.created_at,
@@ -304,6 +308,7 @@ export const getTransactions = async (req, res) => {
         p.payment_mode,
         p.payment_method,
         p.reference,
+        p.title,
         p.description,
         p.date,
         p.created_at,
@@ -409,6 +414,7 @@ export const getTransactionById = async (req, res) => {
       status: normalizeStatus(transaction.status),
       paymentMode: transaction.payment_mode || 'live',
       reference: transaction.reference,
+      title: transaction.title || transaction.description || 'Pago',
       description: transaction.description,
       createdAt: transaction.created_at,
       updatedAt: transaction.updated_at,
@@ -510,6 +516,7 @@ export const updateTransaction = async (req, res) => {
       paymentMethod,
       status,
       reference,
+      title,
       description,
       date,
       dueDate,
@@ -534,6 +541,7 @@ export const updateTransaction = async (req, res) => {
       method: paymentMethod || method,
       status: status ? normalizeStatus(status) : undefined,
       reference: reference !== undefined ? String(reference || '') : undefined,
+      title: title !== undefined ? String(title || '') : undefined,
       description: description !== undefined ? String(description || '') : undefined,
       date: date || undefined,
       dueDate: dueDate || undefined,
@@ -586,6 +594,7 @@ export const updateTransaction = async (req, res) => {
     const hasInvoiceFieldUpdates = [
       updates.amount,
       updates.currency,
+      updates.title,
       updates.description,
       updates.date,
       updates.dueDate,
@@ -629,6 +638,7 @@ export const updateTransaction = async (req, res) => {
     const finalStatus = nextStatus
     const finalMethod = updates.method ?? transaction.payment_method
     const finalReference = updates.reference ?? transaction.reference
+    const finalTitle = updates.title ?? transaction.title
     const finalDescription = updates.description ?? transaction.description
     const finalDate = updates.date ?? transaction.date
     const finalDueDate = updates.dueDate ?? transaction.due_date
@@ -639,7 +649,7 @@ export const updateTransaction = async (req, res) => {
     await db.run(
       `UPDATE payments
        SET contact_id = ?, amount = ?, currency = ?, status = ?, payment_method = ?,
-           reference = ?, description = ?, date = ?, due_date = ?, payment_mode = ?, updated_at = CURRENT_TIMESTAMP
+           reference = ?, title = ?, description = ?, date = ?, due_date = ?, payment_mode = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`,
       [
         finalContactId,
@@ -648,6 +658,7 @@ export const updateTransaction = async (req, res) => {
         finalStatus,
         finalMethod,
         finalReference,
+        finalTitle,
         finalDescription,
         finalDate,
         finalDueDate,
