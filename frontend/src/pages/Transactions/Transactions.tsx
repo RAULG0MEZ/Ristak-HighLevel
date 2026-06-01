@@ -1434,6 +1434,7 @@ export const Transactions: React.FC = () => {
         <div className={styles.controlsRow}>
           {paymentTableTab === 'transactions' ? (
             <div className={styles.dateFilters}>
+              {statusFilterControl}
               <TabList
                 tabs={[
                   {
@@ -1451,7 +1452,6 @@ export const Transactions: React.FC = () => {
                 onTabChange={(value) => setViewMode(value as 'all' | 'by-date')}
                 variant="compact"
               />
-              {statusFilterControl}
               {viewMode === 'by-date' && (
                 <DateRangePicker
                   startDate={formatDateToISO(dateRange.start)}
