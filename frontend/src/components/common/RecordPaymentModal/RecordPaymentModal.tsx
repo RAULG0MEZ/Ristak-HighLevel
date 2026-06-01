@@ -334,6 +334,8 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
 
   const { showToast } = useNotification()
 
+  const canChoosePaymentMode = chargeType === 'direct' || Boolean(selectedProduct && selectedPrice)
+  const activePaymentMode: PaymentMode = canChoosePaymentMode ? paymentMode : 'single'
   const subtotalAmount = useMemo(() => (
     chargeType === 'product'
       ? normalizeAmount(customAmount)
@@ -366,8 +368,8 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     : partialPlanDifference > 0
       ? 'under'
       : 'over'
-  const firstPaymentMethodMissing = paymentMode === 'partial' && firstPaymentEnabled && !firstPaymentMethod
-  const partialNeedsCardAuthorization = paymentMode === 'partial' && remainingAutomatic && (
+  const firstPaymentMethodMissing = activePaymentMode === 'partial' && firstPaymentEnabled && !firstPaymentMethod
+  const partialNeedsCardAuthorization = activePaymentMode === 'partial' && remainingAutomatic && (
     !firstPaymentEnabled || isOfflineFirstPaymentMethod(firstPaymentMethod)
   )
   const sendMethodOptions = useMemo(() => getSendMethodOptions(selectedContact), [selectedContact?.email, selectedContact?.phone])
@@ -524,16 +526,16 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   }, [selectedPrice])
 
   useEffect(() => {
-    if (paymentMode !== 'partial' || remainingFrequency === 'custom') return
+    if (activePaymentMode !== 'partial' || remainingFrequency === 'custom') return
 
     setRemainingInstallments(prev => prev.map((installment, index) => ({
       ...installment,
       dueDate: getNextDueDate(firstPaymentDate, remainingFrequency, index + 1)
     })))
-  }, [firstPaymentDate, paymentMode, remainingFrequency])
+  }, [activePaymentMode, firstPaymentDate, remainingFrequency])
 
   useEffect(() => {
-    if (paymentMode !== 'partial' || !autoDistributeRemaining) return
+    if (activePaymentMode !== 'partial' || !autoDistributeRemaining) return
 
     setRemainingInstallments(prev => {
       const percentages = getRemainingPercentages(
@@ -555,7 +557,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     firstPaymentEnabled,
     firstPaymentType,
     firstPaymentValue,
-    paymentMode,
+    activePaymentMode,
     remainingInstallments.length,
     totalAmount
   ])
@@ -794,7 +796,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       }
     }
 
-    if (paymentMode === 'partial') {
+    if (activePaymentMode === 'partial') {
       if (totalAmount <= 0) {
         showToast('error', 'Ingresa un total válido para el plan')
         return
@@ -903,7 +905,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       setInvoicePayload(payload)
       setInvoiceSummary(summary)
 
-      if (paymentMode === 'partial') {
+      if (activePaymentMode === 'partial') {
         setPaymentOption('send')
         setStep('options')
         return
@@ -1092,6 +1094,30 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     const taxAmount = includeIVA ? normalizeAmount(subtotalAmount * IVA_RATE) : 0
     const totalAmount = includeIVA ? normalizeAmount(subtotalAmount + taxAmount) : subtotalAmount
 
+    const renderPaymentModeField = () => (
+      <div className={styles.field}>
+        <label className={styles.label}>Tipo de pago</label>
+        <div style={{ marginTop: '4px' }}>
+          <TabList
+            tabs={[
+              { value: 'single', label: 'Único' },
+              { value: 'partial', label: 'Parcialidades' }
+            ]}
+            activeTab={paymentMode}
+            onTabChange={(value) => {
+              const nextPaymentMode = value as PaymentMode
+              if (nextPaymentMode === 'partial' && paymentMode !== 'partial') {
+                setFirstPaymentMethod('')
+              }
+              setPaymentMode(nextPaymentMode)
+            }}
+            variant="compact"
+            className={styles.fullWidthTabList}
+          />
+        </div>
+      </div>
+    )
+
     return (
       <div className={styles.content}>
         <div className={styles.field}>
@@ -1181,27 +1207,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
           </div>
         </div>
 
-        <div className={styles.field}>
-          <label className={styles.label}>Tipo de pago</label>
-          <div style={{ marginTop: '4px' }}>
-            <TabList
-              tabs={[
-                { value: 'single', label: 'Único' },
-                { value: 'partial', label: 'Parcialidades' }
-              ]}
-              activeTab={paymentMode}
-              onTabChange={(value) => {
-                const nextPaymentMode = value as PaymentMode
-                if (nextPaymentMode === 'partial' && paymentMode !== 'partial') {
-                  setFirstPaymentMethod('')
-                }
-                setPaymentMode(nextPaymentMode)
-              }}
-              variant="compact"
-              className={styles.fullWidthTabList}
-            />
-          </div>
-        </div>
+        {chargeType === 'direct' && renderPaymentModeField()}
 
         {chargeType === 'product' && (
           <>
@@ -1253,22 +1259,25 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
             )}
 
             {selectedProduct && selectedPrice && (
-              <div className={styles.field}>
-                <label className={styles.label}>Monto a cobrar (personalizable)</label>
-                <div className={styles.amountInput}>
-                  <DollarSign size={16} className={styles.dollarIcon} />
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="0.00"
-                    value={customAmount}
-                    onChange={(e) => setCustomAmount(e.target.value)}
-                    className={styles.input}
-                  />
+              <>
+                <div className={styles.field}>
+                  <label className={styles.label}>Monto a cobrar (personalizable)</label>
+                  <div className={styles.amountInput}>
+                    <DollarSign size={16} className={styles.dollarIcon} />
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                      value={customAmount}
+                      onChange={(e) => setCustomAmount(e.target.value)}
+                      className={styles.input}
+                    />
+                  </div>
+                  <p className={styles.hint}>Puedes modificar el precio según tu negociación con el cliente</p>
                 </div>
-                <p className={styles.hint}>Puedes modificar el precio según tu negociación con el cliente</p>
-              </div>
+                {renderPaymentModeField()}
+              </>
             )}
           </>
         )}
@@ -1318,7 +1327,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
           </div>
         </div>
 
-        {paymentMode === 'partial' && (
+        {activePaymentMode === 'partial' && (
           <div className={styles.planSection}>
             <div className={styles.planIntro}>
               <div className={styles.planIntroText}>
@@ -1918,7 +1927,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       const requiresDeliveryChannel = paymentOption === 'send'
       const lacksDeliveryChannel = requiresDeliveryChannel && !selectedContact?.email && !selectedContact?.phone
       const confirmLabel = paymentOption === 'send'
-        ? paymentMode === 'partial' ? 'Crear y enviar enlace' : 'Enviar enlace'
+        ? activePaymentMode === 'partial' ? 'Crear y enviar enlace' : 'Enviar enlace'
         : 'Registrar pago'
 
       return (
@@ -1991,7 +2000,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
               Preparando...
             </>
           ) : (
-            paymentMode === 'partial' ? 'Crear parcialidades' : 'Continuar'
+            activePaymentMode === 'partial' ? 'Crear parcialidades' : 'Continuar'
           )}
         </Button>
       </div>
@@ -2005,7 +2014,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       title={
         step === 'options'
           ? 'Elige cómo cobrar'
-          : paymentMode === 'partial' ? 'Registrar cobro parcial' : 'Registrar nuevo cobro'
+          : activePaymentMode === 'partial' ? 'Registrar cobro parcial' : 'Registrar nuevo cobro'
       }
       size="md"
       type="custom"
