@@ -21,13 +21,14 @@
 .phoneFrame {
   display: grid;
   grid-template-rows: auto auto auto minmax(0, 1fr);
-  width: min(100%, 430px);
+  width: 100%;
+  max-width: none;
   height: 100dvh;
   min-height: 100dvh;
   max-height: 100dvh;
   background: color-mix(in srgb, var(--color-background-primary) 92%, #ffffff 8%);
-  border-inline: 1px solid rgba(148, 163, 184, 0.1);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.18);
+  border-inline: 0;
+  box-shadow: none;
   contain: size layout paint;
   overflow: hidden;
 }
@@ -39,8 +40,9 @@
   justify-content: space-between;
   gap: 12px;
   min-width: 0;
-  padding: max(12px, env(safe-area-inset-top)) 14px 12px;
-  background: color-mix(in srgb, var(--color-background-primary) 88%, transparent);
+  min-height: calc(74px + env(safe-area-inset-top));
+  padding: calc(env(safe-area-inset-top) + 14px) 14px 12px;
+  background: color-mix(in srgb, var(--color-background-secondary) 94%, var(--color-background-primary) 6%);
   backdrop-filter: blur(16px);
   border-bottom: 1px solid rgba(148, 163, 184, 0.12);
 }
@@ -256,18 +258,17 @@
   align-content: start;
   gap: 7px;
   padding: 13px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--color-background-secondary) 92%, transparent);
+  border: 1px solid var(--design-card-border, rgba(148, 163, 184, 0.16));
+  border-radius: var(--design-card-radius, 8px);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--tile-accent, var(--color-text-tertiary)) 13%, transparent), transparent 58%),
+    var(--design-card-bg, color-mix(in srgb, var(--color-background-secondary) 92%, transparent));
+  box-shadow: var(--design-card-shadow, none);
   overflow: hidden;
 }
 
 .metricTile::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  height: 3px;
-  background: var(--tile-accent);
+  content: none;
 }
 
 .metricTile strong {
@@ -286,7 +287,7 @@
 }
 
 .metricLabel {
-  color: var(--color-text-tertiary);
+  color: color-mix(in srgb, var(--tile-accent, var(--color-text-tertiary)) 58%, var(--color-text-tertiary));
   font-size: 12px;
   font-weight: 850;
   text-transform: uppercase;
@@ -300,19 +301,82 @@
 }
 
 .tonegreen {
-  --tile-accent: #10b981;
+  --tile-accent: var(--design-chart-primary, #10b981);
 }
 
 .toneorange {
-  --tile-accent: #f59e0b;
+  --tile-accent: var(--design-chart-warning, #f59e0b);
 }
 
 .toneblue {
-  --tile-accent: #3b82f6;
+  --tile-accent: var(--design-chart-tertiary, #3b82f6);
 }
 
 .tonepurple {
-  --tile-accent: #8b5cf6;
+  --tile-accent: var(--design-chart-accent, #8b5cf6);
+}
+
+.paymentActionGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.paymentActionButton {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 76px;
+  padding: 12px;
+  border: 1px solid var(--design-card-border, rgba(148, 163, 184, 0.16));
+  border-radius: var(--design-card-radius, 8px);
+  color: var(--color-text-primary);
+  background: var(--design-card-bg, color-mix(in srgb, var(--color-background-secondary) 92%, transparent));
+  box-shadow: var(--design-card-shadow, none);
+  text-align: left;
+}
+
+.paymentActionButton svg {
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+}
+
+.paymentActionButton span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.paymentActionButton strong,
+.paymentActionButton small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.paymentActionButton strong {
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 850;
+  line-height: 1.15;
+}
+
+.paymentActionButton small {
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.paymentActionPrimary {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--design-chart-primary, #10b981) 16%, transparent), transparent 60%),
+    var(--design-card-bg, color-mix(in srgb, var(--color-background-secondary) 92%, transparent));
+}
+
+.paymentActionPrimary svg {
+  color: var(--design-chart-primary, #10b981);
 }
 
 .deltaBadge {
@@ -829,11 +893,17 @@
   .periodButton {
     padding-inline: 4px;
   }
+
+  .paymentActionGrid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (min-width: 768px) {
   .phoneFrame {
     width: min(100%, 430px);
+    border-inline: 1px solid rgba(148, 163, 184, 0.1);
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.18);
   }
 
   .metricGrid {

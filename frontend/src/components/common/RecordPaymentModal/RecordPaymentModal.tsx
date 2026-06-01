@@ -56,6 +56,7 @@ interface RecordPaymentModalProps {
   isOpen: boolean
   onClose: () => void
   onSuccess?: () => void
+  initialPaymentMode?: PaymentMode
 }
 
 interface Contact {
@@ -264,7 +265,8 @@ const isOfflineFirstPaymentMethod = (method: FirstPaymentMethod) => (
 export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   isOpen,
   onClose,
-  onSuccess
+  onSuccess,
+  initialPaymentMode = 'single'
 }) => {
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState<'form' | 'options' | 'processing'>('form')
@@ -391,7 +393,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     setDescription('')
     setCurrency('MXN')
     setIncludeIVA(false)
-    setPaymentMode('single')
+    setPaymentMode(initialPaymentMode)
     setFirstPaymentEnabled(true)
     setFirstPaymentType('percentage')
     setFirstPaymentValue('40')
@@ -452,7 +454,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
 
     resetForm()
     loadConfig()
-  }, [isOpen])
+  }, [isOpen, initialPaymentMode])
 
   // Search contacts
   useEffect(() => {
