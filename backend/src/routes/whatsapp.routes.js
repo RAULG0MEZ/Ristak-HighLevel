@@ -1,6 +1,6 @@
 import express from 'express'
 import {
-  completeSignup,
+  connectCloudApi,
   getConfig,
   refreshStatus,
   saveConfig
@@ -10,7 +10,7 @@ const router = express.Router()
 
 router.get('/config', getConfig)
 router.post('/config', saveConfig)
-router.post('/embedded-signup/complete', completeSignup)
+router.post('/cloud-api/connect', connectCloudApi)
 router.post('/status/refresh', refreshStatus)
 
 export default router

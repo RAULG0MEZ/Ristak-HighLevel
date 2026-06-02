@@ -481,14 +481,13 @@ async function initTables() {
     await db.run('CREATE INDEX IF NOT EXISTS idx_meta_ads_campaign ON meta_ads(campaign_id)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_meta_ads_ad ON meta_ads(ad_id)')
 
-    // Tablas exclusivas para WhatsApp Business API / Coexistence.
+    // Tablas exclusivas para WhatsApp Business API.
     // No se mezclan con contactos, atribución ni CRM; la integración se hace después.
     await db.run(`
       CREATE TABLE IF NOT EXISTS whatsapp_api_config (
         id ${usePostgres ? 'SERIAL PRIMARY KEY' : 'INTEGER PRIMARY KEY AUTOINCREMENT'},
         app_id TEXT,
         app_secret TEXT,
-        embedded_signup_config_id TEXT,
         graph_api_version TEXT DEFAULT 'v23.0',
         webhook_verify_token TEXT,
         callback_url TEXT,

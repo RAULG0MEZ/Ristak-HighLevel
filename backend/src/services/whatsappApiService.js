@@ -6,8 +6,9 @@ import { decrypt, encrypt, isEncrypted } from '../utils/encryption.js'
 import { logger } from '../utils/logger.js'
 
 const DEFAULT_CONNECTION_STATUS = 'not_configured'
-const COEXISTENCE_FEATURE_TYPE = 'whatsapp_business_app_onboarding'
-const COEXISTENCE_FINISH_EVENT = 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING'
+const WHATSAPP_CLOUD_API_DOCS_URL = 'https://developers.facebook.com/docs/whatsapp/cloud-api/get-started'
+const WHATSAPP_CLOUD_API_WEBHOOKS_URL = 'https://developers.facebook.com/docs/whatsapp/cloud-api/guides/set-up-webhooks'
+const WHATSAPP_CLOUD_API_TOKENS_URL = 'https://developers.facebook.com/docs/whatsapp/business-management-api/get-started'
 
 function normalizeString(value) {
   if (value === null || value === undefined) return ''
@@ -91,45 +92,18 @@ function generateWebhookVerifyToken() {
 }
 
 function isConnectedPhone(phone = {}) {
-  return phone.is_on_biz_app === true || phone.is_on_biz_app === 1 || phone.platform_type === 'CLOUD_API'
-}
-
-function getSessionData(sessionPayload = {}) {
-  return sessionPayload?.data && typeof sessionPayload.data === 'object'
-    ? sessionPayload.data
-    : {}
-}
-
-function getSessionWabaId(sessionPayload = {}) {
-  const data = getSessionData(sessionPayload)
-  return nullableString(
-    data.waba_id ||
-    data.whatsapp_business_account_id ||
-    data.business_account_id ||
-    sessionPayload.waba_id
-  )
-}
-
-function getSessionPhoneNumberId(sessionPayload = {}) {
-  const data = getSessionData(sessionPayload)
-  return nullableString(
-    data.phone_number_id ||
-    data.whatsapp_business_phone_number_id ||
-    data.business_phone_number_id ||
-    sessionPayload.phone_number_id
-  )
-}
-
-function getSessionId(sessionPayload = {}) {
-  const data = getSessionData(sessionPayload)
-  return nullableString(data.session_id || sessionPayload.session_id)
+  return Boolean(phone.id || phone.phone_number_id || phone.is_on_biz_app === true || phone.is_on_biz_app === 1 || phone.platform_type === 'CLOUD_API')
 }
 
 function getConfigStatus(row = {}) {
   if (row.connection_status) return row.connection_status
   if (row.business_token && row.waba_id && row.phone_number_id) return 'connected'
-  if (row.app_id && row.app_secret && row.embedded_signup_config_id) return 'ready_to_connect'
+  if (row.app_id && row.app_secret && row.business_token && row.waba_id && row.phone_number_id) return 'ready_to_connect'
   return DEFAULT_CONNECTION_STATUS
+}
+
+function isDirectCloudConfigReady(row = {}) {
+  return Boolean(row.app_id && row.app_secret && row.business_token && row.waba_id && row.phone_number_id && row.webhook_verify_token)
 }
 
 function sanitizeConfig(row) {
@@ -137,19 +111,16 @@ function sanitizeConfig(row) {
     return {
       configured: false,
       connectionStatus: DEFAULT_CONNECTION_STATUS,
-      coexistenceFeatureType: COEXISTENCE_FEATURE_TYPE,
-      finishEvent: COEXISTENCE_FINISH_EVENT,
       graphApiVersion: normalizeGraphVersion()
     }
   }
 
   return {
-    configured: Boolean(row.app_id && row.app_secret && row.embedded_signup_config_id),
+    configured: isDirectCloudConfigReady(row),
     id: row.id,
     appId: row.app_id || '',
     appSecret: row.app_secret ? maskSecret(row.app_secret) : '',
     appSecretConfigured: Boolean(row.app_secret),
-    embeddedSignupConfigId: row.embedded_signup_config_id || '',
     graphApiVersion: normalizeGraphVersion(getMetaApiVersion()),
     webhookVerifyToken: row.webhook_verify_token ? decryptSecret(row.webhook_verify_token) || '' : '',
     webhookVerifyTokenConfigured: Boolean(row.webhook_verify_token),
@@ -168,9 +139,7 @@ function sanitizeConfig(row) {
     connectedAt: row.connected_at || null,
     lastExchangeAt: row.last_exchange_at || null,
     lastVerifiedAt: row.last_verified_at || null,
-    metadata: safeJsonParse(row.metadata, {}),
-    coexistenceFeatureType: COEXISTENCE_FEATURE_TYPE,
-    finishEvent: COEXISTENCE_FINISH_EVENT
+    metadata: safeJsonParse(row.metadata, {})
   }
 }
 
@@ -186,17 +155,20 @@ async function getRawConfigById(id) {
 async function insertConfig(payload) {
   await db.run(
     `INSERT INTO whatsapp_api_config (
-      app_id, app_secret, embedded_signup_config_id, graph_api_version,
-      webhook_verify_token, callback_url, connection_status, metadata,
+      app_id, app_secret, graph_api_version,
+      webhook_verify_token, callback_url, business_token, waba_id, phone_number_id,
+      connection_status, metadata,
       created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
     [
       payload.app_id,
       payload.app_secret,
-      payload.embedded_signup_config_id,
       payload.graph_api_version,
       payload.webhook_verify_token,
       payload.callback_url,
+      payload.business_token,
+      payload.waba_id,
+      payload.phone_number_id,
       payload.connection_status,
       payload.metadata
     ]
@@ -210,10 +182,12 @@ async function updateConfig(id, updates) {
     `UPDATE whatsapp_api_config
      SET app_id = ?,
          app_secret = ?,
-         embedded_signup_config_id = ?,
          graph_api_version = ?,
          webhook_verify_token = ?,
          callback_url = ?,
+         business_token = ?,
+         waba_id = ?,
+         phone_number_id = ?,
          connection_status = ?,
          metadata = ?,
          updated_at = CURRENT_TIMESTAMP
@@ -221,10 +195,12 @@ async function updateConfig(id, updates) {
     [
       updates.app_id,
       updates.app_secret,
-      updates.embedded_signup_config_id,
       updates.graph_api_version,
       updates.webhook_verify_token,
       updates.callback_url,
+      updates.business_token,
+      updates.waba_id,
+      updates.phone_number_id,
       updates.connection_status,
       updates.metadata,
       id
@@ -241,20 +217,17 @@ export async function getWhatsAppConfig() {
 export async function saveWhatsAppConfig(input = {}) {
   const existing = await getRawConfig()
   const appId = nullableString(input.appId ?? input.app_id ?? existing?.app_id)
-  const embeddedSignupConfigId = nullableString(
-    input.embeddedSignupConfigId ??
-    input.embedded_signup_config_id ??
-    existing?.embedded_signup_config_id
-  )
   const graphApiVersion = normalizeGraphVersion(getMetaApiVersion())
   const appSecret = encryptSecret(input.appSecret ?? input.app_secret, existing?.app_secret)
+  const businessToken = encryptSecret(input.businessToken ?? input.business_token ?? input.accessToken ?? input.access_token, existing?.business_token)
+  const wabaId = nullableString(input.wabaId ?? input.waba_id ?? existing?.waba_id)
+  const phoneNumberId = nullableString(input.phoneNumberId ?? input.phone_number_id ?? existing?.phone_number_id)
   const incomingWebhookVerifyToken = input.webhookVerifyToken ?? input.webhook_verify_token
   const shouldGenerateWebhookVerifyToken = Boolean(
     !nullableString(incomingWebhookVerifyToken) &&
     !existing?.webhook_verify_token &&
     appId &&
-    appSecret &&
-    embeddedSignupConfigId
+    appSecret
   )
   const webhookVerifyToken = encryptSecret(
     shouldGenerateWebhookVerifyToken ? generateWebhookVerifyToken() : incomingWebhookVerifyToken,
@@ -264,9 +237,11 @@ export async function saveWhatsAppConfig(input = {}) {
   const existingMetadata = safeJsonParse(existing?.metadata, {}) || {}
   const metadata = {
     ...existingMetadata,
+    connectionMode: 'direct_cloud_api',
     docs: {
-      embeddedSignup: 'https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/implementation',
-      coexistence: 'https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/onboarding-business-app-users'
+      cloudApi: WHATSAPP_CLOUD_API_DOCS_URL,
+      webhooks: WHATSAPP_CLOUD_API_WEBHOOKS_URL,
+      accessTokens: WHATSAPP_CLOUD_API_TOKENS_URL
     },
     webhook: {
       ...(existingMetadata.webhook || {}),
@@ -274,19 +249,20 @@ export async function saveWhatsAppConfig(input = {}) {
     }
   }
 
-  const nextStatus = existing?.business_token
-    ? getConfigStatus(existing)
-    : appId && appSecret && embeddedSignupConfigId
-      ? 'ready_to_connect'
-      : DEFAULT_CONNECTION_STATUS
+  const hasDirectCredentials = Boolean(appId && appSecret && businessToken && wabaId && phoneNumberId)
+  const nextStatus = hasDirectCredentials
+    ? existing?.connection_status === 'connected' ? 'connected' : 'ready_to_connect'
+    : DEFAULT_CONNECTION_STATUS
 
   const payload = {
     app_id: appId,
     app_secret: appSecret,
-    embedded_signup_config_id: embeddedSignupConfigId,
     graph_api_version: graphApiVersion,
     webhook_verify_token: webhookVerifyToken,
     callback_url: callbackUrl,
+    business_token: businessToken,
+    waba_id: wabaId,
+    phone_number_id: phoneNumberId,
     connection_status: nextStatus,
     metadata: safeJsonStringify(metadata)
   }
@@ -296,27 +272,6 @@ export async function saveWhatsAppConfig(input = {}) {
     : await insertConfig(payload)
 
   return sanitizeConfig(saved)
-}
-
-async function exchangeCodeForBusinessToken(config, code) {
-  const appSecret = decryptSecret(config.app_secret)
-  const params = new URLSearchParams({
-    client_id: config.app_id,
-    client_secret: appSecret,
-    code
-  })
-
-  const response = await fetch(`${graphBase(config.graph_api_version)}/oauth/access_token?${params.toString()}`)
-  const data = await response.json()
-
-  if (!response.ok || data.error) {
-    const message = data?.error?.message || `Meta token exchange failed (${response.status})`
-    const error = new Error(message)
-    error.meta = data
-    throw error
-  }
-
-  return data
 }
 
 async function subscribeWabaToWebhooks({ wabaId, businessToken, graphApiVersion }) {
@@ -346,10 +301,7 @@ async function fetchPhoneNumber({ phoneNumberId, businessToken, graphApiVersion 
       'id',
       'display_phone_number',
       'verified_name',
-      'quality_rating',
-      'code_verification_status',
-      'platform_type',
-      'is_on_biz_app'
+      'quality_rating'
     ].join(','),
     access_token: businessToken
   })
@@ -375,10 +327,7 @@ async function fetchWabaPhoneNumbers({ wabaId, businessToken, graphApiVersion })
       'id',
       'display_phone_number',
       'verified_name',
-      'quality_rating',
-      'code_verification_status',
-      'platform_type',
-      'is_on_biz_app'
+      'quality_rating'
     ].join(','),
     access_token: businessToken
   })
@@ -440,179 +389,102 @@ async function upsertPhoneNumber({ configId, wabaId, phone = {} }) {
   return await db.get('SELECT * FROM whatsapp_phone_numbers WHERE phone_number_id = ? LIMIT 1', [phoneNumberId])
 }
 
-async function persistOnboardingSession({ code, sessionPayload, responsePayload }) {
-  const sessionData = getSessionData(sessionPayload)
-  const event = nullableString(sessionPayload?.event || responsePayload?.event)
-
-  await db.run(
-    `INSERT INTO whatsapp_onboarding_sessions (
-      event, session_id, code, waba_id, phone_number_id, current_step,
-      error_code, error_message, raw_payload, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-    [
-      event,
-      getSessionId(sessionPayload),
-      code ? encryptSecret(code) : null,
-      getSessionWabaId(sessionPayload),
-      getSessionPhoneNumberId(sessionPayload),
-      nullableString(sessionData.current_step),
-      nullableString(sessionData.error_code),
-      nullableString(sessionData.error_message),
-      safeJsonStringify({ sessionPayload, responsePayload })
-    ]
-  )
-}
-
-async function updateConfigAfterOnboarding({
+async function updateConfigAfterDirectConnection({
   config,
-  businessToken,
-  tokenResponse,
-  sessionPayload,
-  responsePayload,
   subscriptionResponse,
   phone,
   phoneNumbers
 }) {
-  const selectedPhone = phone || phoneNumbers?.find(isConnectedPhone) || phoneNumbers?.[0] || null
-  const wabaId = getSessionWabaId(sessionPayload) || config.waba_id
-  const phoneNumberId = selectedPhone?.id || getSessionPhoneNumberId(sessionPayload) || config.phone_number_id
-  const connected = Boolean(businessToken && wabaId && phoneNumberId)
-  const onBizApp = selectedPhone ? asBooleanInteger(selectedPhone.is_on_biz_app) : asBooleanInteger(config.is_on_biz_app)
-  const platformType = selectedPhone?.platform_type || config.platform_type || null
+  const selectedPhone = phone || phoneNumbers?.find(item => item.id === config.phone_number_id) || phoneNumbers?.[0] || null
+  const connected = Boolean(config.business_token && config.waba_id && (selectedPhone?.id || config.phone_number_id))
 
   await db.run(
     `UPDATE whatsapp_api_config
-     SET business_token = ?,
-         business_token_expires_at = ?,
-         waba_id = ?,
-         phone_number_id = ?,
-         display_phone_number = ?,
-         verified_name = ?,
-         quality_rating = ?,
-         platform_type = ?,
-         is_on_biz_app = ?,
+     SET phone_number_id = COALESCE(?, phone_number_id),
+         display_phone_number = COALESCE(?, display_phone_number),
+         verified_name = COALESCE(?, verified_name),
+         quality_rating = COALESCE(?, quality_rating),
+         platform_type = COALESCE(?, platform_type, 'CLOUD_API'),
+         is_on_biz_app = 0,
          connection_status = ?,
-         onboarding_event = ?,
-         last_session_payload = ?,
+         onboarding_event = NULL,
+         last_session_payload = NULL,
          last_error_payload = NULL,
          metadata = ?,
          connected_at = CASE WHEN ? = 1 THEN COALESCE(connected_at, CURRENT_TIMESTAMP) ELSE connected_at END,
          last_exchange_at = CURRENT_TIMESTAMP,
-         last_verified_at = CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP ELSE last_verified_at END,
+         last_verified_at = CURRENT_TIMESTAMP,
          updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`,
     [
-      encryptSecret(businessToken),
-      tokenResponse?.expires_in ? new Date(Date.now() + Number(tokenResponse.expires_in) * 1000).toISOString() : null,
-      nullableString(wabaId),
-      nullableString(phoneNumberId),
+      nullableString(selectedPhone?.id),
       nullableString(selectedPhone?.display_phone_number),
       nullableString(selectedPhone?.verified_name),
       nullableString(selectedPhone?.quality_rating),
-      nullableString(platformType),
-      onBizApp,
-      connected ? 'connected' : 'token_exchanged',
-      nullableString(sessionPayload?.event || COEXISTENCE_FINISH_EVENT),
-      safeJsonStringify(sessionPayload),
+      nullableString(selectedPhone?.platform_type),
+      connected ? 'connected' : 'ready_to_connect',
       safeJsonStringify({
-        token_type: tokenResponse?.token_type || null,
+        ...(safeJsonParse(config.metadata, {}) || {}),
+        connectionMode: 'direct_cloud_api',
         subscription: subscriptionResponse || null,
         phoneNumbers: phoneNumbers || [],
-        responsePayload: responsePayload || null,
-        coexistenceFeatureType: COEXISTENCE_FEATURE_TYPE
+        directConnectedAt: new Date().toISOString()
       }),
       connected ? 1 : 0,
-      selectedPhone ? 1 : 0,
       config.id
     ]
   )
 
   if (selectedPhone?.id) {
-    await upsertPhoneNumber({ configId: config.id, wabaId, phone: selectedPhone })
+    await upsertPhoneNumber({ configId: config.id, wabaId: config.waba_id, phone: { ...selectedPhone, platform_type: selectedPhone.platform_type || 'CLOUD_API' } })
   }
 
   if (Array.isArray(phoneNumbers)) {
     for (const phoneNumber of phoneNumbers) {
-      await upsertPhoneNumber({ configId: config.id, wabaId, phone: phoneNumber })
+      await upsertPhoneNumber({
+        configId: config.id,
+        wabaId: config.waba_id,
+        phone: { ...phoneNumber, platform_type: phoneNumber.platform_type || 'CLOUD_API' }
+      })
     }
   }
 
   return await getRawConfigById(config.id)
 }
 
-export async function completeEmbeddedSignup({ code, sessionPayload = {}, responsePayload = {} }) {
+export async function connectWhatsAppCloudApi(input = null) {
+  if (input && Object.keys(input).length > 0) {
+    await saveWhatsAppConfig(input)
+  }
+
   const config = await getRawConfig()
-  if (!config?.app_id || !config?.app_secret || !config?.embedded_signup_config_id) {
-    throw new Error('Configura App ID, App Secret y Configuration ID antes de conectar WhatsApp')
+  if (!isDirectCloudConfigReady(config)) {
+    throw new Error('Completa App ID, App Secret, Access Token, WABA ID, Phone Number ID y webhook antes de validar WhatsApp')
   }
 
-  await persistOnboardingSession({ code, sessionPayload, responsePayload })
+  const businessToken = decryptSecret(config.business_token)
 
-  if (!code) {
-    await db.run(
-      `UPDATE whatsapp_api_config
-       SET last_session_payload = ?,
-           last_error_payload = ?,
-           onboarding_event = ?,
-           connection_status = CASE WHEN connection_status = 'connected' THEN connection_status ELSE 'signup_event_received' END,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE id = ?`,
-      [
-        safeJsonStringify(sessionPayload),
-        sessionPayload?.event === 'CANCEL' ? safeJsonStringify(sessionPayload) : null,
-        nullableString(sessionPayload?.event),
-        config.id
-      ]
-    )
-
-    return sanitizeConfig(await getRawConfigById(config.id))
-  }
-
-  const wabaId = getSessionWabaId(sessionPayload) || nullableString(responsePayload?.waba_id) || config.waba_id
-  const sessionPhoneNumberId = getSessionPhoneNumberId(sessionPayload) || nullableString(responsePayload?.phone_number_id)
-  const tokenResponse = await exchangeCodeForBusinessToken(config, code)
-  const businessToken = tokenResponse.access_token
-
-  let subscriptionResponse = null
-  if (wabaId) {
-    subscriptionResponse = await subscribeWabaToWebhooks({
-      wabaId,
-      businessToken,
-      graphApiVersion: config.graph_api_version
-    })
-  }
-
-  let phone = null
-  let phoneNumbers = []
-  if (sessionPhoneNumberId) {
-    phone = await fetchPhoneNumber({
-      phoneNumberId: sessionPhoneNumberId,
-      businessToken,
-      graphApiVersion: config.graph_api_version
-    })
-  }
-
-  if (wabaId) {
-    phoneNumbers = await fetchWabaPhoneNumbers({
-      wabaId,
-      businessToken,
-      graphApiVersion: config.graph_api_version
-    })
-  }
-
-  const saved = await updateConfigAfterOnboarding({
-    config,
+  const subscriptionResponse = await subscribeWabaToWebhooks({
+    wabaId: config.waba_id,
     businessToken,
-    tokenResponse,
-    sessionPayload: {
-      ...sessionPayload,
-      data: {
-        ...getSessionData(sessionPayload),
-        waba_id: wabaId,
-        phone_number_id: sessionPhoneNumberId
-      }
-    },
-    responsePayload,
+    graphApiVersion: config.graph_api_version
+  })
+
+  const [phone, phoneNumbers] = await Promise.all([
+    fetchPhoneNumber({
+      phoneNumberId: config.phone_number_id,
+      businessToken,
+      graphApiVersion: config.graph_api_version
+    }),
+    fetchWabaPhoneNumbers({
+      wabaId: config.waba_id,
+      businessToken,
+      graphApiVersion: config.graph_api_version
+    })
+  ])
+
+  const saved = await updateConfigAfterDirectConnection({
+    config,
     subscriptionResponse,
     phone,
     phoneNumbers
@@ -976,8 +848,8 @@ export async function getWhatsAppStorageSummary() {
 }
 
 export function logWhatsAppServiceError(context, error) {
-  logger.error(`[WhatsApp Coexistence] ${context}: ${error.message}`)
+  logger.error(`[WhatsApp API] ${context}: ${error.message}`)
   if (error.meta) {
-    logger.error(`[WhatsApp Coexistence] Meta payload: ${safeJsonStringify(error.meta)}`)
+    logger.error(`[WhatsApp API] Meta payload: ${safeJsonStringify(error.meta)}`)
   }
 }

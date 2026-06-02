@@ -6,7 +6,7 @@ import { HighLevelIntegration } from './HighLevelIntegration'
 import { Costs } from './Costs'
 import { PaymentsConfiguration } from './PaymentsConfiguration'
 import { MetaAdsIntegration } from './MetaAdsIntegration'
-import { WhatsAppCoexistence } from './WhatsAppCoexistence'
+import { WhatsApp_API } from './WhatsApp_API'
 import { WebTracking } from './WebTracking'
 import { CalendarsConfiguration } from './CalendarsConfiguration'
 import { AccountSettings } from './AccountSettings'
@@ -38,7 +38,7 @@ export const Settings: React.FC = () => {
       )
     },
     {
-      to: '/settings/whatsapp-coexistence',
+      to: '/settings/whatsapp',
       label: 'WhatsApp API',
       icon: <SiWhatsapp size={18} />
     },
@@ -114,7 +114,7 @@ export const Settings: React.FC = () => {
               <Route path="highlevel" element={<HighLevelIntegration />} />
               <Route path="costs" element={<Costs />} />
               <Route path="meta-ads" element={<MetaAdsIntegration />} />
-              <Route path="whatsapp-coexistence" element={<WhatsAppCoexistence />} />
+              <Route path="whatsapp" element={<WhatsApp_API />} />
               <Route path="calendars" element={<CalendarsConfiguration />} />
               <Route path="tracking" element={<WebTracking />} />
               <Route path="payments" element={<PaymentsConfiguration />} />
