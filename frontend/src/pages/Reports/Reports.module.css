@@ -461,6 +461,19 @@
   color: var(--color-text-primary);
 }
 
+.comparisonAmount {
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+}
+
+.comparisonPositive {
+  color: color-mix(in srgb, var(--color-status-success, #10b981) 72%, var(--color-text-primary) 28%);
+}
+
+.comparisonNegative {
+  color: color-mix(in srgb, var(--color-status-error, #dc2626) 68%, var(--color-text-primary) 32%);
+}
+
 .businessExpenseInputShell {
   display: inline-flex;
   align-items: center;

@@ -388,6 +388,19 @@
   font-weight: var(--font-weight-semibold);
 }
 
+.revenueVsSpendAmount {
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+}
+
+.revenueVsSpendPositive {
+  color: color-mix(in srgb, var(--color-status-success, #10b981) 54%, var(--color-text-primary) 46%);
+}
+
+.revenueVsSpendNegative {
+  color: color-mix(in srgb, var(--color-status-error, #dc2626) 52%, var(--color-text-primary) 48%);
+}
+
 /* Placeholder sutil para filas expandidas */
 .placeholderText {
   color: var(--color-text-tertiary);
