@@ -418,6 +418,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  width: 100%;
   min-height: 48px;
   padding: 0 10px 0 12px;
   border: 1px solid rgba(8, 102, 255, 0.22);
@@ -426,12 +427,68 @@
   background: rgba(8, 102, 255, 0.06);
 }
 
+.secretTokenChip {
+  cursor: text;
+}
+
+.secretTokenChip:hover,
+.secretTokenChip:focus {
+  border-color: rgba(8, 102, 255, 0.42);
+  background: rgba(8, 102, 255, 0.08);
+}
+
+.secretTokenChip:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.12);
+}
+
 .chipText {
   overflow: hidden;
   font-size: 14px;
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.secretTokenText {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 14px;
+  font-weight: 760;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.secretMaskFill {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-primary);
+  opacity: 0.82;
+}
+
+.secretTokenTail {
+  flex: 0 0 auto;
+  color: var(--color-text-primary);
+}
+
+.secretRevealStatus {
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 720;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.secretTokenInput {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
 }
 
 .chipDeleteButton {
@@ -684,7 +741,7 @@
   }
 }
 
-@media (max-width: 1180px) {
+@media (max-width: 1450px) {
   .workspace {
     grid-template-columns: 1fr;
   }

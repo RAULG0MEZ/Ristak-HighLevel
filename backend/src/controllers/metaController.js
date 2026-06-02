@@ -409,6 +409,41 @@ export const revealMetaToken = async (req, res) => {
 };
 
 /**
+ * Revela el Pixel API Token completo (desencriptado) para verlo/copiarlo desde Settings
+ */
+export const revealMetaPixelApiToken = async (req, res) => {
+  try {
+    const metaConfig = await getMetaConfig();
+
+    if (!metaConfig) {
+      return res.status(404).json({
+        success: false,
+        error: 'No hay configuración de Meta guardada'
+      });
+    }
+
+    if (!metaConfig.pixel_api_token) {
+      return res.status(404).json({
+        success: false,
+        error: 'No hay Pixel API Token guardado'
+      });
+    }
+
+    res.json({
+      success: true,
+      pixelApiToken: metaConfig.pixel_api_token
+    });
+
+  } catch (error) {
+    logger.error(`Error en revealMetaPixelApiToken: ${error.message}`);
+    res.status(500).json({
+      success: false,
+      error: 'Error al revelar el Pixel API Token de Meta'
+    });
+  }
+};
+
+/**
  * Sincroniza anuncios de Meta desde una fecha específica
  */
 export const syncAds = async (req, res) => {

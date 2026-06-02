@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Card, Button, Icon } from '@/components/common'
 import { ArrowLeft, ArrowRight, CheckCircle, ExternalLink, RefreshCw, Trash2, XCircle } from 'lucide-react'
 import { useNotification } from '@/contexts/NotificationContext'
@@ -36,6 +36,19 @@ interface FetchCollectionResult {
   count: number
 }
 
+type SecretTokenField = 'accessToken' | 'pixelApiToken'
+
+const MASKED_SECRET_PREFIX = '***'
+const SECRET_MASK_FILL = '*'.repeat(180)
+
+const isMaskedSecretValue = (value = '') => value.trim().startsWith(MASKED_SECRET_PREFIX)
+
+const getMaskedSecretTail = (value = '') => (
+  isMaskedSecretValue(value)
+    ? value.trim().slice(MASKED_SECRET_PREFIX.length)
+    : value.trim()
+)
+
 export const MetaAdsIntegration: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true)
   const [credentials, setCredentials] = useState<MetaCredentials>({
@@ -50,13 +63,18 @@ export const MetaAdsIntegration: React.FC = () => {
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(false)
   const [isLoadingPixels, setIsLoadingPixels] = useState(false)
   const [realAccessToken, setRealAccessToken] = useState('')
+  const [realPixelApiToken, setRealPixelApiToken] = useState('')
   const [isSavingToken, setIsSavingToken] = useState(false)
   const [isSavingPixelToken, setIsSavingPixelToken] = useState(false)
+  const [isRevealingAccessToken, setIsRevealingAccessToken] = useState(false)
+  const [isRevealingPixelApiToken, setIsRevealingPixelApiToken] = useState(false)
   const [isSavingPageId, setIsSavingPageId] = useState(false)
   const [savedPageId, setSavedPageId] = useState('')
   const [isSyncingSnippet, setIsSyncingSnippet] = useState(false)
   const [isSyncingMetaAds, setIsSyncingMetaAds] = useState(false)
   const [activeStep, setActiveStep] = useState(0)
+  const accessTokenInputRef = useRef<HTMLInputElement>(null)
+  const pixelApiTokenInputRef = useRef<HTMLInputElement>(null)
 
   const { showToast } = useNotification()
   const { theme } = useTheme()
@@ -82,7 +100,7 @@ export const MetaAdsIntegration: React.FC = () => {
         if (data.data.accessToken) {
           let tokenToUse = data.data.accessToken
 
-          if (data.data.accessToken.startsWith('***')) {
+          if (isMaskedSecretValue(data.data.accessToken)) {
             try {
               const revealResponse = await fetch('/api/meta/config/reveal/access_token')
               const revealData = await revealResponse.json()
@@ -105,6 +123,10 @@ export const MetaAdsIntegration: React.FC = () => {
               : `act_${data.data.adAccountId}`
             await fetchPixels(accountIdWithPrefix, tokenToUse, data.data.pixelId, { silent: true })
           }
+        }
+
+        if (data.data.pixelApiToken && !isMaskedSecretValue(data.data.pixelApiToken)) {
+          setRealPixelApiToken(data.data.pixelApiToken)
         }
       }
     } catch {
@@ -255,6 +277,7 @@ export const MetaAdsIntegration: React.FC = () => {
         pixelApiToken: ''
       })
       setRealAccessToken('')
+      setRealPixelApiToken('')
       setAdAccounts([])
       setPixels([])
       setSavedPageId('')
@@ -266,6 +289,7 @@ export const MetaAdsIntegration: React.FC = () => {
         pixelId: '',
         pixelApiToken: ''
       }))
+      setRealPixelApiToken('')
       setPixels([])
       setActiveStep(1)
     } else if (field === 'pixelId') {
@@ -274,10 +298,14 @@ export const MetaAdsIntegration: React.FC = () => {
         pixelId: '',
         pixelApiToken: ''
       }))
+      setRealPixelApiToken('')
       setActiveStep(2)
     } else if (field === 'pageId') {
       setCredentials(prev => ({ ...prev, pageId: '' }))
       setSavedPageId('')
+    } else if (field === 'pixelApiToken') {
+      setCredentials(prev => ({ ...prev, pixelApiToken: '' }))
+      setRealPixelApiToken('')
     } else {
       setCredentials(prev => ({ ...prev, [field]: '' }))
     }
@@ -286,6 +314,94 @@ export const MetaAdsIntegration: React.FC = () => {
   const handleInputChange = (field: keyof MetaCredentials, value: string) => {
     setCredentials(prev => ({ ...prev, [field]: value }))
   }
+
+  const focusSecretInput = (field: SecretTokenField) => {
+    const focusAndSelect = () => {
+      const input = field === 'accessToken'
+        ? accessTokenInputRef.current
+        : pixelApiTokenInputRef.current
+
+      input?.focus()
+      input?.select()
+    }
+
+    window.setTimeout(focusAndSelect, 0)
+    window.setTimeout(focusAndSelect, 80)
+  }
+
+  const handleEditStoredSecret = async (field: SecretTokenField) => {
+    const isAccessToken = field === 'accessToken'
+    let revealedToken = isAccessToken ? realAccessToken : realPixelApiToken
+
+    if (!revealedToken) {
+      if (isAccessToken) {
+        setIsRevealingAccessToken(true)
+      } else {
+        setIsRevealingPixelApiToken(true)
+      }
+
+      try {
+        const endpoint = isAccessToken
+          ? '/api/meta/config/reveal/access_token'
+          : '/api/meta/config/reveal/pixel_api_token'
+        const response = await fetch(endpoint)
+        const data = await response.json()
+
+        revealedToken = isAccessToken ? data.accessToken : data.pixelApiToken
+
+        if (!data.success || !revealedToken) {
+          throw new Error(data.error || 'Token no disponible')
+        }
+      } catch {
+        showToast(
+          'error',
+          'No se pudo revelar',
+          isAccessToken ? 'No se pudo cargar el Access Token original' : 'No se pudo cargar el Pixel API Token original'
+        )
+        return
+      } finally {
+        if (isAccessToken) {
+          setIsRevealingAccessToken(false)
+        } else {
+          setIsRevealingPixelApiToken(false)
+        }
+      }
+    }
+
+    if (isAccessToken) {
+      setRealAccessToken(revealedToken)
+    } else {
+      setRealPixelApiToken(revealedToken)
+    }
+
+    setCredentials(prev => ({ ...prev, [field]: revealedToken }))
+    focusSecretInput(field)
+  }
+
+  const handleSecretChipKeyDown = (
+    event: React.KeyboardEvent<HTMLDivElement>,
+    field: SecretTokenField
+  ) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+
+    event.preventDefault()
+    handleEditStoredSecret(field)
+  }
+
+  const renderMaskedSecretValue = (value: string, isRevealing: boolean) => (
+    <span className={styles.secretTokenText}>
+      {isRevealing ? (
+        <span className={styles.secretRevealStatus}>Cargando token...</span>
+      ) : (
+        <>
+          <span className={styles.secretMaskFill} aria-hidden="true">
+            {SECRET_MASK_FILL}
+          </span>
+          <span className={styles.secretTokenTail}>{getMaskedSecretTail(value)}</span>
+        </>
+      )}
+    </span>
+  )
 
   const handleContinueWithToken = async () => {
     if (!credentials.accessToken || credentials.accessToken.length < 50) {
@@ -557,11 +673,21 @@ export const MetaAdsIntegration: React.FC = () => {
   }
 
   const isMetaConfigured = Boolean(credentials.accessToken && credentials.adAccountId)
-  const hasAccessToken = Boolean(realAccessToken || credentials.accessToken?.startsWith('***'))
+  const hasAccessToken = Boolean(realAccessToken || isMaskedSecretValue(credentials.accessToken))
   const hasAdAccount = Boolean(credentials.adAccountId)
   const hasPixel = Boolean(credentials.pixelId)
   const hasPixelApiToken = Boolean(credentials.pixelApiToken)
   const hasPageId = Boolean(savedPageId)
+  const shouldShowAccessTokenAction = Boolean(
+    credentials.accessToken &&
+    !isMaskedSecretValue(credentials.accessToken) &&
+    (!realAccessToken || credentials.accessToken !== realAccessToken)
+  )
+  const shouldShowPixelApiTokenAction = Boolean(
+    credentials.pixelApiToken &&
+    !isMaskedSecretValue(credentials.pixelApiToken) &&
+    (!realPixelApiToken || credentials.pixelApiToken !== realPixelApiToken)
+  )
   const metaSetupSteps = [
     {
       title: 'Access Token',
@@ -688,13 +814,24 @@ export const MetaAdsIntegration: React.FC = () => {
             </a>
           </div>
 
-          <label className={`${styles.formGroup} ${styles.formGroupWide}`}>
-            <span className={styles.formLabel}>Access Token</span>
-            {credentials.accessToken && credentials.accessToken.startsWith('***') ? (
-              <div className={styles.filterChip}>
-                <span className={styles.chipText}>{credentials.accessToken}</span>
+          <div className={`${styles.formGroup} ${styles.formGroupWide}`}>
+            <span id="metaAccessTokenLabel" className={styles.formLabel}>Access Token</span>
+            {credentials.accessToken && isMaskedSecretValue(credentials.accessToken) ? (
+              <div
+                className={`${styles.filterChip} ${styles.secretTokenChip}`}
+                onClick={() => handleEditStoredSecret('accessToken')}
+                onKeyDown={(event) => handleSecretChipKeyDown(event, 'accessToken')}
+                role="button"
+                tabIndex={0}
+                aria-label="Mostrar y editar Access Token"
+                title="Mostrar y editar Access Token"
+              >
+                {renderMaskedSecretValue(credentials.accessToken, isRevealingAccessToken)}
                 <button
-                  onClick={() => handleRemoveCredential('accessToken')}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    handleRemoveCredential('accessToken')
+                  }}
                   className={styles.chipDeleteButton}
                   type="button"
                   aria-label="Eliminar Access Token"
@@ -705,25 +842,30 @@ export const MetaAdsIntegration: React.FC = () => {
             ) : (
               <div className={styles.inputActionRow}>
                 <input
+                  id="metaAccessToken"
+                  ref={accessTokenInputRef}
                   type="text"
                   value={credentials.accessToken}
                   onChange={(event) => handleInputChange('accessToken', event.target.value)}
                   placeholder="EAAabcdef..."
-                  className={styles.formInput}
+                  className={`${styles.formInput} ${styles.secretTokenInput}`}
+                  aria-labelledby="metaAccessTokenLabel"
+                  autoComplete="off"
+                  spellCheck={false}
                 />
-                {!realAccessToken && !isLoadingAccounts && (
+                {shouldShowAccessTokenAction && !isLoadingAccounts && (
                   <Button
                     type="button"
                     variant="primary"
                     onClick={handleContinueWithToken}
                     disabled={isSavingToken || !credentials.accessToken || credentials.accessToken.length < 50}
                   >
-                    {isSavingToken ? 'Guardando...' : 'Continuar'}
+                    {isSavingToken ? 'Guardando...' : realAccessToken ? 'Actualizar' : 'Continuar'}
                   </Button>
                 )}
               </div>
             )}
-          </label>
+          </div>
 
           {isLoadingAccounts && (
             <div className={styles.inlineStatus}>
@@ -884,13 +1026,24 @@ export const MetaAdsIntegration: React.FC = () => {
           {!hasPixel ? (
             <p className={styles.stepHint}>{getStepBlockMessage(3)}</p>
           ) : (
-            <label className={`${styles.formGroup} ${styles.formGroupWide}`}>
-              <span className={styles.formLabel}>Pixel API Token</span>
-              {credentials.pixelApiToken && credentials.pixelApiToken.startsWith('***') ? (
-                <div className={styles.filterChip}>
-                  <span className={styles.chipText}>{credentials.pixelApiToken}</span>
+            <div className={`${styles.formGroup} ${styles.formGroupWide}`}>
+              <span id="metaPixelApiTokenLabel" className={styles.formLabel}>Pixel API Token</span>
+              {credentials.pixelApiToken && isMaskedSecretValue(credentials.pixelApiToken) ? (
+                <div
+                  className={`${styles.filterChip} ${styles.secretTokenChip}`}
+                  onClick={() => handleEditStoredSecret('pixelApiToken')}
+                  onKeyDown={(event) => handleSecretChipKeyDown(event, 'pixelApiToken')}
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Mostrar y editar Pixel API Token"
+                  title="Mostrar y editar Pixel API Token"
+                >
+                  {renderMaskedSecretValue(credentials.pixelApiToken, isRevealingPixelApiToken)}
                   <button
-                    onClick={() => handleRemoveCredential('pixelApiToken')}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      handleRemoveCredential('pixelApiToken')
+                    }}
                     className={styles.chipDeleteButton}
                     type="button"
                     aria-label="Eliminar Pixel API Token"
@@ -901,24 +1054,31 @@ export const MetaAdsIntegration: React.FC = () => {
               ) : (
                 <div className={styles.inputActionRow}>
                   <input
+                    id="metaPixelApiToken"
+                    ref={pixelApiTokenInputRef}
                     type="text"
                     value={credentials.pixelApiToken}
                     onChange={(event) => handleInputChange('pixelApiToken', event.target.value)}
                     placeholder="Pega aquí el token generado desde Events Manager"
-                    className={styles.formInput}
+                    className={`${styles.formInput} ${styles.secretTokenInput}`}
+                    aria-labelledby="metaPixelApiTokenLabel"
+                    autoComplete="off"
+                    spellCheck={false}
                   />
-                  <Button
-                    type="button"
-                    variant="primary"
-                    onClick={handleSavePixelApiToken}
-                    disabled={isSavingPixelToken || !credentials.pixelApiToken}
-                  >
-                    <RefreshCw size={16} className={isSavingPixelToken ? styles.spinning : ''} />
-                    {isSavingPixelToken ? 'Guardando...' : 'Guardar'}
-                  </Button>
+                  {shouldShowPixelApiTokenAction && (
+                    <Button
+                      type="button"
+                      variant="primary"
+                      onClick={handleSavePixelApiToken}
+                      disabled={isSavingPixelToken || !credentials.pixelApiToken}
+                    >
+                      <RefreshCw size={16} className={isSavingPixelToken ? styles.spinning : ''} />
+                      {isSavingPixelToken ? 'Guardando...' : realPixelApiToken ? 'Actualizar' : 'Guardar'}
+                    </Button>
+                  )}
                 </div>
               )}
-            </label>
+            </div>
           )}
         </>
       )

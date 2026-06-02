@@ -3,6 +3,7 @@ import {
   saveConfig,
   getConfig,
   revealMetaToken,
+  revealMetaPixelApiToken,
   syncAds,
   getSyncProgressEndpoint,
   updateRecent,
@@ -31,6 +32,7 @@ const router = express.Router()
 router.post('/config', saveConfig)
 router.get('/config', getConfig)
 router.get('/config/reveal/access_token', revealMetaToken)
+router.get('/config/reveal/pixel_api_token', revealMetaPixelApiToken)
 router.get('/verify-token', verifyToken)
 
 // Obtener datos de Meta para dropdowns
