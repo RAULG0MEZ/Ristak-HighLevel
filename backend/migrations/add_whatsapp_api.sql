@@ -1,11 +1,10 @@
--- Dedicated WhatsApp Business API / Coexistence storage.
+-- Dedicated WhatsApp Business API storage.
 -- These tables intentionally do not reference contacts, attribution, or CRM tables.
 
 CREATE TABLE IF NOT EXISTS whatsapp_api_config (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   app_id TEXT,
   app_secret TEXT,
-  embedded_signup_config_id TEXT,
   graph_api_version TEXT DEFAULT 'v23.0',
   webhook_verify_token TEXT,
   callback_url TEXT,

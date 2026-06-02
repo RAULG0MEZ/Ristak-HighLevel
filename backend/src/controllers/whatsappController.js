@@ -1,11 +1,11 @@
 import {
-  completeEmbeddedSignup,
+  connectWhatsAppCloudApi,
   getWhatsAppConfig,
   getWhatsAppStorageSummary,
   logWhatsAppServiceError,
   refreshWhatsAppConnectionStatus,
   saveWhatsAppConfig
-} from '../services/whatsappCoexistenceService.js'
+} from '../services/whatsappApiService.js'
 
 export const getConfig = async (req, res) => {
   try {
@@ -31,18 +31,14 @@ export const saveConfig = async (req, res) => {
   }
 }
 
-export const completeSignup = async (req, res) => {
+export const connectCloudApi = async (req, res) => {
   try {
-    const config = await completeEmbeddedSignup({
-      code: req.body?.code,
-      sessionPayload: req.body?.sessionPayload || req.body?.sessionInfo || {},
-      responsePayload: req.body?.responsePayload || req.body?.authResponse || {}
-    })
+    const config = await connectWhatsAppCloudApi(req.body || {})
     const storage = await getWhatsAppStorageSummary()
 
     res.json({ success: true, data: { config, storage } })
   } catch (error) {
-    logWhatsAppServiceError('completeSignup', error)
+    logWhatsAppServiceError('connectCloudApi', error)
     res.status(400).json({
       success: false,
       error: error.message,

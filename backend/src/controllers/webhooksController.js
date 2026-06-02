@@ -16,7 +16,7 @@ import {
   getWebhookVerifyToken,
   ingestWhatsAppWebhook,
   logWhatsAppServiceError
-} from '../services/whatsappCoexistenceService.js';
+} from '../services/whatsappApiService.js';
 import { resolveHighLevelContactCustomFields } from '../services/highlevelCustomFieldsService.js';
 import { hasContactCustomFieldsPayload } from '../utils/contactCustomFields.js';
 
@@ -1228,7 +1228,7 @@ export const verifyWhatsAppApiWebhook = async (req, res) => {
 };
 
 /**
- * Recibe webhooks oficiales de WhatsApp Cloud API / Coexistence.
+ * Recibe webhooks oficiales de WhatsApp Cloud API.
  * Guarda todo en tablas whatsapp_* sin tocar CRM ni atribucion.
  */
 export const handleWhatsAppApiWebhook = async (req, res) => {

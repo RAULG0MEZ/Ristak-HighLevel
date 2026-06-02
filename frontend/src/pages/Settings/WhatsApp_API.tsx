@@ -16,40 +16,23 @@ import {
 import { SiWhatsapp } from 'react-icons/si'
 import {
   whatsappService,
+  type SaveWhatsAppConfigPayload,
   type WhatsAppConfig,
   type WhatsAppStorageSummary
 } from '@/services/whatsappService'
-import styles from './WhatsAppCoexistence.module.css'
-
-type EmbeddedSignupPayload = {
-  type?: string
-  event?: string
-  version?: number
-  data?: Record<string, unknown>
-}
-
-type FacebookLoginResponse = {
-  authResponse?: {
-    code?: string
-    accessToken?: string
-    userID?: string
-    expiresIn?: string
-    signedRequest?: string
-  }
-  status?: string
-}
+import styles from './WhatsApp_API.module.css'
 
 const DEFAULT_GRAPH_VERSION = 'v23.0'
-const COEXISTENCE_FEATURE_TYPE = 'whatsapp_business_app_onboarding'
-const COEXISTENCE_FINISH_EVENT = 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING'
 const META_DEVELOPERS_URL = 'https://developers.facebook.com/apps/'
+const CLOUD_API_DOCS_URL = 'https://developers.facebook.com/docs/whatsapp/cloud-api/get-started'
+const WEBHOOK_DOCS_URL = 'https://developers.facebook.com/docs/whatsapp/cloud-api/guides/set-up-webhooks'
+const SYSTEM_USER_DOCS_URL = 'https://developers.facebook.com/docs/whatsapp/business-management-api/get-started'
 
 const emptyConfig: WhatsAppConfig = {
   configured: false,
   appId: '',
   appSecret: '',
   appSecretConfigured: false,
-  embeddedSignupConfigId: '',
   graphApiVersion: DEFAULT_GRAPH_VERSION,
   webhookVerifyToken: '',
   webhookVerifyTokenConfigured: false,
@@ -67,9 +50,7 @@ const emptyConfig: WhatsAppConfig = {
   onboardingEvent: '',
   connectedAt: null,
   lastExchangeAt: null,
-  lastVerifiedAt: null,
-  coexistenceFeatureType: COEXISTENCE_FEATURE_TYPE,
-  finishEvent: COEXISTENCE_FINISH_EVENT
+  lastVerifiedAt: null
 }
 
 const emptyStorage: WhatsAppStorageSummary = {
@@ -83,11 +64,6 @@ const emptyStorage: WhatsAppStorageSummary = {
 function buildDefaultCallbackUrl() {
   if (typeof window === 'undefined') return '/webhook/whatsapp'
   return `${window.location.origin}/webhook/whatsapp`
-}
-
-function buildCurrentWizardUrl() {
-  if (typeof window === 'undefined') return '/settings/whatsapp-coexistence'
-  return `${window.location.origin}/settings/whatsapp-coexistence`
 }
 
 function getUrlParts(value: string) {
@@ -107,11 +83,7 @@ function getStatusLabel(status: string) {
     case 'connected':
       return 'Conectado'
     case 'ready_to_connect':
-      return 'Listo para conectar'
-    case 'token_exchanged':
-      return 'Token intercambiado'
-    case 'signup_event_received':
-      return 'Evento recibido'
+      return 'Listo para validar'
     default:
       return 'No configurado'
   }
@@ -119,110 +91,47 @@ function getStatusLabel(status: string) {
 
 function getStatusClassName(status: string) {
   if (status === 'connected') return styles.statusConnected
-  if (status === 'ready_to_connect' || status === 'token_exchanged' || status === 'signup_event_received') {
-    return styles.statusWarning
-  }
+  if (status === 'ready_to_connect') return styles.statusWarning
   return styles.statusDisconnected
 }
 
-function hasFinishEvent(payload: EmbeddedSignupPayload | null) {
-  return payload?.event === COEXISTENCE_FINISH_EVENT || payload?.event === 'FINISH'
-}
-
-function loadFacebookSdk(appId: string, version: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (!appId) {
-      reject(new Error('App ID requerido'))
-      return
-    }
-
-    const initialize = () => {
-      if (!window.FB) {
-        reject(new Error('Facebook SDK no disponible'))
-        return
-      }
-
-      window.FB.init({
-        appId,
-        autoLogAppEvents: true,
-        xfbml: false,
-        version
-      })
-      resolve()
-    }
-
-    if (window.FB) {
-      initialize()
-      return
-    }
-
-    window.fbAsyncInit = initialize
-
-    if (document.getElementById('facebook-jssdk')) {
-      const startedAt = Date.now()
-      const interval = window.setInterval(() => {
-        if (window.FB) {
-          window.clearInterval(interval)
-          initialize()
-        } else if (Date.now() - startedAt > 8000) {
-          window.clearInterval(interval)
-          reject(new Error('Facebook SDK no respondió'))
-        }
-      }, 100)
-      return
-    }
-
-    const script = document.createElement('script')
-    script.id = 'facebook-jssdk'
-    script.src = 'https://connect.facebook.net/en_US/sdk.js'
-    script.async = true
-    script.defer = true
-    script.onerror = () => reject(new Error('No se pudo cargar Facebook SDK'))
-    document.body.appendChild(script)
-  })
-}
-
-export const WhatsAppCoexistence: React.FC = () => {
+export const WhatsApp_API: React.FC = () => {
   const { showToast } = useNotification()
   const [config, setConfig] = useState<WhatsAppConfig>(emptyConfig)
   const [storage, setStorage] = useState<WhatsAppStorageSummary>(emptyStorage)
   const [form, setForm] = useState({
     appId: '',
     appSecret: '',
-    embeddedSignupConfigId: '',
-    graphApiVersion: DEFAULT_GRAPH_VERSION,
+    businessToken: '',
+    wabaId: '',
+    phoneNumberId: '',
     webhookVerifyToken: '',
     callbackUrl: buildDefaultCallbackUrl()
   })
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
-  const [isLaunching, setIsLaunching] = useState(false)
-  const [isCompleting, setIsCompleting] = useState(false)
+  const [isConnecting, setIsConnecting] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
-  const [sessionPayload, setSessionPayload] = useState<EmbeddedSignupPayload | null>(null)
   const [activeStep, setActiveStep] = useState(0)
-  const pendingCodeRef = useRef<string>('')
-  const sessionPayloadRef = useRef<EmbeddedSignupPayload | null>(null)
-  const completedCodeRef = useRef<string>('')
   const autoSavedWebhookSignatureRef = useRef<string>('')
 
   const hasAppCredentials = Boolean(form.appId && (form.appSecret || config.appSecretConfigured))
-  const hasConfigId = Boolean(form.embeddedSignupConfigId)
+  const hasAccessToken = Boolean(form.businessToken || config.businessTokenConfigured)
+  const hasPhoneApiData = Boolean(hasAccessToken && form.wabaId && form.phoneNumberId)
   const hasWebhookToken = Boolean(form.webhookVerifyToken || config.webhookVerifyTokenConfigured)
   const isConnected = config.connectionStatus === 'connected'
-  const hasSetupCredentials = Boolean(hasAppCredentials && hasConfigId)
-  const isReadyToSave = Boolean(hasSetupCredentials && hasWebhookToken)
+  const isReadyToSave = Boolean(hasAppCredentials && hasPhoneApiData && hasWebhookToken)
 
   const setupSteps = useMemo(() => ([
     {
       title: 'Meta App',
-      description: 'App ID y App Secret',
+      description: 'App propia del usuario',
       done: hasAppCredentials
     },
     {
-      title: 'Configuration ID',
-      description: 'Facebook Login for Business',
-      done: hasConfigId
+      title: 'Cloud API',
+      description: 'Token, WABA y Phone ID',
+      done: hasPhoneApiData
     },
     {
       title: 'Webhook',
@@ -231,18 +140,19 @@ export const WhatsAppCoexistence: React.FC = () => {
     },
     {
       title: 'Guardar',
-      description: 'Persistir datos seguros',
+      description: 'Persistir configuración',
       done: config.configured
     },
     {
-      title: 'Conectar',
-      description: 'Abrir conexión',
+      title: 'Validar',
+      description: 'Conectar con Meta',
       done: isConnected
     }
-  ]), [config.configured, hasAppCredentials, hasConfigId, hasWebhookToken, isConnected])
+  ]), [config.configured, hasAppCredentials, hasPhoneApiData, hasWebhookToken, isConnected])
 
   const completedSteps = setupSteps.filter(step => step.done).length
-  const currentWizardUrl = useMemo(() => buildCurrentWizardUrl(), [])
+  const activeStepDone = setupSteps[activeStep]?.done === true
+
   const webhookEnvironmentMismatch = useMemo(() => {
     if (typeof window === 'undefined') return false
 
@@ -251,55 +161,9 @@ export const WhatsAppCoexistence: React.FC = () => {
 
     return isLocalHostname(window.location.hostname) && !isLocalHostname(callbackUrl.hostname)
   }, [form.callbackUrl])
-  const canLaunchSignup = Boolean(
-    config.configured &&
-    form.appId &&
-    form.embeddedSignupConfigId &&
-    (form.appSecret || config.appSecretConfigured)
-  )
-  const activeStepDone = setupSteps[activeStep]?.done === true
 
   useEffect(() => {
     loadConfig()
-  }, [])
-
-  useEffect(() => {
-    const handleEmbeddedSignupMessage = (event: MessageEvent) => {
-      if (!event.origin.endsWith('facebook.com')) return
-
-      let payload: EmbeddedSignupPayload | null = null
-      try {
-        payload = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
-      } catch {
-        payload = null
-      }
-
-      if (!payload || payload.type !== 'WA_EMBEDDED_SIGNUP') return
-
-      setSessionPayload(payload)
-      sessionPayloadRef.current = payload
-
-      if (payload.event === 'CANCEL') {
-        whatsappService.completeEmbeddedSignup({
-          code: '',
-          sessionPayload: payload as Record<string, unknown>,
-          responsePayload: {}
-        }).catch(() => undefined)
-
-        const errorMessage = typeof payload.data?.error_message === 'string'
-          ? payload.data.error_message
-          : 'El flujo de Meta se canceló antes de terminar'
-        showToast('warning', 'Flujo cancelado', errorMessage)
-        return
-      }
-
-      if (hasFinishEvent(payload) && pendingCodeRef.current) {
-        finalizeSignup(pendingCodeRef.current, payload, { source: 'message_event' })
-      }
-    }
-
-    window.addEventListener('message', handleEmbeddedSignupMessage)
-    return () => window.removeEventListener('message', handleEmbeddedSignupMessage)
   }, [])
 
   const loadConfig = async () => {
@@ -320,8 +184,9 @@ export const WhatsAppCoexistence: React.FC = () => {
     setForm({
       appId: nextConfig.appId || '',
       appSecret: nextConfig.appSecret || '',
-      embeddedSignupConfigId: nextConfig.embeddedSignupConfigId || '',
-      graphApiVersion: nextConfig.graphApiVersion || DEFAULT_GRAPH_VERSION,
+      businessToken: nextConfig.businessToken || '',
+      wabaId: nextConfig.wabaId || '',
+      phoneNumberId: nextConfig.phoneNumberId || '',
       webhookVerifyToken: nextConfig.webhookVerifyToken || '',
       callbackUrl: nextConfig.callbackUrl || buildDefaultCallbackUrl()
     })
@@ -331,46 +196,69 @@ export const WhatsAppCoexistence: React.FC = () => {
     setForm(prev => ({ ...prev, [field]: value }))
   }
 
-  const handleSave = async (options: { silent?: boolean; generateWebhookToken?: boolean } = {}) => {
-    const silent = options.silent === true
-    const generateWebhookToken = options.generateWebhookToken === true
+  const buildSavePayload = (): SaveWhatsAppConfigPayload => ({
+    appId: form.appId,
+    appSecret: form.appSecret || undefined,
+    businessToken: form.businessToken || undefined,
+    wabaId: form.wabaId,
+    phoneNumberId: form.phoneNumberId,
+    webhookVerifyToken: form.webhookVerifyToken || undefined,
+    callbackUrl: form.callbackUrl
+  })
 
-    if (!form.appId || !form.embeddedSignupConfigId) {
-      showToast('error', 'Datos incompletos', 'App ID y Configuration ID son requeridos')
+  const validateConfigForSave = (requireComplete: boolean) => {
+    if (!form.appId) {
+      showToast('error', 'App ID requerido', 'Pega el App ID de Meta Developers')
       return false
     }
 
     if (!form.appSecret && !config.appSecretConfigured) {
-      showToast('error', 'App Secret requerido', 'Guarda el App Secret de Meta Developers')
+      showToast('error', 'App Secret requerido', 'Pega el App Secret de Meta Developers')
       return false
     }
 
-    if (!form.webhookVerifyToken && !config.webhookVerifyTokenConfigured && !generateWebhookToken) {
-      showToast('error', 'Verify token requerido', 'Define el token que usarás en el webhook de Meta')
+    if (!requireComplete) return true
+
+    if (!form.businessToken && !config.businessTokenConfigured) {
+      showToast('error', 'Access Token requerido', 'Pega el token de acceso de WhatsApp Cloud API')
       return false
     }
+
+    if (!form.wabaId || !form.phoneNumberId) {
+      showToast('error', 'IDs requeridos', 'Pega WABA ID y Phone Number ID desde WhatsApp API Setup')
+      return false
+    }
+
+    if (!form.webhookVerifyToken && !config.webhookVerifyTokenConfigured) {
+      showToast('error', 'Verify token requerido', 'Llega al paso de webhook para que Ristak genere el token')
+      return false
+    }
+
+    return true
+  }
+
+  const handleSave = async (options: { silent?: boolean; requireComplete?: boolean; generateWebhookToken?: boolean } = {}) => {
+    const silent = options.silent === true
+    const requireComplete = options.requireComplete !== false
+
+    if (!validateConfigForSave(requireComplete)) return false
 
     setIsSaving(true)
     try {
       const saved = await whatsappService.saveConfig({
-        appId: form.appId,
-        appSecret: form.appSecret,
-        embeddedSignupConfigId: form.embeddedSignupConfigId,
-        webhookVerifyToken: form.webhookVerifyToken || undefined,
-        callbackUrl: form.callbackUrl
+        ...buildSavePayload(),
+        webhookVerifyToken: options.generateWebhookToken ? undefined : form.webhookVerifyToken || undefined
       })
       setConfig(saved)
       setForm(prev => ({
         ...prev,
         appSecret: saved.appSecret || prev.appSecret,
-        webhookVerifyToken: saved.webhookVerifyToken || prev.webhookVerifyToken || '',
-        graphApiVersion: saved.graphApiVersion || prev.graphApiVersion
+        businessToken: saved.businessToken || prev.businessToken,
+        webhookVerifyToken: saved.webhookVerifyToken || prev.webhookVerifyToken || ''
       }))
-      showToast(
-        'success',
-        silent ? 'Webhook listo' : 'WhatsApp guardado',
-        silent ? 'Token guardado; ya puedes verificarlo en Meta' : 'Configuración lista para conectar'
-      )
+      if (!silent) {
+        showToast('success', 'WhatsApp guardado', 'Configuración lista para validar con Meta')
+      }
       return saved
     } catch (error) {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo guardar')
@@ -385,121 +273,62 @@ export const WhatsAppCoexistence: React.FC = () => {
       activeStep !== 2 ||
       isLoading ||
       isSaving ||
-      config.configured ||
       config.webhookVerifyTokenConfigured ||
       form.webhookVerifyToken ||
-      !hasSetupCredentials
+      !hasAppCredentials
     ) return
 
     const signature = [
       form.appId,
       form.appSecret || (config.appSecretConfigured ? 'stored-secret' : ''),
-      form.embeddedSignupConfigId,
       form.callbackUrl
     ].join('|')
 
     if (autoSavedWebhookSignatureRef.current === signature) return
     autoSavedWebhookSignatureRef.current = signature
 
-    handleSave({ silent: true, generateWebhookToken: true }).then(saved => {
+    handleSave({ silent: true, requireComplete: false, generateWebhookToken: true }).then(saved => {
       if (!saved) {
         autoSavedWebhookSignatureRef.current = ''
       }
     })
   }, [
     activeStep,
-    config.configured,
     config.appSecretConfigured,
     config.webhookVerifyTokenConfigured,
     form.appId,
     form.appSecret,
     form.callbackUrl,
-    form.embeddedSignupConfigId,
     form.webhookVerifyToken,
-    hasSetupCredentials,
+    hasAppCredentials,
     isLoading,
     isSaving
   ])
 
-  const finalizeSignup = async (
-    code: string,
-    payload: EmbeddedSignupPayload | null,
-    responsePayload: Record<string, unknown>
-  ) => {
-    if (!code || completedCodeRef.current === code) return
-    completedCodeRef.current = code
-    setIsCompleting(true)
-
-    try {
-      const result = await whatsappService.completeEmbeddedSignup({
-        code,
-        sessionPayload: (payload || {}) as Record<string, unknown>,
-        responsePayload
-      })
-      applyConfigResponse(result.config, result.storage)
-      pendingCodeRef.current = ''
-
-      if (result.config.connectionStatus === 'connected') {
-        setActiveStep(4)
-        showToast('success', 'Número conectado', 'WhatsApp quedó conectado')
-      } else {
-        showToast('warning', 'Revisa Meta', 'El token se guardó, pero falta confirmar WABA o Phone Number ID')
-      }
-    } catch (error) {
-      completedCodeRef.current = ''
-      showToast('error', 'Error de conexión', error instanceof Error ? error.message : 'Meta no completó la conexión')
-    } finally {
-      setIsCompleting(false)
-      setIsLaunching(false)
-    }
+  const handleSaveAndContinue = async () => {
+    const saved = await handleSave({ requireComplete: true })
+    if (saved) setActiveStep(4)
   }
 
-  const handleLaunchSignup = async () => {
-    if (!canLaunchSignup) {
-      showToast('error', 'Guarda primero', 'Completa y guarda la configuración de Meta Developers')
-      return
+  const handleConnect = async () => {
+    if (!config.configured) {
+      const saved = await handleSave({ requireComplete: true })
+      if (!saved) return
     }
 
-    setIsLaunching(true)
-    pendingCodeRef.current = ''
-    completedCodeRef.current = ''
-    sessionPayloadRef.current = null
-    setSessionPayload(null)
-
+    setIsConnecting(true)
     try {
-      await loadFacebookSdk(form.appId, form.graphApiVersion)
-      window.FB.login((response: FacebookLoginResponse) => {
-        const code = response.authResponse?.code
-        if (!code) {
-          setIsLaunching(false)
-          showToast('warning', 'Sin código', 'Meta no regresó el código de conexión')
-          return
-        }
-
-        pendingCodeRef.current = code
-        const latestSession = sessionPayloadRef.current
-        if (hasFinishEvent(latestSession)) {
-          finalizeSignup(code, latestSession, response as Record<string, unknown>)
-          return
-        }
-
-        window.setTimeout(() => {
-          if (pendingCodeRef.current === code && completedCodeRef.current !== code) {
-            finalizeSignup(code, sessionPayloadRef.current, response as Record<string, unknown>)
-          }
-        }, 2500)
-      }, {
-        config_id: form.embeddedSignupConfigId,
-        response_type: 'code',
-        override_default_response_type: true,
-        extras: {
-          setup: {},
-          featureType: COEXISTENCE_FEATURE_TYPE
-        }
-      })
+      const result = await whatsappService.connectCloudApi()
+      applyConfigResponse(result.config, result.storage)
+      if (result.config.connectionStatus === 'connected') {
+        showToast('success', 'WhatsApp conectado', 'Meta validó el número y Ristak quedó suscrito a webhooks')
+      } else {
+        showToast('warning', 'Revisa Meta', 'Se guardó la configuración, pero falta confirmar el número en Meta')
+      }
     } catch (error) {
-      setIsLaunching(false)
-      showToast('error', 'Facebook SDK', error instanceof Error ? error.message : 'No se pudo abrir Meta')
+      showToast('error', 'Error de conexión', error instanceof Error ? error.message : 'Meta no validó la conexión')
+    } finally {
+      setIsConnecting(false)
     }
   }
 
@@ -518,19 +347,19 @@ export const WhatsAppCoexistence: React.FC = () => {
 
   const getStepBlockMessage = (stepIndex = activeStep) => {
     if (stepIndex === 0 && !hasAppCredentials) {
-      return 'Primero pega el App ID y App Secret de tu Meta Developer App'
+      return 'Primero pega App ID y App Secret de tu Meta Developer App'
     }
 
-    if (stepIndex === 1 && !hasConfigId) {
-      return 'Pega el Configuration ID de Facebook Login for Business'
+    if (stepIndex === 1 && !hasPhoneApiData) {
+      return 'Pega Access Token, WABA ID y Phone Number ID desde WhatsApp API Setup'
     }
 
     if (stepIndex === 2 && !hasWebhookToken) {
-      return 'Define el verify token del webhook'
+      return 'Llega al paso de webhook y copia el verify token generado por Ristak'
     }
 
     if (stepIndex === 3 && !config.configured) {
-      return 'Guarda la configuración antes de conectar WhatsApp'
+      return 'Guarda la configuración antes de validarla con Meta'
     }
 
     return ''
@@ -565,13 +394,6 @@ export const WhatsAppCoexistence: React.FC = () => {
     setActiveStep(stepIndex)
   }
 
-  const handleSaveAndContinue = async () => {
-    const saved = await handleSave()
-    if (saved) {
-      setActiveStep(4)
-    }
-  }
-
   const handleCopy = async (value: string, label: string) => {
     try {
       await navigator.clipboard.writeText(value)
@@ -582,16 +404,11 @@ export const WhatsAppCoexistence: React.FC = () => {
   }
 
   const handleCopyWebhookToken = async () => {
-    if (!form.webhookVerifyToken && hasSetupCredentials) {
-      const saved = await handleSave({ silent: true, generateWebhookToken: true })
+    if (!form.webhookVerifyToken && hasAppCredentials) {
+      const saved = await handleSave({ silent: true, requireComplete: false, generateWebhookToken: true })
       if (!saved) return
       await handleCopy(saved.webhookVerifyToken, 'Verify token copiado')
       return
-    }
-
-    if (!config.configured && isReadyToSave) {
-      const saved = await handleSave({ silent: true })
-      if (!saved) return
     }
 
     await handleCopy(form.webhookVerifyToken, 'Verify token copiado')
@@ -603,15 +420,37 @@ export const WhatsAppCoexistence: React.FC = () => {
         <>
           <div className={styles.stepIntro}>
             <span className={styles.stepEyebrow}>Paso 1</span>
-            <h3 className={styles.stepTitle}>Usa la misma Meta Developer App</h3>
+            <h3 className={styles.stepTitle}>Prepara tu Meta Developer App</h3>
             <p className={styles.stepText}>
-              Abre tu app en Meta Developers. Si la app que usas para Meta Ads ya existe, puedes usar esa misma; lo importante es que tenga WhatsApp y Facebook Login for Business configurados.
+              Usa tu propia app de Meta Developers. Como esta instalación es single-user en tu propio Render, la app accede a tus propios activos y se conecta por Cloud API directa.
             </p>
             <a className={styles.inlineDocLink} href={META_DEVELOPERS_URL} target="_blank" rel="noopener noreferrer">
               Abrir Meta Developers
               <ExternalLink size={14} />
             </a>
           </div>
+
+          <div className={styles.warningCallout}>
+            <strong>Importante</strong>
+            <p>
+              Este modo no conserva el número abierto en WhatsApp Business App del celular. Para evitar broncas, usa un número dedicado a Cloud API o migra el número siguiendo el flujo normal de Meta.
+            </p>
+          </div>
+
+          <ol className={styles.guideDetailList}>
+            <li>
+              <strong>Crea o abre tu app</strong>
+              <span>En Meta Developers crea una app tipo Business o usa la app que ya tengas para Meta Ads.</span>
+            </li>
+            <li>
+              <strong>Agrega WhatsApp</strong>
+              <span>Dentro de la app, agrega el producto WhatsApp y entra a WhatsApp API Setup.</span>
+            </li>
+            <li>
+              <strong>Copia App ID y App Secret</strong>
+              <span>El App ID aparece arriba en el dashboard de la app. El App Secret está en App settings → Basic.</span>
+            </li>
+          </ol>
 
           <div className={styles.formGrid}>
             <label className={styles.formGroup}>
@@ -630,11 +469,10 @@ export const WhatsAppCoexistence: React.FC = () => {
                 className={styles.formInput}
                 value={form.appSecret}
                 onChange={(event) => handleInputChange('appSecret', event.target.value)}
-                placeholder={config.appSecretConfigured ? 'Ya guardado; pega uno nuevo sólo si quieres rotarlo' : 'Pega el App Secret'}
+                placeholder={config.appSecretConfigured ? 'Ya guardado; pega uno nuevo solo si quieres rotarlo' : 'Pega el App Secret'}
                 type="password"
               />
             </label>
-
           </div>
         </>
       )
@@ -645,66 +483,77 @@ export const WhatsAppCoexistence: React.FC = () => {
         <>
           <div className={styles.stepIntro}>
             <span className={styles.stepEyebrow}>Paso 2</span>
-            <h3 className={styles.stepTitle}>Crea la configuración de inicio de sesión</h3>
+            <h3 className={styles.stepTitle}>Copia los datos de WhatsApp API Setup</h3>
             <p className={styles.stepText}>
-              El Configuration ID sale de Facebook Login for Business. Esa configuración le dice a Meta que este wizard abrirá WhatsApp, pedirá acceso al número y regresará los IDs a Ristak.
+              En Meta Developers entra a tu app → WhatsApp → API Setup. Desde ahí agregas/verificas el número, copias el WABA ID, el Phone Number ID y generas el access token que Ristak usará para hablar con Meta.
             </p>
+            <a className={styles.inlineDocLink} href={CLOUD_API_DOCS_URL} target="_blank" rel="noopener noreferrer">
+              Ver guía oficial Cloud API
+              <ExternalLink size={14} />
+            </a>
           </div>
 
           <ol className={styles.guideDetailList}>
             <li>
-              <strong>Abre la app correcta</strong>
-              <span>Meta Developers → tu App. Debe tener agregados WhatsApp y Facebook Login for Business.</span>
+              <strong>Agrega el número</strong>
+              <span>En WhatsApp API Setup registra el número que usará Cloud API. Meta puede pedir verificación por SMS o llamada.</span>
             </li>
             <li>
-              <strong>Entra a Configurations</strong>
-              <span>Facebook Login for Business → Configurations → Create configuration.</span>
+              <strong>Copia WABA ID y Phone Number ID</strong>
+              <span>El WABA ID identifica la cuenta de WhatsApp Business. El Phone Number ID identifica el número específico desde el que se enviarán y recibirán mensajes.</span>
             </li>
             <li>
-              <strong>Elige la variación de WhatsApp</strong>
-              <span>Selecciona WhatsApp Embedded Signup / WhatsApp. No uses Conversion API, Website Message Widget, Instagram, Pixel ni otra variación que no sea para conectar WhatsApp.</span>
-            </li>
-            <li>
-              <strong>Permite acceso a WhatsApp</strong>
-              <span>Si Meta pide permisos/scopes, incluye acceso para administrar la cuenta de WhatsApp, enviar mensajes y leer eventos necesarios del negocio. Para conectar números reales, los permisos de WhatsApp deben tener Advanced Access aprobado en App Review.</span>
+              <strong>Genera el token</strong>
+              <span>Para pruebas puedes usar el temporary access token de API Setup. Para producción usa un System User token del Business Manager con permisos de WhatsApp.</span>
               <div className={styles.permissionPills}>
-                <span>whatsapp_business_management</span>
                 <span>whatsapp_business_messaging</span>
-                <span>business_management</span>
+                <span>whatsapp_business_management</span>
               </div>
-            </li>
-            <li>
-              <strong>Copia el Configuration ID</strong>
-              <span>Al final Meta muestra el identificador de configuración. Ese es el único ID que va en este campo.</span>
             </li>
           </ol>
 
           <div className={styles.setupCallout}>
-            <strong>URL de redireccionamiento y dominios</strong>
+            <strong>Token de producción</strong>
             <p>
-              Este wizard usa una ventana de Meta con Facebook Login. Si Meta te pide dominios permitidos o Valid OAuth Redirect URIs, usa la URL de esta pantalla. No pegues aquí la callback URL del webhook; esa va en el paso 3.
+              El token temporal de API Setup caduca. Para que Render siga funcionando, crea un System User en Business settings, asígnale el WABA y genera un token permanente o de larga duración.
             </p>
-            <div className={styles.inputActionRow}>
-              <input className={styles.formInput} value={currentWizardUrl} readOnly />
-              <Button type="button" variant="secondary" onClick={() => handleCopy(currentWizardUrl, 'URL de redirección copiada')}>
-                <Copy size={16} />
-                Copiar
-              </Button>
-            </div>
+            <a className={styles.inlineDocLink} href={SYSTEM_USER_DOCS_URL} target="_blank" rel="noopener noreferrer">
+              Ver tokens de sistema
+              <ExternalLink size={14} />
+            </a>
           </div>
 
-          <label className={`${styles.formGroup} ${styles.formGroupWide}`}>
-            <span className={styles.formLabel}>Configuration ID</span>
-            <input
-              className={styles.formInput}
-              value={form.embeddedSignupConfigId}
-              onChange={(event) => handleInputChange('embeddedSignupConfigId', event.target.value)}
-              placeholder="ID de la configuración de Facebook Login for Business"
-            />
-          </label>
+          <div className={styles.formGrid}>
+            <label className={`${styles.formGroup} ${styles.formGroupWide}`}>
+              <span className={styles.formLabel}>Access Token de WhatsApp Cloud API</span>
+              <input
+                className={styles.formInput}
+                value={form.businessToken}
+                onChange={(event) => handleInputChange('businessToken', event.target.value)}
+                placeholder={config.businessTokenConfigured ? 'Ya guardado; pega uno nuevo solo si quieres rotarlo' : 'Pega el token de acceso'}
+                type="password"
+              />
+            </label>
 
-          <div className={styles.notThisBox}>
-            No pegues aquí WABA ID, Phone Number ID, Pixel ID, Business Manager ID, App ID ni webhook URL. Este campo es sólo el Configuration ID de Facebook Login for Business.
+            <label className={styles.formGroup}>
+              <span className={styles.formLabel}>WABA ID</span>
+              <input
+                className={styles.formInput}
+                value={form.wabaId}
+                onChange={(event) => handleInputChange('wabaId', event.target.value)}
+                placeholder="WhatsApp Business Account ID"
+              />
+            </label>
+
+            <label className={styles.formGroup}>
+              <span className={styles.formLabel}>Phone Number ID</span>
+              <input
+                className={styles.formInput}
+                value={form.phoneNumberId}
+                onChange={(event) => handleInputChange('phoneNumberId', event.target.value)}
+                placeholder="ID del número en Cloud API"
+              />
+            </label>
           </div>
         </>
       )
@@ -715,40 +564,44 @@ export const WhatsAppCoexistence: React.FC = () => {
         <>
           <div className={styles.stepIntro}>
             <span className={styles.stepEyebrow}>Paso 3</span>
-            <h3 className={styles.stepTitle}>Configura el webhook de WhatsApp</h3>
+            <h3 className={styles.stepTitle}>Configura el webhook</h3>
             <p className={styles.stepText}>
-              Ristak crea este token automáticamente en el backend y lo guarda al llegar a este paso. Ahora ve a Meta Developers → Webhooks, selecciona el producto correcto y verifica la URL con este token.
+              Ristak genera el verify token automáticamente al llegar aquí. En Meta Developers entra a Webhooks, selecciona WhatsApp Business Account y verifica esta URL con este token.
             </p>
+            <a className={styles.inlineDocLink} href={WEBHOOK_DOCS_URL} target="_blank" rel="noopener noreferrer">
+              Ver guía oficial de webhooks
+              <ExternalLink size={14} />
+            </a>
           </div>
 
           {webhookEnvironmentMismatch && (
             <div className={styles.warningCallout}>
-              <strong>Estás configurando local contra el dominio público</strong>
+              <strong>Dominio mezclado</strong>
               <p>
-                Meta validará la URL pública, pero este wizard en localhost guarda en tu backend local. Para verificar en Meta, abre esta misma pantalla desde el dominio público y guarda ahí, o usa una callback local expuesta por túnel.
+                Estás viendo la app en localhost, pero la callback apunta a un dominio público. Para que Meta valide bien, guarda esta configuración desde el mismo Render público que usará la callback.
               </p>
             </div>
           )}
 
           <ol className={styles.guideDetailList}>
             <li>
-              <strong>En Meta Developers abre Webhooks</strong>
-              <span>Dentro de tu app, entra a Webhooks. En el campo Seleccionar producto elige exactamente WhatsApp Business Account.</span>
+              <strong>Selecciona el producto correcto</strong>
+              <span>En Webhooks, en Seleccionar producto, elige exactamente WhatsApp Business Account.</span>
             </li>
             <li>
-              <strong>Configura un webhook</strong>
-              <span>Pega la URL de devolución de llamada de Ristak y el token de verificación que aparece abajo. El token no se inventa ni se saca de Meta; Ristak ya lo creó para esta conexión.</span>
+              <strong>Pega URL y token</strong>
+              <span>Usa la URL de devolución de llamada y el verify token de abajo. El token no se inventa; Ristak lo crea y lo guarda cifrado.</span>
             </li>
             <li>
-              <strong>Verifica y guarda</strong>
-              <span>Cuando los dos campos estén pegados, presiona Verificar y guardar. Si Meta valida bien, ya puedes seguir con el wizard.</span>
+              <strong>Suscribe el campo messages</strong>
+              <span>Después de verificar y guardar, suscribe el campo messages para recibir mensajes entrantes y cambios de estado.</span>
             </li>
           </ol>
 
           <div className={styles.warningCallout}>
             <strong>OJO: no actives el certificado de cliente</strong>
             <p>
-              Deja apagado el switch que dice Adjunta un certificado de cliente a las solicitudes de webhook. Ristak no usa certificado de cliente para esta validación inicial; si lo prendes, Meta puede fallar la verificación.
+              Deja apagado el switch de certificado de cliente. Esta integración inicial valida con callback URL + verify token; si prendes certificado, Meta puede fallar la verificación.
             </p>
           </div>
 
@@ -789,7 +642,7 @@ export const WhatsAppCoexistence: React.FC = () => {
           </label>
 
           <p className={styles.stepHint}>
-            No lo sacas de Meta y no se escribe a mano. Si Meta devuelve 403 o dice que no pudo validar, confirma que guardaste en el mismo dominio de la callback URL.
+            Si Meta dice que no pudo validar, casi siempre es porque la URL pública no llega a este backend o porque el token pegado en Meta no es exactamente el mismo.
           </p>
         </>
       )
@@ -802,7 +655,7 @@ export const WhatsAppCoexistence: React.FC = () => {
             <span className={styles.stepEyebrow}>Paso 4</span>
             <h3 className={styles.stepTitle}>Guarda la configuración</h3>
             <p className={styles.stepText}>
-              Esto guarda App ID, App Secret, Configuration ID y webhook en la estructura dedicada de WhatsApp.
+              Ristak guardará los datos en tablas exclusivas de WhatsApp y mantendrá tokens/secretos cifrados. Todavía no se mezcla con contactos, atribución ni CRM.
             </p>
           </div>
 
@@ -812,15 +665,15 @@ export const WhatsAppCoexistence: React.FC = () => {
               <strong>{hasAppCredentials ? 'Lista' : 'Pendiente'}</strong>
             </div>
             <div>
-              <span>Configuration ID</span>
-              <strong>{hasConfigId ? 'Listo' : 'Pendiente'}</strong>
+              <span>Cloud API</span>
+              <strong>{hasPhoneApiData ? 'Lista' : 'Pendiente'}</strong>
             </div>
             <div>
               <span>Webhook</span>
               <strong>{hasWebhookToken ? 'Listo' : 'Pendiente'}</strong>
             </div>
             <div>
-              <span>Estado guardado</span>
+              <span>Estado</span>
               <strong>{config.configured ? 'Guardado' : 'Sin guardar'}</strong>
             </div>
           </div>
@@ -835,24 +688,24 @@ export const WhatsAppCoexistence: React.FC = () => {
 
     return (
       <>
-          <div className={styles.stepIntro}>
-            <span className={styles.stepEyebrow}>Paso 5</span>
-          <h3 className={styles.stepTitle}>Conecta el número de WhatsApp</h3>
+        <div className={styles.stepIntro}>
+          <span className={styles.stepEyebrow}>Paso 5</span>
+          <h3 className={styles.stepTitle}>Valida WhatsApp con Meta</h3>
           <p className={styles.stepText}>
-            Ya está lista la configuración. Abre el flujo oficial de Meta y termina la conexión del número.
+            Ristak usará el token para leer el Phone Number ID, consultar el WABA y suscribir la app a webhooks. Si Meta responde bien, el número queda conectado.
           </p>
         </div>
 
-        <div className={styles.warningCallout}>
-          <strong>Si Meta muestra el error #2655111</strong>
+        <div className={styles.setupCallout}>
+          <strong>Qué hace este botón</strong>
           <p>
-            La conexión ya llegó al registro del número, pero tu Meta App todavía no tiene Advanced Access aprobado para whatsapp_business_messaging y whatsapp_business_management. En Meta Developers ve a App Review → Permissions and Features y solicita esos permisos; mientras no estén aprobados, Meta no permite registrar un número real en Embedded Signup / Coexistence.
+            No abre otra pantalla de Meta. Hace llamadas directas a Graph API con tus datos: suscribe el WABA a la app, lee la información del número y marca la conexión como activa.
           </p>
         </div>
 
-        <Button type="button" variant="primary" onClick={handleLaunchSignup} disabled={!canLaunchSignup || isLaunching || isCompleting}>
-          <Link2 size={16} className={isLaunching || isCompleting ? styles.spinning : ''} />
-          {isCompleting ? 'Conectando...' : 'Conectar WhatsApp'}
+        <Button type="button" variant="primary" onClick={handleConnect} disabled={!config.configured || isConnecting}>
+          <Link2 size={16} className={isConnecting ? styles.spinning : ''} />
+          {isConnecting ? 'Validando...' : 'Validar conexión'}
         </Button>
       </>
     )
@@ -868,9 +721,9 @@ export const WhatsAppCoexistence: React.FC = () => {
                 <SiWhatsapp size={26} />
               </span>
               <div>
-                <h2 className={styles.pageTitle}>Conectar WhatsApp API</h2>
+                <h2 className={styles.pageTitle}>WhatsApp API</h2>
                 <p className={styles.pageSubtitle}>
-                  Sigue el wizard y conecta el número sin mezclar datos con CRM.
+                  Conecta WhatsApp Cloud API directa con tu propia Meta App, sin mezclar datos con CRM.
                 </p>
               </div>
             </div>
@@ -892,7 +745,7 @@ export const WhatsAppCoexistence: React.FC = () => {
                 <div>
                   <h3 className={styles.sectionTitle}>Wizard de conexión</h3>
                   <p className={styles.sectionDescription}>
-                    Completa cada paso y al final conecta el número desde Meta.
+                    Completa cada paso y valida el número con Meta Cloud API.
                   </p>
                 </div>
                 <span className={styles.stepCount}>{completedSteps}/5 listo</span>
@@ -943,7 +796,6 @@ export const WhatsAppCoexistence: React.FC = () => {
                   )}
                 </div>
               </div>
-
             </section>
 
             {isConnected && (
@@ -1016,16 +868,6 @@ export const WhatsAppCoexistence: React.FC = () => {
                 </div>
                 <span className={styles.railSecondaryValue}>Próximamente</span>
               </div>
-
-              {sessionPayload && (
-                <div className={styles.railBlock}>
-                  <div className={styles.railHeader}>
-                    <CheckCircle size={18} />
-                    <span>Último evento</span>
-                  </div>
-                  <strong className={styles.railPrimaryValue}>{sessionPayload.event || 'Recibido'}</strong>
-                </div>
-              )}
             </aside>
           )}
         </div>
