@@ -148,6 +148,12 @@
   background: rgba(8, 102, 255, 0.07);
 }
 
+.whatsappSectionIcon {
+  border-color: rgba(37, 211, 102, 0.28);
+  color: #25d366;
+  background: rgba(37, 211, 102, 0.1);
+}
+
 .stepCount {
   display: inline-flex;
   align-items: center;
