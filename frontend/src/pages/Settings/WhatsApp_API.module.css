@@ -533,6 +533,43 @@
   white-space: nowrap;
 }
 
+.fieldHint {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.sharedTokenBox {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(16, 185, 129, 0.22);
+  border-radius: 8px;
+  color: var(--color-status-success);
+  background: rgba(16, 185, 129, 0.075);
+}
+
+.sharedTokenBox div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.sharedTokenBox strong {
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.sharedTokenBox span {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .actions {
   display: flex;
   justify-content: flex-end;

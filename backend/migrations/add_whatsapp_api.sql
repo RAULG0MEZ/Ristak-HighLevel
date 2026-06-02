@@ -8,8 +8,6 @@ CREATE TABLE IF NOT EXISTS whatsapp_api_config (
   graph_api_version TEXT DEFAULT 'v23.0',
   webhook_verify_token TEXT,
   callback_url TEXT,
-  business_token TEXT,
-  business_token_expires_at DATETIME,
   waba_id TEXT,
   phone_number_id TEXT,
   display_phone_number TEXT,

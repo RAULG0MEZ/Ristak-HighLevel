@@ -130,7 +130,7 @@ export const WhatsApp_API: React.FC = () => {
     },
     {
       title: 'Cloud API',
-      description: 'Token, WABA y Phone ID',
+      description: 'Token, Phone ID y WABA',
       done: hasPhoneApiData
     },
     {
@@ -220,12 +220,12 @@ export const WhatsApp_API: React.FC = () => {
     if (!requireComplete) return true
 
     if (!form.businessToken && !config.businessTokenConfigured) {
-      showToast('error', 'Access Token requerido', 'Pega el token de acceso de WhatsApp Cloud API')
+      showToast('error', 'Access Token requerido', 'Pega el Access Token compartido de Meta')
       return false
     }
 
     if (!form.wabaId || !form.phoneNumberId) {
-      showToast('error', 'IDs requeridos', 'Pega WABA ID y Phone Number ID desde WhatsApp API Setup')
+      showToast('error', 'IDs requeridos', 'Pega Phone Number ID y WABA ID desde WhatsApp API Setup')
       return false
     }
 
@@ -351,7 +351,7 @@ export const WhatsApp_API: React.FC = () => {
     }
 
     if (stepIndex === 1 && !hasPhoneApiData) {
-      return 'Pega Access Token, WABA ID y Phone Number ID desde WhatsApp API Setup'
+      return 'Pega Access Token, Phone Number ID y WABA ID desde WhatsApp API Setup'
     }
 
     if (stepIndex === 2 && !hasWebhookToken) {
@@ -485,7 +485,7 @@ export const WhatsApp_API: React.FC = () => {
             <span className={styles.stepEyebrow}>Paso 2</span>
             <h3 className={styles.stepTitle}>Copia los datos de WhatsApp API Setup</h3>
             <p className={styles.stepText}>
-              En Meta Developers entra a tu app → WhatsApp → API Setup. Desde ahí agregas/verificas el número, copias el WABA ID, el Phone Number ID y generas el access token que Ristak usará para hablar con Meta.
+              En Meta Developers entra a tu app → WhatsApp → API Setup. Desde ahí agregas/verificas el número y copias el Phone Number ID y el WABA ID. Ristak usa el mismo Access Token de Meta para Ads y WhatsApp.
             </p>
             <a className={styles.inlineDocLink} href={CLOUD_API_DOCS_URL} target="_blank" rel="noopener noreferrer">
               Ver guía oficial Cloud API
@@ -499,12 +499,12 @@ export const WhatsApp_API: React.FC = () => {
               <span>En WhatsApp API Setup registra el número que usará Cloud API. Meta puede pedir verificación por SMS o llamada.</span>
             </li>
             <li>
-              <strong>Copia WABA ID y Phone Number ID</strong>
-              <span>El WABA ID identifica la cuenta de WhatsApp Business. El Phone Number ID identifica el número específico desde el que se enviarán y recibirán mensajes.</span>
+              <strong>Copia Phone Number ID y WABA ID</strong>
+              <span>El Phone Number ID identifica el número específico desde el que se enviarán y recibirán mensajes. El WABA ID identifica la cuenta de WhatsApp Business.</span>
             </li>
             <li>
-              <strong>Genera el token</strong>
-              <span>Para pruebas puedes usar el temporary access token de API Setup. Para producción usa un System User token del Business Manager con permisos de WhatsApp.</span>
+              <strong>Usa el token compartido</strong>
+              <span>Si Meta Ads ya está configurado, Ristak usa ese mismo token. Si todavía no existe, pega aquí un System User token con permisos de WhatsApp; después Meta Ads reutilizará el mismo.</span>
               <div className={styles.permissionPills}>
                 <span>whatsapp_business_messaging</span>
                 <span>whatsapp_business_management</span>
@@ -524,14 +524,37 @@ export const WhatsApp_API: React.FC = () => {
           </div>
 
           <div className={styles.formGrid}>
-            <label className={`${styles.formGroup} ${styles.formGroupWide}`}>
-              <span className={styles.formLabel}>Access Token de WhatsApp Cloud API</span>
+            {config.businessTokenConfigured ? (
+              <div className={`${styles.sharedTokenBox} ${styles.formGroupWide}`}>
+                <CheckCircle size={18} />
+                <div>
+                  <strong>Access Token de Meta listo</strong>
+                  <span>Es el mismo token compartido para Meta Ads y WhatsApp API. Aquí ya no necesitas pegarlo otra vez.</span>
+                </div>
+              </div>
+            ) : (
+              <label className={`${styles.formGroup} ${styles.formGroupWide}`}>
+                <span className={styles.formLabel}>Access Token de Meta</span>
+                <input
+                  className={styles.formInput}
+                  value={form.businessToken}
+                  onChange={(event) => handleInputChange('businessToken', event.target.value)}
+                  placeholder="EAAabcdef..."
+                  type="password"
+                />
+                <p className={styles.fieldHint}>
+                  Usa el mismo System User Token que usarías para Meta Ads, pero asegúrate de incluir permisos de WhatsApp.
+                </p>
+              </label>
+            )}
+
+            <label className={styles.formGroup}>
+              <span className={styles.formLabel}>Phone Number ID</span>
               <input
                 className={styles.formInput}
-                value={form.businessToken}
-                onChange={(event) => handleInputChange('businessToken', event.target.value)}
-                placeholder={config.businessTokenConfigured ? 'Ya guardado; pega uno nuevo solo si quieres rotarlo' : 'Pega el token de acceso'}
-                type="password"
+                value={form.phoneNumberId}
+                onChange={(event) => handleInputChange('phoneNumberId', event.target.value)}
+                placeholder="ID del número en Cloud API"
               />
             </label>
 
@@ -542,16 +565,6 @@ export const WhatsApp_API: React.FC = () => {
                 value={form.wabaId}
                 onChange={(event) => handleInputChange('wabaId', event.target.value)}
                 placeholder="WhatsApp Business Account ID"
-              />
-            </label>
-
-            <label className={styles.formGroup}>
-              <span className={styles.formLabel}>Phone Number ID</span>
-              <input
-                className={styles.formInput}
-                value={form.phoneNumberId}
-                onChange={(event) => handleInputChange('phoneNumberId', event.target.value)}
-                placeholder="ID del número en Cloud API"
               />
             </label>
           </div>
@@ -845,10 +858,10 @@ export const WhatsApp_API: React.FC = () => {
                 <strong className={styles.railPrimaryValue}>{config.displayPhoneNumber || 'Pendiente'}</strong>
                 <span className={styles.railSecondaryValue}>{config.verifiedName || getStatusLabel(config.connectionStatus)}</span>
                 <div className={styles.railMeta}>
-                  <span>WABA</span>
-                  <strong>{config.wabaId || '-'}</strong>
                   <span>Phone ID</span>
                   <strong>{config.phoneNumberId || '-'}</strong>
+                  <span>WABA</span>
+                  <strong>{config.wabaId || '-'}</strong>
                 </div>
                 <button
                   type="button"
