@@ -135,6 +135,19 @@
   line-height: 1.25;
 }
 
+.sectionIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(8, 102, 255, 0.22);
+  border-radius: 8px;
+  color: #0866ff;
+  background: rgba(8, 102, 255, 0.07);
+}
+
 .stepCount {
   display: inline-flex;
   align-items: center;
@@ -529,6 +542,10 @@
   border-top: 1px solid rgba(148, 163, 184, 0.16);
 }
 
+.eventSection {
+  padding: 18px;
+}
+
 .eventRow {
   display: flex;
   align-items: flex-start;
@@ -537,6 +554,11 @@
   min-width: 0;
   padding: 10px 0;
   border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.eventRow .railSecondaryValue {
+  display: block;
+  margin-top: 3px;
 }
 
 .eventRow:last-child {

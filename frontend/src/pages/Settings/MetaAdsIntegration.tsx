@@ -1019,42 +1019,19 @@ export const MetaAdsIntegration: React.FC = () => {
                 </div>
               </div>
             </section>
-          </div>
 
-          <aside className={styles.statusRail}>
-            <div className={styles.railBlock}>
-              <div className={styles.railHeader}>
-                <CheckCircle size={18} />
-                <span>Estado Meta</span>
+            <section className={`${styles.section} ${styles.eventSection}`}>
+              <div className={styles.sectionHeader}>
+                <div>
+                  <h3 className={styles.sectionTitle}>Eventos personalizados de WhatsApp</h3>
+                  <p className={styles.sectionDescription}>
+                    Envía conversiones server-side cuando entren eventos desde WhatsApp.
+                  </p>
+                </div>
+                <span className={styles.sectionIcon} aria-hidden="true">
+                  <MessageSquareText size={18} />
+                </span>
               </div>
-              <strong className={styles.railPrimaryValue}>
-                {isMetaConfigured ? 'Configuración activa' : 'Configuración pendiente'}
-              </strong>
-              <span className={styles.railSecondaryValue}>
-                {isMetaConfigured ? 'Cuenta lista para reportes y sincronización.' : 'Completa Access Token y cuenta de anuncios.'}
-              </span>
-              <div className={styles.railMeta}>
-                <span>Token</span>
-                <strong>{hasAccessToken ? 'Listo' : '-'}</strong>
-                <span>Cuenta</span>
-                <strong>{hasAdAccount ? getSelectedAdAccountLabel() : '-'}</strong>
-                <span>Pixel</span>
-                <strong>{hasPixel ? getSelectedPixelLabel() : '-'}</strong>
-                <span>CAPI</span>
-                <strong>{hasPixelApiToken ? 'Listo' : '-'}</strong>
-                <span>Page ID</span>
-                <strong>{hasPageId ? savedPageId : '-'}</strong>
-              </div>
-            </div>
-
-            <div className={styles.railBlock}>
-              <div className={styles.railHeader}>
-                <MessageSquareText size={18} />
-                <span>Eventos WhatsApp</span>
-              </div>
-              <span className={styles.railSecondaryValue}>
-                Envía conversiones server-side cuando entren eventos desde WhatsApp.
-              </span>
 
               <div className={styles.eventRows}>
                 <div className={[
@@ -1102,6 +1079,33 @@ export const MetaAdsIntegration: React.FC = () => {
                     <span className={styles.switchSlider}></span>
                   </label>
                 </div>
+              </div>
+            </section>
+          </div>
+
+          <aside className={styles.statusRail}>
+            <div className={styles.railBlock}>
+              <div className={styles.railHeader}>
+                <CheckCircle size={18} />
+                <span>Estado Meta</span>
+              </div>
+              <strong className={styles.railPrimaryValue}>
+                {isMetaConfigured ? 'Configuración activa' : 'Configuración pendiente'}
+              </strong>
+              <span className={styles.railSecondaryValue}>
+                {isMetaConfigured ? 'Cuenta lista para reportes y sincronización.' : 'Completa Access Token y cuenta de anuncios.'}
+              </span>
+              <div className={styles.railMeta}>
+                <span>Token</span>
+                <strong>{hasAccessToken ? 'Listo' : '-'}</strong>
+                <span>Cuenta</span>
+                <strong>{hasAdAccount ? getSelectedAdAccountLabel() : '-'}</strong>
+                <span>Pixel</span>
+                <strong>{hasPixel ? getSelectedPixelLabel() : '-'}</strong>
+                <span>CAPI</span>
+                <strong>{hasPixelApiToken ? 'Listo' : '-'}</strong>
+                <span>Page ID</span>
+                <strong>{hasPageId ? savedPageId : '-'}</strong>
               </div>
             </div>
 
