@@ -53,6 +53,7 @@ export const WhatsAppSettings: React.FC = () => {
   const [loading, setLoading] = useState(true)
   const [disconnecting, setDisconnecting] = useState(false)
   const [connecting, setConnecting] = useState(false)
+  const [qrRequested, setQrRequested] = useState(false)
   const [manualDisconnected, setManualDisconnected] = useState(false)
   const [showLogs, setShowLogs] = useState(false)
   const [logs, setLogs] = useState<WhatsAppWebLogs | null>(null)
@@ -70,7 +71,7 @@ export const WhatsAppSettings: React.FC = () => {
     businessProfile?.name ||
     'WhatsApp Business'
   const profileImage = session?.profile_picture_url
-  const showQr = !isConnected && Boolean(session?.qr_image) && !manualDisconnected
+  const showQr = qrRequested && !isConnected && Boolean(session?.qr_image) && !manualDisconnected
   const isWaitingForQr = connecting && !isConnected && !showQr && !manualDisconnected
 
   const loadStatus = async () => {
@@ -87,6 +88,7 @@ export const WhatsAppSettings: React.FC = () => {
     requestInFlight.current = true
     setManualDisconnected(false)
     setConnecting(true)
+    setQrRequested(true)
 
     try {
       const nextStatus = await whatsappWebService.connect({ reset: true })
@@ -147,6 +149,7 @@ export const WhatsAppSettings: React.FC = () => {
       async () => {
         setDisconnecting(true)
         setConnecting(false)
+        setQrRequested(false)
         setManualDisconnected(true)
         try {
           const nextStatus = await whatsappWebService.disconnect()
@@ -181,7 +184,7 @@ export const WhatsAppSettings: React.FC = () => {
       <Card className={styles.shell}>
         <div className={styles.generatingState}>
           <RefreshCw size={26} className={styles.spin} />
-          <span>Generando QR</span>
+          <span>Cargando configuracion</span>
         </div>
       </Card>
     )
@@ -254,6 +257,10 @@ export const WhatsAppSettings: React.FC = () => {
           <div className={styles.qrState}>
             <img src={session?.qr_image || ''} alt="Codigo QR para conectar WhatsApp Business" />
             <p>Escanea el codigo desde WhatsApp para conectar la cuenta.</p>
+            <Button variant="outline" size="md" onClick={startConnection}>
+              <RefreshCw size={16} />
+              Generar QR nuevo
+            </Button>
           </div>
         ) : manualDisconnected ? (
           <div className={styles.disconnectedState}>
