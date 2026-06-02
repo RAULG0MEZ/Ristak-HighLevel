@@ -85,6 +85,11 @@ function buildDefaultCallbackUrl() {
   return `${window.location.origin}/webhook/whatsapp`
 }
 
+function buildCurrentWizardUrl() {
+  if (typeof window === 'undefined') return '/settings/whatsapp-coexistence'
+  return `${window.location.origin}/settings/whatsapp-coexistence`
+}
+
 function generateWebhookVerifyToken() {
   const bytes = new Uint8Array(24)
 
@@ -237,6 +242,7 @@ export const WhatsAppCoexistence: React.FC = () => {
   ]), [config.configured, hasAppCredentials, hasConfigId, hasWebhookToken, isConnected])
 
   const completedSteps = setupSteps.filter(step => step.done).length
+  const currentWizardUrl = useMemo(() => buildCurrentWizardUrl(), [])
   const canLaunchSignup = Boolean(
     config.configured &&
     form.appId &&
@@ -579,18 +585,53 @@ export const WhatsAppCoexistence: React.FC = () => {
         <>
           <div className={styles.stepIntro}>
             <span className={styles.stepEyebrow}>Paso 2</span>
-            <h3 className={styles.stepTitle}>Saca el Configuration ID</h3>
+            <h3 className={styles.stepTitle}>Crea la configuración de inicio de sesión</h3>
             <p className={styles.stepText}>
-              En Meta Developers ve a Facebook Login for Business, entra a Configurations y crea una configuración para WhatsApp. El ID que aparece ahí va aquí.
+              El Configuration ID sale de Facebook Login for Business. Esa configuración le dice a Meta que este wizard abrirá WhatsApp, pedirá acceso al número y regresará los IDs a Ristak.
             </p>
           </div>
 
-          <ol className={styles.guideList}>
-            <li>Meta Developers → tu App.</li>
-            <li>Facebook Login for Business → Configurations.</li>
-            <li>Create from template → WhatsApp.</li>
-            <li>Copia el Configuration ID.</li>
+          <ol className={styles.guideDetailList}>
+            <li>
+              <strong>Abre la app correcta</strong>
+              <span>Meta Developers → tu App. Debe tener agregados WhatsApp y Facebook Login for Business.</span>
+            </li>
+            <li>
+              <strong>Entra a Configurations</strong>
+              <span>Facebook Login for Business → Configurations → Create configuration.</span>
+            </li>
+            <li>
+              <strong>Elige la variación de WhatsApp</strong>
+              <span>Selecciona WhatsApp Embedded Signup / WhatsApp. No uses Conversion API, Website Message Widget, Instagram, Pixel ni otra variación que no sea para conectar WhatsApp.</span>
+            </li>
+            <li>
+              <strong>Permite acceso a WhatsApp</strong>
+              <span>Si Meta pide permisos/scopes, incluye acceso para administrar la cuenta de WhatsApp, enviar mensajes y leer eventos necesarios del negocio.</span>
+              <div className={styles.permissionPills}>
+                <span>whatsapp_business_management</span>
+                <span>whatsapp_business_messaging</span>
+                <span>business_management</span>
+              </div>
+            </li>
+            <li>
+              <strong>Copia el Configuration ID</strong>
+              <span>Al final Meta muestra el identificador de configuración. Ese es el único ID que va en este campo.</span>
+            </li>
           </ol>
+
+          <div className={styles.setupCallout}>
+            <strong>URL de redireccionamiento y dominios</strong>
+            <p>
+              Este wizard usa una ventana de Meta con Facebook Login. Si Meta te pide dominios permitidos o Valid OAuth Redirect URIs, usa la URL de esta pantalla. No pegues aquí la callback URL del webhook; esa va en el paso 3.
+            </p>
+            <div className={styles.inputActionRow}>
+              <input className={styles.formInput} value={currentWizardUrl} readOnly />
+              <Button type="button" variant="secondary" onClick={() => handleCopy(currentWizardUrl, 'URL de redirección copiada')}>
+                <Copy size={16} />
+                Copiar
+              </Button>
+            </div>
+          </div>
 
           <label className={`${styles.formGroup} ${styles.formGroupWide}`}>
             <span className={styles.formLabel}>Configuration ID</span>
@@ -603,7 +644,7 @@ export const WhatsAppCoexistence: React.FC = () => {
           </label>
 
           <div className={styles.notThisBox}>
-            No pegues aquí WABA ID, Phone Number ID, Pixel ID ni Business Manager ID. Este campo es sólo el Configuration ID.
+            No pegues aquí WABA ID, Phone Number ID, Pixel ID, Business Manager ID, App ID ni webhook URL. Este campo es sólo el Configuration ID de Facebook Login for Business.
           </div>
         </>
       )
@@ -616,8 +657,21 @@ export const WhatsAppCoexistence: React.FC = () => {
             <span className={styles.stepEyebrow}>Paso 3</span>
             <h3 className={styles.stepTitle}>Configura el webhook de WhatsApp</h3>
             <p className={styles.stepText}>
-              Ristak creó este token automáticamente. Copia la URL y el token; después de guardar en el siguiente paso, pégalos en Meta Developers → WhatsApp → Configuration para verificar el webhook.
+              Ristak creó este token automáticamente. Copia la callback URL y el token; después de guardar en el siguiente paso, pégalos en Meta Developers → WhatsApp → Configuration para verificar el webhook.
             </p>
+          </div>
+
+          <div className={styles.setupCallout}>
+            <strong>Eventos que debes activar en WhatsApp</strong>
+            <p>
+              El webhook no se configura en Facebook Login for Business. Se configura en WhatsApp → Configuration. Cuando Meta deje elegir campos, activa mensajes, estados de mensajes, plantillas y cambios de cuenta o número si aparecen.
+            </p>
+            <div className={styles.permissionPills}>
+              <span>messages</span>
+              <span>message_template_status_update</span>
+              <span>phone_number_quality_update</span>
+              <span>account_update</span>
+            </div>
           </div>
 
           <label className={`${styles.formGroup} ${styles.formGroupWide}`}>
