@@ -291,7 +291,11 @@
 
 .progressFill {
   height: 100%;
-  background: linear-gradient(90deg, var(--design-chart-primary, var(--color-text-secondary)), var(--design-chart-tertiary, var(--design-chart-primary, var(--color-text-secondary))));
+  background: linear-gradient(
+    90deg,
+    var(--color-status-success, #10b981),
+    color-mix(in srgb, var(--color-status-success, #10b981) 78%, #86efac 22%)
+  );
   border-radius: 9999px;
   transition: width 1s ease-out;
 }
