@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
-import { Card, Button } from '@/components/common'
-import { ArrowLeft, ArrowRight, CheckCircle, ExternalLink, MessageSquareText, RefreshCw, Trash2, XCircle } from 'lucide-react'
+import { Card, Button, Icon } from '@/components/common'
+import { ArrowLeft, ArrowRight, CheckCircle, ExternalLink, RefreshCw, Trash2, XCircle } from 'lucide-react'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { useAppConfig, useIsRenderDomain } from '@/hooks'
@@ -1091,8 +1091,8 @@ export const MetaAdsIntegration: React.FC = () => {
                     Envía conversiones server-side cuando entren eventos desde WhatsApp.
                   </p>
                 </div>
-                <span className={styles.sectionIcon} aria-hidden="true">
-                  <MessageSquareText size={18} />
+                <span className={`${styles.sectionIcon} ${styles.whatsappSectionIcon}`} aria-hidden="true">
+                  <Icon name="whatsapp" size={18} />
                 </span>
               </div>
 
