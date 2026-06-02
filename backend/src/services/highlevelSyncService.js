@@ -17,6 +17,7 @@ import {
   finalizePreparedPhoneUpsert,
   prepareContactPhoneUpsert
 } from './contactIdentityService.js'
+import GHLClient from './ghlClient.js'
 
 const HIGHLEVEL_BASE_URL = 'https://services.leadconnectorhq.com'
 const HIGHLEVEL_API_VERSION = '2021-07-28'
@@ -39,6 +40,7 @@ let syncProgress = {
   message: '',
   triggerSource: 'manual', // 'manual' o 'cron' - indica si se debe mostrar en UI
   contacts: { saved: 0, total: 0, status: 'pending', message: '' },
+  whatsappContacts: { saved: 0, total: 0, status: 'pending', message: '' },
   appointments: { saved: 0, total: 0, status: 'pending', message: '' },
   payments: { saved: 0, total: 0, status: 'pending', message: '' },
   metaAds: { synced: false, count: 0, saved: 0, total: 0, status: 'pending', message: '' }
@@ -60,12 +62,14 @@ function updateGlobalProgress() {
   // Calcular el total global y el progreso actual sumando todos los módulos
   const totalGlobal =
     (syncProgress.contacts.total || 0) +
+    (syncProgress.whatsappContacts?.total || 0) +
     (syncProgress.appointments.total || 0) +
     (syncProgress.payments.total || 0) +
     (syncProgress.metaAds?.total || 0)
 
   const currentGlobal =
     (syncProgress.contacts.saved || 0) +
+    (syncProgress.whatsappContacts?.saved || 0) +
     (syncProgress.appointments.saved || 0) +
     (syncProgress.payments.saved || 0) +
     (syncProgress.metaAds?.saved || 0)
@@ -76,6 +80,11 @@ function updateGlobalProgress() {
 
 function updateContacts(saved, total, status, message) {
   syncProgress.contacts = { saved, total, status, message }
+  updateGlobalProgress()
+}
+
+function updateWhatsAppContacts(saved, total, status, message) {
+  syncProgress.whatsappContacts = { saved, total, status, message }
   updateGlobalProgress()
 }
 
@@ -852,6 +861,185 @@ async function syncHighLevelContacts(locationId, apiToken) {
   return { saved, total: allContacts.length }
 }
 
+function serializeCustomFieldsForUpsert(value) {
+  if (value === null || value === undefined || value === '') return null
+  if (typeof value === 'string') return value
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return null
+  }
+}
+
+async function getWhatsAppOnlyContactsForHighLevelUpload() {
+  return db.all(`
+    SELECT id, phone, email, full_name, first_name, last_name, source, visitor_id,
+      attribution_url, attribution_session_source, attribution_medium, attribution_ctwa_clid,
+      attribution_ad_name, attribution_ad_id, custom_fields, created_at
+    FROM contacts
+    WHERE id LIKE 'waweb_contact_%'
+      AND phone IS NOT NULL
+      AND phone != ''
+    ORDER BY created_at ASC
+  `)
+}
+
+async function findHighLevelContactForLocal(client, contact) {
+  const searches = []
+  if (contact.email) searches.push({ email: contact.email })
+  if (contact.phone) searches.push({ phone: contact.phone })
+
+  for (const search of searches) {
+    try {
+      const result = await client.searchContacts({ ...search, limit: 5 })
+      const match = (result.contacts || []).find(candidate => candidate.id)
+      if (match) return match
+    } catch (error) {
+      logger.warn(`No se pudo buscar contacto WhatsApp en HighLevel (${contact.id}): ${error.message}`)
+    }
+  }
+
+  return null
+}
+
+async function upsertHighLevelContactLocallyFromWhatsApp({ localContact, highLevelContact }) {
+  const targetId = highLevelContact.id || highLevelContact._id
+  if (!targetId) throw new Error('HighLevel no devolvio id de contacto')
+
+  const fullName = highLevelContact.name ||
+    highLevelContact.contactName ||
+    `${highLevelContact.firstName || ''} ${highLevelContact.lastName || ''}`.trim() ||
+    localContact.full_name ||
+    localContact.phone
+  const firstName = highLevelContact.firstName || localContact.first_name || fullName?.split(' ')?.[0] || null
+  const lastName = highLevelContact.lastName || localContact.last_name || null
+  const phoneUpsert = await prepareContactPhoneUpsert({
+    contactId: targetId,
+    phone: highLevelContact.phone || localContact.phone
+  })
+  const usePostgres = process.env.DATABASE_URL ? true : false
+  const customFieldsPlaceholder = usePostgres ? '?::jsonb' : '?'
+
+  try {
+    await db.run(`
+      INSERT INTO contacts (
+        id, phone, email, full_name, first_name, last_name, source, visitor_id,
+        attribution_url, attribution_session_source, attribution_medium, attribution_ctwa_clid,
+        attribution_ad_name, attribution_ad_id, custom_fields, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${customFieldsPlaceholder}, COALESCE(?, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP)
+      ON CONFLICT (id) DO UPDATE SET
+        phone = COALESCE(excluded.phone, contacts.phone),
+        email = COALESCE(excluded.email, contacts.email),
+        full_name = COALESCE(excluded.full_name, contacts.full_name),
+        first_name = COALESCE(excluded.first_name, contacts.first_name),
+        last_name = COALESCE(excluded.last_name, contacts.last_name),
+        source = COALESCE(excluded.source, contacts.source),
+        visitor_id = COALESCE(excluded.visitor_id, contacts.visitor_id),
+        attribution_url = COALESCE(excluded.attribution_url, contacts.attribution_url),
+        attribution_session_source = COALESCE(excluded.attribution_session_source, contacts.attribution_session_source),
+        attribution_medium = COALESCE(excluded.attribution_medium, contacts.attribution_medium),
+        attribution_ctwa_clid = COALESCE(excluded.attribution_ctwa_clid, contacts.attribution_ctwa_clid),
+        attribution_ad_name = COALESCE(excluded.attribution_ad_name, contacts.attribution_ad_name),
+        attribution_ad_id = COALESCE(excluded.attribution_ad_id, contacts.attribution_ad_id),
+        custom_fields = COALESCE(excluded.custom_fields, contacts.custom_fields),
+        updated_at = CURRENT_TIMESTAMP
+    `, [
+      targetId,
+      phoneUpsert.phone || null,
+      highLevelContact.email || localContact.email || null,
+      fullName || null,
+      firstName || null,
+      lastName || null,
+      localContact.source || highLevelContact.source || 'WhatsApp Business',
+      localContact.visitor_id || null,
+      localContact.attribution_url || null,
+      localContact.attribution_session_source || null,
+      localContact.attribution_medium || null,
+      localContact.attribution_ctwa_clid || null,
+      localContact.attribution_ad_name || null,
+      localContact.attribution_ad_id || null,
+      serializeCustomFieldsForUpsert(localContact.custom_fields),
+      localContact.created_at || null
+    ])
+
+    await finalizePreparedPhoneUpsert(phoneUpsert, targetId)
+  } catch (error) {
+    if (phoneUpsert.mergeFromContactId) {
+      await db.run(
+        'UPDATE contacts SET phone = COALESCE(phone, ?), email = COALESCE(email, ?), updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [localContact.phone || null, localContact.email || null, phoneUpsert.mergeFromContactId]
+      )
+    }
+    throw error
+  }
+
+  return targetId
+}
+
+async function syncWhatsAppContactsToHighLevel(locationId, apiToken) {
+  const contacts = await getWhatsAppOnlyContactsForHighLevelUpload()
+  const total = contacts.length
+
+  if (!total) {
+    updateWhatsAppContacts(0, 0, 'completed', 'Sin contactos WhatsApp pendientes')
+    return { total: 0, synced: 0, created: 0, matched: 0, failed: 0 }
+  }
+
+  const client = new GHLClient(apiToken, locationId)
+  let created = 0
+  let matched = 0
+  let failed = 0
+
+  updateWhatsAppContacts(0, total, 'running', `Subiendo contactos WhatsApp: 0/${total}`)
+
+  for (const contact of contacts) {
+    try {
+      let highLevelContact = await findHighLevelContactForLocal(client, contact)
+
+      if (highLevelContact) {
+        matched += 1
+      } else {
+        const fullName = contact.full_name ||
+          `${contact.first_name || ''} ${contact.last_name || ''}`.trim() ||
+          contact.phone ||
+          'Contacto WhatsApp'
+        const result = await client.createContact({
+          name: fullName,
+          email: contact.email || '',
+          phone: contact.phone
+        })
+        highLevelContact = result.contact || result
+        created += 1
+      }
+
+      await upsertHighLevelContactLocallyFromWhatsApp({
+        localContact: contact,
+        highLevelContact
+      })
+
+      const synced = created + matched
+      if (synced % 25 === 0 || synced + failed === total) {
+        updateWhatsAppContacts(synced, total, 'running', `Subiendo contactos WhatsApp: ${synced}/${total}`)
+      }
+    } catch (error) {
+      failed += 1
+      logger.warn(`No se pudo subir contacto WhatsApp ${contact.id} a HighLevel: ${error.message}`)
+      updateWhatsAppContacts(created + matched, total, 'running', `Subiendo contactos WhatsApp: ${created + matched}/${total}`)
+    }
+  }
+
+  const synced = created + matched
+  const status = failed > 0 ? 'partial' : 'completed'
+  const message = failed > 0
+    ? `${synced}/${total} contactos WhatsApp sincronizados, ${failed} con error`
+    : `${synced} contactos WhatsApp sincronizados con HighLevel`
+
+  updateWhatsAppContacts(synced, total, status, message)
+  logger.info(`✅ WhatsApp → HighLevel: ${created} creados, ${matched} emparejados, ${failed} fallidos`)
+
+  return { total, synced, created, matched, failed }
+}
+
 /**
  * Sincroniza citas/appointments desde HighLevel (con paginación)
  * Si un contacto no existe, lo obtiene de HighLevel y lo crea
@@ -1499,6 +1687,7 @@ export async function syncHighLevelData(locationId, apiToken, triggerSource = 'm
       message: 'Preparando sincronización de datos',
       triggerSource: triggerSource,
       contacts: { saved: 0, total: 0, status: 'pending', message: 'Esperando...' },
+      whatsappContacts: { saved: 0, total: 0, status: 'pending', message: 'Esperando...' },
       appointments: { saved: 0, total: 0, status: 'pending', message: 'Esperando...' },
       payments: { saved: 0, total: 0, status: 'pending', message: 'Esperando...' },
       metaAds: { synced: false, count: 0, saved: 0, total: 0, status: 'pending', message: 'Esperando...' }
@@ -1515,6 +1704,10 @@ export async function syncHighLevelData(locationId, apiToken, triggerSource = 'm
     // 2. Sincronizar contactos
     syncProgress.step = 'Sincronizando contactos...'
     const contactsResult = await syncHighLevelContacts(locationId, apiToken)
+
+    // 2.5. Subir contactos creados por WhatsApp cuando HighLevel todavía no los tiene
+    syncProgress.step = 'Subiendo contactos WhatsApp a HighLevel...'
+    const whatsappContactsResult = await syncWhatsAppContactsToHighLevel(locationId, apiToken)
 
     // 3. Sincronizar citas
     syncProgress.step = 'Sincronizando citas...'
@@ -1539,11 +1732,12 @@ export async function syncHighLevelData(locationId, apiToken, triggerSource = 'm
     // 5. Completado
     syncProgress.status = 'completed'
     syncProgress.step = 'Sincronización completada'
-    syncProgress.message = `✅ Sincronización completada: ${contactsResult.saved} contactos, ${appointmentsResult.saved} citas, ${paymentsResult.saved} pagos`
+    syncProgress.message = `✅ Sincronización completada: ${contactsResult.saved} contactos GHL, ${whatsappContactsResult.synced} contactos WhatsApp, ${appointmentsResult.saved} citas, ${paymentsResult.saved} pagos`
 
     logger.info('===========================================')
     logger.info('SINCRONIZACIÓN COMPLETADA EXITOSAMENTE')
-    logger.info(`Contactos: ${contactsResult.saved}/${contactsResult.total}`)
+    logger.info(`Contactos GHL: ${contactsResult.saved}/${contactsResult.total}`)
+    logger.info(`Contactos WhatsApp → GHL: ${whatsappContactsResult.synced}/${whatsappContactsResult.total} (${whatsappContactsResult.created} creados, ${whatsappContactsResult.matched} emparejados, ${whatsappContactsResult.failed} fallidos)`)
     logger.info(`Citas: ${appointmentsResult.saved}/${appointmentsResult.total} (${appointmentsResult.contactsCreated} contactos creados)`)
     logger.info(`Pagos: ${paymentsResult.saved}/${paymentsResult.total} (${paymentsResult.contactsCreated} contactos creados)`)
     logger.info('===========================================')
@@ -1623,6 +1817,7 @@ export async function syncHighLevelData(locationId, apiToken, triggerSource = 'm
     return {
       success: true,
       contacts: contactsResult,
+      whatsappContacts: whatsappContactsResult,
       appointments: appointmentsResult,
       payments: paymentsResult,
       metaAds: metaAdsResult

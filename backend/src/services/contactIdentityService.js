@@ -110,12 +110,13 @@ export async function mergeContactIds({ fromId, toId, canonicalPhone = null }) {
   const totalPaid = Math.max(Number(fromContact.total_paid || 0), Number(toContact.total_paid || 0))
   const purchasesCount = Math.max(Number(fromContact.purchases_count || 0), Number(toContact.purchases_count || 0))
 
-  await db.run('UPDATE contacts SET phone = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [fromId])
+  await db.run('UPDATE contacts SET phone = NULL, email = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [fromId])
   await updateContactReferences(fromId, toId)
 
   await db.run(`
     UPDATE contacts SET
       phone = COALESCE(?, phone),
+      email = COALESCE(NULLIF(email, ''), ?),
       full_name = COALESCE(NULLIF(full_name, ''), ?),
       first_name = COALESCE(NULLIF(first_name, ''), ?),
       last_name = COALESCE(NULLIF(last_name, ''), ?),
@@ -133,6 +134,7 @@ export async function mergeContactIds({ fromId, toId, canonicalPhone = null }) {
     WHERE id = ?
   `, [
     normalizedPhone || null,
+    fromContact.email || null,
     fromContact.full_name || null,
     fromContact.first_name || null,
     fromContact.last_name || null,
@@ -175,7 +177,7 @@ export async function prepareContactPhoneUpsert({ contactId, phone }) {
     return { phone: canonicalPhone, mergeFromContactId: null }
   }
 
-  await db.run('UPDATE contacts SET phone = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [matched.id])
+  await db.run('UPDATE contacts SET phone = NULL, email = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [matched.id])
   return { phone: canonicalPhone, mergeFromContactId: matched.id }
 }
 
