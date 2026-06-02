@@ -1542,9 +1542,11 @@ export const Dashboard: React.FC = () => {
     </div>
   )
 
-  if (loading || !metrics) {
+  if (!metrics) {
     return <Loading message="Cargando dashboard..." page="dashboard" kpiLayout="joined" kpiCount={8} />
   }
+
+  const metricsRefreshing = loading
 
   return (
     <>
@@ -1571,57 +1573,65 @@ export const Dashboard: React.FC = () => {
             value={formatCurrency(metrics.ingresosNetos.value)}
             delta={metrics.ingresosNetos.variation}
             deltaLabel="vs periodo anterior"
-          icon={<DollarSign className="w-5 h-5" />}
-        />
-        <KpiCard
-          title="Gastos de Publicidad"
-          value={formatCurrency(metrics.gastosPublicidad.value)}
-          delta={metrics.gastosPublicidad.variation}
-          deltaLabel="vs periodo anterior"
-          icon={<Megaphone className="w-5 h-5" />}
-        />
-        <KpiCard
-          title="Ganancia Bruta"
-          value={formatCurrency(metrics.gananciaBruta.value)}
-          delta={metrics.gananciaBruta.variation}
-          deltaLabel="vs periodo anterior"
-          icon={<TrendingUp className="w-5 h-5" />}
-        />
-        <KpiCard
-          title="Retorno de Inversión"
-          value={formatRoas(metrics.roas.value)}
-          delta={metrics.roas.variation}
-          deltaLabel="vs periodo anterior"
-          icon={<Target className="w-5 h-5" />}
-        />
-        <KpiCard
-          title="Costos Totales"
-          value={formatCurrency(metrics.totalCostos.value)}
-          delta={metrics.totalCostos.variation}
-          deltaLabel="vs periodo anterior"
-          icon={<Receipt className="w-5 h-5" />}
-        />
-        <KpiCard
-          title="Ganancia Neta"
-          value={formatCurrency(metrics.gananciaNeta.value)}
-          delta={metrics.gananciaNeta.variation}
-          deltaLabel="vs periodo anterior"
-          icon={<Wallet className="w-5 h-5" />}
-        />
-        <KpiCard
-          title="Reembolsos"
-          value={formatCurrency(metrics.reembolsos.value)}
-          delta={metrics.reembolsos.variation}
-          deltaLabel="vs periodo anterior"
-          icon={<RotateCcw className="w-5 h-5" />}
-        />
-        <KpiCard
-          title="Pagos totales promedio"
-          value={formatCurrency(metrics.ltvPromedio.value)}
-          delta={metrics.ltvPromedio.variation}
-          deltaLabel="vs periodo anterior"
-          icon={<Users className="w-5 h-5" />}
-        />
+            loading={metricsRefreshing}
+            icon={<DollarSign className="w-5 h-5" />}
+          />
+          <KpiCard
+            title="Gastos de Publicidad"
+            value={formatCurrency(metrics.gastosPublicidad.value)}
+            delta={metrics.gastosPublicidad.variation}
+            deltaLabel="vs periodo anterior"
+            loading={metricsRefreshing}
+            icon={<Megaphone className="w-5 h-5" />}
+          />
+          <KpiCard
+            title="Ganancia Bruta"
+            value={formatCurrency(metrics.gananciaBruta.value)}
+            delta={metrics.gananciaBruta.variation}
+            deltaLabel="vs periodo anterior"
+            loading={metricsRefreshing}
+            icon={<TrendingUp className="w-5 h-5" />}
+          />
+          <KpiCard
+            title="Retorno de Inversión"
+            value={formatRoas(metrics.roas.value)}
+            delta={metrics.roas.variation}
+            deltaLabel="vs periodo anterior"
+            loading={metricsRefreshing}
+            icon={<Target className="w-5 h-5" />}
+          />
+          <KpiCard
+            title="Costos Totales"
+            value={formatCurrency(metrics.totalCostos.value)}
+            delta={metrics.totalCostos.variation}
+            deltaLabel="vs periodo anterior"
+            loading={metricsRefreshing}
+            icon={<Receipt className="w-5 h-5" />}
+          />
+          <KpiCard
+            title="Ganancia Neta"
+            value={formatCurrency(metrics.gananciaNeta.value)}
+            delta={metrics.gananciaNeta.variation}
+            deltaLabel="vs periodo anterior"
+            loading={metricsRefreshing}
+            icon={<Wallet className="w-5 h-5" />}
+          />
+          <KpiCard
+            title="Reembolsos"
+            value={formatCurrency(metrics.reembolsos.value)}
+            delta={metrics.reembolsos.variation}
+            deltaLabel="vs periodo anterior"
+            loading={metricsRefreshing}
+            icon={<RotateCcw className="w-5 h-5" />}
+          />
+          <KpiCard
+            title="Pagos totales promedio"
+            value={formatCurrency(metrics.ltvPromedio.value)}
+            delta={metrics.ltvPromedio.variation}
+            deltaLabel="vs periodo anterior"
+            loading={metricsRefreshing}
+            icon={<Users className="w-5 h-5" />}
+          />
         </div>
 
         <Card data-dashboard-chart-card variant="glass" className="space-y-4">
@@ -1706,7 +1716,7 @@ export const Dashboard: React.FC = () => {
         <div className={chartsGridClass}>
           <ConversionFunnelChart
             data={funnelChartData}
-            loading={funnelLoading}
+            loading={false}
             showVisitors={showFunnelVisitors}
             scope={funnelScope}
             onScopeChange={setFunnelScope}
@@ -1717,7 +1727,7 @@ export const Dashboard: React.FC = () => {
           {analyticsEnabled && (
             <TrafficSourcesChart
               data={trafficSources}
-              loading={loading}
+              loading={false}
             />
           )}
         </div>

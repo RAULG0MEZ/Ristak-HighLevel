@@ -303,6 +303,7 @@ export const Contacts: React.FC = () => {
   const [allEvents, setAllEvents] = useState<CalendarEvent[]>([]) // Eventos de calendarios
   const [chartData, setChartData] = useState<BarChartData[]>([])
   const [loadingChart, setLoadingChart] = useState(false)
+  const [hasLoadedContacts, setHasLoadedContacts] = useState(false)
   const handledOpenContactRef = useRef<string | null>(null)
 
   const rangeStart = dateRange.start instanceof Date ? dateRange.start : new Date(dateRange.start)
@@ -654,6 +655,7 @@ export const Contacts: React.FC = () => {
       showToast('error', 'No se pudieron cargar los contactos', 'Hubo un problema al obtener la información de contactos. Intenta refrescar la página.')
     } finally {
       setLoading(false)
+      setHasLoadedContacts(true)
     }
   }
 
@@ -1169,7 +1171,9 @@ export const Contacts: React.FC = () => {
     }
   }
 
-  if (loading && contacts.length === 0) {
+  const contactsRefreshing = loading && hasLoadedContacts
+
+  if (loading && !hasLoadedContacts) {
     return <Loading message="Cargando contactos..." page="contacts" />
   }
 
@@ -1225,6 +1229,7 @@ export const Contacts: React.FC = () => {
             value={formatNumber(statsData.total)}
             delta={statsData.totalChange}
             deltaLabel="vs periodo anterior"
+            loading={contactsRefreshing}
             icon={<Users className="text-[var(--color-text-tertiary)]" />}
           />
           <KpiCard
@@ -1232,6 +1237,7 @@ export const Contacts: React.FC = () => {
             value={formatNumber(statsData.customers)}
             delta={statsData.customersChange}
             deltaLabel="vs periodo anterior"
+            loading={contactsRefreshing}
             icon={<User className="text-[var(--color-text-tertiary)]" />}
           />
           <KpiCard
@@ -1239,6 +1245,7 @@ export const Contacts: React.FC = () => {
             value={formatCurrency(statsData.ltvTotal)}
             delta={statsData.ltvTotalChange}
             deltaLabel="vs periodo anterior"
+            loading={contactsRefreshing}
             icon={<DollarSign className="text-[var(--color-text-tertiary)]" />}
           />
           <KpiCard
@@ -1246,6 +1253,7 @@ export const Contacts: React.FC = () => {
             value={formatCurrency(statsData.ltvPromedio)}
             delta={statsData.ltvPromedioChange}
             deltaLabel="vs periodo anterior"
+            loading={contactsRefreshing}
             icon={<TrendingUp className="text-[var(--color-text-tertiary)]" />}
           />
         </div>
@@ -1274,7 +1282,7 @@ export const Contacts: React.FC = () => {
           data={filteredContacts}
           keyExtractor={(item) => item.id}
           emptyMessage="No hay contactos disponibles"
-          loading={loading || loadingEvents}
+          loading={(loading && !hasLoadedContacts) || loadingEvents}
           searchable={true}
           searchPlaceholder="Buscar contactos..."
           paginated={true}

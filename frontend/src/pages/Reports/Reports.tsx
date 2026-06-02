@@ -1277,6 +1277,8 @@ export const Reports: React.FC = () => {
   const [summary, setSummary] = useState<ReportsSummary | null>(null)
   const [loadingMetrics, setLoadingMetrics] = useState(false)
   const [loadingSummary, setLoadingSummary] = useState(false)
+  const [hasLoadedMetrics, setHasLoadedMetrics] = useState(false)
+  const [hasLoadedSummary, setHasLoadedSummary] = useState(false)
 
   const [modalState, setModalState] = useState<{
     open: boolean
@@ -1408,6 +1410,7 @@ export const Reports: React.FC = () => {
         showToast('error', 'No se pudieron cargar las métricas', 'Revisa tu conexión e intenta nuevamente')
       } finally {
         setLoadingMetrics(false)
+        setHasLoadedMetrics(true)
       }
     }
 
@@ -1424,6 +1427,7 @@ export const Reports: React.FC = () => {
         setSummary(null)
       } finally {
         setLoadingSummary(false)
+        setHasLoadedSummary(true)
       }
     }
 
@@ -2182,7 +2186,10 @@ export const Reports: React.FC = () => {
   const metricsRangeLabel = formatRangeLabel(metricsRange)
   const closeModal = () => setModalState(prev => ({ ...prev, open: false }))
 
-  if ((loadingMetrics || loadingSummary) && !metrics.length && !summary) {
+  const hasLoadedReports = hasLoadedMetrics && hasLoadedSummary
+  const summaryRefreshing = loadingSummary && hasLoadedSummary
+
+  if ((loadingMetrics || loadingSummary) && !hasLoadedReports) {
     return <Loading message="Cargando reportes..." page="reports" />
   }
 
@@ -2295,6 +2302,7 @@ export const Reports: React.FC = () => {
                 delta={card.delta}
                 deltaLabel={card.deltaLabel}
                 icon={card.icon}
+                loading={summaryRefreshing}
               />
             </div>
           ))}
@@ -2307,7 +2315,7 @@ export const Reports: React.FC = () => {
             initialColumns={initialColumns}
             data={tableData}
             keyExtractor={(item) => item.id}
-            loading={loadingMetrics}
+            loading={loadingMetrics && !hasLoadedMetrics}
             paginated
             pageSize={25}
             searchable
@@ -2319,7 +2327,7 @@ export const Reports: React.FC = () => {
       ) : (
         <MetricsGrid
           metrics={metrics}
-          loading={loadingMetrics}
+          loading={loadingMetrics && !hasLoadedMetrics}
           reportType={reportType}
           showVisitors={analyticsEnabled}
           viewType={viewType}

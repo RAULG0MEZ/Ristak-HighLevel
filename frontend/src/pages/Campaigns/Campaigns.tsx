@@ -211,6 +211,7 @@ export const Campaigns: React.FC = () => {
 
   const [campaigns, setCampaigns] = useState<CampaignData[]>([])
   const [loading, setLoading] = useState(true)
+  const [hasLoadedCampaigns, setHasLoadedCampaigns] = useState(false)
   const [syncStatus, setSyncStatus] = useState<any>(null)
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(new Set())
   const [expandedAdSets, setExpandedAdSets] = useState<Set<string>>(new Set())
@@ -539,6 +540,7 @@ export const Campaigns: React.FC = () => {
       setVisitorsData([])
     } finally {
       setLoading(false)
+      setHasLoadedCampaigns(true)
     }
   }, [analyticsEnabled, dateRange.end, dateRange.start, visitorSource, timezoneInfo, groupAndFormatChartData])
 
@@ -2112,7 +2114,9 @@ export const Campaigns: React.FC = () => {
     }
   }, [campaignSummary, calculateDelta])
 
-  if (loading && campaigns.length === 0) {
+  const campaignsRefreshing = loading && hasLoadedCampaigns
+
+  if (loading && !hasLoadedCampaigns) {
     return <Loading message="Cargando campañas..." page="campaigns" />
   }
 
@@ -2245,6 +2249,7 @@ export const Campaigns: React.FC = () => {
             value={formatCurrency(totals.revenue)}
             delta={campaignDeltas.revenue}
             deltaLabel="vs periodo anterior"
+            loading={campaignsRefreshing}
             icon={<DollarSign size={20} />}
           />
           <KpiCard
@@ -2252,6 +2257,7 @@ export const Campaigns: React.FC = () => {
             value={formatCurrency(totals.spend)}
             delta={campaignDeltas.spend}
             deltaLabel="vs periodo anterior"
+            loading={campaignsRefreshing}
             icon={<Megaphone size={20} />}
           />
           <KpiCard
@@ -2259,6 +2265,7 @@ export const Campaigns: React.FC = () => {
             value={formatRoas(avgRoas)}
             delta={campaignDeltas.roas}
             deltaLabel="vs periodo anterior"
+            loading={campaignsRefreshing}
             icon={<TrendingUp size={20} />}
           />
           <KpiCard
@@ -2266,6 +2273,7 @@ export const Campaigns: React.FC = () => {
             value={totals.sales.toString()}
             delta={campaignDeltas.sales}
             deltaLabel="vs periodo anterior"
+            loading={campaignsRefreshing}
             icon={<Target size={20} />}
           />
           <KpiCard
@@ -2273,6 +2281,7 @@ export const Campaigns: React.FC = () => {
             value={totals.leads.toString()}
             delta={campaignDeltas.leads}
             deltaLabel="vs periodo anterior"
+            loading={campaignsRefreshing}
             icon={<Users size={20} />}
           />
         </div>
@@ -2353,7 +2362,7 @@ export const Campaigns: React.FC = () => {
               data={winnersActiveData}
               keyExtractor={(item) => `winner_${winnersCategory}_${item.id}`}
               emptyMessage="Aún no hay ganadores para este período"
-              loading={loading}
+              loading={loading && !hasLoadedCampaigns}
               searchable={true}
               searchPlaceholder={`Buscar ${winnersCategory === 'campaigns' ? 'campañas' : winnersCategory === 'adsets' ? 'conjuntos' : 'anuncios'}...`}
               paginated={true}
@@ -2370,7 +2379,7 @@ export const Campaigns: React.FC = () => {
             data={campaignTableData}
             keyExtractor={getCampaignTableRowKey}
             emptyMessage={campaignTableEmptyMessage}
-            loading={loading}
+            loading={loading && !hasLoadedCampaigns}
             searchable={true}
             searchPlaceholder={campaignTableSearchPlaceholder}
             paginated={true}

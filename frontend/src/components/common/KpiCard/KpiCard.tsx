@@ -12,6 +12,7 @@ interface KpiCardProps {
   icon?: IconProp
   iconColorClassName?: string
   className?: string
+  loading?: boolean
 }
 
 export const KpiCard: React.FC<KpiCardProps> = ({
@@ -21,7 +22,8 @@ export const KpiCard: React.FC<KpiCardProps> = ({
   deltaLabel,
   icon,
   iconColorClassName = 'text-[var(--color-text-tertiary)]',
-  className
+  className,
+  loading = false
 }) => {
   const formattedDelta = delta !== undefined ? `${delta >= 0 ? '+' : ''}${delta.toFixed(1)}%` : null
   const trendColor = delta === undefined
@@ -51,6 +53,7 @@ export const KpiCard: React.FC<KpiCardProps> = ({
       variant="glass"
       padding="sm"
       className={cn('flex h-full overflow-hidden', className)}
+      aria-busy={loading || undefined}
     >
       <div
         data-ristak-kpi-content
@@ -60,11 +63,18 @@ export const KpiCard: React.FC<KpiCardProps> = ({
           <p className="mb-1 text-sm text-[var(--color-text-tertiary)]">
             {title}
           </p>
-          <p className="mb-1 text-2xl font-bold text-[var(--color-text-primary)] truncate">
+          <p className={cn(
+            'mb-1 text-2xl font-bold text-[var(--color-text-primary)] truncate transition-opacity duration-150',
+            loading && 'invisible'
+          )}>
             {value}
           </p>
           {formattedDelta && (
-            <div className={cn('flex items-center gap-2 text-xs', trendColor)}>
+            <div className={cn(
+              'flex items-center gap-2 text-xs transition-opacity duration-150',
+              trendColor,
+              loading && 'invisible'
+            )}>
               <span className="font-medium">{formattedDelta}</span>
               {deltaLabel && (
                 <span className="text-[var(--color-text-tertiary)]">{deltaLabel}</span>

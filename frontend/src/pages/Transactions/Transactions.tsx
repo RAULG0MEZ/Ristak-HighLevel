@@ -289,6 +289,7 @@ export const Transactions: React.FC = () => {
   const [viewMode, setViewMode] = useState<'all' | 'by-date'>('all') // Por defecto 'all' (Todos)
   const [showRecordPaymentModal, setShowRecordPaymentModal] = useState(false)
   const [isClient, setIsClient] = useState(false)
+  const [hasLoadedTransactions, setHasLoadedTransactions] = useState(false)
   const handledOpenPaymentRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -335,6 +336,7 @@ export const Transactions: React.FC = () => {
       showToast('error', 'No se pudieron cargar los pagos', 'Hubo un problema al obtener la información de pagos. Intenta refrescar la página.')
     } finally {
       setLoading(false)
+      setHasLoadedTransactions(true)
     }
   }
 
@@ -1418,7 +1420,9 @@ export const Transactions: React.FC = () => {
     reembolsosChange: summary ? transactionsService.calculateDelta(summary.refunds, summary.refundsPrev) : 0
   }
 
-  if (paymentTableTab === 'transactions' && loading && transactions.length === 0) {
+  const transactionsRefreshing = paymentTableTab === 'transactions' && loading && hasLoadedTransactions
+
+  if (paymentTableTab === 'transactions' && loading && !hasLoadedTransactions) {
     return <Loading message="Cargando pagos..." page="transactions" />
   }
 
@@ -1507,6 +1511,7 @@ export const Transactions: React.FC = () => {
             value={formatCurrency(totals.ingresos)}
             delta={totals.ingresosChange}
             deltaLabel="vs periodo anterior"
+            loading={transactionsRefreshing}
             icon={<DollarSign className="text-[var(--color-text-tertiary)]" />}
           />
           <KpiCard
@@ -1514,6 +1519,7 @@ export const Transactions: React.FC = () => {
             value={formatNumber(totals.completados)}
             delta={totals.completadosChange}
             deltaLabel="vs periodo anterior"
+            loading={transactionsRefreshing}
             icon={<CheckCircle className="text-[var(--color-text-tertiary)]" />}
           />
           <KpiCard
@@ -1521,6 +1527,7 @@ export const Transactions: React.FC = () => {
             value={formatCurrency(totals.ticketPromedio)}
             delta={totals.ticketChange}
             deltaLabel="vs periodo anterior"
+            loading={transactionsRefreshing}
             icon={<Receipt className="text-[var(--color-text-tertiary)]" />}
           />
           <KpiCard
@@ -1528,6 +1535,7 @@ export const Transactions: React.FC = () => {
             value={formatNumber(totals.reembolsos)}
             delta={totals.reembolsosChange}
             deltaLabel="vs periodo anterior"
+            loading={transactionsRefreshing}
             icon={<RotateCcw className="text-[var(--color-text-tertiary)]" />}
           />
         </div>
@@ -1540,7 +1548,7 @@ export const Transactions: React.FC = () => {
             data={filteredTransactions}
             keyExtractor={(item) => item.id}
             emptyMessage="No hay pagos disponibles"
-            loading={loading}
+            loading={loading && !hasLoadedTransactions}
             searchable={true}
             searchPlaceholder="Buscar pagos..."
             paginated={true}
