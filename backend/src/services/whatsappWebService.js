@@ -16,6 +16,7 @@ import { detectWhatsAppAttributionFields } from '../utils/whatsappAttribution.js
 
 const DEFAULT_SESSION_ID = 'default'
 const SOURCE_NAME = 'WhatsApp Business'
+const GENERIC_CONTACT_NAME = 'Contacto WhatsApp'
 const FULL_HISTORY_BROWSER = Browsers.macOS('Desktop')
 const baileysLogger = pino({ level: process.env.BAILEYS_LOG_LEVEL || 'silent' })
 const runtimeSessions = new Map()
@@ -139,7 +140,7 @@ function pickWhatsAppContactName(values = [], context = {}) {
 
 function shouldReplaceContactName(currentName, phone = '', remoteJid = '') {
   const text = normalizeDisplayText(currentName)
-  return !text || isPhoneLikeName(text, phone, remoteJid)
+  return !text || text === GENERIC_CONTACT_NAME || isPhoneLikeName(text, phone, remoteJid)
 }
 
 function isPhoneJid(jid = '') {
@@ -477,12 +478,97 @@ async function findExistingContact(phone) {
 
   const placeholders = candidates.map(() => '?').join(', ')
   return db.get(
-    `SELECT id, full_name, phone, source, created_at, attribution_ad_id, attribution_ctwa_clid, attribution_ad_name
+    `SELECT id, full_name, first_name, last_name, phone, source, created_at,
+            attribution_ad_id, attribution_ctwa_clid, attribution_ad_name
      FROM contacts
      WHERE phone IN (${placeholders})
      LIMIT 1`,
     candidates
   )
+}
+
+async function findStoredWhatsAppContactName({ sessionId, remoteJid, phone }) {
+  const names = []
+
+  if (remoteJid || phone) {
+    const conditions = []
+    const params = [sessionId]
+
+    if (remoteJid) {
+      conditions.push('remote_jid = ?')
+      params.push(remoteJid)
+    }
+
+    if (phone) {
+      conditions.push('phone = ?')
+      params.push(phone)
+    }
+
+    const rows = await db.all(`
+      SELECT push_name, display_name, updated_at
+      FROM whatsapp_web_contacts
+      WHERE session_id = ?
+        AND (${conditions.join(' OR ')})
+      ORDER BY updated_at DESC
+      LIMIT 20
+    `, params)
+
+    rows.forEach(row => {
+      names.push(row.push_name, row.display_name)
+    })
+  }
+
+  if (remoteJid || phone) {
+    const conditions = []
+    const params = [sessionId]
+
+    if (remoteJid) {
+      conditions.push('remote_jid = ?')
+      params.push(remoteJid)
+    }
+
+    if (phone) {
+      conditions.push('phone = ?')
+      params.push(phone)
+    }
+
+    const rows = await db.all(`
+      SELECT display_name, updated_at
+      FROM whatsapp_web_chats
+      WHERE session_id = ?
+        AND (${conditions.join(' OR ')})
+      ORDER BY updated_at DESC
+      LIMIT 20
+    `, params)
+
+    rows.forEach(row => {
+      names.push(row.display_name)
+    })
+  }
+
+  return pickWhatsAppContactName(names, { phone, remoteJid })
+}
+
+async function applyWhatsAppContactNameToLocalContact(contactId, displayName, { phone = '', remoteJid = '' } = {}) {
+  const contactName = cleanWhatsAppContactName(displayName, { phone, remoteJid })
+  if (!contactId || !contactName) return 0
+
+  const existing = await db.get(
+    'SELECT id, full_name, first_name FROM contacts WHERE id = ? LIMIT 1',
+    [contactId]
+  )
+
+  if (!existing || !shouldReplaceContactName(existing.full_name, phone, remoteJid)) return 0
+
+  await db.run(`
+    UPDATE contacts
+    SET full_name = ?,
+        first_name = ?,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `, [contactName, contactName, contactId])
+
+  return 1
 }
 
 function buildContactCustomFields({ remoteJid, messageText, attribution }) {
@@ -533,7 +619,8 @@ function getMessageSortTime(msg) {
 async function upsertLocalContact({ phone, pushName, remoteJid, messageText, messageTimestamp, isInbound, attribution }) {
   const canonicalPhone = normalizePhoneForStorage(phone) || phone
   const existing = await findExistingContact(canonicalPhone)
-  const fullName = pushName || canonicalPhone || 'Contacto WhatsApp'
+  const contactName = cleanWhatsAppContactName(pushName, { phone: canonicalPhone, remoteJid })
+  const fullName = contactName || GENERIC_CONTACT_NAME
   const firstMessageAt = messageTimestamp || nowIso()
 
   if (!existing) {
@@ -551,7 +638,7 @@ async function upsertLocalContact({ phone, pushName, remoteJid, messageText, mes
       contactId,
       canonicalPhone || null,
       fullName,
-      pushName || null,
+      contactName || null,
       SOURCE_NAME,
       attribution.sourceUrl || null,
       attribution.sourceApp || attribution.entryPoint || SOURCE_NAME,
@@ -569,9 +656,12 @@ async function upsertLocalContact({ phone, pushName, remoteJid, messageText, mes
   const updates = []
   const params = []
 
-  if (!existing.full_name && pushName) {
+  if (contactName && shouldReplaceContactName(existing.full_name, canonicalPhone, remoteJid)) {
     updates.push('full_name = ?')
-    params.push(pushName)
+    params.push(contactName)
+
+    updates.push('first_name = ?')
+    params.push(contactName)
   }
 
   if (attribution.sourceUrl) {
@@ -626,6 +716,7 @@ async function upsertLocalContact({ phone, pushName, remoteJid, messageText, mes
 async function upsertWhatsAppWebContact({ sessionId, contactId, remoteJid, phone, pushName, firstSeenAt, rawProfile }) {
   const webContactId = hashId('waweb_profile', `${sessionId}|${remoteJid}`)
   const seenAt = firstSeenAt || nowIso()
+  const contactName = cleanWhatsAppContactName(pushName, { phone, remoteJid })
 
   await db.run(`
     INSERT INTO whatsapp_web_contacts (
@@ -658,8 +749,8 @@ async function upsertWhatsAppWebContact({ sessionId, contactId, remoteJid, phone
     contactId,
     remoteJid,
     phone || null,
-    pushName || null,
-    pushName || phone || null,
+    contactName || null,
+    contactName || null,
     safeJson(rawProfile),
     seenAt,
     seenAt
@@ -670,6 +761,7 @@ async function upsertWhatsAppWebContact({ sessionId, contactId, remoteJid, phone
 
 async function upsertWhatsAppWebProfile({ sessionId, contactId, remoteJid, phone, displayName, rawProfile }) {
   const webContactId = hashId('waweb_profile', `${sessionId}|${remoteJid}`)
+  const contactName = cleanWhatsAppContactName(displayName, { phone, remoteJid })
 
   await db.run(`
     INSERT INTO whatsapp_web_contacts (
@@ -689,8 +781,8 @@ async function upsertWhatsAppWebProfile({ sessionId, contactId, remoteJid, phone
     contactId || null,
     remoteJid,
     phone || null,
-    displayName || null,
-    displayName || phone || null,
+    contactName || null,
+    contactName || null,
     safeJson(rawProfile)
   ])
 
@@ -699,6 +791,7 @@ async function upsertWhatsAppWebProfile({ sessionId, contactId, remoteJid, phone
 
 async function upsertWhatsAppWebChat({ sessionId, contactId, remoteJid, phone, displayName, chat }) {
   const webChatId = hashId('waweb_chat', `${sessionId}|${remoteJid}`)
+  const contactName = cleanWhatsAppContactName(displayName, { phone, remoteJid })
   const conversationTimestamp = toDateTime(
     chat?.conversationTimestamp ||
     chat?.lastMessageRecvTimestamp ||
@@ -730,7 +823,7 @@ async function upsertWhatsAppWebChat({ sessionId, contactId, remoteJid, phone, d
     contactId || null,
     remoteJid,
     phone || null,
-    displayName || phone || null,
+    contactName || null,
     conversationTimestamp,
     Number(chat?.unreadCount || chat?.unread_count || 0),
     chat?.archived ? 1 : 0,
@@ -743,13 +836,13 @@ async function upsertWhatsAppWebChat({ sessionId, contactId, remoteJid, phone, d
 }
 
 function getWhatsAppProfileDisplayName(profile = {}, phone = '') {
-  return profile.name ||
-    profile.notify ||
-    profile.verifiedName ||
-    profile.pushName ||
-    profile.shortName ||
-    phone ||
-    ''
+  return pickWhatsAppContactName([
+    profile.name,
+    profile.notify,
+    profile.verifiedName,
+    profile.pushName,
+    profile.shortName
+  ], { phone, remoteJid: profile.id || profile.jid || profile.lid || profile.phoneNumber || '' })
 }
 
 async function processWhatsAppWebContacts(sessionId, contacts = [], lidPhoneMap = new Map()) {
@@ -778,6 +871,14 @@ async function processWhatsAppWebContacts(sessionId, contacts = [], lidPhoneMap 
       displayName,
       rawProfile: profile
     })
+
+    if (existingContact?.id && displayName) {
+      await applyWhatsAppContactNameToLocalContact(existingContact.id, displayName, {
+        phone,
+        remoteJid
+      })
+    }
+
     saved += 1
   }
 
@@ -801,7 +902,11 @@ async function processWhatsAppWebChats(sessionId, chats = [], lidPhoneMap = new 
     const phoneJid = pickPhoneJid([remoteJid], lidPhoneMap)
     const phone = normalizePhoneForStorage(normalizePhoneFromJid(phoneJid)) || normalizePhoneFromJid(phoneJid)
     const existingContact = phone ? await findExistingContact(phone) : null
-    const displayName = chat?.name || chat?.subject || chat?.notify || phone || remoteJid
+    const displayName = pickWhatsAppContactName([
+      chat?.name,
+      chat?.subject,
+      chat?.notify
+    ], { phone, remoteJid })
 
     await upsertWhatsAppWebChat({
       sessionId,
@@ -811,10 +916,87 @@ async function processWhatsAppWebChats(sessionId, chats = [], lidPhoneMap = new 
       displayName,
       chat
     })
+
+    if (existingContact?.id && displayName) {
+      await applyWhatsAppContactNameToLocalContact(existingContact.id, displayName, {
+        phone,
+        remoteJid
+      })
+    }
+
     saved += 1
   }
 
   return saved
+}
+
+async function reconcileWhatsAppContactNames(sessionId = DEFAULT_SESSION_ID) {
+  const profileRows = await db.all(`
+    SELECT
+      c.id as contact_id,
+      COALESCE(c.phone, wc.phone) as phone,
+      c.full_name,
+      wc.remote_jid,
+      wc.push_name,
+      wc.display_name,
+      wc.updated_at
+    FROM whatsapp_web_contacts wc
+    INNER JOIN contacts c ON c.id = wc.contact_id
+    WHERE wc.session_id = ?
+      AND wc.contact_id IS NOT NULL
+      AND (
+        wc.push_name IS NOT NULL
+        OR wc.display_name IS NOT NULL
+      )
+    ORDER BY wc.updated_at DESC
+  `, [sessionId])
+
+  const chatRows = await db.all(`
+    SELECT
+      c.id as contact_id,
+      COALESCE(c.phone, ch.phone) as phone,
+      c.full_name,
+      ch.remote_jid,
+      NULL as push_name,
+      ch.display_name,
+      ch.updated_at
+    FROM whatsapp_web_chats ch
+    INNER JOIN contacts c ON c.id = ch.contact_id
+    WHERE ch.session_id = ?
+      AND ch.contact_id IS NOT NULL
+      AND ch.display_name IS NOT NULL
+    ORDER BY ch.updated_at DESC
+  `, [sessionId])
+
+  const touched = new Set()
+  let updated = 0
+
+  for (const row of [...profileRows, ...chatRows]) {
+    if (!row.contact_id || touched.has(row.contact_id)) continue
+    if (!shouldReplaceContactName(row.full_name, row.phone, row.remote_jid)) continue
+
+    const displayName = pickWhatsAppContactName([
+      row.push_name,
+      row.display_name
+    ], {
+      phone: row.phone,
+      remoteJid: row.remote_jid
+    })
+
+    if (!displayName) continue
+
+    updated += await applyWhatsAppContactNameToLocalContact(row.contact_id, displayName, {
+      phone: row.phone,
+      remoteJid: row.remote_jid
+    })
+    touched.add(row.contact_id)
+  }
+
+  if (updated > 0) {
+    logger.info(`WhatsApp Business nombres de contactos reconciliados: ${updated}`)
+  }
+
+  return updated
 }
 
 async function reconcileWhatsAppContactCreatedAt(sessionId = DEFAULT_SESSION_ID) {
@@ -1046,6 +1228,7 @@ async function saveWhatsAppWebMessage({
       contact_id = COALESCE(excluded.contact_id, whatsapp_web_messages.contact_id),
       whatsapp_web_contact_id = COALESCE(excluded.whatsapp_web_contact_id, whatsapp_web_messages.whatsapp_web_contact_id),
       message_text = excluded.message_text,
+      push_name = COALESCE(excluded.push_name, whatsapp_web_messages.push_name),
       raw_payload_json = excluded.raw_payload_json,
       context_info_json = COALESCE(excluded.context_info_json, whatsapp_web_messages.context_info_json),
       detected_ctwa_clid = COALESCE(excluded.detected_ctwa_clid, whatsapp_web_messages.detected_ctwa_clid),
@@ -1184,7 +1367,7 @@ async function saveWhatsAppWebLog({
       direction = excluded.direction,
       message_type = excluded.message_type,
       message_text = excluded.message_text,
-      push_name = excluded.push_name,
+      push_name = COALESCE(excluded.push_name, whatsapp_web_logs.push_name),
       has_attribution = CASE
         WHEN excluded.has_attribution = 1 OR whatsapp_web_logs.has_attribution = 1 THEN 1
         ELSE 0
@@ -1262,7 +1445,15 @@ async function processWhatsAppWebMessage(sessionId, msg, { eventSource = 'notify
   }
 
   const isInbound = !msg.key?.fromMe
-  const pushName = isInbound ? (msg.pushName || '') : ''
+  const storedName = await findStoredWhatsAppContactName({
+    sessionId,
+    remoteJid: identityJid,
+    phone
+  })
+  const pushName = pickWhatsAppContactName([
+    isInbound ? msg.pushName : '',
+    storedName
+  ], { phone, remoteJid: identityJid })
   const messageText = getMessageText(msg.message)
   const messageTimestamp = toDateTime(msg.messageTimestamp)
   const contact = await upsertLocalContact({
@@ -1284,6 +1475,7 @@ async function processWhatsAppWebMessage(sessionId, msg, { eventSource = 'notify
     rawProfile: {
       key: msg.key,
       pushName,
+      rawPushName: msg.pushName || '',
       remoteJid,
       phoneJid,
       identityJid
@@ -1364,6 +1556,8 @@ async function processWhatsAppWebHistory(sessionId, messages = [], metadata = {}
   if (saved > 0) {
     await reconcileWhatsAppContactCreatedAt(sessionId)
   }
+
+  await reconcileWhatsAppContactNames(sessionId)
 
   for (const contactId of affectedContactIds) {
     await reconcileContactFirstWhatsAppAttribution(contactId)
@@ -1755,6 +1949,9 @@ export async function getWhatsAppWebLogs(sessionId = DEFAULT_SESSION_ID) {
 
 export async function initializeWhatsAppWebReceiver() {
   await ensureSessionRecord(DEFAULT_SESSION_ID)
+  await reconcileWhatsAppContactNames(DEFAULT_SESSION_ID).catch(error => {
+    logger.warn(`No se pudieron reconciliar nombres de contactos WhatsApp Business: ${error.message}`)
+  })
   await reconcileWhatsAppContactCreatedAt(DEFAULT_SESSION_ID).catch(error => {
     logger.warn(`No se pudieron reconciliar fechas de contactos WhatsApp Business: ${error.message}`)
   })
