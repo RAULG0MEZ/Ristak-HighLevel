@@ -4,6 +4,7 @@ import { isEncrypted } from '../utils/encryption.js';
 import {
   saveMetaConfig,
   syncMetaAds,
+  updateRecentAds,
   getMetaSyncProgress,
   getMetaConfig,
   verifyMetaToken,
@@ -640,20 +641,35 @@ export const getAdCreativeMedia = async (req, res) => {
  */
 export const updateRecent = async (req, res) => {
   try {
+    logger.info('Iniciando actualización manual inmediata de Meta Ads (últimos 7 días)');
+
+    const recentResult = await updateRecentAds();
+
+    if (!recentResult.success) {
+      const statusCode = recentResult.message === 'Sync completo en progreso' ? 409 : 400;
+
+      return res.status(statusCode).json({
+        success: false,
+        message: recentResult.message || 'No se pudo actualizar Meta Ads',
+        error: recentResult.error || recentResult.message || 'Error al actualizar Meta Ads'
+      });
+    }
+
     const startDate = new Date();
     startDate.setMonth(startDate.getMonth() - 35);
     const startDateStr = startDate.toISOString().split('T')[0];
 
-    logger.info(`Iniciando sincronización manual de Meta Ads (35 meses) desde: ${startDateStr}`);
+    logger.info(`Actualización reciente completada. Iniciando sincronización histórica de Meta Ads (35 meses) desde: ${startDateStr}`);
 
-    // Iniciar en background para no bloquear la respuesta HTTP
+    // Iniciar el histórico en background; los datos recientes ya quedaron actualizados.
     syncMetaAds(startDateStr).catch(error => {
       logger.error(`Error en sincronización manual de Meta Ads (35 meses): ${error.message}`);
     });
 
     res.json({
       success: true,
-      message: 'Sincronización de Meta Ads (últimos 35 meses) iniciada exitosamente'
+      count: recentResult.count || 0,
+      message: `Meta Ads actualizado: ${recentResult.count || 0} filas recientes guardadas. Histórico de 35 meses iniciado en segundo plano.`
     });
 
   } catch (error) {
@@ -1152,6 +1168,8 @@ export const getSyncStatus = async (req, res) => {
       status = 'syncing';
     } else if (progress.status === 'completed') {
       status = 'completed';
+    } else if (progress.status === 'error') {
+      status = 'error';
     }
 
     // Calcular el porcentaje de progreso

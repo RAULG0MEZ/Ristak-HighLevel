@@ -998,6 +998,15 @@ export async function updateRecentAds() {
     const config = await getMetaConfig()
     if (!config?.ad_account_id || !config?.access_token) {
       logger.warn('No hay configuración de Meta. Saltando actualización de ads recientes.')
+      syncProgress = {
+        status: 'error',
+        step: 'Meta Ads sin configurar',
+        total: 0,
+        current: 0,
+        message: 'No hay configuración completa de Meta Ads',
+        monthsTotal: 0,
+        monthsCurrent: 0
+      }
       return { success: false, message: 'No config' }
     }
 
@@ -1008,6 +1017,15 @@ export async function updateRecentAds() {
 
     if (!tokenValidation.valid) {
       logger.error(`❌ Token de Meta inválido en cron job: ${tokenValidation.error}`)
+      syncProgress = {
+        status: 'error',
+        step: 'Token de Meta inválido',
+        total: 0,
+        current: 0,
+        message: tokenValidation.error || 'Token inválido o expirado',
+        monthsTotal: 0,
+        monthsCurrent: 0
+      }
       return { success: false, message: 'Token inválido', error: tokenValidation.error }
     }
 
@@ -1035,9 +1053,29 @@ export async function updateRecentAds() {
       await saveAdsToDatabase(ads, ad_account_id, creativeMediaByAdId)
     }
 
+    syncProgress = {
+      status: 'completed',
+      step: 'Actualización reciente completada',
+      total: 100,
+      current: 100,
+      message: `${ads.length} filas recientes de Meta Ads actualizadas`,
+      monthsTotal: 1,
+      monthsCurrent: 1
+    }
+
     logger.success('Ads recientes actualizados correctamente')
     return { success: true, count: ads.length }
   } catch (error) {
+    syncProgress = {
+      status: 'error',
+      step: 'Error actualizando Meta Ads recientes',
+      total: 0,
+      current: 0,
+      message: error.message,
+      monthsTotal: 0,
+      monthsCurrent: 0
+    }
+
     logger.error('Error actualizando ads recientes:', error.message)
     return { success: false, error: error.message }
   }

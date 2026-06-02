@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { KpiCard, Card, DateRangePicker, Table, Icon, ContactDetailsModal, VisitorDetailsModal, PageContainer, ViewSelector, AreaChart, Loading, TabList } from '@/components/common'
 import type { Column } from '@/components/common'
 import {
+  AlertCircle,
   RefreshCw,
   DollarSign,
   Megaphone,
@@ -702,6 +703,11 @@ export const Campaigns: React.FC = () => {
   const checkSyncStatus = useCallback(async () => {
     try {
       const status = await campaignsService.getSyncStatus()
+
+      if (status?.error) {
+        setSyncStatus(status)
+        return
+      }
 
       // Si no hay status o no está corriendo
       if (!status || !status.running) {
@@ -2183,14 +2189,18 @@ export const Campaigns: React.FC = () => {
         )}
 
         {/* Sync Status Banner - Rediseñado */}
-        {syncStatus && syncStatus.running && (
+        {syncStatus && (syncStatus.running || syncStatus.error) && (
           <div className={styles.syncBanner}>
             <div className={styles.syncHeader}>
               <div className={styles.syncIconWrapper}>
-                <RefreshCw size={20} className={styles.syncIcon} />
+                {syncStatus.error ? (
+                  <AlertCircle size={20} className={`${styles.syncIcon} ${styles.syncIconError}`} />
+                ) : (
+                  <RefreshCw size={20} className={styles.syncIcon} />
+                )}
               </div>
               <div className={styles.syncTextWrapper}>
-                <div className={styles.syncTitle}>Sincronizando campañas</div>
+                <div className={styles.syncTitle}>{syncStatus.error ? 'Error al sincronizar campañas' : 'Sincronizando campañas'}</div>
                 <div className={styles.syncSubtitle}>
                   {syncStatus.currentMonth ? `Procesando ${syncStatus.currentMonth}` : (syncStatus.message || 'Preparando sincronización...')}
                 </div>

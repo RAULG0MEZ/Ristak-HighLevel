@@ -166,7 +166,25 @@ class CampaignsService {
   async getSyncStatus(): Promise<any> {
     try {
       const data = await apiClient.get<any>('/meta/sync/status')
-      return data?.status || null
+      if (!data?.success) return null
+
+      const details = data.details || {}
+      const isRunning = data.status === 'syncing' || data.status === 'running'
+      const isError = data.status === 'error'
+      const total = Number(details.monthsTotal || 0)
+      const processed = Number(details.monthsCurrent || 0)
+
+      return {
+        status: data.status,
+        running: isRunning,
+        error: isError,
+        message: details.message || '',
+        currentMonth: total > 0 && processed > 0 ? `${processed}/${total}` : '',
+        processed,
+        total,
+        totalRecords: 0,
+        progress: Number(data.progress || 0)
+      }
     } catch (error) {
       return null
     }
