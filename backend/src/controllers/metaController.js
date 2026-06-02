@@ -61,7 +61,7 @@ function normalizeMetaAdAccountId(value) {
 }
 
 function hasUsableLocalMetaConfig(metaConfig) {
-  return Boolean(metaConfig?.ad_account_id && metaConfig?.access_token);
+  return Boolean(metaConfig?.access_token);
 }
 
 function toMaskedMetaCredentials(metaConfig = {}, whatsappBusinessAccountId = '') {

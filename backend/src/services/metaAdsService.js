@@ -393,6 +393,30 @@ export async function getMetaConfig() {
   }
 }
 
+export async function saveMetaAccessToken(accessToken) {
+  const normalizedToken = normalizeId(accessToken)
+  if (!normalizedToken || normalizedToken.startsWith('***')) {
+    return await getMetaConfig()
+  }
+
+  const encryptedToken = isEncrypted(normalizedToken) ? normalizedToken : encrypt(normalizedToken)
+  const existing = await db.get('SELECT id FROM meta_config ORDER BY id LIMIT 1')
+
+  if (existing?.id) {
+    await db.run(
+      'UPDATE meta_config SET access_token = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [encryptedToken, existing.id]
+    )
+  } else {
+    await db.run(
+      'INSERT INTO meta_config (access_token, created_at, updated_at) VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)',
+      [encryptedToken]
+    )
+  }
+
+  return await getMetaConfig()
+}
+
 /**
  * Obtiene información de timezone de la cuenta de Meta Ads
  */
@@ -785,8 +809,8 @@ export async function syncMetaAds(startDate, onProgress = null) {
   isMetaFullSyncRunning = true
   try {
     const config = await getMetaConfig()
-    if (!config) {
-      throw new Error('No hay configuración de Meta. Configura Meta primero.')
+    if (!config?.ad_account_id || !config?.access_token) {
+      throw new Error('No hay configuración completa de Meta Ads. Configura cuenta de anuncios y token primero.')
     }
 
     const { ad_account_id, access_token } = config
@@ -972,7 +996,7 @@ export async function updateRecentAds() {
     }
 
     const config = await getMetaConfig()
-    if (!config) {
+    if (!config?.ad_account_id || !config?.access_token) {
       logger.warn('No hay configuración de Meta. Saltando actualización de ads recientes.')
       return { success: false, message: 'No config' }
     }

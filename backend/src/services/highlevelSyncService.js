@@ -1545,7 +1545,7 @@ export async function syncHighLevelData(locationId, apiToken, triggerSource = 'm
       // Verificar si hay configuración de Meta
       const metaConfig = await db.get('SELECT * FROM meta_config LIMIT 1')
 
-      if (metaConfig && metaConfig.access_token) {
+      if (metaConfig && metaConfig.access_token && metaConfig.ad_account_id) {
         logger.info(`Ad Account: ${metaConfig.ad_account_id}`)
 
         syncProgress.message = 'Sincronizando anuncios de Meta (últimos 35 meses)...'

@@ -416,7 +416,7 @@ async function initTables() {
     await db.run(`
       CREATE TABLE IF NOT EXISTS meta_config (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        ad_account_id TEXT UNIQUE NOT NULL,
+        ad_account_id TEXT UNIQUE,
         access_token TEXT NOT NULL,
         app_id TEXT,
         app_secret TEXT,
@@ -491,8 +491,6 @@ async function initTables() {
         graph_api_version TEXT DEFAULT 'v23.0',
         webhook_verify_token TEXT,
         callback_url TEXT,
-        business_token TEXT,
-        business_token_expires_at DATETIME,
         waba_id TEXT,
         phone_number_id TEXT,
         display_phone_number TEXT,
@@ -998,6 +996,94 @@ async function initTables() {
       } catch (err) {
         if (!err.message.includes('duplicate column name') && !err.message.includes('already exists')) {
           throw err
+        }
+      }
+
+      try {
+        if (usePostgres) {
+          await db.run('ALTER TABLE meta_config ALTER COLUMN ad_account_id DROP NOT NULL')
+        } else {
+          const columns = await db.all('PRAGMA table_info(meta_config)')
+          const adAccountColumn = columns.find(column => column.name === 'ad_account_id')
+
+          if (adAccountColumn?.notnull) {
+            await db.exec(`
+              PRAGMA foreign_keys=off;
+              DROP TABLE IF EXISTS meta_config_shared_token_migration;
+              CREATE TABLE meta_config_shared_token_migration (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ad_account_id TEXT UNIQUE,
+                access_token TEXT NOT NULL,
+                app_id TEXT,
+                app_secret TEXT,
+                token_expires_at DATETIME,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                timezone_id INTEGER,
+                timezone_name TEXT,
+                timezone_offset_hours_utc INTEGER,
+                pixel_id TEXT,
+                pixel_api_token TEXT,
+                page_id TEXT
+              );
+              INSERT INTO meta_config_shared_token_migration (
+                id, ad_account_id, access_token, app_id, app_secret, token_expires_at,
+                created_at, updated_at, timezone_id, timezone_name, timezone_offset_hours_utc,
+                pixel_id, pixel_api_token, page_id
+              )
+              SELECT
+                id, ad_account_id, access_token, app_id, app_secret, token_expires_at,
+                created_at, updated_at, timezone_id, timezone_name, timezone_offset_hours_utc,
+                pixel_id, pixel_api_token, page_id
+              FROM meta_config;
+              DROP TABLE meta_config;
+              ALTER TABLE meta_config_shared_token_migration RENAME TO meta_config;
+              PRAGMA foreign_keys=on;
+            `)
+          }
+        }
+      } catch (err) {
+        if (!err.message.includes('already exists')) {
+          logger.warn('Advertencia al permitir token Meta compartido sin cuenta de anuncios:', err.message)
+        }
+      }
+
+      try {
+        const metaTokenRow = await db.get('SELECT id, access_token FROM meta_config ORDER BY id LIMIT 1')
+        const legacyWhatsAppToken = await db.get(
+          'SELECT business_token FROM whatsapp_api_config WHERE business_token IS NOT NULL ORDER BY id DESC LIMIT 1'
+        )
+
+        if (legacyWhatsAppToken?.business_token && !metaTokenRow?.access_token) {
+          if (metaTokenRow?.id) {
+            await db.run(
+              'UPDATE meta_config SET access_token = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+              [legacyWhatsAppToken.business_token, metaTokenRow.id]
+            )
+          } else {
+            await db.run(
+              'INSERT INTO meta_config (access_token, created_at, updated_at) VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)',
+              [legacyWhatsAppToken.business_token]
+            )
+          }
+        }
+      } catch (err) {
+        if (!err.message.includes('no such column') && !err.message.includes('does not exist')) {
+          logger.warn('Advertencia al migrar token legado de WhatsApp hacia Meta compartido:', err.message)
+        }
+      }
+
+      for (const legacyWhatsAppTokenColumn of ['business_token', 'business_token_expires_at']) {
+        try {
+          await db.run(`ALTER TABLE whatsapp_api_config DROP COLUMN ${legacyWhatsAppTokenColumn}`)
+        } catch (err) {
+          if (
+            !err.message.includes('no such column') &&
+            !err.message.includes('does not exist') &&
+            !err.message.includes('duplicate column')
+          ) {
+            logger.warn(`Advertencia al quitar ${legacyWhatsAppTokenColumn} de whatsapp_api_config:`, err.message)
+          }
         }
       }
 
