@@ -24,6 +24,10 @@ function nowIso() {
   return new Date().toISOString()
 }
 
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
 function isPostgres() {
   return Boolean(process.env.DATABASE_URL)
 }
@@ -1382,11 +1386,12 @@ export async function startWhatsAppWebSession(sessionId = DEFAULT_SESSION_ID) {
   await ensureSessionRecord(sessionId)
   const runtime = getRuntime(sessionId)
 
-  if (runtime.starting) return runtime.starting
+  if (runtime.starting) return getWhatsAppWebStatus(sessionId)
   if (runtime.socket) return getWhatsAppWebStatus(sessionId)
 
   runtime.manualDisconnect = false
   runtime.starting = (async () => {
+    try {
     const authAlreadySaved = await hasSavedAuthState(sessionId)
     if (!authAlreadySaved) {
       runtime.lidPhoneMap.clear()
@@ -1539,11 +1544,25 @@ export async function startWhatsAppWebSession(sessionId = DEFAULT_SESSION_ID) {
       logger.info(`WhatsApp Business historial ${status}: ${syncType}`)
     })
 
-    runtime.starting = null
     return getWhatsAppWebStatus(sessionId)
+    } catch (error) {
+      await updateSession(sessionId, {
+        status: 'disconnected',
+        qr_code: null,
+        qr_image: null,
+        last_error: error.message || 'No se pudo iniciar WhatsApp Business'
+      }).catch(() => {})
+      logger.error(`No se pudo iniciar WhatsApp Business: ${error.message}`)
+      throw error
+    } finally {
+      runtime.starting = null
+    }
   })()
 
-  return runtime.starting
+  return Promise.race([
+    runtime.starting,
+    wait(1500).then(() => getWhatsAppWebStatus(sessionId))
+  ])
 }
 
 export async function disconnectWhatsAppWebSession(sessionId = DEFAULT_SESSION_ID) {

@@ -103,7 +103,7 @@ export const WhatsAppSettings: React.FC = () => {
 
         const currentStatus = nextStatus.session?.status
         if (!['connected', 'qr', 'connecting', 'reconnecting'].includes(currentStatus || '')) {
-          await startConnection()
+          void startConnection()
         }
       } catch (error) {
         if (!cancelled) {
@@ -128,7 +128,7 @@ export const WhatsAppSettings: React.FC = () => {
       try {
         const nextStatus = await loadStatus()
         if (nextStatus.session?.status === 'disconnected') {
-          await startConnection()
+          void startConnection()
         }
       } catch {
         // El siguiente ciclo reintenta.
