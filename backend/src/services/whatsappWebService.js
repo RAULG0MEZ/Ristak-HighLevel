@@ -15,6 +15,7 @@ import { buildPhoneMatchCandidates, normalizePhoneDigits, normalizePhoneForStora
 
 const DEFAULT_SESSION_ID = 'default'
 const SOURCE_NAME = 'WhatsApp Business'
+const FULL_HISTORY_BROWSER = Browsers.macOS('Desktop')
 const baileysLogger = pino({ level: process.env.BAILEYS_LOG_LEVEL || 'silent' })
 const runtimeSessions = new Map()
 
@@ -81,21 +82,73 @@ function normalizePhoneFromJid(jid = '') {
 }
 
 function isPhoneJid(jid = '') {
-  return String(jid || '').endsWith('@s.whatsapp.net') || String(jid || '').endsWith('@c.us')
+  return String(jid || '').endsWith('@s.whatsapp.net') ||
+    String(jid || '').endsWith('@c.us') ||
+    String(jid || '').endsWith('@hosted')
 }
 
 function isLidJid(jid = '') {
   return String(jid || '').endsWith('@lid') || String(jid || '').endsWith('@hosted.lid')
 }
 
-function pickPhoneJid(candidates = []) {
-  return candidates.find(candidate => {
+function normalizeJid(value = '') {
+  const jid = String(value || '').trim()
+  const atIndex = jid.indexOf('@')
+  if (atIndex < 0) return jid
+
+  const user = jid.slice(0, atIndex).split(':')[0]
+  const server = jid.slice(atIndex + 1)
+  return `${user}@${server}`
+}
+
+function rememberLidPhoneMapping(map, lid, phoneJid) {
+  const normalizedLid = normalizeJid(lid)
+  const normalizedPhoneJid = normalizeJid(phoneJid)
+
+  if (!map || !isLidJid(normalizedLid) || !isPhoneJid(normalizedPhoneJid)) return
+  if (normalizePhoneDigits(normalizePhoneFromJid(normalizedPhoneJid)).length < 8) return
+
+  map.set(normalizedLid, normalizedPhoneJid)
+}
+
+function buildLidPhoneMap({ lidPnMappings = [], contacts = [] } = {}) {
+  const map = new Map()
+
+  for (const mapping of lidPnMappings || []) {
+    rememberLidPhoneMapping(map, mapping?.lid, mapping?.pn)
+  }
+
+  for (const contact of contacts || []) {
+    rememberLidPhoneMapping(map, contact?.lid || contact?.id, contact?.phoneNumber)
+    rememberLidPhoneMapping(map, contact?.id, contact?.phoneNumber)
+    rememberLidPhoneMapping(map, contact?.lid, contact?.id)
+  }
+
+  return map
+}
+
+function mergeLidPhoneMappings(target, source) {
+  if (!target || !source) return
+  for (const [lid, phoneJid] of source.entries()) {
+    rememberLidPhoneMapping(target, lid, phoneJid)
+  }
+}
+
+function mappedPhoneJid(candidate, lidPhoneMap) {
+  const jid = normalizeJid(candidate)
+  if (isPhoneJid(jid)) return jid
+  if (isLidJid(jid)) return lidPhoneMap?.get(jid) || ''
+  return ''
+}
+
+function pickPhoneJid(candidates = [], lidPhoneMap = new Map()) {
+  return candidates.map(candidate => mappedPhoneJid(candidate, lidPhoneMap)).find(candidate => {
     if (!isPhoneJid(candidate)) return false
     return normalizePhoneDigits(normalizePhoneFromJid(candidate)).length >= 8
   }) || ''
 }
 
-export function resolveWhatsAppWebAddressing(msg = {}) {
+export function resolveWhatsAppWebAddressing(msg = {}, lidPhoneMap = new Map()) {
   const key = msg.key || {}
   const remoteJid = key.remoteJid || ''
   const candidates = [
@@ -104,7 +157,7 @@ export function resolveWhatsAppWebAddressing(msg = {}) {
     key.participant,
     remoteJid
   ].filter(Boolean)
-  const phoneJid = pickPhoneJid(candidates)
+  const phoneJid = pickPhoneJid(candidates, lidPhoneMap)
   const identityJid = phoneJid || remoteJid
   const rawPhone = normalizePhoneFromJid(identityJid)
 
@@ -356,7 +409,8 @@ function getRuntime(sessionId = DEFAULT_SESSION_ID) {
     runtimeSessions.set(sessionId, {
       socket: null,
       starting: null,
-      manualDisconnect: false
+      manualDisconnect: false,
+      lidPhoneMap: new Map()
     })
   }
   return runtimeSessions.get(sessionId)
@@ -713,16 +767,18 @@ async function saveWhatsAppWebLog({
 }
 
 async function processIncomingMessage(sessionId, msg) {
+  const runtime = getRuntime(sessionId)
   return processWhatsAppWebMessage(sessionId, msg, {
     eventSource: 'notify',
-    onlyAttributed: false
+    onlyAttributed: false,
+    lidPhoneMap: runtime.lidPhoneMap
   })
 }
 
-async function processWhatsAppWebMessage(sessionId, msg, { eventSource = 'notify', onlyAttributed = false } = {}) {
+async function processWhatsAppWebMessage(sessionId, msg, { eventSource = 'notify', onlyAttributed = false, lidPhoneMap = new Map() } = {}) {
   if (!msg?.message) return { saved: false, reason: 'ignored' }
 
-  const { remoteJid, phoneJid, identityJid, phone, usedLidFallback } = resolveWhatsAppWebAddressing(msg)
+  const { remoteJid, phoneJid, identityJid, phone, usedLidFallback } = resolveWhatsAppWebAddressing(msg, lidPhoneMap)
   if (shouldIgnoreJid(remoteJid)) return { saved: false, reason: 'ignored-jid' }
 
   const attribution = detectAttribution(msg)
@@ -782,14 +838,28 @@ async function processWhatsAppWebMessage(sessionId, msg, { eventSource = 'notify
 }
 
 async function processWhatsAppWebHistory(sessionId, messages = [], metadata = {}) {
+  const runtime = getRuntime(sessionId)
+  const historyLidPhoneMap = buildLidPhoneMap(metadata)
+  mergeLidPhoneMappings(runtime.lidPhoneMap, historyLidPhoneMap)
+
   let saved = 0
   let attributed = 0
+  let failed = 0
 
   for (const msg of messages) {
-    const result = await processWhatsAppWebMessage(sessionId, msg, {
-      eventSource: 'history',
-      onlyAttributed: false
-    })
+    let result
+
+    try {
+      result = await processWhatsAppWebMessage(sessionId, msg, {
+        eventSource: 'history',
+        onlyAttributed: false,
+        lidPhoneMap: runtime.lidPhoneMap
+      })
+    } catch (error) {
+      failed += 1
+      logger.error(`Error guardando mensaje historico WhatsApp Business: ${error.message}`)
+      continue
+    }
 
     if (result.saved) {
       saved += 1
@@ -799,9 +869,9 @@ async function processWhatsAppWebHistory(sessionId, messages = [], metadata = {}
     }
   }
 
-  if (saved > 0) {
-    logger.info(`WhatsApp Business historial guardado: ${saved} mensajes, ${attributed} con atribucion${metadata.syncType ? ` (sync ${metadata.syncType})` : ''}`)
-  }
+  logger.info(
+    `WhatsApp Business historial procesado: ${saved}/${messages.length} mensajes guardados, ${attributed} con atribucion, ${failed} fallidos, ${runtime.lidPhoneMap.size} mappings LID-PN${metadata.syncType ? ` (sync ${metadata.syncType})` : ''}`
+  )
 
   return saved
 }
@@ -857,6 +927,7 @@ function disconnectRuntimeSocket(sessionId, runtime) {
     runtime.socket.ev.removeAllListeners('messages.upsert')
     runtime.socket.ev.removeAllListeners('messaging-history.set')
     runtime.socket.ev.removeAllListeners('messaging-history.status')
+    runtime.socket.ev.removeAllListeners('lid-mapping.update')
     runtime.socket.ev.removeAllListeners('creds.update')
     runtime.socket.ws?.close?.()
   } catch (error) {
@@ -876,6 +947,11 @@ export async function startWhatsAppWebSession(sessionId = DEFAULT_SESSION_ID) {
 
   runtime.manualDisconnect = false
   runtime.starting = (async () => {
+    const authAlreadySaved = await hasSavedAuthState(sessionId)
+    if (!authAlreadySaved) {
+      runtime.lidPhoneMap.clear()
+    }
+
     const { state, saveCreds } = await useDbAuthState(sessionId)
 
     await updateSession(sessionId, {
@@ -890,7 +966,7 @@ export async function startWhatsAppWebSession(sessionId = DEFAULT_SESSION_ID) {
         creds: state.creds,
         keys: makeCacheableSignalKeyStore(state.keys, baileysLogger)
       },
-      browser: Browsers.macOS('Ristak'),
+      browser: FULL_HISTORY_BROWSER,
       logger: baileysLogger,
       printQRInTerminal: false,
       markOnlineOnConnect: false,
@@ -966,7 +1042,8 @@ export async function startWhatsAppWebSession(sessionId = DEFAULT_SESSION_ID) {
         try {
           await processWhatsAppWebMessage(sessionId, msg, {
             eventSource: type,
-            onlyAttributed: false
+            onlyAttributed: false,
+            lidPhoneMap: runtime.lidPhoneMap
           })
         } catch (error) {
           logger.error(`Error guardando mensaje WhatsApp Business: ${error.message}`)
@@ -974,12 +1051,16 @@ export async function startWhatsAppWebSession(sessionId = DEFAULT_SESSION_ID) {
       }
     })
 
-    socket.ev.on('messaging-history.set', async ({ messages = [], syncType, progress }) => {
+    socket.ev.on('messaging-history.set', async ({ messages = [], contacts = [], lidPnMappings = [], syncType, progress }) => {
       try {
-        await processWhatsAppWebHistory(sessionId, messages, { syncType, progress })
+        await processWhatsAppWebHistory(sessionId, messages, { contacts, lidPnMappings, syncType, progress })
       } catch (error) {
         logger.error(`Error guardando historial de atribucion WhatsApp Business: ${error.message}`)
       }
+    })
+
+    socket.ev.on('lid-mapping.update', ({ lid, pn }) => {
+      rememberLidPhoneMapping(runtime.lidPhoneMap, lid, pn)
     })
 
     socket.ev.on('messaging-history.status', ({ syncType, status }) => {
@@ -1007,6 +1088,7 @@ export async function disconnectWhatsAppWebSession(sessionId = DEFAULT_SESSION_I
   }
 
   disconnectRuntimeSocket(sessionId, runtime)
+  runtime.lidPhoneMap.clear()
   await clearAuthState(sessionId)
   await updateSession(sessionId, {
     status: 'disconnected',
