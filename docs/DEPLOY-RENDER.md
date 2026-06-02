@@ -26,7 +26,7 @@ Los jobs automáticos viven dentro del backend:
 
 - Meta Ads: `backend/src/jobs/metaSync.cron.js`.
 - HighLevel: `backend/src/jobs/highlevelSync.cron.js`.
-- Versiones Meta API: `backend/src/jobs/metaVersionCron.js`.
+- Versiones Meta API: `backend/src/jobs/metaVersionCron.js`, revisa al arrancar el backend y el día 1 de cada mes.
 
 ## Deploy
 

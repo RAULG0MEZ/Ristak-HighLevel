@@ -3,9 +3,9 @@
 // URL pública del servidor para webhooks
 export const PUBLIC_URL = process.env.PUBLIC_URL || 'http://localhost:3002'
 
-// Versión de Meta API (se actualiza dinámicamente desde BD)
-// El cron job metaVersionCron.js actualiza esto cada 6 meses
-let META_API_VERSION = 'v23.0' // Fallback inicial
+// Version de Meta API (se actualiza dinamicamente desde BD)
+// El startup del backend, GitHub Actions y el cron mensual revisan si hay version nueva.
+let META_API_VERSION = process.env.META_API_VERSION?.trim() || 'v23.0' // Fallback inicial
 
 /**
  * Actualiza la versión de Meta API en memoria

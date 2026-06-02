@@ -8,7 +8,7 @@ import { initializeMasterKey } from './utils/encryption.js'
 import { initializeDefaultUser } from './utils/auth.js'
 import { startMetaSyncCron } from './jobs/metaSync.cron.js'
 import { startHighLevelSyncCron } from './jobs/highlevelSync.cron.js'
-import { startMetaVersionCron } from './jobs/metaVersionCron.js'
+import { startMetaVersionCron, updateMetaVersion } from './jobs/metaVersionCron.js'
 import { initializeVersion } from './services/metaVersionService.js'
 import { verifyAndUpdateWebhooks } from './startup/webhookVerification.js'
 import { repairPendingPaymentFlows } from './services/paymentFlowService.js'
@@ -134,6 +134,10 @@ app.listen(PORT, async () => {
   // Inicializar versión de Meta API desde BD
   await initializeVersion()
 
+  updateMetaVersion({ source: 'startup' }).catch(error => {
+    logger.error(`No se pudo revisar la versión de Meta API al arrancar: ${error.message}`)
+  })
+
   // Verificar y actualizar webhooks en producción
   await verifyAndUpdateWebhooks()
 
@@ -148,7 +152,7 @@ app.listen(PORT, async () => {
   // Iniciar cron jobs
   startMetaSyncCron()              // Sincroniza anuncios de Meta Ads cada hora
   startHighLevelSyncCron()         // Sincroniza contactos, citas y pagos de HighLevel cada hora (silencioso)
-  startMetaVersionCron()           // Actualiza versión de Meta API cada 6 meses
+  startMetaVersionCron()           // Revisa versión Meta API una vez al mes
 })
 
 // Manejo de errores de proceso

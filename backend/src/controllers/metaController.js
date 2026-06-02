@@ -2469,19 +2469,8 @@ export const getAdAccounts = async (req, res) => {
 
     logger.info('Obteniendo cuentas de Meta Ads');
 
-    // VERIFICAR VERSIÓN ACTUAL EN MEMORIA
-    const { getMetaApiVersion } = await import('../config/constants.js');
-    const currentVersion = getMetaApiVersion();
-
-    // FORZAR v23.0 SI ES NECESARIO
-    if (currentVersion !== 'v23.0') {
-      logger.warn(`Versión incorrecta detectada: ${currentVersion}, forzando v23.0`);
-      const { setMetaApiVersion } = await import('../config/constants.js');
-      setMetaApiVersion('v23.0');
-    }
-
     // PASO 1: Verificar token y obtener user_id
-    const debugUrl = `https://graph.facebook.com/v23.0/debug_token?input_token=${accessToken}&access_token=${accessToken}`;
+    const debugUrl = `${API_URLS.META_TOKEN_DEBUG}?input_token=${encodeURIComponent(accessToken)}&access_token=${encodeURIComponent(accessToken)}`;
 
     const debugResponse = await fetch(debugUrl);
     const debugData = await debugResponse.json();
@@ -2505,7 +2494,7 @@ export const getAdAccounts = async (req, res) => {
     }
 
     // PASO 2: Obtener ad accounts DIRECTAMENTE del System User (sin businesses)
-    const adAccountsUrl = `https://graph.facebook.com/v23.0/${userId}/adaccounts?fields=id,account_id,name,currency,timezone_name,account_status&access_token=${accessToken}`;
+    const adAccountsUrl = `${API_URLS.META_GRAPH}/${encodeURIComponent(userId)}/adaccounts?fields=id,account_id,name,currency,timezone_name,account_status&access_token=${encodeURIComponent(accessToken)}`;
 
     const adAccountsResponse = await fetch(adAccountsUrl);
     const adAccountsData = await adAccountsResponse.json();

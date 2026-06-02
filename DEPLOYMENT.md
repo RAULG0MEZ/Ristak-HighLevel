@@ -55,7 +55,9 @@ El backend arranca `backend/src/server.js`, registra las rutas API, sirve el fro
 
 - `metaSync.cron.js`: cada hora en minuto `7`.
 - `highlevelSync.cron.js`: cada hora en minuto `17`.
-- `metaVersionCron.js`: días 1 y 15 a las 03:00, timezone `America/Mexico_City`.
+- `metaVersionCron.js`: día 1 de cada mes a las 03:00, timezone `America/Mexico_City`.
+
+Además, el backend revisa la versión de Meta API al arrancar. Con auto-deploy activo, cada push a la rama conectada provoca deploy y dispara esa revisión.
 
 ## Variables De Entorno
 
@@ -74,9 +76,12 @@ Opcionales:
 ```bash
 ENCRYPTION_MASTER_KEY=<hex de 32 bytes o más>
 TRACKING_DOMAIN=<dominio personalizado, sin https://>
+META_API_VERSION=<version fija opcional, ej. v25.0>
 ```
 
 Normalmente no necesitas declarar credenciales de HighLevel, Meta Ads o Stripe en Render. La app las guarda desde Settings.
+
+Si defines `META_API_VERSION`, la app queda fijada en esa versión y no hace auto-update de versión Meta. Déjala vacía para que use la DB y las revisiones automáticas.
 
 ## Primer Acceso
 
@@ -142,3 +147,5 @@ En Render debe existir `RENDER_EXTERNAL_URL`. Si estás local, el backend usa `h
 ## Actualizaciones
 
 Con auto-deploy activo, cada push a la rama conectada dispara build y deploy. Si usas fork, sincroniza tu fork antes de hacer push.
+
+El repo también incluye `.github/workflows/meta-api-version.yml` para revisar la versión de Meta API en cada push, el día 1 de cada mes y manualmente desde GitHub Actions. Para que ese workflow actualice la DB directamente, configura `DATABASE_URL` como secret de GitHub; si no existe, el job se salta sin fallar y Render lo cubre al arrancar.

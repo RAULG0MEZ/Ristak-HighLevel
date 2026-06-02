@@ -216,7 +216,7 @@ Funcionalidad:
 - Cargar pixels.
 - Sync manual y cron.
 - Campañas, creatives, media, spend, funnel y métricas.
-- Versión de Meta API guardada en DB y actualizada periódicamente.
+- Versión de Meta API guardada en DB y revisada al arrancar, en GitHub Actions y mensualmente.
 
 ### Tracking Web
 
@@ -262,7 +262,7 @@ Todos se inician en `server.js`; no son servicios cron de Render.
 
 - `metaSync.cron.js`: cada hora minuto `7`, actualiza ads recientes.
 - `highlevelSync.cron.js`: cada hora minuto `17`, sync completo HighLevel en modo silencioso.
-- `metaVersionCron.js`: días 1 y 15 a las 03:00, revisa versión Meta API cada 6 meses.
+- `metaVersionCron.js`: día 1 de cada mes a las 03:00, revisa versión Meta API.
 
 ## Rutas Backend
 

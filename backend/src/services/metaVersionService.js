@@ -1,18 +1,45 @@
 import fetch from 'node-fetch'
 import { db } from '../config/database.js'
 import { logger } from '../utils/logger.js'
-import { setMetaApiVersion } from '../config/constants.js'
+import { getMetaApiVersion, setMetaApiVersion } from '../config/constants.js'
+
+const DEFAULT_META_API_VERSION = 'v23.0'
+const MIN_META_API_MAJOR = 15
+const MAX_META_API_MAJOR = 30
+
+export function normalizeMetaApiVersion(version) {
+  const cleanVersion = String(version || '').trim().toLowerCase()
+  if (!cleanVersion) return ''
+
+  const prefixedVersion = cleanVersion.startsWith('v') ? cleanVersion : `v${cleanVersion}`
+  const match = prefixedVersion.match(/^v(\d+)(?:\.0)?$/)
+
+  return match ? `v${match[1]}.0` : ''
+}
+
+export function compareMetaApiVersions(a, b) {
+  const majorA = Number(normalizeMetaApiVersion(a).match(/^v(\d+)\.0$/)?.[1] || 0)
+  const majorB = Number(normalizeMetaApiVersion(b).match(/^v(\d+)\.0$/)?.[1] || 0)
+
+  return majorA - majorB
+}
+
+export function getPinnedMetaApiVersion() {
+  return normalizeMetaApiVersion(process.env.META_API_VERSION)
+}
 
 /**
  * Detecta la versión más reciente de Meta API disponible
- * Prueba desde v30.0 hacia abajo hasta encontrar una válida
+ * Prueba desde v30.0 hacia abajo hasta encontrar una valida
  */
-export async function detectLatestVersion() {
+export async function detectLatestVersion(fallbackVersion = DEFAULT_META_API_VERSION) {
   logger.info('🔍 Detectando versión más reciente de Meta API...')
+
+  const normalizedFallback = normalizeMetaApiVersion(fallbackVersion) || DEFAULT_META_API_VERSION
 
   // Probar versiones desde v30.0 hasta v15.0
   const versionsToTest = []
-  for (let major = 30; major >= 15; major--) {
+  for (let major = MAX_META_API_MAJOR; major >= MIN_META_API_MAJOR; major--) {
     versionsToTest.push(`v${major}.0`)
   }
 
@@ -24,9 +51,9 @@ export async function detectLatestVersion() {
     }
   }
 
-  // Si ninguna funciona, usar v23.0 como fallback
-  logger.warn('⚠️ No se pudo detectar versión, usando fallback v23.0')
-  return 'v23.0'
+  // Si ninguna funciona, conservar la version actual/fallback para no degradar por una falla externa.
+  logger.warn(`⚠️ No se pudo detectar versión, conservando ${normalizedFallback}`)
+  return normalizedFallback
 }
 
 /**
@@ -34,21 +61,25 @@ export async function detectLatestVersion() {
  */
 async function testVersion(version) {
   try {
-    // Usar un endpoint simple que siempre existe
-    const url = `https://graph.facebook.com/${version}/me?access_token=test`
+    // Sin token: las versiones existentes responden "Unsupported get request".
+    // Las inexistentes responden "Object with ID 'vXX.0' does not exist".
+    const url = `https://graph.facebook.com/${version}`
     const response = await fetch(url)
     const data = await response.json()
 
-    // Si el error es 190 (token inválido) = la versión existe ✅
-    // Si el error es 2500 (versión no existe) = versión no disponible ❌
-    if (data.error) {
-      return data.error.code === 190 // Token inválido = versión existe
-    }
-
-    return false
+    const message = data.error?.message || ''
+    return response.status === 400 &&
+      data.error?.code === 100 &&
+      message.includes('Unsupported get request') &&
+      !message.includes(`Object with ID '${version}' does not exist`)
   } catch (error) {
     return false
   }
+}
+
+export async function isMetaApiVersionAvailable(version) {
+  const normalizedVersion = normalizeMetaApiVersion(version)
+  return normalizedVersion ? await testVersion(normalizedVersion) : false
 }
 
 /**
@@ -56,13 +87,18 @@ async function testVersion(version) {
  */
 export async function getCurrentVersion() {
   try {
+    const pinnedVersion = getPinnedMetaApiVersion()
+    if (pinnedVersion) {
+      return pinnedVersion
+    }
+
     const result = await db.get(
       'SELECT version FROM meta_api_version ORDER BY updated_at DESC LIMIT 1'
     )
-    return result?.version || 'v23.0'
+    return normalizeMetaApiVersion(result?.version) || DEFAULT_META_API_VERSION
   } catch (error) {
     logger.error('Error obteniendo versión actual:', error.message)
-    return 'v23.0'
+    return normalizeMetaApiVersion(getMetaApiVersion()) || DEFAULT_META_API_VERSION
   }
 }
 
@@ -71,16 +107,21 @@ export async function getCurrentVersion() {
  */
 export async function saveVersion(version) {
   try {
+    const normalizedVersion = normalizeMetaApiVersion(version)
+    if (!normalizedVersion) {
+      throw new Error(`Versión Meta API inválida: ${version}`)
+    }
+
     // Usar CURRENT_TIMESTAMP directamente en lugar de intentar insertar el valor
     await db.run(
       'INSERT INTO meta_api_version (version, updated_at) VALUES (?, CURRENT_TIMESTAMP)',
-      [version]
+      [normalizedVersion]
     )
 
     // También actualizar en memoria
-    setMetaApiVersion(version)
+    setMetaApiVersion(normalizedVersion)
 
-    logger.success(`📝 Versión ${version} guardada en BD`)
+    logger.success(`📝 Versión ${normalizedVersion} guardada en BD`)
     return true
   } catch (error) {
     logger.error('Error guardando versión:', error.message)
@@ -106,23 +147,36 @@ export async function getVersionHistory(limit = 10) {
 
 /**
  * Inicializa la versión desde BD al arrancar el servidor
- * SIEMPRE usa v23.0 para evitar problemas con versiones inválidas
+ * Respeta META_API_VERSION si esta definido; si no, usa la ultima version guardada.
  */
 export async function initializeVersion() {
   try {
-    // FORZAR v23.0 siempre (versión estable conocida)
-    const stableVersion = 'v23.0'
+    const pinnedVersion = getPinnedMetaApiVersion()
+    if (pinnedVersion) {
+      logger.info(`🔧 Versión Meta API fijada por META_API_VERSION: ${pinnedVersion}`)
+      setMetaApiVersion(pinnedVersion)
+      return pinnedVersion
+    }
 
-    logger.info(`🔧 Forzando versión estable: ${stableVersion}`)
+    const result = await db.get(
+      'SELECT version FROM meta_api_version ORDER BY updated_at DESC LIMIT 1'
+    )
+    const storedVersion = normalizeMetaApiVersion(result?.version)
 
-    setMetaApiVersion(stableVersion)
-    await saveVersion(stableVersion)
+    if (storedVersion) {
+      setMetaApiVersion(storedVersion)
+      logger.info(`✅ Versión de Meta API inicializada desde BD: ${storedVersion}`)
+      return storedVersion
+    }
 
-    logger.info(`✅ Versión de Meta API inicializada: ${stableVersion}`)
-    return stableVersion
+    setMetaApiVersion(DEFAULT_META_API_VERSION)
+    await saveVersion(DEFAULT_META_API_VERSION)
+
+    logger.info(`✅ Versión de Meta API inicializada con fallback: ${DEFAULT_META_API_VERSION}`)
+    return DEFAULT_META_API_VERSION
   } catch (error) {
     logger.error('Error inicializando versión:', error.message)
-    const fallback = 'v23.0'
+    const fallback = normalizeMetaApiVersion(getMetaApiVersion()) || DEFAULT_META_API_VERSION
     setMetaApiVersion(fallback)
     return fallback
   }

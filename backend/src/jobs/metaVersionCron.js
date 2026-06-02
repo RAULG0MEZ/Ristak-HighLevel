@@ -1,57 +1,70 @@
 import cron from 'node-cron'
 import { logger } from '../utils/logger.js'
-import { db } from '../config/database.js'
 import {
+  compareMetaApiVersions,
   detectLatestVersion,
   getCurrentVersion,
+  getPinnedMetaApiVersion,
+  isMetaApiVersionAvailable,
   saveVersion
 } from '../services/metaVersionService.js'
 
 /**
- * Verifica si han pasado 6 meses desde la última actualización
+ * Actualiza la versión de Meta API si es necesario.
  */
-async function shouldUpdateVersion() {
+export async function updateMetaVersion({ source = 'manual' } = {}) {
   try {
-    const result = await db.get(
-      `SELECT updated_at FROM meta_api_version
-       ORDER BY updated_at DESC LIMIT 1`
-    )
+    logger.info(`🔄 Verificando actualización de versión de Meta API (${source})...`)
 
-    if (!result) {
-      return true // Primera vez, actualizar
+    const pinnedVersion = getPinnedMetaApiVersion()
+    if (pinnedVersion) {
+      logger.info(`📌 META_API_VERSION está fijada en ${pinnedVersion}; se omite actualización automática`)
+      return {
+        updated: false,
+        pinned: true,
+        version: pinnedVersion,
+        source
+      }
     }
 
-    const lastUpdate = new Date(result.updated_at)
-    const sixMonthsAgo = new Date()
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
-
-    return lastUpdate < sixMonthsAgo
-  } catch (error) {
-    logger.error('Error verificando última actualización:', error.message)
-    return false
-  }
-}
-
-/**
- * Actualiza la versión de Meta API si es necesario
- */
-export async function updateMetaVersion() {
-  try {
-    logger.info('🔄 Verificando actualización de versión de Meta API...')
-
     const currentVersion = await getCurrentVersion()
-    const latestVersion = await detectLatestVersion()
+    const latestVersion = await detectLatestVersion(currentVersion)
 
     if (currentVersion === latestVersion) {
       logger.info(`✅ Ya tienes la versión más reciente: ${currentVersion}`)
       return {
         updated: false,
-        version: currentVersion
+        version: currentVersion,
+        source
       }
     }
 
+    const detectedOlderThanCurrent = compareMetaApiVersions(latestVersion, currentVersion) < 0
+    if (detectedOlderThanCurrent && await isMetaApiVersionAvailable(currentVersion)) {
+      logger.warn(`⚠️ Meta reportó ${latestVersion}, pero la app usa ${currentVersion}; no se hará downgrade`)
+      return {
+        updated: false,
+        version: currentVersion,
+        detectedVersion: latestVersion,
+        source
+      }
+    }
+
+    if (detectedOlderThanCurrent) {
+      logger.warn(`⚠️ La versión guardada ${currentVersion} no está disponible; se corregirá a ${latestVersion}`)
+    }
+
     // Guardar nueva versión
-    await saveVersion(latestVersion)
+    const saved = await saveVersion(latestVersion)
+    if (!saved) {
+      return {
+        updated: false,
+        error: `No se pudo guardar la versión ${latestVersion}`,
+        version: currentVersion,
+        detectedVersion: latestVersion,
+        source
+      }
+    }
 
     logger.success(`
       ✨ VERSIÓN DE META API ACTUALIZADA ✨
@@ -62,49 +75,44 @@ export async function updateMetaVersion() {
     return {
       updated: true,
       oldVersion: currentVersion,
-      newVersion: latestVersion
+      newVersion: latestVersion,
+      source
     }
   } catch (error) {
     logger.error('Error actualizando versión de Meta API:', error.message)
     return {
       updated: false,
-      error: error.message
+      error: error.message,
+      source
     }
   }
 }
 
 /**
  * Inicia el cron job para actualización de versión
- * Se ejecuta el día 1 y 15 de cada mes a las 3:00 AM
+ * Se ejecuta el día 1 de cada mes a las 3:00 AM
  */
 export function startMetaVersionCron() {
-  // Ejecutar el día 1 y 15 de cada mes a las 3:00 AM
-  cron.schedule('0 3 1,15 * *', async () => {
-    logger.info('⏰ Ejecutando verificación de versión de Meta API...')
+  // Ejecutar el día 1 de cada mes a las 3:00 AM
+  cron.schedule('0 3 1 * *', async () => {
+    logger.info('⏰ Ejecutando verificación mensual de versión de Meta API...')
 
-    const needsUpdate = await shouldUpdateVersion()
+    const result = await updateMetaVersion({ source: 'monthly-cron' })
 
-    if (needsUpdate) {
-      logger.info('📅 Han pasado 6+ meses, actualizando versión...')
-      const result = await updateMetaVersion()
-
-      if (result.updated) {
-        logger.success(`✅ Cron: Versión actualizada de ${result.oldVersion} a ${result.newVersion}`)
-      }
-    } else {
-      logger.info('⏱️ Aún no han pasado 6 meses desde la última actualización')
+    if (result.updated) {
+      logger.success(`✅ Cron: Versión actualizada de ${result.oldVersion} a ${result.newVersion}`)
     }
   }, {
     timezone: 'America/Mexico_City'
   })
 
-  logger.info('✅ Cron de actualización de versión Meta API iniciado (días 1 y 15 a las 3 AM)')
+  logger.info('✅ Cron de actualización de versión Meta API iniciado (día 1 de cada mes a las 3 AM)')
 }
 
 /**
  * Función para forzar actualización manual (para testing)
  */
-export async function forceMetaVersionUpdate() {
+export async function forceMetaVersionUpdate(source = 'manual-force') {
   logger.warn('⚠️ Forzando actualización manual de versión...')
-  return await updateMetaVersion()
+  return await updateMetaVersion({ source })
 }
