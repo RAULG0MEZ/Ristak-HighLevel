@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { KpiCard, Card, DateRangePicker, AreaChart, PageContainer, TrafficSourcesChart, ConversionFunnelChart, ViewSelector, Loading, ContactDetailsModal, VisitorDetailsModal, HelpTooltip, Modal } from '@/components/common'
-import funnelStyles from '@/components/common/ConversionFunnelChart/ConversionFunnelChart.module.css'
+import { KpiCard, Card, DateRangePicker, AreaChart, PageContainer, TrafficSourcesChart, ConversionFunnelChart, ViewSelector, Loading, ContactDetailsModal, VisitorDetailsModal, TabList, Modal } from '@/components/common'
 import {
   DollarSign,
   Megaphone,
@@ -1636,58 +1635,49 @@ export const Dashboard: React.FC = () => {
 
         <Card data-dashboard-chart-card variant="glass" className="space-y-4">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+            <div className="flex min-w-0 flex-1 flex-col gap-3 xl:flex-row xl:items-center xl:gap-4">
               <h2 className="m-0 text-xl font-semibold text-[var(--color-text-primary)] sm:whitespace-nowrap">
                 {activeChartLabel}
               </h2>
-              <ViewSelector
-                className="min-w-[190px]"
-                options={chartPeriodOptions}
-                value={selectedChartPeriodValue}
-                onChange={handleChartPeriodChange}
-              />
-            </div>
-            <div className="flex shrink-0 flex-wrap items-center gap-x-6 gap-y-3 xl:justify-end">
-              {selectedChartView === 'revenue-spend' && (
-                <div className={funnelStyles.scopeSelector} data-ristak-scope-selector>
-                  {financialScopeOptions.map(({ value, label, icon: Icon, description }) => {
-                    const button = (
-                      <button
-                        className={`${funnelStyles.scopeButton} ${financialScope === value ? funnelStyles.scopeButtonActive : ''}`}
-                        data-ristak-scope-button
-                        data-active={financialScope === value ? 'true' : undefined}
-                        onClick={() => setFinancialScope(value)}
-                      >
-                        <Icon size={13} />
-                        {label}
-                      </button>
-                    )
-
-                    return (
-                      <HelpTooltip key={value} content={description}>
-                        {button}
-                      </HelpTooltip>
-                    )
-                  })}
+              <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
+                <ViewSelector
+                  className="min-w-[190px]"
+                  options={chartPeriodOptions}
+                  value={selectedChartPeriodValue}
+                  onChange={handleChartPeriodChange}
+                />
+                <ViewSelector
+                  className="min-w-[220px]"
+                  options={chartViewOptions}
+                  value={selectedChartView}
+                  onChange={(value) => setSelectedChartView(value as ChartView)}
+                />
+                <div className="flex flex-wrap items-center gap-4 px-2 text-xs text-[var(--color-text-secondary)]">
+                  {chartLegendItems.map((item) => (
+                    <div key={item.key} className="inline-flex items-center gap-2">
+                      <span
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: item.color }}
+                      />
+                      <span className="font-medium">{item.label}</span>
+                    </div>
+                  ))}
                 </div>
-              )}
-              <div className="flex flex-wrap items-center gap-4 px-2 text-xs text-[var(--color-text-secondary)]">
-                {chartLegendItems.map((item) => (
-                  <div key={item.key} className="inline-flex items-center gap-2">
-                    <span
-                      className="h-2.5 w-2.5 rounded-full"
-                      style={{ backgroundColor: item.color }}
-                    />
-                    <span className="font-medium">{item.label}</span>
-                  </div>
-                ))}
               </div>
-              <ViewSelector
-                options={chartViewOptions}
-                value={selectedChartView}
-                onChange={(value) => setSelectedChartView(value as ChartView)}
-              />
             </div>
+            {selectedChartView === 'revenue-spend' && (
+              <TabList
+                className="shrink-0 self-start xl:ml-auto xl:self-center"
+                tabs={financialScopeOptions.map(({ value, label, icon: Icon, description }) => ({
+                  value,
+                  label,
+                  icon: <Icon size={13} />,
+                  description
+                }))}
+                activeTab={financialScope}
+                onTabChange={(value) => setFinancialScope(value as typeof financialScope)}
+              />
+            )}
           </div>
           <div className="relative w-full" style={{ minHeight: chartHeight, height: chartHeight }}>
             {isChartLoading ? (
