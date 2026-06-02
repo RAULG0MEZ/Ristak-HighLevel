@@ -216,7 +216,7 @@ async function syncContactPhoneColumns(contactId, canonicalPhone) {
 
 async function reconcileCanonicalContactPhones() {
   const rows = await db.all(`
-    SELECT id, phone, full_name, first_name, last_name, source, visitor_id,
+    SELECT id, phone, email, full_name, first_name, last_name, source, visitor_id,
       attribution_url, attribution_session_source, attribution_medium, attribution_ctwa_clid,
       attribution_ad_name, attribution_ad_id, total_paid, purchases_count, created_at
     FROM contacts
@@ -254,6 +254,7 @@ async function reconcileCanonicalContactPhones() {
     for (const loser of losers) {
       for (const field of [
         'full_name',
+        'email',
         'first_name',
         'last_name',
         'source',
@@ -271,7 +272,7 @@ async function reconcileCanonicalContactPhones() {
       merged.total_paid = Math.max(Number(merged.total_paid || 0), Number(loser.total_paid || 0))
       merged.purchases_count = Math.max(Number(merged.purchases_count || 0), Number(loser.purchases_count || 0))
 
-      await db.run('UPDATE contacts SET phone = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [loser.id])
+      await db.run('UPDATE contacts SET phone = NULL, email = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [loser.id])
       await updateContactReferences(loser.id, winner.id)
       await db.run('DELETE FROM contacts WHERE id = ?', [loser.id])
       changed += 1
@@ -280,6 +281,7 @@ async function reconcileCanonicalContactPhones() {
     await db.run(`
       UPDATE contacts SET
         phone = ?,
+        email = ?,
         full_name = ?,
         first_name = ?,
         last_name = ?,
@@ -297,6 +299,7 @@ async function reconcileCanonicalContactPhones() {
       WHERE id = ?
     `, [
       canonicalPhone,
+      merged.email || null,
       merged.full_name || null,
       merged.first_name || null,
       merged.last_name || null,
