@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, CalendarDays, ChevronRight, CreditCard, MonitorX, X } from 'lucide-react'
+import { ArrowLeft, CalendarDays, ChevronRight, CreditCard, MonitorX } from 'lucide-react'
 import { RecordPaymentModal } from '@/components/common'
 import styles from './PhonePayments.module.css'
 
@@ -208,13 +208,7 @@ export const PhonePayments: React.FC = () => {
             </div>
           )}
 
-          {isForm ? (
-            <h2 className={styles.headerFormTitle}>{formTitle}</h2>
-          ) : (
-            <Link className={styles.iconButton} to="/phone/transactions" aria-label="Volver a la app" title="Volver a la app">
-              <X size={18} />
-            </Link>
-          )}
+          {isForm && <h2 className={styles.headerFormTitle}>{formTitle}</h2>}
         </header>
 
         {isForm ? (
@@ -230,9 +224,11 @@ export const PhonePayments: React.FC = () => {
           </div>
         ) : (
           <section className={styles.selectStack} aria-label="Elige el tipo de cobro">
+            <p className={styles.selectHint}>Elige cómo quieres cobrar</p>
+
             <button
               type="button"
-              className={`${styles.choiceCard} ${styles.choiceTop}`}
+              className={styles.choiceCard}
               onClick={() => setView('single')}
             >
               <span className={`${styles.choiceIcon} ${styles.choiceIconGreen}`}>
@@ -245,13 +241,9 @@ export const PhonePayments: React.FC = () => {
               <ChevronRight size={20} className={styles.choiceChevron} aria-hidden="true" />
             </button>
 
-            <div className={styles.selectHint} aria-hidden="true">
-              <span>Elige cómo quieres cobrar</span>
-            </div>
-
             <button
               type="button"
-              className={`${styles.choiceCard} ${styles.choiceBottom}`}
+              className={styles.choiceCard}
               onClick={() => setView('partial')}
             >
               <span className={`${styles.choiceIcon} ${styles.choiceIconBlue}`}>
