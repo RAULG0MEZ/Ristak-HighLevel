@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { Card, Button } from '@/components/common'
-import { Plus, X, Pencil, DollarSign, Loader2, TrendingDown } from 'lucide-react'
+import { Plus, X, Pencil, DollarSign, Loader2, TrendingDown, Info } from 'lucide-react'
 import { useNotification } from '@/contexts/NotificationContext'
 import { costsService, type Cost, type CreateCostDto } from '@/services/costsService'
 import { useAppConfig } from '@/hooks'
@@ -314,7 +314,7 @@ export const Costs: React.FC = () => {
             <div>
               <h2 className={styles.title}>Gestión de Costos (fijos)</h2>
               <p className={styles.subtitle}>
-                Configura impuestos, comisiones y gastos fijos que se reflejan como gastos fijos en reportes
+                Configura impuestos, comisiones y gastos fijos. Los montos ingresados se consideran valores <strong>mensuales</strong> y se reflejan en el reporte mensual.
               </p>
             </div>
           </div>
@@ -327,6 +327,13 @@ export const Costs: React.FC = () => {
             <Plus size={18} />
             Agregar costo
           </Button>
+        </div>
+
+        <div className={styles.infoNote}>
+          <Info size={15} />
+          <span>
+            Cada costo que agregues aquí se interpreta como un <strong>gasto mensual fijo</strong>. En el reporte mensual verás el monto exacto; en reportes de días o años el valor se prorratea automáticamente.
+          </span>
         </div>
 
         {loading ? (
