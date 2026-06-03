@@ -466,10 +466,42 @@ function getRuntime(sessionId = DEFAULT_SESSION_ID) {
       socket: null,
       starting: null,
       manualDisconnect: false,
-      lidPhoneMap: new Map()
+      lidPhoneMap: new Map(),
+      accountJid: null,
+      accountPhone: null
     })
   }
   return runtimeSessions.get(sessionId)
+}
+
+async function isOwnWhatsAppNumber({
+  sessionId = DEFAULT_SESSION_ID,
+  runtime = getRuntime(sessionId),
+  phone = '',
+  remoteJid = '',
+  identityJid = ''
+} = {}) {
+  const normalizedPhone = normalizePhoneDigits(phone)
+  const normalizedRemoteJid = normalizeJid(remoteJid)
+  const normalizedIdentityJid = normalizeJid(identityJid)
+  const runtimeJid = normalizeJid(runtime?.socket?.user?.id || runtime?.accountJid || '')
+  const runtimePhone = normalizePhoneDigits(runtime?.accountPhone || '')
+
+  if (runtimeJid && (runtimeJid === normalizedRemoteJid || runtimeJid === normalizedIdentityJid)) return true
+  if (runtimePhone && normalizedPhone && runtimePhone === normalizedPhone) return true
+  if (runtime?.accountJid || runtime?.accountPhone) return false
+
+  const session = await db.get('SELECT phone, jid FROM whatsapp_web_sessions WHERE id = ?', [sessionId])
+  const sessionJid = normalizeJid(session?.jid || '')
+  const sessionPhone = normalizePhoneDigits(session?.phone || '')
+
+  if (sessionJid) runtime.accountJid = sessionJid
+  if (session?.phone) runtime.accountPhone = session.phone
+
+  return Boolean(
+    (sessionJid && (sessionJid === normalizedRemoteJid || sessionJid === normalizedIdentityJid)) ||
+    (sessionPhone && normalizedPhone && sessionPhone === normalizedPhone)
+  )
 }
 
 async function findExistingContact(phone) {
@@ -1445,6 +1477,13 @@ async function processWhatsAppWebMessage(sessionId, msg, { eventSource = 'notify
   }
 
   const isInbound = !msg.key?.fromMe
+  const isSelfNumber = await isOwnWhatsAppNumber({
+    sessionId,
+    runtime: getRuntime(sessionId),
+    phone,
+    remoteJid,
+    identityJid
+  })
   const storedName = await findStoredWhatsAppContactName({
     sessionId,
     remoteJid: identityJid,
@@ -1456,15 +1495,17 @@ async function processWhatsAppWebMessage(sessionId, msg, { eventSource = 'notify
   ], { phone, remoteJid: identityJid })
   const messageText = getMessageText(msg.message)
   const messageTimestamp = toDateTime(msg.messageTimestamp)
-  const contact = await upsertLocalContact({
-    phone,
-    pushName,
-    remoteJid: identityJid,
-    messageText,
-    messageTimestamp,
-    isInbound,
-    attribution
-  })
+  const contact = isSelfNumber
+    ? { id: null, created: false }
+    : await upsertLocalContact({
+      phone,
+      pushName,
+      remoteJid: identityJid,
+      messageText,
+      messageTimestamp,
+      isInbound,
+      attribution
+    })
   const webContactId = await upsertWhatsAppWebContact({
     sessionId,
     contactId: contact.id,
@@ -1493,7 +1534,7 @@ async function processWhatsAppWebMessage(sessionId, msg, { eventSource = 'notify
     attribution
   })
 
-  if (attribution.sourceId) {
+  if (attribution.sourceId && !isSelfNumber) {
     await reconcileContactFirstWhatsAppAttribution(contact.id)
   }
 
@@ -1629,6 +1670,8 @@ function disconnectRuntimeSocket(sessionId, runtime) {
   } finally {
     runtime.socket = null
     runtime.starting = null
+    runtime.accountJid = null
+    runtime.accountPhone = null
   }
 }
 
@@ -1640,6 +1683,8 @@ export async function startWhatsAppWebSession(sessionId = DEFAULT_SESSION_ID, { 
     runtime.manualDisconnect = true
     disconnectRuntimeSocket(sessionId, runtime)
     runtime.lidPhoneMap.clear()
+    runtime.accountJid = null
+    runtime.accountPhone = null
     await clearAuthState(sessionId)
     await updateSession(sessionId, {
       status: 'disconnected',
@@ -1711,6 +1756,18 @@ export async function startWhatsAppWebSession(sessionId = DEFAULT_SESSION_ID, { 
 
           if (connection === 'open') {
             const accountInfo = await getConnectedAccountInfo(socket)
+            runtime.accountJid = normalizeJid(accountInfo.jid || '')
+            runtime.accountPhone = accountInfo.phone
+            const ownPhoneCandidates = buildPhoneMatchCandidates(accountInfo.phone || '')
+
+            if (ownPhoneCandidates.length) {
+              const placeholders = ownPhoneCandidates.map(() => '?').join(', ')
+              await db.run(
+                `DELETE FROM contacts WHERE source = ? AND phone IN (${placeholders})`,
+                [SOURCE_NAME, ...ownPhoneCandidates]
+              )
+            }
+
             await updateSession(sessionId, {
               status: 'connected',
               qr_code: null,
