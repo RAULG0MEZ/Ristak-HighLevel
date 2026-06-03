@@ -82,7 +82,7 @@ function timestampDateExpression(column, timezone = 'UTC') {
   }
 
   const safeTimezone = String(timezone || 'UTC').replace(/'/g, "''");
-  return `(${column} AT TIME ZONE '${safeTimezone}')::date`;
+  return `((${column})::timestamptz AT TIME ZONE '${safeTimezone}')::date`;
 }
 
 function timestampDayExpression(column, timezone = 'UTC') {

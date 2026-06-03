@@ -68,7 +68,7 @@ function timestampDateExpression(column, timezone = 'UTC') {
   }
 
   const safeTimezone = String(timezone || 'UTC').replace(/'/g, "''")
-  return `(${column} AT TIME ZONE '${safeTimezone}')::date`
+  return `((${column})::timestamptz AT TIME ZONE '${safeTimezone}')::date`
 }
 
 function attributionMatchCondition(alias = 'contacts', dateColumn = 'created_at', timezone = 'UTC') {
@@ -782,7 +782,7 @@ export function getGroupExpression(column, groupBy, timezone = 'America/Mexico_C
   const isDateOnlyColumn = column === 'meta_ads.date'
   const columnExpr = isDateOnlyColumn
     ? `(${column})::date`
-    : `(${column} AT TIME ZONE '${safeTimezone}')`
+    : `((${column})::timestamptz AT TIME ZONE '${safeTimezone}')`
 
   if (groupBy === 'year') {
     return `TO_CHAR(${columnExpr}, 'YYYY')`

@@ -10,6 +10,28 @@ import fetch from 'node-fetch'
 const isPostgres = Boolean(process.env.DATABASE_URL)
 const TRACKING_SNIPPET_VERSION = '8' // Incrementar cuando cambies el código del snippet
 
+function timestampLocalExpression(column, timezone = 'UTC') {
+  if (!isPostgres) {
+    return `datetime(${column}, '-6 hours')`
+  }
+
+  const safeTimezone = String(timezone || 'UTC').replace(/'/g, "''")
+  return `((${column})::timestamptz AT TIME ZONE '${safeTimezone}')`
+}
+
+function timestampDateExpression(column, timezone = 'UTC') {
+  if (!isPostgres) {
+    return `DATE(${column})`
+  }
+
+  return `${timestampLocalExpression(column, timezone)}::date`
+}
+
+function metaAdsSameLocalDayCondition(metaDateColumn, timestampColumn, timezone = 'UTC') {
+  const metaDateExpr = isPostgres ? `(${metaDateColumn})::date` : `DATE(${metaDateColumn})`
+  return `${metaDateExpr} = ${timestampDateExpression(timestampColumn, timezone)}`
+}
+
 const parseIsoDateToUtc = (value) => {
   const [year, month, day] = String(value || '').split('-').map(Number)
   if (!year || !month || !day) return null
@@ -1340,11 +1362,10 @@ export async function getVisitorsByPeriod(req, res) {
     }
 
     const buildWeekExpression = (column) => {
-      const safeTimezone = (range.appliedTimezone || 'UTC').replace(/'/g, "''")
       if (!isPostgres) {
         return `strftime('%Y-W%W', datetime(${column}, '-6 hours'))`
       }
-      const columnExpr = `(${column} AT TIME ZONE '${safeTimezone}')`
+      const columnExpr = timestampLocalExpression(column, range.appliedTimezone)
       return `TO_CHAR(${columnExpr}, 'YYYY-"W"IW')`
     }
 
@@ -1366,7 +1387,7 @@ export async function getVisitorsByPeriod(req, res) {
       conditions.push(`EXISTS (
         SELECT 1 FROM meta_ads ma
         WHERE ma.ad_id = c.attribution_ad_id
-          AND (ma.date)::date = (c.created_at)::date
+          AND ${metaAdsSameLocalDayCondition('ma.date', 'c.created_at', range.appliedTimezone)}
       )`)
     }
 
@@ -1454,7 +1475,7 @@ export async function getVisitorsList(req, res) {
         conditions.push(`EXISTS (
           SELECT 1 FROM meta_ads ma
           WHERE ma.ad_id = c.attribution_ad_id
-            AND (ma.date)::date = (c.created_at)::date
+            AND ${metaAdsSameLocalDayCondition('ma.date', 'c.created_at', range.appliedTimezone)}
         )`)
       }
     } else {
@@ -1750,12 +1771,14 @@ export async function getContactConversionsByDate(req, res) {
 
     logger.info(`Obteniendo conversiones por fecha de creación: ${start} a ${end}`)
 
+    const range = await resolveDateRangeWithGHLTimezone({ startDate: start, endDate: end })
+    const contactCreatedDate = timestampDateExpression('c.created_at', range.appliedTimezone)
     const dateExpr = isPostgres
-      ? "TO_CHAR(c.created_at::date, 'YYYY-MM-DD')"
-      : 'DATE(c.created_at)'
+      ? `TO_CHAR(${contactCreatedDate}, 'YYYY-MM-DD')`
+      : contactCreatedDate
     const dateFilter = isPostgres
-      ? 'c.created_at::date >= ?::date AND c.created_at::date <= ?::date'
-      : 'DATE(c.created_at) >= DATE(?) AND DATE(c.created_at) <= DATE(?)'
+      ? `${contactCreatedDate} >= ?::date AND ${contactCreatedDate} <= ?::date`
+      : `${contactCreatedDate} >= DATE(?) AND ${contactCreatedDate} <= DATE(?)`
 
     const customerCondition = '(COALESCE(c.purchases_count, 0) > 0 OR COALESCE(c.total_paid, 0) > 0)'
     const appointmentCondition = `(

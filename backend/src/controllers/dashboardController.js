@@ -9,6 +9,22 @@ import { getContactsWithAppointmentsHybrid, getContactsWithShowedAppointmentsHyb
 import { getHiddenContactFilters, buildHiddenContactsCondition } from '../utils/hiddenContactsFilter.js';
 import { nonTestPaymentCondition } from '../utils/paymentMode.js';
 
+const isPostgres = Boolean(process.env.DATABASE_URL);
+
+function timestampDateExpression(column, timezone = 'UTC') {
+  if (!isPostgres) {
+    return `DATE(${column})`;
+  }
+
+  const safeTimezone = String(timezone || 'UTC').replace(/'/g, "''");
+  return `((${column})::timestamptz AT TIME ZONE '${safeTimezone}')::date`;
+}
+
+function metaAdsSameLocalDayCondition(metaDateColumn, timestampColumn, timezone = 'UTC') {
+  const metaDateExpr = isPostgres ? `(${metaDateColumn})::date` : `DATE(${metaDateColumn})`;
+  return `${metaDateExpr} = ${timestampDateExpression(timestampColumn, timezone)}`;
+}
+
 const calculateDelta = (current, previous) => {
   if (previous === 0) {
     return current > 0 ? 100 : 0;
@@ -1050,7 +1066,7 @@ export const getFinancialOverview = async (req, res) => {
           ${isAttributed ? `AND c.attribution_ad_id IS NOT NULL AND EXISTS (
             SELECT 1 FROM meta_ads ma
             WHERE ma.ad_id = c.attribution_ad_id
-              AND DATE(ma.date) = DATE(c.created_at)
+              AND ${metaAdsSameLocalDayCondition('ma.date', 'c.created_at', timezone)}
           )` : ''}
           ${hiddenCondition ? `AND ${hiddenCondition}` : ''}
         GROUP BY day
@@ -1207,7 +1223,7 @@ export const getFunnelData = async (req, res) => {
           ${isAttributed ? `AND c.attribution_ad_id IS NOT NULL AND EXISTS (
             SELECT 1 FROM meta_ads ma
             WHERE ma.ad_id = c.attribution_ad_id
-              AND DATE(ma.date) = DATE(c.created_at)
+              AND ${metaAdsSameLocalDayCondition('ma.date', 'c.created_at', range.appliedTimezone)}
           )` : ''}
       `
       const visitorsParams = [range.startUtc, range.endUtc]
@@ -1227,7 +1243,7 @@ export const getFunnelData = async (req, res) => {
       conditions.push(`attribution_ad_id IS NOT NULL AND EXISTS (
         SELECT 1 FROM meta_ads ma
         WHERE ma.ad_id = contacts.attribution_ad_id
-          AND DATE(ma.date) = DATE(contacts.created_at)
+          AND ${metaAdsSameLocalDayCondition('ma.date', 'contacts.created_at', range.appliedTimezone)}
       )`);
     }
     if (hiddenCondition) conditions.push(hiddenCondition);
@@ -1261,7 +1277,7 @@ export const getFunnelData = async (req, res) => {
         conditions.push(`attribution_ad_id IS NOT NULL AND EXISTS (
           SELECT 1 FROM meta_ads ma
           WHERE ma.ad_id = contacts.attribution_ad_id
-            AND DATE(ma.date) = DATE(contacts.created_at)
+            AND ${metaAdsSameLocalDayCondition('ma.date', 'contacts.created_at', range.appliedTimezone)}
         )`);
       }
       if (hiddenCondition) conditions.push(hiddenCondition);
@@ -1312,7 +1328,7 @@ export const getFunnelData = async (req, res) => {
       attendanceConditions.push(`attribution_ad_id IS NOT NULL AND EXISTS (
         SELECT 1 FROM meta_ads ma
         WHERE ma.ad_id = contacts.attribution_ad_id
-          AND DATE(ma.date) = DATE(contacts.created_at)
+          AND ${metaAdsSameLocalDayCondition('ma.date', 'contacts.created_at', range.appliedTimezone)}
       )`);
     }
     if (hiddenCondition) attendanceConditions.push(hiddenCondition);
@@ -1342,7 +1358,7 @@ export const getFunnelData = async (req, res) => {
         conditions.push(`attribution_ad_id IS NOT NULL AND EXISTS (
           SELECT 1 FROM meta_ads ma
           WHERE ma.ad_id = contacts.attribution_ad_id
-            AND DATE(ma.date) = DATE(contacts.created_at)
+            AND ${metaAdsSameLocalDayCondition('ma.date', 'contacts.created_at', range.appliedTimezone)}
         )`);
       }
       if (hiddenCondition) conditions.push(hiddenCondition);

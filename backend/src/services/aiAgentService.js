@@ -168,8 +168,7 @@ Atribución de campañas, anuncios y publicidad (modelo oficial de la página de
 - Sí puedes medir resultados por campaña, adset y anuncio: leads, citas, asistencias, ventas e ingresos. NUNCA digas que no se puede amarrar ventas o ingresos a una campaña, ni pidas UTMs nuevos ni una "ventana de pago"; este modelo ya existe y es el mismo que usa la página de Publicidad.
 - Vínculo: contacts.attribution_ad_id = meta_ads.ad_id. El nombre de campaña, adset y anuncio sale de meta_ads (campaign_name, adset_name, ad_name).
 - Fecha de atribución = contacts.created_at (el día en que se creó el contacto). TODO (lead, cita, venta e ingreso) se cuenta en el día en que se creó el contacto, no en la fecha del pago ni de la cita.
-- Validación obligatoria (idéntica a la página de Publicidad): solo cuenta un contacto si su anuncio estuvo activo ese mismo día, es decir, si existe una fila en meta_ads con ese ad_id y la misma fecha que el created_at del contacto:
-  EXISTS (SELECT 1 FROM meta_ads ma WHERE ma.ad_id = c.attribution_ad_id AND DATE(ma.date) = DATE(c.created_at))
+- Validación obligatoria (idéntica a la página de Publicidad): solo cuenta un contacto si su anuncio estuvo activo ese mismo día local del negocio, es decir, si existe una fila en meta_ads con ese ad_id y la misma fecha local que contacts.created_at.
 - Métricas por campaña/adset/anuncio, siempre sobre el cohort de contactos atribuidos y contadas por created_at dentro del rango:
   Leads/interesados: COUNT(DISTINCT contactos) con attribution_ad_id válido.
   Ventas: esos contactos con purchases_count > 0 (cada contacto cuenta una sola vez).
@@ -185,7 +184,7 @@ Atribución de campañas, anuncios y publicidad (modelo oficial de la página de
          COUNT(DISTINCT CASE WHEN c.purchases_count > 0 THEN c.id END) AS ventas,
          COALESCE(SUM(c.total_paid), 0) AS ingresos
   FROM contacts c
-  JOIN meta_ads ma ON ma.ad_id = c.attribution_ad_id AND DATE(ma.date) = DATE(c.created_at)
+  JOIN meta_ads ma ON ma.ad_id = c.attribution_ad_id AND (ma.date)::date = ((c.created_at)::timestamptz AT TIME ZONE 'America/Mexico_City')::date
   WHERE c.attribution_ad_id IS NOT NULL AND c.created_at >= ? AND c.created_at <= ?
   GROUP BY ma.campaign_name
   ORDER BY ingresos DESC
@@ -13575,7 +13574,26 @@ function sqlMonthExpression(column, timezone = 'UTC') {
   }
 
   const safeTimezone = String(timezone || 'UTC').replace(/'/g, "''")
-  return `TO_CHAR(((${column})::timestamptz AT TIME ZONE 'UTC' AT TIME ZONE '${safeTimezone}'), 'YYYY-MM')`
+  return `TO_CHAR(((${column})::timestamptz AT TIME ZONE '${safeTimezone}'), 'YYYY-MM')`
+}
+
+function sqlDateExpression(column, timezone = 'UTC') {
+  if (!isPostgres) {
+    return `DATE(${column})`
+  }
+
+  const safeTimezone = String(timezone || 'UTC').replace(/'/g, "''")
+  return `((${column})::timestamptz AT TIME ZONE '${safeTimezone}')::date`
+}
+
+function sqlDateOnlyExpression(column) {
+  return isPostgres ? `(${column})::date` : `DATE(${column})`
+}
+
+function sqlDateOnlyMonthExpression(column) {
+  return isPostgres
+    ? `TO_CHAR((${column})::date, 'YYYY-MM')`
+    : `strftime('%Y-%m', DATE(${column}))`
 }
 
 async function buildDatabaseValueMapQuery() {
@@ -13659,7 +13677,7 @@ async function buildHistoricalResearchQueries(runtimeContext) {
   const paymentMonth = sqlMonthExpression(paymentDate, runtimeContext.timezone)
   const appointmentDate = 'COALESCE(a.start_time, a.date_added)'
   const appointmentMonth = sqlMonthExpression(appointmentDate, runtimeContext.timezone)
-  const metaMonth = sqlMonthExpression('m.date', runtimeContext.timezone)
+  const metaMonth = sqlDateOnlyMonthExpression('m.date')
   const sessionMonth = sqlMonthExpression('s.started_at', runtimeContext.timezone)
 
   return [
@@ -13821,7 +13839,9 @@ async function buildCampaignPerformanceQueries(runtimeContext) {
   }
 
   const attributedContactMonth = sqlMonthExpression('contactos_atribuidos.created_at', runtimeContext.timezone)
-  const metaMonth = sqlMonthExpression('m.date', runtimeContext.timezone)
+  const attributedContactDate = sqlDateExpression('c.created_at', runtimeContext.timezone)
+  const metaAdDate = sqlDateOnlyExpression('ma.date')
+  const metaMonth = sqlDateOnlyMonthExpression('m.date')
 
   // Frontera rolling de ~90 días en el timezone del negocio (formato YYYY-MM-DD).
   const ninetyDaysAgo = DateTime.fromISO(runtimeContext.today, { zone: runtimeContext.timezone })
@@ -13854,9 +13874,9 @@ async function buildCampaignPerformanceQueries(runtimeContext) {
           FROM contacts c
           JOIN meta_ads ma
             ON ma.ad_id = c.attribution_ad_id
-           AND DATE(ma.date) = DATE(c.created_at)
+           AND ${metaAdDate} = ${attributedContactDate}
           WHERE ${contactWhere.join(' AND ')}
-            AND DATE(c.created_at) >= ?
+            AND ${attributedContactDate} >= ?
         ),
         ingresos_camp AS (
           SELECT
@@ -13934,7 +13954,7 @@ async function buildCampaignPerformanceQueries(runtimeContext) {
           FROM contacts c
           JOIN meta_ads ma
             ON ma.ad_id = c.attribution_ad_id
-           AND DATE(ma.date) = DATE(c.created_at)
+           AND ${metaAdDate} = ${attributedContactDate}
           WHERE ${contactWhere.join(' AND ')}
         ),
         ingresos_ad AS (
@@ -14015,7 +14035,7 @@ async function buildCampaignPerformanceQueries(runtimeContext) {
           FROM contacts c
           JOIN meta_ads ma
             ON ma.ad_id = c.attribution_ad_id
-           AND DATE(ma.date) = DATE(c.created_at)
+           AND ${metaAdDate} = ${attributedContactDate}
           WHERE ${contactWhere.join(' AND ')}
         ),
         ingresos_cm AS (

@@ -1,5 +1,17 @@
 import { db } from '../config/database.js';
 import { logger } from '../utils/logger.js';
+import { getTimezoneFromGHL } from '../utils/dateUtils.js';
+
+const isPostgres = Boolean(process.env.DATABASE_URL);
+
+function contactDateExpression(column, timezone = 'UTC') {
+  if (!isPostgres) {
+    return `DATE(${column})`;
+  }
+
+  const safeTimezone = String(timezone || 'UTC').replace(/'/g, "''");
+  return `((${column})::timestamptz AT TIME ZONE '${safeTimezone}')::date`;
+}
 
 /**
  * Sistema de Fallback Attribution
@@ -90,14 +102,14 @@ function isDateInRange(contactDate, adDateRange) {
  * Encuentra contactos candidatos para fallback
  * (tienen URL pero no tienen ad_id válido)
  */
-async function findFallbackCandidates() {
+async function findFallbackCandidates(timezone) {
   const query = `
     SELECT
       c.id,
       c.full_name,
       c.attribution_url as url,
       c.attribution_ad_id as current_ad_id,
-      DATE(c.created_at) as contact_date,
+      ${contactDateExpression('c.created_at', timezone)} as contact_date,
       c.total_paid
     FROM contacts c
     WHERE c.attribution_url IS NOT NULL
@@ -122,9 +134,10 @@ export async function executeFallbackAttribution() {
   try {
     // 1. Construir mapeo URL → ad_id dominante
     const urlMapping = await buildUrlToAdIdMapping();
+    const timezone = await getTimezoneFromGHL();
 
     // 2. Obtener candidatos
-    const candidates = await findFallbackCandidates();
+    const candidates = await findFallbackCandidates(timezone);
 
     const stats = {
       total_candidates: candidates.length,

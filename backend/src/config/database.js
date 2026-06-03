@@ -18,6 +18,7 @@ if (usePostgres) {
   const pg = await import('pg')
   const pool = new pg.default.Pool({
     connectionString: DATABASE_URL,
+    options: '-c timezone=UTC',
     ssl: {
       rejectUnauthorized: false
     }
