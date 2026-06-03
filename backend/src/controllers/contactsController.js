@@ -8,6 +8,7 @@ import { prepareContactPhoneUpsert } from '../services/contactIdentityService.js
 import { getHiddenContactFilters, buildHiddenContactsCondition } from '../utils/hiddenContactsFilter.js'
 import { nonTestPaymentCondition } from '../utils/paymentMode.js'
 import { buildContactSearchClause, buildContactSearchRank } from '../utils/searchText.js'
+import { normalizeWhatsAppAttributionPlatform } from '../utils/trafficSourceNormalizer.js'
 import {
   buildHighLevelCustomFieldsPayload,
   mergeContactCustomFields,
@@ -52,6 +53,109 @@ const APPOINTMENT_ATTENDED_STATUSES = new Set(['showed', 'attended', 'completed'
 const sqlList = values => [...values].map(value => `'${value}'`).join(', ')
 const ACTIVE_APPOINTMENT_CONDITION = `LOWER(COALESCE(appointment_status, status, '')) NOT IN (${sqlList(APPOINTMENT_CANCELED_STATUSES)})`
 const ATTENDED_APPOINTMENT_CONDITION = `LOWER(COALESCE(appointment_status, status, '')) IN (${sqlList(APPOINTMENT_ATTENDED_STATUSES)})`
+
+const firstText = (...values) => {
+  for (const value of values) {
+    if (value === null || value === undefined) continue
+    const text = String(value).trim()
+    if (text && text !== 'null' && text !== 'undefined') return value
+  }
+  return null
+}
+
+async function loadFirstWhatsAppAttributions(contactIds = []) {
+  const ids = Array.from(new Set(contactIds.filter(Boolean)))
+  const byContact = new Map()
+  if (!ids.length) return byContact
+
+  const placeholders = ids.map(() => '?').join(', ')
+
+  const officialRows = await db.all(`
+    SELECT
+      contact_id,
+      referral_source_url,
+      referral_source_type,
+      referral_source_id,
+      referral_headline,
+      referral_body,
+      referral_ctwa_clid,
+      NULL as referral_source_app,
+      NULL as referral_entry_point,
+      created_at,
+      'whatsapp_attribution' as attribution_source
+    FROM whatsapp_attribution
+    WHERE contact_id IN (${placeholders})
+    ORDER BY created_at ASC, id ASC
+  `, ids)
+
+  officialRows.forEach(row => {
+    if (row.contact_id && !byContact.has(row.contact_id)) {
+      byContact.set(row.contact_id, row)
+    }
+  })
+
+  const webRows = await db.all(`
+    SELECT
+      msg.contact_id,
+      COALESCE(attr.detected_source_url, msg.detected_source_url) as referral_source_url,
+      COALESCE(attr.detected_source_type, msg.detected_source_type) as referral_source_type,
+      COALESCE(attr.detected_source_id, msg.detected_source_id) as referral_source_id,
+      COALESCE(attr.detected_headline, msg.detected_headline) as referral_headline,
+      COALESCE(attr.detected_body, msg.detected_body) as referral_body,
+      COALESCE(attr.detected_ctwa_clid, msg.detected_ctwa_clid) as referral_ctwa_clid,
+      COALESCE(attr.detected_source_app, msg.detected_source_app) as referral_source_app,
+      COALESCE(attr.detected_entry_point, msg.detected_entry_point) as referral_entry_point,
+      COALESCE(msg.message_timestamp, msg.created_at) as created_at,
+      'whatsapp_web' as attribution_source
+    FROM whatsapp_web_messages msg
+    LEFT JOIN whatsapp_web_attribution attr ON attr.whatsapp_web_message_id = msg.id
+    WHERE msg.contact_id IN (${placeholders})
+      AND msg.direction = 'inbound'
+      AND (
+        attr.id IS NOT NULL
+        OR msg.detected_ctwa_clid IS NOT NULL
+        OR msg.detected_source_id IS NOT NULL
+        OR msg.detected_source_url IS NOT NULL
+        OR msg.detected_headline IS NOT NULL
+      )
+    ORDER BY COALESCE(msg.message_timestamp, msg.created_at) ASC, msg.id ASC
+  `, ids)
+
+  webRows.forEach(row => {
+    if (row.contact_id && !byContact.has(row.contact_id)) {
+      byContact.set(row.contact_id, row)
+    }
+  })
+
+  return byContact
+}
+
+function buildContactAttributionFields(contact = {}, whatsappAttribution = null) {
+  const attributionData = {
+    source: contact.source,
+    referral_source_url: firstText(contact.attribution_url, whatsappAttribution?.referral_source_url),
+    referral_source_type: firstText(contact.attribution_medium, whatsappAttribution?.referral_source_type),
+    referral_source_id: firstText(contact.attribution_ad_id, whatsappAttribution?.referral_source_id),
+    referral_ctwa_clid: firstText(contact.attribution_ctwa_clid, whatsappAttribution?.referral_ctwa_clid),
+    referral_source_app: firstText(contact.attribution_session_source, whatsappAttribution?.referral_source_app),
+    referral_entry_point: whatsappAttribution?.referral_entry_point || null
+  }
+  const platform = normalizeWhatsAppAttributionPlatform(attributionData)
+  const hasPlatform = platform && !['Directo', 'Desconocido', 'Otro'].includes(platform)
+
+  return {
+    attribution_url: attributionData.referral_source_url || null,
+    attribution_session_source: firstText(
+      contact.attribution_session_source,
+      whatsappAttribution?.referral_source_app,
+      whatsappAttribution?.referral_entry_point,
+      whatsappAttribution?.referral_source_type
+    ),
+    attribution_medium: attributionData.referral_source_type || null,
+    attribution_ctwa_clid: attributionData.referral_ctwa_clid || null,
+    whatsappAttributionPlatform: hasPlatform ? platform : null
+  }
+}
 
 /**
  * Obtiene todos los contactos con paginación y filtros
@@ -183,6 +287,10 @@ export const getContacts = async (req, res) => {
         c.last_name,
         c.source,
         c.visitor_id,
+        c.attribution_url,
+        c.attribution_session_source,
+        c.attribution_medium,
+        c.attribution_ctwa_clid,
         c.attribution_ad_name,
         c.attribution_ad_id,
         c.custom_fields,
@@ -302,9 +410,12 @@ export const getContacts = async (req, res) => {
       (contact.email ? firstSessionsByEmail.get(String(contact.email).toLowerCase()) : null) ||
       null
 
+    const whatsappAttributionsByContact = await loadFirstWhatsAppAttributions(contactIds)
+
     // Mapear campos de base de datos a nombres esperados por frontend
     const mappedContacts = contacts.map(c => {
       const firstSession = getFirstSessionForContact(c)
+      const attributionFields = buildContactAttributionFields(c, whatsappAttributionsByContact.get(c.id))
 
       // Determinar status basado en la actividad del contacto
       let status = 'lead'
@@ -328,6 +439,11 @@ export const getContacts = async (req, res) => {
         hasShowedAppointment: Boolean(c.has_showed_appointment),
         hasAttendedAppointment: Boolean(c.has_showed_appointment),
         source: c.source,
+        attribution_url: attributionFields.attribution_url,
+        attribution_session_source: attributionFields.attribution_session_source,
+        attribution_medium: attributionFields.attribution_medium,
+        attribution_ctwa_clid: attributionFields.attribution_ctwa_clid,
+        whatsappAttributionPlatform: attributionFields.whatsappAttributionPlatform,
         ad_name: c.attribution_ad_name,
         ad_id: c.attribution_ad_id,
         customFields: parseContactCustomFields(c.custom_fields),
@@ -424,6 +540,10 @@ export const getContactById = async (req, res) => {
         c.last_name,
         c.source,
         c.visitor_id,
+        c.attribution_url,
+        c.attribution_session_source,
+        c.attribution_medium,
+        c.attribution_ctwa_clid,
         c.attribution_ad_name,
         c.attribution_ad_id,
         COALESCE(ps.total_paid, 0) AS total_paid,
@@ -468,6 +588,7 @@ export const getContactById = async (req, res) => {
     const payments = await db.all(
       `SELECT * FROM payments
        WHERE contact_id = ?
+       AND LOWER(COALESCE(status, '')) != 'deleted'
        ORDER BY date DESC`,
       [id]
     )
@@ -695,6 +816,9 @@ export const getContactById = async (req, res) => {
       logger.warn(`No se pudo obtener primera sesión para contacto ${id}: ${error.message}`)
     }
 
+    const whatsappAttributionsByContact = await loadFirstWhatsAppAttributions([id])
+    const attributionFields = buildContactAttributionFields(contact, whatsappAttributionsByContact.get(id))
+
     // Mapear campos de base de datos a nombres esperados por frontend
     const mappedContact = {
       id: contact.id,
@@ -718,6 +842,11 @@ export const getContactById = async (req, res) => {
       hasAppointments: Boolean(contact.has_appointments),
       hasShowedAppointment,
       hasAttendedAppointment: hasShowedAppointment,
+      attribution_url: attributionFields.attribution_url,
+      attribution_session_source: attributionFields.attribution_session_source,
+      attribution_medium: attributionFields.attribution_medium,
+      attribution_ctwa_clid: attributionFields.attribution_ctwa_clid,
+      whatsappAttributionPlatform: attributionFields.whatsappAttributionPlatform,
       firstSession: firstSession ? {
         started_at: firstSession.started_at,
         page_url: firstSession.page_url,
@@ -1259,61 +1388,27 @@ export const getContactJourney = async (req, res) => {
       return Number.isFinite(time) ? time : 0
     }
 
-    const getDateKey = (value) => {
-      const time = getDateTime(value)
-      return time ? new Date(time).toISOString().slice(0, 10) : String(value || '')
-    }
+    const detectWhatsAppAdPlatform = (data = {}) => normalizeWhatsAppAttributionPlatform(data)
 
-    const detectWhatsAppAdPlatform = (data = {}) => {
-      const haystack = [
-        data.referral_source_app,
-        data.referral_source_type,
-        data.referral_entry_point,
-        data.referral_source_url
-      ].filter(Boolean).join(' ').toLowerCase()
-
-      if (haystack.includes('instagram') || haystack.includes('ig_') || haystack.includes('ig ')) {
-        return 'Instagram'
-      }
-
-      if (haystack.includes('facebook') || haystack.includes('fb_') || haystack.includes('fb ')) {
-        return 'Facebook'
-      }
-
-      if (data.referral_source_id || data.referral_ctwa_clid || haystack.includes('meta')) {
-        return 'Meta Ads'
-      }
-
-      return ''
-    }
-
+    // El backend emite los eventos de WhatsApp tal cual (uno por mensaje). El frontend
+    // los agrupa a uno por día —usando la MISMA zona horaria con la que muestra las
+    // fechas— y fusiona la info dando prioridad a la atribución de anuncio. Aquí solo se
+    // aplica la regla temporal: después del primer pago, solo se conservan los eventos
+    // de WhatsApp que vengan con atribución de anuncio.
     const addWhatsAppJourneyEvents = (events) => {
-      const dailyBeforePayment = new Map()
-      const attributedAfterPayment = []
-
       events
         .filter(event => event?.date)
         .sort((a, b) => getDateTime(a.date) - getDateTime(b.date))
         .forEach(event => {
           const eventTime = getDateTime(event.date)
-          const isAfterFirstPayment = firstPaymentTime && eventTime >= firstPaymentTime
+          const isAfterFirstPayment = firstPaymentTime !== null && eventTime >= firstPaymentTime
 
-          if (isAfterFirstPayment) {
-            if (event.data?.is_ad_attributed) {
-              attributedAfterPayment.push(event)
-            }
+          if (isAfterFirstPayment && !event.data?.is_ad_attributed) {
             return
           }
 
-          const dayKey = getDateKey(event.date)
-          const existing = dailyBeforePayment.get(dayKey)
-
-          if (!existing || (!existing.data?.is_ad_attributed && event.data?.is_ad_attributed)) {
-            dailyBeforePayment.set(dayKey, event)
-          }
+          journey.push(event)
         })
-
-      journey.push(...dailyBeforePayment.values(), ...attributedAfterPayment)
     }
 
     // 1. TODAS las visitas/sessions (por contact_id, visitor_id o email)
@@ -1392,7 +1487,12 @@ export const getContactJourney = async (req, res) => {
         referral_source_id: msg.referral_source_id || msg.ad_id_thru_message,
         referral_headline: msg.referral_headline,
         referral_body: msg.referral_body,
+        referral_image_url: msg.referral_image_url,
+        referral_video_url: msg.referral_video_url,
+        referral_thumbnail_url: msg.referral_thumbnail_url,
         referral_ctwa_clid: msg.referral_ctwa_clid,
+        attribution_source: 'whatsapp_attribution',
+        attribution_record_id: msg.id,
         is_ad_attributed: true
       }
 
@@ -1408,6 +1508,8 @@ export const getContactJourney = async (req, res) => {
 
     const whatsappBusinessMessages = await db.all(
       `SELECT
+          msg.id as whatsapp_web_message_id,
+          msg.message_id,
           msg.message_text,
           msg.message_type,
           msg.push_name,
@@ -1423,7 +1525,9 @@ export const getContactJourney = async (req, res) => {
           COALESCE(attr.detected_source_app, msg.detected_source_app) as detected_source_app,
           COALESCE(attr.detected_entry_point, msg.detected_entry_point) as detected_entry_point,
           COALESCE(attr.detected_headline, msg.detected_headline) as detected_headline,
-          COALESCE(attr.detected_body, msg.detected_body) as detected_body
+          COALESCE(attr.detected_body, msg.detected_body) as detected_body,
+          COALESCE(attr.detected_conversion_data, msg.detected_conversion_data) as detected_conversion_data,
+          COALESCE(attr.detected_ctwa_payload, msg.detected_ctwa_payload) as detected_ctwa_payload
        FROM whatsapp_web_messages msg
        LEFT JOIN whatsapp_web_attribution attr ON attr.whatsapp_web_message_id = msg.id
        WHERE msg.contact_id = ?
@@ -1454,6 +1558,12 @@ export const getContactJourney = async (req, res) => {
         referral_body: msg.detected_body,
         referral_source_app: msg.detected_source_app,
         referral_entry_point: msg.detected_entry_point,
+        referral_conversion_data: msg.detected_conversion_data,
+        referral_ctwa_payload: msg.detected_ctwa_payload,
+        attribution_source: 'whatsapp_web',
+        attribution_record_id: msg.attribution_id || null,
+        whatsapp_web_message_id: msg.whatsapp_web_message_id,
+        whatsapp_message_id: msg.message_id,
         is_ad_attributed: isAdAttributed
       }
 

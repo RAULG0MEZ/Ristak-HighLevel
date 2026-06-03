@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Smartphone, Target, Layers, Image as ImageIcon, Check, ChevronRight } from 'lucide-react'
+import { Target, Layers, Image as ImageIcon, Check, ChevronRight } from 'lucide-react'
+import { Icon } from '../Icon/Icon'
 
 interface AdHierarchyData {
   platform: string
@@ -27,6 +28,36 @@ interface AdHierarchyMenuProps {
   selectedFilters: Record<string, string[]>
   onFilterToggle: (field: string, value: string) => void
   onFilterChange?: (filters: Record<string, string[]>) => void
+}
+
+const getPlatformIcon = (platform?: string | null) => {
+  const normalized = String(platform || '').toLowerCase()
+  if (normalized.includes('instagram')) return 'instagram'
+  if (normalized.includes('facebook')) return 'facebook'
+  if (normalized.includes('tiktok')) return 'tiktok'
+  if (normalized.includes('google')) return 'google'
+  if (normalized.includes('youtube')) return 'youtube'
+  if (normalized.includes('linkedin')) return 'linkedin'
+  if (normalized.includes('twitter') || normalized === 'x') return 'twitter'
+  if (normalized.includes('bing')) return 'bing'
+  if (normalized.includes('whatsapp')) return 'whatsapp'
+  if (normalized.includes('meta')) return 'meta-ads'
+  return 'target'
+}
+
+const getPlatformColor = (platform?: string | null) => {
+  const normalized = String(platform || '').toLowerCase()
+  if (normalized.includes('instagram')) return '#e1306c'
+  if (normalized.includes('facebook')) return '#1877f2'
+  if (normalized.includes('tiktok')) return '#111827'
+  if (normalized.includes('google')) return '#4285f4'
+  if (normalized.includes('youtube')) return '#ff0000'
+  if (normalized.includes('linkedin')) return '#0a66c2'
+  if (normalized.includes('twitter') || normalized === 'x') return '#1d9bf0'
+  if (normalized.includes('bing')) return '#008373'
+  if (normalized.includes('whatsapp')) return '#25d366'
+  if (normalized.includes('meta')) return '#0866ff'
+  return 'currentColor'
 }
 
 export function AdHierarchyMenu({ adsHierarchy, selectedFilters, onFilterToggle, onFilterChange }: AdHierarchyMenuProps) {
@@ -231,8 +262,9 @@ export function AdHierarchyMenu({ adsHierarchy, selectedFilters, onFilterToggle,
                 `}
                 style={{ backgroundColor: !isSelected && !isHovered && index % 2 === 1 ? 'var(--table-row-even)' : undefined }}
               >
-                {/* Icon */}
-                <Smartphone className="w-4 h-4 flex-shrink-0" />
+                <span className="w-4 h-4 flex items-center justify-center flex-shrink-0" style={{ color: getPlatformColor(platform.platform) }}>
+                  <Icon name={getPlatformIcon(platform.platform)} size={16} />
+                </span>
 
                 {/* Label */}
                 <span className="text-sm flex-1">{platform.platform}</span>

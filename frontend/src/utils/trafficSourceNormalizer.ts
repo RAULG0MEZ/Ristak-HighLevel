@@ -241,6 +241,14 @@ const SOURCE_CODE_MAP: Record<string, string> = {
   // WhatsApp - TODAS las variaciones
   'whatsapp': 'WhatsApp',
   'wa': 'WhatsApp',
+  'waweb': 'WhatsApp',
+  'whatsapp_web': 'WhatsApp',
+  'whatsapp_websource_url': 'WhatsApp',
+  'whatsapp_web_source_url': 'WhatsApp',
+  'whatsapp websource url': 'WhatsApp',
+  'whatsapp-websource-url': 'WhatsApp',
+  'click_to_whatsapp': 'WhatsApp',
+  'ctwa': 'WhatsApp',
   'whatsapp_ad': 'WhatsApp',
   'whatsapp.com': 'WhatsApp',
 
@@ -298,8 +306,74 @@ function extractDomain(referrerUrl: string): string | null {
   } catch (e) {
     // Si no es URL válida, intentar extraer dominio manualmente
     const match = referrerUrl.toLowerCase().match(/(?:https?:\/\/)?(?:www\.)?([^\/]+)/)
-    return match ? match[1] : null
+    return match ? match[1].replace(/^www\./, '') : null
   }
+}
+
+function lookupReferrerDomain(domain: string | null): string | null {
+  if (!domain) return null
+
+  const normalized = String(domain).toLowerCase().replace(/^www\./, '')
+  if (REFERRER_DOMAIN_MAP[normalized]) {
+    return REFERRER_DOMAIN_MAP[normalized]
+  }
+
+  const mappedDomain = Object.keys(REFERRER_DOMAIN_MAP)
+    .sort((a, b) => b.length - a.length)
+    .find(mapped => normalized === mapped || normalized.endsWith(`.${mapped}`))
+
+  return mappedDomain ? REFERRER_DOMAIN_MAP[mappedDomain] : null
+}
+
+const PLATFORM_PATTERNS: Array<{ platform: string; patterns: string[] }> = [
+  { platform: 'Instagram', patterns: ['instagram', 'ig_', 'ig-', 'ig ', 'ig.com'] },
+  { platform: 'Facebook', patterns: ['facebook', 'fb_', 'fb-', 'fb ', 'fb.com', 'm.me', 'messenger'] },
+  { platform: 'TikTok', patterns: ['tiktok', 'tt_', 'tt-', 'ttclid'] },
+  { platform: 'YouTube', patterns: ['youtube', 'youtu.be', 'yt_', 'yt-'] },
+  { platform: 'Google', patterns: ['google', 'adwords', 'gclid', 'gbraid', 'wbraid'] },
+  { platform: 'Bing', patterns: ['bing', 'microsoft', 'msclkid'] },
+  { platform: 'LinkedIn', patterns: ['linkedin', 'lnkd', 'li_'] },
+  { platform: 'Snapchat', patterns: ['snapchat', 'snap_', 'snap-', 'sc_'] },
+  { platform: 'Pinterest', patterns: ['pinterest', 'pin.it', 'pin_'] },
+  { platform: 'Reddit', patterns: ['reddit', 'redd.it'] },
+  { platform: 'Twitter', patterns: ['twitter', 'x.com', 'twclid'] },
+  { platform: 'Telegram', patterns: ['telegram', 't.me'] },
+  { platform: 'Email', patterns: ['email', 'newsletter'] }
+]
+
+function lookupSourceValue(value: unknown): string | null {
+  if (!value) return null
+
+  const raw = String(value).trim()
+  if (!raw) return null
+
+  const normalized = raw.toLowerCase().replace(/\s+/g, ' ')
+  const domain = extractDomain(raw)
+  const domainPlatform = lookupReferrerDomain(domain)
+  if (domainPlatform) return domainPlatform
+
+  if (REFERRER_DOMAIN_MAP[normalized]) {
+    return REFERRER_DOMAIN_MAP[normalized]
+  }
+
+  if (SOURCE_CODE_MAP[normalized]) {
+    return SOURCE_CODE_MAP[normalized]
+  }
+
+  const compact = normalized.replace(/[\s-]+/g, '_')
+  if (SOURCE_CODE_MAP[compact]) {
+    return SOURCE_CODE_MAP[compact]
+  }
+
+  const platformMatch = PLATFORM_PATTERNS.find(({ patterns }) =>
+    patterns.some(pattern => normalized.includes(pattern))
+  )
+
+  return platformMatch?.platform || null
+}
+
+function hasSourceSignalValue(value: unknown): boolean {
+  return typeof value === 'string' ? value.trim().length > 0 : Boolean(value)
 }
 
 /**
@@ -307,53 +381,101 @@ function extractDomain(referrerUrl: string): string | null {
  */
 export function normalizeTrafficSource(data: {
   referrer_url?: string | null
+  referral_source_url?: string | null
+  source_url?: string | null
+  attribution_url?: string | null
   site_source_name?: string | null
   utm_source?: string | null
   source_platform?: string | null
-}): string {
+  referral_source_app?: string | null
+  referral_entry_point?: string | null
+  source?: string | null
+} | null | undefined): string {
   if (!data) return 'Desconocido'
 
   const hasSourceSignal = [
     data.referrer_url,
+    data.referral_source_url,
+    data.source_url,
+    data.attribution_url,
     data.site_source_name,
     data.utm_source,
-    data.source_platform
-  ].some(value => (typeof value === 'string' ? value.trim().length > 0 : Boolean(value)))
+    data.source_platform,
+    data.referral_source_app,
+    data.referral_entry_point,
+    data.source
+  ].some(hasSourceSignalValue)
 
   if (!hasSourceSignal) return 'Directo'
 
   // Prioridad 1: referrer_url
-  if (data.referrer_url) {
-    const domain = extractDomain(data.referrer_url)
-    if (domain && REFERRER_DOMAIN_MAP[domain]) {
-      return REFERRER_DOMAIN_MAP[domain]
+  for (const urlValue of [data.referrer_url, data.referral_source_url, data.source_url, data.attribution_url]) {
+    const platform = lookupSourceValue(urlValue)
+    if (platform) {
+      return platform
     }
   }
 
   // Prioridad 2: site_source_name
-  if (data.site_source_name) {
-    const normalized = data.site_source_name.toLowerCase().trim()
-    if (SOURCE_CODE_MAP[normalized]) {
-      return SOURCE_CODE_MAP[normalized]
+  for (const sourceValue of [data.site_source_name, data.referral_source_app, data.referral_entry_point]) {
+    const platform = lookupSourceValue(sourceValue)
+    if (platform) {
+      return platform
     }
   }
 
   // Prioridad 3: utm_source
   if (data.utm_source) {
-    const normalized = data.utm_source.toLowerCase().trim()
-    if (SOURCE_CODE_MAP[normalized]) {
-      return SOURCE_CODE_MAP[normalized]
+    const platform = lookupSourceValue(data.utm_source)
+    if (platform) {
+      return platform
     }
   }
 
   // Prioridad 4: source_platform
-  if (data.source_platform) {
-    const normalized = data.source_platform.toLowerCase().trim()
-    if (SOURCE_CODE_MAP[normalized]) {
-      return SOURCE_CODE_MAP[normalized]
+  for (const sourceValue of [data.source_platform, data.source]) {
+    const platform = lookupSourceValue(sourceValue)
+    if (platform) {
+      return platform
     }
   }
 
   // Fallback
   return 'Otro'
+}
+
+export function normalizeSourceCode(source: string | null | undefined): string {
+  if (!source) return 'Desconocido'
+
+  const platform = lookupSourceValue(source)
+  if (platform) return platform
+
+  return source.charAt(0).toUpperCase() + source.slice(1)
+}
+
+export function normalizeWhatsAppAttributionPlatform(data: Record<string, any> = {}): string {
+  const platform = normalizeTrafficSource({
+    referrer_url: data.referral_source_url || data.source_url || data.attribution_url,
+    referral_source_url: data.referral_source_url,
+    site_source_name: data.referral_source_app || data.source_app,
+    utm_source: data.referral_source_type || data.source_type,
+    source_platform: data.ad_platform || data.source_platform,
+    referral_source_app: data.referral_source_app || data.source_app,
+    referral_entry_point: data.referral_entry_point || data.entry_point,
+    source: data.source
+  })
+
+  if (['Directo', 'Desconocido', 'Otro', 'WhatsApp'].includes(platform)) {
+    if (
+      data.referral_source_id ||
+      data.source_id ||
+      data.referral_ctwa_clid ||
+      data.ctwa_clid ||
+      data.ad_id
+    ) {
+      return 'Meta Ads'
+    }
+  }
+
+  return platform
 }

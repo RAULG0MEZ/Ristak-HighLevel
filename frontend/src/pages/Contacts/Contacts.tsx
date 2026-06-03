@@ -41,6 +41,7 @@ const APPOINTMENT_CANCELED_STATUSES = new Set([
   'void',
   'voided'
 ])
+const REVENUE_PAYMENT_STATUSES = new Set(['succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success'])
 
 const getAppointmentStatusValue = (appointment: { appointment_status?: string | null; appointmentStatus?: string | null; status?: string | null }) =>
   String(appointment.appointment_status || appointment.appointmentStatus || appointment.status || '').trim().toLowerCase()
@@ -48,6 +49,42 @@ const getAppointmentStatusValue = (appointment: { appointment_status?: string | 
 const isActiveAppointment = (appointment: { appointment_status?: string | null; appointmentStatus?: string | null; status?: string | null }) => {
   const statusValue = getAppointmentStatusValue(appointment)
   return !statusValue || !APPOINTMENT_CANCELED_STATUSES.has(statusValue)
+}
+
+const isRevenuePayment = (payment: ContactPayment) => {
+  const status = String(payment.status || '').trim().toLowerCase()
+  const paymentMode = payment.paymentMode || payment.payment_mode || 'live'
+  return Number(payment.amount || 0) > 0 && paymentMode !== 'test' && REVENUE_PAYMENT_STATUSES.has(status)
+}
+
+const summarizeRevenuePayments = (payments: ContactPayment[] = []) => {
+  return payments.reduce(
+    (summary, payment) => {
+      if (!isRevenuePayment(payment)) return summary
+
+      const amount = Number(payment.amount || 0)
+      const timestamp = payment.date ? Date.parse(payment.date) : Number.NaN
+
+      return {
+        purchases: summary.purchases + 1,
+        ltv: summary.ltv + amount,
+        lastPurchase:
+          !Number.isNaN(timestamp) && timestamp > summary.lastPurchaseTimestamp
+            ? payment.date
+            : summary.lastPurchase,
+        lastPurchaseTimestamp:
+          !Number.isNaN(timestamp) && timestamp > summary.lastPurchaseTimestamp
+            ? timestamp
+            : summary.lastPurchaseTimestamp
+      }
+    },
+    {
+      purchases: 0,
+      ltv: 0,
+      lastPurchase: null as string | null,
+      lastPurchaseTimestamp: Number.NEGATIVE_INFINITY
+    }
+  )
 }
 
 const STATUS_PRIORITY: Record<Contact['status'], number> = {
@@ -113,16 +150,18 @@ const getContactPageName = (pageUrl?: string | null) => {
 
 const getContactTrackingData = (contact: Contact) => {
   const firstSession = contact.firstSession
+  const attributionUrl = contact.attribution_url || null
+  const attributionSource = contact.whatsappAttributionPlatform || contact.attribution_session_source || contact.source || null
 
   return {
-    page_url: firstSession?.page_url || firstSession?.landing_page || null,
-    referrer_url: firstSession?.referrer_url || null,
-    utm_source: firstSession?.utm_source || contact.source || null,
-    utm_medium: firstSession?.utm_medium || null,
+    page_url: firstSession?.page_url || firstSession?.landing_page || attributionUrl,
+    referrer_url: firstSession?.referrer_url || attributionUrl,
+    utm_source: firstSession?.utm_source || attributionSource,
+    utm_medium: firstSession?.utm_medium || contact.attribution_medium || null,
     utm_campaign: firstSession?.utm_campaign || null,
     utm_content: firstSession?.utm_content || null,
-    source_platform: firstSession?.source_platform || null,
-    site_source_name: firstSession?.site_source_name || null,
+    source_platform: firstSession?.source_platform || attributionSource,
+    site_source_name: firstSession?.site_source_name || attributionSource,
     campaign_name: firstSession?.campaign_name || null,
     adset_name: firstSession?.adset_name || null,
     ad_name: firstSession?.ad_name || contact.ad_name || null,
@@ -162,6 +201,8 @@ const mergeContactDetailRecords = (
 ): Contact => {
   const allContacts = baseContact ? [baseContact, ...detailContacts] : [...detailContacts]
   const template = allContacts[0]
+  const hasAuthoritativeDetails = detailContacts.length > 0
+  const authoritativeContactIds = new Set(detailContacts.map(contact => contact.id).filter(Boolean))
 
   const merged: Contact = {
     ...(template ?? {} as Contact),
@@ -219,16 +260,20 @@ const mergeContactDetailRecords = (
     if (!merged.ad_id && contact.ad_id) merged.ad_id = contact.ad_id
     merged.customFields = mergeCustomFields(merged.customFields, contact.customFields)
 
-    merged.purchases = Math.max(merged.purchases ?? 0, contact.purchases ?? 0)
-    merged.ltv = Math.max(merged.ltv ?? 0, contact.ltv ?? 0)
+    if (!hasAuthoritativeDetails) {
+      merged.purchases = Math.max(merged.purchases ?? 0, contact.purchases ?? 0)
+      merged.ltv = Math.max(merged.ltv ?? 0, contact.ltv ?? 0)
+    }
+
     merged.hasShowedAppointment = Boolean(merged.hasShowedAppointment || contact.hasShowedAppointment)
     merged.hasAttendedAppointment = Boolean(merged.hasAttendedAppointment || contact.hasAttendedAppointment)
 
-    if (getStatusPriority(contact.status) > getStatusPriority(merged.status)) {
+    const canUseContactStatus = !hasAuthoritativeDetails || authoritativeContactIds.has(contact.id)
+    if (canUseContactStatus && getStatusPriority(contact.status) > getStatusPriority(merged.status)) {
       merged.status = contact.status ?? merged.status
     }
 
-    if (contact.lastPurchase) {
+    if ((!hasAuthoritativeDetails || authoritativeContactIds.has(contact.id)) && contact.lastPurchase) {
       const ts = Date.parse(contact.lastPurchase)
       if (!Number.isNaN(ts) && ts > latestPurchaseTimestamp) {
         latestPurchaseTimestamp = ts
@@ -282,8 +327,22 @@ const mergeContactDetailRecords = (
     ? upcomingAppointment.start_time
     : baseContact?.nextAppointmentDate ?? null
 
-  const payments = Array.from(paymentMap.values())
+  const payments = Array.from(paymentMap.values()).filter(payment =>
+    String(payment.status || '').trim().toLowerCase() !== 'deleted'
+  )
   merged.payments = payments.length > 0 ? payments : undefined
+
+  if (hasAuthoritativeDetails) {
+    const paymentSummary = summarizeRevenuePayments(payments)
+    merged.purchases = paymentSummary.purchases
+    merged.ltv = paymentSummary.ltv
+    merged.lastPurchase = paymentSummary.lastPurchase ?? undefined
+    merged.status = paymentSummary.purchases > 0
+      ? 'customer'
+      : activeAppointments.length > 0
+        ? 'appointment'
+        : 'lead'
+  }
 
   merged.mergedContactIds = Array.from(mergedIds).filter(id => id && id !== merged.id)
 
@@ -751,7 +810,12 @@ export const Contacts: React.FC = () => {
         addContactToMap(adsMap, formatUrlParameter(adValue), contactId)
       }
 
-      if (!isUsableTrackingValue(tracking.utm_source) || !isUsableTrackingValue(campaignValue)) {
+      if (
+        !isUsableTrackingValue(normalizedSource) ||
+        normalizedSource === 'Directo' ||
+        normalizedSource === 'Desconocido' ||
+        normalizedSource === 'Otro'
+      ) {
         return
       }
 
@@ -769,6 +833,10 @@ export const Contacts: React.FC = () => {
 
       const platformNode = adsHierarchyMap.get(platformId)!
       platformNode.contacts.add(contactId)
+
+      if (!isUsableTrackingValue(campaignValue)) {
+        return
+      }
 
       const campaignId = decodeAdName(campaignValue)
       if (!platformNode.campaigns.has(campaignId)) {

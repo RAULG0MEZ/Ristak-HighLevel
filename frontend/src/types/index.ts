@@ -73,6 +73,11 @@ export interface Contact {
   lastPurchase?: string
   purchases: number
   source?: string
+  attribution_url?: string | null
+  attribution_session_source?: string | null
+  attribution_medium?: string | null
+  attribution_ctwa_clid?: string | null
+  whatsappAttributionPlatform?: string | null
   ad_name?: string
   ad_id?: string
   notes?: string

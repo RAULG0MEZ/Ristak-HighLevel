@@ -24,6 +24,7 @@ import {
 } from './metaWhatsappEventsService.js'
 
 const PAID_INVOICE_STATUSES = new Set(['paid', 'succeeded', 'completed'])
+const PAID_STATUS_DOWNGRADE_PROTECTED_STATUSES = new Set(['draft', 'sent', 'pending', 'overdue', 'payment_processing'])
 const LOCAL_EXPORT_EXCLUDED_STATUSES = new Set(['deleted', 'failed', 'refunded', 'void', 'voided'])
 const LOCAL_EXPORT_PAID_STATUSES = new Set(['paid', 'succeeded', 'completed', 'complete', 'fulfilled', 'success'])
 const LOCAL_EXPORT_ID_PREFIXES = ['manual_payment_']
@@ -491,7 +492,7 @@ export async function syncLocalPaymentsToHighLevel({ paymentId, limit = 100 } = 
 async function findExistingPaymentForInvoice({ invoiceId, contactId, invoiceNumber, importedLocalPaymentId = null }) {
   if (importedLocalPaymentId) {
     const existingImportedLocal = await db.get(
-      'SELECT id, status, payment_mode, ghl_invoice_id FROM payments WHERE id = ? LIMIT 1',
+      'SELECT id, contact_id, status, payment_mode, ghl_invoice_id FROM payments WHERE id = ? LIMIT 1',
       [importedLocalPaymentId]
     )
 
@@ -499,7 +500,7 @@ async function findExistingPaymentForInvoice({ invoiceId, contactId, invoiceNumb
   }
 
   const existingByInvoiceId = await db.get(
-    'SELECT id, status, payment_mode, ghl_invoice_id FROM payments WHERE ghl_invoice_id = ? OR id = ? LIMIT 1',
+    'SELECT id, contact_id, status, payment_mode, ghl_invoice_id FROM payments WHERE ghl_invoice_id = ? OR id = ? LIMIT 1',
     [invoiceId, invoiceId]
   )
 
@@ -508,7 +509,7 @@ async function findExistingPaymentForInvoice({ invoiceId, contactId, invoiceNumb
   if (!contactId || !invoiceNumber) return null
 
   return await db.get(
-    `SELECT id, status, payment_mode, ghl_invoice_id
+    `SELECT id, contact_id, status, payment_mode, ghl_invoice_id
      FROM payments
      WHERE contact_id = ?
        AND (
@@ -520,6 +521,35 @@ async function findExistingPaymentForInvoice({ invoiceId, contactId, invoiceNumb
      LIMIT 1`,
     [contactId, invoiceNumber, invoiceNumber, `Invoice #${invoiceNumber}`]
   )
+}
+
+function resolveSyncedInvoiceStatus(existingStatus, incomingStatus) {
+  const normalizedExistingStatus = cleanString(existingStatus).toLowerCase()
+  const normalizedIncomingStatus = cleanString(incomingStatus).toLowerCase()
+
+  if (
+    isSuccessfulPaymentStatus(normalizedExistingStatus) &&
+    PAID_STATUS_DOWNGRADE_PROTECTED_STATUSES.has(normalizedIncomingStatus)
+  ) {
+    return normalizedExistingStatus
+  }
+
+  return normalizedIncomingStatus || 'pending'
+}
+
+async function updateSyncedInvoiceContactStats({ existing, contactId, previousStatus, nextStatus }) {
+  const contactIds = Array.from(new Set([existing?.contact_id, contactId].filter(Boolean)))
+  if (contactIds.length === 0) return
+
+  const contactChanged = Boolean(existing?.contact_id && contactId && existing.contact_id !== contactId)
+  const shouldRecalculate =
+    contactChanged ||
+    isSuccessfulPaymentStatus(previousStatus) ||
+    isSuccessfulPaymentStatus(nextStatus)
+
+  if (!shouldRecalculate) return
+
+  await Promise.all(contactIds.map(id => updateContactStats(id)))
 }
 
 async function activatePaymentFlowFromPaidInvoice(invoiceId, invoiceData) {
@@ -624,12 +654,10 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
           due_date: invoice.dueDate || null,
           sent_at: invoice.sentAt || null,
         }
+        let savedInvoiceStatus = invoiceData.status
 
         if (existing) {
-          const statusToSave = isSuccessfulPaymentStatus(existing.status) &&
-            ['draft', 'sent', 'pending', 'overdue'].includes(invoiceData.status)
-            ? 'paid'
-            : invoiceData.status
+          savedInvoiceStatus = resolveSyncedInvoiceStatus(existing.status, invoiceData.status)
 
           // Actualizar SIEMPRE para mantener datos sincronizados (incluyendo descripción)
           await db.run(
@@ -640,7 +668,7 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
                  updated_at = CURRENT_TIMESTAMP
              WHERE id = ?`,
             [
-              statusToSave,
+              savedInvoiceStatus,
               invoiceData.amount,
               invoiceData.currency,
               invoiceData.payment_method,
@@ -657,7 +685,7 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
             ]
           )
           updated++
-          logger.info(`Invoice actualizado: ${ghlInvoiceId}`)
+          logger.info(`Invoice actualizado: ${ghlInvoiceId} (${savedInvoiceStatus})`)
         } else {
           // Verificar si el contacto existe antes de crear el invoice
           if (invoiceData.contact_id) {
@@ -702,15 +730,19 @@ export async function syncInvoices({ limit = 100, offset = 0, contactId } = {}) 
           logger.success(`Invoice creado: ${ghlInvoiceId} (${invoiceData.status})`)
         }
 
-        // Si el invoice está pagado, actualizar estadísticas del contacto
-        if ((existing ? isSuccessfulPaymentStatus(existing.status) || isSuccessfulPaymentStatus(invoiceData.status) : invoiceData.status === 'paid') && invoiceData.contact_id) {
-          await updateContactStats(invoiceData.contact_id)
-        }
+        const savedInvoiceData = { ...invoiceData, status: savedInvoiceStatus }
 
-        await activatePaymentFlowFromPaidInvoice(ghlInvoiceId, invoiceData)
+        await updateSyncedInvoiceContactStats({
+          existing,
+          contactId: invoiceData.contact_id,
+          previousStatus: existing?.status,
+          nextStatus: savedInvoiceStatus
+        })
+
+        await activatePaymentFlowFromPaidInvoice(ghlInvoiceId, savedInvoiceData)
 
         const transitionedToPaid = invoiceData.contact_id &&
-          isSuccessfulPaymentStatus(invoiceData.status) &&
+          isSuccessfulPaymentStatus(savedInvoiceStatus) &&
           existing &&
           !isSuccessfulPaymentStatus(existing.status)
 
@@ -849,12 +881,10 @@ export async function syncAllInvoices({ contactId } = {}) {
           due_date: invoice.dueDate || null,
           sent_at: invoice.sentAt || null,
         }
+        let savedInvoiceStatus = invoiceData.status
 
         if (existing) {
-          const statusToSave = isSuccessfulPaymentStatus(existing.status) &&
-            ['draft', 'sent', 'pending', 'overdue'].includes(invoiceData.status)
-            ? 'paid'
-            : invoiceData.status
+          savedInvoiceStatus = resolveSyncedInvoiceStatus(existing.status, invoiceData.status)
 
           // Actualizar SIEMPRE para mantener datos sincronizados (incluyendo descripción)
           await db.run(
@@ -865,7 +895,7 @@ export async function syncAllInvoices({ contactId } = {}) {
                  updated_at = CURRENT_TIMESTAMP
              WHERE id = ?`,
             [
-              statusToSave,
+              savedInvoiceStatus,
               invoiceData.amount,
               invoiceData.currency,
               invoiceData.payment_method,
@@ -924,15 +954,19 @@ export async function syncAllInvoices({ contactId } = {}) {
           created++
         }
 
-        // Si está pagado, actualizar estadísticas del contacto
-        if ((existing ? isSuccessfulPaymentStatus(existing.status) || isSuccessfulPaymentStatus(invoiceData.status) : invoiceData.status === 'paid') && invoiceData.contact_id) {
-          await updateContactStats(invoiceData.contact_id)
-        }
+        const savedInvoiceData = { ...invoiceData, status: savedInvoiceStatus }
 
-        await activatePaymentFlowFromPaidInvoice(ghlInvoiceId, invoiceData)
+        await updateSyncedInvoiceContactStats({
+          existing,
+          contactId: invoiceData.contact_id,
+          previousStatus: existing?.status,
+          nextStatus: savedInvoiceStatus
+        })
+
+        await activatePaymentFlowFromPaidInvoice(ghlInvoiceId, savedInvoiceData)
 
         const transitionedToPaid = invoiceData.contact_id &&
-          isSuccessfulPaymentStatus(invoiceData.status) &&
+          isSuccessfulPaymentStatus(savedInvoiceStatus) &&
           existing &&
           !isSuccessfulPaymentStatus(existing.status)
 
@@ -1019,11 +1053,12 @@ export async function syncSingleInvoice(invoiceId) {
       due_date: invoice.dueDate || null,
       sent_at: invoice.sentAt || null,
     }
+    let savedInvoiceStatus = invoiceData.status
 
     if (existing) {
       // Protección anti-race condition: si local ya tiene 'paid' y GHL aún no lo refleja,
-      // conservar 'paid' y solo actualizar los demás campos.
-      const statusToSave = existing.status === 'paid' ? 'paid' : invoiceData.status
+      // conservar 'paid' solo ante estados temporales, no ante deleted/refunded/void.
+      savedInvoiceStatus = resolveSyncedInvoiceStatus(existing.status, invoiceData.status)
 
       await db.run(
         `UPDATE payments
@@ -1033,7 +1068,7 @@ export async function syncSingleInvoice(invoiceId) {
              updated_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
         [
-          statusToSave,
+          savedInvoiceStatus,
           invoiceData.amount,
           invoiceData.currency,
           invoiceData.payment_method,
@@ -1049,7 +1084,7 @@ export async function syncSingleInvoice(invoiceId) {
           existing.id
         ]
       )
-      logger.info(`Invoice actualizado desde GHL: ${ghlInvoiceId} (${statusToSave})`)
+      logger.info(`Invoice actualizado desde GHL: ${ghlInvoiceId} (${savedInvoiceStatus})`)
     } else {
       // No existe en BD — insertar. Si el contacto no existe en contacts, guardarlo igual con contact_id null.
       await db.run(
@@ -1079,15 +1114,19 @@ export async function syncSingleInvoice(invoiceId) {
       logger.info(`Invoice insertado desde GHL: ${ghlInvoiceId} (${invoiceData.status})`)
     }
 
-    // Actualizar stats del contacto si está pagado
-    if (['paid', 'succeeded', 'completed'].includes(invoiceData.status) && invoiceData.contact_id) {
-      await updateContactStats(invoiceData.contact_id)
-    }
+    const savedInvoiceData = { ...invoiceData, status: savedInvoiceStatus }
 
-    await activatePaymentFlowFromPaidInvoice(ghlInvoiceId, invoiceData)
+    await updateSyncedInvoiceContactStats({
+      existing,
+      contactId: invoiceData.contact_id,
+      previousStatus: existing?.status,
+      nextStatus: savedInvoiceStatus
+    })
+
+    await activatePaymentFlowFromPaidInvoice(ghlInvoiceId, savedInvoiceData)
 
     const transitionedToPaid = invoiceData.contact_id &&
-      isSuccessfulPaymentStatus(invoiceData.status) &&
+      isSuccessfulPaymentStatus(savedInvoiceStatus) &&
       existing &&
       !isSuccessfulPaymentStatus(existing.status)
 
@@ -1099,7 +1138,7 @@ export async function syncSingleInvoice(invoiceId) {
       })
     }
 
-    return { success: true, invoiceId: ghlInvoiceId, status: invoiceData.status }
+    return { success: true, invoiceId: ghlInvoiceId, status: savedInvoiceStatus }
   } catch (error) {
     logger.error(`Error en syncSingleInvoice(${invoiceId}): ${error.message}`)
     throw error
@@ -1112,6 +1151,8 @@ export async function syncSingleInvoice(invoiceId) {
  * @returns {string} - Status interno
  */
 function mapInvoiceStatus(ghlStatus) {
+  const normalizedStatus = cleanString(ghlStatus).toLowerCase()
+
   // Mapeo directo 1:1 - mantenemos TODOS los estados de HighLevel
   const statusMap = {
     'draft': 'draft',                // Borrador
@@ -1127,7 +1168,7 @@ function mapInvoiceStatus(ghlStatus) {
     'deleted': 'deleted'             // Eliminado
   }
 
-  return statusMap[ghlStatus] || ghlStatus || 'pending'
+  return statusMap[normalizedStatus] || normalizedStatus || 'pending'
 }
 
 /**
