@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { Logo } from '@/components/common'
-import { useAppConfig, useLogoContrast, useIsRenderDomain } from '@/hooks'
+import { useAppConfig, useLogoContrast } from '@/hooks'
 import { useTheme } from '@/contexts/ThemeContext'
 import {
   DndContext,
@@ -68,7 +68,7 @@ const analyticsNavigation: NavItem = {
   icon: BarChart3
 }
 
-const getNavigationItems = (_showAnalytics: boolean, _isRenderDomain: boolean): NavItem[] => {
+const getNavigationItems = (_showAnalytics: boolean): NavItem[] => {
   return [...baseNavigation, analyticsNavigation]
 }
 
@@ -189,8 +189,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
   const [mounted, setMounted] = useState(false)
   const [analyticsEnabled] = useAppConfig<boolean>('show_analytics', false)
   const [sidebarOrder, setSidebarOrder] = useAppConfig<string[]>('sidebar_navigation_order', [])
-  const isRenderDomain = useIsRenderDomain() // Detectar si es dominio .onrender.com
-  const [navigation, setNavigation] = useState<NavItem[]>(() => getNavigationItems(false, isRenderDomain))
+  const [navigation, setNavigation] = useState<NavItem[]>(() => getNavigationItems(false))
   const [activeId, setActiveId] = useState<string | null>(null)
   const [isEditMode, setIsEditMode] = useState(false)
   const longPressTimerRef = React.useRef<number | null>(null)
@@ -283,16 +282,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
 
   useEffect(() => {
     const showAnalytics = Boolean(analyticsEnabled)
-    const items = getNavigationItems(showAnalytics, isRenderDomain)
+    const items = getNavigationItems(showAnalytics)
     setNavigation(applyOrder(items, sidebarOrder))
-  }, [analyticsEnabled, sidebarOrder, isRenderDomain])
+  }, [analyticsEnabled, sidebarOrder])
 
   useEffect(() => {
     const handleAnalyticsChange = (event: Event) => {
       const customEvent = event as CustomEvent<{ showAnalytics?: boolean }>
       if (typeof customEvent.detail?.showAnalytics === 'boolean') {
         const showAnalytics = customEvent.detail.showAnalytics
-        const items = getNavigationItems(showAnalytics, isRenderDomain)
+        const items = getNavigationItems(showAnalytics)
         setNavigation(applyOrder(items, sidebarOrder))
       }
     }
@@ -302,7 +301,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
     return () => {
       window.removeEventListener('analytics-preference-changed', handleAnalyticsChange)
     }
-  }, [sidebarOrder, isRenderDomain])
+  }, [sidebarOrder])
 
   const handleDragStart = (event: DragStartEvent) => {
     if (!isEditMode) {
