@@ -94,6 +94,7 @@
 }
 
 .generatingState {
+  flex: 1;
   gap: 14px;
   color: var(--color-text-secondary);
   font-size: 18px;
