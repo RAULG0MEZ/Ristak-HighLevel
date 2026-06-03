@@ -72,11 +72,54 @@ export interface WhatsAppWebLogs {
   attributed: WhatsAppWebLog[]
 }
 
+export interface WhatsAppWebAnalyticsTrendPoint {
+  label: string
+  messages: number
+  conversations: number
+  contacts: number
+  attributed: number
+}
+
+export interface WhatsAppWebAnalyticsSource {
+  name: string
+  value: number
+  color?: string
+}
+
+export interface WhatsAppWebAnalyticsTopContact {
+  id: string
+  name?: string | null
+  phone?: string | null
+  messages: number
+}
+
+export interface WhatsAppWebAnalytics {
+  status: {
+    connected: boolean
+    configured: boolean
+    status?: string | null
+    hasData: boolean
+  }
+  metrics: {
+    inboundMessages: number
+    outboundMessages: number
+    conversations: number
+    contacts: number
+    attributedMessages: number
+    attributionRate: number
+  }
+  trend: WhatsAppWebAnalyticsTrendPoint[]
+  sources: WhatsAppWebAnalyticsSource[]
+  topContacts: WhatsAppWebAnalyticsTopContact[]
+}
+
 export const whatsappWebService = {
   getStatus: () => apiClient.get<WhatsAppWebStatus>('/whatsapp-web/status'),
   connect: (options?: { reset?: boolean }) => apiClient.post<WhatsAppWebStatus>('/whatsapp-web/connect', options || {}),
   disconnect: () => apiClient.post<WhatsAppWebStatus>('/whatsapp-web/disconnect'),
   getLogs: () => apiClient.get<WhatsAppWebLogs>('/whatsapp-web/logs'),
+  getAnalytics: ({ start, end, groupBy = 'day' }: { start: string; end: string; groupBy?: 'day' | 'month' | 'year' }) =>
+    apiClient.get<WhatsAppWebAnalytics>('/whatsapp-web/analytics', { params: { start, end, groupBy } }),
   getMessages: (limit = 12) => apiClient.get<WhatsAppWebMessage[]>('/whatsapp-web/messages', {
     params: { limit: String(limit) }
   })

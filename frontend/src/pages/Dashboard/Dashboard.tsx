@@ -24,6 +24,7 @@ import { useLabels } from '@/contexts/LabelsContext'
 import { useTimezone } from '@/contexts/TimezoneContext'
 import { useAppConfig, useIsRenderDomain } from '@/hooks'
 import { dashboardService, type DashboardMetrics, type ChartData, type DashboardVisitorDetail } from '@/services/dashboardService'
+import { trackingService } from '@/services/trackingService'
 import { reportsService, type ContactListItem } from '@/services/reportsService'
 import { transactionsService, type Transaction } from '@/services/transactionsService'
 import { calendarsService, type CalendarEvent } from '@/services/calendarsService'
@@ -469,8 +470,9 @@ export const Dashboard: React.FC = () => {
   })
   const chartPeriodPreference = normalizeChartPeriodPreference(chartPeriodConfig)
 
-  // FORZAR analyticsEnabled a false si estamos en dominio .onrender.com
-  const analyticsEnabled = isRenderDomain ? false : parseAnalyticsFlag(showAnalyticsConfig)
+  const analyticsPreferenceEnabled = !isRenderDomain && parseAnalyticsFlag(showAnalyticsConfig)
+  const [webTrackingConfigured, setWebTrackingConfigured] = useState(false)
+  const analyticsEnabled = analyticsPreferenceEnabled && webTrackingConfigured
   const showFunnelVisitors = analyticsEnabled && parseAnalyticsFlag(showFunnelVisitorsConfig)
 
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null)
@@ -511,13 +513,36 @@ export const Dashboard: React.FC = () => {
     return funnelData.filter((stage) => stage.stage?.trim().toLowerCase() !== 'visitantes')
   }, [analyticsEnabled, funnelData])
 
+  const showTrafficSourcesChart = !isRenderDomain
+
+  useEffect(() => {
+    if (!analyticsPreferenceEnabled) {
+      setWebTrackingConfigured(false)
+      return
+    }
+
+    let mounted = true
+
+    trackingService.getTrackingConfig()
+      .then((config) => {
+        if (mounted) setWebTrackingConfigured(Boolean(config?.isConfigured))
+      })
+      .catch(() => {
+        if (mounted) setWebTrackingConfigured(false)
+      })
+
+    return () => {
+      mounted = false
+    }
+  }, [analyticsPreferenceEnabled])
+
   const handleFunnelVisitorsVisibilityChange = React.useCallback((nextShowVisitors: boolean) => {
     setShowFunnelVisitorsConfig(nextShowVisitors ? '1' : '0').catch((error) => {
       console.error('Error guardando visibilidad de visitantes del embudo:', error)
     })
   }, [setShowFunnelVisitorsConfig])
 
-  const chartsGridClass = analyticsEnabled ? 'grid gap-4 lg:grid-cols-2' : 'grid gap-4'
+  const chartsGridClass = showTrafficSourcesChart ? 'grid gap-4 lg:grid-cols-2' : 'grid gap-4'
   const calendarRangeDays = React.useMemo(
     () => getInclusiveRangeDays(dateRange.start, dateRange.end),
     [dateRange.start, dateRange.end]
@@ -948,19 +973,16 @@ export const Dashboard: React.FC = () => {
     const loadData = async () => {
       setLoading(true)
       try {
-        const trafficPromise = analyticsEnabled
-          ? dashboardService.getTrafficSources({
-              start: dateRange.start,
-              end: dateRange.end
-            })
-          : Promise.resolve<{ name: string; value: number; color: string }[]>([])
-
         const [metricsData, trafficSourcesData, funnelDataResponse] = await Promise.all([
           dashboardService.getDashboardMetrics({
             start: dateRange.start,
             end: dateRange.end
           }),
-          trafficPromise,
+          dashboardService.getTrafficSources({
+            start: dateRange.start,
+            end: dateRange.end,
+            includeWeb: analyticsEnabled
+          }),
           dashboardService.getFunnelData({
             start: dateRange.start,
             end: dateRange.end,
@@ -971,7 +993,7 @@ export const Dashboard: React.FC = () => {
         if (!mounted) return
 
         setMetrics(metricsData)
-        setTrafficSources(analyticsEnabled ? trafficSourcesData : [])
+        setTrafficSources(trafficSourcesData)
         setFunnelData(funnelDataResponse)
       } catch (error) {
         // TODO: add logging service
@@ -1715,10 +1737,15 @@ export const Dashboard: React.FC = () => {
             onVisitorsVisibilityChange={analyticsEnabled ? handleFunnelVisitorsVisibilityChange : undefined}
             visitorsVisibilityLoading={savingFunnelVisitorsConfig}
           />
-          {analyticsEnabled && (
+          {showTrafficSourcesChart && (
             <TrafficSourcesChart
               data={trafficSources}
               loading={false}
+              title={analyticsEnabled ? undefined : 'Origen de mensajes WhatsApp'}
+              totalLabel={analyticsEnabled ? undefined : 'conversaciones'}
+              emptyText={analyticsEnabled ? undefined : 'Sin origen de WhatsApp'}
+              emptySubtext={analyticsEnabled ? undefined : 'Aparecerá cuando WhatsApp Web detecte mensajes con origen de anuncio o enlace'}
+              itemLabel={analyticsEnabled ? undefined : 'Conversaciones'}
             />
           )}
         </div>

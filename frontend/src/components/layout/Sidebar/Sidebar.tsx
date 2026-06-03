@@ -68,11 +68,9 @@ const analyticsNavigation: NavItem = {
   icon: BarChart3
 }
 
-const getNavigationItems = (showAnalytics: boolean, isRenderDomain: boolean): NavItem[] => {
+const getNavigationItems = (_showAnalytics: boolean, isRenderDomain: boolean): NavItem[] => {
   // Si estamos en dominio de Render, NUNCA mostrar Analíticas (sin importar la config)
   if (isRenderDomain) return baseNavigation
-
-  if (!showAnalytics) return baseNavigation
 
   // Insertar Analíticas después de Reportes (último item)
   return [...baseNavigation, analyticsNavigation]

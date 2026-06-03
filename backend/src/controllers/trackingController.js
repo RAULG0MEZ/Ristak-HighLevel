@@ -40,6 +40,30 @@ const parseIsoDateToUtc = (value) => {
 
 const formatUtcDateKey = (date) => date.toISOString().slice(0, 10)
 
+function contactAnalyticsSourceCondition(alias = 'c') {
+  const prefix = alias ? `${alias}.` : ''
+
+  return `(
+    (${prefix}visitor_id IS NOT NULL AND ${prefix}visitor_id != '')
+    OR LOWER(COALESCE(${prefix}source, '')) LIKE '%whatsapp%'
+    OR EXISTS (
+      SELECT 1
+      FROM whatsapp_web_messages wwm
+      WHERE wwm.contact_id = ${prefix}id
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM whatsapp_web_attribution wwa
+      WHERE wwa.contact_id = ${prefix}id
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM whatsapp_attribution wa
+      WHERE wa.contact_id = ${prefix}id
+    )
+  )`
+}
+
 function buildTrackingSnippet({ trackingDomain, metaPixelId = null, includeMetaPixel = false }) {
   let snippet = `<!-- Pixel de Tracking Ristak -->
 <script async src="https://${trackingDomain}/snip.js?v=${TRACKING_SNIPPET_VERSION}"></script>`
@@ -1711,19 +1735,24 @@ export async function getContactsByDate(req, res) {
 
     logger.info(`Obteniendo registros por fecha: ${start} a ${end}`)
 
-    // Query SIMPLIFICADA: solo cuenta contactos que tienen visitor_id
-    // (ya no necesita JOIN con sessions porque visitor_id ya está en contacts)
+    const range = await resolveDateRangeWithGHLTimezone({ startDate: start, endDate: end })
+    const contactCreatedDate = timestampDateExpression('c.created_at', range.appliedTimezone)
+    const dateExpr = isPostgres
+      ? `TO_CHAR(${contactCreatedDate}, 'YYYY-MM-DD')`
+      : contactCreatedDate
+    const dateFilter = isPostgres
+      ? `${contactCreatedDate} >= ?::date AND ${contactCreatedDate} <= ?::date`
+      : `${contactCreatedDate} >= DATE(?) AND ${contactCreatedDate} <= DATE(?)`
+
     const query = `
       SELECT
-        TO_CHAR(created_at::date, 'YYYY-MM-DD') as date,
-        COUNT(DISTINCT id) as count
-      FROM contacts
+        ${dateExpr} as date,
+        COUNT(DISTINCT c.id) as count
+      FROM contacts c
       WHERE
-        created_at::date >= $1::date
-        AND created_at::date <= $2::date
-        AND visitor_id IS NOT NULL
-        AND visitor_id != ''
-      GROUP BY TO_CHAR(created_at::date, 'YYYY-MM-DD')
+        ${dateFilter}
+        AND ${contactAnalyticsSourceCondition('c')}
+      GROUP BY date
       ORDER BY date ASC
     `
     const params = [start, end]
@@ -1738,11 +1767,15 @@ export async function getContactsByDate(req, res) {
 
     // Generar todas las fechas del rango (rellenar con 0 los días sin contactos)
     const result = []
-    const startDate = new Date(start)
-    const endDate = new Date(end)
+    const startDate = parseIsoDateToUtc(start)
+    const endDate = parseIsoDateToUtc(end)
+
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: 'Formato de fecha inválido' })
+    }
 
     for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-      const dateStr = d.toISOString().split('T')[0]
+      const dateStr = formatUtcDateKey(d)
       result.push({
         date: dateStr,
         count: dataMap[dateStr] || 0
@@ -1812,8 +1845,7 @@ export async function getContactConversionsByDate(req, res) {
         FROM contacts c
         WHERE
           ${dateFilter}
-          AND c.visitor_id IS NOT NULL
-          AND c.visitor_id != ''
+          AND ${contactAnalyticsSourceCondition('c')}
       )
       SELECT
         date,

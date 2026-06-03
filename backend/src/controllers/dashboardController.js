@@ -4,6 +4,7 @@ import { resolveDateRange, resolveDateRangeWithGHLTimezone } from '../utils/date
 import { normalizeTrafficSource } from '../utils/trafficSourceNormalizer.js';
 import { getGroupExpression } from '../services/analyticsService.js';
 import { getManualBusinessExpensesTotalForRange } from '../services/manualBusinessExpensesService.js';
+import { getWhatsAppTrafficSourcesForRange } from '../services/whatsappAnalyticsService.js';
 import { DateTime } from 'luxon';
 import { getContactsWithAppointmentsHybrid, getContactsWithShowedAppointmentsHybrid } from '../services/appointmentsMerge.js';
 import { getHiddenContactFilters, buildHiddenContactsCondition } from '../utils/hiddenContactsFilter.js';
@@ -907,13 +908,14 @@ export const getStorageStatus = async (req, res) => {
  */
 export const getTrafficSources = async (req, res) => {
   try {
-    const { startDate, endDate } = req.query
+    const { startDate, endDate, includeWeb = '1' } = req.query
 
     if (!startDate || !endDate) {
       return res.status(400).json({ success: false, error: 'Se requieren startDate y endDate' })
     }
 
     const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate })
+    const shouldIncludeWeb = String(includeWeb) !== '0'
 
     // Cada visitante debe contar una sola vez. Tomamos su primera sesión del rango y
     // normalizamos en JS con la misma lógica robusta que usa Analytics.
@@ -944,7 +946,7 @@ export const getTrafficSources = async (req, res) => {
     `
     const params = [range.startUtc, range.endUtc]
 
-    const sessions = await db.all(query, params)
+    const sessions = shouldIncludeWeb ? await db.all(query, params) : []
 
     const sourcesMap = new Map()
     sessions.forEach(session => {
@@ -958,11 +960,22 @@ export const getTrafficSources = async (req, res) => {
       sourcesMap.set(sourceName, (sourcesMap.get(sourceName) || 0) + 1)
     })
 
+    const whatsappSources = await getWhatsAppTrafficSourcesForRange({
+      startDate,
+      endDate,
+      limit: 50
+    })
+
+    whatsappSources.forEach(source => {
+      sourcesMap.set(source.name, (sourcesMap.get(source.name) || 0) + Number(source.value || 0))
+    })
+
     // Mapear colores por plataforma
     const colorMap = {
       'Facebook': '#1877f2',
       'Google': '#4285f4',
       'Instagram': '#c32aa3',
+      'Meta Ads': '#0084ff',
       'TikTok': '#ee1d52',
       'Bing': '#00a4ef',
       'Microsoft': '#00a4ef',

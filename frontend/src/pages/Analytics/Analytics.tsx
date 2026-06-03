@@ -18,7 +18,7 @@ import {
   SessionsTable,
   Loading
 } from '../../components/common'
-import { Eye, Users, UserCheck, Target, Smartphone, Monitor, Tablet, Globe, Minus, Plus } from 'lucide-react'
+import { Eye, Users, UserCheck, Target, Smartphone, Monitor, Tablet, Globe, Minus, Plus, MessageCircle } from 'lucide-react'
 import { FaFacebook, FaGoogle, FaInstagram, FaTiktok, FaTwitter, FaLinkedin, FaMicrosoft, FaChrome, FaFirefox, FaSafari, FaEdge, FaOpera, FaWindows, FaAndroid, FaLinux } from 'react-icons/fa'
 import { SiMacos, SiIos } from 'react-icons/si'
 import {
@@ -28,7 +28,8 @@ import {
   type ContactsByDate,
   type ContactConversionsByDate
 } from '../../services/analyticsService'
-import { TrackingSession } from '../../services/trackingService'
+import { trackingService, type TrackingSession } from '../../services/trackingService'
+import { whatsappWebService, type WhatsAppWebAnalytics } from '../../services/whatsappWebService'
 import { formatDateToISO, parseLocalDateString, formatUrlParameter, formatChartNumber } from '../../utils/format'
 import { normalizeTrafficSource } from '../../utils/trafficSourceNormalizer'
 
@@ -663,6 +664,8 @@ const Analytics: React.FC = () => {
   const { labels: appLabels } = useLabels()
   const [loading, setLoading] = useState(false)
   const [hasLoadedAnalytics, setHasLoadedAnalytics] = useState(false)
+  const [webTrackingConfigured, setWebTrackingConfigured] = useState(false)
+  const [whatsAppAnalytics, setWhatsAppAnalytics] = useState<WhatsAppWebAnalytics | null>(null)
 
   const leadLabel = appLabels.lead?.trim() || 'Prospecto'
   const leadsLabel = appLabels.leads?.trim() || `${leadLabel}s`
@@ -769,15 +772,21 @@ const Analytics: React.FC = () => {
           prevSessions,
           contactsData,
           prevContactsData,
-          contactConversionRows
+          contactConversionRows,
+          trackingConfig,
+          whatsappAnalyticsData
         ] = await Promise.all([
           getSessionsByDateRange(startDate, endDate),
           getSessionsByDateRange(prevStartDate, prevEndDate),
           getContactsByDate(startDate, endDate),
           getContactsByDate(prevStartDate, prevEndDate),
-          getContactConversionsByDate(startDate, endDate)
+          getContactConversionsByDate(startDate, endDate),
+          trackingService.getTrackingConfig().catch(() => null),
+          whatsappWebService.getAnalytics({ start: startDate, end: endDate, groupBy: viewType }).catch(() => null)
         ])
 
+        setWebTrackingConfigured(Boolean(trackingConfig?.isConfigured))
+        setWhatsAppAnalytics(whatsappAnalyticsData)
         setContactConversionsByDate(contactConversionRows || [])
 
         if (currentSessions.length > 0) {
@@ -1306,6 +1315,8 @@ const Analytics: React.FC = () => {
           setContactConversionsByDate(contactConversionRows || [])
         }
       } catch {
+        setWebTrackingConfigured(false)
+        setWhatsAppAnalytics(null)
         setContactConversionsByDate([])
       } finally {
         setLoading(false)
@@ -1681,33 +1692,62 @@ const Analytics: React.FC = () => {
 
   }, [sessions, allSessions, selectedFilters, viewType, convertToLocalTime])
 
+  const whatsAppMetrics = whatsAppAnalytics?.metrics
+
   // Preparar métricas para KPICards
-  const mainMetrics = [
-    {
-      title: 'Visualizaciones',
-      value: metrics.pageViews > 1000 ? `${(metrics.pageViews / 1000).toFixed(1)}K` : String(metrics.pageViews || 0),
-      delta: metrics.trends?.pageViews || 0,
-      icon: Eye
-    },
-    {
-      title: 'Visitantes Únicos',
-      value: String(metrics.uniqueVisitors || 0),
-      delta: metrics.trends?.uniqueVisitors || 0,
-      icon: Users
-    },
-    {
-      title: 'Registros',
-      value: String(metrics.registros || 0),
-      delta: metrics.trends?.registros || 0,
-      icon: UserCheck
-    },
-    {
-      title: 'Conversión',
-      value: `${(metrics.conversionRate || 0).toFixed(1)}%`,
-      delta: metrics.trends?.conversionRate || 0,
-      icon: Target
-    }
-  ]
+  const mainMetrics = webTrackingConfigured
+    ? [
+        {
+          title: 'Visualizaciones',
+          value: formatChartNumber(metrics.pageViews || 0),
+          delta: metrics.trends?.pageViews || 0,
+          icon: Eye
+        },
+        {
+          title: 'Visitantes Únicos',
+          value: String(metrics.uniqueVisitors || 0),
+          delta: metrics.trends?.uniqueVisitors || 0,
+          icon: Users
+        },
+        {
+          title: 'Registros',
+          value: String(metrics.registros || 0),
+          delta: metrics.trends?.registros || 0,
+          icon: UserCheck
+        },
+        {
+          title: 'Conversión',
+          value: `${(metrics.conversionRate || 0).toFixed(1)}%`,
+          delta: metrics.trends?.conversionRate || 0,
+          icon: Target
+        }
+      ]
+    : [
+        {
+          title: 'Mensajes Entrantes',
+          value: formatChartNumber(whatsAppMetrics?.inboundMessages || 0),
+          delta: 0,
+          icon: MessageCircle
+        },
+        {
+          title: 'Conversaciones',
+          value: formatChartNumber(whatsAppMetrics?.conversations || 0),
+          delta: 0,
+          icon: Users
+        },
+        {
+          title: 'Contactos WhatsApp',
+          value: formatChartNumber(whatsAppMetrics?.contacts || 0),
+          delta: 0,
+          icon: UserCheck
+        },
+        {
+          title: 'Con Atribución',
+          value: `${(whatsAppMetrics?.attributionRate || 0).toFixed(1)}%`,
+          delta: 0,
+          icon: Target
+        }
+      ]
 
   const handleMonthPresetChange = (value: string) => {
     setMonthPreset(value as MonthPreset)
@@ -1724,15 +1764,41 @@ const Analytics: React.FC = () => {
   }
 
   const periodLabel = viewType === 'year' ? 'año' : viewType === 'month' ? 'mes' : 'fecha'
-  const hasActiveFiltersForCharts = Object.values(selectedFilters).some(values => values.length > 0)
+  const hasActiveFiltersForCharts = webTrackingConfigured && Object.values(selectedFilters).some(values => values.length > 0)
   const sessionsForCharts = hasActiveFiltersForCharts ? sessions : allSessions
 
-  const mainChartOptions = React.useMemo<Array<{ value: AnalyticsMainChartView; label: string }>>(() => [
-    { value: 'traffic', label: 'Tráfico del sitio' },
-    { value: 'visitors-registrations', label: 'Visitantes vs Registros' },
-    { value: 'sessions-visitors', label: 'Sesiones vs Visitantes' },
-    { value: 'identity-returning', label: 'Identificados vs Recurrentes' }
-  ], [])
+  const whatsAppTrendData = React.useMemo<TrafficPoint[]>(() => (
+    (whatsAppAnalytics?.trend || []).map(item => ({
+      label: formatPeriodLabel(item.label, viewType),
+      value: Number(item.messages || 0),
+      value2: Number(item.conversations || 0)
+    }))
+  ), [viewType, whatsAppAnalytics])
+
+  const mainChartOptions = React.useMemo<Array<{ value: AnalyticsMainChartView; label: string }>>(() => {
+    if (!webTrackingConfigured) {
+      return [{ value: 'traffic', label: 'Mensajes de WhatsApp' }]
+    }
+
+    return [
+      { value: 'traffic', label: 'Tráfico del sitio' },
+      { value: 'visitors-registrations', label: 'Visitantes vs Registros' },
+      { value: 'sessions-visitors', label: 'Sesiones vs Visitantes' },
+      { value: 'identity-returning', label: 'Identificados vs Recurrentes' }
+    ]
+  }, [webTrackingConfigured])
+
+  useEffect(() => {
+    if (!webTrackingConfigured && selectedMainChartView !== 'traffic') {
+      setSelectedMainChartView('traffic')
+    }
+  }, [selectedMainChartView, webTrackingConfigured])
+
+  useEffect(() => {
+    if (!webTrackingConfigured && Object.keys(selectedFilters).length > 0) {
+      setSelectedFilters({})
+    }
+  }, [selectedFilters, webTrackingConfigured])
 
   const conversionChartOptions = React.useMemo<Array<{ value: AnalyticsConversionChartView; label: string }>>(() => [
     { value: 'registrations-customers', label: `Registros vs ${customersLabel}` },
@@ -1769,6 +1835,19 @@ const Analytics: React.FC = () => {
     : contactCreatedConversionTrendData
 
   const mainChartConfig = React.useMemo<ChartMetricConfig>(() => {
+    if (!webTrackingConfigured) {
+      return {
+        title: 'Mensajes de WhatsApp',
+        description: `Mensajes entrantes y conversaciones por ${periodLabel}`,
+        label1: 'Mensajes entrantes',
+        label2: 'Conversaciones',
+        color: 'var(--design-chart-primary, #10b981)',
+        color2: 'var(--design-chart-tertiary, #3b82f6)',
+        data: whatsAppTrendData,
+        emptyMessage: 'Sin mensajes de WhatsApp disponibles en este rango'
+      }
+    }
+
     switch (selectedMainChartView) {
       case 'visitors-registrations':
         return {
@@ -1816,7 +1895,7 @@ const Analytics: React.FC = () => {
           emptyMessage: 'Sin datos de tráfico disponibles'
         }
     }
-  }, [dailyConversions, dailyTraffic, periodLabel, selectedMainChartView, sessionTrendData])
+  }, [dailyConversions, dailyTraffic, periodLabel, selectedMainChartView, sessionTrendData, webTrackingConfigured, whatsAppTrendData])
 
   const conversionChartConfig = React.useMemo<ChartMetricConfig>(() => {
     switch (selectedConversionChartView) {
@@ -1929,6 +2008,9 @@ const Analytics: React.FC = () => {
     }
   }, [browserData, devicesData, osData, placementsData, platformsData, selectedDistributionView, trafficSources])
 
+  const showWebAnalyticsBlocks = webTrackingConfigured
+  const showWhatsAppSourceBlock = !webTrackingConfigured || Boolean(whatsAppAnalytics?.status.connected || whatsAppAnalytics?.status.hasData)
+  const whatsAppSourceData = whatsAppAnalytics?.sources || []
   const mainChartHasData = mainChartConfig.data.some(item => (item.value || 0) > 0 || (item.value2 || 0) > 0)
   const conversionChartHasData = conversionChartConfig.data.some(item => (item.value || 0) > 0 || (item.value2 || 0) > 0)
 
@@ -1959,11 +2041,13 @@ const Analytics: React.FC = () => {
 
             <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
               <div className="flex flex-wrap items-center gap-3">
-                <TreeFilter
-                  availableData={availableFilterData}
-                  selectedFilters={selectedFilters}
-                  onFilterChange={setSelectedFilters}
-                />
+                {showWebAnalyticsBlocks && (
+                  <TreeFilter
+                    availableData={availableFilterData}
+                    selectedFilters={selectedFilters}
+                    onFilterChange={setSelectedFilters}
+                  />
+                )}
 
                 {viewType === 'day' && (
                   <DateRangePicker
@@ -2163,27 +2247,45 @@ const Analytics: React.FC = () => {
             </div>
           </Card>
 
-          <TrafficSourcesChart
-            data={distributionConfig.data}
-            loading={loading && !hasLoadedAnalytics}
-            title={distributionConfig.title}
-            totalLabel={distributionConfig.totalLabel}
-            emptyText={distributionConfig.emptyText}
-            emptySubtext={distributionConfig.emptySubtext}
-            insightPrimaryLabel={distributionConfig.insightPrimaryLabel}
-            insightCountLabel={distributionConfig.insightCountLabel}
-            insightCountSuffix={distributionConfig.insightCountSuffix}
-            headerAction={(
-              <ViewSelector
-                options={distributionOptions}
-                value={selectedDistributionView}
-                onChange={(value) => setSelectedDistributionView(value as AnalyticsDistributionView)}
-              />
-            )}
-          />
+          {showWebAnalyticsBlocks && (
+            <TrafficSourcesChart
+              data={distributionConfig.data}
+              loading={loading && !hasLoadedAnalytics}
+              title={distributionConfig.title}
+              totalLabel={distributionConfig.totalLabel}
+              emptyText={distributionConfig.emptyText}
+              emptySubtext={distributionConfig.emptySubtext}
+              insightPrimaryLabel={distributionConfig.insightPrimaryLabel}
+              insightCountLabel={distributionConfig.insightCountLabel}
+              insightCountSuffix={distributionConfig.insightCountSuffix}
+              headerAction={(
+                <ViewSelector
+                  options={distributionOptions}
+                  value={selectedDistributionView}
+                  onChange={(value) => setSelectedDistributionView(value as AnalyticsDistributionView)}
+                />
+              )}
+            />
+          )}
+
+          {showWhatsAppSourceBlock && (
+            <TrafficSourcesChart
+              data={whatsAppSourceData}
+              loading={loading && !hasLoadedAnalytics}
+              title="Origen de mensajes WhatsApp"
+              totalLabel="conversaciones"
+              emptyText="Sin origen de WhatsApp"
+              emptySubtext="Aparecerá cuando WhatsApp Web detecte mensajes con origen de anuncio o enlace"
+              itemLabel="Conversaciones"
+              insightPrimaryLabel="Mayor origen"
+              insightCountLabel="Variedad"
+              insightCountSuffix="orígenes activos"
+            />
+          )}
         </div>
 
         {/* Grid de stats cards */}
+        {showWebAnalyticsBlocks && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {/* Top Plataformas */}
           <Card variant="glass">
@@ -2347,12 +2449,15 @@ const Analytics: React.FC = () => {
             </div>
           </Card>
         </div>
+        )}
 
         {/* Tabla de sesiones de tracking */}
-        <SessionsTable
-          filteredSessions={sessions}
-          useExternalData={true}
-        />
+        {showWebAnalyticsBlocks && (
+          <SessionsTable
+            filteredSessions={sessions}
+            useExternalData={true}
+          />
+        )}
       </div>
     </PageContainer>
   )
