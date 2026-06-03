@@ -3,6 +3,7 @@ import * as localCalendarService from '../services/localCalendarService.js';
 import { logger } from '../utils/logger.js';
 import { getGHLClient } from '../services/ghlClient.js';
 import { db } from '../config/database.js';
+import { getAccountTimezone } from '../utils/dateUtils.js';
 import { triggerWhatsappAppointmentBookedEvent } from '../services/metaWhatsappEventsService.js';
 
 /**
@@ -366,13 +367,15 @@ export async function getBlockedSlots(req, res) {
       }
     }
 
+    const timezone = await getAccountTimezone();
     const blockedSlots = await calendarService.getBlockedSlots(
       locationId,
       parseInt(startTime, 10),
       parseInt(endTime, 10),
       accessToken,
       remoteCalendarId,
-      calendar // Pasar el objeto calendario completo con teamMembers
+      calendar, // Pasar el objeto calendario completo con teamMembers
+      timezone // Zona de la cuenta para alinear los bloqueos con las citas
     );
 
     res.json({

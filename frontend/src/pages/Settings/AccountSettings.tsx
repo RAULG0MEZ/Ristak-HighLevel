@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, CheckCircle, ChevronDown, Loader2, Lock, Save, Upload, User, X } from 'lucide-react'
+import { Check, CheckCircle, ChevronDown, Clock, Loader2, Lock, Save, Upload, User, X } from 'lucide-react'
 import { Button, Card } from '@/components/common'
 import { useAuth } from '@/contexts/AuthContext'
 import { useLabels } from '@/contexts/LabelsContext'
 import { useNotification } from '@/contexts/NotificationContext'
+import { useTimezone } from '@/contexts/TimezoneContext'
 import { useAppConfig } from '@/hooks'
 import styles from './Settings.module.css'
 
@@ -14,10 +15,27 @@ const MAX_PROFILE_PHOTO_SIZE = 1.5 * 1024 * 1024
 const CUSTOMER_LABEL_OPTIONS = ['Cliente', 'Paciente', 'Proyecto', 'Miembro', 'Alumno']
 const LEAD_LABEL_OPTIONS = ['Interesado', 'Prospecto', 'Mensaje', 'Lead', 'Consulta']
 
+const ALL_TIMEZONES: string[] =
+  typeof (Intl as any).supportedValuesOf === 'function'
+    ? (Intl as any).supportedValuesOf('timeZone')
+    : [
+        'UTC',
+        'America/Mexico_City',
+        'America/Monterrey',
+        'America/Tijuana',
+        'America/Bogota',
+        'America/Lima',
+        'America/Chicago',
+        'America/New_York',
+        'America/Los_Angeles',
+        'Europe/Madrid'
+      ]
+
 export const AccountSettings: React.FC = () => {
   const { user, logout } = useAuth()
   const { labels, updateLabels } = useLabels()
   const { showToast } = useNotification()
+  const { timezone, updateTimezone } = useTimezone()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const [profilePhoto, setProfilePhoto, savingProfilePhoto] = useAppConfig<string>(PROFILE_PHOTO_KEY, '')
@@ -40,6 +58,8 @@ export const AccountSettings: React.FC = () => {
   })
   const [openDropdown, setOpenDropdown] = useState<'customer' | 'lead' | null>(null)
   const [savingLabels, setSavingLabels] = useState(false)
+  const [timezoneDraft, setTimezoneDraft] = useState(timezone)
+  const [savingTimezone, setSavingTimezone] = useState(false)
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null)
   const customerTriggerRef = useRef<HTMLButtonElement>(null)
   const leadTriggerRef = useRef<HTMLButtonElement>(null)
@@ -54,6 +74,25 @@ export const AccountSettings: React.FC = () => {
       lead: labels.lead
     })
   }, [labels])
+
+  useEffect(() => {
+    setTimezoneDraft(timezone)
+  }, [timezone])
+
+  const handleSaveTimezone = async () => {
+    if (!timezoneDraft || timezoneDraft === timezone) return
+
+    setSavingTimezone(true)
+    try {
+      const resolved = await updateTimezone(timezoneDraft)
+      showToast('success', 'Zona horaria actualizada', `Toda la cuenta usará ${resolved}.`)
+    } catch (error: any) {
+      showToast('error', 'Error', error?.message || 'No se pudo guardar la zona horaria')
+      setTimezoneDraft(timezone)
+    } finally {
+      setSavingTimezone(false)
+    }
+  }
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -625,6 +664,50 @@ export const AccountSettings: React.FC = () => {
                   <span>Guardando...</span>
                 </div>
               )}
+            </section>
+
+            <section className={`${styles.accountSection} ${styles.accountSectionWide}`}>
+              <div className={styles.accountSectionHeader}>
+                <div>
+                  <h3 className={styles.accountSectionTitle}>
+                    <Clock size={16} /> Zona horaria
+                  </h3>
+                  <p className={styles.accountSectionDescription}>
+                    Zona horaria de toda la cuenta: se usa para mostrar fechas, horas, reportes y
+                    el calendario. Es la fuente de verdad sobre HighLevel y no altera los datos
+                    guardados, solo cómo los ves.
+                  </p>
+                </div>
+              </div>
+
+              <div className={styles.lockedFieldRow}>
+                <div className={styles.field}>
+                  <label className={styles.label} htmlFor="account-timezone">Zona horaria</label>
+                  <select
+                    id="account-timezone"
+                    className={styles.select}
+                    value={timezoneDraft}
+                    onChange={(event) => setTimezoneDraft(event.target.value)}
+                    disabled={savingTimezone}
+                  >
+                    {!ALL_TIMEZONES.includes(timezoneDraft) && (
+                      <option value={timezoneDraft}>{timezoneDraft}</option>
+                    )}
+                    {ALL_TIMEZONES.map((tz) => (
+                      <option key={tz} value={tz}>{tz}</option>
+                    ))}
+                  </select>
+                </div>
+                <Button
+                  variant="primary"
+                  onClick={handleSaveTimezone}
+                  loading={savingTimezone}
+                  disabled={savingTimezone || timezoneDraft === timezone}
+                >
+                  <Save size={16} />
+                  Guardar
+                </Button>
+              </div>
             </section>
           </div>
         </div>

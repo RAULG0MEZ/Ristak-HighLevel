@@ -1,70 +1,137 @@
 /**
- * Utilidades para manejo de zonas horarias
+ * Utilidades para manejo de zonas horarias (frontend)
  *
- * IMPORTANTE:
- * - Todo se guarda en UTC en la base de datos
- * - Las campañas de Meta vienen en la zona horaria de la cuenta publicitaria
- * - Necesitamos normalizar todo a UTC antes de guardar
- * - Al mostrar, convertimos de UTC a la zona horaria del usuario
+ * Modelo:
+ * - La BD guarda SIEMPRE en UTC.
+ * - Al mostrar, convertimos de UTC a la zona horaria de la cuenta (la del usuario).
+ * - Usamos Intl.DateTimeFormat (formatToParts), que es la forma robusta y consistente
+ *   con la del calendario, en lugar de parsear strings de toLocaleString.
  */
 
 /**
- * Obtiene el offset de una zona horaria en minutos
+ * Extrae los componentes (año, mes, ...) de una fecha en una zona horaria dada.
  */
-function getTimezoneOffset(timezone: string, date: Date): number {
-  // Crear dos fechas: una en UTC y otra en la zona horaria específica
-  const utcDate = new Date(date.toLocaleString('en-US', { timeZone: 'UTC' }))
-  const tzDate = new Date(date.toLocaleString('en-US', { timeZone: timezone }))
+function getZonedParts(date: Date, timeZone: string): Record<string, number> {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  })
 
-  // La diferencia es el offset
-  return (utcDate.getTime() - tzDate.getTime()) / 60000
+  const parts = formatter.formatToParts(date)
+  const result: Record<string, number> = {}
+  for (const part of parts) {
+    if (part.type !== 'literal') {
+      // 'hour' puede venir como "24" a medianoche en algunos motores; normalizar
+      const value = part.type === 'hour' && part.value === '24' ? 0 : Number(part.value)
+      result[part.type] = value
+    }
+  }
+  return result
 }
 
 /**
- * Convierte una fecha UTC a la zona horaria local del usuario
+ * Offset (zona - UTC) en milisegundos para un instante dado.
+ */
+function getZoneOffsetMs(timeZone: string, atDate: Date): number {
+  const parts = getZonedParts(atDate, timeZone)
+  const zoneWallAsUtc = Date.UTC(
+    parts.year,
+    (parts.month ?? 1) - 1,
+    parts.day,
+    parts.hour ?? 0,
+    parts.minute ?? 0,
+    parts.second ?? 0
+  )
+  return zoneWallAsUtc - atDate.getTime()
+}
+
+/**
+ * Asegura que una fecha quede como ISO string en UTC ("...Z").
+ * Si la cadena NO trae zona, se interpreta como UTC (así viene de la BD).
+ */
+export function ensureUTC(date: string | Date): string {
+  if (date instanceof Date) return date.toISOString()
+
+  const str = String(date).trim()
+  if (!str) return new Date(NaN).toISOString()
+
+  // Ya trae zona explícita (Z o ±HH:MM)
+  if (/(?:Z|[+-]\d{2}:?\d{2})$/i.test(str)) {
+    const parsed = new Date(str)
+    return Number.isNaN(parsed.getTime()) ? str : parsed.toISOString()
+  }
+
+  // Naive → interpretar como UTC
+  const iso = (str.includes('T') ? str : str.replace(' ', 'T')) + 'Z'
+  const parsed = new Date(iso)
+  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString()
+
+  const fallback = new Date(str)
+  return Number.isNaN(fallback.getTime()) ? str : fallback.toISOString()
+}
+
+/**
+ * Convierte una fecha UTC a un Date cuyos getters LOCALES reflejan la hora de
+ * pared en la zona del usuario. Útil para leer getHours()/getDate() en esa zona.
  * @param utcDate Fecha en UTC
- * @param userTimezone Zona horaria del usuario (IANA format)
- * @returns Fecha en la zona horaria del usuario
+ * @param userTimezone Zona horaria del usuario (IANA)
  */
 export function convertUTCToLocal(utcDate: string | Date, userTimezone: string): Date {
-  const date = typeof utcDate === 'string' ? new Date(utcDate + 'Z') : utcDate
+  const date = utcDate instanceof Date ? utcDate : new Date(ensureUTC(utcDate))
+  if (Number.isNaN(date.getTime())) return date
 
-  // Formatear en la zona horaria del usuario
-  const localString = date.toLocaleString('en-US', { timeZone: userTimezone })
-
-  return new Date(localString)
+  const parts = getZonedParts(date, userTimezone)
+  return new Date(
+    parts.year,
+    (parts.month ?? 1) - 1,
+    parts.day,
+    parts.hour ?? 0,
+    parts.minute ?? 0,
+    parts.second ?? 0
+  )
 }
 
 /**
- * Convierte una fecha local a UTC
- * @param localDate Fecha en zona horaria local
- * @param timezone Zona horaria (IANA format)
- * @returns Fecha en UTC
+ * Convierte una hora de pared local (interpretada en `timezone`) a UTC.
+ * @param localDate Fecha cuyos componentes locales representan la hora de pared
+ * @param timezone Zona horaria en la que se interpretan esos componentes (IANA)
  */
 export function convertLocalToUTC(localDate: string | Date, timezone: string): Date {
-  const date = typeof localDate === 'string' ? new Date(localDate) : localDate
+  const date = localDate instanceof Date ? localDate : new Date(localDate)
+  if (Number.isNaN(date.getTime())) return date
 
-  // Obtener el offset de la zona horaria
-  const offset = getTimezoneOffset(timezone, date)
+  const asUtc = Date.UTC(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    date.getHours(),
+    date.getMinutes(),
+    date.getSeconds()
+  )
 
-  // Convertir a UTC restando el offset
-  const utcTime = date.getTime() - (offset * 60 * 1000)
-
-  return new Date(utcTime)
+  // El offset se evalúa en el instante aproximado para respetar DST.
+  const offsetMs = getZoneOffsetMs(timezone, new Date(asUtc))
+  return new Date(asUtc - offsetMs)
 }
 
 /**
- * Formatea una fecha UTC para mostrarla en la zona horaria del usuario
+ * Formatea una fecha UTC para mostrarla en la zona horaria del usuario.
  * @param utcDate Fecha en UTC
  * @param timezone Zona horaria del usuario
- * @param format Formato deseado
+ * @param options Opciones de formato
  */
 export function formatInTimezone(
   utcDate: string | Date,
   timezone: string,
   options?: Intl.DateTimeFormatOptions
 ): string {
-  const date = typeof utcDate === 'string' ? new Date(utcDate + 'Z') : utcDate
+  const date = utcDate instanceof Date ? utcDate : new Date(ensureUTC(utcDate))
 
   const defaultOptions: Intl.DateTimeFormatOptions = {
     timeZone: timezone,
@@ -77,12 +144,4 @@ export function formatInTimezone(
   }
 
   return new Intl.DateTimeFormat('es-MX', defaultOptions).format(date)
-}
-
-/**
- * Asegura que una fecha esté en formato UTC
- */
-export function ensureUTC(date: string | Date): string {
-  const dateObj = typeof date === 'string' ? new Date(date) : date
-  return dateObj.toISOString()
 }

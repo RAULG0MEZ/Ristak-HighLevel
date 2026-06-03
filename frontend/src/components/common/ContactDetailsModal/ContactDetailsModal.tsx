@@ -171,7 +171,7 @@ export function ContactDetailsModal({
   const [savingCustomField, setSavingCustomField] = useState<string | null>(null)
   const [customFieldError, setCustomFieldError] = useState<string | null>(null)
   const { labels } = useLabels()
-  const { formatLocalDateShort, formatLocalDateTime } = useTimezone()
+  const { formatLocalDateShort, formatLocalDateTime, timezone } = useTimezone()
 
   // Seleccionar automáticamente el primer contacto cuando se abre el modal
   useEffect(() => {
@@ -789,8 +789,7 @@ export function ContactDetailsModal({
                         <ul className={styles.paymentList} data-contact-summary-list="appointments">
                           {selectedContact.appointments.map(appointment => {
                             const statusInfo = getAppointmentStatusLabel(appointment.status)
-                            const appointmentDate = new Date(appointment.start_time)
-                            const timeStr = appointmentDate.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: true })
+                            const timeStr = new Date(appointment.start_time).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: timezone })
 
                             return (
                               <li key={appointment.id} className={styles.paymentItem}>

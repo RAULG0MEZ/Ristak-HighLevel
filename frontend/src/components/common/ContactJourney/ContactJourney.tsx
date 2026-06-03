@@ -173,7 +173,7 @@ const getEventDescription = (event?: JourneyEvent | null): string => {
   return ''
 }
 
-const getTooltipContent = (event?: JourneyEvent | null) => {
+const getTooltipContent = (event?: JourneyEvent | null, timezone?: string) => {
   if (!event) {
     return []
   }
@@ -299,8 +299,9 @@ const getTooltipContent = (event?: JourneyEvent | null) => {
       items.push({ label: 'Estado', value: data.status })
     }
     if (data.start_time && data.end_time) {
-      const start = new Date(data.start_time).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
-      const end = new Date(data.end_time).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
+      const timeOpts: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit', ...(timezone ? { timeZone: timezone } : {}) }
+      const start = new Date(data.start_time).toLocaleTimeString('es-MX', timeOpts)
+      const end = new Date(data.end_time).toLocaleTimeString('es-MX', timeOpts)
       items.push({ label: 'Horario', value: `${start} - ${end}` })
     }
     if (data.address) {
@@ -492,7 +493,7 @@ export const ContactJourney = ({ contactId }: ContactJourneyProps) => {
           const isAdAttributed = Boolean(event.data?.is_ad_attributed)
           const adPlatformIcon = getAdPlatformIcon(event.data?.ad_platform)
 
-          const tooltipItems = getTooltipContent(event)
+          const tooltipItems = getTooltipContent(event, timezone)
 
           return (
             <div key={index} className={styles.eventWrapper}>

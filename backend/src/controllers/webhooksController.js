@@ -1,6 +1,7 @@
 import { db } from '../config/database.js';
 import { logger } from '../utils/logger.js';
 import { updateSingleContactStats } from '../utils/updateContactsStats.js';
+import { normalizeToUtcIso, getAccountTimezone } from '../utils/dateUtils.js';
 import { recordAttendanceAttributionSignal } from '../services/appointmentsMerge.js';
 import {
   activatePendingPaymentFlowsForContact,
@@ -790,6 +791,14 @@ export const handleAppointmentWebhook = async (req, res) => {
           date_added = COALESCE(appointments.date_added, EXCLUDED.date_added),
           date_updated = EXCLUDED.date_updated`;
 
+    // Normalizar instantes a UTC real (GHL manda ISO con offset; lo convertimos
+    // para que el instante quede correcto sin importar el tipo de columna).
+    const accountZone = await getAccountTimezone();
+    const startTime = normalizeToUtcIso(calendar.startTime || data.startTime || data.start_time, accountZone);
+    const endTime = normalizeToUtcIso(calendar.endTime || data.endTime || data.end_time, accountZone);
+    const dateAdded = normalizeToUtcIso(calendar.date_created || data.dateAdded || data.date_added || new Date().toISOString(), accountZone);
+    const dateUpdated = normalizeToUtcIso(calendar.last_updated || data.dateUpdated || data.date_updated || new Date().toISOString(), accountZone);
+
     await db.run(query, [
       appointmentId,
       calendar.id || data.calendarId || data.calendar_id,
@@ -801,14 +810,13 @@ export const handleAppointmentWebhook = async (req, res) => {
       calendar.created_by_user_id || data.assignedUserId || data.assigned_user_id,
       calendar.notes || data.notes,
       calendar.address || data.address || data.location?.fullAddress,
-      calendar.startTime || data.startTime || data.start_time,
-      calendar.endTime || data.endTime || data.end_time,
-      calendar.date_created || data.dateAdded || data.date_added || new Date().toISOString(),
-      calendar.last_updated || data.dateUpdated || data.date_updated || new Date().toISOString()
+      startTime,
+      endTime,
+      dateAdded,
+      dateUpdated
     ]);
 
     // Actualizar appointment_date del contacto con la fecha de la cita más próxima
-    const startTime = calendar.startTime || data.startTime || data.start_time;
     if (contactId && startTime) {
       await db.run(`
         UPDATE contacts

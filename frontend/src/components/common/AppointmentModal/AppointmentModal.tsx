@@ -77,21 +77,19 @@ const CONTACT_SEARCH_DELAY_MS = 90;
  * Formatea slot completo con duración
  * Ej: "2025-10-22T15:30:00-06:00" con 60min → "3:30 PM - 4:30 PM"
  */
-const formatSlotWithDuration = (isoTime: string, durationMinutes: number): string => {
+const formatSlotWithDuration = (isoTime: string, durationMinutes: number, timeZone?: string): string => {
   const startDate = new Date(isoTime);
   const endDate = new Date(startDate.getTime() + durationMinutes * 60 * 1000);
 
-  const startTime = startDate.toLocaleTimeString('es-MX', {
+  const options: Intl.DateTimeFormatOptions = {
     hour: 'numeric',
     minute: '2-digit',
-    hour12: true
-  }).toUpperCase();
+    hour12: true,
+    ...(timeZone ? { timeZone } : {})
+  };
 
-  const endTime = endDate.toLocaleTimeString('es-MX', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true
-  }).toUpperCase();
+  const startTime = startDate.toLocaleTimeString('es-MX', options).toUpperCase();
+  const endTime = endDate.toLocaleTimeString('es-MX', options).toUpperCase();
 
   return `${startTime} - ${endTime}`;
 };
@@ -207,6 +205,26 @@ const getTimezoneOffset = (date: Date, timeZone: string): number => {
   return (utcDate.getTime() - tzDate.getTime()) / (1000 * 60);
 };
 
+// ¿La cadena ya trae zona explícita (Z u offset ±HH:MM)? → es un instante absoluto.
+const isAbsoluteIso = (value: string): boolean => /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value.trim());
+
+/**
+ * Convierte el valor del formulario a un ISO listo para guardar.
+ * - Si ya es un instante absoluto (Z u offset, ej: slots de GHL o salida del
+ *   DateTimePicker), se respeta tal cual y se normaliza a UTC.
+ * - Si es un "datetime-local" sin zona ("YYYY-MM-DDTHH:mm"), se interpreta en
+ *   la zona indicada.
+ * Esto evita el doble-procesado que desfasaba la hora al editar o usar slots.
+ */
+const toIsoForSave = (value: string, timeZone: string): string | null => {
+  if (!value) return null;
+  if (isAbsoluteIso(value)) {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+  return convertLocalInputToISO(value, timeZone);
+};
+
 export const AppointmentModal: React.FC<AppointmentModalProps> = ({
   isOpen,
   onClose,
@@ -224,7 +242,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
   onDelete
 }) => {
   const { showToast } = useNotification();
-  const { formatLocalDateShort } = useTimezone();
+  const { formatLocalDateShort, timezone: accountTimezone } = useTimezone();
   const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState(INITIAL_FORM_STATE);
   const isCreateMode = mode === 'create';
@@ -533,15 +551,15 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
             setFormData({
               title: event.title || '',
               appointmentStatus: event.appointmentStatus || 'pending',
-              startTime: toLocalInputValue(event.startTime, event.timeZone),
-              endTime: toLocalInputValue(event.endTime, event.timeZone),
+              startTime: toLocalInputValue(event.startTime, event.timeZone || accountTimezone),
+              endTime: toLocalInputValue(event.endTime, event.timeZone || accountTimezone),
               notes: event.notes || '',
               address: event.address || '',
               timeZone:
                 event.timeZone ||
                 (event as any)?.timeZone ||
                 (event as any)?.timezone ||
-                DEFAULT_TIMEZONE,
+                accountTimezone,
               contactId: (event as any)?.contactId || '',
               assignedUserId: (event as any)?.assignedUserId || ''
             });
@@ -556,15 +574,15 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
             setFormData({
               title: fullEvent.title || '',
               appointmentStatus: fullEvent.appointmentStatus || 'pending',
-              startTime: toLocalInputValue(fullEvent.startTime, fullEvent.timeZone),
-              endTime: toLocalInputValue(fullEvent.endTime, fullEvent.timeZone),
+              startTime: toLocalInputValue(fullEvent.startTime, fullEvent.timeZone || accountTimezone),
+              endTime: toLocalInputValue(fullEvent.endTime, fullEvent.timeZone || accountTimezone),
               notes: fullEvent.notes || '',
               address: fullEvent.address || '',
               timeZone:
                 fullEvent.timeZone ||
                 (fullEvent as any)?.timeZone ||
                 (fullEvent as any)?.timezone ||
-                DEFAULT_TIMEZONE,
+                accountTimezone,
               contactId: fullEvent.contactId || '',
               assignedUserId: fullEvent.assignedUserId || ''
             });
@@ -578,15 +596,15 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
             setFormData({
               title: event.title || '',
               appointmentStatus: event.appointmentStatus || 'pending',
-              startTime: toLocalInputValue(event.startTime, event.timeZone),
-              endTime: toLocalInputValue(event.endTime, event.timeZone),
+              startTime: toLocalInputValue(event.startTime, event.timeZone || accountTimezone),
+              endTime: toLocalInputValue(event.endTime, event.timeZone || accountTimezone),
               notes: event.notes || '',
               address: event.address || '',
               timeZone:
                 event.timeZone ||
                 (event as any)?.timeZone ||
                 (event as any)?.timezone ||
-                DEFAULT_TIMEZONE,
+                accountTimezone,
               contactId: (event as any)?.contactId || '',
               assignedUserId: (event as any)?.assignedUserId || ''
             });
@@ -617,11 +635,11 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
       setFormData({
         title: defaultTitle || '',
         appointmentStatus: 'confirmed', // Estado predeterminado: Confirmada
-        startTime: defaultStart ? toLocalInputValue(defaultStart, defaultTimeZone || DEFAULT_TIMEZONE) : '',
-        endTime: defaultEnd ? toLocalInputValue(defaultEnd, defaultTimeZone || DEFAULT_TIMEZONE) : '',
+        startTime: defaultStart ? toLocalInputValue(defaultStart, defaultTimeZone || accountTimezone) : '',
+        endTime: defaultEnd ? toLocalInputValue(defaultEnd, defaultTimeZone || accountTimezone) : '',
         notes: '',
         address: '',
-        timeZone: defaultTimeZone || DEFAULT_TIMEZONE,
+        timeZone: defaultTimeZone || accountTimezone,
         contactId: '',
         assignedUserId: ''
       });
@@ -641,17 +659,13 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
     if (!calendar || !accessToken || !locationId) return null;
 
     try {
-      // Obtener la fecha del horario seleccionado
+      // Fecha/hora en la ZONA DE LA CUENTA (los blocked slots vienen en esa zona)
       const startDate = new Date(startTime);
-      const dateKey = startDate.toISOString().split('T')[0];
-      const startHour = startDate.getHours();
-      const startMinute = startDate.getMinutes();
-      const startTimeStr = `${String(startHour).padStart(2, '0')}:${String(startMinute).padStart(2, '0')}`;
-
-      const endDate = new Date(endTime);
-      const endHour = endDate.getHours();
-      const endMinute = endDate.getMinutes();
-      const endTimeStr = `${String(endHour).padStart(2, '0')}:${String(endMinute).padStart(2, '0')}`;
+      const zonedStart = toDateInTimeZone(startTime, accountTimezone) ?? startDate;
+      const zonedEnd = toDateInTimeZone(endTime, accountTimezone) ?? new Date(endTime);
+      const dateKey = `${zonedStart.getFullYear()}-${String(zonedStart.getMonth() + 1).padStart(2, '0')}-${String(zonedStart.getDate()).padStart(2, '0')}`;
+      const startTimeStr = `${String(zonedStart.getHours()).padStart(2, '0')}:${String(zonedStart.getMinutes()).padStart(2, '0')}`;
+      const endTimeStr = `${String(zonedEnd.getHours()).padStart(2, '0')}:${String(zonedEnd.getMinutes()).padStart(2, '0')}`;
 
       // Obtener blocked slots del día
       const dayStart = new Date(startDate);
@@ -713,8 +727,8 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
 
         // Validación: verificar si el horario está bloqueado
         if (formData.startTime && formData.endTime) {
-          const startIso = convertLocalInputToISO(formData.startTime, formData.timeZone);
-          const endIso = convertLocalInputToISO(formData.endTime, formData.timeZone);
+          const startIso = toIsoForSave(formData.startTime, formData.timeZone);
+          const endIso = toIsoForSave(formData.endTime, formData.timeZone);
 
           if (startIso && endIso) {
             const blockedSlot = await checkIfTimeIsBlocked(startIso, endIso);
@@ -748,12 +762,12 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
         }
 
         if (formData.startTime) {
-          const startIso = convertLocalInputToISO(formData.startTime, formData.timeZone);
+          const startIso = toIsoForSave(formData.startTime, formData.timeZone);
           if (startIso) payload.startTime = startIso;
         }
 
         if (formData.endTime) {
-          const endIso = convertLocalInputToISO(formData.endTime, formData.timeZone);
+          const endIso = toIsoForSave(formData.endTime, formData.timeZone);
           if (endIso) payload.endTime = endIso;
         }
 
@@ -764,8 +778,8 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
 
         // Validación: verificar si el horario está bloqueado (solo si se cambió el horario)
         if (formData.startTime && formData.endTime) {
-          const startIso = convertLocalInputToISO(formData.startTime, formData.timeZone);
-          const endIso = convertLocalInputToISO(formData.endTime, formData.timeZone);
+          const startIso = toIsoForSave(formData.startTime, formData.timeZone);
+          const endIso = toIsoForSave(formData.endTime, formData.timeZone);
 
           if (startIso && endIso) {
             // Solo validar si el horario cambió respecto al original
@@ -796,12 +810,12 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
         };
 
         if (formData.startTime) {
-          const startIso = convertLocalInputToISO(formData.startTime, formData.timeZone);
+          const startIso = toIsoForSave(formData.startTime, formData.timeZone);
           if (startIso) updates.startTime = startIso;
         }
 
         if (formData.endTime) {
-          const endIso = convertLocalInputToISO(formData.endTime, formData.timeZone);
+          const endIso = toIsoForSave(formData.endTime, formData.timeZone);
           if (endIso) updates.endTime = endIso;
         }
 
@@ -843,7 +857,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
     event?.timeZone ||
     (event as any)?.timeZone ||
     (event as any)?.timezone ||
-    DEFAULT_TIMEZONE;
+    accountTimezone;
 
   const timeFormatter = new Intl.DateTimeFormat('es-MX', {
     hour: 'numeric',
@@ -1157,11 +1171,12 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
                                 { value: '', label: 'Seleccionar fecha...' },
                                 ...freeSlots.map((slot) => ({
                                   value: slot.date,
-                                  label: new Date(slot.date).toLocaleDateString('es-MX', {
+                                  label: new Date(`${slot.date}T00:00:00Z`).toLocaleDateString('es-MX', {
                                     weekday: 'long',
                                     year: 'numeric',
                                     month: 'long',
-                                    day: 'numeric'
+                                    day: 'numeric',
+                                    timeZone: 'UTC'
                                   })
                                 }))
                               ]}
@@ -1188,7 +1203,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
                                         .find((s) => s.date === selectedDate)
                                         ?.slots.map((timeSlot) => ({
                                           value: timeSlot,
-                                          label: formatSlotWithDuration(timeSlot, calendar?.slotDuration || 60)
+                                          label: formatSlotWithDuration(timeSlot, calendar?.slotDuration || 60, accountTimezone)
                                         })) || [])
                                     ]
                                   : [{ value: '', label: 'Primero selecciona una fecha' }]
@@ -1307,10 +1322,10 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
                   const newZone = e.target.value;
                   setFormData((prev) => {
                     const startIso = prev.startTime
-                      ? convertLocalInputToISO(prev.startTime, prev.timeZone) ?? ''
+                      ? toIsoForSave(prev.startTime, prev.timeZone) ?? ''
                       : '';
                     const endIso = prev.endTime
-                      ? convertLocalInputToISO(prev.endTime, prev.timeZone) ?? ''
+                      ? toIsoForSave(prev.endTime, prev.timeZone) ?? ''
                       : '';
 
                     return {

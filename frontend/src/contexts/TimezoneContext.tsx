@@ -7,6 +7,7 @@ const MONTHS_SHORT = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 's
 interface TimezoneContextType {
   timezone: string
   setTimezone: (tz: string) => void
+  updateTimezone: (tz: string | null) => Promise<string>
   convertToLocalTime: (utcDate: string | Date) => Date
   convertToUTC: (localDate: string | Date) => Date
   formatLocalDate: (utcDate: string | Date) => string
@@ -56,6 +57,27 @@ export const TimezoneProvider: React.FC<{ children: ReactNode }> = ({ children }
   useEffect(() => {
     localStorage.setItem('userTimezone', timezone)
   }, [timezone])
+
+  // Persiste la zona horaria elegida en Ristak (fuente de verdad sobre HighLevel).
+  // Pasar null limpia el override y vuelve a usar HighLevel/default.
+  const updateTimezone = async (tz: string | null): Promise<string> => {
+    const endpoint = API_BASE_URL ? `${API_BASE_URL}/api/settings/timezone` : '/api/settings/timezone'
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ timezone: tz })
+    })
+
+    const data = await response.json()
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || 'No se pudo guardar la zona horaria')
+    }
+
+    const resolved = data.timezone || 'America/Mexico_City'
+    setTimezone(resolved)
+    localStorage.setItem('userTimezone', resolved)
+    return resolved
+  }
 
   // Convierte una fecha UTC a la hora local del usuario
   const convertToLocalTime = (utcDate: string | Date): Date => {
@@ -122,6 +144,7 @@ export const TimezoneProvider: React.FC<{ children: ReactNode }> = ({ children }
     <TimezoneContext.Provider value={{
       timezone,
       setTimezone,
+      updateTimezone,
       convertToLocalTime,
       convertToUTC,
       formatLocalDate,

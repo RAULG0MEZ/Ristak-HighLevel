@@ -11,6 +11,7 @@ import { calendarsService, type Calendar, type CalendarEvent, type AppointmentSt
 import { formatTime12h } from '@/utils/format'
 import { buildSearchIndex, prepareSearchQuery, searchIndexIncludes } from '@/utils/searchText'
 import { useTimezone } from '@/contexts/TimezoneContext';
+import { convertLocalToUTC } from '@/utils/timezone';
 import styles from './Appointments.module.css';
 
 const LAST_SELECTED_CALENDAR_KEY = 'lastSelectedCalendarId';
@@ -125,11 +126,47 @@ const isSameDay = (a: Date, b: Date): boolean => {
   );
 };
 
+// Formatea una fecha (por sus componentes locales) como "YYYY-MM-DD".
+const formatDateKey = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export const Appointments: React.FC = () => {
   const { locationId, accessToken } = useAuth();
   const { showToast } = useNotification();
   const { theme } = useTheme();
-  const { formatLocalDateShort } = useTimezone();
+  const { formatLocalDateShort, timezone } = useTimezone();
+
+  // Formatea la hora de un evento (instante UTC) en 12h, en la zona de la cuenta.
+  const formatEventTime = (value?: string | null): string => {
+    const d = toDateInTimeZone(value ?? undefined, timezone);
+    if (!d) return '—';
+    const hours = d.getHours();
+    const minutes = d.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const h12 = hours % 12 || 12;
+    return `${String(h12).padStart(2, '0')}:${String(minutes).padStart(2, '0')} ${ampm}`;
+  };
+
+  // Construye instantes ISO (UTC) para una "hora de pared" en la zona de la cuenta.
+  // Sirve para defaults de creación: 9:00 (o la hora actual si es hoy) en la zona del negocio.
+  const buildCreateDefaultTimes = (baseDate: Date, todayHourOffset: number): { start: string; end: string } => {
+    const zonedNow = toDateInTimeZone(new Date().toISOString(), timezone) ?? new Date();
+    const isToday =
+      baseDate.getFullYear() === zonedNow.getFullYear() &&
+      baseDate.getMonth() === zonedNow.getMonth() &&
+      baseDate.getDate() === zonedNow.getDate();
+    const hour = isToday ? Math.min(23, zonedNow.getHours() + todayHourOffset) : 9;
+    const localWall = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), hour, 0, 0, 0);
+    const startUTC = convertLocalToUTC(localWall, timezone);
+    return {
+      start: startUTC.toISOString(),
+      end: new Date(startUTC.getTime() + 60 * 60 * 1000).toISOString()
+    };
+  };
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -431,7 +468,7 @@ export const Appointments: React.FC = () => {
   useEffect(() => {
     if (!weekGridRef.current && !dayGridRef.current) return;
 
-    const now = new Date();
+    const now = toDateInTimeZone(new Date().toISOString(), timezone) ?? new Date();
     const currentHour = now.getHours() + now.getMinutes() / 60;
     const target = Math.max(currentHour - 2, 0); // deja margen por encima
     const scrollPosition = target * 60; // 60px por cada hora
@@ -443,10 +480,24 @@ export const Appointments: React.FC = () => {
     if (viewMode === 'day' && dayGridRef.current) {
       dayGridRef.current.scrollTop = scrollPosition;
     }
-  }, [viewMode, currentDate]);
+  }, [viewMode, currentDate, timezone]);
 
   // Eventos agrupados por fecha para reutilizar en todas las vistas
-  const eventsByDate = useMemo(() => calendarsService.groupEventsByDate(events), [events]);
+  // Agrupar eventos por DÍA en la zona de la cuenta (no por fecha UTC), para que
+  // una cita de la noche no caiga en el día equivocado del calendario mensual.
+  const eventsByDate = useMemo(() => {
+    const grouped: Record<string, CalendarEvent[]> = {};
+    events.forEach((event) => {
+      const zoned = toDateInTimeZone(event.startTime, timezone) ?? new Date(event.startTime);
+      const key = formatDateKey(zoned);
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(event);
+    });
+    Object.keys(grouped).forEach((key) => {
+      grouped[key].sort((a, b) => a.startTime.localeCompare(b.startTime));
+    });
+    return grouped;
+  }, [events, timezone]);
 
   // Agrupar blocked slots por fecha
   const blockedSlotsByDate = useMemo(() => {
@@ -483,7 +534,7 @@ export const Appointments: React.FC = () => {
     // Días del mes actual
     for (let day = 1; day <= daysInMonth; day++) {
       const date = new Date(year, month, day);
-      const dateKey = date.toISOString().split('T')[0];
+      const dateKey = formatDateKey(date);
       const dayEvents = eventsByDate[dateKey] || [];
 
       cells.push({
@@ -549,8 +600,8 @@ export const Appointments: React.FC = () => {
 
     return uniqueEvents.map((event) => {
       // Buscar por fecha (formato: "15 enero", "15/01", "enero 2025", etc)
-      const eventDate = new Date(event.startTime);
-      const dateStr = formatLocalDateShort(eventDate);
+      const eventDate = toDateInTimeZone(event.startTime, timezone) ?? new Date(event.startTime);
+      const dateStr = formatLocalDateShort(event.startTime);
       const monthName = MONTH_NAMES[eventDate.getMonth()];
       const dayMonth = `${eventDate.getDate()} ${monthName}`;
       const yearStr = eventDate.getFullYear().toString();
@@ -585,7 +636,7 @@ export const Appointments: React.FC = () => {
 
   const handleSelectSearchResult = (event: CalendarEvent) => {
     // Navegar a la fecha de la cita
-    const eventDate = toDateInTimeZone(event.startTime, event.timeZone) ?? new Date(event.startTime);
+    const eventDate = toDateInTimeZone(event.startTime, timezone) ?? new Date(event.startTime);
     setCurrentDate(eventDate);
 
     // Cambiar a vista de día para mejor visualización
@@ -608,22 +659,12 @@ export const Appointments: React.FC = () => {
     }
 
     const baseDate = selectedDate ?? currentDate;
-    const now = new Date();
-    const reference = new Date(baseDate);
-    if (isSameDay(reference, now)) {
-      reference.setHours(now.getHours(), 0, 0, 0);
-    } else {
-      reference.setHours(9, 0, 0, 0);
-    }
-
-    const startISO = reference.toISOString();
-    const endRef = new Date(reference.getTime() + 60 * 60 * 1000);
-    const endISO = endRef.toISOString();
+    const { start: startISO, end: endISO } = buildCreateDefaultTimes(baseDate, 0);
 
     setCreateDefaults({
       start: startISO,
       end: endISO,
-      timeZone: selectedCalendar?.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+      timeZone: timezone,
       title: selectedCalendar?.eventTitle || ''
     });
     setCreateScheduleMode('default'); // Botón normal usa modo por defecto
@@ -637,25 +678,13 @@ export const Appointments: React.FC = () => {
       return;
     }
 
-    const now = new Date();
-    const reference = new Date(date);
-
-    // Si es hoy, usar la hora actual (redondeada a la siguiente hora)
-    if (isSameDay(reference, now)) {
-      reference.setHours(now.getHours() + 1, 0, 0, 0);
-    } else {
-      // Si es otro día, usar las 9:00 AM
-      reference.setHours(9, 0, 0, 0);
-    }
-
-    const startISO = reference.toISOString();
-    const endRef = new Date(reference.getTime() + 60 * 60 * 1000); // 1 hora de duración
-    const endISO = endRef.toISOString();
+    // Si es hoy, usar la siguiente hora; si no, 9:00 AM — en la zona de la cuenta.
+    const { start: startISO, end: endISO } = buildCreateDefaultTimes(date, 1);
 
     setCreateDefaults({
       start: startISO,
       end: endISO,
-      timeZone: selectedCalendar?.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+      timeZone: timezone,
       title: selectedCalendar?.eventTitle || ''
     });
     setCreateScheduleMode('custom'); // Doble click en día usa modo personalizado
@@ -738,7 +767,7 @@ export const Appointments: React.FC = () => {
         if (!isMounted) return;
 
         const normalizedEvent = normalizeCalendarEvent(appointment, appointmentId);
-        const eventDate = toDateInTimeZone(normalizedEvent.startTime, normalizedEvent.timeZone) ?? new Date(normalizedEvent.startTime);
+        const eventDate = toDateInTimeZone(normalizedEvent.startTime, timezone) ?? new Date(normalizedEvent.startTime);
         const matchingCalendar = calendars.find((calendar) => calendar.id === normalizedEvent.calendarId);
 
         if (matchingCalendar) {
@@ -910,15 +939,22 @@ export const Appointments: React.FC = () => {
 
     if (!draggedEvent) return;
 
-    // Calcular nueva fecha/hora manteniendo la hora original
-    const originalStart = new Date(draggedEvent.startTime);
-    const originalEnd = new Date(draggedEvent.endTime);
+    // Calcular nueva fecha/hora manteniendo la hora original (en la zona de la cuenta)
+    const zonedStart = toDateInTimeZone(draggedEvent.startTime, timezone) ?? new Date(draggedEvent.startTime);
+    const originalDuration = new Date(draggedEvent.endTime).getTime() - new Date(draggedEvent.startTime).getTime();
+    const duration = Number.isFinite(originalDuration) && originalDuration > 0 ? originalDuration : 60 * 60 * 1000;
 
-    // Nueva fecha con la hora original
-    const newStart = new Date(dropDate);
-    newStart.setHours(originalStart.getHours(), originalStart.getMinutes(), 0, 0);
-
-    const duration = originalEnd.getTime() - originalStart.getTime();
+    // Misma hora de pared (zona de la cuenta) sobre el nuevo día → instante UTC
+    const localWall = new Date(
+      dropDate.getFullYear(),
+      dropDate.getMonth(),
+      dropDate.getDate(),
+      zonedStart.getHours(),
+      zonedStart.getMinutes(),
+      0,
+      0
+    );
+    const newStart = convertLocalToUTC(localWall, timezone);
     const newEnd = new Date(newStart.getTime() + duration);
 
     // Cerrar modal primero (si estaba abierto)
@@ -940,7 +976,7 @@ export const Appointments: React.FC = () => {
       assignedUserId: draggedEvent.assignedUserId,
       address: draggedEvent.address,
       notes: draggedEvent.notes,
-      timeZone: draggedEvent.timeZone
+      timeZone: timezone
     };
 
     // Abrir modal con el evento actualizado
@@ -1019,20 +1055,36 @@ export const Appointments: React.FC = () => {
 
     setIsSelecting(false);
 
-    // Calcular inicio y fin (asegurar que start < end)
-    const startTime = new Date(selectionStart.date);
-    startTime.setHours(selectionStart.hour, selectionStart.minute, 0, 0);
-
-    const endTime = new Date(selectionEnd.date);
-    endTime.setHours(selectionEnd.hour, selectionEnd.minute + 15, 0, 0); // +15 min para tener duración
+    // Las horas seleccionadas en la rejilla están en la zona de la cuenta;
+    // se convierten a instantes UTC interpretándolas en esa zona.
+    const startWall = new Date(
+      selectionStart.date.getFullYear(),
+      selectionStart.date.getMonth(),
+      selectionStart.date.getDate(),
+      selectionStart.hour,
+      selectionStart.minute,
+      0,
+      0
+    );
+    const endWall = new Date(
+      selectionEnd.date.getFullYear(),
+      selectionEnd.date.getMonth(),
+      selectionEnd.date.getDate(),
+      selectionEnd.hour,
+      selectionEnd.minute + 15, // +15 min para tener duración
+      0,
+      0
+    );
+    const startUTC = convertLocalToUTC(startWall, timezone);
+    const endUTC = convertLocalToUTC(endWall, timezone);
 
     // Si el usuario arrastró hacia arriba, invertir
-    const actualStart = startTime < endTime ? startTime : endTime;
-    const actualEnd = startTime < endTime ? endTime : startTime;
+    const actualStart = startUTC < endUTC ? startUTC : endUTC;
+    let actualEnd = startUTC < endUTC ? endUTC : startUTC;
 
     // Asegurar duración mínima de 15 minutos
     if (actualEnd.getTime() - actualStart.getTime() < 15 * 60 * 1000) {
-      actualEnd.setMinutes(actualStart.getMinutes() + 15);
+      actualEnd = new Date(actualStart.getTime() + 15 * 60 * 1000);
     }
 
     // Limpiar selección
@@ -1043,12 +1095,12 @@ export const Appointments: React.FC = () => {
     setCreateDefaults({
       start: actualStart.toISOString(),
       end: actualEnd.toISOString(),
-      timeZone: selectedCalendar.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+      timeZone: timezone,
       title: selectedCalendar.eventTitle || ''
     });
     setCreateScheduleMode('custom'); // Selección de tiempo usa modo personalizado
     setIsCreateModalOpen(true);
-  }, [isSelecting, selectionStart, selectionEnd, selectedCalendar]);
+  }, [isSelecting, selectionStart, selectionEnd, selectedCalendar, timezone]);
 
   // useEffect para manejar mouseUp global (finalizar selección de tiempo)
   useEffect(() => {
@@ -1225,7 +1277,7 @@ export const Appointments: React.FC = () => {
                             {event.title || '(Sin título)'}
                           </div>
                           <div className={styles.searchResultMeta}>
-                            {formatLocalDateShort(eventDate)} · {formatTime12h(event.startTime)} · {getStatusLabel(event.appointmentStatus)}
+                            {formatLocalDateShort(eventDate)} · {formatEventTime(event.startTime)} · {getStatusLabel(event.appointmentStatus)}
                           </div>
                         </div>
                       </button>
@@ -1479,7 +1531,7 @@ export const Appointments: React.FC = () => {
                               }}
                             >
                               <span className={styles.eventTime}>
-                                {formatTime12h(event.startTime)}
+                                {formatEventTime(event.startTime)}
                               </span>{' '}
                               {event.title || '(Sin título)'}
 
@@ -1499,7 +1551,7 @@ export const Appointments: React.FC = () => {
                                     {event.title || '(Sin título)'}
                                   </div>
                                   <div className={styles.tooltipTime}>
-                                    {formatTime12h(event.startTime)} - {formatTime12h(event.endTime)}
+                                    {formatEventTime(event.startTime)} - {formatEventTime(event.endTime)}
                                   </div>
                                   <div className={styles.tooltipStatus}>
                                     Estado: {getStatusLabel(event.appointmentStatus)}
@@ -1606,8 +1658,8 @@ export const Appointments: React.FC = () => {
                     columnDate.setDate(startOfWeek.getDate() + dayIndex);
                     const isToday = columnDate.toDateString() === new Date().toDateString();
                     const dayEvents = events.filter((event) => {
-                      const eventDate = toDateInTimeZone(event.startTime, event.timeZone) ?? new Date(event.startTime);
-                      const eventColumnDate = toDateInTimeZone(columnDate.toISOString(), event.timeZone) ?? columnDate;
+                      const eventDate = toDateInTimeZone(event.startTime, timezone) ?? new Date(event.startTime);
+                      const eventColumnDate = toDateInTimeZone(columnDate.toISOString(), timezone) ?? columnDate;
                       return eventDate ? isSameDay(eventDate, eventColumnDate) : false;
                     });
 
@@ -1629,8 +1681,8 @@ export const Appointments: React.FC = () => {
 
                         {/* Eventos posicionados */}
                         {dayEvents.map((event) => {
-                          const startDate = toDateInTimeZone(event.startTime, event.timeZone) ?? new Date(event.startTime);
-                          const endDate = toDateInTimeZone(event.endTime, event.timeZone) ?? new Date(event.endTime);
+                          const startDate = toDateInTimeZone(event.startTime, timezone) ?? new Date(event.startTime);
+                          const endDate = toDateInTimeZone(event.endTime, timezone) ?? new Date(event.endTime);
                           const startHour = startDate.getHours() + startDate.getMinutes() / 60;
                           const endHour = endDate.getHours() + endDate.getMinutes() / 60;
                           const top = (startHour / 24) * 100;
@@ -1662,7 +1714,7 @@ export const Appointments: React.FC = () => {
                               }}
                             >
                               <div className={styles.weekEventTime}>
-                                {formatTime12h(event.startTime)}
+                                {formatEventTime(event.startTime)}
                               </div>
                               <div className={styles.weekEventTitle}>{event.title}</div>
 
@@ -1682,7 +1734,7 @@ export const Appointments: React.FC = () => {
                                     {event.title || '(Sin título)'}
                                   </div>
                                   <div className={styles.tooltipTime}>
-                                    {formatTime12h(event.startTime)} - {formatTime12h(event.endTime)}
+                                    {formatEventTime(event.startTime)} - {formatEventTime(event.endTime)}
                                   </div>
                                   <div className={styles.tooltipStatus}>
                                     Estado: {getStatusLabel(event.appointmentStatus)}
@@ -1744,7 +1796,7 @@ export const Appointments: React.FC = () => {
 
                         {/* Indicador de hora actual */}
                         {(() => {
-                          const now = new Date();
+                          const now = toDateInTimeZone(new Date().toISOString(), timezone) ?? new Date();
                           const isToday = columnDate.toDateString() === now.toDateString();
                           if (!isToday) return null;
 
@@ -1814,15 +1866,15 @@ export const Appointments: React.FC = () => {
                   {(() => {
                     const currentDateZonedBase = currentDate.toISOString();
                     const dayEvents = events.filter((event) => {
-                      const eventDate = toDateInTimeZone(event.startTime, event.timeZone) ?? new Date(event.startTime);
+                      const eventDate = toDateInTimeZone(event.startTime, timezone) ?? new Date(event.startTime);
                       const currentDateZoned =
-                        toDateInTimeZone(currentDateZonedBase, event.timeZone) ?? currentDate;
+                        toDateInTimeZone(currentDateZonedBase, timezone) ?? currentDate;
                       return eventDate ? isSameDay(eventDate, currentDateZoned) : false;
                     });
 
                     return dayEvents.map((event) => {
-                      const startDate = toDateInTimeZone(event.startTime, event.timeZone) ?? new Date(event.startTime);
-                      const endDate = toDateInTimeZone(event.endTime, event.timeZone) ?? new Date(event.endTime);
+                      const startDate = toDateInTimeZone(event.startTime, timezone) ?? new Date(event.startTime);
+                      const endDate = toDateInTimeZone(event.endTime, timezone) ?? new Date(event.endTime);
                       const totalMinutesInDay = 24 * 60;
                       const startMinutes = startDate.getHours() * 60 + startDate.getMinutes();
                       const rawDurationMinutes = Math.max(
@@ -1847,7 +1899,7 @@ export const Appointments: React.FC = () => {
                       const statusLabel = getStatusLabel(event.appointmentStatus);
                       const tooltipText = [
                         displayTitle,
-                        `${formatTime12h(event.startTime)} - ${formatTime12h(event.endTime)}`,
+                        `${formatEventTime(event.startTime)} - ${formatEventTime(event.endTime)}`,
                         displayDescription
                       ].filter(Boolean).join(' • ');
 
@@ -1864,7 +1916,7 @@ export const Appointments: React.FC = () => {
                         >
                           <div className={styles.dayEventHeader}>
                             <span className={styles.dayEventTime}>
-                              {formatTime12h(event.startTime)} - {formatTime12h(event.endTime)}
+                              {formatEventTime(event.startTime)} - {formatEventTime(event.endTime)}
                             </span>
                             <span className={styles.dayEventStatus}>{statusLabel}</span>
                           </div>
@@ -1919,7 +1971,8 @@ export const Appointments: React.FC = () => {
 
                   {/* Indicador de hora actual */}
                   {(() => {
-                    const now = new Date();
+                    const realNow = new Date();
+                    const now = toDateInTimeZone(realNow.toISOString(), timezone) ?? realNow;
                     const isToday = currentDate.toDateString() === now.toDateString();
                     if (!isToday) return null;
 
@@ -1929,7 +1982,7 @@ export const Appointments: React.FC = () => {
                     return (
                       <div className={styles.currentTimeLine} style={{ top: `${position}%` }}>
                         <div className={styles.currentTimeDot}></div>
-                        <div className={styles.currentTimeLabel}>{formatTime12h(now.toISOString())}</div>
+                        <div className={styles.currentTimeLabel}>{formatEventTime(realNow.toISOString())}</div>
                       </div>
                     );
                   })()}
@@ -1967,7 +2020,7 @@ export const Appointments: React.FC = () => {
                     className={styles.upcomingTime}
                     style={{ backgroundColor: `${getEventColor(event.appointmentStatus)}20` }}
                   >
-                    {formatTime12h(event.startTime)}
+                    {formatEventTime(event.startTime)}
                   </div>
                 </div>
               ))
@@ -2017,6 +2070,7 @@ export const Appointments: React.FC = () => {
         mode={selectedBlockedSlot?.id ? 'edit' : 'create'}
         defaultStart={createDefaults.start}
         defaultEnd={createDefaults.end}
+        defaultTimeZone={timezone}
         accessToken={accessToken}
         locationId={locationId}
         onSave={handleSaveBlockedSlot}

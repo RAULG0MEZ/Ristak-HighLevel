@@ -1,3 +1,4 @@
+import { DateTime } from 'luxon';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -336,7 +337,7 @@ export async function getFreeSlots(calendarId, startDate, endDate, accessToken, 
  * @param {string} calendarId - (Opcional) ID del calendario
  * @returns {Promise<Array>} Lista de horarios bloqueados
  */
-export async function getBlockedSlots(locationId, startTime, endTime, accessToken, calendarId = null, calendar = null) {
+export async function getBlockedSlots(locationId, startTime, endTime, accessToken, calendarId = null, calendar = null, timezone = 'UTC') {
   try {
     logger.info(`[HighLevel Calendar] Obteniendo blocked slots para locationId: ${locationId}, rango: ${new Date(startTime).toISOString()} - ${new Date(endTime).toISOString()}`);
 
@@ -421,7 +422,10 @@ export async function getBlockedSlots(locationId, startTime, endTime, accessToke
     logger.info(`[HighLevel Calendar] Total: ${uniqueSlots.length} blocked slots únicos`);
     const blockedSlots = uniqueSlots;
 
-    // Transformar a formato estándar si es necesario
+    // Transformar a formato estándar si es necesario.
+    // IMPORTANTE: date/startTime/endTime se devuelven en la ZONA DE LA CUENTA para que
+    // los bloqueos queden alineados con las citas en la rejilla del calendario.
+    const zone = timezone || 'UTC';
     const normalizedSlots = blockedSlots.map(slot => {
       // Si el slot ya tiene el formato correcto (date + startTime + endTime separados)
       if (slot.date && typeof slot.startTime === 'string' && slot.startTime.length === 5) {
@@ -433,15 +437,21 @@ export async function getBlockedSlots(locationId, startTime, endTime, accessToke
       }
 
       // Si viene en formato ISO completo (del API de HighLevel)
-      // startTime: "2025-10-28T15:00:00.000Z" -> extraer date y time
-      const startDate = new Date(slot.startTime);
-      const endDate = new Date(slot.endTime || startDate.getTime() + 30 * 60 * 1000);
+      // startTime: "2025-10-28T15:00:00.000Z" -> convertir a la zona de la cuenta
+      const startDt = DateTime.fromISO(slot.startTime, { setZone: true }).setZone(zone);
+      const endDt = (slot.endTime
+        ? DateTime.fromISO(slot.endTime, { setZone: true })
+        : startDt.plus({ minutes: 30 })
+      ).setZone(zone);
+
+      const safeStart = startDt.isValid ? startDt : DateTime.fromJSDate(new Date(slot.startTime)).setZone(zone);
+      const safeEnd = endDt.isValid ? endDt : safeStart.plus({ minutes: 30 });
 
       return {
         id: slot.id, // IMPORTANTE: Incluir ID para editar/eliminar
-        date: startDate.toISOString().split('T')[0], // YYYY-MM-DD
-        startTime: startDate.toISOString().split('T')[1].slice(0, 5), // HH:mm (en UTC)
-        endTime: endDate.toISOString().split('T')[1].slice(0, 5), // HH:mm (en UTC)
+        date: safeStart.toFormat('yyyy-MM-dd'), // YYYY-MM-DD (zona de la cuenta)
+        startTime: safeStart.toFormat('HH:mm'), // HH:mm (zona de la cuenta)
+        endTime: safeEnd.toFormat('HH:mm'), // HH:mm (zona de la cuenta)
         reason: slot.title || slot.reason || 'Bloqueado',
         blockedBy: slot.assignedUserId || slot.blockedBy || null
       };

@@ -13,6 +13,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: TZ
+        value: UTC
       - key: JWT_SECRET
         generateValue: true
       - key: DATABASE_URL

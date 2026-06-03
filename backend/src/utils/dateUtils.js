@@ -10,44 +10,132 @@ let cachedTimezone = null
 let cacheTimestamp = null
 const CACHE_TTL_MS = 60 * 60 * 1000 // 1 hora
 
+// Clave en app_config donde se guarda la zona horaria elegida en Ristak.
+export const ACCOUNT_TIMEZONE_CONFIG_KEY = 'account_timezone'
+
 /**
- * Obtiene la zona horaria configurada en HighLevel.
- * Si no hay configuración, retorna la zona horaria por defecto.
+ * Valida que una cadena sea una zona horaria IANA reconocida por el runtime.
+ */
+export function isValidTimezone(tz) {
+  if (!tz || typeof tz !== 'string') return false
+  try {
+    // Lanza RangeError si la zona no existe.
+    Intl.DateTimeFormat('en-US', { timeZone: tz })
+    return true
+  } catch (error) {
+    return false
+  }
+}
+
+/**
+ * Invalida el cache de zona horaria. Llamar cuando el usuario cambia la zona
+ * en Ristak o cuando se actualiza la config de HighLevel.
+ */
+export function invalidateTimezoneCache() {
+  cachedTimezone = null
+  cacheTimestamp = null
+}
+
+/**
+ * Obtiene la zona horaria efectiva de la cuenta con esta prioridad:
+ *   1. Override explícito guardado en Ristak (app_config.account_timezone)
+ *   2. Zona horaria de HighLevel (location_data.timezone)
+ *   3. Default (America/Mexico_City)
+ *
+ * Esta es la ÚNICA fuente de verdad de zona horaria del backend. No depende de
+ * que HighLevel esté conectado: usuarios sin GHL pueden fijar su zona en Ristak.
  * INCLUYE CACHE para evitar queries repetidas a la DB.
  */
-export async function getTimezoneFromGHL() {
-  try {
-    // Si hay cache válido, usarlo
-    const now = Date.now()
-    if (cachedTimezone && cacheTimestamp && (now - cacheTimestamp) < CACHE_TTL_MS) {
-      return cachedTimezone
-    }
+export async function getAccountTimezone() {
+  const now = Date.now()
+  if (cachedTimezone && cacheTimestamp && (now - cacheTimestamp) < CACHE_TTL_MS) {
+    return cachedTimezone
+  }
 
-    const config = await db.get(
-      'SELECT location_data FROM highlevel_config LIMIT 1'
+  let timezone = DEFAULT_TIMEZONE
+
+  try {
+    // 1) Override de la cuenta configurado en Ristak
+    const override = await db.get(
+      'SELECT config_value FROM app_config WHERE config_key = ?',
+      [ACCOUNT_TIMEZONE_CONFIG_KEY]
     )
 
-    if (config?.location_data) {
-      const locationData = JSON.parse(config.location_data)
-      const timezone = locationData.timezone || DEFAULT_TIMEZONE
-
-      // Actualizar cache
-      cachedTimezone = timezone
-      cacheTimestamp = now
-
-      return timezone
+    if (override?.config_value && isValidTimezone(override.config_value)) {
+      timezone = override.config_value
+    } else {
+      // 2) Zona horaria de HighLevel (si está conectado)
+      const config = await db.get('SELECT location_data FROM highlevel_config LIMIT 1')
+      if (config?.location_data) {
+        const locationData = JSON.parse(config.location_data)
+        if (locationData?.timezone && isValidTimezone(locationData.timezone)) {
+          timezone = locationData.timezone
+        }
+      }
     }
-
-    // Cachear default también
-    cachedTimezone = DEFAULT_TIMEZONE
-    cacheTimestamp = now
-    return DEFAULT_TIMEZONE
   } catch (error) {
-    // En caso de error, usar default y cachearlo
-    cachedTimezone = DEFAULT_TIMEZONE
-    cacheTimestamp = Date.now()
-    return DEFAULT_TIMEZONE
+    // 3) Ante cualquier error, usar el default
+    timezone = DEFAULT_TIMEZONE
   }
+
+  cachedTimezone = timezone
+  cacheTimestamp = Date.now()
+  return timezone
+}
+
+/**
+ * Alias retrocompatible. La resolución real vive en getAccountTimezone().
+ * @deprecated usar getAccountTimezone()
+ */
+export async function getTimezoneFromGHL() {
+  return getAccountTimezone()
+}
+
+/**
+ * Normaliza CUALQUIER fecha a un ISO string en UTC, listo para guardar en BD.
+ *
+ * Reglas:
+ *  - Si la cadena trae zona explícita (Z o ±HH:MM), se respeta ese offset.
+ *  - Si la cadena es "naive" (sin zona), se interpreta en `fallbackZone`
+ *    (la zona del negocio), NO en la del servidor.
+ *  - Garantiza que el instante guardado sea correcto sin importar si la columna
+ *    es `timestamptz` o `timestamp` (Postgres descarta el offset en `timestamp`,
+ *    por eso normalizamos a UTC antes de insertar).
+ *
+ * @param {string|Date} value
+ * @param {string} [fallbackZone] zona para fechas sin offset (default: zona México)
+ * @returns {string|null} ISO UTC ("...Z") o el valor original si es inválido
+ */
+export function normalizeToUtcIso(value, fallbackZone = DEFAULT_TIMEZONE) {
+  if (value === null || value === undefined || value === '') return value
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? value : value.toISOString()
+  }
+
+  const str = String(value).trim()
+  if (!str) return value
+
+  const zone = isValidTimezone(fallbackZone) ? fallbackZone : DEFAULT_TIMEZONE
+  const hasExplicitZone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(str)
+
+  let dt
+  if (hasExplicitZone) {
+    dt = DateTime.fromISO(str, { setZone: true })
+  } else {
+    dt = DateTime.fromISO(str, { zone })
+    if (!dt.isValid) {
+      // Soportar formato SQL "YYYY-MM-DD HH:mm:ss"
+      dt = DateTime.fromSQL(str, { zone })
+    }
+  }
+
+  if (!dt || !dt.isValid) {
+    const fallback = new Date(str)
+    return Number.isNaN(fallback.getTime()) ? value : fallback.toISOString()
+  }
+
+  return dt.toUTC().toISO({ suppressMilliseconds: false })
 }
 
 /**

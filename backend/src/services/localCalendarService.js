@@ -1,8 +1,10 @@
 import crypto from 'crypto'
+import { DateTime } from 'luxon'
 import { db } from '../config/database.js'
 import { logger } from '../utils/logger.js'
 import { updateSingleContactStats } from '../utils/updateContactsStats.js'
 import { normalizePhoneForStorage } from '../utils/phoneUtils.js'
+import { normalizeToUtcIso, getAccountTimezone, isValidTimezone } from '../utils/dateUtils.js'
 import { finalizePreparedPhoneUpsert, prepareContactPhoneUpsert } from './contactIdentityService.js'
 import GHLClient from './ghlClient.js'
 import * as highlevelCalendarService from './highlevelCalendarService.js'
@@ -10,7 +12,6 @@ import * as highlevelCalendarService from './highlevelCalendarService.js'
 const LOCAL_CALENDAR_PREFIX = 'rstk_cal'
 const LOCAL_APPOINTMENT_PREFIX = 'rstk_appt'
 const DEFAULT_EVENT_COLOR = '#3b82f6'
-const DEFAULT_TIMEZONE = 'America/Mexico_City'
 
 function makeId(prefix) {
   return `${prefix}_${crypto.randomUUID()}`
@@ -436,6 +437,17 @@ function normalizeAppointmentRecord(raw = {}, options = {}) {
 
 export async function upsertLocalAppointment(raw = {}, options = {}) {
   const normalized = normalizeAppointmentRecord(raw, options)
+
+  // Normalizar TODOS los instantes a UTC real antes de guardar.
+  // GHL y el modal mandan ISO con offset (ej "...-06:00"); si la columna es
+  // `timestamp` (sin zona) Postgres descartaría el offset y guardaría hora local.
+  // Convirtiendo a UTC aquí el instante queda correcto en cualquier tipo de columna.
+  const accountZone = await getAccountTimezone()
+  normalized.startTime = normalizeToUtcIso(normalized.startTime, accountZone)
+  normalized.endTime = normalizeToUtcIso(normalized.endTime, accountZone)
+  normalized.dateAdded = normalizeToUtcIso(normalized.dateAdded, accountZone)
+  normalized.dateUpdated = normalizeToUtcIso(normalized.dateUpdated, accountZone)
+
   const existingByGhl = normalized.ghlAppointmentId
     ? await db.get('SELECT id FROM appointments WHERE ghl_appointment_id = ?', [normalized.ghlAppointmentId])
     : null
@@ -680,48 +692,66 @@ function isRistakOwnedRow(row = {}, prefix = '') {
   return source === 'ristak' || (prefix && id.startsWith(prefix))
 }
 
-export async function getLocalFreeSlots(calendarId, startDate, endDate, timezone = DEFAULT_TIMEZONE) {
+export async function getLocalFreeSlots(calendarId, startDate, endDate, timezone) {
   const calendar = await getLocalCalendar(calendarId)
   if (!calendar) return []
 
-  const start = new Date(`${startDate}T00:00:00`)
-  const end = new Date(`${endDate}T00:00:00`)
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return []
+  // Generar los horarios en la ZONA DE LA CUENTA, no en la del servidor (UTC en Render).
+  // Así "9:00–17:00" significan 9–17 en la zona del negocio y no 9–17 UTC.
+  const zone = isValidTimezone(timezone) ? timezone : await getAccountTimezone()
 
-  const rangeStart = start.getTime()
-  const rangeEnd = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59, 59, 999).getTime()
+  const startDay = DateTime.fromISO(startDate, { zone }).startOf('day')
+  const endDay = DateTime.fromISO(endDate, { zone }).startOf('day')
+  if (!startDay.isValid || !endDay.isValid || endDay < startDay) return []
+
+  // Las citas existentes están en UTC en la BD; comparamos por instante absoluto.
+  const rangeStart = startDay.toUTC().toISO()
+  const rangeEnd = endDay.endOf('day').toUTC().toISO()
   const existing = await listLocalAppointments({ startTime: rangeStart, endTime: rangeEnd, calendarId })
+
   const durationMinutes = Math.max(1, toInt(calendar.slotDuration, 60))
   const intervalMinutes = Math.max(1, toInt(calendar.slotInterval, durationMinutes))
+  const nowMs = Date.now()
   const slotsByDate = []
 
-  for (const cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
-    const dateKey = cursor.toISOString().split('T')[0]
-    const intervals = getCalendarOpenIntervals(calendar, cursor)
+  for (let cursor = startDay; cursor <= endDay; cursor = cursor.plus({ days: 1 })) {
+    const dateKey = cursor.toISODate()
+    // getCalendarOpenIntervals usa getDay() (0=domingo); construir una Date con los
+    // componentes de la fecha preserva el día de la semana correcto.
+    const intervals = getCalendarOpenIntervals(calendar, new Date(cursor.year, cursor.month - 1, cursor.day))
     const slots = []
 
     for (const interval of intervals) {
-      const open = new Date(cursor)
-      open.setHours(toInt(interval.openHour, 9), toInt(interval.openMinute, 0), 0, 0)
-      const close = new Date(cursor)
-      close.setHours(toInt(interval.closeHour, 17), toInt(interval.closeMinute, 0), 0, 0)
+      const open = cursor.set({
+        hour: toInt(interval.openHour, 9),
+        minute: toInt(interval.openMinute, 0),
+        second: 0,
+        millisecond: 0
+      })
+      const close = cursor.set({
+        hour: toInt(interval.closeHour, 17),
+        minute: toInt(interval.closeMinute, 0),
+        second: 0,
+        millisecond: 0
+      })
 
-      for (let slotStart = open.getTime(); slotStart + durationMinutes * 60000 <= close.getTime(); slotStart += intervalMinutes * 60000) {
-        const slotEnd = slotStart + durationMinutes * 60000
+      for (let slot = open; slot.plus({ minutes: durationMinutes }) <= close; slot = slot.plus({ minutes: intervalMinutes })) {
+        const slotStartMs = slot.toMillis()
+        const slotEndMs = slot.plus({ minutes: durationMinutes }).toMillis()
         const hasConflict = existing.some(event => overlaps(
-          slotStart,
-          slotEnd,
+          slotStartMs,
+          slotEndMs,
           new Date(event.startTime).getTime(),
           new Date(event.endTime || event.startTime).getTime()
         ))
 
-        if (!hasConflict && slotStart >= Date.now()) {
-          slots.push(new Date(slotStart).toISOString())
+        if (!hasConflict && slotStartMs >= nowMs) {
+          slots.push(slot.toUTC().toISO())
         }
       }
     }
 
-    slotsByDate.push({ date: dateKey, slots, timezone })
+    slotsByDate.push({ date: dateKey, slots, timezone: zone })
   }
 
   return slotsByDate
