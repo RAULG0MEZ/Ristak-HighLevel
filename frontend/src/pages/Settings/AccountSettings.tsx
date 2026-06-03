@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Check, CheckCircle, ChevronDown, Loader2, Lock, Save, Upload, User, X } from 'lucide-react'
 import { Button, Card } from '@/components/common'
 import { useAuth } from '@/contexts/AuthContext'
@@ -39,6 +40,9 @@ export const AccountSettings: React.FC = () => {
   })
   const [openDropdown, setOpenDropdown] = useState<'customer' | 'lead' | null>(null)
   const [savingLabels, setSavingLabels] = useState(false)
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null)
+  const customerTriggerRef = useRef<HTMLButtonElement>(null)
+  const leadTriggerRef = useRef<HTMLButtonElement>(null)
 
   const currentUsername = user?.username || 'admin'
   const visibleProfilePhoto = isEditingPhoto ? profilePhotoDraft : profilePhoto
@@ -58,12 +62,32 @@ export const AccountSettings: React.FC = () => {
         setOpenDropdown(null)
       }
     }
+    const handleClose = () => setOpenDropdown(null)
 
     if (openDropdown) {
       document.addEventListener('click', handleClickOutside)
-      return () => document.removeEventListener('click', handleClickOutside)
+      window.addEventListener('scroll', handleClose, true)
+      window.addEventListener('resize', handleClose)
+      return () => {
+        document.removeEventListener('click', handleClickOutside)
+        window.removeEventListener('scroll', handleClose, true)
+        window.removeEventListener('resize', handleClose)
+      }
     }
   }, [openDropdown])
+
+  const handleOpenDropdown = (type: 'customer' | 'lead') => {
+    if (openDropdown === type) {
+      setOpenDropdown(null)
+      return
+    }
+    const ref = type === 'customer' ? customerTriggerRef : leadTriggerRef
+    if (ref.current) {
+      const rect = ref.current.getBoundingClientRect()
+      setDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width })
+    }
+    setOpenDropdown(type)
+  }
 
   const handleStartPhotoEdit = () => {
     setProfilePhotoDraft(profilePhoto || '')
@@ -519,18 +543,48 @@ export const AccountSettings: React.FC = () => {
                   <label className={styles.label}>Clientes</label>
                   <div className={styles.customDropdown} data-labels-dropdown>
                     <button
+                      ref={customerTriggerRef}
                       type="button"
                       className={styles.dropdownTrigger}
-                      onClick={() => setOpenDropdown(openDropdown === 'customer' ? null : 'customer')}
+                      onClick={() => handleOpenDropdown('customer')}
                       disabled={savingLabels}
                     >
                       <span>{customLabels.customer || 'Seleccionar...'}</span>
                       <ChevronDown size={18} className={openDropdown === 'customer' ? styles.iconRotated : ''} />
                     </button>
-                    {openDropdown === 'customer' && (
-                      <div className={styles.dropdownMenuWrapper}>
-                        <div className={styles.dropdownMenu}>
-                          {CUSTOMER_LABEL_OPTIONS.map((option) => (
+                  </div>
+                </div>
+
+                <div className={styles.labelField}>
+                  <label className={styles.label}>Prospectos</label>
+                  <div className={styles.customDropdown} data-labels-dropdown>
+                    <button
+                      ref={leadTriggerRef}
+                      type="button"
+                      className={styles.dropdownTrigger}
+                      onClick={() => handleOpenDropdown('lead')}
+                      disabled={savingLabels}
+                    >
+                      <span>{customLabels.lead || 'Seleccionar...'}</span>
+                      <ChevronDown size={18} className={openDropdown === 'lead' ? styles.iconRotated : ''} />
+                    </button>
+                  </div>
+                </div>
+
+                {openDropdown && dropdownPos && createPortal(
+                  <div
+                    data-labels-dropdown
+                    style={{
+                      position: 'fixed',
+                      top: dropdownPos.top,
+                      left: dropdownPos.left,
+                      width: dropdownPos.width,
+                      zIndex: 9999
+                    }}
+                  >
+                    <div className={styles.dropdownMenu}>
+                      {openDropdown === 'customer'
+                        ? CUSTOMER_LABEL_OPTIONS.map((option) => (
                             <button
                               key={option}
                               type="button"
@@ -543,29 +597,8 @@ export const AccountSettings: React.FC = () => {
                               <span>{option}</span>
                               {customLabels.customer === option && <Check size={16} />}
                             </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className={styles.labelField}>
-                  <label className={styles.label}>Prospectos</label>
-                  <div className={styles.customDropdown} data-labels-dropdown>
-                    <button
-                      type="button"
-                      className={styles.dropdownTrigger}
-                      onClick={() => setOpenDropdown(openDropdown === 'lead' ? null : 'lead')}
-                      disabled={savingLabels}
-                    >
-                      <span>{customLabels.lead || 'Seleccionar...'}</span>
-                      <ChevronDown size={18} className={openDropdown === 'lead' ? styles.iconRotated : ''} />
-                    </button>
-                    {openDropdown === 'lead' && (
-                      <div className={styles.dropdownMenuWrapper}>
-                        <div className={styles.dropdownMenu}>
-                          {LEAD_LABEL_OPTIONS.map((option) => (
+                          ))
+                        : LEAD_LABEL_OPTIONS.map((option) => (
                             <button
                               key={option}
                               type="button"
@@ -578,12 +611,12 @@ export const AccountSettings: React.FC = () => {
                               <span>{option}</span>
                               {customLabels.lead === option && <Check size={16} />}
                             </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                          ))
+                      }
+                    </div>
+                  </div>,
+                  document.body
+                )}
               </div>
 
               {savingLabels && (
