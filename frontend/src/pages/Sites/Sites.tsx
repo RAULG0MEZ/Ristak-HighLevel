@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   DndContext,
   PointerSensor,
@@ -15,6 +16,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
+  AlertTriangle,
   CheckCircle2,
   ChevronRight,
   DollarSign,
@@ -314,6 +316,7 @@ const defaultBlockPayload = (blockType: SiteBlockType, siteId: string) => {
 
 export const Sites: React.FC = () => {
   const { showToast } = useNotification()
+  const navigate = useNavigate()
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
   const [section, setSection] = useState<SitesSection>('landings')
   const [sites, setSites] = useState<PublicSite[]>([])
@@ -327,6 +330,11 @@ export const Sites: React.FC = () => {
   const [createFlow, setCreateFlow] = useState<CreateFlow>('closed')
   const [leadRows, setLeadRows] = useState<LeadRow[]>([])
   const [loadingLeads, setLoadingLeads] = useState(false)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [showLeaveModal, setShowLeaveModal] = useState(false)
+  const [pendingLeaveAction, setPendingLeaveAction] = useState<(() => void) | null>(null)
+  const guardHistoryArmedRef = useRef(false)
+  const allowNavigationRef = useRef(false)
 
   const landings = useMemo(
     () => sites.filter(site => site.siteType === 'landing_page'),
@@ -347,6 +355,60 @@ export const Sites: React.FC = () => {
       ? (isFormSite(selectedSite) ? selectedSite : null)
       : null
   const publicUrl = editorSite ? buildPublicUrl(editorSite) : ''
+  const showHeaderActions = createFlow === 'closed' && !editorSite
+
+  const performUrlNavigation = useCallback((href: string) => {
+    const target = new URL(href, window.location.href)
+
+    if (target.origin === window.location.origin) {
+      navigate(`${target.pathname}${target.search}${target.hash}`)
+      return
+    }
+
+    window.location.href = target.href
+  }, [navigate])
+
+  const requestLeaveEditor = useCallback((action: () => void) => {
+    if (!hasUnsavedChanges) {
+      action()
+      return
+    }
+
+    setPendingLeaveAction(() => action)
+    setShowLeaveModal(true)
+  }, [hasUnsavedChanges])
+
+  const markEditorDirty = useCallback(() => {
+    if (editorSite) {
+      setHasUnsavedChanges(true)
+    }
+  }, [editorSite])
+
+  const handleCancelLeaveEditor = useCallback(() => {
+    setShowLeaveModal(false)
+    setPendingLeaveAction(null)
+
+    if (hasUnsavedChanges && !guardHistoryArmedRef.current) {
+      window.history.pushState({ ristakSitesUnsavedGuard: true }, '', window.location.href)
+      guardHistoryArmedRef.current = true
+    }
+  }, [hasUnsavedChanges])
+
+  const handleConfirmLeaveEditor = useCallback(() => {
+    const action = pendingLeaveAction
+
+    allowNavigationRef.current = true
+    guardHistoryArmedRef.current = false
+    setHasUnsavedChanges(false)
+    setShowLeaveModal(false)
+    setPendingLeaveAction(null)
+
+    action?.()
+
+    window.setTimeout(() => {
+      allowNavigationRef.current = false
+    }, 500)
+  }, [pendingLeaveAction])
 
   useEffect(() => {
     loadSites()
@@ -362,6 +424,72 @@ export const Sites: React.FC = () => {
       loadLeads()
     }
   }, [section, sites.length])
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) {
+      guardHistoryArmedRef.current = false
+      return
+    }
+
+    if (!guardHistoryArmedRef.current) {
+      window.history.pushState({ ristakSitesUnsavedGuard: true }, '', window.location.href)
+      guardHistoryArmedRef.current = true
+    }
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (allowNavigationRef.current) return
+
+      event.preventDefault()
+      event.returnValue = ''
+    }
+
+    const handleDocumentClick = (event: MouseEvent) => {
+      if (
+        allowNavigationRef.current ||
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.shiftKey
+      ) {
+        return
+      }
+
+      const target = event.target instanceof Element ? event.target : null
+      const anchor = target?.closest('a[href]') as HTMLAnchorElement | null
+      if (!anchor || anchor.target === '_blank' || anchor.hasAttribute('download')) return
+
+      const href = anchor.getAttribute('href')
+      if (!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:')) return
+
+      const targetUrl = new URL(anchor.href, window.location.href)
+      if (targetUrl.href === window.location.href) return
+
+      event.preventDefault()
+      event.stopPropagation()
+      setPendingLeaveAction(() => () => performUrlNavigation(targetUrl.href))
+      setShowLeaveModal(true)
+    }
+
+    const handlePopState = () => {
+      if (allowNavigationRef.current) return
+
+      guardHistoryArmedRef.current = false
+      setPendingLeaveAction(() => () => window.history.back())
+      setShowLeaveModal(true)
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    document.addEventListener('click', handleDocumentClick, true)
+    window.addEventListener('popstate', handlePopState)
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      document.removeEventListener('click', handleDocumentClick, true)
+      window.removeEventListener('popstate', handlePopState)
+    }
+  }, [hasUnsavedChanges, performUrlNavigation])
 
   const loadSites = async (selectId?: string) => {
     setLoading(true)
@@ -408,25 +536,33 @@ export const Sites: React.FC = () => {
     }
   }
 
-  const selectSite = async (siteId: string) => {
+  const openSite = async (siteId: string) => {
     try {
       const site = await sitesService.getSite(siteId)
       setSelectedSite(site)
       setSelectedBlockId(site.blocks?.[0]?.id || '')
       setCreateFlow('closed')
+      setHasUnsavedChanges(false)
     } catch (error) {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo abrir el site')
     }
   }
 
-  const handleSectionChange = async (nextSection: SitesSection) => {
+  const selectSite = (siteId: string) => {
+    requestLeaveEditor(() => {
+      void openSite(siteId)
+    })
+  }
+
+  const changeSection = async (nextSection: SitesSection) => {
     setSection(nextSection)
     setCreateFlow('closed')
+    setHasUnsavedChanges(false)
 
     if (nextSection === 'landings') {
       const first = selectedSite && isLanding(selectedSite) ? selectedSite : landings[0]
       if (first) {
-        await selectSite(first.id)
+        await openSite(first.id)
       } else {
         setSelectedSite(null)
         setSelectedBlockId('')
@@ -436,12 +572,27 @@ export const Sites: React.FC = () => {
     if (nextSection === 'forms') {
       const first = selectedSite && isFormSite(selectedSite) ? selectedSite : forms[0]
       if (first) {
-        await selectSite(first.id)
+        await openSite(first.id)
       } else {
         setSelectedSite(null)
         setSelectedBlockId('')
       }
     }
+  }
+
+  const handleSectionChange = (nextSection: SitesSection) => {
+    if (nextSection === section) return
+
+    requestLeaveEditor(() => {
+      void changeSection(nextSection)
+    })
+  }
+
+  const handleStartCreateFlow = () => {
+    requestLeaveEditor(() => {
+      setCreateFlow('choose-kind')
+      setHasUnsavedChanges(false)
+    })
   }
 
   const syncSelectedSite = (site: PublicSite) => {
@@ -451,6 +602,7 @@ export const Sites: React.FC = () => {
   }
 
   const updateSelectedSite = (patch: Partial<PublicSite>) => {
+    markEditorDirty()
     setSelectedSite(current => current ? { ...current, ...patch } : current)
   }
 
@@ -474,6 +626,7 @@ export const Sites: React.FC = () => {
       setSelectedBlockId(site.blocks?.[0]?.id || '')
       setSection(siteType === 'landing_page' ? 'landings' : 'forms')
       setCreateFlow('closed')
+      setHasUnsavedChanges(false)
       showToast('success', 'Sitio creado', 'Ya estas en el editor visual')
     } catch (error) {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo crear el sitio')
@@ -499,6 +652,7 @@ export const Sites: React.FC = () => {
         metaEventName: selectedSite.metaEventName
       })
       syncSelectedSite(site)
+      setHasUnsavedChanges(false)
       showToast('success', statusOverride === 'published' ? 'Publicado' : 'Guardado', 'Sitio actualizado')
     } catch (error) {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo guardar')
@@ -540,6 +694,7 @@ export const Sites: React.FC = () => {
       const next = pool[0] || nextSites[0]
       setSelectedSite(next ? await sitesService.getSite(next.id) : null)
       setSelectedBlockId('')
+      setHasUnsavedChanges(false)
       showToast('success', 'Eliminado', 'Sitio eliminado')
     } catch (error) {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo eliminar')
@@ -559,6 +714,7 @@ export const Sites: React.FC = () => {
   }
 
   const patchBlockLocal = (blockId: string, patch: Partial<SiteBlock>) => {
+    markEditorDirty()
     setSelectedSite(current => {
       if (!current?.blocks) return current
       return {
@@ -591,6 +747,7 @@ export const Sites: React.FC = () => {
     try {
       const site = await sitesService.updateBlock(selectedSite.id, block.id, block)
       syncSelectedSite(site)
+      setHasUnsavedChanges(false)
     } catch (error) {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo guardar el bloque')
     }
@@ -613,12 +770,17 @@ export const Sites: React.FC = () => {
     const newIndex = blocks.findIndex(block => block.id === event.over?.id)
     if (oldIndex < 0 || newIndex < 0) return
 
+    const wasAlreadyDirty = hasUnsavedChanges
     const nextBlocks = arrayMove(blocks, oldIndex, newIndex).map((block, index) => ({ ...block, sortOrder: index }))
+    setHasUnsavedChanges(true)
     setSelectedSite(current => current ? { ...current, blocks: nextBlocks } : current)
 
     try {
       const site = await sitesService.reorderBlocks(selectedSite.id, nextBlocks.map(block => block.id))
       syncSelectedSite(site)
+      if (!wasAlreadyDirty) {
+        setHasUnsavedChanges(false)
+      }
     } catch (error) {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo reordenar')
     }
@@ -635,118 +797,121 @@ export const Sites: React.FC = () => {
   }
 
   return (
-    <div className={styles.container}>
-      <header className={styles.header}>
-        <div>
-          <h1 className={styles.title}>Sitios</h1>
-          <p className={styles.subtitle}>Constructor visual controlado para landings, formularios, leads y publicacion por dominio verificado.</p>
-        </div>
-        <div className={styles.headerActions}>
-          <Button variant="secondary" onClick={() => loadSites(selectedSite?.id)}>
-            <RefreshCw size={16} />
-            Refrescar
-          </Button>
-          <Button onClick={() => setCreateFlow('choose-kind')}>
-            <Plus size={16} />
-            {getCreateButtonLabel(section)}
-          </Button>
-        </div>
-      </header>
-
-      <div className={styles.sitesShell}>
-        <aside className={styles.internalSidebar}>
-          <nav className={styles.sectionNav}>
-            {sectionItems.map(item => (
-              <button
-                key={item.id}
-                type="button"
-                className={`${styles.sectionButton} ${section === item.id ? styles.sectionButtonActive : ''}`}
-                onClick={() => handleSectionChange(item.id)}
-              >
-                {item.icon}
-                <span>{item.label}</span>
-              </button>
-            ))}
-          </nav>
-
-          {(section === 'landings' || section === 'forms') && (
-            <div className={styles.siteList}>
-              <div className={styles.panelHeader}>
-                <strong>{section === 'landings' ? 'Landings' : 'Formularios'}</strong>
-                <span>{section === 'landings' ? landings.length : forms.length}</span>
-              </div>
-              <div className={styles.siteItems}>
-                {(section === 'landings' ? landings : forms).length === 0 ? (
-                  <div className={styles.emptyState}>
-                    <Globe2 size={22} />
-                    <p>No hay nada creado todavia.</p>
-                  </div>
-                ) : (section === 'landings' ? landings : forms).map(site => (
-                  <button
-                    key={site.id}
-                    type="button"
-                    className={`${styles.siteItem} ${selectedSite?.id === site.id ? styles.siteItemActive : ''}`}
-                    onClick={() => selectSite(site.id)}
-                  >
-                    <span className={styles.siteName}>{site.name}</span>
-                    <span className={styles.siteDomain}>{site.domain || 'Sin dominio'}</span>
-                    <span className={`${styles.statusPill} ${getStatusClass(site)}`}>{getStatusLabel(site)}</span>
-                  </button>
-                ))}
-              </div>
+    <>
+      <div className={styles.container}>
+        <header className={styles.header}>
+          <div>
+            <h1 className={styles.title}>Sitios</h1>
+            <p className={styles.subtitle}>Constructor visual controlado para landings, formularios, leads y publicacion por dominio verificado.</p>
+          </div>
+          {showHeaderActions && (
+            <div className={styles.headerActions}>
+              <Button variant="secondary" onClick={() => loadSites(selectedSite?.id)}>
+                <RefreshCw size={16} />
+                Refrescar
+              </Button>
+              <Button onClick={handleStartCreateFlow}>
+                <Plus size={16} />
+                {getCreateButtonLabel(section)}
+              </Button>
             </div>
           )}
-        </aside>
+        </header>
 
-        <main className={styles.mainSurface}>
-          {createFlow !== 'closed' ? (
-            <CreateFlowPanel
-              step={createFlow}
-              creating={creating}
-              onStepChange={setCreateFlow}
-              onCreate={handleCreateSite}
-            />
-          ) : section === 'leads' ? (
-            <LeadsPanel rows={leadRows} loading={loadingLeads} onRefresh={loadLeads} />
-          ) : section === 'domains' ? (
-            <DomainsPanel
-              sites={sites}
-              selectedSite={selectedSite}
-              verifying={verifying}
-              saving={saving}
-              onSelect={selectSite}
-              onPatchSite={updateSelectedSite}
-              onSaveSite={handleSaveSite}
-              onVerifyDomain={handleVerifyDomain}
-            />
-          ) : editorSite ? (
-            <section className={styles.builder}>
-              <div className={styles.builderHeader}>
-                <div>
-                  <span className={`${styles.statusPill} ${getStatusClass(editorSite)}`}>{getStatusLabel(editorSite)}</span>
-                  <h2>{editorSite.name}</h2>
-                  <p>{editorSite.siteType === 'landing_page' ? 'Editor visual de landing page' : editorSite.siteType === 'interactive_form' ? 'Formulario interactivo, una pregunta por pantalla' : 'Formulario de una sola pagina'}</p>
+        <div className={styles.sitesShell}>
+          <aside className={styles.internalSidebar}>
+            <nav className={styles.sectionNav}>
+              {sectionItems.map(item => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`${styles.sectionButton} ${section === item.id ? styles.sectionButtonActive : ''}`}
+                  onClick={() => handleSectionChange(item.id)}
+                >
+                  {item.icon}
+                  <span>{item.label}</span>
+                </button>
+              ))}
+            </nav>
+
+            {(section === 'landings' || section === 'forms') && (
+              <div className={styles.siteList}>
+                <div className={styles.panelHeader}>
+                  <strong>{section === 'landings' ? 'Landings' : 'Formularios'}</strong>
+                  <span>{section === 'landings' ? landings.length : forms.length}</span>
                 </div>
-                <div className={styles.editorActions}>
-                  {publicUrl && (
-                    <a className={styles.iconLink} href={publicUrl} target="_blank" rel="noreferrer">
-                      <ExternalLink size={16} />
-                      Abrir
-                    </a>
-                  )}
-                  <Button variant="secondary" onClick={() => handleSaveSite()} loading={saving}>
-                    <Save size={16} />
-                    Guardar
-                  </Button>
-                  <Button onClick={() => handleSaveSite('published')} loading={saving}>
-                    <Send size={16} />
-                    Publicar
-                  </Button>
-                  <Button variant="danger" onClick={handleDeleteSite}>
-                    <Trash2 size={16} />
-                  </Button>
+                <div className={styles.siteItems}>
+                  {(section === 'landings' ? landings : forms).length === 0 ? (
+                    <div className={styles.emptyState}>
+                      <Globe2 size={22} />
+                      <p>No hay nada creado todavia.</p>
+                    </div>
+                  ) : (section === 'landings' ? landings : forms).map(site => (
+                    <button
+                      key={site.id}
+                      type="button"
+                      className={`${styles.siteItem} ${selectedSite?.id === site.id ? styles.siteItemActive : ''}`}
+                      onClick={() => selectSite(site.id)}
+                    >
+                      <span className={styles.siteName}>{site.name}</span>
+                      <span className={styles.siteDomain}>{site.domain || 'Sin dominio'}</span>
+                      <span className={`${styles.statusPill} ${getStatusClass(site)}`}>{getStatusLabel(site)}</span>
+                    </button>
+                  ))}
                 </div>
               </div>
+            )}
+          </aside>
+
+          <main className={styles.mainSurface}>
+            {createFlow !== 'closed' ? (
+              <CreateFlowPanel
+                step={createFlow}
+                creating={creating}
+                onStepChange={setCreateFlow}
+                onCreate={handleCreateSite}
+              />
+            ) : section === 'leads' ? (
+              <LeadsPanel rows={leadRows} loading={loadingLeads} onRefresh={loadLeads} />
+            ) : section === 'domains' ? (
+              <DomainsPanel
+                sites={sites}
+                selectedSite={selectedSite}
+                verifying={verifying}
+                saving={saving}
+                onSelect={selectSite}
+                onPatchSite={updateSelectedSite}
+                onSaveSite={handleSaveSite}
+                onVerifyDomain={handleVerifyDomain}
+              />
+            ) : editorSite ? (
+              <section className={styles.builder}>
+                <div className={styles.builderHeader}>
+                  <div>
+                    <span className={`${styles.statusPill} ${getStatusClass(editorSite)}`}>{getStatusLabel(editorSite)}</span>
+                    <h2>{editorSite.name}</h2>
+                    <p>{editorSite.siteType === 'landing_page' ? 'Editor visual de landing page' : editorSite.siteType === 'interactive_form' ? 'Formulario interactivo, una pregunta por pantalla' : 'Formulario de una sola pagina'}</p>
+                  </div>
+                  <div className={styles.editorActions}>
+                    {publicUrl && (
+                      <a className={styles.iconLink} href={publicUrl} target="_blank" rel="noreferrer">
+                        <ExternalLink size={16} />
+                        Abrir
+                      </a>
+                    )}
+                    <Button variant="secondary" onClick={() => handleSaveSite()} loading={saving}>
+                      <Save size={16} />
+                      Guardar
+                    </Button>
+                    <Button onClick={() => handleSaveSite('published')} loading={saving}>
+                      <Send size={16} />
+                      Publicar
+                    </Button>
+                    <Button variant="danger" onClick={handleDeleteSite}>
+                      <Trash2 size={16} />
+                    </Button>
+                  </div>
+                </div>
 
               <div className={styles.siteSettingsBar}>
                 <label className={styles.inlineField}>
@@ -840,7 +1005,7 @@ export const Sites: React.FC = () => {
             <div className={styles.emptyEditor}>
               <LayoutTemplate size={34} />
               <p>{getEmptyEditorMessage(section)}</p>
-              <Button onClick={() => setCreateFlow('choose-kind')}>
+              <Button onClick={handleStartCreateFlow}>
                 <Plus size={16} />
                 {getCreateButtonLabel(section)}
               </Button>
@@ -849,8 +1014,42 @@ export const Sites: React.FC = () => {
         </main>
       </div>
     </div>
+    {showLeaveModal && (
+      <UnsavedChangesModal
+        onStay={handleCancelLeaveEditor}
+        onLeave={handleConfirmLeaveEditor}
+      />
+    )}
+    </>
   )
 }
+
+interface UnsavedChangesModalProps {
+  onStay: () => void
+  onLeave: () => void
+}
+
+const UnsavedChangesModal: React.FC<UnsavedChangesModalProps> = ({ onStay, onLeave }) => (
+  <div className={styles.unsavedModalBackdrop}>
+    <section className={styles.unsavedModal} role="dialog" aria-modal="true" aria-labelledby="unsaved-sites-title">
+      <div className={styles.unsavedModalIcon}>
+        <AlertTriangle size={22} />
+      </div>
+      <h2 id="unsaved-sites-title">Cambios sin guardar</h2>
+      <p>
+        Hay cambios en el editor que todavia no se han guardado o publicado. Si sales ahora, esos ajustes se van a perder.
+      </p>
+      <div className={styles.unsavedModalActions}>
+        <Button variant="secondary" onClick={onStay}>
+          Seguir editando
+        </Button>
+        <Button variant="danger" onClick={onLeave}>
+          Salir sin guardar
+        </Button>
+      </div>
+    </section>
+  </div>
+)
 
 interface CreateFlowPanelProps {
   step: CreateFlow
