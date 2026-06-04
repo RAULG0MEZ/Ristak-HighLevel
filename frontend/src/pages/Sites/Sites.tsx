@@ -60,14 +60,14 @@ import styles from './Sites.module.css'
 
 type SitesSection = 'landings' | 'forms' | 'leads' | 'domains'
 type DeviceMode = 'desktop' | 'mobile'
-type CreateFlow = 'closed' | 'choose-kind' | 'landing-start' | 'form-kind'
+type CreateFlow = 'closed' | 'landing-start' | 'form-kind'
 
 interface LeadRow extends SiteSubmission {
   siteName: string
 }
 
 const sectionItems: Array<{ id: SitesSection; label: string; icon: React.ReactNode }> = [
-  { id: 'landings', label: 'Landings', icon: <LayoutTemplate size={17} /> },
+  { id: 'landings', label: 'Landing pages ("sitio web")', icon: <LayoutTemplate size={17} /> },
   { id: 'forms', label: 'Formularios', icon: <FormInput size={17} /> },
   { id: 'leads', label: 'Respuestas / Leads', icon: <ListChecks size={17} /> },
   { id: 'domains', label: 'Dominios / Publicacion', icon: <Globe2 size={17} /> }
@@ -156,6 +156,11 @@ const getCreateButtonLabel = (section: SitesSection) => {
   if (section === 'landings') return 'Crear landing page ("sitio web")'
   if (section === 'forms') return 'Crear formulario'
   return 'Nuevo sitio'
+}
+
+const getCreateFlowForSection = (section: SitesSection): CreateFlow => {
+  if (section === 'forms') return 'form-kind'
+  return 'landing-start'
 }
 
 const getEmptyEditorMessage = (section: SitesSection) => {
@@ -355,7 +360,6 @@ export const Sites: React.FC = () => {
       ? (isFormSite(selectedSite) ? selectedSite : null)
       : null
   const publicUrl = editorSite ? buildPublicUrl(editorSite) : ''
-  const showHeaderActions = createFlow === 'closed' && !editorSite
 
   const performUrlNavigation = useCallback((href: string) => {
     const target = new URL(href, window.location.href)
@@ -590,7 +594,7 @@ export const Sites: React.FC = () => {
 
   const handleStartCreateFlow = () => {
     requestLeaveEditor(() => {
-      setCreateFlow('choose-kind')
+      setCreateFlow(getCreateFlowForSection(section))
       setHasUnsavedChanges(false)
     })
   }
@@ -804,18 +808,6 @@ export const Sites: React.FC = () => {
             <h1 className={styles.title}>Sitios</h1>
             <p className={styles.subtitle}>Constructor visual controlado para landings, formularios, leads y publicacion por dominio verificado.</p>
           </div>
-          {showHeaderActions && (
-            <div className={styles.headerActions}>
-              <Button variant="secondary" onClick={() => loadSites(selectedSite?.id)}>
-                <RefreshCw size={16} />
-                Refrescar
-              </Button>
-              <Button onClick={handleStartCreateFlow}>
-                <Plus size={16} />
-                {getCreateButtonLabel(section)}
-              </Button>
-            </div>
-          )}
         </header>
 
         <div className={styles.sitesShell}>
@@ -837,7 +829,7 @@ export const Sites: React.FC = () => {
             {(section === 'landings' || section === 'forms') && (
               <div className={styles.siteList}>
                 <div className={styles.panelHeader}>
-                  <strong>{section === 'landings' ? 'Landings' : 'Formularios'}</strong>
+                  <strong>{section === 'landings' ? 'Landing pages ("sitio web")' : 'Formularios'}</strong>
                   <span>{section === 'landings' ? landings.length : forms.length}</span>
                 </div>
                 <div className={styles.siteItems}>
@@ -868,7 +860,6 @@ export const Sites: React.FC = () => {
               <CreateFlowPanel
                 step={createFlow}
                 creating={creating}
-                onStepChange={setCreateFlow}
                 onCreate={handleCreateSite}
               />
             ) : section === 'leads' ? (
@@ -1054,40 +1045,16 @@ const UnsavedChangesModal: React.FC<UnsavedChangesModalProps> = ({ onStay, onLea
 interface CreateFlowPanelProps {
   step: CreateFlow
   creating: boolean
-  onStepChange: (step: CreateFlow) => void
   onCreate: (siteType: SiteType, mode?: 'blank' | 'template') => void
 }
 
-const CreateFlowPanel: React.FC<CreateFlowPanelProps> = ({ step, creating, onStepChange, onCreate }) => {
+const CreateFlowPanel: React.FC<CreateFlowPanelProps> = ({ step, creating, onCreate }) => {
   return (
     <section className={styles.createPanel}>
       <div className={styles.createHeader}>
-        <span>Nuevo sitio</span>
-        <h2>
-          {step === 'choose-kind'
-            ? 'Que quieres construir?'
-            : step === 'landing-start'
-              ? 'Como quieres iniciar la landing?'
-              : 'Que tipo de formulario quieres?'}
-        </h2>
+        <span>{step === 'landing-start' ? 'Nueva landing ("sitio web")' : 'Nuevo formulario'}</span>
+        <h2>{step === 'landing-start' ? 'Como quieres iniciar la landing?' : 'Que tipo de formulario quieres?'}</h2>
       </div>
-
-      {step === 'choose-kind' && (
-        <div className={styles.choiceGrid}>
-          <button type="button" onClick={() => onStepChange('landing-start')}>
-            <LayoutTemplate size={22} />
-            <strong>Landing page</strong>
-            <p>Pagina publica con bloques predefinidos y formularios embebidos.</p>
-            <ChevronRight size={18} />
-          </button>
-          <button type="button" onClick={() => onStepChange('form-kind')}>
-            <FormInput size={22} />
-            <strong>Formulario</strong>
-            <p>Captura leads con una pagina o experiencia tipo Typeform.</p>
-            <ChevronRight size={18} />
-          </button>
-        </div>
-      )}
 
       {step === 'landing-start' && (
         <div className={styles.choiceGrid}>
