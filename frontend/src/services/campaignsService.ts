@@ -427,6 +427,36 @@ class CampaignsService {
     }
   }
 
+  async fetchPages(accessToken: string): Promise<{
+    success: boolean
+    pages: {
+      id: string
+      name: string
+      category: string | null
+      pictureUrl: string | null
+    }[]
+  }> {
+    try {
+      const data = await apiClient.get('/meta/pages', {
+        params: { accessToken }
+      }) as {
+        pages: {
+          id: string
+          name: string
+          category: string | null
+          pictureUrl: string | null
+        }[]
+      }
+
+      return {
+        success: true,
+        pages: data.pages || []
+      }
+    } catch (error) {
+      return { success: false, pages: [] }
+    }
+  }
+
   async syncMetaAds(): Promise<{
     success: boolean
     message?: string

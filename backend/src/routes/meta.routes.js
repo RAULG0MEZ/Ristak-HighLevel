@@ -23,6 +23,7 @@ import {
   saveAndSyncMeta,
   getAdAccounts,
   getPixels,
+  getPages,
   savePixelToken
 } from '../controllers/metaController.js'
 
@@ -38,6 +39,7 @@ router.get('/verify-token', verifyToken)
 // Obtener datos de Meta para dropdowns
 router.get('/ad-accounts', getAdAccounts)
 router.get('/pixels', getPixels)
+router.get('/pages', getPages)
 
 // Custom Values de HighLevel
 router.get('/custom-values', getMetaCustomValues)

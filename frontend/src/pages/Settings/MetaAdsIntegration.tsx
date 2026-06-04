@@ -31,6 +31,13 @@ interface Pixel {
   last_fired_time: string
 }
 
+interface MetaPage {
+  id: string
+  name: string
+  category: string | null
+  pictureUrl: string | null
+}
+
 interface FetchCollectionResult {
   success: boolean
   count: number
@@ -49,6 +56,31 @@ const getMaskedSecretTail = (value = '') => (
     : value.trim()
 )
 
+const tokenSetupGuideSteps = [
+  {
+    title: 'Entra al portafolio comercial',
+    body: 'Abre Configuración del negocio en Meta, entra al portafolio comercial correcto y ve a Apps. Desde ahí crea una aplicación nueva.'
+  },
+  {
+    title: 'Crea la app en Meta Developers',
+    body: 'Cuando Meta te mande a Developers, elige la opción de Meta API para anuncios, llena el formulario básico y deja la app asociada al mismo portafolio comercial.'
+  },
+  {
+    title: 'Crea el usuario del sistema',
+    body: 'Regresa a Configuración del negocio, entra a Usuarios del sistema y crea uno llamado Ristak. Déjalo sin rol si Meta muestra esa opción; los accesos reales se dan en activos.'
+  },
+  {
+    title: 'Asigna activos',
+    body: 'En Añadir activos agrega la Página que hará publicidad, la cuenta publicitaria, la app recién creada, el conjunto de datos o pixel, Instagram si aplica, y concede acceso de administración donde Meta lo pida.'
+  },
+  {
+    title: 'Genera el token',
+    body: 'En Generar token elige la app nueva, selecciona expiración Nunca y marca los permisos necesarios. Copia el token completo y pégalo abajo.'
+  }
+]
+
+const tokenSetupScopes = ['ads_management', 'ads_read', 'business_management', 'pages_show_list']
+
 export const MetaAdsIntegration: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true)
   const [credentials, setCredentials] = useState<MetaCredentials>({
@@ -60,8 +92,10 @@ export const MetaAdsIntegration: React.FC = () => {
   })
   const [adAccounts, setAdAccounts] = useState<AdAccount[]>([])
   const [pixels, setPixels] = useState<Pixel[]>([])
+  const [pages, setPages] = useState<MetaPage[]>([])
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(false)
   const [isLoadingPixels, setIsLoadingPixels] = useState(false)
+  const [isLoadingPages, setIsLoadingPages] = useState(false)
   const [realAccessToken, setRealAccessToken] = useState('')
   const [realPixelApiToken, setRealPixelApiToken] = useState('')
   const [isSavingToken, setIsSavingToken] = useState(false)
@@ -116,6 +150,7 @@ export const MetaAdsIntegration: React.FC = () => {
 
           setRealAccessToken(tokenToUse)
           await fetchAdAccounts(tokenToUse, data.data.adAccountId, { silent: true })
+          await fetchPages(tokenToUse, data.data.pageId, { silent: true })
 
           if (data.data.adAccountId) {
             const accountIdWithPrefix = data.data.adAccountId.startsWith('act_')
@@ -259,6 +294,58 @@ export const MetaAdsIntegration: React.FC = () => {
     }
   }
 
+  const fetchPages = async (
+    token: string,
+    savedPageId?: string,
+    options: { silent?: boolean } = {}
+  ): Promise<FetchCollectionResult> => {
+    if (!token) {
+      if (!options.silent) {
+        showToast('error', 'Token requerido', 'Primero ingresa tu Access Token')
+      }
+      return { success: false, count: 0 }
+    }
+
+    setIsLoadingPages(true)
+    try {
+      const result = await campaignsService.fetchPages(token)
+
+      if (result.success && result.pages.length > 0) {
+        setPages(result.pages)
+
+        if (savedPageId) {
+          const matchingPage = result.pages.find(page => page.id === savedPageId)
+          if (matchingPage) {
+            setCredentials(prev => ({
+              ...prev,
+              pageId: matchingPage.id
+            }))
+          }
+        }
+
+        if (!options.silent) {
+          showToast('success', 'Páginas cargadas', `Se encontraron ${result.pages.length} páginas`)
+        }
+
+        return { success: true, count: result.pages.length }
+      }
+
+      setPages([])
+      if (!options.silent) {
+        showToast('warning', 'Sin páginas', 'Revisa que el token tenga pages_show_list y la Página asignada al usuario del sistema')
+      }
+      return { success: result.success, count: 0 }
+    } catch {
+      setPages([])
+      if (!options.silent) {
+        showToast('error', 'Error', 'No se pudieron cargar las páginas')
+      }
+      return { success: false, count: 0 }
+    } finally {
+      setIsLoadingPages(false)
+    }
+  }
+
   const handleSelectAdAccount = (account: AdAccount) => {
     handleSelectAndSaveAccount(account)
   }
@@ -280,6 +367,7 @@ export const MetaAdsIntegration: React.FC = () => {
       setRealPixelApiToken('')
       setAdAccounts([])
       setPixels([])
+      setPages([])
       setSavedPageId('')
       setActiveStep(0)
     } else if (field === 'adAccountId') {
@@ -421,6 +509,8 @@ export const MetaAdsIntegration: React.FC = () => {
         return
       }
 
+      await fetchPages(credentials.accessToken, credentials.pageId, { silent: true })
+
       if (accountsResult.count > 0) {
         showToast('success', 'Token válido', 'Selecciona tu cuenta de anuncios')
       }
@@ -456,8 +546,10 @@ export const MetaAdsIntegration: React.FC = () => {
       if (data.success) {
         showToast('success', 'Cuenta guardada', `${account.name} configurada`)
         setActiveStep(2)
-        if (realAccessToken) {
-          fetchPixels(account.id, realAccessToken)
+        const token = realAccessToken || credentials.accessToken
+        if (token) {
+          fetchPixels(account.id, token)
+          fetchPages(token, credentials.pageId, { silent: true })
         }
       } else {
         showToast('error', 'Error', data.error || 'No se pudo guardar la cuenta')
@@ -487,6 +579,7 @@ export const MetaAdsIntegration: React.FC = () => {
 
       if (data.success) {
         showToast('success', 'Pixel guardado', `${pixel.name} configurado`)
+        await loadCredentials()
         setActiveStep(3)
       } else {
         showToast('error', 'Error', data.error || 'No se pudo guardar el pixel')
@@ -496,9 +589,9 @@ export const MetaAdsIntegration: React.FC = () => {
     }
   }
 
-  const handleSavePageId = async () => {
-    if (!credentials.pageId) {
-      showToast('error', 'Page ID requerido', 'Ingresa el Page ID primero')
+  const savePageId = async (pageId: string) => {
+    if (!pageId) {
+      showToast('error', 'Facebook Page requerida', 'Selecciona una Página primero')
       return
     }
 
@@ -517,7 +610,7 @@ export const MetaAdsIntegration: React.FC = () => {
           adAccountId: credentials.adAccountId,
           accessToken: realAccessToken || credentials.accessToken,
           pixelId: credentials.pixelId || '',
-          pageId: credentials.pageId,
+          pageId,
           pixelApiToken: credentials.pixelApiToken || ''
         })
       })
@@ -526,7 +619,8 @@ export const MetaAdsIntegration: React.FC = () => {
 
       if (data.success) {
         showToast('success', 'Page ID guardado', 'Configuración actualizada')
-        setSavedPageId(credentials.pageId)
+        setSavedPageId(pageId)
+        setCredentials(prev => ({ ...prev, pageId }))
         await loadCredentials()
       } else {
         showToast('error', 'Error', data.error || 'No se pudo guardar el Page ID')
@@ -536,6 +630,15 @@ export const MetaAdsIntegration: React.FC = () => {
     } finally {
       setIsSavingPageId(false)
     }
+  }
+
+  const handleSavePageId = async () => {
+    await savePageId(credentials.pageId)
+  }
+
+  const handleSelectAndSavePage = async (page: MetaPage) => {
+    setCredentials(prev => ({ ...prev, pageId: page.id }))
+    await savePageId(page.id)
   }
 
   const handleSavePixelApiToken = async () => {
@@ -605,8 +708,8 @@ export const MetaAdsIntegration: React.FC = () => {
     if (newValue && !savedPageId) {
       showToast(
         'warning',
-        'Page ID requerido',
-        'Primero guarda el Facebook Page ID en el paso 5 para activar eventos personalizados de WhatsApp'
+        'Facebook Page requerida',
+        'Primero selecciona la Facebook Page en el paso 5 para activar eventos personalizados de WhatsApp'
       )
       return
     }
@@ -627,8 +730,8 @@ export const MetaAdsIntegration: React.FC = () => {
     if (newValue && !savedPageId) {
       showToast(
         'warning',
-        'Page ID requerido',
-        'Primero guarda el Facebook Page ID en el paso 5 para activar eventos personalizados de WhatsApp'
+        'Facebook Page requerida',
+        'Primero selecciona la Facebook Page en el paso 5 para activar eventos personalizados de WhatsApp'
       )
       return
     }
@@ -690,8 +793,8 @@ export const MetaAdsIntegration: React.FC = () => {
   )
   const metaSetupSteps = [
     {
-      title: 'Access Token',
-      description: 'System User Token',
+      title: 'Token',
+      description: 'App y System User',
       done: hasAccessToken,
       required: true,
       unlocked: true
@@ -712,14 +815,14 @@ export const MetaAdsIntegration: React.FC = () => {
     },
     {
       title: 'Pixel API Token',
-      description: 'Conversions API',
+      description: 'Opcional CAPI',
       done: hasPixelApiToken,
       required: false,
       unlocked: hasPixel
     },
     {
-      title: 'Facebook Page ID',
-      description: 'Caja separada',
+      title: 'Facebook Page',
+      description: 'Selector automático',
       done: hasPageId,
       required: false,
       unlocked: hasAdAccount
@@ -744,6 +847,13 @@ export const MetaAdsIntegration: React.FC = () => {
     if (!credentials.pixelId) return 'Opcional'
     const matchingPixel = pixels.find(p => p.id === credentials.pixelId)
     return matchingPixel ? `${matchingPixel.name} (${credentials.pixelId})` : credentials.pixelId
+  }
+
+  const getSelectedPageLabel = () => {
+    if (!credentials.pageId && !savedPageId) return 'Opcional'
+    const pageId = credentials.pageId || savedPageId
+    const matchingPage = pages.find(page => page.id === pageId)
+    return matchingPage ? `${matchingPage.name} (${pageId})` : pageId
   }
 
   const getStepBlockMessage = (stepIndex = activeStep) => {
@@ -804,18 +914,48 @@ export const MetaAdsIntegration: React.FC = () => {
         <>
           <div className={styles.stepIntro}>
             <span className={styles.stepEyebrow}>Paso 1</span>
-            <h3 className={styles.stepTitle}>Conecta el Access Token</h3>
+            <h3 className={styles.stepTitle}>Crea la app y pega el token</h3>
             <p className={styles.stepText}>
-              Genera un System User Token de Meta con permisos para leer campañas. Este token desbloquea la selección de cuenta de anuncios.
+              El token debe salir de un usuario del sistema dentro del mismo portafolio comercial. Si ese usuario tiene la cuenta publicitaria, la Página y el dataset asignados, este único token sirve para reportes y Conversions API.
             </p>
-            <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener noreferrer" className={styles.inlineDocLink}>
-              Abrir Business Settings
-              <ExternalLink size={14} />
-            </a>
+          </div>
+
+          <div className={styles.setupGuide}>
+            <div className={styles.guideLinks}>
+              <a href="https://business.facebook.com/settings/apps" target="_blank" rel="noopener noreferrer" className={styles.inlineDocLink}>
+                Apps del portafolio
+                <ExternalLink size={14} />
+              </a>
+              <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener noreferrer" className={styles.inlineDocLink}>
+                Usuarios del sistema
+                <ExternalLink size={14} />
+              </a>
+            </div>
+
+            <ol className={styles.guideList}>
+              {tokenSetupGuideSteps.map((step, index) => (
+                <li key={step.title} className={styles.guideItem}>
+                  <span className={styles.guideNumber}>{index + 1}</span>
+                  <div className={styles.guideCopy}>
+                    <strong>{step.title}</strong>
+                    <span>{step.body}</span>
+                  </div>
+                </li>
+              ))}
+            </ol>
+
+            <div className={styles.scopeBlock}>
+              <span className={styles.scopeBlockLabel}>Permisos del token</span>
+              <div className={styles.scopeList}>
+                {tokenSetupScopes.map(scope => (
+                  <code key={scope} className={styles.scopeChip}>{scope}</code>
+                ))}
+              </div>
+            </div>
           </div>
 
           <div className={`${styles.formGroup} ${styles.formGroupWide}`}>
-            <span id="metaAccessTokenLabel" className={styles.formLabel}>Access Token</span>
+            <span id="metaAccessTokenLabel" className={styles.formLabel}>System User Access Token</span>
             {credentials.accessToken && isMaskedSecretValue(credentials.accessToken) ? (
               <div
                 className={`${styles.filterChip} ${styles.secretTokenChip}`}
@@ -1000,7 +1140,7 @@ export const MetaAdsIntegration: React.FC = () => {
                 )}
               </label>
               <p className={styles.stepHint}>
-                Si no necesitas pixel por ahora, puedes saltar directo al Facebook Page ID.
+                Si no necesitas pixel por ahora, puedes saltar directo a la Facebook Page.
               </p>
             </>
           )}
@@ -1013,9 +1153,9 @@ export const MetaAdsIntegration: React.FC = () => {
         <>
           <div className={styles.stepIntro}>
             <span className={styles.stepEyebrow}>Paso 4</span>
-            <h3 className={styles.stepTitle}>Guarda el Pixel API Token</h3>
+            <h3 className={styles.stepTitle}>Revisa Conversions API</h3>
             <p className={styles.stepText}>
-              Este token sólo aplica si usas Conversions API. Se guarda separado para no mezclarlo con el Access Token principal.
+              Normalmente el token principal basta si el usuario del sistema tiene acceso al dataset. Esta caja queda como respaldo si Meta no deja generar o usar CAPI con el token principal.
             </p>
             <a href="https://business.facebook.com/events_manager2" target="_blank" rel="noopener noreferrer" className={styles.inlineDocLink}>
               Abrir Events Manager
@@ -1088,9 +1228,9 @@ export const MetaAdsIntegration: React.FC = () => {
       <>
         <div className={styles.stepIntro}>
           <span className={styles.stepEyebrow}>Paso 5</span>
-          <h3 className={styles.stepTitle}>Guarda el Facebook Page ID</h3>
+          <h3 className={styles.stepTitle}>Selecciona la Facebook Page</h3>
           <p className={styles.stepText}>
-            Esta es la caja separada para Page ID dentro del wizard de Meta Ads. Es opcional para anuncios, pero necesaria para eventos personalizados ligados a Facebook Page.
+            La Página se obtiene desde Meta con el permiso pages_show_list. Así los eventos de WhatsApp quedan ligados a la Página correcta sin copiar IDs a mano.
           </p>
           <a href="https://business.facebook.com/latest/settings/pages" target="_blank" rel="noopener noreferrer" className={styles.inlineDocLink}>
             Abrir páginas en Meta Business
@@ -1101,11 +1241,11 @@ export const MetaAdsIntegration: React.FC = () => {
         {!hasAdAccount ? (
           <p className={styles.stepHint}>{getStepBlockMessage(4)}</p>
         ) : (
-          <label className={`${styles.formGroup} ${styles.formGroupWide}`}>
-            <span className={styles.formLabel}>Facebook Page ID</span>
+          <div className={`${styles.formGroup} ${styles.formGroupWide}`}>
+            <span className={styles.formLabel}>Facebook Page</span>
             {savedPageId && credentials.pageId === savedPageId ? (
               <div className={styles.filterChip}>
-                <span className={styles.chipText}>{credentials.pageId}</span>
+                <span className={styles.chipText}>{getSelectedPageLabel()}</span>
                 <button
                   onClick={() => handleRemoveCredential('pageId')}
                   className={styles.chipDeleteButton}
@@ -1115,27 +1255,44 @@ export const MetaAdsIntegration: React.FC = () => {
                   <Trash2 size={16} />
                 </button>
               </div>
+            ) : isLoadingPages ? (
+              <div className={styles.inlineStatus}>
+                <RefreshCw size={14} className={styles.spinning} />
+                Cargando páginas...
+              </div>
+            ) : pages.length > 0 ? (
+              <select
+                className={styles.formInput}
+                onChange={(event) => {
+                  const page = pages.find(item => item.id === event.target.value)
+                  if (page) handleSelectAndSavePage(page)
+                }}
+                value={credentials.pageId || ''}
+              >
+                <option value="">-- Selecciona una Página --</option>
+                {pages.map((page) => (
+                  <option key={page.id} value={page.id}>
+                    {page.name} ({page.id}){page.category ? ` - ${page.category}` : ''}
+                  </option>
+                ))}
+              </select>
             ) : (
-              <div className={styles.inputActionRow}>
-                <input
-                  type="text"
-                  value={credentials.pageId}
-                  onChange={(event) => handleInputChange('pageId', event.target.value)}
-                  placeholder="1234567890123456"
-                  className={styles.formInput}
-                />
+              <div className={styles.emptyPagesState}>
+                <p>
+                  No encontramos páginas para este token. Revisa que el usuario del sistema tenga asignada la Página y que el token incluya pages_show_list.
+                </p>
                 <Button
                   type="button"
-                  variant="primary"
-                  onClick={handleSavePageId}
-                  disabled={isSavingPageId || !credentials.pageId}
+                  variant="secondary"
+                  onClick={() => fetchPages(realAccessToken || credentials.accessToken)}
+                  disabled={isLoadingPages || !(realAccessToken || credentials.accessToken)}
                 >
-                  <RefreshCw size={16} className={isSavingPageId ? styles.spinning : ''} />
-                  {isSavingPageId ? 'Guardando...' : 'Guardar'}
+                  <RefreshCw size={16} className={isLoadingPages ? styles.spinning : ''} />
+                  Volver a cargar
                 </Button>
               </div>
             )}
-          </label>
+          </div>
         )}
       </>
     )
@@ -1159,7 +1316,7 @@ export const MetaAdsIntegration: React.FC = () => {
               <div>
                 <h2 className={styles.pageTitle}>Meta Ads</h2>
                 <p className={styles.pageSubtitle}>
-                  Sigue el wizard y conecta cuenta, pixel y Page ID sin mezclar campos.
+                  Sigue el wizard y conecta token, cuenta, pixel y Página sin copiar IDs a mano.
                 </p>
               </div>
             </div>
@@ -1186,7 +1343,7 @@ export const MetaAdsIntegration: React.FC = () => {
                 <div>
                   <h3 className={styles.sectionTitle}>Wizard de configuración</h3>
                   <p className={styles.sectionDescription}>
-                    Avanza por pasos. Los opcionales no bloquean el Page ID.
+                    Crea el token correcto y después selecciona los activos que Meta devuelve por API.
                   </p>
                 </div>
                 <span className={styles.stepCount}>{completedMetaSetupSteps}/5 listo</span>
@@ -1232,7 +1389,7 @@ export const MetaAdsIntegration: React.FC = () => {
                         </Button>
                         {activeStep < metaSetupSteps.length - 1 && (
                           <Button type="button" variant="secondary" onClick={handleNextStep}>
-                            {activeStep === 2 && !hasPixel ? 'Saltar a Page ID' : 'Siguiente'}
+                            {activeStep === 2 && !hasPixel ? 'Saltar a Page' : 'Siguiente'}
                             <ArrowRight size={16} />
                           </Button>
                         )}
@@ -1267,7 +1424,7 @@ export const MetaAdsIntegration: React.FC = () => {
                     <span className={styles.railSwitchLabel}>Cita agendada</span>
                     <span className={styles.railSecondaryValue}>LeadSubmitted una sola vez por contacto.</span>
                     {!hasPageId && (
-                      <span className={styles.requirementPill}>Requiere Page ID</span>
+                      <span className={styles.requirementPill}>Requiere Page</span>
                     )}
                   </div>
                   <label className={styles.switchContainer}>
@@ -1290,7 +1447,7 @@ export const MetaAdsIntegration: React.FC = () => {
                     <span className={styles.railSwitchLabel}>Pago recibido</span>
                     <span className={styles.railSecondaryValue}>Purchase una sola vez por contacto.</span>
                     {!hasPageId && (
-                      <span className={styles.requirementPill}>Requiere Page ID</span>
+                      <span className={styles.requirementPill}>Requiere Page</span>
                     )}
                   </div>
                   <label className={styles.switchContainer}>
@@ -1329,8 +1486,8 @@ export const MetaAdsIntegration: React.FC = () => {
                 <strong>{hasPixel ? getSelectedPixelLabel() : '-'}</strong>
                 <span>CAPI</span>
                 <strong>{hasPixelApiToken ? 'Listo' : '-'}</strong>
-                <span>Page ID</span>
-                <strong>{hasPageId ? savedPageId : '-'}</strong>
+                <span>Page</span>
+                <strong>{hasPageId ? getSelectedPageLabel() : '-'}</strong>
               </div>
             </div>
 

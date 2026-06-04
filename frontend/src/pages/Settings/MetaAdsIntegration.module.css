@@ -348,6 +348,114 @@
   color: #0866ff;
 }
 
+.setupGuide {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid rgba(8, 102, 255, 0.16);
+  border-radius: 8px;
+  background: rgba(8, 102, 255, 0.045);
+}
+
+.guideLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.guideList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.guideItem {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 9px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: var(--color-background);
+}
+
+.guideNumber {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgba(8, 102, 255, 0.24);
+  border-radius: 7px;
+  color: #0866ff;
+  background: rgba(8, 102, 255, 0.08);
+  font-size: 11px;
+  font-weight: 820;
+}
+
+.guideCopy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.guideCopy strong {
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 780;
+  line-height: 1.25;
+}
+
+.guideCopy span {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.scopeBlock {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.scopeBlockLabel {
+  flex-shrink: 0;
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 780;
+}
+
+.scopeList {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+  min-width: 0;
+}
+
+.scopeChip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 7px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 7px;
+  color: var(--color-text-primary);
+  background: rgba(148, 163, 184, 0.065);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  font-weight: 760;
+}
+
 .formGroup {
   display: flex;
   flex-direction: column;
@@ -411,6 +519,28 @@
   color: var(--color-text-secondary);
   background: rgba(148, 163, 184, 0.06);
   font-size: 13px;
+}
+
+.emptyPagesState {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgba(245, 158, 11, 0.22);
+  border-radius: 8px;
+  color: var(--color-text-secondary);
+  background: rgba(245, 158, 11, 0.07);
+}
+
+.emptyPagesState p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.emptyPagesState button {
+  flex-shrink: 0;
 }
 
 .filterChip {
@@ -766,8 +896,19 @@
 
   .wizardShell,
   .progressList,
-  .statusRail {
+  .statusRail,
+  .guideList {
     grid-template-columns: 1fr;
+  }
+
+  .scopeBlock,
+  .emptyPagesState {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .scopeList {
+    justify-content: flex-start;
   }
 }
 

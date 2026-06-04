@@ -96,7 +96,7 @@ export const META_OAUTH_SCOPES = [
   'ads_read',              // Leer datos de anuncios
   'ads_management',        // Gestionar campañas (opcional pero recomendado)
   'business_management',   // Acceso a Business Manager
-  'pages_read_engagement'  // Leer páginas de Facebook
+  'pages_show_list'        // Listar páginas asignadas al usuario/sistema
 ].join(',')
 
 export const SYNC_STATUS = {

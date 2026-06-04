@@ -2598,6 +2598,109 @@ export const getPixels = async (req, res) => {
   }
 };
 
+function normalizeMetaPage(page = {}) {
+  return {
+    id: cleanString(page.id),
+    name: cleanString(page.name),
+    category: cleanString(page.category) || null,
+    pictureUrl: page.picture?.data?.url || page.picture?.url || null
+  };
+}
+
+async function fetchMetaConnection(initialUrl) {
+  const records = [];
+  let nextUrl = initialUrl;
+  let pageCount = 0;
+
+  while (nextUrl && pageCount < 10) {
+    const response = await fetch(nextUrl);
+    const data = await response.json();
+
+    if (data.error) {
+      throw new Error(data.error.message || 'Error de Meta API');
+    }
+
+    if (Array.isArray(data.data)) {
+      records.push(...data.data);
+    }
+
+    nextUrl = data.paging?.next || null;
+    pageCount += 1;
+  }
+
+  return records;
+}
+
+/**
+ * Obtiene las páginas disponibles para el token de Meta
+ * GET /api/meta/pages?accessToken=xxx
+ */
+export const getPages = async (req, res) => {
+  try {
+    const { accessToken } = req.query;
+
+    if (!accessToken) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requiere accessToken'
+      });
+    }
+
+    logger.info('Obteniendo páginas de Meta asignadas al token');
+
+    const pageFields = 'id,name,category,picture{url}';
+    const params = new URLSearchParams({
+      fields: pageFields,
+      limit: '100',
+      access_token: accessToken
+    });
+
+    let rawPages = await fetchMetaConnection(`${API_URLS.META_GRAPH}/me/accounts?${params.toString()}`);
+
+    if (rawPages.length === 0) {
+      const debugUrl = `${API_URLS.META_TOKEN_DEBUG}?input_token=${encodeURIComponent(accessToken)}&access_token=${encodeURIComponent(accessToken)}`;
+      const debugResponse = await fetch(debugUrl);
+      const debugData = await debugResponse.json();
+      const userId = debugData?.data?.user_id;
+
+      if (userId) {
+        const fallbackEdges = ['accounts', 'assigned_pages'];
+
+        for (const edge of fallbackEdges) {
+          try {
+            const fallbackPages = await fetchMetaConnection(`${API_URLS.META_GRAPH}/${encodeURIComponent(userId)}/${edge}?${params.toString()}`);
+            rawPages.push(...fallbackPages);
+          } catch (fallbackError) {
+            logger.warn(`No se pudieron leer páginas desde ${edge}: ${fallbackError.message}`);
+          }
+        }
+      }
+    }
+
+    const pagesById = new Map();
+    rawPages
+      .map(normalizeMetaPage)
+      .filter(page => page.id && page.name)
+      .forEach(page => pagesById.set(page.id, page));
+
+    const pages = [...pagesById.values()];
+    logger.info(`Encontradas ${pages.length} página(s) de Meta`);
+
+    res.json({
+      success: true,
+      data: {
+        pages
+      }
+    });
+  } catch (error) {
+    logger.error(`Error en getPages: ${error.message}`);
+    res.status(400).json({
+      success: false,
+      error: error.message || 'Error al obtener páginas'
+    });
+  }
+};
+
 /**
  * Guarda SOLO el Pixel API Token en la base de datos y en HighLevel Custom Values
  * POST /api/meta/save-pixel-token
