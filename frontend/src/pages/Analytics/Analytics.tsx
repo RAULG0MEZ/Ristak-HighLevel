@@ -327,6 +327,45 @@ const getSessionConversionStage = (session: Session): ConversionStage | null => 
   return 'prospect'
 }
 
+const TRACKING_VIEW_EVENTS = new Set(['session_start', 'page_view', 'native_site_view'])
+
+const isTrackingViewEvent = (session: Session) =>
+  TRACKING_VIEW_EVENTS.has(session.event_name || 'page_view')
+
+const isNativeSiteSession = (session: Session) =>
+  (session.tracking_source || '').toLowerCase() === 'native_site' || Boolean(session.site_id)
+
+const getTrackingSourceValue = (session: Session) =>
+  isNativeSiteSession(session) ? 'native_site' : 'external_pixel'
+
+const getTrackingSourceLabel = (source: string) =>
+  source === 'native_site' ? 'Sites nativos' : 'Pixel externo'
+
+const getSiteTypeLabel = (siteType?: string | null) => {
+  if (siteType === 'landing_page') return 'Landing'
+  if (siteType === 'interactive_form') return 'Formulario interactivo'
+  if (siteType === 'standard_form') return 'Formulario'
+  return 'Sin tipo'
+}
+
+const getNativeFormId = (session: Session) => {
+  if (session.form_site_id) return session.form_site_id
+  if (session.site_type === 'standard_form' || session.site_type === 'interactive_form') return session.site_id || ''
+  return ''
+}
+
+const getNativeFormName = (session: Session) => {
+  if (session.form_site_name) return session.form_site_name
+  if (session.site_type === 'standard_form' || session.site_type === 'interactive_form') return session.site_name || session.site_slug || 'Formulario'
+  return ''
+}
+
+const getNativeConversionFilterValue = (session: Session) => {
+  if (session.event_name !== 'native_site_conversion') return ''
+  const formId = getNativeFormId(session)
+  return formId ? `form:${formId}` : `site:${session.site_id || ''}`
+}
+
 const parseTimestamp = (timestamp?: string | null): Date | null => {
   if (!timestamp) return null
 
@@ -403,6 +442,8 @@ const buildTrafficChartData = (
   const stats: Record<string, { totalVisits: number; uniqueVisitors: Set<string> }> = {}
 
   sessions.forEach((session: Session) => {
+    if (!isTrackingViewEvent(session)) return
+
     const periodKey = getPeriodKeyFromTimestamp(session.started_at, viewType, convertToLocalTime)
     if (!periodKey) return
 
@@ -513,9 +554,11 @@ const buildSessionTrendData = (
     }
 
     const bucket = stats.get(periodKey)!
-    bucket.pageViews++
-    bucket.visitors.add(session.visitor_id)
-    bucket.sessionIds.add(session.session_id)
+    if (isTrackingViewEvent(session)) {
+      bucket.pageViews++
+      bucket.visitors.add(session.visitor_id)
+      bucket.sessionIds.add(session.session_id)
+    }
 
     if (session.contact_id) {
       bucket.contactIds.add(session.contact_id)
@@ -787,14 +830,15 @@ const Analytics: React.FC = () => {
         setContactConversionsByDate(contactConversionRows || [])
 
         if (currentSessions.length > 0) {
+          const currentViewSessions = currentSessions.filter(isTrackingViewEvent)
+          const prevViewSessions = prevSessions.filter(isTrackingViewEvent)
           // Calcular métricas principales
-          const uniqueVids = new Set(currentSessions.map((s: Session) => s.visitor_id)).size
+          const uniqueVids = new Set(currentViewSessions.map((s: Session) => s.visitor_id)).size
 
-          // CADA registro es un page_view ahora (cada navegación)
-          const totalPageViews = currentSessions.length
+          const totalPageViews = currentViewSessions.length
 
           // Contar sesiones únicas (por session_id)
-          const uniqueSessionIds = new Set(currentSessions.map((s: Session) => s.session_id)).size
+          const uniqueSessionIds = new Set(currentViewSessions.map((s: Session) => s.session_id)).size
 
           // Registros = contactos con visitor_id creados en el período (con fallback a array vacío)
           const registros = (contactsData || []).reduce((sum, item) => sum + item.count, 0)
@@ -806,7 +850,7 @@ const Analytics: React.FC = () => {
 
           // Usuarios recurrentes: contar visitor_ids que tienen múltiples session_ids diferentes
           const visitorSessionMap: { [key: string]: Set<string> } = {}
-          currentSessions.forEach((s: Session) => {
+          currentViewSessions.forEach((s: Session) => {
             if (!visitorSessionMap[s.visitor_id]) {
               visitorSessionMap[s.visitor_id] = new Set()
             }
@@ -819,17 +863,17 @@ const Analytics: React.FC = () => {
             (totalPageViews / uniqueSessionIds) : 0
 
           // Calcular métricas del período anterior para trends
-          const prevUniqueVids = prevSessions.length > 0 ?
-            new Set(prevSessions.map((s: Session) => s.visitor_id)).size : 0
-          const prevTotalPageViews = prevSessions.length
-          const prevUniqueSessionIds = prevSessions.length > 0 ?
-            new Set(prevSessions.map((s: Session) => s.session_id)).size : 0
+          const prevUniqueVids = prevViewSessions.length > 0 ?
+            new Set(prevViewSessions.map((s: Session) => s.visitor_id)).size : 0
+          const prevTotalPageViews = prevViewSessions.length
+          const prevUniqueSessionIds = prevViewSessions.length > 0 ?
+            new Set(prevViewSessions.map((s: Session) => s.session_id)).size : 0
           const prevRegistros = (prevContactsData || []).reduce((sum, item) => sum + item.count, 0)
           const prevConversionRate = prevUniqueVids > 0 ? ((prevRegistros / prevUniqueVids) * 100) : 0
 
           // Usuarios recurrentes del período anterior
           const prevVisitorSessionMap: { [key: string]: Set<string> } = {}
-          prevSessions.forEach((s: Session) => {
+          prevViewSessions.forEach((s: Session) => {
             if (!prevVisitorSessionMap[s.visitor_id]) {
               prevVisitorSessionMap[s.visitor_id] = new Set()
             }

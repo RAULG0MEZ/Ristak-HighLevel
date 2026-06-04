@@ -65,6 +65,11 @@ interface TreeFilterProps {
     countries?: Array<{ name: string; count: number }>
     placements?: Array<{ name: string; count: number }>
     conversions?: Array<{ stage: string; name: string; count: number }>
+    trackingSources?: Array<{ name: string; value: string; count: number }>
+    siteTypes?: Array<{ name: string; value: string; count: number }>
+    nativeSites?: Array<{ name: string; value: string; count: number }>
+    nativeForms?: Array<{ name: string; value: string; count: number }>
+    nativeConversions?: Array<{ name: string; value: string; count: number }>
     statuses?: Array<{ name: string; value?: string; count: number }>
     adsHierarchy?: Array<AdHierarchyNode>
   }
@@ -123,6 +128,86 @@ export function TreeFilter({
           field: 'status',
           value: status.value || status.name,
           count: status.count
+        }))
+      })
+    }
+
+    // Categoría: Origen del tracking
+    if (availableData.trackingSources?.length) {
+      tree.push({
+        id: 'tracking_sources',
+        label: 'Origen tracking',
+        icon: Layers,
+        children: availableData.trackingSources.map(source => ({
+          id: `tracking_source_${source.value}`,
+          label: source.name,
+          field: 'tracking_source',
+          value: source.value,
+          count: source.count
+        }))
+      })
+    }
+
+    // Categoría: Tipo de Site nativo
+    if (availableData.siteTypes?.length) {
+      tree.push({
+        id: 'site_types',
+        label: 'Tipo de Site',
+        icon: Layers,
+        children: availableData.siteTypes.map(siteType => ({
+          id: `site_type_${siteType.value}`,
+          label: siteType.name,
+          field: 'site_type',
+          value: siteType.value,
+          count: siteType.count
+        }))
+      })
+    }
+
+    // Categoría: Sites nativos
+    if (availableData.nativeSites?.length) {
+      tree.push({
+        id: 'native_sites',
+        label: 'Sites nativos',
+        icon: FileText,
+        children: availableData.nativeSites.map(site => ({
+          id: `native_site_${site.value}`,
+          label: site.name,
+          field: 'site_id',
+          value: site.value,
+          count: site.count
+        }))
+      })
+    }
+
+    // Categoría: Formularios nativos
+    if (availableData.nativeForms?.length) {
+      tree.push({
+        id: 'native_forms',
+        label: 'Formularios',
+        icon: FileText,
+        children: availableData.nativeForms.map(form => ({
+          id: `native_form_${form.value}`,
+          label: form.name,
+          field: 'form_site_id',
+          value: form.value,
+          count: form.count
+        }))
+      })
+    }
+
+    // Categoría: Conversiones de Sites
+    if (availableData.nativeConversions?.length) {
+      tree.push({
+        id: 'native_conversions',
+        label: 'Conversiones Sites',
+        icon: UserCheck,
+        children: availableData.nativeConversions.map(conversion => ({
+          id: `native_conversion_${conversion.value}`,
+          label: conversion.name,
+          field: 'native_conversion_source',
+          value: conversion.value,
+          count: conversion.count
         }))
       })
     }
