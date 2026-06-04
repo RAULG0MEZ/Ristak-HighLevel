@@ -825,7 +825,7 @@ const Analytics: React.FC = () => {
           whatsappWebService.getAnalytics({ start: startDate, end: endDate, groupBy: viewType }).catch(() => null)
         ])
 
-        setWebTrackingConfigured(Boolean(trackingConfig?.isConfigured))
+        setWebTrackingConfigured(Boolean(trackingConfig?.isConfigured) || currentSessions.length > 0)
         setWhatsAppAnalytics(whatsappAnalyticsData)
         setContactConversionsByDate(contactConversionRows || [])
 
@@ -1257,8 +1257,9 @@ const Analytics: React.FC = () => {
           setAvailableFilterData(filterData)
 
           // Calcular stats para las cards - VISITANTES ÚNICOS
+          const chartPercentageDenominator = Math.max(uniqueVids, 1)
           const browsersForChart: { [key: string]: Set<string> } = {}
-          currentSessions.forEach((session: Session) => {
+          currentViewSessions.forEach((session: Session) => {
             const browser = session.browser || 'Desconocido'
             if (!browsersForChart[browser]) browsersForChart[browser] = new Set()
             browsersForChart[browser].add(session.visitor_id)
@@ -1267,14 +1268,14 @@ const Analytics: React.FC = () => {
             .map(([browser, visitorSet]) => ({
               name: browser,
               users: visitorSet.size,
-              percentage: ((visitorSet.size / uniqueVids) * 100).toFixed(1)
+              percentage: ((visitorSet.size / chartPercentageDenominator) * 100).toFixed(1)
             }))
             .sort((a, b) => b.users - a.users)
             .slice(0, 5)
           setBrowserData(browserStats)
 
           const platformsForChart: { [key: string]: Set<string> } = {}
-          currentSessions.forEach((session: Session) => {
+          currentViewSessions.forEach((session: Session) => {
             // Usar normalizador con prioridad: referrer_url → site_source_name → utm_source → source_platform
             const platform = normalizeTrafficSource({
               referrer_url: session.referrer_url,
@@ -1289,7 +1290,7 @@ const Analytics: React.FC = () => {
             .map(([platform, visitorSet]) => ({
               name: platform,
               users: visitorSet.size,
-              percentage: ((visitorSet.size / uniqueVids) * 100).toFixed(1)
+              percentage: ((visitorSet.size / chartPercentageDenominator) * 100).toFixed(1)
             }))
             .sort((a, b) => b.users - a.users)
             .slice(0, 5)
@@ -1297,7 +1298,7 @@ const Analytics: React.FC = () => {
 
           // Calcular placements para "Top de ubicaciones" (Facebook Feed, Instagram Reels, etc.) - VISITANTES ÚNICOS
           const placementsForChart: { [key: string]: Set<string> } = {}
-          currentSessions.forEach((session: Session) => {
+          currentViewSessions.forEach((session: Session) => {
             const rawPlacement = session.placement || 'Sin ubicación'
             const placement = formatPlacementName(rawPlacement)
             if (!placementsForChart[placement]) placementsForChart[placement] = new Set()
@@ -1307,14 +1308,14 @@ const Analytics: React.FC = () => {
             .map(([placement, visitorSet]) => ({
               name: placement,
               users: visitorSet.size,
-              percentage: ((visitorSet.size / uniqueVids) * 100).toFixed(1)
+              percentage: ((visitorSet.size / chartPercentageDenominator) * 100).toFixed(1)
             }))
             .sort((a, b) => b.users - a.users)
             .slice(0, 5)
           setPlacementsData(placementStats)
 
           const devicesForChart: { [key: string]: Set<string> } = {}
-          currentSessions.forEach((session: Session) => {
+          currentViewSessions.forEach((session: Session) => {
             const device = session.device_type || 'Desconocido'
             if (!devicesForChart[device]) devicesForChart[device] = new Set()
             devicesForChart[device].add(session.visitor_id)
@@ -1323,14 +1324,14 @@ const Analytics: React.FC = () => {
             .map(([device, visitorSet]) => ({
               name: device,
               users: visitorSet.size,
-              percentage: ((visitorSet.size / uniqueVids) * 100).toFixed(1)
+              percentage: ((visitorSet.size / chartPercentageDenominator) * 100).toFixed(1)
             }))
             .sort((a, b) => b.users - a.users)
             .slice(0, 5)
           setDevicesData(deviceStats)
 
           const operatingSystemsForChart: { [key: string]: Set<string> } = {}
-          currentSessions.forEach((session: Session) => {
+          currentViewSessions.forEach((session: Session) => {
             const os = session.os || 'Desconocido'
             if (!operatingSystemsForChart[os]) operatingSystemsForChart[os] = new Set()
             operatingSystemsForChart[os].add(session.visitor_id)
@@ -1339,7 +1340,7 @@ const Analytics: React.FC = () => {
             .map(([os, visitorSet]) => ({
               name: os,
               users: visitorSet.size,
-              percentage: ((visitorSet.size / uniqueVids) * 100).toFixed(1)
+              percentage: ((visitorSet.size / chartPercentageDenominator) * 100).toFixed(1)
             }))
             .sort((a, b) => b.users - a.users)
             .slice(0, 5)
@@ -1347,7 +1348,7 @@ const Analytics: React.FC = () => {
 
           // Calcular top visitors (visitantes con más requests)
           const visitorCounts: { [key: string]: number } = {}
-          currentSessions.forEach((s: Session) => {
+          currentViewSessions.forEach((s: Session) => {
             visitorCounts[s.visitor_id] = (visitorCounts[s.visitor_id] || 0) + 1
           })
           const topVisitorsList = Object.entries(visitorCounts)
@@ -1639,24 +1640,25 @@ const Analytics: React.FC = () => {
 
     // Recalcular stats para las cards
     const browsersForFilter: { [key: string]: Set<string> } = {}
-    sessionsToProcess.forEach((session: Session) => {
+    viewSessionsToProcess.forEach((session: Session) => {
       const browser = session.browser || 'Desconocido'
       if (!browsersForFilter[browser]) browsersForFilter[browser] = new Set()
       browsersForFilter[browser].add(session.visitor_id)
     })
     const uniqueVisitorsInFilter = new Set(viewSessionsToProcess.map(s => s.visitor_id)).size
+    const percentageDenominator = Math.max(uniqueVisitorsInFilter, 1)
     const browserStats = Object.entries(browsersForFilter)
       .map(([browser, visitorSet]) => ({
         name: browser,
         users: visitorSet.size,
-        percentage: ((visitorSet.size / uniqueVisitorsInFilter) * 100).toFixed(1)
+        percentage: ((visitorSet.size / percentageDenominator) * 100).toFixed(1)
       }))
       .sort((a, b) => b.users - a.users)
       .slice(0, 5)
     setBrowserData(browserStats)
 
     const platformsForFilter: { [key: string]: Set<string> } = {}
-    sessionsToProcess.forEach((session: Session) => {
+    viewSessionsToProcess.forEach((session: Session) => {
       // Usar normalizador con prioridad: referrer_url → site_source_name → utm_source → source_platform
       const platform = normalizeTrafficSource({
         referrer_url: session.referrer_url,
@@ -1671,7 +1673,7 @@ const Analytics: React.FC = () => {
       .map(([platform, visitorSet]) => ({
         name: platform,
         users: visitorSet.size,
-        percentage: ((visitorSet.size / uniqueVisitorsInFilter) * 100).toFixed(1)
+        percentage: ((visitorSet.size / percentageDenominator) * 100).toFixed(1)
       }))
       .sort((a, b) => b.users - a.users)
       .slice(0, 5)
@@ -1679,7 +1681,7 @@ const Analytics: React.FC = () => {
 
     // Calcular placements para "Top de ubicaciones" (Facebook Feed, Instagram Reels, etc.) - VISITANTES ÚNICOS
     const placementsForFilter: { [key: string]: Set<string> } = {}
-    sessionsToProcess.forEach((session: Session) => {
+    viewSessionsToProcess.forEach((session: Session) => {
       const rawPlacement = session.placement || 'Sin ubicación'
       const placement = formatPlacementName(rawPlacement)
       if (!placementsForFilter[placement]) placementsForFilter[placement] = new Set()
@@ -1689,31 +1691,32 @@ const Analytics: React.FC = () => {
       .map(([placement, visitorSet]) => ({
         name: placement,
         users: visitorSet.size,
-        percentage: ((visitorSet.size / uniqueVisitorsInFilter) * 100).toFixed(1)
+        percentage: ((visitorSet.size / percentageDenominator) * 100).toFixed(1)
       }))
       .sort((a, b) => b.users - a.users)
       .slice(0, 5)
     setPlacementsData(placementStats)
 
     const devicesFiltered: { [key: string]: Set<string> } = {}
-    sessionsToProcess.forEach((session: Session) => {
+    viewSessionsToProcess.forEach((session: Session) => {
       const device = session.device_type || 'Desconocido'
       if (!devicesFiltered[device]) devicesFiltered[device] = new Set()
       devicesFiltered[device].add(session.visitor_id)
     })
     const uniqueVisitorsFiltered = new Set(viewSessionsToProcess.map(s => s.visitor_id)).size
+    const devicePercentageDenominator = Math.max(uniqueVisitorsFiltered, 1)
     const deviceStats = Object.entries(devicesFiltered)
       .map(([device, visitorSet]) => ({
         name: device,
         users: visitorSet.size,
-        percentage: ((visitorSet.size / uniqueVisitorsFiltered) * 100).toFixed(1)
+        percentage: ((visitorSet.size / devicePercentageDenominator) * 100).toFixed(1)
       }))
       .sort((a, b) => b.users - a.users)
       .slice(0, 5)
     setDevicesData(deviceStats)
 
     const operatingSystemsForFilter: { [key: string]: Set<string> } = {}
-    sessionsToProcess.forEach((session: Session) => {
+    viewSessionsToProcess.forEach((session: Session) => {
       const os = session.os || 'Desconocido'
       if (!operatingSystemsForFilter[os]) operatingSystemsForFilter[os] = new Set()
       operatingSystemsForFilter[os].add(session.visitor_id)
@@ -1722,7 +1725,7 @@ const Analytics: React.FC = () => {
       .map(([os, visitorSet]) => ({
         name: os,
         users: visitorSet.size,
-        percentage: ((visitorSet.size / uniqueVisitorsInFilter) * 100).toFixed(1)
+        percentage: ((visitorSet.size / percentageDenominator) * 100).toFixed(1)
       }))
       .sort((a, b) => b.users - a.users)
       .slice(0, 5)
