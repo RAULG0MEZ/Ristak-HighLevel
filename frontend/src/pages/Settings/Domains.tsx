@@ -15,7 +15,7 @@ const emptyDomainConfig: SitesDomainConfig = {
 const getDomainStatus = (config: SitesDomainConfig) => {
   if (!config.domain) return { label: 'Sin dominio', className: styles.statusMuted }
   if (config.renderDomainVerified) return { label: 'Verificado', className: styles.statusSuccess }
-  return { label: 'Pendiente Render', className: styles.statusWarning }
+  return { label: 'Pendiente', className: styles.statusWarning }
 }
 
 export const Domains: React.FC = () => {
@@ -59,9 +59,9 @@ export const Domains: React.FC = () => {
       setDomainConfig(result)
       setDomain(result.domain)
       if (result.verification?.verified) {
-        showToast('success', 'Dominio verificado y guardado', 'Render confirma este dominio para enrutar todos los sites.')
+        showToast('success', 'Dominio verificado y guardado', 'El dominio ya responde con esta app.')
       } else {
-        showToast('warning', 'Dominio pendiente', result.verification?.error || result.renderDomainError || 'Render aun no verifica el dominio')
+        showToast('warning', 'Dominio pendiente', result.verification?.error || result.renderDomainError || 'El dominio todavia no responde con esta app')
       }
     } catch (error) {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo verificar el dominio')
@@ -101,7 +101,7 @@ export const Domains: React.FC = () => {
         <div className={styles.domainMeta}>
           <div>
             <h3>Dominio publico</h3>
-            <p>Se guarda solo cuando Render lo confirma como Custom Domain verificado.</p>
+            <p>Se guarda cuando el dominio responde al health publico de esta app.</p>
           </div>
           <span className={`${styles.statusPill} ${status.className}`}>{status.label}</span>
         </div>

@@ -1,4 +1,5 @@
 import crypto from 'crypto'
+import dns from 'node:dns/promises'
 import fetch from 'node-fetch'
 import { db, getAppConfig, setAppConfig } from '../config/database.js'
 import { API_URLS } from '../config/constants.js'
@@ -70,8 +71,9 @@ const DEFAULT_THEME = {
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 const SITES_AI_MAX_MESSAGES = 18
 const SITES_AI_MAX_MESSAGE_CHARS = 5000
-const RENDER_DOMAIN_CACHE_TTL_MS = 15 * 60 * 1000
-const RENDER_FAILED_CACHE_TTL_MS = 90 * 1000
+const PUBLIC_DOMAIN_CACHE_TTL_MS = 15 * 60 * 1000
+const PUBLIC_DOMAIN_FAILED_CACHE_TTL_MS = 90 * 1000
+const PUBLIC_DOMAIN_VERIFY_TIMEOUT_MS = 6000
 const DEFAULT_FUNNEL_PAGE_ID = 'page-1'
 const SITE_META_EVENTS = new Set(['Lead', 'Schedule', 'Purchase', 'FormSubmitted'])
 const META_STANDARD_PIXEL_EVENTS = new Set(['Lead', 'Schedule', 'Purchase'])
@@ -1330,14 +1332,14 @@ async function compactBlockOrder(siteId) {
   }
 }
 
-function shouldRefreshRenderCheck(site, force = false) {
+function shouldRefreshDomainCheck(site, force = false) {
   if (force) return true
   if (!site?.renderDomainCheckedAt) return true
 
   const checkedAt = Date.parse(site.renderDomainCheckedAt)
   if (!Number.isFinite(checkedAt)) return true
 
-  const ttl = site.renderDomainVerified ? RENDER_DOMAIN_CACHE_TTL_MS : RENDER_FAILED_CACHE_TTL_MS
+  const ttl = site.renderDomainVerified ? PUBLIC_DOMAIN_CACHE_TTL_MS : PUBLIC_DOMAIN_FAILED_CACHE_TTL_MS
   return Date.now() - checkedAt > ttl
 }
 
@@ -1364,7 +1366,7 @@ async function saveSitesPublicDomainVerification(domain, result) {
     domain,
     renderDomainVerified: Boolean(result.verified),
     renderDomainCheckedAt: checkedAt,
-    renderDomainError: result.verified ? null : result.error || 'Dominio no verificado en Render'
+    renderDomainError: result.verified ? null : result.error || 'Dominio no conectado a esta app'
   }
 
   await Promise.all([
@@ -1411,7 +1413,7 @@ export async function refreshSitesPublicDomain(input = {}) {
     }
   }
 
-  const result = await verifyRenderCustomDomain(domain)
+  const result = await verifyPublicDomainConnection(domain)
   const shouldPersist = result.verified || domain === current.domain || !hasDomainCandidate
   const nextConfig = shouldPersist
     ? await saveSitesPublicDomainVerification(domain, result)
@@ -1429,60 +1431,115 @@ export async function refreshSitesPublicDomain(input = {}) {
   }
 }
 
-export async function verifyRenderCustomDomain(domainValue) {
+async function readDomainDns(domain) {
+  const [cnamesResult, ipv4Result, ipv6Result] = await Promise.allSettled([
+    dns.resolveCname(domain),
+    dns.resolve4(domain),
+    dns.resolve6(domain)
+  ])
+
+  const cnames = cnamesResult.status === 'fulfilled'
+    ? cnamesResult.value.map(normalizeDomain).filter(Boolean)
+    : []
+  const addresses = [
+    ...(ipv4Result.status === 'fulfilled' ? ipv4Result.value : []),
+    ...(ipv6Result.status === 'fulfilled' ? ipv6Result.value : [])
+  ].filter(Boolean)
+
+  return { cnames, addresses }
+}
+
+function getExpectedPublicDomainTargets() {
+  return new Set([
+    ...getRenderDefaultHosts(),
+    normalizeDomain(process.env.SITES_PUBLIC_TARGET_HOST),
+    normalizeDomain(process.env.PUBLIC_DOMAIN_TARGET_HOST)
+  ].filter(Boolean))
+}
+
+function describeDnsSignal(dnsInfo) {
+  if (!dnsInfo.cnames.length && !dnsInfo.addresses.length) {
+    return 'No encuentro registros DNS publicos para ese dominio'
+  }
+
+  const expectedTargets = getExpectedPublicDomainTargets()
+  const matchingTarget = dnsInfo.cnames.find(cname => expectedTargets.has(cname))
+  if (matchingTarget) {
+    return `DNS apunta a ${matchingTarget}, pero el dominio todavia no responde a esta app`
+  }
+
+  const renderTarget = dnsInfo.cnames.find(cname => cname.endsWith('.onrender.com'))
+  if (renderTarget) {
+    return `DNS apunta a ${renderTarget}, pero el dominio todavia no responde a esta app`
+  }
+
+  if (dnsInfo.cnames.length) {
+    return `DNS apunta a ${dnsInfo.cnames.join(', ')}, pero no responde a esta app`
+  }
+
+  return 'DNS resuelve, pero el dominio todavia no responde a esta app'
+}
+
+async function checkDomainHealth(domain, protocol) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), PUBLIC_DOMAIN_VERIFY_TIMEOUT_MS)
+  const url = `${protocol}://${domain}/api/health`
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        accept: 'application/json',
+        'user-agent': 'RistakDomainVerifier/1.0'
+      },
+      redirect: 'follow',
+      signal: controller.signal
+    })
+    const payload = await response.json().catch(() => null)
+
+    if (response.ok && cleanString(payload?.status).toLowerCase() === 'ok') {
+      return { ok: true, url }
+    }
+
+    return {
+      ok: false,
+      error: `${url} respondio ${response.status}, pero no parece ser el health de Ristak`
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      error: error.name === 'AbortError'
+        ? `${url} no respondio a tiempo`
+        : `${url} fallo: ${error.message}`
+    }
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+export async function verifyPublicDomainConnection(domainValue) {
   const domain = normalizeDomain(domainValue)
   if (!domain) {
     return { verified: false, error: 'Dominio invalido' }
   }
 
-  const token = cleanString(process.env.RENDER_API_KEY || process.env.RENDER_TOKEN)
-  const serviceId = cleanString(process.env.RENDER_SERVICE_ID)
-
-  if (!token || !serviceId) {
-    return {
-      verified: false,
-      error: 'Faltan RENDER_API_KEY y RENDER_SERVICE_ID para validar Custom Domains en Render'
-    }
+  const httpsCheck = await checkDomainHealth(domain, 'https')
+  if (httpsCheck.ok) {
+    return { verified: true, error: null, method: 'https_health', url: httpsCheck.url }
   }
 
-  try {
-    const params = new URLSearchParams({
-      limit: '20',
-      verificationStatus: 'verified'
-    })
-    params.append('name', domain)
+  const httpCheck = await checkDomainHealth(domain, 'http')
+  if (httpCheck.ok) {
+    return { verified: true, error: null, method: 'http_health', url: httpCheck.url }
+  }
 
-    const response = await fetch(
-      `https://api.render.com/v1/services/${encodeURIComponent(serviceId)}/custom-domains?${params.toString()}`,
-      {
-        headers: {
-          accept: 'application/json',
-          authorization: `Bearer ${token}`
-        }
-      }
-    )
-
-    const payload = await response.json().catch(() => null)
-
-    if (!response.ok) {
-      const message = payload?.message || payload?.error || `Render API ${response.status}`
-      return { verified: false, error: `Render no pudo validar el dominio: ${message}` }
+  const dnsInfo = await readDomainDns(domain)
+  return {
+    verified: false,
+    error: describeDnsSignal(dnsInfo),
+    details: {
+      dns: dnsInfo,
+      checks: [httpsCheck.error, httpCheck.error].filter(Boolean)
     }
-
-    const verifiedDomain = Array.isArray(payload)
-      ? payload.some(item => {
-          const customDomain = item.customDomain || item
-          return normalizeDomain(customDomain?.name) === domain &&
-            cleanString(customDomain?.verificationStatus).toLowerCase() === 'verified'
-        })
-      : false
-
-    return verifiedDomain
-      ? { verified: true, error: null }
-      : { verified: false, error: 'El dominio no existe como Custom Domain verificado en Render para este servicio' }
-  } catch (error) {
-    logger.warn(`No se pudo validar Custom Domain en Render (${domain}): ${error.message}`)
-    return { verified: false, error: `Error consultando Render: ${error.message}` }
   }
 }
 
@@ -1533,8 +1590,8 @@ export async function resolveConnectedPublicDomainForHost(hostValue, { forceRefr
     return { ok: false, status: 404, reason: 'domain_not_configured', message: 'Dominio no configurado' }
   }
 
-  if (shouldRefreshRenderCheck(config, forceRefresh)) {
-    const verification = await verifyRenderCustomDomain(config.domain)
+  if (shouldRefreshDomainCheck(config, forceRefresh)) {
+    const verification = await verifyPublicDomainConnection(config.domain)
     const nextConfig = await saveSitesPublicDomainVerification(config.domain, verification)
     config.renderDomainVerified = nextConfig.renderDomainVerified
     config.renderDomainCheckedAt = nextConfig.renderDomainCheckedAt
@@ -1545,8 +1602,8 @@ export async function resolveConnectedPublicDomainForHost(hostValue, { forceRefr
     return {
       ok: false,
       status: 404,
-      reason: 'render_domain_unverified',
-      message: config.renderDomainError || 'Dominio no verificado en Render',
+      reason: 'domain_unverified',
+      message: config.renderDomainError || 'Dominio no conectado a esta app',
       domainConfig: config
     }
   }

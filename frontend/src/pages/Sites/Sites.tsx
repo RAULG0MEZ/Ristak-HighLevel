@@ -1278,9 +1278,9 @@ export const Sites: React.FC = () => {
       setDomainConfig(result)
       setDomainInput(result.domain)
       if (result.verification?.verified) {
-        showToast('success', 'Dominio verificado y guardado', 'Render ya reconoce este dominio para enrutar todos los sites')
+        showToast('success', 'Dominio verificado y guardado', 'El dominio ya responde con esta app')
       } else {
-        showToast('warning', 'Dominio pendiente', result.verification?.error || result.renderDomainError || 'Render aun no lo verifica')
+        showToast('warning', 'Dominio pendiente', result.verification?.error || result.renderDomainError || 'El dominio todavia no responde con esta app')
       }
     } catch (error) {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo verificar el dominio')
@@ -3166,7 +3166,7 @@ const DomainsPanel: React.FC<DomainsPanelProps> = ({
     ? { label: 'Sin dominio', className: styles.statusMuted }
     : domainConfig.renderDomainVerified
       ? { label: 'Verificado', className: styles.statusSuccess }
-      : { label: 'Pendiente Render', className: styles.statusWarning }
+      : { label: 'Pendiente', className: styles.statusWarning }
 
   return (
     <section className={styles.dataPanel}>

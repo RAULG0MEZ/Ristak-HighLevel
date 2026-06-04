@@ -109,7 +109,7 @@ export async function getCalendarPublicUrlStatus() {
     return {
       enabled: false,
       domain: domainConfig.domain,
-      reason: 'El dominio publico general existe, pero todavia no esta verificado en Render.'
+      reason: 'El dominio publico general existe, pero todavia no responde a esta app.'
     }
   }
 
