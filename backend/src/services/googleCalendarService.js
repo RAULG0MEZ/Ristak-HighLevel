@@ -10,6 +10,8 @@ const GOOGLE_TOKEN_URI = 'https://oauth2.googleapis.com/token'
 const GOOGLE_CALENDAR_API_BASE = 'https://www.googleapis.com/calendar/v3'
 const GOOGLE_CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar'
 const REQUEST_TIMEOUT = 15000
+const MANUAL_SYNC_PAST_DAYS = 30
+const MANUAL_SYNC_FUTURE_DAYS = 365
 
 let tokenCache = null
 
@@ -116,6 +118,11 @@ function publicConfig(config = {}) {
     lastTestAt: config.lastTestAt || null,
     lastTestStatus: config.lastTestStatus || null,
     lastTestMessage: config.lastTestMessage || '',
+    lastSyncAt: config.lastSyncAt || null,
+    lastSyncStatus: config.lastSyncStatus || null,
+    lastSyncMessage: config.lastSyncMessage || '',
+    syncedCalendarsCount: Number(config.syncedCalendarsCount || 0),
+    syncedEventsCount: Number(config.syncedEventsCount || 0),
     connectedAt: config.connectedAt || null,
     updatedAt: config.updatedAt || null
   }
@@ -286,6 +293,60 @@ function eventPath(calendarId, eventId = '') {
   return eventId ? `${base}/${encodeURIComponent(eventId)}` : base
 }
 
+function calendarListPath(pageToken = '') {
+  const params = new URLSearchParams({
+    maxResults: '250',
+    showHidden: 'true',
+    minAccessRole: 'reader'
+  })
+  if (pageToken) params.set('pageToken', pageToken)
+  return `/users/me/calendarList?${params.toString()}`
+}
+
+function localIdForGoogleCalendar(calendarId) {
+  const hash = crypto.createHash('sha1').update(cleanString(calendarId)).digest('hex').slice(0, 32)
+  return `google_cal_${hash}`
+}
+
+function googleCalendarToLocalRecord(calendar = {}, config = {}) {
+  const googleCalendarId = cleanString(calendar.id || config.calendarId)
+  const name = cleanString(calendar.summaryOverride || calendar.summary || config.calendarSummary || 'Google Calendar')
+  const color = cleanString(calendar.backgroundColor || calendar.foregroundColor || '#4285f4')
+
+  return {
+    id: localIdForGoogleCalendar(googleCalendarId),
+    name,
+    description: cleanString(calendar.description),
+    calendarType: 'event',
+    widgetType: 'classic',
+    eventTitle: name || 'Cita',
+    eventColor: color.startsWith('#') ? color : '#4285f4',
+    isActive: !calendar.deleted,
+    slotDuration: 60,
+    slotDurationUnit: 'mins',
+    slotInterval: 60,
+    slotIntervalUnit: 'mins',
+    openHours: [],
+    autoConfirm: true,
+    allowReschedule: true,
+    allowCancellation: true,
+    source: 'google',
+    rawJson: {
+      provider: 'google',
+      googleCalendarId,
+      summary: calendar.summary || config.calendarSummary || '',
+      summaryOverride: calendar.summaryOverride || '',
+      description: calendar.description || '',
+      timeZone: calendar.timeZone || config.calendarTimeZone || '',
+      accessRole: calendar.accessRole || '',
+      primary: Boolean(calendar.primary),
+      selected: calendar.selected !== false,
+      backgroundColor: calendar.backgroundColor || '',
+      foregroundColor: calendar.foregroundColor || ''
+    }
+  }
+}
+
 export async function getGoogleCalendarMetadata(config = null) {
   const activeConfig = config || await getGoogleCalendarConfig({ includeCredentials: true })
   if (!activeConfig) {
@@ -296,6 +357,83 @@ export async function getGoogleCalendarMetadata(config = null) {
     activeConfig,
     `/calendars/${encodeURIComponent(activeConfig.calendarId)}`
   )
+}
+
+export async function listGoogleCalendars({ config = null } = {}) {
+  const activeConfig = config || await getGoogleCalendarConfig({ includeCredentials: true })
+  if (!activeConfig) return []
+
+  const calendars = []
+  let pageToken = ''
+
+  do {
+    const payload = await googleRequest(activeConfig, calendarListPath(pageToken))
+    calendars.push(...(Array.isArray(payload?.items) ? payload.items : []))
+    pageToken = payload?.nextPageToken || ''
+  } while (pageToken)
+
+  return calendars.filter(calendar => calendar?.id && !calendar.deleted)
+}
+
+export async function syncGoogleCalendarsToLocal({ config = null } = {}) {
+  const activeConfig = config || await getGoogleCalendarConfig({ includeCredentials: true })
+  if (!activeConfig) {
+    return { enabled: false, saved: 0, calendars: [] }
+  }
+
+  let calendars = []
+  try {
+    calendars = await listGoogleCalendars({ config: activeConfig })
+  } catch (error) {
+    logger.warn(`[Google Calendar] No se pudo listar calendarList, se usara Calendar ID configurado: ${error.message}`)
+  }
+  const knownIds = new Set()
+  const savedCalendars = []
+
+  for (const calendar of calendars) {
+    const googleCalendarId = cleanString(calendar.id)
+    if (!googleCalendarId || knownIds.has(googleCalendarId)) continue
+
+    knownIds.add(googleCalendarId)
+    const localRecord = googleCalendarToLocalRecord(calendar, activeConfig)
+    const localCalendar = await localCalendarService.upsertLocalCalendar(
+      localRecord,
+      {
+        source: 'google',
+        syncStatus: 'synced',
+        rawJson: localRecord.rawJson
+      }
+    )
+    savedCalendars.push(localCalendar)
+  }
+
+  if (activeConfig.calendarId && !knownIds.has(activeConfig.calendarId)) {
+    const metadata = await getGoogleCalendarMetadata(activeConfig)
+    const fallbackCalendar = {
+      id: activeConfig.calendarId,
+      summary: metadata.summary || activeConfig.calendarSummary || activeConfig.calendarId,
+      description: metadata.description || '',
+      timeZone: metadata.timeZone || activeConfig.calendarTimeZone || '',
+      accessRole: 'writer',
+      selected: true
+    }
+    const localRecord = googleCalendarToLocalRecord(fallbackCalendar, activeConfig)
+    const localCalendar = await localCalendarService.upsertLocalCalendar(
+      localRecord,
+      {
+        source: 'google',
+        syncStatus: 'synced',
+        rawJson: localRecord.rawJson
+      }
+    )
+    savedCalendars.push(localCalendar)
+  }
+
+  return {
+    enabled: true,
+    saved: savedCalendars.length,
+    calendars: savedCalendars
+  }
 }
 
 export async function listGoogleEvents({ timeMin, timeMax, calendarId = null, config = null } = {}) {
@@ -389,48 +527,140 @@ function googleEventToAppointment(event = {}, { calendarId, locationId = null } 
   }
 }
 
-export async function syncGoogleEventsToLocal({ startTime, endTime, calendarId = null } = {}) {
-  const config = await getGoogleCalendarConfig({ includeCredentials: true })
-  if (!config) {
+function googleCalendarIdFromLocalCalendar(calendar = {}) {
+  calendar = calendar || {}
+  return cleanString(calendar.googleCalendarId || calendar.rawJson?.googleCalendarId || calendar.raw_json?.googleCalendarId)
+}
+
+async function resolveGoogleSyncTargets(config, calendarId = null) {
+  if (calendarId) {
+    const localCalendar = await localCalendarService.getLocalCalendar(calendarId)
+    const googleCalendarId = googleCalendarIdFromLocalCalendar(localCalendar)
+
+    if (localCalendar?.source === 'google' && googleCalendarId) {
+      return [{
+        googleCalendarId,
+        localCalendarId: localCalendar.id
+      }]
+    }
+
+    return [{
+      googleCalendarId: config.calendarId,
+      localCalendarId: calendarId
+    }]
+  }
+
+  const calendarSync = await syncGoogleCalendarsToLocal({ config })
+  const targets = (calendarSync.calendars || [])
+    .map(calendar => ({
+      googleCalendarId: googleCalendarIdFromLocalCalendar(calendar),
+      localCalendarId: calendar.id
+    }))
+    .filter(target => target.googleCalendarId && target.localCalendarId)
+
+  if (targets.length) return targets
+
+  const fallbackLocalCalendarId = localIdForGoogleCalendar(config.calendarId)
+  return [{
+    googleCalendarId: config.calendarId,
+    localCalendarId: fallbackLocalCalendarId
+  }]
+}
+
+export async function syncGoogleEventsToLocal({ startTime, endTime, calendarId = null, config = null } = {}) {
+  const activeConfig = config || await getGoogleCalendarConfig({ includeCredentials: true })
+  if (!activeConfig) {
     return { enabled: false, saved: 0 }
   }
 
-  const fallbackLocalCalendarId = await resolveLocalCalendarId(null)
-  const events = await listGoogleEvents({
-    timeMin: startTime,
-    timeMax: endTime,
-    config
-  })
+  const targets = await resolveGoogleSyncTargets(activeConfig, calendarId)
 
   let saved = 0
-  for (const event of events) {
-    if (!event?.id || !event.start) continue
-
-    const appointment = googleEventToAppointment(event, {
-      calendarId: fallbackLocalCalendarId
+  for (const target of targets) {
+    const events = await listGoogleEvents({
+      timeMin: startTime,
+      timeMax: endTime,
+      calendarId: target.googleCalendarId,
+      config: activeConfig
     })
 
-    if (!appointment.startTime || !appointment.endTime) continue
+    for (const event of events) {
+      if (!event?.id || !event.start) continue
 
-    const localCalendarId = await resolveLocalCalendarId(appointment.calendarId)
-    const localCalendar = await localCalendarService.getLocalCalendar(localCalendarId)
-    appointment.calendarId = localCalendarId
-    appointment.locationId = localCalendar?.locationId || null
-    const existingAppointment = await localCalendarService.getLocalAppointment(appointment.id).catch(() => null)
+      const appointment = googleEventToAppointment(event, {
+        calendarId: target.localCalendarId
+      })
 
-    await localCalendarService.upsertLocalAppointment(appointment, {
-      id: appointment.id,
-      source: appointment.source,
-      googleEventId: event.id,
-      calendarId: localCalendarId,
-      locationId: localCalendar?.locationId || null,
-      syncStatus: existingAppointment?.syncStatus || (appointment.source === 'google' ? 'synced' : 'pending'),
-      googleSyncStatus: 'synced'
-    })
-    saved += 1
+      if (!appointment.startTime || !appointment.endTime) continue
+
+      const localCalendarId = await resolveLocalCalendarId(appointment.calendarId)
+      const localCalendar = await localCalendarService.getLocalCalendar(localCalendarId)
+      appointment.calendarId = localCalendarId
+      appointment.locationId = localCalendar?.locationId || null
+      const existingAppointment = await localCalendarService.getLocalAppointment(appointment.id).catch(() => null)
+
+      await localCalendarService.upsertLocalAppointment(appointment, {
+        id: appointment.id,
+        source: appointment.source,
+        googleEventId: event.id,
+        calendarId: localCalendarId,
+        locationId: localCalendar?.locationId || null,
+        syncStatus: existingAppointment?.syncStatus || (appointment.source === 'google' ? 'synced' : 'pending'),
+        googleSyncStatus: 'synced'
+      })
+      saved += 1
+    }
   }
 
   return { enabled: true, saved }
+}
+
+export async function syncGoogleIntegrationNow({ startTime = null, endTime = null } = {}) {
+  const config = await getGoogleCalendarConfig({ includeCredentials: true })
+  if (!config) {
+    throw new Error('Google Calendar no esta configurado')
+  }
+
+  const now = new Date()
+  const syncStart = startTime || new Date(now.getTime() - MANUAL_SYNC_PAST_DAYS * 24 * 60 * 60 * 1000).toISOString()
+  const syncEnd = endTime || new Date(now.getTime() + MANUAL_SYNC_FUTURE_DAYS * 24 * 60 * 60 * 1000).toISOString()
+  const existing = await getStoredConfig()
+
+  try {
+    const calendarsResult = await syncGoogleCalendarsToLocal({ config })
+    const eventsResult = await syncGoogleEventsToLocal({
+      startTime: syncStart,
+      endTime: syncEnd,
+      config
+    })
+
+    const updatedConfig = {
+      ...existing,
+      lastSyncAt: new Date().toISOString(),
+      lastSyncStatus: 'success',
+      lastSyncMessage: `${calendarsResult.saved} calendario(s) y ${eventsResult.saved} cita(s) sincronizados`,
+      syncedCalendarsCount: calendarsResult.saved,
+      syncedEventsCount: eventsResult.saved
+    }
+    await persistConfig(updatedConfig)
+
+    return {
+      ...publicConfig(updatedConfig),
+      sync: {
+        calendars: calendarsResult.saved,
+        events: eventsResult.saved
+      }
+    }
+  } catch (error) {
+    const failedConfig = {
+      ...existing,
+      lastSyncAt: new Date().toISOString(),
+      lastSyncStatus: 'error',
+      lastSyncMessage: error.message
+    }
+    await persistConfig(failedConfig)
+    throw error
+  }
 }
 
 export async function syncGoogleEventsForDateRange({ startDate, endDate, timezone = null, calendarId = null } = {}) {
@@ -671,11 +901,14 @@ export default {
   deleteGoogleEventForAppointment,
   getGoogleCalendarConfig,
   getGoogleCalendarMetadata,
+  listGoogleCalendars,
   listGoogleEvents,
   normalizeServiceAccountCredentials,
   saveGoogleCalendarConfig,
   syncAppointmentToGoogle,
+  syncGoogleCalendarsToLocal,
   syncGoogleEventsForDateRange,
   syncGoogleEventsToLocal,
+  syncGoogleIntegrationNow,
   testGoogleCalendarConnection
 }

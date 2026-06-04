@@ -75,7 +75,9 @@ export interface Calendar {
     enabled: boolean;
     LookBusyPercentage: number;
   };
-  source?: 'ristak' | 'ghl';
+  source?: 'ristak' | 'ghl' | 'google';
+  googleCalendarId?: string;
+  googleAccessRole?: string;
   syncStatus?: 'pending' | 'synced' | 'error';
   syncError?: string | null;
   publicBookingPath?: string;
@@ -125,6 +127,11 @@ export interface GoogleCalendarIntegrationStatus {
   lastTestAt: string | null;
   lastTestStatus: 'success' | 'error' | null;
   lastTestMessage: string;
+  lastSyncAt: string | null;
+  lastSyncStatus: 'success' | 'error' | null;
+  lastSyncMessage: string;
+  syncedCalendarsCount: number;
+  syncedEventsCount: number;
   connectedAt: string | null;
   updatedAt: string | null;
 }
@@ -186,6 +193,10 @@ export const calendarsService = {
 
   async testGoogleIntegration(): Promise<GoogleCalendarIntegrationStatus> {
     return apiClient.post<GoogleCalendarIntegrationStatus>('/calendars/google-integration/test');
+  },
+
+  async syncGoogleIntegration(): Promise<GoogleCalendarIntegrationStatus> {
+    return apiClient.post<GoogleCalendarIntegrationStatus>('/calendars/google-integration/sync');
   },
 
   async deleteGoogleIntegration(): Promise<GoogleCalendarIntegrationStatus> {

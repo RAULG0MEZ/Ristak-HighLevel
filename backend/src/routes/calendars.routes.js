@@ -18,6 +18,7 @@ router.post('/', calendarsController.createCalendar);
 router.get('/google-integration', calendarsController.getGoogleCalendarIntegration);
 router.put('/google-integration', calendarsController.saveGoogleCalendarIntegration);
 router.post('/google-integration/test', calendarsController.testGoogleCalendarIntegration);
+router.post('/google-integration/sync', calendarsController.syncGoogleCalendarIntegration);
 router.delete('/google-integration', calendarsController.deleteGoogleCalendarIntegration);
 
 // Obtener eventos/citas

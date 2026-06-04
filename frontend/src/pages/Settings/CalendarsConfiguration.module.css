@@ -14,6 +14,11 @@
   border-bottom: 1px solid rgba(148, 163, 184, 0.16);
 }
 
+.header > div:first-child {
+  min-width: 280px;
+  flex: 1 1 auto;
+}
+
 .header h2,
 .connectionHeader h2,
 .guideHeader h2 {
@@ -53,7 +58,8 @@
   display: inline-grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
-  width: min(100%, 560px);
+  width: min(100%, 520px);
+  flex: 0 1 520px;
   padding: 6px;
   border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 12px;
@@ -527,6 +533,40 @@
   gap: 14px;
 }
 
+.wizardIntro,
+.syncNote {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 12px 13px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 10px;
+  background: rgba(148, 163, 184, 0.045);
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.wizardIntro {
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wizardIntro strong {
+  color: var(--color-text-primary);
+}
+
+.syncNote {
+  margin: 14px 0 0;
+}
+
+.syncNote svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--color-text-tertiary);
+}
+
 .field {
   display: flex;
   flex-direction: column;
@@ -606,6 +646,83 @@
   font-size: 13px;
 }
 
+.connectedCard {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  align-items: flex-start;
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 12px;
+  background: rgba(148, 163, 184, 0.04);
+}
+
+.connectedIcon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--color-success) 12%, transparent);
+  color: var(--color-success);
+}
+
+.connectedMain {
+  min-width: 0;
+}
+
+.connectedTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.connectedTitle h3 {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font-size: 17px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connectedTitle span {
+  flex: 0 0 auto;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.connectedMeta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 12px;
+}
+
+.connectedMeta span {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 8px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.connectedMeta strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--color-text-tertiary);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .formActions {
   display: flex;
   align-items: center;
@@ -614,8 +731,21 @@
   margin-top: 14px;
 }
 
-.testResult {
+.connectedActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
   margin-top: 14px;
+}
+
+.resultStack {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.testResult {
   padding: 11px 12px;
   border-radius: 8px;
   font-size: 13px;
@@ -766,7 +896,17 @@
   }
 
   .supportLinks,
-  .integrationFacts {
+  .integrationFacts,
+  .connectedMeta {
     grid-template-columns: 1fr;
+  }
+
+  .connectedCard {
+    grid-template-columns: 1fr;
+  }
+
+  .connectedTitle {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

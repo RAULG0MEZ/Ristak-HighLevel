@@ -172,10 +172,13 @@ function calendarRowToApi(row = {}) {
   const teamMembers = normalizeTeamMembers(row.team_members)
   const locationConfigurations = normalizeLocationConfigurations(row.location_configurations)
   const openHours = normalizeOpenHours(row.open_hours)
+  const rawJson = parseJson(row.raw_json, {})
 
   return {
     id: row.id,
     ghlCalendarId: row.ghl_calendar_id || null,
+    googleCalendarId: rawJson?.googleCalendarId || rawJson?.google_calendar_id || '',
+    googleAccessRole: rawJson?.accessRole || rawJson?.access_role || '',
     locationId: row.location_id || '',
     groupId: row.group_id || undefined,
     name: row.name || 'Calendario',
@@ -822,6 +825,8 @@ export async function listLocalCalendars({ sourcePreference = 'combined' } = {})
     filters.push("source = 'ristak'")
   } else if (sourcePreference === 'ghl') {
     filters.push("source = 'ghl'")
+  } else if (sourcePreference === 'google') {
+    filters.push("source = 'google'")
   }
 
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : ''

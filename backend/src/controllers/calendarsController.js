@@ -34,7 +34,8 @@ async function getHighLevelContext(req, source = {}) {
 async function getCalendarSourcePreference() {
   try {
     const row = await db.get('SELECT config_value FROM app_config WHERE config_key = ?', ['calendar_source_preference']);
-    return row?.config_value || 'combined';
+    const value = row?.config_value || 'combined';
+    return ['combined', 'ristak', 'ghl', 'google'].includes(value) ? value : 'combined';
   } catch {
     return 'combined';
   }
@@ -169,6 +170,10 @@ export async function saveGoogleCalendarIntegration(req, res) {
       credentials: body.credentials || body.serviceAccountJson || body.service_account_json
     });
 
+    googleCalendarService.syncGoogleCalendarsToLocal().catch(error => {
+      logger.warn(`[Calendars Controller] Google guardado, pero sync de calendarios falló: ${error.message}`);
+    });
+
     res.json({
       success: true,
       data: config
@@ -188,13 +193,43 @@ export async function saveGoogleCalendarIntegration(req, res) {
  */
 export async function testGoogleCalendarIntegration(req, res) {
   try {
-    const config = await googleCalendarService.testGoogleCalendarConnection();
+    let config = await googleCalendarService.testGoogleCalendarConnection();
+    try {
+      config = await googleCalendarService.syncGoogleIntegrationNow();
+    } catch (syncError) {
+      logger.warn(`[Calendars Controller] Prueba Google OK, pero sync manual falló: ${syncError.message}`);
+    }
     res.json({
       success: true,
       data: config
     });
   } catch (error) {
     logger.warn(`[Calendars Controller] Prueba Google Calendar falló: ${error.message}`);
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+}
+
+/**
+ * POST /api/calendars/google-integration/sync
+ * Fuerza sincronización de calendarios Google y citas recientes hacia Ristak.
+ */
+export async function syncGoogleCalendarIntegration(req, res) {
+  try {
+    const body = req.body || {};
+    const config = await googleCalendarService.syncGoogleIntegrationNow({
+      startTime: body.startTime || body.start_time,
+      endTime: body.endTime || body.end_time
+    });
+
+    res.json({
+      success: true,
+      data: config
+    });
+  } catch (error) {
+    logger.warn(`[Calendars Controller] Sync Google Calendar falló: ${error.message}`);
     res.status(400).json({
       success: false,
       error: error.message
@@ -308,6 +343,10 @@ export async function getCalendars(req, res) {
         logger.warn(`[Calendars Controller] No se pudieron espejear calendarios GHL: ${error.message}`);
       }
     }
+
+    await googleCalendarService.syncGoogleCalendarsToLocal().catch(error => {
+      logger.warn(`[Calendars Controller] No se pudieron espejear calendarios Google: ${error.message}`);
+    });
 
     await localCalendarService.ensureDefaultLocalCalendar();
     const sourcePreference = await getCalendarSourcePreference();
@@ -1166,5 +1205,6 @@ export default {
   getGoogleCalendarIntegration,
   saveGoogleCalendarIntegration,
   testGoogleCalendarIntegration,
+  syncGoogleCalendarIntegration,
   deleteGoogleCalendarIntegration
 };
