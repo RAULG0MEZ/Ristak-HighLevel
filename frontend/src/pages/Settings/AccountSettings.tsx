@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, CheckCircle, ChevronDown, Clock, Loader2, Lock, Save, Upload, User, X } from 'lucide-react'
 import { Button, Card } from '@/components/common'
@@ -31,6 +31,98 @@ const ALL_TIMEZONES: string[] =
         'Europe/Madrid'
       ]
 
+interface TimezoneDisplayInfo {
+  value: string
+  offset: string
+  currentTime: string
+  currentDateTime: string
+  optionLabel: string
+}
+
+const getTimezoneParts = (date: Date, timeZone: string): Record<string, number> => {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  })
+
+  return formatter.formatToParts(date).reduce<Record<string, number>>((parts, part) => {
+    if (part.type !== 'literal') {
+      parts[part.type] = part.type === 'hour' && part.value === '24' ? 0 : Number(part.value)
+    }
+    return parts
+  }, {})
+}
+
+const formatTimezoneOffset = (timeZone: string, atDate: Date): string => {
+  try {
+    const parts = getTimezoneParts(atDate, timeZone)
+    const zoneWallAsUtc = Date.UTC(
+      parts.year,
+      (parts.month ?? 1) - 1,
+      parts.day,
+      parts.hour ?? 0,
+      parts.minute ?? 0,
+      parts.second ?? 0
+    )
+    const offsetMinutes = Math.round((zoneWallAsUtc - atDate.getTime()) / 60000)
+    const sign = offsetMinutes >= 0 ? '+' : '-'
+    const absoluteMinutes = Math.abs(offsetMinutes)
+    const hours = String(Math.floor(absoluteMinutes / 60)).padStart(2, '0')
+    const minutes = String(absoluteMinutes % 60).padStart(2, '0')
+    return `UTC${sign}${hours}:${minutes}`
+  } catch {
+    return 'UTC'
+  }
+}
+
+const formatTimezoneTime = (timeZone: string, atDate: Date): string => {
+  try {
+    return new Intl.DateTimeFormat('es-MX', {
+      timeZone,
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    }).format(atDate)
+  } catch {
+    return 'Hora no disponible'
+  }
+}
+
+const formatTimezoneDateTime = (timeZone: string, atDate: Date): string => {
+  try {
+    return new Intl.DateTimeFormat('es-MX', {
+      timeZone,
+      weekday: 'short',
+      day: '2-digit',
+      month: 'short',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    }).format(atDate)
+  } catch {
+    return 'Hora no disponible'
+  }
+}
+
+const buildTimezoneDisplayInfo = (timeZone: string, atDate: Date): TimezoneDisplayInfo => {
+  const offset = formatTimezoneOffset(timeZone, atDate)
+  const currentTime = formatTimezoneTime(timeZone, atDate)
+
+  return {
+    value: timeZone,
+    offset,
+    currentTime,
+    currentDateTime: formatTimezoneDateTime(timeZone, atDate),
+    optionLabel: `${timeZone} (${offset}) - ${currentTime}`
+  }
+}
+
 export const AccountSettings: React.FC = () => {
   const { user, logout } = useAuth()
   const { labels, updateLabels } = useLabels()
@@ -60,6 +152,7 @@ export const AccountSettings: React.FC = () => {
   const [savingLabels, setSavingLabels] = useState(false)
   const [timezoneDraft, setTimezoneDraft] = useState(timezone)
   const [savingTimezone, setSavingTimezone] = useState(false)
+  const [timezoneClock, setTimezoneClock] = useState(() => new Date())
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null)
   const customerTriggerRef = useRef<HTMLButtonElement>(null)
   const leadTriggerRef = useRef<HTMLButtonElement>(null)
@@ -67,6 +160,22 @@ export const AccountSettings: React.FC = () => {
   const currentUsername = user?.username || 'admin'
   const visibleProfilePhoto = isEditingPhoto ? profilePhotoDraft : profilePhoto
   const usernameChanged = newUsername.trim() && newUsername.trim() !== currentUsername
+  const browserTimezone = useMemo(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+    []
+  )
+  const timezoneOptions = useMemo(
+    () => ALL_TIMEZONES.map((tz) => buildTimezoneDisplayInfo(tz, timezoneClock)),
+    [timezoneClock]
+  )
+  const selectedTimezoneInfo = useMemo(
+    () => buildTimezoneDisplayInfo(timezoneDraft || timezone || 'UTC', timezoneClock),
+    [timezoneDraft, timezone, timezoneClock]
+  )
+  const browserTimezoneInfo = useMemo(
+    () => buildTimezoneDisplayInfo(browserTimezone, timezoneClock),
+    [browserTimezone, timezoneClock]
+  )
 
   useEffect(() => {
     setCustomLabels({
@@ -78,6 +187,16 @@ export const AccountSettings: React.FC = () => {
   useEffect(() => {
     setTimezoneDraft(timezone)
   }, [timezone])
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setTimezoneClock(new Date())
+    }, 60000)
+
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [])
 
   const handleSaveTimezone = async () => {
     if (!timezoneDraft || timezoneDraft === timezone) return
@@ -691,10 +810,10 @@ export const AccountSettings: React.FC = () => {
                     disabled={savingTimezone}
                   >
                     {!ALL_TIMEZONES.includes(timezoneDraft) && (
-                      <option value={timezoneDraft}>{timezoneDraft}</option>
+                      <option value={timezoneDraft}>{selectedTimezoneInfo.optionLabel}</option>
                     )}
-                    {ALL_TIMEZONES.map((tz) => (
-                      <option key={tz} value={tz}>{tz}</option>
+                    {timezoneOptions.map((tz) => (
+                      <option key={tz.value} value={tz.value}>{tz.optionLabel}</option>
                     ))}
                   </select>
                 </div>
@@ -707,6 +826,22 @@ export const AccountSettings: React.FC = () => {
                   <Save size={16} />
                   Guardar
                 </Button>
+              </div>
+              <div className={styles.timezonePreview} aria-live="polite">
+                <div className={styles.timezonePreviewItem}>
+                  <span className={styles.timezonePreviewLabel}>Zona seleccionada</span>
+                  <strong className={styles.timezonePreviewValue}>{selectedTimezoneInfo.currentDateTime}</strong>
+                  <span className={styles.timezonePreviewMeta}>
+                    {selectedTimezoneInfo.value} · {selectedTimezoneInfo.offset}
+                  </span>
+                </div>
+                <div className={styles.timezonePreviewItem}>
+                  <span className={styles.timezonePreviewLabel}>Reloj del navegador</span>
+                  <strong className={styles.timezonePreviewValue}>{browserTimezoneInfo.currentDateTime}</strong>
+                  <span className={styles.timezonePreviewMeta}>
+                    {browserTimezoneInfo.value} · {browserTimezoneInfo.offset}
+                  </span>
+                </div>
               </div>
             </section>
           </div>
