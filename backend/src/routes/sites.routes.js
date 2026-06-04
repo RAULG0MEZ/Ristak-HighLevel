@@ -3,6 +3,7 @@ import { requireAuth } from '../middleware/authMiddleware.js'
 import {
   createBlockHandler,
   createSiteHandler,
+  createSiteWithAIHandler,
   deleteBlockHandler,
   deleteSiteHandler,
   getSiteHandler,
@@ -22,6 +23,7 @@ router.use(requireAuth)
 
 router.get('/', getSitesHandler)
 router.post('/', createSiteHandler)
+router.post('/ai-create', createSiteWithAIHandler)
 router.get('/:siteId', getSiteHandler)
 router.put('/:siteId', updateSiteHandler)
 router.delete('/:siteId', deleteSiteHandler)

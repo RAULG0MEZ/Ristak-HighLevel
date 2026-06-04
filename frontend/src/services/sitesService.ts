@@ -33,8 +33,12 @@ export type SiteBlockType =
 
 export type SiteOptionAction =
   | 'continue'
+  | 'cold_lead'
+  | 'warm_lead'
+  | 'hot_lead'
   | 'disqualify'
   | 'show_message'
+  | 'end_form'
   | 'jump'
   | 'tag'
   | 'category'
@@ -54,6 +58,10 @@ export interface SiteTheme {
   accentColor?: string
   backgroundColor?: string
   textColor?: string
+  finalMessages?: {
+    success?: string
+    disqualified?: string
+  }
 }
 
 export interface SiteBlock {
@@ -114,6 +122,19 @@ export interface RenderVerificationResult {
     verified: boolean
     error: string | null
   }
+}
+
+export type SitesAICreationKind = 'landing' | 'form'
+
+export interface SitesAICreationMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface SitesAICreationResult {
+  status: 'needs_more_info' | 'created'
+  reply: string
+  site?: PublicSite
 }
 
 export const blockLabels: Record<SiteBlockType, string> = {
@@ -214,6 +235,10 @@ export const sitesService = {
 
   createSite(payload: Partial<PublicSite> & { siteType?: SiteType }) {
     return apiClient.post<PublicSite>('/sites', payload)
+  },
+
+  createWithAI(payload: { siteKind: SitesAICreationKind; messages: SitesAICreationMessage[] }) {
+    return apiClient.post<SitesAICreationResult>('/sites/ai-create', payload)
   },
 
   getSite(siteId: string) {

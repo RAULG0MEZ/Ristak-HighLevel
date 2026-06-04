@@ -35,6 +35,7 @@ import {
   Save,
   Send,
   Settings2,
+  Sparkles,
   Smartphone,
   Trash2,
   Type,
@@ -56,6 +57,7 @@ import {
   type SiteSubmission,
   type SiteType
 } from '@/services/sitesService'
+import { requestAIAgentOpen, type AIAgentSitesCreationKind } from '@/utils/aiAgentEvents'
 import styles from './Sites.module.css'
 
 type SitesSection = 'landings' | 'forms' | 'leads' | 'domains'
@@ -75,12 +77,18 @@ const sectionItems: Array<{ id: SitesSection; label: string; icon: React.ReactNo
 
 const ruleActions: Array<{ value: SiteOptionAction; label: string }> = [
   { value: 'continue', label: 'Continuar normalmente' },
+  { value: 'cold_lead', label: 'Marcar lead frio' },
+  { value: 'warm_lead', label: 'Marcar lead tibio' },
+  { value: 'hot_lead', label: 'Marcar lead caliente' },
   { value: 'disqualify', label: 'Descalificar contacto' },
   { value: 'show_message', label: 'Mostrar mensaje de no calificado' },
+  { value: 'end_form', label: 'Terminar formulario' },
   { value: 'jump', label: 'Saltar a otra pregunta' },
   { value: 'tag', label: 'Asignar etiqueta interna' },
   { value: 'category', label: 'Marcar lead con categoria' }
 ]
+
+const SITES_AI_DRAFT_CREATED_EVENT = 'ristak-sites-ai-draft-created'
 
 const blockIcons: Partial<Record<SiteBlockType, React.ReactNode>> = {
   headline: <Type size={15} />,
@@ -424,6 +432,25 @@ export const Sites: React.FC = () => {
   }, [blocks, selectedBlockId])
 
   useEffect(() => {
+    const handleAIDraftCreated = (event: Event) => {
+      const site = (event as CustomEvent<PublicSite>).detail
+      if (!site?.id) return
+
+      setSites(current => [site, ...current.filter(item => item.id !== site.id)])
+      setSelectedSite(site)
+      setSelectedBlockId(site.blocks?.[0]?.id || '')
+      setSection(site.siteType === 'landing_page' ? 'landings' : 'forms')
+      setCreateFlow('closed')
+      setHasUnsavedChanges(false)
+    }
+
+    window.addEventListener(SITES_AI_DRAFT_CREATED_EVENT, handleAIDraftCreated)
+    return () => {
+      window.removeEventListener(SITES_AI_DRAFT_CREATED_EVENT, handleAIDraftCreated)
+    }
+  }, [])
+
+  useEffect(() => {
     if (section === 'leads') {
       loadLeads()
     }
@@ -637,6 +664,15 @@ export const Sites: React.FC = () => {
     } finally {
       setCreating(false)
     }
+  }
+
+  const handleCreateSiteWithAI = (siteKind: AIAgentSitesCreationKind) => {
+    requestAIAgentOpen({
+      sitesCreation: {
+        siteKind
+      }
+    })
+    showToast('info', 'IA abierta', 'Responde las preguntas y se va a crear un borrador editable en Sites.')
   }
 
   const handleSaveSite = async (statusOverride?: PublicSite['status']) => {
@@ -861,6 +897,7 @@ export const Sites: React.FC = () => {
                 step={createFlow}
                 creating={creating}
                 onCreate={handleCreateSite}
+                onCreateWithAI={handleCreateSiteWithAI}
               />
             ) : section === 'leads' ? (
               <LeadsPanel rows={leadRows} loading={loadingLeads} onRefresh={loadLeads} />
@@ -1046,9 +1083,10 @@ interface CreateFlowPanelProps {
   step: CreateFlow
   creating: boolean
   onCreate: (siteType: SiteType, mode?: 'blank' | 'template') => void
+  onCreateWithAI: (siteKind: AIAgentSitesCreationKind) => void
 }
 
-const CreateFlowPanel: React.FC<CreateFlowPanelProps> = ({ step, creating, onCreate }) => {
+const CreateFlowPanel: React.FC<CreateFlowPanelProps> = ({ step, creating, onCreate, onCreateWithAI }) => {
   return (
     <section className={styles.createPanel}>
       <div className={styles.createHeader}>
@@ -1060,14 +1098,20 @@ const CreateFlowPanel: React.FC<CreateFlowPanelProps> = ({ step, creating, onCre
         <div className={styles.choiceGrid}>
           <button type="button" disabled={creating} onClick={() => onCreate('landing_page', 'template')}>
             <LayoutTemplate size={22} />
-            <strong>Usar plantilla</strong>
+            <strong>Desde plantilla</strong>
             <p>Arranca con Hero, beneficios y CTA final listos para editar.</p>
             <ChevronRight size={18} />
           </button>
           <button type="button" disabled={creating} onClick={() => onCreate('landing_page', 'blank')}>
             <FileText size={22} />
-            <strong>Empezar en blanco</strong>
+            <strong>En blanco</strong>
             <p>Canvas limpio para agregar solo los bloques que necesitas.</p>
+            <ChevronRight size={18} />
+          </button>
+          <button type="button" disabled={creating} onClick={() => onCreateWithAI('landing')}>
+            <Sparkles size={22} />
+            <strong>Usando IA</strong>
+            <p>El asistente pregunta lo necesario y crea un borrador con bloques editables.</p>
             <ChevronRight size={18} />
           </button>
         </div>
@@ -1085,6 +1129,12 @@ const CreateFlowPanel: React.FC<CreateFlowPanelProps> = ({ step, creating, onCre
             <MousePointerClick size={22} />
             <strong>Interactivo</strong>
             <p>Una pregunta por pantalla, con saltos y descalificacion.</p>
+            <ChevronRight size={18} />
+          </button>
+          <button type="button" disabled={creating} onClick={() => onCreateWithAI('form')}>
+            <Sparkles size={22} />
+            <strong>Usando IA</strong>
+            <p>El asistente arma preguntas, campos y reglas de calificacion como borrador.</p>
             <ChevronRight size={18} />
           </button>
         </div>
@@ -1456,7 +1506,17 @@ const OptionsRulesEditor: React.FC<OptionsRulesEditorProps> = ({ block, blocks, 
               <span>Regla</span>
               <select
                 value={option.action || 'continue'}
-                onChange={(event) => patchOption(index, { action: event.target.value as SiteOptionAction })}
+                onChange={(event) => {
+                  const action = event.target.value as SiteOptionAction
+                  const defaultCategory = action === 'cold_lead'
+                    ? 'frio'
+                    : action === 'warm_lead'
+                      ? 'tibio'
+                      : action === 'hot_lead'
+                        ? 'caliente'
+                        : option.category
+                  patchOption(index, { action, category: defaultCategory })
+                }}
                 onBlur={onSave}
               >
                 {ruleActions.map(action => <option key={action.value} value={action.value}>{action.label}</option>)}
@@ -1474,9 +1534,9 @@ const OptionsRulesEditor: React.FC<OptionsRulesEditorProps> = ({ block, blocks, 
             </label>
           )}
 
-          {(option.action === 'disqualify' || option.action === 'show_message') && (
+          {(option.action === 'disqualify' || option.action === 'show_message' || option.action === 'end_form') && (
             <label className={styles.field}>
-              <span>Mensaje de no calificado</span>
+              <span>{option.action === 'end_form' ? 'Mensaje final' : 'Mensaje de no calificado'}</span>
               <textarea rows={2} value={option.message || ''} onChange={(event) => patchOption(index, { message: event.target.value })} onBlur={onSave} />
             </label>
           )}
@@ -1488,7 +1548,7 @@ const OptionsRulesEditor: React.FC<OptionsRulesEditorProps> = ({ block, blocks, 
             </label>
           )}
 
-          {(option.action === 'category' || option.category) && (
+          {(option.action === 'category' || option.action === 'cold_lead' || option.action === 'warm_lead' || option.action === 'hot_lead' || option.category) && (
             <label className={styles.field}>
               <span>Categoria del lead</span>
               <input value={option.category || ''} onChange={(event) => patchOption(index, { category: event.target.value })} onBlur={onSave} />

@@ -2,8 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { ArrowUp, Bot, CalendarPlus, Check, Copy, CreditCard, Eraser, File as FileIcon, FileText, GitBranch, Image as ImageIcon, KeyRound, MessageCircle, Mic, Paperclip, Pause, SendHorizonal, Sparkles, TrendingUp, Video as VideoIcon, X } from 'lucide-react'
 import { aiAgentService, type AIAgentAttachment, type AIAgentAttachmentKind, type AIAgentBusinessContextField, type AIAgentClarificationOption, type AIAgentConfigInput, type AIAgentConfigStatus, type AIAgentMessage, type AIAgentViewContext } from '@/services/aiAgentService'
+import { sitesService, type SitesAICreationMessage } from '@/services/sitesService'
 import { useNotification } from '@/contexts/NotificationContext'
-import { AI_AGENT_CLOSE_REQUEST_EVENT } from '@/utils/aiAgentEvents'
+import { AI_AGENT_CLOSE_REQUEST_EVENT, AI_AGENT_OPEN_REQUEST_EVENT, type AIAgentOpenRequestDetail, type AIAgentSitesCreationKind } from '@/utils/aiAgentEvents'
 import styles from './AIAgentPanel.module.css'
 
 const AI_AGENT_FLOATING_OPEN_KEY = 'ristak.aiAgentFloating.open'
@@ -19,6 +20,7 @@ const MAX_DIRECT_ATTACHMENT_BYTES = 8 * 1024 * 1024
 const MAX_ATTACHMENT_TOTAL_BYTES = 18 * 1024 * 1024
 const MAX_TEXT_ATTACHMENT_BYTES = 1.5 * 1024 * 1024
 const TEXT_ATTACHMENT_CHAR_LIMIT = 18000
+const SITES_AI_DRAFT_CREATED_EVENT = 'ristak-sites-ai-draft-created'
 const FILE_INPUT_ACCEPT = [
   'image/*',
   'video/*',
@@ -53,6 +55,9 @@ type SendMessageOptions = {
 }
 type AIAgentAttachmentDraft = AIAgentAttachment & {
   previewUrl?: string
+}
+type SitesCreationMode = {
+  siteKind: AIAgentSitesCreationKind
 }
 
 const quickActions = [
@@ -99,7 +104,49 @@ const routeLabels: Record<string, string> = {
   '/contacts': 'Contactos',
   '/appointments': 'Citas',
   '/analytics': 'Analíticas',
-  '/settings': 'Configuración'
+  '/settings': 'Configuración',
+  '/sites': 'Sitios'
+}
+
+function getSitesAIIntro(siteKind: AIAgentSitesCreationKind) {
+  if (siteKind === 'landing') {
+    return [
+      'Vamos a crear una landing page ("sitio web") usando IA, pero con los bloques controlados de Sites.',
+      '',
+      'Cuéntame esto en un solo mensaje si puedes:',
+      '- Nicho o tipo de negocio.',
+      '- Servicio, producto u oferta principal.',
+      '- Objetivo de la landing.',
+      '- Cliente o prospecto ideal.',
+      '- Tono de comunicación.',
+      '- Estilo visual deseado.',
+      '- CTA principal.',
+      '- Si quieres incluir formulario dentro de la landing.'
+    ].join('\n')
+  }
+
+  return [
+    'Vamos a crear un formulario usando IA con campos y reglas editables dentro de Sites.',
+    '',
+    'Cuéntame esto en un solo mensaje si puedes:',
+    '- Qué tipo de prospecto quieres atraer.',
+    '- Qué datos necesitas capturar.',
+    '- Qué preguntas son importantes.',
+    '- Qué respuestas indican buen candidato.',
+    '- Qué respuestas deben descalificar o detener el formulario.',
+    '- Qué mensaje mostrar si alguien queda descalificado.',
+    '- Si debe ser de una sola página o interactivo, una pregunta por pantalla.'
+  ].join('\n')
+}
+
+function prepareSitesCreationMessages(messages: AIAgentMessage[]): SitesAICreationMessage[] {
+  return prepareMessagesForApi(messages)
+    .filter((message) => message.role === 'user' || message.role === 'assistant')
+    .map((message) => ({
+      role: message.role,
+      content: message.content
+    }))
+    .filter((message) => message.content.trim())
 }
 
 const emptyStatus: AIAgentConfigStatus = {
@@ -1469,6 +1516,7 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
   const [form, setForm] = useState<AIAgentConfigInput>(emptyForm)
   const [messages, setMessages] = useState<AIAgentMessage[]>([])
   const [input, setInput] = useState('')
+  const [sitesCreationMode, setSitesCreationMode] = useState<SitesCreationMode | null>(null)
   const [attachments, setAttachments] = useState<AIAgentAttachmentDraft[]>([])
   const [attachmentError, setAttachmentError] = useState('')
   const [apiKeyInput, setApiKeyInput] = useState('')
@@ -1586,9 +1634,38 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
       setOpenState(false)
     }
 
+    const handleOpenRequest = (event: Event) => {
+      const detail = (event as CustomEvent<AIAgentOpenRequestDetail>).detail
+      setOpenState(true)
+
+      if (!detail?.sitesCreation?.siteKind) {
+        focusComposer()
+        return
+      }
+
+      activeChatRequestRef.current?.controller.abort()
+      activeChatRequestRef.current = null
+      chatRequestSeqRef.current += 1
+
+      const nextMessage = createMessage('assistant', getSitesAIIntro(detail.sitesCreation.siteKind))
+      messagesRef.current = [nextMessage]
+      attachmentsRef.current.forEach(revokeAttachmentPreview)
+      attachmentsRef.current = []
+      setSitesCreationMode({ siteKind: detail.sitesCreation.siteKind })
+      setMessages([nextMessage])
+      setInput('')
+      setAttachments([])
+      setAttachmentError('')
+      setSending(false)
+      setUnreadReplies(0)
+      focusComposer()
+    }
+
     window.addEventListener(AI_AGENT_CLOSE_REQUEST_EVENT, handleCloseRequest)
+    window.addEventListener(AI_AGENT_OPEN_REQUEST_EVENT, handleOpenRequest)
     return () => {
       window.removeEventListener(AI_AGENT_CLOSE_REQUEST_EVENT, handleCloseRequest)
+      window.removeEventListener(AI_AGENT_OPEN_REQUEST_EVENT, handleOpenRequest)
     }
   }, [embedded, setOpenState])
 
@@ -1656,7 +1733,7 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
   }, [attachments])
 
   useEffect(() => {
-    if (loadingConfig || askedOnboardingRef.current || businessContextLoaded || !status.configured) return
+    if (sitesCreationMode || loadingConfig || askedOnboardingRef.current || businessContextLoaded || !status.configured) return
 
     askedOnboardingRef.current = true
     const firstQuestion = getNextOnboardingQuestion(form)
@@ -1669,7 +1746,7 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
         createMessage('assistant', firstQuestion.question)
       ]
     })
-  }, [businessContextLoaded, form, loadingConfig, status.configured])
+  }, [businessContextLoaded, form, loadingConfig, sitesCreationMode, status.configured])
 
   const getViewContext = (): AIAgentViewContext => ({
     path: location.pathname,
@@ -1815,6 +1892,58 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
     return true
   }
 
+  const sendSitesCreationMessage = async (userMessage: AIAgentMessage) => {
+    if (!sitesCreationMode) return false
+
+    activeChatRequestRef.current?.controller.abort()
+
+    const controller = new AbortController()
+    const requestId = chatRequestSeqRef.current + 1
+    chatRequestSeqRef.current = requestId
+    activeChatRequestRef.current = { id: requestId, controller }
+
+    const nextMessages = [...messagesRef.current, userMessage]
+    setMessages(nextMessages)
+    setSending(true)
+
+    try {
+      const result = await sitesService.createWithAI({
+        siteKind: sitesCreationMode.siteKind,
+        messages: prepareSitesCreationMessages(nextMessages)
+      })
+
+      if (activeChatRequestRef.current?.id !== requestId) return true
+
+      setMessages((current) => [
+        ...current,
+        createMessage('assistant', result.reply || 'Listo, sigo esperando la información para armar el borrador.')
+      ])
+
+      if (result.status === 'created' && result.site) {
+        setSitesCreationMode(null)
+        window.dispatchEvent(new CustomEvent(SITES_AI_DRAFT_CREATED_EVENT, {
+          detail: result.site
+        }))
+        showToast('success', 'Borrador creado', 'Ya lo abrí en el editor visual de Sites para que lo ajustes.')
+      }
+    } catch (error: any) {
+      if (error?.name === 'AbortError' || activeChatRequestRef.current?.id !== requestId) return true
+
+      setMessages((current) => [
+        ...current,
+        createMessage('assistant', `No pude crear el borrador. ${error?.message || 'Revisa la configuración de OpenAI e inténtalo otra vez.'}`)
+      ])
+    } finally {
+      if (activeChatRequestRef.current?.id === requestId) {
+        activeChatRequestRef.current = null
+        setSending(false)
+        focusComposer()
+      }
+    }
+
+    return true
+  }
+
   const sendMessage = async (
     overrideText?: string,
     selectedClarificationOption?: AIAgentMessage['selectedClarificationOption'],
@@ -1828,6 +1957,11 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
 
     if (nextOnboardingQuestion && !options.forceChat && messageAttachments.length) {
       setAttachmentError('Primero responde el contexto en texto; los archivos los analizamos después.')
+      return
+    }
+
+    if (sitesCreationMode && messageAttachments.length) {
+      setAttachmentError('Para crear Sites con IA responde en texto. Después puedes editar el borrador en el builder.')
       return
     }
 
@@ -1851,6 +1985,11 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
         createMessage('assistant', 'Primero conecta tu API key de OpenAI. Después te hago las preguntas del negocio y yo mismo redacto bien tus respuestas para guardarlas en Configuración.')
       ])
       focusComposer()
+      return
+    }
+
+    if (sitesCreationMode) {
+      await sendSitesCreationMessage(userMessage)
       return
     }
 
@@ -2208,6 +2347,7 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
     setChatCopied(false)
     setCopyingChat(false)
     setAttachmentError('')
+    setSitesCreationMode(null)
     focusComposer()
   }
 
@@ -2224,9 +2364,9 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
   const textComposerClassName = attachments.length
     ? `${styles.textComposer} ${styles.textComposerWithAttachments}`
     : styles.textComposer
-  const panelTitle = embedded ? 'Ristak AI' : 'Agente AI'
+  const panelTitle = sitesCreationMode ? 'Creador de Sites con IA' : embedded ? 'Ristak AI' : 'Agente AI'
   const statusLabel = status.configured
-    ? embedded ? 'Listo para ayudarte' : 'Conectado a OpenAI'
+    ? sitesCreationMode ? 'Creando borrador editable' : embedded ? 'Listo para ayudarte' : 'Conectado a OpenAI'
     : 'Configúralo aquí mismo'
 
   return (

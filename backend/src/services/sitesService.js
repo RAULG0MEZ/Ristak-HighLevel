@@ -4,6 +4,7 @@ import { db, getAppConfig } from '../config/database.js'
 import { API_URLS } from '../config/constants.js'
 import { logger } from '../utils/logger.js'
 import { normalizePhoneForStorage } from '../utils/phoneUtils.js'
+import { getAIAgentConfig, getOpenAIApiKey } from './aiAgentService.js'
 import {
   finalizePreparedPhoneUpsert,
   findContactByPhoneCandidates,
@@ -45,6 +46,18 @@ export const FIELD_BLOCK_TYPES = new Set([
   'date'
 ])
 export const BLOCK_TYPES = new Set([...CONTENT_BLOCK_TYPES, ...FIELD_BLOCK_TYPES])
+export const OPTION_ACTIONS = new Set([
+  'continue',
+  'cold_lead',
+  'warm_lead',
+  'hot_lead',
+  'disqualify',
+  'show_message',
+  'end_form',
+  'jump',
+  'tag',
+  'category'
+])
 
 const DEFAULT_THEME = {
   accentColor: '#111827',
@@ -52,6 +65,9 @@ const DEFAULT_THEME = {
   textColor: '#111827'
 }
 
+const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
+const SITES_AI_MAX_MESSAGES = 18
+const SITES_AI_MAX_MESSAGE_CHARS = 5000
 const RENDER_DOMAIN_CACHE_TTL_MS = 15 * 60 * 1000
 const RENDER_FAILED_CACHE_TTL_MS = 90 * 1000
 
@@ -264,6 +280,46 @@ function validateBlockType(value) {
   return blockType
 }
 
+function normalizeOptionAction(value) {
+  const rawAction = cleanString(value || 'continue').toLowerCase()
+  const action = rawAction
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+
+  const aliases = {
+    normal: 'continue',
+    continuar: 'continue',
+    continuar_normalmente: 'continue',
+    lead_frio: 'cold_lead',
+    frio: 'cold_lead',
+    marcar_lead_frio: 'cold_lead',
+    lead_tibio: 'warm_lead',
+    tibio: 'warm_lead',
+    marcar_lead_tibio: 'warm_lead',
+    lead_caliente: 'hot_lead',
+    caliente: 'hot_lead',
+    marcar_lead_caliente: 'hot_lead',
+    descalificar: 'disqualify',
+    descalificar_contacto: 'disqualify',
+    no_calificado: 'disqualify',
+    mostrar_mensaje: 'show_message',
+    mostrar_mensaje_especifico: 'show_message',
+    terminar: 'end_form',
+    terminar_formulario: 'end_form',
+    finalizar: 'end_form',
+    saltar: 'jump',
+    saltar_pregunta: 'jump',
+    etiqueta: 'tag',
+    asignar_etiqueta: 'tag',
+    categoria: 'category'
+  }
+
+  const resolvedAction = aliases[action] || action
+  return OPTION_ACTIONS.has(resolvedAction) ? resolvedAction : 'continue'
+}
+
 async function ensureUniqueSlug(baseSlug, ignoreSiteId = null) {
   let slug = baseSlug
   let suffix = 2
@@ -350,6 +406,427 @@ function buildDefaultBlocks(siteId, siteType) {
       sortOrder: 3
     })
   ]
+}
+
+function limitString(value, limit = 1200) {
+  const text = cleanString(value)
+  return text.length > limit ? text.slice(0, limit).trim() : text
+}
+
+function normalizeInternalName(value, fallback = 'field') {
+  return slugify(value || fallback).replace(/-/g, '_')
+}
+
+function normalizeHexColor(value, fallback) {
+  const color = cleanString(value)
+  return /^#[0-9a-f]{6}$/i.test(color) ? color : fallback
+}
+
+function normalizeAITheme(theme = {}) {
+  const input = theme && typeof theme === 'object' && !Array.isArray(theme) ? theme : {}
+  return {
+    accentColor: normalizeHexColor(input.accentColor || input.accent_color, DEFAULT_THEME.accentColor),
+    backgroundColor: normalizeHexColor(input.backgroundColor || input.background_color, DEFAULT_THEME.backgroundColor),
+    textColor: normalizeHexColor(input.textColor || input.text_color, DEFAULT_THEME.textColor)
+  }
+}
+
+function normalizeSitesAIMessages(messages = []) {
+  return (Array.isArray(messages) ? messages : [])
+    .slice(-SITES_AI_MAX_MESSAGES)
+    .map(message => ({
+      role: cleanString(message?.role) === 'assistant' ? 'assistant' : 'user',
+      content: limitString(message?.content, SITES_AI_MAX_MESSAGE_CHARS)
+    }))
+    .filter(message => message.content)
+}
+
+function getOpenAIErrorMessage(data, fallback = 'OpenAI no pudo generar el site') {
+  if (!data) return fallback
+  return cleanString(data?.error?.message || data?.message || data?.error) || fallback
+}
+
+function extractOpenAIResponseText(data) {
+  if (typeof data?.output_text === 'string' && data.output_text.trim()) {
+    return data.output_text.trim()
+  }
+
+  const textParts = []
+  const output = Array.isArray(data?.output) ? data.output : []
+  for (const item of output) {
+    const content = Array.isArray(item?.content) ? item.content : []
+    for (const part of content) {
+      if (typeof part?.text === 'string') {
+        textParts.push(part.text)
+      }
+    }
+  }
+
+  return textParts.join('\n').trim()
+}
+
+function parseSitesAIJson(text) {
+  const rawText = cleanString(text)
+  if (!rawText) throw new Error('La IA respondio vacia')
+
+  const fenced = rawText.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  const candidate = fenced?.[1] || rawText
+  const start = candidate.indexOf('{')
+  const end = candidate.lastIndexOf('}')
+  const jsonText = start >= 0 && end > start ? candidate.slice(start, end + 1) : candidate
+
+  try {
+    return JSON.parse(jsonText)
+  } catch {
+    const error = new Error('La IA no devolvio JSON valido para Sites')
+    error.status = 502
+    throw error
+  }
+}
+
+function buildSitesAIInstructions({ siteKind, agentConfig = {} }) {
+  const businessContext = [
+    agentConfig.business_context,
+    agentConfig.market_context,
+    agentConfig.ideal_customer,
+    agentConfig.location_context,
+    agentConfig.competitors_context,
+    agentConfig.brand_voice,
+    agentConfig.action_customizations
+  ].map(value => limitString(value, 1200)).filter(Boolean).join('\n\n')
+
+  return `
+Eres el asistente de creacion de Sites de Ristak. Tu trabajo es hacer preguntas y, cuando haya informacion suficiente, devolver SOLO JSON valido compatible con el builder actual.
+
+Reglas duras:
+- No generes HTML, CSS, React, JavaScript ni codigo libre.
+- Usa unicamente bloques y campos permitidos.
+- Si falta informacion critica, responde JSON con status "needs_more_info" y una pregunta concreta en "reply".
+- Si ya hay informacion suficiente, responde JSON con status "ready", "reply" y un objeto "site".
+- El site creado siempre debe quedar como borrador editable en el builder.
+- La respuesta completa debe ser JSON valido sin markdown.
+
+Tipo solicitado por el usuario: ${siteKind === 'landing' ? 'landing_page' : 'formulario'}.
+
+Bloques permitidos para landing_page:
+hero, title, subtitle, text, image, video, button, benefits, testimonials, services, embed, form_embed, faq, cta.
+
+Bloques permitidos para formularios:
+short_text, paragraph, number, currency, dropdown, radio, checkboxes, phone, email, date, title, subtitle, description, embed.
+
+Acciones permitidas por opcion:
+continue, cold_lead, warm_lead, hot_lead, disqualify, show_message, end_form, jump, tag, category.
+
+JSON esperado cuando falta informacion:
+{
+  "status": "needs_more_info",
+  "reply": "Pregunta breve al usuario"
+}
+
+JSON esperado cuando esta listo:
+{
+  "status": "ready",
+  "reply": "Ya arme un borrador editable.",
+  "site": {
+    "siteType": "landing_page | standard_form | interactive_form",
+    "name": "Nombre interno",
+    "title": "Titulo publico",
+    "description": "Descripcion corta",
+    "theme": { "accentColor": "#111827", "backgroundColor": "#ffffff", "textColor": "#111827" },
+    "seo": { "title": "SEO title", "description": "SEO description" },
+    "finalMessages": { "success": "Mensaje final", "disqualified": "Mensaje no calificado" },
+    "blocks": [
+      {
+        "key": "identificador_opcional_para_saltos",
+        "blockType": "hero | short_text | radio | etc",
+        "label": "Etiqueta o pregunta",
+        "content": "Texto principal cuando aplique",
+        "placeholder": "Placeholder cuando aplique",
+        "required": true,
+        "settings": { "internalName": "nombre_interno", "helpText": "Texto de ayuda", "validation": "email" },
+        "options": [
+          {
+            "label": "Opcion visible",
+            "value": "valor",
+            "action": "continue | cold_lead | warm_lead | hot_lead | disqualify | show_message | end_form | jump | tag | category",
+            "targetBlockId": "key_de_bloque_destino_si_hay_salto",
+            "message": "Mensaje especifico si aplica",
+            "tag": "etiqueta si aplica",
+            "category": "frio | tibio | caliente u otra categoria"
+          }
+        ]
+      }
+    ]
+  }
+}
+
+Para landings, si el usuario quiere formulario dentro de la landing, usa un bloque form_embed con settings.embeddedBlocks usando campos permitidos.
+Para formularios, propone reglas de calificacion/descalificacion cuando haya dropdown, radio o checkboxes.
+Usa copy claro y estrategico, pero mantenlo editable y estructurado.
+
+Contexto del negocio configurado en Ristak:
+${businessContext || 'Sin contexto adicional configurado.'}
+`.trim()
+}
+
+async function callSitesAIGenerator({ apiKey, model, siteKind, messages, agentConfig }) {
+  const response = await fetch(OPENAI_RESPONSES_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: cleanString(model) || 'gpt-5.5',
+      instructions: buildSitesAIInstructions({ siteKind, agentConfig }),
+      input: JSON.stringify({
+        siteKind,
+        conversation: messages
+      }),
+      max_output_tokens: 5200
+    })
+  })
+
+  let data = null
+  try {
+    data = await response.json()
+  } catch {
+    data = null
+  }
+
+  if (!response.ok) {
+    const error = new Error(getOpenAIErrorMessage(data))
+    error.status = response.status >= 400 && response.status < 500 ? 400 : 502
+    throw error
+  }
+
+  const text = extractOpenAIResponseText(data)
+  return parseSitesAIJson(text)
+}
+
+function normalizeAIOption(option = {}) {
+  const label = limitString(option.label || option.value || option.text || option.name, 160)
+  const action = normalizeOptionAction(option.action || option.accion || option.rule || option.regla)
+  let category = limitString(option.category || option.categoria || option.leadCategory, 80)
+
+  if (action === 'cold_lead' && !category) category = 'frio'
+  if (action === 'warm_lead' && !category) category = 'tibio'
+  if (action === 'hot_lead' && !category) category = 'caliente'
+
+  return {
+    id: cleanString(option.id) || slugify(label || 'opcion'),
+    label,
+    value: limitString(option.value || label, 160),
+    action,
+    targetBlockId: cleanString(option.targetBlockId || option.target_block_id || option.targetBlockKey || option.jumpTo || option.saltarA),
+    message: limitString(option.message || option.mensaje, 600),
+    tag: limitString(option.tag || option.etiqueta, 80),
+    category
+  }
+}
+
+function normalizeAIBlockOptions(blockType, options = []) {
+  const normalized = (Array.isArray(options) ? options : [])
+    .map(normalizeAIOption)
+    .filter(option => option.label)
+
+  if (['dropdown', 'radio', 'checkboxes'].includes(blockType) && normalized.length === 0) {
+    return [
+      normalizeAIOption({ label: 'Si', value: 'Si', action: 'continue' }),
+      normalizeAIOption({ label: 'No', value: 'No', action: 'continue' })
+    ]
+  }
+
+  return normalized
+}
+
+function normalizeAIEmbeddedBlocks(siteId, embeddedBlocks = []) {
+  const allowedTypes = new Set([...FIELD_BLOCK_TYPES, 'title', 'subtitle', 'description', 'embed'])
+  return (Array.isArray(embeddedBlocks) ? embeddedBlocks : [])
+    .map((block, index) => normalizeAIBlock({
+      block,
+      siteId,
+      sortOrder: index,
+      allowedTypes,
+      fallbackType: 'short_text'
+    }))
+    .filter(Boolean)
+    .map(({ sourceKey, ...block }) => block)
+}
+
+function normalizeAIBlock({ block = {}, siteId, sortOrder = 0, allowedTypes = BLOCK_TYPES, fallbackType = 'text' }) {
+  const rawType = cleanString(block.blockType || block.block_type || block.type || block.tipo)
+  const blockType = allowedTypes.has(rawType) ? rawType : fallbackType
+  const isField = FIELD_BLOCK_TYPES.has(blockType)
+  const id = crypto.randomUUID()
+  const label = limitString(block.label || block.question || block.pregunta || block.title || block.titulo || (isField ? 'Nueva pregunta' : 'Nuevo bloque'), 180)
+  const settings = block.settings && typeof block.settings === 'object' && !Array.isArray(block.settings)
+    ? { ...block.settings }
+    : {}
+
+  if (block.helpText || block.help_text || block.ayuda) {
+    settings.helpText = limitString(block.helpText || block.help_text || block.ayuda, 400)
+  }
+
+  if (block.validation || block.validacion) {
+    settings.validation = limitString(block.validation || block.validacion, 80)
+  }
+
+  if (isField && !settings.internalName) {
+    settings.internalName = normalizeInternalName(block.internalName || block.internal_name || label)
+  }
+
+  if (blockType === 'form_embed') {
+    const embeddedBlocks = settings.embeddedBlocks || settings.embedded_blocks || block.embeddedBlocks || block.embedded_blocks || block.questions || block.preguntas
+    settings.embeddedBlocks = normalizeAIEmbeddedBlocks(siteId, embeddedBlocks)
+  }
+
+  return {
+    sourceKey: cleanString(block.key || block.id || settings.internalName || label),
+    id,
+    site_id: siteId,
+    block_type: blockType,
+    label,
+    content: limitString(block.content || block.text || block.copy || block.title || block.titulo, 1800),
+    placeholder: limitString(block.placeholder, 180),
+    required: normalizeBoolean(block.required || block.requerido),
+    options: normalizeAIBlockOptions(blockType, block.options || block.opciones),
+    settings,
+    sort_order: sortOrder
+  }
+}
+
+function resolveAIJumpTargets(blocks = []) {
+  const targets = new Map()
+
+  for (const block of blocks) {
+    for (const key of [
+      block.sourceKey,
+      block.id,
+      block.label,
+      block.settings?.internalName
+    ]) {
+      const normalized = normalizeInternalName(key)
+      if (normalized) targets.set(normalized, block.id)
+    }
+  }
+
+  return blocks.map(block => ({
+    ...block,
+    options: block.options.map(option => {
+      if (option.action !== 'jump' || !option.targetBlockId) return option
+      const normalizedTarget = normalizeInternalName(option.targetBlockId)
+      return {
+        ...option,
+        targetBlockId: targets.get(normalizedTarget) || ''
+      }
+    })
+  }))
+}
+
+function normalizeAISiteBlueprint(siteKind, aiSite = {}) {
+  const siteTypeInput = cleanString(aiSite.siteType || aiSite.site_type || aiSite.type || aiSite.tipo)
+  const siteType = siteKind === 'landing'
+    ? 'landing_page'
+    : siteTypeInput === 'interactive_form' || /interactivo|typeform|una_pregunta/i.test(siteTypeInput)
+      ? 'interactive_form'
+      : 'standard_form'
+
+  const id = crypto.randomUUID()
+  const allowedTypes = siteType === 'landing_page'
+    ? new Set(['hero', 'title', 'subtitle', 'text', 'image', 'video', 'button', 'benefits', 'testimonials', 'services', 'embed', 'form_embed', 'faq', 'cta'])
+    : new Set([...FIELD_BLOCK_TYPES, 'title', 'subtitle', 'description', 'embed'])
+  const fallbackType = siteType === 'landing_page' ? 'text' : 'short_text'
+  const blocksInput = Array.isArray(aiSite.blocks)
+    ? aiSite.blocks
+    : Array.isArray(aiSite.bloques)
+      ? aiSite.bloques
+      : []
+  let blocks = blocksInput
+    .map((block, index) => normalizeAIBlock({ block, siteId: id, sortOrder: index, allowedTypes, fallbackType }))
+    .filter(Boolean)
+
+  if (blocks.length === 0) {
+    throw new Error('La IA no genero bloques validos para Sites')
+  }
+
+  blocks = resolveAIJumpTargets(blocks)
+
+  const seo = aiSite.seo && typeof aiSite.seo === 'object' && !Array.isArray(aiSite.seo) ? aiSite.seo : {}
+  const finalMessages = aiSite.finalMessages && typeof aiSite.finalMessages === 'object' && !Array.isArray(aiSite.finalMessages)
+    ? aiSite.finalMessages
+    : aiSite.final_messages && typeof aiSite.final_messages === 'object' && !Array.isArray(aiSite.final_messages)
+      ? aiSite.final_messages
+      : {}
+  const theme = normalizeAITheme(aiSite.theme || aiSite.style || aiSite.estilo)
+  const successMessage = limitString(finalMessages.success || finalMessages.exito, 600)
+  const disqualifiedMessage = limitString(finalMessages.disqualified || finalMessages.descalificado, 600)
+  const title = limitString(aiSite.title || seo.title || aiSite.name || (siteType === 'landing_page' ? 'Nueva landing con IA' : 'Nuevo formulario con IA'), 180)
+  const name = limitString(aiSite.name || title, 100)
+
+  return {
+    id,
+    name,
+    siteType,
+    slug: slugify(aiSite.slug || name),
+    title,
+    description: limitString(aiSite.description || seo.description, 600),
+    theme: {
+      ...theme,
+      ...(successMessage || disqualifiedMessage
+        ? {
+            finalMessages: {
+              ...(successMessage ? { success: successMessage } : {}),
+              ...(disqualifiedMessage ? { disqualified: disqualifiedMessage } : {})
+            }
+          }
+        : {})
+    },
+    metaEventName: 'Lead',
+    blocks
+  }
+}
+
+async function insertAISiteBlueprint(blueprint) {
+  const slug = await ensureUniqueSlug(blueprint.slug)
+
+  await db.run(`
+    INSERT INTO public_sites (
+      id, name, slug, site_type, status, domain, title, description, theme_json,
+      meta_capi_enabled, meta_event_name, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, 'draft', NULL, ?, ?, ?, 0, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+  `, [
+    blueprint.id,
+    blueprint.name,
+    slug,
+    blueprint.siteType,
+    blueprint.title,
+    blueprint.description || null,
+    jsonString(blueprint.theme),
+    blueprint.metaEventName || 'Lead'
+  ])
+
+  for (const block of blueprint.blocks) {
+    await db.run(`
+      INSERT INTO public_site_blocks (
+        id, site_id, block_type, label, content, placeholder, required,
+        options_json, settings_json, sort_order, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `, [
+      block.id,
+      block.site_id,
+      block.block_type,
+      block.label,
+      block.content,
+      block.placeholder,
+      block.required,
+      jsonString(block.options),
+      jsonString(block.settings || {}),
+      block.sort_order
+    ])
+  }
+
+  return getSite(blueprint.id, { includeBlocks: true, includeSubmissions: true })
 }
 
 export async function listSites() {
@@ -462,6 +939,58 @@ export async function createSite(input = {}) {
   }
 
   return getSite(id, { includeBlocks: true, includeSubmissions: true })
+}
+
+export async function createSiteWithAI(input = {}) {
+  const siteKind = cleanString(input.siteKind || input.site_kind)
+  if (!['landing', 'form'].includes(siteKind)) {
+    const error = new Error('Tipo de creacion con IA invalido')
+    error.status = 400
+    throw error
+  }
+
+  const messages = normalizeSitesAIMessages(input.messages)
+  if (messages.length === 0) {
+    return {
+      status: 'needs_more_info',
+      reply: siteKind === 'landing'
+        ? 'Cuentame el nicho, oferta, objetivo, cliente ideal, tono, estilo visual, CTA y si quieres formulario dentro de la landing.'
+        : 'Cuentame que prospecto quieres atraer, que datos necesitas, preguntas clave, respuestas que califican o descalifican y si lo quieres de una sola pagina o interactivo.'
+    }
+  }
+
+  const apiKey = await getOpenAIApiKey()
+  if (!apiKey) {
+    const error = new Error('Primero configura la API key de OpenAI en Configuracion.')
+    error.status = 409
+    throw error
+  }
+
+  const agentConfig = await getAIAgentConfig({ userId: input.userId })
+  const aiPayload = await callSitesAIGenerator({
+    apiKey,
+    model: agentConfig?.model,
+    siteKind,
+    messages,
+    agentConfig
+  })
+
+  const status = cleanString(aiPayload?.status)
+  if (status === 'needs_more_info' || !aiPayload?.site) {
+    return {
+      status: 'needs_more_info',
+      reply: limitString(aiPayload?.reply, 1000) || 'Me falta un dato clave para armar el borrador. Cuentame un poco mas del negocio y el objetivo.'
+    }
+  }
+
+  const blueprint = normalizeAISiteBlueprint(siteKind, aiPayload.site)
+  const site = await insertAISiteBlueprint(blueprint)
+
+  return {
+    status: 'created',
+    reply: limitString(aiPayload?.reply, 1000) || 'Listo, cree un borrador editable en Sites.',
+    site
+  }
 }
 
 export async function updateSite(siteId, input = {}) {
@@ -861,7 +1390,7 @@ function normalizeOption(option) {
       id: cleanString(option.id) || slugify(label || 'opcion'),
       label,
       value: cleanString(option.value) || label,
-      action: cleanString(option.action || 'continue'),
+      action: normalizeOptionAction(option.action),
       targetBlockId: cleanString(option.targetBlockId || option.target_block_id),
       message: cleanString(option.message),
       tag: cleanString(option.tag),
@@ -1471,14 +2000,16 @@ export function renderPublicSiteHtml(site) {
       nextButton?.addEventListener('click', () => {
         const current = steps[index];
         if (current && !validateField(current)) return;
-        const rule = current ? readSelectedRules(current).find(item => item.action && item.action !== 'continue') : null;
-        if (rule?.action === 'show_message' || rule?.action === 'disqualify') {
-          if (message) message.textContent = rule.message || 'Gracias. Tu informacion fue recibida.';
+        const rules = current ? readSelectedRules(current).filter(item => item.action && item.action !== 'continue') : [];
+        const blockingRule = rules.find(item => item.action === 'show_message' || item.action === 'disqualify' || item.action === 'end_form');
+        if (blockingRule) {
+          if (message) message.textContent = blockingRule.message || 'Gracias. Tu informacion fue recibida.';
           form.requestSubmit();
           return;
         }
-        if (rule?.action === 'jump' && rule.targetBlockId) {
-          const targetIndex = steps.findIndex(step => step.getAttribute('data-block-id') === rule.targetBlockId);
+        const jumpRule = rules.find(item => item.action === 'jump' && item.targetBlockId);
+        if (jumpRule?.targetBlockId) {
+          const targetIndex = steps.findIndex(step => step.getAttribute('data-block-id') === jumpRule.targetBlockId);
           index = targetIndex >= 0 ? targetIndex : Math.min(index + 1, steps.length - 1);
         } else {
           index = Math.min(index + 1, steps.length - 1);
@@ -1832,6 +2363,9 @@ function evaluateSubmissionRules(blocks, responses = {}) {
       const action = option.action || 'continue'
       if (option.tag) tags.add(option.tag)
       if (option.category) categories.add(option.category)
+      if (action === 'cold_lead') categories.add(option.category || 'frio')
+      if (action === 'warm_lead') categories.add(option.category || 'tibio')
+      if (action === 'hot_lead') categories.add(option.category || 'caliente')
 
       if (action !== 'continue' || option.tag || option.category) {
         actions.push({
@@ -1851,6 +2385,10 @@ function evaluateSubmissionRules(blocks, responses = {}) {
         if (!message) {
           message = option.message || 'Gracias. Tu informacion fue recibida.'
         }
+      }
+
+      if (action === 'end_form' && !message) {
+        message = option.message || 'Gracias. Tu informacion fue recibida.'
       }
     }
   }
@@ -1879,6 +2417,17 @@ function hashValue(value, normalizer = normalizeForHash) {
   const normalized = normalizer(value)
   if (!normalized) return null
   return crypto.createHash('sha256').update(normalized).digest('hex')
+}
+
+function getSiteFinalMessage(site, ruleEvaluation) {
+  if (ruleEvaluation.message) return ruleEvaluation.message
+
+  const finalMessages = site?.theme?.finalMessages || site?.theme?.final_messages || {}
+  if (ruleEvaluation.disqualified && finalMessages.disqualified) {
+    return cleanString(finalMessages.disqualified)
+  }
+
+  return cleanString(finalMessages.success) || 'Listo. Recibimos tu informacion.'
 }
 
 async function logMetaEvent({ contactId, eventType, metaEventName, eventId, status, requestPayload, responsePayload, errorMessage }) {
@@ -2086,7 +2635,7 @@ export async function createSubmissionFromRequest(req, body = {}) {
     siteId: site.id,
     contactId,
     status: ruleEvaluation.status,
-    message: ruleEvaluation.message || 'Listo. Recibimos tu informacion.',
+    message: getSiteFinalMessage(site, ruleEvaluation),
     rules: ruleEvaluation,
     capi
   }
