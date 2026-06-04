@@ -585,6 +585,20 @@ async function findStoredWhatsAppContactName({ sessionId, remoteJid, phone }) {
   return pickWhatsAppContactName(names, { phone, remoteJid })
 }
 
+async function getWhatsAppWebContactByRemoteJid(sessionId = DEFAULT_SESSION_ID, remoteJid = '') {
+  const normalizedRemoteJid = normalizeJid(remoteJid)
+  if (!sessionId || !normalizedRemoteJid) return null
+
+  return db.get(`
+    SELECT id, contact_id, phone, push_name, display_name, updated_at
+    FROM whatsapp_web_contacts
+    WHERE session_id = ?
+      AND remote_jid = ?
+    ORDER BY updated_at DESC
+    LIMIT 1
+  `, [sessionId, normalizedRemoteJid])
+}
+
 async function applyWhatsAppContactNameToLocalContact(contactId, displayName, { phone = '', remoteJid = '' } = {}) {
   const contactName = cleanWhatsAppContactName(displayName, { phone, remoteJid })
   if (!contactId || !contactName) return 0
@@ -1468,6 +1482,24 @@ async function processWhatsAppWebMessage(sessionId, msg, { eventSource = 'notify
   if (!msg?.message) return { saved: false, reason: 'ignored' }
 
   const { remoteJid, phoneJid, identityJid, phone, usedLidFallback } = resolveWhatsAppWebAddressing(msg, lidPhoneMap)
+  let resolvedPhone = phone
+  let linkedContact = null
+
+  if (!resolvedPhone && usedLidFallback) {
+    linkedContact = await getWhatsAppWebContactByRemoteJid(sessionId, identityJid)
+    resolvedPhone = linkedContact?.phone || ''
+  }
+
+  if (!resolvedPhone && !usedLidFallback) {
+    logger.warn(`WhatsApp Business mensaje sin numero telefonico resoluble: ${remoteJid}`)
+    return { saved: false, reason: 'no-phone' }
+  }
+
+  if (!resolvedPhone && usedLidFallback && !linkedContact?.contact_id) {
+    logger.warn(`WhatsApp Business mensaje con fallback LID sin contacto local resoluble: ${remoteJid}`)
+    return { saved: false, reason: 'no-phone' }
+  }
+
   if (shouldIgnoreJid(remoteJid)) return { saved: false, reason: 'ignored-jid' }
 
   const attribution = detectAttribution(msg)
@@ -1475,34 +1507,31 @@ async function processWhatsAppWebMessage(sessionId, msg, { eventSource = 'notify
     return { saved: false, reason: 'no-attribution' }
   }
 
-  if (!phone || usedLidFallback) {
-    logger.warn(`WhatsApp Business mensaje sin numero telefonico resoluble: ${remoteJid}`)
-    return { saved: false, reason: 'no-phone' }
-  }
-
   const isInbound = !msg.key?.fromMe
   const isSelfNumber = await isOwnWhatsAppNumber({
     sessionId,
     runtime: getRuntime(sessionId),
-    phone,
+    phone: resolvedPhone,
     remoteJid,
     identityJid
   })
   const storedName = await findStoredWhatsAppContactName({
     sessionId,
     remoteJid: identityJid,
-    phone
+    phone: resolvedPhone
   })
   const pushName = pickWhatsAppContactName([
     isInbound ? msg.pushName : '',
     storedName
-  ], { phone, remoteJid: identityJid })
+  ], { phone: resolvedPhone, remoteJid: identityJid })
   const messageText = getMessageText(msg.message)
   const messageTimestamp = toDateTime(msg.messageTimestamp)
   const contact = isSelfNumber
     ? { id: null, created: false }
-    : await upsertLocalContact({
-      phone,
+    : linkedContact?.contact_id
+      ? { id: linkedContact.contact_id, created: false }
+      : await upsertLocalContact({
+      phone: resolvedPhone,
       pushName,
       remoteJid: identityJid,
       messageText,
@@ -1514,7 +1543,7 @@ async function processWhatsAppWebMessage(sessionId, msg, { eventSource = 'notify
     sessionId,
     contactId: contact.id,
     remoteJid: identityJid,
-    phone,
+    phone: resolvedPhone,
     pushName,
     firstSeenAt: messageTimestamp,
     rawProfile: {
@@ -1533,7 +1562,7 @@ async function processWhatsAppWebMessage(sessionId, msg, { eventSource = 'notify
     webContactId,
     msg,
     remoteJid: identityJid,
-    phone,
+    phone: resolvedPhone,
     pushName,
     attribution
   })
@@ -1550,7 +1579,7 @@ async function processWhatsAppWebMessage(sessionId, msg, { eventSource = 'notify
     saved: true,
     attributionDetected: attribution.hasAttribution,
     contactId: contact.id,
-    phone
+    phone: resolvedPhone
   }
 }
 
