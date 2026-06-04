@@ -162,7 +162,7 @@ export async function reorderBlocksHandler(req, res) {
 
 export async function verifySiteDomainHandler(req, res) {
   try {
-    const result = await refreshSiteRenderDomain(req.params.siteId)
+    const result = await refreshSiteRenderDomain(req.params.siteId, req.body || {})
     if (!result) {
       return res.status(404).json({ success: false, error: 'Site no encontrado' })
     }

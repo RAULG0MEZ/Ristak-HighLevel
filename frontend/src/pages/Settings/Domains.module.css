@@ -85,6 +85,11 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) 180px;
   gap: 12px;
+  align-items: end;
+}
+
+.domainControls > button {
+  width: 100%;
 }
 
 .field {

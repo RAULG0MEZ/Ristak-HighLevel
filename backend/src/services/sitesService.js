@@ -113,6 +113,28 @@ function slugify(value) {
   return base || `site-${Date.now()}`
 }
 
+function getDefaultRoutePrefix(siteType) {
+  return siteType === 'landing_page' ? 'site' : 'form'
+}
+
+async function getNextDefaultSlug(siteType) {
+  const prefix = getDefaultRoutePrefix(siteType)
+  const rows = await db.all(
+    'SELECT slug FROM public_sites WHERE slug LIKE ?',
+    [`${prefix}-%`]
+  )
+  const used = new Set(rows.map(row => row.slug))
+  let index = 1
+  let slug = `${prefix}-${String(index).padStart(2, '0')}`
+
+  while (used.has(slug)) {
+    index += 1
+    slug = `${prefix}-${String(index).padStart(2, '0')}`
+  }
+
+  return slug
+}
+
 function parseHost(value) {
   const rawValue = cleanString(value)
   if (!rawValue) return ''
@@ -892,7 +914,7 @@ export async function createSite(input = {}) {
   const id = crypto.randomUUID()
   const name = cleanString(input.name) || 'Nuevo site'
   const siteType = validateSiteType(input.siteType || input.site_type)
-  const slug = await ensureUniqueSlug(slugify(input.slug || name))
+  const slug = await ensureUniqueSlug(slugify(input.slug || await getNextDefaultSlug(siteType)))
   const title = cleanString(input.title) || name
   const description = cleanString(input.description)
   const domain = normalizeDomain(input.domain)
@@ -1200,6 +1222,34 @@ async function updateRenderVerification(siteId, result) {
   ])
 }
 
+async function saveVerifiedSiteDomain(siteId, domain, result) {
+  const existing = await db.get(
+    "SELECT id FROM public_sites WHERE LOWER(domain) = LOWER(?) AND id != ? AND COALESCE(domain, '') != '' LIMIT 1",
+    [domain, siteId]
+  )
+
+  if (existing) {
+    const error = new Error('Este dominio ya esta conectado a otro site')
+    error.status = 409
+    throw error
+  }
+
+  await db.run(`
+    UPDATE public_sites SET
+      domain = ?,
+      render_domain_verified = ?,
+      render_domain_checked_at = CURRENT_TIMESTAMP,
+      render_domain_error = ?,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `, [
+    domain,
+    result.verified ? 1 : 0,
+    result.verified ? null : result.error || 'Dominio no verificado en Render',
+    siteId
+  ])
+}
+
 export async function verifyRenderCustomDomain(domainValue) {
   const domain = normalizeDomain(domainValue)
   if (!domain) {
@@ -1257,20 +1307,65 @@ export async function verifyRenderCustomDomain(domainValue) {
   }
 }
 
-export async function refreshSiteRenderDomain(siteId) {
+export async function refreshSiteRenderDomain(siteId, input = {}) {
   const site = await getSite(siteId, { includeBlocks: false })
   if (!site) return null
+  const hasDomainCandidate = Object.prototype.hasOwnProperty.call(input, 'domain')
+  const rawDomain = hasDomainCandidate ? input.domain : site.domain
+  const domain = normalizeDomain(rawDomain)
 
-  if (!site.domain) {
-    const result = { verified: false, error: 'Configura un dominio primero' }
-    await updateRenderVerification(site.id, result)
-    return { site: await getSite(site.id), verification: result }
+  if (hasDomainCandidate && cleanString(rawDomain) && !domain) {
+    const result = { verified: false, error: 'Dominio invalido' }
+    return {
+      site: {
+        ...(await getSite(site.id, { includeBlocks: true, includeSubmissions: true })),
+        domain: cleanString(rawDomain),
+        renderDomainVerified: false,
+        renderDomainCheckedAt: new Date().toISOString(),
+        renderDomainError: result.error
+      },
+      verification: result
+    }
   }
 
-  const result = await verifyRenderCustomDomain(site.domain)
-  await updateRenderVerification(site.id, result)
+  if (!domain) {
+    const result = { verified: false, error: 'Configura un dominio primero' }
+    if (!hasDomainCandidate) {
+      await updateRenderVerification(site.id, result)
+    }
+    return {
+      site: {
+        ...(await getSite(site.id, { includeBlocks: true, includeSubmissions: true })),
+        domain: '',
+        renderDomainVerified: false,
+        renderDomainCheckedAt: new Date().toISOString(),
+        renderDomainError: result.error
+      },
+      verification: result
+    }
+  }
 
-  return { site: await getSite(site.id), verification: result }
+  const result = await verifyRenderCustomDomain(domain)
+
+  if (result.verified) {
+    await saveVerifiedSiteDomain(site.id, domain, result)
+    return { site: await getSite(site.id, { includeBlocks: true, includeSubmissions: true }), verification: result }
+  }
+
+  if (!hasDomainCandidate || domain === site.domain) {
+    await updateRenderVerification(site.id, result)
+  }
+
+  return {
+    site: {
+      ...(await getSite(site.id, { includeBlocks: true, includeSubmissions: true })),
+      domain,
+      renderDomainVerified: false,
+      renderDomainCheckedAt: new Date().toISOString(),
+      renderDomainError: result.error
+    },
+    verification: result
+  }
 }
 
 async function findSiteByDomain(hostValue) {

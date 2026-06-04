@@ -254,8 +254,8 @@ export const sitesService = {
     return apiClient.delete(`/sites/${siteId}`)
   },
 
-  verifyDomain(siteId: string) {
-    return apiClient.post<RenderVerificationResult>(`/sites/${siteId}/verify-domain`)
+  verifyDomain(siteId: string, domain?: string) {
+    return apiClient.post<RenderVerificationResult>(`/sites/${siteId}/verify-domain`, domain === undefined ? undefined : { domain })
   },
 
   createBlock(siteId: string, payload: Partial<SiteBlock> & { blockType: SiteBlockType }) {

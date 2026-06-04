@@ -235,7 +235,7 @@
 
 .siteSettingsBar {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) minmax(220px, 1.3fr) 140px auto;
+  grid-template-columns: minmax(150px, 0.8fr) minmax(160px, 1fr) minmax(220px, 1.25fr) 140px auto;
   gap: 10px;
   align-items: end;
   border: 1px solid rgba(148, 163, 184, 0.16);
@@ -852,6 +852,10 @@
   border-radius: 8px;
   background: var(--color-background-primary);
   padding: 14px;
+}
+
+.domainEditor .editorActions {
+  justify-content: flex-end;
 }
 
 .domainError {

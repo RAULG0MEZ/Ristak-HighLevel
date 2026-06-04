@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { CheckCircle2, ExternalLink, Globe2, RefreshCw, Save } from 'lucide-react'
+import { CheckCircle2, ExternalLink, Globe2, RefreshCw } from 'lucide-react'
 import { Button, Loading } from '@/components/common'
 import { useNotification } from '@/contexts/NotificationContext'
 import { sitesService, type PublicSite } from '@/services/sitesService'
@@ -15,7 +15,6 @@ export const Domains: React.FC = () => {
   const { showToast } = useNotification()
   const [sites, setSites] = useState<PublicSite[]>([])
   const [loading, setLoading] = useState(true)
-  const [savingSiteId, setSavingSiteId] = useState<string | null>(null)
   const [verifyingSiteId, setVerifyingSiteId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -37,29 +36,13 @@ export const Domains: React.FC = () => {
     setSites(current => current.map(site => site.id === siteId ? { ...site, ...patch } : site))
   }
 
-  const saveSiteDomain = async (site: PublicSite) => {
-    setSavingSiteId(site.id)
-    try {
-      const updated = await sitesService.updateSite(site.id, {
-        domain: site.domain,
-        status: site.status
-      })
-      patchSite(site.id, updated)
-      showToast('success', 'Dominio guardado', 'Ahora verifica Render antes de publicar')
-    } catch (error) {
-      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo guardar el dominio')
-    } finally {
-      setSavingSiteId(null)
-    }
-  }
-
   const verifyDomain = async (site: PublicSite) => {
     setVerifyingSiteId(site.id)
     try {
-      const result = await sitesService.verifyDomain(site.id)
+      const result = await sitesService.verifyDomain(site.id, site.domain)
       patchSite(site.id, result.site)
       if (result.verification.verified) {
-        showToast('success', 'Dominio verificado', 'Render confirma este dominio en el servicio')
+        showToast('success', 'Dominio verificado y guardado', 'Render confirma este dominio en el servicio')
       } else {
         showToast('warning', 'Dominio pendiente', result.verification.error || 'Render aun no verifica el dominio')
       }
@@ -82,7 +65,7 @@ export const Domains: React.FC = () => {
         </div>
         <div>
           <h2>Dominios</h2>
-          <p>Asocia cada site publico a un dominio exacto y valida que exista como Custom Domain verificado en Render.</p>
+          <p>Conecta cada site publico a un dominio exacto y valida que exista como Custom Domain verificado en Render.</p>
         </div>
         <Button variant="secondary" onClick={loadSites}>
           <RefreshCw size={16} />
@@ -91,8 +74,8 @@ export const Domains: React.FC = () => {
       </div>
 
       <div className={styles.infoBox}>
-        <strong>Regla de publicacion</strong>
-        <span>El dashboard sigue viviendo en el dominio principal y en .onrender.com. Un site publico solo responde si el Host coincide con el dominio guardado aqui, el site esta publicado y Render lo reporta como Custom Domain verificado.</span>
+        <strong>Validacion Render</strong>
+        <span>El dominio se guarda solo cuando Render confirma que existe como Custom Domain verificado para este servicio.</span>
       </div>
 
       <div className={styles.domainList}>
@@ -103,7 +86,7 @@ export const Domains: React.FC = () => {
           </div>
         ) : sites.map(site => {
           const status = getDomainStatus(site)
-          const publicUrl = site.domain ? `https://${site.domain}` : ''
+          const publicUrl = site.domain ? `https://${site.domain}/${site.slug}` : ''
 
           return (
             <article key={site.id} className={styles.domainCard}>
@@ -121,20 +104,17 @@ export const Domains: React.FC = () => {
                   <input
                     value={site.domain}
                     placeholder="www.doctorramirez.com"
-                    onChange={(event) => patchSite(site.id, { domain: event.target.value })}
+                    onChange={(event) => patchSite(site.id, {
+                      domain: event.target.value,
+                      renderDomainVerified: false,
+                      renderDomainError: null
+                    })}
                   />
                 </label>
-                <label className={styles.field}>
-                  <span>Estado del site</span>
-                  <select
-                    value={site.status}
-                    onChange={(event) => patchSite(site.id, { status: event.target.value as PublicSite['status'] })}
-                  >
-                    <option value="draft">Borrador</option>
-                    <option value="published">Publicado</option>
-                    <option value="archived">Archivado</option>
-                  </select>
-                </label>
+                <Button onClick={() => verifyDomain(site)} loading={verifyingSiteId === site.id} disabled={!site.domain.trim()}>
+                  <CheckCircle2 size={16} />
+                  Verificar dominio
+                </Button>
               </div>
 
               {site.renderDomainError && (
@@ -148,14 +128,6 @@ export const Domains: React.FC = () => {
                     Abrir
                   </a>
                 )}
-                <Button variant="secondary" onClick={() => saveSiteDomain(site)} loading={savingSiteId === site.id}>
-                  <Save size={16} />
-                  Guardar
-                </Button>
-                <Button onClick={() => verifyDomain(site)} loading={verifyingSiteId === site.id}>
-                  <CheckCircle2 size={16} />
-                  Verificar Render
-                </Button>
               </div>
             </article>
           )
