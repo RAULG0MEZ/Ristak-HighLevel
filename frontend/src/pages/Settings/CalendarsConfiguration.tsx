@@ -527,7 +527,7 @@ export const CalendarsConfiguration: React.FC = () => {
               <h3>{calendar.name}</h3>
               {isDefault && (
                 <span className={pageStyles.defaultPill}>
-                  <Star size={13} />
+                  <Star size={12} fill="currentColor" />
                   Predeterminado
                 </span>
               )}
@@ -570,17 +570,10 @@ export const CalendarsConfiguration: React.FC = () => {
         </div>
 
         <div className={pageStyles.calendarActions}>
-          {!isDefault && (
-            <Button
-              variant="outline"
-              size="small"
-              onClick={() => handleDefaultCalendarChange(calendar.id)}
-            >
-              <Star size={15} />
-              Usar como predeterminado
-            </Button>
-          )}
-          <div className={styles.toggleContainer}>
+          <div className={`${pageStyles.conversionControl} ${isAttributed ? pageStyles.conversionControlActive : ''}`}>
+            <span className={`${styles.toggleLabel} ${isAttributed ? styles.toggleLabelActive : ''}`}>
+              Conversión
+            </span>
             <button
               type="button"
               className={`${styles.toggle} ${isAttributed ? styles.toggleActive : ''}`}
@@ -591,10 +584,17 @@ export const CalendarsConfiguration: React.FC = () => {
             >
               <span className={styles.toggleThumb} />
             </button>
-            <span className={`${styles.toggleLabel} ${isAttributed ? styles.toggleLabelActive : ''}`}>
-              Conversión
-            </span>
           </div>
+          {!isDefault && (
+            <Button
+              variant="outline"
+              size="small"
+              onClick={() => handleDefaultCalendarChange(calendar.id)}
+            >
+              <Star size={15} />
+              Usar como predeterminado
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="small"
@@ -611,27 +611,21 @@ export const CalendarsConfiguration: React.FC = () => {
   const renderCalendarsTab = () => (
     <div className={pageStyles.tabPanel}>
       <div className={pageStyles.panelToolbar}>
-        <div>
-          <h2>Tus calendarios</h2>
-          <p>{calendars.length} calendario{calendars.length !== 1 ? 's' : ''} conectado{calendars.length !== 1 ? 's' : ''}</p>
-        </div>
+        <p className={pageStyles.panelCount}>
+          <strong>{calendars.length}</strong> calendario{calendars.length !== 1 ? 's' : ''}
+          {' · '}
+          <strong>{attributionCalendarIds.length}</strong> como conversión
+        </p>
         <div className={pageStyles.toolbarActions}>
           {renderCalendarSourceSelect()}
+          <Button variant="ghost" size="small" onClick={handleSelectAllAttribution} disabled={calendars.length === 0}>
+            {allSelected ? 'Desmarcar todos' : 'Marcar todos'}
+          </Button>
           <Button variant="outline" size="small" onClick={() => setShowCreateModal(true)}>
             <Plus size={16} />
             Crear calendario
           </Button>
         </div>
-      </div>
-
-      <div className={pageStyles.attributionBar}>
-        <div>
-          <strong>{attributionCalendarIds.length}/{calendars.length}</strong>
-          <span>marcados como conversión</span>
-        </div>
-        <Button variant="ghost" size="small" onClick={handleSelectAllAttribution} disabled={calendars.length === 0}>
-          {allSelected ? 'Desmarcar todos' : 'Marcar todos'}
-        </Button>
       </div>
 
       <details className={pageStyles.compactHelp}>
@@ -855,16 +849,12 @@ export const CalendarsConfiguration: React.FC = () => {
         <div className={pageStyles.header}>
           <div>
             <div className={pageStyles.eyebrow}>
-              <Calendar size={17} />
+              <Calendar size={15} />
               Configuración
             </div>
             <h2>Configuración de calendario</h2>
-            <p>Administra calendarios, predeterminado, conversiones y Google Calendar sin llenar la pantalla de ruido.</p>
+            <p>Administra tus calendarios, el predeterminado, las conversiones y la conexión con Google Calendar.</p>
           </div>
-          <Button variant="outline" size="small" onClick={() => setShowCreateModal(true)}>
-            <Plus size={16} />
-            Crear calendario
-          </Button>
         </div>
 
         <div className={pageStyles.tabs} role="tablist" aria-label="Configuración de calendarios">
