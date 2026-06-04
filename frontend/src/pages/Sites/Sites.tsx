@@ -19,6 +19,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import {
   AlertTriangle,
+  ArrowLeft,
   CalendarDays,
   CheckCircle2,
   ChevronRight,
@@ -664,6 +665,7 @@ export const Sites: React.FC = () => {
     : section === 'forms'
       ? (isFormSite(selectedSite) ? selectedSite : null)
       : null
+  const isFocusedSitesMode = createFlow !== 'closed' || Boolean(editorSite)
   const publicUrl = editorSite ? buildPublicUrl(editorSite) : ''
   const editorTrackingStats = getTrackingStats(editorSite)
 
@@ -1373,30 +1375,40 @@ export const Sites: React.FC = () => {
 
   return (
     <>
-      <div className={styles.container}>
+      <div className={`${styles.container} ${isFocusedSitesMode ? styles.containerFocused : ''}`}>
         <header className={styles.header}>
           <div>
-            <h1 className={styles.title}>Sitios</h1>
+            <div className={styles.titleRow}>
+              {isFocusedSitesMode && (
+                <button type="button" className={styles.backButton} onClick={handleBackToLibrary}>
+                  <ArrowLeft size={16} />
+                  Volver
+                </button>
+              )}
+              <h1 className={styles.title}>Sitios</h1>
+            </div>
             <p className={styles.subtitle}>Constructor visual controlado para landings, formularios, leads y publicacion por dominio verificado.</p>
           </div>
         </header>
 
-        <div className={styles.sitesShell}>
-          <aside className={styles.internalSidebar}>
-            <nav className={styles.sectionNav}>
-              {sectionItems.map(item => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className={`${styles.sectionButton} ${section === item.id ? styles.sectionButtonActive : ''}`}
-                  onClick={() => handleSectionChange(item.id)}
-                >
-                  {item.icon}
-                  <span>{item.label}</span>
-                </button>
-              ))}
-            </nav>
-          </aside>
+        <div className={`${styles.sitesShell} ${isFocusedSitesMode ? styles.sitesShellFocused : ''}`}>
+          {!isFocusedSitesMode && (
+            <aside className={styles.internalSidebar}>
+              <nav className={styles.sectionNav}>
+                {sectionItems.map(item => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`${styles.sectionButton} ${section === item.id ? styles.sectionButtonActive : ''}`}
+                    onClick={() => handleSectionChange(item.id)}
+                  >
+                    {item.icon}
+                    <span>{item.label}</span>
+                  </button>
+                ))}
+              </nav>
+            </aside>
+          )}
 
           <main className={styles.mainSurface}>
             {createFlow !== 'closed' ? (
@@ -1450,10 +1462,6 @@ export const Sites: React.FC = () => {
                         Abrir
                       </a>
                     )}
-                    <Button variant="secondary" onClick={handleBackToLibrary}>
-                      <LayoutTemplate size={16} />
-                      Biblioteca
-                    </Button>
                     <Button variant="secondary" onClick={handlePreviewSite}>
                       <Eye size={16} />
                       Previsualizar
@@ -1509,9 +1517,9 @@ export const Sites: React.FC = () => {
 
               <DesignControls site={editorSite} onPatchTheme={patchSiteTheme} onSave={() => handleSaveSite()} />
 
-              <div className={styles.builderGrid}>
-                <div className={styles.leftTools}>
-                  {isLanding(editorSite) && (
+              <div className={`${styles.builderGrid} ${isLanding(editorSite) ? styles.builderGridLanding : styles.builderGridForm}`}>
+                {isLanding(editorSite) && (
+                  <div className={styles.pagesRail}>
                     <FunnelPagesPanel
                       pages={pages}
                       activePageId={activePage?.id || DEFAULT_FUNNEL_PAGE_ID}
@@ -1523,7 +1531,10 @@ export const Sites: React.FC = () => {
                       onDragPage={setDraggingPageId}
                       onReorderPages={handleReorderPages}
                     />
-                  )}
+                  </div>
+                )}
+
+                <div className={styles.blocksRail}>
                   <Palette
                     blockTypes={isLanding(editorSite) ? landingBlockTypes : formBlockTypes}
                     onAdd={handleAddBlock}
@@ -1942,44 +1953,13 @@ interface DesignControlsProps {
 const DesignControls: React.FC<DesignControlsProps> = ({ site, onPatchTheme, onSave }) => {
   const currentId = resolveTemplateId(site)
   const isFormSite = site.siteType !== 'landing_page'
-  const available: SiteTemplateId[] = site.siteType === 'landing_page'
-    ? ['ristak', 'vsl']
-    : site.siteType === 'interactive_form'
-      ? ['interactive', 'ristak']
-      : ['ristak', 'facebook', 'instagram', 'tiktok']
   const platform = platformChromeFor(currentId)
   const theme = site.theme || {}
 
-  const pickTemplate = (id: SiteTemplateId) => {
-    onPatchTheme({ template: id })
-    window.setTimeout(onSave, 0)
-  }
+  if (!isFormSite && !platform) return null
 
   return (
     <div className={styles.designBar}>
-      <div className={styles.designRow}>
-        <span className={styles.designLabel}>Plantilla</span>
-        <div className={styles.templatePills}>
-          {available.map(id => {
-            const meta = templateMetaById(id)
-            if (!meta) return null
-            return (
-              <button
-                key={id}
-                type="button"
-                className={`${styles.templatePill} ${currentId === id ? styles.templatePillActive : ''}`}
-                onClick={() => pickTemplate(id)}
-              >
-                <span className={styles.pillSwatch} style={{ background: meta.swatchBg }}>
-                  <span style={{ background: meta.accent }} />
-                </span>
-                {meta.label}
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
       {(isFormSite || platform) && (
         <div className={styles.designRow}>
           {isFormSite && (
