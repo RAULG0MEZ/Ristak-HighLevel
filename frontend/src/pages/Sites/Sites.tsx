@@ -228,6 +228,103 @@ const parseItems = (value: string) => value
     return { title, text: text || '', author: author || '' }
   })
 
+type EmbedPreviewConfig =
+  | { kind: 'empty' }
+  | { kind: 'url'; src: string; title: string; allow?: string; height?: number }
+  | { kind: 'html'; srcDoc: string; title: string; height?: number }
+
+const DEFAULT_EMBED_ALLOW = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share'
+const EMBED_SANDBOX_URL = 'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox'
+const EMBED_SANDBOX_HTML = 'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox'
+const EMBED_DEFAULT_HEIGHT = 360
+const EMBED_MIN_HEIGHT = 180
+const EMBED_MAX_HEIGHT = 760
+
+const decodeHtmlEntities = (value: string) => value
+  .replace(/&amp;/g, '&')
+  .replace(/&quot;/g, '"')
+  .replace(/&#039;/g, "'")
+  .replace(/&#39;/g, "'")
+  .replace(/&#x27;/gi, "'")
+  .replace(/&lt;/g, '<')
+  .replace(/&gt;/g, '>')
+
+const safeEmbedUrl = (value: string) => {
+  const raw = decodeHtmlEntities(value).trim()
+  if (!raw) return ''
+  const candidate = raw.startsWith('//')
+    ? `https:${raw}`
+    : /^www\./i.test(raw)
+      ? `https://${raw}`
+      : raw
+
+  try {
+    const parsed = new URL(candidate)
+    return ['http:', 'https:'].includes(parsed.protocol) ? parsed.toString() : ''
+  } catch {
+    return ''
+  }
+}
+
+const normalizeEmbedHeight = (value: string | null | undefined) => {
+  const match = String(value || '').match(/(\d{2,4})/)
+  if (!match) return undefined
+  const height = Number(match[1])
+  if (!Number.isFinite(height)) return undefined
+  return Math.min(EMBED_MAX_HEIGHT, Math.max(EMBED_MIN_HEIGHT, height))
+}
+
+const buildEmbedSrcDoc = (html: string) => `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <base target="_blank">
+    <style>
+      * { box-sizing: border-box; }
+      html, body { margin: 0; min-height: 100%; background: transparent; color: #111827; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      body { padding: 0; overflow-wrap: anywhere; }
+      iframe, img, video { max-width: 100%; }
+      iframe { border: 0; }
+    </style>
+  </head>
+  <body>${html}</body>
+</html>`
+
+const resolveEmbedPreview = (rawValue: string): EmbedPreviewConfig => {
+  const raw = rawValue.trim()
+  if (!raw || raw.toLowerCase() === 'embed') return { kind: 'empty' }
+
+  const directUrl = safeEmbedUrl(raw)
+  if (directUrl) {
+    return { kind: 'url', src: directUrl, title: 'Embed', height: EMBED_DEFAULT_HEIGHT }
+  }
+
+  if (/<iframe\b/i.test(raw) && typeof DOMParser !== 'undefined') {
+    try {
+      const document = new DOMParser().parseFromString(raw, 'text/html')
+      const iframe = document.querySelector('iframe')
+      const iframeUrl = safeEmbedUrl(iframe?.getAttribute('src') || '')
+      if (iframeUrl) {
+        return {
+          kind: 'url',
+          src: iframeUrl,
+          title: iframe?.getAttribute('title') || 'Embed',
+          allow: iframe?.getAttribute('allow') || undefined,
+          height: normalizeEmbedHeight(iframe?.getAttribute('height') || iframe?.style.height)
+        }
+      }
+    } catch {
+      // Fall through to srcDoc rendering.
+    }
+  }
+
+  if (/<[a-z][\s\S]*>/i.test(raw)) {
+    return { kind: 'html', srcDoc: buildEmbedSrcDoc(raw), title: 'Codigo embed', height: EMBED_DEFAULT_HEIGHT }
+  }
+
+  return { kind: 'empty' }
+}
+
 const createEmbeddedBlocks = (siteId: string): SiteBlock[] => [
   {
     id: `embedded_${crypto.randomUUID()}`,
@@ -308,6 +405,15 @@ const defaultBlockPayload = (blockType: SiteBlockType, siteId: string) => {
       label,
       content: 'Formulario',
       settings: { description: 'Completa tus datos.', embeddedBlocks: createEmbeddedBlocks(siteId) }
+    }
+  }
+
+  if (blockType === 'embed') {
+    return {
+      blockType,
+      label,
+      content: '',
+      settings: {}
     }
   }
 
@@ -1287,10 +1393,43 @@ const CanvasPreviewBlock: React.FC<{ block: SiteBlock; forms: PublicSite[] }> = 
   }
 
   if (block.blockType === 'embed') {
-    return <div className={styles.previewEmbed}>{block.content || 'Embed / contenido embebido'}</div>
+    return <EmbedPreview rawCode={block.content} />
   }
 
   return <FieldPreview block={block} />
+}
+
+const EmbedPreview: React.FC<{ rawCode: string }> = ({ rawCode }) => {
+  const embed = resolveEmbedPreview(rawCode)
+
+  if (embed.kind === 'empty') {
+    return (
+      <div className={`${styles.previewEmbed} ${styles.previewEmbedEmpty}`}>
+        Pega una URL, iframe o codigo embed/html
+      </div>
+    )
+  }
+
+  const frameStyle = {
+    height: `${embed.height || EMBED_DEFAULT_HEIGHT}px`
+  } as React.CSSProperties
+
+  return (
+    <div className={styles.previewEmbed}>
+      <iframe
+        className={styles.previewEmbedFrame}
+        title={embed.title}
+        src={embed.kind === 'url' ? embed.src : undefined}
+        srcDoc={embed.kind === 'html' ? embed.srcDoc : undefined}
+        loading="lazy"
+        referrerPolicy="no-referrer-when-downgrade"
+        sandbox={embed.kind === 'url' ? EMBED_SANDBOX_URL : EMBED_SANDBOX_HTML}
+        allow={embed.kind === 'url' ? embed.allow || DEFAULT_EMBED_ALLOW : DEFAULT_EMBED_ALLOW}
+        allowFullScreen
+        style={frameStyle}
+      />
+    </div>
+  )
 }
 
 const FieldPreview: React.FC<{ block: SiteBlock }> = ({ block }) => (
@@ -1347,6 +1486,12 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 
   const isField = fieldBlockTypes.has(block.blockType)
   const settings = block.settings || {}
+  const contentLabel = isField
+    ? 'Texto de ayuda'
+    : block.blockType === 'embed'
+      ? 'Codigo embed, iframe o URL'
+      : 'Contenido'
+  const contentRows = block.blockType === 'embed' ? 7 : isField ? 2 : 3
 
   return (
     <aside className={styles.propertiesPanel}>
@@ -1362,10 +1507,11 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         </label>
 
         <label className={styles.field}>
-          <span>{isField ? 'Texto de ayuda' : block.blockType === 'embed' ? 'URL embebida' : 'Contenido'}</span>
+          <span>{contentLabel}</span>
           <textarea
-            rows={isField ? 2 : 3}
+            rows={contentRows}
             value={block.content}
+            placeholder={block.blockType === 'embed' ? '<iframe src="https://..."></iframe> o codigo HTML del widget' : undefined}
             onChange={(event) => onPatchBlock({ content: event.target.value })}
             onBlur={onSave}
           />

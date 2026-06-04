@@ -1383,6 +1383,99 @@ function safeHref(value, fallback = '#') {
   return safeUrl(raw) || fallback
 }
 
+const DEFAULT_EMBED_ALLOW = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share'
+const EMBED_SANDBOX_URL = 'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox'
+const EMBED_SANDBOX_HTML = 'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox'
+const EMBED_MIN_HEIGHT = 180
+const EMBED_MAX_HEIGHT = 900
+
+function decodeHtmlAttribute(value) {
+  return cleanString(value)
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/gi, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCharCode(Number.parseInt(code, 16)))
+}
+
+function safeEmbedUrl(value) {
+  const raw = decodeHtmlAttribute(value)
+  if (!raw) return ''
+  const candidate = raw.startsWith('//')
+    ? `https:${raw}`
+    : /^www\./i.test(raw)
+      ? `https://${raw}`
+      : raw
+
+  return safeUrl(candidate)
+}
+
+function getIframeAttribute(iframeTag, attributeName) {
+  const pattern = new RegExp(`\\s${attributeName}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i')
+  const match = String(iframeTag || '').match(pattern)
+  return decodeHtmlAttribute(match?.[1] || match?.[2] || match?.[3] || '')
+}
+
+function normalizeEmbedHeight(value) {
+  const match = cleanString(value).match(/(\d{2,4})/)
+  if (!match) return 0
+  const height = Number(match[1])
+  if (!Number.isFinite(height)) return 0
+  return Math.min(EMBED_MAX_HEIGHT, Math.max(EMBED_MIN_HEIGHT, height))
+}
+
+function buildEmbedSrcDoc(html) {
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <base target="_blank">
+    <style>
+      * { box-sizing: border-box; }
+      html, body { margin: 0; min-height: 100%; background: transparent; color: #111827; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      body { padding: 0; overflow-wrap: anywhere; }
+      iframe, img, video { max-width: 100%; }
+      iframe { border: 0; }
+    </style>
+  </head>
+  <body>${html}</body>
+</html>`
+}
+
+function resolveEmbedContent(value) {
+  const raw = cleanString(value)
+  if (!raw || raw.toLowerCase() === 'embed') return { kind: 'empty' }
+
+  const directUrl = safeEmbedUrl(raw)
+  if (directUrl) {
+    return { kind: 'url', src: directUrl, title: 'Embed', allow: DEFAULT_EMBED_ALLOW, height: 0 }
+  }
+
+  const iframeTag = raw.match(/<iframe\b[\s\S]*?>/i)?.[0] || ''
+  if (iframeTag) {
+    const iframeUrl = safeEmbedUrl(getIframeAttribute(iframeTag, 'src'))
+    if (iframeUrl) {
+      return {
+        kind: 'url',
+        src: iframeUrl,
+        title: getIframeAttribute(iframeTag, 'title') || 'Embed',
+        allow: getIframeAttribute(iframeTag, 'allow') || DEFAULT_EMBED_ALLOW,
+        height: normalizeEmbedHeight(getIframeAttribute(iframeTag, 'height') || getIframeAttribute(iframeTag, 'style'))
+      }
+    }
+  }
+
+  if (/<[a-z][\s\S]*>/i.test(raw)) {
+    return { kind: 'html', srcDoc: buildEmbedSrcDoc(raw), title: 'Codigo embed', allow: DEFAULT_EMBED_ALLOW, height: 0 }
+  }
+
+  return { kind: 'empty' }
+}
+
 function normalizeOption(option) {
   if (option && typeof option === 'object') {
     const label = cleanString(option.label || option.value || option.text)
@@ -1550,12 +1643,17 @@ function renderContentBlock(block) {
   }
 
   if (block.blockType === 'embed') {
-    const embedUrl = safeUrl(block.content)
-    if (!embedUrl) {
-      return `<div class="rstk-embed rstk-embed-empty">Embed sin URL valida</div>`
+    const embed = resolveEmbedContent(block.content)
+    if (embed.kind === 'empty') {
+      return `<div class="rstk-embed rstk-embed-empty">Pega una URL, iframe o codigo embed/html</div>`
     }
 
-    return `<iframe class="rstk-embed" src="${escapeHtml(embedUrl)}" loading="lazy" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>`
+    const heightStyle = embed.height ? ` style="min-height:${embed.height}px"` : ''
+    if (embed.kind === 'url') {
+      return `<iframe class="rstk-embed" src="${escapeHtml(embed.src)}" title="${escapeHtml(embed.title)}" loading="lazy" referrerpolicy="no-referrer-when-downgrade" sandbox="${EMBED_SANDBOX_URL}" allow="${escapeHtml(embed.allow || DEFAULT_EMBED_ALLOW)}" allowfullscreen${heightStyle}></iframe>`
+    }
+
+    return `<iframe class="rstk-embed rstk-embed-code" srcdoc="${escapeHtml(embed.srcDoc)}" title="${escapeHtml(embed.title)}" loading="lazy" referrerpolicy="no-referrer-when-downgrade" sandbox="${EMBED_SANDBOX_HTML}" allow="${escapeHtml(embed.allow || DEFAULT_EMBED_ALLOW)}"${heightStyle}></iframe>`
   }
 
   return `<div class="rstk-text">${content.replace(/\n/g, '<br>')}</div>`
@@ -1865,10 +1963,12 @@ export function renderPublicSiteHtml(site) {
     .rstk-embed {
       width: 100%;
       min-height: 360px;
+      display: block;
       border: 1px solid var(--rstk-border);
       border-radius: 8px;
       background: #fff;
     }
+    .rstk-embed-code { background: transparent; }
     .rstk-embed-empty {
       display: grid;
       place-items: center;

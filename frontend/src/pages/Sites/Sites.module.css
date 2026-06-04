@@ -542,8 +542,7 @@
   font-weight: 850;
 }
 
-.previewMedia,
-.previewEmbed {
+.previewMedia {
   min-height: 190px;
   display: grid;
   place-items: center;
@@ -553,6 +552,35 @@
   color: #64748b;
   padding: 16px;
   overflow-wrap: anywhere;
+}
+
+.previewEmbed {
+  width: 100%;
+  min-height: 220px;
+  overflow: hidden;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.previewEmbedEmpty {
+  display: grid;
+  place-items: center;
+  min-height: 190px;
+  padding: 16px;
+  background: #f8fafc;
+  color: #64748b;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.previewEmbedFrame {
+  width: 100%;
+  min-height: 220px;
+  display: block;
+  border: 0;
+  background: #fff;
+  pointer-events: none;
 }
 
 .previewList,
