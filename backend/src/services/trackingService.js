@@ -172,6 +172,31 @@ function extractAdsParams(data) {
   }
 }
 
+function cleanTrackingString(value, maxLength = 500) {
+  const cleaned = String(value || '').trim()
+  return cleaned ? cleaned.slice(0, maxLength) : null
+}
+
+function extractNativeSiteInfo(data = {}) {
+  const explicitSource = cleanTrackingString(data.tracking_source, 80)
+  const hasSiteContext = Boolean(data.site_id || data.siteId || data.public_site_id)
+  const trackingSource = explicitSource || (hasSiteContext ? 'native_site' : 'external_pixel')
+
+  return {
+    tracking_source: trackingSource,
+    site_id: cleanTrackingString(data.site_id || data.siteId || data.public_site_id, 120),
+    site_slug: cleanTrackingString(data.site_slug || data.siteSlug, 220),
+    site_name: cleanTrackingString(data.site_name || data.siteName, 260),
+    site_type: cleanTrackingString(data.site_type || data.siteType, 80),
+    form_site_id: cleanTrackingString(data.form_site_id || data.formSiteId, 160),
+    form_site_name: cleanTrackingString(data.form_site_name || data.formSiteName, 260),
+    public_page_id: cleanTrackingString(data.public_page_id || data.publicPageId || data.page_id || data.pageId, 160),
+    public_page_title: cleanTrackingString(data.public_page_title || data.publicPageTitle || data.page_title || data.pageTitle, 260),
+    conversion_type: cleanTrackingString(data.conversion_type || data.conversionType, 120),
+    submission_id: cleanTrackingString(data.submission_id || data.submissionId, 160)
+  }
+}
+
 /**
  * Deriva source_platform y channel basado en los datos disponibles
  */
@@ -243,6 +268,7 @@ export async function createSession(sessionData) {
   const deviceInfo = extractDeviceInfo(data)
   const adsParams = extractAdsParams(data)
   const sourceInfo = deriveSourceInfo(data, utms, clickIds)
+  const nativeSiteInfo = extractNativeSiteInfo(data)
 
   // Obtener geolocalización desde la IP del request (en vez de confiar en el cliente)
   const geoInfo = await getGeoInfoFromIP(ip)
@@ -326,13 +352,24 @@ export async function createSession(sessionData) {
         timezone,
         geo_country,
         geo_region,
-        geo_city
+        geo_city,
+        tracking_source,
+        site_id,
+        site_slug,
+        site_name,
+        site_type,
+        form_site_id,
+        form_site_name,
+        public_page_id,
+        public_page_title,
+        conversion_type,
+        submission_id
       ) VALUES (
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
       )
     `, [
       session_id,
@@ -385,7 +422,18 @@ export async function createSession(sessionData) {
       deviceInfo.timezone,
       geoInfo.geo_country,
       geoInfo.geo_region,
-      geoInfo.geo_city
+      geoInfo.geo_city,
+      nativeSiteInfo.tracking_source,
+      nativeSiteInfo.site_id,
+      nativeSiteInfo.site_slug,
+      nativeSiteInfo.site_name,
+      nativeSiteInfo.site_type,
+      nativeSiteInfo.form_site_id,
+      nativeSiteInfo.form_site_name,
+      nativeSiteInfo.public_page_id,
+      nativeSiteInfo.public_page_title,
+      nativeSiteInfo.conversion_type,
+      nativeSiteInfo.submission_id
     ])
 
     const pageUrl = data.url || 'unknown'
@@ -493,7 +541,18 @@ export async function getRecentSessions(limit = 50) {
         timezone,
         geo_country,
         geo_region,
-        geo_city
+        geo_city,
+        COALESCE(tracking_source, 'external_pixel') as tracking_source,
+        site_id,
+        site_slug,
+        site_name,
+        site_type,
+        form_site_id,
+        form_site_name,
+        public_page_id,
+        public_page_title,
+        conversion_type,
+        submission_id
       FROM sessions
       ORDER BY started_at DESC
       LIMIT ?
@@ -577,6 +636,17 @@ export async function getSessionsByDateRange(startDate, endDate) {
         s.geo_city,
         s.ip,
         s.user_agent,
+        COALESCE(s.tracking_source, 'external_pixel') as tracking_source,
+        s.site_id,
+        s.site_slug,
+        s.site_name,
+        s.site_type,
+        s.form_site_id,
+        s.form_site_name,
+        s.public_page_id,
+        s.public_page_title,
+        s.conversion_type,
+        s.submission_id,
         c.created_at as contact_created_at,
         c.purchases_count as contact_purchases_count,
         c.total_paid as contact_total_paid,

@@ -64,6 +64,90 @@ function slugify(value, fallback = '') {
     .slice(0, 80) || `calendario-${Date.now()}`
 }
 
+function decodeSegment(value) {
+  try {
+    return cleanString(decodeURIComponent(String(value || '')))
+  } catch {
+    return cleanString(value)
+  }
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
+function jsonForInlineScript(value) {
+  return JSON.stringify(value).replace(/</g, '\\u003c')
+}
+
+function publicCalendarSlug(calendar = {}) {
+  return cleanString(calendar.slug || calendar.widgetSlug || calendar.id) || slugify(calendar.name || calendar.id)
+}
+
+function publicCalendarPath(calendar = {}) {
+  return `/calendar/${encodeURIComponent(publicCalendarSlug(calendar))}`
+}
+
+export async function getCalendarPublicUrlStatus() {
+  const row = await db.get(`
+    SELECT domain, render_domain_verified, status
+    FROM public_sites
+    WHERE COALESCE(domain, '') != ''
+    ORDER BY
+      CASE WHEN render_domain_verified = 1 THEN 0 ELSE 1 END,
+      CASE WHEN status = 'published' THEN 0 ELSE 1 END,
+      updated_at DESC
+    LIMIT 1
+  `)
+
+  if (!row?.domain) {
+    return {
+      enabled: false,
+      domain: '',
+      reason: 'Conecta y verifica un dominio externo en Sites para activar URLs publicas de calendarios.'
+    }
+  }
+
+  if (Number(row.render_domain_verified || 0) !== 1) {
+    return {
+      enabled: false,
+      domain: row.domain,
+      reason: 'El dominio de Sites existe, pero todavia no esta verificado en Render.'
+    }
+  }
+
+  return {
+    enabled: true,
+    domain: row.domain,
+    reason: ''
+  }
+}
+
+export function attachPublicCalendarUrl(calendar = {}, status = null) {
+  const path = publicCalendarPath(calendar)
+  const enabled = Boolean(status?.enabled && calendar.isActive !== false)
+  return {
+    ...calendar,
+    publicBookingPath: path,
+    publicBaseDomain: status?.domain || '',
+    publicUrlEnabled: enabled,
+    publicUrl: enabled ? `https://${status.domain}${path}` : '',
+    publicUrlUnavailableReason: calendar.isActive === false
+      ? 'Este calendario esta inactivo.'
+      : status?.reason || ''
+  }
+}
+
+export async function attachPublicCalendarUrls(calendars = []) {
+  const status = await getCalendarPublicUrlStatus()
+  return calendars.map(calendar => attachPublicCalendarUrl(calendar, status))
+}
+
 function normalizeTeamMembers(value) {
   const parsed = parseJson(value, value)
   if (!Array.isArray(parsed)) return []
@@ -321,6 +405,238 @@ export async function getLocalCalendar(calendarId) {
     [calendarId, calendarId]
   )
   return row ? calendarRowToApi(row) : null
+}
+
+export async function getPublicCalendarBySlug(slugOrId) {
+  const value = decodeSegment(slugOrId)
+  if (!value) return null
+
+  const row = await db.get(`
+    SELECT *
+    FROM calendars
+    WHERE COALESCE(is_active, 1) != 0
+      AND (id = ? OR slug = ? OR widget_slug = ?)
+    ORDER BY
+      CASE WHEN id = ? THEN 0 ELSE 1 END,
+      LOWER(name) ASC
+    LIMIT 1
+  `, [value, value, value, value])
+
+  return row ? calendarRowToApi(row) : null
+}
+
+export function renderPublicCalendarHtml(calendar, { host = '' } = {}) {
+  const slug = publicCalendarSlug(calendar)
+  const duration = Math.max(1, toInt(calendar.slotDuration, 60))
+  const title = calendar.eventTitle || calendar.name || 'Cita'
+  const payload = {
+    slug,
+    name: calendar.name || 'Calendario',
+    description: calendar.description || '',
+    eventTitle: title,
+    duration,
+    color: calendar.eventColor || DEFAULT_EVENT_COLOR,
+    host
+  }
+
+  return `<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(calendar.name || 'Calendario')}</title>
+  <meta name="description" content="${escapeHtml(calendar.description || `Agenda ${title}`)}">
+  <style>
+    :root{--accent:${escapeHtml(calendar.eventColor || DEFAULT_EVENT_COLOR)};--ink:#111827;--muted:#667085;--line:#e5e7eb;--bg:#f6f7f9;--surface:#fff;--danger:#b42318;--ok:#047857}
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;letter-spacing:0;line-height:1.5}
+    .page{width:min(1040px,calc(100% - 28px));margin:0 auto;padding:clamp(28px,5vw,64px) 0}
+    .shell{display:grid;grid-template-columns:minmax(0,.9fr) minmax(320px,1.1fr);gap:22px;align-items:start}
+    .intro,.booking{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 30px 70px -52px rgba(15,23,42,.55)}
+    .intro{padding:28px;position:sticky;top:22px}
+    .booking{padding:22px;display:grid;gap:18px}
+    .dot{width:12px;height:12px;border-radius:50%;background:var(--accent);display:inline-block;margin-right:8px}
+    h1{margin:10px 0 10px;font-size:clamp(2rem,4vw,3.6rem);line-height:1;letter-spacing:0;font-weight:850}
+    h2{font-size:1rem;margin:0 0 8px}
+    h3{font-size:.94rem;margin:0 0 10px;color:var(--muted);font-weight:750}
+    p{margin:0;color:var(--muted)}
+    .meta{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px}
+    .pill{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:999px;min-height:34px;padding:0 12px;font-size:.9rem;font-weight:700;color:var(--ink);background:#fff}
+    .slotGroups{display:grid;gap:16px}
+    .slotGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:10px}
+    .slot{min-height:42px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);font:inherit;font-weight:750;cursor:pointer}
+    .slot:hover,.slot.selected{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
+    .slot.selected{background:var(--accent);color:#fff}
+    form{display:grid;gap:12px;border-top:1px solid var(--line);padding-top:18px}
+    label{display:grid;gap:6px;font-size:.9rem;font-weight:750}
+    input,textarea{width:100%;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);font:inherit;padding:11px 12px;outline:none}
+    input:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
+    button.submit{min-height:46px;border:1px solid var(--accent);border-radius:10px;background:var(--accent);color:#fff;font:inherit;font-weight:850;cursor:pointer}
+    button:disabled{opacity:.58;cursor:not-allowed}
+    .message{min-height:22px;font-weight:750;color:var(--muted)}
+    .message.error{color:var(--danger)}
+    .message.ok{color:var(--ok)}
+    .empty{padding:22px;border:1px dashed var(--line);border-radius:12px;color:var(--muted);text-align:center}
+    @media (max-width:800px){.shell{grid-template-columns:1fr}.intro{position:static}.page{width:min(100% - 20px,1040px);padding:18px 0}.intro,.booking{border-radius:12px;padding:18px}}
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="shell">
+      <section class="intro">
+        <span class="pill"><span class="dot" aria-hidden="true"></span>${escapeHtml(title)}</span>
+        <h1>${escapeHtml(calendar.name || 'Agenda tu cita')}</h1>
+        <p>${escapeHtml(calendar.description || 'Selecciona un horario disponible y deja tus datos para confirmar la cita.')}</p>
+        <div class="meta">
+          <span class="pill">${duration} min</span>
+          <span class="pill">Confirmacion ${calendar.autoConfirm ? 'automatica' : 'pendiente'}</span>
+        </div>
+      </section>
+
+      <section class="booking">
+        <div>
+          <h2>Horarios disponibles</h2>
+          <p>Elige un horario para continuar.</p>
+        </div>
+        <div class="slotGroups" data-slots>
+          <div class="empty">Cargando horarios...</div>
+        </div>
+        <form data-form>
+          <h2>Tus datos</h2>
+          <label>Nombre completo<input name="name" autocomplete="name" required placeholder="Tu nombre"></label>
+          <label>Telefono / WhatsApp<input name="phone" autocomplete="tel" inputmode="tel" required placeholder="10 digitos"></label>
+          <label>Correo<input name="email" autocomplete="email" type="email" placeholder="tu@email.com"></label>
+          <label>Notas<textarea name="notes" rows="3" placeholder="Algo que debamos saber"></textarea></label>
+          <button class="submit" type="submit" disabled data-submit>Selecciona un horario</button>
+          <p class="message" data-message role="status"></p>
+        </form>
+      </section>
+    </div>
+  </main>
+  <script>
+    (() => {
+      const calendar = ${jsonForInlineScript(payload)};
+      const slotsEl = document.querySelector('[data-slots]');
+      const form = document.querySelector('[data-form]');
+      const submit = document.querySelector('[data-submit]');
+      const message = document.querySelector('[data-message]');
+      let selectedSlot = '';
+      let timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+
+      const pad = (value) => String(value).padStart(2, '0');
+      const dateKey = (date) => date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
+      const today = new Date();
+      const end = new Date(today);
+      end.setDate(today.getDate() + 21);
+
+      const setMessage = (text, type = '') => {
+        message.textContent = text || '';
+        message.className = 'message' + (type ? ' ' + type : '');
+      };
+
+      const formatDay = (iso) => new Intl.DateTimeFormat('es-MX', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        timeZone: timezone
+      }).format(new Date(iso));
+
+      const formatTime = (iso) => new Intl.DateTimeFormat('es-MX', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: timezone
+      }).format(new Date(iso));
+
+      const renderSlots = (days) => {
+        const groups = (Array.isArray(days) ? days : []).filter(day => Array.isArray(day.slots) && day.slots.length);
+        if (!groups.length) {
+          slotsEl.innerHTML = '<div class="empty">No hay horarios disponibles en los proximos dias.</div>';
+          return;
+        }
+
+        timezone = groups.find(day => day.timezone)?.timezone || timezone;
+        slotsEl.innerHTML = groups.map(day => {
+          const firstSlot = day.slots[0];
+          return '<section><h3>' + formatDay(firstSlot) + '</h3><div class="slotGrid">' +
+            day.slots.map(slot => '<button type="button" class="slot" data-slot="' + slot + '">' + formatTime(slot) + '</button>').join('') +
+            '</div></section>';
+        }).join('');
+      };
+
+      slotsEl.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-slot]');
+        if (!button) return;
+        selectedSlot = button.getAttribute('data-slot') || '';
+        slotsEl.querySelectorAll('.slot').forEach(item => item.classList.remove('selected'));
+        button.classList.add('selected');
+        submit.disabled = false;
+        submit.textContent = 'Agendar cita';
+        setMessage('Horario seleccionado: ' + formatDay(selectedSlot) + ' a las ' + formatTime(selectedSlot));
+      });
+
+      const loadSlots = async () => {
+        try {
+          const params = new URLSearchParams({
+            startDate: dateKey(today),
+            endDate: dateKey(end),
+            timezone
+          });
+          const response = await fetch('/api/calendars/public/' + encodeURIComponent(calendar.slug) + '/free-slots?' + params.toString());
+          const payload = await response.json();
+          if (!response.ok || payload.success === false) throw new Error(payload.error || 'No se pudieron cargar horarios');
+          renderSlots(payload.data || []);
+        } catch (error) {
+          slotsEl.innerHTML = '<div class="empty">No se pudieron cargar horarios. Intenta mas tarde.</div>';
+        }
+      };
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!selectedSlot) {
+          setMessage('Selecciona un horario primero.', 'error');
+          return;
+        }
+
+        const formData = new FormData(form);
+        submit.disabled = true;
+        submit.textContent = 'Agendando...';
+        setMessage('');
+
+        try {
+          const response = await fetch('/api/calendars/public/' + encodeURIComponent(calendar.slug) + '/appointments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              startTime: selectedSlot,
+              timezone,
+              sourceUrl: window.location.href,
+              name: formData.get('name'),
+              phone: formData.get('phone'),
+              email: formData.get('email'),
+              notes: formData.get('notes')
+            })
+          });
+          const payload = await response.json();
+          if (!response.ok || payload.success === false) throw new Error(payload.error || 'No se pudo agendar');
+          form.reset();
+          selectedSlot = '';
+          slotsEl.querySelectorAll('.slot').forEach(item => item.classList.remove('selected'));
+          setMessage(payload.data?.message || 'Listo. Tu cita quedo agendada.', 'ok');
+          await loadSlots();
+        } catch (error) {
+          setMessage(error.message || 'No se pudo agendar la cita.', 'error');
+        } finally {
+          submit.disabled = !selectedSlot;
+          submit.textContent = selectedSlot ? 'Agendar cita' : 'Selecciona un horario';
+        }
+      });
+
+      loadSlots();
+    })();
+  </script>
+</body>
+</html>`
 }
 
 export async function listLocalCalendars({ sourcePreference = 'combined' } = {}) {

@@ -78,6 +78,11 @@ export interface Calendar {
   source?: 'ristak' | 'ghl';
   syncStatus?: 'pending' | 'synced' | 'error';
   syncError?: string | null;
+  publicBookingPath?: string;
+  publicBaseDomain?: string;
+  publicUrlEnabled?: boolean;
+  publicUrl?: string;
+  publicUrlUnavailableReason?: string;
 }
 
 export interface CalendarEvent {

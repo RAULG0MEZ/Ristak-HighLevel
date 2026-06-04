@@ -20,6 +20,10 @@ router.get('/events', calendarsController.getEvents);
 // Obtener detalles completos de una cita individual (con contactId y assignedUserId)
 router.get('/events/:eventId', calendarsController.getAppointment);
 
+// Slots y reservas publicas para URLs compartibles de calendario
+router.get('/public/:slug/free-slots', calendarsController.getPublicFreeSlots);
+router.post('/public/:slug/appointments', calendarsController.createPublicAppointment);
+
 // Crear nueva cita
 router.post('/appointments', calendarsController.createAppointment);
 

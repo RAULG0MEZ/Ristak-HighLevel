@@ -1,5 +1,14 @@
 import apiClient from './apiClient'
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || ''
+
+function getAuthHeaders(): HeadersInit {
+  const token = localStorage.getItem('auth_token')
+  return {
+    ...(token ? { Authorization: `Bearer ${token}` } : {})
+  }
+}
+
 export type SiteType = 'standard_form' | 'interactive_form' | 'landing_page'
 export type SiteStatus = 'draft' | 'published' | 'archived'
 export type SiteBlockType =
@@ -10,6 +19,7 @@ export type SiteBlockType =
   | 'description'
   | 'text'
   | 'embed'
+  | 'calendar_embed'
   | 'hero'
   | 'image'
   | 'video'
@@ -54,15 +64,50 @@ export interface SiteBlockOption {
   category?: string
 }
 
+export type SiteTemplateId = 'ristak' | 'facebook' | 'instagram' | 'tiktok' | 'vsl' | 'interactive'
+
+export interface SitePage {
+  id: string
+  title: string
+  sortOrder: number
+}
+
 export interface SiteTheme {
   accentColor?: string
   backgroundColor?: string
   textColor?: string
+  template?: SiteTemplateId
+  pages?: SitePage[]
+  brandName?: string
+  brandSubtitle?: string
+  brandAvatar?: string
+  brandVerified?: boolean
+  submitText?: string
   finalMessages?: {
     success?: string
     disqualified?: string
   }
 }
+
+export interface SiteTemplateMeta {
+  id: SiteTemplateId
+  label: string
+  description: string
+  group: 'form' | 'landing' | 'interactive'
+  accent: string
+  swatchBg: string
+  swatchInk: string
+  badge: string
+}
+
+export const siteTemplates: SiteTemplateMeta[] = [
+  { id: 'ristak', label: 'Ristak', description: 'Limpio, minimalista y neutro. El look de marca por defecto.', group: 'landing', accent: '#111827', swatchBg: '#f5f6f8', swatchInk: '#0f172a', badge: 'Minimal' },
+  { id: 'vsl', label: 'Carta de ventas', description: 'Video, checklist y un CTA fuerte. Ideal para VSL.', group: 'landing', accent: '#111827', swatchBg: '#0a0b0d', swatchInk: '#ffffff', badge: 'VSL' },
+  { id: 'facebook', label: 'Facebook', description: 'Se siente como un anuncio patrocinado de Facebook.', group: 'form', accent: '#1877f2', swatchBg: '#f0f2f5', swatchInk: '#1c1e21', badge: 'Ads' },
+  { id: 'instagram', label: 'Instagram', description: 'Encabezado con el degradado y azul de Instagram.', group: 'form', accent: '#0095f6', swatchBg: '#ffffff', swatchInk: '#262626', badge: 'Ads' },
+  { id: 'tiktok', label: 'TikTok', description: 'Oscuro, con el rojo y cian neon de TikTok.', group: 'form', accent: '#fe2c55', swatchBg: '#000000', swatchInk: '#ffffff', badge: 'Ads' },
+  { id: 'interactive', label: 'Interactivo', description: 'Una pregunta por pantalla, estilo quiz.', group: 'interactive', accent: '#111827', swatchBg: '#0a0b0d', swatchInk: '#ffffff', badge: 'Quiz' }
+]
 
 export interface SiteBlock {
   id: string
@@ -145,6 +190,7 @@ export const blockLabels: Record<SiteBlockType, string> = {
   description: 'Texto descriptivo',
   text: 'Texto',
   embed: 'Embed',
+  calendar_embed: 'Calendario',
   hero: 'Hero',
   image: 'Imagen',
   video: 'Video',
@@ -179,6 +225,7 @@ export const landingBlockTypes: SiteBlockType[] = [
   'testimonials',
   'services',
   'embed',
+  'calendar_embed',
   'form_embed',
   'faq',
   'cta'
@@ -199,7 +246,8 @@ export const formBlockTypes: SiteBlockType[] = [
   'subtitle',
   'description',
   'video',
-  'embed'
+  'embed',
+  'calendar_embed'
 ]
 
 export const blockTypes: SiteBlockType[] = [
@@ -246,6 +294,27 @@ export const sitesService = {
     return apiClient.get<PublicSite>(`/sites/${siteId}`)
   },
 
+  async getPreviewHtml(siteId: string, pageId?: string) {
+    const params = pageId ? `?page=${encodeURIComponent(pageId)}` : ''
+    const response = await fetch(`${API_BASE_URL}/api/sites/${siteId}/preview${params}`, {
+      headers: getAuthHeaders()
+    })
+
+    if (!response.ok) {
+      let message = 'No se pudo generar la previsualizacion'
+      const errorResponse = response.clone()
+      try {
+        const payload = await response.json()
+        message = payload?.error || message
+      } catch {
+        message = await errorResponse.text().catch(() => message)
+      }
+      throw new Error(message)
+    }
+
+    return response.text()
+  },
+
   updateSite(siteId: string, payload: Partial<PublicSite>) {
     return apiClient.put<PublicSite>(`/sites/${siteId}`, payload)
   },
@@ -270,7 +339,7 @@ export const sitesService = {
     return apiClient.delete<PublicSite>(`/sites/${siteId}/blocks/${blockId}`)
   },
 
-  reorderBlocks(siteId: string, blockIds: string[]) {
-    return apiClient.put<PublicSite>(`/sites/${siteId}/blocks/reorder`, { blockIds })
+  reorderBlocks(siteId: string, blockIds: string[], pageId?: string) {
+    return apiClient.put<PublicSite>(`/sites/${siteId}/blocks/reorder`, { blockIds, pageId })
   }
 }

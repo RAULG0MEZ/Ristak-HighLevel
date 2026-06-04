@@ -7,16 +7,22 @@ import {
   deleteSite,
   getRequestHost,
   getSite,
+  getSitePreview,
   isDashboardHost,
   listSites,
   refreshSiteRenderDomain,
   renderDomainErrorHtml,
   renderPublicSiteHtml,
   reorderBlocks,
+  resolveConnectedPublicDomainForHost,
   resolvePublicSiteForHost,
   updateBlock,
   updateSite
 } from '../services/sitesService.js'
+import {
+  getPublicCalendarBySlug,
+  renderPublicCalendarHtml
+} from '../services/localCalendarService.js'
 import { logger } from '../utils/logger.js'
 
 function sendError(res, error, fallback = 'Error procesando solicitud') {
@@ -76,6 +82,23 @@ export async function getSiteHandler(req, res) {
   } catch (error) {
     logger.error(`Error obteniendo site: ${error.message}`)
     sendError(res, error, 'Error obteniendo site')
+  }
+}
+
+export async function previewSiteHandler(req, res) {
+  try {
+    const site = await getSitePreview(req.params.siteId)
+    if (!site) {
+      return res.status(404).json({ success: false, error: 'Site no encontrado' })
+    }
+
+    res.status(200).type('html').send(renderPublicSiteHtml(site, {
+      pageId: req.query?.page,
+      trackingEnabled: false
+    }))
+  } catch (error) {
+    logger.error(`Error previsualizando site: ${error.message}`)
+    sendError(res, error, 'Error previsualizando site')
   }
 }
 
@@ -151,7 +174,9 @@ export async function deleteBlockHandler(req, res) {
 
 export async function reorderBlocksHandler(req, res) {
   try {
-    const site = await reorderBlocks(req.params.siteId, req.body?.blockIds || [])
+    const site = await reorderBlocks(req.params.siteId, req.body?.blockIds || [], {
+      pageId: req.body?.pageId
+    })
     res.json({ success: true, data: site })
   } catch (error) {
     logger.error(`Error ordenando bloques de site: ${error.message}`)
@@ -203,12 +228,39 @@ function sendDomainError(req, res, status, message) {
 
 export async function publicSiteHostMiddleware(req, res, next) {
   try {
-    if (req.path === '/api/health' || req.path === '/api/sites/public/submit') {
+    if (
+      req.path === '/api/health' ||
+      req.path === '/api/sites/public/submit' ||
+      req.path === '/snip.js' ||
+      req.path === '/collect' ||
+      req.path === '/sync-visitor' ||
+      req.path === '/link-visitor' ||
+      req.path.startsWith('/api/calendars/public/')
+    ) {
       return next()
     }
 
     const host = getRequestHost(req)
     if (!host) return next()
+
+    const calendarMatch = req.path.match(/^\/calendars?\/([^/?#]+)/i)
+    if (calendarMatch) {
+      const domainResolution = await resolveConnectedPublicDomainForHost(host)
+      if (!domainResolution.ok) {
+        return sendDomainError(req, res, domainResolution.status || 404, domainResolution.message)
+      }
+
+      const calendar = await getPublicCalendarBySlug(calendarMatch[1])
+      if (!calendar) {
+        return sendDomainError(req, res, 404, 'Calendario no encontrado o inactivo')
+      }
+
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        return sendDomainError(req, res, 404, 'Ruta no disponible en este calendario publico')
+      }
+
+      return res.status(200).type('html').send(renderPublicCalendarHtml(calendar, { host }))
+    }
 
     const resolution = await resolvePublicSiteForHost(host)
     if (resolution.ok) {
@@ -220,7 +272,10 @@ export async function publicSiteHostMiddleware(req, res, next) {
         return sendDomainError(req, res, 404, 'Ruta no disponible en este dominio publico')
       }
 
-      return res.status(200).type('html').send(renderPublicSiteHtml(resolution.site))
+      return res.status(200).type('html').send(renderPublicSiteHtml(resolution.site, {
+        pageId: req.query?.page,
+        trackingEnabled: true
+      }))
     }
 
     if (resolution.reason !== 'domain_not_configured') {

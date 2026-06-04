@@ -11,6 +11,7 @@ import {
   prepareContactPhoneUpsert
 } from './contactIdentityService.js'
 import { getMetaConfig } from './metaAdsService.js'
+import { createSession, linkVisitorToContact, unifyVisitorIds } from './trackingService.js'
 
 export const SITE_TYPES = new Set(['standard_form', 'interactive_form', 'landing_page'])
 export const SITE_STATUSES = new Set(['draft', 'published', 'archived'])
@@ -22,6 +23,7 @@ export const CONTENT_BLOCK_TYPES = new Set([
   'description',
   'text',
   'embed',
+  'calendar_embed',
   'hero',
   'image',
   'video',
@@ -70,6 +72,7 @@ const SITES_AI_MAX_MESSAGES = 18
 const SITES_AI_MAX_MESSAGE_CHARS = 5000
 const RENDER_DOMAIN_CACHE_TTL_MS = 15 * 60 * 1000
 const RENDER_FAILED_CACHE_TTL_MS = 90 * 1000
+const DEFAULT_FUNNEL_PAGE_ID = 'page-1'
 
 function cleanString(value) {
   return String(value || '').trim()
@@ -237,7 +240,16 @@ function mapSite(row) {
     publishedAt: row.published_at || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    submissionsCount: Number(row.submissions_count || 0)
+    submissionsCount: Number(row.submissions_count || 0),
+    trackingStats: {
+      views: Number(row.tracking_views || 0),
+      visitors: Number(row.tracking_visitors || 0),
+      sessions: Number(row.tracking_sessions || 0),
+      conversions: Number(row.tracking_conversions || 0),
+      conversionRate: Number(row.tracking_visitors || 0) > 0
+        ? Number(((Number(row.tracking_conversions || 0) / Number(row.tracking_visitors || 0)) * 100).toFixed(1))
+        : 0
+    }
   }
 }
 
@@ -363,7 +375,8 @@ async function ensureUniqueSlug(baseSlug, ignoreSiteId = null) {
   }
 }
 
-function buildDefaultBlocks(siteId, siteType) {
+function buildDefaultBlocks(siteId, siteType, template) {
+  const tpl = cleanString(template)
   const makeBlock = (blockType, label, content = '', extra = {}) => ({
     id: crypto.randomUUID(),
     site_id: siteId,
@@ -377,11 +390,58 @@ function buildDefaultBlocks(siteId, siteType) {
     sort_order: extra.sortOrder || 0
   })
 
+  const contactFields = (startOrder) => [
+    makeBlock('short_text', 'Nombre completo', '', {
+      placeholder: 'Tu nombre',
+      required: true,
+      settings: { internalName: 'full_name' },
+      sortOrder: startOrder
+    }),
+    makeBlock('phone', 'Telefono / WhatsApp', '', {
+      placeholder: '10 digitos',
+      required: true,
+      settings: { internalName: 'phone', validation: 'phone' },
+      sortOrder: startOrder + 1
+    }),
+    makeBlock('email', 'Correo electronico', '', {
+      placeholder: 'tu@email.com',
+      required: true,
+      settings: { internalName: 'email', validation: 'email' },
+      sortOrder: startOrder + 2
+    })
+  ]
+
   if (siteType === 'landing_page') {
+    if (tpl === 'vsl') {
+      return [
+        makeBlock('headline', 'Titular', 'Mira esto antes de tomar una decision', { sortOrder: 0 }),
+        makeBlock('subheading', 'Subtitulo', 'En menos de 3 minutos te explico exactamente como funciona.', { sortOrder: 1 }),
+        makeBlock('video', 'Video', '', {
+          sortOrder: 2,
+          settings: { mediaUrl: '' }
+        }),
+        makeBlock('cta', 'CTA final', 'Quiero empezar ahora', {
+          sortOrder: 3,
+          settings: { subtitle: 'Deja tus datos y un asesor te contacta hoy mismo.', buttonText: 'Quiero mas informacion', buttonUrl: '#form' }
+        }),
+        makeBlock('benefits', 'Lo que vas a lograr', 'Esto es lo que vas a lograr', {
+          sortOrder: 4,
+          settings: {
+            items: [
+              { title: '+ Atraer clientes de forma constante', text: 'Sin depender de recomendaciones.' },
+              { title: '+ Un sistema que trabaja por ti', text: 'Automatizado de principio a fin.' },
+              { title: '- Sin perder tiempo en tacticas que no funcionan', text: '' }
+            ]
+          }
+        })
+      ]
+    }
+
     return [
       makeBlock('hero', 'Hero', 'Agenda tu consulta', {
         sortOrder: 0,
         settings: {
+          kicker: 'Nuevo',
           subtitle: 'Una pagina clara para convertir visitas en leads calificados.',
           buttonText: 'Quiero una consulta',
           buttonUrl: '#form'
@@ -391,9 +451,9 @@ function buildDefaultBlocks(siteId, siteType) {
         sortOrder: 1,
         settings: {
           items: [
-            { title: 'Atencion rapida', text: 'Captura datos y responde sin friccion.' },
-            { title: 'Leads ordenados', text: 'Todo llega al dashboard y a la misma base de datos.' },
-            { title: 'Dominio propio', text: 'Publica solo en dominios verificados.' }
+            { title: '+ Atencion rapida', text: 'Captura datos y responde sin friccion.' },
+            { title: '+ Leads ordenados', text: 'Todo llega al dashboard y a la misma base de datos.' },
+            { title: '+ Dominio propio', text: 'Publica solo en dominios verificados.' }
           ]
         }
       }),
@@ -408,6 +468,14 @@ function buildDefaultBlocks(siteId, siteType) {
     ]
   }
 
+  if (siteType === 'standard_form' && (tpl === 'facebook' || tpl === 'instagram' || tpl === 'tiktok')) {
+    return [
+      makeBlock('title', 'Titulo', 'Deja tus datos y te contactamos', { sortOrder: 0 }),
+      makeBlock('subtitle', 'Subtitulo', 'Completa el formulario y un asesor te contacta en minutos.', { sortOrder: 1 }),
+      ...contactFields(2)
+    ]
+  }
+
   return [
     makeBlock('title', 'Titulo', siteType === 'interactive_form' ? 'Vamos paso a paso' : 'Cuentanos que necesitas', {
       sortOrder: 0
@@ -415,18 +483,7 @@ function buildDefaultBlocks(siteId, siteType) {
     makeBlock('subtitle', 'Subtitulo', 'Completa la informacion y nuestro equipo te contactara.', {
       sortOrder: 1
     }),
-    makeBlock('short_text', 'Nombre completo', '', {
-      placeholder: 'Tu nombre',
-      required: true,
-      settings: { internalName: 'full_name' },
-      sortOrder: 2
-    }),
-    makeBlock('email', 'Correo electronico', '', {
-      placeholder: 'tu@email.com',
-      required: true,
-      settings: { internalName: 'email', validation: 'email' },
-      sortOrder: 3
-    })
+    ...contactFields(2)
   ]
 }
 
@@ -531,10 +588,10 @@ Reglas duras:
 Tipo solicitado por el usuario: ${siteKind === 'landing' ? 'landing_page' : 'formulario'}.
 
 Bloques permitidos para landing_page:
-hero, title, subtitle, text, image, video, button, benefits, testimonials, services, embed, form_embed, faq, cta.
+hero, title, subtitle, text, image, video, button, benefits, testimonials, services, embed, calendar_embed, form_embed, faq, cta.
 
 Bloques permitidos para formularios:
-short_text, paragraph, number, currency, dropdown, radio, checkboxes, phone, email, date, title, subtitle, description, video, embed.
+short_text, paragraph, number, currency, dropdown, radio, checkboxes, phone, email, date, title, subtitle, description, video, embed, calendar_embed.
 
 Acciones permitidas por opcion:
 continue, cold_lead, warm_lead, hot_lead, disqualify, show_message, end_form, jump, tag, category.
@@ -663,7 +720,7 @@ function normalizeAIBlockOptions(blockType, options = []) {
 }
 
 function normalizeAIEmbeddedBlocks(siteId, embeddedBlocks = []) {
-  const allowedTypes = new Set([...FIELD_BLOCK_TYPES, 'title', 'subtitle', 'description', 'video', 'embed'])
+  const allowedTypes = new Set([...FIELD_BLOCK_TYPES, 'title', 'subtitle', 'description', 'video', 'embed', 'calendar_embed'])
   return (Array.isArray(embeddedBlocks) ? embeddedBlocks : [])
     .map((block, index) => normalizeAIBlock({
       block,
@@ -756,8 +813,8 @@ function normalizeAISiteBlueprint(siteKind, aiSite = {}) {
 
   const id = crypto.randomUUID()
   const allowedTypes = siteType === 'landing_page'
-    ? new Set(['hero', 'title', 'subtitle', 'text', 'image', 'video', 'button', 'benefits', 'testimonials', 'services', 'embed', 'form_embed', 'faq', 'cta'])
-    : new Set([...FIELD_BLOCK_TYPES, 'title', 'subtitle', 'description', 'video', 'embed'])
+    ? new Set(['hero', 'title', 'subtitle', 'text', 'image', 'video', 'button', 'benefits', 'testimonials', 'services', 'embed', 'calendar_embed', 'form_embed', 'faq', 'cta'])
+    : new Set([...FIELD_BLOCK_TYPES, 'title', 'subtitle', 'description', 'video', 'embed', 'calendar_embed'])
   const fallbackType = siteType === 'landing_page' ? 'text' : 'short_text'
   const blocksInput = Array.isArray(aiSite.blocks)
     ? aiSite.blocks
@@ -781,6 +838,8 @@ function normalizeAISiteBlueprint(siteKind, aiSite = {}) {
       ? aiSite.final_messages
       : {}
   const theme = normalizeAITheme(aiSite.theme || aiSite.style || aiSite.estilo)
+  const requestedTemplate = cleanString(aiSite.template || aiSite.plantilla)
+  const aiTemplate = SITE_TEMPLATES[requestedTemplate] ? requestedTemplate : ''
   const successMessage = limitString(finalMessages.success || finalMessages.exito, 600)
   const disqualifiedMessage = limitString(finalMessages.disqualified || finalMessages.descalificado, 600)
   const title = limitString(aiSite.title || seo.title || aiSite.name || (siteType === 'landing_page' ? 'Nueva landing con IA' : 'Nuevo formulario con IA'), 180)
@@ -795,6 +854,7 @@ function normalizeAISiteBlueprint(siteKind, aiSite = {}) {
     description: limitString(aiSite.description || seo.description, 600),
     theme: {
       ...theme,
+      ...(aiTemplate ? { template: aiTemplate } : {}),
       ...(successMessage || disqualifiedMessage
         ? {
             finalMessages: {
@@ -855,7 +915,35 @@ export async function listSites() {
   const rows = await db.all(`
     SELECT
       s.*,
-      COUNT(sub.id) AS submissions_count
+      COUNT(sub.id) AS submissions_count,
+      (
+        SELECT COUNT(*)
+        FROM sessions ts
+        WHERE (ts.site_id = s.id OR ts.form_site_id = s.id)
+          AND ts.event_name IN ('native_site_view', 'session_start', 'page_view')
+      ) AS tracking_views,
+      (
+        SELECT COUNT(DISTINCT ts.visitor_id)
+        FROM sessions ts
+        WHERE (ts.site_id = s.id OR ts.form_site_id = s.id)
+          AND ts.visitor_id IS NOT NULL
+          AND ts.visitor_id != ''
+      ) AS tracking_visitors,
+      (
+        SELECT COUNT(DISTINCT ts.session_id)
+        FROM sessions ts
+        WHERE (ts.site_id = s.id OR ts.form_site_id = s.id)
+          AND ts.session_id IS NOT NULL
+          AND ts.session_id != ''
+      ) AS tracking_sessions,
+      (
+        SELECT COUNT(DISTINCT ts.submission_id)
+        FROM sessions ts
+        WHERE (ts.site_id = s.id OR ts.form_site_id = s.id)
+          AND ts.event_name = 'native_site_conversion'
+          AND ts.submission_id IS NOT NULL
+          AND ts.submission_id != ''
+      ) AS tracking_conversions
     FROM public_sites s
     LEFT JOIN public_site_submissions sub ON sub.site_id = s.id
     GROUP BY
@@ -868,11 +956,36 @@ export async function listSites() {
   return rows.map(mapSite)
 }
 
+async function getSiteTrackingStats(siteId) {
+  const row = await db.get(`
+    SELECT
+      COUNT(CASE WHEN event_name IN ('native_site_view', 'session_start', 'page_view') THEN 1 END) AS tracking_views,
+      COUNT(DISTINCT visitor_id) AS tracking_visitors,
+      COUNT(DISTINCT session_id) AS tracking_sessions,
+      COUNT(DISTINCT CASE WHEN event_name = 'native_site_conversion' THEN submission_id END) AS tracking_conversions
+    FROM sessions
+    WHERE site_id = ? OR form_site_id = ?
+  `, [siteId, siteId])
+
+  const visitors = Number(row?.tracking_visitors || 0)
+  const conversions = Number(row?.tracking_conversions || 0)
+
+  return {
+    views: Number(row?.tracking_views || 0),
+    visitors,
+    sessions: Number(row?.tracking_sessions || 0),
+    conversions,
+    conversionRate: visitors > 0 ? Number(((conversions / visitors) * 100).toFixed(1)) : 0
+  }
+}
+
 export async function getSite(siteId, { includeBlocks = true, includeSubmissions = false } = {}) {
   const row = await db.get('SELECT * FROM public_sites WHERE id = ?', [siteId])
   const site = mapSite(row)
 
   if (!site) return null
+
+  site.trackingStats = await getSiteTrackingStats(site.id)
 
   if (includeBlocks) {
     site.blocks = await listSiteBlocks(site.id)
@@ -882,6 +995,14 @@ export async function getSite(siteId, { includeBlocks = true, includeSubmissions
     site.submissions = await listSiteSubmissions(site.id)
   }
 
+  return site
+}
+
+export async function getSitePreview(siteId) {
+  const site = await getSite(siteId, { includeBlocks: false, includeSubmissions: false })
+  if (!site) return null
+
+  site.blocks = await hydrateEmbeddedForms(await listSiteBlocks(site.id))
   return site
 }
 
@@ -940,7 +1061,7 @@ export async function createSite(input = {}) {
     cleanString(input.metaEventName) || 'Lead'
   ])
 
-  for (const block of buildDefaultBlocks(id, siteType)) {
+  for (const block of buildDefaultBlocks(id, siteType, theme.template)) {
     await db.run(`
       INSERT INTO public_site_blocks (
         id, site_id, block_type, label, content, placeholder, required,
@@ -1167,13 +1288,20 @@ export async function deleteBlock(siteId, blockId) {
   return getSite(siteId, { includeBlocks: true, includeSubmissions: true })
 }
 
-export async function reorderBlocks(siteId, blockIds = []) {
+export async function reorderBlocks(siteId, blockIds = [], { pageId } = {}) {
   const normalizedIds = Array.isArray(blockIds) ? blockIds.map(cleanString).filter(Boolean) : []
   const existing = await listSiteBlocks(siteId)
-  const existingIds = new Set(existing.map(block => block.id))
+  const normalizedPageId = cleanString(pageId)
+  const pageBlocks = normalizedPageId
+    ? existing.filter(block => {
+        const blockPageId = cleanString(block.settings?.pageId || block.settings?.page_id)
+        return blockPageId === normalizedPageId || (!blockPageId && normalizedPageId === DEFAULT_FUNNEL_PAGE_ID)
+      })
+    : existing
+  const existingIds = new Set(pageBlocks.map(block => block.id))
   const orderedIds = [
     ...normalizedIds.filter(id => existingIds.has(id)),
-    ...existing.map(block => block.id).filter(id => !normalizedIds.includes(id))
+    ...pageBlocks.map(block => block.id).filter(id => !normalizedIds.includes(id))
   ]
 
   for (const [index, blockId] of orderedIds.entries()) {
@@ -1318,7 +1446,7 @@ export async function refreshSiteRenderDomain(siteId, input = {}) {
     const result = { verified: false, error: 'Dominio invalido' }
     return {
       site: {
-        ...(await getSite(site.id, { includeBlocks: true, includeSubmissions: true })),
+        ...await getSite(site.id, { includeBlocks: true, includeSubmissions: true }),
         domain: cleanString(rawDomain),
         renderDomainVerified: false,
         renderDomainCheckedAt: new Date().toISOString(),
@@ -1335,7 +1463,7 @@ export async function refreshSiteRenderDomain(siteId, input = {}) {
     }
     return {
       site: {
-        ...(await getSite(site.id, { includeBlocks: true, includeSubmissions: true })),
+        ...await getSite(site.id, { includeBlocks: true, includeSubmissions: true }),
         domain: '',
         renderDomainVerified: false,
         renderDomainCheckedAt: new Date().toISOString(),
@@ -1358,7 +1486,7 @@ export async function refreshSiteRenderDomain(siteId, input = {}) {
 
   return {
     site: {
-      ...(await getSite(site.id, { includeBlocks: true, includeSubmissions: true })),
+      ...await getSite(site.id, { includeBlocks: true, includeSubmissions: true }),
       domain,
       renderDomainVerified: false,
       renderDomainCheckedAt: new Date().toISOString(),
@@ -1378,6 +1506,38 @@ async function findSiteByDomain(hostValue) {
   )
 
   return mapSite(row)
+}
+
+export async function resolveConnectedPublicDomainForHost(hostValue, { forceRefresh = false } = {}) {
+  const host = normalizeDomain(hostValue)
+  if (!host) {
+    return { ok: false, status: 404, reason: 'invalid_host', message: 'Dominio invalido' }
+  }
+
+  const site = await findSiteByDomain(host)
+  if (!site) {
+    return { ok: false, status: 404, reason: 'domain_not_configured', message: 'Dominio no configurado' }
+  }
+
+  if (shouldRefreshRenderCheck(site, forceRefresh)) {
+    const verification = await verifyRenderCustomDomain(host)
+    await updateRenderVerification(site.id, verification)
+    site.renderDomainVerified = verification.verified
+    site.renderDomainCheckedAt = new Date().toISOString()
+    site.renderDomainError = verification.error
+  }
+
+  if (!site.renderDomainVerified) {
+    return {
+      ok: false,
+      status: 404,
+      reason: 'render_domain_unverified',
+      message: site.renderDomainError || 'Dominio no verificado en Render',
+      site
+    }
+  }
+
+  return { ok: true, site, host }
 }
 
 async function hydrateEmbeddedForms(blocks = []) {
@@ -1419,31 +1579,13 @@ export async function resolvePublicSiteForHost(hostValue, { forceRefresh = false
     return { ok: false, status: 404, reason: 'invalid_host', message: 'Dominio invalido' }
   }
 
-  const site = await findSiteByDomain(host)
-  if (!site) {
-    return { ok: false, status: 404, reason: 'domain_not_configured', message: 'Dominio no configurado' }
-  }
+  const domainResolution = await resolveConnectedPublicDomainForHost(host, { forceRefresh })
+  if (!domainResolution.ok) return domainResolution
+
+  const site = domainResolution.site
 
   if (site.status !== 'published') {
     return { ok: false, status: 404, reason: 'site_not_published', message: 'Este site no esta publicado', site }
-  }
-
-  if (shouldRefreshRenderCheck(site, forceRefresh)) {
-    const verification = await verifyRenderCustomDomain(host)
-    await updateRenderVerification(site.id, verification)
-    site.renderDomainVerified = verification.verified
-    site.renderDomainCheckedAt = new Date().toISOString()
-    site.renderDomainError = verification.error
-  }
-
-  if (!site.renderDomainVerified) {
-    return {
-      ok: false,
-      status: 404,
-      reason: 'render_domain_unverified',
-      message: site.renderDomainError || 'Dominio no verificado en Render',
-      site
-    }
   }
 
   site.blocks = await hydrateEmbeddedForms(await listSiteBlocks(site.id))
@@ -1651,7 +1793,337 @@ function collectFieldBlocks(blocks = []) {
   return fields
 }
 
-function renderContentBlock(block) {
+function normalizeSitePages(site) {
+  const rawPages = Array.isArray(site?.theme?.pages) ? site.theme.pages : []
+  const seen = new Set()
+  const pages = rawPages
+    .map((page, index) => ({
+      id: cleanString(page?.id) || `${DEFAULT_FUNNEL_PAGE_ID}-${index + 1}`,
+      title: cleanString(page?.title) || `Pagina ${index + 1}`,
+      sortOrder: Number.isFinite(Number(page?.sortOrder)) ? Number(page.sortOrder) : index
+    }))
+    .filter(page => {
+      if (!page.id || seen.has(page.id)) return false
+      seen.add(page.id)
+      return true
+    })
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((page, index) => ({ ...page, sortOrder: index }))
+
+  return pages.length ? pages : [{ id: DEFAULT_FUNNEL_PAGE_ID, title: 'Pagina 1', sortOrder: 0 }]
+}
+
+function getBlockPageId(block, pages) {
+  const pageId = cleanString(block?.settings?.pageId || block?.settings?.page_id)
+  return pages.some(page => page.id === pageId) ? pageId : pages[0]?.id || DEFAULT_FUNNEL_PAGE_ID
+}
+
+function getPageBlocks(site, pageId) {
+  const blocks = Array.isArray(site?.blocks) ? site.blocks : []
+  if (site?.siteType !== 'landing_page') return blocks
+
+  const pages = normalizeSitePages(site)
+  const activePage = pages.find(page => page.id === pageId) || pages[0]
+  return blocks.filter(block => getBlockPageId(block, pages) === activePage.id)
+}
+
+function getNextPage(site, pageId) {
+  const pages = normalizeSitePages(site)
+  const index = pages.findIndex(page => page.id === pageId)
+  return index >= 0 ? pages[index + 1] || null : pages[1] || null
+}
+
+function pageHref(pageId) {
+  return `?page=${encodeURIComponent(pageId)}`
+}
+
+function resolveButtonHref(settings = {}, context = {}) {
+  const action = cleanString(settings.buttonAction || settings.button_action || 'url')
+  if (action === 'next_page') {
+    const nextPage = getNextPage(context.site, context.pageId)
+    if (nextPage) return pageHref(nextPage.id)
+  }
+
+  if (action === 'specific_page') {
+    const pages = normalizeSitePages(context.site)
+    const targetPageId = cleanString(settings.buttonPageId || settings.button_page_id)
+    const targetPage = pages.find(page => page.id === targetPageId)
+    if (targetPage) return pageHref(targetPage.id)
+  }
+
+  return safeHref(settings.buttonUrl, '#form')
+}
+
+function getFormCompletionAction(blocks = []) {
+  const formBlock = blocks.find(block => block.blockType === 'form_embed')
+  const action = cleanString(formBlock?.settings?.completionAction || formBlock?.settings?.completion_action)
+  return ['next_page', 'next_page_if_qualified', 'form_default'].includes(action) ? action : 'form_default'
+}
+
+function getNativeFormContext(site, blocks = []) {
+  if (!site || site.siteType !== 'landing_page') {
+    return {
+      formSiteId: site?.id || null,
+      formSiteName: site?.name || null
+    }
+  }
+
+  const formBlock = blocks.find(block => block.blockType === 'form_embed')
+  if (!formBlock) {
+    return {
+      formSiteId: null,
+      formSiteName: null
+    }
+  }
+
+  const settings = formBlock.settings || {}
+  return {
+    formSiteId: cleanString(settings.embeddedSiteId || settings.formSiteId || settings.form_site_id) || `${site.id}:form_embed:${formBlock.id}`,
+    formSiteName: cleanString(settings.embeddedSiteName || settings.formSiteName || settings.form_site_name) || cleanString(formBlock.label) || `Formulario de ${site.name}`
+  }
+}
+
+function scriptJson(value) {
+  return JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029')
+}
+
+function buildNativeSiteTrackingScript(context) {
+  return `
+  <script>
+    (() => {
+      const RSTK_CONTEXT = ${scriptJson(context)};
+      const ENDPOINT = '/collect';
+
+      const readJson = (storage, key) => {
+        try {
+          const raw = storage.getItem(key);
+          return raw ? JSON.parse(raw) : {};
+        } catch (_) {
+          return {};
+        }
+      };
+
+      const writeJson = (storage, key, value) => {
+        try {
+          storage.setItem(key, JSON.stringify(value));
+        } catch (_) {}
+      };
+
+      const generateId = () => {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        let id = '';
+        for (let i = 0; i < 20; i += 1) {
+          id += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return id;
+      };
+
+      const generateSessionId = () => {
+        if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {
+          const random = Math.random() * 16 | 0;
+          const value = char === 'x' ? random : (random & 0x3 | 0x8);
+          return value.toString(16);
+        });
+      };
+
+      const getVisitorId = () => {
+        const data = readJson(localStorage, 'ristak');
+        if (!data.visitor_id) {
+          data.visitor_id = generateId();
+          data.first_visit = new Date().toISOString();
+          writeJson(localStorage, 'ristak', data);
+        }
+        return data.visitor_id;
+      };
+
+      const getSessionId = () => {
+        const data = readJson(sessionStorage, 'ristak');
+        if (!data.session_id) {
+          data.session_id = generateSessionId();
+          data.session_start = Date.now();
+          writeJson(sessionStorage, 'ristak', data);
+        }
+        return data.session_id;
+      };
+
+      const rememberContact = (contact) => {
+        if (!contact || !contact.contactId) return;
+        const data = readJson(localStorage, 'ristak');
+        data.contact_id = contact.contactId;
+        data.contact_email = contact.email || data.contact_email || null;
+        data.contact_name = contact.fullName || data.contact_name || null;
+        data.contact_synced_at = new Date().toISOString();
+        writeJson(localStorage, 'ristak', data);
+      };
+
+      const getSavedContactId = () => {
+        const data = readJson(localStorage, 'ristak');
+        return data.contact_id || null;
+      };
+
+      const getParams = () => {
+        const params = {};
+        const searchParams = new URLSearchParams(window.location.search || '');
+        searchParams.forEach((value, key) => {
+          if (
+            key.indexOf('utm_') === 0 ||
+            ['gclid', 'fbclid', 'msclkid', 'ttclid', 'wbraid', 'gbraid', 'campaign_id', 'adset_id', 'ad_id', 'campaign_name', 'adset_name', 'ad_name', 'placement', 'site_source_name', 'campaignid', 'adgroupid', 'creative', 'keyword', 'matchtype', 'network', 'device', 'target'].includes(key)
+          ) {
+            params[key] = value;
+          }
+        });
+        return params;
+      };
+
+      const getFacebookCookies = () => {
+        const cookies = {};
+        try {
+          document.cookie.split(';').forEach((part) => {
+            const pieces = part.trim().split('=');
+            const name = pieces[0];
+            const value = pieces.slice(1).join('=');
+            if (name === '_fbc') cookies.fbc = value;
+            if (name === '_fbp') cookies.fbp = value;
+          });
+        } catch (_) {}
+        return cookies;
+      };
+
+      const getDeviceType = () => {
+        const ua = navigator.userAgent || '';
+        if (/(tablet|ipad|playbook|silk)|(android(?!.*mobi))/i.test(ua)) return 'tablet';
+        if (/Mobile|Android|iP(hone|od)|IEMobile|BlackBerry|Kindle|Silk-Accelerated|(hpw|web)OS|Opera M(obi|ini)/.test(ua)) return 'mobile';
+        return 'desktop';
+      };
+
+      const getBrowserInfo = () => {
+        const ua = navigator.userAgent || '';
+        let browser = 'Unknown';
+        let version = '';
+        let match = null;
+        if (ua.indexOf('Edg/') > -1) {
+          browser = 'Edge';
+          match = ua.match(/Edg\\/([\\d.]+)/);
+        } else if (ua.indexOf('Chrome/') > -1 && ua.indexOf('Edg/') === -1) {
+          browser = 'Chrome';
+          match = ua.match(/Chrome\\/([\\d.]+)/);
+        } else if (ua.indexOf('Safari/') > -1 && ua.indexOf('Chrome') === -1) {
+          browser = 'Safari';
+          match = ua.match(/Version\\/([\\d.]+)/);
+        } else if (ua.indexOf('Firefox/') > -1) {
+          browser = 'Firefox';
+          match = ua.match(/Firefox\\/([\\d.]+)/);
+        } else if (ua.indexOf('OPR/') > -1 || ua.indexOf('Opera/') > -1) {
+          browser = 'Opera';
+          match = ua.match(/(?:OPR|Opera)\\/([\\d.]+)/);
+        }
+        version = match ? match[1] : '';
+        return { browser, browser_version: version };
+      };
+
+      const getOS = () => {
+        const ua = navigator.userAgent || '';
+        if (ua.indexOf('Windows NT 10.0') > -1) return 'Windows 10';
+        if (ua.indexOf('Windows') > -1) return 'Windows';
+        if (ua.indexOf('Mac OS X') > -1) {
+          const match = ua.match(/Mac OS X ([\\d_]+)/);
+          return match ? 'macOS ' + match[1].replace(/_/g, '.') : 'macOS';
+        }
+        if (ua.indexOf('Android') > -1) {
+          const match = ua.match(/Android ([\\d.]+)/);
+          return match ? 'Android ' + match[1] : 'Android';
+        }
+        if (ua.indexOf('iPhone') > -1 || ua.indexOf('iPad') > -1) return 'iOS';
+        if (ua.indexOf('Linux') > -1) return 'Linux';
+        return 'Unknown';
+      };
+
+      const buildTrackingData = (extra = {}) => {
+        const browserInfo = getBrowserInfo();
+        return Object.assign({
+          tracking_source: 'native_site',
+          site_id: RSTK_CONTEXT.siteId,
+          site_slug: RSTK_CONTEXT.siteSlug,
+          site_name: RSTK_CONTEXT.siteName,
+          site_type: RSTK_CONTEXT.siteType,
+          form_site_id: RSTK_CONTEXT.formSiteId,
+          form_site_name: RSTK_CONTEXT.formSiteName,
+          public_page_id: RSTK_CONTEXT.pageId,
+          public_page_title: RSTK_CONTEXT.pageTitle,
+          url: window.location.href,
+          referrer: document.referrer || null,
+          title: document.title || null,
+          device_type: getDeviceType(),
+          browser: browserInfo.browser,
+          browser_version: browserInfo.browser_version,
+          os: getOS(),
+          language: navigator.language || navigator.userLanguage || null,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
+          user_agent: navigator.userAgent
+        }, getParams(), getFacebookCookies(), extra);
+      };
+
+      const sendEvent = (eventName, extra = {}) => {
+        const payload = {
+          visitor_id: getVisitorId(),
+          session_id: getSessionId(),
+          contact_id: extra.contact_id || getSavedContactId(),
+          event_name: eventName,
+          ts: Date.now(),
+          data: buildTrackingData(extra)
+        };
+        fetch(ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          keepalive: true
+        }).catch(() => {});
+      };
+
+      window.ristakNativeIdentity = () => ({ visitorId: getVisitorId(), sessionId: getSessionId() });
+      window.ristakNativeBuildData = buildTrackingData;
+      window.ristakNativeRememberContact = rememberContact;
+      window.ristakNativeTrack = sendEvent;
+
+      const emitView = () => sendEvent('native_site_view');
+      if (document.readyState === 'complete' || document.readyState === 'interactive') {
+        setTimeout(emitView, 0);
+      } else {
+        document.addEventListener('DOMContentLoaded', emitView, { once: true });
+      }
+    })();
+  </script>`
+}
+
+const RSTK_ICONS = {
+  check: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M20 6 9 17l-5-5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  cross: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>',
+  play: '<svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" fill="currentColor"/></svg>',
+  verified: '<svg class="rstk-verified" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M12 2.2l2.3 1.7 2.85.05.95 2.7 2.25 1.8-.95 2.75.95 2.75-2.25 1.8-.95 2.7L14.3 18.6 12 20.3l-2.3-1.7-2.85-.05-.95-2.7-2.25-1.8.95-2.75-.95-2.75 2.25-1.8.95-2.7L9.7 3.9z"/><path d="M8.4 12.3l2.4 2.4 4.8-4.9" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  globe: '<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M3 12h18M12 3c3.2 3 3.2 15 0 18M12 3c-3.2 3-3.2 15 0 18" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>',
+  camera: '<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5.4" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="17.6" cy="6.4" r="1.25" fill="currentColor"/></svg>',
+  music: '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M9 17.2a3.1 3.1 0 1 1-2-2.9V5l9-2v9.2a3.1 3.1 0 1 1-2-2.9V6.6L9 7.8z"/></svg>',
+  lock: '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><rect x="4.5" y="10.5" width="15" height="10" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>'
+}
+
+function getItemTone(item) {
+  const raw = String(item.title || item.text || '').trim()
+  if (/^[+✓✔]/.test(raw)) return 'pro'
+  if (/^[-–—✗✘x×]/i.test(raw)) return 'con'
+  return 'neutral'
+}
+
+function stripToneMarker(value) {
+  return String(value || '').replace(/^\s*[+\-–—✓✔✗✘x×]\s*/i, '').trim()
+}
+
+function renderContentBlock(block, context = {}) {
   const content = escapeHtml(block.content)
   const settings = block.settings || {}
 
@@ -1664,10 +2136,10 @@ function renderContentBlock(block) {
   }
 
   if (block.blockType === 'hero') {
-    const buttonUrl = safeHref(settings.buttonUrl, '#form')
+    const buttonUrl = resolveButtonHref(settings, context)
     return `
       <section class="rstk-hero">
-        <p class="rstk-kicker">${escapeHtml(settings.kicker || '')}</p>
+        ${settings.kicker ? `<p class="rstk-kicker">${escapeHtml(settings.kicker)}</p>` : ''}
         <h1 class="rstk-headline">${content || escapeHtml(block.label)}</h1>
         ${settings.subtitle ? `<p class="rstk-subheading">${escapeHtml(settings.subtitle)}</p>` : ''}
         ${settings.buttonText ? `<a class="rstk-button-link" href="${escapeHtml(buttonUrl)}">${escapeHtml(settings.buttonText)}</a>` : ''}
@@ -1686,15 +2158,42 @@ function renderContentBlock(block) {
     const videoUrl = safeUrl(settings.mediaUrl || block.content)
     return videoUrl
       ? `<div class="rstk-video"><iframe src="${escapeHtml(videoUrl)}" loading="lazy" allowfullscreen sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe></div>`
-      : `<div class="rstk-media rstk-media-empty">Video sin URL</div>`
+      : `<div class="rstk-media rstk-media-empty"><span class="rstk-play">${RSTK_ICONS.play}</span>Agrega la URL del video</div>`
   }
 
   if (block.blockType === 'button') {
-    const buttonUrl = safeHref(settings.buttonUrl)
+    const buttonUrl = resolveButtonHref(settings, context)
     return `<a class="rstk-button-link" href="${escapeHtml(buttonUrl)}">${escapeHtml(settings.buttonText || block.content || block.label || 'Continuar')}</a>`
   }
 
-  if (['benefits', 'testimonials', 'services', 'faq'].includes(block.blockType)) {
+  if (block.blockType === 'benefits') {
+    const items = getItems(settings)
+    const heading = content || escapeHtml(block.label)
+    return `
+      <section class="rstk-section-list rstk-checklist">
+        ${heading ? `<h2>${heading}</h2>` : ''}
+        <ul class="rstk-check-list">
+          ${items.map(item => {
+            const tone = getItemTone(item)
+            const icon = tone === 'con' ? RSTK_ICONS.cross : RSTK_ICONS.check
+            const title = escapeHtml(stripToneMarker(item.title))
+            const text = escapeHtml(stripToneMarker(item.text))
+            return `
+              <li class="rstk-check rstk-check-${tone}">
+                <span class="rstk-check-icon" aria-hidden="true">${icon}</span>
+                <span class="rstk-check-body">
+                  ${title ? `<strong>${title}</strong>` : ''}
+                  ${text ? `<span>${text}</span>` : ''}
+                </span>
+              </li>
+            `
+          }).join('')}
+        </ul>
+      </section>
+    `
+  }
+
+  if (['testimonials', 'services', 'faq'].includes(block.blockType)) {
     const items = getItems(settings)
     return `
       <section class="rstk-section-list">
@@ -1727,7 +2226,7 @@ function renderContentBlock(block) {
   }
 
   if (block.blockType === 'cta') {
-    const buttonUrl = safeHref(settings.buttonUrl, '#form')
+    const buttonUrl = resolveButtonHref(settings, context)
     return `
       <section class="rstk-cta">
         <h2>${content || escapeHtml(block.label)}</h2>
@@ -1735,6 +2234,16 @@ function renderContentBlock(block) {
         ${settings.buttonText ? `<a class="rstk-button-link" href="${escapeHtml(buttonUrl)}">${escapeHtml(settings.buttonText)}</a>` : ''}
       </section>
     `
+  }
+
+  if (block.blockType === 'calendar_embed') {
+    const calendarSlug = cleanString(settings.calendarSlug || settings.calendar_slug || block.content)
+    if (!calendarSlug) {
+      return `<div class="rstk-embed rstk-embed-empty">Selecciona un calendario para embeber</div>`
+    }
+
+    const calendarName = cleanString(settings.calendarName || settings.calendar_name || block.label || 'Calendario')
+    return `<iframe class="rstk-embed rstk-calendar-embed" src="/calendar/${encodeURIComponent(calendarSlug)}" title="${escapeHtml(calendarName)}" loading="lazy" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>`
   }
 
   if (block.blockType === 'embed') {
@@ -1836,17 +2345,549 @@ function renderFieldBlock(block, interactive = false) {
   `
 }
 
-export function renderPublicSiteHtml(site) {
+const RSTK_SANS = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif"
+
+const SITE_TEMPLATES = {
+  ristak: {
+    id: 'ristak',
+    label: 'Ristak minimal',
+    mode: 'light',
+    chrome: 'none',
+    font: RSTK_SANS,
+    vars: {
+      pageBg: '#f5f6f8',
+      pageImage: 'radial-gradient(1200px 520px at 50% -120px, rgba(15,23,42,.06), transparent 70%)',
+      ink: '#0f172a',
+      muted: '#64748b',
+      surface: '#ffffff',
+      surface2: '#f8fafc',
+      border: '#e6e8ec',
+      accent: '#111827',
+      accentStrong: '#000000',
+      onAccent: '#ffffff',
+      ring: 'rgba(17,24,39,.16)',
+      inputBg: '#ffffff',
+      inputInk: '#0f172a',
+      inputBorder: '#dfe3e8',
+      radius: '12px',
+      radiusLg: '18px',
+      shadow: '0 30px 60px -42px rgba(15,23,42,.4)',
+      headingWeight: '800',
+      btnRadius: '12px',
+      btnWeight: '750'
+    }
+  },
+
+  facebook: {
+    id: 'facebook',
+    label: 'Facebook',
+    mode: 'light',
+    chrome: 'facebook',
+    font: RSTK_SANS,
+    vars: {
+      pageBg: '#f0f2f5',
+      pageImage: 'none',
+      ink: '#1c1e21',
+      muted: '#65676b',
+      surface: '#ffffff',
+      surface2: '#f7f8fa',
+      border: '#ced0d4',
+      accent: '#1877f2',
+      accentStrong: '#166fe5',
+      onAccent: '#ffffff',
+      ring: 'rgba(24,119,242,.22)',
+      inputBg: '#ffffff',
+      inputInk: '#1c1e21',
+      inputBorder: '#ccd0d5',
+      radius: '8px',
+      radiusLg: '12px',
+      shadow: '0 1px 2px rgba(0,0,0,.1), 0 22px 48px -34px rgba(0,0,0,.5)',
+      headingWeight: '800',
+      btnRadius: '8px',
+      btnWeight: '800'
+    }
+  },
+
+  instagram: {
+    id: 'instagram',
+    label: 'Instagram',
+    mode: 'light',
+    chrome: 'instagram',
+    font: RSTK_SANS,
+    gradient: 'linear-gradient(45deg, #feda75, #fa7e1e, #d62976, #962fbf, #4f5bd5)',
+    vars: {
+      pageBg: '#fafafa',
+      pageImage: 'none',
+      ink: '#262626',
+      muted: '#8e8e8e',
+      surface: '#ffffff',
+      surface2: '#fafafa',
+      border: '#dbdbdb',
+      accent: '#0095f6',
+      accentStrong: '#1877f2',
+      onAccent: '#ffffff',
+      ring: 'rgba(0,149,246,.2)',
+      inputBg: '#ffffff',
+      inputInk: '#262626',
+      inputBorder: '#dbdbdb',
+      radius: '12px',
+      radiusLg: '16px',
+      shadow: '0 24px 54px -38px rgba(0,0,0,.45)',
+      headingWeight: '800',
+      btnRadius: '10px',
+      btnWeight: '800'
+    }
+  },
+
+  tiktok: {
+    id: 'tiktok',
+    label: 'TikTok',
+    mode: 'dark',
+    chrome: 'tiktok',
+    font: RSTK_SANS,
+    cyan: '#25f4ee',
+    vars: {
+      pageBg: '#000000',
+      pageImage: 'radial-gradient(760px 420px at 50% -80px, rgba(37,244,238,.12), transparent 70%)',
+      ink: '#ffffff',
+      muted: '#a1a1aa',
+      surface: '#161616',
+      surface2: '#1f1f1f',
+      border: 'rgba(255,255,255,.12)',
+      accent: '#fe2c55',
+      accentStrong: '#ef1f49',
+      onAccent: '#ffffff',
+      ring: 'rgba(254,44,85,.32)',
+      inputBg: '#1f1f1f',
+      inputInk: '#ffffff',
+      inputBorder: 'rgba(255,255,255,.16)',
+      radius: '10px',
+      radiusLg: '18px',
+      shadow: '0 36px 70px -42px rgba(0,0,0,.9)',
+      headingWeight: '900',
+      btnRadius: '10px',
+      btnWeight: '800'
+    }
+  },
+
+  vsl: {
+    id: 'vsl',
+    label: 'Carta de ventas (VSL)',
+    mode: 'light',
+    chrome: 'none',
+    centered: true,
+    font: RSTK_SANS,
+    vars: {
+      pageBg: '#0a0b0d',
+      pageImage: 'radial-gradient(900px 520px at 50% -60px, rgba(71,85,105,.28), transparent 70%)',
+      ink: '#0f172a',
+      muted: '#64748b',
+      surface: '#ffffff',
+      surface2: '#f8fafc',
+      border: '#e6e8ec',
+      accent: '#111827',
+      accentStrong: '#000000',
+      onAccent: '#ffffff',
+      ring: 'rgba(17,24,39,.16)',
+      inputBg: '#ffffff',
+      inputInk: '#0f172a',
+      inputBorder: '#dfe3e8',
+      radius: '14px',
+      radiusLg: '22px',
+      shadow: '0 50px 90px -46px rgba(0,0,0,.75)',
+      headingWeight: '800',
+      btnRadius: '14px',
+      btnWeight: '800'
+    }
+  },
+
+  interactive: {
+    id: 'interactive',
+    label: 'Interactivo',
+    mode: 'light',
+    chrome: 'none',
+    centered: true,
+    font: RSTK_SANS,
+    vars: {
+      pageBg: '#0a0b0d',
+      pageImage: 'radial-gradient(900px 520px at 50% -60px, rgba(71,85,105,.3), transparent 70%)',
+      ink: '#0f172a',
+      muted: '#64748b',
+      surface: '#ffffff',
+      surface2: '#f6f7f9',
+      border: '#e6e8ec',
+      accent: '#111827',
+      accentStrong: '#000000',
+      onAccent: '#ffffff',
+      ring: 'rgba(17,24,39,.14)',
+      inputBg: '#ffffff',
+      inputInk: '#0f172a',
+      inputBorder: '#dfe3e8',
+      radius: '14px',
+      radiusLg: '24px',
+      shadow: '0 60px 100px -52px rgba(0,0,0,.8)',
+      headingWeight: '800',
+      btnRadius: '14px',
+      btnWeight: '800'
+    }
+  }
+}
+
+function resolveTemplate(site) {
+  const id = cleanString(site && site.theme && site.theme.template)
+  if (id && SITE_TEMPLATES[id]) return SITE_TEMPLATES[id]
+  if (site && site.siteType === 'interactive_form') return SITE_TEMPLATES.interactive
+  return SITE_TEMPLATES.ristak
+}
+
+function getBrand(site, template) {
+  const theme = (site && site.theme) || {}
+  const name = cleanString(theme.brandName) || cleanString(site && site.title) || cleanString(site && site.name) || 'Tu marca'
+  const subtitleDefault = template.chrome === 'instagram' ? 'Publicacion pagada' : 'Patrocinado'
+  const subtitle = cleanString(theme.brandSubtitle) || subtitleDefault
+  const avatarUrl = safeUrl(theme.brandAvatar)
+  const verified = theme.brandVerified === undefined ? true : normalizeBoolean(theme.brandVerified) === 1
+  const handle = (slugify(name) || 'marca').replace(/-/g, '')
+  const initial = (name.trim()[0] || 'R').toUpperCase()
+  return { name, subtitle, avatarUrl, verified, handle, initial }
+}
+
+function renderAvatar(brand) {
+  if (brand.avatarUrl) {
+    return `<span class="rstk-avatar"><img src="${escapeHtml(brand.avatarUrl)}" alt="${escapeHtml(brand.name)}"></span>`
+  }
+  return `<span class="rstk-avatar">${escapeHtml(brand.initial)}</span>`
+}
+
+function renderBrandChrome(template, brand) {
+  if (template.chrome === 'facebook') {
+    return `
+      <header class="rstk-chrome rstk-fb">
+        <span class="rstk-fb-line" aria-hidden="true"></span>
+        <div class="rstk-fb-row">
+          ${renderAvatar(brand)}
+          <div class="rstk-fb-meta">
+            <div class="rstk-fb-name">${escapeHtml(brand.name)}${brand.verified ? RSTK_ICONS.verified : ''}</div>
+            <div class="rstk-fb-sub">${escapeHtml(brand.subtitle)} <span aria-hidden="true">&middot;</span> ${RSTK_ICONS.globe}</div>
+          </div>
+          <span class="rstk-fb-mark" aria-hidden="true">f</span>
+        </div>
+      </header>
+    `
+  }
+
+  if (template.chrome === 'instagram') {
+    return `
+      <header class="rstk-chrome rstk-ig">
+        <div class="rstk-ig-bar">
+          <span class="rstk-ig-cam" aria-hidden="true">${RSTK_ICONS.camera}</span>
+          <span class="rstk-ig-word">Instagram</span>
+          <span class="rstk-ig-dots" aria-hidden="true">&#8943;</span>
+        </div>
+        <div class="rstk-ig-profile">
+          <span class="rstk-ig-ring">${renderAvatar(brand)}</span>
+          <div class="rstk-ig-meta">
+            <div class="rstk-ig-name">${escapeHtml(brand.handle)}</div>
+            <div class="rstk-ig-sub">${escapeHtml(brand.subtitle)}</div>
+          </div>
+        </div>
+      </header>
+    `
+  }
+
+  if (template.chrome === 'tiktok') {
+    return `
+      <header class="rstk-chrome rstk-tt">
+        <div class="rstk-tt-bar">
+          <span class="rstk-tt-note" aria-hidden="true">${RSTK_ICONS.music}</span>
+          <span>TikTok</span>
+        </div>
+        <div class="rstk-tt-profile">
+          ${renderAvatar(brand)}
+          <div class="rstk-tt-meta">
+            <div class="rstk-tt-name">@${escapeHtml(brand.handle)}</div>
+            <div class="rstk-tt-sub">${escapeHtml(brand.subtitle)}</div>
+          </div>
+        </div>
+      </header>
+    `
+  }
+
+  return ''
+}
+
+function renderLegalFooter(brand) {
+  return `
+    <p class="rstk-footer">
+      <span class="rstk-lock" aria-hidden="true">${RSTK_ICONS.lock}</span>
+      Tu informacion esta protegida. ${escapeHtml(brand.name)} no la comparte con terceros.
+    </p>
+  `
+}
+
+const RSTK_BASE_CSS = `
+  *,*::before,*::after{box-sizing:border-box}
+  [hidden]{display:none !important}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0;min-height:100vh;
+    font-family:var(--rstk-font);
+    color:var(--rstk-ink);
+    background-color:var(--rstk-page-bg);
+    background-image:var(--rstk-page-image);
+    background-repeat:no-repeat;
+    line-height:1.5;letter-spacing:-0.003em;
+    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+  }
+  img{max-width:100%;display:block}
+  .rstk-frame{min-height:100vh;padding:clamp(14px,5vw,56px) 16px}
+  .rstk-page{width:100%;max-width:var(--rstk-max);margin:0 auto}
+  .rstk-shell{display:grid;gap:var(--rstk-gap)}
+  .rstk-centered .rstk-shell{text-align:center;justify-items:center}
+  .rstk-centered .rstk-subheading,.rstk-centered .rstk-text{margin-inline:auto}
+
+  .rstk-kind-form .rstk-shell{
+    background:var(--rstk-surface);border:1px solid var(--rstk-border);
+    border-radius:var(--rstk-radius-lg);box-shadow:var(--rstk-shadow);
+    padding:var(--rstk-pad);overflow:hidden;
+  }
+  form{display:grid;gap:18px;background:transparent;border:0;box-shadow:none;padding:0;margin:0}
+
+  .rstk-headline{margin:0;font-weight:var(--rstk-heading-weight);font-size:clamp(1.7rem,4.6vw,3rem);line-height:1.05;letter-spacing:-0.02em}
+  .rstk-kind-landing .rstk-headline{font-size:clamp(2rem,5.4vw,3.6rem)}
+  .rstk-subheading{margin:0;color:var(--rstk-muted);font-size:clamp(1rem,2vw,1.18rem);max-width:60ch}
+  .rstk-kicker{margin:0;color:var(--rstk-accent);font-size:.78rem;font-weight:800;text-transform:uppercase;letter-spacing:.09em}
+  .rstk-text{margin:0;color:color-mix(in srgb,var(--rstk-ink) 80%,transparent);max-width:66ch}
+  .rstk-hero,.rstk-cta,.rstk-section-list,.rstk-embedded-form{display:grid;gap:14px}
+  .rstk-hero{gap:16px}
+  .rstk-section-list h2,.rstk-cta h2,.rstk-embedded-form h2{margin:0;font-size:clamp(1.25rem,2.6vw,1.7rem);font-weight:var(--rstk-heading-weight);letter-spacing:-0.01em}
+
+  .rstk-button-link,.rstk-actions button{
+    -webkit-appearance:none;appearance:none;cursor:pointer;
+    min-height:50px;display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    border:1px solid var(--rstk-accent);border-radius:var(--rstk-btn-radius);
+    background:var(--rstk-accent);color:var(--rstk-on-accent);
+    font:inherit;font-weight:var(--rstk-btn-weight);font-size:1.02rem;line-height:1;
+    padding:0 22px;text-decoration:none;
+    transition:background .15s ease,border-color .15s ease,transform .04s ease,box-shadow .15s ease;
+  }
+  .rstk-button-link{width:fit-content}
+  .rstk-centered .rstk-button-link{margin-inline:auto}
+  .rstk-button-link:hover,.rstk-actions button:hover{background:var(--rstk-accent-strong);border-color:var(--rstk-accent-strong)}
+  .rstk-actions button:active{transform:translateY(1px)}
+  .rstk-actions button[disabled]{opacity:.6;cursor:not-allowed}
+  .rstk-secondary{background:transparent !important;color:var(--rstk-ink) !important;border-color:var(--rstk-border) !important}
+
+  .rstk-list-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+  .rstk-list-grid article{border:1px solid var(--rstk-border);border-radius:var(--rstk-radius);background:var(--rstk-surface2);padding:16px;text-align:left}
+  .rstk-list-grid strong{display:block;font-weight:750}
+  .rstk-list-grid p{margin:6px 0 0;color:var(--rstk-muted);font-size:.92rem}
+  .rstk-list-grid small{display:block;margin-top:8px;color:var(--rstk-muted);font-weight:700}
+
+  .rstk-check-list{list-style:none;margin:0;padding:0;display:grid;gap:11px;text-align:left}
+  .rstk-check{display:flex;align-items:flex-start;gap:11px}
+  .rstk-check-icon{flex:0 0 auto;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;margin-top:1px}
+  .rstk-check-pro .rstk-check-icon{background:color-mix(in srgb,#16a34a 16%,var(--rstk-surface));color:#16a34a}
+  .rstk-check-con .rstk-check-icon{background:color-mix(in srgb,#dc2626 14%,var(--rstk-surface));color:#dc2626}
+  .rstk-check-neutral .rstk-check-icon{background:color-mix(in srgb,var(--rstk-accent) 14%,var(--rstk-surface));color:var(--rstk-accent)}
+  .rstk-check-body{display:grid;gap:2px}
+  .rstk-check-body strong{font-weight:650;font-size:1rem}
+  .rstk-check-body span{color:var(--rstk-muted);font-size:.92rem}
+
+  .rstk-media,.rstk-video{width:100%;margin:0;overflow:hidden;border:1px solid var(--rstk-border);border-radius:var(--rstk-radius);background:var(--rstk-surface2)}
+  .rstk-media img,.rstk-video iframe{width:100%;display:block;border:0}
+  .rstk-video{aspect-ratio:16/9;position:relative}
+  .rstk-video iframe{height:100%}
+  .rstk-media-empty{min-height:190px;display:grid;place-items:center;gap:8px;color:var(--rstk-muted);font-size:.92rem}
+  .rstk-play{display:grid;place-items:center;width:58px;height:58px;border-radius:50%;background:var(--rstk-accent);color:var(--rstk-on-accent)}
+
+  .rstk-field{display:grid;gap:8px;text-align:left}
+  .rstk-step[hidden]{display:none}
+  label{font-size:.95rem;font-weight:700;color:var(--rstk-ink)}
+  .rstk-required{color:#dc2626;margin-left:3px}
+  .rstk-help{margin:0;color:var(--rstk-muted);font-size:.9rem}
+  input,textarea,select{
+    width:100%;border:1px solid var(--rstk-input-border);border-radius:var(--rstk-radius);
+    background:var(--rstk-input-bg);color:var(--rstk-input-ink);font:inherit;font-size:1rem;
+    padding:13px 14px;outline:none;transition:border-color .15s ease,box-shadow .15s ease;
+  }
+  textarea{resize:vertical;min-height:108px}
+  input::placeholder,textarea::placeholder{color:color-mix(in srgb,var(--rstk-muted) 80%,transparent)}
+  input:focus,textarea:focus,select:focus{border-color:var(--rstk-accent);box-shadow:0 0 0 4px var(--rstk-ring)}
+  select{appearance:none;-webkit-appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--rstk-muted) 50%),linear-gradient(135deg,var(--rstk-muted) 50%,transparent 50%);background-position:calc(100% - 20px) calc(50% - 3px),calc(100% - 15px) calc(50% - 3px);background-size:5px 5px,5px 5px;background-repeat:no-repeat;padding-right:42px}
+
+  .rstk-options{display:grid;gap:10px}
+  .rstk-option{display:flex;align-items:center;gap:11px;min-height:50px;border:1px solid var(--rstk-input-border);border-radius:var(--rstk-radius);padding:11px 14px;background:var(--rstk-input-bg);color:var(--rstk-input-ink);font-weight:600;cursor:pointer;transition:border-color .15s ease,background .15s ease}
+  .rstk-option:hover{border-color:var(--rstk-accent)}
+  .rstk-option:has(input:checked){border-color:var(--rstk-accent);background:color-mix(in srgb,var(--rstk-accent) 8%,var(--rstk-input-bg))}
+  .rstk-option input{width:19px;height:19px;padding:0;flex:0 0 auto;accent-color:var(--rstk-accent)}
+
+  .rstk-embed{width:100%;min-height:360px;display:block;border:1px solid var(--rstk-border);border-radius:var(--rstk-radius);background:var(--rstk-surface2)}
+  .rstk-calendar-embed{min-height:760px}
+  iframe.rstk-embed{overflow:hidden}
+  .rstk-embed-code{background:transparent}
+  .rstk-embed-empty{display:grid;place-items:center;min-height:160px;color:var(--rstk-muted)}
+
+  .rstk-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
+  .rstk-actions [data-submit],.rstk-actions [data-next]{flex:1 1 auto}
+  .rstk-actions [data-back]{flex:0 0 auto;min-width:120px}
+  .rstk-error{margin:2px 0 0;color:#dc2626;font-size:.85rem;font-weight:650}
+  .rstk-submit-message{margin:0;color:var(--rstk-muted);font-weight:650;text-align:center}
+
+  .rstk-progress{display:grid;gap:8px}
+  .rstk-progress-track{height:6px;border-radius:999px;background:color-mix(in srgb,var(--rstk-ink) 12%,transparent);overflow:hidden}
+  .rstk-progress-fill{display:block;height:100%;width:0;border-radius:999px;background:var(--rstk-accent);transition:width .35s cubic-bezier(.4,0,.2,1)}
+  .rstk-progress b{font-size:.8rem;color:var(--rstk-muted);font-weight:700}
+
+  .rstk-footer{margin:6px 0 0;display:flex;align-items:center;justify-content:center;gap:6px;color:var(--rstk-muted);font-size:.78rem;text-align:center}
+  .rstk-footer .rstk-lock{display:inline-flex}
+
+  .rstk-chrome .rstk-avatar{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;overflow:hidden;background:var(--rstk-accent);color:#fff;font-weight:800;font-size:1.15rem;flex:0 0 auto}
+  .rstk-chrome .rstk-avatar img{width:100%;height:100%;object-fit:cover}
+
+  @media (max-width:540px){
+    .rstk-actions{flex-direction:column-reverse}
+    .rstk-actions button{width:100%}
+    .rstk-actions [data-back]{width:100%}
+  }
+`
+
+const RSTK_TEMPLATE_EXTRAS = {
+  ristak: `
+    .rstk-tpl-ristak .rstk-kind-form .rstk-shell{}
+  `,
+
+  facebook: `
+    .rstk-fb{position:relative;margin:calc(-1 * var(--rstk-pad));margin-bottom:var(--rstk-gap);padding:14px var(--rstk-pad) 12px;border-bottom:1px solid var(--rstk-border)}
+    .rstk-fb-line{position:absolute;top:0;left:0;right:0;height:4px;background:var(--rstk-accent)}
+    .rstk-fb-row{display:flex;align-items:center;gap:10px}
+    .rstk-fb-meta{flex:1 1 auto;min-width:0}
+    .rstk-fb-name{display:flex;align-items:center;gap:5px;font-weight:700;font-size:1rem;color:var(--rstk-ink)}
+    .rstk-verified{color:#1877f2;flex:0 0 auto}
+    .rstk-fb-sub{display:flex;align-items:center;gap:5px;color:var(--rstk-muted);font-size:.82rem;margin-top:1px}
+    .rstk-fb-mark{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--rstk-accent);color:#fff;font-weight:900;font-family:Georgia,'Times New Roman',serif;font-size:1.2rem;flex:0 0 auto}
+  `,
+
+  instagram: `
+    .rstk-ig{position:relative;margin:calc(-1 * var(--rstk-pad));margin-bottom:var(--rstk-gap);padding:0 var(--rstk-pad) 14px}
+    .rstk-ig::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:var(--rstk-gradient)}
+    .rstk-ig-bar{display:flex;align-items:center;gap:8px;padding:12px 0 14px;border-bottom:1px solid var(--rstk-border)}
+    .rstk-ig-cam{display:inline-flex;color:var(--rstk-ink)}
+    .rstk-ig-word{font-weight:800;font-size:1.05rem}
+    .rstk-ig-dots{margin-left:auto;color:var(--rstk-ink);font-size:1.2rem;line-height:1}
+    .rstk-ig-profile{display:flex;align-items:center;gap:11px;padding-top:14px}
+    .rstk-ig-ring{display:inline-grid;place-items:center;padding:2px;border-radius:50%;background:var(--rstk-gradient);flex:0 0 auto}
+    .rstk-ig-ring .rstk-avatar{width:42px;height:42px;border:2px solid var(--rstk-surface)}
+    .rstk-ig-name{font-weight:700;font-size:.95rem}
+    .rstk-ig-sub{color:var(--rstk-muted);font-size:.8rem;margin-top:1px}
+    .rstk-tpl-instagram .rstk-button-link,.rstk-tpl-instagram .rstk-actions [data-submit]{background:var(--rstk-accent)}
+  `,
+
+  tiktok: `
+    .rstk-tt{margin:calc(-1 * var(--rstk-pad));margin-bottom:var(--rstk-gap);padding:14px var(--rstk-pad);border-bottom:1px solid var(--rstk-border);display:grid;gap:10px;justify-items:center}
+    .rstk-tt-bar{display:flex;align-items:center;gap:8px;font-weight:800;font-size:1.05rem;letter-spacing:.2px}
+    .rstk-tt-note{display:inline-flex;color:#fff;filter:drop-shadow(1.5px 0 var(--rstk-cyan)) drop-shadow(-1.5px 0 var(--rstk-accent))}
+    .rstk-tt-profile{display:flex;align-items:center;gap:11px}
+    .rstk-tt-name{font-weight:800}
+    .rstk-tt-sub{color:var(--rstk-muted);font-size:.8rem}
+    .rstk-tpl-tiktok .rstk-headline{text-shadow:1.5px 0 var(--rstk-cyan),-1.5px 0 var(--rstk-accent)}
+    .rstk-tpl-tiktok ::selection{background:var(--rstk-accent);color:#fff}
+  `,
+
+  vsl: `
+    .rstk-tpl-vsl .rstk-shell{background:var(--rstk-surface);border:1px solid var(--rstk-border);border-radius:var(--rstk-radius-lg);box-shadow:var(--rstk-shadow);padding:clamp(20px,4vw,40px)}
+    .rstk-tpl-vsl .rstk-kicker{display:inline-block}
+  `,
+
+  interactive: `
+    .rstk-interactive .rstk-shell{min-height:min(72vh,560px);align-content:center;padding:clamp(22px,5vw,46px)}
+    .rstk-interactive .rstk-field{gap:14px}
+    .rstk-interactive label{font-size:clamp(1.3rem,3.4vw,1.9rem);font-weight:800;letter-spacing:-0.015em;line-height:1.15}
+    .rstk-interactive .rstk-help{font-size:1rem}
+    .rstk-interactive .rstk-options{counter-reset:rstk-opt;gap:12px}
+    .rstk-interactive .rstk-option{position:relative;min-height:60px;padding:16px 18px 16px 60px;font-size:1.05rem;font-weight:600}
+    .rstk-interactive .rstk-option input{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
+    .rstk-interactive .rstk-option::before{counter-increment:rstk-opt;content:counter(rstk-opt,upper-alpha);position:absolute;left:14px;top:50%;transform:translateY(-50%);width:32px;height:32px;border-radius:9px;display:grid;place-items:center;border:1px solid var(--rstk-border);font-weight:800;font-size:.9rem;color:var(--rstk-muted);background:var(--rstk-surface);transition:all .15s ease}
+    .rstk-interactive .rstk-option:has(input:checked)::before{background:var(--rstk-accent);color:var(--rstk-on-accent);border-color:var(--rstk-accent)}
+    .rstk-interactive .rstk-actions{margin-top:10px}
+    .rstk-interactive input,.rstk-interactive textarea,.rstk-interactive select{font-size:1.1rem;padding:15px 16px}
+  `
+}
+
+function buildStyleSheet(template, maxWidth, accentOverride) {
+  const v = template.vars
+  const accent = accentOverride || v.accent
+  const accentStrong = accentOverride ? `color-mix(in srgb, ${accentOverride} 86%, #000)` : v.accentStrong
+  const ring = accentOverride ? `color-mix(in srgb, ${accentOverride} 22%, transparent)` : v.ring
+  return `
+  :root{
+    --rstk-font:${template.font};
+    --rstk-page-bg:${v.pageBg};
+    --rstk-page-image:${v.pageImage};
+    --rstk-ink:${v.ink};
+    --rstk-muted:${v.muted};
+    --rstk-surface:${v.surface};
+    --rstk-surface2:${v.surface2};
+    --rstk-border:${v.border};
+    --rstk-accent:${accent};
+    --rstk-accent-strong:${accentStrong};
+    --rstk-on-accent:${v.onAccent};
+    --rstk-ring:${ring};
+    --rstk-input-bg:${v.inputBg};
+    --rstk-input-ink:${v.inputInk};
+    --rstk-input-border:${v.inputBorder};
+    --rstk-radius:${v.radius};
+    --rstk-radius-lg:${v.radiusLg};
+    --rstk-shadow:${v.shadow};
+    --rstk-heading-weight:${v.headingWeight};
+    --rstk-btn-radius:${v.btnRadius};
+    --rstk-btn-weight:${v.btnWeight};
+    --rstk-max:${maxWidth};
+    --rstk-pad:clamp(18px,4vw,30px);
+    --rstk-gap:clamp(16px,3vw,22px);
+    ${template.gradient ? `--rstk-gradient:${template.gradient};` : ''}
+    ${template.cyan ? `--rstk-cyan:${template.cyan};` : ''}
+  }
+  ${RSTK_BASE_CSS}
+  ${RSTK_TEMPLATE_EXTRAS[template.id] || ''}
+  `
+}
+
+export function renderPublicSiteHtml(site, { pageId, trackingEnabled = true } = {}) {
   const theme = { ...DEFAULT_THEME, ...(site.theme || {}) }
-  const blocks = Array.isArray(site.blocks) ? site.blocks : []
+  const template = resolveTemplate(site)
+  const brand = getBrand(site, template)
+  const pages = normalizeSitePages(site)
+  const requestedPageId = cleanString(pageId)
+  const activePage = pages.find(page => page.id === requestedPageId) || pages[0]
+  const blocks = getPageBlocks(site, activePage?.id)
   const fieldBlocks = collectFieldBlocks(blocks)
+  const nativeFormContext = getNativeFormContext(site, blocks)
   const isInteractive = site.siteType === 'interactive_form'
+  const isLandingType = site.siteType === 'landing_page'
   const hasForm = fieldBlocks.length > 0
+  const completionAction = isLandingType ? getFormCompletionAction(blocks) : 'form_default'
+  const nextPage = isLandingType ? getNextPage(site, activePage?.id) : null
+  const nextPageUrl = nextPage ? pageHref(nextPage.id) : ''
+  const submitText = cleanString(theme.submitText) || 'Enviar'
+  const maxWidth = isLandingType ? '780px' : (template.id === 'interactive' ? '600px' : '520px')
+  const themeAccent = cleanString(theme.accentColor)
+  const allowThemeAccent = (template.chrome === 'none') && /^#[0-9a-f]{6}$/i.test(themeAccent) && themeAccent.toLowerCase() !== String(DEFAULT_THEME.accentColor).toLowerCase()
+  const styleSheet = buildStyleSheet(template, maxWidth, allowThemeAccent ? themeAccent : null)
+  const chrome = (!isLandingType && template.chrome && template.chrome !== 'none') ? renderBrandChrome(template, brand) : ''
+  const footer = (hasForm && !isLandingType) ? renderLegalFooter(brand) : ''
+  const bodyClass = [
+    `rstk-tpl-${template.id}`,
+    `rstk-${template.mode}`,
+    `rstk-kind-${isLandingType ? 'landing' : 'form'}`,
+    template.centered ? 'rstk-centered' : '',
+    isInteractive ? 'rstk-interactive' : ''
+  ].filter(Boolean).join(' ')
 
   const bodyBlocks = blocks.map(block => (
     FIELD_BLOCK_TYPES.has(block.blockType)
       ? renderFieldBlock(block, isInteractive)
-      : renderContentBlock(block)
+      : renderContentBlock(block, { site, pageId: activePage?.id })
   )).join('\n')
 
   const submitArea = hasForm
@@ -1854,10 +2895,22 @@ export function renderPublicSiteHtml(site) {
       <div class="rstk-actions">
         ${isInteractive ? '<button type="button" class="rstk-secondary" data-back hidden>Anterior</button>' : ''}
         ${isInteractive ? '<button type="button" data-next>Siguiente</button>' : ''}
-        <button type="submit" ${isInteractive ? 'hidden' : ''} data-submit>Enviar</button>
+        <button type="submit" ${isInteractive ? 'hidden' : ''} data-submit>${escapeHtml(submitText)}</button>
       </div>
       <p class="rstk-submit-message" data-message role="status"></p>
     `
+    : ''
+  const nativeTrackingScript = trackingEnabled
+    ? buildNativeSiteTrackingScript({
+      siteId: site.id,
+      siteSlug: site.slug,
+      siteName: site.name,
+      siteType: site.siteType,
+      formSiteId: nativeFormContext.formSiteId,
+      formSiteName: nativeFormContext.formSiteName,
+      pageId: activePage?.id || '',
+      pageTitle: activePage?.title || ''
+    })
     : ''
 
   return `<!doctype html>
@@ -1867,278 +2920,38 @@ export function renderPublicSiteHtml(site) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(site.title || site.name)}</title>
   <meta name="description" content="${escapeHtml(site.description || '')}">
-  <style>
-    :root {
-      --rstk-accent: ${escapeHtml(theme.accentColor || DEFAULT_THEME.accentColor)};
-      --rstk-bg: ${escapeHtml(theme.backgroundColor || DEFAULT_THEME.backgroundColor)};
-      --rstk-text: ${escapeHtml(theme.textColor || DEFAULT_THEME.textColor)};
-      --rstk-muted: #64748b;
-      --rstk-border: #d7dde8;
-      --rstk-surface: rgba(255, 255, 255, 0.88);
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      min-height: 100vh;
-      background:
-        linear-gradient(180deg, rgba(15, 23, 42, 0.04), transparent 340px),
-        var(--rstk-bg);
-      color: var(--rstk-text);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      line-height: 1.5;
-      letter-spacing: 0;
-    }
-    .rstk-page {
-      width: min(760px, calc(100% - 32px));
-      margin: 0 auto;
-      padding: clamp(32px, 6vw, 76px) 0;
-    }
-    .rstk-shell {
-      display: grid;
-      gap: 24px;
-    }
-    .rstk-headline {
-      margin: 0;
-      font-size: clamp(2rem, 5vw, 4rem);
-      line-height: 0.98;
-      letter-spacing: 0;
-      max-width: 12ch;
-    }
-    .rstk-subheading {
-      margin: 0;
-      color: var(--rstk-muted);
-      font-size: clamp(1.05rem, 2vw, 1.3rem);
-      max-width: 62ch;
-    }
-    .rstk-hero,
-    .rstk-cta,
-    .rstk-section-list,
-    .rstk-embedded-form {
-      display: grid;
-      gap: 16px;
-    }
-    .rstk-kicker {
-      margin: 0;
-      color: var(--rstk-accent);
-      font-size: 0.82rem;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-    }
-    .rstk-text {
-      color: color-mix(in srgb, var(--rstk-text) 82%, white 18%);
-      font-size: 1rem;
-      max-width: 68ch;
-    }
-    .rstk-button-link {
-      width: fit-content;
-      min-height: 44px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      border: 1px solid var(--rstk-accent);
-      border-radius: 8px;
-      background: var(--rstk-accent);
-      color: #fff;
-      font-weight: 800;
-      padding: 0 18px;
-      text-decoration: none;
-    }
-    .rstk-list-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 12px;
-    }
-    .rstk-list-grid article {
-      border: 1px solid var(--rstk-border);
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.7);
-      padding: 16px;
-    }
-    .rstk-list-grid p,
-    .rstk-cta p {
-      margin: 6px 0 0;
-      color: var(--rstk-muted);
-    }
-    .rstk-list-grid small {
-      color: var(--rstk-muted);
-      font-weight: 700;
-    }
-    .rstk-media,
-    .rstk-video {
-      width: 100%;
-      margin: 0;
-      overflow: hidden;
-      border: 1px solid var(--rstk-border);
-      border-radius: 8px;
-      background: #fff;
-    }
-    .rstk-media img,
-    .rstk-video iframe {
-      width: 100%;
-      display: block;
-      border: 0;
-    }
-    .rstk-media img {
-      height: auto;
-    }
-    .rstk-video {
-      aspect-ratio: 16 / 9;
-    }
-    .rstk-video iframe {
-      height: 100%;
-    }
-    .rstk-media-empty {
-      min-height: 180px;
-      display: grid;
-      place-items: center;
-      color: var(--rstk-muted);
-    }
-    form {
-      display: grid;
-      gap: 18px;
-      padding: 24px;
-      background: var(--rstk-surface);
-      border: 1px solid var(--rstk-border);
-      border-radius: 8px;
-      box-shadow: 0 24px 70px -46px rgba(15, 23, 42, 0.65);
-    }
-    .rstk-field {
-      display: grid;
-      gap: 8px;
-    }
-    .rstk-step[hidden] { display: none; }
-    label {
-      font-size: 0.96rem;
-      font-weight: 700;
-      color: var(--rstk-text);
-    }
-    .rstk-required { color: #dc2626; margin-left: 4px; }
-    .rstk-help {
-      margin: 0;
-      color: var(--rstk-muted);
-      font-size: 0.92rem;
-    }
-    input, textarea, select {
-      width: 100%;
-      border: 1px solid var(--rstk-border);
-      border-radius: 8px;
-      background: #fff;
-      color: #111827;
-      font: inherit;
-      padding: 12px 13px;
-      outline: none;
-    }
-    input:focus, textarea:focus, select:focus {
-      border-color: var(--rstk-accent);
-      box-shadow: 0 0 0 3px color-mix(in srgb, var(--rstk-accent) 18%, transparent);
-    }
-    .rstk-options {
-      display: grid;
-      gap: 8px;
-    }
-    .rstk-option {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      min-height: 44px;
-      border: 1px solid var(--rstk-border);
-      border-radius: 8px;
-      padding: 10px 12px;
-      background: #fff;
-      font-weight: 600;
-      color: #111827;
-    }
-    .rstk-option input {
-      width: 18px;
-      height: 18px;
-      padding: 0;
-      accent-color: var(--rstk-accent);
-    }
-    .rstk-embed {
-      width: 100%;
-      min-height: 360px;
-      display: block;
-      border: 1px solid var(--rstk-border);
-      border-radius: 8px;
-      background: #fff;
-    }
-    .rstk-embed-code { background: transparent; }
-    .rstk-embed-empty {
-      display: grid;
-      place-items: center;
-      min-height: 160px;
-      color: var(--rstk-muted);
-    }
-    .rstk-actions {
-      display: flex;
-      justify-content: flex-end;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin-top: 4px;
-    }
-    button {
-      min-height: 44px;
-      border: 1px solid var(--rstk-accent);
-      border-radius: 8px;
-      background: var(--rstk-accent);
-      color: #fff;
-      font: inherit;
-      font-weight: 800;
-      padding: 0 18px;
-      cursor: pointer;
-    }
-    button[hidden] { display: none; }
-    button:disabled { opacity: 0.62; cursor: not-allowed; }
-    .rstk-secondary {
-      background: #fff;
-      color: var(--rstk-accent);
-    }
-    .rstk-error {
-      margin: 0;
-      color: #b91c1c;
-      font-size: 0.86rem;
-    }
-    .rstk-submit-message {
-      margin: 0;
-      color: var(--rstk-muted);
-      font-weight: 650;
-    }
-    .rstk-progress {
-      color: var(--rstk-muted);
-      font-size: 0.9rem;
-      font-weight: 700;
-    }
-    @media (max-width: 640px) {
-      .rstk-page { width: min(100% - 24px, 760px); }
-      form { padding: 18px; }
-      .rstk-actions { justify-content: stretch; }
-      button { flex: 1; }
-    }
-  </style>
+  <style>${styleSheet}</style>
 </head>
-<body>
-  <main class="rstk-page">
-    <div class="rstk-shell">
-      ${isInteractive && hasForm ? `<div class="rstk-progress" data-progress>Pregunta 1 de ${fieldBlocks.length}</div>` : ''}
-      <form data-site-form data-site-id="${escapeHtml(site.id)}" novalidate>
-        ${bodyBlocks}
-        ${submitArea}
-      </form>
-    </div>
-  </main>
+<body class="${bodyClass}">
+  <div class="rstk-frame">
+    <main class="rstk-page">
+      <div class="rstk-shell">
+        ${chrome}
+        ${isInteractive && hasForm ? `<div class="rstk-progress" data-progress><span class="rstk-progress-track"><span class="rstk-progress-fill" data-progress-fill></span></span><b data-progress-label>Pregunta 1 de ${fieldBlocks.length}</b></div>` : ''}
+        <form data-site-form data-site-id="${escapeHtml(site.id)}" data-page-id="${escapeHtml(activePage?.id || '')}" novalidate>
+          ${bodyBlocks}
+          ${submitArea}
+        </form>
+        ${footer}
+      </div>
+    </main>
+  </div>
   <script>
     (() => {
       const form = document.querySelector('[data-site-form]');
       if (!form) return;
       const siteId = form.getAttribute('data-site-id');
+      const pageId = form.getAttribute('data-page-id') || '';
       const steps = Array.from(form.querySelectorAll('.rstk-step'));
       const nextButton = form.querySelector('[data-next]');
       const backButton = form.querySelector('[data-back]');
       const submitButton = form.querySelector('[data-submit]');
       const message = form.querySelector('[data-message]');
-      const progress = document.querySelector('[data-progress]');
+      const progressLabel = document.querySelector('[data-progress-label]');
+      const progressFill = document.querySelector('[data-progress-fill]');
       const isInteractive = ${isInteractive ? 'true' : 'false'};
+      const completionAction = ${JSON.stringify(completionAction)};
+      const nextPageUrl = ${JSON.stringify(nextPageUrl)};
       let index = 0;
 
       const parseRule = (value) => {
@@ -2147,7 +2960,6 @@ export function renderPublicSiteHtml(site) {
       };
 
       const readFieldValue = (field) => {
-        const id = field.getAttribute('data-block-id');
         const type = field.getAttribute('data-field-type');
         if (type === 'checkboxes') {
           return Array.from(field.querySelectorAll('input[type="checkbox"]:checked')).map(input => input.value);
@@ -2168,7 +2980,7 @@ export function renderPublicSiteHtml(site) {
         const checked = field.querySelector('input[type="radio"]:checked');
         if (checked) return [parseRule(checked.dataset.rule)].filter(Boolean);
         const select = field.querySelector('select');
-        if (select && select.selectedOptions?.[0]) {
+        if (select && select.selectedOptions && select.selectedOptions[0]) {
           return [parseRule(select.selectedOptions[0].dataset.rule)].filter(Boolean);
         }
         return [];
@@ -2189,10 +3001,11 @@ export function renderPublicSiteHtml(site) {
         if (backButton) backButton.hidden = index === 0;
         if (nextButton) nextButton.hidden = index >= steps.length - 1;
         if (submitButton) submitButton.hidden = index < steps.length - 1;
-        if (progress) progress.textContent = 'Pregunta ' + (index + 1) + ' de ' + steps.length;
+        if (progressLabel) progressLabel.textContent = 'Pregunta ' + (index + 1) + ' de ' + steps.length;
+        if (progressFill) progressFill.style.width = (((index + 1) / steps.length) * 100) + '%';
       };
 
-      nextButton?.addEventListener('click', () => {
+      nextButton && nextButton.addEventListener('click', () => {
         const current = steps[index];
         if (current && !validateField(current)) return;
         const rules = current ? readSelectedRules(current).filter(item => item.action && item.action !== 'continue') : [];
@@ -2203,7 +3016,7 @@ export function renderPublicSiteHtml(site) {
           return;
         }
         const jumpRule = rules.find(item => item.action === 'jump' && item.targetBlockId);
-        if (jumpRule?.targetBlockId) {
+        if (jumpRule && jumpRule.targetBlockId) {
           const targetIndex = steps.findIndex(step => step.getAttribute('data-block-id') === jumpRule.targetBlockId);
           index = targetIndex >= 0 ? targetIndex : Math.min(index + 1, steps.length - 1);
         } else {
@@ -2212,7 +3025,7 @@ export function renderPublicSiteHtml(site) {
         renderStep();
       });
 
-      backButton?.addEventListener('click', () => {
+      backButton && backButton.addEventListener('click', () => {
         index = Math.max(index - 1, 0);
         renderStep();
       });
@@ -2230,6 +3043,8 @@ export function renderPublicSiteHtml(site) {
 
         const url = new URL(window.location.href);
         const params = Object.fromEntries(url.searchParams.entries());
+        const nativeIdentity = window.ristakNativeIdentity ? window.ristakNativeIdentity() : {};
+        const nativeTracking = window.ristakNativeBuildData ? window.ristakNativeBuildData({ conversion_type: 'form_submit' }) : null;
         if (submitButton) submitButton.disabled = true;
         if (message) message.textContent = 'Enviando...';
 
@@ -2239,13 +3054,18 @@ export function renderPublicSiteHtml(site) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               siteId,
+              pageId,
               responses,
               meta: {
+                pageId,
                 pageUrl: window.location.href,
                 referrer: document.referrer,
                 params,
-                fbp: document.cookie.match(/(?:^|; )_fbp=([^;]+)/)?.[1] || null,
-                fbc: document.cookie.match(/(?:^|; )_fbc=([^;]+)/)?.[1] || null
+                visitorId: nativeIdentity.visitorId || null,
+                sessionId: nativeIdentity.sessionId || null,
+                tracking: nativeTracking,
+                fbp: (document.cookie.match(/(?:^|; )_fbp=([^;]+)/) || [])[1] || null,
+                fbc: (document.cookie.match(/(?:^|; )_fbc=([^;]+)/) || [])[1] || null
               }
             })
           });
@@ -2253,10 +3073,23 @@ export function renderPublicSiteHtml(site) {
           if (!response.ok || data.success === false) {
             throw new Error(data.error || 'No se pudo enviar el formulario');
           }
+          const submission = data && data.data ? data.data : {};
           form.reset();
+          if (window.ristakNativeRememberContact && submission.contactId) {
+            window.ristakNativeRememberContact({
+              contactId: submission.contactId,
+              fullName: submission.contactName || '',
+              email: submission.contactEmail || ''
+            });
+          }
           index = 0;
           renderStep();
-          if (message) message.textContent = data?.data?.message || ${JSON.stringify('Listo. Recibimos tu informacion.')};
+          const qualifies = submission.status !== 'disqualified';
+          if (nextPageUrl && (completionAction === 'next_page' || (completionAction === 'next_page_if_qualified' && qualifies))) {
+            window.location.href = nextPageUrl;
+            return;
+          }
+          if (message) message.textContent = (data && data.data && data.data.message) || ${JSON.stringify('Listo. Recibimos tu informacion.')};
         } catch (error) {
           if (message) message.textContent = error.message || 'No se pudo enviar el formulario';
         } finally {
@@ -2267,6 +3100,7 @@ export function renderPublicSiteHtml(site) {
       renderStep();
     })();
   </script>
+  ${nativeTrackingScript}
 </body>
 </html>`
 }
@@ -2412,6 +3246,7 @@ async function upsertContactFromSubmission({ site, contact, meta }) {
   const phoneUpsert = await prepareContactPhoneUpsert({ contactId, phone })
   const names = splitName(fullName)
   const params = meta?.params || {}
+  const visitorId = cleanString(meta?.visitorId || meta?.visitor_id)
 
   if (existing) {
     await db.run(`
@@ -2427,6 +3262,7 @@ async function upsertContactFromSubmission({ site, contact, meta }) {
         attribution_medium = COALESCE(NULLIF(attribution_medium, ''), ?),
         attribution_ad_name = COALESCE(NULLIF(attribution_ad_name, ''), ?),
         attribution_ad_id = COALESCE(NULLIF(attribution_ad_id, ''), ?),
+        visitor_id = COALESCE(NULLIF(visitor_id, ''), ?),
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `, [
@@ -2441,6 +3277,7 @@ async function upsertContactFromSubmission({ site, contact, meta }) {
       cleanString(params.utm_medium) || null,
       cleanString(params.utm_content || params.ad_name) || null,
       cleanString(params.ad_id || params.utm_ad_id) || null,
+      visitorId || null,
       contactId
     ])
     await finalizePreparedPhoneUpsert(phoneUpsert, contactId)
@@ -2451,14 +3288,15 @@ async function upsertContactFromSubmission({ site, contact, meta }) {
     INSERT INTO contacts (
       id, phone, email, full_name, first_name, last_name, source,
       attribution_url, attribution_session_source, attribution_medium,
-      attribution_ad_name, attribution_ad_id, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      attribution_ad_name, attribution_ad_id, visitor_id, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     ON CONFLICT(id) DO UPDATE SET
       phone = COALESCE(NULLIF(contacts.phone, ''), excluded.phone),
       email = COALESCE(NULLIF(contacts.email, ''), excluded.email),
       full_name = COALESCE(NULLIF(contacts.full_name, ''), excluded.full_name),
       first_name = COALESCE(NULLIF(contacts.first_name, ''), excluded.first_name),
       last_name = COALESCE(NULLIF(contacts.last_name, ''), excluded.last_name),
+      visitor_id = COALESCE(NULLIF(contacts.visitor_id, ''), excluded.visitor_id),
       updated_at = CURRENT_TIMESTAMP
   `, [
     contactId,
@@ -2472,7 +3310,8 @@ async function upsertContactFromSubmission({ site, contact, meta }) {
     cleanString(params.utm_source || params.source) || null,
     cleanString(params.utm_medium) || null,
     cleanString(params.utm_content || params.ad_name) || null,
-    cleanString(params.ad_id || params.utm_ad_id) || null
+    cleanString(params.ad_id || params.utm_ad_id) || null,
+    visitorId || null
   ])
 
   await finalizePreparedPhoneUpsert(phoneUpsert, contactId)
@@ -2759,6 +3598,53 @@ async function sendSiteLeadMetaEvent({ site, submissionId, contactId, contact, r
   }
 }
 
+async function recordNativeSiteConversionEvent({ site, blocks, submittedPageId, submissionId, contactId, contact, req, meta }) {
+  const visitorId = cleanString(meta?.visitorId || meta?.visitor_id) || `site_visitor_${submissionId}`
+  const sessionId = cleanString(meta?.sessionId || meta?.session_id) || `site_session_${submissionId}`
+  const tracking = meta?.tracking && typeof meta.tracking === 'object' ? meta.tracking : {}
+  const pages = normalizeSitePages(site)
+  const page = pages.find(item => item.id === submittedPageId) || pages[0] || null
+  const formContext = getNativeFormContext(site, blocks)
+
+  const data = {
+    ...tracking,
+    tracking_source: 'native_site',
+    site_id: site.id,
+    site_slug: site.slug,
+    site_name: site.name,
+    site_type: site.siteType,
+    form_site_id: formContext.formSiteId,
+    form_site_name: formContext.formSiteName,
+    public_page_id: submittedPageId || page?.id || '',
+    public_page_title: page?.title || '',
+    conversion_type: 'form_submit',
+    submission_id: submissionId,
+    url: cleanString(meta?.pageUrl) || tracking.url || `https://${site.domain || cleanString(meta?.host) || ''}`,
+    referrer: cleanString(meta?.referrer) || tracking.referrer || null,
+    contact_name: cleanString(contact?.fullName) || undefined
+  }
+
+  await createSession({
+    session_id: sessionId,
+    visitor_id: visitorId,
+    contact_id: contactId || null,
+    full_name: cleanString(contact?.fullName) || null,
+    event_name: 'native_site_conversion',
+    ts: Date.now(),
+    data,
+    ip: getClientIp(req),
+    user_agent: req.headers['user-agent'] || ''
+  })
+
+  if (contactId) {
+    linkVisitorToContact(visitorId, contactId, cleanString(contact?.fullName) || 'Lead de site')
+      .then(() => unifyVisitorIds(contactId))
+      .catch(error => {
+        logger.warn(`No se pudo vincular visitor nativo ${visitorId} con contacto ${contactId}: ${error.message}`)
+      })
+  }
+}
+
 export async function createSubmissionFromRequest(req, body = {}) {
   const host = getRequestHost(req)
   const resolution = await resolvePublicSiteForHost(host)
@@ -2779,14 +3665,18 @@ export async function createSubmissionFromRequest(req, body = {}) {
   const blocks = Array.isArray(site.blocks) && site.blocks.length
     ? site.blocks
     : await hydrateEmbeddedForms(await listSiteBlocks(site.id))
-  const { responses, errors } = normalizeSubmissionResponses(blocks, body.responses || {})
+  const submittedPageId = cleanString(body.pageId || body.page_id || body.meta?.pageId || body.meta?.page_id)
+  const submissionBlocks = site.siteType === 'landing_page' && submittedPageId
+    ? getPageBlocks({ ...site, blocks }, submittedPageId)
+    : blocks
+  const { responses, errors } = normalizeSubmissionResponses(submissionBlocks, body.responses || {})
   if (errors.length) {
     const error = new Error(errors.join(', '))
     error.status = 400
     throw error
   }
 
-  const ruleEvaluation = evaluateSubmissionRules(blocks, responses)
+  const ruleEvaluation = evaluateSubmissionRules(submissionBlocks, responses)
 
   const meta = {
     ...(body.meta && typeof body.meta === 'object' ? body.meta : {}),
@@ -2795,7 +3685,7 @@ export async function createSubmissionFromRequest(req, body = {}) {
     userAgent: req.headers['user-agent'] || '',
     submittedAt: new Date().toISOString()
   }
-  const inferredContact = inferContactFromResponses(collectFieldBlocks(blocks), responses)
+  const inferredContact = inferContactFromResponses(collectFieldBlocks(submissionBlocks), responses)
   const contactId = await upsertContactFromSubmission({ site, contact: inferredContact, meta })
   const submissionId = crypto.randomUUID()
 
@@ -2825,10 +3715,26 @@ export async function createSubmissionFromRequest(req, body = {}) {
     }
   })
 
+  await recordNativeSiteConversionEvent({
+    site,
+    blocks: submissionBlocks,
+    submittedPageId,
+    submissionId,
+    contactId,
+    contact: inferredContact,
+    req,
+    meta
+  }).catch(error => {
+    logger.warn(`No se pudo registrar conversion nativa de site ${site.id}: ${error.message}`)
+  })
+
   return {
     submissionId,
     siteId: site.id,
     contactId,
+    contactName: inferredContact.fullName || '',
+    contactEmail: inferredContact.email || '',
+    contactPhone: inferredContact.phone || '',
     status: ruleEvaluation.status,
     message: getSiteFinalMessage(site, ruleEvaluation),
     rules: ruleEvaluation,

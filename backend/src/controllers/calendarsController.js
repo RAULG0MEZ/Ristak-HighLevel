@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import * as calendarService from '../services/highlevelCalendarService.js';
 import * as localCalendarService from '../services/localCalendarService.js';
 import { logger } from '../utils/logger.js';
@@ -5,6 +6,13 @@ import { getGHLClient } from '../services/ghlClient.js';
 import { db } from '../config/database.js';
 import { getAccountTimezone } from '../utils/dateUtils.js';
 import { triggerWhatsappAppointmentBookedEvent } from '../services/metaWhatsappEventsService.js';
+import { getRequestHost, resolveConnectedPublicDomainForHost } from '../services/sitesService.js';
+import { normalizePhoneForStorage } from '../utils/phoneUtils.js';
+import {
+  finalizePreparedPhoneUpsert,
+  findContactByPhoneCandidates,
+  prepareContactPhoneUpsert
+} from '../services/contactIdentityService.js';
 
 /**
  * Controlador para endpoints de Calendarios de HighLevel
@@ -29,6 +37,151 @@ async function getCalendarSourcePreference() {
   } catch {
     return 'combined';
   }
+}
+
+function cleanString(value) {
+  return String(value ?? '').trim();
+}
+
+function normalizeEmail(value) {
+  const email = cleanString(value).toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : '';
+}
+
+function splitName(fullName = '') {
+  const parts = cleanString(fullName).split(/\s+/).filter(Boolean);
+  return {
+    firstName: parts[0] || '',
+    lastName: parts.slice(1).join(' ')
+  };
+}
+
+function dateKeyFromDate(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function addDays(date, days) {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+}
+
+async function getSavedHighLevelOnlyContext() {
+  const saved = await getSavedHighLevelConfig().catch(() => null);
+  return {
+    locationId: saved?.location_id || null,
+    accessToken: saved?.api_token || null
+  };
+}
+
+async function ensurePublicCalendarRequest(req, slugOrId) {
+  const host = getRequestHost(req);
+  if (!host) {
+    const error = new Error('Dominio invalido');
+    error.status = 404;
+    throw error;
+  }
+
+  const domainResolution = await resolveConnectedPublicDomainForHost(host);
+  if (!domainResolution.ok) {
+    const error = new Error(domainResolution.message || 'Dominio publico no verificado');
+    error.status = domainResolution.status || 404;
+    throw error;
+  }
+
+  const calendar = await localCalendarService.getPublicCalendarBySlug(slugOrId);
+  if (!calendar) {
+    const error = new Error('Calendario no encontrado o inactivo');
+    error.status = 404;
+    throw error;
+  }
+
+  return { host, calendar };
+}
+
+async function getCalendarFreeSlotsForPublic(calendar, { startDate, endDate, timezone }, context = {}) {
+  let slots = null;
+
+  if (context.accessToken && calendar.ghlCalendarId) {
+    try {
+      slots = await calendarService.getFreeSlots(
+        calendar.ghlCalendarId,
+        startDate,
+        endDate,
+        context.accessToken,
+        timezone
+      );
+    } catch (error) {
+      logger.warn(`[Calendars Controller] Free slots publicos GHL fallaron, usando local: ${error.message}`);
+    }
+  }
+
+  if (!slots) {
+    slots = await localCalendarService.getLocalFreeSlots(
+      calendar.id,
+      startDate,
+      endDate,
+      timezone
+    );
+  }
+
+  return slots;
+}
+
+async function upsertPublicCalendarContact({ calendar, contact, host, sourceUrl }) {
+  const fullName = cleanString(contact.name || contact.fullName);
+  const email = normalizeEmail(contact.email);
+  const phone = normalizePhoneForStorage(contact.phone) || cleanString(contact.phone);
+
+  if (!fullName) {
+    const error = new Error('El nombre es requerido');
+    error.status = 400;
+    throw error;
+  }
+
+  if (!phone || phone.replace(/[^\d]/g, '').length < 7) {
+    const error = new Error('El telefono es requerido');
+    error.status = 400;
+    throw error;
+  }
+
+  const byPhone = await findContactByPhoneCandidates(phone).catch(() => null);
+  const byEmail = !byPhone && email
+    ? await db.get('SELECT id FROM contacts WHERE LOWER(email) = LOWER(?) ORDER BY updated_at DESC LIMIT 1', [email]).catch(() => null)
+    : null;
+  const contactId = byPhone?.id || byEmail?.id || `rstk_contact_${crypto.randomUUID()}`;
+  const names = splitName(fullName);
+  const phoneUpsert = await prepareContactPhoneUpsert({ contactId, phone });
+
+  await db.run(`
+    INSERT INTO contacts (
+      id, phone, email, full_name, first_name, last_name, source,
+      attribution_url, attribution_session_source, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ON CONFLICT(id) DO UPDATE SET
+      phone = COALESCE(excluded.phone, contacts.phone),
+      email = COALESCE(excluded.email, contacts.email),
+      full_name = COALESCE(NULLIF(excluded.full_name, ''), contacts.full_name),
+      first_name = COALESCE(NULLIF(excluded.first_name, ''), contacts.first_name),
+      last_name = COALESCE(NULLIF(excluded.last_name, ''), contacts.last_name),
+      source = COALESCE(NULLIF(contacts.source, ''), excluded.source),
+      attribution_url = COALESCE(NULLIF(contacts.attribution_url, ''), excluded.attribution_url),
+      attribution_session_source = COALESCE(NULLIF(contacts.attribution_session_source, ''), excluded.attribution_session_source),
+      updated_at = CURRENT_TIMESTAMP
+  `, [
+    contactId,
+    phoneUpsert.phone || phone || null,
+    email || null,
+    fullName,
+    names.firstName || null,
+    names.lastName || null,
+    `ristak_calendar:${calendar.slug || calendar.id}`,
+    cleanString(sourceUrl) || `https://${host}/calendar/${calendar.slug || calendar.id}`,
+    'public_calendar'
+  ]);
+
+  await finalizePreparedPhoneUpsert(phoneUpsert, contactId);
+  return contactId;
 }
 
 async function mirrorHighLevelCalendars(locationId, accessToken) {
@@ -65,10 +218,11 @@ export async function getCalendars(req, res) {
     await localCalendarService.ensureDefaultLocalCalendar();
     const sourcePreference = await getCalendarSourcePreference();
     const calendars = await localCalendarService.listLocalCalendars({ sourcePreference });
+    const calendarsWithPublicUrls = await localCalendarService.attachPublicCalendarUrls(calendars);
 
     res.json({
       success: true,
-      data: calendars
+      data: calendarsWithPublicUrls
     });
   } catch (error) {
     logger.error(`[Calendars Controller] Error en getCalendars: ${error.message}`);
@@ -104,7 +258,10 @@ export async function createCalendar(req, res) {
 
     res.status(201).json({
       success: true,
-      data: calendar
+      data: await localCalendarService.attachPublicCalendarUrl(
+        calendar,
+        await localCalendarService.getCalendarPublicUrlStatus()
+      )
     });
   } catch (error) {
     logger.error(`[Calendars Controller] Error en createCalendar: ${error.message}`);
@@ -128,7 +285,10 @@ export async function getCalendar(req, res) {
     if (localCalendar) {
       return res.json({
         success: true,
-        data: localCalendar
+        data: await localCalendarService.attachPublicCalendarUrl(
+          localCalendar,
+          await localCalendarService.getCalendarPublicUrlStatus()
+        )
       });
     }
 
@@ -150,7 +310,10 @@ export async function getCalendar(req, res) {
 
     res.json({
       success: true,
-      data: calendar
+      data: await localCalendarService.attachPublicCalendarUrl(
+        calendar,
+        await localCalendarService.getCalendarPublicUrlStatus()
+      )
     });
   } catch (error) {
     logger.error(`[Calendars Controller] Error en getCalendar: ${error.message}`);
@@ -274,6 +437,166 @@ export async function getAppointment(req, res) {
 
     logger.error(`[Calendars Controller] Error en getAppointment: ${error.message}`);
     res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}
+
+/**
+ * GET /api/calendars/public/:slug/free-slots
+ * Slots publicos para URLs compartibles de calendario.
+ */
+export async function getPublicFreeSlots(req, res) {
+  try {
+    const { slug } = req.params;
+    const { startDate, endDate, timezone } = req.query;
+
+    if (!startDate || !endDate) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requiere startDate y endDate'
+      });
+    }
+
+    const { calendar } = await ensurePublicCalendarRequest(req, slug);
+    const context = await getSavedHighLevelOnlyContext();
+    const resolvedTimezone = cleanString(timezone) || await getAccountTimezone();
+    const slots = await getCalendarFreeSlotsForPublic(calendar, {
+      startDate,
+      endDate,
+      timezone: resolvedTimezone
+    }, context);
+
+    res.json({
+      success: true,
+      data: slots
+    });
+  } catch (error) {
+    logger.warn(`[Calendars Controller] Slots publicos rechazados: ${error.message}`);
+    res.status(error.status || 500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}
+
+/**
+ * POST /api/calendars/public/:slug/appointments
+ * Crea una cita desde una URL publica de calendario.
+ */
+export async function createPublicAppointment(req, res) {
+  try {
+    const { slug } = req.params;
+    const { calendar, host } = await ensurePublicCalendarRequest(req, slug);
+    const body = req.body || {};
+    const start = new Date(body.startTime || body.start_time || '');
+
+    if (Number.isNaN(start.getTime())) {
+      return res.status(400).json({
+        success: false,
+        error: 'Horario invalido'
+      });
+    }
+
+    if (start.getTime() < Date.now() - 60000) {
+      return res.status(400).json({
+        success: false,
+        error: 'Ese horario ya paso'
+      });
+    }
+
+    const timezone = cleanString(body.timezone) || await getAccountTimezone();
+    const context = await getSavedHighLevelOnlyContext();
+    const startDate = dateKeyFromDate(start);
+    const endDate = dateKeyFromDate(addDays(start, 1));
+    const availableSlots = await getCalendarFreeSlotsForPublic(calendar, {
+      startDate,
+      endDate,
+      timezone
+    }, context);
+    const requestedMs = start.getTime();
+    const isAvailable = availableSlots
+      .flatMap(day => Array.isArray(day.slots) ? day.slots : [])
+      .some(slot => Math.abs(new Date(slot).getTime() - requestedMs) <= 60000);
+
+    if (!isAvailable) {
+      return res.status(409).json({
+        success: false,
+        error: 'Ese horario ya no esta disponible'
+      });
+    }
+
+    const contactId = await upsertPublicCalendarContact({
+      calendar,
+      host,
+      sourceUrl: body.sourceUrl || body.source_url,
+      contact: {
+        name: body.name || body.fullName || body.full_name,
+        phone: body.phone,
+        email: body.email
+      }
+    });
+
+    const durationMinutes = Math.max(1, Number(calendar.slotDuration || 60));
+    const end = new Date(start.getTime() + durationMinutes * 60 * 1000);
+    let appointment = await localCalendarService.createLocalAppointment({
+      calendarId: calendar.id,
+      contactId,
+      locationId: context.locationId || calendar.locationId,
+      title: calendar.eventTitle || calendar.name || 'Cita',
+      appointmentStatus: calendar.autoConfirm ? 'confirmed' : 'pending',
+      status: calendar.autoConfirm ? 'confirmed' : 'pending',
+      startTime: start.toISOString(),
+      endTime: end.toISOString(),
+      notes: cleanString(body.notes),
+      source: 'ristak'
+    }, {
+      locationId: context.locationId || calendar.locationId,
+      syncStatus: 'pending'
+    });
+
+    if (context.locationId && context.accessToken && calendar.ghlCalendarId) {
+      try {
+        const remote = await calendarService.createAppointment({
+          calendarId: calendar.ghlCalendarId,
+          contactId,
+          title: calendar.eventTitle || calendar.name || 'Cita',
+          appointmentStatus: calendar.autoConfirm ? 'confirmed' : 'pending',
+          startTime: start.toISOString(),
+          endTime: end.toISOString(),
+          notes: cleanString(body.notes)
+        }, context.locationId, context.accessToken);
+
+        appointment = await localCalendarService.upsertLocalAppointment(remote, {
+          id: appointment.id,
+          source: appointment.source || 'ristak',
+          ghlAppointmentId: remote.appointment?.id || remote.id,
+          calendarId: appointment.calendarId,
+          locationId: context.locationId,
+          syncStatus: 'synced'
+        });
+      } catch (error) {
+        logger.warn(`[Calendars Controller] Cita publica guardada local, sync GHL pendiente: ${error.message}`);
+      }
+    }
+
+    await triggerWhatsappAppointmentBookedEvent(contactId, {
+      calendarId: calendar.id
+    }).catch(error => {
+      logger.warn(`[Calendars Controller] No se pudo disparar evento WhatsApp para cita publica: ${error.message}`);
+    });
+
+    res.status(201).json({
+      success: true,
+      data: {
+        appointment,
+        message: 'Listo. Tu cita quedo agendada.'
+      }
+    });
+  } catch (error) {
+    logger.warn(`[Calendars Controller] Cita publica rechazada: ${error.message}`);
+    res.status(error.status || 500).json({
       success: false,
       error: error.message
     });
@@ -604,7 +927,10 @@ export async function updateCalendar(req, res) {
 
     res.json({
       success: true,
-      data: calendar
+      data: await localCalendarService.attachPublicCalendarUrl(
+        calendar,
+        await localCalendarService.getCalendarPublicUrlStatus()
+      )
     });
   } catch (error) {
     logger.error(`[Calendars Controller] Error en updateCalendar: ${error.message}`);

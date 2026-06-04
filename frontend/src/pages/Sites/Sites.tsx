@@ -2,11 +2,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   DndContext,
+  DragOverlay,
   PointerSensor,
   closestCenter,
   useSensor,
   useSensors,
-  type DragEndEvent
+  type DragEndEvent,
+  type DragStartEvent
 } from '@dnd-kit/core'
 import {
   SortableContext,
@@ -17,9 +19,12 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import {
   AlertTriangle,
+  CalendarDays,
   CheckCircle2,
   ChevronRight,
+  Copy,
   DollarSign,
+  Eye,
   ExternalLink,
   FileText,
   FormInput,
@@ -29,6 +34,7 @@ import {
   LayoutTemplate,
   ListChecks,
   Monitor,
+  MoreVertical,
   MousePointerClick,
   Plus,
   RefreshCw,
@@ -48,21 +54,26 @@ import {
   fieldBlockTypes,
   formBlockTypes,
   landingBlockTypes,
+  siteTemplates,
   sitesService,
   type PublicSite,
   type SiteBlock,
   type SiteBlockOption,
   type SiteBlockType,
   type SiteOptionAction,
+  type SitePage,
   type SiteSubmission,
+  type SiteTemplateId,
+  type SiteTheme,
   type SiteType
 } from '@/services/sitesService'
+import { calendarsService, type Calendar as CalendarType } from '@/services/calendarsService'
 import { requestAIAgentOpen, type AIAgentSitesCreationKind } from '@/utils/aiAgentEvents'
 import styles from './Sites.module.css'
 
 type SitesSection = 'landings' | 'forms' | 'leads' | 'domains'
 type DeviceMode = 'desktop' | 'mobile'
-type CreateFlow = 'closed' | 'landing-start' | 'form-kind'
+type CreateFlow = 'closed' | 'landing-start' | 'landing-template' | 'form-kind' | 'form-template'
 
 interface LeadRow extends SiteSubmission {
   siteName: string
@@ -89,6 +100,10 @@ const ruleActions: Array<{ value: SiteOptionAction; label: string }> = [
 ]
 
 const SITES_AI_DRAFT_CREATED_EVENT = 'ristak-sites-ai-draft-created'
+const DEFAULT_FUNNEL_PAGE_ID = 'page-1'
+
+type ButtonAction = 'url' | 'next_page' | 'specific_page'
+type FormCompletionAction = 'form_default' | 'next_page' | 'next_page_if_qualified'
 
 const blockIcons: Partial<Record<SiteBlockType, React.ReactNode>> = {
   headline: <Type size={15} />,
@@ -98,6 +113,7 @@ const blockIcons: Partial<Record<SiteBlockType, React.ReactNode>> = {
   description: <FileText size={15} />,
   text: <FileText size={15} />,
   embed: <Globe2 size={15} />,
+  calendar_embed: <CalendarDays size={15} />,
   hero: <LayoutTemplate size={15} />,
   image: <Image size={15} />,
   video: <Video size={15} />,
@@ -184,6 +200,43 @@ const getNextRouteSlug = (siteType: SiteType, existingSites: PublicSite[]) => {
   return slug
 }
 
+const templateMetaById = (id?: string) => siteTemplates.find(template => template.id === id)
+
+const resolveTemplateId = (site?: PublicSite | null): SiteTemplateId => {
+  const explicit = site?.theme?.template
+  if (explicit && templateMetaById(explicit)) return explicit
+  if (site?.siteType === 'interactive_form') return 'interactive'
+  if (site?.siteType === 'landing_page') return 'ristak'
+  return 'ristak'
+}
+
+const isDarkTemplate = (id: SiteTemplateId) => id === 'tiktok' || id === 'vsl' || id === 'interactive'
+
+const getCanvasThemeStyle = (site: PublicSite): React.CSSProperties => {
+  const id = resolveTemplateId(site)
+  const meta = templateMetaById(id)
+  const themeAccent = site.theme?.accentColor
+  const accent = themeAccent && themeAccent.toLowerCase() !== '#111827' && id !== 'facebook' && id !== 'instagram' && id !== 'tiktok'
+    ? themeAccent
+    : meta?.accent || '#111827'
+  const dark = isDarkTemplate(id)
+  const surface = id === 'tiktok' ? '#161616' : '#ffffff'
+  return {
+    '--site-accent': accent,
+    '--site-background': surface,
+    '--site-surface': surface,
+    '--site-frame': dark ? (id === 'tiktok' ? '#000000' : '#0a0b0d') : '#f4f6f8',
+    '--site-text': id === 'tiktok' ? '#ffffff' : '#0f172a',
+    '--site-muted': id === 'tiktok' ? '#a1a1aa' : '#64748b',
+    '--site-border': id === 'tiktok' ? 'rgba(255,255,255,0.14)' : '#e6e8ec'
+  } as React.CSSProperties
+}
+
+const platformChromeFor = (id: SiteTemplateId): 'facebook' | 'instagram' | 'tiktok' | null => {
+  if (id === 'facebook' || id === 'instagram' || id === 'tiktok') return id
+  return null
+}
+
 const getCreateButtonLabel = (section: SitesSection) => {
   if (section === 'landings') return 'Crear landing page ("sitio web")'
   if (section === 'forms') return 'Crear formulario'
@@ -204,6 +257,62 @@ const getEmptyEditorMessage = (section: SitesSection) => {
 const getSettingString = (settings: Record<string, unknown>, key: string) => {
   const value = settings?.[key]
   return typeof value === 'string' ? value : ''
+}
+
+const cloneJson = <T,>(value: T): T => {
+  try {
+    return JSON.parse(JSON.stringify(value)) as T
+  } catch {
+    return value
+  }
+}
+
+const normalizeFunnelPages = (site?: PublicSite | null): SitePage[] => {
+  const pages = Array.isArray(site?.theme?.pages) ? site.theme.pages : []
+  const seen = new Set<string>()
+  const normalized = pages
+    .map((page, index) => ({
+      id: page?.id || `${DEFAULT_FUNNEL_PAGE_ID}-${index + 1}`,
+      title: page?.title || `Pagina ${index + 1}`,
+      sortOrder: Number.isFinite(Number(page?.sortOrder)) ? Number(page.sortOrder) : index
+    }))
+    .filter(page => {
+      if (!page.id || seen.has(page.id)) return false
+      seen.add(page.id)
+      return true
+    })
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((page, index) => ({ ...page, sortOrder: index }))
+
+  return normalized.length ? normalized : [{ id: DEFAULT_FUNNEL_PAGE_ID, title: 'Pagina 1', sortOrder: 0 }]
+}
+
+const makeFunnelPage = (index: number): SitePage => ({
+  id: `page-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+  title: `Pagina ${index + 1}`,
+  sortOrder: index
+})
+
+const normalizePagesForSave = (pages: SitePage[]) =>
+  pages.map((page, index) => ({
+    id: page.id,
+    title: page.title || `Pagina ${index + 1}`,
+    sortOrder: index
+  }))
+
+const getBlockPageId = (block: SiteBlock, pages: SitePage[]) => {
+  const pageId = getSettingString(block.settings || {}, 'pageId')
+  return pages.some(page => page.id === pageId) ? pageId : pages[0]?.id || DEFAULT_FUNNEL_PAGE_ID
+}
+
+const getButtonAction = (settings: Record<string, unknown>): ButtonAction => {
+  const action = getSettingString(settings, 'buttonAction') as ButtonAction
+  return ['url', 'next_page', 'specific_page'].includes(action) ? action : 'url'
+}
+
+const getFormCompletionAction = (settings: Record<string, unknown>): FormCompletionAction => {
+  const action = getSettingString(settings, 'completionAction') as FormCompletionAction
+  return ['form_default', 'next_page', 'next_page_if_qualified'].includes(action) ? action : 'form_default'
 }
 
 const normalizeOption = (option: string | SiteBlockOption, index: number): SiteBlockOption => {
@@ -441,6 +550,15 @@ const defaultBlockPayload = (blockType: SiteBlockType, siteId: string) => {
     }
   }
 
+  if (blockType === 'calendar_embed') {
+    return {
+      blockType,
+      label,
+      content: '',
+      settings: { calendarId: '', calendarSlug: '', calendarName: '' }
+    }
+  }
+
   return {
     blockType,
     label,
@@ -463,6 +581,7 @@ export const Sites: React.FC = () => {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
   const [section, setSection] = useState<SitesSection>('landings')
   const [sites, setSites] = useState<PublicSite[]>([])
+  const [calendars, setCalendars] = useState<CalendarType[]>([])
   const [selectedSite, setSelectedSite] = useState<PublicSite | null>(null)
   const [selectedBlockId, setSelectedBlockId] = useState<string>('')
   const [loading, setLoading] = useState(true)
@@ -471,6 +590,10 @@ export const Sites: React.FC = () => {
   const [verifying, setVerifying] = useState(false)
   const [device, setDevice] = useState<DeviceMode>('desktop')
   const [createFlow, setCreateFlow] = useState<CreateFlow>('closed')
+  const [activePageId, setActivePageId] = useState<string>(DEFAULT_FUNNEL_PAGE_ID)
+  const [draggingPageId, setDraggingPageId] = useState<string | null>(null)
+  const [activeDragId, setActiveDragId] = useState<string | null>(null)
+  const [paletteDragging, setPaletteDragging] = useState(false)
   const [leadRows, setLeadRows] = useState<LeadRow[]>([])
   const [loadingLeads, setLoadingLeads] = useState(false)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
@@ -491,7 +614,19 @@ export const Sites: React.FC = () => {
     () => [...(selectedSite?.blocks || [])].sort((a, b) => a.sortOrder - b.sortOrder),
     [selectedSite?.blocks]
   )
-  const selectedBlock = blocks.find(block => block.id === selectedBlockId) || blocks[0] || null
+  const pages = useMemo(
+    () => isLanding(selectedSite) ? normalizeFunnelPages(selectedSite) : [],
+    [selectedSite]
+  )
+  const activePage = pages.find(page => page.id === activePageId) || pages[0] || null
+  const canvasBlocks = useMemo(
+    () => isLanding(selectedSite) && activePage
+      ? blocks.filter(block => getBlockPageId(block, pages) === activePage.id)
+      : blocks,
+    [activePage, blocks, pages, selectedSite]
+  )
+  const selectedBlock = canvasBlocks.find(block => block.id === selectedBlockId) || canvasBlocks[0] || null
+  const activeDragBlock = canvasBlocks.find(block => block.id === activeDragId) || null
   const editorSite = section === 'landings'
     ? (isLanding(selectedSite) ? selectedSite : null)
     : section === 'forms'
@@ -554,12 +689,27 @@ export const Sites: React.FC = () => {
 
   useEffect(() => {
     loadSites()
+    loadCalendarsForBuilder()
   }, [])
 
   useEffect(() => {
-    if (selectedBlockId || !blocks[0]) return
-    setSelectedBlockId(blocks[0].id)
-  }, [blocks, selectedBlockId])
+    if (!isLanding(selectedSite)) return
+    const firstPage = pages[0]
+    if (!firstPage) return
+    if (!pages.some(page => page.id === activePageId)) {
+      setActivePageId(firstPage.id)
+    }
+  }, [activePageId, pages, selectedSite])
+
+  useEffect(() => {
+    if (!canvasBlocks.length) {
+      if (selectedBlockId) setSelectedBlockId('')
+      return
+    }
+    if (!selectedBlockId || !canvasBlocks.some(block => block.id === selectedBlockId)) {
+      setSelectedBlockId(canvasBlocks[0].id)
+    }
+  }, [canvasBlocks, selectedBlockId])
 
   useEffect(() => {
     const handleAIDraftCreated = (event: Event) => {
@@ -568,6 +718,7 @@ export const Sites: React.FC = () => {
 
       setSites(current => [site, ...current.filter(item => item.id !== site.id)])
       setSelectedSite(site)
+      setActivePageId(normalizeFunnelPages(site)[0]?.id || DEFAULT_FUNNEL_PAGE_ID)
       setSelectedBlockId(site.blocks?.[0]?.id || '')
       setSection(site.siteType === 'landing_page' ? 'landings' : 'forms')
       setCreateFlow('closed')
@@ -661,6 +812,7 @@ export const Sites: React.FC = () => {
       if (nextId) {
         const site = await sitesService.getSite(nextId)
         setSelectedSite(site)
+        setActivePageId(normalizeFunnelPages(site)[0]?.id || DEFAULT_FUNNEL_PAGE_ID)
         setSelectedBlockId(site.blocks?.[0]?.id || '')
       } else {
         setSelectedSite(null)
@@ -670,6 +822,14 @@ export const Sites: React.FC = () => {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudieron cargar los sites')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadCalendarsForBuilder = async () => {
+    try {
+      setCalendars(await calendarsService.getCalendars())
+    } catch {
+      setCalendars([])
     }
   }
 
@@ -701,6 +861,7 @@ export const Sites: React.FC = () => {
     try {
       const site = await sitesService.getSite(siteId)
       setSelectedSite(site)
+      setActivePageId(normalizeFunnelPages(site)[0]?.id || DEFAULT_FUNNEL_PAGE_ID)
       setSelectedBlockId(site.blocks?.[0]?.id || '')
       setCreateFlow('closed')
       setHasUnsavedChanges(false)
@@ -767,14 +928,162 @@ export const Sites: React.FC = () => {
     setSelectedSite(current => current ? { ...current, ...patch } : current)
   }
 
-  const handleCreateSite = async (siteType: SiteType, mode: 'blank' | 'template' = 'template') => {
+  const patchSiteTheme = (patch: Partial<SiteTheme>) => {
+    markEditorDirty()
+    setSelectedSite(current => current ? { ...current, theme: { ...(current.theme || {}), ...patch } } : current)
+  }
+
+  const saveSiteTheme = async (site: PublicSite, theme: SiteTheme) => {
+    return sitesService.updateSite(site.id, {
+      name: site.name,
+      slug: site.slug,
+      siteType: site.siteType,
+      status: site.status,
+      domain: site.domain,
+      title: site.title,
+      description: site.description,
+      theme,
+      metaCapiEnabled: site.metaCapiEnabled,
+      metaEventName: site.metaEventName
+    })
+  }
+
+  const persistFunnelPages = async (nextPages: SitePage[], nextActivePageId?: string) => {
+    if (!selectedSite || !isLanding(selectedSite)) return
+
+    setSaving(true)
+    try {
+      const theme = {
+        ...(selectedSite.theme || {}),
+        pages: normalizePagesForSave(nextPages)
+      }
+      const site = await saveSiteTheme(selectedSite, theme)
+      syncSelectedSite(site)
+      setActivePageId(nextActivePageId || activePageId)
+      setHasUnsavedChanges(false)
+    } catch (error) {
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudieron guardar las paginas')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleAddPage = () => {
+    if (!selectedSite || !isLanding(selectedSite)) return
+    const nextPage = makeFunnelPage(pages.length)
+    void persistFunnelPages([...pages, nextPage], nextPage.id)
+  }
+
+  const cloneBlockForPage = (block: SiteBlock, pageId: string): Partial<SiteBlock> & { blockType: SiteBlockType } => ({
+    blockType: block.blockType,
+    label: block.label,
+    content: block.content,
+    placeholder: block.placeholder,
+    required: block.required,
+    options: cloneJson(block.options),
+    settings: {
+      ...cloneJson(block.settings || {}),
+      pageId
+    }
+  })
+
+  const handleDuplicatePage = async (pageId: string) => {
+    if (!selectedSite || !isLanding(selectedSite)) return
+
+    const sourceIndex = pages.findIndex(page => page.id === pageId)
+    if (sourceIndex < 0) return
+
+    const nextPage = makeFunnelPage(pages.length)
+    nextPage.title = `${pages[sourceIndex].title} copia`
+    const nextPages = [
+      ...pages.slice(0, sourceIndex + 1),
+      nextPage,
+      ...pages.slice(sourceIndex + 1)
+    ]
+
+    setSaving(true)
+    try {
+      let site = await saveSiteTheme(selectedSite, {
+        ...(selectedSite.theme || {}),
+        pages: normalizePagesForSave(nextPages)
+      })
+      const sourceBlocks = blocks.filter(block => getBlockPageId(block, pages) === pageId)
+      for (const block of sourceBlocks) {
+        site = await sitesService.createBlock(selectedSite.id, cloneBlockForPage(block, nextPage.id))
+      }
+      syncSelectedSite(site)
+      setActivePageId(nextPage.id)
+      setHasUnsavedChanges(false)
+      showToast('success', 'Pagina duplicada', 'Ya esta lista para editar.')
+    } catch (error) {
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo duplicar la pagina')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDeletePage = async (pageId: string) => {
+    if (!selectedSite || !isLanding(selectedSite)) return
+    if (pages.length <= 1) {
+      showToast('warning', 'No se puede eliminar', 'El embudo debe tener al menos una pagina.')
+      return
+    }
+
+    const confirmed = window.confirm('Eliminar esta pagina y todos sus bloques?')
+    if (!confirmed) return
+
+    const pageIndex = pages.findIndex(page => page.id === pageId)
+    const nextPages = pages.filter(page => page.id !== pageId)
+    const nextActive = activePageId === pageId
+      ? nextPages[Math.max(0, pageIndex - 1)]?.id || nextPages[0]?.id
+      : activePageId
+
+    setSaving(true)
+    try {
+      let site = selectedSite
+      const pageBlockIds = blocks
+        .filter(block => getBlockPageId(block, pages) === pageId)
+        .map(block => block.id)
+      for (const blockId of pageBlockIds) {
+        site = await sitesService.deleteBlock(selectedSite.id, blockId)
+      }
+      site = await saveSiteTheme(site, {
+        ...(site.theme || {}),
+        pages: normalizePagesForSave(nextPages)
+      })
+      syncSelectedSite(site)
+      setActivePageId(nextActive || DEFAULT_FUNNEL_PAGE_ID)
+      setHasUnsavedChanges(false)
+      showToast('success', 'Pagina eliminada', 'El embudo se actualizo.')
+    } catch (error) {
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo eliminar la pagina')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleReorderPages = (sourcePageId: string, targetPageId: string) => {
+    if (!sourcePageId || sourcePageId === targetPageId) return
+    const oldIndex = pages.findIndex(page => page.id === sourcePageId)
+    const newIndex = pages.findIndex(page => page.id === targetPageId)
+    if (oldIndex < 0 || newIndex < 0) return
+    void persistFunnelPages(arrayMove(pages, oldIndex, newIndex), activePageId)
+  }
+
+  const handleCreateSite = async (siteType: SiteType, mode: 'blank' | 'template' = 'template', templateId?: SiteTemplateId) => {
     setCreating(true)
     try {
+      const template: SiteTemplateId = templateId
+        || (siteType === 'interactive_form' ? 'interactive' : siteType === 'landing_page' ? 'ristak' : 'ristak')
       let site = await sitesService.createSite({
         name: siteType === 'landing_page' ? 'Nueva landing' : siteType === 'interactive_form' ? 'Nuevo formulario interactivo' : 'Nuevo formulario',
         siteType,
         slug: getNextRouteSlug(siteType, sites),
-        title: siteType === 'landing_page' ? 'Nueva landing' : 'Nuevo formulario'
+        title: siteType === 'landing_page' ? 'Nueva landing' : 'Nuevo formulario',
+        theme: {
+          template,
+          ...(siteType === 'landing_page' ? { pages: normalizePagesForSave([{ id: DEFAULT_FUNNEL_PAGE_ID, title: 'Pagina 1', sortOrder: 0 }]) } : {})
+        }
       })
 
       if (siteType === 'landing_page' && mode === 'blank') {
@@ -785,6 +1094,7 @@ export const Sites: React.FC = () => {
 
       setSites(current => [site, ...current])
       setSelectedSite(site)
+      setActivePageId(normalizeFunnelPages(site)[0]?.id || DEFAULT_FUNNEL_PAGE_ID)
       setSelectedBlockId(site.blocks?.[0]?.id || '')
       setSection(siteType === 'landing_page' ? 'landings' : 'forms')
       setCreateFlow('closed')
@@ -832,6 +1142,26 @@ export const Sites: React.FC = () => {
     }
   }
 
+  const handlePreviewSite = async () => {
+    if (!editorSite) return
+    const previewWindow = window.open('', '_blank')
+    if (!previewWindow) {
+      showToast('error', 'Preview bloqueado', 'Permite popups para abrir la previsualizacion.')
+      return
+    }
+
+    previewWindow.document.write('<!doctype html><title>Previsualizando...</title><body style="font-family: system-ui; padding: 24px;">Cargando previsualizacion...</body>')
+    try {
+      const html = await sitesService.getPreviewHtml(editorSite.id, isLanding(editorSite) ? activePage?.id : undefined)
+      previewWindow.document.open()
+      previewWindow.document.write(html)
+      previewWindow.document.close()
+    } catch (error) {
+      previewWindow.close()
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo previsualizar')
+    }
+  }
+
   const handleVerifyDomain = async () => {
     if (!selectedSite) return
     setVerifying(true)
@@ -875,9 +1205,18 @@ export const Sites: React.FC = () => {
   const handleAddBlock = async (blockType: SiteBlockType) => {
     if (!selectedSite) return
     try {
-      const site = await sitesService.createBlock(selectedSite.id, defaultBlockPayload(blockType, selectedSite.id))
+      const payload = defaultBlockPayload(blockType, selectedSite.id)
+      if (isLanding(selectedSite) && activePage) {
+        payload.settings = {
+          ...(payload.settings || {}),
+          pageId: activePage.id
+        }
+      }
+      const site = await sitesService.createBlock(selectedSite.id, payload)
       syncSelectedSite(site)
-      const added = [...(site.blocks || [])].sort((a, b) => b.sortOrder - a.sortOrder)[0]
+      const added = [...(site.blocks || [])]
+        .filter(block => !isLanding(site) || getBlockPageId(block, normalizeFunnelPages(site)) === (activePage?.id || DEFAULT_FUNNEL_PAGE_ID))
+        .sort((a, b) => b.sortOrder - a.sortOrder)[0]
       if (added) setSelectedBlockId(added.id)
     } catch (error) {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo agregar el bloque')
@@ -934,20 +1273,30 @@ export const Sites: React.FC = () => {
     }
   }
 
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveDragId(String(event.active.id))
+  }
+
   const handleDragEnd = async (event: DragEndEvent) => {
+    setActiveDragId(null)
     if (!selectedSite || !event.over || event.active.id === event.over.id) return
 
-    const oldIndex = blocks.findIndex(block => block.id === event.active.id)
-    const newIndex = blocks.findIndex(block => block.id === event.over?.id)
+    const oldIndex = canvasBlocks.findIndex(block => block.id === event.active.id)
+    const newIndex = canvasBlocks.findIndex(block => block.id === event.over?.id)
     if (oldIndex < 0 || newIndex < 0) return
 
     const wasAlreadyDirty = hasUnsavedChanges
-    const nextBlocks = arrayMove(blocks, oldIndex, newIndex).map((block, index) => ({ ...block, sortOrder: index }))
+    const nextPageBlocks = arrayMove(canvasBlocks, oldIndex, newIndex).map((block, index) => ({ ...block, sortOrder: index }))
+    const nextBlocks = blocks.map(block => nextPageBlocks.find(item => item.id === block.id) || block)
     setHasUnsavedChanges(true)
     setSelectedSite(current => current ? { ...current, blocks: nextBlocks } : current)
 
     try {
-      const site = await sitesService.reorderBlocks(selectedSite.id, nextBlocks.map(block => block.id))
+      const site = await sitesService.reorderBlocks(
+        selectedSite.id,
+        nextPageBlocks.map(block => block.id),
+        isLanding(selectedSite) ? activePage?.id : undefined
+      )
       syncSelectedSite(site)
       if (!wasAlreadyDirty) {
         setHasUnsavedChanges(false)
@@ -959,8 +1308,16 @@ export const Sites: React.FC = () => {
 
   const handleCanvasDrop = async (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault()
+    setPaletteDragging(false)
     const blockType = event.dataTransfer.getData('application/ristak-block') as SiteBlockType
     if (blockType) await handleAddBlock(blockType)
+  }
+
+  const handleCanvasDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    if (event.dataTransfer.types.includes('application/ristak-block')) {
+      event.preventDefault()
+      if (!paletteDragging) setPaletteDragging(true)
+    }
   }
 
   if (loading) {
@@ -1029,6 +1386,7 @@ export const Sites: React.FC = () => {
                 creating={creating}
                 onCreate={handleCreateSite}
                 onCreateWithAI={handleCreateSiteWithAI}
+                onAdvance={setCreateFlow}
               />
             ) : section === 'leads' ? (
               <LeadsPanel rows={leadRows} loading={loadingLeads} onRefresh={loadLeads} />
@@ -1056,6 +1414,10 @@ export const Sites: React.FC = () => {
                         Abrir
                       </a>
                     )}
+                    <Button variant="secondary" onClick={handlePreviewSite}>
+                      <Eye size={16} />
+                      Previsualizar
+                    </Button>
                     <Button variant="secondary" onClick={() => handleSaveSite()} loading={saving}>
                       <Save size={16} />
                       Guardar
@@ -1105,38 +1467,61 @@ export const Sites: React.FC = () => {
                 </div>
               </div>
 
+              <DesignControls site={editorSite} onPatchTheme={patchSiteTheme} onSave={() => handleSaveSite()} />
+
               <div className={styles.builderGrid}>
-                <Palette
-                  blockTypes={isLanding(editorSite) ? landingBlockTypes : formBlockTypes}
-                  onAdd={handleAddBlock}
-                />
+                <div className={styles.leftTools}>
+                  {isLanding(editorSite) && (
+                    <FunnelPagesPanel
+                      pages={pages}
+                      activePageId={activePage?.id || DEFAULT_FUNNEL_PAGE_ID}
+                      draggingPageId={draggingPageId}
+                      onSelectPage={setActivePageId}
+                      onAddPage={handleAddPage}
+                      onDuplicatePage={handleDuplicatePage}
+                      onDeletePage={handleDeletePage}
+                      onDragPage={setDraggingPageId}
+                      onReorderPages={handleReorderPages}
+                    />
+                  )}
+                  <Palette
+                    blockTypes={isLanding(editorSite) ? landingBlockTypes : formBlockTypes}
+                    onAdd={handleAddBlock}
+                  />
+                </div>
 
                 <section className={styles.canvasColumn}>
                   <div className={styles.canvasToolbar}>
-                    <strong>Canvas</strong>
-                    <span>{blocks.length} bloques</span>
+                    <strong>{isLanding(editorSite) ? activePage?.title || 'Pagina 1' : 'Canvas'}</strong>
+                    <span>{canvasBlocks.length} {canvasBlocks.length === 1 ? 'bloque' : 'bloques'}</span>
                   </div>
-                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                    <SortableContext items={blocks.map(block => block.id)} strategy={verticalListSortingStrategy}>
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragStart={handleDragStart}
+                    onDragEnd={handleDragEnd}
+                    onDragCancel={() => setActiveDragId(null)}
+                  >
+                    <SortableContext items={canvasBlocks.map(block => block.id)} strategy={verticalListSortingStrategy}>
                       <div
-                        className={`${styles.canvasWrap} ${device === 'mobile' ? styles.canvasWrapMobile : ''}`}
-                        onDragOver={(event) => event.preventDefault()}
+                        className={`${styles.canvasWrap} ${device === 'mobile' ? styles.canvasWrapMobile : ''} ${paletteDragging ? styles.canvasWrapActive : ''} ${isDarkTemplate(resolveTemplateId(editorSite)) ? styles.canvasWrapDark : ''}`}
+                        style={getCanvasThemeStyle(editorSite)}
+                        onDragOver={handleCanvasDragOver}
+                        onDragLeave={() => setPaletteDragging(false)}
                         onDrop={handleCanvasDrop}
                       >
                         <div
-                          className={`${styles.pageCanvas} ${editorSite.siteType === 'interactive_form' ? styles.interactiveCanvas : ''}`}
-                          style={{
-                            '--site-accent': editorSite.theme?.accentColor || '#111827',
-                            '--site-background': editorSite.theme?.backgroundColor || '#ffffff',
-                            '--site-text': editorSite.theme?.textColor || '#111827'
-                          } as React.CSSProperties}
+                          className={`${styles.pageCanvas} ${editorSite.siteType === 'interactive_form' ? styles.interactiveCanvas : ''} ${isDarkTemplate(resolveTemplateId(editorSite)) ? styles.darkCanvas : ''}`}
                         >
-                          {blocks.length === 0 ? (
+                          {!isLanding(editorSite) && platformChromeFor(resolveTemplateId(editorSite)) && (
+                            <CanvasChrome platform={platformChromeFor(resolveTemplateId(editorSite))!} site={editorSite} />
+                          )}
+                          {canvasBlocks.length === 0 ? (
                             <div className={styles.dropEmpty}>
-                              <Plus size={24} />
-                              <p>Arrastra bloques desde la barra lateral o da click para agregarlos.</p>
+                              <Plus size={22} />
+                              <p>Arrastra bloques desde la barra de la izquierda o haz click para agregarlos.</p>
                             </div>
-                          ) : blocks.map((block, index) => (
+                          ) : canvasBlocks.map((block, index) => (
                             <SortableCanvasBlock
                               key={block.id}
                               block={block}
@@ -1144,6 +1529,7 @@ export const Sites: React.FC = () => {
                               selected={selectedBlock?.id === block.id}
                               site={editorSite}
                               forms={forms}
+                              calendars={calendars}
                               onSelect={() => setSelectedBlockId(block.id)}
                               onDelete={() => handleDeleteBlock(block.id)}
                             />
@@ -1151,14 +1537,24 @@ export const Sites: React.FC = () => {
                         </div>
                       </div>
                     </SortableContext>
+                    <DragOverlay dropAnimation={null}>
+                      {activeDragBlock ? (
+                        <div className={styles.dragOverlayCard} style={getCanvasThemeStyle(editorSite)}>
+                          <CanvasPreviewBlock block={activeDragBlock} forms={forms} calendars={calendars} />
+                        </div>
+                      ) : null}
+                    </DragOverlay>
                   </DndContext>
                 </section>
 
                 <PropertiesPanel
                   site={editorSite}
                   block={selectedBlock}
-                  blocks={blocks}
+                  blocks={canvasBlocks}
                   forms={forms}
+                  calendars={calendars}
+                  pages={pages}
+                  activePageId={activePage?.id || DEFAULT_FUNNEL_PAGE_ID}
                   onPatchBlock={patchSelectedBlock}
                   onPatchSettings={patchSelectedBlockSettings}
                   onSave={() => handleSaveBlock()}
@@ -1219,27 +1615,67 @@ const UnsavedChangesModal: React.FC<UnsavedChangesModalProps> = ({ onStay, onLea
 interface CreateFlowPanelProps {
   step: CreateFlow
   creating: boolean
-  onCreate: (siteType: SiteType, mode?: 'blank' | 'template') => void
+  onCreate: (siteType: SiteType, mode?: 'blank' | 'template', templateId?: SiteTemplateId) => void
   onCreateWithAI: (siteKind: AIAgentSitesCreationKind) => void
+  onAdvance: (step: CreateFlow) => void
 }
 
-const CreateFlowPanel: React.FC<CreateFlowPanelProps> = ({ step, creating, onCreate, onCreateWithAI }) => {
+const FORM_TEMPLATE_IDS: SiteTemplateId[] = ['facebook', 'instagram', 'tiktok', 'ristak']
+const LANDING_TEMPLATE_IDS: SiteTemplateId[] = ['ristak', 'vsl']
+
+const TemplateCard: React.FC<{ id: SiteTemplateId; disabled: boolean; onPick: () => void }> = ({ id, disabled, onPick }) => {
+  const meta = templateMetaById(id)
+  if (!meta) return null
+  return (
+    <button type="button" className={styles.templateCard} disabled={disabled} onClick={onPick}>
+      <span className={styles.templatePreview} style={{ background: meta.swatchBg, color: meta.swatchInk } as React.CSSProperties}>
+        <span className={styles.templatePreviewBar}>
+          <span className={styles.templateDot} style={{ background: meta.accent }} />
+          <span className={styles.templatePreviewName}>{meta.label}</span>
+          <span className={styles.templateBadge}>{meta.badge}</span>
+        </span>
+        <span className={styles.templatePreviewLines}><span /><span /></span>
+        <span className={styles.templatePreviewBtn} style={{ background: meta.accent }} />
+      </span>
+      <span className={styles.templateCardBody}>
+        <strong>{meta.label}</strong>
+        <p>{meta.description}</p>
+      </span>
+    </button>
+  )
+}
+
+const CreateFlowPanel: React.FC<CreateFlowPanelProps> = ({ step, creating, onCreate, onCreateWithAI, onAdvance }) => {
+  const isLandingFlow = step === 'landing-start' || step === 'landing-template'
+  const heading = step === 'landing-template'
+    ? 'Elige el estilo de tu landing'
+    : step === 'form-template'
+      ? 'Donde se va a abrir tu formulario?'
+      : isLandingFlow
+        ? 'Como quieres iniciar la landing?'
+        : 'Que tipo de formulario quieres?'
+
   return (
     <section className={styles.createPanel}>
       <div className={styles.createHeader}>
-        <span>{step === 'landing-start' ? 'Nueva landing ("sitio web")' : 'Nuevo formulario'}</span>
-        <h2>{step === 'landing-start' ? 'Como quieres iniciar la landing?' : 'Que tipo de formulario quieres?'}</h2>
+        {(step === 'form-template' || step === 'landing-template') && (
+          <button type="button" className={styles.backLink} onClick={() => onAdvance(step === 'form-template' ? 'form-kind' : 'landing-start')}>
+            <ChevronRight size={15} /> Volver
+          </button>
+        )}
+        <span>{isLandingFlow ? 'Nueva landing ("sitio web")' : 'Nuevo formulario'}</span>
+        <h2>{heading}</h2>
       </div>
 
       {step === 'landing-start' && (
         <div className={styles.choiceGrid}>
-          <button type="button" disabled={creating} onClick={() => onCreate('landing_page', 'template')}>
+          <button type="button" disabled={creating} onClick={() => onAdvance('landing-template')}>
             <LayoutTemplate size={22} />
             <strong>Desde plantilla</strong>
-            <p>Arranca con Hero, beneficios y CTA final listos para editar.</p>
+            <p>Elige un estilo listo (minimal o carta de ventas) y empieza a editar.</p>
             <ChevronRight size={18} />
           </button>
-          <button type="button" disabled={creating} onClick={() => onCreate('landing_page', 'blank')}>
+          <button type="button" disabled={creating} onClick={() => onCreate('landing_page', 'blank', 'ristak')}>
             <FileText size={22} />
             <strong>En blanco</strong>
             <p>Canvas limpio para agregar solo los bloques que necesitas.</p>
@@ -1254,18 +1690,26 @@ const CreateFlowPanel: React.FC<CreateFlowPanelProps> = ({ step, creating, onCre
         </div>
       )}
 
+      {step === 'landing-template' && (
+        <div className={styles.templateGallery}>
+          {LANDING_TEMPLATE_IDS.map(id => (
+            <TemplateCard key={id} id={id} disabled={creating} onPick={() => onCreate('landing_page', 'template', id)} />
+          ))}
+        </div>
+      )}
+
       {step === 'form-kind' && (
         <div className={styles.choiceGrid}>
-          <button type="button" disabled={creating} onClick={() => onCreate('standard_form')}>
+          <button type="button" disabled={creating} onClick={() => onAdvance('form-template')}>
             <FormInput size={22} />
             <strong>Una sola pagina</strong>
-            <p>Todos los campos visibles en una pagina estructurada.</p>
+            <p>Todos los campos en una pagina. Se adapta al estilo de Facebook, Instagram o TikTok.</p>
             <ChevronRight size={18} />
           </button>
-          <button type="button" disabled={creating} onClick={() => onCreate('interactive_form')}>
+          <button type="button" disabled={creating} onClick={() => onCreate('interactive_form', 'template', 'interactive')}>
             <MousePointerClick size={22} />
             <strong>Interactivo</strong>
-            <p>Una pregunta por pantalla, con saltos y descalificacion.</p>
+            <p>Una pregunta por pantalla, estilo quiz, con saltos y descalificacion.</p>
             <ChevronRight size={18} />
           </button>
           <button type="button" disabled={creating} onClick={() => onCreateWithAI('form')}>
@@ -1276,32 +1720,297 @@ const CreateFlowPanel: React.FC<CreateFlowPanelProps> = ({ step, creating, onCre
           </button>
         </div>
       )}
+
+      {step === 'form-template' && (
+        <>
+          <p className={styles.galleryHint}>El formulario se vera como un anuncio nativo de la plataforma para que el lead sienta que nunca salio de ahi.</p>
+          <div className={styles.templateGallery}>
+            {FORM_TEMPLATE_IDS.map(id => (
+              <TemplateCard key={id} id={id} disabled={creating} onPick={() => onCreate('standard_form', 'template', id)} />
+            ))}
+          </div>
+        </>
+      )}
     </section>
   )
 }
 
-const Palette: React.FC<{ blockTypes: SiteBlockType[]; onAdd: (blockType: SiteBlockType) => void }> = ({ blockTypes, onAdd }) => (
-  <aside className={styles.palette}>
-    <div className={styles.panelHeader}>
-      <strong>Bloques</strong>
-      <span>Arrastra o da click</span>
+interface DesignControlsProps {
+  site: PublicSite
+  onPatchTheme: (patch: Partial<SiteTheme>) => void
+  onSave: () => void
+}
+
+const DesignControls: React.FC<DesignControlsProps> = ({ site, onPatchTheme, onSave }) => {
+  const currentId = resolveTemplateId(site)
+  const isFormSite = site.siteType !== 'landing_page'
+  const available: SiteTemplateId[] = site.siteType === 'landing_page'
+    ? ['ristak', 'vsl']
+    : site.siteType === 'interactive_form'
+      ? ['interactive', 'ristak']
+      : ['ristak', 'facebook', 'instagram', 'tiktok']
+  const platform = platformChromeFor(currentId)
+  const theme = site.theme || {}
+
+  const pickTemplate = (id: SiteTemplateId) => {
+    onPatchTheme({ template: id })
+    window.setTimeout(onSave, 0)
+  }
+
+  return (
+    <div className={styles.designBar}>
+      <div className={styles.designRow}>
+        <span className={styles.designLabel}>Plantilla</span>
+        <div className={styles.templatePills}>
+          {available.map(id => {
+            const meta = templateMetaById(id)
+            if (!meta) return null
+            return (
+              <button
+                key={id}
+                type="button"
+                className={`${styles.templatePill} ${currentId === id ? styles.templatePillActive : ''}`}
+                onClick={() => pickTemplate(id)}
+              >
+                <span className={styles.pillSwatch} style={{ background: meta.swatchBg }}>
+                  <span style={{ background: meta.accent }} />
+                </span>
+                {meta.label}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {(isFormSite || platform) && (
+        <div className={styles.designRow}>
+          {isFormSite && (
+            <label className={styles.inlineField}>
+              <span>Texto del boton</span>
+              <input value={theme.submitText || ''} placeholder="Enviar" onChange={(event) => onPatchTheme({ submitText: event.target.value })} onBlur={onSave} />
+            </label>
+          )}
+          {platform && (
+            <>
+              <label className={styles.inlineField}>
+                <span>Nombre de la marca</span>
+                <input value={theme.brandName || ''} placeholder={site.title || 'Tu marca'} onChange={(event) => onPatchTheme({ brandName: event.target.value })} onBlur={onSave} />
+              </label>
+              <label className={styles.inlineField}>
+                <span>Etiqueta</span>
+                <input value={theme.brandSubtitle || ''} placeholder={platform === 'instagram' ? 'Publicacion pagada' : 'Patrocinado'} onChange={(event) => onPatchTheme({ brandSubtitle: event.target.value })} onBlur={onSave} />
+              </label>
+              <label className={styles.inlineField}>
+                <span>Avatar (URL)</span>
+                <input value={theme.brandAvatar || ''} placeholder="https://..." onChange={(event) => onPatchTheme({ brandAvatar: event.target.value })} onBlur={onSave} />
+              </label>
+              {platform === 'facebook' && (
+                <label className={styles.brandCheckbox}>
+                  <input type="checkbox" checked={theme.brandVerified !== false} onChange={(event) => { onPatchTheme({ brandVerified: event.target.checked }); window.setTimeout(onSave, 0) }} />
+                  <span>Verificado</span>
+                </label>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
-    <div className={styles.paletteItems}>
-      {blockTypes.map(blockType => (
-        <button
-          key={blockType}
-          type="button"
-          draggable
-          onDragStart={(event) => event.dataTransfer.setData('application/ristak-block', blockType)}
-          onClick={() => onAdd(blockType)}
-        >
-          {blockIcons[blockType]}
-          <span>{blockLabels[blockType]}</span>
-        </button>
-      ))}
-    </div>
-  </aside>
+  )
+}
+
+const CanvasAvatar: React.FC<{ name: string; avatar?: string }> = ({ name, avatar }) => (
+  <span className={styles.chromeAvatar}>
+    {avatar ? <img src={avatar} alt={name} /> : (name.trim()[0] || 'R').toUpperCase()}
+  </span>
 )
+
+const CanvasChrome: React.FC<{ platform: 'facebook' | 'instagram' | 'tiktok'; site: PublicSite }> = ({ platform, site }) => {
+  const theme = site.theme || {}
+  const name = theme.brandName || site.title || site.name || 'Tu marca'
+  const subtitle = theme.brandSubtitle || (platform === 'instagram' ? 'Publicacion pagada' : 'Patrocinado')
+  const handle = name.normalize('NFD').replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || 'marca'
+
+  if (platform === 'facebook') {
+    return (
+      <div className={`${styles.canvasChrome} ${styles.chromeFacebook}`}>
+        <CanvasAvatar name={name} avatar={theme.brandAvatar} />
+        <div className={styles.chromeMeta}>
+          <div className={styles.chromeName}>
+            {name}
+            {theme.brandVerified !== false && (
+              <svg viewBox="0 0 24 24" width="14" height="14" className={styles.chromeVerified}><path fill="#1877f2" d="M12 2.2l2.3 1.7 2.85.05.95 2.7 2.25 1.8-.95 2.75.95 2.75-2.25 1.8-.95 2.7L14.3 18.6 12 20.3l-2.3-1.7-2.85-.05-.95-2.7L3.95 14.3l.95-2.75-.95-2.75 2.25-1.8.95-2.7L9.7 3.9z"/><path d="M8.4 12.3l2.4 2.4 4.8-4.9" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            )}
+          </div>
+          <div className={styles.chromeSub}>{subtitle} · <Globe2 size={11} /></div>
+        </div>
+        <span className={styles.chromeMark}>f</span>
+      </div>
+    )
+  }
+
+  if (platform === 'instagram') {
+    return (
+      <div className={`${styles.canvasChrome} ${styles.chromeInstagram}`}>
+        <span className={styles.chromeRing}><CanvasAvatar name={name} avatar={theme.brandAvatar} /></span>
+        <div className={styles.chromeMeta}>
+          <div className={styles.chromeName}>{handle}</div>
+          <div className={styles.chromeSub}>{subtitle}</div>
+        </div>
+        <span className={styles.chromeDots}>···</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className={`${styles.canvasChrome} ${styles.chromeTiktok}`}>
+      <CanvasAvatar name={name} avatar={theme.brandAvatar} />
+      <div className={styles.chromeMeta}>
+        <div className={styles.chromeName}>@{handle}</div>
+        <div className={styles.chromeSub}>{subtitle}</div>
+      </div>
+      <span className={styles.chromeMark}>♪</span>
+    </div>
+  )
+}
+
+const paletteGroups: Array<{ label: string; types: SiteBlockType[] }> = [
+  { label: 'Contenido', types: ['hero', 'title', 'subtitle', 'text', 'image', 'video', 'button', 'benefits', 'testimonials', 'services', 'faq', 'cta', 'embed', 'calendar_embed', 'form_embed'] },
+  { label: 'Campos', types: ['short_text', 'paragraph', 'email', 'phone', 'number', 'currency', 'date', 'dropdown', 'radio', 'checkboxes', 'description'] }
+]
+
+interface FunnelPagesPanelProps {
+  pages: SitePage[]
+  activePageId: string
+  draggingPageId: string | null
+  onSelectPage: (pageId: string) => void
+  onAddPage: () => void
+  onDuplicatePage: (pageId: string) => void
+  onDeletePage: (pageId: string) => void
+  onDragPage: (pageId: string | null) => void
+  onReorderPages: (sourcePageId: string, targetPageId: string) => void
+}
+
+const FunnelPagesPanel: React.FC<FunnelPagesPanelProps> = ({
+  pages,
+  activePageId,
+  draggingPageId,
+  onSelectPage,
+  onAddPage,
+  onDuplicatePage,
+  onDeletePage,
+  onDragPage,
+  onReorderPages
+}) => {
+  const [menuPageId, setMenuPageId] = useState<string | null>(null)
+
+  return (
+    <aside className={styles.pagesPanel}>
+      <div className={styles.panelHeader}>
+        <strong>Paginas</strong>
+        <span>{pages.length}</span>
+      </div>
+      <div className={styles.pageList}>
+        {pages.map((page, index) => (
+          <div
+            key={page.id}
+            className={`${styles.pageItemWrap} ${draggingPageId === page.id ? styles.pageItemDragging : ''}`}
+            draggable
+            onDragStart={(event) => {
+              event.dataTransfer.setData('application/ristak-page', page.id)
+              onDragPage(page.id)
+            }}
+            onDragOver={(event) => {
+              if (event.dataTransfer.types.includes('application/ristak-page')) {
+                event.preventDefault()
+              }
+            }}
+            onDrop={(event) => {
+              event.preventDefault()
+              const sourcePageId = event.dataTransfer.getData('application/ristak-page')
+              onDragPage(null)
+              onReorderPages(sourcePageId, page.id)
+            }}
+            onDragEnd={() => onDragPage(null)}
+          >
+            <button
+              type="button"
+              className={`${styles.pageItem} ${activePageId === page.id ? styles.pageItemActive : ''}`}
+              onClick={() => onSelectPage(page.id)}
+            >
+              <GripVertical size={14} />
+              <span>{page.title || `Pagina ${index + 1}`}</span>
+            </button>
+            <div className={styles.pageMenuWrap}>
+              <button
+                type="button"
+                className={styles.pageMenuButton}
+                onClick={() => setMenuPageId(current => current === page.id ? null : page.id)}
+                aria-label="Opciones de pagina"
+              >
+                <MoreVertical size={15} />
+              </button>
+              {menuPageId === page.id && (
+                <div className={styles.pageMenu}>
+                  <button type="button" onClick={() => { setMenuPageId(null); onDuplicatePage(page.id) }}>
+                    <Copy size={14} />
+                    Duplicar pagina
+                  </button>
+                  <button type="button" disabled={pages.length <= 1} onClick={() => { setMenuPageId(null); onDeletePage(page.id) }}>
+                    <Trash2 size={14} />
+                    Eliminar pagina
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+      <button type="button" className={styles.addPageButton} onClick={onAddPage}>
+        <Plus size={15} />
+        Agregar pagina
+      </button>
+    </aside>
+  )
+}
+
+const Palette: React.FC<{ blockTypes: SiteBlockType[]; onAdd: (blockType: SiteBlockType) => void }> = ({ blockTypes, onAdd }) => {
+  const allowed = new Set(blockTypes)
+  const groups = paletteGroups
+    .map(group => ({ label: group.label, types: group.types.filter(type => allowed.has(type)) }))
+    .filter(group => group.types.length > 0)
+
+  return (
+    <aside className={styles.palette}>
+      <div className={styles.panelHeader}>
+        <strong>Bloques</strong>
+        <span>Arrastra o da click</span>
+      </div>
+      <div className={styles.paletteGroups}>
+        {groups.map(group => (
+          <div key={group.label} className={styles.paletteGroup}>
+            <span className={styles.paletteGroupLabel}>{group.label}</span>
+            <div className={styles.paletteItems}>
+              {group.types.map(blockType => (
+                <button
+                  key={blockType}
+                  type="button"
+                  className={styles.paletteItem}
+                  draggable
+                  onDragStart={(event) => event.dataTransfer.setData('application/ristak-block', blockType)}
+                  onClick={() => onAdd(blockType)}
+                >
+                  <span className={styles.paletteIcon}>{blockIcons[blockType]}</span>
+                  <span>{blockLabels[blockType]}</span>
+                  <GripVertical className={styles.paletteGrip} size={14} />
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </aside>
+  )
+}
 
 interface SortableCanvasBlockProps {
   block: SiteBlock
@@ -1309,11 +2018,12 @@ interface SortableCanvasBlockProps {
   selected: boolean
   site: PublicSite
   forms: PublicSite[]
+  calendars: CalendarType[]
   onSelect: () => void
   onDelete: () => void
 }
 
-const SortableCanvasBlock: React.FC<SortableCanvasBlockProps> = ({ block, index, selected, site, forms, onSelect, onDelete }) => {
+const SortableCanvasBlock: React.FC<SortableCanvasBlockProps> = ({ block, index, selected, site, forms, calendars, onSelect, onDelete }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: block.id })
 
   return (
@@ -1332,12 +2042,12 @@ const SortableCanvasBlock: React.FC<SortableCanvasBlockProps> = ({ block, index,
       <button type="button" className={styles.blockDelete} onClick={(event) => { event.stopPropagation(); onDelete() }} aria-label="Eliminar bloque">
         <Trash2 size={15} />
       </button>
-      <CanvasPreviewBlock block={block} forms={forms} />
+      <CanvasPreviewBlock block={block} forms={forms} calendars={calendars} />
     </article>
   )
 }
 
-const CanvasPreviewBlock: React.FC<{ block: SiteBlock; forms: PublicSite[] }> = ({ block, forms }) => {
+const CanvasPreviewBlock: React.FC<{ block: SiteBlock; forms: PublicSite[]; calendars: CalendarType[] }> = ({ block, forms, calendars }) => {
   const settings = block.settings || {}
 
   if (block.blockType === 'hero') {
@@ -1423,6 +2133,20 @@ const CanvasPreviewBlock: React.FC<{ block: SiteBlock; forms: PublicSite[] }> = 
     )
   }
 
+  if (block.blockType === 'calendar_embed') {
+    const calendarId = getSettingString(settings, 'calendarId')
+    const calendarName = getSettingString(settings, 'calendarName')
+    const calendar = calendars.find(item => item.id === calendarId)
+    return (
+      <div className={styles.previewEmbed}>
+        <div className={styles.previewEmbedEmpty}>
+          <CalendarDays size={18} />
+          <span>{calendar?.name || calendarName || 'Selecciona un calendario'}</span>
+        </div>
+      </div>
+    )
+  }
+
   if (block.blockType === 'embed') {
     return <EmbedPreview rawCode={block.content} />
   }
@@ -1488,6 +2212,9 @@ interface PropertiesPanelProps {
   block: SiteBlock | null
   blocks: SiteBlock[]
   forms: PublicSite[]
+  calendars: CalendarType[]
+  pages: SitePage[]
+  activePageId: string
   onPatchBlock: (patch: Partial<SiteBlock>) => void
   onPatchSettings: (patch: Record<string, unknown>) => void
   onSave: () => void
@@ -1499,6 +2226,9 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   block,
   blocks,
   forms,
+  calendars,
+  pages,
+  activePageId,
   onPatchBlock,
   onPatchSettings,
   onSave,
@@ -1537,16 +2267,18 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           <input value={block.label} onChange={(event) => onPatchBlock({ label: event.target.value })} onBlur={onSave} />
         </label>
 
-        <label className={styles.field}>
-          <span>{contentLabel}</span>
-          <textarea
-            rows={contentRows}
-            value={block.content}
-            placeholder={block.blockType === 'embed' ? '<iframe src="https://..."></iframe> o codigo HTML del widget' : undefined}
-            onChange={(event) => onPatchBlock({ content: event.target.value })}
-            onBlur={onSave}
-          />
-        </label>
+        {block.blockType !== 'calendar_embed' && (
+          <label className={styles.field}>
+            <span>{contentLabel}</span>
+            <textarea
+              rows={contentRows}
+              value={block.content}
+              placeholder={block.blockType === 'embed' ? '<iframe src="https://..."></iframe> o codigo HTML del widget' : undefined}
+              onChange={(event) => onPatchBlock({ content: event.target.value })}
+              onBlur={onSave}
+            />
+          </label>
+        )}
 
         {isField && (
           <>
@@ -1605,6 +2337,9 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             site={site}
             block={block}
             forms={forms}
+            calendars={calendars}
+            pages={pages}
+            activePageId={activePageId}
             onPatchSettings={onPatchSettings}
             onSave={onSave}
           />
@@ -1746,11 +2481,55 @@ interface LandingBlockSettingsProps {
   site: PublicSite
   block: SiteBlock
   forms: PublicSite[]
+  calendars: CalendarType[]
+  pages: SitePage[]
+  activePageId: string
   onPatchSettings: (patch: Record<string, unknown>) => void
   onSave: () => void
 }
 
-const LandingBlockSettings: React.FC<LandingBlockSettingsProps> = ({ site, block, forms, onPatchSettings, onSave }) => {
+const ButtonActionFields: React.FC<{
+  settings: Record<string, unknown>
+  pages: SitePage[]
+  activePageId: string
+  onPatchSettings: (patch: Record<string, unknown>) => void
+  onSave: () => void
+}> = ({ settings, pages, activePageId, onPatchSettings, onSave }) => {
+  const action = getButtonAction(settings)
+  const targetPages = pages.filter(page => page.id !== activePageId)
+
+  return (
+    <>
+      <label className={styles.field}>
+        <span>Accion del boton</span>
+        <select value={action} onChange={(event) => onPatchSettings({ buttonAction: event.target.value })} onBlur={onSave}>
+          <option value="url">Enviar a una URL</option>
+          <option value="next_page">Ir a la siguiente pagina del embudo</option>
+          <option value="specific_page">Ir a una pagina especifica del embudo</option>
+        </select>
+      </label>
+
+      {action === 'url' && (
+        <label className={styles.field}>
+          <span>URL</span>
+          <input value={getSettingString(settings, 'buttonUrl')} onChange={(event) => onPatchSettings({ buttonUrl: event.target.value })} onBlur={onSave} />
+        </label>
+      )}
+
+      {action === 'specific_page' && (
+        <label className={styles.field}>
+          <span>Pagina destino</span>
+          <select value={getSettingString(settings, 'buttonPageId')} onChange={(event) => onPatchSettings({ buttonPageId: event.target.value })} onBlur={onSave}>
+            <option value="">Selecciona una pagina</option>
+            {targetPages.map(page => <option key={page.id} value={page.id}>{page.title}</option>)}
+          </select>
+        </label>
+      )}
+    </>
+  )
+}
+
+const LandingBlockSettings: React.FC<LandingBlockSettingsProps> = ({ site, block, forms, calendars, pages, activePageId, onPatchSettings, onSave }) => {
   const settings = block.settings || {}
 
   if (['hero', 'cta'].includes(block.blockType)) {
@@ -1771,10 +2550,7 @@ const LandingBlockSettings: React.FC<LandingBlockSettingsProps> = ({ site, block
             <span>Texto del boton</span>
             <input value={getSettingString(settings, 'buttonText')} onChange={(event) => onPatchSettings({ buttonText: event.target.value })} onBlur={onSave} />
           </label>
-          <label className={styles.field}>
-            <span>URL del boton</span>
-            <input value={getSettingString(settings, 'buttonUrl')} onChange={(event) => onPatchSettings({ buttonUrl: event.target.value })} onBlur={onSave} />
-          </label>
+          <ButtonActionFields settings={settings} pages={pages} activePageId={activePageId} onPatchSettings={onPatchSettings} onSave={onSave} />
         </div>
       </div>
     )
@@ -1787,10 +2563,7 @@ const LandingBlockSettings: React.FC<LandingBlockSettingsProps> = ({ site, block
           <span>Texto del boton</span>
           <input value={getSettingString(settings, 'buttonText')} onChange={(event) => onPatchSettings({ buttonText: event.target.value })} onBlur={onSave} />
         </label>
-        <label className={styles.field}>
-          <span>URL</span>
-          <input value={getSettingString(settings, 'buttonUrl')} onChange={(event) => onPatchSettings({ buttonUrl: event.target.value })} onBlur={onSave} />
-        </label>
+        <ButtonActionFields settings={settings} pages={pages} activePageId={activePageId} onPatchSettings={onPatchSettings} onSave={onSave} />
       </div>
     )
   }
@@ -1818,6 +2591,45 @@ const LandingBlockSettings: React.FC<LandingBlockSettingsProps> = ({ site, block
     )
   }
 
+  if (block.blockType === 'calendar_embed') {
+    const selectedCalendarId = getSettingString(settings, 'calendarId')
+    const selectedCalendar = calendars.find(calendar => calendar.id === selectedCalendarId)
+
+    return (
+      <div className={styles.settingsGroup}>
+        <label className={styles.field}>
+          <span>Calendario a embeber</span>
+          <select
+            value={selectedCalendarId}
+            onChange={(event) => {
+              const calendar = calendars.find(item => item.id === event.target.value)
+              onPatchSettings({
+                calendarId: calendar?.id || '',
+                calendarSlug: calendar?.slug || calendar?.widgetSlug || '',
+                calendarName: calendar?.name || ''
+              })
+            }}
+            onBlur={onSave}
+          >
+            <option value="">Selecciona un calendario</option>
+            {calendars.map(calendar => (
+              <option key={calendar.id} value={calendar.id}>{calendar.name}</option>
+            ))}
+          </select>
+        </label>
+        {selectedCalendar ? (
+          <p className={styles.muted}>
+            {selectedCalendar.publicUrlEnabled
+              ? `Se mostrara como iframe usando ${selectedCalendar.publicBookingPath || '/calendar/...'}`
+              : selectedCalendar.publicUrlUnavailableReason || 'Conecta un dominio externo en Sites para que funcione publicamente.'}
+          </p>
+        ) : (
+          <p className={styles.muted}>Este bloque usa la URL publica del calendario en el mismo dominio del site.</p>
+        )}
+      </div>
+    )
+  }
+
   if (block.blockType === 'form_embed') {
     const embeddedBlocks = Array.isArray(settings.embeddedBlocks) ? settings.embeddedBlocks as SiteBlock[] : []
 
@@ -1835,6 +2647,14 @@ const LandingBlockSettings: React.FC<LandingBlockSettingsProps> = ({ site, block
         <label className={styles.field}>
           <span>Descripcion del form</span>
           <textarea rows={2} value={getSettingString(settings, 'description')} onChange={(event) => onPatchSettings({ description: event.target.value })} onBlur={onSave} />
+        </label>
+        <label className={styles.field}>
+          <span>Al terminar el formulario</span>
+          <select value={getFormCompletionAction(settings)} onChange={(event) => onPatchSettings({ completionAction: event.target.value })} onBlur={onSave}>
+            <option value="next_page">Ir a la siguiente pagina al terminar</option>
+            <option value="next_page_if_qualified">Ir a la siguiente pagina solo si califica</option>
+            <option value="form_default">Mantener la configuracion actual del formulario</option>
+          </select>
         </label>
         <button
           type="button"

@@ -8,6 +8,7 @@ import {
   deleteSiteHandler,
   getSiteHandler,
   getSitesHandler,
+  previewSiteHandler,
   reorderBlocksHandler,
   submitPublicSiteHandler,
   updateBlockHandler,
@@ -24,6 +25,7 @@ router.use(requireAuth)
 router.get('/', getSitesHandler)
 router.post('/', createSiteHandler)
 router.post('/ai-create', createSiteWithAIHandler)
+router.get('/:siteId/preview', previewSiteHandler)
 router.get('/:siteId', getSiteHandler)
 router.put('/:siteId', updateSiteHandler)
 router.delete('/:siteId', deleteSiteHandler)

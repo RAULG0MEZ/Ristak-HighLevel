@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { Card, Button, Modal, CustomSelect, Loading } from '@/components/common'
-import { Calendar, Loader2, CheckCircle, XCircle, Info, Settings, Plus } from 'lucide-react'
+import { Calendar, Loader2, CheckCircle, XCircle, Info, Settings, Plus, Copy, ExternalLink, Globe2 } from 'lucide-react'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useAppConfig, useHighLevelConnected } from '@/hooks'
 import { useAuth } from '@/contexts/AuthContext'
@@ -229,6 +229,20 @@ export const CalendarsConfiguration: React.FC = () => {
       showToast('error', 'Error al crear calendario', error.message || 'Intenta nuevamente')
     } finally {
       setCreatingCalendar(false)
+    }
+  }
+
+  const handleCopyPublicUrl = async (calendar: CalendarType) => {
+    if (!calendar.publicUrl) {
+      showToast('warning', 'URL no disponible', calendar.publicUrlUnavailableReason || 'Conecta y verifica un dominio externo en Sites primero')
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(calendar.publicUrl)
+      showToast('success', 'URL copiada', calendar.publicUrl)
+    } catch {
+      showToast('error', 'No se pudo copiar', 'Copia la URL manualmente')
     }
   }
 
@@ -536,6 +550,39 @@ export const CalendarsConfiguration: React.FC = () => {
                       </div>
                       <div style={{ fontSize: '12px', color: 'var(--color-text-tertiary)' }}>
                         {calendar.slotDuration} {calendar.slotDurationUnit} · cada {calendar.slotInterval} {calendar.slotIntervalUnit}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', minWidth: 0, maxWidth: 520 }}>
+                        <Globe2 size={14} style={{ color: calendar.publicUrl ? 'var(--color-primary)' : 'var(--color-text-tertiary)', flexShrink: 0 }} />
+                        <input
+                          readOnly
+                          value={calendar.publicUrl || calendar.publicUrlUnavailableReason || 'Conecta un dominio externo en Sites'}
+                          title={calendar.publicUrl || calendar.publicUrlUnavailableReason || 'Conecta un dominio externo en Sites'}
+                          style={{
+                            minWidth: 0,
+                            flex: 1,
+                            height: 32,
+                            border: '1px solid var(--color-border)',
+                            borderRadius: '7px',
+                            backgroundColor: 'var(--color-background-primary)',
+                            color: calendar.publicUrl ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
+                            fontSize: '12px',
+                            padding: '0 10px'
+                          }}
+                        />
+                        <Button
+                          variant="ghost"
+                          size="small"
+                          onClick={() => handleCopyPublicUrl(calendar)}
+                          disabled={!calendar.publicUrl}
+                        >
+                          <Copy size={14} />
+                          Copiar URL
+                        </Button>
+                        {calendar.publicUrl && (
+                          <a href={calendar.publicUrl} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', color: 'var(--color-text-secondary)' }}>
+                            <ExternalLink size={15} />
+                          </a>
+                        )}
                       </div>
                     </div>
                   </div>

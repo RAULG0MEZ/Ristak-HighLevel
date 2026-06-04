@@ -1779,9 +1779,43 @@ async function initTables() {
         geo_region TEXT,
         geo_city TEXT,
 
+        tracking_source TEXT DEFAULT 'external_pixel',
+        site_id TEXT,
+        site_slug TEXT,
+        site_name TEXT,
+        site_type TEXT,
+        form_site_id TEXT,
+        form_site_name TEXT,
+        public_page_id TEXT,
+        public_page_title TEXT,
+        conversion_type TEXT,
+        submission_id TEXT,
+
         FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE SET NULL
       )
     `)
+
+    for (const [columnName, columnType] of [
+      ['tracking_source', "TEXT DEFAULT 'external_pixel'"],
+      ['site_id', 'TEXT'],
+      ['site_slug', 'TEXT'],
+      ['site_name', 'TEXT'],
+      ['site_type', 'TEXT'],
+      ['form_site_id', 'TEXT'],
+      ['form_site_name', 'TEXT'],
+      ['public_page_id', 'TEXT'],
+      ['public_page_title', 'TEXT'],
+      ['conversion_type', 'TEXT'],
+      ['submission_id', 'TEXT']
+    ]) {
+      try {
+        await db.run(`ALTER TABLE sessions ADD COLUMN ${columnName} ${columnType}`)
+      } catch (err) {
+        if (!err.message.includes('duplicate column') && !err.message.includes('already exists')) {
+          logger.warn(`Advertencia al migrar sessions.${columnName}: ${err.message}`)
+        }
+      }
+    }
 
     await db.run('CREATE INDEX IF NOT EXISTS idx_sessions_session_id ON sessions(session_id)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_sessions_visitor ON sessions(visitor_id)')
@@ -1791,6 +1825,9 @@ async function initTables() {
     await db.run('CREATE INDEX IF NOT EXISTS idx_sessions_campaign ON sessions(campaign_id, adset_id, ad_group_id, ad_id)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_sessions_geo ON sessions(geo_country, geo_region, geo_city)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_sessions_contact ON sessions(contact_id)')
+    await db.run('CREATE INDEX IF NOT EXISTS idx_sessions_tracking_source ON sessions(tracking_source)')
+    await db.run('CREATE INDEX IF NOT EXISTS idx_sessions_site ON sessions(site_id, site_type)')
+    await db.run('CREATE INDEX IF NOT EXISTS idx_sessions_form_site ON sessions(form_site_id)')
 
     // Tabla de usuarios (para autenticación)
     await db.run(`
