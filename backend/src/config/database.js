@@ -378,6 +378,93 @@ async function initTables() {
       logger.warn('Advertencia al asegurar unicidad de app_config.config_key:', err.message)
     }
 
+    // Sites públicos/formularios. El dashboard administra la estructura, pero
+    // el render público se decide estrictamente por dominio verificado.
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS public_sites (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        slug TEXT UNIQUE NOT NULL,
+        site_type TEXT DEFAULT 'standard_form',
+        status TEXT DEFAULT 'draft',
+        domain TEXT UNIQUE,
+        title TEXT,
+        description TEXT,
+        theme_json TEXT,
+        meta_capi_enabled INTEGER DEFAULT 0,
+        meta_event_name TEXT DEFAULT 'Lead',
+        render_domain_verified INTEGER DEFAULT 0,
+        render_domain_checked_at DATETIME,
+        render_domain_error TEXT,
+        published_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS public_site_blocks (
+        id TEXT PRIMARY KEY,
+        site_id TEXT NOT NULL,
+        block_type TEXT NOT NULL,
+        label TEXT,
+        content TEXT,
+        placeholder TEXT,
+        required INTEGER DEFAULT 0,
+        options_json TEXT,
+        settings_json TEXT,
+        sort_order INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (site_id) REFERENCES public_sites(id) ON DELETE CASCADE
+      )
+    `)
+
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS public_site_submissions (
+        id TEXT PRIMARY KEY,
+        site_id TEXT NOT NULL,
+        contact_id TEXT,
+        domain TEXT,
+        response_json TEXT NOT NULL,
+        meta_json TEXT,
+        status TEXT DEFAULT 'received',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (site_id) REFERENCES public_sites(id) ON DELETE CASCADE
+      )
+    `)
+
+    for (const [columnName, columnType] of [
+      ['domain', 'TEXT UNIQUE'],
+      ['title', 'TEXT'],
+      ['description', 'TEXT'],
+      ['theme_json', 'TEXT'],
+      ['meta_capi_enabled', 'INTEGER DEFAULT 0'],
+      ['meta_event_name', "TEXT DEFAULT 'Lead'"],
+      ['render_domain_verified', 'INTEGER DEFAULT 0'],
+      ['render_domain_checked_at', 'DATETIME'],
+      ['render_domain_error', 'TEXT'],
+      ['published_at', 'DATETIME']
+    ]) {
+      try {
+        await db.run(`ALTER TABLE public_sites ADD COLUMN ${columnName} ${columnType}`)
+      } catch (err) {
+        if (!err.message.includes('duplicate column') && !err.message.includes('already exists')) {
+          logger.warn(`Advertencia al migrar public_sites.${columnName}: ${err.message}`)
+        }
+      }
+    }
+
+    try {
+      await db.run('CREATE INDEX IF NOT EXISTS idx_public_sites_status ON public_sites(status)')
+      await db.run('CREATE INDEX IF NOT EXISTS idx_public_site_blocks_site_order ON public_site_blocks(site_id, sort_order)')
+      await db.run('CREATE INDEX IF NOT EXISTS idx_public_site_submissions_site ON public_site_submissions(site_id, created_at)')
+      await db.run('CREATE INDEX IF NOT EXISTS idx_public_site_submissions_contact ON public_site_submissions(contact_id)')
+      await db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_public_sites_domain_lower ON public_sites(LOWER(domain)) WHERE domain IS NOT NULL AND domain != ''")
+    } catch (err) {
+      logger.warn('Advertencia al crear índices de public sites:', err.message)
+    }
+
     // Tabla de configuración del agente AI
     await db.run(`
       CREATE TABLE IF NOT EXISTS ai_agent_config (

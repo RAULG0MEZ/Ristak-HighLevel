@@ -28,14 +28,13 @@ Render creará:
 
 ### Storage De Postgres
 
-El Blueprint habilita `storageAutoscalingEnabled`, pero no fija `diskSizeGB`.
-Esto es intencional: Render no permite reducir el disco de una base existente.
-Si `diskSizeGB` queda fijo en `1` y después la base se aumenta manualmente a
-15 GB o más, el siguiente Blueprint sync falla intentando bajarla otra vez.
+El Blueprint fija `diskSizeGB: 1` y habilita `storageAutoscalingEnabled`.
+Esto hace que una base nueva arranque con 1 GB de storage y pueda crecer
+automaticamente cuando Render detecte uso alto.
 
-Cuando `diskSizeGB` se omite, Render conserva el tamaño actual en bases
-existentes. Para una base nueva, Render usa el tamaño inicial por defecto del
-plan configurado.
+Importante: Render no permite reducir el disco de una base existente. Si una
+base ya fue aumentada manualmente a 15 GB o mas, el siguiente Blueprint sync
+puede fallar intentando bajarla a 1 GB.
 
 ## Qué Hace El Build
 

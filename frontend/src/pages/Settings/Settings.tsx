@@ -1,6 +1,6 @@
 import React from 'react'
 import { Routes, Route, Navigate, NavLink } from 'react-router-dom'
-import { Send, CreditCard, Activity, Calendar, UserCircle, TrendingDown, Bot, KeyRound } from 'lucide-react'
+import { Send, CreditCard, Activity, Calendar, UserCircle, TrendingDown, Bot, KeyRound, Globe2 } from 'lucide-react'
 import { SiWhatsapp } from 'react-icons/si'
 import { HighLevelIntegration } from './HighLevelIntegration'
 import { Costs } from './Costs'
@@ -12,6 +12,7 @@ import { CalendarsConfiguration } from './CalendarsConfiguration'
 import { AccountSettings } from './AccountSettings'
 import { AIAgentSettings } from './AIAgentSettings'
 import { APIAccessSettings } from './APIAccessSettings'
+import { Domains } from './Domains'
 import { useTheme } from '@/contexts/ThemeContext'
 import styles from './Settings.module.css'
 
@@ -51,6 +52,11 @@ export const Settings: React.FC = () => {
       to: '/settings/tracking',
       label: 'Rastreo Web',
       icon: <Activity size={18} />
+    },
+    {
+      to: '/settings/domains',
+      label: 'Dominios',
+      icon: <Globe2 size={18} />
     },
     {
       to: '/settings/payments',
@@ -117,6 +123,7 @@ export const Settings: React.FC = () => {
               <Route path="whatsapp" element={<WhatsAppSettings />} />
               <Route path="calendars" element={<CalendarsConfiguration />} />
               <Route path="tracking" element={<WebTracking />} />
+              <Route path="domains" element={<Domains />} />
               <Route path="payments" element={<PaymentsConfiguration />} />
               <Route path="ai-agent" element={<AIAgentSettings />} />
               <Route path="api-access" element={<APIAccessSettings />} />

@@ -22,10 +22,13 @@ No define:
 - `APP_URL`.
 - `META_ACCESS_TOKEN`, `META_AD_ACCOUNT_ID` ni `HIGHLEVEL_API_KEY`.
 - Servicios frontend/backend separados.
-- `diskSizeGB` fijo para Postgres. Esto es intencional: Render conserva el tamaño
-  actual de una base existente cuando ese campo se omite. Si se fija en `1`, un
-  sync falla cuando la base ya fue aumentada manualmente, por ejemplo de 1 GB a
-  15 GB.
+
+Define:
+
+- `diskSizeGB: 1` para que una base nueva arranque con 1 GB de storage.
+  `storageAutoscalingEnabled` queda habilitado. Render no permite reducir disco,
+  asi que un Blueprint sync puede fallar si una base existente ya fue aumentada
+  manualmente por encima de 1 GB.
 
 Los jobs automáticos viven dentro del backend:
 

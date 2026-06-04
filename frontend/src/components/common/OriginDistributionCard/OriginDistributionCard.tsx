@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { TrafficSourcesChart } from '../TrafficSourcesChart/TrafficSourcesChart'
 import { ViewSelector } from '../ViewSelector/ViewSelector'
 import { useDateRange } from '@/contexts/DateRangeContext'
-import { useAppConfig, useIsRenderDomain } from '@/hooks'
 import { dashboardService, type OriginDistributionData, type SourceDatum } from '@/services/dashboardService'
 import { trackingService } from '@/services/trackingService'
 import { whatsappWebService } from '@/services/whatsappWebService'
@@ -36,16 +35,6 @@ const DIMENSION_INSIGHTS: Record<TrafficDimension, { primary: string; suffix: st
   os: { primary: 'Mayor sistema', suffix: 'sistemas activos' }
 }
 
-const parseAnalyticsFlag = (value: unknown) => {
-  if (value === null || value === undefined) return false
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase()
-    return normalized === '1' || normalized === 'true' || normalized === 'yes'
-  }
-  if (typeof value === 'number') return value === 1
-  return Boolean(value)
-}
-
 /**
  * Dona unificada de "Origen" usada igual en Dashboard y Analíticas.
  * El título muestra sólo las vistas que tienen integración conectada:
@@ -53,9 +42,8 @@ const parseAnalyticsFlag = (value: unknown) => {
  */
 export const OriginDistributionCard: React.FC = () => {
   const { dateRange } = useDateRange()
-  const isRenderDomain = useIsRenderDomain()
-  const [showAnalyticsConfig] = useAppConfig<string | number | boolean>('show_analytics', '1')
   const [category, setCategory] = useState<OriginCategory>('traffic')
+  const [categoryTouched, setCategoryTouched] = useState(false)
   const [dimension, setDimension] = useState<TrafficDimension>('sources')
   const [data, setData] = useState<OriginDistributionData>(EMPTY)
   const [messageSources, setMessageSources] = useState<SourceDatum[]>([])
@@ -66,8 +54,7 @@ export const OriginDistributionCard: React.FC = () => {
   const [whatsAppConnected, setWhatsAppConnected] = useState(false)
   const [whatsAppConnectionLoading, setWhatsAppConnectionLoading] = useState(true)
 
-  const analyticsPreferenceEnabled = !isRenderDomain && parseAnalyticsFlag(showAnalyticsConfig)
-  const webConnected = analyticsPreferenceEnabled && webTrackingConfigured
+  const webConnected = webTrackingConfigured
 
   useEffect(() => {
     let active = true
@@ -84,12 +71,6 @@ export const OriginDistributionCard: React.FC = () => {
   }, [dateRange.start, dateRange.end])
 
   useEffect(() => {
-    if (!analyticsPreferenceEnabled) {
-      setWebTrackingConfigured(false)
-      setWebConnectionLoading(false)
-      return
-    }
-
     let active = true
     setWebConnectionLoading(true)
 
@@ -105,7 +86,7 @@ export const OriginDistributionCard: React.FC = () => {
       })
 
     return () => { active = false }
-  }, [analyticsPreferenceEnabled])
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -113,7 +94,12 @@ export const OriginDistributionCard: React.FC = () => {
 
     whatsappWebService.getStatus()
       .then((status) => {
-        if (active) setWhatsAppConnected(status?.session?.status === 'connected')
+        if (active) {
+          setWhatsAppConnected(
+            status?.session?.status === 'connected' ||
+            Number(status?.stats?.messages || 0) > 0
+          )
+        }
       })
       .catch(() => {
         if (active) setWhatsAppConnected(false)
@@ -144,7 +130,14 @@ export const OriginDistributionCard: React.FC = () => {
       groupBy: 'day'
     })
       .then((result) => {
-        if (active) setMessageSources(result?.sources || [])
+        if (active) {
+          setMessageSources(result?.sources || [])
+          setWhatsAppConnected(Boolean(
+            result?.status?.connected ||
+            result?.status?.hasData ||
+            (result?.sources || []).length > 0
+          ))
+        }
       })
       .catch(() => {
         if (active) setMessageSources([])
@@ -164,6 +157,16 @@ export const OriginDistributionCard: React.FC = () => {
 
     return options
   }, [webConnected, whatsAppConnected])
+
+  useEffect(() => {
+    if (categoryTouched) return
+
+    if (webConnected) {
+      setCategory('traffic')
+    } else if (whatsAppConnected) {
+      setCategory('messages')
+    }
+  }, [categoryTouched, webConnected, whatsAppConnected])
 
   const activeCategory = useMemo<OriginCategory>(() => {
     if (categoryOptions.some(option => option.value === category)) return category
@@ -232,7 +235,10 @@ export const OriginDistributionCard: React.FC = () => {
             variant="title"
             options={categoryOptions}
             value={activeCategory}
-            onChange={(value) => setCategory(value as OriginCategory)}
+            onChange={(value) => {
+              setCategoryTouched(true)
+              setCategory(value as OriginCategory)
+            }}
           />
           {activeCategory === 'traffic' && webConnected && (
             <ViewSelector

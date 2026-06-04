@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, CheckCircle, ChevronDown, Clock, Loader2, Lock, Save, Upload, User, X } from 'lucide-react'
+import { Check, CheckCircle, ChevronDown, Clock, Database, Loader2, Lock, Save, Upload, User, X } from 'lucide-react'
 import { Button, Card } from '@/components/common'
 import { useAuth } from '@/contexts/AuthContext'
 import { useLabels } from '@/contexts/LabelsContext'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useTimezone } from '@/contexts/TimezoneContext'
 import { useAppConfig } from '@/hooks'
+import apiClient from '@/services/apiClient'
 import styles from './Settings.module.css'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
@@ -14,6 +15,15 @@ const PROFILE_PHOTO_KEY = 'admin_profile_photo'
 const MAX_PROFILE_PHOTO_SIZE = 1.5 * 1024 * 1024
 const CUSTOMER_LABEL_OPTIONS = ['Cliente', 'Paciente', 'Proyecto', 'Miembro', 'Alumno']
 const LEAD_LABEL_OPTIONS = ['Interesado', 'Prospecto', 'Mensaje', 'Lead', 'Consulta']
+
+interface StorageStatus {
+  sizeGB: number
+  sizePretty?: string
+  limitGB: number
+  percentUsed: number
+  warningThreshold: number
+  needsAttention: boolean
+}
 
 const ALL_TIMEZONES: string[] =
   typeof (Intl as any).supportedValuesOf === 'function'
@@ -153,6 +163,8 @@ export const AccountSettings: React.FC = () => {
   const [timezoneDraft, setTimezoneDraft] = useState(timezone)
   const [savingTimezone, setSavingTimezone] = useState(false)
   const [timezoneClock, setTimezoneClock] = useState(() => new Date())
+  const [storageStatus, setStorageStatus] = useState<StorageStatus | null>(null)
+  const [storageStatusError, setStorageStatusError] = useState(false)
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null)
   const customerTriggerRef = useRef<HTMLButtonElement>(null)
   const leadTriggerRef = useRef<HTMLButtonElement>(null)
@@ -160,6 +172,7 @@ export const AccountSettings: React.FC = () => {
   const currentUsername = user?.username || 'admin'
   const visibleProfilePhoto = isEditingPhoto ? profilePhotoDraft : profilePhoto
   const usernameChanged = newUsername.trim() && newUsername.trim() !== currentUsername
+  const storagePercent = Math.max(0, Math.min(100, storageStatus?.percentUsed ?? 0))
   const browserTimezone = useMemo(
     () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
     []
@@ -195,6 +208,30 @@ export const AccountSettings: React.FC = () => {
 
     return () => {
       window.clearInterval(intervalId)
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadStorageStatus = async () => {
+      try {
+        const data = await apiClient.get<StorageStatus>('/dashboard/storage-status')
+        if (!cancelled) {
+          setStorageStatus(data)
+          setStorageStatusError(false)
+        }
+      } catch {
+        if (!cancelled) {
+          setStorageStatusError(true)
+        }
+      }
+    }
+
+    loadStorageStatus()
+
+    return () => {
+      cancelled = true
     }
   }, [])
 
@@ -827,6 +864,7 @@ export const AccountSettings: React.FC = () => {
                   Guardar
                 </Button>
               </div>
+
               <div className={styles.timezonePreview} aria-live="polite">
                 <div className={styles.timezonePreviewItem}>
                   <span className={styles.timezonePreviewLabel}>Zona seleccionada</span>
@@ -842,6 +880,43 @@ export const AccountSettings: React.FC = () => {
                     {browserTimezoneInfo.value} · {browserTimezoneInfo.offset}
                   </span>
                 </div>
+              </div>
+            </section>
+
+            <section className={`${styles.accountSection} ${styles.accountSectionWide} ${styles.storageUsageSection}`}>
+              <div className={styles.storageUsageHeader}>
+                <div>
+                  <h3 className={styles.accountSectionTitle}>
+                    <Database size={16} /> Base de datos
+                  </h3>
+                  <p className={styles.accountSectionDescription}>Storage utilizado en Render.</p>
+                </div>
+                <strong className={styles.storageUsageValue}>
+                  {storageStatus
+                    ? `${storageStatus.percentUsed}%`
+                    : storageStatusError
+                      ? 'No disponible'
+                      : 'Cargando...'}
+                </strong>
+              </div>
+
+              <div
+                className={styles.storageUsageTrack}
+                role="meter"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(storagePercent)}
+                aria-label="Uso de base de datos"
+              >
+                <span
+                  className={`${styles.storageUsageBar} ${storageStatus?.needsAttention ? styles.storageUsageBarWarning : ''}`}
+                  style={{ width: `${storagePercent}%` }}
+                />
+              </div>
+
+              <div className={styles.storageUsageMeta}>
+                <span>{storageStatus?.sizePretty || `${storageStatus?.sizeGB ?? 0} GB`} usados</span>
+                <span>{storageStatus ? `${storageStatus.limitGB} GB disponibles` : 'Esperando lectura'}</span>
               </div>
             </section>
           </div>

@@ -44,6 +44,8 @@ import externalRoutes from './routes/external.routes.js'
 import mcpRoutes from './routes/mcp.routes.js'
 import whatsappWebRoutes from './routes/whatsappWeb.routes.js'
 import productsRoutes from './routes/products.routes.js'
+import sitesRoutes from './routes/sites.routes.js'
+import { publicSiteHostMiddleware } from './controllers/sitesController.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -68,10 +70,14 @@ app.get('/api/health', (req, res) => {
   })
 })
 
+// Host router para Sites públicos. Debe correr antes de APIs privadas/static.
+app.use(publicSiteHostMiddleware)
+
 // API Routes
 app.use('/', oauthRoutes)
 app.use('/api/auth', authRoutes)
 app.use('/api/api-access', apiAccessRoutes)
+app.use('/api/sites', sitesRoutes)
 app.use('/api/reports', reportsRoutes)
 app.use('/api/highlevel', highlevelRoutes)
 app.use('/api/products', productsRoutes)

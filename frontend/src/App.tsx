@@ -16,6 +16,7 @@ import { Settings } from '@/pages/Settings'
 import { APIDocumentation } from '@/pages/Settings/APIDocumentation'
 import { Appointments } from '@/pages/Appointments'
 import { Analytics } from '@/pages/Analytics'
+import { Sites } from '@/pages/Sites'
 import { PhoneAgentChat } from '@/pages/PhoneAgentChat'
 import { PhoneApp } from '@/pages/PhoneApp'
 import { PhonePayments } from '@/pages/PhonePayments'
@@ -148,6 +149,7 @@ const AppWithNotifications: React.FC = () => {
             <Route path="transactions" element={<Transactions />} />
             <Route path="contacts" element={<Contacts />} />
             <Route path="appointments" element={<Appointments />} />
+            <Route path="sites" element={<Sites />} />
             <Route path="analytics" element={<Analytics />} />
             <Route path="settings/*" element={<Settings />} />
           </Route>

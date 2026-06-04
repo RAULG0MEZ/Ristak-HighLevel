@@ -9,6 +9,7 @@ import {
   Calendar,
   Settings,
   BarChart3,
+  Globe2,
   GripVertical
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
@@ -56,6 +57,7 @@ const baseNavigation: NavItem[] = [
   { id: 'appointments', name: 'Citas', href: '/appointments', icon: Calendar },
   { id: 'transactions', name: 'Pagos', href: '/transactions', icon: Banknote },
   { id: 'contacts', name: 'Contactos', href: '/contacts', icon: Users },
+  { id: 'sites', name: 'Sites', href: '/sites', icon: Globe2 },
   { id: 'divider-1', name: '', href: '#', icon: LayoutDashboard, isDivider: true }, // Divisor visual
   { id: 'campaigns', name: 'Publicidad', href: '/campaigns', icon: Megaphone },
   { id: 'reports', name: 'Reportes', href: '/reports', icon: FileBarChart }

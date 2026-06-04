@@ -260,6 +260,20 @@ type ChartMetricConfig = {
   emptyMessage: string
 }
 
+const ANALYTICS_CHART_COLORS = {
+  traffic: '#22c55e',
+  visitors: '#38bdf8',
+  sessions: '#f59e0b',
+  registrations: '#a78bfa',
+  prospects: '#c084fc',
+  identified: '#10b981',
+  returning: '#f43f5e',
+  messages: '#25d366',
+  appointments: '#f59e0b',
+  attendances: '#60a5fa',
+  customers: '#34d399'
+}
+
 type ConversionStage = 'prospect' | 'appointment_scheduled' | 'appointment_attended' | 'customer'
 
 const CONVERSION_STAGES: ConversionStage[] = [
@@ -1754,8 +1768,8 @@ const Analytics: React.FC = () => {
         title: 'Mensajes de WhatsApp',
         description: `Mensajes recibidos por ${periodLabel}`,
         label1: 'Mensajes',
-        color: 'var(--design-chart-primary, #10b981)',
-        color2: 'var(--design-chart-tertiary, #3b82f6)',
+        color: ANALYTICS_CHART_COLORS.messages,
+        color2: ANALYTICS_CHART_COLORS.appointments,
         data: whatsAppTrendData,
         emptyMessage: 'Sin mensajes de WhatsApp disponibles en este rango'
       }
@@ -1768,8 +1782,8 @@ const Analytics: React.FC = () => {
           description: `Cuántos visitantes terminan identificándose por ${periodLabel}`,
           label1: 'Visitantes únicos',
           label2: 'Registros',
-          color: 'var(--design-chart-tertiary, #3b82f6)',
-          color2: 'var(--design-chart-accent, #8b5cf6)',
+          color: ANALYTICS_CHART_COLORS.visitors,
+          color2: ANALYTICS_CHART_COLORS.registrations,
           data: mergeVisitorRegistrationData(dailyTraffic, dailyConversions),
           emptyMessage: 'Sin datos de visitantes o registros disponibles'
         }
@@ -1779,8 +1793,8 @@ const Analytics: React.FC = () => {
           description: `Frecuencia de regreso y volumen real por ${periodLabel}`,
           label1: 'Sesiones',
           label2: 'Visitantes únicos',
-          color: 'var(--design-chart-warning, #f59e0b)',
-          color2: 'var(--design-chart-tertiary, #3b82f6)',
+          color: ANALYTICS_CHART_COLORS.sessions,
+          color2: ANALYTICS_CHART_COLORS.visitors,
           data: mapTrendToChartData(sessionTrendData, 'uniqueSessions', 'uniqueVisitors'),
           emptyMessage: 'Sin sesiones disponibles'
         }
@@ -1790,8 +1804,8 @@ const Analytics: React.FC = () => {
           description: `Calidad del tráfico: contactos identificados y usuarios que regresan por ${periodLabel}`,
           label1: 'Contactos identificados',
           label2: 'Visitantes recurrentes',
-          color: 'var(--design-chart-primary, #10b981)',
-          color2: 'var(--design-chart-secondary, #64748b)',
+          color: ANALYTICS_CHART_COLORS.identified,
+          color2: ANALYTICS_CHART_COLORS.returning,
           data: mapTrendToChartData(sessionTrendData, 'identifiedContacts', 'returningVisitors'),
           emptyMessage: 'Sin visitantes identificados o recurrentes'
         }
@@ -1802,8 +1816,8 @@ const Analytics: React.FC = () => {
           description: `Visualizaciones de página y visitantes únicos por ${periodLabel}`,
           label1: 'Visualizaciones',
           label2: 'Visitantes únicos',
-          color: 'var(--design-chart-primary, #10b981)',
-          color2: 'var(--design-chart-tertiary, #3b82f6)',
+          color: ANALYTICS_CHART_COLORS.traffic,
+          color2: ANALYTICS_CHART_COLORS.visitors,
           data: dailyTraffic,
           emptyMessage: 'Sin datos de tráfico disponibles'
         }
@@ -1818,8 +1832,8 @@ const Analytics: React.FC = () => {
           description: `Controla si la agenda se está convirtiendo en show-ups por ${periodLabel}`,
           label1: 'Citas agendadas',
           label2: 'Citas asistidas',
-          color: 'var(--design-chart-warning, #f59e0b)',
-          color2: 'var(--design-chart-tertiary, #3b82f6)',
+          color: ANALYTICS_CHART_COLORS.appointments,
+          color2: ANALYTICS_CHART_COLORS.attendances,
           data: mapTrendToChartData(conversionTrendData, 'appointments', 'attendances'),
           emptyMessage: 'Sin citas o asistencias disponibles'
         }
@@ -1829,8 +1843,8 @@ const Analytics: React.FC = () => {
           description: `Compara ${leadsLabelLower} en etapa inicial contra ${customersLabelLower} por ${periodLabel}`,
           label1: leadsLabel,
           label2: customersLabel,
-          color: 'var(--design-chart-accent, #8b5cf6)',
-          color2: 'var(--design-chart-primary, #10b981)',
+          color: ANALYTICS_CHART_COLORS.prospects,
+          color2: ANALYTICS_CHART_COLORS.customers,
           data: mapTrendToChartData(conversionTrendData, 'prospects', 'customers'),
           emptyMessage: `Sin ${leadsLabelLower} o ${customersLabelLower} disponibles`
         }
@@ -1840,8 +1854,8 @@ const Analytics: React.FC = () => {
           description: `Cuántos mensajes de WhatsApp llegan versus citas agendadas por ${periodLabel}`,
           label1: 'Mensajes',
           label2: 'Citas',
-          color: 'var(--design-chart-primary, #10b981)',
-          color2: 'var(--design-chart-warning, #f59e0b)',
+          color: ANALYTICS_CHART_COLORS.messages,
+          color2: ANALYTICS_CHART_COLORS.appointments,
           data: mergeWhatsAppWithAppointments(whatsAppTrendData, conversionTrendData),
           emptyMessage: 'Sin mensajes o citas disponibles'
         }
@@ -1851,8 +1865,8 @@ const Analytics: React.FC = () => {
           description: `Cuántas citas agendadas se convierten en ${customersLabelLower} por ${periodLabel}`,
           label1: 'Citas',
           label2: customersLabel,
-          color: 'var(--design-chart-warning, #f59e0b)',
-          color2: 'var(--design-chart-primary, #10b981)',
+          color: ANALYTICS_CHART_COLORS.appointments,
+          color2: ANALYTICS_CHART_COLORS.customers,
           data: mapTrendToChartData(conversionTrendData, 'appointments', 'customers'),
           emptyMessage: `Sin citas o ${customersLabelLower} disponibles`
         }
@@ -1863,8 +1877,8 @@ const Analytics: React.FC = () => {
           description: `Mide cuántos registros terminan siendo ${customersLabelLower} por ${periodLabel}`,
           label1: 'Registros',
           label2: customersLabel,
-          color: 'var(--design-chart-accent, #8b5cf6)',
-          color2: 'var(--design-chart-primary, #10b981)',
+          color: ANALYTICS_CHART_COLORS.registrations,
+          color2: ANALYTICS_CHART_COLORS.customers,
           data: mapTrendToChartData(conversionTrendData, 'registrations', 'customers'),
           emptyMessage: `Sin registros o ${customersLabelLower} disponibles`
         }
