@@ -2,7 +2,12 @@
   display: flex;
   flex-direction: column;
   gap: 18px;
-  padding-bottom: 48px;
+  width: min(1680px, calc(100% - clamp(32px, 4vw, 72px)));
+  max-width: 100%;
+  min-height: 100%;
+  margin: 0 auto;
+  padding: var(--spacing-2xl) 0 4rem;
+  box-sizing: border-box;
 }
 
 .header,
@@ -37,7 +42,7 @@
 }
 
 .sitesShell {
-  min-height: calc(100vh - 180px);
+  min-height: calc(100vh - 220px);
   display: grid;
   grid-template-columns: 292px minmax(0, 1fr);
   gap: 16px;

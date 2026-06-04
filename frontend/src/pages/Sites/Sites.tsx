@@ -150,6 +150,18 @@ const getStatusClass = (site: PublicSite) => {
 
 const buildPublicUrl = (site: PublicSite) => site.domain ? `https://${site.domain}` : ''
 
+const getCreateButtonLabel = (section: SitesSection) => {
+  if (section === 'landings') return 'Crear landing page ("sitio web")'
+  if (section === 'forms') return 'Crear formulario'
+  return 'Nuevo sitio'
+}
+
+const getEmptyEditorMessage = (section: SitesSection) => {
+  if (section === 'landings') return 'Crea una landing page para entrar al editor visual.'
+  if (section === 'forms') return 'Crea un formulario para entrar al editor visual.'
+  return 'Crea una landing o formulario para entrar al editor visual.'
+}
+
 const getSettingString = (settings: Record<string, unknown>, key: string) => {
   const value = settings?.[key]
   return typeof value === 'string' ? value : ''
@@ -462,9 +474,9 @@ export const Sites: React.FC = () => {
       setSelectedBlockId(site.blocks?.[0]?.id || '')
       setSection(siteType === 'landing_page' ? 'landings' : 'forms')
       setCreateFlow('closed')
-      showToast('success', 'Site creado', 'Ya estas en el editor visual')
+      showToast('success', 'Sitio creado', 'Ya estas en el editor visual')
     } catch (error) {
-      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo crear el site')
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo crear el sitio')
     } finally {
       setCreating(false)
     }
@@ -487,7 +499,7 @@ export const Sites: React.FC = () => {
         metaEventName: selectedSite.metaEventName
       })
       syncSelectedSite(site)
-      showToast('success', statusOverride === 'published' ? 'Publicado' : 'Guardado', 'Site actualizado')
+      showToast('success', statusOverride === 'published' ? 'Publicado' : 'Guardado', 'Sitio actualizado')
     } catch (error) {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo guardar')
     } finally {
@@ -528,7 +540,7 @@ export const Sites: React.FC = () => {
       const next = pool[0] || nextSites[0]
       setSelectedSite(next ? await sitesService.getSite(next.id) : null)
       setSelectedBlockId('')
-      showToast('success', 'Eliminado', 'Site eliminado')
+      showToast('success', 'Eliminado', 'Sitio eliminado')
     } catch (error) {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo eliminar')
     }
@@ -626,7 +638,7 @@ export const Sites: React.FC = () => {
     <div className={styles.container}>
       <header className={styles.header}>
         <div>
-          <h1 className={styles.title}>Sites</h1>
+          <h1 className={styles.title}>Sitios</h1>
           <p className={styles.subtitle}>Constructor visual controlado para landings, formularios, leads y publicacion por dominio verificado.</p>
         </div>
         <div className={styles.headerActions}>
@@ -636,7 +648,7 @@ export const Sites: React.FC = () => {
           </Button>
           <Button onClick={() => setCreateFlow('choose-kind')}>
             <Plus size={16} />
-            Nuevo site
+            {getCreateButtonLabel(section)}
           </Button>
         </div>
       </header>
@@ -827,10 +839,10 @@ export const Sites: React.FC = () => {
           ) : (
             <div className={styles.emptyEditor}>
               <LayoutTemplate size={34} />
-              <p>Crea una landing o formulario para entrar al editor visual.</p>
+              <p>{getEmptyEditorMessage(section)}</p>
               <Button onClick={() => setCreateFlow('choose-kind')}>
                 <Plus size={16} />
-                Crear site
+                {getCreateButtonLabel(section)}
               </Button>
             </div>
           )}
@@ -851,7 +863,7 @@ const CreateFlowPanel: React.FC<CreateFlowPanelProps> = ({ step, creating, onSte
   return (
     <section className={styles.createPanel}>
       <div className={styles.createHeader}>
-        <span>Nuevo site</span>
+        <span>Nuevo sitio</span>
         <h2>
           {step === 'choose-kind'
             ? 'Que quieres construir?'
@@ -1458,7 +1470,7 @@ const LeadsPanel: React.FC<{ rows: LeadRow[]; loading: boolean; onRefresh: () =>
     <div className={styles.leadsTable}>
       <div className={styles.leadsHeader}>
         <span>Lead</span>
-        <span>Site</span>
+        <span>Sitio</span>
         <span>Estado</span>
         <span>Reglas</span>
         <span>Fecha</span>
@@ -1513,7 +1525,7 @@ const DomainsPanel: React.FC<DomainsPanelProps> = ({
     <div className={styles.builderHeader}>
       <div>
         <h2>Dominios / Publicacion</h2>
-        <p>El site publico solo se renderiza si el dominio coincide aqui y tambien existe como Custom Domain verificado en Render.</p>
+        <p>El sitio publico solo se renderiza si el dominio coincide aqui y tambien existe como Custom Domain verificado en Render.</p>
       </div>
       {selectedSite && (
         <Button onClick={() => onSaveSite('published')} loading={saving}>
@@ -1586,7 +1598,7 @@ const DomainsPanel: React.FC<DomainsPanelProps> = ({
       ) : (
         <div className={styles.emptyState}>
           <Globe2 size={24} />
-          <p>Selecciona un site para configurar su dominio.</p>
+          <p>Selecciona un sitio para configurar su dominio.</p>
         </div>
       )}
     </div>

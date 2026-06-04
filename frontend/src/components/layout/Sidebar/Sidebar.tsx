@@ -9,7 +9,7 @@ import {
   Calendar,
   Settings,
   BarChart3,
-  Globe2,
+  PanelTop,
   GripVertical
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
@@ -57,9 +57,9 @@ const baseNavigation: NavItem[] = [
   { id: 'appointments', name: 'Citas', href: '/appointments', icon: Calendar },
   { id: 'transactions', name: 'Pagos', href: '/transactions', icon: Banknote },
   { id: 'contacts', name: 'Contactos', href: '/contacts', icon: Users },
-  { id: 'sites', name: 'Sites', href: '/sites', icon: Globe2 },
   { id: 'divider-1', name: '', href: '#', icon: LayoutDashboard, isDivider: true }, // Divisor visual
   { id: 'campaigns', name: 'Publicidad', href: '/campaigns', icon: Megaphone },
+  { id: 'sites', name: 'Sitios', href: '/sites', icon: PanelTop },
   { id: 'reports', name: 'Reportes', href: '/reports', icon: FileBarChart }
 ]
 
@@ -257,7 +257,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
 
   // Aplicar orden guardado a los items
   const applyOrder = (items: NavItem[], order: string[]): NavItem[] => {
-    if (!order.length) return items
+    const placeSitesAfterCampaigns = (orderedItems: NavItem[]) => {
+      const sitesIndex = orderedItems.findIndex(item => item.id === 'sites')
+      const campaignsIndex = orderedItems.findIndex(item => item.id === 'campaigns')
+
+      if (sitesIndex === -1 || campaignsIndex === -1 || sitesIndex === campaignsIndex + 1) {
+        return orderedItems
+      }
+
+      const nextItems = [...orderedItems]
+      const [sitesItem] = nextItems.splice(sitesIndex, 1)
+      const nextCampaignsIndex = nextItems.findIndex(item => item.id === 'campaigns')
+      nextItems.splice(nextCampaignsIndex + 1, 0, sitesItem)
+      return nextItems
+    }
+
+    if (!order.length) return placeSitesAfterCampaigns(items)
 
     const itemsById = new Map(items.map(item => [item.id, item]))
     const orderedItems: NavItem[] = []
@@ -276,7 +291,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, locationName, loca
       orderedItems.push(item)
     })
 
-    return orderedItems
+    return placeSitesAfterCampaigns(orderedItems)
   }
 
   useEffect(() => {
