@@ -371,16 +371,13 @@
   border-radius: 10px;
 }
 
-.rstkCanvas .rstk-section-lane.rstkSelActive .rstk-section-column {
-  position: relative;
+.rstkCanvas .rstk-section-lane.rstkSelActive .rstk-section-column .rstkSel:not(.rstkSelActive)::after {
+  border-color: transparent;
+  box-shadow: none;
 }
 
-.rstkCanvas .rstk-section-lane.rstkSelActive .rstk-section-column::before {
-  content: "";
-  position: absolute;
-  inset: -8px;
-  border: 1.5px dashed rgba(191, 219, 254, 0.64);
-  border-radius: 12px;
+.rstkCanvas .rstk-section-lane.rstkSelActive .rstk-section-column .rstkSel:not(.rstkSelActive) .rstkBlockTools {
+  opacity: 0;
   pointer-events: none;
 }
 
