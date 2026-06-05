@@ -1592,7 +1592,7 @@ export const Sites: React.FC = () => {
     showToast('info', 'IA abierta', 'Responde las preguntas y se va a crear un borrador editable en Sites.')
   }
 
-  const handleSaveSite = async (statusOverride?: PublicSite['status']) => {
+  const handleSaveSite = async (statusOverride?: PublicSite['status'], options: { silent?: boolean } = {}) => {
     if (!selectedSite) return
     setSaving(true)
     try {
@@ -1609,7 +1609,9 @@ export const Sites: React.FC = () => {
       })
       syncSelectedSite(site)
       setHasUnsavedChanges(false)
-      showToast('success', statusOverride === 'published' ? 'Publicado' : 'Guardado', 'Sitio actualizado')
+      if (!options.silent) {
+        showToast('success', statusOverride === 'published' ? 'Publicado' : 'Guardado', 'Sitio actualizado')
+      }
     } catch (error) {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo guardar')
     } finally {
@@ -1935,7 +1937,7 @@ export const Sites: React.FC = () => {
                     aria-label="Nombre interno del site"
                     style={{ width: `calc(${Math.max((editorSite.name || '').length, 6)}ch + 16px)` }}
                     onChange={(event) => updateSelectedSite({ name: event.target.value })}
-                    onBlur={() => handleSaveSite()}
+                    onBlur={() => handleSaveSite(undefined, { silent: true })}
                   />
                   <Pencil size={15} />
                 </label>
@@ -1946,7 +1948,7 @@ export const Sites: React.FC = () => {
                     placeholder="Titulo publico"
                     style={{ width: `calc(${Math.max((editorSite.title || '').length, 'Titulo publico'.length)}ch + 16px)` }}
                     onChange={(event) => updateSelectedSite({ title: event.target.value })}
-                    onBlur={() => handleSaveSite()}
+                    onBlur={() => handleSaveSite(undefined, { silent: true })}
                   />
                   <Pencil size={14} />
                 </label>
@@ -1958,7 +1960,7 @@ export const Sites: React.FC = () => {
                     value={getRoutePath(editorSite)}
                     placeholder={editorSite.siteType === 'landing_page' ? '/site-01' : '/form-01'}
                     onChange={(event) => updateSelectedSite({ slug: normalizeRouteInput(event.target.value) })}
-                    onBlur={() => handleSaveSite()}
+                    onBlur={() => handleSaveSite(undefined, { silent: true })}
                   />
                 </label>
                 <div className={`${styles.metaCard} ${editorSite.metaCapiEnabled ? styles.metaCardActive : ''}`}>
@@ -2140,7 +2142,7 @@ export const Sites: React.FC = () => {
                                     platform={platformChromeFor(resolveTemplateId(editorSite))!}
                                     site={editorSite}
                                     onPatchTheme={patchSiteTheme}
-                                    onSave={() => handleSaveSite()}
+                                    onSave={() => handleSaveSite(undefined, { silent: true })}
                                   />
                                 </div>
                               )}
@@ -2216,7 +2218,7 @@ export const Sites: React.FC = () => {
                   showSocialProfile={selectedBlockId === SOCIAL_PROFILE_SELECTED_ID}
                   onPatchSite={updateSelectedSite}
                   onPatchTheme={patchSiteTheme}
-                  onSaveSite={() => handleSaveSite()}
+                  onSaveSite={() => handleSaveSite(undefined, { silent: true })}
                   onPatchBlock={(patch) => patchSelectedBlock(patch)}
                   onPatchSettings={(patch) => patchSelectedBlockSettings(patch)}
                   onPatchCategorySettings={(block, patch) => patchBlockCategorySettingsLocal(block, patch)}
