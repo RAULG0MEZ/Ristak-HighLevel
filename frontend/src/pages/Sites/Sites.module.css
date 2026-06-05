@@ -74,7 +74,7 @@
 .sitesShell {
   min-height: calc(100vh - 220px);
   display: grid;
-  grid-template-columns: 292px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   align-items: start;
 }
@@ -105,6 +105,71 @@
 .sectionNav {
   display: grid;
   gap: 6px;
+}
+
+.sectionTabs {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding: 2px 0 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.sectionTabs::-webkit-scrollbar {
+  height: 6px;
+}
+
+.sectionTabs::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sectionTabs::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: transparent;
+}
+
+.sectionTabs:hover::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.26);
+}
+
+.sectionTab {
+  min-height: 40px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  padding: 0 14px;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease;
+}
+
+.sectionTab:hover {
+  border-color: rgba(148, 163, 184, 0.18);
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--color-text-primary);
+}
+
+.sectionTabActive {
+  border-color: var(--color-border-subtle, rgba(148, 163, 184, 0.28));
+  background: color-mix(in srgb, var(--color-background-secondary) 86%, var(--color-primary) 14%);
+  color: var(--color-text-primary);
 }
 
 .sectionButton,
@@ -3403,6 +3468,7 @@
 }
 
 .sectionButton,
+.sectionTab,
 .siteItem,
 .createLibraryCard,
 .libraryCard,
@@ -3822,6 +3888,7 @@
 .domainEditor,
 .emptyEditor,
 .sectionButton,
+.sectionTab,
 .siteItem,
 .createLibraryCard,
 .libraryCard,
@@ -3886,6 +3953,7 @@
 .templateCard,
 .leadRow,
 .sectionButton,
+.sectionTab,
 .siteItem,
 .metaToggle,
 .optionRuleCard,
@@ -3897,6 +3965,21 @@
   background: var(--color-background-primary);
   border-color: var(--color-border-subtle, rgba(148, 163, 184, 0.2));
   border-radius: 8px;
+}
+
+.sectionTabs .sectionTab {
+  background: transparent;
+  border-color: transparent;
+}
+
+.sectionTabs .sectionTab:hover {
+  border-color: rgba(148, 163, 184, 0.18);
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.sectionTabs .sectionTabActive {
+  border-color: var(--color-border-subtle, rgba(148, 163, 184, 0.28));
+  background: color-mix(in srgb, var(--color-background-secondary) 86%, var(--color-primary) 14%);
 }
 
 .libraryCardPreview,
@@ -4672,7 +4755,7 @@
 
 .container:not(.containerFocused) .sitesShell {
   min-height: 0;
-  grid-template-columns: minmax(220px, 292px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .container:not(.containerFocused) .libraryPanel,

@@ -108,7 +108,7 @@ interface LeadRow extends SiteSubmission {
 const sectionItems: Array<{ id: SitesSection; label: string; icon: React.ReactNode }> = [
   { id: 'landings', label: 'Sitios embudo', icon: <LayoutTemplate size={17} /> },
   { id: 'forms', label: 'Formularios', icon: <FormInput size={17} /> },
-  { id: 'leads', label: 'Respuestas / Leads', icon: <ListChecks size={17} /> },
+  { id: 'leads', label: 'Respuestas', icon: <ListChecks size={17} /> },
   { id: 'domains', label: 'Dominios', icon: <Globe2 size={17} /> }
 ]
 
@@ -1677,6 +1677,13 @@ export const Sites: React.FC = () => {
   }
 
   const handleSectionChange = (nextSection: SitesSection) => {
+    if (nextSection === 'domains') {
+      requestLeaveEditor(() => {
+        performUrlNavigation('/settings/domains')
+      })
+      return
+    }
+
     if (nextSection === section) {
       if ((section === 'landings' || section === 'forms') && (editorSite || createFlow !== 'closed')) {
         requestLeaveEditor(() => {
@@ -2548,21 +2555,25 @@ export const Sites: React.FC = () => {
 
         <div className={`${styles.sitesShell} ${isFocusedSitesMode ? styles.sitesShellFocused : ''}`}>
           {!isFocusedSitesMode && (
-            <aside className={styles.internalSidebar}>
-              <nav className={styles.sectionNav}>
-                {sectionItems.map(item => (
+            <nav className={styles.sectionTabs} role="tablist" aria-label="Secciones de sitios">
+              {sectionItems.map(item => {
+                const isActive = section === item.id
+                return (
                   <button
                     key={item.id}
                     type="button"
-                    className={`${styles.sectionButton} ${section === item.id ? styles.sectionButtonActive : ''}`}
+                    role="tab"
+                    aria-selected={isActive}
+                    className={`${styles.sectionTab} ${isActive ? styles.sectionTabActive : ''}`}
                     onClick={() => handleSectionChange(item.id)}
                   >
                     {item.icon}
                     <span>{item.label}</span>
+                    {item.id === 'domains' && <ExternalLink size={14} aria-hidden="true" />}
                   </button>
-                ))}
-              </nav>
-            </aside>
+                )
+              })}
+            </nav>
           )}
 
           <main className={styles.mainSurface}>
@@ -5674,7 +5685,7 @@ const LeadsPanel: React.FC<{ rows: LeadRow[]; loading: boolean; onRefresh: () =>
   <section className={styles.dataPanel}>
     <div className={styles.builderHeader}>
       <div>
-        <h2>Respuestas / Leads</h2>
+        <h2>Respuestas</h2>
         <p>Respuestas recibidas desde sitios embudo y formularios publicos.</p>
       </div>
       <Button variant="secondary" onClick={onRefresh} loading={loading}>
