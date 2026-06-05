@@ -9,6 +9,7 @@ import {
   getSitesDomainHandler,
   getSiteHandler,
   getSitesHandler,
+  metaPageEventPublicHandler,
   previewSiteHandler,
   reorderBlocksHandler,
   submitPublicSiteHandler,
@@ -21,6 +22,7 @@ import {
 const router = express.Router()
 
 router.post('/public/submit', submitPublicSiteHandler)
+router.post('/public/meta-event', metaPageEventPublicHandler)
 
 router.use(requireAuth)
 

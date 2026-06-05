@@ -1,5 +1,6 @@
 import {
   createBlock,
+  createMetaPageEventFromRequest,
   createSite,
   createSiteWithAI,
   createSubmissionFromRequest,
@@ -225,6 +226,16 @@ export async function submitPublicSiteHandler(req, res) {
   }
 }
 
+export async function metaPageEventPublicHandler(req, res) {
+  try {
+    const result = await createMetaPageEventFromRequest(req, req.body || {})
+    res.status(200).json({ success: true, data: result })
+  } catch (error) {
+    logger.warn(`Evento publico de pagina Site rechazado: ${error.message}`)
+    sendError(res, error, 'No se pudo enviar el evento de pagina')
+  }
+}
+
 function wantsJson(req) {
   return req.path.startsWith('/api') || String(req.headers.accept || '').includes('application/json')
 }
@@ -247,6 +258,7 @@ export async function publicSiteHostMiddleware(req, res, next) {
     if (
       req.path === '/api/health' ||
       req.path === '/api/sites/public/submit' ||
+      req.path === '/api/sites/public/meta-event' ||
       req.path === '/snip.js' ||
       req.path === '/collect' ||
       req.path === '/sync-visitor' ||
