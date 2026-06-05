@@ -392,6 +392,18 @@ async function ensureUniqueSlug(baseSlug, ignoreSiteId = null) {
 
 function buildDefaultBlocks(siteId, siteType, template) {
   const tpl = cleanString(template)
+  const landingSpacing = {
+    blockMarginLinked: false,
+    blockMarginTop: 50,
+    blockMarginRight: 0,
+    blockMarginBottom: 50,
+    blockMarginLeft: 0,
+    blockPaddingLinked: true
+  }
+  const withLandingSpacing = (settings = {}) => ({
+    ...landingSpacing,
+    ...settings
+  })
   const makeBlock = (blockType, label, content = '', extra = {}) => ({
     id: crypto.randomUUID(),
     site_id: siteId,
@@ -429,25 +441,31 @@ function buildDefaultBlocks(siteId, siteType, template) {
   if (siteType === 'landing_page') {
     if (tpl === 'vsl') {
       return [
-        makeBlock('headline', 'Titular', 'Mira esto antes de tomar una decision', { sortOrder: 0 }),
-        makeBlock('subheading', 'Subtitulo', 'En menos de 3 minutos te explico exactamente como funciona.', { sortOrder: 1 }),
+        makeBlock('headline', 'Titular', 'Mira esto antes de tomar una decision', {
+          sortOrder: 0,
+          settings: withLandingSpacing()
+        }),
+        makeBlock('subheading', 'Subtitulo', 'En menos de 3 minutos te explico exactamente como funciona.', {
+          sortOrder: 1,
+          settings: withLandingSpacing()
+        }),
         makeBlock('video', 'Video', '', {
           sortOrder: 2,
-          settings: { mediaUrl: '' }
+          settings: withLandingSpacing({ mediaUrl: '' })
         }),
         makeBlock('cta', 'CTA final', 'Quiero empezar ahora', {
           sortOrder: 3,
-          settings: { subtitle: 'Deja tus datos y un asesor te contacta hoy mismo.', buttonText: 'Quiero mas informacion', buttonUrl: '#form' }
+          settings: withLandingSpacing({ subtitle: 'Deja tus datos y un asesor te contacta hoy mismo.', buttonText: 'Quiero mas informacion', buttonUrl: '#form' })
         }),
         makeBlock('benefits', 'Lo que vas a lograr', 'Esto es lo que vas a lograr', {
           sortOrder: 4,
-          settings: {
+          settings: withLandingSpacing({
             items: [
               { title: '+ Atraer clientes de forma constante', text: 'Sin depender de recomendaciones.' },
               { title: '+ Un sistema que trabaja por ti', text: 'Automatizado de principio a fin.' },
               { title: '- Sin perder tiempo en tacticas que no funcionan', text: '' }
             ]
-          }
+          })
         })
       ]
     }
@@ -455,30 +473,30 @@ function buildDefaultBlocks(siteId, siteType, template) {
     return [
       makeBlock('hero', 'Hero', 'Agenda tu consulta', {
         sortOrder: 0,
-        settings: {
+        settings: withLandingSpacing({
           kicker: 'Nuevo',
           subtitle: 'Una pagina clara para convertir visitas en leads calificados.',
           buttonText: 'Quiero una consulta',
           buttonUrl: '#form'
-        }
+        })
       }),
       makeBlock('benefits', 'Beneficios', 'Por que elegirnos', {
         sortOrder: 1,
-        settings: {
+        settings: withLandingSpacing({
           items: [
             { title: '+ Atencion rapida', text: 'Captura datos y responde sin friccion.' },
             { title: '+ Leads ordenados', text: 'Todo llega al dashboard y a la misma base de datos.' },
             { title: '+ Dominio propio', text: 'Publica solo en dominios verificados.' }
           ]
-        }
+        })
       }),
       makeBlock('cta', 'CTA final', 'Listo para empezar?', {
         sortOrder: 2,
-        settings: {
+        settings: withLandingSpacing({
           subtitle: 'Deja tus datos y te contactamos.',
           buttonText: 'Contactar',
           buttonUrl: '#form'
-        }
+        })
       })
     ]
   }
@@ -2209,6 +2227,29 @@ function blockSettingNumber(settings, key, min, max) {
   return Math.min(max, Math.max(min, value))
 }
 
+const SPACING_SIDES = ['Top', 'Right', 'Bottom', 'Left']
+
+function hasSpacingSideValue(settings, base) {
+  return SPACING_SIDES.some(side => settings && settings[`${base}${side}`] !== undefined)
+}
+
+function blockSpacingValue(settings, base, side, fallback, min, max) {
+  const sideValue = blockSettingNumber(settings, `${base}${side}`, min, max)
+  if (sideValue !== null) return sideValue
+
+  const baseValue = blockSettingNumber(settings, base, min, max)
+  if (baseValue !== null) return baseValue
+
+  return fallback
+}
+
+function renderBlockSpacing(settings, base, fallback, min, max) {
+  if (!settings || (settings[base] === undefined && !hasSpacingSideValue(settings, base))) return ''
+  return SPACING_SIDES
+    .map(side => `${blockSpacingValue(settings, base, side, fallback, min, max)}px`)
+    .join(' ')
+}
+
 function themeNumber(theme, key, fallback, min, max) {
   const value = Number(theme && theme[key])
   if (!Number.isFinite(value)) return fallback
@@ -2229,7 +2270,8 @@ function renderBlockStyleVars(block) {
   const fieldBorder = blockSettingHex(settings, 'fieldBorder')
   const fontFamily = cleanString(settings.fontFamily)
   const fontSize = blockSettingNumber(settings, 'fontSize', 12, 72)
-  const blockPadding = blockSettingNumber(settings, 'blockPadding', 0, 80)
+  const blockPadding = renderBlockSpacing(settings, 'blockPadding', 0, 0, 160)
+  const blockMargin = renderBlockSpacing(settings, 'blockMargin', 0, -80, 200)
   const blockRadius = blockSettingNumber(settings, 'blockRadius', 0, 48)
   const buttonRadius = blockSettingNumber(settings, 'buttonRadius', 0, 48)
   const mediaWidth = blockSettingNumber(settings, 'mediaWidth', 30, 100)
@@ -2241,7 +2283,8 @@ function renderBlockStyleVars(block) {
   if (fontFamily) vars.push(`--rstk-block-font:${fontFamily.replace(/[;"{}<>]/g, '')}`)
   if (settings.fontWeight === 'bold') vars.push('--rstk-block-weight:850')
   if (fontSize !== null) vars.push(`--rstk-block-size:${fontSize}px`)
-  if (blockPadding !== null) vars.push(`--rstk-block-pad:${blockPadding}px`)
+  if (blockPadding) vars.push(`--rstk-block-pad:${blockPadding}`)
+  if (blockMargin) vars.push(`--rstk-block-margin:${blockMargin}`)
   if (blockRadius !== null) vars.push(`--rstk-block-radius:${blockRadius}px`)
   if (buttonRadius !== null) vars.push(`--rstk-block-button-radius:${buttonRadius}px`)
   if (mediaWidth !== null) vars.push(`--rstk-media-width:${mediaWidth}%`)
@@ -2780,7 +2823,9 @@ const RSTK_BASE_CSS = `
   .rstk-centered .rstk-shell{text-align:center;justify-items:center}
   .rstk-centered .rstk-subheading,.rstk-centered .rstk-text{margin-inline:auto}
   .rstk-block-style{
-    width:100%;
+    width:auto;
+    min-width:0;
+    margin:var(--rstk-block-margin,0);
     background:var(--rstk-block-bg,transparent);
     color:var(--rstk-block-text,var(--rstk-ink));
     font-family:var(--rstk-block-font,var(--rstk-font));
@@ -3193,7 +3238,7 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
   const metaConversionTarget = cleanString(theme.metaConversionTarget) === 'next_page' && nextPageUrl ? 'next_page' : 'same_page'
   const submitText = cleanString(theme.submitText) || 'Enviar'
   const pageMaxWidth = themeNumber(theme, 'pageMaxWidth', isLandingType ? 1160 : (template.id === 'interactive' ? 600 : 520), 360, 1440)
-  const pagePadding = themeNumber(theme, 'pagePadding', isLandingType ? 18 : 22, 0, 80)
+  const pagePadding = themeNumber(theme, 'pagePadding', isLandingType ? 50 : 22, 0, 120)
   const pageRadius = themeNumber(theme, 'pageRadius', isLandingType ? 0 : 24, 0, 40)
   const pageBorder = themeHex(theme, 'pageBorderColor') || 'transparent'
   const maxWidth = `${pageMaxWidth}px`

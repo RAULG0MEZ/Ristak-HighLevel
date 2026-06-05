@@ -39,7 +39,9 @@
 .rstkCanvas.rstk-centered .rstk-subheading, .rstkCanvas.rstk-centered .rstk-text { margin-inline: auto; }
 
 .rstkCanvas .rstk-block-style {
-  width: 100%;
+  width: auto;
+  min-width: 0;
+  margin: var(--rstk-block-margin, 0);
   background: var(--rstk-block-bg, transparent);
   color: var(--rstk-block-text, var(--rstk-ink));
   font-family: var(--rstk-block-font, var(--rstk-font));
@@ -195,23 +197,26 @@
   min-height: 620px;
   max-height: calc(100vh - 230px);
   overflow: auto;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 12px;
-  background:
-    linear-gradient(90deg, rgba(148, 163, 184, 0.07) 1px, transparent 1px),
-    linear-gradient(180deg, rgba(148, 163, 184, 0.07) 1px, transparent 1px),
-    var(--color-background-secondary, #f1f5f9);
-  background-size: 22px 22px;
-  padding: 18px;
+  border: 0;
+  border-radius: 18px;
+  background: transparent;
+  padding: 0;
   display: flex;
   justify-content: center;
 }
-.canvasViewportActive { border-color: color-mix(in srgb, var(--rstk-accent, #2563eb) 60%, transparent); }
+.canvasViewportActive { box-shadow: 0 0 0 3px color-mix(in srgb, var(--rstk-accent, #2563eb) 22%, transparent); }
 
 /* The scaler reserves the post-scale footprint; the inner page is rendered at
    its true design width and transform-scaled to fit (a real "compressed monitor"). */
 .canvasScaler { position: relative; flex: 0 0 auto; }
-.canvasStage { transform-origin: top left; }
+.canvasStage {
+  transform-origin: top left;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 18px;
+  background: var(--rstk-page-bg);
+  box-shadow: 0 30px 86px -56px rgba(15, 23, 42, 0.62);
+}
 
 /* Preview-only: fields and embeds are edited via the right panel, never typed
    into directly on the canvas. Inline-edit text nodes opt back in below. */

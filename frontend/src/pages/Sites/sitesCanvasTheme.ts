@@ -222,7 +222,7 @@ export const buildCanvasTheme = (site: PublicSite, device: 'desktop' | 'mobile' 
   const display = template.chrome === 'none' ? `'Inter Tight', 'Inter', ${template.font}` : template.font
 
   const pageMaxWidth = themeNumber(theme, 'pageMaxWidth', isLandingType ? 1160 : (template.id === 'interactive' ? 600 : 520), 360, 1440)
-  const pagePadding = themeNumber(theme, 'pagePadding', isLandingType ? 18 : 22, 0, 80)
+  const pagePadding = themeNumber(theme, 'pagePadding', isLandingType ? 50 : 22, 0, 120)
   const pageRadius = themeNumber(theme, 'pageRadius', isLandingType ? 0 : 24, 0, 40)
   const pageBorder = isHex6(theme.pageBorderColor) ? (theme.pageBorderColor as string) : 'transparent'
 

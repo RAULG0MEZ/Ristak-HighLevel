@@ -34,6 +34,7 @@ import {
   GripVertical,
   Image,
   LayoutTemplate,
+  Link2,
   ListChecks,
   Monitor,
   MoreVertical,
@@ -49,6 +50,7 @@ import {
   Smartphone,
   Trash2,
   Type,
+  Unlink2,
   Video,
   X
 } from 'lucide-react'
@@ -131,6 +133,15 @@ const ruleActions: Array<{ value: SiteOptionAction; label: string }> = [
 const SITES_AI_DRAFT_CREATED_EVENT = 'ristak-sites-ai-draft-created'
 const DEFAULT_FUNNEL_PAGE_ID = 'page-1'
 const SOCIAL_PROFILE_SELECTED_ID = '__social_profile__'
+const LANDING_DEFAULT_PAGE_PADDING = 50
+const LANDING_DEFAULT_BLOCK_SPACING = {
+  blockMarginLinked: false,
+  blockMarginTop: 50,
+  blockMarginRight: 0,
+  blockMarginBottom: 50,
+  blockMarginLeft: 0,
+  blockPaddingLinked: true
+}
 
 type ButtonAction = 'url' | 'next_page' | 'specific_page'
 type FormCompletionAction = 'form_default' | 'next_page' | 'next_page_if_qualified'
@@ -364,6 +375,42 @@ const getThemeHex = (theme: SiteTheme | undefined, key: keyof SiteTheme, fallbac
   return typeof value === 'string' && isHex6(value) ? value : fallback
 }
 
+const spacingSides = [
+  { id: 'Top', label: 'Arriba' },
+  { id: 'Right', label: 'Derecha' },
+  { id: 'Bottom', label: 'Abajo' },
+  { id: 'Left', label: 'Izquierda' }
+] as const
+
+type SpacingBase = 'blockPadding' | 'blockMargin'
+
+const hasSpacingSideValue = (settings: Record<string, unknown>, base: SpacingBase) =>
+  spacingSides.some(side => settings[`${base}${side.id}`] !== undefined)
+
+const getSpacingValue = (
+  settings: Record<string, unknown>,
+  base: SpacingBase,
+  side: typeof spacingSides[number]['id'],
+  fallback: number,
+  min: number,
+  max: number
+) => {
+  const sideKey = `${base}${side}`
+  if (settings[sideKey] !== undefined) return getSettingNumber(settings, sideKey, fallback, min, max)
+  if (settings[base] !== undefined) return getSettingNumber(settings, base, fallback, min, max)
+  return fallback
+}
+
+const getSpacingShorthand = (
+  settings: Record<string, unknown>,
+  base: SpacingBase,
+  fallback: number,
+  min: number,
+  max: number
+) => spacingSides
+  .map(side => `${getSpacingValue(settings, base, side.id, fallback, min, max)}px`)
+  .join(' ')
+
 // Mirrors backend renderBlockStyleVars so per-block overrides resolve to the same
 // CSS variables the published .rstk-block-style wrapper consumes.
 const getBlockCanvasStyle = (block: SiteBlock): React.CSSProperties => {
@@ -383,7 +430,12 @@ const getBlockCanvasStyle = (block: SiteBlock): React.CSSProperties => {
   if (settings.fontWeight === 'bold') style['--rstk-block-weight'] = '850'
 
   if (settings.fontSize !== undefined) style['--rstk-block-size'] = `${getSettingNumber(settings, 'fontSize', 18, 12, 72)}px`
-  if (settings.blockPadding !== undefined) style['--rstk-block-pad'] = `${getSettingNumber(settings, 'blockPadding', 16, 0, 80)}px`
+  if (settings.blockPadding !== undefined || hasSpacingSideValue(settings, 'blockPadding')) {
+    style['--rstk-block-pad'] = getSpacingShorthand(settings, 'blockPadding', 0, 0, 160)
+  }
+  if (settings.blockMargin !== undefined || hasSpacingSideValue(settings, 'blockMargin')) {
+    style['--rstk-block-margin'] = getSpacingShorthand(settings, 'blockMargin', 0, -80, 200)
+  }
   if (settings.blockRadius !== undefined) style['--rstk-block-radius'] = `${getSettingNumber(settings, 'blockRadius', 8, 0, 48)}px`
   if (settings.buttonRadius !== undefined) style['--rstk-block-button-radius'] = `${getSettingNumber(settings, 'buttonRadius', 8, 0, 48)}px`
   if (settings.mediaWidth !== undefined) style['--rstk-media-width'] = `${getSettingNumber(settings, 'mediaWidth', 100, 30, 100)}%`
@@ -651,19 +703,24 @@ const createEmbeddedBlocks = (siteId: string): SiteBlock[] => [
   }
 ]
 
-const defaultBlockPayload = (blockType: SiteBlockType, siteId: string) => {
+const defaultBlockPayload = (blockType: SiteBlockType, siteId: string, siteType?: SiteType) => {
   const isField = fieldBlockTypes.has(blockType)
   const label = blockLabels[blockType]
   const baseSettings: Record<string, unknown> = isField
     ? { internalName: slugifyName(label), validation: blockType === 'email' ? 'email' : blockType === 'phone' ? 'phone' : '' }
     : {}
+  const landingSettings = siteType === 'landing_page' && !isField ? LANDING_DEFAULT_BLOCK_SPACING : {}
+  const blockSettings = (settings: Record<string, unknown> = {}) => ({
+    ...landingSettings,
+    ...settings
+  })
 
   if (blockType === 'hero') {
     return {
       blockType,
       label,
       content: 'Titular principal',
-      settings: { kicker: 'Nuevo', subtitle: 'Subtitulo de la landing', buttonText: 'Comenzar', buttonUrl: '#form' }
+      settings: blockSettings({ kicker: 'Nuevo', subtitle: 'Subtitulo de la landing', buttonText: 'Comenzar', buttonUrl: '#form' })
     }
   }
 
@@ -672,7 +729,7 @@ const defaultBlockPayload = (blockType: SiteBlockType, siteId: string) => {
       blockType,
       label,
       content: 'Listo para empezar?',
-      settings: { subtitle: 'Deja tus datos y te contactamos.', buttonText: 'Enviar solicitud', buttonUrl: '#form' }
+      settings: blockSettings({ subtitle: 'Deja tus datos y te contactamos.', buttonText: 'Enviar solicitud', buttonUrl: '#form' })
     }
   }
 
@@ -681,7 +738,7 @@ const defaultBlockPayload = (blockType: SiteBlockType, siteId: string) => {
       blockType,
       label,
       content: 'Boton',
-      settings: { buttonText: 'Continuar', buttonUrl: '#form' }
+      settings: blockSettings({ buttonText: 'Continuar', buttonUrl: '#form' })
     }
   }
 
@@ -690,7 +747,7 @@ const defaultBlockPayload = (blockType: SiteBlockType, siteId: string) => {
       blockType,
       label,
       content: label,
-      settings: { items: [{ title: 'Elemento 1', text: 'Descripcion breve.' }, { title: 'Elemento 2', text: 'Descripcion breve.' }] }
+      settings: blockSettings({ items: [{ title: 'Elemento 1', text: 'Descripcion breve.' }, { title: 'Elemento 2', text: 'Descripcion breve.' }] })
     }
   }
 
@@ -699,7 +756,7 @@ const defaultBlockPayload = (blockType: SiteBlockType, siteId: string) => {
       blockType,
       label,
       content: 'Formulario',
-      settings: { description: 'Completa tus datos.', embeddedBlocks: createEmbeddedBlocks(siteId) }
+      settings: blockSettings({ description: 'Completa tus datos.', embeddedBlocks: createEmbeddedBlocks(siteId) })
     }
   }
 
@@ -708,7 +765,7 @@ const defaultBlockPayload = (blockType: SiteBlockType, siteId: string) => {
       blockType,
       label,
       content: '',
-      settings: {}
+      settings: blockSettings()
     }
   }
 
@@ -717,7 +774,7 @@ const defaultBlockPayload = (blockType: SiteBlockType, siteId: string) => {
       blockType,
       label,
       content: '',
-      settings: { calendarId: '', calendarSlug: '', calendarName: '' }
+      settings: blockSettings({ calendarId: '', calendarSlug: '', calendarName: '' })
     }
   }
 
@@ -733,7 +790,7 @@ const defaultBlockPayload = (blockType: SiteBlockType, siteId: string) => {
           { label: 'Opcion 2', value: 'Opcion 2', action: 'continue' as SiteOptionAction }
         ]
       : [],
-    settings: baseSettings
+    settings: blockSettings(baseSettings)
   }
 }
 
@@ -1395,7 +1452,7 @@ export const Sites: React.FC = () => {
   const handleAddBlock = async (blockType: SiteBlockType) => {
     if (!selectedSite) return
     try {
-      const payload = defaultBlockPayload(blockType, selectedSite.id)
+      const payload = defaultBlockPayload(blockType, selectedSite.id, selectedSite.siteType)
       if (isLanding(selectedSite) && activePage) {
         payload.settings = {
           ...(payload.settings || {}),
@@ -2249,24 +2306,13 @@ interface DimensionFieldProps {
   onCommit: () => void
 }
 
-// Slider + numeric box so a value can be dialed in visually or typed exactly.
+// Numeric box only: spacing/size edits should feel exact, not like a fader.
 const DimensionField: React.FC<DimensionFieldProps> = ({ label, value, min, max, step = 1, unit = 'px', onChange, onCommit }) => {
   const set = (raw: number) => onChange(clampNumber(raw, min, max))
   return (
     <label className={styles.dimensionField}>
       <span>{label}</span>
-      <div className={styles.dimensionRow}>
-        <input
-          className={styles.dimensionSlider}
-          type="range"
-          min={min}
-          max={max}
-          step={step}
-          value={value}
-          onChange={(event) => set(Number(event.target.value))}
-          onPointerUp={onCommit}
-          onKeyUp={onCommit}
-        />
+      <div className={styles.dimensionTextRow}>
         <div className={styles.dimensionBox}>
           <input
             type="number"
@@ -2281,6 +2327,107 @@ const DimensionField: React.FC<DimensionFieldProps> = ({ label, value, min, max,
         </div>
       </div>
     </label>
+  )
+}
+
+interface LinkedSpacingFieldProps {
+  label: string
+  base: SpacingBase
+  settings: Record<string, unknown>
+  min?: number
+  max?: number
+  fallback?: number
+  unit?: string
+  onChange: (patch: Record<string, unknown>) => void
+  onCommit: () => void
+}
+
+const LinkedSpacingField: React.FC<LinkedSpacingFieldProps> = ({
+  label,
+  base,
+  settings,
+  min = 0,
+  max = 160,
+  fallback = 0,
+  unit = 'px',
+  onChange,
+  onCommit
+}) => {
+  const linkKey = `${base}Linked`
+  const linked = settings[linkKey] !== false
+  const values = spacingSides.reduce<Record<typeof spacingSides[number]['id'], number>>((acc, side) => {
+    acc[side.id] = getSpacingValue(settings, base, side.id, fallback, min, max)
+    return acc
+  }, { Top: fallback, Right: fallback, Bottom: fallback, Left: fallback })
+
+  const patchAllSides = (next: number, nextLinked = linked) => {
+    const value = clampNumber(next, min, max)
+    onChange({
+      [linkKey]: nextLinked,
+      [base]: value,
+      [`${base}Top`]: value,
+      [`${base}Right`]: value,
+      [`${base}Bottom`]: value,
+      [`${base}Left`]: value
+    })
+  }
+
+  const patchSide = (side: typeof spacingSides[number]['id'], next: number) => {
+    const value = clampNumber(next, min, max)
+    if (linked) {
+      patchAllSides(value, true)
+      return
+    }
+    onChange({
+      [linkKey]: false,
+      [`${base}${side}`]: value
+    })
+  }
+
+  const toggleLinked = () => {
+    if (linked) {
+      onChange({ [linkKey]: false })
+      window.setTimeout(onCommit, 0)
+      return
+    }
+    patchAllSides(values.Top, true)
+    window.setTimeout(onCommit, 0)
+  }
+
+  return (
+    <div className={styles.spacingControl}>
+      <div className={styles.spacingHeader}>
+        <span>{label}</span>
+        <button
+          type="button"
+          className={`${styles.spacingLinkButton} ${linked ? styles.spacingLinkButtonActive : ''}`}
+          onClick={toggleLinked}
+          title={linked ? 'Desvincular lados' : 'Vincular lados'}
+          aria-label={linked ? 'Desvincular lados' : 'Vincular lados'}
+        >
+          {linked ? <Link2 size={15} /> : <Unlink2 size={15} />}
+        </button>
+      </div>
+      <div className={styles.spacingGrid}>
+        {spacingSides.map(side => (
+          <label key={side.id} className={styles.spacingBox}>
+            <span>{side.label}</span>
+            <div>
+              <input
+                type="number"
+                min={min}
+                max={max}
+                step={1}
+                value={values[side.id]}
+                onChange={(event) => patchSide(side.id, Number(event.target.value))}
+                onBlur={onCommit}
+              />
+              <small>{unit}</small>
+            </div>
+          </label>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -2769,12 +2916,24 @@ const InlineBlockStyleControls: React.FC<{
           onCommit={onSave}
         />
       </div>
-      <DimensionField
+      <LinkedSpacingField
         label="Padding"
-        value={getSettingNumber(settings, 'blockPadding', 16, 8, 64)}
-        min={8}
-        max={64}
-        onChange={(value) => onPatchSettings({ blockPadding: value })}
+        base="blockPadding"
+        settings={settings}
+        min={0}
+        max={160}
+        fallback={getSettingNumber(settings, 'blockPadding', 0, 0, 160)}
+        onChange={onPatchSettings}
+        onCommit={onSave}
+      />
+      <LinkedSpacingField
+        label="Margen"
+        base="blockMargin"
+        settings={settings}
+        min={-80}
+        max={200}
+        fallback={getSettingNumber(settings, 'blockMargin', 0, -80, 200)}
+        onChange={onPatchSettings}
         onCommit={onSave}
       />
       <div className={styles.twoColumn}>
@@ -3170,9 +3329,9 @@ const PageInspector: React.FC<{
           <div className={styles.twoColumn}>
             <DimensionField
               label="Padding"
-              value={getThemeNumber(theme, 'pagePadding', isLanding(site) ? 18 : 22, 0, 80)}
+              value={getThemeNumber(theme, 'pagePadding', isLanding(site) ? LANDING_DEFAULT_PAGE_PADDING : 22, 0, 120)}
               min={0}
-              max={80}
+              max={120}
               onChange={(value) => onPatchTheme({ pagePadding: value })}
               onCommit={onSaveSite}
             />
