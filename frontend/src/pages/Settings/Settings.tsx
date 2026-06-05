@@ -44,9 +44,9 @@ export const Settings: React.FC = () => {
       icon: <CreditCard size={18} />
     },
     {
-      to: '/settings/whatsapp',
-      label: 'WhatsApp',
-      icon: <SiWhatsapp size={18} />
+      to: '/settings/highlevel',
+      label: 'HighLevel',
+      icon: <Send size={18} />
     },
     {
       to: '/settings/meta-ads',
@@ -63,9 +63,9 @@ export const Settings: React.FC = () => {
       )
     },
     {
-      to: '/settings/highlevel',
-      label: 'HighLevel',
-      icon: <Send size={18} />
+      to: '/settings/whatsapp',
+      label: 'WhatsApp',
+      icon: <SiWhatsapp size={18} />
     },
     {
       to: '/settings/tracking',
