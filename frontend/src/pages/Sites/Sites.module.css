@@ -4868,3 +4868,111 @@
     padding-inline: 0;
   }
 }
+
+/* Editor header: one real band. Pages are no longer trapped inside the left
+   title column, and the publish controls stay in one horizontal toolbar. */
+.containerFocused .editorHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  overflow: hidden;
+}
+
+.editorHeaderMain {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(260px, 0.42fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+
+.editorHeaderMain .editorTopControls {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.editorHeaderMain .editorPublishControls,
+.editorHeaderMain .editorActions {
+  flex: 0 0 auto;
+}
+
+.editorHeaderMain .editorActions {
+  flex-wrap: nowrap;
+}
+
+.editorHeaderPages {
+  width: 100%;
+  max-width: none;
+  margin-top: 2px;
+}
+
+.editorHeaderPages .pagesPanel {
+  width: 100%;
+  max-width: none;
+}
+
+.editorHeaderPages .pageList {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.editorHeaderPages .pageList:hover,
+.editorHeaderMain .editorTopControls:hover,
+.containerFocused .propertiesPanel:hover,
+.containerFocused .blocksRail:hover {
+  scrollbar-color: rgba(148, 163, 184, 0.34) transparent;
+}
+
+.editorHeaderPages .pageList::-webkit-scrollbar,
+.editorHeaderMain .editorTopControls::-webkit-scrollbar,
+.containerFocused .propertiesPanel::-webkit-scrollbar,
+.containerFocused .blocksRail::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.editorHeaderPages .pageList::-webkit-scrollbar-track,
+.editorHeaderMain .editorTopControls::-webkit-scrollbar-track,
+.containerFocused .propertiesPanel::-webkit-scrollbar-track,
+.containerFocused .blocksRail::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.editorHeaderPages .pageList::-webkit-scrollbar-thumb,
+.editorHeaderMain .editorTopControls::-webkit-scrollbar-thumb,
+.containerFocused .propertiesPanel::-webkit-scrollbar-thumb,
+.containerFocused .blocksRail::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-color: transparent;
+  background-clip: content-box;
+}
+
+.editorHeaderPages .pageList:hover::-webkit-scrollbar-thumb,
+.editorHeaderMain .editorTopControls:hover::-webkit-scrollbar-thumb,
+.containerFocused .propertiesPanel:hover::-webkit-scrollbar-thumb,
+.containerFocused .blocksRail:hover::-webkit-scrollbar-thumb {
+  background-color: rgba(148, 163, 184, 0.36);
+}
+
+@media (max-width: 1180px) {
+  .editorHeaderMain {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .editorHeaderMain .editorTopControls {
+    justify-content: flex-start;
+  }
+}
