@@ -172,6 +172,35 @@ const DEFAULT_BUTTON_SETTINGS = {
   buttonHeight: 54,
   buttonPaddingX: 28
 }
+const SECTION_BLOCK_TYPE: SiteBlockType = 'section'
+const DEFAULT_SECTION_GAP = 24
+
+type PaletteDragPayload = {
+  blockType: SiteBlockType
+  initialSettings?: Record<string, unknown>
+}
+
+type AddBlockOptions = {
+  insertIndex?: number
+  initialSettings?: Record<string, unknown>
+  sectionId?: string
+  sectionColumn?: number
+}
+
+type PaletteItem = {
+  id: string
+  label: string
+  blockType: SiteBlockType
+  initialSettings?: Record<string, unknown>
+}
+
+interface LandingSectionLane {
+  id: string
+  section: SiteBlock | null
+  columns: number
+  columnBlocks: SiteBlock[][]
+  sortOrder: number
+}
 
 type ButtonAction = 'url' | 'next_page' | 'specific_page'
 type FormCompletionAction = 'form_default' | 'next_page' | 'next_page_if_qualified'
@@ -2190,49 +2219,58 @@ export const Sites: React.FC = () => {
                 )}
               </div>
               <div className={styles.editorTopControls}>
-                <label className={styles.compactField}>
-                  <span>Ruta publica</span>
-                  <input
-                    value={getRoutePath(editorSite)}
-                    placeholder={editorSite.siteType === 'landing_page' ? '/site-01' : '/form-01'}
-                    onChange={(event) => updateSelectedSite({ slug: normalizeRouteInput(event.target.value) })}
-                    onBlur={() => handleSaveSite(undefined, { silent: true })}
-                  />
-                </label>
-                <div className={`${styles.metaCard} ${editorSite.metaCapiEnabled ? styles.metaCardActive : ''}`}>
-                  <span className={styles.metaMark} aria-hidden="true">∞</span>
-                  <div className={styles.metaCardInfo}>
-                    <strong>Meta Pixel + CAPI</strong>
-                    <small>{editorSite.metaCapiEnabled ? 'Page view' : 'Apagado'}</small>
+                <div className={styles.editorPublishControls}>
+                  <label className={styles.routeField}>
+                    <span>Ruta publica</span>
+                    <span className={`${styles.publicRouteBox} ${domainConfig.domain ? '' : styles.publicRouteBoxStandalone}`}>
+                      {domainConfig.domain && (
+                        <span className={styles.publicRouteDomain} title={`https://${domainConfig.domain}`}>
+                          https://{domainConfig.domain}
+                        </span>
+                      )}
+                      <input
+                        value={getRoutePath(editorSite)}
+                        placeholder={editorSite.siteType === 'landing_page' ? '/site-01' : '/form-01'}
+                        onChange={(event) => updateSelectedSite({ slug: normalizeRouteInput(event.target.value) })}
+                        onBlur={() => handleSaveSite(undefined, { silent: true })}
+                      />
+                    </span>
+                  </label>
+                  <div className={`${styles.metaCard} ${editorSite.metaCapiEnabled ? styles.metaCardActive : ''}`}>
+                    <span className={styles.metaMark} aria-hidden="true">∞</span>
+                    <div className={styles.metaCardInfo}>
+                      <strong>Meta Pixel + CAPI</strong>
+                      <small>{editorSite.metaCapiEnabled ? 'Page view' : 'Apagado'}</small>
+                    </div>
+                    <div className={styles.metaCardDivider} aria-hidden="true" />
+                    <label className={styles.metaCardField}>
+                      <span>Evento</span>
+                      <select
+                        value={normalizeMetaEventName(editorSite.metaEventName, 'none')}
+                        disabled={!editorSite.metaCapiEnabled}
+                        onChange={(event) => {
+                          updateSelectedSite({ metaEventName: event.target.value })
+                          window.setTimeout(() => handleSaveSite(undefined, { silent: true }), 0)
+                        }}
+                        onBlur={() => handleSaveSite(undefined, { silent: true })}
+                      >
+                        {metaEventOptions.map(option => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className={styles.metaSwitch} title={editorSite.metaCapiEnabled ? 'Desactivar' : 'Activar'}>
+                      <input
+                        type="checkbox"
+                        checked={editorSite.metaCapiEnabled}
+                        onChange={(event) => {
+                          updateSelectedSite({ metaCapiEnabled: event.target.checked })
+                          window.setTimeout(() => handleSaveSite(undefined, { silent: true }), 0)
+                        }}
+                      />
+                      <span className={styles.metaSwitchTrack} aria-hidden="true" />
+                    </label>
                   </div>
-                  <div className={styles.metaCardDivider} aria-hidden="true" />
-                  <label className={styles.metaCardField}>
-                    <span>Evento</span>
-                    <select
-                      value={normalizeMetaEventName(editorSite.metaEventName, 'none')}
-                      disabled={!editorSite.metaCapiEnabled}
-                      onChange={(event) => {
-                        updateSelectedSite({ metaEventName: event.target.value })
-                        window.setTimeout(() => handleSaveSite(undefined, { silent: true }), 0)
-                      }}
-                      onBlur={() => handleSaveSite(undefined, { silent: true })}
-                    >
-                      {metaEventOptions.map(option => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className={styles.metaSwitch} title={editorSite.metaCapiEnabled ? 'Desactivar' : 'Activar'}>
-                    <input
-                      type="checkbox"
-                      checked={editorSite.metaCapiEnabled}
-                      onChange={(event) => {
-                        updateSelectedSite({ metaCapiEnabled: event.target.checked })
-                        window.setTimeout(() => handleSaveSite(undefined, { silent: true }), 0)
-                      }}
-                    />
-                    <span className={styles.metaSwitchTrack} aria-hidden="true" />
-                  </label>
                 </div>
                 <div className={styles.editorActions}>
                   <div className={styles.deviceToggle} role="group" aria-label="Vista previa del dispositivo">

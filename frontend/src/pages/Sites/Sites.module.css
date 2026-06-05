@@ -4695,3 +4695,133 @@
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   align-items: stretch;
 }
+
+/* Editor publish bar: route + tracking stay left, actions stay on the same row. */
+.containerFocused .editorHeader {
+  grid-template-columns: minmax(340px, 0.55fr) minmax(920px, 1.45fr);
+  align-items: start;
+}
+
+.editorTopControls {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  justify-content: stretch;
+  gap: 10px;
+}
+
+.editorPublishControls {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.routeField {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-primary);
+}
+
+.routeField > span:first-child {
+  flex: 0 0 auto;
+  color: var(--color-text-secondary);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.publicRouteBox {
+  min-width: 0;
+  max-width: min(420px, 100%);
+  height: var(--editor-control-h, 44px);
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--color-border-subtle, rgba(148, 163, 184, 0.26));
+  border-radius: 10px;
+  background: var(--color-background-primary);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.publicRouteBox:hover {
+  border-color: rgba(148, 163, 184, 0.42);
+}
+
+.publicRouteBox:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.16);
+}
+
+.publicRouteDomain {
+  min-width: 0;
+  max-width: 230px;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border-right: 1px solid var(--color-border-subtle, rgba(148, 163, 184, 0.2));
+  background: color-mix(in srgb, var(--color-background-tertiary) 72%, var(--color-background-primary) 28%);
+  color: var(--color-text-tertiary);
+  font-size: 0.84rem;
+  font-weight: 850;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+}
+
+.publicRouteBox input {
+  width: 122px;
+  min-width: 98px;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-primary);
+  padding: 0 12px;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 800;
+  outline: none;
+}
+
+.publicRouteBoxStandalone input {
+  width: 180px;
+}
+
+.editorTopControls .metaCard {
+  flex: 0 1 390px;
+  min-width: min(390px, 100%);
+  max-width: 390px;
+}
+
+.editorTopControls .editorActions {
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+}
+
+.editorTopControls .editorActions > * {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 1500px) {
+  .containerFocused .editorHeader {
+    grid-template-columns: 1fr;
+  }
+
+  .editorTopControls {
+    grid-template-columns: 1fr;
+    justify-items: stretch;
+  }
+
+  .editorPublishControls,
+  .editorTopControls .editorActions {
+    justify-content: flex-start;
+  }
+}
