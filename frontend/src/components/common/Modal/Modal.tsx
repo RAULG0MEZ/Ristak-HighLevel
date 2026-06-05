@@ -19,6 +19,9 @@ interface ModalProps {
   onConfirm?: () => void
   onCancel?: () => void
   showCloseButton?: boolean
+  className?: string
+  backdropClassName?: string
+  contentClassName?: string
   children?: React.ReactNode
 }
 
@@ -41,6 +44,9 @@ export const Modal: React.FC<ModalProps> = ({
   onConfirm,
   onCancel,
   showCloseButton = true,
+  className = '',
+  backdropClassName = '',
+  contentClassName = '',
   children
 }) => {
   const handleCancel = useCallback(() => {
@@ -77,8 +83,8 @@ export const Modal: React.FC<ModalProps> = ({
   }
 
   const modalContent = (
-    <div className={styles.backdrop} onClick={handleBackdropClick} data-phone-modal-root="true">
-      <div className={`${styles.modal} ${styles[type]} ${styles[size]}`}>
+    <div className={`${styles.backdrop} ${backdropClassName}`.trim()} onClick={handleBackdropClick} data-phone-modal-root="true">
+      <div className={`${styles.modal} ${styles[type]} ${styles[size]} ${className}`.trim()}>
         {/* Solo mostrar header si hay título o botón de cerrar */}
         {(title || showCloseButton) && (
           <div className={styles.header}>
@@ -103,7 +109,7 @@ export const Modal: React.FC<ModalProps> = ({
         )}
 
         {(message || children) && (
-          <div className={styles.content} data-phone-scrollable="true">
+          <div className={`${styles.content} ${contentClassName}`.trim()} data-phone-scrollable="true">
             {message && <p className={styles.message}>{message}</p>}
             {children}
           </div>

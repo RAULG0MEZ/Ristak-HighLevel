@@ -2,14 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   Bell,
-  CalendarClock,
   CalendarDays,
-  CalendarRange,
   Check,
-  ChevronDown,
   ChevronLeft,
-  ChevronRight,
-  Grid3X3,
   LayoutList,
   List,
   Loader2,
@@ -17,7 +12,6 @@ import {
   Plus,
   Rows3,
   Search,
-  Settings,
   X
 } from 'lucide-react'
 import { AppointmentModal } from '@/components/common'
@@ -47,6 +41,7 @@ const MONTH_NAMES = [
 const DAYS_COMPACT = ['D', 'L', 'M', 'M', 'J', 'V', 'S']
 const TIMELINE_START_HOUR = 8
 const TIMELINE_END_HOUR = 20
+const YEAR_GRID_SIZE = 12
 
 const STATUS_LABELS: Record<CalendarEvent['appointmentStatus'], string> = {
   confirmed: 'Confirmada',
@@ -58,14 +53,20 @@ const STATUS_LABELS: Record<CalendarEvent['appointmentStatus'], string> = {
 }
 
 type AccessState = 'checking' | 'allowed' | 'blocked'
-type SheetView = 'calendar' | 'search' | 'settings' | 'view' | null
-type CalendarView = 'month' | 'week' | 'day'
+type SheetView = 'calendar' | 'search' | 'settings' | null
+type CalendarView = 'month' | 'week' | 'day' | 'year' | 'years'
 type AgendaView = 'details' | 'stacked' | 'list'
 
 interface DayCell {
   date: Date
   events: CalendarEvent[]
   isCurrentMonth: boolean
+}
+
+interface MiniMonthDayCell {
+  key: string
+  date: Date | null
+  events: CalendarEvent[]
 }
 
 const getStoredLastCalendarId = () => {
@@ -171,6 +172,10 @@ function buildMonthRange(date: Date) {
   return { start, end }
 }
 
+function getDaysInMonth(year: number, month: number) {
+  return new Date(year, month + 1, 0).getDate()
+}
+
 function getStatusLabel(status: CalendarEvent['appointmentStatus']) {
   return STATUS_LABELS[status] || status
 }
@@ -231,6 +236,7 @@ export const PhoneCalendar: React.FC = () => {
   const [requestingPush, setRequestingPush] = useState(false)
   const stripRef = useRef<HTMLDivElement | null>(null)
   const handledOpenAppointmentRef = useRef<string | null>(null)
+  const calendarTouchStartRef = useRef<{ x: number; y: number } | null>(null)
 
   const formatEventTime = useCallback((value?: string | null) => {
     const date = toDateInTimeZone(value, timezone)
@@ -631,6 +637,44 @@ export const PhoneCalendar: React.FC = () => {
     })
   }, [currentDate, eventsByDate])
 
+  const yearMonths = useMemo(() => {
+    const year = currentDate.getFullYear()
+
+    return MONTH_NAMES.map((name, monthIndex) => {
+      const firstDay = new Date(year, monthIndex, 1)
+      const leadingBlanks = firstDay.getDay()
+      const daysInMonth = getDaysInMonth(year, monthIndex)
+      const cells: MiniMonthDayCell[] = [
+        ...Array.from({ length: leadingBlanks }).map((_, index) => ({
+          key: `${monthIndex}-blank-${index}`,
+          date: null,
+          events: []
+        })),
+        ...Array.from({ length: daysInMonth }).map((_, index) => {
+          const date = new Date(year, monthIndex, index + 1)
+          return {
+            key: formatDateKey(date),
+            date,
+            events: eventsByDate[formatDateKey(date)] || []
+          }
+        })
+      ]
+
+      return {
+        name,
+        monthIndex,
+        daysInMonth,
+        cells
+      }
+    })
+  }, [currentDate, eventsByDate])
+
+  const yearsGrid = useMemo(() => {
+    const selectedYear = currentDate.getFullYear()
+    const startYear = Math.floor(selectedYear / YEAR_GRID_SIZE) * YEAR_GRID_SIZE
+    return Array.from({ length: YEAR_GRID_SIZE }).map((_, index) => startYear + index)
+  }, [currentDate])
+
   const timelineHours = useMemo(() => {
     return Array.from({ length: TIMELINE_END_HOUR - TIMELINE_START_HOUR + 1 }).map((_, index) => (
       TIMELINE_START_HOUR + index
@@ -700,6 +744,9 @@ export const PhoneCalendar: React.FC = () => {
   const handleSelectDate = (date: Date) => {
     setSelectedDate(date)
     setCurrentDate(date)
+    if (calendarView === 'year' || calendarView === 'years') {
+      setCalendarView('month')
+    }
     setSheetView(null)
   }
 
@@ -719,23 +766,95 @@ export const PhoneCalendar: React.FC = () => {
       return
     }
 
+    if (calendarView === 'year') {
+      const selectedDay = selectedDate.getDate()
+      next.setFullYear(currentDate.getFullYear() + direction)
+      const daysInTargetMonth = getDaysInMonth(next.getFullYear(), selectedDate.getMonth())
+      const adjustedSelection = new Date(
+        next.getFullYear(),
+        selectedDate.getMonth(),
+        Math.min(selectedDay, daysInTargetMonth)
+      )
+      setCurrentDate(next)
+      setSelectedDate(adjustedSelection)
+      return
+    }
+
+    if (calendarView === 'years') {
+      next.setFullYear(currentDate.getFullYear() + direction * YEAR_GRID_SIZE)
+      setCurrentDate(next)
+      setSelectedDate(next)
+      return
+    }
+
     next.setDate(next.getDate() + (calendarView === 'week' ? direction * 7 : direction))
     setSelectedDate(next)
     setCurrentDate(next)
-  }
-
-  const handlePrevPeriod = () => {
-    movePeriod(-1)
-  }
-
-  const handleNextPeriod = () => {
-    movePeriod(1)
   }
 
   const handleToday = () => {
     const today = new Date()
     setSelectedDate(today)
     setCurrentDate(today)
+    setCalendarView('month')
+  }
+
+  const handleNavigateUp = () => {
+    if (calendarView === 'month') {
+      setCalendarView('year')
+      return
+    }
+
+    if (calendarView === 'year') {
+      setCalendarView('years')
+      return
+    }
+
+    handleToday()
+  }
+
+  const handleSelectMonthFromYear = (monthIndex: number) => {
+    const year = currentDate.getFullYear()
+    const daysInMonth = getDaysInMonth(year, monthIndex)
+    const nextDate = new Date(year, monthIndex, Math.min(selectedDate.getDate(), daysInMonth))
+    setCurrentDate(nextDate)
+    setSelectedDate(nextDate)
+    setCalendarView('month')
+  }
+
+  const handleSelectYear = (year: number) => {
+    const daysInMonth = getDaysInMonth(year, selectedDate.getMonth())
+    const nextDate = new Date(year, selectedDate.getMonth(), Math.min(selectedDate.getDate(), daysInMonth))
+    setCurrentDate(nextDate)
+    setSelectedDate(nextDate)
+    setCalendarView('year')
+  }
+
+  const handleCalendarTouchStart = (event: React.TouchEvent<HTMLElement>) => {
+    const touch = event.touches[0]
+    if (!touch) return
+    calendarTouchStartRef.current = { x: touch.clientX, y: touch.clientY }
+  }
+
+  const handleCalendarTouchEnd = (event: React.TouchEvent<HTMLElement>) => {
+    const start = calendarTouchStartRef.current
+    const touch = event.changedTouches[0]
+    calendarTouchStartRef.current = null
+    if (!start || !touch) return
+
+    const deltaX = touch.clientX - start.x
+    const deltaY = touch.clientY - start.y
+    if (Math.abs(deltaX) < 56 || Math.abs(deltaX) < Math.abs(deltaY) * 1.35) return
+
+    movePeriod(deltaX < 0 ? 1 : -1)
+  }
+
+  const cycleAgendaView = () => {
+    setAgendaView((view) => {
+      if (view === 'details') return 'list'
+      if (view === 'list') return 'stacked'
+      return 'details'
+    })
   }
 
   const handleCreateAppointment = async (payload: {
@@ -885,7 +1004,6 @@ export const PhoneCalendar: React.FC = () => {
     )
   }
 
-  const selectedMonthLabel = `${MONTH_NAMES[currentDate.getMonth()]} ${currentDate.getFullYear()}`
   const selectedDayLabel = new Intl.DateTimeFormat('es-MX', {
     weekday: 'long',
     day: 'numeric',
@@ -898,20 +1016,45 @@ export const PhoneCalendar: React.FC = () => {
     ? 'Mes'
     : calendarView === 'week'
       ? 'Semana'
-      : 'Día'
+      : calendarView === 'day'
+        ? 'Día'
+        : calendarView === 'year'
+          ? 'Año'
+          : 'Años'
   const agendaViewLabel = agendaView === 'details'
     ? 'Detalles'
     : agendaView === 'stacked'
       ? 'Apilada'
       : 'Lista'
+  const nextAgendaViewLabel = agendaView === 'details'
+    ? 'Lista'
+    : agendaView === 'list'
+      ? 'Apilada'
+      : 'Detalles'
+  const AgendaIcon = agendaView === 'details'
+    ? LayoutList
+    : agendaView === 'list'
+      ? List
+      : Rows3
+  const yearRangeLabel = `${yearsGrid[0]} - ${yearsGrid[yearsGrid.length - 1]}`
   const viewTitle = calendarView === 'month'
     ? MONTH_NAMES[currentDate.getMonth()]
     : calendarView === 'week'
       ? `${formatShortDate(weekStart)} - ${formatShortDate(weekEnd)}`
-      : selectedDayShortLabel
-  const viewSubtitle = calendarView === 'month'
+      : calendarView === 'day'
+        ? selectedDayShortLabel
+        : calendarView === 'year'
+          ? String(currentDate.getFullYear())
+          : yearRangeLabel
+  const viewSubtitle = calendarView === 'week' || calendarView === 'day'
+    ? `${MONTH_NAMES[selectedDate.getMonth()]} ${selectedDate.getFullYear()}`
+    : ''
+  const periodChipLabel = calendarView === 'month'
     ? String(currentDate.getFullYear())
-    : `${MONTH_NAMES[selectedDate.getMonth()]} ${selectedDate.getFullYear()}`
+    : calendarView === 'year'
+      ? 'Años'
+      : 'Hoy'
+  const showAgenda = calendarView !== 'year' && calendarView !== 'years'
 
   const renderEventItem = (event: CalendarEvent) => {
     const eventColor = getEventColor(event)
@@ -945,22 +1088,22 @@ export const PhoneCalendar: React.FC = () => {
 
   return (
     <main className={styles.phonePage} aria-label="Calendario móvil de Ristak">
-      <div className={styles.phoneFrame}>
+      <div className={styles.phoneFrame} data-phone-scrollable="true">
         <header className={styles.header}>
           <div className={styles.headerToolbar}>
             <button
               type="button"
               className={styles.periodChip}
-              onClick={() => setSheetView('view')}
+              onClick={handleNavigateUp}
+              aria-label={calendarView === 'month' ? 'Ver año' : calendarView === 'year' ? 'Ver años' : 'Volver a hoy'}
             >
-              <CalendarRange size={18} />
-              <span>{selectedViewLabel}</span>
-              <ChevronDown size={16} />
+              {calendarView !== 'years' && <ChevronLeft size={21} />}
+              <span>{periodChipLabel}</span>
             </button>
 
             <div className={styles.headerCapsule} aria-label="Acciones rápidas">
-              <button type="button" onClick={() => setSheetView('view')} aria-label="Cambiar vista">
-                <LayoutList size={22} />
+              <button type="button" onClick={cycleAgendaView} aria-label={`Cambiar a vista ${nextAgendaViewLabel.toLowerCase()}`}>
+                <AgendaIcon size={22} />
               </button>
               <button type="button" onClick={() => setSheetView('search')} aria-label="Buscar citas">
                 <Search size={23} />
@@ -971,40 +1114,20 @@ export const PhoneCalendar: React.FC = () => {
             </div>
           </div>
 
-          <div className={styles.titleRow}>
-            <button type="button" className={styles.titleNavButton} onClick={handlePrevPeriod} aria-label="Anterior">
-              <ChevronLeft size={24} />
-            </button>
-            <div>
+          <div className={styles.titleRow} data-calendar-view={calendarView}>
+            <button type="button" className={styles.titleButton} onClick={handleNavigateUp}>
               <h1>{viewTitle}</h1>
-              <p>{viewSubtitle}</p>
-            </div>
-            <button type="button" className={styles.titleNavButton} onClick={handleNextPeriod} aria-label="Siguiente">
-              <ChevronRight size={24} />
-            </button>
-          </div>
-
-          <div className={styles.headerMeta}>
-            <button
-              type="button"
-              className={styles.calendarButton}
-              onClick={() => setSheetView('calendar')}
-              disabled={loading || calendars.length === 0}
-            >
-              <span
-                className={styles.calendarDot}
-                style={{ backgroundColor: selectedCalendar?.eventColor || '#2563eb' }}
-                aria-hidden="true"
-              />
-              <span>{selectedCalendar?.name || 'Calendario'}</span>
-            </button>
-            <button type="button" className={styles.iconButton} onClick={() => setSheetView('settings')} aria-label="Ajustes">
-              <Settings size={18} />
+              {viewSubtitle && <p>{viewSubtitle}</p>}
             </button>
           </div>
         </header>
 
-        <section className={styles.calendarSurface} aria-label={`Vista de ${selectedViewLabel.toLowerCase()}`}>
+        <section
+          className={styles.calendarSurface}
+          aria-label={`Vista de ${selectedViewLabel.toLowerCase()}`}
+          onTouchStart={handleCalendarTouchStart}
+          onTouchEnd={handleCalendarTouchEnd}
+        >
           {calendarView === 'month' && (
             <div className={styles.monthGridPanel}>
               <div className={styles.weekdayRow}>
@@ -1036,7 +1159,71 @@ export const PhoneCalendar: React.FC = () => {
             </div>
           )}
 
-          {calendarView !== 'month' && (
+          {calendarView === 'year' && (
+            <div className={styles.yearPanel}>
+              <div className={styles.yearGrid}>
+                {yearMonths.map((month) => {
+                  const isSelectedMonth =
+                    currentDate.getFullYear() === selectedDate.getFullYear() &&
+                    month.monthIndex === selectedDate.getMonth()
+
+                  return (
+                    <button
+                      key={month.name}
+                      type="button"
+                      className={`${styles.yearMonth} ${isSelectedMonth ? styles.yearMonthSelected : ''}`}
+                      onClick={() => handleSelectMonthFromYear(month.monthIndex)}
+                    >
+                      <strong>{month.name.slice(0, 3)}</strong>
+                      <span className={styles.miniMonthGrid} aria-hidden="true">
+                        {month.cells.map((cell) => {
+                          if (!cell.date) {
+                            return <span key={cell.key} />
+                          }
+
+                          const isSelected = isSameDay(cell.date, selectedDate)
+                          const isToday = isSameDay(cell.date, new Date())
+
+                          return (
+                            <span
+                              key={cell.key}
+                              className={`${styles.miniDay} ${isSelected ? styles.miniDaySelected : ''} ${isToday ? styles.miniDayToday : ''}`}
+                            >
+                              <span>{cell.date.getDate()}</span>
+                              {cell.events.length > 0 && <i />}
+                            </span>
+                          )
+                        })}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {calendarView === 'years' && (
+            <div className={styles.yearsPanel}>
+              <div className={styles.yearsGrid}>
+                {yearsGrid.map((year) => {
+                  const isSelectedYear = year === selectedDate.getFullYear()
+                  const isCurrentYear = year === new Date().getFullYear()
+                  return (
+                    <button
+                      key={year}
+                      type="button"
+                      className={`${styles.yearButton} ${isSelectedYear ? styles.yearButtonSelected : ''} ${isCurrentYear ? styles.yearButtonToday : ''}`}
+                      onClick={() => handleSelectYear(year)}
+                    >
+                      {year}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {(calendarView === 'week' || calendarView === 'day') && (
             <div className={styles.timelineWrap}>
               {calendarView === 'week' && (
                 <section
@@ -1103,50 +1290,46 @@ export const PhoneCalendar: React.FC = () => {
           )}
         </section>
 
-        <section className={styles.agendaHeader}>
-          <div>
-            <p>{selectedDayLabel}</p>
-            <h1>{selectedDayEvents.length ? `${selectedDayEvents.length} cita${selectedDayEvents.length === 1 ? '' : 's'}` : 'Agenda libre'}</h1>
+        {showAgenda && (
+          <>
+            <section className={styles.agendaHeader}>
+              <div>
+                <p>{selectedDayLabel}</p>
+                <h1>{selectedDayEvents.length ? `${selectedDayEvents.length} cita${selectedDayEvents.length === 1 ? '' : 's'}` : 'Agenda libre'}</h1>
+              </div>
+              <button type="button" className={styles.agendaViewButton} onClick={cycleAgendaView}>
+                <AgendaIcon size={15} />
+                <span>{agendaViewLabel}</span>
+              </button>
+              {loading && <Loader2 size={18} className={styles.spinIcon} />}
+            </section>
+
+            <section className={`${styles.agendaList} ${styles[`agendaList_${agendaView}`]}`} aria-label="Citas del día">
+              {selectedDayEvents.length > 0 ? (
+                selectedDayEvents.map(renderEventItem)
+              ) : (
+                <div className={styles.emptyAgenda}>
+                  <CalendarDays size={30} />
+                  <strong>No hay citas este día</strong>
+                  <span>Puedes programar una nueva cita en el horario que necesites.</span>
+                </div>
+              )}
+            </section>
+          </>
+        )}
+
+        <nav className={styles.floatingActions} aria-label="Acciones de calendario">
+          <button type="button" className={styles.todayPill} onClick={handleToday}>
+            Hoy
+          </button>
+          <div className={styles.actionPillGroup}>
+            <button type="button" onClick={() => setSheetView('calendar')} aria-label="Calendarios">
+              <CalendarDays size={24} />
+            </button>
+            <button type="button" onClick={() => setSheetView('settings')} aria-label="Avisos y ajustes">
+              <Bell size={24} />
+            </button>
           </div>
-          <button type="button" className={styles.agendaViewButton} onClick={() => setSheetView('view')}>
-            {agendaViewLabel}
-          </button>
-          {loading && <Loader2 size={18} className={styles.spinIcon} />}
-        </section>
-
-        <section className={`${styles.agendaList} ${styles[`agendaList_${agendaView}`]}`} data-phone-scrollable="true" aria-label="Citas del día">
-          {selectedDayEvents.length > 0 ? (
-            selectedDayEvents.map(renderEventItem)
-          ) : (
-            <div className={styles.emptyAgenda}>
-              <CalendarDays size={30} />
-              <strong>No hay citas este día</strong>
-              <span>Puedes programar una nueva cita en el horario que necesites.</span>
-            </div>
-          )}
-        </section>
-
-        <nav className={styles.bottomBar} aria-label="Acciones de calendario">
-          <button type="button" className={styles.bottomButton} onClick={handleToday}>
-            <CalendarDays size={18} />
-            <span>Hoy</span>
-          </button>
-          <button type="button" className={styles.bottomButton} onClick={() => setSheetView('view')}>
-            <Grid3X3 size={18} />
-            <span>Vista</span>
-          </button>
-          <button type="button" className={styles.addButton} onClick={() => openCreateModal()}>
-            <Plus size={24} />
-            <span>Agendar</span>
-          </button>
-          <button type="button" className={styles.bottomButton} onClick={() => setSheetView('calendar')}>
-            <ChevronDown size={18} />
-            <span>Calendarios</span>
-          </button>
-          <button type="button" className={styles.bottomButton} onClick={() => setSheetView('settings')}>
-            <Bell size={18} />
-            <span>Avisos</span>
-          </button>
         </nav>
       </div>
 
@@ -1159,7 +1342,6 @@ export const PhoneCalendar: React.FC = () => {
                 {sheetView === 'calendar' && 'Calendarios'}
                 {sheetView === 'search' && 'Buscar cita'}
                 {sheetView === 'settings' && 'Ajustes'}
-                {sheetView === 'view' && 'Vista'}
               </h2>
               <button type="button" className={styles.closeSheetButton} onClick={() => setSheetView(null)} aria-label="Cerrar">
                 <X size={18} />
@@ -1186,65 +1368,6 @@ export const PhoneCalendar: React.FC = () => {
                     {selectedCalendar?.id === calendar.id && <Check size={18} />}
                   </button>
                 ))}
-              </div>
-            )}
-
-            {sheetView === 'view' && (
-              <div className={styles.viewPanel} data-phone-scrollable="true">
-                <section className={styles.settingBlock}>
-                  <div className={styles.settingBlockHeader}>
-                    <strong>Ver calendario</strong>
-                    <span>{selectedMonthLabel}</span>
-                  </div>
-                  <div className={styles.viewChoiceGrid}>
-                    {([
-                      ['month', 'Mes', CalendarDays],
-                      ['week', 'Semana', CalendarRange],
-                      ['day', 'Día', CalendarClock]
-                    ] as const).map(([value, label, Icon]) => (
-                      <button
-                        key={value}
-                        type="button"
-                        className={`${styles.viewChoice} ${calendarView === value ? styles.viewChoiceActive : ''}`}
-                        onClick={() => {
-                          setCalendarView(value)
-                          setCurrentDate(selectedDate)
-                          setSheetView(null)
-                        }}
-                      >
-                        <Icon size={19} />
-                        <span>{label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-
-                <section className={styles.settingBlock}>
-                  <div className={styles.settingBlockHeader}>
-                    <strong>Lista de citas</strong>
-                    <span>{agendaViewLabel}</span>
-                  </div>
-                  <div className={styles.viewChoiceGrid}>
-                    {([
-                      ['details', 'Detalles', LayoutList],
-                      ['stacked', 'Apilada', Rows3],
-                      ['list', 'Lista', List]
-                    ] as const).map(([value, label, Icon]) => (
-                      <button
-                        key={value}
-                        type="button"
-                        className={`${styles.viewChoice} ${agendaView === value ? styles.viewChoiceActive : ''}`}
-                        onClick={() => {
-                          setAgendaView(value)
-                          setSheetView(null)
-                        }}
-                      >
-                        <Icon size={19} />
-                        <span>{label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </section>
               </div>
             )}
 
@@ -1360,6 +1483,7 @@ export const PhoneCalendar: React.FC = () => {
         calendar={selectedCalendar}
         accessToken={accessToken || undefined}
         locationId={locationId || undefined}
+        presentation="mobileSheet"
         onSave={handleSaveAppointment}
         onDelete={handleDeleteAppointment}
       />
@@ -1376,6 +1500,7 @@ export const PhoneCalendar: React.FC = () => {
         defaultScheduleMode="custom"
         accessToken={accessToken || undefined}
         locationId={locationId || undefined}
+        presentation="mobileSheet"
         onSave={handleCreateAppointment}
       />
     </main>

@@ -24,6 +24,7 @@ interface AppointmentModalProps {
   defaultScheduleMode?: 'default' | 'custom'; // Modo de selección de horario al abrir
   accessToken?: string; // Token para cargar slots disponibles
   locationId?: string; // Location ID para consultas
+  presentation?: 'dialog' | 'mobileSheet';
   onSave: (eventIdOrPayload: string | any, updates?: Partial<CalendarEvent>) => Promise<void>;
   onDelete?: (eventId: string) => Promise<void>;
 }
@@ -238,6 +239,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
   defaultScheduleMode = 'default',
   accessToken,
   locationId,
+  presentation = 'dialog',
   onSave,
   onDelete
 }) => {
@@ -874,11 +876,20 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
   const timeZoneShort = new Intl.DateTimeFormat('es-MX', { timeZone: selectedTimeZone, timeZoneName: 'short' })
     .formatToParts(startDate ?? new Date())
     .find((part) => part.type === 'timeZoneName')?.value ?? selectedTimeZone;
+  const isMobileSheet = presentation === 'mobileSheet';
 
   return (
     <>
-    <Modal isOpen={isOpen} onClose={onClose} title="" size="lg">
-      <div className={styles.container}>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={isMobileSheet ? (isCreateMode ? 'Nueva cita' : 'Editar cita') : ''}
+      size="lg"
+      className={isMobileSheet ? styles.mobileSheetModal : undefined}
+      backdropClassName={isMobileSheet ? styles.mobileSheetBackdrop : undefined}
+      contentClassName={isMobileSheet ? styles.mobileSheetContent : undefined}
+    >
+      <div className={`${styles.container} ${isMobileSheet ? styles.mobileSheetContainer : ''}`}>
         <div className={styles.summary}>
           <div className={styles.summaryBody}>
             <h3 className={styles.summaryTitle}>{formData.title.trim() || '(Sin título)'}</h3>
