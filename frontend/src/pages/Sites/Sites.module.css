@@ -5457,3 +5457,37 @@
     max-height: 100%;
   }
 }
+
+/* Sites page frame: keep the workspace flush with the app chrome, without an
+   outer card border in library, template flow, or editor mode. */
+.pageFrame .container,
+.pageFrame .containerFocused,
+.pageFrame .container:not(.containerFocused),
+.pageFrame .containerFocused:has(.createPanel):not(:has(.builder)),
+.pageFrame .containerFocused:has(.builder) {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.pageFrame .container:not(.containerFocused) {
+  min-height: calc(100dvh - var(--header-height, 84px));
+  margin: 0 auto;
+  padding: 24px 18px 18px;
+}
+
+.pageFrame .containerFocused {
+  min-height: calc(100dvh - var(--header-height, 84px));
+  margin: 0 auto;
+}
+
+.pageFrame .containerFocused:has(.createPanel):not(:has(.builder)) {
+  width: min(1960px, calc(100% - clamp(28px, 2.8vw, 64px)));
+  margin: 0 auto;
+  padding: 24px 18px 18px;
+}
+
+.pageFrame .containerFocused:has(.builder) {
+  margin: 0 auto;
+}
