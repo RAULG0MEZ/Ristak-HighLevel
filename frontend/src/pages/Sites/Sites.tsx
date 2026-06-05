@@ -214,6 +214,7 @@ const blockIcons: Partial<Record<SiteBlockType, React.ReactNode>> = {
   text: <FileText size={15} />,
   embed: <Globe2 size={15} />,
   calendar_embed: <CalendarDays size={15} />,
+  section: <LayoutTemplate size={15} />,
   hero: <LayoutTemplate size={15} />,
   image: <Image size={15} />,
   video: <Video size={15} />,
@@ -782,6 +783,10 @@ const getBlockCanvasStyle = (block: SiteBlock): React.CSSProperties => {
   if (settings.listColumns !== undefined) style['--rstk-list-columns'] = `repeat(${getSettingNumber(settings, 'listColumns', 3, 1, 4)}, minmax(0, 1fr))`
   if (settings.cardAlign !== undefined) style['--rstk-card-align'] = getHorizontalAlign(settings, 'cardAlign', 'left')
   if (settings.fieldRadius !== undefined) style['--rstk-field-radius'] = `${getSettingNumber(settings, 'fieldRadius', 12, 0, 32)}px`
+  if (block.blockType === SECTION_BLOCK_TYPE) {
+    style['--rstk-section-columns'] = `${getSectionColumns(block)}`
+    style['--rstk-section-gap'] = `${getSettingNumber(settings, 'sectionGap', DEFAULT_SECTION_GAP, 0, 80)}px`
+  }
 
   return style as React.CSSProperties
 }
@@ -850,6 +855,92 @@ const normalizePagesForSave = (pages: SitePage[]) =>
 const getBlockPageId = (block: SiteBlock, pages: SitePage[]) => {
   const pageId = getSettingString(block.settings || {}, 'pageId')
   return pages.some(page => page.id === pageId) ? pageId : pages[0]?.id || DEFAULT_FUNNEL_PAGE_ID
+}
+
+const isSectionBlock = (block?: SiteBlock | null) => block?.blockType === SECTION_BLOCK_TYPE
+
+const getSectionColumns = (block?: SiteBlock | null) => {
+  const value = Number(block?.settings?.sectionColumns ?? block?.settings?.columns)
+  if (!Number.isFinite(value)) return 1
+  return Math.min(3, Math.max(1, Math.round(value)))
+}
+
+const getBlockSectionId = (block: SiteBlock) => getSettingString(block.settings || {}, 'sectionId')
+
+const getBlockSectionColumn = (block: SiteBlock) => {
+  const value = Number(block.settings?.sectionColumn)
+  if (!Number.isFinite(value)) return 0
+  return Math.min(2, Math.max(0, Math.round(value)))
+}
+
+const getSectionColumnLabel = (columns: number) =>
+  columns === 1 ? 'Franja 1 columna' : `Franja ${columns} columnas`
+
+const getTextForPaint = (paint: string, fallback = '#111827') => {
+  if (!isCssColor(paint)) return fallback
+  return relLum(paint) > 0.58 ? '#111827' : '#ffffff'
+}
+
+const getNextSectionContrast = (site: PublicSite, pageBlocks: SiteBlock[]) => {
+  const sectionCount = pageBlocks.filter(isSectionBlock).length
+  const darkPage = isSiteDark(site)
+  const blockBg = sectionCount % 2 === 0
+    ? (darkPage ? '#ffffff' : '#111827')
+    : (darkPage ? '#111827' : '#ffffff')
+
+  return {
+    blockBg,
+    blockText: getTextForPaint(blockBg, darkPage ? '#111827' : '#ffffff')
+  }
+}
+
+const makeLandingLane = (section: SiteBlock | null, sortOrder: number): LandingSectionLane => {
+  const columns = section ? getSectionColumns(section) : 1
+  return {
+    id: section?.id || '__legacy-section__',
+    section,
+    columns,
+    columnBlocks: Array.from({ length: columns }, () => []),
+    sortOrder
+  }
+}
+
+const buildLandingSectionLanes = (pageBlocks: SiteBlock[]): LandingSectionLane[] => {
+  const sortedBlocks = [...pageBlocks].sort((a, b) => a.sortOrder - b.sortOrder)
+  const sectionLanes = sortedBlocks
+    .filter(isSectionBlock)
+    .map(block => makeLandingLane(block, block.sortOrder))
+  const sectionById = new Map(sectionLanes.map(lane => [lane.id, lane]))
+  let legacyLane: LandingSectionLane | null = null
+
+  const ensureLegacyLane = () => {
+    if (!legacyLane) {
+      legacyLane = makeLandingLane(null, -1)
+      sectionLanes.unshift(legacyLane)
+    }
+    return legacyLane
+  }
+
+  sortedBlocks.forEach(block => {
+    if (isSectionBlock(block)) return
+
+    const explicitSectionId = getBlockSectionId(block)
+    const explicitLane = explicitSectionId ? sectionById.get(explicitSectionId) : null
+    const previousLane = explicitLane || [...sectionLanes]
+      .filter(lane => lane.section && lane.sortOrder <= block.sortOrder)
+      .sort((a, b) => b.sortOrder - a.sortOrder)[0]
+    const lane = previousLane || ensureLegacyLane()
+    const columnIndex = Math.min(lane.columns - 1, getBlockSectionColumn(block))
+    lane.columnBlocks[columnIndex].push(block)
+  })
+
+  return sectionLanes
+    .filter(lane => lane.section || lane.columnBlocks.some(column => column.length > 0))
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map(lane => ({
+      ...lane,
+      columnBlocks: lane.columnBlocks.map(column => [...column].sort((a, b) => a.sortOrder - b.sortOrder))
+    }))
 }
 
 const getButtonAction = (settings: Record<string, unknown>): ButtonAction => {
@@ -1098,9 +1189,11 @@ const defaultBlockPayload = (blockType: SiteBlockType, siteId: string, siteType?
     return {
       blockType,
       label,
-      content: 'Nueva seccion',
+      content: '',
       settings: blockSettings({
-        subtitle: 'Usa esta franja para separar zonas y cambiar el fondo.',
+        subtitle: '',
+        sectionColumns: 1,
+        sectionGap: DEFAULT_SECTION_GAP,
         blockBg: 'transparent',
         blockText: siteType === 'landing_page' ? '#f4f4f6' : '#111827',
         blockPaddingTop: 80,
@@ -1194,7 +1287,7 @@ const defaultBlockPayload = (blockType: SiteBlockType, siteId: string, siteType?
   }
 }
 
-const makePreviewBlock = (blockType: SiteBlockType, site: PublicSite, pageId?: string): SiteBlock => {
+const makePreviewBlock = (blockType: SiteBlockType, site: PublicSite, pageId?: string, initialSettings: Record<string, unknown> = {}): SiteBlock => {
   const payload = defaultBlockPayload(blockType, site.id, site.siteType)
   return {
     id: '__palette-preview__',
@@ -1207,6 +1300,7 @@ const makePreviewBlock = (blockType: SiteBlockType, site: PublicSite, pageId?: s
     options: payload.options || [],
     settings: {
       ...(payload.settings || {}),
+      ...initialSettings,
       ...(pageId ? { pageId } : {})
     },
     sortOrder: -1,
@@ -1236,7 +1330,7 @@ export const Sites: React.FC = () => {
   const [draggingPageId, setDraggingPageId] = useState<string | null>(null)
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
   const [paletteDragging, setPaletteDragging] = useState(false)
-  const [paletteDragBlockType, setPaletteDragBlockType] = useState<SiteBlockType | null>(null)
+  const [paletteDragPayload, setPaletteDragPayload] = useState<PaletteDragPayload | null>(null)
   const [paletteInsertIndex, setPaletteInsertIndex] = useState<number | null>(null)
   const [leadRows, setLeadRows] = useState<LeadRow[]>([])
   const [loadingLeads, setLoadingLeads] = useState(false)
@@ -1283,8 +1377,17 @@ export const Sites: React.FC = () => {
   const isFocusedSitesMode = createFlow !== 'closed' || Boolean(editorSite)
   const createFlowHeaderCopy = getCreateFlowHeaderCopy(createFlow)
   const canvasTheme = editorSite ? buildCanvasTheme(editorSite, device) : null
-  const palettePreviewBlock = editorSite && paletteDragBlockType
-    ? makePreviewBlock(paletteDragBlockType, editorSite, isLanding(editorSite) ? activePage?.id : undefined)
+  const landingSectionLanes = useMemo(
+    () => editorSite && isLanding(editorSite) ? buildLandingSectionLanes(canvasBlocks) : [],
+    [canvasBlocks, editorSite]
+  )
+  const palettePreviewBlock = editorSite && paletteDragPayload
+    ? makePreviewBlock(
+      paletteDragPayload.blockType,
+      editorSite,
+      isLanding(editorSite) ? activePage?.id : undefined,
+      paletteDragPayload.initialSettings
+    )
     : null
 
   useEffect(() => {
@@ -1942,14 +2045,66 @@ export const Sites: React.FC = () => {
     )
   }
 
-  const handleAddBlock = async (blockType: SiteBlockType, insertIndex?: number) => {
+  const handleAddBlock = async (blockType: SiteBlockType, addOptions: AddBlockOptions | number = {}) => {
     if (!selectedSite) return
     try {
+      const options = typeof addOptions === 'number' ? { insertIndex: addOptions } : addOptions
       const payload = defaultBlockPayload(blockType, selectedSite.id, selectedSite.siteType)
+      const initialSettings = options.initialSettings || {}
       if (isLanding(selectedSite) && activePage) {
+        const pageSectionIds = new Set(canvasBlocks.filter(isSectionBlock).map(block => block.id))
+        const isSection = blockType === SECTION_BLOCK_TYPE
+        const selectedTarget = selectedBlock
+          ? isSectionBlock(selectedBlock)
+            ? { sectionId: selectedBlock.id, sectionColumn: 0 }
+            : getBlockSectionId(selectedBlock) && pageSectionIds.has(getBlockSectionId(selectedBlock))
+              ? { sectionId: getBlockSectionId(selectedBlock), sectionColumn: getBlockSectionColumn(selectedBlock) }
+              : null
+          : null
+        const singleSectionTarget = pageSectionIds.size === 1
+          ? { sectionId: [...pageSectionIds][0], sectionColumn: 0 }
+          : null
+        const targetSectionId = options.sectionId && pageSectionIds.has(options.sectionId)
+          ? options.sectionId
+          : selectedTarget?.sectionId || singleSectionTarget?.sectionId || ''
+        const targetColumn = Number.isFinite(Number(options.sectionColumn))
+          ? Math.min(2, Math.max(0, Math.round(Number(options.sectionColumn))))
+          : selectedTarget?.sectionColumn || singleSectionTarget?.sectionColumn || 0
+
+        if (!isSection && !targetSectionId) {
+          showToast('warning', 'Primero agrega una franja', 'Arrastra una franja de 1, 2 o 3 columnas y luego mete el contenido dentro.')
+          return
+        }
+
+        if (isSection) {
+          const columns = getSettingNumber(initialSettings, 'sectionColumns', 1, 1, 3)
+          const contrast = getNextSectionContrast(selectedSite, canvasBlocks)
+          payload.label = getSectionColumnLabel(columns)
+          payload.content = ''
+          payload.settings = {
+            ...(payload.settings || {}),
+            ...contrast,
+            ...initialSettings,
+            sectionColumns: columns,
+            sectionGap: getSettingNumber(initialSettings, 'sectionGap', DEFAULT_SECTION_GAP, 0, 80)
+          }
+        } else {
+          payload.settings = {
+            ...(payload.settings || {}),
+            ...initialSettings,
+            sectionId: targetSectionId,
+            sectionColumn: targetColumn
+          }
+        }
+
         payload.settings = {
           ...(payload.settings || {}),
           pageId: activePage.id
+        }
+      } else if (Object.keys(initialSettings).length > 0) {
+        payload.settings = {
+          ...(payload.settings || {}),
+          ...initialSettings
         }
       }
       let site = await sitesService.createBlock(selectedSite.id, payload)
@@ -1958,12 +2113,12 @@ export const Sites: React.FC = () => {
       const added = [...(site.blocks || [])]
         .filter(block => !isLanding(site) || getBlockPageId(block, sitePages) === (activePage?.id || DEFAULT_FUNNEL_PAGE_ID))
         .sort((a, b) => b.sortOrder - a.sortOrder)[0]
-      if (added && Number.isFinite(insertIndex)) {
+      if (added && Number.isFinite(options.insertIndex)) {
         const pageBlocks = [...(site.blocks || [])]
           .filter(block => !isLanding(site) || getBlockPageId(block, sitePages) === (activePage?.id || DEFAULT_FUNNEL_PAGE_ID))
           .sort((a, b) => a.sortOrder - b.sortOrder)
         const withoutAdded = pageBlocks.filter(block => block.id !== added.id)
-        const boundedIndex = Math.max(0, Math.min(Number(insertIndex), withoutAdded.length))
+        const boundedIndex = Math.max(0, Math.min(Number(options.insertIndex), withoutAdded.length))
         const orderedBlocks = [
           ...withoutAdded.slice(0, boundedIndex),
           added,
@@ -2131,27 +2286,78 @@ export const Sites: React.FC = () => {
     return targetIndex < 0 ? blockNodes.length : targetIndex
   }
 
+  const getPalettePayload = (dataTransfer: DataTransfer): PaletteDragPayload | null => {
+    const blockType = dataTransfer.getData('application/ristak-block') as SiteBlockType
+    if (!blockType) return null
+
+    const rawSettings = dataTransfer.getData('application/ristak-block-settings')
+    let initialSettings: Record<string, unknown> | undefined
+    if (rawSettings) {
+      try {
+        const parsed = JSON.parse(rawSettings)
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          initialSettings = parsed as Record<string, unknown>
+        }
+      } catch {
+        initialSettings = undefined
+      }
+    }
+
+    return { blockType, initialSettings }
+  }
+
+  const getDropSectionTarget = (event: React.DragEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement | null
+    const column = target?.closest<HTMLElement>('[data-rstk-section-column]')
+    const sectionId = column?.dataset.rstkSectionId || target?.closest<HTMLElement>('[data-rstk-section-id]')?.dataset.rstkSectionId || ''
+    const columnIndex = Number(column?.dataset.rstkSectionColumn)
+    return sectionId
+      ? {
+          sectionId,
+          sectionColumn: Number.isFinite(columnIndex) ? columnIndex : 0
+        }
+      : null
+  }
+
   const resetPaletteDrag = () => {
     setPaletteDragging(false)
-    setPaletteDragBlockType(null)
+    setPaletteDragPayload(null)
     setPaletteInsertIndex(null)
   }
 
   const handleCanvasDrop = async (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault()
-    const blockType = event.dataTransfer.getData('application/ristak-block') as SiteBlockType
+    const payload = getPalettePayload(event.dataTransfer)
     const insertIndex = paletteInsertIndex ?? getPaletteInsertIndex(event)
+    const target = payload && editorSite && isLanding(editorSite) && payload.blockType !== SECTION_BLOCK_TYPE
+      ? getDropSectionTarget(event)
+      : null
     resetPaletteDrag()
-    if (blockType) await handleAddBlock(blockType, insertIndex)
+    if (!payload) return
+    if (editorSite && isLanding(editorSite) && payload.blockType !== SECTION_BLOCK_TYPE && !target) {
+      showToast('warning', 'Suelta dentro de una franja', 'El contenido necesita una franja para poder vivir ahi.')
+      return
+    }
+    await handleAddBlock(payload.blockType, {
+      insertIndex: payload.blockType === SECTION_BLOCK_TYPE ? insertIndex : undefined,
+      initialSettings: payload.initialSettings,
+      sectionId: target?.sectionId,
+      sectionColumn: target?.sectionColumn
+    })
   }
 
   const handleCanvasDragOver = (event: React.DragEvent<HTMLDivElement>) => {
     if (event.dataTransfer.types.includes('application/ristak-block')) {
       event.preventDefault()
       event.dataTransfer.dropEffect = 'move'
-      const blockType = event.dataTransfer.getData('application/ristak-block') as SiteBlockType
+      const payload = getPalettePayload(event.dataTransfer)
       if (!paletteDragging) setPaletteDragging(true)
-      if (blockType && blockType !== paletteDragBlockType) setPaletteDragBlockType(blockType)
+      if (payload && (
+        payload.blockType !== paletteDragPayload?.blockType ||
+        JSON.stringify(payload.initialSettings || {}) !== JSON.stringify(paletteDragPayload?.initialSettings || {})
+      )) {
+        setPaletteDragPayload(payload)
+      }
       setPaletteInsertIndex(getPaletteInsertIndex(event))
     }
   }
@@ -2380,8 +2586,8 @@ export const Sites: React.FC = () => {
                   <Palette
                     blockTypes={isLanding(editorSite) ? landingBlockTypes : formBlockTypes}
                     onAdd={handleAddBlock}
-                    onPaletteDragStart={(blockType) => {
-                      setPaletteDragBlockType(blockType)
+                    onPaletteDragStart={(payload) => {
+                      setPaletteDragPayload(payload)
                       setPaletteDragging(true)
                       setPaletteInsertIndex(canvasBlocks.length)
                     }}
@@ -2435,14 +2641,49 @@ export const Sites: React.FC = () => {
                                   />
                                 </div>
                               )}
-                              {canvasBlocks.length === 0 ? (
+                              {isLanding(editorSite) ? (
+                                landingSectionLanes.length === 0 ? (
+                                  palettePreviewBlock && paletteDragPayload?.blockType === SECTION_BLOCK_TYPE ? (
+                                    <PaletteInsertPreview block={palettePreviewBlock} forms={forms} calendars={calendars} />
+                                  ) : (
+                                    <div className="rstkDropEmpty">
+                                      <Plus size={22} />
+                                      <p>Arrastra primero una franja de 1, 2 o 3 columnas.</p>
+                                    </div>
+                                  )
+                                ) : (
+                                  <>
+                                    {palettePreviewBlock && paletteDragPayload?.blockType === SECTION_BLOCK_TYPE && paletteInsertIndex === 0 && (
+                                      <PaletteInsertPreview block={palettePreviewBlock} forms={forms} calendars={calendars} />
+                                    )}
+                                    <LandingCanvasSections
+                                      lanes={landingSectionLanes}
+                                      blocks={canvasBlocks}
+                                      selectedBlockId={selectedBlock?.id || ''}
+                                      site={editorSite}
+                                      forms={forms}
+                                      calendars={calendars}
+                                      pages={pages}
+                                      activePageId={activePage?.id || DEFAULT_FUNNEL_PAGE_ID}
+                                      palettePreviewBlock={palettePreviewBlock}
+                                      paletteInsertIndex={paletteInsertIndex}
+                                      paletteDragging={paletteDragging}
+                                      onSelectBlock={setSelectedBlockId}
+                                      onDeleteBlock={handleDeleteBlock}
+                                      onPatchBlock={patchBlockLocal}
+                                      onPatchBlockSettings={patchBlockSettingsLocal}
+                                      onSaveBlock={handleSaveBlock}
+                                    />
+                                  </>
+                                )
+                              ) : canvasBlocks.length === 0 ? (
                                 palettePreviewBlock ? (
                                   <PaletteInsertPreview block={palettePreviewBlock} forms={forms} calendars={calendars} />
                                 ) : (
-                                <div className="rstkDropEmpty">
-                                  <Plus size={22} />
-                                  <p>Arrastra bloques desde la barra de la izquierda o haz click para agregarlos.</p>
-                                </div>
+                                  <div className="rstkDropEmpty">
+                                    <Plus size={22} />
+                                    <p>Arrastra bloques desde la barra de la izquierda o haz click para agregarlos.</p>
+                                  </div>
                                 )
                               ) : (
                                 <>
@@ -3316,9 +3557,26 @@ const CanvasChrome: React.FC<{
   )
 }
 
-const paletteGroups: Array<{ label: string; types: SiteBlockType[] }> = [
-  { label: 'Contenido', types: ['hero', 'section', 'title', 'subtitle', 'text', 'image', 'video', 'button', 'benefits', 'testimonials', 'services', 'faq', 'cta', 'embed', 'calendar_embed', 'form_embed'] },
-  { label: 'Campos', types: ['short_text', 'paragraph', 'email', 'phone', 'number', 'currency', 'date', 'dropdown', 'radio', 'checkboxes', 'description'] }
+const paletteGroups: Array<{ label: string; items: PaletteItem[] }> = [
+  {
+    label: 'Franjas',
+    items: [1, 2, 3].map(columns => ({
+      id: `section-${columns}`,
+      label: getSectionColumnLabel(columns),
+      blockType: SECTION_BLOCK_TYPE,
+      initialSettings: { sectionColumns: columns }
+    }))
+  },
+  {
+    label: 'Contenido',
+    items: ['hero', 'title', 'subtitle', 'text', 'image', 'video', 'button', 'benefits', 'testimonials', 'services', 'faq', 'cta', 'embed', 'calendar_embed', 'form_embed']
+      .map(blockType => ({ id: blockType, label: blockLabels[blockType as SiteBlockType], blockType: blockType as SiteBlockType }))
+  },
+  {
+    label: 'Campos',
+    items: ['short_text', 'paragraph', 'email', 'phone', 'number', 'currency', 'date', 'dropdown', 'radio', 'checkboxes', 'description']
+      .map(blockType => ({ id: blockType, label: blockLabels[blockType as SiteBlockType], blockType: blockType as SiteBlockType }))
+  }
 ]
 
 interface FunnelPagesPanelProps {
@@ -3484,14 +3742,14 @@ const EditablePageTitle: React.FC<{
 
 const Palette: React.FC<{
   blockTypes: SiteBlockType[]
-  onAdd: (blockType: SiteBlockType) => void
-  onPaletteDragStart: (blockType: SiteBlockType) => void
+  onAdd: (blockType: SiteBlockType, options?: AddBlockOptions) => void
+  onPaletteDragStart: (payload: PaletteDragPayload) => void
   onPaletteDragEnd: () => void
 }> = ({ blockTypes, onAdd, onPaletteDragStart, onPaletteDragEnd }) => {
   const allowed = new Set(blockTypes)
   const groups = paletteGroups
-    .map(group => ({ label: group.label, types: group.types.filter(type => allowed.has(type)) }))
-    .filter(group => group.types.length > 0)
+    .map(group => ({ label: group.label, items: group.items.filter(item => allowed.has(item.blockType)) }))
+    .filter(group => group.items.length > 0)
 
   return (
     <aside className={styles.palette}>
@@ -3506,23 +3764,26 @@ const Palette: React.FC<{
               <span className={styles.paletteGroupHint}>(Arrastra)</span>
             </span>
             <div className={styles.paletteItems}>
-              {group.types.map(blockType => (
+              {group.items.map(item => (
                 <button
-                  key={blockType}
+                  key={item.id}
                   type="button"
                   className={styles.paletteItem}
                   draggable
                   onDragStart={(event) => {
                     event.dataTransfer.effectAllowed = 'move'
                     event.dataTransfer.dropEffect = 'move'
-                    event.dataTransfer.setData('application/ristak-block', blockType)
-                    onPaletteDragStart(blockType)
+                    event.dataTransfer.setData('application/ristak-block', item.blockType)
+                    if (item.initialSettings) {
+                      event.dataTransfer.setData('application/ristak-block-settings', JSON.stringify(item.initialSettings))
+                    }
+                    onPaletteDragStart({ blockType: item.blockType, initialSettings: item.initialSettings })
                   }}
                   onDragEnd={onPaletteDragEnd}
-                  onClick={() => onAdd(blockType)}
+                  onClick={() => onAdd(item.blockType, { initialSettings: item.initialSettings })}
                 >
-                  <span className={styles.paletteIcon}>{blockIcons[blockType]}</span>
-                  <span>{blockLabels[blockType]}</span>
+                  <span className={styles.paletteIcon}>{blockIcons[item.blockType]}</span>
+                  <span>{item.label}</span>
                   <GripVertical className={styles.paletteGrip} size={14} />
                 </button>
               ))}
@@ -3743,6 +4004,258 @@ const SortableCanvasBlock: React.FC<SortableCanvasBlockProps> = ({
   )
 }
 
+interface LandingCanvasSectionsProps {
+  lanes: LandingSectionLane[]
+  blocks: SiteBlock[]
+  selectedBlockId: string
+  site: PublicSite
+  forms: PublicSite[]
+  calendars: CalendarType[]
+  pages: SitePage[]
+  activePageId: string
+  palettePreviewBlock: SiteBlock | null
+  paletteInsertIndex: number | null
+  paletteDragging: boolean
+  onSelectBlock: (blockId: string) => void
+  onDeleteBlock: (blockId: string) => void
+  onPatchBlock: (blockId: string, patch: Partial<SiteBlock>) => void
+  onPatchBlockSettings: (block: SiteBlock, patch: Record<string, unknown>) => void
+  onSaveBlock: (blockId: string) => void
+}
+
+const LandingCanvasSections: React.FC<LandingCanvasSectionsProps> = ({
+  lanes,
+  blocks,
+  selectedBlockId,
+  site,
+  forms,
+  calendars,
+  pages,
+  activePageId,
+  palettePreviewBlock,
+  paletteInsertIndex,
+  paletteDragging,
+  onSelectBlock,
+  onDeleteBlock,
+  onPatchBlock,
+  onPatchBlockSettings,
+  onSaveBlock
+}) => {
+  const blockIndexById = new Map(blocks.map((block, index) => [block.id, index]))
+
+  return (
+    <>
+      {lanes.map((lane, laneIndex) => {
+        const sectionInsertIndex = lane.section ? (blockIndexById.get(lane.section.id) ?? laneIndex) : laneIndex
+        return (
+          <React.Fragment key={lane.id}>
+            {lane.section ? (
+              <SortableLandingSection
+                lane={lane}
+                blocks={blocks}
+                blockIndexById={blockIndexById}
+                selectedBlockId={selectedBlockId}
+                site={site}
+                forms={forms}
+                calendars={calendars}
+                pages={pages}
+                activePageId={activePageId}
+                paletteDragging={paletteDragging}
+                onSelectBlock={onSelectBlock}
+                onDeleteBlock={onDeleteBlock}
+                onPatchBlock={onPatchBlock}
+                onPatchBlockSettings={onPatchBlockSettings}
+                onSaveBlock={onSaveBlock}
+              />
+            ) : (
+              <LegacyLandingSection
+                lane={lane}
+                blocks={blocks}
+                blockIndexById={blockIndexById}
+                selectedBlockId={selectedBlockId}
+                site={site}
+                forms={forms}
+                calendars={calendars}
+                pages={pages}
+                activePageId={activePageId}
+                onSelectBlock={onSelectBlock}
+                onDeleteBlock={onDeleteBlock}
+                onPatchBlock={onPatchBlock}
+                onPatchBlockSettings={onPatchBlockSettings}
+                onSaveBlock={onSaveBlock}
+              />
+            )}
+            {palettePreviewBlock && palettePreviewBlock.blockType === SECTION_BLOCK_TYPE && paletteInsertIndex === sectionInsertIndex + 1 && (
+              <PaletteInsertPreview block={palettePreviewBlock} forms={forms} calendars={calendars} />
+            )}
+          </React.Fragment>
+        )
+      })}
+    </>
+  )
+}
+
+interface LandingSectionRenderProps {
+  lane: LandingSectionLane
+  blocks: SiteBlock[]
+  blockIndexById: Map<string, number>
+  selectedBlockId: string
+  site: PublicSite
+  forms: PublicSite[]
+  calendars: CalendarType[]
+  pages: SitePage[]
+  activePageId: string
+  paletteDragging?: boolean
+  onSelectBlock: (blockId: string) => void
+  onDeleteBlock: (blockId: string) => void
+  onPatchBlock: (blockId: string, patch: Partial<SiteBlock>) => void
+  onPatchBlockSettings: (block: SiteBlock, patch: Record<string, unknown>) => void
+  onSaveBlock: (blockId: string) => void
+}
+
+const LandingSectionColumns: React.FC<LandingSectionRenderProps> = ({
+  lane,
+  blocks,
+  blockIndexById,
+  selectedBlockId,
+  site,
+  forms,
+  calendars,
+  pages,
+  activePageId,
+  paletteDragging,
+  onSelectBlock,
+  onDeleteBlock,
+  onPatchBlock,
+  onPatchBlockSettings,
+  onSaveBlock
+}) => (
+  <div className="rstk-section-columns">
+    {lane.columnBlocks.map((columnBlocks, columnIndex) => (
+      <div
+        key={`${lane.id}-${columnIndex}`}
+        className={`rstk-section-column ${paletteDragging && lane.section ? 'rstk-section-column-active' : ''}`}
+        data-rstk-section-id={lane.section?.id || undefined}
+        data-rstk-section-column={lane.section ? columnIndex : undefined}
+      >
+        {columnBlocks.map(block => (
+          <SortableCanvasBlock
+            key={block.id}
+            block={block}
+            blocks={blocks}
+            index={blockIndexById.get(block.id) ?? 0}
+            selected={selectedBlockId === block.id}
+            site={site}
+            forms={forms}
+            calendars={calendars}
+            pages={pages}
+            activePageId={activePageId}
+            onSelect={() => onSelectBlock(block.id)}
+            onDelete={() => onDeleteBlock(block.id)}
+            onPatchBlock={(patch) => onPatchBlock(block.id, patch)}
+            onPatchSettings={(patch) => onPatchBlockSettings(block, patch)}
+            onSave={() => onSaveBlock(block.id)}
+          />
+        ))}
+        {lane.section && columnBlocks.length === 0 && (
+          <div className="rstkColumnDropZone">Suelta contenido aqui</div>
+        )}
+      </div>
+    ))}
+  </div>
+)
+
+const SortableLandingSection: React.FC<LandingSectionRenderProps> = ({
+  lane,
+  blocks,
+  blockIndexById,
+  selectedBlockId,
+  site,
+  forms,
+  calendars,
+  pages,
+  activePageId,
+  paletteDragging,
+  onSelectBlock,
+  onDeleteBlock,
+  onPatchBlock,
+  onPatchBlockSettings,
+  onSaveBlock
+}) => {
+  const section = lane.section!
+  const settings = section.settings || {}
+  const selected = selectedBlockId === section.id
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: section.id,
+    animateLayoutChanges: sortableAnimateLayoutChanges,
+    transition: sortableTransition
+  })
+  const hasHeading = Boolean(section.content || getSettingString(settings, 'subtitle'))
+
+  return (
+    <section
+      ref={setNodeRef}
+      data-rstk-block-index={blockIndexById.get(section.id) ?? 0}
+      data-rstk-section-index={blockIndexById.get(section.id) ?? 0}
+      data-rstk-section-id={section.id}
+      className={getBlockStyleClassName(section, `rstk-section-lane rstkSel ${selected ? 'rstkSelActive' : ''} ${isDragging ? 'rstkSelDragging' : ''}`)}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition: transition || 'transform 190ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+        opacity: isDragging ? 0.34 : undefined,
+        zIndex: isDragging ? 8 : undefined,
+        ...getBlockCanvasStyle(section)
+      }}
+      onClick={(event) => {
+        event.stopPropagation()
+        onSelectBlock(section.id)
+      }}
+    >
+      <div className="rstkBlockTools">
+        <button type="button" className="rstkBlockTool rstkBlockToolDrag" {...attributes} {...listeners} aria-label="Reordenar franja">
+          <GripVertical size={15} />
+        </button>
+        <button type="button" className="rstkBlockTool rstkBlockToolDelete" onClick={(event) => { event.stopPropagation(); onDeleteBlock(section.id) }} aria-label="Eliminar franja">
+          <Trash2 size={14} />
+        </button>
+      </div>
+      <div className="rstk-section-inner">
+        {hasHeading && (
+          <div className="rstk-section-heading">
+            <InlineEditable as="h2" value={section.content} placeholder="Titulo opcional" onChange={(value) => onPatchBlock(section.id, { content: value })} onCommit={() => onSaveBlock(section.id)} />
+            <InlineEditable as="p" multiline value={getSettingString(settings, 'subtitle')} placeholder="Texto breve opcional" onChange={(value) => onPatchBlockSettings(section, { subtitle: value })} onCommit={() => onSaveBlock(section.id)} />
+          </div>
+        )}
+        <LandingSectionColumns
+          lane={lane}
+          blocks={blocks}
+          blockIndexById={blockIndexById}
+          selectedBlockId={selectedBlockId}
+          site={site}
+          forms={forms}
+          calendars={calendars}
+          pages={pages}
+          activePageId={activePageId}
+          paletteDragging={paletteDragging}
+          onSelectBlock={onSelectBlock}
+          onDeleteBlock={onDeleteBlock}
+          onPatchBlock={onPatchBlock}
+          onPatchBlockSettings={onPatchBlockSettings}
+          onSaveBlock={onSaveBlock}
+        />
+      </div>
+    </section>
+  )
+}
+
+const LegacyLandingSection: React.FC<Omit<LandingSectionRenderProps, 'paletteDragging'>> = (props) => (
+  <section className="rstk-section-lane rstk-section-lane-legacy">
+    <div className="rstk-section-inner">
+      <LandingSectionColumns {...props} />
+    </div>
+  </section>
+)
+
 const PaletteInsertPreview: React.FC<{
   block: SiteBlock
   forms: PublicSite[]
@@ -3773,6 +4286,8 @@ const InlineBlockStyleControls: React.FC<{
 }> = ({ site, block, onPatchSettings, onSave }) => {
   const settings = block.settings || {}
   const defaultAccent = defaultAccentForSite(site)
+  const isSection = block.blockType === SECTION_BLOCK_TYPE
+  const isLandingContent = isLanding(site) && !isSection
   const supportsButton = block.blockType === 'hero' || block.blockType === 'button' || block.blockType === 'cta'
   const supportsField = fieldBlockTypes.has(block.blockType)
   const isHardEmbed = block.blockType === 'embed' || block.blockType === 'calendar_embed'
@@ -3783,9 +4298,9 @@ const InlineBlockStyleControls: React.FC<{
 
   return (
     <div className={styles.blockStyleControls} onClick={(event) => event.stopPropagation()}>
-      <div className={styles.panelSubheader}>Estilo del bloque</div>
+      <div className={styles.panelSubheader}>{isSection ? 'Estilo de franja' : isLandingContent ? 'Estilo del contenido' : 'Estilo del bloque'}</div>
       <LinkedSpacingField
-        label="Padding"
+        label={isSection ? 'Relleno de franja' : 'Padding'}
         base="blockPadding"
         settings={settings}
         min={0}
@@ -3795,7 +4310,7 @@ const InlineBlockStyleControls: React.FC<{
         onCommit={onSave}
       />
       <LinkedSpacingField
-        label="Margen"
+        label={isSection ? 'Separacion de franja' : 'Margen'}
         base="blockMargin"
         settings={settings}
         min={-80}
@@ -3808,14 +4323,14 @@ const InlineBlockStyleControls: React.FC<{
         <>
           <div className={styles.twoColumn}>
             <ColorField
-              label="Fondo"
+              label={isSection ? 'Fondo de franja' : isLandingContent ? 'Fondo del contenido' : 'Fondo'}
               value={getSettingPaint(settings, 'blockBg', 'transparent')}
               allowGradient
               onChange={(value) => onPatchSettings({ blockBg: value })}
               onCommit={onSave}
             />
             <ColorField
-              label="Texto"
+              label={isSection ? 'Texto de franja' : 'Texto'}
               value={getSettingHex(settings, 'blockText', '#111827')}
               onChange={(value) => onPatchSettings({ blockText: value })}
               onCommit={onSave}
@@ -4163,10 +4678,11 @@ const CanvasPreviewBlock: React.FC<CanvasPreviewBlockProps> = ({
   }
 
   if (block.blockType === 'section') {
+    const columns = getSectionColumns(block)
     return (
       <section className="rstk-section-break">
-        <InlineEditable as="h2" value={block.content} placeholder="Titulo de seccion" disabled={!editable} onChange={(value) => patchBlock({ content: value })} onCommit={save} />
-        <InlineEditable as="p" multiline value={getSettingString(settings, 'subtitle')} placeholder="Texto breve opcional" disabled={!editable} onChange={(value) => patchSettings({ subtitle: value })} onCommit={save} />
+        <h2>{getSectionColumnLabel(columns)}</h2>
+        <p>Franja para agregar contenido en {columns} {columns === 1 ? 'columna' : 'columnas'}.</p>
       </section>
     )
   }
@@ -4652,10 +5168,12 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   const settings = block.settings || {}
   const contentLabel = isField
     ? 'Texto de ayuda'
-    : block.blockType === 'embed'
+    : block.blockType === SECTION_BLOCK_TYPE
+      ? 'Titulo visible opcional'
+      : block.blockType === 'embed'
       ? 'Codigo embed, iframe o URL'
       : 'Contenido'
-  const contentRows = block.blockType === 'embed' ? 7 : isField ? 2 : 3
+  const contentRows = block.blockType === 'embed' ? 7 : isField || block.blockType === SECTION_BLOCK_TYPE ? 2 : 3
 
   return (
     <aside className={styles.propertiesPanel}>
@@ -4666,7 +5184,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 
       <div className={styles.propertiesBody}>
         <label className={styles.field}>
-          <span>{isField ? 'Label / pregunta' : 'Nombre del bloque'}</span>
+          <span>{isField ? 'Label / pregunta' : block.blockType === SECTION_BLOCK_TYPE ? 'Nombre de la franja' : 'Nombre del bloque'}</span>
           <input value={block.label} onChange={(event) => onPatchBlock({ label: event.target.value })} onBlur={onSave} />
         </label>
 
@@ -4937,6 +5455,34 @@ const ButtonActionFields: React.FC<{
 
 const LandingBlockSettings: React.FC<LandingBlockSettingsProps> = ({ site, block, forms, calendars, pages, activePageId, onPatchSettings, onSave }) => {
   const settings = block.settings || {}
+
+  if (block.blockType === SECTION_BLOCK_TYPE) {
+    return (
+      <div className={styles.settingsGroup}>
+        <div className={styles.panelSubheader}>Tipo de franja</div>
+        <label className={styles.field}>
+          <span>Columnas</span>
+          <select
+            value={String(getSectionColumns(block))}
+            onChange={(event) => onPatchSettings({ sectionColumns: Number(event.target.value) })}
+            onBlur={onSave}
+          >
+            <option value="1">Una columna</option>
+            <option value="2">Dos columnas</option>
+            <option value="3">Tres columnas</option>
+          </select>
+        </label>
+        <DimensionField
+          label="Espacio entre columnas"
+          value={getSettingNumber(settings, 'sectionGap', DEFAULT_SECTION_GAP, 0, 80)}
+          min={0}
+          max={80}
+          onChange={(value) => onPatchSettings({ sectionGap: value })}
+          onCommit={onSave}
+        />
+      </div>
+    )
+  }
 
   if (['hero', 'cta'].includes(block.blockType)) {
     return (
