@@ -2771,7 +2771,33 @@ export async function updateBlock(siteId, blockId, input = {}) {
 }
 
 export async function deleteBlock(siteId, blockId) {
-  await db.run('DELETE FROM public_site_blocks WHERE id = ? AND site_id = ?', [blockId, siteId])
+  const normalizedBlockId = cleanString(blockId)
+  if (!normalizedBlockId) {
+    return getSite(siteId, { includeBlocks: true, includeSubmissions: true })
+  }
+
+  const blocks = await listSiteBlocks(siteId)
+  const targetBlock = blocks.find(block => block.id === normalizedBlockId)
+  const deleteIds = new Set([normalizedBlockId])
+
+  if (isSectionBlock(targetBlock)) {
+    const sectionLane = buildLandingSectionLanes(blocks).find(lane => lane.section?.id === normalizedBlockId)
+    for (const block of (sectionLane?.columnBlocks || []).flat()) {
+      deleteIds.add(block.id)
+    }
+    for (const block of blocks) {
+      if (getBlockSectionId(block) === normalizedBlockId) {
+        deleteIds.add(block.id)
+      }
+    }
+  }
+
+  const ids = [...deleteIds]
+  const placeholders = ids.map(() => '?').join(', ')
+  await db.run(
+    `DELETE FROM public_site_blocks WHERE site_id = ? AND id IN (${placeholders})`,
+    [siteId, ...ids]
+  )
   await compactBlockOrder(siteId)
   return getSite(siteId, { includeBlocks: true, includeSubmissions: true })
 }

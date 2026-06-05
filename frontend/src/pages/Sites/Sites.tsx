@@ -246,6 +246,8 @@ const SECTION_BLOCK_TYPE: SiteBlockType = 'section'
 const DEFAULT_SECTION_GAP = 24
 const isTopLevelLandingBlockType = (blockType?: SiteBlockType) =>
   blockType === SECTION_BLOCK_TYPE || Boolean(blockType && PANEL_BLOCK_TYPES.has(blockType))
+const hasDataTransferType = (dataTransfer: DataTransfer, type: string) =>
+  Array.from(dataTransfer.types || []).includes(type)
 
 type PaletteDragPayload = {
   blockType: SiteBlockType
@@ -255,6 +257,11 @@ type PaletteDragPayload = {
 type PaletteSectionTarget = {
   sectionId: string
   sectionColumn: number
+}
+
+type PaletteDragPosition = {
+  x: number
+  y: number
 }
 
 type BlockMoveDirection = 'up' | 'down'
@@ -1688,10 +1695,12 @@ export const Sites: React.FC = () => {
   const [paletteDragPayload, setPaletteDragPayload] = useState<PaletteDragPayload | null>(null)
   const [paletteInsertIndex, setPaletteInsertIndex] = useState<number | null>(null)
   const [paletteSectionTarget, setPaletteSectionTarget] = useState<PaletteSectionTarget | null>(null)
+  const [paletteDragPosition, setPaletteDragPosition] = useState<PaletteDragPosition | null>(null)
   const [leadRows, setLeadRows] = useState<LeadRow[]>([])
   const [loadingLeads, setLoadingLeads] = useState(false)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const selectedSiteRef = useRef<PublicSite | null>(null)
+  const paletteDragPayloadRef = useRef<PaletteDragPayload | null>(null)
   const guardHistoryArmedRef = useRef(false)
   const allowNavigationRef = useRef(false)
 
@@ -1740,7 +1749,6 @@ export const Sites: React.FC = () => {
   )
   const hasLandingCanvasContent = landingSectionLanes.length > 0 || canvasBlocks.some(isPanelBlock)
   const palettePreviewBlock = editorSite && paletteDragPayload
-    && paletteDragging
     ? makePreviewBlock(
       paletteDragPayload.blockType,
       editorSite,
@@ -1748,6 +1756,7 @@ export const Sites: React.FC = () => {
       paletteDragPayload.initialSettings
     )
     : null
+  const canvasPalettePreviewBlock = paletteDragging ? palettePreviewBlock : null
 
   useEffect(() => {
     window.dispatchEvent(new CustomEvent(SITES_EDITOR_ACTIVE_EVENT, {
@@ -2702,11 +2711,28 @@ export const Sites: React.FC = () => {
     }
   }
 
+  const getDeletedBlockIds = (blockId: string) => {
+    const block = canvasBlocks.find(item => item.id === blockId) || blocks.find(item => item.id === blockId)
+    if (!editorSite || !isLanding(editorSite) || !isSectionBlock(block)) return [blockId]
+
+    const lane = landingSectionLanes.find(item => item.section?.id === blockId)
+    const laneBlockIds = (lane?.columnBlocks || []).flat().map(item => item.id)
+    const explicitChildIds = canvasBlocks
+      .filter(item => item.id !== blockId && getBlockSectionId(item) === blockId)
+      .map(item => item.id)
+
+    return [...new Set([...laneBlockIds, ...explicitChildIds, blockId])]
+  }
+
   const handleDeleteBlock = async (blockId: string) => {
     if (!selectedSite) return
     try {
+      const deletedBlockIds = getDeletedBlockIds(blockId)
       const site = await sitesService.deleteBlock(selectedSite.id, blockId)
       syncSelectedSite(site)
+      if (deletedBlockIds.includes(selectedBlockId)) {
+        setSelectedBlockId('')
+      }
     } catch (error) {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo eliminar el bloque')
     }
@@ -2873,6 +2899,14 @@ export const Sites: React.FC = () => {
     return { blockType, initialSettings }
   }
 
+  const setActivePaletteDragPayload = (payload: PaletteDragPayload | null) => {
+    paletteDragPayloadRef.current = payload
+    setPaletteDragPayload(payload)
+  }
+
+  const getPalettePayloadForDrag = (dataTransfer: DataTransfer) =>
+    getPalettePayload(dataTransfer) || paletteDragPayloadRef.current
+
   const getDropSectionTarget = (event: React.DragEvent<HTMLDivElement>): PaletteSectionTarget | null => {
     const target = event.target as HTMLElement | null
     const column = target?.closest<HTMLElement>('[data-rstk-section-column]')
@@ -2933,14 +2967,31 @@ export const Sites: React.FC = () => {
 
   const resetPaletteDrag = () => {
     setPaletteDragging(false)
-    setPaletteDragPayload(null)
+    setActivePaletteDragPayload(null)
+    setPaletteInsertIndex(null)
+    setPaletteSectionTarget(null)
+    setPaletteDragPosition(null)
+  }
+
+  const setPaletteDragEventPosition = (event: React.DragEvent<HTMLElement>) => {
+    if (event.clientX || event.clientY) {
+      setPaletteDragPosition({ x: event.clientX, y: event.clientY })
+    }
+  }
+
+  const isPaletteDragEvent = (event: React.DragEvent<HTMLElement>) =>
+    hasDataTransferType(event.dataTransfer, 'application/ristak-block') || Boolean(paletteDragPayloadRef.current)
+
+  const leaveCanvasPaletteDrag = () => {
+    setPaletteDragging(false)
     setPaletteInsertIndex(null)
     setPaletteSectionTarget(null)
   }
 
   const handleCanvasDrop = async (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault()
-    const payload = getPalettePayload(event.dataTransfer)
+    setPaletteDragEventPosition(event)
+    const payload = getPalettePayloadForDrag(event.dataTransfer)
     const placement = payload ? getPaletteDropPlacement(event, payload) : null
     const insertIndex = placement?.insertIndex ?? paletteInsertIndex ?? canvasBlocks.length
     const target = placement?.target || paletteSectionTarget
@@ -2959,16 +3010,17 @@ export const Sites: React.FC = () => {
   }
 
   const handleCanvasDragOver = (event: React.DragEvent<HTMLDivElement>) => {
-    if (event.dataTransfer.types.includes('application/ristak-block')) {
+    if (isPaletteDragEvent(event)) {
       event.preventDefault()
       event.dataTransfer.dropEffect = 'move'
-      const payload = getPalettePayload(event.dataTransfer)
+      setPaletteDragEventPosition(event)
+      const payload = getPalettePayloadForDrag(event.dataTransfer)
       if (!paletteDragging) setPaletteDragging(true)
       if (payload && (
         payload.blockType !== paletteDragPayload?.blockType ||
         JSON.stringify(payload.initialSettings || {}) !== JSON.stringify(paletteDragPayload?.initialSettings || {})
       )) {
-        setPaletteDragPayload(payload)
+        setActivePaletteDragPayload(payload)
       }
       if (payload) {
         const placement = getPaletteDropPlacement(event, payload)
@@ -2979,8 +3031,19 @@ export const Sites: React.FC = () => {
   }
 
   const handleCanvasDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
-    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-      resetPaletteDrag()
+    if (!isPaletteDragEvent(event)) return
+    setPaletteDragEventPosition(event)
+    const nextTarget = event.relatedTarget as Node | null
+    if (nextTarget && event.currentTarget.contains(nextTarget)) return
+    if (!event.clientX && !event.clientY) return
+
+    const rect = event.currentTarget.getBoundingClientRect()
+    const stillInside = event.clientX >= rect.left
+      && event.clientX <= rect.right
+      && event.clientY >= rect.top
+      && event.clientY <= rect.bottom
+    if (!stillInside) {
+      leaveCanvasPaletteDrag()
     }
   }
 
@@ -3204,12 +3267,14 @@ export const Sites: React.FC = () => {
 	                    blockTypes={isLanding(editorSite) ? landingBlockTypes : formBlockTypes}
 	                    existingBlocks={canvasBlocks}
 	                    onAdd={handleAddBlock}
-	                    onPaletteDragStart={(payload) => {
-	                      setPaletteDragPayload(payload)
+	                    onPaletteDragStart={(payload, position) => {
+	                      setActivePaletteDragPayload(payload)
+	                      setPaletteDragPosition(position)
 	                      setPaletteDragging(false)
 	                      setPaletteInsertIndex(null)
 	                      setPaletteSectionTarget(null)
 	                    }}
+                    onPaletteDragMove={setPaletteDragPosition}
                     onPaletteDragEnd={resetPaletteDrag}
                   />
                 </div>
@@ -3268,8 +3333,8 @@ export const Sites: React.FC = () => {
                               <div className="rstk-form">
 	                              {isLanding(editorSite) ? (
 	                                !hasLandingCanvasContent ? (
-	                                  palettePreviewBlock && isTopLevelLandingBlockType(paletteDragPayload?.blockType) ? (
-	                                    <PaletteInsertPreview block={palettePreviewBlock} forms={forms} calendars={calendars} />
+	                                  canvasPalettePreviewBlock && isTopLevelLandingBlockType(paletteDragPayload?.blockType) ? (
+	                                    <PaletteInsertPreview block={canvasPalettePreviewBlock} forms={forms} calendars={calendars} />
 	                                  ) : (
 	                                    <div className="rstkDropEmpty">
 	                                      <Plus size={22} />
@@ -3287,7 +3352,7 @@ export const Sites: React.FC = () => {
 	                                      calendars={calendars}
 	                                      pages={pages}
 	                                      activePageId={activePage?.id || DEFAULT_FUNNEL_PAGE_ID}
-	                                      palettePreviewBlock={palettePreviewBlock}
+	                                      palettePreviewBlock={canvasPalettePreviewBlock}
 	                                      paletteInsertIndex={paletteInsertIndex}
 	                                      paletteSectionTarget={paletteSectionTarget}
 	                                      paletteDragging={paletteDragging}
@@ -3302,8 +3367,8 @@ export const Sites: React.FC = () => {
                                   </>
                                 )
                               ) : canvasBlocks.length === 0 ? (
-                                palettePreviewBlock ? (
-                                  <PaletteInsertPreview block={palettePreviewBlock} forms={forms} calendars={calendars} />
+                                canvasPalettePreviewBlock ? (
+                                  <PaletteInsertPreview block={canvasPalettePreviewBlock} forms={forms} calendars={calendars} />
                                 ) : (
                                   <div className="rstkDropEmpty">
                                     <Plus size={22} />
@@ -3312,8 +3377,8 @@ export const Sites: React.FC = () => {
                                 )
                               ) : (
                                 <>
-                                  {palettePreviewBlock && paletteInsertIndex === 0 && (
-                                    <PaletteInsertPreview block={palettePreviewBlock} forms={forms} calendars={calendars} />
+                                  {canvasPalettePreviewBlock && paletteInsertIndex === 0 && (
+                                    <PaletteInsertPreview block={canvasPalettePreviewBlock} forms={forms} calendars={calendars} />
                                   )}
                                   {canvasBlocks.map((block, index) => {
                                     const moveState = getBlockMoveState(block)
@@ -3339,8 +3404,8 @@ export const Sites: React.FC = () => {
                                           onPatchSettings={(patch) => patchBlockSettingsLocal(block, patch)}
                                           onSave={() => handleSaveBlock(block.id)}
                                         />
-                                        {palettePreviewBlock && paletteInsertIndex === index + 1 && (
-                                          <PaletteInsertPreview block={palettePreviewBlock} forms={forms} calendars={calendars} />
+                                        {canvasPalettePreviewBlock && paletteInsertIndex === index + 1 && (
+                                          <PaletteInsertPreview block={canvasPalettePreviewBlock} forms={forms} calendars={calendars} />
                                         )}
                                       </React.Fragment>
                                     )
@@ -3402,6 +3467,16 @@ export const Sites: React.FC = () => {
             </div>
           )}
         </main>
+        {palettePreviewBlock && paletteDragPosition && !paletteDragging && (
+          <div
+            className="rstkPaletteFloatingPreview"
+            style={{ left: paletteDragPosition.x, top: paletteDragPosition.y }}
+            aria-hidden="true"
+          >
+            <span className="rstkPaletteFloatingPreviewIcon">{blockIcons[palettePreviewBlock.blockType]}</span>
+            <span>{blockLabels[palettePreviewBlock.blockType] || palettePreviewBlock.label}</span>
+          </div>
+        )}
       </div>
     </div>
   </div>
@@ -4587,9 +4662,10 @@ const Palette: React.FC<{
   blockTypes: SiteBlockType[]
   existingBlocks?: SiteBlock[]
   onAdd: (blockType: SiteBlockType, options?: AddBlockOptions) => void
-  onPaletteDragStart: (payload: PaletteDragPayload) => void
+  onPaletteDragStart: (payload: PaletteDragPayload, position: PaletteDragPosition | null) => void
+  onPaletteDragMove: (position: PaletteDragPosition | null) => void
   onPaletteDragEnd: () => void
-}> = ({ blockTypes, existingBlocks = [], onAdd, onPaletteDragStart, onPaletteDragEnd }) => {
+}> = ({ blockTypes, existingBlocks = [], onAdd, onPaletteDragStart, onPaletteDragMove, onPaletteDragEnd }) => {
   const allowed = new Set(blockTypes)
   const existingPanelTypes = new Set(existingBlocks.filter(isPanelBlock).map(block => block.blockType))
   const groups = paletteGroups
@@ -4626,7 +4702,18 @@ const Palette: React.FC<{
                       event.dataTransfer.setData('application/ristak-block-settings', JSON.stringify(item.initialSettings))
                     }
                     hideNativeDragPreview(event.dataTransfer)
-                    onPaletteDragStart({ blockType: item.blockType, initialSettings: item.initialSettings })
+                    const rect = event.currentTarget.getBoundingClientRect()
+                    onPaletteDragStart(
+                      { blockType: item.blockType, initialSettings: item.initialSettings },
+                      event.clientX || event.clientY
+                        ? { x: event.clientX, y: event.clientY }
+                        : { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+                    )
+                  }}
+                  onDrag={(event) => {
+                    if (event.clientX || event.clientY) {
+                      onPaletteDragMove({ x: event.clientX, y: event.clientY })
+                    }
                   }}
                   onDragEnd={onPaletteDragEnd}
                   onClick={() => onAdd(item.blockType, { initialSettings: item.initialSettings })}
@@ -4800,7 +4887,7 @@ interface SortableCanvasBlockProps {
 }
 
 const sortableTransition = {
-  duration: 420,
+  duration: 520,
   easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)'
 }
 
@@ -4846,7 +4933,7 @@ const SortableCanvasBlock: React.FC<SortableCanvasBlockProps> = ({
 	      data-rstk-page-block={isPanelBlock(block) ? 'true' : undefined}
 	      style={{
         transform: CSS.Transform.toString(transform),
-	        transition: transition || 'transform 420ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+	        transition: transition || 'transform 520ms cubic-bezier(0.2, 0.8, 0.2, 1)',
         opacity: isDragging ? 0.34 : undefined,
         zIndex: isDragging ? 8 : undefined,
         ...getBlockCanvasStyle(block)
@@ -5258,7 +5345,7 @@ const SortableLandingSection: React.FC<LandingSectionRenderProps> = ({
       className={getBlockStyleClassName(section, `rstk-section-lane rstkSel ${selected ? 'rstkSelActive' : ''} ${isDragging ? 'rstkSelDragging' : ''}`)}
       style={{
         transform: CSS.Transform.toString(transform),
-	        transition: transition || 'transform 420ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+	        transition: transition || 'transform 520ms cubic-bezier(0.2, 0.8, 0.2, 1)',
         opacity: isDragging ? 0.34 : undefined,
         zIndex: isDragging ? 8 : undefined,
         ...getBlockCanvasStyle(section)

@@ -312,6 +312,37 @@
 .canvasViewport::-webkit-scrollbar { width: 0; height: 0; display: none; }
 .canvasViewportActive { box-shadow: 0 0 0 3px color-mix(in srgb, var(--rstk-accent, #2563eb) 22%, transparent); }
 
+.rstkPaletteFloatingPreview {
+  position: fixed;
+  z-index: 9999;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 230px;
+  padding: 9px 12px;
+  border: 1px solid rgba(37, 99, 235, 0.28);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #0f172a;
+  box-shadow: 0 18px 42px -18px rgba(15, 23, 42, 0.7);
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1.15;
+  pointer-events: none;
+  transform: translate(14px, 14px);
+}
+
+.rstkPaletteFloatingPreviewIcon {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  background: rgba(37, 99, 235, 0.1);
+  color: #1d4ed8;
+}
+
 .canvasViewportFlush,
 .canvasViewportFlush .canvasScaler,
 .canvasViewportFlush .canvasStage { border-radius: 0; }
@@ -388,8 +419,8 @@
   outline-offset: 4px;
   pointer-events: none;
   transform: translateY(0);
-  animation: rstkPalettePreviewIn .44s cubic-bezier(.2,.8,.2,1);
-  transition: transform .34s cubic-bezier(.2,.8,.2,1), opacity .2s ease, max-height .44s cubic-bezier(.2,.8,.2,1);
+  animation: rstkPalettePreviewIn .58s cubic-bezier(.2,.8,.2,1);
+  transition: transform .46s cubic-bezier(.2,.8,.2,1), opacity .28s ease, max-height .58s cubic-bezier(.2,.8,.2,1);
   will-change: max-height, transform, opacity;
 }
 
