@@ -560,46 +560,38 @@ export const WhatsAppSettings: React.FC = () => {
     <div className={styles.apiTutorial}>
       <div className={styles.apiTutorialHeader}>
         <span>Guia rapida</span>
-        <strong>Conecta YCloud sin vueltas</strong>
+        <strong>Conecta YCloud paso a paso</strong>
       </div>
       <ol className={styles.apiTutorialSteps}>
         <li>
           <span>1</span>
           <div>
             <strong>Crea o entra a tu cuenta de YCloud</strong>
-            <p>Usa el correo del negocio y deja listo el workspace desde donde vas a manejar WhatsApp.</p>
+            <p>Usa el correo del negocio. No necesitas configurar nada raro todavia.</p>
           </div>
         </li>
         <li>
           <span>2</span>
           <div>
-            <strong>Conecta tu numero con coexistencia</strong>
-            <p>En YCloud abre WhatsApp Accounts, elige conectar WhatsApp Business App / Coexistence y sigue el flujo de Meta con el numero que ya usas.</p>
+            <strong>Conecta el numero que ya usas</strong>
+            <p>En YCloud busca la opcion para usar tu mismo WhatsApp Business. Si aparece en ingles, elige WhatsApp Business App / Coexistence.</p>
           </div>
         </li>
         <li>
           <span>3</span>
           <div>
-            <strong>Copia tu API key</strong>
-            <p>Cuando el numero ya aparezca conectado en YCloud, ve a Developer / API Keys, copia la llave y pegala aqui.</p>
+            <strong>Copia tu llave de conexion</strong>
+            <p>Cuando el numero ya salga conectado, copia la llave que YCloud llama API key y pegala aqui.</p>
           </div>
         </li>
         <li>
           <span>4</span>
           <div>
             <strong>Presiona conectar</strong>
-            <p>Ristak valida la cuenta, guarda el numero, consulta saldo, plantillas y contactos disponibles automaticamente.</p>
+            <p>Ristak revisa la cuenta, guarda el numero, consulta saldo, plantillas y contactos disponibles automaticamente.</p>
           </div>
         </li>
       </ol>
-      <div className={styles.apiTutorialLinks}>
-        <a href="https://helpdocs.ycloud.com/help-center/whatsapp-accounts-management/create-a-whatsapp-api-account/whatsapp-business-app-coexistence" target="_blank" rel="noopener noreferrer">
-          Guia de coexistencia
-        </a>
-        <a href="https://docs.ycloud.com/reference/introduction" target="_blank" rel="noopener noreferrer">
-          Documentacion API
-        </a>
-      </div>
     </div>
   )
 

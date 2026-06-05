@@ -400,32 +400,6 @@
   line-height: 1.45;
 }
 
-.apiTutorialLinks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.apiTutorialLinks a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 30px;
-  padding: 0 10px;
-  border: 1px solid rgba(20, 184, 166, 0.28);
-  border-radius: 999px;
-  color: #047857;
-  background: rgba(20, 184, 166, 0.08);
-  font-size: 12px;
-  font-weight: 850;
-  text-decoration: none;
-}
-
-.apiTutorialLinks a:hover,
-.apiTutorialLinks a:focus-visible {
-  border-color: rgba(20, 184, 166, 0.5);
-  background: rgba(20, 184, 166, 0.13);
-}
-
 .apiAlertList {
   display: grid;
   gap: 10px;
