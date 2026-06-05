@@ -13,6 +13,7 @@ import {
   DropdownMenuSeparator
 } from '@/components/common'
 import {
+  ArrowLeft,
   Calendar,
   Loader2,
   CheckCircle,
@@ -44,7 +45,7 @@ import { calendarsService, type Calendar as CalendarType, type GoogleCalendarInt
 import styles from './HighLevelIntegration.module.css'
 import pageStyles from './CalendarsConfiguration.module.css'
 
-type CalendarSettingsTab = 'calendars' | 'google'
+type CalendarSettingsView = 'calendars' | 'google'
 type CalendarSourcePreference = 'combined' | 'ristak' | 'ghl' | 'google'
 
 const GOOGLE_HELP_LINKS = {
@@ -159,7 +160,7 @@ export const CalendarsConfiguration: React.FC = () => {
   // Estados locales
   const [calendars, setCalendars] = useState<CalendarType[]>([])
   const [loadingCalendars, setLoadingCalendars] = useState(true)
-  const [activeTab, setActiveTab] = useState<CalendarSettingsTab>('calendars')
+  const [activeView, setActiveView] = useState<CalendarSettingsView>('calendars')
   const [googleIntegration, setGoogleIntegration] = useState<GoogleCalendarIntegrationStatus | null>(null)
   const [loadingGoogleIntegration, setLoadingGoogleIntegration] = useState(true)
   const [savingGoogleIntegration, setSavingGoogleIntegration] = useState(false)
@@ -521,21 +522,6 @@ export const CalendarsConfiguration: React.FC = () => {
     try {
       await setAttributionCalendarIds(newSelection)
       showToast('success', 'Calendarios de atribución actualizados', `${newSelection.length} calendario${newSelection.length !== 1 ? 's' : ''} seleccionado${newSelection.length !== 1 ? 's' : ''}`)
-    } catch (error: any) {
-      showToast('error', 'Error al guardar', error.message)
-    }
-  }
-
-  // Guardado automático: Seleccionar/Deseleccionar todos
-  const handleSelectAllAttribution = async () => {
-    const newSelection = attributionCalendarIds.length === calendars.length
-      ? []  // Deseleccionar todos
-      : calendars.map(cal => cal.id)  // Seleccionar todos
-
-    try {
-      await setAttributionCalendarIds(newSelection)
-      const action = newSelection.length === 0 ? 'Todos deseleccionados' : 'Todos seleccionados'
-      showToast('success', 'Calendarios de atribución actualizados', action)
     } catch (error: any) {
       showToast('error', 'Error al guardar', error.message)
     }
@@ -1378,9 +1364,6 @@ export const CalendarsConfiguration: React.FC = () => {
         </div>
         <div className={pageStyles.toolbarActions}>
           {renderCalendarSourceSelect()}
-          <Button variant="ghost" size="small" onClick={handleSelectAllAttribution} disabled={calendars.length === 0}>
-            {allSelected ? 'Desmarcar todos' : 'Marcar todos'}
-          </Button>
           <Button variant="outline" size="small" onClick={() => setShowCreateModal(true)}>
             <Plus size={16} />
             Crear calendario
@@ -1761,56 +1744,62 @@ export const CalendarsConfiguration: React.FC = () => {
     )
   }
 
-  const renderCalendarTabs = () => (
-    <div className={pageStyles.tabs} role="tablist" aria-label="Configuración de calendarios">
+  const renderGoogleHeaderAction = () => {
+    const isConnected = Boolean(googleIntegration?.connected)
+
+    return (
       <button
         type="button"
-        role="tab"
-        aria-selected={activeTab === 'calendars'}
-        className={activeTab === 'calendars' ? pageStyles.tabActive : ''}
-        onClick={() => setActiveTab('calendars')}
+        className={`${pageStyles.googleHeaderButton} ${isConnected ? pageStyles.googleHeaderButtonConnected : ''}`}
+        onClick={() => {
+          setActiveView('google')
+          setEditingGoogleIntegration(!isConnected)
+        }}
       >
-        <Calendar size={16} />
-        Tus calendarios
-        <span>{calendars.length}</span>
+        <span className={pageStyles.googleCalendarMark}>
+          <Calendar size={16} />
+        </span>
+        <span>{isConnected ? 'Conectado' : 'Integrar Google Calendar'}</span>
       </button>
-      <button
-        type="button"
-        role="tab"
-        aria-selected={activeTab === 'google'}
-        className={activeTab === 'google' ? pageStyles.tabActive : ''}
-        onClick={() => setActiveTab('google')}
-      >
-        <Globe2 size={16} />
-        Google Calendar
-        <span>{googleIntegration?.connected ? 'Conectado' : 'Setup'}</span>
-      </button>
-    </div>
-  )
+    )
+  }
 
   if (loadingCalendars) {
     return <Loading message="Cargando calendarios..." page="calendar-settings" />
   }
-
-  const allSelected = calendars.length > 0 && attributionCalendarIds.length === calendars.length
 
   return (
     <div className={styles.integrationContainer}>
       <Card className={`${styles.mainCard} ${pageStyles.mainCard}`}>
         <div className={pageStyles.header}>
           <div className={pageStyles.headerIdentity}>
-            <div className={pageStyles.headerIcon}>
-              <Calendar size={20} />
-            </div>
+            {activeView === 'google' ? (
+              <button
+                type="button"
+                className={pageStyles.backButton}
+                onClick={() => setActiveView('calendars')}
+                aria-label="Volver a calendarios"
+              >
+                <ArrowLeft size={18} />
+              </button>
+            ) : (
+              <div className={pageStyles.headerIcon}>
+                <Calendar size={20} />
+              </div>
+            )}
             <div>
-              <h2>Configuración de calendario</h2>
-              <p>Administra calendarios, predeterminado, conversiones y Google Calendar.</p>
+              <h2>{activeView === 'google' ? 'Configuración de Google Calendar' : 'Configuración de calendario'}</h2>
+              <p>
+                {activeView === 'google'
+                  ? 'Conecta, prueba y sincroniza Google Calendar con Ristak.'
+                  : 'Administra calendarios, predeterminado y conversiones.'}
+              </p>
             </div>
           </div>
-          {renderCalendarTabs()}
+          {activeView === 'calendars' && renderGoogleHeaderAction()}
         </div>
 
-        {activeTab === 'calendars' ? renderCalendarsTab() : renderGoogleCalendarTab()}
+        {activeView === 'calendars' ? renderCalendarsTab() : renderGoogleCalendarTab()}
       </Card>
 
       {renderCreateCalendarModal()}
