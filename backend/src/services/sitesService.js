@@ -401,6 +401,72 @@ const TEMPLATE_IMAGE_URLS = {
   handshake: 'https://images.unsplash.com/photo-1521791136064-7986c2920216?auto=format&fit=crop&w=1800&q=80'
 }
 
+const makeDefaultFunnelPage = (id, title, sortOrder) => ({
+  id,
+  title,
+  sortOrder,
+  metaCapiEnabled: false,
+  metaEventName: SITE_META_NO_EVENT,
+  metaTrigger: 'page_view'
+})
+
+function getDefaultFunnelPages(template) {
+  const tpl = cleanString(template)
+
+  if (tpl === 'launch') {
+    return [
+      makeDefaultFunnelPage(DEFAULT_FUNNEL_PAGE_ID, 'Registro', 0),
+      makeDefaultFunnelPage('page-2', 'Detalles', 1),
+      makeDefaultFunnelPage('page-3', 'Gracias', 2)
+    ]
+  }
+
+  if (tpl === 'local') {
+    return [
+      makeDefaultFunnelPage(DEFAULT_FUNNEL_PAGE_ID, 'Oferta local', 0),
+      makeDefaultFunnelPage('page-2', 'Contacto', 1),
+      makeDefaultFunnelPage('page-3', 'Gracias', 2)
+    ]
+  }
+
+  if (tpl === 'facebook' || tpl === 'instagram' || tpl === 'tiktok') {
+    return [
+      makeDefaultFunnelPage(DEFAULT_FUNNEL_PAGE_ID, 'Anuncio', 0),
+      makeDefaultFunnelPage('page-2', 'Gracias', 1)
+    ]
+  }
+
+  if (tpl === 'executive') {
+    return [
+      makeDefaultFunnelPage(DEFAULT_FUNNEL_PAGE_ID, 'Diagnostico', 0),
+      makeDefaultFunnelPage('page-2', 'Agenda', 1),
+      makeDefaultFunnelPage('page-3', 'Gracias', 2)
+    ]
+  }
+
+  if (tpl === 'vsl') {
+    return [
+      makeDefaultFunnelPage(DEFAULT_FUNNEL_PAGE_ID, 'Carta de ventas', 0),
+      makeDefaultFunnelPage('page-2', 'Agenda', 1),
+      makeDefaultFunnelPage('page-3', 'Gracias', 2)
+    ]
+  }
+
+  if (tpl === 'premium') {
+    return [
+      makeDefaultFunnelPage(DEFAULT_FUNNEL_PAGE_ID, 'Presentacion', 0),
+      makeDefaultFunnelPage('page-2', 'Agenda privada', 1),
+      makeDefaultFunnelPage('page-3', 'Gracias', 2)
+    ]
+  }
+
+  return [
+    makeDefaultFunnelPage(DEFAULT_FUNNEL_PAGE_ID, 'Opt-in', 0),
+    makeDefaultFunnelPage('page-2', 'Agenda', 1),
+    makeDefaultFunnelPage('page-3', 'Gracias', 2)
+  ]
+}
+
 async function ensureUniqueSlug(baseSlug, ignoreSiteId = null) {
   let slug = baseSlug
   let suffix = 2
@@ -666,10 +732,369 @@ function buildDefaultBlocks(siteId, siteType, template) {
       ...settings
     }
   })
+  const assignBlocksToPage = (blocks, pageId) => blocks.map(block => {
+    const settings = parseJson(block.settings_json, {})
+    return {
+      ...block,
+      settings_json: jsonString({
+        ...settings,
+        pageId
+      })
+    }
+  })
+  const prepareFunnelEntryBlocks = (blocks, pageId = DEFAULT_FUNNEL_PAGE_ID) => {
+    const nextBlocks = blocks.map(block => {
+      const settings = parseJson(block.settings_json, {})
+      if (block.block_type !== 'form_embed') return block
+
+      return {
+        ...block,
+        settings_json: jsonString({
+          ...settings,
+          completionAction: 'next_page'
+        })
+      }
+    })
+
+    return assignBlocksToPage(nextBlocks, pageId)
+  }
+  const makeLandingPageLayout = (pageId, sectionConfigs) => assignBlocksToPage(makeLandingLayout(sectionConfigs), pageId)
+  const makeSchedulePageLayout = (pageId, options = {}) => makeLandingPageLayout(pageId, [
+    {
+      columns: 2,
+      settings: {
+        blockBg: options.blockBg || 'linear-gradient(120deg, rgba(248,250,252,.98), rgba(219,234,254,.76))',
+        blockText: options.blockText || '#0f172a',
+        sectionGap: 34,
+        blockPaddingTop: 70,
+        blockPaddingBottom: 62
+      },
+      columnBlocks: [
+        [
+          makeBlock('hero', 'Paso de agenda', options.headline || 'Agenda el siguiente paso', {
+            settings: withLandingSpacing('hero', {
+              textAlign: 'left',
+              kicker: options.kicker || 'Agenda',
+              subtitle: options.subtitle || 'El prospecto ya dejo sus datos. Ahora puede elegir un horario para continuar la conversacion.',
+              buttonText: options.buttonText || 'Continuar a confirmacion',
+              buttonAction: 'next_page',
+              buttonAlign: 'left',
+              buttonBg: options.buttonBg || '#2563eb',
+              buttonTextColor: options.buttonTextColor || '#ffffff',
+              ...defaultButtonSettings
+            })
+          })
+        ],
+        [
+          makeBlock('calendar_embed', 'Calendario', 'Selecciona un horario', {
+            settings: withLandingSpacing('calendar_embed', {
+              blockBg: options.calendarBg || '#ffffff',
+              blockText: options.calendarText || '#111827',
+              blockRadius: 18,
+              blockBorderWidth: 1,
+              blockBorderColor: options.calendarBorder || '#dbeafe',
+              blockPaddingTop: 22,
+              blockPaddingRight: 22,
+              blockPaddingBottom: 22,
+              blockPaddingLeft: 22,
+              embedHeight: 680
+            })
+          })
+        ]
+      ]
+    },
+    {
+      settings: {
+        blockBg: options.ctaBg || '#111827',
+        blockText: '#ffffff',
+        textAlign: 'center',
+        blockPaddingTop: 44,
+        blockPaddingBottom: 48
+      },
+      blocks: [
+        makeBlock('cta', 'Continuar', 'Ya quedo el siguiente paso?', {
+          settings: withLandingSpacing('cta', {
+            textAlign: 'center',
+            subtitle: options.ctaSubtitle || 'Cuando termines de agendar, avanza a la pagina de confirmacion.',
+            buttonText: options.ctaButtonText || 'Ver confirmacion',
+            buttonAction: 'next_page',
+            ...defaultButtonSettings
+          })
+        })
+      ]
+    }
+  ])
+  const makeDetailsPageLayout = (pageId, options = {}) => makeLandingPageLayout(pageId, [
+    {
+      settings: {
+        blockBg: options.blockBg || '#fff7ed',
+        blockText: options.blockText || '#7c2d12',
+        textAlign: 'center',
+        blockPaddingTop: 62,
+        blockPaddingBottom: 48
+      },
+      blocks: [
+        makeBlock('hero', 'Detalles', options.headline || 'Estos son los detalles importantes', {
+          settings: withLandingSpacing('hero', {
+            textAlign: 'center',
+            kicker: options.kicker || 'Antes de confirmar',
+            subtitle: options.subtitle || 'Usa esta pagina para explicar fechas, cupos, bonos, condiciones o lo que el cliente debe saber antes de avanzar.',
+            buttonText: options.buttonText || 'Confirmar mi interes',
+            buttonAction: 'next_page',
+            buttonBg: options.buttonBg || '#ea580c',
+            ...defaultButtonSettings
+          })
+        })
+      ]
+    },
+    {
+      columns: 3,
+      settings: {
+        blockBg: '#ffffff',
+        blockText: options.blockText || '#7c2d12',
+        sectionGap: 18,
+        blockPaddingTop: 44,
+        blockPaddingBottom: 48
+      },
+      columnBlocks: [
+        [makeBlock('text', 'Que incluye', 'Aclara el beneficio principal de la oferta.', { settings: withLandingSpacing('text', { blockBg: '#fff7ed', blockRadius: 16, blockPaddingTop: 22, blockPaddingRight: 22, blockPaddingBottom: 22, blockPaddingLeft: 22, blockBorderWidth: 1, blockBorderColor: '#fed7aa' }) })],
+        [makeBlock('text', 'Para quien es', 'Explica quien aprovecha mejor esta oportunidad.', { settings: withLandingSpacing('text', { blockBg: '#fff7ed', blockRadius: 16, blockPaddingTop: 22, blockPaddingRight: 22, blockPaddingBottom: 22, blockPaddingLeft: 22, blockBorderWidth: 1, blockBorderColor: '#fed7aa' }) })],
+        [makeBlock('text', 'Que sigue', 'Deja claro como lo contactaran despues.', { settings: withLandingSpacing('text', { blockBg: '#fff7ed', blockRadius: 16, blockPaddingTop: 22, blockPaddingRight: 22, blockPaddingBottom: 22, blockPaddingLeft: 22, blockBorderWidth: 1, blockBorderColor: '#fed7aa' }) })]
+      ]
+    },
+    {
+      settings: {
+        blockBg: options.ctaBg || '#ea580c',
+        blockText: '#ffffff',
+        textAlign: 'center',
+        blockPaddingTop: 42,
+        blockPaddingBottom: 48
+      },
+      blocks: [
+        makeBlock('cta', 'Confirmar', 'Confirmar interes', {
+          settings: withLandingSpacing('cta', {
+            textAlign: 'center',
+            subtitle: 'La persona ya entiende la oferta y puede avanzar a la confirmacion.',
+            buttonText: 'Continuar',
+            buttonAction: 'next_page',
+            ...defaultButtonSettings
+          })
+        })
+      ]
+    }
+  ])
+  const makeContactPageLayout = (pageId, options = {}) => makeLandingPageLayout(pageId, [
+    {
+      columns: 2,
+      settings: {
+        blockBg: options.blockBg || '#dcfce7',
+        blockText: options.blockText || '#14532d',
+        sectionGap: 30,
+        blockPaddingTop: 58,
+        blockPaddingBottom: 58
+      },
+      columnBlocks: [
+        [
+          makeBlock('hero', 'Contacto', options.headline || 'Confirma como quieres que te contacten', {
+            settings: withLandingSpacing('hero', {
+              textAlign: 'left',
+              kicker: options.kicker || 'Contacto',
+              subtitle: options.subtitle || 'Esta pagina sirve para pedir datos finales, sucursal, servicio o cualquier detalle necesario antes de responder.',
+              buttonText: 'Enviar datos',
+              buttonUrl: '#form',
+              buttonAlign: 'left',
+              buttonBg: options.buttonBg || '#15803d',
+              ...defaultButtonSettings
+            })
+          })
+        ],
+        [
+          makeBlock('form_embed', 'Datos de contacto', 'Datos de contacto', {
+            settings: formEmbedSettings(options.formDescription || 'Deja tus datos y te contactamos con el siguiente paso.', {
+              completionAction: 'next_page',
+              blockBg: '#ffffff',
+              blockText: options.formText || '#14532d',
+              fieldBorder: options.fieldBorder || '#86efac',
+              fieldRadius: 14
+            })
+          })
+        ]
+      ]
+    }
+  ])
+  const makeThankYouPageLayout = (pageId, options = {}) => makeLandingPageLayout(pageId, [
+    {
+      columns: 2,
+      settings: {
+        blockBg: options.blockBg || 'linear-gradient(120deg, rgba(15,23,42,.98), rgba(20,184,166,.72))',
+        blockText: options.blockText || '#ffffff',
+        sectionGap: 34,
+        blockPaddingTop: 78,
+        blockPaddingBottom: 72
+      },
+      columnBlocks: [
+        [
+          makeBlock('hero', 'Gracias', options.headline || 'Gracias, recibimos tu informacion', {
+            settings: withLandingSpacing('hero', {
+              textAlign: 'left',
+              kicker: options.kicker || 'Confirmacion',
+              subtitle: options.subtitle || 'El siguiente paso queda claro para que la persona sepa que pasara despues.',
+              buttonText: options.buttonText || 'Volver al inicio',
+              buttonUrl: options.buttonUrl || '#',
+              buttonAlign: 'left',
+              buttonBg: options.buttonBg || '#ffffff',
+              buttonTextColor: options.buttonTextColor || '#111827',
+              ...defaultButtonSettings
+            })
+          })
+        ],
+        [
+          landingImageBlock('Imagen de cierre', options.imageUrl || TEMPLATE_IMAGE_URLS.handshake, {
+            mediaRadius: 22,
+            blockBorderColor: options.imageBorder || 'rgba(255,255,255,.16)'
+          })
+        ]
+      ]
+    },
+    {
+      columns: 3,
+      settings: {
+        blockBg: options.stepsBg || '#ffffff',
+        blockText: options.stepsText || '#0f172a',
+        sectionGap: 18,
+        blockPaddingTop: 46,
+        blockPaddingBottom: 48
+      },
+      columnBlocks: [
+        [makeBlock('text', 'Paso recibido', 'Tu equipo ya tiene la informacion para dar seguimiento.', { settings: withLandingSpacing('text', { blockBg: options.cardBg || '#f8fafc', blockRadius: 16, blockPaddingTop: 22, blockPaddingRight: 22, blockPaddingBottom: 22, blockPaddingLeft: 22, blockBorderWidth: 1, blockBorderColor: options.cardBorder || '#e2e8f0' }) })],
+        [makeBlock('text', 'Respuesta clara', 'Edita este texto para explicar en cuanto tiempo contactaran.', { settings: withLandingSpacing('text', { blockBg: options.cardBg || '#f8fafc', blockRadius: 16, blockPaddingTop: 22, blockPaddingRight: 22, blockPaddingBottom: 22, blockPaddingLeft: 22, blockBorderWidth: 1, blockBorderColor: options.cardBorder || '#e2e8f0' }) })],
+        [makeBlock('text', 'Siguiente paso', 'Puedes indicar si deben revisar WhatsApp, correo o una llamada.', { settings: withLandingSpacing('text', { blockBg: options.cardBg || '#f8fafc', blockRadius: 16, blockPaddingTop: 22, blockPaddingRight: 22, blockPaddingBottom: 22, blockPaddingLeft: 22, blockBorderWidth: 1, blockBorderColor: options.cardBorder || '#e2e8f0' }) })]
+      ]
+    }
+  ])
+  const makeLandingFunnel = (templateId, primaryBlocks) => {
+    const entryBlocks = prepareFunnelEntryBlocks(primaryBlocks)
+
+    if (templateId === 'launch') {
+      return [
+        ...entryBlocks,
+        ...makeDetailsPageLayout('page-2'),
+        ...makeThankYouPageLayout('page-3', {
+          blockBg: 'linear-gradient(120deg, rgba(124,45,18,.98), rgba(234,88,12,.72))',
+          headline: 'Gracias, tu registro quedo recibido',
+          subtitle: 'Ahora la persona sabe que el equipo puede contactarla con los detalles del lanzamiento.',
+          imageUrl: TEMPLATE_IMAGE_URLS.planning
+        })
+      ]
+    }
+
+    if (templateId === 'local') {
+      return [
+        ...entryBlocks,
+        ...makeContactPageLayout('page-2'),
+        ...makeThankYouPageLayout('page-3', {
+          blockBg: 'linear-gradient(120deg, rgba(20,83,45,.98), rgba(22,163,74,.72))',
+          headline: 'Gracias, recibimos tu solicitud',
+          subtitle: 'El visitante queda con una confirmacion clara y listo para que el negocio lo contacte.',
+          imageUrl: TEMPLATE_IMAGE_URLS.local,
+          stepsText: '#14532d',
+          cardBg: '#f0fdf4',
+          cardBorder: '#bbf7d0'
+        })
+      ]
+    }
+
+    if (templateId === 'facebook' || templateId === 'instagram' || templateId === 'tiktok') {
+      return [
+        ...entryBlocks,
+        ...makeThankYouPageLayout('page-2', {
+          blockBg: templateId === 'tiktok'
+            ? 'linear-gradient(120deg, rgba(0,0,0,.98), rgba(31,31,31,.86))'
+            : 'linear-gradient(120deg, rgba(17,24,39,.98), rgba(59,130,246,.74))',
+          headline: 'Listo, recibimos tus datos',
+          subtitle: 'Esta pagina corta confirma la accion despues de venir desde redes sociales.',
+          imageUrl: TEMPLATE_IMAGE_URLS.consult
+        })
+      ]
+    }
+
+    if (templateId === 'premium') {
+      return [
+        ...entryBlocks,
+        ...makeSchedulePageLayout('page-2', {
+          blockBg: 'linear-gradient(120deg, rgba(16,16,16,.98), rgba(39,39,42,.82))',
+          blockText: '#f8fafc',
+          headline: 'Agenda una llamada privada',
+          subtitle: 'Despues de aplicar, la persona puede elegir el horario ideal para revisar la propuesta.',
+          buttonBg: '#d4af37',
+          buttonTextColor: '#121212',
+          calendarBg: '#18181b',
+          calendarText: '#f8fafc',
+          calendarBorder: '#3f3f46',
+          ctaBg: '#101010'
+        }),
+        ...makeThankYouPageLayout('page-3', {
+          blockBg: 'linear-gradient(120deg, rgba(16,16,16,.98), rgba(212,175,55,.45))',
+          headline: 'Gracias, tu solicitud esta en proceso',
+          subtitle: 'El cierre mantiene la sensacion premium y explica que el equipo dara seguimiento.',
+          imageUrl: TEMPLATE_IMAGE_URLS.premium,
+          stepsBg: '#18181b',
+          stepsText: '#f8fafc',
+          cardBg: '#222225',
+          cardBorder: '#3f3f46'
+        })
+      ]
+    }
+
+    if (templateId === 'vsl') {
+      return [
+        ...entryBlocks,
+        ...makeSchedulePageLayout('page-2', {
+          blockBg: 'linear-gradient(120deg, rgba(17,24,39,.98), rgba(30,64,175,.72))',
+          blockText: '#ffffff',
+          headline: 'Elige una llamada para revisar la oferta',
+          subtitle: 'Despues de leer la carta de ventas, el prospecto puede pasar directo a una conversacion.',
+          buttonBg: '#ffffff',
+          buttonTextColor: '#111827',
+          ctaBg: '#111827'
+        }),
+        ...makeThankYouPageLayout('page-3', {
+          blockBg: 'linear-gradient(120deg, rgba(17,24,39,.98), rgba(30,64,175,.72))',
+          headline: 'Gracias, tu solicitud quedo enviada',
+          subtitle: 'La persona termina con una confirmacion limpia y una idea clara del siguiente paso.'
+        })
+      ]
+    }
+
+    if (templateId === 'executive') {
+      return [
+        ...entryBlocks,
+        ...makeSchedulePageLayout('page-2', {
+          blockBg: 'linear-gradient(120deg, rgba(240,253,250,.98), rgba(204,251,241,.78))',
+          blockText: '#0f172a',
+          headline: 'Agenda el diagnostico',
+          subtitle: 'Despues de explicar el servicio, este paso mueve al prospecto a una llamada concreta.',
+          buttonBg: '#0f766e',
+          ctaBg: '#0f766e'
+        }),
+        ...makeThankYouPageLayout('page-3', {
+          blockBg: 'linear-gradient(120deg, rgba(15,118,110,.98), rgba(45,212,191,.64))',
+          headline: 'Gracias, tu diagnostico quedo solicitado',
+          subtitle: 'La pagina final confirma que el equipo recibio la informacion y dara seguimiento.'
+        })
+      ]
+    }
+
+    return [
+      ...entryBlocks,
+      ...makeSchedulePageLayout('page-2'),
+      ...makeThankYouPageLayout('page-3')
+    ]
+  }
 
   if (siteType === 'landing_page') {
     if (tpl === 'ristak') {
-      return makeLandingLayout([
+      return makeLandingFunnel(tpl, makeLandingLayout([
         {
           columns: 2,
           settings: {
@@ -776,11 +1201,11 @@ function buildDefaultBlocks(siteId, siteType, template) {
             })
           ]
         }
-      ])
+      ]))
     }
 
     if (tpl === 'vsl') {
-      return makeLandingLayout([
+      return makeLandingFunnel(tpl, makeLandingLayout([
         {
           columns: 2,
           settings: {
@@ -872,11 +1297,11 @@ function buildDefaultBlocks(siteId, siteType, template) {
             })
           ]
         }
-      ])
+      ]))
     }
 
     if (tpl === 'executive') {
-      return makeLandingLayout([
+      return makeLandingFunnel(tpl, makeLandingLayout([
         {
           columns: 2,
           settings: {
@@ -949,11 +1374,11 @@ function buildDefaultBlocks(siteId, siteType, template) {
             ]
           ]
         }
-      ])
+      ]))
     }
 
     if (tpl === 'launch') {
-      return makeLandingLayout([
+      return makeLandingFunnel(tpl, makeLandingLayout([
         {
           settings: {
             blockBg: 'linear-gradient(135deg, rgba(255,247,237,.96), rgba(251,146,60,.34))',
@@ -1021,11 +1446,11 @@ function buildDefaultBlocks(siteId, siteType, template) {
             })
           ]
         }
-      ])
+      ]))
     }
 
     if (tpl === 'premium') {
-      return makeLandingLayout([
+      return makeLandingFunnel(tpl, makeLandingLayout([
         {
           columns: 2,
           settings: {
@@ -1100,11 +1525,11 @@ function buildDefaultBlocks(siteId, siteType, template) {
             ]
           ]
         }
-      ])
+      ]))
     }
 
     if (tpl === 'local') {
-      return makeLandingLayout([
+      return makeLandingFunnel(tpl, makeLandingLayout([
         {
           columns: 2,
           settings: {
@@ -1175,11 +1600,11 @@ function buildDefaultBlocks(siteId, siteType, template) {
             })
           ]
         }
-      ])
+      ]))
     }
 
     if (tpl === 'facebook' || tpl === 'instagram' || tpl === 'tiktok') {
-      return makeLandingLayout([
+      return makeLandingFunnel(tpl, makeLandingLayout([
         {
           settings: { blockBg: tpl === 'tiktok' ? '#000000' : '#ffffff', blockText: tpl === 'tiktok' ? '#ffffff' : '#111827', textAlign: 'center', blockPaddingTop: 46, blockPaddingBottom: 46 },
           blocks: [
@@ -1203,10 +1628,10 @@ function buildDefaultBlocks(siteId, siteType, template) {
             })
           ]
         }
-      ])
+      ]))
     }
 
-    return makeLandingLayout([
+    return makeLandingFunnel(tpl, makeLandingLayout([
       {
         settings: { blockBg: '#08080a', blockText: '#ffffff', textAlign: 'center', blockPaddingTop: 68, blockPaddingBottom: 56 },
         blocks: [
@@ -1261,7 +1686,7 @@ function buildDefaultBlocks(siteId, siteType, template) {
       })
         ]
       }
-    ])
+    ]))
   }
 
   if (siteType === 'interactive_form') {
@@ -2100,8 +2525,13 @@ export async function createSite(input = {}) {
   const description = cleanString(input.description)
   const domain = ''
   const theme = { ...DEFAULT_THEME, ...(input.theme || {}) }
-  if (siteType === 'landing_page' && theme.pageMaxWidth === undefined) {
-    theme.pageMaxWidth = 1440
+  if (siteType === 'landing_page') {
+    if (theme.pageMaxWidth === undefined) {
+      theme.pageMaxWidth = 1440
+    }
+    if (!Array.isArray(theme.pages) || theme.pages.length === 0) {
+      theme.pages = getDefaultFunnelPages(theme.template)
+    }
   }
   const status = validateSiteStatus(input.status || 'draft')
 

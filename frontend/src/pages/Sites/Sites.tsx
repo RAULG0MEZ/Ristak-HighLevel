@@ -472,6 +472,70 @@ const getTemplateThemeDefaults = (id: SiteTemplateId, siteType: SiteType): Parti
   }
 }
 
+const makeTemplateFunnelPage = (id: string, title: string, sortOrder: number): SitePage => ({
+  id,
+  title,
+  sortOrder,
+  metaCapiEnabled: false,
+  metaEventName: 'none',
+  metaTrigger: 'page_view'
+})
+
+const getTemplateFunnelPages = (id: SiteTemplateId): SitePage[] => {
+  if (id === 'launch') {
+    return [
+      makeTemplateFunnelPage(DEFAULT_FUNNEL_PAGE_ID, 'Registro', 0),
+      makeTemplateFunnelPage('page-2', 'Detalles', 1),
+      makeTemplateFunnelPage('page-3', 'Gracias', 2)
+    ]
+  }
+
+  if (id === 'local') {
+    return [
+      makeTemplateFunnelPage(DEFAULT_FUNNEL_PAGE_ID, 'Oferta local', 0),
+      makeTemplateFunnelPage('page-2', 'Contacto', 1),
+      makeTemplateFunnelPage('page-3', 'Gracias', 2)
+    ]
+  }
+
+  if (id === 'facebook' || id === 'instagram' || id === 'tiktok') {
+    return [
+      makeTemplateFunnelPage(DEFAULT_FUNNEL_PAGE_ID, 'Anuncio', 0),
+      makeTemplateFunnelPage('page-2', 'Gracias', 1)
+    ]
+  }
+
+  if (id === 'executive') {
+    return [
+      makeTemplateFunnelPage(DEFAULT_FUNNEL_PAGE_ID, 'Diagnostico', 0),
+      makeTemplateFunnelPage('page-2', 'Agenda', 1),
+      makeTemplateFunnelPage('page-3', 'Gracias', 2)
+    ]
+  }
+
+  if (id === 'vsl') {
+    return [
+      makeTemplateFunnelPage(DEFAULT_FUNNEL_PAGE_ID, 'Carta de ventas', 0),
+      makeTemplateFunnelPage('page-2', 'Agenda', 1),
+      makeTemplateFunnelPage('page-3', 'Gracias', 2)
+    ]
+  }
+
+  if (id === 'premium') {
+    return [
+      makeTemplateFunnelPage(DEFAULT_FUNNEL_PAGE_ID, 'Presentacion', 0),
+      makeTemplateFunnelPage('page-2', 'Agenda privada', 1),
+      makeTemplateFunnelPage('page-3', 'Gracias', 2)
+    ]
+  }
+
+  return [
+    makeTemplateFunnelPage(DEFAULT_FUNNEL_PAGE_ID, 'Opt-in', 0),
+    makeTemplateFunnelPage('page-2', 'Agenda', 1),
+    makeTemplateFunnelPage('page-3', 'Gracias', 2)
+  ]
+}
+
 const resolveTemplateId = (site?: PublicSite | null): SiteTemplateId => {
   const explicit = site?.theme?.template
   if (explicit && templateMetaById(explicit)) return explicit
@@ -2219,7 +2283,11 @@ export const Sites: React.FC = () => {
           ...(siteType === 'landing_page'
             ? {
                 pageMaxWidth: templateDefaults.pageMaxWidth ?? 1440,
-                pages: normalizePagesForSave([{ id: DEFAULT_FUNNEL_PAGE_ID, title: 'Pagina 1', sortOrder: 0 }])
+                pages: normalizePagesForSave(
+                  mode === 'blank'
+                    ? [makeTemplateFunnelPage(DEFAULT_FUNNEL_PAGE_ID, 'Pagina 1', 0)]
+                    : getTemplateFunnelPages(template)
+                )
               }
             : {})
         },
@@ -3643,20 +3711,20 @@ type TemplateGalleryCategory = {
 const LANDING_TEMPLATE_CATEGORIES: TemplateGalleryCategory[] = [
   {
     id: 'full-page',
-    title: 'Paginas completas',
-    description: 'Sitios grandes para explicar tu oferta, mostrar beneficios y llevar a una accion clara.',
+    title: 'Web grandes',
+    description: 'Embudos completos con pagina principal, captura, agenda o confirmacion.',
     ids: ['ristak', 'executive', 'local']
   },
   {
     id: 'sales-pages',
     title: 'Cartas y lanzamientos',
-    description: 'Paginas grandes para vender una oferta, lanzar una promocion o presentar algo premium.',
+    description: 'Flujos completos para vender, registrar interesados y cerrar con pagina de gracias.',
     ids: ['vsl', 'launch', 'premium']
   },
   {
     id: 'social',
     title: 'Redes sociales',
-    description: 'Apariencias cortas para trafico que viene desde anuncios o perfiles sociales.',
+    description: 'Flujos cortos para anuncios sociales con captura y confirmacion final.',
     ids: ['facebook', 'instagram', 'tiktok']
   }
 ]
@@ -3775,7 +3843,7 @@ const CreateFlowPanel: React.FC<CreateFlowPanelProps> = ({ step, creating, onCre
           <button type="button" disabled={creating} onClick={() => onAdvance('landing-template')}>
             <LayoutTemplate size={22} />
             <strong>Desde plantilla</strong>
-            <p>Elige entre paginas completas, cartas de venta, lanzamientos y redes sociales.</p>
+            <p>Elige embudos completos para web, ventas, lanzamientos o redes sociales.</p>
             <ChevronRight size={18} />
           </button>
           <button type="button" disabled={creating} onClick={() => onCreate('landing_page', 'blank', 'ristak')}>
