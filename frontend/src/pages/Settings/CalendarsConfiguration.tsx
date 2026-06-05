@@ -62,9 +62,33 @@ const GOOGLE_HELP_LINKS = {
   videoSearch: 'https://www.youtube.com/results?search_query=Google+Cloud+service+account+JSON+key+Google+Calendar+API'
 }
 
+const CALENDAR_COLOR_PALETTE = [
+  { label: 'Azul', value: '#3b82f6' },
+  { label: 'Cielo', value: '#38bdf8' },
+  { label: 'Menta', value: '#14b8a6' },
+  { label: 'Verde', value: '#22c55e' },
+  { label: 'Lima', value: '#84cc16' },
+  { label: 'Amarillo', value: '#f59e0b' },
+  { label: 'Naranja', value: '#f97316' },
+  { label: 'Rojo', value: '#ef4444' },
+  { label: 'Rosa', value: '#ec4899' },
+  { label: 'Violeta', value: '#8b5cf6' },
+  { label: 'Indigo', value: '#6366f1' },
+  { label: 'Grafito', value: '#64748b' }
+]
+
+const CALENDAR_DEFAULT_COLOR = '#3b82f6'
+const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i
+
 const normalizeBase64 = (value: string) => {
   const normalized = value.trim().replace(/-/g, '+').replace(/_/g, '/')
   return normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
+}
+
+const normalizeCalendarColor = (value?: string | null) => {
+  const raw = String(value || '').trim()
+  if (HEX_COLOR_PATTERN.test(raw)) return raw.toLowerCase()
+  return CALENDAR_DEFAULT_COLOR
 }
 
 const normalizeGoogleCalendarIdInput = (value: string) => {
@@ -148,7 +172,7 @@ const getGoogleFailureHelp = (message = '') => {
 
 export const CalendarsConfiguration: React.FC = () => {
   const { showToast, showConfirm } = useNotification()
-  const { locationId, accessToken } = useAuth()
+  const { locationId, accessToken, user } = useAuth()
 
   // Estados de configuración (usa sistema híbrido)
   const [defaultCalendarId, setDefaultCalendarId] = useAppConfig<string>('default_calendar_id', '')
@@ -179,6 +203,7 @@ export const CalendarsConfiguration: React.FC = () => {
   const [googleCalendarId, setGoogleCalendarId] = useState('')
   const [serviceAccountJson, setServiceAccountJson] = useState('')
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showNotificationsModal, setShowNotificationsModal] = useState(false)
   const [creatingCalendar, setCreatingCalendar] = useState(false)
   const [newCalendar, setNewCalendar] = useState<Partial<CalendarType>>({
     name: '',
@@ -757,6 +782,59 @@ export const CalendarsConfiguration: React.FC = () => {
     )
   }
 
+  const renderCalendarColorPicker = (
+    value: string | undefined,
+    onChange: (nextColor: string) => void,
+    compact = false
+  ) => {
+    const currentColor = normalizeCalendarColor(value)
+    const inputValue = value || currentColor
+
+    return (
+      <div className={`${pageStyles.calendarColorPicker} ${compact ? pageStyles.calendarColorPickerCompact : ''}`}>
+        <div className={pageStyles.calendarColorRow}>
+          <span
+            className={pageStyles.calendarColorPreview}
+            style={{ backgroundColor: currentColor }}
+            aria-hidden="true"
+          />
+          <input
+            className={pageStyles.calendarColorHex}
+            value={inputValue}
+            spellCheck={false}
+            maxLength={7}
+            onChange={(event) => onChange(event.target.value)}
+            onBlur={(event) => onChange(normalizeCalendarColor(event.target.value))}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                onChange(normalizeCalendarColor(event.currentTarget.value))
+              }
+            }}
+            aria-label="Color del calendario en hexadecimal"
+          />
+        </div>
+
+        <div className={pageStyles.calendarPalette} aria-label="Paleta de colores del calendario">
+          {CALENDAR_COLOR_PALETTE.map((color) => {
+            const selected = currentColor === color.value
+            return (
+              <button
+                key={color.value}
+                type="button"
+                className={`${pageStyles.calendarPaletteSwatch} ${selected ? pageStyles.calendarPaletteSwatchActive : ''}`}
+                style={{ backgroundColor: color.value }}
+                onClick={() => onChange(color.value)}
+                aria-label={`Usar color ${color.label}`}
+                aria-pressed={selected}
+              />
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
   const renderCreateCalendarModal = () => showCreateModal ? createPortal(
     <Modal
       isOpen={showCreateModal}
@@ -810,12 +888,10 @@ export const CalendarsConfiguration: React.FC = () => {
 
         <div className={styles.formField}>
           <label className={styles.label}>Color</label>
-          <input
-            type="color"
-            value={newCalendar.eventColor || '#3b82f6'}
-            onChange={(e) => setNewCalendar({ ...newCalendar, eventColor: e.target.value })}
-            style={{ width: 56, height: 38, padding: 0, border: '1px solid var(--color-border)', borderRadius: 6, background: 'transparent' }}
-          />
+          {renderCalendarColorPicker(
+            newCalendar.eventColor,
+            (nextColor) => setNewCalendar({ ...newCalendar, eventColor: nextColor })
+          )}
         </div>
 
         <div style={{ display: 'flex', gap: '12px', paddingTop: '8px', borderTop: '1px solid var(--color-border)' }}>
@@ -997,15 +1073,14 @@ export const CalendarsConfiguration: React.FC = () => {
                 />
               </label>
 
-              <label className={pageStyles.editorField}>
+              <div className={pageStyles.editorField}>
                 <span>Color</span>
-                <input
-                  type="color"
-                  className={pageStyles.colorInput}
-                  value={selectedCalendar.eventColor || '#3b82f6'}
-                  onChange={(event) => updateSelectedCalendar({ eventColor: event.target.value })}
-                />
-              </label>
+                {renderCalendarColorPicker(
+                  selectedCalendar.eventColor,
+                  (nextColor) => updateSelectedCalendar({ eventColor: nextColor }),
+                  true
+                )}
+              </div>
 
               <div className={pageStyles.editorField}>
                 <span>Estado</span>
@@ -1278,70 +1353,124 @@ export const CalendarsConfiguration: React.FC = () => {
     )
   }
 
-  const renderCalendarNotificationsPanel = () => (
-    <section className={pageStyles.notificationsPanel}>
-      <div className={pageStyles.notificationsHeader}>
-        <div className={pageStyles.notificationsTitle}>
-          <span className={pageStyles.notificationsIcon}>
-            {calendarPushEnabled ? <Bell size={18} /> : <BellOff size={18} />}
-          </span>
-          <div>
-            <h3>Avisos en celulares</h3>
-            <p>Cuando alguien agenda, Ristak avisa a los celulares que ya dieron permiso.</p>
-          </div>
-        </div>
+  const getNotificationScopeLabel = () => {
+    if (!calendarPushEnabled) return 'Apagadas'
+    if (calendarPushNotificationIds.length === 0) return 'Todos los calendarios'
+    return `${calendarPushNotificationIds.length} calendario${calendarPushNotificationIds.length === 1 ? '' : 's'}`
+  }
 
-        <button
-          type="button"
-          className={`${pageStyles.editorToggle} ${calendarPushEnabled ? pageStyles.editorToggleActive : ''}`}
-          onClick={handleCalendarPushEnabledToggle}
-          aria-pressed={calendarPushEnabled}
-        >
-          <span />
-          {calendarPushEnabled ? 'Encendidos' : 'Apagados'}
-        </button>
-      </div>
-
-      <div className={pageStyles.phoneInstallHint}>
-        <Smartphone size={16} />
-        <span>El usuario debe abrir Ristak desde el icono del celular y tocar “Activar” en Avisos.</span>
-      </div>
-
-      <div className={pageStyles.notificationCalendarPicker}>
-        <div className={pageStyles.notificationPickerHeader}>
-          <strong>Calendarios que mandan aviso</strong>
-          <span>{calendarPushNotificationIds.length ? `${calendarPushNotificationIds.length} elegido${calendarPushNotificationIds.length === 1 ? '' : 's'}` : 'Todos'}</span>
-        </div>
-
-        <button
-          type="button"
-          className={`${pageStyles.notificationAllButton} ${calendarPushNotificationIds.length === 0 ? pageStyles.notificationAllButtonActive : ''}`}
-          onClick={handleUseAllCalendarPushNotifications}
-        >
-          Todos los calendarios
-        </button>
-
-        {calendars.length > 0 && (
-          <div className={pageStyles.notificationChips}>
-            {calendars.map((calendar) => {
-              const selected = calendarPushNotificationIds.includes(calendar.id)
-              return (
-                <button
-                  key={calendar.id}
-                  type="button"
-                  className={`${pageStyles.notificationChip} ${selected ? pageStyles.notificationChipActive : ''}`}
-                  onClick={() => handleCalendarPushSelectionToggle(calendar.id)}
-                >
-                  <span style={{ backgroundColor: calendar.eventColor || 'var(--color-primary)' }} />
-                  {calendar.name}
-                </button>
-              )
-            })}
-          </div>
-        )}
-      </div>
-    </section>
+  const renderNotificationsHeaderAction = () => (
+    <button
+      type="button"
+      className={`${pageStyles.notificationsHeaderButton} ${calendarPushEnabled ? pageStyles.notificationsHeaderButtonActive : ''}`}
+      onClick={() => setShowNotificationsModal(true)}
+    >
+      <span className={pageStyles.notificationsButtonMark}>
+        {calendarPushEnabled ? <Bell size={16} /> : <BellOff size={16} />}
+      </span>
+      <span className={pageStyles.notificationsButtonText}>
+        <strong>Notificaciones</strong>
+        <small>{getNotificationScopeLabel()}</small>
+      </span>
+    </button>
   )
+
+  const renderCalendarNotificationsModal = () => showNotificationsModal ? createPortal(
+    <Modal
+      isOpen={showNotificationsModal}
+      onClose={() => setShowNotificationsModal(false)}
+      title="Notificaciones"
+      size="md"
+    >
+      <div className={pageStyles.notificationsModal}>
+        <section className={pageStyles.notificationsHero}>
+          <div className={pageStyles.notificationsTitle}>
+            <span className={pageStyles.notificationsIcon}>
+              {calendarPushEnabled ? <Bell size={18} /> : <BellOff size={18} />}
+            </span>
+            <div>
+              <h3>Avisos en celulares</h3>
+              <p>Cuando alguien agenda, Ristak avisa a los celulares que ya dieron permiso.</p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            className={`${pageStyles.editorToggle} ${calendarPushEnabled ? pageStyles.editorToggleActive : ''}`}
+            onClick={handleCalendarPushEnabledToggle}
+            aria-pressed={calendarPushEnabled}
+          >
+            <span />
+            {calendarPushEnabled ? 'Encendidos' : 'Apagados'}
+          </button>
+        </section>
+
+        <section className={pageStyles.notificationSettingsSection}>
+          <div className={pageStyles.notificationSectionHeader}>
+            <strong>Quién recibirá avisos</strong>
+            <span>Reciben avisos los celulares donde esta cuenta haya permitido notificaciones.</span>
+          </div>
+
+          <div className={pageStyles.notificationRecipientList}>
+            <div className={pageStyles.notificationRecipientCard}>
+              <span className={pageStyles.notificationRecipientIcon}>
+                <Bell size={16} />
+              </span>
+              <div>
+                <strong>{user?.name || user?.username || 'Cuenta actual'}</strong>
+                <span>{user?.email || user?.username || 'Usuario conectado en Ristak'}</span>
+              </div>
+            </div>
+
+            <div className={pageStyles.notificationRecipientCard}>
+              <span className={pageStyles.notificationRecipientIcon}>
+                <Smartphone size={16} />
+              </span>
+              <div>
+                <strong>Celulares con permiso</strong>
+                <span>Cada persona debe abrir Ristak desde el icono del celular y tocar “Activar” en Avisos.</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className={pageStyles.notificationSettingsSection}>
+          <div className={pageStyles.notificationPickerHeader}>
+            <strong>Calendarios que mandan aviso</strong>
+            <span>{calendarPushNotificationIds.length ? `${calendarPushNotificationIds.length} elegido${calendarPushNotificationIds.length === 1 ? '' : 's'}` : 'Todos'}</span>
+          </div>
+
+          <button
+            type="button"
+            className={`${pageStyles.notificationAllButton} ${calendarPushNotificationIds.length === 0 ? pageStyles.notificationAllButtonActive : ''}`}
+            onClick={handleUseAllCalendarPushNotifications}
+          >
+            Todos los calendarios
+          </button>
+
+          {calendars.length > 0 && (
+            <div className={pageStyles.notificationChips}>
+              {calendars.map((calendar) => {
+                const selected = calendarPushNotificationIds.includes(calendar.id)
+                return (
+                  <button
+                    key={calendar.id}
+                    type="button"
+                    className={`${pageStyles.notificationChip} ${selected ? pageStyles.notificationChipActive : ''}`}
+                    onClick={() => handleCalendarPushSelectionToggle(calendar.id)}
+                  >
+                    <span style={{ backgroundColor: calendar.eventColor || 'var(--color-primary)' }} />
+                    {calendar.name}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </section>
+      </div>
+    </Modal>,
+    document.body
+  ) : null
 
   const renderCalendarRow = (calendar: CalendarType) => {
     const isAttributed = attributionCalendarIds.includes(calendar.id)
@@ -1474,8 +1603,6 @@ export const CalendarsConfiguration: React.FC = () => {
         <summary>¿Qué significa “conversión”?</summary>
         <p>Los calendarios marcados alimentan citas en reportes, campañas, viaje del cliente y eventos de Meta/WhatsApp. Si no marcas ninguno, Ristak toma todos.</p>
       </details>
-
-      {renderCalendarNotificationsPanel()}
 
       {calendars.length > 0 ? (
         <div className={pageStyles.calendarList}>
@@ -1865,6 +1992,13 @@ export const CalendarsConfiguration: React.FC = () => {
     )
   }
 
+  const renderCalendarHeaderActions = () => (
+    <div className={pageStyles.headerActionGroup}>
+      {renderGoogleHeaderAction()}
+      {renderNotificationsHeaderAction()}
+    </div>
+  )
+
   if (loadingCalendars) {
     return <Loading message="Cargando calendarios..." page="calendar-settings" />
   }
@@ -1897,13 +2031,14 @@ export const CalendarsConfiguration: React.FC = () => {
               </p>
             </div>
           </div>
-          {activeView === 'calendars' && renderGoogleHeaderAction()}
+          {activeView === 'calendars' && renderCalendarHeaderActions()}
         </div>
 
         {activeView === 'calendars' ? renderCalendarsTab() : renderGoogleCalendarTab()}
       </Card>
 
       {renderCreateCalendarModal()}
+      {renderCalendarNotificationsModal()}
       {renderGoogleDefaultPromptModal()}
     </div>
   )
