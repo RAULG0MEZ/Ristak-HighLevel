@@ -2464,7 +2464,7 @@ export const Sites: React.FC = () => {
   }
 
   return (
-    <>
+    <div className={styles.pageFrame}>
       <div className={`${styles.container} ${isFocusedSitesMode ? styles.containerFocused : ''}`}>
         <header className={`${styles.header} ${editorSite ? styles.editorHeader : ''}`}>
           {editorSite ? (
@@ -2866,7 +2866,7 @@ export const Sites: React.FC = () => {
         </main>
       </div>
     </div>
-    </>
+  </div>
   )
 }
 
