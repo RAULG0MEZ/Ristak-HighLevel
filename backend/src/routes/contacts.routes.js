@@ -2,6 +2,7 @@ import express from 'express'
 import {
   getContacts,
   getContactById,
+  createContact,
   searchContacts,
   getContactStats,
   getContactsChart,
@@ -18,6 +19,7 @@ router.get('/', getContacts)
 router.get('/search', searchContacts)
 router.get('/stats', getContactStats)
 router.get('/chart', getContactsChart)
+router.post('/', createContact)
 router.post('/sync-stats', syncContactsStats)
 router.get('/:id', getContactById)
 router.get('/:id/journey', getContactJourney)

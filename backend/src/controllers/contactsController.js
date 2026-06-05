@@ -4,7 +4,7 @@ import { updateContactsStats } from '../utils/updateContactsStats.js'
 import { resolveDateRange, resolveDateRangeWithGHLTimezone } from '../utils/dateUtils.js'
 import { buildContactStats } from '../services/analyticsService.js'
 import { getGHLClient } from '../services/ghlClient.js'
-import { prepareContactPhoneUpsert } from '../services/contactIdentityService.js'
+import { findContactByPhoneCandidates, prepareContactPhoneUpsert } from '../services/contactIdentityService.js'
 import { getHiddenContactFilters, buildHiddenContactsCondition } from '../utils/hiddenContactsFilter.js'
 import { nonTestPaymentCondition } from '../utils/paymentMode.js'
 import { buildContactSearchClause, buildContactSearchRank } from '../utils/searchText.js'
@@ -54,6 +54,47 @@ const APPOINTMENT_ATTENDED_STATUSES = new Set(['showed', 'attended', 'completed'
 const sqlList = values => [...values].map(value => `'${value}'`).join(', ')
 const ACTIVE_APPOINTMENT_CONDITION = `LOWER(COALESCE(appointment_status, status, '')) NOT IN (${sqlList(APPOINTMENT_CANCELED_STATUSES)})`
 const ATTENDED_APPOINTMENT_CONDITION = `LOWER(COALESCE(appointment_status, status, '')) IN (${sqlList(APPOINTMENT_ATTENDED_STATUSES)})`
+
+const cleanString = (value) => String(value || '').trim()
+
+const splitName = (name = '') => {
+  const parts = cleanString(name).split(/\s+/).filter(Boolean)
+  return {
+    firstName: parts[0] || '',
+    lastName: parts.slice(1).join(' ')
+  }
+}
+
+const createManualContactId = () => `manual_contact_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+
+const mapContactRowForResponse = (contact = {}) => {
+  let status = 'lead'
+  if (Number(contact.purchases_count || 0) > 0) {
+    status = 'customer'
+  } else if (contact.has_appointments || contact.appointment_date) {
+    status = 'appointment'
+  }
+
+  return {
+    id: contact.id,
+    createdAt: contact.created_at,
+    name: contact.full_name || '',
+    email: contact.email || '',
+    phone: contact.phone || '',
+    ltv: parseFloat(contact.total_paid || 0),
+    status,
+    lastPurchase: contact.last_purchase_date,
+    purchases: contact.purchases_count || 0,
+    hasAppointments: Boolean(contact.has_appointments),
+    hasShowedAppointment: Boolean(contact.has_showed_appointment),
+    hasAttendedAppointment: Boolean(contact.has_showed_appointment),
+    source: contact.source,
+    ad_name: contact.attribution_ad_name,
+    ad_id: contact.attribution_ad_id,
+    customFields: parseContactCustomFields(contact.custom_fields),
+    notes: ''
+  }
+}
 
 /**
  * Obtiene todos los contactos con paginación y filtros
@@ -902,6 +943,106 @@ export const searchContacts = async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Error buscando contactos'
+    })
+  }
+}
+
+/**
+ * Crea un contacto local directamente en la base de datos
+ */
+export const createContact = async (req, res) => {
+  try {
+    const {
+      name,
+      full_name,
+      first_name,
+      last_name,
+      email,
+      phone,
+      source,
+      createdAt
+    } = req.body || {}
+
+    const firstNameInput = cleanString(first_name)
+    const lastNameInput = cleanString(last_name)
+    const fullName = cleanString(full_name || name || [firstNameInput, lastNameInput].filter(Boolean).join(' '))
+    const normalizedEmail = cleanString(email).toLowerCase() || null
+    const normalizedPhone = phone ? normalizePhoneForStorage(phone) : null
+
+    if (!fullName && !normalizedEmail && !normalizedPhone) {
+      return res.status(400).json({
+        success: false,
+        error: 'Agrega al menos nombre, correo o teléfono para crear el contacto'
+      })
+    }
+
+    if (normalizedEmail) {
+      const existingByEmail = await db.get(
+        'SELECT id, full_name FROM contacts WHERE LOWER(email) = ? LIMIT 1',
+        [normalizedEmail]
+      )
+
+      if (existingByEmail) {
+        return res.status(409).json({
+          success: false,
+          error: 'Ya existe un contacto con ese correo. Búscalo en la lista y edítalo si necesitas cambiar algo.'
+        })
+      }
+    }
+
+    if (normalizedPhone) {
+      const existingByPhone = await findContactByPhoneCandidates(normalizedPhone)
+      if (existingByPhone) {
+        return res.status(409).json({
+          success: false,
+          error: 'Ya existe un contacto con ese teléfono. Búscalo en la lista y edítalo si necesitas cambiar algo.'
+        })
+      }
+    }
+
+    const id = createManualContactId()
+    const nameParts = fullName ? splitName(fullName) : {
+      firstName: firstNameInput,
+      lastName: lastNameInput
+    }
+    const createdAtValue = createdAt && !Number.isNaN(Date.parse(createdAt))
+      ? new Date(createdAt).toISOString()
+      : new Date().toISOString()
+    const sourceValue = cleanString(source) || 'ristak_manual'
+
+    await db.run(
+      `INSERT INTO contacts (
+        id, phone, email, full_name, first_name, last_name, source, custom_fields, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ${process.env.DATABASE_URL ? '?::jsonb' : '?'}, ?, CURRENT_TIMESTAMP)`,
+      [
+        id,
+        normalizedPhone,
+        normalizedEmail,
+        fullName || normalizedEmail || normalizedPhone || 'Contacto manual',
+        nameParts.firstName || null,
+        nameParts.lastName || null,
+        sourceValue,
+        serializeContactCustomFieldsForDb([]),
+        createdAtValue
+      ]
+    )
+
+    const contact = await db.get('SELECT * FROM contacts WHERE id = ?', [id])
+
+    logger.info(`Contacto manual creado: ${id} (${contact.full_name || contact.email || contact.phone || 'sin nombre'})`)
+
+    res.status(201).json({
+      success: true,
+      data: mapContactRowForResponse(contact)
+    })
+  } catch (error) {
+    logger.error(`Error creando contacto: ${error.message}`)
+    const isUniqueError = /unique|duplicate/i.test(error.message || '')
+    res.status(isUniqueError ? 409 : 500).json({
+      success: false,
+      error: isUniqueError
+        ? 'Ya existe un contacto con ese correo o teléfono.'
+        : 'Error creando contacto'
     })
   }
 }

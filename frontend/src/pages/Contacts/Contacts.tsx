@@ -13,7 +13,8 @@ import {
   Trash2,
   MoreVertical,
   Eye,
-  Mail
+  Mail,
+  Plus
 } from 'lucide-react'
 import { useDateRange } from '@/contexts/DateRangeContext'
 import { useTimezone } from '@/contexts/TimezoneContext'
@@ -42,6 +43,7 @@ const APPOINTMENT_CANCELED_STATUSES = new Set([
   'voided'
 ])
 const REVENUE_PAYMENT_STATUSES = new Set(['succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success'])
+const DELETE_CONFIRMATION_WORD = 'ELIMINAR'
 
 const getAppointmentStatusValue = (appointment: { appointment_status?: string | null; appointmentStatus?: string | null; status?: string | null }) =>
   String(appointment.appointment_status || appointment.appointmentStatus || appointment.status || '').trim().toLowerCase()
@@ -366,7 +368,10 @@ export const Contacts: React.FC = () => {
   const [contactDetailsLoading, setContactDetailsLoading] = useState(false)
   const [showNewContactModal, setShowNewContactModal] = useState(false)
   const [editingContact, setEditingContact] = useState<Contact | null>(null)
-  const [deletingContact, setDeletingContact] = useState<Contact | null>(null)
+  const [selectedContactIds, setSelectedContactIds] = useState<string[]>([])
+  const [contactsPendingDeletion, setContactsPendingDeletion] = useState<Contact[]>([])
+  const [contactDeleteConfirmation, setContactDeleteConfirmation] = useState('')
+  const [deletingContacts, setDeletingContacts] = useState(false)
   const [loading, setLoading] = useState(false)
   const [loadingEvents, setLoadingEvents] = useState(false) // Loading específico para eventos de calendarios
   const [viewMode, setViewMode] = useState<'all' | 'by-date'>('all') // Por defecto 'all' (Todos)
@@ -447,6 +452,17 @@ export const Contacts: React.FC = () => {
   useEffect(() => {
     setIsClient(true)
   }, [])
+
+  useEffect(() => {
+    if (selectedContactIds.length === 0) return
+
+    const availableIds = new Set(contacts.map(contact => contact.id))
+    const nextSelectedIds = selectedContactIds.filter(id => availableIds.has(id))
+
+    if (nextSelectedIds.length !== selectedContactIds.length) {
+      setSelectedContactIds(nextSelectedIds)
+    }
+  }, [contacts, selectedContactIds])
 
   // Cargar eventos de calendarios cuando se activa el filtro "Citados" o "Asistencias"
   useEffect(() => {
@@ -1029,6 +1045,13 @@ export const Contacts: React.FC = () => {
     })
   }, [contacts, filter, allEvents, selectedFilters])
 
+  const selectedContacts = useMemo(() => {
+    if (selectedContactIds.length === 0) return []
+
+    const selectedIds = new Set(selectedContactIds)
+    return contacts.filter(contact => selectedIds.has(contact.id))
+  }, [contacts, selectedContactIds])
+
   const filterOptions = [
     { label: 'Todos', value: 'all' },
     { label: labels.leads, value: 'leads' },
@@ -1054,6 +1077,68 @@ export const Contacts: React.FC = () => {
     }, labels)
 
     return badge ? <Badge variant={badge.variant}>{badge.text}</Badge> : null
+  }
+
+  const openContactDeleteModal = (targetContacts: Contact[]) => {
+    if (targetContacts.length === 0) return
+
+    setContactsPendingDeletion(targetContacts)
+    setContactDeleteConfirmation('')
+  }
+
+  const closeContactDeleteModal = () => {
+    if (deletingContacts) return
+
+    setContactsPendingDeletion([])
+    setContactDeleteConfirmation('')
+  }
+
+  const handleConfirmDeleteContacts = async () => {
+    if (contactsPendingDeletion.length === 0) return
+    if (contactDeleteConfirmation.trim().toUpperCase() !== DELETE_CONFIRMATION_WORD) return
+
+    setDeletingContacts(true)
+    const deletingIds = contactsPendingDeletion.map(contact => contact.id)
+    const failedContacts: Contact[] = []
+
+    for (const contact of contactsPendingDeletion) {
+      try {
+        await contactsService.deleteContact(contact.id)
+      } catch {
+        failedContacts.push(contact)
+      }
+    }
+
+    const deletedIds = new Set(
+      deletingIds.filter(id => !failedContacts.some(contact => contact.id === id))
+    )
+
+    if (deletedIds.size > 0) {
+      setContacts(prev => prev.filter(contact => !deletedIds.has(contact.id)))
+      setSelectedContactIds(prev => prev.filter(id => !deletedIds.has(id)))
+    }
+
+    setDeletingContacts(false)
+    setContactsPendingDeletion([])
+    setContactDeleteConfirmation('')
+
+    if (failedContacts.length > 0) {
+      showToast(
+        'error',
+        'No se pudieron eliminar todos',
+        `Se eliminaron ${deletedIds.size} y fallaron ${failedContacts.length}. Intenta otra vez con los pendientes.`
+      )
+    } else {
+      showToast(
+        'success',
+        contactsPendingDeletion.length === 1 ? 'Contacto eliminado' : 'Contactos eliminados',
+        contactsPendingDeletion.length === 1
+          ? 'El contacto se eliminó correctamente.'
+          : `Se eliminaron ${contactsPendingDeletion.length} contactos correctamente.`
+      )
+    }
+
+    fetchData()
   }
 
   const columns: Column<Contact>[] = [
@@ -1125,7 +1210,7 @@ export const Contacts: React.FC = () => {
             <div className={styles.actions}>
               <button
                 className={`${styles.actionButton} ${styles.deleteButton}`}
-                onClick={() => setDeletingContact(item)}
+                onClick={() => openContactDeleteModal([item])}
                 title="Eliminar contacto"
               >
                 <Trash2 size={16} />
@@ -1169,7 +1254,7 @@ export const Contacts: React.FC = () => {
 
                 {/* Eliminar */}
                 <DropdownMenuItem
-                  onClick={() => setDeletingContact(item)}
+                  onClick={() => openContactDeleteModal([item])}
                   className={styles.destructive}
                 >
                   <Trash2 size={16} />
@@ -1209,6 +1294,21 @@ export const Contacts: React.FC = () => {
       showToast('error', 'No se pudo crear el contacto', 'Hubo un problema al guardar el contacto. Verifica los datos e intenta nuevamente.')
     }
   }
+
+  const contactSelectionToolbar = selectedContacts.length > 0 ? (
+    <div className={styles.selectionToolbar}>
+      <span>{selectedContacts.length} seleccionado{selectedContacts.length === 1 ? '' : 's'}</span>
+      <Button
+        type="button"
+        variant="danger"
+        size="sm"
+        onClick={() => openContactDeleteModal(selectedContacts)}
+      >
+        <Trash2 size={16} />
+        Eliminar
+      </Button>
+    </div>
+  ) : null
 
   const contactsRefreshing = loading && hasLoadedContacts
 
@@ -1259,6 +1359,16 @@ export const Contacts: React.FC = () => {
                 })}
               />
             )}
+          </div>
+          <div className={styles.headerActions}>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setShowNewContactModal(true)}
+            >
+              <Plus size={16} />
+              Nuevo contacto
+            </Button>
           </div>
         </div>
 
@@ -1313,6 +1423,13 @@ export const Contacts: React.FC = () => {
           activeFilter={filter}
           onFilterChange={setFilter}
           tableId="contacts_v2"
+          toolbarStart={contactSelectionToolbar}
+          rowSelection={{
+            selectedKeys: selectedContactIds,
+            onChange: setSelectedContactIds,
+            getRowLabel: (item) => item.name || item.email || item.phone || 'contacto',
+            selectVisibleLabel: 'Seleccionar contactos visibles'
+          }}
         />
       </Card>
 
@@ -1332,29 +1449,46 @@ export const Contacts: React.FC = () => {
       {isClient && showNewContactModal && createPortal(
         <div className={styles.modalOverlay} onClick={() => setShowNewContactModal(false)}>
           <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <h2>Nuevo Contacto</h2>
+            <div className={styles.modalHeader}>
+              <div>
+                <h2>Nuevo contacto</h2>
+                <p className={styles.modalSubtitle}>Guarda a la persona para verla en tu lista y usarla en pagos o seguimiento.</p>
+              </div>
+              <button
+                className={styles.closeButton}
+                onClick={() => setShowNewContactModal(false)}
+                type="button"
+              >
+                <X size={20} />
+              </button>
+            </div>
             <form className={styles.form} onSubmit={(e) => {
               e.preventDefault()
               const formData = new FormData(e.currentTarget)
               const contact = {
-                name: formData.get('name') as string,
-                email: formData.get('email') as string,
-                phone: formData.get('phone') as string,
+                name: String(formData.get('name') || '').trim(),
+                email: String(formData.get('email') || '').trim(),
+                phone: String(formData.get('phone') || '').trim(),
+                source: String(formData.get('source') || '').trim() || 'Manual',
                 status: 'lead' as const
               }
               handleCreateContact(contact)
             }}>
               <div className={styles.formGroup}>
                 <label>Nombre completo</label>
-                <input name="name" type="text" required />
+                <input name="name" type="text" autoFocus required />
               </div>
               <div className={styles.formGroup}>
-                <label>Email</label>
-                <input name="email" type="email" required />
+                <label>Correo</label>
+                <input name="email" type="email" />
               </div>
               <div className={styles.formGroup}>
                 <label>Teléfono</label>
-                <input name="phone" type="tel" required />
+                <input name="phone" type="tel" />
+              </div>
+              <div className={styles.formGroup}>
+                <label>Fuente</label>
+                <input name="source" type="text" placeholder="Manual, WhatsApp, referido..." />
               </div>
               <div className={styles.formActions}>
                 <Button type="button" variant="ghost" onClick={() => setShowNewContactModal(false)}>
@@ -1448,40 +1582,48 @@ export const Contacts: React.FC = () => {
         document.body
       )}
 
-      {isClient && deletingContact && createPortal(
-        <div className={styles.modalOverlay} onClick={() => setDeletingContact(null)}>
+      {isClient && contactsPendingDeletion.length > 0 && createPortal(
+        <div className={styles.modalOverlay} onClick={closeContactDeleteModal}>
           <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
             <div className={styles.modalHeader}>
-              <h2>¿Estás seguro?</h2>
+              <div>
+                <h2>Eliminar contacto{contactsPendingDeletion.length === 1 ? '' : 's'}</h2>
+                <p className={styles.modalSubtitle}>Esta acción borra la información seleccionada y no se puede deshacer.</p>
+              </div>
               <button
                 className={styles.closeButton}
-                onClick={() => setDeletingContact(null)}
+                onClick={closeContactDeleteModal}
+                disabled={deletingContacts}
+                type="button"
               >
                 <X size={20} />
               </button>
             </div>
             <p>
-              ¿Deseas eliminar a <strong>{deletingContact.name}</strong>?
-              Esta acción no se puede deshacer y se eliminarán todos los datos relacionados.
+              Vas a eliminar <strong>{contactsPendingDeletion.length}</strong> contacto{contactsPendingDeletion.length === 1 ? '' : 's'}.
+              Para confirmar, escribe <strong>{DELETE_CONFIRMATION_WORD}</strong> en la caja de abajo.
             </p>
+            <div className={styles.formGroup}>
+              <label>Palabra de confirmación</label>
+              <input
+                value={contactDeleteConfirmation}
+                onChange={(event) => setContactDeleteConfirmation(event.target.value)}
+                placeholder={DELETE_CONFIRMATION_WORD}
+                disabled={deletingContacts}
+                autoFocus
+              />
+            </div>
             <div className={styles.formActions}>
-              <Button type="button" variant="ghost" onClick={() => setDeletingContact(null)}>
+              <Button type="button" variant="ghost" onClick={closeContactDeleteModal} disabled={deletingContacts}>
                 Cancelar
               </Button>
               <Button
-                variant="primary"
-                onClick={async () => {
-                  try {
-                    await contactsService.deleteContact(deletingContact.id)
-                    setDeletingContact(null)
-                    showToast('success', '¡Contacto eliminado!', 'El contacto se eliminó correctamente')
-                    fetchData()
-                  } catch (error) {
-                    showToast('error', 'Error al eliminar', 'No se pudo eliminar el contacto')
-                  }
-                }}
+                variant="danger"
+                onClick={handleConfirmDeleteContacts}
+                loading={deletingContacts}
+                disabled={contactDeleteConfirmation.trim().toUpperCase() !== DELETE_CONFIRMATION_WORD || deletingContacts}
               >
-                Eliminar
+                Sí, eliminar
               </Button>
             </div>
           </div>
