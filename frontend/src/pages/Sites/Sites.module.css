@@ -4190,6 +4190,24 @@
   padding-top: 14px;
 }
 
+.containerFocused .createPanel {
+  min-height: calc(100vh - var(--header-height) - 170px);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 18px 0 0;
+}
+
+.containerFocused .createHeader {
+  max-width: 760px;
+}
+
+.containerFocused .choiceGrid,
+.containerFocused .templateGallery {
+  max-width: 1040px;
+}
+
 .builderGridLanding {
   grid-template-columns: 208px minmax(0, 1fr) 312px;
 }
