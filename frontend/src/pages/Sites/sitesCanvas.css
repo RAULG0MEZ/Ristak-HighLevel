@@ -383,8 +383,9 @@
   outline-offset: 4px;
   pointer-events: none;
   transform: translateY(0);
-  animation: rstkPalettePreviewIn .32s cubic-bezier(.2,.8,.2,1);
-  transition: transform .24s cubic-bezier(.2,.8,.2,1), opacity .18s ease, max-height .32s cubic-bezier(.2,.8,.2,1);
+  animation: rstkPalettePreviewIn .44s cubic-bezier(.2,.8,.2,1);
+  transition: transform .34s cubic-bezier(.2,.8,.2,1), opacity .2s ease, max-height .44s cubic-bezier(.2,.8,.2,1);
+  will-change: max-height, transform, opacity;
 }
 
 @keyframes rstkPalettePreviewIn {
@@ -414,7 +415,7 @@
   outline: 1.5px dashed rgba(37, 99, 235, 0.45);
   outline-offset: 8px;
   border-radius: 10px;
-  transition: min-height .32s cubic-bezier(.2,.8,.2,1), outline-color .18s ease, background .18s ease;
+  transition: min-height .42s cubic-bezier(.2,.8,.2,1), outline-color .2s ease, background .2s ease;
 }
 
 .rstkCanvas .rstk-section-column-target {
@@ -445,7 +446,7 @@
   padding: 16px;
 }
 
-/* Block toolbar (drag + delete). Counter-scaled so it stays usable at any zoom. */
+/* Block toolbar (drag + actions). Counter-scaled so it stays usable at any zoom. */
 .rstkCanvas .rstkBlockTools {
   position: absolute; top: -6px; right: -6px; z-index: 5;
   display: flex; gap: 4px; opacity: 0; pointer-events: none;
@@ -466,6 +467,16 @@
   background: #ffffff; color: #334155; box-shadow: 0 12px 24px -12px rgba(15, 23, 42, 0.72);
 }
 .rstkCanvas .rstkBlockTool:hover { color: #0f172a; border-color: rgba(148, 163, 184, 0.5); }
+.rstkCanvas .rstkBlockTool:disabled {
+  cursor: not-allowed;
+  color: #94a3b8;
+  opacity: .48;
+  box-shadow: none;
+}
+.rstkCanvas .rstkBlockToolMenu[data-state="open"] {
+  color: #0f172a;
+  border-color: rgba(37, 99, 235, 0.38);
+}
 .rstkCanvas .rstkBlockToolDrag { cursor: grab; }
 .rstkCanvas .rstkBlockToolDelete:hover { color: #dc2626; border-color: rgba(220, 38, 38, 0.4); }
 .rstkCanvas .rstkStepBadge {

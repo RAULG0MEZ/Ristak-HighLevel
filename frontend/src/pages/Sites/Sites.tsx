@@ -353,6 +353,9 @@ const getStatusClass = (site: PublicSite, domainConfig: SitesDomainConfig) => {
   return styles.statusSuccess
 }
 
+const isPublicSiteLive = (site: PublicSite, domainConfig: SitesDomainConfig) =>
+  site.status === 'published' && Boolean(domainConfig.domain && domainConfig.renderDomainVerified)
+
 const normalizeRouteInput = (value: string) => value
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
@@ -366,6 +369,9 @@ const getTrackingSafeRoutePath = (site: PublicSite) => `${getRoutePath(site).rep
 
 const buildPublicUrl = (site: PublicSite, domainConfig: SitesDomainConfig) =>
   domainConfig.domain ? `https://${domainConfig.domain}${getTrackingSafeRoutePath(site)}` : ''
+
+const buildLivePublicUrl = (site: PublicSite, domainConfig: SitesDomainConfig) =>
+  domainConfig.domain ? `https://${domainConfig.domain}${getRoutePath(site)}` : ''
 
 const getPublicRouteLabel = (site: PublicSite, domainConfig: SitesDomainConfig) =>
   domainConfig.domain ? `${domainConfig.domain}${getRoutePath(site)}` : getRoutePath(site)
@@ -2253,6 +2259,36 @@ export const Sites: React.FC = () => {
     }
   }
 
+  const handlePreviewLibrarySite = async (site: PublicSite) => {
+    if (isPublicSiteLive(site, domainConfig)) {
+      const liveWindow = window.open(buildLivePublicUrl(site, domainConfig), '_blank')
+      if (!liveWindow) {
+        showToast('error', 'Ventana bloqueada', 'Permite popups para abrir el sitio en vivo.')
+      } else {
+        liveWindow.opener = null
+      }
+      return
+    }
+
+    const previewWindow = window.open('', '_blank')
+    if (!previewWindow) {
+      showToast('error', 'Preview bloqueado', 'Permite popups para abrir la previsualizacion.')
+      return
+    }
+
+    previewWindow.document.write('<!doctype html><title>Previsualizando...</title><body style="font-family: system-ui; padding: 24px;">Cargando previsualizacion...</body>')
+    try {
+      const pageId = isLanding(site) ? normalizeFunnelPages(site)[0]?.id : undefined
+      const html = await sitesService.getPreviewHtml(site.id, pageId, { test: true })
+      previewWindow.document.open()
+      previewWindow.document.write(html)
+      previewWindow.document.close()
+    } catch (error) {
+      previewWindow.close()
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo previsualizar')
+    }
+  }
+
   const handleVerifyDomain = async () => {
     setVerifying(true)
     try {
@@ -2924,6 +2960,7 @@ export const Sites: React.FC = () => {
                 selectedSiteId={selectedSite?.id || ''}
                 onCreate={handleStartCreateFlow}
                 onEdit={selectSite}
+                onPreview={(site) => void handlePreviewLibrarySite(site)}
                 onUpdateRoute={handleUpdateLibraryRoute}
                 onDelete={(site) => void handleDeleteSite(site)}
                 domainConfig={domainConfig}
@@ -3137,12 +3174,10 @@ interface SitesLibraryPanelProps {
   domainConfig: SitesDomainConfig
   onCreate: () => void
   onEdit: (siteId: string) => void
+  onPreview: (site: PublicSite) => void
   onUpdateRoute: (site: PublicSite, slug: string) => Promise<void>
   onDelete: (site: PublicSite) => void
 }
-
-const isLibraryCardActionTarget = (target: EventTarget | null) =>
-  target instanceof HTMLElement && Boolean(target.closest('[data-library-card-action="true"]'))
 
 const LibrarySitePreview: React.FC<{
   site: PublicSite
@@ -3239,6 +3274,7 @@ const SitesLibraryPanel: React.FC<SitesLibraryPanelProps> = ({
   domainConfig,
   onCreate,
   onEdit,
+  onPreview,
   onUpdateRoute,
   onDelete
 }) => {
@@ -3252,6 +3288,7 @@ const SitesLibraryPanel: React.FC<SitesLibraryPanelProps> = ({
     setRouteDraft(getRouteEditorValue(site))
   }
   const cancelRouteEdit = () => {
+    if (routeSavingId) return
     setRouteEditingId(null)
     setRouteDraft('')
   }
@@ -3272,6 +3309,7 @@ const SitesLibraryPanel: React.FC<SitesLibraryPanelProps> = ({
       setRouteSavingId(null)
     }
   }
+  const routeEditingSite = routeEditingId ? sites.find(site => site.id === routeEditingId) || null : null
 
   return (
     <section className={styles.libraryPanel}>
@@ -3305,19 +3343,6 @@ const SitesLibraryPanel: React.FC<SitesLibraryPanelProps> = ({
             <article
               key={site.id}
               className={`${styles.libraryCard} ${selectedSiteId === site.id ? styles.libraryCardActive : ''}`}
-              role="button"
-              tabIndex={0}
-              onClick={(event) => {
-                if (isLibraryCardActionTarget(event.target)) return
-                onEdit(site.id)
-              }}
-              onKeyDown={(event) => {
-                if (event.target !== event.currentTarget || isLibraryCardActionTarget(event.target)) return
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault()
-                  onEdit(site.id)
-                }
-              }}
             >
               <div className={styles.libraryCardPreview}>
                 <DropdownMenu>
@@ -3359,6 +3384,16 @@ const SitesLibraryPanel: React.FC<SitesLibraryPanelProps> = ({
                 </DropdownMenu>
                 <LibrarySitePreview site={site} forms={forms} calendars={calendars} />
                 <span className={styles.libraryPreviewType}>{getSiteTypeLabel(site)}</span>
+                <div className={styles.libraryCardHoverActions} data-library-card-action="true">
+                  <button type="button" onClick={() => onEdit(site.id)}>
+                    <Pencil size={16} />
+                    Editar
+                  </button>
+                  <button type="button" onClick={() => onPreview(site)}>
+                    {isPublicSiteLive(site, domainConfig) ? <ExternalLink size={16} /> : <Eye size={16} />}
+                    {isPublicSiteLive(site, domainConfig) ? 'Ver en vivo' : 'Previsualizar'}
+                  </button>
+                </div>
               </div>
 
               <div className={styles.libraryCardBody}>
@@ -3366,51 +3401,66 @@ const SitesLibraryPanel: React.FC<SitesLibraryPanelProps> = ({
                   <strong>{site.name}</strong>
                   <span className={`${styles.statusPill} ${getStatusClass(site, domainConfig)}`}>{getStatusLabel(site, domainConfig)}</span>
                 </div>
-                {routeEditingId === site.id ? (
-                  <form
-                    className={styles.libraryRouteEditor}
-                    data-library-card-action="true"
-                    onPointerDown={stopCardAction}
-                    onClick={stopCardAction}
-                    onSubmit={(event) => {
-                      event.preventDefault()
-                      void saveRouteEdit(site)
-                    }}
-                  >
-                    <span className={styles.libraryRouteDomain} title={getPublicDomainPreview(domainConfig)}>
-                      {getPublicDomainPreview(domainConfig)}
-                    </span>
-                    <span className={styles.libraryRouteSlash} aria-hidden="true">/</span>
-                    <input
-                      value={routeDraft}
-                      aria-label={`Ruta de ${site.name}`}
-                      autoFocus
-                      disabled={routeSavingId === site.id}
-                      onFocus={(event) => event.currentTarget.select()}
-                      onChange={(event) => setRouteDraft(normalizeRouteEditorInput(event.target.value, domainConfig))}
-                      onKeyDown={(event) => {
-                        event.stopPropagation()
-                        if (event.key === 'Escape') {
-                          event.preventDefault()
-                          cancelRouteEdit()
-                        }
-                      }}
-                    />
-                    <button type="submit" disabled={routeSavingId === site.id} aria-label="Guardar ruta">
-                      <Check size={14} />
-                    </button>
-                    <button type="button" disabled={routeSavingId === site.id} onClick={cancelRouteEdit} aria-label="Cancelar cambio de ruta">
-                      <X size={14} />
-                    </button>
-                  </form>
-                ) : (
-                  <span className={styles.siteDomain}>{getPublicRouteLabel(site, domainConfig)}</span>
-                )}
+                <span className={styles.siteDomain}>{getPublicRouteLabel(site, domainConfig)}</span>
               </div>
             </article>
           )
         })}
       </div>
+
+      {routeEditingSite && (
+        <div className={styles.libraryRouteOverlay} onMouseDown={(event) => {
+          if (event.target === event.currentTarget) cancelRouteEdit()
+        }}>
+          <form
+            className={styles.libraryRouteEditor}
+            data-library-card-action="true"
+            onMouseDown={stopCardAction}
+            onClick={stopCardAction}
+            onSubmit={(event) => {
+              event.preventDefault()
+              void saveRouteEdit(routeEditingSite)
+            }}
+          >
+            <div className={styles.libraryRouteEditorHeader}>
+              <div>
+                <span>Ruta publica</span>
+                <strong>{routeEditingSite.name}</strong>
+              </div>
+              <button type="button" className={styles.libraryRouteClose} disabled={routeSavingId === routeEditingSite.id} onClick={cancelRouteEdit} aria-label="Cerrar editor de ruta">
+                <X size={17} />
+              </button>
+            </div>
+            <label className={styles.libraryRouteField}>
+              <span className={styles.libraryRouteDomain} title={getPublicDomainPreview(domainConfig)}>
+                {getPublicDomainPreview(domainConfig)}
+              </span>
+              <span className={styles.libraryRouteSlash} aria-hidden="true">/</span>
+              <input
+                value={routeDraft}
+                aria-label={`Ruta de ${routeEditingSite.name}`}
+                autoFocus
+                disabled={routeSavingId === routeEditingSite.id}
+                onFocus={(event) => event.currentTarget.select()}
+                onChange={(event) => setRouteDraft(normalizeRouteEditorInput(event.target.value, domainConfig))}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    event.preventDefault()
+                    cancelRouteEdit()
+                  }
+                }}
+              />
+            </label>
+            <div className={styles.libraryRouteActions}>
+              <button type="button" disabled={routeSavingId === routeEditingSite.id} onClick={cancelRouteEdit}>Cancelar</button>
+              <button type="submit" disabled={routeSavingId === routeEditingSite.id}>
+                <Check size={16} />
+                Guardar ruta
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </section>
   )
 }

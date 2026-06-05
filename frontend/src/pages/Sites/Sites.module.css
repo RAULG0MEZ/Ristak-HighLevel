@@ -450,7 +450,7 @@
   display: grid;
   grid-template-rows: 178px 1fr;
   overflow: hidden;
-  cursor: pointer;
+  cursor: default;
 }
 
 .libraryCardPreview {
@@ -575,6 +575,50 @@
   border-color: rgba(148, 163, 184, 0.42);
   background: var(--color-background-secondary);
   color: var(--color-text-primary);
+}
+
+.libraryCardHoverActions {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  background: rgba(8, 13, 23, 0.58);
+  opacity: 0;
+  pointer-events: none;
+  backdrop-filter: blur(4px);
+  transition: opacity 0.16s ease;
+}
+
+.libraryCard:hover .libraryCardHoverActions,
+.libraryCard:focus-within .libraryCardHoverActions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.libraryCardHoverActions button {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #111827;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 12px 34px -22px rgba(0, 0, 0, 0.58);
+}
+
+.libraryCardHoverActions button:hover {
+  background: #ffffff;
+  transform: translateY(-1px);
 }
 
 .trackingSummary {
@@ -4023,32 +4067,93 @@
   max-width: calc(100% - 26px);
 }
 
+.libraryRouteOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  background: rgba(2, 6, 23, 0.42);
+  padding: 18px;
+}
+
 .libraryRouteEditor {
-  position: absolute;
-  right: 13px;
-  bottom: 8px;
-  left: 13px;
-  z-index: 3;
+  width: min(560px, calc(100vw - 36px));
   min-width: 0;
-  min-height: 34px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  display: grid;
+  gap: 14px;
   border: 1px solid var(--color-border-subtle, rgba(148, 163, 184, 0.24));
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--color-background-secondary);
   color: var(--color-text-primary);
-  padding: 4px;
+  padding: 16px;
   cursor: default;
+  box-shadow: 0 32px 86px -46px rgba(0, 0, 0, 0.72);
+}
+
+.libraryRouteEditorHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.libraryRouteEditorHeader div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.libraryRouteEditorHeader span {
+  color: var(--color-text-tertiary);
+  font-size: 0.74rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.libraryRouteEditorHeader strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font-size: 1rem;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.libraryRouteClose {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border-subtle, rgba(148, 163, 184, 0.22));
+  border-radius: 8px;
+  background: var(--color-background-primary);
+  color: var(--color-text-secondary);
+  padding: 0;
+  cursor: pointer;
+}
+
+.libraryRouteField {
+  min-width: 0;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-border-subtle, rgba(148, 163, 184, 0.24));
+  border-radius: 10px;
+  background: var(--color-background-primary);
+  padding: 0 10px;
 }
 
 .libraryRouteDomain {
   min-width: 0;
-  max-width: 46%;
+  max-width: 44%;
   overflow: hidden;
   color: var(--color-text-secondary);
-  padding-left: 6px;
-  font-size: 0.74rem;
+  font-size: 0.82rem;
   font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4056,44 +4161,60 @@
 
 .libraryRouteSlash {
   color: var(--color-text-tertiary);
-  font-size: 0.86rem;
+  font-size: 1rem;
   font-weight: 900;
 }
 
-.libraryRouteEditor input {
+.libraryRouteField input {
   min-width: 42px;
   flex: 1;
   border: 0;
   background: transparent;
   color: var(--color-text-primary);
   font: inherit;
-  font-size: 0.82rem;
+  font-size: 1rem;
   font-weight: 850;
   outline: none;
 }
 
-.libraryRouteEditor button {
-  width: 26px;
-  height: 26px;
-  flex: 0 0 auto;
+.libraryRouteActions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.libraryRouteActions button {
+  min-height: 38px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 0;
-  border-radius: 7px;
-  background: rgba(148, 163, 184, 0.12);
+  gap: 7px;
+  border: 1px solid var(--color-border-subtle, rgba(148, 163, 184, 0.24));
+  border-radius: 8px;
+  background: var(--color-background-primary);
   color: var(--color-text-secondary);
-  padding: 0;
+  padding: 0 13px;
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 850;
   cursor: pointer;
 }
 
-.libraryRouteEditor button:hover {
+.libraryRouteActions button:last-child {
+  border-color: rgba(var(--color-primary-rgb), 0.28);
+  background: rgba(var(--color-primary-rgb), 0.14);
+  color: var(--color-primary);
+}
+
+.libraryRouteClose:hover,
+.libraryRouteActions button:hover {
   background: rgba(var(--color-primary-rgb), 0.14);
   color: var(--color-primary);
 }
 
 .libraryRouteEditor button:disabled,
-.libraryRouteEditor input:disabled {
+.libraryRouteField input:disabled {
   cursor: wait;
   opacity: 0.62;
 }
