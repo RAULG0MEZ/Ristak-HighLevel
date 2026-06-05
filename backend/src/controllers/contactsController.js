@@ -1475,6 +1475,76 @@ export const getContactJourney = async (req, res) => {
       })
     })
 
+    const whatsappApiMessages = await db.all(
+      `SELECT
+          msg.id as whatsapp_api_message_id,
+          msg.ycloud_message_id,
+          msg.wamid,
+          msg.message_text,
+          msg.message_type,
+          msg.message_timestamp,
+          msg.created_at,
+          msg.phone,
+          msg.direction,
+          COALESCE(attr.id, '') as attribution_id,
+          COALESCE(attr.detected_ctwa_clid, msg.detected_ctwa_clid) as detected_ctwa_clid,
+          COALESCE(attr.detected_source_id, msg.detected_source_id) as detected_source_id,
+          COALESCE(attr.detected_source_url, msg.detected_source_url) as detected_source_url,
+          COALESCE(attr.detected_source_type, msg.detected_source_type) as detected_source_type,
+          COALESCE(attr.detected_source_app, msg.detected_source_app) as detected_source_app,
+          COALESCE(attr.detected_entry_point, msg.detected_entry_point) as detected_entry_point,
+          COALESCE(attr.detected_headline, msg.detected_headline) as detected_headline,
+          COALESCE(attr.detected_body, msg.detected_body) as detected_body,
+          COALESCE(attr.detected_conversion_data, msg.detected_conversion_data) as detected_conversion_data,
+          COALESCE(attr.detected_ctwa_payload, msg.detected_ctwa_payload) as detected_ctwa_payload
+       FROM whatsapp_api_messages msg
+       LEFT JOIN whatsapp_api_attribution attr ON attr.whatsapp_api_message_id = msg.id
+       WHERE msg.contact_id = ?
+         AND msg.direction = 'inbound'
+       ORDER BY COALESCE(msg.message_timestamp, msg.created_at) ASC`,
+      [id]
+    )
+
+    whatsappApiMessages.forEach(msg => {
+      const isAdAttributed = Boolean(
+        msg.attribution_id ||
+        msg.detected_ctwa_clid ||
+        msg.detected_source_id ||
+        msg.detected_source_url ||
+        msg.detected_headline
+      )
+      const data = {
+        source: 'WhatsApp',
+        phone: msg.phone,
+        message_text: msg.message_text,
+        message_type: msg.message_type,
+        referral_source_url: msg.detected_source_url,
+        referral_source_type: msg.detected_source_type,
+        referral_ctwa_clid: msg.detected_ctwa_clid,
+        referral_source_id: msg.detected_source_id,
+        referral_headline: msg.detected_headline,
+        referral_body: msg.detected_body,
+        referral_source_app: msg.detected_source_app,
+        referral_entry_point: msg.detected_entry_point,
+        referral_conversion_data: msg.detected_conversion_data,
+        referral_ctwa_payload: msg.detected_ctwa_payload,
+        attribution_source: 'whatsapp_api',
+        attribution_record_id: msg.attribution_id || null,
+        whatsapp_api_message_id: msg.whatsapp_api_message_id,
+        whatsapp_message_id: msg.wamid || msg.ycloud_message_id,
+        is_ad_attributed: isAdAttributed
+      }
+
+      whatsappJourneyEvents.push({
+        type: 'whatsapp_message',
+        date: msg.message_timestamp || msg.created_at,
+        data: {
+          ...data,
+          ad_platform: detectWhatsAppAdPlatform(data)
+        }
+      })
+    })
+
     addWhatsAppJourneyEvents(whatsappJourneyEvents)
 
     // 3. Contacto creado

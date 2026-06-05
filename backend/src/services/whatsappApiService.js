@@ -16,6 +16,8 @@ const GENERIC_CONTACT_NAME = 'Contacto WhatsApp_API'
 const REQUIRED_WEBHOOK_EVENTS = [
   'whatsapp.inbound_message.received',
   'whatsapp.message.updated',
+  'whatsapp.smb.history',
+  'whatsapp.smb.message.created',
   'whatsapp.user.preferences',
   'contact.unsubscribe.created',
   'contact.unsubscribe.deleted',
@@ -29,6 +31,25 @@ const REQUIRED_WEBHOOK_EVENTS = [
   'whatsapp.business_account.reviewed',
   'whatsapp.business_account.deleted'
 ]
+
+const INBOUND_MESSAGE_EVENT_TYPES = new Set([
+  'whatsapp.inbound_message.received'
+])
+
+const OUTBOUND_MESSAGE_EVENT_TYPES = new Set([
+  'whatsapp.message.updated',
+  'whatsapp.smb.message.created'
+])
+
+const HISTORY_MESSAGE_EVENT_TYPES = new Set([
+  'whatsapp.smb.history'
+])
+
+const MESSAGE_EVENT_TYPES = new Set([
+  ...INBOUND_MESSAGE_EVENT_TYPES,
+  ...OUTBOUND_MESSAGE_EVENT_TYPES,
+  ...HISTORY_MESSAGE_EVENT_TYPES
+])
 
 const PHONE_STATUS_ALERTS = {
   BANNED: {
@@ -1286,6 +1307,16 @@ export async function connectWhatsAppApi({ apiKey, senderPhone, phoneNumberId, w
       await setAppConfig(CONFIG_KEYS.wabaId, selectedPhone.wabaId || '')
     }
 
+    await backfillStoredWhatsAppApiMessageEvents({
+      businessPhoneHints: [
+        selectedPhone?.phoneNumber,
+        senderPhone,
+        ...enrichedPhoneNumbers.flatMap(item => [item.phoneNumber, item.displayPhoneNumber])
+      ].filter(Boolean)
+    }).catch(error => {
+      logger.warn(`No se pudo recuperar historial guardado WhatsApp Business: ${error.message}`)
+    })
+
     return getWhatsAppApiStatus()
   } catch (error) {
     await setAppConfig(CONFIG_KEYS.lastError, error.message)
@@ -1323,9 +1354,11 @@ export async function refreshWhatsAppApi() {
 
     if (config.webhookEndpointId) {
       try {
-        const webhookEndpoint = await ycloudRequest(`/webhookEndpoints/${encodeURIComponent(config.webhookEndpointId)}`, {
-          apiKey: config.apiKey
-        })
+        const webhookEndpoint = config.webhookUrl
+          ? await updateWebhookEndpoint(config.apiKey, config.webhookEndpointId, config.webhookUrl)
+          : await ycloudRequest(`/webhookEndpoints/${encodeURIComponent(config.webhookEndpointId)}`, {
+              apiKey: config.apiKey
+            })
         await setAppConfig(CONFIG_KEYS.webhookStatus, webhookEndpoint.status || config.webhookStatus || '')
         await setAppConfig(CONFIG_KEYS.webhookUrl, webhookEndpoint.url || config.webhookUrl || '')
         if (webhookEndpoint.secret) {
@@ -1336,6 +1369,15 @@ export async function refreshWhatsAppApi() {
         await setAppConfig(CONFIG_KEYS.lastError, error.message)
       }
     }
+
+    await backfillStoredWhatsAppApiMessageEvents({
+      businessPhoneHints: [
+        config.senderPhone,
+        ...enrichedPhoneNumbers.flatMap(item => [item.phoneNumber, item.displayPhoneNumber])
+      ].filter(Boolean)
+    }).catch(error => {
+      logger.warn(`No se pudo recuperar historial guardado WhatsApp Business: ${error.message}`)
+    })
 
     await setAppConfig(CONFIG_KEYS.lastSyncedAt, nowIso())
     await setAppConfig(CONFIG_KEYS.lastError, '')
@@ -1399,9 +1441,20 @@ function shouldReplaceContactName(currentName, phone = '') {
   return !text || text === GENERIC_CONTACT_NAME || text === 'Contacto WhatsApp' || isPhoneLikeName(text, phone)
 }
 
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function normalizeMessageTextObject(value) {
+  if (typeof value === 'string') return { body: value }
+  return isPlainObject(value) ? value : null
+}
+
 function extractMessageText(message = {}) {
+  const text = normalizeMessageTextObject(message.text)
+
   return cleanString(
-    message.text?.body ||
+    text?.body ||
     message.button?.text ||
     message.interactive?.button_reply?.title ||
     message.interactive?.list_reply?.title ||
@@ -1409,6 +1462,7 @@ function extractMessageText(message = {}) {
     message.image?.caption ||
     message.video?.caption ||
     message.document?.caption ||
+    message.template?.name ||
     message.location?.name ||
     message.location?.address ||
     message.reaction?.emoji ||
@@ -1416,19 +1470,39 @@ function extractMessageText(message = {}) {
   )
 }
 
+function findReferralObject(payload = {}, message = {}) {
+  const candidates = [
+    message.referral,
+    message.context?.referral,
+    message.contextInfo?.referral,
+    message.context_info?.referral,
+    message.ad?.referral,
+    message.context?.ad,
+    message.contextInfo?.ad,
+    payload.whatsappInboundMessage?.referral,
+    payload.whatsappInboundMessage?.context?.referral,
+    payload.whatsappInboundMessage?.contextInfo?.referral,
+    payload.referral,
+    payload.context?.referral,
+    payload.contextInfo?.referral
+  ]
+
+  return candidates.find(isPlainObject) || {}
+}
+
 function extractAttribution(payload = {}, message = {}, messageText = '') {
-  const referral = message.referral || payload.whatsappInboundMessage?.referral || {}
-  const detected = detectWhatsAppAttributionFields(payload, [messageText])
+  const referral = findReferralObject(payload, message)
+  const detected = detectWhatsAppAttributionFields({ payload, message, referral }, [messageText])
 
   const attribution = {
-    ctwaClid: cleanString(referral.ctwa_clid || referral.ctwaClid || detected.ctwaClid),
-    sourceId: cleanString(referral.source_id || referral.sourceId || detected.sourceId),
+    ctwaClid: cleanString(referral.ctwa_clid || referral.ctwaClid || referral.ctwa || detected.ctwaClid),
+    sourceId: cleanString(referral.source_id || referral.sourceId || referral.ad_id || referral.adId || detected.sourceId),
     sourceUrl: cleanString(referral.source_url || referral.sourceUrl || detected.sourceUrl),
     sourceType: cleanString(referral.source_type || referral.sourceType || detected.sourceType),
-    sourceApp: cleanString(detected.sourceApp),
-    entryPoint: cleanString(detected.entryPoint),
-    headline: cleanString(referral.headline || detected.headline),
-    body: cleanString(referral.body || detected.body),
+    sourceApp: cleanString(referral.source_app || referral.sourceApp || detected.sourceApp),
+    entryPoint: cleanString(referral.entry_point || referral.entryPoint || detected.entryPoint),
+    headline: cleanString(referral.headline || referral.title || detected.headline),
+    body: cleanString(referral.body || referral.description || detected.body),
     imageUrl: cleanString(referral.image_url || referral.imageUrl),
     videoUrl: cleanString(referral.video_url || referral.videoUrl),
     thumbnailUrl: cleanString(referral.thumbnail_url || referral.thumbnailUrl),
@@ -1444,9 +1518,50 @@ function extractAttribution(payload = {}, message = {}, messageText = '') {
   }
 }
 
-function getMessageIdentity({ payload = {}, direction = '', message = {} }) {
+function normalizeDirectionValue(value) {
+  const text = cleanString(value).toLowerCase()
+  if (!text) return ''
+  if (['inbound', 'incoming', 'received', 'customer', 'user'].includes(text)) return 'inbound'
+  if (['outbound', 'outgoing', 'sent', 'business', 'api', 'app'].includes(text)) return 'outbound'
+  return ''
+}
+
+function normalizePhoneSet(values = []) {
+  return new Set(
+    values
+      .map(value => normalizePhoneForStorage(value) || cleanString(value))
+      .filter(Boolean)
+  )
+}
+
+function inferMessageDirection({ payload = {}, direction = '', message = {}, businessPhoneHints = [] }) {
   const type = cleanString(payload.type)
-  const normalizedDirection = direction || (type === 'whatsapp.inbound_message.received' ? 'inbound' : 'outbound')
+  const explicitDirection = normalizeDirectionValue(
+    direction ||
+    message.direction ||
+    message.messageDirection ||
+    message.message_direction ||
+    message.flow
+  )
+  if (explicitDirection) return explicitDirection
+
+  if (message.fromMe === true || message.from_me === true || message.isFromMe === true) return 'outbound'
+  if (message.fromMe === false || message.from_me === false || message.isFromMe === false) return 'inbound'
+
+  const hints = normalizePhoneSet(businessPhoneHints)
+  const fromPhone = normalizePhoneForStorage(message.from) || cleanString(message.from)
+  const toPhone = normalizePhoneForStorage(message.to) || cleanString(message.to)
+  if (fromPhone && hints.has(fromPhone)) return 'outbound'
+  if (toPhone && hints.has(toPhone)) return 'inbound'
+
+  if (INBOUND_MESSAGE_EVENT_TYPES.has(type)) return 'inbound'
+  if (OUTBOUND_MESSAGE_EVENT_TYPES.has(type)) return 'outbound'
+
+  return 'inbound'
+}
+
+function getMessageIdentity({ payload = {}, direction = '', message = {}, businessPhoneHints = [] }) {
+  const normalizedDirection = inferMessageDirection({ payload, direction, message, businessPhoneHints })
   const customerPhone = normalizedDirection === 'inbound' ? message.from : message.to
   const businessPhone = normalizedDirection === 'inbound' ? message.to : message.from
 
@@ -1595,12 +1710,57 @@ async function upsertWhatsAppApiContact({ contactId, phone, profileName, rawProf
   return apiContactId
 }
 
-async function upsertMessage({ payload, message, direction }) {
-  const identity = getMessageIdentity({ payload, direction, message })
-  const messageText = extractMessageText(message)
-  const messageTimestamp = toDateTime(message.sendTime || message.createTime || message.updateTime || payload.createTime) || nowIso()
-  const profileName = message.customerProfile?.name || message.profile?.name || ''
-  const attribution = extractAttribution(payload, message, messageText)
+function normalizeWebhookMessage(rawMessage = {}) {
+  if (!isPlainObject(rawMessage)) return rawMessage
+
+  const normalized = { ...rawMessage }
+  normalized.id = cleanString(normalized.id || normalized.messageId || normalized.message_id || normalized.ycloudMessageId) || normalized.id
+  normalized.wamid = cleanString(normalized.wamid || normalized.waMessageId || normalized.whatsappMessageId || normalized.messageWamid) || normalized.wamid
+  normalized.wabaId = cleanString(normalized.wabaId || normalized.waba_id || normalized.whatsappBusinessAccountId) || normalized.wabaId
+  normalized.from = cleanString(normalized.from || normalized.fromPhone || normalized.from_phone || normalized.sender || normalized.senderPhone) || normalized.from
+  normalized.to = cleanString(normalized.to || normalized.toPhone || normalized.to_phone || normalized.recipient || normalized.recipientPhone) || normalized.to
+  normalized.sendTime = normalized.sendTime || normalized.send_time || normalized.timestamp || normalized.messageTimestamp || normalized.createdAt
+  normalized.createTime = normalized.createTime || normalized.create_time || normalized.createdAt
+  normalized.updateTime = normalized.updateTime || normalized.update_time || normalized.updatedAt
+
+  const customerPhone = cleanString(normalized.customer || normalized.customerPhone || normalized.customer_phone || normalized.phone)
+  const businessPhone = cleanString(normalized.businessPhone || normalized.business_phone || normalized.business || normalized.senderPhoneNumber)
+  const explicitDirection = normalizeDirectionValue(normalized.direction || normalized.messageDirection || normalized.message_direction)
+  const fromMe = normalized.fromMe === true || normalized.from_me === true || normalized.isFromMe === true
+  const isOutbound = explicitDirection === 'outbound' || fromMe
+
+  if (customerPhone) {
+    if (isOutbound && !normalized.to) normalized.to = customerPhone
+    if (!isOutbound && !normalized.from) normalized.from = customerPhone
+  }
+
+  if (businessPhone) {
+    if (isOutbound && !normalized.from) normalized.from = businessPhone
+    if (!isOutbound && !normalized.to) normalized.to = businessPhone
+  }
+
+  if (typeof normalized.text === 'string') {
+    normalized.text = { body: normalized.text }
+  } else if (!normalized.text && typeof normalized.body === 'string' && !normalized.template) {
+    normalized.text = { body: normalized.body }
+  }
+
+  if (!normalized.customerProfile && normalized.profileName) {
+    normalized.customerProfile = { name: normalized.profileName }
+  } else if (!normalized.customerProfile && normalized.customerName) {
+    normalized.customerProfile = { name: normalized.customerName }
+  }
+
+  return normalized
+}
+
+async function upsertMessage({ payload, message, direction, businessPhoneHints = [] }) {
+  const normalizedMessage = normalizeWebhookMessage(message)
+  const identity = getMessageIdentity({ payload, direction, message: normalizedMessage, businessPhoneHints })
+  const messageText = extractMessageText(normalizedMessage)
+  const messageTimestamp = toDateTime(normalizedMessage.sendTime || normalizedMessage.createTime || normalizedMessage.updateTime || payload.createTime) || nowIso()
+  const profileName = normalizedMessage.customerProfile?.name || normalizedMessage.profile?.name || ''
+  const attribution = extractAttribution(payload, normalizedMessage, messageText)
   const localContact = await upsertLocalContact({
     phone: identity.phone,
     profileName,
@@ -1612,15 +1772,15 @@ async function upsertMessage({ payload, message, direction }) {
     contactId: localContact.id,
     phone: identity.phone,
     profileName,
-    rawProfile: message.customerProfile || message.profile || null,
+    rawProfile: normalizedMessage.customerProfile || normalizedMessage.profile || null,
     seenAt: messageTimestamp
   })
 
-  const ycloudMessageId = cleanString(message.id)
-  const wamid = cleanString(message.wamid || message.context?.id)
+  const ycloudMessageId = cleanString(normalizedMessage.id)
+  const wamid = cleanString(normalizedMessage.wamid || normalizedMessage.context?.id)
   const messageId = hashId('waapi_msg', ycloudMessageId || wamid || `${payload.id}|${identity.direction}|${identity.phone}`)
-  const status = cleanString(message.status)
-  const error = Array.isArray(message.errors) ? message.errors[0] : message.error
+  const status = cleanString(normalizedMessage.status)
+  const error = Array.isArray(normalizedMessage.errors) ? normalizedMessage.errors[0] : normalizedMessage.error
 
   await db.run(`
     INSERT INTO whatsapp_api_messages (
@@ -1633,10 +1793,32 @@ async function upsertMessage({ payload, message, direction }) {
       detected_conversion_data, detected_ctwa_payload, updated_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(id) DO UPDATE SET
+      whatsapp_api_contact_id = COALESCE(excluded.whatsapp_api_contact_id, whatsapp_api_messages.whatsapp_api_contact_id),
+      contact_id = COALESCE(excluded.contact_id, whatsapp_api_messages.contact_id),
+      phone = COALESCE(NULLIF(excluded.phone, ''), whatsapp_api_messages.phone),
+      from_phone = COALESCE(NULLIF(excluded.from_phone, ''), whatsapp_api_messages.from_phone),
+      to_phone = COALESCE(NULLIF(excluded.to_phone, ''), whatsapp_api_messages.to_phone),
+      business_phone = COALESCE(NULLIF(excluded.business_phone, ''), whatsapp_api_messages.business_phone),
+      direction = COALESCE(NULLIF(excluded.direction, ''), whatsapp_api_messages.direction),
+      message_type = COALESCE(NULLIF(excluded.message_type, ''), whatsapp_api_messages.message_type),
+      message_text = COALESCE(NULLIF(excluded.message_text, ''), whatsapp_api_messages.message_text),
       status = COALESCE(NULLIF(excluded.status, ''), whatsapp_api_messages.status),
       error_code = COALESCE(NULLIF(excluded.error_code, ''), whatsapp_api_messages.error_code),
       error_message = COALESCE(NULLIF(excluded.error_message, ''), whatsapp_api_messages.error_message),
+      message_timestamp = COALESCE(excluded.message_timestamp, whatsapp_api_messages.message_timestamp),
       raw_payload_json = excluded.raw_payload_json,
+      context_json = COALESCE(NULLIF(excluded.context_json, 'null'), whatsapp_api_messages.context_json),
+      referral_json = COALESCE(NULLIF(excluded.referral_json, 'null'), whatsapp_api_messages.referral_json),
+      detected_ctwa_clid = COALESCE(NULLIF(excluded.detected_ctwa_clid, ''), whatsapp_api_messages.detected_ctwa_clid),
+      detected_source_id = COALESCE(NULLIF(excluded.detected_source_id, ''), whatsapp_api_messages.detected_source_id),
+      detected_source_url = COALESCE(NULLIF(excluded.detected_source_url, ''), whatsapp_api_messages.detected_source_url),
+      detected_source_type = COALESCE(NULLIF(excluded.detected_source_type, ''), whatsapp_api_messages.detected_source_type),
+      detected_source_app = COALESCE(NULLIF(excluded.detected_source_app, ''), whatsapp_api_messages.detected_source_app),
+      detected_entry_point = COALESCE(NULLIF(excluded.detected_entry_point, ''), whatsapp_api_messages.detected_entry_point),
+      detected_headline = COALESCE(NULLIF(excluded.detected_headline, ''), whatsapp_api_messages.detected_headline),
+      detected_body = COALESCE(NULLIF(excluded.detected_body, ''), whatsapp_api_messages.detected_body),
+      detected_conversion_data = COALESCE(NULLIF(excluded.detected_conversion_data, ''), whatsapp_api_messages.detected_conversion_data),
+      detected_ctwa_payload = COALESCE(NULLIF(excluded.detected_ctwa_payload, ''), whatsapp_api_messages.detected_ctwa_payload),
       updated_at = CURRENT_TIMESTAMP
   `, [
     messageId,
@@ -1650,14 +1832,14 @@ async function upsertMessage({ payload, message, direction }) {
     identity.toPhone || null,
     identity.businessPhone || null,
     identity.direction,
-    cleanString(message.type) || 'unknown',
+    cleanString(normalizedMessage.type) || 'unknown',
     messageText || null,
     status || null,
-    cleanString(error?.code || message.errorCode) || null,
-    cleanString(error?.message || error?.title || message.errorMessage) || null,
+    cleanString(error?.code || normalizedMessage.errorCode) || null,
+    cleanString(error?.message || error?.title || normalizedMessage.errorMessage) || null,
     messageTimestamp,
-    safeJson(message),
-    safeJson(message.context || null),
+    safeJson(normalizedMessage),
+    safeJson(normalizedMessage.context || normalizedMessage.contextInfo || null),
     safeJson(attribution.referral || null),
     attribution.ctwaClid || null,
     attribution.sourceId || null,
@@ -1684,6 +1866,17 @@ async function upsertMessage({ payload, message, direction }) {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         contact_id = COALESCE(excluded.contact_id, whatsapp_api_attribution.contact_id),
+        detected_ctwa_clid = COALESCE(NULLIF(excluded.detected_ctwa_clid, ''), whatsapp_api_attribution.detected_ctwa_clid),
+        detected_source_id = COALESCE(NULLIF(excluded.detected_source_id, ''), whatsapp_api_attribution.detected_source_id),
+        detected_source_url = COALESCE(NULLIF(excluded.detected_source_url, ''), whatsapp_api_attribution.detected_source_url),
+        detected_source_type = COALESCE(NULLIF(excluded.detected_source_type, ''), whatsapp_api_attribution.detected_source_type),
+        detected_source_app = COALESCE(NULLIF(excluded.detected_source_app, ''), whatsapp_api_attribution.detected_source_app),
+        detected_entry_point = COALESCE(NULLIF(excluded.detected_entry_point, ''), whatsapp_api_attribution.detected_entry_point),
+        detected_headline = COALESCE(NULLIF(excluded.detected_headline, ''), whatsapp_api_attribution.detected_headline),
+        detected_body = COALESCE(NULLIF(excluded.detected_body, ''), whatsapp_api_attribution.detected_body),
+        detected_conversion_data = COALESCE(NULLIF(excluded.detected_conversion_data, ''), whatsapp_api_attribution.detected_conversion_data),
+        detected_ctwa_payload = COALESCE(NULLIF(excluded.detected_ctwa_payload, ''), whatsapp_api_attribution.detected_ctwa_payload),
+        referral_json = COALESCE(NULLIF(excluded.referral_json, 'null'), whatsapp_api_attribution.referral_json),
         raw_payload_json = excluded.raw_payload_json
     `, [
       attributionId,
@@ -1704,12 +1897,209 @@ async function upsertMessage({ payload, message, direction }) {
       attribution.conversionData || null,
       attribution.ctwaPayload || null,
       safeJson(attribution.referral || null),
-      safeJson(message),
+      safeJson(normalizedMessage),
       messageTimestamp
     ])
   }
 
   return { messageId, contactId: localContact.id, apiContactId, attribution }
+}
+
+function directionFromCandidatePath(path = [], payload = {}) {
+  const pathText = path.join('.').toLowerCase()
+  const type = cleanString(payload.type)
+
+  if (pathText.includes('inbound')) return 'inbound'
+  if (pathText.includes('outbound')) return 'outbound'
+  if (pathText.includes('whatsappmessage') || pathText.includes('whatsapp_message')) return 'outbound'
+  if (INBOUND_MESSAGE_EVENT_TYPES.has(type)) return 'inbound'
+  if (OUTBOUND_MESSAGE_EVENT_TYPES.has(type)) return 'outbound'
+  return ''
+}
+
+function looksLikeWhatsAppMessage(value = {}) {
+  if (!isPlainObject(value)) return false
+
+  const messageId = cleanString(value.id || value.wamid || value.messageId || value.message_id || value.whatsappMessageId)
+  const hasAddress = Boolean(cleanString(
+    value.from ||
+    value.to ||
+    value.fromPhone ||
+    value.toPhone ||
+    value.sender ||
+    value.recipient ||
+    value.customer
+  ))
+  const hasContent = Boolean(
+    value.text ||
+    value.image ||
+    value.video ||
+    value.audio ||
+    value.document ||
+    value.sticker ||
+    value.interactive ||
+    value.button ||
+    value.contacts ||
+    value.location ||
+    value.reaction ||
+    value.order ||
+    value.template ||
+    value.system
+  )
+
+  return Boolean(messageId && (hasAddress || hasContent))
+}
+
+function isMetadataPath(path = []) {
+  const metadataKeys = new Set([
+    'context',
+    'contextinfo',
+    'context_info',
+    'referral',
+    'ad',
+    'error',
+    'errors',
+    'customerprofile',
+    'profile'
+  ])
+
+  return path.some(part => metadataKeys.has(String(part || '').toLowerCase()))
+}
+
+function candidateKey(candidate = {}) {
+  const message = normalizeWebhookMessage(candidate.message || {})
+  return [
+    candidate.direction || '',
+    cleanString(message.id || ''),
+    cleanString(message.wamid || ''),
+    cleanString(message.from || ''),
+    cleanString(message.to || ''),
+    cleanString(message.sendTime || message.createTime || message.updateTime || '')
+  ].join('|')
+}
+
+function collectWhatsAppMessageCandidates(value, { payload, path = [], candidates = [], seen = new WeakSet() } = {}) {
+  if (!value || typeof value !== 'object') return candidates
+  if (seen.has(value)) return candidates
+  seen.add(value)
+
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => collectWhatsAppMessageCandidates(item, {
+      payload,
+      path: [...path, String(index)],
+      candidates,
+      seen
+    }))
+    return candidates
+  }
+
+  if (looksLikeWhatsAppMessage(value) && !isMetadataPath(path)) {
+    candidates.push({
+      message: value,
+      direction: directionFromCandidatePath(path, payload),
+      path: path.join('.')
+    })
+  }
+
+  for (const [key, child] of Object.entries(value)) {
+    if (!child || typeof child !== 'object') continue
+    collectWhatsAppMessageCandidates(child, {
+      payload,
+      path: [...path, key],
+      candidates,
+      seen
+    })
+  }
+
+  return candidates
+}
+
+function extractWhatsAppMessageCandidates(payload = {}) {
+  const candidates = []
+
+  if (payload?.whatsappInboundMessage) {
+    candidates.push({
+      message: payload.whatsappInboundMessage,
+      direction: 'inbound',
+      path: 'whatsappInboundMessage'
+    })
+  }
+
+  if (payload?.whatsappMessage) {
+    candidates.push({
+      message: payload.whatsappMessage,
+      direction: 'outbound',
+      path: 'whatsappMessage'
+    })
+  }
+
+  collectWhatsAppMessageCandidates(payload, { payload, candidates })
+
+  const byKey = new Map()
+  for (const candidate of candidates) {
+    const key = candidateKey(candidate)
+    if (!byKey.has(key)) byKey.set(key, candidate)
+  }
+
+  return [...byKey.values()]
+}
+
+async function getKnownBusinessPhoneHints(config = {}) {
+  const rows = await db.all(`
+    SELECT phone_number, display_phone_number
+    FROM whatsapp_api_phone_numbers
+  `).catch(() => [])
+
+  return [
+    config.senderPhone,
+    ...rows.flatMap(row => [row.phone_number, row.display_phone_number])
+  ].filter(Boolean)
+}
+
+async function processWhatsAppMessageEventPayload({ payload = {}, businessPhoneHints = [] } = {}) {
+  const candidates = extractWhatsAppMessageCandidates(payload)
+  const results = []
+
+  for (const candidate of candidates) {
+    results.push(await upsertMessage({
+      payload,
+      message: candidate.message,
+      direction: candidate.direction,
+      businessPhoneHints
+    }))
+  }
+
+  return results
+}
+
+async function backfillStoredWhatsAppApiMessageEvents({ businessPhoneHints = [], limit = 1000 } = {}) {
+  const eventTypes = [...MESSAGE_EVENT_TYPES]
+  const placeholders = eventTypes.map(() => '?').join(', ')
+  const rows = await db.all(`
+    SELECT id, event_type, raw_payload_json
+    FROM whatsapp_api_webhook_events
+    WHERE event_type IN (${placeholders})
+    ORDER BY COALESCE(ycloud_create_time, created_at) ASC, id ASC
+    LIMIT ?
+  `, [...eventTypes, limit])
+
+  let savedMessages = 0
+  for (const row of rows) {
+    const payload = parseJsonValue(row.raw_payload_json, null)
+    if (!payload) continue
+
+    const results = await processWhatsAppMessageEventPayload({
+      payload,
+      businessPhoneHints
+    })
+    savedMessages += results.length
+  }
+
+  if (savedMessages) {
+    logger.info(`WhatsApp Business API recupero ${savedMessages} mensajes desde eventos guardados`)
+  }
+
+  return { events: rows.length, messages: savedMessages }
 }
 
 function parseSignatureHeader(signatureHeader = '') {
@@ -1807,33 +2197,36 @@ export async function processYCloudWhatsAppWebhook({ payload, rawBody, signature
   })
 
   try {
-    if (payload?.whatsappInboundMessage) {
-      await upsertMessage({
-        payload,
-        message: payload.whatsappInboundMessage,
-        direction: 'inbound'
-      })
-    } else if (payload?.whatsappMessage) {
-      await upsertMessage({
-        payload,
-        message: payload.whatsappMessage,
-        direction: 'outbound'
-      })
-    } else if (payload?.whatsappPhoneNumber) {
+    const businessPhoneHints = await getKnownBusinessPhoneHints(config)
+    const messageResults = MESSAGE_EVENT_TYPES.has(cleanString(payload?.type)) ||
+      payload?.whatsappInboundMessage ||
+      payload?.whatsappMessage
+      ? await processWhatsAppMessageEventPayload({ payload, businessPhoneHints })
+      : []
+
+    if (payload?.whatsappPhoneNumber) {
       await syncPhoneNumbers([payload.whatsappPhoneNumber], {
         sourceEventId: eventRowId,
         eventType: payload?.type
       })
-    } else if (payload?.whatsappTemplate) {
+    }
+
+    if (payload?.whatsappTemplate) {
       await syncTemplates([payload.whatsappTemplate], {
         sourceEventId: eventRowId,
         eventType: payload?.type
       })
-    } else if (payload?.whatsappBusinessAccount) {
+    }
+
+    if (payload?.whatsappBusinessAccount) {
       await syncBusinessAccountAlert(payload.whatsappBusinessAccount, {
         sourceEventId: eventRowId,
         eventType: payload?.type
       })
+    }
+
+    if (MESSAGE_EVENT_TYPES.has(cleanString(payload?.type)) && !messageResults.length) {
+      logger.warn(`Evento WhatsApp Business ${payload?.type} no trajo mensajes reconocibles (${payload?.id || 'sin id'})`)
     }
 
     await db.run(`
