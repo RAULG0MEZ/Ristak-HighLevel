@@ -158,6 +158,8 @@ const SITES_AI_DRAFT_CREATED_EVENT = 'ristak-sites-ai-draft-created'
 const SITES_EDITOR_ACTIVE_EVENT = 'ristak-sites-editor-active'
 const DEFAULT_FUNNEL_PAGE_ID = 'page-1'
 const SOCIAL_PROFILE_SELECTED_ID = '__social_profile__'
+const PAGE_SELECTED_ID = '__page__'
+const isEditorSurfaceSelection = (id: string) => id === SOCIAL_PROFILE_SELECTED_ID || id === PAGE_SELECTED_ID
 const LANDING_DEFAULT_PAGE_PADDING = 50
 const LANDING_DEFAULT_BLOCK_SPACING = {
   blockMarginLinked: false,
@@ -1545,10 +1547,10 @@ export const Sites: React.FC = () => {
 
   useEffect(() => {
     if (!canvasBlocks.length) {
-      if (selectedBlockId && selectedBlockId !== SOCIAL_PROFILE_SELECTED_ID) setSelectedBlockId('')
+      if (selectedBlockId && !isEditorSurfaceSelection(selectedBlockId)) setSelectedBlockId('')
       return
     }
-    if (selectedBlockId === SOCIAL_PROFILE_SELECTED_ID) return
+    if (isEditorSurfaceSelection(selectedBlockId)) return
     if (selectedBlockId && !canvasBlocks.some(block => block.id === selectedBlockId)) {
       setSelectedBlockId('')
     }
@@ -2705,7 +2707,11 @@ export const Sites: React.FC = () => {
                         canvasClassName={`rstkCanvas ${canvasTheme!.bodyClass}`}
                         canvasStyle={canvasTheme!.vars}
                         active={paletteDragging}
-                        onClear={() => setSelectedBlockId('')}
+                        pageSelected={selectedBlockId === PAGE_SELECTED_ID}
+                        onClear={() => {
+                          setSelectedBlockId(PAGE_SELECTED_ID)
+                          setPaletteInsertIndex(null)
+                        }}
                         onDragOver={handleCanvasDragOver}
                         onDragLeave={handleCanvasDragLeave}
                         onDrop={handleCanvasDrop}
@@ -3933,6 +3939,7 @@ interface CanvasStageProps {
   canvasClassName: string
   canvasStyle: React.CSSProperties
   active?: boolean
+  pageSelected?: boolean
   onClear?: () => void
   onDragOver?: React.DragEventHandler<HTMLDivElement>
   onDragLeave?: React.DragEventHandler<HTMLDivElement>
@@ -3941,7 +3948,7 @@ interface CanvasStageProps {
 }
 
 const CanvasStage: React.FC<CanvasStageProps> = ({
-  designWidth, canvasClassName, canvasStyle, active, onClear, onDragOver, onDragLeave, onDrop, children
+  designWidth, canvasClassName, canvasStyle, active, pageSelected, onClear, onDragOver, onDragLeave, onDrop, children
 }) => {
   const viewportRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<HTMLDivElement>(null)
@@ -3981,7 +3988,7 @@ const CanvasStage: React.FC<CanvasStageProps> = ({
       >
         <div
           ref={stageRef}
-          className={`canvasStage ${canvasClassName}`}
+          className={`canvasStage ${canvasClassName} ${pageSelected ? 'canvasPageSelected' : ''}`}
           style={{ ...canvasStyle, width: designWidth, transform: `scale(${scale})`, ['--rstk-scale' as string]: scale } as React.CSSProperties}
         >
           {children}
