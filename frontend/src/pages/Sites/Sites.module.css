@@ -5399,3 +5399,69 @@
     padding-inline: 16px;
   }
 }
+
+@media (min-width: 1281px) {
+  .containerFocused:has(.builder) {
+    height: calc(100dvh - var(--header-height, 84px));
+    min-height: 0;
+    margin: 0 auto;
+    overflow: hidden;
+  }
+
+  .containerFocused:has(.builder) .sitesShellFocused,
+  .containerFocused:has(.builder) .mainSurface,
+  .containerFocused:has(.builder) .builder,
+  .containerFocused:has(.builder) .builderGrid,
+  .containerFocused:has(.builder) .blocksRail,
+  .containerFocused:has(.builder) .canvasColumn,
+  .containerFocused:has(.builder) .propertiesPanel {
+    min-height: 0;
+  }
+
+  .containerFocused:has(.builder) .sitesShellFocused {
+    flex: 1 1 auto;
+    overflow: hidden;
+  }
+
+  .containerFocused:has(.builder) .mainSurface,
+  .containerFocused:has(.builder) .builder {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .containerFocused:has(.builder) .builder {
+    padding-top: 10px;
+  }
+
+  .containerFocused:has(.builder) .builderGrid {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .containerFocused:has(.builder) .blocksRail,
+  .containerFocused:has(.builder) .propertiesPanel {
+    position: relative;
+    top: auto;
+    height: 100%;
+    max-height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  .containerFocused:has(.builder) .canvasColumn {
+    height: 100%;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .containerFocused:has(.builder) .canvasColumn:has(.canvasToolbar) {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .containerFocused:has(.builder) :global(.canvasViewport) {
+    min-height: 0;
+    height: 100%;
+    max-height: 100%;
+  }
+}
