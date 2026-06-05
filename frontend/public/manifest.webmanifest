@@ -1,36 +1,50 @@
 {
-  "name": "Ristak",
-  "short_name": "Ristak",
-  "description": "Agenda, pagos y dashboard móvil de Ristak.",
-  "start_url": "/phone/calendar",
+  "id": "/phone/chat",
+  "name": "Ristak Chat",
+  "short_name": "Ristak Chat",
+  "description": "Chat móvil de Ristak con WhatsApp, pagos y citas.",
+  "start_url": "/phone/chat",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#f8fafc",
-  "theme_color": "#111827",
+  "theme_color": "#047857",
   "icons": [
     {
-      "src": "/logo.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "/ristak-chat-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/favicon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml"
+      "src": "/ristak-chat-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ],
   "shortcuts": [
+    {
+      "name": "Chat",
+      "short_name": "Chat",
+      "url": "/phone/chat",
+      "icons": [
+        {
+          "src": "/ristak-chat-icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
     {
       "name": "Calendario",
       "short_name": "Agenda",
       "url": "/phone/calendar",
       "icons": [
         {
-          "src": "/logo.svg",
-          "sizes": "any",
-          "type": "image/svg+xml"
+          "src": "/ristak-chat-icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
         }
       ]
     },
@@ -40,9 +54,9 @@
       "url": "/phone/payments",
       "icons": [
         {
-          "src": "/logo.svg",
-          "sizes": "any",
-          "type": "image/svg+xml"
+          "src": "/ristak-chat-icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
         }
       ]
     }

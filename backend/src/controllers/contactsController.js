@@ -1570,7 +1570,6 @@ export const getContactJourney = async (req, res) => {
        FROM whatsapp_api_messages msg
        LEFT JOIN whatsapp_api_attribution attr ON attr.whatsapp_api_message_id = msg.id
        WHERE msg.contact_id = ?
-         AND msg.direction = 'inbound'
        ORDER BY COALESCE(msg.message_timestamp, msg.created_at) ASC`,
       [id]
     )
@@ -1602,6 +1601,7 @@ export const getContactJourney = async (req, res) => {
         attribution_record_id: msg.attribution_id || null,
         whatsapp_api_message_id: msg.whatsapp_api_message_id,
         whatsapp_message_id: msg.wamid || msg.ycloud_message_id,
+        direction: msg.direction || 'inbound',
         is_ad_attributed: isAdAttributed
       }
 

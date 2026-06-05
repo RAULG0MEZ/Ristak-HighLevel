@@ -8,6 +8,7 @@ import { syncAllInvoices, syncLocalPaymentsToHighLevel } from '../services/invoi
 import { getHiddenContactFilters, buildHiddenContactsCondition } from '../utils/hiddenContactsFilter.js'
 import { updateSingleContactStats } from '../utils/updateContactsStats.js'
 import { triggerWhatsappFirstPurchaseEvent } from '../services/metaWhatsappEventsService.js'
+import { sendPaymentNotification } from '../services/pushNotificationsService.js'
 import { formatInvoiceMultilineText, formatInvoiceSingleLineText } from '../utils/invoiceTextFormatter.js'
 import { findContactByPhoneCandidates } from '../services/contactIdentityService.js'
 import { normalizePhoneForStorage } from '../utils/phoneUtils.js'
@@ -426,6 +427,12 @@ export const createTransaction = async (req, res) => {
     }
 
     const createdTransaction = await getTransactionByIdForResponse(transactionId)
+
+    if (createdTransaction && SUCCESS_PAYMENT_STATUSES.has(finalStatus)) {
+      sendPaymentNotification(createdTransaction).catch((pushError) => {
+        logger.warn(`No se pudo enviar aviso de pago ${transactionId}: ${pushError.message}`)
+      })
+    }
 
     logger.success(`Transacción creada: ${transactionId}`)
 
@@ -1137,6 +1144,13 @@ export const recordPayment = async (req, res) => {
       } catch (syncError) {
         logger.warn(`Pago ${id} registrado localmente; no se pudo exportar a HighLevel: ${syncError.message}`)
       }
+    }
+
+    const paidTransaction = await getTransactionByIdForResponse(id)
+    if (paidTransaction) {
+      sendPaymentNotification(paidTransaction).catch((pushError) => {
+        logger.warn(`No se pudo enviar aviso de pago ${id}: ${pushError.message}`)
+      })
     }
 
     logger.success(`Pago registrado para transacción: ${id}`)

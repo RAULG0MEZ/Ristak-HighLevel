@@ -5,11 +5,13 @@ export interface WebPushPublicConfig {
   publicKey: string
 }
 
-export type CalendarPushResult =
+export type PushSubscriptionResult =
   | { status: 'subscribed' }
   | { status: 'not_supported'; reason: string }
   | { status: 'not_configured'; reason: string }
   | { status: 'denied'; reason: string }
+
+export type CalendarPushResult = PushSubscriptionResult
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
@@ -39,7 +41,7 @@ export const pushNotificationsService = {
     return apiClient.get<WebPushPublicConfig>('/push/public-key')
   },
 
-  async subscribeToCalendarNotifications(calendarIds: string[]): Promise<CalendarPushResult> {
+  async subscribeToAppNotifications({ calendarIds = [] }: { calendarIds?: string[] } = {}): Promise<PushSubscriptionResult> {
     if (!isPushAvailable()) {
       return {
         status: 'not_supported',
@@ -79,5 +81,9 @@ export const pushNotificationsService = {
     })
 
     return { status: 'subscribed' }
+  },
+
+  async subscribeToCalendarNotifications(calendarIds: string[]): Promise<CalendarPushResult> {
+    return this.subscribeToAppNotifications({ calendarIds })
   }
 }

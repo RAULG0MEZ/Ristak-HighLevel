@@ -21,6 +21,7 @@ interface AppointmentModalProps {
   defaultEnd?: string;
   defaultTimeZone?: string;
   defaultTitle?: string;
+  initialContact?: Partial<Contact> | null;
   defaultScheduleMode?: 'default' | 'custom'; // Modo de selección de horario al abrir
   accessToken?: string; // Token para cargar slots disponibles
   locationId?: string; // Location ID para consultas
@@ -37,6 +38,19 @@ interface Contact {
   firstName?: string;
   lastName?: string;
 }
+
+const normalizeAppointmentContact = (contact?: Partial<Contact> | null): Contact | null => {
+  if (!contact?.id) return null;
+
+  return {
+    id: contact.id,
+    name: contact.name || '',
+    email: contact.email || '',
+    phone: contact.phone || '',
+    firstName: contact.firstName || '',
+    lastName: contact.lastName || ''
+  };
+};
 
 interface User {
   id: string;
@@ -236,6 +250,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
   defaultEnd,
   defaultTimeZone,
   defaultTitle,
+  initialContact = null,
   defaultScheduleMode = 'default',
   accessToken,
   locationId,
@@ -634,25 +649,33 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
       loadEventDetails();
     } else if (isCreateMode && isOpen) {
       // Modo crear: usar defaults
+      const resolvedInitialContact = normalizeAppointmentContact(initialContact);
+      const initialContactName = resolvedInitialContact
+        ? resolvedInitialContact.name ||
+          `${resolvedInitialContact.firstName || ''} ${resolvedInitialContact.lastName || ''}`.trim() ||
+          resolvedInitialContact.email ||
+          resolvedInitialContact.phone
+        : '';
+
       setFormData({
-        title: defaultTitle || '',
+        title: defaultTitle || initialContactName || '',
         appointmentStatus: 'confirmed', // Estado predeterminado: Confirmada
         startTime: defaultStart ? toLocalInputValue(defaultStart, defaultTimeZone || accountTimezone) : '',
         endTime: defaultEnd ? toLocalInputValue(defaultEnd, defaultTimeZone || accountTimezone) : '',
         notes: '',
         address: '',
         timeZone: defaultTimeZone || accountTimezone,
-        contactId: '',
+        contactId: resolvedInitialContact?.id || '',
         assignedUserId: ''
       });
-      setSelectedContact(null);
+      setSelectedContact(resolvedInitialContact);
       setSearchQuery('');
     } else if (!isOpen) {
       setFormData(INITIAL_FORM_STATE);
       setSelectedContact(null);
       setSearchQuery('');
     }
-  }, [event, isOpen, isCreateMode, defaultStart, defaultEnd, defaultTimeZone, defaultTitle]);
+  }, [event, isOpen, isCreateMode, defaultStart, defaultEnd, defaultTimeZone, defaultTitle, initialContact?.id, initialContact?.email, initialContact?.phone, initialContact?.name]);
 
   /**
    * Verificar si el horario seleccionado está bloqueado

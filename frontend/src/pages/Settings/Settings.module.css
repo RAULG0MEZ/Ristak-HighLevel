@@ -1015,6 +1015,101 @@ body.dark .select:focus {
   font-weight: 700;
 }
 
+.notificationDeviceCard {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 13px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.055);
+}
+
+.notificationDeviceIcon,
+.notificationSettingIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  color: #047857;
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.notificationDeviceCard strong,
+.notificationSettingCard strong {
+  display: block;
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 780;
+}
+
+.notificationDeviceCard small,
+.notificationSettingCard small {
+  display: block;
+  margin-top: 3px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.notificationSettingsGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.notificationSettingCard {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 11px;
+  min-height: 104px;
+  padding: 13px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  color: var(--color-text-primary);
+  background: var(--color-background-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.notificationSettingCard:hover:not(:disabled) {
+  border-color: rgba(16, 185, 129, 0.28);
+  background: rgba(16, 185, 129, 0.045);
+}
+
+.notificationSettingCard:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.notificationSettingCardActive {
+  border-color: rgba(16, 185, 129, 0.36);
+  background: rgba(16, 185, 129, 0.07);
+}
+
+.notificationSettingCard i {
+  grid-column: 1 / -1;
+  width: fit-content;
+  min-height: 24px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  color: var(--color-text-tertiary);
+  background: rgba(148, 163, 184, 0.12);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.notificationSettingCardActive i {
+  color: #047857;
+  background: rgba(16, 185, 129, 0.14);
+}
+
 .storageUsageSection {
   gap: 12px;
 }
@@ -1103,7 +1198,8 @@ body.dark .select:focus {
 
   .accountGrid,
   .passwordGrid,
-  .labelsGrid {
+  .labelsGrid,
+  .notificationSettingsGrid {
     grid-template-columns: 1fr;
   }
 
@@ -1123,6 +1219,7 @@ body.dark .select:focus {
 
   .profileSummary,
   .lockedFieldRow,
+  .notificationDeviceCard,
   .storageUsageHeader,
   .storageUsageMeta {
     align-items: stretch;

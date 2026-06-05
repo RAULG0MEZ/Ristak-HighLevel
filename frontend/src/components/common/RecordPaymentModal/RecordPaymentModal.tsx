@@ -60,6 +60,7 @@ interface RecordPaymentModalProps {
   onClose: () => void
   onSuccess?: () => void
   initialPaymentMode?: PaymentMode
+  initialContact?: Partial<Contact> | null
   /**
    * 'modal' (default) renderiza dentro del overlay Modal.
    * 'embedded' renderiza el mismo flujo sin overlay, para incrustarlo en una
@@ -75,6 +76,19 @@ interface Contact {
   phone: string
   firstName?: string
   lastName?: string
+}
+
+const normalizePaymentContact = (contact?: Partial<Contact> | null): Contact | null => {
+  if (!contact?.id) return null
+
+  return {
+    id: contact.id,
+    name: contact.name || '',
+    email: contact.email || '',
+    phone: contact.phone || '',
+    firstName: contact.firstName || '',
+    lastName: contact.lastName || ''
+  }
 }
 
 const EMAIL_SEND_METHODS = new Set<SendMethod>(['email', 'email_whatsapp', 'email_sms', 'all'])
@@ -285,6 +299,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   onClose,
   onSuccess,
   initialPaymentMode = 'single',
+  initialContact = null,
   variant = 'modal'
 }) => {
   const [loading, setLoading] = useState(false)
@@ -414,12 +429,14 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   }, [sendMethodOptions, selectedSendMethodOption])
 
   const resetForm = () => {
+    const resolvedInitialContact = normalizePaymentContact(initialContact)
+
     setStep('form')
     setLoading(false)
     setSearchQuery('')
     setSearchingContact(false)
     setContacts([])
-    setSelectedContact(null)
+    setSelectedContact(resolvedInitialContact)
     setShowContactDropdown(false)
     setChargeType('direct')
     setAmount('')
@@ -452,7 +469,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     setInvoicePayload(null)
     setInvoiceSummary(null)
     setPaymentOption('send')
-    setSendMethod(DEFAULT_SEND_METHOD)
+    setSendMethod(resolvedInitialContact ? getDefaultSendMethod(getSendMethodOptions(resolvedInitialContact)) : DEFAULT_SEND_METHOD)
     setManualPaymentData(defaultManualPaymentData())
   }
 
@@ -518,7 +535,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     resetForm()
     loadConfig()
     loadIntegrationStatus()
-  }, [isOpen, initialPaymentMode])
+  }, [isOpen, initialPaymentMode, initialContact?.id, initialContact?.email, initialContact?.phone, initialContact?.name])
 
   // Search contacts
   useEffect(() => {

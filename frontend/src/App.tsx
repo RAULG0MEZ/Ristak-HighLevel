@@ -20,6 +20,7 @@ import { Sites } from '@/pages/Sites'
 import { PhoneAgentChat } from '@/pages/PhoneAgentChat'
 import { PhoneApp } from '@/pages/PhoneApp'
 import { PhoneCalendar } from '@/pages/PhoneCalendar'
+import { PhoneChat } from '@/pages/PhoneChat'
 import { PhonePayments } from '@/pages/PhonePayments'
 import { Login } from '@/pages/Login'
 import { Setup } from '@/pages/Login/Setup'
@@ -130,7 +131,15 @@ const AppWithNotifications: React.FC = () => {
             path="/phone/app"
             element={
               <ProtectedRoute>
-                <Navigate to="/phone/dashboard" replace />
+                <Navigate to="/phone/chat" replace />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/phone/chat"
+            element={
+              <ProtectedRoute>
+                <PhoneChat />
               </ProtectedRoute>
             }
           />

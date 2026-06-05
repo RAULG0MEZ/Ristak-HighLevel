@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, CheckCircle, ChevronDown, Clock, Database, Loader2, Lock, Save, Upload, User, X } from 'lucide-react'
+import { Bell, CalendarDays, Check, CheckCircle, ChevronDown, Clock, CreditCard, Database, Loader2, Lock, MessageCircle, Save, Smartphone, Upload, User, X } from 'lucide-react'
 import { Button, Card } from '@/components/common'
 import { useAuth } from '@/contexts/AuthContext'
 import { useLabels } from '@/contexts/LabelsContext'
@@ -8,6 +8,7 @@ import { useNotification } from '@/contexts/NotificationContext'
 import { useTimezone } from '@/contexts/TimezoneContext'
 import { useAppConfig } from '@/hooks'
 import apiClient from '@/services/apiClient'
+import { pushNotificationsService } from '@/services/pushNotificationsService'
 import styles from './Settings.module.css'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
@@ -115,6 +116,15 @@ const buildTimezoneDisplayInfo = (timeZone: string, atDate: Date): TimezoneDispl
   }
 }
 
+const getNotificationPermissionLabel = () => {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    return 'Este celular no permite avisos de la app.'
+  }
+  if (Notification.permission === 'granted') return 'Este celular ya puede recibir avisos.'
+  if (Notification.permission === 'denied') return 'El celular bloqueó los avisos. Actívalos desde los ajustes del navegador.'
+  return 'Toca Activar para permitir avisos en este celular.'
+}
+
 export const AccountSettings: React.FC = () => {
   const { user, logout } = useAuth()
   const { labels, updateLabels } = useLabels()
@@ -123,6 +133,10 @@ export const AccountSettings: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const [profilePhoto, setProfilePhoto, savingProfilePhoto] = useAppConfig<string>(PROFILE_PHOTO_KEY, '')
+  const [calendarPushEnabled, setCalendarPushEnabled, savingCalendarPush] = useAppConfig<boolean>('calendar_push_notifications_enabled', false)
+  const [chatPushEnabled, setChatPushEnabled, savingChatPush] = useAppConfig<boolean>('chat_push_notifications_enabled', true)
+  const [paymentPushEnabled, setPaymentPushEnabled, savingPaymentPush] = useAppConfig<boolean>('payment_push_notifications_enabled', true)
+  const [pushCalendarIds] = useAppConfig<string[]>('calendar_push_notification_calendar_ids', [])
   const [profilePhotoDraft, setProfilePhotoDraft] = useState('')
   const [isEditingPhoto, setIsEditingPhoto] = useState(false)
 
@@ -147,6 +161,7 @@ export const AccountSettings: React.FC = () => {
   const [timezoneClock, setTimezoneClock] = useState(() => new Date())
   const [storageStatus, setStorageStatus] = useState<StorageStatus | null>(null)
   const [storageStatusError, setStorageStatusError] = useState(false)
+  const [requestingPush, setRequestingPush] = useState(false)
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null)
   const customerTriggerRef = useRef<HTMLButtonElement>(null)
   const leadTriggerRef = useRef<HTMLButtonElement>(null)
@@ -450,6 +465,40 @@ export const AccountSettings: React.FC = () => {
       showToast('error', 'Error', 'No se pudieron guardar los nombres')
     } finally {
       setSavingLabels(false)
+    }
+  }
+
+  const handleRequestPushNotifications = async () => {
+    setRequestingPush(true)
+    try {
+      const result = await pushNotificationsService.subscribeToAppNotifications({
+        calendarIds: pushCalendarIds
+      })
+
+      if (result.status === 'subscribed') {
+        showToast('success', 'Avisos activados', 'Este celular ya puede recibir avisos de Ristak.')
+      } else {
+        showToast('warning', 'No se activaron', result.reason)
+      }
+    } catch (error: any) {
+      showToast('error', 'No se activaron', error?.message || 'Intenta nuevamente.')
+    } finally {
+      setRequestingPush(false)
+    }
+  }
+
+  const handleToggleNotification = async (
+    enabled: boolean,
+    save: (value: boolean) => Promise<void>,
+    titleOn: string,
+    titleOff: string
+  ) => {
+    const nextValue = !enabled
+    try {
+      await save(nextValue)
+      showToast('success', nextValue ? titleOn : titleOff)
+    } catch (error: any) {
+      showToast('error', 'No se guardó', error?.message || 'Intenta nuevamente.')
     }
   }
 
@@ -839,6 +888,91 @@ export const AccountSettings: React.FC = () => {
                 </Button>
               </div>
 
+            </section>
+
+            <section className={`${styles.accountSection} ${styles.accountSectionWide}`}>
+              <div className={styles.accountSectionHeader}>
+                <div>
+                  <h3 className={styles.accountSectionTitle}>
+                    <Bell size={16} /> Notificaciones
+                  </h3>
+                  <p className={styles.accountSectionDescription}>
+                    Elige qué avisos quieres recibir en los celulares donde abras Ristak desde el icono de inicio.
+                  </p>
+                </div>
+              </div>
+
+              <div className={styles.notificationDeviceCard}>
+                <span className={styles.notificationDeviceIcon}>
+                  <Smartphone size={18} />
+                </span>
+                <div>
+                  <strong>Este celular</strong>
+                  <small>{getNotificationPermissionLabel()}</small>
+                </div>
+                <Button
+                  variant="secondary"
+                  onClick={handleRequestPushNotifications}
+                  loading={requestingPush}
+                  disabled={requestingPush}
+                >
+                  <Bell size={16} />
+                  Activar
+                </Button>
+              </div>
+
+              <div className={styles.notificationSettingsGrid}>
+                <button
+                  type="button"
+                  className={`${styles.notificationSettingCard} ${chatPushEnabled ? styles.notificationSettingCardActive : ''}`}
+                  onClick={() => handleToggleNotification(chatPushEnabled, setChatPushEnabled, 'Avisos de chat encendidos', 'Avisos de chat apagados')}
+                  disabled={savingChatPush}
+                  aria-pressed={chatPushEnabled}
+                >
+                  <span className={styles.notificationSettingIcon}>
+                    <MessageCircle size={18} />
+                  </span>
+                  <span>
+                    <strong>Chat</strong>
+                    <small>Mensajes nuevos de WhatsApp.</small>
+                  </span>
+                  <i>{chatPushEnabled ? 'Activo' : 'Apagado'}</i>
+                </button>
+
+                <button
+                  type="button"
+                  className={`${styles.notificationSettingCard} ${calendarPushEnabled ? styles.notificationSettingCardActive : ''}`}
+                  onClick={() => handleToggleNotification(calendarPushEnabled, setCalendarPushEnabled, 'Avisos de citas encendidos', 'Avisos de citas apagados')}
+                  disabled={savingCalendarPush}
+                  aria-pressed={calendarPushEnabled}
+                >
+                  <span className={styles.notificationSettingIcon}>
+                    <CalendarDays size={18} />
+                  </span>
+                  <span>
+                    <strong>Citas</strong>
+                    <small>Cuando alguien agenda una cita.</small>
+                  </span>
+                  <i>{calendarPushEnabled ? 'Activo' : 'Apagado'}</i>
+                </button>
+
+                <button
+                  type="button"
+                  className={`${styles.notificationSettingCard} ${paymentPushEnabled ? styles.notificationSettingCardActive : ''}`}
+                  onClick={() => handleToggleNotification(paymentPushEnabled, setPaymentPushEnabled, 'Avisos de pagos encendidos', 'Avisos de pagos apagados')}
+                  disabled={savingPaymentPush}
+                  aria-pressed={paymentPushEnabled}
+                >
+                  <span className={styles.notificationSettingIcon}>
+                    <CreditCard size={18} />
+                  </span>
+                  <span>
+                    <strong>Pagos</strong>
+                    <small>Cuando se registre un pago.</small>
+                  </span>
+                  <i>{paymentPushEnabled ? 'Activo' : 'Apagado'}</i>
+                </button>
+              </div>
             </section>
 
             <section className={`${styles.accountSection} ${styles.accountSectionWide} ${styles.storageUsageSection}`}>

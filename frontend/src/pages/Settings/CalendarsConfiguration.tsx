@@ -1995,7 +1995,6 @@ export const CalendarsConfiguration: React.FC = () => {
   const renderCalendarHeaderActions = () => (
     <div className={pageStyles.headerActionGroup}>
       {renderGoogleHeaderAction()}
-      {renderNotificationsHeaderAction()}
     </div>
   )
 
@@ -2038,7 +2037,6 @@ export const CalendarsConfiguration: React.FC = () => {
       </Card>
 
       {renderCreateCalendarModal()}
-      {renderCalendarNotificationsModal()}
       {renderGoogleDefaultPromptModal()}
     </div>
   )

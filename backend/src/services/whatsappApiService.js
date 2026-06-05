@@ -2,6 +2,7 @@ import crypto from 'crypto'
 import fetch from 'node-fetch'
 import { db, getAppConfig, setAppConfig } from '../config/database.js'
 import { findContactByPhoneCandidates } from './contactIdentityService.js'
+import { sendChatMessageNotification } from './pushNotificationsService.js'
 import { decrypt, encrypt } from '../utils/encryption.js'
 import { buildPhoneMatchCandidates, normalizePhoneDigits, normalizePhoneForStorage } from '../utils/phoneUtils.js'
 import { detectWhatsAppAttributionFields } from '../utils/whatsappAttribution.js'
@@ -1973,7 +1974,17 @@ async function upsertMessage({ payload, message, direction, businessPhoneHints =
     ])
   }
 
-  return { messageId, contactId: localContact.id, apiContactId, attribution }
+  return {
+    messageId,
+    contactId: localContact.id,
+    apiContactId,
+    attribution,
+    direction: identity.direction,
+    phone: identity.phone,
+    profileName,
+    messageText,
+    messageTimestamp
+  }
 }
 
 function directionFromCandidatePath(path = [], payload = {}) {
@@ -2274,6 +2285,19 @@ export async function processYCloudWhatsAppWebhook({ payload, rawBody, signature
       payload?.whatsappMessage
       ? await processWhatsAppMessageEventPayload({ payload, businessPhoneHints })
       : []
+
+    await Promise.all(messageResults
+      .filter(result => result?.direction === 'inbound')
+      .map(result => sendChatMessageNotification({
+        contactId: result.contactId,
+        phone: result.phone,
+        profileName: result.profileName,
+        text: result.messageText,
+        messageId: result.messageId,
+        timestamp: result.messageTimestamp
+      }).catch(error => {
+        logger.warn(`[Push] No se pudo avisar mensaje WhatsApp ${result?.messageId || ''}: ${error.message}`)
+      })))
 
     if (payload?.whatsappPhoneNumber) {
       await syncPhoneNumbers([payload.whatsappPhoneNumber], {

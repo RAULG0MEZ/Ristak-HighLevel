@@ -11,6 +11,7 @@ import {
   Gauge,
   LineChart,
   Megaphone,
+  MessageCircle,
   MonitorX,
   RefreshCw,
   TrendingUp,
@@ -38,6 +39,7 @@ const SCROLLABLE_PHONE_SELECTOR = '[data-phone-scrollable="true"]'
 const SCROLLABLE_PHONE_NAV_SELECTOR = '[data-phone-nav-scrollable="true"]'
 
 const PHONE_SECTION_IDS = [
+  'chat',
   'dashboard',
   'appointments',
   'transactions',
@@ -85,6 +87,7 @@ interface PhoneAppData {
 }
 
 const PHONE_SECTIONS: PhoneSectionConfig[] = [
+  { id: 'chat', label: 'Chat', Icon: MessageCircle },
   { id: 'dashboard', label: 'Dashboard', Icon: Gauge },
   { id: 'appointments', label: 'Citas', Icon: CalendarDays },
   { id: 'transactions', label: 'Pagos', Icon: CreditCard },
@@ -343,7 +346,7 @@ function toTrendFromReports(data: ReportMetricRow[], key: keyof ReportMetricRow,
 }
 
 export const PhoneApp: React.FC = () => {
-  const params = useParams()
+  const params = useParams<{ section?: string }>()
   const { locationId, accessToken } = useAuth()
   const { dateRange, setPreset } = useDateRange()
   const [accessState, setAccessState] = useState<AccessState>(getAccessState)

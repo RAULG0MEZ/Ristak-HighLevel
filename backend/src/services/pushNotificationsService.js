@@ -28,6 +28,12 @@ function normalizeCalendarIds(value = []) {
   return [...new Set(value.map((item) => String(item || '').trim()).filter(Boolean))]
 }
 
+async function getBooleanPushConfig(key, fallback = false) {
+  const raw = await getAppConfig(key).catch(() => null)
+  if (raw === null || raw === undefined || raw === '') return fallback
+  return ['1', 'true', 'yes', 'on'].includes(String(raw).toLowerCase())
+}
+
 function getSubscriptionId(endpoint = '') {
   return `push_${crypto.createHash('sha256').update(endpoint).digest('hex')}`
 }
@@ -44,6 +50,21 @@ function formatAppointmentTime(value) {
     minute: '2-digit',
     hour12: true
   }).format(date)
+}
+
+function formatPaymentAmount(amount, currency = 'MXN') {
+  const value = Number(amount)
+  const safeAmount = Number.isFinite(value) ? value : 0
+
+  try {
+    return new Intl.NumberFormat('es-MX', {
+      style: 'currency',
+      currency: String(currency || 'MXN').toUpperCase(),
+      maximumFractionDigits: 2
+    }).format(safeAmount)
+  } catch {
+    return `$${safeAmount.toFixed(2)}`
+  }
 }
 
 async function getGlobalCalendarPushConfig() {
@@ -131,6 +152,14 @@ async function getSubscriptionsForCalendar(calendarId) {
   })
 }
 
+async function getEnabledSubscriptions() {
+  return db.all(`
+    SELECT id, endpoint, subscription_json
+    FROM push_subscriptions
+    WHERE enabled = 1
+  `)
+}
+
 async function markSubscriptionError(row, error) {
   const statusCode = error?.statusCode || error?.status
   const shouldDisable = statusCode === 404 || statusCode === 410
@@ -141,6 +170,24 @@ async function markSubscriptionError(row, error) {
      WHERE id = ?`,
     [shouldDisable ? 0 : 1, error?.message || 'Error enviando aviso', row.id]
   ).catch(() => {})
+}
+
+async function sendNotificationRows(rows = [], payload = {}) {
+  let sent = 0
+  await Promise.all(rows.map(async (row) => {
+    const subscription = safeJsonParse(row.subscription_json, null)
+    if (!subscription) return
+
+    try {
+      await webPush.sendNotification(subscription, JSON.stringify(payload))
+      sent += 1
+    } catch (error) {
+      logger.warn(`[Push] No se pudo enviar aviso a ${row.id}: ${error.message}`)
+      await markSubscriptionError(row, error)
+    }
+  }))
+
+  return sent
 }
 
 export async function sendCalendarAppointmentNotification(appointment = {}, options = {}) {
@@ -171,19 +218,53 @@ export async function sendCalendarAppointmentNotification(appointment = {}, opti
     url: `/phone/calendar?open=appointment&id=${encodeURIComponent(appointment.id || '')}`
   })
 
-  let sent = 0
-  await Promise.all(subscriptions.map(async (row) => {
-    const subscription = safeJsonParse(row.subscription_json, null)
-    if (!subscription) return
+  const sent = await sendNotificationRows(subscriptions, JSON.parse(payload))
 
-    try {
-      await webPush.sendNotification(subscription, payload)
-      sent += 1
-    } catch (error) {
-      logger.warn(`[Push] No se pudo enviar aviso a ${row.id}: ${error.message}`)
-      await markSubscriptionError(row, error)
-    }
-  }))
+  return { sent, skipped: false }
+}
 
+export async function sendChatMessageNotification(message = {}) {
+  if (!pushConfigured) return { sent: 0, skipped: true, reason: 'not_configured' }
+
+  const enabled = await getBooleanPushConfig('chat_push_notifications_enabled', true)
+  if (!enabled) return { sent: 0, skipped: true, reason: 'disabled' }
+
+  const subscriptions = await getEnabledSubscriptions()
+  if (subscriptions.length === 0) return { sent: 0, skipped: true, reason: 'no_subscriptions' }
+
+  const senderName = String(message.profileName || message.name || message.phone || 'WhatsApp').trim()
+  const bodyText = String(message.text || '').trim()
+  const payload = {
+    title: senderName,
+    body: bodyText ? bodyText.slice(0, 140) : 'Tienes un mensaje nuevo.',
+    tag: `chat-${message.contactId || message.phone || 'whatsapp'}`,
+    url: `/phone/chat?contact=${encodeURIComponent(message.contactId || '')}`,
+    category: 'chat'
+  }
+
+  const sent = await sendNotificationRows(subscriptions, payload)
+  return { sent, skipped: false }
+}
+
+export async function sendPaymentNotification(payment = {}) {
+  if (!pushConfigured) return { sent: 0, skipped: true, reason: 'not_configured' }
+
+  const enabled = await getBooleanPushConfig('payment_push_notifications_enabled', true)
+  if (!enabled) return { sent: 0, skipped: true, reason: 'disabled' }
+
+  const subscriptions = await getEnabledSubscriptions()
+  if (subscriptions.length === 0) return { sent: 0, skipped: true, reason: 'no_subscriptions' }
+
+  const amountLabel = formatPaymentAmount(payment.amount, payment.currency)
+  const contactLabel = String(payment.contactName || payment.contact_name || 'Cliente').trim()
+  const payload = {
+    title: 'Pago registrado',
+    body: `${contactLabel}: ${amountLabel}`,
+    tag: `payment-${payment.id || payment.contactId || 'ristak'}`,
+    url: '/phone/transactions',
+    category: 'payment'
+  }
+
+  const sent = await sendNotificationRows(subscriptions, payload)
   return { sent, skipped: false }
 }

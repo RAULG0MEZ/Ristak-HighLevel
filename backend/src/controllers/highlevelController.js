@@ -7,6 +7,7 @@ import { API_URLS } from '../config/constants.js';
 import { getGHLClient } from '../services/ghlClient.js';
 import { buildInvoicePaymentUrl } from '../utils/paymentUrl.js';
 import { createInstallmentPaymentFlow } from '../services/paymentFlowService.js';
+import { sendPaymentNotification } from '../services/pushNotificationsService.js';
 import { formatInvoiceMultilineText, formatInvoicePayloadText } from '../utils/invoiceTextFormatter.js';
 import { normalizePhoneForStorage } from '../utils/phoneUtils.js';
 import * as localCalendarService from '../services/localCalendarService.js';
@@ -1366,6 +1367,30 @@ export const recordPayment = async (req, res) => {
           logger.success(`Estadísticas actualizadas para contacto: ${payment.contact_id}`);
         }
       }
+
+      const savedPayment = await db.get(
+        `SELECT
+          p.id,
+          p.amount,
+          p.currency,
+          p.contact_id,
+          c.full_name as contact_name
+         FROM payments p
+         LEFT JOIN contacts c ON c.id = p.contact_id
+         WHERE p.ghl_invoice_id = ?
+         LIMIT 1`,
+        [invoiceId]
+      );
+
+      sendPaymentNotification({
+        id: savedPayment?.id || invoiceId,
+        amount: amount || savedPayment?.amount,
+        currency: currency || savedPayment?.currency || 'MXN',
+        contactId: savedPayment?.contact_id,
+        contactName: savedPayment?.contact_name || 'Cliente'
+      }).catch((pushError) => {
+        logger.warn(`No se pudo enviar aviso de pago ${invoiceId}: ${pushError.message}`);
+      });
     } catch (dbError) {
       logger.error(`Error actualizando estado en BD: ${dbError.message}`);
       // No fallar, el pago ya se registró

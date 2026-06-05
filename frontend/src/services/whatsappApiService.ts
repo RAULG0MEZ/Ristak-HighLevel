@@ -146,6 +146,13 @@ export interface WhatsAppApiTemplateSendPayload {
   externalId?: string
 }
 
+export interface WhatsAppApiTextSendPayload {
+  to: string
+  from?: string
+  text: string
+  externalId?: string
+}
+
 export const whatsappApiService = {
   getStatus: () => apiClient.get<WhatsAppApiStatus>('/whatsapp-api/status'),
   connect: (payload: WhatsAppApiConnectPayload) => apiClient.post<WhatsAppApiStatus>('/whatsapp-api/connect', payload),
@@ -156,5 +163,6 @@ export const whatsappApiService = {
   getTemplates: (status?: string) => apiClient.get<WhatsAppApiTemplatesResponse>('/whatsapp-api/templates', {
     params: status ? { status } : undefined
   }),
+  sendText: (payload: WhatsAppApiTextSendPayload) => apiClient.post('/whatsapp-api/messages/text', payload),
   sendTemplate: (payload: WhatsAppApiTemplateSendPayload) => apiClient.post('/whatsapp-api/templates/send', payload)
 }

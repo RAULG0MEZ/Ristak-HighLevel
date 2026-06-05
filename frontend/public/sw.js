@@ -1,5 +1,14 @@
-const CACHE_NAME = 'ristak-app-v1'
-const SHELL_ASSETS = ['/', '/manifest.webmanifest', '/logo.svg', '/favicon.svg']
+const CACHE_NAME = 'ristak-chat-v2'
+const SHELL_ASSETS = [
+  '/',
+  '/phone/chat',
+  '/manifest.webmanifest',
+  '/logo.svg',
+  '/favicon.svg',
+  '/apple-touch-icon.png',
+  '/ristak-chat-icon-192.png',
+  '/ristak-chat-icon-512.png'
+]
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -39,7 +48,7 @@ self.addEventListener('push', (event) => {
   let payload = {
     title: 'Ristak',
     body: 'Tienes un aviso nuevo.',
-    url: '/phone/calendar'
+    url: '/phone/chat'
   }
 
   try {
@@ -54,12 +63,12 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification(payload.title || 'Ristak', {
       body: payload.body || 'Tienes un aviso nuevo.',
-      icon: '/logo.svg',
-      badge: '/favicon.svg',
-      tag: payload.tag || 'ristak-calendar',
+      icon: '/ristak-chat-icon-192.png',
+      badge: '/ristak-chat-icon-192.png',
+      tag: payload.tag || 'ristak-chat',
       renotify: true,
       data: {
-        url: payload.url || '/phone/calendar'
+        url: payload.url || '/phone/chat'
       }
     })
   )
@@ -67,19 +76,23 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
-  const targetUrl = event.notification.data?.url || '/phone/calendar'
+  const targetUrl = event.notification.data?.url || '/phone/chat'
+  const normalizedTarget = new URL(targetUrl, self.location.origin)
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
         const clientUrl = new URL(client.url)
-        if (clientUrl.pathname === targetUrl && 'focus' in client) {
+        if (clientUrl.pathname === normalizedTarget.pathname && 'focus' in client) {
+          if ('navigate' in client && clientUrl.href !== normalizedTarget.href) {
+            return client.navigate(normalizedTarget.href).then(() => client.focus())
+          }
           return client.focus()
         }
       }
 
       if (self.clients.openWindow) {
-        return self.clients.openWindow(targetUrl)
+        return self.clients.openWindow(normalizedTarget.href)
       }
 
       return undefined
