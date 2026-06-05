@@ -709,6 +709,17 @@ const getBlockCanvasStyle = (block: SiteBlock): React.CSSProperties => {
   return style as React.CSSProperties
 }
 
+const getBlockStyleClassName = (block: SiteBlock, extra = '') => {
+  const settings = block.settings || {}
+  return [
+    'rstk-block-style',
+    settings.fontFamily ? 'rstkFontOverride' : '',
+    settings.fontSize !== undefined ? 'rstkSizeOverride' : '',
+    settings.fontWeight === 'bold' ? 'rstkWeightOverride' : '',
+    extra
+  ].filter(Boolean).join(' ')
+}
+
 const cloneJson = <T,>(value: T): T => {
   try {
     return JSON.parse(JSON.stringify(value)) as T
@@ -2189,7 +2200,7 @@ export const Sites: React.FC = () => {
             <div>
               <div className={styles.titleRow}>
                 {isFocusedSitesMode && (
-                  <button type="button" className={styles.backButton} onClick={handleBackToLibrary}>
+        <button type="button" className={styles.backButton} onClick={handleBackToLibrary}>
                     <ArrowLeft size={16} />
                     Volver
                   </button>
@@ -2306,7 +2317,7 @@ export const Sites: React.FC = () => {
                           <CanvasBackgroundVideo theme={editorSite.theme} />
                           <main className="rstk-page">
                             <div className="rstk-shell">
-                              {!isLanding(editorSite) && platformChromeFor(resolveTemplateId(editorSite)) && (
+                              {platformChromeFor(resolveTemplateId(editorSite)) && (
                                 <div
                                   className={`${styles.socialProfileSelectable} ${selectedBlockId === SOCIAL_PROFILE_SELECTED_ID ? styles.socialProfileSelected : ''}`}
                                   onClick={(event) => {
@@ -2374,7 +2385,7 @@ export const Sites: React.FC = () => {
                     <DragOverlay dropAnimation={{ duration: 180, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' }}>
                       {activeDragBlock ? (
                         <div className={`rstkCanvas ${canvasTheme!.bodyClass}`} style={{ ...canvasTheme!.vars, width: 460, ['--rstk-scale' as string]: 1 } as React.CSSProperties}>
-                          <div className="rstk-block-style">
+                          <div className={getBlockStyleClassName(activeDragBlock)} style={getBlockCanvasStyle(activeDragBlock)}>
                             <CanvasPreviewBlock block={activeDragBlock} forms={forms} calendars={calendars} />
                           </div>
                         </div>
@@ -2443,53 +2454,77 @@ const LibrarySitePreview: React.FC<{
   const activePageId = pages[0]?.id || DEFAULT_FUNNEL_PAGE_ID
   const blocks = getLibraryPreviewBlocks(site)
   const canvasTheme = buildCanvasTheme(site, 'desktop')
-  const platform = !isLanding(site) ? platformChromeFor(resolveTemplateId(site)) : null
+  const platform = platformChromeFor(resolveTemplateId(site))
   const hasFields = isFormSite(site) && blocks.some(block => fieldBlockTypes.has(block.blockType))
+  const isLandingPreview = isLanding(site)
+  const previewDesignWidth = canvasTheme.designWidth
+  const previewHeight = isLandingPreview ? 680 : 540
+  const previewScale = Math.min(
+    isLandingPreview ? 0.205 : 0.52,
+    (isLandingPreview ? 304 : 286) / previewDesignWidth
+  )
+  const previewFrameStyle = {
+    minHeight: previewHeight,
+    padding: isLandingPreview ? '28px 24px 56px' : '20px 16px 42px'
+  } as React.CSSProperties
+  const previewScalerStyle = {
+    width: Math.round(previewDesignWidth * previewScale),
+    height: Math.round(previewHeight * previewScale)
+  } as React.CSSProperties
+  const previewCanvasStyle = {
+    ...canvasTheme.vars,
+    width: previewDesignWidth,
+    minHeight: previewHeight,
+    transform: `scale(${previewScale})`,
+    ['--rstk-scale' as string]: previewScale
+  } as React.CSSProperties
 
   return (
     <div className={styles.libraryPreviewViewport} aria-hidden="true" inert>
-      <div
-        className={`rstkCanvas ${canvasTheme.bodyClass} ${styles.libraryPreviewCanvas}`}
-        style={{ ...canvasTheme.vars, ['--rstk-scale' as string]: 1 } as React.CSSProperties}
-      >
-        <div className="rstk-frame">
-          <CanvasBackgroundVideo theme={site.theme} />
-          <main className="rstk-page">
-            <div className="rstk-shell">
-              {platform && (
-                <CanvasChrome
-                  platform={platform}
-                  site={site}
-                  onPatchTheme={() => {}}
-                  onSave={() => {}}
-                />
-              )}
-              {blocks.length ? (
-                blocks.map(block => (
-                  <div key={block.id} className="rstk-block-style" style={getBlockCanvasStyle(block)}>
-                    <CanvasPreviewBlock
-                      block={block}
-                      blocks={blocks}
-                      forms={forms}
-                      calendars={calendars}
-                      pages={pages}
-                      activePageId={activePageId}
-                    />
+      <div className={styles.libraryPreviewScaler} style={previewScalerStyle}>
+        <div
+          className={`rstkCanvas ${canvasTheme.bodyClass} ${styles.libraryPreviewCanvas}`}
+          style={previewCanvasStyle}
+        >
+          <div className="rstk-frame" style={previewFrameStyle}>
+            <CanvasBackgroundVideo theme={site.theme} />
+            <main className="rstk-page">
+              <div className="rstk-shell">
+                {platform && (
+                  <CanvasChrome
+                    platform={platform}
+                    site={site}
+                    onPatchTheme={() => {}}
+                    onSave={() => {}}
+                  />
+                )}
+                {blocks.length ? (
+                  blocks.map(block => (
+                    <div key={block.id} className={getBlockStyleClassName(block)} style={getBlockCanvasStyle(block)}>
+                      <CanvasPreviewBlock
+                        block={block}
+                        blocks={blocks}
+                        forms={forms}
+                        calendars={calendars}
+                        pages={pages}
+                        activePageId={activePageId}
+                      />
+                    </div>
+                  ))
+                ) : (
+                  <div className="rstkDropEmpty">
+                    {isLandingPreview ? <LayoutTemplate size={22} /> : <FormInput size={22} />}
+                    <p>Sin bloques todavia</p>
                   </div>
-                ))
-              ) : (
-                <div className="rstkDropEmpty">
-                  {isLanding(site) ? <LayoutTemplate size={22} /> : <FormInput size={22} />}
-                  <p>Sin bloques todavia</p>
-                </div>
-              )}
-              {hasFields && (
-                <div className="rstk-actions">
-                  <button type="button" data-submit>{site.theme?.submitText || 'Enviar'}</button>
-                </div>
-              )}
-            </div>
-          </main>
+                )}
+                {hasFields && (
+                  <div className="rstk-actions">
+                    <button type="button" data-submit>{site.theme?.submitText || 'Enviar'}</button>
+                  </div>
+                )}
+              </div>
+            </main>
+          </div>
         </div>
       </div>
     </div>
@@ -2631,7 +2666,7 @@ interface CreateFlowPanelProps {
 }
 
 const FORM_TEMPLATE_IDS: SiteTemplateId[] = ['facebook', 'instagram', 'tiktok', 'ristak']
-const LANDING_TEMPLATE_IDS: SiteTemplateId[] = ['ristak', 'vsl']
+const LANDING_TEMPLATE_IDS: SiteTemplateId[] = ['ristak', 'vsl', 'facebook', 'instagram', 'tiktok']
 const INTERACTIVE_TEMPLATE_IDS: SiteTemplateId[] = ['facebook', 'instagram', 'tiktok', 'interactive']
 
 const TemplateCard: React.FC<{ id: SiteTemplateId; disabled: boolean; onPick: () => void }> = ({ id, disabled, onPick }) => {
@@ -2689,7 +2724,7 @@ const CreateFlowPanel: React.FC<CreateFlowPanelProps> = ({ step, creating, onCre
           <button type="button" disabled={creating} onClick={() => onAdvance('landing-template')}>
             <LayoutTemplate size={22} />
             <strong>Desde plantilla</strong>
-            <p>Elige un estilo listo (minimal o carta de ventas) y empieza a editar.</p>
+            <p>Elige un estilo listo (minimal, VSL o tipo redes) y empieza a editar.</p>
             <ChevronRight size={18} />
           </button>
           <button type="button" disabled={creating} onClick={() => onCreate('landing_page', 'blank', 'ristak')}>
@@ -3205,7 +3240,7 @@ const CanvasChrome: React.FC<{
 }
 
 const paletteGroups: Array<{ label: string; types: SiteBlockType[] }> = [
-  { label: 'Arrastra o da click', types: ['hero', 'section', 'title', 'subtitle', 'text', 'image', 'video', 'button', 'benefits', 'testimonials', 'services', 'faq', 'cta', 'embed', 'calendar_embed', 'form_embed'] },
+  { label: 'Contenido', types: ['hero', 'section', 'title', 'subtitle', 'text', 'image', 'video', 'button', 'benefits', 'testimonials', 'services', 'faq', 'cta', 'embed', 'calendar_embed', 'form_embed'] },
   { label: 'Campos', types: ['short_text', 'paragraph', 'email', 'phone', 'number', 'currency', 'date', 'dropdown', 'radio', 'checkboxes', 'description'] }
 ]
 
@@ -3389,7 +3424,10 @@ const Palette: React.FC<{
       <div className={styles.paletteGroups}>
         {groups.map(group => (
           <div key={group.label} className={styles.paletteGroup}>
-            <span className={styles.paletteGroupLabel}>{group.label}</span>
+            <span className={styles.paletteGroupLabel}>
+              <span>{group.label}</span>
+              <span className={styles.paletteGroupHint}>(Arrastra)</span>
+            </span>
             <div className={styles.paletteItems}>
               {group.types.map(blockType => (
                 <button
@@ -3595,7 +3633,7 @@ const SortableCanvasBlock: React.FC<SortableCanvasBlockProps> = ({
         zIndex: isDragging ? 8 : undefined,
         ...getBlockCanvasStyle(block)
       }}
-      className={`rstk-block-style rstkSel ${selected ? 'rstkSelActive' : ''} ${isDragging ? 'rstkSelDragging' : ''}`}
+      className={getBlockStyleClassName(block, `rstkSel ${selected ? 'rstkSelActive' : ''} ${isDragging ? 'rstkSelDragging' : ''}`)}
       onClick={(event) => {
         event.stopPropagation()
         onSelect()
@@ -3633,7 +3671,7 @@ const PaletteInsertPreview: React.FC<{
   forms: PublicSite[]
   calendars: CalendarType[]
 }> = ({ block, forms, calendars }) => (
-  <div className="rstk-block-style rstkPalettePreview" style={getBlockCanvasStyle(block)}>
+  <div className={getBlockStyleClassName(block, 'rstkPalettePreview')} style={getBlockCanvasStyle(block)}>
     <CanvasPreviewBlock block={block} forms={forms} calendars={calendars} />
   </div>
 )
@@ -4300,6 +4338,7 @@ const PageInspector: React.FC<{
         <span>{isLanding(site) ? 'Sitio embudo' : 'Formulario'}</span>
       </div>
       <div className={styles.propertiesBody}>
+        {!(platform && showSocialProfile) && (
         <div className={styles.settingsGroup}>
           <div className={styles.panelSubheader}>Colores</div>
           <div className={styles.twoColumn}>
@@ -4474,6 +4513,7 @@ const PageInspector: React.FC<{
             </>
           )}
         </div>
+        )}
 
         {platform && showSocialProfile && (
           <div className={styles.settingsGroup}>

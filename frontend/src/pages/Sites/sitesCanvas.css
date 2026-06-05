@@ -243,7 +243,10 @@
   padding: 0;
   display: flex;
   justify-content: center;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
+.canvasViewport::-webkit-scrollbar { width: 0; height: 0; display: none; }
 .canvasViewportActive { box-shadow: 0 0 0 3px color-mix(in srgb, var(--rstk-accent, #2563eb) 22%, transparent); }
 
 /* The scaler reserves the post-scale footprint; the inner page is rendered at
@@ -344,6 +347,44 @@
 }
 /* Gradient-clipped landing headline would hide typed text; force it solid while editing. */
 .rstkCanvas.rstk-kind-landing .rstk-headline[data-rstk-edit]:focus { background: none; -webkit-text-fill-color: var(--rstk-ink); color: var(--rstk-ink); }
+
+.rstkCanvas .rstkFontOverride .rstk-headline,
+.rstkCanvas .rstkFontOverride .rstk-subheading,
+.rstkCanvas .rstkFontOverride .rstk-text,
+.rstkCanvas .rstkFontOverride h2,
+.rstkCanvas .rstkFontOverride label,
+.rstkCanvas .rstkFontOverride .rstk-help,
+.rstkCanvas .rstkFontOverride .rstk-list-grid strong,
+.rstkCanvas .rstkFontOverride .rstk-list-grid p,
+.rstkCanvas .rstkFontOverride .rstk-check-body strong,
+.rstkCanvas .rstkFontOverride .rstk-check-body span {
+  font-family: var(--rstk-block-font, inherit);
+}
+
+.rstkCanvas .rstkSizeOverride .rstk-headline,
+.rstkCanvas .rstkSizeOverride .rstk-subheading,
+.rstkCanvas .rstkSizeOverride .rstk-text,
+.rstkCanvas .rstkSizeOverride h2,
+.rstkCanvas .rstkSizeOverride label,
+.rstkCanvas .rstkSizeOverride .rstk-help,
+.rstkCanvas .rstkSizeOverride .rstk-list-grid strong,
+.rstkCanvas .rstkSizeOverride .rstk-list-grid p,
+.rstkCanvas .rstkSizeOverride .rstk-list-grid small,
+.rstkCanvas .rstkSizeOverride .rstk-check-body strong,
+.rstkCanvas .rstkSizeOverride .rstk-check-body span {
+  font-size: var(--rstk-block-size);
+}
+
+.rstkCanvas .rstkWeightOverride .rstk-headline,
+.rstkCanvas .rstkWeightOverride .rstk-subheading,
+.rstkCanvas .rstkWeightOverride .rstk-text,
+.rstkCanvas .rstkWeightOverride h2,
+.rstkCanvas .rstkWeightOverride label,
+.rstkCanvas .rstkWeightOverride .rstk-help,
+.rstkCanvas .rstkWeightOverride .rstk-list-grid strong,
+.rstkCanvas .rstkWeightOverride .rstk-check-body strong {
+  font-weight: var(--rstk-block-weight, 850);
+}
 
 .rstkCanvas .rstkDropEmpty {
   min-height: 260px; display: grid; place-items: center; gap: 10px;

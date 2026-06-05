@@ -411,11 +411,20 @@
 .libraryPreviewViewport {
   position: absolute;
   inset: 28px 10px 10px;
+  display: grid;
+  place-items: start center;
   overflow: hidden;
   border: 1px solid rgba(148, 163, 184, 0.14);
   border-radius: 6px;
   background: var(--color-background-primary);
+  padding: 8px;
   pointer-events: none;
+}
+
+.libraryPreviewScaler {
+  position: relative;
+  flex: 0 0 auto;
+  overflow: hidden;
 }
 
 .libraryPreviewCanvas {
@@ -3908,12 +3917,12 @@
 
 .libraryPreviewViewport {
   display: grid;
-  place-items: center;
+  place-items: start center;
+  padding: 8px;
 }
 
 .libraryPreviewCanvas {
-  transform: scale(0.3);
-  transform-origin: center center;
+  transform-origin: top left;
 }
 
 .libraryPreviewType {
@@ -4605,4 +4614,45 @@
   .editorTopControls .compactField {
     min-width: min(100%, 320px);
   }
+}
+
+/* Editor fixes: keep long inspectors usable without stealing page scroll. */
+.containerFocused .propertiesPanel,
+.builderGridForm .propertiesPanel {
+  align-self: start;
+  max-height: calc(100dvh - var(--header-height) - 28px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.containerFocused .propertiesBody,
+.builderGridForm .propertiesBody {
+  padding-bottom: 36px;
+}
+
+.canvasToolbar {
+  justify-content: center;
+  text-align: center;
+}
+
+.canvasToolbarTitle {
+  width: 100%;
+  justify-content: center;
+}
+
+.paletteGroupLabel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.paletteGroupHint {
+  color: var(--color-text-tertiary);
+  font-size: 0.68rem;
+  font-weight: 850;
+  text-transform: none;
+  letter-spacing: 0;
 }

@@ -2490,9 +2490,22 @@ function renderBlockStyleVars(block) {
   return vars.length ? ` style="${escapeHtml(vars.join(';'))}"` : ''
 }
 
+function renderBlockStyleClassName(block) {
+  const settings = block.settings || {}
+  const classes = [
+    'rstk-block-style',
+    cleanString(settings.fontFamily) ? 'rstkFontOverride' : '',
+    settings.fontSize !== undefined ? 'rstkSizeOverride' : '',
+    settings.fontWeight === 'bold' ? 'rstkWeightOverride' : ''
+  ].filter(Boolean)
+
+  return classes.join(' ')
+}
+
 function wrapRenderedBlock(block, html) {
   const style = renderBlockStyleVars(block)
-  return style ? `<div class="rstk-block-style"${style}>${html}</div>` : html
+  const className = renderBlockStyleClassName(block)
+  return style ? `<div class="${escapeHtml(className)}"${style}>${html}</div>` : html
 }
 
 function renderContentBlock(block, context = {}) {
@@ -3220,6 +3233,9 @@ const RSTK_BASE_CSS = `
 
   .rstk-kind-landing .rstk-media,.rstk-kind-landing .rstk-video,.rstk-kind-landing .rstk-embed{border-radius:var(--rstk-media-radius,var(--rstk-block-radius,clamp(16px,2vw,22px)));box-shadow:none}
   .rstk-kind-landing .rstk-embedded-form{padding:clamp(24px,3vw,40px);border:var(--rstk-block-border-width,0) solid var(--rstk-block-border,transparent);border-radius:var(--rstk-block-radius,0);background:var(--rstk-block-bg,transparent);width:100%;margin-inline:auto}
+  .rstkFontOverride .rstk-headline,.rstkFontOverride .rstk-subheading,.rstkFontOverride .rstk-text,.rstkFontOverride h2,.rstkFontOverride label,.rstkFontOverride .rstk-help,.rstkFontOverride .rstk-list-grid strong,.rstkFontOverride .rstk-list-grid p,.rstkFontOverride .rstk-check-body strong,.rstkFontOverride .rstk-check-body span{font-family:var(--rstk-block-font,inherit)}
+  .rstkSizeOverride .rstk-headline,.rstkSizeOverride .rstk-subheading,.rstkSizeOverride .rstk-text,.rstkSizeOverride h2,.rstkSizeOverride label,.rstkSizeOverride .rstk-help,.rstkSizeOverride .rstk-list-grid strong,.rstkSizeOverride .rstk-list-grid p,.rstkSizeOverride .rstk-list-grid small,.rstkSizeOverride .rstk-check-body strong,.rstkSizeOverride .rstk-check-body span{font-size:var(--rstk-block-size)}
+  .rstkWeightOverride .rstk-headline,.rstkWeightOverride .rstk-subheading,.rstkWeightOverride .rstk-text,.rstkWeightOverride h2,.rstkWeightOverride label,.rstkWeightOverride .rstk-help,.rstkWeightOverride .rstk-list-grid strong,.rstkWeightOverride .rstk-check-body strong{font-weight:var(--rstk-block-weight,850)}
 
   @media (max-width:640px){
     .rstk-kind-landing .rstk-hero{padding:clamp(32px,8vw,56px) 20px}
@@ -3584,7 +3600,7 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
     pageVideoFit: backgroundFitValue(theme.backgroundFit),
     pageRadius: `${pageRadius}px`
   })
-  const chrome = (!isLandingType && template.chrome && template.chrome !== 'none') ? renderBrandChrome(template, brand) : ''
+  const chrome = template.chrome && template.chrome !== 'none' ? renderBrandChrome(template, brand) : ''
   const footer = (hasForm && !isLandingType) ? renderLegalFooter(brand) : ''
   const bodyClass = [
     `rstk-tpl-${template.id}`,
