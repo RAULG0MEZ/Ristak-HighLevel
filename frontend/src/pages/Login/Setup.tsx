@@ -1,5 +1,5 @@
 import React, { useState, FormEvent } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Lock, User, UserPlus } from 'lucide-react'
 import { Button } from '@/components/common'
 import { useAuth } from '@/contexts/AuthContext'
@@ -22,7 +22,7 @@ function getRedirectPath(from?: RedirectLocation) {
     return '/dashboard'
   }
 
-  return `${pathname}${from.search || ''}${from.hash || ''}`
+  return `${pathname}${from?.search || ''}${from?.hash || ''}`
 }
 
 export const Setup: React.FC = () => {
@@ -32,15 +32,16 @@ export const Setup: React.FC = () => {
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
 
-  const { setupAccount, needsSetup } = useAuth()
+  const { isAuthenticated, setupAccount, needsSetup } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
   const redirectPath = getRedirectPath((location.state as SetupLocationState)?.from)
 
-  // Si ya hay usuarios creados, redirigir a login
+  // Si el setup ya terminó, mandar a la pantalla correcta sin pedir los datos otra vez.
   if (!needsSetup) {
-    navigate('/login', { replace: true, state: location.state })
-    return null
+    return isAuthenticated
+      ? <Navigate to={redirectPath} replace />
+      : <Navigate to="/login" replace state={location.state} />
   }
 
   const handleSubmit = async (e: FormEvent) => {

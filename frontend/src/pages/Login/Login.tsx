@@ -1,5 +1,5 @@
 import React, { useState, FormEvent } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Lock, User, Terminal, Copy, Check } from 'lucide-react'
 import { Button } from '@/components/common'
 import { useAuth } from '@/contexts/AuthContext'
@@ -22,7 +22,7 @@ function getRedirectPath(from?: RedirectLocation) {
     return '/dashboard'
   }
 
-  return `${pathname}${from.search || ''}${from.hash || ''}`
+  return `${pathname}${from?.search || ''}${from?.hash || ''}`
 }
 
 export const Login: React.FC = () => {
@@ -33,10 +33,36 @@ export const Login: React.FC = () => {
   const [showRecovery, setShowRecovery] = useState(false)
   const [copied, setCopied] = useState(false)
 
-  const { login } = useAuth()
+  const { isAuthenticated, isLoading: isAuthLoading, login, needsSetup } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
   const redirectPath = getRedirectPath((location.state as LoginLocationState)?.from)
+
+  if (isAuthLoading) {
+    return (
+      <div className={styles.container}>
+        <div className={styles.loginBox}>
+          <div className={styles.header}>
+            <div className={styles.logoContainer}>
+              <div className={styles.logo}>
+                <Lock size={32} strokeWidth={1.5} />
+              </div>
+            </div>
+            <h1 className={styles.title}>Ristak</h1>
+            <p className={styles.subtitle}>Revisando tu acceso...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (needsSetup) {
+    return <Navigate to="/setup" state={{ from: (location.state as LoginLocationState)?.from || location }} replace />
+  }
+
+  if (isAuthenticated) {
+    return <Navigate to={redirectPath} replace />
+  }
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()

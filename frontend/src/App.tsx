@@ -27,10 +27,31 @@ import { ToastContainer } from '@/components/common/Toast'
 import { Modal } from '@/components/common/Modal'
 import { StorageAlert } from '@/components/common/StorageAlert'
 
+type RedirectLocation = {
+  pathname?: string
+  search?: string
+  hash?: string
+}
+
+type RouteLocationState = {
+  from?: RedirectLocation
+} | null
+
+function getRedirectPath(from?: RedirectLocation) {
+  const pathname = from?.pathname
+
+  if (!pathname?.startsWith('/') || pathname === '/login' || pathname === '/setup') {
+    return '/dashboard'
+  }
+
+  return `${pathname}${from?.search || ''}${from?.hash || ''}`
+}
+
 // Componente para la ruta de setup (primera vez)
 const SetupRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { needsSetup, isLoading } = useAuth()
+  const { isAuthenticated, needsSetup, isLoading } = useAuth()
   const location = useLocation()
+  const redirectPath = getRedirectPath((location.state as RouteLocationState)?.from)
 
   if (isLoading) {
     return (
@@ -48,7 +69,9 @@ const SetupRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   }
 
   if (!needsSetup) {
-    return <Navigate to="/login" state={{ from: location }} replace />
+    return isAuthenticated
+      ? <Navigate to={redirectPath} replace />
+      : <Navigate to="/login" state={{ from: location }} replace />
   }
 
   return <>{children}</>
