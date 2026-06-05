@@ -3,6 +3,7 @@ import {
   getContacts,
   getContactById,
   createContact,
+  getChatContacts,
   searchContacts,
   getContactStats,
   getContactsChart,
@@ -16,6 +17,7 @@ const router = express.Router()
 
 // Rutas principales
 router.get('/', getContacts)
+router.get('/chats', getChatContacts)
 router.get('/search', searchContacts)
 router.get('/stats', getContactStats)
 router.get('/chart', getContactsChart)

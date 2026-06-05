@@ -1,7 +1,7 @@
 import React, { useState, FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Lock, User, Terminal, Copy, Check } from 'lucide-react'
-import { Button } from '@/components/common'
+import { Button, Icon } from '@/components/common'
 import { useAuth } from '@/contexts/AuthContext'
 import styles from './Login.module.css'
 
@@ -36,19 +36,21 @@ export const Login: React.FC = () => {
   const { isAuthenticated, isLoading: isAuthLoading, login, needsSetup } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
-  const redirectPath = getRedirectPath((location.state as LoginLocationState)?.from)
+  const fromLocation = (location.state as LoginLocationState)?.from
+  const redirectPath = getRedirectPath(fromLocation)
+  const isPhoneLogin = Boolean(fromLocation?.pathname?.startsWith('/phone/'))
 
   if (isAuthLoading) {
     return (
-      <div className={styles.container}>
-        <div className={styles.loginBox}>
+      <div className={`${styles.container} ${isPhoneLogin ? styles.phoneContainer : ''}`}>
+        <div className={`${styles.loginBox} ${isPhoneLogin ? styles.phoneLoginBox : ''}`}>
           <div className={styles.header}>
             <div className={styles.logoContainer}>
-              <div className={styles.logo}>
-                <Lock size={32} strokeWidth={1.5} />
+              <div className={`${styles.logo} ${isPhoneLogin ? styles.phoneLogo : ''}`}>
+                {isPhoneLogin ? <Icon name="whatsapp" size={36} /> : <Lock size={32} strokeWidth={1.5} />}
               </div>
             </div>
-            <h1 className={styles.title}>Ristak</h1>
+            <h1 className={styles.title}>{isPhoneLogin ? 'Ristak Chat' : 'Ristak'}</h1>
             <p className={styles.subtitle}>Revisando tu acceso...</p>
           </div>
         </div>
@@ -94,16 +96,18 @@ export const Login: React.FC = () => {
   }
 
   return (
-    <div className={styles.container}>
-      <div className={styles.loginBox}>
+    <div className={`${styles.container} ${isPhoneLogin ? styles.phoneContainer : ''}`}>
+      <div className={`${styles.loginBox} ${isPhoneLogin ? styles.phoneLoginBox : ''}`}>
         <div className={styles.header}>
           <div className={styles.logoContainer}>
-            <div className={styles.logo}>
-              <Lock size={32} strokeWidth={1.5} />
+            <div className={`${styles.logo} ${isPhoneLogin ? styles.phoneLogo : ''}`}>
+              {isPhoneLogin ? <Icon name="whatsapp" size={38} /> : <Lock size={32} strokeWidth={1.5} />}
             </div>
           </div>
-          <h1 className={styles.title}>Ristak</h1>
-          <p className={styles.subtitle}>Ingresa a tu cuenta</p>
+          <h1 className={styles.title}>{isPhoneLogin ? 'Ristak Chat' : 'Ristak'}</h1>
+          <p className={styles.subtitle}>
+            {isPhoneLogin ? 'Entra para ver tus chats, pagos y citas desde el celular.' : 'Ingresa a tu cuenta'}
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className={styles.form}>

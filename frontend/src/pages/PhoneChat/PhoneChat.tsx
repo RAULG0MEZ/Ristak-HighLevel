@@ -1,22 +1,36 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
+  Archive,
   Bell,
   Bot,
   CalendarDays,
+  Camera,
   Check,
+  ChevronLeft,
   CreditCard,
+  FileText,
+  Image as ImageIcon,
   Loader2,
+  MapPin,
   MessageCircle,
+  Mic,
   MonitorX,
+  MoreHorizontal,
+  Phone,
+  Plus,
   RefreshCw,
   Search,
   Send,
   Settings,
+  Smile,
   Smartphone,
+  User,
+  Users,
+  Video,
   X
 } from 'lucide-react'
-import { AppointmentModal, RecordPaymentModal } from '@/components/common'
+import { AppointmentModal, Icon, RecordPaymentModal } from '@/components/common'
 import { useAuth } from '@/contexts/AuthContext'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useTimezone } from '@/contexts/TimezoneContext'
@@ -38,7 +52,7 @@ const SCROLLABLE_CHAT_SELECTOR = '[data-phone-chat-scrollable="true"], textarea,
 type AccessState = 'checking' | 'allowed' | 'blocked'
 type ComposerStatus = 'idle' | 'sending'
 type PaymentMode = 'single' | 'partial'
-type ActionSheet = 'payment' | 'appointment' | 'notifications' | null
+type ActionSheet = 'attachments' | 'payment' | 'appointment' | 'notifications' | 'newChat' | null
 
 interface ChatMessage {
   id: string
@@ -46,6 +60,15 @@ interface ChatMessage {
   date: string
   direction: 'inbound' | 'outbound' | 'system'
   status?: string
+}
+
+interface ChatContact extends Contact {
+  lastMessageText?: string
+  lastMessageType?: string
+  lastMessageDate?: string
+  lastMessageDirection?: string
+  messageCount?: number
+  unreadCount?: number
 }
 
 function hasPortableAccess() {
@@ -98,6 +121,10 @@ function formatMessageDate(value?: string | null) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return ''
 
+  const now = new Date()
+  const sameDay = date.toDateString() === now.toDateString()
+  if (sameDay) return formatMessageTime(value)
+
   return new Intl.DateTimeFormat('es-MX', {
     day: '2-digit',
     month: 'short'
@@ -120,11 +147,27 @@ function getJourneyMessage(event: JourneyEvent, index: number): ChatMessage | nu
 
   return {
     id: String(event.data?.whatsapp_api_message_id || event.data?.whatsapp_message_id || event.data?.attribution_record_id || `message-${index}`),
-    text: text || `Mensaje ${event.data?.message_type || 'de WhatsApp'}`,
+    text: text || getMessageTypeLabel(String(event.data?.message_type || '')),
     date: event.date,
     direction,
     status: String(event.data?.status || '')
   }
+}
+
+function getMessageTypeLabel(type = '') {
+  const normalized = type.toLowerCase()
+  if (normalized.includes('image')) return 'Foto'
+  if (normalized.includes('video')) return 'Video'
+  if (normalized.includes('audio') || normalized.includes('voice')) return 'Mensaje de voz'
+  if (normalized.includes('document')) return 'Documento'
+  if (normalized.includes('location')) return 'Ubicación'
+  return 'Mensaje de WhatsApp'
+}
+
+function getChatPreview(contact: ChatContact) {
+  const text = String(contact.lastMessageText || '').trim()
+  const typeLabel = text ? text : getMessageTypeLabel(contact.lastMessageType || '')
+  return contact.lastMessageDirection === 'outbound' ? `Tú: ${typeLabel}` : typeLabel
 }
 
 function getNotificationPermissionLabel() {
@@ -141,6 +184,17 @@ function toPaymentContact(contact: Contact | null) {
     name: getContactName(contact),
     email: contact.email || '',
     phone: contact.phone || ''
+  }
+}
+
+function toChatContact(contact: Contact): ChatContact {
+  return {
+    ...contact,
+    lastMessageText: '',
+    lastMessageDate: contact.createdAt,
+    lastMessageDirection: '',
+    messageCount: 0,
+    unreadCount: 0
   }
 }
 
@@ -169,10 +223,13 @@ export const PhoneChat: React.FC = () => {
   const [pushCalendarIds] = useAppConfig<string[]>('calendar_push_notification_calendar_ids', [])
 
   const [accessState, setAccessState] = useState<AccessState>(getAccessState)
-  const [contacts, setContacts] = useState<Contact[]>([])
-  const [contactsLoading, setContactsLoading] = useState(true)
-  const [contactsError, setContactsError] = useState('')
-  const [query, setQuery] = useState('')
+  const [chats, setChats] = useState<ChatContact[]>([])
+  const [chatsLoading, setChatsLoading] = useState(true)
+  const [chatsError, setChatsError] = useState('')
+  const [chatQuery, setChatQuery] = useState('')
+  const [contactQuery, setContactQuery] = useState('')
+  const [contactResults, setContactResults] = useState<Contact[]>([])
+  const [contactsLoading, setContactsLoading] = useState(false)
   const [activeContactId, setActiveContactId] = useState<string | null>(null)
   const [conversationOpen, setConversationOpen] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -189,8 +246,8 @@ export const PhoneChat: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
   const activeContact = useMemo(
-    () => contacts.find((contact) => contact.id === activeContactId) || null,
-    [activeContactId, contacts]
+    () => chats.find((contact) => contact.id === activeContactId) || null,
+    [activeContactId, chats]
   )
 
   const selectedCalendar = useMemo(
@@ -202,10 +259,63 @@ export const PhoneChat: React.FC = () => {
   const defaultAppointmentRange = useMemo(() => createDefaultAppointmentRange(timezone), [timezone])
   const whatsappConnected = Boolean(whatsappStatus?.connected && whatsappStatus?.configured)
   const canSendMessage = Boolean(activeContact?.phone && messageText.trim() && composerStatus !== 'sending')
+  const hasChats = chats.length > 0
 
-  const loadContacts = useCallback(async () => {
+  const ensureChatContact = useCallback((contact: Contact) => {
+    const nextContact = toChatContact(contact)
+    setChats((current) => {
+      if (current.some((item) => item.id === nextContact.id)) return current
+      return [nextContact, ...current]
+    })
+    return nextContact
+  }, [])
+
+  const loadChats = useCallback(async () => {
+    setChatsLoading(true)
+    setChatsError('')
+
+    try {
+      const trimmed = chatQuery.trim()
+      const data = await apiClient.get<ChatContact[]>('/contacts/chats', {
+        params: {
+          limit: '60',
+          ...(trimmed ? { q: trimmed } : {})
+        }
+      })
+
+      let nextChats = Array.isArray(data) ? data : []
+      let requestedContact = requestedContactParam
+        ? nextChats.find((contact) => contact.id === requestedContactParam)
+        : null
+
+      if (requestedContactParam && !requestedContact) {
+        const contact = await contactsService.getContactDetails(requestedContactParam).catch(() => null)
+        if (contact) {
+          requestedContact = toChatContact(contact)
+          nextChats = [requestedContact, ...nextChats.filter((item) => item.id !== contact.id)]
+        }
+      }
+
+      setChats(nextChats)
+      setActiveContactId((current) => {
+        if (requestedContact) return requestedContact.id
+        if (current && nextChats.some((contact) => contact.id === current)) return current
+        return null
+      })
+
+      if (requestedContact) {
+        setConversationOpen(true)
+      }
+    } catch {
+      setChatsError('No se pudieron cargar los chats.')
+      setChats([])
+    } finally {
+      setChatsLoading(false)
+    }
+  }, [chatQuery, requestedContactParam])
+
+  const loadContactResults = useCallback(async (query: string) => {
     setContactsLoading(true)
-    setContactsError('')
 
     try {
       const trimmed = query.trim()
@@ -220,35 +330,13 @@ export const PhoneChat: React.FC = () => {
             }
           })
 
-      let nextContacts = Array.isArray(data) ? data : []
-      let requestedContact = requestedContactParam
-        ? nextContacts.find((contact) => contact.id === requestedContactParam)
-        : null
-
-      if (requestedContactParam && !requestedContact) {
-        const contact = await contactsService.getContactDetails(requestedContactParam).catch(() => null)
-        if (contact) {
-          requestedContact = contact
-          nextContacts = [contact, ...nextContacts.filter((item) => item.id !== contact.id)]
-        }
-      }
-
-      setContacts(nextContacts)
-      setActiveContactId((current) => {
-        if (requestedContact) return requestedContact.id
-        if (current && nextContacts.some((contact) => contact.id === current)) return current
-        return null
-      })
-      if (requestedContact) {
-        setConversationOpen(true)
-      }
+      setContactResults(Array.isArray(data) ? data : [])
     } catch {
-      setContactsError('No se pudieron cargar los contactos.')
-      setContacts([])
+      setContactResults([])
     } finally {
       setContactsLoading(false)
     }
-  }, [query, requestedContactParam])
+  }, [])
 
   const loadConversation = useCallback(async (contactId: string) => {
     setMessagesLoading(true)
@@ -376,11 +464,11 @@ export const PhoneChat: React.FC = () => {
   useEffect(() => {
     if (accessState !== 'allowed') return
     const timer = window.setTimeout(() => {
-      loadContacts()
-    }, query.trim() ? 120 : 0)
+      loadChats()
+    }, chatQuery.trim() ? 140 : 0)
 
     return () => window.clearTimeout(timer)
-  }, [accessState, loadContacts, query])
+  }, [accessState, chatQuery, loadChats])
 
   useEffect(() => {
     if (accessState !== 'allowed') return
@@ -396,12 +484,40 @@ export const PhoneChat: React.FC = () => {
   }, [accessState, activeContact?.id, loadConversation])
 
   useEffect(() => {
+    if (accessState !== 'allowed') return
+
+    const shouldSearchContacts = sheet === 'newChat' || (!hasChats && chatQuery.trim().length >= 2)
+    if (!shouldSearchContacts) {
+      setContactResults([])
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      loadContactResults(sheet === 'newChat' ? contactQuery : chatQuery)
+    }, 160)
+
+    return () => window.clearTimeout(timer)
+  }, [accessState, chatQuery, contactQuery, hasChats, loadContactResults, sheet])
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ block: 'end' })
   }, [messages, messagesLoading, conversationOpen])
 
   const handleSelectContact = (contact: Contact) => {
-    setActiveContactId(contact.id)
+    const nextContact = ensureChatContact(contact)
+    setActiveContactId(nextContact.id)
     setConversationOpen(true)
+    setSheet(null)
+    setContactQuery('')
+  }
+
+  const handleBackToChats = () => {
+    setConversationOpen(false)
+    setSheet(null)
+  }
+
+  const handleUnavailableAttachment = (label: string) => {
+    showToast('info', label, 'Esta opción ya está en el menú. La conexión real se activa cuando conectemos archivos del celular.')
   }
 
   const handleSendMessage = async () => {
@@ -419,6 +535,7 @@ export const PhoneChat: React.FC = () => {
     }
 
     const optimisticId = `local-${Date.now()}`
+    const sentAt = new Date().toISOString()
     setComposerStatus('sending')
     setMessageText('')
     setMessages((current) => [
@@ -426,11 +543,16 @@ export const PhoneChat: React.FC = () => {
       {
         id: optimisticId,
         text,
-        date: new Date().toISOString(),
+        date: sentAt,
         direction: 'outbound',
         status: 'enviando'
       }
     ])
+    setChats((current) => current.map((contact) => (
+      contact.id === activeContact.id
+        ? { ...contact, lastMessageText: text, lastMessageDate: sentAt, lastMessageDirection: 'outbound', messageCount: Number(contact.messageCount || 0) + 1 }
+        : contact
+    )))
 
     try {
       await whatsappApiService.sendText({
@@ -442,6 +564,7 @@ export const PhoneChat: React.FC = () => {
         message.id === optimisticId ? { ...message, status: 'sent' } : message
       )))
       await loadConversation(activeContact.id)
+      await loadChats()
     } catch (error: any) {
       setMessages((current) => current.map((message) => (
         message.id === optimisticId ? { ...message, status: 'error' } : message
@@ -508,50 +631,97 @@ export const PhoneChat: React.FC = () => {
     }
   }
 
-  const renderContacts = () => {
-    if (contactsLoading) {
-      return (
-        <div className={styles.centerState}>
-          <Loader2 size={18} className={styles.spinIcon} />
-          <span>Cargando contactos...</span>
-        </div>
-      )
-    }
+  const renderContactButton = (contact: Contact, source: 'chat' | 'contact') => {
+    const chatContact = contact as ChatContact
+    const subtitle = source === 'chat' ? getChatPreview(chatContact) : getContactDetail(contact)
+    const dateLabel = source === 'chat' ? formatMessageDate(chatContact.lastMessageDate || contact.createdAt) : ''
+    const unreadCount = Number(chatContact.unreadCount || 0)
 
-    if (contactsError) {
-      return (
-        <div className={styles.centerState}>
-          <span>{contactsError}</span>
-          <button type="button" onClick={loadContacts}>Reintentar</button>
-        </div>
-      )
-    }
-
-    if (contacts.length === 0) {
-      return (
-        <div className={styles.emptyContacts}>
-          <MessageCircle size={22} />
-          <strong>Sin contactos por ahora</strong>
-          <span>Cuando entren mensajes o guardes contactos, aparecerán aquí.</span>
-        </div>
-      )
-    }
-
-    return contacts.map((contact) => (
+    return (
       <button
         key={contact.id}
         type="button"
-        className={`${styles.contactItem} ${activeContact?.id === contact.id ? styles.contactItemActive : ''}`}
+        className={`${styles.chatItem} ${activeContact?.id === contact.id ? styles.chatItemActive : ''}`}
         onClick={() => handleSelectContact(contact)}
       >
         <span className={styles.avatar}>{getContactInitials(contact)}</span>
-        <span className={styles.contactMain}>
+        <span className={styles.chatMain}>
           <strong>{getContactName(contact)}</strong>
-          <small>{getContactDetail(contact)}</small>
+          <small>{subtitle}</small>
         </span>
-        <span className={styles.contactMeta}>{contact.createdAt ? formatMessageDate(contact.createdAt) : ''}</span>
+        <span className={styles.chatMeta}>
+          {dateLabel && <small>{dateLabel}</small>}
+          {unreadCount > 0 && <i>{unreadCount}</i>}
+        </span>
       </button>
-    ))
+    )
+  }
+
+  const renderChats = () => {
+    if (chatsLoading) {
+      return (
+        <div className={styles.centerState}>
+          <Loader2 size={20} className={styles.spinIcon} />
+          <span>Cargando chats...</span>
+        </div>
+      )
+    }
+
+    if (chatsError) {
+      return (
+        <div className={styles.centerState}>
+          <span>{chatsError}</span>
+          <button type="button" onClick={loadChats}>Reintentar</button>
+        </div>
+      )
+    }
+
+    if (chats.length === 0 && chatQuery.trim().length >= 2) {
+      if (contactsLoading) {
+        return (
+          <div className={styles.centerState}>
+            <Loader2 size={20} className={styles.spinIcon} />
+            <span>Buscando contactos...</span>
+          </div>
+        )
+      }
+
+      if (contactResults.length > 0) {
+        return (
+          <div className={styles.contactResultGroup}>
+            <p>Contactos encontrados</p>
+            {contactResults.map((contact) => renderContactButton(contact, 'contact'))}
+          </div>
+        )
+      }
+    }
+
+    if (chats.length === 0) {
+      return (
+        <div className={styles.emptyChats}>
+          <span className={styles.emptyChatsIcon}>
+            <Icon name="whatsapp" size={34} />
+          </span>
+          <strong>No hay chats todavía</strong>
+          <small>Toca el botón verde para buscar un contacto e iniciar una conversación.</small>
+          <button type="button" onClick={() => setSheet('newChat')}>
+            <Plus size={17} />
+            Nuevo chat
+          </button>
+        </div>
+      )
+    }
+
+    return (
+      <>
+        <button type="button" className={styles.archiveRow}>
+          <Archive size={21} />
+          <strong>Archivados</strong>
+          <span>0</span>
+        </button>
+        {chats.map((contact) => renderContactButton(contact, 'chat'))}
+      </>
+    )
   }
 
   const renderMessages = () => {
@@ -559,7 +729,7 @@ export const PhoneChat: React.FC = () => {
       return (
         <div className={styles.emptyConversation}>
           <MessageCircle size={34} />
-          <strong>Elige un contacto</strong>
+          <strong>Elige un chat</strong>
           <span>Abre una conversación para escribir, cobrar o agendar.</span>
         </div>
       )
@@ -577,9 +747,9 @@ export const PhoneChat: React.FC = () => {
     if (messages.length === 0) {
       return (
         <div className={styles.emptyConversation}>
-          <MessageCircle size={34} />
+          <Icon name="whatsapp" size={38} />
           <strong>Sin mensajes todavía</strong>
-          <span>Escribe el primer mensaje o usa una acción rápida.</span>
+          <span>Escribe el primer mensaje o abre el botón + para cobrar o agendar.</span>
         </div>
       )
     }
@@ -594,12 +764,92 @@ export const PhoneChat: React.FC = () => {
           <span>
             {formatMessageTime(message.date)}
             {message.direction === 'outbound' && (
-              <Check size={13} className={message.status === 'error' ? styles.messageErrorIcon : undefined} />
+              <Check size={15} className={message.status === 'error' ? styles.messageErrorIcon : undefined} />
             )}
           </span>
         </div>
       </div>
     ))
+  }
+
+  const renderNewChatSheet = () => (
+    <div className={styles.newChatStack}>
+      <div className={styles.sheetSearchBox}>
+        <Search size={18} />
+        <input
+          value={contactQuery}
+          onChange={(event) => setContactQuery(event.target.value)}
+          placeholder="Buscar por nombre, número o correo"
+          aria-label="Buscar contacto para chat"
+        />
+        {contactQuery && (
+          <button type="button" onClick={() => setContactQuery('')} aria-label="Limpiar búsqueda de contactos">
+            <X size={16} />
+          </button>
+        )}
+      </div>
+
+      <div className={styles.sheetList} data-phone-chat-scrollable="true">
+        {contactsLoading ? (
+          <div className={styles.centerState}>
+            <Loader2 size={20} className={styles.spinIcon} />
+            <span>Buscando contactos...</span>
+          </div>
+        ) : contactResults.length > 0 ? (
+          contactResults.map((contact) => renderContactButton(contact, 'contact'))
+        ) : (
+          <div className={styles.emptySheetState}>
+            <User size={24} />
+            <strong>Sin contactos</strong>
+            <span>Escribe al menos dos letras o revisa que el contacto tenga teléfono.</span>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+
+  const renderAttachmentsSheet = () => {
+    const attachmentActions = [
+      { label: 'Fotos', Icon: ImageIcon, className: styles.actionBlue, onClick: () => handleUnavailableAttachment('Fotos') },
+      { label: 'Cámara', Icon: Camera, className: styles.actionDark, onClick: () => handleUnavailableAttachment('Cámara') },
+      { label: 'Ubicación', Icon: MapPin, className: styles.actionGreen, onClick: () => handleUnavailableAttachment('Ubicación') },
+      { label: 'Contacto', Icon: User, className: styles.actionGray, onClick: () => handleUnavailableAttachment('Contacto') },
+      { label: 'Documento', Icon: FileText, className: styles.actionSky, onClick: () => handleUnavailableAttachment('Documento') },
+      {
+        label: 'Pago',
+        Icon: CreditCard,
+        className: styles.actionGold,
+        onClick: () => {
+          setPaymentMode('single')
+          setSheet('payment')
+        }
+      },
+      {
+        label: 'Cita',
+        Icon: CalendarDays,
+        className: styles.actionRed,
+        onClick: () => setSheet('appointment')
+      },
+      {
+        label: 'Agente IA',
+        Icon: Bot,
+        className: styles.actionPurple,
+        onClick: () => handleUnavailableAttachment('Agente IA')
+      }
+    ]
+
+    return (
+      <div className={styles.attachmentGrid}>
+        {attachmentActions.map(({ label, Icon: ActionIcon, className, onClick }) => (
+          <button key={label} type="button" onClick={onClick}>
+            <span className={className}>
+              <ActionIcon size={31} />
+            </span>
+            <strong>{label}</strong>
+          </button>
+        ))}
+      </div>
+    )
   }
 
   if (accessState === 'checking') {
@@ -633,102 +883,117 @@ export const PhoneChat: React.FC = () => {
   return (
     <main className={`${styles.phoneChatPage} ${conversationOpen ? styles.conversationOpen : ''}`} aria-label="Ristak Chat móvil">
       <div className={styles.phoneFrame}>
-        <header className={styles.appHeader}>
-          <div className={styles.brandCluster}>
-            <span className={styles.brandMark}>R</span>
-            <div>
-              <p>Ristak Chat</p>
-              <h1>WhatsApp</h1>
-            </div>
-          </div>
-          <div className={styles.headerActions}>
-            <button type="button" className={styles.iconButton} onClick={loadContacts} aria-label="Actualizar chats">
-              <RefreshCw size={18} className={contactsLoading ? styles.spinIcon : undefined} />
-            </button>
-            <Link className={styles.iconButton} to="/phone/agent-chat" aria-label="Abrir agente AI">
-              <Bot size={18} />
-            </Link>
-            <button type="button" className={styles.iconButton} onClick={() => setSheet('notifications')} aria-label="Configurar avisos">
-              <Settings size={18} />
-            </button>
-          </div>
-        </header>
-
-        <div className={styles.chatShell}>
-          <aside className={styles.contactPane}>
-            <div className={styles.searchBox}>
-              <Search size={17} />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Buscar contacto"
-                aria-label="Buscar contacto"
-              />
-              {query && (
-                <button type="button" onClick={() => setQuery('')} aria-label="Limpiar búsqueda">
-                  <X size={16} />
-                </button>
-              )}
-            </div>
-            <div className={styles.contactList} data-phone-chat-scrollable="true">
-              {renderContacts()}
-            </div>
-          </aside>
-
-          <section className={styles.conversationPane}>
-            <div className={styles.conversationHeader}>
-              <button type="button" className={styles.backButton} onClick={() => setConversationOpen(false)} aria-label="Volver a contactos">
-                <X size={18} />
+        <section className={styles.chatListScreen} aria-label="Lista de chats">
+          <header className={styles.chatListHeader}>
+            <div className={styles.topActionRow}>
+              <button type="button" className={styles.roundButton} onClick={() => setSheet('notifications')} aria-label="Más opciones">
+                <MoreHorizontal size={24} />
               </button>
-
-              {activeContact ? (
-                <>
-                  <span className={styles.avatar}>{getContactInitials(activeContact)}</span>
-                  <div className={styles.conversationIdentity}>
-                    <strong>{getContactName(activeContact)}</strong>
-                    <span>{getContactDetail(activeContact)}</span>
-                  </div>
-                </>
-              ) : (
-                <div className={styles.conversationIdentity}>
-                  <strong>Sin contacto</strong>
-                  <span>Elige una conversación</span>
-                </div>
-              )}
-
-              <div className={styles.quickActions}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPaymentMode('single')
-                    setSheet('payment')
-                  }}
-                  disabled={!activeContact}
-                  aria-label="Registrar pago"
-                >
-                  <CreditCard size={18} />
+              <div className={styles.topRightActions}>
+                <button type="button" className={styles.roundButton} onClick={() => handleUnavailableAttachment('Cámara')} aria-label="Abrir cámara">
+                  <Camera size={24} />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setSheet('appointment')}
-                  disabled={!activeContact}
-                  aria-label="Agendar cita"
-                >
-                  <CalendarDays size={18} />
+                <button type="button" className={styles.newChatButton} onClick={() => setSheet('newChat')} aria-label="Nuevo chat">
+                  <Plus size={32} />
                 </button>
               </div>
             </div>
-
-            <div className={styles.messagesPane} data-phone-chat-scrollable="true">
-              {renderMessages()}
-              <div ref={messagesEndRef} />
+            <h1>Chats</h1>
+            <div className={styles.searchBox}>
+              <Search size={22} />
+              <input
+                value={chatQuery}
+                onChange={(event) => setChatQuery(event.target.value)}
+                placeholder="Buscar chats o contactos"
+                aria-label="Buscar chats o contactos"
+              />
+              {chatQuery && (
+                <button type="button" onClick={() => setChatQuery('')} aria-label="Limpiar búsqueda">
+                  <X size={17} />
+                </button>
+              )}
             </div>
+            <div className={styles.filterChips} data-phone-chat-scrollable="true">
+              <button type="button" className={styles.filterChipActive}>Todos</button>
+              <button type="button">No leídos</button>
+              <button type="button">Favoritos</button>
+              <button type="button">Grupos</button>
+            </div>
+          </header>
 
-            <div className={styles.composer}>
+          <div className={styles.chatList} data-phone-chat-scrollable="true">
+            {renderChats()}
+          </div>
+
+          <nav className={styles.mobileDock} aria-label="Secciones móviles">
+            <Link to="/phone/app">
+              <RefreshCw size={24} />
+              <span>Novedades</span>
+            </Link>
+            <Link to="/phone/agent-chat">
+              <Phone size={24} />
+              <span>Agente</span>
+            </Link>
+            <Link to="/phone/calendar">
+              <Users size={26} />
+              <span>Citas</span>
+            </Link>
+            <Link to="/phone/chat" className={styles.mobileDockActive}>
+              <MessageCircle size={27} />
+              <span>Chats</span>
+            </Link>
+            <Link to="/phone/payments">
+              <CreditCard size={24} />
+              <span>Pagos</span>
+            </Link>
+          </nav>
+        </section>
+
+        <section className={styles.conversationScreen} aria-label="Conversación">
+          <header className={styles.conversationHeader}>
+            <button type="button" className={styles.backButton} onClick={handleBackToChats} aria-label="Volver a chats">
+              <ChevronLeft size={32} />
+            </button>
+
+            {activeContact ? (
+              <>
+                <span className={styles.avatar}>{getContactInitials(activeContact)}</span>
+                <div className={styles.conversationIdentity}>
+                  <strong>{getContactName(activeContact)}</strong>
+                  <span>{getContactDetail(activeContact)}</span>
+                </div>
+              </>
+            ) : (
+              <div className={styles.conversationIdentity}>
+                <strong>Sin contacto</strong>
+                <span>Elige una conversación</span>
+              </div>
+            )}
+
+            <div className={styles.callActions}>
+              <button type="button" onClick={() => handleUnavailableAttachment('Videollamada')} aria-label="Videollamada">
+                <Video size={26} />
+              </button>
+              <button type="button" onClick={() => handleUnavailableAttachment('Llamada')} aria-label="Llamada">
+                <Phone size={25} />
+              </button>
+            </div>
+          </header>
+
+          <div className={styles.messagesPane} data-phone-chat-scrollable="true">
+            {renderMessages()}
+            <div ref={messagesEndRef} />
+          </div>
+
+          <div className={styles.composer}>
+            <button type="button" className={styles.composerPlus} onClick={() => setSheet('attachments')} aria-label="Abrir adjuntos">
+              <Plus size={34} />
+            </button>
+            <div className={styles.messageInputWrap}>
               <textarea
                 value={messageText}
                 onChange={(event) => setMessageText(event.target.value)}
-                placeholder={activeContact?.phone ? 'Escribe un mensaje' : 'Este contacto no tiene teléfono'}
+                placeholder={activeContact?.phone ? '' : 'Sin teléfono'}
                 rows={1}
                 disabled={!activeContact?.phone || composerStatus === 'sending'}
                 onKeyDown={(event) => {
@@ -738,18 +1003,30 @@ export const PhoneChat: React.FC = () => {
                   }
                 }}
               />
-              <button type="button" onClick={handleSendMessage} disabled={!canSendMessage} aria-label="Enviar mensaje">
-                {composerStatus === 'sending' ? <Loader2 size={18} className={styles.spinIcon} /> : <Send size={18} />}
+              <button type="button" onClick={() => handleUnavailableAttachment('Stickers')} aria-label="Stickers">
+                <Smile size={26} />
               </button>
             </div>
-          </section>
-        </div>
+            <button type="button" className={styles.composerIconButton} onClick={() => handleUnavailableAttachment('Cámara')} aria-label="Cámara">
+              <Camera size={29} />
+            </button>
+            <button
+              type="button"
+              className={styles.composerIconButton}
+              onClick={canSendMessage ? handleSendMessage : () => handleUnavailableAttachment('Mensaje de voz')}
+              disabled={composerStatus === 'sending'}
+              aria-label={canSendMessage ? 'Enviar mensaje' : 'Mensaje de voz'}
+            >
+              {composerStatus === 'sending' ? <Loader2 size={23} className={styles.spinIcon} /> : canSendMessage ? <Send size={25} /> : <Mic size={30} />}
+            </button>
+          </div>
+        </section>
       </div>
 
       {sheet && (
         <div className={styles.sheetBackdrop} onClick={() => setSheet(null)}>
           <section
-            className={`${styles.sheetPanel} ${sheet === 'payment' ? styles.paymentSheet : ''}`}
+            className={`${styles.sheetPanel} ${sheet === 'payment' ? styles.paymentSheet : ''} ${sheet === 'attachments' ? styles.attachmentsSheet : ''}`}
             onClick={(event) => event.stopPropagation()}
             aria-label="Acciones del chat"
           >
@@ -758,25 +1035,20 @@ export const PhoneChat: React.FC = () => {
               <div>
                 <p>{activeContact ? getContactName(activeContact) : 'Ristak Chat'}</p>
                 <h2>
+                  {sheet === 'attachments' && 'Agregar'}
                   {sheet === 'payment' && 'Registrar pago'}
                   {sheet === 'appointment' && 'Agendar cita'}
                   {sheet === 'notifications' && 'Avisos del celular'}
+                  {sheet === 'newChat' && 'Nuevo chat'}
                 </h2>
               </div>
-              <button
-                type="button"
-                onClick={() => setSheet(null)}
-                aria-label={
-                  sheet === 'payment'
-                    ? 'Cerrar panel de pago'
-                    : sheet === 'appointment'
-                      ? 'Cerrar panel de cita'
-                      : 'Cerrar panel de avisos'
-                }
-              >
-                <X size={18} />
+              <button type="button" onClick={() => setSheet(null)} aria-label="Cerrar panel">
+                <X size={20} />
               </button>
             </div>
+
+            {sheet === 'newChat' && renderNewChatSheet()}
+            {sheet === 'attachments' && renderAttachmentsSheet()}
 
             {sheet === 'payment' && (
               <>
@@ -824,7 +1096,7 @@ export const PhoneChat: React.FC = () => {
             {sheet === 'appointment' && (
               <div className={styles.appointmentSetup}>
                 <div className={styles.setupCard}>
-                  <CalendarDays size={20} />
+                  <CalendarDays size={22} />
                   <div>
                     <strong>Calendario</strong>
                     <span>Elige dónde quieres guardar la cita.</span>

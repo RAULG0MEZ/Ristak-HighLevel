@@ -96,6 +96,139 @@ const mapContactRowForResponse = (contact = {}) => {
   }
 }
 
+const mapChatContactRowForResponse = (contact = {}) => ({
+  ...mapContactRowForResponse(contact),
+  lastMessageText: contact.last_message_text || '',
+  lastMessageType: contact.last_message_type || '',
+  lastMessageDate: contact.last_message_date || contact.created_at,
+  lastMessageDirection: contact.last_message_direction || '',
+  messageCount: Number(contact.message_count || 0),
+  unreadCount: Number(contact.unread_count || 0)
+})
+
+/**
+ * Obtiene conversaciones con actividad de WhatsApp.
+ */
+export const getChatContacts = async (req, res) => {
+  try {
+    const { q = '', limit = 60 } = req.query
+    const limitNumber = Math.min(Number(limit) || 60, 100)
+    const searchTerm = cleanString(q)
+    const conditions = []
+    const params = []
+
+    if (searchTerm) {
+      const searchClause = buildContactSearchClause('c', searchTerm)
+      conditions.push(searchClause.condition)
+      params.push(...searchClause.params)
+    }
+
+    const hiddenFilters = await getHiddenContactFilters()
+    const hiddenCondition = buildHiddenContactsCondition(hiddenFilters, 'c', false)
+    if (hiddenCondition) {
+      conditions.push(hiddenCondition)
+    }
+
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+
+    const rows = await db.all(`
+      WITH chat_stats AS (
+        SELECT
+          contact_id,
+          COUNT(*) AS message_count,
+          MAX(COALESCE(message_timestamp, created_at)) AS last_message_date
+        FROM whatsapp_api_messages
+        WHERE contact_id IS NOT NULL
+        GROUP BY contact_id
+      ),
+      payment_stats AS (
+        SELECT
+          contact_id,
+          SUM(CASE
+                WHEN amount > 0 AND LOWER(status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')
+                AND ${nonTestPaymentCondition()}
+                THEN amount ELSE 0 END) AS total_paid,
+          SUM(CASE
+                WHEN amount > 0 AND LOWER(status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')
+                AND ${nonTestPaymentCondition()}
+                THEN 1 ELSE 0 END) AS purchases_count,
+          MAX(CASE
+                WHEN amount > 0 AND LOWER(status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')
+                AND ${nonTestPaymentCondition()}
+                THEN date ELSE NULL END) AS last_purchase_date
+        FROM payments
+        GROUP BY contact_id
+      )
+      SELECT
+        c.id,
+        c.phone,
+        c.email,
+        c.full_name,
+        c.first_name,
+        c.last_name,
+        c.source,
+        c.attribution_ad_name,
+        c.attribution_ad_id,
+        c.custom_fields,
+        COALESCE(ps.total_paid, 0) AS total_paid,
+        COALESCE(ps.purchases_count, 0) AS purchases_count,
+        ps.last_purchase_date AS last_purchase_date,
+        c.appointment_date,
+        c.created_at,
+        (
+          SELECT COUNT(*) > 0
+          FROM appointments
+          WHERE contact_id = c.id
+            AND ${ACTIVE_APPOINTMENT_CONDITION}
+        ) AS has_appointments,
+        (
+          COALESCE(ps.purchases_count, 0) > 0
+          OR EXISTS (
+            SELECT 1
+            FROM appointment_attendance_signals aas
+            WHERE aas.contact_id = c.id
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM appointments
+            WHERE contact_id = c.id
+              AND ${ATTENDED_APPOINTMENT_CONDITION}
+          )
+        ) AS has_showed_appointment,
+        chat_stats.message_count,
+        chat_stats.last_message_date,
+        lm.message_text AS last_message_text,
+        lm.message_type AS last_message_type,
+        lm.direction AS last_message_direction,
+        0 AS unread_count
+      FROM chat_stats
+      JOIN contacts c ON c.id = chat_stats.contact_id
+      LEFT JOIN payment_stats ps ON ps.contact_id = c.id
+      LEFT JOIN whatsapp_api_messages lm ON lm.id = (
+        SELECT id
+        FROM whatsapp_api_messages
+        WHERE contact_id = c.id
+        ORDER BY COALESCE(message_timestamp, created_at) DESC, created_at DESC
+        LIMIT 1
+      )
+      ${whereClause}
+      ORDER BY chat_stats.last_message_date DESC
+      LIMIT ?
+    `, [...params, limitNumber])
+
+    res.json({
+      success: true,
+      data: rows.map(mapChatContactRowForResponse)
+    })
+  } catch (error) {
+    logger.error(`Error obteniendo chats: ${error.message}`)
+    res.status(500).json({
+      success: false,
+      error: 'Error obteniendo chats'
+    })
+  }
+}
+
 /**
  * Obtiene todos los contactos con paginación y filtros
  */

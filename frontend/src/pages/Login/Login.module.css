@@ -7,6 +7,13 @@
   padding: 1.5rem;
 }
 
+.phoneContainer {
+  min-height: 100dvh;
+  align-items: stretch;
+  padding: 0;
+  background: #ffffff;
+}
+
 .loginBox {
   width: 100%;
   max-width: 420px;
@@ -17,9 +24,32 @@
   box-shadow: 0 18px 45px -28px rgba(15, 23, 42, 0.65);
 }
 
+.phoneLoginBox {
+  display: grid;
+  align-content: center;
+  width: 100%;
+  max-width: none;
+  min-height: 100dvh;
+  padding: calc(env(safe-area-inset-top) + 42px) 24px calc(env(safe-area-inset-bottom) + 32px);
+  border: 0;
+  border-radius: 0;
+  color: #111111;
+  background:
+    radial-gradient(circle at 50% 20%, rgba(37, 211, 102, 0.12), transparent 34%),
+    #ffffff;
+  box-shadow: none;
+}
+
 body.light .loginBox {
   background: var(--color-background-primary);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+body.light .phoneLoginBox {
+  background:
+    radial-gradient(circle at 50% 20%, rgba(37, 211, 102, 0.12), transparent 34%),
+    #ffffff;
+  box-shadow: none;
 }
 
 .header {
@@ -45,8 +75,22 @@ body.light .loginBox {
   color: var(--color-text-secondary);
 }
 
+.phoneLogo {
+  width: 86px;
+  height: 86px;
+  color: #ffffff;
+  background: #25d366;
+  border: 0;
+  box-shadow: 0 18px 38px rgba(37, 211, 102, 0.28);
+}
+
 body.light .logo {
   background: linear-gradient(135deg, rgba(100, 116, 139, 0.08) 0%, rgba(30, 41, 59, 0.05) 100%);
+}
+
+body.light .phoneLogo {
+  color: #ffffff;
+  background: #25d366;
 }
 
 .title {
@@ -164,6 +208,67 @@ body.light .error {
   margin-top: 0.5rem;
   height: 2.75rem;
   font-weight: 600;
+}
+
+.phoneLoginBox .header {
+  margin-bottom: 2.5rem;
+}
+
+.phoneLoginBox .title {
+  color: #111111;
+  font-size: 2.35rem;
+  font-weight: 860;
+  letter-spacing: 0;
+}
+
+.phoneLoginBox .subtitle {
+  max-width: 310px;
+  margin-inline: auto;
+  color: #6b7280;
+  font-size: 1rem;
+  line-height: 1.45;
+}
+
+.phoneLoginBox .form {
+  gap: 1rem;
+}
+
+.phoneLoginBox .label {
+  color: #4b5563;
+  font-size: 0.95rem;
+  font-weight: 760;
+}
+
+.phoneLoginBox .input {
+  height: 3.35rem;
+  border-radius: 1rem;
+  color: #111111;
+  background: #f3f4f6;
+  font-size: 1.05rem;
+}
+
+.phoneLoginBox .input:focus {
+  background: #ffffff;
+  border-color: #25d366;
+  box-shadow: 0 0 0 4px rgba(37, 211, 102, 0.14);
+}
+
+.phoneLoginBox .submitButton {
+  height: 3.35rem;
+  margin-top: 0.75rem;
+  border-radius: 999px;
+  font-size: 1rem;
+  font-weight: 820;
+}
+
+.phoneLoginBox .forgotLink {
+  color: #6b7280;
+}
+
+.phoneLoginBox .recoverySection {
+  max-height: 38dvh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Link de recuperación */
