@@ -282,8 +282,13 @@
   max-height: calc(100vh - 230px);
   overflow: auto;
   border: 0;
-  border-radius: 0;
-  background: transparent;
+  border-radius: 10px;
+  background-color: var(--rstk-page-bg, transparent);
+  background-image: var(--rstk-page-overlay, none), var(--rstk-page-image, none);
+  background-position: center center, var(--rstk-page-image-position, center top);
+  background-repeat: no-repeat, var(--rstk-page-image-repeat, no-repeat);
+  background-size: cover, var(--rstk-page-image-size, auto);
+  background-attachment: scroll, var(--rstk-page-image-attachment, scroll);
   padding: 0;
   display: flex;
   align-items: flex-start;
@@ -300,13 +305,14 @@
   position: relative;
   flex: 0 0 auto;
   overflow: hidden;
+  border-radius: inherit;
   background: var(--rstk-page-bg, transparent);
 }
 .canvasStage {
   transform-origin: top left;
   overflow: hidden;
   border: 0;
-  border-radius: 0;
+  border-radius: inherit;
   background: var(--rstk-page-bg);
   box-shadow: none;
 }

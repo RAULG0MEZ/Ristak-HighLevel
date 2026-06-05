@@ -3969,6 +3969,7 @@ const CanvasStage: React.FC<CanvasStageProps> = ({
     <div
       ref={viewportRef}
       className={`canvasViewport ${active ? 'canvasViewportActive' : ''}`}
+      style={canvasStyle}
       onClick={onClear}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
