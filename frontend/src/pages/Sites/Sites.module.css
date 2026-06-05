@@ -3906,6 +3906,40 @@
   border-bottom-color: var(--color-border-subtle, rgba(148, 163, 184, 0.16));
 }
 
+.libraryCard {
+  min-height: 274px;
+  grid-template-rows: 196px minmax(78px, auto);
+}
+
+.libraryPreviewViewport {
+  display: grid;
+  place-items: center;
+}
+
+.libraryPreviewCanvas {
+  transform: scale(0.3);
+  transform-origin: center center;
+}
+
+.libraryPreviewType {
+  display: none;
+}
+
+.libraryCardBody {
+  position: relative;
+  align-content: start;
+  min-height: 78px;
+  gap: 0;
+  padding: 12px 13px 34px;
+}
+
+.libraryCardBody .siteDomain {
+  position: absolute;
+  bottom: 12px;
+  left: 13px;
+  max-width: calc(100% - 26px);
+}
+
 .createLibraryIcon,
 .paletteIcon,
 .unsavedModalIcon {
