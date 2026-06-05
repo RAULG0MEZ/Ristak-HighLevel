@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
-  AlertCircle,
   ArrowLeft,
   Check,
   Edit3,
@@ -1041,51 +1040,6 @@ export const MessageTemplates: React.FC<MessageTemplatesProps> = ({
               {languageOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
-          <label className={styles.field}>
-            <span>Carpeta</span>
-            <select value={draft.folderId || ''} onChange={(event) => updateDraft('folderId', event.target.value || null)}>
-              <option value="">Sin carpeta</option>
-              {folderOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-            </select>
-          </label>
-          <label className={styles.field}>
-            <span>Estado</span>
-            <select value={draft.status} onChange={(event) => updateDraft('status', event.target.value as MessageTemplateStatus)}>
-              {statusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
-          </label>
-          <label className={styles.field}>
-            <span>Descripción</span>
-            <input
-              value={draft.description || ''}
-              onChange={(event) => updateDraft('description', event.target.value)}
-              placeholder="Recordatorio antes de cita"
-            />
-          </label>
-        </div>
-
-        <div className={styles.ycloudStatusPanel}>
-          <div>
-            <span className={`${styles.ycloudBadge} ${styles[`ycloudBadge${getYCloudStatusTone(draft.ycloudStatus)}`]}`}>
-              {getYCloudStatusLabel(draft.ycloudStatus)}
-            </span>
-            <strong>Estado Meta/YCloud</strong>
-          </div>
-          <p>
-            {(draft.ycloudStatus || '').toUpperCase() === 'APPROVED'
-              ? 'Plantilla aprobada y lista para enviarse por WhatsApp Business.'
-              : (draft.ycloudStatus || '').toUpperCase() === 'REJECTED'
-                ? draft.ycloudReason || draft.lastError || 'Meta rechazo la plantilla. Revisa el motivo y ajusta el contenido.'
-                : (draft.ycloudStatus || '').toUpperCase() === 'PENDING'
-                  ? 'Meta esta revisando la plantilla. Puedes sincronizar para actualizar el estado.'
-                  : draft.lastError || 'Guarda la plantilla y enviala a revision cuando este lista.'}
-          </p>
-          {(draft.ycloudReason || draft.lastError) && (
-            <div className={styles.ycloudError}>
-              <AlertCircle size={15} />
-              <span>{draft.ycloudReason || draft.lastError}</span>
-            </div>
-          )}
         </div>
 
         <div className={styles.formSection}>
