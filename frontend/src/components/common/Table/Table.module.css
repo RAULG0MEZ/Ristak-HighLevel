@@ -204,6 +204,35 @@
   accent-color: var(--color-primary);
 }
 
+html body input.selectionCheckbox {
+  width: 16px !important;
+  min-width: 16px !important;
+  height: 16px !important;
+  min-height: 16px !important;
+  border-radius: 4px !important;
+  transform: none !important;
+}
+
+body.light input.selectionCheckbox:not(:checked):hover:not(:disabled) {
+  border-color: var(--color-primary) !important;
+  background: color-mix(in srgb, var(--color-primary) 8%, #ffffff 92%) !important;
+  box-shadow: inset 0 0 0 1px rgba(var(--color-primary-rgb), 0.16) !important;
+}
+
+body.light input.selectionCheckbox:checked,
+body.light input.selectionCheckbox:checked:hover:not(:disabled) {
+  border-color: var(--color-primary) !important;
+  background: var(--color-primary) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+body.light input.selectionCheckbox:checked::after,
+body.light input.selectionCheckbox:checked:hover::after {
+  border-color: var(--color-text-onAccent) !important;
+  opacity: 1 !important;
+}
+
 .selectionCheckbox:disabled {
   cursor: not-allowed;
   opacity: 0.5;
