@@ -30,6 +30,7 @@ type BusinessProfile = {
 type WhatsAppSection = 'connection' | 'templates'
 
 const YCLOUD_REGISTER_URL = 'https://www.ycloud.com/console/#/entry/register?'
+const YCLOUD_CONSOLE_URL = 'https://www.ycloud.com/console/#/app/dashboard/analytics'
 
 function parseJson<T>(value?: string | null): T | null {
   if (!value) return null
@@ -425,7 +426,7 @@ export const WhatsAppSettings: React.FC = () => {
               <Unplug size={17} />
               Desconectar
             </Button>
-            <a className={styles.externalButton} href={YCLOUD_REGISTER_URL} target="_blank" rel="noopener noreferrer">
+            <a className={styles.externalButton} href={YCLOUD_CONSOLE_URL} target="_blank" rel="noopener noreferrer">
               <ExternalLink size={16} />
               Abrir YCloud
             </a>
