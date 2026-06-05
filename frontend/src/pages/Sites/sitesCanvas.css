@@ -189,6 +189,14 @@
 .rstkCanvas .rstk-media-empty { min-height: 190px; display: grid; place-items: center; gap: 8px; color: var(--rstk-muted); font-size: .92rem; }
 .rstkCanvas .rstk-play { display: grid; place-items: center; width: 58px; height: 58px; border-radius: 50%; background: var(--rstk-accent); color: var(--rstk-on-accent); }
 
+.rstkCanvas .rstk-site-panel { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 18px; color: var(--rstk-block-text, var(--rstk-ink)); }
+.rstkCanvas .rstk-site-panel-copy { margin: 0; color: inherit; font: inherit; font-weight: 800; }
+.rstkCanvas .rstk-site-panel-footer .rstk-site-panel-copy { font-weight: 600; color: color-mix(in srgb, var(--rstk-block-text, var(--rstk-ink)) 72%, var(--rstk-muted) 28%); }
+.rstkCanvas .rstk-site-panel-links { display: flex; align-items: center; justify-content: flex-end; gap: 14px; flex-wrap: wrap; }
+.rstkCanvas .rstk-site-panel-links a { color: inherit; text-decoration: none; font-size: .92rem; font-weight: 750; }
+.rstkCanvas .rstk-site-panel-footer { justify-content: center; text-align: center; flex-wrap: wrap; }
+.rstkCanvas .rstk-site-panel-footer .rstk-site-panel-links { justify-content: center; }
+
 .rstkCanvas .rstk-field { display: grid; gap: 8px; text-align: left; }
 .rstkCanvas label { font-size: .95rem; font-weight: 700; color: var(--rstk-ink); }
 .rstkCanvas .rstk-required { color: #dc2626; margin-left: 3px; }
@@ -227,6 +235,7 @@
 .rstkCanvas.rstk-kind-landing .rstk-frame { padding: 0; }
 .rstkCanvas.rstk-kind-landing .rstk-page { max-width: none; margin: 0; border-radius: var(--rstk-page-radius, 0); overflow: hidden; }
 .rstkCanvas.rstk-kind-landing .rstk-shell { gap: 0; padding-top: 0; }
+.rstkCanvas.rstk-kind-landing .rstk-section-column { gap: 0; }
 .rstkCanvas.rstk-kind-landing .rstk-headline { font-family: var(--rstk-display); font-size: clamp(2.3rem, 5.6vw, 4rem); line-height: 1.03; letter-spacing: 0; background: none; color: var(--rstk-block-text, var(--rstk-ink)); }
 .rstkCanvas.rstk-kind-landing .rstk-subheading { font-size: clamp(1.05rem, 1.7vw, 1.28rem); max-width: 60ch; line-height: 1.6; }
 .rstkCanvas.rstk-kind-landing h2 { font-family: var(--rstk-display); }
@@ -270,6 +279,9 @@
 
 @media (max-width: 760px) {
   .rstkCanvas .rstk-section-columns { grid-template-columns: 1fr; }
+  .rstkCanvas .rstk-site-panel { align-items: flex-start; flex-direction: column; }
+  .rstkCanvas .rstk-site-panel-footer { align-items: center; }
+  .rstkCanvas .rstk-site-panel-links { justify-content: flex-start; }
 }
 
 /* ============================================================
@@ -333,9 +345,9 @@
   cursor: pointer;
   will-change: transform;
   transition:
-    transform .19s cubic-bezier(.2,.8,.2,1),
-    opacity .12s ease,
-    box-shadow .12s ease;
+    transform .32s cubic-bezier(.2,.8,.2,1),
+    opacity .16s ease,
+    box-shadow .16s ease;
 }
 .rstkCanvas .rstkSelDragging {
   cursor: grabbing;
@@ -365,11 +377,27 @@
 .rstkCanvas .rstkPalettePreview {
   position: relative;
   opacity: .82;
+  max-height: 1400px;
+  overflow: hidden;
   outline: 2px solid var(--rstk-accent);
   outline-offset: 4px;
   pointer-events: none;
   transform: translateY(0);
-  transition: transform .12s ease, opacity .12s ease;
+  animation: rstkPalettePreviewIn .32s cubic-bezier(.2,.8,.2,1);
+  transition: transform .24s cubic-bezier(.2,.8,.2,1), opacity .18s ease, max-height .32s cubic-bezier(.2,.8,.2,1);
+}
+
+@keyframes rstkPalettePreviewIn {
+  from {
+    max-height: 0;
+    opacity: 0;
+    transform: translateY(-8px) scale(.985);
+  }
+  to {
+    max-height: 1400px;
+    opacity: .82;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .rstkCanvas .rstkPalettePreview::before {
@@ -386,6 +414,11 @@
   outline: 1.5px dashed rgba(37, 99, 235, 0.45);
   outline-offset: 8px;
   border-radius: 10px;
+  transition: min-height .32s cubic-bezier(.2,.8,.2,1), outline-color .18s ease, background .18s ease;
+}
+
+.rstkCanvas .rstk-section-column-target {
+  background: color-mix(in srgb, var(--rstk-accent, #2563eb) 7%, transparent);
 }
 
 .rstkCanvas .rstk-section-lane.rstkSelActive .rstk-section-column .rstkSel:not(.rstkSelActive)::after {
@@ -492,6 +525,45 @@
 .rstkCanvas .rstkWeightOverride .rstk-list-grid strong,
 .rstkCanvas .rstkWeightOverride .rstk-check-body strong {
   font-weight: var(--rstk-block-weight, 850);
+}
+
+.rstkCanvas .rstkItalicOverride .rstk-headline,
+.rstkCanvas .rstkItalicOverride .rstk-subheading,
+.rstkCanvas .rstkItalicOverride .rstk-text,
+.rstkCanvas .rstkItalicOverride h2,
+.rstkCanvas .rstkItalicOverride label,
+.rstkCanvas .rstkItalicOverride .rstk-help,
+.rstkCanvas .rstkItalicOverride .rstk-list-grid strong,
+.rstkCanvas .rstkItalicOverride .rstk-list-grid p,
+.rstkCanvas .rstkItalicOverride .rstk-check-body strong,
+.rstkCanvas .rstkItalicOverride .rstk-check-body span {
+  font-style: var(--rstk-block-font-style, italic);
+}
+
+.rstkCanvas .rstkUnderlineOverride .rstk-headline,
+.rstkCanvas .rstkUnderlineOverride .rstk-subheading,
+.rstkCanvas .rstkUnderlineOverride .rstk-text,
+.rstkCanvas .rstkUnderlineOverride h2,
+.rstkCanvas .rstkUnderlineOverride label,
+.rstkCanvas .rstkUnderlineOverride .rstk-help,
+.rstkCanvas .rstkUnderlineOverride .rstk-list-grid strong,
+.rstkCanvas .rstkUnderlineOverride .rstk-list-grid p,
+.rstkCanvas .rstkUnderlineOverride .rstk-check-body strong,
+.rstkCanvas .rstkUnderlineOverride .rstk-check-body span {
+  text-decoration: var(--rstk-block-text-decoration, underline);
+}
+
+.rstkCanvas .rstkStrokeOverride .rstk-headline,
+.rstkCanvas .rstkStrokeOverride .rstk-subheading,
+.rstkCanvas .rstkStrokeOverride .rstk-text,
+.rstkCanvas .rstkStrokeOverride h2,
+.rstkCanvas .rstkStrokeOverride label,
+.rstkCanvas .rstkStrokeOverride .rstk-help,
+.rstkCanvas .rstkStrokeOverride .rstk-list-grid strong,
+.rstkCanvas .rstkStrokeOverride .rstk-list-grid p,
+.rstkCanvas .rstkStrokeOverride .rstk-check-body strong,
+.rstkCanvas .rstkStrokeOverride .rstk-check-body span {
+  -webkit-text-stroke: var(--rstk-text-stroke-width, 0) var(--rstk-text-stroke-color, currentColor);
 }
 
 .rstkCanvas .rstkDropEmpty {

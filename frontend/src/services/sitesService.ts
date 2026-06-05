@@ -22,6 +22,8 @@ export type SiteBlockType =
   | 'embed'
   | 'calendar_embed'
   | 'section'
+  | 'header_panel'
+  | 'footer_panel'
   | 'hero'
   | 'image'
   | 'video'
@@ -66,7 +68,19 @@ export interface SiteBlockOption {
   category?: string
 }
 
-export type SiteTemplateId = 'ristak' | 'facebook' | 'instagram' | 'tiktok' | 'vsl' | 'interactive'
+export type SiteTemplateId =
+  | 'ristak'
+  | 'executive'
+  | 'launch'
+  | 'premium'
+  | 'local'
+  | 'compact'
+  | 'event'
+  | 'facebook'
+  | 'instagram'
+  | 'tiktok'
+  | 'vsl'
+  | 'interactive'
 
 export interface SitePage {
   id: string
@@ -112,19 +126,27 @@ export interface SiteTemplateMeta {
   label: string
   description: string
   group: 'form' | 'landing' | 'interactive'
+  category: 'full_page' | 'social' | 'compact' | 'guided' | 'event'
   accent: string
   swatchBg: string
   swatchInk: string
   badge: string
+  defaultTheme?: Partial<SiteTheme>
 }
 
 export const siteTemplates: SiteTemplateMeta[] = [
-  { id: 'ristak', label: 'Ristak', description: 'Limpio, minimalista y neutro. El look de marca por defecto.', group: 'landing', accent: '#111827', swatchBg: '#f5f6f8', swatchInk: '#0f172a', badge: 'Minimal' },
-  { id: 'vsl', label: 'Carta de ventas', description: 'Video, checklist y un CTA fuerte. Ideal para VSL.', group: 'landing', accent: '#111827', swatchBg: '#0a0b0d', swatchInk: '#ffffff', badge: 'VSL' },
-  { id: 'facebook', label: 'Facebook', description: 'Se siente como un anuncio patrocinado de Facebook.', group: 'form', accent: '#1877f2', swatchBg: '#f0f2f5', swatchInk: '#1c1e21', badge: 'Ads' },
-  { id: 'instagram', label: 'Instagram', description: 'Encabezado con el degradado y azul de Instagram.', group: 'form', accent: '#0095f6', swatchBg: '#ffffff', swatchInk: '#262626', badge: 'Ads' },
-  { id: 'tiktok', label: 'TikTok', description: 'Oscuro, con el rojo y cian neon de TikTok.', group: 'form', accent: '#fe2c55', swatchBg: '#000000', swatchInk: '#ffffff', badge: 'Ads' },
-  { id: 'interactive', label: 'Interactivo', description: 'Una pregunta por pantalla, estilo quiz.', group: 'interactive', accent: '#111827', swatchBg: '#0a0b0d', swatchInk: '#ffffff', badge: 'Quiz' }
+  { id: 'ristak', label: 'Base de negocio', description: 'Pagina completa limpia para explicar una oferta y pedir contacto.', group: 'landing', category: 'full_page', accent: '#111827', swatchBg: '#f5f6f8', swatchInk: '#0f172a', badge: 'Web' },
+  { id: 'executive', label: 'Corporativo claro', description: 'Sitio grande, serio y ordenado para servicios o consultorias.', group: 'landing', category: 'full_page', accent: '#0f766e', swatchBg: '#f8fafc', swatchInk: '#0f172a', badge: 'Web', defaultTheme: { backgroundColor: '#f8fafc', accentColor: '#0f766e' } },
+  { id: 'launch', label: 'Lanzamiento', description: 'Colores calidos para presentar promociones, aperturas o nuevas ofertas.', group: 'landing', category: 'full_page', accent: '#ea580c', swatchBg: '#fff7ed', swatchInk: '#1f2937', badge: 'Promo', defaultTheme: { backgroundColor: '#fff7ed', accentColor: '#ea580c' } },
+  { id: 'premium', label: 'Premium sobrio', description: 'Fondo oscuro, contraste alto y apariencia elegante para vender valor.', group: 'landing', category: 'full_page', accent: '#d4af37', swatchBg: '#101010', swatchInk: '#f8fafc', badge: 'Premium', defaultTheme: { backgroundColor: '#101010', accentColor: '#d4af37', textColor: '#f8fafc' } },
+  { id: 'local', label: 'Negocio local', description: 'Estilo fresco para negocios, servicios y atencion cercana.', group: 'landing', category: 'full_page', accent: '#15803d', swatchBg: '#f0fdf4', swatchInk: '#14532d', badge: 'Local', defaultTheme: { backgroundColor: '#f0fdf4', accentColor: '#15803d' } },
+  { id: 'vsl', label: 'Carta de ventas', description: 'Pagina generica de venta con video, pruebas y llamada a la accion.', group: 'landing', category: 'full_page', accent: '#111827', swatchBg: '#0a0b0d', swatchInk: '#ffffff', badge: 'Venta' },
+  { id: 'facebook', label: 'Facebook', description: 'Formato corto con apariencia de anuncio o perfil de Facebook.', group: 'form', category: 'social', accent: '#1877f2', swatchBg: '#f0f2f5', swatchInk: '#1c1e21', badge: 'Redes' },
+  { id: 'instagram', label: 'Instagram', description: 'Formato corto con apariencia de publicacion o anuncio de Instagram.', group: 'form', category: 'social', accent: '#0095f6', swatchBg: '#ffffff', swatchInk: '#262626', badge: 'Redes' },
+  { id: 'tiktok', label: 'TikTok', description: 'Formato oscuro y directo para trafico que viene de TikTok.', group: 'form', category: 'social', accent: '#fe2c55', swatchBg: '#000000', swatchInk: '#ffffff', badge: 'Redes' },
+  { id: 'compact', label: 'Formulario compacto', description: 'Captura rapida de datos, ideal para formularios pequenos y directos.', group: 'form', category: 'compact', accent: '#2563eb', swatchBg: '#f8fafc', swatchInk: '#0f172a', badge: 'Corto', defaultTheme: { backgroundColor: '#f8fafc', accentColor: '#2563eb', pageMaxWidth: 480, pagePadding: 18, pageRadius: 18 } },
+  { id: 'event', label: 'Registro simple', description: 'Para pedir datos antes de una llamada, evento, clase o cotizacion.', group: 'form', category: 'event', accent: '#be123c', swatchBg: '#fdf2f8', swatchInk: '#500724', badge: 'Registro', defaultTheme: { backgroundColor: '#fdf2f8', accentColor: '#be123c', pageMaxWidth: 520, pagePadding: 22, pageRadius: 22 } },
+  { id: 'interactive', label: 'Quiz guiado', description: 'Una pregunta por pantalla para calificar prospectos paso a paso.', group: 'interactive', category: 'guided', accent: '#111827', swatchBg: '#0a0b0d', swatchInk: '#ffffff', badge: 'Quiz' }
 ]
 
 export interface SiteBlock {
@@ -220,6 +242,8 @@ export const blockLabels: Record<SiteBlockType, string> = {
   embed: 'Embed',
   calendar_embed: 'Calendario',
   section: 'Franja',
+  header_panel: 'Panel superior',
+  footer_panel: 'Panel inferior',
   hero: 'Hero',
   image: 'Imagen',
   video: 'Video',
@@ -243,7 +267,7 @@ export const blockLabels: Record<SiteBlockType, string> = {
 }
 
 export const landingBlockTypes: SiteBlockType[] = [
-  'hero',
+  'header_panel',
   'section',
   'title',
   'subtitle',
@@ -258,7 +282,8 @@ export const landingBlockTypes: SiteBlockType[] = [
   'calendar_embed',
   'form_embed',
   'faq',
-  'cta'
+  'cta',
+  'footer_panel'
 ]
 
 export const formBlockTypes: SiteBlockType[] = [

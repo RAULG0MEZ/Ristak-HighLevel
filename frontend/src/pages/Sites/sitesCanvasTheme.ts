@@ -61,6 +61,78 @@ const SITE_TEMPLATES: Record<SiteTemplateId, Template> = {
       headingWeight: '800', btnRadius: '12px', btnWeight: '750'
     }
   },
+  executive: {
+    id: 'executive', mode: 'light', chrome: 'none', font: RSTK_SANS,
+    vars: {
+      pageBg: '#f8fafc',
+      pageImage: 'none',
+      ink: '#0f172a', muted: '#475569', surface: '#ffffff', surface2: '#ecfeff', border: '#cbd5e1',
+      accent: '#0f766e', accentStrong: '#115e59', onAccent: '#ffffff', ring: 'rgba(15,118,110,.18)',
+      inputBg: '#ffffff', inputInk: '#0f172a', inputBorder: '#cbd5e1',
+      radius: '10px', radiusLg: '18px', shadow: '0 28px 70px -46px rgba(15,23,42,.42)',
+      headingWeight: '800', btnRadius: '10px', btnWeight: '800'
+    }
+  },
+  launch: {
+    id: 'launch', mode: 'light', chrome: 'none', font: RSTK_SANS,
+    vars: {
+      pageBg: '#fff7ed',
+      pageImage: 'none',
+      ink: '#1f2937', muted: '#7c2d12', surface: '#ffffff', surface2: '#ffedd5', border: '#fed7aa',
+      accent: '#ea580c', accentStrong: '#c2410c', onAccent: '#ffffff', ring: 'rgba(234,88,12,.2)',
+      inputBg: '#ffffff', inputInk: '#1f2937', inputBorder: '#fdba74',
+      radius: '14px', radiusLg: '22px', shadow: '0 32px 72px -46px rgba(124,45,18,.45)',
+      headingWeight: '850', btnRadius: '999px', btnWeight: '850'
+    }
+  },
+  premium: {
+    id: 'premium', mode: 'dark', chrome: 'none', font: RSTK_SANS,
+    vars: {
+      pageBg: '#101010',
+      pageImage: 'none',
+      ink: '#f8fafc', muted: '#a1a1aa', surface: '#18181b', surface2: '#222225', border: 'rgba(255,255,255,.14)',
+      accent: '#d4af37', accentStrong: '#b88916', onAccent: '#121212', ring: 'rgba(212,175,55,.26)',
+      inputBg: '#202023', inputInk: '#f8fafc', inputBorder: 'rgba(255,255,255,.16)',
+      radius: '8px', radiusLg: '18px', shadow: '0 48px 90px -52px rgba(0,0,0,.9)',
+      headingWeight: '850', btnRadius: '8px', btnWeight: '850'
+    }
+  },
+  local: {
+    id: 'local', mode: 'light', chrome: 'none', font: RSTK_SANS,
+    vars: {
+      pageBg: '#f0fdf4',
+      pageImage: 'none',
+      ink: '#14532d', muted: '#4b5563', surface: '#ffffff', surface2: '#dcfce7', border: '#bbf7d0',
+      accent: '#15803d', accentStrong: '#166534', onAccent: '#ffffff', ring: 'rgba(21,128,61,.2)',
+      inputBg: '#ffffff', inputInk: '#14532d', inputBorder: '#86efac',
+      radius: '16px', radiusLg: '24px', shadow: '0 30px 70px -46px rgba(20,83,45,.38)',
+      headingWeight: '800', btnRadius: '16px', btnWeight: '800'
+    }
+  },
+  compact: {
+    id: 'compact', mode: 'light', chrome: 'none', font: RSTK_SANS,
+    vars: {
+      pageBg: '#f8fafc',
+      pageImage: 'none',
+      ink: '#0f172a', muted: '#64748b', surface: '#ffffff', surface2: '#f1f5f9', border: '#dbe3ef',
+      accent: '#2563eb', accentStrong: '#1d4ed8', onAccent: '#ffffff', ring: 'rgba(37,99,235,.18)',
+      inputBg: '#ffffff', inputInk: '#0f172a', inputBorder: '#cbd5e1',
+      radius: '8px', radiusLg: '18px', shadow: '0 24px 54px -40px rgba(15,23,42,.35)',
+      headingWeight: '800', btnRadius: '10px', btnWeight: '800'
+    }
+  },
+  event: {
+    id: 'event', mode: 'light', chrome: 'none', font: RSTK_SANS,
+    vars: {
+      pageBg: '#fdf2f8',
+      pageImage: 'none',
+      ink: '#500724', muted: '#831843', surface: '#ffffff', surface2: '#fce7f3', border: '#fbcfe8',
+      accent: '#be123c', accentStrong: '#9f1239', onAccent: '#ffffff', ring: 'rgba(190,18,60,.2)',
+      inputBg: '#ffffff', inputInk: '#500724', inputBorder: '#f9a8d4',
+      radius: '14px', radiusLg: '24px', shadow: '0 30px 68px -44px rgba(131,24,67,.42)',
+      headingWeight: '850', btnRadius: '999px', btnWeight: '850'
+    }
+  },
   facebook: {
     id: 'facebook', mode: 'light', chrome: 'facebook', font: RSTK_SANS,
     vars: {
@@ -311,7 +383,7 @@ export const buildCanvasTheme = (site: PublicSite, device: 'desktop' | 'mobile' 
   const pageMaxWidth = isLandingType && storedPageMaxWidth === 1160
     ? 1440
     : themeNumber(theme, 'pageMaxWidth', isLandingType ? 1440 : (template.id === 'interactive' ? 600 : 520), 360, 1440)
-  const pagePadding = themeNumber(theme, 'pagePadding', isLandingType ? 50 : 22, 0, 120)
+  const pagePadding = themeNumber(theme, 'pagePadding', isLandingType ? 36 : 22, 0, 120)
   const pageRadius = themeNumber(theme, 'pageRadius', isLandingType ? 0 : 24, 0, 40)
   const pageBorder = isCssColor(theme.pageBorderColor) ? normalizeCssColor(theme.pageBorderColor as string, 'transparent') : 'transparent'
   const pageBorderWidth = themeNumber(theme, 'pageBorderWidth', 0, 0, 12)

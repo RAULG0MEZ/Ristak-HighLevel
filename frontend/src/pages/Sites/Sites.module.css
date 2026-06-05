@@ -2208,6 +2208,35 @@
   line-height: 1.5;
 }
 
+.templateCategoryStack {
+  display: grid;
+  gap: 22px;
+}
+
+.templateCategory {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.templateCategoryHeader {
+  display: grid;
+  gap: 3px;
+}
+
+.templateCategoryHeader strong {
+  color: var(--color-text-primary);
+  font-size: 0.95rem;
+}
+
+.templateCategoryHeader p {
+  max-width: 760px;
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
 .templateGallery {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -4738,6 +4767,12 @@
 
 .containerFocused .choiceGrid,
 .containerFocused .templateGallery {
+  width: 100%;
+  max-width: none;
+}
+
+.containerFocused .templateCategoryStack,
+.containerFocused .templateCategory {
   width: 100%;
   max-width: none;
 }

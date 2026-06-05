@@ -26,6 +26,8 @@ export const CONTENT_BLOCK_TYPES = new Set([
   'embed',
   'calendar_embed',
   'section',
+  'header_panel',
+  'footer_panel',
   'hero',
   'image',
   'video',
@@ -411,22 +413,50 @@ async function ensureUniqueSlug(baseSlug, ignoreSiteId = null) {
 
 function buildDefaultBlocks(siteId, siteType, template) {
   const tpl = cleanString(template)
-  const landingSpacing = {
+  const makeLandingSpacing = (top, bottom, right = 0, left = 0) => ({
     blockMarginLinked: false,
-    blockMarginTop: 50,
-    blockMarginRight: 0,
-    blockMarginBottom: 50,
-    blockMarginLeft: 0,
-    blockPaddingLinked: true
+    blockMarginTop: top,
+    blockMarginRight: right,
+    blockMarginBottom: bottom,
+    blockMarginLeft: left,
+    blockPaddingLinked: true,
+    blockPadding: 0,
+    blockPaddingTop: 0,
+    blockPaddingRight: 0,
+    blockPaddingBottom: 0,
+    blockPaddingLeft: 0
+  })
+  const landingSpacingByType = {
+    headline: makeLandingSpacing(0, 10),
+    title: makeLandingSpacing(0, 10),
+    subheading: makeLandingSpacing(6, 14),
+    subtitle: makeLandingSpacing(6, 14),
+    description: makeLandingSpacing(6, 16),
+    text: makeLandingSpacing(8, 16),
+    image: makeLandingSpacing(16, 18),
+    video: makeLandingSpacing(16, 18),
+    embed: makeLandingSpacing(16, 18),
+    calendar_embed: makeLandingSpacing(16, 18),
+    button: makeLandingSpacing(18, 18),
+    hero: makeLandingSpacing(0, 0),
+    benefits: makeLandingSpacing(0, 0),
+    testimonials: makeLandingSpacing(0, 0),
+    services: makeLandingSpacing(0, 0),
+    faq: makeLandingSpacing(0, 0),
+    form_embed: makeLandingSpacing(18, 0),
+    cta: makeLandingSpacing(0, 0),
+    header_panel: makeLandingSpacing(0, 0),
+    footer_panel: makeLandingSpacing(0, 0)
   }
+  const getLandingSpacing = (blockType) => landingSpacingByType[blockType] || makeLandingSpacing(10, 14)
   const defaultButtonSettings = {
     buttonAlign: 'center',
     buttonRadius: 28,
     buttonHeight: 54,
     buttonPaddingX: 28
   }
-  const withLandingSpacing = (settings = {}) => ({
-    ...landingSpacing,
+  const withLandingSpacing = (blockType, settings = {}) => ({
+    ...getLandingSpacing(blockType),
     ...settings
   })
   const makeBlock = (blockType, label, content = '', extra = {}) => ({
@@ -441,18 +471,18 @@ function buildDefaultBlocks(siteId, siteType, template) {
     settings_json: jsonString(extra.settings || {}),
     sort_order: extra.sortOrder || 0
   })
-  const makeLandingSection = (index, columns = 1) => {
+  const makeLandingSection = (index, columns = 1, sortOrder = index * 2) => {
     const dark = index % 2 === 1
     return makeBlock('section', `Franja ${index + 1}`, '', {
-      sortOrder: index * 2,
+      sortOrder,
       settings: {
         sectionColumns: columns,
         sectionGap: 24,
         blockBg: dark ? '#111827' : '#ffffff',
         blockText: dark ? '#ffffff' : '#111827',
-        blockPaddingTop: 80,
+        blockPaddingTop: 48,
         blockPaddingRight: 42,
-        blockPaddingBottom: 80,
+        blockPaddingBottom: 48,
         blockPaddingLeft: 42,
         blockMarginTop: 0,
         blockMarginRight: 0,
@@ -464,22 +494,96 @@ function buildDefaultBlocks(siteId, siteType, template) {
       }
     })
   }
-  const wrapLandingBlocksInSections = (contentBlocks) => contentBlocks.flatMap((block, index) => {
-    const section = makeLandingSection(index, 1)
-    const settings = parseJson(block.settings_json, {})
-    return [
-      section,
-      {
+  const makeLandingPanel = (kind, sortOrder) => {
+    const isHeader = kind === 'header'
+    return makeBlock(isHeader ? 'header_panel' : 'footer_panel', isHeader ? 'Panel superior' : 'Panel inferior', isHeader ? 'Tu marca' : 'Tu informacion esta protegida.', {
+      sortOrder,
+      settings: {
+        ...getLandingSpacing(isHeader ? 'header_panel' : 'footer_panel'),
+        panelLinks: isHeader
+          ? [
+              { label: 'Inicio', url: '#' },
+              { label: 'Contacto', url: '#form' }
+            ]
+          : [
+              { label: 'Privacidad', url: '#' },
+              { label: 'Instagram', url: '#' },
+              { label: 'Facebook', url: '#' }
+            ],
+        blockPaddingTop: isHeader ? 18 : 24,
+        blockPaddingRight: 42,
+        blockPaddingBottom: isHeader ? 18 : 28,
+        blockPaddingLeft: 42,
+        blockBg: 'transparent',
+        textAlign: isHeader ? 'left' : 'center',
+        blockRadius: 0,
+        blockBorderWidth: 0
+      }
+    })
+  }
+  const wrapLandingBlocksInSections = (contentBlocks) => {
+    const output = []
+    let sortOrder = 0
+    output.push(makeLandingPanel('header', sortOrder++))
+    contentBlocks.forEach((block, index) => {
+      const section = makeLandingSection(index, 1, sortOrder++)
+      const settings = parseJson(block.settings_json, {})
+      output.push(section)
+      output.push({
         ...block,
-        sort_order: index * 2 + 1,
+        sort_order: sortOrder++,
         settings_json: jsonString({
           ...settings,
           sectionId: section.id,
           sectionColumn: 0
         })
+      })
+    })
+    output.push(makeLandingPanel('footer', sortOrder++))
+    return output
+  }
+  const makeLandingLayout = (sectionConfigs) => {
+    const output = []
+    let sortOrder = 0
+    output.push(makeLandingPanel('header', sortOrder++))
+
+    sectionConfigs.forEach((sectionConfig, index) => {
+      const columnGroups = sectionConfig.columnBlocks || [sectionConfig.blocks || []]
+      const columnCount = Math.max(1, Math.min(3, sectionConfig.columns || columnGroups.length || 1))
+      const section = makeLandingSection(index, columnCount, sortOrder++)
+      const sectionSettings = parseJson(section.settings_json, {})
+      const nextSection = {
+        ...section,
+        label: sectionConfig.label || section.label,
+        content: sectionConfig.content || section.content,
+        settings_json: jsonString({
+          ...sectionSettings,
+          ...(sectionConfig.settings || {})
+        })
       }
-    ]
-  })
+
+      output.push(nextSection)
+
+      columnGroups.slice(0, columnCount).forEach((columnBlocks, columnIndex) => {
+        const blocksForColumn = Array.isArray(columnBlocks) ? columnBlocks : []
+        blocksForColumn.forEach(block => {
+          const settings = parseJson(block.settings_json, {})
+          output.push({
+            ...block,
+            sort_order: sortOrder++,
+            settings_json: jsonString({
+              ...settings,
+              sectionId: nextSection.id,
+              sectionColumn: columnIndex
+            })
+          })
+        })
+      })
+    })
+
+    output.push(makeLandingPanel('footer', sortOrder++))
+    return output
+  }
 
   const contactFields = (startOrder) => [
     makeBlock('short_text', 'Nombre completo', '', {
@@ -501,49 +605,455 @@ function buildDefaultBlocks(siteId, siteType, template) {
       sortOrder: startOrder + 2
     })
   ]
+  const makeEmbeddedField = (blockType, label, placeholder, settings = {}, sortOrder = 0) => ({
+    id: crypto.randomUUID(),
+    siteId,
+    blockType,
+    label,
+    content: '',
+    placeholder,
+    required: true,
+    options: [],
+    settings,
+    sortOrder,
+    createdAt: '',
+    updatedAt: ''
+  })
+  const embeddedContactFields = () => [
+    makeEmbeddedField('short_text', 'Nombre completo', 'Tu nombre', { internalName: 'full_name' }, 0),
+    makeEmbeddedField('phone', 'Telefono / WhatsApp', '10 digitos', { internalName: 'phone', validation: 'phone' }, 1),
+    makeEmbeddedField('email', 'Correo electronico', 'tu@email.com', { internalName: 'email', validation: 'email' }, 2)
+  ]
+  const formEmbedSettings = (description, settings = {}) => withLandingSpacing('form_embed', {
+    description,
+    embeddedBlocks: embeddedContactFields(),
+    blockRadius: 20,
+    blockBorderWidth: 1,
+    blockPaddingTop: 30,
+    blockPaddingRight: 30,
+    blockPaddingBottom: 30,
+    blockPaddingLeft: 30,
+    ...settings
+  })
 
   if (siteType === 'landing_page') {
     if (tpl === 'vsl') {
-      return wrapLandingBlocksInSections([
-        makeBlock('headline', 'Titular', 'Mira esto antes de tomar una decision', {
-          sortOrder: 0,
-          settings: withLandingSpacing()
-        }),
-        makeBlock('subheading', 'Subtitulo', 'En menos de 3 minutos te explico exactamente como funciona.', {
-          sortOrder: 1,
-          settings: withLandingSpacing()
-        }),
-        makeBlock('video', 'Video', '', {
-          sortOrder: 2,
-          settings: withLandingSpacing({ mediaUrl: '' })
-        }),
-        makeBlock('cta', 'CTA final', 'Quiero empezar ahora', {
-          sortOrder: 3,
-          settings: withLandingSpacing({
-            textAlign: 'center',
-            subtitle: 'Deja tus datos y un asesor te contacta hoy mismo.',
-            buttonText: 'Quiero mas informacion',
-            buttonUrl: '#form',
-            ...defaultButtonSettings
-          })
-        }),
-        makeBlock('benefits', 'Lo que vas a lograr', 'Esto es lo que vas a lograr', {
-          sortOrder: 4,
-          settings: withLandingSpacing({
-            items: [
-              { title: '+ Atraer clientes de forma constante', text: 'Sin depender de recomendaciones.' },
-              { title: '+ Un sistema que trabaja por ti', text: 'Automatizado de principio a fin.' },
-              { title: '- Sin perder tiempo en tacticas que no funcionan', text: '' }
+      return makeLandingLayout([
+        {
+          settings: { blockBg: '#0a0b0d', blockText: '#ffffff', textAlign: 'center', blockPaddingTop: 64, blockPaddingBottom: 54 },
+          blocks: [
+            makeBlock('headline', 'Titular', 'Una oferta clara para que mas clientes den el siguiente paso', {
+              settings: withLandingSpacing('headline', { contentMaxWidth: 18, textAlign: 'center' })
+            }),
+            makeBlock('subheading', 'Subtitulo', 'Usa esta carta de ventas para explicar el problema, presentar tu solucion y pedir contacto sin vueltas.', {
+              settings: withLandingSpacing('subheading', { contentMaxWidth: 62, textAlign: 'center' })
+            }),
+            makeBlock('video', 'Video', '', {
+              settings: withLandingSpacing('video', { mediaUrl: '', mediaRadius: 18, mediaWidth: 86 })
+            })
+          ]
+        },
+        {
+          columns: 2,
+          settings: { blockBg: '#ffffff', blockText: '#111827', sectionGap: 30, blockPaddingTop: 52, blockPaddingBottom: 52 },
+          columnBlocks: [
+            [
+              makeBlock('benefits', 'Lo que obtiene el cliente', 'Lo que obtiene el cliente', {
+                settings: withLandingSpacing('benefits', {
+                  items: [
+                    { title: '+ Entiende rapido tu propuesta', text: 'La pagina explica que vendes, para quien es y por que conviene.' },
+                    { title: '+ Da el siguiente paso sin friccion', text: 'El llamado a la accion lleva directo al formulario.' },
+                    { title: '- Sin textos confusos', text: 'Cada seccion se puede editar con lenguaje de tu negocio.' }
+                  ]
+                })
+              })
+            ],
+            [
+              makeBlock('form_embed', 'Solicitar informacion', 'Hablemos de lo que necesitas', {
+                settings: formEmbedSettings('Deja tus datos y tu equipo podra dar seguimiento.', {
+                  blockBg: '#f8fafc',
+                  blockText: '#111827',
+                  fieldRadius: 10
+                })
+              })
             ]
-          })
-        })
+          ]
+        },
+        {
+          settings: { blockBg: '#111827', blockText: '#ffffff', textAlign: 'center', blockPaddingTop: 48, blockPaddingBottom: 52 },
+          blocks: [
+            makeBlock('testimonials', 'Prueba social', 'Confianza para avanzar', {
+              settings: withLandingSpacing('testimonials', {
+                cardBg: 'rgba(255,255,255,0.06)',
+                cardBorderColor: '#374151',
+                cardRadius: 16,
+                items: [
+                  { title: 'Respuesta mas clara', text: 'Ahora los interesados entienden la oferta antes de escribir.', author: 'Cliente actual' },
+                  { title: 'Seguimiento mas ordenado', text: 'Los datos llegan completos para contactar sin perseguir informacion.', author: 'Equipo comercial' }
+                ]
+              })
+            }),
+            makeBlock('cta', 'CTA final', 'Listo para convertir mas visitas?', {
+              settings: withLandingSpacing('cta', {
+                textAlign: 'center',
+                subtitle: 'Cambia el texto, ajusta el video y publica cuando tu oferta este lista.',
+                buttonText: 'Quiero mas informacion',
+                buttonUrl: '#form',
+                ...defaultButtonSettings
+              })
+            })
+          ]
+        }
       ])
     }
 
-    return wrapLandingBlocksInSections([
+    if (tpl === 'executive') {
+      return makeLandingLayout([
+        {
+          columns: 2,
+          settings: { blockBg: '#f8fafc', blockText: '#0f172a', sectionGap: 34, blockPaddingTop: 70, blockPaddingBottom: 70 },
+          columnBlocks: [
+            [
+              makeBlock('hero', 'Hero', 'Servicios claros para hacer crecer tu negocio', {
+                settings: withLandingSpacing('hero', {
+                  textAlign: 'left',
+                  kicker: 'Solucion de negocio',
+                  subtitle: 'Presenta tu servicio, explica el valor y convierte visitas en conversaciones reales.',
+                  buttonText: 'Agendar una llamada',
+                  buttonUrl: '#form',
+                  buttonAlign: 'left',
+                  ...defaultButtonSettings
+                })
+              })
+            ],
+            [
+              makeBlock('services', 'Servicios', 'Como podemos ayudarte', {
+                settings: withLandingSpacing('services', {
+                  listColumns: 1,
+                  cardBg: '#ffffff',
+                  cardBorderColor: '#cbd5e1',
+                  cardRadius: 14,
+                  items: [
+                    { title: 'Diagnostico', text: 'Entendemos tu situacion y detectamos la mejor ruta.' },
+                    { title: 'Plan de accion', text: 'Definimos pasos claros para avanzar sin perder foco.' },
+                    { title: 'Seguimiento', text: 'Damos continuidad hasta que el prospecto tome decision.' }
+                  ]
+                })
+              })
+            ]
+          ]
+        },
+        {
+          columns: 2,
+          settings: { blockBg: '#0f766e', blockText: '#ffffff', sectionGap: 28, blockPaddingTop: 54, blockPaddingBottom: 54 },
+          columnBlocks: [
+            [
+              makeBlock('benefits', 'Beneficios', 'Por que esta pagina funciona', {
+                settings: withLandingSpacing('benefits', {
+                  items: [
+                    { title: '+ Mensaje facil de entender', text: 'El visitante sabe que haces y que debe hacer.' },
+                    { title: '+ Captura datos completos', text: 'El formulario queda en la misma pagina.' },
+                    { title: '+ Lista para editar', text: 'Cambia textos, colores y bloques desde el builder.' }
+                  ]
+                })
+              })
+            ],
+            [
+              makeBlock('form_embed', 'Agenda una llamada', 'Cuentanos que necesitas', {
+                settings: formEmbedSettings('Completa tus datos y te contactamos para revisar opciones.', {
+                  blockBg: '#ffffff',
+                  blockText: '#0f172a',
+                  fieldBorder: '#99f6e4',
+                  fieldRadius: 10
+                })
+              })
+            ]
+          ]
+        }
+      ])
+    }
+
+    if (tpl === 'launch') {
+      return makeLandingLayout([
+        {
+          settings: { blockBg: '#fff7ed', blockText: '#1f2937', textAlign: 'center', blockPaddingTop: 72, blockPaddingBottom: 52 },
+          blocks: [
+            makeBlock('hero', 'Hero', 'Lanza tu nueva oferta con una pagina lista para captar interesados', {
+              settings: withLandingSpacing('hero', {
+                textAlign: 'center',
+                kicker: 'Nuevo lanzamiento',
+                subtitle: 'Ideal para promociones, aperturas, preventas o cualquier oferta que necesita respuestas rapido.',
+                buttonText: 'Quiero registrarme',
+                buttonUrl: '#form',
+                buttonBg: '#ea580c',
+                ...defaultButtonSettings
+              })
+            })
+          ]
+        },
+        {
+          columns: 3,
+          settings: { blockBg: '#ffffff', blockText: '#1f2937', sectionGap: 16, blockPaddingTop: 44, blockPaddingBottom: 46 },
+          columnBlocks: [
+            [makeBlock('text', 'Paso 1', 'Cuenta que estas ofreciendo y para quien es.', { settings: withLandingSpacing('text', { blockBg: '#fff7ed', blockRadius: 16, blockPaddingTop: 22, blockPaddingRight: 22, blockPaddingBottom: 22, blockPaddingLeft: 22, blockBorderWidth: 1, blockBorderColor: '#fed7aa' }) })],
+            [makeBlock('text', 'Paso 2', 'Muestra el beneficio principal y por que conviene actuar ahora.', { settings: withLandingSpacing('text', { blockBg: '#fff7ed', blockRadius: 16, blockPaddingTop: 22, blockPaddingRight: 22, blockPaddingBottom: 22, blockPaddingLeft: 22, blockBorderWidth: 1, blockBorderColor: '#fed7aa' }) })],
+            [makeBlock('text', 'Paso 3', 'Pide los datos para dar seguimiento desde tu equipo.', { settings: withLandingSpacing('text', { blockBg: '#fff7ed', blockRadius: 16, blockPaddingTop: 22, blockPaddingRight: 22, blockPaddingBottom: 22, blockPaddingLeft: 22, blockBorderWidth: 1, blockBorderColor: '#fed7aa' }) })]
+          ]
+        },
+        {
+          columns: 2,
+          settings: { blockBg: '#ffedd5', blockText: '#7c2d12', sectionGap: 30, blockPaddingTop: 54, blockPaddingBottom: 58 },
+          columnBlocks: [
+            [
+              makeBlock('cta', 'CTA', 'Aparta tu lugar o pide informacion', {
+                settings: withLandingSpacing('cta', {
+                  textAlign: 'left',
+                  subtitle: 'Edita este bloque segun tu promocion, cupo o fecha limite.',
+                  buttonText: 'Enviar mis datos',
+                  buttonUrl: '#form',
+                  buttonAlign: 'left',
+                  ...defaultButtonSettings
+                })
+              })
+            ],
+            [
+              makeBlock('form_embed', 'Registro', 'Registro rapido', {
+                settings: formEmbedSettings('Deja tus datos para recibir la informacion completa.', {
+                  blockBg: '#ffffff',
+                  blockText: '#1f2937',
+                  fieldBorder: '#fdba74'
+                })
+              })
+            ]
+          ]
+        }
+      ])
+    }
+
+    if (tpl === 'premium') {
+      return makeLandingLayout([
+        {
+          columns: 2,
+          settings: { blockBg: '#101010', blockText: '#f8fafc', sectionGap: 36, blockPaddingTop: 76, blockPaddingBottom: 70 },
+          columnBlocks: [
+            [
+              makeBlock('hero', 'Hero', 'Una experiencia premium para presentar una oferta de alto valor', {
+                settings: withLandingSpacing('hero', {
+                  textAlign: 'left',
+                  kicker: 'Servicio premium',
+                  subtitle: 'Usa este diseno para propuestas donde la confianza, el detalle y la claridad pesan mas que el volumen.',
+                  buttonText: 'Solicitar una llamada',
+                  buttonUrl: '#form',
+                  buttonAlign: 'left',
+                  buttonBg: '#d4af37',
+                  buttonTextColor: '#121212',
+                  ...defaultButtonSettings
+                })
+              })
+            ],
+            [
+              makeBlock('testimonials', 'Confianza', 'Por que confiar', {
+                settings: withLandingSpacing('testimonials', {
+                  listColumns: 1,
+                  cardBg: '#18181b',
+                  cardBorderColor: '#3f3f46',
+                  cardRadius: 10,
+                  items: [
+                    { title: 'Proceso cuidado', text: 'El cliente entiende cada paso antes de dejar sus datos.' },
+                    { title: 'Presentacion sobria', text: 'El diseno ayuda a comunicar calidad sin saturar.' }
+                  ]
+                })
+              })
+            ]
+          ]
+        },
+        {
+          columns: 2,
+          settings: { blockBg: '#18181b', blockText: '#f8fafc', sectionGap: 28, blockPaddingTop: 56, blockPaddingBottom: 58 },
+          columnBlocks: [
+            [
+              makeBlock('services', 'Servicios', 'Incluye lo importante', {
+                settings: withLandingSpacing('services', {
+                  listColumns: 1,
+                  cardBg: '#222225',
+                  cardBorderColor: '#3f3f46',
+                  cardRadius: 10,
+                  items: [
+                    { title: 'Asesoria', text: 'Explica como acompanas al cliente.' },
+                    { title: 'Implementacion', text: 'Muestra como conviertes la propuesta en resultados.' },
+                    { title: 'Soporte', text: 'Deja claro que hay seguimiento despues del primer contacto.' }
+                  ]
+                })
+              })
+            ],
+            [
+              makeBlock('form_embed', 'Aplicar', 'Solicita informacion', {
+                settings: formEmbedSettings('Completa tus datos para recibir una respuesta personalizada.', {
+                  blockBg: '#101010',
+                  blockText: '#f8fafc',
+                  blockBorderColor: '#3f3f46',
+                  fieldBg: '#202023',
+                  fieldBorder: '#3f3f46',
+                  fieldRadius: 8
+                })
+              })
+            ]
+          ]
+        }
+      ])
+    }
+
+    if (tpl === 'local') {
+      return makeLandingLayout([
+        {
+          settings: { blockBg: '#f0fdf4', blockText: '#14532d', textAlign: 'center', blockPaddingTop: 66, blockPaddingBottom: 54 },
+          blocks: [
+            makeBlock('hero', 'Hero', 'Haz que mas personas encuentren y contacten tu negocio', {
+              settings: withLandingSpacing('hero', {
+                textAlign: 'center',
+                kicker: 'Negocio local',
+                subtitle: 'Una pagina sencilla para explicar que haces, mostrar beneficios y recibir mensajes de clientes interesados.',
+                buttonText: 'Quiero que me contacten',
+                buttonUrl: '#form',
+                ...defaultButtonSettings
+              })
+            })
+          ]
+        },
+        {
+          columns: 2,
+          settings: { blockBg: '#ffffff', blockText: '#14532d', sectionGap: 28, blockPaddingTop: 52, blockPaddingBottom: 52 },
+          columnBlocks: [
+            [
+              makeBlock('services', 'Servicios', 'Servicios principales', {
+                settings: withLandingSpacing('services', {
+                  listColumns: 1,
+                  cardBg: '#f0fdf4',
+                  cardBorderColor: '#bbf7d0',
+                  cardRadius: 18,
+                  items: [
+                    { title: 'Atencion rapida', text: 'Responde a los interesados cuando estan listos para comprar.' },
+                    { title: 'Informacion clara', text: 'Explica horarios, servicios o promociones sin complicar.' },
+                    { title: 'Seguimiento facil', text: 'Cada respuesta queda lista para contactar.' }
+                  ]
+                })
+              })
+            ],
+            [
+              makeBlock('form_embed', 'Contacto', 'Pide informacion', {
+                settings: formEmbedSettings('Deja tus datos y te contactamos con mas detalles.', {
+                  blockBg: '#dcfce7',
+                  blockText: '#14532d',
+                  fieldBorder: '#86efac',
+                  fieldRadius: 14
+                })
+              })
+            ]
+          ]
+        },
+        {
+          settings: { blockBg: '#15803d', blockText: '#ffffff', textAlign: 'center', blockPaddingTop: 44, blockPaddingBottom: 46 },
+          blocks: [
+            makeBlock('faq', 'Preguntas frecuentes', 'Preguntas frecuentes', {
+              settings: withLandingSpacing('faq', {
+                cardBg: 'rgba(255,255,255,0.12)',
+                cardBorderColor: '#86efac',
+                cardRadius: 16,
+                items: [
+                  { title: 'Cuando me contactan?', text: 'Puedes ajustar este texto segun tus tiempos de respuesta.' },
+                  { title: 'Que informacion debo dejar?', text: 'Nombre, telefono y correo para dar seguimiento sin perder datos.' }
+                ]
+              })
+            })
+          ]
+        }
+      ])
+    }
+
+    if (tpl === 'compact' || tpl === 'event') {
+      const isEvent = tpl === 'event'
+      return makeLandingLayout([
+        {
+          columns: 2,
+          settings: {
+            blockBg: isEvent ? '#fdf2f8' : '#f8fafc',
+            blockText: isEvent ? '#500724' : '#0f172a',
+            sectionGap: 28,
+            blockPaddingTop: 64,
+            blockPaddingBottom: 64
+          },
+          columnBlocks: [
+            [
+              makeBlock('hero', 'Hero', isEvent ? 'Registra interesados en una sola pagina' : 'Captura datos rapido sin construir un sitio completo', {
+                settings: withLandingSpacing('hero', {
+                  textAlign: 'left',
+                  kicker: isEvent ? 'Registro simple' : 'Formulario compacto',
+                  subtitle: isEvent ? 'Usa esta pagina para llamadas, clases, eventos, cotizaciones o listas de espera.' : 'Ideal cuando solo necesitas explicar lo basico y pedir informacion de contacto.',
+                  buttonText: isEvent ? 'Registrarme' : 'Enviar mis datos',
+                  buttonUrl: '#form',
+                  buttonAlign: 'left',
+                  ...defaultButtonSettings
+                })
+              }),
+              makeBlock('benefits', 'Detalles', isEvent ? 'Antes de registrarte' : 'Que incluye', {
+                settings: withLandingSpacing('benefits', {
+                  items: [
+                    { title: '+ Informacion breve', text: 'El visitante entiende que va a recibir.' },
+                    { title: '+ Datos completos', text: 'Nombre, telefono y correo quedan listos para seguimiento.' },
+                    { title: '+ Edicion simple', text: 'Cambia preguntas, colores y texto cuando lo necesites.' }
+                  ]
+                })
+              })
+            ],
+            [
+              makeBlock('form_embed', isEvent ? 'Registro' : 'Formulario', isEvent ? 'Completa tu registro' : 'Deja tus datos', {
+                settings: formEmbedSettings(isEvent ? 'Te contactaremos para confirmar la informacion.' : 'Completa tus datos y te contactamos.', {
+                  blockBg: '#ffffff',
+                  blockText: isEvent ? '#500724' : '#0f172a',
+                  fieldBorder: isEvent ? '#f9a8d4' : '#cbd5e1',
+                  fieldRadius: isEvent ? 14 : 10
+                })
+              })
+            ]
+          ]
+        }
+      ])
+    }
+
+    if (tpl === 'facebook' || tpl === 'instagram' || tpl === 'tiktok') {
+      return makeLandingLayout([
+        {
+          settings: { blockBg: tpl === 'tiktok' ? '#000000' : '#ffffff', blockText: tpl === 'tiktok' ? '#ffffff' : '#111827', textAlign: 'center', blockPaddingTop: 46, blockPaddingBottom: 46 },
+          blocks: [
+            makeBlock('hero', 'Hero', 'Conoce esta oferta y deja tus datos', {
+              settings: withLandingSpacing('hero', {
+                textAlign: 'center',
+                kicker: 'Anuncio',
+                subtitle: 'Pagina corta para continuar una conversacion que viene desde redes sociales.',
+                buttonText: 'Quiero informacion',
+                buttonUrl: '#form',
+                ...defaultButtonSettings
+              })
+            }),
+            makeBlock('form_embed', 'Formulario', 'Deja tus datos', {
+              settings: formEmbedSettings('Completa la informacion y te contactamos.', {
+                blockBg: tpl === 'tiktok' ? '#161616' : '#f8fafc',
+                blockText: tpl === 'tiktok' ? '#ffffff' : '#111827',
+                fieldBg: tpl === 'tiktok' ? '#1f1f1f' : '#ffffff',
+                fieldBorder: tpl === 'tiktok' ? 'rgba(255,255,255,.16)' : '#dbe3ef'
+              })
+            })
+          ]
+        }
+      ])
+    }
+
+    return makeLandingLayout([
+      {
+        settings: { blockBg: '#08080a', blockText: '#ffffff', textAlign: 'center', blockPaddingTop: 68, blockPaddingBottom: 56 },
+        blocks: [
       makeBlock('hero', 'Hero', 'Agenda tu consulta', {
-        sortOrder: 0,
-        settings: withLandingSpacing({
+        settings: withLandingSpacing('hero', {
           textAlign: 'center',
           kicker: 'Nuevo',
           subtitle: 'Una pagina clara para convertir visitas en leads calificados.',
@@ -551,20 +1061,39 @@ function buildDefaultBlocks(siteId, siteType, template) {
           buttonUrl: '#form',
           ...defaultButtonSettings
         })
-      }),
+      })
+        ]
+      },
+      {
+        columns: 2,
+        settings: { blockBg: '#ffffff', blockText: '#111827', sectionGap: 28, blockPaddingTop: 52, blockPaddingBottom: 52 },
+        columnBlocks: [
+          [
       makeBlock('benefits', 'Beneficios', 'Por que elegirnos', {
-        sortOrder: 1,
-        settings: withLandingSpacing({
+        settings: withLandingSpacing('benefits', {
           items: [
             { title: '+ Atencion rapida', text: 'Captura datos y responde sin friccion.' },
             { title: '+ Leads ordenados', text: 'Todo llega al dashboard y a la misma base de datos.' },
             { title: '+ Dominio propio', text: 'Publica solo en dominios verificados.' }
           ]
         })
-      }),
+      })
+          ],
+          [
+            makeBlock('form_embed', 'Formulario', 'Deja tus datos', {
+              settings: formEmbedSettings('Completa la informacion y nuestro equipo te contactara.', {
+                blockBg: '#f8fafc',
+                blockText: '#111827'
+              })
+            })
+          ]
+        ]
+      },
+      {
+        settings: { blockBg: '#111827', blockText: '#ffffff', textAlign: 'center', blockPaddingTop: 46, blockPaddingBottom: 50 },
+        blocks: [
       makeBlock('cta', 'CTA final', 'Listo para empezar?', {
-        sortOrder: 2,
-        settings: withLandingSpacing({
+        settings: withLandingSpacing('cta', {
           textAlign: 'center',
           subtitle: 'Deja tus datos y te contactamos.',
           buttonText: 'Contactar',
@@ -572,10 +1101,76 @@ function buildDefaultBlocks(siteId, siteType, template) {
           ...defaultButtonSettings
         })
       })
+        ]
+      }
     ])
   }
 
-  if (siteType === 'standard_form' && (tpl === 'facebook' || tpl === 'instagram' || tpl === 'tiktok')) {
+  if (tpl === 'compact') {
+    return [
+      makeBlock('title', 'Titulo', 'Deja tus datos y te contactamos', { sortOrder: 0 }),
+      makeBlock('subtitle', 'Subtitulo', 'Completa este formulario rapido para que podamos darte seguimiento.', { sortOrder: 1 }),
+      ...contactFields(2)
+    ]
+  }
+
+  if (tpl === 'event') {
+    return [
+      makeBlock('title', 'Titulo', 'Registro rapido', { sortOrder: 0 }),
+      makeBlock('subtitle', 'Subtitulo', 'Deja tus datos para confirmar informacion y recibir los siguientes pasos.', { sortOrder: 1 }),
+      makeBlock('dropdown', 'Que te interesa?', '', {
+        required: true,
+        options: ['Recibir informacion', 'Agendar una llamada', 'Cotizar un servicio'],
+        settings: { internalName: 'interest' },
+        sortOrder: 2
+      }),
+      ...contactFields(3)
+    ]
+  }
+
+  if (tpl === 'executive') {
+    return [
+      makeBlock('title', 'Titulo', 'Solicita una llamada', { sortOrder: 0 }),
+      makeBlock('subtitle', 'Subtitulo', 'Cuentanos que necesitas y un asesor revisara la mejor ruta contigo.', { sortOrder: 1 }),
+      makeBlock('paragraph', 'Que necesitas resolver?', '', {
+        placeholder: 'Escribe una descripcion breve',
+        required: false,
+        settings: { internalName: 'need' },
+        sortOrder: 2
+      }),
+      ...contactFields(3)
+    ]
+  }
+
+  if (tpl === 'local') {
+    return [
+      makeBlock('title', 'Titulo', 'Pide informacion del servicio', { sortOrder: 0 }),
+      makeBlock('subtitle', 'Subtitulo', 'Completa tus datos y te contactamos para ayudarte.', { sortOrder: 1 }),
+      makeBlock('dropdown', 'Servicio de interes', '', {
+        required: true,
+        options: ['Servicio principal', 'Promocion disponible', 'Necesito asesoria'],
+        settings: { internalName: 'service_interest' },
+        sortOrder: 2
+      }),
+      ...contactFields(3)
+    ]
+  }
+
+  if (tpl === 'premium') {
+    return [
+      makeBlock('title', 'Titulo', 'Solicitud personalizada', { sortOrder: 0 }),
+      makeBlock('subtitle', 'Subtitulo', 'Comparte tus datos y te contactamos con una respuesta cuidada.', { sortOrder: 1 }),
+      makeBlock('paragraph', 'Que estas buscando?', '', {
+        placeholder: 'Cuentanos el contexto',
+        required: false,
+        settings: { internalName: 'context' },
+        sortOrder: 2
+      }),
+      ...contactFields(3)
+    ]
+  }
+
+  if (tpl === 'facebook' || tpl === 'instagram' || tpl === 'tiktok') {
     return [
       makeBlock('title', 'Titulo', 'Deja tus datos y te contactamos', { sortOrder: 0 }),
       makeBlock('subtitle', 'Subtitulo', 'Completa el formulario y un asesor te contacta en minutos.', { sortOrder: 1 }),
@@ -736,7 +1331,7 @@ Reglas duras:
 Tipo solicitado por el usuario: ${siteKind === 'landing' ? 'landing_page' : 'formulario'}.
 
 Bloques permitidos para landing_page:
-hero, title, subtitle, text, image, video, button, benefits, testimonials, services, embed, calendar_embed, form_embed, faq, cta.
+header_panel, hero, title, subtitle, text, image, video, button, benefits, testimonials, services, embed, calendar_embed, form_embed, faq, cta, footer_panel.
 
 Bloques permitidos para formularios:
 short_text, paragraph, number, currency, dropdown, radio, checkboxes, phone, email, date, title, subtitle, description, video, embed, calendar_embed.
@@ -961,7 +1556,7 @@ function normalizeAISiteBlueprint(siteKind, aiSite = {}) {
 
   const id = crypto.randomUUID()
   const allowedTypes = siteType === 'landing_page'
-    ? new Set(['hero', 'section', 'title', 'subtitle', 'text', 'image', 'video', 'button', 'benefits', 'testimonials', 'services', 'embed', 'calendar_embed', 'form_embed', 'faq', 'cta'])
+    ? new Set(['header_panel', 'hero', 'section', 'title', 'subtitle', 'text', 'image', 'video', 'button', 'benefits', 'testimonials', 'services', 'embed', 'calendar_embed', 'form_embed', 'faq', 'cta', 'footer_panel'])
     : new Set([...FIELD_BLOCK_TYPES, 'title', 'subtitle', 'description', 'video', 'embed', 'calendar_embed'])
   const fallbackType = siteType === 'landing_page' ? 'text' : 'short_text'
   const blocksInput = Array.isArray(aiSite.blocks)
@@ -1992,6 +2587,23 @@ function getItems(settings = {}, fallback = []) {
     .filter(item => item.title || item.text)
 }
 
+function getPanelLinks(settings = {}) {
+  const links = Array.isArray(settings.panelLinks) ? settings.panelLinks : []
+  return links
+    .map(item => {
+      if (item && typeof item === 'object') {
+        return {
+          label: cleanString(item.label || item.title || item.name),
+          url: cleanString(item.url || item.href || '#') || '#'
+        }
+      }
+
+      const [label, url] = cleanString(item).split('|').map(part => cleanString(part))
+      return { label, url: url || '#' }
+    })
+    .filter(item => item.label)
+}
+
 function collectFieldBlocks(blocks = []) {
   const fields = []
 
@@ -2050,6 +2662,10 @@ function isSectionBlock(block) {
   return block && block.blockType === 'section'
 }
 
+function isPanelBlock(block) {
+  return block && (block.blockType === 'header_panel' || block.blockType === 'footer_panel')
+}
+
 function getSectionColumns(block) {
   const value = Number(block?.settings?.sectionColumns ?? block?.settings?.columns)
   if (!Number.isFinite(value)) return 1
@@ -2095,6 +2711,7 @@ function buildLandingSectionLanes(pageBlocks = []) {
 
   for (const block of sortedBlocks) {
     if (isSectionBlock(block)) continue
+    if (isPanelBlock(block)) continue
 
     const explicitSectionId = getBlockSectionId(block)
     const explicitLane = explicitSectionId ? laneById.get(explicitSectionId) : null
@@ -2459,6 +3076,71 @@ function blockSettingNumber(settings, key, min, max) {
 
 const SPACING_SIDES = ['Top', 'Right', 'Bottom', 'Left']
 
+function makeRenderLandingSpacing(top, bottom, right = 0, left = 0) {
+  return {
+    blockMarginLinked: false,
+    blockMarginTop: top,
+    blockMarginRight: right,
+    blockMarginBottom: bottom,
+    blockMarginLeft: left,
+    blockPaddingLinked: true,
+    blockPadding: 0,
+    blockPaddingTop: 0,
+    blockPaddingRight: 0,
+    blockPaddingBottom: 0,
+    blockPaddingLeft: 0
+  }
+}
+
+function getRenderLandingSpacing(blockType) {
+  const spacing = {
+    headline: makeRenderLandingSpacing(0, 10),
+    title: makeRenderLandingSpacing(0, 10),
+    subheading: makeRenderLandingSpacing(6, 14),
+    subtitle: makeRenderLandingSpacing(6, 14),
+    description: makeRenderLandingSpacing(6, 16),
+    text: makeRenderLandingSpacing(8, 16),
+    image: makeRenderLandingSpacing(16, 18),
+    video: makeRenderLandingSpacing(16, 18),
+    embed: makeRenderLandingSpacing(16, 18),
+    calendar_embed: makeRenderLandingSpacing(16, 18),
+    button: makeRenderLandingSpacing(18, 18),
+    hero: makeRenderLandingSpacing(0, 0),
+    benefits: makeRenderLandingSpacing(0, 0),
+    testimonials: makeRenderLandingSpacing(0, 0),
+    services: makeRenderLandingSpacing(0, 0),
+    faq: makeRenderLandingSpacing(0, 0),
+    form_embed: makeRenderLandingSpacing(18, 0),
+    cta: makeRenderLandingSpacing(0, 0),
+    header_panel: makeRenderLandingSpacing(0, 0),
+    footer_panel: makeRenderLandingSpacing(0, 0)
+  }
+  return spacing[blockType] || makeRenderLandingSpacing(10, 14)
+}
+
+function isZeroSpacingValue(value) {
+  if (value === undefined || value === null || value === '') return true
+  const numeric = Number(value)
+  return Number.isFinite(numeric) && numeric === 0
+}
+
+function normalizeLegacyLandingBlockSettings(block) {
+  const settings = block?.settings || {}
+  if (!block || FIELD_BLOCK_TYPES.has(block.blockType) || block.blockType === 'section' || isPanelBlock(block)) return settings
+  const top = Number(settings.blockMarginTop)
+  const bottom = Number(settings.blockMarginBottom)
+  const hasOldVerticalMargin = top === 50 || bottom === 50
+  if (!hasOldVerticalMargin) return settings
+  if (!isZeroSpacingValue(settings.blockMarginRight) || !isZeroSpacingValue(settings.blockMarginLeft)) return settings
+  const paddingIsZero = ['blockPadding', 'blockPaddingTop', 'blockPaddingRight', 'blockPaddingBottom', 'blockPaddingLeft']
+    .every(key => isZeroSpacingValue(settings[key]))
+  if (!paddingIsZero) return settings
+  return {
+    ...settings,
+    ...getRenderLandingSpacing(block.blockType)
+  }
+}
+
 function hasSpacingSideValue(settings, base) {
   return SPACING_SIDES.some(side => settings && settings[`${base}${side}`] !== undefined)
 }
@@ -2514,7 +3196,7 @@ function marginForAlign(align) {
 }
 
 function renderBlockStyleVars(block) {
-  const settings = block.settings || {}
+  const settings = normalizeLegacyLandingBlockSettings(block)
   const vars = []
   const blockBg = blockSettingPaint(settings, 'blockBg')
   const blockText = blockSettingColor(settings, 'blockText')
@@ -2527,7 +3209,9 @@ function renderBlockStyleVars(block) {
   const fieldBg = blockSettingPaint(settings, 'fieldBg')
   const fieldBorder = blockSettingColor(settings, 'fieldBorder')
   const fontFamily = cleanString(settings.fontFamily)
+  const textStrokeColor = blockSettingColor(settings, 'textStrokeColor')
   const fontSize = blockSettingNumber(settings, 'fontSize', 12, 72)
+  const textStrokeWidth = blockSettingNumber(settings, 'textStrokeWidth', 0, 12)
   const contentMaxWidth = blockSettingNumber(settings, 'contentMaxWidth', 10, 120)
   const blockPadding = renderBlockSpacing(settings, 'blockPadding', 0, 0, 160)
   const blockMargin = renderBlockSpacing(settings, 'blockMargin', 0, -80, 200)
@@ -2563,6 +3247,10 @@ function renderBlockStyleVars(block) {
   if (fieldBg) vars.push(`--rstk-field-bg:${fieldBg}`)
   if (fieldBorder) vars.push(`--rstk-field-border:${fieldBorder}`)
   if (fontFamily) vars.push(`--rstk-block-font:${fontFamily.replace(/[;"{}<>]/g, '')}`)
+  if (settings.fontStyle === 'italic') vars.push('--rstk-block-font-style:italic')
+  if (settings.textDecoration === 'underline') vars.push('--rstk-block-text-decoration:underline')
+  if (textStrokeWidth !== null) vars.push(`--rstk-text-stroke-width:${textStrokeWidth}px`)
+  if (textStrokeColor) vars.push(`--rstk-text-stroke-color:${textStrokeColor}`)
   if (settings.fontWeight === 'bold') vars.push('--rstk-block-weight:850')
   if (settings.textAlign !== undefined) {
     const align = blockHorizontalAlign(settings, 'textAlign', 'left')
@@ -2623,7 +3311,10 @@ function renderBlockStyleClassName(block) {
     'rstk-block-style',
     cleanString(settings.fontFamily) ? 'rstkFontOverride' : '',
     settings.fontSize !== undefined ? 'rstkSizeOverride' : '',
-    settings.fontWeight === 'bold' ? 'rstkWeightOverride' : ''
+    settings.fontWeight === 'bold' ? 'rstkWeightOverride' : '',
+    settings.fontStyle === 'italic' ? 'rstkItalicOverride' : '',
+    settings.textDecoration === 'underline' ? 'rstkUnderlineOverride' : '',
+    settings.textStrokeWidth !== undefined ? 'rstkStrokeOverride' : ''
   ].filter(Boolean)
 
   return classes.join(' ')
@@ -2687,9 +3378,58 @@ function renderLandingSectionLane(lane, context = {}) {
   `
 }
 
+function renderLandingBlocks(blocks = [], context = {}) {
+  const sortedBlocks = [...blocks].sort((a, b) => a.sortOrder - b.sortOrder)
+  const lanes = buildLandingSectionLanes(sortedBlocks)
+  const laneBySectionId = new Map(lanes.filter(lane => lane.section).map(lane => [lane.section.id, lane]))
+  const legacyLane = lanes.find(lane => !lane.section)
+  const legacyBlockIds = new Set((legacyLane?.columnBlocks || []).flat().map(block => block.id))
+  let legacyRendered = false
+
+  const html = sortedBlocks.map(block => {
+    if (isPanelBlock(block)) {
+      return renderPublicBlock(block, context)
+    }
+
+    if (isSectionBlock(block)) {
+      const lane = laneBySectionId.get(block.id)
+      return lane ? renderLandingSectionLane(lane, context) : ''
+    }
+
+    if (legacyLane && !legacyRendered && legacyBlockIds.has(block.id)) {
+      legacyRendered = true
+      return renderLandingSectionLane(legacyLane, context)
+    }
+
+    return ''
+  }).filter(Boolean)
+
+  if (legacyLane && !legacyRendered) {
+    html.push(renderLandingSectionLane(legacyLane, context))
+  }
+
+  return html.join('\n')
+}
+
 function renderContentBlock(block, context = {}) {
   const content = escapeHtml(block.content)
   const settings = block.settings || {}
+
+  if (block.blockType === 'header_panel' || block.blockType === 'footer_panel') {
+    const isHeader = block.blockType === 'header_panel'
+    const links = getPanelLinks(settings)
+    const copy = content || (isHeader ? escapeHtml(block.label || 'Tu marca') : 'Tu informacion esta protegida.')
+    return `
+      <div class="rstk-site-panel ${isHeader ? 'rstk-site-panel-header' : 'rstk-site-panel-footer'}">
+        ${isHeader ? `<strong class="rstk-site-panel-copy">${copy}</strong>` : `<p class="rstk-site-panel-copy">${copy}</p>`}
+        ${links.length ? `
+          <nav class="rstk-site-panel-links" aria-label="${isHeader ? 'Enlaces superiores' : 'Enlaces inferiores'}">
+            ${links.map(link => `<a href="${escapeHtml(safeHref(link.url, '#'))}">${escapeHtml(link.label)}</a>`).join('')}
+          </nav>
+        ` : ''}
+      </div>
+    `
+  }
 
   if (block.blockType === 'headline' || block.blockType === 'title') {
     return `<h1 class="rstk-headline">${content || escapeHtml(block.label)}</h1>`
@@ -2948,6 +3688,186 @@ const SITE_TEMPLATES = {
       headingWeight: '800',
       btnRadius: '12px',
       btnWeight: '750'
+    }
+  },
+
+  executive: {
+    id: 'executive',
+    label: 'Corporativo claro',
+    mode: 'light',
+    chrome: 'none',
+    font: RSTK_SANS,
+    vars: {
+      pageBg: '#f8fafc',
+      pageImage: 'none',
+      ink: '#0f172a',
+      muted: '#475569',
+      surface: '#ffffff',
+      surface2: '#ecfeff',
+      border: '#cbd5e1',
+      accent: '#0f766e',
+      accentStrong: '#115e59',
+      onAccent: '#ffffff',
+      ring: 'rgba(15,118,110,.18)',
+      inputBg: '#ffffff',
+      inputInk: '#0f172a',
+      inputBorder: '#cbd5e1',
+      radius: '10px',
+      radiusLg: '18px',
+      shadow: '0 28px 70px -46px rgba(15,23,42,.42)',
+      headingWeight: '800',
+      btnRadius: '10px',
+      btnWeight: '800'
+    }
+  },
+
+  launch: {
+    id: 'launch',
+    label: 'Lanzamiento',
+    mode: 'light',
+    chrome: 'none',
+    font: RSTK_SANS,
+    vars: {
+      pageBg: '#fff7ed',
+      pageImage: 'none',
+      ink: '#1f2937',
+      muted: '#7c2d12',
+      surface: '#ffffff',
+      surface2: '#ffedd5',
+      border: '#fed7aa',
+      accent: '#ea580c',
+      accentStrong: '#c2410c',
+      onAccent: '#ffffff',
+      ring: 'rgba(234,88,12,.2)',
+      inputBg: '#ffffff',
+      inputInk: '#1f2937',
+      inputBorder: '#fdba74',
+      radius: '14px',
+      radiusLg: '22px',
+      shadow: '0 32px 72px -46px rgba(124,45,18,.45)',
+      headingWeight: '850',
+      btnRadius: '999px',
+      btnWeight: '850'
+    }
+  },
+
+  premium: {
+    id: 'premium',
+    label: 'Premium sobrio',
+    mode: 'dark',
+    chrome: 'none',
+    font: RSTK_SANS,
+    vars: {
+      pageBg: '#101010',
+      pageImage: 'none',
+      ink: '#f8fafc',
+      muted: '#a1a1aa',
+      surface: '#18181b',
+      surface2: '#222225',
+      border: 'rgba(255,255,255,.14)',
+      accent: '#d4af37',
+      accentStrong: '#b88916',
+      onAccent: '#121212',
+      ring: 'rgba(212,175,55,.26)',
+      inputBg: '#202023',
+      inputInk: '#f8fafc',
+      inputBorder: 'rgba(255,255,255,.16)',
+      radius: '8px',
+      radiusLg: '18px',
+      shadow: '0 48px 90px -52px rgba(0,0,0,.9)',
+      headingWeight: '850',
+      btnRadius: '8px',
+      btnWeight: '850'
+    }
+  },
+
+  local: {
+    id: 'local',
+    label: 'Negocio local',
+    mode: 'light',
+    chrome: 'none',
+    font: RSTK_SANS,
+    vars: {
+      pageBg: '#f0fdf4',
+      pageImage: 'none',
+      ink: '#14532d',
+      muted: '#4b5563',
+      surface: '#ffffff',
+      surface2: '#dcfce7',
+      border: '#bbf7d0',
+      accent: '#15803d',
+      accentStrong: '#166534',
+      onAccent: '#ffffff',
+      ring: 'rgba(21,128,61,.2)',
+      inputBg: '#ffffff',
+      inputInk: '#14532d',
+      inputBorder: '#86efac',
+      radius: '16px',
+      radiusLg: '24px',
+      shadow: '0 30px 70px -46px rgba(20,83,45,.38)',
+      headingWeight: '800',
+      btnRadius: '16px',
+      btnWeight: '800'
+    }
+  },
+
+  compact: {
+    id: 'compact',
+    label: 'Formulario compacto',
+    mode: 'light',
+    chrome: 'none',
+    font: RSTK_SANS,
+    vars: {
+      pageBg: '#f8fafc',
+      pageImage: 'none',
+      ink: '#0f172a',
+      muted: '#64748b',
+      surface: '#ffffff',
+      surface2: '#f1f5f9',
+      border: '#dbe3ef',
+      accent: '#2563eb',
+      accentStrong: '#1d4ed8',
+      onAccent: '#ffffff',
+      ring: 'rgba(37,99,235,.18)',
+      inputBg: '#ffffff',
+      inputInk: '#0f172a',
+      inputBorder: '#cbd5e1',
+      radius: '8px',
+      radiusLg: '18px',
+      shadow: '0 24px 54px -40px rgba(15,23,42,.35)',
+      headingWeight: '800',
+      btnRadius: '10px',
+      btnWeight: '800'
+    }
+  },
+
+  event: {
+    id: 'event',
+    label: 'Registro simple',
+    mode: 'light',
+    chrome: 'none',
+    font: RSTK_SANS,
+    vars: {
+      pageBg: '#fdf2f8',
+      pageImage: 'none',
+      ink: '#500724',
+      muted: '#831843',
+      surface: '#ffffff',
+      surface2: '#fce7f3',
+      border: '#fbcfe8',
+      accent: '#be123c',
+      accentStrong: '#9f1239',
+      onAccent: '#ffffff',
+      ring: 'rgba(190,18,60,.2)',
+      inputBg: '#ffffff',
+      inputInk: '#500724',
+      inputBorder: '#f9a8d4',
+      radius: '14px',
+      radiusLg: '24px',
+      shadow: '0 30px 68px -44px rgba(131,24,67,.42)',
+      headingWeight: '850',
+      btnRadius: '999px',
+      btnWeight: '850'
     }
   },
 
@@ -3304,6 +4224,14 @@ const RSTK_BASE_CSS = `
   .rstk-media-empty{min-height:190px;display:grid;place-items:center;gap:8px;color:var(--rstk-muted);font-size:.92rem}
   .rstk-play{display:grid;place-items:center;width:58px;height:58px;border-radius:50%;background:var(--rstk-accent);color:var(--rstk-on-accent)}
 
+  .rstk-site-panel{width:100%;display:flex;align-items:center;justify-content:space-between;gap:18px;color:var(--rstk-block-text,var(--rstk-ink))}
+  .rstk-site-panel-copy{margin:0;color:inherit;font:inherit;font-weight:800}
+  .rstk-site-panel-footer .rstk-site-panel-copy{font-weight:600;color:color-mix(in srgb,var(--rstk-block-text,var(--rstk-ink)) 72%,var(--rstk-muted) 28%)}
+  .rstk-site-panel-links{display:flex;align-items:center;justify-content:flex-end;gap:14px;flex-wrap:wrap}
+  .rstk-site-panel-links a{color:inherit;text-decoration:none;font-size:.92rem;font-weight:750}
+  .rstk-site-panel-footer{justify-content:center;text-align:center;flex-wrap:wrap}
+  .rstk-site-panel-footer .rstk-site-panel-links{justify-content:center}
+
   .rstk-field{display:grid;gap:8px;text-align:left}
   .rstk-step[hidden]{display:none}
   label{font-size:.95rem;font-weight:700;color:var(--rstk-ink)}
@@ -3344,6 +4272,9 @@ const RSTK_BASE_CSS = `
 
   @media (max-width:640px){
     .rstk-list-grid{grid-template-columns:1fr}
+    .rstk-site-panel{align-items:flex-start;flex-direction:column}
+    .rstk-site-panel-footer{align-items:center}
+    .rstk-site-panel-links{justify-content:flex-start}
   }
 
   .rstk-footer{margin:6px 0 0;display:flex;align-items:center;justify-content:center;gap:6px;color:var(--rstk-muted);font-size:.78rem;text-align:center}
@@ -3380,6 +4311,7 @@ const RSTK_BASE_CSS = `
   .rstk-kind-landing .rstk-frame{padding:0}
   .rstk-kind-landing .rstk-page{max-width:none;margin:0;border-radius:var(--rstk-page-radius,0);overflow:hidden}
   .rstk-kind-landing .rstk-shell{gap:0;padding-top:0}
+  .rstk-kind-landing .rstk-section-column{gap:0}
   .rstk-kind-landing .rstk-headline{font-family:var(--rstk-display);font-size:clamp(2.3rem,5.6vw,4rem);line-height:1.03;letter-spacing:0;background:none;color:var(--rstk-block-text,var(--rstk-ink))}
   .rstk-kind-landing .rstk-subheading{font-size:clamp(1.05rem,1.7vw,1.28rem);max-width:var(--rstk-content-max,60ch);line-height:1.6}
   .rstk-kind-landing h2{font-family:var(--rstk-display)}
@@ -3423,6 +4355,9 @@ const RSTK_BASE_CSS = `
   .rstkFontOverride .rstk-headline,.rstkFontOverride .rstk-subheading,.rstkFontOverride .rstk-text,.rstkFontOverride h2,.rstkFontOverride label,.rstkFontOverride .rstk-help,.rstkFontOverride .rstk-list-grid strong,.rstkFontOverride .rstk-list-grid p,.rstkFontOverride .rstk-check-body strong,.rstkFontOverride .rstk-check-body span{font-family:var(--rstk-block-font,inherit)}
   .rstkSizeOverride .rstk-headline,.rstkSizeOverride .rstk-subheading,.rstkSizeOverride .rstk-text,.rstkSizeOverride h2,.rstkSizeOverride label,.rstkSizeOverride .rstk-help,.rstkSizeOverride .rstk-list-grid strong,.rstkSizeOverride .rstk-list-grid p,.rstkSizeOverride .rstk-list-grid small,.rstkSizeOverride .rstk-check-body strong,.rstkSizeOverride .rstk-check-body span{font-size:var(--rstk-block-size)}
   .rstkWeightOverride .rstk-headline,.rstkWeightOverride .rstk-subheading,.rstkWeightOverride .rstk-text,.rstkWeightOverride h2,.rstkWeightOverride label,.rstkWeightOverride .rstk-help,.rstkWeightOverride .rstk-list-grid strong,.rstkWeightOverride .rstk-check-body strong{font-weight:var(--rstk-block-weight,850)}
+  .rstkItalicOverride .rstk-headline,.rstkItalicOverride .rstk-subheading,.rstkItalicOverride .rstk-text,.rstkItalicOverride h2,.rstkItalicOverride label,.rstkItalicOverride .rstk-help,.rstkItalicOverride .rstk-list-grid strong,.rstkItalicOverride .rstk-list-grid p,.rstkItalicOverride .rstk-check-body strong,.rstkItalicOverride .rstk-check-body span{font-style:var(--rstk-block-font-style,italic)}
+  .rstkUnderlineOverride .rstk-headline,.rstkUnderlineOverride .rstk-subheading,.rstkUnderlineOverride .rstk-text,.rstkUnderlineOverride h2,.rstkUnderlineOverride label,.rstkUnderlineOverride .rstk-help,.rstkUnderlineOverride .rstk-list-grid strong,.rstkUnderlineOverride .rstk-list-grid p,.rstkUnderlineOverride .rstk-check-body strong,.rstkUnderlineOverride .rstk-check-body span{text-decoration:var(--rstk-block-text-decoration,underline)}
+  .rstkStrokeOverride .rstk-headline,.rstkStrokeOverride .rstk-subheading,.rstkStrokeOverride .rstk-text,.rstkStrokeOverride h2,.rstkStrokeOverride label,.rstkStrokeOverride .rstk-help,.rstkStrokeOverride .rstk-list-grid strong,.rstkStrokeOverride .rstk-list-grid p,.rstkStrokeOverride .rstk-check-body strong,.rstkStrokeOverride .rstk-check-body span{-webkit-text-stroke:var(--rstk-text-stroke-width,0) var(--rstk-text-stroke-color,currentColor)}
 
   @media (max-width:640px){
     .rstk-kind-landing .rstk-hero{padding:clamp(32px,8vw,56px) 20px}
@@ -3761,7 +4696,7 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
   const pageMaxWidth = isLandingType && storedPageMaxWidth === 1160
     ? 1440
     : themeNumber(theme, 'pageMaxWidth', isLandingType ? 1440 : (template.id === 'interactive' ? 600 : 520), 360, 1440)
-  const pagePadding = themeNumber(theme, 'pagePadding', isLandingType ? 50 : 22, 0, 120)
+  const pagePadding = themeNumber(theme, 'pagePadding', isLandingType ? 36 : 22, 0, 120)
   const pageRadius = themeNumber(theme, 'pageRadius', isLandingType ? 0 : 24, 0, 40)
   const pageBorderWidth = themeNumber(theme, 'pageBorderWidth', 0, 0, 12)
   const pageBorder = themeColor(theme, 'pageBorderColor') || 'transparent'
@@ -3799,7 +4734,7 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
 
   const renderContext = { site, pageId: activePage?.id, isInteractive }
   const bodyBlocks = isLandingType
-    ? buildLandingSectionLanes(blocks).map(lane => renderLandingSectionLane(lane, renderContext)).join('\n')
+    ? renderLandingBlocks(blocks, renderContext)
     : blocks.map(block => renderPublicBlock(block, renderContext)).join('\n')
 
   const submitArea = hasForm
