@@ -276,7 +276,7 @@
 }
 
 .apiDetailsGrid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .apiMetricsGrid div,
@@ -325,6 +325,105 @@
   font-size: 13px;
   font-weight: 800;
   text-align: left;
+}
+
+.apiTutorial {
+  display: grid;
+  gap: 14px;
+  width: min(620px, 100%);
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.045);
+  color: var(--color-text-primary);
+  text-align: left;
+}
+
+.apiTutorialHeader {
+  display: grid;
+  gap: 3px;
+}
+
+.apiTutorialHeader span {
+  color: #0f9f6e;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.apiTutorialHeader strong {
+  color: var(--color-text-primary);
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.apiTutorialSteps {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.apiTutorialSteps li {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.apiTutorialSteps li > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  color: #047857;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.24);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.apiTutorialSteps strong {
+  display: block;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.apiTutorialSteps p {
+  margin: 3px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.apiTutorialLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.apiTutorialLinks a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgba(20, 184, 166, 0.28);
+  border-radius: 999px;
+  color: #047857;
+  background: rgba(20, 184, 166, 0.08);
+  font-size: 12px;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.apiTutorialLinks a:hover,
+.apiTutorialLinks a:focus-visible {
+  border-color: rgba(20, 184, 166, 0.5);
+  background: rgba(20, 184, 166, 0.13);
 }
 
 .apiAlertList {

@@ -310,12 +310,12 @@ export const WhatsAppSettings: React.FC = () => {
       setApiKey('')
 
       if (nextStatus.requiresPhoneSelection) {
-        showToast('warning', 'WhatsApp_API conectado', 'Selecciona el numero emisor para terminar')
+        showToast('warning', 'WhatsApp Business conectado', 'Selecciona el numero emisor para terminar')
       } else {
-        showToast('success', 'WhatsApp_API conectado', 'YCloud y el webhook quedaron activos')
+        showToast('success', 'WhatsApp Business conectado', 'YCloud y tu numero quedaron listos')
       }
     } catch (error) {
-      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo conectar WhatsApp_API')
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo conectar WhatsApp Business')
     } finally {
       setApiConnecting(false)
       setApiLoading(false)
@@ -327,9 +327,9 @@ export const WhatsAppSettings: React.FC = () => {
     try {
       const nextStatus = await whatsappApiService.refresh()
       setApiStatus(nextStatus)
-      showToast('success', 'Actualizado', 'WhatsApp_API se sincronizo con YCloud')
+      showToast('success', 'Actualizado', 'WhatsApp Business se sincronizo con YCloud')
     } catch (error) {
-      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo actualizar WhatsApp_API')
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo actualizar WhatsApp Business')
     } finally {
       setApiRefreshing(false)
     }
@@ -416,16 +416,16 @@ export const WhatsAppSettings: React.FC = () => {
 
   const confirmApiDisconnect = () => {
     showConfirm(
-      'Desconectar WhatsApp_API',
-      'Se pausara el webhook de YCloud. Los mensajes y contactos guardados se quedan intactos.',
+      'Desconectar WhatsApp Business',
+      'Se pausara la conexion con YCloud. Los mensajes y contactos guardados se quedan intactos.',
       async () => {
         setApiDisconnecting(true)
         try {
           const nextStatus = await whatsappApiService.disconnect()
           setApiStatus(nextStatus)
-          showToast('success', 'Desconectado', 'WhatsApp_API quedo pausado')
+          showToast('success', 'Desconectado', 'WhatsApp Business quedo pausado')
         } catch (error) {
-          showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo desconectar WhatsApp_API')
+          showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo desconectar WhatsApp Business')
         } finally {
           setApiDisconnecting(false)
         }
@@ -478,7 +478,7 @@ export const WhatsAppSettings: React.FC = () => {
         language: selectedTemplate.language,
         variables: parsedVariables
       })
-      showToast('success', 'Plantilla enviada', 'YCloud acepto el envio por WhatsApp_API')
+      showToast('success', 'Plantilla enviada', 'YCloud acepto el envio por WhatsApp Business')
       setTemplateTo('')
       await loadApiStatus()
     } catch (error) {
@@ -551,9 +551,56 @@ export const WhatsAppSettings: React.FC = () => {
 
       <Button type="submit" loading={apiConnecting} disabled={!canSubmitApi}>
         <Cloud size={18} />
-        {apiConnected ? 'Actualizar conexion' : 'Conectar WhatsApp_API'}
+        {apiConnected ? 'Actualizar conexion' : 'Conectar WhatsApp Business'}
       </Button>
     </form>
+  )
+
+  const renderYCloudGuide = () => (
+    <div className={styles.apiTutorial}>
+      <div className={styles.apiTutorialHeader}>
+        <span>Guia rapida</span>
+        <strong>Conecta YCloud sin vueltas</strong>
+      </div>
+      <ol className={styles.apiTutorialSteps}>
+        <li>
+          <span>1</span>
+          <div>
+            <strong>Crea o entra a tu cuenta de YCloud</strong>
+            <p>Usa el correo del negocio y deja listo el workspace desde donde vas a manejar WhatsApp.</p>
+          </div>
+        </li>
+        <li>
+          <span>2</span>
+          <div>
+            <strong>Conecta tu numero con coexistencia</strong>
+            <p>En YCloud abre WhatsApp Accounts, elige conectar WhatsApp Business App / Coexistence y sigue el flujo de Meta con el numero que ya usas.</p>
+          </div>
+        </li>
+        <li>
+          <span>3</span>
+          <div>
+            <strong>Copia tu API key</strong>
+            <p>Cuando el numero ya aparezca conectado en YCloud, ve a Developer / API Keys, copia la llave y pegala aqui.</p>
+          </div>
+        </li>
+        <li>
+          <span>4</span>
+          <div>
+            <strong>Presiona conectar</strong>
+            <p>Ristak valida la cuenta, guarda el numero, consulta saldo, plantillas y contactos disponibles automaticamente.</p>
+          </div>
+        </li>
+      </ol>
+      <div className={styles.apiTutorialLinks}>
+        <a href="https://helpdocs.ycloud.com/help-center/whatsapp-accounts-management/create-a-whatsapp-api-account/whatsapp-business-app-coexistence" target="_blank" rel="noopener noreferrer">
+          Guia de coexistencia
+        </a>
+        <a href="https://docs.ycloud.com/reference/introduction" target="_blank" rel="noopener noreferrer">
+          Documentacion API
+        </a>
+      </div>
+    </div>
   )
 
   const renderApiStage = () => {
@@ -654,24 +701,14 @@ export const WhatsAppSettings: React.FC = () => {
 
           <div className={styles.apiDetailsGrid}>
             <div>
-              <span>Numero</span>
-              <strong>{selectedApiPhone?.display_phone_number || selectedApiPhone?.phone_number || apiStatus.sender.phone || 'Sin numero'}</strong>
-              <small>{selectedApiPhone?.status || 'Sin status'} · Calidad {selectedApiPhone?.quality_rating || 'UNKNOWN'}</small>
-            </div>
-            <div>
               <span>Limite</span>
               <strong>{selectedApiPhone?.messaging_limit || 'Sin dato'}</strong>
-              <small>WABA {selectedApiPhone?.waba_id || apiStatus.sender.wabaId || 'Sin WABA'}</small>
+              <small>Conversaciones iniciadas por el negocio</small>
             </div>
             <div>
-              <span>Webhook</span>
-              <strong>{apiStatus.webhook.status || 'activo'}</strong>
-              <small>{apiStatus.webhook.url || 'Sin URL'}</small>
-            </div>
-            <div>
-              <span>Ultima sync</span>
-              <strong>{formatDateTime(apiStatus.timestamps.lastSyncedAt) || 'Pendiente'}</strong>
-              <small>{apiStatus.webhook.id || 'Sin endpoint'}</small>
+              <span>Calidad</span>
+              <strong>{selectedApiPhone?.quality_rating || 'UNKNOWN'}</strong>
+              <small>{selectedApiPhone?.status || 'Sin estado'}</small>
             </div>
           </div>
 
@@ -791,9 +828,10 @@ export const WhatsAppSettings: React.FC = () => {
     return (
       <div className={styles.apiIdleState}>
         <span className={styles.apiLogoMark}><Cloud size={42} /></span>
-        <h3>Conectar WhatsApp_API</h3>
-        <p>YCloud · Cloud API oficial</p>
+        <h3>Conectar WhatsApp Business</h3>
+        <p>YCloud · WhatsApp Business oficial</p>
         {apiStatus?.lastError && <p className={styles.errorText}>{apiStatus.lastError}</p>}
+        {renderYCloudGuide()}
         {renderApiForm()}
       </div>
     )
@@ -927,7 +965,7 @@ export const WhatsAppSettings: React.FC = () => {
           onClick={() => setActiveChannel('api')}
         >
           <Cloud size={17} />
-          WhatsApp_API
+          WhatsApp Business
         </button>
         <button
           type="button"
