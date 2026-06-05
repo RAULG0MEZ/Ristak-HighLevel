@@ -3163,10 +3163,10 @@ const RSTK_BASE_CSS = `
   .rstk-kind-landing h2{font-family:var(--rstk-display)}
   .rstk-kind-landing .rstk-text{font-size:1.06rem;line-height:1.7}
 
-  .rstk-kind-landing .rstk-kicker{display:inline-flex;align-items:center;gap:8px;width:fit-content;padding:7px 14px 7px 12px;border:var(--rstk-block-border-width,1px) solid var(--rstk-block-border,var(--rstk-border));border-radius:999px;background:var(--rstk-block-bg,var(--rstk-surface));color:var(--rstk-muted);font-size:.72rem;font-weight:700;letter-spacing:0;text-transform:uppercase}
+  .rstk-kind-landing .rstk-kicker{display:inline-flex;align-items:center;gap:8px;width:fit-content;padding:7px 14px 7px 12px;border:var(--rstk-block-border-width,0) solid var(--rstk-block-border,var(--rstk-border));border-radius:999px;background:var(--rstk-block-bg,transparent);color:var(--rstk-muted);font-size:.72rem;font-weight:700;letter-spacing:0;text-transform:uppercase}
   .rstk-kind-landing .rstk-kicker::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--rstk-accent)}
 
-  .rstk-kind-landing .rstk-hero{position:relative;isolation:isolate;overflow:hidden;gap:22px;justify-items:var(--rstk-block-justify,center);text-align:var(--rstk-block-align,center);padding:clamp(32px,4.8vw,68px) clamp(20px,3.2vw,44px);border:var(--rstk-block-border-width,1px) solid var(--rstk-block-border,var(--rstk-border));border-radius:var(--rstk-block-radius,clamp(22px,3vw,32px));background:var(--rstk-block-bg,var(--rstk-surface))}
+  .rstk-kind-landing .rstk-hero{position:relative;isolation:isolate;overflow:hidden;gap:22px;justify-items:var(--rstk-block-justify,center);text-align:var(--rstk-block-align,center);padding:clamp(32px,4.8vw,68px) clamp(20px,3.2vw,44px);border:var(--rstk-block-border-width,0) solid var(--rstk-block-border,transparent);border-radius:var(--rstk-block-radius,0);background:var(--rstk-block-bg,transparent)}
   .rstk-kind-landing .rstk-hero::before,.rstk-kind-landing .rstk-hero::after{content:none}
   .rstk-kind-landing .rstk-hero .rstk-headline{font-size:clamp(2.6rem,6.2vw,4.6rem);max-width:var(--rstk-content-max,16ch)}
   .rstk-kind-landing .rstk-hero .rstk-subheading{margin-left:var(--rstk-content-margin-left,auto);margin-right:var(--rstk-content-margin-right,auto)}
@@ -3174,15 +3174,15 @@ const RSTK_BASE_CSS = `
   .rstk-kind-landing .rstk-section-list{gap:clamp(20px,3vw,38px)}
   .rstk-kind-landing .rstk-section-list h2{text-align:var(--rstk-block-align,center);max-width:var(--rstk-content-max,20ch);margin-left:var(--rstk-content-margin-left,auto);margin-right:var(--rstk-content-margin-right,auto);font-size:clamp(1.85rem,3.4vw,2.85rem);line-height:1.08;letter-spacing:0}
   .rstk-kind-landing .rstk-list-grid{gap:16px}
-  .rstk-kind-landing .rstk-list-grid article{padding:24px;border-radius:var(--rstk-card-radius,18px);background:var(--rstk-card-bg,var(--rstk-block-bg,var(--rstk-surface)));transition:border-color .15s ease}
+  .rstk-kind-landing .rstk-list-grid article{padding:24px;border:var(--rstk-card-border-width,var(--rstk-block-border-width,0)) solid var(--rstk-card-border,var(--rstk-block-border,transparent));border-radius:var(--rstk-card-radius,0);background:var(--rstk-card-bg,var(--rstk-block-bg,transparent));transition:border-color .15s ease}
   .rstk-kind-landing .rstk-list-grid article:hover{border-color:color-mix(in srgb,var(--rstk-ink) 22%,transparent)}
   .rstk-kind-landing .rstk-list-grid strong{font-size:1.06rem}
 
-  .rstk-kind-landing .rstk-checklist{padding:clamp(24px,3vw,40px);border:var(--rstk-block-border-width,1px) solid var(--rstk-block-border,var(--rstk-border));border-radius:var(--rstk-block-radius,24px);background:var(--rstk-block-bg,var(--rstk-surface));width:100%;margin-inline:auto}
+  .rstk-kind-landing .rstk-checklist{padding:clamp(24px,3vw,40px);border:var(--rstk-block-border-width,0) solid var(--rstk-block-border,transparent);border-radius:var(--rstk-block-radius,0);background:var(--rstk-block-bg,transparent);width:100%;margin-inline:auto}
   .rstk-kind-landing .rstk-checklist h2{text-align:var(--rstk-block-align,center);margin-bottom:4px}
   .rstk-kind-landing .rstk-check-body strong{font-size:1.04rem}
 
-  .rstk-kind-landing .rstk-cta{position:relative;overflow:hidden;justify-items:var(--rstk-block-justify,center);text-align:var(--rstk-block-align,center);gap:18px;padding:clamp(30px,4.4vw,62px) clamp(20px,3.2vw,44px);border:var(--rstk-block-border-width,1px) solid var(--rstk-block-border,var(--rstk-border));border-radius:var(--rstk-block-radius,clamp(24px,3vw,32px));background:var(--rstk-block-bg,var(--rstk-surface))}
+  .rstk-kind-landing .rstk-cta{position:relative;overflow:hidden;justify-items:var(--rstk-block-justify,center);text-align:var(--rstk-block-align,center);gap:18px;padding:clamp(30px,4.4vw,62px) clamp(20px,3.2vw,44px);border:var(--rstk-block-border-width,0) solid var(--rstk-block-border,transparent);border-radius:var(--rstk-block-radius,0);background:var(--rstk-block-bg,transparent)}
   .rstk-kind-landing .rstk-cta::after{content:none}
   .rstk-kind-landing .rstk-cta > *{position:relative;z-index:1}
   .rstk-kind-landing .rstk-cta h2{font-size:clamp(2rem,4vw,3.1rem)}
@@ -3192,7 +3192,7 @@ const RSTK_BASE_CSS = `
   .rstk-kind-landing .rstk-button-link:hover{transform:none;box-shadow:none}
 
   .rstk-kind-landing .rstk-media,.rstk-kind-landing .rstk-video,.rstk-kind-landing .rstk-embed{border-radius:var(--rstk-media-radius,var(--rstk-block-radius,clamp(16px,2vw,22px)));box-shadow:none}
-  .rstk-kind-landing .rstk-embedded-form{padding:clamp(24px,3vw,40px);border:var(--rstk-block-border-width,1px) solid var(--rstk-block-border,var(--rstk-border));border-radius:var(--rstk-block-radius,24px);background:var(--rstk-block-bg,var(--rstk-surface));width:100%;margin-inline:auto}
+  .rstk-kind-landing .rstk-embedded-form{padding:clamp(24px,3vw,40px);border:var(--rstk-block-border-width,0) solid var(--rstk-block-border,transparent);border-radius:var(--rstk-block-radius,0);background:var(--rstk-block-bg,transparent);width:100%;margin-inline:auto}
 
   @media (max-width:640px){
     .rstk-kind-landing .rstk-hero{padding:clamp(32px,8vw,56px) 20px}

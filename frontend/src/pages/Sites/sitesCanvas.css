@@ -186,10 +186,10 @@
 .rstkCanvas.rstk-kind-landing h2 { font-family: var(--rstk-display); }
 .rstkCanvas.rstk-kind-landing .rstk-text { font-size: 1.06rem; line-height: 1.7; }
 
-.rstkCanvas.rstk-kind-landing .rstk-kicker { display: inline-flex; align-items: center; gap: 8px; width: fit-content; padding: 7px 14px 7px 12px; border: var(--rstk-block-border-width, 1px) solid var(--rstk-block-border, var(--rstk-border)); border-radius: 999px; background: var(--rstk-block-bg, var(--rstk-surface)); color: var(--rstk-muted); font-size: .72rem; font-weight: 700; letter-spacing: 0; text-transform: uppercase; }
+.rstkCanvas.rstk-kind-landing .rstk-kicker { display: inline-flex; align-items: center; gap: 8px; width: fit-content; padding: 7px 14px 7px 12px; border: var(--rstk-block-border-width, 0) solid var(--rstk-block-border, var(--rstk-border)); border-radius: 999px; background: var(--rstk-block-bg, transparent); color: var(--rstk-muted); font-size: .72rem; font-weight: 700; letter-spacing: 0; text-transform: uppercase; }
 .rstkCanvas.rstk-kind-landing .rstk-kicker::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--rstk-accent); }
 
-.rstkCanvas.rstk-kind-landing .rstk-hero { position: relative; isolation: isolate; overflow: hidden; gap: 22px; justify-items: var(--rstk-block-justify, center); text-align: var(--rstk-block-align, center); padding: clamp(32px, 4.8vw, 68px) clamp(20px, 3.2vw, 44px); border: var(--rstk-block-border-width, 1px) solid var(--rstk-block-border, var(--rstk-border)); border-radius: var(--rstk-block-radius, clamp(22px, 3vw, 32px)); background: var(--rstk-block-bg, var(--rstk-surface)); }
+.rstkCanvas.rstk-kind-landing .rstk-hero { position: relative; isolation: isolate; overflow: hidden; gap: 22px; justify-items: var(--rstk-block-justify, center); text-align: var(--rstk-block-align, center); padding: clamp(32px, 4.8vw, 68px) clamp(20px, 3.2vw, 44px); border: var(--rstk-block-border-width, 0) solid var(--rstk-block-border, transparent); border-radius: var(--rstk-block-radius, 0); background: var(--rstk-block-bg, transparent); }
 .rstkCanvas.rstk-kind-landing .rstk-hero::before,
 .rstkCanvas.rstk-kind-landing .rstk-hero::after { content: none; }
 .rstkCanvas.rstk-kind-landing .rstk-hero .rstk-headline { font-size: clamp(2.6rem, 6.2vw, 4.6rem); max-width: var(--rstk-content-max, 16ch); }
@@ -201,14 +201,14 @@
 .rstkCanvas.rstk-kind-landing .rstk-section-list { gap: clamp(20px, 3vw, 38px); }
 .rstkCanvas.rstk-kind-landing .rstk-section-list h2 { text-align: var(--rstk-block-align, center); max-width: var(--rstk-content-max, 20ch); margin-left: var(--rstk-content-margin-left, auto); margin-right: var(--rstk-content-margin-right, auto); font-size: clamp(1.85rem, 3.4vw, 2.85rem); line-height: 1.08; letter-spacing: 0; }
 .rstkCanvas.rstk-kind-landing .rstk-list-grid { gap: 16px; }
-.rstkCanvas.rstk-kind-landing .rstk-list-grid article { padding: 24px; border-radius: var(--rstk-card-radius, 18px); background: var(--rstk-card-bg, var(--rstk-block-bg, var(--rstk-surface))); }
+.rstkCanvas.rstk-kind-landing .rstk-list-grid article { padding: 24px; border: var(--rstk-card-border-width, var(--rstk-block-border-width, 0)) solid var(--rstk-card-border, var(--rstk-block-border, transparent)); border-radius: var(--rstk-card-radius, 0); background: var(--rstk-card-bg, var(--rstk-block-bg, transparent)); }
 .rstkCanvas.rstk-kind-landing .rstk-list-grid strong { font-size: 1.06rem; }
 
-.rstkCanvas.rstk-kind-landing .rstk-checklist { padding: clamp(24px, 3vw, 40px); border: var(--rstk-block-border-width, 1px) solid var(--rstk-block-border, var(--rstk-border)); border-radius: var(--rstk-block-radius, 24px); background: var(--rstk-block-bg, var(--rstk-surface)); width: 100%; margin-inline: auto; }
+.rstkCanvas.rstk-kind-landing .rstk-checklist { padding: clamp(24px, 3vw, 40px); border: var(--rstk-block-border-width, 0) solid var(--rstk-block-border, transparent); border-radius: var(--rstk-block-radius, 0); background: var(--rstk-block-bg, transparent); width: 100%; margin-inline: auto; }
 .rstkCanvas.rstk-kind-landing .rstk-checklist h2 { text-align: var(--rstk-block-align, center); margin-bottom: 4px; }
 .rstkCanvas.rstk-kind-landing .rstk-check-body strong { font-size: 1.04rem; }
 
-.rstkCanvas.rstk-kind-landing .rstk-cta { position: relative; overflow: hidden; justify-items: var(--rstk-block-justify, center); text-align: var(--rstk-block-align, center); gap: 18px; padding: clamp(30px, 4.4vw, 62px) clamp(20px, 3.2vw, 44px); border: var(--rstk-block-border-width, 1px) solid var(--rstk-block-border, var(--rstk-border)); border-radius: var(--rstk-block-radius, clamp(24px, 3vw, 32px)); background: var(--rstk-block-bg, var(--rstk-surface)); }
+.rstkCanvas.rstk-kind-landing .rstk-cta { position: relative; overflow: hidden; justify-items: var(--rstk-block-justify, center); text-align: var(--rstk-block-align, center); gap: 18px; padding: clamp(30px, 4.4vw, 62px) clamp(20px, 3.2vw, 44px); border: var(--rstk-block-border-width, 0) solid var(--rstk-block-border, transparent); border-radius: var(--rstk-block-radius, 0); background: var(--rstk-block-bg, transparent); }
 .rstkCanvas.rstk-kind-landing .rstk-cta::after { content: none; }
 .rstkCanvas.rstk-kind-landing .rstk-cta > * { position: relative; z-index: 1; }
 .rstkCanvas.rstk-kind-landing .rstk-cta h2 { font-size: clamp(2rem, 4vw, 3.1rem); }
@@ -216,7 +216,7 @@
 
 .rstkCanvas.rstk-kind-landing .rstk-button-link { border-radius: var(--rstk-block-button-radius, 999px); min-height: var(--rstk-button-height, 54px); padding: 0 var(--rstk-button-pad-x, 28px); font-family: var(--rstk-display); font-weight: 600; }
 .rstkCanvas.rstk-kind-landing .rstk-media, .rstkCanvas.rstk-kind-landing .rstk-video, .rstkCanvas.rstk-kind-landing .rstk-embed { border-radius: var(--rstk-media-radius, var(--rstk-block-radius, clamp(16px, 2vw, 22px))); box-shadow: none; }
-.rstkCanvas.rstk-kind-landing .rstk-embedded-form { padding: clamp(24px, 3vw, 40px); border: var(--rstk-block-border-width, 1px) solid var(--rstk-block-border, var(--rstk-border)); border-radius: var(--rstk-block-radius, 24px); background: var(--rstk-block-bg, var(--rstk-surface)); width: 100%; margin-inline: auto; }
+.rstkCanvas.rstk-kind-landing .rstk-embedded-form { padding: clamp(24px, 3vw, 40px); border: var(--rstk-block-border-width, 0) solid var(--rstk-block-border, transparent); border-radius: var(--rstk-block-radius, 0); background: var(--rstk-block-bg, transparent); width: 100%; margin-inline: auto; }
 
 /* ============================================================
  * Editor-only chrome (NOT part of the published page)

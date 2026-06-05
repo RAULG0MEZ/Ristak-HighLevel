@@ -325,7 +325,7 @@
 
 .createLibraryCard,
 .libraryCard {
-  min-height: 236px;
+  min-height: 292px;
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 8px;
   background: rgba(15, 23, 42, 0.16);
@@ -378,26 +378,27 @@
 .libraryCard {
   position: relative;
   display: grid;
-  grid-template-rows: 118px 1fr;
+  grid-template-rows: 178px 1fr;
   overflow: hidden;
   cursor: pointer;
 }
 
 .libraryCardPreview {
   position: relative;
-  display: grid;
-  align-content: start;
-  gap: 12px;
+  overflow: hidden;
   border-bottom: 1px solid rgba(148, 163, 184, 0.14);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0)),
     rgba(148, 163, 184, 0.08);
-  padding: 13px;
+  padding: 11px;
 }
 
 .libraryBrowserDots {
+  position: relative;
+  z-index: 2;
   display: flex;
   gap: 5px;
+  margin-bottom: 9px;
 }
 
 .libraryBrowserDots span {
@@ -407,22 +408,58 @@
   background: rgba(148, 163, 184, 0.5);
 }
 
-.libraryPreviewBody {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  color: var(--color-text-tertiary);
+.libraryPreviewViewport {
+  position: absolute;
+  inset: 28px 10px 10px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 6px;
+  background: var(--color-background-primary);
+  pointer-events: none;
 }
 
-.libraryPreviewBody span {
-  max-width: 150px;
+.libraryPreviewCanvas {
+  width: 560px;
+  min-height: 520px;
+  transform: scale(0.45);
+  transform-origin: top left;
+}
+
+.libraryPreviewCanvas :global(.rstk-frame) {
+  min-height: 520px;
+  padding: 22px 24px 48px;
+}
+
+.libraryPreviewCanvas :global(.rstk-shell) {
+  gap: 18px;
+}
+
+.libraryPreviewCanvas :global(.rstk-block-style) {
+  box-shadow: none;
+}
+
+.libraryPreviewCanvas :global(.rstk-embed iframe),
+.libraryPreviewCanvas :global(iframe) {
+  pointer-events: none;
+}
+
+.libraryPreviewType {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 2;
+  max-width: calc(100% - 20px);
   overflow: hidden;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-background-primary) 86%, transparent);
   color: var(--color-text-secondary);
-  font-size: 0.8rem;
+  padding: 4px 8px;
+  font-size: 0.72rem;
   font-weight: 850;
   text-overflow: ellipsis;
   white-space: nowrap;
+  backdrop-filter: blur(10px);
 }
 
 .libraryCardBody {
@@ -445,23 +482,6 @@
   color: var(--color-text-primary);
   font-size: 0.98rem;
   text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.libraryMetaGrid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.libraryMetaGrid span {
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 999px;
-  background: rgba(148, 163, 184, 0.08);
-  color: var(--color-text-secondary);
-  padding: 3px 7px;
-  font-size: 0.72rem;
-  font-weight: 800;
   white-space: nowrap;
 }
 
@@ -4156,4 +4176,259 @@
 .pageTitleInput:focus {
   border-color: rgba(var(--color-primary-rgb), 0.32);
   background: var(--color-background-secondary);
+}
+
+/* Product pass: Sites editor as one clear workspace, not stacked cards. */
+.containerFocused {
+  width: calc(100% - 24px);
+  max-width: none;
+  margin: 12px auto;
+  padding: 16px;
+}
+
+.containerFocused .builder {
+  padding-top: 14px;
+}
+
+.builderGridLanding {
+  grid-template-columns: 208px minmax(0, 1fr) 312px;
+}
+
+.builderGridForm {
+  grid-template-columns: 208px minmax(0, 1fr) 312px;
+}
+
+.containerFocused .builderGridLanding {
+  grid-template-columns: 208px minmax(0, 1fr) 312px;
+}
+
+.containerFocused .builderGridForm {
+  grid-template-columns: 208px minmax(0, 1fr) 312px;
+}
+
+.containerFocused :global(.canvasViewport) {
+  min-height: calc(100vh - var(--header-height) - 194px);
+  max-height: calc(100vh - var(--header-height) - 194px);
+}
+
+.pagesPanel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border: 0;
+  border-bottom: 1px solid var(--color-border-subtle, rgba(148, 163, 184, 0.2));
+  border-radius: 0;
+  background: transparent;
+  padding: 0 0 10px;
+  box-shadow: none;
+}
+
+.pageTabsLead {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  font-weight: 850;
+}
+
+.pageList {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 1px 2px 2px;
+  scrollbar-width: thin;
+}
+
+.pageItemWrap {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: minmax(112px, 168px) 30px;
+  gap: 3px;
+}
+
+.pageItem,
+.pageMenuButton,
+.addPageButton {
+  min-height: 34px;
+  border-radius: 8px;
+}
+
+.pageItem {
+  background: transparent;
+}
+
+.pageItemActive,
+.pageItem:hover {
+  background: var(--color-background-primary);
+  border-color: rgba(var(--color-primary-rgb), 0.36);
+}
+
+.addPageButton {
+  flex: 0 0 auto;
+  width: auto;
+  margin-top: 0;
+  border-style: solid;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
+.containerFocused .pagesPanel,
+.containerFocused .palette {
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.containerFocused .palette {
+  border: 0;
+}
+
+.containerFocused .blocksRail {
+  padding-right: 14px;
+}
+
+.containerFocused .canvasColumn {
+  padding: 0 16px;
+}
+
+.editorTopControls .metaCard {
+  flex: 0 1 430px;
+  min-width: min(430px, 100%);
+  max-width: 430px;
+}
+
+.editorTopControls .metaCardInfo {
+  min-width: 88px;
+}
+
+.editorTopControls .metaCardField {
+  min-width: 128px;
+}
+
+.editorTopControls .metaCardField select {
+  width: 128px;
+}
+
+.propertiesPanel .metaCard {
+  width: 100%;
+  min-width: 0;
+}
+
+.settingsGroup,
+.blockStyleControls {
+  background: var(--color-background-primary);
+  background-image: none;
+  overflow: visible;
+}
+
+.colorField {
+  isolation: isolate;
+}
+
+.colorField:has(.colorPopover) {
+  z-index: 2600;
+}
+
+.colorPopover {
+  z-index: 2600;
+  box-shadow: 0 24px 70px -42px rgba(15, 23, 42, 0.75);
+}
+
+.colorSlider input,
+.alphaSlider input {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 18px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.colorSlider input::-webkit-slider-runnable-track,
+.alphaSlider input::-webkit-slider-runnable-track {
+  height: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  border-radius: 999px;
+}
+
+.colorSlider input::-webkit-slider-runnable-track {
+  background: linear-gradient(90deg, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000);
+}
+
+.alphaSlider input::-webkit-slider-runnable-track {
+  background:
+    linear-gradient(45deg, rgba(148, 163, 184, 0.28) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(148, 163, 184, 0.28) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(148, 163, 184, 0.28) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(148, 163, 184, 0.28) 75%),
+    linear-gradient(90deg, rgba(0, 0, 0, 0), var(--alpha-color, #000000));
+  background-position: 0 0, 0 4px, 4px -4px, -4px 0, 0 0;
+  background-size: 8px 8px, 8px 8px, 8px 8px, 8px 8px, 100% 100%;
+}
+
+.colorSlider input::-moz-range-track,
+.alphaSlider input::-moz-range-track {
+  height: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  border-radius: 999px;
+}
+
+.colorSlider input::-moz-range-track {
+  background: linear-gradient(90deg, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000);
+}
+
+.alphaSlider input::-moz-range-track {
+  background:
+    linear-gradient(45deg, rgba(148, 163, 184, 0.28) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(148, 163, 184, 0.28) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(148, 163, 184, 0.28) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(148, 163, 184, 0.28) 75%),
+    linear-gradient(90deg, rgba(0, 0, 0, 0), var(--alpha-color, #000000));
+  background-position: 0 0, 0 4px, 4px -4px, -4px 0, 0 0;
+  background-size: 8px 8px, 8px 8px, 8px 8px, 8px 8px, 100% 100%;
+}
+
+.colorSlider input::-webkit-slider-thumb,
+.alphaSlider input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -6px;
+  border: 2px solid var(--color-background-primary);
+  border-radius: 999px;
+  background: var(--color-text-primary);
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.32);
+}
+
+.colorSlider input::-moz-range-thumb,
+.alphaSlider input::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--color-background-primary);
+  border-radius: 999px;
+  background: var(--color-text-primary);
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.32);
+}
+
+@media (max-width: 1280px) {
+  .builderGridLanding,
+  .builderGridForm,
+  .containerFocused .builderGridLanding,
+  .containerFocused .builderGridForm {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .containerFocused :global(.canvasViewport) {
+    min-height: 620px;
+    max-height: none;
+  }
+
+  .editorTopControls .metaCard {
+    max-width: 100%;
+  }
 }

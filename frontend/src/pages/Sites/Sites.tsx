@@ -101,7 +101,7 @@ interface LeadRow extends SiteSubmission {
 }
 
 const sectionItems: Array<{ id: SitesSection; label: string; icon: React.ReactNode }> = [
-  { id: 'landings', label: 'Landing pages ("sitio web")', icon: <LayoutTemplate size={17} /> },
+  { id: 'landings', label: 'Sitios embudo', icon: <LayoutTemplate size={17} /> },
   { id: 'forms', label: 'Formularios', icon: <FormInput size={17} /> },
   { id: 'leads', label: 'Respuestas / Leads', icon: <ListChecks size={17} /> },
   { id: 'domains', label: 'Dominios', icon: <Globe2 size={17} /> }
@@ -241,13 +241,6 @@ const getStatusClass = (site: PublicSite, domainConfig: SitesDomainConfig) => {
   if (!domainConfig.domain || !domainConfig.renderDomainVerified) return styles.statusWarning
   return styles.statusSuccess
 }
-
-const getTrackingStats = (site?: PublicSite | null) => ({
-  views: site?.trackingStats?.views || 0,
-  visitors: site?.trackingStats?.visitors || 0,
-  conversions: site?.trackingStats?.conversions || site?.submissionsCount || 0,
-  conversionRate: site?.trackingStats?.conversionRate || 0
-})
 
 const normalizeRouteInput = (value: string) => value
   .normalize('NFD')
@@ -393,13 +386,13 @@ const platformChromeFor = (id: SiteTemplateId): 'facebook' | 'instagram' | 'tikt
 }
 
 const getCreateButtonLabel = (section: SitesSection) => {
-  if (section === 'landings') return 'Crear landing page ("sitio web")'
+  if (section === 'landings') return 'Crear sitio embudo'
   if (section === 'forms') return 'Crear formulario'
   return 'Nuevo sitio'
 }
 
 const getLibraryTitle = (section: SitesSection) => {
-  if (section === 'landings') return 'Landing pages ("sitio web")'
+  if (section === 'landings') return 'Sitios embudo'
   if (section === 'forms') return 'Formularios'
   return 'Sitios'
 }
@@ -411,13 +404,13 @@ const getLibraryDescription = (section: SitesSection) => {
 }
 
 const getLibraryEmptyMessage = (section: SitesSection) => {
-  if (section === 'landings') return 'Crea una landing page para verla aqui como tarjeta editable.'
+  if (section === 'landings') return 'Crea un sitio embudo para verlo aqui como tarjeta editable.'
   if (section === 'forms') return 'Crea un formulario para verlo aqui como tarjeta editable.'
   return getEmptyEditorMessage(section)
 }
 
 const getSiteTypeLabel = (site: PublicSite) => {
-  if (site.siteType === 'landing_page') return 'Landing page'
+  if (site.siteType === 'landing_page') return 'Sitio embudo'
   if (site.siteType === 'interactive_form') return 'Formulario interactivo'
   return 'Formulario'
 }
@@ -428,9 +421,20 @@ const getCreateFlowForSection = (section: SitesSection): CreateFlow => {
 }
 
 const getEmptyEditorMessage = (section: SitesSection) => {
-  if (section === 'landings') return 'Crea una landing page para entrar al editor visual.'
+  if (section === 'landings') return 'Crea un sitio embudo para entrar al editor visual.'
   if (section === 'forms') return 'Crea un formulario para entrar al editor visual.'
-  return 'Crea una landing o formulario para entrar al editor visual.'
+  return 'Crea un sitio embudo o formulario para entrar al editor visual.'
+}
+
+const getLibraryPreviewBlocks = (site: PublicSite) => {
+  const blocks = [...(site.blocks || [])].sort((a, b) => a.sortOrder - b.sortOrder)
+  if (!isLanding(site)) return blocks.slice(0, 4)
+
+  const pages = normalizeFunnelPages(site)
+  const firstPageId = pages[0]?.id || DEFAULT_FUNNEL_PAGE_ID
+  return blocks
+    .filter(block => getBlockPageId(block, pages) === firstPageId)
+    .slice(0, 4)
 }
 
 const getSettingString = (settings: Record<string, unknown>, key: string) => {
@@ -922,7 +926,7 @@ const defaultBlockPayload = (blockType: SiteBlockType, siteId: string, siteType?
       settings: blockSettings({
         textAlign: 'center',
         kicker: 'Nuevo',
-        subtitle: 'Subtitulo de la landing',
+        subtitle: 'Subtitulo del sitio embudo',
         buttonText: 'Comenzar',
         buttonUrl: '#form',
         ...DEFAULT_BUTTON_SETTINGS
@@ -1053,8 +1057,13 @@ export const Sites: React.FC = () => {
   const [leadRows, setLeadRows] = useState<LeadRow[]>([])
   const [loadingLeads, setLoadingLeads] = useState(false)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const selectedSiteRef = useRef<PublicSite | null>(null)
   const guardHistoryArmedRef = useRef(false)
   const allowNavigationRef = useRef(false)
+
+  useEffect(() => {
+    selectedSiteRef.current = selectedSite
+  }, [selectedSite])
 
   const landings = useMemo(
     () => sites.filter(site => site.siteType === 'landing_page'),
@@ -1378,6 +1387,7 @@ export const Sites: React.FC = () => {
   }
 
   const syncSelectedSite = (site: PublicSite) => {
+    selectedSiteRef.current = site
     setSelectedSite(site)
     setSelectedBlockId(current => site.blocks?.some(block => block.id === current) ? current : '')
     setSites(current => current.map(item => item.id === site.id ? { ...item, ...site } : item))
@@ -1385,12 +1395,20 @@ export const Sites: React.FC = () => {
 
   const updateSelectedSite = (patch: Partial<PublicSite>) => {
     markEditorDirty()
-    setSelectedSite(current => current ? { ...current, ...patch } : current)
+    const current = selectedSiteRef.current
+    if (!current) return
+    const next = { ...current, ...patch }
+    selectedSiteRef.current = next
+    setSelectedSite(next)
   }
 
   const patchSiteTheme = (patch: Partial<SiteTheme>) => {
     markEditorDirty()
-    setSelectedSite(current => current ? { ...current, theme: { ...(current.theme || {}), ...patch } } : current)
+    const current = selectedSiteRef.current
+    if (!current) return
+    const next = { ...current, theme: { ...(current.theme || {}), ...patch } }
+    selectedSiteRef.current = next
+    setSelectedSite(next)
   }
 
   const saveSiteTheme = async (site: PublicSite, theme: SiteTheme) => {
@@ -1554,10 +1572,10 @@ export const Sites: React.FC = () => {
       const template: SiteTemplateId = templateId
         || (siteType === 'interactive_form' ? 'interactive' : siteType === 'landing_page' ? 'ristak' : 'ristak')
       let site = await sitesService.createSite({
-        name: siteType === 'landing_page' ? 'Nueva landing' : siteType === 'interactive_form' ? 'Nuevo formulario interactivo' : 'Nuevo formulario',
+        name: siteType === 'landing_page' ? 'Nuevo sitio embudo' : siteType === 'interactive_form' ? 'Nuevo formulario interactivo' : 'Nuevo formulario',
         siteType,
         slug: getNextRouteSlug(siteType, sites),
-        title: siteType === 'landing_page' ? 'Nueva landing' : 'Nuevo formulario',
+        title: siteType === 'landing_page' ? 'Nuevo sitio embudo' : 'Nuevo formulario',
         theme: {
           template,
           ...(siteType === 'landing_page' ? { pages: normalizePagesForSave([{ id: DEFAULT_FUNNEL_PAGE_ID, title: 'Pagina 1', sortOrder: 0 }]) } : {})
@@ -1595,19 +1613,20 @@ export const Sites: React.FC = () => {
   }
 
   const handleSaveSite = async (statusOverride?: PublicSite['status'], options: { silent?: boolean } = {}) => {
-    if (!selectedSite) return
+    const siteToSave = selectedSiteRef.current || selectedSite
+    if (!siteToSave) return
     setSaving(true)
     try {
-      const site = await sitesService.updateSite(selectedSite.id, {
-        name: selectedSite.name,
-        slug: selectedSite.slug,
-        siteType: selectedSite.siteType,
-        status: statusOverride || selectedSite.status,
-        title: selectedSite.title,
-        description: selectedSite.description,
-        theme: selectedSite.theme,
-        metaCapiEnabled: selectedSite.metaCapiEnabled,
-        metaEventName: selectedSite.metaEventName
+      const site = await sitesService.updateSite(siteToSave.id, {
+        name: siteToSave.name,
+        slug: siteToSave.slug,
+        siteType: siteToSave.siteType,
+        status: statusOverride || siteToSave.status,
+        title: siteToSave.title,
+        description: siteToSave.description,
+        theme: siteToSave.theme,
+        metaCapiEnabled: siteToSave.metaCapiEnabled,
+        metaEventName: siteToSave.metaEventName
       })
       syncSelectedSite(site)
       setHasUnsavedChanges(false)
@@ -1742,13 +1761,14 @@ export const Sites: React.FC = () => {
 
   const patchBlockLocal = (blockId: string, patch: Partial<SiteBlock>) => {
     markEditorDirty()
-    setSelectedSite(current => {
-      if (!current?.blocks) return current
-      return {
-        ...current,
-        blocks: current.blocks.map(block => block.id === blockId ? { ...block, ...patch } : block)
-      }
-    })
+    const current = selectedSiteRef.current
+    if (!current?.blocks) return
+    const next = {
+      ...current,
+      blocks: current.blocks.map(block => block.id === blockId ? { ...block, ...patch } : block)
+    }
+    selectedSiteRef.current = next
+    setSelectedSite(next)
   }
 
   const patchSelectedBlock = (patch: Partial<SiteBlock>) => {
@@ -1767,9 +1787,10 @@ export const Sites: React.FC = () => {
   }
 
   const patchBlockSettingsLocal = (block: SiteBlock, patch: Record<string, unknown>) => {
+    const currentBlock = (selectedSiteRef.current?.blocks || []).find(item => item.id === block.id) || block
     patchBlockLocal(block.id, {
       settings: {
-        ...(block.settings || {}),
+        ...(currentBlock.settings || {}),
         ...patch
       }
     })
@@ -1777,36 +1798,38 @@ export const Sites: React.FC = () => {
 
   const patchBlockCategorySettingsLocal = (sourceBlock: SiteBlock, patch: Record<string, unknown>) => {
     markEditorDirty()
-    const sourcePageId = isLanding(selectedSite) ? getBlockPageId(sourceBlock, pages) : ''
-    setSelectedSite(current => {
-      if (!current?.blocks) return current
-      return {
-        ...current,
-        blocks: current.blocks.map(block => {
-          const sameType = block.blockType === sourceBlock.blockType
-          const samePage = !isLanding(current) || getBlockPageId(block, pages) === sourcePageId
-          return sameType && samePage
-            ? { ...block, settings: { ...(block.settings || {}), ...patch } }
-            : block
-        })
-      }
-    })
+    const current = selectedSiteRef.current
+    if (!current?.blocks) return
+    const sourcePageId = isLanding(current) ? getBlockPageId(sourceBlock, pages) : ''
+    const next = {
+      ...current,
+      blocks: current.blocks.map(block => {
+        const sameType = block.blockType === sourceBlock.blockType
+        const samePage = !isLanding(current) || getBlockPageId(block, pages) === sourcePageId
+        return sameType && samePage
+          ? { ...block, settings: { ...(block.settings || {}), ...patch } }
+          : block
+      })
+    }
+    selectedSiteRef.current = next
+    setSelectedSite(next)
   }
 
   const handleSaveBlockCategory = async (sourceBlock = selectedBlock) => {
-    if (!selectedSite?.blocks || !sourceBlock) return
-    const sourcePageId = isLanding(selectedSite) ? getBlockPageId(sourceBlock, pages) : ''
-    const targets = selectedSite.blocks.filter(block => {
+    const siteToSave = selectedSiteRef.current || selectedSite
+    if (!siteToSave?.blocks || !sourceBlock) return
+    const sourcePageId = isLanding(siteToSave) ? getBlockPageId(sourceBlock, pages) : ''
+    const targets = siteToSave.blocks.filter(block => {
       const sameType = block.blockType === sourceBlock.blockType
-      const samePage = !isLanding(selectedSite) || getBlockPageId(block, pages) === sourcePageId
+      const samePage = !isLanding(siteToSave) || getBlockPageId(block, pages) === sourcePageId
       return sameType && samePage
     })
     if (!targets.length) return
 
     try {
-      let site = selectedSite
+      let site = siteToSave
       for (const block of targets) {
-        site = await sitesService.updateBlock(selectedSite.id, block.id, block)
+        site = await sitesService.updateBlock(siteToSave.id, block.id, block)
       }
       syncSelectedSite(site)
       setHasUnsavedChanges(false)
@@ -1816,12 +1839,13 @@ export const Sites: React.FC = () => {
   }
 
   const handleSaveBlock = async (blockId = selectedBlock?.id) => {
-    if (!selectedSite?.blocks || !blockId) return
-    const block = selectedSite.blocks.find(item => item.id === blockId)
+    const siteToSave = selectedSiteRef.current || selectedSite
+    if (!siteToSave?.blocks || !blockId) return
+    const block = siteToSave.blocks.find(item => item.id === blockId)
     if (!block) return
 
     try {
-      const site = await sitesService.updateBlock(selectedSite.id, block.id, block)
+      const site = await sitesService.updateBlock(siteToSave.id, block.id, block)
       syncSelectedSite(site)
       setHasUnsavedChanges(false)
     } catch (error) {
@@ -1968,14 +1992,34 @@ export const Sites: React.FC = () => {
                 <div className={`${styles.metaCard} ${editorSite.metaCapiEnabled ? styles.metaCardActive : ''}`}>
                   <span className={styles.metaMark} aria-hidden="true">∞</span>
                   <div className={styles.metaCardInfo}>
-                    <strong>Meta del sitio</strong>
-                    <small>{editorSite.metaCapiEnabled ? 'PageView activo en todas las paginas' : 'Pixel y CAPI apagados'}</small>
+                    <strong>Meta Pixel + CAPI</strong>
+                    <small>{editorSite.metaCapiEnabled ? 'Page view' : 'Apagado'}</small>
                   </div>
+                  <div className={styles.metaCardDivider} aria-hidden="true" />
+                  <label className={styles.metaCardField}>
+                    <span>Evento</span>
+                    <select
+                      value={normalizeMetaEventName(editorSite.metaEventName, 'none')}
+                      disabled={!editorSite.metaCapiEnabled}
+                      onChange={(event) => {
+                        updateSelectedSite({ metaEventName: event.target.value })
+                        window.setTimeout(() => handleSaveSite(undefined, { silent: true }), 0)
+                      }}
+                      onBlur={() => handleSaveSite(undefined, { silent: true })}
+                    >
+                      {metaEventOptions.map(option => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
                   <label className={styles.metaSwitch} title={editorSite.metaCapiEnabled ? 'Desactivar' : 'Activar'}>
                     <input
                       type="checkbox"
                       checked={editorSite.metaCapiEnabled}
-                      onChange={(event) => updateSelectedSite({ metaCapiEnabled: event.target.checked })}
+                      onChange={(event) => {
+                        updateSelectedSite({ metaCapiEnabled: event.target.checked })
+                        window.setTimeout(() => handleSaveSite(undefined, { silent: true }), 0)
+                      }}
                     />
                     <span className={styles.metaSwitchTrack} aria-hidden="true" />
                   </label>
@@ -2007,7 +2051,7 @@ export const Sites: React.FC = () => {
                 )}
                 <h1 className={styles.title}>Sitios</h1>
               </div>
-              <p className={styles.subtitle}>Constructor visual controlado para landings, formularios, leads y publicacion por dominio verificado.</p>
+              <p className={styles.subtitle}>Constructor visual controlado para sitios embudo, formularios, leads y publicacion por dominio verificado.</p>
             </div>
           )}
         </header>
@@ -2062,7 +2106,8 @@ export const Sites: React.FC = () => {
               <SitesLibraryPanel
                 section={section}
                 sites={section === 'landings' ? landings : forms}
-                creating={creating}
+                forms={forms}
+                calendars={calendars}
                 selectedSiteId={selectedSite?.id || ''}
                 onCreate={handleStartCreateFlow}
                 onEdit={selectSite}
@@ -2073,23 +2118,6 @@ export const Sites: React.FC = () => {
             ) : editorSite ? (
               <section className={styles.builder}>
               <div className={`${styles.builderGrid} ${isLanding(editorSite) ? styles.builderGridLanding : styles.builderGridForm}`}>
-                {isLanding(editorSite) && (
-                  <div className={styles.pagesRail}>
-                    <FunnelPagesPanel
-                      pages={pages}
-                      activePageId={activePage?.id || DEFAULT_FUNNEL_PAGE_ID}
-                      draggingPageId={draggingPageId}
-                      onSelectPage={setActivePageId}
-                      onAddPage={handleAddPage}
-                      onDuplicatePage={handleDuplicatePage}
-                      onDeletePage={handleDeletePage}
-                      onDragPage={setDraggingPageId}
-                      onReorderPages={handleReorderPages}
-                      onRenamePage={handleRenamePage}
-                    />
-                  </div>
-                )}
-
                 <div className={styles.blocksRail}>
                   <Palette
                     blockTypes={isLanding(editorSite) ? landingBlockTypes : formBlockTypes}
@@ -2104,9 +2132,23 @@ export const Sites: React.FC = () => {
                 </div>
 
                 <section className={styles.canvasColumn}>
+                  {isLanding(editorSite) && (
+                    <FunnelPagesPanel
+                      pages={pages}
+                      activePageId={activePage?.id || DEFAULT_FUNNEL_PAGE_ID}
+                      draggingPageId={draggingPageId}
+                      onSelectPage={setActivePageId}
+                      onAddPage={handleAddPage}
+                      onDuplicatePage={handleDuplicatePage}
+                      onDeletePage={handleDeletePage}
+                      onDragPage={setDraggingPageId}
+                      onReorderPages={handleReorderPages}
+                      onRenamePage={handleRenamePage}
+                    />
+                  )}
                   <div className={styles.canvasToolbar}>
                     <div className={styles.canvasToolbarTitle}>
-                      <strong>{isLanding(editorSite) ? activePage?.title || 'Pagina 1' : 'Canvas'}</strong>
+                      {!isLanding(editorSite) && <strong>Canvas</strong>}
                       <span>{canvasBlocks.length} {canvasBlocks.length === 1 ? 'bloque' : 'bloques'}</span>
                     </div>
                     <div className={styles.deviceToggle} role="group" aria-label="Vista previa del dispositivo">
@@ -2257,7 +2299,8 @@ export const Sites: React.FC = () => {
 interface SitesLibraryPanelProps {
   section: SitesSection
   sites: PublicSite[]
-  creating: boolean
+  forms: PublicSite[]
+  calendars: CalendarType[]
   selectedSiteId: string
   domainConfig: SitesDomainConfig
   onCreate: () => void
@@ -2266,10 +2309,72 @@ interface SitesLibraryPanelProps {
   onDelete: (site: PublicSite) => void
 }
 
+const LibrarySitePreview: React.FC<{
+  site: PublicSite
+  forms: PublicSite[]
+  calendars: CalendarType[]
+}> = ({ site, forms, calendars }) => {
+  const pages = isLanding(site) ? normalizeFunnelPages(site) : []
+  const activePageId = pages[0]?.id || DEFAULT_FUNNEL_PAGE_ID
+  const blocks = getLibraryPreviewBlocks(site)
+  const canvasTheme = buildCanvasTheme(site, 'desktop')
+  const platform = !isLanding(site) ? platformChromeFor(resolveTemplateId(site)) : null
+  const hasFields = isFormSite(site) && blocks.some(block => fieldBlockTypes.has(block.blockType))
+
+  return (
+    <div className={styles.libraryPreviewViewport} aria-hidden="true" inert>
+      <div
+        className={`rstkCanvas ${canvasTheme.bodyClass} ${styles.libraryPreviewCanvas}`}
+        style={{ ...canvasTheme.vars, ['--rstk-scale' as string]: 1 } as React.CSSProperties}
+      >
+        <div className="rstk-frame">
+          <main className="rstk-page">
+            <div className="rstk-shell">
+              {platform && (
+                <CanvasChrome
+                  platform={platform}
+                  site={site}
+                  onPatchTheme={() => {}}
+                  onSave={() => {}}
+                />
+              )}
+              {blocks.length ? (
+                blocks.map(block => (
+                  <div key={block.id} className="rstk-block-style" style={getBlockCanvasStyle(block)}>
+                    <CanvasPreviewBlock
+                      block={block}
+                      blocks={blocks}
+                      forms={forms}
+                      calendars={calendars}
+                      pages={pages}
+                      activePageId={activePageId}
+                    />
+                  </div>
+                ))
+              ) : (
+                <div className="rstkDropEmpty">
+                  {isLanding(site) ? <LayoutTemplate size={22} /> : <FormInput size={22} />}
+                  <p>Sin bloques todavia</p>
+                </div>
+              )}
+              {hasFields && (
+                <div className="rstk-actions">
+                  <button type="button" data-submit>{site.theme?.submitText || 'Enviar'}</button>
+                </div>
+              )}
+            </div>
+          </main>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const SitesLibraryPanel: React.FC<SitesLibraryPanelProps> = ({
   section,
   sites,
-  creating,
+  forms,
+  calendars,
   selectedSiteId,
   domainConfig,
   onCreate,
@@ -2287,10 +2392,6 @@ const SitesLibraryPanel: React.FC<SitesLibraryPanelProps> = ({
           <h2>{getLibraryTitle(section)}</h2>
           <p>{getLibraryDescription(section)}</p>
         </div>
-        <Button onClick={onCreate} loading={creating}>
-          <Plus size={16} />
-          {getCreateButtonLabel(section)}
-        </Button>
       </div>
 
       <div className={styles.libraryGrid}>
@@ -2309,9 +2410,7 @@ const SitesLibraryPanel: React.FC<SitesLibraryPanelProps> = ({
         </button>
 
         {sites.map(site => {
-          const stats = getTrackingStats(site)
           const publicUrl = buildPublicUrl(site, domainConfig)
-          const pagesCount = isLanding(site) ? normalizeFunnelPages(site).length : 1
 
           return (
             <article
@@ -2333,10 +2432,8 @@ const SitesLibraryPanel: React.FC<SitesLibraryPanelProps> = ({
                   <span />
                   <span />
                 </div>
-                <div className={styles.libraryPreviewBody}>
-                  {isLanding(site) ? <LayoutTemplate size={30} /> : <FormInput size={30} />}
-                  <span>{getSiteTypeLabel(site)}</span>
-                </div>
+                <LibrarySitePreview site={site} forms={forms} calendars={calendars} />
+                <span className={styles.libraryPreviewType}>{getSiteTypeLabel(site)}</span>
               </div>
 
               <div className={styles.libraryCardBody}>
@@ -2345,12 +2442,6 @@ const SitesLibraryPanel: React.FC<SitesLibraryPanelProps> = ({
                   <span className={`${styles.statusPill} ${getStatusClass(site, domainConfig)}`}>{getStatusLabel(site, domainConfig)}</span>
                 </div>
                 <span className={styles.siteDomain}>{getPublicRouteLabel(site, domainConfig)}</span>
-                <div className={styles.libraryMetaGrid}>
-                  <span>{pagesCount} {pagesCount === 1 ? 'pagina' : 'paginas'}</span>
-                  <span>{stats.visitors} visitantes</span>
-                  <span>{stats.conversions} conv.</span>
-                  <span>{stats.conversionRate}%</span>
-                </div>
               </div>
 
               <div className={styles.libraryCardActions} aria-label={`Acciones para ${site.name}`}>
@@ -2442,13 +2533,13 @@ const TemplateCard: React.FC<{ id: SiteTemplateId; disabled: boolean; onPick: ()
 const CreateFlowPanel: React.FC<CreateFlowPanelProps> = ({ step, creating, onCreate, onCreateWithAI, onAdvance }) => {
   const isLandingFlow = step === 'landing-start' || step === 'landing-template'
   const heading = step === 'landing-template'
-    ? 'Elige el estilo de tu landing'
+    ? 'Elige el estilo de tu sitio embudo'
     : step === 'form-template'
       ? 'Donde se va a abrir tu formulario?'
       : step === 'interactive-template'
         ? 'Elige el estilo de tu formulario interactivo'
       : isLandingFlow
-        ? 'Como quieres iniciar la landing?'
+        ? 'Como quieres iniciar tu sitio embudo?'
         : 'Que tipo de formulario quieres?'
 
   return (
@@ -2463,7 +2554,7 @@ const CreateFlowPanel: React.FC<CreateFlowPanelProps> = ({ step, creating, onCre
             <ChevronRight size={15} /> Volver
           </button>
         )}
-        <span>{isLandingFlow ? 'Nueva landing ("sitio web")' : 'Nuevo formulario'}</span>
+        <span>{isLandingFlow ? 'Nuevo sitio embudo' : 'Nuevo formulario'}</span>
         <h2>{heading}</h2>
       </div>
 
@@ -2795,6 +2886,7 @@ const ColorField: React.FC<ColorFieldProps> = ({ label, value, onChange, onCommi
   const hsv = rgbToHsv(rgba)
   const hueRgb = hsvToRgb(hsv.h, 1, 1)
   const hueColor = rgbToHex(hueRgb.r, hueRgb.g, hueRgb.b)
+  const alphaColor = formatCssColor({ r: rgba.r, g: rgba.g, b: rgba.b, a: 1 })
   const [text, setText] = useState(color)
   const [open, setOpen] = useState(false)
 
@@ -2895,6 +2987,7 @@ const ColorField: React.FC<ColorFieldProps> = ({ label, value, onChange, onCommi
               min={0}
               max={100}
               value={Math.round(rgba.a * 100)}
+              style={{ ['--alpha-color' as string]: alphaColor } as React.CSSProperties}
               onChange={(event) => patchColor({ a: Number(event.target.value) / 100 })}
               onBlur={onCommit}
             />
@@ -3012,9 +3105,9 @@ const FunnelPagesPanel: React.FC<FunnelPagesPanelProps> = ({
 }) => {
   return (
     <aside className={styles.pagesPanel}>
-      <div className={styles.panelHeader}>
-        <strong>Paginas</strong>
-        <span>{pages.length}</span>
+      <div className={styles.pageTabsLead} aria-hidden="true">
+        <span>Paginas</span>
+        <ChevronRight size={15} />
       </div>
       <div className={styles.pageList}>
         {pages.map((page, index) => (
@@ -3167,6 +3260,7 @@ const Palette: React.FC<{
                   draggable
                   onDragStart={(event) => {
                     event.dataTransfer.effectAllowed = 'move'
+                    event.dataTransfer.dropEffect = 'move'
                     event.dataTransfer.setData('application/ristak-block', blockType)
                     onPaletteDragStart(blockType)
                   }}
@@ -3438,7 +3532,7 @@ const InlineBlockStyleControls: React.FC<{
           <div className={styles.twoColumn}>
             <ColorField
               label="Fondo"
-              value={getSettingHex(settings, 'blockBg', '#ffffff')}
+              value={getSettingHex(settings, 'blockBg', 'transparent')}
               onChange={(value) => onPatchSettings({ blockBg: value })}
               onCommit={onSave}
             />
@@ -3702,7 +3796,7 @@ const InlineBlockStyleControls: React.FC<{
           <div className={styles.twoColumn}>
             <ColorField
               label="Fondo tarjeta"
-              value={getSettingHex(settings, 'cardBg', '#ffffff')}
+              value={getSettingHex(settings, 'cardBg', 'transparent')}
               onChange={(value) => onPatchSettings({ cardBg: value })}
               onCommit={onSave}
             />
@@ -4016,7 +4110,7 @@ const PageInspector: React.FC<{
     <aside className={styles.propertiesPanel}>
       <div className={styles.panelHeader}>
         <strong>{platform && showSocialProfile ? 'Social Media Profile' : 'Pagina'}</strong>
-        <span>{isLanding(site) ? 'Landing' : 'Formulario'}</span>
+        <span>{isLanding(site) ? 'Sitio embudo' : 'Formulario'}</span>
       </div>
       <div className={styles.propertiesBody}>
         <div className={styles.settingsGroup}>
@@ -4619,7 +4713,7 @@ const LandingBlockSettings: React.FC<LandingBlockSettingsProps> = ({ site, block
         <label className={styles.field}>
           <span>Formulario existente</span>
           <select value={getSettingString(settings, 'formSiteId')} onChange={(event) => onPatchSettings({ formSiteId: event.target.value, embeddedBlocks: undefined })} onBlur={onSave}>
-            <option value="">Formulario inline dentro de esta landing</option>
+            <option value="">Formulario inline dentro de este sitio embudo</option>
             {forms.filter(form => form.id !== site.id).map(form => (
               <option key={form.id} value={form.id}>{form.name}</option>
             ))}
@@ -4663,7 +4757,7 @@ const LeadsPanel: React.FC<{ rows: LeadRow[]; loading: boolean; onRefresh: () =>
     <div className={styles.builderHeader}>
       <div>
         <h2>Respuestas / Leads</h2>
-        <p>Submissions recibidos desde landings y formularios publicos.</p>
+        <p>Respuestas recibidas desde sitios embudo y formularios publicos.</p>
       </div>
       <Button variant="secondary" onClick={onRefresh} loading={loading}>
         <RefreshCw size={16} />
@@ -4730,7 +4824,7 @@ const DomainsPanel: React.FC<DomainsPanelProps> = ({
       <div className={styles.builderHeader}>
         <div>
           <h2>Dominios</h2>
-          <p>Conecta un solo dominio general para enrutar todos los formularios, sitios y landing pages.</p>
+          <p>Conecta un solo dominio general para enrutar todos los formularios y sitios embudo.</p>
         </div>
         <span className={`${styles.statusPill} ${domainStatus.className}`}>{domainStatus.label}</span>
       </div>
