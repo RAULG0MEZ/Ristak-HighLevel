@@ -1,6 +1,6 @@
 import React from 'react'
-import { Routes, Route, Navigate, NavLink } from 'react-router-dom'
-import { Send, CreditCard, Activity, Calendar, UserCircle, TrendingDown, Bot, KeyRound } from 'lucide-react'
+import { Routes, Route, Navigate, NavLink, useLocation } from 'react-router-dom'
+import { Send, CreditCard, Activity, Calendar, UserCircle, TrendingDown, Bot, KeyRound, Globe2 } from 'lucide-react'
 import { SiWhatsapp } from 'react-icons/si'
 import { HighLevelIntegration } from './HighLevelIntegration'
 import { Costs } from './Costs'
@@ -12,12 +12,31 @@ import { CalendarsConfiguration } from './CalendarsConfiguration'
 import { AccountSettings } from './AccountSettings'
 import { AIAgentSettings } from './AIAgentSettings'
 import { APIAccessSettings } from './APIAccessSettings'
+import { Domains } from './Domains'
 import { useTheme } from '@/contexts/ThemeContext'
 import styles from './Settings.module.css'
 
 export const Settings: React.FC = () => {
   const { theme } = useTheme()
+  const location = useLocation()
+  const isAccountPage = location.pathname.includes('/settings/account')
+
   const settingsNavigation = [
+    {
+      to: '/settings/account',
+      label: 'Cuenta',
+      icon: <UserCircle size={18} />
+    },
+    {
+      to: '/settings/calendars',
+      label: 'Calendarios',
+      icon: <Calendar size={18} />
+    },
+    {
+      to: '/settings/payments',
+      label: 'Pagos',
+      icon: <CreditCard size={18} />
+    },
     {
       to: '/settings/highlevel',
       label: 'HighLevel',
@@ -43,19 +62,14 @@ export const Settings: React.FC = () => {
       icon: <SiWhatsapp size={18} />
     },
     {
-      to: '/settings/calendars',
-      label: 'Calendarios',
-      icon: <Calendar size={18} />
-    },
-    {
       to: '/settings/tracking',
       label: 'Rastreo Web',
       icon: <Activity size={18} />
     },
     {
-      to: '/settings/payments',
-      label: 'Pagos',
-      icon: <CreditCard size={18} />
+      to: '/settings/domains',
+      label: 'Dominios',
+      icon: <Globe2 size={18} />
     },
     {
       to: '/settings/costs',
@@ -71,11 +85,6 @@ export const Settings: React.FC = () => {
       to: '/settings/api-access',
       label: 'Acceso API',
       icon: <KeyRound size={18} />
-    },
-    {
-      to: '/settings/account',
-      label: 'Cuenta',
-      icon: <UserCircle size={18} />
     }
   ]
 
@@ -105,7 +114,7 @@ export const Settings: React.FC = () => {
         <section className={styles.settingsPanel}>
           <div className={styles.header}>
             <h1 className={styles.title}>Configuración</h1>
-            <p className={styles.subtitle}>Gestiona las integraciones y configuración de tu cuenta</p>
+            {isAccountPage && <p className={styles.subtitle}>Gestiona las integraciones y configuración de tu cuenta</p>}
           </div>
 
           <div className={styles.mainContent}>
@@ -117,6 +126,7 @@ export const Settings: React.FC = () => {
               <Route path="whatsapp" element={<WhatsAppSettings />} />
               <Route path="calendars" element={<CalendarsConfiguration />} />
               <Route path="tracking" element={<WebTracking />} />
+              <Route path="domains" element={<Domains />} />
               <Route path="payments" element={<PaymentsConfiguration />} />
               <Route path="ai-agent" element={<AIAgentSettings />} />
               <Route path="api-access" element={<APIAccessSettings />} />
