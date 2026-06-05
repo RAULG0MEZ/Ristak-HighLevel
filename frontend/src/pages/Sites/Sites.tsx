@@ -18,7 +18,6 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
-  AlertTriangle,
   ArrowLeft,
   CalendarDays,
   Check,
@@ -75,6 +74,7 @@ import {
   type SiteBlock,
   type SiteBlockOption,
   type SiteBlockType,
+  type SiteMetaTrigger,
   type SiteOptionAction,
   type SitePage,
   type SiteSubmission,
@@ -111,11 +111,26 @@ const emptySitesDomainConfig: SitesDomainConfig = {
 }
 
 const metaEventOptions = [
+  { value: 'none', label: 'Sin evento (solo PageView)' },
   { value: 'Lead', label: 'Lead' },
   { value: 'Schedule', label: 'Schedule' },
   { value: 'Purchase', label: 'Purchase' },
-  { value: 'FormSubmitted', label: 'FormSubmitted' }
+  { value: 'FormSubmitted', label: 'FormSubmitted' },
+  { value: 'ViewContent', label: 'ViewContent' },
+  { value: 'CompleteRegistration', label: 'CompleteRegistration' },
+  { value: 'Contact', label: 'Contact' }
 ]
+
+const metaTriggerOptions: Array<{ value: SiteMetaTrigger; label: string }> = [
+  { value: 'page_view', label: 'Al aterrizar' },
+  { value: 'form_submit', label: 'Al enviar formulario' }
+]
+
+const normalizeMetaEventName = (value?: string, fallback = 'Lead') =>
+  metaEventOptions.some(option => option.value === value) ? value || fallback : fallback
+
+const normalizeMetaTrigger = (value?: string): SiteMetaTrigger =>
+  value === 'form_submit' ? 'form_submit' : 'page_view'
 
 const ruleActions: Array<{ value: SiteOptionAction; label: string }> = [
   { value: 'continue', label: 'Continuar normalmente' },
@@ -179,6 +194,8 @@ const blockIcons: Partial<Record<SiteBlockType, React.ReactNode>> = {
 
 const isChoiceBlock = (blockType: SiteBlockType) =>
   blockType === 'dropdown' || blockType === 'radio' || blockType === 'checkboxes'
+
+const nativeBorderBlockTypes = new Set<SiteBlockType>(['hero', 'cta', 'benefits', 'testimonials', 'services', 'faq', 'form_embed', 'image', 'video', 'embed', 'calendar_embed'])
 
 const isLanding = (site?: PublicSite | null) => site?.siteType === 'landing_page'
 const isFormSite = (site?: PublicSite | null) => site?.siteType === 'standard_form' || site?.siteType === 'interactive_form'
@@ -375,6 +392,11 @@ const getThemeHex = (theme: SiteTheme | undefined, key: keyof SiteTheme, fallbac
   return typeof value === 'string' && isHex6(value) ? value : fallback
 }
 
+const getThemeString = (theme: SiteTheme | undefined, key: keyof SiteTheme) => {
+  const value = theme?.[key]
+  return typeof value === 'string' ? value : ''
+}
+
 const spacingSides = [
   { id: 'Top', label: 'Arriba' },
   { id: 'Right', label: 'Derecha' },
@@ -421,12 +443,15 @@ const getBlockCanvasStyle = (block: SiteBlock): React.CSSProperties => {
   const fontFamily = getSettingString(settings, 'fontFamily')
   const fieldBg = getSettingString(settings, 'fieldBg')
   const fieldBorder = getSettingString(settings, 'fieldBorder')
+  const blockBorder = getSettingString(settings, 'blockBorderColor')
+  const blockHasNativeBorder = nativeBorderBlockTypes.has(block.blockType)
 
   if (isHex6(bg)) style['--rstk-block-bg'] = bg
   if (isHex6(text)) style['--rstk-block-text'] = text
   if (fontFamily) style['--rstk-block-font'] = fontFamily.replace(/[;"{}<>]/g, '')
   if (isHex6(fieldBg)) style['--rstk-field-bg'] = fieldBg
   if (isHex6(fieldBorder)) style['--rstk-field-border'] = fieldBorder
+  if (isHex6(blockBorder)) style['--rstk-block-border'] = blockBorder
   if (settings.fontWeight === 'bold') style['--rstk-block-weight'] = '850'
 
   if (settings.fontSize !== undefined) style['--rstk-block-size'] = `${getSettingNumber(settings, 'fontSize', 18, 12, 72)}px`
@@ -437,6 +462,11 @@ const getBlockCanvasStyle = (block: SiteBlock): React.CSSProperties => {
     style['--rstk-block-margin'] = getSpacingShorthand(settings, 'blockMargin', 0, -80, 200)
   }
   if (settings.blockRadius !== undefined) style['--rstk-block-radius'] = `${getSettingNumber(settings, 'blockRadius', 8, 0, 48)}px`
+  if (settings.blockBorderWidth !== undefined) {
+    const width = `${getSettingNumber(settings, 'blockBorderWidth', 0, 0, 12)}px`
+    style['--rstk-block-border-width'] = width
+    if (!blockHasNativeBorder) style['--rstk-block-shell-border-width'] = width
+  }
   if (settings.buttonRadius !== undefined) style['--rstk-block-button-radius'] = `${getSettingNumber(settings, 'buttonRadius', 8, 0, 48)}px`
   if (settings.mediaWidth !== undefined) style['--rstk-media-width'] = `${getSettingNumber(settings, 'mediaWidth', 100, 30, 100)}%`
 
@@ -458,7 +488,10 @@ const normalizeFunnelPages = (site?: PublicSite | null): SitePage[] => {
     .map((page, index) => ({
       id: page?.id || `${DEFAULT_FUNNEL_PAGE_ID}-${index + 1}`,
       title: page?.title || `Pagina ${index + 1}`,
-      sortOrder: Number.isFinite(Number(page?.sortOrder)) ? Number(page.sortOrder) : index
+      sortOrder: Number.isFinite(Number(page?.sortOrder)) ? Number(page.sortOrder) : index,
+      metaCapiEnabled: Boolean(page?.metaCapiEnabled),
+      metaEventName: normalizeMetaEventName(page?.metaEventName, 'none'),
+      metaTrigger: normalizeMetaTrigger(page?.metaTrigger)
     }))
     .filter(page => {
       if (!page.id || seen.has(page.id)) return false
@@ -474,14 +507,20 @@ const normalizeFunnelPages = (site?: PublicSite | null): SitePage[] => {
 const makeFunnelPage = (index: number): SitePage => ({
   id: `page-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
   title: `Pagina ${index + 1}`,
-  sortOrder: index
+  sortOrder: index,
+  metaCapiEnabled: false,
+  metaEventName: 'none',
+  metaTrigger: 'page_view'
 })
 
 const normalizePagesForSave = (pages: SitePage[]) =>
   pages.map((page, index) => ({
     id: page.id,
     title: page.title || `Pagina ${index + 1}`,
-    sortOrder: index
+    sortOrder: index,
+    metaCapiEnabled: Boolean(page.metaCapiEnabled),
+    metaEventName: normalizeMetaEventName(page.metaEventName, 'none'),
+    metaTrigger: normalizeMetaTrigger(page.metaTrigger)
   }))
 
 const getBlockPageId = (block: SiteBlock, pages: SitePage[]) => {
@@ -795,7 +834,7 @@ const defaultBlockPayload = (blockType: SiteBlockType, siteId: string, siteType?
 }
 
 export const Sites: React.FC = () => {
-  const { showToast } = useNotification()
+  const { showToast, showConfirm } = useNotification()
   const navigate = useNavigate()
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
   const [section, setSection] = useState<SitesSection>('landings')
@@ -818,8 +857,6 @@ export const Sites: React.FC = () => {
   const [leadRows, setLeadRows] = useState<LeadRow[]>([])
   const [loadingLeads, setLoadingLeads] = useState(false)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
-  const [showLeaveModal, setShowLeaveModal] = useState(false)
-  const [pendingLeaveAction, setPendingLeaveAction] = useState<(() => void) | null>(null)
   const guardHistoryArmedRef = useRef(false)
   const allowNavigationRef = useRef(false)
 
@@ -870,47 +907,46 @@ export const Sites: React.FC = () => {
     window.location.href = target.href
   }, [navigate])
 
-  const requestLeaveEditor = useCallback((action: () => void) => {
-    if (!hasUnsavedChanges) {
-      action()
-      return
-    }
-
-    setPendingLeaveAction(() => action)
-    setShowLeaveModal(true)
-  }, [hasUnsavedChanges])
-
-  const markEditorDirty = useCallback(() => {
-    if (editorSite) {
-      setHasUnsavedChanges(true)
-    }
-  }, [editorSite])
-
   const handleCancelLeaveEditor = useCallback(() => {
-    setShowLeaveModal(false)
-    setPendingLeaveAction(null)
-
     if (hasUnsavedChanges && !guardHistoryArmedRef.current) {
       window.history.pushState({ ristakSitesUnsavedGuard: true }, '', window.location.href)
       guardHistoryArmedRef.current = true
     }
   }, [hasUnsavedChanges])
 
-  const handleConfirmLeaveEditor = useCallback(() => {
-    const action = pendingLeaveAction
-
+  const handleConfirmLeaveEditor = useCallback((action?: () => void) => {
     allowNavigationRef.current = true
     guardHistoryArmedRef.current = false
     setHasUnsavedChanges(false)
-    setShowLeaveModal(false)
-    setPendingLeaveAction(null)
 
     action?.()
 
     window.setTimeout(() => {
       allowNavigationRef.current = false
     }, 500)
-  }, [pendingLeaveAction])
+  }, [])
+
+  const requestLeaveEditor = useCallback((action: () => void) => {
+    if (!hasUnsavedChanges) {
+      action()
+      return
+    }
+
+    showConfirm(
+      'Cambios sin guardar',
+      'Hay cambios en el editor que todavia no se han guardado o publicado. Si sales ahora, esos ajustes se van a perder.',
+      () => handleConfirmLeaveEditor(action),
+      'Salir sin guardar',
+      'Seguir editando',
+      handleCancelLeaveEditor
+    )
+  }, [handleCancelLeaveEditor, handleConfirmLeaveEditor, hasUnsavedChanges, showConfirm])
+
+  const markEditorDirty = useCallback(() => {
+    if (editorSite) {
+      setHasUnsavedChanges(true)
+    }
+  }, [editorSite])
 
   useEffect(() => {
     const initialEditorId = new URLSearchParams(window.location.search).get('siteEditor') || undefined
@@ -975,13 +1011,6 @@ export const Sites: React.FC = () => {
       guardHistoryArmedRef.current = true
     }
 
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (allowNavigationRef.current) return
-
-      event.preventDefault()
-      event.returnValue = ''
-    }
-
     const handleDocumentClick = (event: MouseEvent) => {
       if (
         allowNavigationRef.current ||
@@ -1007,28 +1036,24 @@ export const Sites: React.FC = () => {
 
       event.preventDefault()
       event.stopPropagation()
-      setPendingLeaveAction(() => () => performUrlNavigation(targetUrl.href))
-      setShowLeaveModal(true)
+      requestLeaveEditor(() => performUrlNavigation(targetUrl.href))
     }
 
     const handlePopState = () => {
       if (allowNavigationRef.current) return
 
       guardHistoryArmedRef.current = false
-      setPendingLeaveAction(() => () => window.history.back())
-      setShowLeaveModal(true)
+      requestLeaveEditor(() => window.history.back())
     }
 
-    window.addEventListener('beforeunload', handleBeforeUnload)
     document.addEventListener('click', handleDocumentClick, true)
     window.addEventListener('popstate', handlePopState)
 
     return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload)
       document.removeEventListener('click', handleDocumentClick, true)
       window.removeEventListener('popstate', handlePopState)
     }
-  }, [hasUnsavedChanges, performUrlNavigation])
+  }, [hasUnsavedChanges, performUrlNavigation, requestLeaveEditor])
 
   const loadSites = async (selectId?: string) => {
     setLoading(true)
@@ -1267,37 +1292,46 @@ export const Sites: React.FC = () => {
       return
     }
 
-    const confirmed = window.confirm('Eliminar esta pagina y todos sus bloques?')
-    if (!confirmed) return
+    showConfirm(
+      'Eliminar pagina',
+      'Se eliminara esta pagina y todos sus bloques. Esta accion no se puede deshacer.',
+      () => {
+        const deletePage = async () => {
+          const pageIndex = pages.findIndex(page => page.id === pageId)
+          const nextPages = pages.filter(page => page.id !== pageId)
+          const nextActive = activePageId === pageId
+            ? nextPages[Math.max(0, pageIndex - 1)]?.id || nextPages[0]?.id
+            : activePageId
 
-    const pageIndex = pages.findIndex(page => page.id === pageId)
-    const nextPages = pages.filter(page => page.id !== pageId)
-    const nextActive = activePageId === pageId
-      ? nextPages[Math.max(0, pageIndex - 1)]?.id || nextPages[0]?.id
-      : activePageId
+          setSaving(true)
+          try {
+            let site = selectedSite
+            const pageBlockIds = blocks
+              .filter(block => getBlockPageId(block, pages) === pageId)
+              .map(block => block.id)
+            for (const blockId of pageBlockIds) {
+              site = await sitesService.deleteBlock(selectedSite.id, blockId)
+            }
+            site = await saveSiteTheme(site, {
+              ...(site.theme || {}),
+              pages: normalizePagesForSave(nextPages)
+            })
+            syncSelectedSite(site)
+            setActivePageId(nextActive || DEFAULT_FUNNEL_PAGE_ID)
+            setHasUnsavedChanges(false)
+            showToast('success', 'Pagina eliminada', 'El embudo se actualizo.')
+          } catch (error) {
+            showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo eliminar la pagina')
+          } finally {
+            setSaving(false)
+          }
+        }
 
-    setSaving(true)
-    try {
-      let site = selectedSite
-      const pageBlockIds = blocks
-        .filter(block => getBlockPageId(block, pages) === pageId)
-        .map(block => block.id)
-      for (const blockId of pageBlockIds) {
-        site = await sitesService.deleteBlock(selectedSite.id, blockId)
-      }
-      site = await saveSiteTheme(site, {
-        ...(site.theme || {}),
-        pages: normalizePagesForSave(nextPages)
-      })
-      syncSelectedSite(site)
-      setActivePageId(nextActive || DEFAULT_FUNNEL_PAGE_ID)
-      setHasUnsavedChanges(false)
-      showToast('success', 'Pagina eliminada', 'El embudo se actualizo.')
-    } catch (error) {
-      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo eliminar la pagina')
-    } finally {
-      setSaving(false)
-    }
+        void deletePage()
+      },
+      'Eliminar',
+      'Cancelar'
+    )
   }
 
   const handleReorderPages = (sourcePageId: string, targetPageId: string) => {
@@ -1431,22 +1465,31 @@ export const Sites: React.FC = () => {
 
   const handleDeleteSite = async (siteToDelete = selectedSite) => {
     if (!siteToDelete) return
-    const confirmed = window.confirm(`Eliminar "${siteToDelete.name}" y sus respuestas?`)
-    if (!confirmed) return
+    showConfirm(
+      'Eliminar sitio',
+      `Se eliminara "${siteToDelete.name}" y sus respuestas. Esta accion no se puede deshacer.`,
+      () => {
+        const deleteSite = async () => {
+          try {
+            await sitesService.deleteSite(siteToDelete.id)
+            const nextSites = sites.filter(site => site.id !== siteToDelete.id)
+            setSites(nextSites)
+            if (selectedSite?.id === siteToDelete.id) {
+              setSelectedSite(null)
+              setSelectedBlockId('')
+            }
+            setHasUnsavedChanges(false)
+            showToast('success', 'Eliminado', 'Sitio eliminado')
+          } catch (error) {
+            showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo eliminar')
+          }
+        }
 
-    try {
-      await sitesService.deleteSite(siteToDelete.id)
-      const nextSites = sites.filter(site => site.id !== siteToDelete.id)
-      setSites(nextSites)
-      if (selectedSite?.id === siteToDelete.id) {
-        setSelectedSite(null)
-        setSelectedBlockId('')
-      }
-      setHasUnsavedChanges(false)
-      showToast('success', 'Eliminado', 'Sitio eliminado')
-    } catch (error) {
-      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo eliminar')
-    }
+        void deleteSite()
+      },
+      'Eliminar',
+      'Cancelar'
+    )
   }
 
   const handleAddBlock = async (blockType: SiteBlockType) => {
@@ -1956,42 +1999,9 @@ export const Sites: React.FC = () => {
         </main>
       </div>
     </div>
-    {showLeaveModal && (
-      <UnsavedChangesModal
-        onStay={handleCancelLeaveEditor}
-        onLeave={handleConfirmLeaveEditor}
-      />
-    )}
     </>
   )
 }
-
-interface UnsavedChangesModalProps {
-  onStay: () => void
-  onLeave: () => void
-}
-
-const UnsavedChangesModal: React.FC<UnsavedChangesModalProps> = ({ onStay, onLeave }) => (
-  <div className={styles.unsavedModalBackdrop}>
-    <section className={styles.unsavedModal} role="dialog" aria-modal="true" aria-labelledby="unsaved-sites-title">
-      <div className={styles.unsavedModalIcon}>
-        <AlertTriangle size={22} />
-      </div>
-      <h2 id="unsaved-sites-title">Cambios sin guardar</h2>
-      <p>
-        Hay cambios en el editor que todavia no se han guardado o publicado. Si sales ahora, esos ajustes se van a perder.
-      </p>
-      <div className={styles.unsavedModalActions}>
-        <Button variant="secondary" onClick={onStay}>
-          Seguir editando
-        </Button>
-        <Button variant="danger" onClick={onLeave}>
-          Salir sin guardar
-        </Button>
-      </div>
-    </section>
-  </div>
-)
 
 interface SitesLibraryPanelProps {
   section: SitesSection
@@ -2898,6 +2908,7 @@ const InlineBlockStyleControls: React.FC<{
   const supportsButton = block.blockType === 'hero' || block.blockType === 'button' || block.blockType === 'cta'
   const supportsField = fieldBlockTypes.has(block.blockType)
   const supportsMedia = block.blockType === 'image'
+  const defaultBorderWidth = nativeBorderBlockTypes.has(block.blockType) ? 1 : 0
 
   return (
     <div className={styles.blockStyleControls} onClick={(event) => event.stopPropagation()}>
@@ -2952,6 +2963,22 @@ const InlineBlockStyleControls: React.FC<{
           max={72}
           unit="px"
           onChange={(value) => onPatchSettings({ fontSize: value })}
+          onCommit={onSave}
+        />
+      </div>
+      <div className={styles.twoColumn}>
+        <DimensionField
+          label="Grosor borde"
+          value={getSettingNumber(settings, 'blockBorderWidth', defaultBorderWidth, 0, 12)}
+          min={0}
+          max={12}
+          onChange={(value) => onPatchSettings({ blockBorderWidth: value })}
+          onCommit={onSave}
+        />
+        <ColorField
+          label="Color borde"
+          value={getSettingHex(settings, 'blockBorderColor', '#dbe3ef')}
+          onChange={(value) => onPatchSettings({ blockBorderColor: value })}
           onCommit={onSave}
         />
       </div>
@@ -3284,7 +3311,17 @@ const PageInspector: React.FC<{
   const theme = site.theme || {}
   const currentId = resolveTemplateId(site)
   const platform = platformChromeFor(currentId)
+  const activePage = pages.find(page => page.id === activePageId) || pages[0] || null
   const hasNextPage = isLanding(site) && pages.length > 1 && pages.some(page => page.sortOrder > (pages.find(item => item.id === activePageId)?.sortOrder || 0))
+  const patchActivePage = (patch: Partial<SitePage>) => {
+    if (!activePage) return
+
+    onPatchTheme({
+      pages: normalizePagesForSave(pages.map(page => (
+        page.id === activePage.id ? { ...page, ...patch } : page
+      )))
+    })
+  }
 
   return (
     <aside className={styles.propertiesPanel}>
@@ -3309,12 +3346,15 @@ const PageInspector: React.FC<{
               onCommit={onSaveSite}
             />
           </div>
-          <ColorField
-            label="Borde de la pagina"
-            value={getThemeHex(theme, 'pageBorderColor', '#111827')}
-            onChange={(value) => onPatchTheme({ pageBorderColor: value })}
-            onCommit={onSaveSite}
-          />
+          <label className={styles.field}>
+            <span>Imagen de fondo</span>
+            <input
+              value={getThemeString(theme, 'backgroundImage')}
+              placeholder="https://..."
+              onChange={(event) => onPatchTheme({ backgroundImage: event.target.value })}
+              onBlur={onSaveSite}
+            />
+          </label>
 
           <div className={styles.panelSubheader}>Dimensiones</div>
           <DimensionField
@@ -3344,6 +3384,72 @@ const PageInspector: React.FC<{
               onCommit={onSaveSite}
             />
           </div>
+          <div className={styles.panelSubheader}>Borde de pagina</div>
+          <div className={styles.twoColumn}>
+            <DimensionField
+              label="Grosor"
+              value={getThemeNumber(theme, 'pageBorderWidth', 0, 0, 12)}
+              min={0}
+              max={12}
+              onChange={(value) => onPatchTheme({ pageBorderWidth: value })}
+              onCommit={onSaveSite}
+            />
+            <ColorField
+              label="Color"
+              value={getThemeHex(theme, 'pageBorderColor', '#dbe3ef')}
+              onChange={(value) => onPatchTheme({ pageBorderColor: value })}
+              onCommit={onSaveSite}
+            />
+          </div>
+          {isLanding(site) && activePage && (
+            <>
+              <div className={styles.panelSubheader}>Evento de pagina</div>
+              <div className={`${styles.metaCard} ${activePage.metaCapiEnabled && site.metaCapiEnabled ? styles.metaCardActive : ''}`}>
+                <span className={styles.metaMark} aria-hidden="true">∞</span>
+                <div className={styles.metaCardInfo}>
+                  <strong>Meta Pixel + CAPI</strong>
+                  <small>{activePage.metaCapiEnabled && site.metaCapiEnabled ? 'Activo en esta pagina' : 'Apagado en esta pagina'}</small>
+                </div>
+                <label className={styles.metaSwitch} title={activePage.metaCapiEnabled ? 'Desactivar' : 'Activar'}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(activePage.metaCapiEnabled)}
+                    disabled={!site.metaCapiEnabled}
+                    onChange={(event) => patchActivePage({ metaCapiEnabled: event.target.checked })}
+                  />
+                  <span className={styles.metaSwitchTrack} aria-hidden="true" />
+                </label>
+              </div>
+              <div className={styles.twoColumn}>
+                <label className={styles.field}>
+                  <span>Disparo</span>
+                  <select
+                    value={normalizeMetaTrigger(activePage.metaTrigger)}
+                    disabled={!site.metaCapiEnabled || !activePage.metaCapiEnabled}
+                    onChange={(event) => patchActivePage({ metaTrigger: event.target.value as SiteMetaTrigger })}
+                    onBlur={onSaveSite}
+                  >
+                    {metaTriggerOptions.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className={styles.field}>
+                  <span>Evento</span>
+                  <select
+                    value={normalizeMetaEventName(activePage.metaEventName, 'none')}
+                    disabled={!site.metaCapiEnabled || !activePage.metaCapiEnabled}
+                    onChange={(event) => patchActivePage({ metaEventName: event.target.value })}
+                    onBlur={onSaveSite}
+                  >
+                    {metaEventOptions.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </>
+          )}
           {hasNextPage && site.metaCapiEnabled && (
             <label className={styles.field}>
               <span>Meta Pixel + CAPI sucede en</span>

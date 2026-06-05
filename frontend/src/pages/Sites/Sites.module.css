@@ -3694,3 +3694,326 @@
     flex: 1;
   }
 }
+
+/* ============================================================
+   Sites editor reset: single page container, app-native surfaces
+   ============================================================ */
+
+.containerFocused {
+  width: min(1960px, calc(100% - clamp(20px, 2.8vw, 48px)));
+  min-height: calc(100vh - var(--header-height) - 48px);
+  gap: 0;
+  margin: 24px auto;
+  padding: 18px;
+  border: 1px solid var(--color-border-subtle, rgba(148, 163, 184, 0.24));
+  border-radius: 8px;
+  background: var(--color-background-secondary);
+  box-shadow: none;
+}
+
+.containerFocused .editorHeader {
+  border: 0;
+  border-bottom: 1px solid var(--color-border-subtle, rgba(148, 163, 184, 0.22));
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0 0 16px;
+}
+
+.containerFocused .sitesShellFocused {
+  display: block;
+  min-height: 0;
+}
+
+.containerFocused .builder {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 16px 0 0;
+  overflow: visible;
+}
+
+.containerFocused .builderGrid {
+  gap: 0;
+  align-items: start;
+}
+
+.containerFocused .builderGridLanding {
+  grid-template-columns: 168px 200px minmax(0, 1fr) 312px;
+}
+
+.containerFocused .builderGridForm {
+  grid-template-columns: 200px minmax(0, 1fr) 312px;
+}
+
+.containerFocused .pagesRail,
+.containerFocused .blocksRail,
+.containerFocused .propertiesPanel {
+  top: calc(var(--header-height) + 18px);
+  max-height: calc(100vh - var(--header-height) - 48px);
+}
+
+.containerFocused .pagesRail {
+  border-right: 1px solid var(--color-border-subtle, rgba(148, 163, 184, 0.22));
+  padding-right: 14px;
+}
+
+.containerFocused .blocksRail {
+  border-right: 1px solid var(--color-border-subtle, rgba(148, 163, 184, 0.22));
+  padding: 0 14px;
+}
+
+.containerFocused .propertiesPanel {
+  border: 0;
+  border-left: 1px solid var(--color-border-subtle, rgba(148, 163, 184, 0.22));
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0 0 0 16px;
+}
+
+.containerFocused .pagesPanel,
+.containerFocused .palette {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+.containerFocused .canvasColumn {
+  min-height: 720px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0 16px;
+}
+
+.containerFocused .canvasToolbar {
+  border-bottom: 1px solid var(--color-border-subtle, rgba(148, 163, 184, 0.18));
+  padding-bottom: 10px;
+}
+
+.containerFocused .panelHeader {
+  min-height: 38px;
+  border-bottom: 0;
+  padding: 0 0 10px;
+}
+
+.containerFocused .panelHeader span {
+  background: var(--color-background-tertiary);
+  color: var(--color-text-tertiary);
+}
+
+.editorHeader,
+.builder,
+.pagesPanel,
+.palette,
+.propertiesPanel,
+.canvasColumn,
+.internalSidebar,
+.dataPanel,
+.createPanel,
+.libraryPanel,
+.siteSettingsBar,
+.metaSettingsBar,
+.designBar,
+.domainEditor,
+.emptyEditor,
+.sectionButton,
+.siteItem,
+.createLibraryCard,
+.libraryCard,
+.choiceGrid button,
+.templateCard,
+.leadRow,
+.metaToggle,
+.optionRuleCard,
+.settingsGroup,
+.blockStyleControls,
+.inlineControls,
+.inlineBlockTools,
+.socialProfileControls,
+.pageItem,
+.pageMenuButton,
+.paletteItem,
+.addPageButton,
+.deviceToggle,
+.compactField input,
+.compactField select,
+.field input,
+.field textarea,
+.field select,
+.dimensionBox,
+.colorRow,
+.spacingBox > div,
+.metaCard,
+.metaCardActive,
+.metaCardField select {
+  background-image: none;
+  box-shadow: none;
+}
+
+.internalSidebar,
+.dataPanel,
+.createPanel,
+.libraryPanel,
+.siteSettingsBar,
+.metaSettingsBar,
+.designBar,
+.domainEditor,
+.emptyEditor {
+  border-color: var(--color-border-subtle, rgba(148, 163, 184, 0.22));
+  border-radius: 8px;
+  background: var(--color-background-secondary);
+  box-shadow: none;
+}
+
+.libraryCard,
+.createLibraryCard,
+.choiceGrid button,
+.templateCard,
+.leadRow,
+.sectionButton,
+.siteItem,
+.metaToggle,
+.optionRuleCard,
+.settingsGroup,
+.blockStyleControls,
+.inlineControls,
+.inlineBlockTools,
+.socialProfileControls {
+  background: var(--color-background-primary);
+  border-color: var(--color-border-subtle, rgba(148, 163, 184, 0.2));
+  border-radius: 8px;
+}
+
+.libraryCardPreview,
+.templatePreview,
+.libraryCardBody,
+.templateCardBody {
+  background: var(--color-background-primary);
+}
+
+.libraryCardPreview {
+  border-bottom-color: var(--color-border-subtle, rgba(148, 163, 184, 0.16));
+}
+
+.createLibraryIcon,
+.paletteIcon,
+.unsavedModalIcon {
+  background: var(--color-background-tertiary);
+  border-color: var(--color-border-subtle, rgba(148, 163, 184, 0.22));
+  color: var(--color-text-secondary);
+}
+
+.pageItem,
+.pageMenuButton,
+.paletteItem,
+.addPageButton,
+.deviceToggle,
+.compactField input,
+.compactField select,
+.field input,
+.field textarea,
+.field select,
+.dimensionBox,
+.colorRow,
+.spacingBox > div,
+.metaCardField select {
+  background: var(--color-background-primary);
+  border-color: var(--color-border-subtle, rgba(148, 163, 184, 0.24));
+  border-radius: 8px;
+}
+
+.pageItem:hover,
+.pageItemActive,
+.paletteItem:hover,
+.sectionButton:hover,
+.sectionButtonActive,
+.siteItem:hover,
+.siteItemActive,
+.libraryCard:hover,
+.libraryCardActive,
+.createLibraryCard:hover,
+.choiceGrid button:hover,
+.templateCard:hover {
+  background: var(--color-background-tertiary);
+  border-color: rgba(var(--color-primary-rgb), 0.36);
+  transform: none;
+}
+
+.paletteIcon {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+}
+
+.metaCard {
+  min-height: var(--editor-control-h, 44px);
+  border-color: var(--color-border-subtle, rgba(148, 163, 184, 0.24));
+  background: var(--color-background-primary);
+}
+
+.metaCardActive {
+  border-color: rgba(8, 102, 255, 0.42);
+  background: var(--color-background-primary);
+}
+
+.spacingLinkButton,
+.spacingLinkButtonActive {
+  background: var(--color-background-primary);
+  box-shadow: none;
+}
+
+.spacingLinkButtonActive,
+.deviceActive {
+  border-color: rgba(var(--color-primary-rgb), 0.38);
+  background: var(--color-background-tertiary) !important;
+  color: var(--color-primary) !important;
+}
+
+.libraryCard:hover,
+.templateCard:hover {
+  box-shadow: none;
+}
+
+.canvasToolbarTitle strong,
+.panelHeader strong {
+  letter-spacing: 0;
+}
+
+@media (max-width: 1280px) {
+  .containerFocused .builderGridLanding,
+  .containerFocused .builderGridForm {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .containerFocused .pagesRail,
+  .containerFocused .blocksRail,
+  .containerFocused .propertiesPanel {
+    position: static;
+    max-height: none;
+    border: 0;
+    padding: 0;
+  }
+
+  .containerFocused .canvasColumn {
+    padding: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .containerFocused {
+    width: min(100% - 20px, 100%);
+    margin: 10px auto;
+    padding: 12px;
+  }
+
+  .containerFocused .editorHeader {
+    padding-bottom: 12px;
+  }
+}

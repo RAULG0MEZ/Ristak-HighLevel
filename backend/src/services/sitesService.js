@@ -75,8 +75,10 @@ const PUBLIC_DOMAIN_CACHE_TTL_MS = 15 * 60 * 1000
 const PUBLIC_DOMAIN_FAILED_CACHE_TTL_MS = 90 * 1000
 const PUBLIC_DOMAIN_VERIFY_TIMEOUT_MS = 6000
 const DEFAULT_FUNNEL_PAGE_ID = 'page-1'
-const SITE_META_EVENTS = new Set(['Lead', 'Schedule', 'Purchase', 'FormSubmitted'])
-const META_STANDARD_PIXEL_EVENTS = new Set(['Lead', 'Schedule', 'Purchase'])
+const SITE_META_NO_EVENT = 'none'
+const SITE_META_EVENTS = new Set(['Lead', 'Schedule', 'Purchase', 'FormSubmitted', 'ViewContent', 'CompleteRegistration', 'Contact'])
+const META_STANDARD_PIXEL_EVENTS = new Set(['Lead', 'Schedule', 'Purchase', 'ViewContent', 'CompleteRegistration', 'Contact'])
+const SITE_META_TRIGGERS = new Set(['page_view', 'form_submit'])
 const SITES_PUBLIC_DOMAIN_CONFIG_KEYS = {
   domain: 'sites_public_domain',
   verified: 'sites_public_domain_verified',
@@ -88,9 +90,15 @@ function cleanString(value) {
   return String(value || '').trim()
 }
 
-function normalizeSiteMetaEventName(value) {
+function normalizeSiteMetaEventName(value, { allowNone = false, fallback = 'Lead' } = {}) {
   const eventName = cleanString(value)
-  return SITE_META_EVENTS.has(eventName) ? eventName : 'Lead'
+  if (allowNone && eventName.toLowerCase() === SITE_META_NO_EVENT) return SITE_META_NO_EVENT
+  return SITE_META_EVENTS.has(eventName) ? eventName : fallback
+}
+
+function normalizeSiteMetaTrigger(value) {
+  const trigger = cleanString(value)
+  return SITE_META_TRIGGERS.has(trigger) ? trigger : 'page_view'
 }
 
 function parseJson(value, fallback) {
@@ -248,7 +256,7 @@ function mapSite(row) {
     description: row.description || '',
     theme: parseJson(row.theme_json, DEFAULT_THEME),
     metaCapiEnabled: Boolean(Number(row.meta_capi_enabled || 0)),
-    metaEventName: normalizeSiteMetaEventName(row.meta_event_name),
+    metaEventName: normalizeSiteMetaEventName(row.meta_event_name, { allowNone: true }),
     renderDomainVerified: Boolean(Number(row.render_domain_verified || 0)),
     renderDomainCheckedAt: row.render_domain_checked_at || null,
     renderDomainError: row.render_domain_error || null,
@@ -918,7 +926,7 @@ async function insertAISiteBlueprint(blueprint) {
     blueprint.title,
     blueprint.description || null,
     jsonString(blueprint.theme),
-    normalizeSiteMetaEventName(blueprint.metaEventName)
+    normalizeSiteMetaEventName(blueprint.metaEventName, { allowNone: true })
   ])
 
   for (const block of blueprint.blocks) {
@@ -1091,7 +1099,7 @@ export async function createSite(input = {}) {
     description || null,
     jsonString(theme),
     normalizeBoolean(input.metaCapiEnabled),
-    normalizeSiteMetaEventName(input.metaEventName)
+    normalizeSiteMetaEventName(input.metaEventName, { allowNone: true })
   ])
 
   for (const block of buildDefaultBlocks(id, siteType, theme.template)) {
@@ -1217,7 +1225,7 @@ export async function updateSite(siteId, input = {}) {
     input.description === undefined ? current.description : cleanString(input.description) || null,
     jsonString({ ...DEFAULT_THEME, ...(input.theme || current.theme || {}) }),
     input.metaCapiEnabled === undefined ? normalizeBoolean(current.metaCapiEnabled) : normalizeBoolean(input.metaCapiEnabled),
-    normalizeSiteMetaEventName(input.metaEventName || current.metaEventName),
+    normalizeSiteMetaEventName(input.metaEventName || current.metaEventName, { allowNone: true }),
     domainChanged ? 1 : 0,
     domainChanged ? 1 : 0,
     domainChanged ? 1 : 0,
@@ -1893,7 +1901,10 @@ function normalizeSitePages(site) {
     .map((page, index) => ({
       id: cleanString(page?.id) || `${DEFAULT_FUNNEL_PAGE_ID}-${index + 1}`,
       title: cleanString(page?.title) || `Pagina ${index + 1}`,
-      sortOrder: Number.isFinite(Number(page?.sortOrder)) ? Number(page.sortOrder) : index
+      sortOrder: Number.isFinite(Number(page?.sortOrder)) ? Number(page.sortOrder) : index,
+      metaCapiEnabled: Boolean(normalizeBoolean(page?.metaCapiEnabled ?? page?.meta_capi_enabled)),
+      metaEventName: normalizeSiteMetaEventName(page?.metaEventName || page?.meta_event_name, { allowNone: true, fallback: SITE_META_NO_EVENT }),
+      metaTrigger: normalizeSiteMetaTrigger(page?.metaTrigger || page?.meta_trigger)
     }))
     .filter(page => {
       if (!page.id || seen.has(page.id)) return false
@@ -1928,6 +1939,37 @@ function getNextPage(site, pageId) {
 
 function pageHref(pageId) {
   return `?page=${encodeURIComponent(pageId)}`
+}
+
+function getSitePage(site, pageId) {
+  const pages = normalizeSitePages(site)
+  const requestedPageId = cleanString(pageId)
+  return pages.find(page => page.id === requestedPageId) || pages[0] || null
+}
+
+function getPageMetaConfig(site, pageId) {
+  if (!site || site.siteType !== 'landing_page') return null
+  const page = getSitePage(site, pageId)
+  if (!page || !page.metaCapiEnabled) return null
+  const eventName = normalizeSiteMetaEventName(page.metaEventName || site.metaEventName, { allowNone: true })
+  if (eventName === SITE_META_NO_EVENT) return null
+
+  return {
+    page,
+    eventName,
+    trigger: normalizeSiteMetaTrigger(page.metaTrigger)
+  }
+}
+
+function getFormSubmitMetaEventName(site, pageId) {
+  if (site?.siteType === 'landing_page') {
+    const page = getSitePage(site, pageId)
+    if (page?.metaCapiEnabled && normalizeSiteMetaTrigger(page.metaTrigger) === 'form_submit') {
+      return normalizeSiteMetaEventName(page.metaEventName || site.metaEventName, { allowNone: true })
+    }
+  }
+
+  return normalizeSiteMetaEventName(site.metaEventName, { allowNone: true })
 }
 
 function resolveButtonHref(settings = {}, context = {}) {
@@ -2266,6 +2308,7 @@ function renderBlockStyleVars(block) {
   const vars = []
   const blockBg = blockSettingHex(settings, 'blockBg')
   const blockText = blockSettingHex(settings, 'blockText')
+  const blockBorder = blockSettingHex(settings, 'blockBorderColor')
   const fieldBg = blockSettingHex(settings, 'fieldBg')
   const fieldBorder = blockSettingHex(settings, 'fieldBorder')
   const fontFamily = cleanString(settings.fontFamily)
@@ -2273,11 +2316,14 @@ function renderBlockStyleVars(block) {
   const blockPadding = renderBlockSpacing(settings, 'blockPadding', 0, 0, 160)
   const blockMargin = renderBlockSpacing(settings, 'blockMargin', 0, -80, 200)
   const blockRadius = blockSettingNumber(settings, 'blockRadius', 0, 48)
+  const blockBorderWidth = blockSettingNumber(settings, 'blockBorderWidth', 0, 12)
   const buttonRadius = blockSettingNumber(settings, 'buttonRadius', 0, 48)
   const mediaWidth = blockSettingNumber(settings, 'mediaWidth', 30, 100)
+  const blockHasNativeBorder = ['hero', 'cta', 'benefits', 'testimonials', 'services', 'faq', 'form_embed', 'image', 'video', 'embed', 'calendar_embed'].includes(block.blockType)
 
   if (blockBg) vars.push(`--rstk-block-bg:${blockBg}`)
   if (blockText) vars.push(`--rstk-block-text:${blockText}`)
+  if (blockBorder) vars.push(`--rstk-block-border:${blockBorder}`)
   if (fieldBg) vars.push(`--rstk-field-bg:${fieldBg}`)
   if (fieldBorder) vars.push(`--rstk-field-border:${fieldBorder}`)
   if (fontFamily) vars.push(`--rstk-block-font:${fontFamily.replace(/[;"{}<>]/g, '')}`)
@@ -2286,6 +2332,10 @@ function renderBlockStyleVars(block) {
   if (blockPadding) vars.push(`--rstk-block-pad:${blockPadding}`)
   if (blockMargin) vars.push(`--rstk-block-margin:${blockMargin}`)
   if (blockRadius !== null) vars.push(`--rstk-block-radius:${blockRadius}px`)
+  if (blockBorderWidth !== null) {
+    vars.push(`--rstk-block-border-width:${blockBorderWidth}px`)
+    if (!blockHasNativeBorder) vars.push(`--rstk-block-shell-border-width:${blockBorderWidth}px`)
+  }
   if (buttonRadius !== null) vars.push(`--rstk-block-button-radius:${buttonRadius}px`)
   if (mediaWidth !== null) vars.push(`--rstk-media-width:${mediaWidth}%`)
 
@@ -2530,7 +2580,7 @@ const SITE_TEMPLATES = {
     font: RSTK_SANS,
     vars: {
       pageBg: '#f5f6f8',
-      pageImage: 'radial-gradient(1200px 520px at 50% -120px, rgba(15,23,42,.06), transparent 70%)',
+      pageImage: 'none',
       ink: '#0f172a',
       muted: '#64748b',
       surface: '#ffffff',
@@ -2622,7 +2672,7 @@ const SITE_TEMPLATES = {
     cyan: '#25f4ee',
     vars: {
       pageBg: '#000000',
-      pageImage: 'radial-gradient(760px 420px at 50% -80px, rgba(37,244,238,.12), transparent 70%)',
+      pageImage: 'none',
       ink: '#ffffff',
       muted: '#a1a1aa',
       surface: '#161616',
@@ -2653,7 +2703,7 @@ const SITE_TEMPLATES = {
     font: RSTK_SANS,
     vars: {
       pageBg: '#0a0b0d',
-      pageImage: 'radial-gradient(900px 520px at 50% -60px, rgba(71,85,105,.28), transparent 70%)',
+      pageImage: 'none',
       ink: '#0f172a',
       muted: '#64748b',
       surface: '#ffffff',
@@ -2684,7 +2734,7 @@ const SITE_TEMPLATES = {
     font: RSTK_SANS,
     vars: {
       pageBg: '#0a0b0d',
-      pageImage: 'radial-gradient(900px 520px at 50% -60px, rgba(71,85,105,.3), transparent 70%)',
+      pageImage: 'none',
       ink: '#0f172a',
       muted: '#64748b',
       surface: '#ffffff',
@@ -2812,13 +2862,15 @@ const RSTK_BASE_CSS = `
     color:var(--rstk-ink);
     background-color:var(--rstk-page-bg);
     background-image:var(--rstk-page-image);
+    background-position:var(--rstk-page-image-position,center top);
     background-repeat:no-repeat;
-    line-height:1.5;letter-spacing:-0.003em;
+    background-size:var(--rstk-page-image-size,auto);
+    line-height:1.5;letter-spacing:0;
     -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
   }
   img{max-width:100%;display:block}
   .rstk-frame{min-height:100vh;padding:var(--rstk-frame-pad,clamp(10px,3vw,32px)) 16px}
-  .rstk-page{width:100%;max-width:var(--rstk-max);margin:0 auto;border:1px solid var(--rstk-page-border,transparent);border-radius:var(--rstk-page-radius,0)}
+  .rstk-page{width:100%;max-width:var(--rstk-max);margin:0 auto;border:var(--rstk-page-border-width,0) solid var(--rstk-page-border,transparent);border-radius:var(--rstk-page-radius,0)}
   .rstk-shell{display:grid;gap:var(--rstk-gap)}
   .rstk-centered .rstk-shell{text-align:center;justify-items:center}
   .rstk-centered .rstk-subheading,.rstk-centered .rstk-text{margin-inline:auto}
@@ -2831,6 +2883,7 @@ const RSTK_BASE_CSS = `
     font-family:var(--rstk-block-font,var(--rstk-font));
     font-size:var(--rstk-block-size,inherit);
     font-weight:var(--rstk-block-weight,inherit);
+    border:var(--rstk-block-shell-border-width,0) solid var(--rstk-block-border,transparent);
     border-radius:var(--rstk-block-radius,0);
     padding:var(--rstk-block-pad,0);
   }
@@ -2858,20 +2911,20 @@ const RSTK_BASE_CSS = `
   }
 
   .rstk-kind-form .rstk-shell{
-    background:var(--rstk-surface);border:1px solid var(--rstk-border);
-    border-radius:var(--rstk-radius-lg);box-shadow:var(--rstk-shadow);
+    background:var(--rstk-surface);border:var(--rstk-page-border-width,0) solid var(--rstk-page-border,var(--rstk-border));
+    border-radius:var(--rstk-radius-lg);box-shadow:none;
     padding:var(--rstk-pad);overflow:hidden;
   }
   form{display:grid;gap:18px;background:transparent;border:0;box-shadow:none;padding:0;margin:0}
 
-  .rstk-headline{margin:0;font-weight:var(--rstk-heading-weight);font-size:clamp(1.7rem,4.6vw,3rem);line-height:1.05;letter-spacing:-0.02em}
+  .rstk-headline{margin:0;font-weight:var(--rstk-heading-weight);font-size:clamp(1.7rem,4.6vw,3rem);line-height:1.05;letter-spacing:0}
   .rstk-kind-landing .rstk-headline{font-size:clamp(2rem,5.4vw,3.6rem)}
   .rstk-subheading{margin:0;color:var(--rstk-muted);font-size:clamp(1rem,2vw,1.18rem);max-width:60ch}
   .rstk-kicker{margin:0;color:var(--rstk-accent);font-size:.78rem;font-weight:800;text-transform:uppercase;letter-spacing:.09em}
   .rstk-text{margin:0;color:color-mix(in srgb,var(--rstk-ink) 80%,transparent);max-width:66ch}
   .rstk-hero,.rstk-cta,.rstk-section-list,.rstk-embedded-form{display:grid;gap:14px}
   .rstk-hero{gap:16px}
-  .rstk-section-list h2,.rstk-cta h2,.rstk-embedded-form h2{margin:0;font-size:clamp(1.25rem,2.6vw,1.7rem);font-weight:var(--rstk-heading-weight);letter-spacing:-0.01em}
+  .rstk-section-list h2,.rstk-cta h2,.rstk-embedded-form h2{margin:0;font-size:clamp(1.25rem,2.6vw,1.7rem);font-weight:var(--rstk-heading-weight);letter-spacing:0}
 
   .rstk-button-link,.rstk-actions button{
     -webkit-appearance:none;appearance:none;cursor:pointer;
@@ -2890,7 +2943,7 @@ const RSTK_BASE_CSS = `
   .rstk-secondary{background:transparent !important;color:var(--rstk-ink) !important;border-color:var(--rstk-border) !important}
 
   .rstk-list-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
-  .rstk-list-grid article{border:1px solid var(--rstk-border);border-radius:var(--rstk-radius);background:var(--rstk-surface2);padding:16px;text-align:left}
+  .rstk-list-grid article{border:var(--rstk-block-border-width,1px) solid var(--rstk-block-border,var(--rstk-border));border-radius:var(--rstk-radius);background:var(--rstk-block-bg,var(--rstk-surface2));padding:16px;text-align:left}
   .rstk-list-grid strong{display:block;font-weight:750}
   .rstk-list-grid p{margin:6px 0 0;color:var(--rstk-muted);font-size:.92rem}
   .rstk-list-grid small{display:block;margin-top:8px;color:var(--rstk-muted);font-weight:700}
@@ -2905,7 +2958,7 @@ const RSTK_BASE_CSS = `
   .rstk-check-body strong{font-weight:650;font-size:1rem}
   .rstk-check-body span{color:var(--rstk-muted);font-size:.92rem}
 
-  .rstk-media,.rstk-video{width:100%;margin:0;overflow:hidden;border:1px solid var(--rstk-border);border-radius:var(--rstk-radius);background:var(--rstk-surface2)}
+  .rstk-media,.rstk-video{width:100%;margin:0;overflow:hidden;border:var(--rstk-block-border-width,1px) solid var(--rstk-block-border,var(--rstk-border));border-radius:var(--rstk-radius);background:var(--rstk-block-bg,var(--rstk-surface2))}
   .rstk-media img,.rstk-video iframe{width:100%;display:block;border:0}
   .rstk-video{aspect-ratio:16/9;position:relative}
   .rstk-video iframe{height:100%}
@@ -2933,7 +2986,7 @@ const RSTK_BASE_CSS = `
   .rstk-option:has(input:checked){border-color:var(--rstk-accent);background:color-mix(in srgb,var(--rstk-accent) 8%,var(--rstk-input-bg))}
   .rstk-option input{width:19px;height:19px;padding:0;flex:0 0 auto;accent-color:var(--rstk-accent)}
 
-  .rstk-embed{width:100%;min-height:360px;display:block;border:1px solid var(--rstk-border);border-radius:var(--rstk-radius);background:var(--rstk-surface2)}
+  .rstk-embed{width:100%;min-height:360px;display:block;border:var(--rstk-block-border-width,1px) solid var(--rstk-block-border,var(--rstk-border));border-radius:var(--rstk-radius);background:var(--rstk-block-bg,var(--rstk-surface2))}
   .rstk-calendar-embed{min-height:760px}
   iframe.rstk-embed{overflow:hidden}
   .rstk-embed-code{background:transparent}
@@ -2965,42 +3018,41 @@ const RSTK_BASE_CSS = `
   /* ---------- Premium landing ---------- */
   .rstk-kind-landing .rstk-frame{padding:var(--rstk-frame-pad,clamp(10px,3vw,28px)) clamp(14px,3vw,24px) clamp(32px,5vw,64px)}
   .rstk-kind-landing .rstk-shell{gap:clamp(24px,4vw,64px);padding-top:clamp(6px,2vw,20px)}
-  .rstk-kind-landing .rstk-headline{font-family:var(--rstk-display);font-size:clamp(2.3rem,5.6vw,4rem);line-height:1.03;letter-spacing:-0.028em;background:linear-gradient(180deg,var(--rstk-ink),color-mix(in srgb,var(--rstk-ink) 58%,var(--rstk-page-bg)));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .rstk-kind-landing .rstk-headline{font-family:var(--rstk-display);font-size:clamp(2.3rem,5.6vw,4rem);line-height:1.03;letter-spacing:0;background:none;color:var(--rstk-block-text,var(--rstk-ink))}
   .rstk-kind-landing .rstk-subheading{font-size:clamp(1.05rem,1.7vw,1.28rem);max-width:60ch;line-height:1.6}
   .rstk-kind-landing h2{font-family:var(--rstk-display)}
   .rstk-kind-landing .rstk-text{font-size:1.06rem;line-height:1.7}
 
-  .rstk-kind-landing .rstk-kicker{display:inline-flex;align-items:center;gap:8px;width:fit-content;padding:7px 14px 7px 12px;border:1px solid var(--rstk-border);border-radius:999px;background:var(--rstk-surface);color:var(--rstk-muted);font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
-  .rstk-kind-landing .rstk-kicker::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--rstk-accent);box-shadow:0 0 10px 1px color-mix(in srgb,var(--rstk-accent) 80%,transparent)}
+  .rstk-kind-landing .rstk-kicker{display:inline-flex;align-items:center;gap:8px;width:fit-content;padding:7px 14px 7px 12px;border:var(--rstk-block-border-width,1px) solid var(--rstk-block-border,var(--rstk-border));border-radius:999px;background:var(--rstk-block-bg,var(--rstk-surface));color:var(--rstk-muted);font-size:.72rem;font-weight:700;letter-spacing:0;text-transform:uppercase}
+  .rstk-kind-landing .rstk-kicker::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--rstk-accent)}
 
-  .rstk-kind-landing .rstk-hero{position:relative;isolation:isolate;overflow:hidden;gap:22px;justify-items:center;text-align:center;padding:clamp(32px,4.8vw,68px) clamp(20px,3.2vw,44px);border:1px solid var(--rstk-border);border-radius:clamp(22px,3vw,32px);background:var(--rstk-surface)}
-  .rstk-kind-landing .rstk-hero::before{content:"";position:absolute;inset:-1px;z-index:-1;background-image:linear-gradient(to right,color-mix(in srgb,var(--rstk-ink) 7%,transparent) 1px,transparent 1px),linear-gradient(to bottom,color-mix(in srgb,var(--rstk-ink) 7%,transparent) 1px,transparent 1px);background-size:56px 56px;-webkit-mask-image:radial-gradient(ellipse 78% 66% at 50% 28%,#000,transparent 72%);mask-image:radial-gradient(ellipse 78% 66% at 50% 28%,#000,transparent 72%)}
-  .rstk-kind-landing .rstk-hero::after{content:"";position:absolute;left:50%;top:-32%;width:82%;height:380px;transform:translateX(-50%);z-index:-1;background:radial-gradient(ellipse at center,color-mix(in srgb,var(--rstk-accent) 22%,transparent),transparent 70%);filter:blur(22px);pointer-events:none}
+  .rstk-kind-landing .rstk-hero{position:relative;isolation:isolate;overflow:hidden;gap:22px;justify-items:center;text-align:center;padding:clamp(32px,4.8vw,68px) clamp(20px,3.2vw,44px);border:var(--rstk-block-border-width,1px) solid var(--rstk-block-border,var(--rstk-border));border-radius:clamp(22px,3vw,32px);background:var(--rstk-block-bg,var(--rstk-surface))}
+  .rstk-kind-landing .rstk-hero::before,.rstk-kind-landing .rstk-hero::after{content:none}
   .rstk-kind-landing .rstk-hero .rstk-headline{font-size:clamp(2.6rem,6.2vw,4.6rem);max-width:16ch}
   .rstk-kind-landing .rstk-hero .rstk-subheading{margin-inline:auto}
 
   .rstk-kind-landing .rstk-section-list{gap:clamp(20px,3vw,38px)}
-  .rstk-kind-landing .rstk-section-list h2{text-align:center;max-width:20ch;margin-inline:auto;font-size:clamp(1.85rem,3.4vw,2.85rem);line-height:1.08;letter-spacing:-0.02em}
+  .rstk-kind-landing .rstk-section-list h2{text-align:center;max-width:20ch;margin-inline:auto;font-size:clamp(1.85rem,3.4vw,2.85rem);line-height:1.08;letter-spacing:0}
   .rstk-kind-landing .rstk-list-grid{gap:16px}
-  .rstk-kind-landing .rstk-list-grid article{padding:24px;border-radius:18px;background:var(--rstk-surface);transition:transform .3s var(--rstk-ease),border-color .3s var(--rstk-ease),box-shadow .3s var(--rstk-ease)}
-  .rstk-kind-landing .rstk-list-grid article:hover{transform:translateY(-4px);border-color:color-mix(in srgb,var(--rstk-ink) 22%,transparent);box-shadow:0 30px 60px -42px rgba(0,0,0,.55)}
+  .rstk-kind-landing .rstk-list-grid article{padding:24px;border-radius:18px;background:var(--rstk-block-bg,var(--rstk-surface));transition:border-color .15s ease}
+  .rstk-kind-landing .rstk-list-grid article:hover{border-color:color-mix(in srgb,var(--rstk-ink) 22%,transparent)}
   .rstk-kind-landing .rstk-list-grid strong{font-size:1.06rem}
 
-  .rstk-kind-landing .rstk-checklist{padding:clamp(24px,3vw,40px);border:1px solid var(--rstk-border);border-radius:24px;background:var(--rstk-surface);width:100%;margin-inline:auto}
+  .rstk-kind-landing .rstk-checklist{padding:clamp(24px,3vw,40px);border:var(--rstk-block-border-width,1px) solid var(--rstk-block-border,var(--rstk-border));border-radius:24px;background:var(--rstk-block-bg,var(--rstk-surface));width:100%;margin-inline:auto}
   .rstk-kind-landing .rstk-checklist h2{text-align:center;margin-bottom:4px}
   .rstk-kind-landing .rstk-check-body strong{font-size:1.04rem}
 
-  .rstk-kind-landing .rstk-cta{position:relative;overflow:hidden;justify-items:center;text-align:center;gap:18px;padding:clamp(30px,4.4vw,62px) clamp(20px,3.2vw,44px);border:1px solid var(--rstk-border);border-radius:clamp(24px,3vw,32px);background:var(--rstk-surface)}
-  .rstk-kind-landing .rstk-cta::after{content:"";position:absolute;left:50%;top:-42%;width:72%;height:320px;transform:translateX(-50%);z-index:0;background:radial-gradient(ellipse at center,color-mix(in srgb,var(--rstk-accent) 24%,transparent),transparent 70%);filter:blur(20px);pointer-events:none}
+  .rstk-kind-landing .rstk-cta{position:relative;overflow:hidden;justify-items:center;text-align:center;gap:18px;padding:clamp(30px,4.4vw,62px) clamp(20px,3.2vw,44px);border:var(--rstk-block-border-width,1px) solid var(--rstk-block-border,var(--rstk-border));border-radius:clamp(24px,3vw,32px);background:var(--rstk-block-bg,var(--rstk-surface))}
+  .rstk-kind-landing .rstk-cta::after{content:none}
   .rstk-kind-landing .rstk-cta > *{position:relative;z-index:1}
   .rstk-kind-landing .rstk-cta h2{font-size:clamp(2rem,4vw,3.1rem)}
   .rstk-kind-landing .rstk-cta p{font-size:1.1rem;max-width:52ch;margin-inline:auto}
 
   .rstk-kind-landing .rstk-button-link{border-radius:999px;min-height:54px;padding:0 28px;font-family:var(--rstk-display);font-weight:600;transition:transform .25s var(--rstk-ease),box-shadow .25s var(--rstk-ease),background .2s ease}
-  .rstk-kind-landing .rstk-button-link:hover{transform:translateY(-2px);box-shadow:0 18px 42px -14px color-mix(in srgb,var(--rstk-accent) 55%,transparent)}
+  .rstk-kind-landing .rstk-button-link:hover{transform:none;box-shadow:none}
 
-  .rstk-kind-landing .rstk-media,.rstk-kind-landing .rstk-video,.rstk-kind-landing .rstk-embed{border-radius:clamp(16px,2vw,22px);box-shadow:0 40px 90px -52px rgba(0,0,0,.6)}
-  .rstk-kind-landing .rstk-embedded-form{padding:clamp(24px,3vw,40px);border:1px solid var(--rstk-border);border-radius:24px;background:var(--rstk-surface);width:100%;margin-inline:auto}
+  .rstk-kind-landing .rstk-media,.rstk-kind-landing .rstk-video,.rstk-kind-landing .rstk-embed{border-radius:clamp(16px,2vw,22px);box-shadow:none}
+  .rstk-kind-landing .rstk-embedded-form{padding:clamp(24px,3vw,40px);border:var(--rstk-block-border-width,1px) solid var(--rstk-block-border,var(--rstk-border));border-radius:24px;background:var(--rstk-block-bg,var(--rstk-surface));width:100%;margin-inline:auto}
 
   @media (max-width:640px){
     .rstk-kind-landing .rstk-hero{padding:clamp(32px,8vw,56px) 20px}
@@ -3050,14 +3102,14 @@ const RSTK_TEMPLATE_EXTRAS = {
   `,
 
   vsl: `
-    .rstk-tpl-vsl .rstk-shell{background:var(--rstk-surface);border:1px solid var(--rstk-border);border-radius:var(--rstk-radius-lg);box-shadow:var(--rstk-shadow);padding:clamp(20px,4vw,40px)}
+    .rstk-tpl-vsl .rstk-shell{background:var(--rstk-surface);border:var(--rstk-page-border-width,0) solid var(--rstk-page-border,var(--rstk-border));border-radius:var(--rstk-radius-lg);box-shadow:none;padding:clamp(20px,4vw,40px)}
     .rstk-tpl-vsl .rstk-kicker{display:inline-block}
   `,
 
   interactive: `
     .rstk-interactive .rstk-shell{min-height:min(72vh,560px);align-content:center;padding:clamp(22px,5vw,46px)}
     .rstk-interactive .rstk-field{gap:14px}
-    .rstk-interactive label{font-size:clamp(1.3rem,3.4vw,1.9rem);font-weight:800;letter-spacing:-0.015em;line-height:1.15}
+    .rstk-interactive label{font-size:clamp(1.3rem,3.4vw,1.9rem);font-weight:800;letter-spacing:0;line-height:1.15}
     .rstk-interactive .rstk-help{font-size:1rem}
     .rstk-interactive .rstk-options{counter-reset:rstk-opt;gap:12px}
     .rstk-interactive .rstk-option{position:relative;min-height:60px;padding:16px 18px 16px 60px;font-size:1.05rem;font-weight:600}
@@ -3082,6 +3134,13 @@ function relLuminance(hex) {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b
 }
 
+function cssImageUrl(value) {
+  const raw = cleanString(value)
+  if (!raw) return ''
+  if (!/^https?:\/\//i.test(raw) && !raw.startsWith('/') && !/^data:image\//i.test(raw)) return ''
+  return `url("${raw.replace(/["\\\n\r]/g, '')}")`
+}
+
 function deriveNeutralVars(template, bg, userAccent) {
   const dark = relLuminance(bg) < 0.5
   const ink = dark ? '#f4f4f6' : '#0f172a'
@@ -3090,7 +3149,7 @@ function deriveNeutralVars(template, bg, userAccent) {
   return {
     ...template.vars,
     pageBg: bg,
-    pageImage: `radial-gradient(1100px 560px at 50% -160px, color-mix(in srgb, ${accent} ${dark ? '12%' : '9%'}, transparent), transparent 70%)`,
+    pageImage: 'none',
     ink,
     muted: `color-mix(in srgb, ${ink} 60%, ${bg})`,
     surface: dark ? 'rgba(255,255,255,0.04)' : 'rgba(15,23,42,0.022)',
@@ -3131,13 +3190,16 @@ function buildStyleSheet(template, maxWidth, overrides = {}, pageVars = {}) {
   const ring = overrides.accent ? `color-mix(in srgb, ${overrides.accent} 22%, transparent)` : v.ring
   const baseFont = template.chrome === 'none' ? `'Inter', ${template.font}` : template.font
   const display = template.chrome === 'none' ? `'Inter Tight', 'Inter', ${template.font}` : template.font
+  const pageImage = pageVars.pageImage || v.pageImage
   return `
   :root{
     --rstk-font:${baseFont};
     --rstk-display:${display};
     --rstk-ease:cubic-bezier(.16,.84,.44,1);
     --rstk-page-bg:${v.pageBg};
-    --rstk-page-image:${v.pageImage};
+    --rstk-page-image:${pageImage};
+    --rstk-page-image-size:${pageImage === 'none' ? 'auto' : 'cover'};
+    --rstk-page-image-position:center top;
     --rstk-ink:${v.ink};
     --rstk-muted:${v.muted};
     --rstk-surface:${v.surface};
@@ -3159,6 +3221,7 @@ function buildStyleSheet(template, maxWidth, overrides = {}, pageVars = {}) {
     --rstk-max:${maxWidth};
     --rstk-frame-pad:${pageVars.framePad || 'clamp(10px,3vw,32px)'};
     --rstk-page-border:${pageVars.pageBorder || 'transparent'};
+    --rstk-page-border-width:${pageVars.pageBorderWidth || '0px'};
     --rstk-page-radius:${pageVars.pageRadius || '0px'};
     --rstk-pad:clamp(18px,4vw,30px);
     --rstk-gap:clamp(16px,3vw,22px);
@@ -3170,7 +3233,7 @@ function buildStyleSheet(template, maxWidth, overrides = {}, pageVars = {}) {
   `
 }
 
-async function buildMetaPixelSnippet(site, trackingEnabled) {
+async function buildMetaPixelSnippet(site, trackingEnabled, activePage = null) {
   if (!trackingEnabled || !site.metaCapiEnabled) return ''
 
   const metaConfig = await getMetaConfig().catch(error => {
@@ -3180,8 +3243,9 @@ async function buildMetaPixelSnippet(site, trackingEnabled) {
   const pixelId = cleanString(metaConfig?.pixel_id || process.env.META_PIXEL_ID || process.env.META_DATASET_ID)
   if (!pixelId) return ''
 
-  const eventName = normalizeSiteMetaEventName(site.metaEventName)
-  const pixelMethod = META_STANDARD_PIXEL_EVENTS.has(eventName) ? 'track' : 'trackCustom'
+  const submitEventName = getFormSubmitMetaEventName(site, activePage?.id)
+  const pageMeta = getPageMetaConfig(site, activePage?.id)
+  const pageViewEventName = pageMeta?.trigger === 'page_view' ? pageMeta.eventName : ''
 
   return `
   <script>
@@ -3192,8 +3256,11 @@ async function buildMetaPixelSnippet(site, trackingEnabled) {
     (window, document,'script','https://connect.facebook.net/en_US/fbevents.js');
     fbq('init', ${JSON.stringify(pixelId)});
     fbq('track', 'PageView');
-    window.ristakMetaTrackSiteSubmit = function(eventId, customData) {
+    window.ristakMetaTrackSiteEvent = function(eventName, eventId, customData) {
       if (!window.fbq) return;
+      const normalizedEventName = eventName || ${JSON.stringify(submitEventName)};
+      if (!normalizedEventName || normalizedEventName === ${JSON.stringify(SITE_META_NO_EVENT)}) return;
+      const method = ${JSON.stringify([...META_STANDARD_PIXEL_EVENTS])}.indexOf(normalizedEventName) >= 0 ? 'track' : 'trackCustom';
       const data = Object.assign({
         source: 'ristak_site',
         site_id: ${JSON.stringify(site.id)},
@@ -3202,19 +3269,61 @@ async function buildMetaPixelSnippet(site, trackingEnabled) {
       }, customData || {});
       const options = eventId ? { eventID: eventId } : undefined;
       if (options) {
-        window.fbq(${JSON.stringify(pixelMethod)}, ${JSON.stringify(eventName)}, data, options);
+        window.fbq(method, normalizedEventName, data, options);
       } else {
-        window.fbq(${JSON.stringify(pixelMethod)}, ${JSON.stringify(eventName)}, data);
+        window.fbq(method, normalizedEventName, data);
       }
+    };
+    window.ristakMetaTrackSiteSubmit = function(eventId, customData, eventName) {
+      window.ristakMetaTrackSiteEvent(eventName || ${JSON.stringify(submitEventName)}, eventId, customData);
+    };
+    window.ristakMetaSendServerEvent = function(payload) {
+      fetch('/api/sites/public/meta-event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        keepalive: true
+      }).catch(() => {});
     };
     try {
       const pending = window.sessionStorage && window.sessionStorage.getItem('ristakPendingMetaSubmit');
       if (pending) {
         window.sessionStorage.removeItem('ristakPendingMetaSubmit');
         const parsed = JSON.parse(pending);
-        window.ristakMetaTrackSiteSubmit(parsed.eventId || '', parsed.data || {});
+        window.ristakMetaTrackSiteSubmit(parsed.eventId || '', parsed.data || {}, parsed.eventName || '');
       }
     } catch (error) {}
+    ${pageViewEventName ? `
+    try {
+      const pageEventId = [
+        'site_page',
+        ${JSON.stringify(site.id)},
+        ${JSON.stringify(activePage?.id || '')},
+        Date.now(),
+        Math.random().toString(16).slice(2)
+      ].join('_');
+      const pageData = {
+        conversion_type: 'page_view',
+        public_page_id: ${JSON.stringify(activePage?.id || '')},
+        public_page_title: ${JSON.stringify(activePage?.title || '')}
+      };
+      window.ristakMetaTrackSiteEvent(${JSON.stringify(pageViewEventName)}, pageEventId, pageData);
+      window.ristakMetaSendServerEvent({
+        siteId: ${JSON.stringify(site.id)},
+        pageId: ${JSON.stringify(activePage?.id || '')},
+        eventId: pageEventId,
+        eventName: ${JSON.stringify(pageViewEventName)},
+        trigger: 'page_view',
+        meta: {
+          pageUrl: window.location.href,
+          referrer: document.referrer,
+          params: Object.fromEntries(new URL(window.location.href).searchParams.entries()),
+          fbp: (document.cookie.match(/(?:^|; )_fbp=([^;]+)/) || [])[1] || null,
+          fbc: (document.cookie.match(/(?:^|; )_fbc=([^;]+)/) || [])[1] || null
+        }
+      });
+    } catch (error) {}
+    ` : ''}
   </script>
   <noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=${encodeURIComponent(pixelId)}&ev=PageView&noscript=1"/></noscript>`
 }
@@ -3240,11 +3349,15 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
   const pageMaxWidth = themeNumber(theme, 'pageMaxWidth', isLandingType ? 1160 : (template.id === 'interactive' ? 600 : 520), 360, 1440)
   const pagePadding = themeNumber(theme, 'pagePadding', isLandingType ? 50 : 22, 0, 120)
   const pageRadius = themeNumber(theme, 'pageRadius', isLandingType ? 0 : 24, 0, 40)
+  const pageBorderWidth = themeNumber(theme, 'pageBorderWidth', 0, 0, 12)
   const pageBorder = themeHex(theme, 'pageBorderColor') || 'transparent'
+  const pageImage = cssImageUrl(theme.backgroundImage)
   const maxWidth = `${pageMaxWidth}px`
   const styleSheet = buildStyleSheet(template, maxWidth, resolveRenderOverrides(template, theme, isLandingType), {
     framePad: `${pagePadding}px`,
     pageBorder,
+    pageBorderWidth: `${pageBorderWidth}px`,
+    pageImage,
     pageRadius: `${pageRadius}px`
   })
   const chrome = (!isLandingType && template.chrome && template.chrome !== 'none') ? renderBrandChrome(template, brand) : ''
@@ -3286,7 +3399,7 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
       pageTitle: activePage?.title || ''
     })
     : ''
-  const metaPixelSnippet = await buildMetaPixelSnippet(site, trackingEnabled)
+  const metaPixelSnippet = await buildMetaPixelSnippet(site, trackingEnabled, activePage)
 
   return `<!doctype html>
 <html lang="es">
@@ -3456,10 +3569,14 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
           const metaEventId = submission.capi && submission.capi.eventId
             ? submission.capi.eventId
             : (submission.submissionId ? 'site_' + siteId + '_' + submission.submissionId : '');
+          const metaEventName = submission.capi && submission.capi.eventName
+            ? submission.capi.eventName
+            : '';
           if (window.ristakMetaTrackSiteSubmit) {
             if (metaConversionTarget === 'next_page' && nextPageUrl && window.sessionStorage) {
               window.sessionStorage.setItem('ristakPendingMetaSubmit', JSON.stringify({
                 eventId: metaEventId,
+                eventName: metaEventName,
                 data: {
                   status: submission.status || 'submitted',
                   conversion_type: 'form_submit'
@@ -3469,7 +3586,7 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
             window.ristakMetaTrackSiteSubmit(metaEventId, {
               status: submission.status || 'submitted',
               conversion_type: 'form_submit'
-            });
+            }, metaEventName);
             }
           }
           form.reset();
@@ -3881,13 +3998,17 @@ async function logMetaEvent({ contactId, eventType, metaEventName, eventId, stat
   ])
 }
 
-async function sendSiteLeadMetaEvent({ site, submissionId, contactId, contact, requestMeta }) {
+async function sendSiteLeadMetaEvent({ site, submissionId, submittedPageId, contactId, contact, requestMeta }) {
   if (!site.metaCapiEnabled) {
     return { sent: false, reason: 'disabled' }
   }
 
-  const eventName = normalizeSiteMetaEventName(site.metaEventName)
+  const eventName = getFormSubmitMetaEventName(site, submittedPageId)
   const eventId = `site_${site.id}_${submissionId}`
+  if (eventName === SITE_META_NO_EVENT) {
+    return { sent: false, reason: 'no_event_configured', eventId, eventName }
+  }
+
   const metaConfig = await getMetaConfig().catch(error => {
     logger.warn(`No se pudo leer configuracion Meta para Sites CAPI: ${error.message}`)
     return null
@@ -3904,7 +4025,7 @@ async function sendSiteLeadMetaEvent({ site, submissionId, contactId, contact, r
       status: 'skipped',
       errorMessage: 'Falta Pixel/Dataset ID o Pixel API Token de Meta'
     })
-    return { sent: false, reason: 'missing_meta_config' }
+    return { sent: false, reason: 'missing_meta_config', eventId, eventName }
   }
 
   const names = splitName(contact.fullName)
@@ -3933,7 +4054,7 @@ async function sendSiteLeadMetaEvent({ site, submissionId, contactId, contact, r
       status: 'skipped',
       errorMessage: 'user_data insuficiente para Meta'
     })
-    return { sent: false, reason: 'insufficient_user_data' }
+    return { sent: false, reason: 'insufficient_user_data', eventId, eventName }
   }
 
   const payload = {
@@ -3982,7 +4103,7 @@ async function sendSiteLeadMetaEvent({ site, submissionId, contactId, contact, r
       responsePayload
     })
 
-    return { sent: true, eventId, responsePayload }
+    return { sent: true, eventId, eventName, responsePayload }
   } catch (error) {
     await logMetaEvent({
       contactId,
@@ -3993,7 +4114,115 @@ async function sendSiteLeadMetaEvent({ site, submissionId, contactId, contact, r
       requestPayload: payload,
       errorMessage: error.message
     })
-    return { sent: false, reason: 'meta_error', error: error.message }
+    return { sent: false, reason: 'meta_error', error: error.message, eventId, eventName }
+  }
+}
+
+async function sendSitePageMetaEvent({ site, page, eventName, eventId, contactId, requestMeta }) {
+  const metaConfig = await getMetaConfig().catch(error => {
+    logger.warn(`No se pudo leer configuracion Meta para evento de pagina Site: ${error.message}`)
+    return null
+  })
+  const datasetId = cleanString(metaConfig?.pixel_id || process.env.META_PIXEL_ID || process.env.META_DATASET_ID)
+  const accessToken = cleanString(metaConfig?.pixel_api_token || process.env.META_ACCESS_TOKEN || metaConfig?.access_token)
+
+  if (!datasetId || !accessToken) {
+    await logMetaEvent({
+      contactId,
+      eventType: 'site_page_view',
+      metaEventName: eventName,
+      eventId,
+      status: 'skipped',
+      errorMessage: 'Falta Pixel/Dataset ID o Pixel API Token de Meta'
+    })
+    return { sent: false, reason: 'missing_meta_config', eventId, eventName }
+  }
+
+  const userData = {
+    external_id: contactId ? hashValue(contactId) : undefined,
+    client_ip_address: requestMeta.ip || undefined,
+    client_user_agent: requestMeta.userAgent || undefined,
+    fbp: cleanString(requestMeta.meta?.fbp) || undefined,
+    fbc: cleanString(requestMeta.meta?.fbc) || undefined
+  }
+
+  Object.keys(userData).forEach(key => {
+    if (!userData[key]) delete userData[key]
+  })
+
+  if (!userData.client_ip_address && !userData.client_user_agent && !userData.fbp && !userData.fbc && !userData.external_id) {
+    await logMetaEvent({
+      contactId,
+      eventType: 'site_page_view',
+      metaEventName: eventName,
+      eventId,
+      status: 'skipped',
+      errorMessage: 'user_data insuficiente para Meta'
+    })
+    return { sent: false, reason: 'insufficient_user_data', eventId, eventName }
+  }
+
+  const payload = {
+    data: [
+      {
+        event_name: eventName,
+        event_time: Math.floor(Date.now() / 1000),
+        action_source: 'website',
+        event_source_url: cleanString(requestMeta.meta?.pageUrl) || `https://${site.domain}`,
+        event_id: eventId,
+        user_data: userData,
+        custom_data: {
+          source: 'ristak_site',
+          conversion_type: 'page_view',
+          site_id: site.id,
+          site_name: site.name,
+          public_page_id: page?.id || '',
+          public_page_title: page?.title || '',
+          content_name: page?.title || site.title || site.name
+        }
+      }
+    ]
+  }
+
+  const testEventCode = cleanString(await getAppConfig('meta_test_event_code') || process.env.META_TEST_EVENT_CODE)
+  if (testEventCode) {
+    payload.test_event_code = testEventCode
+  }
+
+  try {
+    const response = await fetch(`${API_URLS.META_GRAPH}/${encodeURIComponent(datasetId)}/events?access_token=${encodeURIComponent(accessToken)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    const responsePayload = await response.json().catch(() => ({}))
+
+    if (!response.ok || responsePayload?.error) {
+      throw new Error(responsePayload?.error?.message || `Meta CAPI ${response.status}`)
+    }
+
+    await logMetaEvent({
+      contactId,
+      eventType: 'site_page_view',
+      metaEventName: eventName,
+      eventId,
+      status: 'success',
+      requestPayload: payload,
+      responsePayload
+    })
+
+    return { sent: true, eventId, eventName, responsePayload }
+  } catch (error) {
+    await logMetaEvent({
+      contactId,
+      eventType: 'site_page_view',
+      metaEventName: eventName,
+      eventId,
+      status: 'error',
+      requestPayload: payload,
+      errorMessage: error.message
+    })
+    return { sent: false, reason: 'meta_error', error: error.message, eventId, eventName }
   }
 }
 
@@ -4118,6 +4347,7 @@ export async function createSubmissionFromRequest(req, body = {}) {
   const capi = await sendSiteLeadMetaEvent({
     site,
     submissionId,
+    submittedPageId,
     contactId,
     contact: inferredContact,
     requestMeta: {
@@ -4152,4 +4382,64 @@ export async function createSubmissionFromRequest(req, body = {}) {
     rules: ruleEvaluation,
     capi
   }
+}
+
+export async function createMetaPageEventFromRequest(req, body = {}) {
+  const host = getRequestHost(req)
+  const domainResolution = await resolveConnectedPublicDomainForHost(host)
+
+  if (!domainResolution.ok) {
+    const error = new Error(domainResolution.message)
+    error.status = domainResolution.status
+    throw error
+  }
+
+  const siteId = cleanString(body.siteId || body.site_id)
+  if (!siteId) {
+    const error = new Error('Site requerido')
+    error.status = 400
+    throw error
+  }
+
+  const site = await getSite(siteId, { includeBlocks: false, includeSubmissions: false })
+  if (!site) {
+    const error = new Error('Site publico no encontrado')
+    error.status = 404
+    throw error
+  }
+
+  if (site.status !== 'published') {
+    const error = new Error('Este site no esta publicado')
+    error.status = 404
+    throw error
+  }
+
+  site.domain = domainResolution.domain || host
+
+  if (!site.metaCapiEnabled) {
+    return { sent: false, reason: 'site_disabled' }
+  }
+
+  const pageId = cleanString(body.pageId || body.page_id)
+  const pageMeta = getPageMetaConfig(site, pageId)
+  if (!pageMeta || pageMeta.trigger !== 'page_view') {
+    return { sent: false, reason: 'page_event_disabled' }
+  }
+
+  const meta = body.meta && typeof body.meta === 'object' ? body.meta : {}
+  const eventId = cleanString(body.eventId || body.event_id) || `site_page_${site.id}_${pageMeta.page.id}_${crypto.randomUUID()}`
+  const contactId = cleanString(body.contactId || body.contact_id)
+
+  return sendSitePageMetaEvent({
+    site,
+    page: pageMeta.page,
+    eventName: pageMeta.eventName,
+    eventId,
+    contactId,
+    requestMeta: {
+      ip: getClientIp(req),
+      userAgent: req.headers['user-agent'] || '',
+      meta
+    }
+  })
 }

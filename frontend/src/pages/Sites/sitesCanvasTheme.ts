@@ -53,7 +53,7 @@ const SITE_TEMPLATES: Record<SiteTemplateId, Template> = {
     id: 'ristak', mode: 'light', chrome: 'none', font: RSTK_SANS,
     vars: {
       pageBg: '#f5f6f8',
-      pageImage: 'radial-gradient(1200px 520px at 50% -120px, rgba(15,23,42,.06), transparent 70%)',
+      pageImage: 'none',
       ink: '#0f172a', muted: '#64748b', surface: '#ffffff', surface2: '#f8fafc', border: '#e6e8ec',
       accent: '#111827', accentStrong: '#000000', onAccent: '#ffffff', ring: 'rgba(17,24,39,.16)',
       inputBg: '#ffffff', inputInk: '#0f172a', inputBorder: '#dfe3e8',
@@ -87,7 +87,7 @@ const SITE_TEMPLATES: Record<SiteTemplateId, Template> = {
   tiktok: {
     id: 'tiktok', mode: 'dark', chrome: 'tiktok', font: RSTK_SANS, cyan: '#25f4ee',
     vars: {
-      pageBg: '#000000', pageImage: 'radial-gradient(760px 420px at 50% -80px, rgba(37,244,238,.12), transparent 70%)',
+      pageBg: '#000000', pageImage: 'none',
       ink: '#ffffff', muted: '#a1a1aa', surface: '#161616', surface2: '#1f1f1f', border: 'rgba(255,255,255,.12)',
       accent: '#fe2c55', accentStrong: '#ef1f49', onAccent: '#ffffff', ring: 'rgba(254,44,85,.32)',
       inputBg: '#1f1f1f', inputInk: '#ffffff', inputBorder: 'rgba(255,255,255,.16)',
@@ -98,7 +98,7 @@ const SITE_TEMPLATES: Record<SiteTemplateId, Template> = {
   vsl: {
     id: 'vsl', mode: 'light', chrome: 'none', centered: true, font: RSTK_SANS,
     vars: {
-      pageBg: '#0a0b0d', pageImage: 'radial-gradient(900px 520px at 50% -60px, rgba(71,85,105,.28), transparent 70%)',
+      pageBg: '#0a0b0d', pageImage: 'none',
       ink: '#0f172a', muted: '#64748b', surface: '#ffffff', surface2: '#f8fafc', border: '#e6e8ec',
       accent: '#111827', accentStrong: '#000000', onAccent: '#ffffff', ring: 'rgba(17,24,39,.16)',
       inputBg: '#ffffff', inputInk: '#0f172a', inputBorder: '#dfe3e8',
@@ -109,7 +109,7 @@ const SITE_TEMPLATES: Record<SiteTemplateId, Template> = {
   interactive: {
     id: 'interactive', mode: 'light', chrome: 'none', centered: true, font: RSTK_SANS,
     vars: {
-      pageBg: '#0a0b0d', pageImage: 'radial-gradient(900px 520px at 50% -60px, rgba(71,85,105,.3), transparent 70%)',
+      pageBg: '#0a0b0d', pageImage: 'none',
       ink: '#0f172a', muted: '#64748b', surface: '#ffffff', surface2: '#f6f7f9', border: '#e6e8ec',
       accent: '#111827', accentStrong: '#000000', onAccent: '#ffffff', ring: 'rgba(17,24,39,.14)',
       inputBg: '#ffffff', inputInk: '#0f172a', inputBorder: '#dfe3e8',
@@ -123,6 +123,13 @@ const DEFAULT_BG = '#ffffff'
 const DEFAULT_ACCENT = '#111827'
 
 const isHex6 = (value?: string): value is string => !!value && /^#[0-9a-f]{6}$/i.test(value)
+
+const cssImageUrl = (value?: string) => {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  if (!/^https?:\/\//i.test(raw) && !raw.startsWith('/') && !/^data:image\//i.test(raw)) return ''
+  return `url("${raw.replace(/["\\\n\r]/g, '')}")`
+}
 
 const relLuminance = (hex: string): number => {
   const h = hex.replace('#', '')
@@ -151,7 +158,7 @@ const deriveNeutralVars = (template: Template, bg: string, userAccent: string | 
   return {
     ...template.vars,
     pageBg: bg,
-    pageImage: `radial-gradient(1100px 560px at 50% -160px, color-mix(in srgb, ${accent} ${dark ? '12%' : '9%'}, transparent), transparent 70%)`,
+    pageImage: 'none',
     ink,
     muted: `color-mix(in srgb, ${ink} 60%, ${bg})`,
     surface: dark ? 'rgba(255,255,255,0.04)' : 'rgba(15,23,42,0.022)',
@@ -225,13 +232,17 @@ export const buildCanvasTheme = (site: PublicSite, device: 'desktop' | 'mobile' 
   const pagePadding = themeNumber(theme, 'pagePadding', isLandingType ? 50 : 22, 0, 120)
   const pageRadius = themeNumber(theme, 'pageRadius', isLandingType ? 0 : 24, 0, 40)
   const pageBorder = isHex6(theme.pageBorderColor) ? (theme.pageBorderColor as string) : 'transparent'
+  const pageBorderWidth = themeNumber(theme, 'pageBorderWidth', 0, 0, 12)
+  const pageImage = cssImageUrl(theme.backgroundImage) || v.pageImage
 
   const vars = {
     '--rstk-font': baseFont,
     '--rstk-display': display,
     '--rstk-ease': 'cubic-bezier(.16,.84,.44,1)',
     '--rstk-page-bg': v.pageBg,
-    '--rstk-page-image': v.pageImage,
+    '--rstk-page-image': pageImage,
+    '--rstk-page-image-size': pageImage === 'none' ? 'auto' : 'cover',
+    '--rstk-page-image-position': 'center top',
     '--rstk-ink': v.ink,
     '--rstk-muted': v.muted,
     '--rstk-surface': v.surface,
@@ -253,6 +264,7 @@ export const buildCanvasTheme = (site: PublicSite, device: 'desktop' | 'mobile' 
     '--rstk-max': `${pageMaxWidth}px`,
     '--rstk-frame-pad': `${pagePadding}px`,
     '--rstk-page-border': pageBorder,
+    '--rstk-page-border-width': `${pageBorderWidth}px`,
     '--rstk-page-radius': `${pageRadius}px`,
     '--rstk-pad': 'clamp(18px,4vw,30px)',
     '--rstk-gap': 'clamp(16px,3vw,22px)',

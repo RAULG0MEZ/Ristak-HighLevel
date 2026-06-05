@@ -11,6 +11,7 @@ function getAuthHeaders(): HeadersInit {
 
 export type SiteType = 'standard_form' | 'interactive_form' | 'landing_page'
 export type SiteStatus = 'draft' | 'published' | 'archived'
+export type SiteMetaTrigger = 'page_view' | 'form_submit'
 export type SiteBlockType =
   | 'headline'
   | 'subheading'
@@ -70,16 +71,21 @@ export interface SitePage {
   id: string
   title: string
   sortOrder: number
+  metaCapiEnabled?: boolean
+  metaEventName?: string
+  metaTrigger?: SiteMetaTrigger
 }
 
 export interface SiteTheme {
   accentColor?: string
   backgroundColor?: string
+  backgroundImage?: string
   textColor?: string
   template?: SiteTemplateId
   pages?: SitePage[]
   pagePadding?: number
   pageRadius?: number
+  pageBorderWidth?: number
   pageBorderColor?: string
   pageMaxWidth?: number
   metaConversionTarget?: 'same_page' | 'next_page'
