@@ -2,10 +2,12 @@ import {
   connectWhatsAppApi,
   disconnectWhatsAppApi,
   getWhatsAppApiStatus,
+  getWhatsAppApiTemplates,
   getWhatsAppApiWebhookPath,
   processYCloudWhatsAppWebhook,
   refreshWhatsAppApi,
   resetWhatsAppApiCredentials,
+  sendWhatsAppApiTemplateMessage,
   sendWhatsAppApiTextMessage
 } from '../services/whatsappApiService.js'
 import { logger } from '../utils/logger.js'
@@ -118,6 +120,44 @@ export async function sendWhatsAppApiTextMessageView(req, res) {
     res.status(400).json({
       success: false,
       error: error.message || 'No se pudo enviar el mensaje por WhatsApp_API'
+    })
+  }
+}
+
+export async function getWhatsAppApiTemplatesView(req, res) {
+  try {
+    const data = await getWhatsAppApiTemplates({
+      status: req.query?.status,
+      limit: req.query?.limit
+    })
+    res.json({ success: true, data })
+  } catch (error) {
+    logger.error(`Error obteniendo plantillas WhatsApp_API: ${error.message}`)
+    res.status(500).json({
+      success: false,
+      error: 'No se pudieron leer las plantillas de WhatsApp_API'
+    })
+  }
+}
+
+export async function sendWhatsAppApiTemplateMessageView(req, res) {
+  try {
+    const data = await sendWhatsAppApiTemplateMessage({
+      to: req.body?.to,
+      from: req.body?.from,
+      templateId: req.body?.templateId,
+      templateName: req.body?.templateName,
+      language: req.body?.language,
+      components: req.body?.components,
+      variables: req.body?.variables,
+      externalId: req.body?.externalId
+    })
+    res.json({ success: true, data })
+  } catch (error) {
+    logger.error(`Error enviando plantilla WhatsApp_API: ${error.message}`)
+    res.status(400).json({
+      success: false,
+      error: error.message || 'No se pudo enviar la plantilla por WhatsApp_API'
     })
   }
 }

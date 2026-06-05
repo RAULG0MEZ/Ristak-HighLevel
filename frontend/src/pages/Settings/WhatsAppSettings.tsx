@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, CheckCircle, Cloud, KeyRound, RefreshCw, ShieldCheck, Smartphone, Unplug } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, CheckCircle, Cloud, FileText, KeyRound, RefreshCw, Send, ShieldCheck, Smartphone, Unplug } from 'lucide-react'
 import { SiWhatsapp } from 'react-icons/si'
 import { Button, Card } from '@/components/common'
 import { useNotification } from '@/contexts/NotificationContext'
-import { WhatsAppApiPhoneNumber, WhatsAppApiStatus, whatsappApiService } from '@/services/whatsappApiService'
+import { WhatsAppApiAlert, WhatsAppApiPhoneNumber, WhatsAppApiStatus, WhatsAppApiTemplate, whatsappApiService } from '@/services/whatsappApiService'
 import { WhatsAppWebLog, WhatsAppWebLogs, WhatsAppWebStatus, whatsappWebService } from '@/services/whatsappWebService'
 import styles from './WhatsAppSettings.module.css'
 
@@ -45,9 +45,44 @@ function formatMetric(value?: number | null) {
   return new Intl.NumberFormat('es-MX').format(Number(value || 0))
 }
 
+function formatCurrency(amount?: number | null, currency?: string | null) {
+  const cleanCurrency = currency || 'USD'
+  try {
+    return new Intl.NumberFormat('es-MX', {
+      style: 'currency',
+      currency: cleanCurrency,
+      maximumFractionDigits: 2
+    }).format(Number(amount || 0))
+  } catch {
+    return `${new Intl.NumberFormat('es-MX', { maximumFractionDigits: 2 }).format(Number(amount || 0))} ${cleanCurrency}`
+  }
+}
+
 function getPhoneLabel(phone: WhatsAppApiPhoneNumber) {
   const number = phone.display_phone_number || phone.phone_number || 'Numero'
   return phone.verified_name ? `${number} · ${phone.verified_name}` : number
+}
+
+function getTemplateLabel(template: WhatsAppApiTemplate) {
+  return `${template.name} · ${template.language}`
+}
+
+function getTemplateVariablesCount(template?: WhatsAppApiTemplate | null) {
+  if (!template?.components?.length) return 0
+  const matches = JSON.stringify(template.components).match(/{{\s*\d+\s*}}/g)
+  return matches ? new Set(matches).size : 0
+}
+
+function getAlertClass(alert: WhatsAppApiAlert) {
+  if (alert.severity === 'critical') return styles.apiAlertCritical
+  if (alert.severity === 'warning') return styles.apiAlertWarning
+  return styles.apiAlertInfo
+}
+
+function getTemplateStatusClass(template: WhatsAppApiTemplate) {
+  if (template.status === 'APPROVED') return styles.templateStatusApproved
+  if (template.status === 'PENDING' || template.status === 'IN_APPEAL') return styles.templateStatusPending
+  return styles.templateStatusBlocked
 }
 
 function renderLog(log: WhatsAppWebLog) {
@@ -89,6 +124,10 @@ export const WhatsAppSettings: React.FC = () => {
   const [apiKey, setApiKey] = useState('')
   const [selectedPhoneId, setSelectedPhoneId] = useState('')
   const [manualPhone, setManualPhone] = useState('')
+  const [selectedTemplateId, setSelectedTemplateId] = useState('')
+  const [templateTo, setTemplateTo] = useState('')
+  const [templateVariables, setTemplateVariables] = useState('[]')
+  const [templateSending, setTemplateSending] = useState(false)
 
   const requestInFlight = useRef(false)
   const connectionStartedAt = useRef<number | null>(null)
@@ -110,6 +149,15 @@ export const WhatsAppSettings: React.FC = () => {
   const selectedPhone = useMemo(() => {
     return apiStatus?.phoneNumbers.find(phone => phone.id === selectedPhoneId) || null
   }, [apiStatus?.phoneNumbers, selectedPhoneId])
+
+  const apiTemplates = apiStatus?.templates?.items || []
+  const approvedTemplates = useMemo(() => {
+    return apiTemplates.filter(template => template.status === 'APPROVED')
+  }, [apiTemplates])
+  const selectedTemplate = useMemo(() => {
+    return apiTemplates.find(template => template.id === selectedTemplateId) || approvedTemplates[0] || apiTemplates[0] || null
+  }, [apiTemplates, approvedTemplates, selectedTemplateId])
+  const selectedTemplateVariablesCount = getTemplateVariablesCount(selectedTemplate)
 
   const canSubmitApi = Boolean(apiKey.trim() || apiStatus?.credentials.hasApiKey)
   const apiConnected = Boolean(apiStatus?.connected)
@@ -155,6 +203,11 @@ export const WhatsAppSettings: React.FC = () => {
 
     setSelectedPhoneId(preferredPhoneId)
     setManualPhone(nextStatus.sender.phone || '')
+    setSelectedTemplateId((current) => {
+      const templates = nextStatus.templates?.items || []
+      if (current && templates.some(template => template.id === current)) return current
+      return templates.find(template => template.status === 'APPROVED')?.id || templates[0]?.id || ''
+    })
 
     return nextStatus
   }
@@ -276,6 +329,17 @@ export const WhatsAppSettings: React.FC = () => {
     return () => window.clearInterval(interval)
   }, [isConnected, manualDisconnected, qrRequested])
 
+  useEffect(() => {
+    if (!apiStatus) return
+    const templates = apiStatus.templates?.items || []
+    if (!templates.length) {
+      if (selectedTemplateId) setSelectedTemplateId('')
+      return
+    }
+    if (selectedTemplateId && templates.some(template => template.id === selectedTemplateId)) return
+    setSelectedTemplateId(templates.find(template => template.status === 'APPROVED')?.id || templates[0]?.id || '')
+  }, [apiStatus, selectedTemplateId])
+
   const confirmDisconnect = () => {
     showConfirm(
       'Desconectar WhatsApp Business',
@@ -332,6 +396,46 @@ export const WhatsAppSettings: React.FC = () => {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudieron leer los logs')
     } finally {
       setLogsLoading(false)
+    }
+  }
+
+  const sendTemplate = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!selectedTemplate || templateSending) return
+
+    if (selectedTemplate.status !== 'APPROVED') {
+      showToast('warning', 'Plantilla no aprobada', 'Solo se pueden enviar plantillas APPROVED')
+      return
+    }
+
+    let parsedVariables: unknown = []
+    const cleanVariables = templateVariables.trim()
+    if (cleanVariables) {
+      try {
+        parsedVariables = JSON.parse(cleanVariables)
+      } catch {
+        showToast('error', 'Variables invalidas', 'Usa JSON valido para las variables de la plantilla')
+        return
+      }
+    }
+
+    setTemplateSending(true)
+    try {
+      await whatsappApiService.sendTemplate({
+        to: templateTo.trim(),
+        from: apiStatus?.sender.phone || undefined,
+        templateId: selectedTemplate.id,
+        templateName: selectedTemplate.name,
+        language: selectedTemplate.language,
+        variables: parsedVariables
+      })
+      showToast('success', 'Plantilla enviada', 'YCloud acepto el envio por WhatsApp_API')
+      setTemplateTo('')
+      await loadApiStatus()
+    } catch (error) {
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo enviar la plantilla')
+    } finally {
+      setTemplateSending(false)
     }
   }
 
@@ -393,6 +497,16 @@ export const WhatsAppSettings: React.FC = () => {
     }
 
     if (apiConnected && apiStatus) {
+      const balance = apiStatus.balance
+      const alerts = apiStatus.alerts?.items || []
+      const selectedApiPhone = selectedPhone || apiStatus.selectedPhone
+      const visibleTemplates = apiTemplates.slice(0, 8)
+      const orderedTemplates = [...apiTemplates].sort((left, right) => {
+        if (left.status === 'APPROVED' && right.status !== 'APPROVED') return -1
+        if (left.status !== 'APPROVED' && right.status === 'APPROVED') return 1
+        return getTemplateLabel(left).localeCompare(getTemplateLabel(right))
+      })
+
       return (
         <div className={styles.apiConnectedState}>
           <div className={styles.apiHero}>
@@ -405,6 +519,26 @@ export const WhatsAppSettings: React.FC = () => {
             <p>{selectedPhone?.verified_name || selectedPhone?.display_phone_number || 'YCloud'}</p>
           </div>
 
+          {alerts.length ? (
+            <div className={styles.apiAlertList}>
+              {alerts.map((alert) => (
+                <div key={alert.id} className={`${styles.apiAlert} ${getAlertClass(alert)}`}>
+                  <AlertTriangle size={18} />
+                  <div>
+                    <strong>{alert.title}</strong>
+                    {alert.message && <p>{alert.message}</p>}
+                    <small>{alert.alert_type} · {formatDateTime(alert.updated_at) || 'Ahora'}</small>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className={styles.apiHealthyBanner}>
+              <CheckCircle size={18} />
+              <span>Sin alertas activas de YCloud</span>
+            </div>
+          )}
+
           {apiStatus.requiresPhoneSelection && (
             <div className={styles.apiNotice}>
               Selecciona el numero emisor para dejar el envio listo.
@@ -412,13 +546,37 @@ export const WhatsAppSettings: React.FC = () => {
           )}
 
           <div className={styles.apiMetricsGrid}>
+            <div>
+              <span>Saldo</span>
+              <strong>{balance ? formatCurrency(balance.amount, balance.currency) : 'Pendiente'}</strong>
+            </div>
+            <div>
+              <span>Plantillas</span>
+              <strong>{formatMetric(apiStatus.templates?.approved || 0)} / {formatMetric(apiStatus.templates?.total || 0)}</strong>
+            </div>
+            <div>
+              <span>Alertas</span>
+              <strong>{formatMetric(apiStatus.alerts?.total || 0)}</strong>
+            </div>
+            <div>
+              <span>Envios plantilla</span>
+              <strong>{formatMetric(apiStatus.stats.templateSends || 0)}</strong>
+            </div>
             <div><span>Mensajes</span><strong>{formatMetric(apiStatus.stats.messages)}</strong></div>
             <div><span>Contactos</span><strong>{formatMetric(apiStatus.stats.contacts)}</strong></div>
-            <div><span>Atribucion</span><strong>{formatMetric(apiStatus.stats.attributedMessages)}</strong></div>
-            <div><span>Eventos</span><strong>{formatMetric(apiStatus.stats.webhookEvents)}</strong></div>
           </div>
 
           <div className={styles.apiDetailsGrid}>
+            <div>
+              <span>Numero</span>
+              <strong>{selectedApiPhone?.display_phone_number || selectedApiPhone?.phone_number || apiStatus.sender.phone || 'Sin numero'}</strong>
+              <small>{selectedApiPhone?.status || 'Sin status'} · Calidad {selectedApiPhone?.quality_rating || 'UNKNOWN'}</small>
+            </div>
+            <div>
+              <span>Limite</span>
+              <strong>{selectedApiPhone?.messaging_limit || 'Sin dato'}</strong>
+              <small>WABA {selectedApiPhone?.waba_id || apiStatus.sender.wabaId || 'Sin WABA'}</small>
+            </div>
             <div>
               <span>Webhook</span>
               <strong>{apiStatus.webhook.status || 'activo'}</strong>
@@ -429,6 +587,101 @@ export const WhatsAppSettings: React.FC = () => {
               <strong>{formatDateTime(apiStatus.timestamps.lastSyncedAt) || 'Pendiente'}</strong>
               <small>{apiStatus.webhook.id || 'Sin endpoint'}</small>
             </div>
+          </div>
+
+          <div className={styles.apiWorkspaceGrid}>
+            <section className={styles.apiPanel}>
+              <div className={styles.apiPanelHeader}>
+                <div>
+                  <span>Plantillas</span>
+                  <strong>{formatMetric(apiStatus.templates?.approved || 0)} aprobadas</strong>
+                </div>
+                <FileText size={20} />
+              </div>
+
+              <div className={styles.templateList}>
+                {visibleTemplates.length ? visibleTemplates.map((template) => (
+                  <div key={template.id} className={styles.templateItem}>
+                    <div>
+                      <strong>{template.name}</strong>
+                      <small>{template.language} · {template.category || 'Sin categoria'}</small>
+                    </div>
+                    <span className={`${styles.templateStatus} ${getTemplateStatusClass(template)}`}>
+                      {template.status || 'UNKNOWN'}
+                    </span>
+                  </div>
+                )) : (
+                  <p className={styles.emptyText}>Sin plantillas sincronizadas</p>
+                )}
+              </div>
+            </section>
+
+            <form className={styles.apiPanel} onSubmit={sendTemplate}>
+              <div className={styles.apiPanelHeader}>
+                <div>
+                  <span>Envio rapido</span>
+                  <strong>Plantilla aprobada</strong>
+                </div>
+                <Send size={20} />
+              </div>
+
+              <label className={styles.fieldLabel}>
+                <span>Plantilla</span>
+                <div className={styles.selectWrap}>
+                  <FileText size={17} />
+                  <select
+                    value={selectedTemplateId || selectedTemplate?.id || ''}
+                    onChange={(event) => setSelectedTemplateId(event.target.value)}
+                    disabled={!orderedTemplates.length}
+                  >
+                    <option value="">Elegir plantilla</option>
+                    {orderedTemplates.map((template) => (
+                      <option key={template.id} value={template.id}>
+                        {getTemplateLabel(template)} · {template.status || 'UNKNOWN'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </label>
+
+              <label className={styles.fieldLabel}>
+                <span>Destino</span>
+                <div className={styles.inputWrap}>
+                  <Smartphone size={17} />
+                  <input
+                    type="tel"
+                    value={templateTo}
+                    onChange={(event) => setTemplateTo(event.target.value)}
+                    placeholder="+52..."
+                    autoComplete="tel"
+                  />
+                </div>
+              </label>
+
+              <label className={styles.fieldLabel}>
+                <span>Variables</span>
+                <div className={styles.textareaWrap}>
+                  <textarea
+                    value={templateVariables}
+                    onChange={(event) => setTemplateVariables(event.target.value)}
+                    placeholder={selectedTemplateVariablesCount ? '["valor_1", "valor_2"]' : '[]'}
+                    rows={3}
+                  />
+                </div>
+                <small className={styles.fieldHint}>
+                  {selectedTemplateVariablesCount ? `${selectedTemplateVariablesCount} variables detectadas` : 'Sin variables detectadas'}
+                </small>
+              </label>
+
+              <Button
+                type="submit"
+                loading={templateSending}
+                disabled={!templateTo.trim() || !selectedTemplate || selectedTemplate.status !== 'APPROVED'}
+              >
+                <Send size={17} />
+                Enviar plantilla
+              </Button>
+            </form>
           </div>
 
           {apiStatus.lastError && <p className={styles.errorText}>{apiStatus.lastError}</p>}

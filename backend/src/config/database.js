@@ -1346,6 +1346,81 @@ async function initTables() {
       )
     `)
 
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS whatsapp_api_balance (
+        id TEXT PRIMARY KEY,
+        amount REAL DEFAULT 0,
+        currency TEXT,
+        raw_payload_json TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS whatsapp_api_templates (
+        id TEXT PRIMARY KEY,
+        official_template_id TEXT,
+        waba_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        language TEXT NOT NULL,
+        category TEXT,
+        sub_category TEXT,
+        previous_category TEXT,
+        message_send_ttl_seconds INTEGER,
+        status TEXT,
+        quality_rating TEXT,
+        reason TEXT,
+        status_update_event TEXT,
+        disable_date DATETIME,
+        components_json TEXT,
+        raw_payload_json TEXT,
+        ycloud_create_time DATETIME,
+        ycloud_update_time DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(waba_id, name, language)
+      )
+    `)
+
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS whatsapp_api_alerts (
+        id TEXT PRIMARY KEY,
+        severity TEXT DEFAULT 'info',
+        alert_type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        message TEXT,
+        source_event_id TEXT,
+        entity_type TEXT,
+        entity_id TEXT,
+        status TEXT DEFAULT 'active',
+        raw_payload_json TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        resolved_at DATETIME,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (source_event_id) REFERENCES whatsapp_api_webhook_events(id) ON DELETE SET NULL
+      )
+    `)
+
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS whatsapp_api_template_sends (
+        id TEXT PRIMARY KEY,
+        template_id TEXT,
+        template_name TEXT,
+        language TEXT,
+        to_phone TEXT,
+        from_phone TEXT,
+        ycloud_message_id TEXT,
+        wamid TEXT,
+        status TEXT,
+        variables_json TEXT,
+        raw_payload_json TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (template_id) REFERENCES whatsapp_api_templates(id) ON DELETE SET NULL
+      )
+    `)
+
     await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_api_phone_numbers_phone ON whatsapp_api_phone_numbers(phone_number)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_api_contacts_phone ON whatsapp_api_contacts(phone)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_api_contacts_contact ON whatsapp_api_contacts(contact_id)')
@@ -1357,6 +1432,13 @@ async function initTables() {
     await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_api_attr_source ON whatsapp_api_attribution(detected_source_id)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_api_attr_ctwa ON whatsapp_api_attribution(detected_ctwa_clid)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_api_events_type_created ON whatsapp_api_webhook_events(event_type, created_at)')
+    await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_api_balance_updated ON whatsapp_api_balance(updated_at)')
+    await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_api_templates_status ON whatsapp_api_templates(status)')
+    await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_api_templates_waba ON whatsapp_api_templates(waba_id)')
+    await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_api_alerts_status_severity ON whatsapp_api_alerts(status, severity, updated_at)')
+    await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_api_alerts_entity ON whatsapp_api_alerts(entity_type, entity_id)')
+    await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_api_template_sends_created ON whatsapp_api_template_sends(created_at)')
+    await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_api_template_sends_status ON whatsapp_api_template_sends(status)')
 
     // Tabla de versiones de Meta API (para auto-actualización)
     await db.run(`

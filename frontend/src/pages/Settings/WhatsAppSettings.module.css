@@ -236,13 +236,13 @@
 .apiMetricsGrid,
 .apiDetailsGrid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 10px;
   width: min(820px, 100%);
 }
 
 .apiDetailsGrid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .apiMetricsGrid div,
@@ -291,6 +291,218 @@
   font-size: 13px;
   font-weight: 800;
   text-align: left;
+}
+
+.apiAlertList {
+  display: grid;
+  gap: 10px;
+  width: min(820px, 100%);
+}
+
+.apiAlert,
+.apiHealthyBanner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  text-align: left;
+}
+
+.apiAlert strong,
+.apiHealthyBanner span {
+  display: block;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.apiAlert p {
+  margin: 4px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.apiAlert small {
+  display: block;
+  margin-top: 6px;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.apiAlertCritical {
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.28);
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.apiAlertWarning {
+  color: #b45309;
+  border-color: rgba(245, 158, 11, 0.28);
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.apiAlertInfo,
+.apiHealthyBanner {
+  color: #0f766e;
+  border-color: rgba(20, 184, 166, 0.25);
+  background: rgba(20, 184, 166, 0.08);
+}
+
+.apiWorkspaceGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.85fr);
+  gap: 12px;
+  width: min(820px, 100%);
+  text-align: left;
+}
+
+.apiPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.045);
+}
+
+.apiPanelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.apiPanelHeader div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.apiPanelHeader span {
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.apiPanelHeader strong {
+  color: var(--color-text-primary);
+  font-size: 17px;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.templateList {
+  display: grid;
+  gap: 8px;
+}
+
+.templateItem {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.templateItem:last-child {
+  border-bottom: 0;
+}
+
+.templateItem strong {
+  display: block;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.templateItem small {
+  display: block;
+  margin-top: 3px;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.templateStatus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.templateStatusApproved {
+  color: #047857;
+  background: rgba(16, 185, 129, 0.11);
+  border: 1px solid rgba(16, 185, 129, 0.22);
+}
+
+.templateStatusPending {
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.22);
+}
+
+.templateStatusBlocked {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.08);
+  border: 1px solid rgba(220, 38, 38, 0.22);
+}
+
+.textareaWrap {
+  display: flex;
+  min-height: 86px;
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  background: var(--color-background-secondary);
+}
+
+.textareaWrap:focus-within {
+  border-color: rgba(20, 184, 166, 0.55);
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.12);
+}
+
+.textareaWrap textarea {
+  width: 100%;
+  min-width: 0;
+  resize: vertical;
+  border: 0;
+  outline: none;
+  color: var(--color-text-primary);
+  background: transparent;
+  font: inherit;
+  line-height: 1.4;
+}
+
+.fieldHint,
+.emptyText {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.35;
 }
 
 .apiActions {
@@ -630,7 +842,8 @@
 
   .apiMetricsGrid,
   .apiDetailsGrid,
-  .apiInlineForm {
+  .apiInlineForm,
+  .apiWorkspaceGrid {
     grid-template-columns: 1fr;
   }
 
