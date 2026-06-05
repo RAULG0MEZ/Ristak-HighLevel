@@ -2438,7 +2438,6 @@ export const Sites: React.FC = () => {
                         <span>Evento</span>
                         <select
                           value={normalizeMetaEventName(editorSite.metaEventName, 'none')}
-                          disabled={!editorSite.metaCapiEnabled}
                           onChange={(event) => {
                             updateSelectedSite({ metaEventName: event.target.value })
                             window.setTimeout(() => handleSaveSite(undefined, { silent: true }), 0)

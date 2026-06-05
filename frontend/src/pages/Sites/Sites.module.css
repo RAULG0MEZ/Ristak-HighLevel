@@ -5019,22 +5019,26 @@
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   overflow: visible;
   padding-bottom: 0;
 }
 
 .editorHeaderMain .editorPublishControls {
-  flex: 1 1 auto;
+  flex: 1 1 620px;
   min-width: 0;
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
-  overflow: hidden;
+  gap: 10px;
+  overflow: visible;
 }
 
 .editorHeaderMain .routeField {
-  flex: 1 1 260px;
-  max-width: 380px;
+  flex: 1 1 320px;
+  min-width: min(320px, 100%);
+  max-width: 460px;
 }
 
 .editorHeaderMain .publicRouteBox {
@@ -5043,14 +5047,25 @@
 }
 
 .editorHeaderMain .editorTopControls .metaCard {
-  flex: 0 1 260px;
-  min-width: 220px;
-  max-width: 300px;
+  flex: 0 1 360px;
+  min-width: min(340px, 100%);
+  max-width: 380px;
 }
 
 .editorHeaderMain .editorActions {
   flex: 0 0 auto;
   flex-wrap: nowrap;
+}
+
+.editorHeaderMain .metaCardField select {
+  width: 136px;
+  opacity: 1;
+  cursor: pointer;
+}
+
+.editorHeaderMain .metaSwitch {
+  flex: 0 0 auto;
+  pointer-events: auto;
 }
 
 .editorHeaderPages {
@@ -5137,6 +5152,28 @@
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(241, 245, 249, 0.96));
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.72);
+}
+
+.containerFocused .paletteItem {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  transform: none;
+  border-color: rgba(148, 163, 184, 0.16);
+}
+
+.containerFocused .paletteItem:hover {
+  transform: none;
+  border-color: rgba(var(--color-primary-rgb), 0.62);
+}
+
+.containerFocused .paletteItem:active {
+  transform: none;
+}
+
+.containerFocused .paletteGrip {
+  width: 14px;
+  flex: 0 0 14px;
 }
 
 @media (max-width: 1420px) {
