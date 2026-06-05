@@ -1951,7 +1951,7 @@ function getPageMetaConfig(site, pageId) {
   if (!site || site.siteType !== 'landing_page') return null
   const page = getSitePage(site, pageId)
   if (!page || !page.metaCapiEnabled) return null
-  const eventName = normalizeSiteMetaEventName(page.metaEventName || site.metaEventName, { allowNone: true })
+  const eventName = normalizeSiteMetaEventName(page.metaEventName, { allowNone: true, fallback: SITE_META_NO_EVENT })
   if (eventName === SITE_META_NO_EVENT) return null
 
   return {
@@ -1965,8 +1965,9 @@ function getFormSubmitMetaEventName(site, pageId) {
   if (site?.siteType === 'landing_page') {
     const page = getSitePage(site, pageId)
     if (page?.metaCapiEnabled && normalizeSiteMetaTrigger(page.metaTrigger) === 'form_submit') {
-      return normalizeSiteMetaEventName(page.metaEventName || site.metaEventName, { allowNone: true })
+      return normalizeSiteMetaEventName(page.metaEventName, { allowNone: true, fallback: SITE_META_NO_EVENT })
     }
+    return SITE_META_NO_EVENT
   }
 
   return normalizeSiteMetaEventName(site.metaEventName, { allowNone: true })
@@ -3285,14 +3286,6 @@ async function buildMetaPixelSnippet(site, trackingEnabled, activePage = null) {
         keepalive: true
       }).catch(() => {});
     };
-    try {
-      const pending = window.sessionStorage && window.sessionStorage.getItem('ristakPendingMetaSubmit');
-      if (pending) {
-        window.sessionStorage.removeItem('ristakPendingMetaSubmit');
-        const parsed = JSON.parse(pending);
-        window.ristakMetaTrackSiteSubmit(parsed.eventId || '', parsed.data || {}, parsed.eventName || '');
-      }
-    } catch (error) {}
     ${pageViewEventName ? `
     try {
       const pageEventId = [
@@ -3344,7 +3337,6 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
   const completionAction = isLandingType ? getFormCompletionAction(blocks) : 'form_default'
   const nextPage = isLandingType ? getNextPage(site, activePage?.id) : null
   const nextPageUrl = nextPage ? pageHref(nextPage.id) : ''
-  const metaConversionTarget = cleanString(theme.metaConversionTarget) === 'next_page' && nextPageUrl ? 'next_page' : 'same_page'
   const submitText = cleanString(theme.submitText) || 'Enviar'
   const pageMaxWidth = themeNumber(theme, 'pageMaxWidth', isLandingType ? 1160 : (template.id === 'interactive' ? 600 : 520), 360, 1440)
   const pagePadding = themeNumber(theme, 'pagePadding', isLandingType ? 50 : 22, 0, 120)
@@ -3442,7 +3434,6 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
       const progressFill = document.querySelector('[data-progress-fill]');
       const isInteractive = ${isInteractive ? 'true' : 'false'};
       const completionAction = ${JSON.stringify(completionAction)};
-      const metaConversionTarget = ${JSON.stringify(metaConversionTarget)};
       const nextPageUrl = ${JSON.stringify(nextPageUrl)};
       let index = 0;
 
@@ -3573,21 +3564,10 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
             ? submission.capi.eventName
             : '';
           if (window.ristakMetaTrackSiteSubmit) {
-            if (metaConversionTarget === 'next_page' && nextPageUrl && window.sessionStorage) {
-              window.sessionStorage.setItem('ristakPendingMetaSubmit', JSON.stringify({
-                eventId: metaEventId,
-                eventName: metaEventName,
-                data: {
-                  status: submission.status || 'submitted',
-                  conversion_type: 'form_submit'
-                }
-              }));
-            } else {
             window.ristakMetaTrackSiteSubmit(metaEventId, {
               status: submission.status || 'submitted',
               conversion_type: 'form_submit'
             }, metaEventName);
-            }
           }
           form.reset();
           if (window.ristakNativeRememberContact && submission.contactId) {

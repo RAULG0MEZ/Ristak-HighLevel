@@ -891,9 +891,6 @@ export const Sites: React.FC = () => {
       ? (isFormSite(selectedSite) ? selectedSite : null)
       : null
   const isFocusedSitesMode = createFlow !== 'closed' || Boolean(editorSite)
-  const hasNextFunnelPage = Boolean(
-    editorSite && isLanding(editorSite) && pages.length > 1 && activePage && pages.some(page => page.sortOrder > activePage.sortOrder)
-  )
   const canvasTheme = editorSite ? buildCanvasTheme(editorSite, device) : null
 
   const performUrlNavigation = useCallback((href: string) => {
@@ -1713,7 +1710,7 @@ export const Sites: React.FC = () => {
                   <span className={styles.metaMark} aria-hidden="true">∞</span>
                   <div className={styles.metaCardInfo}>
                     <strong>Meta del sitio</strong>
-                    <small>{editorSite.metaCapiEnabled ? 'Pixel + CAPI activos' : 'Pixel + CAPI apagados'}</small>
+                    <small>{editorSite.metaCapiEnabled ? 'PageView activo en todas las paginas' : 'Pixel y CAPI apagados'}</small>
                   </div>
                   <label className={styles.metaSwitch} title={editorSite.metaCapiEnabled ? 'Desactivar' : 'Activar'}>
                     <input
@@ -1723,34 +1720,6 @@ export const Sites: React.FC = () => {
                     />
                     <span className={styles.metaSwitchTrack} aria-hidden="true" />
                   </label>
-                  <span className={styles.metaCardDivider} aria-hidden="true" />
-                  <label className={styles.metaCardField}>
-                    <span>Evento default</span>
-                    <select
-                      value={editorSite.metaEventName || 'Lead'}
-                      disabled={!editorSite.metaCapiEnabled}
-                      onChange={(event) => updateSelectedSite({ metaEventName: event.target.value })}
-                      onBlur={() => handleSaveSite()}
-                    >
-                      {metaEventOptions.map(option => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                  {hasNextFunnelPage && (
-                    <label className={styles.metaCardField}>
-                      <span>Envio de formulario</span>
-                      <select
-                        value={editorSite.theme?.metaConversionTarget || 'same_page'}
-                        disabled={!editorSite.metaCapiEnabled}
-                        onChange={(event) => patchSiteTheme({ metaConversionTarget: event.target.value as SiteTheme['metaConversionTarget'] })}
-                        onBlur={() => handleSaveSite()}
-                      >
-                        <option value="same_page">Pagina actual</option>
-                        <option value="next_page">Despues de avanzar</option>
-                      </select>
-                    </label>
-                  )}
                 </div>
                 <div className={styles.editorActions}>
                   <Button variant="secondary" size="lg" onClick={handlePreviewSite}>
@@ -1975,6 +1944,7 @@ export const Sites: React.FC = () => {
                   pages={pages}
                   activePageId={activePage?.id || DEFAULT_FUNNEL_PAGE_ID}
                   showSocialProfile={selectedBlockId === SOCIAL_PROFILE_SELECTED_ID}
+                  onPatchSite={updateSelectedSite}
                   onPatchTheme={patchSiteTheme}
                   onSaveSite={() => handleSaveSite()}
                   onPatchBlock={(patch) => patchSelectedBlock(patch)}
@@ -3291,6 +3261,7 @@ interface PropertiesPanelProps {
   pages: SitePage[]
   activePageId: string
   showSocialProfile: boolean
+  onPatchSite: (patch: Partial<PublicSite>) => void
   onPatchTheme: (patch: Partial<SiteTheme>) => void
   onSaveSite: () => void
   onPatchBlock: (patch: Partial<SiteBlock>) => void
@@ -3305,13 +3276,20 @@ const PageInspector: React.FC<{
   pages: SitePage[]
   activePageId: string
   showSocialProfile: boolean
+  onPatchSite: (patch: Partial<PublicSite>) => void
   onPatchTheme: (patch: Partial<SiteTheme>) => void
   onSaveSite: () => void
-}> = ({ site, pages, activePageId, showSocialProfile, onPatchTheme, onSaveSite }) => {
+}> = ({ site, pages, activePageId, showSocialProfile, onPatchSite, onPatchTheme, onSaveSite }) => {
   const theme = site.theme || {}
   const currentId = resolveTemplateId(site)
   const platform = platformChromeFor(currentId)
   const activePage = pages.find(page => page.id === activePageId) || pages[0] || null
+  const activePageEventName = activePage?.metaCapiEnabled
+    ? normalizeMetaEventName(activePage.metaEventName, 'none')
+    : 'none'
+  const activePageHasConversion = activePageEventName !== 'none'
+  const formEventName = normalizeMetaEventName(site.metaEventName, 'none')
+  const formHasConversion = formEventName !== 'none'
   const patchActivePage = (patch: Partial<SitePage>) => {
     if (!activePage) return
 
@@ -3403,28 +3381,19 @@ const PageInspector: React.FC<{
           {isLanding(site) && activePage && (
             <>
               <div className={styles.panelSubheader}>Conversion de esta pagina</div>
-              <div className={`${styles.metaCard} ${activePage.metaCapiEnabled && site.metaCapiEnabled ? styles.metaCardActive : ''}`}>
+              <div className={`${styles.metaCard} ${activePageHasConversion && site.metaCapiEnabled ? styles.metaCardActive : ''}`}>
                 <span className={styles.metaMark} aria-hidden="true">∞</span>
                 <div className={styles.metaCardInfo}>
-                  <strong>Evento extra</strong>
-                  <small>{!site.metaCapiEnabled ? 'Requiere Meta del sitio' : activePage.metaCapiEnabled ? 'Override activo' : 'Sin conversion extra'}</small>
+                  <strong>{activePageHasConversion ? 'Evento configurado' : 'Sin evento'}</strong>
+                  <small>{!site.metaCapiEnabled ? 'Requiere Meta del sitio' : activePageHasConversion ? 'Se envia desde esta pagina' : 'Solo PageView global'}</small>
                 </div>
-                <label className={styles.metaSwitch} title={activePage.metaCapiEnabled ? 'Desactivar' : 'Activar'}>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(activePage.metaCapiEnabled)}
-                    disabled={!site.metaCapiEnabled}
-                    onChange={(event) => patchActivePage({ metaCapiEnabled: event.target.checked })}
-                  />
-                  <span className={styles.metaSwitchTrack} aria-hidden="true" />
-                </label>
               </div>
               <div className={styles.twoColumn}>
                 <label className={styles.field}>
                   <span>Cuando</span>
                   <select
                     value={normalizeMetaTrigger(activePage.metaTrigger)}
-                    disabled={!site.metaCapiEnabled || !activePage.metaCapiEnabled}
+                    disabled={!site.metaCapiEnabled || !activePageHasConversion}
                     onChange={(event) => patchActivePage({ metaTrigger: event.target.value as SiteMetaTrigger })}
                     onBlur={onSaveSite}
                   >
@@ -3434,11 +3403,17 @@ const PageInspector: React.FC<{
                   </select>
                 </label>
                 <label className={styles.field}>
-                  <span>Evento extra</span>
+                  <span>Evento</span>
                   <select
-                    value={normalizeMetaEventName(activePage.metaEventName, 'none')}
-                    disabled={!site.metaCapiEnabled || !activePage.metaCapiEnabled}
-                    onChange={(event) => patchActivePage({ metaEventName: event.target.value })}
+                    value={activePageEventName}
+                    disabled={!site.metaCapiEnabled}
+                    onChange={(event) => {
+                      const metaEventName = event.target.value
+                      patchActivePage({
+                        metaEventName,
+                        metaCapiEnabled: metaEventName !== 'none'
+                      })
+                    }}
                     onBlur={onSaveSite}
                   >
                     {metaEventOptions.map(option => (
@@ -3450,10 +3425,33 @@ const PageInspector: React.FC<{
             </>
           )}
           {isFormSite(site) && (
-            <label className={styles.field}>
-              <span>Texto del boton de envio</span>
-              <input value={theme.submitText || ''} placeholder="Enviar" onChange={(event) => onPatchTheme({ submitText: event.target.value })} onBlur={onSaveSite} />
-            </label>
+            <>
+              <div className={styles.panelSubheader}>Conversion del formulario</div>
+              <div className={`${styles.metaCard} ${formHasConversion && site.metaCapiEnabled ? styles.metaCardActive : ''}`}>
+                <span className={styles.metaMark} aria-hidden="true">∞</span>
+                <div className={styles.metaCardInfo}>
+                  <strong>{formHasConversion ? 'Evento de submit' : 'Sin evento'}</strong>
+                  <small>{!site.metaCapiEnabled ? 'Requiere Meta del sitio' : formHasConversion ? 'Se envia al enviar formulario' : 'Solo PageView global'}</small>
+                </div>
+              </div>
+              <label className={styles.field}>
+                <span>Evento de submit</span>
+                <select
+                  value={formEventName}
+                  disabled={!site.metaCapiEnabled}
+                  onChange={(event) => onPatchSite({ metaEventName: event.target.value })}
+                  onBlur={onSaveSite}
+                >
+                  {metaEventOptions.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className={styles.field}>
+                <span>Texto del boton de envio</span>
+                <input value={theme.submitText || ''} placeholder="Enviar" onChange={(event) => onPatchTheme({ submitText: event.target.value })} onBlur={onSaveSite} />
+              </label>
+            </>
           )}
         </div>
 
@@ -3500,6 +3498,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   pages,
   activePageId,
   showSocialProfile,
+  onPatchSite,
   onPatchTheme,
   onSaveSite,
   onPatchBlock,
@@ -3509,7 +3508,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   onSave
 }) => {
   if (!block) {
-    return <PageInspector site={site} pages={pages} activePageId={activePageId} showSocialProfile={showSocialProfile} onPatchTheme={onPatchTheme} onSaveSite={onSaveSite} />
+    return <PageInspector site={site} pages={pages} activePageId={activePageId} showSocialProfile={showSocialProfile} onPatchSite={onPatchSite} onPatchTheme={onPatchTheme} onSaveSite={onSaveSite} />
   }
 
   const isField = fieldBlockTypes.has(block.blockType)
