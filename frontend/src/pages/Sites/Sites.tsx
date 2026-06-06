@@ -2619,6 +2619,7 @@ export const Sites: React.FC = () => {
                 }
             : {})
         },
+        metaCapiEnabled: metaPixelConnected,
         metaEventName: 'none'
       })
 
@@ -2686,13 +2687,6 @@ export const Sites: React.FC = () => {
       setSaving(false)
     }
   }
-
-  useEffect(() => {
-    if (!metaPixelConnected || !editorSite || editorSite.metaCapiEnabled) return
-
-    updateSelectedSite({ metaCapiEnabled: true })
-    window.setTimeout(() => handleSaveSite(undefined, { silent: true }), 0)
-  }, [editorSite?.id, editorSite?.metaCapiEnabled, metaPixelConnected])
 
   const handlePreviewSite = async () => {
     if (!editorSite) return
