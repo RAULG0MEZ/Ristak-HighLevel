@@ -2323,6 +2323,21 @@ export const PhoneChat: React.FC = () => {
   }, [accessState, activeContact?.id, loadConversation])
 
   useEffect(() => {
+    if (!conversationOpen || aiAgentConversationOpen || activeContact || chatsLoading) return
+
+    setActiveContactId(null)
+    setConversationOpen(false)
+    setContactInfoOpen(false)
+    setContactInfoContact(null)
+    setContactInfoError('')
+    setContactInfoLoading(false)
+    setMessages([])
+    setContactJourney([])
+    setDraftAttachments([])
+    setVoiceDraft(null)
+  }, [activeContact, aiAgentConversationOpen, chatsLoading, conversationOpen])
+
+  useEffect(() => {
     setContactInfoOpen(false)
     setContactInfoContact(null)
     setContactInfoError('')
