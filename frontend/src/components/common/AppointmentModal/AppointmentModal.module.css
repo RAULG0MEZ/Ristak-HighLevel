@@ -517,6 +517,20 @@
   padding-right: 2.5rem;
 }
 
+.customSelectControl {
+  width: 100%;
+}
+
+.mobilePhoneSelectButton {
+  min-height: 44px;
+  border-radius: 12px;
+  color: var(--appointment-mobile-text);
+  background: var(--appointment-mobile-panel);
+  border-color: var(--appointment-mobile-border);
+  font-size: 16px;
+  font-weight: 650;
+}
+
 .textarea {
   min-height: 96px;
   resize: vertical;

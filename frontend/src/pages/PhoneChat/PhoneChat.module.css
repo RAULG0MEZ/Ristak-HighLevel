@@ -71,8 +71,7 @@
 
 .phoneChatPage button,
 .phoneChatPage a,
-.phoneChatPage label,
-.phoneChatPage select {
+.phoneChatPage label {
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
@@ -203,16 +202,14 @@
   text-transform: uppercase;
 }
 
-.chatPhoneSelector select {
+.chatPhoneSelect {
   width: 100%;
   min-height: 32px;
   padding: 0 10px;
   border: 1px solid var(--phone-chat-border);
   border-radius: 999px;
-  outline: 0;
   color: var(--phone-chat-text);
   background: var(--phone-chat-surface-soft);
-  font: inherit;
   font-size: 12px;
   font-weight: 760;
 }
@@ -2282,7 +2279,6 @@
 }
 
 .quickTemplateForm input,
-.quickTemplateForm select,
 .quickTemplateForm textarea {
   width: 100%;
   min-width: 0;
@@ -2294,10 +2290,17 @@
   font-size: 16px;
 }
 
-.quickTemplateForm input,
-.quickTemplateForm select {
+.quickTemplateForm input {
   min-height: 44px;
   padding: 0 12px;
+}
+
+.quickTemplateSelect {
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 14px;
+  font-size: 16px;
+  font-weight: 720;
 }
 
 .quickTemplateForm textarea {
@@ -2836,16 +2839,6 @@
   line-height: 1.4;
 }
 
-.appointmentSetup select {
-  min-height: 46px;
-  padding: 0 13px;
-  border: 1px solid var(--phone-chat-border);
-  border-radius: 12px;
-  color: var(--phone-chat-text);
-  background: var(--phone-chat-surface);
-  font: inherit;
-}
-
 .primarySheetButton,
 .permissionCard button {
   display: inline-flex;
@@ -3043,7 +3036,7 @@
     min-width: 116px;
   }
 
-  .chatPhoneSelector select {
+  .chatPhoneSelect {
     font-size: 11px;
   }
 

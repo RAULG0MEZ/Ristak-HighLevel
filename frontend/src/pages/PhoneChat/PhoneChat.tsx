@@ -44,6 +44,7 @@ import {
 import { MdArchive } from 'react-icons/md'
 import { AppointmentModal, Icon, RecordPaymentModal } from '@/components/common'
 import { PhoneEcosystemNav } from '@/components/phone/PhoneEcosystemNav'
+import { PhoneSelect } from '@/components/phone/PhoneSelect'
 import { useAuth } from '@/contexts/AuthContext'
 import { useLabels } from '@/contexts/LabelsContext'
 import { useNotification } from '@/contexts/NotificationContext'
@@ -4087,25 +4088,25 @@ export const PhoneChat: React.FC = () => {
                 <div className={styles.quickTemplateSplit}>
                   <label>
                     <span>Categoría</span>
-                    <select
+                    <PhoneSelect
                       value={newTemplateCategory}
-                      onChange={(event) => setNewTemplateCategory(event.target.value as MessageTemplateCategory)}
-                    >
-                      {QUICK_TEMPLATE_CATEGORIES.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
+                      onChange={(value) => setNewTemplateCategory(value as MessageTemplateCategory)}
+                      options={QUICK_TEMPLATE_CATEGORIES}
+                      title="Categoría"
+                      placeholder="Categoría"
+                      buttonClassName={styles.quickTemplateSelect}
+                    />
                   </label>
                   <label>
                     <span>Idioma</span>
-                    <select
+                    <PhoneSelect
                       value={newTemplateLanguage}
-                      onChange={(event) => setNewTemplateLanguage(event.target.value)}
-                    >
-                      {QUICK_TEMPLATE_LANGUAGES.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
+                      onChange={setNewTemplateLanguage}
+                      options={QUICK_TEMPLATE_LANGUAGES}
+                      title="Idioma"
+                      placeholder="Idioma"
+                      buttonClassName={styles.quickTemplateSelect}
+                    />
                   </label>
                 </div>
                 <label>
@@ -4457,25 +4458,25 @@ export const PhoneChat: React.FC = () => {
             <div className={styles.quickTemplateSplit}>
               <label>
                 <span>Categoría</span>
-                <select
+                <PhoneSelect
                   value={newTemplateCategory}
-                  onChange={(event) => setNewTemplateCategory(event.target.value as MessageTemplateCategory)}
-                >
-                  {QUICK_TEMPLATE_CATEGORIES.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
+                  onChange={(value) => setNewTemplateCategory(value as MessageTemplateCategory)}
+                  options={QUICK_TEMPLATE_CATEGORIES}
+                  title="Categoría"
+                  placeholder="Categoría"
+                  buttonClassName={styles.quickTemplateSelect}
+                />
               </label>
               <label>
                 <span>Idioma</span>
-                <select
+                <PhoneSelect
                   value={newTemplateLanguage}
-                  onChange={(event) => setNewTemplateLanguage(event.target.value)}
-                >
-                  {QUICK_TEMPLATE_LANGUAGES.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
+                  onChange={setNewTemplateLanguage}
+                  options={QUICK_TEMPLATE_LANGUAGES}
+                  title="Idioma"
+                  placeholder="Idioma"
+                  buttonClassName={styles.quickTemplateSelect}
+                />
               </label>
             </div>
             <label>
@@ -4721,18 +4722,21 @@ export const PhoneChat: React.FC = () => {
               {chatPhoneFilterEnabled && (
                 <label className={styles.chatPhoneSelector}>
                   <span>Número</span>
-                  <select
+                  <PhoneSelect
                     value={selectedChatPhoneId}
-                    onChange={(event) => saveConfigPreference(setSelectedChatPhoneId, event.target.value)}
-                    aria-label="Elegir número de WhatsApp para ver chats"
-                  >
-                    <option value="all">Ver todos</option>
-                    {businessPhones.map((phone, index) => (
-                      <option key={phone.id} value={phone.id}>
-                        {`Ver chats de ${getBusinessPhoneLabel(phone) || `número ${index + 1}`}`}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(value) => saveConfigPreference(setSelectedChatPhoneId, value)}
+                    ariaLabel="Elegir número de WhatsApp para ver chats"
+                    options={[
+                      { value: 'all', label: 'Ver todos' },
+                      ...businessPhones.map((phone, index) => ({
+                        value: phone.id,
+                        label: `Ver chats de ${getBusinessPhoneLabel(phone) || `número ${index + 1}`}`
+                      }))
+                    ]}
+                    title="Número"
+                    placeholder="Número"
+                    buttonClassName={styles.chatPhoneSelect}
+                  />
                 </label>
               )}
             </div>

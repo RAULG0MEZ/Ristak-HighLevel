@@ -101,6 +101,27 @@
   box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
 }
 
+.phoneSelectButton {
+  min-height: 41px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  background-image: none;
+  backdrop-filter: blur(8px);
+}
+
+.phoneDateButton {
+  min-height: 41px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.customSelectControl {
+  width: 100%;
+}
+
 .fieldWarning {
   display: flex;
   align-items: center;
@@ -349,8 +370,8 @@
 
 .dateInput {
   position: relative;
-  display: flex;
-  align-items: center;
+  display: block;
+  width: 100%;
 }
 
 .dateInput .input {

@@ -4,6 +4,8 @@ import { Button } from '../Button'
 import { TabList } from '../TabList'
 import { CustomSelect } from '../CustomSelect'
 import { NumberInput } from '../NumberInput'
+import { PhoneDateField } from '@/components/phone/PhoneDateField'
+import { PhoneSelect } from '@/components/phone/PhoneSelect'
 import {
   Search,
   Loader2,
@@ -13,7 +15,6 @@ import {
   Check,
   AlertCircle,
   Send,
-  Calendar,
   Percent,
   Plus,
   Trash2,
@@ -48,6 +49,39 @@ type FirstPaymentMethod = '' | 'cash' | 'bank_transfer' | 'deposit' | 'card'
 type RemainingFrequency = 'custom' | 'weekly' | 'biweekly' | 'monthly'
 type SendMethod = 'whatsapp' | 'sms' | 'email' | 'email_whatsapp' | 'email_sms' | 'all'
 type InvoiceSendMethod = 'email' | 'sms' | 'both'
+
+const INSTALLMENT_VALUE_TYPE_OPTIONS = [
+  { value: 'percentage', label: 'Porcentaje' },
+  { value: 'amount', label: 'Monto fijo' }
+]
+
+const INSTALLMENT_SHORT_TYPE_OPTIONS = [
+  { value: 'percentage', label: '%' },
+  { value: 'amount', label: '$' }
+]
+
+const FIRST_PAYMENT_METHOD_OPTIONS = [
+  { value: '', label: 'Seleccionar método', disabled: true },
+  { value: 'bank_transfer', label: 'Transferencia' },
+  { value: 'cash', label: 'Efectivo' },
+  { value: 'deposit', label: 'Depósito' },
+  { value: 'card', label: 'Tarjeta / link' }
+]
+
+const REMAINING_FREQUENCY_OPTIONS = [
+  { value: 'monthly', label: 'Mensual' },
+  { value: 'biweekly', label: 'Quincenal' },
+  { value: 'weekly', label: 'Semanal' },
+  { value: 'custom', label: 'Personalizada' }
+]
+
+const MANUAL_PAYMENT_METHOD_OPTIONS = [
+  { value: 'cash', label: 'Efectivo' },
+  { value: 'bank_transfer', label: 'Transferencia bancaria' },
+  { value: 'card', label: 'Tarjeta' },
+  { value: 'check', label: 'Cheque' },
+  { value: 'other', label: 'Otro' }
+]
 
 interface InstallmentDraft {
   id: string
@@ -382,6 +416,42 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   const [highLevelConnected, setHighLevelConnected] = useState(false)
 
   const { showToast } = useNotification()
+  const renderPaymentSelect = ({
+    value,
+    onChange,
+    options,
+    title,
+    placeholder,
+    invalid = false
+  }: {
+    value: string;
+    onChange: (value: string) => void;
+    options: Array<{ value: string; label: string; disabled?: boolean }>;
+    title: string;
+    placeholder?: string;
+    invalid?: boolean;
+  }) => (
+    variant === 'embedded' ? (
+      <PhoneSelect
+        value={value}
+        onChange={onChange}
+        options={options}
+        title={title}
+        placeholder={placeholder || title}
+        invalid={invalid}
+        buttonClassName={styles.phoneSelectButton}
+      />
+    ) : (
+      <CustomSelect
+        value={value}
+        onChange={onChange}
+        options={options.filter((option) => !option.disabled)}
+        placeholder={placeholder || title}
+        className={styles.customSelectControl}
+        portal
+      />
+    )
+  )
 
   const canChoosePaymentMode = chargeType === 'direct' || Boolean(selectedProduct && selectedPrice)
   const activePaymentMode: PaymentMode = canChoosePaymentMode ? paymentMode : 'single'
@@ -1773,17 +1843,15 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                   <div className={styles.fieldGrid}>
                     <div className={styles.manualField}>
                       <label>Tipo de valor</label>
-                      <select
-                        value={firstPaymentType}
-                        onChange={(e) => {
-                          setFirstPaymentType(e.target.value as InstallmentValueType)
+                      {renderPaymentSelect({
+                        value: firstPaymentType,
+                        onChange: (value) => {
+                          setFirstPaymentType(value as InstallmentValueType)
                           setAutoDistributeRemaining(true)
-                        }}
-                        className={styles.select}
-                      >
-                        <option value="percentage">Porcentaje</option>
-                        <option value="amount">Monto fijo</option>
-                      </select>
+                        },
+                        options: INSTALLMENT_VALUE_TYPE_OPTIONS,
+                        title: 'Tipo de valor'
+                      })}
                     </div>
                     <div className={styles.manualField}>
                       <label>{firstPaymentType === 'percentage' ? 'Porcentaje' : 'Monto'}</label>
@@ -1806,30 +1874,25 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                     <div className={styles.manualField}>
                       <label>Fecha límite</label>
                       <div className={styles.dateInput}>
-                        <Calendar size={16} className={styles.dollarIcon} />
-                        <input
-                          type="date"
+                        <PhoneDateField
                           value={firstPaymentDate}
                           min={toDateInputValue(new Date())}
-                          onChange={(e) => setFirstPaymentDate(e.target.value)}
-                          className={styles.input}
+                          onChange={setFirstPaymentDate}
+                          title="Fecha límite"
+                          buttonClassName={styles.phoneDateButton}
                         />
                       </div>
                     </div>
                     <div className={styles.manualField}>
                       <label>Método de pago</label>
-                      <select
-                        value={firstPaymentMethod}
-                        onChange={(e) => setFirstPaymentMethod(e.target.value as FirstPaymentMethod)}
-                        className={`${styles.select} ${firstPaymentMethodMissing ? styles.selectError : ''}`}
-                        aria-invalid={firstPaymentMethodMissing}
-                      >
-                        <option value="" disabled>Seleccionar método</option>
-                        <option value="bank_transfer">Transferencia</option>
-                        <option value="cash">Efectivo</option>
-                        <option value="deposit">Depósito</option>
-                        <option value="card">Tarjeta / link</option>
-                      </select>
+                      {renderPaymentSelect({
+                        value: firstPaymentMethod,
+                        onChange: (value) => setFirstPaymentMethod(value as FirstPaymentMethod),
+                        options: FIRST_PAYMENT_METHOD_OPTIONS,
+                        title: 'Método de pago',
+                        placeholder: 'Seleccionar método',
+                        invalid: firstPaymentMethodMissing
+                      })}
                     </div>
                   </div>
                   {firstPaymentMethodMissing && (
@@ -1865,16 +1928,12 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                 <div className={styles.fieldGrid}>
                   <div className={styles.manualField}>
                     <label>Frecuencia de cobro</label>
-                    <select
-                      value={remainingFrequency}
-                      onChange={(e) => setRemainingFrequency(e.target.value as RemainingFrequency)}
-                      className={styles.select}
-                    >
-                      <option value="monthly">Mensual</option>
-                      <option value="biweekly">Quincenal</option>
-                      <option value="weekly">Semanal</option>
-                      <option value="custom">Personalizada</option>
-                    </select>
+                    {renderPaymentSelect({
+                      value: remainingFrequency,
+                      onChange: (value) => setRemainingFrequency(value as RemainingFrequency),
+                      options: REMAINING_FREQUENCY_OPTIONS,
+                      title: 'Frecuencia de cobro'
+                    })}
                   </div>
                   <div className={styles.calcChip}>
                     <span>Suma de pagos restantes</span>
@@ -1904,14 +1963,12 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                         <div className={styles.installmentSeq}>{installment.sequence}</div>
                         <label className={styles.installmentCell}>
                           <span className={styles.cellLabel}>Tipo</span>
-                          <select
-                            value={installment.type}
-                            onChange={(e) => updateRemainingInstallment(installment.id, { type: e.target.value as InstallmentValueType })}
-                            className={styles.select}
-                          >
-                            <option value="percentage">%</option>
-                            <option value="amount">$</option>
-                          </select>
+                          {renderPaymentSelect({
+                            value: installment.type,
+                            onChange: (value) => updateRemainingInstallment(installment.id, { type: value as InstallmentValueType }),
+                            options: INSTALLMENT_SHORT_TYPE_OPTIONS,
+                            title: `Tipo de parcialidad ${installment.sequence}`
+                          })}
                         </label>
                         <label className={styles.installmentCell}>
                           <span className={styles.cellLabel}>Valor</span>
@@ -1926,13 +1983,13 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                         </label>
                         <label className={`${styles.installmentCell} ${styles.installmentDate}`}>
                           <span className={styles.cellLabel}>Fecha de cobro</span>
-                          <input
-                            type="date"
+                          <PhoneDateField
                             value={installment.dueDate}
-                            onChange={(e) => updateRemainingInstallment(installment.id, { dueDate: e.target.value })}
-                            className={styles.input}
+                            onChange={(value) => updateRemainingInstallment(installment.id, { dueDate: value })}
                             disabled={remainingFrequency !== 'custom'}
-                            aria-label={`Fecha de parcialidad ${installment.sequence}`}
+                            title={`Fecha de parcialidad ${installment.sequence}`}
+                            ariaLabel={`Fecha de parcialidad ${installment.sequence}`}
+                            buttonClassName={styles.phoneDateButton}
                           />
                         </label>
                         <div className={styles.installmentMonto}>
@@ -2241,26 +2298,21 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
             <div className={styles.manualGrid}>
               <div className={styles.manualField}>
                 <label>Fecha de pago</label>
-                <input
-                  type="date"
+                <PhoneDateField
                   value={manualPaymentData.paymentDate}
-                  onChange={(e) => setManualPaymentData({ ...manualPaymentData, paymentDate: e.target.value })}
-                  className={styles.input}
+                  onChange={(value) => setManualPaymentData({ ...manualPaymentData, paymentDate: value })}
+                  title="Fecha de pago"
+                  buttonClassName={styles.phoneDateButton}
                 />
               </div>
               <div className={styles.manualField}>
                 <label>Método de pago</label>
-                <select
-                  value={manualPaymentData.paymentMethod}
-                  onChange={(e) => setManualPaymentData({ ...manualPaymentData, paymentMethod: e.target.value })}
-                  className={styles.select}
-                >
-                  <option value="cash">Efectivo</option>
-                  <option value="bank_transfer">Transferencia bancaria</option>
-                  <option value="card">Tarjeta</option>
-                  <option value="check">Cheque</option>
-                  <option value="other">Otro</option>
-                </select>
+                {renderPaymentSelect({
+                  value: manualPaymentData.paymentMethod,
+                  onChange: (value) => setManualPaymentData({ ...manualPaymentData, paymentMethod: value }),
+                  options: MANUAL_PAYMENT_METHOD_OPTIONS,
+                  title: 'Método de pago'
+                })}
               </div>
             </div>
             {manualPaymentData.paymentMethod === 'bank_transfer' && (

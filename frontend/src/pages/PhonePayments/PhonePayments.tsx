@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, CalendarDays, Check, ChevronDown, ChevronRight, CreditCard, Loader2, MonitorX, Package, Pencil, Plus, RefreshCw, Save, Trash2, X } from 'lucide-react'
 import { RecordPaymentModal } from '@/components/common'
 import { PhoneEcosystemNav } from '@/components/phone/PhoneEcosystemNav'
+import { PhoneSelect } from '@/components/phone/PhoneSelect'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useHighLevelConnected } from '@/hooks'
 import apiClient from '@/services/apiClient'
@@ -60,6 +61,11 @@ const RECENT_PAYMENT_PERIODS: Array<{ id: RecentPaymentsPeriod; label: string; d
   { id: '7d', label: '7 días', days: 7 },
   { id: '30d', label: '30 días', days: 30 },
   { id: '90d', label: '90 días', days: 90 }
+]
+
+const PRODUCT_CURRENCY_OPTIONS = [
+  { value: 'MXN', label: 'MXN', description: 'Peso mexicano' },
+  { value: 'USD', label: 'USD', description: 'Dólar estadounidense' }
 ]
 
 function hasPortableAccess() {
@@ -585,13 +591,14 @@ export const PhonePayments: React.FC = () => {
             </label>
             <label className={styles.productField}>
               <span>Moneda</span>
-              <select
+              <PhoneSelect
                 value={productForm.currency}
-                onChange={(event) => updateProductForm('currency', event.target.value)}
-              >
-                <option value="MXN">MXN</option>
-                <option value="USD">USD</option>
-              </select>
+                onChange={(value) => updateProductForm('currency', value)}
+                options={PRODUCT_CURRENCY_OPTIONS}
+                title="Moneda"
+                placeholder="Moneda"
+                buttonClassName={styles.productSelectButton}
+              />
             </label>
           </div>
 

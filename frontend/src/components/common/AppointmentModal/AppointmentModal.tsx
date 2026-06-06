@@ -5,6 +5,7 @@ import { Button } from '../Button';
 import { TabList } from '../TabList';
 import { DateTimePicker } from '../DateTimePicker';
 import { CustomSelect } from '../CustomSelect';
+import { PhoneSelect } from '@/components/phone/PhoneSelect';
 import { CalendarEvent, Calendar, calendarsService, FreeSlot, BlockedSlot } from '@/services/calendarsService';
 import { useNotification } from '@/contexts/NotificationContext';
 import { useTimezone } from '@/contexts/TimezoneContext';
@@ -62,6 +63,12 @@ interface User {
   email: string;
   firstName?: string;
   lastName?: string;
+}
+
+interface SelectOption {
+  value: string;
+  label: string;
+  disabled?: boolean;
 }
 
 const STATUS_OPTIONS = [
@@ -922,6 +929,77 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
     .formatToParts(startDate ?? new Date())
     .find((part) => part.type === 'timeZoneName')?.value ?? selectedTimeZone;
   const isMobileSheet = presentation === 'mobileSheet';
+  const calendarOptions: SelectOption[] = calendarsLoading
+    ? [{ value: '', label: 'Cargando calendarios...' }]
+    : !calendars?.length
+      ? [{ value: '', label: 'No hay calendarios disponibles' }]
+      : calendars.map((item) => ({ value: item.id, label: item.name }));
+  const assignedUserOptions: SelectOption[] = [
+    { value: '', label: 'Seleccionar...' },
+    ...users.map((user) => ({
+      value: user.id,
+      label: user.name || user.email || `${user.firstName} ${user.lastName}`.trim()
+    }))
+  ];
+  const statusOptions: SelectOption[] = STATUS_OPTIONS.map((option) => ({
+    value: option.value,
+    label: option.label
+  }));
+  const timeZoneOptions: SelectOption[] = ALL_TIMEZONES.map((tz) => ({ value: tz, label: tz }));
+  const renderSelect = ({
+    title,
+    value,
+    options,
+    onChange,
+    disabled = false,
+    placeholder
+  }: {
+    title: string;
+    value: string;
+    options: SelectOption[];
+    onChange: (value: string) => void;
+    disabled?: boolean;
+    placeholder?: string;
+  }) => (
+    isMobileSheet ? (
+      <PhoneSelect
+        value={value}
+        onChange={onChange}
+        options={options}
+        title={title}
+        placeholder={placeholder || title}
+        disabled={disabled}
+        buttonClassName={styles.mobilePhoneSelectButton}
+      />
+    ) : (
+      <CustomSelect
+        value={value}
+        onChange={onChange}
+        options={options.filter((option) => !option.disabled)}
+        placeholder={placeholder || title}
+        disabled={disabled}
+        className={styles.customSelectControl}
+        portal
+      />
+    )
+  );
+  const handleTimeZoneChange = (newZone: string) => {
+    setFormData((prev) => {
+      const startIso = prev.startTime
+        ? toIsoForSave(prev.startTime, prev.timeZone) ?? ''
+        : '';
+      const endIso = prev.endTime
+        ? toIsoForSave(prev.endTime, prev.timeZone) ?? ''
+        : '';
+
+      return {
+        ...prev,
+        timeZone: newZone,
+        startTime: startIso ? toLocalInputValue(startIso, newZone) : '',
+        endTime: endIso ? toLocalInputValue(endIso, newZone) : ''
+      };
+    });
+  };
 
   return (
     <>
@@ -942,28 +1020,17 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
         >
         {showCalendarPicker && (
           <div className={styles.field}>
-            <label className={styles.label} htmlFor="appointmentCalendar">
+            <label className={styles.label}>
               Calendario <span className={styles.required}>*</span>
             </label>
-            <select
-              id="appointmentCalendar"
-              className={styles.select}
-              value={selectedCalendarId ?? calendar?.id ?? ''}
-              onChange={(event) => onCalendarChange?.(event.target.value)}
-              disabled={calendarsLoading || !calendars?.length}
-            >
-              {calendarsLoading ? (
-                <option value="">Cargando calendarios...</option>
-              ) : !calendars?.length ? (
-                <option value="">No hay calendarios disponibles</option>
-              ) : (
-                calendars.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))
-              )}
-            </select>
+            {renderSelect({
+              title: 'Calendario',
+              value: selectedCalendarId ?? calendar?.id ?? '',
+              options: calendarOptions,
+              onChange: (value) => onCalendarChange?.(value),
+              disabled: calendarsLoading || !calendars?.length,
+              placeholder: 'Elige calendario'
+            })}
             <p className={styles.helpText}>Elige dónde quieres guardar esta cita.</p>
           </div>
         )}
@@ -1127,7 +1194,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
 
                 return (
                   <div className={styles.sectionBlock}>
-                    <label className={styles.label} htmlFor="assignedUser">
+                    <label className={styles.label}>
                       {isRoundRobin ? (
                         <>
                           Elegir miembro del equipo <span className={styles.required}>*</span>
@@ -1143,20 +1210,14 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
                       </p>
                     )}
 
-                    <select
-                      id="assignedUser"
-                      className={styles.select}
-                      value={formData.assignedUserId}
-                      onChange={(e) => setFormData({ ...formData, assignedUserId: e.target.value })}
-                      disabled={loadingUsers}
-                    >
-                      <option value="">Seleccionar...</option>
-                      {users.map((user) => (
-                        <option key={user.id} value={user.id}>
-                          {user.name || user.email || `${user.firstName} ${user.lastName}`.trim()}
-                        </option>
-                      ))}
-                    </select>
+                    {renderSelect({
+                      title: 'Persona asignada',
+                      value: formData.assignedUserId,
+                      options: assignedUserOptions,
+                      onChange: (value) => setFormData({ ...formData, assignedUserId: value }),
+                      disabled: loadingUsers,
+                      placeholder: 'Seleccionar...'
+                    })}
                   </div>
                 );
               }
@@ -1184,23 +1245,16 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
             </div>
 
             <div className={styles.field}>
-              <label className={styles.label} htmlFor="status">
+              <label className={styles.label}>
                 Estado
               </label>
-              <select
-                id="status"
-                className={styles.select}
-                value={formData.appointmentStatus}
-                onChange={(e) =>
-                  setFormData({ ...formData, appointmentStatus: e.target.value as CalendarEvent['appointmentStatus'] })
-                }
-              >
-                {STATUS_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+              {renderSelect({
+                title: 'Estado',
+                value: formData.appointmentStatus,
+                options: statusOptions,
+                onChange: (value) =>
+                  setFormData({ ...formData, appointmentStatus: value as CalendarEvent['appointmentStatus'] })
+              })}
             </div>
 
             {/* Sección de Fecha y Hora (solo en modo crear) */}
@@ -1398,38 +1452,15 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
             {/* Validación de slots ELIMINADA - Como admin, puedes agendar en cualquier horario */}
 
             <div className={styles.field}>
-              <label className={styles.label} htmlFor="timeZone">
+              <label className={styles.label}>
                 Zona horaria
               </label>
-              <select
-                id="timeZone"
-                className={styles.select}
-                value={formData.timeZone}
-                onChange={(e) => {
-                  const newZone = e.target.value;
-                  setFormData((prev) => {
-                    const startIso = prev.startTime
-                      ? toIsoForSave(prev.startTime, prev.timeZone) ?? ''
-                      : '';
-                    const endIso = prev.endTime
-                      ? toIsoForSave(prev.endTime, prev.timeZone) ?? ''
-                      : '';
-
-                    return {
-                      ...prev,
-                      timeZone: newZone,
-                      startTime: startIso ? toLocalInputValue(startIso, newZone) : '',
-                      endTime: endIso ? toLocalInputValue(endIso, newZone) : ''
-                    };
-                  });
-                }}
-              >
-                {ALL_TIMEZONES.map((tz) => (
-                  <option key={tz} value={tz}>
-                    {tz}
-                  </option>
-                ))}
-              </select>
+              {renderSelect({
+                title: 'Zona horaria',
+                value: formData.timeZone,
+                options: timeZoneOptions,
+                onChange: handleTimeZoneChange
+              })}
             </div>
 
             <div className={styles.field}>

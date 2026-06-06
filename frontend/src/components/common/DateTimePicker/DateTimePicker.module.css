@@ -263,38 +263,72 @@
   text-align: left;
 }
 
-.timeSelect {
+.timeStepper,
+.periodToggle {
   width: 100%;
-  padding: 6px 8px;
-  background: var(--color-background-secondary);
   border: 1px solid var(--color-border);
   border-radius: 6px;
-  font-size: 12px;
-  font-weight: 500;
+  background: var(--color-background-secondary);
+}
+
+.timeStepper {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 28px;
+  align-items: center;
+  min-height: 34px;
+  overflow: hidden;
+}
+
+.timeStepper button,
+.periodToggle button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 100%;
+  border: 0;
   color: var(--color-text-primary);
+  background: transparent;
   cursor: pointer;
-  text-align: center;
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 6px center;
-  padding-right: 24px;
 }
 
-.timeSelect:hover {
-  border-color: var(--color-primary);
-  background-color: var(--color-background-tertiary);
+.timeStepper button:hover,
+.periodToggle button:hover {
+  background: var(--color-background-tertiary);
 }
 
-.timeSelect:focus {
-  outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+.timeStepper strong {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 100%;
+  border-inline: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
 }
 
-/* Dark mode select arrow */
-:global(body.dark) .timeSelect {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23aaa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+.periodToggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-height: 34px;
+  overflow: hidden;
+}
+
+.periodToggle button {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.periodToggle button + button {
+  border-left: 1px solid var(--color-border);
+}
+
+.periodActive {
+  color: white !important;
+  background: var(--color-primary) !important;
 }
 
 /* Actions */
