@@ -482,7 +482,7 @@ function getContactInitials(contact?: Partial<Contact> | null) {
   return label.slice(0, 2).toUpperCase()
 }
 
-function getContactProfilePhoto(contact?: (Partial<Contact> & Record<string, unknown>) | null) {
+function getContactProfilePhoto(contact?: Partial<Contact> | null) {
   const candidates = [
     contact?.profilePhotoUrl,
     contact?.avatarUrl,
@@ -5070,6 +5070,7 @@ export const PhoneChat: React.FC = () => {
 
     const revenueTotal = contactInfoSuccessfulPayments.reduce((sum, payment) => sum + payment.amount, 0)
     const paymentsCount = contactInfoPayments.length || Number(contactInfoData.purchases || 0) || contactInfoSuccessfulPayments.length
+    const nextAppointment = contactInfoActiveAppointments.find((appointment) => Date.parse(appointment.startTime) >= Date.now()) || contactInfoActiveAppointments[0]
     const firstSuccessfulPayment = [...contactInfoSuccessfulPayments]
       .sort((left, right) => Date.parse(left.date) - Date.parse(right.date))[0]
     const firstAppointment = contactInfoAppointments[0]
@@ -5273,20 +5274,6 @@ export const PhoneChat: React.FC = () => {
                   'Pago',
                   `${formatCurrency(payment.amount)} · ${formatLocalDateShort(payment.date)}`,
                   formatPlainStatus(payment.status)
-                ))}
-              </div>
-            </section>
-          )}
-
-          {visibleCustomFields.length > 0 && (
-            <section className={styles.contactInfoSection}>
-              <h3>Datos extra</h3>
-              <div className={styles.contactInfoRows}>
-                {visibleCustomFields.map((field) => renderContactInfoRow(
-                  `custom-${field.id}`,
-                  <FileText size={17} />,
-                  field.label,
-                  field.value
                 ))}
               </div>
             </section>
