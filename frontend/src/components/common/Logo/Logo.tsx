@@ -11,7 +11,7 @@ const sizeClasses: Record<NonNullable<LogoProps['size']>, string> = {
   md: 'w-14 h-14',
   lg: 'w-20 h-20',
   xl: 'w-24 h-24',
-  '2xl': 'w-24 h-10'
+  '2xl': 'w-32 h-10'
 }
 
 export const Logo: React.FC<LogoProps> = ({ className = '', size = 'md' }) => {
@@ -20,7 +20,7 @@ export const Logo: React.FC<LogoProps> = ({ className = '', size = 'md' }) => {
   return (
     <div className={`${sizeClasses[size]} ${className}`}>
       <img
-        src="/logo.svg?v=2"
+        src="/logo-web.png?v=1"
         alt="Ristak"
         className="w-full h-full object-contain"
         style={theme === 'dark' ? { filter: 'invert(1)' } : undefined}
