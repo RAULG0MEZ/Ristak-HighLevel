@@ -13,6 +13,7 @@ import type { PushSubscriptionResult } from './pushNotificationsService'
 
 type NativePlatform = 'ios' | 'android' | 'web'
 type PhotoSource = 'camera' | 'photos'
+type MobileShellTheme = 'light' | 'dark'
 
 export interface MobilePhotoAttachment {
   id: string
@@ -27,6 +28,13 @@ let notificationListenersConfigured = false
 
 function getPlatform(): NativePlatform {
   return Capacitor.getPlatform() as NativePlatform
+}
+
+async function applyShellTheme(theme: MobileShellTheme) {
+  if (!Capacitor.isNativePlatform()) return
+
+  await StatusBar.setStyle({ style: theme === 'dark' ? Style.Dark : Style.Light }).catch(() => undefined)
+  await StatusBar.setBackgroundColor({ color: theme === 'dark' ? '#0b0f14' : '#ffffff' }).catch(() => undefined)
 }
 
 function openInternalPath(value?: string | null) {
@@ -204,8 +212,7 @@ export const mobileAppService = {
     if (shellConfigured || !Capacitor.isNativePlatform()) return
     shellConfigured = true
 
-    await StatusBar.setStyle({ style: Style.Light }).catch(() => undefined)
-    await StatusBar.setBackgroundColor({ color: '#ffffff' }).catch(() => undefined)
+    await applyShellTheme('light')
     await StatusBar.setOverlaysWebView({ overlay: false }).catch(() => undefined)
     await SplashScreen.hide().catch(() => undefined)
 
@@ -224,6 +231,10 @@ export const mobileAppService = {
     }).catch(() => undefined)
 
     await configureNativeNotificationListeners()
+  },
+
+  async setShellTheme(theme: MobileShellTheme) {
+    await applyShellTheme(theme)
   },
 
   async subscribeToPushNotifications({ calendarIds = [] }: { calendarIds?: string[] } = {}): Promise<PushSubscriptionResult> {
