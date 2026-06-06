@@ -19,12 +19,20 @@ export const Logo: React.FC<LogoProps> = ({ className = '', size = 'md' }) => {
 
   return (
     <div className={`${sizeClasses[size]} ${className}`}>
-      <img
-        src="/logo-web.png?v=1"
-        alt="Ristak"
-        className="w-full h-full object-contain"
-        style={theme === 'dark' ? { filter: 'invert(1)' } : undefined}
-      />
+      <picture className="block w-full h-full">
+        <source
+          type="image/webp"
+          srcSet="/logo-web-320.webp?v=1 320w, /logo-web-640.webp?v=1 640w"
+          sizes="128px"
+        />
+        <img
+          src="/logo-web.png?v=2"
+          alt="Ristak"
+          className="w-full h-full object-contain"
+          decoding="async"
+          style={theme === 'dark' ? { filter: 'invert(1)' } : undefined}
+        />
+      </picture>
     </div>
   )
 }
