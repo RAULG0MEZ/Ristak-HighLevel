@@ -13,6 +13,7 @@
   --phone-settings-accent-soft: var(--phone-chat-accent-soft, #dff8e8);
   position: fixed;
   inset: 0;
+  isolation: isolate;
   width: 100vw;
   height: 100dvh;
   min-height: 100dvh;
@@ -28,6 +29,24 @@
   -webkit-user-select: none;
   -webkit-touch-callout: none;
   -webkit-text-size-adjust: 100%;
+}
+
+.phoneSettingsPage::after {
+  content: "";
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 60;
+  height: calc(168px + env(safe-area-inset-bottom));
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--phone-settings-bg) 0%, transparent) 0%,
+    color-mix(in srgb, var(--phone-settings-bg) 72%, transparent) 35%,
+    var(--phone-settings-bg) 78%,
+    var(--phone-settings-bg) 100%
+  );
 }
 
 :global(body[data-phone-chat-tone="dark"]) .phoneSettingsPage {
@@ -135,14 +154,16 @@
 }
 
 .settingsListGroup {
-  overflow: hidden;
-  border: 1px solid var(--phone-settings-border);
-  border-radius: 26px;
-  background: color-mix(in srgb, var(--phone-settings-surface) 94%, transparent);
-  box-shadow: 0 12px 24px rgba(var(--phone-settings-primary-rgb), 0.06);
+  display: grid;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .settingsListItem {
+  position: relative;
   display: grid;
   grid-template-columns: 54px minmax(0, 1fr) auto;
   align-items: center;
@@ -151,15 +172,28 @@
   min-height: 76px;
   padding: 11px 12px;
   border: 0;
-  border-bottom: 1px solid var(--phone-settings-border);
+  border-radius: 0;
   color: var(--phone-settings-text);
   background: transparent;
+  box-shadow: none;
   text-align: left;
   cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
 }
 
-.settingsListItem:last-child {
-  border-bottom: 0;
+.settingsListItem::after {
+  content: "";
+  position: absolute;
+  right: 12px;
+  bottom: 0;
+  left: 78px;
+  height: 1px;
+  background: var(--phone-settings-border);
+}
+
+.settingsListItem:last-child::after {
+  display: none;
 }
 
 .settingsListItem:active {
