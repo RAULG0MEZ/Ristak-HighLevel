@@ -396,6 +396,23 @@ const themeNumber = (theme: PublicSite['theme'], key: keyof NonNullable<PublicSi
   return Math.min(max, Math.max(min, value))
 }
 
+const themePaint = (theme: PublicSite['theme'], key: keyof NonNullable<PublicSite['theme']>, fallback: string) => {
+  const value = theme?.[key]
+  return typeof value === 'string' && (isCssColor(value) || isCssGradient(value)) ? normalizeCssPaint(value, fallback) : fallback
+}
+
+const sanitizeCssFont = (value?: string) => String(value || '').replace(/[;"{}<>]/g, '').trim()
+
+const normalizeFormChoiceStyle = (value: unknown) => {
+  const raw = String(value || '').trim()
+  return ['native', 'cards', 'pills', 'minimal'].includes(raw) ? raw : 'native'
+}
+
+const normalizeFormSelectStyle = (value: unknown) => {
+  const raw = String(value || '').trim()
+  return ['classic', 'filled', 'underline'].includes(raw) ? raw : 'classic'
+}
+
 export interface CanvasTheme {
   /** All --rstk-* variables, applied inline on the canvas root. */
   vars: React.CSSProperties
@@ -446,7 +463,7 @@ export const buildCanvasTheme = (site: PublicSite, device: 'desktop' | 'mobile' 
   const textPaint = rawTextPaint && (theme.textColorCustom || rawTextPaint.toLowerCase() !== DEFAULT_ACCENT.toLowerCase()) ? rawTextPaint : ''
   const ink = textPaint ? paintFallbackColor(textPaint, v.ink) : v.ink
 
-  const vars = {
+	const vars = {
     '--rstk-font': baseFont,
     '--rstk-display': display,
     '--rstk-ease': 'cubic-bezier(.16,.84,.44,1)',
@@ -481,10 +498,38 @@ export const buildCanvasTheme = (site: PublicSite, device: 'desktop' | 'mobile' 
     '--rstk-frame-pad': `${pagePadding}px`,
     '--rstk-page-border': pageBorder,
     '--rstk-page-border-width': `${pageBorderWidth}px`,
-    '--rstk-page-radius': `${pageRadius}px`,
-    '--rstk-pad': 'clamp(18px,4vw,30px)',
-    '--rstk-gap': 'clamp(16px,3vw,22px)',
-    ...(textPaint && isCssGradient(textPaint) ? { '--rstk-page-text-paint': textPaint } : {}),
+	    '--rstk-page-radius': `${pageRadius}px`,
+	    '--rstk-pad': 'clamp(18px,4vw,30px)',
+	    '--rstk-gap': 'clamp(16px,3vw,22px)',
+	    '--rstk-form-font': sanitizeCssFont(theme.formFontFamily) || baseFont,
+	    '--rstk-form-label-size': `${themeNumber(theme, 'formLabelSize', 15, 11, 28)}px`,
+	    '--rstk-form-input-size': `${themeNumber(theme, 'formInputSize', 16, 11, 28)}px`,
+	    '--rstk-form-help-size': `${themeNumber(theme, 'formHelpSize', 14, 10, 24)}px`,
+	    '--rstk-form-weight': theme.formFontWeight === 'bold' ? '850' : theme.formFontWeight === 'normal' ? '400' : '700',
+	    '--rstk-form-font-style': theme.formFontStyle === 'italic' ? 'italic' : 'normal',
+	    '--rstk-form-text-decoration': theme.formTextDecoration === 'underline' ? 'underline' : 'none',
+	    '--rstk-form-label-color': paintFallbackColor(themePaint(theme, 'formLabelColor', ink), ink),
+	    '--rstk-form-help-color': paintFallbackColor(themePaint(theme, 'formHelpColor', v.muted), v.muted),
+	    '--rstk-form-field-bg': themePaint(theme, 'formFieldBg', v.inputBg),
+	    '--rstk-form-field-text': paintFallbackColor(themePaint(theme, 'formFieldText', v.inputInk), v.inputInk),
+	    '--rstk-form-field-border': paintFallbackColor(themePaint(theme, 'formFieldBorder', v.inputBorder), v.inputBorder),
+	    '--rstk-form-placeholder': paintFallbackColor(themePaint(theme, 'formPlaceholderColor', v.muted), v.muted),
+	    '--rstk-form-field-radius': `${themeNumber(theme, 'formFieldRadius', Number.parseInt(v.radius, 10) || 12, 0, 36)}px`,
+	    '--rstk-form-field-border-width': `${themeNumber(theme, 'formFieldBorderWidth', 1, 0, 8)}px`,
+	    '--rstk-form-field-height': `${themeNumber(theme, 'formFieldHeight', 50, 34, 96)}px`,
+	    '--rstk-form-field-pad-x': `${themeNumber(theme, 'formFieldPaddingX', 14, 6, 48)}px`,
+	    '--rstk-form-field-pad-y': `${themeNumber(theme, 'formFieldPaddingY', 13, 6, 36)}px`,
+	    '--rstk-form-choice-selected-bg': themePaint(theme, 'formChoiceSelectedBg', `color-mix(in srgb, ${accent} 10%, ${v.inputBg})`),
+	    '--rstk-form-choice-selected-border': paintFallbackColor(themePaint(theme, 'formChoiceSelectedBorder', accent), accent),
+	    '--rstk-submit-bg': themePaint(theme, 'submitBg', accent),
+	    '--rstk-submit-text': paintFallbackColor(themePaint(theme, 'submitTextColor', v.onAccent), v.onAccent),
+	    '--rstk-submit-border': paintFallbackColor(themePaint(theme, 'submitBorderColor', accent), accent),
+	    '--rstk-submit-radius': `${themeNumber(theme, 'submitRadius', Number.parseInt(v.btnRadius, 10) || 12, 0, 80)}px`,
+	    '--rstk-submit-height': `${themeNumber(theme, 'submitHeight', 50, 34, 96)}px`,
+	    '--rstk-submit-pad-x': `${themeNumber(theme, 'submitPaddingX', 22, 8, 72)}px`,
+	    '--rstk-submit-size': `${themeNumber(theme, 'submitFontSize', 16, 11, 32)}px`,
+	    '--rstk-submit-border-width': `${themeNumber(theme, 'submitBorderWidth', 1, 0, 8)}px`,
+	    ...(textPaint && isCssGradient(textPaint) ? { '--rstk-page-text-paint': textPaint } : {}),
     ...(template.gradient ? { '--rstk-gradient': template.gradient } : {}),
     ...(template.cyan ? { '--rstk-cyan': template.cyan } : {})
   } as React.CSSProperties
@@ -494,9 +539,11 @@ export const buildCanvasTheme = (site: PublicSite, device: 'desktop' | 'mobile' 
     `rstk-${template.mode}`,
     `rstk-kind-${isLandingType ? 'landing' : 'form'}`,
     template.centered ? 'rstk-centered' : '',
-    textPaint && isCssGradient(textPaint) ? 'rstkPageTextGradient' : '',
-    site.siteType === 'interactive_form' ? 'rstk-interactive' : ''
-  ].filter(Boolean).join(' ')
+	    textPaint && isCssGradient(textPaint) ? 'rstkPageTextGradient' : '',
+	    site.siteType === 'interactive_form' ? 'rstk-interactive' : '',
+	    `rstk-choice-${normalizeFormChoiceStyle(theme.formChoiceStyle)}`,
+	    `rstk-select-${normalizeFormSelectStyle(theme.formSelectStyle)}`
+	  ].filter(Boolean).join(' ')
 
   const desktopChromePadding = isLandingType ? 48 : 32
   const designWidth = device === 'mobile' ? 390 : pageMaxWidth + desktopChromePadding

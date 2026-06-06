@@ -376,6 +376,7 @@ const blockIcons: Partial<Record<SiteBlockType, React.ReactNode>> = {
   testimonials: <FileText size={15} />,
   services: <LayoutTemplate size={15} />,
   form_embed: <FormInput size={15} />,
+  social_profile: <Instagram size={15} />,
   faq: <ListChecks size={15} />,
   cta: <Send size={15} />,
   short_text: <FormInput size={15} />,
@@ -762,7 +763,7 @@ const isSiteDark = (site: PublicSite): boolean => {
 const defaultAccentForSite = (site: PublicSite): string =>
   userAccentColor(site) || templateMetaById(resolveTemplateId(site))?.accent || (isSiteDark(site) ? '#ffffff' : '#111827')
 
-const platformChromeFor = (id: SiteTemplateId): 'facebook' | 'instagram' | 'tiktok' | null => {
+const platformChromeFor = (id: SiteTemplateId): SocialPlatform | null => {
   if (id === 'facebook' || id === 'instagram' || id === 'tiktok') return id
   return null
 }
@@ -939,6 +940,9 @@ const spacingSides = [
 type SpacingBase = 'blockPadding' | 'blockMargin'
 type HorizontalAlign = 'left' | 'center' | 'right'
 type ButtonAlign = HorizontalAlign | 'full'
+type SocialPlatform = 'facebook' | 'instagram' | 'tiktok'
+type FormChoiceStyle = NonNullable<SiteTheme['formChoiceStyle']>
+type FormSelectStyle = NonNullable<SiteTheme['formSelectStyle']>
 
 const horizontalAlignOptions: Array<{ value: HorizontalAlign; label: string; icon: React.ReactNode }> = [
   { value: 'left', label: 'Izquierda', icon: <AlignLeft size={14} /> },
@@ -965,6 +969,40 @@ const backgroundVisualOptions = [
   { value: 'repeat-y', label: 'Repetir vertical' },
   { value: 'repeat-x-fixed-top', label: 'Repetir horizontal fijo arriba' }
 ] as const
+
+const formChoiceStyleOptions: Array<{ value: FormChoiceStyle; label: string }> = [
+  { value: 'native', label: 'Clasico con circulo' },
+  { value: 'cards', label: 'Fila seleccionada' },
+  { value: 'pills', label: 'Pildoras' },
+  { value: 'minimal', label: 'Linea simple' }
+]
+
+const formSelectStyleOptions: Array<{ value: FormSelectStyle; label: string }> = [
+  { value: 'classic', label: 'Clasico' },
+  { value: 'filled', label: 'Relleno moderno' },
+  { value: 'underline', label: 'Linea inferior' }
+]
+
+const socialPlatformOptions: Array<{ value: SocialPlatform; label: string }> = [
+  { value: 'facebook', label: 'Facebook' },
+  { value: 'instagram', label: 'Instagram' },
+  { value: 'tiktok', label: 'TikTok' }
+]
+
+const normalizeFormChoiceStyle = (value: unknown): FormChoiceStyle => {
+  const raw = String(value || '').trim()
+  return formChoiceStyleOptions.some(option => option.value === raw) ? raw as FormChoiceStyle : 'native'
+}
+
+const normalizeFormSelectStyle = (value: unknown): FormSelectStyle => {
+  const raw = String(value || '').trim()
+  return formSelectStyleOptions.some(option => option.value === raw) ? raw as FormSelectStyle : 'classic'
+}
+
+const normalizeSocialPlatform = (value: unknown): SocialPlatform => {
+  const raw = String(value || '').trim()
+  return socialPlatformOptions.some(option => option.value === raw) ? raw as SocialPlatform : 'facebook'
+}
 
 const getBackgroundVisualValue = (theme: SiteTheme | undefined) => {
   if (theme?.backgroundAttachment === 'fixed' && theme.backgroundRepeat === 'repeat-x' && theme.backgroundPosition === 'center top') return 'repeat-x-fixed-top'
@@ -1942,6 +1980,22 @@ const defaultBlockPayload = (blockType: SiteBlockType, siteId: string, siteType?
       label,
       content: 'Formulario',
       settings: blockSettings({ description: 'Completa tus datos.', embeddedBlocks: createEmbeddedBlocks(siteId) })
+    }
+  }
+
+  if (blockType === 'social_profile') {
+    return {
+      blockType,
+      label,
+      content: 'Perfil social',
+      settings: blockSettings({
+        platform: 'facebook',
+        brandName: 'Tu marca',
+        brandSubtitle: 'Patrocinado',
+        brandAvatar: '',
+        followers: '',
+        brandVerified: true
+      })
     }
   }
 
@@ -3851,44 +3905,44 @@ export const Sites: React.FC = () => {
                                 </div>
                               )}
                               <div className="rstk-form">
-		                              {isLanding(editorSite) ? (
-	                                !hasLandingCanvasContent ? (
-	                                  canvasPalettePreviewBlock && isTopLevelLandingBlockType(paletteDragPayload?.blockType) ? (
-	                                    <PaletteInsertPreview block={canvasPalettePreviewBlock} forms={forms} calendars={calendars} />
-	                                  ) : (
-	                                    <div className="rstkDropEmpty">
-	                                      <Plus size={22} />
-	                                      <p>Arrastra primero una franja de 1, 2 o 3 columnas.</p>
-	                                    </div>
-	                                  )
-	                                ) : (
-	                                  <>
-	                                    <LandingCanvasSections
-	                                      lanes={landingSectionLanes}
-	                                      blocks={canvasBlocks}
-	                                      selectedBlockId={selectedBlock?.id || ''}
-	                                      site={editorSite}
-	                                      forms={forms}
-	                                      calendars={calendars}
-	                                      pages={pages}
-	                                      activePageId={activePage?.id || DEFAULT_FUNNEL_PAGE_ID}
-	                                      palettePreviewBlock={canvasPalettePreviewBlock}
-	                                      paletteInsertIndex={paletteInsertIndex}
-	                                      paletteSectionTarget={paletteSectionTarget}
-	                                      paletteDragging={paletteDragging}
-	                                      onSelectBlock={setSelectedBlockId}
-                                      onDeleteBlock={handleDeleteBlock}
-                                      onMoveBlock={handleMoveBlock}
-                                      getBlockMoveState={getBlockMoveState}
-                                      onPatchBlock={patchBlockLocal}
-                                      onPatchBlockSettings={patchBlockSettingsLocal}
-                                      onSaveBlock={handleSaveBlock}
-                                    />
-                                  </>
-                                )
-                              ) : canvasBlocks.length === 0 ? (
+                                {isLanding(editorSite) ? (
+                                  !hasLandingCanvasContent ? (
+                                    canvasPalettePreviewBlock && isTopLevelLandingBlockType(paletteDragPayload?.blockType) ? (
+                                      <PaletteInsertPreview block={canvasPalettePreviewBlock} site={editorSite} forms={forms} calendars={calendars} />
+                                    ) : (
+                                      <div className="rstkDropEmpty">
+                                        <Plus size={22} />
+                                        <p>Arrastra primero una franja de 1, 2 o 3 columnas.</p>
+                                      </div>
+                                    )
+                                  ) : (
+                                    <>
+                                      <LandingCanvasSections
+                                        lanes={landingSectionLanes}
+                                        blocks={canvasBlocks}
+                                        selectedBlockId={selectedBlock?.id || ''}
+                                        site={editorSite}
+                                        forms={forms}
+                                        calendars={calendars}
+                                        pages={pages}
+                                        activePageId={activePage?.id || DEFAULT_FUNNEL_PAGE_ID}
+                                        palettePreviewBlock={canvasPalettePreviewBlock}
+                                        paletteInsertIndex={paletteInsertIndex}
+                                        paletteSectionTarget={paletteSectionTarget}
+                                        paletteDragging={paletteDragging}
+                                        onSelectBlock={setSelectedBlockId}
+                                        onDeleteBlock={handleDeleteBlock}
+                                        onMoveBlock={handleMoveBlock}
+                                        getBlockMoveState={getBlockMoveState}
+                                        onPatchBlock={patchBlockLocal}
+                                        onPatchBlockSettings={patchBlockSettingsLocal}
+                                        onSaveBlock={handleSaveBlock}
+                                      />
+                                    </>
+                                  )
+                                ) : canvasBlocks.length === 0 ? (
                                 canvasPalettePreviewBlock ? (
-                                  <PaletteInsertPreview block={canvasPalettePreviewBlock} forms={forms} calendars={calendars} />
+                                  <PaletteInsertPreview block={canvasPalettePreviewBlock} site={editorSite} forms={forms} calendars={calendars} />
                                 ) : (
                                   <div className="rstkDropEmpty">
                                     <Plus size={22} />
@@ -3898,7 +3952,7 @@ export const Sites: React.FC = () => {
                               ) : (
                                 <>
                                   {canvasPalettePreviewBlock && paletteInsertIndex === 0 && (
-                                    <PaletteInsertPreview block={canvasPalettePreviewBlock} forms={forms} calendars={calendars} />
+                                    <PaletteInsertPreview block={canvasPalettePreviewBlock} site={editorSite} forms={forms} calendars={calendars} />
                                   )}
                                   {canvasBlocks.map((block, index) => {
                                     const moveState = getBlockMoveState(block)
@@ -3925,7 +3979,7 @@ export const Sites: React.FC = () => {
                                           onSave={() => handleSaveBlock(block.id)}
                                         />
                                         {canvasPalettePreviewBlock && paletteInsertIndex === index + 1 && (
-                                          <PaletteInsertPreview block={canvasPalettePreviewBlock} forms={forms} calendars={calendars} />
+                                          <PaletteInsertPreview block={canvasPalettePreviewBlock} site={editorSite} forms={forms} calendars={calendars} />
                                         )}
                                       </React.Fragment>
                                     )
@@ -3934,7 +3988,7 @@ export const Sites: React.FC = () => {
                               )}
                               {isFormSite(editorSite) && canvasBlocks.some(block => fieldBlockTypes.has(block.blockType)) && (
                                 <div className="rstk-actions">
-                                  <button type="button" data-submit>{editorSite.theme?.submitText || 'Enviar'}</button>
+                                  <button type="button" data-submit><SubmitButtonContent theme={editorSite.theme} /></button>
                                 </div>
                               )}
                               </div>
@@ -3947,7 +4001,7 @@ export const Sites: React.FC = () => {
                       {activeDragBlock ? (
                         <div className={`rstkCanvas ${canvasTheme!.bodyClass}`} style={{ ...canvasTheme!.vars, width: 460, ['--rstk-scale' as string]: 1 } as React.CSSProperties}>
                           <div className={getBlockStyleClassName(activeDragBlock)} style={getBlockCanvasStyle(activeDragBlock)}>
-                            <CanvasPreviewBlock block={activeDragBlock} forms={forms} calendars={calendars} />
+                            <CanvasPreviewBlock block={activeDragBlock} site={editorSite} forms={forms} calendars={calendars} />
                           </div>
                         </div>
                       ) : null}
@@ -4076,6 +4130,7 @@ const LibrarySitePreview: React.FC<{
                     <div key={block.id} className={getBlockStyleClassName(block)} style={getBlockCanvasStyle(block)}>
                       <CanvasPreviewBlock
                         block={block}
+                        site={site}
                         blocks={blocks}
                         forms={forms}
                         calendars={calendars}
@@ -4092,7 +4147,7 @@ const LibrarySitePreview: React.FC<{
                 )}
                 {hasFields && (
                   <div className="rstk-actions">
-                    <button type="button" data-submit>{site.theme?.submitText || 'Enviar'}</button>
+                    <button type="button" data-submit><SubmitButtonContent theme={site.theme} /></button>
                   </div>
                 )}
               </div>
@@ -5253,7 +5308,7 @@ const CanvasAvatar: React.FC<{ name: string; avatar?: string }> = ({ name, avata
   </span>
 )
 
-const SocialPlatformBadge: React.FC<{ platform: 'facebook' | 'instagram' | 'tiktok' }> = ({ platform }) => {
+const SocialPlatformBadge: React.FC<{ platform: SocialPlatform }> = ({ platform }) => {
   const platformClass = platform === 'facebook'
     ? styles.socialPlatformFacebook
     : platform === 'instagram'
@@ -5269,7 +5324,7 @@ const SocialPlatformBadge: React.FC<{ platform: 'facebook' | 'instagram' | 'tikt
 }
 
 const CanvasChrome: React.FC<{
-  platform: 'facebook' | 'instagram' | 'tiktok'
+  platform: SocialPlatform
   site: PublicSite
   onPatchTheme: (patch: Partial<SiteTheme>) => void
   onSave: () => void
@@ -5304,6 +5359,18 @@ const CanvasChrome: React.FC<{
   )
 }
 
+const SubmitButtonContent: React.FC<{ theme?: SiteTheme }> = ({ theme }) => {
+  const label = getThemeString(theme, 'submitText') || 'Enviar'
+  const subtitle = getThemeString(theme, 'submitSubtitle')
+
+  return (
+    <>
+      <span className="rstk-button-label">{label}</span>
+      {subtitle ? <span className="rstk-button-subtitle">{subtitle}</span> : null}
+    </>
+  )
+}
+
 const paletteGroups: Array<{ label: string; items: PaletteItem[] }> = [
   {
     label: 'Paneles',
@@ -5323,7 +5390,7 @@ const paletteGroups: Array<{ label: string; items: PaletteItem[] }> = [
   },
   {
     label: 'Contenido',
-    items: ['title', 'subtitle', 'text', 'image', 'video', 'button', 'benefits', 'testimonials', 'services', 'faq', 'cta', 'embed', 'calendar_embed', 'form_embed']
+    items: ['title', 'subtitle', 'text', 'image', 'video', 'button', 'benefits', 'testimonials', 'services', 'faq', 'cta', 'embed', 'calendar_embed', 'form_embed', 'social_profile']
       .map(blockType => ({ id: blockType, label: blockLabels[blockType as SiteBlockType], blockType: blockType as SiteBlockType }))
   },
   {
@@ -6127,6 +6194,7 @@ const SortableCanvasBlock: React.FC<SortableCanvasBlockProps> = ({
       </div>
       <CanvasPreviewBlock
         block={block}
+        site={site}
         blocks={blocks}
         forms={forms}
         calendars={calendars}
@@ -6588,11 +6656,12 @@ const LegacyLandingSection: React.FC<Omit<LandingSectionRenderProps, 'paletteDra
 
 const PaletteInsertPreview: React.FC<{
   block: SiteBlock
+  site?: PublicSite
   forms: PublicSite[]
   calendars: CalendarType[]
-}> = ({ block, forms, calendars }) => (
+}> = ({ block, site, forms, calendars }) => (
   <div className={getBlockStyleClassName(block, 'rstkPalettePreview')} style={getBlockCanvasStyle(block)}>
-    <CanvasPreviewBlock block={block} forms={forms} calendars={calendars} />
+    <CanvasPreviewBlock block={block} site={site} forms={forms} calendars={calendars} />
   </div>
 )
 
@@ -7006,6 +7075,7 @@ const InlineBlockStyleControls: React.FC<{
 
 interface CanvasPreviewBlockProps {
   block: SiteBlock
+  site?: PublicSite
   blocks?: SiteBlock[]
   forms: PublicSite[]
   calendars: CalendarType[]
@@ -7019,6 +7089,7 @@ interface CanvasPreviewBlockProps {
 
 const CanvasPreviewBlock: React.FC<CanvasPreviewBlockProps> = ({
   block,
+  site,
   blocks = [],
   forms,
   calendars,
@@ -7034,6 +7105,29 @@ const CanvasPreviewBlock: React.FC<CanvasPreviewBlockProps> = ({
   const patchBlock = onPatchBlock || (() => {})
   const patchSettings = onPatchSettings || (() => {})
   const save = onSave || (() => {})
+
+  if (block.blockType === 'social_profile') {
+    const platform = normalizeSocialPlatform(settings.platform)
+    const fallbackTheme = site?.theme || {}
+    const brandName = getSettingString(settings, 'brandName') || fallbackTheme.brandName || site?.title || site?.name || 'Tu marca'
+    const socialSite = {
+      ...(site || {}),
+      id: site?.id || block.siteId,
+      name: site?.name || brandName,
+      title: site?.title || brandName,
+      theme: {
+        ...fallbackTheme,
+        template: platform,
+        brandName,
+        brandSubtitle: getSettingString(settings, 'brandSubtitle') || fallbackTheme.brandSubtitle || (platform === 'instagram' ? 'Publicacion pagada' : 'Patrocinado'),
+        brandAvatar: getSettingString(settings, 'brandAvatar') || fallbackTheme.brandAvatar || '',
+        followers: getSettingString(settings, 'followers') || fallbackTheme.followers || '',
+        brandVerified: settings.brandVerified === undefined ? fallbackTheme.brandVerified : settings.brandVerified !== false
+      }
+    } as PublicSite
+
+    return <CanvasChrome platform={platform} site={socialSite} onPatchTheme={() => {}} onSave={() => {}} />
+  }
 
   if (block.blockType === HEADER_PANEL_BLOCK_TYPE || block.blockType === FOOTER_PANEL_BLOCK_TYPE) {
     const links = getPanelLinks(settings)
@@ -7312,6 +7406,135 @@ interface PropertiesPanelProps {
   onSave: () => void
 }
 
+const FormGlobalStyleControls: React.FC<{
+  site: PublicSite
+  onPatchTheme: (patch: Partial<SiteTheme>) => void
+  onSaveSite: () => void
+}> = ({ site, onPatchTheme, onSaveSite }) => {
+  if (!isFormSite(site)) return null
+
+  const theme = site.theme || {}
+  const defaultAccent = defaultAccentForSite(site)
+  const inputText = isSiteDark(site) ? '#ffffff' : '#111827'
+  const accentRgb = cssColorToHex(defaultAccent, '#111827').replace('#', '').match(/.{2}/g)?.map(hex => parseInt(hex, 16)).join(', ') || '17, 24, 39'
+  const defaultChoiceSelectedBg = `rgba(${accentRgb}, 0.10)`
+  const currentFontFamily = getThemeString(theme, 'formFontFamily')
+  const fontOptions = currentFontFamily && !GOOGLE_FONT_OPTIONS.some(option => option.value === currentFontFamily)
+    ? [...GOOGLE_FONT_OPTIONS, { label: 'Fuente actual', value: currentFontFamily }]
+    : GOOGLE_FONT_OPTIONS
+  const isBold = theme.formFontWeight === 'bold'
+  const isItalic = theme.formFontStyle === 'italic'
+  const isUnderline = theme.formTextDecoration === 'underline'
+  const patchTextFormat = (patch: Partial<SiteTheme>) => {
+    onPatchTheme(patch)
+    window.setTimeout(onSaveSite, 0)
+  }
+
+  return (
+    <div className={styles.formGlobalControls}>
+      <div className={styles.panelSubheader}>Formulario global</div>
+      <div className={styles.textFormatPanel}>
+        <div className={styles.textToolbar}>
+          <label className={styles.textFontSelect}>
+            <span>Tipografia</span>
+            <select value={currentFontFamily} onChange={(event) => onPatchTheme({ formFontFamily: event.target.value })} onBlur={onSaveSite}>
+              {fontOptions.map(option => (
+                <option key={option.label} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+          <div className={styles.textFormatButtons} role="group" aria-label="Formato global de formulario">
+            <button type="button" className={isBold ? styles.textFormatActive : ''} aria-pressed={isBold} title="Negrita" aria-label="Negrita" onClick={() => patchTextFormat({ formFontWeight: isBold ? 'normal' : 'bold' })}>
+              <Bold size={15} />
+            </button>
+            <button type="button" className={isItalic ? styles.textFormatActive : ''} aria-pressed={isItalic} title="Italica" aria-label="Italica" onClick={() => patchTextFormat({ formFontStyle: isItalic ? 'normal' : 'italic' })}>
+              <Italic size={15} />
+            </button>
+            <button type="button" className={isUnderline ? styles.textFormatActive : ''} aria-pressed={isUnderline} title="Subrayado" aria-label="Subrayado" onClick={() => patchTextFormat({ formTextDecoration: isUnderline ? 'none' : 'underline' })}>
+              <Underline size={15} />
+            </button>
+          </div>
+        </div>
+        <div className={styles.twoColumn}>
+          <DimensionField label="Texto pregunta" value={getThemeNumber(theme, 'formLabelSize', 15, 11, 28)} min={11} max={28} onChange={(value) => onPatchTheme({ formLabelSize: value })} onCommit={onSaveSite} />
+          <DimensionField label="Texto respuesta" value={getThemeNumber(theme, 'formInputSize', 16, 11, 28)} min={11} max={28} onChange={(value) => onPatchTheme({ formInputSize: value })} onCommit={onSaveSite} />
+        </div>
+        <DimensionField label="Texto ayuda" value={getThemeNumber(theme, 'formHelpSize', 14, 10, 24)} min={10} max={24} onChange={(value) => onPatchTheme({ formHelpSize: value })} onCommit={onSaveSite} />
+      </div>
+
+      <div className={styles.twoColumn}>
+        <ColorField label="Pregunta" value={getThemePaint(theme, 'formLabelColor', getThemePaint(theme, 'textColor', inputText))} allowGradient onChange={(value) => onPatchTheme({ formLabelColor: value })} onCommit={onSaveSite} />
+        <ColorField label="Ayuda" value={getThemePaint(theme, 'formHelpColor', '#64748b')} allowGradient onChange={(value) => onPatchTheme({ formHelpColor: value })} onCommit={onSaveSite} />
+      </div>
+      <div className={styles.twoColumn}>
+        <ColorField label="Caja" value={getThemePaint(theme, 'formFieldBg', '#ffffff')} allowGradient onChange={(value) => onPatchTheme({ formFieldBg: value })} onCommit={onSaveSite} />
+        <ColorField label="Texto caja" value={getThemePaint(theme, 'formFieldText', inputText)} allowGradient onChange={(value) => onPatchTheme({ formFieldText: value })} onCommit={onSaveSite} />
+      </div>
+      <div className={styles.twoColumn}>
+        <ColorField label="Borde caja" value={getThemePaint(theme, 'formFieldBorder', '#dbe3ef')} allowGradient onChange={(value) => onPatchTheme({ formFieldBorder: value })} onCommit={onSaveSite} />
+        <ColorField label="Placeholder" value={getThemePaint(theme, 'formPlaceholderColor', '#94a3b8')} allowGradient onChange={(value) => onPatchTheme({ formPlaceholderColor: value })} onCommit={onSaveSite} />
+      </div>
+
+      <div className={styles.twoColumn}>
+        <DimensionField label="Alto caja" value={getThemeNumber(theme, 'formFieldHeight', 50, 34, 96)} min={34} max={96} onChange={(value) => onPatchTheme({ formFieldHeight: value })} onCommit={onSaveSite} />
+        <DimensionField label="Radio caja" value={getThemeNumber(theme, 'formFieldRadius', 12, 0, 36)} min={0} max={36} onChange={(value) => onPatchTheme({ formFieldRadius: value })} onCommit={onSaveSite} />
+      </div>
+      <div className={styles.twoColumn}>
+        <DimensionField label="Borde caja" value={getThemeNumber(theme, 'formFieldBorderWidth', 1, 0, 8)} min={0} max={8} onChange={(value) => onPatchTheme({ formFieldBorderWidth: value })} onCommit={onSaveSite} />
+        <DimensionField label="Relleno lados" value={getThemeNumber(theme, 'formFieldPaddingX', 14, 6, 48)} min={6} max={48} onChange={(value) => onPatchTheme({ formFieldPaddingX: value })} onCommit={onSaveSite} />
+      </div>
+      <DimensionField label="Relleno vertical" value={getThemeNumber(theme, 'formFieldPaddingY', 13, 6, 36)} min={6} max={36} onChange={(value) => onPatchTheme({ formFieldPaddingY: value })} onCommit={onSaveSite} />
+
+      <div className={styles.twoColumn}>
+        <label className={styles.field}>
+          <span>Estilo opciones</span>
+          <select value={normalizeFormChoiceStyle(theme.formChoiceStyle)} onChange={(event) => onPatchTheme({ formChoiceStyle: event.target.value as FormChoiceStyle })} onBlur={onSaveSite}>
+            {formChoiceStyleOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </label>
+        <label className={styles.field}>
+          <span>Estilo dropdown</span>
+          <select value={normalizeFormSelectStyle(theme.formSelectStyle)} onChange={(event) => onPatchTheme({ formSelectStyle: event.target.value as FormSelectStyle })} onBlur={onSaveSite}>
+            {formSelectStyleOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </label>
+      </div>
+      <div className={styles.twoColumn}>
+        <ColorField label="Opcion seleccionada" value={getThemePaint(theme, 'formChoiceSelectedBg', defaultChoiceSelectedBg)} allowGradient onChange={(value) => onPatchTheme({ formChoiceSelectedBg: value })} onCommit={onSaveSite} />
+        <ColorField label="Borde seleccionado" value={getThemePaint(theme, 'formChoiceSelectedBorder', defaultAccent)} allowGradient onChange={(value) => onPatchTheme({ formChoiceSelectedBorder: value })} onCommit={onSaveSite} />
+      </div>
+
+      <div className={styles.panelSubheader}>Boton de envio</div>
+      <div className={styles.twoColumn}>
+        <label className={styles.field}>
+          <span>Texto del boton</span>
+          <input value={theme.submitText || ''} placeholder="Enviar" onChange={(event) => onPatchTheme({ submitText: event.target.value })} onBlur={onSaveSite} />
+        </label>
+        <label className={styles.field}>
+          <span>Subtexto</span>
+          <input value={theme.submitSubtitle || ''} placeholder="Tarda menos de un minuto" onChange={(event) => onPatchTheme({ submitSubtitle: event.target.value })} onBlur={onSaveSite} />
+        </label>
+      </div>
+      <div className={styles.twoColumn}>
+        <ColorField label="Fondo boton" value={getThemePaint(theme, 'submitBg', defaultAccent)} allowGradient onChange={(value) => onPatchTheme({ submitBg: value })} onCommit={onSaveSite} />
+        <ColorField label="Texto boton" value={getThemePaint(theme, 'submitTextColor', onAccentFor(defaultAccent))} allowGradient onChange={(value) => onPatchTheme({ submitTextColor: value })} onCommit={onSaveSite} />
+      </div>
+      <div className={styles.twoColumn}>
+        <ColorField label="Borde boton" value={getThemePaint(theme, 'submitBorderColor', defaultAccent)} allowGradient onChange={(value) => onPatchTheme({ submitBorderColor: value })} onCommit={onSaveSite} />
+        <DimensionField label="Radio boton" value={getThemeNumber(theme, 'submitRadius', 12, 0, 80)} min={0} max={80} onChange={(value) => onPatchTheme({ submitRadius: value })} onCommit={onSaveSite} />
+      </div>
+      <div className={styles.twoColumn}>
+        <DimensionField label="Alto boton" value={getThemeNumber(theme, 'submitHeight', 50, 34, 96)} min={34} max={96} onChange={(value) => onPatchTheme({ submitHeight: value })} onCommit={onSaveSite} />
+        <DimensionField label="Texto boton" value={getThemeNumber(theme, 'submitFontSize', 16, 11, 32)} min={11} max={32} onChange={(value) => onPatchTheme({ submitFontSize: value })} onCommit={onSaveSite} />
+      </div>
+      <div className={styles.twoColumn}>
+        <DimensionField label="Relleno boton" value={getThemeNumber(theme, 'submitPaddingX', 22, 8, 72)} min={8} max={72} onChange={(value) => onPatchTheme({ submitPaddingX: value })} onCommit={onSaveSite} />
+        <DimensionField label="Borde boton" value={getThemeNumber(theme, 'submitBorderWidth', 1, 0, 8)} min={0} max={8} onChange={(value) => onPatchTheme({ submitBorderWidth: value })} onCommit={onSaveSite} />
+      </div>
+    </div>
+  )
+}
+
 const PageInspector: React.FC<{
   site: PublicSite
   pages: SitePage[]
@@ -7458,6 +7681,9 @@ const PageInspector: React.FC<{
               onCommit={onSaveSite}
             />
           </div>
+          {isFormSite(site) && (
+            <FormGlobalStyleControls site={site} onPatchTheme={onPatchTheme} onSaveSite={onSaveSite} />
+          )}
           {metaPixelConnected && (
             <>
               <div className={styles.panelSubheader}>Medicion Meta</div>
@@ -7673,6 +7899,10 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
       </div>
 
       <div className={styles.propertiesBody}>
+        {isFormSite(site) && isField && (
+          <FormGlobalStyleControls site={site} onPatchTheme={onPatchTheme} onSaveSite={onSaveSite} />
+        )}
+
         <label className={styles.field}>
           <span>{isField ? 'Label / pregunta' : block.blockType === SECTION_BLOCK_TYPE ? 'Nombre de la franja' : 'Nombre del bloque'}</span>
           <input value={block.label} onChange={(event) => onPatchBlock({ label: event.target.value })} onBlur={onSave} />
@@ -8023,6 +8253,53 @@ const LandingBlockSettings: React.FC<LandingBlockSettingsProps> = ({ site, block
           <input value={getSettingString(settings, 'buttonText')} onChange={(event) => onPatchSettings({ buttonText: event.target.value })} onBlur={onSave} />
         </label>
         <ButtonActionFields settings={settings} pages={pages} activePageId={activePageId} onPatchSettings={onPatchSettings} onSave={onSave} />
+      </div>
+    )
+  }
+
+  if (block.blockType === 'social_profile') {
+    const platform = normalizeSocialPlatform(settings.platform)
+
+    return (
+      <div className={styles.settingsGroup}>
+        <div className={styles.panelSubheader}>Perfil social</div>
+        <label className={styles.field}>
+          <span>Red social</span>
+          <select value={platform} onChange={(event) => onPatchSettings({ platform: event.target.value })} onBlur={onSave}>
+            {socialPlatformOptions.map(option => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+        <label className={styles.field}>
+          <span>Nombre que se vera</span>
+          <input value={getSettingString(settings, 'brandName')} placeholder={site.title || site.name || 'Tu marca'} onChange={(event) => onPatchSettings({ brandName: event.target.value })} onBlur={onSave} />
+        </label>
+        <label className={styles.field}>
+          <span>Texto secundario</span>
+          <input value={getSettingString(settings, 'brandSubtitle')} placeholder={platform === 'instagram' ? 'Publicacion pagada' : 'Patrocinado'} onChange={(event) => onPatchSettings({ brandSubtitle: event.target.value })} onBlur={onSave} />
+        </label>
+        <label className={styles.field}>
+          <span>Foto de perfil (URL)</span>
+          <input value={getSettingString(settings, 'brandAvatar')} placeholder="Pega la liga de la imagen" onChange={(event) => onPatchSettings({ brandAvatar: event.target.value })} onBlur={onSave} />
+        </label>
+        <div className={styles.twoColumn}>
+          <label className={styles.field}>
+            <span>Seguidores</span>
+            <input value={getSettingString(settings, 'followers')} placeholder="12 mil" onChange={(event) => onPatchSettings({ followers: event.target.value })} onBlur={onSave} />
+          </label>
+          <label className={styles.checkboxLabel}>
+            <input
+              type="checkbox"
+              checked={settings.brandVerified !== false}
+              onChange={(event) => {
+                onPatchSettings({ brandVerified: event.target.checked })
+                window.setTimeout(onSave, 0)
+              }}
+            />
+            <span>Mostrar verificado</span>
+          </label>
+        </div>
       </div>
     )
   }

@@ -167,6 +167,7 @@
   margin-right: var(--rstk-button-margin-right, auto);
 }
 .rstkCanvas .rstk-button-label { display: inline-block; }
+.rstkCanvas .rstk-button-subtitle { display: block; font-size: .78em; font-weight: 650; line-height: 1.25; opacity: .82; }
 .rstkCanvas.rstk-centered .rstk-button-link { margin-inline: auto; }
 .rstkCanvas .rstk-secondary { background: transparent !important; color: var(--rstk-ink) !important; border-color: var(--rstk-border) !important; }
 
@@ -202,21 +203,76 @@
 .rstkCanvas .rstk-site-panel-footer .rstk-site-panel-links { justify-content: center; }
 
 .rstkCanvas .rstk-field { display: grid; gap: 8px; text-align: left; }
+.rstkCanvas.rstk-kind-form .rstk-form { font-family: var(--rstk-form-font, var(--rstk-font)); }
 .rstkCanvas label { font-size: .95rem; font-weight: 700; color: var(--rstk-ink); }
+.rstkCanvas.rstk-kind-form .rstk-field > label {
+  color: var(--rstk-form-label-color, var(--rstk-ink));
+  font-family: var(--rstk-form-font, var(--rstk-font));
+  font-size: var(--rstk-form-label-size, .95rem);
+  font-style: var(--rstk-form-font-style, normal);
+  font-weight: var(--rstk-form-weight, 700);
+  text-decoration: var(--rstk-form-text-decoration, none);
+}
 .rstkCanvas .rstk-required { color: #dc2626; margin-left: 3px; }
 .rstkCanvas .rstk-help { margin: 0; color: var(--rstk-muted); font-size: .9rem; }
+.rstkCanvas.rstk-kind-form .rstk-help {
+  color: var(--rstk-form-help-color, var(--rstk-muted));
+  font-family: var(--rstk-form-font, var(--rstk-font));
+  font-size: var(--rstk-form-help-size, .9rem);
+  font-style: var(--rstk-form-font-style, normal);
+  text-decoration: var(--rstk-form-text-decoration, none);
+}
 .rstkCanvas input, .rstkCanvas textarea, .rstkCanvas select {
   width: 100%; border: 1px solid var(--rstk-input-border); border-radius: var(--rstk-field-radius, var(--rstk-radius));
   background: var(--rstk-input-bg); color: var(--rstk-input-ink); font: inherit; font-size: 1rem;
   padding: 13px 14px; outline: none;
 }
+.rstkCanvas.rstk-kind-form .rstk-field > input, .rstkCanvas.rstk-kind-form .rstk-field > textarea, .rstkCanvas.rstk-kind-form .rstk-field > select {
+  min-height: var(--rstk-form-field-height, 50px);
+  border-width: var(--rstk-form-field-border-width, 1px);
+  border-color: var(--rstk-form-field-border, var(--rstk-input-border));
+  border-radius: var(--rstk-form-field-radius, var(--rstk-field-radius, var(--rstk-radius)));
+  background: var(--rstk-form-field-bg, var(--rstk-input-bg));
+  color: var(--rstk-form-field-text, var(--rstk-input-ink));
+  font-family: var(--rstk-form-font, var(--rstk-font));
+  font-size: var(--rstk-form-input-size, 1rem);
+  font-style: var(--rstk-form-font-style, normal);
+  font-weight: var(--rstk-form-weight, 700);
+  text-decoration: var(--rstk-form-text-decoration, none);
+  padding: var(--rstk-form-field-pad-y, 13px) var(--rstk-form-field-pad-x, 14px);
+}
 .rstkCanvas textarea { resize: vertical; min-height: 108px; }
 .rstkCanvas input::placeholder, .rstkCanvas textarea::placeholder { color: color-mix(in srgb, var(--rstk-muted) 80%, transparent); }
+.rstkCanvas.rstk-kind-form input::placeholder, .rstkCanvas.rstk-kind-form textarea::placeholder { color: var(--rstk-form-placeholder, color-mix(in srgb, var(--rstk-muted) 80%, transparent)); }
 .rstkCanvas select { appearance: none; -webkit-appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--rstk-muted) 50%), linear-gradient(135deg, var(--rstk-muted) 50%, transparent 50%); background-position: calc(100% - 20px) calc(50% - 3px), calc(100% - 15px) calc(50% - 3px); background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; padding-right: 42px; }
+.rstkCanvas.rstk-kind-form.rstk-select-filled select { background-color: color-mix(in srgb, var(--rstk-form-field-bg, var(--rstk-input-bg)) 88%, var(--rstk-accent) 12%); }
+.rstkCanvas.rstk-kind-form.rstk-select-underline select { border-width: 0 0 var(--rstk-form-field-border-width, 1px); border-radius: 0; background-color: transparent; padding-left: 0; padding-right: 36px; }
 
 .rstkCanvas .rstk-options { display: grid; gap: 10px; }
 .rstkCanvas .rstk-option { display: flex; align-items: center; gap: 11px; min-height: 50px; border: 1px solid var(--rstk-input-border); border-radius: var(--rstk-field-radius, var(--rstk-radius)); padding: 11px 14px; background: var(--rstk-input-bg); color: var(--rstk-input-ink); font-weight: 600; }
 .rstkCanvas .rstk-option input { width: 19px; height: 19px; padding: 0; flex: 0 0 auto; accent-color: var(--rstk-accent); }
+.rstkCanvas.rstk-kind-form .rstk-option {
+  min-height: var(--rstk-form-field-height, 50px);
+  border-width: var(--rstk-form-field-border-width, 1px);
+  border-color: var(--rstk-form-field-border, var(--rstk-input-border));
+  border-radius: var(--rstk-form-field-radius, var(--rstk-field-radius, var(--rstk-radius)));
+  background: var(--rstk-form-field-bg, var(--rstk-input-bg));
+  color: var(--rstk-form-field-text, var(--rstk-input-ink));
+  font-family: var(--rstk-form-font, var(--rstk-font));
+  font-size: var(--rstk-form-input-size, 1rem);
+  font-style: var(--rstk-form-font-style, normal);
+  font-weight: var(--rstk-form-weight, 700);
+  text-decoration: var(--rstk-form-text-decoration, none);
+  padding: var(--rstk-form-field-pad-y, 13px) var(--rstk-form-field-pad-x, 14px);
+}
+.rstkCanvas.rstk-kind-form .rstk-option:has(input:checked) { border-color: var(--rstk-form-choice-selected-border, var(--rstk-accent)); background: var(--rstk-form-choice-selected-bg, color-mix(in srgb, var(--rstk-accent) 8%, var(--rstk-form-field-bg, var(--rstk-input-bg)))); }
+.rstkCanvas.rstk-kind-form.rstk-choice-cards .rstk-option, .rstkCanvas.rstk-kind-form.rstk-choice-pills .rstk-option { position: relative; }
+.rstkCanvas.rstk-kind-form.rstk-choice-cards .rstk-option input, .rstkCanvas.rstk-kind-form.rstk-choice-pills .rstk-option input { position: absolute; opacity: 0; pointer-events: none; }
+.rstkCanvas.rstk-kind-form.rstk-choice-cards .rstk-option { position: relative; padding-left: calc(var(--rstk-form-field-pad-x, 14px) + 10px); box-shadow: inset 4px 0 0 transparent; }
+.rstkCanvas.rstk-kind-form.rstk-choice-cards .rstk-option:has(input:checked) { box-shadow: inset 4px 0 0 var(--rstk-form-choice-selected-border, var(--rstk-accent)); }
+.rstkCanvas.rstk-kind-form.rstk-choice-pills .rstk-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.rstkCanvas.rstk-kind-form.rstk-choice-pills .rstk-option { flex: 0 1 auto; min-height: 40px; border-radius: 999px; padding: 9px 16px; }
+.rstkCanvas.rstk-kind-form.rstk-choice-minimal .rstk-option { min-height: 38px; border-width: 0 0 var(--rstk-form-field-border-width, 1px); border-radius: 0; background: transparent; padding-inline: 0; }
 
 .rstkCanvas .rstk-embed { width: 100%; min-height: var(--rstk-embed-height, 360px); display: block; border: var(--rstk-block-border-width, 1px) solid var(--rstk-block-border, var(--rstk-border)); border-radius: var(--rstk-block-radius, var(--rstk-radius)); background: var(--rstk-block-bg, var(--rstk-surface2)); }
 .rstkCanvas .rstk-calendar-embed { min-height: 760px; }
@@ -226,6 +282,19 @@
 
 .rstkCanvas .rstk-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
 .rstkCanvas .rstk-actions [data-submit], .rstkCanvas .rstk-actions [data-next] { flex: 1 1 auto; }
+.rstkCanvas.rstk-kind-form .rstk-actions [data-submit] {
+  min-height: var(--rstk-submit-height, var(--rstk-button-height, 50px));
+  border-width: var(--rstk-submit-border-width, var(--rstk-button-border-width, 1px));
+  border-color: var(--rstk-submit-border, var(--rstk-button-border, var(--rstk-accent)));
+  border-radius: var(--rstk-submit-radius, var(--rstk-btn-radius));
+  background: var(--rstk-submit-bg, var(--rstk-accent));
+  color: var(--rstk-submit-text, var(--rstk-on-accent));
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--rstk-submit-size, var(--rstk-button-size, 1.02rem));
+  padding-left: var(--rstk-submit-pad-x, var(--rstk-button-pad-x, 22px));
+  padding-right: var(--rstk-submit-pad-x, var(--rstk-button-pad-x, 22px));
+}
 .rstkCanvas .rstk-progress { display: grid; gap: 8px; }
 .rstkCanvas .rstk-progress-track { height: 6px; border-radius: 999px; background: color-mix(in srgb, var(--rstk-ink) 12%, transparent); overflow: hidden; }
 .rstkCanvas .rstk-progress-fill { display: block; height: 100%; border-radius: 999px; background: var(--rstk-accent); }

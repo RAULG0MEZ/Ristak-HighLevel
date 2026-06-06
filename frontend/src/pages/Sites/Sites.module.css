@@ -3334,6 +3334,17 @@
   padding: 14px;
 }
 
+.formGlobalControls {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.64), rgba(255, 255, 255, 0.4)),
+    color-mix(in srgb, var(--color-background-primary) 86%, var(--color-primary) 14%);
+  padding: 14px;
+}
+
 .blockStyleControls .panelSubheader {
   margin: 0;
 }
@@ -3807,6 +3818,7 @@
 
 .blockStyleControls,
 .settingsGroup,
+.formGlobalControls,
 .optionRuleCard {
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 12px;

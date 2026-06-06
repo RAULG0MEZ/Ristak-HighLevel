@@ -36,6 +36,7 @@ export const CONTENT_BLOCK_TYPES = new Set([
   'testimonials',
   'services',
   'form_embed',
+  'social_profile',
   'faq',
   'cta'
 ])
@@ -2136,10 +2137,10 @@ Reglas duras:
 Tipo solicitado por el usuario: ${getSitesAITargetType(siteKind)}.
 
 Bloques permitidos para landing_page:
-header_panel, hero, title, subtitle, text, image, video, button, benefits, testimonials, services, embed, calendar_embed, form_embed, faq, cta, footer_panel.
+header_panel, hero, title, subtitle, text, image, video, button, benefits, testimonials, services, embed, calendar_embed, form_embed, social_profile, faq, cta, footer_panel.
 
 Bloques permitidos para formularios:
-short_text, paragraph, number, currency, dropdown, radio, checkboxes, phone, email, date, title, subtitle, description, video, embed, calendar_embed.
+short_text, paragraph, number, currency, dropdown, radio, checkboxes, phone, email, date, title, subtitle, description, video, embed, calendar_embed, social_profile.
 
 Acciones permitidas por opcion:
 continue, jump, disqualify, disqualify_after_submit, redirect.
@@ -2269,7 +2270,7 @@ function normalizeAIBlockOptions(blockType, options = []) {
 }
 
 function normalizeAIEmbeddedBlocks(siteId, embeddedBlocks = []) {
-  const allowedTypes = new Set([...FIELD_BLOCK_TYPES, 'title', 'subtitle', 'description', 'video', 'embed', 'calendar_embed'])
+  const allowedTypes = new Set([...FIELD_BLOCK_TYPES, 'title', 'subtitle', 'description', 'video', 'embed', 'calendar_embed', 'social_profile'])
   return (Array.isArray(embeddedBlocks) ? embeddedBlocks : [])
     .map((block, index) => normalizeAIBlock({
       block,
@@ -2430,8 +2431,8 @@ function normalizeAISiteBlueprint(siteKind, aiSite = {}) {
 
   const id = crypto.randomUUID()
   const allowedTypes = siteType === 'landing_page'
-    ? new Set(['header_panel', 'hero', 'section', 'title', 'subtitle', 'text', 'image', 'video', 'button', 'benefits', 'testimonials', 'services', 'embed', 'calendar_embed', 'form_embed', 'faq', 'cta', 'footer_panel'])
-    : new Set([...FIELD_BLOCK_TYPES, 'title', 'subtitle', 'description', 'video', 'embed', 'calendar_embed'])
+    ? new Set(['header_panel', 'hero', 'section', 'title', 'subtitle', 'text', 'image', 'video', 'button', 'benefits', 'testimonials', 'services', 'embed', 'calendar_embed', 'form_embed', 'social_profile', 'faq', 'cta', 'footer_panel'])
+    : new Set([...FIELD_BLOCK_TYPES, 'title', 'subtitle', 'description', 'video', 'embed', 'calendar_embed', 'social_profile'])
   const fallbackType = siteType === 'landing_page' ? 'text' : 'short_text'
   const blocksInput = Array.isArray(aiSite.blocks)
     ? aiSite.blocks
@@ -4575,6 +4576,12 @@ function renderLandingBlocks(blocks = [], context = {}) {
   return html.join('\n')
 }
 
+function renderSubmitButtonContent(label, subtitle = '') {
+  const safeLabel = escapeHtml(cleanString(label) || 'Enviar')
+  const safeSubtitle = escapeHtml(cleanString(subtitle))
+  return `<span class="rstk-button-label">${safeLabel}</span>${safeSubtitle ? `<span class="rstk-button-subtitle">${safeSubtitle}</span>` : ''}`
+}
+
 function renderContentBlock(block, context = {}) {
   const content = escapeHtml(block.content)
   const settings = block.settings || {}
@@ -4593,6 +4600,10 @@ function renderContentBlock(block, context = {}) {
         ` : ''}
       </div>
     `
+  }
+
+  if (block.blockType === 'social_profile') {
+    return renderSocialProfileBlock(block, context)
   }
 
   if (block.blockType === 'headline' || block.blockType === 'title') {
@@ -4691,7 +4702,7 @@ function renderContentBlock(block, context = {}) {
   if (block.blockType === 'form_embed') {
     const embeddedBlocks = Array.isArray(settings.embeddedBlocks) ? settings.embeddedBlocks : []
     const fields = collectFieldBlocks(embeddedBlocks)
-    const submitText = escapeHtml(cleanString(context.submitText) || 'Enviar')
+    const submitButtonContent = renderSubmitButtonContent(context.submitText, context.submitSubtitle)
     return `
       <section class="rstk-embedded-form" id="form">
         <h2>${content || escapeHtml(block.label || 'Formulario')}</h2>
@@ -4701,7 +4712,7 @@ function renderContentBlock(block, context = {}) {
           : '<p class="rstk-help">Selecciona o crea un formulario embebido para capturar respuestas.</p>'}
         ${fields.length ? `
           <div class="rstk-actions rstk-embed-actions">
-            <button type="submit" data-submit>${submitText}</button>
+            <button type="submit" data-submit>${submitButtonContent}</button>
           </div>
           <p class="rstk-submit-message" data-message role="status"></p>
         ` : ''}
@@ -5342,6 +5353,48 @@ function renderBrandChrome(template, brand) {
   return ''
 }
 
+function normalizeSocialPlatform(value) {
+  const platform = cleanString(value)
+  return ['facebook', 'instagram', 'tiktok'].includes(platform) ? platform : 'facebook'
+}
+
+function renderSocialProfileBlock(block, context = {}) {
+  const settings = block.settings || {}
+  const platform = normalizeSocialPlatform(settings.platform)
+  const template = SITE_TEMPLATES[platform] || resolveTemplate(context.site)
+  const siteBrand = getBrand(context.site || {}, template)
+  const name = cleanString(settings.brandName) || siteBrand.name
+  const subtitleDefault = platform === 'instagram' ? 'Publicacion pagada' : 'Patrocinado'
+  const subtitle = cleanString(settings.brandSubtitle) || siteBrand.subtitle || subtitleDefault
+  const followers = cleanString(settings.followers || settings.followersCount || settings.followerCount) || siteBrand.followers
+  const avatarUrl = safeUrl(settings.brandAvatar) || siteBrand.avatarUrl
+  const verified = settings.brandVerified === undefined ? siteBrand.verified : normalizeBoolean(settings.brandVerified) === 1
+  const initial = (name.trim()[0] || 'R').toUpperCase()
+  const brand = {
+    name,
+    subtitle,
+    followers,
+    avatarUrl,
+    verified,
+    initial
+  }
+  const secondary = followers ? `${escapeHtml(followers)} seguidores` : escapeHtml(subtitle)
+  const platformLabel = platform === 'facebook' ? 'Facebook' : platform === 'instagram' ? 'Instagram' : 'TikTok'
+
+  return `
+    <section class="rstk-chrome rstk-social-profile rstk-social-profile-block rstk-social-profile-${platform}" aria-label="Perfil de ${platformLabel}">
+      <div class="rstk-social-image">
+        ${renderAvatar(brand)}
+        <span class="rstk-social-platform rstk-social-platform-${platform}" aria-hidden="true">${getSocialPlatformIcon(platform)}</span>
+      </div>
+      <div class="rstk-social-details">
+        <div class="rstk-social-name">${escapeHtml(name)}${verified ? RSTK_ICONS.verified : ''}</div>
+        <div class="rstk-social-followers">${secondary}</div>
+      </div>
+    </section>
+  `
+}
+
 function renderLegalFooter(brand) {
   return `
     <p class="rstk-footer">
@@ -5460,9 +5513,10 @@ const RSTK_BASE_CSS = `
     padding:0 var(--rstk-button-pad-x,22px);text-decoration:none;
     transition:background .15s ease,border-color .15s ease,transform .04s ease,box-shadow .15s ease;
   }
-  .rstk-button-link{justify-self:var(--rstk-button-justify,center);width:var(--rstk-button-width,fit-content);margin-left:var(--rstk-button-margin-left,auto);margin-right:var(--rstk-button-margin-right,auto)}
-  .rstk-button-label{display:inline-block}
-  .rstk-centered .rstk-button-link{margin-inline:auto}
+	  .rstk-button-link{justify-self:var(--rstk-button-justify,center);width:var(--rstk-button-width,fit-content);margin-left:var(--rstk-button-margin-left,auto);margin-right:var(--rstk-button-margin-right,auto)}
+	  .rstk-button-label{display:inline-block}
+	  .rstk-button-subtitle{display:block;font-size:.78em;font-weight:650;line-height:1.25;opacity:.82}
+	  .rstk-centered .rstk-button-link{margin-inline:auto}
   .rstk-button-link:hover,.rstk-actions button:hover{background:var(--rstk-button-hover-bg,var(--rstk-accent-strong));border-color:var(--rstk-button-hover-border,var(--rstk-button-border,var(--rstk-button-hover-bg,var(--rstk-accent-strong))))}
   .rstk-actions button:active{transform:translateY(1px)}
   .rstk-actions button[disabled]{opacity:.6;cursor:not-allowed}
@@ -5499,25 +5553,41 @@ const RSTK_BASE_CSS = `
   .rstk-site-panel-footer{justify-content:center;text-align:center;flex-wrap:wrap}
   .rstk-site-panel-footer .rstk-site-panel-links{justify-content:center}
 
-  .rstk-field{display:grid;gap:8px;text-align:left}
-  label{font-size:.95rem;font-weight:700;color:var(--rstk-ink)}
-  .rstk-required{color:#dc2626;margin-left:3px}
-  .rstk-help{margin:0;color:var(--rstk-muted);font-size:.9rem}
-  input,textarea,select{
-    width:100%;border:1px solid var(--rstk-input-border);border-radius:var(--rstk-field-radius,var(--rstk-radius));
-    background:var(--rstk-input-bg);color:var(--rstk-input-ink);font:inherit;font-size:1rem;
-    padding:13px 14px;outline:none;transition:border-color .15s ease,box-shadow .15s ease;
-  }
-  textarea{resize:vertical;min-height:108px}
-  input::placeholder,textarea::placeholder{color:color-mix(in srgb,var(--rstk-muted) 80%,transparent)}
-  input:focus,textarea:focus,select:focus{border-color:var(--rstk-accent);box-shadow:0 0 0 4px var(--rstk-ring)}
-  select{appearance:none;-webkit-appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--rstk-muted) 50%),linear-gradient(135deg,var(--rstk-muted) 50%,transparent 50%);background-position:calc(100% - 20px) calc(50% - 3px),calc(100% - 15px) calc(50% - 3px);background-size:5px 5px,5px 5px;background-repeat:no-repeat;padding-right:42px}
+	  .rstk-field{display:grid;gap:8px;text-align:left}
+	  .rstk-kind-form form{font-family:var(--rstk-form-font,var(--rstk-font))}
+	  label{font-size:.95rem;font-weight:700;color:var(--rstk-ink)}
+	  .rstk-kind-form .rstk-field > label{color:var(--rstk-form-label-color,var(--rstk-ink));font-family:var(--rstk-form-font,var(--rstk-font));font-size:var(--rstk-form-label-size,.95rem);font-style:var(--rstk-form-font-style,normal);font-weight:var(--rstk-form-weight,700);text-decoration:var(--rstk-form-text-decoration,none)}
+	  .rstk-required{color:#dc2626;margin-left:3px}
+	  .rstk-help{margin:0;color:var(--rstk-muted);font-size:.9rem}
+	  .rstk-kind-form .rstk-help{color:var(--rstk-form-help-color,var(--rstk-muted));font-family:var(--rstk-form-font,var(--rstk-font));font-size:var(--rstk-form-help-size,.9rem);font-style:var(--rstk-form-font-style,normal);text-decoration:var(--rstk-form-text-decoration,none)}
+	  input,textarea,select{
+	    width:100%;border:1px solid var(--rstk-input-border);border-radius:var(--rstk-field-radius,var(--rstk-radius));
+	    background:var(--rstk-input-bg);color:var(--rstk-input-ink);font:inherit;font-size:1rem;
+	    padding:13px 14px;outline:none;transition:border-color .15s ease,box-shadow .15s ease;
+	  }
+	  .rstk-kind-form .rstk-field > input,.rstk-kind-form .rstk-field > textarea,.rstk-kind-form .rstk-field > select{min-height:var(--rstk-form-field-height,50px);border-width:var(--rstk-form-field-border-width,1px);border-color:var(--rstk-form-field-border,var(--rstk-input-border));border-radius:var(--rstk-form-field-radius,var(--rstk-field-radius,var(--rstk-radius)));background:var(--rstk-form-field-bg,var(--rstk-input-bg));color:var(--rstk-form-field-text,var(--rstk-input-ink));font-family:var(--rstk-form-font,var(--rstk-font));font-size:var(--rstk-form-input-size,1rem);font-style:var(--rstk-form-font-style,normal);font-weight:var(--rstk-form-weight,700);text-decoration:var(--rstk-form-text-decoration,none);padding:var(--rstk-form-field-pad-y,13px) var(--rstk-form-field-pad-x,14px)}
+	  textarea{resize:vertical;min-height:108px}
+	  input::placeholder,textarea::placeholder{color:color-mix(in srgb,var(--rstk-muted) 80%,transparent)}
+	  .rstk-kind-form input::placeholder,.rstk-kind-form textarea::placeholder{color:var(--rstk-form-placeholder,color-mix(in srgb,var(--rstk-muted) 80%,transparent))}
+	  input:focus,textarea:focus,select:focus{border-color:var(--rstk-accent);box-shadow:0 0 0 4px var(--rstk-ring)}
+	  select{appearance:none;-webkit-appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--rstk-muted) 50%),linear-gradient(135deg,var(--rstk-muted) 50%,transparent 50%);background-position:calc(100% - 20px) calc(50% - 3px),calc(100% - 15px) calc(50% - 3px);background-size:5px 5px,5px 5px;background-repeat:no-repeat;padding-right:42px}
+	  .rstk-kind-form.rstk-select-filled .rstk-field select{background-color:color-mix(in srgb,var(--rstk-form-field-bg,var(--rstk-input-bg)) 88%,var(--rstk-accent) 12%)}
+	  .rstk-kind-form.rstk-select-underline .rstk-field select{border-width:0 0 var(--rstk-form-field-border-width,1px);border-radius:0;background-color:transparent;padding-left:0;padding-right:36px}
 
-  .rstk-options{display:grid;gap:10px}
-  .rstk-option{display:flex;align-items:center;gap:11px;min-height:50px;border:1px solid var(--rstk-input-border);border-radius:var(--rstk-field-radius,var(--rstk-radius));padding:11px 14px;background:var(--rstk-input-bg);color:var(--rstk-input-ink);font-weight:600;cursor:pointer;transition:border-color .15s ease,background .15s ease}
-  .rstk-option:hover{border-color:var(--rstk-accent)}
-  .rstk-option:has(input:checked){border-color:var(--rstk-accent);background:color-mix(in srgb,var(--rstk-accent) 8%,var(--rstk-input-bg))}
-  .rstk-option input{width:19px;height:19px;padding:0;flex:0 0 auto;accent-color:var(--rstk-accent)}
+	  .rstk-options{display:grid;gap:10px}
+	  .rstk-option{display:flex;align-items:center;gap:11px;min-height:50px;border:1px solid var(--rstk-input-border);border-radius:var(--rstk-field-radius,var(--rstk-radius));padding:11px 14px;background:var(--rstk-input-bg);color:var(--rstk-input-ink);font-weight:600;cursor:pointer;transition:border-color .15s ease,background .15s ease}
+	  .rstk-option:hover{border-color:var(--rstk-accent)}
+	  .rstk-option:has(input:checked){border-color:var(--rstk-accent);background:color-mix(in srgb,var(--rstk-accent) 8%,var(--rstk-input-bg))}
+	  .rstk-option input{width:19px;height:19px;padding:0;flex:0 0 auto;accent-color:var(--rstk-accent)}
+	  .rstk-kind-form .rstk-options .rstk-option{min-height:var(--rstk-form-field-height,50px);border-width:var(--rstk-form-field-border-width,1px);border-color:var(--rstk-form-field-border,var(--rstk-input-border));border-radius:var(--rstk-form-field-radius,var(--rstk-field-radius,var(--rstk-radius)));background:var(--rstk-form-field-bg,var(--rstk-input-bg));color:var(--rstk-form-field-text,var(--rstk-input-ink));font-family:var(--rstk-form-font,var(--rstk-font));font-size:var(--rstk-form-input-size,1rem);font-style:var(--rstk-form-font-style,normal);font-weight:var(--rstk-form-weight,700);text-decoration:var(--rstk-form-text-decoration,none);padding:var(--rstk-form-field-pad-y,13px) var(--rstk-form-field-pad-x,14px)}
+	  .rstk-kind-form .rstk-option:has(input:checked){border-color:var(--rstk-form-choice-selected-border,var(--rstk-accent));background:var(--rstk-form-choice-selected-bg,color-mix(in srgb,var(--rstk-accent) 8%,var(--rstk-form-field-bg,var(--rstk-input-bg))))}
+	  .rstk-kind-form.rstk-choice-cards .rstk-option,.rstk-kind-form.rstk-choice-pills .rstk-option{position:relative}
+	  .rstk-kind-form.rstk-choice-cards .rstk-option input,.rstk-kind-form.rstk-choice-pills .rstk-option input{position:absolute;opacity:0;pointer-events:none}
+	  .rstk-kind-form.rstk-choice-cards .rstk-option{padding-left:calc(var(--rstk-form-field-pad-x,14px) + 10px);box-shadow:inset 4px 0 0 transparent}
+	  .rstk-kind-form.rstk-choice-cards .rstk-option:has(input:checked){box-shadow:inset 4px 0 0 var(--rstk-form-choice-selected-border,var(--rstk-accent))}
+	  .rstk-kind-form.rstk-choice-pills .rstk-options{display:flex;flex-wrap:wrap;gap:8px}
+	  .rstk-kind-form.rstk-choice-pills .rstk-option{flex:0 1 auto;min-height:40px;border-radius:999px;padding:9px 16px}
+	  .rstk-kind-form.rstk-choice-minimal .rstk-option{min-height:38px;border-width:0 0 var(--rstk-form-field-border-width,1px);border-radius:0;background:transparent;padding-inline:0}
 
   .rstk-embed{width:100%;min-height:var(--rstk-embed-height,360px);display:block;border:var(--rstk-block-border-width,1px) solid var(--rstk-block-border,var(--rstk-border));border-radius:var(--rstk-block-radius,var(--rstk-radius));background:var(--rstk-block-bg,var(--rstk-surface2))}
   .rstk-calendar-embed{min-height:760px}
@@ -5525,9 +5595,10 @@ const RSTK_BASE_CSS = `
   .rstk-embed-code{background:transparent}
   .rstk-embed-empty{display:grid;place-items:center;min-height:160px;color:var(--rstk-muted)}
 
-  .rstk-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
-  .rstk-actions [data-submit],.rstk-actions [data-next]{flex:1 1 auto}
-  .rstk-actions [data-back]{flex:0 0 auto;min-width:120px}
+	  .rstk-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
+	  .rstk-actions [data-submit],.rstk-actions [data-next]{flex:1 1 auto}
+	  .rstk-kind-form .rstk-actions [data-submit]{min-height:var(--rstk-submit-height,var(--rstk-button-height,50px));border-width:var(--rstk-submit-border-width,var(--rstk-button-border-width,1px));border-color:var(--rstk-submit-border,var(--rstk-button-border,var(--rstk-accent)));border-radius:var(--rstk-submit-radius,var(--rstk-btn-radius));background:var(--rstk-submit-bg,var(--rstk-accent));color:var(--rstk-submit-text,var(--rstk-on-accent));flex-direction:column;gap:2px;font-size:var(--rstk-submit-size,var(--rstk-button-size,1.02rem));padding-left:var(--rstk-submit-pad-x,var(--rstk-button-pad-x,22px));padding-right:var(--rstk-submit-pad-x,var(--rstk-button-pad-x,22px))}
+	  .rstk-actions [data-back]{flex:0 0 auto;min-width:120px}
   .rstk-error{margin:2px 0 0;color:#dc2626;font-size:.85rem;font-weight:650}
   .rstk-submit-message{margin:0;color:var(--rstk-muted);font-weight:650;text-align:center}
 
@@ -5548,9 +5619,11 @@ const RSTK_BASE_CSS = `
 
   .rstk-chrome .rstk-avatar{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;overflow:hidden;background:var(--rstk-accent);color:#fff;font-weight:800;font-size:1.15rem;flex:0 0 auto}
   .rstk-chrome .rstk-avatar img{width:100%;height:100%;object-fit:cover}
-  .rstk-social-profile{margin:calc(-1 * var(--rstk-pad)) calc(-1 * var(--rstk-pad)) 0;padding:20px var(--rstk-pad) 14px;display:flex;align-items:center;gap:8px;background:transparent;border:0}
-  .rstk-social-image{position:relative;display:inline-block;flex:0 0 auto}
-  .rstk-social-profile .rstk-avatar{width:64px;height:64px;font-size:1.35rem}
+	  .rstk-social-profile{margin:calc(-1 * var(--rstk-pad)) calc(-1 * var(--rstk-pad)) 0;padding:20px var(--rstk-pad) 14px;display:flex;align-items:center;gap:8px;background:transparent;border:0}
+	  .rstk-social-profile-block{margin:0;padding:16px;border:1px solid var(--rstk-border);border-radius:var(--rstk-radius-lg);background:var(--rstk-surface2);gap:12px}
+	  .rstk-social-image{position:relative;display:inline-block;flex:0 0 auto}
+	  .rstk-social-profile .rstk-avatar{width:64px;height:64px;font-size:1.35rem}
+	  .rstk-social-profile-block .rstk-avatar{width:56px;height:56px;font-size:1.2rem}
   .rstk-social-platform{position:absolute;right:-1px;bottom:-1px;z-index:2;width:28px;height:28px;border-radius:50%;border:2px solid #fff;background:#fff;display:grid;place-items:center;padding:2px;color:#fff;overflow:hidden}
   .rstk-social-platform-facebook{background:#fff url('https://storage.googleapis.com/msgsndr/cAEl3p2eZROgv2GFvMZM/media/67b7bb9d7c922f0d2f3b2adf.svg') center/contain no-repeat}
   .rstk-social-platform-instagram{background:var(--rstk-gradient)}
@@ -5803,6 +5876,68 @@ function resolveRenderOverrides(template, theme, isLandingType) {
   return userAccent ? { accent: userAccent } : {}
 }
 
+function sanitizeCssFont(value) {
+  return cleanString(value).replace(/[;"{}<>]/g, '')
+}
+
+function normalizeFormChoiceStyle(value) {
+  const raw = cleanString(value)
+  return ['native', 'cards', 'pills', 'minimal'].includes(raw) ? raw : 'native'
+}
+
+function normalizeFormSelectStyle(value) {
+  const raw = cleanString(value)
+  return ['classic', 'filled', 'underline'].includes(raw) ? raw : 'classic'
+}
+
+function buildFormThemeStyleVars(theme, { baseFont, v, accent, ink, muted }) {
+  const formFont = sanitizeCssFont(theme.formFontFamily) || baseFont
+  const formLabel = themePaint(theme, 'formLabelColor') || ink
+  const formHelp = themePaint(theme, 'formHelpColor') || muted
+  const formFieldBg = themePaint(theme, 'formFieldBg') || v.inputBg
+  const formFieldText = themePaint(theme, 'formFieldText') || v.inputInk
+  const formFieldBorder = themePaint(theme, 'formFieldBorder') || v.inputBorder
+  const formPlaceholder = themePaint(theme, 'formPlaceholderColor') || muted
+  const choiceSelectedBg = themePaint(theme, 'formChoiceSelectedBg') || `color-mix(in srgb, ${accent} 10%, ${v.inputBg})`
+  const choiceSelectedBorder = themePaint(theme, 'formChoiceSelectedBorder') || accent
+  const submitBg = themePaint(theme, 'submitBg') || accent
+  const submitText = themePaint(theme, 'submitTextColor') || v.onAccent
+  const submitBorder = themePaint(theme, 'submitBorderColor') || accent
+  const defaultRadius = Number.parseInt(v.radius, 10) || 12
+  const defaultButtonRadius = Number.parseInt(v.btnRadius, 10) || 12
+
+  return `
+	    --rstk-form-font:${formFont};
+	    --rstk-form-label-size:${themeNumber(theme, 'formLabelSize', 15, 11, 28)}px;
+	    --rstk-form-input-size:${themeNumber(theme, 'formInputSize', 16, 11, 28)}px;
+	    --rstk-form-help-size:${themeNumber(theme, 'formHelpSize', 14, 10, 24)}px;
+	    --rstk-form-weight:${theme.formFontWeight === 'bold' ? '850' : theme.formFontWeight === 'normal' ? '400' : '700'};
+	    --rstk-form-font-style:${theme.formFontStyle === 'italic' ? 'italic' : 'normal'};
+	    --rstk-form-text-decoration:${theme.formTextDecoration === 'underline' ? 'underline' : 'none'};
+	    --rstk-form-label-color:${paintFallbackColor(formLabel, ink)};
+	    --rstk-form-help-color:${paintFallbackColor(formHelp, muted)};
+	    --rstk-form-field-bg:${formFieldBg};
+	    --rstk-form-field-text:${paintFallbackColor(formFieldText, v.inputInk)};
+	    --rstk-form-field-border:${paintFallbackColor(formFieldBorder, v.inputBorder)};
+	    --rstk-form-placeholder:${paintFallbackColor(formPlaceholder, muted)};
+	    --rstk-form-field-radius:${themeNumber(theme, 'formFieldRadius', defaultRadius, 0, 36)}px;
+	    --rstk-form-field-border-width:${themeNumber(theme, 'formFieldBorderWidth', 1, 0, 8)}px;
+	    --rstk-form-field-height:${themeNumber(theme, 'formFieldHeight', 50, 34, 96)}px;
+	    --rstk-form-field-pad-x:${themeNumber(theme, 'formFieldPaddingX', 14, 6, 48)}px;
+	    --rstk-form-field-pad-y:${themeNumber(theme, 'formFieldPaddingY', 13, 6, 36)}px;
+	    --rstk-form-choice-selected-bg:${choiceSelectedBg};
+	    --rstk-form-choice-selected-border:${paintFallbackColor(choiceSelectedBorder, accent)};
+	    --rstk-submit-bg:${submitBg};
+	    --rstk-submit-text:${paintFallbackColor(submitText, v.onAccent)};
+	    --rstk-submit-border:${paintFallbackColor(submitBorder, accent)};
+	    --rstk-submit-radius:${themeNumber(theme, 'submitRadius', defaultButtonRadius, 0, 80)}px;
+	    --rstk-submit-height:${themeNumber(theme, 'submitHeight', 50, 34, 96)}px;
+	    --rstk-submit-pad-x:${themeNumber(theme, 'submitPaddingX', 22, 8, 72)}px;
+	    --rstk-submit-size:${themeNumber(theme, 'submitFontSize', 16, 11, 32)}px;
+	    --rstk-submit-border-width:${themeNumber(theme, 'submitBorderWidth', 1, 0, 8)}px;
+  `
+}
+
 function buildStyleSheet(template, maxWidth, overrides = {}, pageVars = {}) {
   const v = { ...template.vars, ...(overrides.vars || {}) }
   const accent = overrides.accent || v.accent
@@ -5816,8 +5951,10 @@ function buildStyleSheet(template, maxWidth, overrides = {}, pageVars = {}) {
   const textPaint = pageVars.textPaint || ''
   const ink = textPaint ? paintFallbackColor(textPaint, v.ink) : v.ink
   const muted = textPaint && isCssColor(textPaint) ? `color-mix(in srgb, ${ink} 60%, ${pageBg})` : v.muted
+  const theme = pageVars.theme || {}
+  const formStyleVars = buildFormThemeStyleVars(theme, { baseFont, v, accent, ink, muted })
   return `
-  :root{
+	  :root{
     --rstk-font:${baseFont};
     --rstk-display:${display};
     --rstk-ease:cubic-bezier(.16,.84,.44,1);
@@ -5852,10 +5989,11 @@ function buildStyleSheet(template, maxWidth, overrides = {}, pageVars = {}) {
     --rstk-frame-pad:${pageVars.framePad || 'clamp(10px,3vw,32px)'};
     --rstk-page-border:${pageVars.pageBorder || 'transparent'};
     --rstk-page-border-width:${pageVars.pageBorderWidth || '0px'};
-    --rstk-page-radius:${pageVars.pageRadius || '0px'};
-    --rstk-pad:clamp(18px,4vw,30px);
-    --rstk-gap:clamp(16px,3vw,22px);
-    ${template.gradient ? `--rstk-gradient:${template.gradient};` : ''}
+	    --rstk-page-radius:${pageVars.pageRadius || '0px'};
+	    --rstk-pad:clamp(18px,4vw,30px);
+	    --rstk-gap:clamp(16px,3vw,22px);
+	    ${formStyleVars}
+	    ${template.gradient ? `--rstk-gradient:${template.gradient};` : ''}
     ${template.cyan ? `--rstk-cyan:${template.cyan};` : ''}
   }
   ${RSTK_BASE_CSS}
@@ -5984,10 +6122,11 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
       : 'form_default'
   const nextPage = (isLandingType || isStandardFormType) ? getNextPage(site, activePage?.id) : null
   const nextPageUrl = nextPage ? pageHref(nextPage.id) : ''
-  const disqualifiedPage = isStandardFormType ? pages.find(page => page.id === FORM_DISQUALIFIED_PAGE_ID) : null
-  const disqualifiedPageUrl = disqualifiedPage ? pageHref(disqualifiedPage.id) : ''
-  const submitText = cleanString(theme.submitText) || 'Enviar'
-  const storedPageMaxWidth = Number(theme && theme.pageMaxWidth)
+	  const disqualifiedPage = isStandardFormType ? pages.find(page => page.id === FORM_DISQUALIFIED_PAGE_ID) : null
+	  const disqualifiedPageUrl = disqualifiedPage ? pageHref(disqualifiedPage.id) : ''
+	  const submitText = cleanString(theme.submitText) || 'Enviar'
+	  const submitSubtitle = cleanString(theme.submitSubtitle || theme.submitSubtext || theme.formButtonSubtitle)
+	  const storedPageMaxWidth = Number(theme && theme.pageMaxWidth)
   const pageMaxWidth = isLandingType && storedPageMaxWidth === 1160
     ? 1440
     : themeNumber(theme, 'pageMaxWidth', isLandingType ? 1440 : (template.id === 'interactive' ? 600 : 520), 360, 1440)
@@ -6017,22 +6156,25 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
     pageImagePosition: backgroundPositionValue(theme.backgroundPosition),
     pageImageRepeat: backgroundRepeatValue(theme.backgroundRepeat),
     pageImageAttachment: backgroundAttachmentValue(theme.backgroundAttachment),
-    pageVideoFit: backgroundFitValue(theme.backgroundFit),
-    pageRadius: `${pageRadius}px`,
-    textPaint
-  })
+	    pageVideoFit: backgroundFitValue(theme.backgroundFit),
+	    pageRadius: `${pageRadius}px`,
+	    textPaint,
+	    theme
+	  })
   const chrome = template.chrome && template.chrome !== 'none' ? renderBrandChrome(template, brand) : ''
   const footer = (hasForm && !isLandingType) ? renderLegalFooter(brand) : ''
   const bodyClass = [
     `rstk-tpl-${template.id}`,
     `rstk-${template.mode}`,
     `rstk-kind-${isLandingType ? 'landing' : 'form'}`,
-    template.centered ? 'rstk-centered' : '',
-    textPaint && isCssGradient(textPaint) ? 'rstkPageTextGradient' : '',
-    isInteractive ? 'rstk-interactive' : ''
-  ].filter(Boolean).join(' ')
+	    template.centered ? 'rstk-centered' : '',
+	    textPaint && isCssGradient(textPaint) ? 'rstkPageTextGradient' : '',
+	    isInteractive ? 'rstk-interactive' : '',
+	    `rstk-choice-${normalizeFormChoiceStyle(theme.formChoiceStyle)}`,
+	    `rstk-select-${normalizeFormSelectStyle(theme.formSelectStyle)}`
+	  ].filter(Boolean).join(' ')
 
-  const renderContext = { site, pageId: activePage?.id, pages, isInteractive, isLandingType, submitText }
+	  const renderContext = { site, pageId: activePage?.id, pages, isInteractive, isLandingType, submitText, submitSubtitle }
   const bodyBlocks = isLandingType
     ? renderLandingBlocks(blocks, renderContext)
     : blocks.map(block => renderPublicBlock(block, renderContext)).join('\n')
@@ -6042,7 +6184,7 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
       <div class="rstk-actions">
         ${isInteractive && interactivePageCount > 1 ? '<button type="button" class="rstk-secondary" data-back hidden>Anterior</button>' : ''}
         ${isInteractive && interactivePageCount > 1 ? '<button type="button" data-next>Siguiente</button>' : ''}
-        <button type="submit" ${isInteractive && interactivePageCount > 1 ? 'hidden' : ''} data-submit>${escapeHtml(submitText)}</button>
+	        <button type="submit" ${isInteractive && interactivePageCount > 1 ? 'hidden' : ''} data-submit>${renderSubmitButtonContent(submitText, submitSubtitle)}</button>
       </div>
       <p class="rstk-submit-message" data-message role="status"></p>
     `

@@ -33,6 +33,7 @@ export type SiteBlockType =
   | 'testimonials'
   | 'services'
   | 'form_embed'
+  | 'social_profile'
   | 'faq'
   | 'cta'
   | 'short_text'
@@ -131,6 +132,37 @@ export interface SiteTheme {
   seoCanonicalLinks?: string
   seoLanguage?: string
   submitText?: string
+  submitSubtitle?: string
+  submitBg?: string
+  submitTextColor?: string
+  submitBorderColor?: string
+  submitRadius?: number
+  submitHeight?: number
+  submitPaddingX?: number
+  submitFontSize?: number
+  submitBorderWidth?: number
+  formFontFamily?: string
+  formLabelSize?: number
+  formInputSize?: number
+  formHelpSize?: number
+  formFontWeight?: 'normal' | 'bold'
+  formFontStyle?: 'normal' | 'italic'
+  formTextDecoration?: 'none' | 'underline'
+  formLabelColor?: string
+  formHelpColor?: string
+  formFieldBg?: string
+  formFieldText?: string
+  formFieldBorder?: string
+  formPlaceholderColor?: string
+  formFieldRadius?: number
+  formFieldBorderWidth?: number
+  formFieldHeight?: number
+  formFieldPaddingX?: number
+  formFieldPaddingY?: number
+  formChoiceStyle?: 'native' | 'cards' | 'pills' | 'minimal'
+  formChoiceSelectedBg?: string
+  formChoiceSelectedBorder?: string
+  formSelectStyle?: 'classic' | 'filled' | 'underline'
   finalMessages?: {
     success?: string
     disqualified?: string
@@ -282,6 +314,7 @@ export const blockLabels: Record<SiteBlockType, string> = {
   testimonials: 'Testimonios',
   services: 'Servicios',
   form_embed: 'Formulario embebido',
+  social_profile: 'Perfil social',
   faq: 'Preguntas frecuentes',
   cta: 'CTA final',
   short_text: 'Respuesta corta',
@@ -310,6 +343,7 @@ export const landingBlockTypes: SiteBlockType[] = [
   'services',
   'embed',
   'calendar_embed',
+  'social_profile',
   'form_embed',
   'faq',
   'cta',
@@ -332,7 +366,8 @@ export const formBlockTypes: SiteBlockType[] = [
   'description',
   'video',
   'embed',
-  'calendar_embed'
+  'calendar_embed',
+  'social_profile'
 ]
 
 export const blockTypes: SiteBlockType[] = [
