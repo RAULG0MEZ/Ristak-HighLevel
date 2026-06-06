@@ -8,21 +8,29 @@ import {
   Camera,
   Check,
   ChevronLeft,
+  Clock,
   CreditCard,
+  DollarSign,
   FileText,
+  Globe2,
   Image as ImageIcon,
   Loader2,
+  Mail,
   MapPin,
+  Megaphone,
   MessageCircle,
   Mic,
   MonitorX,
   MoreHorizontal,
+  MousePointerClick,
   Phone,
   Plus,
+  ReceiptText,
   Search,
   Send,
   Smile,
   Smartphone,
+  Tag,
   User,
   Video,
   X
@@ -41,6 +49,9 @@ import { mobileAppService, type MobilePhotoAttachment } from '@/services/mobileA
 import { pushNotificationsService } from '@/services/pushNotificationsService'
 import { whatsappApiService, type WhatsAppApiStatus } from '@/services/whatsappApiService'
 import type { Contact } from '@/types'
+import { getContactStageBadge } from '@/utils/contactStageBadge'
+import { formatCurrency, formatUrlParameter } from '@/utils/format'
+import { normalizeTrafficSource } from '@/utils/trafficSourceNormalizer'
 import styles from './PhoneChat.module.css'
 
 const PORTABLE_WIDTH_QUERY = '(max-width: 1366px)'
@@ -54,6 +65,9 @@ type ComposerStatus = 'idle' | 'sending'
 type PaymentMode = 'single' | 'partial'
 type ActionSheet = 'attachments' | 'payment' | 'appointment' | 'notifications' | 'newChat' | null
 type ChatFilter = 'all' | 'unread' | 'appointments' | 'customers' | 'leads'
+
+const SUCCESS_PAYMENT_STATUSES = new Set(['succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success'])
+const CANCELED_APPOINTMENT_STATUSES = new Set(['cancelled', 'canceled', 'no_show', 'noshow', 'deleted', 'failed', 'invalid'])
 
 interface ChatMessage {
   id: string
@@ -80,6 +94,20 @@ interface ChatContact extends Contact {
   photoUrl?: string | null
   pictureUrl?: string | null
   profile_picture_url?: string | null
+}
+
+interface ContactInfoPayment {
+  id: string
+  amount: number
+  status?: string | null
+  date: string
+}
+
+interface ContactInfoAppointment {
+  id: string
+  title: string
+  status?: string | null
+  startTime: string
 }
 
 function hasPortableAccess() {
@@ -187,6 +215,192 @@ function getMessageTypeLabel(type = '') {
   return 'WhatsApp message'
 }
 
+function getReadableValue(value?: string | number | null) {
+  if (value === null || value === undefined) return ''
+  const normalized = String(value).trim()
+  if (!normalized || ['null', 'undefined', 'nan'].includes(normalized.toLowerCase())) return ''
+  return formatUrlParameter(normalized) || normalized
+}
+
+function formatPlainStatus(value?: string | null) {
+  const normalized = String(value || '').trim()
+  if (!normalized) return ''
+
+  const statusMap: Record<string, string> = {
+    succeeded: 'Pagado',
+    paid: 'Pagado',
+    completed: 'Completado',
+    complete: 'Completado',
+    fulfilled: 'Pagado',
+    success: 'Pagado',
+    pending: 'Pendiente',
+    processing: 'Procesando',
+    failed: 'Fallido',
+    canceled: 'Cancelado',
+    cancelled: 'Cancelado',
+    booked: 'Reservado',
+    confirmed: 'Confirmado',
+    scheduled: 'Agendado',
+    showed: 'Asistió',
+    attended: 'Asistió',
+    no_show: 'No asistió',
+    noshow: 'No asistió'
+  }
+
+  const key = normalized.toLowerCase()
+  return statusMap[key] || normalized
+    .toLowerCase()
+    .split(/[\s_]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function isSuccessfulPayment(payment: ContactInfoPayment) {
+  const status = String(payment.status || '').trim().toLowerCase()
+  return payment.amount > 0 && (!status || SUCCESS_PAYMENT_STATUSES.has(status))
+}
+
+function isActiveAppointment(appointment: ContactInfoAppointment) {
+  const status = String(appointment.status || '').trim().toLowerCase()
+  return !status || !CANCELED_APPOINTMENT_STATUSES.has(status)
+}
+
+function getContactInfoPayments(contact?: Contact | null, journey: JourneyEvent[] = []): ContactInfoPayment[] {
+  const contactPayments = (contact?.payments || [])
+    .map((payment, index) => ({
+      id: String(payment.id || `${contact?.id || 'contact'}-payment-${index}`),
+      amount: Number(payment.amount || 0),
+      status: payment.status,
+      date: payment.date || contact?.createdAt || new Date().toISOString()
+    }))
+
+  if (contactPayments.length > 0) {
+    return contactPayments.sort((left, right) => Date.parse(right.date) - Date.parse(left.date))
+  }
+
+  return journey
+    .filter((event) => event.type === 'payment')
+    .map((event, index) => ({
+      id: String(event.data?.id || `${contact?.id || 'contact'}-journey-payment-${index}`),
+      amount: Number(event.data?.amount || 0),
+      status: event.data?.status || null,
+      date: event.date
+    }))
+    .sort((left, right) => Date.parse(right.date) - Date.parse(left.date))
+}
+
+function getContactInfoAppointments(contact?: Contact | null, journey: JourneyEvent[] = []): ContactInfoAppointment[] {
+  const contactAppointments = (contact?.appointments || [])
+    .map((appointment, index) => ({
+      id: String(appointment.id || `${contact?.id || 'contact'}-appointment-${index}`),
+      title: appointment.title || 'Cita',
+      status: appointment.appointment_status || appointment.status || null,
+      startTime: appointment.start_time || appointment.end_time || contact?.createdAt || new Date().toISOString()
+    }))
+
+  if (contactAppointments.length > 0) {
+    return contactAppointments.sort((left, right) => Date.parse(left.startTime) - Date.parse(right.startTime))
+  }
+
+  return journey
+    .filter((event) => event.type === 'appointment')
+    .map((event, index) => ({
+      id: String(event.data?.id || `${contact?.id || 'contact'}-journey-appointment-${index}`),
+      title: String(event.data?.title || 'Cita'),
+      status: event.data?.status || null,
+      startTime: String(event.data?.start_time || event.date)
+    }))
+    .sort((left, right) => Date.parse(left.startTime) - Date.parse(right.startTime))
+}
+
+function getTrackingData(contact?: Contact | null, journey: JourneyEvent[] = []) {
+  const firstSession = contact?.firstSession || null
+  const firstPageVisit = journey.find((event) => event.type === 'page_visit')
+  const pageData = firstPageVisit?.data || {}
+  const attributionSource = contact?.whatsappAttributionPlatform || contact?.attribution_session_source || contact?.source || null
+
+  return {
+    started_at: firstSession?.started_at || firstPageVisit?.date || contact?.createdAt || null,
+    page_url: firstSession?.page_url || firstSession?.landing_page || pageData.page_url || pageData.landing_page || contact?.attribution_url || null,
+    referrer_url: firstSession?.referrer_url || pageData.referrer_url || contact?.attribution_url || null,
+    utm_source: firstSession?.utm_source || pageData.utm_source || attributionSource,
+    utm_medium: firstSession?.utm_medium || pageData.utm_medium || contact?.attribution_medium || null,
+    utm_campaign: firstSession?.utm_campaign || pageData.utm_campaign || null,
+    utm_content: firstSession?.utm_content || pageData.utm_content || null,
+    source_platform: firstSession?.source_platform || pageData.source_platform || attributionSource,
+    site_source_name: firstSession?.site_source_name || pageData.site_source_name || attributionSource,
+    campaign_name: firstSession?.campaign_name || pageData.campaign_name || null,
+    ad_name: firstSession?.ad_name || pageData.ad_name || contact?.ad_name || null,
+    ad_id: firstSession?.ad_id || pageData.ad_id || contact?.ad_id || null,
+    device_type: firstSession?.device_type || pageData.device_type || null,
+    browser: firstSession?.browser || pageData.browser || null,
+    os: firstSession?.os || null,
+    placement: firstSession?.placement || null,
+    geo_city: firstSession?.geo_city || pageData.geo_city || null,
+    geo_region: firstSession?.geo_region || pageData.geo_region || null,
+    geo_country: firstSession?.geo_country || pageData.geo_country || null
+  }
+}
+
+function getPageName(pageUrl?: string | null) {
+  if (!pageUrl) return ''
+  try {
+    const url = new URL(pageUrl)
+    const pathName = url.pathname.split('/').filter(Boolean).pop()
+    return pathName || url.hostname
+  } catch {
+    const cleanUrl = pageUrl.split('?')[0]
+    return cleanUrl.split('/').filter(Boolean).pop() || cleanUrl
+  }
+}
+
+function getCustomFieldLabel(field: NonNullable<Contact['customFields']>[number], index: number) {
+  return field.label || field.name || field.key || field.fieldKey || field.id || `Dato ${index + 1}`
+}
+
+function formatCustomFieldValue(value: NonNullable<Contact['customFields']>[number]['value']) {
+  if (value === null || value === undefined) return ''
+  if (Array.isArray(value)) return value.map((item) => getReadableValue(String(item))).filter(Boolean).join(', ')
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
+}
+
+function getJourneyEventLabel(event: JourneyEvent, leadLabel: string) {
+  if (event.type === 'page_visit') return 'Visitó una página'
+  if (event.type === 'contact_created') return `Se hizo ${leadLabel.toLowerCase()}`
+  if (event.type === 'appointment') return 'Agendó una cita'
+  if (event.type === 'payment') return 'Registró un pago'
+  if (event.type === 'whatsapp_message') return 'Mensaje de WhatsApp'
+  return 'Actividad'
+}
+
+function getJourneyEventDescription(event: JourneyEvent) {
+  const data = event.data || {}
+
+  if (event.type === 'page_visit') {
+    return getPageName(data.page_url || data.landing_page) || normalizeTrafficSource(data) || 'Visita registrada'
+  }
+
+  if (event.type === 'contact_created') {
+    return getReadableValue(data.source) || 'Contacto guardado en Ristak'
+  }
+
+  if (event.type === 'appointment') {
+    return getReadableValue(data.title) || formatPlainStatus(data.status) || 'Cita'
+  }
+
+  if (event.type === 'payment') {
+    return data.amount ? formatCurrency(Number(data.amount)) : formatPlainStatus(data.status) || 'Pago'
+  }
+
+  if (event.type === 'whatsapp_message') {
+    return getReadableValue(data.message_text || data.message || data.body) || getMessageTypeLabel(String(data.message_type || ''))
+  }
+
+  return ''
+}
+
 function getChatPreview(contact: ChatContact) {
   const text = String(contact.lastMessageText || '').trim()
   const typeLabel = text ? text : getMessageTypeLabel(contact.lastMessageType || '')
@@ -240,7 +454,7 @@ export const PhoneChat: React.FC = () => {
   const { locationId, accessToken } = useAuth()
   const { labels } = useLabels()
   const { showToast } = useNotification()
-  const { timezone } = useTimezone()
+  const { timezone, formatLocalDateShort, formatLocalDateTime } = useTimezone()
   const [defaultCalendarId] = useAppConfig<string>('default_calendar_id', '')
   const [calendarPushEnabled, setCalendarPushEnabled] = useAppConfig<boolean>('calendar_push_notifications_enabled', false)
   const [chatPushEnabled, setChatPushEnabled] = useAppConfig<boolean>('chat_push_notifications_enabled', true)
@@ -259,6 +473,7 @@ export const PhoneChat: React.FC = () => {
   const [activeContactId, setActiveContactId] = useState<string | null>(null)
   const [conversationOpen, setConversationOpen] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [contactJourney, setContactJourney] = useState<JourneyEvent[]>([])
   const [messagesLoading, setMessagesLoading] = useState(false)
   const [messageText, setMessageText] = useState('')
   const [draftAttachments, setDraftAttachments] = useState<MobilePhotoAttachment[]>([])
@@ -267,6 +482,10 @@ export const PhoneChat: React.FC = () => {
   const [calendars, setCalendars] = useState<Calendar[]>([])
   const [selectedCalendarId, setSelectedCalendarId] = useState('')
   const [sheet, setSheet] = useState<ActionSheet>(null)
+  const [contactInfoOpen, setContactInfoOpen] = useState(false)
+  const [contactInfoContact, setContactInfoContact] = useState<Contact | null>(null)
+  const [contactInfoLoading, setContactInfoLoading] = useState(false)
+  const [contactInfoError, setContactInfoError] = useState('')
   const [paymentMode, setPaymentMode] = useState<PaymentMode>('single')
   const [appointmentOpen, setAppointmentOpen] = useState(false)
   const [requestingPush, setRequestingPush] = useState(false)
@@ -279,6 +498,41 @@ export const PhoneChat: React.FC = () => {
     () => chats.find((contact) => contact.id === activeContactId) || null,
     [activeContactId, chats]
   )
+  const contactInfoData = contactInfoContact || activeContact
+  const contactInfoPayments = useMemo(
+    () => getContactInfoPayments(contactInfoData, contactJourney),
+    [contactInfoData, contactJourney]
+  )
+  const contactInfoAppointments = useMemo(
+    () => getContactInfoAppointments(contactInfoData, contactJourney),
+    [contactInfoData, contactJourney]
+  )
+  const contactInfoTracking = useMemo(
+    () => getTrackingData(contactInfoData, contactJourney),
+    [contactInfoData, contactJourney]
+  )
+  const contactInfoSource = useMemo(() => {
+    const normalizedSource = normalizeTrafficSource(contactInfoTracking)
+    return normalizedSource && normalizedSource !== 'Desconocido'
+      ? normalizedSource
+      : getReadableValue(contactInfoData?.source)
+  }, [contactInfoData?.source, contactInfoTracking])
+  const contactInfoStageBadge = useMemo(
+    () => getContactStageBadge(contactInfoData, labels),
+    [contactInfoData, labels]
+  )
+  const contactInfoSuccessfulPayments = useMemo(
+    () => contactInfoPayments.filter(isSuccessfulPayment),
+    [contactInfoPayments]
+  )
+  const contactInfoActiveAppointments = useMemo(
+    () => contactInfoAppointments.filter(isActiveAppointment),
+    [contactInfoAppointments]
+  )
+  const contactInfoRecentEvents = useMemo(
+    () => [...contactJourney].sort((left, right) => Date.parse(right.date) - Date.parse(left.date)).slice(0, 6),
+    [contactJourney]
+  )
 
   const selectedCalendar = useMemo(
     () => calendars.find((calendar) => calendar.id === selectedCalendarId) || calendars[0] || null,
@@ -290,6 +544,8 @@ export const PhoneChat: React.FC = () => {
   const whatsappConnected = Boolean(whatsappStatus?.connected && whatsappStatus?.configured)
   const canSendMessage = Boolean(activeContact?.phone && (messageText.trim() || draftAttachments.length > 0) && composerStatus !== 'sending')
   const hasChats = chats.length > 0
+  const customerLabel = labels.customer?.trim() || 'Cliente'
+  const leadLabel = labels.lead?.trim() || 'Interesado'
   const customersLabel = labels.customers?.trim() || 'Clientes'
   const leadsLabel = labels.leads?.trim() || 'Interesados'
   const isCustomerContact = useCallback((contact: ChatContact) => contact.status === 'customer' || Number(contact.purchases || 0) > 0, [])
@@ -387,6 +643,7 @@ export const PhoneChat: React.FC = () => {
     setMessagesLoading(true)
     try {
       const journey = await contactsService.getContactJourney(contactId)
+      setContactJourney(journey)
       const nextMessages = journey
         .map(getJourneyMessage)
         .filter((message): message is ChatMessage => Boolean(message))
@@ -395,6 +652,7 @@ export const PhoneChat: React.FC = () => {
       setMessages(nextMessages)
     } catch {
       setMessages([])
+      setContactJourney([])
     } finally {
       setMessagesLoading(false)
     }
@@ -539,10 +797,18 @@ export const PhoneChat: React.FC = () => {
   useEffect(() => {
     if (!activeContact?.id || accessState !== 'allowed') {
       setMessages([])
+      setContactJourney([])
       return
     }
     loadConversation(activeContact.id)
   }, [accessState, activeContact?.id, loadConversation])
+
+  useEffect(() => {
+    setContactInfoOpen(false)
+    setContactInfoContact(null)
+    setContactInfoError('')
+    setContactInfoLoading(false)
+  }, [activeContactId])
 
   useEffect(() => {
     if (accessState !== 'allowed') return
@@ -569,6 +835,7 @@ export const PhoneChat: React.FC = () => {
     setActiveContactId(nextContact.id)
     setConversationOpen(true)
     setSheet(null)
+    setContactInfoOpen(false)
     setContactQuery('')
     setDraftAttachments([])
   }
@@ -576,7 +843,39 @@ export const PhoneChat: React.FC = () => {
   const handleBackToChats = () => {
     setConversationOpen(false)
     setSheet(null)
+    setContactInfoOpen(false)
     setDraftAttachments([])
+  }
+
+  const handleOpenContactInfo = async () => {
+    if (!activeContact) return
+
+    setSheet(null)
+    setContactInfoOpen(true)
+    setContactInfoError('')
+
+    if (contactInfoContact?.id === activeContact.id) return
+
+    setContactInfoContact(activeContact)
+    setContactInfoLoading(true)
+
+    try {
+      const details = await contactsService.getContactDetails(activeContact.id)
+      setContactInfoContact(details)
+      setChats((current) => current.map((contact) => (
+        contact.id === details.id ? { ...contact, ...details } : contact
+      )))
+    } catch {
+      setContactInfoError('No se pudo cargar todo el detalle. Te muestro lo que ya está guardado en este chat.')
+    } finally {
+      setContactInfoLoading(false)
+    }
+  }
+
+  const handleContactInfoAction = (nextSheet: Exclude<ActionSheet, 'newChat' | 'notifications' | null>) => {
+    if (nextSheet === 'payment') setPaymentMode('single')
+    setContactInfoOpen(false)
+    setSheet(nextSheet)
   }
 
   const handleUnavailableAttachment = (label: string) => {
@@ -998,6 +1297,221 @@ export const PhoneChat: React.FC = () => {
     )
   }
 
+  const renderContactInfoRow = (
+    key: string,
+    icon: React.ReactNode,
+    label: string,
+    value?: React.ReactNode,
+    detail?: React.ReactNode
+  ) => {
+    if (value === null || value === undefined) return null
+    if (typeof value === 'string' && !value.trim()) return null
+
+    return (
+      <div key={key} className={styles.contactInfoRow}>
+        <span className={styles.contactInfoRowIcon}>{icon}</span>
+        <span className={styles.contactInfoRowText}>
+          <small>{label}</small>
+          <strong>{value}</strong>
+          {detail && <em>{detail}</em>}
+        </span>
+      </div>
+    )
+  }
+
+  const renderContactInfoScreen = () => {
+    if (!contactInfoData) return null
+
+    const revenueTotal = contactInfoSuccessfulPayments.reduce((sum, payment) => sum + payment.amount, 0)
+    const purchasesCount = Number(contactInfoData.purchases || 0) || contactInfoSuccessfulPayments.length
+    const nextAppointment = contactInfoActiveAppointments.find((appointment) => Date.parse(appointment.startTime) >= Date.now()) || contactInfoActiveAppointments[0]
+    const firstSuccessfulPayment = [...contactInfoSuccessfulPayments]
+      .sort((left, right) => Date.parse(left.date) - Date.parse(right.date))[0]
+    const firstAppointment = contactInfoAppointments[0]
+    const leadEvent = contactJourney.find((event) => event.type === 'contact_created')
+    const leadDate = leadEvent?.date || contactInfoData.createdAt
+    const leadSource = getReadableValue(leadEvent?.data?.source) || contactInfoSource
+    const campaignName = getReadableValue(contactInfoTracking.campaign_name || contactInfoTracking.utm_campaign)
+    const adName = getReadableValue(contactInfoTracking.ad_name || contactInfoTracking.utm_content)
+    const pageName = getReadableValue(getPageName(contactInfoTracking.page_url))
+    const deviceName = [getReadableValue(contactInfoTracking.device_type), getReadableValue(contactInfoTracking.browser)].filter(Boolean).join(' · ')
+    const locationName = [contactInfoTracking.geo_city, contactInfoTracking.geo_region, contactInfoTracking.geo_country]
+      .map((value) => getReadableValue(value))
+      .filter(Boolean)
+      .join(', ')
+    const visibleCustomFields = (contactInfoData.customFields || [])
+      .map((field, index) => ({
+        id: field.id || field.key || field.fieldKey || field.label || field.name || `field-${index}`,
+        label: getCustomFieldLabel(field, index),
+        value: formatCustomFieldValue(field.value)
+      }))
+      .filter((field) => field.value.trim().length > 0)
+
+    return (
+      <section
+        className={`${styles.contactInfoScreen} ${contactInfoOpen ? styles.contactInfoScreenOpen : ''}`}
+        aria-label="Información del contacto"
+        aria-hidden={!contactInfoOpen}
+      >
+        <header className={styles.contactInfoTopbar}>
+          <button type="button" className={styles.backButton} onClick={() => setContactInfoOpen(false)} aria-label="Back to chat">
+            <ChevronLeft size={32} />
+          </button>
+          <strong>Info del contacto</strong>
+          <button type="button" className={styles.contactInfoTopbarAction} onClick={() => setContactInfoOpen(false)} aria-label="Close contact info">
+            <X size={20} />
+          </button>
+        </header>
+
+        <div className={styles.contactInfoContent} data-phone-chat-scrollable="true">
+          <section className={styles.contactInfoHero}>
+            <span className={styles.contactInfoAvatar}>
+              {renderAvatar(contactInfoData)}
+            </span>
+            <h2>{getContactName(contactInfoData)}</h2>
+            <p>{getContactDetail(contactInfoData)}</p>
+            {contactInfoStageBadge && (
+              <span className={styles.contactInfoBadge}>{contactInfoStageBadge.text}</span>
+            )}
+            {contactInfoLoading && (
+              <span className={styles.contactInfoLoading}>
+                <Loader2 size={14} className={styles.spinIcon} />
+                Actualizando datos
+              </span>
+            )}
+            {contactInfoError && <span className={styles.contactInfoError}>{contactInfoError}</span>}
+          </section>
+
+          <div className={styles.contactInfoActions}>
+            <button type="button" onClick={() => setContactInfoOpen(false)}>
+              <MessageCircle size={21} />
+              <span>Chat</span>
+            </button>
+            <button type="button" onClick={() => handleContactInfoAction('appointment')}>
+              <CalendarDays size={21} />
+              <span>Agendar</span>
+            </button>
+            <button type="button" onClick={() => handleContactInfoAction('payment')}>
+              <CreditCard size={21} />
+              <span>Cobrar</span>
+            </button>
+          </div>
+
+          <section className={styles.contactInfoSection}>
+            <div className={styles.contactInfoMetrics}>
+              <span className={styles.contactInfoMetric}>
+                <small>Ingresos</small>
+                <strong>{formatCurrency(Number(contactInfoData.ltv || 0) || revenueTotal)}</strong>
+              </span>
+              <span className={styles.contactInfoMetric}>
+                <small>Compras</small>
+                <strong>{purchasesCount}</strong>
+              </span>
+              <span className={styles.contactInfoMetric}>
+                <small>Citas</small>
+                <strong>{contactInfoAppointments.length}</strong>
+              </span>
+            </div>
+          </section>
+
+          <section className={styles.contactInfoSection}>
+            <h3>Datos principales</h3>
+            <div className={styles.contactInfoRows}>
+              {renderContactInfoRow('phone', <Phone size={17} />, 'Número', contactInfoData.phone)}
+              {renderContactInfoRow('email', <Mail size={17} />, 'Correo', contactInfoData.email)}
+              {renderContactInfoRow('created', <User size={17} />, `Se hizo ${leadLabel.toLowerCase()}`, formatLocalDateTime(leadDate), leadSource)}
+              {renderContactInfoRow('stage', <Tag size={17} />, 'Estado', contactInfoStageBadge?.text || (contactInfoData.status === 'customer' ? customerLabel : leadLabel))}
+            </div>
+          </section>
+
+          <section className={styles.contactInfoSection}>
+            <h3>Origen y conversión</h3>
+            <div className={styles.contactInfoRows}>
+              {renderContactInfoRow('source', <Globe2 size={17} />, 'Llegó desde', contactInfoSource || 'Sin origen guardado')}
+              {renderContactInfoRow('first-visit', <MousePointerClick size={17} />, 'Primera visita', contactInfoTracking.started_at ? formatLocalDateTime(contactInfoTracking.started_at) : '')}
+              {renderContactInfoRow('page', <FileText size={17} />, 'Página', pageName)}
+              {renderContactInfoRow('campaign', <Megaphone size={17} />, 'Campaña', campaignName)}
+              {renderContactInfoRow('ad', <ReceiptText size={17} />, 'Anuncio', adName, getReadableValue(contactInfoTracking.ad_id))}
+              {renderContactInfoRow('device', <Smartphone size={17} />, 'Dispositivo', deviceName)}
+              {renderContactInfoRow('location', <MapPin size={17} />, 'Ubicación', locationName)}
+              {firstSuccessfulPayment
+                ? renderContactInfoRow(
+                    'conversion-payment',
+                    <DollarSign size={17} />,
+                    'Convirtió',
+                    `${formatCurrency(firstSuccessfulPayment.amount)} · ${formatLocalDateTime(firstSuccessfulPayment.date)}`,
+                    contactInfoSource
+                  )
+                : firstAppointment
+                  ? renderContactInfoRow(
+                      'conversion-appointment',
+                      <CalendarDays size={17} />,
+                      'Convirtió',
+                      `${firstAppointment.title} · ${formatLocalDateTime(firstAppointment.startTime)}`,
+                      contactInfoSource
+                    )
+                  : renderContactInfoRow('conversion-empty', <DollarSign size={17} />, 'Convirtió', 'Aún sin conversión registrada')}
+            </div>
+          </section>
+
+          {(nextAppointment || contactInfoPayments.length > 0) && (
+            <section className={styles.contactInfoSection}>
+              <h3>Seguimiento</h3>
+              <div className={styles.contactInfoRows}>
+                {nextAppointment && renderContactInfoRow(
+                  'next-appointment',
+                  <Clock size={17} />,
+                  'Próxima cita',
+                  formatLocalDateTime(nextAppointment.startTime),
+                  `${nextAppointment.title}${nextAppointment.status ? ` · ${formatPlainStatus(nextAppointment.status)}` : ''}`
+                )}
+                {contactInfoPayments.slice(0, 3).map((payment) => renderContactInfoRow(
+                  `payment-${payment.id}`,
+                  <CreditCard size={17} />,
+                  'Pago',
+                  `${formatCurrency(payment.amount)} · ${formatLocalDateShort(payment.date)}`,
+                  formatPlainStatus(payment.status)
+                ))}
+              </div>
+            </section>
+          )}
+
+          {visibleCustomFields.length > 0 && (
+            <section className={styles.contactInfoSection}>
+              <h3>Datos extra</h3>
+              <div className={styles.contactInfoRows}>
+                {visibleCustomFields.map((field) => renderContactInfoRow(
+                  `custom-${field.id}`,
+                  <FileText size={17} />,
+                  field.label,
+                  field.value
+                ))}
+              </div>
+            </section>
+          )}
+
+          {contactInfoRecentEvents.length > 0 && (
+            <section className={styles.contactInfoSection}>
+              <h3>Actividad reciente</h3>
+              <div className={styles.contactInfoTimeline}>
+                {contactInfoRecentEvents.map((event, index) => (
+                  <div key={`${event.type}-${event.date}-${index}`} className={styles.contactInfoTimelineItem}>
+                    <span />
+                    <div>
+                      <strong>{getJourneyEventLabel(event, leadLabel)}</strong>
+                      <small>{getJourneyEventDescription(event)}</small>
+                      <em>{formatLocalDateTime(event.date)}</em>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
+      </section>
+    )
+  }
+
   const renderNewChatSheet = () => (
     <div className={styles.newChatStack}>
       <div className={styles.sheetSearchBox}>
@@ -1036,32 +1550,10 @@ export const PhoneChat: React.FC = () => {
 
   const renderAttachmentsSheet = () => {
     const attachmentActions = [
-      { label: 'Photos', Icon: ImageIcon, className: styles.actionBlue, onClick: () => handlePickPhoto('photos') },
-      { label: 'Camera', Icon: Camera, className: styles.actionDark, onClick: () => handlePickPhoto('camera') },
-      { label: 'Location', Icon: MapPin, className: styles.actionGreen, onClick: () => handleUnavailableAttachment('Location') },
-      { label: 'Contact', Icon: User, className: styles.actionGray, onClick: () => handleUnavailableAttachment('Contact') },
-      { label: 'Document', Icon: FileText, className: styles.actionSky, onClick: () => handleUnavailableAttachment('Document') },
-      {
-        label: 'Payment',
-        Icon: CreditCard,
-        className: styles.actionGold,
-        onClick: () => {
-          setPaymentMode('single')
-          setSheet('payment')
-        }
-      },
-      {
-        label: 'Appointment',
-        Icon: CalendarDays,
-        className: styles.actionRed,
-        onClick: () => setSheet('appointment')
-      },
-      {
-        label: 'AI Agent',
-        Icon: Bot,
-        className: styles.actionPurple,
-        onClick: () => handleUnavailableAttachment('AI Agent')
-      }
+      { label: 'Fotos', Icon: ImageIcon, className: styles.actionBlue, onClick: () => handlePickPhoto('photos') },
+      { label: 'Cámara', Icon: Camera, className: styles.actionDark, onClick: () => handlePickPhoto('camera') },
+      { label: 'Ubicación', Icon: MapPin, className: styles.actionGreen, onClick: () => handleUnavailableAttachment('Ubicación') },
+      { label: 'Documento', Icon: FileText, className: styles.actionSky, onClick: () => handleUnavailableAttachment('Documento') }
     ]
 
     return (
@@ -1175,11 +1667,18 @@ export const PhoneChat: React.FC = () => {
 
             {activeContact ? (
               <>
-                {renderAvatar(activeContact)}
-                <div className={styles.conversationIdentity}>
-                  <strong>{getContactName(activeContact)}</strong>
-                  <span>{getContactDetail(activeContact)}</span>
-                </div>
+                <button
+                  type="button"
+                  className={styles.conversationContactButton}
+                  onClick={handleOpenContactInfo}
+                  aria-label="Ver información del contacto"
+                >
+                  {renderAvatar(activeContact)}
+                  <span className={styles.conversationIdentity}>
+                    <strong>{getContactName(activeContact)}</strong>
+                    <span>{getContactDetail(activeContact)}</span>
+                  </span>
+                </button>
               </>
             ) : (
               <div className={styles.conversationIdentity}>
@@ -1251,6 +1750,8 @@ export const PhoneChat: React.FC = () => {
             </div>
           </div>
         </section>
+
+        {renderContactInfoScreen()}
       </div>
 
       <input
@@ -1277,21 +1778,22 @@ export const PhoneChat: React.FC = () => {
             aria-label="Chat actions"
           >
             <div className={styles.sheetHandle} />
-            <div className={styles.sheetHeader}>
-              <div>
-                <p>{activeContact ? getContactName(activeContact) : 'Ristak Chat'}</p>
-                <h2>
-                  {sheet === 'attachments' && 'Add'}
-                  {sheet === 'payment' && 'Record payment'}
-                  {sheet === 'appointment' && 'Schedule appointment'}
-                  {sheet === 'notifications' && 'Phone alerts'}
-                  {sheet === 'newChat' && 'New chat'}
-                </h2>
+            {sheet !== 'attachments' && (
+              <div className={styles.sheetHeader}>
+                <div>
+                  <p>{activeContact ? getContactName(activeContact) : 'Ristak Chat'}</p>
+                  <h2>
+                    {sheet === 'payment' && 'Registrar pago'}
+                    {sheet === 'appointment' && 'Agendar cita'}
+                    {sheet === 'notifications' && 'Alertas del celular'}
+                    {sheet === 'newChat' && 'Nuevo chat'}
+                  </h2>
+                </div>
+                <button type="button" onClick={() => setSheet(null)} aria-label="Cerrar panel">
+                  <X size={20} />
+                </button>
               </div>
-              <button type="button" onClick={() => setSheet(null)} aria-label="Close panel">
-                <X size={20} />
-              </button>
-            </div>
+            )}
 
             {sheet === 'newChat' && renderNewChatSheet()}
             {sheet === 'attachments' && renderAttachmentsSheet()}
