@@ -4,11 +4,13 @@ import {
   Archive,
   BadgeDollarSign,
   Bell,
+  BellOff,
   Bot,
   CalendarDays,
   Camera,
   Check,
   ChevronLeft,
+  ChevronRight,
   CircleAlert,
   Cog,
   Clock,
@@ -25,6 +27,7 @@ import {
   MessageCircle,
   Mic,
   MonitorX,
+  MoreHorizontal,
   MousePointerClick,
   Phone,
   Plus,
@@ -68,8 +71,13 @@ const COARSE_POINTER_QUERY = '(pointer: coarse)'
 const MOBILE_OR_TABLET_USER_AGENT_PATTERN = /Android|iPad|iPhone|iPod|IEMobile|Opera Mini|Mobile|Tablet/i
 const SCROLLABLE_CHAT_SELECTOR = '[data-phone-chat-scrollable="true"], [contenteditable="true"], textarea, input, select'
 const CHAT_READ_STATE_KEY = 'ristak_phone_chat_read_state_v1'
+const CHAT_ARCHIVED_STATE_KEY = 'ristak_phone_chat_archived_state_v1'
+const CHAT_MUTED_STATE_KEY = 'ristak_phone_chat_muted_state_v1'
 const AI_AGENT_CHAT_ID = 'ristak-ai-agent-mobile-chat'
 const AI_AGENT_MESSAGES_KEY = 'ristak_phone_chat_ai_agent_messages_v1'
+const CHAT_SWIPE_ACTION_WIDTH = 184
+const CHAT_SWIPE_OPEN_THRESHOLD = 78
+const CHAT_SWIPE_ACTIVATE_THRESHOLD = 12
 const MAX_VOICE_MESSAGE_BYTES = 16 * 1024 * 1024
 const MIN_VOICE_RECORDING_MS = 600
 const MAX_VOICE_RECORDING_MS = 3 * 60 * 1000
@@ -83,11 +91,21 @@ const VOICE_MIME_CANDIDATES = [
 type AccessState = 'checking' | 'allowed' | 'blocked'
 type ComposerStatus = 'idle' | 'sending'
 type PaymentMode = 'single' | 'partial'
-type ActionSheet = 'attachments' | 'templates' | 'payment' | 'appointment' | 'settings' | 'newChat' | null
+type ActionSheet = 'attachments' | 'templates' | 'payment' | 'appointment' | 'settings' | 'newChat' | 'chatMore' | null
 type ChatFilter = 'all' | 'unread' | 'appointments' | 'customers' | 'leads'
 type TemplateMode = 'choice' | 'send' | 'create'
+type ChatSettingsSection = 'templates' | 'numbers' | 'notifications' | 'agent' | 'chats' | null
 type WhatsAppNumberMode = 'merged' | 'separated'
 type ConversationSortMode = 'recent' | 'unread'
+
+interface ChatSwipeGesture {
+  contactId: string
+  startX: number
+  startY: number
+  startOffset: number
+  offset: number
+  active: boolean
+}
 
 const SUCCESS_PAYMENT_STATUSES = new Set(['succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success'])
 const CANCELED_APPOINTMENT_STATUSES = new Set(['cancelled', 'canceled', 'no_show', 'noshow', 'deleted', 'failed', 'invalid'])
@@ -208,6 +226,23 @@ function readChatReadState(): ChatReadState {
 function writeChatReadState(state: ChatReadState) {
   if (typeof window === 'undefined') return
   window.localStorage.setItem(CHAT_READ_STATE_KEY, JSON.stringify(state))
+}
+
+function readStoredChatIds(key: string) {
+  if (typeof window === 'undefined') return []
+
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(key) || '[]')
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+  } catch {
+    return []
+  }
+}
+
+function writeStoredChatIds(key: string, ids: string[]) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(key, JSON.stringify(Array.from(new Set(ids))))
 }
 
 function createAIAgentMobileMessage(role: AIAgentMessage['role'], content: string): AIAgentMessage {
@@ -1178,6 +1213,12 @@ export const PhoneChat: React.FC = () => {
   const [chatsError, setChatsError] = useState('')
   const [chatQuery, setChatQuery] = useState('')
   const [chatFilter, setChatFilter] = useState<ChatFilter>('all')
+  const [archivedViewOpen, setArchivedViewOpen] = useState(false)
+  const [archivedChatIds, setArchivedChatIds] = useState<string[]>(() => readStoredChatIds(CHAT_ARCHIVED_STATE_KEY))
+  const [mutedChatIds, setMutedChatIds] = useState<string[]>(() => readStoredChatIds(CHAT_MUTED_STATE_KEY))
+  const [openSwipeChatId, setOpenSwipeChatId] = useState<string | null>(null)
+  const [draggingSwipe, setDraggingSwipe] = useState<{ contactId: string; offset: number } | null>(null)
+  const [chatActionContactId, setChatActionContactId] = useState<string | null>(null)
   const [contactQuery, setContactQuery] = useState('')
   const [contactResults, setContactResults] = useState<Contact[]>([])
   const [contactsLoading, setContactsLoading] = useState(false)
@@ -1197,6 +1238,7 @@ export const PhoneChat: React.FC = () => {
   const [calendars, setCalendars] = useState<Calendar[]>([])
   const [selectedCalendarId, setSelectedCalendarId] = useState('')
   const [sheet, setSheet] = useState<ActionSheet>(null)
+  const [activeSettingsSection, setActiveSettingsSection] = useState<ChatSettingsSection>(null)
   const [contactInfoOpen, setContactInfoOpen] = useState(false)
   const [contactInfoContact, setContactInfoContact] = useState<Contact | null>(null)
   const [contactInfoLoading, setContactInfoLoading] = useState(false)
@@ -1232,6 +1274,8 @@ export const PhoneChat: React.FC = () => {
   const voiceTimerRef = useRef<number | null>(null)
   const voiceCancelRef = useRef(false)
   const autoOpenedLastConversationRef = useRef(false)
+  const chatSwipeGestureRef = useRef<ChatSwipeGesture | null>(null)
+  const ignoreNextChatClickRef = useRef(false)
 
   const aiAgentConversationOpen = activeContactId === AI_AGENT_CHAT_ID
   const activeContact = useMemo(
@@ -1239,6 +1283,10 @@ export const PhoneChat: React.FC = () => {
     [activeContactId, aiAgentConversationOpen, chats]
   )
   const contactInfoData = contactInfoContact || activeContact
+  const chatActionContact = useMemo(
+    () => chats.find((contact) => contact.id === chatActionContactId) || activeContact || null,
+    [activeContact, chatActionContactId, chats]
+  )
   const contactInfoPayments = useMemo(
     () => getContactInfoPayments(contactInfoData, contactJourney),
     [contactInfoData, contactJourney]
@@ -1323,6 +1371,13 @@ export const PhoneChat: React.FC = () => {
     return alertMap
   }, [activeTemplateAlerts])
   const hasChats = chats.length > 0
+  const archivedChatIdSet = useMemo(() => new Set(archivedChatIds), [archivedChatIds])
+  const mutedChatIdSet = useMemo(() => new Set(mutedChatIds), [mutedChatIds])
+  const archivedChatCount = archivedChatIds.length
+  const listBaseChats = useMemo(
+    () => chats.filter((contact) => archivedViewOpen ? archivedChatIdSet.has(contact.id) : !archivedChatIdSet.has(contact.id)),
+    [archivedChatIdSet, archivedViewOpen, chats]
+  )
   const customerLabel = labels.customer?.trim() || 'Cliente'
   const leadLabel = labels.lead?.trim() || 'Interesado'
   const customersLabel = labels.customers?.trim() || 'Clientes'
@@ -1335,12 +1390,12 @@ export const PhoneChat: React.FC = () => {
   }, [isAppointmentContact, isCustomerContact])
   const filteredChats = useMemo(() => {
     const phoneFilteredChats = chatPhoneFilterEnabled && selectedChatPhoneId !== 'all'
-      ? chats.filter((contact) => {
+      ? listBaseChats.filter((contact) => {
           if (contact.lastBusinessPhoneNumberId && contact.lastBusinessPhoneNumberId === selectedChatPhoneId) return true
           if (!selectedChatPhone) return false
           return phoneLooksSame(contact.lastBusinessPhone, getBusinessPhoneValue(selectedChatPhone))
         })
-      : chats
+      : listBaseChats
 
     const chipFilteredChats = phoneFilteredChats.filter((contact) => {
       if (chatFilter === 'unread') return Number(contact.unreadCount || 0) > 0
@@ -1360,17 +1415,19 @@ export const PhoneChat: React.FC = () => {
   }, [
     chatFilter,
     chatPhoneFilterEnabled,
-    chats,
     conversationSortMode,
     isAppointmentContact,
     isCustomerContact,
     isLeadContact,
+    listBaseChats,
     selectedChatPhone,
     selectedChatPhoneId
   ])
   const unreadTotal = useMemo(
-    () => chats.reduce((total, contact) => total + Math.max(0, Number(contact.unreadCount || 0)), 0),
-    [chats]
+    () => chats.reduce((total, contact) => (
+      archivedChatIdSet.has(contact.id) ? total : total + Math.max(0, Number(contact.unreadCount || 0))
+    ), 0),
+    [archivedChatIdSet, chats]
   )
 
   const ensureChatContact = useCallback((contact: Contact) => {
@@ -1549,6 +1606,19 @@ export const PhoneChat: React.FC = () => {
   useEffect(() => {
     writeAIAgentMobileMessages(aiMessages)
   }, [aiMessages])
+
+  useEffect(() => {
+    writeStoredChatIds(CHAT_ARCHIVED_STATE_KEY, archivedChatIds)
+  }, [archivedChatIds])
+
+  useEffect(() => {
+    writeStoredChatIds(CHAT_MUTED_STATE_KEY, mutedChatIds)
+  }, [mutedChatIds])
+
+  useEffect(() => {
+    setOpenSwipeChatId(null)
+    setDraggingSwipe(null)
+  }, [archivedViewOpen, chatFilter, chatQuery, selectedChatPhoneId])
 
   useEffect(() => {
     if (!businessPhones.length) {
@@ -1870,10 +1940,25 @@ export const PhoneChat: React.FC = () => {
   }, [accessState, chatQuery, contactQuery, hasChats, loadContactResults, sheet])
 
   useEffect(() => {
-    if (accessState !== 'allowed' || sheet !== 'templates') return
-    setTemplateMode('choice')
-    loadTemplates()
-  }, [accessState, loadTemplates, sheet])
+    if (sheet !== 'settings') {
+      setActiveSettingsSection(null)
+    }
+  }, [sheet])
+
+  useEffect(() => {
+    if (accessState !== 'allowed') return
+
+    if (sheet === 'templates') {
+      setTemplateMode('choice')
+      loadTemplates()
+      return
+    }
+
+    if (sheet === 'settings' && activeSettingsSection === 'templates') {
+      setTemplateMode((current) => (current === 'choice' ? 'send' : current))
+      loadTemplates()
+    }
+  }, [accessState, activeSettingsSection, loadTemplates, sheet])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ block: 'end' })
@@ -3275,211 +3360,427 @@ export const PhoneChat: React.FC = () => {
     </div>
   )
 
-  const renderChatSettingsSheet = () => (
-    <div className={styles.chatSettingsStack} data-phone-chat-scrollable="true">
-      <section className={styles.settingsSection}>
-        <div className={styles.settingsSectionTitle}>
-          <Smartphone size={18} />
-          <span>
-            <strong>Números de WhatsApp</strong>
-            <small>Elige cómo quieres ver las conversaciones cuando hay más de un número conectado.</small>
-          </span>
-        </div>
-        <div className={styles.settingsSegmented} role="group" aria-label="Modo de números de WhatsApp">
-          <button
-            type="button"
-            className={whatsappNumberMode === 'merged' ? styles.settingsSegmentActive : ''}
-            onClick={() => saveConfigPreference(setWhatsappNumberMode, 'merged')}
-          >
-            Todos juntos
+  const renderChatSettingsSheet = () => {
+    const renderSettingsDetail = (title: string, children: React.ReactNode) => (
+      <div className={styles.settingsDetailStack} data-phone-chat-scrollable="true">
+        <div className={styles.settingsDetailHeader}>
+          <button type="button" onClick={() => setActiveSettingsSection(null)}>
+            <ChevronLeft size={18} />
+            Ajustes
           </button>
-          <button
-            type="button"
-            className={whatsappNumberMode === 'separated' ? styles.settingsSegmentActive : ''}
-            onClick={() => saveConfigPreference(setWhatsappNumberMode, 'separated')}
-          >
-            Números separados
-          </button>
+          <strong>{title}</strong>
         </div>
-        {businessPhones.length <= 1 && (
-          <p className={styles.settingsHint}>Cuando conectes otro número, aparecerá el selector junto al título Chats.</p>
-        )}
-      </section>
+        {children}
+      </div>
+    )
 
-      <section className={styles.settingsSection}>
-        <div className={styles.settingsSectionTitle}>
-          <Bell size={18} />
-          <span>
-            <strong>Notificaciones</strong>
-            <small>Controla qué avisos llegan a este celular.</small>
-          </span>
+    const renderTemplateStatusList = () => {
+      if (templatesLoading) {
+        return (
+          <div className={styles.centerState}>
+            <Loader2 size={20} className={styles.spinIcon} />
+            <span>Cargando plantillas...</span>
+          </div>
+        )
+      }
+
+      if (templatesError) {
+        return (
+          <div className={styles.emptySheetState}>
+            <CircleAlert size={24} />
+            <strong>No se cargaron</strong>
+            <span>{templatesError}</span>
+            <button type="button" onClick={loadTemplates}>Intentar otra vez</button>
+          </div>
+        )
+      }
+
+      if (templates.length === 0) {
+        return (
+          <div className={styles.emptySheetState}>
+            <FileText size={24} />
+            <strong>No hay plantillas</strong>
+            <span>Crea una plantilla y cuando Meta la apruebe podrás usarla desde cualquier chat.</span>
+          </div>
+        )
+      }
+
+      return (
+        <div className={styles.templateList}>
+          {templates.map((template) => {
+            const status = getTemplateStatus(template)
+            const alertMessage = getTemplateAlertMessage(template)
+            const reason = getTemplateBlockedReason(template, alertMessage)
+            const statusClass = status === 'APPROVED'
+              ? styles.templateStatusApproved
+              : TEMPLATE_DISABLED_STATUSES.has(status)
+                ? styles.templateStatusBlocked
+                : styles.templateStatusPending
+
+            return (
+              <div key={`${template.id}-${template.language}`} className={styles.templateRow}>
+                <span className={styles.templateRowIcon}>
+                  <FileText size={18} />
+                </span>
+                <span className={styles.templateRowMain}>
+                  <strong>{template.name}</strong>
+                  <small>{getTemplateBodyPreview(template)}</small>
+                  {status !== 'APPROVED' && <em>{reason}</em>}
+                </span>
+                <span className={`${styles.templateStatus} ${statusClass}`}>
+                  {getTemplateStatusLabel(status)}
+                </span>
+              </div>
+            )
+          })}
         </div>
+      )
+    }
 
-        <section className={styles.permissionCard}>
-          <span>
+    const renderSettingsTemplateAlerts = () => {
+      if (activeTemplateAlerts.length === 0) return null
+
+      return (
+        <div className={styles.templateAlertList}>
+          {activeTemplateAlerts.slice(0, 3).map((alert) => (
+            <div key={alert.id} className={styles.templateAlert}>
+              <CircleAlert size={17} />
+              <span>
+                <strong>{alert.title}</strong>
+                <small>{alert.message || 'Revisa esta plantilla antes de usarla.'}</small>
+              </span>
+            </div>
+          ))}
+        </div>
+      )
+    }
+
+    if (activeSettingsSection === 'templates') {
+      return renderSettingsDetail('Plantillas', (
+        <>
+          {templateMode === 'create' ? (
+            <section className={styles.settingsSection}>
+              <div className={styles.templateSubHeader}>
+                <button type="button" onClick={() => setTemplateMode('send')}>
+                  <ChevronLeft size={19} />
+                  Plantillas
+                </button>
+                <strong>Nueva plantilla</strong>
+              </div>
+              <div className={styles.quickTemplateForm}>
+                <label>
+                  <span>Nombre</span>
+                  <input
+                    value={newTemplateName}
+                    onChange={(event) => setNewTemplateName(event.target.value)}
+                    placeholder="ej. recordatorio_cita"
+                  />
+                </label>
+                <div className={styles.quickTemplateSplit}>
+                  <label>
+                    <span>Categoría</span>
+                    <select
+                      value={newTemplateCategory}
+                      onChange={(event) => setNewTemplateCategory(event.target.value as MessageTemplateCategory)}
+                    >
+                      {QUICK_TEMPLATE_CATEGORIES.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Idioma</span>
+                    <select
+                      value={newTemplateLanguage}
+                      onChange={(event) => setNewTemplateLanguage(event.target.value)}
+                    >
+                      {QUICK_TEMPLATE_LANGUAGES.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <label>
+                  <span>Mensaje</span>
+                  <textarea
+                    value={newTemplateBody}
+                    onChange={(event) => setNewTemplateBody(event.target.value)}
+                    placeholder="Hola, te escribo de Ristak para confirmar..."
+                    rows={5}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className={styles.primarySheetButton}
+                  onClick={handleCreateQuickTemplate}
+                  disabled={creatingTemplate}
+                >
+                  {creatingTemplate ? <Loader2 size={18} className={styles.spinIcon} /> : <Plus size={18} />}
+                  Crear y enviar a revisión
+                </button>
+              </div>
+            </section>
+          ) : (
+            <>
+              <section className={styles.settingsActionCard}>
+                <span>
+                  <FileText size={18} />
+                </span>
+                <div>
+                  <strong>Plantillas de WhatsApp</strong>
+                  <small>Consulta estados, rechazos y crea mensajes para revisión de Meta.</small>
+                </div>
+                <button type="button" onClick={() => setTemplateMode('create')}>
+                  Crear
+                </button>
+              </section>
+              <button type="button" className={styles.settingsRefreshButton} onClick={loadTemplates} disabled={templatesLoading}>
+                {templatesLoading ? <Loader2 size={16} className={styles.spinIcon} /> : <FileText size={16} />}
+                Actualizar plantillas
+              </button>
+              {renderSettingsTemplateAlerts()}
+              {renderTemplateStatusList()}
+            </>
+          )}
+        </>
+      ))
+    }
+
+    if (activeSettingsSection === 'numbers') {
+      return renderSettingsDetail('Números de WhatsApp', (
+        <section className={styles.settingsSection}>
+          <div className={styles.settingsSectionTitle}>
             <Smartphone size={18} />
-          </span>
-          <div>
-            <strong>Este celular</strong>
-            <small>{getNotificationPermissionLabel()}</small>
+            <span>
+              <strong>Vista de conversaciones</strong>
+              <small>Elige cómo quieres ver los chats cuando tengas más de un número conectado.</small>
+            </span>
           </div>
-          <button type="button" onClick={handleRequestPush} disabled={requestingPush}>
-            {requestingPush ? <Loader2 size={16} className={styles.spinIcon} /> : <Bell size={16} />}
-            Activar
-          </button>
+          <div className={styles.settingsSegmented} role="group" aria-label="Modo de números de WhatsApp">
+            <button
+              type="button"
+              className={whatsappNumberMode === 'merged' ? styles.settingsSegmentActive : ''}
+              onClick={() => saveConfigPreference(setWhatsappNumberMode, 'merged')}
+            >
+              Todos juntos
+            </button>
+            <button
+              type="button"
+              className={whatsappNumberMode === 'separated' ? styles.settingsSegmentActive : ''}
+              onClick={() => saveConfigPreference(setWhatsappNumberMode, 'separated')}
+            >
+              Separados
+            </button>
+          </div>
+          {businessPhones.length <= 1 && (
+            <p className={styles.settingsHint}>Cuando conectes otro número, aparecerá el selector junto al título Chats.</p>
+          )}
         </section>
+      ))
+    }
 
-        <label className={styles.toggleRow}>
-          <span>
-            <strong>Mensajes del chat</strong>
-            <small>Avísame cuando llegue un WhatsApp nuevo.</small>
-          </span>
-          <input
-            type="checkbox"
-            checked={chatPushEnabled}
-            onChange={(event) => saveConfigPreference(setChatPushEnabled, event.target.checked)}
-          />
-        </label>
-
-        <label className={styles.toggleRow}>
-          <span>
-            <strong>Citas</strong>
-            <small>Avísame cuando alguien agende una cita.</small>
-          </span>
-          <input
-            type="checkbox"
-            checked={calendarPushEnabled}
-            onChange={(event) => saveConfigPreference(setCalendarPushEnabled, event.target.checked)}
-          />
-        </label>
-
-        <label className={styles.toggleRow}>
-          <span>
-            <strong>Pagos</strong>
-            <small>Avísame cuando se registre un pago.</small>
-          </span>
-          <input
-            type="checkbox"
-            checked={paymentPushEnabled}
-            onChange={(event) => saveConfigPreference(setPaymentPushEnabled, event.target.checked)}
-          />
-        </label>
-      </section>
-
-      <section className={styles.settingsSection}>
-        <div className={styles.settingsSectionTitle}>
-          <Bot size={18} />
-          <span>
-            <strong>Agente de inteligencia artificial</strong>
-            <small>Úsalo como una conversación normal dentro de Chats.</small>
-          </span>
-        </div>
-
-        <label className={styles.toggleRow}>
-          <span>
-            <strong>Mostrar como primer chat</strong>
-            <small>El agente aparece fijo arriba de tus conversaciones.</small>
-          </span>
-          <input
-            type="checkbox"
-            checked={aiAgentChatEnabled}
-            onChange={(event) => saveConfigPreference(setAiAgentChatEnabled, event.target.checked)}
-          />
-        </label>
-
-        <label className={`${styles.toggleRow} ${!aiAgentChatEnabled ? styles.toggleRowDisabled : ''}`}>
-          <span>
-            <strong>Sugerir respuestas</strong>
-            <small>El agente puede preparar un texto para responder en chats reales.</small>
-          </span>
-          <input
-            type="checkbox"
-            checked={aiReplySuggestionsEnabled}
-            disabled={!aiAgentChatEnabled}
-            onChange={(event) => saveConfigPreference(setAiReplySuggestionsEnabled, event.target.checked)}
-          />
-        </label>
-      </section>
-
-      <section className={styles.settingsSection}>
-        <div className={styles.settingsSectionTitle}>
-          <MessageCircle size={18} />
-          <span>
-            <strong>Lista de chats</strong>
-            <small>Ajusta cómo quieres revisar tus conversaciones en móvil.</small>
-          </span>
-        </div>
-
-        <div className={styles.settingsField}>
-          <strong>Ordenar conversaciones</strong>
-          <div className={styles.settingsSegmented} role="group" aria-label="Orden de conversaciones">
-            <button
-              type="button"
-              className={conversationSortMode === 'recent' ? styles.settingsSegmentActive : ''}
-              onClick={() => saveConfigPreference(setConversationSortMode, 'recent')}
-            >
-              Más recientes
+    if (activeSettingsSection === 'notifications') {
+      return renderSettingsDetail('Notificaciones', (
+        <>
+          <section className={styles.permissionCard}>
+            <span>
+              <Smartphone size={18} />
+            </span>
+            <div>
+              <strong>Este celular</strong>
+              <small>{getNotificationPermissionLabel()}</small>
+            </div>
+            <button type="button" onClick={handleRequestPush} disabled={requestingPush}>
+              {requestingPush ? <Loader2 size={16} className={styles.spinIcon} /> : <Bell size={16} />}
+              Activar
             </button>
+          </section>
+          <label className={styles.toggleRow}>
+            <span>
+              <strong>Mensajes del chat</strong>
+              <small>Avísame cuando llegue un WhatsApp nuevo.</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={chatPushEnabled}
+              onChange={(event) => saveConfigPreference(setChatPushEnabled, event.target.checked)}
+            />
+          </label>
+          <label className={styles.toggleRow}>
+            <span>
+              <strong>Citas</strong>
+              <small>Avísame cuando alguien agende una cita.</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={calendarPushEnabled}
+              onChange={(event) => saveConfigPreference(setCalendarPushEnabled, event.target.checked)}
+            />
+          </label>
+          <label className={styles.toggleRow}>
+            <span>
+              <strong>Pagos</strong>
+              <small>Avísame cuando se registre un pago.</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={paymentPushEnabled}
+              onChange={(event) => saveConfigPreference(setPaymentPushEnabled, event.target.checked)}
+            />
+          </label>
+        </>
+      ))
+    }
+
+    if (activeSettingsSection === 'agent') {
+      return renderSettingsDetail('Agente IA', (
+        <>
+          <label className={styles.toggleRow}>
+            <span>
+              <strong>Mostrar como primer chat</strong>
+              <small>El agente aparece fijo arriba de tus conversaciones.</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={aiAgentChatEnabled}
+              onChange={(event) => saveConfigPreference(setAiAgentChatEnabled, event.target.checked)}
+            />
+          </label>
+          <label className={`${styles.toggleRow} ${!aiAgentChatEnabled ? styles.toggleRowDisabled : ''}`}>
+            <span>
+              <strong>Sugerir respuestas</strong>
+              <small>El agente puede preparar un texto para responder en chats reales.</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={aiReplySuggestionsEnabled}
+              disabled={!aiAgentChatEnabled}
+              onChange={(event) => saveConfigPreference(setAiReplySuggestionsEnabled, event.target.checked)}
+            />
+          </label>
+        </>
+      ))
+    }
+
+    if (activeSettingsSection === 'chats') {
+      return renderSettingsDetail('Lista de chats', (
+        <>
+          <section className={styles.settingsSection}>
+            <div className={styles.settingsField}>
+              <strong>Ordenar conversaciones</strong>
+              <div className={styles.settingsSegmented} role="group" aria-label="Orden de conversaciones">
+                <button
+                  type="button"
+                  className={conversationSortMode === 'recent' ? styles.settingsSegmentActive : ''}
+                  onClick={() => saveConfigPreference(setConversationSortMode, 'recent')}
+                >
+                  Más recientes
+                </button>
+                <button
+                  type="button"
+                  className={conversationSortMode === 'unread' ? styles.settingsSegmentActive : ''}
+                  onClick={() => saveConfigPreference(setConversationSortMode, 'unread')}
+                >
+                  No leídas
+                </button>
+              </div>
+            </div>
+          </section>
+          <label className={styles.toggleRow}>
+            <span>
+              <strong>Mostrar archivados</strong>
+              <small>Deja visible el acceso a chats archivados.</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={showArchivedChats}
+              onChange={(event) => saveConfigPreference(setShowArchivedChats, event.target.checked)}
+            />
+          </label>
+          <label className={styles.toggleRow}>
+            <span>
+              <strong>Vista previa</strong>
+              <small>Muestra un resumen debajo del nombre del contacto.</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={showLastMessagePreview}
+              onChange={(event) => saveConfigPreference(setShowLastMessagePreview, event.target.checked)}
+            />
+          </label>
+          <label className={styles.toggleRow}>
+            <span>
+              <strong>Indicadores de no leídos</strong>
+              <small>Muestra el contador verde cuando hay mensajes nuevos.</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={showUnreadIndicators}
+              onChange={(event) => saveConfigPreference(setShowUnreadIndicators, event.target.checked)}
+            />
+          </label>
+          <label className={styles.toggleRow}>
+            <span>
+              <strong>Abrir el último chat</strong>
+              <small>Al entrar a Chats, abre la última conversación que usaste.</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={openLastConversation}
+              onChange={(event) => saveConfigPreference(setOpenLastConversation, event.target.checked)}
+            />
+          </label>
+        </>
+      ))
+    }
+
+    const settingsItems: Array<{
+      id: Exclude<ChatSettingsSection, null>
+      title: string
+      description: string
+      meta?: string
+      Icon: React.ElementType
+    }> = [
+      { id: 'templates', title: 'Plantillas', description: 'Crear y revisar estados de Meta.', meta: `${templates.length} guardadas`, Icon: FileText },
+      { id: 'numbers', title: 'Números de WhatsApp', description: 'Cómo se muestran tus líneas.', meta: whatsappNumberMode === 'merged' ? 'Juntos' : 'Separados', Icon: Smartphone },
+      { id: 'notifications', title: 'Notificaciones', description: 'Mensajes, citas y pagos.', meta: getNotificationPermissionLabel(), Icon: Bell },
+      { id: 'agent', title: 'Agente IA', description: 'Chat fijo y sugerencias.', meta: aiAgentChatEnabled ? 'Activo' : 'Apagado', Icon: Bot },
+      { id: 'chats', title: 'Lista de chats', description: 'Orden, archivados y vista previa.', meta: conversationSortMode === 'recent' ? 'Recientes' : 'No leídas', Icon: MessageCircle }
+    ]
+
+    return (
+      <div className={styles.chatSettingsStack} data-phone-chat-scrollable="true">
+        <div className={styles.settingsListGroup}>
+          {settingsItems.map(({ id, title, description, meta, Icon: SettingsIcon }) => (
             <button
+              key={id}
               type="button"
-              className={conversationSortMode === 'unread' ? styles.settingsSegmentActive : ''}
-              onClick={() => saveConfigPreference(setConversationSortMode, 'unread')}
+              className={styles.settingsListItem}
+              onClick={() => {
+                setActiveSettingsSection(id)
+                if (id === 'templates') {
+                  setTemplateMode('send')
+                  loadTemplates()
+                }
+              }}
             >
-              No leídas primero
+              <span className={styles.settingsListIcon}>
+                <SettingsIcon size={18} />
+              </span>
+              <span className={styles.settingsListText}>
+                <strong>{title}</strong>
+                <small>{description}</small>
+              </span>
+              <span className={styles.settingsListMeta}>
+                {meta && <small>{meta}</small>}
+                <ChevronRight size={18} />
+              </span>
             </button>
-          </div>
+          ))}
         </div>
-
-        <label className={styles.toggleRow}>
-          <span>
-            <strong>Mostrar archivados</strong>
-            <small>Deja visible el acceso a chats archivados.</small>
-          </span>
-          <input
-            type="checkbox"
-            checked={showArchivedChats}
-            onChange={(event) => saveConfigPreference(setShowArchivedChats, event.target.checked)}
-          />
-        </label>
-
-        <label className={styles.toggleRow}>
-          <span>
-            <strong>Vista previa del último mensaje</strong>
-            <small>Muestra un resumen debajo del nombre del contacto.</small>
-          </span>
-          <input
-            type="checkbox"
-            checked={showLastMessagePreview}
-            onChange={(event) => saveConfigPreference(setShowLastMessagePreview, event.target.checked)}
-          />
-        </label>
-
-        <label className={styles.toggleRow}>
-          <span>
-            <strong>Indicadores de no leídos</strong>
-            <small>Muestra el contador verde cuando hay mensajes nuevos.</small>
-          </span>
-          <input
-            type="checkbox"
-            checked={showUnreadIndicators}
-            onChange={(event) => saveConfigPreference(setShowUnreadIndicators, event.target.checked)}
-          />
-        </label>
-
-        <label className={styles.toggleRow}>
-          <span>
-            <strong>Abrir el último chat</strong>
-            <small>Al entrar a Chats, abre la última conversación que usaste.</small>
-          </span>
-          <input
-            type="checkbox"
-            checked={openLastConversation}
-            onChange={(event) => saveConfigPreference(setOpenLastConversation, event.target.checked)}
-          />
-        </label>
-      </section>
-    </div>
-  )
+      </div>
+    )
+  }
 
   const renderTemplatesSheet = () => {
     const renderTemplateAlerts = () => {
@@ -3722,7 +4023,15 @@ export const PhoneChat: React.FC = () => {
         <section className={styles.chatListScreen} aria-label="Lista de chats">
           <header className={styles.chatListHeader}>
             <div className={styles.topActionRow}>
-              <button type="button" className={styles.roundButton} onClick={() => setSheet('settings')} aria-label="Abrir configuración del chat">
+              <button
+                type="button"
+                className={styles.roundButton}
+                onClick={() => {
+                  setActiveSettingsSection(null)
+                  setSheet('settings')
+                }}
+                aria-label="Abrir configuración del chat"
+              >
                 <Cog size={23} />
               </button>
               <div className={styles.topRightActions}>
@@ -3935,7 +4244,7 @@ export const PhoneChat: React.FC = () => {
       {sheet && (
         <div className={styles.sheetBackdrop} onClick={() => setSheet(null)}>
           <section
-            className={`${styles.sheetPanel} ${sheet === 'payment' ? styles.paymentSheet : ''} ${sheet === 'attachments' ? styles.attachmentsSheet : ''} ${sheet === 'templates' ? styles.templatesSheet : ''}`}
+            className={`${styles.sheetPanel} ${sheet === 'payment' ? styles.paymentSheet : ''} ${sheet === 'attachments' ? styles.attachmentsSheet : ''} ${sheet === 'templates' ? styles.templatesSheet : ''} ${sheet === 'settings' ? styles.settingsSheet : ''}`}
             onClick={(event) => event.stopPropagation()}
             aria-label="Acciones del chat"
           >
