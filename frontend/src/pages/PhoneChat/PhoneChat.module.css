@@ -583,20 +583,39 @@
 }
 
 .avatar {
+  --avatar-ring-gradient: linear-gradient(135deg, rgba(255, 255, 255, 0.4), rgba(var(--phone-chat-primary-rgb), 0.7));
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
   width: 44px;
   height: 44px;
+  box-sizing: border-box;
+  border: 2px solid transparent;
   border-radius: 999px;
   color: #ffffff;
-  background: linear-gradient(135deg, #0f766e, var(--phone-chat-accent));
+  background:
+    linear-gradient(135deg, #0f766e, var(--phone-chat-accent)) padding-box,
+    var(--avatar-ring-gradient) border-box;
   font-size: 15px;
   font-weight: 850;
   letter-spacing: 0;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 8px 18px rgba(0, 0, 0, 0.22);
   overflow: hidden;
+}
+
+.avatarWhatsapp {
+  --avatar-ring-gradient: linear-gradient(135deg, #25d366 0%, #128c7e 48%, #075e54 100%);
+}
+
+.avatarMessenger {
+  --avatar-ring-gradient: linear-gradient(135deg, #00b2ff 0%, #006aff 48%, #003f9e 100%);
+}
+
+.avatarInstagram {
+  --avatar-ring-gradient: linear-gradient(135deg, #833ab4 0%, #c13584 38%, #fd1d1d 68%, #fcb045 100%);
 }
 
 .avatar img {

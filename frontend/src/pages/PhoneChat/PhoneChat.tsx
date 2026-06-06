@@ -742,6 +742,14 @@ function getHighLevelChatChannelLabel(channel?: string | null) {
   return normalized ? GHL_CHAT_CHANNEL_LABELS[normalized] : ''
 }
 
+function getAvatarChannelClass(contact?: (Partial<Contact> & { lastMessageChannel?: string | null }) | null) {
+  const channel = normalizeGhlChatChannelValue(contact?.lastMessageChannel)
+  if (channel === 'instagram') return styles.avatarInstagram
+  if (channel === 'messenger') return styles.avatarMessenger
+  if (channel === 'whatsapp_api' || channel === 'sms_qr') return styles.avatarWhatsapp
+  return ''
+}
+
 function getMessageTransportBadge(transport?: string | null) {
   const raw = String(transport || '').trim().toLowerCase()
   if (raw === 'qr') return 'QR'
@@ -3598,9 +3606,10 @@ export const PhoneChat: React.FC = () => {
 
   const renderAvatar = (contact: Contact) => {
     const photoUrl = getContactProfilePhoto(contact as ChatContact)
+    const avatarChannelClass = getAvatarChannelClass(contact as ChatContact)
 
     return (
-      <span className={styles.avatar}>
+      <span className={`${styles.avatar} ${avatarChannelClass}`}>
         {photoUrl ? (
           <img src={photoUrl} alt="" loading="lazy" referrerPolicy="no-referrer" />
         ) : getContactInitials(contact)}
