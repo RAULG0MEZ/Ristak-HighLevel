@@ -3,27 +3,12 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Lock, User, UserPlus } from 'lucide-react'
 import { Button } from '@/components/common'
 import { useAuth } from '@/contexts/AuthContext'
+import { getLoginPathForRoute, getPostAuthRedirectPath, type RedirectLocation } from '@/utils/phoneAccess'
 import styles from './Login.module.css'
-
-type RedirectLocation = {
-  pathname?: string
-  search?: string
-  hash?: string
-}
 
 type SetupLocationState = {
   from?: RedirectLocation
 } | null
-
-function getRedirectPath(from?: RedirectLocation) {
-  const pathname = from?.pathname
-
-  if (!pathname?.startsWith('/') || pathname === '/login' || pathname === '/setup') {
-    return '/dashboard'
-  }
-
-  return `${pathname}${from?.search || ''}${from?.hash || ''}`
-}
 
 export const Setup: React.FC = () => {
   const [username, setUsername] = useState('')
@@ -35,13 +20,14 @@ export const Setup: React.FC = () => {
   const { isAuthenticated, setupAccount, needsSetup } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
-  const redirectPath = getRedirectPath((location.state as SetupLocationState)?.from)
+  const fromLocation = (location.state as SetupLocationState)?.from
+  const redirectPath = getPostAuthRedirectPath(fromLocation)
 
   // Si el setup ya terminó, mandar a la pantalla correcta sin pedir los datos otra vez.
   if (!needsSetup) {
     return isAuthenticated
       ? <Navigate to={redirectPath} replace />
-      : <Navigate to="/login" replace state={location.state} />
+      : <Navigate to={getLoginPathForRoute(fromLocation?.pathname || location.pathname)} replace state={location.state} />
   }
 
   const handleSubmit = async (e: FormEvent) => {

@@ -31,12 +31,17 @@ import { ToastContainer } from '@/components/common/Toast'
 import { Modal } from '@/components/common/Modal'
 import { StorageAlert } from '@/components/common/StorageAlert'
 import { MobileNotificationOnboarding } from '@/components/phone/MobileNotificationOnboarding'
-
-type RedirectLocation = {
-  pathname?: string
-  search?: string
-  hash?: string
-}
+import {
+  DESKTOP_LOGIN_PATH,
+  PHONE_APP_HOME_PATH,
+  PHONE_APP_LOGIN_PATH,
+  SETUP_PATH,
+  getLoginPathForRoute,
+  getPostAuthRedirectPath,
+  isCellphoneDevice,
+  isPhoneAppPath,
+  type RedirectLocation
+} from '@/utils/phoneAccess'
 
 type RouteLocationState = {
   from?: RedirectLocation
@@ -152,20 +157,6 @@ const PhoneThemeRouteEffects: React.FC = () => {
   return null
 }
 
-function getRedirectPath(from?: RedirectLocation) {
-  const pathname = from?.pathname
-
-  if (!pathname?.startsWith('/') || pathname === '/login' || pathname === '/phone/login' || pathname === '/setup') {
-    return '/dashboard'
-  }
-
-  return `${pathname}${from?.search || ''}${from?.hash || ''}`
-}
-
-function getLoginPath(pathname?: string) {
-  return pathname?.startsWith('/phone') ? '/phone/login' : '/login'
-}
-
 function isStandalonePhoneShell() {
   if (typeof window === 'undefined') return false
 
@@ -190,7 +181,7 @@ function getStandalonePhoneRedirect(pathname: string) {
 const SetupRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, needsSetup, isLoading } = useAuth()
   const location = useLocation()
-  const redirectPath = getRedirectPath((location.state as RouteLocationState)?.from)
+  const redirectPath = getPostAuthRedirectPath((location.state as RouteLocationState)?.from)
 
   if (isLoading) {
     return (
@@ -210,7 +201,7 @@ const SetupRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   if (!needsSetup) {
     return isAuthenticated
       ? <Navigate to={redirectPath} replace />
-      : <Navigate to={getLoginPath(location.pathname)} state={{ from: location }} replace />
+      : <Navigate to={getLoginPathForRoute(location.pathname)} state={{ from: location }} replace />
   }
 
   return <>{children}</>
@@ -238,11 +229,11 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   }
 
   if (needsSetup) {
-    return <Navigate to="/setup" state={{ from: location }} replace />
+    return <Navigate to={SETUP_PATH} state={{ from: location }} replace />
   }
 
   if (!isAuthenticated) {
-    return <Navigate to={getLoginPath(location.pathname)} state={{ from: location }} replace />
+    return <Navigate to={getLoginPathForRoute(location.pathname)} state={{ from: location }} replace />
   }
 
   return <>{children}</>
@@ -251,7 +242,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 const PhoneRouteEffects: React.FC = () => {
   const location = useLocation()
   const navigate = useNavigate()
-  const isPhoneRoute = location.pathname.startsWith('/phone')
+  const isPhoneRoute = isPhoneAppPath(location.pathname)
 
   React.useEffect(() => {
     const redirectPath = getStandalonePhoneRedirect(location.pathname)
@@ -332,6 +323,43 @@ const PhoneRouteEffects: React.FC = () => {
   return isPhoneRoute ? <PhoneThemeRouteEffects /> : null
 }
 
+function useCellphoneAccessState() {
+  const [isCellphone, setIsCellphone] = React.useState(isCellphoneDevice)
+
+  React.useEffect(() => {
+    const updateAccessState = () => setIsCellphone(isCellphoneDevice())
+    const pointerMedia = window.matchMedia?.('(pointer: coarse)')
+
+    updateAccessState()
+    pointerMedia?.addEventListener('change', updateAccessState)
+    window.addEventListener('resize', updateAccessState)
+    window.addEventListener('orientationchange', updateAccessState)
+    window.visualViewport?.addEventListener('resize', updateAccessState)
+
+    return () => {
+      pointerMedia?.removeEventListener('change', updateAccessState)
+      window.removeEventListener('resize', updateAccessState)
+      window.removeEventListener('orientationchange', updateAccessState)
+      window.visualViewport?.removeEventListener('resize', updateAccessState)
+    }
+  }, [])
+
+  return isCellphone
+}
+
+const CellphoneRouteGate: React.FC = () => {
+  const location = useLocation()
+  const isCellphone = useCellphoneAccessState()
+
+  if (!isCellphone || isPhoneAppPath(location.pathname) || location.pathname === SETUP_PATH) {
+    return null
+  }
+
+  const redirectPath = location.pathname === DESKTOP_LOGIN_PATH ? PHONE_APP_LOGIN_PATH : PHONE_APP_HOME_PATH
+
+  return <Navigate to={redirectPath} replace state={{ from: location }} />
+}
+
 const AppWithNotifications: React.FC = () => {
   const { toasts, removeToast, modal, closeModal } = useNotification()
 
@@ -339,6 +367,7 @@ const AppWithNotifications: React.FC = () => {
     <>
       <BrowserRouter>
         <PhoneRouteEffects />
+        <CellphoneRouteGate />
         <Routes>
           <Route path="/setup" element={<SetupRoute><Setup /></SetupRoute>} />
           <Route path="/login" element={<Login />} />

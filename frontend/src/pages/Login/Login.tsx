@@ -3,27 +3,12 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Lock, User, Terminal, Copy, Check } from 'lucide-react'
 import { Button, Icon } from '@/components/common'
 import { useAuth } from '@/contexts/AuthContext'
+import { PHONE_APP_HOME_PATH, getPostAuthRedirectPath, type RedirectLocation } from '@/utils/phoneAccess'
 import styles from './Login.module.css'
-
-type RedirectLocation = {
-  pathname?: string
-  search?: string
-  hash?: string
-}
 
 type LoginLocationState = {
   from?: RedirectLocation
 } | null
-
-function getRedirectPath(from?: RedirectLocation, fallbackPath = '/dashboard') {
-  const pathname = from?.pathname
-
-  if (!pathname?.startsWith('/') || pathname === '/login' || pathname === '/phone/login' || pathname === '/setup') {
-    return fallbackPath
-  }
-
-  return `${pathname}${from?.search || ''}${from?.hash || ''}`
-}
 
 export const Login: React.FC = () => {
   const [username, setUsername] = useState('')
@@ -38,7 +23,7 @@ export const Login: React.FC = () => {
   const navigate = useNavigate()
   const fromLocation = (location.state as LoginLocationState)?.from
   const isPhoneLogin = location.pathname.startsWith('/phone')
-  const redirectPath = getRedirectPath(fromLocation, isPhoneLogin ? '/phone/chat' : '/dashboard')
+  const redirectPath = getPostAuthRedirectPath(fromLocation, isPhoneLogin ? PHONE_APP_HOME_PATH : '/dashboard')
 
   if (isAuthLoading) {
     return (
