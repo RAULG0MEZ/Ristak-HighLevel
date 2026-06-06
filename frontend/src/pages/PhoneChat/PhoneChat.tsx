@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowRight,
   Bell,
@@ -72,7 +72,7 @@ import { whatsappApiService, type WhatsAppApiStatus, type WhatsAppApiTemplate } 
 import type { Contact } from '@/types'
 import { getContactStageBadge } from '@/utils/contactStageBadge'
 import { formatCurrency, formatUrlParameter } from '@/utils/format'
-import { getPortableDeviceMode, type PortableDeviceMode } from '@/utils/phoneAccess'
+import { getPortableDeviceMode, writeTabletViewPreference, type PortableDeviceMode } from '@/utils/phoneAccess'
 import { normalizeTrafficSource } from '@/utils/trafficSourceNormalizer'
 import styles from './PhoneChat.module.css'
 
@@ -113,7 +113,7 @@ type PaymentMode = 'single' | 'partial'
 type ActionSheet = 'attachments' | 'templates' | 'payment' | 'appointment' | 'settings' | 'newChat' | 'chatMore' | null
 type ChatFilter = 'all' | 'unread' | 'appointments' | 'customers' | 'leads'
 type TemplateMode = 'choice' | 'send' | 'create'
-type ChatSettingsSection = 'appearance' | 'templates' | 'numbers' | 'notifications' | 'agent' | 'chats' | null
+type ChatSettingsSection = 'appearance' | 'templates' | 'numbers' | 'notifications' | 'agent' | 'chats' | 'display' | null
 type WhatsAppNumberMode = 'merged' | 'separated'
 type ConversationSortMode = 'recent' | 'unread'
 type PhotoPickDestination = 'chat' | 'cameraShare'
@@ -1493,6 +1493,7 @@ function createDefaultAppointmentRange(timeZone: string) {
 
 export const PhoneChat: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
   const requestedContactParam = searchParams.get('contact')
   const requestedActionParam = searchParams.get('action')
   const { locationId, accessToken } = useAuth()
@@ -1627,6 +1628,12 @@ export const PhoneChat: React.FC = () => {
   const chatSwipeGestureRef = useRef<ChatSwipeGesture | null>(null)
   const handledRouteAppointmentRef = useRef<string | null>(null)
   const closeSheetNow = useCallback(() => setSheet(null), [])
+  const handleSwitchToWebView = useCallback(() => {
+    writeTabletViewPreference('web')
+    setActiveSettingsSection(null)
+    setSheet(null)
+    navigate('/dashboard', { replace: true })
+  }, [navigate])
   const actionSheetDismiss = useBottomSheetDismiss({
     isOpen: Boolean(sheet),
     onClose: closeSheetNow
@@ -5790,6 +5797,27 @@ export const PhoneChat: React.FC = () => {
       ))
     }
 
+    if (activeSettingsSection === 'display') {
+      return renderSettingsDetail('Vista de tableta', (
+        <section className={styles.settingsSection}>
+          <div className={styles.settingsSectionTitle}>
+            <Globe2 size={18} />
+            <span>
+              <strong>Vista web</strong>
+              <small>Regresa al panel completo de Ristak en esta tablet.</small>
+            </span>
+          </div>
+          <button type="button" className={styles.settingsRefreshButton} onClick={handleSwitchToWebView}>
+            <Globe2 size={16} />
+            Cambiar a vista web
+          </button>
+          <p className={styles.settingsHint}>
+            Esta opción sólo aparece en tablet. En celular se mantiene la vista móvil.
+          </p>
+        </section>
+      ))
+    }
+
     const settingsItems: Array<{
       id: Exclude<ChatSettingsSection, null>
       title: string
@@ -5797,6 +5825,15 @@ export const PhoneChat: React.FC = () => {
       meta?: string
       Icon: React.ElementType
     }> = [
+      ...(deviceMode === 'tablet'
+        ? [{
+            id: 'display' as const,
+            title: 'Vista de tableta',
+            description: 'Regresar al panel completo.',
+            meta: 'Tableta',
+            Icon: Globe2
+          }]
+        : []),
       { id: 'numbers', title: 'Números de WhatsApp', description: 'Cómo se muestran tus líneas.', meta: whatsappNumberMode === 'merged' ? 'Juntos' : 'Separados', Icon: Smartphone },
       { id: 'templates', title: 'Plantillas', description: 'Crear y revisar estados de Meta.', meta: `${templates.length} guardadas`, Icon: FileText },
       { id: 'agent', title: 'Agente IA', description: 'Chat fijo y sugerencias.', meta: aiAgentChatEnabled ? 'Activo' : 'Apagado', Icon: Bot },

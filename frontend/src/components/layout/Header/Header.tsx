@@ -1,12 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, Bell, ChevronDown, CircleAlert, Info, LogOut, Moon, Palette, RefreshCw, Settings as SettingsIcon, Sun, Check } from 'lucide-react'
+import { AlertTriangle, Bell, Check, ChevronDown, CircleAlert, Info, LogOut, Moon, Palette, RefreshCw, Settings as SettingsIcon, Smartphone, Sun } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { useTheme } from '@/contexts/ThemeContext'
 import { useAuth } from '@/contexts/AuthContext'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useScrollDirection } from '@/hooks/useScrollDirection'
 import { GlobalSearch } from '@/components/common/GlobalSearch/GlobalSearch'
 import { notificationsService, type SystemNotification } from '@/services/notificationsService'
+import {
+  PHONE_APP_HOME_PATH,
+  TABLET_VIEW_PREFERENCE_EVENT,
+  isTabletDevice,
+  writeTabletViewPreference
+} from '@/utils/phoneAccess'
 
 interface HeaderProps {
   onLogout: () => void
@@ -99,8 +105,10 @@ function getNotificationTone(severity?: string) {
 export const Header: React.FC<HeaderProps> = ({ onLogout, sitesEditorActive = false }) => {
   const { theme, toggleTheme, themeSource, resetToSystem, isSystemTheme, designPreset, setDesignPreset, designPresets } = useTheme()
   const { user } = useAuth()
+  const navigate = useNavigate()
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
+  const [showTabletSwitcher, setShowTabletSwitcher] = useState(false)
   const [notifications, setNotifications] = useState<SystemNotification[]>([])
   const [notificationsLoading, setNotificationsLoading] = useState(false)
   const [notificationsError, setNotificationsError] = useState('')
@@ -172,6 +180,33 @@ export const Header: React.FC<HeaderProps> = ({ onLogout, sitesEditorActive = fa
     if (showNotifications) markNotificationsSeen()
   }, [showNotifications, notifications])
 
+  useEffect(() => {
+    const pointerMedia = window.matchMedia?.('(pointer: coarse)')
+    const updateTabletSwitcher = () => setShowTabletSwitcher(isTabletDevice())
+
+    updateTabletSwitcher()
+    pointerMedia?.addEventListener('change', updateTabletSwitcher)
+    window.addEventListener('resize', updateTabletSwitcher)
+    window.addEventListener('orientationchange', updateTabletSwitcher)
+    window.visualViewport?.addEventListener('resize', updateTabletSwitcher)
+    window.addEventListener(TABLET_VIEW_PREFERENCE_EVENT, updateTabletSwitcher)
+
+    return () => {
+      pointerMedia?.removeEventListener('change', updateTabletSwitcher)
+      window.removeEventListener('resize', updateTabletSwitcher)
+      window.removeEventListener('orientationchange', updateTabletSwitcher)
+      window.visualViewport?.removeEventListener('resize', updateTabletSwitcher)
+      window.removeEventListener(TABLET_VIEW_PREFERENCE_EVENT, updateTabletSwitcher)
+    }
+  }, [])
+
+  const handleSwitchToTabletMode = () => {
+    writeTabletViewPreference('tablet')
+    setShowNotifications(false)
+    setShowUserMenu(false)
+    navigate(PHONE_APP_HOME_PATH)
+  }
+
   const initials = getInitials(user?.name, user?.email)
   const unreadNotifications = notifications.filter((notification) => !seenNotificationIds.has(notification.id))
   const unreadCount = unreadNotifications.length
@@ -197,6 +232,16 @@ export const Header: React.FC<HeaderProps> = ({ onLogout, sitesEditorActive = fa
       </div>
 
       <div className="flex items-center gap-1 sm:gap-3">
+        {showTabletSwitcher && (
+          <button
+            type="button"
+            className="hidden sm:inline-flex min-h-[38px] items-center gap-2 whitespace-nowrap rounded-xl border border-[rgba(var(--color-primary-rgb),0.24)] bg-[rgba(var(--color-primary-rgb),0.08)] px-3 text-xs font-bold text-[var(--color-primary)] transition-colors hover:bg-[rgba(var(--color-primary-rgb),0.14)]"
+            onClick={handleSwitchToTabletMode}
+          >
+            <Smartphone className="h-4 w-4" />
+            Cambiar a modo tableta
+          </button>
+        )}
         <div className="relative" ref={notificationsRef}>
           <button
             type="button"

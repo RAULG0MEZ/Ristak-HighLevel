@@ -36,11 +36,16 @@ import {
   PHONE_APP_HOME_PATH,
   PHONE_APP_LOGIN_PATH,
   SETUP_PATH,
+  TABLET_VIEW_PREFERENCE_EVENT,
   getLoginPathForRoute,
   getPostAuthRedirectPath,
   isCellphoneDevice,
   isPhoneAppPath,
-  type RedirectLocation
+  isTabletDevice,
+  readTabletViewPreference,
+  writeTabletViewPreference,
+  type RedirectLocation,
+  type TabletViewPreference
 } from '@/utils/phoneAccess'
 
 type RouteLocationState = {
@@ -375,6 +380,158 @@ const CellphoneRouteGate: React.FC = () => {
   return <Navigate to={redirectPath} replace state={{ from: location }} />
 }
 
+function useTabletViewPreferenceState() {
+  const [isTablet, setIsTablet] = React.useState(isTabletDevice)
+  const [preference, setPreference] = React.useState<TabletViewPreference | null>(readTabletViewPreference)
+
+  React.useEffect(() => {
+    const pointerMedia = window.matchMedia?.('(pointer: coarse)')
+    const updateDeviceState = () => {
+      setIsTablet(isTabletDevice())
+      setPreference(readTabletViewPreference())
+    }
+    const updatePreference = () => setPreference(readTabletViewPreference())
+
+    updateDeviceState()
+    pointerMedia?.addEventListener('change', updateDeviceState)
+    window.addEventListener('resize', updateDeviceState)
+    window.addEventListener('orientationchange', updateDeviceState)
+    window.visualViewport?.addEventListener('resize', updateDeviceState)
+    window.addEventListener('storage', updatePreference)
+    window.addEventListener(TABLET_VIEW_PREFERENCE_EVENT, updatePreference)
+
+    return () => {
+      pointerMedia?.removeEventListener('change', updateDeviceState)
+      window.removeEventListener('resize', updateDeviceState)
+      window.removeEventListener('orientationchange', updateDeviceState)
+      window.visualViewport?.removeEventListener('resize', updateDeviceState)
+      window.removeEventListener('storage', updatePreference)
+      window.removeEventListener(TABLET_VIEW_PREFERENCE_EVENT, updatePreference)
+    }
+  }, [])
+
+  return { isTablet, preference, setPreference }
+}
+
+const TabletViewPreferenceGate: React.FC = () => {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const { isTablet, preference, setPreference } = useTabletViewPreferenceState()
+  const isPhoneRoute = isPhoneAppPath(location.pathname)
+  const canApplyTabletPreference = isTablet && location.pathname !== SETUP_PATH
+
+  React.useEffect(() => {
+    if (!canApplyTabletPreference || !preference) return
+
+    if (preference === 'tablet' && !isPhoneRoute) {
+      navigate(PHONE_APP_HOME_PATH, { replace: true })
+      return
+    }
+
+    if (preference === 'web' && isPhoneRoute) {
+      navigate('/dashboard', { replace: true })
+    }
+  }, [canApplyTabletPreference, isPhoneRoute, location.pathname, navigate, preference])
+
+  const chooseTabletView = (nextPreference: TabletViewPreference) => {
+    writeTabletViewPreference(nextPreference)
+    setPreference(nextPreference)
+
+    if (nextPreference === 'tablet' && !isPhoneRoute) {
+      navigate(PHONE_APP_HOME_PATH, { replace: true })
+      return
+    }
+
+    if (nextPreference === 'web' && isPhoneRoute) {
+      navigate('/dashboard', { replace: true })
+    }
+  }
+
+  if (!canApplyTabletPreference || preference) return null
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="tablet-view-choice-title"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 10000,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '24px',
+        background: 'rgba(15, 23, 42, 0.42)',
+        backdropFilter: 'blur(16px)'
+      }}
+    >
+      <div
+        style={{
+          width: 'min(100%, 480px)',
+          borderRadius: '18px',
+          border: '1px solid rgba(148, 163, 184, 0.22)',
+          background: 'var(--color-background-primary)',
+          color: 'var(--color-text-primary)',
+          boxShadow: '0 24px 70px rgba(15, 23, 42, 0.24)',
+          padding: '24px'
+        }}
+      >
+        <p
+          style={{
+            margin: '0 0 8px',
+            color: 'var(--color-text-tertiary)',
+            fontSize: '12px',
+            fontWeight: 800,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase'
+          }}
+        >
+          Tablet detectada
+        </p>
+        <h1 id="tablet-view-choice-title" style={{ margin: 0, fontSize: '24px', lineHeight: 1.15 }}>
+          ¿Cómo quieres usar Ristak en esta tablet?
+        </h1>
+        <p style={{ margin: '12px 0 22px', color: 'var(--color-text-secondary)', lineHeight: 1.55 }}>
+          Puedes abrir el panel completo como computadora o usar la vista de tableta para chats.
+        </p>
+        <div style={{ display: 'grid', gap: '10px' }}>
+          <button
+            type="button"
+            onClick={() => chooseTabletView('web')}
+            style={{
+              minHeight: '48px',
+              borderRadius: '12px',
+              border: '1px solid rgba(148, 163, 184, 0.24)',
+              background: 'transparent',
+              color: 'var(--color-text-primary)',
+              fontWeight: 800,
+              cursor: 'pointer'
+            }}
+          >
+            Versión para computadora
+          </button>
+          <button
+            type="button"
+            onClick={() => chooseTabletView('tablet')}
+            style={{
+              minHeight: '48px',
+              borderRadius: '12px',
+              border: '1px solid rgba(var(--color-primary-rgb), 0.35)',
+              background: 'rgb(var(--color-primary-rgb))',
+              color: '#fff',
+              fontWeight: 800,
+              cursor: 'pointer'
+            }}
+          >
+            Versión para tableta
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const AppWithNotifications: React.FC = () => {
   const { toasts, removeToast, modal, closeModal } = useNotification()
 
@@ -383,6 +540,7 @@ const AppWithNotifications: React.FC = () => {
       <BrowserRouter>
         <PhoneRouteEffects />
         <CellphoneRouteGate />
+        <TabletViewPreferenceGate />
         <Routes>
           <Route path="/setup" element={<SetupRoute><Setup /></SetupRoute>} />
           <Route path="/login" element={<Login />} />

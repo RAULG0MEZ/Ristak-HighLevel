@@ -8,8 +8,11 @@ export const PHONE_APP_HOME_PATH = '/phone/chat'
 export const PHONE_APP_LOGIN_PATH = '/phone/login'
 export const DESKTOP_LOGIN_PATH = '/login'
 export const SETUP_PATH = '/setup'
+export const TABLET_VIEW_PREFERENCE_KEY = 'ristak.tabletViewPreference.v1'
+export const TABLET_VIEW_PREFERENCE_EVENT = 'ristak:tablet-view-preference'
 
 export type PortableDeviceMode = 'phone' | 'tablet' | 'desktop'
+export type TabletViewPreference = 'web' | 'tablet'
 
 const PHONE_USER_AGENT_PATTERN = /Android.+Mobile|iPhone|iPod|IEMobile|Opera Mini|Windows Phone|Mobile/i
 const TABLET_USER_AGENT_PATTERN = /iPad|Tablet|PlayBook|Silk|Kindle|Android(?!.*Mobile)/i
@@ -110,4 +113,31 @@ export function getPortableDeviceMode(): PortableDeviceMode {
   if (isCellphoneDevice()) return 'phone'
   if (isTabletDevice()) return 'tablet'
   return 'desktop'
+}
+
+function isTabletViewPreference(value: string | null): value is TabletViewPreference {
+  return value === 'web' || value === 'tablet'
+}
+
+export function readTabletViewPreference(): TabletViewPreference | null {
+  if (typeof window === 'undefined') return null
+
+  try {
+    const preference = window.localStorage.getItem(TABLET_VIEW_PREFERENCE_KEY)
+    return isTabletViewPreference(preference) ? preference : null
+  } catch {
+    return null
+  }
+}
+
+export function writeTabletViewPreference(preference: TabletViewPreference) {
+  if (typeof window === 'undefined') return
+
+  try {
+    window.localStorage.setItem(TABLET_VIEW_PREFERENCE_KEY, preference)
+  } catch {
+    // Storage can be blocked in private or embedded contexts.
+  }
+
+  window.dispatchEvent(new CustomEvent(TABLET_VIEW_PREFERENCE_EVENT, { detail: preference }))
 }
