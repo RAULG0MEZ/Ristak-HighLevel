@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import {
   PHONE_NAV_ROUTE_INDEX_KEY,
   PHONE_NAV_TRANSITION_DIRECTION_KEY,
@@ -9,6 +9,8 @@ import {
   type PhoneSection
 } from './phoneNavigation'
 import styles from './PhonePageTransition.module.css'
+
+const PAGE_TRANSITION_SETTLE_MS = 360
 
 interface PhonePageTransitionProps extends React.HTMLAttributes<HTMLDivElement> {
   active: PhoneSection
@@ -32,9 +34,9 @@ function readInitialDirection(activeIndex: number): PhoneRouteDirection {
   return getPhoneRouteDirection(previousIndex, activeIndex)
 }
 
-export const PhonePageTransition: React.FC<PhonePageTransitionProps> = ({ active, className, children, ...rest }) => {
+export const PhonePageTransition: React.FC<PhonePageTransitionProps> = ({ active, className, children, onAnimationEnd, ...rest }) => {
   const activeIndex = getPhoneSectionIndex(active)
-  const [direction] = useState(() => readInitialDirection(activeIndex))
+  const [direction, setDirection] = useState(() => readInitialDirection(activeIndex))
   const directionClass = direction === 'forward'
     ? styles.forward
     : direction === 'back'
@@ -44,10 +46,28 @@ export const PhonePageTransition: React.FC<PhonePageTransitionProps> = ({ active
   useEffect(() => {
     if (typeof window === 'undefined') return
     window.sessionStorage.setItem(PHONE_NAV_ROUTE_INDEX_KEY, String(activeIndex))
-  }, [activeIndex])
+    if (direction === 'none') return
+
+    const settleTimer = window.setTimeout(() => {
+      setDirection('none')
+    }, PAGE_TRANSITION_SETTLE_MS)
+
+    return () => window.clearTimeout(settleTimer)
+  }, [activeIndex, direction])
+
+  const handleAnimationEnd = useCallback((event: React.AnimationEvent<HTMLDivElement>) => {
+    onAnimationEnd?.(event)
+    if (event.currentTarget !== event.target) return
+    setDirection('none')
+  }, [onAnimationEnd])
 
   return (
-    <div {...rest} className={`${className || ''} ${styles.transitionFrame} ${directionClass}`} data-phone-page-transition={direction}>
+    <div
+      {...rest}
+      className={`${className || ''} ${styles.transitionFrame} ${directionClass}`}
+      data-phone-page-transition={direction}
+      onAnimationEnd={handleAnimationEnd}
+    >
       {children}
     </div>
   )
