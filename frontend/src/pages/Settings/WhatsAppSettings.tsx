@@ -428,6 +428,17 @@ export const WhatsAppSettings: React.FC = () => {
 
     return (
       <div className={styles.connectionGrid}>
+        <section className={`${styles.templateSummaryCard} ${styles.balanceSummaryCard}`}>
+          <div className={styles.summaryHeader}>
+            <span className={styles.summaryIcon}><Wallet size={20} /></span>
+            <div>
+              <span className={styles.sectionEyebrow}>Saldo</span>
+              <h3>{balance ? formatCurrency(balance.amount, balance.currency) : 'Pendiente'}</h3>
+            </div>
+          </div>
+          <p className={styles.emptyText}>Si el saldo baja demasiado, YCloud puede detener los envios.</p>
+        </section>
+
         <section className={styles.connectionCard}>
           <div className={styles.connectionHeader}>
             <div className={styles.connectionIdentity}>
@@ -587,17 +598,6 @@ export const WhatsAppSettings: React.FC = () => {
           )}
 
           {apiStatus.lastError && <p className={styles.errorText}>{apiStatus.lastError}</p>}
-        </section>
-
-        <section className={`${styles.templateSummaryCard} ${styles.balanceSummaryCard}`}>
-          <div className={styles.summaryHeader}>
-            <span className={styles.summaryIcon}><Wallet size={20} /></span>
-            <div>
-              <span className={styles.sectionEyebrow}>Saldo</span>
-              <h3>{balance ? formatCurrency(balance.amount, balance.currency) : 'Pendiente'}</h3>
-            </div>
-          </div>
-          <p className={styles.emptyText}>Si el saldo baja demasiado, YCloud puede detener los envios.</p>
         </section>
       </div>
     )
