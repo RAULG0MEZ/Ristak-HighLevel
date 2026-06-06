@@ -72,13 +72,11 @@ import { whatsappApiService, type WhatsAppApiStatus, type WhatsAppApiTemplate } 
 import type { Contact } from '@/types'
 import { getContactStageBadge } from '@/utils/contactStageBadge'
 import { formatCurrency, formatUrlParameter } from '@/utils/format'
+import { getPortableDeviceMode, type PortableDeviceMode } from '@/utils/phoneAccess'
 import { normalizeTrafficSource } from '@/utils/trafficSourceNormalizer'
 import styles from './PhoneChat.module.css'
 
-const PORTABLE_WIDTH_QUERY = '(max-width: 1366px)'
-const PHONE_WIDTH_QUERY = '(max-width: 900px)'
 const COARSE_POINTER_QUERY = '(pointer: coarse)'
-const MOBILE_OR_TABLET_USER_AGENT_PATTERN = /Android|iPad|iPhone|iPod|IEMobile|Opera Mini|Mobile|Tablet/i
 const SCROLLABLE_CHAT_SELECTOR = '[data-phone-chat-scrollable="true"], [data-phone-scrollable="true"]'
 const CHAT_READ_STATE_KEY = 'ristak_phone_chat_read_state_v1'
 const CHAT_ARCHIVED_STATE_KEY = 'ristak_phone_chat_archived_state_v1'
@@ -109,6 +107,7 @@ const VOICE_MIME_CANDIDATES = [
 const VOICE_WAVE_BASE_PATTERN = [8, 16, 24, 31, 18, 13, 23, 30, 21, 9, 6, 15, 27, 33, 20, 12, 25, 30]
 
 type AccessState = 'checking' | 'allowed' | 'blocked'
+type PhoneChatDeviceMode = PortableDeviceMode | 'checking'
 type ComposerStatus = 'idle' | 'sending'
 type PaymentMode = 'single' | 'partial'
 type ActionSheet = 'attachments' | 'templates' | 'payment' | 'appointment' | 'settings' | 'newChat' | 'chatMore' | null
@@ -274,22 +273,14 @@ interface ContactInfoAppointment {
   startTime: string
 }
 
-function hasPortableAccess() {
-  if (typeof window === 'undefined') return false
-
-  const portableViewport = window.matchMedia(PORTABLE_WIDTH_QUERY).matches
-  const phoneViewport = window.matchMedia(PHONE_WIDTH_QUERY).matches
-  const coarsePointer = window.matchMedia(COARSE_POINTER_QUERY).matches
-  const userAgent = navigator.userAgent || ''
-  const mobileOrTabletUserAgent = MOBILE_OR_TABLET_USER_AGENT_PATTERN.test(userAgent)
-  const iPadDesktopMode = /Macintosh/i.test(userAgent) && navigator.maxTouchPoints > 1
-
-  return phoneViewport || (portableViewport && (mobileOrTabletUserAgent || iPadDesktopMode || coarsePointer))
+function getPhoneChatDeviceMode(): PhoneChatDeviceMode {
+  if (typeof window === 'undefined') return 'checking'
+  return getPortableDeviceMode()
 }
 
-function getAccessState(): AccessState {
-  if (typeof window === 'undefined') return 'checking'
-  return hasPortableAccess() ? 'allowed' : 'blocked'
+function getAccessState(deviceMode = getPhoneChatDeviceMode()): AccessState {
+  if (deviceMode === 'checking') return 'checking'
+  return deviceMode === 'desktop' ? 'blocked' : 'allowed'
 }
 
 function readChatReadState(): ChatReadState {
@@ -1533,7 +1524,8 @@ export const PhoneChat: React.FC = () => {
     deviceLabel: phoneThemeDeviceLabel
   } = usePhoneTheme({ active: false })
 
-  const [accessState, setAccessState] = useState<AccessState>(getAccessState)
+  const [deviceMode, setDeviceMode] = useState<PhoneChatDeviceMode>(getPhoneChatDeviceMode)
+  const [accessState, setAccessState] = useState<AccessState>(() => getAccessState(deviceMode))
   const [chats, setChats] = useState<ChatContact[]>([])
   const [chatsLoading, setChatsLoading] = useState(true)
   const [chatsRefreshing, setChatsRefreshing] = useState(false)
@@ -2326,22 +2318,20 @@ export const PhoneChat: React.FC = () => {
   }, [highLevelConnected, paymentMode])
 
   useEffect(() => {
-    const updateAccess = () => setAccessState(getAccessState())
-    const portableMedia = window.matchMedia(PORTABLE_WIDTH_QUERY)
-    const phoneMedia = window.matchMedia(PHONE_WIDTH_QUERY)
+    const updateAccess = () => {
+      const nextDeviceMode = getPhoneChatDeviceMode()
+      setDeviceMode(nextDeviceMode)
+      setAccessState(getAccessState(nextDeviceMode))
+    }
     const pointerMedia = window.matchMedia(COARSE_POINTER_QUERY)
 
     updateAccess()
-    portableMedia.addEventListener('change', updateAccess)
-    phoneMedia.addEventListener('change', updateAccess)
     pointerMedia.addEventListener('change', updateAccess)
     window.addEventListener('resize', updateAccess)
     window.addEventListener('orientationchange', updateAccess)
     window.visualViewport?.addEventListener('resize', updateAccess)
 
     return () => {
-      portableMedia.removeEventListener('change', updateAccess)
-      phoneMedia.removeEventListener('change', updateAccess)
       pointerMedia.removeEventListener('change', updateAccess)
       window.removeEventListener('resize', updateAccess)
       window.removeEventListener('orientationchange', updateAccess)
@@ -6148,8 +6138,15 @@ export const PhoneChat: React.FC = () => {
       className={`${styles.phoneChatPage} ${conversationVisible ? styles.conversationOpen : ''}`}
       data-phone-chat-tone={resolvedPhoneChatTheme}
       data-phone-chat-mode={safeChatThemePreference}
+      data-phone-chat-device={deviceMode}
       aria-label="Chat móvil de Ristak"
     >
+      <div className={styles.portraitLock} role="status" aria-live="polite">
+        <Smartphone size={34} />
+        <strong>Usa el celular en vertical</strong>
+        <span>Ristak Chat está bloqueado en modo vertical para que la pantalla no se desacomode.</span>
+      </div>
+
       <PhonePageTransition
         active="chat"
         className={styles.phoneFrame}
@@ -6300,99 +6297,101 @@ export const PhoneChat: React.FC = () => {
             <div ref={messagesEndRef} />
           </div>
 
-          <div className={styles.composerShell} data-phone-chat-composer="true">
-            {aiAgentConversationOpen ? (
-              renderAIAgentComposer()
-            ) : (
-              <>
-                {renderSenderBar()}
-                {!composerBlockedByReplyWindow && renderAISuggestionBar()}
-                {!composerBlockedByReplyWindow && renderDraftAttachments()}
-                {composerBlockedByReplyWindow ? (
-                  <div className={styles.replyWindowBlockedComposer}>
-                    <span className={styles.replyWindowBlockedIcon}>
-                      <Clock size={18} />
-                    </span>
-                    <span className={styles.replyWindowBlockedText}>
-                      <strong>Fuera de 24 horas</strong>
-                      <small>Manda una plantilla para volver a escribirle.</small>
-                    </span>
-                    <button type="button" onClick={handleOpenTemplatesSheet} aria-label="Enviar plantilla">
-                      <FileText size={20} />
-                    </button>
-                  </div>
-                ) : (
-                  <div className={`${styles.composer} ${hasComposerContent ? styles.composerHasContent : ''} ${voicePanelActive ? styles.composerVoiceMode : ''}`}>
-                    {voicePanelActive ? (
-                      renderVoiceComposerPanel()
-                    ) : (
-                      <>
-                        <button type="button" className={styles.composerPlus} onClick={() => setSheet('attachments')} aria-label="Abrir adjuntos">
-                          <Plus size={34} />
-                        </button>
-                        <div className={styles.messageInputWrap}>
-                          <div
-                            ref={composerInputRef}
-                            className={styles.composerInput}
-                            role="textbox"
-                            aria-multiline="true"
-                            aria-label="Mensaje"
-                            aria-disabled={composerInputDisabled}
-                            data-placeholder={composerPlaceholder}
-                            contentEditable={!composerInputDisabled}
-                            suppressContentEditableWarning
-                            spellCheck
-                            autoCorrect="on"
-                            autoCapitalize="sentences"
-                            onInput={(event) => syncComposerText(event.currentTarget)}
-                            onPaste={handleComposerPaste}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter' && !event.shiftKey) {
-                                event.preventDefault()
-                                handleSendMessage()
-                              }
-                            }}
-                          />
-                        </div>
-                        <div className={styles.composerTrailingActions}>
-                          <button
-                            type="button"
-                            className={`${styles.composerIconButton} ${styles.composerCameraButton}`}
-                            onClick={() => handlePickPhoto('camera')}
-                            disabled={hasComposerContent}
-                            tabIndex={hasComposerContent ? -1 : undefined}
-                            aria-hidden={hasComposerContent}
-                            aria-label="Cámara"
-                          >
-                            <Camera size={29} />
+          {(aiAgentConversationOpen || activeContact) && (
+            <div className={styles.composerShell} data-phone-chat-composer="true">
+              {aiAgentConversationOpen ? (
+                renderAIAgentComposer()
+              ) : (
+                <>
+                  {renderSenderBar()}
+                  {!composerBlockedByReplyWindow && renderAISuggestionBar()}
+                  {!composerBlockedByReplyWindow && renderDraftAttachments()}
+                  {composerBlockedByReplyWindow ? (
+                    <div className={styles.replyWindowBlockedComposer}>
+                      <span className={styles.replyWindowBlockedIcon}>
+                        <Clock size={18} />
+                      </span>
+                      <span className={styles.replyWindowBlockedText}>
+                        <strong>Fuera de 24 horas</strong>
+                        <small>Manda una plantilla para volver a escribirle.</small>
+                      </span>
+                      <button type="button" onClick={handleOpenTemplatesSheet} aria-label="Enviar plantilla">
+                        <FileText size={20} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className={`${styles.composer} ${hasComposerContent ? styles.composerHasContent : ''} ${voicePanelActive ? styles.composerVoiceMode : ''}`}>
+                      {voicePanelActive ? (
+                        renderVoiceComposerPanel()
+                      ) : (
+                        <>
+                          <button type="button" className={styles.composerPlus} onClick={() => setSheet('attachments')} aria-label="Abrir adjuntos">
+                            <Plus size={34} />
                           </button>
-                          <button
-                            type="button"
-                            className={`${styles.composerIconButton} ${canSendMessage ? styles.composerSendButton : ''} ${voiceRecording ? styles.composerMicRecording : ''}`}
-                            onPointerDown={handleVoiceButtonPointerDown}
-                            onPointerUp={finishVoiceButtonPress}
-                            onPointerCancel={handleVoiceButtonPointerCancel}
-                            onClick={handleVoiceOrSendButtonClick}
-                            disabled={composerStatus === 'sending'}
-                            aria-label={voiceRecording ? 'Detener grabación' : canSendMessage ? 'Enviar mensaje' : 'Grabar mensaje de voz'}
-                          >
-                            {composerStatus === 'sending' ? <Loader2 size={23} className={styles.spinIcon} /> : canSendMessage ? <ArrowRight size={23} /> : <Mic size={30} />}
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
+                          <div className={styles.messageInputWrap}>
+                            <div
+                              ref={composerInputRef}
+                              className={styles.composerInput}
+                              role="textbox"
+                              aria-multiline="true"
+                              aria-label="Mensaje"
+                              aria-disabled={composerInputDisabled}
+                              data-placeholder={composerPlaceholder}
+                              contentEditable={!composerInputDisabled}
+                              suppressContentEditableWarning
+                              spellCheck
+                              autoCorrect="on"
+                              autoCapitalize="sentences"
+                              onInput={(event) => syncComposerText(event.currentTarget)}
+                              onPaste={handleComposerPaste}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter' && !event.shiftKey) {
+                                  event.preventDefault()
+                                  handleSendMessage()
+                                }
+                              }}
+                            />
+                          </div>
+                          <div className={styles.composerTrailingActions}>
+                            <button
+                              type="button"
+                              className={`${styles.composerIconButton} ${styles.composerCameraButton}`}
+                              onClick={() => handlePickPhoto('camera')}
+                              disabled={hasComposerContent}
+                              tabIndex={hasComposerContent ? -1 : undefined}
+                              aria-hidden={hasComposerContent}
+                              aria-label="Cámara"
+                            >
+                              <Camera size={29} />
+                            </button>
+                            <button
+                              type="button"
+                              className={`${styles.composerIconButton} ${canSendMessage ? styles.composerSendButton : ''} ${voiceRecording ? styles.composerMicRecording : ''}`}
+                              onPointerDown={handleVoiceButtonPointerDown}
+                              onPointerUp={finishVoiceButtonPress}
+                              onPointerCancel={handleVoiceButtonPointerCancel}
+                              onClick={handleVoiceOrSendButtonClick}
+                              disabled={composerStatus === 'sending'}
+                              aria-label={voiceRecording ? 'Detener grabación' : canSendMessage ? 'Enviar mensaje' : 'Grabar mensaje de voz'}
+                            >
+                              {composerStatus === 'sending' ? <Loader2 size={23} className={styles.spinIcon} /> : canSendMessage ? <ArrowRight size={23} /> : <Mic size={30} />}
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </section>
 
         {renderContactInfoScreen()}
         {renderCameraShareScreen()}
       </PhonePageTransition>
 
-      {!conversationOpen && !cameraSharePhoto && <PhoneEcosystemNav active="chat" badges={{ chat: unreadTotal }} />}
+      {deviceMode !== 'tablet' && !conversationOpen && !cameraSharePhoto && <PhoneEcosystemNav active="chat" badges={{ chat: unreadTotal }} />}
 
       <input
         ref={cameraInputRef}

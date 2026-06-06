@@ -255,6 +255,21 @@ const PhoneRouteEffects: React.FC = () => {
   }, [location.pathname])
 
   React.useEffect(() => {
+    if (!isPhoneRoute || !isCellphoneDevice()) return
+
+    const orientation = window.screen?.orientation as (ScreenOrientation & {
+      lock?: (orientation: string) => Promise<void>
+      unlock?: () => void
+    }) | undefined
+
+    void orientation?.lock?.('portrait').catch(() => undefined)
+
+    return () => {
+      orientation?.unlock?.()
+    }
+  }, [isPhoneRoute])
+
+  React.useEffect(() => {
     const body = document.body
     const root = document.documentElement
     const previousBodyPhoneApp = body.dataset.phoneApp

@@ -9,11 +9,14 @@ export const PHONE_APP_LOGIN_PATH = '/phone/login'
 export const DESKTOP_LOGIN_PATH = '/login'
 export const SETUP_PATH = '/setup'
 
+export type PortableDeviceMode = 'phone' | 'tablet' | 'desktop'
+
 const PHONE_USER_AGENT_PATTERN = /Android.+Mobile|iPhone|iPod|IEMobile|Opera Mini|Windows Phone|Mobile/i
 const TABLET_USER_AGENT_PATTERN = /iPad|Tablet|PlayBook|Silk|Kindle|Android(?!.*Mobile)/i
 const COARSE_POINTER_QUERY = '(pointer: coarse)'
 const PHONE_SHORT_SIDE_LIMIT = 768
 const IPAD_DESKTOP_SHORT_SIDE_LIMIT = 700
+const TABLET_SHORT_SIDE_LIMIT = 1366
 
 export function isPhoneAppPath(pathname = '') {
   return pathname === '/phone' || pathname.startsWith('/phone/')
@@ -81,4 +84,30 @@ export function isCellphoneDevice() {
     : viewportShortSide > 0 && viewportShortSide < PHONE_SHORT_SIDE_LIMIT
 
   return phoneSizedScreen && (mobileUserAgent || hasTouch)
+}
+
+export function isTabletDevice() {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false
+  if (isCellphoneDevice()) return false
+
+  const userAgent = navigator.userAgent || ''
+  const maxTouchPoints = navigator.maxTouchPoints || 0
+  const screenShortSide = getScreenShortSide()
+  const viewportShortSide = getViewportShortSide()
+  const coarsePointer = window.matchMedia?.(COARSE_POINTER_QUERY).matches ?? false
+  const iPadDesktopMode = /Macintosh/i.test(userAgent)
+    && maxTouchPoints > 1
+    && screenShortSide >= IPAD_DESKTOP_SHORT_SIDE_LIMIT
+  const tabletUserAgent = TABLET_USER_AGENT_PATTERN.test(userAgent) || iPadDesktopMode
+  const tabletSizedScreen = screenShortSide >= IPAD_DESKTOP_SHORT_SIDE_LIMIT
+    && screenShortSide <= TABLET_SHORT_SIDE_LIMIT
+    && viewportShortSide >= IPAD_DESKTOP_SHORT_SIDE_LIMIT
+
+  return tabletUserAgent || (tabletSizedScreen && maxTouchPoints > 0 && coarsePointer)
+}
+
+export function getPortableDeviceMode(): PortableDeviceMode {
+  if (isCellphoneDevice()) return 'phone'
+  if (isTabletDevice()) return 'tablet'
+  return 'desktop'
 }
