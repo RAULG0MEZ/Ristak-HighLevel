@@ -107,6 +107,7 @@ type ChatSettingsSection = 'appearance' | 'templates' | 'numbers' | 'notificatio
 type WhatsAppNumberMode = 'merged' | 'separated'
 type ConversationSortMode = 'recent' | 'unread'
 type PhotoPickDestination = 'chat' | 'cameraShare'
+type MessageDayScrollDirection = 'idle' | 'up' | 'down'
 
 interface ChatSwipeGesture {
   contactId: string
@@ -502,6 +503,66 @@ function formatMessageDate(value?: string | null) {
     day: '2-digit',
     month: 'short'
   }).format(date).replace('.', '')
+}
+
+function capitalizeFirst(value: string) {
+  if (!value) return value
+  return value.charAt(0).toUpperCase() + value.slice(1)
+}
+
+function getConversationDayKey(value?: string | null, timeZone?: string) {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const safeTimeZone = timeZone || undefined
+
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: safeTimeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  })
+  const parts = formatter.formatToParts(date)
+  const year = parts.find((part) => part.type === 'year')?.value
+  const month = parts.find((part) => part.type === 'month')?.value
+  const day = parts.find((part) => part.type === 'day')?.value
+
+  return year && month && day ? `${year}-${month}-${day}` : ''
+}
+
+function getConversationDayLabel(value?: string | null, timeZone?: string) {
+  const dayKey = getConversationDayKey(value, timeZone)
+  if (!dayKey) return ''
+
+  const todayKey = getConversationDayKey(new Date().toISOString(), timeZone)
+  const yesterday = new Date()
+  yesterday.setDate(yesterday.getDate() - 1)
+  const yesterdayKey = getConversationDayKey(yesterday.toISOString(), timeZone)
+
+  if (dayKey === todayKey) return 'Hoy'
+  if (dayKey === yesterdayKey) return 'Ayer'
+
+  const date = new Date(value || '')
+  const safeTimeZone = timeZone || undefined
+  const [year, month, day] = dayKey.split('-').map(Number)
+  const [todayYear, todayMonth, todayDay] = todayKey.split('-').map(Number)
+  const dayDistance = Math.round((Date.UTC(todayYear, todayMonth - 1, todayDay) - Date.UTC(year, month - 1, day)) / 86_400_000)
+
+  if (dayDistance > 1 && dayDistance < 7) {
+    return capitalizeFirst(new Intl.DateTimeFormat('es-MX', { weekday: 'long', timeZone: safeTimeZone }).format(date))
+  }
+
+  const formatOptions: Intl.DateTimeFormatOptions = {
+    day: 'numeric',
+    month: 'short',
+    timeZone: safeTimeZone
+  }
+
+  if (year !== todayYear) {
+    formatOptions.year = 'numeric'
+  }
+
+  return new Intl.DateTimeFormat('es-MX', formatOptions).format(date).replace('.', '')
 }
 
 function getSupportedVoiceMimeType() {
@@ -1419,6 +1480,8 @@ export const PhoneChat: React.FC = () => {
   const [contactJourney, setContactJourney] = useState<JourneyEvent[]>([])
   const [messagesLoading, setMessagesLoading] = useState(false)
   const [messagesRefreshing, setMessagesRefreshing] = useState(false)
+  const [activeMessageDayKey, setActiveMessageDayKey] = useState('')
+  const [messageDayScrollDirection, setMessageDayScrollDirection] = useState<MessageDayScrollDirection>('idle')
   const [messageText, setMessageText] = useState('')
   const [draftAttachments, setDraftAttachments] = useState<MobilePhotoAttachment[]>([])
   const [cameraSharePhoto, setCameraSharePhoto] = useState<MobilePhotoAttachment | null>(null)
@@ -1462,6 +1525,7 @@ export const PhoneChat: React.FC = () => {
   const [aiSending, setAiSending] = useState(false)
   const [aiSuggestionLoading, setAiSuggestionLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
+  const messagesPaneRef = useRef<HTMLDivElement | null>(null)
   const composerInputRef = useRef<HTMLDivElement | null>(null)
   const cameraShareCaptionRef = useRef<HTMLDivElement | null>(null)
   const cameraInputRef = useRef<HTMLInputElement | null>(null)
@@ -1474,6 +1538,11 @@ export const PhoneChat: React.FC = () => {
   const voiceTimerRef = useRef<number | null>(null)
   const voiceCancelRef = useRef(false)
   const chatSwipeGestureRef = useRef<ChatSwipeGesture | null>(null)
+  const messageDayScrollRef = useRef({
+    frame: 0,
+    idleTimer: 0,
+    lastTop: 0
+  })
   const closeSheetNow = useCallback(() => setSheet(null), [])
   const actionSheetDismiss = useBottomSheetDismiss({
     isOpen: Boolean(sheet),
@@ -1493,11 +1562,99 @@ export const PhoneChat: React.FC = () => {
   }, [])
 
   const aiAgentConversationOpen = activeContactId === AI_AGENT_CHAT_ID
+
+  const updateVisibleMessageDay = useCallback(() => {
+    const pane = messagesPaneRef.current
+    if (!pane || aiAgentConversationOpen) return
+
+    const scrollTop = pane.scrollTop
+    const lastTop = messageDayScrollRef.current.lastTop
+    const nextDirection: MessageDayScrollDirection = scrollTop > lastTop + 2
+      ? 'down'
+      : scrollTop < lastTop - 2 ? 'up' : messageDayScrollDirection
+    messageDayScrollRef.current.lastTop = scrollTop
+
+    if (nextDirection !== messageDayScrollDirection) {
+      setMessageDayScrollDirection(nextDirection)
+    }
+
+    if (messageDayScrollRef.current.idleTimer) {
+      window.clearTimeout(messageDayScrollRef.current.idleTimer)
+    }
+    messageDayScrollRef.current.idleTimer = window.setTimeout(() => {
+      setMessageDayScrollDirection('idle')
+    }, 520)
+
+    const paneRect = pane.getBoundingClientRect()
+    const dayMarkers = Array.from(pane.querySelectorAll<HTMLElement>('[data-message-day-key]'))
+    if (dayMarkers.length === 0) {
+      setActiveMessageDayKey('')
+      return
+    }
+
+    const threshold = paneRect.top + 58
+    let nextDayKey = dayMarkers[0].dataset.messageDayKey || ''
+    for (const marker of dayMarkers) {
+      if (marker.getBoundingClientRect().top <= threshold) {
+        nextDayKey = marker.dataset.messageDayKey || nextDayKey
+      } else {
+        break
+      }
+    }
+
+    setActiveMessageDayKey((current) => current === nextDayKey ? current : nextDayKey)
+  }, [aiAgentConversationOpen, messageDayScrollDirection])
+
+  const handleMessagesPaneScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
+    if (event.currentTarget.scrollLeft !== 0) {
+      event.currentTarget.scrollLeft = 0
+    }
+
+    if (messageDayScrollRef.current.frame) return
+    messageDayScrollRef.current.frame = window.requestAnimationFrame(() => {
+      messageDayScrollRef.current.frame = 0
+      updateVisibleMessageDay()
+    })
+  }, [updateVisibleMessageDay])
+
   const activeContact = useMemo(
     () => aiAgentConversationOpen ? null : chats.find((contact) => contact.id === activeContactId) || null,
     [activeContactId, aiAgentConversationOpen, chats]
   )
   const conversationVisible = conversationOpen && (aiAgentConversationOpen || Boolean(activeContact))
+  const conversationMessageItems = useMemo(() => {
+    const items: Array<
+      | { type: 'day'; key: string; label: string }
+      | { type: 'message'; key: string; message: ChatMessage }
+    > = []
+    let previousDayKey = ''
+
+    messages.forEach((message) => {
+      const dayKey = getConversationDayKey(message.date, timezone)
+      if (dayKey && dayKey !== previousDayKey) {
+        items.push({
+          type: 'day',
+          key: dayKey,
+          label: getConversationDayLabel(message.date, timezone)
+        })
+        previousDayKey = dayKey
+      }
+      items.push({
+        type: 'message',
+        key: message.id,
+        message
+      })
+    })
+
+    return items
+  }, [messages, timezone])
+  const activeMessageDayLabel = useMemo(() => {
+    if (aiAgentConversationOpen || messages.length === 0) return ''
+    const dayItem = conversationMessageItems.find((item) => item.type === 'day' && item.key === activeMessageDayKey)
+    if (dayItem?.type === 'day') return dayItem.label
+    const fallbackDay = [...conversationMessageItems].reverse().find((item) => item.type === 'day')
+    return fallbackDay?.type === 'day' ? fallbackDay.label : ''
+  }, [activeMessageDayKey, aiAgentConversationOpen, conversationMessageItems, messages.length])
   const contactInfoData = contactInfoContact || activeContact
   const chatActionContact = useMemo(
     () => chats.find((contact) => contact.id === chatActionContactId) || activeContact || null,
@@ -2406,7 +2563,33 @@ export const PhoneChat: React.FC = () => {
   }, [messages, messagesLoading, conversationOpen])
 
   useEffect(() => {
+    if (!conversationVisible || aiAgentConversationOpen || messagesLoading || messages.length === 0) {
+      setActiveMessageDayKey('')
+      setMessageDayScrollDirection('idle')
+      return undefined
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      const pane = messagesPaneRef.current
+      if (pane) {
+        messageDayScrollRef.current.lastTop = pane.scrollTop
+      }
+      updateVisibleMessageDay()
+    })
+
+    return () => window.cancelAnimationFrame(frame)
+  }, [aiAgentConversationOpen, conversationVisible, messages.length, messagesLoading, updateVisibleMessageDay])
+
+  useEffect(() => {
     return () => {
+      if (messageDayScrollRef.current.frame) {
+        window.cancelAnimationFrame(messageDayScrollRef.current.frame)
+        messageDayScrollRef.current.frame = 0
+      }
+      if (messageDayScrollRef.current.idleTimer) {
+        window.clearTimeout(messageDayScrollRef.current.idleTimer)
+        messageDayScrollRef.current.idleTimer = 0
+      }
       if (voiceTimerRef.current) {
         window.clearInterval(voiceTimerRef.current)
         voiceTimerRef.current = null
@@ -4112,7 +4295,22 @@ export const PhoneChat: React.FC = () => {
             Mostrando lo guardado, actualizando conversación
           </div>
         )}
-        {messages.map((message) => {
+        {conversationMessageItems.map((item) => {
+          if (item.type === 'day') {
+            const active = item.key === activeMessageDayKey
+            const moving = messageDayScrollDirection !== 'idle'
+            return (
+              <div
+                key={`day-${item.key}`}
+                className={`${styles.messageDaySeparator} ${active ? styles.messageDaySeparatorActive : ''} ${active && moving ? styles.messageDaySeparatorMoving : ''}`}
+                data-message-day-key={item.key}
+              >
+                <span>{item.label}</span>
+              </div>
+            )
+          }
+
+          const message = item.message
           const failed = message.direction === 'outbound' && isMessageFailed(message)
           const pending = message.direction === 'outbound' && !failed && isMessagePending(message)
           const receiptStatus = getMessageReceiptStatus(message)
@@ -4121,7 +4319,7 @@ export const PhoneChat: React.FC = () => {
 
           return (
             <div
-              key={message.id}
+              key={item.key}
               className={`${styles.messageRow} ${styles[`messageRow_${message.direction}`]}`}
             >
               <div className={styles.messageBubble}>
@@ -5478,7 +5676,21 @@ export const PhoneChat: React.FC = () => {
             )}
           </header>
 
-          <div className={styles.messagesPane} data-phone-chat-scrollable="true">
+          <div
+            ref={messagesPaneRef}
+            className={styles.messagesPane}
+            data-phone-chat-scrollable="true"
+            onScroll={handleMessagesPaneScroll}
+          >
+            {activeMessageDayLabel && !aiAgentConversationOpen && (
+              <div
+                className={styles.messageDayFloating}
+                data-scroll-direction={messageDayScrollDirection}
+                aria-hidden="true"
+              >
+                <span>{activeMessageDayLabel}</span>
+              </div>
+            )}
             {renderMessages()}
             <div ref={messagesEndRef} />
           </div>
