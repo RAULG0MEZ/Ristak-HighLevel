@@ -119,6 +119,12 @@ export interface SiteTheme {
   brandAvatar?: string
   followers?: string
   brandVerified?: boolean
+  seoKeywords?: string
+  seoAuthor?: string
+  seoImage?: string
+  seoMetaTags?: string
+  seoCanonicalLinks?: string
+  seoLanguage?: string
   submitText?: string
   finalMessages?: {
     success?: string

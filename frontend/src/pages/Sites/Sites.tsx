@@ -20,6 +20,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
+  AlertTriangle,
   AlignCenter,
   AlignLeft,
   AlignRight,
@@ -57,6 +58,7 @@ import {
   Plus,
   RefreshCw,
   Save,
+  Search,
   Send,
   Settings2,
   Sparkles,
@@ -1992,6 +1994,7 @@ export const Sites: React.FC = () => {
   const [loadingLeads, setLoadingLeads] = useState(false)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [editorFocusMode, setEditorFocusMode] = useState(false)
+  const [seoModalOpen, setSeoModalOpen] = useState(false)
   const selectedSiteRef = useRef<PublicSite | null>(null)
   const paletteDragPayloadRef = useRef<PaletteDragPayload | null>(null)
   const undoStackRef = useRef<EditorHistoryEntry[]>([])
@@ -2061,6 +2064,7 @@ export const Sites: React.FC = () => {
 
   useEffect(() => {
     setEditorFocusMode(false)
+    setSeoModalOpen(false)
   }, [editorSite?.id])
 
   useEffect(() => {
@@ -3578,17 +3582,10 @@ export const Sites: React.FC = () => {
                   </div>
                 </div>
                 <div className={styles.editorToolbarSub}>
-                  <label className={styles.publicTitleToolbarField}>
-                    <span>Nombre publico</span>
-                    <input
-                      value={getPublicTitleEditorValue(editorSite)}
-                      aria-label="Nombre público"
-                      placeholder="Nombre público"
-                      onChange={(event) => updateSelectedSite({ title: event.target.value })}
-                      onBlur={() => handleSaveSite(undefined, { silent: true })}
-                    />
-                    <Pencil size={12} />
-                  </label>
+                  <button type="button" className={styles.seoToolbarButton} onClick={() => setSeoModalOpen(true)}>
+                    <Search size={15} />
+                    <span>SEO & optimizacion de busqueda</span>
+                  </button>
                   {hasEditablePages(editorSite) && (
                     <div className={styles.editorInlinePages}>
                       <FunnelPagesPanel
@@ -3623,6 +3620,16 @@ export const Sites: React.FC = () => {
             </div>
           )}
         </header>
+
+        {editorSite && seoModalOpen && (
+          <SeoOptimizationModal
+            site={editorSite}
+            onClose={() => setSeoModalOpen(false)}
+            onPatchSite={updateSelectedSite}
+            onPatchTheme={patchSiteTheme}
+            onSave={() => handleSaveSite(undefined, { silent: true })}
+          />
+        )}
 
         <div className={`${styles.sitesShell} ${isFocusedSitesMode ? styles.sitesShellFocused : ''}`}>
           {!isFocusedSitesMode && (
@@ -5285,6 +5292,238 @@ const hideNativeDragPreview = (dataTransfer: DataTransfer) => {
   window.setTimeout(() => ghost.remove(), 0)
 }
 
+const seoLanguageOptions = ['es - Spanish', 'en - English', 'pt - Portuguese', 'fr - French']
+
+const SeoCheckLine: React.FC<{ ok: boolean; children: React.ReactNode }> = ({ ok, children }) => (
+  <p className={`${styles.seoCheckLine} ${ok ? styles.seoCheckOk : styles.seoCheckWarning}`}>
+    {ok ? <Check size={14} /> : <AlertTriangle size={14} />}
+    <span>{children}</span>
+  </p>
+)
+
+const SeoSectionTitle: React.FC<{
+  icon: React.ReactNode
+  title: string
+  issues?: number
+}> = ({ icon, title, issues = 0 }) => (
+  <div className={styles.seoSectionTitle}>
+    <span className={styles.seoSectionIcon}>{icon}</span>
+    <strong>{title}</strong>
+    {issues > 0 && <span className={styles.seoIssueBadge}>{issues}</span>}
+  </div>
+)
+
+const SeoOptimizationModal: React.FC<{
+  site: PublicSite
+  onClose: () => void
+  onPatchSite: (patch: Partial<PublicSite>) => void
+  onPatchTheme: (patch: Partial<SiteTheme>) => void
+  onSave: () => void
+}> = ({ site, onClose, onPatchSite, onPatchTheme, onSave }) => {
+  const theme = site.theme || {}
+  const publicTitle = getPublicTitleEditorValue(site)
+  const description = site.description || ''
+  const keywords = theme.seoKeywords || ''
+  const author = theme.seoAuthor || ''
+  const seoImage = theme.seoImage || ''
+  const metaTags = theme.seoMetaTags || ''
+  const canonicalLinks = theme.seoCanonicalLinks || ''
+  const language = theme.seoLanguage || 'es - Spanish'
+  const contentIssues = [
+    !publicTitle.trim(),
+    publicTitle.trim().length > 70,
+    !description.trim(),
+    description.trim().length > 155
+  ].filter(Boolean).length
+  const linkIssues = [!metaTags.trim(), !canonicalLinks.trim()].filter(Boolean).length
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
+  const patchThemeText = (key: keyof SiteTheme, value: string) => {
+    onPatchTheme({ [key]: value } as Partial<SiteTheme>)
+  }
+
+  const addThemeLine = (key: keyof SiteTheme, currentValue: string, line: string) => {
+    const next = currentValue.trim() ? `${currentValue.trim()}\n${line}` : line
+    patchThemeText(key, next)
+  }
+
+  const saveAndClose = () => {
+    onSave()
+    onClose()
+  }
+
+  return (
+    <div className={styles.seoModalBackdrop} role="presentation" onMouseDown={onClose}>
+      <section
+        className={styles.seoModal}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="seo-modal-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className={styles.seoModalHeader}>
+          <div>
+            <span>Configuracion del sitio</span>
+            <h2 id="seo-modal-title">SEO & optimizacion de busqueda</h2>
+          </div>
+          <button type="button" className={styles.seoModalClose} onClick={onClose} aria-label="Cerrar SEO">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className={styles.seoModalBody}>
+          <section className={styles.seoSection}>
+            <SeoSectionTitle icon={<FileText size={17} />} title="Contenido" issues={contentIssues} />
+            <label className={styles.seoField}>
+              <span>Titulo publico</span>
+              <input
+                value={publicTitle}
+                placeholder="Nombre que vera la gente"
+                onChange={(event) => onPatchSite({ title: event.target.value })}
+                onBlur={onSave}
+              />
+            </label>
+            <SeoCheckLine ok={Boolean(publicTitle.trim())}>La pagina tiene un titulo.</SeoCheckLine>
+            <SeoCheckLine ok={publicTitle.trim().length <= 70}>El titulo tiene menos de 70 caracteres.</SeoCheckLine>
+            <label className={styles.seoField}>
+              <span>Descripcion</span>
+              <textarea
+                value={description}
+                placeholder="Explica en una frase clara que ofrece esta pagina."
+                rows={4}
+                onChange={(event) => onPatchSite({ description: event.target.value })}
+                onBlur={onSave}
+              />
+            </label>
+            <SeoCheckLine ok={Boolean(description.trim())}>La pagina tiene una descripcion para buscadores.</SeoCheckLine>
+            <SeoCheckLine ok={description.trim().length <= 155}>La descripcion tiene menos de 155 caracteres.</SeoCheckLine>
+          </section>
+
+          <section className={styles.seoSection}>
+            <SeoSectionTitle icon={<Search size={17} />} title="Palabras clave" />
+            <label className={styles.seoField}>
+              <span>Palabras clave</span>
+              <textarea
+                value={keywords}
+                placeholder="servicio, ciudad, problema que resuelves"
+                rows={3}
+                onChange={(event) => patchThemeText('seoKeywords', event.target.value)}
+                onBlur={onSave}
+              />
+            </label>
+          </section>
+
+          <section className={styles.seoSection}>
+            <SeoSectionTitle icon={<Pencil size={17} />} title="Autor" issues={author.trim() ? 0 : 1} />
+            <label className={styles.seoField}>
+              <span>Autor</span>
+              <input
+                value={author}
+                placeholder="Nombre de la persona o negocio"
+                onChange={(event) => patchThemeText('seoAuthor', event.target.value)}
+                onBlur={onSave}
+              />
+            </label>
+            <SeoCheckLine ok={Boolean(author.trim())}>La pagina tiene nombre de autor.</SeoCheckLine>
+          </section>
+
+          <section className={styles.seoSection}>
+            <SeoSectionTitle icon={<Image size={17} />} title="Imagenes" />
+            <label className={styles.seoField}>
+              <span>Imagen principal para compartir</span>
+              <div className={styles.seoUrlField}>
+                <input
+                  value={seoImage}
+                  placeholder="https://..."
+                  onChange={(event) => patchThemeText('seoImage', event.target.value)}
+                  onBlur={onSave}
+                />
+                <Image size={17} />
+              </div>
+            </label>
+          </section>
+
+          <section className={styles.seoSection}>
+            <SeoSectionTitle icon={<Link2 size={17} />} title="Enlaces y etiquetas" issues={linkIssues} />
+            <div className={styles.seoFieldHeader}>
+              <span>Metaetiquetas personalizadas</span>
+              <button
+                type="button"
+                onClick={() => addThemeLine('seoMetaTags', metaTags, '<meta name="robots" content="index, follow">')}
+              >
+                <Plus size={15} />
+                Anadir
+              </button>
+            </div>
+            <textarea
+              className={styles.seoTextarea}
+              value={metaTags}
+              placeholder='<meta name="robots" content="index, follow">'
+              rows={3}
+              onChange={(event) => patchThemeText('seoMetaTags', event.target.value)}
+              onBlur={onSave}
+            />
+            <SeoCheckLine ok={Boolean(metaTags.trim())}>La pagina tiene metaetiquetas personalizadas.</SeoCheckLine>
+            <div className={styles.seoFieldHeader}>
+              <span>Enlaces canonicos</span>
+              <button
+                type="button"
+                onClick={() => addThemeLine('seoCanonicalLinks', canonicalLinks, getRoutePath(site))}
+              >
+                <Plus size={15} />
+                Anadir
+              </button>
+            </div>
+            <textarea
+              className={styles.seoTextarea}
+              value={canonicalLinks}
+              placeholder="/embudo-01"
+              rows={3}
+              onChange={(event) => patchThemeText('seoCanonicalLinks', event.target.value)}
+              onBlur={onSave}
+            />
+            <SeoCheckLine ok={canonicalLinks.split('\n').filter(line => line.trim()).length < 300}>
+              La pagina tiene menos de 300 enlaces salientes.
+            </SeoCheckLine>
+          </section>
+
+          <section className={styles.seoSection}>
+            <SeoSectionTitle icon={<Globe2 size={17} />} title="Idioma" />
+            <label className={styles.seoField}>
+              <span>Idioma</span>
+              <select
+                value={language}
+                onChange={(event) => patchThemeText('seoLanguage', event.target.value)}
+                onBlur={onSave}
+              >
+                {seoLanguageOptions.map(option => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+            </label>
+          </section>
+        </div>
+
+        <div className={styles.seoModalActions}>
+          <Button variant="secondary" size="lg" onClick={onClose}>Cancelar</Button>
+          <Button size="lg" onClick={saveAndClose}>
+            <Save size={15} />
+            Guardar SEO
+          </Button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
 interface FunnelPagesPanelProps {
   pages: SitePage[]
   activePageId: string
@@ -5310,6 +5549,8 @@ const FunnelPagesPanel: React.FC<FunnelPagesPanelProps> = ({
   onReorderPages,
   onRenamePage
 }) => {
+  const [renamingPageId, setRenamingPageId] = useState<string | null>(null)
+
   return (
     <aside className={styles.pagesPanel}>
       <div className={styles.pageTabsLead} aria-hidden="true">
@@ -5353,12 +5594,17 @@ const FunnelPagesPanel: React.FC<FunnelPagesPanelProps> = ({
                 }}
               >
                 <GripVertical size={14} />
-                <EditablePageTitle
-                  pageId={page.id}
-                  title={page.title || `Pagina ${index + 1}`}
-                  onFocus={() => onSelectPage(page.id)}
-                  onRename={onRenamePage}
-                />
+                {renamingPageId === page.id ? (
+                  <EditablePageTitle
+                    pageId={page.id}
+                    title={page.title || `Pagina ${index + 1}`}
+                    onFocus={() => onSelectPage(page.id)}
+                    onRename={onRenamePage}
+                    onDone={() => setRenamingPageId(null)}
+                  />
+                ) : (
+                  <span className={styles.pageTitleText}>{page.title || `Pagina ${index + 1}`}</span>
+                )}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
@@ -5373,6 +5619,15 @@ const FunnelPagesPanel: React.FC<FunnelPagesPanelProps> = ({
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" sideOffset={6} className={styles.pageMenu}>
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        onSelectPage(page.id)
+                        window.setTimeout(() => setRenamingPageId(page.id), 80)
+                      }}
+                    >
+                      <Pencil size={14} />
+                      Cambiar nombre
+                    </DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => onDuplicatePage(page.id)}>
                       <Copy size={14} />
                       Duplicar pagina
@@ -5410,19 +5665,37 @@ const EditablePageTitle: React.FC<{
   title: string
   onFocus: () => void
   onRename: (pageId: string, title: string) => void
-}> = ({ pageId, title, onFocus, onRename }) => {
+  onDone: () => void
+}> = ({ pageId, title, onFocus, onRename, onDone }) => {
   const [draft, setDraft] = useState(title)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const cancelRenameRef = useRef(false)
 
   useEffect(() => setDraft(title), [title])
+  useEffect(() => {
+    window.setTimeout(() => {
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    }, 0)
+  }, [])
 
   const commit = () => {
+    if (cancelRenameRef.current) {
+      cancelRenameRef.current = false
+      setDraft(title)
+      onDone()
+      return
+    }
+
     const next = draft.trim() || title
     setDraft(next)
     if (next !== title) onRename(pageId, next)
+    onDone()
   }
 
   return (
     <input
+      ref={inputRef}
       className={styles.pageTitleInput}
       value={draft}
       draggable={false}
@@ -5433,12 +5706,13 @@ const EditablePageTitle: React.FC<{
       onChange={(event) => setDraft(event.target.value)}
       onBlur={commit}
       onKeyDown={(event) => {
+        event.stopPropagation()
         if (event.key === 'Enter') {
           event.preventDefault()
           event.currentTarget.blur()
         }
         if (event.key === 'Escape') {
-          setDraft(title)
+          cancelRenameRef.current = true
           event.currentTarget.blur()
         }
       }}
