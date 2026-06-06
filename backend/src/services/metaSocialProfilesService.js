@@ -59,7 +59,7 @@ async function fetchMetaConnection(initialUrl) {
   return records
 }
 
-function normalizeFacebookProfile(page = {}, updatedAt) {
+function normalizeFacebookProfile(page = {}, updatedAt, configuredPageId = '') {
   const sourceId = cleanString(page.id)
   const followerCount = normalizeCount(page.followers_count ?? page.fan_count)
   if (!sourceId || !cleanString(page.name)) return null
@@ -76,11 +76,12 @@ function normalizeFacebookProfile(page = {}, updatedAt) {
     avatarUrl: page.picture?.data?.url || page.picture?.url || '',
     followers: followerCount,
     followersLabel: formatFollowers(followerCount),
+    isConfiguredPage: Boolean(configuredPageId && sourceId === configuredPageId),
     updatedAt
   }
 }
 
-function normalizeInstagramProfile(page = {}, updatedAt) {
+function normalizeInstagramProfile(page = {}, updatedAt, configuredPageId = '') {
   const instagram = page.instagram_business_account || page.connected_instagram_account
   const sourceId = cleanString(instagram?.id)
   if (!sourceId) return null
@@ -101,6 +102,7 @@ function normalizeInstagramProfile(page = {}, updatedAt) {
     avatarUrl: instagram.profile_picture_url || '',
     followers: followerCount,
     followersLabel: formatFollowers(followerCount),
+    isConfiguredPage: Boolean(configuredPageId && cleanString(page.id) === configuredPageId),
     updatedAt
   }
 }
@@ -110,7 +112,7 @@ function dedupeProfiles(profiles = []) {
   for (const profile of profiles) {
     if (profile?.id) byId.set(profile.id, profile)
   }
-  return [...byId.values()]
+  return [...byId.values()].sort((a, b) => Number(Boolean(b.isConfiguredPage)) - Number(Boolean(a.isConfiguredPage)))
 }
 
 function extractThreadsFollowers(insights = {}) {
@@ -172,6 +174,39 @@ async function fetchThreadsProfile(accessToken, updatedAt) {
   }
 }
 
+async function fetchMetaPages(accessToken, params) {
+  let pages = []
+  try {
+    pages = await fetchMetaConnection(`${API_URLS.META_GRAPH}/me/accounts?${params.toString()}`)
+  } catch (error) {
+    logger.warn(`Meta no devolvio todos los campos de perfil social: ${error.message}`)
+    throw error
+  }
+
+  if (pages.length > 0) return pages
+
+  try {
+    const debugUrl = `${API_URLS.META_TOKEN_DEBUG}?input_token=${encodeURIComponent(accessToken)}&access_token=${encodeURIComponent(accessToken)}`
+    const debugResponse = await fetch(debugUrl)
+    const debugData = await debugResponse.json()
+    const userId = debugData?.data?.user_id
+    if (!userId) return pages
+
+    for (const edge of ['accounts', 'assigned_pages']) {
+      try {
+        const fallbackPages = await fetchMetaConnection(`${API_URLS.META_GRAPH}/${encodeURIComponent(userId)}/${edge}?${params.toString()}`)
+        pages.push(...fallbackPages)
+      } catch (fallbackError) {
+        logger.warn(`No se pudieron leer paginas Meta desde ${edge}: ${fallbackError.message}`)
+      }
+    }
+  } catch (error) {
+    logger.warn(`No se pudo revisar rutas alternas de paginas Meta: ${error.message}`)
+  }
+
+  return pages
+}
+
 export async function getConnectedMetaSocialProfiles(options = {}) {
   const config = options.accessToken
     ? { access_token: cleanString(options.accessToken) }
@@ -181,6 +216,7 @@ export async function getConnectedMetaSocialProfiles(options = {}) {
     })
 
   const accessToken = cleanString(config?.access_token)
+  const configuredPageId = cleanString(config?.page_id)
   const updatedAt = new Date().toISOString()
 
   if (!accessToken) {
@@ -213,12 +249,12 @@ export async function getConnectedMetaSocialProfiles(options = {}) {
 
   let pages = []
   try {
-    pages = await fetchMetaConnection(`${API_URLS.META_GRAPH}/me/accounts?${params.toString()}`)
+    pages = await fetchMetaPages(accessToken, params)
   } catch (error) {
     logger.warn(`Meta no devolvio todos los campos de perfil social: ${error.message}`)
     params.set('fields', fallbackFields)
     try {
-      pages = await fetchMetaConnection(`${API_URLS.META_GRAPH}/me/accounts?${params.toString()}`)
+      pages = await fetchMetaPages(accessToken, params)
     } catch (fallbackError) {
       logger.warn(`No se pudieron leer paginas Meta conectadas: ${fallbackError.message}`)
       pages = []
@@ -227,8 +263,8 @@ export async function getConnectedMetaSocialProfiles(options = {}) {
   const profiles = []
 
   for (const page of pages) {
-    const facebook = normalizeFacebookProfile(page, updatedAt)
-    const instagram = normalizeInstagramProfile(page, updatedAt)
+    const facebook = normalizeFacebookProfile(page, updatedAt, configuredPageId)
+    const instagram = normalizeInstagramProfile(page, updatedAt, configuredPageId)
     if (facebook) profiles.push(facebook)
     if (instagram) profiles.push(instagram)
   }
@@ -269,6 +305,28 @@ function applyProfileToSettings(settings = {}, profile) {
   }
 }
 
+function applyProfileToTheme(theme = {}, profile) {
+  return {
+    ...theme,
+    ...(profile.platform === 'facebook' || profile.platform === 'instagram' ? { template: profile.platform } : {}),
+    brandName: profile.name || theme.brandName || '',
+    brandSubtitle: profile.platform === 'instagram'
+      ? 'Perfil de Instagram conectado'
+      : profile.platform === 'threads'
+        ? 'Perfil de Threads conectado'
+        : 'Pagina de Facebook conectada',
+    brandAvatar: profile.avatarUrl || theme.brandAvatar || '',
+    followers: profile.followersLabel || '',
+    socialAutoSync: true,
+    socialSourceProfileId: profile.id,
+    socialSourcePlatform: profile.platform,
+    socialSourceId: profile.sourceId,
+    socialSourcePageId: profile.pageId || '',
+    socialSourceName: profile.name || '',
+    socialSyncedAt: profile.updatedAt
+  }
+}
+
 function findProfileForSettings(settings = {}, profiles = []) {
   const sourceProfileId = cleanString(settings.socialSourceProfileId)
   const sourcePlatform = cleanString(settings.socialSourcePlatform || settings.platform)
@@ -293,6 +351,25 @@ export async function refreshConnectedSocialProfileBlocks({ force = false } = {}
   )
 
   let updated = 0
+  const siteRows = await db.all(
+    "SELECT id, theme_json FROM public_sites WHERE theme_json LIKE '%socialAutoSync%'"
+  )
+
+  for (const row of siteRows) {
+    const theme = parseJson(row.theme_json, {})
+    if (theme.socialAutoSync !== true) continue
+    if (!force && cleanString(theme.socialSyncedAt).slice(0, 10) === today) continue
+
+    const profile = findProfileForSettings(theme, profiles)
+    if (!profile) continue
+
+    await db.run(
+      'UPDATE public_sites SET theme_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [jsonString(applyProfileToTheme(theme, profile)), row.id]
+    )
+    updated += 1
+  }
+
   for (const row of rows) {
     const settings = parseJson(row.settings_json, {})
     if (settings.socialAutoSync !== true) continue

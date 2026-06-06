@@ -125,6 +125,13 @@ export interface SiteTheme {
   brandAvatar?: string
   followers?: string
   brandVerified?: boolean
+  socialAutoSync?: boolean
+  socialSourceProfileId?: string
+  socialSourcePlatform?: string
+  socialSourceId?: string
+  socialSourcePageId?: string
+  socialSourceName?: string
+  socialSyncedAt?: string
   seoKeywords?: string
   seoAuthor?: string
   seoImage?: string

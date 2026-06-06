@@ -32,6 +32,7 @@ export interface ConnectedSocialProfile {
   avatarUrl?: string | null
   followers?: number | null
   followersLabel?: string
+  isConfiguredPage?: boolean
   updatedAt?: string
 }
 
