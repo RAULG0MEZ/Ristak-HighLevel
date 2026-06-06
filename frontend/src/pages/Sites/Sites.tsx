@@ -4483,27 +4483,173 @@ const importedStandardFieldOptions = [
   { value: 'first_name', label: 'Nombre' },
   { value: 'last_name', label: 'Apellido' },
   { value: 'email', label: 'Email' },
-  { value: 'phone', label: 'Telefono' },
+  { value: 'phone', label: 'Telefono / WhatsApp' },
   { value: 'message', label: 'Mensaje o nota' }
 ]
 
 const normalizeImportedDestinationKey = (value: string, fallback: string) =>
   (value || fallback || 'campo_personalizado')
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '') || 'campo_personalizado'
 
+const importedStandardFieldAliases: Record<string, string[]> = {
+  email: [
+    'email',
+    'e_mail',
+    'emailaddress',
+    'email_address',
+    'mail',
+    'correo',
+    'correo_electronico',
+    'correoelectronico',
+    'correo_contacto',
+    'contact_email',
+    'customer_email',
+    'client_email',
+    'lead_email',
+    'tu_email'
+  ],
+  phone: [
+    'phone',
+    'phone_number',
+    'phonenumber',
+    'phone_no',
+    'tel',
+    'telephone',
+    'telefono',
+    'numero_telefono',
+    'numero_de_telefono',
+    'telefono_contacto',
+    'numero_contacto',
+    'contact_phone',
+    'contact_number',
+    'contacto',
+    'contact',
+    'mobile',
+    'mobile_phone',
+    'mobile_number',
+    'movil',
+    'cel',
+    'cell',
+    'cellphone',
+    'cell_phone',
+    'celular',
+    'numero_celular',
+    'whatsapp',
+    'whats_app',
+    'whatsapp_number',
+    'whatsapp_phone',
+    'numero_whatsapp',
+    'wpp',
+    'wa'
+  ],
+  first_name: [
+    'first_name',
+    'firstname',
+    'first',
+    'fname',
+    'given_name',
+    'givenname',
+    'forename',
+    'nombre',
+    'nombres',
+    'primer_nombre',
+    'nombre_1',
+    'name_first',
+    'contact_first_name',
+    'customer_first_name',
+    'client_first_name',
+    'lead_first_name',
+    'tu_nombre'
+  ],
+  last_name: [
+    'last_name',
+    'lastname',
+    'last',
+    'lname',
+    'surname',
+    'family_name',
+    'familyname',
+    'apellido',
+    'apellidos',
+    'primer_apellido',
+    'segundo_apellido',
+    'apellido_paterno',
+    'apellido_materno',
+    'name_last',
+    'contact_last_name',
+    'customer_last_name',
+    'client_last_name',
+    'lead_last_name'
+  ],
+  full_name: [
+    'full_name',
+    'fullname',
+    'complete_name',
+    'name',
+    'nombre_completo',
+    'nombre_y_apellido',
+    'nombre_y_apellidos',
+    'nombre_apellido',
+    'nombre_apellidos',
+    'contact_name',
+    'customer_name',
+    'client_name',
+    'lead_name',
+    'person_name',
+    'nombre_contacto',
+    'nombre_cliente',
+    'your_name'
+  ],
+  message: [
+    'message',
+    'mensaje',
+    'comments',
+    'comment',
+    'comentario',
+    'comentarios',
+    'observacion',
+    'observaciones',
+    'notes',
+    'note',
+    'nota',
+    'notas',
+    'details',
+    'detalle',
+    'detalles',
+    'description',
+    'descripcion'
+  ]
+}
+
+const hasImportedStandardAlias = (text: string, aliases: string[]) =>
+  aliases.some(alias => {
+    const normalized = normalizeImportedDestinationKey(alias, '')
+    if (!normalized) return false
+    return new RegExp(`(?:^|\\s)${normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\s|$)`).test(text)
+  })
+
 const inferImportedStandardKey = (field: ImportedSiteFieldMapping) => {
   const current = normalizeImportedDestinationKey(field.destinationKey, '')
   if (importedStandardFieldOptions.some(option => option.value === current)) return current
-  const text = `${field.type || ''} ${field.sourceName || ''} ${field.label || ''}`.toLowerCase()
-  if (field.type === 'email' || text.includes('email') || text.includes('correo')) return 'email'
-  if (field.type === 'tel' || text.includes('phone') || text.includes('telefono') || text.includes('teléfono') || text.includes('whatsapp')) return 'phone'
-  if (text.includes('apellido')) return 'last_name'
-  if (text.includes('nombre')) return 'full_name'
-  if (text.includes('mensaje') || text.includes('comentario') || text.includes('nota')) return 'message'
+  const type = normalizeImportedDestinationKey(field.type, '')
+  const text = [
+    field.type,
+    field.sourceName,
+    field.label
+  ].map(value => normalizeImportedDestinationKey(value || '', '')).filter(Boolean).join(' ')
+  if (type === 'email') return 'email'
+  if (type === 'tel') return 'phone'
+  if (hasImportedStandardAlias(text, importedStandardFieldAliases.email)) return 'email'
+  if (hasImportedStandardAlias(text, importedStandardFieldAliases.phone)) return 'phone'
+  if (hasImportedStandardAlias(text, importedStandardFieldAliases.last_name)) return 'last_name'
+  if (hasImportedStandardAlias(text, importedStandardFieldAliases.first_name)) return 'first_name'
+  if (hasImportedStandardAlias(text, importedStandardFieldAliases.full_name)) return 'full_name'
+  if (hasImportedStandardAlias(text, importedStandardFieldAliases.message)) return 'message'
   return 'full_name'
 }
 

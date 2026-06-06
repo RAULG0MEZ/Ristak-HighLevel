@@ -120,6 +120,55 @@ const IMPORTED_STATIC_FALLBACK_STYLE = `<style data-rstk-import-static-fallback>
 </style>`
 const IMPORTED_FORM_STANDARD_FIELDS = new Set(['full_name', 'first_name', 'last_name', 'phone', 'email', 'message'])
 const IMPORTED_FORM_CUSTOM_FIELD_HINTS = new Map([
+  ['fecha_de_nacimiento', 'birth_date'],
+  ['fecha_nacimiento', 'birth_date'],
+  ['nacimiento', 'birth_date'],
+  ['cumpleanos', 'birth_date'],
+  ['cumple', 'birth_date'],
+  ['birthday', 'birth_date'],
+  ['birth_date', 'birth_date'],
+  ['birthdate', 'birth_date'],
+  ['date_of_birth', 'birth_date'],
+  ['dob', 'birth_date'],
+  ['direccion_completa', 'full_address'],
+  ['direccion', 'address'],
+  ['domicilio', 'address'],
+  ['address_line_1', 'address_line_1'],
+  ['address1', 'address_line_1'],
+  ['street_address', 'address_line_1'],
+  ['calle', 'address_line_1'],
+  ['colonia', 'neighborhood'],
+  ['barrio', 'neighborhood'],
+  ['neighborhood', 'neighborhood'],
+  ['ciudad', 'city'],
+  ['city', 'city'],
+  ['estado', 'state'],
+  ['state', 'state'],
+  ['provincia', 'state'],
+  ['province', 'state'],
+  ['pais', 'country'],
+  ['country', 'country'],
+  ['codigo_postal', 'postal_code'],
+  ['cp', 'postal_code'],
+  ['zip', 'postal_code'],
+  ['zip_code', 'postal_code'],
+  ['postal_code', 'postal_code'],
+  ['ubicacion', 'location'],
+  ['location', 'location'],
+  ['empresa', 'company_name'],
+  ['compania', 'company_name'],
+  ['company', 'company_name'],
+  ['company_name', 'company_name'],
+  ['organizacion', 'company_name'],
+  ['organization', 'company_name'],
+  ['negocio', 'company_name'],
+  ['business_name', 'company_name'],
+  ['puesto', 'job_title'],
+  ['cargo', 'job_title'],
+  ['job_title', 'job_title'],
+  ['website', 'website'],
+  ['sitio_web', 'website'],
+  ['url', 'website'],
   ['tratamiento', 'treatment_interest'],
   ['treatment', 'treatment_interest'],
   ['servicio', 'service_interest'],
@@ -132,8 +181,6 @@ const IMPORTED_FORM_CUSTOM_FIELD_HINTS = new Map([
   ['time', 'preferred_time'],
   ['presupuesto', 'budget'],
   ['budget', 'budget'],
-  ['ciudad', 'city'],
-  ['city', 'city'],
   ['edad', 'age'],
   ['age', 'age'],
   ['genero', 'gender'],
@@ -142,6 +189,174 @@ const IMPORTED_FORM_CUSTOM_FIELD_HINTS = new Map([
   ['reason', 'appointment_reason'],
   ['nota', 'notes'],
   ['notes', 'notes']
+])
+const IMPORTED_STANDARD_FIELD_ALIASES = {
+  email: [
+    'email',
+    'e_mail',
+    'emailaddress',
+    'email_address',
+    'mail',
+    'mail_address',
+    'correo',
+    'correo_electronico',
+    'correo_electrónico',
+    'correoelectronico',
+    'correo_contacto',
+    'contact_email',
+    'customer_email',
+    'client_email',
+    'lead_email',
+    'your_email',
+    'tu_email'
+  ],
+  phone: [
+    'phone',
+    'phone_number',
+    'phonenumber',
+    'phone_no',
+    'tel',
+    'telephone',
+    'telephone_number',
+    'telefono',
+    'teléfono',
+    'numero_telefono',
+    'número_telefono',
+    'numero_de_telefono',
+    'número_de_teléfono',
+    'telefono_contacto',
+    'numero_contacto',
+    'contact_phone',
+    'contact_number',
+    'contacto',
+    'contact',
+    'mobile',
+    'mobile_phone',
+    'mobilenumber',
+    'mobile_number',
+    'movil',
+    'móvil',
+    'numero_movil',
+    'cel',
+    'cell',
+    'cellphone',
+    'cell_phone',
+    'cell_number',
+    'celular',
+    'numero_celular',
+    'whatsapp',
+    'whats_app',
+    'whatsapp_number',
+    'whatsapp_phone',
+    'numero_whatsapp',
+    'número_whatsapp',
+    'wpp',
+    'wa',
+    'sms',
+    'customer_phone',
+    'client_phone',
+    'lead_phone',
+    'your_phone',
+    'tu_telefono'
+  ],
+  first_name: [
+    'first_name',
+    'firstname',
+    'first',
+    'fname',
+    'given_name',
+    'givenname',
+    'forename',
+    'nombre',
+    'nombres',
+    'primer_nombre',
+    'nombre_1',
+    'name_first',
+    'contact_first_name',
+    'customer_first_name',
+    'client_first_name',
+    'lead_first_name',
+    'tu_nombre'
+  ],
+  last_name: [
+    'last_name',
+    'lastname',
+    'last',
+    'lname',
+    'surname',
+    'family_name',
+    'familyname',
+    'apellido',
+    'apellidos',
+    'primer_apellido',
+    'segundo_apellido',
+    'apellido_paterno',
+    'apellido_materno',
+    'name_last',
+    'contact_last_name',
+    'customer_last_name',
+    'client_last_name',
+    'lead_last_name'
+  ],
+  full_name: [
+    'full_name',
+    'fullname',
+    'complete_name',
+    'name',
+    'nombre_completo',
+    'nombre_y_apellido',
+    'nombre_y_apellidos',
+    'nombre_apellido',
+    'nombre_apellidos',
+    'nombre_completo_y_apellidos',
+    'contact_name',
+    'customer_name',
+    'client_name',
+    'lead_name',
+    'person_name',
+    'nombre_contacto',
+    'nombre_cliente',
+    'nombre_del_cliente',
+    'your_name'
+  ],
+  message: [
+    'message',
+    'mensaje',
+    'comments',
+    'comment',
+    'comentario',
+    'comentarios',
+    'observacion',
+    'observaciones',
+    'notes',
+    'note',
+    'nota',
+    'notas',
+    'details',
+    'detalle',
+    'detalles',
+    'description',
+    'descripcion',
+    'descripción',
+    'instrucciones',
+    'additional_info',
+    'additional_information'
+  ]
+}
+const IMPORTED_CONTACT_CUSTOM_FIELD_KEYS = new Set([
+  'birth_date',
+  'full_address',
+  'address',
+  'address_line_1',
+  'neighborhood',
+  'city',
+  'state',
+  'country',
+  'postal_code',
+  'location',
+  'company_name',
+  'job_title',
+  'website'
 ])
 
 function cleanString(value) {
@@ -220,11 +435,50 @@ function parseHtmlAttributes(attributeText = '') {
 
 function normalizeImportedFieldKey(value, fallback = 'custom_field') {
   return cleanString(value || fallback)
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '') || fallback
+}
+
+function escapeRegExp(value = '') {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function hasImportedAlias(haystack = '', aliases = []) {
+  return aliases.some(alias => {
+    const normalized = normalizeImportedFieldKey(alias, '')
+    if (!normalized) return false
+    return new RegExp(`(?:^|\\s)${escapeRegExp(normalized)}(?:\\s|$)`).test(haystack)
+  })
+}
+
+function getImportedStandardAliasKey(haystack = '') {
+  if (hasImportedAlias(haystack, IMPORTED_STANDARD_FIELD_ALIASES.email)) return 'email'
+  if (hasImportedAlias(haystack, IMPORTED_STANDARD_FIELD_ALIASES.phone)) return 'phone'
+  if (hasImportedAlias(haystack, IMPORTED_STANDARD_FIELD_ALIASES.last_name)) return 'last_name'
+  if (hasImportedAlias(haystack, IMPORTED_STANDARD_FIELD_ALIASES.first_name)) return 'first_name'
+  if (hasImportedAlias(haystack, IMPORTED_STANDARD_FIELD_ALIASES.full_name)) return 'full_name'
+  if (hasImportedAlias(haystack, IMPORTED_STANDARD_FIELD_ALIASES.message)) return 'message'
+  return ''
+}
+
+function getImportedCustomHintDestination(haystack = '', allowedKeys = null) {
+  const tokens = haystack.split(/\s+/).filter(Boolean)
+  for (const [hint, key] of IMPORTED_FORM_CUSTOM_FIELD_HINTS.entries()) {
+    if (allowedKeys && !allowedKeys.has(key)) continue
+    const matched = tokens.some(token => (
+      token === hint ||
+      token.startsWith(`${hint}_`) ||
+      token.endsWith(`_${hint}`)
+    ))
+    if (matched) {
+      return { destinationType: 'custom', destinationKey: key, confidence: 0.76 }
+    }
+  }
+  return null
 }
 
 function shouldApplyImportedStaticFallback(html = '') {
@@ -434,8 +688,10 @@ function inferImportedFieldDestination(field = {}) {
   const explicit = normalizeImportedFieldKey(field.explicitField, '')
   const haystack = [
     explicit,
+    field.sourceName,
     field.name,
     field.htmlId,
+    field.type,
     field.label,
     field.placeholder,
     field.nearbyText
@@ -445,31 +701,42 @@ function inferImportedFieldDestination(field = {}) {
     return { destinationType: 'standard', destinationKey: explicit, confidence: 0.98 }
   }
 
+  const explicitStandardAlias = explicit ? getImportedStandardAliasKey(explicit) : ''
+  if (explicitStandardAlias) {
+    return { destinationType: 'standard', destinationKey: explicitStandardAlias, confidence: 0.96 }
+  }
+
   if (explicit) {
     return { destinationType: 'custom', destinationKey: explicit, confidence: 0.94 }
   }
 
-  if (field.type === 'email' || /\b(email|correo|mail)\b/.test(haystack)) {
+  if (field.type === 'email') {
     return { destinationType: 'standard', destinationKey: 'email', confidence: 0.92 }
   }
 
-  if (field.type === 'tel' || /\b(phone|telefono|telefono|celular|whatsapp|movil|mobile)\b/.test(haystack)) {
+  if (field.type === 'tel') {
     return { destinationType: 'standard', destinationKey: 'phone', confidence: 0.9 }
   }
 
-  if (/\b(full_name|nombre_completo|nombre_y_apellido|name|nombre)\b/.test(haystack)) {
-    return { destinationType: 'standard', destinationKey: 'full_name', confidence: 0.82 }
+  const standardAlias = getImportedStandardAliasKey(haystack)
+  if (standardAlias) {
+    const confidence = standardAlias === 'first_name' || standardAlias === 'last_name'
+      ? 0.9
+      : standardAlias === 'full_name'
+        ? 0.84
+        : 0.9
+    return { destinationType: 'standard', destinationKey: standardAlias, confidence }
   }
 
-  if (field.tag === 'textarea' || /\b(message|mensaje|comentario|comments|observaciones)\b/.test(haystack)) {
-    return { destinationType: 'standard', destinationKey: 'message', confidence: 0.78 }
+  const contactCustom = getImportedCustomHintDestination(haystack, IMPORTED_CONTACT_CUSTOM_FIELD_KEYS)
+  if (contactCustom) return contactCustom
+
+  if (field.tag === 'textarea') {
+    return { destinationType: 'standard', destinationKey: 'message', confidence: 0.72 }
   }
 
-  for (const [hint, key] of IMPORTED_FORM_CUSTOM_FIELD_HINTS.entries()) {
-    if (haystack.includes(hint)) {
-      return { destinationType: 'custom', destinationKey: key, confidence: 0.76 }
-    }
-  }
+  const customHint = getImportedCustomHintDestination(haystack)
+  if (customHint) return customHint
 
   return {
     destinationType: 'custom',
