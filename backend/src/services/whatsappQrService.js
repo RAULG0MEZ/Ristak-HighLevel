@@ -1,13 +1,23 @@
 import pino from 'pino'
 import { db } from '../config/database.js'
-import { buildPhoneMatchCandidates, normalizePhoneForStorage } from '../utils/phoneUtils.js'
+import { buildPhoneMatchCandidates, normalizePhoneDigits, normalizePhoneForStorage } from '../utils/phoneUtils.js'
 import { logger } from '../utils/logger.js'
 
 const QR_CONSENT_TEXT = 'Acepto que esta conexion usa WhatsApp Web por QR y no la API oficial de Meta. Entiendo que puede desconectarse, fallar o poner en riesgo el numero. Ristak solo la usara para mensajes individuales cuando yo lo active.'
 const CONNECT_TIMEOUT_MS = 20000
+const QR_SEND_ACK_TIMEOUT_MS = 10000
+const QR_RECENT_ACK_RETENTION_MS = 90000
 const RECONNECT_BASE_DELAY_MS = 2500
 const RECONNECT_MAX_DELAY_MS = 60000
 const MAX_RECONNECT_ATTEMPTS = 8
+const QR_ACK_STATUS = {
+  ERROR: 0,
+  PENDING: 1,
+  SERVER_ACK: 2,
+  DELIVERY_ACK: 3,
+  READ: 4,
+  PLAYED: 5
+}
 const baileysLogger = pino({ level: process.env.BAILEYS_LOG_LEVEL || 'silent' })
 const AUDIO_MIME_BY_EXTENSION = {
   aac: 'audio/aac',
@@ -22,6 +32,8 @@ const AUDIO_MIME_BY_EXTENSION = {
 }
 
 const liveSessions = new Map()
+const qrSendAckWaiters = new Map()
+const qrRecentMessageAcks = new Map()
 let baileysRuntime = null
 
 function cleanString(value) {
@@ -122,10 +134,365 @@ function normalizeConnectedPhone(value = '') {
   return normalizePhoneForStorage(bare) || bare.replace(/\D/g, '')
 }
 
+function normalizeJid(value = '') {
+  const jid = cleanString(value)
+  const atIndex = jid.indexOf('@')
+  if (atIndex < 0) return jid
+
+  const user = jid.slice(0, atIndex).split(':')[0]
+  const server = jid.slice(atIndex + 1)
+  return `${user}@${server}`
+}
+
+function normalizePhoneFromJid(jid = '') {
+  const digits = normalizePhoneDigits(String(jid || '').split('@')[0]?.split(':')[0] || '')
+  return digits ? `+${digits}` : ''
+}
+
 function phoneMatches(left = '', right = '') {
   const leftCandidates = buildPhoneMatchCandidates(left)
   const rightCandidates = buildPhoneMatchCandidates(right)
   return leftCandidates.some(candidate => rightCandidates.includes(candidate))
+}
+
+function buildOutboundPhoneCandidates(value = '') {
+  const candidates = new Set()
+  const addCandidate = (candidate) => {
+    const digits = normalizePhoneDigits(candidate)
+    if (digits.length >= 8) candidates.add(digits)
+  }
+
+  addCandidate(value)
+  addCandidate(normalizePhoneForStorage(value))
+  for (const candidate of buildPhoneMatchCandidates(value)) {
+    addCandidate(candidate)
+  }
+
+  return [...candidates]
+}
+
+function getJidPhoneDigits(jid = '') {
+  return normalizePhoneDigits(normalizePhoneFromJid(jid))
+}
+
+async function resolveRecipientJid(sock, toPhone) {
+  const candidates = buildOutboundPhoneCandidates(toPhone)
+  if (!candidates.length) throw new Error('Falta el numero destino')
+  if (!sock?.onWhatsApp) {
+    throw new Error('La conexion QR no puede verificar si el numero destino existe en WhatsApp')
+  }
+
+  let results = []
+  try {
+    results = await sock.onWhatsApp(...candidates)
+  } catch (error) {
+    throw new Error(`No se pudo verificar el numero destino en WhatsApp: ${error.message}`)
+  }
+
+  const existingResults = Array.isArray(results)
+    ? results.filter(result => result?.exists && result?.jid)
+    : []
+
+  for (const candidate of candidates) {
+    const matched = existingResults.find(result => getJidPhoneDigits(result.jid) === candidate)
+    if (matched) {
+      return {
+        jid: normalizeJid(matched.jid),
+        verifiedPhone: normalizePhoneForStorage(normalizePhoneFromJid(matched.jid)) || normalizePhoneFromJid(matched.jid),
+        lookup: existingResults
+      }
+    }
+  }
+
+  const fallback = existingResults[0]
+  if (fallback?.jid) {
+    return {
+      jid: normalizeJid(fallback.jid),
+      verifiedPhone: normalizePhoneForStorage(normalizePhoneFromJid(fallback.jid)) || normalizePhoneFromJid(fallback.jid),
+      lookup: existingResults
+    }
+  }
+
+  throw new Error('Ese numero no aparece como usuario activo de WhatsApp para enviar por QR')
+}
+
+function assertQrSendAccepted(response, recipientJid) {
+  const messageId = cleanString(response?.key?.id)
+  const remoteJid = normalizeJid(response?.key?.remoteJid)
+
+  if (!messageId || !remoteJid) {
+    throw new Error('WhatsApp QR no confirmo el envio al servidor. Intenta otra vez.')
+  }
+
+  if (recipientJid && remoteJid && remoteJid !== normalizeJid(recipientJid)) {
+    throw new Error('WhatsApp QR respondio con un destinatario distinto al verificado')
+  }
+
+  return {
+    messageId,
+    remoteJid
+  }
+}
+
+function getBaileysStatusCode(value) {
+  if (value === null || value === undefined || value === '') return null
+  const numeric = Number(value)
+  if (Number.isFinite(numeric)) return numeric
+
+  const label = cleanString(value).toUpperCase()
+  return Object.prototype.hasOwnProperty.call(QR_ACK_STATUS, label)
+    ? QR_ACK_STATUS[label]
+    : null
+}
+
+function mapBaileysAckToMessageStatus(statusCode) {
+  const code = getBaileysStatusCode(statusCode)
+  if (code === QR_ACK_STATUS.ERROR) return 'failed'
+  if (code >= QR_ACK_STATUS.READ) return 'read'
+  if (code >= QR_ACK_STATUS.DELIVERY_ACK) return 'delivered'
+  if (code >= QR_ACK_STATUS.SERVER_ACK) return 'sent'
+  return 'pending'
+}
+
+function getStoredStatusPriority(status) {
+  switch (cleanString(status).toLowerCase()) {
+    case 'failed':
+    case 'error':
+      return 100
+    case 'read':
+      return 80
+    case 'delivered':
+      return 70
+    case 'sent':
+      return 60
+    case 'pending':
+    case 'queued':
+    case 'scheduled':
+      return 20
+    default:
+      return 0
+  }
+}
+
+function shouldUpdateStoredStatus(currentStatus, nextStatus) {
+  const next = cleanString(nextStatus).toLowerCase()
+  if (!next) return false
+  if (next === 'failed') return true
+  return getStoredStatusPriority(next) >= getStoredStatusPriority(currentStatus)
+}
+
+function getQrAckPriority(ack = {}) {
+  const status = cleanString(ack.status).toLowerCase()
+  if (status === 'failed') return 100
+  return getStoredStatusPriority(status)
+}
+
+function pickBestQrAck(current, next) {
+  if (!current) return next
+  if (!next) return current
+  return getQrAckPriority(next) >= getQrAckPriority(current) ? next : current
+}
+
+function shouldResolveQrAck(ack = {}) {
+  const status = cleanString(ack.status).toLowerCase()
+  const code = getBaileysStatusCode(ack.statusCode)
+  return status === 'failed' || code === QR_ACK_STATUS.ERROR || code >= QR_ACK_STATUS.SERVER_ACK
+}
+
+function getQrAckError(update = {}) {
+  const params = update?.update?.messageStubParameters
+  if (Array.isArray(params) && params.length) {
+    return {
+      errorCode: cleanString(params[0]),
+      errorMessage: cleanString(params.slice(1).join(' '))
+    }
+  }
+
+  return {
+    errorCode: '',
+    errorMessage: ''
+  }
+}
+
+function buildQrAckFromMessageUpdate(update = {}) {
+  const messageId = cleanString(update?.key?.id)
+  if (!messageId) return null
+
+  const statusCode = getBaileysStatusCode(update?.update?.status)
+  if (statusCode === null) return null
+
+  const error = getQrAckError(update)
+  const status = mapBaileysAckToMessageStatus(statusCode)
+
+  return {
+    messageId,
+    remoteJid: normalizeJid(update?.key?.remoteJid),
+    fromMe: update?.key?.fromMe === true,
+    statusCode,
+    status,
+    errorCode: error.errorCode,
+    errorMessage: status === 'failed'
+      ? error.errorMessage || error.errorCode || 'WhatsApp rechazo el mensaje por QR'
+      : '',
+    messageTimestamp: update?.update?.messageTimestamp || null,
+    source: 'messages.update',
+    receivedAt: nowIso()
+  }
+}
+
+function buildQrAckFromSendResponse(messageId, response = {}) {
+  const statusCode = getBaileysStatusCode(response?.status)
+  return {
+    messageId,
+    remoteJid: normalizeJid(response?.key?.remoteJid),
+    fromMe: response?.key?.fromMe === true,
+    statusCode,
+    status: mapBaileysAckToMessageStatus(statusCode),
+    errorCode: '',
+    errorMessage: '',
+    source: 'sendMessage',
+    receivedAt: nowIso()
+  }
+}
+
+function cleanupRecentQrAcks() {
+  const now = Date.now()
+  for (const [messageId, entry] of qrRecentMessageAcks.entries()) {
+    if (!entry?.expiresAt || entry.expiresAt <= now) {
+      qrRecentMessageAcks.delete(messageId)
+    }
+  }
+}
+
+function rememberQrAck(ack) {
+  if (!ack?.messageId) return
+  cleanupRecentQrAcks()
+  const existing = qrRecentMessageAcks.get(ack.messageId)?.ack
+  qrRecentMessageAcks.set(ack.messageId, {
+    ack: pickBestQrAck(existing, ack),
+    expiresAt: Date.now() + QR_RECENT_ACK_RETENTION_MS
+  })
+}
+
+function resolveQrAckWaiter(ack) {
+  if (!ack?.messageId) return
+  const waiter = qrSendAckWaiters.get(ack.messageId)
+  if (!waiter) return
+
+  waiter.bestAck = pickBestQrAck(waiter.bestAck, ack)
+  if (!shouldResolveQrAck(waiter.bestAck)) return
+
+  clearTimeout(waiter.timeout)
+  qrSendAckWaiters.delete(ack.messageId)
+  waiter.resolve(waiter.bestAck)
+}
+
+async function updateStoredQrMessageAck(ack) {
+  if (!ack?.messageId || !ack.status) return
+
+  const rows = await db.all(`
+    SELECT id, status
+    FROM whatsapp_api_messages
+    WHERE transport = 'qr'
+      AND (ycloud_message_id = ? OR wamid = ?)
+  `, [ack.messageId, ack.messageId])
+
+  await Promise.all((rows || [])
+    .filter(row => shouldUpdateStoredStatus(row.status, ack.status))
+    .map(row => db.run(`
+      UPDATE whatsapp_api_messages
+      SET status = ?,
+          error_code = CASE WHEN ? != '' THEN ? ELSE error_code END,
+          error_message = CASE WHEN ? != '' THEN ? ELSE error_message END,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `, [
+      ack.status,
+      ack.errorCode || '',
+      ack.errorCode || '',
+      ack.errorMessage || '',
+      ack.errorMessage || '',
+      row.id
+    ])))
+}
+
+async function handleQrMessageUpdates(phone, updates = []) {
+  const list = Array.isArray(updates) ? updates : []
+  for (const update of list) {
+    const ack = buildQrAckFromMessageUpdate(update)
+    if (!ack) continue
+
+    rememberQrAck(ack)
+    resolveQrAckWaiter(ack)
+    updateStoredQrMessageAck(ack).catch(error => {
+      logger.warn(`[WhatsApp QR] No se pudo guardar ACK ${ack.messageId} (${phone.id}): ${error.message}`)
+    })
+
+    logger.info(`[WhatsApp QR] ACK ${ack.messageId} ${ack.status}${ack.errorMessage ? `: ${ack.errorMessage}` : ''}`)
+  }
+}
+
+function waitForQrSendAck(messageId, response = {}) {
+  const cleanMessageId = cleanString(messageId)
+  if (!cleanMessageId) {
+    return Promise.resolve({
+      messageId: '',
+      status: 'pending',
+      statusCode: QR_ACK_STATUS.PENDING,
+      source: 'missing-message-id',
+      timedOut: true,
+      receivedAt: nowIso()
+    })
+  }
+
+  const initialAck = buildQrAckFromSendResponse(cleanMessageId, response)
+  const recentAck = qrRecentMessageAcks.get(cleanMessageId)?.ack
+  const bestImmediateAck = pickBestQrAck(recentAck, initialAck)
+  if (shouldResolveQrAck(bestImmediateAck)) return Promise.resolve(bestImmediateAck)
+
+  return new Promise(resolve => {
+    const timeout = setTimeout(() => {
+      const waiter = qrSendAckWaiters.get(cleanMessageId)
+      qrSendAckWaiters.delete(cleanMessageId)
+      const latestAck = qrRecentMessageAcks.get(cleanMessageId)?.ack
+      resolve(pickBestQrAck(latestAck, waiter?.bestAck || bestImmediateAck) || {
+        messageId: cleanMessageId,
+        status: 'pending',
+        statusCode: QR_ACK_STATUS.PENDING,
+        source: 'timeout',
+        timedOut: true,
+        receivedAt: nowIso()
+      })
+    }, QR_SEND_ACK_TIMEOUT_MS)
+
+    qrSendAckWaiters.set(cleanMessageId, {
+      timeout,
+      resolve,
+      bestAck: bestImmediateAck
+    })
+  })
+}
+
+async function finalizeQrSendResponse({ response, recipient, externalId }) {
+  const accepted = assertQrSendAccepted(response, recipient.jid)
+  const ack = await waitForQrSendAck(accepted.messageId, response)
+
+  if (cleanString(ack.status).toLowerCase() === 'failed') {
+    const error = new Error(ack.errorMessage || 'WhatsApp rechazo el mensaje enviado por QR')
+    error.code = ack.errorCode || 'qr_send_failed'
+    error.statusCode = 400
+    error.qrAck = ack
+    throw error
+  }
+
+  return {
+    id: accepted.messageId || externalId || '',
+    wamid: accepted.messageId || '',
+    recipientJid: accepted.remoteJid,
+    status: ack.status || 'pending',
+    ack,
+    raw: safeJson({ response, ack })
+  }
 }
 
 function pickValue(values, key, fallback) {
@@ -506,6 +873,7 @@ function closeLiveSession(phoneNumberId) {
   try {
     live.sock.ev?.removeAllListeners?.('connection.update')
     live.sock.ev?.removeAllListeners?.('creds.update')
+    live.sock.ev?.removeAllListeners?.('messages.update')
     live.sock.ws?.close?.()
   } catch (error) {
     logger.warn(`[WhatsApp QR] No se pudo cerrar socket ${phoneNumberId}: ${error.message}`)
@@ -565,6 +933,11 @@ async function openSocket(phone, { requireConsent = true, reconnectAttempt = 0, 
   })
 
   sock.ev.on('creds.update', saveCreds)
+  sock.ev.on('messages.update', (updates) => {
+    handleQrMessageUpdates(phone, updates).catch(error => {
+      logger.warn(`[WhatsApp QR] No se pudieron procesar actualizaciones de mensajes ${phone.id}: ${error.message}`)
+    })
+  })
   sock.ev.on('connection.update', async (update = {}) => {
     const live = liveSessions.get(phone.id)
 
@@ -852,20 +1225,22 @@ export async function sendWhatsAppQrTextMessage({ phoneNumberId, from, to, text,
   if (!body) throw new Error('Falta el texto del mensaje')
 
   const sock = await ensureOpenSocket(phone)
-  const jid = `${toPhone.replace(/\D/g, '')}@s.whatsapp.net`
-  const response = await sock.sendMessage(jid, { text: body })
+  const recipient = await resolveRecipientJid(sock, toPhone)
+  const response = await sock.sendMessage(recipient.jid, { text: body })
+  const sendResult = await finalizeQrSendResponse({ response, recipient, externalId })
 
   return {
-    id: response?.key?.id || externalId || '',
-    wamid: response?.key?.id || '',
+    id: sendResult.id,
+    wamid: sendResult.wamid,
     from: phone.expectedPhone,
-    to: toPhone,
+    to: recipient.verifiedPhone || toPhone,
+    recipientJid: sendResult.recipientJid,
     type: 'text',
     text: { body },
-    status: 'sent',
+    status: sendResult.status,
     transport: 'qr',
     createTime: nowIso(),
-    raw: response ? safeJson(response) : null
+    raw: sendResult.raw
   }
 }
 
@@ -888,28 +1263,30 @@ export async function sendWhatsAppQrImageMessage({ phoneNumberId, from, to, imag
     label: 'la foto'
   })
   const sock = await ensureOpenSocket(phone)
-  const jid = `${toPhone.replace(/\D/g, '')}@s.whatsapp.net`
-  const response = await sock.sendMessage(jid, {
+  const recipient = await resolveRecipientJid(sock, toPhone)
+  const response = await sock.sendMessage(recipient.jid, {
     image: media.content,
     ...(media.mimeType ? { mimetype: media.mimeType } : {}),
     ...(cleanCaption ? { caption: cleanCaption } : {})
   })
+  const sendResult = await finalizeQrSendResponse({ response, recipient, externalId })
 
   return {
-    id: response?.key?.id || externalId || '',
-    wamid: response?.key?.id || '',
+    id: sendResult.id,
+    wamid: sendResult.wamid,
     from: phone.expectedPhone,
-    to: toPhone,
+    to: recipient.verifiedPhone || toPhone,
+    recipientJid: sendResult.recipientJid,
     type: 'image',
     image: {
       link: media.sourceUrl,
       mimeType: media.mimeType,
       ...(cleanCaption ? { caption: cleanCaption } : {})
     },
-    status: 'sent',
+    status: sendResult.status,
     transport: 'qr',
     createTime: nowIso(),
-    raw: response ? safeJson(response) : null
+    raw: sendResult.raw
   }
 }
 
@@ -932,28 +1309,30 @@ export async function sendWhatsAppQrAudioMessage({ phoneNumberId, from, to, audi
   })
   const mimeType = inferAudioMimeType({ mimeType: media.mimeType, url: media.sourceUrl })
   const sock = await ensureOpenSocket(phone)
-  const jid = `${toPhone.replace(/\D/g, '')}@s.whatsapp.net`
-  const response = await sock.sendMessage(jid, {
+  const recipient = await resolveRecipientJid(sock, toPhone)
+  const response = await sock.sendMessage(recipient.jid, {
     audio: media.content,
     mimetype: mimeType,
     ptt: false
   })
+  const sendResult = await finalizeQrSendResponse({ response, recipient, externalId })
 
   return {
-    id: response?.key?.id || externalId || '',
-    wamid: response?.key?.id || '',
+    id: sendResult.id,
+    wamid: sendResult.wamid,
     from: phone.expectedPhone,
-    to: toPhone,
+    to: recipient.verifiedPhone || toPhone,
+    recipientJid: sendResult.recipientJid,
     type: 'audio',
     audio: {
       link: media.sourceUrl,
       mimeType,
       ...(durationMs ? { durationMs } : {})
     },
-    status: 'sent',
+    status: sendResult.status,
     transport: 'qr',
     createTime: nowIso(),
-    raw: response ? safeJson(response) : null
+    raw: sendResult.raw
   }
 }
 

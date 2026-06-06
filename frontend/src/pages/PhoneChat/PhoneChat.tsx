@@ -3393,7 +3393,7 @@ export const PhoneChat: React.FC = () => {
         })
         setMessages((current) => current.map((message) => (
           message.id === `${optimisticId}-audio`
-            ? { ...message, status: 'sent', transport: result.transport || message.transport }
+            ? { ...message, status: result.status || 'sent', transport: result.transport || message.transport }
             : message
         )))
       } else if (attachmentsToSend.length > 0) {
@@ -3411,7 +3411,7 @@ export const PhoneChat: React.FC = () => {
           message.id.startsWith(`${optimisticId}-image-`)
             ? {
                 ...message,
-                status: 'sent',
+                status: results[Number(message.id.replace(`${optimisticId}-image-`, ''))]?.status || 'sent',
                 transport: results[Number(message.id.replace(`${optimisticId}-image-`, ''))]?.transport || message.transport
               }
             : message
@@ -3427,7 +3427,7 @@ export const PhoneChat: React.FC = () => {
         })
         setMessages((current) => current.map((message) => (
           message.id === optimisticId
-            ? { ...message, status: 'sent', transport: result.transport || message.transport }
+            ? { ...message, status: result.status || 'sent', transport: result.transport || message.transport }
             : message
         )))
       }
