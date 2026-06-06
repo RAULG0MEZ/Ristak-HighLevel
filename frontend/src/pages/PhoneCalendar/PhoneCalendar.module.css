@@ -1041,6 +1041,7 @@
   border-radius: 24px 24px 0 0;
   background: #f7f6f2;
   box-shadow: 0 -24px 60px rgba(15, 23, 42, 0.24);
+  touch-action: pan-y;
   animation: sheetRise 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
   will-change: transform;
 }
@@ -1544,7 +1545,7 @@
 @keyframes sheetRise {
   from {
     opacity: 0.92;
-    transform: translateY(36px);
+    transform: translateY(100%);
   }
   to {
     opacity: 1;

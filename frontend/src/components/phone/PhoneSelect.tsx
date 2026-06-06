@@ -75,8 +75,9 @@ export const PhoneSelect: React.FC<PhoneSelectProps> = ({
         aria-modal="true"
         aria-label={title}
         onClick={(event) => event.stopPropagation()}
+        {...sheetDismiss.sheetDragProps}
       >
-        <div className={styles.handle} aria-hidden="true" {...sheetDismiss.dragHandleProps} />
+        <div className={styles.handle} aria-hidden="true" />
         <div className={styles.sheetHeader}>
           <button type="button" className={styles.backButton} onClick={closeSheet} aria-label="Volver">
             <ChevronLeft size={22} />

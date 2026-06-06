@@ -16,6 +16,14 @@ interface BottomSheetDragState {
 }
 
 const INTERACTIVE_SELECTOR = 'button, a, input, textarea, select, [contenteditable="true"], [data-bottom-sheet-no-drag="true"]'
+const SCROLLABLE_SELECTOR = '[data-phone-scrollable="true"], [data-phone-chat-scrollable="true"], [data-bottom-sheet-scrollable="true"]'
+
+function getScrollableParent(target: EventTarget | null, boundary: Element) {
+  if (!(target instanceof Element)) return null
+  const scrollable = target.closest(SCROLLABLE_SELECTOR)
+  if (!scrollable || !boundary.contains(scrollable)) return null
+  return scrollable as HTMLElement
+}
 
 export function useBottomSheetDismiss({
   isOpen,
@@ -73,6 +81,8 @@ export function useBottomSheetDismiss({
     if (!isOpen || closing) return
     if (event.pointerType === 'mouse' && event.button !== 0) return
     if (event.target instanceof Element && event.target.closest(INTERACTIVE_SELECTOR)) return
+    const scrollableParent = getScrollableParent(event.target, event.currentTarget)
+    if (scrollableParent && scrollableParent.scrollTop > 2) return
 
     dragRef.current = {
       active: true,
@@ -160,6 +170,7 @@ export function useBottomSheetDismiss({
     backdropStyle,
     sheetStyle,
     dragHandleProps,
+    sheetDragProps: dragHandleProps,
     requestClose,
     dragging,
     closing

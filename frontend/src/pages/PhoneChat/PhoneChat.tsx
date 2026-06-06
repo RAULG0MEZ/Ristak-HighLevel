@@ -4962,8 +4962,9 @@ export const PhoneChat: React.FC = () => {
             style={actionSheetDismiss.sheetStyle}
             onClick={(event) => event.stopPropagation()}
             aria-label="Acciones del chat"
+            {...actionSheetDismiss.sheetDragProps}
           >
-            <div className={styles.sheetHandle} aria-hidden="true" {...actionSheetDismiss.dragHandleProps} />
+            <div className={styles.sheetHandle} aria-hidden="true" />
             {sheet !== 'attachments' && (
               <div className={styles.sheetHeader}>
                 <button type="button" onClick={actionSheetDismiss.requestClose} aria-label="Volver al chat">

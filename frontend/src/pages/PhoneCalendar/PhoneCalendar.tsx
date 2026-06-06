@@ -1406,8 +1406,9 @@ export const PhoneCalendar: React.FC = () => {
             style={calendarSheetDismiss.sheetStyle}
             onClick={(event) => event.stopPropagation()}
             aria-label="Panel del calendario"
+            {...calendarSheetDismiss.sheetDragProps}
           >
-            <div className={styles.sheetHandle} aria-hidden="true" {...calendarSheetDismiss.dragHandleProps} />
+            <div className={styles.sheetHandle} aria-hidden="true" />
             <header className={styles.sheetHeader}>
               <button type="button" className={styles.closeSheetButton} onClick={calendarSheetDismiss.requestClose} aria-label="Volver al calendario">
                 <ChevronLeft size={24} />

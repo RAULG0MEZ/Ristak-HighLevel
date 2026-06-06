@@ -147,9 +147,10 @@ export const Modal: React.FC<ModalProps> = ({
       <div
         className={`${styles.modal} ${styles[type]} ${styles[size]} ${isDestructiveConfirm ? styles.destructive : ''} ${draggableSheet ? styles.bottomSheetModal : ''} ${className}`.trim()}
         style={draggableSheet ? bottomSheetDismiss.sheetStyle : undefined}
+        {...(draggableSheet ? bottomSheetDismiss.sheetDragProps : {})}
       >
         {draggableSheet && (
-          <div className={styles.bottomSheetHandle} aria-hidden="true" {...bottomSheetDismiss.dragHandleProps} />
+          <div className={styles.bottomSheetHandle} aria-hidden="true" />
         )}
         {/* Solo mostrar header si hay título o botón de cerrar */}
         {(title || showCloseButton) && (

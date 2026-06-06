@@ -89,7 +89,8 @@
   border-radius: 24px 24px 0 0;
   color: var(--appointment-mobile-text);
   background: var(--appointment-mobile-bg);
-  animation: mobileSheetRise 220ms ease-out;
+  touch-action: pan-y;
+  animation: mobileSheetRise 280ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .mobileSheetModal::before {

@@ -47,6 +47,7 @@
 .bottomSheetModal {
   transform-origin: bottom center;
   animation: bottomSheetRise 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  touch-action: pan-y;
   will-change: transform;
 }
 
@@ -107,7 +108,7 @@ body.dark .modal {
 @keyframes bottomSheetRise {
   from {
     opacity: 0.92;
-    transform: translateY(36px);
+    transform: translateY(100%);
   }
   to {
     opacity: 1;
