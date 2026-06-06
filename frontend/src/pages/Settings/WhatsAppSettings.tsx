@@ -600,9 +600,19 @@ export const WhatsAppSettings: React.FC = () => {
 
           {phoneRows.length > 0 && (
             <>
-              <p className={styles.phoneTableIntro}>
-                Cada numero usa WhatsApp API como conexion oficial. El QR es opcional por numero: ayuda a obtener detalles extra y sirve como respaldo fuera de 24 horas o si la API queda restringida.
-              </p>
+              <div className={styles.phoneTableToolbar}>
+                <p className={styles.phoneTableIntro}>
+                  Cada numero usa WhatsApp API como conexion oficial. El QR es opcional por numero: ayuda a obtener detalles extra y sirve como respaldo fuera de 24 horas o si la API queda restringida.
+                </p>
+                <button
+                  type="button"
+                  className={styles.viewToggleButton}
+                  onClick={() => setActiveSection('templates')}
+                >
+                  <FileText size={15} />
+                  Plantillas
+                </button>
+              </div>
               <div className={styles.phoneTableWrap}>
                 <table className={styles.phoneTable}>
                   <thead>
@@ -738,10 +748,20 @@ export const WhatsAppSettings: React.FC = () => {
             <h3>Mensajes aprobados por Meta</h3>
             <p>Crea, manda a revisión y sincroniza el estado real desde WhatsApp API.</p>
           </div>
-          <div className={styles.templatesSummaryBar}>
-            <span>{formatMetric(templateSummary.approved)} aprobadas</span>
-            <span>{formatMetric(templateSummary.pending)} en revisión</span>
-            <span>{formatMetric(templateSummary.rejected)} rechazadas</span>
+          <div className={styles.templatesHeaderActions}>
+            <button
+              type="button"
+              className={styles.viewToggleButton}
+              onClick={() => setActiveSection('connection')}
+            >
+              <SiWhatsapp size={15} />
+              Numeros de WhatsApp
+            </button>
+            <div className={styles.templatesSummaryBar}>
+              <span>{formatMetric(templateSummary.approved)} aprobadas</span>
+              <span>{formatMetric(templateSummary.pending)} en revisión</span>
+              <span>{formatMetric(templateSummary.rejected)} rechazadas</span>
+            </div>
           </div>
         </div>
         <MessageTemplates embedded />
@@ -773,25 +793,6 @@ export const WhatsAppSettings: React.FC = () => {
           <h2 className={styles.title}>WhatsApp</h2>
           <span>Conexión oficial por API para mensajes, saldo y plantillas.</span>
         </div>
-      </div>
-
-      <div className={styles.sectionSwitch} aria-label="Secciones de WhatsApp">
-        <button
-          type="button"
-          className={`${styles.sectionSwitchButton} ${activeSection === 'connection' ? styles.sectionSwitchButtonActive : ''}`}
-          onClick={() => setActiveSection('connection')}
-        >
-          <ShieldCheck size={17} />
-          Conexión
-        </button>
-        <button
-          type="button"
-          className={`${styles.sectionSwitchButton} ${activeSection === 'templates' ? styles.sectionSwitchButtonActive : ''}`}
-          onClick={() => setActiveSection('templates')}
-        >
-          <FileText size={17} />
-          Plantillas
-        </button>
       </div>
 
       <div className={styles.stage}>

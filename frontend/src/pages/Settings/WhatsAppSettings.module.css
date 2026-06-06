@@ -64,46 +64,6 @@
   letter-spacing: 0;
 }
 
-.sectionSwitch {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  width: fit-content;
-  max-width: 100%;
-}
-
-.sectionSwitchButton {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 40px;
-  padding: 0 14px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 8px;
-  color: var(--color-text-secondary);
-  background: var(--color-background-secondary);
-  font-size: 13px;
-  font-weight: 850;
-  letter-spacing: 0;
-  cursor: pointer;
-  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
-}
-
-.sectionSwitchButton:hover,
-.sectionSwitchButton:focus-visible {
-  color: var(--color-text-primary);
-  border-color: var(--settings-brand-border);
-  background: var(--settings-brand-bg-muted);
-}
-
-.sectionSwitchButtonActive {
-  color: var(--settings-brand-color);
-  border-color: var(--settings-brand-border-strong);
-  background: var(--settings-brand-bg);
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
-}
-
 .stage {
   display: block;
   flex: 1;
@@ -490,6 +450,13 @@
   gap: 8px;
 }
 
+.phoneTableToolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
 .phoneTableIntro {
   max-width: 920px;
   margin: 0;
@@ -498,6 +465,34 @@
   font-weight: 760;
   line-height: 1.45;
   overflow-wrap: anywhere;
+}
+
+.viewToggleButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  color: var(--color-text-secondary);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 160ms ease, color 160ms ease, background 160ms ease;
+}
+
+.viewToggleButton:hover,
+.viewToggleButton:focus-visible {
+  color: var(--settings-brand-color);
+  border-color: var(--settings-brand-border-strong);
+  background: var(--settings-brand-bg-muted);
+  outline: none;
 }
 
 .phoneTableWrap {
@@ -991,6 +986,13 @@
   align-items: flex-start;
 }
 
+.templatesHeaderActions {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+  min-width: 0;
+}
+
 .templatesSummaryBar {
   display: flex;
   flex-wrap: wrap;
@@ -1114,8 +1116,6 @@
     font-size: 30px;
   }
 
-  .sectionSwitch,
-  .sectionSwitchButton,
   .connectionHeaderRight,
   .connectionActions {
     width: 100%;
@@ -1126,13 +1126,23 @@
     flex-direction: column;
   }
 
-  .sectionSwitchButton {
-    flex: 1;
-  }
-
   .connectionHeader,
   .templatesHeader {
     flex-direction: column;
+  }
+
+  .phoneTableToolbar {
+    flex-direction: column;
+  }
+
+  .phoneTableToolbar,
+  .templatesHeaderActions,
+  .viewToggleButton {
+    width: 100%;
+  }
+
+  .templatesHeaderActions {
+    justify-items: stretch;
   }
 
   .connectionHeaderRight {
