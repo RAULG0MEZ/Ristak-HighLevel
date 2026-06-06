@@ -1367,97 +1367,141 @@ export const MessageTemplates: React.FC<MessageTemplatesProps> = ({
           </div>
         )}
 
-        <div className={styles.collectionList}>
-          {currentFolders.map((folder) => (
-            <article
-              key={folder.id}
-              className={`${styles.collectionItem} ${selectedFolderIds.has(folder.id) ? styles.collectionItemSelected : ''} ${dropTargetFolderId === folder.id ? styles.collectionItemDropTarget : ''}`}
-              draggable
-              onDragStart={(event) => handleDragStart(event, 'folder', folder.id)}
-              onDragEnd={() => {
-                setDragging(null)
-                setDropTargetFolderId(null)
-              }}
-              onDragOver={(event) => handleFolderDragOver(event, folder.id)}
-              onDragLeave={() => setDropTargetFolderId(null)}
-              onDrop={(event) => handleDropOnFolder(event, folder.id)}
-            >
-              <label className={styles.itemCheck} aria-label={`Seleccionar ${folder.name}`}>
-                <input
-                  type="checkbox"
-                  checked={selectedFolderIds.has(folder.id)}
-                  onChange={() => toggleFolderSelection(folder.id)}
-                />
-              </label>
-              <button type="button" className={styles.itemMain} onClick={() => {
-                setActiveFolderId(folder.id)
-                setSearchTerm('')
-              }}>
-                <span className={styles.folderIcon}><Folder size={18} /></span>
-                <span>
-                  <strong>{folder.name}</strong>
-                  <small>{templateCountsByFolder.get(folder.id) || 0} plantillas</small>
-                </span>
-              </button>
-              <button
-                type="button"
-                className={styles.iconButton}
-                onClick={() => confirmDeleteFolder(folder.id)}
-                aria-label={`Eliminar ${folder.name}`}
-                title="Eliminar"
-              >
-                <Trash2 size={15} />
-              </button>
-            </article>
-          ))}
+        {currentFolders.length || visibleTemplates.length ? (
+          <div className={styles.collectionTableWrap}>
+            <table className={styles.collectionTable}>
+              <thead>
+                <tr>
+                  <th aria-label="Seleccionar" />
+                  <th>Tipo</th>
+                  <th>Nombre</th>
+                  <th>Detalle</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {currentFolders.map((folder) => (
+                  <tr
+                    key={folder.id}
+                    className={`${selectedFolderIds.has(folder.id) ? styles.collectionRowSelected : ''} ${dropTargetFolderId === folder.id ? styles.collectionRowDropTarget : ''}`}
+                    draggable
+                    onDragStart={(event) => handleDragStart(event, 'folder', folder.id)}
+                    onDragEnd={() => {
+                      setDragging(null)
+                      setDropTargetFolderId(null)
+                    }}
+                    onDragOver={(event) => handleFolderDragOver(event, folder.id)}
+                    onDragLeave={() => setDropTargetFolderId(null)}
+                    onDrop={(event) => handleDropOnFolder(event, folder.id)}
+                  >
+                    <td>
+                      <label className={styles.itemCheck} aria-label={`Seleccionar ${folder.name}`}>
+                        <input
+                          type="checkbox"
+                          checked={selectedFolderIds.has(folder.id)}
+                          onChange={() => toggleFolderSelection(folder.id)}
+                        />
+                      </label>
+                    </td>
+                    <td>
+                      <span className={`${styles.collectionTypeBadge} ${styles.collectionTypeFolder}`}>
+                        <Folder size={14} />
+                        Carpeta
+                      </span>
+                    </td>
+                    <td>
+                      <button type="button" className={styles.collectionNameButton} onClick={() => {
+                        setActiveFolderId(folder.id)
+                        setSearchTerm('')
+                      }}>
+                        <strong>{folder.name}</strong>
+                        <small>{activeFolderId ? 'Subcarpeta' : 'Carpeta'}</small>
+                      </button>
+                    </td>
+                    <td>{templateCountsByFolder.get(folder.id) || 0} plantilla{(templateCountsByFolder.get(folder.id) || 0) === 1 ? '' : 's'}</td>
+                    <td><span className={styles.collectionMuted}>Sin revisión</span></td>
+                    <td>
+                      <div className={styles.collectionTableActions}>
+                        <button
+                          type="button"
+                          className={styles.iconButton}
+                          onClick={() => confirmDeleteFolder(folder.id)}
+                          aria-label={`Eliminar ${folder.name}`}
+                          title="Eliminar"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
 
-          {visibleTemplates.map((template) => (
-            <article
-              key={template.id}
-              className={`${styles.collectionItem} ${selectedTemplateIds.has(template.id) ? styles.collectionItemSelected : ''}`}
-              draggable
-              onDragStart={(event) => handleDragStart(event, 'template', template.id)}
-              onDragEnd={() => {
-                setDragging(null)
-                setDropTargetFolderId(null)
-              }}
-            >
-              <label className={styles.itemCheck} aria-label={`Seleccionar ${template.name}`}>
-                <input
-                  type="checkbox"
-                  checked={selectedTemplateIds.has(template.id)}
-                  onChange={() => toggleTemplateSelection(template.id)}
-                />
-              </label>
-              <button type="button" className={styles.itemMain} onClick={() => editTemplate(template)}>
-                <span className={styles.templateIcon}><FileText size={18} /></span>
-                <span>
-                  <strong>{template.name}</strong>
-                  <small>{getCategoryLabel(template.category)} · {template.language} · {getStatusLabel(template.status)}</small>
-                  <span className={`${styles.ycloudBadge} ${styles[`ycloudBadge${getYCloudStatusTone(template.ycloudStatus)}`]}`}>
-                    {getYCloudStatusLabel(template.ycloudStatus)}
-                  </span>
-                </span>
-              </button>
-              <div className={styles.itemActions}>
-                <button type="button" className={styles.iconButton} onClick={() => editTemplate(template)} aria-label={`Editar ${template.name}`} title="Editar">
-                  <Edit3 size={15} />
-                </button>
-                <button type="button" className={styles.iconButton} onClick={() => confirmDeleteTemplate(template)} aria-label={`Eliminar ${template.name}`} title="Eliminar">
-                  <Trash2 size={15} />
-                </button>
-              </div>
-            </article>
-          ))}
-
-          {!currentFolders.length && !visibleTemplates.length && (
-            <div className={styles.emptyState}>
-              <ListTree size={28} />
-              <strong>{hasTemplateFilters ? 'Sin resultados' : 'Sin plantillas'}</strong>
-              {hasTemplateFilters && <span>Prueba con otro número, tipo o estado.</span>}
-            </div>
-          )}
-        </div>
+                {visibleTemplates.map((template) => (
+                  <tr
+                    key={template.id}
+                    className={selectedTemplateIds.has(template.id) ? styles.collectionRowSelected : ''}
+                    draggable
+                    onDragStart={(event) => handleDragStart(event, 'template', template.id)}
+                    onDragEnd={() => {
+                      setDragging(null)
+                      setDropTargetFolderId(null)
+                    }}
+                  >
+                    <td>
+                      <label className={styles.itemCheck} aria-label={`Seleccionar ${template.name}`}>
+                        <input
+                          type="checkbox"
+                          checked={selectedTemplateIds.has(template.id)}
+                          onChange={() => toggleTemplateSelection(template.id)}
+                        />
+                      </label>
+                    </td>
+                    <td>
+                      <span className={`${styles.collectionTypeBadge} ${styles.collectionTypeTemplate}`}>
+                        <FileText size={14} />
+                        Plantilla
+                      </span>
+                    </td>
+                    <td>
+                      <button type="button" className={styles.collectionNameButton} onClick={() => editTemplate(template)}>
+                        <strong>{template.name}</strong>
+                        <small>{template.bodyText || template.description || 'Sin texto principal'}</small>
+                      </button>
+                    </td>
+                    <td>
+                      <div className={styles.collectionMetaStack}>
+                        <span>{getCategoryLabel(template.category)} · {template.language}</span>
+                        <small>{getStatusLabel(template.status)}</small>
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`${styles.ycloudBadge} ${styles[`ycloudBadge${getYCloudStatusTone(template.ycloudStatus)}`]}`}>
+                        {getYCloudStatusLabel(template.ycloudStatus)}
+                      </span>
+                    </td>
+                    <td>
+                      <div className={styles.collectionTableActions}>
+                        <button type="button" className={styles.iconButton} onClick={() => editTemplate(template)} aria-label={`Editar ${template.name}`} title="Editar">
+                          <Edit3 size={15} />
+                        </button>
+                        <button type="button" className={styles.iconButton} onClick={() => confirmDeleteTemplate(template)} aria-label={`Eliminar ${template.name}`} title="Eliminar">
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className={styles.emptyState}>
+            <ListTree size={28} />
+            <strong>{hasTemplateFilters ? 'Sin resultados' : 'Sin plantillas'}</strong>
+            {hasTemplateFilters && <span>Prueba con otro número, tipo o estado.</span>}
+          </div>
+        )}
       </section>
 
     </div>
