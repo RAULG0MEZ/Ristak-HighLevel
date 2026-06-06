@@ -118,11 +118,11 @@ const buildTimezoneDisplayInfo = (timeZone: string, atDate: Date): TimezoneDispl
 
 const getNotificationPermissionLabel = () => {
   if (typeof window === 'undefined' || !('Notification' in window)) {
-    return 'Este celular no permite avisos de la app.'
+    return 'Este celular no permite notificaciones de la app.'
   }
-  if (Notification.permission === 'granted') return 'Este celular ya puede recibir avisos.'
-  if (Notification.permission === 'denied') return 'El celular bloqueó los avisos. Actívalos desde los ajustes del navegador.'
-  return 'Toca Activar para permitir avisos en este celular.'
+  if (Notification.permission === 'granted') return 'Este celular ya puede recibir notificaciones.'
+  if (Notification.permission === 'denied') return 'El celular bloqueó las notificaciones. Actívalas desde los ajustes del navegador.'
+  return 'Toca Activar para permitir notificaciones en este celular.'
 }
 
 export const AccountSettings: React.FC = () => {
@@ -476,7 +476,7 @@ export const AccountSettings: React.FC = () => {
       })
 
       if (result.status === 'subscribed') {
-        showToast('success', 'Avisos activados', 'Este celular ya puede recibir avisos de Ristak.')
+        showToast('success', 'Notificaciones activadas', 'Este celular ya puede recibir notificaciones de Ristak.')
       } else {
         showToast('warning', 'No se activaron', result.reason)
       }
@@ -897,7 +897,7 @@ export const AccountSettings: React.FC = () => {
                     <Bell size={16} /> Notificaciones
                   </h3>
                   <p className={styles.accountSectionDescription}>
-                    Elige qué avisos quieres recibir en los celulares donde abras Ristak desde el icono de inicio.
+                    Elige qué notificaciones quieres recibir en los celulares donde abras Ristak desde el icono de inicio.
                   </p>
                 </div>
               </div>
@@ -925,7 +925,7 @@ export const AccountSettings: React.FC = () => {
                 <button
                   type="button"
                   className={`${styles.notificationSettingCard} ${chatPushEnabled ? styles.notificationSettingCardActive : ''}`}
-                  onClick={() => handleToggleNotification(chatPushEnabled, setChatPushEnabled, 'Avisos de chat encendidos', 'Avisos de chat apagados')}
+                  onClick={() => handleToggleNotification(chatPushEnabled, setChatPushEnabled, 'Notificaciones de chat encendidas', 'Notificaciones de chat apagadas')}
                   disabled={savingChatPush}
                   aria-pressed={chatPushEnabled}
                 >
@@ -942,7 +942,7 @@ export const AccountSettings: React.FC = () => {
                 <button
                   type="button"
                   className={`${styles.notificationSettingCard} ${calendarPushEnabled ? styles.notificationSettingCardActive : ''}`}
-                  onClick={() => handleToggleNotification(calendarPushEnabled, setCalendarPushEnabled, 'Avisos de citas encendidos', 'Avisos de citas apagados')}
+                  onClick={() => handleToggleNotification(calendarPushEnabled, setCalendarPushEnabled, 'Notificaciones de citas encendidas', 'Notificaciones de citas apagadas')}
                   disabled={savingCalendarPush}
                   aria-pressed={calendarPushEnabled}
                 >
@@ -959,7 +959,7 @@ export const AccountSettings: React.FC = () => {
                 <button
                   type="button"
                   className={`${styles.notificationSettingCard} ${paymentPushEnabled ? styles.notificationSettingCardActive : ''}`}
-                  onClick={() => handleToggleNotification(paymentPushEnabled, setPaymentPushEnabled, 'Avisos de pagos encendidos', 'Avisos de pagos apagados')}
+                  onClick={() => handleToggleNotification(paymentPushEnabled, setPaymentPushEnabled, 'Notificaciones de pagos encendidas', 'Notificaciones de pagos apagadas')}
                   disabled={savingPaymentPush}
                   aria-pressed={paymentPushEnabled}
                 >

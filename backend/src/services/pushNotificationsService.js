@@ -19,8 +19,8 @@ const APNS_BUNDLE_ID = process.env.APNS_BUNDLE_ID || process.env.IOS_BUNDLE_ID |
 const APNS_PRIVATE_KEY = process.env.APNS_PRIVATE_KEY || ''
 const APNS_PRIVATE_KEY_FILE = process.env.APNS_PRIVATE_KEY_FILE || ''
 const APNS_ENV = String(process.env.APNS_ENV || process.env.NODE_ENV || 'production').toLowerCase()
-const DEFAULT_NOTIFICATION_TITLE = 'Aviso nuevo'
-const DEFAULT_NOTIFICATION_BODY = 'Tienes un aviso nuevo.'
+const DEFAULT_NOTIFICATION_TITLE = 'Notificación nueva'
+const DEFAULT_NOTIFICATION_BODY = 'Tienes una notificación nueva.'
 
 async function resolveWebPushKeys() {
   const envPublicKey = String(ENV_VAPID_PUBLIC_KEY || '').trim()
@@ -59,7 +59,7 @@ async function resolveWebPushKeys() {
     setAppConfig(WEB_PUSH_PRIVATE_CONFIG_KEY, generated.privateKey)
   ])
 
-  logger.success('[Push] Llaves web push creadas y guardadas para activar avisos en celulares PWA.')
+  logger.success('[Push] Llaves web push creadas y guardadas para activar notificaciones en celulares PWA.')
 
   return {
     publicKey: generated.publicKey,
@@ -88,11 +88,11 @@ if (pushConfigured) {
     logger.info(`[Push] Web Push activo con llaves ${resolvedWebPushKeys.source === 'generated' ? 'creadas automáticamente' : 'guardadas en base de datos'}.`)
   }
 } else {
-  logger.warn('[Push] Web Push sin llaves VAPID; las suscripciones se guardan, pero no se enviarán avisos.')
+  logger.warn('[Push] Web Push sin llaves VAPID; las suscripciones se guardan, pero no se enviarán notificaciones.')
 }
 
 if (!nativePushConfigured) {
-  logger.warn('[Push] Push nativo sin FCM/APNs; los celulares nativos se guardan, pero no recibirán avisos hasta configurar credenciales.')
+  logger.warn('[Push] Push nativo sin FCM/APNs; los celulares nativos se guardan, pero no recibirán notificaciones hasta configurar credenciales.')
 }
 
 function safeJsonParse(value, fallback) {
@@ -202,7 +202,7 @@ async function getFcmAccessToken() {
 
   const account = await getFcmServiceAccount()
   if (!account?.clientEmail || !account?.privateKey) {
-    throw new Error('Faltan credenciales FCM para avisos Android')
+    throw new Error('Faltan credenciales FCM para notificaciones Android')
   }
 
   const now = Math.floor(Date.now() / 1000)
@@ -252,7 +252,7 @@ async function getApnsJwt() {
 
   const privateKey = await getApnsPrivateKey()
   if (!privateKey) {
-    throw new Error('Falta la llave privada APNs para avisos iPhone')
+    throw new Error('Falta la llave privada APNs para notificaciones iPhone')
   }
 
   const now = Math.floor(Date.now() / 1000)
@@ -492,11 +492,11 @@ export async function saveMobilePushDevice({
   const normalizedPlatform = normalizePlatform(platform)
 
   if (!normalizedToken) {
-    throw new Error('Falta la llave de avisos del celular')
+    throw new Error('Falta la llave de notificaciones del celular')
   }
 
   if (!normalizedPlatform) {
-    throw new Error('Este tipo de celular no está soportado para avisos')
+    throw new Error('Este tipo de celular no está soportado para notificaciones')
   }
 
   const id = getNativeDeviceId(normalizedPlatform, normalizedToken)
@@ -599,7 +599,7 @@ async function markSubscriptionError(row, error) {
     `UPDATE push_subscriptions
      SET enabled = ?, last_error = ?, updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`,
-    [shouldDisable ? 0 : 1, error?.message || 'Error enviando aviso', row.id]
+    [shouldDisable ? 0 : 1, error?.message || 'Error enviando notificación', row.id]
   ).catch(() => {})
 }
 
@@ -617,7 +617,7 @@ async function markMobileDeviceError(row, error) {
     `UPDATE mobile_push_devices
      SET enabled = ?, last_error = ?, updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`,
-    [shouldDisable ? 0 : 1, error?.message || 'Error enviando aviso al celular', row.id]
+    [shouldDisable ? 0 : 1, error?.message || 'Error enviando notificación al celular', row.id]
   ).catch(() => {})
 }
 
@@ -631,7 +631,7 @@ async function sendNotificationRows(rows = [], payload = {}) {
       await webPush.sendNotification(subscription, JSON.stringify(payload))
       sent += 1
     } catch (error) {
-      logger.warn(`[Push] No se pudo enviar aviso a ${row.id}: ${error.message}`)
+      logger.warn(`[Push] No se pudo enviar notificación a ${row.id}: ${error.message}`)
       await markSubscriptionError(row, error)
     }
   }))
@@ -641,7 +641,7 @@ async function sendNotificationRows(rows = [], payload = {}) {
 
 async function sendFcmNotification(row, payload = {}) {
   if (!fcmConfigured) {
-    throw new Error('Faltan credenciales FCM para avisos Android')
+    throw new Error('Faltan credenciales FCM para notificaciones Android')
   }
 
   const notificationTitle = getNotificationTitle(payload)
@@ -684,7 +684,7 @@ async function sendFcmNotification(row, payload = {}) {
 
 async function sendApnsNotification(row, payload = {}) {
   if (!apnsConfigured) {
-    throw new Error('Faltan credenciales APNs para avisos iPhone')
+    throw new Error('Faltan credenciales APNs para notificaciones iPhone')
   }
 
   const notificationTitle = getNotificationTitle(payload)
@@ -767,7 +767,7 @@ async function sendMobileNotificationRows(rows = [], payload = {}) {
       }
       sent += 1
     } catch (error) {
-      logger.warn(`[Push] No se pudo enviar aviso nativo a ${row.id}: ${error.message}`)
+      logger.warn(`[Push] No se pudo enviar notificación nativa a ${row.id}: ${error.message}`)
       await markMobileDeviceError(row, error)
     }
   }))

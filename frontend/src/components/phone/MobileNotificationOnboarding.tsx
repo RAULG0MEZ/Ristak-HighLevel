@@ -37,11 +37,11 @@ function getStepCopy(step: PromptStep, denialReason = '') {
   if (step === 'first_decline') {
     return {
       icon: AlertTriangle,
-      eyebrow: 'Avisos apagados',
-      title: 'Sin avisos te puedes perder mensajes',
-      message: 'Si rechazas esto, el celular no te va a avisar cuando llegue un WhatsApp nuevo. Tendrás que abrir la app para revisar si alguien escribió.',
+      eyebrow: 'Notificaciones apagadas',
+      title: 'Sin notificaciones te puedes perder mensajes',
+      message: 'Si rechazas esto, el celular no te va a notificar cuando llegue un WhatsApp nuevo. Tendrás que abrir la app para revisar si alguien escribió.',
       primary: 'Mejor activar',
-      secondary: 'Seguir sin avisos',
+      secondary: 'Seguir sin notificaciones',
       warning: true
     }
   }
@@ -50,10 +50,10 @@ function getStepCopy(step: PromptStep, denialReason = '') {
     return {
       icon: Bell,
       eyebrow: 'Última confirmación',
-      title: '¿Seguro que no quieres avisos?',
-      message: 'Esta es la última pregunta. Si dejas los avisos apagados, no vas a saber al momento cuando un cliente te mande mensaje.',
-      primary: 'Activar avisos',
-      secondary: 'Sí, no quiero avisos',
+      title: '¿Seguro que no quieres notificaciones?',
+      message: 'Esta es la última pregunta. Si dejas las notificaciones apagadas, no vas a saber al momento cuando un cliente te mande mensaje.',
+      primary: 'Activar notificaciones',
+      secondary: 'Sí, no quiero notificaciones',
       warning: true
     }
   }
@@ -61,11 +61,11 @@ function getStepCopy(step: PromptStep, denialReason = '') {
   if (step === 'system_denied') {
     return {
       icon: AlertTriangle,
-      eyebrow: 'El celular no activó avisos',
+      eyebrow: 'El celular no activó notificaciones',
       title: 'Todavía no van a llegar notificaciones',
-      message: 'El permiso no quedó activo. Puedes intentar otra vez o seguir sin avisos en este celular.',
+      message: 'El permiso no quedó activo. Puedes intentar otra vez o seguir sin notificaciones en este celular.',
       primary: 'Intentar activar',
-      secondary: 'Seguir sin avisos',
+      secondary: 'Seguir sin notificaciones',
       reason: denialReason,
       warning: true
     }
@@ -132,7 +132,7 @@ export function MobileNotificationOnboarding() {
     setDenialReason('')
     showToast(
       'warning',
-      'Avisos apagados',
+      'Notificaciones apagadas',
       'No recibirás notificaciones de mensajes en este celular. Puedes activarlas después desde ajustes.'
     )
   }
@@ -144,7 +144,7 @@ export function MobileNotificationOnboarding() {
 
       if (result.status === 'subscribed') {
         closeAsAccepted()
-        showToast('success', 'Avisos activados', 'Este celular ya puede avisarte cuando llegue un mensaje.')
+        showToast('success', 'Notificaciones activadas', 'Este celular ya puede notificarte cuando llegue un mensaje.')
         return
       }
 
@@ -181,7 +181,7 @@ export function MobileNotificationOnboarding() {
   const Icon = copy.icon
   const permission = getBrowserNotificationPermission()
   const reason = copy.reason || (step === 'system_denied' && permission === 'denied'
-    ? 'El celular bloqueó los avisos. Si no aparece el permiso otra vez, actívalos desde los ajustes del sistema.'
+    ? 'El celular bloqueó las notificaciones. Si no aparece el permiso otra vez, actívalas desde los ajustes del sistema.'
     : '')
 
   return (

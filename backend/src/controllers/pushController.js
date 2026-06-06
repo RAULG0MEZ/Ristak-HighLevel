@@ -17,7 +17,7 @@ export async function getPushPublicKey(req, res) {
     logger.error(`[Push Controller] Error obteniendo llave pública: ${error.message}`)
     res.status(500).json({
       success: false,
-      error: 'No se pudo leer la configuración de avisos'
+      error: 'No se pudo leer la configuración de notificaciones'
     })
   }
 }

@@ -1,6 +1,6 @@
 const CACHE_NAME = 'ristak-chat-v5'
-const DEFAULT_NOTIFICATION_TITLE = 'Aviso nuevo'
-const DEFAULT_NOTIFICATION_BODY = 'Tienes un aviso nuevo.'
+const DEFAULT_NOTIFICATION_TITLE = 'Notificación nueva'
+const DEFAULT_NOTIFICATION_BODY = 'Tienes una notificación nueva.'
 const SHELL_ASSETS = [
   '/',
   '/phone/chat',

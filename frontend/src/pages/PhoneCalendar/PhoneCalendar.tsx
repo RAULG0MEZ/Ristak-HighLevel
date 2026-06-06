@@ -970,7 +970,7 @@ export const PhoneCalendar: React.FC = () => {
 
       if (result.status === 'subscribed') {
         await setPushEnabled(true)
-        showToast('success', 'Alertas activadas', 'Este celular ya puede recibir avisos de citas nuevas.')
+        showToast('success', 'Notificaciones activadas', 'Este celular ya puede recibir notificaciones de citas nuevas.')
         return
       }
 

@@ -660,10 +660,10 @@ export const CalendarsConfiguration: React.FC = () => {
       await setCalendarPushEnabled(!calendarPushEnabled)
       showToast(
         'success',
-        !calendarPushEnabled ? 'Avisos encendidos' : 'Avisos apagados',
+        !calendarPushEnabled ? 'Notificaciones encendidas' : 'Notificaciones apagadas',
         !calendarPushEnabled
-          ? 'Ristak enviará avisos a los celulares que ya dieron permiso.'
-          : 'Ristak dejará de enviar avisos de nuevas citas.'
+          ? 'Ristak enviará notificaciones a los celulares que ya dieron permiso.'
+          : 'Ristak dejará de enviar notificaciones de nuevas citas.'
       )
     } catch (error: any) {
       showToast('error', 'No se pudo guardar el ajuste', error.message || 'Intenta nuevamente')
@@ -679,10 +679,10 @@ export const CalendarsConfiguration: React.FC = () => {
       await setCalendarPushNotificationIds(newSelection)
       showToast(
         'success',
-        'Calendarios de aviso actualizados',
+        'Calendarios de notificaciones actualizados',
         newSelection.length
-          ? `${newSelection.length} calendario${newSelection.length !== 1 ? 's' : ''} enviarán avisos.`
-          : 'Todos los calendarios enviarán avisos.'
+          ? `${newSelection.length} calendario${newSelection.length !== 1 ? 's' : ''} enviarán notificaciones.`
+          : 'Todos los calendarios enviarán notificaciones.'
       )
     } catch (error: any) {
       showToast('error', 'No se pudo guardar el ajuste', error.message || 'Intenta nuevamente')
@@ -692,7 +692,7 @@ export const CalendarsConfiguration: React.FC = () => {
   const handleUseAllCalendarPushNotifications = async () => {
     try {
       await setCalendarPushNotificationIds([])
-      showToast('success', 'Avisos para todos', 'Todos los calendarios activos podrán avisar nuevas citas.')
+      showToast('success', 'Notificaciones para todos', 'Todos los calendarios activos podrán notificar nuevas citas.')
     } catch (error: any) {
       showToast('error', 'No se pudo guardar el ajuste', error.message || 'Intenta nuevamente')
     }
@@ -1542,8 +1542,8 @@ export const CalendarsConfiguration: React.FC = () => {
               {calendarPushEnabled ? <Bell size={18} /> : <BellOff size={18} />}
             </span>
             <div>
-              <h3>Avisos en celulares</h3>
-              <p>Cuando alguien agenda, Ristak avisa a los celulares que ya dieron permiso.</p>
+              <h3>Notificaciones en celulares</h3>
+              <p>Cuando alguien agenda, Ristak notifica a los celulares que ya dieron permiso.</p>
             </div>
           </div>
 
@@ -1560,8 +1560,8 @@ export const CalendarsConfiguration: React.FC = () => {
 
         <section className={pageStyles.notificationSettingsSection}>
           <div className={pageStyles.notificationSectionHeader}>
-            <strong>Quién recibirá avisos</strong>
-            <span>Reciben avisos los celulares donde esta cuenta haya permitido notificaciones.</span>
+            <strong>Quién recibirá notificaciones</strong>
+            <span>Reciben notificaciones los celulares donde esta cuenta haya permitido notificaciones.</span>
           </div>
 
           <div className={pageStyles.notificationRecipientList}>
@@ -1581,7 +1581,7 @@ export const CalendarsConfiguration: React.FC = () => {
               </span>
               <div>
                 <strong>Celulares con permiso</strong>
-                <span>Cada persona debe abrir Ristak desde el icono del celular y tocar “Activar” en Avisos.</span>
+                <span>Cada persona debe abrir Ristak desde el icono del celular y tocar “Activar” en Notificaciones.</span>
               </div>
             </div>
           </div>
@@ -1589,7 +1589,7 @@ export const CalendarsConfiguration: React.FC = () => {
 
         <section className={pageStyles.notificationSettingsSection}>
           <div className={pageStyles.notificationPickerHeader}>
-            <strong>Calendarios que mandan aviso</strong>
+            <strong>Calendarios que mandan notificaciones</strong>
             <span>{calendarPushNotificationIds.length ? `${calendarPushNotificationIds.length} elegido${calendarPushNotificationIds.length === 1 ? '' : 's'}` : 'Todos'}</span>
           </div>
 
