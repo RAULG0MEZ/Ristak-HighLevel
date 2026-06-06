@@ -332,6 +332,16 @@
   transform: translate(14px, 14px);
 }
 
+.rstkPaletteFloatingPreviewCanvas {
+  min-width: 190px;
+  transform: translate(18px, -50%);
+  border-color: color-mix(in srgb, var(--rstk-accent, #2563eb) 48%, transparent);
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow:
+    0 22px 48px -20px rgba(15, 23, 42, 0.72),
+    0 0 0 3px color-mix(in srgb, var(--rstk-accent, #2563eb) 14%, transparent);
+}
+
 .rstkPaletteFloatingPreviewIcon {
   width: 24px;
   height: 24px;
