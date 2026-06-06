@@ -10,8 +10,8 @@ const __dirname = dirname(__filename)
 const QR_AUTH_ROOT = join(__dirname, '../../storage/whatsapp-qr-auth')
 const QR_CONSENT_TEXT = 'Acepto que esta conexion usa WhatsApp Web por QR y no la API oficial de Meta. Entiendo que puede desconectarse, fallar o poner en riesgo el numero. Ristak solo la usara para mensajes individuales cuando yo lo active.'
 const CONNECT_TIMEOUT_MS = 20000
-const RESTART_DELAY_MS = 800
-const MAX_RESTART_ATTEMPTS = 3
+const RECONNECT_DELAY_MS = 800
+const MAX_RECONNECT_ATTEMPTS = 8
 
 const liveSessions = new Map()
 
@@ -22,6 +22,17 @@ function cleanString(value) {
 
 function nowIso() {
   return new Date().toISOString()
+}
+
+function createDeferred() {
+  let resolve
+  let reject
+  const promise = new Promise((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+
+  return { promise, resolve, reject }
 }
 
 function safeJson(value) {
@@ -44,12 +55,58 @@ function phoneMatches(left = '', right = '') {
   return leftCandidates.some(candidate => rightCandidates.includes(candidate))
 }
 
+function pickValue(values, key, fallback) {
+  return Object.prototype.hasOwnProperty.call(values, key) ? values[key] : fallback
+}
+
+function getDisconnectStatusCode(update = {}) {
+  const rawStatus = update.lastDisconnect?.error?.output?.statusCode
+  const numericStatus = Number(rawStatus)
+  return Number.isFinite(numericStatus) && numericStatus > 0 ? numericStatus : null
+}
+
+function getDisconnectMessage(update = {}) {
+  return cleanString(
+    update.lastDisconnect?.error?.message ||
+    update.lastDisconnect?.error?.output?.payload?.message ||
+    update.lastDisconnect?.error?.data?.reason ||
+    ''
+  )
+}
+
 function isRestartRequiredDisconnect(statusCode, lastError = '', DisconnectReason = {}) {
   const numericStatus = Number(statusCode)
   const restartCode = Number(DisconnectReason.restartRequired || 515)
   return numericStatus === 515 ||
     numericStatus === restartCode ||
     /restart required/i.test(cleanString(lastError))
+}
+
+function isLoggedOutDisconnect(statusCode, DisconnectReason = {}) {
+  const numericStatus = Number(statusCode)
+  const loggedOutCode = Number(DisconnectReason.loggedOut || 401)
+  return numericStatus === 401 || numericStatus === loggedOutCode
+}
+
+function getReconnectStatus(statusCode, lastError = '', DisconnectReason = {}) {
+  return isRestartRequiredDisconnect(statusCode, lastError, DisconnectReason) ? 'restarting' : 'reconnecting'
+}
+
+function getConnectedPhoneFromSocket(sock, authState) {
+  const candidates = [
+    sock?.user?.id,
+    authState?.creds?.me?.id,
+    sock?.user?.jid,
+    sock?.user?.lid,
+    authState?.creds?.me?.lid
+  ]
+
+  for (const candidate of candidates) {
+    const normalized = normalizeConnectedPhone(candidate)
+    if (normalized) return normalized
+  }
+
+  return ''
 }
 
 function getSessionId(phoneNumberId) {
@@ -170,18 +227,18 @@ async function upsertSession(phone, values = {}) {
   const id = getSessionId(phone.id)
   const existing = await getSessionRow(phone.id)
   const next = {
-    expectedPhone: phone.expectedPhone,
-    connectedPhone: values.connectedPhone ?? existing?.connected_phone ?? null,
-    status: values.status ?? existing?.status ?? 'disconnected',
-    qrCode: values.qrCode ?? existing?.qr_code ?? null,
-    qrCodeDataUrl: values.qrCodeDataUrl ?? existing?.qr_code_data_url ?? null,
-    consentAccepted: values.consentAccepted ?? Number(existing?.consent_accepted || 0),
-    consentText: values.consentText ?? existing?.consent_text ?? QR_CONSENT_TEXT,
-    consentAcceptedAt: values.consentAcceptedAt ?? existing?.consent_accepted_at ?? null,
-    consentAcceptedBy: values.consentAcceptedBy ?? existing?.consent_accepted_by ?? null,
-    lastError: values.lastError ?? existing?.last_error ?? null,
-    lastConnectedAt: values.lastConnectedAt ?? existing?.last_connected_at ?? null,
-    lastDisconnectedAt: values.lastDisconnectedAt ?? existing?.last_disconnected_at ?? null
+    expectedPhone: pickValue(values, 'expectedPhone', phone.expectedPhone),
+    connectedPhone: pickValue(values, 'connectedPhone', existing?.connected_phone ?? null),
+    status: pickValue(values, 'status', existing?.status ?? 'disconnected'),
+    qrCode: pickValue(values, 'qrCode', existing?.qr_code ?? null),
+    qrCodeDataUrl: pickValue(values, 'qrCodeDataUrl', existing?.qr_code_data_url ?? null),
+    consentAccepted: pickValue(values, 'consentAccepted', Number(existing?.consent_accepted || 0)),
+    consentText: pickValue(values, 'consentText', existing?.consent_text ?? QR_CONSENT_TEXT),
+    consentAcceptedAt: pickValue(values, 'consentAcceptedAt', existing?.consent_accepted_at ?? null),
+    consentAcceptedBy: pickValue(values, 'consentAcceptedBy', existing?.consent_accepted_by ?? null),
+    lastError: pickValue(values, 'lastError', existing?.last_error ?? null),
+    lastConnectedAt: pickValue(values, 'lastConnectedAt', existing?.last_connected_at ?? null),
+    lastDisconnectedAt: pickValue(values, 'lastDisconnectedAt', existing?.last_disconnected_at ?? null)
   }
 
   await db.run(`
@@ -271,7 +328,7 @@ function closeLiveSession(phoneNumberId) {
   }
 }
 
-async function openSocket(phone, { requireConsent = true, restartCount = 0 } = {}) {
+async function openSocket(phone, { requireConsent = true, reconnectAttempt = 0, openDeferred = null } = {}) {
   const existing = await getSessionRow(phone.id)
   if (requireConsent && Number(existing?.consent_accepted || 0) !== 1) {
     throw new Error('Primero acepta el riesgo de usar conexion por QR para este numero')
@@ -283,24 +340,20 @@ async function openSocket(phone, { requireConsent = true, restartCount = 0 } = {
   const { makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers } = await loadBaileys()
   const { state, saveCreds } = await useMultiFileAuthState(getAuthDir(phone.id))
 
-  let resolveOpen
-  let rejectOpen
+  const deferred = openDeferred || createDeferred()
   let openSettled = false
-  const openPromise = new Promise((resolve, reject) => {
-    resolveOpen = resolve
-    rejectOpen = reject
-  })
+  let currentReconnectAttempt = reconnectAttempt
 
   const resolveCurrentOpen = (value) => {
     if (openSettled) return
     openSettled = true
-    resolveOpen(value)
+    deferred.resolve(value)
   }
 
   const rejectCurrentOpen = (error) => {
     if (openSettled) return
     openSettled = true
-    rejectOpen(error)
+    deferred.reject(error)
   }
 
   const sock = makeWASocket({
@@ -313,7 +366,7 @@ async function openSocket(phone, { requireConsent = true, restartCount = 0 } = {
 
   liveSessions.set(phone.id, {
     sock,
-    openPromise,
+    openPromise: deferred.promise,
     connected: false
   })
 
@@ -337,7 +390,7 @@ async function openSocket(phone, { requireConsent = true, restartCount = 0 } = {
     }
 
     if (update.connection === 'open') {
-      const connectedPhone = normalizeConnectedPhone(sock.user?.id || sock.user?.lid || '')
+      const connectedPhone = getConnectedPhoneFromSocket(sock, state)
 
       if (!phoneMatches(connectedPhone, phone.expectedPhone)) {
         const message = `El QR conecto ${connectedPhone || 'otro numero'}, pero esperabamos ${phone.expectedPhone}`
@@ -355,6 +408,7 @@ async function openSocket(phone, { requireConsent = true, restartCount = 0 } = {
       }
 
       if (live) live.connected = true
+      currentReconnectAttempt = 0
       await upsertSession(phone, {
         status: 'connected',
         connectedPhone,
@@ -368,8 +422,8 @@ async function openSocket(phone, { requireConsent = true, restartCount = 0 } = {
     }
 
     if (update.connection === 'close') {
-      const statusCode = update.lastDisconnect?.error?.output?.statusCode
-      const lastError = update.lastDisconnect?.error?.message || ''
+      const statusCode = getDisconnectStatusCode(update)
+      const lastError = getDisconnectMessage(update)
       const status = statusCode ? `disconnected_${statusCode}` : 'disconnected'
       const liveStillCurrent = liveSessions.get(phone.id)?.sock === sock
 
@@ -378,59 +432,67 @@ async function openSocket(phone, { requireConsent = true, restartCount = 0 } = {
         return
       }
 
-      if (isRestartRequiredDisconnect(statusCode, lastError, DisconnectReason)) {
-        if (restartCount >= MAX_RESTART_ATTEMPTS) {
-          const message = 'WhatsApp pidio reiniciar la conexion varias veces. Genera un QR nuevo e intentalo otra vez.'
-          await upsertSession(phone, {
-            status,
-            qrCode: null,
-            qrCodeDataUrl: null,
-            lastError: message,
-            lastDisconnectedAt: nowIso()
-          })
-          liveSessions.delete(phone.id)
-          rejectCurrentOpen(new Error(message))
-          return
-        }
-
-        logger.info(`[WhatsApp QR] Reiniciando socket ${phone.id} despues de restart required (${restartCount + 1}/${MAX_RESTART_ATTEMPTS})`)
+      if (isLoggedOutDisconnect(statusCode, DisconnectReason)) {
+        const message = lastError || 'WhatsApp cerro la sesion. Genera un QR nuevo para conectarlo otra vez.'
         await upsertSession(phone, {
-          status: 'restarting',
+          status: 'logged_out',
+          connectedPhone: null,
           qrCode: null,
           qrCodeDataUrl: null,
-          lastError: null,
+          lastError: message,
           lastDisconnectedAt: nowIso()
         })
         liveSessions.delete(phone.id)
-
-        setTimeout(() => {
-          openSocket(phone, { requireConsent: false, restartCount: restartCount + 1 })
-            .then(({ openPromise: restartedOpenPromise }) => {
-              restartedOpenPromise
-                .then(resolveCurrentOpen)
-                .catch(rejectCurrentOpen)
-            })
-            .catch(rejectCurrentOpen)
-        }, RESTART_DELAY_MS)
+        rejectCurrentOpen(new Error(message))
         return
       }
 
+      if (currentReconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
+        const message = lastError ||
+          'WhatsApp no dejo estabilizar la conexion por QR. Genera un QR nuevo e intentalo otra vez.'
+        await upsertSession(phone, {
+          status,
+          qrCode: null,
+          qrCodeDataUrl: null,
+          lastError: message,
+          lastDisconnectedAt: nowIso()
+        })
+        liveSessions.delete(phone.id)
+        rejectCurrentOpen(new Error(message))
+        return
+      }
+
+      const nextStatus = getReconnectStatus(statusCode, lastError, DisconnectReason)
+      const nextReconnectAttempt = currentReconnectAttempt + 1
+      logger.info(`[WhatsApp QR] ${nextStatus === 'restarting' ? 'Reiniciando' : 'Reconectando'} socket ${phone.id} (${nextReconnectAttempt}/${MAX_RECONNECT_ATTEMPTS})`)
       await upsertSession(phone, {
-        status,
+        status: nextStatus,
         qrCode: null,
         qrCodeDataUrl: null,
-        lastError,
+        lastError: null,
         lastDisconnectedAt: nowIso()
       })
+      liveSessions.delete(phone.id)
 
-      if (liveStillCurrent) liveSessions.delete(phone.id)
-      rejectCurrentOpen(new Error(lastError || 'La conexion por QR se desconecto'))
+      const nextOpenDeferred = openSettled ? createDeferred() : deferred
+      if (openSettled) {
+        nextOpenDeferred.promise.catch(error => {
+          logger.warn(`[WhatsApp QR] Reconexion fallida ${phone.id}: ${error.message}`)
+        })
+      }
+      setTimeout(() => {
+        openSocket(phone, {
+          requireConsent: false,
+          reconnectAttempt: nextReconnectAttempt,
+          openDeferred: nextOpenDeferred
+        }).catch(nextOpenDeferred.reject)
+      }, RECONNECT_DELAY_MS)
     }
   })
 
   return {
     sock,
-    openPromise
+    openPromise: deferred.promise
   }
 }
 
@@ -439,7 +501,7 @@ async function waitForSessionReady(phoneNumberId, timeoutMs = 6000) {
 
   while (Date.now() - startedAt < timeoutMs) {
     const row = await getSessionRow(phoneNumberId)
-    if (['qr_pending', 'connected', 'number_mismatch', 'restarting'].includes(row?.status)) {
+    if (['qr_pending', 'connected', 'number_mismatch', 'restarting', 'reconnecting'].includes(row?.status)) {
       return row
     }
     await new Promise(resolve => setTimeout(resolve, 350))
@@ -452,13 +514,24 @@ async function ensureOpenSocket(phone) {
   const live = liveSessions.get(phone.id)
   if (live?.sock && live.connected) return live.sock
 
+  if (live?.openPromise) {
+    const timeout = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('El QR se esta reconectando. Espera unos segundos e intenta mandar otra vez.')), CONNECT_TIMEOUT_MS)
+    })
+
+    await Promise.race([live.openPromise, timeout])
+    const currentLive = liveSessions.get(phone.id)
+    if (currentLive?.sock && currentLive.connected) return currentLive.sock
+  }
+
   const { sock, openPromise } = await openSocket(phone)
   const timeout = new Promise((_, reject) => {
     setTimeout(() => reject(new Error('El QR no esta conectado. Abre Configuracion > WhatsApp y escanea el codigo.')), CONNECT_TIMEOUT_MS)
   })
 
   await Promise.race([openPromise, timeout])
-  return sock
+  const currentLive = liveSessions.get(phone.id)
+  return currentLive?.sock || sock
 }
 
 export async function getWhatsAppQrSessions() {

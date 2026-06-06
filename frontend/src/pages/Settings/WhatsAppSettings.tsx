@@ -86,7 +86,10 @@ function getQrStatusLabel(status?: string | null) {
   if (normalized === 'qr_pending') return 'Escanea QR'
   if (normalized === 'starting') return 'Preparando QR'
   if (normalized === 'restarting') return 'Reiniciando QR'
+  if (normalized === 'reconnecting') return 'Reconectando QR'
   if (normalized === 'number_mismatch') return 'Numero incorrecto'
+  if (normalized === 'disconnected_515') return 'Reiniciar QR'
+  if (normalized === 'logged_out') return 'QR cerrado'
   if (normalized.startsWith('disconnected')) return 'QR desconectado'
   return 'QR apagado'
 }
@@ -94,9 +97,13 @@ function getQrStatusLabel(status?: string | null) {
 function getQrStatusClass(status?: string | null) {
   const normalized = String(status || '').toLowerCase()
   if (normalized === 'connected') return styles.qrBadgeConnected
-  if (normalized === 'qr_pending' || normalized === 'starting' || normalized === 'restarting') return styles.qrBadgePending
-  if (normalized === 'number_mismatch' || normalized.includes('disconnect')) return styles.qrBadgeWarning
+  if (['qr_pending', 'starting', 'restarting', 'reconnecting', 'disconnected_515'].includes(normalized)) return styles.qrBadgePending
+  if (normalized === 'number_mismatch' || normalized === 'logged_out' || normalized.includes('disconnect')) return styles.qrBadgeWarning
   return styles.qrBadgeMuted
+}
+
+function isQrWorkingStatus(status?: string | null) {
+  return ['connected', 'qr_pending', 'starting', 'restarting', 'reconnecting'].includes(String(status || '').toLowerCase())
 }
 
 export const WhatsAppSettings: React.FC = () => {
@@ -179,7 +186,7 @@ export const WhatsAppSettings: React.FC = () => {
   useEffect(() => {
     const hasPendingQr = apiStatus?.phoneNumbers.some((phone) => {
       const status = String(qrSessionsByPhoneId.get(phone.id)?.status || phone.qr_status || '').toLowerCase()
-      return status === 'starting' || status === 'qr_pending' || status === 'restarting'
+      return status === 'starting' || status === 'qr_pending' || status === 'restarting' || status === 'reconnecting'
     })
 
     if (!hasPendingQr && !qrConnectingPhoneId) return
@@ -588,11 +595,11 @@ export const WhatsAppSettings: React.FC = () => {
                 const phoneProfile = getPhoneProfile(phone)
                 const qrSession = qrSessionsByPhoneId.get(phone.id)
                 const qrStatus = qrSession?.status || phone.qr_status || ''
-                const qrError = qrSession?.lastError || phone.qr_last_error || ''
+                const qrError = isQrWorkingStatus(qrStatus) ? '' : (qrSession?.lastError || phone.qr_last_error || '')
                 const isSender = phone.id === selectedPhoneId ||
                   phone.phone_number === apiStatus.sender.phone ||
                   phone.display_phone_number === apiStatus.sender.phone
-                const qrPending = ['starting', 'qr_pending', 'restarting'].includes(String(qrStatus).toLowerCase())
+                const qrPending = ['starting', 'qr_pending', 'restarting', 'reconnecting'].includes(String(qrStatus).toLowerCase())
                 const qrConnected = String(qrStatus).toLowerCase() === 'connected'
 
                 return (
