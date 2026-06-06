@@ -30,7 +30,9 @@ import {
   MonitorX,
   MoreHorizontal,
   MousePointerClick,
+  Pause,
   Phone,
+  Play,
   Plus,
   ReceiptText,
   Search,
@@ -39,6 +41,7 @@ import {
   Smartphone,
   Sun,
   Tag,
+  Trash2,
   User,
   X
 } from 'lucide-react'
@@ -90,12 +93,20 @@ const CHAT_SWIPE_RENDER_STEP = 1
 const MAX_VOICE_MESSAGE_BYTES = 16 * 1024 * 1024
 const MIN_VOICE_RECORDING_MS = 600
 const MAX_VOICE_RECORDING_MS = 3 * 60 * 1000
+const VOICE_HOLD_TO_PREVIEW_MS = 430
+const VOICE_WAVE_BAR_COUNT = 54
+const VOICE_WAVE_MIN_HEIGHT = 4
+const VOICE_WAVE_MAX_HEIGHT = 34
+const VOICE_WAVE_SILENCE_THRESHOLD = 4
+const VOICE_WAVE_SIGNAL_RANGE = 30
+const MESSAGE_AUDIO_WAVE_BAR_COUNT = 28
 const VOICE_MIME_CANDIDATES = [
   'audio/ogg;codecs=opus',
   'audio/mp4',
   'audio/webm;codecs=opus',
   'audio/webm'
 ]
+const VOICE_WAVE_BASE_PATTERN = [8, 16, 24, 31, 18, 13, 23, 30, 21, 9, 6, 15, 27, 33, 20, 12, 25, 30]
 
 type AccessState = 'checking' | 'allowed' | 'blocked'
 type ComposerStatus = 'idle' | 'sending'
@@ -107,6 +118,7 @@ type ChatSettingsSection = 'appearance' | 'templates' | 'numbers' | 'notificatio
 type WhatsAppNumberMode = 'merged' | 'separated'
 type ConversationSortMode = 'recent' | 'unread'
 type PhotoPickDestination = 'chat' | 'cameraShare'
+type ContactInfoDetailPanel = 'payments' | 'appointments' | null
 
 interface ChatSwipeGesture {
   contactId: string
@@ -215,6 +227,11 @@ interface VoiceDraftAttachment {
   dataUrl: string
   size: number
   durationMs: number
+}
+
+interface MessageAudioPlaybackState {
+  currentTime: number
+  duration: number
 }
 
 interface ChatContact extends Contact {
@@ -477,6 +494,25 @@ function getContactProfilePhoto(contact?: (Partial<Contact> & Record<string, unk
   return candidates.find((value): value is string => typeof value === 'string' && value.trim().length > 0)?.trim() || ''
 }
 
+function getBusinessProfilePhotoFromJson(value?: string | null) {
+  if (!value) return ''
+  try {
+    const parsed = JSON.parse(value)
+    const candidates = [
+      parsed?.profilePictureUrl,
+      parsed?.profile_picture_url,
+      parsed?.pictureUrl,
+      parsed?.picture_url,
+      parsed?.avatarUrl,
+      parsed?.avatar_url
+    ]
+
+    return candidates.find((candidate): candidate is string => typeof candidate === 'string' && candidate.trim().length > 0)?.trim() || ''
+  } catch {
+    return ''
+  }
+}
+
 function formatMessageTime(value?: string | null) {
   if (!value) return ''
   const date = new Date(value)
@@ -591,6 +627,32 @@ function formatVoiceDuration(durationMs = 0) {
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = totalSeconds % 60
   return `${minutes}:${String(seconds).padStart(2, '0')}`
+}
+
+function createInitialVoiceBars() {
+  return Array.from({ length: VOICE_WAVE_BAR_COUNT }, (_, index) => {
+    return VOICE_WAVE_BASE_PATTERN[index % VOICE_WAVE_BASE_PATTERN.length]
+  })
+}
+
+function getVoiceBarHeight(samples: Uint8Array) {
+  const average = samples.reduce((sum, value) => sum + Math.abs(value - 128), 0) / samples.length
+  const gatedLevel = average <= VOICE_WAVE_SILENCE_THRESHOLD
+    ? 0
+    : Math.min(1, (average - VOICE_WAVE_SILENCE_THRESHOLD) / VOICE_WAVE_SIGNAL_RANGE)
+  const responsiveLevel = Math.sqrt(gatedLevel)
+
+  return Math.round(VOICE_WAVE_MIN_HEIGHT + responsiveLevel * (VOICE_WAVE_MAX_HEIGHT - VOICE_WAVE_MIN_HEIGHT))
+}
+
+function getAudioContextConstructor() {
+  if (typeof window === 'undefined') return null
+  const audioWindow = window as Window & {
+    AudioContext?: typeof AudioContext
+    webkitAudioContext?: typeof AudioContext
+  }
+
+  return audioWindow.AudioContext || audioWindow.webkitAudioContext || null
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -1368,6 +1430,21 @@ function getBusinessPhoneValue(phone?: WhatsAppApiStatus['phoneNumbers'][number]
   return phone?.phone_number || phone?.display_phone_number || ''
 }
 
+function getBusinessPhoneProfilePhoto(phone?: WhatsAppApiStatus['phoneNumbers'][number] | null) {
+  return phone?.profile_picture_url || getBusinessProfilePhotoFromJson(phone?.business_profile_json) || ''
+}
+
+function getBusinessPhoneInitials(phone?: WhatsAppApiStatus['phoneNumbers'][number] | null) {
+  const label = phone?.label || phone?.verified_name || phone?.display_phone_number || phone?.phone_number || 'Ristak'
+  const words = label.replace(/[+()\-]/g, ' ').split(/\s+/).filter(Boolean)
+  if (words.length >= 2 && words[0].length > 1) return `${words[0][0]}${words[1][0]}`.toUpperCase()
+  return label.replace(/\D/g, '').slice(-2) || label.slice(0, 2).toUpperCase()
+}
+
+function isBusinessPhoneQrReady(phone?: WhatsAppApiStatus['phoneNumbers'][number] | null) {
+  return Boolean(phone?.qr_send_enabled && String(phone.qr_status || '').toLowerCase() === 'connected')
+}
+
 function getBusinessPhoneLabel(phone?: WhatsAppApiStatus['phoneNumbers'][number] | null) {
   return phone?.label || phone?.display_phone_number || phone?.phone_number || 'WhatsApp'
 }
@@ -1478,7 +1555,12 @@ export const PhoneChat: React.FC = () => {
   const [cameraShareSending, setCameraShareSending] = useState(false)
   const [voiceDraft, setVoiceDraft] = useState<VoiceDraftAttachment | null>(null)
   const [voiceRecording, setVoiceRecording] = useState(false)
+  const [voiceProcessing, setVoiceProcessing] = useState(false)
   const [voiceElapsedMs, setVoiceElapsedMs] = useState(0)
+  const [voiceWaveBars, setVoiceWaveBars] = useState<number[]>(createInitialVoiceBars)
+  const [voicePreviewPlaying, setVoicePreviewPlaying] = useState(false)
+  const [playingAudioMessageId, setPlayingAudioMessageId] = useState<string | null>(null)
+  const [messageAudioPlayback, setMessageAudioPlayback] = useState<Record<string, MessageAudioPlaybackState>>({})
   const [composerStatus, setComposerStatus] = useState<ComposerStatus>('idle')
   const [whatsappStatus, setWhatsappStatus] = useState<WhatsAppApiStatus | null>(null)
   const [calendars, setCalendars] = useState<Calendar[]>([])
@@ -1490,6 +1572,7 @@ export const PhoneChat: React.FC = () => {
   const [contactInfoContact, setContactInfoContact] = useState<Contact | null>(null)
   const [contactInfoLoading, setContactInfoLoading] = useState(false)
   const [contactInfoError, setContactInfoError] = useState('')
+  const [contactInfoDetailPanel, setContactInfoDetailPanel] = useState<ContactInfoDetailPanel>(null)
   const [paymentMode, setPaymentMode] = useState<PaymentMode>('single')
   const [appointmentOpen, setAppointmentOpen] = useState(false)
   const [requestingPush, setRequestingPush] = useState(false)
@@ -1524,6 +1607,20 @@ export const PhoneChat: React.FC = () => {
   const voiceStartedAtRef = useRef(0)
   const voiceTimerRef = useRef<number | null>(null)
   const voiceCancelRef = useRef(false)
+  const voiceAudioRef = useRef<HTMLAudioElement | null>(null)
+  const voiceAudioContextRef = useRef<AudioContext | null>(null)
+  const voiceAudioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
+  const voiceAnalyserRef = useRef<AnalyserNode | null>(null)
+  const voiceAnimationFrameRef = useRef<number | null>(null)
+  const voiceLastWaveUpdateRef = useRef(0)
+  const voiceHoldTimerRef = useRef<number | null>(null)
+  const voicePressStartedAtRef = useRef<number | null>(null)
+  const voicePressShouldStopOnReleaseRef = useRef(false)
+  const voiceSuppressNextClickRef = useRef(false)
+  const voiceStartPendingRef = useRef(false)
+  const voiceStopAfterStartRef = useRef(false)
+  const voiceSendAfterStopRef = useRef(false)
+  const messageAudioRefs = useRef<Record<string, HTMLAudioElement | null>>({})
   const chatSwipeGestureRef = useRef<ChatSwipeGesture | null>(null)
   const handledRouteAppointmentRef = useRef<string | null>(null)
   const closeSheetNow = useCallback(() => setSheet(null), [])
@@ -1709,6 +1806,23 @@ export const PhoneChat: React.FC = () => {
     whatsappStatus?.selectedPhone
   ])
   const selectedBusinessPhoneValue = getBusinessPhoneValue(selectedBusinessPhone)
+  const getBusinessPhoneForMessage = (message: ChatMessage) => {
+    if (message.businessPhoneNumberId) {
+      const fromId = businessPhones.find((phone) => phone.id === message.businessPhoneNumberId)
+      if (fromId) return fromId
+    }
+
+    if (message.businessPhone) {
+      const fromPhone = businessPhones.find((phone) => phoneLooksSame(getBusinessPhoneValue(phone), message.businessPhone))
+      if (fromPhone) return fromPhone
+    }
+
+    return selectedBusinessPhone ||
+      whatsappStatus?.selectedPhone ||
+      businessPhones.find((phone) => phone.is_default_sender) ||
+      businessPhones[0] ||
+      null
+  }
   const cameraShareBusinessPhone = useMemo(() => (
     effectiveSelectedChatPhone ||
     businessPhones.find((phone) => phone.is_default_sender) ||
@@ -1717,6 +1831,11 @@ export const PhoneChat: React.FC = () => {
     null
   ), [businessPhones, effectiveSelectedChatPhone, whatsappStatus?.selectedPhone])
   const cameraShareBusinessPhoneValue = getBusinessPhoneValue(cameraShareBusinessPhone)
+  const cameraShareQrReady = isBusinessPhoneQrReady(cameraShareBusinessPhone)
+  const cameraShareApiEnabled = cameraShareBusinessPhone?.api_send_enabled !== false
+  const cameraShareTransport: 'api' | 'qr' = cameraShareQrReady && (!whatsappConnected || !cameraShareApiEnabled)
+    ? 'qr'
+    : 'api'
   const lastInboundForSelectedPhone = useMemo(() => {
     return [...messages]
       .filter((message) => {
@@ -1727,7 +1846,7 @@ export const PhoneChat: React.FC = () => {
       .sort((left, right) => Date.parse(right.date) - Date.parse(left.date))[0] || null
   }, [messages, selectedBusinessPhoneValue])
   const apiReplyWindowOpen = isInsideReplyWindow(lastInboundForSelectedPhone?.date)
-  const selectedQrReady = Boolean(selectedBusinessPhone?.qr_send_enabled && String(selectedBusinessPhone?.qr_status || '').toLowerCase() === 'connected')
+  const selectedQrReady = isBusinessPhoneQrReady(selectedBusinessPhone)
   const outsideReplyWindow = Boolean(activeContact?.phone && !apiReplyWindowOpen)
   const inferredHighLevelChatChannel = useMemo(() => inferHighLevelChatChannel(activeContact, messages), [activeContact, messages])
   const activeContactHighLevelChannelOverride = activeContact?.id ? contactHighLevelChannelOverrides[activeContact.id] : undefined
@@ -1742,10 +1861,13 @@ export const PhoneChat: React.FC = () => {
     : Boolean(activeContact?.phone)
   const composerBlockedByReplyWindow = Boolean(outsideReplyWindow && !selectedQrReady && !sendingThroughHighLevel)
   const hasComposerContent = Boolean(messageText.trim() || draftAttachments.length > 0 || voiceDraft)
-  const canSendMessage = Boolean(selectedChannelCanSend && hasComposerContent && composerStatus !== 'sending' && !voiceRecording && !composerBlockedByReplyWindow)
-  const composerInputDisabled = Boolean(!selectedChannelCanSend || composerStatus === 'sending' || voiceRecording || voiceDraft)
+  const voicePanelActive = Boolean(voiceRecording || voiceProcessing || voiceDraft)
+  const canSendMessage = Boolean(selectedChannelCanSend && hasComposerContent && composerStatus !== 'sending' && !voiceRecording && !voiceProcessing && !composerBlockedByReplyWindow)
+  const composerInputDisabled = Boolean(!selectedChannelCanSend || composerStatus === 'sending' || voiceRecording || voiceProcessing || voiceDraft)
   const composerPlaceholder = voiceRecording
     ? 'Grabando...'
+    : voiceProcessing
+      ? 'Preparando audio...'
     : voiceDraft
       ? 'Audio listo'
       : selectedChannelCanSend
@@ -2444,6 +2566,7 @@ export const PhoneChat: React.FC = () => {
     setContactInfoContact(null)
     setContactInfoError('')
     setContactInfoLoading(false)
+    setContactInfoDetailPanel(null)
   }, [activeContactId])
 
   useEffect(() => {
@@ -2491,11 +2614,20 @@ export const PhoneChat: React.FC = () => {
   }, [messages, messagesLoading, conversationOpen])
 
   useEffect(() => {
+    if (!playingAudioMessageId) return
+    if (messages.some((message) => message.id === playingAudioMessageId)) return
+
+    messageAudioRefs.current[playingAudioMessageId]?.pause()
+    setPlayingAudioMessageId(null)
+  }, [messages, playingAudioMessageId])
+
+  useEffect(() => {
     return () => {
-      if (voiceTimerRef.current) {
-        window.clearInterval(voiceTimerRef.current)
-        voiceTimerRef.current = null
-      }
+      clearVoiceTimer()
+      clearVoiceHoldTimer()
+      stopVoiceMeter()
+      voiceAudioRef.current?.pause()
+      Object.values(messageAudioRefs.current).forEach((audio) => audio?.pause())
       voiceRecorderRef.current = null
       voiceStreamRef.current?.getTracks().forEach((track) => track.stop())
       voiceStreamRef.current = null
@@ -2508,9 +2640,80 @@ export const PhoneChat: React.FC = () => {
     voiceTimerRef.current = null
   }
 
+  const clearVoiceHoldTimer = () => {
+    if (!voiceHoldTimerRef.current) return
+    window.clearTimeout(voiceHoldTimerRef.current)
+    voiceHoldTimerRef.current = null
+  }
+
+  const stopVoiceMeter = () => {
+    if (voiceAnimationFrameRef.current !== null) {
+      window.cancelAnimationFrame(voiceAnimationFrameRef.current)
+      voiceAnimationFrameRef.current = null
+    }
+
+    voiceAudioSourceRef.current?.disconnect()
+    voiceAudioSourceRef.current = null
+    voiceAnalyserRef.current = null
+
+    if (voiceAudioContextRef.current) {
+      voiceAudioContextRef.current.close().catch(() => undefined)
+      voiceAudioContextRef.current = null
+    }
+  }
+
+  const startVoiceMeter = (stream: MediaStream) => {
+    const AudioContextConstructor = getAudioContextConstructor()
+    if (!AudioContextConstructor) return
+
+    try {
+      const audioContext = new AudioContextConstructor()
+      const analyser = audioContext.createAnalyser()
+      const source = audioContext.createMediaStreamSource(stream)
+
+      analyser.fftSize = 256
+      analyser.smoothingTimeConstant = 0.72
+      const samples = new Uint8Array(analyser.fftSize)
+      source.connect(analyser)
+
+      voiceAudioContextRef.current = audioContext
+      voiceAudioSourceRef.current = source
+      voiceAnalyserRef.current = analyser
+      voiceLastWaveUpdateRef.current = 0
+
+      audioContext.resume().catch(() => undefined)
+
+      const drawWave = (timestamp: number) => {
+        if (!voiceAnalyserRef.current) return
+
+        if (timestamp - voiceLastWaveUpdateRef.current > 70) {
+          voiceAnalyserRef.current.getByteTimeDomainData(samples)
+          const nextHeight = getVoiceBarHeight(samples)
+          setVoiceWaveBars((current) => [...current.slice(1), nextHeight])
+          voiceLastWaveUpdateRef.current = timestamp
+        }
+
+        voiceAnimationFrameRef.current = window.requestAnimationFrame(drawWave)
+      }
+
+      voiceAnimationFrameRef.current = window.requestAnimationFrame(drawWave)
+    } catch {
+      stopVoiceMeter()
+    }
+  }
+
   const stopVoiceStream = () => {
     voiceStreamRef.current?.getTracks().forEach((track) => track.stop())
     voiceStreamRef.current = null
+  }
+
+  const stopVoicePreview = (reset = false) => {
+    const audio = voiceAudioRef.current
+    if (audio) {
+      audio.pause()
+      if (reset) audio.currentTime = 0
+    }
+    setVoicePreviewPlaying(false)
   }
 
   const handleStopVoiceRecording = () => {
@@ -2522,8 +2725,15 @@ export const PhoneChat: React.FC = () => {
 
   const handleCancelVoiceDraft = () => {
     voiceCancelRef.current = true
+    voiceSendAfterStopRef.current = false
+    voiceStartPendingRef.current = false
+    voiceStopAfterStartRef.current = false
+    clearVoiceHoldTimer()
+    stopVoicePreview(true)
     setVoiceDraft(null)
+    setVoiceProcessing(false)
     setVoiceElapsedMs(0)
+    setVoiceWaveBars(createInitialVoiceBars())
 
     const recorder = voiceRecorderRef.current
     if (recorder && recorder.state === 'recording') {
@@ -2532,12 +2742,15 @@ export const PhoneChat: React.FC = () => {
     }
 
     clearVoiceTimer()
+    stopVoiceMeter()
     stopVoiceStream()
     setVoiceRecording(false)
     voiceCancelRef.current = false
   }
 
   const handleStartVoiceRecording = async () => {
+    if (voiceRecording || voiceProcessing || voiceDraft || composerStatus === 'sending') return
+
     if (!activeContact?.phone) {
       showToast('error', 'Falta el teléfono', 'Guarda el número del contacto antes de mandar audio por WhatsApp.')
       return
@@ -2553,6 +2766,8 @@ export const PhoneChat: React.FC = () => {
       return
     }
 
+    voiceStartPendingRef.current = true
+
     try {
       const mimeType = getSupportedVoiceMimeType()
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -2563,8 +2778,12 @@ export const PhoneChat: React.FC = () => {
       voiceStreamRef.current = stream
       voiceRecorderRef.current = recorder
       voiceStartedAtRef.current = Date.now()
+      stopVoicePreview(true)
       setVoiceDraft(null)
+      setVoiceProcessing(false)
       setVoiceElapsedMs(0)
+      setVoiceWaveBars(createInitialVoiceBars())
+      startVoiceMeter(stream)
 
       recorder.ondataavailable = (event) => {
         if (event.data?.size) {
@@ -2584,25 +2803,38 @@ export const PhoneChat: React.FC = () => {
         const recordedType = recorder.mimeType || mimeType || chunks[0]?.type || 'audio/webm'
 
         clearVoiceTimer()
+        stopVoiceMeter()
         stopVoiceStream()
         setVoiceRecording(false)
         voiceRecorderRef.current = null
         voiceChunksRef.current = []
         voiceCancelRef.current = false
 
-        if (canceled) return
+        if (canceled) {
+          voiceSendAfterStopRef.current = false
+          setVoiceProcessing(false)
+          return
+        }
+
+        setVoiceProcessing(true)
 
         try {
           const blob = new Blob(chunks, { type: recordedType })
           if (durationMs < MIN_VOICE_RECORDING_MS || blob.size === 0) {
             showToast('info', 'Audio muy corto', 'Graba un poquito más para poder enviarlo.')
+            voiceSendAfterStopRef.current = false
+            setVoiceProcessing(false)
             setVoiceElapsedMs(0)
+            setVoiceWaveBars(createInitialVoiceBars())
             return
           }
 
           if (blob.size > MAX_VOICE_MESSAGE_BYTES) {
             showToast('error', 'Audio muy pesado', 'Graba un audio más corto para enviarlo por WhatsApp.')
+            voiceSendAfterStopRef.current = false
+            setVoiceProcessing(false)
             setVoiceElapsedMs(0)
+            setVoiceWaveBars(createInitialVoiceBars())
             return
           }
 
@@ -2621,13 +2853,18 @@ export const PhoneChat: React.FC = () => {
             durationMs
           })
           setVoiceElapsedMs(durationMs)
+          setVoiceProcessing(false)
         } catch (error: any) {
           showToast('error', 'No se pudo preparar el audio', error?.message || 'Intenta grabarlo otra vez.')
+          voiceSendAfterStopRef.current = false
+          setVoiceProcessing(false)
           setVoiceElapsedMs(0)
+          setVoiceWaveBars(createInitialVoiceBars())
         }
       }
 
       recorder.start(250)
+      voiceStartPendingRef.current = false
       setVoiceRecording(true)
       voiceTimerRef.current = window.setInterval(() => {
         const elapsed = Date.now() - voiceStartedAtRef.current
@@ -2636,11 +2873,25 @@ export const PhoneChat: React.FC = () => {
           voiceRecorderRef.current.stop()
         }
       }, 250)
+
+      if (voiceStopAfterStartRef.current) {
+        voiceStopAfterStartRef.current = false
+        window.setTimeout(() => {
+          if (voiceRecorderRef.current?.state === 'recording') {
+            voiceRecorderRef.current.stop()
+          }
+        }, 0)
+      }
     } catch (error: any) {
       clearVoiceTimer()
+      stopVoiceMeter()
       stopVoiceStream()
       setVoiceRecording(false)
+      setVoiceProcessing(false)
       voiceRecorderRef.current = null
+      voiceStartPendingRef.current = false
+      voiceStopAfterStartRef.current = false
+      voiceSendAfterStopRef.current = false
       showToast('error', 'No se abrió el micrófono', error?.message || 'Revisa permisos del celular e intenta otra vez.')
     }
   }
@@ -2713,12 +2964,6 @@ export const PhoneChat: React.FC = () => {
     } finally {
       setContactInfoLoading(false)
     }
-  }
-
-  const handleContactInfoAction = (nextSheet: Exclude<ActionSheet, 'newChat' | 'settings' | 'chatMore' | null>) => {
-    if (nextSheet === 'payment') setPaymentMode('single')
-    setContactInfoOpen(false)
-    setSheet(nextSheet)
   }
 
   const closeSwipeActions = () => {
@@ -3104,8 +3349,8 @@ export const PhoneChat: React.FC = () => {
       return
     }
 
-    if (!whatsappConnected) {
-      showToast('error', 'WhatsApp no está conectado', 'Conecta WhatsApp API para mandar fotos desde la cámara.')
+    if (!whatsappConnected && !cameraShareQrReady) {
+      showToast('error', 'WhatsApp no está conectado', 'Conecta WhatsApp API o QR para mandar fotos desde la cámara.')
       return
     }
 
@@ -3119,6 +3364,7 @@ export const PhoneChat: React.FC = () => {
         imageDataUrl: photo.dataUrl,
         caption,
         externalId: `camera-share-${Date.now()}-${index}`,
+        transport: cameraShareTransport,
         phoneNumberId: cameraShareBusinessPhone?.id || undefined
       })
     )))
@@ -3483,6 +3729,8 @@ export const PhoneChat: React.FC = () => {
       composerInputRef.current.textContent = ''
     }
     setDraftAttachments([])
+    stopVoicePreview(true)
+    voiceSendAfterStopRef.current = false
     setVoiceDraft(null)
     const optimisticMessages: ChatMessage[] = voiceToSend
       ? [{
@@ -3565,6 +3813,7 @@ export const PhoneChat: React.FC = () => {
             imageDataUrl: attachment.dataUrl,
             caption: index === 0 ? text : '',
             externalId: `${optimisticId}-image-${index}`,
+            transport: resolvedTransport,
             phoneNumberId: selectedBusinessPhone?.id || undefined
           })
         )))
@@ -3609,7 +3858,115 @@ export const PhoneChat: React.FC = () => {
     }
   }
 
+  useEffect(() => {
+    if (!voiceDraft || !voiceSendAfterStopRef.current || voiceRecording || voiceProcessing) return
+
+    voiceSendAfterStopRef.current = false
+    handleSendMessage()
+  }, [voiceDraft, voiceProcessing, voiceRecording])
+
+  const handleToggleVoicePreview = () => {
+    if (!voiceDraft || voiceProcessing) return
+
+    const audio = voiceAudioRef.current
+    if (!audio) return
+
+    if (voicePreviewPlaying) {
+      audio.pause()
+      setVoicePreviewPlaying(false)
+      return
+    }
+
+    audio.play()
+      .then(() => setVoicePreviewPlaying(true))
+      .catch(() => {
+        showToast('error', 'No se pudo escuchar', 'Toca el audio otra vez. Si sigue igual, revisa que el celular permita reproducir sonido.')
+        setVoicePreviewPlaying(false)
+      })
+  }
+
+  const handleVoicePanelPrimaryAction = () => {
+    if (voiceProcessing) return
+
+    if (voiceRecording) {
+      handleStopVoiceRecording()
+      return
+    }
+
+    handleToggleVoicePreview()
+  }
+
+  const handleSendVoiceFromPanel = () => {
+    if (voiceProcessing || composerStatus === 'sending') return
+
+    if (voiceRecording) {
+      voiceSendAfterStopRef.current = true
+      handleStopVoiceRecording()
+      return
+    }
+
+    if (voiceDraft) {
+      handleSendMessage()
+    }
+  }
+
+  const handleVoiceButtonPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (canSendMessage || voiceRecording || voiceProcessing || voiceDraft || composerStatus === 'sending') return
+
+    voiceSuppressNextClickRef.current = true
+    voicePressStartedAtRef.current = Date.now()
+    voicePressShouldStopOnReleaseRef.current = false
+    voiceStopAfterStartRef.current = false
+    clearVoiceHoldTimer()
+
+    voiceHoldTimerRef.current = window.setTimeout(() => {
+      voicePressShouldStopOnReleaseRef.current = true
+    }, VOICE_HOLD_TO_PREVIEW_MS)
+
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    }
+
+    handleStartVoiceRecording()
+  }
+
+  const finishVoiceButtonPress = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const pressStartedAt = voicePressStartedAtRef.current
+    if (pressStartedAt === null) return
+
+    const heldLongEnough = voicePressShouldStopOnReleaseRef.current || Date.now() - pressStartedAt >= VOICE_HOLD_TO_PREVIEW_MS
+
+    voicePressStartedAtRef.current = null
+    voicePressShouldStopOnReleaseRef.current = false
+    voiceSuppressNextClickRef.current = true
+    clearVoiceHoldTimer()
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+
+    if (!heldLongEnough) return
+
+    if (voiceRecorderRef.current?.state === 'recording') {
+      handleStopVoiceRecording()
+      return
+    }
+
+    if (voiceStartPendingRef.current) {
+      voiceStopAfterStartRef.current = true
+    }
+  }
+
+  const handleVoiceButtonPointerCancel = (event: React.PointerEvent<HTMLButtonElement>) => {
+    finishVoiceButtonPress(event)
+  }
+
   const handleVoiceOrSendButtonClick = () => {
+    if (voiceSuppressNextClickRef.current) {
+      voiceSuppressNextClickRef.current = false
+      return
+    }
+
     if (voiceRecording) {
       handleStopVoiceRecording()
       return
@@ -4047,6 +4404,228 @@ export const PhoneChat: React.FC = () => {
     )
   }
 
+  const updateMessageAudioPlayback = (messageId: string, audio = messageAudioRefs.current[messageId]) => {
+    if (!audio) return
+
+    setMessageAudioPlayback((current) => {
+      const previous = current[messageId] || { currentTime: 0, duration: 0 }
+      const duration = Number.isFinite(audio.duration) && audio.duration > 0
+        ? audio.duration
+        : previous.duration
+      const next = {
+        currentTime: Number.isFinite(audio.currentTime) ? audio.currentTime : 0,
+        duration
+      }
+
+      if (
+        Math.abs(previous.currentTime - next.currentTime) < 0.05 &&
+        Math.abs(previous.duration - next.duration) < 0.05
+      ) {
+        return current
+      }
+
+      return {
+        ...current,
+        [messageId]: next
+      }
+    })
+  }
+
+  const getMessageAudioDurationMs = (message: ChatMessage) => {
+    const storedDuration = Number(message.attachment?.durationMs || 0)
+    if (storedDuration > 0) return storedDuration
+
+    const playbackDuration = messageAudioPlayback[message.id]?.duration || 0
+    return playbackDuration > 0 ? playbackDuration * 1000 : 0
+  }
+
+  const getMessageAudioProgress = (message: ChatMessage) => {
+    const playback = messageAudioPlayback[message.id]
+    const duration = playback?.duration || (Number(message.attachment?.durationMs || 0) / 1000)
+    if (!duration) return 0
+
+    return Math.min(100, Math.max(0, ((playback?.currentTime || 0) / duration) * 100))
+  }
+
+  const handleToggleMessageAudio = (message: ChatMessage) => {
+    const audio = messageAudioRefs.current[message.id] ||
+      (typeof document === 'undefined'
+        ? null
+        : Array.from(document.querySelectorAll<HTMLAudioElement>('[data-message-audio-id]')).find((node) => node.dataset.messageAudioId === message.id) || null)
+    if (!audio) return
+
+    if (playingAudioMessageId === message.id && !audio.paused) {
+      audio.pause()
+      updateMessageAudioPlayback(message.id, audio)
+      return
+    }
+
+    if (voicePreviewPlaying) {
+      voiceAudioRef.current?.pause()
+      setVoicePreviewPlaying(false)
+    }
+
+    if (playingAudioMessageId && playingAudioMessageId !== message.id) {
+      messageAudioRefs.current[playingAudioMessageId]?.pause()
+    }
+
+    if (audio.ended) audio.currentTime = 0
+
+    audio.play()
+      .then(() => {
+        setPlayingAudioMessageId(message.id)
+        updateMessageAudioPlayback(message.id, audio)
+      })
+      .catch(() => {
+        showToast('error', 'No se pudo escuchar', 'Toca el audio otra vez. Si sigue igual, revisa que el celular permita reproducir sonido.')
+        setPlayingAudioMessageId(null)
+      })
+  }
+
+  const renderMessageMeta = (message: ChatMessage, className = styles.messageMeta, options?: { showTransport?: boolean }) => {
+    const failed = message.direction === 'outbound' && isMessageFailed(message)
+    const pending = message.direction === 'outbound' && !failed && isMessagePending(message)
+    const receiptStatus = getMessageReceiptStatus(message)
+    const receiptLabel = getMessageReceiptLabel(receiptStatus)
+    const transportBadge = options?.showTransport === false ? '' : getMessageTransportBadge(message.transport)
+
+    return (
+      <span className={className}>
+        {transportBadge && <em className={styles.messageTransport}>{transportBadge}</em>}
+        {formatMessageTime(message.date)}
+        {message.direction === 'outbound' && (failed ? (
+          <button
+            type="button"
+            className={styles.messageErrorButton}
+            onClick={() => handleShowMessageError(message)}
+            aria-label="Ver razón del error"
+          >
+            <CircleAlert size={15} />
+          </button>
+        ) : pending ? (
+          <Loader2 size={14} className={`${styles.spinIcon} ${styles.messageSendingIcon}`} />
+        ) : receiptStatus === 'delivered' || receiptStatus === 'read' ? (
+          <span
+            className={`${styles.messageReceipt} ${receiptStatus === 'read' ? styles.messageReceiptRead : ''}`}
+            title={receiptLabel}
+            aria-label={receiptLabel}
+          >
+            <CheckCheck size={15} />
+          </span>
+        ) : (
+          <span className={styles.messageReceipt} title={receiptLabel} aria-label={receiptLabel}>
+            <Check size={15} />
+          </span>
+        ))}
+      </span>
+    )
+  }
+
+  const renderMessageAudioAvatar = (imageUrl: string, fallback: string, label: string) => (
+    <span className={styles.messageAudioAvatar} aria-label={label}>
+      <span className={styles.messageAudioAvatarFallback}>{fallback}</span>
+      {imageUrl && (
+        <img
+          src={imageUrl}
+          alt=""
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={(event) => {
+            event.currentTarget.hidden = true
+          }}
+        />
+      )}
+      <span className={styles.messageAudioMicBadge} aria-hidden="true">
+        <Mic size={24} />
+      </span>
+    </span>
+  )
+
+  const renderMessageAudioWaveform = (message: ChatMessage, isPlaying: boolean) => {
+    const progress = getMessageAudioProgress(message)
+
+    return (
+      <div
+        className={`${styles.messageAudioWaveform} ${isPlaying ? styles.messageAudioWaveformPlaying : ''}`}
+        style={{ '--audio-progress': `${progress}%` } as React.CSSProperties}
+        aria-hidden="true"
+      >
+        <span className={styles.messageAudioProgressDot} />
+        {Array.from({ length: MESSAGE_AUDIO_WAVE_BAR_COUNT }, (_, index) => {
+          const baseHeight = VOICE_WAVE_BASE_PATTERN[(index + (message.direction === 'outbound' ? 2 : 0)) % VOICE_WAVE_BASE_PATTERN.length]
+          const height = Math.max(4, Math.round(baseHeight * 0.78))
+
+          return (
+            <span
+              key={index}
+              className={styles.messageAudioWaveBar}
+              style={{
+                '--bar-height': `${height}px`,
+                '--bar-delay': `${index * 34}ms`
+              } as React.CSSProperties}
+            />
+          )
+        })}
+      </div>
+    )
+  }
+
+  const renderAudioMessage = (message: ChatMessage) => {
+    const audioSrc = message.attachment?.dataUrl || message.attachment?.url
+    if (!audioSrc) return null
+
+    const isOutbound = message.direction === 'outbound'
+    const businessPhone = isOutbound ? getBusinessPhoneForMessage(message) : null
+    const avatarUrl = isOutbound
+      ? getBusinessPhoneProfilePhoto(businessPhone)
+      : getContactProfilePhoto(activeContact as ChatContact)
+    const avatarFallback = isOutbound
+      ? getBusinessPhoneInitials(businessPhone)
+      : getContactInitials(activeContact as ChatContact)
+    const avatarLabel = isOutbound
+      ? `Foto de ${getBusinessPhoneLabel(businessPhone)}`
+      : `Foto de ${getContactName(activeContact)}`
+    const isPlaying = playingAudioMessageId === message.id
+
+    return (
+      <div className={`${styles.messageAudio} ${isOutbound ? styles.messageAudioOutbound : styles.messageAudioInbound}`}>
+        <audio
+          ref={(node) => {
+            messageAudioRefs.current[message.id] = node
+          }}
+          className={styles.messageAudioNative}
+          data-message-audio-id={message.id}
+          preload="metadata"
+          src={audioSrc}
+          onLoadedMetadata={(event) => updateMessageAudioPlayback(message.id, event.currentTarget)}
+          onTimeUpdate={(event) => updateMessageAudioPlayback(message.id, event.currentTarget)}
+          onPlay={() => setPlayingAudioMessageId(message.id)}
+          onPause={(event) => {
+            updateMessageAudioPlayback(message.id, event.currentTarget)
+            setPlayingAudioMessageId((current) => current === message.id ? null : current)
+          }}
+          onEnded={(event) => {
+            event.currentTarget.currentTime = 0
+            updateMessageAudioPlayback(message.id, event.currentTarget)
+            setPlayingAudioMessageId((current) => current === message.id ? null : current)
+          }}
+        />
+        {renderMessageAudioAvatar(avatarUrl, avatarFallback, avatarLabel)}
+        <button
+          type="button"
+          className={styles.messageAudioPlayButton}
+          onClick={() => handleToggleMessageAudio(message)}
+          aria-label={isPlaying ? 'Pausar audio' : 'Reproducir audio'}
+        >
+          {isPlaying ? <Pause size={22} /> : <Play size={24} />}
+        </button>
+        {renderMessageAudioWaveform(message, isPlaying)}
+        <span className={styles.messageAudioDuration}>{formatVoiceDuration(getMessageAudioDurationMs(message))}</span>
+        {renderMessageMeta(message, styles.messageAudioMeta, { showTransport: false })}
+      </div>
+    )
+  }
+
   const renderChats = () => {
     const normalizedChatQuery = chatQuery.trim().toLowerCase()
     const showAIAgentListItem = aiAgentChatEnabled &&
@@ -4247,56 +4826,20 @@ export const PhoneChat: React.FC = () => {
           }
 
           const message = item.message
-          const failed = message.direction === 'outbound' && isMessageFailed(message)
-          const pending = message.direction === 'outbound' && !failed && isMessagePending(message)
-          const receiptStatus = getMessageReceiptStatus(message)
-          const receiptLabel = getMessageReceiptLabel(receiptStatus)
-          const transportBadge = getMessageTransportBadge(message.transport)
+          const isAudioMessage = message.attachment?.type === 'audio' && Boolean(message.attachment.dataUrl || message.attachment.url)
 
           return (
             <div
               key={item.key}
               className={`${styles.messageRow} ${styles[`messageRow_${message.direction}`]}`}
             >
-              <div className={styles.messageBubble}>
+              <div className={`${styles.messageBubble} ${isAudioMessage ? styles.messageAudioBubble : ''}`}>
                 {message.attachment?.type === 'image' && (message.attachment.dataUrl || message.attachment.url) && (
                   <img className={styles.messageImage} src={message.attachment.dataUrl || message.attachment.url} alt={message.attachment.name || 'Foto enviada'} />
                 )}
-                {message.attachment?.type === 'audio' && (message.attachment.dataUrl || message.attachment.url) && (
-                  <div className={styles.messageAudio}>
-                    <Mic size={18} />
-                    <audio controls preload="metadata" src={message.attachment.dataUrl || message.attachment.url} />
-                  </div>
-                )}
-                {message.text && <p>{message.text}</p>}
-                <span className={styles.messageMeta}>
-                  {transportBadge && <em className={styles.messageTransport}>{transportBadge}</em>}
-                  {formatMessageTime(message.date)}
-                  {message.direction === 'outbound' && (failed ? (
-                    <button
-                      type="button"
-                      className={styles.messageErrorButton}
-                      onClick={() => handleShowMessageError(message)}
-                      aria-label="Ver razón del error"
-                    >
-                      <CircleAlert size={15} />
-                    </button>
-                  ) : pending ? (
-                    <Loader2 size={14} className={`${styles.spinIcon} ${styles.messageSendingIcon}`} />
-                  ) : receiptStatus === 'delivered' || receiptStatus === 'read' ? (
-                    <span
-                      className={`${styles.messageReceipt} ${receiptStatus === 'read' ? styles.messageReceiptRead : ''}`}
-                      title={receiptLabel}
-                      aria-label={receiptLabel}
-                    >
-                      <CheckCheck size={15} />
-                    </span>
-                  ) : (
-                    <span className={styles.messageReceipt} title={receiptLabel} aria-label={receiptLabel}>
-                      <Check size={15} />
-                    </span>
-                  ))}
-                </span>
+                {isAudioMessage && renderAudioMessage(message)}
+                {!isAudioMessage && message.text && <p>{message.text}</p>}
+                {!isAudioMessage && renderMessageMeta(message)}
               </div>
             </div>
           )
@@ -4322,28 +4865,89 @@ export const PhoneChat: React.FC = () => {
     )
   }
 
-  const renderVoiceDraft = () => {
-    if (!voiceRecording && !voiceDraft) return null
+  const renderVoiceWaveform = () => (
+    <div
+      className={`${styles.voiceComposerWaveform} ${voiceRecording ? styles.voiceComposerWaveformRecording : ''} ${voicePreviewPlaying ? styles.voiceComposerWaveformPlaying : ''}`}
+      aria-hidden="true"
+    >
+      {voiceWaveBars.map((height, index) => (
+        <span
+          key={`voice-composer-bar-${index}`}
+          className={styles.voiceComposerWaveBar}
+          style={{
+            '--voice-bar-height': `${height}px`,
+            '--voice-bar-delay': `${index * 18}ms`
+          } as React.CSSProperties}
+        />
+      ))}
+    </div>
+  )
+
+  const renderVoiceComposerPanel = () => {
+    if (!voicePanelActive) return null
+
+    const primaryLabel = voiceRecording
+      ? 'Pausar grabación'
+      : voicePreviewPlaying
+        ? 'Pausar audio'
+        : 'Escuchar audio'
+    const PrimaryIcon = voiceProcessing
+      ? Loader2
+      : voiceRecording || voicePreviewPlaying
+        ? Pause
+        : Play
 
     return (
-      <div className={`${styles.voiceDraft} ${voiceRecording ? styles.voiceDraftRecording : ''}`}>
-        <span className={styles.voiceDraftIcon}>
-          <Mic size={18} />
-        </span>
-        <div className={styles.voiceDraftBody}>
-          <strong>{voiceRecording ? 'Grabando audio' : 'Audio listo'}</strong>
-          {voiceDraft ? (
-            <audio controls preload="metadata" src={voiceDraft.dataUrl} />
-          ) : (
-            <span>{formatVoiceDuration(voiceElapsedMs)}</span>
+      <div
+        className={`${styles.voiceComposerPanel} ${voiceRecording ? styles.voiceComposerPanelRecording : ''} ${voiceProcessing ? styles.voiceComposerPanelProcessing : ''}`}
+        aria-label="Grabación de audio"
+      >
+        <div className={styles.voiceComposerTrack}>
+          <span className={styles.voiceComposerTime}>
+            {formatVoiceDuration(voiceDraft?.durationMs || voiceElapsedMs)}
+          </span>
+          {renderVoiceWaveform()}
+          {voiceDraft && (
+            <audio
+              ref={voiceAudioRef}
+              className={styles.voicePreviewAudio}
+              preload="metadata"
+              src={voiceDraft.dataUrl}
+              onEnded={() => setVoicePreviewPlaying(false)}
+              onPause={() => setVoicePreviewPlaying(false)}
+              onPlay={() => setVoicePreviewPlaying(true)}
+            />
           )}
         </div>
-        <span className={styles.voiceDraftTime}>
-          {formatVoiceDuration(voiceDraft?.durationMs || voiceElapsedMs)}
-        </span>
-        <button type="button" onClick={handleCancelVoiceDraft} aria-label={voiceRecording ? 'Cancelar grabación' : 'Borrar audio'}>
-          <X size={17} />
-        </button>
+        <div className={styles.voiceComposerActions}>
+          <button
+            type="button"
+            className={`${styles.voiceComposerButton} ${styles.voiceDeleteButton}`}
+            onClick={handleCancelVoiceDraft}
+            disabled={voiceProcessing}
+            aria-label={voiceRecording ? 'Eliminar grabación' : 'Eliminar audio'}
+          >
+            <Trash2 size={32} />
+          </button>
+          <button
+            type="button"
+            className={`${styles.voiceComposerButton} ${styles.voicePauseButton}`}
+            onClick={handleVoicePanelPrimaryAction}
+            disabled={voiceProcessing}
+            aria-label={primaryLabel}
+          >
+            <PrimaryIcon size={voiceProcessing ? 25 : voiceRecording || voicePreviewPlaying ? 28 : 26} className={voiceProcessing ? styles.spinIcon : undefined} />
+          </button>
+          <button
+            type="button"
+            className={`${styles.voiceComposerButton} ${styles.voiceSendAudioButton}`}
+            onClick={handleSendVoiceFromPanel}
+            disabled={voiceProcessing || composerStatus === 'sending'}
+            aria-label="Enviar audio"
+          >
+            {composerStatus === 'sending' ? <Loader2 size={28} className={styles.spinIcon} /> : <Send size={36} />}
+          </button>
+        </div>
       </div>
     )
   }
@@ -4465,8 +5069,7 @@ export const PhoneChat: React.FC = () => {
     if (!contactInfoData) return null
 
     const revenueTotal = contactInfoSuccessfulPayments.reduce((sum, payment) => sum + payment.amount, 0)
-    const purchasesCount = Number(contactInfoData.purchases || 0) || contactInfoSuccessfulPayments.length
-    const nextAppointment = contactInfoActiveAppointments.find((appointment) => Date.parse(appointment.startTime) >= Date.now()) || contactInfoActiveAppointments[0]
+    const paymentsCount = contactInfoPayments.length || Number(contactInfoData.purchases || 0) || contactInfoSuccessfulPayments.length
     const firstSuccessfulPayment = [...contactInfoSuccessfulPayments]
       .sort((left, right) => Date.parse(left.date) - Date.parse(right.date))[0]
     const firstAppointment = contactInfoAppointments[0]
@@ -4532,36 +5135,84 @@ export const PhoneChat: React.FC = () => {
             {contactInfoError && <span className={styles.contactInfoError}>{contactInfoError}</span>}
           </section>
 
-          <div className={styles.contactInfoActions}>
-            <button type="button" onClick={() => setContactInfoOpen(false)}>
-              <MessageCircle size={21} />
-              <span>Chat</span>
-            </button>
-            <button type="button" onClick={() => handleContactInfoAction('appointment')}>
-              <CalendarDays size={21} />
-              <span>Agendar</span>
-            </button>
-            <button type="button" onClick={() => handleContactInfoAction('payment')}>
-              <CreditCard size={21} />
-              <span>Cobrar</span>
-            </button>
-          </div>
-
           <section className={styles.contactInfoSection}>
-            <div className={styles.contactInfoMetrics}>
-              <span className={styles.contactInfoMetric}>
-                <small>Ingresos</small>
+            <div className={styles.contactInfoMetrics} role="group" aria-label="Resumen del contacto">
+              <button
+                type="button"
+                className={`${styles.contactInfoMetricCard} ${contactInfoDetailPanel === 'payments' ? styles.contactInfoMetricCardActive : ''}`}
+                onClick={() => setContactInfoDetailPanel((current) => current === 'payments' ? null : 'payments')}
+                aria-expanded={contactInfoDetailPanel === 'payments'}
+              >
+                <span className={styles.contactInfoMetricHeader}>
+                  <small>Ingresos y pagos</small>
+                  <span>
+                    {contactInfoDetailPanel === 'payments' ? 'Cerrar' : 'Ver'}
+                    <ChevronRight size={15} />
+                  </span>
+                </span>
                 <strong>{formatCurrency(Number(contactInfoData.ltv || 0) || revenueTotal)}</strong>
-              </span>
-              <span className={styles.contactInfoMetric}>
-                <small>Compras</small>
-                <strong>{purchasesCount}</strong>
-              </span>
-              <span className={styles.contactInfoMetric}>
-                <small>Citas</small>
+                <em>{paymentsCount} pago{paymentsCount === 1 ? '' : 's'}</em>
+              </button>
+
+              <button
+                type="button"
+                className={`${styles.contactInfoMetricCard} ${contactInfoDetailPanel === 'appointments' ? styles.contactInfoMetricCardActive : ''}`}
+                onClick={() => setContactInfoDetailPanel((current) => current === 'appointments' ? null : 'appointments')}
+                aria-expanded={contactInfoDetailPanel === 'appointments'}
+              >
+                <span className={styles.contactInfoMetricHeader}>
+                  <small>Citas</small>
+                  <span>
+                    {contactInfoDetailPanel === 'appointments' ? 'Cerrar' : 'Ver'}
+                    <ChevronRight size={15} />
+                  </span>
+                </span>
                 <strong>{contactInfoAppointments.length}</strong>
-              </span>
+                <em>{contactInfoActiveAppointments.length} activa{contactInfoActiveAppointments.length === 1 ? '' : 's'}</em>
+              </button>
             </div>
+
+            {contactInfoDetailPanel === 'payments' && (
+              <div className={styles.contactInfoDetailPanel}>
+                <h3>Pagos realizados</h3>
+                {contactInfoPayments.length > 0 ? (
+                  <div className={styles.contactInfoRows}>
+                    {contactInfoPayments.map((payment) => renderContactInfoRow(
+                      `payment-detail-${payment.id}`,
+                      <CreditCard size={17} />,
+                      formatLocalDateShort(payment.date),
+                      formatCurrency(payment.amount),
+                      formatPlainStatus(payment.status)
+                    ))}
+                  </div>
+                ) : (
+                  <p className={styles.contactInfoDetailEmpty}>
+                    {paymentsCount > 0
+                      ? `Hay ${paymentsCount} pago${paymentsCount === 1 ? '' : 's'} registrado${paymentsCount === 1 ? '' : 's'}, pero todavía no se cargó el detalle.`
+                      : 'Aún no hay pagos guardados para este contacto.'}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {contactInfoDetailPanel === 'appointments' && (
+              <div className={styles.contactInfoDetailPanel}>
+                <h3>Historial de citas</h3>
+                {contactInfoAppointments.length > 0 ? (
+                  <div className={styles.contactInfoRows}>
+                    {contactInfoAppointments.map((appointment) => renderContactInfoRow(
+                      `appointment-detail-${appointment.id}`,
+                      <CalendarDays size={17} />,
+                      appointment.title,
+                      formatLocalDateTime(appointment.startTime),
+                      formatPlainStatus(appointment.status)
+                    ))}
+                  </div>
+                ) : (
+                  <p className={styles.contactInfoDetailEmpty}>Aún no hay citas guardadas para este contacto.</p>
+                )}
+              </div>
+            )}
           </section>
 
           <section className={styles.contactInfoSection}>
@@ -4622,6 +5273,20 @@ export const PhoneChat: React.FC = () => {
                   'Pago',
                   `${formatCurrency(payment.amount)} · ${formatLocalDateShort(payment.date)}`,
                   formatPlainStatus(payment.status)
+                ))}
+              </div>
+            </section>
+          )}
+
+          {visibleCustomFields.length > 0 && (
+            <section className={styles.contactInfoSection}>
+              <h3>Datos extra</h3>
+              <div className={styles.contactInfoRows}>
+                {visibleCustomFields.map((field) => renderContactInfoRow(
+                  `custom-${field.id}`,
+                  <FileText size={17} />,
+                  field.label,
+                  field.value
                 ))}
               </div>
             </section>
@@ -5624,7 +6289,6 @@ export const PhoneChat: React.FC = () => {
                 {renderSenderBar()}
                 {!composerBlockedByReplyWindow && renderAISuggestionBar()}
                 {!composerBlockedByReplyWindow && renderDraftAttachments()}
-                {!composerBlockedByReplyWindow && renderVoiceDraft()}
                 {composerBlockedByReplyWindow ? (
                   <div className={styles.replyWindowBlockedComposer}>
                     <span className={styles.replyWindowBlockedIcon}>
@@ -5639,56 +6303,65 @@ export const PhoneChat: React.FC = () => {
                     </button>
                   </div>
                 ) : (
-                  <div className={`${styles.composer} ${hasComposerContent ? styles.composerHasContent : ''}`}>
-                    <button type="button" className={styles.composerPlus} onClick={() => setSheet('attachments')} aria-label="Abrir adjuntos">
-                      <Plus size={34} />
-                    </button>
-                    <div className={styles.messageInputWrap}>
-                      <div
-                        ref={composerInputRef}
-                        className={styles.composerInput}
-                        role="textbox"
-                        aria-multiline="true"
-                        aria-label="Mensaje"
-                        aria-disabled={composerInputDisabled}
-                        data-placeholder={composerPlaceholder}
-                        contentEditable={!composerInputDisabled}
-                        suppressContentEditableWarning
-                        spellCheck
-                        autoCorrect="on"
-                        autoCapitalize="sentences"
-                        onInput={(event) => syncComposerText(event.currentTarget)}
-                        onPaste={handleComposerPaste}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter' && !event.shiftKey) {
-                            event.preventDefault()
-                            handleSendMessage()
-                          }
-                        }}
-                      />
-                    </div>
-                    <div className={styles.composerTrailingActions}>
-                      <button
-                        type="button"
-                        className={`${styles.composerIconButton} ${styles.composerCameraButton}`}
-                        onClick={() => handlePickPhoto('camera')}
-                        disabled={hasComposerContent}
-                        tabIndex={hasComposerContent ? -1 : undefined}
-                        aria-hidden={hasComposerContent}
-                        aria-label="Cámara"
-                      >
-                        <Camera size={29} />
-                      </button>
-                      <button
-                        type="button"
-                        className={`${styles.composerIconButton} ${canSendMessage ? styles.composerSendButton : ''} ${voiceRecording ? styles.composerMicRecording : ''}`}
-                        onClick={handleVoiceOrSendButtonClick}
-                        disabled={composerStatus === 'sending'}
-                        aria-label={voiceRecording ? 'Detener grabación' : canSendMessage ? 'Enviar mensaje' : 'Grabar mensaje de voz'}
-                      >
-                        {canSendMessage ? <ArrowRight size={23} /> : <Mic size={30} />}
-                      </button>
-                    </div>
+                  <div className={`${styles.composer} ${hasComposerContent ? styles.composerHasContent : ''} ${voicePanelActive ? styles.composerVoiceMode : ''}`}>
+                    {voicePanelActive ? (
+                      renderVoiceComposerPanel()
+                    ) : (
+                      <>
+                        <button type="button" className={styles.composerPlus} onClick={() => setSheet('attachments')} aria-label="Abrir adjuntos">
+                          <Plus size={34} />
+                        </button>
+                        <div className={styles.messageInputWrap}>
+                          <div
+                            ref={composerInputRef}
+                            className={styles.composerInput}
+                            role="textbox"
+                            aria-multiline="true"
+                            aria-label="Mensaje"
+                            aria-disabled={composerInputDisabled}
+                            data-placeholder={composerPlaceholder}
+                            contentEditable={!composerInputDisabled}
+                            suppressContentEditableWarning
+                            spellCheck
+                            autoCorrect="on"
+                            autoCapitalize="sentences"
+                            onInput={(event) => syncComposerText(event.currentTarget)}
+                            onPaste={handleComposerPaste}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' && !event.shiftKey) {
+                                event.preventDefault()
+                                handleSendMessage()
+                              }
+                            }}
+                          />
+                        </div>
+                        <div className={styles.composerTrailingActions}>
+                          <button
+                            type="button"
+                            className={`${styles.composerIconButton} ${styles.composerCameraButton}`}
+                            onClick={() => handlePickPhoto('camera')}
+                            disabled={hasComposerContent}
+                            tabIndex={hasComposerContent ? -1 : undefined}
+                            aria-hidden={hasComposerContent}
+                            aria-label="Cámara"
+                          >
+                            <Camera size={29} />
+                          </button>
+                          <button
+                            type="button"
+                            className={`${styles.composerIconButton} ${canSendMessage ? styles.composerSendButton : ''} ${voiceRecording ? styles.composerMicRecording : ''}`}
+                            onPointerDown={handleVoiceButtonPointerDown}
+                            onPointerUp={finishVoiceButtonPress}
+                            onPointerCancel={handleVoiceButtonPointerCancel}
+                            onClick={handleVoiceOrSendButtonClick}
+                            disabled={composerStatus === 'sending'}
+                            aria-label={voiceRecording ? 'Detener grabación' : canSendMessage ? 'Enviar mensaje' : 'Grabar mensaje de voz'}
+                          >
+                            {composerStatus === 'sending' ? <Loader2 size={23} className={styles.spinIcon} /> : canSendMessage ? <ArrowRight size={23} /> : <Mic size={30} />}
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
               </>
