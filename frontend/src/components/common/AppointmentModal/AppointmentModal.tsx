@@ -26,6 +26,10 @@ interface AppointmentModalProps {
   accessToken?: string; // Token para cargar slots disponibles
   locationId?: string; // Location ID para consultas
   presentation?: 'dialog' | 'mobileSheet';
+  calendars?: Calendar[];
+  calendarsLoading?: boolean;
+  selectedCalendarId?: string;
+  onCalendarChange?: (calendarId: string) => void;
   onSave: (eventIdOrPayload: string | any, updates?: Partial<CalendarEvent>) => Promise<void>;
   onDelete?: (eventId: string) => Promise<void>;
 }
@@ -255,6 +259,10 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
   accessToken,
   locationId,
   presentation = 'dialog',
+  calendars,
+  calendarsLoading = false,
+  selectedCalendarId,
+  onCalendarChange,
   onSave,
   onDelete
 }) => {
@@ -290,6 +298,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
   // Cargar slots disponibles desde la API de HighLevel
   const loadFreeSlots = async () => {
     if (!calendar?.id || scheduleMode !== 'default') {
+      if (!calendar?.id) setFreeSlots([]);
       return;
     }
 
@@ -488,6 +497,12 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
       loadFreeSlots();
     }
   }, [isOpen, isCreateMode, scheduleMode, calendar?.id, accessToken]);
+
+  useEffect(() => {
+    if (!isOpen || !isCreateMode) return;
+    setSelectedDate('');
+    setSelectedSlot('');
+  }, [calendar?.id, isOpen, isCreateMode]);
 
   // Búsqueda de contactos
   useEffect(() => {
@@ -734,6 +749,12 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
       setIsSaving(true);
 
       if (isCreateMode) {
+        if (!calendar?.id) {
+          showToast('warning', 'Elige un calendario', 'Selecciona dónde quieres guardar la cita.');
+          setIsSaving(false);
+          return;
+        }
+
         // Validación: contacto es OBLIGATORIO en modo crear
         if (!formData.contactId || !selectedContact) {
           showToast('error', 'Contacto requerido', 'Debes seleccionar un contacto para crear la cita');
@@ -877,6 +898,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
   const currentStatus = STATUS_OPTIONS.find((status) => status.value === formData.appointmentStatus);
   const startDate = parseDateSafe(formData.startTime) ?? parseDateSafe(event?.startTime);
   const endDate = parseDateSafe(formData.endTime) ?? parseDateSafe(event?.endTime);
+  const showCalendarPicker = isCreateMode && Boolean(calendars || calendarsLoading);
   const selectedTimeZone =
     formData.timeZone ||
     event?.timeZone ||
@@ -918,6 +940,34 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
           className={`${styles.container} ${isMobileSheet ? styles.mobileSheetContainer : ''}`}
           data-phone-scrollable={isMobileSheet ? 'true' : undefined}
         >
+        {showCalendarPicker && (
+          <div className={styles.field}>
+            <label className={styles.label} htmlFor="appointmentCalendar">
+              Calendario <span className={styles.required}>*</span>
+            </label>
+            <select
+              id="appointmentCalendar"
+              className={styles.select}
+              value={selectedCalendarId ?? calendar?.id ?? ''}
+              onChange={(event) => onCalendarChange?.(event.target.value)}
+              disabled={calendarsLoading || !calendars?.length}
+            >
+              {calendarsLoading ? (
+                <option value="">Cargando calendarios...</option>
+              ) : !calendars?.length ? (
+                <option value="">No hay calendarios disponibles</option>
+              ) : (
+                calendars.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))
+              )}
+            </select>
+            <p className={styles.helpText}>Elige dónde quieres guardar esta cita.</p>
+          </div>
+        )}
+
         <div className={styles.summary}>
           <div className={styles.summaryBody}>
             <h3 className={styles.summaryTitle}>{formData.title.trim() || '(Sin título)'}</h3>

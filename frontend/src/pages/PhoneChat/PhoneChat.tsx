@@ -96,7 +96,7 @@ const VOICE_MIME_CANDIDATES = [
 type AccessState = 'checking' | 'allowed' | 'blocked'
 type ComposerStatus = 'idle' | 'sending'
 type PaymentMode = 'single' | 'partial'
-type ActionSheet = 'attachments' | 'templates' | 'payment' | 'appointment' | 'settings' | 'newChat' | 'chatMore' | null
+type ActionSheet = 'attachments' | 'templates' | 'payment' | 'settings' | 'newChat' | 'chatMore' | null
 type ChatFilter = 'all' | 'unread' | 'appointments' | 'customers' | 'leads'
 type TemplateMode = 'choice' | 'send' | 'create'
 type ChatSettingsSection = 'appearance' | 'templates' | 'numbers' | 'notifications' | 'agent' | 'chats' | null
@@ -2475,6 +2475,15 @@ export const PhoneChat: React.FC = () => {
     closeSwipeActions()
   }
 
+  const handleOpenAppointmentForm = (contact?: Contact | null) => {
+    if (contact?.id) setActiveContactId(contact.id)
+    setChatActionContactId(null)
+    setContactInfoOpen(false)
+    setSheet(null)
+    setAppointmentOpen(true)
+    closeSwipeActions()
+  }
+
   const handleChatMoreAction = (contact: Contact, nextSheet: Exclude<ActionSheet, 'attachments' | 'templates' | 'settings' | 'newChat' | 'chatMore' | null>) => {
     setActiveContactId(contact.id)
     setChatActionContactId(null)
@@ -2994,7 +3003,10 @@ export const PhoneChat: React.FC = () => {
     timeZone: string
     contactId?: string
   }) => {
-    if (!selectedCalendar) return
+    if (!selectedCalendar) {
+      showToast('warning', 'Elige un calendario', 'Selecciona dónde quieres guardar la cita.')
+      return
+    }
 
     try {
       await calendarsService.createAppointment({
@@ -4559,7 +4571,7 @@ export const PhoneChat: React.FC = () => {
         description: 'Crear una cita para este contacto.',
         Icon: CalendarDays,
         className: styles.chatMoreAppointment,
-        onClick: () => handleChatMoreAction(chatActionContact, 'appointment')
+        onClick: () => handleOpenAppointmentForm(chatActionContact)
       },
       {
         label: 'Registrar pagos',
@@ -4755,7 +4767,7 @@ export const PhoneChat: React.FC = () => {
               <span className={styles.conversationHeaderSpacer} aria-hidden="true" />
             ) : (
               <div className={styles.callActions}>
-                <button type="button" onClick={() => setSheet('appointment')} aria-label="Agendar cita">
+                <button type="button" onClick={() => handleOpenAppointmentForm(activeContact)} aria-label="Agendar cita">
                   <CalendarDays size={25} />
                 </button>
                 <button
@@ -4885,7 +4897,6 @@ export const PhoneChat: React.FC = () => {
                   )}
                   <h2>
                     {sheet === 'payment' && 'Registrar pago'}
-                    {sheet === 'appointment' && 'Agendar cita'}
                     {sheet === 'templates' && 'Plantillas'}
                     {sheet === 'settings' && 'Ajustes del chat'}
                     {sheet === 'newChat' && 'Nuevo chat'}
@@ -4948,42 +4959,6 @@ export const PhoneChat: React.FC = () => {
               </>
             )}
 
-            {sheet === 'appointment' && (
-              <div className={styles.appointmentSetup}>
-                <div className={styles.setupCard}>
-                  <CalendarDays size={22} />
-                  <div>
-                    <strong>Calendario</strong>
-                    <span>Elige dónde quieres guardar la cita.</span>
-                  </div>
-                </div>
-
-                <select
-                  value={selectedCalendar?.id || ''}
-                  onChange={(event) => setSelectedCalendarId(event.target.value)}
-                  disabled={calendarsLoading || calendars.length === 0}
-                >
-                  {calendarsLoading ? (
-                    <option value="">Cargando calendarios...</option>
-                  ) : calendars.length === 0 ? (
-                    <option value="">No hay calendarios disponibles</option>
-                  ) : calendars.map((calendar) => (
-                    <option key={calendar.id} value={calendar.id}>{calendar.name}</option>
-                  ))}
-                </select>
-
-                <button
-                  type="button"
-                  className={styles.primarySheetButton}
-                  onClick={() => setAppointmentOpen(true)}
-                  disabled={!selectedCalendar || !activeContact}
-                >
-                  <CalendarDays size={18} />
-                  Agendar cita
-                </button>
-              </div>
-            )}
-
           </section>
         </div>
       )}
@@ -5002,6 +4977,10 @@ export const PhoneChat: React.FC = () => {
         accessToken={accessToken || undefined}
         locationId={locationId || undefined}
         presentation="mobileSheet"
+        calendars={calendars}
+        calendarsLoading={calendarsLoading}
+        selectedCalendarId={selectedCalendar?.id || ''}
+        onCalendarChange={setSelectedCalendarId}
         onSave={handleCreateAppointment}
       />
     </main>
