@@ -9,10 +9,10 @@
   gap: 2px;
   min-height: 66px;
   padding: 6px 8px;
-  border: 1px solid rgba(17, 24, 39, 0.08);
+  border: 1px solid var(--phone-chat-border, rgba(17, 24, 39, 0.08));
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
+  background: color-mix(in srgb, var(--phone-chat-surface, #ffffff) 90%, transparent);
+  box-shadow: 0 8px 22px rgba(var(--phone-chat-primary-rgb, 15, 23, 42), 0.08);
   backdrop-filter: blur(22px);
   -webkit-backdrop-filter: blur(22px);
 }
@@ -24,7 +24,7 @@
   min-width: 0;
   gap: 2px;
   border-radius: 999px;
-  color: #111111;
+  color: var(--phone-chat-text, #111111);
   text-decoration: none;
   -webkit-tap-highlight-color: transparent;
 }
@@ -65,8 +65,8 @@
   padding: 0 5px;
   border-radius: 999px;
   color: #07140d;
-  background: #25d366;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.92);
+  background: var(--phone-chat-accent, #25d366);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--phone-chat-surface, #ffffff) 92%, transparent);
   font-size: 11px;
   font-style: normal;
   font-weight: 850;
@@ -74,8 +74,8 @@
 }
 
 .active {
-  color: #050505;
-  background: #ececec;
+  color: var(--phone-chat-primary, #050505);
+  background: var(--phone-chat-surface-soft, #ececec);
 }
 
 @media (max-width: 360px) {

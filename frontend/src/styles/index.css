@@ -2057,3 +2057,90 @@ html body input[type='file']::file-selector-button {
   font-weight: 700 !important;
   cursor: pointer !important;
 }
+
+html[data-phone-chat-theme='active'],
+body[data-phone-chat-theme='active'],
+body.light[data-phone-chat-theme='active'],
+body.dark[data-phone-chat-theme='active'],
+body[data-design-preset][data-phone-chat-theme='active'] {
+  --font-app: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', Inter, sans-serif;
+  --font-display: var(--font-app);
+  --font-mono: 'SF Mono', Consolas, monospace;
+  --phone-chat-font: var(--font-app);
+  --phone-chat-bg: #fbfaf6;
+  --phone-chat-surface: #ffffff;
+  --phone-chat-surface-soft: #f5f3ee;
+  --phone-chat-conversation-bg: #f1eadf;
+  --phone-chat-text: #0b0b0d;
+  --phone-chat-muted: #77736c;
+  --phone-chat-border: rgba(20, 20, 20, 0.09);
+  --phone-chat-primary: #101010;
+  --phone-chat-primary-rgb: 16, 16, 16;
+  --phone-chat-accent: #25d366;
+  --phone-chat-accent-rgb: 37, 211, 102;
+  --phone-chat-accent-soft: #dff8e8;
+  --phone-chat-inbound: #ffffff;
+  --phone-chat-outbound: #d8fdd2;
+  --phone-chat-panel: #f4f4f4;
+  --phone-chat-shadow: 0 18px 38px rgba(17, 24, 39, 0.1);
+  --color-background-primary: #fbfaf6;
+  --color-background-secondary: #ffffff;
+  --color-background-tertiary: #f5f3ee;
+  --color-background-glass: rgba(255, 255, 255, 0.88);
+  --color-background-glassBorder: rgba(20, 20, 20, 0.08);
+  --color-text-primary: #0b0b0d;
+  --color-text-secondary: #343434;
+  --color-text-tertiary: #77736c;
+  --color-text-muted: #9b968d;
+  --color-text-onAccent: #ffffff;
+  --color-border: rgba(20, 20, 20, 0.11);
+  --color-border-subtle: rgba(20, 20, 20, 0.07);
+  --color-primary: #101010;
+  --color-primary-rgb: 16, 16, 16;
+  --color-primary-hover: #000000;
+  --color-primary-dark: #000000;
+  --color-primary-light: rgba(16, 16, 16, 0.08);
+  --color-primary-alpha: rgba(16, 16, 16, 0.14);
+  --color-status-success: #25d366;
+  --color-status-info: #128c7e;
+  --badge-primary-bg: #dff8e8;
+  --badge-primary-text: #165c40;
+  --effect-glassMorphism-background: rgba(255, 255, 255, 0.88);
+  --effect-glassMorphism-backdropFilter: blur(18px) saturate(1.08);
+  --effect-glassMorphism-border: 1px solid rgba(20, 20, 20, 0.08);
+  --design-card-bg: #ffffff;
+  --design-card-border: rgba(20, 20, 20, 0.08);
+  --design-card-shadow: 0 18px 42px -30px rgba(16, 16, 16, 0.3);
+  --design-card-radius: 1rem;
+  --design-control-radius: 999px;
+  --design-table-bg: #ffffff;
+  --design-table-toolbar-bg: #f5f3ee;
+  --design-table-head-bg: #f0eee8;
+  --design-table-control-bg: #f5f3ee;
+  --design-table-empty-bg: #f5f3ee;
+  --design-table-border: rgba(20, 20, 20, 0.08);
+  --native-control-bg: #ffffff;
+  --native-control-bg-hover: #f5f3ee;
+  --native-control-border: rgba(20, 20, 20, 0.12);
+  --native-control-border-hover: rgba(16, 16, 16, 0.26);
+  --native-control-icon: #101010;
+  --native-control-shadow: none;
+  --native-control-radius: 999px;
+  --native-control-height: 42px;
+}
+
+body[data-phone-chat-theme='active'] {
+  color: #0b0b0d;
+  background: #fbfaf6;
+}
+
+body[data-phone-chat-theme='active'] select option {
+  color: #0b0b0d;
+  background-color: #ffffff;
+}
+
+body[data-phone-chat-theme='active'] select option:hover,
+body[data-phone-chat-theme='active'] select option:checked {
+  color: #ffffff;
+  background-color: #101010;
+}

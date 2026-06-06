@@ -1598,6 +1598,30 @@ export const PhoneChat: React.FC = () => {
   }, [showToast])
 
   useEffect(() => {
+    const root = document.documentElement
+    const body = document.body
+    const previousRootTheme = root.dataset.phoneChatTheme
+    const previousBodyTheme = body.dataset.phoneChatTheme
+
+    root.dataset.phoneChatTheme = 'active'
+    body.dataset.phoneChatTheme = 'active'
+
+    return () => {
+      if (previousRootTheme !== undefined) {
+        root.dataset.phoneChatTheme = previousRootTheme
+      } else {
+        delete root.dataset.phoneChatTheme
+      }
+
+      if (previousBodyTheme !== undefined) {
+        body.dataset.phoneChatTheme = previousBodyTheme
+      } else {
+        delete body.dataset.phoneChatTheme
+      }
+    }
+  }, [])
+
+  useEffect(() => {
     document.title = aiAgentConversationOpen
       ? 'Agente de IA | Ristak Chat'
       : activeContact ? `${getContactName(activeContact)} | Ristak Chat` : 'Ristak Chat'
