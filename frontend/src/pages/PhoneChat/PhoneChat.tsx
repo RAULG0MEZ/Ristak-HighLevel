@@ -104,6 +104,7 @@ type TemplateMode = 'choice' | 'send' | 'create'
 type ChatSettingsSection = 'appearance' | 'templates' | 'numbers' | 'notifications' | 'agent' | 'chats' | null
 type WhatsAppNumberMode = 'merged' | 'separated'
 type ConversationSortMode = 'recent' | 'unread'
+type PhotoPickDestination = 'chat' | 'cameraShare'
 
 interface ChatSwipeGesture {
   contactId: string
@@ -425,6 +426,17 @@ function getContactName(contact?: Partial<Contact> | null) {
 
 function getContactDetail(contact?: Partial<Contact> | null) {
   return contact?.phone || contact?.email || 'Sin teléfono guardado'
+}
+
+function contactMatchesQuery(contact: Partial<Contact>, query: string) {
+  const normalizedQuery = query.trim().toLowerCase()
+  if (!normalizedQuery) return true
+  const haystack = [
+    contact.name,
+    contact.phone,
+    contact.email
+  ].filter(Boolean).join(' ').toLowerCase()
+  return haystack.includes(normalizedQuery)
 }
 
 function getContactInitials(contact?: Partial<Contact> | null) {
@@ -1312,6 +1324,11 @@ export const PhoneChat: React.FC = () => {
   const [messagesRefreshing, setMessagesRefreshing] = useState(false)
   const [messageText, setMessageText] = useState('')
   const [draftAttachments, setDraftAttachments] = useState<MobilePhotoAttachment[]>([])
+  const [cameraSharePhoto, setCameraSharePhoto] = useState<MobilePhotoAttachment | null>(null)
+  const [cameraShareQuery, setCameraShareQuery] = useState('')
+  const [cameraShareCaption, setCameraShareCaption] = useState('')
+  const [cameraShareSelectedContacts, setCameraShareSelectedContacts] = useState<Contact[]>([])
+  const [cameraShareSending, setCameraShareSending] = useState(false)
   const [voiceDraft, setVoiceDraft] = useState<VoiceDraftAttachment | null>(null)
   const [voiceRecording, setVoiceRecording] = useState(false)
   const [voiceElapsedMs, setVoiceElapsedMs] = useState(0)
@@ -1349,8 +1366,10 @@ export const PhoneChat: React.FC = () => {
   const [aiSuggestionLoading, setAiSuggestionLoading] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
   const composerInputRef = useRef<HTMLDivElement | null>(null)
+  const cameraShareCaptionRef = useRef<HTMLDivElement | null>(null)
   const cameraInputRef = useRef<HTMLInputElement | null>(null)
   const photosInputRef = useRef<HTMLInputElement | null>(null)
+  const photoPickDestinationRef = useRef<PhotoPickDestination>('chat')
   const voiceRecorderRef = useRef<MediaRecorder | null>(null)
   const voiceStreamRef = useRef<MediaStream | null>(null)
   const voiceChunksRef = useRef<Blob[]>([])
@@ -1495,6 +1514,14 @@ export const PhoneChat: React.FC = () => {
     whatsappStatus?.selectedPhone
   ])
   const selectedBusinessPhoneValue = getBusinessPhoneValue(selectedBusinessPhone)
+  const cameraShareBusinessPhone = useMemo(() => (
+    selectedChatPhone ||
+    businessPhones.find((phone) => phone.is_default_sender) ||
+    whatsappStatus?.selectedPhone ||
+    businessPhones[0] ||
+    null
+  ), [businessPhones, selectedChatPhone, whatsappStatus?.selectedPhone])
+  const cameraShareBusinessPhoneValue = getBusinessPhoneValue(cameraShareBusinessPhone)
   const lastInboundForSelectedPhone = useMemo(() => {
     return [...messages]
       .filter((message) => {
@@ -1579,6 +1606,27 @@ export const PhoneChat: React.FC = () => {
     ), 0),
     [archivedChatIdSet, chats]
   )
+  const cameraShareSelectedIds = useMemo(
+    () => new Set(cameraShareSelectedContacts.map((contact) => contact.id)),
+    [cameraShareSelectedContacts]
+  )
+  const cameraShareContactOptions = useMemo(() => {
+    if (!cameraSharePhoto) return []
+
+    const normalizedQuery = cameraShareQuery.trim()
+    const seen = new Set<string>()
+    const recentChats = [...chats]
+      .filter((contact) => contact.phone && contactMatchesQuery(contact, normalizedQuery))
+      .sort((left, right) => Date.parse(right.lastMessageDate || right.createdAt) - Date.parse(left.lastMessageDate || left.createdAt))
+    const searchedContacts = contactResults
+      .filter((contact) => contact.phone && contactMatchesQuery(contact, normalizedQuery))
+
+    return [...recentChats, ...searchedContacts].filter((contact) => {
+      if (seen.has(contact.id)) return false
+      seen.add(contact.id)
+      return true
+    })
+  }, [cameraSharePhoto, cameraShareQuery, chats, contactResults])
   const ensureChatContact = useCallback((contact: Contact) => {
     const nextContact = toChatContact(contact)
     setChats((current) => {
@@ -2186,18 +2234,18 @@ export const PhoneChat: React.FC = () => {
   useEffect(() => {
     if (accessState !== 'allowed') return
 
-    const shouldSearchContacts = sheet === 'newChat' || (!hasChats && chatQuery.trim().length >= 2)
+    const shouldSearchContacts = sheet === 'newChat' || Boolean(cameraSharePhoto) || (!hasChats && chatQuery.trim().length >= 2)
     if (!shouldSearchContacts) {
       setContactResults([])
       return
     }
 
     const timer = window.setTimeout(() => {
-      loadContactResults(sheet === 'newChat' ? contactQuery : chatQuery)
+      loadContactResults(sheet === 'newChat' ? contactQuery : cameraSharePhoto ? cameraShareQuery : chatQuery)
     }, 160)
 
     return () => window.clearTimeout(timer)
-  }, [accessState, chatQuery, contactQuery, hasChats, loadContactResults, sheet])
+  }, [accessState, cameraSharePhoto, cameraShareQuery, chatQuery, contactQuery, hasChats, loadContactResults, sheet])
 
   useEffect(() => {
     if (sheet !== 'settings') {
@@ -2639,7 +2687,38 @@ export const PhoneChat: React.FC = () => {
     showToast('success', 'Foto lista', 'Revisa la vista previa y toca enviar.')
   }
 
-  const readImageFile = (file: File, source: 'camera' | 'photos') => {
+  const openCameraShare = (attachment: MobilePhotoAttachment) => {
+    setSheet(null)
+    setCameraSharePhoto(attachment)
+    setCameraShareQuery('')
+    setCameraShareCaption('')
+    setCameraShareSelectedContacts([])
+    setCameraShareSending(false)
+    if (cameraShareCaptionRef.current) {
+      cameraShareCaptionRef.current.textContent = ''
+    }
+  }
+
+  const closeCameraShare = () => {
+    setCameraSharePhoto(null)
+    setCameraShareQuery('')
+    setCameraShareCaption('')
+    setCameraShareSelectedContacts([])
+    setCameraShareSending(false)
+    if (cameraShareCaptionRef.current) {
+      cameraShareCaptionRef.current.textContent = ''
+    }
+  }
+
+  const handlePickedPhoto = (attachment: MobilePhotoAttachment, destination: PhotoPickDestination) => {
+    if (destination === 'cameraShare') {
+      openCameraShare(attachment)
+      return
+    }
+    addDraftAttachment(attachment)
+  }
+
+  const readImageFile = (file: File, source: 'camera' | 'photos', destination: PhotoPickDestination) => {
     if (!file.type.startsWith('image/')) {
       showToast('error', 'Archivo no válido', 'Elige una foto JPG, PNG o WebP.')
       return
@@ -2658,13 +2737,13 @@ export const PhoneChat: React.FC = () => {
         return
       }
 
-      addDraftAttachment({
+      handlePickedPhoto({
         id: `photo-${Date.now()}`,
         name: file.name || `photo-${Date.now()}`,
         type: file.type || 'image/jpeg',
         dataUrl,
         source
-      })
+      }, destination)
     }
     reader.onerror = () => showToast('error', 'No se pudo leer', 'Intenta elegir la foto otra vez.')
     reader.readAsDataURL(file)
@@ -2674,16 +2753,17 @@ export const PhoneChat: React.FC = () => {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file) return
-    readImageFile(file, source)
+    readImageFile(file, source, photoPickDestinationRef.current)
   }
 
-  const handlePickPhoto = async (source: 'camera' | 'photos') => {
+  const handlePickPhoto = async (source: 'camera' | 'photos', destination: PhotoPickDestination = 'chat') => {
+    photoPickDestinationRef.current = destination
     actionSheetDismiss.requestClose()
 
     if (mobileAppService.isNative()) {
       try {
         const photo = await mobileAppService.pickPhoto(source)
-        if (photo) addDraftAttachment(photo)
+        if (photo) handlePickedPhoto(photo, destination)
       } catch (error: any) {
         showToast('error', source === 'camera' ? 'No se abrió la cámara' : 'No se abrieron las fotos', error?.message || 'Revisa los permisos del celular e intenta otra vez.')
       }
@@ -2692,6 +2772,145 @@ export const PhoneChat: React.FC = () => {
 
     const input = source === 'camera' ? cameraInputRef.current : photosInputRef.current
     input?.click()
+  }
+
+  const syncCameraShareCaption = (element: HTMLDivElement) => {
+    const nextText = element.innerText.replace(/\u00a0/g, ' ')
+    const normalizedText = nextText.replace(/\n{3,}/g, '\n\n')
+    if (!normalizedText.trim()) {
+      element.textContent = ''
+      setCameraShareCaption('')
+      return
+    }
+    setCameraShareCaption(normalizedText)
+  }
+
+  const handleCameraShareCaptionPaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    const text = event.clipboardData.getData('text/plain')
+    if (!text) return
+    document.execCommand('insertText', false, text)
+    syncCameraShareCaption(event.currentTarget)
+  }
+
+  const toggleCameraShareContact = (contact: Contact) => {
+    if (!contact.phone) {
+      showToast('warning', 'Sin teléfono', 'Guarda el número del contacto para poder enviarle la foto.')
+      return
+    }
+
+    setCameraShareSelectedContacts((current) => (
+      current.some((item) => item.id === contact.id)
+        ? current.filter((item) => item.id !== contact.id)
+        : [...current, contact]
+    ))
+  }
+
+  const updateCameraShareChats = (targets: Contact[], caption: string, sentAt: string) => {
+    const targetById = new Map(targets.map((contact) => [contact.id, contact]))
+    setChats((current) => {
+      const existingIds = new Set(current.map((contact) => contact.id))
+      const updated = current.map((contact) => (
+        targetById.has(contact.id)
+          ? {
+              ...contact,
+              lastMessageText: caption || 'Foto',
+              lastMessageType: 'image',
+              lastMessageDate: sentAt,
+              lastMessageDirection: 'outbound',
+              messageCount: Number(contact.messageCount || 0) + 1
+            }
+          : contact
+      ))
+      const inserted = targets
+        .filter((contact) => !existingIds.has(contact.id))
+        .map((contact) => ({
+          ...toChatContact(contact),
+          lastMessageText: caption || 'Foto',
+          lastMessageType: 'image',
+          lastMessageDate: sentAt,
+          lastMessageDirection: 'outbound',
+          messageCount: 1
+        }))
+
+      return [...inserted, ...updated].sort((left, right) => (
+        Date.parse(right.lastMessageDate || right.createdAt) - Date.parse(left.lastMessageDate || left.createdAt)
+      ))
+    })
+  }
+
+  const handleSendCameraSharePhoto = async () => {
+    const photo = cameraSharePhoto
+    const targets = cameraShareSelectedContacts.filter((contact) => Boolean(contact.phone))
+    const caption = cameraShareCaption.trim()
+    if (!photo || cameraShareSending) return
+
+    if (targets.length === 0) {
+      showToast('warning', 'Elige un contacto', 'Selecciona una o varias personas para mandar la foto.')
+      return
+    }
+
+    if (!cameraShareBusinessPhoneValue) {
+      showToast('error', 'Falta el WhatsApp del negocio', 'Configura el número conectado para enviar fotos.')
+      return
+    }
+
+    if (!whatsappConnected) {
+      showToast('error', 'WhatsApp no está conectado', 'Conecta WhatsApp API para mandar fotos desde la cámara.')
+      return
+    }
+
+    const sentAt = new Date().toISOString()
+    setCameraShareSending(true)
+
+    const results = await Promise.allSettled(targets.map((contact, index) => (
+      whatsappApiService.sendImage({
+        to: contact.phone || '',
+        from: cameraShareBusinessPhoneValue,
+        imageDataUrl: photo.dataUrl,
+        caption,
+        externalId: `camera-share-${Date.now()}-${index}`,
+        phoneNumberId: cameraShareBusinessPhone?.id || undefined
+      })
+    )))
+
+    const failedContacts = targets.filter((_, index) => results[index].status === 'rejected')
+    const successfulContacts = targets.filter((_, index) => results[index].status === 'fulfilled')
+    const firstFailure = results.find((result) => result.status === 'rejected')
+    if (successfulContacts.length > 0) {
+      updateCameraShareChats(successfulContacts, caption, sentAt)
+    }
+
+    try {
+      await loadChats({ showCacheRefresh: true })
+    } catch {
+      // La foto ya se intentó enviar; la lista se refrescará sola en la siguiente carga.
+    }
+
+    if (failedContacts.length > 0) {
+      const reason = firstFailure && firstFailure.status === 'rejected'
+        ? getErrorMessage(firstFailure.reason, 'Intenta enviar la foto otra vez.')
+        : 'Intenta enviar la foto otra vez.'
+      setCameraShareSelectedContacts(failedContacts)
+      setCameraShareSending(false)
+      showToast(
+        'error',
+        failedContacts.length === targets.length ? 'No se envió la foto' : 'Algunos contactos fallaron',
+        failedContacts.length === targets.length
+          ? reason
+          : `Se mandó a ${targets.length - failedContacts.length}, faltan ${failedContacts.length}. ${reason}`
+      )
+      return
+    }
+
+    closeCameraShare()
+    showToast(
+      'success',
+      targets.length === 1 ? 'Foto enviada' : 'Fotos enviadas',
+      targets.length === 1
+        ? `Se mandó a ${getContactName(targets[0])}.`
+        : `Se mandó a ${targets.length} contactos.`
+    )
   }
 
   const getTemplateAlertMessage = (template: WhatsAppApiTemplate) => (
@@ -3325,6 +3544,149 @@ export const PhoneChat: React.FC = () => {
           {content}
         </div>
       </div>
+    )
+  }
+
+  const renderCameraShareContactButton = (contact: Contact) => {
+    const selected = cameraShareSelectedIds.has(contact.id)
+    const chatContact = contact as ChatContact
+    const lastDate = chatContact.lastMessageDate || contact.createdAt
+    const subtitle = chatContact.lastMessageDate
+      ? `Reciente · ${formatMessageDate(lastDate)}`
+      : getContactDetail(contact)
+
+    return (
+      <button
+        key={contact.id}
+        type="button"
+        className={`${styles.cameraShareContact} ${selected ? styles.cameraShareContactSelected : ''}`}
+        onClick={() => toggleCameraShareContact(contact)}
+        aria-pressed={selected}
+      >
+        <span className={styles.cameraShareAvatarWrap}>
+          {renderAvatar(contact)}
+          <span className={styles.cameraShareCheck}>
+            {selected ? <Check size={15} /> : null}
+          </span>
+        </span>
+        <span className={styles.cameraShareContactText}>
+          <strong>{getContactName(contact)}</strong>
+          <small>{subtitle}</small>
+        </span>
+      </button>
+    )
+  }
+
+  const renderCameraShareScreen = () => {
+    if (!cameraSharePhoto) return null
+
+    const canSendCameraShare = cameraShareSelectedContacts.length > 0 && !cameraShareSending
+
+    return (
+      <section className={styles.cameraShareScreen} aria-label="Enviar foto">
+        <header className={styles.cameraShareHeader}>
+          <button type="button" className={styles.backButton} onClick={closeCameraShare} aria-label="Volver a chats">
+            <ChevronLeft size={32} />
+          </button>
+          <div>
+            <strong>Enviar foto</strong>
+            <span>
+              {cameraShareSelectedContacts.length > 0
+                ? `${cameraShareSelectedContacts.length} seleccionado${cameraShareSelectedContacts.length === 1 ? '' : 's'}`
+                : 'Elige uno o varios contactos'}
+            </span>
+          </div>
+          <figure className={styles.cameraShareThumb}>
+            <img src={cameraSharePhoto.dataUrl} alt="" />
+          </figure>
+        </header>
+
+        <div className={styles.cameraShareSearch}>
+          <Search size={20} />
+          <input
+            value={cameraShareQuery}
+            onChange={(event) => setCameraShareQuery(event.target.value)}
+            placeholder="Buscar nombre, número o correo"
+            aria-label="Buscar contacto para enviar foto"
+          />
+          {cameraShareQuery && (
+            <button type="button" onClick={() => setCameraShareQuery('')} aria-label="Limpiar búsqueda">
+              <X size={17} />
+            </button>
+          )}
+        </div>
+
+        <div className={styles.cameraShareList} data-phone-chat-scrollable="true">
+          {contactsLoading && cameraShareContactOptions.length === 0 ? (
+            <div className={styles.centerState}>
+              <Loader2 size={20} className={styles.spinIcon} />
+              <span>Cargando contactos...</span>
+            </div>
+          ) : cameraShareContactOptions.length > 0 ? (
+            cameraShareContactOptions.map(renderCameraShareContactButton)
+          ) : (
+            <div className={styles.emptyChats}>
+              <span className={styles.emptyChatsIcon}>
+                <User size={28} />
+              </span>
+              <strong>No hay contactos</strong>
+              <small>Busca por nombre, número o correo para elegir a quién mandarle la foto.</small>
+            </div>
+          )}
+        </div>
+
+        <footer className={styles.cameraShareFooter}>
+          {cameraShareSelectedContacts.length > 0 && (
+            <div className={styles.cameraShareSelectedStrip} data-phone-chat-scrollable="true">
+              {cameraShareSelectedContacts.map((contact) => (
+                <button
+                  key={contact.id}
+                  type="button"
+                  onClick={() => toggleCameraShareContact(contact)}
+                  aria-label={`Quitar ${getContactName(contact)}`}
+                >
+                  {renderAvatar(contact)}
+                  <span>{getContactName(contact)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <div className={`${styles.composer} ${cameraShareCaption.trim() || cameraShareSelectedContacts.length > 0 ? styles.composerHasContent : ''} ${styles.cameraShareComposer}`}>
+            <div className={styles.messageInputWrap}>
+              <div
+                ref={cameraShareCaptionRef}
+                className={styles.composerInput}
+                role="textbox"
+                aria-multiline="true"
+                aria-label="Mensaje para acompañar la foto"
+                data-placeholder="Escribe un mensaje"
+                contentEditable={!cameraShareSending}
+                suppressContentEditableWarning
+                spellCheck
+                autoCorrect="on"
+                autoCapitalize="sentences"
+                onInput={(event) => syncCameraShareCaption(event.currentTarget)}
+                onPaste={handleCameraShareCaptionPaste}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault()
+                    handleSendCameraSharePhoto()
+                  }
+                }}
+              />
+            </div>
+            <button
+              type="button"
+              className={`${styles.composerIconButton} ${styles.composerSendButton}`}
+              onClick={handleSendCameraSharePhoto}
+              disabled={!canSendCameraShare}
+              aria-label="Enviar foto"
+            >
+              {cameraShareSending ? <Loader2 size={23} className={styles.spinIcon} /> : <ArrowRight size={23} />}
+            </button>
+          </div>
+        </footer>
+      </section>
     )
   }
 
@@ -4717,7 +5079,7 @@ export const PhoneChat: React.FC = () => {
                 <Cog size={23} />
               </button>
               <div className={styles.topRightActions}>
-                <button type="button" className={styles.roundButton} onClick={() => handlePickPhoto('camera')} aria-label="Abrir cámara">
+                <button type="button" className={styles.roundButton} onClick={() => handlePickPhoto('camera', 'cameraShare')} aria-label="Abrir cámara">
                   <Camera size={24} />
                 </button>
                 <button type="button" className={styles.newChatButton} onClick={() => setSheet('newChat')} aria-label="Nuevo chat">
@@ -4933,6 +5295,7 @@ export const PhoneChat: React.FC = () => {
         </section>
 
         {renderContactInfoScreen()}
+        {renderCameraShareScreen()}
       </div>
 
       <input
