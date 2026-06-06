@@ -16,7 +16,7 @@ import {
   Wallet
 } from 'lucide-react'
 import { SiWhatsapp } from 'react-icons/si'
-import { Button } from '@/components/common'
+import { Button, Modal } from '@/components/common'
 import { useNotification } from '@/contexts/NotificationContext'
 import { WhatsAppApiAlert, WhatsAppApiPhoneNumber, WhatsAppApiStatus, WhatsAppQrSession, whatsappApiService } from '@/services/whatsappApiService'
 import { MessageTemplates } from './MessageTemplates'
@@ -97,6 +97,7 @@ function getAlertSummaryCopy(count: number, severity?: string | null) {
 
 function getQrStatusLabel(status?: string | null) {
   const normalized = String(status || '').toLowerCase()
+  if (!normalized) return 'QR opcional'
   if (normalized === 'connected') return 'QR conectado'
   if (normalized === 'qr_pending') return 'Escanea QR'
   if (normalized === 'starting') return 'Preparando QR'
@@ -135,6 +136,7 @@ export const WhatsAppSettings: React.FC = () => {
   const [selectedPhoneId, setSelectedPhoneId] = useState('')
   const [qrConnectingPhoneId, setQrConnectingPhoneId] = useState('')
   const [qrDisconnectingPhoneId, setQrDisconnectingPhoneId] = useState('')
+  const [qrConsentPhone, setQrConsentPhone] = useState<WhatsAppApiPhoneNumber | null>(null)
   const [defaultingPhoneId, setDefaultingPhoneId] = useState('')
   const [alertsExpanded, setAlertsExpanded] = useState(false)
 
@@ -279,38 +281,31 @@ export const WhatsAppSettings: React.FC = () => {
     )
   }
 
-  const connectQrForPhone = (phone: WhatsAppApiPhoneNumber) => {
-    const label = getPhoneLabel(phone)
-    const consent = apiStatus?.qr?.consentText ||
-      'Acepto que esta conexion usa WhatsApp Web por QR y no la API oficial de Meta. Entiendo que puede desconectarse, fallar o poner en riesgo el numero. Ristak solo la usara para mensajes individuales cuando yo lo active.'
+  const openQrConsentForPhone = (phone: WhatsAppApiPhoneNumber) => {
+    setQrConsentPhone(phone)
+  }
 
-    showConfirm(
-      'Conectar por QR',
-      `${label}\n\n${consent}\n\nEscanea el QR solamente con ese mismo numero. Si conectas otro, Ristak lo rechazara.`,
-      async () => {
-        setQrConnectingPhoneId(phone.id)
-        try {
-          const session = await whatsappApiService.connectQr({
-            phoneNumberId: phone.id,
-            acceptedRisk: true
-          })
-          await loadApiStatus()
-          if (session.status === 'connected') {
-            showToast('success', 'QR conectado', 'Este numero ya puede mandar mensajes individuales por QR')
-          } else if (session.status === 'qr_pending') {
-            showToast('info', 'Escanea el QR', 'Usa WhatsApp en ese mismo numero para completar la conexion')
-          } else {
-            showToast('warning', 'QR pendiente', session.lastError || 'Revisa el estado del codigo QR')
-          }
-        } catch (error) {
-          showToast('error', 'No se pudo abrir QR', error instanceof Error ? error.message : 'Intenta nuevamente')
-        } finally {
-          setQrConnectingPhoneId('')
-        }
-      },
-      'Acepto y conectar',
-      'Cancelar'
-    )
+  const confirmQrConnection = async (phone: WhatsAppApiPhoneNumber) => {
+    setQrConsentPhone(null)
+    setQrConnectingPhoneId(phone.id)
+    try {
+      const session = await whatsappApiService.connectQr({
+        phoneNumberId: phone.id,
+        acceptedRisk: true
+      })
+      await loadApiStatus()
+      if (session.status === 'connected') {
+        showToast('success', 'QR conectado', 'Este numero ya puede mandar mensajes individuales por QR')
+      } else if (session.status === 'qr_pending') {
+        showToast('info', 'Escanea el QR', 'Usa WhatsApp en ese mismo numero para completar la conexion')
+      } else {
+        showToast('warning', 'QR pendiente', session.lastError || 'Revisa el estado del codigo QR')
+      }
+    } catch (error) {
+      showToast('error', 'No se pudo abrir QR', error instanceof Error ? error.message : 'Intenta nuevamente')
+    } finally {
+      setQrConnectingPhoneId('')
+    }
   }
 
   const disconnectQrForPhone = (phone: WhatsAppApiPhoneNumber) => {
@@ -604,109 +599,114 @@ export const WhatsAppSettings: React.FC = () => {
           )}
 
           {phoneRows.length > 0 && (
-            <div className={styles.phoneTableWrap}>
-              <table className={styles.phoneTable}>
-                <thead>
-                  <tr>
-                    <th>Numero</th>
-                    <th>Nombre</th>
-                    <th>API</th>
-                    <th>QR</th>
-                    <th>Calidad</th>
-                    <th>Limite</th>
-                    <th className={styles.actionColumn}>Accion</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {phoneRows.map((phone) => {
-                    const phoneProfile = getPhoneProfile(phone)
-                    const qrSession = qrSessionsByPhoneId.get(phone.id)
-                    const qrStatus = qrSession?.status || phone.qr_status || ''
-                    const qrError = isQrWorkingStatus(qrStatus) ? '' : (qrSession?.lastError || phone.qr_last_error || '')
-                    const isSender = Boolean(phone.is_default_sender) ||
-                      phone.id === selectedPhoneId ||
-                      phone.phone_number === apiStatus.sender.phone ||
-                      phone.display_phone_number === apiStatus.sender.phone
-                    const qrPending = ['starting', 'qr_pending', 'restarting', 'reconnecting'].includes(String(qrStatus).toLowerCase())
-                    const qrConnected = String(qrStatus).toLowerCase() === 'connected'
-                    const displayName = phone.verified_name || phoneProfile?.verifiedName || phoneProfile?.businessName || phoneProfile?.name || 'Sin nombre'
+            <>
+              <p className={styles.phoneTableIntro}>
+                Cada numero usa WhatsApp API como conexion oficial. El QR es opcional por numero: ayuda a obtener detalles extra y sirve como respaldo fuera de 24 horas o si la API queda restringida.
+              </p>
+              <div className={styles.phoneTableWrap}>
+                <table className={styles.phoneTable}>
+                  <thead>
+                    <tr>
+                      <th>Numero</th>
+                      <th>Nombre</th>
+                      <th>API</th>
+                      <th>QR opcional</th>
+                      <th>Calidad</th>
+                      <th>Limite</th>
+                      <th className={styles.actionColumn}>Accion</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {phoneRows.map((phone) => {
+                      const phoneProfile = getPhoneProfile(phone)
+                      const qrSession = qrSessionsByPhoneId.get(phone.id)
+                      const qrStatus = qrSession?.status || phone.qr_status || ''
+                      const qrError = isQrWorkingStatus(qrStatus) ? '' : (qrSession?.lastError || phone.qr_last_error || '')
+                      const isSender = Boolean(phone.is_default_sender) ||
+                        phone.id === selectedPhoneId ||
+                        phone.phone_number === apiStatus.sender.phone ||
+                        phone.display_phone_number === apiStatus.sender.phone
+                      const qrPending = ['starting', 'qr_pending', 'restarting', 'reconnecting'].includes(String(qrStatus).toLowerCase())
+                      const qrConnected = String(qrStatus).toLowerCase() === 'connected'
+                      const displayName = phone.verified_name || phoneProfile?.verifiedName || phoneProfile?.businessName || phoneProfile?.name || 'Sin nombre'
 
-                    return (
-                      <React.Fragment key={phone.id}>
-                        <tr>
-                          <td>
-                            <strong>{phone.display_phone_number || phone.phone_number || 'Numero'}</strong>
-                            <small>{phone.id}</small>
-                          </td>
-                          <td>{displayName}</td>
-                          <td>
-                            <span className={styles.phoneBadges}>
-                              <mark>{isSender ? 'Principal' : 'Oficial'}</mark>
-                            </span>
-                          </td>
-                          <td>
-                            <span className={styles.phoneBadges}>
-                              <mark className={getQrStatusClass(qrStatus)}>{getQrStatusLabel(qrStatus)}</mark>
-                            </span>
-                          </td>
-                          <td>{phone.quality_rating || 'Sin dato'}</td>
-                          <td>{phone.messaging_limit || 'Sin dato'}</td>
-                          <td className={styles.actionCell}>
-                            <div className={styles.phoneActions}>
-                              {!isSender && (
-                                <button
-                                  type="button"
-                                  className={styles.phoneActionButton}
-                                  onClick={() => makePhoneDefault(phone)}
-                                  disabled={defaultingPhoneId === phone.id}
-                                >
-                                  <Star size={14} />
-                                  {defaultingPhoneId === phone.id ? 'Guardando' : 'Hacer principal'}
-                                </button>
-                              )}
-                              {qrConnected ? (
-                                <button
-                                  type="button"
-                                  className={styles.phoneActionDanger}
-                                  onClick={() => disconnectQrForPhone(phone)}
-                                  disabled={qrDisconnectingPhoneId === phone.id}
-                                >
-                                  <Unplug size={14} />
-                                  {qrDisconnectingPhoneId === phone.id ? 'Apagando' : 'Apagar QR'}
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className={styles.phoneActionButton}
-                                  onClick={() => connectQrForPhone(phone)}
-                                  disabled={qrConnectingPhoneId === phone.id}
-                                >
-                                  <QrCode size={14} />
-                                  {qrConnectingPhoneId === phone.id ? 'Abriendo' : qrPending ? 'Nuevo QR' : 'Conectar QR'}
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                        {(qrSession?.qrCodeDataUrl && qrPending) || qrError ? (
-                          <tr className={styles.phoneDetailRow}>
-                            <td colSpan={7}>
-                              {qrSession?.qrCodeDataUrl && qrPending && (
-                                <div className={styles.qrPreview}>
-                                  <img src={qrSession.qrCodeDataUrl} alt={`QR para ${phone.display_phone_number || phone.phone_number || 'WhatsApp'}`} />
-                                  <span>Escanea este codigo desde WhatsApp en el mismo numero.</span>
-                                </div>
-                              )}
-                              {qrError && <p className={styles.phoneError}>{qrError}</p>}
+                      return (
+                        <React.Fragment key={phone.id}>
+                          <tr>
+                            <td>
+                              <strong>{phone.display_phone_number || phone.phone_number || 'Numero'}</strong>
+                              <small>{phone.id}</small>
+                            </td>
+                            <td>{displayName}</td>
+                            <td>
+                              <span className={styles.phoneBadges}>
+                                <mark>{isSender ? 'Principal' : 'Oficial'}</mark>
+                              </span>
+                            </td>
+                            <td>
+                              <span className={styles.phoneBadges}>
+                                <mark className={getQrStatusClass(qrStatus)}>{getQrStatusLabel(qrStatus)}</mark>
+                              </span>
+                            </td>
+                            <td>{phone.quality_rating || 'Sin dato'}</td>
+                            <td>{phone.messaging_limit || 'Sin dato'}</td>
+                            <td className={styles.actionCell}>
+                              <div className={styles.phoneActions}>
+                                {!isSender && (
+                                  <button
+                                    type="button"
+                                    className={styles.phoneActionButton}
+                                    onClick={() => makePhoneDefault(phone)}
+                                    disabled={defaultingPhoneId === phone.id}
+                                  >
+                                    <Star size={14} />
+                                    {defaultingPhoneId === phone.id ? 'Guardando' : 'Hacer principal'}
+                                  </button>
+                                )}
+                                {qrConnected ? (
+                                  <button
+                                    type="button"
+                                    className={styles.phoneActionDanger}
+                                    onClick={() => disconnectQrForPhone(phone)}
+                                    disabled={qrDisconnectingPhoneId === phone.id}
+                                  >
+                                    <Unplug size={14} />
+                                    {qrDisconnectingPhoneId === phone.id ? 'Apagando' : 'Apagar QR'}
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className={styles.phoneActionButton}
+                                    onClick={() => openQrConsentForPhone(phone)}
+                                    disabled={qrConnectingPhoneId === phone.id}
+                                  >
+                                    <QrCode size={14} />
+                                    {qrConnectingPhoneId === phone.id ? 'Abriendo' : qrPending ? 'Nuevo QR' : 'Conectar QR'}
+                                  </button>
+                                )}
+                              </div>
                             </td>
                           </tr>
-                        ) : null}
-                      </React.Fragment>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+                          {(qrSession?.qrCodeDataUrl && qrPending) || qrError ? (
+                            <tr className={styles.phoneDetailRow}>
+                              <td colSpan={7}>
+                                {qrSession?.qrCodeDataUrl && qrPending && (
+                                  <div className={styles.qrPreview}>
+                                    <img src={qrSession.qrCodeDataUrl} alt={`QR para ${phone.display_phone_number || phone.phone_number || 'WhatsApp'}`} />
+                                    <span>Escanea este codigo desde WhatsApp en el mismo numero.</span>
+                                  </div>
+                                )}
+                                {qrError && <p className={styles.phoneError}>{qrError}</p>}
+                              </td>
+                            </tr>
+                          ) : null}
+                        </React.Fragment>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
 
           {apiStatus.lastError && <p className={styles.errorText}>{apiStatus.lastError}</p>}
@@ -797,6 +797,36 @@ export const WhatsAppSettings: React.FC = () => {
       <div className={styles.stage}>
         {activeSection === 'connection' ? renderConnectionStage() : renderTemplatesStage()}
       </div>
+
+      <Modal
+        isOpen={Boolean(qrConsentPhone)}
+        onClose={() => setQrConsentPhone(null)}
+        title="Conectar QR de WhatsApp"
+        type="confirm"
+        size="md"
+        confirmText="Acepto el riesgo y conectar"
+        cancelText="No conectar"
+        onConfirm={() => {
+          if (qrConsentPhone) {
+            confirmQrConnection(qrConsentPhone)
+          }
+        }}
+      >
+        <div className={styles.qrConsentBody}>
+          <p>
+            Este paso no es obligatorio. WhatsApp API sigue siendo la conexion principal; el QR solo funciona como respaldo para {qrConsentPhone ? getPhoneLabel(qrConsentPhone) : 'este numero'}.
+          </p>
+          <ul className={styles.qrConsentList}>
+            <li>Usa WhatsApp Web por QR, no la API oficial de Meta.</li>
+            <li>WhatsApp puede cerrar la sesion, bloquear el numero o restringir la cuenta.</li>
+            <li>Si WhatsApp bloquea el numero, puede que no se pueda recuperar.</li>
+            <li>Ristak lo usa para detalles extra, mensajes fuera de 24 horas o si la API queda restringida.</li>
+          </ul>
+          <p className={styles.qrConsentNote}>
+            Escanea el QR solamente con ese mismo numero. Si conectas otro, Ristak lo rechazara.
+          </p>
+        </div>
+      </Modal>
     </div>
   )
 }
