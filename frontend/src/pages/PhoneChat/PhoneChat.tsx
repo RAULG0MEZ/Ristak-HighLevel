@@ -53,7 +53,7 @@ type AccessState = 'checking' | 'allowed' | 'blocked'
 type ComposerStatus = 'idle' | 'sending'
 type PaymentMode = 'single' | 'partial'
 type ActionSheet = 'attachments' | 'payment' | 'appointment' | 'notifications' | 'newChat' | null
-type ChatFilter = 'all' | 'unread' | 'appointments' | 'customers'
+type ChatFilter = 'all' | 'unread' | 'appointments' | 'customers' | 'leads'
 
 interface ChatMessage {
   id: string
@@ -290,12 +290,20 @@ export const PhoneChat: React.FC = () => {
   const canSendMessage = Boolean(activeContact?.phone && (messageText.trim() || draftAttachments.length > 0) && composerStatus !== 'sending')
   const hasChats = chats.length > 0
   const customersLabel = labels.customers?.trim() || 'Clientes'
+  const leadsLabel = labels.leads?.trim() || 'Interesados'
+  const isCustomerContact = useCallback((contact: ChatContact) => contact.status === 'customer' || Number(contact.purchases || 0) > 0, [])
+  const isAppointmentContact = useCallback((contact: ChatContact) => contact.status === 'appointment' || Boolean(contact.hasAppointments), [])
+  const isLeadContact = useCallback((contact: ChatContact) => {
+    if (isCustomerContact(contact) || isAppointmentContact(contact)) return false
+    return contact.status === 'lead'
+  }, [isAppointmentContact, isCustomerContact])
   const filteredChats = useMemo(() => {
     if (chatFilter === 'unread') return chats.filter((contact) => Number(contact.unreadCount || 0) > 0)
-    if (chatFilter === 'appointments') return chats.filter((contact) => contact.status === 'appointment' || contact.hasAppointments)
-    if (chatFilter === 'customers') return chats.filter((contact) => contact.status === 'customer' || Number(contact.purchases || 0) > 0)
+    if (chatFilter === 'appointments') return chats.filter(isAppointmentContact)
+    if (chatFilter === 'customers') return chats.filter(isCustomerContact)
+    if (chatFilter === 'leads') return chats.filter(isLeadContact)
     return chats
-  }, [chatFilter, chats])
+  }, [chatFilter, chats, isAppointmentContact, isCustomerContact, isLeadContact])
 
   const ensureChatContact = useCallback((contact: Contact) => {
     const nextContact = toChatContact(contact)
@@ -1110,10 +1118,11 @@ export const PhoneChat: React.FC = () => {
             </div>
             <div className={styles.filterChips} data-phone-chat-scrollable="true">
               {([
-                ['all', 'All'],
-                ['unread', 'Unread'],
-                ['appointments', 'Scheduled'],
-                ['customers', customersLabel]
+                ['all', 'Todos'],
+                ['unread', 'No leídos'],
+                ['appointments', 'Agendados'],
+                ['customers', customersLabel],
+                ['leads', leadsLabel]
               ] as Array<[ChatFilter, string]>).map(([key, label]) => (
                 <button
                   key={key}
