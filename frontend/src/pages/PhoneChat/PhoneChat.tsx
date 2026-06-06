@@ -754,7 +754,7 @@ function getJourneyEventLabel(event: JourneyEvent, leadLabel: string) {
   if (event.type === 'contact_created') return `Se hizo ${leadLabel.toLowerCase()}`
   if (event.type === 'appointment') return 'Agendó una cita'
   if (event.type === 'payment') return 'Registró un pago'
-  if (event.type === 'whatsapp_message') return 'Mensaje de WhatsApp'
+  if (event.type === 'whatsapp_message') return 'WhatsApp'
   return 'Actividad'
 }
 
@@ -766,10 +766,225 @@ function isWhatsAppJourneyEvent(event?: JourneyEvent | null) {
   return event.type === 'whatsapp_message' || source.includes('whatsapp')
 }
 
+function getJourneyPlatformLabel(event?: JourneyEvent | null) {
+  if (!event) return ''
+  const data = event.data || {}
+  const platform = getReadableValue(data.ad_platform)
+  if (platform) return platform
+
+  const normalizedSource = normalizeTrafficSource({
+    referrer_url: data.referrer_url || data.referral_source_url || data.source_url,
+    referral_source_url: data.referral_source_url,
+    site_source_name: data.site_source_name || data.referral_source_app,
+    utm_source: data.utm_source || data.referral_source_type,
+    source_platform: data.source_platform,
+    referral_source_app: data.referral_source_app,
+    referral_entry_point: data.referral_entry_point,
+    source: data.source
+  })
+
+  return normalizedSource && !['Directo', 'Desconocido', 'Otro'].includes(normalizedSource)
+    ? normalizedSource
+    : ''
+}
+
+function getJourneyPlatformIconName(platform?: string | null) {
+  const normalized = String(platform || '').toLowerCase()
+  if (normalized.includes('instagram')) return 'instagram'
+  if (normalized.includes('facebook')) return 'facebook'
+  if (normalized.includes('tiktok')) return 'tiktok'
+  if (normalized.includes('google')) return 'google'
+  if (normalized.includes('youtube')) return 'youtube'
+  if (normalized.includes('linkedin')) return 'linkedin'
+  if (normalized.includes('twitter') || normalized === 'x') return 'twitter'
+  if (normalized.includes('bing')) return 'bing'
+  if (normalized.includes('meta')) return 'meta-ads'
+  return ''
+}
+
+function getJourneyPlatformClass(platform?: string | null) {
+  const iconName = getJourneyPlatformIconName(platform)
+  const classMap: Record<string, string | undefined> = {
+    facebook: styles.contactInfoTimelineIconFacebook,
+    instagram: styles.contactInfoTimelineIconInstagram,
+    tiktok: styles.contactInfoTimelineIconTikTok,
+    google: styles.contactInfoTimelineIconGoogle,
+    youtube: styles.contactInfoTimelineIconYouTube,
+    linkedin: styles.contactInfoTimelineIconLinkedIn,
+    twitter: styles.contactInfoTimelineIconTwitter,
+    bing: styles.contactInfoTimelineIconBing,
+    'meta-ads': styles.contactInfoTimelineIconMeta
+  }
+
+  return classMap[iconName] || ''
+}
+
+function hasMeaningfulJourneyValue(value: unknown) {
+  if (value === null || value === undefined) return false
+  if (typeof value === 'string') {
+    const trimmed = value.trim().toLowerCase()
+    return Boolean(trimmed) && !['null', 'undefined', 'nan'].includes(trimmed)
+  }
+  return true
+}
+
+function isAdAttributedJourneyEvent(event: JourneyEvent) {
+  const data = event.data || {}
+  return Boolean(
+    data.is_ad_attributed ||
+    data.attribution_ad_id ||
+    data.referral_source_id ||
+    data.referral_ctwa_clid
+  )
+}
+
+function getWhatsAppJourneyEventScore(event: JourneyEvent) {
+  const data = event.data || {}
+  const completenessFields = [
+    'campaign_name',
+    'adset_name',
+    'attribution_ad_name',
+    'attribution_ad_id',
+    'ad_platform',
+    'referral_source_url',
+    'referral_source_type',
+    'referral_source_id',
+    'referral_ctwa_clid',
+    'referral_headline',
+    'referral_body',
+    'message_text'
+  ]
+
+  const completeness = completenessFields.reduce(
+    (score, field) => score + (hasMeaningfulJourneyValue(data[field]) ? 1 : 0),
+    0
+  )
+
+  return (isAdAttributedJourneyEvent(event) ? 1000 : 0) + (event.type === 'whatsapp_message' ? 10 : 0) + completeness
+}
+
+const contactInfoJourneyDayFormatters = new Map<string, Intl.DateTimeFormat>()
+
+function getContactInfoJourneyDayKey(date: string, timezone: string) {
+  const parsed = new Date(date)
+  if (Number.isNaN(parsed.getTime())) return String(date || '')
+
+  let formatter = contactInfoJourneyDayFormatters.get(timezone)
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    })
+    contactInfoJourneyDayFormatters.set(timezone, formatter)
+  }
+
+  return formatter.format(parsed)
+}
+
+function enrichJourneyDataWithMeta(
+  data: Record<string, any>,
+  metaAttribution?: Contact['metaAttribution'] | null
+) {
+  if (!metaAttribution) return data
+
+  const eventAdId = String(data.attribution_ad_id || data.referral_source_id || data.ad_id || '').trim()
+  const metaAdId = String(metaAttribution.adId || '').trim()
+  const sameAd = eventAdId && metaAdId ? eventAdId === metaAdId : true
+  const shouldEnrich = sameAd && (data.is_ad_attributed || eventAdId || data.referral_ctwa_clid)
+  if (!shouldEnrich) return data
+
+  return {
+    ...data,
+    campaign_name: data.campaign_name || metaAttribution.campaignName || null,
+    adset_name: data.adset_name || metaAttribution.adsetName || null,
+    attribution_ad_id: metaAttribution.adId || data.attribution_ad_id || data.referral_source_id || null,
+    attribution_ad_name: metaAttribution.adName || data.attribution_ad_name || null,
+    ad_platform: data.ad_platform || 'Meta Ads',
+    is_ad_attributed: true
+  }
+}
+
+function buildContactInfoJourney(
+  events: JourneyEvent[],
+  timezone: string,
+  metaAttribution?: Contact['metaAttribution'] | null
+) {
+  const whatsappEvents: JourneyEvent[] = []
+  const otherEvents: JourneyEvent[] = []
+
+  events.forEach((event) => {
+    if (!event?.date) return
+    if (isWhatsAppJourneyEvent(event)) {
+      whatsappEvents.push(event)
+    } else {
+      otherEvents.push(event)
+    }
+  })
+
+  const whatsappByDay = new Map<string, JourneyEvent[]>()
+  whatsappEvents.forEach((event) => {
+    const dayKey = getContactInfoJourneyDayKey(event.date, timezone)
+    const dayEvents = whatsappByDay.get(dayKey)
+    if (dayEvents) {
+      dayEvents.push(event)
+    } else {
+      whatsappByDay.set(dayKey, [event])
+    }
+  })
+
+  const mergedWhatsAppEvents: JourneyEvent[] = []
+  whatsappByDay.forEach((dayEvents) => {
+    const sorted = [...dayEvents].sort((left, right) => getWhatsAppJourneyEventScore(right) - getWhatsAppJourneyEventScore(left))
+    const primary = sorted[0]
+    const mergedData: Record<string, any> = {}
+
+    sorted.forEach((event) => {
+      const data = event.data || {}
+      Object.entries(data).forEach(([key, value]) => {
+        if (!hasMeaningfulJourneyValue(mergedData[key]) && hasMeaningfulJourneyValue(value)) {
+          mergedData[key] = value
+        }
+      })
+    })
+
+    const enrichedData = enrichJourneyDataWithMeta({
+      ...mergedData,
+      is_ad_attributed: dayEvents.some(isAdAttributedJourneyEvent)
+    }, metaAttribution)
+
+    mergedWhatsAppEvents.push({
+      ...primary,
+      type: 'whatsapp_message',
+      data: enrichedData
+    })
+  })
+
+  return [...otherEvents, ...mergedWhatsAppEvents].sort(
+    (left, right) => Date.parse(left.date) - Date.parse(right.date)
+  )
+}
+
+function getJourneyEventNetworkBadge(event: JourneyEvent) {
+  if (!isWhatsAppJourneyEvent(event) || !isAdAttributedJourneyEvent(event)) return null
+  const platform = getJourneyPlatformLabel(event) || 'Meta Ads'
+  const iconName = getJourneyPlatformIconName(platform) || 'meta-ads'
+
+  return (
+    <span className={`${styles.contactInfoTimelineNetworkBadge} ${getJourneyPlatformClass(platform)}`} title={platform}>
+      <Icon name={iconName} size={10} />
+    </span>
+  )
+}
+
 function getJourneyEventIcon(event: JourneyEvent) {
   if (isWhatsAppJourneyEvent(event)) return <Icon name="whatsapp" size={15} />
 
-  if (event.type === 'page_visit') return <MousePointerClick size={15} />
+  if (event.type === 'page_visit') {
+    const platformIcon = getJourneyPlatformIconName(getJourneyPlatformLabel(event))
+    return platformIcon ? <Icon name={platformIcon} size={15} /> : <MousePointerClick size={15} />
+  }
   if (event.type === 'contact_created') return <User size={15} />
   if (event.type === 'appointment') return <CalendarDays size={15} />
   if (event.type === 'payment') return <DollarSign size={15} />
@@ -780,7 +995,7 @@ function getJourneyEventIcon(event: JourneyEvent) {
 function getJourneyEventIconClass(event: JourneyEvent) {
   if (isWhatsAppJourneyEvent(event)) return styles.contactInfoTimelineIconWhatsapp
 
-  if (event.type === 'page_visit') return styles.contactInfoTimelineIconVisit
+  if (event.type === 'page_visit') return getJourneyPlatformClass(getJourneyPlatformLabel(event)) || styles.contactInfoTimelineIconVisit
   if (event.type === 'contact_created') return styles.contactInfoTimelineIconContact
   if (event.type === 'appointment') return styles.contactInfoTimelineIconAppointment
   if (event.type === 'payment') return styles.contactInfoTimelineIconPayment
@@ -792,7 +1007,11 @@ function getJourneyEventDescription(event: JourneyEvent) {
   const data = event.data || {}
 
   if (event.type === 'page_visit') {
-    return getPageName(data.page_url || data.landing_page) || normalizeTrafficSource(data) || 'Visita registrada'
+    const source = getJourneyPlatformLabel(event)
+    const pageName = getPageName(data.page_url || data.landing_page)
+    const campaign = getReadableValue(data.campaign_name || data.utm_campaign)
+
+    return [source, pageName, campaign ? `Campaña ${campaign}` : ''].filter(Boolean).join(' · ') || 'Visita registrada'
   }
 
   if (event.type === 'contact_created') {
@@ -812,7 +1031,20 @@ function getJourneyEventDescription(event: JourneyEvent) {
   }
 
   if (event.type === 'whatsapp_message') {
-    return getReadableValue(data.message_text || data.message || data.body) || getMessageTypeLabel(String(data.message_type || ''))
+    const platform = getJourneyPlatformLabel(event) || (data.is_ad_attributed ? 'Meta Ads' : 'WhatsApp')
+    const campaign = getReadableValue(data.campaign_name)
+    const adName = getReadableValue(data.attribution_ad_name || data.ad_name)
+    const messageText = getReadableValue(data.message_text || data.message || data.body)
+
+    if (data.is_ad_attributed) {
+      return [
+        `Anuncio ${platform}`,
+        campaign ? `Campaña ${campaign}` : '',
+        !campaign && adName ? adName : ''
+      ].filter(Boolean).join(' · ')
+    }
+
+    return messageText || getMessageTypeLabel(String(data.message_type || '')) || 'Conversación por WhatsApp'
   }
 
   return ''
@@ -1019,6 +1251,10 @@ export const PhoneChat: React.FC = () => {
     () => getTrackingData(contactInfoData, contactJourney),
     [contactInfoData, contactJourney]
   )
+  const contactInfoResolvedMetaAttribution = useMemo(
+    () => getResolvedMetaAttribution(contactInfoData, contactJourney),
+    [contactInfoData, contactJourney]
+  )
   const contactInfoSource = useMemo(() => {
     const normalizedSource = normalizeTrafficSource(contactInfoTracking)
     return normalizedSource && normalizedSource !== 'Desconocido'
@@ -1037,9 +1273,9 @@ export const PhoneChat: React.FC = () => {
     () => contactInfoAppointments.filter(isActiveAppointment),
     [contactInfoAppointments]
   )
-  const contactInfoRecentEvents = useMemo(
-    () => [...contactJourney].sort((left, right) => Date.parse(right.date) - Date.parse(left.date)).slice(0, 6),
-    [contactJourney]
+  const contactInfoJourneyEvents = useMemo(
+    () => buildContactInfoJourney(contactJourney, timezone, contactInfoResolvedMetaAttribution),
+    [contactInfoResolvedMetaAttribution, contactJourney, timezone]
   )
 
   const selectedCalendar = useMemo(
@@ -2748,7 +2984,7 @@ export const PhoneChat: React.FC = () => {
     const leadEvent = contactJourney.find((event) => event.type === 'contact_created')
     const leadDate = leadEvent?.date || contactInfoData.createdAt
     const leadSource = getReadableValue(leadEvent?.data?.source) || contactInfoSource
-    const resolvedMetaAttribution = getResolvedMetaAttribution(contactInfoData, contactJourney)
+    const resolvedMetaAttribution = contactInfoResolvedMetaAttribution
     const campaignName = getReadableValue(resolvedMetaAttribution?.campaignName || contactInfoTracking.campaign_name || contactInfoTracking.utm_campaign)
     const campaignDetail = resolvedMetaAttribution
       ? ['Datos reales de Meta', getReadableValue(resolvedMetaAttribution.campaignId)].filter(Boolean).join(' · ')
@@ -2916,14 +3152,15 @@ export const PhoneChat: React.FC = () => {
             </section>
           )}
 
-          {contactInfoRecentEvents.length > 0 && (
+          {contactInfoJourneyEvents.length > 0 && (
             <section className={styles.contactInfoSection}>
               <h3>Viaje del cliente</h3>
               <div className={styles.contactInfoTimeline}>
-                {contactInfoRecentEvents.map((event, index) => (
+                {contactInfoJourneyEvents.map((event, index) => (
                   <div key={`${event.type}-${event.date}-${index}`} className={styles.contactInfoTimelineItem}>
                     <span className={`${styles.contactInfoTimelineIcon} ${getJourneyEventIconClass(event)}`}>
                       {getJourneyEventIcon(event)}
+                      {getJourneyEventNetworkBadge(event)}
                     </span>
                     <div>
                       <strong>{getJourneyEventLabel(event, leadLabel)}</strong>
