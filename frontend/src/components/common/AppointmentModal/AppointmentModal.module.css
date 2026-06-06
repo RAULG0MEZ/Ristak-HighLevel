@@ -124,19 +124,6 @@
   white-space: nowrap;
 }
 
-.mobileSheetModal > :nth-child(2) button[aria-label='Volver al calendario'],
-.mobileSheetModal > :nth-child(2) button[aria-label='Cerrar modal'] {
-  grid-column: 1;
-  grid-row: 1;
-  width: 46px;
-  height: 46px;
-  border: 1px solid var(--appointment-mobile-border);
-  border-radius: 999px;
-  color: var(--appointment-mobile-text);
-  background: color-mix(in srgb, var(--appointment-mobile-surface) 86%, transparent);
-  opacity: 1;
-}
-
 .mobileSheetContent {
   flex: 1 1 auto;
   min-height: 0;

@@ -2685,9 +2685,10 @@
 
 .sheetHeader {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) 42px;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
+  gap: 0;
+  min-height: 42px;
 }
 
 .sheetHeader > div {
@@ -2714,23 +2715,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.sheetHeader button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 42px;
-  height: 42px;
-  border: 1px solid var(--phone-chat-border);
-  border-radius: 999px;
-  color: var(--phone-chat-text);
-  background: color-mix(in srgb, var(--phone-chat-surface) 72%, transparent);
-}
-
-.sheetHeaderSpacer {
-  width: 42px;
-  height: 42px;
 }
 
 .attachmentGrid {

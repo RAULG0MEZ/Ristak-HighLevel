@@ -104,7 +104,7 @@
 
 .sheetHeader {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) 42px;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   min-height: 50px;
   padding: 0 12px 8px;
@@ -120,19 +120,6 @@
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.backButton {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 38px;
-  height: 38px;
-  border: 0;
-  border-radius: 999px;
-  color: var(--phone-chat-text, #111111);
-  background: var(--phone-chat-surface-soft, #f4f4f4);
-  -webkit-tap-highlight-color: transparent;
 }
 
 .options {

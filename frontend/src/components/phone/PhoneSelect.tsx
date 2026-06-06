@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, ChevronDown, ChevronLeft } from 'lucide-react'
+import { Check, ChevronDown } from 'lucide-react'
 import { useBottomSheetDismiss } from '@/hooks'
 import styles from './PhoneSelect.module.css'
 
@@ -79,9 +79,6 @@ export const PhoneSelect: React.FC<PhoneSelectProps> = ({
       >
         <div className={styles.handle} aria-hidden="true" />
         <div className={styles.sheetHeader}>
-          <button type="button" className={styles.backButton} onClick={closeSheet} aria-label="Volver">
-            <ChevronLeft size={22} />
-          </button>
           <strong>{title}</strong>
         </div>
         <div className={styles.options} role="listbox" aria-label={title} data-phone-scrollable="true">

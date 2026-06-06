@@ -144,9 +144,6 @@ export const PhoneDateField: React.FC<PhoneDateFieldProps> = ({
       >
         <div className={styles.handle} aria-hidden="true" />
         <div className={styles.header}>
-          <button type="button" className={styles.backButton} onClick={closeSheet} aria-label="Volver">
-            <ChevronLeft size={22} />
-          </button>
           <strong>{title}</strong>
           <button type="button" className={styles.todayButton} onClick={() => selectDate(new Date())}>
             Hoy

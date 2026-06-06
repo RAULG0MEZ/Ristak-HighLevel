@@ -9,6 +9,7 @@ interface BottomSheetDismissOptions {
 
 interface BottomSheetDragState {
   active: boolean
+  captured: boolean
   pointerId: number | null
   startY: number
   lastY: number
@@ -37,6 +38,7 @@ export function useBottomSheetDismiss({
   const timerRef = useRef<number | null>(null)
   const dragRef = useRef<BottomSheetDragState>({
     active: false,
+    captured: false,
     pointerId: null,
     startY: 0,
     lastY: 0,
@@ -58,6 +60,7 @@ export function useBottomSheetDismiss({
 
     clearCloseTimer()
     dragRef.current.active = false
+    dragRef.current.captured = false
     setDragging(false)
     setDragOffset(0)
     setClosing(true)
@@ -72,6 +75,7 @@ export function useBottomSheetDismiss({
 
   const resetDrag = useCallback(() => {
     dragRef.current.active = false
+    dragRef.current.captured = false
     dragRef.current.pointerId = null
     setDragging(false)
     setDragOffset(0)
@@ -86,15 +90,15 @@ export function useBottomSheetDismiss({
 
     dragRef.current = {
       active: true,
+      captured: false,
       pointerId: event.pointerId,
       startY: event.clientY,
       lastY: event.clientY,
       startTime: performance.now()
     }
     setClosing(false)
-    setDragging(true)
+    setDragging(false)
     setDragOffset(0)
-    event.currentTarget.setPointerCapture?.(event.pointerId)
   }, [closing, isOpen])
 
   const handlePointerMove = useCallback((event: ReactPointerEvent<HTMLElement>) => {
@@ -102,13 +106,26 @@ export function useBottomSheetDismiss({
     if (!drag.active || drag.pointerId !== event.pointerId) return
 
     drag.lastY = event.clientY
-    const nextOffset = Math.max(0, event.clientY - drag.startY)
+    const rawOffset = event.clientY - drag.startY
+    if (!drag.captured) {
+      if (rawOffset < -4) {
+        resetDrag()
+        return
+      }
+      if (rawOffset <= 4) return
+
+      drag.captured = true
+      setDragging(true)
+      event.currentTarget.setPointerCapture?.(event.pointerId)
+    }
+
+    const nextOffset = Math.max(0, rawOffset)
     setDragOffset(nextOffset)
 
     if (nextOffset > 3) {
       event.preventDefault()
     }
-  }, [])
+  }, [resetDrag])
 
   const handlePointerEnd = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     const drag = dragRef.current
@@ -117,10 +134,14 @@ export function useBottomSheetDismiss({
     const offset = Math.max(0, drag.lastY - drag.startY)
     const elapsed = Math.max(1, performance.now() - drag.startTime)
     const velocity = offset / elapsed
+    const wasCaptured = drag.captured
     dragRef.current.active = false
+    dragRef.current.captured = false
     dragRef.current.pointerId = null
     setDragging(false)
-    event.currentTarget.releasePointerCapture?.(event.pointerId)
+    if (wasCaptured) {
+      event.currentTarget.releasePointerCapture?.(event.pointerId)
+    }
 
     if (offset >= dismissThreshold || (offset > 34 && velocity > 0.72)) {
       requestClose()

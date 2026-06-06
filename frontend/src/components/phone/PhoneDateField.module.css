@@ -98,7 +98,7 @@
 
 .header {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   min-height: 50px;
@@ -116,7 +116,6 @@
   white-space: nowrap;
 }
 
-.backButton,
 .todayButton,
 .monthRow button {
   border: 0;
@@ -125,7 +124,6 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.backButton,
 .monthRow button {
   display: inline-flex;
   align-items: center;

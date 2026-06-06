@@ -5813,9 +5813,6 @@ export const PhoneChat: React.FC = () => {
             <div className={styles.sheetHandle} aria-hidden="true" />
             {sheet !== 'attachments' && (
               <div className={styles.sheetHeader}>
-                <button type="button" onClick={actionSheetDismiss.requestClose} aria-label="Volver al chat">
-                  <ChevronLeft size={24} />
-                </button>
                 <div>
                   {sheet !== 'payment' && (
                     <p>{activeContact ? getContactName(activeContact) : aiAgentConversationOpen ? 'Agente de IA' : 'Ristak Chat'}</p>
@@ -5828,7 +5825,6 @@ export const PhoneChat: React.FC = () => {
                     {sheet === 'chatMore' && 'Más acciones'}
                   </h2>
                 </div>
-                <span className={styles.sheetHeaderSpacer} aria-hidden="true" />
               </div>
             )}
 
