@@ -70,6 +70,13 @@
   background: var(--phone-calendar-soft);
 }
 
+:global(body[data-phone-chat-tone="dark"]) .periodChip,
+:global(body[data-phone-chat-tone="dark"]) .headerCapsule {
+  border-color: rgba(233, 237, 239, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.24);
+}
+
 :global(body[data-phone-chat-tone="dark"]) .titleRow h1,
 :global(body[data-phone-chat-tone="dark"]) .monthDay,
 :global(body[data-phone-chat-tone="dark"]) .yearMonth,
@@ -247,11 +254,12 @@
   min-height: 42px;
   max-width: 38vw;
   padding: 0 15px 0 12px;
-  border: 0;
+  border: 1px solid rgba(17, 24, 39, 0.08);
   border-radius: 999px;
   color: var(--phone-calendar-text);
-  background: var(--phone-calendar-soft);
-  box-shadow: 0 6px 16px rgba(17, 24, 39, 0.05);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.045);
+  backdrop-filter: blur(18px);
   font-size: 15px;
   font-weight: 760;
 }
@@ -269,10 +277,11 @@
   gap: 2px;
   min-height: 46px;
   padding: 0 7px;
-  border: 0;
+  border: 1px solid rgba(17, 24, 39, 0.08);
   border-radius: 999px;
-  background: var(--phone-calendar-soft);
-  box-shadow: 0 6px 16px rgba(17, 24, 39, 0.05);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.045);
+  backdrop-filter: blur(18px);
 }
 
 .headerCapsule button {
