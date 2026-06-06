@@ -1234,7 +1234,6 @@ export const PhoneChat: React.FC = () => {
   const [voiceElapsedMs, setVoiceElapsedMs] = useState(0)
   const [composerStatus, setComposerStatus] = useState<ComposerStatus>('idle')
   const [whatsappStatus, setWhatsappStatus] = useState<WhatsAppApiStatus | null>(null)
-  const [selectedBusinessPhoneId, setSelectedBusinessPhoneId] = useState('')
   const [calendars, setCalendars] = useState<Calendar[]>([])
   const [selectedCalendarId, setSelectedCalendarId] = useState('')
   const [sheet, setSheet] = useState<ActionSheet>(null)
@@ -1340,12 +1339,38 @@ export const PhoneChat: React.FC = () => {
     businessPhones.find((phone) => phone.id === selectedChatPhoneId) || null
   ), [businessPhones, selectedChatPhoneId])
   const selectedBusinessPhone = useMemo(() => {
-    return businessPhones.find((phone) => phone.id === selectedBusinessPhoneId) ||
+    const newestMessageWithBusinessPhone = [...messages]
+      .filter((message) => message.businessPhoneNumberId || message.businessPhone)
+      .sort((left, right) => Date.parse(right.date) - Date.parse(left.date))[0] || null
+
+    const fromMessageId = newestMessageWithBusinessPhone?.businessPhoneNumberId
+      ? businessPhones.find((phone) => phone.id === newestMessageWithBusinessPhone.businessPhoneNumberId)
+      : null
+    const fromMessagePhone = newestMessageWithBusinessPhone?.businessPhone
+      ? businessPhones.find((phone) => phoneLooksSame(getBusinessPhoneValue(phone), newestMessageWithBusinessPhone.businessPhone))
+      : null
+    const fromChatId = activeContact?.lastBusinessPhoneNumberId
+      ? businessPhones.find((phone) => phone.id === activeContact.lastBusinessPhoneNumberId)
+      : null
+    const fromChatPhone = activeContact?.lastBusinessPhone
+      ? businessPhones.find((phone) => phoneLooksSame(getBusinessPhoneValue(phone), activeContact.lastBusinessPhone))
+      : null
+
+    return fromMessageId ||
+      fromMessagePhone ||
+      fromChatId ||
+      fromChatPhone ||
       businessPhones.find((phone) => phone.is_default_sender) ||
       whatsappStatus?.selectedPhone ||
       businessPhones[0] ||
       null
-  }, [businessPhones, selectedBusinessPhoneId, whatsappStatus?.selectedPhone])
+  }, [
+    activeContact?.lastBusinessPhone,
+    activeContact?.lastBusinessPhoneNumberId,
+    businessPhones,
+    messages,
+    whatsappStatus?.selectedPhone
+  ])
   const selectedBusinessPhoneValue = getBusinessPhoneValue(selectedBusinessPhone)
   const lastInboundForSelectedPhone = useMemo(() => {
     return [...messages]
@@ -1358,8 +1383,10 @@ export const PhoneChat: React.FC = () => {
   }, [messages, selectedBusinessPhoneValue])
   const apiReplyWindowOpen = isInsideReplyWindow(lastInboundForSelectedPhone?.date)
   const selectedQrReady = Boolean(selectedBusinessPhone?.qr_send_enabled && String(selectedBusinessPhone?.qr_status || '').toLowerCase() === 'connected')
+  const outsideReplyWindow = Boolean(activeContact?.phone && !apiReplyWindowOpen)
+  const composerBlockedByReplyWindow = Boolean(outsideReplyWindow && !selectedQrReady)
   const hasComposerContent = Boolean(messageText.trim() || draftAttachments.length > 0 || voiceDraft)
-  const canSendMessage = Boolean(activeContact?.phone && hasComposerContent && composerStatus !== 'sending' && !voiceRecording)
+  const canSendMessage = Boolean(activeContact?.phone && hasComposerContent && composerStatus !== 'sending' && !voiceRecording && !composerBlockedByReplyWindow)
   const activeTemplateAlerts = useMemo(() => (
     (whatsappStatus?.alerts?.items || []).filter((alert) => String(alert.entity_type || '').toLowerCase() === 'template')
   ), [whatsappStatus?.alerts?.items])
@@ -1648,31 +1675,6 @@ export const PhoneChat: React.FC = () => {
     if (showArchivedChats) return
     setArchivedViewOpen(false)
   }, [showArchivedChats])
-
-  useEffect(() => {
-    if (!businessPhones.length) {
-      setSelectedBusinessPhoneId('')
-      return
-    }
-
-    setSelectedBusinessPhoneId((current) => {
-      if (current && businessPhones.some((phone) => phone.id === current)) return current
-
-      const lastInboundBusinessPhone = [...messages]
-        .filter((message) => message.direction === 'inbound' && message.businessPhone)
-        .sort((left, right) => Date.parse(right.date) - Date.parse(left.date))[0]?.businessPhone
-
-      const fromConversation = lastInboundBusinessPhone
-        ? businessPhones.find((phone) => phoneLooksSame(getBusinessPhoneValue(phone), lastInboundBusinessPhone))
-        : null
-
-      return fromConversation?.id ||
-        businessPhones.find((phone) => phone.is_default_sender)?.id ||
-        whatsappStatus?.selectedPhone?.id ||
-        businessPhones[0]?.id ||
-        ''
-    })
-  }, [businessPhones, messages, whatsappStatus?.selectedPhone?.id])
 
   useEffect(() => {
     if (!chatPhoneFilterEnabled || selectedChatPhoneId === 'all') return
@@ -2453,7 +2455,7 @@ export const PhoneChat: React.FC = () => {
     }
 
     if (!selectedBusinessPhoneValue) {
-      showToast('error', 'Falta el número emisor', 'Elige el WhatsApp del negocio que responderá este chat.')
+      showToast('error', 'Falta el WhatsApp del negocio', 'Configura el número conectado para responder este chat.')
       return
     }
 
@@ -2593,30 +2595,32 @@ export const PhoneChat: React.FC = () => {
       return
     }
 
-    if (!whatsappConnected) {
+    if (!selectedBusinessPhoneValue) {
+      showToast('error', 'Falta el WhatsApp del negocio', 'Configura el número conectado para responder este chat.')
+      return
+    }
+
+    const resolvedTransport: 'api' | 'qr' = selectedQrReady && (transport === 'qr' || !apiReplyWindowOpen || !whatsappConnected)
+      ? 'qr'
+      : 'api'
+
+    if (resolvedTransport === 'api' && !whatsappConnected) {
       showToast('error', 'WhatsApp no está conectado', 'Conecta WhatsApp API en configuración para enviar mensajes desde Ristak.')
       return
     }
 
-    if (!selectedBusinessPhoneValue) {
-      showToast('error', 'Falta el número emisor', 'Elige el WhatsApp del negocio que responderá este chat.')
+    if (!apiReplyWindowOpen && !selectedQrReady) {
+      showToast('warning', 'Fuera de 24 horas', 'Manda una plantilla aprobada para volver a escribirle.')
       return
     }
 
-    if (transport === 'qr' && (attachmentsToSend.length > 0 || voiceToSend)) {
-      showToast('warning', 'QR solo manda texto', 'Quita el archivo o envía con la conexión oficial si todavía está disponible.')
+    if (resolvedTransport === 'qr' && !selectedQrReady) {
+      showToast('error', 'Baileys no está conectado', 'Conecta este número por QR en Configuración > WhatsApp.')
       return
     }
 
-    if (transport === 'api' && !apiReplyWindowOpen) {
-      showToast('warning', 'Ya pasaron 24 horas', selectedQrReady
-        ? 'Usa el botón QR o manda una plantilla aprobada desde WhatsApp.'
-        : 'Manda una plantilla aprobada o conecta el QR de este número en Configuración.')
-      return
-    }
-
-    if (transport === 'qr' && !selectedQrReady) {
-      showToast('error', 'QR no conectado', 'Conecta este número por QR en Configuración > WhatsApp.')
+    if (resolvedTransport === 'qr' && (attachmentsToSend.length > 0 || voiceToSend)) {
+      showToast('warning', 'Baileys solo manda texto', 'Quita el archivo o manda una plantilla aprobada.')
       return
     }
 
@@ -2638,7 +2642,7 @@ export const PhoneChat: React.FC = () => {
           status: 'enviando',
           businessPhone: selectedBusinessPhoneValue,
           businessPhoneNumberId: selectedBusinessPhone?.id || '',
-          transport,
+          transport: resolvedTransport,
           attachment: {
             type: 'audio',
             dataUrl: voiceToSend.dataUrl,
@@ -2656,7 +2660,7 @@ export const PhoneChat: React.FC = () => {
           status: 'enviando',
           businessPhone: selectedBusinessPhoneValue,
           businessPhoneNumberId: selectedBusinessPhone?.id || '',
-          transport,
+          transport: resolvedTransport,
           attachment: {
             type: 'image',
             dataUrl: attachment.dataUrl,
@@ -2668,10 +2672,10 @@ export const PhoneChat: React.FC = () => {
           text,
           date: sentAt,
           direction: 'outbound',
-          status: transport === 'qr' ? 'enviando por QR' : 'enviando',
+          status: resolvedTransport === 'qr' ? 'enviando por Baileys' : 'enviando',
           businessPhone: selectedBusinessPhoneValue,
           businessPhoneNumberId: selectedBusinessPhone?.id || '',
-          transport
+          transport: resolvedTransport
         }]
 
     setMessages((current) => [...current, ...optimisticMessages])
@@ -2718,7 +2722,7 @@ export const PhoneChat: React.FC = () => {
           from: selectedBusinessPhoneValue,
           text,
           externalId: optimisticId,
-          transport,
+          transport: resolvedTransport,
           phoneNumberId: selectedBusinessPhone?.id || undefined
         })
         setMessages((current) => current.map((message) => (
@@ -3286,44 +3290,14 @@ export const PhoneChat: React.FC = () => {
   }
 
   const renderSenderBar = () => {
-    if (!activeContact || businessPhones.length === 0) return null
-
-    const windowLabel = apiReplyWindowOpen
-      ? 'API disponible'
-      : selectedQrReady
-        ? 'Fuera de 24 h · QR listo'
-        : 'Fuera de 24 h'
+    if (!activeContact || !outsideReplyWindow || !selectedQrReady) return null
 
     return (
       <div className={styles.senderBar}>
-        <div className={styles.senderSelectWrap}>
-          <Smartphone size={15} />
-          <select
-            value={selectedBusinessPhone?.id || ''}
-            onChange={(event) => setSelectedBusinessPhoneId(event.target.value)}
-            aria-label="Numero de WhatsApp que respondera"
-          >
-            {businessPhones.map((phone) => (
-              <option key={phone.id} value={phone.id}>
-                {getBusinessPhoneLabel(phone)}
-              </option>
-            ))}
-          </select>
-        </div>
-        <span className={apiReplyWindowOpen ? styles.senderStatusOpen : styles.senderStatusClosed}>
-          {windowLabel}
+        <span className={styles.replyWindowNotice}>
+          <Clock size={14} />
+          Fuera de 24 h · se enviará por Baileys
         </span>
-        {!apiReplyWindowOpen && selectedQrReady && messageText.trim() && draftAttachments.length === 0 && (
-          <button
-            type="button"
-            className={styles.senderQrButton}
-            onClick={() => handleSendMessage('qr')}
-            disabled={composerStatus === 'sending'}
-          >
-            <Send size={14} />
-            Enviar QR
-          </button>
-        )}
       </div>
     )
   }
@@ -4484,50 +4458,65 @@ export const PhoneChat: React.FC = () => {
             ) : (
               <>
                 {renderSenderBar()}
-                {renderAISuggestionBar()}
-                {renderDraftAttachments()}
-                {renderVoiceDraft()}
-                <div className={styles.composer}>
-                  <button type="button" className={styles.composerPlus} onClick={() => setSheet('attachments')} aria-label="Abrir adjuntos">
-                    <Plus size={34} />
-                  </button>
-                  <div className={styles.messageInputWrap}>
-                    <div
-                      ref={composerInputRef}
-                      className={styles.composerInput}
-                      role="textbox"
-                      aria-multiline="true"
-                      aria-label="Mensaje"
-                      aria-disabled={!activeContact?.phone || composerStatus === 'sending' || voiceRecording || Boolean(voiceDraft)}
-                      data-placeholder={voiceRecording ? 'Grabando...' : voiceDraft ? 'Audio listo' : activeContact?.phone ? '' : 'Sin teléfono'}
-                      contentEditable={Boolean(activeContact?.phone && composerStatus !== 'sending' && !voiceRecording && !voiceDraft)}
-                      suppressContentEditableWarning
-                      spellCheck
-                      autoCorrect="on"
-                      autoCapitalize="sentences"
-                      onInput={(event) => syncComposerText(event.currentTarget)}
-                      onPaste={handleComposerPaste}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' && !event.shiftKey) {
-                          event.preventDefault()
-                          handleSendMessage()
-                        }
-                      }}
-                    />
+                {!composerBlockedByReplyWindow && renderAISuggestionBar()}
+                {!composerBlockedByReplyWindow && renderDraftAttachments()}
+                {!composerBlockedByReplyWindow && renderVoiceDraft()}
+                {composerBlockedByReplyWindow ? (
+                  <div className={styles.replyWindowBlockedComposer}>
+                    <span className={styles.replyWindowBlockedIcon}>
+                      <Clock size={18} />
+                    </span>
+                    <span className={styles.replyWindowBlockedText}>
+                      <strong>Fuera de 24 horas</strong>
+                      <small>Manda una plantilla para volver a escribirle.</small>
+                    </span>
+                    <button type="button" onClick={handleOpenTemplatesSheet} aria-label="Enviar plantilla">
+                      <FileText size={20} />
+                    </button>
                   </div>
-                  <button type="button" className={styles.composerIconButton} onClick={() => handlePickPhoto('camera')} aria-label="Cámara">
-                    <Camera size={29} />
-                  </button>
-                  <button
-                    type="button"
-                    className={`${styles.composerIconButton} ${voiceRecording ? styles.composerMicRecording : ''}`}
-                    onClick={handleVoiceOrSendButtonClick}
-                    disabled={composerStatus === 'sending'}
-                    aria-label={voiceRecording ? 'Detener grabación' : canSendMessage ? 'Enviar mensaje' : 'Grabar mensaje de voz'}
-                  >
-                    {composerStatus === 'sending' ? <Loader2 size={23} className={styles.spinIcon} /> : canSendMessage ? <Send size={25} /> : <Mic size={30} />}
-                  </button>
-                </div>
+                ) : (
+                  <div className={styles.composer}>
+                    <button type="button" className={styles.composerPlus} onClick={() => setSheet('attachments')} aria-label="Abrir adjuntos">
+                      <Plus size={34} />
+                    </button>
+                    <div className={styles.messageInputWrap}>
+                      <div
+                        ref={composerInputRef}
+                        className={styles.composerInput}
+                        role="textbox"
+                        aria-multiline="true"
+                        aria-label="Mensaje"
+                        aria-disabled={!activeContact?.phone || composerStatus === 'sending' || voiceRecording || Boolean(voiceDraft)}
+                        data-placeholder={voiceRecording ? 'Grabando...' : voiceDraft ? 'Audio listo' : activeContact?.phone ? '' : 'Sin teléfono'}
+                        contentEditable={Boolean(activeContact?.phone && composerStatus !== 'sending' && !voiceRecording && !voiceDraft)}
+                        suppressContentEditableWarning
+                        spellCheck
+                        autoCorrect="on"
+                        autoCapitalize="sentences"
+                        onInput={(event) => syncComposerText(event.currentTarget)}
+                        onPaste={handleComposerPaste}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' && !event.shiftKey) {
+                            event.preventDefault()
+                            handleSendMessage()
+                          }
+                        }}
+                      />
+                    </div>
+                    <button type="button" className={styles.composerIconButton} onClick={() => handlePickPhoto('camera')} aria-label="Cámara">
+                      <Camera size={29} />
+                    </button>
+                    <button
+                      type="button"
+                      className={`${styles.composerIconButton} ${voiceRecording ? styles.composerMicRecording : ''}`}
+                      onClick={handleVoiceOrSendButtonClick}
+                      disabled={composerStatus === 'sending'}
+                      aria-label={voiceRecording ? 'Detener grabación' : canSendMessage ? 'Enviar mensaje' : 'Grabar mensaje de voz'}
+                    >
+                      {composerStatus === 'sending' ? <Loader2 size={23} className={styles.spinIcon} /> : canSendMessage ? <Send size={25} /> : <Mic size={30} />}
+                    </button>
+                  </div>
+                )}
               </>
             )}
           </div>

@@ -2960,14 +2960,14 @@ export async function sendWhatsAppApiTemplateMessage({
 
 export async function sendWhatsAppApiTextMessage({ to, text, from, externalId, transport = 'api', phoneNumberId } = {}) {
   const config = await loadConfig({ includeSecrets: true })
-  if (!config.enabled || !config.apiKey) {
-    throw new Error('WhatsApp_API no está conectado')
-  }
-
   const fromPhone = normalizePhoneForStorage(from || config.senderPhone) || cleanString(from || config.senderPhone)
   const toPhone = normalizePhoneForStorage(to) || cleanString(to)
   const body = cleanString(text)
   const cleanTransport = cleanString(transport).toLowerCase() === 'qr' ? 'qr' : 'api'
+
+  if (cleanTransport !== 'qr' && (!config.enabled || !config.apiKey)) {
+    throw new Error('WhatsApp_API no está conectado')
+  }
 
   if (!fromPhone) throw new Error('Falta el número emisor de WhatsApp_API')
   if (!toPhone) throw new Error('Falta el número destino')

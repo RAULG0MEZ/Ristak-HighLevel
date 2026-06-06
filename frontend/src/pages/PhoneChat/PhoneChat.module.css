@@ -1248,72 +1248,27 @@
 }
 
 .senderBar {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 7px 8px 2px;
+  justify-content: flex-start;
+  min-width: 0;
+  padding: 7px 8px 0 46px;
   border-top: 1px solid rgba(0, 0, 0, 0.04);
 }
 
-.senderSelectWrap {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  min-height: 30px;
-  padding: 0 9px;
-  border-radius: 999px;
-  color: #0f5132;
-  background: rgba(255, 255, 255, 0.72);
-}
-
-.senderSelectWrap select {
-  min-width: 0;
-  height: 28px;
-  border: 0;
-  outline: 0;
-  color: var(--phone-chat-text);
-  background: transparent;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 780;
-}
-
-.senderStatusOpen,
-.senderStatusClosed,
-.senderQrButton {
+.replyWindowNotice {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  min-height: 28px;
+  gap: 6px;
+  min-height: 30px;
+  max-width: 100%;
+  padding: 0 10px;
   border-radius: 999px;
-  padding: 0 9px;
-  font-size: 11px;
-  font-weight: 850;
+  font-size: 12px;
+  font-weight: 820;
   white-space: nowrap;
-}
-
-.senderStatusOpen {
-  color: #0f5132;
-  background: var(--phone-chat-accent-soft);
-}
-
-.senderStatusClosed {
   color: #9a3412;
   background: #ffedd5;
-}
-
-.senderQrButton {
-  gap: 5px;
-  border: 0;
-  color: #ffffff;
-  background: var(--phone-chat-primary);
-}
-
-.senderQrButton:disabled {
-  opacity: 0.56;
 }
 
 .aiSuggestionBar {
@@ -1451,6 +1406,70 @@
 
 .composerMicRecording {
   color: #dc2626;
+}
+
+.replyWindowBlockedComposer {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 42px;
+  align-items: center;
+  gap: 10px;
+  min-height: calc(58px + env(safe-area-inset-bottom));
+  margin: 5px 8px max(6px, env(safe-area-inset-bottom));
+  padding: 8px 8px 8px 10px;
+  border: 1px solid rgba(154, 52, 18, 0.18);
+  border-radius: 24px;
+  color: #7c2d12;
+  background: #fff7ed;
+}
+
+.replyWindowBlockedIcon,
+.replyWindowBlockedComposer button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+}
+
+.replyWindowBlockedIcon {
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  color: #9a3412;
+  background: #ffedd5;
+}
+
+.replyWindowBlockedText {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.replyWindowBlockedText strong {
+  overflow: hidden;
+  color: #7c2d12;
+  font-size: 14px;
+  font-weight: 860;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.replyWindowBlockedText small {
+  overflow: hidden;
+  color: rgba(124, 45, 18, 0.72);
+  font-size: 12px;
+  font-weight: 690;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.replyWindowBlockedComposer button {
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  color: #ffffff;
+  background: var(--phone-chat-primary);
 }
 
 .aiComposer {
@@ -2758,15 +2777,6 @@
     min-height: 31px;
     padding-inline: 12px;
     font-size: 14px;
-  }
-
-  .senderBar {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .senderQrButton {
-    grid-column: 1 / -1;
-    width: 100%;
   }
 
   .attachmentGrid {
