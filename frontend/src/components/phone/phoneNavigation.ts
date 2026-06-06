@@ -11,11 +11,11 @@ export interface PhoneNavItem {
 }
 
 export const PHONE_NAV_ITEMS: PhoneNavItem[] = [
+  { key: 'settings', label: 'Ajustes', to: '/phone/settings', Icon: Settings },
   { key: 'chat', label: 'Chats', to: '/phone/chat', Icon: MessageCircle },
   { key: 'calendar', label: 'Citas', to: '/phone/calendar', Icon: CalendarDays },
   { key: 'payments', label: 'Pagos', to: '/phone/payments', Icon: CreditCard },
-  { key: 'analytics', label: 'Analíticas', to: '/phone/analytics', Icon: BarChart3 },
-  { key: 'settings', label: 'Ajustes', to: '/phone/settings', Icon: Settings }
+  { key: 'analytics', label: 'Analíticas', to: '/phone/analytics', Icon: BarChart3 }
 ]
 
 export const PHONE_NAV_ACTIVE_INDEX_KEY = 'ristak_phone_nav_active_index'
