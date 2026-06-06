@@ -62,6 +62,7 @@ interface RecordPaymentModalProps {
   onSuccess?: () => void
   initialPaymentMode?: PaymentMode
   initialContact?: Partial<Contact> | null
+  lockInitialContact?: boolean
   /**
    * 'modal' (default) renderiza dentro del overlay Modal.
    * 'embedded' renderiza el mismo flujo sin overlay, para incrustarlo en una
@@ -301,6 +302,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   onSuccess,
   initialPaymentMode = 'single',
   initialContact = null,
+  lockInitialContact = false,
   variant = 'modal'
 }) => {
   const [loading, setLoading] = useState(false)
@@ -421,6 +423,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   )
   const sendMethodOptions = useMemo(() => getSendMethodOptions(selectedContact), [selectedContact?.email, selectedContact?.phone])
   const selectedSendMethodOption = sendMethodOptions.find(option => option.value === sendMethod)
+  const contactLocked = Boolean(lockInitialContact && initialContact?.id)
 
   useEffect(() => {
     if (sendMethodOptions.length === 0) return
@@ -540,6 +543,13 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
 
   // Search contacts
   useEffect(() => {
+    if (contactLocked) {
+      setContacts([])
+      setShowContactDropdown(false)
+      setSearchingContact(false)
+      return
+    }
+
     const query = searchQuery.trim()
 
     if (query.length < 2) {
@@ -623,7 +633,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       window.clearTimeout(timer)
       controller.abort()
     }
-  }, [searchQuery, highLevelConnected])
+  }, [searchQuery, highLevelConnected, contactLocked])
 
   useEffect(() => {
     if (isOpen && chargeType === 'product' && products.length === 0) {
@@ -820,6 +830,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   }
 
   const handleClearContact = () => {
+    if (contactLocked) return
     setSelectedContact(null)
     setSearchQuery('')
   }
@@ -1396,68 +1407,70 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
 
     return (
       <div className={styles.content}>
-        <div className={styles.field}>
-          <label className={styles.label}>Cliente</label>
+        {!contactLocked && (
+          <div className={styles.field}>
+            <label className={styles.label}>Cliente</label>
 
-          {selectedContact ? (
-            <div className={styles.selectedContact}>
-              <div className={styles.contactInfo}>
-                <p className={styles.contactName}>{selectedContact.name || 'Sin nombre'}</p>
-                <p className={styles.contactDetail}>{selectedContact.email || selectedContact.phone}</p>
-              </div>
-              <button
-                type="button"
-                onClick={handleClearContact}
-                className={styles.clearButton}
-                title="Cambiar contacto"
-              >
-                <X size={16} />
-              </button>
-            </div>
-          ) : (
-            <div className={styles.searchWrapper}>
-              <div className={styles.searchInput}>
-                <Search size={16} className={styles.searchIcon} />
-                <input
-                  type="text"
-                  placeholder="Buscar por nombre, email o teléfono..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className={styles.input}
-                />
-                {searchingContact && <Loader2 size={16} className={styles.loadingIcon} />}
-              </div>
-
-              {showContactDropdown && (
-                <div className={styles.dropdown}>
-                  {searchingContact && contacts.length === 0 ? (
-                    <div className={styles.dropdownEmpty}>
-                      Buscando contactos...
-                    </div>
-                  ) : contacts.length > 0 ? (
-                    contacts.map((contact) => (
-                      <button
-                        key={contact.id}
-                        type="button"
-                        className={styles.dropdownItem}
-                        onClick={() => handleSelectContact(contact)}
-                      >
-                        <p className={styles.dropdownName}>{contact.name || 'Sin nombre'}</p>
-                        <p className={styles.dropdownDetail}>
-                          {contact.email || contact.phone || 'Sin información de contacto'}
-                        </p>
-                      </button>
-                    ))
-                  ) : (
-                    <div className={styles.dropdownEmpty}>
-                      No se encontraron contactos
-                    </div>
-                  )}
+            {selectedContact ? (
+              <div className={styles.selectedContact}>
+                <div className={styles.contactInfo}>
+                  <p className={styles.contactName}>{selectedContact.name || 'Sin nombre'}</p>
+                  <p className={styles.contactDetail}>{selectedContact.email || selectedContact.phone}</p>
                 </div>
-              )}
-            </div>
-          )}
-        </div>
+                <button
+                  type="button"
+                  onClick={handleClearContact}
+                  className={styles.clearButton}
+                  title="Cambiar contacto"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            ) : (
+              <div className={styles.searchWrapper}>
+                <div className={styles.searchInput}>
+                  <Search size={16} className={styles.searchIcon} />
+                  <input
+                    type="text"
+                    placeholder="Buscar por nombre, email o teléfono..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className={styles.input}
+                  />
+                  {searchingContact && <Loader2 size={16} className={styles.loadingIcon} />}
+                </div>
+
+                {showContactDropdown && (
+                  <div className={styles.dropdown}>
+                    {searchingContact && contacts.length === 0 ? (
+                      <div className={styles.dropdownEmpty}>
+                        Buscando contactos...
+                      </div>
+                    ) : contacts.length > 0 ? (
+                      contacts.map((contact) => (
+                        <button
+                          key={contact.id}
+                          type="button"
+                          className={styles.dropdownItem}
+                          onClick={() => handleSelectContact(contact)}
+                        >
+                          <p className={styles.dropdownName}>{contact.name || 'Sin nombre'}</p>
+                          <p className={styles.dropdownDetail}>
+                            {contact.email || contact.phone || 'Sin información de contacto'}
+                          </p>
+                        </button>
+                      ))
+                    ) : (
+                      <div className={styles.dropdownEmpty}>
+                        No se encontraron contactos
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className={styles.field}>
           <label className={styles.label}>Tipo de cobro</label>
@@ -2410,7 +2423,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
 
     return (
       <div className={styles.embeddedRoot}>
-        <div className={styles.embeddedScroll} data-phone-chat-scrollable="true">
+        <div className={styles.embeddedScroll} data-phone-chat-scrollable="true" data-phone-scrollable="true">
           {step === 'processing' && renderProcessing()}
           {step === 'form' && renderForm()}
           {step === 'options' && renderPaymentOptions()}

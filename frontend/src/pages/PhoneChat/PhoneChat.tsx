@@ -72,7 +72,7 @@ const PORTABLE_WIDTH_QUERY = '(max-width: 1366px)'
 const PHONE_WIDTH_QUERY = '(max-width: 900px)'
 const COARSE_POINTER_QUERY = '(pointer: coarse)'
 const MOBILE_OR_TABLET_USER_AGENT_PATTERN = /Android|iPad|iPhone|iPod|IEMobile|Opera Mini|Mobile|Tablet/i
-const SCROLLABLE_CHAT_SELECTOR = '[data-phone-chat-scrollable="true"], [contenteditable="true"], textarea, input, select'
+const SCROLLABLE_CHAT_SELECTOR = '[data-phone-chat-scrollable="true"], [data-phone-scrollable="true"]'
 const CHAT_READ_STATE_KEY = 'ristak_phone_chat_read_state_v1'
 const CHAT_ARCHIVED_STATE_KEY = 'ristak_phone_chat_archived_state_v1'
 const CHAT_MUTED_STATE_KEY = 'ristak_phone_chat_muted_state_v1'
@@ -4865,7 +4865,9 @@ export const PhoneChat: React.FC = () => {
                   <ChevronLeft size={24} />
                 </button>
                 <div>
-                  <p>{activeContact ? getContactName(activeContact) : aiAgentConversationOpen ? 'Agente de IA' : 'Ristak Chat'}</p>
+                  {sheet !== 'payment' && (
+                    <p>{activeContact ? getContactName(activeContact) : aiAgentConversationOpen ? 'Agente de IA' : 'Ristak Chat'}</p>
+                  )}
                   <h2>
                     {sheet === 'payment' && 'Registrar pago'}
                     {sheet === 'appointment' && 'Agendar cita'}
@@ -4912,6 +4914,7 @@ export const PhoneChat: React.FC = () => {
                     isOpen
                     initialPaymentMode={activePhonePaymentMode}
                     initialContact={initialContact}
+                    lockInitialContact={Boolean(initialContact?.id)}
                     onClose={() => setSheet(null)}
                     onSuccess={() => {
                       setSheet(null)

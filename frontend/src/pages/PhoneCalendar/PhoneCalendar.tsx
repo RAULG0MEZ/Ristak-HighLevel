@@ -26,7 +26,7 @@ const PORTABLE_WIDTH_QUERY = '(max-width: 1366px)'
 const PHONE_WIDTH_QUERY = '(max-width: 900px)'
 const COARSE_POINTER_QUERY = '(pointer: coarse)'
 const MOBILE_OR_TABLET_USER_AGENT_PATTERN = /Android|iPad|iPhone|iPod|IEMobile|Opera Mini|Mobile|Tablet/i
-const SCROLLABLE_PHONE_SELECTOR = '[data-phone-scrollable="true"], textarea, input, select'
+const SCROLLABLE_PHONE_SELECTOR = '[data-phone-scrollable="true"], [data-phone-chat-scrollable="true"]'
 const SCROLLABLE_PHONE_NAV_SELECTOR = '[data-phone-nav-scrollable="true"]'
 const LAST_SELECTED_CALENDAR_KEY = 'lastSelectedCalendarId'
 
