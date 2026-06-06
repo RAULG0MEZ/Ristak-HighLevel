@@ -326,7 +326,7 @@ interface MessageTemplatesProps {
 export const MessageTemplates: React.FC<MessageTemplatesProps> = ({
   embedded = false,
   title = 'Plantillas',
-  subtitle = 'WhatsApp · Variables · YCloud'
+  subtitle = 'WhatsApp · Variables · WhatsApp API'
 }) => {
   const { showToast, showConfirm } = useNotification()
   const [bundle, setBundle] = useState<MessageTemplateBundle>({
@@ -679,10 +679,10 @@ export const MessageTemplates: React.FC<MessageTemplatesProps> = ({
       setSelectedTemplateId(result.template.id)
       setDraft(templateToDraft(result.template))
       await loadBundle()
-      showToast('success', 'Enviada a revisión', result.message || 'YCloud recibio la plantilla')
+      showToast('success', 'Enviada a revisión', result.message || 'WhatsApp API recibio la plantilla')
     } catch (error) {
       await loadBundle()
-      showToast('error', 'YCloud rechazo la plantilla', getErrorMessage(error, 'Revisa los errores de Meta/YCloud'))
+      showToast('error', 'WhatsApp API rechazo la plantilla', getErrorMessage(error, 'Revisa los errores de Meta o WhatsApp API'))
     } finally {
       setSubmitting(false)
     }
@@ -699,10 +699,10 @@ export const MessageTemplates: React.FC<MessageTemplatesProps> = ({
       const result = await messageTemplatesService.syncTemplate(selectedTemplateId)
       setDraft(templateToDraft(result.template))
       await loadBundle()
-      showToast('success', 'Estado sincronizado', result.message || 'YCloud respondio correctamente')
+      showToast('success', 'Estado sincronizado', result.message || 'WhatsApp API respondio correctamente')
     } catch (error) {
       await loadBundle()
-      showToast('error', 'No se pudo sincronizar', getErrorMessage(error, 'YCloud no regreso estado'))
+      showToast('error', 'No se pudo sincronizar', getErrorMessage(error, 'WhatsApp API no regreso estado'))
     } finally {
       setSyncing(false)
     }
@@ -713,9 +713,9 @@ export const MessageTemplates: React.FC<MessageTemplatesProps> = ({
     try {
       const data = await messageTemplatesService.syncAll()
       setBundle(data)
-      showToast('success', 'Plantillas sincronizadas', 'Estados actualizados desde YCloud')
+      showToast('success', 'Plantillas sincronizadas', 'Estados actualizados desde WhatsApp API')
     } catch (error) {
-      showToast('error', 'No se pudo sincronizar', getErrorMessage(error, 'Revisa la conexion con YCloud'))
+      showToast('error', 'No se pudo sincronizar', getErrorMessage(error, 'Revisa la conexion con WhatsApp API'))
     } finally {
       setSyncing(false)
     }
@@ -824,7 +824,7 @@ export const MessageTemplates: React.FC<MessageTemplatesProps> = ({
       showToast('success', 'Plantillas sincronizadas', 'Se actualizo el estado de la seleccion')
     } catch (error) {
       await loadBundle()
-      showToast('error', 'No se pudo sincronizar', getErrorMessage(error, 'Revisa la conexion con YCloud'))
+      showToast('error', 'No se pudo sincronizar', getErrorMessage(error, 'Revisa la conexion con WhatsApp API'))
     } finally {
       setBulkWorking(false)
     }
@@ -941,7 +941,7 @@ export const MessageTemplates: React.FC<MessageTemplatesProps> = ({
       showToast('success', 'Prueba enviada', result.message || 'WhatsApp Business acepto el envio')
     } catch (error) {
       await loadBundle()
-      showToast('error', 'No se pudo enviar', getErrorMessage(error, 'Meta/YCloud rechazo el envio'))
+      showToast('error', 'No se pudo enviar', getErrorMessage(error, 'Meta o WhatsApp API rechazo el envio'))
     } finally {
       setSendingTest(false)
     }

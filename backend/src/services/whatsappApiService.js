@@ -26,7 +26,7 @@ const __dirname = dirname(__filename)
 const YCLOUD_API_BASE_URL = 'https://api.ycloud.com/v2'
 const SOURCE_NAME = 'WhatsApp_API'
 const PROVIDER_NAME = 'ycloud'
-const WEBHOOK_DESCRIPTION = 'Ristak WhatsApp_API via YCloud'
+const WEBHOOK_DESCRIPTION = 'Ristak WhatsApp API'
 const GENERIC_CONTACT_NAME = 'Contacto WhatsApp_API'
 const WHATSAPP_IMAGE_UPLOAD_ROOT = join(__dirname, '../../uploads/whatsapp-images')
 const WHATSAPP_IMAGE_PUBLIC_PATH = '/uploads/whatsapp-images'
@@ -100,7 +100,7 @@ const PHONE_STATUS_ALERTS = {
   BANNED: {
     severity: 'critical',
     title: 'Numero de WhatsApp baneado',
-    message: 'WhatsApp marco este numero como baneado. No se puede usar para enviar mensajes hasta resolverlo en Meta/YCloud.'
+    message: 'WhatsApp marco este numero como baneado. No se puede usar para enviar mensajes hasta resolverlo en Meta o WhatsApp API.'
   },
   BLOCKED: {
     severity: 'critical',
@@ -120,7 +120,7 @@ const PHONE_STATUS_ALERTS = {
   DISCONNECTED: {
     severity: 'critical',
     title: 'Numero desconectado',
-    message: 'El numero no esta alcanzable por los servidores de WhatsApp. Revisa el estado en YCloud/Meta antes de enviar.'
+    message: 'El numero no esta alcanzable por los servidores de WhatsApp. Revisa el estado en Meta o WhatsApp API antes de enviar.'
   },
   MIGRATED: {
     severity: 'critical',
@@ -145,7 +145,7 @@ const PHONE_STATUS_ALERTS = {
   MANUAL_REVIEW: {
     severity: 'warning',
     title: 'Numero en revision manual',
-    message: 'Meta/YCloud esta revisando el numero. El envio puede quedar limitado hasta que aprueben la revision.'
+    message: 'Meta o WhatsApp API esta revisando el numero. El envio puede quedar limitado hasta que aprueben la revision.'
   },
   PENDING: {
     severity: 'info',
@@ -155,7 +155,7 @@ const PHONE_STATUS_ALERTS = {
   UNKNOWN: {
     severity: 'warning',
     title: 'Estado de numero desconocido',
-    message: 'YCloud no pudo determinar el estado del numero. Conviene sincronizar y revisar antes de enviar campañas.'
+    message: 'WhatsApp API no pudo determinar el estado del numero. Conviene sincronizar y revisar antes de enviar campañas.'
   }
 }
 
@@ -178,7 +178,7 @@ const TEMPLATE_STATUS_ALERTS = {
   ARCHIVED: {
     severity: 'critical',
     title: 'Plantilla archivada',
-    message: 'La plantilla esta archivada. YCloud indica que las plantillas archivadas no se pueden enviar.'
+    message: 'La plantilla esta archivada. WhatsApp API indica que las plantillas archivadas no se pueden enviar.'
   },
   DELETED: {
     severity: 'critical',
@@ -547,7 +547,7 @@ async function loadConfig({ includeSecrets = false } = {}) {
 async function ycloudRequest(path, { apiKey, method = 'GET', body, query } = {}) {
   const cleanApiKey = cleanString(apiKey)
   if (!cleanApiKey) {
-    throw new Error('Falta la API key de YCloud')
+    throw new Error('Falta la llave de WhatsApp API')
   }
 
   const url = new URL(`${YCLOUD_API_BASE_URL}${path}`)
@@ -584,7 +584,7 @@ async function ycloudRequest(path, { apiKey, method = 'GET', body, query } = {})
       data?.message ||
       data?.error?.message ||
       data?.error ||
-      `YCloud respondió ${response.status} ${response.statusText}`
+      `WhatsApp API respondio ${response.status} ${response.statusText}`
     const error = new Error(typeof message === 'string' ? message : safeJson(message))
     error.statusCode = response.status
     error.ycloud = data
@@ -951,8 +951,8 @@ async function syncBalanceAlert(balance) {
     await upsertAlert({
       severity: 'critical',
       alertType: 'balance',
-      title: 'Saldo de YCloud agotado',
-      message: `La cuenta YCloud reporta ${amount.toFixed(2)} ${currency}. Las plantillas pueden fallar por saldo insuficiente.`,
+      title: 'Saldo de WhatsApp API agotado',
+      message: `La cuenta de WhatsApp API reporta ${amount.toFixed(2)} ${currency}. Las plantillas pueden fallar por saldo insuficiente.`,
       entityType: 'account',
       entityId: 'balance',
       raw: balance.raw || balance
@@ -961,8 +961,8 @@ async function syncBalanceAlert(balance) {
     await upsertAlert({
       severity: 'warning',
       alertType: 'balance',
-      title: 'Saldo bajo de YCloud',
-      message: `La cuenta YCloud reporta ${amount.toFixed(2)} ${currency}. Recarga antes de lanzar envios grandes.`,
+      title: 'Saldo bajo de WhatsApp API',
+      message: `La cuenta de WhatsApp API reporta ${amount.toFixed(2)} ${currency}. Recarga antes de lanzar envios grandes.`,
       entityType: 'account',
       entityId: 'balance',
       raw: balance.raw || balance
@@ -982,7 +982,7 @@ async function syncBusinessAccountAlert(account = {}, { sourceEventId, eventType
       severity: 'critical',
       alertType: 'business_account',
       title: 'Cuenta WhatsApp Business eliminada',
-      message: 'YCloud aviso que la cuenta de WhatsApp Business fue eliminada. Revisa Meta/YCloud antes de mandar.',
+      message: 'WhatsApp API aviso que la cuenta de WhatsApp Business fue eliminada. Revisa Meta o WhatsApp API antes de mandar.',
       sourceEventId,
       entityType: 'business_account',
       entityId,
@@ -996,7 +996,7 @@ async function syncBusinessAccountAlert(account = {}, { sourceEventId, eventType
       severity: 'critical',
       alertType: 'business_account',
       title: 'Cuenta WhatsApp Business con bloqueo',
-      message: 'YCloud reporto una actualizacion grave en la cuenta de WhatsApp Business. Revisa el panel de YCloud/Meta.',
+      message: 'WhatsApp API reporto una actualizacion grave en la cuenta de WhatsApp Business. Revisa el panel de Meta o WhatsApp API.',
       sourceEventId,
       entityType: 'business_account',
       entityId,
@@ -1010,7 +1010,7 @@ async function syncBusinessAccountAlert(account = {}, { sourceEventId, eventType
       severity: 'warning',
       alertType: 'business_account',
       title: 'Cuenta WhatsApp Business en revision',
-      message: `YCloud reporto decision/estado ${decision}. Puede afectar aprobacion o envio de plantillas.`,
+      message: `WhatsApp API reporto decision/estado ${decision}. Puede afectar aprobacion o envio de plantillas.`,
       sourceEventId,
       entityType: 'business_account',
       entityId,
@@ -1365,7 +1365,7 @@ async function ensureWebhookEndpoint({ apiKey, webhookUrl, webhookEndpointId }) 
     try {
       return await updateWebhookEndpoint(apiKey, webhookEndpointId, cleanWebhookUrl)
     } catch (error) {
-      logger.warn(`No se pudo actualizar webhook YCloud ${webhookEndpointId}: ${error.message}`)
+      logger.warn(`No se pudo actualizar webhook de WhatsApp API ${webhookEndpointId}: ${error.message}`)
     }
   }
 
@@ -1627,22 +1627,22 @@ export async function connectWhatsAppApi({ apiKey, senderPhone, phoneNumberId, w
   const cleanApiKey = cleanString(apiKey) || saved.apiKey
 
   if (!cleanApiKey) {
-    throw new Error('Pega la API key de YCloud para conectar WhatsApp_API')
+    throw new Error('Pega la llave de WhatsApp API para conectar WhatsApp Business')
   }
 
   try {
     const [phoneNumbers, balance, templates, ycloudContacts] = await Promise.all([
       listYCloudPhoneNumbers(cleanApiKey),
       retrieveYCloudBalance(cleanApiKey).catch(error => {
-        logger.warn(`No se pudo leer balance YCloud: ${error.message}`)
+        logger.warn(`No se pudo leer balance de WhatsApp API: ${error.message}`)
         return null
       }),
       listYCloudTemplates(cleanApiKey, { wabaId }).catch(error => {
-        logger.warn(`No se pudieron leer plantillas YCloud: ${error.message}`)
+        logger.warn(`No se pudieron leer plantillas de WhatsApp API: ${error.message}`)
         return []
       }),
       listYCloudContacts(cleanApiKey).catch(error => {
-        logger.warn(`No se pudieron leer contactos YCloud: ${error.message}`)
+        logger.warn(`No se pudieron leer contactos de WhatsApp API: ${error.message}`)
         return []
       })
     ])
@@ -1711,15 +1711,15 @@ export async function refreshWhatsAppApi() {
     const [phoneNumbers, balance, templates, ycloudContacts] = await Promise.all([
       listYCloudPhoneNumbers(config.apiKey),
       retrieveYCloudBalance(config.apiKey).catch(error => {
-        logger.warn(`No se pudo actualizar balance YCloud: ${error.message}`)
+        logger.warn(`No se pudo actualizar balance de WhatsApp API: ${error.message}`)
         return null
       }),
       listYCloudTemplates(config.apiKey, { wabaId: config.wabaId }).catch(error => {
-        logger.warn(`No se pudieron actualizar plantillas YCloud: ${error.message}`)
+        logger.warn(`No se pudieron actualizar plantillas de WhatsApp API: ${error.message}`)
         return []
       }),
       listYCloudContacts(config.apiKey).catch(error => {
-        logger.warn(`No se pudieron actualizar contactos YCloud: ${error.message}`)
+        logger.warn(`No se pudieron actualizar contactos de WhatsApp API: ${error.message}`)
         return []
       })
     ])
@@ -1773,7 +1773,7 @@ export async function previewWhatsAppApiPhoneNumbers({ apiKey } = {}) {
   const cleanApiKey = cleanString(apiKey) || saved.apiKey
 
   if (!cleanApiKey) {
-    throw new Error('Pega la llave de YCloud para buscar tus numeros')
+    throw new Error('Pega la llave de WhatsApp API para buscar tus numeros')
   }
 
   const phoneNumbers = await listYCloudPhoneNumbers(cleanApiKey)
@@ -1797,7 +1797,7 @@ export async function disconnectWhatsAppApi() {
       })
       await setAppConfig(CONFIG_KEYS.webhookStatus, endpoint.status || 'disabled')
     } catch (error) {
-      logger.warn(`No se pudo deshabilitar webhook YCloud: ${error.message}`)
+      logger.warn(`No se pudo deshabilitar webhook de WhatsApp API: ${error.message}`)
     }
   }
 
@@ -2626,9 +2626,9 @@ export async function processYCloudWhatsAppWebhook({ payload, rawBody, signature
       endpointId,
       signatureValid,
       processedStatus: 'rejected',
-      processedError: 'Firma YCloud inválida'
+      processedError: 'Firma de WhatsApp API invalida'
     })
-    const error = new Error('Firma YCloud inválida')
+    const error = new Error('Firma de WhatsApp API invalida')
     error.statusCode = 401
     throw error
   }
@@ -2737,7 +2737,7 @@ export async function disconnectWhatsAppQrForPhone({ phoneNumberId } = {}) {
 export async function createWhatsAppApiTemplate(templatePayload = {}) {
   const config = await loadConfig({ includeSecrets: true })
   if (!config.enabled || !config.apiKey) {
-    throw new Error('WhatsApp Business no esta conectado con YCloud')
+    throw new Error('WhatsApp Business no esta conectado con WhatsApp API')
   }
 
   const wabaId = cleanString(templatePayload.wabaId || config.wabaId)
@@ -2763,7 +2763,7 @@ export async function createWhatsAppApiTemplate(templatePayload = {}) {
 export async function retrieveWhatsAppApiTemplate({ wabaId, name, language } = {}) {
   const config = await loadConfig({ includeSecrets: true })
   if (!config.enabled || !config.apiKey) {
-    throw new Error('WhatsApp Business no esta conectado con YCloud')
+    throw new Error('WhatsApp Business no esta conectado con WhatsApp API')
   }
 
   const cleanWabaId = cleanString(wabaId || config.wabaId)
@@ -2786,7 +2786,7 @@ export async function retrieveWhatsAppApiTemplate({ wabaId, name, language } = {
 export async function syncWhatsAppApiTemplatesFromYCloud({ wabaId, status } = {}) {
   const config = await loadConfig({ includeSecrets: true })
   if (!config.enabled || !config.apiKey) {
-    throw new Error('WhatsApp Business no esta conectado con YCloud')
+    throw new Error('WhatsApp Business no esta conectado con WhatsApp API')
   }
 
   const items = await listYCloudTemplates(config.apiKey, {

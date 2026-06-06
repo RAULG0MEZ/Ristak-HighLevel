@@ -196,7 +196,7 @@ export const WhatsAppSettings: React.FC = () => {
       setApiStatus(nextStatus)
       setApiKey('')
 
-      showToast('success', 'WhatsApp conectado', 'Ristak sincronizo los numeros disponibles de YCloud')
+      showToast('success', 'WhatsApp conectado', 'Ristak sincronizo los numeros disponibles de WhatsApp API')
     } catch (error) {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo conectar WhatsApp Business')
     } finally {
@@ -210,7 +210,7 @@ export const WhatsAppSettings: React.FC = () => {
     try {
       const nextStatus = await whatsappApiService.refresh()
       setApiStatus(nextStatus)
-      showToast('success', 'Actualizado', 'WhatsApp se sincronizo con YCloud')
+      showToast('success', 'Actualizado', 'WhatsApp se sincronizo con WhatsApp API')
     } catch (error) {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo actualizar WhatsApp')
     } finally {
@@ -237,7 +237,7 @@ export const WhatsAppSettings: React.FC = () => {
   const confirmApiDisconnect = () => {
     showConfirm(
       'Desconectar WhatsApp',
-      'Se pausara la conexion con YCloud. Los mensajes, contactos y plantillas guardadas se quedan intactos.',
+      'Se pausara la conexion con WhatsApp API. Los mensajes, contactos y plantillas guardadas se quedan intactos.',
       async () => {
         setApiDisconnecting(true)
         try {
@@ -292,7 +292,7 @@ export const WhatsAppSettings: React.FC = () => {
   const disconnectQrForPhone = (phone: WhatsAppApiPhoneNumber) => {
     showConfirm(
       'Desconectar QR',
-      `Se apagara el envio por QR para ${getPhoneLabel(phone)}. La conexion oficial de YCloud y los mensajes guardados se quedan intactos.`,
+      `Se apagara el envio por QR para ${getPhoneLabel(phone)}. La conexion oficial de WhatsApp API y los mensajes guardados se quedan intactos.`,
       async () => {
         setQrDisconnectingPhoneId(phone.id)
         try {
@@ -334,7 +334,7 @@ export const WhatsAppSettings: React.FC = () => {
   const renderApiForm = () => (
     <form className={styles.apiConnectForm} onSubmit={connectApi}>
       <label className={styles.fieldLabel}>
-        <span>Llave de conexión de YCloud</span>
+        <span>Llave de conexión de WhatsApp API</span>
         <div className={styles.apiKeyRow}>
           <div className={styles.inputWrap}>
             <KeyRound size={17} />
@@ -344,7 +344,7 @@ export const WhatsAppSettings: React.FC = () => {
               onChange={(event) => {
                 setApiKey(event.target.value)
               }}
-              placeholder={apiStatus?.credentials.hasApiKey ? 'Llave guardada' : 'Pega tu llave de YCloud'}
+              placeholder={apiStatus?.credentials.hasApiKey ? 'Llave guardada' : 'Pega tu llave de WhatsApp API'}
               autoComplete="off"
             />
           </div>
@@ -353,7 +353,7 @@ export const WhatsAppSettings: React.FC = () => {
 
       <Button type="submit" loading={apiConnecting} disabled={!canSubmitApi}>
         <Cloud size={18} />
-        {apiConnected ? 'Actualizar conexión' : 'Conectar YCloud'}
+        {apiConnected ? 'Actualizar conexión' : 'Conectar WhatsApp API'}
       </Button>
     </form>
   )
@@ -368,10 +368,10 @@ export const WhatsAppSettings: React.FC = () => {
         <li>
           <span>1</span>
           <div>
-            <strong>Entra a YCloud</strong>
+            <strong>Entra a WhatsApp API</strong>
             <p>Usa la cuenta del negocio donde tienes tu WhatsApp Business.</p>
             <a className={styles.apiTutorialButton} href={YCLOUD_REGISTER_URL} target="_blank" rel="noopener noreferrer">
-              Abrir YCloud
+              Abrir WhatsApp API
               <ExternalLink size={14} />
             </a>
           </div>
@@ -405,7 +405,7 @@ export const WhatsAppSettings: React.FC = () => {
           <span className={styles.apiLogoMark}><Cloud size={38} /></span>
           <div className={styles.apiConnectCopy}>
             <h3>Conecta WhatsApp Business</h3>
-            <p>Usa YCloud para enviar mensajes oficiales, revisar saldo y mandar plantillas a Meta.</p>
+            <p>Usa WhatsApp API para enviar mensajes oficiales, revisar saldo y mandar plantillas a Meta.</p>
           </div>
           {apiStatus?.lastError && <p className={styles.errorText}>{apiStatus.lastError}</p>}
           <div className={styles.connectContent}>
@@ -419,7 +419,7 @@ export const WhatsAppSettings: React.FC = () => {
     const selectedApiPhone = selectedPhone || apiStatus.selectedPhone || apiStatus.phoneNumbers[0] || null
     const profile = getPhoneProfile(selectedApiPhone)
     const apiProfileImage = selectedApiPhone?.profile_picture_url || profile?.profilePictureUrl || ''
-    const apiDisplayNumber = 'YCloud conectado'
+    const apiDisplayNumber = 'WhatsApp API conectado'
     const apiDisplayName = apiStatus.phoneNumbers.length
       ? `${formatMetric(apiStatus.phoneNumbers.length)} numero${apiStatus.phoneNumbers.length === 1 ? '' : 's'} sincronizado${apiStatus.phoneNumbers.length === 1 ? '' : 's'}`
       : 'Sin numeros sincronizados todavia'
@@ -436,7 +436,7 @@ export const WhatsAppSettings: React.FC = () => {
               <h3>{balance ? formatCurrency(balance.amount, balance.currency) : 'Pendiente'}</h3>
             </div>
           </div>
-          <p className={styles.emptyText}>Si el saldo baja demasiado, YCloud puede detener los envios.</p>
+          <p className={styles.emptyText}>Si el saldo baja demasiado, WhatsApp API puede detener los envios.</p>
         </section>
 
         <section className={styles.connectionCard}>
@@ -451,25 +451,26 @@ export const WhatsAppSettings: React.FC = () => {
                 <p>{apiDisplayName}</p>
               </div>
             </div>
-            <span className={styles.connectedLabel}>
-              <ShieldCheck size={16} />
-              Conectado
-            </span>
-          </div>
-
-          <div className={styles.connectionActions}>
-            <Button variant="outline" onClick={refreshApi} loading={apiRefreshing}>
-              <RefreshCw size={17} />
-              Sincronizar
-            </Button>
-            <Button variant="danger" onClick={confirmApiDisconnect} loading={apiDisconnecting}>
-              <Unplug size={17} />
-              Desconectar
-            </Button>
-            <a className={styles.externalButton} href={YCLOUD_CONSOLE_URL} target="_blank" rel="noopener noreferrer">
-              <ExternalLink size={16} />
-              Abrir YCloud
-            </a>
+            <div className={styles.connectionHeaderRight}>
+              <span className={styles.connectedLabel}>
+                <ShieldCheck size={16} />
+                Conectado
+              </span>
+              <div className={styles.connectionActions}>
+                <Button variant="outline" onClick={refreshApi} loading={apiRefreshing}>
+                  <RefreshCw size={17} />
+                  Sincronizar
+                </Button>
+                <Button variant="danger" onClick={confirmApiDisconnect} loading={apiDisconnecting}>
+                  <Unplug size={17} />
+                  Desconectar
+                </Button>
+                <a className={styles.externalButton} href={YCLOUD_CONSOLE_URL} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink size={16} />
+                  Abrir WhatsApp API
+                </a>
+              </div>
+            </div>
           </div>
 
           {connectionAlerts.length ? (
@@ -624,7 +625,7 @@ export const WhatsAppSettings: React.FC = () => {
           <div>
             <span className={styles.sectionEyebrow}>Plantillas</span>
             <h3>Mensajes aprobados por Meta</h3>
-            <p>Crea, manda a revisión y sincroniza el estado real desde YCloud.</p>
+            <p>Crea, manda a revisión y sincroniza el estado real desde WhatsApp API.</p>
           </div>
           <div className={styles.templatesSummaryBar}>
             <span>{formatMetric(templateSummary.approved)} aprobadas</span>
