@@ -9,11 +9,20 @@
   position: relative;
   border: 1px solid rgba(0, 0, 0, 0.08);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  touch-action: pan-y;
+  will-change: transform, opacity;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .closing {
   pointer-events: none;
   animation: toastSlideOut 0.26s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+.dragging {
+  cursor: grabbing;
 }
 
 :global(body.dark) .toast {
@@ -184,6 +193,8 @@
   backdrop-filter: blur(28px) saturate(1.22);
   -webkit-backdrop-filter: blur(28px) saturate(1.22);
   animation: phoneToastDropIn 0.34s cubic-bezier(0.2, 0.9, 0.2, 1) both;
+  cursor: grab;
+  touch-action: none;
 }
 
 :global(body[data-phone-app='active']) .success {
