@@ -267,6 +267,8 @@ export const Header: React.FC<HeaderProps> = ({ onLogout, sitesEditorActive = fa
                   return (
                     <div
                       key={notification.id}
+                      data-ristak-notification-item
+                      data-unread={unread ? 'true' : undefined}
                       className={cn(
                         'mx-2 mb-2 rounded-lg border border-[rgba(148,163,184,0.12)] px-3 py-3 transition-colors',
                         unread ? 'bg-[rgba(var(--color-primary-rgb),0.08)]' : 'bg-[rgba(148,163,184,0.04)]'
