@@ -263,9 +263,101 @@
   border-color: var(--settings-brand-border-strong);
 }
 
-.apiAlertList {
+.apiAlertDropdown {
   display: grid;
-  gap: 10px;
+  gap: 8px;
+}
+
+.apiAlertSummary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 58px;
+  padding: 11px 13px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  color: var(--color-text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.apiAlertSummary:hover,
+.apiAlertSummary:focus-visible {
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.apiAlertSummaryIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid currentColor;
+  opacity: 0.86;
+}
+
+.apiAlertSummaryCopy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.apiAlertSummaryCopy strong,
+.apiAlertSummaryCopy small,
+.apiAlertSummaryMeta,
+.apiAlertRelated {
+  overflow-wrap: anywhere;
+}
+
+.apiAlertSummaryCopy strong {
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 950;
+  line-height: 1.2;
+}
+
+.apiAlertSummaryCopy small {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 760;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.apiAlertSummaryMeta {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: var(--color-text-primary);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.apiAlertChevron {
+  transition: transform 160ms ease;
+}
+
+.apiAlertChevronOpen {
+  transform: rotate(180deg);
+}
+
+.apiAlertDetails {
+  display: grid;
+  gap: 8px;
 }
 
 .apiAlert,
@@ -294,6 +386,38 @@
   color: var(--color-text-secondary);
   font-size: 12px;
   line-height: 1.4;
+}
+
+.apiAlertHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.apiAlertHeader span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  color: currentColor;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid currentColor;
+  font-size: 10px;
+  font-weight: 900;
+  white-space: nowrap;
+  opacity: 0.82;
+}
+
+.apiAlertRelated {
+  display: block;
+  margin-top: 6px;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1.35;
 }
 
 .apiAlertCritical {
@@ -398,6 +522,12 @@
   letter-spacing: 0;
   text-transform: uppercase;
   white-space: nowrap;
+}
+
+.actionColumn,
+.actionCell {
+  width: 168px;
+  text-align: right;
 }
 
 .phoneTable td {
@@ -517,9 +647,12 @@
 }
 
 .phoneActions {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 6px;
-  justify-items: end;
+  align-items: flex-end;
+  justify-content: center;
+  min-width: 132px;
 }
 
 .phoneActionButton,
@@ -529,6 +662,7 @@
   justify-content: center;
   gap: 6px;
   min-height: 30px;
+  min-width: 112px;
   padding: 0 10px;
   border: 1px solid var(--settings-brand-border);
   border-radius: 8px;
@@ -970,6 +1104,32 @@
   .connectionFacts,
   .templateSummary {
     grid-template-columns: 1fr;
+  }
+
+  .apiAlertSummary {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 10px;
+  }
+
+  .apiAlertSummaryMeta {
+    display: none;
+  }
+
+  .apiAlertSummaryCopy small {
+    display: none;
+  }
+
+  .apiAlertChevron {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+
+  .apiAlertHeader {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
   }
 
   .phoneListItem,

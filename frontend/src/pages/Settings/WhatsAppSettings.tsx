@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
+  Bell,
   CheckCircle,
+  ChevronDown,
   Cloud,
   ExternalLink,
   FileText,
@@ -68,10 +70,29 @@ function getPhoneProfile(phone?: WhatsAppApiPhoneNumber | null) {
   return parseJson<BusinessProfile>(phone?.business_profile_json)
 }
 
-function getAlertClass(alert: WhatsAppApiAlert) {
-  if (alert.severity === 'critical') return styles.apiAlertCritical
-  if (alert.severity === 'warning') return styles.apiAlertWarning
+function getAlertClass(severity?: string | null) {
+  if (severity === 'critical') return styles.apiAlertCritical
+  if (severity === 'warning') return styles.apiAlertWarning
   return styles.apiAlertInfo
+}
+
+function normalizeAlertText(value?: string | null) {
+  return String(value || '').trim().replace(/\s+/g, ' ')
+}
+
+function getAlertWeight(severity?: string | null) {
+  const normalized = String(severity || '').toLowerCase()
+  if (normalized === 'critical') return 3
+  if (normalized === 'warning') return 2
+  return 1
+}
+
+function getAlertSummaryCopy(count: number, severity?: string | null) {
+  const normalized = String(severity || '').toLowerCase()
+  const suffix = count === 1 ? '' : 's'
+  if (normalized === 'critical') return `${count} alerta${suffix} importante${suffix}`
+  if (normalized === 'warning') return `${count} advertencia${suffix}`
+  return `${count} aviso${suffix}`
 }
 
 function getQrStatusLabel(status?: string | null) {
@@ -113,6 +134,7 @@ export const WhatsAppSettings: React.FC = () => {
   const [qrConnectingPhoneId, setQrConnectingPhoneId] = useState('')
   const [qrDisconnectingPhoneId, setQrDisconnectingPhoneId] = useState('')
   const [defaultingPhoneId, setDefaultingPhoneId] = useState('')
+  const [alertsExpanded, setAlertsExpanded] = useState(false)
 
   const apiConnected = Boolean(apiStatus?.connected)
 
@@ -318,6 +340,49 @@ export const WhatsAppSettings: React.FC = () => {
     })
   }, [apiStatus?.alerts?.items])
 
+  const connectionAlertGroups = useMemo(() => {
+    const groups = new Map<string, {
+      key: string
+      severity: string
+      title: string
+      message: string
+      count: number
+      titles: string[]
+      alerts: WhatsAppApiAlert[]
+    }>()
+
+    for (const alert of connectionAlerts) {
+      const severity = String(alert.severity || 'info').toLowerCase()
+      const title = normalizeAlertText(alert.title) || 'Aviso de WhatsApp'
+      const message = normalizeAlertText(alert.message)
+      const key = `${severity}|${message || title}`
+      const existing = groups.get(key)
+
+      if (existing) {
+        existing.count += 1
+        existing.alerts.push(alert)
+        if (!existing.titles.includes(title)) existing.titles.push(title)
+        continue
+      }
+
+      groups.set(key, {
+        key,
+        severity,
+        title,
+        message,
+        count: 1,
+        titles: [title],
+        alerts: [alert]
+      })
+    }
+
+    return Array.from(groups.values()).sort((a, b) => {
+      const severityDiff = getAlertWeight(b.severity) - getAlertWeight(a.severity)
+      if (severityDiff !== 0) return severityDiff
+      return b.count - a.count
+    })
+  }, [connectionAlerts])
+
   const templateSummary = useMemo(() => {
     const templates = apiStatus?.templates?.items || []
     const pending = templates.filter(template => ['PENDING', 'IN_APPEAL'].includes(String(template.status || '').toUpperCase())).length
@@ -425,6 +490,12 @@ export const WhatsAppSettings: React.FC = () => {
       : 'Sin numeros sincronizados todavia'
     const balance = apiStatus.balance
     const phoneRows = apiStatus.phoneNumbers.length ? apiStatus.phoneNumbers : selectedApiPhone ? [selectedApiPhone] : []
+    const alertCount = connectionAlerts.length
+    const topAlertGroup = connectionAlertGroups[0]
+    const alertSummaryText = topAlertGroup
+      ? getAlertSummaryCopy(alertCount, topAlertGroup.severity)
+      : ''
+    const alertPreview = topAlertGroup?.message || topAlertGroup?.title || 'Revisa los avisos de WhatsApp'
 
     return (
       <div className={styles.connectionGrid}>
@@ -473,17 +544,55 @@ export const WhatsAppSettings: React.FC = () => {
             </div>
           </div>
 
-          {connectionAlerts.length ? (
-            <div className={styles.apiAlertList}>
-              {connectionAlerts.map((alert) => (
-                <div key={alert.id} className={`${styles.apiAlert} ${getAlertClass(alert)}`}>
-                  <AlertTriangle size={18} />
-                  <div>
-                    <strong>{alert.title}</strong>
-                    {alert.message && <p>{alert.message}</p>}
-                  </div>
+          {connectionAlertGroups.length ? (
+            <div className={styles.apiAlertDropdown}>
+              <button
+                type="button"
+                className={`${styles.apiAlertSummary} ${getAlertClass(topAlertGroup?.severity)}`}
+                onClick={() => setAlertsExpanded((current) => !current)}
+                aria-expanded={alertsExpanded}
+              >
+                <span className={styles.apiAlertSummaryIcon}>
+                  <Bell size={17} />
+                </span>
+                <span className={styles.apiAlertSummaryCopy}>
+                  <strong>{alertSummaryText}</strong>
+                  <small>{alertPreview}</small>
+                </span>
+                <span className={styles.apiAlertSummaryMeta}>
+                  {connectionAlertGroups.length === 1 ? 'Ver detalle' : `${connectionAlertGroups.length} temas`}
+                </span>
+                <ChevronDown
+                  size={18}
+                  className={`${styles.apiAlertChevron} ${alertsExpanded ? styles.apiAlertChevronOpen : ''}`}
+                />
+              </button>
+
+              {alertsExpanded && (
+                <div className={styles.apiAlertDetails}>
+                  {connectionAlertGroups.map((group) => {
+                    const extraTitles = group.titles.filter((title) => title !== group.title)
+
+                    return (
+                      <article key={group.key} className={`${styles.apiAlert} ${getAlertClass(group.severity)}`}>
+                        <AlertTriangle size={18} />
+                        <div>
+                          <div className={styles.apiAlertHeader}>
+                            <strong>{group.title}</strong>
+                            {group.count > 1 && <span>{group.count} avisos</span>}
+                          </div>
+                          {group.message && <p>{group.message}</p>}
+                          {extraTitles.length > 0 && (
+                            <small className={styles.apiAlertRelated}>
+                              Tambien incluye: {extraTitles.join(', ')}
+                            </small>
+                          )}
+                        </div>
+                      </article>
+                    )
+                  })}
                 </div>
-              ))}
+              )}
             </div>
           ) : (
             <div className={styles.apiHealthyBanner}>
@@ -503,7 +612,7 @@ export const WhatsAppSettings: React.FC = () => {
                     <th>QR</th>
                     <th>Calidad</th>
                     <th>Limite</th>
-                    <th>Accion</th>
+                    <th className={styles.actionColumn}>Accion</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -540,7 +649,7 @@ export const WhatsAppSettings: React.FC = () => {
                           </td>
                           <td>{phone.quality_rating || 'Sin dato'}</td>
                           <td>{phone.messaging_limit || 'Sin dato'}</td>
-                          <td>
+                          <td className={styles.actionCell}>
                             <div className={styles.phoneActions}>
                               {!isSender && (
                                 <button
