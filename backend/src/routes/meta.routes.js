@@ -24,6 +24,7 @@ import {
   getAdAccounts,
   getPixels,
   getPages,
+  getSocialProfiles,
   deleteMetaConfig,
   savePixelToken
 } from '../controllers/metaController.js'
@@ -42,6 +43,7 @@ router.get('/verify-token', verifyToken)
 router.get('/ad-accounts', getAdAccounts)
 router.get('/pixels', getPixels)
 router.get('/pages', getPages)
+router.get('/social-profiles', getSocialProfiles)
 
 // Custom Values de HighLevel
 router.get('/custom-values', getMetaCustomValues)

@@ -25,6 +25,7 @@ import {
   reconcileMetaBusinessWithHighLevel,
   saveMetaCustomValues
 } from '../services/highlevelSyncService.js';
+import { getConnectedMetaSocialProfiles } from '../services/metaSocialProfilesService.js';
 import { getHiddenContactFilters, buildHiddenContactsCondition } from '../utils/hiddenContactsFilter.js';
 import { parseContactCustomFields } from '../utils/contactCustomFields.js';
 import { API_URLS } from '../config/constants.js';
@@ -2744,6 +2745,26 @@ export const getPages = async (req, res) => {
     res.status(400).json({
       success: false,
       error: error.message || 'Error al obtener páginas'
+    });
+  }
+};
+
+/**
+ * Obtiene perfiles sociales disponibles desde la conexión Meta guardada.
+ * GET /api/meta/social-profiles
+ */
+export const getSocialProfiles = async (req, res) => {
+  try {
+    const result = await getConnectedMetaSocialProfiles();
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    logger.error(`Error en getSocialProfiles: ${error.message}`);
+    res.status(400).json({
+      success: false,
+      error: error.message || 'Error al obtener perfiles sociales conectados'
     });
   }
 };

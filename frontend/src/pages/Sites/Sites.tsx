@@ -101,7 +101,7 @@ import {
   type SiteTheme,
   type SiteType
 } from '@/services/sitesService'
-import { campaignsService } from '@/services/campaignsService'
+import { campaignsService, type ConnectedSocialProfile } from '@/services/campaignsService'
 import { calendarsService, type Calendar as CalendarType } from '@/services/calendarsService'
 import { requestAIAgentOpen, type AIAgentSitesCreationKind } from '@/utils/aiAgentEvents'
 import styles from './Sites.module.css'
@@ -940,7 +940,7 @@ const spacingSides = [
 type SpacingBase = 'blockPadding' | 'blockMargin'
 type HorizontalAlign = 'left' | 'center' | 'right'
 type ButtonAlign = HorizontalAlign | 'full'
-type SocialPlatform = 'facebook' | 'instagram' | 'tiktok'
+type SocialPlatform = 'facebook' | 'instagram' | 'tiktok' | 'threads'
 type FormChoiceStyle = NonNullable<SiteTheme['formChoiceStyle']>
 type FormSelectStyle = NonNullable<SiteTheme['formSelectStyle']>
 
@@ -986,7 +986,8 @@ const formSelectStyleOptions: Array<{ value: FormSelectStyle; label: string }> =
 const socialPlatformOptions: Array<{ value: SocialPlatform; label: string }> = [
   { value: 'facebook', label: 'Facebook' },
   { value: 'instagram', label: 'Instagram' },
-  { value: 'tiktok', label: 'TikTok' }
+  { value: 'tiktok', label: 'TikTok' },
+  { value: 'threads', label: 'Threads' }
 ]
 
 const normalizeFormChoiceStyle = (value: unknown): FormChoiceStyle => {
@@ -1003,6 +1004,28 @@ const normalizeSocialPlatform = (value: unknown): SocialPlatform => {
   const raw = String(value || '').trim()
   return socialPlatformOptions.some(option => option.value === raw) ? raw as SocialPlatform : 'facebook'
 }
+
+const socialProfileOptionLabel = (profile: ConnectedSocialProfile) => {
+  const platform = socialPlatformOptions.find(option => option.value === profile.platform)?.label || profile.platform
+  const followers = profile.followersLabel ? ` - ${profile.followersLabel} seguidores` : ''
+  const owner = profile.pageName && profile.pageName !== profile.name ? ` (${profile.pageName})` : ''
+  return `${platform}: ${profile.name}${owner}${followers}`
+}
+
+const connectedProfilePatch = (profile: ConnectedSocialProfile): Record<string, unknown> => ({
+  platform: profile.platform,
+  brandName: profile.name,
+  brandSubtitle: profile.platform === 'instagram' ? 'Perfil de Instagram conectado' : profile.platform === 'facebook' ? 'Pagina de Facebook conectada' : 'Perfil conectado',
+  brandAvatar: profile.avatarUrl || '',
+  followers: profile.followersLabel || '',
+  socialAutoSync: true,
+  socialSourceProfileId: profile.id,
+  socialSourcePlatform: profile.platform,
+  socialSourceId: profile.sourceId,
+  socialSourcePageId: profile.pageId || '',
+  socialSourceName: profile.name,
+  socialSyncedAt: profile.updatedAt || new Date().toISOString()
+})
 
 const getBackgroundVisualValue = (theme: SiteTheme | undefined) => {
   if (theme?.backgroundAttachment === 'fixed' && theme.backgroundRepeat === 'repeat-x' && theme.backgroundPosition === 'center top') return 'repeat-x-fixed-top'
@@ -2065,6 +2088,8 @@ export const Sites: React.FC = () => {
   const [domainInput, setDomainInput] = useState('')
   const [calendars, setCalendars] = useState<CalendarType[]>([])
   const [metaPixelConnected, setMetaPixelConnected] = useState(false)
+  const [connectedSocialProfiles, setConnectedSocialProfiles] = useState<ConnectedSocialProfile[]>([])
+  const [loadingSocialProfiles, setLoadingSocialProfiles] = useState(false)
   const [selectedSite, setSelectedSite] = useState<PublicSite | null>(null)
   const [selectedBlockId, setSelectedBlockId] = useState<string>('')
   const [loading, setLoading] = useState(true)
@@ -2234,6 +2259,7 @@ export const Sites: React.FC = () => {
   useEffect(() => {
     let mounted = true
 
+    setLoadingSocialProfiles(true)
     campaignsService.getMetaConfig()
       .then(response => {
         if (!mounted) return
@@ -2246,6 +2272,18 @@ export const Sites: React.FC = () => {
       })
       .catch(() => {
         if (mounted) setMetaPixelConnected(false)
+      })
+
+    campaignsService.getConnectedSocialProfiles()
+      .then(response => {
+        if (!mounted) return
+        setConnectedSocialProfiles(response.profiles)
+      })
+      .catch(() => {
+        if (mounted) setConnectedSocialProfiles([])
+      })
+      .finally(() => {
+        if (mounted) setLoadingSocialProfiles(false)
       })
 
     return () => {
@@ -4030,6 +4068,8 @@ export const Sites: React.FC = () => {
                   pages={pages}
                   activePageId={activePage?.id || DEFAULT_FUNNEL_PAGE_ID}
                   metaPixelConnected={metaPixelConnected}
+                  connectedSocialProfiles={connectedSocialProfiles}
+                  loadingSocialProfiles={loadingSocialProfiles}
                   showSocialProfile={selectedBlockId === SOCIAL_PROFILE_SELECTED_ID}
                   onPatchSite={updateSelectedSite}
                   onPatchTheme={patchSiteTheme}
@@ -5325,12 +5365,15 @@ const SocialPlatformBadge: React.FC<{ platform: SocialPlatform }> = ({ platform 
     ? styles.socialPlatformFacebook
     : platform === 'instagram'
       ? styles.socialPlatformInstagram
-      : styles.socialPlatformTiktok
+      : platform === 'threads'
+        ? styles.socialPlatformThreads
+        : styles.socialPlatformTiktok
 
   return (
     <span className={`${styles.socialPlatformBadge} ${platformClass}`} aria-hidden="true">
       {platform === 'instagram' && <Instagram size={16} strokeWidth={2.2} />}
       {platform === 'tiktok' && <Music2 size={16} strokeWidth={2.2} />}
+      {platform === 'threads' && <span className={styles.socialPlatformThreadsGlyph}>@</span>}
     </span>
   )
 }
@@ -5338,9 +5381,10 @@ const SocialPlatformBadge: React.FC<{ platform: SocialPlatform }> = ({ platform 
 const CanvasChrome: React.FC<{
   platform: SocialPlatform
   site: PublicSite
+  embedded?: boolean
   onPatchTheme: (patch: Partial<SiteTheme>) => void
   onSave: () => void
-}> = ({ platform, site }) => {
+}> = ({ platform, site, embedded = false }) => {
   const theme = site.theme || {}
   const name = theme.brandName || site.title || site.name || 'Tu marca'
   const subtitle = theme.brandSubtitle || (platform === 'instagram' ? 'Publicacion pagada' : 'Patrocinado')
@@ -5350,10 +5394,12 @@ const CanvasChrome: React.FC<{
     ? styles.chromeFacebook
     : platform === 'instagram'
       ? styles.chromeInstagram
-      : styles.chromeTiktok
+      : platform === 'threads'
+        ? styles.chromeThreads
+        : styles.chromeTiktok
 
   return (
-    <div className={`${styles.canvasChrome} ${platformClass}`} aria-label={`Perfil de ${platform}`}>
+    <div className={`${styles.canvasChrome} ${embedded ? styles.canvasChromeEmbedded : ''} ${platformClass}`} aria-label={`Perfil de ${platform}`}>
       <div className={styles.socialImageWrap}>
         <CanvasAvatar name={name} avatar={theme.brandAvatar} />
         <SocialPlatformBadge platform={platform} />
@@ -7213,7 +7259,7 @@ const CanvasPreviewBlock: React.FC<CanvasPreviewBlockProps> = ({
       }
     } as PublicSite
 
-    return <CanvasChrome platform={platform} site={socialSite} onPatchTheme={() => {}} onSave={() => {}} />
+    return <CanvasChrome platform={platform} site={socialSite} embedded onPatchTheme={() => {}} onSave={() => {}} />
   }
 
   if (block.blockType === HEADER_PANEL_BLOCK_TYPE || block.blockType === FOOTER_PANEL_BLOCK_TYPE) {
@@ -7482,6 +7528,8 @@ interface PropertiesPanelProps {
   pages: SitePage[]
   activePageId: string
   metaPixelConnected: boolean
+  connectedSocialProfiles: ConnectedSocialProfile[]
+  loadingSocialProfiles: boolean
   showSocialProfile: boolean
   onPatchSite: (patch: Partial<PublicSite>) => void
   onPatchTheme: (patch: Partial<SiteTheme>) => void
@@ -7953,6 +8001,8 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   pages,
   activePageId,
   metaPixelConnected,
+  connectedSocialProfiles,
+  loadingSocialProfiles,
   showSocialProfile,
   onPatchSite,
   onPatchTheme,
@@ -8068,6 +8118,8 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             calendars={calendars}
             pages={pages}
             activePageId={activePageId}
+            connectedSocialProfiles={connectedSocialProfiles}
+            loadingSocialProfiles={loadingSocialProfiles}
             onPatchSettings={onPatchSettings}
             onSave={onSave}
           />
@@ -8213,6 +8265,8 @@ interface LandingBlockSettingsProps {
   calendars: CalendarType[]
   pages: SitePage[]
   activePageId: string
+  connectedSocialProfiles: ConnectedSocialProfile[]
+  loadingSocialProfiles: boolean
   onPatchSettings: (patch: Record<string, unknown>) => void
   onSave: () => void
 }
@@ -8258,7 +8312,7 @@ const ButtonActionFields: React.FC<{
   )
 }
 
-const LandingBlockSettings: React.FC<LandingBlockSettingsProps> = ({ site, block, forms, calendars, pages, activePageId, onPatchSettings, onSave }) => {
+const LandingBlockSettings: React.FC<LandingBlockSettingsProps> = ({ site, block, forms, calendars, pages, activePageId, connectedSocialProfiles, loadingSocialProfiles, onPatchSettings, onSave }) => {
   const settings = block.settings || {}
 
   if (isPanelBlock(block)) {
@@ -8346,18 +8400,72 @@ const LandingBlockSettings: React.FC<LandingBlockSettingsProps> = ({ site, block
 
   if (block.blockType === 'social_profile') {
     const platform = normalizeSocialPlatform(settings.platform)
+    const connectedProfilesForPlatform = connectedSocialProfiles.filter(profile => profile.platform === platform)
+    const selectedConnectedProfileId = getSettingString(settings, 'socialSourceProfileId')
+    const selectedConnectedProfile = connectedProfilesForPlatform.find(profile => profile.id === selectedConnectedProfileId) || null
+    const canUseMetaProfile = platform === 'facebook' || platform === 'instagram' || platform === 'threads'
 
     return (
       <div className={styles.settingsGroup}>
         <div className={styles.panelSubheader}>Perfil social</div>
         <label className={styles.field}>
           <span>Red social</span>
-          <select value={platform} onChange={(event) => onPatchSettings({ platform: event.target.value })} onBlur={onSave}>
+          <select
+            value={platform}
+            onChange={(event) => onPatchSettings({
+              platform: event.target.value,
+              socialAutoSync: false,
+              socialSourceProfileId: '',
+              socialSourcePlatform: '',
+              socialSourceId: '',
+              socialSourcePageId: '',
+              socialSourceName: ''
+            })}
+            onBlur={onSave}
+          >
             {socialPlatformOptions.map(option => (
               <option key={option.value} value={option.value}>{option.label}</option>
             ))}
           </select>
         </label>
+        <label className={styles.field}>
+          <span>Perfil conectado</span>
+          <select
+            value={selectedConnectedProfileId}
+            disabled={loadingSocialProfiles || connectedProfilesForPlatform.length === 0}
+            onChange={(event) => {
+              const profile = connectedProfilesForPlatform.find(item => item.id === event.target.value)
+              if (profile) {
+                onPatchSettings(connectedProfilePatch(profile))
+                window.setTimeout(onSave, 0)
+                return
+              }
+              onPatchSettings({
+                socialAutoSync: false,
+                socialSourceProfileId: '',
+                socialSourcePlatform: '',
+                socialSourceId: '',
+                socialSourcePageId: '',
+                socialSourceName: ''
+              })
+            }}
+            onBlur={onSave}
+          >
+            <option value="">{loadingSocialProfiles ? 'Buscando perfiles...' : 'Escribir manualmente'}</option>
+            {connectedProfilesForPlatform.map(profile => (
+              <option key={profile.id} value={profile.id}>{socialProfileOptionLabel(profile)}</option>
+            ))}
+          </select>
+        </label>
+        {selectedConnectedProfile ? (
+          <p className={styles.muted}>Este perfil se actualiza una vez al dia con los datos conectados de Meta.</p>
+        ) : (
+          <p className={styles.muted}>
+            {canUseMetaProfile
+              ? 'Si Meta esta conectado y tiene acceso a esa pagina, el perfil aparecera aqui. Si no, deja manual.'
+              : 'TikTok todavia se llena manualmente porque no viene desde el token de Meta.'}
+          </p>
+        )}
         <label className={styles.field}>
           <span>Nombre que se vera</span>
           <input value={getSettingString(settings, 'brandName')} placeholder={site.title || site.name || 'Tu marca'} onChange={(event) => onPatchSettings({ brandName: event.target.value })} onBlur={onSave} />
@@ -8373,7 +8481,12 @@ const LandingBlockSettings: React.FC<LandingBlockSettingsProps> = ({ site, block
         <div className={styles.twoColumn}>
           <label className={styles.field}>
             <span>Seguidores</span>
-            <input value={getSettingString(settings, 'followers')} placeholder="12 mil" onChange={(event) => onPatchSettings({ followers: event.target.value })} onBlur={onSave} />
+            <input
+              value={getSettingString(settings, 'followers')}
+              placeholder={selectedConnectedProfile ? 'Se llena desde Meta' : '12 mil'}
+              onChange={(event) => onPatchSettings({ followers: event.target.value, socialAutoSync: false })}
+              onBlur={onSave}
+            />
           </label>
           <label className={styles.checkboxLabel}>
             <input

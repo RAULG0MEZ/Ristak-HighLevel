@@ -2351,6 +2351,20 @@
   border: 0;
 }
 
+.canvasChromeEmbedded {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  gap: 12px;
+}
+
+.chromeFacebook,
+.chromeInstagram,
+.chromeTiktok,
+.chromeThreads {
+  color: inherit;
+}
+
 .socialProfileControls {
   grid-column: 1 / -1;
   grid-template-columns: minmax(150px, 1fr) 140px repeat(4, minmax(120px, 1fr));
@@ -2419,6 +2433,16 @@
 .socialPlatformTiktok {
   background: #050505;
   box-shadow: inset 1px 0 var(--rstk-cyan, #25f4ee), inset -1px 0 var(--rstk-accent, #fe2c55);
+}
+
+.socialPlatformThreads {
+  background: #050505;
+}
+
+.socialPlatformThreadsGlyph {
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 1;
 }
 
 .chromeMeta {
@@ -2942,8 +2966,10 @@
 }
 
 .socialProfileSelectable {
+  width: 100%;
   border: 1px solid transparent;
   border-radius: 8px;
+  padding: 0;
   cursor: pointer;
 }
 

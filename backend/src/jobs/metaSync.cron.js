@@ -1,5 +1,6 @@
 import cron from 'node-cron'
 import { updateRecentAds } from '../services/metaAdsService.js'
+import { refreshConnectedSocialProfileBlocks } from '../services/metaSocialProfilesService.js'
 import { logger } from '../utils/logger.js'
 
 /**
@@ -21,6 +22,21 @@ export function startMetaSyncCron() {
       }
     } catch (error) {
       logger.error('Error en actualización automática de Meta Ads:', error.message)
+    }
+  })
+
+  // Refresca una vez al dia los seguidores usados por bloques de perfil social.
+  cron.schedule('17 5 * * *', async () => {
+    logger.info('Ejecutando actualización diaria de perfiles sociales Meta...')
+    try {
+      const result = await refreshConnectedSocialProfileBlocks()
+      if (result.success) {
+        logger.success(result.message)
+      } else {
+        logger.warn('Actualización diaria de perfiles sociales saltada:', result.message)
+      }
+    } catch (error) {
+      logger.error('Error actualizando perfiles sociales:', error.message)
     }
   })
 

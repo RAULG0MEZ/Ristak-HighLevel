@@ -20,6 +20,21 @@ export interface Campaign {
   adsets?: AdSet[]
 }
 
+export interface ConnectedSocialProfile {
+  id: string
+  platform: 'facebook' | 'instagram' | 'threads' | 'tiktok'
+  sourceId: string
+  pageId?: string
+  pageName?: string
+  name: string
+  username?: string
+  category?: string | null
+  avatarUrl?: string | null
+  followers?: number | null
+  followersLabel?: string
+  updatedAt?: string
+}
+
 export interface AdSet {
   id: string
   name: string
@@ -458,6 +473,31 @@ class CampaignsService {
       }
     } catch (error) {
       return { success: false, pages: [] }
+    }
+  }
+
+  async getConnectedSocialProfiles(): Promise<{
+    success: boolean
+    connected: boolean
+    updatedAt: string | null
+    profiles: ConnectedSocialProfile[]
+    error?: string
+  }> {
+    try {
+      const data = await apiClient.get('/meta/social-profiles') as {
+        connected?: boolean
+        updatedAt?: string
+        profiles?: ConnectedSocialProfile[]
+      }
+
+      return {
+        success: true,
+        connected: Boolean(data.connected),
+        updatedAt: data.updatedAt || null,
+        profiles: Array.isArray(data.profiles) ? data.profiles : []
+      }
+    } catch (error) {
+      return { success: false, connected: false, updatedAt: null, profiles: [] }
     }
   }
 

@@ -5328,6 +5328,7 @@ function renderAvatar(brand) {
 function getSocialPlatformIcon(platform) {
   if (platform === 'instagram') return RSTK_ICONS.camera
   if (platform === 'tiktok') return RSTK_ICONS.music
+  if (platform === 'threads') return '@'
   return ''
 }
 
@@ -5355,7 +5356,7 @@ function renderBrandChrome(template, brand) {
 
 function normalizeSocialPlatform(value) {
   const platform = cleanString(value)
-  return ['facebook', 'instagram', 'tiktok'].includes(platform) ? platform : 'facebook'
+  return ['facebook', 'instagram', 'tiktok', 'threads'].includes(platform) ? platform : 'facebook'
 }
 
 function renderSocialProfileBlock(block, context = {}) {
@@ -5379,7 +5380,7 @@ function renderSocialProfileBlock(block, context = {}) {
     initial
   }
   const secondary = followers ? `${escapeHtml(followers)} seguidores` : escapeHtml(subtitle)
-  const platformLabel = platform === 'facebook' ? 'Facebook' : platform === 'instagram' ? 'Instagram' : 'TikTok'
+  const platformLabel = platform === 'facebook' ? 'Facebook' : platform === 'instagram' ? 'Instagram' : platform === 'threads' ? 'Threads' : 'TikTok'
 
   return `
     <section class="rstk-chrome rstk-social-profile rstk-social-profile-block rstk-social-profile-${platform}" aria-label="Perfil de ${platformLabel}">
@@ -5620,7 +5621,7 @@ const RSTK_BASE_CSS = `
   .rstk-chrome .rstk-avatar{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;overflow:hidden;background:var(--rstk-accent);color:#fff;font-weight:800;font-size:1.15rem;flex:0 0 auto}
   .rstk-chrome .rstk-avatar img{width:100%;height:100%;object-fit:cover}
 	  .rstk-social-profile{margin:calc(-1 * var(--rstk-pad)) calc(-1 * var(--rstk-pad)) 0;padding:20px var(--rstk-pad) 14px;display:flex;align-items:center;gap:8px;background:transparent;border:0}
-	  .rstk-social-profile-block{margin:0;padding:16px;border:1px solid var(--rstk-border);border-radius:var(--rstk-radius-lg);background:var(--rstk-surface2);gap:12px}
+	  .rstk-social-profile-block{width:100%;margin:0;padding:16px;border:1px solid var(--rstk-border);border-radius:var(--rstk-radius-lg);background:var(--rstk-surface2);gap:12px}
 	  .rstk-social-image{position:relative;display:inline-block;flex:0 0 auto}
 	  .rstk-social-profile .rstk-avatar{width:64px;height:64px;font-size:1.35rem}
 	  .rstk-social-profile-block .rstk-avatar{width:56px;height:56px;font-size:1.2rem}
@@ -5628,6 +5629,7 @@ const RSTK_BASE_CSS = `
   .rstk-social-platform-facebook{background:#fff url('https://storage.googleapis.com/msgsndr/cAEl3p2eZROgv2GFvMZM/media/67b7bb9d7c922f0d2f3b2adf.svg') center/contain no-repeat}
   .rstk-social-platform-instagram{background:var(--rstk-gradient)}
   .rstk-social-platform-tiktok{background:#050505;box-shadow:inset 1px 0 var(--rstk-cyan),inset -1px 0 var(--rstk-accent)}
+  .rstk-social-platform-threads{background:#050505;font-size:16px;font-weight:900;line-height:1}
   .rstk-social-platform svg{width:16px;height:16px}
   .rstk-social-details{display:flex;flex-direction:column;min-width:0}
   .rstk-social-name{display:flex;align-items:center;gap:4px;min-width:0;font-size:18px;line-height:1.18;font-weight:800;color:var(--rstk-ink)}
