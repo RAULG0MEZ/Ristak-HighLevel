@@ -121,6 +121,7 @@ interface ChatSwipeGesture {
 const SUCCESS_PAYMENT_STATUSES = new Set(['succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success'])
 const CANCELED_APPOINTMENT_STATUSES = new Set(['cancelled', 'canceled', 'no_show', 'noshow', 'deleted', 'failed', 'invalid'])
 const FAILED_MESSAGE_STATUSES = new Set(['error', 'failed', 'undelivered', 'rejected'])
+const PENDING_MESSAGE_STATUSES = new Set(['pending', 'scheduled', 'queued'])
 const TEMPLATE_DISABLED_STATUSES = new Set(['REJECTED', 'PAUSED', 'DISABLED', 'ARCHIVED', 'DELETED', 'PENDING', 'IN_APPEAL'])
 const EMPTY_TEMPLATE_LOCATION = {
   latitude: '',
@@ -633,6 +634,11 @@ function getJourneyMessageError(event: JourneyEvent) {
 
 function isMessageFailed(message: ChatMessage) {
   return FAILED_MESSAGE_STATUSES.has(String(message.status || '').trim().toLowerCase()) || Boolean(message.errorReason)
+}
+
+function isMessagePending(message: ChatMessage) {
+  const status = String(message.status || '').trim().toLowerCase()
+  return PENDING_MESSAGE_STATUSES.has(status) || status.startsWith('enviando')
 }
 
 function getJourneyMediaAttachment(event: JourneyEvent): ChatMessage['attachment'] | undefined {
@@ -3237,17 +3243,23 @@ export const PhoneChat: React.FC = () => {
           externalId: optimisticId
         })
         const resultData = result.data || result
+        const resultStatus = String(resultData.status || '').trim() || 'pending'
+        const resultDelivered = ['sent', 'delivered', 'read'].includes(resultStatus.toLowerCase())
         setMessages((current) => current.map((message) => (
           message.id === optimisticId
             ? {
                 ...message,
                 id: resultData.localMessageId || message.id,
-                status: 'sent',
+                status: resultStatus,
                 transport: resultData.transport || message.transport
               }
             : message
         )))
-        showToast('success', 'Mensaje enviado', `Se envió por ${resultData.channelLabel || channelLabel}.`)
+        showToast(
+          'success',
+          resultDelivered ? 'Mensaje enviado' : 'Mensaje en cola',
+          `${resultDelivered ? 'Se envió' : 'HighLevel lo recibió'} por ${resultData.channelLabel || channelLabel}.`
+        )
         await loadConversation(activeContact.id)
         await loadChats()
       } catch (error: any) {
@@ -4061,6 +4073,7 @@ export const PhoneChat: React.FC = () => {
         )}
         {messages.map((message) => {
           const failed = message.direction === 'outbound' && isMessageFailed(message)
+          const pending = message.direction === 'outbound' && !failed && isMessagePending(message)
           const transportBadge = getMessageTransportBadge(message.transport)
 
           return (
@@ -4091,6 +4104,8 @@ export const PhoneChat: React.FC = () => {
                     >
                       <CircleAlert size={15} />
                     </button>
+                  ) : pending ? (
+                    <Clock size={15} />
                   ) : (
                     <Check size={15} />
                   ))}

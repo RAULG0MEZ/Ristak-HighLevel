@@ -1650,9 +1650,34 @@ function getHighLevelMessageId(response = {}, externalId = '') {
   ));
 }
 
+function normalizeHighLevelMessageStatus(value = '') {
+  const status = cleanString(value).toLowerCase();
+  if (['delivered', 'failed', 'pending', 'read', 'sent', 'scheduled', 'undelivered'].includes(status)) {
+    return status;
+  }
+  return '';
+}
+
+function getHighLevelResponseStatus(response = {}) {
+  const explicitStatus = normalizeHighLevelMessageStatus(firstDefined(
+    response.status,
+    response.messageStatus,
+    response.message?.status,
+    response.data?.status
+  ));
+  if (explicitStatus) return explicitStatus;
+
+  const responseText = cleanString(firstDefined(response.msg, response.message, response.data?.msg)).toLowerCase();
+  if (responseText.includes('failed') || responseText.includes('error')) return 'failed';
+  if (responseText.includes('queued') || responseText.includes('pending') || responseText.includes('scheduled')) return 'pending';
+
+  return 'pending';
+}
+
 async function saveHighLevelWhatsAppMirror({ contact, channel, text, fromNumber, toNumber, externalId, requestBody, response }) {
   const now = new Date().toISOString();
   const remoteMessageId = getHighLevelMessageId(response, externalId);
+  const deliveryStatus = getHighLevelResponseStatus(response);
   const localMessageId = hashId(
     'ghl_msg',
     remoteMessageId || `${contact.id}:${channel.key}:${text}:${now}`
@@ -1703,18 +1728,22 @@ async function saveHighLevelWhatsAppMirror({ contact, channel, text, fromNumber,
     'outbound',
     'text',
     text,
-    cleanString(response?.status) || 'sent',
+    deliveryStatus,
     now,
     rawPayload
   ]);
 
-  return localMessageId;
+  return {
+    localMessageId,
+    status: deliveryStatus
+  };
 }
 
 async function saveHighLevelMetaMirror({ contact, channel, text, externalId, requestBody, response }) {
   const now = new Date().toISOString();
   const platform = channel.platform;
   const remoteMessageId = getHighLevelMessageId(response, externalId);
+  const deliveryStatus = getHighLevelResponseStatus(response);
   const localMessageId = hashId(
     'ghl_meta_msg',
     remoteMessageId || `${contact.id}:${platform}:${text}:${now}`
@@ -1775,7 +1804,10 @@ async function saveHighLevelMetaMirror({ contact, channel, text, externalId, req
     null
   ]);
 
-  return localMessageId;
+  return {
+    localMessageId,
+    status: deliveryStatus
+  };
 }
 
 export const sendConversationMessage = async (req, res) => {
@@ -1847,7 +1879,7 @@ export const sendConversationMessage = async (req, res) => {
       ...(cleanString(conversationProviderId) && { conversationProviderId: cleanString(conversationProviderId) })
     };
     const response = await ghlClient.sendConversationMessage(requestBody);
-    const localMessageId = channelConfig.localTable === 'meta'
+    const localMirror = channelConfig.localTable === 'meta'
       ? await saveHighLevelMetaMirror({
           contact,
           channel: channelConfig,
@@ -1877,7 +1909,8 @@ export const sendConversationMessage = async (req, res) => {
         transport: channelConfig.transport,
         contactId: contact.id,
         highLevelContactId,
-        localMessageId
+        localMessageId: localMirror.localMessageId,
+        status: localMirror.status
       }
     });
   } catch (error) {

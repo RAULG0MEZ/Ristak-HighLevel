@@ -31,6 +31,7 @@ export interface HighLevelConversationMessageResponse {
     channelLabel?: string
     type?: string
     transport?: string
+    status?: string
     contactId?: string
     highLevelContactId?: string
     localMessageId?: string
@@ -41,6 +42,7 @@ export interface HighLevelConversationMessageResponse {
   channelLabel?: string
   type?: string
   transport?: string
+  status?: string
   contactId?: string
   highLevelContactId?: string
   localMessageId?: string
