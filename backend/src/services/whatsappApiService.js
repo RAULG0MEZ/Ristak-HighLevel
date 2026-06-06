@@ -36,6 +36,8 @@ const MAX_WHATSAPP_IMAGE_BYTES = 8 * 1024 * 1024
 const WHATSAPP_AUDIO_UPLOAD_ROOT = join(__dirname, '../../uploads/whatsapp-audio')
 const WHATSAPP_AUDIO_PUBLIC_PATH = '/uploads/whatsapp-audio'
 const MAX_WHATSAPP_AUDIO_BYTES = 16 * 1024 * 1024
+const WHATSAPP_API_PROFILE_PICTURE_CACHE_TTL_MS = 24 * 60 * 60 * 1000
+const WHATSAPP_API_PROFILE_PICTURE_BATCH_LIMIT = 40
 const IMAGE_EXTENSION_BY_MIME = {
   'image/jpeg': 'jpg',
   'image/jpg': 'jpg',
@@ -294,6 +296,136 @@ function safeJson(value) {
   } catch {
     return JSON.stringify({ unserializable: true })
   }
+}
+
+const normalizeProfilePictureKey = (key = '') => cleanString(key).toLowerCase().replace(/[\s_-]+/g, '')
+
+const PROFILE_PICTURE_URL_KEYS = new Set([
+  'profilepictureurl',
+  'profilephotourl',
+  'profileimageurl',
+  'avatarurl',
+  'photourl',
+  'pictureurl',
+  'displaypictureurl',
+  'headshoturl'
+])
+
+const PROFILE_PICTURE_CONTEXT_KEYS = new Set([
+  'profile',
+  'customerprofile',
+  'whatsappprofile',
+  'avatar',
+  'photo',
+  'picture',
+  'image',
+  'displaypicture',
+  'headshot'
+])
+
+function isHttpUrl(value) {
+  const text = cleanString(value)
+  return /^https?:\/\//i.test(text) ? text : ''
+}
+
+function isLikelyProfilePictureUrlKey(key, path = []) {
+  const normalizedKey = normalizeProfilePictureKey(key)
+  if (PROFILE_PICTURE_URL_KEYS.has(normalizedKey)) return true
+
+  const hasProfileHint =
+    normalizedKey.includes('profile') ||
+    normalizedKey.includes('avatar') ||
+    normalizedKey.includes('photo') ||
+    normalizedKey.includes('picture') ||
+    normalizedKey.includes('headshot')
+
+  if (normalizedKey.endsWith('url') && hasProfileHint) return true
+
+  if (normalizedKey === 'url') {
+    return path.some(part => PROFILE_PICTURE_CONTEXT_KEYS.has(normalizeProfilePictureKey(part)))
+  }
+
+  if (normalizedKey === 'imageurl') {
+    return path.some(part => PROFILE_PICTURE_CONTEXT_KEYS.has(normalizeProfilePictureKey(part)))
+  }
+
+  return false
+}
+
+function parseJsonLikeValue(value) {
+  if (typeof value !== 'string') return value
+  const trimmed = value.trim()
+  if (!trimmed || !/^[{[]/.test(trimmed)) return value
+  try {
+    return JSON.parse(trimmed)
+  } catch {
+    return value
+  }
+}
+
+function findProfilePictureUrlInValue(value, { path = [], depth = 0, seen = new WeakSet() } = {}) {
+  const parsedValue = parseJsonLikeValue(value)
+  if (!parsedValue || depth > 5) return ''
+
+  if (typeof parsedValue === 'string') {
+    return path.length && isLikelyProfilePictureUrlKey(path[path.length - 1], path.slice(0, -1))
+      ? isHttpUrl(parsedValue)
+      : ''
+  }
+
+  if (Array.isArray(parsedValue)) {
+    for (const item of parsedValue) {
+      const found = findProfilePictureUrlInValue(item, { path, depth: depth + 1, seen })
+      if (found) return found
+    }
+    return ''
+  }
+
+  if (typeof parsedValue !== 'object') return ''
+  if (seen.has(parsedValue)) return ''
+  seen.add(parsedValue)
+
+  for (const [key, child] of Object.entries(parsedValue)) {
+    if (!isLikelyProfilePictureUrlKey(key, path)) continue
+    const found = findProfilePictureUrlInValue(child, { path: [...path, key], depth: depth + 1, seen })
+    if (found) return found
+  }
+
+  const priorityKeys = [
+    'customerProfile',
+    'profile',
+    'whatsAppProfile',
+    'whatsappProfile',
+    'contact',
+    'avatar',
+    'photo',
+    'picture',
+    'image'
+  ]
+
+  for (const key of priorityKeys) {
+    if (!(key in parsedValue)) continue
+    const found = findProfilePictureUrlInValue(parsedValue[key], { path: [...path, key], depth: depth + 1, seen })
+    if (found) return found
+  }
+
+  for (const [key, child] of Object.entries(parsedValue)) {
+    if (!child || typeof child !== 'object') continue
+    const found = findProfilePictureUrlInValue(child, { path: [...path, key], depth: depth + 1, seen })
+    if (found) return found
+  }
+
+  return ''
+}
+
+function isFreshDate(value, ttlMs) {
+  if (!value) return false
+  const time = new Date(value).getTime()
+  return Number.isFinite(time) && Date.now() - time < ttlMs
+}
+
+export function findWhatsAppProfilePictureUrl(value) {
+  return findProfilePictureUrlInValue(value)
 }
 
 function normalizePublicBaseUrl(value = '') {
@@ -726,6 +858,13 @@ async function listYCloudContacts(apiKey, { maxPages = 10 } = {}) {
   }
 
   return contacts
+}
+
+async function retrieveYCloudContact(apiKey, identifier) {
+  const cleanIdentifier = cleanString(identifier)
+  if (!cleanIdentifier) return null
+
+  return ycloudRequest(`/contact/contacts/${encodeURIComponent(cleanIdentifier)}`, { apiKey })
 }
 
 async function retrieveYCloudPhoneNumberProfile(apiKey, { wabaId, phoneNumber } = {}) {
@@ -1553,6 +1692,7 @@ function normalizeYCloudContactRecord(record = {}) {
     phone,
     email: cleanString(record.email),
     profileName,
+    profilePictureUrl: findProfilePictureUrlInValue(record),
     seenAt: toDateTime(record.lastSeen || record.createTime) || nowIso(),
     sourceId: cleanString(record.sourceId),
     sourceUrl: cleanString(record.sourceUrl),
@@ -1580,38 +1720,15 @@ async function syncYCloudContacts(contacts = []) {
       }
     })
 
-    const apiContactId = hashId('waapi_profile', contact.phone)
-    await db.run(`
-      INSERT INTO whatsapp_api_contacts (
-        id, contact_id, phone, profile_name, raw_profile_json,
-        first_seen_at, last_seen_at, message_count, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)
-      ON CONFLICT(phone) DO UPDATE SET
-        contact_id = COALESCE(excluded.contact_id, whatsapp_api_contacts.contact_id),
-        profile_name = COALESCE(NULLIF(excluded.profile_name, ''), whatsapp_api_contacts.profile_name),
-        raw_profile_json = excluded.raw_profile_json,
-        first_seen_at = CASE
-          WHEN whatsapp_api_contacts.first_seen_at IS NULL THEN excluded.first_seen_at
-          WHEN excluded.first_seen_at IS NULL THEN whatsapp_api_contacts.first_seen_at
-          WHEN excluded.first_seen_at < whatsapp_api_contacts.first_seen_at THEN excluded.first_seen_at
-          ELSE whatsapp_api_contacts.first_seen_at
-        END,
-        last_seen_at = CASE
-          WHEN whatsapp_api_contacts.last_seen_at IS NULL THEN excluded.last_seen_at
-          WHEN excluded.last_seen_at IS NULL THEN whatsapp_api_contacts.last_seen_at
-          WHEN excluded.last_seen_at > whatsapp_api_contacts.last_seen_at THEN excluded.last_seen_at
-          ELSE whatsapp_api_contacts.last_seen_at
-        END,
-        updated_at = CURRENT_TIMESTAMP
-    `, [
-      apiContactId,
-      localContact.id || null,
-      contact.phone,
-      contact.profileName || null,
-      safeJson(contact.raw),
-      contact.seenAt,
-      contact.seenAt
-    ])
+    await upsertWhatsAppApiContact({
+      contactId: localContact.id,
+      phone: contact.phone,
+      profileName: contact.profileName,
+      rawProfile: contact.raw,
+      seenAt: contact.seenAt,
+      profilePictureUrl: contact.profilePictureUrl,
+      messageCountDelta: 0
+    })
   }
 }
 
@@ -2444,20 +2561,50 @@ async function upsertLocalContact({ phone, profileName, messageText, messageTime
   }
 }
 
-async function upsertWhatsAppApiContact({ contactId, phone, profileName, rawProfile, seenAt }) {
+async function upsertWhatsAppApiContact({
+  contactId,
+  phone,
+  profileName,
+  rawProfile,
+  seenAt,
+  profilePictureUrl,
+  profilePictureSource = 'whatsapp_api',
+  messageCountDelta = 1
+}) {
   const canonicalPhone = normalizePhoneForStorage(phone) || cleanString(phone)
   if (!canonicalPhone) return null
 
   const apiContactId = hashId('waapi_profile', canonicalPhone)
+  const cleanProfilePictureUrl = cleanString(profilePictureUrl) || findProfilePictureUrlInValue(rawProfile)
+  const cleanProfilePictureSource = cleanProfilePictureUrl
+    ? cleanString(profilePictureSource) || 'whatsapp_api'
+    : null
+  const profilePictureUpdatedAt = cleanProfilePictureUrl ? nowIso() : null
+  const safeMessageCountDelta = Math.max(Number(messageCountDelta) || 0, 0)
+
   await db.run(`
     INSERT INTO whatsapp_api_contacts (
-      id, contact_id, phone, profile_name, raw_profile_json,
-      first_seen_at, last_seen_at, message_count, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+      id, contact_id, phone, profile_name, profile_picture_url,
+      profile_picture_source, profile_picture_updated_at, profile_picture_error,
+      raw_profile_json, first_seen_at, last_seen_at, message_count, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(phone) DO UPDATE SET
       contact_id = COALESCE(excluded.contact_id, whatsapp_api_contacts.contact_id),
       profile_name = COALESCE(NULLIF(excluded.profile_name, ''), whatsapp_api_contacts.profile_name),
-      raw_profile_json = excluded.raw_profile_json,
+      profile_picture_url = COALESCE(NULLIF(excluded.profile_picture_url, ''), whatsapp_api_contacts.profile_picture_url),
+      profile_picture_source = CASE
+        WHEN NULLIF(excluded.profile_picture_url, '') IS NOT NULL THEN excluded.profile_picture_source
+        ELSE whatsapp_api_contacts.profile_picture_source
+      END,
+      profile_picture_updated_at = CASE
+        WHEN NULLIF(excluded.profile_picture_url, '') IS NOT NULL THEN excluded.profile_picture_updated_at
+        ELSE whatsapp_api_contacts.profile_picture_updated_at
+      END,
+      profile_picture_error = CASE
+        WHEN NULLIF(excluded.profile_picture_url, '') IS NOT NULL THEN NULL
+        ELSE whatsapp_api_contacts.profile_picture_error
+      END,
+      raw_profile_json = COALESCE(NULLIF(excluded.raw_profile_json, 'null'), whatsapp_api_contacts.raw_profile_json),
       first_seen_at = CASE
         WHEN whatsapp_api_contacts.first_seen_at IS NULL THEN excluded.first_seen_at
         WHEN excluded.first_seen_at IS NULL THEN whatsapp_api_contacts.first_seen_at
@@ -2470,19 +2617,178 @@ async function upsertWhatsAppApiContact({ contactId, phone, profileName, rawProf
         WHEN excluded.last_seen_at > whatsapp_api_contacts.last_seen_at THEN excluded.last_seen_at
         ELSE whatsapp_api_contacts.last_seen_at
       END,
-      message_count = whatsapp_api_contacts.message_count + 1,
+      message_count = COALESCE(whatsapp_api_contacts.message_count, 0) + COALESCE(excluded.message_count, 0),
       updated_at = CURRENT_TIMESTAMP
   `, [
     apiContactId,
     contactId || null,
     canonicalPhone,
     normalizeDisplayText(profileName) || null,
+    cleanProfilePictureUrl || null,
+    cleanProfilePictureSource,
+    profilePictureUpdatedAt,
     safeJson(rawProfile),
     seenAt || nowIso(),
-    seenAt || nowIso()
+    seenAt || nowIso(),
+    safeMessageCountDelta
   ])
 
   return apiContactId
+}
+
+function getProfileRawProfileForContact(contact = {}) {
+  return parseJsonLikeValue(
+    contact.whatsapp_raw_profile_json ||
+    contact.raw_profile_json ||
+    contact.customerProfile ||
+    contact.customer_profile ||
+    contact.profile ||
+    null
+  )
+}
+
+function buildYCloudContactLookupIdentifiers(contact = {}) {
+  const rawProfile = getProfileRawProfileForContact(contact)
+  const phone = normalizePhoneForStorage(contact.phone) || cleanString(contact.phone)
+  const originalPhone = cleanString(contact.phone)
+  const identifiers = [
+    rawProfile?.id,
+    rawProfile?.contactId,
+    rawProfile?.contact_id,
+    rawProfile?.ycloudContactId,
+    rawProfile?.ycloud_contact_id
+  ]
+
+  if (phone) {
+    identifiers.push(`+${phone}`)
+    identifiers.push(phone)
+  }
+  if (originalPhone && originalPhone !== phone) identifiers.push(originalPhone)
+
+  const seen = new Set()
+  return identifiers
+    .map(cleanString)
+    .filter(identifier => {
+      if (!identifier || seen.has(identifier)) return false
+      seen.add(identifier)
+      return true
+    })
+}
+
+function getContactProfileName(contact = {}, rawProfile = null) {
+  return normalizeDisplayText(
+    contact.full_name ||
+    contact.name ||
+    contact.profile_name ||
+    rawProfile?.nickname ||
+    rawProfile?.name ||
+    rawProfile?.fullName ||
+    rawProfile?.customerProfile?.name ||
+    rawProfile?.profile?.name ||
+    ''
+  )
+}
+
+async function retrieveYCloudContactProfilePicture(apiKey, contact = {}) {
+  const identifiers = buildYCloudContactLookupIdentifiers(contact)
+  let lastError = null
+
+  for (const identifier of identifiers) {
+    try {
+      const rawProfile = await retrieveYCloudContact(apiKey, identifier)
+      const profilePictureUrl = findProfilePictureUrlInValue(rawProfile)
+      if (profilePictureUrl) {
+        return { rawProfile, profilePictureUrl }
+      }
+    } catch (error) {
+      lastError = error
+      if (Number(error?.statusCode) !== 404) {
+        logger.debug(`[WhatsApp API] No se pudo leer detalle de contacto ${identifier}: ${error.message}`)
+      }
+    }
+  }
+
+  if (lastError && Number(lastError?.statusCode) !== 404) {
+    logger.debug(`[WhatsApp API] Contacto sin foto por API ${contact?.id || contact?.phone || ''}: ${lastError.message}`)
+  }
+
+  return { rawProfile: null, profilePictureUrl: '' }
+}
+
+export async function warmWhatsAppApiProfilePictures(contacts = [], {
+  limit = WHATSAPP_API_PROFILE_PICTURE_BATCH_LIMIT,
+  force = false
+} = {}) {
+  const uniqueContacts = []
+  const seenKeys = new Set()
+
+  for (const contact of Array.isArray(contacts) ? contacts : []) {
+    const phone = normalizePhoneForStorage(contact?.phone) || cleanString(contact?.phone)
+    const key = cleanString(contact?.id) || phone
+    if (!phone || !key || seenKeys.has(key)) continue
+    if (
+      !force &&
+      cleanString(contact?.whatsapp_profile_picture_url) &&
+      isFreshDate(contact?.whatsapp_profile_picture_updated_at, WHATSAPP_API_PROFILE_PICTURE_CACHE_TTL_MS)
+    ) {
+      continue
+    }
+
+    seenKeys.add(key)
+    uniqueContacts.push(contact)
+    if (uniqueContacts.length >= Math.max(Number(limit) || WHATSAPP_API_PROFILE_PICTURE_BATCH_LIMIT, 1)) break
+  }
+
+  const results = new Map()
+  if (!uniqueContacts.length) return results
+
+  let config = null
+  let configLoaded = false
+
+  const getConfig = async () => {
+    if (configLoaded) return config
+    configLoaded = true
+    try {
+      config = await loadConfig({ includeSecrets: true })
+    } catch (error) {
+      logger.warn(`[WhatsApp API] No se pudo cargar configuracion para fotos de perfil: ${error.message}`)
+      config = null
+    }
+    return config
+  }
+
+  for (const contact of uniqueContacts) {
+    const key = cleanString(contact?.id) || cleanString(contact?.phone)
+    const phone = normalizePhoneForStorage(contact?.phone) || cleanString(contact?.phone)
+    let rawProfile = getProfileRawProfileForContact(contact)
+    let profilePictureUrl = findProfilePictureUrlInValue(rawProfile)
+
+    if (!profilePictureUrl) {
+      const apiConfig = await getConfig()
+      if (apiConfig?.enabled !== false && apiConfig?.apiKey) {
+        const detail = await retrieveYCloudContactProfilePicture(apiConfig.apiKey, contact)
+        rawProfile = detail.rawProfile || rawProfile
+        profilePictureUrl = detail.profilePictureUrl
+      }
+    }
+
+    if (!profilePictureUrl) continue
+
+    await upsertWhatsAppApiContact({
+      contactId: cleanString(contact?.id) || null,
+      phone,
+      profileName: getContactProfileName(contact, rawProfile),
+      rawProfile,
+      seenAt: nowIso(),
+      profilePictureUrl,
+      profilePictureSource: 'whatsapp_api',
+      messageCountDelta: 0
+    })
+
+    results.set(key, profilePictureUrl)
+  }
+
+  return results
 }
 
 function normalizeWebhookMessage(rawMessage = {}) {
@@ -2533,6 +2839,24 @@ function normalizeWebhookMessage(rawMessage = {}) {
     normalized.customerProfile = { name: normalized.customerName }
   }
 
+  const customerProfilePictureUrl =
+    findProfilePictureUrlInValue(normalized.customerProfile) ||
+    findProfilePictureUrlInValue(normalized.profile) ||
+    findProfilePictureUrlInValue({
+      profilePictureUrl: normalized.profilePictureUrl || normalized.profile_picture_url,
+      profilePhotoUrl: normalized.profilePhotoUrl || normalized.profile_photo_url,
+      avatarUrl: normalized.avatarUrl || normalized.avatar_url,
+      photoUrl: normalized.photoUrl || normalized.photo_url,
+      pictureUrl: normalized.pictureUrl || normalized.picture_url
+    })
+
+  if (customerProfilePictureUrl) {
+    normalized.customerProfile = {
+      ...(isPlainObject(normalized.customerProfile) ? normalized.customerProfile : {}),
+      profilePictureUrl: customerProfilePictureUrl
+    }
+  }
+
   return normalized
 }
 
@@ -2543,6 +2867,8 @@ async function upsertMessage({ payload, message, direction, businessPhoneHints =
   const messageText = extractMessageText(normalizedMessage)
   const messageTimestamp = toDateTime(normalizedMessage.sendTime || normalizedMessage.createTime || normalizedMessage.updateTime || payload.createTime) || nowIso()
   const profileName = normalizedMessage.customerProfile?.name || normalizedMessage.profile?.name || ''
+  const rawProfile = normalizedMessage.customerProfile || normalizedMessage.profile || null
+  const profilePictureUrl = findProfilePictureUrlInValue(rawProfile)
   const attribution = extractAttribution(payload, normalizedMessage, messageText)
   const localContact = await upsertLocalContact({
     phone: identity.phone,
@@ -2555,7 +2881,8 @@ async function upsertMessage({ payload, message, direction, businessPhoneHints =
     contactId: localContact.id,
     phone: identity.phone,
     profileName,
-    rawProfile: normalizedMessage.customerProfile || normalizedMessage.profile || null,
+    rawProfile,
+    profilePictureUrl,
     seenAt: messageTimestamp
   })
 

@@ -10,6 +10,7 @@ import { nonTestPaymentCondition } from '../utils/paymentMode.js'
 import { buildContactSearchClause, buildContactSearchRank } from '../utils/searchText.js'
 import { normalizeWhatsAppAttributionPlatform } from '../utils/trafficSourceNormalizer.js'
 import { loadFirstWhatsAppAttributions, buildContactAttributionFields } from '../services/contactSourceService.js'
+import { findWhatsAppProfilePictureUrl, warmWhatsAppApiProfilePictures } from '../services/whatsappApiService.js'
 import { warmWhatsAppQrProfilePictures } from '../services/whatsappQrService.js'
 import {
   buildHighLevelCustomFieldsPayload,
@@ -307,62 +308,7 @@ const splitName = (name = '') => {
 
 const createManualContactId = () => `manual_contact_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
 
-const getProfilePhotoFromRawProfile = (rawProfile) => {
-  if (!rawProfile) return ''
-
-  let parsed = rawProfile
-  if (typeof rawProfile === 'string') {
-    try {
-      parsed = JSON.parse(rawProfile)
-    } catch {
-      return ''
-    }
-  }
-
-  const visit = (value, depth = 0) => {
-    if (!value || depth > 3) return ''
-    if (typeof value === 'string') {
-      const trimmed = value.trim()
-      return /^https?:\/\//i.test(trimmed) ? trimmed : ''
-    }
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        const found = visit(item, depth + 1)
-        if (found) return found
-      }
-      return ''
-    }
-    if (typeof value !== 'object') return ''
-
-    for (const key of [
-      'profilePictureUrl',
-      'profile_picture_url',
-      'profilePhotoUrl',
-      'profile_photo_url',
-      'avatarUrl',
-      'avatar_url',
-      'photoUrl',
-      'photo_url',
-      'pictureUrl',
-      'picture_url',
-      'imageUrl',
-      'image_url',
-      'url'
-    ]) {
-      const found = visit(value[key], depth + 1)
-      if (found) return found
-    }
-
-    for (const key of ['profile', 'contact', 'image', 'picture', 'avatar']) {
-      const found = visit(value[key], depth + 1)
-      if (found) return found
-    }
-
-    return ''
-  }
-
-  return visit(parsed)
-}
+const getProfilePhotoFromRawProfile = (rawProfile) => findWhatsAppProfilePictureUrl(rawProfile)
 
 const getContactProfilePhotoUrl = (contact = {}) =>
   cleanString(contact.profile_photo_url) ||
@@ -421,6 +367,48 @@ const mapChatContactRowForResponse = (contact = {}) => ({
   messageCount: Number(contact.message_count || 0),
   unreadCount: Number(contact.unread_count || 0)
 })
+
+const applyWarmedProfilePictures = (rows = [], warmedPictures = new Map()) => {
+  if (!warmedPictures?.size) return rows
+
+  const now = new Date().toISOString()
+  return rows.map(row => {
+    const key = cleanString(row?.id) || cleanString(row?.phone)
+    const profilePictureUrl = warmedPictures.get(key)
+    return profilePictureUrl
+      ? {
+          ...row,
+          whatsapp_profile_picture_url: profilePictureUrl,
+          whatsapp_profile_picture_updated_at: row.whatsapp_profile_picture_updated_at || now
+        }
+      : row
+  })
+}
+
+const warmWhatsAppProfilePicturesForRows = async (rows = [], {
+  apiLimit = 40,
+  qrLimit = 16
+} = {}) => {
+  if (!Array.isArray(rows) || rows.length === 0) return rows
+
+  let hydratedRows = rows
+
+  try {
+    const apiPictures = await warmWhatsAppApiProfilePictures(hydratedRows, { limit: apiLimit })
+    hydratedRows = applyWarmedProfilePictures(hydratedRows, apiPictures)
+  } catch (error) {
+    logger.warn(`No se pudieron preparar fotos por WhatsApp API: ${error.message}`)
+  }
+
+  try {
+    const qrPictures = await warmWhatsAppQrProfilePictures(hydratedRows, { limit: qrLimit })
+    hydratedRows = applyWarmedProfilePictures(hydratedRows, qrPictures)
+  } catch (error) {
+    logger.warn(`No se pudieron preparar fotos por QR: ${error.message}`)
+  }
+
+  return hydratedRows
+}
 
 const mapMetaAttributionRow = (row, matchType) => {
   if (!row) return null
@@ -693,18 +681,10 @@ ${CONTACT_META_PROFILE_SELECT},
       LIMIT ?
     `, [...whatsappMessageParams, ...params, limitNumber])
 
-    let responseRows = rows
-    try {
-      const warmedPictures = await warmWhatsAppQrProfilePictures(rows, { limit: 8 })
-      if (warmedPictures.size > 0) {
-        responseRows = rows.map(row => {
-          const profilePictureUrl = warmedPictures.get(row.id)
-          return profilePictureUrl ? { ...row, whatsapp_profile_picture_url: profilePictureUrl } : row
-        })
-      }
-    } catch (error) {
-      logger.warn(`No se pudieron preparar fotos QR para chats: ${error.message}`)
-    }
+    const responseRows = await warmWhatsAppProfilePicturesForRows(rows, {
+      apiLimit: 60,
+      qrLimit: 24
+    })
 
     res.json({
       success: true,
@@ -893,14 +873,18 @@ ${CONTACT_META_PROFILE_SELECT},
 
     const contactsParams = [...params, ...(searchRank?.params ?? []), limitNumber, offset]
     const contacts = await db.all(contactsQuery, contactsParams)
+    const hydratedContacts = await warmWhatsAppProfilePicturesForRows(contacts, {
+      apiLimit: Math.min(limitNumber, 80),
+      qrLimit: Math.min(limitNumber, 24)
+    })
 
     const firstSessionsByContact = new Map()
     const firstSessionsByVisitor = new Map()
     const firstSessionsByEmail = new Map()
-    const contactIds = Array.from(new Set(contacts.map(c => c.id).filter(Boolean)))
-    const visitorIds = Array.from(new Set(contacts.map(c => c.visitor_id).filter(Boolean)))
+    const contactIds = Array.from(new Set(hydratedContacts.map(c => c.id).filter(Boolean)))
+    const visitorIds = Array.from(new Set(hydratedContacts.map(c => c.visitor_id).filter(Boolean)))
     const emails = Array.from(new Set(
-      contacts
+      hydratedContacts
         .map(c => c.email)
         .filter(Boolean)
         .map(email => String(email).toLowerCase())
@@ -978,7 +962,7 @@ ${CONTACT_META_PROFILE_SELECT},
     const whatsappAttributionsByContact = await loadFirstWhatsAppAttributions(contactIds)
 
     // Mapear campos de base de datos a nombres esperados por frontend
-    const mappedContacts = contacts.map(c => {
+    const mappedContacts = hydratedContacts.map(c => {
       const firstSession = getFirstSessionForContact(c)
       const attributionFields = buildContactAttributionFields(c, whatsappAttributionsByContact.get(c.id))
 
@@ -1047,7 +1031,7 @@ ${CONTACT_META_PROFILE_SELECT},
     const totalPages = Math.ceil(totalContacts / limitNumber)
 
     logger.debug(
-      `Contactos obtenidos (${rangeLabel}) -> ${contacts.length} registros en esta página, ${totalContacts} total`
+      `Contactos obtenidos (${rangeLabel}) -> ${hydratedContacts.length} registros en esta página, ${totalContacts} total`
     )
 
     res.json({
@@ -1079,7 +1063,7 @@ export const getContactById = async (req, res) => {
   try {
     const { id } = req.params
 
-    const contact = await db.get(
+    let contact = await db.get(
       `WITH payment_stats AS (
         SELECT
           contact_id,
@@ -1155,6 +1139,12 @@ ${CONTACT_META_PROFILE_SELECT},
         error: 'Contacto no encontrado'
       })
     }
+
+    const [hydratedContact] = await warmWhatsAppProfilePicturesForRows([contact], {
+      apiLimit: 1,
+      qrLimit: 1
+    })
+    contact = hydratedContact || contact
 
     // Obtener pagos del contacto
     const payments = await db.all(
@@ -1543,9 +1533,13 @@ ${CONTACT_META_PROFILE_SELECT},
       LIMIT 20`,
       [...searchClause.params, ...searchRank.params]
     )
+    const hydratedContacts = await warmWhatsAppProfilePicturesForRows(contacts, {
+      apiLimit: 20,
+      qrLimit: 10
+    })
 
     // Mapear campos de base de datos a nombres esperados por frontend
-    const mappedContacts = contacts.map(c => {
+    const mappedContacts = hydratedContacts.map(c => {
       // Determinar status basado en la actividad del contacto
       let status = 'lead'
       if (c.purchases_count > 0) {
