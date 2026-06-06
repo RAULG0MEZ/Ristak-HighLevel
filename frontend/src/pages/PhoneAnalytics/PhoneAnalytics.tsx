@@ -677,12 +677,12 @@ export const PhoneAnalytics: React.FC = () => {
             <strong className={styles.conversionPill}>{formatNumber(originTotal)}</strong>
           </div>
 
-          <div className={styles.segmentedControl} role="group" aria-label="Tipo de origen">
+          <div className={styles.optionScroller} role="group" aria-label="Tipo de origen">
             {originOptions.map((option) => (
               <button
                 key={option.id}
                 type="button"
-                className={originTab === option.id ? styles.segmentActive : ''}
+                className={originTab === option.id ? styles.chipActive : ''}
                 onClick={() => setOriginTab(option.id)}
               >
                 {option.label}
