@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   Bell,
@@ -1268,6 +1268,7 @@ export const PhoneChat: React.FC = () => {
   const [mutedChatIds, setMutedChatIds] = useState<string[]>(() => readStoredChatIds(CHAT_MUTED_STATE_KEY))
   const [openSwipeChatId, setOpenSwipeChatId] = useState<string | null>(null)
   const [draggingSwipe, setDraggingSwipe] = useState<{ contactId: string; offset: number } | null>(null)
+  const [chatSwipeSuppressed, setChatSwipeSuppressed] = useState(false)
   const [chatActionContactId, setChatActionContactId] = useState<string | null>(null)
   const [contactQuery, setContactQuery] = useState('')
   const [contactResults, setContactResults] = useState<Contact[]>([])
@@ -1824,14 +1825,25 @@ export const PhoneChat: React.FC = () => {
     setDraggingSwipe(null)
   }, [archivedViewOpen, chatFilter, chatQuery, selectedChatPhoneId])
 
-  useEffect(() => {
-    if (!conversationOpen) return
+  useLayoutEffect(() => {
+    setChatSwipeSuppressed(true)
     setOpenSwipeChatId(null)
     setDraggingSwipe(null)
     chatSwipeGestureRef.current = null
+
+    if (conversationOpen) return
+
+    const releaseSwipe = window.setTimeout(() => {
+      setOpenSwipeChatId(null)
+      setDraggingSwipe(null)
+      chatSwipeGestureRef.current = null
+      setChatSwipeSuppressed(false)
+    }, 320)
+
+    return () => window.clearTimeout(releaseSwipe)
   }, [conversationOpen])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!activeContactId) return
     setOpenSwipeChatId(null)
     setDraggingSwipe(null)
@@ -2360,6 +2372,7 @@ export const PhoneChat: React.FC = () => {
   }
 
   const handleBackToChats = () => {
+    setChatSwipeSuppressed(true)
     closeSwipeActions()
     handleCancelVoiceDraft()
     setConversationOpen(false)
@@ -3190,7 +3203,7 @@ export const PhoneChat: React.FC = () => {
       )
     }
 
-    const swipeLocked = conversationOpen
+    const swipeLocked = conversationOpen || chatSwipeSuppressed
     const isDraggingSwipe = !swipeLocked && draggingSwipe?.contactId === contact.id
     const swipeOffset = swipeLocked
       ? 0
