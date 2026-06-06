@@ -1366,7 +1366,8 @@
 .contactInfoActions button {
   display: grid;
   place-items: center;
-  gap: 5px;
+  align-content: center;
+  gap: 2px;
   min-width: 0;
   min-height: 60px;
   border: 1px solid var(--phone-chat-border);
@@ -1413,6 +1414,7 @@
 
 .contactInfoMetric {
   display: grid;
+  place-items: center;
   gap: 4px;
   min-width: 0;
   padding: 10px;
@@ -1426,6 +1428,7 @@
   color: var(--phone-chat-muted);
   font-size: 12px;
   font-weight: 760;
+  text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1435,6 +1438,7 @@
   color: var(--phone-chat-text);
   font-size: 17px;
   font-weight: 860;
+  text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

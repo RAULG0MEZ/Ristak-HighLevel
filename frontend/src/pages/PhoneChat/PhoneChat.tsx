@@ -988,17 +988,6 @@ function getPageName(pageUrl?: string | null) {
   }
 }
 
-function getCustomFieldLabel(field: NonNullable<Contact['customFields']>[number], index: number) {
-  return field.label || field.name || field.key || field.fieldKey || field.id || `Dato ${index + 1}`
-}
-
-function formatCustomFieldValue(value: NonNullable<Contact['customFields']>[number]['value']) {
-  if (value === null || value === undefined) return ''
-  if (Array.isArray(value)) return value.map((item) => getReadableValue(String(item))).filter(Boolean).join(', ')
-  if (typeof value === 'object') return JSON.stringify(value)
-  return String(value)
-}
-
 function getJourneyEventLabel(event: JourneyEvent, leadLabel: string) {
   if (event.type === 'page_visit') return 'Visitó una página'
   if (event.type === 'contact_created') return `Se hizo ${leadLabel.toLowerCase()}`
@@ -4484,6 +4473,13 @@ export const PhoneChat: React.FC = () => {
     const leadEvent = contactJourney.find((event) => event.type === 'contact_created')
     const leadDate = leadEvent?.date || contactInfoData.createdAt
     const leadSource = getReadableValue(leadEvent?.data?.source) || contactInfoSource
+    const contactInfoChannel = getHighLevelChatChannelLabel((contactInfoData as ChatContact).lastMessageChannel)
+    const integrationName = contactInfoChannel || leadSource || contactInfoSource || 'Sin integración guardada'
+    const rawIntegrationProvider = contactInfoChannel
+      ? 'HighLevel'
+      : getReadableValue(contactInfoData.whatsappAttributionPlatform || contactInfoTracking.source_platform || contactInfoTracking.site_source_name)
+    const integrationProvider = rawIntegrationProvider && rawIntegrationProvider !== integrationName ? rawIntegrationProvider : ''
+    const integrationOrigin = contactInfoSource && contactInfoSource !== integrationName ? contactInfoSource : ''
     const resolvedMetaAttribution = contactInfoResolvedMetaAttribution
     const campaignName = getReadableValue(resolvedMetaAttribution?.campaignName || contactInfoTracking.campaign_name || contactInfoTracking.utm_campaign)
     const campaignDetail = resolvedMetaAttribution
@@ -4502,13 +4498,6 @@ export const PhoneChat: React.FC = () => {
       .map((value) => getReadableValue(value))
       .filter(Boolean)
       .join(', ')
-    const visibleCustomFields = (contactInfoData.customFields || [])
-      .map((field, index) => ({
-        id: field.id || field.key || field.fieldKey || field.label || field.name || `field-${index}`,
-        label: getCustomFieldLabel(field, index),
-        value: formatCustomFieldValue(field.value)
-      }))
-      .filter((field) => field.value.trim().length > 0)
 
     return (
       <section
@@ -4580,7 +4569,7 @@ export const PhoneChat: React.FC = () => {
             <div className={styles.contactInfoRows}>
               {renderContactInfoRow('phone', <Phone size={17} />, 'Número', contactInfoData.phone)}
               {renderContactInfoRow('email', <Mail size={17} />, 'Correo', contactInfoData.email)}
-              {renderContactInfoRow('created', <User size={17} />, `Se hizo ${leadLabel.toLowerCase()}`, formatLocalDateTime(leadDate), leadSource)}
+              {renderContactInfoRow('created', <User size={17} />, 'Contacto creado', formatLocalDateTime(leadDate))}
               {renderContactInfoRow('stage', <Tag size={17} />, 'Estado', contactInfoStageBadge?.text || (contactInfoData.status === 'customer' ? customerLabel : leadLabel))}
             </div>
           </section>
@@ -4638,19 +4627,13 @@ export const PhoneChat: React.FC = () => {
             </section>
           )}
 
-          {visibleCustomFields.length > 0 && (
-            <section className={styles.contactInfoSection}>
-              <h3>Datos extra</h3>
-              <div className={styles.contactInfoRows}>
-                {visibleCustomFields.map((field) => renderContactInfoRow(
-                  `custom-${field.id}`,
-                  <FileText size={17} />,
-                  field.label,
-                  field.value
-                ))}
-              </div>
-            </section>
-          )}
+          <section className={styles.contactInfoSection}>
+            <h3>Integración</h3>
+            <div className={styles.contactInfoRows}>
+              {renderContactInfoRow('integration-channel', <Globe2 size={17} />, 'Canal', integrationName, integrationProvider)}
+              {renderContactInfoRow('integration-origin', <MousePointerClick size={17} />, 'Origen', integrationOrigin)}
+            </div>
+          </section>
 
           {contactInfoJourneyEvents.length > 0 && (
             <section className={styles.contactInfoSection}>
