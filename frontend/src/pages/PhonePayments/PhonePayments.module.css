@@ -59,6 +59,27 @@
   gap: 10px;
 }
 
+.chatBackButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: var(--color-text-primary);
+  background: color-mix(in srgb, var(--color-background-secondary) 86%, #ffffff 14%);
+  font-size: 13px;
+  font-weight: 760;
+  text-decoration: none;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.chatBackButton:active {
+  transform: scale(0.98);
+}
+
 .headerMain > div {
   min-width: 0;
 }

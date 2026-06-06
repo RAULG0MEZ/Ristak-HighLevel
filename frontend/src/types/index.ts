@@ -73,6 +73,11 @@ export interface Contact {
   lastPurchase?: string
   purchases: number
   source?: string
+  profilePhotoUrl?: string | null
+  avatarUrl?: string | null
+  photoUrl?: string | null
+  pictureUrl?: string | null
+  profile_picture_url?: string | null
   attribution_url?: string | null
   attribution_session_source?: string | null
   attribution_medium?: string | null

@@ -200,6 +200,10 @@ export const PhonePayments: React.FC = () => {
             </button>
           ) : (
             <div className={styles.headerMain}>
+              <Link className={styles.chatBackButton} to="/phone/chat" aria-label="Volver a chats">
+                <ArrowLeft size={18} />
+                <span>Chats</span>
+              </Link>
               <span className={styles.brandMark}>R</span>
               <div>
                 <p className={styles.eyebrow}>Ristak Phone</p>

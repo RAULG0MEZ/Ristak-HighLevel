@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { MonitorX } from 'lucide-react'
+import { ArrowLeft, MonitorX } from 'lucide-react'
 import { AIAgentPanel } from '@/components/ai'
 import styles from './PhoneAgentChat.module.css'
 
@@ -161,6 +161,10 @@ export const PhoneAgentChat: React.FC = () => {
 
   return (
     <main className={styles.mobilePage} aria-label="Chat movil y tablet del agente AI">
+      <Link className={styles.chatBackButton} to="/phone/chat" aria-label="Volver a chats">
+        <ArrowLeft size={18} />
+        <span>Chats</span>
+      </Link>
       <AIAgentPanel variant="embedded" />
     </main>
   )

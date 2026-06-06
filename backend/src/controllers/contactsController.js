@@ -67,6 +67,71 @@ const splitName = (name = '') => {
 
 const createManualContactId = () => `manual_contact_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
 
+const getProfilePhotoFromRawProfile = (rawProfile) => {
+  if (!rawProfile) return ''
+
+  let parsed = rawProfile
+  if (typeof rawProfile === 'string') {
+    try {
+      parsed = JSON.parse(rawProfile)
+    } catch {
+      return ''
+    }
+  }
+
+  const visit = (value, depth = 0) => {
+    if (!value || depth > 3) return ''
+    if (typeof value === 'string') {
+      const trimmed = value.trim()
+      return /^https?:\/\//i.test(trimmed) ? trimmed : ''
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const found = visit(item, depth + 1)
+        if (found) return found
+      }
+      return ''
+    }
+    if (typeof value !== 'object') return ''
+
+    for (const key of [
+      'profilePictureUrl',
+      'profile_picture_url',
+      'profilePhotoUrl',
+      'profile_photo_url',
+      'avatarUrl',
+      'avatar_url',
+      'photoUrl',
+      'photo_url',
+      'pictureUrl',
+      'picture_url',
+      'imageUrl',
+      'image_url',
+      'url'
+    ]) {
+      const found = visit(value[key], depth + 1)
+      if (found) return found
+    }
+
+    for (const key of ['profile', 'contact', 'image', 'picture', 'avatar']) {
+      const found = visit(value[key], depth + 1)
+      if (found) return found
+    }
+
+    return ''
+  }
+
+  return visit(parsed)
+}
+
+const getContactProfilePhotoUrl = (contact = {}) =>
+  cleanString(contact.profile_photo_url) ||
+  cleanString(contact.profile_picture_url) ||
+  cleanString(contact.avatar_url) ||
+  cleanString(contact.photo_url) ||
+  cleanString(contact.picture_url) ||
+  getProfilePhotoFromRawProfile(contact.whatsapp_raw_profile_json)
+
 const mapContactRowForResponse = (contact = {}) => {
   let status = 'lead'
   if (Number(contact.purchases_count || 0) > 0) {
@@ -89,6 +154,7 @@ const mapContactRowForResponse = (contact = {}) => {
     hasShowedAppointment: Boolean(contact.has_showed_appointment),
     hasAttendedAppointment: Boolean(contact.has_showed_appointment),
     source: contact.source,
+    profilePhotoUrl: getContactProfilePhotoUrl(contact) || null,
     ad_name: contact.attribution_ad_name,
     ad_id: contact.attribution_ad_id,
     customFields: parseContactCustomFields(contact.custom_fields),
@@ -170,6 +236,13 @@ export const getChatContacts = async (req, res) => {
         c.attribution_ad_name,
         c.attribution_ad_id,
         c.custom_fields,
+        (
+          SELECT raw_profile_json
+          FROM whatsapp_api_contacts
+          WHERE contact_id = c.id OR phone = c.phone
+          ORDER BY updated_at DESC
+          LIMIT 1
+        ) AS whatsapp_raw_profile_json,
         COALESCE(ps.total_paid, 0) AS total_paid,
         COALESCE(ps.purchases_count, 0) AS purchases_count,
         ps.last_purchase_date AS last_purchase_date,

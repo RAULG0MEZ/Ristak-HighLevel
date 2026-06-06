@@ -19,19 +19,17 @@ import {
   MoreHorizontal,
   Phone,
   Plus,
-  RefreshCw,
   Search,
   Send,
-  Settings,
   Smile,
   Smartphone,
   User,
-  Users,
   Video,
   X
 } from 'lucide-react'
 import { AppointmentModal, Icon, RecordPaymentModal } from '@/components/common'
 import { useAuth } from '@/contexts/AuthContext'
+import { useLabels } from '@/contexts/LabelsContext'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useTimezone } from '@/contexts/TimezoneContext'
 import { useAppConfig } from '@/hooks'
@@ -53,6 +51,7 @@ type AccessState = 'checking' | 'allowed' | 'blocked'
 type ComposerStatus = 'idle' | 'sending'
 type PaymentMode = 'single' | 'partial'
 type ActionSheet = 'attachments' | 'payment' | 'appointment' | 'notifications' | 'newChat' | null
+type ChatFilter = 'all' | 'unread' | 'appointments' | 'customers'
 
 interface ChatMessage {
   id: string
@@ -69,6 +68,11 @@ interface ChatContact extends Contact {
   lastMessageDirection?: string
   messageCount?: number
   unreadCount?: number
+  profilePhotoUrl?: string | null
+  avatarUrl?: string | null
+  photoUrl?: string | null
+  pictureUrl?: string | null
+  profile_picture_url?: string | null
 }
 
 function hasPortableAccess() {
@@ -102,6 +106,18 @@ function getContactInitials(contact?: Partial<Contact> | null) {
   const parts = label.split(' ').filter(Boolean)
   if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
   return label.slice(0, 2).toUpperCase()
+}
+
+function getContactProfilePhoto(contact?: (Partial<Contact> & Record<string, unknown>) | null) {
+  const candidates = [
+    contact?.profilePhotoUrl,
+    contact?.avatarUrl,
+    contact?.photoUrl,
+    contact?.pictureUrl,
+    contact?.profile_picture_url
+  ]
+
+  return candidates.find((value): value is string => typeof value === 'string' && value.trim().length > 0)?.trim() || ''
 }
 
 function formatMessageTime(value?: string | null) {
@@ -214,6 +230,7 @@ export const PhoneChat: React.FC = () => {
   const [searchParams] = useSearchParams()
   const requestedContactParam = searchParams.get('contact')
   const { locationId, accessToken } = useAuth()
+  const { labels } = useLabels()
   const { showToast } = useNotification()
   const { timezone } = useTimezone()
   const [defaultCalendarId] = useAppConfig<string>('default_calendar_id', '')
@@ -227,6 +244,7 @@ export const PhoneChat: React.FC = () => {
   const [chatsLoading, setChatsLoading] = useState(true)
   const [chatsError, setChatsError] = useState('')
   const [chatQuery, setChatQuery] = useState('')
+  const [chatFilter, setChatFilter] = useState<ChatFilter>('all')
   const [contactQuery, setContactQuery] = useState('')
   const [contactResults, setContactResults] = useState<Contact[]>([])
   const [contactsLoading, setContactsLoading] = useState(false)
@@ -260,6 +278,13 @@ export const PhoneChat: React.FC = () => {
   const whatsappConnected = Boolean(whatsappStatus?.connected && whatsappStatus?.configured)
   const canSendMessage = Boolean(activeContact?.phone && messageText.trim() && composerStatus !== 'sending')
   const hasChats = chats.length > 0
+  const customersLabel = labels.customers?.trim() || 'Clientes'
+  const filteredChats = useMemo(() => {
+    if (chatFilter === 'unread') return chats.filter((contact) => Number(contact.unreadCount || 0) > 0)
+    if (chatFilter === 'appointments') return chats.filter((contact) => contact.status === 'appointment' || contact.hasAppointments)
+    if (chatFilter === 'customers') return chats.filter((contact) => contact.status === 'customer' || Number(contact.purchases || 0) > 0)
+    return chats
+  }, [chatFilter, chats])
 
   const ensureChatContact = useCallback((contact: Contact) => {
     const nextContact = toChatContact(contact)
@@ -409,6 +434,7 @@ export const PhoneChat: React.FC = () => {
     const previousBodyOverflow = body.style.overflow
     const previousBodyHeight = body.style.height
     const previousBodyOverscroll = body.style.overscrollBehavior
+    let startX = 0
     let startY = 0
 
     html.style.overflow = 'hidden'
@@ -425,6 +451,7 @@ export const PhoneChat: React.FC = () => {
     }
 
     const handleTouchStart = (event: TouchEvent) => {
+      startX = event.touches[0]?.clientX || 0
       startY = event.touches[0]?.clientY || 0
     }
 
@@ -435,13 +462,27 @@ export const PhoneChat: React.FC = () => {
         return
       }
 
+      const currentX = event.touches[0]?.clientX || startX
       const currentY = event.touches[0]?.clientY || startY
+      const deltaX = currentX - startX
       const deltaY = currentY - startY
-      const canScroll = scrollable.scrollHeight > scrollable.clientHeight + 1
+      const canScrollX = scrollable.scrollWidth > scrollable.clientWidth + 1
+      const canScrollY = scrollable.scrollHeight > scrollable.clientHeight + 1
+
+      if (canScrollX && Math.abs(deltaX) > Math.abs(deltaY)) {
+        const atLeft = scrollable.scrollLeft <= 0
+        const atRight = scrollable.scrollLeft + scrollable.clientWidth >= scrollable.scrollWidth - 1
+
+        if ((atLeft && deltaX > 0) || (atRight && deltaX < 0)) {
+          event.preventDefault()
+        }
+        return
+      }
+
       const atTop = scrollable.scrollTop <= 0
       const atBottom = scrollable.scrollTop + scrollable.clientHeight >= scrollable.scrollHeight - 1
 
-      if (!canScroll || (atTop && deltaY > 0) || (atBottom && deltaY < 0)) {
+      if (!canScrollY || (atTop && deltaY > 0) || (atBottom && deltaY < 0)) {
         event.preventDefault()
       }
     }
@@ -631,6 +672,18 @@ export const PhoneChat: React.FC = () => {
     }
   }
 
+  const renderAvatar = (contact: Contact) => {
+    const photoUrl = getContactProfilePhoto(contact as ChatContact)
+
+    return (
+      <span className={styles.avatar}>
+        {photoUrl ? (
+          <img src={photoUrl} alt="" loading="lazy" referrerPolicy="no-referrer" />
+        ) : getContactInitials(contact)}
+      </span>
+    )
+  }
+
   const renderContactButton = (contact: Contact, source: 'chat' | 'contact') => {
     const chatContact = contact as ChatContact
     const subtitle = source === 'chat' ? getChatPreview(chatContact) : getContactDetail(contact)
@@ -644,7 +697,7 @@ export const PhoneChat: React.FC = () => {
         className={`${styles.chatItem} ${activeContact?.id === contact.id ? styles.chatItemActive : ''}`}
         onClick={() => handleSelectContact(contact)}
       >
-        <span className={styles.avatar}>{getContactInitials(contact)}</span>
+        {renderAvatar(contact)}
         <span className={styles.chatMain}>
           <strong>{getContactName(contact)}</strong>
           <small>{subtitle}</small>
@@ -719,7 +772,17 @@ export const PhoneChat: React.FC = () => {
           <strong>Archivados</strong>
           <span>0</span>
         </button>
-        {chats.map((contact) => renderContactButton(contact, 'chat'))}
+        {filteredChats.length > 0 ? (
+          filteredChats.map((contact) => renderContactButton(contact, 'chat'))
+        ) : (
+          <div className={styles.emptyChats}>
+            <span className={styles.emptyChatsIcon}>
+              <Icon name="whatsapp" size={30} />
+            </span>
+            <strong>No hay chats en este filtro</strong>
+            <small>Cambia de filtro o busca un contacto para iniciar una conversación.</small>
+          </div>
+        )}
       </>
     )
   }
@@ -914,10 +977,22 @@ export const PhoneChat: React.FC = () => {
               )}
             </div>
             <div className={styles.filterChips} data-phone-chat-scrollable="true">
-              <button type="button" className={styles.filterChipActive}>Todos</button>
-              <button type="button">No leídos</button>
-              <button type="button">Favoritos</button>
-              <button type="button">Grupos</button>
+              {([
+                ['all', 'Todos'],
+                ['unread', 'No leídos'],
+                ['appointments', 'Citados'],
+                ['customers', customersLabel]
+              ] as Array<[ChatFilter, string]>).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={chatFilter === key ? styles.filterChipActive : ''}
+                  aria-pressed={chatFilter === key}
+                  onClick={() => setChatFilter(key)}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           </header>
 
@@ -926,25 +1001,21 @@ export const PhoneChat: React.FC = () => {
           </div>
 
           <nav className={styles.mobileDock} aria-label="Secciones móviles">
-            <Link to="/phone/app">
-              <RefreshCw size={24} />
-              <span>Novedades</span>
-            </Link>
-            <Link to="/phone/agent-chat">
-              <Phone size={24} />
-              <span>Agente</span>
+            <Link to="/phone/chat" className={styles.mobileDockActive}>
+              <MessageCircle size={25} />
+              <span>Chats</span>
             </Link>
             <Link to="/phone/calendar">
-              <Users size={26} />
+              <CalendarDays size={24} />
               <span>Citas</span>
-            </Link>
-            <Link to="/phone/chat" className={styles.mobileDockActive}>
-              <MessageCircle size={27} />
-              <span>Chats</span>
             </Link>
             <Link to="/phone/payments">
               <CreditCard size={24} />
               <span>Pagos</span>
+            </Link>
+            <Link to="/phone/agent-chat">
+              <Bot size={24} />
+              <span>Agente</span>
             </Link>
           </nav>
         </section>
@@ -957,7 +1028,7 @@ export const PhoneChat: React.FC = () => {
 
             {activeContact ? (
               <>
-                <span className={styles.avatar}>{getContactInitials(activeContact)}</span>
+                {renderAvatar(activeContact)}
                 <div className={styles.conversationIdentity}>
                   <strong>{getContactName(activeContact)}</strong>
                   <span>{getContactDetail(activeContact)}</span>
