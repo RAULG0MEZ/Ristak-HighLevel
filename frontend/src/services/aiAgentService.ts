@@ -87,6 +87,10 @@ export interface AIAgentConfigStatus {
   configured: boolean
   model: string
   tokenPreview: string | null
+  credentialStatus?: 'missing' | 'ready' | 'reconnect_required'
+  needsReconnect?: boolean
+  connectionIssue?: string | null
+  connectionIssueCode?: string | null
   businessContext: string
   marketContext: string
   idealCustomer: string
@@ -151,6 +155,8 @@ type AIAgentRequestOptions = {
   signal?: AbortSignal
 }
 
+export const AI_AGENT_RECONNECT_REQUIRED_CODE = 'OPENAI_CREDENTIAL_RECONNECT_REQUIRED'
+
 const API_BASE_URL = import.meta.env.VITE_API_URL || ''
 
 function getAuthHeaders(includeContentType = true): HeadersInit {
@@ -180,7 +186,7 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   }
 
   if (!response.ok) {
-    throw new Error(payload?.error || payload?.message || 'Error en el agente AI')
+    throw createAIAgentRequestError(payload, response.status, 'Error en el agente AI')
   }
 
   return (payload?.data ?? payload) as T
@@ -245,9 +251,32 @@ export const aiAgentService = {
     }
 
     if (!response.ok) {
-      throw new Error(payload?.error || payload?.message || 'Error al transcribir el audio')
+      throw createAIAgentRequestError(payload, response.status, 'Error al transcribir el audio')
     }
 
     return (payload?.data ?? payload) as AIAgentTranscriptionResult
   }
+}
+
+function createAIAgentRequestError(payload: any, status: number, fallback: string) {
+  const error = new Error(payload?.error || payload?.message || fallback) as Error & {
+    status?: number
+    code?: string
+    needsReconnect?: boolean
+  }
+
+  error.status = status
+  error.code = payload?.code
+  error.needsReconnect = Boolean(payload?.needsReconnect || payload?.code === AI_AGENT_RECONNECT_REQUIRED_CODE)
+
+  return error
+}
+
+export function isAIAgentReconnectError(error: unknown) {
+  const candidate = error as { code?: string; needsReconnect?: boolean; status?: number } | null
+  return Boolean(
+    candidate?.needsReconnect ||
+    candidate?.code === AI_AGENT_RECONNECT_REQUIRED_CODE ||
+    candidate?.status === 409
+  )
 }

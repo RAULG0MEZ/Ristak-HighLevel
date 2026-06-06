@@ -29,8 +29,9 @@ import {
 } from 'lucide-react'
 import { useDateRange } from '@/contexts/DateRangeContext'
 import { useTimezone } from '@/contexts/TimezoneContext'
-import { useHighLevelConnected } from '@/hooks'
+import { useAppConfig, useHighLevelConnected } from '@/hooks'
 import { formatCurrency, formatDateToISO, formatEndDateToISO, formatNumber, parseLocalDateString, formatName } from '@/utils/format'
+import { ACCOUNT_CURRENCY_CONFIG_KEY, CURRENCY_OPTIONS, getDetectedAccountLocaleDefaults } from '@/utils/accountLocale'
 import { transactionsService, type Transaction, type TransactionSummary, type PaymentPlan } from '@/services/transactionsService'
 import { highLevelService } from '@/services/highLevelService'
 import styles from './Transactions.module.css'
@@ -266,6 +267,8 @@ export const Transactions: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams()
   const { formatLocalDateShort } = useTimezone()
   const { showConfirm, showToast } = useNotification()
+  const detectedLocaleDefaults = useMemo(getDetectedAccountLocaleDefaults, [])
+  const [defaultCurrency] = useAppConfig<string>(ACCOUNT_CURRENCY_CONFIG_KEY, detectedLocaleDefaults.currency)
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [paymentPlans, setPaymentPlans] = useState<PaymentPlan[]>([])
   const [summary, setSummary] = useState<TransactionSummary | null>(null)
@@ -972,7 +975,7 @@ export const Transactions: React.FC = () => {
       email: contactSnapshot.email || '',
       phone: contactSnapshot.phone || '',
       amount: parseFloat(formData.get('amount') as string) || 0,
-      currency: (formData.get('currency') as string) || modal.transaction?.currency || 'MXN',
+      currency: (formData.get('currency') as string) || modal.transaction?.currency || defaultCurrency || 'MXN',
       method: formData.get('method') as any,
       status: formData.get('status') as any,
       reference: formData.get('reference') as string,
@@ -1836,9 +1839,10 @@ export const Transactions: React.FC = () => {
               </div>
               <div className={styles.formGroup}>
                 <label>Moneda</label>
-                <select name="currency" defaultValue={modal.transaction?.currency || 'MXN'}>
-                  <option value="MXN">MXN</option>
-                  <option value="USD">USD</option>
+                <select name="currency" defaultValue={modal.transaction?.currency || defaultCurrency || 'MXN'}>
+                  {CURRENCY_OPTIONS.map((currencyOption) => (
+                    <option key={currencyOption.value} value={currencyOption.value}>{currencyOption.value}</option>
+                  ))}
                 </select>
               </div>
               <div className={styles.formGroup}>

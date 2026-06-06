@@ -11,7 +11,7 @@ import { triggerWhatsappFirstPurchaseEvent } from '../services/metaWhatsappEvent
 import { sendPaymentNotification } from '../services/pushNotificationsService.js'
 import { formatInvoiceMultilineText, formatInvoiceSingleLineText } from '../utils/invoiceTextFormatter.js'
 import { findContactByPhoneCandidates } from '../services/contactIdentityService.js'
-import { normalizePhoneForStorage } from '../utils/phoneUtils.js'
+import { getAccountCurrency, normalizePhoneForAccount } from '../utils/accountLocale.js'
 
 const SUCCESS_PAYMENT_STATUSES = new Set(['succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success'])
 const VALID_TRANSACTION_STATUSES = new Set([
@@ -99,7 +99,7 @@ async function findExistingContactForPayment({ contactId, email, phone }) {
 
 async function ensureLocalContactForPayment({ contactId, contactName, email, phone }) {
   const fullName = cleanString(contactName)
-  const normalizedPhone = normalizePhoneForStorage(phone) || cleanString(phone) || null
+  const normalizedPhone = await normalizePhoneForAccount(phone) || cleanString(phone) || null
   const normalizedEmail = cleanString(email) || null
   const existingContactId = await findExistingContactForPayment({
     contactId: cleanString(contactId),
@@ -379,7 +379,7 @@ export const createTransaction = async (req, res) => {
     }
 
     const transactionId = cleanString(id) || createLocalId('manual_payment')
-    const finalCurrency = cleanString(currency || 'MXN').toUpperCase()
+    const finalCurrency = cleanString(currency || await getAccountCurrency()).toUpperCase()
     const finalMethod = cleanString(paymentMethod || method || 'cash') || 'cash'
     const finalTitle = cleanString(title || description || 'Pago')
     const finalDescription = cleanString(description || title || 'Pago')

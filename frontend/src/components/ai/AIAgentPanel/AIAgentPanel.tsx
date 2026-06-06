@@ -169,6 +169,10 @@ const emptyStatus: AIAgentConfigStatus = {
   configured: false,
   model: DEFAULT_AI_MODEL,
   tokenPreview: null,
+  credentialStatus: 'missing',
+  needsReconnect: false,
+  connectionIssue: null,
+  connectionIssueCode: null,
   businessContext: '',
   marketContext: '',
   idealCustomer: '',
@@ -1998,7 +2002,12 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
       setMessages((current) => [
         ...current,
         userMessage,
-        createMessage('assistant', 'Primero conecta tu API key de OpenAI. Después te hago las preguntas del negocio y yo mismo redacto bien tus respuestas para guardarlas en Configuración.')
+        createMessage(
+          'assistant',
+          needsReconnect
+            ? 'OpenAI necesita reconectarse. Pega tu API token arriba y vuelvo a funcionar con voz y chat.'
+            : 'Primero conecta tu API key de OpenAI. Después te hago las preguntas del negocio y yo mismo redacto bien tus respuestas para guardarlas en Configuración.'
+        )
       ])
       focusComposer()
       return
@@ -2196,7 +2205,7 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
     if (voiceIsActive || savingConfig) return
 
     if (!status.configured) {
-      setVoiceErrorMessage('Conecta OpenAI para transcribir mensajes de voz.')
+      setVoiceErrorMessage(needsReconnect ? 'Reconecta OpenAI para volver a dictar mensajes de voz.' : 'Conecta OpenAI para transcribir mensajes de voz.')
       return
     }
 
@@ -2381,9 +2390,10 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
     ? `${styles.textComposer} ${styles.textComposerWithAttachments}`
     : styles.textComposer
   const panelTitle = sitesCreationMode ? 'Creador de Sites con IA' : embedded ? 'Ristak AI' : 'Agente AI'
+  const needsReconnect = Boolean(status.needsReconnect)
   const statusLabel = status.configured
     ? sitesCreationMode ? 'Creando borrador editable' : embedded ? 'Listo para ayudarte' : 'Conectado a OpenAI'
-    : 'Configúralo aquí mismo'
+    : needsReconnect ? 'Reconecta OpenAI' : 'Configúralo aquí mismo'
 
   return (
     <div className={rootClassName}>
@@ -2442,14 +2452,19 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
             <div className={styles.setupCard}>
               <div className={styles.setupTitle}>
                 <KeyRound size={16} />
-                Conectar OpenAI
+                {needsReconnect ? 'Reconectar OpenAI' : 'Conectar OpenAI'}
               </div>
+              {needsReconnect && (
+                <p className={styles.setupHint}>
+                  El token guardado ya no se puede leer. Pega el token otra vez y queda listo para voz y chat.
+                </p>
+              )}
               <div className={styles.setupForm}>
                 <input
                   className={styles.setupInput}
                   type="password"
                   value={apiKeyInput}
-                  placeholder="Pega tu API key sk-..."
+                  placeholder={needsReconnect ? 'Pega tu token para reconectar...' : 'Pega tu API key sk-...'}
                   autoComplete="off"
                   onChange={(event) => setApiKeyInput(event.target.value)}
                   disabled={savingConfig || loadingConfig}
@@ -2460,7 +2475,7 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
                   onClick={saveTokenFromChat}
                   disabled={savingConfig || loadingConfig || !apiKeyInput.trim()}
                 >
-                  {savingConfig ? 'Guardando...' : 'Guardar'}
+                  {savingConfig ? 'Guardando...' : needsReconnect ? 'Reconectar' : 'Guardar'}
                 </button>
               </div>
             </div>
@@ -2639,7 +2654,7 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
                   ref={textareaRef}
                   className={styles.textarea}
                   value={input}
-                  placeholder={status.configured && nextOnboardingQuestion ? 'Responde para guardar contexto...' : status.configured ? 'Pregunta algo del negocio...' : 'Pega el token arriba o cuéntame del negocio...'}
+                  placeholder={status.configured && nextOnboardingQuestion ? 'Responde para guardar contexto...' : status.configured ? 'Pregunta algo del negocio...' : needsReconnect ? 'Pega el token arriba para reconectar...' : 'Pega el token arriba o cuéntame del negocio...'}
                   onChange={(event) => setInput(event.target.value)}
                   onKeyDown={handleKeyDown}
                   disabled={savingConfig}

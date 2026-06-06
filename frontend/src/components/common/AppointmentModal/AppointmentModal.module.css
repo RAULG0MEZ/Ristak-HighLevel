@@ -429,6 +429,7 @@
 
 .mobileSheetContainer .textarea {
   min-height: 86px;
+  border-radius: 8px;
 }
 
 .field {
@@ -516,6 +517,7 @@
 
 .textarea {
   min-height: 96px;
+  border-radius: 10px;
   resize: vertical;
 }
 

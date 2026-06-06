@@ -279,6 +279,13 @@
   color: var(--color-text-primary);
 }
 
+.setupHint {
+  margin: -2px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-text-tertiary);
+}
+
 .setupForm {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

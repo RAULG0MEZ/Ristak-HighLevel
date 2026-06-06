@@ -25,6 +25,7 @@ import {
   serializeContactCustomFieldsForDb
 } from '../utils/contactCustomFields.js'
 import { normalizePhoneForStorage } from '../utils/phoneUtils.js'
+import { normalizePhoneForAccount } from '../utils/accountLocale.js'
 import fetch from 'node-fetch'
 
 const normalizePhone = (phone) => {
@@ -1682,7 +1683,7 @@ export const createContact = async (req, res) => {
     const lastNameInput = cleanString(last_name)
     const fullName = cleanString(full_name || name || [firstNameInput, lastNameInput].filter(Boolean).join(' '))
     const normalizedEmail = cleanString(email).toLowerCase() || null
-    const normalizedPhone = phone ? normalizePhoneForStorage(phone) : null
+    const normalizedPhone = phone ? await normalizePhoneForAccount(phone) : null
 
     if (!fullName && !normalizedEmail && !normalizedPhone) {
       return res.status(400).json({
@@ -1868,7 +1869,7 @@ export const updateContact = async (req, res) => {
       : null
     const shouldSyncHighLevelCustomFields = Array.isArray(highLevelCustomFields) && highLevelCustomFields.length > 0
     const normalizedPhone = phone !== undefined
-      ? (normalizePhoneForStorage(phone) || phone || null)
+      ? (await normalizePhoneForAccount(phone) || phone || null)
       : undefined
     const phoneUpsert = phone !== undefined
       ? await prepareContactPhoneUpsert({ contactId: id, phone: normalizedPhone })

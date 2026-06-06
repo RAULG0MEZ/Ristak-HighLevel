@@ -108,6 +108,7 @@ import {
 import { campaignsService, type ConnectedSocialProfile } from '@/services/campaignsService'
 import { calendarsService, type Calendar as CalendarType } from '@/services/calendarsService'
 import { requestAIAgentOpen, type AIAgentSitesCreationKind } from '@/utils/aiAgentEvents'
+import { COUNTRY_OPTIONS, getCountryDefaults, getCountryFlagEmoji, getDetectedAccountLocaleDefaults } from '@/utils/accountLocale'
 import styles from './Sites.module.css'
 import './sitesCanvas.css'
 import { buildCanvasTheme } from './sitesCanvasTheme'
@@ -1021,6 +1022,13 @@ const getSettingString = (settings: Record<string, unknown>, key: string) => {
   return typeof value === 'string' ? value : ''
 }
 
+const isPhoneCountrySelectorEnabled = (block: SiteBlock) => {
+  const settings = block.settings || {}
+  return settings.phoneCountrySelectorEnabled !== false &&
+    settings.countrySelectorEnabled !== false &&
+    settings.phoneCountrySelector !== false
+}
+
 const getSettingNumber = (settings: Record<string, unknown>, key: string, fallback: number, min: number, max: number) => {
   const value = Number(settings?.[key])
   if (!Number.isFinite(value)) return fallback
@@ -1302,6 +1310,7 @@ const getBlockContentMaxWidthFallback = (site: PublicSite, block: SiteBlock) => 
 const getBlockRadiusFallback = (_site: PublicSite, _block: SiteBlock) => 0
 
 const getBlockBorderWidthFallback = (site: PublicSite, block: SiteBlock) => {
+  if (block.blockType === 'social_profile') return 0
   if (block.blockType === 'image' || block.blockType === 'video' || block.blockType === 'embed' || block.blockType === 'calendar_embed') return 1
   if (isLanding(site) && ['hero', 'section', 'cta', 'benefits', 'testimonials', 'services', 'faq', 'form_embed', 'social_profile'].includes(block.blockType)) return 0
   return nativeBorderBlockTypes.has(block.blockType) ? 1 : 0
@@ -2011,6 +2020,20 @@ const createEmbeddedBlocks = (siteId: string): SiteBlock[] => [
   {
     id: `embedded_${crypto.randomUUID()}`,
     siteId,
+    blockType: 'phone',
+    label: 'Telefono / WhatsApp',
+    content: '',
+    placeholder: '10 digitos',
+    required: true,
+    options: [],
+    settings: { internalName: 'phone', validation: 'phone', phoneCountrySelectorEnabled: true },
+    sortOrder: 1,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: `embedded_${crypto.randomUUID()}`,
+    siteId,
     blockType: 'email',
     label: 'Correo electronico',
     content: '',
@@ -2018,7 +2041,7 @@ const createEmbeddedBlocks = (siteId: string): SiteBlock[] => [
     required: true,
     options: [],
     settings: { internalName: 'email', validation: 'email' },
-    sortOrder: 1,
+    sortOrder: 2,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   }
@@ -2031,7 +2054,11 @@ const defaultBlockPayload = (blockType: SiteBlockType, siteOrId: PublicSite | st
   const isField = fieldBlockTypes.has(blockType)
   const label = blockLabels[blockType]
   const baseSettings: Record<string, unknown> = isField
-    ? { internalName: slugifyName(label), validation: blockType === 'email' ? 'email' : blockType === 'phone' ? 'phone' : '' }
+    ? {
+        internalName: slugifyName(label),
+        validation: blockType === 'email' ? 'email' : blockType === 'phone' ? 'phone' : '',
+        ...(blockType === 'phone' ? { phoneCountrySelectorEnabled: true } : {})
+      }
     : {}
   const landingSettings = resolvedSiteType === 'landing_page' && !isField ? getLandingDefaultBlockSpacing(blockType) : {}
   const blockSettings = (settings: Record<string, unknown> = {}) => ({
@@ -7895,6 +7922,8 @@ const FieldStaticPreview: React.FC<{ block: SiteBlock }> = ({ block }) => (
     {block.content ? <p className="rstk-help">{block.content}</p> : null}
     {block.blockType === 'paragraph'
       ? <textarea readOnly rows={4} placeholder={block.placeholder || ''} />
+      : block.blockType === 'phone' && isPhoneCountrySelectorEnabled(block)
+        ? <PhoneCountryInputPreview placeholder={block.placeholder || ''} />
       : <input readOnly placeholder={block.placeholder || 'Respuesta'} />}
   </section>
 )
@@ -7919,6 +7948,24 @@ const EmbedPreview: React.FC<{ rawCode: string }> = ({ rawCode }) => {
       allowFullScreen
       style={{ minHeight: `${embed.height || EMBED_DEFAULT_HEIGHT}px` }}
     />
+  )
+}
+
+const PhoneCountryInputPreview: React.FC<{ placeholder?: string }> = ({ placeholder }) => {
+  const detected = getDetectedAccountLocaleDefaults()
+  const selectedCountry = getCountryDefaults(detected.countryCode)
+
+  return (
+    <div className="rstk-phone-input">
+      <select aria-label="Pais y lada" defaultValue={selectedCountry.value}>
+        {COUNTRY_OPTIONS.map(country => (
+          <option key={country.value} value={country.value}>
+            {getCountryFlagEmoji(country.value)} +{country.dialCode} {country.label}
+          </option>
+        ))}
+      </select>
+      <input type="tel" readOnly placeholder={placeholder || 'Numero'} />
+    </div>
   )
 }
 
@@ -7952,6 +7999,8 @@ const FieldPreview: React.FC<{
             </label>
           ))}
         </div>
+      ) : block.blockType === 'phone' && isPhoneCountrySelectorEnabled(block) ? (
+        <PhoneCountryInputPreview placeholder={block.placeholder || ''} />
       ) : (
         <input type={inputType} readOnly placeholder={block.placeholder || ''} />
       )}
@@ -8511,6 +8560,20 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 <span>Campo requerido</span>
               </label>
             </div>
+
+            {block.blockType === 'phone' && (
+              <label className={styles.checkboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={isPhoneCountrySelectorEnabled(block)}
+                  onChange={(event) => {
+                    onPatchSettings({ phoneCountrySelectorEnabled: event.target.checked })
+                    window.setTimeout(onSave, 0)
+                  }}
+                />
+                <span>Mostrar pais y lada</span>
+              </label>
+            )}
           </>
         )}
 

@@ -253,6 +253,31 @@
   text-decoration: var(--rstk-form-text-decoration, none);
   padding: var(--rstk-form-field-pad-y, 13px) var(--rstk-form-field-pad-x, 14px);
 }
+.rstkCanvas .rstk-phone-input {
+  display: grid;
+  grid-template-columns: minmax(128px, .42fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: stretch;
+}
+.rstkCanvas .rstk-phone-input > select,
+.rstkCanvas .rstk-phone-input > input {
+  min-width: 0;
+}
+.rstkCanvas.rstk-kind-form .rstk-field .rstk-phone-input > input,
+.rstkCanvas.rstk-kind-form .rstk-field .rstk-phone-input > select {
+  min-height: var(--rstk-form-field-height, 50px);
+  border-width: var(--rstk-form-field-border-width, 1px);
+  border-color: var(--rstk-form-field-border, var(--rstk-input-border));
+  border-radius: var(--rstk-form-field-radius, var(--rstk-field-radius, var(--rstk-radius)));
+  background-color: var(--rstk-form-field-bg, var(--rstk-input-bg));
+  color: var(--rstk-form-field-text, var(--rstk-input-ink));
+  font-family: var(--rstk-form-font, var(--rstk-font));
+  font-size: var(--rstk-form-input-size, 1rem);
+  font-style: var(--rstk-form-font-style, normal);
+  font-weight: var(--rstk-form-weight, 700);
+  text-decoration: var(--rstk-form-text-decoration, none);
+  padding: var(--rstk-form-field-pad-y, 13px) var(--rstk-form-field-pad-x, 14px);
+}
 .rstkCanvas textarea { resize: vertical; min-height: 108px; }
 .rstkCanvas input::placeholder, .rstkCanvas textarea::placeholder { color: color-mix(in srgb, var(--rstk-muted) 80%, transparent); }
 .rstkCanvas.rstk-kind-form input::placeholder, .rstkCanvas.rstk-kind-form textarea::placeholder { color: var(--rstk-form-placeholder, color-mix(in srgb, var(--rstk-muted) 80%, transparent)); }
@@ -314,6 +339,7 @@
 
 @media (max-width: 640px) {
   .rstkCanvas .rstk-list-grid { grid-template-columns: 1fr; }
+  .rstkCanvas .rstk-phone-input { grid-template-columns: 1fr; }
 }
 
 /* ---------- Premium landing ---------- */

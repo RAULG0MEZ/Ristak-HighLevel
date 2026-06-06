@@ -9,7 +9,14 @@ import {
   parseContactCustomFields,
   serializeContactCustomFieldsForDb
 } from '../utils/contactCustomFields.js'
-import { normalizePhoneForStorage } from '../utils/phoneUtils.js'
+import { composePhoneWithDialCode } from '../utils/phoneUtils.js'
+import {
+  COUNTRY_OPTIONS,
+  getAccountLocaleSettings,
+  getCountryDefaults,
+  getCountryFlagEmoji,
+  normalizePhoneForAccount
+} from '../utils/accountLocale.js'
 import { getAIAgentConfig, getOpenAIApiKey } from './aiAgentService.js'
 import { prepareContactCustomFieldsForStorage } from './contactCustomFieldDefinitionsService.js'
 import {
@@ -1062,7 +1069,7 @@ function buildDefaultBlocks(siteId, siteType, template, siteContext = {}) {
     makeBlock('phone', 'Telefono / WhatsApp', '', {
       placeholder: '10 digitos',
       required: true,
-      settings: { internalName: 'phone', validation: 'phone' },
+      settings: { internalName: 'phone', validation: 'phone', phoneCountrySelectorEnabled: true },
       sortOrder: startOrder + 1
     }),
     makeBlock('email', 'Correo electronico', '', {
@@ -1088,7 +1095,7 @@ function buildDefaultBlocks(siteId, siteType, template, siteContext = {}) {
   })
   const embeddedContactFields = () => [
     makeEmbeddedField('short_text', 'Nombre completo', 'Tu nombre', { internalName: 'full_name' }, 0),
-    makeEmbeddedField('phone', 'Telefono / WhatsApp', '10 digitos', { internalName: 'phone', validation: 'phone' }, 1),
+    makeEmbeddedField('phone', 'Telefono / WhatsApp', '10 digitos', { internalName: 'phone', validation: 'phone', phoneCountrySelectorEnabled: true }, 1),
     makeEmbeddedField('email', 'Correo electronico', 'tu@email.com', { internalName: 'email', validation: 'email' }, 2)
   ]
   const formEmbedSettings = (description, settings = {}) => withLandingSpacing('form_embed', {
@@ -2672,6 +2679,10 @@ function normalizeAIBlock({ block = {}, siteId, sortOrder = 0, allowedTypes = BL
     settings.internalName = normalizeInternalName(block.internalName || block.internal_name || label)
   }
 
+  if (blockType === 'phone' && settings.phoneCountrySelectorEnabled === undefined) {
+    settings.phoneCountrySelectorEnabled = true
+  }
+
   if (blockType === 'form_embed') {
     const embeddedBlocks = settings.embeddedBlocks || settings.embedded_blocks || block.embeddedBlocks || block.embedded_blocks || block.questions || block.preguntas
     settings.embeddedBlocks = normalizeAIEmbeddedBlocks(siteId, embeddedBlocks)
@@ -4079,6 +4090,67 @@ function safeHref(value, fallback = '#') {
   return safeUrl(raw) || fallback
 }
 
+function isPhoneCountrySelectorEnabled(block = {}) {
+  const settings = block.settings || {}
+  return settings.phoneCountrySelectorEnabled !== false &&
+    settings.countrySelectorEnabled !== false &&
+    settings.phoneCountrySelector !== false
+}
+
+function getPhoneCountryOption(countryCode) {
+  return getCountryDefaults(countryCode)
+}
+
+function getPhoneCountryOptionByDialCode(dialCode) {
+  const normalizedDialCode = cleanString(dialCode).replace(/\D/g, '')
+  return COUNTRY_OPTIONS.find(country => country.dialCode === normalizedDialCode) || null
+}
+
+function renderPhoneCountryOptions(defaultCountryCode) {
+  const selectedCountry = getPhoneCountryOption(defaultCountryCode)
+  return COUNTRY_OPTIONS.map(country => {
+    const selected = country.value === selectedCountry.value ? 'selected' : ''
+    const label = `${getCountryFlagEmoji(country.value)} +${country.dialCode} ${country.label}`
+    return `<option value="${escapeHtml(country.value)}" data-dial-code="${escapeHtml(country.dialCode)}" data-timezones="${escapeHtml((country.timezones || []).join(','))}" ${selected}>${escapeHtml(label)}</option>`
+  }).join('')
+}
+
+function getPhoneDialCodeFromResponse(block, responses = {}) {
+  const settings = block.settings || {}
+  const rawCountryCode = cleanString(
+    responses?.[`${block.id}__country`] ||
+    responses?.[`${block.id}_country`] ||
+    responses?.[`${block.id}Country`] ||
+    settings.defaultCountryCode ||
+    settings.countryCode
+  ).toUpperCase()
+  const rawDialCode = cleanString(
+    responses?.[`${block.id}__dial_code`] ||
+    responses?.[`${block.id}_dial_code`] ||
+    responses?.[`${block.id}DialCode`] ||
+    settings.defaultDialCode ||
+    settings.dialCode
+  ).replace(/\D/g, '')
+  const country = rawCountryCode ? getPhoneCountryOption(rawCountryCode) : null
+  const dialCountry = rawDialCode ? getPhoneCountryOptionByDialCode(rawDialCode) : null
+
+  return rawDialCode || country?.dialCode || dialCountry?.dialCode || ''
+}
+
+function normalizePhoneResponseValue(block, rawValue, responses = {}) {
+  if (rawValue && typeof rawValue === 'object' && !Array.isArray(rawValue)) {
+    const number = cleanString(rawValue.number || rawValue.phone || rawValue.value)
+    const dialCode = cleanString(rawValue.dialCode || rawValue.dial_code || rawValue.lada).replace(/\D/g, '') ||
+      getPhoneCountryOption(rawValue.countryCode || rawValue.country || rawValue.pais)?.dialCode ||
+      getPhoneDialCodeFromResponse(block, responses)
+    return dialCode ? composePhoneWithDialCode(number, dialCode) : number
+  }
+
+  const value = cleanString(rawValue)
+  const dialCode = getPhoneDialCodeFromResponse(block, responses)
+  return dialCode ? composePhoneWithDialCode(value, dialCode) || value : value
+}
+
 const DEFAULT_EMBED_ALLOW = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share'
 const EMBED_SANDBOX_URL = 'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox'
 const EMBED_SANDBOX_HTML = 'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox'
@@ -5132,7 +5204,7 @@ function renderPublicBlock(block, context = {}) {
   const pages = Array.isArray(context.pages) ? context.pages : normalizeSitePages(context.site)
   const blockPageId = context.isInteractive ? getBlockPageId(block, pages) : ''
   const html = FIELD_BLOCK_TYPES.has(block.blockType)
-    ? renderFieldBlock(block, false, blockPageId)
+    ? renderFieldBlock(block, false, blockPageId, context)
     : renderContentBlock(block, context)
   const rendered = wrapRenderedBlock(block, html)
 
@@ -5353,7 +5425,7 @@ function renderContentBlock(block, context = {}) {
         <h2>${content || escapeHtml(block.label || 'Formulario')}</h2>
         ${settings.description ? `<p class="rstk-help">${escapeHtml(settings.description)}</p>` : ''}
         ${fields.length
-          ? fields.map(field => renderFieldBlock(field, false)).join('\n')
+          ? fields.map(field => renderFieldBlock(field, false, '', context)).join('\n')
           : '<p class="rstk-help">Selecciona o crea un formulario embebido para capturar respuestas.</p>'}
         ${fields.length ? `
           <div class="rstk-actions rstk-embed-actions">
@@ -5403,11 +5475,12 @@ function renderContentBlock(block, context = {}) {
   return `<div class="rstk-text">${content.replace(/\n/g, '<br>')}</div>`
 }
 
-function renderFieldInput(block) {
+function renderFieldInput(block, context = {}) {
   const id = escapeHtml(block.id)
   const placeholder = escapeHtml(block.placeholder)
   const required = block.required ? 'required' : ''
   const options = getBlockOptions(block)
+  const settings = block.settings || {}
 
   if (block.blockType === 'paragraph') {
     return `<textarea id="${id}" name="${id}" rows="5" placeholder="${placeholder}" ${required}></textarea>`
@@ -5426,6 +5499,23 @@ function renderFieldInput(block) {
   }
 
   if (block.blockType === 'phone') {
+    if (isPhoneCountrySelectorEnabled(block)) {
+      const defaultCountryCode = cleanString(
+        settings.defaultCountryCode ||
+        settings.countryCode ||
+        context.phoneLocale?.countryCode ||
+        'MX'
+      ).toUpperCase()
+      return `
+        <div class="rstk-phone-input" data-phone-country-field>
+          <select id="${id}__country" name="${id}__country" data-phone-country-select aria-label="Pais y lada">
+            ${renderPhoneCountryOptions(defaultCountryCode)}
+          </select>
+          <input id="${id}" name="${id}" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="${placeholder || 'Numero'}" data-phone-number-input ${required}>
+        </div>
+      `
+    }
+
     return `<input id="${id}" name="${id}" type="tel" inputmode="tel" autocomplete="tel" placeholder="${placeholder}" ${required}>`
   }
 
@@ -5471,7 +5561,7 @@ function renderFieldInput(block) {
   return `<input id="${id}" name="${id}" type="text" placeholder="${placeholder}" ${required}>`
 }
 
-function renderFieldBlock(block, _interactive = false, pageId = '') {
+function renderFieldBlock(block, _interactive = false, pageId = '', context = {}) {
   const label = escapeHtml(block.label || 'Pregunta')
   const required = block.required ? '<span class="rstk-required">*</span>' : ''
 
@@ -5479,7 +5569,7 @@ function renderFieldBlock(block, _interactive = false, pageId = '') {
     <section class="rstk-field" data-block-id="${escapeHtml(block.id)}" data-page-id="${escapeHtml(pageId)}" data-required="${block.required ? 'true' : 'false'}" data-field-type="${escapeHtml(block.blockType)}">
       <label for="${escapeHtml(block.id)}">${label}${required}</label>
       ${block.content ? `<p class="rstk-help">${escapeHtml(block.content)}</p>` : ''}
-      ${renderFieldInput(block)}
+      ${renderFieldInput(block, context)}
       <p class="rstk-error" hidden>Esta respuesta es requerida.</p>
     </section>
   `
@@ -6021,48 +6111,6 @@ function renderSocialProfileBlock(block, context = {}) {
   `
 }
 
-function normalizeSocialPlatform(value) {
-  const platform = cleanString(value)
-  return ['facebook', 'instagram', 'tiktok'].includes(platform) ? platform : 'facebook'
-}
-
-function renderSocialProfileBlock(block, context = {}) {
-  const settings = block.settings || {}
-  const platform = normalizeSocialPlatform(settings.platform)
-  const template = SITE_TEMPLATES[platform] || resolveTemplate(context.site)
-  const siteBrand = getBrand(context.site || {}, template)
-  const name = cleanString(settings.brandName) || siteBrand.name
-  const subtitleDefault = platform === 'instagram' ? 'Publicacion pagada' : 'Patrocinado'
-  const subtitle = cleanString(settings.brandSubtitle) || siteBrand.subtitle || subtitleDefault
-  const followers = cleanString(settings.followers || settings.followersCount || settings.followerCount) || siteBrand.followers
-  const avatarUrl = safeUrl(settings.brandAvatar) || siteBrand.avatarUrl
-  const verified = settings.brandVerified === undefined ? siteBrand.verified : normalizeBoolean(settings.brandVerified) === 1
-  const initial = (name.trim()[0] || 'R').toUpperCase()
-  const brand = {
-    name,
-    subtitle,
-    followers,
-    avatarUrl,
-    verified,
-    initial
-  }
-  const secondary = followers ? `${escapeHtml(followers)} seguidores` : escapeHtml(subtitle)
-  const platformLabel = platform === 'facebook' ? 'Facebook' : platform === 'instagram' ? 'Instagram' : 'TikTok'
-
-  return `
-    <section class="rstk-chrome rstk-social-profile rstk-social-profile-block rstk-social-profile-${platform}" aria-label="Perfil de ${platformLabel}">
-      <div class="rstk-social-image">
-        ${renderAvatar(brand)}
-        <span class="rstk-social-platform rstk-social-platform-${platform}" aria-hidden="true">${getSocialPlatformIcon(platform)}</span>
-      </div>
-      <div class="rstk-social-details">
-        <div class="rstk-social-name">${escapeHtml(name)}${verified ? RSTK_ICONS.verified : ''}</div>
-        <div class="rstk-social-followers">${secondary}</div>
-      </div>
-    </section>
-  `
-}
-
 function renderLegalFooter(brand) {
   return `
     <p class="rstk-footer">
@@ -6239,6 +6287,9 @@ const RSTK_BASE_CSS = `
 	    padding:13px 14px;outline:none;transition:border-color .15s ease,box-shadow .15s ease;
 	  }
 	  .rstk-kind-form .rstk-field > input,.rstk-kind-form .rstk-field > textarea,.rstk-kind-form .rstk-field > select{min-height:var(--rstk-form-field-height,50px);border-width:var(--rstk-form-field-border-width,1px);border-color:var(--rstk-form-field-border,var(--rstk-input-border));border-radius:var(--rstk-form-field-radius,var(--rstk-field-radius,var(--rstk-radius)));background:var(--rstk-form-field-bg,var(--rstk-input-bg));color:var(--rstk-form-field-text,var(--rstk-input-ink));font-family:var(--rstk-form-font,var(--rstk-font));font-size:var(--rstk-form-input-size,1rem);font-style:var(--rstk-form-font-style,normal);font-weight:var(--rstk-form-weight,700);text-decoration:var(--rstk-form-text-decoration,none);padding:var(--rstk-form-field-pad-y,13px) var(--rstk-form-field-pad-x,14px)}
+	  .rstk-phone-input{display:grid;grid-template-columns:minmax(128px,.42fr) minmax(0,1fr);gap:8px;align-items:stretch}
+	  .rstk-phone-input > select,.rstk-phone-input > input{min-width:0}
+	  .rstk-kind-form .rstk-field .rstk-phone-input > input,.rstk-kind-form .rstk-field .rstk-phone-input > select{min-height:var(--rstk-form-field-height,50px);border-width:var(--rstk-form-field-border-width,1px);border-color:var(--rstk-form-field-border,var(--rstk-input-border));border-radius:var(--rstk-form-field-radius,var(--rstk-field-radius,var(--rstk-radius)));background-color:var(--rstk-form-field-bg,var(--rstk-input-bg));color:var(--rstk-form-field-text,var(--rstk-input-ink));font-family:var(--rstk-form-font,var(--rstk-font));font-size:var(--rstk-form-input-size,1rem);font-style:var(--rstk-form-font-style,normal);font-weight:var(--rstk-form-weight,700);text-decoration:var(--rstk-form-text-decoration,none);padding:var(--rstk-form-field-pad-y,13px) var(--rstk-form-field-pad-x,14px)}
 	  textarea{resize:vertical;min-height:108px}
 	  input::placeholder,textarea::placeholder{color:color-mix(in srgb,var(--rstk-muted) 80%,transparent)}
 	  .rstk-kind-form input::placeholder,.rstk-kind-form textarea::placeholder{color:var(--rstk-form-placeholder,color-mix(in srgb,var(--rstk-muted) 80%,transparent))}
@@ -6376,6 +6427,7 @@ const RSTK_BASE_CSS = `
 
   @media (max-width:640px){
     .rstk-kind-landing .rstk-hero{padding:clamp(32px,8vw,56px) 20px}
+    .rstk-phone-input{grid-template-columns:1fr}
   }
 `
 
@@ -7040,7 +7092,8 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
 	    `rstk-select-${normalizeFormSelectStyle(theme.formSelectStyle)}`
 	  ].filter(Boolean).join(' ')
 
-	  const renderContext = { site, pageId: activePage?.id, pages, isInteractive, isLandingType, submitText, submitSubtitle }
+	  const phoneLocale = await getAccountLocaleSettings().catch(() => ({ countryCode: 'MX', currency: 'MXN', dialCode: '52' }))
+	  const renderContext = { site, pageId: activePage?.id, pages, isInteractive, isLandingType, submitText, submitSubtitle, phoneLocale }
   const bodyBlocks = isLandingType
     ? renderLandingBlocks(blocks, renderContext)
     : blocks.map(block => renderPublicBlock(block, renderContext)).join('\n')
@@ -7121,10 +7174,64 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
         try { return JSON.parse(value); } catch { return null; }
       };
 
+      const phoneDigits = (value) => String(value || '').replace(/\\D/g, '');
+      const stripInternationalPrefix = (digits) => digits.startsWith('00') ? digits.slice(2) : digits;
+      const normalizeMexicoPhoneDigits = (digits) => {
+        const national = digits.slice(-10);
+        if (national.length !== 10) return '';
+        if (digits.startsWith('521') && digits.length >= 13) return '52' + national;
+        if (digits.startsWith('52') && digits.length >= 12) return '52' + national;
+        return '';
+      };
+      const composePhoneValue = (value, dialCode) => {
+        const raw = String(value || '').trim();
+        const digits = stripInternationalPrefix(phoneDigits(raw));
+        const countryCode = phoneDigits(dialCode).slice(0, 4);
+        if (digits.length < 7) return '';
+        const mexicoPhone = countryCode === '52' ? normalizeMexicoPhoneDigits(digits) : '';
+        if (mexicoPhone) return '+' + mexicoPhone;
+        if (!countryCode || raw.startsWith('+') || raw.startsWith('00')) return '+' + digits;
+        if (digits.startsWith(countryCode) && digits.length > countryCode.length + 6) return '+' + digits;
+        return '+' + countryCode + digits;
+      };
+      const optionExists = (select, countryCode) => Boolean(countryCode && select && select.querySelector('option[value="' + String(countryCode).replace(/["\\\\]/g, '\\\\$&') + '"]'));
+      const detectPhoneCountry = (select) => {
+        const locales = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language];
+        for (const locale of locales) {
+          const match = String(locale || '').match(/[-_]([A-Za-z]{2})\\b/);
+          const country = match && match[1] ? match[1].toUpperCase() : '';
+          if (optionExists(select, country)) return country;
+        }
+        const timezone = typeof Intl !== 'undefined' && Intl.DateTimeFormat ? Intl.DateTimeFormat().resolvedOptions().timeZone : '';
+        if (!timezone) return '';
+        for (const option of Array.from(select.options || [])) {
+          const timezones = String(option.dataset.timezones || '').split(',').filter(Boolean);
+          if (timezones.indexOf(timezone) >= 0) return option.value;
+        }
+        return '';
+      };
+      const initPhoneCountryFields = () => {
+        fields.forEach((field) => {
+          if (field.getAttribute('data-field-type') !== 'phone') return;
+          const select = field.querySelector('[data-phone-country-select]');
+          if (!select) return;
+          const detectedCountry = detectPhoneCountry(select);
+          if (detectedCountry) select.value = detectedCountry;
+        });
+      };
+
       const readFieldValue = (field) => {
         const type = field.getAttribute('data-field-type');
         if (type === 'checkboxes') {
           return Array.from(field.querySelectorAll('input[type="checkbox"]:checked')).map(input => input.value);
+        }
+        if (type === 'phone') {
+          const input = field.querySelector('[data-phone-number-input]') || field.querySelector('input[type="tel"], input');
+          const select = field.querySelector('[data-phone-country-select]');
+          const dialCode = select && select.selectedOptions && select.selectedOptions[0]
+            ? select.selectedOptions[0].dataset.dialCode || ''
+            : '';
+          return composePhoneValue(input ? input.value : '', dialCode);
         }
         const checked = field.querySelector('input[type="radio"]:checked');
         if (checked) return checked.value;
@@ -7266,6 +7373,7 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
             }, metaEventName);
           }
           form.reset();
+          initPhoneCountryFields();
           if (window.ristakNativeRememberContact && submission.contactId) {
             window.ristakNativeRememberContact({
               contactId: submission.contactId,
@@ -7297,6 +7405,7 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
         }
       });
 
+      initPhoneCountryFields();
       renderStep();
     })();
   </script>
@@ -7406,7 +7515,7 @@ function inferContactFromResponses(blocks, responseEntries) {
       label.includes('celular') ||
       label.includes('whatsapp')
     )) {
-      contact.phone = normalizePhoneForStorage(normalizedValue) || normalizedValue
+      contact.phone = normalizedValue
       continue
     }
 
@@ -7437,7 +7546,7 @@ async function findExistingContact({ email, phone }) {
 
 async function upsertContactFromSubmission({ site, contact, meta }) {
   const email = normalizeEmail(contact.email)
-  const phone = normalizePhoneForStorage(contact.phone) || cleanString(contact.phone)
+  const phone = await normalizePhoneForAccount(contact.phone) || cleanString(contact.phone)
   const fullName = cleanString(contact.fullName) || email || phone || 'Lead de site'
 
   if (!email && !phone && !fullName) return null
@@ -7531,6 +7640,8 @@ function normalizeSubmissionResponses(blocks, responses = {}) {
 
     if (block.blockType === 'checkboxes') {
       value = Array.isArray(rawValue) ? rawValue.map(cleanString).filter(Boolean) : []
+    } else if (block.blockType === 'phone') {
+      value = normalizePhoneResponseValue(block, rawValue, responses)
     } else {
       value = cleanString(rawValue)
     }
@@ -8136,7 +8247,7 @@ function buildImportedSubmissionLayers({ site, imported, formId, rawFields }) {
   }
 
   if (mappedFields.standard.phone) {
-    derivedFields.phone = normalizePhoneForStorage(mappedFields.standard.phone) || cleanString(mappedFields.standard.phone)
+    derivedFields.phone = cleanString(mappedFields.standard.phone)
   }
 
   return {
@@ -8202,10 +8313,11 @@ async function createImportedSubmissionFromRequest({ req, body, site, host }) {
     standard.first_name || derived.first_name,
     standard.last_name || derived.last_name
   ].map(cleanString).filter(Boolean).join(' '))
+  const rawPhone = standard.phone || derived.phone
   const contact = {
     fullName,
     email: normalizeEmail(standard.email || derived.email),
-    phone: normalizePhoneForStorage(standard.phone || derived.phone) || cleanString(standard.phone || derived.phone)
+    phone: await normalizePhoneForAccount(rawPhone) || cleanString(rawPhone)
   }
   const meta = {
     ...(body.meta && typeof body.meta === 'object' ? body.meta : {}),

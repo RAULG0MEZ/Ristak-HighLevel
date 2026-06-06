@@ -34,6 +34,8 @@ const HIGHLEVEL_MCP_SERVER_URL = process.env.GHL_MCP_SERVER_URL || 'https://serv
 const HIGHLEVEL_API_VERSION = process.env.GHL_API_VERSION || '2021-07-28'
 const DEFAULT_MODEL = process.env.OPENAI_AGENT_MODEL || 'gpt-5.5'
 const DEFAULT_TRANSCRIPTION_MODEL = process.env.OPENAI_TRANSCRIPTION_MODEL || 'gpt-4o-mini-transcribe'
+const OPENAI_CREDENTIAL_RECONNECT_CODE = 'OPENAI_CREDENTIAL_RECONNECT_REQUIRED'
+const OPENAI_CREDENTIAL_RECONNECT_MESSAGE = 'OpenAI necesita reconectarse. Ve a Configuración > Agente AI y pega nuevamente tu API token.'
 const REQUEST_TIMEOUT_MS = 45000
 const BUSINESS_CONTEXT_LIMIT = 12000
 const VIEW_CONTEXT_LIMIT = 6000
@@ -82,6 +84,19 @@ const ACTION_CUSTOMIZATION_STOPWORDS = new Set([
   'texto', 'adicional', 'adicionales', 'indique', 'indiques', 'mes', 'meses'
 ])
 const isPostgres = Boolean(process.env.DATABASE_URL)
+
+export class AIAgentCredentialError extends Error {
+  constructor(message = OPENAI_CREDENTIAL_RECONNECT_MESSAGE) {
+    super(message)
+    this.name = 'AIAgentCredentialError'
+    this.code = OPENAI_CREDENTIAL_RECONNECT_CODE
+    this.statusCode = 409
+  }
+}
+
+export function isAIAgentCredentialError(error) {
+  return Boolean(error?.code === OPENAI_CREDENTIAL_RECONNECT_CODE || error?.name === 'AIAgentCredentialError')
+}
 
 const paidStatuses = "('paid','succeeded','success','completed','complete')"
 const pendingStatuses = "('pending','unpaid','sent','open','draft')"
@@ -15664,51 +15679,53 @@ export async function getAIAgentConfig({ userId } = {}) {
 export async function getAIAgentStatus({ userId } = {}) {
   const config = await getAIAgentConfig({ userId })
   const businessContext = buildUnifiedBusinessContext(config)
-
-  if (!config?.openai_api_key_encrypted) {
-    return {
-      configured: false,
-      model: normalizeAIAgentModel(config?.model),
-      tokenPreview: null,
-      businessContext,
-      marketContext: '',
-      idealCustomer: '',
-      locationContext: '',
-      competitorsContext: '',
-      brandVoice: '',
-      actionCustomizations: config?.action_customizations || '',
-      researchDomains: config?.research_domains || '',
-      responseStyle: normalizeAIAgentResponseStyle(config?.response_style),
-      recommendationMode: normalizeAIAgentRecommendationMode(config?.recommendation_mode),
-      webSearchEnabled: toBooleanValue(config?.web_search_enabled),
-      updatedAt: config?.updated_at || null
-    }
-  }
-
-  let tokenPreview = 'Configurada'
-
-  try {
-    tokenPreview = maskApiKey(decrypt(config.openai_api_key_encrypted))
-  } catch {
-    tokenPreview = 'Configurada'
-  }
-
-  return {
-    configured: true,
-    model: normalizeAIAgentModel(config.model),
-    tokenPreview,
+  const baseStatus = {
+    model: normalizeAIAgentModel(config?.model),
+    tokenPreview: null,
     businessContext,
     marketContext: '',
     idealCustomer: '',
     locationContext: '',
     competitorsContext: '',
     brandVoice: '',
-    actionCustomizations: config.action_customizations || '',
-    researchDomains: config.research_domains || '',
-    responseStyle: normalizeAIAgentResponseStyle(config.response_style),
-    recommendationMode: normalizeAIAgentRecommendationMode(config.recommendation_mode),
-    webSearchEnabled: toBooleanValue(config.web_search_enabled),
-    updatedAt: config.updated_at || null
+    actionCustomizations: config?.action_customizations || '',
+    researchDomains: config?.research_domains || '',
+    responseStyle: normalizeAIAgentResponseStyle(config?.response_style),
+    recommendationMode: normalizeAIAgentRecommendationMode(config?.recommendation_mode),
+    webSearchEnabled: toBooleanValue(config?.web_search_enabled),
+    needsReconnect: false,
+    connectionIssue: null,
+    connectionIssueCode: null,
+    updatedAt: config?.updated_at || null
+  }
+
+  if (!config?.openai_api_key_encrypted) {
+    return {
+      ...baseStatus,
+      configured: false,
+      credentialStatus: 'missing'
+    }
+  }
+
+  try {
+    return {
+      ...baseStatus,
+      configured: true,
+      credentialStatus: 'ready',
+      tokenPreview: maskApiKey(decrypt(config.openai_api_key_encrypted))
+    }
+  } catch (error) {
+    logger.warn(`[Agente AI] No se pudo leer el token guardado de OpenAI: ${error.message}`)
+  }
+
+  return {
+    ...baseStatus,
+    configured: false,
+    credentialStatus: 'reconnect_required',
+    needsReconnect: true,
+    connectionIssue: OPENAI_CREDENTIAL_RECONNECT_MESSAGE,
+    connectionIssueCode: OPENAI_CREDENTIAL_RECONNECT_CODE,
+    tokenPreview: 'Requiere reconexión'
   }
 }
 
@@ -15878,7 +15895,12 @@ export async function getOpenAIApiKey() {
     return null
   }
 
-  return decrypt(config.openai_api_key_encrypted)
+  try {
+    return decrypt(config.openai_api_key_encrypted)
+  } catch (error) {
+    logger.warn(`[Agente AI] Token de OpenAI guardado no se pudo desencriptar: ${error.message}`)
+    throw new AIAgentCredentialError()
+  }
 }
 
 export async function verifyOpenAIApiKey(apiKey) {

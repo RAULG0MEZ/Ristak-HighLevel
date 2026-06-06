@@ -5082,7 +5082,6 @@ export const PhoneChat: React.FC = () => {
     const revenueTotal = contactInfoSuccessfulPayments.reduce((sum, payment) => sum + payment.amount, 0)
     const paymentsCount = contactInfoPayments.length || Number(contactInfoData.purchases || 0) || contactInfoSuccessfulPayments.length
     const nextAppointment = contactInfoActiveAppointments.find((appointment) => Date.parse(appointment.startTime) >= Date.now()) || contactInfoActiveAppointments[0]
-    const nextAppointment = contactInfoActiveAppointments.find((appointment) => Date.parse(appointment.startTime) >= Date.now()) || contactInfoActiveAppointments[0]
     const firstSuccessfulPayment = [...contactInfoSuccessfulPayments]
       .sort((left, right) => Date.parse(left.date) - Date.parse(right.date))[0]
     const firstAppointment = contactInfoAppointments[0]

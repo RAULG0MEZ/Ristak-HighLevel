@@ -30,6 +30,14 @@ import styles from './Contacts.module.css'
 import { dedupeContacts } from '@/utils/contactDedup'
 import { getContactStageBadge, isAttendedAppointmentStatus } from '@/utils/contactStageBadge'
 import { normalizeTrafficSource } from '@/utils/trafficSourceNormalizer'
+import {
+  COUNTRY_OPTIONS,
+  composePhoneWithDialCode,
+  getCountryDefaults,
+  getCountryFlagEmoji,
+  getDetectedAccountLocaleDefaults,
+  getPhoneInputParts
+} from '@/utils/accountLocale'
 
 const APPOINTMENT_CANCELED_STATUSES = new Set([
   'cancelled',
@@ -45,6 +53,40 @@ const APPOINTMENT_CANCELED_STATUSES = new Set([
 ])
 const REVENUE_PAYMENT_STATUSES = new Set(['succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success'])
 const DELETE_CONFIRMATION_WORD = 'ELIMINAR'
+
+const ContactPhoneField: React.FC<{ defaultValue?: string; autoFocus?: boolean }> = ({ defaultValue = '', autoFocus = false }) => {
+  const detected = useMemo(() => getDetectedAccountLocaleDefaults(), [])
+  const initialParts = useMemo(() => getPhoneInputParts(defaultValue, detected.countryCode), [defaultValue, detected.countryCode])
+  const [countryCode, setCountryCode] = useState(initialParts.countryCode)
+  const [phoneNumber, setPhoneNumber] = useState(initialParts.nationalNumber)
+  const country = getCountryDefaults(countryCode)
+  const composedPhone = composePhoneWithDialCode(phoneNumber, country.dialCode)
+
+  return (
+    <div className={styles.phoneCountryField}>
+      <input type="hidden" name="phone" value={composedPhone} />
+      <select
+        value={country.value}
+        onChange={(event) => setCountryCode(event.target.value)}
+        aria-label="Pais y lada"
+      >
+        {COUNTRY_OPTIONS.map(option => (
+          <option key={option.value} value={option.value}>
+            {getCountryFlagEmoji(option.value)} +{option.dialCode} {option.label}
+          </option>
+        ))}
+      </select>
+      <input
+        type="tel"
+        inputMode="tel"
+        autoFocus={autoFocus}
+        placeholder="Numero"
+        value={phoneNumber}
+        onChange={(event) => setPhoneNumber(event.target.value)}
+      />
+    </div>
+  )
+}
 
 const getAppointmentStatusValue = (appointment: { appointment_status?: string | null; appointmentStatus?: string | null; status?: string | null }) =>
   String(appointment.appointment_status || appointment.appointmentStatus || appointment.status || '').trim().toLowerCase()
@@ -1541,7 +1583,7 @@ export const Contacts: React.FC = () => {
               </div>
               <div className={styles.formGroup}>
                 <label>Teléfono</label>
-                <input name="phone" type="tel" />
+                <ContactPhoneField />
               </div>
               <div className={styles.formGroup}>
                 <label>Fuente</label>
@@ -1611,11 +1653,7 @@ export const Contacts: React.FC = () => {
               </div>
               <div className={styles.formGroup}>
                 <label>Teléfono</label>
-                <input
-                  name="phone"
-                  type="tel"
-                  defaultValue={editingContact.phone}
-                />
+                <ContactPhoneField defaultValue={editingContact.phone} />
               </div>
               <div className={styles.formGroup}>
                 <label>Fuente</label>

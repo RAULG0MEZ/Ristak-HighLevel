@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Bell, CalendarDays, Check, CheckCircle, ChevronDown, Clock, CreditCard, Database, Loader2, Lock, MessageCircle, Save, Smartphone, Upload, User, X } from 'lucide-react'
+import { Bell, CalendarDays, Check, CheckCircle, ChevronDown, Clock, CreditCard, Database, Globe2, Loader2, Lock, MessageCircle, Save, Smartphone, Upload, User, X } from 'lucide-react'
 import { Button, Card } from '@/components/common'
 import { useAuth } from '@/contexts/AuthContext'
 import { useLabels } from '@/contexts/LabelsContext'
@@ -9,6 +9,15 @@ import { useTimezone } from '@/contexts/TimezoneContext'
 import { useAppConfig } from '@/hooks'
 import apiClient from '@/services/apiClient'
 import { pushNotificationsService } from '@/services/pushNotificationsService'
+import {
+  ACCOUNT_COUNTRY_CONFIG_KEY,
+  ACCOUNT_CURRENCY_CONFIG_KEY,
+  ACCOUNT_DIAL_CODE_CONFIG_KEY,
+  COUNTRY_OPTIONS,
+  CURRENCY_OPTIONS,
+  getCountryDefaults,
+  getDetectedAccountLocaleDefaults
+} from '@/utils/accountLocale'
 import styles from './Settings.module.css'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
@@ -131,8 +140,12 @@ export const AccountSettings: React.FC = () => {
   const { showToast } = useNotification()
   const { timezone, updateTimezone } = useTimezone()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const detectedLocaleDefaults = useMemo(getDetectedAccountLocaleDefaults, [])
 
   const [profilePhoto, setProfilePhoto, savingProfilePhoto] = useAppConfig<string>(PROFILE_PHOTO_KEY, '')
+  const [accountCountry, setAccountCountry, savingAccountCountry] = useAppConfig<string>(ACCOUNT_COUNTRY_CONFIG_KEY, detectedLocaleDefaults.countryCode)
+  const [accountCurrency, setAccountCurrency, savingAccountCurrency] = useAppConfig<string>(ACCOUNT_CURRENCY_CONFIG_KEY, detectedLocaleDefaults.currency)
+  const [accountDialCode, setAccountDialCode, savingAccountDialCode] = useAppConfig<string>(ACCOUNT_DIAL_CODE_CONFIG_KEY, detectedLocaleDefaults.dialCode)
   const [calendarPushEnabled, setCalendarPushEnabled, savingCalendarPush] = useAppConfig<boolean>('calendar_push_notifications_enabled', false)
   const [chatPushEnabled, setChatPushEnabled, savingChatPush] = useAppConfig<boolean>('chat_push_notifications_enabled', true)
   const [paymentPushEnabled, setPaymentPushEnabled, savingPaymentPush] = useAppConfig<boolean>('payment_push_notifications_enabled', true)
@@ -159,12 +172,19 @@ export const AccountSettings: React.FC = () => {
   const [timezoneDraft, setTimezoneDraft] = useState(timezone)
   const [savingTimezone, setSavingTimezone] = useState(false)
   const [timezoneClock, setTimezoneClock] = useState(() => new Date())
+  const [accountLocaleDraft, setAccountLocaleDraft] = useState({
+    countryCode: detectedLocaleDefaults.countryCode,
+    currency: detectedLocaleDefaults.currency,
+    dialCode: detectedLocaleDefaults.dialCode
+  })
+  const [savingAccountLocale, setSavingAccountLocale] = useState(false)
   const [storageStatus, setStorageStatus] = useState<StorageStatus | null>(null)
   const [storageStatusError, setStorageStatusError] = useState(false)
   const [requestingPush, setRequestingPush] = useState(false)
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null)
   const customerTriggerRef = useRef<HTMLButtonElement>(null)
   const leadTriggerRef = useRef<HTMLButtonElement>(null)
+  const localeBootstrappedRef = useRef(false)
 
   const currentUsername = user?.username || 'admin'
   const visibleProfilePhoto = isEditingPhoto ? profilePhotoDraft : profilePhoto
@@ -178,6 +198,11 @@ export const AccountSettings: React.FC = () => {
     () => buildTimezoneDisplayInfo(timezoneDraft || timezone || 'UTC', timezoneClock),
     [timezoneDraft, timezone, timezoneClock]
   )
+  const accountLocaleChanged =
+    accountLocaleDraft.countryCode !== accountCountry ||
+    accountLocaleDraft.currency !== accountCurrency ||
+    accountLocaleDraft.dialCode !== accountDialCode
+  const accountLocaleSaving = savingAccountLocale || savingAccountCountry || savingAccountCurrency || savingAccountDialCode
 
   useEffect(() => {
     setCustomLabels({
@@ -189,6 +214,56 @@ export const AccountSettings: React.FC = () => {
   useEffect(() => {
     setTimezoneDraft(timezone)
   }, [timezone])
+
+  useEffect(() => {
+    setAccountLocaleDraft({
+      countryCode: accountCountry || detectedLocaleDefaults.countryCode,
+      currency: accountCurrency || detectedLocaleDefaults.currency,
+      dialCode: accountDialCode || detectedLocaleDefaults.dialCode
+    })
+  }, [accountCountry, accountCurrency, accountDialCode, detectedLocaleDefaults])
+
+  useEffect(() => {
+    if (localeBootstrappedRef.current) return
+    localeBootstrappedRef.current = true
+
+    let cancelled = false
+
+    const bootstrapDetectedLocale = async () => {
+      try {
+        const keys = [
+          ACCOUNT_COUNTRY_CONFIG_KEY,
+          ACCOUNT_CURRENCY_CONFIG_KEY,
+          ACCOUNT_DIAL_CODE_CONFIG_KEY
+        ].join(',')
+        const response = await apiClient.get<{ config?: Record<string, string | null> }>('/config', {
+          params: { keys }
+        })
+        if (cancelled) return
+
+        const stored = response.config || {}
+        const storedCountry = stored[ACCOUNT_COUNTRY_CONFIG_KEY]
+        const countryDefaults = getCountryDefaults(storedCountry || detectedLocaleDefaults.countryCode)
+        const nextCountry = storedCountry || detectedLocaleDefaults.countryCode
+        const nextCurrency = stored[ACCOUNT_CURRENCY_CONFIG_KEY] || countryDefaults.currency
+        const nextDialCode = stored[ACCOUNT_DIAL_CODE_CONFIG_KEY] || countryDefaults.dialCode
+        const saves: Array<Promise<void>> = []
+
+        if (!stored[ACCOUNT_COUNTRY_CONFIG_KEY]) saves.push(setAccountCountry(nextCountry))
+        if (!stored[ACCOUNT_CURRENCY_CONFIG_KEY]) saves.push(setAccountCurrency(nextCurrency))
+        if (!stored[ACCOUNT_DIAL_CODE_CONFIG_KEY]) saves.push(setAccountDialCode(nextDialCode))
+        if (saves.length) await Promise.all(saves)
+      } catch {
+        // La pantalla ya muestra defaults locales; si no se puede guardar ahora, el usuario puede tocar Guardar.
+      }
+    }
+
+    bootstrapDetectedLocale()
+
+    return () => {
+      cancelled = true
+    }
+  }, [detectedLocaleDefaults, setAccountCountry, setAccountCurrency, setAccountDialCode])
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -236,6 +311,38 @@ export const AccountSettings: React.FC = () => {
       setTimezoneDraft(timezone)
     } finally {
       setSavingTimezone(false)
+    }
+  }
+
+  const handleCountryChange = (countryCode: string) => {
+    const country = getCountryDefaults(countryCode)
+    setAccountLocaleDraft({
+      countryCode: country.value,
+      currency: country.currency,
+      dialCode: country.dialCode
+    })
+  }
+
+  const handleSaveAccountLocale = async () => {
+    if (!accountLocaleChanged) return
+
+    setSavingAccountLocale(true)
+    try {
+      await Promise.all([
+        setAccountCountry(accountLocaleDraft.countryCode),
+        setAccountCurrency(accountLocaleDraft.currency),
+        setAccountDialCode(accountLocaleDraft.dialCode)
+      ])
+      showToast('success', 'Configuración guardada', 'Ristak usará ese país, lada y moneda como default.')
+    } catch (error: any) {
+      setAccountLocaleDraft({
+        countryCode: accountCountry || detectedLocaleDefaults.countryCode,
+        currency: accountCurrency || detectedLocaleDefaults.currency,
+        dialCode: accountDialCode || detectedLocaleDefaults.dialCode
+      })
+      showToast('error', 'No se guardó', error?.message || 'Intenta guardar la configuración otra vez.')
+    } finally {
+      setSavingAccountLocale(false)
     }
   }
 
@@ -888,6 +995,70 @@ export const AccountSettings: React.FC = () => {
                 </Button>
               </div>
 
+            </section>
+
+            <section className={`${styles.accountSection} ${styles.accountSectionWide}`}>
+              <div className={styles.accountSectionHeader}>
+                <div>
+                  <h3 className={styles.accountSectionTitle}>
+                    <Globe2 size={16} /> País y cobros
+                  </h3>
+                  <p className={styles.accountSectionDescription}>
+                    Ristak usa esto para poner la lada en teléfonos sin + y para dejar lista la moneda de nuevos cobros.
+                  </p>
+                </div>
+              </div>
+
+              <div className={styles.accountLocaleGrid}>
+                <div className={styles.field}>
+                  <label className={styles.label} htmlFor="account-country">País de la cuenta</label>
+                  <select
+                    id="account-country"
+                    className={styles.select}
+                    value={accountLocaleDraft.countryCode}
+                    onChange={(event) => handleCountryChange(event.target.value)}
+                    disabled={accountLocaleSaving}
+                  >
+                    {COUNTRY_OPTIONS.map((country) => (
+                      <option key={country.value} value={country.value}>
+                        {country.label} (+{country.dialCode})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className={styles.field}>
+                  <label className={styles.label} htmlFor="account-currency">Moneda de cobro</label>
+                  <select
+                    id="account-currency"
+                    className={styles.select}
+                    value={accountLocaleDraft.currency}
+                    onChange={(event) => setAccountLocaleDraft((current) => ({ ...current, currency: event.target.value }))}
+                    disabled={accountLocaleSaving}
+                  >
+                    {CURRENCY_OPTIONS.map((currencyOption) => (
+                      <option key={currencyOption.value} value={currencyOption.value}>
+                        {currencyOption.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className={styles.localePreview}>
+                  <span>Teléfonos sin lada se guardan con +{accountLocaleDraft.dialCode}</span>
+                  <span>Cobros nuevos salen en {accountLocaleDraft.currency}</span>
+                </div>
+
+                <Button
+                  variant="primary"
+                  onClick={handleSaveAccountLocale}
+                  loading={accountLocaleSaving}
+                  disabled={accountLocaleSaving || !accountLocaleChanged}
+                >
+                  <Save size={16} />
+                  Guardar
+                </Button>
+              </div>
             </section>
 
             <section className={`${styles.accountSection} ${styles.accountSectionWide}`}>

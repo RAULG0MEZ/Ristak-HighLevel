@@ -9,7 +9,7 @@ import { getAccountTimezone } from '../utils/dateUtils.js';
 import { triggerWhatsappAppointmentBookedEvent } from '../services/metaWhatsappEventsService.js';
 import { sendCalendarAppointmentNotification } from '../services/pushNotificationsService.js';
 import { getRequestHost, resolveConnectedPublicDomainForHost } from '../services/sitesService.js';
-import { normalizePhoneForStorage } from '../utils/phoneUtils.js';
+import { normalizePhoneForAccount } from '../utils/accountLocale.js';
 import {
   finalizePreparedPhoneUpsert,
   findContactByPhoneCandidates,
@@ -352,7 +352,7 @@ export async function deleteGoogleCalendarIntegration(req, res) {
 async function upsertPublicCalendarContact({ calendar, contact, host, sourceUrl }) {
   const fullName = cleanString(contact.name || contact.fullName);
   const email = normalizeEmail(contact.email);
-  const phone = normalizePhoneForStorage(contact.phone) || cleanString(contact.phone);
+  const phone = await normalizePhoneForAccount(contact.phone) || cleanString(contact.phone);
 
   if (!fullName) {
     const error = new Error('El nombre es requerido');

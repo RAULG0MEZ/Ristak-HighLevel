@@ -61,6 +61,18 @@ const SITE_TEMPLATES: Record<SiteTemplateId, Template> = {
       headingWeight: '800', btnRadius: '12px', btnWeight: '750'
     }
   },
+  imported_html: {
+    id: 'imported_html', mode: 'light', chrome: 'none', font: RSTK_SANS,
+    vars: {
+      pageBg: '#ffffff',
+      pageImage: 'none',
+      ink: '#0f172a', muted: '#64748b', surface: '#ffffff', surface2: '#f8fafc', border: '#e6e8ec',
+      accent: '#111827', accentStrong: '#000000', onAccent: '#ffffff', ring: 'rgba(17,24,39,.16)',
+      inputBg: '#ffffff', inputInk: '#0f172a', inputBorder: '#dfe3e8',
+      radius: '12px', radiusLg: '18px', shadow: '0 30px 60px -42px rgba(15,23,42,.4)',
+      headingWeight: '800', btnRadius: '12px', btnWeight: '750'
+    }
+  },
   executive: {
     id: 'executive', mode: 'light', chrome: 'none', font: RSTK_SANS,
     vars: {

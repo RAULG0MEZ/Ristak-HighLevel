@@ -888,6 +888,27 @@ body.dark .select:focus {
   gap: 12px;
 }
 
+.accountLocaleGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.localePreview {
+  display: grid;
+  gap: 4px;
+  min-height: 42px;
+  padding: 6px 0;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.accountLocaleGrid > button {
+  justify-self: end;
+}
+
 .labelField {
   display: flex;
   min-width: 0;
@@ -1398,6 +1419,7 @@ body.dark .select:focus {
   .accountGrid,
   .passwordGrid,
   .labelsGrid,
+  .accountLocaleGrid,
   .notificationSettingsGrid,
   .mobileGuideGrid,
   .mobileStepList {

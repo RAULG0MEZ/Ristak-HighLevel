@@ -22,7 +22,9 @@ import {
 } from 'lucide-react'
 import styles from './RecordPaymentModal.module.css'
 import { useNotification } from '@/contexts/NotificationContext'
+import { useAppConfig } from '@/hooks'
 import { formatCurrency as formatMxCurrency } from '@/utils/format'
+import { ACCOUNT_CURRENCY_CONFIG_KEY, CURRENCY_OPTIONS, getDetectedAccountLocaleDefaults } from '@/utils/accountLocale'
 import { highLevelService } from '@/services/highLevelService'
 import { transactionsService } from '@/services/transactionsService'
 
@@ -30,7 +32,7 @@ const IVA_RATE = 0.16
 const DEFAULT_INVOICE_TITLE = 'Pago'
 const CONTACT_SEARCH_DELAY_MS = 90
 
-const formatCurrency = (value: number, _currency = 'MXN'): string => formatMxCurrency(value)
+const formatCurrency = (value: number, currency = 'MXN'): string => formatMxCurrency(value, currency)
 
 const normalizeAmount = (value: string | number): number => {
   if (typeof value === 'number') {
@@ -416,6 +418,12 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   const [highLevelConnected, setHighLevelConnected] = useState(false)
 
   const { showToast } = useNotification()
+  const detectedLocaleDefaults = useMemo(getDetectedAccountLocaleDefaults, [])
+  const [defaultCurrency] = useAppConfig<string>(ACCOUNT_CURRENCY_CONFIG_KEY, detectedLocaleDefaults.currency)
+  const currencyOptions = useMemo(
+    () => CURRENCY_OPTIONS.map((option) => ({ value: option.value, label: option.value })),
+    []
+  )
   const renderPaymentSelect = ({
     value,
     onChange,
@@ -516,7 +524,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     setAmount('')
     setPaymentTitle('')
     setDescription('')
-    setCurrency('MXN')
+    setCurrency(defaultCurrency || 'MXN')
     setIncludeIVA(false)
     setPaymentMode(initialPaymentMode)
     setFirstPaymentEnabled(true)
@@ -539,7 +547,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     setNewProductDescription('')
     setNewProductPriceName('')
     setNewProductAmount('')
-    setNewProductCurrency('MXN')
+    setNewProductCurrency(defaultCurrency || 'MXN')
     setInvoicePayload(null)
     setInvoiceSummary(null)
     setPaymentOption('send')
@@ -609,7 +617,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     resetForm()
     loadConfig()
     loadIntegrationStatus()
-  }, [isOpen, initialPaymentMode, initialContact?.id, initialContact?.email, initialContact?.phone, initialContact?.name])
+  }, [isOpen, initialPaymentMode, initialContact?.id, initialContact?.email, initialContact?.phone, initialContact?.name, defaultCurrency])
 
   // Search contacts
   useEffect(() => {
@@ -722,9 +730,9 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     if (selectedPrice) {
       const priceAmount = selectedPrice.amount || selectedPrice.price
       setCustomAmount(priceAmount ? String(priceAmount) : '')
-      setCurrency(selectedPrice.currency || 'MXN')
+      setCurrency(selectedPrice.currency || defaultCurrency || 'MXN')
     }
-  }, [selectedPrice])
+  }, [selectedPrice, defaultCurrency])
 
   useEffect(() => {
     if (activePaymentMode !== 'partial' || remainingFrequency === 'custom') return
@@ -793,7 +801,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     setNewProductDescription('')
     setNewProductPriceName('')
     setNewProductAmount('')
-    setNewProductCurrency(currency || 'MXN')
+    setNewProductCurrency(currency || defaultCurrency || 'MXN')
   }
 
   const handleCreateProduct = async () => {
@@ -820,12 +828,12 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
           description: newProductDescription.trim(),
           productType: 'DIGITAL',
           availableInStore: false,
-          currency: newProductCurrency || currency || 'MXN',
+          currency: newProductCurrency || currency || defaultCurrency || 'MXN',
           prices: [
             {
               name: newProductPriceName.trim() || productName,
               amount: productAmount,
-              currency: newProductCurrency || currency || 'MXN',
+              currency: newProductCurrency || currency || defaultCurrency || 'MXN',
               type: 'one_time',
               description: newProductDescription.trim()
             }
@@ -849,7 +857,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       setSelectedPrice(firstPrice)
       if (firstPrice) {
         setCustomAmount(String(firstPrice.amount || firstPrice.price || productAmount))
-        setCurrency(firstPrice.currency || newProductCurrency || 'MXN')
+        setCurrency(firstPrice.currency || newProductCurrency || defaultCurrency || 'MXN')
       }
       setShowCreateProduct(false)
       resetNewProductForm()
@@ -1558,12 +1566,12 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                   setSelectedPrice(null)
                   setPrices([])
                   setCustomAmount('')
-                  setCurrency('MXN')
+                  setCurrency(defaultCurrency || 'MXN')
                   setShowCreateProduct(false)
                 } else {
                   setChargeType('product')
                   setAmount('')
-                  setNewProductCurrency(currency || 'MXN')
+                  setNewProductCurrency(currency || defaultCurrency || 'MXN')
                 }
               }}
               variant="compact"
@@ -1585,7 +1593,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                   size="sm"
                   onClick={() => {
                     setShowCreateProduct(prev => !prev)
-                    if (!showCreateProduct) setNewProductCurrency(currency || 'MXN')
+                    if (!showCreateProduct) setNewProductCurrency(currency || defaultCurrency || 'MXN')
                   }}
                 >
                   <Plus size={14} />
@@ -1656,10 +1664,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                     <CustomSelect
                       value={newProductCurrency}
                       onChange={setNewProductCurrency}
-                      options={[
-                        { value: 'MXN', label: 'MXN' },
-                        { value: 'USD', label: 'USD' }
-                      ]}
+                      options={currencyOptions}
                     />
                   </div>
                 </div>
