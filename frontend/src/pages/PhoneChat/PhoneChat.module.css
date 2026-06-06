@@ -857,14 +857,30 @@
   background: var(--phone-chat-accent-soft);
 }
 
+:global(body[data-phone-chat-tone="dark"]) .contactInfoBadge {
+  color: #b9f6d0;
+  border: 1px solid rgba(var(--phone-chat-accent-rgb), 0.24);
+  background: rgba(var(--phone-chat-accent-rgb), 0.16);
+}
+
 .contactInfoLoading {
   color: #4b5563;
   background: color-mix(in srgb, var(--phone-chat-surface) 72%, transparent);
 }
 
+:global(body[data-phone-chat-tone="dark"]) .contactInfoLoading {
+  color: var(--phone-chat-muted);
+  background: var(--phone-chat-surface);
+}
+
 .contactInfoError {
   color: #991b1b;
   background: #fee2e2;
+}
+
+:global(body[data-phone-chat-tone="dark"]) .contactInfoError {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.18);
 }
 
 .contactInfoActions {
@@ -978,6 +994,12 @@
   border-radius: 8px;
   color: #0f766e;
   background: #ecfdf5;
+}
+
+:global(body[data-phone-chat-tone="dark"]) .contactInfoRowIcon {
+  border-radius: 999px;
+  color: var(--phone-chat-text-on-primary, #07140d);
+  background: var(--phone-chat-accent);
 }
 
 .contactInfoRowText {
@@ -1115,6 +1137,50 @@
   background: #eef4ff;
 }
 
+:global(body[data-phone-chat-tone="dark"]) .contactInfoTimelineIcon {
+  box-shadow: inset 0 0 0 1px var(--phone-chat-border);
+}
+
+:global(body[data-phone-chat-tone="dark"]) .contactInfoTimelineIconWhatsapp,
+:global(body[data-phone-chat-tone="dark"]) .contactInfoTimelineIconPayment,
+:global(body[data-phone-chat-tone="dark"]) .contactInfoTimelineIconBing {
+  color: var(--phone-chat-text-on-primary, #07140d);
+  background: var(--phone-chat-accent);
+  box-shadow: none;
+}
+
+:global(body[data-phone-chat-tone="dark"]) .contactInfoTimelineIconVisit,
+:global(body[data-phone-chat-tone="dark"]) .contactInfoTimelineIconContact,
+:global(body[data-phone-chat-tone="dark"]) .contactInfoTimelineIconFacebook,
+:global(body[data-phone-chat-tone="dark"]) .contactInfoTimelineIconGoogle,
+:global(body[data-phone-chat-tone="dark"]) .contactInfoTimelineIconLinkedIn,
+:global(body[data-phone-chat-tone="dark"]) .contactInfoTimelineIconTwitter,
+:global(body[data-phone-chat-tone="dark"]) .contactInfoTimelineIconMeta {
+  color: #dbeafe;
+  background: rgba(96, 165, 250, 0.2);
+}
+
+:global(body[data-phone-chat-tone="dark"]) .contactInfoTimelineIconAppointment {
+  color: #fff4c2;
+  background: rgba(245, 158, 11, 0.2);
+}
+
+:global(body[data-phone-chat-tone="dark"]) .contactInfoTimelineIconInstagram {
+  color: #fbcfe8;
+  background: rgba(236, 72, 153, 0.2);
+}
+
+:global(body[data-phone-chat-tone="dark"]) .contactInfoTimelineIconYouTube {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.2);
+}
+
+:global(body[data-phone-chat-tone="dark"]) .contactInfoTimelineIconTikTok,
+:global(body[data-phone-chat-tone="dark"]) .contactInfoTimelineIconDefault {
+  color: var(--phone-chat-text);
+  background: var(--phone-chat-surface-soft);
+}
+
 .contactInfoTimelineNetworkBadge {
   position: absolute;
   right: -4px;
@@ -1127,6 +1193,11 @@
   border: 1px solid var(--phone-chat-surface);
   border-radius: 999px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+:global(body[data-phone-chat-tone="dark"]) .contactInfoTimelineNetworkBadge {
+  border-color: var(--phone-chat-surface);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.34);
 }
 
 .contactInfoTimelineItem div {
