@@ -2432,6 +2432,14 @@ export const Sites: React.FC = () => {
     })
   }
 
+  const clearSiteEditorUrlParam = () => {
+    const url = new URL(window.location.href)
+    if (!url.searchParams.has('siteEditor')) return
+
+    url.searchParams.delete('siteEditor')
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
+  }
+
   const handleBackToLibrary = () => {
     requestLeaveEditor(() => {
       selectedSiteRef.current = null
@@ -2445,6 +2453,9 @@ export const Sites: React.FC = () => {
       setPaletteInsertIndex(null)
       setPaletteSectionTarget(null)
       setCreateFlow('closed')
+      setEditorFocusMode(false)
+      setSeoModalOpen(false)
+      clearSiteEditorUrlParam()
       setHasUnsavedChanges(false)
     })
   }
