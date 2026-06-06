@@ -1050,6 +1050,17 @@ function getPageName(pageUrl?: string | null) {
   }
 }
 
+function getCustomFieldLabel(field: NonNullable<Contact['customFields']>[number], index: number) {
+  return field.label || field.name || field.key || field.fieldKey || field.id || `Dato ${index + 1}`
+}
+
+function formatCustomFieldValue(value: NonNullable<Contact['customFields']>[number]['value']) {
+  if (value === null || value === undefined) return ''
+  if (Array.isArray(value)) return value.map((item) => getReadableValue(String(item))).filter(Boolean).join(', ')
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
+}
+
 function getJourneyEventLabel(event: JourneyEvent, leadLabel: string) {
   if (event.type === 'page_visit') return 'Visitó una página'
   if (event.type === 'contact_created') return `Se hizo ${leadLabel.toLowerCase()}`
@@ -5071,6 +5082,7 @@ export const PhoneChat: React.FC = () => {
     const revenueTotal = contactInfoSuccessfulPayments.reduce((sum, payment) => sum + payment.amount, 0)
     const paymentsCount = contactInfoPayments.length || Number(contactInfoData.purchases || 0) || contactInfoSuccessfulPayments.length
     const nextAppointment = contactInfoActiveAppointments.find((appointment) => Date.parse(appointment.startTime) >= Date.now()) || contactInfoActiveAppointments[0]
+    const nextAppointment = contactInfoActiveAppointments.find((appointment) => Date.parse(appointment.startTime) >= Date.now()) || contactInfoActiveAppointments[0]
     const firstSuccessfulPayment = [...contactInfoSuccessfulPayments]
       .sort((left, right) => Date.parse(left.date) - Date.parse(right.date))[0]
     const firstAppointment = contactInfoAppointments[0]
@@ -5102,6 +5114,13 @@ export const PhoneChat: React.FC = () => {
       .map((value) => getReadableValue(value))
       .filter(Boolean)
       .join(', ')
+    const visibleCustomFields = (contactInfoData.customFields || [])
+      .map((field, index) => ({
+        id: field.id || field.key || field.fieldKey || field.label || field.name || `field-${index}`,
+        label: getCustomFieldLabel(field, index),
+        value: formatCustomFieldValue(field.value)
+      }))
+      .filter((field) => field.value.trim().length > 0)
 
     return (
       <section
@@ -5274,6 +5293,20 @@ export const PhoneChat: React.FC = () => {
                   'Pago',
                   `${formatCurrency(payment.amount)} · ${formatLocalDateShort(payment.date)}`,
                   formatPlainStatus(payment.status)
+                ))}
+              </div>
+            </section>
+          )}
+
+          {visibleCustomFields.length > 0 && (
+            <section className={styles.contactInfoSection}>
+              <h3>Datos extra</h3>
+              <div className={styles.contactInfoRows}>
+                {visibleCustomFields.map((field) => renderContactInfoRow(
+                  `custom-${field.id}`,
+                  <FileText size={17} />,
+                  field.label,
+                  field.value
                 ))}
               </div>
             </section>
