@@ -16,6 +16,7 @@ import {
   type LucideIcon
 } from 'lucide-react'
 import { PhoneEcosystemNav } from '@/components/phone/PhoneEcosystemNav'
+import { PhonePageTransition } from '@/components/phone/PhonePageTransition'
 import { useLabels } from '@/contexts/LabelsContext'
 import {
   dashboardService,
@@ -523,7 +524,7 @@ export const PhoneAnalytics: React.FC = () => {
 
   return (
     <main className={styles.phoneAnalyticsPage} aria-label="Analíticas de Ristak Chat">
-      <section className={styles.phoneFrame} data-phone-scrollable="true">
+      <PhonePageTransition active="analytics" className={styles.phoneFrame} data-phone-scrollable="true">
         <header className={styles.header}>
           <div className={styles.headerContent}>
             <p className={styles.eyebrow}>Ristak Chat</p>
@@ -768,7 +769,7 @@ export const PhoneAnalytics: React.FC = () => {
             </div>
           </section>
         )}
-      </section>
+      </PhonePageTransition>
 
       <PhoneEcosystemNav active="analytics" />
     </main>

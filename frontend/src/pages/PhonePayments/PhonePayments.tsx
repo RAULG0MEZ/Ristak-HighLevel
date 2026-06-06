@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, CalendarDays, Check, ChevronDown, ChevronRight, CreditCard, Loader2, MonitorX, Package, Pencil, Plus, RefreshCw, Save, Trash2, X } from 'lucide-react'
 import { RecordPaymentModal } from '@/components/common'
 import { PhoneEcosystemNav } from '@/components/phone/PhoneEcosystemNav'
+import { PhonePageTransition } from '@/components/phone/PhonePageTransition'
 import { PhoneSelect } from '@/components/phone/PhoneSelect'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useHighLevelConnected } from '@/hooks'
@@ -733,7 +734,7 @@ export const PhonePayments: React.FC = () => {
 
   return (
     <main className={styles.phonePage} aria-label="Pagos móviles de Ristak">
-      <div className={styles.phoneFrame}>
+      <PhonePageTransition active="payments" className={styles.phoneFrame}>
         {isForm && (
           <header className={styles.header}>
             <button
@@ -898,7 +899,7 @@ export const PhonePayments: React.FC = () => {
             </section>
           </section>
         )}
-      </div>
+      </PhonePageTransition>
       <PhoneEcosystemNav active="payments" />
     </main>
   )

@@ -45,6 +45,7 @@ import {
 import { MdArchive } from 'react-icons/md'
 import { AppointmentModal, Icon, RecordPaymentModal } from '@/components/common'
 import { PhoneEcosystemNav } from '@/components/phone/PhoneEcosystemNav'
+import { PhonePageTransition } from '@/components/phone/PhonePageTransition'
 import { PhoneSelect } from '@/components/phone/PhoneSelect'
 import { useAuth } from '@/contexts/AuthContext'
 import { useLabels } from '@/contexts/LabelsContext'
@@ -5297,7 +5298,7 @@ export const PhoneChat: React.FC = () => {
       data-phone-chat-mode={safeChatThemePreference}
       aria-label="Chat móvil de Ristak"
     >
-      <div className={styles.phoneFrame}>
+      <PhonePageTransition active="chat" className={styles.phoneFrame}>
         <section className={styles.chatListScreen} aria-label="Lista de chats">
           <header className={`${styles.chatListHeader} ${chatSearchExpanded ? styles.chatListHeaderSearchExpanded : ''}`}>
             <div className={styles.topActionRow} aria-hidden={chatSearchExpanded}>
@@ -5383,7 +5384,6 @@ export const PhoneChat: React.FC = () => {
             {renderChats()}
           </div>
 
-          <PhoneEcosystemNav active="chat" badges={{ chat: unreadTotal }} />
         </section>
 
         <section className={styles.conversationScreen} aria-label="Conversación">
@@ -5530,7 +5530,9 @@ export const PhoneChat: React.FC = () => {
 
         {renderContactInfoScreen()}
         {renderCameraShareScreen()}
-      </div>
+      </PhonePageTransition>
+
+      {!conversationOpen && !cameraSharePhoto && <PhoneEcosystemNav active="chat" badges={{ chat: unreadTotal }} />}
 
       <input
         ref={cameraInputRef}

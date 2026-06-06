@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { AppointmentModal } from '@/components/common'
 import { PhoneEcosystemNav } from '@/components/phone/PhoneEcosystemNav'
+import { PhonePageTransition } from '@/components/phone/PhonePageTransition'
 import { useAuth } from '@/contexts/AuthContext'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useTimezone } from '@/contexts/TimezoneContext'
@@ -1149,7 +1150,7 @@ export const PhoneCalendar: React.FC = () => {
 
   return (
     <main className={styles.phonePage} aria-label="Calendario móvil de Ristak">
-      <div className={styles.phoneFrame}>
+      <PhonePageTransition active="calendar" className={styles.phoneFrame}>
 	        <header className={styles.header}>
 	          <div className={styles.headerToolbar}>
 	            <button
@@ -1395,7 +1396,7 @@ export const PhoneCalendar: React.FC = () => {
 	            </section>
 	          </section>
 	        )}
-      </div>
+      </PhonePageTransition>
 
       <PhoneEcosystemNav active="calendar" />
 
