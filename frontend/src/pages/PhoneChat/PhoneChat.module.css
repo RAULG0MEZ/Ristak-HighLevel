@@ -1914,6 +1914,10 @@
   background: rgba(var(--phone-chat-primary-rgb), 0.28);
 }
 
+.settingsSheetBackdrop {
+  animation: settingsBackdropFade 620ms ease-out both;
+}
+
 .sheetPanel {
   display: grid;
   gap: 12px;
@@ -1955,6 +1959,9 @@
   height: min(82dvh, 720px);
   min-height: 0;
   background: var(--phone-chat-panel);
+  transform-origin: bottom center;
+  animation: settingsSheetExpandUp 720ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity, clip-path;
 }
 
 .chatMoreSheet {
@@ -3076,5 +3083,39 @@
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes settingsBackdropFade {
+  from {
+    background: rgba(var(--phone-chat-primary-rgb), 0);
+  }
+  to {
+    background: rgba(var(--phone-chat-primary-rgb), 0.28);
+  }
+}
+
+@keyframes settingsSheetExpandUp {
+  0% {
+    opacity: 0;
+    transform: translateY(34px);
+    -webkit-clip-path: inset(100% 0 0 0 round 24px 24px 0 0);
+    clip-path: inset(100% 0 0 0 round 24px 24px 0 0);
+  }
+  35% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    -webkit-clip-path: inset(0 0 0 0 round 24px 24px 0 0);
+    clip-path: inset(0 0 0 0 round 24px 24px 0 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settingsSheetBackdrop,
+  .settingsSheet {
+    animation-duration: 1ms;
   }
 }

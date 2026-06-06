@@ -4934,7 +4934,10 @@ export const PhoneChat: React.FC = () => {
       />
 
       {sheet && (
-        <div className={styles.sheetBackdrop} onClick={() => setSheet(null)}>
+        <div
+          className={`${styles.sheetBackdrop} ${sheet === 'settings' ? styles.settingsSheetBackdrop : ''}`}
+          onClick={() => setSheet(null)}
+        >
           <section
             className={`${styles.sheetPanel} ${sheet === 'payment' ? styles.paymentSheet : ''} ${sheet === 'attachments' ? styles.attachmentsSheet : ''} ${sheet === 'templates' ? styles.templatesSheet : ''} ${sheet === 'settings' ? styles.settingsSheet : ''} ${sheet === 'chatMore' ? styles.chatMoreSheet : ''}`}
             onClick={(event) => event.stopPropagation()}
