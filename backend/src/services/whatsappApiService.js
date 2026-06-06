@@ -1944,6 +1944,21 @@ function getMessageIdentity({ payload = {}, direction = '', message = {}, busine
   }
 }
 
+function getStoredContactDisplayName(existing = {}, fallbackName = '', phone = '') {
+  const storedName = normalizeDisplayText(existing.full_name)
+  const cleanFallback = normalizeDisplayText(fallbackName)
+
+  if (storedName && storedName !== GENERIC_CONTACT_NAME && !isPhoneLikeName(storedName, phone)) {
+    return storedName
+  }
+
+  if (cleanFallback && !isPhoneLikeName(cleanFallback, phone)) {
+    return cleanFallback
+  }
+
+  return phone
+}
+
 async function upsertLocalContact({ phone, profileName, messageText, messageTimestamp, attribution }) {
   const canonicalPhone = normalizePhoneForStorage(phone) || cleanString(phone)
   if (!canonicalPhone) return { id: null, created: false }
@@ -1985,7 +2000,11 @@ async function upsertLocalContact({ phone, profileName, messageText, messageTime
       messageTimestamp || nowIso()
     ])
 
-    return { id: contactId, created: true }
+    return {
+      id: contactId,
+      created: true,
+      contactName: contactName || canonicalPhone
+    }
   }
 
   const updates = []
@@ -2036,7 +2055,11 @@ async function upsertLocalContact({ phone, profileName, messageText, messageTime
     await db.run(`UPDATE contacts SET ${updates.join(', ')} WHERE id = ?`, params)
   }
 
-  return { id: existing.id, created: false }
+  return {
+    id: existing.id,
+    created: false,
+    contactName: getStoredContactDisplayName(existing, contactName, canonicalPhone)
+  }
 }
 
 async function upsertWhatsAppApiContact({ contactId, phone, profileName, rawProfile, seenAt }) {
@@ -2291,6 +2314,7 @@ async function upsertMessage({ payload, message, direction, businessPhoneHints =
     businessPhone: identity.businessPhone,
     businessPhoneNumberId,
     transport: cleanTransport,
+    contactName: localContact.contactName,
     profileName,
     messageText,
     messageType,
@@ -2602,6 +2626,7 @@ export async function processYCloudWhatsAppWebhook({ payload, rawBody, signature
       .filter(result => result?.direction === 'inbound' && result?.isNew !== false)
       .map(result => sendChatMessageNotification({
         contactId: result.contactId,
+        contactName: result.contactName,
         phone: result.phone,
         profileName: result.profileName,
         text: result.messageText,

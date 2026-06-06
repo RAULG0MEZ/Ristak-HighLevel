@@ -19,6 +19,8 @@ const APNS_BUNDLE_ID = process.env.APNS_BUNDLE_ID || process.env.IOS_BUNDLE_ID |
 const APNS_PRIVATE_KEY = process.env.APNS_PRIVATE_KEY || ''
 const APNS_PRIVATE_KEY_FILE = process.env.APNS_PRIVATE_KEY_FILE || ''
 const APNS_ENV = String(process.env.APNS_ENV || process.env.NODE_ENV || 'production').toLowerCase()
+const DEFAULT_NOTIFICATION_TITLE = 'Aviso nuevo'
+const DEFAULT_NOTIFICATION_BODY = 'Tienes un aviso nuevo.'
 
 async function resolveWebPushKeys() {
   const envPublicKey = String(ENV_VAPID_PUBLIC_KEY || '').trim()
@@ -282,6 +284,61 @@ function getNotificationData(payload = {}) {
 
 function cleanNotificationText(value = '') {
   return String(value || '').replace(/\s+/g, ' ').trim()
+}
+
+function stripAppNameFromNotificationText(value = '') {
+  return cleanNotificationText(value)
+    .replace(/\s+(?:from|de)\s+Ristak(?:\s+Chat)?$/i, '')
+    .replace(/^Ristak(?:\s+Chat)?\s*[:\-–]\s*/i, '')
+    .trim()
+}
+
+function isAppNameNotificationText(value = '') {
+  const text = cleanNotificationText(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/gi, ' ')
+    .trim()
+    .toLowerCase()
+
+  return text === 'ristak' || text === 'ristak chat' || text === 'from ristak' || text === 'from ristak chat'
+}
+
+function getNotificationTitle(payload = {}) {
+  const title = stripAppNameFromNotificationText(payload.title)
+  return title && !isAppNameNotificationText(title) ? title : DEFAULT_NOTIFICATION_TITLE
+}
+
+function getNotificationBody(payload = {}) {
+  const body = stripAppNameFromNotificationText(payload.body)
+  return body && !isAppNameNotificationText(body) ? body : DEFAULT_NOTIFICATION_BODY
+}
+
+function normalizeNotificationPayload(payload = {}) {
+  return {
+    ...payload,
+    title: getNotificationTitle(payload),
+    body: getNotificationBody(payload)
+  }
+}
+
+function getChatSenderName(message = {}) {
+  const candidates = [
+    message.contactName,
+    message.contact_name,
+    message.profileName,
+    message.name,
+    message.phone
+  ]
+
+  for (const candidate of candidates) {
+    const value = stripAppNameFromNotificationText(candidate)
+    if (value && !isAppNameNotificationText(value)) {
+      return value.slice(0, 90)
+    }
+  }
+
+  return 'WhatsApp'
 }
 
 function getChatMessageBody(message = {}) {
@@ -587,6 +644,8 @@ async function sendFcmNotification(row, payload = {}) {
     throw new Error('Faltan credenciales FCM para avisos Android')
   }
 
+  const notificationTitle = getNotificationTitle(payload)
+  const notificationBody = getNotificationBody(payload)
   const accessToken = await getFcmAccessToken()
   const response = await fetch(`https://fcm.googleapis.com/v1/projects/${encodeURIComponent(FCM_PROJECT_ID)}/messages:send`, {
     method: 'POST',
@@ -598,8 +657,8 @@ async function sendFcmNotification(row, payload = {}) {
       message: {
         token: row.token,
         notification: {
-          title: String(payload.title || 'Ristak'),
-          body: String(payload.body || 'Tienes un aviso nuevo.')
+          title: notificationTitle,
+          body: notificationBody
         },
         data: getNotificationData(payload),
         android: {
@@ -628,16 +687,18 @@ async function sendApnsNotification(row, payload = {}) {
     throw new Error('Faltan credenciales APNs para avisos iPhone')
   }
 
+  const notificationTitle = getNotificationTitle(payload)
+  const notificationBody = getNotificationBody(payload)
   const host = APNS_ENV === 'development' || APNS_ENV === 'sandbox'
     ? 'api.sandbox.push.apple.com'
     : 'api.push.apple.com'
   const authToken = await getApnsJwt()
   const client = http2.connect(`https://${host}`)
-  const body = JSON.stringify({
+  const requestBody = JSON.stringify({
     aps: {
       alert: {
-        title: String(payload.title || 'Ristak'),
-        body: String(payload.body || 'Tienes un aviso nuevo.')
+        title: notificationTitle,
+        body: notificationBody
       },
       sound: 'default'
     },
@@ -655,7 +716,7 @@ async function sendApnsNotification(row, payload = {}) {
       'apns-push-type': 'alert',
       'apns-priority': '10',
       'content-type': 'application/json',
-      'content-length': Buffer.byteLength(body)
+      'content-length': Buffer.byteLength(requestBody)
     })
 
     request.setEncoding('utf8')
@@ -688,7 +749,7 @@ async function sendApnsNotification(row, payload = {}) {
       reject(error)
     })
 
-    request.end(body)
+    request.end(requestBody)
   })
 }
 
@@ -719,6 +780,7 @@ async function sendAppNotificationPayload(payload = {}, { calendarId = '' } = {}
     return { sent: 0, webSent: 0, nativeSent: 0, skipped: true, reason: 'not_configured' }
   }
 
+  const normalizedPayload = normalizeNotificationPayload(payload)
   const [webRows, nativeRows] = await Promise.all([
     pushConfigured
       ? (calendarId ? getSubscriptionsForCalendar(calendarId) : getEnabledSubscriptions())
@@ -733,8 +795,8 @@ async function sendAppNotificationPayload(payload = {}, { calendarId = '' } = {}
   }
 
   const [webSent, nativeSent] = await Promise.all([
-    pushConfigured ? sendNotificationRows(webRows, payload) : Promise.resolve(0),
-    nativePushConfigured ? sendMobileNotificationRows(nativeRows, payload) : Promise.resolve(0)
+    pushConfigured ? sendNotificationRows(webRows, normalizedPayload) : Promise.resolve(0),
+    nativePushConfigured ? sendMobileNotificationRows(nativeRows, normalizedPayload) : Promise.resolve(0)
   ])
 
   return {
@@ -779,7 +841,7 @@ export async function sendChatMessageNotification(message = {}) {
   const enabled = await getBooleanPushConfig('chat_push_notifications_enabled', true)
   if (!enabled) return { sent: 0, skipped: true, reason: 'disabled' }
 
-  const senderName = cleanNotificationText(message.profileName || message.name || message.phone || 'WhatsApp')
+  const senderName = getChatSenderName(message)
   const bodyText = getChatMessageBody(message)
   const messageKey = cleanNotificationText(message.messageId || message.timestamp || `${senderName}-${bodyText}-${Date.now()}`)
   const payload = {

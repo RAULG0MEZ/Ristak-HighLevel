@@ -128,8 +128,8 @@ async function createAndroidNotificationChannel() {
 
   await PushNotifications.createChannel({
     id: 'ristak_alerts',
-    name: 'Ristak alerts',
-    description: 'Messages, appointments, and payments from Ristak',
+    name: 'Mensajes de WhatsApp',
+    description: 'Avisos de mensajes, citas y pagos',
     importance: 5,
     visibility: 1,
     sound: 'default',

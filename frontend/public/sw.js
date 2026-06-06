@@ -1,4 +1,6 @@
-const CACHE_NAME = 'ristak-chat-v4'
+const CACHE_NAME = 'ristak-chat-v5'
+const DEFAULT_NOTIFICATION_TITLE = 'Aviso nuevo'
+const DEFAULT_NOTIFICATION_BODY = 'Tienes un aviso nuevo.'
 const SHELL_ASSETS = [
   '/',
   '/phone/chat',
@@ -48,10 +50,43 @@ self.addEventListener('fetch', (event) => {
   )
 })
 
+function cleanNotificationText(value, fallback = '') {
+  return String(value || fallback || '').replace(/\s+/g, ' ').trim()
+}
+
+function stripAppNameFromNotificationText(value, fallback = '') {
+  return cleanNotificationText(value, fallback)
+    .replace(/\s+(?:from|de)\s+Ristak(?:\s+Chat)?$/i, '')
+    .replace(/^Ristak(?:\s+Chat)?\s*[:\-–]\s*/i, '')
+    .trim()
+}
+
+function isAppNameNotificationText(value) {
+  const text = cleanNotificationText(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/gi, ' ')
+    .trim()
+    .toLowerCase()
+
+  return text === 'ristak' || text === 'ristak chat' || text === 'from ristak' || text === 'from ristak chat'
+}
+
+function getNotificationTitle(payload) {
+  const fallback = payload?.category === 'chat' ? 'WhatsApp' : DEFAULT_NOTIFICATION_TITLE
+  const title = stripAppNameFromNotificationText(payload?.title, fallback)
+  return title && !isAppNameNotificationText(title) ? title : fallback
+}
+
+function getNotificationBody(payload) {
+  const body = stripAppNameFromNotificationText(payload?.body, DEFAULT_NOTIFICATION_BODY)
+  return body && !isAppNameNotificationText(body) ? body : DEFAULT_NOTIFICATION_BODY
+}
+
 self.addEventListener('push', (event) => {
   let payload = {
-    title: 'Ristak',
-    body: 'Tienes un aviso nuevo.',
+    title: DEFAULT_NOTIFICATION_TITLE,
+    body: DEFAULT_NOTIFICATION_BODY,
     url: '/phone/chat'
   }
 
@@ -65,8 +100,8 @@ self.addEventListener('push', (event) => {
   }
 
   event.waitUntil(
-    self.registration.showNotification(payload.title || 'Ristak', {
-      body: payload.body || 'Tienes un aviso nuevo.',
+    self.registration.showNotification(getNotificationTitle(payload), {
+      body: getNotificationBody(payload),
       icon: '/ristak-chat-icon-192.png',
       badge: '/ristak-chat-icon-192.png',
       tag: payload.tag || 'ristak-chat',
