@@ -105,6 +105,7 @@ export interface SiteTheme {
   backgroundPosition?: string
   backgroundAttachment?: 'scroll' | 'fixed'
   textColor?: string
+  textColorCustom?: boolean
   template?: SiteTemplateId
   pages?: SitePage[]
   pagePadding?: number

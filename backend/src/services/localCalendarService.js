@@ -13,6 +13,12 @@ import { getSitesPublicDomain } from './sitesService.js'
 const LOCAL_CALENDAR_PREFIX = 'rstk_cal'
 const LOCAL_APPOINTMENT_PREFIX = 'rstk_appt'
 const DEFAULT_EVENT_COLOR = '#3b82f6'
+const GOOGLE_CALENDAR_CONFIG_KEY = 'google_calendar_service_account_config'
+const DEFAULT_RISTAK_CALENDAR_NAME = 'calendario ristak'
+const DEFAULT_RISTAK_CALENDAR_DESC = 'calendario principal creado en ristak'
+const DEFAULT_CALENDAR_CONFIG_KEY = 'default_calendar_id'
+const ATTRIBUTION_CALENDAR_IDS_CONFIG_KEY = 'attribution_calendar_ids'
+const SOURCE_PREFERENCE_CONFIG_KEY = 'calendar_source_preference'
 
 function makeId(prefix) {
   return `${prefix}_${crypto.randomUUID()}`
@@ -41,6 +47,276 @@ function parseJson(value, fallback) {
     return JSON.parse(value)
   } catch {
     return fallback
+  }
+}
+
+function parseConfigArray(value, fallback = []) {
+  const parsed = parseJson(value, fallback)
+  if (!Array.isArray(parsed)) return fallback
+
+  const normalized = parsed
+    .map(item => cleanString(item))
+    .filter(Boolean)
+
+  return [...new Set(normalized)]
+}
+
+function normalizeSqlConfigValue(value) {
+  if (value === undefined || value === null) return null
+  return typeof value === 'string' ? value : JSON.stringify(value)
+}
+
+async function getAppConfigValue(configKey) {
+  const normalizedKey = cleanString(configKey)
+  if (!normalizedKey) return null
+
+  const row = await db.get('SELECT config_value FROM app_config WHERE config_key = ?', [normalizedKey])
+  return row ? row.config_value : null
+}
+
+async function setAppConfigValue(configKey, value) {
+  const normalizedKey = cleanString(configKey)
+  if (!normalizedKey) return
+
+  await db.run(`
+    INSERT INTO app_config (config_key, config_value, updated_at)
+    VALUES (?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(config_key) DO UPDATE SET
+      config_value = excluded.config_value,
+      updated_at = CURRENT_TIMESTAMP
+  `, [normalizedKey, normalizeSqlConfigValue(value)])
+}
+
+function normalizeCalendarSource(value) {
+  const normalized = cleanString(value || '').toLowerCase()
+
+  if (['ghl', 'google', 'ristak'].includes(normalized)) {
+    return normalized
+  }
+
+  return 'ristak'
+}
+
+function normalizeCalendarSourcePreference(value) {
+  const normalized = cleanString(value).toLowerCase()
+  if (['combined', 'ristak', 'ghl', 'google'].includes(normalized)) {
+    return normalized
+  }
+  return 'combined'
+}
+
+function isLikelySeedRistakCalendar(calendar = {}) {
+  const source = normalizeCalendarSource(calendar.source)
+  const id = cleanString(calendar.id)
+  const name = cleanString(calendar.name).toLowerCase()
+  const description = cleanString(calendar.description).toLowerCase()
+  const slug = cleanString(calendar.slug).toLowerCase()
+
+  if (!id.startsWith(LOCAL_CALENDAR_PREFIX) || source !== 'ristak') return false
+
+  return (
+    name.includes(DEFAULT_RISTAK_CALENDAR_NAME)
+    || description.includes(DEFAULT_RISTAK_CALENDAR_DESC)
+    || slug === 'calendario-ristak'
+  )
+}
+
+function sanitizeCalendarConfigValue(value, fallback = null) {
+  if (value === undefined || value === null) return fallback
+  return typeof value === 'string' ? value : String(value)
+}
+
+async function getConnectedSourceFlags() {
+  const [googleConfig, highlevelConfig] = await Promise.all([
+    db.get('SELECT config_value FROM app_config WHERE config_key = ?', [GOOGLE_CALENDAR_CONFIG_KEY]),
+    db.get('SELECT 1 FROM highlevel_config LIMIT 1')
+  ])
+  const googleConfigValue = sanitizeCalendarConfigValue(googleConfig?.config_value, '').trim()
+  const googleConfigData = parseJson(googleConfigValue, {})
+  const googleCalendarId = cleanString(googleConfigData?.calendarId)
+
+  return {
+    google: Boolean(googleCalendarId && googleConfigData?.credentialsEncrypted),
+    googleCalendarId,
+    ghl: Boolean(highlevelConfig)
+  }
+}
+
+function filterCalendarsByConnection(calendars = []) {
+  return calendars.map(calendar => ({
+    ...calendar,
+    source: normalizeCalendarSource(calendar.source)
+  }))
+}
+
+function isConfiguredGoogleCalendar(calendar = {}, connectedSources = {}) {
+  if (calendar.source !== 'google') return true
+
+  const configuredGoogleCalendarId = cleanString(connectedSources.googleCalendarId).toLowerCase()
+  if (!configuredGoogleCalendarId) return true
+
+  return cleanString(calendar.googleCalendarId || calendar.id).toLowerCase() === configuredGoogleCalendarId
+}
+
+function pickCalendarByPreference(calendars = [], sourcePreference = 'combined', { includeInactive = false } = {}) {
+  const normalizedPreference = normalizeCalendarSourcePreference(sourcePreference)
+
+  const sourceOrder = normalizedPreference === 'ghl'
+    ? ['ghl']
+    : normalizedPreference === 'google'
+      ? ['google']
+      : normalizedPreference === 'ristak'
+        ? ['ristak']
+        : ['ghl', 'google', 'ristak']
+
+  const isUsable = calendar => includeInactive || calendar.isActive !== false
+
+  for (const source of sourceOrder) {
+    const calendar = calendars.find(item => item.source === source && isUsable(item))
+    if (calendar) return calendar
+  }
+
+  if (!includeInactive) {
+    return null
+  }
+
+  for (const source of sourceOrder) {
+    const calendar = calendars.find(item => item.source === source)
+    if (calendar) return calendar
+  }
+
+  return null
+}
+
+function shouldHideSeedCalendarForCombined(calendars = [], connectedSources = { google: false, ghl: false }) {
+  return (connectedSources.google || connectedSources.ghl)
+    && calendars.some(calendar => ['google', 'ghl'].includes(calendar.source))
+}
+
+async function getCalendarAppointmentCounts(calendarIds = []) {
+  const ids = [...new Set(calendarIds.map(id => cleanString(id)).filter(Boolean))]
+  if (!ids.length) return new Map()
+
+  const placeholders = ids.map(() => '?').join(', ')
+  const rows = await db.all(`
+    SELECT calendar_id, COUNT(*) AS appointments_count
+    FROM appointments
+    WHERE calendar_id IN (${placeholders})
+      AND deleted_at IS NULL
+      AND COALESCE(sync_status, '') != 'pending_delete'
+    GROUP BY calendar_id
+  `, ids)
+
+  return new Map(rows.map(row => [
+    cleanString(row.calendar_id),
+    toInt(row.appointments_count, 0)
+  ]))
+}
+
+function calendarHasAppointments(calendar = {}, appointmentCounts = new Map()) {
+  return toInt(appointmentCounts.get(cleanString(calendar.id)), 0) > 0
+}
+
+function isEmptySeedRistakCalendar(calendar = {}, appointmentCounts = new Map()) {
+  return isLikelySeedRistakCalendar(calendar) && !calendarHasAppointments(calendar, appointmentCounts)
+}
+
+export async function reconcileCalendarDefaults({ sourcePreference = null } = {}) {
+  await ensureDefaultLocalCalendar()
+
+  const rows = await db.all('SELECT * FROM calendars ORDER BY is_active DESC, LOWER(name) ASC')
+  const connectedSources = await getConnectedSourceFlags()
+  const calendars = filterCalendarsByConnection(rows.map(calendarRowToApi))
+    .filter(calendar => isConfiguredGoogleCalendar(calendar, connectedSources))
+  const hasConnectedExternalSources = Boolean(connectedSources.google || connectedSources.ghl)
+
+  if (!calendars.length) {
+    return {
+      changed: false,
+      defaultCalendarId: null,
+      previousDefaultCalendarId: null,
+      hasExternalCalendars: false
+    }
+  }
+
+  const preference = normalizeCalendarSourcePreference(sourcePreference || sanitizeCalendarConfigValue(
+    await getAppConfigValue(SOURCE_PREFERENCE_CONFIG_KEY),
+    'combined'
+  ))
+
+  const configuredDefaultCalendarId = sanitizeCalendarConfigValue(await getAppConfigValue(DEFAULT_CALENDAR_CONFIG_KEY), '').trim()
+  const configuredDefaultCalendar = configuredDefaultCalendarId
+    ? calendars.find(calendar => calendar.id === configuredDefaultCalendarId)
+    : null
+
+  const hasExternalCalendars = hasConnectedExternalSources
+    && calendars.some(calendar => ['google', 'ghl'].includes(calendar.source))
+  let nextDefaultCalendarId = configuredDefaultCalendar?.id || null
+
+  const appointmentCounts = await getCalendarAppointmentCounts(calendars.map(calendar => calendar.id))
+  const officialSeedCalendar = calendars.find(calendar => (
+    isLikelySeedRistakCalendar(calendar) && calendarHasAppointments(calendar, appointmentCounts)
+  ))
+
+  if (hasExternalCalendars && !nextDefaultCalendarId && officialSeedCalendar?.id) {
+    nextDefaultCalendarId = officialSeedCalendar.id
+  }
+
+  if (hasExternalCalendars && (!nextDefaultCalendarId || isEmptySeedRistakCalendar(configuredDefaultCalendar || {}, appointmentCounts))) {
+    const externalPreference = preference === 'google'
+      ? 'google'
+      : preference === 'ghl'
+        ? 'ghl'
+        : preference === 'ristak'
+          ? 'ristak'
+          : 'combined'
+
+    const externalCandidate = pickCalendarByPreference(
+      calendars.filter(calendar => ['google', 'ghl'].includes(calendar.source)),
+      externalPreference,
+      { includeInactive: true }
+    ) || pickCalendarByPreference(calendars, externalPreference, { includeInactive: true })
+
+    if (externalCandidate?.id) {
+      nextDefaultCalendarId = externalCandidate.id
+    }
+  }
+
+  if (!hasExternalCalendars) {
+    const shouldUseLocalFallback = !nextDefaultCalendarId
+      || configuredDefaultCalendar?.source === 'google'
+      || configuredDefaultCalendar?.source === 'ghl'
+
+    if (shouldUseLocalFallback) {
+      const localCandidate = calendars.find(calendar => isLikelySeedRistakCalendar(calendar))
+        || calendars.find(calendar => calendar.source === 'ristak')
+        || calendars[0]
+
+      nextDefaultCalendarId = localCandidate?.id || null
+    }
+  }
+
+  const updates = {}
+  if (nextDefaultCalendarId && nextDefaultCalendarId !== configuredDefaultCalendarId) {
+    updates.default_calendar_id = nextDefaultCalendarId
+  }
+
+  if (Object.keys(updates).length > 0) {
+    await setAppConfigValue(DEFAULT_CALENDAR_CONFIG_KEY, updates.default_calendar_id)
+
+    const attributionRaw = await getAppConfigValue(ATTRIBUTION_CALENDAR_IDS_CONFIG_KEY)
+    const attributionIds = parseConfigArray(attributionRaw)
+    if (!attributionIds.length) {
+      await setAppConfigValue(ATTRIBUTION_CALENDAR_IDS_CONFIG_KEY, [updates.default_calendar_id])
+    }
+  }
+
+  return {
+    changed: Object.keys(updates).length > 0,
+    defaultCalendarId: nextDefaultCalendarId,
+    previousDefaultCalendarId: configuredDefaultCalendarId,
+    hasExternalCalendars,
+    sourcePreference: preference
   }
 }
 
@@ -820,12 +1096,14 @@ export function renderPublicCalendarHtml(calendar, { host = '' } = {}) {
 export async function listLocalCalendars({ sourcePreference = 'combined' } = {}) {
   const filters = []
   const params = []
+  const normalizedSourcePreference = normalizeCalendarSourcePreference(sourcePreference)
+  const connectedSources = await getConnectedSourceFlags()
 
-  if (sourcePreference === 'ristak') {
+  if (normalizedSourcePreference === 'ristak') {
     filters.push("source = 'ristak'")
-  } else if (sourcePreference === 'ghl') {
+  } else if (normalizedSourcePreference === 'ghl') {
     filters.push("source = 'ghl'")
-  } else if (sourcePreference === 'google') {
+  } else if (normalizedSourcePreference === 'google') {
     filters.push("source = 'google'")
   }
 
@@ -836,7 +1114,18 @@ export async function listLocalCalendars({ sourcePreference = 'combined' } = {})
     ORDER BY is_active DESC, LOWER(name) ASC
   `, params)
 
-  return rows.map(calendarRowToApi)
+  const calendars = filterCalendarsByConnection(rows.map(calendarRowToApi))
+    .filter(calendar => isConfiguredGoogleCalendar(calendar, connectedSources))
+  const shouldHideSeed = normalizedSourcePreference === 'combined'
+    && shouldHideSeedCalendarForCombined(calendars, connectedSources)
+
+  if (!shouldHideSeed) {
+    return calendars
+  }
+
+  const appointmentCounts = await getCalendarAppointmentCounts(calendars.map(calendar => calendar.id))
+  const visibleCalendars = calendars.filter(calendar => !isEmptySeedRistakCalendar(calendar, appointmentCounts))
+  return visibleCalendars.length ? visibleCalendars : calendars
 }
 
 export async function updateLocalCalendar(calendarId, updateData = {}, { syncStatus = 'pending' } = {}) {
@@ -1639,6 +1928,7 @@ export async function syncLocalAppointmentsToHighLevel(locationId, apiToken) {
 
 export default {
   createLocalCalendar,
+  reconcileCalendarDefaults,
   ensureDefaultLocalCalendar,
   getLocalCalendar,
   listLocalCalendars,

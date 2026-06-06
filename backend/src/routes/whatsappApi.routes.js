@@ -7,6 +7,7 @@ import {
   previewWhatsAppApiPhoneNumbersView,
   refreshWhatsAppApiView,
   resetWhatsAppApiCredentialsView,
+  sendWhatsAppApiImageMessageView,
   sendWhatsAppApiTemplateMessageView,
   sendWhatsAppApiTextMessageView
 } from '../controllers/whatsappApiController.js'
@@ -20,6 +21,7 @@ router.post('/refresh', refreshWhatsAppApiView)
 router.post('/disconnect', disconnectWhatsAppApiView)
 router.post('/reset', resetWhatsAppApiCredentialsView)
 router.post('/messages/text', sendWhatsAppApiTextMessageView)
+router.post('/messages/image', sendWhatsAppApiImageMessageView)
 router.get('/templates', getWhatsAppApiTemplatesView)
 router.post('/templates/send', sendWhatsAppApiTemplateMessageView)
 

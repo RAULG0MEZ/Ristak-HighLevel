@@ -8,7 +8,7 @@
  * backend. Editor-only chrome (selection outline, handles, inline-edit
  * placeholders) lives in the clearly marked block at the bottom.
  */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Inter+Tight:wght@500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700;800;900&family=Bebas+Neue&family=Inter:wght@400;500;600;700;800;900&family=Inter+Tight:wght@500;600;700;800;900&family=Lato:wght@400;700;900&family=Libre+Baskerville:wght@400;700&family=Manrope:wght@400;500;600;700;800&family=Merriweather:wght@400;700;900&family=Montserrat:wght@400;500;600;700;800;900&family=Nunito:wght@400;600;700;800;900&family=Open+Sans:wght@400;600;700;800&family=Oswald:wght@400;500;600;700&family=Playfair+Display:wght@400;600;700;800;900&family=Poppins:wght@400;500;600;700;800;900&family=Raleway:wght@400;500;600;700;800;900&family=Roboto:wght@400;500;700;900&family=Work+Sans:wght@400;500;600;700;800;900&display=swap');
 
 .rstkCanvas,
 .rstkCanvas *,
@@ -99,6 +99,8 @@
   border-radius: var(--rstk-block-radius, 0);
   padding: var(--rstk-block-pad, 0);
 }
+.rstkCanvas .rstkHeaderPanelBlock { z-index: 6; }
+.rstkCanvas .rstkFooterPanelBlock { z-index: 1; }
 .rstkCanvas .rstk-block-style .rstk-headline,
 .rstkCanvas .rstk-block-style h2,
 .rstkCanvas .rstk-block-style .rstk-subheading,
@@ -164,6 +166,7 @@
   margin-left: var(--rstk-button-margin-left, auto);
   margin-right: var(--rstk-button-margin-right, auto);
 }
+.rstkCanvas .rstk-button-label { display: inline-block; }
 .rstkCanvas.rstk-centered .rstk-button-link { margin-inline: auto; }
 .rstkCanvas .rstk-secondary { background: transparent !important; color: var(--rstk-ink) !important; border-color: var(--rstk-border) !important; }
 
@@ -352,7 +355,6 @@
   background: rgba(37, 99, 235, 0.1);
   color: #1d4ed8;
 }
-
 .canvasViewportFlush,
 .canvasViewportFlush .canvasScaler,
 .canvasViewportFlush .canvasStage { border-radius: 0; }
@@ -545,13 +547,6 @@
 }
 .rstkCanvas .rstkBlockToolDrag { cursor: grab; }
 .rstkCanvas .rstkBlockToolDelete:hover { color: #dc2626; border-color: rgba(220, 38, 38, 0.4); }
-.rstkCanvas .rstkStepBadge {
-  position: absolute; top: -6px; left: -6px; z-index: 5;
-  transform: scale(calc(1 / var(--rstk-scale, 1))); transform-origin: top left;
-  border-radius: 999px; background: var(--rstk-accent); color: var(--rstk-on-accent);
-  padding: 3px 9px; font-size: .68rem; font-weight: 800; white-space: nowrap;
-}
-
 /* Inline-editable text nodes render as the real rstk element, so typography,
    gradients and spacing match the published page exactly. */
 .rstkCanvas [data-rstk-edit] {
@@ -563,8 +558,11 @@
 .rstkCanvas [data-rstk-edit][data-empty="true"]::before {
   content: attr(data-placeholder); opacity: .45; pointer-events: none;
 }
-/* Gradient-clipped landing headline would hide typed text; force it solid while editing. */
-.rstkCanvas.rstk-kind-landing .rstk-headline[data-rstk-edit]:focus { background: none; -webkit-text-fill-color: var(--rstk-ink); color: var(--rstk-ink); }
+/* Focus keeps the same effective block color; gradient cases are handled below. */
+.rstkCanvas.rstk-kind-landing .rstk-headline[data-rstk-edit]:focus {
+  color: var(--rstk-block-text, var(--rstk-ink));
+  -webkit-text-fill-color: currentColor;
+}
 
 .rstkCanvas .rstkFontOverride .rstk-headline,
 .rstkCanvas .rstkFontOverride .rstk-subheading,
@@ -641,6 +639,50 @@
 .rstkCanvas .rstkStrokeOverride .rstk-check-body strong,
 .rstkCanvas .rstkStrokeOverride .rstk-check-body span {
   -webkit-text-stroke: var(--rstk-text-stroke-width, 0) var(--rstk-text-stroke-color, currentColor);
+}
+
+.rstkCanvas .rstkTextGradient .rstk-headline,
+.rstkCanvas .rstkTextGradient .rstk-subheading,
+.rstkCanvas .rstkTextGradient .rstk-text,
+.rstkCanvas .rstkTextGradient h2,
+.rstkCanvas .rstkTextGradient label,
+.rstkCanvas .rstkTextGradient .rstk-help,
+.rstkCanvas .rstkTextGradient .rstk-site-panel-copy,
+.rstkCanvas .rstkTextGradient .rstk-list-grid strong,
+.rstkCanvas .rstkTextGradient .rstk-list-grid p,
+.rstkCanvas .rstkTextGradient .rstk-check-body strong,
+.rstkCanvas .rstkTextGradient .rstk-check-body span,
+.rstkCanvas.rstkPageTextGradient .rstk-block-style:not(.rstkBlockTextOverride) .rstk-headline,
+.rstkCanvas.rstkPageTextGradient .rstk-block-style:not(.rstkBlockTextOverride) .rstk-subheading,
+.rstkCanvas.rstkPageTextGradient .rstk-block-style:not(.rstkBlockTextOverride) .rstk-text,
+.rstkCanvas.rstkPageTextGradient .rstk-block-style:not(.rstkBlockTextOverride) h2,
+.rstkCanvas.rstkPageTextGradient .rstk-block-style:not(.rstkBlockTextOverride) label,
+.rstkCanvas.rstkPageTextGradient .rstk-block-style:not(.rstkBlockTextOverride) .rstk-help,
+.rstkCanvas.rstkPageTextGradient .rstk-block-style:not(.rstkBlockTextOverride) .rstk-site-panel-copy,
+.rstkCanvas.rstkPageTextGradient .rstk-block-style:not(.rstkBlockTextOverride) .rstk-list-grid strong,
+.rstkCanvas.rstkPageTextGradient .rstk-block-style:not(.rstkBlockTextOverride) .rstk-list-grid p,
+.rstkCanvas.rstkPageTextGradient .rstk-block-style:not(.rstkBlockTextOverride) .rstk-check-body strong,
+.rstkCanvas.rstkPageTextGradient .rstk-block-style:not(.rstkBlockTextOverride) .rstk-check-body span {
+  background-image: var(--rstk-block-text-paint, var(--rstk-page-text-paint));
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent;
+}
+
+.rstkCanvas .rstkButtonTextGradient .rstk-button-label {
+  background-image: var(--rstk-button-text-paint);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+.rstkCanvas.rstk-kind-landing .rstkTextGradient .rstk-headline[data-rstk-edit]:focus,
+.rstkCanvas.rstk-kind-landing.rstkPageTextGradient .rstk-block-style:not(.rstkBlockTextOverride) .rstk-headline[data-rstk-edit]:focus {
+  background-image: var(--rstk-block-text-paint, var(--rstk-page-text-paint));
+  color: transparent;
+  -webkit-text-fill-color: transparent;
 }
 
 .rstkCanvas .rstkDropEmpty {

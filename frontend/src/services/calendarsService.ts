@@ -140,6 +140,25 @@ export interface GoogleCalendarServiceAccountReveal {
   serviceAccountJson: string;
 }
 
+export interface GoogleCalendarMergeCalendar extends Calendar {
+  appointmentsCount?: number;
+}
+
+export interface GoogleCalendarMergePreview {
+  connected: boolean;
+  mergeAvailable: boolean;
+  googleCalendar: Calendar | null;
+  sourceCalendars: GoogleCalendarMergeCalendar[];
+  totalAppointments: number;
+}
+
+export interface GoogleCalendarMergeResult extends GoogleCalendarMergePreview {
+  moved: number;
+  removedSourceCalendars?: number;
+  synced: number;
+  failed: number;
+}
+
 export interface AppointmentStats {
   pending: number;
   cancelled: number;
@@ -210,6 +229,16 @@ export const calendarsService = {
 
   async syncGoogleIntegration(): Promise<GoogleCalendarIntegrationStatus> {
     return apiClient.post<GoogleCalendarIntegrationStatus>('/calendars/google-integration/sync');
+  },
+
+  async getGoogleMergePreview(): Promise<GoogleCalendarMergePreview> {
+    return apiClient.get<GoogleCalendarMergePreview>('/calendars/google-integration/merge-preview');
+  },
+
+  async mergeGoogleAppointments(sourceCalendarIds?: string[]): Promise<GoogleCalendarMergeResult> {
+    return apiClient.post<GoogleCalendarMergeResult>('/calendars/google-integration/merge', {
+      ...(sourceCalendarIds?.length ? { sourceCalendarIds } : {})
+    });
   },
 
   async deleteGoogleIntegration(): Promise<GoogleCalendarIntegrationStatus> {

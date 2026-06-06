@@ -1,10 +1,14 @@
-const CACHE_NAME = 'ristak-chat-v2'
+const CACHE_NAME = 'ristak-chat-v3'
 const SHELL_ASSETS = [
   '/',
   '/phone/chat',
+  '/phone/dashboard',
+  '/phone/calendar',
+  '/phone/payments',
+  '/phone/agent-ai',
   '/manifest.webmanifest',
   '/logo.svg',
-  '/favicon.svg',
+  '/ristak-chat-icon.svg',
   '/apple-touch-icon.png',
   '/ristak-chat-icon-192.png',
   '/ristak-chat-icon-512.png'

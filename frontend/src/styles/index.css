@@ -1645,3 +1645,415 @@ body[data-design-preset='editorial'] [class*='scopeButtonActive'] {
     padding-right: 1rem;
   }
 }
+
+/* ============================================
+   RISTAK NATIVE CONTROL SKIN
+   Mantiene formularios funcionales, pero evita que los controles
+   se vean como UI cruda del navegador.
+   ============================================ */
+@layer base {
+  :root {
+    --native-control-bg: color-mix(in srgb, var(--color-background-secondary) 88%, var(--color-primary) 12%);
+    --native-control-bg-hover: color-mix(in srgb, var(--color-background-tertiary) 86%, var(--color-primary) 14%);
+    --native-control-border: color-mix(in srgb, var(--color-border) 72%, var(--color-primary) 28%);
+    --native-control-border-hover: color-mix(in srgb, var(--color-border) 42%, var(--color-primary) 58%);
+    --native-control-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 10px 28px rgba(15, 23, 42, 0.08);
+    --native-control-radius: 12px;
+    --native-control-height: 42px;
+    --native-control-icon: var(--color-text-tertiary);
+  }
+
+  body.light {
+    --native-control-bg: color-mix(in srgb, #ffffff 92%, var(--color-primary) 8%);
+    --native-control-bg-hover: color-mix(in srgb, #ffffff 86%, var(--color-primary) 14%);
+    --native-control-shadow: 0 10px 26px rgba(15, 23, 42, 0.06);
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--color-primary) 76%, white 24%);
+    color: var(--color-text-onAccent);
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+  }
+
+  select,
+  input[type='date'],
+  input[type='time'],
+  input[type='datetime-local'],
+  input[type='month'],
+  input[type='week'],
+  input[type='color'],
+  input[type='file']::file-selector-button {
+    border: 1px solid var(--native-control-border) !important;
+    border-radius: var(--native-control-radius) !important;
+    color: var(--color-text-primary) !important;
+    background-color: var(--native-control-bg) !important;
+    box-shadow: var(--native-control-shadow) !important;
+    transition:
+      border-color var(--transition-fast),
+      background-color var(--transition-fast),
+      color var(--transition-fast),
+      transform var(--transition-fast) !important;
+  }
+
+  select,
+  input[type='date'],
+  input[type='time'],
+  input[type='datetime-local'],
+  input[type='month'],
+  input[type='week'] {
+    min-height: var(--native-control-height);
+    padding: 0 42px 0 14px !important;
+  }
+
+  select {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    background-image:
+      linear-gradient(45deg, transparent 50%, var(--native-control-icon) 50%),
+      linear-gradient(135deg, var(--native-control-icon) 50%, transparent 50%),
+      linear-gradient(to right, color-mix(in srgb, var(--color-border) 55%, transparent), color-mix(in srgb, var(--color-border) 55%, transparent)) !important;
+    background-position:
+      calc(100% - 19px) calc(50% - 3px),
+      calc(100% - 14px) calc(50% - 3px),
+      calc(100% - 36px) 50% !important;
+    background-size: 5px 5px, 5px 5px, 1px 22px !important;
+    background-repeat: no-repeat !important;
+  }
+
+  select:hover:not(:disabled),
+  input[type='date']:hover:not(:disabled),
+  input[type='time']:hover:not(:disabled),
+  input[type='datetime-local']:hover:not(:disabled),
+  input[type='month']:hover:not(:disabled),
+  input[type='week']:hover:not(:disabled),
+  input[type='color']:hover:not(:disabled),
+  input[type='file']::file-selector-button:hover {
+    border-color: var(--native-control-border-hover) !important;
+    background-color: var(--native-control-bg-hover) !important;
+  }
+
+  select:focus-visible,
+  input[type='date']:focus-visible,
+  input[type='time']:focus-visible,
+  input[type='datetime-local']:focus-visible,
+  input[type='month']:focus-visible,
+  input[type='week']:focus-visible,
+  input[type='color']:focus-visible {
+    border-color: var(--color-primary) !important;
+    background-color: var(--native-control-bg-hover) !important;
+  }
+
+  select:disabled,
+  input[type='date']:disabled,
+  input[type='time']:disabled,
+  input[type='datetime-local']:disabled,
+  input[type='month']:disabled,
+  input[type='week']:disabled,
+  input[type='color']:disabled,
+  input[type='file']:disabled::file-selector-button {
+    cursor: not-allowed !important;
+    opacity: var(--opacity-disabled) !important;
+  }
+
+  select option,
+  select optgroup {
+    background: var(--color-background-secondary) !important;
+    color: var(--color-text-primary) !important;
+  }
+
+  input[type='date']::-webkit-calendar-picker-indicator,
+  input[type='time']::-webkit-calendar-picker-indicator,
+  input[type='datetime-local']::-webkit-calendar-picker-indicator,
+  input[type='month']::-webkit-calendar-picker-indicator,
+  input[type='week']::-webkit-calendar-picker-indicator {
+    width: 18px;
+    height: 18px;
+    margin-right: -28px;
+    border-radius: 8px;
+    cursor: pointer;
+    opacity: 0.72;
+    filter: grayscale(1) opacity(0.82);
+    background-color: color-mix(in srgb, var(--color-primary) 16%, transparent);
+    padding: 5px;
+    transition: opacity var(--transition-fast), background-color var(--transition-fast);
+  }
+
+  input[type='date']::-webkit-calendar-picker-indicator:hover,
+  input[type='time']::-webkit-calendar-picker-indicator:hover,
+  input[type='datetime-local']::-webkit-calendar-picker-indicator:hover,
+  input[type='month']::-webkit-calendar-picker-indicator:hover,
+  input[type='week']::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+    background-color: color-mix(in srgb, var(--color-primary) 26%, transparent);
+  }
+
+  input[type='color'] {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    width: 44px;
+    min-width: 44px;
+    height: 38px;
+    padding: 4px !important;
+    cursor: pointer;
+  }
+
+  input[type='color']::-webkit-color-swatch-wrapper {
+    padding: 0;
+  }
+
+  input[type='color']::-webkit-color-swatch {
+    border: 1px solid color-mix(in srgb, var(--color-border) 65%, transparent);
+    border-radius: 9px;
+  }
+
+  input[type='color']::-moz-color-swatch {
+    border: 1px solid color-mix(in srgb, var(--color-border) 65%, transparent);
+    border-radius: 9px;
+  }
+
+  input[type='file'] {
+    color: var(--color-text-secondary);
+  }
+
+  input[type='file']::file-selector-button {
+    min-height: 36px;
+    margin: 0 12px 0 0;
+    padding: 0 14px;
+    color: var(--color-text-primary) !important;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  input[type='checkbox'],
+  input[type='radio'] {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    display: inline-grid;
+    place-content: center;
+    width: 19px !important;
+    min-width: 19px !important;
+    height: 19px !important;
+    min-height: 19px !important;
+    margin: 0;
+    border: 1.5px solid var(--native-control-border) !important;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent),
+      var(--native-control-bg) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+    cursor: pointer;
+    transition:
+      border-color var(--transition-fast),
+      background-color var(--transition-fast),
+      transform var(--transition-fast) !important;
+  }
+
+  input[type='checkbox'] {
+    border-radius: 6px !important;
+  }
+
+  input[type='radio'] {
+    border-radius: var(--radius-full) !important;
+  }
+
+  input[type='checkbox']:hover:not(:disabled),
+  input[type='radio']:hover:not(:disabled) {
+    border-color: var(--color-primary) !important;
+    background-color: var(--native-control-bg-hover) !important;
+    transform: translateY(-1px);
+  }
+
+  input[type='checkbox']:checked,
+  input[type='radio']:checked {
+    border-color: var(--color-primary) !important;
+    background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover)) !important;
+  }
+
+  input[type='checkbox']:checked::after {
+    content: '';
+    width: 5px;
+    height: 9px;
+    border: solid var(--color-text-onAccent);
+    border-width: 0 2px 2px 0;
+    transform: translateY(-1px) rotate(45deg);
+  }
+
+  input[type='radio']::after {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: var(--radius-full);
+    background: var(--color-text-onAccent);
+    transform: scale(0);
+    transition: transform var(--transition-fast);
+  }
+
+  input[type='radio']:checked::after {
+    transform: scale(1);
+  }
+
+  input[type='checkbox']:disabled,
+  input[type='radio']:disabled {
+    cursor: not-allowed !important;
+    opacity: var(--opacity-disabled) !important;
+    transform: none !important;
+  }
+
+  input[type='range'] {
+    appearance: none;
+    -webkit-appearance: none;
+    height: 6px;
+    border-radius: var(--radius-full);
+    background: linear-gradient(90deg, var(--color-primary), color-mix(in srgb, var(--color-primary) 24%, var(--color-border) 76%));
+    cursor: pointer;
+  }
+
+  input[type='range']::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--color-background-secondary);
+    border-radius: var(--radius-full);
+    background: var(--color-primary);
+    box-shadow: 0 8px 18px rgba(var(--color-primary-rgb), 0.28);
+  }
+
+  input[type='range']::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--color-background-secondary);
+    border-radius: var(--radius-full);
+    background: var(--color-primary);
+    box-shadow: 0 8px 18px rgba(var(--color-primary-rgb), 0.28);
+  }
+}
+
+/* Final hardening: estas reglas viven fuera de @layer para ganarle a resets viejos y CSS modules agresivos. */
+html body select,
+html body input[type='date'],
+html body input[type='time'],
+html body input[type='datetime-local'],
+html body input[type='month'],
+html body input[type='week'] {
+  border: 1px solid var(--native-control-border) !important;
+  border-radius: var(--native-control-radius) !important;
+  min-height: var(--native-control-height) !important;
+  padding: 0 42px 0 14px !important;
+  color: var(--color-text-primary) !important;
+  background-color: var(--native-control-bg) !important;
+  box-shadow: var(--native-control-shadow) !important;
+}
+
+html body select {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--native-control-icon) 50%),
+    linear-gradient(135deg, var(--native-control-icon) 50%, transparent 50%),
+    linear-gradient(to right, color-mix(in srgb, var(--color-border) 55%, transparent), color-mix(in srgb, var(--color-border) 55%, transparent)) !important;
+  background-position:
+    calc(100% - 19px) calc(50% - 3px),
+    calc(100% - 14px) calc(50% - 3px),
+    calc(100% - 36px) 50% !important;
+  background-size: 5px 5px, 5px 5px, 1px 22px !important;
+  background-repeat: no-repeat !important;
+}
+
+html body input[type='checkbox'],
+html body input[type='radio'] {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  position: relative !important;
+  display: inline-grid !important;
+  place-content: center !important;
+  width: 19px !important;
+  min-width: 19px !important;
+  height: 19px !important;
+  min-height: 19px !important;
+  margin: 0 !important;
+  border: 1.5px solid var(--native-control-border) !important;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent), var(--native-control-bg) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+  cursor: pointer !important;
+}
+
+html body input[type='checkbox'] {
+  border-radius: 6px !important;
+}
+
+html body input[type='radio'] {
+  border-radius: var(--radius-full) !important;
+}
+
+html body input[type='checkbox']::after,
+html body input[type='radio']::after {
+  position: static !important;
+  left: auto !important;
+  top: auto !important;
+}
+
+html body input[type='checkbox']:checked,
+html body input[type='radio']:checked {
+  border-color: var(--color-primary) !important;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover)) !important;
+}
+
+html body input[type='checkbox']:checked::after {
+  content: '' !important;
+  width: 5px !important;
+  height: 9px !important;
+  border: solid var(--color-text-onAccent) !important;
+  border-width: 0 2px 2px 0 !important;
+  transform: translateY(-1px) rotate(45deg) !important;
+}
+
+html body input[type='radio']::after {
+  content: '' !important;
+  width: 7px !important;
+  height: 7px !important;
+  border: 0 !important;
+  border-radius: var(--radius-full) !important;
+  background: var(--color-text-onAccent) !important;
+  transform: scale(0) !important;
+}
+
+html body input[type='radio']:checked::after {
+  transform: scale(1) !important;
+}
+
+html body input[type='color'] {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  width: 44px !important;
+  min-width: 44px !important;
+  height: 38px !important;
+  padding: 4px !important;
+  border: 1px solid var(--native-control-border) !important;
+  border-radius: var(--native-control-radius) !important;
+  background: var(--native-control-bg) !important;
+  box-shadow: var(--native-control-shadow) !important;
+  cursor: pointer !important;
+}
+
+html body input[type='file']::file-selector-button {
+  min-height: 36px !important;
+  margin: 0 12px 0 0 !important;
+  padding: 0 14px !important;
+  border: 1px solid var(--native-control-border) !important;
+  border-radius: var(--native-control-radius) !important;
+  color: var(--color-text-primary) !important;
+  background: var(--native-control-bg) !important;
+  box-shadow: var(--native-control-shadow) !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+}

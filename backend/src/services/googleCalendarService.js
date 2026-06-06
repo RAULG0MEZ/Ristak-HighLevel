@@ -420,53 +420,26 @@ export async function syncGoogleCalendarsToLocal({ config = null } = {}) {
     return { enabled: false, saved: 0, calendars: [] }
   }
 
-  let calendars = []
-  try {
-    calendars = await listGoogleCalendars({ config: activeConfig })
-  } catch (error) {
-    logger.warn(`[Google Calendar] No se pudo listar calendarList, se usara Calendar ID configurado: ${error.message}`)
-  }
-  const knownIds = new Set()
   const savedCalendars = []
-
-  for (const calendar of calendars) {
-    const googleCalendarId = cleanString(calendar.id)
-    if (!googleCalendarId || knownIds.has(googleCalendarId)) continue
-
-    knownIds.add(googleCalendarId)
-    const localRecord = googleCalendarToLocalRecord(calendar, activeConfig)
-    const localCalendar = await localCalendarService.upsertLocalCalendar(
-      localRecord,
-      {
-        source: 'google',
-        syncStatus: 'synced',
-        rawJson: localRecord.rawJson
-      }
-    )
-    savedCalendars.push(localCalendar)
+  const metadata = await getGoogleCalendarMetadata(activeConfig)
+  const configuredCalendar = {
+    id: activeConfig.calendarId,
+    summary: metadata.summary || activeConfig.calendarSummary || activeConfig.calendarId,
+    description: metadata.description || '',
+    timeZone: metadata.timeZone || activeConfig.calendarTimeZone || '',
+    accessRole: 'writer',
+    selected: true
   }
-
-  if (activeConfig.calendarId && !knownIds.has(activeConfig.calendarId)) {
-    const metadata = await getGoogleCalendarMetadata(activeConfig)
-    const fallbackCalendar = {
-      id: activeConfig.calendarId,
-      summary: metadata.summary || activeConfig.calendarSummary || activeConfig.calendarId,
-      description: metadata.description || '',
-      timeZone: metadata.timeZone || activeConfig.calendarTimeZone || '',
-      accessRole: 'writer',
-      selected: true
+  const localRecord = googleCalendarToLocalRecord(configuredCalendar, activeConfig)
+  const localCalendar = await localCalendarService.upsertLocalCalendar(
+    localRecord,
+    {
+      source: 'google',
+      syncStatus: 'synced',
+      rawJson: localRecord.rawJson
     }
-    const localRecord = googleCalendarToLocalRecord(fallbackCalendar, activeConfig)
-    const localCalendar = await localCalendarService.upsertLocalCalendar(
-      localRecord,
-      {
-        source: 'google',
-        syncStatus: 'synced',
-        rawJson: localRecord.rawJson
-      }
-    )
-    savedCalendars.push(localCalendar)
-  }
+  )
+  savedCalendars.push(localCalendar)
 
   return {
     enabled: true,
@@ -825,6 +798,259 @@ export async function syncAppointmentToGoogle(appointmentOrId) {
   }
 }
 
+export async function syncLocalAppointmentsToGoogle({ calendarId = null, limit = 500 } = {}) {
+  const config = await getGoogleCalendarConfig({ includeCredentials: true })
+  if (!config) {
+    return { enabled: false, total: 0, synced: 0, failed: 0 }
+  }
+
+  const conditions = [
+    'deleted_at IS NULL',
+    "COALESCE(sync_status, '') != 'pending_delete'",
+    "(COALESCE(source, 'ristak') = 'ristak' OR id LIKE 'rstk_appt_%')",
+    "LOWER(COALESCE(appointment_status, status, '')) NOT IN ('cancelled', 'canceled', 'invalid')",
+    "(COALESCE(google_sync_status, '') != 'synced' OR COALESCE(google_event_id, '') = '')"
+  ]
+  const params = []
+
+  if (calendarId) {
+    conditions.push('calendar_id = ?')
+    params.push(calendarId)
+  }
+
+  const rows = await db.all(`
+    SELECT id
+    FROM appointments
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY date_added ASC
+    LIMIT ?
+  `, [...params, Math.max(1, Number(limit) || 500)])
+
+  let synced = 0
+  let failed = 0
+
+  for (const row of rows) {
+    try {
+      const appointment = await localCalendarService.getLocalAppointment(row.id)
+      if (!appointment?.id) continue
+
+      const result = await syncAppointmentToGoogle(appointment)
+      if (result?.enabled !== false) {
+        synced += 1
+      }
+    } catch (error) {
+      failed += 1
+      logger.warn(`[Google Calendar] No se pudo subir cita local ${row.id}: ${error.message}`)
+    }
+  }
+
+  return {
+    enabled: true,
+    total: rows.length,
+    synced,
+    failed
+  }
+}
+
+async function getConfiguredGoogleLocalCalendar(config = null) {
+  const activeConfig = config || await getGoogleCalendarConfig({ includeCredentials: true })
+  if (!activeConfig?.calendarId) return null
+
+  try {
+    const calendarSync = await syncGoogleCalendarsToLocal({ config: activeConfig })
+    const configuredCalendarId = cleanString(activeConfig.calendarId).toLowerCase()
+    const calendar = (calendarSync.calendars || []).find(item => (
+      cleanString(item.googleCalendarId || item.id).toLowerCase() === configuredCalendarId
+    ))
+    if (calendar?.id) return calendar
+  } catch (error) {
+    logger.warn(`[Google Calendar] No se pudo asegurar calendario local configurado: ${error.message}`)
+  }
+
+  return localCalendarService.getLocalCalendar(localIdForGoogleCalendar(activeConfig.calendarId))
+}
+
+async function getRistakCalendarsWithActiveAppointments() {
+  const configuredDefaultCalendarId = cleanString(await getAppConfig('default_calendar_id'))
+  const rows = await db.all(`
+    SELECT c.id, COUNT(a.id) AS appointments_count
+    FROM calendars c
+    INNER JOIN appointments a ON a.calendar_id = c.id
+    WHERE (
+        COALESCE(c.source, 'ristak') = 'ristak'
+        OR c.id LIKE 'rstk_cal_%'
+      )
+      AND a.deleted_at IS NULL
+      AND COALESCE(a.sync_status, '') != 'pending_delete'
+      AND LOWER(COALESCE(a.appointment_status, a.status, '')) NOT IN ('cancelled', 'canceled', 'invalid')
+    GROUP BY c.id, c.name, c.slug
+    ORDER BY
+      CASE WHEN c.id = ? THEN 0 ELSE 1 END,
+      CASE
+        WHEN LOWER(COALESCE(c.name, '')) LIKE '%calendario ristak%' THEN 0
+        WHEN LOWER(COALESCE(c.slug, '')) = 'calendario-ristak' THEN 0
+        ELSE 1
+      END,
+      LOWER(COALESCE(c.name, '')) ASC
+  `, [configuredDefaultCalendarId])
+
+  const calendars = []
+  for (const row of rows) {
+    const calendar = await localCalendarService.getLocalCalendar(row.id)
+    if (!calendar?.id || calendar.source !== 'ristak') continue
+
+    calendars.push({
+      ...calendar,
+      appointmentsCount: Number(row.appointments_count || 0)
+    })
+  }
+
+  return calendars
+}
+
+export async function getGoogleCalendarMergePreview() {
+  const config = await getGoogleCalendarConfig({ includeCredentials: true })
+  if (!config) {
+    return {
+      connected: false,
+      mergeAvailable: false,
+      googleCalendar: null,
+      sourceCalendars: [],
+      totalAppointments: 0
+    }
+  }
+
+  const [googleCalendar, sourceCalendars] = await Promise.all([
+    getConfiguredGoogleLocalCalendar(config),
+    getRistakCalendarsWithActiveAppointments()
+  ])
+  const totalAppointments = sourceCalendars.reduce((total, calendar) => total + Number(calendar.appointmentsCount || 0), 0)
+
+  return {
+    connected: true,
+    mergeAvailable: Boolean(googleCalendar?.id && totalAppointments > 0),
+    googleCalendar,
+    sourceCalendars,
+    totalAppointments
+  }
+}
+
+export async function mergeRistakAppointmentsIntoGoogle({ sourceCalendarIds = null } = {}) {
+  const preview = await getGoogleCalendarMergePreview()
+  if (!preview.connected || !preview.googleCalendar?.id) {
+    throw new Error('Google Calendar no esta configurado')
+  }
+
+  const requestedSourceIds = Array.isArray(sourceCalendarIds)
+    ? new Set(sourceCalendarIds.map(id => cleanString(id)).filter(Boolean))
+    : null
+  const sourceCalendars = requestedSourceIds
+    ? preview.sourceCalendars.filter(calendar => requestedSourceIds.has(calendar.id))
+    : preview.sourceCalendars
+  const sourceIds = sourceCalendars.map(calendar => calendar.id)
+
+  if (!sourceIds.length) {
+    return {
+      ...preview,
+      moved: 0,
+      synced: 0,
+      failed: 0
+    }
+  }
+
+  const placeholders = sourceIds.map(() => '?').join(', ')
+  const appointments = await db.all(`
+    SELECT id, LOWER(COALESCE(appointment_status, status, '')) AS appointment_status
+    FROM appointments
+    WHERE calendar_id IN (${placeholders})
+      AND deleted_at IS NULL
+      AND COALESCE(sync_status, '') != 'pending_delete'
+    ORDER BY date_added ASC
+  `, sourceIds)
+
+  if (!appointments.length) {
+    return {
+      ...preview,
+      moved: 0,
+      synced: 0,
+      failed: 0
+    }
+  }
+
+  const appointmentIds = appointments.map(appointment => appointment.id)
+  const appointmentPlaceholders = appointmentIds.map(() => '?').join(', ')
+
+  await db.run(`
+    UPDATE appointments
+    SET calendar_id = ?,
+        location_id = COALESCE(location_id, ?),
+        google_sync_status = NULL,
+        google_sync_error = NULL,
+        date_updated = CURRENT_TIMESTAMP
+    WHERE id IN (${appointmentPlaceholders})
+  `, [
+    preview.googleCalendar.id,
+    preview.googleCalendar.locationId || null,
+    ...appointmentIds
+  ])
+
+  let synced = 0
+  let failed = 0
+
+  for (const appointment of appointments) {
+    const appointmentId = appointment.id
+    const status = cleanString(appointment.appointment_status).toLowerCase()
+
+    if (status === 'invalid') continue
+
+    try {
+      await syncAppointmentToGoogle(appointmentId)
+      synced += 1
+    } catch (error) {
+      failed += 1
+      logger.warn(`[Google Calendar] No se pudo sincronizar cita combinada ${appointmentId}: ${error.message}`)
+    }
+  }
+
+  await setAppConfig('default_calendar_id', preview.googleCalendar.id)
+  await setAppConfig('attribution_calendar_ids', [preview.googleCalendar.id])
+
+  const remainingSourceCalendars = await db.all(`
+    SELECT c.id
+    FROM calendars c
+    WHERE c.id IN (${placeholders})
+      AND EXISTS (
+        SELECT 1
+        FROM appointments a
+        WHERE a.calendar_id = c.id
+          AND a.deleted_at IS NULL
+      )
+  `, sourceIds)
+  const remainingSourceIds = new Set(remainingSourceCalendars.map(calendar => cleanString(calendar.id)))
+  const removableSourceIds = sourceIds.filter(calendarId => !remainingSourceIds.has(calendarId))
+
+  if (removableSourceIds.length) {
+    const removablePlaceholders = removableSourceIds.map(() => '?').join(', ')
+    await db.run(`
+      DELETE FROM calendars
+      WHERE id IN (${removablePlaceholders})
+        AND COALESCE(source, 'ristak') = 'ristak'
+    `, removableSourceIds)
+  }
+
+  return {
+    connected: true,
+    mergeAvailable: false,
+    googleCalendar: preview.googleCalendar,
+    sourceCalendars,
+    totalAppointments: appointments.length,
+    moved: appointments.length,
+    removedSourceCalendars: removableSourceIds.length,
+    synced,
+    failed
+  }
+}
+
 export async function deleteGoogleEventForAppointment(appointmentOrId) {
   const config = await getGoogleCalendarConfig({ includeCredentials: true })
   if (!config) return { enabled: false }
@@ -939,13 +1165,16 @@ export default {
   deleteGoogleCalendarConfig,
   deleteGoogleEventForAppointment,
   getGoogleCalendarConfig,
+  getGoogleCalendarMergePreview,
   getGoogleCalendarMetadata,
   getGoogleServiceAccountJson,
   listGoogleCalendars,
   listGoogleEvents,
+  mergeRistakAppointmentsIntoGoogle,
   normalizeServiceAccountCredentials,
   saveGoogleCalendarConfig,
   syncAppointmentToGoogle,
+  syncLocalAppointmentsToGoogle,
   syncGoogleCalendarsToLocal,
   syncGoogleEventsForDateRange,
   syncGoogleEventsToLocal,

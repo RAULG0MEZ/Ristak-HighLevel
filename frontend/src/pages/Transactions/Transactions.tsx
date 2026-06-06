@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useSearchParams } from 'react-router-dom'
-import { KpiCard, Card, Button, Table, DateRangePicker, ContactSearchInput, PageContainer, TabList, TreeFilter, RecordPaymentModal, Badge, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, Loading } from '@/components/common'
+import { KpiCard, Card, Button, Table, DateRangePicker, ContactSearchInput, PageContainer, TabList, TreeFilter, RecordPaymentModal, Badge, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, Loading, NumberInput } from '@/components/common'
 import type { Column, BadgeVariant } from '@/components/common'
 import { useNotification } from '@/contexts/NotificationContext'
 import { Contact } from '@/types'
@@ -2021,9 +2021,8 @@ export const Transactions: React.FC = () => {
                     </div>
                     <div className={styles.formGroup}>
                       <label>Intervalo</label>
-                      <input
+                      <NumberInput
                         name="interval"
-                        type="number"
                         min="1"
                         defaultValue="1"
                         required
@@ -2048,9 +2047,8 @@ export const Transactions: React.FC = () => {
                     {paymentPlanCreateModal.endType === 'count' && (
                       <div className={styles.formGroup}>
                         <label>Número de cobros</label>
-                        <input
+                        <NumberInput
                           name="count"
-                          type="number"
                           min="1"
                           max="9999"
                           defaultValue="12"
@@ -2079,9 +2077,8 @@ export const Transactions: React.FC = () => {
                     )}
                     <div className={styles.formGroup}>
                       <label>Enviar factura días antes del cobro</label>
-                      <input
+                      <NumberInput
                         name="daysBefore"
-                        type="number"
                         min="0"
                         defaultValue="0"
                       />

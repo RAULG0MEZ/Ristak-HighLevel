@@ -271,6 +271,14 @@ const normalizeCssPaint = (value: string | undefined, fallback = '') => {
   return normalizeCssColor(raw, fallback)
 }
 
+const extractCssColor = (value: string, fallback = '#111827') => {
+  const match = String(value || '').match(/(#[0-9a-f]{6}|rgba?\([^)]*\)|transparent)/i)
+  return match ? normalizeCssColor(match[1], fallback) : fallback
+}
+
+const paintFallbackColor = (paint: string, fallback = '#111827') =>
+  isCssGradient(paint) ? extractCssColor(paint, fallback) : normalizeCssColor(paint, fallback)
+
 const paintLayer = (paint: string) => {
   if (!paint) return 'none'
   if (isCssGradient(paint)) return paint
@@ -365,10 +373,13 @@ type Overrides = { vars?: TemplateVars; accent?: string }
 
 const resolveRenderOverrides = (template: Template, theme: PublicSite['theme'], isLandingType: boolean): Overrides => {
   if (template.chrome !== 'none') return {}
-  const color = (value?: string) => (isCssColor(value) ? normalizeCssColor(value as string, '') : null)
-  const rawBg = color(theme.backgroundColor)
+  const paintColor = (value?: string) => {
+    const paint = normalizeCssPaint(value, '')
+    return paint ? paintFallbackColor(paint, '') : null
+  }
+  const rawBg = paintColor(theme.backgroundColor)
   const userBg = rawBg && rawBg.toLowerCase() !== DEFAULT_BG ? rawBg : null
-  const rawAccent = color(theme.accentColor)
+  const rawAccent = paintColor(theme.accentColor)
   const userAccent = rawAccent && rawAccent.toLowerCase() !== DEFAULT_ACCENT.toLowerCase() ? rawAccent : null
   if (isLandingType) {
     return { vars: deriveNeutralVars(template, userBg || '#08080a', userAccent) }
@@ -421,7 +432,8 @@ export const buildCanvasTheme = (site: PublicSite, device: 'desktop' | 'mobile' 
     : themeNumber(theme, 'pageMaxWidth', isLandingType ? 1440 : (template.id === 'interactive' ? 600 : 520), 360, 1440)
   const pagePadding = themeNumber(theme, 'pagePadding', isLandingType ? 36 : 22, 0, 120)
   const pageRadius = themeNumber(theme, 'pageRadius', isLandingType ? 0 : 24, 0, 40)
-  const pageBorder = isCssColor(theme.pageBorderColor) ? normalizeCssColor(theme.pageBorderColor as string, 'transparent') : 'transparent'
+  const pageBorderPaint = normalizeCssPaint(theme.pageBorderColor, '')
+  const pageBorder = pageBorderPaint ? paintFallbackColor(pageBorderPaint, 'transparent') : 'transparent'
   const pageBorderWidth = themeNumber(theme, 'pageBorderWidth', 0, 0, 12)
   const rawBackgroundPaint = normalizeCssPaint(theme.backgroundColor, '')
   const backgroundPaint = rawBackgroundPaint.toLowerCase() === DEFAULT_BG ? '' : rawBackgroundPaint
@@ -430,6 +442,9 @@ export const buildCanvasTheme = (site: PublicSite, device: 'desktop' | 'mobile' 
   const pageVideo = backgroundMediaType === 'video' ? cssMediaUrl(theme.backgroundImage) : ''
   const pageOverlay = backgroundPaint ? paintLayer(backgroundPaint) : 'none'
   const pageBg = backgroundPaint && isCssColor(backgroundPaint) ? normalizeCssColor(backgroundPaint, v.pageBg) : v.pageBg
+  const rawTextPaint = normalizeCssPaint(theme.textColor, '')
+  const textPaint = rawTextPaint && (theme.textColorCustom || rawTextPaint.toLowerCase() !== DEFAULT_ACCENT.toLowerCase()) ? rawTextPaint : ''
+  const ink = textPaint ? paintFallbackColor(textPaint, v.ink) : v.ink
 
   const vars = {
     '--rstk-font': baseFont,
@@ -444,8 +459,8 @@ export const buildCanvasTheme = (site: PublicSite, device: 'desktop' | 'mobile' 
     '--rstk-page-image-repeat': backgroundRepeatValue(theme.backgroundRepeat),
     '--rstk-page-image-attachment': backgroundAttachmentValue(theme.backgroundAttachment),
     '--rstk-page-video-fit': backgroundFitValue(theme.backgroundFit),
-    '--rstk-ink': v.ink,
-    '--rstk-muted': v.muted,
+    '--rstk-ink': ink,
+    '--rstk-muted': textPaint && isCssColor(textPaint) ? `color-mix(in srgb, ${ink} 60%, ${pageBg})` : v.muted,
     '--rstk-surface': v.surface,
     '--rstk-surface2': v.surface2,
     '--rstk-border': v.border,
@@ -469,6 +484,7 @@ export const buildCanvasTheme = (site: PublicSite, device: 'desktop' | 'mobile' 
     '--rstk-page-radius': `${pageRadius}px`,
     '--rstk-pad': 'clamp(18px,4vw,30px)',
     '--rstk-gap': 'clamp(16px,3vw,22px)',
+    ...(textPaint && isCssGradient(textPaint) ? { '--rstk-page-text-paint': textPaint } : {}),
     ...(template.gradient ? { '--rstk-gradient': template.gradient } : {}),
     ...(template.cyan ? { '--rstk-cyan': template.cyan } : {})
   } as React.CSSProperties
@@ -478,6 +494,7 @@ export const buildCanvasTheme = (site: PublicSite, device: 'desktop' | 'mobile' 
     `rstk-${template.mode}`,
     `rstk-kind-${isLandingType ? 'landing' : 'form'}`,
     template.centered ? 'rstk-centered' : '',
+    textPaint && isCssGradient(textPaint) ? 'rstkPageTextGradient' : '',
     site.siteType === 'interactive_form' ? 'rstk-interactive' : ''
   ].filter(Boolean).join(' ')
 

@@ -8,6 +8,7 @@ import {
   processYCloudWhatsAppWebhook,
   refreshWhatsAppApi,
   resetWhatsAppApiCredentials,
+  sendWhatsAppApiImageMessage,
   sendWhatsAppApiTemplateMessage,
   sendWhatsAppApiTextMessage
 } from '../services/whatsappApiService.js'
@@ -136,6 +137,27 @@ export async function sendWhatsAppApiTextMessageView(req, res) {
     res.status(400).json({
       success: false,
       error: error.message || 'No se pudo enviar el mensaje por WhatsApp_API'
+    })
+  }
+}
+
+export async function sendWhatsAppApiImageMessageView(req, res) {
+  try {
+    const data = await sendWhatsAppApiImageMessage({
+      to: req.body?.to,
+      from: req.body?.from,
+      imageDataUrl: req.body?.imageDataUrl,
+      imageUrl: req.body?.imageUrl,
+      caption: req.body?.caption,
+      externalId: req.body?.externalId,
+      publicBaseUrl: getPublicBaseUrl(req)
+    })
+    res.json({ success: true, data })
+  } catch (error) {
+    logger.error(`Error enviando foto WhatsApp_API: ${error.message}`)
+    res.status(400).json({
+      success: false,
+      error: error.message || 'No se pudo enviar la foto por WhatsApp_API'
     })
   }
 }

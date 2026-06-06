@@ -54,8 +54,8 @@
 
 .chatListHeader {
   display: grid;
-  gap: 12px;
-  padding: calc(env(safe-area-inset-top) + 11px) 16px 0;
+  gap: 8px;
+  padding: calc(env(safe-area-inset-top) + 8px) 14px 0;
   background: #ffffff;
 }
 
@@ -63,7 +63,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 48px;
+  min-height: 40px;
 }
 
 .topRightActions {
@@ -76,8 +76,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 46px;
-  height: 46px;
+  width: 38px;
+  height: 38px;
   border: 0;
   border-radius: 999px;
   color: #111111;
@@ -94,7 +94,7 @@
 .chatListHeader h1 {
   margin: 0;
   color: #000000;
-  font-size: clamp(40px, 10.8vw, 54px);
+  font-size: clamp(32px, 8.5vw, 42px);
   font-weight: 850;
   letter-spacing: 0;
   line-height: 0.98;
@@ -106,8 +106,8 @@
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  min-height: 46px;
-  padding: 0 12px;
+  min-height: 38px;
+  padding: 0 10px;
   border-radius: 999px;
   color: #7d7d7d;
   background: #f0f0f0;
@@ -116,13 +116,13 @@
 .searchBox input,
 .sheetSearchBox input {
   min-width: 0;
-  height: 38px;
+  height: 32px;
   border: 0;
   outline: 0;
   color: #111111;
   background: transparent;
   font: inherit;
-  font-size: 17px;
+  font-size: 15px;
   letter-spacing: 0;
 }
 
@@ -163,13 +163,13 @@
 
 .filterChips button {
   flex: 0 0 auto;
-  min-height: 36px;
-  padding: 0 14px;
+  min-height: 30px;
+  padding: 0 12px;
   border: 1px solid #d4d4d4;
   border-radius: 999px;
   color: #6d6d6d;
   background: #ffffff;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 760;
   letter-spacing: 0;
 }
@@ -182,7 +182,7 @@
 
 .chatList {
   min-height: 0;
-  padding: 10px 16px 94px;
+  padding: 6px 14px 92px;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -190,11 +190,11 @@
 .archiveRow,
 .chatItem {
   display: grid;
-  grid-template-columns: 60px minmax(0, 1fr) auto;
+  grid-template-columns: 50px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   width: 100%;
-  min-height: 72px;
+  min-height: 60px;
   border: 0;
   color: #111111;
   background: transparent;
@@ -202,8 +202,8 @@
 }
 
 .archiveRow {
-  min-height: 50px;
-  grid-template-columns: 60px minmax(0, 1fr) auto;
+  min-height: 42px;
+  grid-template-columns: 50px minmax(0, 1fr) auto;
   color: #707070;
 }
 
@@ -228,7 +228,7 @@
   position: absolute;
   right: 0;
   bottom: 0;
-  left: 68px;
+  left: 58px;
   height: 1px;
   background: #e4e4e4;
 }
@@ -242,8 +242,8 @@
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  width: 54px;
-  height: 54px;
+  width: 44px;
+  height: 44px;
   border-radius: 999px;
   color: #ffffff;
   background: linear-gradient(135deg, #0f766e, #25d366);
@@ -273,7 +273,7 @@
   min-width: 0;
   overflow: hidden;
   color: #111111;
-  font-size: 19px;
+  font-size: 16px;
   font-weight: 820;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -285,7 +285,7 @@
   min-width: 0;
   overflow: hidden;
   color: #737373;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 500;
   line-height: 1.25;
   text-overflow: ellipsis;
@@ -297,7 +297,7 @@
   justify-items: end;
   align-self: start;
   gap: 6px;
-  padding-top: 12px;
+  padding-top: 8px;
 }
 
 .chatMeta small {
@@ -378,8 +378,8 @@
   grid-template-columns: auto auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  min-height: calc(74px + env(safe-area-inset-top));
-  padding: calc(env(safe-area-inset-top) + 9px) 12px 8px;
+  min-height: calc(58px + env(safe-area-inset-top));
+  padding: calc(env(safe-area-inset-top) + 6px) 10px 6px;
   background: #f6f2eb;
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
 }
@@ -388,8 +388,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 46px;
-  height: 46px;
+  width: 38px;
+  height: 38px;
   border: 0;
   border-radius: 999px;
   color: #111111;
@@ -397,8 +397,8 @@
 }
 
 .conversationHeader .avatar {
-  width: 48px;
-  height: 48px;
+  width: 38px;
+  height: 38px;
   font-size: 14px;
 }
 
@@ -409,7 +409,7 @@
 }
 
 .conversationIdentity strong {
-  font-size: 20px;
+  font-size: 17px;
 }
 
 .conversationIdentity span {
@@ -418,7 +418,7 @@
 
 .callActions {
   display: inline-grid;
-  grid-template-columns: repeat(2, 50px);
+  grid-template-columns: repeat(2, 42px);
   gap: 0;
   overflow: hidden;
   border-radius: 999px;
@@ -430,7 +430,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 48px;
+  height: 40px;
   border: 0;
   color: #111111;
   background: transparent;
@@ -438,7 +438,7 @@
 
 .messagesPane {
   min-height: 0;
-  padding: 12px 10px 10px;
+  padding: 8px 8px 8px;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   background:
@@ -489,9 +489,19 @@
 .messageBubble p {
   margin: 0;
   overflow-wrap: anywhere;
-  font-size: 18px;
+  font-size: 15px;
   line-height: 1.25;
   letter-spacing: 0;
+}
+
+.messageImage {
+  display: block;
+  width: min(268px, 68vw);
+  max-height: 330px;
+  margin: 0 0 6px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #d7d2c8;
 }
 
 .messageBubble span {
@@ -502,7 +512,7 @@
   float: right;
   margin: 4px 0 0 9px;
   color: #606060;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 560;
 }
 
@@ -510,14 +520,20 @@
   color: #dc2626;
 }
 
+.composerShell {
+  display: grid;
+  min-width: 0;
+  background: #f6f2eb;
+}
+
 .composer {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
-  min-height: calc(60px + env(safe-area-inset-bottom));
-  padding: 6px 9px max(8px, env(safe-area-inset-bottom));
-  background: #f6f2eb;
+  min-height: calc(50px + env(safe-area-inset-bottom));
+  padding: 5px 8px max(6px, env(safe-area-inset-bottom));
+  background: transparent;
 }
 
 .composerPlus,
@@ -532,8 +548,8 @@
 }
 
 .composerPlus {
-  width: 36px;
-  height: 44px;
+  width: 30px;
+  height: 38px;
   font-size: 28px;
 }
 
@@ -541,7 +557,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  min-height: 44px;
+  min-height: 38px;
   border: 1px solid rgba(0, 0, 0, 0.14);
   border-radius: 999px;
   background: #ffffff;
@@ -550,31 +566,88 @@
 
 .messageInputWrap textarea {
   width: 100%;
-  min-height: 43px;
+  min-height: 37px;
   max-height: 116px;
   resize: none;
-  padding: 10px 6px 9px 14px;
+  padding: 8px 6px 7px 12px;
   border: 0;
   outline: none;
   color: #111111;
   background: transparent;
   font: inherit;
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1.35;
 }
 
 .messageInputWrap button {
-  width: 44px;
-  height: 44px;
+  width: 38px;
+  height: 38px;
 }
 
 .composerIconButton {
-  width: 34px;
-  height: 44px;
+  width: 30px;
+  height: 38px;
 }
 
 .composerIconButton:disabled {
   opacity: 0.42;
+}
+
+.draftAttachments {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 10px 0 46px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.draftAttachments::-webkit-scrollbar {
+  display: none;
+}
+
+.draftAttachment {
+  position: relative;
+  flex: 0 0 auto;
+  width: 70px;
+  height: 70px;
+  margin: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #d7d2c8;
+  box-shadow: 0 10px 20px rgba(17, 24, 39, 0.12);
+}
+
+.draftAttachment img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.draftAttachment button {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 999px;
+  color: #ffffff;
+  background: rgba(17, 24, 39, 0.72);
+}
+
+.hiddenFileInput {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .centerState,
@@ -728,8 +801,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 62px;
-  height: 62px;
+  width: 54px;
+  height: 54px;
   border-radius: 999px;
   color: #ffffff;
   background: #25d366;
@@ -1044,48 +1117,48 @@
 
 @media (max-width: 430px) {
   .chatListHeader {
-    padding-inline: 18px;
-    gap: 14px;
+    padding-inline: 14px;
+    gap: 8px;
   }
 
   .chatList {
-    padding-inline: 18px;
+    padding-inline: 14px;
   }
 
   .chatListHeader h1 {
-    font-size: clamp(44px, 14vw, 58px);
+    font-size: clamp(34px, 9vw, 44px);
   }
 
   .searchBox input,
   .sheetSearchBox input {
-    font-size: 18px;
+    font-size: 15px;
   }
 
   .filterChips button {
-    min-height: 40px;
-    padding-inline: 15px;
-    font-size: 17px;
-  }
-
-  .attachmentGrid {
-    gap: 24px 10px;
-  }
-
-  .attachmentGrid button span {
-    width: 66px;
-    height: 66px;
-  }
-
-  .attachmentGrid button strong {
+    min-height: 31px;
+    padding-inline: 12px;
     font-size: 14px;
   }
 
+  .attachmentGrid {
+    gap: 18px 8px;
+  }
+
+  .attachmentGrid button span {
+    width: 54px;
+    height: 54px;
+  }
+
+  .attachmentGrid button strong {
+    font-size: 12px;
+  }
+
   .callActions {
-    grid-template-columns: repeat(2, 50px);
+    grid-template-columns: repeat(2, 42px);
   }
 
   .callActions button {
-    height: 50px;
+    height: 40px;
   }
 }
 

@@ -200,8 +200,12 @@ export async function saveGoogleCalendarIntegration(req, res) {
       credentials: body.credentials || body.serviceAccountJson || body.service_account_json
     });
 
-    googleCalendarService.syncGoogleCalendarsToLocal().catch(error => {
+    await googleCalendarService.syncGoogleCalendarsToLocal().catch(error => {
       logger.warn(`[Calendars Controller] Google guardado, pero sync de calendarios falló: ${error.message}`);
+    });
+
+    await localCalendarService.reconcileCalendarDefaults({ sourcePreference: 'google' }).catch(error => {
+      logger.warn(`[Calendars Controller] No se pudo reconciliar calendario predeterminado tras guardar Google: ${error.message}`);
     });
 
     res.json({
@@ -229,6 +233,11 @@ export async function testGoogleCalendarIntegration(req, res) {
     } catch (syncError) {
       logger.warn(`[Calendars Controller] Prueba Google OK, pero sync manual falló: ${syncError.message}`);
     }
+
+    await localCalendarService.reconcileCalendarDefaults({ sourcePreference: 'google' }).catch(error => {
+      logger.warn(`[Calendars Controller] No se pudo reconciliar calendario predeterminado tras probar Google: ${error.message}`);
+    });
+
     res.json({
       success: true,
       data: config
@@ -254,6 +263,10 @@ export async function syncGoogleCalendarIntegration(req, res) {
       endTime: body.endTime || body.end_time
     });
 
+    await localCalendarService.reconcileCalendarDefaults({ sourcePreference: 'google' }).catch(error => {
+      logger.warn(`[Calendars Controller] No se pudo reconciliar calendario predeterminado tras sincronizar Google: ${error.message}`);
+    });
+
     res.json({
       success: true,
       data: config
@@ -268,12 +281,61 @@ export async function syncGoogleCalendarIntegration(req, res) {
 }
 
 /**
+ * GET /api/calendars/google-integration/merge-preview
+ * Indica si hay citas locales de Ristak que se pueden combinar hacia el Google Calendar conectado.
+ */
+export async function getGoogleCalendarMergePreview(req, res) {
+  try {
+    res.json({
+      success: true,
+      data: await googleCalendarService.getGoogleCalendarMergePreview()
+    });
+  } catch (error) {
+    logger.warn(`[Calendars Controller] No se pudo calcular preview de combinación Google: ${error.message}`);
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+}
+
+/**
+ * POST /api/calendars/google-integration/merge
+ * Mueve citas existentes de calendarios Ristak al Google Calendar conectado y las sincroniza hacia Google.
+ */
+export async function mergeGoogleCalendarAppointments(req, res) {
+  try {
+    const result = await googleCalendarService.mergeRistakAppointmentsIntoGoogle({
+      sourceCalendarIds: req.body?.sourceCalendarIds || req.body?.source_calendar_ids || null
+    });
+
+    await localCalendarService.reconcileCalendarDefaults({ sourcePreference: 'google' }).catch(error => {
+      logger.warn(`[Calendars Controller] No se pudo reconciliar calendario predeterminado tras combinar Google: ${error.message}`);
+    });
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    logger.warn(`[Calendars Controller] No se pudieron combinar citas hacia Google: ${error.message}`);
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+}
+
+/**
  * DELETE /api/calendars/google-integration
  * Desconecta la integración guardada.
  */
 export async function deleteGoogleCalendarIntegration(req, res) {
   try {
     await googleCalendarService.deleteGoogleCalendarConfig();
+    await localCalendarService.reconcileCalendarDefaults().catch(error => {
+      logger.warn(`[Calendars Controller] No se pudo reconciliar calendario predeterminado tras desconectar Google: ${error.message}`);
+    });
     res.json({
       success: true,
       data: await googleCalendarService.getGoogleCalendarConfig()
@@ -378,8 +440,11 @@ export async function getCalendars(req, res) {
       logger.warn(`[Calendars Controller] No se pudieron espejear calendarios Google: ${error.message}`);
     });
 
-    await localCalendarService.ensureDefaultLocalCalendar();
     const sourcePreference = await getCalendarSourcePreference(req.query?.sourcePreference);
+    await localCalendarService.reconcileCalendarDefaults({ sourcePreference }).catch(error => {
+      logger.warn(`[Calendars Controller] No se pudo reconciliar calendario predeterminado: ${error.message}`);
+    });
+    await localCalendarService.ensureDefaultLocalCalendar();
     const calendars = await localCalendarService.listLocalCalendars({ sourcePreference });
     const calendarsWithPublicUrls = await localCalendarService.attachPublicCalendarUrls(calendars);
 
@@ -418,6 +483,10 @@ export async function createCalendar(req, res) {
       calendar = await localCalendarService.getLocalCalendar(calendar.id);
       logger.info(`[Calendars Controller] Sync calendario creado: ${JSON.stringify(syncResult)}`);
     }
+
+    await localCalendarService.reconcileCalendarDefaults().catch(error => {
+      logger.warn(`[Calendars Controller] No se pudo reconciliar calendario predeterminado tras crear calendario: ${error.message}`);
+    });
 
     res.status(201).json({
       success: true,
@@ -1293,5 +1362,7 @@ export default {
   saveGoogleCalendarIntegration,
   testGoogleCalendarIntegration,
   syncGoogleCalendarIntegration,
+  getGoogleCalendarMergePreview,
+  mergeGoogleCalendarAppointments,
   deleteGoogleCalendarIntegration
 };

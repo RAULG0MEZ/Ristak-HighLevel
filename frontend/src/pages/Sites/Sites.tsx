@@ -26,6 +26,7 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
+  Bold,
   CalendarDays,
   Check,
   CheckCircle2,
@@ -40,6 +41,7 @@ import {
   GripVertical,
   Image,
   Instagram,
+  Italic,
   LayoutTemplate,
   Link2,
   ListChecks,
@@ -61,6 +63,7 @@ import {
   Smartphone,
   Trash2,
   Type,
+  Underline,
   Unlink2,
   Video,
   X
@@ -68,6 +71,7 @@ import {
 import {
   Button,
   Loading,
+  NumberInput,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -98,6 +102,7 @@ import {
 import { campaignsService } from '@/services/campaignsService'
 import { calendarsService, type Calendar as CalendarType } from '@/services/calendarsService'
 import { requestAIAgentOpen, type AIAgentSitesCreationKind } from '@/utils/aiAgentEvents'
+import { useTheme } from '@/contexts/ThemeContext'
 import styles from './Sites.module.css'
 import './sitesCanvas.css'
 import { buildCanvasTheme } from './sitesCanvasTheme'
@@ -177,6 +182,7 @@ const LANDING_DEFAULT_PAGE_PADDING = 36
 const HEADER_PANEL_BLOCK_TYPE: SiteBlockType = 'header_panel'
 const FOOTER_PANEL_BLOCK_TYPE: SiteBlockType = 'footer_panel'
 const PANEL_BLOCK_TYPES = new Set<SiteBlockType>([HEADER_PANEL_BLOCK_TYPE, FOOTER_PANEL_BLOCK_TYPE])
+const SPACING_OVERLAP_MIN = -80
 const makeLandingSpacing = (top: number, bottom: number, right = 0, left = 0) => ({
   blockMarginLinked: false,
   blockMarginTop: top,
@@ -250,6 +256,28 @@ const DEFAULT_BUTTON_SETTINGS = {
   buttonHeight: 54,
   buttonPaddingX: 28
 }
+const GOOGLE_FONT_OPTIONS = [
+  { label: 'Sistema', value: '' },
+  { label: 'Inter', value: "'Inter', system-ui, sans-serif" },
+  { label: 'Inter Tight', value: "'Inter Tight', 'Inter', system-ui, sans-serif" },
+  { label: 'Roboto', value: "'Roboto', Arial, sans-serif" },
+  { label: 'Open Sans', value: "'Open Sans', Arial, sans-serif" },
+  { label: 'Lato', value: "'Lato', Arial, sans-serif" },
+  { label: 'Montserrat', value: "'Montserrat', Arial, sans-serif" },
+  { label: 'Poppins', value: "'Poppins', Arial, sans-serif" },
+  { label: 'Oswald', value: "'Oswald', Arial, sans-serif" },
+  { label: 'Raleway', value: "'Raleway', Arial, sans-serif" },
+  { label: 'Nunito', value: "'Nunito', Arial, sans-serif" },
+  { label: 'Work Sans', value: "'Work Sans', Arial, sans-serif" },
+  { label: 'Manrope', value: "'Manrope', Arial, sans-serif" },
+  { label: 'Barlow', value: "'Barlow', Arial, sans-serif" },
+  { label: 'Archivo', value: "'Archivo', Arial, sans-serif" },
+  { label: 'Bebas Neue', value: "'Bebas Neue', Impact, sans-serif" },
+  { label: 'Playfair Display', value: "'Playfair Display', Georgia, serif" },
+  { label: 'Merriweather', value: "'Merriweather', Georgia, serif" },
+  { label: 'Libre Baskerville', value: "'Libre Baskerville', Georgia, serif" },
+  { label: 'Georgia', value: "Georgia, 'Times New Roman', serif" }
+]
 const SECTION_BLOCK_TYPE: SiteBlockType = 'section'
 const DEFAULT_SECTION_GAP = 24
 const isTopLevelLandingBlockType = (blockType?: SiteBlockType) =>
@@ -603,6 +631,35 @@ const normalizeCssPaint = (value: string, fallback: string) => {
   return normalizeCssColor(raw, fallback)
 }
 
+const splitCssArgs = (value: string) => {
+  const parts: string[] = []
+  let current = ''
+  let depth = 0
+
+  for (const char of value) {
+    if (char === '(') depth += 1
+    if (char === ')') depth = Math.max(0, depth - 1)
+    if (char === ',' && depth === 0) {
+      parts.push(current.trim())
+      current = ''
+      continue
+    }
+    current += char
+  }
+
+  if (current.trim()) parts.push(current.trim())
+  return parts
+}
+
+const extractCssColor = (value: string, fallback = '#111827') => {
+  const raw = String(value || '').trim()
+  const match = raw.match(/(#[0-9a-f]{6}|rgba?\([^)]*\)|transparent)/i)
+  return match ? normalizeCssColor(match[1], fallback) : fallback
+}
+
+const paintFallbackColor = (paint: string, fallback = '#111827') =>
+  isCssGradient(paint) ? extractCssColor(paint, fallback) : normalizeCssColor(paint, fallback)
+
 const parseCssColor = (value: string, fallback = '#000000') => {
   const raw = normalizeCssColor(value, fallback)
   if (raw.startsWith('#')) {
@@ -649,11 +706,17 @@ const onAccentFor = (hex: string): string => (isCssColor(hex) && relLum(hex) > 0
 // Mirrors the backend palette resolution so the editor canvas matches the published site.
 const userBgColor = (site: PublicSite): string | null => {
   const v = site.theme?.backgroundColor
-  return typeof v === 'string' && isCssColor(v) && normalizeCssColor(v, '').toLowerCase() !== '#ffffff' ? normalizeCssColor(v, '#ffffff') : null
+  if (typeof v !== 'string' || !isCssPaint(v)) return null
+  const paint = normalizeCssPaint(v, '#ffffff')
+  const color = paintFallbackColor(paint, '#ffffff')
+  return color.toLowerCase() !== '#ffffff' ? color : null
 }
 const userAccentColor = (site: PublicSite): string | null => {
   const v = site.theme?.accentColor
-  return typeof v === 'string' && isCssColor(v) && normalizeCssColor(v, '').toLowerCase() !== '#111827' ? normalizeCssColor(v, '#111827') : null
+  if (typeof v !== 'string' || !isCssPaint(v)) return null
+  const paint = normalizeCssPaint(v, '#111827')
+  const color = paintFallbackColor(paint, '#111827')
+  return color.toLowerCase() !== '#111827' ? color : null
 }
 const resolvedPageBg = (site: PublicSite): string => {
   const id = resolveTemplateId(site)
@@ -820,11 +883,6 @@ const getSettingPaint = (settings: Record<string, unknown>, key: string, fallbac
   return isCssPaint(value) ? normalizeCssPaint(value, fallback) : fallback
 }
 
-const getThemeHex = (theme: SiteTheme | undefined, key: keyof SiteTheme, fallback: string) => {
-  const value = theme?.[key]
-  return typeof value === 'string' && isCssColor(value) ? normalizeCssColor(value, fallback) : fallback
-}
-
 const getThemePaint = (theme: SiteTheme | undefined, key: keyof SiteTheme, fallback: string) => {
   const value = theme?.[key]
   return typeof value === 'string' && isCssPaint(value) ? normalizeCssPaint(value, fallback) : fallback
@@ -929,6 +987,141 @@ const marginVarsForAlign = (align: HorizontalAlign | ButtonAlign) => {
   return { left: '0', right: align === 'full' ? '0' : 'auto' }
 }
 
+const textBoldDefaultBlockTypes = new Set<SiteBlockType>([
+  'headline',
+  'title',
+  'hero',
+  'section',
+  'benefits',
+  'testimonials',
+  'services',
+  'faq',
+  'form_embed',
+  'cta'
+])
+
+const getParentSectionBlock = (block: SiteBlock, blocks: SiteBlock[]) => {
+  const sectionId = getBlockSectionId(block)
+  if (!sectionId) return null
+  return blocks.find(item => item.id === sectionId && isSectionBlock(item)) || null
+}
+
+const getPageTextPaint = (site: PublicSite) =>
+  getThemePaint(site.theme, 'textColor', isSiteDark(site) ? '#ffffff' : '#111827')
+
+const getBlockTextAlignFallback = (site: PublicSite, block: SiteBlock, blocks: SiteBlock[] = []): HorizontalAlign => {
+  const parent = isLanding(site) && !isTopLevelLandingBlock(block) ? getParentSectionBlock(block, blocks) : null
+  if (parent) {
+    return getHorizontalAlign(parent.settings || {}, 'textAlign', 'center')
+  }
+
+  if (block.blockType === HEADER_PANEL_BLOCK_TYPE) return 'left'
+  if (block.blockType === FOOTER_PANEL_BLOCK_TYPE) return 'center'
+  if (block.blockType === SECTION_BLOCK_TYPE || block.blockType === 'hero' || block.blockType === 'cta') return 'center'
+  if (['benefits', 'testimonials', 'services', 'faq'].includes(block.blockType)) return 'center'
+  if (!fieldBlockTypes.has(block.blockType) && ['interactive', 'vsl'].includes(resolveTemplateId(site))) return 'center'
+  return 'left'
+}
+
+const getBlockFontSizeFallback = (site: PublicSite, block: SiteBlock) => {
+  if (isLanding(site)) {
+    if (block.blockType === 'hero') return 58
+    if (block.blockType === 'headline' || block.blockType === 'title') return 52
+    if (block.blockType === 'cta') return 42
+    if (block.blockType === SECTION_BLOCK_TYPE || ['benefits', 'testimonials', 'services', 'faq', 'form_embed'].includes(block.blockType)) return 32
+    if (block.blockType === 'subheading' || block.blockType === 'subtitle' || block.blockType === 'description') return 20
+    if (block.blockType === 'text') return 17
+  }
+
+  if (block.blockType === 'headline' || block.blockType === 'title') return 38
+  if (block.blockType === 'subheading' || block.blockType === 'subtitle' || block.blockType === 'description') return 18
+  return 18
+}
+
+const getBlockContentMaxWidthFallback = (site: PublicSite, block: SiteBlock) => {
+  if (isLanding(site)) {
+    if (block.blockType === 'hero') return 16
+    if (['benefits', 'testimonials', 'services', 'faq'].includes(block.blockType)) return 20
+    if (block.blockType === 'cta') return 52
+    if (block.blockType === 'subheading' || block.blockType === 'subtitle') return 60
+    if (block.blockType === 'description') return 58
+  }
+
+  if (block.blockType === 'subheading' || block.blockType === 'subtitle' || block.blockType === 'description') return 60
+  return 66
+}
+
+const getBlockRadiusFallback = (_site: PublicSite, _block: SiteBlock) => 0
+
+const getBlockBorderWidthFallback = (site: PublicSite, block: SiteBlock) => {
+  if (block.blockType === 'image' || block.blockType === 'video' || block.blockType === 'embed' || block.blockType === 'calendar_embed') return 1
+  if (isLanding(site) && ['hero', 'section', 'cta', 'benefits', 'testimonials', 'services', 'faq', 'form_embed'].includes(block.blockType)) return 0
+  return nativeBorderBlockTypes.has(block.blockType) ? 1 : 0
+}
+
+const getCardRadiusFallback = (site: PublicSite) => isLanding(site) ? 0 : 8
+const getCardBorderWidthFallback = (site: PublicSite) => isLanding(site) ? 0 : 1
+
+const getInheritedBlockStyleSettings = (site: PublicSite, block: SiteBlock, blocks: SiteBlock[]) => {
+  const parent = isLanding(site) && !isTopLevelLandingBlock(block) ? getParentSectionBlock(block, blocks) : null
+  if (!parent) return {}
+  const settings = parent.settings || {}
+  const inheritedKeys = [
+    'blockBg',
+    'blockText',
+    'contentMaxWidth',
+    'fontFamily',
+    'fontWeight',
+    'fontStyle',
+    'textDecoration',
+    'textStrokeColor',
+    'textStrokeWidth',
+    'textAlign'
+  ]
+
+  return inheritedKeys.reduce<Record<string, unknown>>((acc, key) => {
+    if (settings[key] !== undefined && settings[key] !== '') acc[key] = settings[key]
+    return acc
+  }, {})
+}
+
+const getPanelStyleSettings = (site: PublicSite, block: SiteBlock, blocks: SiteBlock[]) => {
+  const inherited = getInheritedBlockStyleSettings(site, block, blocks)
+  const defaults: Record<string, unknown> = {
+    textAlign: getBlockTextAlignFallback(site, block, blocks),
+    buttonAlign: 'center',
+    fontSize: getBlockFontSizeFallback(site, block),
+    contentMaxWidth: getBlockContentMaxWidthFallback(site, block),
+    blockText: getPageTextPaint(site),
+    blockBg: 'transparent',
+    blockRadius: getBlockRadiusFallback(site, block),
+    blockBorderWidth: getBlockBorderWidthFallback(site, block),
+    cardAlign: 'left',
+    cardRadius: getCardRadiusFallback(site),
+    cardBorderWidth: getCardBorderWidthFallback(site),
+    listColumns: 3,
+    mediaAlign: 'center',
+    mediaWidth: 100,
+    mediaRadius: 18,
+    fieldBg: '#ffffff',
+    fieldBorder: '#dbe3ef',
+    fieldRadius: 12,
+    buttonRadius: 28,
+    buttonHeight: 54,
+    buttonPaddingX: 28,
+    buttonFontSize: 16,
+    buttonBorderWidth: 1
+  }
+
+  if (textBoldDefaultBlockTypes.has(block.blockType)) defaults.fontWeight = 'bold'
+
+  return {
+    ...defaults,
+    ...inherited,
+    ...(block.settings || {})
+  }
+}
+
 const hasSpacingSideValue = (settings: Record<string, unknown>, base: SpacingBase) =>
   spacingSides.some(side => settings[`${base}${side.id}`] !== undefined)
 
@@ -947,14 +1140,45 @@ const getSpacingValue = (
 }
 
 const getSpacingShorthand = (
+  values: Record<typeof spacingSides[number]['id'], number>
+) => spacingSides
+  .map(side => `${values[side.id]}px`)
+  .join(' ')
+
+const getSpacingValues = (
   settings: Record<string, unknown>,
   base: SpacingBase,
   fallback: number,
   min: number,
   max: number
 ) => spacingSides
-  .map(side => `${getSpacingValue(settings, base, side.id, fallback, min, max)}px`)
-  .join(' ')
+  .reduce<Record<typeof spacingSides[number]['id'], number>>((acc, side) => {
+    acc[side.id] = getSpacingValue(settings, base, side.id, fallback, min, max)
+    return acc
+  }, { Top: fallback, Right: fallback, Bottom: fallback, Left: fallback })
+
+const hasNegativeSpacing = (values: Record<typeof spacingSides[number]['id'], number>) =>
+  spacingSides.some(side => values[side.id] < 0)
+
+const getPositiveSpacing = (values: Record<typeof spacingSides[number]['id'], number>) =>
+  spacingSides.reduce<Record<typeof spacingSides[number]['id'], number>>((acc, side) => {
+    acc[side.id] = Math.max(0, values[side.id])
+    return acc
+  }, { Top: 0, Right: 0, Bottom: 0, Left: 0 })
+
+const getNegativeSpacing = (values: Record<typeof spacingSides[number]['id'], number>) =>
+  spacingSides.reduce<Record<typeof spacingSides[number]['id'], number>>((acc, side) => {
+    acc[side.id] = Math.min(0, values[side.id])
+    return acc
+  }, { Top: 0, Right: 0, Bottom: 0, Left: 0 })
+
+const combineSpacingValues = (
+  first: Record<typeof spacingSides[number]['id'], number>,
+  second: Record<typeof spacingSides[number]['id'], number>
+) => spacingSides.reduce<Record<typeof spacingSides[number]['id'], number>>((acc, side) => {
+  acc[side.id] = first[side.id] + second[side.id]
+  return acc
+}, { Top: 0, Right: 0, Bottom: 0, Left: 0 })
 
 // Mirrors backend renderBlockStyleVars so per-block overrides resolve to the same
 // CSS variables the published .rstk-block-style wrapper consumes.
@@ -978,25 +1202,34 @@ const getBlockCanvasStyle = (block: SiteBlock): React.CSSProperties => {
   const supportsButton = block.blockType === 'hero' || block.blockType === 'button' || block.blockType === 'cta'
 
   if (isCssPaint(bg)) style['--rstk-block-bg'] = normalizeCssPaint(bg, '#ffffff')
-  if (isCssColor(text)) style['--rstk-block-text'] = normalizeCssColor(text, '#111827')
+  if (isCssPaint(text)) {
+    const normalized = normalizeCssPaint(text, '#111827')
+    style['--rstk-block-text'] = paintFallbackColor(normalized, '#111827')
+    if (isCssGradient(normalized)) style['--rstk-block-text-paint'] = normalized
+  }
   if (isCssPaint(buttonBg)) {
     const normalized = normalizeCssPaint(buttonBg, '#111827')
     style['--rstk-button-bg'] = normalized
     style['--rstk-button-hover-bg'] = normalized
   }
-  if (isCssColor(buttonText)) style['--rstk-button-text'] = normalizeCssColor(buttonText, '#ffffff')
-  if (isCssColor(buttonBorder)) style['--rstk-button-border'] = normalizeCssColor(buttonBorder, '#111827')
+  if (isCssPaint(buttonText)) {
+    const normalized = normalizeCssPaint(buttonText, '#ffffff')
+    style['--rstk-button-text'] = paintFallbackColor(normalized, '#ffffff')
+    if (isCssGradient(normalized)) style['--rstk-button-text-paint'] = normalized
+  }
+  if (isCssPaint(buttonBorder)) style['--rstk-button-border'] = paintFallbackColor(normalizeCssPaint(buttonBorder, '#111827'), '#111827')
   if (isCssPaint(cardBg)) style['--rstk-card-bg'] = normalizeCssPaint(cardBg, '#ffffff')
-  if (isCssColor(cardBorder)) style['--rstk-card-border'] = normalizeCssColor(cardBorder, '#dbe3ef')
+  if (isCssPaint(cardBorder)) style['--rstk-card-border'] = paintFallbackColor(normalizeCssPaint(cardBorder, '#dbe3ef'), '#dbe3ef')
   if (fontFamily) style['--rstk-block-font'] = fontFamily.replace(/[;"{}<>]/g, '')
   if (settings.fontStyle === 'italic') style['--rstk-block-font-style'] = 'italic'
   if (settings.textDecoration === 'underline') style['--rstk-block-text-decoration'] = 'underline'
   if (settings.textStrokeWidth !== undefined) style['--rstk-text-stroke-width'] = `${getSettingNumber(settings, 'textStrokeWidth', 0, 0, 12)}px`
-  if (isCssColor(textStrokeColor)) style['--rstk-text-stroke-color'] = normalizeCssColor(textStrokeColor, '#111827')
+  if (isCssPaint(textStrokeColor)) style['--rstk-text-stroke-color'] = paintFallbackColor(normalizeCssPaint(textStrokeColor, '#111827'), '#111827')
   if (isCssPaint(fieldBg)) style['--rstk-field-bg'] = normalizeCssPaint(fieldBg, '#ffffff')
-  if (isCssColor(fieldBorder)) style['--rstk-field-border'] = normalizeCssColor(fieldBorder, '#dbe3ef')
-  if (isCssColor(blockBorder)) style['--rstk-block-border'] = normalizeCssColor(blockBorder, '#dbe3ef')
+  if (isCssPaint(fieldBorder)) style['--rstk-field-border'] = paintFallbackColor(normalizeCssPaint(fieldBorder, '#dbe3ef'), '#dbe3ef')
+  if (isCssPaint(blockBorder)) style['--rstk-block-border'] = paintFallbackColor(normalizeCssPaint(blockBorder, '#dbe3ef'), '#dbe3ef')
   if (settings.fontWeight === 'bold') style['--rstk-block-weight'] = '850'
+  if (settings.fontWeight === 'normal') style['--rstk-block-weight'] = '400'
 
   if (settings.textAlign !== undefined) {
     const align = getHorizontalAlign(settings, 'textAlign', 'left')
@@ -1007,12 +1240,24 @@ const getBlockCanvasStyle = (block: SiteBlock): React.CSSProperties => {
     style['--rstk-content-margin-right'] = margins.right
   }
   if (settings.contentMaxWidth !== undefined) style['--rstk-content-max'] = `${getSettingNumber(settings, 'contentMaxWidth', 66, 10, 120)}ch`
-  if (settings.fontSize !== undefined) style['--rstk-block-size'] = `${getSettingNumber(settings, 'fontSize', 18, 12, 72)}px`
-  if (settings.blockPadding !== undefined || hasSpacingSideValue(settings, 'blockPadding')) {
-    style['--rstk-block-pad'] = getSpacingShorthand(settings, 'blockPadding', 0, 0, 160)
+  if (settings.fontSize !== undefined) style['--rstk-block-size'] = `${getSettingNumber(settings, 'fontSize', 18, 12, 96)}px`
+  const hasBlockPadding = settings.blockPadding !== undefined || hasSpacingSideValue(settings, 'blockPadding')
+  const hasBlockMargin = settings.blockMargin !== undefined || hasSpacingSideValue(settings, 'blockMargin')
+  const paddingValues = hasBlockPadding
+    ? getSpacingValues(settings, 'blockPadding', 0, SPACING_OVERLAP_MIN, 160)
+    : null
+  const marginValues = hasBlockMargin
+    ? getSpacingValues(settings, 'blockMargin', 0, SPACING_OVERLAP_MIN, 200)
+    : null
+
+  if (paddingValues) {
+    style['--rstk-block-pad'] = getSpacingShorthand(getPositiveSpacing(paddingValues))
   }
-  if (settings.blockMargin !== undefined || hasSpacingSideValue(settings, 'blockMargin')) {
-    style['--rstk-block-margin'] = getSpacingShorthand(settings, 'blockMargin', 0, -80, 200)
+
+  if (marginValues || paddingValues && hasNegativeSpacing(paddingValues)) {
+    const safeMargin = marginValues || { Top: 0, Right: 0, Bottom: 0, Left: 0 }
+    const paddingOverlap = paddingValues ? getNegativeSpacing(paddingValues) : { Top: 0, Right: 0, Bottom: 0, Left: 0 }
+    style['--rstk-block-margin'] = getSpacingShorthand(combineSpacingValues(safeMargin, paddingOverlap))
   }
   if (settings.blockRadius !== undefined) style['--rstk-block-radius'] = `${getSettingNumber(settings, 'blockRadius', 8, 0, 48)}px`
   if (settings.blockBorderWidth !== undefined) {
@@ -1060,9 +1305,14 @@ const getBlockStyleClassName = (block: SiteBlock, extra = '') => {
   const settings = block.settings || {}
   return [
     'rstk-block-style',
+    block.blockType === HEADER_PANEL_BLOCK_TYPE ? 'rstkHeaderPanelBlock' : '',
+    block.blockType === FOOTER_PANEL_BLOCK_TYPE ? 'rstkFooterPanelBlock' : '',
+    getSettingString(settings, 'blockText') ? 'rstkBlockTextOverride' : '',
+    isCssGradient(getSettingString(settings, 'blockText')) ? 'rstkTextGradient' : '',
+    isCssGradient(getSettingString(settings, 'buttonTextColor')) ? 'rstkButtonTextGradient' : '',
     settings.fontFamily ? 'rstkFontOverride' : '',
     settings.fontSize !== undefined ? 'rstkSizeOverride' : '',
-    settings.fontWeight === 'bold' ? 'rstkWeightOverride' : '',
+    settings.fontWeight === 'bold' || settings.fontWeight === 'normal' ? 'rstkWeightOverride' : '',
     settings.fontStyle === 'italic' ? 'rstkItalicOverride' : '',
     settings.textDecoration === 'underline' ? 'rstkUnderlineOverride' : '',
     settings.textStrokeWidth !== undefined ? 'rstkStrokeOverride' : '',
@@ -1698,6 +1948,7 @@ const makePreviewBlock = (blockType: SiteBlockType, site: PublicSite, pageId?: s
 
 export const Sites: React.FC = () => {
   const { showToast, showConfirm } = useNotification()
+  const { theme } = useTheme()
   const navigate = useNavigate()
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
   const [section, setSection] = useState<SitesSection>('landings')
@@ -1725,6 +1976,7 @@ export const Sites: React.FC = () => {
   const [leadRows, setLeadRows] = useState<LeadRow[]>([])
   const [loadingLeads, setLoadingLeads] = useState(false)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [editorFocusMode, setEditorFocusMode] = useState(false)
   const selectedSiteRef = useRef<PublicSite | null>(null)
   const paletteDragPayloadRef = useRef<PaletteDragPayload | null>(null)
   const guardHistoryArmedRef = useRef(false)
@@ -1764,8 +2016,9 @@ export const Sites: React.FC = () => {
     : section === 'forms'
       ? (isFormSite(selectedSite) ? selectedSite : null)
       : null
-  const metaPixelActive = Boolean(editorSite?.metaCapiEnabled || metaPixelConnected)
+  const metaPixelActive = Boolean(editorSite?.metaCapiEnabled && metaPixelConnected)
   const editorActive = Boolean(editorSite)
+  const isCanvasFocusMode = editorFocusMode && Boolean(editorSite)
   const isFocusedSitesMode = createFlow !== 'closed' || Boolean(editorSite)
   const createFlowHeaderCopy = getCreateFlowHeaderCopy(createFlow)
   const canvasTheme = editorSite ? buildCanvasTheme(editorSite, device) : null
@@ -1785,16 +2038,22 @@ export const Sites: React.FC = () => {
   const canvasPalettePreviewBlock = paletteDragging ? palettePreviewBlock : null
 
   useEffect(() => {
-    window.dispatchEvent(new CustomEvent(SITES_EDITOR_ACTIVE_EVENT, {
-      detail: { active: editorActive }
-    }))
+    setEditorFocusMode(false)
+  }, [editorSite?.id])
 
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent(SITES_EDITOR_ACTIVE_EVENT, {
+      detail: { active: editorActive, focusMode: isCanvasFocusMode }
+    }))
+  }, [editorActive, isCanvasFocusMode])
+
+  useEffect(() => {
     return () => {
       window.dispatchEvent(new CustomEvent(SITES_EDITOR_ACTIVE_EVENT, {
-        detail: { active: false }
+        detail: { active: false, focusMode: false }
       }))
     }
-  }, [editorActive])
+  }, [])
 
   const performUrlNavigation = useCallback((href: string) => {
     const target = new URL(href, window.location.href)
@@ -1860,7 +2119,12 @@ export const Sites: React.FC = () => {
     campaignsService.getMetaConfig()
       .then(response => {
         if (!mounted) return
-        setMetaPixelConnected(Boolean(response.config?.pixelId))
+        setMetaPixelConnected(Boolean(
+          response.configured &&
+          response.config?.adAccountId &&
+          response.config?.accessToken &&
+          response.config?.pixelId
+        ))
       })
       .catch(() => {
         if (mounted) setMetaPixelConnected(false)
@@ -3097,43 +3361,27 @@ export const Sites: React.FC = () => {
 
   return (
     <div className={styles.pageFrame}>
-      <div className={`${styles.container} ${isFocusedSitesMode ? styles.containerFocused : ''}`}>
+      <div className={`${styles.container} ${isFocusedSitesMode ? styles.containerFocused : ''} ${isCanvasFocusMode ? styles.containerEditorFocus : ''}`}>
         <header className={`${styles.header} ${editorSite ? styles.editorHeader : ''}`}>
           {editorSite ? (
             <>
-              <div className={styles.editorHeaderMain}>
-                <div className={styles.editorHeaderIdentity}>
-                  <div className={styles.titleRow}>
+              <div className={styles.editorUnifiedToolbar}>
+                <div className={styles.editorToolbarTop}>
+                  <div className={styles.editorToolbarLeft}>
                     <button type="button" className={styles.backButton} onClick={handleBackToLibrary}>
-                      <ArrowLeft size={16} />
-                      Volver
+                      <ArrowLeft size={15} />
+                      <span>Volver</span>
                     </button>
                     <span className={`${styles.statusPill} ${getStatusClass(editorSite, domainConfig)}`}>{getStatusLabel(editorSite, domainConfig)}</span>
-                  </div>
-                  <label className={styles.editorNameField}>
-                    <input
-                      value={editorSite.name}
-                      aria-label="Nombre interno del site"
-                      style={{ width: `calc(${Math.max((editorSite.name || '').length, 6)}ch + 16px)` }}
-                      onChange={(event) => updateSelectedSite({ name: event.target.value })}
-                      onBlur={() => handleSaveSite(undefined, { silent: true })}
-                    />
-                    <Pencil size={15} />
-                  </label>
-                  <label className={styles.publicTitleEditorField}>
-                    <input
-                      value={getPublicTitleEditorValue(editorSite)}
-                      aria-label="Nombre público"
-                      placeholder="Nombre público"
-                      style={{ width: `calc(${Math.max(getPublicTitleEditorValue(editorSite).length, 'Nombre público'.length)}ch + 16px)` }}
-                      onChange={(event) => updateSelectedSite({ title: event.target.value })}
-                      onBlur={() => handleSaveSite(undefined, { silent: true })}
-                    />
-                    <Pencil size={14} />
-                  </label>
-                </div>
-                <div className={styles.editorTopControls}>
-                  <div className={styles.editorPublishControls}>
+                    <label className={`${styles.editorNameField} ${styles.editorToolbarNameField}`}>
+                      <input
+                        value={editorSite.name}
+                        aria-label="Nombre interno del site"
+                        onChange={(event) => updateSelectedSite({ name: event.target.value })}
+                        onBlur={() => handleSaveSite(undefined, { silent: true })}
+                      />
+                      <Pencil size={13} />
+                    </label>
                     <label className={styles.routeField}>
                       <span className={`${styles.publicRouteBox} ${domainConfig.domain ? '' : styles.publicRouteBoxStandalone}`}>
                         <span className={styles.publicRouteDomain} title={getPublicDomainPreview(domainConfig)}>
@@ -3154,15 +3402,24 @@ export const Sites: React.FC = () => {
                         type="button"
                         className={styles.metaPixelButton}
                         aria-pressed={metaPixelActive}
+                        disabled={!metaPixelConnected}
                         onClick={() => {
-                          if (!editorSite.metaCapiEnabled) {
+                          if (!editorSite.metaCapiEnabled && metaPixelConnected) {
                             updateSelectedSite({ metaCapiEnabled: true })
                             window.setTimeout(() => handleSaveSite(undefined, { silent: true }), 0)
                           }
                         }}
                       >
-                        <span className={styles.metaMark} aria-hidden="true">∞</span>
-                        <span>Meta Pixel</span>
+                        <img
+                          className={styles.metaPixelLogo}
+                          src={theme === 'dark'
+                            ? 'https://img.icons8.com/ios-filled/150/FFFFFF/meta.png'
+                            : 'https://img.icons8.com/ios-filled/150/meta.png'
+                          }
+                          alt=""
+                          aria-hidden="true"
+                        />
+                        <span>Pixel</span>
                         <small>{metaPixelActive ? 'Encendido' : 'Activar'}</small>
                       </button>
                       <label className={styles.metaCardField}>
@@ -3191,37 +3448,53 @@ export const Sites: React.FC = () => {
                         <Smartphone size={15} />
                       </button>
                     </div>
+                    <button type="button" className={styles.editorIconAction} onClick={() => setEditorFocusMode(true)} title="Modo enfoque" aria-label="Modo enfoque">
+                      <Maximize2 size={14} />
+                    </button>
                     <Button variant="secondary" size="lg" onClick={handlePreviewSite}>
-                      <Eye size={16} />
+                      <Eye size={15} />
                       Previsualizar
                     </Button>
                     <Button variant="secondary" size="lg" onClick={() => handleSaveSite()} loading={saving}>
-                      <Save size={16} />
+                      <Save size={15} />
                       Guardar
                     </Button>
                     <Button size="lg" onClick={() => handleSaveSite('published')} loading={saving}>
-                      <Send size={16} />
+                      <Send size={15} />
                       Publicar
                     </Button>
                   </div>
                 </div>
-              </div>
-              {hasEditablePages(editorSite) && (
-                <div className={styles.editorHeaderPages}>
-                  <FunnelPagesPanel
-                    pages={pages}
-                    activePageId={activePage?.id || DEFAULT_FUNNEL_PAGE_ID}
-                    draggingPageId={draggingPageId}
-                    onSelectPage={setActivePageId}
-                    onAddPage={handleAddPage}
-                    onDuplicatePage={handleDuplicatePage}
-                    onDeletePage={handleDeletePage}
-                    onDragPage={setDraggingPageId}
-                    onReorderPages={handleReorderPages}
-                    onRenamePage={handleRenamePage}
-                  />
+                <div className={styles.editorToolbarSub}>
+                  <label className={styles.publicTitleToolbarField}>
+                    <span>Nombre publico</span>
+                    <input
+                      value={getPublicTitleEditorValue(editorSite)}
+                      aria-label="Nombre público"
+                      placeholder="Nombre público"
+                      onChange={(event) => updateSelectedSite({ title: event.target.value })}
+                      onBlur={() => handleSaveSite(undefined, { silent: true })}
+                    />
+                    <Pencil size={12} />
+                  </label>
+                  {hasEditablePages(editorSite) && (
+                    <div className={styles.editorInlinePages}>
+                      <FunnelPagesPanel
+                        pages={pages}
+                        activePageId={activePage?.id || DEFAULT_FUNNEL_PAGE_ID}
+                        draggingPageId={draggingPageId}
+                        onSelectPage={setActivePageId}
+                        onAddPage={handleAddPage}
+                        onDuplicatePage={handleDuplicatePage}
+                        onDeletePage={handleDeletePage}
+                        onDragPage={setDraggingPageId}
+                        onReorderPages={handleReorderPages}
+                        onRenamePage={handleRenamePage}
+                      />
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </>
           ) : (
             <div>
@@ -3305,6 +3578,34 @@ export const Sites: React.FC = () => {
               />
             ) : editorSite ? (
               <section className={styles.builder}>
+              {isCanvasFocusMode && (
+                <div className={styles.focusModeBar} role="toolbar" aria-label="Controles de enfoque">
+                  <button type="button" className={styles.focusExitButton} onClick={() => setEditorFocusMode(false)}>
+                    <X size={16} />
+                    <span>Salir de enfoque</span>
+                  </button>
+                  <div className={styles.deviceToggle} role="group" aria-label="Vista previa del dispositivo">
+                    <button type="button" className={device === 'desktop' ? styles.deviceActive : ''} onClick={() => setDevice('desktop')} title="Escritorio" aria-label="Escritorio">
+                      <Monitor size={15} />
+                    </button>
+                    <button type="button" className={device === 'mobile' ? styles.deviceActive : ''} onClick={() => setDevice('mobile')} title="Movil" aria-label="Movil">
+                      <Smartphone size={15} />
+                    </button>
+                  </div>
+                  <button type="button" className={styles.focusActionButton} onClick={handlePreviewSite}>
+                    <Eye size={15} />
+                    <span>Vista</span>
+                  </button>
+                  <button type="button" className={styles.focusActionButton} onClick={() => handleSaveSite()} disabled={saving}>
+                    <Save size={15} />
+                    <span>Guardar</span>
+                  </button>
+                  <button type="button" className={styles.focusPrimaryButton} onClick={() => handleSaveSite('published')} disabled={saving}>
+                    <Send size={15} />
+                    <span>Publicar</span>
+                  </button>
+                </div>
+              )}
               <div className={`${styles.builderGrid} ${isLanding(editorSite) ? styles.builderGridLanding : styles.builderGridForm}`}>
                 <div className={styles.blocksRail}>
                   <Palette
@@ -3375,7 +3676,7 @@ export const Sites: React.FC = () => {
                                 </div>
                               )}
                               <div className="rstk-form">
-	                              {isLanding(editorSite) ? (
+		                              {isLanding(editorSite) ? (
 	                                !hasLandingCanvasContent ? (
 	                                  canvasPalettePreviewBlock && isTopLevelLandingBlockType(paletteDragPayload?.blockType) ? (
 	                                    <PaletteInsertPreview block={canvasPalettePreviewBlock} forms={forms} calendars={calendars} />
@@ -4143,13 +4444,12 @@ const DimensionField: React.FC<DimensionFieldProps> = ({ label, value, min, max,
       <span>{label}</span>
       <div className={styles.dimensionTextRow}>
         <div className={styles.dimensionBox}>
-          <input
-            type="number"
+          <NumberInput
             min={min}
             max={max}
             step={step}
             value={value}
-            onChange={(event) => set(Number(event.target.value))}
+            onValueChange={set}
             onBlur={onCommit}
           />
           <small>{unit}</small>
@@ -4272,13 +4572,12 @@ const LinkedSpacingField: React.FC<LinkedSpacingFieldProps> = ({
           <label key={side.id} className={styles.spacingBox}>
             <span>{side.label}</span>
             <div>
-              <input
-                type="number"
+              <NumberInput
                 min={min}
                 max={max}
                 step={1}
                 value={values[side.id]}
-                onChange={(event) => patchSide(side.id, Number(event.target.value))}
+                onValueChange={(value) => patchSide(side.id, value)}
                 onBlur={onCommit}
               />
               <small>{unit}</small>
@@ -4296,6 +4595,86 @@ interface ColorFieldProps {
   allowGradient?: boolean
   onChange: (color: string) => void
   onCommit: () => void
+}
+
+type EditableGradientStop = {
+  color: string
+  position: number
+}
+
+type EditableGradient = {
+  angle: number
+  stops: EditableGradientStop[]
+}
+
+const gradientPresets = [
+  { label: 'Azul claro', value: 'linear-gradient(135deg, #dbeafe 0%, #22d3ee 100%)' },
+  { label: 'Noche', value: 'linear-gradient(135deg, #111827 0%, #2563eb 100%)' },
+  { label: 'Verde venta', value: 'linear-gradient(135deg, #dcfce7 0%, #16a34a 100%)' },
+  { label: 'Promo', value: 'linear-gradient(135deg, #ffedd5 0%, #f97316 100%)' },
+  { label: 'Premium', value: 'linear-gradient(135deg, #101010 0%, #d4af37 100%)' },
+  { label: 'Rosa', value: 'linear-gradient(135deg, #fce7f3 0%, #db2777 100%)' }
+]
+
+const clampPercent = (value: number) => clampNumber(value, 0, 100)
+const MAX_GRADIENT_STOPS = 5
+
+const parseGradientStop = (value: string, fallbackColor: string, fallbackPosition: number): EditableGradientStop => {
+  const color = extractCssColor(value, fallbackColor)
+  const positionMatch = value.replace(/rgba?\([^)]*\)/gi, '').match(/(-?\d+(?:\.\d+)?)%/)
+  const position = positionMatch ? clampPercent(Number(positionMatch[1])) : fallbackPosition
+  return { color, position }
+}
+
+const parseEditableGradient = (value: string, fallbackColor = '#111827'): EditableGradient => {
+  const fallback: EditableGradient = {
+    angle: 135,
+    stops: [
+      { color: normalizeCssColor(fallbackColor, '#111827'), position: 0 },
+      { color: '#ffffff', position: 100 }
+    ]
+  }
+
+  const raw = String(value || '').trim()
+  const match = raw.match(/^linear-gradient\((.*)\)$/i)
+  if (!match) return fallback
+
+  const args = splitCssArgs(match[1])
+  const first = args[0] || ''
+  const angleMatch = first.match(/^(-?\d+(?:\.\d+)?)deg$/i)
+  const angle = angleMatch ? clampNumber(Number(angleMatch[1]), 0, 360) : 135
+  const stopArgs = angleMatch ? args.slice(1) : args
+  if (stopArgs.length < 2) return fallback
+
+  return {
+    angle,
+    stops: stopArgs.slice(0, MAX_GRADIENT_STOPS).map((stopArg, index, list) => (
+      parseGradientStop(
+        stopArg,
+        index === 0 ? fallback.stops[0].color : fallback.stops[1].color,
+        list.length === 1 ? 100 : (index / (list.length - 1)) * 100
+      )
+    ))
+  }
+}
+
+const formatEditableGradient = (gradient: EditableGradient) =>
+  `linear-gradient(${Math.round(gradient.angle)}deg, ${[...gradient.stops]
+    .sort((a, b) => a.position - b.position)
+    .map(stop => `${stop.color} ${Math.round(stop.position)}%`)
+    .join(', ')})`
+
+const defaultGradientFromPaint = (paint: string) => {
+  if (isCssGradient(paint)) return paint
+  const start = normalizeCssColor(paint, '#111827')
+  const end = relLum(start) > 0.58 ? '#2563eb' : '#ffffff'
+  return formatEditableGradient({
+    angle: 135,
+    stops: [
+      { color: start, position: 0 },
+      { color: end, position: 100 }
+    ]
+  })
 }
 
 const rgbToHsv = ({ r, g, b }: { r: number; g: number; b: number }) => {
@@ -4358,17 +4737,22 @@ const swatchBackground = (color: string) => isCssGradient(color)
       backgroundSize: '12px 12px'
     } as React.CSSProperties)
 
-// Ristak color control: no native OS picker, with hue, intensity and alpha.
-const ColorField: React.FC<ColorFieldProps> = ({ label, value, allowGradient = false, onChange, onCommit }) => {
+// Ristak paint control: solid color or editable multi-stop gradient.
+const ColorField: React.FC<ColorFieldProps> = ({ label, value, allowGradient = true, onChange, onCommit }) => {
   const rootRef = useRef<HTMLDivElement>(null)
-  const color = allowGradient ? normalizeCssPaint(value, '#000000') : normalizeCssColor(value, '#000000')
-  const colorForPicker = isCssGradient(color) ? '#000000' : color
-  const rgba = parseCssColor(colorForPicker, '#000000')
+  const paint = allowGradient ? normalizeCssPaint(value, '#000000') : normalizeCssColor(value, '#000000')
+  const isGradient = allowGradient && isCssGradient(paint)
+  const gradient = useMemo(() => parseEditableGradient(paint, paintFallbackColor(paint, '#111827')), [paint])
+  const [activeStopIndex, setActiveStopIndex] = useState(0)
+  const safeActiveStopIndex = Math.min(activeStopIndex, Math.max(0, gradient.stops.length - 1))
+  const activeStop = gradient.stops[safeActiveStopIndex]
+  const activeColor = isGradient ? (activeStop?.color || '#000000') : paint
+  const rgba = parseCssColor(activeColor, '#000000')
   const hsv = rgbToHsv(rgba)
   const hueRgb = hsvToRgb(hsv.h, 1, 1)
   const hueColor = rgbToHex(hueRgb.r, hueRgb.g, hueRgb.b)
   const alphaColor = formatCssColor({ r: rgba.r, g: rgba.g, b: rgba.b, a: 1 })
-  const [text, setText] = useState(color)
+  const [text, setText] = useState(paint)
   const [open, setOpen] = useState(false)
 
   useEffect(() => { setText(allowGradient ? normalizeCssPaint(value, '#000000') : normalizeCssColor(value, '#000000')) }, [allowGradient, value])
@@ -4385,15 +4769,88 @@ const ColorField: React.FC<ColorFieldProps> = ({ label, value, allowGradient = f
     return () => document.removeEventListener('mousedown', close)
   }, [onCommit, open])
 
-  const patchColor = (next: { h?: number; s?: number; v?: number; a?: number }) => {
+  const emitPaint = (nextPaint: string) => {
+    setText(nextPaint)
+    onChange(nextPaint)
+  }
+
+  const patchGradient = (patch: Partial<EditableGradient> & { stops?: EditableGradientStop[] }) => {
+    const nextGradient = {
+      ...gradient,
+      ...patch,
+      stops: patch.stops || gradient.stops
+    }
+    emitPaint(formatEditableGradient(nextGradient))
+  }
+
+  const patchActiveColor = (next: { h?: number; s?: number; v?: number; a?: number }) => {
     const nextH = next.h ?? hsv.h
     const nextS = next.s ?? hsv.s
     const nextV = next.v ?? hsv.v
     const nextA = next.a ?? rgba.a
     const rgb = hsvToRgb(nextH, nextS, nextV)
     const formatted = formatCssColor({ ...rgb, a: nextA })
-    setText(formatted)
-    onChange(formatted)
+    if (!isGradient) {
+      emitPaint(formatted)
+      return
+    }
+    const stops = [...gradient.stops]
+    stops[safeActiveStopIndex] = { ...stops[safeActiveStopIndex], color: formatted }
+    patchGradient({ stops })
+  }
+
+  const setMode = (mode: 'solid' | 'gradient') => {
+    if (mode === 'gradient') {
+      emitPaint(defaultGradientFromPaint(paint))
+      return
+    }
+    emitPaint(paintFallbackColor(paint, '#111827'))
+  }
+
+  const patchStopText = (index: number, nextColor: string) => {
+    const normalized = normalizeCssColor(nextColor.startsWith('#') || nextColor.startsWith('rgb') || nextColor === 'transparent' ? nextColor : `#${nextColor}`, '')
+    if (!normalized) return
+    const stops = [...gradient.stops]
+    stops[index] = { ...stops[index], color: normalized }
+    patchGradient({ stops })
+  }
+
+  const patchStopPosition = (index: number, nextPosition: number) => {
+    const stops = [...gradient.stops]
+    stops[index] = { ...stops[index], position: clampPercent(nextPosition) }
+    patchGradient({ stops })
+  }
+
+  const addGradientStop = () => {
+    if (gradient.stops.length >= MAX_GRADIENT_STOPS) return
+    const sorted = [...gradient.stops].sort((a, b) => a.position - b.position)
+    const largestGap = sorted.slice(0, -1).reduce((best, stop, index) => {
+      const next = sorted[index + 1]
+      const gap = next.position - stop.position
+      return gap > best.gap ? { gap, index, stop, next } : best
+    }, { gap: -1, index: 0, stop: sorted[0], next: sorted[1] })
+    const position = largestGap.stop && largestGap.next
+      ? clampPercent(largestGap.stop.position + largestGap.gap / 2)
+      : 50
+    const color = largestGap.next?.color || activeStop?.color || '#ffffff'
+    const stops = [...gradient.stops, { color, position }]
+    setActiveStopIndex(stops.length - 1)
+    patchGradient({ stops })
+  }
+
+  const removeActiveGradientStop = () => {
+    if (gradient.stops.length <= 2) return
+    const stops = gradient.stops.filter((_, index) => index !== safeActiveStopIndex)
+    setActiveStopIndex(Math.max(0, Math.min(safeActiveStopIndex, stops.length - 1)))
+    patchGradient({ stops })
+  }
+
+  const handleStopRailPointer = (event: React.PointerEvent<HTMLDivElement>, index: number) => {
+    const rail = event.currentTarget.closest(`.${styles.gradientStopRail}`) as HTMLDivElement | null
+    if (!rail) return
+    const rect = rail.getBoundingClientRect()
+    const x = Math.min(rect.width, Math.max(0, event.clientX - rect.left))
+    patchStopPosition(index, (x / rect.width) * 100)
   }
 
   const commitText = () => {
@@ -4408,7 +4865,7 @@ const ColorField: React.FC<ColorFieldProps> = ({ label, value, allowGradient = f
       onChange(normalized)
       onCommit()
     } else {
-      setText(color)
+      setText(paint)
     }
   }
 
@@ -4416,17 +4873,19 @@ const ColorField: React.FC<ColorFieldProps> = ({ label, value, allowGradient = f
     const rect = event.currentTarget.getBoundingClientRect()
     const x = Math.min(rect.width, Math.max(0, event.clientX - rect.left))
     const y = Math.min(rect.height, Math.max(0, event.clientY - rect.top))
-    patchColor({ s: x / rect.width, v: 1 - y / rect.height })
+    patchActiveColor({ s: x / rect.width, v: 1 - y / rect.height })
   }
 
   return (
-    <div ref={rootRef} className={styles.colorField}>
-      <span>{label}</span>
+    <div ref={rootRef} className={styles.colorField} data-paint-control="gradient-v3" data-paint-mode={isGradient ? 'gradient' : 'solid'}>
+      <div className={styles.colorFieldHeader}>
+        <span>{label}</span>
+      </div>
       <div className={styles.colorRow} data-open={open ? 'true' : 'false'}>
         <button
           type="button"
           className={styles.colorSwatchButton}
-          style={swatchBackground(color)}
+          style={swatchBackground(paint)}
           onClick={() => setOpen(current => !current)}
           aria-label={`Elegir ${label}`}
         />
@@ -4434,7 +4893,7 @@ const ColorField: React.FC<ColorFieldProps> = ({ label, value, allowGradient = f
           className={styles.colorHex}
           value={text}
           spellCheck={false}
-          maxLength={allowGradient ? 180 : 28}
+          maxLength={allowGradient ? 360 : 28}
           onChange={(event) => setText(event.target.value)}
           onBlur={commitText}
           onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); commitText() } }}
@@ -4463,10 +4922,124 @@ const ColorField: React.FC<ColorFieldProps> = ({ label, value, allowGradient = f
               min={0}
               max={360}
               value={Math.round(hsv.h)}
-              onChange={(event) => patchColor({ h: Number(event.target.value) })}
+              onChange={(event) => patchActiveColor({ h: Number(event.target.value) })}
               onBlur={onCommit}
             />
           </label>
+          {allowGradient && (
+            <section className={styles.gradientPanel} aria-label={`Degradado para ${label}`}>
+              <div className={styles.gradientPanelHeader}>
+                <span>Degradado</span>
+                {isGradient ? (
+                  <button type="button" className={styles.gradientClearButton} onClick={() => setMode('solid')} aria-label="Quitar degradado">
+                    <X size={14} />
+                    <span>Sin degradado</span>
+                  </button>
+                ) : (
+                  <button type="button" className={styles.gradientCreateButton} onClick={() => setMode('gradient')}>
+                    <Plus size={14} />
+                    <span>Crear degradado</span>
+                  </button>
+                )}
+              </div>
+              {!isGradient ? (
+                <div className={styles.gradientEmptyState}>
+                  <X size={15} />
+                  <span>Sin degradado</span>
+                </div>
+              ) : (
+                <div className={styles.gradientEditor}>
+                  <div className={styles.gradientPresetGrid} aria-label="Paletas de degradado">
+                    {gradientPresets.map(preset => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        style={swatchBackground(preset.value)}
+                        onClick={() => emitPaint(preset.value)}
+                        title={preset.label}
+                        aria-label={preset.label}
+                      />
+                    ))}
+                  </div>
+                  <div className={styles.gradientStops}>
+                    <div
+                      className={styles.gradientStopRail}
+                      style={{ backgroundImage: formatEditableGradient(gradient) }}
+                      aria-label="Distancia entre colores del degradado"
+                    >
+                      {gradient.stops.map((stop, index) => (
+                        <button
+                          key={`${stop.color}-${index}`}
+                          type="button"
+                          className={styles.gradientStopHandle}
+                          data-active={safeActiveStopIndex === index ? 'true' : 'false'}
+                          style={{ left: `${stop.position}%`, ...swatchBackground(stop.color) }}
+                          onPointerDown={(event) => {
+                            event.currentTarget.setPointerCapture(event.pointerId)
+                            setActiveStopIndex(index)
+                            handleStopRailPointer(event, index)
+                          }}
+                          onPointerMove={(event) => {
+                            if (event.buttons) handleStopRailPointer(event, index)
+                          }}
+                          onPointerUp={onCommit}
+                          aria-label={`Mover color ${index + 1}`}
+                        />
+                      ))}
+                    </div>
+                    <div className={styles.gradientStopActions}>
+                      <button type="button" onClick={addGradientStop} disabled={gradient.stops.length >= MAX_GRADIENT_STOPS}>
+                        Agregar punto
+                      </button>
+                      <button type="button" onClick={removeActiveGradientStop} disabled={gradient.stops.length <= 2}>
+                        Quitar punto
+                      </button>
+                    </div>
+                    <label className={styles.colorSlider}>
+                      <span>Direccion</span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={360}
+                        value={Math.round(gradient.angle)}
+                        onChange={(event) => patchGradient({ angle: Number(event.target.value) })}
+                        onBlur={onCommit}
+                      />
+                    </label>
+                    {gradient.stops.map((stop, index) => (
+                      <div key={index} className={styles.gradientStopRow} data-active={safeActiveStopIndex === index ? 'true' : 'false'}>
+                        <button
+                          type="button"
+                          className={styles.gradientStopButton}
+                          style={swatchBackground(stop.color)}
+                          onClick={() => setActiveStopIndex(index)}
+                          aria-label={`Editar color ${index + 1}`}
+                        />
+                        <input
+                          value={stop.color}
+                          spellCheck={false}
+                          onFocus={() => setActiveStopIndex(index)}
+                          onChange={(event) => patchStopText(index, event.target.value)}
+                          onBlur={onCommit}
+                        />
+                        <div className={styles.gradientStopPosition}>
+                          <NumberInput
+                            min={0}
+                            max={100}
+                            value={Math.round(stop.position)}
+                            onFocus={() => setActiveStopIndex(index)}
+                            onValueChange={(value) => patchStopPosition(index, value)}
+                            onBlur={onCommit}
+                          />
+                          <small>%</small>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
           <label className={styles.alphaSlider}>
             <span>Transparencia</span>
             <input
@@ -4475,12 +5048,12 @@ const ColorField: React.FC<ColorFieldProps> = ({ label, value, allowGradient = f
               max={100}
               value={Math.round(rgba.a * 100)}
               style={{ ['--alpha-color' as string]: alphaColor } as React.CSSProperties}
-              onChange={(event) => patchColor({ a: Number(event.target.value) / 100 })}
+              onChange={(event) => patchActiveColor({ a: Number(event.target.value) / 100 })}
               onBlur={onCommit}
             />
           </label>
           <div className={styles.colorPopoverActions}>
-            <button type="button" onClick={() => patchColor({ a: 0 })}>Transparente</button>
+            <button type="button" onClick={() => patchActiveColor({ a: 0 })}>Transparente</button>
             <button type="button" onClick={() => { setOpen(false); onCommit() }}>Listo</button>
           </div>
         </div>
@@ -4897,6 +5470,12 @@ const InlineEditable: React.FC<InlineEditableProps> = ({
   )
 }
 
+const InlineButtonEditable: React.FC<Omit<InlineEditableProps, 'as' | 'className'>> = (props) => (
+  <a className="rstk-button-link" href="#" onClick={(event) => event.preventDefault()}>
+    <InlineEditable {...props} as="span" className="rstk-button-label" />
+  </a>
+)
+
 // Renders the canvas page at its true desktop width and transform-scales it to
 // fit the column — a faithful "monitor comprimido" of the published page.
 interface CanvasStageProps {
@@ -5046,9 +5625,6 @@ const SortableCanvasBlock: React.FC<SortableCanvasBlockProps> = ({
         onSelect()
       }}
     >
-      {site.siteType === 'interactive_form' && fieldBlockTypes.has(block.blockType) && (
-        <span className="rstkStepBadge">Pantalla {index + 1}</span>
-      )}
       <div className="rstkBlockTools">
         <button type="button" className="rstkBlockTool rstkBlockToolDrag" {...attributes} {...listeners} aria-label="Reordenar bloque">
           <GripVertical size={15} />
@@ -5580,10 +6156,11 @@ const InlineButtonRouting: React.FC<{
 const InlineBlockStyleControls: React.FC<{
   site: PublicSite
   block: SiteBlock
+  blocks: SiteBlock[]
   onPatchSettings: (patch: Record<string, unknown>) => void
   onSave: () => void
-}> = ({ site, block, onPatchSettings, onSave }) => {
-  const settings = block.settings || {}
+}> = ({ site, block, blocks, onPatchSettings, onSave }) => {
+  const settings = getPanelStyleSettings(site, block, blocks)
   const defaultAccent = defaultAccentForSite(site)
   const isSection = block.blockType === SECTION_BLOCK_TYPE
   const isLandingContent = isLanding(site) && !isSection
@@ -5593,55 +6170,111 @@ const InlineBlockStyleControls: React.FC<{
   const supportsTextStyle = isSection || ['headline', 'title', 'subheading', 'subtitle', 'description', 'text', 'hero', 'cta', 'benefits', 'testimonials', 'services', 'faq', 'form_embed'].includes(block.blockType)
   const supportsMedia = block.blockType === 'image' || block.blockType === 'video'
   const supportsCards = ['benefits', 'testimonials', 'services', 'faq'].includes(block.blockType)
-  const defaultBorderWidth = nativeBorderBlockTypes.has(block.blockType) ? 1 : 0
+  const defaultBorderWidth = getBlockBorderWidthFallback(site, block)
+  const blockTextPaint = getSettingPaint(settings, 'blockText', getPageTextPaint(site))
+  const isBold = settings.fontWeight === 'bold'
+  const isItalic = settings.fontStyle === 'italic'
+  const isUnderline = settings.textDecoration === 'underline'
+  const currentFontFamily = getSettingString(settings, 'fontFamily')
+  const fontOptions = currentFontFamily && !GOOGLE_FONT_OPTIONS.some(option => option.value === currentFontFamily)
+    ? [...GOOGLE_FONT_OPTIONS, { label: 'Fuente actual', value: currentFontFamily }]
+    : GOOGLE_FONT_OPTIONS
+  const patchTextFormat = (patch: Record<string, unknown>) => {
+    onPatchSettings(patch)
+    window.setTimeout(onSave, 0)
+  }
 
   return (
     <div className={styles.blockStyleControls} onClick={(event) => event.stopPropagation()}>
       {supportsTextStyle && (
         <>
           <div className={styles.panelSubheader}>Personalizacion del texto</div>
-          <AlignmentControl
-            label="Alineacion"
-            value={getHorizontalAlign(settings, 'textAlign', block.blockType === 'hero' || block.blockType === 'cta' ? 'center' : 'left')}
-            options={horizontalAlignOptions}
-            onChange={(value) => onPatchSettings({ textAlign: value })}
-            onCommit={onSave}
-          />
-          <div className={styles.twoColumn}>
-            <DimensionField
-              label="Tamano de letra"
-              value={getSettingNumber(settings, 'fontSize', 18, 12, 72)}
-              min={12}
-              max={72}
-              unit="px"
-              onChange={(value) => onPatchSettings({ fontSize: value })}
+          <div className={styles.textFormatPanel}>
+            <div className={styles.textToolbar}>
+              <label className={styles.textFontSelect}>
+                <span>Fuente</span>
+                <select value={currentFontFamily} onChange={(event) => onPatchSettings({ fontFamily: event.target.value })} onBlur={onSave}>
+                  {fontOptions.map(option => (
+                    <option key={option.label} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              <div className={styles.textFormatButtons} role="group" aria-label="Formato de texto">
+                <button
+                  type="button"
+                  className={isBold ? styles.textFormatActive : ''}
+                  aria-pressed={isBold}
+                  title="Negrita"
+                  aria-label="Negrita"
+                  onClick={() => patchTextFormat({ fontWeight: isBold ? 'normal' : 'bold' })}
+                >
+                  <Bold size={15} />
+                </button>
+                <button
+                  type="button"
+                  className={isItalic ? styles.textFormatActive : ''}
+                  aria-pressed={isItalic}
+                  title="Italica"
+                  aria-label="Italica"
+                  onClick={() => patchTextFormat({ fontStyle: isItalic ? '' : 'italic' })}
+                >
+                  <Italic size={15} />
+                </button>
+                <button
+                  type="button"
+                  className={isUnderline ? styles.textFormatActive : ''}
+                  aria-pressed={isUnderline}
+                  title="Subrayado"
+                  aria-label="Subrayado"
+                  onClick={() => patchTextFormat({ textDecoration: isUnderline ? '' : 'underline' })}
+                >
+                  <Underline size={15} />
+                </button>
+              </div>
+            </div>
+            <AlignmentControl
+              label="Alineacion"
+              value={getHorizontalAlign(settings, 'textAlign', getBlockTextAlignFallback(site, block, blocks))}
+              options={horizontalAlignOptions}
+              onChange={(value) => onPatchSettings({ textAlign: value })}
               onCommit={onSave}
             />
-            <DimensionField
-              label="Ancho texto"
-              value={getSettingNumber(settings, 'contentMaxWidth', 66, 10, 120)}
-              min={10}
-              max={120}
-              unit="ch"
-              onChange={(value) => onPatchSettings({ contentMaxWidth: value })}
-              onCommit={onSave}
-            />
-          </div>
-          <div className={styles.twoColumn}>
-            <ColorField
-              label="Color"
-              value={getSettingHex(settings, 'blockText', '#111827')}
-              onChange={(value) => onPatchSettings({ blockText: value })}
-              onCommit={onSave}
-            />
-            <ColorField
-              label="Color contorno"
-              value={getSettingHex(settings, 'textStrokeColor', getSettingHex(settings, 'blockText', '#111827'))}
-              onChange={(value) => onPatchSettings({ textStrokeColor: value })}
-              onCommit={onSave}
-            />
-          </div>
-          <div className={styles.twoColumn}>
+            <div className={styles.twoColumn}>
+              <DimensionField
+                label="Tamano de letra"
+                value={getSettingNumber(settings, 'fontSize', getBlockFontSizeFallback(site, block), 12, 96)}
+                min={12}
+                max={96}
+                unit="px"
+                onChange={(value) => onPatchSettings({ fontSize: value })}
+                onCommit={onSave}
+              />
+              <DimensionField
+                label="Ancho texto"
+                value={getSettingNumber(settings, 'contentMaxWidth', getBlockContentMaxWidthFallback(site, block), 10, 120)}
+                min={10}
+                max={120}
+                unit="ch"
+                onChange={(value) => onPatchSettings({ contentMaxWidth: value })}
+                onCommit={onSave}
+              />
+            </div>
+            <div className={styles.twoColumn}>
+              <ColorField
+                label="Color"
+                value={blockTextPaint}
+                allowGradient
+                onChange={(value) => onPatchSettings({ blockText: value })}
+                onCommit={onSave}
+              />
+              <ColorField
+                label="Color contorno"
+                value={getSettingPaint(settings, 'textStrokeColor', paintFallbackColor(blockTextPaint, '#111827'))}
+                allowGradient
+                onChange={(value) => onPatchSettings({ textStrokeColor: value })}
+                onCommit={onSave}
+              />
+            </div>
             <DimensionField
               label="Contorno"
               value={getSettingNumber(settings, 'textStrokeWidth', 0, 0, 12)}
@@ -5651,50 +6284,6 @@ const InlineBlockStyleControls: React.FC<{
               onChange={(value) => onPatchSettings({ textStrokeWidth: value })}
               onCommit={onSave}
             />
-            <label className={styles.field}>
-              <span>Fuente</span>
-              <select value={getSettingString(settings, 'fontFamily')} onChange={(event) => onPatchSettings({ fontFamily: event.target.value })} onBlur={onSave}>
-                <option value="">Sistema</option>
-                <option value="Inter, system-ui, sans-serif">Inter</option>
-                <option value="'Inter Tight', Inter, system-ui, sans-serif">Inter Tight</option>
-                <option value="Georgia, 'Times New Roman', serif">Serif</option>
-              </select>
-            </label>
-          </div>
-          <div className={styles.inlineBlockTools}>
-            <label className={styles.checkboxLabel}>
-              <input
-                type="checkbox"
-                checked={settings.fontWeight === 'bold'}
-                onChange={(event) => {
-                  onPatchSettings({ fontWeight: event.target.checked ? 'bold' : '' })
-                  window.setTimeout(onSave, 0)
-                }}
-              />
-              <span>Negrita</span>
-            </label>
-            <label className={styles.checkboxLabel}>
-              <input
-                type="checkbox"
-                checked={settings.fontStyle === 'italic'}
-                onChange={(event) => {
-                  onPatchSettings({ fontStyle: event.target.checked ? 'italic' : '' })
-                  window.setTimeout(onSave, 0)
-                }}
-              />
-              <span>Italica</span>
-            </label>
-            <label className={styles.checkboxLabel}>
-              <input
-                type="checkbox"
-                checked={settings.textDecoration === 'underline'}
-                onChange={(event) => {
-                  onPatchSettings({ textDecoration: event.target.checked ? 'underline' : '' })
-                  window.setTimeout(onSave, 0)
-                }}
-              />
-              <span>Subrayado</span>
-            </label>
           </div>
         </>
       )}
@@ -5719,7 +6308,8 @@ const InlineBlockStyleControls: React.FC<{
             />
             <ColorField
               label="Texto del boton"
-              value={getSettingHex(settings, 'buttonTextColor', onAccentFor(defaultAccent))}
+              value={getSettingPaint(settings, 'buttonTextColor', onAccentFor(defaultAccent))}
+              allowGradient
               onChange={(value) => onPatchSettings({ buttonTextColor: value })}
               onCommit={onSave}
             />
@@ -5771,7 +6361,8 @@ const InlineBlockStyleControls: React.FC<{
             />
             <ColorField
               label="Color borde"
-              value={getSettingHex(settings, 'buttonBorderColor', getSettingHex(settings, 'buttonBg', defaultAccent))}
+              value={getSettingPaint(settings, 'buttonBorderColor', getSettingPaint(settings, 'buttonBg', defaultAccent))}
+              allowGradient
               onChange={(value) => onPatchSettings({ buttonBorderColor: value })}
               onCommit={onSave}
             />
@@ -5792,7 +6383,8 @@ const InlineBlockStyleControls: React.FC<{
             />
             <ColorField
               label="Borde del campo"
-              value={getSettingHex(settings, 'fieldBorder', '#dbe3ef')}
+              value={getSettingPaint(settings, 'fieldBorder', '#dbe3ef')}
+              allowGradient
               onChange={(value) => onPatchSettings({ fieldBorder: value })}
               onCommit={onSave}
             />
@@ -5879,7 +6471,8 @@ const InlineBlockStyleControls: React.FC<{
             />
             <ColorField
               label="Borde tarjeta"
-              value={getSettingHex(settings, 'cardBorderColor', '#dbe3ef')}
+              value={getSettingPaint(settings, 'cardBorderColor', '#dbe3ef')}
+              allowGradient
               onChange={(value) => onPatchSettings({ cardBorderColor: value })}
               onCommit={onSave}
             />
@@ -5897,22 +6490,22 @@ const InlineBlockStyleControls: React.FC<{
 
       <div className={styles.panelSubheader}>{isSection ? 'Estilo de franja' : isLandingContent ? 'Estilo del contenedor' : 'Estilo del bloque'}</div>
       <LinkedSpacingField
-        label={isSection ? 'Relleno de franja' : 'Padding'}
+        label={isSection ? 'Relleno de franja' : 'Relleno'}
         base="blockPadding"
         settings={settings}
-        min={0}
+        min={SPACING_OVERLAP_MIN}
         max={160}
-        fallback={getSettingNumber(settings, 'blockPadding', 0, 0, 160)}
+        fallback={getSettingNumber(settings, 'blockPadding', 0, SPACING_OVERLAP_MIN, 160)}
         onChange={onPatchSettings}
         onCommit={onSave}
       />
       <LinkedSpacingField
-        label={isSection ? 'Separacion de franja' : 'Margen'}
+        label={isSection ? 'Margen de franja' : 'Margen'}
         base="blockMargin"
         settings={settings}
-        min={-80}
+        min={SPACING_OVERLAP_MIN}
         max={200}
-        fallback={getSettingNumber(settings, 'blockMargin', 0, -80, 200)}
+        fallback={getSettingNumber(settings, 'blockMargin', 0, SPACING_OVERLAP_MIN, 200)}
         onChange={onPatchSettings}
         onCommit={onSave}
       />
@@ -5945,7 +6538,8 @@ const InlineBlockStyleControls: React.FC<{
           </div>
           <ColorField
             label="Color borde"
-            value={getSettingHex(settings, 'blockBorderColor', '#dbe3ef')}
+            value={getSettingPaint(settings, 'blockBorderColor', '#dbe3ef')}
+            allowGradient
             onChange={(value) => onPatchSettings({ blockBorderColor: value })}
             onCommit={onSave}
           />
@@ -6018,7 +6612,7 @@ const CanvasPreviewBlock: React.FC<CanvasPreviewBlockProps> = ({
         <InlineEditable as="p" className="rstk-kicker" value={getSettingString(settings, 'kicker')} placeholder="Kicker (opcional)" disabled={!editable} onChange={(value) => patchSettings({ kicker: value })} onCommit={save} />
         <InlineEditable as="h1" className="rstk-headline" multiline value={block.content} placeholder={block.label || 'Titular principal'} disabled={!editable} onChange={(value) => patchBlock({ content: value })} onCommit={save} />
         <InlineEditable as="p" className="rstk-subheading" multiline value={getSettingString(settings, 'subtitle')} placeholder="Subtitulo" disabled={!editable} onChange={(value) => patchSettings({ subtitle: value })} onCommit={save} />
-        <InlineEditable as="a" className="rstk-button-link" value={getSettingString(settings, 'buttonText')} placeholder="Texto del boton" disabled={!editable} onChange={(value) => patchSettings({ buttonText: value })} onCommit={save} />
+        <InlineButtonEditable value={getSettingString(settings, 'buttonText')} placeholder="Texto del boton" disabled={!editable} onChange={(value) => patchSettings({ buttonText: value })} onCommit={save} />
       </section>
     )
   }
@@ -6067,7 +6661,7 @@ const CanvasPreviewBlock: React.FC<CanvasPreviewBlockProps> = ({
 
   if (block.blockType === 'button') {
     return (
-      <InlineEditable as="a" className="rstk-button-link" value={getSettingString(settings, 'buttonText') || block.content || ''} placeholder="Boton" disabled={!editable} onChange={(value) => patchSettings({ buttonText: value })} onCommit={save} />
+      <InlineButtonEditable value={getSettingString(settings, 'buttonText') || block.content || ''} placeholder="Boton" disabled={!editable} onChange={(value) => patchSettings({ buttonText: value })} onCommit={save} />
     )
   }
 
@@ -6137,7 +6731,7 @@ const CanvasPreviewBlock: React.FC<CanvasPreviewBlockProps> = ({
       <section className="rstk-cta">
         <InlineEditable as="h2" value={block.content} placeholder={block.label || 'CTA final'} disabled={!editable} onChange={(value) => patchBlock({ content: value })} onCommit={save} />
         <InlineEditable as="p" multiline value={getSettingString(settings, 'subtitle')} placeholder="Subtitulo" disabled={!editable} onChange={(value) => patchSettings({ subtitle: value })} onCommit={save} />
-        <InlineEditable as="a" className="rstk-button-link" value={getSettingString(settings, 'buttonText')} placeholder="Texto del boton" disabled={!editable} onChange={(value) => patchSettings({ buttonText: value })} onCommit={save} />
+        <InlineButtonEditable value={getSettingString(settings, 'buttonText')} placeholder="Texto del boton" disabled={!editable} onChange={(value) => patchSettings({ buttonText: value })} onCommit={save} />
       </section>
     )
   }
@@ -6299,8 +6893,9 @@ const PageInspector: React.FC<{
       </div>
       <div className={styles.propertiesBody}>
         {!(platform && showSocialProfile) && (
-        <div className={styles.settingsGroup}>
-          <div className={styles.panelSubheader}>Colores</div>
+          <>
+            <div className={styles.settingsGroup}>
+              <div className={styles.panelSubheader}>Colores</div>
           <div className={styles.twoColumn}>
             <ColorField
               label="Fondo de pagina"
@@ -6310,12 +6905,20 @@ const PageInspector: React.FC<{
               onCommit={onSaveSite}
             />
             <ColorField
-              label="Acento"
-              value={userAccentColor(site) || (isSiteDark(site) ? '#ffffff' : '#111827')}
-              onChange={(value) => onPatchTheme({ accentColor: value })}
+              label="Texto de pagina"
+              value={getThemePaint(theme, 'textColor', isSiteDark(site) ? '#ffffff' : '#111827')}
+              allowGradient
+              onChange={(value) => onPatchTheme({ textColor: value, textColorCustom: true })}
               onCommit={onSaveSite}
             />
           </div>
+          <ColorField
+            label="Acento"
+            value={getThemePaint(theme, 'accentColor', userAccentColor(site) || (isSiteDark(site) ? '#ffffff' : '#111827'))}
+            allowGradient
+            onChange={(value) => onPatchTheme({ accentColor: value })}
+            onCommit={onSaveSite}
+          />
           <label className={styles.field}>
             <span>URL de fondo</span>
             <input
@@ -6364,7 +6967,7 @@ const PageInspector: React.FC<{
           />
           <div className={styles.twoColumn}>
             <DimensionField
-              label="Padding"
+              label="Relleno de pagina"
               value={getThemeNumber(theme, 'pagePadding', isLanding(site) ? LANDING_DEFAULT_PAGE_PADDING : 22, 0, 120)}
               min={0}
               max={120}
@@ -6392,7 +6995,8 @@ const PageInspector: React.FC<{
             />
             <ColorField
               label="Color"
-              value={getThemeHex(theme, 'pageBorderColor', '#dbe3ef')}
+              value={getThemePaint(theme, 'pageBorderColor', '#dbe3ef')}
+              allowGradient
               onChange={(value) => onPatchTheme({ pageBorderColor: value })}
               onCommit={onSaveSite}
             />
@@ -6473,6 +7077,7 @@ const PageInspector: React.FC<{
             </>
           )}
         </div>
+          </>
         )}
 
         {platform && showSocialProfile && (
@@ -6636,6 +7241,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         <InlineBlockStyleControls
           site={site}
           block={block}
+          blocks={blocks}
           onPatchSettings={onPatchSettings}
           onSave={onSave}
         />

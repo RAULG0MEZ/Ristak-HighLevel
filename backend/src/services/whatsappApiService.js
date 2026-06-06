@@ -1,4 +1,7 @@
 import crypto from 'crypto'
+import fs from 'fs/promises'
+import { dirname, join } from 'path'
+import { fileURLToPath } from 'url'
 import fetch from 'node-fetch'
 import { db, getAppConfig, setAppConfig } from '../config/database.js'
 import { findContactByPhoneCandidates } from './contactIdentityService.js'
@@ -8,11 +11,22 @@ import { buildPhoneMatchCandidates, normalizePhoneDigits, normalizePhoneForStora
 import { detectWhatsAppAttributionFields } from '../utils/whatsappAttribution.js'
 import { logger } from '../utils/logger.js'
 
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
 const YCLOUD_API_BASE_URL = 'https://api.ycloud.com/v2'
 const SOURCE_NAME = 'WhatsApp_API'
 const PROVIDER_NAME = 'ycloud'
 const WEBHOOK_DESCRIPTION = 'Ristak WhatsApp_API via YCloud'
 const GENERIC_CONTACT_NAME = 'Contacto WhatsApp_API'
+const WHATSAPP_IMAGE_UPLOAD_ROOT = join(__dirname, '../../uploads/whatsapp-images')
+const WHATSAPP_IMAGE_PUBLIC_PATH = '/uploads/whatsapp-images'
+const MAX_WHATSAPP_IMAGE_BYTES = 8 * 1024 * 1024
+const IMAGE_EXTENSION_BY_MIME = {
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp'
+}
 
 const REQUIRED_WEBHOOK_EVENTS = [
   'whatsapp.inbound_message.received',
@@ -192,6 +206,80 @@ function safeJson(value) {
     return JSON.stringify(value ?? null)
   } catch {
     return JSON.stringify({ unserializable: true })
+  }
+}
+
+function normalizePublicBaseUrl(value = '') {
+  return cleanString(value).replace(/\/+$/, '')
+}
+
+function isPrivateHost(hostname = '') {
+  const host = hostname.toLowerCase()
+  return host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '0.0.0.0' ||
+    host === '::1' ||
+    host.endsWith('.local') ||
+    /^10\./.test(host) ||
+    /^192\.168\./.test(host) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(host)
+}
+
+function requirePublicHttpsBaseUrl(baseUrl = '') {
+  const normalized = normalizePublicBaseUrl(baseUrl)
+  let parsed
+  try {
+    parsed = new URL(normalized)
+  } catch {
+    throw new Error('Para enviar fotos por WhatsApp, configura una URL pública HTTPS de Ristak.')
+  }
+
+  if (parsed.protocol !== 'https:' || isPrivateHost(parsed.hostname)) {
+    throw new Error('Para enviar fotos por WhatsApp, Ristak necesita estar publicado en una URL HTTPS que WhatsApp pueda abrir.')
+  }
+
+  return normalized
+}
+
+function parseImageDataUrl(value = '') {
+  const match = cleanString(value).match(/^data:(image\/(?:jpeg|jpg|png|webp));base64,([a-z0-9+/=\s]+)$/i)
+  if (!match) {
+    throw new Error('La foto debe ser JPG, PNG o WebP.')
+  }
+
+  const mimeType = match[1].toLowerCase() === 'image/jpg' ? 'image/jpeg' : match[1].toLowerCase()
+  const extension = IMAGE_EXTENSION_BY_MIME[mimeType]
+  if (!extension) {
+    throw new Error('La foto debe ser JPG, PNG o WebP.')
+  }
+
+  const buffer = Buffer.from(match[2].replace(/\s/g, ''), 'base64')
+  if (!buffer.length) {
+    throw new Error('La foto está vacía.')
+  }
+
+  if (buffer.length > MAX_WHATSAPP_IMAGE_BYTES) {
+    throw new Error('La foto pesa demasiado. Toma otra foto más ligera o recórtala antes de enviarla.')
+  }
+
+  return { buffer, mimeType, extension }
+}
+
+async function saveWhatsAppImageDataUrl(dataUrl = '') {
+  const { buffer, mimeType, extension } = parseImageDataUrl(dataUrl)
+  const dayKey = new Date().toISOString().slice(0, 10)
+  const folder = join(WHATSAPP_IMAGE_UPLOAD_ROOT, dayKey)
+  const filename = `${crypto.randomUUID()}.${extension}`
+  const filePath = join(folder, filename)
+
+  await fs.mkdir(folder, { recursive: true })
+  await fs.writeFile(filePath, buffer)
+
+  return {
+    mimeType,
+    size: buffer.length,
+    publicPath: `${WHATSAPP_IMAGE_PUBLIC_PATH}/${dayKey}/${filename}`,
+    filename
   }
 }
 
@@ -2650,6 +2738,85 @@ export async function sendWhatsAppApiTextMessage({ to, text, from, externalId } 
   })
 
   return response
+}
+
+export async function sendWhatsAppApiImageMessage({
+  to,
+  from,
+  imageDataUrl,
+  imageUrl,
+  caption,
+  externalId,
+  publicBaseUrl
+} = {}) {
+  const config = await loadConfig({ includeSecrets: true })
+  if (!config.enabled || !config.apiKey) {
+    throw new Error('WhatsApp_API no está conectado')
+  }
+
+  const fromPhone = normalizePhoneForStorage(from || config.senderPhone) || cleanString(from || config.senderPhone)
+  const toPhone = normalizePhoneForStorage(to) || cleanString(to)
+  const cleanCaption = cleanString(caption).slice(0, 1024)
+  const cleanImageUrl = cleanString(imageUrl)
+
+  if (!fromPhone) throw new Error('Falta el número emisor de WhatsApp_API')
+  if (!toPhone) throw new Error('Falta el número destino')
+
+  let link = cleanImageUrl
+  let savedImage = null
+
+  if (!link) {
+    const baseUrl = requirePublicHttpsBaseUrl(publicBaseUrl || process.env.RENDER_EXTERNAL_URL || process.env.PUBLIC_URL)
+    savedImage = await saveWhatsAppImageDataUrl(imageDataUrl)
+    link = `${baseUrl}${savedImage.publicPath}`
+  }
+
+  if (!/^https:\/\//i.test(link)) {
+    throw new Error('La foto necesita un enlace público HTTPS para poder enviarse por WhatsApp.')
+  }
+
+  const requestBody = {
+    from: fromPhone,
+    to: toPhone,
+    type: 'image',
+    image: {
+      link,
+      ...(cleanCaption ? { caption: cleanCaption } : {})
+    },
+    filterUnsubscribed: true,
+    filterBlocked: true,
+    ...(externalId ? { externalId } : {})
+  }
+
+  const response = await ycloudRequest('/whatsapp/messages', {
+    apiKey: config.apiKey,
+    method: 'POST',
+    body: requestBody
+  })
+
+  await upsertMessage({
+    payload: {
+      id: response.id || externalId || hashId('waapi_img_event', `${fromPhone}|${toPhone}|${link}`),
+      type: 'whatsapp.message.updated',
+      createTime: nowIso(),
+      whatsappMessage: response
+    },
+    message: {
+      ...response,
+      from: response.from || fromPhone,
+      to: response.to || toPhone,
+      type: response.type || 'image',
+      image: response.image || requestBody.image,
+      createTime: response.createTime || nowIso()
+    },
+    direction: 'outbound'
+  })
+
+  return {
+    ...response,
+    image: response.image || requestBody.image,
+    localMedia: savedImage
+  }
 }
 
 export function getWhatsAppApiWebhookPath() {

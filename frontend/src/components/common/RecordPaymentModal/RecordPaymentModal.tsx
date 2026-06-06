@@ -3,6 +3,7 @@ import { Modal } from '../Modal'
 import { Button } from '../Button'
 import { TabList } from '../TabList'
 import { CustomSelect } from '../CustomSelect'
+import { NumberInput } from '../NumberInput'
 import {
   Search,
   Loader2,
@@ -1545,8 +1546,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                     <label className={styles.label}>Precio</label>
                     <div className={styles.amountInput}>
                       <DollarSign size={16} className={styles.dollarIcon} />
-                      <input
-                        type="number"
+                      <NumberInput
                         step="0.01"
                         min="0"
                         className={styles.input}
@@ -1647,8 +1647,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                   <label className={styles.label}>Monto a cobrar (personalizable)</label>
                   <div className={styles.amountInput}>
                     <DollarSign size={16} className={styles.dollarIcon} />
-                    <input
-                      type="number"
+                    <NumberInput
                       step="0.01"
                       min="0"
                       placeholder="0.00"
@@ -1670,8 +1669,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
             <label className={styles.label}>Monto ({currency})</label>
             <div className={styles.amountInput}>
               <DollarSign size={16} className={styles.dollarIcon} />
-              <input
-                type="number"
+              <NumberInput
                 step="0.01"
                 min="0"
                 placeholder="0.00"
@@ -1780,8 +1778,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                         {firstPaymentType === 'percentage'
                           ? <Percent size={16} className={styles.dollarIcon} />
                           : <DollarSign size={16} className={styles.dollarIcon} />}
-                        <input
-                          type="number"
+                        <NumberInput
                           step="0.01"
                           min="0"
                           value={firstPaymentValue}
@@ -1905,8 +1902,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                         </label>
                         <label className={styles.installmentCell}>
                           <span className={styles.cellLabel}>Valor</span>
-                          <input
-                            type="number"
+                          <NumberInput
                             step="0.01"
                             min="0"
                             value={installment.value}
@@ -2381,13 +2377,15 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
 
     return (
       <div className={styles.footer}>
-        <Button
-          variant="secondary"
-          onClick={onClose}
-          disabled={loading}
-        >
-          Cancelar
-        </Button>
+        {variant !== 'embedded' && (
+          <Button
+            variant="secondary"
+            onClick={onClose}
+            disabled={loading}
+          >
+            Cancelar
+          </Button>
+        )}
         <Button
           variant="primary"
           onClick={handleContinue}

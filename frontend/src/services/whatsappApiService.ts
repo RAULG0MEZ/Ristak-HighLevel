@@ -153,6 +153,15 @@ export interface WhatsAppApiTextSendPayload {
   externalId?: string
 }
 
+export interface WhatsAppApiImageSendPayload {
+  to: string
+  from?: string
+  imageDataUrl?: string
+  imageUrl?: string
+  caption?: string
+  externalId?: string
+}
+
 export const whatsappApiService = {
   getStatus: () => apiClient.get<WhatsAppApiStatus>('/whatsapp-api/status'),
   connect: (payload: WhatsAppApiConnectPayload) => apiClient.post<WhatsAppApiStatus>('/whatsapp-api/connect', payload),
@@ -164,5 +173,6 @@ export const whatsappApiService = {
     params: status ? { status } : undefined
   }),
   sendText: (payload: WhatsAppApiTextSendPayload) => apiClient.post('/whatsapp-api/messages/text', payload),
+  sendImage: (payload: WhatsAppApiImageSendPayload) => apiClient.post('/whatsapp-api/messages/image', payload),
   sendTemplate: (payload: WhatsAppApiTemplateSendPayload) => apiClient.post('/whatsapp-api/templates/send', payload)
 }

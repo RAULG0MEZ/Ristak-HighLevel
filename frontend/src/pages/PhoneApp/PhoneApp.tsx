@@ -89,36 +89,36 @@ interface PhoneAppData {
 const PHONE_SECTIONS: PhoneSectionConfig[] = [
   { id: 'chat', label: 'Chat', Icon: MessageCircle },
   { id: 'dashboard', label: 'Dashboard', Icon: Gauge },
-  { id: 'appointments', label: 'Citas', Icon: CalendarDays },
-  { id: 'transactions', label: 'Pagos', Icon: CreditCard },
-  { id: 'contacts', label: 'Contactos', Icon: Users },
-  { id: 'campaigns', label: 'Publicidad', Icon: Megaphone },
-  { id: 'reports', label: 'Reportes', Icon: BarChart3 },
-  { id: 'analytics', label: 'Analíticas', Icon: LineChart },
-  { id: 'settings', label: 'Configuración', Icon: Cog }
+  { id: 'appointments', label: 'Appointments', Icon: CalendarDays },
+  { id: 'transactions', label: 'Payments', Icon: CreditCard },
+  { id: 'contacts', label: 'Contacts', Icon: Users },
+  { id: 'campaigns', label: 'Ads', Icon: Megaphone },
+  { id: 'reports', label: 'Reports', Icon: BarChart3 },
+  { id: 'analytics', label: 'Analytics', Icon: LineChart },
+  { id: 'settings', label: 'Settings', Icon: Cog }
 ]
 
 const PERIOD_OPTIONS: PeriodOption[] = [
-  { id: 'today', label: 'Hoy' },
+  { id: 'today', label: 'Today' },
   { id: 'last7days', label: '7d' },
-  { id: 'thisMonth', label: 'Mes' },
+  { id: 'thisMonth', label: 'Month' },
   { id: 'last30days', label: '30d' },
   { id: 'last90days', label: '90d' }
 ]
 
 const STATUS_LABELS: Record<string, string> = {
-  confirmed: 'Confirmada',
-  pending: 'Pendiente',
-  cancelled: 'Cancelada',
-  showed: 'Asistió',
-  noshow: 'No asistió',
-  rescheduled: 'Reprogramada',
-  paid: 'Pagado',
-  sent: 'Enviado',
-  overdue: 'Vencido',
-  refunded: 'Reembolso',
-  failed: 'Fallido',
-  draft: 'Borrador'
+  confirmed: 'Confirmed',
+  pending: 'Pending',
+  cancelled: 'Cancelled',
+  showed: 'Showed',
+  noshow: 'No-show',
+  rescheduled: 'Rescheduled',
+  paid: 'Paid',
+  sent: 'Sent',
+  overdue: 'Overdue',
+  refunded: 'Refund',
+  failed: 'Failed',
+  draft: 'Draft'
 }
 
 const SECTION_BY_ID = PHONE_SECTIONS.reduce((acc, section) => {
@@ -363,7 +363,7 @@ export const PhoneApp: React.FC = () => {
   const endIso = formatDateToISO(endDate)
 
   useEffect(() => {
-    document.title = `${activeSection.label} móvil | Ristak`
+    document.title = `${activeSection.label} mobile | Ristak`
   }, [activeSection.label])
 
   useEffect(() => {
@@ -592,7 +592,7 @@ export const PhoneApp: React.FC = () => {
         })
       } catch {
         if (!cancelled) {
-          setLoadError('No se pudieron cargar todas las métricas móviles.')
+          setLoadError('Mobile metrics could not be loaded.')
         }
       } finally {
         if (!cancelled) {
@@ -612,21 +612,21 @@ export const PhoneApp: React.FC = () => {
     const metrics = phoneData.dashboardMetrics
     return [
       {
-        label: 'Ingresos',
+        label: 'Revenue',
         value: formatCompactCurrency(metrics.ingresosNetos.value),
         detail: formatCurrency(metrics.ingresosNetos.value),
         delta: metrics.ingresosNetos.variation,
         tone: 'green' as const
       },
       {
-        label: 'Gasto ads',
+        label: 'Ad spend',
         value: formatCompactCurrency(metrics.gastosPublicidad.value),
         detail: formatCurrency(metrics.gastosPublicidad.value),
         delta: metrics.gastosPublicidad.variation,
         tone: 'orange' as const
       },
       {
-        label: 'Ganancia neta',
+        label: 'Net profit',
         value: formatCompactCurrency(metrics.gananciaNeta.value),
         detail: formatCurrency(metrics.gananciaNeta.value),
         delta: metrics.gananciaNeta.variation,
@@ -709,10 +709,10 @@ export const PhoneApp: React.FC = () => {
     const sales = salesTrend.reduce((total, item) => total + item.value, 0)
 
     return [
-      { label: 'Visitantes', value: visitors, percent: 100 },
+      { label: 'Visitors', value: visitors, percent: 100 },
       { label: 'Leads', value: leads, percent: visitors ? (leads / visitors) * 100 : 0 },
-      { label: 'Citas', value: appointments, percent: leads ? (appointments / leads) * 100 : 0 },
-      { label: 'Ventas', value: sales, percent: leads ? (sales / leads) * 100 : 0 }
+      { label: 'Appointments', value: appointments, percent: leads ? (appointments / leads) * 100 : 0 },
+      { label: 'Sales', value: sales, percent: leads ? (sales / leads) * 100 : 0 }
     ]
   }, [appointmentsTrend, leadsTrend, salesTrend, visitorsTrend])
 
@@ -736,14 +736,14 @@ export const PhoneApp: React.FC = () => {
             <MonitorX size={28} />
           </div>
           <div className={styles.blockedCopy}>
-            <p className={styles.eyebrow}>Ruta phone</p>
-            <h1 id="phone-app-blocked-title">Solo en móvil o tablet</h1>
+            <p className={styles.eyebrow}>Phone route</p>
+            <h1 id="phone-app-blocked-title">Mobile or tablet only</h1>
             <p>
-              Esta vista está optimizada para analizar Ristak desde teléfono o tablet. Ábrela desde un dispositivo portátil para ver el dashboard móvil completo.
+              This view is optimized to analyze Ristak from a phone or tablet. Open it from a portable device to see the full mobile dashboard.
             </p>
           </div>
           <Link className={styles.dashboardLink} to="/dashboard">
-            Volver al dashboard
+            Back to dashboard
           </Link>
         </section>
       </main>
@@ -751,7 +751,7 @@ export const PhoneApp: React.FC = () => {
   }
 
   return (
-    <main className={styles.phonePage} aria-label="Aplicación móvil de Ristak">
+    <main className={styles.phonePage} aria-label="Ristak mobile app">
       <div className={styles.phoneFrame}>
         <header className={styles.header}>
           <div className={styles.headerMain}>
@@ -766,21 +766,21 @@ export const PhoneApp: React.FC = () => {
               type="button"
               className={styles.iconButton}
               onClick={() => setRefreshKey((value) => value + 1)}
-              aria-label="Actualizar métricas"
-              title="Actualizar métricas"
+              aria-label="Refresh metrics"
+              title="Refresh metrics"
             >
               <RefreshCw size={18} className={loading ? styles.spinIcon : undefined} />
             </button>
-            <Link className={styles.iconButton} to="/phone/agente-ia" aria-label="Abrir agente AI" title="Abrir agente AI">
+            <Link className={styles.iconButton} to="/phone/agent-ai" aria-label="Open AI agent" title="Open AI agent">
               <Bot size={18} />
             </Link>
           </div>
         </header>
 
         {activeSectionId !== 'settings' && (
-          <section className={styles.periodPanel} aria-label="Rango de fechas">
+          <section className={styles.periodPanel} aria-label="Date range">
             <div className={styles.periodCopy}>
-              <span>Periodo</span>
+              <span>Period</span>
               <strong>{formatPeriodLabel(startDate, endDate)}</strong>
             </div>
             <div className={styles.periodControls}>
@@ -798,7 +798,7 @@ export const PhoneApp: React.FC = () => {
           </section>
         )}
 
-        <nav className={styles.sectionTabs} aria-label="Secciones móviles" data-phone-nav-scrollable="true">
+        <nav className={styles.sectionTabs} aria-label="Mobile sections" data-phone-nav-scrollable="true">
           {PHONE_SECTIONS.map((section) => {
             const Icon = section.Icon
             const isActive = section.id === activeSectionId

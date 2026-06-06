@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Card, Button } from '@/components/common'
+import { Card, Button, NumberInput } from '@/components/common'
 import { CheckCircle, Clock, CreditCard, Loader2 } from 'lucide-react'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useHighLevelConnected } from '@/hooks/useHighLevelConnected'
@@ -308,11 +308,10 @@ export const PaymentsConfiguration: React.FC = () => {
 
                 <div className={styles.formField}>
                   <label className={styles.label}>Días para Vencimiento</label>
-                  <input
-                    type="number"
+                  <NumberInput
                     min="1"
                     value={paymentDueDays}
-                    onChange={(e) => setPaymentDueDays(parseInt(e.target.value) || 7)}
+                    onValueChange={(value) => setPaymentDueDays(Math.trunc(value) || 7)}
                     className={styles.input}
                   />
                   <p className={styles.hint}>
@@ -350,12 +349,11 @@ export const PaymentsConfiguration: React.FC = () => {
 
                 <div className={styles.formField}>
                   <label className={styles.label}>Monto para Domiciliar Tarjeta (MXN)</label>
-                  <input
-                    type="number"
+                  <NumberInput
                     min="1"
                     step="0.01"
                     value={cardSetupAmount}
-                    onChange={(e) => setCardSetupAmount(Number(e.target.value) || 25)}
+                    onValueChange={(value) => setCardSetupAmount(value || 25)}
                     className={styles.input}
                   />
                   <p className={styles.hint}>

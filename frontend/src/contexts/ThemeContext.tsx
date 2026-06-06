@@ -32,6 +32,8 @@ const THEME_STYLE_CONFIG_KEY = 'theme_style'
 const DEFAULT_DESIGN_PRESET: DesignPreset = 'editorial'
 const LEGACY_THEME_STORAGE_KEY = 'manualTheme'
 const LEGACY_DESIGN_PRESET_STORAGE_KEY = 'ristak-design-preset'
+const DAY_START_HOUR = 6
+const NIGHT_START_HOUR = 19
 
 interface ThemeContextType {
   theme: ThemeMode
@@ -48,11 +50,30 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
 
-const getSystemPreference = (): ThemeMode => {
-  if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-    return 'dark'
+const getTimeBasedTheme = (now: Date = new Date()): ThemeMode => {
+  const hour = now.getHours()
+  return hour >= NIGHT_START_HOUR || hour < DAY_START_HOUR ? 'dark' : 'light'
+}
+
+const msUntilNextThemeSwitch = (now: Date = new Date()): number => {
+  const currentHour = now.getHours()
+
+  let nextSwitch: Date
+
+  if (currentHour >= DAY_START_HOUR && currentHour < NIGHT_START_HOUR) {
+    nextSwitch = new Date(now)
+    nextSwitch.setHours(NIGHT_START_HOUR, 0, 0, 0)
+  } else if (currentHour >= NIGHT_START_HOUR) {
+    nextSwitch = new Date(now)
+    nextSwitch.setDate(now.getDate() + 1)
+    nextSwitch.setHours(DAY_START_HOUR, 0, 0, 0)
+  } else {
+    nextSwitch = new Date(now)
+    nextSwitch.setHours(DAY_START_HOUR, 0, 0, 0)
   }
-  return 'light'
+
+  const msUntilNextSwitch = nextSwitch.getTime() - now.getTime()
+  return Math.max(1000, msUntilNextSwitch)
 }
 
 const parseConfigValue = (value: unknown): string | null => {
@@ -160,7 +181,7 @@ const deleteAppConfig = async (key: string) => {
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [theme, setThemeState] = useState<ThemeMode>(() => {
-    return getLegacyTheme() ?? getSystemPreference()
+    return getLegacyTheme() ?? getTimeBasedTheme()
   })
 
   const [themeSource, setThemeSource] = useState<ThemeSource>(() => {
@@ -190,7 +211,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const resetToSystem = () => {
     setThemeSource('system')
-    setThemeState(getSystemPreference())
+    setThemeState(getTimeBasedTheme())
     void deleteAppConfig(THEME_COLOR_CONFIG_KEY).catch((error) => {
       console.error('Error deleting theme color config:', error)
     })
@@ -227,7 +248,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           setThemeSource('manual')
           migrations.push(saveAppConfig(THEME_COLOR_CONFIG_KEY, legacyTheme))
         } else {
-          setThemeState(getSystemPreference())
+          setThemeState(getTimeBasedTheme())
           setThemeSource('system')
         }
 
@@ -260,20 +281,23 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [])
 
   useEffect(() => {
-    if (themeSource !== 'system' || typeof window === 'undefined' || !window.matchMedia) {
+    if (themeSource !== 'system' || typeof window === 'undefined') {
       return
     }
 
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+    let timeoutId: ReturnType<typeof window.setTimeout> | null = null
 
-    const handleChange = (event: MediaQueryListEvent) => {
-      setThemeState(event.matches ? 'dark' : 'light')
+    const runAutoThemeLoop = () => {
+      setThemeState(getTimeBasedTheme())
+      timeoutId = window.setTimeout(runAutoThemeLoop, msUntilNextThemeSwitch())
     }
 
-    mediaQuery.addEventListener('change', handleChange)
+    runAutoThemeLoop()
 
     return () => {
-      mediaQuery.removeEventListener('change', handleChange)
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId)
+      }
     }
   }, [themeSource])
 

@@ -5,9 +5,24 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "mobile:sync": "npm run build && cap sync",
+    "mobile:add:ios": "cap add ios",
+    "mobile:add:android": "cap add android",
+    "mobile:open:ios": "cap open ios",
+    "mobile:open:android": "cap open android"
   },
   "dependencies": {
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/camera": "^8.2.0",
+    "@capacitor/core": "^8.4.0",
+    "@capacitor/device": "^8.0.2",
+    "@capacitor/filesystem": "^8.1.2",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/keyboard": "^8.0.3",
+    "@capacitor/push-notifications": "^8.1.1",
+    "@capacitor/splash-screen": "^8.0.1",
+    "@capacitor/status-bar": "^8.0.2",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
@@ -22,6 +37,9 @@
     "recharts": "^2.15.0"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.4.0",
+    "@capacitor/cli": "^8.4.0",
+    "@capacitor/ios": "^8.4.0",
     "@tailwindcss/postcss": "^4.1.13",
     "@types/lodash": "^4.17.20",
     "@types/react": "^19.0.6",

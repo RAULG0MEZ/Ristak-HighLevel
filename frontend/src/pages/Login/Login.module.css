@@ -12,6 +12,7 @@
   align-items: stretch;
   padding: 0;
   background: #ffffff;
+  overflow: hidden;
 }
 
 .loginBox {
@@ -34,10 +35,10 @@
   border: 0;
   border-radius: 0;
   color: #111111;
-  background:
-    radial-gradient(circle at 50% 20%, rgba(37, 211, 102, 0.12), transparent 34%),
-    #ffffff;
+  background: #ffffff;
   box-shadow: none;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 body.light .loginBox {
@@ -46,9 +47,7 @@ body.light .loginBox {
 }
 
 body.light .phoneLoginBox {
-  background:
-    radial-gradient(circle at 50% 20%, rgba(37, 211, 102, 0.12), transparent 34%),
-    #ffffff;
+  background: #ffffff;
   box-shadow: none;
 }
 
@@ -79,9 +78,9 @@ body.light .phoneLoginBox {
   width: 86px;
   height: 86px;
   color: #ffffff;
-  background: #25d366;
+  background: #050505;
   border: 0;
-  box-shadow: 0 18px 38px rgba(37, 211, 102, 0.28);
+  box-shadow: 0 18px 38px rgba(17, 24, 39, 0.24);
 }
 
 body.light .logo {
@@ -90,7 +89,7 @@ body.light .logo {
 
 body.light .phoneLogo {
   color: #ffffff;
-  background: #25d366;
+  background: #050505;
 }
 
 .title {
@@ -216,9 +215,10 @@ body.light .error {
 
 .phoneLoginBox .title {
   color: #111111;
-  font-size: 2.35rem;
+  font-size: clamp(2.35rem, 12vw, 3.3rem);
   font-weight: 860;
   letter-spacing: 0;
+  line-height: 0.98;
 }
 
 .phoneLoginBox .subtitle {
@@ -241,16 +241,16 @@ body.light .error {
 
 .phoneLoginBox .input {
   height: 3.35rem;
-  border-radius: 1rem;
+  border-radius: 999px;
   color: #111111;
-  background: #f3f4f6;
+  background: #f0f0f0;
   font-size: 1.05rem;
 }
 
 .phoneLoginBox .input:focus {
   background: #ffffff;
-  border-color: #25d366;
-  box-shadow: 0 0 0 4px rgba(37, 211, 102, 0.14);
+  border-color: #111111;
+  box-shadow: 0 0 0 4px rgba(17, 24, 39, 0.08);
 }
 
 .phoneLoginBox .submitButton {

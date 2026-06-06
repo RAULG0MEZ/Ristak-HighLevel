@@ -2,7 +2,7 @@
   "id": "/phone/chat",
   "name": "Ristak Chat",
   "short_name": "Ristak Chat",
-  "description": "Chat móvil premium de Ristak para conversaciones, citas, pagos y agente AI.",
+  "description": "Premium Ristak mobile chat for conversations, appointments, payments, and the AI agent.",
   "start_url": "/phone/chat",
   "scope": "/",
   "display": "standalone",
@@ -55,9 +55,9 @@
       ]
     },
     {
-      "name": "Citas",
-      "short_name": "Citas",
-      "url": "/phone/calendario",
+      "name": "Calendar",
+      "short_name": "Calendar",
+      "url": "/phone/calendar",
       "icons": [
         {
           "src": "/ristak-chat-icon-192.png",
@@ -67,9 +67,9 @@
       ]
     },
     {
-      "name": "Pagos",
-      "short_name": "Pagos",
-      "url": "/phone/pagos",
+      "name": "Payments",
+      "short_name": "Payments",
+      "url": "/phone/payments",
       "icons": [
         {
           "src": "/ristak-chat-icon-192.png",
@@ -79,9 +79,9 @@
       ]
     },
     {
-      "name": "Agente",
-      "short_name": "Agente",
-      "url": "/phone/agente-ia",
+      "name": "AI Agent",
+      "short_name": "Agent",
+      "url": "/phone/agent-ai",
       "icons": [
         {
           "src": "/ristak-chat-icon-192.png",

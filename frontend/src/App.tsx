@@ -64,7 +64,7 @@ const SetupRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         background: 'var(--color-background-primary)',
         color: 'var(--color-text-primary)'
       }}>
-        Cargando...
+        Loading...
       </div>
     )
   }
@@ -94,7 +94,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
         background: 'var(--color-background-primary)',
         color: 'var(--color-text-primary)'
       }}>
-        Cargando...
+        Loading...
       </div>
     )
   }
@@ -145,6 +145,14 @@ const AppWithNotifications: React.FC = () => {
           />
           <Route
             path="/phone/agente-ia"
+            element={
+              <ProtectedRoute>
+                <PhoneAgentChat />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/phone/ai-agent"
             element={
               <ProtectedRoute>
                 <PhoneAgentChat />

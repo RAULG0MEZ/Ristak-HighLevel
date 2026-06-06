@@ -1486,7 +1486,7 @@ body.dark .tooltipInfo {
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  background: var(--color-surface);
+  background: #ffffff;
 }
 
 .embeddedScroll {
@@ -1499,13 +1499,42 @@ body.dark .tooltipInfo {
 
 .embeddedRoot .content,
 .embeddedRoot .optionsContent {
-  padding: 16px 16px 24px;
-  gap: 16px;
+  padding: 12px 14px 18px;
+  gap: 12px;
 }
 
 .embeddedRoot .footer {
   position: sticky;
   bottom: 0;
-  padding: 14px 16px calc(env(safe-area-inset-bottom, 0px) + 14px);
-  background: var(--color-surface);
+  justify-content: stretch;
+  padding: 10px 14px calc(env(safe-area-inset-bottom, 0px) + 12px);
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(246, 242, 235, 0.96);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.embeddedRoot .footer > button,
+.embeddedRoot .confirmButtonWrapper,
+.embeddedRoot .confirmButtonWrapper > button {
+  width: 100%;
+}
+
+.embeddedRoot .footer > button {
+  min-height: 48px;
+  border-radius: 999px;
+  background: #111111;
+}
+
+.embeddedRoot .input,
+.embeddedRoot .select,
+.embeddedRoot .textArea,
+.embeddedRoot .searchInput input {
+  border-radius: 999px;
+  background: #f0f0f0;
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+.embeddedRoot .textArea {
+  border-radius: 16px;
 }

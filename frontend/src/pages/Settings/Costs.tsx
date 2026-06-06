@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
-import { Card, Button } from '@/components/common'
+import { Card, Button, NumberInput } from '@/components/common'
 import { Plus, X, Pencil, DollarSign, Loader2, TrendingDown, Info } from 'lucide-react'
 import { useNotification } from '@/contexts/NotificationContext'
 import { costsService, type Cost, type CreateCostDto } from '@/services/costsService'
@@ -522,8 +522,7 @@ export const Costs: React.FC = () => {
                   <span className={styles.prefix}>
                     {calculationType === 'percentage' ? '%' : '$'}
                   </span>
-                  <input
-                    type="number"
+                  <NumberInput
                     className={styles.input}
                     placeholder={calculationType === 'percentage' ? '0-100' : '0.00'}
                     value={value}

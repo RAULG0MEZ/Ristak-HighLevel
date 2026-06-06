@@ -1,4 +1,5 @@
 import apiClient from './apiClient'
+import { mobileAppService } from './mobileAppService'
 
 export interface WebPushPublicConfig {
   configured: boolean
@@ -42,6 +43,10 @@ export const pushNotificationsService = {
   },
 
   async subscribeToAppNotifications({ calendarIds = [] }: { calendarIds?: string[] } = {}): Promise<PushSubscriptionResult> {
+    if (mobileAppService.isNative()) {
+      return mobileAppService.subscribeToPushNotifications({ calendarIds })
+    }
+
     if (!isPushAvailable()) {
       return {
         status: 'not_supported',

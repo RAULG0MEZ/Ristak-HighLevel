@@ -389,11 +389,32 @@ async function initTables() {
       )
     `)
 
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS mobile_push_devices (
+        id TEXT PRIMARY KEY,
+        user_id TEXT,
+        platform TEXT NOT NULL,
+        token TEXT UNIQUE NOT NULL,
+        calendar_ids_json TEXT,
+        enabled INTEGER DEFAULT 1,
+        app_version TEXT,
+        app_build TEXT,
+        device_model TEXT,
+        os_version TEXT,
+        last_error TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
     try {
       await db.run('CREATE INDEX IF NOT EXISTS idx_push_subscriptions_enabled ON push_subscriptions(enabled)')
       await db.run('CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id)')
+      await db.run('CREATE INDEX IF NOT EXISTS idx_mobile_push_devices_enabled ON mobile_push_devices(enabled)')
+      await db.run('CREATE INDEX IF NOT EXISTS idx_mobile_push_devices_user ON mobile_push_devices(user_id)')
+      await db.run('CREATE INDEX IF NOT EXISTS idx_mobile_push_devices_platform ON mobile_push_devices(platform)')
     } catch (err) {
-      logger.warn('Advertencia al crear índices de push_subscriptions:', err.message)
+      logger.warn('Advertencia al crear índices de avisos push:', err.message)
     }
 
     // Sites públicos/formularios. El dashboard administra la estructura, pero

@@ -5,6 +5,7 @@ import {
   Button,
   Modal,
   CustomSelect,
+  NumberInput,
   Loading,
   DropdownMenu,
   DropdownMenuTrigger,
@@ -44,7 +45,12 @@ import {
 import { useNotification } from '@/contexts/NotificationContext'
 import { useAppConfig, useHighLevelConnected } from '@/hooks'
 import { useAuth } from '@/contexts/AuthContext'
-import { calendarsService, type Calendar as CalendarType, type GoogleCalendarIntegrationStatus } from '@/services/calendarsService'
+import {
+  calendarsService,
+  type Calendar as CalendarType,
+  type GoogleCalendarIntegrationStatus,
+  type GoogleCalendarMergePreview
+} from '@/services/calendarsService'
 import styles from './HighLevelIntegration.module.css'
 import pageStyles from './CalendarsConfiguration.module.css'
 
@@ -121,6 +127,10 @@ const googleDefaultPromptKey = (calendar?: CalendarType | null) => (
   normalizeCalendarMatchValue(calendar?.googleCalendarId || calendar?.id)
 )
 
+const googleMergePromptKey = (preview?: GoogleCalendarMergePreview | null) => (
+  normalizeCalendarMatchValue(preview?.googleCalendar?.googleCalendarId || preview?.googleCalendar?.id)
+)
+
 const getGoogleFailureHelp = (message = '') => {
   const lowerMessage = message.toLowerCase()
 
@@ -181,6 +191,7 @@ export const CalendarsConfiguration: React.FC = () => {
   const [googleDefaultPromptHandledIds, setGoogleDefaultPromptHandledIds] = useAppConfig<string[]>('google_default_calendar_prompt_handled_ids', [])
   const [calendarPushEnabled, setCalendarPushEnabled] = useAppConfig<boolean>('calendar_push_notifications_enabled', false)
   const [calendarPushNotificationIds, setCalendarPushNotificationIds] = useAppConfig<string[]>('calendar_push_notification_calendar_ids', [])
+  const [googleMergePromptHandledIds, setGoogleMergePromptHandledIds] = useAppConfig<string[]>('google_calendar_merge_prompt_handled_ids', [])
 
   // El origen de calendarios solo tiene sentido con una integración de terceros
   // (HighLevel). Sin ella, Ristak es la única fuente posible.
@@ -200,6 +211,8 @@ export const CalendarsConfiguration: React.FC = () => {
   const [googleGuideExpanded, setGoogleGuideExpanded] = useState(false)
   const [googleDefaultPromptCalendar, setGoogleDefaultPromptCalendar] = useState<CalendarType | null>(null)
   const [savingGoogleDefaultPrompt, setSavingGoogleDefaultPrompt] = useState(false)
+  const [googleMergePrompt, setGoogleMergePrompt] = useState<GoogleCalendarMergePreview | null>(null)
+  const [savingGoogleMergePrompt, setSavingGoogleMergePrompt] = useState(false)
   const [googleCalendarId, setGoogleCalendarId] = useState('')
   const [serviceAccountJson, setServiceAccountJson] = useState('')
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -328,15 +341,16 @@ export const CalendarsConfiguration: React.FC = () => {
     integrationStatus: GoogleCalendarIntegrationStatus | null
   ) => {
     const importedCalendar = findConnectedGoogleCalendar(calendarList, integrationStatus)
-    if (!importedCalendar) return
+    if (!importedCalendar) return false
 
     const promptKey = googleDefaultPromptKey(importedCalendar)
-    if (!promptKey || googleDefaultPromptHandledIds.includes(promptKey)) return
+    if (!promptKey || googleDefaultPromptHandledIds.includes(promptKey)) return false
 
     const alreadyConfigured = defaultCalendarId === importedCalendar.id && attributionCalendarIds.includes(importedCalendar.id)
-    if (alreadyConfigured) return
+    if (alreadyConfigured) return false
 
     setGoogleDefaultPromptCalendar(importedCalendar)
+    return true
   }
 
   const maybeShowGoogleDefaultPromptFromCalendars = async (
@@ -344,12 +358,11 @@ export const CalendarsConfiguration: React.FC = () => {
     integrationStatus: GoogleCalendarIntegrationStatus | null
   ) => {
     if (findConnectedGoogleCalendar(calendarList, integrationStatus)) {
-      maybeShowGoogleDefaultPrompt(calendarList, integrationStatus)
-      return
+      return maybeShowGoogleDefaultPrompt(calendarList, integrationStatus)
     }
 
     const allCalendars = await calendarsService.getCalendars(locationId, accessToken, 'combined')
-    maybeShowGoogleDefaultPrompt(allCalendars, integrationStatus)
+    return maybeShowGoogleDefaultPrompt(allCalendars, integrationStatus)
   }
 
   const markGoogleDefaultPromptHandled = async (calendar: CalendarType) => {
@@ -357,6 +370,40 @@ export const CalendarsConfiguration: React.FC = () => {
     if (!promptKey || googleDefaultPromptHandledIds.includes(promptKey)) return
 
     await setGoogleDefaultPromptHandledIds([...googleDefaultPromptHandledIds, promptKey])
+  }
+
+  const maybeShowGoogleMergePrompt = async () => {
+    try {
+      const preview = await calendarsService.getGoogleMergePreview()
+      const promptKey = googleMergePromptKey(preview)
+
+      if (!preview.mergeAvailable || !promptKey || googleMergePromptHandledIds.includes(promptKey)) {
+        return false
+      }
+
+      setGoogleMergePrompt(preview)
+      return true
+    } catch (error: any) {
+      showToast('warning', 'No se pudo revisar combinación', error.message || 'Puedes intentar sincronizar manualmente después')
+      return false
+    }
+  }
+
+  const maybeShowGooglePostConnectPrompts = async (
+    calendarList: CalendarType[],
+    integrationStatus: GoogleCalendarIntegrationStatus | null
+  ) => {
+    const defaultPromptOpened = await maybeShowGoogleDefaultPromptFromCalendars(calendarList, integrationStatus)
+    if (!defaultPromptOpened) {
+      await maybeShowGoogleMergePrompt()
+    }
+  }
+
+  const markGoogleMergePromptHandled = async (preview: GoogleCalendarMergePreview) => {
+    const promptKey = googleMergePromptKey(preview)
+    if (!promptKey || googleMergePromptHandledIds.includes(promptKey)) return
+
+    await setGoogleMergePromptHandledIds([...googleMergePromptHandledIds, promptKey])
   }
 
   const handleCopyServiceAccountEmail = async () => {
@@ -402,7 +449,7 @@ export const CalendarsConfiguration: React.FC = () => {
       }
       setEditingGoogleIntegration(false)
       const updatedCalendars = await loadCalendars()
-      await maybeShowGoogleDefaultPromptFromCalendars(updatedCalendars, data)
+      await maybeShowGooglePostConnectPrompts(updatedCalendars, data)
       showToast('success', 'Google Calendar guardado', 'La conexión quedó guardada. Ahora puedes probar o sincronizar manualmente.')
     } catch (error: any) {
       showToast('error', 'No se pudo guardar Google Calendar', error.message || 'Revisa el JSON y Calendar ID')
@@ -419,7 +466,7 @@ export const CalendarsConfiguration: React.FC = () => {
       setGoogleCalendarId(data.calendarId || googleCalendarId)
       setEditingGoogleIntegration(false)
       const updatedCalendars = await loadCalendars()
-      await maybeShowGoogleDefaultPromptFromCalendars(updatedCalendars, data)
+      await maybeShowGooglePostConnectPrompts(updatedCalendars, data)
       showToast('success', 'Google Calendar probado', data.lastTestMessage || 'Permisos validados correctamente')
     } catch (error: any) {
       await loadGoogleIntegration()
@@ -436,7 +483,7 @@ export const CalendarsConfiguration: React.FC = () => {
       setGoogleIntegration(data)
       setGoogleCalendarId(data.calendarId || googleCalendarId)
       const updatedCalendars = await loadCalendars()
-      await maybeShowGoogleDefaultPromptFromCalendars(updatedCalendars, data)
+      await maybeShowGooglePostConnectPrompts(updatedCalendars, data)
       showToast('success', 'Google Calendar sincronizado', data.lastSyncMessage || 'Calendarios y citas importados a Ristak')
     } catch (error: any) {
       await loadGoogleIntegration()
@@ -459,6 +506,7 @@ export const CalendarsConfiguration: React.FC = () => {
 
       await markGoogleDefaultPromptHandled(googleDefaultPromptCalendar)
       setGoogleDefaultPromptCalendar(null)
+      await maybeShowGoogleMergePrompt()
       showToast(
         'success',
         'Calendario predeterminado actualizado',
@@ -478,6 +526,7 @@ export const CalendarsConfiguration: React.FC = () => {
     try {
       await markGoogleDefaultPromptHandled(googleDefaultPromptCalendar)
       setGoogleDefaultPromptCalendar(null)
+      await maybeShowGoogleMergePrompt()
       showToast('info', 'Sin cambios', 'El calendario se queda conectado sin hacerlo predeterminado')
     } catch (error: any) {
       showToast('error', 'No se pudo cerrar la pregunta', error.message || 'Intenta nuevamente')
@@ -489,6 +538,55 @@ export const CalendarsConfiguration: React.FC = () => {
   const handleCloseGoogleDefaultPromptModal = () => {
     if (savingGoogleDefaultPrompt) return
     void handleDismissGoogleDefaultPrompt()
+  }
+
+  const handleAcceptGoogleMergePrompt = async () => {
+    if (!googleMergePrompt) return
+
+    setSavingGoogleMergePrompt(true)
+    try {
+      const sourceCalendarIds = googleMergePrompt.sourceCalendars.map((calendar) => calendar.id)
+      const result = await calendarsService.mergeGoogleAppointments(sourceCalendarIds)
+      const googleCalendar = result.googleCalendar || googleMergePrompt.googleCalendar
+
+      if (googleCalendar?.id) {
+        await setDefaultCalendarId(googleCalendar.id)
+        await setAttributionCalendarIds([googleCalendar.id])
+      }
+
+      await markGoogleMergePromptHandled(googleMergePrompt)
+      setGoogleMergePrompt(null)
+      await loadCalendars()
+      showToast(
+        result.failed > 0 ? 'warning' : 'success',
+        'Calendarios combinados',
+        `${result.moved || 0} cita${result.moved === 1 ? '' : 's'} se movieron a Google Calendar${result.failed > 0 ? `; ${result.failed} quedaron pendientes` : ''}`
+      )
+    } catch (error: any) {
+      showToast('error', 'No se pudieron combinar calendarios', error.message || 'Intenta nuevamente')
+    } finally {
+      setSavingGoogleMergePrompt(false)
+    }
+  }
+
+  const handleDismissGoogleMergePrompt = async () => {
+    if (!googleMergePrompt) return
+
+    setSavingGoogleMergePrompt(true)
+    try {
+      await markGoogleMergePromptHandled(googleMergePrompt)
+      setGoogleMergePrompt(null)
+      showToast('info', 'Calendarios separados', 'Ristak y Google Calendar se quedan como calendarios independientes')
+    } catch (error: any) {
+      showToast('error', 'No se pudo cerrar la pregunta', error.message || 'Intenta nuevamente')
+    } finally {
+      setSavingGoogleMergePrompt(false)
+    }
+  }
+
+  const handleCloseGoogleMergePromptModal = () => {
+    if (savingGoogleMergePrompt) return
+    void handleDismissGoogleMergePrompt()
   }
 
   const handleEditGoogleIntegration = async () => {
@@ -866,22 +964,20 @@ export const CalendarsConfiguration: React.FC = () => {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
           <div className={styles.formField}>
             <label className={styles.label}>Duración</label>
-            <input
-              type="number"
+            <NumberInput
               className={styles.input}
               value={newCalendar.slotDuration || 60}
               min="1"
-              onChange={(e) => setNewCalendar({ ...newCalendar, slotDuration: parseInt(e.target.value, 10) || 60 })}
+              onValueChange={(value) => setNewCalendar({ ...newCalendar, slotDuration: Math.trunc(value) || 60 })}
             />
           </div>
           <div className={styles.formField}>
             <label className={styles.label}>Intervalo</label>
-            <input
-              type="number"
+            <NumberInput
               className={styles.input}
               value={newCalendar.slotInterval || 60}
               min="1"
-              onChange={(e) => setNewCalendar({ ...newCalendar, slotInterval: parseInt(e.target.value, 10) || 60 })}
+              onValueChange={(value) => setNewCalendar({ ...newCalendar, slotInterval: Math.trunc(value) || 60 })}
             />
           </div>
         </div>
@@ -961,6 +1057,72 @@ export const CalendarsConfiguration: React.FC = () => {
             disabled={savingGoogleDefaultPrompt}
           >
             No, dejarlo así
+          </Button>
+        </div>
+      </div>
+    </Modal>,
+    document.body
+  ) : null
+
+  const renderGoogleMergePromptModal = () => googleMergePrompt ? createPortal(
+    <Modal
+      isOpen={Boolean(googleMergePrompt)}
+      onClose={handleCloseGoogleMergePromptModal}
+      title="Combinar calendarios"
+      size="md"
+      showCloseButton={!savingGoogleMergePrompt}
+    >
+      <div className={pageStyles.defaultPromptModal}>
+        <div className={pageStyles.defaultPromptIcon}>
+          <RefreshCw size={24} />
+        </div>
+        <div className={pageStyles.defaultPromptBody}>
+          <p className={pageStyles.defaultPromptEyebrow}>Citas existentes en Ristak</p>
+          <h3>¿Quieres combinar las citas actuales con el Google Calendar conectado?</h3>
+          <div className={pageStyles.mergeCalendarStack}>
+            <div className={pageStyles.defaultPromptCalendar}>
+              <strong>
+                {googleMergePrompt.sourceCalendars.map((calendar) => calendar.name).join(', ') || 'Calendario Ristak'}
+              </strong>
+              <span>{googleMergePrompt.totalAppointments} cita{googleMergePrompt.totalAppointments === 1 ? '' : 's'} existente{googleMergePrompt.totalAppointments === 1 ? '' : 's'}</span>
+            </div>
+            <div className={pageStyles.mergeArrow}>se combinará con</div>
+            <div className={pageStyles.defaultPromptCalendar}>
+              <strong>{googleMergePrompt.googleCalendar?.name || 'Google Calendar'}</strong>
+              <span>{googleMergePrompt.googleCalendar?.googleCalendarId || googleIntegration?.calendarId || 'Calendar ID conectado'}</span>
+            </div>
+          </div>
+          <p>
+            Ejemplo: las citas de Calendario Ristak se moverán al calendario de Google conectado.
+            Desde ese momento todo queda en un mismo calendario y las nuevas citas se crearán en Google Calendar.
+          </p>
+          <p>
+            Si eliges que no, Calendario Ristak y Google Calendar se quedan separados.
+          </p>
+        </div>
+        <div className={pageStyles.defaultPromptActions}>
+          <Button
+            onClick={handleAcceptGoogleMergePrompt}
+            disabled={savingGoogleMergePrompt}
+          >
+            {savingGoogleMergePrompt ? (
+              <>
+                <Loader2 size={16} className={styles.spinIcon} />
+                Combinando...
+              </>
+            ) : (
+              <>
+                <RefreshCw size={16} />
+                Sí, combinar
+              </>
+            )}
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={handleDismissGoogleMergePrompt}
+            disabled={savingGoogleMergePrompt}
+          >
+            No, mantener separados
           </Button>
         </div>
       </div>
@@ -1106,11 +1268,10 @@ export const CalendarsConfiguration: React.FC = () => {
               <label className={pageStyles.editorField}>
                 <span>Duración</span>
                 <div className={pageStyles.inlineFieldGroup}>
-                  <input
-                    type="number"
+                  <NumberInput
                     className={styles.input}
                     value={selectedCalendar.slotDuration}
-                    onChange={(event) => updateSelectedCalendar({ slotDuration: parseInt(event.target.value, 10) || 0 })}
+                    onValueChange={(value) => updateSelectedCalendar({ slotDuration: Math.trunc(value) || 0 })}
                     min="1"
                   />
                   <CustomSelect
@@ -1127,11 +1288,10 @@ export const CalendarsConfiguration: React.FC = () => {
               <label className={pageStyles.editorField}>
                 <span>Intervalo</span>
                 <div className={pageStyles.inlineFieldGroup}>
-                  <input
-                    type="number"
+                  <NumberInput
                     className={styles.input}
                     value={selectedCalendar.slotInterval}
-                    onChange={(event) => updateSelectedCalendar({ slotInterval: parseInt(event.target.value, 10) || 0 })}
+                    onValueChange={(value) => updateSelectedCalendar({ slotInterval: Math.trunc(value) || 0 })}
                     min="1"
                   />
                   <CustomSelect
@@ -1171,11 +1331,10 @@ export const CalendarsConfiguration: React.FC = () => {
               <label className={pageStyles.editorField}>
                 <span>Anticipación mínima</span>
                 <div className={pageStyles.inlineFieldGroup}>
-                  <input
-                    type="number"
+                  <NumberInput
                     className={styles.input}
                     value={selectedCalendar.allowBookingAfter || 0}
-                    onChange={(event) => updateSelectedCalendar({ allowBookingAfter: parseInt(event.target.value, 10) || 0 })}
+                    onValueChange={(value) => updateSelectedCalendar({ allowBookingAfter: Math.trunc(value) || 0 })}
                     min="0"
                   />
                   <CustomSelect
@@ -1194,11 +1353,10 @@ export const CalendarsConfiguration: React.FC = () => {
               <label className={pageStyles.editorField}>
                 <span>Ventana para agendar</span>
                 <div className={pageStyles.inlineFieldGroup}>
-                  <input
-                    type="number"
+                  <NumberInput
                     className={styles.input}
                     value={selectedCalendar.allowBookingFor || 30}
-                    onChange={(event) => updateSelectedCalendar({ allowBookingFor: parseInt(event.target.value, 10) || 1 })}
+                    onValueChange={(value) => updateSelectedCalendar({ allowBookingFor: Math.trunc(value) || 1 })}
                     min="1"
                   />
                   <CustomSelect
@@ -1215,22 +1373,20 @@ export const CalendarsConfiguration: React.FC = () => {
 
               <label className={pageStyles.editorField}>
                 <span>Personas por horario</span>
-                <input
-                  type="number"
+                <NumberInput
                   className={styles.input}
                   value={selectedCalendar.appoinmentPerSlot}
-                  onChange={(event) => updateSelectedCalendar({ appoinmentPerSlot: parseInt(event.target.value, 10) || 1 })}
+                  onValueChange={(value) => updateSelectedCalendar({ appoinmentPerSlot: Math.trunc(value) || 1 })}
                   min="1"
                 />
               </label>
 
               <label className={pageStyles.editorField}>
                 <span>Límite diario</span>
-                <input
-                  type="number"
+                <NumberInput
                   className={styles.input}
                   value={selectedCalendar.appoinmentPerDay}
-                  onChange={(event) => updateSelectedCalendar({ appoinmentPerDay: parseInt(event.target.value, 10) || 0 })}
+                  onValueChange={(value) => updateSelectedCalendar({ appoinmentPerDay: Math.trunc(value) || 0 })}
                   min="0"
                 />
               </label>
@@ -1246,11 +1402,10 @@ export const CalendarsConfiguration: React.FC = () => {
               <label className={pageStyles.editorField}>
                 <span>Buffer antes</span>
                 <div className={pageStyles.inlineFieldGroup}>
-                  <input
-                    type="number"
+                  <NumberInput
                     className={styles.input}
                     value={selectedCalendar.preBuffer || 0}
-                    onChange={(event) => updateSelectedCalendar({ preBuffer: parseInt(event.target.value, 10) || 0 })}
+                    onValueChange={(value) => updateSelectedCalendar({ preBuffer: Math.trunc(value) || 0 })}
                     min="0"
                   />
                   <CustomSelect
@@ -1267,11 +1422,10 @@ export const CalendarsConfiguration: React.FC = () => {
               <label className={pageStyles.editorField}>
                 <span>Buffer después</span>
                 <div className={pageStyles.inlineFieldGroup}>
-                  <input
-                    type="number"
+                  <NumberInput
                     className={styles.input}
                     value={selectedCalendar.slotBuffer || 0}
-                    onChange={(event) => updateSelectedCalendar({ slotBuffer: parseInt(event.target.value, 10) || 0 })}
+                    onValueChange={(value) => updateSelectedCalendar({ slotBuffer: Math.trunc(value) || 0 })}
                     min="0"
                   />
                   <CustomSelect
@@ -1305,14 +1459,13 @@ export const CalendarsConfiguration: React.FC = () => {
                   {selectedCalendar.lookBusyConfig?.enabled && (
                     <label className={pageStyles.lookBusyPercent}>
                       <span>Ocultar</span>
-                      <input
-                        type="number"
+                      <NumberInput
                         className={styles.input}
                         value={selectedCalendar.lookBusyConfig?.LookBusyPercentage || 0}
-                        onChange={(event) => updateSelectedCalendar({
+                        onValueChange={(value) => updateSelectedCalendar({
                           lookBusyConfig: {
                             enabled: true,
-                            LookBusyPercentage: parseInt(event.target.value, 10) || 0
+                            LookBusyPercentage: Math.trunc(value) || 0
                           }
                         })}
                         min="0"
@@ -2038,6 +2191,7 @@ export const CalendarsConfiguration: React.FC = () => {
 
       {renderCreateCalendarModal()}
       {renderGoogleDefaultPromptModal()}
+      {renderGoogleMergePromptModal()}
     </div>
   )
 }

@@ -426,6 +426,10 @@ export const saveConfig = async (req, res) => {
       logger.warn(`No se pudo inicializar configuración de calendario predeterminado: ${error.message}`);
     });
 
+    await localCalendarService.reconcileCalendarDefaults().catch(error => {
+      logger.warn(`[HighLevel Controller] No se pudo reconciliar calendario predeterminado tras guardar HighLevel: ${error.message}`);
+    });
+
     // Iniciar sincronización automáticamente después de guardar
     logger.info('Iniciando sincronización automática después de guardar configuración');
     syncHighLevelData(cleanLocationId, cleanToken).catch(error => {
@@ -837,6 +841,10 @@ export const deleteConfig = async (req, res) => {
   try {
     await db.run('DELETE FROM highlevel_config');
     logger.info('Configuración de HighLevel eliminada');
+
+    await localCalendarService.reconcileCalendarDefaults().catch(error => {
+      logger.warn(`[HighLevel Controller] No se pudo reconciliar calendario predeterminado tras desconectar HighLevel: ${error.message}`);
+    });
 
     res.json({
       success: true,

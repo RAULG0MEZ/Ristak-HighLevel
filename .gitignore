@@ -24,6 +24,7 @@ logs/
 *.sqlite
 *.sqlite3
 ristak.db
+backend/uploads/
 
 # OS files
 .DS_Store

@@ -490,6 +490,7 @@ async function ensureUniqueSlug(baseSlug, ignoreSiteId = null) {
 
 function buildDefaultBlocks(siteId, siteType, template) {
   const tpl = cleanString(template)
+  const templateHeaderPanelOverlap = -42
   const makeLandingSpacing = (top, bottom, right = 0, left = 0) => ({
     blockMarginLinked: false,
     blockMarginTop: top,
@@ -591,6 +592,17 @@ function buildDefaultBlocks(siteId, siteType, template) {
         blockPaddingRight: 42,
         blockPaddingBottom: isHeader ? 18 : 28,
         blockPaddingLeft: 42,
+        ...(isHeader ? {
+          blockMarginLinked: false,
+          blockMarginTop: 0,
+          blockMarginRight: 0,
+          blockMarginBottom: templateHeaderPanelOverlap,
+          blockMarginLeft: 0,
+          blockPaddingTop: 16,
+          blockPaddingRight: 42,
+          blockPaddingBottom: 16,
+          blockPaddingLeft: 42
+        } : {}),
         blockBg: 'transparent',
         textAlign: isHeader ? 'left' : 'center',
         blockRadius: 0,
@@ -1983,12 +1995,22 @@ function normalizeCssPaint(value, fallback = '') {
   return normalizeCssColor(raw, fallback)
 }
 
+function extractCssColor(value, fallback = '#111827') {
+  const raw = cleanString(value)
+  const match = raw.match(/(#[0-9a-f]{6}|rgba?\([^)]*\)|transparent)/i)
+  return match ? normalizeCssColor(match[1], fallback) : fallback
+}
+
+function paintFallbackColor(paint, fallback = '#111827') {
+  return isCssGradient(paint) ? extractCssColor(paint, fallback) : normalizeCssColor(paint, fallback)
+}
+
 function normalizeAITheme(theme = {}) {
   const input = theme && typeof theme === 'object' && !Array.isArray(theme) ? theme : {}
   return {
-    accentColor: normalizeHexColor(input.accentColor || input.accent_color, DEFAULT_THEME.accentColor),
-    backgroundColor: normalizeHexColor(input.backgroundColor || input.background_color, DEFAULT_THEME.backgroundColor),
-    textColor: normalizeHexColor(input.textColor || input.text_color, DEFAULT_THEME.textColor)
+    accentColor: normalizeCssPaint(input.accentColor || input.accent_color, DEFAULT_THEME.accentColor),
+    backgroundColor: normalizeCssPaint(input.backgroundColor || input.background_color, DEFAULT_THEME.backgroundColor),
+    textColor: normalizeCssPaint(input.textColor || input.text_color, DEFAULT_THEME.textColor)
   }
 }
 
@@ -3961,11 +3983,41 @@ function blockSpacingValue(settings, base, side, fallback, min, max) {
   return fallback
 }
 
-function renderBlockSpacing(settings, base, fallback, min, max) {
-  if (!settings || (settings[base] === undefined && !hasSpacingSideValue(settings, base))) return ''
-  return SPACING_SIDES
-    .map(side => `${blockSpacingValue(settings, base, side, fallback, min, max)}px`)
-    .join(' ')
+function blockSpacingValues(settings, base, fallback, min, max) {
+  if (!settings || (settings[base] === undefined && !hasSpacingSideValue(settings, base))) return null
+  return SPACING_SIDES.reduce((acc, side) => {
+    acc[side] = blockSpacingValue(settings, base, side, fallback, min, max)
+    return acc
+  }, {})
+}
+
+function spacingValuesToCss(values) {
+  return SPACING_SIDES.map(side => `${values[side]}px`).join(' ')
+}
+
+function positiveSpacingValues(values) {
+  return SPACING_SIDES.reduce((acc, side) => {
+    acc[side] = Math.max(0, values[side])
+    return acc
+  }, {})
+}
+
+function negativeSpacingValues(values) {
+  return SPACING_SIDES.reduce((acc, side) => {
+    acc[side] = Math.min(0, values[side])
+    return acc
+  }, {})
+}
+
+function hasNegativeSpacing(values) {
+  return values && SPACING_SIDES.some(side => values[side] < 0)
+}
+
+function combineSpacingValues(first, second) {
+  return SPACING_SIDES.reduce((acc, side) => {
+    acc[side] = (first && first[side] ? first[side] : 0) + (second && second[side] ? second[side] : 0)
+    return acc
+  }, {})
 }
 
 function themeNumber(theme, key, fallback, min, max) {
@@ -3974,8 +4026,8 @@ function themeNumber(theme, key, fallback, min, max) {
   return Math.min(max, Math.max(min, value))
 }
 
-function themeColor(theme, key) {
-  return normalizeCssColor(theme && theme[key], '')
+function themePaint(theme, key) {
+  return normalizeCssPaint(theme && theme[key], '')
 }
 
 function blockHorizontalAlign(settings, key, fallback = 'left') {
@@ -4005,22 +4057,26 @@ function renderBlockStyleVars(block) {
   const settings = normalizeLegacyLandingBlockSettings(block)
   const vars = []
   const blockBg = blockSettingPaint(settings, 'blockBg')
-  const blockText = blockSettingColor(settings, 'blockText')
-  const blockBorder = blockSettingColor(settings, 'blockBorderColor')
+  const blockText = blockSettingPaint(settings, 'blockText')
+  const blockBorder = blockSettingPaint(settings, 'blockBorderColor')
   const buttonBg = blockSettingPaint(settings, 'buttonBg')
-  const buttonText = blockSettingColor(settings, 'buttonTextColor')
-  const buttonBorder = blockSettingColor(settings, 'buttonBorderColor')
+  const buttonText = blockSettingPaint(settings, 'buttonTextColor')
+  const buttonBorder = blockSettingPaint(settings, 'buttonBorderColor')
   const cardBg = blockSettingPaint(settings, 'cardBg')
-  const cardBorder = blockSettingColor(settings, 'cardBorderColor')
+  const cardBorder = blockSettingPaint(settings, 'cardBorderColor')
   const fieldBg = blockSettingPaint(settings, 'fieldBg')
-  const fieldBorder = blockSettingColor(settings, 'fieldBorder')
+  const fieldBorder = blockSettingPaint(settings, 'fieldBorder')
   const fontFamily = cleanString(settings.fontFamily)
-  const textStrokeColor = blockSettingColor(settings, 'textStrokeColor')
-  const fontSize = blockSettingNumber(settings, 'fontSize', 12, 72)
+  const textStrokeColor = blockSettingPaint(settings, 'textStrokeColor')
+  const fontSize = blockSettingNumber(settings, 'fontSize', 12, 96)
   const textStrokeWidth = blockSettingNumber(settings, 'textStrokeWidth', 0, 12)
   const contentMaxWidth = blockSettingNumber(settings, 'contentMaxWidth', 10, 120)
-  const blockPadding = renderBlockSpacing(settings, 'blockPadding', 0, 0, 160)
-  const blockMargin = renderBlockSpacing(settings, 'blockMargin', 0, -80, 200)
+  const blockPaddingValues = blockSpacingValues(settings, 'blockPadding', 0, -80, 160)
+  const blockMarginValues = blockSpacingValues(settings, 'blockMargin', 0, -80, 200)
+  const blockPadding = blockPaddingValues ? spacingValuesToCss(positiveSpacingValues(blockPaddingValues)) : ''
+  const blockMargin = blockMarginValues || hasNegativeSpacing(blockPaddingValues)
+    ? spacingValuesToCss(combineSpacingValues(blockMarginValues, blockPaddingValues ? negativeSpacingValues(blockPaddingValues) : null))
+    : ''
   const blockRadius = blockSettingNumber(settings, 'blockRadius', 0, 48)
   const blockBorderWidth = blockSettingNumber(settings, 'blockBorderWidth', 0, 12)
   const buttonRadius = blockSettingNumber(settings, 'buttonRadius', 0, 80)
@@ -4040,24 +4096,31 @@ function renderBlockStyleVars(block) {
   const supportsButton = ['hero', 'button', 'cta'].includes(block.blockType)
 
   if (blockBg) vars.push(`--rstk-block-bg:${blockBg}`)
-  if (blockText) vars.push(`--rstk-block-text:${blockText}`)
-  if (blockBorder) vars.push(`--rstk-block-border:${blockBorder}`)
+  if (blockText) {
+    vars.push(`--rstk-block-text:${paintFallbackColor(blockText, '#111827')}`)
+    if (isCssGradient(blockText)) vars.push(`--rstk-block-text-paint:${blockText}`)
+  }
+  if (blockBorder) vars.push(`--rstk-block-border:${paintFallbackColor(blockBorder, '#dbe3ef')}`)
   if (buttonBg) {
     vars.push(`--rstk-button-bg:${buttonBg}`)
     vars.push(`--rstk-button-hover-bg:${buttonBg}`)
   }
-  if (buttonText) vars.push(`--rstk-button-text:${buttonText}`)
-  if (buttonBorder) vars.push(`--rstk-button-border:${buttonBorder}`)
+  if (buttonText) {
+    vars.push(`--rstk-button-text:${paintFallbackColor(buttonText, '#ffffff')}`)
+    if (isCssGradient(buttonText)) vars.push(`--rstk-button-text-paint:${buttonText}`)
+  }
+  if (buttonBorder) vars.push(`--rstk-button-border:${paintFallbackColor(buttonBorder, '#111827')}`)
   if (cardBg) vars.push(`--rstk-card-bg:${cardBg}`)
-  if (cardBorder) vars.push(`--rstk-card-border:${cardBorder}`)
+  if (cardBorder) vars.push(`--rstk-card-border:${paintFallbackColor(cardBorder, '#dbe3ef')}`)
   if (fieldBg) vars.push(`--rstk-field-bg:${fieldBg}`)
-  if (fieldBorder) vars.push(`--rstk-field-border:${fieldBorder}`)
+  if (fieldBorder) vars.push(`--rstk-field-border:${paintFallbackColor(fieldBorder, '#dbe3ef')}`)
   if (fontFamily) vars.push(`--rstk-block-font:${fontFamily.replace(/[;"{}<>]/g, '')}`)
   if (settings.fontStyle === 'italic') vars.push('--rstk-block-font-style:italic')
   if (settings.textDecoration === 'underline') vars.push('--rstk-block-text-decoration:underline')
   if (textStrokeWidth !== null) vars.push(`--rstk-text-stroke-width:${textStrokeWidth}px`)
-  if (textStrokeColor) vars.push(`--rstk-text-stroke-color:${textStrokeColor}`)
+  if (textStrokeColor) vars.push(`--rstk-text-stroke-color:${paintFallbackColor(textStrokeColor, '#111827')}`)
   if (settings.fontWeight === 'bold') vars.push('--rstk-block-weight:850')
+  if (settings.fontWeight === 'normal') vars.push('--rstk-block-weight:400')
   if (settings.textAlign !== undefined) {
     const align = blockHorizontalAlign(settings, 'textAlign', 'left')
     const margins = marginForAlign(align)
@@ -4115,9 +4178,14 @@ function renderBlockStyleClassName(block) {
   const settings = block.settings || {}
   const classes = [
     'rstk-block-style',
+    block.blockType === 'header_panel' ? 'rstkHeaderPanelBlock' : '',
+    block.blockType === 'footer_panel' ? 'rstkFooterPanelBlock' : '',
+    cleanString(settings.blockText) ? 'rstkBlockTextOverride' : '',
+    isCssGradient(settings.blockText) ? 'rstkTextGradient' : '',
+    isCssGradient(settings.buttonTextColor) ? 'rstkButtonTextGradient' : '',
     cleanString(settings.fontFamily) ? 'rstkFontOverride' : '',
     settings.fontSize !== undefined ? 'rstkSizeOverride' : '',
-    settings.fontWeight === 'bold' ? 'rstkWeightOverride' : '',
+    settings.fontWeight === 'bold' || settings.fontWeight === 'normal' ? 'rstkWeightOverride' : '',
     settings.fontStyle === 'italic' ? 'rstkItalicOverride' : '',
     settings.textDecoration === 'underline' ? 'rstkUnderlineOverride' : '',
     settings.textStrokeWidth !== undefined ? 'rstkStrokeOverride' : ''
@@ -4136,11 +4204,11 @@ function renderPublicBlock(block, context = {}) {
   const pages = Array.isArray(context.pages) ? context.pages : normalizeSitePages(context.site)
   const blockPageId = context.isInteractive ? getBlockPageId(block, pages) : ''
   const html = FIELD_BLOCK_TYPES.has(block.blockType)
-    ? renderFieldBlock(block, context.isInteractive, blockPageId)
+    ? renderFieldBlock(block, false, blockPageId)
     : renderContentBlock(block, context)
   const rendered = wrapRenderedBlock(block, html)
 
-  if (context.isInteractive && !FIELD_BLOCK_TYPES.has(block.blockType)) {
+  if (context.isInteractive) {
     return `<div class="rstk-interactive-page-content" data-interactive-page-content="${escapeHtml(blockPageId)}">${rendered}</div>`
   }
 
@@ -4269,7 +4337,7 @@ function renderContentBlock(block, context = {}) {
         ${settings.kicker ? `<p class="rstk-kicker">${escapeHtml(settings.kicker)}</p>` : ''}
         <h1 class="rstk-headline">${content || escapeHtml(block.label)}</h1>
         ${settings.subtitle ? `<p class="rstk-subheading">${escapeHtml(settings.subtitle)}</p>` : ''}
-        ${settings.buttonText ? `<a class="rstk-button-link" href="${escapeHtml(buttonUrl)}">${escapeHtml(settings.buttonText)}</a>` : ''}
+        ${settings.buttonText ? `<a class="rstk-button-link" href="${escapeHtml(buttonUrl)}"><span class="rstk-button-label">${escapeHtml(settings.buttonText)}</span></a>` : ''}
       </section>
     `
   }
@@ -4290,7 +4358,7 @@ function renderContentBlock(block, context = {}) {
 
   if (block.blockType === 'button') {
     const buttonUrl = resolveButtonHref(settings, context)
-    return `<a class="rstk-button-link" href="${escapeHtml(buttonUrl)}">${escapeHtml(settings.buttonText || block.content || block.label || 'Continuar')}</a>`
+    return `<a class="rstk-button-link" href="${escapeHtml(buttonUrl)}"><span class="rstk-button-label">${escapeHtml(settings.buttonText || block.content || block.label || 'Continuar')}</span></a>`
   }
 
   if (block.blockType === 'benefits') {
@@ -4365,7 +4433,7 @@ function renderContentBlock(block, context = {}) {
       <section class="rstk-cta">
         <h2>${content || escapeHtml(block.label)}</h2>
         ${settings.subtitle ? `<p>${escapeHtml(settings.subtitle)}</p>` : ''}
-        ${settings.buttonText ? `<a class="rstk-button-link" href="${escapeHtml(buttonUrl)}">${escapeHtml(settings.buttonText)}</a>` : ''}
+        ${settings.buttonText ? `<a class="rstk-button-link" href="${escapeHtml(buttonUrl)}"><span class="rstk-button-label">${escapeHtml(settings.buttonText)}</span></a>` : ''}
       </section>
     `
   }
@@ -4465,12 +4533,12 @@ function renderFieldInput(block) {
   return `<input id="${id}" name="${id}" type="text" placeholder="${placeholder}" ${required}>`
 }
 
-function renderFieldBlock(block, interactive = false, pageId = '') {
+function renderFieldBlock(block, _interactive = false, pageId = '') {
   const label = escapeHtml(block.label || 'Pregunta')
   const required = block.required ? '<span class="rstk-required">*</span>' : ''
 
   return `
-    <section class="rstk-field ${interactive ? 'rstk-step' : ''}" data-block-id="${escapeHtml(block.id)}" data-page-id="${escapeHtml(pageId)}" data-required="${block.required ? 'true' : 'false'}" data-field-type="${escapeHtml(block.blockType)}">
+    <section class="rstk-field" data-block-id="${escapeHtml(block.id)}" data-page-id="${escapeHtml(pageId)}" data-required="${block.required ? 'true' : 'false'}" data-field-type="${escapeHtml(block.blockType)}">
       <label for="${escapeHtml(block.id)}">${label}${required}</label>
       ${block.content ? `<p class="rstk-help">${escapeHtml(block.content)}</p>` : ''}
       ${renderFieldInput(block)}
@@ -5001,6 +5069,8 @@ function renderLegalFooter(brand) {
   `
 }
 
+const RSTK_GOOGLE_FONTS_HREF = 'https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Barlow:wght@400;500;600;700;800;900&family=Bebas+Neue&family=Inter:wght@400;500;600;700;800;900&family=Inter+Tight:wght@500;600;700;800;900&family=Lato:wght@400;700;900&family=Libre+Baskerville:wght@400;700&family=Manrope:wght@400;500;600;700;800&family=Merriweather:wght@400;700;900&family=Montserrat:wght@400;500;600;700;800;900&family=Nunito:wght@400;600;700;800;900&family=Open+Sans:wght@400;600;700;800&family=Oswald:wght@400;500;600;700&family=Playfair+Display:wght@400;600;700;800;900&family=Poppins:wght@400;500;600;700;800;900&family=Raleway:wght@400;500;600;700;800;900&family=Roboto:wght@400;500;700;900&family=Work+Sans:wght@400;500;600;700;800;900&display=swap'
+
 const RSTK_BASE_CSS = `
   *,*::before,*::after{box-sizing:border-box}
   [hidden]{display:none !important}
@@ -5046,6 +5116,8 @@ const RSTK_BASE_CSS = `
     border-radius:var(--rstk-block-radius,0);
     padding:var(--rstk-block-pad,0);
   }
+  .rstkHeaderPanelBlock{z-index:6}
+  .rstkFooterPanelBlock{z-index:1}
   .rstk-block-style .rstk-headline,
   .rstk-block-style h2,
   .rstk-block-style .rstk-subheading,
@@ -5107,6 +5179,7 @@ const RSTK_BASE_CSS = `
     transition:background .15s ease,border-color .15s ease,transform .04s ease,box-shadow .15s ease;
   }
   .rstk-button-link{justify-self:var(--rstk-button-justify,center);width:var(--rstk-button-width,fit-content);margin-left:var(--rstk-button-margin-left,auto);margin-right:var(--rstk-button-margin-right,auto)}
+  .rstk-button-label{display:inline-block}
   .rstk-centered .rstk-button-link{margin-inline:auto}
   .rstk-button-link:hover,.rstk-actions button:hover{background:var(--rstk-button-hover-bg,var(--rstk-accent-strong));border-color:var(--rstk-button-hover-border,var(--rstk-button-border,var(--rstk-button-hover-bg,var(--rstk-accent-strong))))}
   .rstk-actions button:active{transform:translateY(1px)}
@@ -5145,7 +5218,6 @@ const RSTK_BASE_CSS = `
   .rstk-site-panel-footer .rstk-site-panel-links{justify-content:center}
 
   .rstk-field{display:grid;gap:8px;text-align:left}
-  .rstk-step[hidden]{display:none}
   label{font-size:.95rem;font-weight:700;color:var(--rstk-ink)}
   .rstk-required{color:#dc2626;margin-left:3px}
   .rstk-help{margin:0;color:var(--rstk-muted);font-size:.9rem}
@@ -5270,6 +5342,8 @@ const RSTK_BASE_CSS = `
   .rstkItalicOverride .rstk-headline,.rstkItalicOverride .rstk-subheading,.rstkItalicOverride .rstk-text,.rstkItalicOverride h2,.rstkItalicOverride label,.rstkItalicOverride .rstk-help,.rstkItalicOverride .rstk-list-grid strong,.rstkItalicOverride .rstk-list-grid p,.rstkItalicOverride .rstk-check-body strong,.rstkItalicOverride .rstk-check-body span{font-style:var(--rstk-block-font-style,italic)}
   .rstkUnderlineOverride .rstk-headline,.rstkUnderlineOverride .rstk-subheading,.rstkUnderlineOverride .rstk-text,.rstkUnderlineOverride h2,.rstkUnderlineOverride label,.rstkUnderlineOverride .rstk-help,.rstkUnderlineOverride .rstk-list-grid strong,.rstkUnderlineOverride .rstk-list-grid p,.rstkUnderlineOverride .rstk-check-body strong,.rstkUnderlineOverride .rstk-check-body span{text-decoration:var(--rstk-block-text-decoration,underline)}
   .rstkStrokeOverride .rstk-headline,.rstkStrokeOverride .rstk-subheading,.rstkStrokeOverride .rstk-text,.rstkStrokeOverride h2,.rstkStrokeOverride label,.rstkStrokeOverride .rstk-help,.rstkStrokeOverride .rstk-list-grid strong,.rstkStrokeOverride .rstk-list-grid p,.rstkStrokeOverride .rstk-check-body strong,.rstkStrokeOverride .rstk-check-body span{-webkit-text-stroke:var(--rstk-text-stroke-width,0) var(--rstk-text-stroke-color,currentColor)}
+  .rstkTextGradient .rstk-headline,.rstkTextGradient .rstk-subheading,.rstkTextGradient .rstk-text,.rstkTextGradient h2,.rstkTextGradient label,.rstkTextGradient .rstk-help,.rstkTextGradient .rstk-site-panel-copy,.rstkTextGradient .rstk-list-grid strong,.rstkTextGradient .rstk-list-grid p,.rstkTextGradient .rstk-check-body strong,.rstkTextGradient .rstk-check-body span,.rstkPageTextGradient .rstk-block-style:not(.rstkBlockTextOverride) .rstk-headline,.rstkPageTextGradient .rstk-block-style:not(.rstkBlockTextOverride) .rstk-subheading,.rstkPageTextGradient .rstk-block-style:not(.rstkBlockTextOverride) .rstk-text,.rstkPageTextGradient .rstk-block-style:not(.rstkBlockTextOverride) h2,.rstkPageTextGradient .rstk-block-style:not(.rstkBlockTextOverride) label,.rstkPageTextGradient .rstk-block-style:not(.rstkBlockTextOverride) .rstk-help,.rstkPageTextGradient .rstk-block-style:not(.rstkBlockTextOverride) .rstk-site-panel-copy,.rstkPageTextGradient .rstk-block-style:not(.rstkBlockTextOverride) .rstk-list-grid strong,.rstkPageTextGradient .rstk-block-style:not(.rstkBlockTextOverride) .rstk-list-grid p,.rstkPageTextGradient .rstk-block-style:not(.rstkBlockTextOverride) .rstk-check-body strong,.rstkPageTextGradient .rstk-block-style:not(.rstkBlockTextOverride) .rstk-check-body span{background-image:var(--rstk-block-text-paint,var(--rstk-page-text-paint));background-clip:text;-webkit-background-clip:text;color:transparent !important;-webkit-text-fill-color:transparent}
+  .rstkButtonTextGradient .rstk-button-label{background-image:var(--rstk-button-text-paint);background-clip:text;-webkit-background-clip:text;color:transparent;-webkit-text-fill-color:transparent}
 
   @media (max-width:640px){
     .rstk-kind-landing .rstk-hero{padding:clamp(32px,8vw,56px) 20px}
@@ -5428,12 +5502,15 @@ function deriveNeutralVars(template, bg, userAccent) {
 
 function resolveRenderOverrides(template, theme, isLandingType) {
   if (template.chrome !== 'none') return {}
-  const color = (value) => normalizeCssColor(value, '') || null
+  const paintColor = (value) => {
+    const paint = normalizeCssPaint(value, '')
+    return paint ? paintFallbackColor(paint, '') : null
+  }
   // DEFAULT_THEME forces backgroundColor=#ffffff, so treat white as "not chosen":
   // landings default to the premium dark canvas; forms stay light until recolored.
-  const rawBg = color(theme.backgroundColor)
+  const rawBg = paintColor(theme.backgroundColor)
   const userBg = rawBg && rawBg.toLowerCase() !== String(DEFAULT_THEME.backgroundColor).toLowerCase() ? rawBg : null
-  const rawAccent = color(theme.accentColor)
+  const rawAccent = paintColor(theme.accentColor)
   const userAccent = rawAccent && rawAccent.toLowerCase() !== String(DEFAULT_THEME.accentColor).toLowerCase() ? rawAccent : null
   if (isLandingType) {
     return { vars: deriveNeutralVars(template, userBg || '#08080a', userAccent) }
@@ -5454,6 +5531,9 @@ function buildStyleSheet(template, maxWidth, overrides = {}, pageVars = {}) {
   const pageImage = pageVars.pageImage || v.pageImage
   const pageOverlay = pageVars.pageOverlay || 'none'
   const pageBg = pageVars.pageBg || v.pageBg
+  const textPaint = pageVars.textPaint || ''
+  const ink = textPaint ? paintFallbackColor(textPaint, v.ink) : v.ink
+  const muted = textPaint && isCssColor(textPaint) ? `color-mix(in srgb, ${ink} 60%, ${pageBg})` : v.muted
   return `
   :root{
     --rstk-font:${baseFont};
@@ -5467,8 +5547,9 @@ function buildStyleSheet(template, maxWidth, overrides = {}, pageVars = {}) {
     --rstk-page-image-repeat:${pageVars.pageImageRepeat || 'no-repeat'};
     --rstk-page-image-attachment:${pageVars.pageImageAttachment || 'scroll'};
     --rstk-page-video-fit:${pageVars.pageVideoFit || 'cover'};
-    --rstk-ink:${v.ink};
-    --rstk-muted:${v.muted};
+    --rstk-ink:${ink};
+    --rstk-muted:${muted};
+    ${textPaint && isCssGradient(textPaint) ? `--rstk-page-text-paint:${textPaint};` : ''}
     --rstk-surface:${v.surface};
     --rstk-surface2:${v.surface2};
     --rstk-border:${v.border};
@@ -5598,6 +5679,13 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
   const activePage = pages.find(page => page.id === requestedPageId) || pages[0]
   const blocks = isInteractive ? getInteractiveFormBlocks(site) : getPageBlocks(site, activePage?.id)
   const fieldBlocks = collectFieldBlocks(blocks)
+  const interactivePageIds = isInteractive
+    ? pages
+      .filter(page => blocks.some(block => getBlockPageId(block, pages) === page.id))
+      .map(page => page.id)
+    : []
+  const interactivePageCount = interactivePageIds.length
+  const interactiveInitialIndex = Math.max(0, interactivePageIds.indexOf(activePage?.id || ''))
   const nativeFormContext = getNativeFormContext(site, blocks)
   const hasForm = fieldBlocks.length > 0
   const completionAction = isLandingType ? getFormCompletionAction(blocks) : 'form_default'
@@ -5611,7 +5699,8 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
   const pagePadding = themeNumber(theme, 'pagePadding', isLandingType ? 36 : 22, 0, 120)
   const pageRadius = themeNumber(theme, 'pageRadius', isLandingType ? 0 : 24, 0, 40)
   const pageBorderWidth = themeNumber(theme, 'pageBorderWidth', 0, 0, 12)
-  const pageBorder = themeColor(theme, 'pageBorderColor') || 'transparent'
+  const pageBorderPaint = themePaint(theme, 'pageBorderColor')
+  const pageBorder = pageBorderPaint ? paintFallbackColor(pageBorderPaint, 'transparent') : 'transparent'
   const backgroundMediaType = cleanString(theme.backgroundMediaType) === 'video' ? 'video' : 'image'
   const rawBackgroundPaint = normalizeCssPaint(theme.backgroundColor, '')
   const backgroundPaint = rawBackgroundPaint.toLowerCase() === DEFAULT_THEME.backgroundColor ? '' : rawBackgroundPaint
@@ -5619,6 +5708,8 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
   const pageVideo = backgroundMediaType === 'video' ? cssMediaUrl(theme.backgroundImage) : ''
   const pageOverlay = paintLayer(backgroundPaint)
   const pageBg = backgroundPaint && isCssColor(backgroundPaint) ? normalizeCssColor(backgroundPaint, '') : ''
+  const rawTextPaint = normalizeCssPaint(site.theme?.textColor, '')
+  const textPaint = rawTextPaint && (site.theme?.textColorCustom || rawTextPaint.toLowerCase() !== String(DEFAULT_THEME.textColor).toLowerCase()) ? rawTextPaint : ''
   const maxWidth = `${pageMaxWidth}px`
   const styleSheet = buildStyleSheet(template, maxWidth, resolveRenderOverrides(template, theme, isLandingType), {
     framePad: `${pagePadding}px`,
@@ -5632,7 +5723,8 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
     pageImageRepeat: backgroundRepeatValue(theme.backgroundRepeat),
     pageImageAttachment: backgroundAttachmentValue(theme.backgroundAttachment),
     pageVideoFit: backgroundFitValue(theme.backgroundFit),
-    pageRadius: `${pageRadius}px`
+    pageRadius: `${pageRadius}px`,
+    textPaint
   })
   const chrome = template.chrome && template.chrome !== 'none' ? renderBrandChrome(template, brand) : ''
   const footer = (hasForm && !isLandingType) ? renderLegalFooter(brand) : ''
@@ -5641,6 +5733,7 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
     `rstk-${template.mode}`,
     `rstk-kind-${isLandingType ? 'landing' : 'form'}`,
     template.centered ? 'rstk-centered' : '',
+    textPaint && isCssGradient(textPaint) ? 'rstkPageTextGradient' : '',
     isInteractive ? 'rstk-interactive' : ''
   ].filter(Boolean).join(' ')
 
@@ -5652,9 +5745,9 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
   const submitArea = hasForm && !isLandingType
     ? `
       <div class="rstk-actions">
-        ${isInteractive ? '<button type="button" class="rstk-secondary" data-back hidden>Anterior</button>' : ''}
-        ${isInteractive ? '<button type="button" data-next>Siguiente</button>' : ''}
-        <button type="submit" ${isInteractive ? 'hidden' : ''} data-submit>${escapeHtml(submitText)}</button>
+        ${isInteractive && interactivePageCount > 1 ? '<button type="button" class="rstk-secondary" data-back hidden>Anterior</button>' : ''}
+        ${isInteractive && interactivePageCount > 1 ? '<button type="button" data-next>Siguiente</button>' : ''}
+        <button type="submit" ${isInteractive && interactivePageCount > 1 ? 'hidden' : ''} data-submit>${escapeHtml(submitText)}</button>
       </div>
       <p class="rstk-submit-message" data-message role="status"></p>
     `
@@ -5682,7 +5775,7 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
   <meta name="description" content="${escapeHtml(site.description || '')}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Inter+Tight:wght@500;600;700&display=swap" rel="stylesheet">
+  <link href="${RSTK_GOOGLE_FONTS_HREF}" rel="stylesheet">
   <style>${styleSheet}</style>
 </head>
 <body class="${bodyClass}">
@@ -5691,7 +5784,7 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
     <main class="rstk-page">
       <div class="rstk-shell">
         ${chrome}
-        ${isInteractive && hasForm ? `<div class="rstk-progress" data-progress><span class="rstk-progress-track"><span class="rstk-progress-fill" data-progress-fill></span></span><b data-progress-label>Pregunta 1 de ${fieldBlocks.length}</b></div>` : ''}
+        ${isInteractive && hasForm && interactivePageCount > 1 ? `<div class="rstk-progress" data-progress><span class="rstk-progress-track"><span class="rstk-progress-fill" data-progress-fill></span></span><b data-progress-label>Pantalla ${interactiveInitialIndex + 1} de ${interactivePageCount}</b></div>` : ''}
         <form data-site-form data-site-id="${escapeHtml(site.id)}" data-page-id="${escapeHtml(activePage?.id || '')}" novalidate>
           ${bodyBlocks}
           ${submitArea}
@@ -5706,7 +5799,7 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
       if (!form) return;
       const siteId = form.getAttribute('data-site-id');
       const pageId = form.getAttribute('data-page-id') || '';
-      const steps = Array.from(form.querySelectorAll('.rstk-step'));
+      const fields = Array.from(form.querySelectorAll('.rstk-field'));
       const pageContents = Array.from(form.querySelectorAll('[data-interactive-page-content]'));
       const nextButton = form.querySelector('[data-next]');
       const backButton = form.querySelector('[data-back]');
@@ -5715,9 +5808,10 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
       const progressLabel = document.querySelector('[data-progress-label]');
       const progressFill = document.querySelector('[data-progress-fill]');
       const isInteractive = ${isInteractive ? 'true' : 'false'};
+      const stepPages = ${JSON.stringify(interactivePageIds)};
       const completionAction = ${JSON.stringify(completionAction)};
       const nextPageUrl = ${JSON.stringify(nextPageUrl)};
-      let index = 0;
+      let index = Math.max(0, stepPages.indexOf(pageId));
 
       const parseRule = (value) => {
         if (!value) return null;
@@ -5760,25 +5854,30 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
         return valid;
       };
 
+      const getCurrentPageId = () => stepPages[index] || pageId || '';
+      const getPageFields = (targetPageId) => fields.filter((field) => {
+        const fieldPageId = field.getAttribute('data-page-id') || '';
+        return fieldPageId === targetPageId;
+      });
+
       const renderStep = () => {
-        if (!isInteractive || steps.length === 0) return;
-        steps.forEach((step, stepIndex) => { step.hidden = stepIndex !== index; });
-        const currentPageId = steps[index] ? steps[index].getAttribute('data-page-id') || '' : '';
+        if (!isInteractive || stepPages.length === 0) return;
+        const currentPageId = getCurrentPageId();
         pageContents.forEach((content) => {
           const contentPageId = content.getAttribute('data-interactive-page-content') || '';
-          content.hidden = Boolean(currentPageId) && contentPageId !== currentPageId;
+          content.hidden = contentPageId !== currentPageId;
         });
         if (backButton) backButton.hidden = index === 0;
-        if (nextButton) nextButton.hidden = index >= steps.length - 1;
-        if (submitButton) submitButton.hidden = index < steps.length - 1;
-        if (progressLabel) progressLabel.textContent = 'Pregunta ' + (index + 1) + ' de ' + steps.length;
-        if (progressFill) progressFill.style.width = (((index + 1) / steps.length) * 100) + '%';
+        if (nextButton) nextButton.hidden = index >= stepPages.length - 1;
+        if (submitButton) submitButton.hidden = index < stepPages.length - 1;
+        if (progressLabel) progressLabel.textContent = 'Pantalla ' + (index + 1) + ' de ' + stepPages.length;
+        if (progressFill) progressFill.style.width = (((index + 1) / stepPages.length) * 100) + '%';
       };
 
       nextButton && nextButton.addEventListener('click', () => {
-        const current = steps[index];
-        if (current && !validateField(current)) return;
-        const rules = current ? readSelectedRules(current).filter(item => item.action && item.action !== 'continue') : [];
+        const currentFields = getPageFields(getCurrentPageId());
+        if (!currentFields.every(validateField)) return;
+        const rules = currentFields.flatMap((field) => readSelectedRules(field)).filter(item => item.action && item.action !== 'continue');
         const blockingRule = rules.find(item => item.action === 'show_message' || item.action === 'disqualify' || item.action === 'end_form');
         if (blockingRule) {
           if (message) message.textContent = blockingRule.message || 'Gracias. Tu informacion fue recibida.';
@@ -5787,10 +5886,12 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
         }
         const jumpRule = rules.find(item => item.action === 'jump' && item.targetBlockId);
         if (jumpRule && jumpRule.targetBlockId) {
-          const targetIndex = steps.findIndex(step => step.getAttribute('data-block-id') === jumpRule.targetBlockId);
-          index = targetIndex >= 0 ? targetIndex : Math.min(index + 1, steps.length - 1);
+          const targetField = fields.find(field => field.getAttribute('data-block-id') === jumpRule.targetBlockId);
+          const targetPageId = targetField ? targetField.getAttribute('data-page-id') || '' : '';
+          const targetIndex = stepPages.indexOf(targetPageId);
+          index = targetIndex >= 0 ? targetIndex : Math.min(index + 1, stepPages.length - 1);
         } else {
-          index = Math.min(index + 1, steps.length - 1);
+          index = Math.min(index + 1, stepPages.length - 1);
         }
         renderStep();
       });
@@ -5802,7 +5903,6 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
 
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
-        const fields = Array.from(form.querySelectorAll('.rstk-field'));
         const valid = fields.every(validateField);
         if (!valid) return;
 

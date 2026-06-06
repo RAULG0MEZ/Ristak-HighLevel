@@ -65,6 +65,10 @@ app.use(express.json({
   }
 }))
 app.use(express.urlencoded({ extended: true, limit: '35mb' }))
+app.use('/uploads', express.static(join(__dirname, '../uploads'), {
+  maxAge: '7d',
+  immutable: true
+}))
 
 // Health check
 app.get('/api/health', (req, res) => {

@@ -11,13 +11,13 @@ interface PhoneEcosystemNavProps {
 
 const navItems = [
   { key: 'chat', label: 'Chats', to: '/phone/chat', Icon: MessageCircle },
-  { key: 'calendar', label: 'Citas', to: '/phone/calendario', Icon: CalendarDays },
-  { key: 'payments', label: 'Pagos', to: '/phone/pagos', Icon: CreditCard },
-  { key: 'agent', label: 'Agente', to: '/phone/agente-ia', Icon: Bot }
+  { key: 'calendar', label: 'Calendar', to: '/phone/calendar', Icon: CalendarDays },
+  { key: 'payments', label: 'Payments', to: '/phone/payments', Icon: CreditCard },
+  { key: 'agent', label: 'Agent', to: '/phone/agent-ai', Icon: Bot }
 ] as const
 
 export const PhoneEcosystemNav: React.FC<PhoneEcosystemNavProps> = ({ active }) => (
-  <nav className={styles.dock} aria-label="Secciones de Ristak Chat">
+  <nav className={styles.dock} aria-label="Ristak Chat sections">
     {navItems.map(({ key, label, to, Icon }) => (
       <Link key={key} to={to} className={active === key ? styles.active : undefined}>
         <Icon size={key === 'chat' ? 25 : 24} />

@@ -20,6 +20,8 @@ router.get('/google-integration/reveal/service-account', calendarsController.rev
 router.put('/google-integration', calendarsController.saveGoogleCalendarIntegration);
 router.post('/google-integration/test', calendarsController.testGoogleCalendarIntegration);
 router.post('/google-integration/sync', calendarsController.syncGoogleCalendarIntegration);
+router.get('/google-integration/merge-preview', calendarsController.getGoogleCalendarMergePreview);
+router.post('/google-integration/merge', calendarsController.mergeGoogleCalendarAppointments);
 router.delete('/google-integration', calendarsController.deleteGoogleCalendarIntegration);
 
 // Obtener eventos/citas

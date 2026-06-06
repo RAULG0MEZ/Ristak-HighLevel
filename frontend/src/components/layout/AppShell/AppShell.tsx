@@ -64,6 +64,7 @@ export const AppShell: React.FC = () => {
   const [aiAgentWidth, setAIAgentWidth] = useState(getInitialAIAgentWidth)
   const [aiAgentResizing, setAIAgentResizing] = useState(false)
   const [sitesEditorActive, setSitesEditorActive] = useState(false)
+  const [sitesEditorFocusMode, setSitesEditorFocusMode] = useState(false)
   const resizePointerIdRef = useRef<number | null>(null)
   const aiAgentWidthRef = useRef(aiAgentWidth)
   const lastSavedAIAgentWidthRef = useRef(aiAgentWidth)
@@ -131,7 +132,10 @@ export const AppShell: React.FC = () => {
 
   useLayoutEffect(() => {
     const handleSitesEditorActive = (event: Event) => {
-      setSitesEditorActive(Boolean((event as CustomEvent<{ active?: boolean }>).detail?.active))
+      const detail = (event as CustomEvent<{ active?: boolean; focusMode?: boolean }>).detail
+      const active = Boolean(detail?.active)
+      setSitesEditorActive(active)
+      setSitesEditorFocusMode(active && Boolean(detail?.focusMode))
     }
 
     window.addEventListener(SITES_EDITOR_ACTIVE_EVENT, handleSitesEditorActive)
@@ -237,20 +241,25 @@ export const AppShell: React.FC = () => {
     saveAIAgentWidth(clampedWidth)
   }
 
+  const shellStyle = {
+    '--ai-agent-width': `${aiAgentWidth}px`,
+    ...(sitesEditorActive ? { '--header-height': sitesEditorFocusMode ? '0px' : '48px' } : {})
+  } as React.CSSProperties
+
   return (
     <>
       {syncProgressVisible && <SyncProgressBar onClose={handleProgressBarClose} />}
 
       <div
-        className={`${styles.shell} ${aiAgentOpen ? styles.shellWithAIAgent : ''} ${aiAgentResizing ? styles.shellResizingAIAgent : ''}`}
-        style={{ '--ai-agent-width': `${aiAgentWidth}px` } as React.CSSProperties}
+        className={`${styles.shell} ${aiAgentOpen ? styles.shellWithAIAgent : ''} ${aiAgentResizing ? styles.shellResizingAIAgent : ''} ${sitesEditorFocusMode ? styles.shellSitesEditorFocus : ''}`}
+        style={shellStyle}
       >
         <div className={styles.mainPane}>
           <Layout
             sidebar={<Sidebar locationName={locationName} locationLogo={locationLogo} />}
           >
             <div className="flex flex-col min-h-full">
-              <Header onLogout={handleLogout} />
+              <Header onLogout={handleLogout} sitesEditorActive={sitesEditorActive} sitesEditorFocusMode={sitesEditorFocusMode} />
               <div className="flex-1 overflow-auto">
                 <Outlet />
               </div>

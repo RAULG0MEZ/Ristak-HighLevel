@@ -34,6 +34,22 @@
   overflow: hidden;
 }
 
+.shellSitesEditorFocus .mainPane,
+.shellSitesEditorFocus [data-ristak-layout],
+.shellSitesEditorFocus [data-ristak-layout-main] {
+  height: 100dvh;
+  min-height: 0;
+}
+
+.shellSitesEditorFocus [data-ristak-layout-sidebar],
+.shellSitesEditorFocus [data-ristak-header] {
+  display: none !important;
+}
+
+.shellSitesEditorFocus [data-ristak-layout-main] {
+  overflow: hidden;
+}
+
 .aiAgentSlot {
   position: relative;
   z-index: 20;

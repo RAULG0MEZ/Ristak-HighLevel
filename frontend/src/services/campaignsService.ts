@@ -333,8 +333,10 @@ class CampaignsService {
     configured: boolean
     config: {
       adAccountId: string
+      accessToken: string
       pixelId: string | null
       pixelApiToken: string | null
+      pageId: string | null
       timezoneId: number | null
       timezoneName: string | null
       timezoneOffsetHoursUtc: number | null
@@ -346,6 +348,8 @@ class CampaignsService {
         configured: boolean
         config: {
           adAccountId: string
+          accessToken: string
+          pageId: string | null
           pixelId: string | null
           pixelApiToken: string | null
           timezoneId: number | null

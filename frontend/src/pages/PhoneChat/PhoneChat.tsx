@@ -37,6 +37,7 @@ import { useAppConfig } from '@/hooks'
 import apiClient from '@/services/apiClient'
 import { calendarsService, type Calendar, type CalendarEvent } from '@/services/calendarsService'
 import { contactsService, type JourneyEvent } from '@/services/contactsService'
+import { mobileAppService, type MobilePhotoAttachment } from '@/services/mobileAppService'
 import { pushNotificationsService } from '@/services/pushNotificationsService'
 import { whatsappApiService, type WhatsAppApiStatus } from '@/services/whatsappApiService'
 import type { Contact } from '@/types'
@@ -60,6 +61,11 @@ interface ChatMessage {
   date: string
   direction: 'inbound' | 'outbound' | 'system'
   status?: string
+  attachment?: {
+    type: 'image'
+    dataUrl: string
+    name?: string
+  }
 }
 
 interface ChatContact extends Contact {
@@ -95,11 +101,11 @@ function getAccessState(): AccessState {
 }
 
 function getContactName(contact?: Partial<Contact> | null) {
-  return contact?.name || contact?.email || contact?.phone || 'Contacto sin nombre'
+  return contact?.name || contact?.email || contact?.phone || 'Unnamed contact'
 }
 
 function getContactDetail(contact?: Partial<Contact> | null) {
-  return contact?.phone || contact?.email || 'Sin teléfono guardado'
+  return contact?.phone || contact?.email || 'No saved phone'
 }
 
 function getContactInitials(contact?: Partial<Contact> | null) {
@@ -126,7 +132,7 @@ function formatMessageTime(value?: string | null) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return ''
 
-  return new Intl.DateTimeFormat('es-MX', {
+  return new Intl.DateTimeFormat('en-US', {
     hour: 'numeric',
     minute: '2-digit',
     hour12: true
@@ -142,7 +148,7 @@ function formatMessageDate(value?: string | null) {
   const sameDay = date.toDateString() === now.toDateString()
   if (sameDay) return formatMessageTime(value)
 
-  return new Intl.DateTimeFormat('es-MX', {
+  return new Intl.DateTimeFormat('en-US', {
     day: '2-digit',
     month: 'short'
   }).format(date).replace('.', '')
@@ -173,25 +179,26 @@ function getJourneyMessage(event: JourneyEvent, index: number): ChatMessage | nu
 
 function getMessageTypeLabel(type = '') {
   const normalized = type.toLowerCase()
-  if (normalized.includes('image')) return 'Foto'
+  if (normalized.includes('image')) return 'Photo'
   if (normalized.includes('video')) return 'Video'
-  if (normalized.includes('audio') || normalized.includes('voice')) return 'Mensaje de voz'
-  if (normalized.includes('document')) return 'Documento'
-  if (normalized.includes('location')) return 'Ubicación'
-  return 'Mensaje de WhatsApp'
+  if (normalized.includes('audio') || normalized.includes('voice')) return 'Voice message'
+  if (normalized.includes('document')) return 'Document'
+  if (normalized.includes('location')) return 'Location'
+  return 'WhatsApp message'
 }
 
 function getChatPreview(contact: ChatContact) {
   const text = String(contact.lastMessageText || '').trim()
   const typeLabel = text ? text : getMessageTypeLabel(contact.lastMessageType || '')
-  return contact.lastMessageDirection === 'outbound' ? `Tú: ${typeLabel}` : typeLabel
+  return contact.lastMessageDirection === 'outbound' ? `You: ${typeLabel}` : typeLabel
 }
 
 function getNotificationPermissionLabel() {
-  if (typeof window === 'undefined' || !('Notification' in window)) return 'Este celular no permite avisos de la app.'
-  if (Notification.permission === 'granted') return 'Este celular ya puede recibir avisos.'
-  if (Notification.permission === 'denied') return 'El celular bloqueó los avisos. Actívalos desde los ajustes del navegador.'
-  return 'Toca Activar para permitir avisos en este celular.'
+  if (mobileAppService.isNative()) return 'Tap Enable to allow alerts on this phone.'
+  if (typeof window === 'undefined' || !('Notification' in window)) return 'This phone does not allow app alerts.'
+  if (Notification.permission === 'granted') return 'This phone can already receive alerts.'
+  if (Notification.permission === 'denied') return 'This phone blocked alerts. Enable them from browser settings.'
+  return 'Tap Enable to allow alerts on this phone.'
 }
 
 function toPaymentContact(contact: Contact | null) {
@@ -254,6 +261,7 @@ export const PhoneChat: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [messagesLoading, setMessagesLoading] = useState(false)
   const [messageText, setMessageText] = useState('')
+  const [draftAttachments, setDraftAttachments] = useState<MobilePhotoAttachment[]>([])
   const [composerStatus, setComposerStatus] = useState<ComposerStatus>('idle')
   const [whatsappStatus, setWhatsappStatus] = useState<WhatsAppApiStatus | null>(null)
   const [calendars, setCalendars] = useState<Calendar[]>([])
@@ -263,6 +271,8 @@ export const PhoneChat: React.FC = () => {
   const [appointmentOpen, setAppointmentOpen] = useState(false)
   const [requestingPush, setRequestingPush] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement | null>(null)
+  const cameraInputRef = useRef<HTMLInputElement | null>(null)
+  const photosInputRef = useRef<HTMLInputElement | null>(null)
 
   const activeContact = useMemo(
     () => chats.find((contact) => contact.id === activeContactId) || null,
@@ -277,7 +287,7 @@ export const PhoneChat: React.FC = () => {
   const initialContact = useMemo(() => toPaymentContact(activeContact), [activeContact])
   const defaultAppointmentRange = useMemo(() => createDefaultAppointmentRange(timezone), [timezone])
   const whatsappConnected = Boolean(whatsappStatus?.connected && whatsappStatus?.configured)
-  const canSendMessage = Boolean(activeContact?.phone && messageText.trim() && composerStatus !== 'sending')
+  const canSendMessage = Boolean(activeContact?.phone && (messageText.trim() || draftAttachments.length > 0) && composerStatus !== 'sending')
   const hasChats = chats.length > 0
   const customersLabel = labels.customers?.trim() || 'Clientes'
   const filteredChats = useMemo(() => {
@@ -333,7 +343,7 @@ export const PhoneChat: React.FC = () => {
         setConversationOpen(true)
       }
     } catch {
-      setChatsError('No se pudieron cargar los chats.')
+      setChatsError('Chats could not be loaded.')
       setChats([])
     } finally {
       setChatsLoading(false)
@@ -551,28 +561,95 @@ export const PhoneChat: React.FC = () => {
     setConversationOpen(true)
     setSheet(null)
     setContactQuery('')
+    setDraftAttachments([])
   }
 
   const handleBackToChats = () => {
     setConversationOpen(false)
     setSheet(null)
+    setDraftAttachments([])
   }
 
   const handleUnavailableAttachment = (label: string) => {
-    showToast('info', label, 'Esta opción ya está en el menú. La conexión real se activa cuando conectemos archivos del celular.')
+    showToast('info', label, 'This option is already in the menu. The real connection turns on when phone files are connected.')
+  }
+
+  const addDraftAttachment = (attachment: MobilePhotoAttachment) => {
+    setDraftAttachments((current) => [attachment, ...current].slice(0, 4))
+    showToast('success', 'Photo ready', 'Review the preview and tap send.')
+  }
+
+  const readImageFile = (file: File, source: 'camera' | 'photos') => {
+    if (!file.type.startsWith('image/')) {
+      showToast('error', 'Invalid file', 'Choose a JPG, PNG, or WebP photo.')
+      return
+    }
+
+    if (file.size > 8 * 1024 * 1024) {
+      showToast('error', 'Photo is too large', 'Choose a lighter photo so it can be sent through WhatsApp.')
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === 'string' ? reader.result : ''
+      if (!dataUrl) {
+        showToast('error', 'Could not read it', 'Try choosing the photo again.')
+        return
+      }
+
+      addDraftAttachment({
+        id: `photo-${Date.now()}`,
+        name: file.name || `photo-${Date.now()}`,
+        type: file.type || 'image/jpeg',
+        dataUrl,
+        source
+      })
+    }
+    reader.onerror = () => showToast('error', 'Could not read it', 'Try choosing the photo again.')
+    reader.readAsDataURL(file)
+  }
+
+  const handleWebPhotoSelected = (source: 'camera' | 'photos', event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    readImageFile(file, source)
+  }
+
+  const handlePickPhoto = async (source: 'camera' | 'photos') => {
+    setSheet(null)
+
+    if (mobileAppService.isNative()) {
+      try {
+        const photo = await mobileAppService.pickPhoto(source)
+        if (photo) addDraftAttachment(photo)
+      } catch (error: any) {
+        showToast('error', source === 'camera' ? 'Camera did not open' : 'Photos did not open', error?.message || 'Check phone permissions and try again.')
+      }
+      return
+    }
+
+    const input = source === 'camera' ? cameraInputRef.current : photosInputRef.current
+    input?.click()
+  }
+
+  const removeDraftAttachment = (attachmentId: string) => {
+    setDraftAttachments((current) => current.filter((attachment) => attachment.id !== attachmentId))
   }
 
   const handleSendMessage = async () => {
     const text = messageText.trim()
-    if (!activeContact || !text) return
+    const attachmentsToSend = draftAttachments
+    if (!activeContact || (!text && attachmentsToSend.length === 0)) return
 
     if (!activeContact.phone) {
-      showToast('error', 'Falta teléfono', 'Guarda el teléfono del contacto para poder escribirle por WhatsApp.')
+      showToast('error', 'Missing phone', 'Save the contact phone number before writing through WhatsApp.')
       return
     }
 
     if (!whatsappConnected) {
-      showToast('error', 'WhatsApp no está conectado', 'Conecta WhatsApp API en configuración para enviar mensajes desde Ristak.')
+      showToast('error', 'WhatsApp is not connected', 'Connect WhatsApp API in settings to send messages from Ristak.')
       return
     }
 
@@ -580,38 +657,72 @@ export const PhoneChat: React.FC = () => {
     const sentAt = new Date().toISOString()
     setComposerStatus('sending')
     setMessageText('')
-    setMessages((current) => [
-      ...current,
-      {
-        id: optimisticId,
-        text,
-        date: sentAt,
-        direction: 'outbound',
-        status: 'enviando'
-      }
-    ])
+    setDraftAttachments([])
+    const optimisticMessages: ChatMessage[] = attachmentsToSend.length > 0
+      ? attachmentsToSend.map((attachment, index) => ({
+          id: `${optimisticId}-image-${index}`,
+          text: index === 0 ? text : '',
+          date: sentAt,
+          direction: 'outbound',
+          status: 'enviando',
+          attachment: {
+            type: 'image',
+            dataUrl: attachment.dataUrl,
+            name: attachment.name
+          }
+        }))
+      : [{
+          id: optimisticId,
+          text,
+          date: sentAt,
+          direction: 'outbound',
+          status: 'enviando'
+        }]
+
+    setMessages((current) => [...current, ...optimisticMessages])
     setChats((current) => current.map((contact) => (
       contact.id === activeContact.id
-        ? { ...contact, lastMessageText: text, lastMessageDate: sentAt, lastMessageDirection: 'outbound', messageCount: Number(contact.messageCount || 0) + 1 }
+        ? {
+            ...contact,
+            lastMessageText: attachmentsToSend.length > 0 ? (text || 'Photo') : text,
+            lastMessageDate: sentAt,
+            lastMessageDirection: 'outbound',
+            messageCount: Number(contact.messageCount || 0) + Math.max(1, attachmentsToSend.length)
+          }
         : contact
     )))
 
     try {
-      await whatsappApiService.sendText({
-        to: activeContact.phone,
-        text,
-        externalId: optimisticId
-      })
-      setMessages((current) => current.map((message) => (
-        message.id === optimisticId ? { ...message, status: 'sent' } : message
-      )))
+      if (attachmentsToSend.length > 0) {
+        await Promise.all(attachmentsToSend.map((attachment, index) => (
+          whatsappApiService.sendImage({
+            to: activeContact.phone || '',
+            imageDataUrl: attachment.dataUrl,
+            caption: index === 0 ? text : '',
+            externalId: `${optimisticId}-image-${index}`
+          })
+        )))
+        setMessages((current) => current.map((message) => (
+          message.id.startsWith(`${optimisticId}-image-`) ? { ...message, status: 'sent' } : message
+        )))
+      } else {
+        await whatsappApiService.sendText({
+          to: activeContact.phone,
+          text,
+          externalId: optimisticId
+        })
+        setMessages((current) => current.map((message) => (
+          message.id === optimisticId ? { ...message, status: 'sent' } : message
+        )))
+      }
       await loadConversation(activeContact.id)
       await loadChats()
     } catch (error: any) {
       setMessages((current) => current.map((message) => (
-        message.id === optimisticId ? { ...message, status: 'error' } : message
+        message.id === optimisticId || message.id.startsWith(`${optimisticId}-image-`) ? { ...message, status: 'error' } : message
       )))
-      showToast('error', 'No se envió', error?.message || 'Intenta mandar el mensaje otra vez.')
+      setDraftAttachments(attachmentsToSend)
+      showToast('error', 'Message was not sent', error?.message || 'Try sending the message again.')
     } finally {
       setComposerStatus('idle')
     }
@@ -638,18 +749,18 @@ export const PhoneChat: React.FC = () => {
 
       setAppointmentOpen(false)
       setSheet(null)
-      showToast('success', 'Cita agendada', 'La cita quedó guardada.')
+      showToast('success', 'Appointment scheduled', 'The appointment was saved.')
       setMessages((current) => [
         ...current,
         {
           id: `appointment-${Date.now()}`,
-          text: 'Cita agendada desde este chat.',
+          text: 'Appointment scheduled from this chat.',
           date: new Date().toISOString(),
           direction: 'system'
         }
       ])
     } catch (error) {
-      showToast('error', 'No se pudo agendar', 'Intenta de nuevo en unos minutos.')
+      showToast('error', 'Could not schedule', 'Try again in a few minutes.')
       throw error
     }
   }
@@ -662,12 +773,12 @@ export const PhoneChat: React.FC = () => {
       })
 
       if (result.status === 'subscribed') {
-        showToast('success', 'Avisos activados', 'Este celular ya puede recibir avisos de Ristak.')
+        showToast('success', 'Alerts enabled', 'This phone can now receive Ristak alerts.')
       } else {
-        showToast('warning', 'No se activaron', result.reason)
+        showToast('warning', 'Alerts were not enabled', result.reason)
       }
     } catch (error: any) {
-      showToast('error', 'No se activaron', error?.message || 'Intenta nuevamente.')
+      showToast('error', 'Alerts were not enabled', error?.message || 'Try again.')
     } finally {
       setRequestingPush(false)
     }
@@ -716,7 +827,7 @@ export const PhoneChat: React.FC = () => {
       return (
         <div className={styles.centerState}>
           <Loader2 size={20} className={styles.spinIcon} />
-          <span>Cargando chats...</span>
+          <span>Loading chats...</span>
         </div>
       )
     }
@@ -725,7 +836,7 @@ export const PhoneChat: React.FC = () => {
       return (
         <div className={styles.centerState}>
           <span>{chatsError}</span>
-          <button type="button" onClick={loadChats}>Reintentar</button>
+          <button type="button" onClick={loadChats}>Try again</button>
         </div>
       )
     }
@@ -735,7 +846,7 @@ export const PhoneChat: React.FC = () => {
         return (
           <div className={styles.centerState}>
             <Loader2 size={20} className={styles.spinIcon} />
-            <span>Buscando contactos...</span>
+            <span>Searching contacts...</span>
           </div>
         )
       }
@@ -743,7 +854,7 @@ export const PhoneChat: React.FC = () => {
       if (contactResults.length > 0) {
         return (
           <div className={styles.contactResultGroup}>
-            <p>Contactos encontrados</p>
+            <p>Contacts found</p>
             {contactResults.map((contact) => renderContactButton(contact, 'contact'))}
           </div>
         )
@@ -756,11 +867,11 @@ export const PhoneChat: React.FC = () => {
           <span className={styles.emptyChatsIcon}>
             <Icon name="whatsapp" size={34} />
           </span>
-          <strong>No hay chats todavía</strong>
-          <small>Toca el botón verde para buscar un contacto e iniciar una conversación.</small>
+          <strong>No chats yet</strong>
+          <small>Tap the green button to search for a contact and start a conversation.</small>
           <button type="button" onClick={() => setSheet('newChat')}>
             <Plus size={17} />
-            Nuevo chat
+            New chat
           </button>
         </div>
       )
@@ -770,7 +881,7 @@ export const PhoneChat: React.FC = () => {
       <>
         <button type="button" className={styles.archiveRow}>
           <Archive size={21} />
-          <strong>Archivados</strong>
+          <strong>Archived</strong>
           <span>0</span>
         </button>
         {filteredChats.length > 0 ? (
@@ -780,8 +891,8 @@ export const PhoneChat: React.FC = () => {
             <span className={styles.emptyChatsIcon}>
               <Icon name="whatsapp" size={30} />
             </span>
-            <strong>No hay chats en este filtro</strong>
-            <small>Cambia de filtro o busca un contacto para iniciar una conversación.</small>
+            <strong>No chats in this filter</strong>
+            <small>Change the filter or search for a contact to start a conversation.</small>
           </div>
         )}
       </>
@@ -793,8 +904,8 @@ export const PhoneChat: React.FC = () => {
       return (
         <div className={styles.emptyConversation}>
           <MessageCircle size={34} />
-          <strong>Elige un chat</strong>
-          <span>Abre una conversación para escribir, cobrar o agendar.</span>
+          <strong>Choose a chat</strong>
+          <span>Open a conversation to write, charge, or schedule.</span>
         </div>
       )
     }
@@ -803,7 +914,7 @@ export const PhoneChat: React.FC = () => {
       return (
         <div className={styles.emptyConversation}>
           <Loader2 size={22} className={styles.spinIcon} />
-          <span>Cargando conversación...</span>
+          <span>Loading conversation...</span>
         </div>
       )
     }
@@ -812,8 +923,8 @@ export const PhoneChat: React.FC = () => {
       return (
         <div className={styles.emptyConversation}>
           <Icon name="whatsapp" size={38} />
-          <strong>Sin mensajes todavía</strong>
-          <span>Escribe el primer mensaje o abre el botón + para cobrar o agendar.</span>
+          <strong>No messages yet</strong>
+          <span>Write the first message or open + to charge or schedule.</span>
         </div>
       )
     }
@@ -824,7 +935,10 @@ export const PhoneChat: React.FC = () => {
         className={`${styles.messageRow} ${styles[`messageRow_${message.direction}`]}`}
       >
         <div className={styles.messageBubble}>
-          <p>{message.text}</p>
+          {message.attachment?.type === 'image' && (
+            <img className={styles.messageImage} src={message.attachment.dataUrl} alt={message.attachment.name || 'Sent photo'} />
+          )}
+          {message.text && <p>{message.text}</p>}
           <span>
             {formatMessageTime(message.date)}
             {message.direction === 'outbound' && (
@@ -836,6 +950,23 @@ export const PhoneChat: React.FC = () => {
     ))
   }
 
+  const renderDraftAttachments = () => {
+    if (draftAttachments.length === 0) return null
+
+    return (
+      <div className={styles.draftAttachments} data-phone-chat-scrollable="true">
+        {draftAttachments.map((attachment) => (
+          <figure key={attachment.id} className={styles.draftAttachment}>
+            <img src={attachment.dataUrl} alt={attachment.name || 'Photo ready'} />
+            <button type="button" onClick={() => removeDraftAttachment(attachment.id)} aria-label="Remove photo">
+              <X size={15} />
+            </button>
+          </figure>
+        ))}
+      </div>
+    )
+  }
+
   const renderNewChatSheet = () => (
     <div className={styles.newChatStack}>
       <div className={styles.sheetSearchBox}>
@@ -843,11 +974,11 @@ export const PhoneChat: React.FC = () => {
         <input
           value={contactQuery}
           onChange={(event) => setContactQuery(event.target.value)}
-          placeholder="Buscar por nombre, número o correo"
-          aria-label="Buscar contacto para chat"
+          placeholder="Search by name, number, or email"
+          aria-label="Search contact for chat"
         />
         {contactQuery && (
-          <button type="button" onClick={() => setContactQuery('')} aria-label="Limpiar búsqueda de contactos">
+          <button type="button" onClick={() => setContactQuery('')} aria-label="Clear contact search">
             <X size={16} />
           </button>
         )}
@@ -857,15 +988,15 @@ export const PhoneChat: React.FC = () => {
         {contactsLoading ? (
           <div className={styles.centerState}>
             <Loader2 size={20} className={styles.spinIcon} />
-            <span>Buscando contactos...</span>
+            <span>Searching contacts...</span>
           </div>
         ) : contactResults.length > 0 ? (
           contactResults.map((contact) => renderContactButton(contact, 'contact'))
         ) : (
           <div className={styles.emptySheetState}>
             <User size={24} />
-            <strong>Sin contactos</strong>
-            <span>Escribe al menos dos letras o revisa que el contacto tenga teléfono.</span>
+            <strong>No contacts</strong>
+            <span>Type at least two letters or check that the contact has a phone number.</span>
           </div>
         )}
       </div>
@@ -874,13 +1005,13 @@ export const PhoneChat: React.FC = () => {
 
   const renderAttachmentsSheet = () => {
     const attachmentActions = [
-      { label: 'Fotos', Icon: ImageIcon, className: styles.actionBlue, onClick: () => handleUnavailableAttachment('Fotos') },
-      { label: 'Cámara', Icon: Camera, className: styles.actionDark, onClick: () => handleUnavailableAttachment('Cámara') },
-      { label: 'Ubicación', Icon: MapPin, className: styles.actionGreen, onClick: () => handleUnavailableAttachment('Ubicación') },
-      { label: 'Contacto', Icon: User, className: styles.actionGray, onClick: () => handleUnavailableAttachment('Contacto') },
-      { label: 'Documento', Icon: FileText, className: styles.actionSky, onClick: () => handleUnavailableAttachment('Documento') },
+      { label: 'Photos', Icon: ImageIcon, className: styles.actionBlue, onClick: () => handlePickPhoto('photos') },
+      { label: 'Camera', Icon: Camera, className: styles.actionDark, onClick: () => handlePickPhoto('camera') },
+      { label: 'Location', Icon: MapPin, className: styles.actionGreen, onClick: () => handleUnavailableAttachment('Location') },
+      { label: 'Contact', Icon: User, className: styles.actionGray, onClick: () => handleUnavailableAttachment('Contact') },
+      { label: 'Document', Icon: FileText, className: styles.actionSky, onClick: () => handleUnavailableAttachment('Document') },
       {
-        label: 'Pago',
+        label: 'Payment',
         Icon: CreditCard,
         className: styles.actionGold,
         onClick: () => {
@@ -889,16 +1020,16 @@ export const PhoneChat: React.FC = () => {
         }
       },
       {
-        label: 'Cita',
+        label: 'Appointment',
         Icon: CalendarDays,
         className: styles.actionRed,
         onClick: () => setSheet('appointment')
       },
       {
-        label: 'Agente IA',
+        label: 'AI Agent',
         Icon: Bot,
         className: styles.actionPurple,
-        onClick: () => handleUnavailableAttachment('Agente IA')
+        onClick: () => handleUnavailableAttachment('AI Agent')
       }
     ]
 
@@ -933,11 +1064,11 @@ export const PhoneChat: React.FC = () => {
           </div>
           <div className={styles.blockedCopy}>
             <p className={styles.eyebrow}>Ristak Chat</p>
-            <h1 id="phone-chat-blocked-title">Solo en móvil o tablet</h1>
-            <p>Esta app de chat está hecha para usarse desde el celular, como una app guardada en inicio.</p>
+            <h1 id="phone-chat-blocked-title">Mobile or tablet only</h1>
+            <p>This chat app is built to be used from your phone, like an app saved to your home screen.</p>
           </div>
           <Link className={styles.dashboardLink} to="/dashboard">
-            Volver al dashboard
+            Back to dashboard
           </Link>
         </section>
       </main>
@@ -945,19 +1076,19 @@ export const PhoneChat: React.FC = () => {
   }
 
   return (
-    <main className={`${styles.phoneChatPage} ${conversationOpen ? styles.conversationOpen : ''}`} aria-label="Ristak Chat móvil">
+    <main className={`${styles.phoneChatPage} ${conversationOpen ? styles.conversationOpen : ''}`} aria-label="Ristak mobile chat">
       <div className={styles.phoneFrame}>
         <section className={styles.chatListScreen} aria-label="Lista de chats">
           <header className={styles.chatListHeader}>
             <div className={styles.topActionRow}>
-              <button type="button" className={styles.roundButton} onClick={() => setSheet('notifications')} aria-label="Más opciones">
+              <button type="button" className={styles.roundButton} onClick={() => setSheet('notifications')} aria-label="More options">
                 <MoreHorizontal size={24} />
               </button>
               <div className={styles.topRightActions}>
-                <button type="button" className={styles.roundButton} onClick={() => handleUnavailableAttachment('Cámara')} aria-label="Abrir cámara">
+                <button type="button" className={styles.roundButton} onClick={() => handlePickPhoto('camera')} aria-label="Open camera">
                   <Camera size={24} />
                 </button>
-                <button type="button" className={styles.newChatButton} onClick={() => setSheet('newChat')} aria-label="Nuevo chat">
+                <button type="button" className={styles.newChatButton} onClick={() => setSheet('newChat')} aria-label="New chat">
                   <Plus size={32} />
                 </button>
               </div>
@@ -968,20 +1099,20 @@ export const PhoneChat: React.FC = () => {
               <input
                 value={chatQuery}
                 onChange={(event) => setChatQuery(event.target.value)}
-                placeholder="Buscar chats o contactos"
-                aria-label="Buscar chats o contactos"
+                placeholder="Search chats or contacts"
+                aria-label="Search chats or contacts"
               />
               {chatQuery && (
-                <button type="button" onClick={() => setChatQuery('')} aria-label="Limpiar búsqueda">
+                <button type="button" onClick={() => setChatQuery('')} aria-label="Clear search">
                   <X size={17} />
                 </button>
               )}
             </div>
             <div className={styles.filterChips} data-phone-chat-scrollable="true">
               {([
-                ['all', 'Todos'],
-                ['unread', 'No leídos'],
-                ['appointments', 'Citados'],
+                ['all', 'All'],
+                ['unread', 'Unread'],
+                ['appointments', 'Scheduled'],
                 ['customers', customersLabel]
               ] as Array<[ChatFilter, string]>).map(([key, label]) => (
                 <button
@@ -1004,9 +1135,9 @@ export const PhoneChat: React.FC = () => {
           <PhoneEcosystemNav active="chat" />
         </section>
 
-        <section className={styles.conversationScreen} aria-label="Conversación">
+        <section className={styles.conversationScreen} aria-label="Conversation">
           <header className={styles.conversationHeader}>
-            <button type="button" className={styles.backButton} onClick={handleBackToChats} aria-label="Volver a chats">
+            <button type="button" className={styles.backButton} onClick={handleBackToChats} aria-label="Back to chats">
               <ChevronLeft size={32} />
             </button>
 
@@ -1020,16 +1151,16 @@ export const PhoneChat: React.FC = () => {
               </>
             ) : (
               <div className={styles.conversationIdentity}>
-                <strong>Sin contacto</strong>
-                <span>Elige una conversación</span>
+                <strong>No contact</strong>
+                <span>Choose a conversation</span>
               </div>
             )}
 
             <div className={styles.callActions}>
-              <button type="button" onClick={() => handleUnavailableAttachment('Videollamada')} aria-label="Videollamada">
+              <button type="button" onClick={() => handleUnavailableAttachment('Video call')} aria-label="Video call">
                 <Video size={26} />
               </button>
-              <button type="button" onClick={() => handleUnavailableAttachment('Llamada')} aria-label="Llamada">
+              <button type="button" onClick={() => handleUnavailableAttachment('Call')} aria-label="Call">
                 <Phone size={25} />
               </button>
             </div>
@@ -1040,64 +1171,83 @@ export const PhoneChat: React.FC = () => {
             <div ref={messagesEndRef} />
           </div>
 
-          <div className={styles.composer}>
-            <button type="button" className={styles.composerPlus} onClick={() => setSheet('attachments')} aria-label="Abrir adjuntos">
-              <Plus size={34} />
-            </button>
-            <div className={styles.messageInputWrap}>
-              <textarea
-                value={messageText}
-                onChange={(event) => setMessageText(event.target.value)}
-                placeholder={activeContact?.phone ? '' : 'Sin teléfono'}
-                rows={1}
-                disabled={!activeContact?.phone || composerStatus === 'sending'}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && !event.shiftKey) {
-                    event.preventDefault()
-                    handleSendMessage()
-                  }
-                }}
-              />
-              <button type="button" onClick={() => handleUnavailableAttachment('Stickers')} aria-label="Stickers">
-                <Smile size={26} />
+          <div className={styles.composerShell}>
+            {renderDraftAttachments()}
+            <div className={styles.composer}>
+              <button type="button" className={styles.composerPlus} onClick={() => setSheet('attachments')} aria-label="Open attachments">
+                <Plus size={34} />
+              </button>
+              <div className={styles.messageInputWrap}>
+                <textarea
+                  value={messageText}
+                  onChange={(event) => setMessageText(event.target.value)}
+                  placeholder={activeContact?.phone ? '' : 'No phone'}
+                  rows={1}
+                  disabled={!activeContact?.phone || composerStatus === 'sending'}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                      event.preventDefault()
+                      handleSendMessage()
+                    }
+                  }}
+                />
+                <button type="button" onClick={() => handleUnavailableAttachment('Stickers')} aria-label="Stickers">
+                  <Smile size={26} />
+                </button>
+              </div>
+              <button type="button" className={styles.composerIconButton} onClick={() => handlePickPhoto('camera')} aria-label="Camera">
+                <Camera size={29} />
+              </button>
+              <button
+                type="button"
+                className={styles.composerIconButton}
+                onClick={canSendMessage ? handleSendMessage : () => handleUnavailableAttachment('Voice message')}
+                disabled={composerStatus === 'sending'}
+                aria-label={canSendMessage ? 'Send message' : 'Voice message'}
+              >
+                {composerStatus === 'sending' ? <Loader2 size={23} className={styles.spinIcon} /> : canSendMessage ? <Send size={25} /> : <Mic size={30} />}
               </button>
             </div>
-            <button type="button" className={styles.composerIconButton} onClick={() => handleUnavailableAttachment('Cámara')} aria-label="Cámara">
-              <Camera size={29} />
-            </button>
-            <button
-              type="button"
-              className={styles.composerIconButton}
-              onClick={canSendMessage ? handleSendMessage : () => handleUnavailableAttachment('Mensaje de voz')}
-              disabled={composerStatus === 'sending'}
-              aria-label={canSendMessage ? 'Enviar mensaje' : 'Mensaje de voz'}
-            >
-              {composerStatus === 'sending' ? <Loader2 size={23} className={styles.spinIcon} /> : canSendMessage ? <Send size={25} /> : <Mic size={30} />}
-            </button>
           </div>
         </section>
       </div>
+
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className={styles.hiddenFileInput}
+        onChange={(event) => handleWebPhotoSelected('camera', event)}
+      />
+      <input
+        ref={photosInputRef}
+        type="file"
+        accept="image/*"
+        className={styles.hiddenFileInput}
+        onChange={(event) => handleWebPhotoSelected('photos', event)}
+      />
 
       {sheet && (
         <div className={styles.sheetBackdrop} onClick={() => setSheet(null)}>
           <section
             className={`${styles.sheetPanel} ${sheet === 'payment' ? styles.paymentSheet : ''} ${sheet === 'attachments' ? styles.attachmentsSheet : ''}`}
             onClick={(event) => event.stopPropagation()}
-            aria-label="Acciones del chat"
+            aria-label="Chat actions"
           >
             <div className={styles.sheetHandle} />
             <div className={styles.sheetHeader}>
               <div>
                 <p>{activeContact ? getContactName(activeContact) : 'Ristak Chat'}</p>
                 <h2>
-                  {sheet === 'attachments' && 'Agregar'}
-                  {sheet === 'payment' && 'Registrar pago'}
-                  {sheet === 'appointment' && 'Agendar cita'}
-                  {sheet === 'notifications' && 'Avisos del celular'}
-                  {sheet === 'newChat' && 'Nuevo chat'}
+                  {sheet === 'attachments' && 'Add'}
+                  {sheet === 'payment' && 'Record payment'}
+                  {sheet === 'appointment' && 'Schedule appointment'}
+                  {sheet === 'notifications' && 'Phone alerts'}
+                  {sheet === 'newChat' && 'New chat'}
                 </h2>
               </div>
-              <button type="button" onClick={() => setSheet(null)} aria-label="Cerrar panel">
+              <button type="button" onClick={() => setSheet(null)} aria-label="Close panel">
                 <X size={20} />
               </button>
             </div>
@@ -1113,14 +1263,14 @@ export const PhoneChat: React.FC = () => {
                     className={paymentMode === 'single' ? styles.segmentActive : ''}
                     onClick={() => setPaymentMode('single')}
                   >
-                    Pago único
+                    Single payment
                   </button>
                   <button
                     type="button"
                     className={paymentMode === 'partial' ? styles.segmentActive : ''}
                     onClick={() => setPaymentMode('partial')}
                   >
-                    Plan de pagos
+                    Payment plan
                   </button>
                 </div>
                 <div className={styles.embeddedPayment} data-phone-chat-scrollable="true">
@@ -1137,7 +1287,7 @@ export const PhoneChat: React.FC = () => {
                         ...current,
                         {
                           id: `payment-${Date.now()}`,
-                          text: 'Pago registrado desde este chat.',
+                          text: 'Payment recorded from this chat.',
                           date: new Date().toISOString(),
                           direction: 'system'
                         }
@@ -1153,8 +1303,8 @@ export const PhoneChat: React.FC = () => {
                 <div className={styles.setupCard}>
                   <CalendarDays size={22} />
                   <div>
-                    <strong>Calendario</strong>
-                    <span>Elige dónde quieres guardar la cita.</span>
+                    <strong>Calendar</strong>
+                    <span>Choose where you want to save the appointment.</span>
                   </div>
                 </div>
 
@@ -1164,7 +1314,7 @@ export const PhoneChat: React.FC = () => {
                   disabled={calendars.length === 0}
                 >
                   {calendars.length === 0 ? (
-                    <option value="">No hay calendarios disponibles</option>
+                    <option value="">No calendars available</option>
                   ) : calendars.map((calendar) => (
                     <option key={calendar.id} value={calendar.id}>{calendar.name}</option>
                   ))}
@@ -1177,7 +1327,7 @@ export const PhoneChat: React.FC = () => {
                   disabled={!selectedCalendar || !activeContact}
                 >
                   <CalendarDays size={18} />
-                  Agendar cita
+                  Schedule appointment
                 </button>
               </div>
             )}
@@ -1189,48 +1339,48 @@ export const PhoneChat: React.FC = () => {
                     <Smartphone size={18} />
                   </span>
                   <div>
-                    <strong>Este celular</strong>
+                    <strong>This phone</strong>
                     <small>{getNotificationPermissionLabel()}</small>
                   </div>
                   <button type="button" onClick={handleRequestPush} disabled={requestingPush}>
                     {requestingPush ? <Loader2 size={16} className={styles.spinIcon} /> : <Bell size={16} />}
-                    Activar
+                    Enable
                   </button>
                 </section>
 
                 <label className={styles.toggleRow}>
                   <span>
-                    <strong>Mensajes de chat</strong>
-                    <small>Avisa cuando llegue un WhatsApp nuevo.</small>
+                    <strong>Chat messages</strong>
+                    <small>Alert me when a new WhatsApp arrives.</small>
                   </span>
                   <input
                     type="checkbox"
                     checked={chatPushEnabled}
-                    onChange={(event) => setChatPushEnabled(event.target.checked).catch(() => showToast('error', 'No se guardó', 'Intenta otra vez.'))}
+                    onChange={(event) => setChatPushEnabled(event.target.checked).catch(() => showToast('error', 'Setting was not saved', 'Try again.'))}
                   />
                 </label>
 
                 <label className={styles.toggleRow}>
                   <span>
-                    <strong>Citas</strong>
-                    <small>Avisa cuando alguien agenda una cita.</small>
+                    <strong>Appointments</strong>
+                    <small>Alert me when someone schedules an appointment.</small>
                   </span>
                   <input
                     type="checkbox"
                     checked={calendarPushEnabled}
-                    onChange={(event) => setCalendarPushEnabled(event.target.checked).catch(() => showToast('error', 'No se guardó', 'Intenta otra vez.'))}
+                    onChange={(event) => setCalendarPushEnabled(event.target.checked).catch(() => showToast('error', 'Setting was not saved', 'Try again.'))}
                   />
                 </label>
 
                 <label className={styles.toggleRow}>
                   <span>
-                    <strong>Pagos</strong>
-                    <small>Avisa cuando se registre un pago.</small>
+                    <strong>Payments</strong>
+                    <small>Alert me when a payment is recorded.</small>
                   </span>
                   <input
                     type="checkbox"
                     checked={paymentPushEnabled}
-                    onChange={(event) => setPaymentPushEnabled(event.target.checked).catch(() => showToast('error', 'No se guardó', 'Intenta otra vez.'))}
+                    onChange={(event) => setPaymentPushEnabled(event.target.checked).catch(() => showToast('error', 'Setting was not saved', 'Try again.'))}
                   />
                 </label>
               </div>
