@@ -7430,6 +7430,37 @@
   background: rgba(148, 163, 184, 0.13);
 }
 
+.seoToolbarButtonWarning {
+  border-color: rgba(249, 115, 22, 0.32);
+  background: rgba(249, 115, 22, 0.1);
+}
+
+.seoToolbarButtonWarning:hover {
+  border-color: rgba(249, 115, 22, 0.48);
+  background: rgba(249, 115, 22, 0.14);
+}
+
+.seoToolbarAlert {
+  min-width: 24px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-radius: 999px;
+  background: rgba(249, 115, 22, 0.18);
+  color: #c2410c;
+  padding: 0 7px;
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.seoToolbarAlert svg {
+  width: 13px;
+  height: 13px;
+}
+
 .publicTitleToolbarField {
   height: 28px;
   flex: 0 0 min(300px, 35vw);

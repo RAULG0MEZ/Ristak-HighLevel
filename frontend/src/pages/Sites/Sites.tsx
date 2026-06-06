@@ -2133,6 +2133,7 @@ export const Sites: React.FC = () => {
     : section === 'forms'
       ? (isFormSite(selectedSite) ? selectedSite : null)
       : null
+  const seoValidation = editorSite ? getSeoValidationState(editorSite) : null
   const editorActive = Boolean(editorSite)
   const isCanvasFocusMode = editorFocusMode && Boolean(editorSite)
   const isFocusedSitesMode = createFlow !== 'closed' || Boolean(editorSite)
@@ -3691,9 +3692,20 @@ export const Sites: React.FC = () => {
                   </div>
                 </div>
                 <div className={styles.editorToolbarSub}>
-                  <button type="button" className={styles.seoToolbarButton} onClick={() => setSeoModalOpen(true)}>
+                  <button
+                    type="button"
+                    className={`${styles.seoToolbarButton} ${seoValidation?.totalIssues ? styles.seoToolbarButtonWarning : ''}`}
+                    onClick={() => setSeoModalOpen(true)}
+                    title={seoValidation?.totalIssues ? `SEO tiene ${seoValidation.totalIssues} pendientes` : 'SEO completo'}
+                  >
                     <Search size={15} />
                     <span>SEO & optimizacion de busqueda</span>
+                    {Boolean(seoValidation?.totalIssues) && (
+                      <span className={styles.seoToolbarAlert} aria-label={`${seoValidation?.totalIssues} pendientes de SEO`}>
+                        <AlertTriangle size={13} />
+                        <strong>{seoValidation?.totalIssues}</strong>
+                      </span>
+                    )}
                   </button>
                   {hasEditablePages(editorSite) && (
                     <div className={styles.editorInlinePages}>
@@ -5417,6 +5429,83 @@ const hideNativeDragPreview = (dataTransfer: DataTransfer) => {
 
 const seoLanguageOptions = ['es - Spanish', 'en - English', 'pt - Portuguese', 'fr - French']
 
+interface SeoValidationState {
+  checks: {
+    titlePresent: boolean
+    titleLength: boolean
+    descriptionPresent: boolean
+    descriptionLength: boolean
+    keywordsPresent: boolean
+    authorPresent: boolean
+    imagePresent: boolean
+    metaTagsPresent: boolean
+    outgoingLinksLimit: boolean
+    languagePresent: boolean
+  }
+  contentIssues: number
+  keywordsIssues: number
+  authorIssues: number
+  imageIssues: number
+  linkIssues: number
+  languageIssues: number
+  totalIssues: number
+}
+
+const cleanSeoValue = (value: unknown) => typeof value === 'string' ? value.trim() : ''
+
+const countSeoLines = (value: string) => value
+  .split('\n')
+  .map(line => line.trim())
+  .filter(Boolean).length
+
+const getSeoValidationState = (site?: PublicSite | null): SeoValidationState => {
+  const theme = site?.theme || {}
+  const title = cleanSeoValue(getPublicTitleEditorValue(site))
+  const description = cleanSeoValue(site?.description)
+  const keywords = cleanSeoValue(theme.seoKeywords)
+  const author = cleanSeoValue(theme.seoAuthor)
+  const image = cleanSeoValue(theme.seoImage)
+  const metaTags = cleanSeoValue(theme.seoMetaTags)
+  const outgoingLinks = cleanSeoValue(theme.seoCanonicalLinks)
+  const language = cleanSeoValue(theme.seoLanguage || 'es - Spanish')
+  const outgoingLinkCount = countSeoLines(outgoingLinks)
+  const checks = {
+    titlePresent: title.length > 0,
+    titleLength: title.length > 0 && title.length <= 70,
+    descriptionPresent: description.length > 0,
+    descriptionLength: description.length > 0 && description.length <= 155,
+    keywordsPresent: keywords.length > 0,
+    authorPresent: author.length > 0,
+    imagePresent: image.length > 0,
+    metaTagsPresent: metaTags.length > 0,
+    outgoingLinksLimit: outgoingLinks.length > 0 && outgoingLinkCount < 300,
+    languagePresent: language.length > 0
+  }
+  const countIssues = (items: boolean[]) => items.filter(ok => !ok).length
+  const contentIssues = countIssues([
+    checks.titlePresent,
+    checks.titleLength,
+    checks.descriptionPresent,
+    checks.descriptionLength
+  ])
+  const keywordsIssues = countIssues([checks.keywordsPresent])
+  const authorIssues = countIssues([checks.authorPresent])
+  const imageIssues = countIssues([checks.imagePresent])
+  const linkIssues = countIssues([checks.metaTagsPresent, checks.outgoingLinksLimit])
+  const languageIssues = countIssues([checks.languagePresent])
+
+  return {
+    checks,
+    contentIssues,
+    keywordsIssues,
+    authorIssues,
+    imageIssues,
+    linkIssues,
+    languageIssues,
+    totalIssues: contentIssues + keywordsIssues + authorIssues + imageIssues + linkIssues + languageIssues
+  }
+}
+
 const SeoCheckLine: React.FC<{ ok: boolean; children: React.ReactNode }> = ({ ok, children }) => (
   <p className={`${styles.seoCheckLine} ${ok ? styles.seoCheckOk : styles.seoCheckWarning}`}>
     {ok ? <Check size={14} /> : <AlertTriangle size={14} />}
@@ -5452,13 +5541,8 @@ const SeoOptimizationModal: React.FC<{
   const metaTags = theme.seoMetaTags || ''
   const canonicalLinks = theme.seoCanonicalLinks || ''
   const language = theme.seoLanguage || 'es - Spanish'
-  const contentIssues = [
-    !publicTitle.trim(),
-    publicTitle.trim().length > 70,
-    !description.trim(),
-    description.trim().length > 155
-  ].filter(Boolean).length
-  const linkIssues = [!metaTags.trim(), !canonicalLinks.trim()].filter(Boolean).length
+  const validation = getSeoValidationState(site)
+  const { checks } = validation
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -5504,7 +5588,7 @@ const SeoOptimizationModal: React.FC<{
 
         <div className={styles.seoModalBody}>
           <section className={styles.seoSection}>
-            <SeoSectionTitle icon={<FileText size={17} />} title="Contenido" issues={contentIssues} />
+            <SeoSectionTitle icon={<FileText size={17} />} title="Contenido" issues={validation.contentIssues} />
             <label className={styles.seoField}>
               <span>Titulo publico</span>
               <input
@@ -5514,8 +5598,8 @@ const SeoOptimizationModal: React.FC<{
                 onBlur={onSave}
               />
             </label>
-            <SeoCheckLine ok={Boolean(publicTitle.trim())}>La pagina tiene un titulo.</SeoCheckLine>
-            <SeoCheckLine ok={publicTitle.trim().length <= 70}>El titulo tiene menos de 70 caracteres.</SeoCheckLine>
+            <SeoCheckLine ok={checks.titlePresent}>La pagina tiene un titulo.</SeoCheckLine>
+            <SeoCheckLine ok={checks.titleLength}>El titulo tiene menos de 70 caracteres.</SeoCheckLine>
             <label className={styles.seoField}>
               <span>Descripcion</span>
               <textarea
@@ -5526,12 +5610,12 @@ const SeoOptimizationModal: React.FC<{
                 onBlur={onSave}
               />
             </label>
-            <SeoCheckLine ok={Boolean(description.trim())}>La pagina tiene una descripcion para buscadores.</SeoCheckLine>
-            <SeoCheckLine ok={description.trim().length <= 155}>La descripcion tiene menos de 155 caracteres.</SeoCheckLine>
+            <SeoCheckLine ok={checks.descriptionPresent}>La pagina tiene una descripcion para buscadores.</SeoCheckLine>
+            <SeoCheckLine ok={checks.descriptionLength}>La descripcion tiene menos de 155 caracteres.</SeoCheckLine>
           </section>
 
           <section className={styles.seoSection}>
-            <SeoSectionTitle icon={<Search size={17} />} title="Palabras clave" />
+            <SeoSectionTitle icon={<Search size={17} />} title="Palabras clave" issues={validation.keywordsIssues} />
             <label className={styles.seoField}>
               <span>Palabras clave</span>
               <textarea
@@ -5542,10 +5626,11 @@ const SeoOptimizationModal: React.FC<{
                 onBlur={onSave}
               />
             </label>
+            <SeoCheckLine ok={checks.keywordsPresent}>La pagina tiene palabras clave.</SeoCheckLine>
           </section>
 
           <section className={styles.seoSection}>
-            <SeoSectionTitle icon={<Pencil size={17} />} title="Autor" issues={author.trim() ? 0 : 1} />
+            <SeoSectionTitle icon={<Pencil size={17} />} title="Autor" issues={validation.authorIssues} />
             <label className={styles.seoField}>
               <span>Autor</span>
               <input
@@ -5555,11 +5640,11 @@ const SeoOptimizationModal: React.FC<{
                 onBlur={onSave}
               />
             </label>
-            <SeoCheckLine ok={Boolean(author.trim())}>La pagina tiene nombre de autor.</SeoCheckLine>
+            <SeoCheckLine ok={checks.authorPresent}>La pagina tiene nombre de autor.</SeoCheckLine>
           </section>
 
           <section className={styles.seoSection}>
-            <SeoSectionTitle icon={<Image size={17} />} title="Imagenes" />
+            <SeoSectionTitle icon={<Image size={17} />} title="Imagenes" issues={validation.imageIssues} />
             <label className={styles.seoField}>
               <span>Imagen principal para compartir</span>
               <div className={styles.seoUrlField}>
@@ -5572,10 +5657,11 @@ const SeoOptimizationModal: React.FC<{
                 <Image size={17} />
               </div>
             </label>
+            <SeoCheckLine ok={checks.imagePresent}>La pagina tiene imagen para compartir.</SeoCheckLine>
           </section>
 
           <section className={styles.seoSection}>
-            <SeoSectionTitle icon={<Link2 size={17} />} title="Enlaces y etiquetas" issues={linkIssues} />
+            <SeoSectionTitle icon={<Link2 size={17} />} title="Enlaces y etiquetas" issues={validation.linkIssues} />
             <div className={styles.seoFieldHeader}>
               <span>Metaetiquetas personalizadas</span>
               <button
@@ -5594,7 +5680,7 @@ const SeoOptimizationModal: React.FC<{
               onChange={(event) => patchThemeText('seoMetaTags', event.target.value)}
               onBlur={onSave}
             />
-            <SeoCheckLine ok={Boolean(metaTags.trim())}>La pagina tiene metaetiquetas personalizadas.</SeoCheckLine>
+            <SeoCheckLine ok={checks.metaTagsPresent}>La pagina tiene metaetiquetas personalizadas.</SeoCheckLine>
             <div className={styles.seoFieldHeader}>
               <span>Enlaces canonicos</span>
               <button
@@ -5613,13 +5699,13 @@ const SeoOptimizationModal: React.FC<{
               onChange={(event) => patchThemeText('seoCanonicalLinks', event.target.value)}
               onBlur={onSave}
             />
-            <SeoCheckLine ok={canonicalLinks.split('\n').filter(line => line.trim()).length < 300}>
+            <SeoCheckLine ok={checks.outgoingLinksLimit}>
               La pagina tiene menos de 300 enlaces salientes.
             </SeoCheckLine>
           </section>
 
           <section className={styles.seoSection}>
-            <SeoSectionTitle icon={<Globe2 size={17} />} title="Idioma" />
+            <SeoSectionTitle icon={<Globe2 size={17} />} title="Idioma" issues={validation.languageIssues} />
             <label className={styles.seoField}>
               <span>Idioma</span>
               <select
@@ -5632,6 +5718,7 @@ const SeoOptimizationModal: React.FC<{
                 ))}
               </select>
             </label>
+            <SeoCheckLine ok={checks.languagePresent}>La pagina tiene idioma seleccionado.</SeoCheckLine>
           </section>
         </div>
 
