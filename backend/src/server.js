@@ -29,7 +29,7 @@ import integrationsRoutes from './routes/integrations.routes.js'
 import attributionRoutes from './routes/attribution.routes.js'
 import settingsRoutes from './routes/settings.routes.js'
 import calendarsRoutes from './routes/calendars.routes.js'
-import trackingRoutes from './routes/tracking.routes.js'
+import trackingRoutes, { publicTrackingRoutes } from './routes/tracking.routes.js'
 import configRoutes from './routes/config.routes.js'
 import costsRoutes from './routes/costs.routes.js'
 import maintenanceRoutes from './routes/maintenance.routes.js'
@@ -112,9 +112,10 @@ app.use('/api/whatsapp-api', whatsappApiRoutes)
 app.use('/webhook', webhooksRoutes)
 app.use('/webhooks', webhooksRoutes) // Alias para webhooks con 's'
 
-// Tracking routes (pixel)
-app.use('/', trackingRoutes) // Maneja /snip.js y /collect
-app.use('/api/tracking', trackingRoutes) // Maneja /api/tracking/sessions
+// Tracking público y privado. El router público no debe capturar "/" porque bloquearía el frontend.
+app.use('/', publicTrackingRoutes) // Maneja /snip.js, /collect, /sync-visitor y /link-visitor
+app.use('/api/tracking', publicTrackingRoutes)
+app.use('/api/tracking', trackingRoutes)
 
 // Servir frontend en producción
 if (process.env.NODE_ENV === 'production') {

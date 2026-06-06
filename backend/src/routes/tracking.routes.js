@@ -20,19 +20,20 @@ import {
 } from '../controllers/trackingController.js'
 import { requireAuth } from '../middleware/authMiddleware.js'
 
+export const publicTrackingRoutes = express.Router()
 const router = express.Router()
 
 // Servir pixel JavaScript
-router.get('/snip.js', servePixel)
+publicTrackingRoutes.get('/snip.js', servePixel)
 
 // Recibir eventos del pixel
-router.post('/collect', collectEvent)
+publicTrackingRoutes.post('/collect', collectEvent)
 
 // Sincronizar visitor_id con HighLevel
-router.post('/sync-visitor', syncVisitorToHighLevel)
+publicTrackingRoutes.post('/sync-visitor', syncVisitorToHighLevel)
 
 // Vincular visitor_id histórico a contacto
-router.post('/link-visitor', linkVisitorToContactHandler)
+publicTrackingRoutes.post('/link-visitor', linkVisitorToContactHandler)
 
 router.use(requireAuth)
 
