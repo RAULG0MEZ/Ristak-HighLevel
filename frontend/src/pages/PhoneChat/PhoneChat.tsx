@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
+  ArrowRight,
   Bell,
   BellOff,
   Bot,
@@ -4867,7 +4868,7 @@ export const PhoneChat: React.FC = () => {
                     </button>
                   </div>
                 ) : (
-                  <div className={styles.composer}>
+                  <div className={`${styles.composer} ${hasComposerContent ? styles.composerHasContent : ''}`}>
                     <button type="button" className={styles.composerPlus} onClick={() => setSheet('attachments')} aria-label="Abrir adjuntos">
                       <Plus size={34} />
                     </button>
@@ -4895,18 +4896,28 @@ export const PhoneChat: React.FC = () => {
                         }}
                       />
                     </div>
-                    <button type="button" className={styles.composerIconButton} onClick={() => handlePickPhoto('camera')} aria-label="Cámara">
-                      <Camera size={29} />
-                    </button>
-                    <button
-                      type="button"
-                      className={`${styles.composerIconButton} ${voiceRecording ? styles.composerMicRecording : ''}`}
-                      onClick={handleVoiceOrSendButtonClick}
-                      disabled={composerStatus === 'sending'}
-                      aria-label={voiceRecording ? 'Detener grabación' : canSendMessage ? 'Enviar mensaje' : 'Grabar mensaje de voz'}
-                    >
-                      {composerStatus === 'sending' ? <Loader2 size={23} className={styles.spinIcon} /> : canSendMessage ? <Send size={25} /> : <Mic size={30} />}
-                    </button>
+                    <div className={styles.composerTrailingActions}>
+                      <button
+                        type="button"
+                        className={`${styles.composerIconButton} ${styles.composerCameraButton}`}
+                        onClick={() => handlePickPhoto('camera')}
+                        disabled={hasComposerContent}
+                        tabIndex={hasComposerContent ? -1 : undefined}
+                        aria-hidden={hasComposerContent}
+                        aria-label="Cámara"
+                      >
+                        <Camera size={29} />
+                      </button>
+                      <button
+                        type="button"
+                        className={`${styles.composerIconButton} ${canSendMessage ? styles.composerSendButton : ''} ${voiceRecording ? styles.composerMicRecording : ''}`}
+                        onClick={handleVoiceOrSendButtonClick}
+                        disabled={composerStatus === 'sending'}
+                        aria-label={voiceRecording ? 'Detener grabación' : canSendMessage ? 'Enviar mensaje' : 'Grabar mensaje de voz'}
+                      >
+                        {composerStatus === 'sending' ? <Loader2 size={23} className={styles.spinIcon} /> : canSendMessage ? <ArrowRight size={23} /> : <Mic size={30} />}
+                      </button>
+                    </div>
                   </div>
                 )}
               </>

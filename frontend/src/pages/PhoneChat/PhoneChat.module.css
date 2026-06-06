@@ -1503,12 +1503,17 @@
 
 .composer {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: end;
   gap: 8px;
   min-height: calc(50px + env(safe-area-inset-bottom));
   padding: 5px 8px max(6px, env(safe-area-inset-bottom));
   background: transparent;
+  transition: gap 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.composerHasContent {
+  gap: 6px;
 }
 
 :global(html[data-phone-chat-keyboard="true"]) .composer {
@@ -1542,6 +1547,15 @@
   border-radius: 999px;
   background: var(--phone-chat-surface);
   overflow: hidden;
+  transition:
+    border-color 220ms ease,
+    box-shadow 220ms ease,
+    background-color 220ms ease;
+}
+
+.composerHasContent .messageInputWrap {
+  border-color: color-mix(in srgb, var(--phone-chat-accent) 24%, var(--phone-chat-border));
+  box-shadow: 0 6px 18px rgba(var(--phone-chat-primary-rgb), 0.06);
 }
 
 .composerInput {
@@ -1591,10 +1605,67 @@
 .composerIconButton {
   width: 30px;
   height: 38px;
+  border-radius: 999px;
+  overflow: hidden;
+  transition:
+    width 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 180ms ease,
+    transform 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    background-color 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease;
 }
 
 .composerIconButton:disabled {
   opacity: 0.42;
+}
+
+.composerTrailingActions {
+  display: grid;
+  grid-template-columns: 30px 30px;
+  align-items: end;
+  gap: 8px;
+  min-width: 68px;
+  height: 38px;
+  transition:
+    grid-template-columns 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    min-width 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    gap 220ms ease;
+}
+
+.composerHasContent .composerTrailingActions {
+  grid-template-columns: 0 42px;
+  gap: 0;
+  min-width: 42px;
+}
+
+.composerCameraButton {
+  opacity: 1;
+  transform: translateX(0) scale(1);
+}
+
+.composerHasContent .composerCameraButton,
+.composerHasContent .composerCameraButton:disabled {
+  width: 0;
+  opacity: 0;
+  transform: translateX(10px) scale(0.72);
+  pointer-events: none;
+}
+
+.composerSendButton {
+  width: 42px;
+  height: 38px;
+  color: var(--phone-chat-text-on-primary);
+  background: var(--phone-chat-accent);
+  box-shadow: 0 8px 18px rgba(var(--phone-chat-accent-rgb), 0.24);
+}
+
+.composerSendButton svg {
+  stroke-width: 3;
+}
+
+.composerSendButton:disabled {
+  opacity: 0.74;
 }
 
 .composerMicRecording {
