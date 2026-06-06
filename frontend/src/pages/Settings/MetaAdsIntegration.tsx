@@ -51,6 +51,7 @@ interface MetaWebhookInfo {
 }
 
 type SecretTokenField = 'accessToken'
+type MetaMessagingPlatform = 'messenger' | 'instagram'
 
 const MASKED_SECRET_PREFIX = '***'
 const SECRET_MASK_FILL = '*'.repeat(180)
@@ -137,6 +138,8 @@ export const MetaAdsIntegration: React.FC = () => {
   const [includeMetaPixel, setIncludeMetaPixel, savingPixelPref] = useAppConfig('include_meta_pixel', true)
   const [whatsappScheduleEventEnabled, setWhatsappScheduleEventEnabled, savingWhatsappScheduleEvent] = useAppConfig('meta_whatsapp_schedule_enabled', false)
   const [whatsappPurchaseEventEnabled, setWhatsappPurchaseEventEnabled, savingWhatsappPurchaseEvent] = useAppConfig('meta_whatsapp_purchase_enabled', false)
+  const [messengerMessagingEnabled, setMessengerMessagingEnabled, savingMessengerMessaging] = useAppConfig('meta_messenger_messaging_enabled', false)
+  const [instagramMessagingEnabled, setInstagramMessagingEnabled, savingInstagramMessaging] = useAppConfig('meta_instagram_messaging_enabled', false)
 
   useEffect(() => {
     loadCredentials()
@@ -484,9 +487,12 @@ export const MetaAdsIntegration: React.FC = () => {
     } else if (field === 'pageId') {
       setCredentials(prev => ({ ...prev, pageId: '' }))
       setSavedPageId('')
+      void setMessengerMessagingEnabled(false)
+      void setInstagramMessagingEnabled(false)
     } else if (field === 'instagramAccountId') {
       setCredentials(prev => ({ ...prev, instagramAccountId: '' }))
       setSavedInstagramAccountId('')
+      void setInstagramMessagingEnabled(false)
     } else if (field === 'pixelApiToken') {
       setCredentials(prev => ({ ...prev, pixelApiToken: '' }))
     } else {
@@ -815,7 +821,9 @@ export const MetaAdsIntegration: React.FC = () => {
 
       await Promise.all([
         setWhatsappScheduleEventEnabled(false),
-        setWhatsappPurchaseEventEnabled(false)
+        setWhatsappPurchaseEventEnabled(false),
+        setMessengerMessagingEnabled(false),
+        setInstagramMessagingEnabled(false)
       ])
 
       resetLocalMetaState()
@@ -899,6 +907,47 @@ export const MetaAdsIntegration: React.FC = () => {
       )
     } catch {
       showToast('error', 'Error', 'No se pudo actualizar el evento de pago')
+    }
+  }
+
+  const handleToggleMetaMessaging = async (platform: MetaMessagingPlatform, newValue: boolean) => {
+    const isInstagram = platform === 'instagram'
+    const platformLabel = isInstagram ? 'Instagram DM' : 'Messenger'
+
+    if (newValue && !hasPageId) {
+      showToast(
+        'warning',
+        'Facebook Page requerida',
+        'Primero selecciona una Facebook Page para recibir y mandar mensajes de Meta'
+      )
+      return
+    }
+
+    if (newValue && isInstagram && !hasInstagramAccount) {
+      showToast(
+        'warning',
+        'Instagram requerido',
+        'Primero selecciona la cuenta de Instagram al final del wizard'
+      )
+      return
+    }
+
+    try {
+      if (isInstagram) {
+        await setInstagramMessagingEnabled(newValue)
+      } else {
+        await setMessengerMessagingEnabled(newValue)
+      }
+
+      showToast(
+        'success',
+        `${platformLabel} actualizado`,
+        newValue
+          ? `${platformLabel} ya puede recibir y mandar mensajes`
+          : `${platformLabel} quedó apagado`
+      )
+    } catch {
+      showToast('error', 'Error', `No se pudo actualizar ${platformLabel}`)
     }
   }
 
@@ -1032,6 +1081,11 @@ export const MetaAdsIntegration: React.FC = () => {
     if (!matchingAccount) return instagramAccountId
     const username = matchingAccount.username ? `@${matchingAccount.username}` : matchingAccount.name
     return `${username} (${instagramAccountId})`
+  }
+
+  const getMetaMessagingStatus = (enabled: boolean, available: boolean) => {
+    if (!available) return 'Pendiente'
+    return enabled ? 'Activo' : 'Apagado'
   }
 
   const getStepBlockMessage = (stepIndex = activeStep) => {
@@ -1592,6 +1646,81 @@ export const MetaAdsIntegration: React.FC = () => {
                   <div className={styles.connectedMetaItem}>
                     <span>Instagram</span>
                     <strong>{hasInstagramAccount ? getSelectedInstagramLabel() : 'Sin Instagram'}</strong>
+                  </div>
+                </div>
+
+                <div className={styles.connectedPagesPanel}>
+                  <div className={styles.connectedPagesHeader}>
+                    <div>
+                      <h4 className={styles.connectedPagesTitle}>Páginas conectadas</h4>
+                      <p className={styles.connectedPagesDescription}>
+                        Activa cada canal solo cuando quieras que Ristak reciba y mande mensajes desde esa cuenta.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className={styles.connectedPagesList}>
+                    <div className={[
+                      styles.connectedPageCard,
+                      !hasPageId ? styles.connectedPageCardLocked : ''
+                    ].filter(Boolean).join(' ')}>
+                      <span className={`${styles.connectedPageIcon} ${styles.connectedPageIconFacebook}`} aria-hidden="true">
+                        <Icon name="facebook" size={19} />
+                      </span>
+                      <div className={styles.connectedPageMain}>
+                        <strong>Messenger</strong>
+                        <span>{hasPageId ? getSelectedPageLabel() : 'Selecciona una Facebook Page'}</span>
+                      </div>
+                      <div className={styles.connectedPageControl}>
+                        <span className={[
+                          styles.connectedPageStatus,
+                          messengerMessagingEnabled && hasPageId ? styles.connectedPageStatusActive : ''
+                        ].filter(Boolean).join(' ')}>
+                          {getMetaMessagingStatus(messengerMessagingEnabled, hasPageId)}
+                        </span>
+                        <label className={styles.switchContainer} aria-label="Activar mensajes de Messenger">
+                          <input
+                            type="checkbox"
+                            checked={messengerMessagingEnabled === true}
+                            onChange={(event) => handleToggleMetaMessaging('messenger', event.target.checked)}
+                            disabled={!hasPageId || savingMessengerMessaging}
+                            className={styles.switchInput}
+                          />
+                          <span className={styles.switchSlider}></span>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className={[
+                      styles.connectedPageCard,
+                      !hasInstagramAccount ? styles.connectedPageCardLocked : ''
+                    ].filter(Boolean).join(' ')}>
+                      <span className={`${styles.connectedPageIcon} ${styles.connectedPageIconInstagram}`} aria-hidden="true">
+                        <Icon name="instagram" size={19} />
+                      </span>
+                      <div className={styles.connectedPageMain}>
+                        <strong>Instagram DM</strong>
+                        <span>{hasInstagramAccount ? getSelectedInstagramLabel() : 'Selecciona una cuenta de Instagram'}</span>
+                      </div>
+                      <div className={styles.connectedPageControl}>
+                        <span className={[
+                          styles.connectedPageStatus,
+                          instagramMessagingEnabled && hasInstagramAccount ? styles.connectedPageStatusActive : ''
+                        ].filter(Boolean).join(' ')}>
+                          {getMetaMessagingStatus(instagramMessagingEnabled, hasInstagramAccount)}
+                        </span>
+                        <label className={styles.switchContainer} aria-label="Activar mensajes de Instagram DM">
+                          <input
+                            type="checkbox"
+                            checked={instagramMessagingEnabled === true}
+                            onChange={(event) => handleToggleMetaMessaging('instagram', event.target.checked)}
+                            disabled={!hasInstagramAccount || savingInstagramMessaging}
+                            className={styles.switchInput}
+                          />
+                          <span className={styles.switchSlider}></span>
+                        </label>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </section>

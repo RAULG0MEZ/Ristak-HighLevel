@@ -8,6 +8,8 @@ import { sendChatMessageNotification } from './pushNotificationsService.js'
 
 const DEFAULT_VERIFY_TOKEN = 'ristak-meta-webhook'
 const META_SIGNATURE_HEADER = 'x-hub-signature-256'
+const META_MESSENGER_MESSAGING_ENABLED_KEY = 'meta_messenger_messaging_enabled'
+const META_INSTAGRAM_MESSAGING_ENABLED_KEY = 'meta_instagram_messaging_enabled'
 
 function cleanString(value) {
   if (value === null || value === undefined) return ''
@@ -38,6 +40,25 @@ function compactName(...values) {
 function getPlatformLabel(platform) {
   if (platform === 'instagram') return 'Instagram DM'
   return 'Messenger'
+}
+
+function isEnabledConfigValue(value) {
+  const normalized = cleanString(value).toLowerCase()
+  return ['1', 'true', 'yes', 'on'].includes(normalized)
+}
+
+export async function isMetaSocialMessagingEnabled(platform = '') {
+  const normalizedPlatform = cleanString(platform).toLowerCase()
+  const key = normalizedPlatform === 'instagram'
+    ? META_INSTAGRAM_MESSAGING_ENABLED_KEY
+    : META_MESSENGER_MESSAGING_ENABLED_KEY
+
+  const value = await getAppConfig(key).catch(error => {
+    logger.warn(`No se pudo leer switch de mensajería Meta (${key}): ${error.message}`)
+    return ''
+  })
+
+  return isEnabledConfigValue(value)
 }
 
 function normalizeObjectPlatform(objectType = '', entry = {}, messaging = {}, config = {}) {
@@ -478,6 +499,8 @@ export async function processMetaSocialWebhook({ payload = {}, rawBody = '', sig
 
   const entries = Array.isArray(payload.entry) ? payload.entry : []
   const results = []
+  const enabledByPlatform = new Map()
+  let skippedMessages = 0
 
   try {
     for (const entry of entries) {
@@ -492,6 +515,19 @@ export async function processMetaSocialWebhook({ payload = {}, rawBody = '', sig
         })
 
         if (!socialMessage) continue
+
+        if (!enabledByPlatform.has(socialMessage.platform)) {
+          enabledByPlatform.set(
+            socialMessage.platform,
+            await isMetaSocialMessagingEnabled(socialMessage.platform)
+          )
+        }
+
+        if (!enabledByPlatform.get(socialMessage.platform)) {
+          skippedMessages += 1
+          logger.info(`DM de ${getPlatformLabel(socialMessage.platform)} ignorado porque la mensajería Meta está apagada`)
+          continue
+        }
 
         const profile = await fetchMetaSenderProfile({
           platform: socialMessage.platform,
@@ -538,13 +574,24 @@ export async function processMetaSocialWebhook({ payload = {}, rawBody = '', sig
       }
     }
 
+    const finalStatus = results.length > 0 || skippedMessages === 0 ? 'processed' : 'ignored'
+    const finalError = skippedMessages > 0 && results.length === 0
+      ? 'Mensajería de Meta apagada en Configuración'
+      : null
+
     await db.run(`
       UPDATE meta_social_webhook_events
-      SET processed_status = 'processed', processed_error = NULL, updated_at = CURRENT_TIMESTAMP
+      SET processed_status = ?, processed_error = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `, [eventRowId])
+    `, [finalStatus, finalError, eventRowId])
 
-    return { processed: true, eventId: eventRowId, messages: results.length, results }
+    return {
+      processed: true,
+      eventId: eventRowId,
+      messages: results.length,
+      skippedMessages,
+      results
+    }
   } catch (error) {
     await db.run(`
       UPDATE meta_social_webhook_events
@@ -555,4 +602,8 @@ export async function processMetaSocialWebhook({ payload = {}, rawBody = '', sig
   }
 }
 
-export { META_SIGNATURE_HEADER }
+export {
+  META_SIGNATURE_HEADER,
+  META_MESSENGER_MESSAGING_ENABLED_KEY,
+  META_INSTAGRAM_MESSAGING_ENABLED_KEY
+}
