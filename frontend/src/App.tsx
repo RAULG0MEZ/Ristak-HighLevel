@@ -6,7 +6,7 @@ import { ThemeProvider } from '@/contexts/ThemeContext'
 import { NotificationProvider, useNotification } from '@/contexts/NotificationContext'
 import { TimezoneProvider } from '@/contexts/TimezoneContext'
 import { LabelsProvider } from '@/contexts/LabelsContext'
-import { usePhoneTheme } from '@/hooks'
+import { usePhoneTheme, usePhoneWakeLock } from '@/hooks'
 import { AppShell } from '@/components/layout/AppShell'
 import { Dashboard } from '@/pages/Dashboard'
 import { Reports } from '@/pages/Reports'
@@ -43,6 +43,7 @@ type RouteLocationState = {
 
 const PhoneThemeRouteEffects: React.FC = () => {
   usePhoneTheme({ active: true })
+  usePhoneWakeLock({ active: true })
   return null
 }
 
