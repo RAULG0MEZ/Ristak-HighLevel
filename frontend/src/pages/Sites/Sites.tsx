@@ -3687,6 +3687,8 @@ export const Sites: React.FC = () => {
                       />
                       <Pencil size={13} />
                     </label>
+                  </div>
+                  <div className={styles.editorActions}>
                     <label className={styles.routeField}>
                       <span className={`${styles.publicRouteBox} ${domainConfig.domain ? '' : styles.publicRouteBoxStandalone}`}>
                         <span className={styles.publicRouteDomain} title={getPublicDomainPreview(domainConfig)}>
@@ -3702,8 +3704,6 @@ export const Sites: React.FC = () => {
                         />
                       </span>
                     </label>
-                  </div>
-                  <div className={styles.editorActions}>
                     <div className={styles.deviceToggle} role="group" aria-label="Vista previa del dispositivo">
                       <button type="button" className={device === 'desktop' ? styles.deviceActive : ''} onClick={() => setDevice('desktop')} title="Escritorio">
                         <Monitor size={15} />
