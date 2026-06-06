@@ -4106,7 +4106,7 @@ export const PhoneChat: React.FC = () => {
                       <CircleAlert size={15} />
                     </button>
                   ) : pending ? (
-                    <Clock size={15} />
+                    <Loader2 size={14} className={`${styles.spinIcon} ${styles.messageSendingIcon}`} />
                   ) : (
                     <Check size={15} />
                   ))}
@@ -5518,7 +5518,7 @@ export const PhoneChat: React.FC = () => {
                         disabled={composerStatus === 'sending'}
                         aria-label={voiceRecording ? 'Detener grabación' : canSendMessage ? 'Enviar mensaje' : 'Grabar mensaje de voz'}
                       >
-                        {composerStatus === 'sending' ? <Loader2 size={23} className={styles.spinIcon} /> : canSendMessage ? <ArrowRight size={23} /> : <Mic size={30} />}
+                        {canSendMessage ? <ArrowRight size={23} /> : <Mic size={30} />}
                       </button>
                     </div>
                   </div>

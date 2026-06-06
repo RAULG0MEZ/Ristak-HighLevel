@@ -1760,6 +1760,11 @@
   color: #dc2626;
 }
 
+.messageSendingIcon {
+  color: currentColor;
+  opacity: 0.78;
+}
+
 .messageErrorButton {
   display: inline-flex;
   align-items: center;
