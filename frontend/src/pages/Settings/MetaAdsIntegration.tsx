@@ -44,12 +44,6 @@ interface FetchCollectionResult {
   count: number
 }
 
-interface MetaWebhookInfo {
-  webhookUrl: string
-  verifyToken: string
-  fields: string[]
-}
-
 type SecretTokenField = 'accessToken'
 type MetaMessagingPlatform = 'messenger' | 'instagram'
 
@@ -123,7 +117,6 @@ export const MetaAdsIntegration: React.FC = () => {
   const [isSavingInstagramAccountId, setIsSavingInstagramAccountId] = useState(false)
   const [savedPageId, setSavedPageId] = useState('')
   const [savedInstagramAccountId, setSavedInstagramAccountId] = useState('')
-  const [metaWebhookInfo, setMetaWebhookInfo] = useState<MetaWebhookInfo | null>(null)
   const [isSyncingSnippet, setIsSyncingSnippet] = useState(false)
   const [isSyncingMetaAds, setIsSyncingMetaAds] = useState(false)
   const [isEditingMetaConfig, setIsEditingMetaConfig] = useState(false)
@@ -143,20 +136,7 @@ export const MetaAdsIntegration: React.FC = () => {
 
   useEffect(() => {
     loadCredentials()
-    loadMetaWebhookInfo()
   }, [])
-
-  const loadMetaWebhookInfo = async () => {
-    try {
-      const response = await fetch('/api/meta/webhook-info')
-      const data = await response.json()
-      if (data.success && data.data) {
-        setMetaWebhookInfo(data.data)
-      }
-    } catch {
-      setMetaWebhookInfo(null)
-    }
-  }
 
   const loadCredentials = async () => {
     setIsLoading(true)
@@ -793,12 +773,13 @@ export const MetaAdsIntegration: React.FC = () => {
   }
 
   const handleFinishWizard = () => {
-    if (!hasPageId) {
-      showToast('warning', 'Falta Facebook Page', 'Selecciona y guarda una Página para terminar')
+    if (!hasAdAccount) {
+      showToast('warning', 'Falta cuenta de anuncios', 'Selecciona y guarda una cuenta de anuncios para terminar')
       return
     }
 
     setIsEditingMetaConfig(false)
+    setActiveStep(0)
   }
 
   const handleEditMetaConfig = () => {
@@ -995,8 +976,8 @@ export const MetaAdsIntegration: React.FC = () => {
   const hasPixel = Boolean(credentials.pixelId)
   const hasPageId = Boolean(savedPageId)
   const hasInstagramAccount = Boolean(savedInstagramAccountId || credentials.instagramAccountId)
-  const isMetaConfigured = Boolean(hasAccessToken && hasAdAccount && hasPageId)
-  const shouldShowWizard = !isMetaConfigured || isEditingMetaConfig
+  const isMetaConfigured = Boolean(hasAccessToken && hasAdAccount)
+  const shouldShowWizard = !isMetaConfigured || isEditingMetaConfig || activeStep > 0
   const shouldShowAccessTokenAction = Boolean(
     credentials.accessToken &&
     !isMaskedSecretValue(credentials.accessToken) &&
@@ -1025,18 +1006,11 @@ export const MetaAdsIntegration: React.FC = () => {
       unlocked: hasAdAccount
     },
     {
-      title: 'Facebook Page',
-      description: 'Selector automático',
-      done: hasPageId,
+      title: 'Páginas de Meta',
+      description: 'Facebook e Instagram',
+      done: hasPageId || hasInstagramAccount,
       required: false,
       unlocked: hasAdAccount
-    },
-    {
-      title: 'Instagram',
-      description: 'DMs y contactos',
-      done: hasInstagramAccount,
-      required: false,
-      unlocked: hasPageId
     }
   ]
   const completedMetaSetupSteps = metaSetupSteps.filter(step => step.done).length
@@ -1095,10 +1069,6 @@ export const MetaAdsIntegration: React.FC = () => {
 
     if ((stepIndex === 2 || stepIndex === 3) && !hasAdAccount) {
       return 'Primero selecciona y guarda una cuenta de anuncios'
-    }
-
-    if (stepIndex === 4 && !hasPageId) {
-      return 'Primero selecciona y guarda una Facebook Page'
     }
 
     return 'Completa el paso anterior para continuar'
@@ -1372,7 +1342,7 @@ export const MetaAdsIntegration: React.FC = () => {
                 )}
               </label>
               <p className={styles.stepHint}>
-                Si no necesitas pixel por ahora, puedes saltar directo a la Facebook Page.
+                Si no necesitas pixel por ahora, puedes saltar directo a las páginas de Meta.
               </p>
             </>
           )}
@@ -1385,181 +1355,152 @@ export const MetaAdsIntegration: React.FC = () => {
         <>
           <div className={styles.stepIntro}>
             <span className={styles.stepEyebrow}>Paso 4</span>
-            <h3 className={styles.stepTitle}>Selecciona la Facebook Page</h3>
+            <h3 className={styles.stepTitle}>Selecciona tus páginas de Meta</h3>
             <p className={styles.stepText}>
-              La Página se obtiene desde Meta con el permiso pages_show_list. También es la base para activar Messenger e Instagram DM en el mismo webhook.
+              Elige la Facebook Page para Messenger y la cuenta de Instagram para DMs. Las dos son opcionales; puedes terminar y volver a conectarlas después.
             </p>
-            <a href="https://business.facebook.com/latest/settings/pages" target="_blank" rel="noopener noreferrer" className={styles.inlineDocLink}>
-              Abrir páginas en Meta Business
-              <ExternalLink size={14} />
-            </a>
+            <div className={styles.guideLinks}>
+              <a href="https://business.facebook.com/latest/settings/pages" target="_blank" rel="noopener noreferrer" className={styles.inlineDocLink}>
+                Abrir páginas en Meta Business
+                <ExternalLink size={14} />
+              </a>
+              <a href="https://business.facebook.com/latest/settings/instagram-account" target="_blank" rel="noopener noreferrer" className={styles.inlineDocLink}>
+                Abrir Instagram en Meta Business
+                <ExternalLink size={14} />
+              </a>
+            </div>
           </div>
 
           {!hasAdAccount ? (
             <p className={styles.stepHint}>{getStepBlockMessage(3)}</p>
           ) : (
-            <div className={`${styles.formGroup} ${styles.formGroupWide}`}>
-              <span className={styles.formLabel}>Facebook Page</span>
-              {savedPageId && credentials.pageId === savedPageId ? (
-                <div className={styles.filterChip}>
-                  <span className={styles.chipText}>{getSelectedPageLabel()}</span>
-                  <button
-                    onClick={() => handleRemoveCredential('pageId')}
-                    className={styles.chipDeleteButton}
-                    type="button"
-                    aria-label="Eliminar Page ID"
+            <>
+              <div className={`${styles.formGroup} ${styles.formGroupWide}`}>
+                <span className={styles.formLabel}>Facebook Page opcional</span>
+                {savedPageId && credentials.pageId === savedPageId ? (
+                  <div className={styles.filterChip}>
+                    <span className={styles.chipText}>{getSelectedPageLabel()}</span>
+                    <button
+                      onClick={() => handleRemoveCredential('pageId')}
+                      className={styles.chipDeleteButton}
+                      type="button"
+                      aria-label="Eliminar Page ID"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ) : isLoadingPages ? (
+                  <div className={styles.inlineStatus}>
+                    <RefreshCw size={14} className={styles.spinning} />
+                    Cargando páginas...
+                  </div>
+                ) : pages.length > 0 ? (
+                  <select
+                    className={styles.formInput}
+                    onChange={(event) => {
+                      const page = pages.find(item => item.id === event.target.value)
+                      if (page) handleSelectAndSavePage(page)
+                    }}
+                    value={credentials.pageId || ''}
+                    disabled={isSavingPageId}
                   >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              ) : isLoadingPages ? (
-                <div className={styles.inlineStatus}>
-                  <RefreshCw size={14} className={styles.spinning} />
-                  Cargando páginas...
-                </div>
-              ) : pages.length > 0 ? (
-                <select
-                  className={styles.formInput}
-                  onChange={(event) => {
-                    const page = pages.find(item => item.id === event.target.value)
-                    if (page) handleSelectAndSavePage(page)
-                  }}
-                  value={credentials.pageId || ''}
-                  disabled={isSavingPageId}
-                >
-                  <option value="">-- Selecciona una Página --</option>
-                  {pages.map((page) => (
-                    <option key={page.id} value={page.id}>
-                      {page.name} ({page.id}){page.category ? ` - ${page.category}` : ''}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <div className={styles.emptyPagesState}>
-                  <p>
-                    No encontramos páginas para este token. Revisa que el usuario del sistema tenga asignada la Página y que el token incluya pages_show_list.
-                  </p>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => fetchPages(realAccessToken || credentials.accessToken)}
-                    disabled={isLoadingPages || !(realAccessToken || credentials.accessToken)}
+                    <option value="">-- Sin Facebook Page por ahora --</option>
+                    {pages.map((page) => (
+                      <option key={page.id} value={page.id}>
+                        {page.name} ({page.id}){page.category ? ` - ${page.category}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className={styles.emptyPagesState}>
+                    <p>
+                      No encontramos páginas para este token. Puedes terminar y volver cuando la Página esté asignada al usuario del sistema.
+                    </p>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => fetchPages(realAccessToken || credentials.accessToken)}
+                      disabled={isLoadingPages || !(realAccessToken || credentials.accessToken)}
+                    >
+                      <RefreshCw size={16} className={isLoadingPages ? styles.spinning : ''} />
+                      Volver a cargar
+                    </Button>
+                  </div>
+                )}
+                {isSavingPageId && (
+                  <div className={styles.inlineStatus}>
+                    <RefreshCw size={14} className={styles.spinning} />
+                    Guardando página...
+                  </div>
+                )}
+              </div>
+
+              <div className={`${styles.formGroup} ${styles.formGroupWide}`}>
+                <span className={styles.formLabel}>Cuenta de Instagram opcional</span>
+                {savedInstagramAccountId && credentials.instagramAccountId === savedInstagramAccountId ? (
+                  <div className={styles.filterChip}>
+                    <span className={styles.chipText}>{getSelectedInstagramLabel()}</span>
+                    <button
+                      onClick={() => handleRemoveCredential('instagramAccountId')}
+                      className={styles.chipDeleteButton}
+                      type="button"
+                      aria-label="Eliminar Instagram"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ) : isLoadingInstagramAccounts ? (
+                  <div className={styles.inlineStatus}>
+                    <RefreshCw size={14} className={styles.spinning} />
+                    Cargando Instagram...
+                  </div>
+                ) : instagramAccounts.length > 0 ? (
+                  <select
+                    className={styles.formInput}
+                    onChange={(event) => {
+                      const account = instagramAccounts.find(item => item.sourceId === event.target.value)
+                      if (account) handleSelectInstagramAccount(account)
+                    }}
+                    value={credentials.instagramAccountId || ''}
+                    disabled={isSavingInstagramAccountId}
                   >
-                    <RefreshCw size={16} className={isLoadingPages ? styles.spinning : ''} />
-                    Volver a cargar
-                  </Button>
-                </div>
-              )}
-              {isSavingPageId && (
-                <div className={styles.inlineStatus}>
-                  <RefreshCw size={14} className={styles.spinning} />
-                  Guardando página...
-                </div>
-              )}
-            </div>
+                    <option value="">-- Sin Instagram por ahora --</option>
+                    {instagramAccounts.map((account) => (
+                      <option key={account.sourceId} value={account.sourceId}>
+                        {account.username ? `@${account.username}` : account.name} ({account.sourceId})
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className={styles.emptyPagesState}>
+                    <p>
+                      No encontramos Instagram conectado. Puedes terminar y volver cuando la cuenta esté ligada en Meta Business.
+                    </p>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => fetchInstagramAccounts(realAccessToken || credentials.accessToken, credentials.instagramAccountId)}
+                      disabled={isLoadingInstagramAccounts || !(realAccessToken || credentials.accessToken)}
+                    >
+                      <RefreshCw size={16} className={isLoadingInstagramAccounts ? styles.spinning : ''} />
+                      Volver a cargar
+                    </Button>
+                  </div>
+                )}
+                {isSavingInstagramAccountId && (
+                  <div className={styles.inlineStatus}>
+                    <RefreshCw size={14} className={styles.spinning} />
+                    Guardando Instagram...
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </>
       )
     }
 
-    return (
-      <>
-        <div className={styles.stepIntro}>
-          <span className={styles.stepEyebrow}>Paso 5</span>
-          <h3 className={styles.stepTitle}>Selecciona Instagram y activa DMs</h3>
-          <p className={styles.stepText}>
-            Si tienes Instagram conectado a tu Página, elige la cuenta que recibirá DMs. Los mensajes nuevos entrarán al chat del celular como contactos de Meta.
-          </p>
-          <a href="https://business.facebook.com/latest/settings/instagram-account" target="_blank" rel="noopener noreferrer" className={styles.inlineDocLink}>
-            Abrir Instagram en Meta Business
-            <ExternalLink size={14} />
-          </a>
-        </div>
-
-        {!hasPageId ? (
-          <p className={styles.stepHint}>{getStepBlockMessage(4)}</p>
-        ) : (
-          <>
-            <div className={`${styles.formGroup} ${styles.formGroupWide}`}>
-              <span className={styles.formLabel}>Cuenta de Instagram</span>
-              {savedInstagramAccountId && credentials.instagramAccountId === savedInstagramAccountId ? (
-                <div className={styles.filterChip}>
-                  <span className={styles.chipText}>{getSelectedInstagramLabel()}</span>
-                  <button
-                    onClick={() => handleRemoveCredential('instagramAccountId')}
-                    className={styles.chipDeleteButton}
-                    type="button"
-                    aria-label="Eliminar Instagram"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              ) : isLoadingInstagramAccounts ? (
-                <div className={styles.inlineStatus}>
-                  <RefreshCw size={14} className={styles.spinning} />
-                  Cargando Instagram...
-                </div>
-              ) : instagramAccounts.length > 0 ? (
-                <select
-                  className={styles.formInput}
-                  onChange={(event) => {
-                    const account = instagramAccounts.find(item => item.sourceId === event.target.value)
-                    if (account) handleSelectInstagramAccount(account)
-                  }}
-                  value={credentials.instagramAccountId || ''}
-                  disabled={isSavingInstagramAccountId}
-                >
-                  <option value="">-- Sin Instagram por ahora --</option>
-                  {instagramAccounts.map((account) => (
-                    <option key={account.sourceId} value={account.sourceId}>
-                      {account.username ? `@${account.username}` : account.name} ({account.sourceId})
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <div className={styles.emptyPagesState}>
-                  <p>
-                    No encontramos Instagram conectado. Puedes terminar y volver cuando la cuenta esté ligada a la Página en Meta Business.
-                  </p>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => fetchInstagramAccounts(realAccessToken || credentials.accessToken, credentials.instagramAccountId)}
-                    disabled={isLoadingInstagramAccounts || !(realAccessToken || credentials.accessToken)}
-                  >
-                    <RefreshCw size={16} className={isLoadingInstagramAccounts ? styles.spinning : ''} />
-                    Volver a cargar
-                  </Button>
-                </div>
-              )}
-              {isSavingInstagramAccountId && (
-                <div className={styles.inlineStatus}>
-                  <RefreshCw size={14} className={styles.spinning} />
-                  Guardando Instagram...
-                </div>
-              )}
-            </div>
-
-            {metaWebhookInfo && (
-              <div className={styles.setupGuide}>
-                <span className={styles.scopeBlockLabel}>Webhook para Messenger e Instagram DM</span>
-                <label className={`${styles.formGroup} ${styles.formGroupWide}`}>
-                  <span className={styles.formLabel}>URL del webhook</span>
-                  <input className={styles.formInput} value={metaWebhookInfo.webhookUrl} readOnly />
-                </label>
-                <label className={`${styles.formGroup} ${styles.formGroupWide}`}>
-                  <span className={styles.formLabel}>Token de verificación</span>
-                  <input className={styles.formInput} value={metaWebhookInfo.verifyToken} readOnly />
-                </label>
-                <p className={styles.stepHint}>
-                  En Meta Developers suscribe la app a la Página con estos campos: {metaWebhookInfo.fields.join(', ')}.
-                </p>
-              </div>
-            )}
-          </>
-        )}
-      </>
-    )
+    return null
   }
 
   return (
@@ -1735,7 +1676,7 @@ export const MetaAdsIntegration: React.FC = () => {
                     Crea el token correcto y después selecciona los activos que Meta devuelve.
                   </p>
                 </div>
-                <span className={styles.stepCount}>{completedMetaSetupSteps}/5 listo</span>
+                <span className={styles.stepCount}>{completedMetaSetupSteps}/{metaSetupSteps.length} listo</span>
               </div>
 
               <div className={styles.wizardShell}>
@@ -1789,7 +1730,12 @@ export const MetaAdsIntegration: React.FC = () => {
                             </Button>
                           )}
                           {activeStep === metaSetupSteps.length - 1 && (
-                            <Button type="button" variant="primary" onClick={handleFinishWizard} disabled={!hasPageId || isSavingPageId}>
+                            <Button
+                              type="button"
+                              variant="primary"
+                              onClick={handleFinishWizard}
+                              disabled={!hasAdAccount || isSavingPageId || isSavingInstagramAccountId}
+                            >
                               Terminar
                               <CheckCircle size={16} />
                             </Button>
