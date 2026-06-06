@@ -311,8 +311,8 @@
   align-items: center;
   gap: 8px;
   width: 100%;
-  min-height: 66px;
-  padding: 0 14px;
+  min-height: 78px;
+  padding: 8px 14px;
   border: 0;
   color: var(--phone-chat-text);
   background: transparent;
@@ -389,7 +389,7 @@
 
 .chatSwipeRow {
   position: relative;
-  min-height: 66px;
+  min-height: 78px;
   overflow: hidden;
   border-radius: 0 !important;
   isolation: isolate;
@@ -403,7 +403,7 @@
   display: grid;
   grid-template-columns: 84px 100px;
   width: 184px;
-  min-height: 66px;
+  min-height: 78px;
   border-radius: 0 !important;
   overflow: hidden;
 }
