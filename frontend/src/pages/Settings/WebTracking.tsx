@@ -38,38 +38,20 @@ export const WebTracking: React.FC = () => {
       setHasHighLevel(config.hasHighLevel)
       setTrackingSnippet(config.trackingSnippet || '')
 
-      // Si es .onrender.com → FORZAR analytics OFF y visitor source a 'platform'
-      if (isOnRenderDomain) {
-        if (showAnalytics !== false) {
-          await setShowAnalytics(false)
-        }
-        if (visitorSource !== 'platform') {
-          await setVisitorSource('platform')
-        }
-
-        // Disparar eventos para actualizar el sidebar
+      if (!showAnalytics) {
+        await setShowAnalytics(true)
         window.dispatchEvent(new CustomEvent('analytics-preference-changed', {
-          detail: { showAnalytics: false }
-        }))
-        window.dispatchEvent(new CustomEvent('visitor-source-changed', {
-          detail: { visitorSource: 'platform' }
+          detail: { showAnalytics: true }
         }))
       }
-      // Si NO es .onrender.com → Activación automática
-      else if (config.trackingDomain && !hasAutoActivated) {
-        // Activar analytics y visitor tracking automáticamente
-        if (!showAnalytics) {
-          await setShowAnalytics(true)
-        }
+
+      // En dominio personalizado, activar la fuente de rastreo automáticamente.
+      if (!isOnRenderDomain && config.trackingDomain && !hasAutoActivated) {
         if (visitorSource !== 'tracking') {
           await setVisitorSource('tracking')
         }
         setHasAutoActivated(true)
 
-        // Disparar eventos para actualizar el sidebar
-        window.dispatchEvent(new CustomEvent('analytics-preference-changed', {
-          detail: { showAnalytics: true }
-        }))
         window.dispatchEvent(new CustomEvent('visitor-source-changed', {
           detail: { visitorSource: 'tracking' }
         }))
