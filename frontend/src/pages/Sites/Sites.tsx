@@ -161,17 +161,16 @@ const normalizeMetaTrigger = (value?: string): SiteMetaTrigger =>
   value === 'form_submit' ? 'form_submit' : 'page_view'
 
 const ruleActions: Array<{ value: SiteOptionAction; label: string }> = [
-  { value: 'continue', label: 'Continuar normalmente' },
-  { value: 'cold_lead', label: 'Marcar lead frio' },
-  { value: 'warm_lead', label: 'Marcar lead tibio' },
-  { value: 'hot_lead', label: 'Marcar lead caliente' },
-  { value: 'disqualify', label: 'Descalificar contacto' },
-  { value: 'show_message', label: 'Mostrar mensaje de no calificado' },
-  { value: 'end_form', label: 'Terminar formulario' },
+  { value: 'continue', label: 'Continuar' },
   { value: 'jump', label: 'Saltar a otra pregunta' },
-  { value: 'tag', label: 'Asignar etiqueta interna' },
-  { value: 'category', label: 'Marcar lead con categoria' }
+  { value: 'disqualify', label: 'Descalificar inmediatamente' },
+  { value: 'disqualify_after_submit', label: 'Descalificar al finalizar formulario' },
+  { value: 'redirect', label: 'Dirigir a sitio' }
 ]
+const visibleRuleActionValues = new Set<SiteOptionAction>(ruleActions.map(action => action.value))
+const normalizeVisibleRuleAction = (action?: SiteOptionAction): SiteOptionAction => (
+  action && visibleRuleActionValues.has(action) ? action : 'continue'
+)
 
 const SITES_AI_DRAFT_CREATED_EVENT = 'ristak-sites-ai-draft-created'
 const SITES_EDITOR_ACTIVE_EVENT = 'ristak-sites-editor-active'
@@ -1585,9 +1584,10 @@ const normalizeOption = (option: string | SiteBlockOption, index: number): SiteB
     id: option.id || `option-${index}`,
     label,
     value: option.value || label,
-    action: option.action || 'continue',
+    action: normalizeVisibleRuleAction(option.action),
     targetBlockId: option.targetBlockId || '',
     message: option.message || '',
+    redirectUrl: option.redirectUrl || '',
     tag: option.tag || '',
     category: option.category || ''
   }
@@ -7797,6 +7797,19 @@ const OptionsRulesEditor: React.FC<OptionsRulesEditorProps> = ({ block, blocks, 
     onPatchBlock({ options: options.filter((_, optionIndex) => optionIndex !== index) })
   }
 
+  const getVisibleRuleAction = (action?: SiteOptionAction) => (
+    action && visibleRuleActionValues.has(action) ? action : 'continue'
+  )
+
+  const buildRuleActionPatch = (option: SiteBlockOption, action: SiteOptionAction): Partial<SiteBlockOption> => ({
+    action,
+    targetBlockId: action === 'jump' ? option.targetBlockId || '' : '',
+    redirectUrl: action === 'redirect' ? option.redirectUrl || '' : '',
+    message: '',
+    tag: '',
+    category: ''
+  })
+
   return (
     <div className={styles.optionRules}>
       <div className={styles.optionRulesHeader}>
@@ -7820,17 +7833,10 @@ const OptionsRulesEditor: React.FC<OptionsRulesEditorProps> = ({ block, blocks, 
             <label className={styles.field}>
               <span>Regla</span>
               <select
-                value={option.action || 'continue'}
+                value={getVisibleRuleAction(option.action)}
                 onChange={(event) => {
                   const action = event.target.value as SiteOptionAction
-                  const defaultCategory = action === 'cold_lead'
-                    ? 'frio'
-                    : action === 'warm_lead'
-                      ? 'tibio'
-                      : action === 'hot_lead'
-                        ? 'caliente'
-                        : option.category
-                  patchOption(index, { action, category: defaultCategory })
+                  patchOption(index, buildRuleActionPatch(option, action))
                 }}
                 onBlur={onSave}
               >
@@ -7849,24 +7855,15 @@ const OptionsRulesEditor: React.FC<OptionsRulesEditorProps> = ({ block, blocks, 
             </label>
           )}
 
-          {(option.action === 'disqualify' || option.action === 'show_message' || option.action === 'end_form') && (
+          {option.action === 'redirect' && (
             <label className={styles.field}>
-              <span>{option.action === 'end_form' ? 'Mensaje final' : 'Mensaje de no calificado'}</span>
-              <textarea rows={2} value={option.message || ''} onChange={(event) => patchOption(index, { message: event.target.value })} onBlur={onSave} />
-            </label>
-          )}
-
-          {(option.action === 'tag' || option.tag) && (
-            <label className={styles.field}>
-              <span>Etiqueta interna</span>
-              <input value={option.tag || ''} onChange={(event) => patchOption(index, { tag: event.target.value })} onBlur={onSave} />
-            </label>
-          )}
-
-          {(option.action === 'category' || option.action === 'cold_lead' || option.action === 'warm_lead' || option.action === 'hot_lead' || option.category) && (
-            <label className={styles.field}>
-              <span>Categoria del lead</span>
-              <input value={option.category || ''} onChange={(event) => patchOption(index, { category: event.target.value })} onBlur={onSave} />
+              <span>Sitio</span>
+              <input
+                value={option.redirectUrl || ''}
+                placeholder="https://tusitio.com"
+                onChange={(event) => patchOption(index, { redirectUrl: event.target.value })}
+                onBlur={onSave}
+              />
             </label>
           )}
 

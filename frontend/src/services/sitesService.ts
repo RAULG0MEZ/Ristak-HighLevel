@@ -52,9 +52,11 @@ export type SiteOptionAction =
   | 'warm_lead'
   | 'hot_lead'
   | 'disqualify'
+  | 'disqualify_after_submit'
   | 'show_message'
   | 'end_form'
   | 'jump'
+  | 'redirect'
   | 'tag'
   | 'category'
 
@@ -65,6 +67,7 @@ export interface SiteBlockOption {
   action?: SiteOptionAction
   targetBlockId?: string
   message?: string
+  redirectUrl?: string
   tag?: string
   category?: string
 }

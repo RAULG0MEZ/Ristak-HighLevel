@@ -58,9 +58,11 @@ export const OPTION_ACTIONS = new Set([
   'warm_lead',
   'hot_lead',
   'disqualify',
+  'disqualify_after_submit',
   'show_message',
   'end_form',
   'jump',
+  'redirect',
   'tag',
   'category'
 ])
@@ -380,6 +382,9 @@ function normalizeOptionAction(value) {
     marcar_lead_caliente: 'hot_lead',
     descalificar: 'disqualify',
     descalificar_contacto: 'disqualify',
+    descalificar_inmediatamente: 'disqualify',
+    descalificar_al_finalizar: 'disqualify_after_submit',
+    descalificar_al_finalizar_formulario: 'disqualify_after_submit',
     no_calificado: 'disqualify',
     mostrar_mensaje: 'show_message',
     mostrar_mensaje_especifico: 'show_message',
@@ -388,6 +393,11 @@ function normalizeOptionAction(value) {
     finalizar: 'end_form',
     saltar: 'jump',
     saltar_pregunta: 'jump',
+    dirigir: 'redirect',
+    dirigir_a_sitio: 'redirect',
+    redirigir: 'redirect',
+    redirigir_a_sitio: 'redirect',
+    sitio: 'redirect',
     etiqueta: 'tag',
     asignar_etiqueta: 'tag',
     categoria: 'category'
@@ -2132,7 +2142,7 @@ Bloques permitidos para formularios:
 short_text, paragraph, number, currency, dropdown, radio, checkboxes, phone, email, date, title, subtitle, description, video, embed, calendar_embed.
 
 Acciones permitidas por opcion:
-continue, cold_lead, warm_lead, hot_lead, disqualify, show_message, end_form, jump, tag, category.
+continue, jump, disqualify, disqualify_after_submit, redirect.
 
 JSON esperado cuando falta informacion:
 {
@@ -2165,11 +2175,9 @@ JSON esperado cuando esta listo:
           {
             "label": "Opcion visible",
             "value": "valor",
-            "action": "continue | cold_lead | warm_lead | hot_lead | disqualify | show_message | end_form | jump | tag | category",
+            "action": "continue | jump | disqualify | disqualify_after_submit | redirect",
             "targetBlockId": "key_de_bloque_destino_si_hay_salto",
-            "message": "Mensaje especifico si aplica",
-            "tag": "etiqueta si aplica",
-            "category": "frio | tibio | caliente u otra categoria"
+            "redirectUrl": "https://sitio-destino.com si la accion es redirect"
           }
         ]
       }
@@ -2239,6 +2247,7 @@ function normalizeAIOption(option = {}) {
     action,
     targetBlockId: cleanString(option.targetBlockId || option.target_block_id || option.targetBlockKey || option.jumpTo || option.saltarA),
     message: limitString(option.message || option.mensaje, 600),
+    redirectUrl: limitString(option.redirectUrl || option.redirect_url || option.siteUrl || option.site_url || option.url || option.sitio, 500),
     tag: limitString(option.tag || option.etiqueta, 80),
     category
   }
@@ -3527,6 +3536,7 @@ function normalizeOption(option) {
       action: normalizeOptionAction(option.action),
       targetBlockId: cleanString(option.targetBlockId || option.target_block_id),
       message: cleanString(option.message),
+      redirectUrl: safeHref(option.redirectUrl || option.redirect_url || option.siteUrl || option.site_url || option.url || option.sitio, ''),
       tag: cleanString(option.tag),
       category: cleanString(option.category)
     }
@@ -3540,6 +3550,7 @@ function normalizeOption(option) {
     action: 'continue',
     targetBlockId: '',
     message: '',
+    redirectUrl: '',
     tag: '',
     category: ''
   }
@@ -3556,6 +3567,7 @@ function optionRuleAttributes(option) {
     action: option.action || 'continue',
     targetBlockId: option.targetBlockId || '',
     message: option.message || '',
+    redirectUrl: safeHref(option.redirectUrl, ''),
     tag: option.tag || '',
     category: option.category || ''
   }
@@ -6162,9 +6174,10 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
         const currentFields = getPageFields(getCurrentPageId());
         if (!currentFields.every(validateField)) return;
         const rules = currentFields.flatMap((field) => readSelectedRules(field)).filter(item => item.action && item.action !== 'continue');
-        const blockingRule = rules.find(item => item.action === 'show_message' || item.action === 'disqualify' || item.action === 'end_form');
+        const blockingRule = rules.find(item => item.action === 'show_message' || item.action === 'disqualify' || item.action === 'end_form' || item.action === 'redirect');
         if (blockingRule) {
-          if (message) message.textContent = blockingRule.message || 'Gracias. Tu informacion fue recibida.';
+          if (message) message.textContent = blockingRule.action === 'redirect' ? 'Enviando...' : (blockingRule.message || 'Gracias. Tu informacion fue recibida.');
+          form.dataset.ruleSubmit = 'true';
           form.requestSubmit();
           return;
         }
@@ -6187,8 +6200,13 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
 
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
-        const valid = fields.every(validateField);
-        if (!valid) return;
+        const ruleSubmit = form.dataset.ruleSubmit === 'true';
+        const fieldsToValidate = ruleSubmit ? getPageFields(getCurrentPageId()) : fields;
+        const valid = fieldsToValidate.every(validateField);
+        if (!valid) {
+          delete form.dataset.ruleSubmit;
+          return;
+        }
 
         const responses = {};
         fields.forEach((field) => {
@@ -6250,6 +6268,10 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
           }
           index = 0;
           renderStep();
+          if (submission.redirectUrl) {
+            window.location.href = submission.redirectUrl;
+            return;
+          }
           const qualifies = submission.status !== 'disqualified';
           if (!qualifies && disqualifiedPageUrl && completionAction === 'next_page_if_qualified') {
             window.location.href = disqualifiedPageUrl;
@@ -6263,6 +6285,7 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
         } catch (error) {
           if (message) message.textContent = error.message || 'No se pudo enviar el formulario';
         } finally {
+          delete form.dataset.ruleSubmit;
           if (submitButton) submitButton.disabled = false;
         }
       });
@@ -6552,6 +6575,7 @@ function evaluateSubmissionRules(blocks, responses = {}) {
   const actions = []
   let disqualified = false
   let message = ''
+  let redirectUrl = ''
 
   for (const block of fields) {
     if (!['dropdown', 'radio', 'checkboxes'].includes(block.blockType)) continue
@@ -6580,20 +6604,25 @@ function evaluateSubmissionRules(blocks, responses = {}) {
           action,
           targetBlockId: option.targetBlockId || '',
           message: option.message || '',
+          redirectUrl: option.redirectUrl || '',
           tag: option.tag || '',
           category: option.category || ''
         })
       }
 
-      if (action === 'disqualify' || action === 'show_message') {
+      if (action === 'disqualify' || action === 'show_message' || action === 'disqualify_after_submit') {
         disqualified = true
         if (!message) {
-          message = option.message || 'Gracias. Tu informacion fue recibida.'
+          message = option.message || ''
         }
       }
 
       if (action === 'end_form' && !message) {
         message = option.message || 'Gracias. Tu informacion fue recibida.'
+      }
+
+      if (action === 'redirect' && !redirectUrl) {
+        redirectUrl = safeHref(option.redirectUrl, '')
       }
     }
   }
@@ -6602,6 +6631,7 @@ function evaluateSubmissionRules(blocks, responses = {}) {
     status: disqualified ? 'disqualified' : 'received',
     disqualified,
     message,
+    redirectUrl,
     tags: Array.from(tags),
     categories: Array.from(categories),
     actions
@@ -7037,6 +7067,7 @@ export async function createSubmissionFromRequest(req, body = {}) {
     contactPhone: inferredContact.phone || '',
     status: ruleEvaluation.status,
     message: getSiteFinalMessage(site, ruleEvaluation),
+    redirectUrl: ruleEvaluation.redirectUrl || '',
     rules: ruleEvaluation,
     capi
   }
