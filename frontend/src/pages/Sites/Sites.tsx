@@ -4150,6 +4150,7 @@ export const Sites: React.FC = () => {
                 <ImportedHtmlEditorPanel
                   site={editorSite}
                   domainConfig={domainConfig}
+                  device={device}
                   saving={saving}
                   onPreview={handlePreviewSite}
                   onPublish={() => handleSaveSite('published')}
@@ -4370,19 +4371,43 @@ export const Sites: React.FC = () => {
 const ImportedHtmlEditorPanel: React.FC<{
   site: PublicSite
   domainConfig: SitesDomainConfig
+  device: DeviceMode
   saving: boolean
   onPreview: () => void
   onPublish: () => void
   onUpdateRoute: (site: PublicSite, route: string) => Promise<void>
   onDelete: () => void
-}> = ({ site, domainConfig, saving, onPreview, onPublish, onUpdateRoute, onDelete }) => {
+}> = ({ site, domainConfig, device, saving, onPreview, onPublish, onUpdateRoute, onDelete }) => {
   const [routeEditing, setRouteEditing] = useState(false)
   const [routeDraft, setRouteDraft] = useState(getRouteEditorValue(site))
   const [routeSaving, setRouteSaving] = useState(false)
+  const [previewHtml, setPreviewHtml] = useState('')
+  const [previewLoading, setPreviewLoading] = useState(true)
+  const [previewError, setPreviewError] = useState('')
+  const [previewVersion, setPreviewVersion] = useState(0)
 
   useEffect(() => {
     if (!routeEditing) setRouteDraft(getRouteEditorValue(site))
   }, [routeEditing, site.id, site.slug])
+
+  const loadInlinePreview = useCallback(async () => {
+    setPreviewLoading(true)
+    setPreviewError('')
+    try {
+      const html = await sitesService.getPreviewHtml(site.id, undefined, { test: true })
+      setPreviewHtml(html)
+      setPreviewVersion(current => current + 1)
+    } catch (error) {
+      setPreviewHtml('')
+      setPreviewError(error instanceof Error ? error.message : 'No se pudo cargar la vista previa')
+    } finally {
+      setPreviewLoading(false)
+    }
+  }, [site.id])
+
+  useEffect(() => {
+    void loadInlinePreview()
+  }, [loadInlinePreview])
 
   const routeValue = getRouteEditorValue(site)
   const saveRoute = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -4405,75 +4430,130 @@ const ImportedHtmlEditorPanel: React.FC<{
 
   return (
     <div className={styles.importedEditorPanel}>
-      <div className={styles.importedEditorCopy}>
-        <Upload size={24} />
-        <div>
-          <strong>{site.title || site.name}</strong>
-          <p>Esta pagina usa el archivo que subiste. Puedes previsualizarla, ajustar su ruta, eliminarla o publicarla cuando el dominio este listo.</p>
-        </div>
-      </div>
-
-      <div className={styles.importedRouteBox}>
-        <span className={styles.importedRouteLabel}>Ruta publica</span>
-        {routeEditing ? (
-          <form className={styles.importedRouteForm} onSubmit={(event) => void saveRoute(event)}>
-            <input
-              value={routeDraft}
-              onChange={(event) => setRouteDraft(normalizeRouteEditorInput(event.target.value, domainConfig))}
-              placeholder={site.siteType === 'landing_page' ? 'embudo-01' : 'formulario-01'}
-              disabled={routeSaving}
-            />
-            <Button type="submit" size="sm" loading={routeSaving}>
-              <Check size={15} />
-              Guardar
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              disabled={routeSaving}
-              onClick={() => {
-                setRouteDraft(routeValue)
-                setRouteEditing(false)
-              }}
-            >
-              <X size={15} />
-              Cancelar
-            </Button>
-          </form>
-        ) : (
-          <div className={styles.importedRouteRow}>
-            <strong>{getPublicRouteLabel(site, domainConfig)}</strong>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                setRouteDraft(routeValue)
-                setRouteEditing(true)
-              }}
-            >
-              <Settings2 size={15} />
-              Cambiar ruta
-            </Button>
+      <section className={styles.importedPreviewPane}>
+        <div className={styles.importedPreviewToolbar}>
+          <div>
+            <span>Vista previa del HTML</span>
+            <strong>{site.title || site.name}</strong>
           </div>
-        )}
-      </div>
+          <div className={styles.importedPreviewTools}>
+            <span>{device === 'mobile' ? 'Movil' : 'Escritorio'}</span>
+            <button
+              type="button"
+              className={styles.importedPreviewRefresh}
+              onClick={() => void loadInlinePreview()}
+              disabled={previewLoading}
+              title="Recargar vista previa"
+              aria-label="Recargar vista previa"
+            >
+              <RefreshCw size={15} />
+            </button>
+          </div>
+        </div>
 
-      <div className={styles.importedEditorActions}>
-        <Button type="button" variant="secondary" onClick={onPreview}>
-          <Eye size={15} />
-          Previsualizar
-        </Button>
-        <Button type="button" onClick={onPublish} loading={saving}>
-          <Send size={15} />
-          Publicar
-        </Button>
-        <Button type="button" variant="danger" onClick={onDelete} disabled={saving || routeSaving}>
-          <Trash2 size={15} />
-          Eliminar
-        </Button>
-      </div>
+        <div className={`${styles.importedPreviewStage} ${device === 'mobile' ? styles.importedPreviewStageMobile : ''}`}>
+          {previewLoading && (
+            <div className={styles.importedPreviewState}>
+              <RefreshCw size={18} />
+              <span>Cargando vista previa...</span>
+            </div>
+          )}
+          {!previewLoading && previewError && (
+            <div className={styles.importedPreviewState}>
+              <AlertTriangle size={18} />
+              <span>{previewError}</span>
+            </div>
+          )}
+          {!previewLoading && !previewError && previewHtml && (
+            <iframe
+              key={`${site.id}-${previewVersion}-${device}`}
+              className={styles.importedPreviewFrame}
+              title={`Vista previa de ${site.name}`}
+              srcDoc={previewHtml}
+              sandbox=""
+              referrerPolicy="no-referrer-when-downgrade"
+            />
+          )}
+          {!previewLoading && !previewError && !previewHtml && (
+            <div className={styles.importedPreviewState}>
+              <FileText size={18} />
+              <span>La vista previa todavia no tiene contenido.</span>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <aside className={styles.importedSidePanel}>
+        <div className={styles.importedEditorCopy}>
+          <Upload size={24} />
+          <div>
+            <strong>{site.title || site.name}</strong>
+            <p>Esta pagina usa el archivo que subiste. Revisa la vista previa antes de publicarla.</p>
+          </div>
+        </div>
+
+        <div className={styles.importedRouteBox}>
+          <span className={styles.importedRouteLabel}>Ruta publica</span>
+          {routeEditing ? (
+            <form className={styles.importedRouteForm} onSubmit={(event) => void saveRoute(event)}>
+              <input
+                value={routeDraft}
+                onChange={(event) => setRouteDraft(normalizeRouteEditorInput(event.target.value, domainConfig))}
+                placeholder={site.siteType === 'landing_page' ? 'embudo-01' : 'formulario-01'}
+                disabled={routeSaving}
+              />
+              <Button type="submit" size="sm" loading={routeSaving}>
+                <Check size={15} />
+                Guardar
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={routeSaving}
+                onClick={() => {
+                  setRouteDraft(routeValue)
+                  setRouteEditing(false)
+                }}
+              >
+                <X size={15} />
+                Cancelar
+              </Button>
+            </form>
+          ) : (
+            <div className={styles.importedRouteRow}>
+              <strong>{getPublicRouteLabel(site, domainConfig)}</strong>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setRouteDraft(routeValue)
+                  setRouteEditing(true)
+                }}
+              >
+                <Settings2 size={15} />
+                Cambiar ruta
+              </Button>
+            </div>
+          )}
+        </div>
+
+        <div className={styles.importedEditorActions}>
+          <Button type="button" variant="secondary" onClick={onPreview}>
+            <Eye size={15} />
+            Abrir completa
+          </Button>
+          <Button type="button" onClick={onPublish} loading={saving}>
+            <Send size={15} />
+            Publicar
+          </Button>
+          <Button type="button" variant="danger" onClick={onDelete} disabled={saving || routeSaving}>
+            <Trash2 size={15} />
+            Eliminar
+          </Button>
+        </div>
+      </aside>
     </div>
   )
 }
