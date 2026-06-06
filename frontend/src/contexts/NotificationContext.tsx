@@ -34,6 +34,11 @@ interface NotificationContextType {
 
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined)
 
+function isOpenPhoneApp() {
+  if (typeof document === 'undefined') return false
+  return document.body.dataset.phoneApp === 'active'
+}
+
 export const useNotification = () => {
   const context = useContext(NotificationContext)
   if (!context) {
@@ -59,7 +64,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   ) => {
     const id = Date.now().toString()
     const newToast: ToastData = { id, type, title, message, duration }
-    setToasts(prev => [...prev, newToast])
+    setToasts(prev => isOpenPhoneApp() ? [newToast] : [...prev, newToast])
   }, [])
 
   const removeToast = useCallback((id: string) => {
