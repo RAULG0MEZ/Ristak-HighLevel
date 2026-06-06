@@ -212,6 +212,17 @@
   font: inherit;
 }
 
+.searchBox input {
+  height: 38px;
+  min-height: 0;
+  padding: 0;
+  line-height: 20px;
+}
+
+.searchBox svg {
+  flex-shrink: 0;
+}
+
 .field input,
 .field select,
 .folderForm input,
