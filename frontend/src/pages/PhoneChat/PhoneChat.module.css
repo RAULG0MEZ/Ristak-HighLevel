@@ -24,6 +24,14 @@
   -webkit-touch-callout: none;
 }
 
+.phoneChatPage input,
+.phoneChatPage textarea,
+.phoneChatPage [contenteditable="true"] {
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
+}
+
 .phoneFrame {
   position: relative;
   width: 100%;
