@@ -2529,6 +2529,15 @@ export async function createSite(input = {}) {
   const description = cleanString(input.description)
   const domain = ''
   const theme = { ...DEFAULT_THEME, ...(input.theme || {}) }
+  const blankCanvas = Boolean(normalizeBoolean(input.blankCanvas || input.blank_canvas || theme.blankCanvas || theme.blank_canvas))
+  delete theme.blankCanvas
+  delete theme.blank_canvas
+  if (blankCanvas) {
+    theme.backgroundImage = ''
+    if (!cleanString(theme.backgroundColor)) {
+      theme.backgroundColor = '#ffffff'
+    }
+  }
   if (siteType === 'landing_page') {
     if (theme.pageMaxWidth === undefined) {
       theme.pageMaxWidth = 1440
@@ -2560,24 +2569,26 @@ export async function createSite(input = {}) {
     normalizeSiteMetaEventName(input.metaEventName, { allowNone: true, fallback: SITE_META_NO_EVENT })
   ])
 
-  for (const block of buildDefaultBlocks(id, siteType, theme.template)) {
-    await db.run(`
-      INSERT INTO public_site_blocks (
-        id, site_id, block_type, label, content, placeholder, required,
-        options_json, settings_json, sort_order, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-    `, [
-      block.id,
-      block.site_id,
-      block.block_type,
-      block.label,
-      block.content,
-      block.placeholder,
-      block.required,
-      block.options_json,
-      block.settings_json,
-      block.sort_order
-    ])
+  if (!blankCanvas) {
+    for (const block of buildDefaultBlocks(id, siteType, theme.template)) {
+      await db.run(`
+        INSERT INTO public_site_blocks (
+          id, site_id, block_type, label, content, placeholder, required,
+          options_json, settings_json, sort_order, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      `, [
+        block.id,
+        block.site_id,
+        block.block_type,
+        block.label,
+        block.content,
+        block.placeholder,
+        block.required,
+        block.options_json,
+        block.settings_json,
+        block.sort_order
+      ])
+    }
   }
 
   return getSite(id, { includeBlocks: true, includeSubmissions: true })

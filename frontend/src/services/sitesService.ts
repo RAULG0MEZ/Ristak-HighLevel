@@ -98,6 +98,7 @@ export interface SiteTheme {
   accentColor?: string
   backgroundColor?: string
   backgroundImage?: string
+  blankCanvas?: boolean
   backgroundMediaType?: 'image' | 'video'
   backgroundFit?: 'cover' | 'contain' | 'full_width' | 'auto'
   backgroundRepeat?: 'no-repeat' | 'repeat' | 'repeat-x' | 'repeat-y'

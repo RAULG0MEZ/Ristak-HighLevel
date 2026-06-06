@@ -509,36 +509,6 @@
   transform: translate(-50%, -50%) scale(calc(1 / var(--rstk-scale, 1)));
   transform-origin: top center;
 }
-.rstkCanvas .rstk-section-lane > .rstkBlockTools {
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-  opacity: 0;
-  transform: none;
-  transform-origin: center;
-}
-.rstkCanvas .rstk-section-lane > .rstkBlockTools > .rstkBlockTool,
-.rstkCanvas .rstk-section-lane > .rstkBlockTools .rstkBlockToolMenu {
-  position: absolute;
-  transform: translate(-50%, -50%) scale(calc(1 / var(--rstk-scale, 1)));
-}
-.rstkCanvas .rstk-section-lane > .rstkBlockTools > .rstkBlockToolDrag {
-  top: 0;
-  left: calc(50% - 38px);
-}
-.rstkCanvas .rstk-section-lane > .rstkBlockTools > .rstkBlockTool:not(.rstkBlockToolDrag):not(.rstkBlockToolMenu):nth-of-type(2) {
-  top: 0;
-  left: 50%;
-}
-.rstkCanvas .rstk-section-lane > .rstkBlockTools > .rstkBlockTool:not(.rstkBlockToolDrag):not(.rstkBlockToolMenu):nth-of-type(3) {
-  top: 100%;
-  left: 50%;
-}
-.rstkCanvas .rstk-section-lane > .rstkBlockTools .rstkBlockToolMenu {
-  top: 0;
-  left: calc(50% + 38px);
-}
 .rstkCanvas.rstk-kind-landing .rstk-section-column > .rstkSel > .rstkBlockTools {
   top: 50%;
   right: -12px;

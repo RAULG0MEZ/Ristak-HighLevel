@@ -2319,10 +2319,11 @@ export const Sites: React.FC = () => {
   const handleCreateSite = async (siteType: SiteType, mode: 'blank' | 'template' = 'template', templateId?: SiteTemplateId) => {
     setCreating(true)
     try {
+      const isBlank = mode === 'blank'
       const template: SiteTemplateId = templateId
         || (siteType === 'interactive_form' ? 'interactive' : siteType === 'landing_page' ? 'ristak' : 'ristak')
       const siteIdentity = getNextSiteIdentity(siteType, sites)
-      const templateDefaults = getTemplateThemeDefaults(template, siteType)
+      const templateDefaults = isBlank ? {} : getTemplateThemeDefaults(template, siteType)
       let site = await sitesService.createSite({
         name: siteIdentity.name,
         siteType,
@@ -2331,11 +2332,18 @@ export const Sites: React.FC = () => {
         theme: {
           ...templateDefaults,
           template,
+          ...(isBlank
+            ? {
+                blankCanvas: true,
+                backgroundColor: siteType === 'landing_page' ? '#ffffff' : '#f8fafc',
+                backgroundImage: ''
+              }
+            : {}),
           ...(siteType === 'landing_page'
             ? {
                 pageMaxWidth: templateDefaults.pageMaxWidth ?? 1440,
                 pages: normalizePagesForSave(
-                  mode === 'blank'
+                  isBlank
                     ? [makeTemplateFunnelPage(DEFAULT_FUNNEL_PAGE_ID, 'Pagina 1', 0)]
                     : getTemplateFunnelPages(template)
                 )
@@ -2349,7 +2357,7 @@ export const Sites: React.FC = () => {
         metaEventName: 'none'
       })
 
-      if (mode === 'blank') {
+      if (isBlank && site.blocks?.length) {
         for (const block of site.blocks || []) {
           site = await sitesService.deleteBlock(site.id, block.id)
         }
