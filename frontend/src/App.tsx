@@ -144,14 +144,6 @@ const AppWithNotifications: React.FC = () => {
             }
           />
           <Route
-            path="/phone/agente-ia"
-            element={
-              <ProtectedRoute>
-                <PhoneAgentChat />
-              </ProtectedRoute>
-            }
-          />
-          <Route
             path="/phone/ai-agent"
             element={
               <ProtectedRoute>
@@ -184,23 +176,7 @@ const AppWithNotifications: React.FC = () => {
             }
           />
           <Route
-            path="/phone/pagos"
-            element={
-              <ProtectedRoute>
-                <PhonePayments />
-              </ProtectedRoute>
-            }
-          />
-          <Route
             path="/phone/calendar"
-            element={
-              <ProtectedRoute>
-                <PhoneCalendar />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/phone/calendario"
             element={
               <ProtectedRoute>
                 <PhoneCalendar />
