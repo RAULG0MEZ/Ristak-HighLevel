@@ -9,7 +9,6 @@ import {
   QrCode,
   RefreshCw,
   ShieldCheck,
-  Smartphone,
   Unplug,
   Wallet
 } from 'lucide-react'
@@ -40,12 +39,6 @@ function parseJson<T>(value?: string | null): T | null {
   } catch {
     return null
   }
-}
-
-function formatDateTime(value?: string | null) {
-  if (!value) return 'Pendiente'
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('es-MX')
 }
 
 function formatMetric(value?: number | null) {
@@ -116,21 +109,14 @@ export const WhatsAppSettings: React.FC = () => {
   const [apiDisconnecting, setApiDisconnecting] = useState(false)
   const [apiKey, setApiKey] = useState('')
   const [selectedPhoneId, setSelectedPhoneId] = useState('')
-  const [discoveredApiPhones, setDiscoveredApiPhones] = useState<WhatsAppApiPhoneNumber[]>([])
-  const [apiPhoneLookupLoading, setApiPhoneLookupLoading] = useState(false)
-  const [apiPhoneLookupAttempted, setApiPhoneLookupAttempted] = useState(false)
   const [qrConnectingPhoneId, setQrConnectingPhoneId] = useState('')
   const [qrDisconnectingPhoneId, setQrDisconnectingPhoneId] = useState('')
 
   const apiConnected = Boolean(apiStatus?.connected)
 
-  const availableApiPhones = useMemo(() => {
-    return apiStatus?.phoneNumbers.length ? apiStatus.phoneNumbers : discoveredApiPhones
-  }, [apiStatus?.phoneNumbers, discoveredApiPhones])
-
   const selectedPhone = useMemo(() => {
-    return availableApiPhones.find(phone => phone.id === selectedPhoneId) || apiStatus?.selectedPhone || null
-  }, [apiStatus?.selectedPhone, availableApiPhones, selectedPhoneId])
+    return apiStatus?.phoneNumbers.find(phone => phone.id === selectedPhoneId) || apiStatus?.selectedPhone || apiStatus?.phoneNumbers[0] || null
+  }, [apiStatus?.phoneNumbers, apiStatus?.selectedPhone, selectedPhoneId])
 
   const qrSessionsByPhoneId = useMemo(() => {
     return new Map<string, WhatsAppQrSession>(
@@ -139,17 +125,14 @@ export const WhatsAppSettings: React.FC = () => {
   }, [apiStatus?.qr?.sessions])
 
   const hasApiCredential = Boolean(apiKey.trim() || apiStatus?.credentials.hasApiKey)
-  const canLookupApiPhones = hasApiCredential
-  const canSubmitApi = hasApiCredential &&
-    (apiConnected || (availableApiPhones.length > 0 && Boolean(selectedPhoneId)))
+  const canSubmitApi = hasApiCredential
 
   const loadApiStatus = async () => {
     const nextStatus = await whatsappApiService.getStatus()
     setApiStatus(nextStatus)
 
     if (nextStatus.phoneNumbers.length) {
-      setDiscoveredApiPhones([])
-      setApiPhoneLookupAttempted(false)
+      // La lista completa se muestra abajo; este id solo marca el principal.
     }
 
     const preferredPhoneId = nextStatus.sender.phoneNumberId ||
@@ -198,33 +181,6 @@ export const WhatsAppSettings: React.FC = () => {
     return () => window.clearInterval(timer)
   }, [apiStatus?.phoneNumbers, qrConnectingPhoneId, qrSessionsByPhoneId])
 
-  const lookupApiPhoneNumbers = async () => {
-    if (!canLookupApiPhones || apiPhoneLookupLoading) return
-
-    setApiPhoneLookupLoading(true)
-    setApiPhoneLookupAttempted(true)
-    try {
-      const result = await whatsappApiService.previewPhoneNumbers(apiKey.trim() || undefined)
-      const phones = result.phoneNumbers || []
-      setDiscoveredApiPhones(phones)
-      setSelectedPhoneId((current) => {
-        if (current && phones.some(phone => phone.id === current)) return current
-        return phones[0]?.id || ''
-      })
-
-      if (phones.length) {
-        showToast('success', 'Numeros encontrados', 'Elige el numero que enviara mensajes')
-      } else {
-        showToast('warning', 'Sin numeros', 'YCloud todavia no muestra numeros conectados en esta cuenta')
-      }
-    } catch (error) {
-      setDiscoveredApiPhones([])
-      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudieron buscar tus numeros')
-    } finally {
-      setApiPhoneLookupLoading(false)
-    }
-  }
-
   const connectApi = async (event?: React.FormEvent) => {
     event?.preventDefault()
     if (!canSubmitApi || apiConnecting) return
@@ -232,21 +188,12 @@ export const WhatsAppSettings: React.FC = () => {
     setApiConnecting(true)
     try {
       const nextStatus = await whatsappApiService.connect({
-        apiKey: apiKey.trim() || undefined,
-        phoneNumberId: selectedPhone?.id || undefined,
-        senderPhone: selectedPhone?.phone_number || undefined,
-        wabaId: selectedPhone?.waba_id || undefined
+        apiKey: apiKey.trim() || undefined
       })
       setApiStatus(nextStatus)
-      setDiscoveredApiPhones([])
-      setApiPhoneLookupAttempted(false)
       setApiKey('')
 
-      if (nextStatus.requiresPhoneSelection) {
-        showToast('warning', 'Falta elegir numero', 'Selecciona el numero que enviara mensajes')
-      } else {
-        showToast('success', 'WhatsApp conectado', 'Tu numero quedo listo para enviar mensajes')
-      }
+      showToast('success', 'WhatsApp conectado', 'Ristak sincronizo los numeros disponibles de YCloud')
     } catch (error) {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo conectar WhatsApp Business')
     } finally {
@@ -365,8 +312,8 @@ export const WhatsAppSettings: React.FC = () => {
     }
   }, [apiStatus?.templates])
 
-  const renderApiForm = (compact = false) => (
-    <form className={compact ? styles.apiInlineForm : styles.apiConnectForm} onSubmit={connectApi}>
+  const renderApiForm = () => (
+    <form className={styles.apiConnectForm} onSubmit={connectApi}>
       <label className={styles.fieldLabel}>
         <span>Llave de conexión de YCloud</span>
         <div className={styles.apiKeyRow}>
@@ -377,54 +324,17 @@ export const WhatsAppSettings: React.FC = () => {
               value={apiKey}
               onChange={(event) => {
                 setApiKey(event.target.value)
-                setApiPhoneLookupAttempted(false)
-                setDiscoveredApiPhones([])
-                if (!apiStatus?.phoneNumbers.length) setSelectedPhoneId('')
               }}
               placeholder={apiStatus?.credentials.hasApiKey ? 'Llave guardada' : 'Pega tu llave de YCloud'}
               autoComplete="off"
             />
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            loading={apiPhoneLookupLoading}
-            disabled={!canLookupApiPhones}
-            onClick={lookupApiPhoneNumbers}
-          >
-            <RefreshCw size={17} />
-            Buscar numeros
-          </Button>
         </div>
       </label>
 
-      {availableApiPhones.length ? (
-        <label className={styles.fieldLabel}>
-          <span>Numero que enviara mensajes</span>
-          <div className={styles.selectWrap}>
-            <Smartphone size={17} />
-            <select value={selectedPhoneId} onChange={(event) => setSelectedPhoneId(event.target.value)}>
-              <option value="">Elegir numero</option>
-              {availableApiPhones.map((phone) => (
-                <option key={phone.id} value={phone.id}>{getPhoneLabel(phone)}</option>
-              ))}
-            </select>
-          </div>
-        </label>
-      ) : (
-        <div className={styles.apiEmptySelector}>
-          <Smartphone size={18} />
-          <span>
-            {apiPhoneLookupAttempted
-              ? 'No encontramos numeros conectados. Conecta tu WhatsApp Business en YCloud y vuelve a buscar.'
-              : 'Pega tu llave y toca Buscar numeros. Ristak los traera de YCloud para que solo elijas uno.'}
-          </span>
-        </div>
-      )}
-
       <Button type="submit" loading={apiConnecting} disabled={!canSubmitApi}>
         <Cloud size={18} />
-        {apiConnected ? 'Guardar numero' : 'Conectar WhatsApp'}
+        {apiConnected ? 'Actualizar conexión' : 'Conectar YCloud'}
       </Button>
     </form>
   )
@@ -451,14 +361,14 @@ export const WhatsAppSettings: React.FC = () => {
           <span>2</span>
           <div>
             <strong>Copia tu llave de conexión</strong>
-            <p>Pegala aqui y Ristak buscara los numeros disponibles.</p>
+            <p>Pegala aqui y Ristak se conectara a tu cuenta.</p>
           </div>
         </li>
         <li>
           <span>3</span>
           <div>
-            <strong>Elige el numero</strong>
-            <p>Ese numero sera el que mande mensajes y plantillas.</p>
+            <strong>Revisa tus numeros</strong>
+            <p>Al conectar, Ristak mostrara todos los numeros disponibles en esta misma pantalla.</p>
           </div>
         </li>
       </ol>
@@ -490,15 +400,10 @@ export const WhatsAppSettings: React.FC = () => {
     const selectedApiPhone = selectedPhone || apiStatus.selectedPhone || apiStatus.phoneNumbers[0] || null
     const profile = getPhoneProfile(selectedApiPhone)
     const apiProfileImage = selectedApiPhone?.profile_picture_url || profile?.profilePictureUrl || ''
-    const apiDisplayNumber = apiStatus.sender.phone ||
-      selectedApiPhone?.display_phone_number ||
-      selectedApiPhone?.phone_number ||
-      'Numero conectado'
-    const apiDisplayName = selectedApiPhone?.verified_name ||
-      profile?.verifiedName ||
-      profile?.businessName ||
-      profile?.name ||
-      'WhatsApp Business'
+    const apiDisplayNumber = 'YCloud conectado'
+    const apiDisplayName = apiStatus.phoneNumbers.length
+      ? `${formatMetric(apiStatus.phoneNumbers.length)} numero${apiStatus.phoneNumbers.length === 1 ? '' : 's'} sincronizado${apiStatus.phoneNumbers.length === 1 ? '' : 's'}`
+      : 'Sin numeros sincronizados todavia'
     const balance = apiStatus.balance
     const phoneRows = apiStatus.phoneNumbers.length ? apiStatus.phoneNumbers : selectedApiPhone ? [selectedApiPhone] : []
 
@@ -556,101 +461,99 @@ export const WhatsAppSettings: React.FC = () => {
             </div>
           )}
 
-          {apiStatus.requiresPhoneSelection && (
-            <div className={styles.apiNotice}>
-              Elige el numero que enviara mensajes para terminar la conexión.
-            </div>
-          )}
-
-          <div className={styles.connectionFacts}>
-            <div className={styles.connectionFact}>
-              <span>Puede enviar</span>
-              <strong>{apiStatus.requiresPhoneSelection ? 'Falta numero' : 'Si'}</strong>
-            </div>
-            <div className={styles.connectionFact}>
-              <span>Saldo</span>
-              <strong>{balance ? formatCurrency(balance.amount, balance.currency) : 'Pendiente'}</strong>
-            </div>
-            <div className={styles.connectionFact}>
-              <span>Calidad</span>
-              <strong>{selectedApiPhone?.quality_rating || 'Sin dato'}</strong>
-            </div>
-            <div className={styles.connectionFact}>
-              <span>Limite</span>
-              <strong>{selectedApiPhone?.messaging_limit || 'Sin dato'}</strong>
-            </div>
-            <div className={styles.connectionFact}>
-              <span>Contactos</span>
-              <strong>{formatMetric(apiStatus.stats.contacts)}</strong>
-            </div>
-            <div className={styles.connectionFact}>
-              <span>Ultima sincronización</span>
-              <strong>{formatDateTime(apiStatus.timestamps.lastSyncedAt)}</strong>
-            </div>
-          </div>
-
           {phoneRows.length > 0 && (
-            <div className={styles.phoneList}>
-              {phoneRows.map((phone) => {
-                const phoneProfile = getPhoneProfile(phone)
-                const qrSession = qrSessionsByPhoneId.get(phone.id)
-                const qrStatus = qrSession?.status || phone.qr_status || ''
-                const qrError = isQrWorkingStatus(qrStatus) ? '' : (qrSession?.lastError || phone.qr_last_error || '')
-                const isSender = phone.id === selectedPhoneId ||
-                  phone.phone_number === apiStatus.sender.phone ||
-                  phone.display_phone_number === apiStatus.sender.phone
-                const qrPending = ['starting', 'qr_pending', 'restarting', 'reconnecting'].includes(String(qrStatus).toLowerCase())
-                const qrConnected = String(qrStatus).toLowerCase() === 'connected'
+            <div className={styles.phoneTableWrap}>
+              <table className={styles.phoneTable}>
+                <thead>
+                  <tr>
+                    <th>Numero</th>
+                    <th>Nombre</th>
+                    <th>API</th>
+                    <th>QR</th>
+                    <th>Calidad</th>
+                    <th>Limite</th>
+                    <th>Accion</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {phoneRows.map((phone) => {
+                    const phoneProfile = getPhoneProfile(phone)
+                    const qrSession = qrSessionsByPhoneId.get(phone.id)
+                    const qrStatus = qrSession?.status || phone.qr_status || ''
+                    const qrError = isQrWorkingStatus(qrStatus) ? '' : (qrSession?.lastError || phone.qr_last_error || '')
+                    const isSender = phone.id === selectedPhoneId ||
+                      phone.phone_number === apiStatus.sender.phone ||
+                      phone.display_phone_number === apiStatus.sender.phone
+                    const qrPending = ['starting', 'qr_pending', 'restarting', 'reconnecting'].includes(String(qrStatus).toLowerCase())
+                    const qrConnected = String(qrStatus).toLowerCase() === 'connected'
+                    const displayName = phone.verified_name || phoneProfile?.verifiedName || phoneProfile?.businessName || phoneProfile?.name || 'Sin nombre'
 
-                return (
-                  <div key={phone.id} className={styles.phoneListItem}>
-                    <span className={styles.phoneAvatar}><SiWhatsapp size={15} /></span>
-                    <div className={styles.phoneListMain}>
-                      <strong>{phone.display_phone_number || phone.phone_number || 'Numero'}</strong>
-                      <small>{phone.verified_name || phoneProfile?.verifiedName || phoneProfile?.businessName || phoneProfile?.name || 'Sin nombre'}</small>
-                      <div className={styles.phoneBadges}>
-                        <mark>{isSender ? 'Emisor principal' : 'API oficial'}</mark>
-                        <mark className={getQrStatusClass(qrStatus)}>{getQrStatusLabel(qrStatus)}</mark>
-                      </div>
-                      {qrSession?.qrCodeDataUrl && qrPending && (
-                        <div className={styles.qrPreview}>
-                          <img src={qrSession.qrCodeDataUrl} alt={`QR para ${phone.display_phone_number || phone.phone_number || 'WhatsApp'}`} />
-                          <span>Escanea este codigo desde WhatsApp en el mismo numero.</span>
-                        </div>
-                      )}
-                      {qrError && <p className={styles.phoneError}>{qrError}</p>}
-                    </div>
-                    <div className={styles.phoneActions}>
-                      {qrConnected ? (
-                        <button
-                          type="button"
-                          className={styles.phoneActionDanger}
-                          onClick={() => disconnectQrForPhone(phone)}
-                          disabled={qrDisconnectingPhoneId === phone.id}
-                        >
-                          <Unplug size={14} />
-                          {qrDisconnectingPhoneId === phone.id ? 'Apagando' : 'Apagar QR'}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className={styles.phoneActionButton}
-                          onClick={() => connectQrForPhone(phone)}
-                          disabled={qrConnectingPhoneId === phone.id}
-                        >
-                          <QrCode size={14} />
-                          {qrConnectingPhoneId === phone.id ? 'Abriendo' : qrPending ? 'Nuevo QR' : 'Conectar QR'}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
+                    return (
+                      <React.Fragment key={phone.id}>
+                        <tr>
+                          <td>
+                            <strong>{phone.display_phone_number || phone.phone_number || 'Numero'}</strong>
+                            <small>{phone.id}</small>
+                          </td>
+                          <td>{displayName}</td>
+                          <td>
+                            <span className={styles.phoneBadges}>
+                              <mark>{isSender ? 'Principal' : 'Oficial'}</mark>
+                            </span>
+                          </td>
+                          <td>
+                            <span className={styles.phoneBadges}>
+                              <mark className={getQrStatusClass(qrStatus)}>{getQrStatusLabel(qrStatus)}</mark>
+                            </span>
+                          </td>
+                          <td>{phone.quality_rating || 'Sin dato'}</td>
+                          <td>{phone.messaging_limit || 'Sin dato'}</td>
+                          <td>
+                            {qrConnected ? (
+                              <button
+                                type="button"
+                                className={styles.phoneActionDanger}
+                                onClick={() => disconnectQrForPhone(phone)}
+                                disabled={qrDisconnectingPhoneId === phone.id}
+                              >
+                                <Unplug size={14} />
+                                {qrDisconnectingPhoneId === phone.id ? 'Apagando' : 'Apagar QR'}
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                className={styles.phoneActionButton}
+                                onClick={() => connectQrForPhone(phone)}
+                                disabled={qrConnectingPhoneId === phone.id}
+                              >
+                                <QrCode size={14} />
+                                {qrConnectingPhoneId === phone.id ? 'Abriendo' : qrPending ? 'Nuevo QR' : 'Conectar QR'}
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                        {(qrSession?.qrCodeDataUrl && qrPending) || qrError ? (
+                          <tr className={styles.phoneDetailRow}>
+                            <td colSpan={7}>
+                              {qrSession?.qrCodeDataUrl && qrPending && (
+                                <div className={styles.qrPreview}>
+                                  <img src={qrSession.qrCodeDataUrl} alt={`QR para ${phone.display_phone_number || phone.phone_number || 'WhatsApp'}`} />
+                                  <span>Escanea este codigo desde WhatsApp en el mismo numero.</span>
+                                </div>
+                              )}
+                              {qrError && <p className={styles.phoneError}>{qrError}</p>}
+                            </td>
+                          </tr>
+                        ) : null}
+                      </React.Fragment>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
 
           {apiStatus.lastError && <p className={styles.errorText}>{apiStatus.lastError}</p>}
-          {apiStatus.requiresPhoneSelection && renderApiForm(true)}
         </section>
 
         <section className={`${styles.templateSummaryCard} ${styles.balanceSummaryCard}`}>

@@ -1299,7 +1299,7 @@ function pickPhoneNumber(phoneNumbers = [], { senderPhone, phoneNumberId, wabaId
     if (matchedByWaba) return matchedByWaba
   }
 
-  return normalized.length === 1 ? normalized[0] : null
+  return normalized[0] || null
 }
 
 async function createWebhookEndpoint(apiKey, webhookUrl) {
@@ -1528,7 +1528,7 @@ export async function getWhatsAppApiStatus() {
   ])
 
   const connected = Boolean(config.enabled && config.hasApiKey && config.webhookEndpointId)
-  const requiresPhoneSelection = connected && !config.senderPhone && phoneNumbers.length > 1
+  const requiresPhoneSelection = false
   const selectedPhone = phoneNumbers.find(phone => phone.id === config.phoneNumberId) ||
     phoneNumbers.find(phone => phone.phone_number === config.senderPhone) ||
     phoneNumbers.find(phone => Number(phone.is_default_sender || 0) === 1) ||
