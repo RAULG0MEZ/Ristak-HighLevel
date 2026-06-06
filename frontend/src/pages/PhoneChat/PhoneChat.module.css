@@ -285,9 +285,83 @@
   font-weight: 650;
 }
 
+.archiveRowActive {
+  color: #111111;
+}
+
+.archiveRowActive strong,
+.archiveRowActive span {
+  color: #111111;
+}
+
 .chatItem {
   position: relative;
   border-radius: 6px;
+}
+
+.chatSwipeRow {
+  position: relative;
+  min-height: 60px;
+  overflow: hidden;
+  border-radius: 6px;
+  touch-action: pan-y;
+}
+
+.chatSwipeActions {
+  position: absolute;
+  inset: 0 0 0 auto;
+  z-index: 0;
+  display: grid;
+  grid-template-columns: 84px 100px;
+  width: 184px;
+  min-height: 60px;
+}
+
+.chatSwipeAction {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 3px;
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 760;
+  letter-spacing: 0;
+}
+
+.chatSwipeAction span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chatSwipeAction:disabled {
+  pointer-events: none;
+}
+
+.chatSwipeMore {
+  color: #ffffff;
+  background: #5c5f62;
+}
+
+.chatSwipeArchive {
+  color: #07140d;
+  background: #58c46e;
+}
+
+.chatSwipeContent {
+  position: relative;
+  z-index: 1;
+  background: #ffffff;
+  transition: transform 180ms ease;
+  will-change: transform;
+}
+
+.chatSwipeRowOpen .chatSwipeContent {
+  transition-duration: 140ms;
 }
 
 .chatItem::after {
@@ -428,6 +502,17 @@
   color: #0f5132;
   background: rgba(37, 211, 102, 0.18);
   font-size: 11px;
+}
+
+.chatMutedIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  color: #707070;
+  background: #eeeeee;
 }
 
 .contactResultGroup {
@@ -1633,6 +1718,11 @@
   background: #f2f2f7;
 }
 
+.chatMoreSheet {
+  min-height: 292px;
+  background: #f7f7f7;
+}
+
 .sheetHandle {
   width: 42px;
   height: 4px;
@@ -1701,6 +1791,76 @@
   border-radius: 999px;
   color: #ffffff;
   background: #25d366;
+}
+
+.chatMoreList {
+  display: grid;
+  gap: 8px;
+}
+
+.chatMoreList button {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  min-height: 64px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  color: #111111;
+  background: #ffffff;
+  text-align: left;
+  box-shadow: 0 8px 22px rgba(17, 24, 39, 0.06);
+}
+
+.chatMoreList button > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+}
+
+.chatMoreList button > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.chatMoreList strong,
+.chatMoreList small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chatMoreList strong {
+  font-size: 15px;
+  font-weight: 830;
+}
+
+.chatMoreList small {
+  color: #737373;
+  font-size: 13px;
+  font-weight: 560;
+}
+
+.chatMoreAppointment {
+  color: #6d28d9;
+  background: #f3e8ff;
+}
+
+.chatMorePayment {
+  color: #047857;
+  background: #ecfdf5;
+}
+
+.chatMoreMute {
+  color: #525252;
+  background: #eeeeee;
 }
 
 .attachmentGrid button strong {

@@ -1621,6 +1621,11 @@ export const PhoneChat: React.FC = () => {
   }, [archivedViewOpen, chatFilter, chatQuery, selectedChatPhoneId])
 
   useEffect(() => {
+    if (showArchivedChats) return
+    setArchivedViewOpen(false)
+  }, [showArchivedChats])
+
+  useEffect(() => {
     if (!businessPhones.length) {
       setSelectedBusinessPhoneId('')
       return
@@ -1943,6 +1948,9 @@ export const PhoneChat: React.FC = () => {
     if (sheet !== 'settings') {
       setActiveSettingsSection(null)
     }
+    if (sheet !== 'chatMore') {
+      setChatActionContactId(null)
+    }
   }, [sheet])
 
   useEffect(() => {
@@ -2183,10 +2191,150 @@ export const PhoneChat: React.FC = () => {
     }
   }
 
-  const handleContactInfoAction = (nextSheet: Exclude<ActionSheet, 'newChat' | 'settings' | null>) => {
+  const handleContactInfoAction = (nextSheet: Exclude<ActionSheet, 'newChat' | 'settings' | 'chatMore' | null>) => {
     if (nextSheet === 'payment') setPaymentMode('single')
     setContactInfoOpen(false)
     setSheet(nextSheet)
+  }
+
+  const closeSwipeActions = () => {
+    setOpenSwipeChatId(null)
+    setDraggingSwipe(null)
+    chatSwipeGestureRef.current = null
+  }
+
+  const handleArchiveChat = (contact: Contact) => {
+    const alreadyArchived = archivedChatIdSet.has(contact.id)
+
+    setArchivedChatIds((current) => {
+      if (alreadyArchived) return current.filter((id) => id !== contact.id)
+      return [contact.id, ...current.filter((id) => id !== contact.id)]
+    })
+
+    closeSwipeActions()
+    if (activeContactId === contact.id && !alreadyArchived) {
+      setConversationOpen(false)
+      setContactInfoOpen(false)
+      setSheet(null)
+    }
+
+    showToast(
+      'success',
+      alreadyArchived ? 'Chat de vuelta' : 'Chat archivado',
+      alreadyArchived
+        ? `${getContactName(contact)} volvió a tu lista de chats.`
+        : `${getContactName(contact)} se movió a Archivados.`
+    )
+  }
+
+  const handleToggleMuteChat = (contact: Contact) => {
+    const alreadyMuted = mutedChatIdSet.has(contact.id)
+
+    setMutedChatIds((current) => {
+      if (alreadyMuted) return current.filter((id) => id !== contact.id)
+      return [contact.id, ...current.filter((id) => id !== contact.id)]
+    })
+
+    setSheet(null)
+    setChatActionContactId(null)
+    closeSwipeActions()
+    showToast(
+      'success',
+      alreadyMuted ? 'Silencio quitado' : 'Chat silenciado',
+      alreadyMuted
+        ? `${getContactName(contact)} volverá a aparecer sin marca de silencio.`
+        : `${getContactName(contact)} quedó marcado como silenciado en tu lista.`
+    )
+  }
+
+  const handleOpenChatMore = (contact: Contact) => {
+    setActiveContactId(contact.id)
+    setChatActionContactId(contact.id)
+    setSheet('chatMore')
+    setContactInfoOpen(false)
+    closeSwipeActions()
+  }
+
+  const handleChatMoreAction = (contact: Contact, nextSheet: Exclude<ActionSheet, 'attachments' | 'templates' | 'settings' | 'newChat' | 'chatMore' | null>) => {
+    setActiveContactId(contact.id)
+    setChatActionContactId(null)
+    setContactInfoOpen(false)
+    if (nextSheet === 'payment') setPaymentMode('single')
+    setSheet(nextSheet)
+    closeSwipeActions()
+  }
+
+  const handleChatTouchStart = (contactId: string, event: React.TouchEvent<HTMLDivElement>) => {
+    const touch = event.touches[0]
+    if (!touch) return
+
+    const currentOffset = draggingSwipe?.contactId === contactId
+      ? draggingSwipe.offset
+      : openSwipeChatId === contactId ? CHAT_SWIPE_ACTION_WIDTH : 0
+
+    if (openSwipeChatId && openSwipeChatId !== contactId) {
+      closeSwipeActions()
+    }
+
+    chatSwipeGestureRef.current = {
+      contactId,
+      startX: touch.clientX,
+      startY: touch.clientY,
+      startOffset: currentOffset,
+      offset: currentOffset,
+      active: false
+    }
+  }
+
+  const handleChatTouchMove = (event: React.TouchEvent<HTMLDivElement>) => {
+    const gesture = chatSwipeGestureRef.current
+    const touch = event.touches[0]
+    if (!gesture || !touch) return
+
+    const deltaX = touch.clientX - gesture.startX
+    const deltaY = touch.clientY - gesture.startY
+    const horizontalDistance = Math.abs(deltaX)
+
+    if (!gesture.active) {
+      if (horizontalDistance < CHAT_SWIPE_ACTIVATE_THRESHOLD || horizontalDistance <= Math.abs(deltaY)) return
+      gesture.active = true
+    }
+
+    event.preventDefault()
+    const nextOffset = Math.min(
+      CHAT_SWIPE_ACTION_WIDTH,
+      Math.max(0, gesture.startOffset - deltaX)
+    )
+
+    gesture.offset = nextOffset
+    setDraggingSwipe({ contactId: gesture.contactId, offset: nextOffset })
+  }
+
+  const handleChatTouchEnd = () => {
+    const gesture = chatSwipeGestureRef.current
+    if (!gesture) return
+
+    if (gesture.active) {
+      setOpenSwipeChatId(gesture.offset >= CHAT_SWIPE_OPEN_THRESHOLD ? gesture.contactId : null)
+      setDraggingSwipe(null)
+      ignoreNextChatClickRef.current = true
+      window.setTimeout(() => {
+        ignoreNextChatClickRef.current = false
+      }, 240)
+    }
+
+    chatSwipeGestureRef.current = null
+  }
+
+  const handleChatItemPress = (contact: Contact) => {
+    if (ignoreNextChatClickRef.current) return
+
+    if (openSwipeChatId === contact.id) {
+      closeSwipeActions()
+      return
+    }
+
+    handleSelectContact(contact)
   }
 
   const handleUnavailableAttachment = (label: string) => {
@@ -2764,14 +2912,11 @@ export const PhoneChat: React.FC = () => {
     const dateLabel = source === 'chat' ? formatMessageDate(chatContact.lastMessageDate || contact.createdAt) : ''
     const unreadCount = Number(chatContact.unreadCount || 0)
     const hasUnread = showUnreadIndicators && source === 'chat' && unreadCount > 0
+    const isArchived = archivedChatIdSet.has(contact.id)
+    const isMuted = mutedChatIdSet.has(contact.id)
 
-    return (
-      <button
-        key={contact.id}
-        type="button"
-        className={`${styles.chatItem} ${activeContact?.id === contact.id ? styles.chatItemActive : ''} ${hasUnread ? styles.chatItemUnread : ''}`}
-        onClick={() => handleSelectContact(contact)}
-      >
+    const content = (
+      <>
         {renderAvatar(contact)}
         <span className={styles.chatMain}>
           <strong>{getContactName(contact)}</strong>
@@ -2779,15 +2924,84 @@ export const PhoneChat: React.FC = () => {
         </span>
         <span className={`${styles.chatMeta} ${hasUnread ? styles.chatMetaUnread : ''}`}>
           {dateLabel && <small className={hasUnread ? styles.chatUnreadTime : undefined}>{dateLabel}</small>}
+          {isMuted && (
+            <span className={styles.chatMutedIcon} aria-label="Chat silenciado">
+              <BellOff size={13} />
+            </span>
+          )}
           {hasUnread && <i className={styles.chatUnreadBadge} aria-label={`${unreadCount} mensajes no leídos`}>{unreadCount > 9 ? '9+' : unreadCount}</i>}
         </span>
-      </button>
+      </>
+    )
+
+    if (source !== 'chat') {
+      return (
+        <button
+          key={contact.id}
+          type="button"
+          className={`${styles.chatItem} ${activeContact?.id === contact.id ? styles.chatItemActive : ''}`}
+          onClick={() => handleSelectContact(contact)}
+        >
+          {content}
+        </button>
+      )
+    }
+
+    const swipeOffset = draggingSwipe?.contactId === contact.id
+      ? draggingSwipe.offset
+      : openSwipeChatId === contact.id ? CHAT_SWIPE_ACTION_WIDTH : 0
+
+    return (
+      <div
+        key={contact.id}
+        className={`${styles.chatSwipeRow} ${swipeOffset > 0 ? styles.chatSwipeRowOpen : ''}`}
+        onTouchStart={(event) => handleChatTouchStart(contact.id, event)}
+        onTouchMove={handleChatTouchMove}
+        onTouchEnd={handleChatTouchEnd}
+        onTouchCancel={handleChatTouchEnd}
+      >
+        <div className={styles.chatSwipeActions} aria-hidden={swipeOffset === 0}>
+          <button
+            type="button"
+            className={`${styles.chatSwipeAction} ${styles.chatSwipeMore}`}
+            disabled={swipeOffset === 0}
+            onClick={(event) => {
+              event.stopPropagation()
+              handleOpenChatMore(contact)
+            }}
+          >
+            <MoreHorizontal size={30} />
+            <span>Más</span>
+          </button>
+          <button
+            type="button"
+            className={`${styles.chatSwipeAction} ${styles.chatSwipeArchive}`}
+            disabled={swipeOffset === 0}
+            onClick={(event) => {
+              event.stopPropagation()
+              handleArchiveChat(contact)
+            }}
+          >
+            <Archive size={30} />
+            <span>{isArchived ? 'Restaurar' : 'Archivar'}</span>
+          </button>
+        </div>
+        <button
+          type="button"
+          className={`${styles.chatItem} ${styles.chatSwipeContent} ${activeContact?.id === contact.id ? styles.chatItemActive : ''} ${hasUnread ? styles.chatItemUnread : ''}`}
+          style={{ transform: `translateX(-${swipeOffset}px)` }}
+          onClick={() => handleChatItemPress(contact)}
+        >
+          {content}
+        </button>
+      </div>
     )
   }
 
   const renderChats = () => {
     const normalizedChatQuery = chatQuery.trim().toLowerCase()
     const showAIAgentListItem = aiAgentChatEnabled &&
+      !archivedViewOpen &&
       chatFilter === 'all' &&
       (!normalizedChatQuery || 'agente inteligencia artificial ia ristak'.includes(normalizedChatQuery))
 
@@ -2809,7 +3023,7 @@ export const PhoneChat: React.FC = () => {
       )
     }
 
-    if (chats.length === 0 && chatQuery.trim().length >= 2) {
+    if (!archivedViewOpen && chats.length === 0 && chatQuery.trim().length >= 2) {
       if (contactsLoading) {
         return (
           <div className={styles.centerState}>
@@ -2829,7 +3043,7 @@ export const PhoneChat: React.FC = () => {
       }
     }
 
-    if (chats.length === 0 && !showAIAgentListItem) {
+    if (chats.length === 0 && !showAIAgentListItem && archivedChatCount === 0) {
       return (
         <div className={styles.emptyChats}>
           <span className={styles.emptyChatsIcon}>
@@ -2848,11 +3062,27 @@ export const PhoneChat: React.FC = () => {
     return (
       <>
         {showAIAgentListItem && renderAIAgentChatButton()}
-        {showArchivedChats && chats.length > 0 && (
-          <button type="button" className={styles.archiveRow}>
+        {archivedViewOpen && (
+          <button
+            type="button"
+            className={`${styles.archiveRow} ${styles.archiveRowActive}`}
+            onClick={() => setArchivedViewOpen(false)}
+          >
+            <ChevronLeft size={22} />
+            <strong>Archivados</strong>
+            <span>{archivedChatCount}</span>
+          </button>
+        )}
+        {showArchivedChats && !archivedViewOpen && (chats.length > 0 || archivedChatCount > 0) && (
+          <button
+            type="button"
+            className={styles.archiveRow}
+            onClick={() => setArchivedViewOpen(true)}
+            aria-label={`Ver ${archivedChatCount} chats archivados`}
+          >
             <Archive size={21} />
             <strong>Archivados</strong>
-            <span>0</span>
+            <span>{archivedChatCount}</span>
           </button>
         )}
         {filteredChats.length > 0 ? (
@@ -2862,8 +3092,12 @@ export const PhoneChat: React.FC = () => {
             <span className={styles.emptyChatsIcon}>
               <Icon name="whatsapp" size={30} />
             </span>
-            <strong>{chats.length === 0 ? 'Aún no hay chats de WhatsApp' : 'No hay chats en este filtro'}</strong>
-            <small>{chats.length === 0 ? 'Cuando llegue un mensaje de WhatsApp aparecerá aquí.' : 'Cambia el filtro o busca un contacto para iniciar una conversación.'}</small>
+            <strong>{archivedViewOpen ? 'No hay chats archivados' : chats.length === 0 ? 'Aún no hay chats de WhatsApp' : 'No hay chats en este filtro'}</strong>
+            <small>
+              {archivedViewOpen
+                ? 'Cuando archives una conversación, aparecerá en esta sección.'
+                : chats.length === 0 ? 'Cuando llegue un mensaje de WhatsApp aparecerá aquí.' : 'Cambia el filtro o busca un contacto para iniciar una conversación.'}
+            </small>
           </div>
         )}
       </>
@@ -3989,6 +4223,59 @@ export const PhoneChat: React.FC = () => {
     )
   }
 
+  const renderChatMoreSheet = () => {
+    if (!chatActionContact) {
+      return (
+        <div className={styles.emptySheetState}>
+          <CircleAlert size={24} />
+          <strong>Elige un chat</strong>
+          <span>Vuelve a la lista y desliza una conversación para ver sus acciones.</span>
+        </div>
+      )
+    }
+
+    const isMuted = mutedChatIdSet.has(chatActionContact.id)
+    const actions = [
+      {
+        label: 'Agendar cita',
+        description: 'Crear una cita para este contacto.',
+        Icon: CalendarDays,
+        className: styles.chatMoreAppointment,
+        onClick: () => handleChatMoreAction(chatActionContact, 'appointment')
+      },
+      {
+        label: 'Registrar pagos',
+        description: 'Guardar un pago o plan de pagos.',
+        Icon: BadgeDollarSign,
+        className: styles.chatMorePayment,
+        onClick: () => handleChatMoreAction(chatActionContact, 'payment')
+      },
+      {
+        label: isMuted ? 'Quitar silencio' : 'Silenciar',
+        description: isMuted ? 'Quitar la marca de silencio de este chat.' : 'Marcar este chat como silenciado.',
+        Icon: isMuted ? Bell : BellOff,
+        className: styles.chatMoreMute,
+        onClick: () => handleToggleMuteChat(chatActionContact)
+      }
+    ]
+
+    return (
+      <div className={styles.chatMoreList}>
+        {actions.map(({ label, description, Icon: ActionIcon, className, onClick }) => (
+          <button key={label} type="button" onClick={onClick}>
+            <span className={className}>
+              <ActionIcon size={22} />
+            </span>
+            <span>
+              <strong>{label}</strong>
+              <small>{description}</small>
+            </span>
+          </button>
+        ))}
+      </div>
+    )
+  }
+
   if (accessState === 'checking') {
     return (
       <main className={styles.loadingPage}>
@@ -4244,7 +4531,7 @@ export const PhoneChat: React.FC = () => {
       {sheet && (
         <div className={styles.sheetBackdrop} onClick={() => setSheet(null)}>
           <section
-            className={`${styles.sheetPanel} ${sheet === 'payment' ? styles.paymentSheet : ''} ${sheet === 'attachments' ? styles.attachmentsSheet : ''} ${sheet === 'templates' ? styles.templatesSheet : ''} ${sheet === 'settings' ? styles.settingsSheet : ''}`}
+            className={`${styles.sheetPanel} ${sheet === 'payment' ? styles.paymentSheet : ''} ${sheet === 'attachments' ? styles.attachmentsSheet : ''} ${sheet === 'templates' ? styles.templatesSheet : ''} ${sheet === 'settings' ? styles.settingsSheet : ''} ${sheet === 'chatMore' ? styles.chatMoreSheet : ''}`}
             onClick={(event) => event.stopPropagation()}
             aria-label="Acciones del chat"
           >
@@ -4259,6 +4546,7 @@ export const PhoneChat: React.FC = () => {
                     {sheet === 'templates' && 'Plantillas'}
                     {sheet === 'settings' && 'Ajustes del chat'}
                     {sheet === 'newChat' && 'Nuevo chat'}
+                    {sheet === 'chatMore' && 'Más acciones'}
                   </h2>
                 </div>
                 <button type="button" onClick={() => setSheet(null)} aria-label="Cerrar panel">
@@ -4271,6 +4559,7 @@ export const PhoneChat: React.FC = () => {
             {sheet === 'attachments' && renderAttachmentsSheet()}
             {sheet === 'templates' && renderTemplatesSheet()}
             {sheet === 'settings' && renderChatSettingsSheet()}
+            {sheet === 'chatMore' && renderChatMoreSheet()}
 
             {sheet === 'payment' && (
               <>
