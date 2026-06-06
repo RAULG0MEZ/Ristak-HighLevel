@@ -517,13 +517,14 @@
   transform-origin: bottom center;
 }
 .rstkCanvas.rstk-kind-landing .rstk-section-column > .rstkSel > .rstkBlockTools {
-  top: 50%;
-  right: -12px;
+  top: 0;
+  bottom: auto;
+  right: 0;
   left: auto;
-  flex-direction: column;
+  flex-direction: row;
   gap: 5px;
-  transform: translate(100%, -50%) scale(calc(1 / var(--rstk-scale, 1)));
-  transform-origin: center left;
+  transform: translateY(-50%) scale(calc(1 / var(--rstk-scale, 1)));
+  transform-origin: top right;
 }
 .rstkCanvas .rstkSelActive > .rstkBlockTools { opacity: 1; pointer-events: auto; }
 .rstkCanvas .rstkBlockTool {
