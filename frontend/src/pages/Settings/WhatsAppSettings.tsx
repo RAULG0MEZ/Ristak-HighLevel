@@ -653,39 +653,7 @@ export const WhatsAppSettings: React.FC = () => {
           {apiStatus.requiresPhoneSelection && renderApiForm(true)}
         </section>
 
-        <section className={styles.templateSummaryCard}>
-          <div className={styles.summaryHeader}>
-            <span className={styles.summaryIcon}><FileText size={20} /></span>
-            <div>
-              <span className={styles.sectionEyebrow}>Plantillas</span>
-              <h3>Estado general</h3>
-            </div>
-          </div>
-          <div className={styles.templateSummary}>
-            <div className={styles.templateSummaryItem}>
-              <span>Total</span>
-              <strong>{formatMetric(templateSummary.total)}</strong>
-            </div>
-            <div className={styles.templateSummaryItem}>
-              <span>Aprobadas</span>
-              <strong>{formatMetric(templateSummary.approved)}</strong>
-            </div>
-            <div className={styles.templateSummaryItem}>
-              <span>En revisión</span>
-              <strong>{formatMetric(templateSummary.pending)}</strong>
-            </div>
-            <div className={styles.templateSummaryItem}>
-              <span>Rechazadas</span>
-              <strong>{formatMetric(templateSummary.rejected)}</strong>
-            </div>
-          </div>
-          <Button variant="outline" onClick={() => setActiveSection('templates')}>
-            <FileText size={16} />
-            Ver plantillas
-          </Button>
-        </section>
-
-        <section className={styles.templateSummaryCard}>
+        <section className={`${styles.templateSummaryCard} ${styles.balanceSummaryCard}`}>
           <div className={styles.summaryHeader}>
             <span className={styles.summaryIcon}><Wallet size={20} /></span>
             <div>

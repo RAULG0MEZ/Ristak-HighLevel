@@ -518,6 +518,10 @@
   padding: 16px;
 }
 
+.balanceSummaryCard {
+  grid-column: 1 / 2;
+}
+
 .templateSummary {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
