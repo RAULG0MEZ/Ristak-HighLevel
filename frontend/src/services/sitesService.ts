@@ -428,6 +428,10 @@ export const sitesService = {
     return apiClient.delete<PublicSite>(`/sites/${siteId}/blocks/${blockId}`)
   },
 
+  restoreBlocks(siteId: string, blocks: SiteBlock[]) {
+    return apiClient.post<PublicSite>(`/sites/${siteId}/blocks/restore`, { blocks })
+  },
+
   reorderBlocks(siteId: string, blockIds: string[], pageId?: string) {
     return apiClient.put<PublicSite>(`/sites/${siteId}/blocks/reorder`, { blockIds, pageId })
   }

@@ -2843,6 +2843,68 @@ export async function deleteBlock(siteId, blockId) {
   return getSite(siteId, { includeBlocks: true, includeSubmissions: true })
 }
 
+export async function restoreBlocks(siteId, inputBlocks = []) {
+  const site = await getSite(siteId, { includeBlocks: false, includeSubmissions: false })
+  if (!site) return null
+
+  const blocks = Array.isArray(inputBlocks) ? inputBlocks : []
+  if (!blocks.length) {
+    return getSite(siteId, { includeBlocks: true, includeSubmissions: true })
+  }
+
+  for (const input of blocks) {
+    const id = cleanString(input.id) || crypto.randomUUID()
+    const blockType = validateBlockType(input.blockType || input.block_type)
+    const isField = FIELD_BLOCK_TYPES.has(blockType)
+    const sortOrder = Number(input.sortOrder ?? input.sort_order)
+    const existing = await db.get(
+      'SELECT id FROM public_site_blocks WHERE id = ? AND site_id = ?',
+      [id, siteId]
+    )
+    const values = [
+      blockType,
+      cleanString(input.label) || (isField ? 'Nueva pregunta' : 'Nuevo bloque'),
+      cleanString(input.content),
+      cleanString(input.placeholder),
+      normalizeBoolean(input.required),
+      jsonString(Array.isArray(input.options) ? input.options : []),
+      jsonString(input.settings || {}),
+      Number.isFinite(sortOrder) ? sortOrder : 0
+    ]
+
+    if (existing) {
+      await db.run(`
+        UPDATE public_site_blocks SET
+          block_type = ?,
+          label = ?,
+          content = ?,
+          placeholder = ?,
+          required = ?,
+          options_json = ?,
+          settings_json = ?,
+          sort_order = ?,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND site_id = ?
+      `, [...values, id, siteId])
+      continue
+    }
+
+    await db.run(`
+      INSERT INTO public_site_blocks (
+        id, site_id, block_type, label, content, placeholder, required,
+        options_json, settings_json, sort_order, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP)
+    `, [
+      id,
+      siteId,
+      ...values,
+      cleanString(input.createdAt || input.created_at) || null
+    ])
+  }
+
+  return getSite(siteId, { includeBlocks: true, includeSubmissions: true })
+}
+
 export async function reorderBlocks(siteId, blockIds = [], { pageId } = {}) {
   const normalizedIds = Array.isArray(blockIds) ? blockIds.map(cleanString).filter(Boolean) : []
   const existing = await listSiteBlocks(siteId)

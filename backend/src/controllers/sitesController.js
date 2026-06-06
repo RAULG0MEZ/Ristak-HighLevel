@@ -18,6 +18,7 @@ import {
   reorderBlocks,
   resolveConnectedPublicDomainForHost,
   resolvePublicSiteForHost,
+  restoreBlocks,
   updateBlock,
   updateSite
 } from '../services/sitesService.js'
@@ -187,6 +188,21 @@ export async function deleteBlockHandler(req, res) {
   } catch (error) {
     logger.error(`Error eliminando bloque de site: ${error.message}`)
     sendError(res, error, 'Error eliminando bloque')
+  }
+}
+
+export async function restoreBlocksHandler(req, res) {
+  try {
+    const site = await restoreBlocks(req.params.siteId, req.body?.blocks || [])
+    if (!site) {
+      return res.status(404).json({ success: false, error: 'Site no encontrado' })
+    }
+
+    res.json({ success: true, data: site })
+  } catch (error) {
+    logger.error(`Error restaurando bloques de site: ${error.message}`)
+    error.status = error.status || 400
+    sendError(res, error, 'Error restaurando bloques')
   }
 }
 

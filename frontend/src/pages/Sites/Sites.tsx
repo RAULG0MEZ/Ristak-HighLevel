@@ -284,6 +284,11 @@ const isTopLevelLandingBlockType = (blockType?: SiteBlockType) =>
   blockType === SECTION_BLOCK_TYPE || Boolean(blockType && PANEL_BLOCK_TYPES.has(blockType))
 const hasDataTransferType = (dataTransfer: DataTransfer, type: string) =>
   Array.from(dataTransfer.types || []).includes(type)
+const MAX_SITES_EDITOR_HISTORY = 40
+const isNativeUndoTarget = (target: EventTarget | null) => {
+  const element = target instanceof HTMLElement ? target : null
+  return Boolean(element?.closest('input, textarea, select, [contenteditable="true"], [data-rstk-edit]'))
+}
 
 type PaletteDragPayload = {
   blockType: SiteBlockType
@@ -304,6 +309,18 @@ type BlockMoveDirection = 'up' | 'down'
 type BlockMoveState = {
   canMoveUp: boolean
   canMoveDown: boolean
+}
+
+type EditorHistoryEntry = {
+  action: 'reorder' | 'delete'
+  siteId: string
+  pageId?: string
+  selectedBefore: string
+  selectedAfter: string
+  beforeBlockIds: string[]
+  afterBlockIds: string[]
+  deletedRootBlockId?: string
+  deletedBlocks?: SiteBlock[]
 }
 
 type AddBlockOptions = {
@@ -1979,12 +1996,20 @@ export const Sites: React.FC = () => {
   const [editorFocusMode, setEditorFocusMode] = useState(false)
   const selectedSiteRef = useRef<PublicSite | null>(null)
   const paletteDragPayloadRef = useRef<PaletteDragPayload | null>(null)
+  const undoStackRef = useRef<EditorHistoryEntry[]>([])
+  const redoStackRef = useRef<EditorHistoryEntry[]>([])
+  const historyBusyRef = useRef(false)
   const guardHistoryArmedRef = useRef(false)
   const allowNavigationRef = useRef(false)
 
   useEffect(() => {
     selectedSiteRef.current = selectedSite
   }, [selectedSite])
+
+  useEffect(() => {
+    undoStackRef.current = []
+    redoStackRef.current = []
+  }, [selectedSite?.id])
 
   const landings = useMemo(
     () => sites.filter(site => site.siteType === 'landing_page'),
@@ -2407,6 +2432,103 @@ export const Sites: React.FC = () => {
     setSelectedBlockId(current => normalizedSite.blocks?.some(block => block.id === current) ? current : '')
     setSites(current => current.map(item => item.id === normalizedSite.id ? { ...item, ...normalizedSite } : item))
   }
+
+  const pushEditorHistory = (entry: EditorHistoryEntry) => {
+    if (historyBusyRef.current) return
+    undoStackRef.current = [...undoStackRef.current, cloneJson(entry)].slice(-MAX_SITES_EDITOR_HISTORY)
+    redoStackRef.current = []
+  }
+
+  const applyEditorHistoryEntry = async (entry: EditorHistoryEntry, direction: 'undo' | 'redo') => {
+    if (historyBusyRef.current) return false
+
+    historyBusyRef.current = true
+    setSaving(true)
+    try {
+      let site: PublicSite | null = null
+
+      if (entry.action === 'reorder') {
+        site = await sitesService.reorderBlocks(
+          entry.siteId,
+          direction === 'undo' ? entry.beforeBlockIds : entry.afterBlockIds,
+          entry.pageId
+        )
+      } else if (entry.action === 'delete') {
+        if (direction === 'undo') {
+          if (!entry.deletedBlocks?.length) return false
+          site = await sitesService.restoreBlocks(entry.siteId, entry.deletedBlocks)
+          if (entry.beforeBlockIds.length) {
+            site = await sitesService.reorderBlocks(entry.siteId, entry.beforeBlockIds, entry.pageId)
+          }
+        } else if (entry.deletedRootBlockId) {
+          site = await sitesService.deleteBlock(entry.siteId, entry.deletedRootBlockId)
+        }
+      }
+
+      if (!site) return false
+
+      syncSelectedSite(site)
+      if (entry.pageId) setActivePageId(entry.pageId)
+      setSelectedBlockId(direction === 'undo' ? entry.selectedBefore : entry.selectedAfter)
+      setHasUnsavedChanges(false)
+      showToast(
+        'info',
+        direction === 'undo' ? 'Cambio deshecho' : 'Cambio rehecho',
+        direction === 'undo' ? 'El editor regreso al paso anterior.' : 'El editor aplico otra vez el cambio.'
+      )
+      return true
+    } catch (error) {
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo actualizar el historial')
+      return false
+    } finally {
+      historyBusyRef.current = false
+      setSaving(false)
+    }
+  }
+
+  const handleEditorUndo = async () => {
+    const entry = undoStackRef.current.pop()
+    if (!entry) return
+
+    const applied = await applyEditorHistoryEntry(entry, 'undo')
+    if (applied) {
+      redoStackRef.current = [...redoStackRef.current, entry].slice(-MAX_SITES_EDITOR_HISTORY)
+    } else {
+      undoStackRef.current = [...undoStackRef.current, entry].slice(-MAX_SITES_EDITOR_HISTORY)
+    }
+  }
+
+  const handleEditorRedo = async () => {
+    const entry = redoStackRef.current.pop()
+    if (!entry) return
+
+    const applied = await applyEditorHistoryEntry(entry, 'redo')
+    if (applied) {
+      undoStackRef.current = [...undoStackRef.current, entry].slice(-MAX_SITES_EDITOR_HISTORY)
+    } else {
+      redoStackRef.current = [...redoStackRef.current, entry].slice(-MAX_SITES_EDITOR_HISTORY)
+    }
+  }
+
+  useEffect(() => {
+    if (!editorSite) return
+
+    const handleEditorKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || isNativeUndoTarget(event.target)) return
+
+      const key = event.key.toLowerCase()
+      const wantsUndo = key === 'z' && !event.shiftKey
+      const wantsRedo = key === 'y' || (key === 'z' && event.shiftKey)
+      if (!wantsUndo && !wantsRedo) return
+
+      event.preventDefault()
+      if (historyBusyRef.current) return
+      void (wantsUndo ? handleEditorUndo() : handleEditorRedo())
+    }
+
+    window.addEventListener('keydown', handleEditorKeyDown)
+    return () => window.removeEventListener('keydown', handleEditorKeyDown)
+  }, [editorSite])
 
   const updateSelectedSite = (patch: Partial<PublicSite>) => {
     markEditorDirty()
@@ -3027,15 +3149,41 @@ export const Sites: React.FC = () => {
     return [...new Set([...laneBlockIds, ...explicitChildIds, blockId])]
   }
 
+  const getDeletedBlocks = (blockId: string) => {
+    const deletedIds = new Set(getDeletedBlockIds(blockId))
+    return blocks.filter(block => deletedIds.has(block.id)).map(block => cloneJson(block))
+  }
+
   const handleDeleteBlock = async (blockId: string) => {
     if (!selectedSite) return
     try {
+      const beforeBlockIds = canvasBlocks.map(block => block.id)
       const deletedBlockIds = getDeletedBlockIds(blockId)
+      const deletedBlocks = getDeletedBlocks(blockId)
+      const selectedBefore = selectedBlockId
       const site = await sitesService.deleteBlock(selectedSite.id, blockId)
       syncSelectedSite(site)
+      const normalizedSite = normalizeSiteForEditor(site)
+      const normalizedPages = normalizeFunnelPages(normalizedSite)
+      const pageId = hasEditablePages(selectedSite) ? activePage?.id : undefined
+      const afterBlockIds = (normalizedSite.blocks || [])
+        .filter(block => !pageId || getBlockPageId(block, normalizedPages) === pageId)
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map(block => block.id)
       if (deletedBlockIds.includes(selectedBlockId)) {
         setSelectedBlockId('')
       }
+      pushEditorHistory({
+        action: 'delete',
+        siteId: selectedSite.id,
+        pageId,
+        selectedBefore,
+        selectedAfter: deletedBlockIds.includes(selectedBlockId) ? '' : selectedBlockId,
+        beforeBlockIds,
+        afterBlockIds,
+        deletedRootBlockId: blockId,
+        deletedBlocks
+      })
     } catch (error) {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo eliminar el bloque')
     }
@@ -3045,6 +3193,11 @@ export const Sites: React.FC = () => {
     if (!selectedSite) return false
 
     const wasAlreadyDirty = hasUnsavedChanges
+    const beforeBlockIds = canvasBlocks.map(block => block.id)
+    const afterBlockIds = orderedBlocks.map(block => block.id)
+    if (beforeBlockIds.join('|') === afterBlockIds.join('|')) return true
+    const selectedBefore = selectedBlockId
+    const pageId = hasEditablePages(selectedSite) ? activePage?.id : undefined
     const nextPageBlocks = orderedBlocks.map((block, index) => ({ ...block, sortOrder: index }))
     const nextPageBlocksById = new Map(nextPageBlocks.map(block => [block.id, block]))
     const nextBlocks = blocks.map(block => nextPageBlocksById.get(block.id) || block)
@@ -3061,6 +3214,15 @@ export const Sites: React.FC = () => {
         hasEditablePages(selectedSite) ? activePage?.id : undefined
       )
       syncSelectedSite(site)
+      pushEditorHistory({
+        action: 'reorder',
+        siteId: selectedSite.id,
+        pageId,
+        selectedBefore,
+        selectedAfter: selectedBefore,
+        beforeBlockIds,
+        afterBlockIds
+      })
       if (!wasAlreadyDirty) {
         setHasUnsavedChanges(false)
       }

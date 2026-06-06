@@ -3101,6 +3101,7 @@
 
 /* --- Pages context menu (Radix portal content) --- */
 .pageMenu {
+  z-index: 3200;
   min-width: 196px;
   padding: 6px;
   border-radius: 12px;

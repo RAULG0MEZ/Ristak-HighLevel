@@ -390,6 +390,8 @@
 /* Selectable block wrapper. */
 .rstkCanvas .rstk-block-style { position: relative; }
 .rstkCanvas .rstkSel {
+  position: relative;
+  z-index: 1;
   cursor: pointer;
   will-change: transform;
   transition:
@@ -397,7 +399,12 @@
     opacity .16s ease,
     box-shadow .16s ease;
 }
+.rstkCanvas .rstkSel:hover,
+.rstkCanvas .rstkSelActive {
+  z-index: 40;
+}
 .rstkCanvas .rstkSelDragging {
+  z-index: 80 !important;
   cursor: grabbing;
   pointer-events: none;
 }
@@ -496,7 +503,7 @@
 
 /* Block toolbar (drag + actions). Counter-scaled so it stays usable at any zoom. */
 .rstkCanvas .rstkBlockTools {
-  position: absolute; top: 8px; right: 8px; z-index: 5;
+  position: absolute; top: 8px; right: 8px; z-index: 90;
   display: flex; gap: 4px; opacity: 0; pointer-events: none;
   transform: scale(calc(1 / var(--rstk-scale, 1))); transform-origin: top right;
   transition: opacity .12s ease;
@@ -528,6 +535,7 @@
   transform: translateY(-50%) scale(calc(1 / var(--rstk-scale, 1)));
   transform-origin: top right;
 }
+.rstkCanvas .rstkSel:hover > .rstkBlockTools,
 .rstkCanvas .rstkSelActive > .rstkBlockTools { opacity: 1; pointer-events: auto; }
 .rstkCanvas .rstkBlockTool {
   width: 30px; height: 30px; display: grid; place-items: center;

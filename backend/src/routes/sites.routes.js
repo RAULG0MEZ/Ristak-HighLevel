@@ -13,6 +13,7 @@ import {
   previewCalendarHandler,
   previewSiteHandler,
   reorderBlocksHandler,
+  restoreBlocksHandler,
   submitPublicSiteHandler,
   updateBlockHandler,
   updateSiteHandler,
@@ -39,6 +40,7 @@ router.put('/:siteId', updateSiteHandler)
 router.delete('/:siteId', deleteSiteHandler)
 router.post('/:siteId/verify-domain', verifySiteDomainHandler)
 router.post('/:siteId/blocks', createBlockHandler)
+router.post('/:siteId/blocks/restore', restoreBlocksHandler)
 router.put('/:siteId/blocks/reorder', reorderBlocksHandler)
 router.put('/:siteId/blocks/:blockId', updateBlockHandler)
 router.delete('/:siteId/blocks/:blockId', deleteBlockHandler)
