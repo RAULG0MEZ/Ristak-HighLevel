@@ -1465,6 +1465,7 @@ export const PhoneChat: React.FC = () => {
     () => aiAgentConversationOpen ? null : chats.find((contact) => contact.id === activeContactId) || null,
     [activeContactId, aiAgentConversationOpen, chats]
   )
+  const conversationVisible = conversationOpen && (aiAgentConversationOpen || Boolean(activeContact))
   const contactInfoData = contactInfoContact || activeContact
   const chatActionContact = useMemo(
     () => chats.find((contact) => contact.id === chatActionContactId) || activeContact || null,
@@ -2018,7 +2019,7 @@ export const PhoneChat: React.FC = () => {
     setDraggingSwipe(null)
     chatSwipeGestureRef.current = null
 
-    if (conversationOpen) return
+    if (conversationVisible) return
 
     const releaseSwipe = window.setTimeout(() => {
       chatSwipeGenerationRef.current += 1
@@ -2029,7 +2030,7 @@ export const PhoneChat: React.FC = () => {
     }, 320)
 
     return () => window.clearTimeout(releaseSwipe)
-  }, [conversationOpen])
+  }, [conversationVisible])
 
   useLayoutEffect(() => {
     if (!activeContactId) return
@@ -2323,7 +2324,7 @@ export const PhoneChat: React.FC = () => {
   }, [accessState, activeContact?.id, loadConversation])
 
   useEffect(() => {
-    if (!conversationOpen || aiAgentConversationOpen || activeContact || chatsLoading) return
+    if (!conversationOpen || conversationVisible || chatsLoading) return
 
     setActiveContactId(null)
     setConversationOpen(false)
@@ -2335,7 +2336,7 @@ export const PhoneChat: React.FC = () => {
     setContactJourney([])
     setDraftAttachments([])
     setVoiceDraft(null)
-  }, [activeContact, aiAgentConversationOpen, chatsLoading, conversationOpen])
+  }, [chatsLoading, conversationOpen, conversationVisible])
 
   useEffect(() => {
     setContactInfoOpen(false)
@@ -3710,7 +3711,7 @@ export const PhoneChat: React.FC = () => {
       )
     }
 
-    const swipeLocked = conversationOpen || chatSwipeSuppressed
+    const swipeLocked = conversationVisible || chatSwipeSuppressed
     const isDraggingSwipe = !swipeLocked && draggingSwipe?.contactId === contact.id
     const swipeOffset = swipeLocked
       ? 0
@@ -5317,7 +5318,7 @@ export const PhoneChat: React.FC = () => {
 
   return (
     <main
-      className={`${styles.phoneChatPage} ${conversationOpen ? styles.conversationOpen : ''}`}
+      className={`${styles.phoneChatPage} ${conversationVisible ? styles.conversationOpen : ''}`}
       data-phone-chat-tone={resolvedPhoneChatTheme}
       data-phone-chat-mode={safeChatThemePreference}
       aria-label="Chat móvil de Ristak"

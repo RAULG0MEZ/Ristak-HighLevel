@@ -130,11 +130,15 @@ const PhoneThemeRouteEffects: React.FC = () => {
 function getRedirectPath(from?: RedirectLocation) {
   const pathname = from?.pathname
 
-  if (!pathname?.startsWith('/') || pathname === '/login' || pathname === '/setup') {
+  if (!pathname?.startsWith('/') || pathname === '/login' || pathname === '/phone/login' || pathname === '/setup') {
     return '/dashboard'
   }
 
   return `${pathname}${from?.search || ''}${from?.hash || ''}`
+}
+
+function getLoginPath(pathname?: string) {
+  return pathname?.startsWith('/phone') ? '/phone/login' : '/login'
 }
 
 // Componente para la ruta de setup (primera vez)
@@ -161,7 +165,7 @@ const SetupRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   if (!needsSetup) {
     return isAuthenticated
       ? <Navigate to={redirectPath} replace />
-      : <Navigate to="/login" state={{ from: location }} replace />
+      : <Navigate to={getLoginPath(location.pathname)} state={{ from: location }} replace />
   }
 
   return <>{children}</>
@@ -193,7 +197,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" state={{ from: location }} replace />
+    return <Navigate to={getLoginPath(location.pathname)} state={{ from: location }} replace />
   }
 
   return <>{children}</>
@@ -286,6 +290,7 @@ const AppWithNotifications: React.FC = () => {
         <Routes>
           <Route path="/setup" element={<SetupRoute><Setup /></SetupRoute>} />
           <Route path="/login" element={<Login />} />
+          <Route path="/phone/login" element={<Login />} />
           <Route
             path="/phone"
             element={

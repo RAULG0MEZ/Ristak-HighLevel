@@ -15,11 +15,11 @@ type LoginLocationState = {
   from?: RedirectLocation
 } | null
 
-function getRedirectPath(from?: RedirectLocation) {
+function getRedirectPath(from?: RedirectLocation, fallbackPath = '/dashboard') {
   const pathname = from?.pathname
 
-  if (!pathname?.startsWith('/') || pathname === '/login' || pathname === '/setup') {
-    return '/dashboard'
+  if (!pathname?.startsWith('/') || pathname === '/login' || pathname === '/phone/login' || pathname === '/setup') {
+    return fallbackPath
   }
 
   return `${pathname}${from?.search || ''}${from?.hash || ''}`
@@ -37,8 +37,8 @@ export const Login: React.FC = () => {
   const location = useLocation()
   const navigate = useNavigate()
   const fromLocation = (location.state as LoginLocationState)?.from
-  const redirectPath = getRedirectPath(fromLocation)
   const isPhoneLogin = location.pathname.startsWith('/phone')
+  const redirectPath = getRedirectPath(fromLocation, isPhoneLogin ? '/phone/chat' : '/dashboard')
 
   if (isAuthLoading) {
     return (
