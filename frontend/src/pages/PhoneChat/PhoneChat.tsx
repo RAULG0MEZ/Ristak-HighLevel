@@ -1773,31 +1773,30 @@ export const PhoneChat: React.FC = () => {
     [activeContactId, aiAgentConversationOpen, chats]
   )
   const conversationVisible = conversationOpen && (aiAgentConversationOpen || Boolean(activeContact))
-  const conversationMessageItems = useMemo(() => {
-    const items: Array<
-      | { type: 'day'; key: string; label: string }
-      | { type: 'message'; key: string; message: ChatMessage }
-    > = []
-    let previousDayKey = ''
+  const conversationMessageGroups = useMemo(() => {
+    const groups: Array<{
+      key: string
+      label: string
+      messages: ChatMessage[]
+    }> = []
 
     messages.forEach((message) => {
-      const dayKey = getConversationDayKey(message.date, timezone)
-      if (dayKey && dayKey !== previousDayKey) {
-        items.push({
-          type: 'day',
+      const dayKey = getConversationDayKey(message.date, timezone) || 'sin-fecha'
+      const currentGroup = groups[groups.length - 1]
+
+      if (!currentGroup || currentGroup.key !== dayKey) {
+        groups.push({
           key: dayKey,
-          label: getConversationDayLabel(message.date, timezone)
+          label: dayKey === 'sin-fecha' ? '' : getConversationDayLabel(message.date, timezone),
+          messages: [message]
         })
-        previousDayKey = dayKey
+        return
       }
-      items.push({
-        type: 'message',
-        key: message.id,
-        message
-      })
+
+      currentGroup.messages.push(message)
     })
 
-    return items
+    return groups
   }, [messages, timezone])
   const messagesSignature = useMemo(() => getMessagesSignature(messages), [messages])
   const contactInfoData = contactInfoContact || activeContact
