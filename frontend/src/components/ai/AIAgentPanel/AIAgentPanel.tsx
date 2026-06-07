@@ -4,7 +4,7 @@ import { ArrowUp, Bot, CalendarPlus, Check, Copy, CreditCard, Eraser, File as Fi
 import { aiAgentService, type AIAgentAttachment, type AIAgentAttachmentKind, type AIAgentBusinessContextField, type AIAgentClarificationOption, type AIAgentConfigInput, type AIAgentConfigStatus, type AIAgentMessage, type AIAgentViewContext } from '@/services/aiAgentService'
 import { sitesService, type SitesAICreationMessage } from '@/services/sitesService'
 import { useNotification } from '@/contexts/NotificationContext'
-import { AI_AGENT_CLOSE_REQUEST_EVENT, AI_AGENT_OPEN_REQUEST_EVENT, type AIAgentOpenRequestDetail, type AIAgentSitesCreationKind } from '@/utils/aiAgentEvents'
+import { AI_AGENT_CLOSE_REQUEST_EVENT, AI_AGENT_OPEN_REQUEST_EVENT, type AIAgentOpenRequestDetail, type AIAgentSitesCreationKind, type AIAgentSitesCreationMode } from '@/utils/aiAgentEvents'
 import styles from './AIAgentPanel.module.css'
 
 const AI_AGENT_FLOATING_OPEN_KEY = 'ristak.aiAgentFloating.open'
@@ -58,6 +58,10 @@ type AIAgentAttachmentDraft = AIAgentAttachment & {
 }
 type SitesCreationMode = {
   siteKind: AIAgentSitesCreationKind
+  creationMode: AIAgentSitesCreationMode
+  editSiteId?: string
+  metaCapiEnabled?: boolean
+  siteTitle?: string
 }
 
 const quickActions = [
@@ -110,7 +114,41 @@ const routeLabels: Record<string, string> = {
   '/sites': 'Sitios'
 }
 
-function getSitesAIIntro(siteKind: AIAgentSitesCreationKind) {
+function getSitesAIIntro(siteKind: AIAgentSitesCreationKind, creationMode: AIAgentSitesCreationMode = 'builder', siteTitle = '') {
+  if (creationMode === 'html' && siteTitle) {
+    return [
+      `Vamos a editar con IA el HTML de "${siteTitle}".`,
+      '',
+      'Pídeme el cambio como lo dirías a un diseñador:',
+      '- Cambiar titulo, textos o CTA.',
+      '- Cambiar imagenes por otras de internet o por una URL especifica.',
+      '- Reordenar secciones.',
+      '- Hacerlo mas premium, mas limpio o mas directo.',
+      '- Agregar, quitar o ajustar campos del formulario.',
+      '',
+      'Cuando lo actualice, Ristak volvera a revisar los formularios para que puedas confirmar donde se guarda cada dato.'
+    ].join('\n')
+  }
+
+  if (creationMode === 'html') {
+    return [
+      'Vamos a crear una pagina completa desde cero en HTML con IA.',
+      '',
+      'Esta opcion no usa los bloques del editor visual. La IA genera el HTML/CSS completo y Ristak lo importa como codigo propio para revisar formularios y publicar.',
+      '',
+      'Cuéntame esto en un solo mensaje si puedes:',
+      '- Nicho o tipo de negocio.',
+      '- Servicio, producto u oferta principal.',
+      '- Objetivo de la pagina.',
+      '- Cliente o prospecto ideal.',
+      '- Estilo visual deseado.',
+      '- Si quieres formulario y que campos debe pedir.',
+      '- CTA principal.',
+      '- Si quieres fotos de internet o alguna imagen por URL.',
+      '- Si prefieres una pagina corta o una pagina mas completa.'
+    ].join('\n')
+  }
+
   if (siteKind === 'landing') {
     return [
       'Vamos a crear una landing page ("sitio web") usando IA, pero con los bloques controlados de Sites.',
@@ -1671,11 +1709,21 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
       activeChatRequestRef.current = null
       chatRequestSeqRef.current += 1
 
-      const nextMessage = createMessage('assistant', getSitesAIIntro(detail.sitesCreation.siteKind))
+      const creationMode = detail.sitesCreation.creationMode || 'builder'
+      const nextMessage = createMessage(
+        'assistant',
+        getSitesAIIntro(detail.sitesCreation.siteKind, creationMode, detail.sitesCreation.siteTitle || '')
+      )
       messagesRef.current = [nextMessage]
       attachmentsRef.current.forEach(revokeAttachmentPreview)
       attachmentsRef.current = []
-      setSitesCreationMode({ siteKind: detail.sitesCreation.siteKind })
+      setSitesCreationMode({
+        siteKind: detail.sitesCreation.siteKind,
+        creationMode,
+        editSiteId: detail.sitesCreation.editSiteId,
+        metaCapiEnabled: detail.sitesCreation.metaCapiEnabled,
+        siteTitle: detail.sitesCreation.siteTitle
+      })
       setMessages([nextMessage])
       setInput('')
       setAttachments([])
@@ -1931,10 +1979,22 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
     setSending(true)
 
     try {
-      const result = await sitesService.createWithAI({
-        siteKind: sitesCreationMode.siteKind,
-        messages: prepareSitesCreationMessages(nextMessages)
-      })
+      const requestMessages = prepareSitesCreationMessages(nextMessages)
+      const result = sitesCreationMode.creationMode === 'html' && sitesCreationMode.editSiteId
+        ? await sitesService.editImportedHtmlWithAI(sitesCreationMode.editSiteId, {
+            siteKind: sitesCreationMode.siteKind,
+            messages: requestMessages
+          })
+        : sitesCreationMode.creationMode === 'html'
+          ? await sitesService.createWithAIHtml({
+              siteKind: sitesCreationMode.siteKind,
+              messages: requestMessages,
+              metaCapiEnabled: sitesCreationMode.metaCapiEnabled
+            })
+          : await sitesService.createWithAI({
+              siteKind: sitesCreationMode.siteKind,
+              messages: requestMessages
+            })
 
       if (activeChatRequestRef.current?.id !== requestId) return true
 
@@ -1943,19 +2003,27 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
         createMessage('assistant', result.reply || 'Listo, sigo esperando la información para armar el borrador.')
       ])
 
-      if (result.status === 'created' && result.site) {
+      if ((result.status === 'created' || result.status === 'updated') && result.site) {
         setSitesCreationMode(null)
         window.dispatchEvent(new CustomEvent(SITES_AI_DRAFT_CREATED_EVENT, {
-          detail: result.site
+          detail: result.import
+            ? { site: result.site, import: result.import, reviewMapping: true }
+            : result.site
         }))
-        showToast('success', 'Borrador creado', 'Ya lo abrí en el editor visual de Sites para que lo ajustes.')
+        showToast(
+          'success',
+          result.status === 'updated' ? 'HTML actualizado' : 'Borrador creado',
+          result.creationMode === 'html'
+            ? 'Ya lo abrí con vista previa y revisión de campos.'
+            : 'Ya lo abrí en el editor visual de Sites para que lo ajustes.'
+        )
       }
     } catch (error: any) {
       if (error?.name === 'AbortError' || activeChatRequestRef.current?.id !== requestId) return true
 
       setMessages((current) => [
         ...current,
-        createMessage('assistant', `No pude crear el borrador. ${error?.message || 'Revisa la configuración de OpenAI e inténtalo otra vez.'}`)
+        createMessage('assistant', `No pude completar la creación con IA. ${error?.message || 'Revisa la configuración de OpenAI e inténtalo otra vez.'}`)
       ])
     } finally {
       if (activeChatRequestRef.current?.id === requestId) {
@@ -2393,10 +2461,14 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
   const textComposerClassName = attachments.length
     ? `${styles.textComposer} ${styles.textComposerWithAttachments}`
     : styles.textComposer
-  const panelTitle = sitesCreationMode ? 'Creador de Sites con IA' : embedded ? 'Ristak AI' : 'Agente AI'
+  const panelTitle = sitesCreationMode?.creationMode === 'html'
+    ? 'Creador HTML con IA'
+    : sitesCreationMode ? 'Creador de Sites con IA' : embedded ? 'Ristak AI' : 'Agente AI'
   const needsReconnect = Boolean(status.needsReconnect)
   const statusLabel = status.configured
-    ? sitesCreationMode ? 'Creando borrador editable' : embedded ? 'Listo para ayudarte' : 'Conectado a OpenAI'
+    ? sitesCreationMode?.creationMode === 'html'
+      ? sitesCreationMode.editSiteId ? 'Editando HTML importado' : 'Creando HTML importable'
+      : sitesCreationMode ? 'Creando borrador editable' : embedded ? 'Listo para ayudarte' : 'Conectado a OpenAI'
     : needsReconnect ? 'Reconecta OpenAI' : 'Configúralo aquí mismo'
 
   return (

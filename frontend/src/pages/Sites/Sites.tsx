@@ -108,7 +108,7 @@ import {
 } from '@/services/sitesService'
 import { campaignsService, type ConnectedSocialProfile } from '@/services/campaignsService'
 import { calendarsService, type Calendar as CalendarType } from '@/services/calendarsService'
-import { requestAIAgentOpen, type AIAgentSitesCreationKind } from '@/utils/aiAgentEvents'
+import { requestAIAgentOpen, type AIAgentSitesCreationKind, type AIAgentSitesCreationMode } from '@/utils/aiAgentEvents'
 import { COUNTRY_OPTIONS, getCountryDefaults, getCountryFlagEmoji, getDetectedAccountLocaleDefaults } from '@/utils/accountLocale'
 import styles from './Sites.module.css'
 import './sitesCanvas.css'
@@ -119,11 +119,14 @@ type DeviceMode = 'desktop' | 'mobile'
 type CreateFlow =
   | 'closed'
   | 'landing-start'
+  | 'landing-ai-mode'
   | 'landing-template'
   | 'form-kind'
   | 'form-start'
+  | 'form-ai-mode'
   | 'form-template'
   | 'interactive-start'
+  | 'interactive-ai-mode'
   | 'interactive-template'
 
 interface LeadRow extends SiteSubmission {
@@ -380,6 +383,11 @@ const normalizeSiteForEditor = (site: PublicSite): PublicSite => ({
 })
 const isImportedHtmlSite = (site?: PublicSite | null) =>
   Boolean(site?.theme?.importedHtml || site?.theme?.template === 'imported_html')
+const getAIAgentSiteKindForSite = (site: PublicSite): AIAgentSitesCreationKind => {
+  if (site.siteType === 'interactive_form') return 'interactive_form'
+  if (site.siteType === 'standard_form') return 'form'
+  return 'landing'
+}
 const fileToBase64 = (file: File) => new Promise<string>((resolve, reject) => {
   const reader = new FileReader()
   reader.onload = () => resolve(String(reader.result || ''))
@@ -954,6 +962,13 @@ const getCreateFlowHeaderCopy = (step: CreateFlow) => {
     }
   }
 
+  if (step === 'landing-ai-mode') {
+    return {
+      title: 'Crear con inteligencia artificial',
+      subtitle: 'Elige si quieres usar el editor de Ristak o generar una pagina HTML completa.'
+    }
+  }
+
   if (step === 'form-kind') {
     return {
       title: 'Nuevo formulario',
@@ -975,6 +990,13 @@ const getCreateFlowHeaderCopy = (step: CreateFlow) => {
     }
   }
 
+  if (step === 'form-ai-mode') {
+    return {
+      title: 'Crear formulario con inteligencia artificial',
+      subtitle: 'Elige entre formulario editable en Ristak o HTML libre importado.'
+    }
+  }
+
   if (step === 'interactive-start') {
     return {
       title: 'Formulario interactivo multipagina',
@@ -989,6 +1011,13 @@ const getCreateFlowHeaderCopy = (step: CreateFlow) => {
     }
   }
 
+  if (step === 'interactive-ai-mode') {
+    return {
+      title: 'Crear interactivo con inteligencia artificial',
+      subtitle: 'Elige entre flujo editable en Ristak o HTML libre importado.'
+    }
+  }
+
   return {
     title: 'Sitios',
     subtitle: 'Constructor visual controlado para sitios embudo, formularios, leads y publicacion por dominio verificado.'
@@ -997,10 +1026,13 @@ const getCreateFlowHeaderCopy = (step: CreateFlow) => {
 
 const getPreviousCreateFlowStep = (step: CreateFlow): CreateFlow => {
   if (step === 'landing-template') return 'landing-start'
+  if (step === 'landing-ai-mode') return 'landing-start'
   if (step === 'form-start') return 'closed'
   if (step === 'interactive-start') return 'form-start'
   if (step === 'form-template') return 'form-start'
+  if (step === 'form-ai-mode') return 'form-start'
   if (step === 'interactive-template') return 'interactive-start'
+  if (step === 'interactive-ai-mode') return 'interactive-start'
   return 'closed'
 }
 
@@ -2559,9 +2591,12 @@ export const Sites: React.FC = () => {
 
   useEffect(() => {
     const handleAIDraftCreated = (event: Event) => {
-      const rawSite = (event as CustomEvent<PublicSite>).detail
+      const detail = (event as CustomEvent<PublicSite | { site?: PublicSite; import?: ImportedSiteImport; reviewMapping?: boolean }>).detail
+      const wrappedDetail = Boolean(detail && typeof detail === 'object' && 'site' in detail)
+      const rawSite = wrappedDetail ? (detail as { site?: PublicSite }).site : detail as PublicSite | undefined
       if (!rawSite?.id) return
       const site = normalizeSiteForEditor(rawSite)
+      const importData = wrappedDetail ? (detail as { import?: ImportedSiteImport }).import : null
 
       setSites(current => [site, ...current.filter(item => item.id !== site.id)])
       setSelectedSite(site)
@@ -2570,6 +2605,12 @@ export const Sites: React.FC = () => {
       setSection(site.siteType === 'landing_page' ? 'landings' : 'forms')
       setCreateFlow('closed')
       setHasUnsavedChanges(false)
+      if (importData?.siteId) {
+        setSelectedImportData(importData)
+        if (wrappedDetail && (detail as { reviewMapping?: boolean }).reviewMapping) {
+          setImportReview({ site, importData })
+        }
+      }
     }
 
     window.addEventListener(SITES_AI_DRAFT_CREATED_EVENT, handleAIDraftCreated)
@@ -3188,13 +3229,29 @@ export const Sites: React.FC = () => {
     }
   }
 
-  const handleCreateSiteWithAI = (siteKind: AIAgentSitesCreationKind) => {
+  const handleCreateSiteWithAI = (
+    siteKind: AIAgentSitesCreationKind,
+    creationMode: AIAgentSitesCreationMode = 'builder',
+    editSite?: PublicSite
+  ) => {
     requestAIAgentOpen({
       sitesCreation: {
-        siteKind
+        siteKind,
+        creationMode,
+        editSiteId: editSite?.id,
+        metaCapiEnabled: creationMode === 'html' ? metaPixelConnected : undefined,
+        siteTitle: editSite?.title || editSite?.name
       }
     })
-    showToast('info', 'IA abierta', 'Responde las preguntas y se va a crear un borrador editable en Sites.')
+    showToast(
+      'info',
+      'IA abierta',
+      editSite
+        ? 'Dile que quieres cambiar del HTML y Ristak volvera a revisar sus campos.'
+        : creationMode === 'html'
+          ? 'Responde las preguntas y se generara una pagina HTML lista para importar.'
+          : 'Responde las preguntas y se va a crear un borrador editable en Sites.'
+    )
   }
 
   const handleOpenImportHtml = (siteType: SiteType) => {
@@ -3275,6 +3332,11 @@ export const Sites: React.FC = () => {
     } finally {
       setLoadingImportData(false)
     }
+  }
+
+  const handleEditImportedHtmlWithAI = (site: PublicSite) => {
+    if (!isImportedHtmlSite(site)) return
+    handleCreateSiteWithAI(getAIAgentSiteKindForSite(site), 'html', site)
   }
 
   const handleSaveSite = async (statusOverride?: PublicSite['status'], options: { silent?: boolean } = {}) => {
@@ -4283,6 +4345,7 @@ export const Sites: React.FC = () => {
                   onSelectPage={setActivePageId}
                   onPreview={handlePreviewSite}
                   onPublish={() => handleSaveSite('published')}
+                  onEditWithAI={() => handleEditImportedHtmlWithAI(editorSite)}
                   onEditFields={() => void handleOpenImportMappingEditor(editorSite)}
                   onUpdateRoute={handleUpdateLibraryRoute}
                   onDelete={() => void handleDeleteSite(editorSite)}
@@ -4511,6 +4574,7 @@ const ImportedHtmlEditorPanel: React.FC<{
   onSelectPage: (pageId: string) => void
   onPreview: () => void
   onPublish: () => void
+  onEditWithAI: () => void
   onEditFields: () => void
   onUpdateRoute: (site: PublicSite, route: string) => Promise<void>
   onDelete: () => void
@@ -4526,6 +4590,7 @@ const ImportedHtmlEditorPanel: React.FC<{
   onSelectPage,
   onPreview,
   onPublish,
+  onEditWithAI,
   onEditFields,
   onUpdateRoute,
   onDelete
@@ -4569,7 +4634,7 @@ const ImportedHtmlEditorPanel: React.FC<{
     } finally {
       setPreviewLoading(false)
     }
-  }, [activeImportedPage?.id, site.id])
+  }, [activeImportedPage?.id, site.id, site.updatedAt])
 
   useEffect(() => {
     void loadInlinePreview()
@@ -4768,6 +4833,10 @@ const ImportedHtmlEditorPanel: React.FC<{
         </div>
 
         <div className={styles.importedEditorActions}>
+          <Button type="button" variant="secondary" onClick={onEditWithAI} disabled={saving || routeSaving}>
+            <Sparkles size={15} />
+            Editar con IA
+          </Button>
           <Button type="button" variant="secondary" onClick={onPreview}>
             <Eye size={15} />
             Abrir completa
@@ -5413,7 +5482,7 @@ interface CreateFlowPanelProps {
   step: CreateFlow
   creating: boolean
   onCreate: (siteType: SiteType, mode?: 'blank' | 'template', templateId?: SiteTemplateId) => void
-  onCreateWithAI: (siteKind: AIAgentSitesCreationKind) => void
+  onCreateWithAI: (siteKind: AIAgentSitesCreationKind, creationMode?: AIAgentSitesCreationMode) => void
   onImportHtml: (siteType: SiteType) => void
   onAdvance: (step: CreateFlow) => void
 }
@@ -5574,6 +5643,36 @@ const TemplateCategoryGallery: React.FC<{
   </div>
 )
 
+const AIModeChoice: React.FC<{
+  siteKind: AIAgentSitesCreationKind
+  disabled: boolean
+  onPick: (creationMode: AIAgentSitesCreationMode) => void
+}> = ({ siteKind, disabled, onPick }) => {
+  const nativeCopy = siteKind === 'landing'
+    ? 'Usa plantillas, bloques y estructura nativa para que todo quede editable en el constructor visual.'
+    : 'Usa campos, reglas y paginas nativas para que el formulario quede editable en Ristak.'
+  const htmlCopy = siteKind === 'landing'
+    ? 'Genera una pagina completa en HTML/CSS, la importa como codigo propio y detecta sus formularios.'
+    : 'Genera un formulario completo en HTML/CSS, lo importa y prepara sus campos para guardar contactos.'
+
+  return (
+    <div className={styles.choiceGrid}>
+      <button type="button" disabled={disabled} onClick={() => onPick('builder')}>
+        <LayoutTemplate size={22} />
+        <strong>IA con editor de sitios</strong>
+        <p>{nativeCopy}</p>
+        <ChevronRight size={18} />
+      </button>
+      <button type="button" disabled={disabled} onClick={() => onPick('html')}>
+        <Sparkles size={22} />
+        <strong>IA desde cero en HTML</strong>
+        <p>{htmlCopy}</p>
+        <ChevronRight size={18} />
+      </button>
+    </div>
+  )
+}
+
 const CreateFlowPanel: React.FC<CreateFlowPanelProps> = ({ step, creating, onCreate, onCreateWithAI, onImportHtml, onAdvance }) => {
   return (
     <section className={styles.createPanel}>
@@ -5591,10 +5690,10 @@ const CreateFlowPanel: React.FC<CreateFlowPanelProps> = ({ step, creating, onCre
             <p>Elige embudos completos para web, ventas, lanzamientos o redes sociales.</p>
             <ChevronRight size={18} />
           </button>
-          <button type="button" disabled={creating} onClick={() => onCreateWithAI('landing')}>
+          <button type="button" disabled={creating} onClick={() => onAdvance('landing-ai-mode')}>
             <Sparkles size={22} />
             <strong>Usando IA</strong>
-            <p>El asistente pregunta lo necesario y crea un borrador con bloques editables.</p>
+            <p>Elige entre crear con bloques nativos o generar HTML libre para importar.</p>
             <ChevronRight size={18} />
           </button>
           <button type="button" disabled={creating} onClick={() => onImportHtml('landing_page')}>
@@ -5604,6 +5703,14 @@ const CreateFlowPanel: React.FC<CreateFlowPanelProps> = ({ step, creating, onCre
             <ChevronRight size={18} />
           </button>
         </div>
+      )}
+
+      {step === 'landing-ai-mode' && (
+        <AIModeChoice
+          siteKind="landing"
+          disabled={creating}
+          onPick={(creationMode) => onCreateWithAI('landing', creationMode)}
+        />
       )}
 
       {step === 'landing-template' && (
@@ -5646,10 +5753,10 @@ const CreateFlowPanel: React.FC<CreateFlowPanelProps> = ({ step, creating, onCre
             <p>Elige formularios de captura, registros o redes sociales.</p>
             <ChevronRight size={18} />
           </button>
-          <button type="button" disabled={creating} onClick={() => onCreateWithAI('form')}>
+          <button type="button" disabled={creating} onClick={() => onAdvance('form-ai-mode')}>
             <Sparkles size={22} />
             <strong>Usando IA</strong>
-            <p>El asistente arma el formulario y sus paginas finales editables.</p>
+            <p>Elige entre campos nativos editables o HTML libre importado.</p>
             <ChevronRight size={18} />
           </button>
           <button type="button" disabled={creating} onClick={() => onImportHtml('standard_form')}>
@@ -5659,6 +5766,14 @@ const CreateFlowPanel: React.FC<CreateFlowPanelProps> = ({ step, creating, onCre
             <ChevronRight size={18} />
           </button>
         </div>
+      )}
+
+      {step === 'form-ai-mode' && (
+        <AIModeChoice
+          siteKind="form"
+          disabled={creating}
+          onPick={(creationMode) => onCreateWithAI('form', creationMode)}
+        />
       )}
 
       {step === 'interactive-start' && (
@@ -5675,10 +5790,10 @@ const CreateFlowPanel: React.FC<CreateFlowPanelProps> = ({ step, creating, onCre
             <p>Elige quiz guiados, registros paso a paso o formatos de redes sociales.</p>
             <ChevronRight size={18} />
           </button>
-          <button type="button" disabled={creating} onClick={() => onCreateWithAI('interactive_form')}>
+          <button type="button" disabled={creating} onClick={() => onAdvance('interactive-ai-mode')}>
             <Sparkles size={22} />
             <strong>Usando IA</strong>
-            <p>El asistente arma un borrador interactivo con preguntas por pasos y reglas de calificacion.</p>
+            <p>Elige entre flujo nativo editable o HTML libre importado.</p>
             <ChevronRight size={18} />
           </button>
           <button type="button" disabled={creating} onClick={() => onImportHtml('interactive_form')}>
@@ -5688,6 +5803,14 @@ const CreateFlowPanel: React.FC<CreateFlowPanelProps> = ({ step, creating, onCre
             <ChevronRight size={18} />
           </button>
         </div>
+      )}
+
+      {step === 'interactive-ai-mode' && (
+        <AIModeChoice
+          siteKind="interactive_form"
+          disabled={creating}
+          onPick={(creationMode) => onCreateWithAI('interactive_form', creationMode)}
+        />
       )}
 
       {step === 'interactive-template' && (

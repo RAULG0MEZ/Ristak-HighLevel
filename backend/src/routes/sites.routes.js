@@ -5,6 +5,7 @@ import {
   importSiteHtmlHandler,
   createSiteHandler,
   createSiteWithAIHandler,
+  createSiteWithAIHtmlHandler,
   deleteBlockHandler,
   deleteSiteHandler,
   getSitesDomainHandler,
@@ -19,6 +20,7 @@ import {
   restoreBlocksHandler,
   submitPublicSiteHandler,
   updateBlockHandler,
+  updateImportedSiteHtmlWithAIHandler,
   updateImportedSiteMappingHandler,
   updateSiteHandler,
   verifySitesDomainHandler,
@@ -37,6 +39,7 @@ router.use(requireAuth)
 router.get('/', getSitesHandler)
 router.post('/', createSiteHandler)
 router.post('/ai-create', createSiteWithAIHandler)
+router.post('/ai-create-html', createSiteWithAIHtmlHandler)
 router.post('/import-html', importSiteHtmlHandler)
 router.get('/domain', getSitesDomainHandler)
 router.post('/domain/verify', verifySitesDomainHandler)
@@ -45,6 +48,7 @@ router.get('/:siteId/import-mapping', getImportedSiteMappingHandler)
 router.get('/:siteId', getSiteHandler)
 router.put('/:siteId', updateSiteHandler)
 router.delete('/:siteId', deleteSiteHandler)
+router.post('/:siteId/ai-edit-html', updateImportedSiteHtmlWithAIHandler)
 router.put('/:siteId/import-mapping', updateImportedSiteMappingHandler)
 router.post('/:siteId/verify-domain', verifySiteDomainHandler)
 router.post('/:siteId/blocks', createBlockHandler)

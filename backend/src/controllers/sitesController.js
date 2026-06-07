@@ -4,6 +4,7 @@ import {
   createMetaPageEventFromRequest,
   createSite,
   createSiteWithAI,
+  createSiteWithAIHtml,
   createSubmissionFromRequest,
   deleteBlock,
   deleteSite,
@@ -23,6 +24,7 @@ import {
   resolvePublicSiteForHost,
   restoreBlocks,
   updateBlock,
+  updateImportedSiteHtmlWithAI,
   updateImportedSiteFormMappings,
   updateSite
 } from '../services/sitesService.js'
@@ -74,6 +76,20 @@ export async function createSiteWithAIHandler(req, res) {
   }
 }
 
+export async function createSiteWithAIHtmlHandler(req, res) {
+  try {
+    const result = await createSiteWithAIHtml({
+      ...(req.body || {}),
+      userId: req.user?.userId || req.user?.id
+    })
+    res.status(result.status === 'created' ? 201 : 200).json({ success: true, data: result })
+  } catch (error) {
+    logger.error(`Error creando HTML con IA: ${error.message}`)
+    error.status = error.status || 400
+    sendError(res, error, 'Error creando HTML con IA')
+  }
+}
+
 export async function importSiteHtmlHandler(req, res) {
   try {
     const result = await createImportedSiteFromHtml({
@@ -85,6 +101,20 @@ export async function importSiteHtmlHandler(req, res) {
     logger.error(`Error importando HTML de site: ${error.message}`)
     error.status = error.status || 400
     sendError(res, error, 'Error importando HTML')
+  }
+}
+
+export async function updateImportedSiteHtmlWithAIHandler(req, res) {
+  try {
+    const result = await updateImportedSiteHtmlWithAI(req.params.siteId, {
+      ...(req.body || {}),
+      userId: req.user?.userId || req.user?.id
+    })
+    res.json({ success: true, data: result })
+  } catch (error) {
+    logger.error(`Error editando HTML importado con IA: ${error.message}`)
+    error.status = error.status || 400
+    sendError(res, error, 'Error editando HTML con IA')
   }
 }
 

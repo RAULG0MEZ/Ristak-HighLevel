@@ -855,8 +855,9 @@ function extractImportedFields(formHtml = '', formIndex = 0) {
     const type = tag === 'input' ? cleanString(attrs.type || 'text').toLowerCase() : tag
     if (['hidden', 'submit', 'button', 'reset', 'image'].includes(type)) continue
 
-    const explicitField = cleanString(attrs['data-ristack-field'] || attrs['data-ristak-field'])
-    const sourceName = cleanString(attrs.name || attrs.id || explicitField || `field_${formIndex + 1}_${index + 1}`)
+    const explicitField = cleanString(attrs['data-rstk-field'] || attrs['data-ristack-field'] || attrs['data-ristak-field'])
+    const explicitCustomField = cleanString(attrs['data-rstk-custom-field'] || attrs['data-ristack-custom-field'] || attrs['data-ristak-custom-field'])
+    const sourceName = cleanString(attrs.name || attrs.id || explicitField || explicitCustomField || `field_${formIndex + 1}_${index + 1}`)
     const fieldId = normalizeImportedFieldKey(sourceName, `field_${formIndex + 1}_${index + 1}`)
     const label = getLabelForField(formHtml, attrs) || cleanString(attrs['aria-label']) || cleanString(attrs.placeholder) || sourceName
     const options = []
@@ -885,6 +886,7 @@ function extractImportedFields(formHtml = '', formIndex = 0) {
       label,
       nearbyText: getNearbyText(formHtml, candidate.index),
       explicitField,
+      explicitCustomField,
       required: attrs.required !== undefined || cleanString(attrs['aria-required']).toLowerCase() === 'true',
       options
     })
@@ -903,7 +905,7 @@ function detectImportedForms(html = '') {
   while ((formMatch = formPattern.exec(html))) {
     const attrs = parseHtmlAttributes(formMatch[1] || '')
     const formHtml = formMatch[2] || ''
-    const explicitForm = cleanString(attrs['data-ristack-form'] || attrs['data-ristak-form'])
+    const explicitForm = cleanString(attrs['data-rstk-form'] || attrs['data-ristack-form'] || attrs['data-ristak-form'])
     const importedFormId = cleanString(attrs['data-rstk-form-id'])
     const fields = extractImportedFields(formHtml, formIndex)
     const buttonMatch = formHtml.match(/<button\b([^>]*)>([\s\S]*?)<\/button>|<input\b([^>]*type=["']?submit["']?[^>]*)>/i)
@@ -991,8 +993,13 @@ function assignImportedFormIds(html = '', forms = []) {
 
 function inferImportedFieldDestination(field = {}) {
   const explicit = normalizeImportedFieldKey(field.explicitField, '')
+  const explicitCustom = normalizeImportedFieldKey(field.explicitCustomField, '')
   const haystack = getImportedFieldHaystack(field)
   const suppressAmbiguousName = hasImportedNameContextExclusion(field) && hasImportedAlias(haystack, IMPORTED_AMBIGUOUS_PERSON_NAME_ALIASES)
+
+  if (explicitCustom) {
+    return { destinationType: 'custom', destinationKey: explicitCustom, confidence: 0.98 }
+  }
 
   if (explicit && IMPORTED_FORM_STANDARD_FIELDS.has(explicit)) {
     return { destinationType: 'standard', destinationKey: explicit, confidence: 0.98 }
@@ -1110,6 +1117,56 @@ function countImportedDetectedFields(forms = []) {
 
 function countImportedMappedFields(mappings = []) {
   return mappings.reduce((total, mapping) => total + (Array.isArray(mapping?.fields) ? mapping.fields.length : 0), 0)
+}
+
+function findExistingImportedFieldMapping(existingMappings = [], nextForm = {}, nextField = {}) {
+  const normalizedFormId = normalizeImportedFieldKey(nextForm.formId, '')
+  const normalizedFormTitle = normalizeImportedFieldKey(nextForm.formTitle, '')
+  const normalizedFieldId = normalizeImportedFieldKey(nextField.fieldId, '')
+  const normalizedSourceName = normalizeImportedFieldKey(nextField.sourceName, '')
+
+  const formCandidates = (Array.isArray(existingMappings) ? existingMappings : []).filter(mapping => {
+    const mappingFormId = normalizeImportedFieldKey(mapping?.formId, '')
+    const mappingFormTitle = normalizeImportedFieldKey(mapping?.formTitle, '')
+    return (
+      (normalizedFormId && mappingFormId === normalizedFormId) ||
+      (normalizedFormTitle && mappingFormTitle === normalizedFormTitle)
+    )
+  })
+
+  const candidateForms = formCandidates.length ? formCandidates : existingMappings
+  for (const mapping of candidateForms || []) {
+    const fields = Array.isArray(mapping?.fields) ? mapping.fields : []
+    const exact = fields.find(field => (
+      (normalizedFieldId && normalizeImportedFieldKey(field?.fieldId, '') === normalizedFieldId) ||
+      (normalizedSourceName && normalizeImportedFieldKey(field?.sourceName, '') === normalizedSourceName)
+    ))
+    if (exact) return exact
+  }
+
+  return null
+}
+
+function mergeImportedFormMappings(existingMappings = [], nextMappings = []) {
+  return (Array.isArray(nextMappings) ? nextMappings : []).map(nextForm => ({
+    ...nextForm,
+    fields: (Array.isArray(nextForm?.fields) ? nextForm.fields : []).map(nextField => {
+      const existingField = findExistingImportedFieldMapping(existingMappings, nextForm, nextField)
+      if (!existingField) return nextField
+
+      return {
+        ...nextField,
+        destinationType: existingField.destinationType || nextField.destinationType,
+        destinationKey: existingField.destinationKey || nextField.destinationKey,
+        saveMode: existingField.saveMode || nextField.saveMode,
+        ignored: Boolean(existingField.ignored || existingField.destinationType === 'ignored'),
+        confidence: Number(existingField.confidence || nextField.confidence || 0) || nextField.confidence,
+        options: Array.isArray(nextField.options) && nextField.options.length
+          ? nextField.options
+          : existingField.options || []
+      }
+    })
+  }))
 }
 
 function isSocialTemplate(value) {
@@ -3566,8 +3623,24 @@ function getSitesAITargetType(siteKind) {
   return 'standard_form'
 }
 
-function buildSitesAIInstructions({ siteKind, agentConfig = {} }) {
-  const businessContext = [
+function validateSitesAICreationKind(value) {
+  const siteKind = cleanString(value)
+  if (!['landing', 'form', 'interactive_form'].includes(siteKind)) {
+    const error = new Error('Tipo de creacion con IA invalido')
+    error.status = 400
+    throw error
+  }
+  return siteKind
+}
+
+function getSitesAIKindFromSiteType(siteType = 'landing_page') {
+  if (siteType === 'interactive_form') return 'interactive_form'
+  if (siteType === 'standard_form') return 'form'
+  return 'landing'
+}
+
+function getSitesAIBusinessContext(agentConfig = {}) {
+  return [
     agentConfig.business_context,
     agentConfig.market_context,
     agentConfig.ideal_customer,
@@ -3576,9 +3649,17 @@ function buildSitesAIInstructions({ siteKind, agentConfig = {} }) {
     agentConfig.brand_voice,
     agentConfig.action_customizations
   ].map(value => limitString(value, 1200)).filter(Boolean).join('\n\n')
-  const imageCatalog = SITES_AI_STOCK_IMAGE_LIBRARY
+}
+
+function getSitesAIImageCatalogText() {
+  return SITES_AI_STOCK_IMAGE_LIBRARY
     .map(group => `- ${group.id}: ${group.label}. Fondo: ${group.backgroundImage}. Imagenes: ${group.images.join(' | ')}`)
     .join('\n')
+}
+
+function buildSitesAIInstructions({ siteKind, agentConfig = {} }) {
+  const businessContext = getSitesAIBusinessContext(agentConfig)
+  const imageCatalog = getSitesAIImageCatalogText()
 
   return `
 Eres el asistente de creacion de Sites de Ristak. Tu trabajo es hacer preguntas y, cuando haya informacion suficiente, devolver SOLO JSON valido compatible con el builder actual.
@@ -3696,7 +3777,83 @@ ${businessContext || 'Sin contexto adicional configurado.'}
 `.trim()
 }
 
-async function callSitesAIGenerator({ apiKey, model, siteKind, messages, agentConfig }) {
+function buildSitesAIHtmlInstructions({ siteKind, agentConfig = {}, editMode = false }) {
+  const businessContext = getSitesAIBusinessContext(agentConfig)
+  const imageCatalog = getSitesAIImageCatalogText()
+  const targetSiteType = getSitesAITargetType(siteKind)
+
+  return `
+Eres el creador libre de paginas HTML de Ristak. Esta experiencia NO usa el builder interno ni bloques nativos: genera o modifica una pagina completa en HTML/CSS para que Ristak la importe como codigo propio.
+
+Reglas duras:
+- Responde SOLO JSON valido, sin markdown.
+- No uses React, JSX, Tailwind, dependencias externas ni JavaScript obligatorio. El importador de Ristak puede quitar scripts por seguridad.
+- Entrega un documento HTML completo con <!doctype html>, <html lang="es">, <head>, <meta charset>, <meta viewport>, <title>, meta description y CSS dentro de <style>.
+- La pagina debe ser responsiva, profesional y lista para publicarse.
+- Copy corto: titulares de 4 a 10 palabras cuando sea posible, parrafos breves de 1 a 2 lineas, listas cortas para explicar detalles.
+- Si un texto largo es necesario, ajusta el CSS con font-size menor, max-width razonable, line-height claro y espacios suficientes. No dejes titulares enormes que rompan el layout.
+- Usa imagenes HTTPS directas y visibles. Prefiere el catalogo incluido. Tambien puedes usar URLs directas publicas/licenciadas de bancos conocidos cuando el usuario las proporcione o esten permitidas; no uses previews con marca de agua.
+- No uses formularios que dependan de JavaScript. El submit lo intercepta Ristak.
+- No agregues action externo en formularios.
+- No escondas campos importantes ni uses inputs sin name.
+- No metas tarjetas dentro de tarjetas sin necesidad; usa secciones limpias, buena jerarquia y aire visual.
+- Tipo solicitado: ${targetSiteType}.
+
+Convenciones de formularios para Ristak:
+- Cada formulario debe tener data-rstk-form="lead_capture" y method="post".
+- Cada campo debe tener id, name, label visible y autocomplete cuando aplique.
+- Agrega data-rstk-field y data-ristak-field en campos estandar para que Ristak los entienda.
+- Campos estandar permitidos: full_name, first_name, last_name, phone, email, message.
+- Para campos personalizados usa data-rstk-custom-field y data-ristak-field con una llave clara.
+- Campos personalizados utiles: treatment_interest, service_interest, preferred_date, preferred_time, appointment_reason, budget, branch, notes, company_name, job_title, city, state, postal_code.
+- Ejemplo de nombre: <input id="full_name" name="full_name" data-rstk-field="full_name" data-ristak-field="full_name" autocomplete="name" required>
+- Ejemplo de tratamiento: <select id="treatment_interest" name="treatment_interest" data-rstk-custom-field="treatment_interest" data-ristak-field="treatment_interest" required>.
+- Si hay telefono, usa type="tel", name="phone", data-rstk-field="phone", autocomplete="tel".
+- Si hay email, usa type="email", name="email", data-rstk-field="email", autocomplete="email".
+
+JSON cuando falta informacion:
+{
+  "status": "needs_more_info",
+  "reply": "Pregunta breve al usuario"
+}
+
+JSON cuando esta listo:
+{
+  "status": "ready",
+  "reply": "Pagina HTML lista para importar.",
+  "page": {
+    "siteType": "${targetSiteType}",
+    "filename": "pagina-generada.html",
+    "name": "Nombre interno",
+    "title": "Titulo publico",
+    "description": "Descripcion corta",
+    "html": "<!doctype html>..."
+  }
+}
+
+${editMode ? `
+Modo edicion:
+- Recibiras el HTML actual y la peticion del usuario.
+- Devuelve el HTML completo actualizado, no solo un fragmento.
+- Conserva formularios, ids, name, data-rstk-form, data-rstk-form-id, data-rstk-field, data-ristak-field y data-rstk-custom-field cuando el usuario no pida cambiarlos.
+- Si cambias campos, deja convenciones claras para que Ristak pueda redetectar y mapear.
+- Puedes cambiar titulo, imagenes, orden de secciones, colores, layout, copy y campos segun lo que pida el usuario.
+` : `
+Modo creacion:
+- Si el usuario pidio formulario, incluyelo completo y bien mapeado.
+- Si no especifica campos, usa los campos minimos razonables para el objetivo.
+- Para landings de captura, incluye nombre completo, telefono o email y un campo de interes si aplica.
+`}
+
+Catalogo de imagenes permitido:
+${imageCatalog}
+
+Contexto del negocio configurado en Ristak:
+${businessContext || 'Sin contexto adicional configurado.'}
+`.trim()
+}
+
+async function callSitesAIJson({ apiKey, model, instructions, input, maxOutputTokens = 7200, fallbackError = 'OpenAI no pudo generar el site' }) {
   const response = await fetch(OPENAI_RESPONSES_URL, {
     method: 'POST',
     headers: {
@@ -3705,32 +3862,9 @@ async function callSitesAIGenerator({ apiKey, model, siteKind, messages, agentCo
     },
     body: JSON.stringify({
       model: cleanString(model) || 'gpt-5.5',
-      instructions: buildSitesAIInstructions({ siteKind, agentConfig }),
-      input: JSON.stringify({
-        siteKind,
-        builderContext: {
-          targetSiteType: getSitesAITargetType(siteKind),
-          landingBlocks: ['header_panel', 'section', 'hero', 'title', 'subtitle', 'text', 'image', 'video', 'button', 'benefits', 'testimonials', 'services', 'embed', 'calendar_embed', 'form_embed', 'social_profile', 'faq', 'cta', 'footer_panel'],
-          formBlocks: ['title', 'subtitle', 'description', 'image', 'video', 'short_text', 'paragraph', 'number', 'currency', 'dropdown', 'radio', 'checkboxes', 'phone', 'email', 'date', 'embed', 'calendar_embed', 'social_profile'],
-          styleSettings: SITES_AI_STYLE_SETTINGS,
-          copyLimits: SITES_AI_COPY_LIMITS,
-          imageCatalog: SITES_AI_STOCK_IMAGE_LIBRARY.map(group => ({
-            id: group.id,
-            label: group.label,
-            backgroundImage: group.backgroundImage,
-            images: group.images
-          })),
-          previewModel: {
-            desktopWidth: 1440,
-            formMaxWidth: '480-620px',
-            sectionColumns: '1-3',
-            textSizing: 'fontSize and contentMaxWidth are saved into each block settings',
-            mediaSizing: 'mediaWidth, mediaAlign and mediaRadius are saved into image/video settings'
-          }
-        },
-        conversation: messages
-      }),
-      max_output_tokens: 7200
+      instructions,
+      input: JSON.stringify(input),
+      max_output_tokens: maxOutputTokens
     })
   })
 
@@ -3742,13 +3876,114 @@ async function callSitesAIGenerator({ apiKey, model, siteKind, messages, agentCo
   }
 
   if (!response.ok) {
-    const error = new Error(getOpenAIErrorMessage(data))
+    const error = new Error(getOpenAIErrorMessage(data, fallbackError))
     error.status = response.status >= 400 && response.status < 500 ? 400 : 502
     throw error
   }
 
   const text = extractOpenAIResponseText(data)
   return parseSitesAIJson(text)
+}
+
+async function callSitesAIGenerator({ apiKey, model, siteKind, messages, agentConfig }) {
+  return callSitesAIJson({
+    apiKey,
+    model,
+    instructions: buildSitesAIInstructions({ siteKind, agentConfig }),
+    input: {
+      siteKind,
+      builderContext: {
+        targetSiteType: getSitesAITargetType(siteKind),
+        landingBlocks: ['header_panel', 'section', 'hero', 'title', 'subtitle', 'text', 'image', 'video', 'button', 'benefits', 'testimonials', 'services', 'embed', 'calendar_embed', 'form_embed', 'social_profile', 'faq', 'cta', 'footer_panel'],
+        formBlocks: ['title', 'subtitle', 'description', 'image', 'video', 'short_text', 'paragraph', 'number', 'currency', 'dropdown', 'radio', 'checkboxes', 'phone', 'email', 'date', 'embed', 'calendar_embed', 'social_profile'],
+        styleSettings: SITES_AI_STYLE_SETTINGS,
+        copyLimits: SITES_AI_COPY_LIMITS,
+        imageCatalog: SITES_AI_STOCK_IMAGE_LIBRARY.map(group => ({
+          id: group.id,
+          label: group.label,
+          backgroundImage: group.backgroundImage,
+          images: group.images
+        })),
+        previewModel: {
+          desktopWidth: 1440,
+          formMaxWidth: '480-620px',
+          sectionColumns: '1-3',
+          textSizing: 'fontSize and contentMaxWidth are saved into each block settings',
+          mediaSizing: 'mediaWidth, mediaAlign and mediaRadius are saved into image/video settings'
+        }
+      },
+      conversation: messages
+    },
+    maxOutputTokens: 7200
+  })
+}
+
+async function callSitesAIHtmlGenerator({ apiKey, model, siteKind, messages, agentConfig }) {
+  return callSitesAIJson({
+    apiKey,
+    model,
+    instructions: buildSitesAIHtmlInstructions({ siteKind, agentConfig }),
+    input: {
+      siteKind,
+      targetSiteType: getSitesAITargetType(siteKind),
+      conversation: messages
+    },
+    maxOutputTokens: 18000,
+    fallbackError: 'OpenAI no pudo generar el HTML'
+  })
+}
+
+async function callSitesAIHtmlEditor({ apiKey, model, siteKind, messages, agentConfig, site, importedSite }) {
+  return callSitesAIJson({
+    apiKey,
+    model,
+    instructions: buildSitesAIHtmlInstructions({ siteKind, agentConfig, editMode: true }),
+    input: {
+      siteKind,
+      targetSiteType: getSitesAITargetType(siteKind),
+      site: {
+        id: site?.id,
+        name: site?.name,
+        title: site?.title,
+        description: site?.description,
+        siteType: site?.siteType
+      },
+      importedSite: {
+        importType: importedSite?.importType,
+        originalFilename: importedSite?.originalFilename,
+        detectedForms: importedSite?.detectedForms || [],
+        formMappings: importedSite?.formMappings || []
+      },
+      currentHtml: limitString(importedSite?.htmlSanitized || importedSite?.htmlOriginal || '', 90000),
+      conversation: messages
+    },
+    maxOutputTokens: 18000,
+    fallbackError: 'OpenAI no pudo editar el HTML'
+  })
+}
+
+function normalizeAIHtmlPagePayload(aiPayload = {}, siteKind = 'landing') {
+  const page = aiPayload.page || aiPayload.site || aiPayload
+  const targetSiteType = getSitesAITargetType(siteKind)
+  const html = String(page?.html || aiPayload.html || '').trim()
+  if (!html) {
+    const error = new Error('La IA no devolvio HTML para importar')
+    error.status = 502
+    throw error
+  }
+
+  let filename = cleanString(page?.filename || page?.fileName || page?.name || 'pagina-generada.html')
+  filename = filename.replace(/[^\w.\-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '')
+  if (!/\.html?$/i.test(filename)) filename = `${filename || 'pagina-generada'}.html`
+
+  return {
+    siteType: targetSiteType,
+    filename,
+    name: limitString(page?.name || page?.title || filename.replace(/\.[^.]+$/, ''), 100),
+    title: limitString(page?.title || page?.name || filename.replace(/\.[^.]+$/, ''), 120),
+    description: limitString(page?.description || page?.seoDescription || page?.seo?.description, 220),
+    html
+  }
 }
 
 function normalizeAIOption(option = {}) {
@@ -4794,6 +5029,20 @@ function getImportedHtmlTitle(html = '', fallback = 'Pagina importada') {
   return limitString(stripHtmlTags(titleMatch?.[1] || fallback), 120)
 }
 
+function getImportedHtmlDescription(html = '', fallback = '') {
+  const metaPattern = /<meta\b([^>]*)>/gi
+  let match
+  while ((match = metaPattern.exec(String(html || '')))) {
+    const attrs = parseHtmlAttributes(match[1] || '')
+    const name = cleanString(attrs.name || attrs.property).toLowerCase()
+    if (['description', 'og:description', 'twitter:description'].includes(name)) {
+      const content = cleanString(attrs.content)
+      if (content) return limitString(content, 220)
+    }
+  }
+  return limitString(fallback, 220)
+}
+
 function pickImportedZipMainHtmlPath(paths = [], filename = '') {
   const sorted = [...paths].sort((left, right) => {
     const leftDepth = left.split('/').length
@@ -5157,7 +5406,7 @@ export async function createImportedSiteFromHtml(input = {}) {
   } else {
     const rawHtml = input.html || decodeBase64Text(input.fileBase64 || input.contentBase64 || input.content)
     const sanitized = sanitizeImportedHtml(rawHtml)
-    const detectedForms = detectImportedForms(sanitized.html)
+    const detectedForms = namespaceImportedPageForms(detectImportedForms(sanitized.html), '', new Set())
     prepared = {
       importType: 'html',
       rawHtml,
@@ -5173,7 +5422,8 @@ export async function createImportedSiteFromHtml(input = {}) {
 
   const detectedForms = prepared.detectedForms
   const mappings = buildDefaultImportedFormMappings(detectedForms)
-  const publicTitle = getImportedHtmlTitle(prepared.sanitized.html, filename.replace(/\.[^.]+$/, '') || 'Pagina importada')
+  const publicTitle = getImportedHtmlTitle(prepared.sanitized.html, input.title || filename.replace(/\.[^.]+$/, '') || 'Pagina importada')
+  const publicDescription = getImportedHtmlDescription(prepared.sanitized.html, input.description || 'Pagina importada desde HTML propio')
   const slug = await ensureUniqueSlug(slugify(input.slug || publicTitle || 'pagina-importada'))
   const theme = {
     ...DEFAULT_THEME,
@@ -5198,7 +5448,7 @@ export async function createImportedSiteFromHtml(input = {}) {
     slug,
     siteType,
     publicTitle,
-    'Pagina importada desde HTML propio',
+    publicDescription || 'Pagina importada desde HTML propio',
     jsonString(theme),
     normalizeBoolean(input.metaCapiEnabled),
     normalizeSiteMetaEventName(input.metaEventName, { allowNone: true, fallback: SITE_META_NO_EVENT })
@@ -5260,13 +5510,200 @@ export async function updateImportedSiteFormMappings(siteId, input = {}) {
   return getImportedSiteBySiteId(siteId)
 }
 
-export async function createSiteWithAI(input = {}) {
-  const siteKind = cleanString(input.siteKind || input.site_kind)
-  if (!['landing', 'form', 'interactive_form'].includes(siteKind)) {
-    const error = new Error('Tipo de creacion con IA invalido')
+async function replaceImportedSiteHtml(siteId, input = {}) {
+  const currentImport = await getImportedSiteBySiteId(siteId)
+  if (!currentImport) {
+    const error = new Error('Importacion no encontrada')
+    error.status = 404
+    throw error
+  }
+
+  if (currentImport.importType !== 'html') {
+    const error = new Error('La edicion con IA funciona con paginas HTML de un solo archivo. Para ZIP, sube una nueva version del archivo.')
     error.status = 400
     throw error
   }
+
+  const rawHtml = String(input.html || '').trim()
+  if (!rawHtml) {
+    const error = new Error('El HTML actualizado esta vacio')
+    error.status = 400
+    throw error
+  }
+
+  const sanitized = sanitizeImportedHtml(rawHtml)
+  const detectedForms = namespaceImportedPageForms(detectImportedForms(sanitized.html), '', new Set())
+  const htmlSanitized = assignImportedFormIds(sanitized.html, detectedForms)
+  const nextMappings = mergeImportedFormMappings(
+    currentImport.formMappings,
+    buildDefaultImportedFormMappings(detectedForms)
+  )
+  const publicTitle = getImportedHtmlTitle(htmlSanitized, input.title || 'Pagina importada')
+  const publicDescription = getImportedHtmlDescription(htmlSanitized, input.description || '')
+
+  await db.run(`
+    UPDATE public_site_imports SET
+      html_original = ?,
+      html_sanitized = ?,
+      detected_forms_json = ?,
+      form_mappings_json = ?,
+      security_report_json = ?,
+      status = 'mapping_pending',
+      updated_at = CURRENT_TIMESTAMP
+    WHERE site_id = ?
+  `, [
+    rawHtml,
+    htmlSanitized,
+    jsonString(detectedForms),
+    jsonString(nextMappings),
+    jsonString(sanitized.report),
+    siteId
+  ])
+
+  await db.run(`
+    UPDATE public_sites SET
+      title = ?,
+      description = ?,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `, [
+    publicTitle,
+    publicDescription || null,
+    siteId
+  ])
+
+  return {
+    site: await getSite(siteId, { includeBlocks: true, includeSubmissions: true }),
+    import: await getImportedSiteBySiteId(siteId)
+  }
+}
+
+export async function createSiteWithAIHtml(input = {}) {
+  const siteKind = validateSitesAICreationKind(input.siteKind || input.site_kind)
+  const messages = normalizeSitesAIMessages(input.messages)
+  if (messages.length === 0) {
+    return {
+      status: 'needs_more_info',
+      reply: siteKind === 'landing'
+        ? 'Cuentame el negocio, oferta, objetivo, estilo visual, CTA y que campos quieres capturar si llevara formulario.'
+        : 'Cuentame que formulario quieres, que datos debe pedir, estilo visual y que mensaje debe ver la persona al terminar.'
+    }
+  }
+
+  const apiKey = await getOpenAIApiKey()
+  if (!apiKey) {
+    const error = new Error('Primero configura la API key de OpenAI en Configuracion.')
+    error.status = 409
+    throw error
+  }
+
+  const agentConfig = await getAIAgentConfig({ userId: input.userId })
+  const aiPayload = await callSitesAIHtmlGenerator({
+    apiKey,
+    model: agentConfig?.model,
+    siteKind,
+    messages,
+    agentConfig
+  })
+
+  const status = cleanString(aiPayload?.status)
+  if (status === 'needs_more_info' || !(aiPayload?.page || aiPayload?.html || aiPayload?.site)) {
+    return {
+      status: 'needs_more_info',
+      reply: limitString(aiPayload?.reply, 1000) || 'Me falta un dato clave para armar la pagina HTML. Cuentame un poco mas del negocio, objetivo y campos.'
+    }
+  }
+
+  const page = normalizeAIHtmlPagePayload(aiPayload, siteKind)
+  const result = await createImportedSiteFromHtml({
+    siteType: page.siteType,
+    filename: page.filename,
+    html: page.html,
+    name: page.name,
+    title: page.title,
+    description: page.description || 'Pagina generada con IA desde HTML.',
+    userId: input.userId,
+    metaCapiEnabled: input.metaCapiEnabled,
+    metaEventName: input.metaEventName
+  })
+
+  return {
+    status: 'created',
+    creationMode: 'html',
+    reply: limitString(aiPayload?.reply, 1000) || 'Listo, genere la pagina HTML y la importe para revisar sus formularios.',
+    site: result.site,
+    import: result.import
+  }
+}
+
+export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
+  const currentSite = await getSite(siteId, { includeBlocks: true, includeSubmissions: true })
+  if (!currentSite) {
+    const error = new Error('Site no encontrado')
+    error.status = 404
+    throw error
+  }
+
+  const currentImport = await getImportedSiteBySiteId(siteId)
+  if (!currentImport) {
+    const error = new Error('Importacion no encontrada')
+    error.status = 404
+    throw error
+  }
+
+  const siteKind = validateSitesAICreationKind(input.siteKind || input.site_kind || getSitesAIKindFromSiteType(currentSite.siteType))
+  const messages = normalizeSitesAIMessages(input.messages)
+  if (messages.length === 0) {
+    return {
+      status: 'needs_more_info',
+      reply: 'Dime que quieres cambiar del HTML: titulo, imagen, orden de secciones, colores, textos o campos del formulario.'
+    }
+  }
+
+  const apiKey = await getOpenAIApiKey()
+  if (!apiKey) {
+    const error = new Error('Primero configura la API key de OpenAI en Configuracion.')
+    error.status = 409
+    throw error
+  }
+
+  const agentConfig = await getAIAgentConfig({ userId: input.userId })
+  const aiPayload = await callSitesAIHtmlEditor({
+    apiKey,
+    model: agentConfig?.model,
+    siteKind,
+    messages,
+    agentConfig,
+    site: currentSite,
+    importedSite: currentImport
+  })
+
+  const status = cleanString(aiPayload?.status)
+  if (status === 'needs_more_info' || !(aiPayload?.page || aiPayload?.html || aiPayload?.site)) {
+    return {
+      status: 'needs_more_info',
+      reply: limitString(aiPayload?.reply, 1000) || 'Me falta saber que cambio quieres hacer en esta pagina HTML.'
+    }
+  }
+
+  const page = normalizeAIHtmlPagePayload(aiPayload, siteKind)
+  const result = await replaceImportedSiteHtml(siteId, {
+    html: page.html,
+    title: page.title || currentSite.title,
+    description: page.description || currentSite.description
+  })
+
+  return {
+    status: 'updated',
+    creationMode: 'html',
+    reply: limitString(aiPayload?.reply, 1000) || 'Listo, actualice el HTML y volvi a revisar los formularios.',
+    site: result.site,
+    import: result.import
+  }
+}
+
+export async function createSiteWithAI(input = {}) {
+  const siteKind = validateSitesAICreationKind(input.siteKind || input.site_kind)
 
   const messages = normalizeSitesAIMessages(input.messages)
   if (messages.length === 0) {
