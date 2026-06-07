@@ -888,6 +888,10 @@ body.dark .select:focus {
   gap: 12px;
 }
 
+.profileDetailsWide {
+  grid-column: 1 / -1;
+}
+
 .labelsGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

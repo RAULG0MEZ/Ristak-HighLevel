@@ -203,6 +203,7 @@ export const AccountSettings: React.FC = () => {
   const localeBootstrappedRef = useRef(false)
 
   const currentUsername = user?.username || 'admin'
+  const accountEmail = user?.email || (currentUsername.includes('@') ? currentUsername : '')
   const visibleProfilePhoto = isEditingPhoto ? profilePhotoDraft : profilePhoto
   const profileNameFallback = user?.name && user.name !== user.username ? user.name : ''
   const fallbackNameParts = useMemo(() => splitFallbackName(profileNameFallback), [profileNameFallback])
@@ -773,7 +774,7 @@ export const AccountSettings: React.FC = () => {
                 <div>
                   <h3 className={styles.accountSectionTitle}>Datos de cuenta</h3>
                   <p className={styles.accountSectionDescription}>
-                    Estos datos identifican al administrador y el negocio que aparece en el menú lateral.
+                    El nombre del negocio aparece en el menú lateral. Si lo dejas vacío, se mostrará el correo.
                   </p>
                 </div>
               </div>
@@ -806,6 +807,18 @@ export const AccountSettings: React.FC = () => {
                 </div>
 
                 <div className={styles.field}>
+                  <label className={styles.label} htmlFor="account-email">Correo</label>
+                  <input
+                    id="account-email"
+                    className={`${styles.input} ${styles.inputReadOnly}`}
+                    type="text"
+                    value={accountEmail || 'Sin correo guardado'}
+                    readOnly
+                    autoComplete="email"
+                  />
+                </div>
+
+                <div className={styles.field}>
                   <label className={styles.label} htmlFor="account-phone">Teléfono</label>
                   <input
                     id="account-phone"
@@ -819,7 +832,7 @@ export const AccountSettings: React.FC = () => {
                   />
                 </div>
 
-                <div className={styles.field}>
+                <div className={`${styles.field} ${styles.profileDetailsWide}`}>
                   <label className={styles.label} htmlFor="account-business-name">Nombre del negocio</label>
                   <input
                     id="account-business-name"

@@ -228,10 +228,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, onLogout }) => {
   const longPressStartPos = React.useRef<{ x: number; y: number } | null>(null)
   const userMenuRef = React.useRef<HTMLDivElement>(null)
 
-  const initials = getInitials(user?.name, user?.email)
-  const accountMenuName = user?.name || user?.username || 'Usuario'
-  const accountMenuDetail = user?.businessName || user?.email || 'Sin correo guardado'
-  const accountMenuEmail = user?.businessName && user?.email ? user.email : ''
+  const accountMenuLabel = user?.businessName || user?.email || user?.name || user?.username || 'Usuario'
+  const initials = getInitials(accountMenuLabel, user?.email)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -426,11 +424,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, onLogout }) => {
               {initials}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-medium text-[var(--color-text-primary)]">
-                {accountMenuName}
-              </span>
-              <span className="mt-0.5 block truncate text-[11px] font-medium text-[var(--color-text-tertiary)]">
-                {accountMenuDetail}
+              <span className="block truncate text-sm font-semibold text-[var(--color-text-primary)]">
+                {accountMenuLabel}
               </span>
             </span>
             <ChevronDown
@@ -453,11 +448,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, onLogout }) => {
                     {initials}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{accountMenuName}</p>
-                    <p className="truncate text-xs text-[var(--color-text-tertiary)]">{accountMenuDetail}</p>
-                    {accountMenuEmail && (
-                      <p className="mt-0.5 truncate text-xs text-[var(--color-text-tertiary)]">{accountMenuEmail}</p>
-                    )}
+                    <p className="truncate text-sm font-semibold text-[var(--color-text-primary)]">{accountMenuLabel}</p>
                   </div>
                 </div>
               </div>
