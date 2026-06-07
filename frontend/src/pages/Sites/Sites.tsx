@@ -3150,6 +3150,20 @@ export const Sites: React.FC = () => {
     if (routeState.siteId) {
       if (suppressEditorRouteRestoreRef.current) return
 
+      const pendingGenerationSite = selectedSiteRef.current
+      if (aiEditorGeneration?.siteId === routeState.siteId && pendingGenerationSite?.id === routeState.siteId) {
+        if (selectedSite?.id !== pendingGenerationSite.id) {
+          setSelectedSite(pendingGenerationSite)
+        }
+        if (routeState.pageId && routeState.pageId !== activePageId) {
+          setActivePageId(routeState.pageId)
+        }
+        if (routeState.blockId !== selectedBlockId) {
+          setSelectedBlockId(routeState.blockId)
+        }
+        return
+      }
+
       if (selectedSite?.id !== routeState.siteId) {
         void openSite(routeState.siteId, routeState.pageId || undefined, { replaceRoute: true })
         return
@@ -3172,6 +3186,7 @@ export const Sites: React.FC = () => {
       setActivePageId(DEFAULT_FUNNEL_PAGE_ID)
     }
   }, [
+    aiEditorGeneration?.siteId,
     activePageId,
     loading,
     routeState.blockId,
@@ -3727,6 +3742,8 @@ export const Sites: React.FC = () => {
     const pendingSite = editSite ? normalizeSiteForEditor(editSite) : makePendingAIGenerationSite(siteKind)
     const pendingSiteId = pendingSite.id
     const pendingPages = normalizeFunnelPages(pendingSite)
+    const pendingSection = getSiteSection(pendingSite)
+    const pendingPageId = pendingPages[0]?.id || DEFAULT_FUNNEL_PAGE_ID
 
     const restoreAfterGenerationProblem = (
       toastType: 'warning' | 'error',
@@ -3740,12 +3757,22 @@ export const Sites: React.FC = () => {
         setSelectedSite(restoredSite)
         selectedSiteRef.current = restoredSite
         setActivePageId(restoredPages[0]?.id || DEFAULT_FUNNEL_PAGE_ID)
+        navigate(buildSitesEditorPath({
+          section: getSiteSection(restoredSite),
+          siteId: restoredSite.id,
+          pageId: restoredPages[0]?.id || DEFAULT_FUNNEL_PAGE_ID,
+          device,
+          focus: editorFocusMode
+        }), { replace: true })
       } else {
         setSites(current => current.filter(item => item.id !== pendingSiteId))
         if (selectedSiteRef.current?.id === pendingSiteId) {
           setSelectedSite(null)
           selectedSiteRef.current = null
         }
+        setSection(pendingSection)
+        setCreateFlow(getCreateFlowForSection(pendingSection))
+        navigate(buildSitesCreatePath(pendingSection, getCreateFlowForSection(pendingSection)), { replace: true })
       }
       setAiCreationModal({ siteKind, editSite: editSite || null })
       showToast(toastType, title, message)
@@ -3756,8 +3783,8 @@ export const Sites: React.FC = () => {
     setImportReview(null)
     setSelectedImportData(null)
     setSelectedBlockId('')
-    setActivePageId(pendingPages[0]?.id || DEFAULT_FUNNEL_PAGE_ID)
-    setSection(pendingSite.siteType === 'landing_page' ? 'landings' : 'forms')
+    setActivePageId(pendingPageId)
+    setSection(pendingSection)
     setCreateFlow('closed')
     setHasUnsavedChanges(false)
     setEditorFocusMode(false)
@@ -3770,6 +3797,13 @@ export const Sites: React.FC = () => {
     })
     setSelectedSite(pendingSite)
     selectedSiteRef.current = pendingSite
+    navigate(buildSitesEditorPath({
+      section: pendingSection,
+      siteId: pendingSiteId,
+      pageId: pendingPageId,
+      device,
+      focus: false
+    }), { replace: true })
 
     try {
       const result = editSite
@@ -3810,7 +3844,7 @@ export const Sites: React.FC = () => {
         pageId: nextPageId,
         device,
         focus: editorFocusMode
-      }))
+      }), { replace: true })
       showToast(
         'success',
         editSite ? 'Página actualizada con IA' : 'Página creada con IA',
