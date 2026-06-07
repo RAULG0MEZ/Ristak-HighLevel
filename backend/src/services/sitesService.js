@@ -151,6 +151,7 @@ const IMPORTED_ASSET_CONTENT_TYPES = new Map([
   ['ogg', 'audio/ogg']
 ])
 const IMPORTED_ASSET_ALLOWED_EXTENSIONS = new Set(IMPORTED_ASSET_CONTENT_TYPES.keys())
+const IMPORTED_EDITABLE_IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif'])
 const IMPORTED_STATIC_FALLBACK_STYLE = `<style data-rstk-import-static-fallback>
 .reveal,
 [data-aos] {
@@ -4351,6 +4352,82 @@ function buildImportedAssetRow({ importId, siteId, assetPath, contentType, conte
   }
 }
 
+function getImportedEditableUploadMimeType(value = '') {
+  const match = cleanString(value).match(/^data:([^;,]+);base64,/i)
+  return cleanString(match?.[1]).toLowerCase()
+}
+
+function getImportedEditableImageExtension(filename = '', mimeType = '') {
+  const safeName = normalizeImportedAssetPath(filename).split('/').pop() || ''
+  let extension = getImportedAssetExtension(safeName)
+
+  if (!IMPORTED_EDITABLE_IMAGE_EXTENSIONS.has(extension)) {
+    const normalizedMime = cleanString(mimeType).toLowerCase()
+    const extensionByMime = {
+      'image/png': 'png',
+      'image/jpeg': 'jpg',
+      'image/jpg': 'jpg',
+      'image/gif': 'gif',
+      'image/webp': 'webp',
+      'image/avif': 'avif'
+    }
+    extension = extensionByMime[normalizedMime] || ''
+  }
+
+  if (!IMPORTED_EDITABLE_IMAGE_EXTENSIONS.has(extension)) {
+    const error = new Error('Sube una imagen PNG, JPG, WEBP, GIF o AVIF.')
+    error.status = 400
+    throw error
+  }
+
+  return extension === 'jpeg' ? 'jpg' : extension
+}
+
+async function addImportedEditableImageAsset(siteId, currentImport, input = {}) {
+  const fileBase64 = cleanString(input.fileBase64 || input.file_base64)
+  if (!fileBase64) return ''
+
+  const buffer = decodeBase64Buffer(fileBase64)
+  if (!buffer.length) {
+    const error = new Error('La imagen esta vacia.')
+    error.status = 400
+    throw error
+  }
+
+  if (buffer.byteLength > IMPORTED_ASSET_MAX_BYTES) {
+    const error = new Error('La imagen es demasiado grande. Sube una imagen de maximo 8 MB.')
+    error.status = 400
+    throw error
+  }
+
+  const extension = getImportedEditableImageExtension(input.filename || input.fileName || 'imagen', getImportedEditableUploadMimeType(fileBase64))
+  const assetPath = `ai-edits/${Date.now()}-${crypto.randomUUID()}.${extension}`
+  const asset = buildImportedAssetRow({
+    importId: currentImport.id,
+    siteId,
+    assetPath,
+    contentType: getImportedAssetContentType(assetPath),
+    content: buffer
+  })
+
+  await db.run(`
+    INSERT INTO public_site_import_assets (
+      id, import_id, site_id, asset_path, content_type, content_base64, size_bytes,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+  `, [
+    asset.id,
+    asset.importId,
+    asset.siteId,
+    asset.assetPath,
+    asset.contentType,
+    asset.contentBase64,
+    asset.sizeBytes
+  ])
+
+  return `/api/sites/public/imported-assets/${encodeURIComponent(siteId)}/${assetPath}`
+}
+
 async function prepareImportedZipContent({ filename, fileBase64, siteId, importId }) {
   const archive = await extractImportedZipArchive(filename, decodeBase64Buffer(fileBase64))
   const availablePaths = new Set(archive.files.map(file => file.assetPath))
@@ -4765,8 +4842,23 @@ export async function updateImportedSiteEditableContent(siteId, input = {}) {
     throw error
   }
 
+  let updateInput = { ...input }
+  if (cleanString(updateInput.fileBase64 || updateInput.file_base64)) {
+    const editType = normalizeImportedEditableContentType(updateInput.editType || updateInput.edit_type)
+    if (!['image', 'background_image'].includes(editType)) {
+      const error = new Error('La subida de archivo solo aplica para imagenes.')
+      error.status = 400
+      throw error
+    }
+    const uploadedImageUrl = await addImportedEditableImageAsset(siteId, currentImport, updateInput)
+    updateInput = {
+      ...updateInput,
+      value: uploadedImageUrl
+    }
+  }
+
   const currentHtml = currentImport.htmlSanitized || currentImport.htmlOriginal || ''
-  const editedHtml = applyImportedEditableContentUpdate(currentHtml, input)
+  const editedHtml = applyImportedEditableContentUpdate(currentHtml, updateInput)
   const sanitized = sanitizeImportedHtml(editedHtml)
   const detectedForms = namespaceImportedPageForms(detectImportedForms(sanitized.html), '', new Set())
   const htmlSanitized = annotateImportedEditableHtml(assignImportedFormIds(sanitized.html, detectedForms))
@@ -5597,7 +5689,7 @@ function renderPhoneCountryOptions(defaultCountryCode) {
   const selectedCountry = getPhoneCountryOption(defaultCountryCode)
   return COUNTRY_OPTIONS.map(country => {
     const selected = country.value === selectedCountry.value ? 'selected' : ''
-    const label = `${getCountryFlagEmoji(country.value)} +${country.dialCode} ${country.label}`
+    const label = `${getCountryFlagEmoji(country.value)} +${country.dialCode}`
     return `<option value="${escapeHtml(country.value)}" data-dial-code="${escapeHtml(country.dialCode)}" data-timezones="${escapeHtml((country.timezones || []).join(','))}" ${selected}>${escapeHtml(label)}</option>`
   }).join('')
 }
@@ -7817,7 +7909,7 @@ const RSTK_BASE_CSS = `
 	    padding:13px 14px;outline:none;transition:border-color .15s ease,box-shadow .15s ease;
 	  }
 	  .rstk-kind-form .rstk-field > input,.rstk-kind-form .rstk-field > textarea,.rstk-kind-form .rstk-field > select{min-height:var(--rstk-form-field-height,50px);border-width:var(--rstk-form-field-border-width,1px);border-color:var(--rstk-form-field-border,var(--rstk-input-border));border-radius:var(--rstk-form-field-radius,var(--rstk-field-radius,var(--rstk-radius)));background:var(--rstk-form-field-bg,var(--rstk-input-bg));color:var(--rstk-form-field-text,var(--rstk-input-ink));font-family:var(--rstk-form-font,var(--rstk-font));font-size:var(--rstk-form-input-size,1rem);font-style:var(--rstk-form-font-style,normal);font-weight:var(--rstk-form-weight,700);text-decoration:var(--rstk-form-text-decoration,none);padding:var(--rstk-form-field-pad-y,13px) var(--rstk-form-field-pad-x,14px)}
-	  .rstk-phone-input{display:grid;grid-template-columns:minmax(128px,.42fr) minmax(0,1fr);gap:8px;align-items:stretch}
+	  .rstk-phone-input{display:grid;grid-template-columns:minmax(92px,.24fr) minmax(0,1fr);gap:8px;align-items:stretch}
 	  .rstk-phone-input > select,.rstk-phone-input > input{min-width:0}
 	  .rstk-kind-form .rstk-field .rstk-phone-input > input,.rstk-kind-form .rstk-field .rstk-phone-input > select{min-height:var(--rstk-form-field-height,50px);border-width:var(--rstk-form-field-border-width,1px);border-color:var(--rstk-form-field-border,var(--rstk-input-border));border-radius:var(--rstk-form-field-radius,var(--rstk-field-radius,var(--rstk-radius)));background-color:var(--rstk-form-field-bg,var(--rstk-input-bg));color:var(--rstk-form-field-text,var(--rstk-input-ink));font-family:var(--rstk-form-font,var(--rstk-font));font-size:var(--rstk-form-input-size,1rem);font-style:var(--rstk-form-font-style,normal);font-weight:var(--rstk-form-weight,700);text-decoration:var(--rstk-form-text-decoration,none);padding:var(--rstk-form-field-pad-y,13px) var(--rstk-form-field-pad-x,14px)}
 	  textarea{resize:vertical;min-height:108px}

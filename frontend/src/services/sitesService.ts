@@ -352,6 +352,8 @@ export interface ImportedEditableContentUpdate {
   editId: string
   editType: ImportedEditableContentType
   value: string
+  fileBase64?: string
+  filename?: string
 }
 
 export type SitesAICreationKind = 'landing' | 'form' | 'interactive_form'

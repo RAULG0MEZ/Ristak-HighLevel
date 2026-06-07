@@ -48,12 +48,14 @@ import {
   Link2,
   ListChecks,
   Maximize2,
+  Mic,
   Monitor,
   MoreVertical,
   Music2,
   MousePointerClick,
   PanelBottom,
   PanelTop,
+  Paperclip,
   Pencil,
   Play,
   Plus,
@@ -96,6 +98,8 @@ import {
   siteTemplates,
   sitesService,
   type PublicSite,
+  type SitesAICreationKind,
+  type SitesAICreationMessage,
   type SitesDomainConfig,
   type SiteBlock,
   type SiteBlockOption,
@@ -109,9 +113,9 @@ import {
   type SiteTheme,
   type SiteType
 } from '@/services/sitesService'
+import { aiAgentService } from '@/services/aiAgentService'
 import { campaignsService, type ConnectedSocialProfile } from '@/services/campaignsService'
 import { calendarsService, type Calendar as CalendarType } from '@/services/calendarsService'
-import { requestAIAgentOpen, type AIAgentSitesCreationKind } from '@/utils/aiAgentEvents'
 import { COUNTRY_OPTIONS, getCountryDefaults, getCountryFlagEmoji, getDetectedAccountLocaleDefaults } from '@/utils/accountLocale'
 import styles from './Sites.module.css'
 import './sitesCanvas.css'
@@ -136,6 +140,18 @@ interface LeadRow extends SiteSubmission {
 interface ImportReviewState {
   site: PublicSite
   importData: ImportedSiteImport
+}
+
+type SitesAICreationModalState = {
+  siteKind: SitesAICreationKind
+  editSite?: PublicSite | null
+} | null
+
+type SitesAICreationModalSubmit = {
+  siteKind: SitesAICreationKind
+  prompt: string
+  attachmentNotes: string[]
+  editSite?: PublicSite | null
 }
 
 const sectionItems: Array<{ id: SitesSection; label: string; icon: React.ReactNode }> = [
@@ -383,7 +399,7 @@ const normalizeSiteForEditor = (site: PublicSite): PublicSite => ({
 })
 const isImportedHtmlSite = (site?: PublicSite | null) =>
   Boolean(site?.theme?.importedHtml || site?.theme?.template === 'imported_html')
-const getAIAgentSiteKindForSite = (site: PublicSite): AIAgentSitesCreationKind => {
+const getAIAgentSiteKindForSite = (site: PublicSite): SitesAICreationKind => {
   if (site.siteType === 'interactive_form') return 'interactive_form'
   if (site.siteType === 'standard_form') return 'form'
   return 'landing'
@@ -2331,6 +2347,7 @@ export const Sites: React.FC = () => {
   const [pendingImportSiteType, setPendingImportSiteType] = useState<SiteType>('landing_page')
   const [importReview, setImportReview] = useState<ImportReviewState | null>(null)
   const [selectedImportData, setSelectedImportData] = useState<ImportedSiteImport | null>(null)
+  const [aiCreationModal, setAiCreationModal] = useState<SitesAICreationModalState>(null)
   const [loadingImportData, setLoadingImportData] = useState(false)
   const [savingImportMapping, setSavingImportMapping] = useState(false)
   const selectedSiteRef = useRef<PublicSite | null>(null)
@@ -3206,24 +3223,72 @@ export const Sites: React.FC = () => {
     }
   }
 
-  const handleCreateSiteWithAI = (siteKind: AIAgentSitesCreationKind, editSite?: PublicSite) => {
+  const handleCreateSiteWithAI = (siteKind: SitesAICreationKind, editSite?: PublicSite) => {
     if (!aiAgentConfigured) return
 
-    requestAIAgentOpen({
-      sitesCreation: {
-        siteKind,
-        editSiteId: editSite?.id,
-        metaCapiEnabled: metaPixelConnected,
-        siteTitle: editSite?.title || editSite?.name
-      }
-    })
-    showToast(
-      'info',
-      'IA abierta',
+    setAiCreationModal({ siteKind, editSite: editSite || null })
+  }
+
+  const handleSubmitAICreationModal = async ({
+    siteKind,
+    prompt,
+    attachmentNotes,
+    editSite
+  }: SitesAICreationModalSubmit): Promise<string | null> => {
+    const promptParts = [
       editSite
-        ? 'Dile que quieres cambiar del HTML y Ristak volvera a revisar sus campos.'
-        : 'Responde las preguntas y se generara una pagina HTML lista para importar.'
-    )
+        ? `Modifica esta pagina importada con IA segun la peticion del usuario. Manten formularios, campos, tracking y acciones de botones funcionando.`
+        : `Crea una pagina completa con IA libre en HTML/CSS para importarla en Ristak.`,
+      `Peticion del usuario:\n${prompt.trim()}`,
+      attachmentNotes.length ? `Archivos de referencia:\n${attachmentNotes.join('\n\n')}` : '',
+      [
+        'Reglas de experiencia:',
+        '- Usa textos cortos, titulares compactos y parrafos faciles de escanear.',
+        '- Si algun texto necesita ser largo, ajusta font-size, line-height y ancho para que no rompa el diseno.',
+        '- Usa fotos HTTPS visibles cuando ayuden al objetivo.',
+        '- Marca textos e imagenes editables con los atributos internos de Ristak.',
+        '- Prepara formularios con campos claros para que Ristak detecte y mapee datos automaticamente.'
+      ].join('\n')
+    ].filter(Boolean)
+    const messages: SitesAICreationMessage[] = [{ role: 'user', content: promptParts.join('\n\n') }]
+
+    setCreating(true)
+    try {
+      const result = editSite
+        ? await sitesService.editImportedHtmlWithAI(editSite.id, { siteKind, messages })
+        : await sitesService.createWithAIHtml({ siteKind, messages, metaCapiEnabled: metaPixelConnected })
+
+      if (result.status === 'needs_more_info' || !result.site || !result.import) {
+        return result.reply || 'Dame un poco mas de contexto para crear una pagina bien armada.'
+      }
+
+      const normalizedSite = normalizeSiteForEditor(result.site)
+      setSites(current => {
+        const exists = current.some(item => item.id === normalizedSite.id)
+        if (exists) return current.map(item => item.id === normalizedSite.id ? { ...item, ...normalizedSite } : item)
+        return [normalizedSite, ...current]
+      })
+      setSelectedSite(normalizedSite)
+      selectedSiteRef.current = normalizedSite
+      setSelectedBlockId('')
+      setActivePageId(DEFAULT_FUNNEL_PAGE_ID)
+      setSection(normalizedSite.siteType === 'landing_page' ? 'landings' : 'forms')
+      setCreateFlow('closed')
+      setHasUnsavedChanges(false)
+      setSelectedImportData(result.import)
+      setImportReview({ site: normalizedSite, importData: result.import })
+      setAiCreationModal(null)
+      showToast(
+        'success',
+        editSite ? 'Pagina actualizada con IA' : 'Pagina creada con IA',
+        'Ristak ya reviso el HTML. Confirma la ruta de datos antes de publicar.'
+      )
+      return null
+    } catch (error) {
+      return error instanceof Error ? error.message : 'No se pudo generar la pagina con IA'
+    } finally {
+      setCreating(false)
+    }
   }
 
   const handleOpenImportHtml = (siteType: SiteType) => {
@@ -4217,6 +4282,17 @@ export const Sites: React.FC = () => {
           />
         )}
 
+        {aiCreationModal && (
+          <SitesAICreationModal
+            state={aiCreationModal}
+            creating={creating}
+            onClose={() => {
+              if (!creating) setAiCreationModal(null)
+            }}
+            onSubmit={handleSubmitAICreationModal}
+          />
+        )}
+
         <div className={`${styles.sitesShell} ${isFocusedSitesMode ? styles.sitesShellFocused : ''}`}>
           {!isFocusedSitesMode && (
             <nav className={styles.sectionTabs} role="tablist" aria-label="Secciones de sitios">
@@ -4545,12 +4621,345 @@ export const Sites: React.FC = () => {
   )
 }
 
+type SitesAICreationAttachment = {
+  id: string
+  name: string
+  size: number
+  text: string
+}
+
+const AI_CREATION_TEXT_ATTACHMENT_MAX_CHARS = 8000
+const aiCreationTextFilePattern = /\.(txt|md|markdown|html?|css|json|csv|xml)$/i
+const aiCreationAudioMimeTypes = [
+  'audio/webm;codecs=opus',
+  'audio/webm',
+  'audio/mp4',
+  'audio/mpeg',
+  'audio/wav'
+]
+
+const getSitesAICreationKindLabel = (siteKind: SitesAICreationKind) => {
+  if (siteKind === 'interactive_form') return 'formulario interactivo'
+  if (siteKind === 'form') return 'formulario'
+  return 'pagina o embudo'
+}
+
+const getSitesAICreationPlaceholder = (siteKind: SitesAICreationKind, editMode: boolean) => {
+  if (editMode) return 'Dime que quieres cambiar: titulo, foto principal, orden de secciones, campos, estilo, colores...'
+  if (siteKind === 'form') return 'Ejemplo: formulario para agendar valoracion dental, pedir nombre, telefono, correo, tratamiento y fecha preferida...'
+  if (siteKind === 'interactive_form') return 'Ejemplo: quiz de 4 pasos para calificar prospectos, con captura final de nombre y telefono...'
+  return 'Ejemplo: embudo para clinica estetica con foto principal, beneficios, testimonios y formulario para agendar...'
+}
+
+const formatAICreationFileSize = (bytes: number) => {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 KB'
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+const makeAICreationId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+const readAICreationAttachment = async (file: File): Promise<SitesAICreationAttachment> => {
+  let text = ''
+  if (file.type.startsWith('text/') || aiCreationTextFilePattern.test(file.name)) {
+    text = (await file.text()).slice(0, AI_CREATION_TEXT_ATTACHMENT_MAX_CHARS)
+  }
+
+  return {
+    id: makeAICreationId(),
+    name: file.name,
+    size: file.size,
+    text
+  }
+}
+
+const getAICreationAudioMimeType = () => {
+  if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') return ''
+  return aiCreationAudioMimeTypes.find(mimeType => MediaRecorder.isTypeSupported(mimeType)) || ''
+}
+
+const SitesAICreationModal: React.FC<{
+  state: NonNullable<SitesAICreationModalState>
+  creating: boolean
+  onClose: () => void
+  onSubmit: (payload: SitesAICreationModalSubmit) => Promise<string | null>
+}> = ({ state, creating, onClose, onSubmit }) => {
+  const editMode = Boolean(state.editSite)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const mediaStreamRef = useRef<MediaStream | null>(null)
+  const voiceChunksRef = useRef<Blob[]>([])
+  const [prompt, setPrompt] = useState('')
+  const [attachments, setAttachments] = useState<SitesAICreationAttachment[]>([])
+  const [attachmentError, setAttachmentError] = useState('')
+  const [voiceState, setVoiceState] = useState<'idle' | 'recording' | 'transcribing'>('idle')
+  const [voiceError, setVoiceError] = useState('')
+  const [assistantReply, setAssistantReply] = useState('')
+  const [submitError, setSubmitError] = useState('')
+
+  useEffect(() => {
+    return () => {
+      const recorder = mediaRecorderRef.current
+      if (recorder && recorder.state !== 'inactive') {
+        try {
+          recorder.stop()
+        } catch {
+          // Best effort cleanup for browser recorder state.
+        }
+      }
+      mediaStreamRef.current?.getTracks().forEach(track => track.stop())
+    }
+  }, [])
+
+  const stopVoiceStream = () => {
+    mediaStreamRef.current?.getTracks().forEach(track => track.stop())
+    mediaStreamRef.current = null
+  }
+
+  const appendPromptText = (text: string) => {
+    const cleanText = text.trim()
+    if (!cleanText) return
+    setPrompt(current => current.trim() ? `${current.trim()}\n\n${cleanText}` : cleanText)
+  }
+
+  const handlePickFiles = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || [])
+    event.target.value = ''
+    if (!files.length) return
+
+    setAttachmentError('')
+    try {
+      const nextAttachments = await Promise.all(files.slice(0, 5).map(readAICreationAttachment))
+      setAttachments(current => [...current, ...nextAttachments].slice(0, 5))
+    } catch (error) {
+      setAttachmentError(error instanceof Error ? error.message : 'No se pudo leer el archivo.')
+    }
+  }
+
+  const startVoice = async () => {
+    setVoiceError('')
+    setAssistantReply('')
+    setSubmitError('')
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setVoiceError('Este navegador no permite grabar audio aqui.')
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mimeType = getAICreationAudioMimeType()
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+      mediaStreamRef.current = stream
+      mediaRecorderRef.current = recorder
+      voiceChunksRef.current = []
+
+      recorder.ondataavailable = (event) => {
+        if (event.data?.size) voiceChunksRef.current.push(event.data)
+      }
+      recorder.onstop = () => {
+        const chunks = voiceChunksRef.current
+        const audioBlob = new Blob(chunks, { type: mimeType || chunks[0]?.type || 'audio/webm' })
+        stopVoiceStream()
+        if (!audioBlob.size) {
+          setVoiceState('idle')
+          return
+        }
+        setVoiceState('transcribing')
+        void aiAgentService.transcribeVoice(audioBlob)
+          .then(result => {
+            appendPromptText(result.text)
+            setVoiceState('idle')
+          })
+          .catch(error => {
+            setVoiceError(error instanceof Error ? error.message : 'No se pudo transcribir el audio.')
+            setVoiceState('idle')
+          })
+      }
+
+      recorder.start()
+      setVoiceState('recording')
+    } catch (error) {
+      stopVoiceStream()
+      setVoiceError(error instanceof Error ? error.message : 'No se pudo activar el microfono.')
+      setVoiceState('idle')
+    }
+  }
+
+  const stopVoice = () => {
+    const recorder = mediaRecorderRef.current
+    if (recorder && recorder.state !== 'inactive') recorder.stop()
+  }
+
+  const removeAttachment = (id: string) => {
+    setAttachments(current => current.filter(attachment => attachment.id !== id))
+  }
+
+  const buildAttachmentNotes = () => attachments.map(attachment => [
+    `Archivo: ${attachment.name} (${formatAICreationFileSize(attachment.size)})`,
+    attachment.text
+      ? `Contenido:\n${attachment.text}`
+      : 'Usalo solo como referencia de nombre/tipo; si es imagen o PDF sin texto, crea la pagina con la descripcion del usuario.'
+  ].join('\n'))
+
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const cleanPrompt = prompt.trim()
+    if (!cleanPrompt) {
+      setSubmitError('Escribe que quieres construir primero.')
+      return
+    }
+    setSubmitError('')
+    setAssistantReply('')
+    const reply = await onSubmit({
+      siteKind: state.siteKind,
+      prompt: cleanPrompt,
+      attachmentNotes: buildAttachmentNotes(),
+      editSite: state.editSite || null
+    })
+    if (reply) {
+      setAssistantReply(reply)
+      setSubmitError(editMode ? 'La IA necesita una instruccion mas clara para editar.' : 'La IA necesita un poco mas de contexto.')
+    }
+  }
+
+  return (
+    <div className={styles.aiCreationOverlay} role="dialog" aria-modal="true" aria-labelledby="ai-creation-title">
+      <div className={`${styles.aiCreationDialog} ${creating ? styles.aiCreationDialogBusy : ''}`}>
+        {creating ? (
+          <div className={styles.aiCreationThinking}>
+            <div className={styles.aiCreationThinkingHeader}>
+              <Sparkles size={24} />
+              <span>{editMode ? 'La IA esta ajustando tu pagina' : 'La IA esta creando tu pagina'}</span>
+            </div>
+            <div className={styles.aiCreationScan} aria-hidden="true">
+              <span />
+              <span />
+              <span />
+              <span />
+            </div>
+            <div className={styles.aiCreationSteps}>
+              <span>Armando estructura</span>
+              <span>Eligiendo imagenes</span>
+              <span>Preparando formularios</span>
+              <span>Revisando campos</span>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={(event) => void submit(event)}>
+            <header className={styles.aiCreationHeader}>
+              <div>
+                <span>{editMode ? 'Editar con IA' : 'Generar con inteligencia artificial'}</span>
+                <h2 id="ai-creation-title">{editMode ? 'Dime que cambio quieres' : `Crear ${getSitesAICreationKindLabel(state.siteKind)}`}</h2>
+                <p>
+                  {editMode
+                    ? 'Ristak modifica esta pagina y vuelve a revisar sus formularios.'
+                    : 'Describe la pagina y Ristak la crea como codigo propio listo para revisar.'}
+                </p>
+              </div>
+              <button type="button" className={styles.aiCreationClose} onClick={onClose} aria-label="Cerrar">
+                <X size={18} />
+              </button>
+            </header>
+
+            <div className={styles.aiCreationBody}>
+              <label className={styles.aiCreationPrompt}>
+                <span>{editMode ? 'Cambio que quieres hacer' : 'Que quieres construir'}</span>
+                <textarea
+                  value={prompt}
+                  onChange={(event) => {
+                    setPrompt(event.target.value)
+                    setAssistantReply('')
+                    setSubmitError('')
+                  }}
+                  placeholder={getSitesAICreationPlaceholder(state.siteKind, editMode)}
+                  rows={7}
+                  autoFocus
+                />
+              </label>
+
+              {attachments.length > 0 && (
+                <div className={styles.aiCreationAttachments}>
+                  {attachments.map(attachment => (
+                    <span key={attachment.id}>
+                      <FileText size={14} />
+                      <strong>{attachment.name}</strong>
+                      <small>{formatAICreationFileSize(attachment.size)}</small>
+                      <button type="button" onClick={() => removeAttachment(attachment.id)} aria-label={`Quitar ${attachment.name}`}>
+                        <X size={13} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {(assistantReply || submitError || voiceError || attachmentError) && (
+                <div className={styles.aiCreationNotice}>
+                  <AlertTriangle size={16} />
+                  <span>{assistantReply || submitError || voiceError || attachmentError}</span>
+                </div>
+              )}
+
+              <input
+                ref={fileInputRef}
+                className={styles.hiddenFileInput}
+                type="file"
+                multiple
+                accept=".txt,.md,.html,.htm,.css,.json,.csv,.xml,image/*,.pdf"
+                onChange={(event) => void handlePickFiles(event)}
+              />
+            </div>
+
+            <footer className={styles.aiCreationFooter}>
+              <div className={styles.aiCreationToolRow}>
+                <button type="button" onClick={() => fileInputRef.current?.click()} title="Subir archivo">
+                  <Paperclip size={16} />
+                  <span>Archivo</span>
+                </button>
+                <button
+                  type="button"
+                  className={voiceState === 'recording' ? styles.aiCreationMicActive : ''}
+                  onClick={() => voiceState === 'recording' ? stopVoice() : void startVoice()}
+                  disabled={voiceState === 'transcribing'}
+                  title={voiceState === 'recording' ? 'Detener audio' : 'Dictar con microfono'}
+                >
+                  <Mic size={16} />
+                  <span>{voiceState === 'recording' ? 'Grabando' : voiceState === 'transcribing' ? 'Transcribiendo' : 'Microfono'}</span>
+                </button>
+              </div>
+              <div className={styles.aiCreationActions}>
+                <Button type="button" variant="secondary" onClick={onClose}>
+                  Cancelar
+                </Button>
+                <Button type="submit">
+                  <Sparkles size={15} />
+                  {editMode ? 'Actualizar pagina' : 'Crear pagina'}
+                </Button>
+              </div>
+            </footer>
+          </form>
+        )}
+      </div>
+    </div>
+  )
+}
+
 type ImportedEditableSelection = {
   editId: string
   editType: ImportedEditableContentType | 'section'
   label: string
   value: string
   tagName: string
+}
+
+type ImportedInlineEditorState = {
+  selection: ImportedEditableSelection
+  mode: 'text' | 'image'
+  value: string
+  top: number
+  left: number
 }
 
 const importedEditableSelector = [
@@ -4644,17 +5053,6 @@ const readImportedEditableSelection = (element: HTMLElement): ImportedEditableSe
   }
 }
 
-const readImportedSectionSelection = (element: HTMLElement): ImportedEditableSelection => {
-  const label = getImportedEditableAttribute(element, 'section') || getImportedEditableAttribute(element, 'label') || 'Seccion'
-  return {
-    editId: label,
-    editType: 'section',
-    label,
-    value: '',
-    tagName: element.tagName.toLowerCase()
-  }
-}
-
 const ImportedHtmlEditorPanel: React.FC<{
   site: PublicSite
   pages: SitePage[]
@@ -4695,6 +5093,7 @@ const ImportedHtmlEditorPanel: React.FC<{
   const { showToast } = useNotification()
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   const selectedIframeElementRef = useRef<HTMLElement | null>(null)
+  const inlineImageFileInputRef = useRef<HTMLInputElement | null>(null)
   const [routeEditing, setRouteEditing] = useState(false)
   const [routeDraft, setRouteDraft] = useState(getRouteEditorValue(site))
   const [routeSaving, setRouteSaving] = useState(false)
@@ -4702,8 +5101,7 @@ const ImportedHtmlEditorPanel: React.FC<{
   const [previewLoading, setPreviewLoading] = useState(true)
   const [previewError, setPreviewError] = useState('')
   const [previewVersion, setPreviewVersion] = useState(0)
-  const [selectedEditable, setSelectedEditable] = useState<ImportedEditableSelection | null>(null)
-  const [editDraft, setEditDraft] = useState('')
+  const [inlineEditor, setInlineEditor] = useState<ImportedInlineEditorState | null>(null)
   const [contentSaving, setContentSaving] = useState(false)
   const [contentError, setContentError] = useState('')
   const importedPages = pages.length ? pages : [{ id: DEFAULT_FUNNEL_PAGE_ID, title: 'Pagina 1', sortOrder: 0 }]
@@ -4747,10 +5145,72 @@ const ImportedHtmlEditorPanel: React.FC<{
   useEffect(() => {
     selectedIframeElementRef.current?.classList.remove('rstk-imported-selected')
     selectedIframeElementRef.current = null
-    setSelectedEditable(null)
-    setEditDraft('')
+    setInlineEditor(null)
     setContentError('')
   }, [activeImportedPage?.id, site.id, previewVersion])
+
+  const getInlineEditorPosition = useCallback((element: HTMLElement) => {
+    const iframe = iframeRef.current
+    const iframeRect = iframe?.getBoundingClientRect()
+    const elementRect = element.getBoundingClientRect()
+    const rawLeft = (iframeRect?.left || 0) + elementRect.left + 10
+    const rawTop = (iframeRect?.top || 0) + elementRect.top + 10
+    return {
+      left: Math.min(Math.max(rawLeft, 16), Math.max(16, window.innerWidth - 360)),
+      top: Math.min(Math.max(rawTop, 16), Math.max(16, window.innerHeight - 220))
+    }
+  }, [])
+
+  const openInlineEditorForElement = useCallback((element: HTMLElement, selection: ImportedEditableSelection, mode: 'text' | 'image') => {
+    const position = getInlineEditorPosition(element)
+    setInlineEditor({
+      selection,
+      mode,
+      value: selection.value,
+      ...position
+    })
+    setContentError('')
+  }, [getInlineEditorPosition])
+
+  const clearInlineSelection = useCallback(() => {
+    selectedIframeElementRef.current?.classList.remove('rstk-imported-selected')
+    selectedIframeElementRef.current = null
+    setInlineEditor(null)
+  }, [])
+
+  const saveEditableContent = useCallback(async (
+    selection: ImportedEditableSelection,
+    value: string,
+    fileUpload?: { fileBase64: string; filename: string }
+  ) => {
+    if (selection.editType === 'section') return false
+    const cleanValue = value.trim()
+    if (!cleanValue && !fileUpload) {
+      setContentError('Escribe el nuevo contenido antes de guardar.')
+      return false
+    }
+
+    setContentSaving(true)
+    setContentError('')
+    try {
+      const result = await sitesService.updateImportedContent(site.id, {
+        editId: selection.editId,
+        editType: selection.editType,
+        value: cleanValue || selection.value,
+        ...(fileUpload || {})
+      })
+      onContentUpdated(result)
+      clearInlineSelection()
+      await loadInlinePreview()
+      showToast('success', 'Cambio guardado', 'La pagina conserva formularios, campos y tracking.')
+      return true
+    } catch (error) {
+      setContentError(error instanceof Error ? error.message : 'No se pudo guardar el cambio')
+      return false
+    } finally {
+      setContentSaving(false)
+    }
+  }, [clearInlineSelection, loadInlinePreview, onContentUpdated, showToast, site.id])
 
   useEffect(() => {
     if (previewLoading || !previewHtml) return
@@ -4770,26 +5230,141 @@ const ImportedHtmlEditorPanel: React.FC<{
       style.textContent = `
         ${importedEditableSelector} {
           cursor: pointer !important;
-          outline-offset: 3px !important;
+          outline-offset: 4px !important;
         }
         ${importedEditableSelector}:hover {
-          outline: 2px solid rgba(34, 197, 94, 0.72) !important;
-          box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.16) !important;
+          outline: 2px dashed rgba(34, 197, 94, 0.86) !important;
+          border-radius: 8px !important;
+          box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.13) !important;
         }
         ${importedSectionSelector} {
           scroll-margin: 40px !important;
         }
         .rstk-imported-selected {
           outline: 3px solid #22c55e !important;
+          border-radius: 8px !important;
           box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.2) !important;
+        }
+        .rstk-imported-editing {
+          cursor: text !important;
+          outline: 3px solid #22c55e !important;
+          border-radius: 8px !important;
+          background: rgba(34, 197, 94, 0.08) !important;
+          box-shadow: 0 0 0 7px rgba(34, 197, 94, 0.18) !important;
+        }
+        .rstk-imported-image-action {
+          position: fixed !important;
+          z-index: 2147483647 !important;
+          display: inline-flex !important;
+          align-items: center !important;
+          gap: 7px !important;
+          min-height: 34px !important;
+          border: 1px solid rgba(21, 128, 61, 0.22) !important;
+          border-radius: 8px !important;
+          background: #ffffff !important;
+          color: #166534 !important;
+          padding: 0 11px !important;
+          font: 800 13px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+          box-shadow: 0 14px 36px rgba(15, 23, 42, 0.22) !important;
+          cursor: pointer !important;
         }
       `
       doc.head?.appendChild(style)
+
+      let imageActionButton: HTMLButtonElement | null = null
+
+      const removeImageActionButton = () => {
+        imageActionButton?.remove()
+        imageActionButton = null
+      }
 
       const selectElement = (element: HTMLElement) => {
         selectedIframeElementRef.current?.classList.remove('rstk-imported-selected')
         selectedIframeElementRef.current = element
         element.classList.add('rstk-imported-selected')
+      }
+
+      const beginTextEdit = (element: HTMLElement, selection: ImportedEditableSelection) => {
+        const originalValue = selection.value
+        setInlineEditor(null)
+        setContentError('')
+        element.classList.add('rstk-imported-editing')
+        element.setAttribute('contenteditable', 'plaintext-only')
+        element.setAttribute('spellcheck', 'true')
+        element.focus({ preventScroll: true })
+
+        const frameSelection = doc.defaultView?.getSelection()
+        if (frameSelection) {
+          const range = doc.createRange()
+          range.selectNodeContents(element)
+          frameSelection.removeAllRanges()
+          frameSelection.addRange(range)
+        }
+
+        let done = false
+        const cleanupTextEdit = (save: boolean) => {
+          if (done) return
+          done = true
+          element.removeEventListener('blur', handleBlur)
+          element.removeEventListener('keydown', handleKeydown)
+          element.removeAttribute('contenteditable')
+          element.removeAttribute('spellcheck')
+          element.classList.remove('rstk-imported-editing')
+          const nextValue = (element.textContent || '').replace(/\s+/g, ' ').trim()
+          if (!save) {
+            element.textContent = originalValue
+            return
+          }
+          if (nextValue && nextValue !== originalValue.trim()) {
+            void saveEditableContent(selection, nextValue)
+          }
+        }
+
+        const handleBlur = () => cleanupTextEdit(true)
+        const handleKeydown = (keyboardEvent: KeyboardEvent) => {
+          if (keyboardEvent.key === 'Escape') {
+            keyboardEvent.preventDefault()
+            cleanupTextEdit(false)
+            return
+          }
+          if (keyboardEvent.key === 'Enter' && !keyboardEvent.shiftKey) {
+            keyboardEvent.preventDefault()
+            element.blur()
+          }
+        }
+
+        element.addEventListener('blur', handleBlur)
+        element.addEventListener('keydown', handleKeydown)
+      }
+
+      const showImageActionButton = (element: HTMLElement, selection: ImportedEditableSelection) => {
+        removeImageActionButton()
+        const rect = element.getBoundingClientRect()
+        imageActionButton = doc.createElement('button')
+        imageActionButton.type = 'button'
+        imageActionButton.className = 'rstk-imported-image-action'
+        imageActionButton.textContent = 'Cambiar imagen'
+        imageActionButton.style.left = `${Math.max(8, rect.left + 8)}px`
+        imageActionButton.style.top = `${Math.max(8, rect.top + 8)}px`
+        imageActionButton.addEventListener('click', (buttonEvent) => {
+          buttonEvent.preventDefault()
+          buttonEvent.stopPropagation()
+          selectElement(element)
+          openInlineEditorForElement(element, selection, 'image')
+        })
+        doc.body.appendChild(imageActionButton)
+      }
+
+      const handleFrameMouseOver = (event: MouseEvent) => {
+        const target = event.target as Element | null
+        if (!target || typeof target.closest !== 'function') return
+        const editableElement = target.closest(importedEditableSelector) as HTMLElement | null
+        if (!editableElement) return
+        const selection = readImportedEditableSelection(editableElement)
+        if (!selection) return
+        if (selection.editType === 'image' || selection.editType === 'background_image') {
+          showImageActionButton(editableElement, selection)
+        }
       }
 
       const handleFrameClick = (event: MouseEvent) => {
@@ -4803,9 +5378,14 @@ const ImportedHtmlEditorPanel: React.FC<{
           event.preventDefault()
           event.stopPropagation()
           selectElement(editableElement)
-          setSelectedEditable(selection)
-          setEditDraft(selection.value)
-          setContentError('')
+          removeImageActionButton()
+          if (selection.editType === 'image' || selection.editType === 'background_image') {
+            openInlineEditorForElement(editableElement, selection, 'image')
+          } else if (selection.editType === 'placeholder' || (selection.editType === 'button' && selection.tagName === 'input')) {
+            openInlineEditorForElement(editableElement, selection, 'text')
+          } else {
+            beginTextEdit(editableElement, selection)
+          }
           return
         }
 
@@ -4814,15 +5394,22 @@ const ImportedHtmlEditorPanel: React.FC<{
           event.preventDefault()
           event.stopPropagation()
           selectElement(sectionElement)
-          setSelectedEditable(readImportedSectionSelection(sectionElement))
-          setEditDraft('')
+          setInlineEditor(null)
           setContentError('')
+          removeImageActionButton()
+          return
         }
+
+        clearInlineSelection()
+        removeImageActionButton()
       }
 
+      doc.addEventListener('mouseover', handleFrameMouseOver, true)
       doc.addEventListener('click', handleFrameClick, true)
       cleanupDocument = () => {
+        doc.removeEventListener('mouseover', handleFrameMouseOver, true)
         doc.removeEventListener('click', handleFrameClick, true)
+        removeImageActionButton()
         style.remove()
       }
     }
@@ -4836,7 +5423,7 @@ const ImportedHtmlEditorPanel: React.FC<{
       iframe.removeEventListener('load', installEditorHooks)
       cleanupDocument()
     }
-  }, [previewHtml, previewLoading, previewVersion])
+  }, [clearInlineSelection, openInlineEditorForElement, previewHtml, previewLoading, previewVersion, saveEditableContent])
 
   const routeValue = getRouteEditorValue(site)
   const saveRoute = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -4857,51 +5444,46 @@ const ImportedHtmlEditorPanel: React.FC<{
     }
   }
 
-  const saveSelectedEditable = async () => {
-    if (!selectedEditable || selectedEditable.editType === 'section') return
-    const value = editDraft.trim()
-    if (!value) {
-      setContentError('Escribe el nuevo contenido antes de guardar.')
+  const saveInlineEditor = async () => {
+    if (!inlineEditor || inlineEditor.selection.editType === 'section') return
+    await saveEditableContent(inlineEditor.selection, inlineEditor.value)
+  }
+
+  const handleInlineImageFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file || !inlineEditor || inlineEditor.mode !== 'image') return
+
+    if (!file.type.startsWith('image/')) {
+      setContentError('Sube una imagen valida.')
       return
     }
 
-    setContentSaving(true)
-    setContentError('')
     try {
-      const result = await sitesService.updateImportedContent(site.id, {
-        editId: selectedEditable.editId,
-        editType: selectedEditable.editType,
-        value
+      const fileBase64 = await fileToBase64(file)
+      await saveEditableContent(inlineEditor.selection, inlineEditor.value, {
+        fileBase64,
+        filename: file.name
       })
-      onContentUpdated(result)
-      setSelectedEditable(null)
-      setEditDraft('')
-      selectedIframeElementRef.current?.classList.remove('rstk-imported-selected')
-      selectedIframeElementRef.current = null
-      await loadInlinePreview()
-      showToast('success', 'Cambio guardado', 'La pagina conserva formularios, campos y tracking.')
     } catch (error) {
-      setContentError(error instanceof Error ? error.message : 'No se pudo guardar el cambio')
-    } finally {
-      setContentSaving(false)
+      setContentError(error instanceof Error ? error.message : 'No se pudo leer la imagen.')
     }
   }
 
-  const canSaveSelectedEditable = Boolean(
-    selectedEditable &&
-    selectedEditable.editType !== 'section' &&
-    editDraft.trim() &&
-    editDraft.trim() !== selectedEditable.value.trim() &&
+  const canSaveInlineEditor = Boolean(
+    inlineEditor &&
+    inlineEditor.selection.editType !== 'section' &&
+    inlineEditor.value.trim() &&
+    inlineEditor.value.trim() !== inlineEditor.selection.value.trim() &&
     !contentSaving
   )
-  const selectedEditableIsImage = selectedEditable?.editType === 'image' || selectedEditable?.editType === 'background_image'
 
   return (
     <div className={styles.importedEditorPanel}>
       <section className={styles.importedPreviewPane}>
         <div className={styles.importedPreviewToolbar}>
           <div>
-            <span>Vista previa del HTML</span>
+            <span>Vista editable</span>
             <strong>{site.title || site.name}</strong>
           </div>
           <div className={styles.importedPreviewTools}>
@@ -4950,6 +5532,12 @@ const ImportedHtmlEditorPanel: React.FC<{
             </div>
           )}
         </div>
+        {contentError && (
+          <div className={styles.importedInlineError}>
+            <AlertTriangle size={15} />
+            <span>{contentError}</span>
+          </div>
+        )}
       </section>
 
       <aside className={styles.importedSidePanel}>
@@ -4957,50 +5545,8 @@ const ImportedHtmlEditorPanel: React.FC<{
           <Upload size={24} />
           <div>
             <strong>{site.title || site.name}</strong>
-            <p>Selecciona textos o imagenes en la vista previa para cambiarlos sin tocar codigo.</p>
+            <p>Pasa el cursor por textos e imagenes para editarlos directo sobre la pagina.</p>
           </div>
-        </div>
-
-        <div className={styles.importedQuickEditBox}>
-          <div className={styles.importedQuickEditHeader}>
-            <div>
-              {selectedEditableIsImage ? <Image size={17} /> : <Type size={17} />}
-              <span>Edicion rapida</span>
-            </div>
-            <strong>{selectedEditable ? editableTypeLabels[selectedEditable.editType] : 'Lista'}</strong>
-          </div>
-
-          {!selectedEditable ? (
-            <p>Haz clic en un texto, boton, placeholder o imagen de la vista previa.</p>
-          ) : selectedEditable.editType === 'section' ? (
-            <p>Seccion detectada: {selectedEditable.label}. Para cambiar contenido, selecciona un texto o imagen dentro de esta seccion.</p>
-          ) : (
-            <div className={styles.importedQuickEditForm}>
-              <label>
-                <span>{selectedEditable.label}</span>
-                {selectedEditableIsImage ? (
-                  <input
-                    value={editDraft}
-                    onChange={(event) => setEditDraft(event.target.value)}
-                    placeholder="https://..."
-                    disabled={contentSaving}
-                  />
-                ) : (
-                  <textarea
-                    rows={selectedEditable.editType === 'heading' || selectedEditable.editType === 'button' || selectedEditable.editType === 'placeholder' ? 2 : 4}
-                    value={editDraft}
-                    onChange={(event) => setEditDraft(event.target.value)}
-                    disabled={contentSaving}
-                  />
-                )}
-              </label>
-              {contentError && <small>{contentError}</small>}
-              <Button type="button" onClick={() => void saveSelectedEditable()} disabled={!canSaveSelectedEditable} loading={contentSaving}>
-                <Save size={15} />
-                Guardar cambio
-              </Button>
-            </div>
-          )}
         </div>
 
         <div className={styles.importedDataRouteBox}>
@@ -5133,6 +5679,67 @@ const ImportedHtmlEditorPanel: React.FC<{
           </Button>
         </div>
       </aside>
+
+      <input
+        ref={inlineImageFileInputRef}
+        className={styles.hiddenFileInput}
+        type="file"
+        accept="image/*"
+        onChange={(event) => void handleInlineImageFile(event)}
+      />
+      {inlineEditor && (
+        <div
+          className={styles.importedInlineEditor}
+          style={{ top: inlineEditor.top, left: inlineEditor.left }}
+          role="dialog"
+          aria-label={inlineEditor.mode === 'image' ? 'Cambiar imagen' : 'Editar texto'}
+        >
+          <div className={styles.importedInlineEditorHeader}>
+            <span>{inlineEditor.mode === 'image' ? 'Cambiar imagen' : editableTypeLabels[inlineEditor.selection.editType]}</span>
+            <button type="button" onClick={clearInlineSelection} aria-label="Cerrar editor rapido">
+              <X size={14} />
+            </button>
+          </div>
+          {inlineEditor.mode === 'image' ? (
+            <>
+              <input
+                value={inlineEditor.value}
+                onChange={(event) => setInlineEditor(current => current ? { ...current, value: event.target.value } : current)}
+                placeholder="https://..."
+                disabled={contentSaving}
+              />
+              <div className={styles.importedInlineEditorActions}>
+                <Button type="button" variant="secondary" size="sm" onClick={() => inlineImageFileInputRef.current?.click()} disabled={contentSaving}>
+                  <Upload size={14} />
+                  Subir foto
+                </Button>
+                <Button type="button" size="sm" onClick={() => void saveInlineEditor()} disabled={!canSaveInlineEditor} loading={contentSaving}>
+                  <Save size={14} />
+                  Guardar URL
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <textarea
+                rows={inlineEditor.selection.editType === 'placeholder' || inlineEditor.selection.editType === 'button' ? 2 : 4}
+                value={inlineEditor.value}
+                onChange={(event) => setInlineEditor(current => current ? { ...current, value: event.target.value } : current)}
+                disabled={contentSaving}
+              />
+              <div className={styles.importedInlineEditorActions}>
+                <Button type="button" variant="secondary" size="sm" onClick={clearInlineSelection} disabled={contentSaving}>
+                  Cancelar
+                </Button>
+                <Button type="button" size="sm" onClick={() => void saveInlineEditor()} disabled={!canSaveInlineEditor} loading={contentSaving}>
+                  <Save size={14} />
+                  Guardar
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -5765,7 +6372,7 @@ interface CreateFlowPanelProps {
   creating: boolean
   aiAgentAvailable: boolean
   onCreate: (siteType: SiteType, mode?: 'blank' | 'template', templateId?: SiteTemplateId) => void
-  onCreateWithAI: (siteKind: AIAgentSitesCreationKind) => void
+  onCreateWithAI: (siteKind: SitesAICreationKind) => void
   onImportHtml: (siteType: SiteType) => void
   onAdvance: (step: CreateFlow) => void
 }
@@ -8956,7 +9563,7 @@ const PhoneCountryInputPreview: React.FC<{ placeholder?: string }> = ({ placehol
       <select aria-label="Pais y lada" defaultValue={selectedCountry.value}>
         {COUNTRY_OPTIONS.map(country => (
           <option key={country.value} value={country.value}>
-            {getCountryFlagEmoji(country.value)} +{country.dialCode} {country.label}
+            {getCountryFlagEmoji(country.value)} +{country.dialCode}
           </option>
         ))}
       </select>
