@@ -11403,3 +11403,374 @@
     overflow-y: auto;
   }
 }
+
+/* Dashboard theme bridge.
+   Sites has its own editor chrome, but the surrounding app should read like the
+   rest of Ristak: same page spacing, same quiet surfaces, same controls. */
+.pageFrame {
+  background: var(--color-background-primary);
+  color: var(--color-text-primary);
+}
+
+.pageFrame .container:not(.containerFocused) {
+  width: 100%;
+  max-width: var(--app-page-wide-max, var(--app-page-max, 104rem));
+  min-height: calc(100dvh - var(--header-height, 84px));
+  gap: calc(var(--spacing-md, 1rem) * 0.9);
+  padding: var(--spacing-2xl, 2rem) clamp(1.5rem, 4vw, 2.5rem) 4rem;
+}
+
+.pageFrame .container:not(.containerFocused) .header {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: var(--spacing-xs, 0.5rem);
+}
+
+.pageFrame .container:not(.containerFocused) .title {
+  font-size: 24px;
+  font-weight: var(--font-weight-bold, 800);
+}
+
+.pageFrame .container:not(.containerFocused) .subtitle {
+  max-width: 68ch;
+  margin: 0;
+  font-size: var(--font-size-base, 1rem);
+  line-height: 1.5;
+}
+
+.pageFrame .container:not(.containerFocused) .sitesShell {
+  min-height: 0;
+  gap: var(--spacing-md, 1rem);
+}
+
+.pageFrame .container:not(.containerFocused) .sectionTabs {
+  width: fit-content;
+  max-width: 100%;
+  gap: 4px;
+  border: 1px solid var(--color-border-subtle, rgba(148, 163, 184, 0.18));
+  border-radius: var(--radius-lg, 12px);
+  background: var(--color-background-secondary);
+  padding: 4px;
+  box-shadow: none;
+}
+
+.pageFrame .container:not(.containerFocused) .sectionTab {
+  min-height: 36px;
+  border: 0;
+  border-radius: var(--radius-md, 8px);
+  color: var(--color-text-secondary);
+  padding: 0 12px;
+  font-size: var(--font-size-sm, 0.875rem);
+  font-weight: var(--font-weight-semibold, 700);
+}
+
+.pageFrame .container:not(.containerFocused) .sectionTab:hover {
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--color-text-primary);
+}
+
+.pageFrame .container:not(.containerFocused) .sectionTabActive {
+  background: var(--color-background-primary);
+  color: var(--color-text-primary);
+  box-shadow: none;
+}
+
+.pageFrame .container:not(.containerFocused) .mainSurface,
+.pageFrame .container:not(.containerFocused) .libraryPanel,
+.pageFrame .container:not(.containerFocused) .createPanel,
+.pageFrame .container:not(.containerFocused) .dataPanel,
+.pageFrame .container:not(.containerFocused) .domainEditor,
+.pageFrame .container:not(.containerFocused) .siteSettingsBar,
+.pageFrame .container:not(.containerFocused) .metaSettingsBar {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+.pageFrame .builderHeader {
+  gap: var(--spacing-md, 1rem);
+}
+
+.pageFrame .builderHeader h2,
+.pageFrame .dataPanel h2 {
+  color: var(--color-text-primary);
+  font-size: var(--font-size-xl, 1.25rem);
+  font-weight: var(--font-weight-semibold, 700);
+  letter-spacing: 0;
+}
+
+.pageFrame .builderHeader p,
+.pageFrame .dataPanel p {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm, 0.875rem);
+  line-height: 1.5;
+}
+
+.pageFrame .libraryPanel,
+.pageFrame .createPanel,
+.pageFrame .dataPanel {
+  gap: var(--spacing-lg, 1.5rem);
+}
+
+.pageFrame .libraryGrid,
+.pageFrame .createLibraryGrid,
+.pageFrame .templateGallery,
+.pageFrame .choiceGrid {
+  gap: var(--spacing-md, 1rem);
+}
+
+.pageFrame .libraryCard,
+.pageFrame .createLibraryCard,
+.pageFrame .templateCard,
+.pageFrame .choiceGrid button,
+.pageFrame .leadRow,
+.pageFrame .emptyState,
+.pageFrame .importedButtonActionBox,
+.pageFrame .importedAIRegionBox,
+.pageFrame .importedActionStep,
+.pageFrame .optionRuleCard,
+.pageFrame .popupDetectedCard,
+.pageFrame .metaCard {
+  border: 1px solid var(--color-border-subtle, rgba(148, 163, 184, 0.18));
+  border-radius: var(--radius-lg, 12px);
+  background: var(--color-background-secondary);
+  box-shadow: none;
+}
+
+.pageFrame .libraryCard:hover,
+.pageFrame .libraryCardActive,
+.pageFrame .createLibraryCard:hover,
+.pageFrame .templateCard:hover,
+.pageFrame .choiceGrid button:hover {
+  border-color: rgba(var(--color-primary-rgb), 0.28);
+  background: color-mix(in srgb, var(--color-background-secondary) 92%, var(--color-primary) 8%);
+  box-shadow: none;
+}
+
+.pageFrame .libraryCardPreview,
+.pageFrame .templatePreview,
+.pageFrame .createLibraryCardPreview,
+.pageFrame .importedPreviewPane {
+  border-color: var(--color-border-subtle, rgba(148, 163, 184, 0.18));
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-background-tertiary);
+  box-shadow: none;
+}
+
+.pageFrame .libraryCardPreview::before,
+.pageFrame .templatePreview::before,
+.pageFrame .createLibraryCardPreview::before {
+  opacity: 0.42;
+}
+
+.pageFrame .libraryCardBody strong,
+.pageFrame .libraryCardTitleRow strong,
+.pageFrame .templateCard strong,
+.pageFrame .choiceGrid button strong,
+.pageFrame .leadRow strong {
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-semibold, 700);
+}
+
+.pageFrame .libraryCardBody p,
+.pageFrame .templateCard p,
+.pageFrame .choiceGrid button p,
+.pageFrame .leadRow p,
+.pageFrame .muted {
+  color: var(--color-text-secondary);
+}
+
+.pageFrame .field input,
+.pageFrame .field select,
+.pageFrame .field textarea,
+.pageFrame .routeField input,
+.pageFrame .pageTitleInput,
+.pageFrame .publicTitleEditorField input,
+.pageFrame .editorNameField input,
+.pageFrame .importedActionField input,
+.pageFrame .importedActionField select,
+.pageFrame .importedActionField textarea,
+.pageFrame .metaCardField select,
+.pageFrame .headerCodeTextarea {
+  border: 1px solid var(--color-border-subtle, rgba(148, 163, 184, 0.22));
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-background-primary);
+  color: var(--color-text-primary);
+  box-shadow: none;
+}
+
+.pageFrame .field input:focus,
+.pageFrame .field select:focus,
+.pageFrame .field textarea:focus,
+.pageFrame .routeField input:focus,
+.pageFrame .pageTitleInput:focus,
+.pageFrame .publicTitleEditorField input:focus,
+.pageFrame .editorNameField input:focus,
+.pageFrame .importedActionField input:focus,
+.pageFrame .importedActionField select:focus,
+.pageFrame .importedActionField textarea:focus,
+.pageFrame .metaCardField select:focus,
+.pageFrame .headerCodeTextarea:focus {
+  border-color: rgba(var(--color-primary-rgb), 0.36);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.1);
+}
+
+.pageFrame .containerFocused:has(.builder) {
+  background: var(--color-background-primary);
+}
+
+.pageFrame .containerFocused:has(.builder) .editorHeader {
+  border-bottom: 1px solid var(--color-border-subtle, rgba(148, 163, 184, 0.14));
+  background: var(--color-background-secondary);
+  box-shadow: none;
+}
+
+.pageFrame .containerFocused:has(.builder) .editorToolbarLeft,
+.pageFrame .containerFocused:has(.builder) .editorActions,
+.pageFrame .containerFocused:has(.builder) .editorRouteControls {
+  background: transparent;
+}
+
+.pageFrame .containerFocused:has(.builder) .backButton,
+.pageFrame .containerFocused:has(.builder) .seoToolbarButton,
+.pageFrame .containerFocused:has(.builder) .headerToolbarButton,
+.pageFrame .containerFocused:has(.builder) .editorIconAction,
+.pageFrame .containerFocused:has(.builder) .focusActionButton,
+.pageFrame .containerFocused:has(.builder) .focusExitButton {
+  border-color: var(--color-border-subtle, rgba(148, 163, 184, 0.18));
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-background-primary);
+  color: var(--color-text-secondary);
+  box-shadow: none;
+}
+
+.pageFrame .containerFocused:has(.builder) .backButton {
+  border: 0;
+  background: transparent;
+}
+
+.pageFrame .containerFocused:has(.builder) .backButton:hover,
+.pageFrame .containerFocused:has(.builder) .seoToolbarButton:hover,
+.pageFrame .containerFocused:has(.builder) .headerToolbarButton:hover,
+.pageFrame .containerFocused:has(.builder) .editorIconAction:hover,
+.pageFrame .containerFocused:has(.builder) .focusActionButton:hover,
+.pageFrame .containerFocused:has(.builder) .focusExitButton:hover {
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--color-text-primary);
+}
+
+.pageFrame .containerFocused:has(.builder) .headerToolbarButtonActive,
+.pageFrame .containerFocused:has(.builder) .seoToolbarButtonWarning {
+  border-color: rgba(var(--color-primary-rgb), 0.3);
+  background: rgba(var(--color-primary-rgb), 0.1);
+  color: var(--color-primary);
+}
+
+.pageFrame .containerFocused:has(.builder) .publicRouteBox,
+.pageFrame .containerFocused:has(.builder) .deviceToggle,
+.pageFrame .containerFocused:has(.builder) .pageItem,
+.pageFrame .containerFocused:has(.builder) .addPageButton,
+.pageFrame .containerFocused:has(.builder) .metaCard {
+  border: 1px solid var(--color-border-subtle, rgba(148, 163, 184, 0.18));
+  background: var(--color-background-primary);
+  box-shadow: none;
+}
+
+.pageFrame .containerFocused:has(.builder) .deviceActive,
+.pageFrame .containerFocused:has(.builder) .pageItemActive {
+  border-color: rgba(var(--color-primary-rgb), 0.3);
+  background: rgba(var(--color-primary-rgb), 0.1);
+  color: var(--color-primary);
+}
+
+.pageFrame .containerFocused:has(.builder) .blocksRail,
+.pageFrame .containerFocused:has(.builder) .propertiesPanel {
+  background: var(--color-background-primary);
+}
+
+.pageFrame .containerFocused:has(.builder) .blocksRail {
+  border-right: 1px solid var(--color-border-subtle, rgba(148, 163, 184, 0.12));
+}
+
+.pageFrame .containerFocused:has(.builder) .propertiesPanel {
+  border-left: 1px solid var(--color-border-subtle, rgba(148, 163, 184, 0.12));
+}
+
+.pageFrame .containerFocused:has(.builder) .pagesPanel,
+.pageFrame .containerFocused:has(.builder) .palette,
+.pageFrame .containerFocused:has(.builder) .propertiesBody {
+  background: transparent;
+  box-shadow: none;
+}
+
+.pageFrame .containerFocused:has(.builder) .paletteGroup,
+.pageFrame .containerFocused:has(.builder) .settingsGroup,
+.pageFrame .containerFocused:has(.builder) .textFormatPanel,
+.pageFrame .containerFocused:has(.builder) .formGlobalControls,
+.pageFrame .containerFocused:has(.builder) .spacingBox,
+.pageFrame .containerFocused:has(.builder) .dimensionBox,
+.pageFrame .containerFocused:has(.builder) .colorRow,
+.pageFrame .containerFocused:has(.builder) .customFieldBinding {
+  border: 1px solid var(--color-border-subtle, rgba(148, 163, 184, 0.16));
+  border-radius: var(--radius-lg, 12px);
+  background: var(--color-background-secondary);
+  box-shadow: none;
+}
+
+.pageFrame .containerFocused:has(.builder) .paletteItem {
+  border: 1px solid transparent;
+  border-radius: var(--radius-md, 8px);
+  background: transparent;
+  color: var(--color-text-primary);
+}
+
+.pageFrame .containerFocused:has(.builder) .paletteItem:hover {
+  border-color: var(--color-border-subtle, rgba(148, 163, 184, 0.18));
+  background: rgba(148, 163, 184, 0.1);
+  box-shadow: none;
+}
+
+.pageFrame .containerFocused:has(.builder) .canvasColumn {
+  background: var(--color-background-primary);
+}
+
+.pageFrame .containerFocused:has(.builder) :global(.canvasViewport) {
+  border-color: var(--color-border-subtle, rgba(148, 163, 184, 0.18));
+  background: var(--color-background-tertiary);
+  box-shadow: none;
+}
+
+.pageFrame .containerFocused:has(.builder) .importedPreviewStage {
+  background:
+    linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+    var(--color-background-tertiary);
+  background-size: 24px 24px;
+}
+
+@media (max-width: 768px) {
+  .pageFrame .container:not(.containerFocused) {
+    padding-inline: 1rem;
+  }
+
+  .pageFrame .container:not(.containerFocused) .sectionTabs {
+    width: 100%;
+  }
+
+  .pageFrame .container:not(.containerFocused) .libraryGrid,
+  .pageFrame .container:not(.containerFocused) .createLibraryGrid,
+  .pageFrame .container:not(.containerFocused) .templateGallery,
+  .pageFrame .container:not(.containerFocused) .choiceGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pageFrame .container:not(.containerFocused) .libraryCard,
+  .pageFrame .container:not(.containerFocused) .createLibraryCard,
+  .pageFrame .container:not(.containerFocused) .templateCard {
+    width: 100%;
+    min-width: 0;
+  }
+}

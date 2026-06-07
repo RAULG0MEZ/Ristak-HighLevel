@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { ensureLocalDevAuth } from '@/services/authFetch'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
@@ -60,10 +61,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // Verificar si hay un token guardado al cargar la app
   useEffect(() => {
     const verifyToken = async () => {
-      const token = localStorage.getItem('auth_token')
-
-      if (!token) {
-        // Si no hay token, verificar si se necesita setup
+      const checkSetupState = async () => {
         try {
           const response = await fetch(`${API_URL}/api/auth/setup`)
           const data = await response.json()
@@ -71,38 +69,57 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         } catch {
           setNeedsSetup(false)
         }
+      }
+
+      const verifyStoredToken = async (token: string) => {
+        try {
+          const response = await fetch(`${API_URL}/api/auth/verify`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ token })
+          })
+
+          if (response.ok) {
+            const data = await response.json()
+            if (data.success && data.user) {
+              setUser(mapUserFromApi(data.user))
+              setNeedsSetup(false)
+              return true
+            }
+          }
+        } catch {
+          // Se maneja igual que un token invalido.
+        }
+
+        localStorage.removeItem('auth_token')
+        setNeedsSetup(false)
+        return false
+      }
+
+      let token = localStorage.getItem('auth_token')
+
+      if (!token && await ensureLocalDevAuth()) {
+        token = localStorage.getItem('auth_token')
+      }
+
+      if (!token) {
+        // Si no hay token, verificar si se necesita setup.
+        await checkSetupState()
         setIsLoading(false)
         return
       }
 
-      try {
-        const response = await fetch(`${API_URL}/api/auth/verify`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ token })
-        })
-
-        if (response.ok) {
-          const data = await response.json()
-          if (data.success && data.user) {
-            setUser(mapUserFromApi(data.user))
-            setNeedsSetup(false)
-          } else {
-            localStorage.removeItem('auth_token')
-            setNeedsSetup(false)
-          }
-        } else {
-          localStorage.removeItem('auth_token')
-          setNeedsSetup(false)
+      const tokenIsValid = await verifyStoredToken(token)
+      if (!tokenIsValid && await ensureLocalDevAuth()) {
+        const devToken = localStorage.getItem('auth_token')
+        if (devToken) {
+          await verifyStoredToken(devToken)
         }
-      } catch {
-        localStorage.removeItem('auth_token')
-        setNeedsSetup(false)
-      } finally {
-        setIsLoading(false)
       }
+
+      setIsLoading(false)
     }
 
     verifyToken()

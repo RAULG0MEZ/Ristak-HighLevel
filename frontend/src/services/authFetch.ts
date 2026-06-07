@@ -1,6 +1,7 @@
 const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
 const API_AUTH_HEADER = 'Authorization'
+const LOCAL_DEV_LOGIN_TIMEOUT_MS = 2500
 
 function getStoredAuthToken() {
   try {
@@ -29,6 +30,19 @@ function isRistakApiRequest(url: URL) {
   } catch {
     return url.origin === window.location.origin
   }
+}
+
+function isLocalDevHost() {
+  if (typeof window === 'undefined') return false
+
+  const hostname = window.location.hostname
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
+}
+
+function shouldUseLocalDevLogin() {
+  return import.meta.env.DEV
+    && import.meta.env.VITE_DISABLE_LOCAL_DEV_LOGIN !== 'true'
+    && isLocalDevHost()
 }
 
 export function installAuthFetch() {
@@ -62,5 +76,34 @@ export function installAuthFetch() {
       ...init,
       headers
     })
+  }
+}
+
+export async function ensureLocalDevAuth() {
+  if (typeof window === 'undefined') return false
+  if (!shouldUseLocalDevLogin()) return false
+  if (getStoredAuthToken()) return false
+
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(() => controller.abort(), LOCAL_DEV_LOGIN_TIMEOUT_MS)
+
+  try {
+    const response = await window.fetch(`${API_BASE_URL}/api/auth/local-dev-session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal
+    })
+
+    if (!response.ok) return false
+
+    const data = await response.json()
+    if (!data?.success || !data?.token) return false
+
+    window.localStorage.setItem('auth_token', data.token)
+    return true
+  } catch {
+    return false
+  } finally {
+    window.clearTimeout(timeoutId)
   }
 }

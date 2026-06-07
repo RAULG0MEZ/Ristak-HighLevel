@@ -35,6 +35,46 @@ function serializeAuthUser(user) {
   }
 }
 
+function getHeaderHostname(value = '') {
+  const rawValue = String(value || '').trim()
+  if (!rawValue) return ''
+
+  try {
+    return new URL(rawValue.includes('://') ? rawValue : `http://${rawValue}`).hostname
+  } catch {
+    return rawValue.split(',')[0].trim().replace(/^\[/, '').replace(/\]$/, '').split(':')[0]
+  }
+}
+
+function isLoopbackHost(value = '') {
+  const hostname = String(value || '').trim().toLowerCase().replace(/^\[/, '').replace(/\]$/, '')
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1'
+}
+
+function isLoopbackAddress(value = '') {
+  const address = String(value || '').trim().replace(/^::ffff:/, '')
+  return isLoopbackHost(address)
+}
+
+function isLocalDevAuthRequest(req) {
+  if (process.env.NODE_ENV === 'production') return false
+  if (process.env.ALLOW_LOCAL_DEV_LOGIN === 'false') return false
+
+  const remoteAddress = req.ip || req.socket?.remoteAddress || ''
+  if (!isLoopbackAddress(remoteAddress)) return false
+
+  const hostCandidates = [
+    req.get('host'),
+    req.get('origin'),
+    req.get('referer'),
+    req.get('x-forwarded-host')
+  ]
+    .map(getHeaderHostname)
+    .filter(Boolean)
+
+  return hostCandidates.length > 0 && hostCandidates.every(isLoopbackHost)
+}
+
 /**
  * POST /api/auth/login
  * Autentica un usuario y devuelve un token JWT
@@ -115,6 +155,70 @@ export async function login(req, res) {
     })
   } catch (error) {
     logger.error('❌ Error en login:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error en el servidor'
+    })
+  }
+}
+
+/**
+ * POST /api/auth/local-dev-session
+ * Permite a la app local abrir una sesión de prueba sin pedir contraseña.
+ * No está disponible en producción ni para requests fuera de localhost.
+ */
+export async function localDevSession(req, res) {
+  try {
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(404).json({
+        success: false,
+        message: 'No disponible'
+      })
+    }
+
+    if (!isLocalDevAuthRequest(req)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Sesión local no permitida desde este origen'
+      })
+    }
+
+    const user = await db.get(
+      'SELECT * FROM users WHERE is_active = 1 ORDER BY id LIMIT 1'
+    )
+
+    if (!user) {
+      return res.status(409).json({
+        success: false,
+        needsSetup: true,
+        message: 'No hay usuarios locales activos'
+      })
+    }
+
+    const token = generateToken({
+      userId: user.id,
+      username: user.username,
+      email: user.email,
+      role: user.role
+    })
+
+    const [apiTokenMetadata, appId] = await Promise.all([
+      getApiTokenMetadataForUser(user.id),
+      getExternalApiAppId()
+    ])
+
+    logger.info(`Sesión local de desarrollo creada para ${user.username}`)
+
+    res.json({
+      success: true,
+      message: 'Sesión local iniciada',
+      token,
+      appId,
+      apiTokenMetadata,
+      user: serializeAuthUser(user)
+    })
+  } catch (error) {
+    logger.error('Error creando sesión local de desarrollo:', error)
     res.status(500).json({
       success: false,
       message: 'Error en el servidor'

@@ -8,6 +8,7 @@ import {
   getMe,
   checkSetup,
   setup,
+  localDevSession,
   getApiToken,
   rotateApiToken,
   revokeApiToken
@@ -24,6 +25,9 @@ router.post('/setup', setup)
 
 // POST /api/auth/login - Autenticar usuario
 router.post('/login', login)
+
+// POST /api/auth/local-dev-session - Sesión automática sólo para desarrollo local
+router.post('/local-dev-session', localDevSession)
 
 // POST /api/auth/verify - Verificar token JWT
 router.post('/verify', verifyTokenEndpoint)
