@@ -5973,7 +5973,6 @@ const SitesAICreationModal: React.FC<{
                       placeholder={getSitesAICreationPlaceholder(state.siteKind, editMode)}
                       rows={7}
                     />
-                    <AIVoiceDictationControl voice={voiceDictation} disabled={!canWritePrompt || creating} />
                   </label>
                 </>
               )}
@@ -6017,6 +6016,11 @@ const SitesAICreationModal: React.FC<{
                     <Paperclip size={16} />
                     <span>Archivo</span>
                   </button>
+                  <AIVoiceDictationControl
+                    voice={voiceDictation}
+                    disabled={!canWritePrompt || creating}
+                    className={styles.aiCreationFooterVoice}
+                  />
                 </div>
               ) : (
                 <span className={styles.aiCreationFooterHint}>Primero elige una estructura.</span>
@@ -8563,7 +8567,6 @@ const ImportedHtmlEditorPanel: React.FC<{
                 name="rstk-imported-ai-region-prompt"
                 {...importedEditorNoAutocompleteAttrs}
               />
-              <AIVoiceDictationControl voice={aiRegionVoiceDictation} disabled={aiRegionSaving} />
             </label>
             {aiRegionError && (
               <div className={styles.importedAIRegionError}>
@@ -8586,7 +8589,12 @@ const ImportedHtmlEditorPanel: React.FC<{
                 </small>
               </div>
             )}
-            <div className={styles.importedButtonActionFooter}>
+            <div className={`${styles.importedButtonActionFooter} ${styles.importedAIRegionFooter}`}>
+              <AIVoiceDictationControl
+                voice={aiRegionVoiceDictation}
+                disabled={aiRegionSaving}
+                className={styles.importedAIRegionFooterVoice}
+              />
               <Button type="button" variant="secondary" size="sm" onClick={cancelAIRegionMode} disabled={aiRegionSaving}>
                 Cancelar
               </Button>
