@@ -7275,7 +7275,7 @@ const FunnelPagesPanel: React.FC<FunnelPagesPanelProps> = ({
             <span>Paginas</span>
             <strong>{pages.length}</strong>
           </div>
-          <div className={styles.pageList}>
+          <div className={`${styles.pageList} ${styles.pagesDropdownList}`}>
             {pages.map((page, index) => {
               const fixedPage = isFixedPage(page)
               const pageCanDelete = !locked && canDeletePage(page)
@@ -7289,16 +7289,16 @@ const FunnelPagesPanel: React.FC<FunnelPagesPanelProps> = ({
               return (
                 <div
                   key={page.id}
-                  className={`${styles.pageItemWrap} ${draggingPageId === page.id ? styles.pageItemDragging : ''}`}
+                  className={`${styles.pageItemWrap} ${styles.pagesDropdownItemWrap} ${draggingPageId === page.id ? styles.pageItemDragging : ''}`}
                   onDragOver={(event) => handlePageDragOver(event, fixedPage)}
                   onDrop={(event) => handlePageDrop(event, page, fixedPage)}
                   onDragEnd={() => onDragPage(null)}
                 >
                   <div
-                    className={`${styles.pageItem} ${pageToneClass} ${fixedPage ? styles.pageItemFixed : ''} ${locked ? styles.pageItemLocked : ''} ${activePageId === page.id ? styles.pageItemActive : ''}`}
+                    className={`${styles.pageItem} ${styles.pagesDropdownItem} ${pageToneClass} ${fixedPage ? styles.pageItemFixed : ''} ${locked ? styles.pageItemLocked : ''} ${activePageId === page.id ? styles.pageItemActive : ''}`}
                   >
                     <span
-                      className={`${styles.pageDragHandle} ${locked || fixedPage ? styles.pageDragHandleDisabled : ''}`}
+                      className={`${styles.pageDragHandle} ${styles.pagesDropdownDragHandle} ${locked || fixedPage ? styles.pageDragHandleDisabled : ''}`}
                       draggable={!locked && !fixedPage}
                       role={!locked && !fixedPage ? 'button' : undefined}
                       tabIndex={!locked && !fixedPage ? 0 : -1}
@@ -7322,7 +7322,7 @@ const FunnelPagesPanel: React.FC<FunnelPagesPanelProps> = ({
                         />
                       </div>
                     ) : (
-                      <button type="button" className={styles.pageSelectButton} onClick={() => handleSelectPage(page.id)}>
+                      <button type="button" className={`${styles.pageSelectButton} ${styles.pagesDropdownSelectButton}`} onClick={() => handleSelectPage(page.id)}>
                         <span className={styles.pageTitleText}>{page.title || `Pagina ${index + 1}`}</span>
                       </button>
                     )}
@@ -7331,7 +7331,7 @@ const FunnelPagesPanel: React.FC<FunnelPagesPanelProps> = ({
                         <DropdownMenuTrigger asChild>
                           <button
                             type="button"
-                            className={styles.pageMenuButton}
+                            className={`${styles.pageMenuButton} ${styles.pagesDropdownMenuButton}`}
                             aria-label="Opciones de pagina"
                             onDragStart={(event) => event.preventDefault()}
                             onClick={(event) => event.stopPropagation()}
@@ -7379,7 +7379,7 @@ const FunnelPagesPanel: React.FC<FunnelPagesPanelProps> = ({
               )
             })}
             {!locked && (
-              <button type="button" className={styles.addPageButton} onClick={onAddPage}>
+              <button type="button" className={`${styles.addPageButton} ${styles.pagesDropdownAddButton}`} onClick={onAddPage}>
                 <Plus size={15} />
                 Agregar pagina
               </button>

@@ -8750,7 +8750,7 @@
   }
 }
 
-/* Sites editor header: SEO sits with the title, pages open as a compact panel. */
+/* Sites editor header: SEO sits with the title, pages open as a full-width panel. */
 .editorToolbarTop .editorToolbarLeft .seoToolbarButton {
   height: 34px;
   min-height: 34px;
@@ -8804,15 +8804,14 @@
   grid-template-columns: 20px minmax(0, 1fr) 18px;
   align-items: center;
   gap: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  border: 1px solid color-mix(in srgb, var(--color-border-subtle, rgba(148, 163, 184, 0.26)) 86%, var(--color-primary) 14%);
   border-radius: 8px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.52)),
-    var(--color-background-primary);
+  background: color-mix(in srgb, var(--color-background-secondary) 88%, var(--color-primary) 12%);
   color: var(--color-text-primary);
   padding: 0 12px;
   cursor: pointer;
   text-align: left;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-text-onAccent, #fff) 8%, transparent);
   transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
 }
 
@@ -8820,9 +8819,7 @@
 .pagesDropdownTrigger:focus-visible,
 .pagesDropdownOpen .pagesDropdownTrigger {
   border-color: rgba(59, 130, 246, 0.36);
-  background:
-    linear-gradient(180deg, rgba(59, 130, 246, 0.12), rgba(59, 130, 246, 0.04)),
-    var(--color-background-primary);
+  background: color-mix(in srgb, var(--color-background-secondary) 82%, var(--color-primary) 18%);
 }
 
 .pagesDropdownTrigger:focus-visible {
@@ -8876,13 +8873,12 @@
   min-width: 100%;
   max-height: min(720px, calc(100dvh - 96px));
   overflow: auto;
-  border: 1px solid rgba(148, 163, 184, 0.24);
+  border: 1px solid color-mix(in srgb, var(--color-border-subtle, rgba(148, 163, 184, 0.26)) 82%, var(--color-primary) 18%);
   border-radius: 8px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.78)),
-    var(--color-background-primary);
-  padding: 14px;
-  box-shadow: 0 24px 70px -44px rgba(15, 23, 42, 0.72);
+  background: color-mix(in srgb, var(--color-background-secondary) 92%, var(--color-background-primary) 8%);
+  color: var(--color-text-primary);
+  padding: 16px;
+  box-shadow: 0 24px 70px -42px rgba(0, 0, 0, 0.82);
   scrollbar-gutter: stable;
 }
 
@@ -8893,7 +8889,7 @@
   justify-content: space-between;
   gap: 10px;
   padding: 0 2px 12px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border-subtle, rgba(148, 163, 184, 0.2)) 76%, transparent);
 }
 
 .pagesDropdownHeader span {
@@ -8903,52 +8899,69 @@
 }
 
 .pagesDropdownHeader strong {
-  min-width: 30px;
-  height: 26px;
+  min-width: 34px;
+  height: 30px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  background: rgba(59, 130, 246, 0.1);
+  background: color-mix(in srgb, var(--color-primary) 18%, var(--color-background-tertiary) 82%);
   color: color-mix(in srgb, var(--color-primary) 78%, var(--color-text-primary) 22%);
-  padding: 0 7px;
-  font-size: 0.82rem;
+  padding: 0 9px;
+  font-size: 0.86rem;
   font-weight: var(--font-weight-semibold, 600);
 }
 
-.pagesDropdownPanel .pageList {
+.pagesDropdownPanel .pageList,
+.pagesDropdownPanel .pagesDropdownList {
   width: 100%;
   display: grid;
-  gap: 10px;
-  padding-top: 12px;
+  justify-items: stretch;
+  gap: 12px;
+  padding-top: 14px;
 }
 
-.pagesDropdownPanel .pageItemWrap {
+.pagesDropdownPanel .pageItemWrap,
+.pagesDropdownPanel .pagesDropdownItemWrap {
   width: 100%;
   justify-self: stretch;
   grid-template-columns: minmax(0, 1fr);
 }
 
-.pagesDropdownPanel .pageItem {
+.pagesDropdownPanel .pagesDropdownItemWrap {
+  display: block;
+}
+
+.pagesDropdownPanel .pageItem,
+.pagesDropdownPanel .pagesDropdownItem {
   width: 100%;
-  min-height: 64px;
+  min-height: 72px;
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 42px;
+  grid-template-columns: 44px minmax(0, 1fr) 50px;
   align-items: center;
-  gap: 12px;
-  padding: 0 14px;
+  gap: 14px;
+  border-color: color-mix(in srgb, var(--color-border-subtle, rgba(148, 163, 184, 0.2)) 82%, transparent);
+  background: color-mix(in srgb, var(--color-background-primary) 78%, var(--color-background-tertiary) 22%);
+  padding: 0 16px;
   cursor: default;
-  font-size: 0.96rem;
+  font-size: 1rem;
   font-weight: var(--font-weight-semibold, 600);
 }
 
-.pagesDropdownPanel .pageItemLocked {
-  grid-template-columns: 34px minmax(0, 1fr);
+.pagesDropdownPanel .pagesDropdownItem:hover,
+.pagesDropdownPanel .pagesDropdownItem.pageItemActive {
+  border-color: color-mix(in srgb, var(--color-primary) 42%, var(--color-border-subtle, rgba(148, 163, 184, 0.28)) 58%);
+  background: color-mix(in srgb, var(--color-background-tertiary) 82%, var(--color-primary) 18%);
 }
 
-.pagesDropdownPanel .pageDragHandle {
-  width: 34px;
-  height: 44px;
+.pagesDropdownPanel .pageItemLocked {
+  grid-template-columns: 44px minmax(0, 1fr);
+}
+
+.pagesDropdownPanel .pageDragHandle,
+.pagesDropdownPanel .pagesDropdownDragHandle {
+  width: 44px;
+  height: 54px;
   display: inline-grid;
   place-items: center;
   border-radius: 8px;
@@ -8956,8 +8969,8 @@
   cursor: grab;
 }
 
-.pagesDropdownPanel .pageDragHandle:hover {
-  background: rgba(148, 163, 184, 0.12);
+.pagesDropdownPanel .pagesDropdownDragHandle:hover {
+  background: color-mix(in srgb, var(--color-background-tertiary) 82%, var(--color-primary) 18%);
   color: var(--color-text-secondary);
 }
 
@@ -8977,25 +8990,26 @@
   align-items: center;
 }
 
-.pagesDropdownPanel .pageSelectButton {
+.pagesDropdownPanel .pageSelectButton,
+.pagesDropdownPanel .pagesDropdownSelectButton {
   width: 100%;
   min-width: 0;
-  min-height: 44px;
+  min-height: 54px;
   display: flex;
   align-items: center;
   border: 0;
   border-radius: 8px;
   background: transparent;
   color: inherit;
-  padding: 0 4px;
+  padding: 0 6px;
   text-align: left;
   font: inherit;
   font-weight: var(--font-weight-semibold, 600);
 }
 
-.pagesDropdownPanel .pageSelectButton:hover,
-.pagesDropdownPanel .pageSelectButton:focus-visible {
-  background: rgba(148, 163, 184, 0.1);
+.pagesDropdownPanel .pagesDropdownSelectButton:hover,
+.pagesDropdownPanel .pagesDropdownSelectButton:focus-visible {
+  background: color-mix(in srgb, var(--color-background-tertiary) 82%, var(--color-primary) 18%);
   outline: none;
 }
 
@@ -9010,26 +9024,36 @@
 
 .pagesDropdownPanel .pageTitleInput {
   width: 100%;
-  height: 42px;
+  height: 50px;
   min-height: 0;
-  padding: 0 10px;
-  font-size: 0.96rem;
+  padding: 0 12px;
+  font-size: 1rem;
   font-weight: var(--font-weight-semibold, 600);
 }
 
-.pagesDropdownPanel .pageMenuButton {
-  width: 42px;
-  height: 42px;
-  min-height: 42px;
+.pagesDropdownPanel .pageMenuButton,
+.pagesDropdownPanel .pagesDropdownMenuButton {
+  width: 50px;
+  height: 50px;
+  min-height: 50px;
   border-radius: 8px;
 }
 
-.pagesDropdownPanel .addPageButton {
-  min-height: 58px;
-  margin-top: 6px;
+.pagesDropdownPanel .addPageButton,
+.pagesDropdownPanel .pagesDropdownAddButton {
+  width: 100%;
+  min-height: 66px;
+  justify-content: flex-start;
+  margin-top: 2px;
   border-radius: 8px;
-  font-size: 0.96rem;
+  background: color-mix(in srgb, var(--color-background-primary) 78%, var(--color-primary) 22%);
+  padding: 0 18px;
+  font-size: 1rem;
   font-weight: var(--font-weight-semibold, 600);
+}
+
+.pagesDropdownPanel .pagesDropdownAddButton:hover {
+  background: color-mix(in srgb, var(--color-background-tertiary) 72%, var(--color-primary) 28%);
 }
 
 @media (max-width: 1500px) {
