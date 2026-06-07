@@ -6332,7 +6332,7 @@ export const PhoneChat: React.FC = () => {
   const renderMessageMeta = (message: ChatMessage, className = styles.messageMeta, options?: { showTransport?: boolean }) => {
     const failed = message.direction === 'outbound' && isMessageFailed(message)
     const scheduled = message.direction === 'outbound' && !failed && isMessageScheduled(message)
-    const pending = message.direction === 'outbound' && !failed && isMessagePending(message)
+    const pending = message.direction === 'outbound' && !failed && !scheduled && isMessagePending(message)
     const receiptStatus = getMessageReceiptStatus(message)
     const receiptLabel = getMessageReceiptLabel(receiptStatus)
     const transportBadge = options?.showTransport === false ? '' : getMessageTransportBadge(message.transport)
@@ -6350,7 +6350,7 @@ export const PhoneChat: React.FC = () => {
           >
             <CircleAlert size={15} />
           </button>
-        ) : pending ? (
+        ) : scheduled ? null : pending ? (
           <Loader2 size={14} className={`${styles.spinIcon} ${styles.messageSendingIcon}`} />
         ) : receiptStatus === 'delivered' || receiptStatus === 'read' ? (
           <span
