@@ -64,12 +64,13 @@ export const PhoneSelect: React.FC<PhoneSelectProps> = ({
     onChange(option.value)
     closeSheet()
   }
+  const sheetMoving = sheetDismiss.dragging || sheetDismiss.closing || sheetDismiss.dragOffset > 0
 
   const sheet = open ? (
-    <div className={styles.overlay} style={sheetDismiss.backdropStyle} role="presentation" onClick={closeSheet}>
+    <div className={`${styles.overlay} ${sheetMoving ? styles.overlayInteractive : ''}`} style={sheetDismiss.backdropStyle} role="presentation" onClick={closeSheet}>
       <div
         ref={sheetRef}
-        className={`${styles.sheet} ${sheetClassName}`}
+        className={`${styles.sheet} ${sheetMoving ? styles.sheetInteractive : ''} ${sheetClassName}`}
         style={sheetDismiss.sheetStyle}
         role="dialog"
         aria-modal="true"

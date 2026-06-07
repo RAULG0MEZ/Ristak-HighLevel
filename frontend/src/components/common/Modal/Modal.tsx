@@ -106,6 +106,7 @@ export const Modal: React.FC<ModalProps> = ({
     onClose: handleCancel
   })
   const closeWithSheetAnimation = bottomSheetDismiss.requestClose
+  const bottomSheetMoving = bottomSheetDismiss.dragging || bottomSheetDismiss.closing || bottomSheetDismiss.dragOffset > 0
 
   useEffect(() => {
     if (!isOpen) return
@@ -139,13 +140,13 @@ export const Modal: React.FC<ModalProps> = ({
 
   const modalContent = (
     <div
-      className={`${styles.backdrop} ${isSystemModal ? styles.systemBackdrop : ''} ${draggableSheet ? styles.bottomSheetBackdrop : ''} ${backdropClassName}`.trim()}
+      className={`${styles.backdrop} ${isSystemModal ? styles.systemBackdrop : ''} ${draggableSheet ? styles.bottomSheetBackdrop : ''} ${draggableSheet && bottomSheetMoving ? styles.bottomSheetBackdropInteractive : ''} ${backdropClassName}`.trim()}
       style={draggableSheet ? bottomSheetDismiss.backdropStyle : undefined}
       onClick={handleBackdropClick}
       data-phone-modal-root="true"
     >
       <div
-        className={`${styles.modal} ${styles[type]} ${styles[size]} ${isDestructiveConfirm ? styles.destructive : ''} ${draggableSheet ? styles.bottomSheetModal : ''} ${className}`.trim()}
+        className={`${styles.modal} ${styles[type]} ${styles[size]} ${isDestructiveConfirm ? styles.destructive : ''} ${draggableSheet ? styles.bottomSheetModal : ''} ${draggableSheet && bottomSheetMoving ? styles.bottomSheetModalInteractive : ''} ${className}`.trim()}
         style={draggableSheet ? bottomSheetDismiss.sheetStyle : undefined}
         {...(draggableSheet ? bottomSheetDismiss.sheetDragProps : {})}
       >

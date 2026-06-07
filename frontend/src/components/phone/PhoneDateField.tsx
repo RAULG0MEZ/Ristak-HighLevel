@@ -130,11 +130,12 @@ export const PhoneDateField: React.FC<PhoneDateFieldProps> = ({
     onChange(formatDateInput(date))
     closeSheet()
   }
+  const sheetMoving = sheetDismiss.dragging || sheetDismiss.closing || sheetDismiss.dragOffset > 0
 
   const sheet = open ? (
-    <div className={styles.overlay} style={sheetDismiss.backdropStyle} role="presentation" onClick={closeSheet}>
+    <div className={`${styles.overlay} ${sheetMoving ? styles.overlayInteractive : ''}`} style={sheetDismiss.backdropStyle} role="presentation" onClick={closeSheet}>
       <div
-        className={styles.sheet}
+        className={`${styles.sheet} ${sheetMoving ? styles.sheetInteractive : ''}`}
         style={sheetDismiss.sheetStyle}
         role="dialog"
         aria-modal="true"

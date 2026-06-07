@@ -1063,23 +1063,40 @@
 }
 
 .sheetBackdrop {
+  --bottom-sheet-backdrop-bg:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.2), rgba(15, 23, 42, 0.72)),
+    rgba(15, 23, 42, 0.58);
   position: fixed;
   inset: 0;
   z-index: 90;
   display: flex;
   align-items: flex-end;
-  background:
-    linear-gradient(180deg, rgba(15, 23, 42, 0.2), rgba(15, 23, 42, 0.7)),
-    rgba(15, 23, 42, 0.56);
+  overflow: hidden;
+  background: transparent;
+  isolation: isolate;
+}
+
+.sheetBackdrop::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: var(--bottom-sheet-backdrop-bg);
+  opacity: var(--bottom-sheet-progress, 1);
   animation: sheetBackdropIn 240ms ease-out both;
+  pointer-events: none;
+  transition: opacity 260ms ease;
   will-change: opacity;
 }
 
-.sheetBackdropInteractive {
+.sheetBackdropInteractive::before {
   animation: none;
+  transition: none;
 }
 
 .sheet {
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   width: 100%;

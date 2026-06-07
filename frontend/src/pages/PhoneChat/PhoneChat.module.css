@@ -3451,34 +3451,51 @@
 }
 
 .sheetBackdrop {
+  --bottom-sheet-backdrop-bg:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.2), rgba(15, 23, 42, 0.72)),
+    rgba(15, 23, 42, 0.58);
   position: fixed;
   inset: 0;
   z-index: 80;
   display: grid;
   align-items: end;
-  background:
-    linear-gradient(180deg, rgba(var(--phone-chat-primary-rgb), 0.18), rgba(var(--phone-chat-primary-rgb), 0.68)),
-    rgba(var(--phone-chat-primary-rgb), 0.54);
+  overflow: hidden;
+  background: transparent;
+  isolation: isolate;
+}
+
+.sheetBackdrop::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: var(--bottom-sheet-backdrop-bg);
+  opacity: var(--bottom-sheet-progress, 1);
   animation: phoneChatSheetBackdropIn 240ms ease-out both;
+  pointer-events: none;
+  transition: opacity 260ms ease;
   will-change: opacity;
 }
 
 .settingsSheetBackdrop {
-  animation: phoneChatSheetBackdropIn 240ms ease-out both;
+  --bottom-sheet-backdrop-bg:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.2), rgba(15, 23, 42, 0.72)),
+    rgba(15, 23, 42, 0.58);
 }
 
-.sheetBackdropInteractive {
+.sheetBackdropInteractive::before {
   animation: none;
+  transition: none;
 }
 
 .darkSheetBackdrop {
-  background:
+  --bottom-sheet-backdrop-bg:
     linear-gradient(180deg, rgba(15, 23, 42, 0.2), rgba(15, 23, 42, 0.72)),
     rgba(15, 23, 42, 0.58);
 }
 
 .chatMoreSheetBackdrop {
-  background:
+  --bottom-sheet-backdrop-bg:
     linear-gradient(180deg, rgba(3, 7, 18, 0.36), rgba(3, 7, 18, 0.82)),
     rgba(3, 7, 18, 0.68);
 }
@@ -3488,6 +3505,8 @@
 }
 
 .sheetPanel {
+  position: relative;
+  z-index: 1;
   display: grid;
   gap: 12px;
   max-height: min(84dvh, 720px);

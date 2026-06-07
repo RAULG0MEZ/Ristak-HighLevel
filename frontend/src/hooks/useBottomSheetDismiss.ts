@@ -191,9 +191,7 @@ export function useBottomSheetDismiss({
 
   const backdropStyle: BottomSheetBackdropStyle | undefined = dragging || closing || dragOffset > 0
     ? {
-        opacity: backdropProgress,
-        transition: dragging ? 'none' : `opacity ${closeDurationMs}ms ease`,
-        willChange: 'opacity',
+        pointerEvents: closing ? 'none' : undefined,
         '--bottom-sheet-progress': String(backdropProgress)
       }
     : undefined
