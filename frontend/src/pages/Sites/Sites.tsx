@@ -8956,7 +8956,7 @@ const PhoneCountryInputPreview: React.FC<{ placeholder?: string }> = ({ placehol
       <select aria-label="Pais y lada" defaultValue={selectedCountry.value}>
         {COUNTRY_OPTIONS.map(country => (
           <option key={country.value} value={country.value}>
-            {getCountryFlagEmoji(country.value)} +{country.dialCode} {country.label}
+            {getCountryFlagEmoji(country.value)} +{country.dialCode}
           </option>
         ))}
       </select>

@@ -5597,7 +5597,7 @@ function renderPhoneCountryOptions(defaultCountryCode) {
   const selectedCountry = getPhoneCountryOption(defaultCountryCode)
   return COUNTRY_OPTIONS.map(country => {
     const selected = country.value === selectedCountry.value ? 'selected' : ''
-    const label = `${getCountryFlagEmoji(country.value)} +${country.dialCode} ${country.label}`
+    const label = `${getCountryFlagEmoji(country.value)} +${country.dialCode}`
     return `<option value="${escapeHtml(country.value)}" data-dial-code="${escapeHtml(country.dialCode)}" data-timezones="${escapeHtml((country.timezones || []).join(','))}" ${selected}>${escapeHtml(label)}</option>`
   }).join('')
 }
@@ -7817,7 +7817,7 @@ const RSTK_BASE_CSS = `
 	    padding:13px 14px;outline:none;transition:border-color .15s ease,box-shadow .15s ease;
 	  }
 	  .rstk-kind-form .rstk-field > input,.rstk-kind-form .rstk-field > textarea,.rstk-kind-form .rstk-field > select{min-height:var(--rstk-form-field-height,50px);border-width:var(--rstk-form-field-border-width,1px);border-color:var(--rstk-form-field-border,var(--rstk-input-border));border-radius:var(--rstk-form-field-radius,var(--rstk-field-radius,var(--rstk-radius)));background:var(--rstk-form-field-bg,var(--rstk-input-bg));color:var(--rstk-form-field-text,var(--rstk-input-ink));font-family:var(--rstk-form-font,var(--rstk-font));font-size:var(--rstk-form-input-size,1rem);font-style:var(--rstk-form-font-style,normal);font-weight:var(--rstk-form-weight,700);text-decoration:var(--rstk-form-text-decoration,none);padding:var(--rstk-form-field-pad-y,13px) var(--rstk-form-field-pad-x,14px)}
-	  .rstk-phone-input{display:grid;grid-template-columns:minmax(128px,.42fr) minmax(0,1fr);gap:8px;align-items:stretch}
+	  .rstk-phone-input{display:grid;grid-template-columns:minmax(92px,.24fr) minmax(0,1fr);gap:8px;align-items:stretch}
 	  .rstk-phone-input > select,.rstk-phone-input > input{min-width:0}
 	  .rstk-kind-form .rstk-field .rstk-phone-input > input,.rstk-kind-form .rstk-field .rstk-phone-input > select{min-height:var(--rstk-form-field-height,50px);border-width:var(--rstk-form-field-border-width,1px);border-color:var(--rstk-form-field-border,var(--rstk-input-border));border-radius:var(--rstk-form-field-radius,var(--rstk-field-radius,var(--rstk-radius)));background-color:var(--rstk-form-field-bg,var(--rstk-input-bg));color:var(--rstk-form-field-text,var(--rstk-input-ink));font-family:var(--rstk-form-font,var(--rstk-font));font-size:var(--rstk-form-input-size,1rem);font-style:var(--rstk-form-font-style,normal);font-weight:var(--rstk-form-weight,700);text-decoration:var(--rstk-form-text-decoration,none);padding:var(--rstk-form-field-pad-y,13px) var(--rstk-form-field-pad-x,14px)}
 	  textarea{resize:vertical;min-height:108px}
