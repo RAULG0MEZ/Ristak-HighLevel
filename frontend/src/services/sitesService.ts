@@ -442,32 +442,12 @@ export interface SitesAIPreviewVisualContext {
   elements: SitesAIPreviewVisualElement[]
 }
 
-export interface SitesAIEditDebug {
-  traceId?: string
-  siteId?: string
-  activePageId?: string
-  model?: string
-  pageCount?: number
-  visualContext?: boolean
-  selectedElements?: number
-  requestPreview?: string
-  aiStatus?: string
-  aiReply?: string
-  changedByAI?: boolean
-  fallbackAttempted?: boolean
-  fallbackApplied?: boolean
-  fallbackType?: string
-  fallbackReason?: string
-  finalStatus?: string
-  steps?: string[]
-}
-
 export interface SitesAICreationResult {
   status: 'needs_more_info' | 'created' | 'updated'
   reply: string
   site?: PublicSite
   import?: ImportedSiteImport
-  debug?: SitesAIEditDebug
+  reason?: 'selection_target_missing'
 }
 
 export const blockLabels: Record<SiteBlockType, string> = {

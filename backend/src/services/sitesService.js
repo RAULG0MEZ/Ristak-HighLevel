@@ -5335,15 +5335,12 @@ function getImportedAIRegionMissingTargetMessage(fallbackResult = {}) {
   return ''
 }
 
-function buildImportedAIRegionMissingTargetResponse(debug, message = '') {
+function buildImportedAIRegionMissingTargetResponse(message = '') {
   const reply = cleanString(message) || 'La zona seleccionada no incluye el elemento que pediste cambiar. Selecciona la parte correcta de la pagina y vuelve a intentar.'
-  debug.finalStatus = 'selection_target_missing'
-  addSitesAIEditDebugStep(debug, `No se guardo el HTML porque falta el objetivo en la seleccion: ${reply}`)
-  logSitesAIEditDebug(debug, 'selection_target_missing')
   return {
     status: 'needs_more_info',
     reply,
-    debug: getSitesAIEditDebugPayload(debug)
+    reason: 'selection_target_missing'
   }
 }
 
@@ -6784,67 +6781,7 @@ export async function createSiteWithAIHtml(input = {}) {
   }
 }
 
-function createSitesAIEditDebug({ traceId, siteId, activePageId, model, importedPages = [], visualContext = null, messages = [] } = {}) {
-  const promptText = getSitesAIConversationText(messages)
-  return {
-    traceId,
-    siteId: cleanString(siteId),
-    activePageId: cleanString(activePageId),
-    model: cleanString(model),
-    pageCount: Array.isArray(importedPages) ? importedPages.length : 0,
-    visualContext: Boolean(visualContext?.summary || visualContext?.screenshotDataUrl),
-    selectedElements: Array.isArray(visualContext?.elements) ? visualContext.elements.length : 0,
-    requestPreview: limitString(getImportedAIRegionUserRequestText(promptText), 420),
-    aiStatus: '',
-    aiReply: '',
-    changedByAI: false,
-    fallbackAttempted: false,
-    fallbackApplied: false,
-    fallbackType: '',
-    fallbackReason: '',
-    finalStatus: '',
-    steps: []
-  }
-}
-
-function addSitesAIEditDebugStep(debug, message = '') {
-  const cleanMessage = limitString(message, 420)
-  if (!debug || !cleanMessage) return
-  debug.steps.push(cleanMessage)
-}
-
-function getSitesAIEditDebugPayload(debug = {}) {
-  return {
-    traceId: debug.traceId,
-    siteId: debug.siteId,
-    activePageId: debug.activePageId,
-    model: debug.model,
-    pageCount: debug.pageCount,
-    visualContext: debug.visualContext,
-    selectedElements: debug.selectedElements,
-    requestPreview: debug.requestPreview,
-    aiStatus: debug.aiStatus,
-    aiReply: limitString(debug.aiReply, 900),
-    changedByAI: Boolean(debug.changedByAI),
-    fallbackAttempted: Boolean(debug.fallbackAttempted),
-    fallbackApplied: Boolean(debug.fallbackApplied),
-    fallbackType: debug.fallbackType,
-    fallbackReason: debug.fallbackReason,
-    finalStatus: debug.finalStatus,
-    steps: Array.isArray(debug.steps) ? debug.steps.slice(-12) : []
-  }
-}
-
-function logSitesAIEditDebug(debug = {}, event = 'step', extra = {}) {
-  logger.info('[Sites AI HTML edit]', {
-    event,
-    ...getSitesAIEditDebugPayload(debug),
-    ...extra
-  })
-}
-
 export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
-  const traceId = crypto.randomUUID()
   const currentSite = await getSite(siteId, { includeBlocks: true, includeSubmissions: true })
   if (!currentSite) {
     const error = new Error('Site no encontrado')
@@ -6864,12 +6801,7 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
   if (messages.length === 0) {
     return {
       status: 'needs_more_info',
-      reply: 'Dime que quieres cambiar del HTML: titulo, imagen, orden de secciones, colores, textos o campos del formulario.',
-      debug: {
-        traceId,
-        finalStatus: 'needs_more_info',
-        steps: ['No llego ninguna instruccion para editar el HTML.']
-      }
+      reply: 'Dime que quieres cambiar del HTML: titulo, imagen, orden de secciones, colores, textos o campos del formulario.'
     }
   }
 
@@ -6885,17 +6817,6 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
   const importedPages = await getImportedSitePagesForAIContext(currentSite, currentImport)
   const visualContext = normalizeSitesAIVisualContext(input.visualContext || input.visual_context)
   const activePageId = getImportedAIActivePageId(input, visualContext)
-  const debug = createSitesAIEditDebug({
-    traceId,
-    siteId,
-    activePageId,
-    model,
-    importedPages,
-    visualContext,
-    messages
-  })
-  addSitesAIEditDebugStep(debug, `Inicio de edicion IA para pagina ${activePageId || 'activa'} con ${debug.selectedElements} elementos visuales.`)
-  logSitesAIEditDebug(debug, 'request_started')
 
   let aiPayload = null
   try {
@@ -6912,33 +6833,15 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
       activePageId
     })
   } catch (error) {
-    debug.finalStatus = 'openai_error'
-    addSitesAIEditDebugStep(debug, `OpenAI fallo antes de devolver HTML: ${error.message}`)
-    logger.error('[Sites AI HTML edit]', {
-      event: 'openai_error',
-      ...getSitesAIEditDebugPayload(debug),
-      error
-    })
     throw error
   }
 
   const status = cleanString(aiPayload?.status)
-  debug.aiStatus = status || (hasSitesAIHtmlPayload(aiPayload) ? 'html_payload' : 'empty_payload')
-  debug.aiReply = limitString(aiPayload?.reply, 1000)
-  addSitesAIEditDebugStep(debug, `OpenAI respondio con estado ${debug.aiStatus || 'sin estado'}.`)
-  if (debug.aiReply) addSitesAIEditDebugStep(debug, `Respuesta de IA: ${debug.aiReply}`)
-  logSitesAIEditDebug(debug, 'openai_response', {
-    hasHtmlPayload: hasSitesAIHtmlPayload(aiPayload)
-  })
 
   if (status === 'needs_more_info' || !hasSitesAIHtmlPayload(aiPayload)) {
-    debug.finalStatus = 'needs_more_info'
-    addSitesAIEditDebugStep(debug, 'No se guardo porque OpenAI no devolvio HTML actualizable.')
-    logSitesAIEditDebug(debug, 'needs_more_info')
     return {
       status: 'needs_more_info',
-      reply: limitString(aiPayload?.reply, 1000) || 'Me falta saber que cambio quieres hacer en esta pagina HTML.',
-      debug: getSitesAIEditDebugPayload(debug)
+      reply: limitString(aiPayload?.reply, 1000) || 'Me falta saber que cambio quieres hacer en esta pagina HTML.'
     }
   }
 
@@ -6956,13 +6859,9 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
     mergeImportedPages,
     activePageId
   )
-  debug.changedByAI = didAIChangeImportedHtml(page, currentImport, mergeImportedPages)
-  addSitesAIEditDebugStep(debug, debug.changedByAI
-    ? 'El HTML devuelto por OpenAI tiene diferencias contra la pagina guardada.'
-    : 'OpenAI devolvio HTML igual o sin cambios visibles contra la pagina guardada.')
+  const changedByAI = didAIChangeImportedHtml(page, currentImport, mergeImportedPages)
 
   if (shouldApplyImportedAIRegionCenteredLayoutFallback(promptText) || shouldApplyImportedAIRegionVideoOnlyFallback(promptText)) {
-    debug.fallbackAttempted = true
     const layoutFallbackPages = await getImportedSitePagesForAIContext(currentSite, currentImport, { htmlLimit: 0 })
     const layoutFallbackResult = buildImportedAIRegionFallbackPageResult({
       currentImport,
@@ -6972,21 +6871,14 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
       siteKind
     })
     const layoutFallbackPage = layoutFallbackResult.page
-    debug.fallbackType = layoutFallbackResult.type
-    debug.fallbackReason = layoutFallbackResult.reason
-    addSitesAIEditDebugStep(debug, `Fallback ${layoutFallbackResult.type}: ${layoutFallbackResult.reason}`)
 
     if (layoutFallbackPage && didAIChangeImportedHtml(layoutFallbackPage, currentImport, layoutFallbackPages.length ? layoutFallbackPages : mergeImportedPages)) {
-      debug.fallbackApplied = true
       const layoutResult = await replaceImportedSiteHtml(siteId, {
         html: layoutFallbackPage.html,
         pages: layoutFallbackPage.pages,
         title: layoutFallbackPage.title || currentSite.title,
         description: layoutFallbackPage.description || currentSite.description
       })
-      debug.finalStatus = 'updated_with_fallback'
-      addSitesAIEditDebugStep(debug, 'Se guardo el HTML usando fallback determinista porque era mas confiable para esta instruccion.')
-      logSitesAIEditDebug(debug, 'updated_with_fallback')
 
       return {
         status: 'updated',
@@ -6994,22 +6886,19 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
           ? 'Ristak dejo solo el video grande y centrado en la zona seleccionada.'
           : 'Ristak aplico el reordenamiento de la zona seleccionada: titular, subtitulo, video y boton.',
         site: layoutResult.site,
-        import: layoutResult.import,
-        debug: getSitesAIEditDebugPayload(debug)
+        import: layoutResult.import
       }
     }
     const missingTargetMessage = getImportedAIRegionMissingTargetMessage(layoutFallbackResult)
     if (missingTargetMessage) {
-      return buildImportedAIRegionMissingTargetResponse(debug, missingTargetMessage)
+      return buildImportedAIRegionMissingTargetResponse(missingTargetMessage)
     }
-    logSitesAIEditDebug(debug, 'fallback_not_applied')
   }
 
-  if (!debug.changedByAI) {
+  if (!changedByAI) {
     const fallbackImportedPages = mergeImportedPages.length > 1
       ? mergeImportedPages
       : importedPages
-    debug.fallbackAttempted = true
     const fallbackResultPage = buildImportedAIRegionFallbackPageResult({
       currentImport,
       importedPages: fallbackImportedPages,
@@ -7018,20 +6907,13 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
       siteKind
     })
     const fallbackPage = fallbackResultPage.page
-    debug.fallbackType = fallbackResultPage.type
-    debug.fallbackReason = fallbackResultPage.reason
-    addSitesAIEditDebugStep(debug, `Fallback por HTML sin cambios ${fallbackResultPage.type}: ${fallbackResultPage.reason}`)
     if (fallbackPage && didAIChangeImportedHtml(fallbackPage, currentImport, fallbackImportedPages)) {
-      debug.fallbackApplied = true
       const fallbackResult = await replaceImportedSiteHtml(siteId, {
         html: fallbackPage.html,
         pages: fallbackPage.pages,
         title: fallbackPage.title || currentSite.title,
         description: fallbackPage.description || currentSite.description
       })
-      debug.finalStatus = 'updated_with_fallback_after_unchanged_ai'
-      addSitesAIEditDebugStep(debug, 'Se guardo fallback porque OpenAI no cambio el HTML visible.')
-      logSitesAIEditDebug(debug, 'updated_with_fallback_after_unchanged_ai')
 
       return {
         status: 'updated',
@@ -7039,18 +6921,13 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
           ? 'La IA no hizo cambios visibles, asi que Ristak dejo solo el video grande y centrado en la zona seleccionada.'
           : 'La IA no hizo cambios visibles, asi que Ristak aplico el ajuste de layout en la zona seleccionada.',
         site: fallbackResult.site,
-        import: fallbackResult.import,
-        debug: getSitesAIEditDebugPayload(debug)
+        import: fallbackResult.import
       }
     }
 
-    debug.finalStatus = 'unchanged'
-    addSitesAIEditDebugStep(debug, 'No se guardo nada porque ni OpenAI ni el fallback produjeron un cambio visible.')
-    logSitesAIEditDebug(debug, 'unchanged')
     return {
       status: 'needs_more_info',
-      reply: 'La IA devolvio el mismo HTML sin cambios visibles. Reintenta indicando exactamente que debe cambiar en la zona seleccionada.',
-      debug: getSitesAIEditDebugPayload(debug)
+      reply: 'La IA devolvio el mismo HTML sin cambios visibles. Reintenta indicando exactamente que debe cambiar en la zona seleccionada.'
     }
   }
 
@@ -7060,16 +6937,12 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
     title: page.title || currentSite.title,
     description: page.description || currentSite.description
   })
-  debug.finalStatus = 'updated_with_ai_html'
-  addSitesAIEditDebugStep(debug, 'Se guardo el HTML devuelto por OpenAI.')
-  logSitesAIEditDebug(debug, 'updated_with_ai_html')
 
   return {
     status: 'updated',
     reply: limitString(aiPayload?.reply, 1000) || 'Listo, actualice el HTML y volvi a revisar los formularios.',
     site: result.site,
-    import: result.import,
-    debug: getSitesAIEditDebugPayload(debug)
+    import: result.import
   }
 }
 

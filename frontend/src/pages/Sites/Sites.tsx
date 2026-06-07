@@ -96,7 +96,6 @@ import {
   type ImportedSiteFieldMapping,
   type ImportedSiteFormMapping,
   type ImportedSiteImport,
-  type SitesAIEditDebug,
   type SitesAIPreviewVisualElement,
   type SitesAIPreviewVisualContext,
   landingBlockTypes,
@@ -6356,7 +6355,6 @@ type ImportedAIRegionAttempt = {
   pageTitle: string
   elementCount: number
   prompt: string
-  debug?: SitesAIEditDebug
 }
 
 type ImportedButtonEditorState = {
@@ -7985,7 +7983,7 @@ const ImportedHtmlEditorPanel: React.FC<{
 
   const setAIRegionAttemptStatus = (
     selection: ImportedAIRegionSelection,
-    nextAttempt: Pick<ImportedAIRegionAttempt, 'status' | 'message' | 'prompt'> & { debug?: SitesAIEditDebug }
+    nextAttempt: Pick<ImportedAIRegionAttempt, 'status' | 'message' | 'prompt'>
   ) => {
     setAiRegionLastAttempt({
       ...nextAttempt,
@@ -8028,7 +8026,7 @@ const ImportedHtmlEditorPanel: React.FC<{
       )
 
       let result = await runRegionEdit()
-      const targetMissing = result.debug?.finalStatus === 'selection_target_missing'
+      const targetMissing = result.reason === 'selection_target_missing'
       if (!targetMissing && (result.status === 'needs_more_info' || !result.site || !result.import)) {
         result = await runRegionEdit({
           forceApply: true,
@@ -8037,7 +8035,7 @@ const ImportedHtmlEditorPanel: React.FC<{
       }
 
       if (result.status === 'needs_more_info' || !result.site || !result.import) {
-        const missingTarget = result.debug?.finalStatus === 'selection_target_missing'
+        const missingTarget = result.reason === 'selection_target_missing'
         const message = result.reply
           ? missingTarget
             ? result.reply
@@ -8047,13 +8045,7 @@ const ImportedHtmlEditorPanel: React.FC<{
         setAIRegionAttemptStatus(aiRegionSelection, {
           status: 'error',
           message,
-          prompt,
-          debug: result.debug
-        })
-        console.error('[Sites] AI region edit did not apply changes', {
-          siteId: site.id,
-          pageId: aiRegionSelection.pageId,
-          result
+          prompt
         })
         return
       }
@@ -8069,15 +8061,7 @@ const ImportedHtmlEditorPanel: React.FC<{
         setAIRegionAttemptStatus(aiRegionSelection, {
           status: 'unchanged',
           message,
-          prompt,
-          debug: result.debug
-        })
-        console.error('[Sites] AI region edit returned unchanged HTML', {
-          siteId: site.id,
-          pageId: aiRegionSelection.pageId,
-          elementCount: aiRegionSelection.elements.length,
-          prompt,
-          debug: result.debug
+          prompt
         })
         return
       }
@@ -8088,8 +8072,7 @@ const ImportedHtmlEditorPanel: React.FC<{
       setAIRegionAttemptStatus(aiRegionSelection, {
         status: 'success',
         message: result.reply || 'La IA aplicó cambios en el HTML visible.',
-        prompt,
-        debug: result.debug
+        prompt
       })
       setPreviewHtml(refreshedHtml)
       setPreviewVersion(current => current + 1)
@@ -8101,11 +8084,6 @@ const ImportedHtmlEditorPanel: React.FC<{
         status: 'error',
         message,
         prompt
-      })
-      console.error('[Sites] AI region edit failed', {
-        siteId: site.id,
-        pageId: aiRegionSelection.pageId,
-        error
       })
     } finally {
       setAiRegionSaving(false)
@@ -8926,37 +8904,6 @@ const ImportedHtmlEditorPanel: React.FC<{
                 <small>
                   {aiRegionLastAttempt.at} · {aiRegionLastAttempt.pageTitle} · {aiRegionLastAttempt.elementCount} elementos detectados
                 </small>
-                {aiRegionLastAttempt.debug && (
-                  <div className={styles.importedAIRegionDebug}>
-                    <span>Respuesta y diagnostico</span>
-                    {aiRegionLastAttempt.debug.traceId && (
-                      <small>Rastro para logs: {aiRegionLastAttempt.debug.traceId}</small>
-                    )}
-                    {aiRegionLastAttempt.debug.aiReply && (
-                      <p><b>Respuesta de IA:</b> {aiRegionLastAttempt.debug.aiReply}</p>
-                    )}
-                    <p>
-                      <b>Que hizo Ristak:</b>{' '}
-                      {aiRegionLastAttempt.debug.finalStatus === 'selection_target_missing'
-                        ? 'Detuvo el guardado porque la zona seleccionada no incluye el elemento que pediste cambiar.'
-                        : aiRegionLastAttempt.debug.fallbackApplied
-                        ? `Aplico ${aiRegionLastAttempt.debug.fallbackType || 'un ajuste automatico'} porque era mas confiable para esta zona.`
-                        : aiRegionLastAttempt.debug.changedByAI
-                          ? 'Guardo el HTML que devolvio la IA.'
-                          : 'No detecto cambios visibles en el HTML.'}
-                    </p>
-                    {aiRegionLastAttempt.debug.fallbackReason && (
-                      <p><b>Detalle:</b> {aiRegionLastAttempt.debug.fallbackReason}</p>
-                    )}
-                    {aiRegionLastAttempt.debug.steps?.length ? (
-                      <ul>
-                        {aiRegionLastAttempt.debug.steps.map((step, index) => (
-                          <li key={`${aiRegionLastAttempt.debug?.traceId || 'trace'}-${index}`}>{step}</li>
-                        ))}
-                      </ul>
-                    ) : null}
-                  </div>
-                )}
               </div>
             )}
             <div className={`${styles.importedButtonActionFooter} ${styles.importedAIRegionFooter}`}>
