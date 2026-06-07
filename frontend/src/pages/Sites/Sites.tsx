@@ -5057,54 +5057,54 @@ const SitesLibraryPanel: React.FC<SitesLibraryPanelProps> = ({
               className={`${styles.libraryCard} ${selectedSiteId === site.id ? styles.libraryCardActive : ''}`}
             >
               <div className={styles.libraryCardPreview}>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type="button"
-                      className={styles.libraryCardMenuButton}
-                      aria-label={`Acciones para ${site.name}`}
-                      data-library-card-action="true"
-                      onPointerDown={(event) => event.stopPropagation()}
-                      onMouseDown={(event) => event.stopPropagation()}
-                      onMouseUp={(event) => event.stopPropagation()}
-                      onClick={(event) => event.stopPropagation()}
-                      onKeyDown={(event) => event.stopPropagation()}
-                    >
-                      <MoreVertical size={17} />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    align="end"
-                    sideOffset={6}
-                    className={styles.pageMenu}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    <DropdownMenuItem onSelect={(event) => { event.stopPropagation(); onEdit(site.id) }}>
-                      <Pencil size={15} />
-                      Editar {siteKindLabel}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={(event) => { event.stopPropagation(); startRouteEdit(site) }}>
-                      <Settings2 size={15} />
-                      Cambiar ruta
-                    </DropdownMenuItem>
-                    <DropdownMenuItem className={styles.pageMenuDanger} onSelect={(event) => { event.stopPropagation(); onDelete(site) }}>
-                      <Trash2 size={15} />
-                      Eliminar {siteKindLabel}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
                 <LibrarySitePreview site={site} forms={forms} calendars={calendars} />
                 <span className={styles.libraryPreviewType}>{getSiteTypeLabel(site)}</span>
                 <div className={styles.libraryCardHoverActions} data-library-card-action="true">
                   <button type="button" onClick={() => onEdit(site.id)}>
                     <Pencil size={16} />
-                    Editar
+                    <span>Editar</span>
                   </button>
                   <button type="button" onClick={() => onPreview(site)}>
                     {isPublicSiteLive(site, domainConfig) ? <ExternalLink size={16} /> : <Eye size={16} />}
-                    {isPublicSiteLive(site, domainConfig) ? 'Ver en vivo' : 'Previsualizar'}
+                    <span>{isPublicSiteLive(site, domainConfig) ? 'Ver en vivo' : 'Previsualizar'}</span>
                   </button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className={styles.libraryCardMenuButton}
+                        aria-label={`Acciones para ${site.name}`}
+                        data-library-card-action="true"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onMouseDown={(event) => event.stopPropagation()}
+                        onMouseUp={(event) => event.stopPropagation()}
+                        onClick={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => event.stopPropagation()}
+                      >
+                        <MoreVertical size={17} />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="end"
+                      sideOffset={6}
+                      className={styles.pageMenu}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <DropdownMenuItem onSelect={(event) => { event.stopPropagation(); onEdit(site.id) }}>
+                        <Pencil size={15} />
+                        Editar {siteKindLabel}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={(event) => { event.stopPropagation(); startRouteEdit(site) }}>
+                        <Settings2 size={15} />
+                        Cambiar ruta
+                      </DropdownMenuItem>
+                      <DropdownMenuItem className={styles.pageMenuDanger} onSelect={(event) => { event.stopPropagation(); onDelete(site) }}>
+                        <Trash2 size={15} />
+                        Eliminar {siteKindLabel}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </div>
 
