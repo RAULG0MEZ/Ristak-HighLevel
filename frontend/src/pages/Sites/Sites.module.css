@@ -4639,6 +4639,42 @@
   background: rgba(148, 163, 184, 0.1);
 }
 
+.headerCodeTextarea {
+  min-height: 168px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.seoField small {
+  color: var(--color-text-tertiary);
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.popupDetectedCard {
+  display: grid;
+  gap: 5px;
+  border: 1px solid rgba(59, 130, 246, 0.22);
+  border-radius: 8px;
+  background: rgba(59, 130, 246, 0.08);
+  padding: 12px;
+}
+
+.popupDetectedCard strong {
+  color: var(--color-text-primary);
+  font-size: 0.84rem;
+  font-weight: 900;
+}
+
+.popupDetectedCard p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
 .seoSection {
   display: grid;
   gap: 10px;
@@ -9609,15 +9645,17 @@
 .containerFocused:has(.builder) {
   width: 100%;
   padding: 0;
-  --sites-editor-toolbar-offset: 96px;
+  --sites-editor-topbar-h: 72px;
+  --editor-control-h: 44px;
+  --sites-editor-toolbar-offset: 102px;
 }
 
 .containerFocused:has(.builder) .editorHeader {
-  --editor-control-h: 44px;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 8px;
-  padding: 11px 16px;
+  min-height: var(--sites-editor-topbar-h, 72px);
+  padding: calc((var(--sites-editor-topbar-h, 72px) - var(--editor-control-h, 44px)) / 2) 16px;
   border: 0;
   border-bottom: 1px solid var(--color-border-subtle, rgba(148, 163, 184, 0.18));
   border-radius: 0;
@@ -9964,9 +10002,9 @@
 
 /* Editor toolbar v2: actions pinned top-right, pages integrated under title. */
 .containerFocused:has(.builder) .editorHeader {
-  --editor-control-h: 44px;
   gap: 0;
-  padding: 11px 16px;
+  min-height: var(--sites-editor-topbar-h, 72px);
+  padding: calc((var(--sites-editor-topbar-h, 72px) - var(--editor-control-h, 44px)) / 2) 16px;
   border: 0;
   border-bottom: 1px solid rgba(148, 163, 184, 0.12);
   border-radius: 0;
@@ -10234,6 +10272,12 @@
 
 .headerToolbarButton {
   color: var(--color-text-primary);
+}
+
+.headerToolbarButtonActive {
+  border-color: rgba(59, 130, 246, 0.42);
+  background: rgba(59, 130, 246, 0.14);
+  color: #bfdbfe;
 }
 
 .seoToolbarAlert {

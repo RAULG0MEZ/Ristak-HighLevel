@@ -778,6 +778,34 @@ function injectImportedStaticFallback(html = '', report = []) {
   return `${IMPORTED_STATIC_FALLBACK_STYLE}${html}`
 }
 
+function getRawTrackingCode(value) {
+  return typeof value === 'string' ? value : ''
+}
+
+function buildHeaderTrackingCode(site, activePage = null) {
+  const globalCode = getRawTrackingCode(site?.theme?.headerTrackingCode ?? site?.theme?.header_tracking_code)
+  const pageCode = getRawTrackingCode(activePage?.headerTrackingCode ?? activePage?.header_tracking_code)
+
+  return [globalCode, pageCode]
+    .filter(code => cleanString(code))
+    .join('\n')
+}
+
+function injectHtmlBeforeHeadClose(html = '', injection = '') {
+  const safeHtml = html || '<!doctype html><html><head></head><body></body></html>'
+  if (!cleanString(injection)) return safeHtml
+
+  if (/<\/head>/i.test(safeHtml)) {
+    return safeHtml.replace(/<\/head>/i, `${injection}\n</head>`)
+  }
+
+  if (/<body\b/i.test(safeHtml)) {
+    return safeHtml.replace(/<body\b/i, `<head>\n${injection}\n</head>\n$&`)
+  }
+
+  return `${injection}\n${safeHtml}`
+}
+
 function sanitizeImportedIframeTag(attrsText = '', report = []) {
   const attrs = parseHtmlAttributes(attrsText)
   const src = safeEmbedUrl(attrs.src || '')
@@ -7640,6 +7668,71 @@ function safeUrl(value) {
   }
 }
 
+function renderSitePopup(site) {
+  const theme = site?.theme || {}
+  if (!normalizeBoolean(theme.popupEnabled ?? theme.popup_enabled)) return ''
+
+  const title = cleanString(theme.popupTitle ?? theme.popup_title) || 'Antes de irte'
+  const body = cleanString(theme.popupBody ?? theme.popup_body) || 'Dejanos tus datos y te contactamos para ayudarte.'
+  const buttonText = cleanString(theme.popupButtonText ?? theme.popup_button_text) || 'Quiero informacion'
+  const buttonUrl = safeUrl(theme.popupButtonUrl ?? theme.popup_button_url)
+  const trigger = cleanString(theme.popupTrigger ?? theme.popup_trigger) === 'exit_intent' ? 'exit_intent' : 'delay'
+  const delaySeconds = themeNumber(theme, 'popupDelaySeconds', 8, 0, 120)
+  const bodyHtml = escapeHtml(body).replace(/\n/g, '<br>')
+
+  return `
+  <style>
+    .rstk-site-popup[hidden]{display:none!important}
+    .rstk-site-popup{position:fixed;inset:0;z-index:2147483000;display:grid;place-items:center;padding:22px;background:rgba(2,6,23,.62);backdrop-filter:blur(8px)}
+    .rstk-site-popup__box{width:min(460px,100%);border:1px solid rgba(148,163,184,.28);border-radius:14px;background:#0f172a;color:#f8fafc;box-shadow:0 28px 80px -34px rgba(2,6,23,.9);padding:24px}
+    .rstk-site-popup__top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+    .rstk-site-popup h2{margin:0;color:inherit;font:800 1.35rem/1.15 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:0}
+    .rstk-site-popup p{margin:12px 0 0;color:rgba(248,250,252,.78);font:500 .96rem/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    .rstk-site-popup__close{width:34px;height:34px;flex:0 0 auto;border:1px solid rgba(148,163,184,.24);border-radius:10px;background:rgba(255,255,255,.08);color:#f8fafc;font-size:22px;line-height:1;cursor:pointer}
+    .rstk-site-popup__action{display:inline-flex;align-items:center;justify-content:center;min-height:44px;margin-top:18px;border:0;border-radius:10px;background:#3b82f6;color:#fff;padding:0 18px;font:800 .92rem/1 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;text-decoration:none;cursor:pointer}
+  </style>
+  <div class="rstk-site-popup" data-rstk-site-popup data-trigger="${escapeHtml(trigger)}" data-delay="${escapeHtml(delaySeconds)}" hidden>
+    <div class="rstk-site-popup__box" role="dialog" aria-modal="true" aria-labelledby="rstk-site-popup-title">
+      <div class="rstk-site-popup__top">
+        <h2 id="rstk-site-popup-title">${escapeHtml(title)}</h2>
+        <button type="button" class="rstk-site-popup__close" data-rstk-popup-close aria-label="Cerrar">x</button>
+      </div>
+      <p>${bodyHtml}</p>
+      ${buttonUrl
+        ? `<a class="rstk-site-popup__action" href="${escapeHtml(buttonUrl)}">${escapeHtml(buttonText)}</a>`
+        : `<button type="button" class="rstk-site-popup__action" data-rstk-popup-close>${escapeHtml(buttonText)}</button>`}
+    </div>
+  </div>
+  <script>
+    (() => {
+      const popup = document.querySelector('[data-rstk-site-popup]');
+      if (!popup) return;
+      const closeButtons = popup.querySelectorAll('[data-rstk-popup-close]');
+      let shown = false;
+      const show = () => {
+        if (shown) return;
+        shown = true;
+        popup.hidden = false;
+      };
+      const hide = () => { popup.hidden = true; };
+      closeButtons.forEach(button => button.addEventListener('click', hide));
+      popup.addEventListener('click', event => {
+        if (event.target === popup) hide();
+      });
+      document.addEventListener('keydown', event => {
+        if (event.key === 'Escape') hide();
+      });
+      if (popup.dataset.trigger === 'exit_intent') {
+        document.addEventListener('mouseout', event => {
+          if (event.clientY <= 0) show();
+        }, { once: true });
+      } else {
+        window.setTimeout(show, Math.max(0, Number(popup.dataset.delay || 8)) * 1000);
+      }
+    })();
+  </script>`
+}
+
 function safeHref(value, fallback = '#') {
   const raw = cleanString(value)
   if (!raw) return fallback
@@ -7908,6 +8001,9 @@ function normalizePageList(rawPages = []) {
     .map((page, index) => {
       const importedAssetPath = normalizeImportedAssetPath(page?.importedAssetPath || page?.imported_asset_path)
       const importedOriginalTitle = cleanString(page?.importedOriginalTitle || page?.imported_original_title)
+      const headerTrackingCode = typeof (page?.headerTrackingCode ?? page?.header_tracking_code) === 'string'
+        ? page.headerTrackingCode ?? page.header_tracking_code
+        : ''
 
       return {
         id: cleanString(page?.id) || `${DEFAULT_FUNNEL_PAGE_ID}-${index + 1}`,
@@ -7917,7 +8013,8 @@ function normalizePageList(rawPages = []) {
         metaEventName: normalizeSiteMetaEventName(page?.metaEventName || page?.meta_event_name, { allowNone: true, fallback: SITE_META_NO_EVENT }),
         metaTrigger: normalizeSiteMetaTrigger(page?.metaTrigger || page?.meta_trigger),
         ...(importedAssetPath ? { importedAssetPath } : {}),
-        ...(importedOriginalTitle ? { importedOriginalTitle } : {})
+        ...(importedOriginalTitle ? { importedOriginalTitle } : {}),
+        ...(headerTrackingCode ? { headerTrackingCode } : {})
       }
     })
     .filter(page => {
@@ -10811,7 +10908,8 @@ async function buildImportedHtmlRuntimeInjection(site, imported, { trackingEnabl
     : ''
   const buttonActionScript = buildImportedButtonActionScript(site, { pageId: activePageId })
   const captureScript = buildImportedFormCaptureScript(site, imported, { pageId: activePageId })
-  return `${metaPixelSnippet}${nativeTrackingScript}${buttonActionScript}${captureScript}`
+  const popupHtml = renderSitePopup(site)
+  return `${metaPixelSnippet}${nativeTrackingScript}${buttonActionScript}${captureScript}${popupHtml}`
 }
 
 function injectImportedHtmlRuntime(html = '', injection = '') {
@@ -10865,7 +10963,11 @@ async function renderImportedPublicSiteHtml(site, { pageId = '', trackingEnabled
     pageId: activePage?.id || DEFAULT_FUNNEL_PAGE_ID,
     pageTitle: activePage?.title || site.title || site.name
   })
-  return injectImportedHtmlRuntime(annotateImportedEditableHtml(html), injection)
+  const htmlWithHeaderTracking = injectHtmlBeforeHeadClose(
+    annotateImportedEditableHtml(html),
+    buildHeaderTrackingCode(site, activePage)
+  )
+  return injectImportedHtmlRuntime(htmlWithHeaderTracking, injection)
 }
 
 export async function getImportedSiteAssetResponse(siteId, assetPath, { trackingEnabled = true } = {}) {
@@ -10886,11 +10988,16 @@ export async function getImportedSiteAssetResponse(siteId, assetPath, { tracking
       pageTitle: page?.title || asset.assetPath
     })
 
+    const htmlWithHeaderTracking = injectHtmlBeforeHeadClose(
+      annotateImportedEditableHtml(asset.content.toString('utf8')),
+      buildHeaderTrackingCode(site, page)
+    )
+
     return {
       site,
       assetPath: asset.assetPath,
       contentType: 'text/html; charset=utf-8',
-      body: Buffer.from(injectImportedHtmlRuntime(annotateImportedEditableHtml(asset.content.toString('utf8')), injection), 'utf8'),
+      body: Buffer.from(injectImportedHtmlRuntime(htmlWithHeaderTracking, injection), 'utf8'),
       cacheControl: trackingEnabled ? 'public, max-age=300' : 'no-store'
     }
   }
@@ -11035,6 +11142,8 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
     })
     : ''
   const metaPixelSnippet = await buildMetaPixelSnippet(site, trackingEnabled, activePage)
+  const headerTrackingCode = buildHeaderTrackingCode(site, activePage)
+  const popupHtml = renderSitePopup(site)
 
   return `<!doctype html>
 <html lang="es">
@@ -11047,6 +11156,7 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="${RSTK_GOOGLE_FONTS_HREF}" rel="stylesheet">
   <style>${styleSheet}</style>
+  ${headerTrackingCode}
 </head>
 <body class="${bodyClass}">
   <div class="rstk-frame">
@@ -11062,6 +11172,7 @@ export async function renderPublicSiteHtml(site, { pageId, trackingEnabled = tru
       </div>
     </main>
   </div>
+  ${popupHtml}
   <script>
     (() => {
       const form = document.querySelector('[data-site-form]');

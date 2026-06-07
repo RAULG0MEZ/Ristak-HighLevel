@@ -481,7 +481,8 @@ const writePreviewLoadingPage = (previewWindow: Window) => {
 }
 
 const PAGE_SELECTED_ID = '__page__'
-const isEditorSurfaceSelection = (id: string) => id === PAGE_SELECTED_ID
+const POPUP_SELECTED_ID = '__popup__'
+const isEditorSurfaceSelection = (id: string) => id === PAGE_SELECTED_ID || id === POPUP_SELECTED_ID
 const LANDING_DEFAULT_PAGE_PADDING = 36
 const HEADER_PANEL_BLOCK_TYPE: SiteBlockType = 'header_panel'
 const FOOTER_PANEL_BLOCK_TYPE: SiteBlockType = 'footer_panel'
@@ -559,6 +560,11 @@ const normalizeSiteForEditor = (site: PublicSite): PublicSite => ({
 })
 const isImportedHtmlSite = (site?: PublicSite | null) =>
   Boolean(site?.theme?.importedHtml || site?.theme?.template === 'imported_html')
+const IMPORTED_POPUP_PATTERN = /(<dialog\b|role=["']dialog["']|aria-modal=["']true["']|(?:id|class|data-[\w-]+)=["'][^"']*(?:popup|pop-up|modal|dialog|lightbox|overlay|exit-intent|newsletter)[^"']*["'])/i
+const importedHtmlHasPopup = (importData?: ImportedSiteImport | null) => {
+  const html = `${importData?.htmlSanitized || ''}\n${importData?.htmlOriginal || ''}`
+  return IMPORTED_POPUP_PATTERN.test(html)
+}
 const getAIAgentSiteKindForSite = (site: PublicSite): SitesAICreationKind => {
   if (site.siteType === 'interactive_form') return 'interactive_form'
   if (site.siteType === 'standard_form') return 'form'
@@ -1303,6 +1309,14 @@ const getThemeString = (theme: SiteTheme | undefined, key: keyof SiteTheme) => {
   return typeof value === 'string' ? value : ''
 }
 
+const hasThemePopupConfig = (theme?: SiteTheme | null) => Boolean(
+  theme?.popupEnabled ||
+  getThemeString(theme || undefined, 'popupTitle').trim() ||
+  getThemeString(theme || undefined, 'popupBody').trim() ||
+  getThemeString(theme || undefined, 'popupButtonText').trim() ||
+  getThemeString(theme || undefined, 'popupButtonUrl').trim()
+)
+
 const getThemeBackgroundVideo = (theme: SiteTheme | undefined) => {
   const mediaType = getThemeString(theme, 'backgroundMediaType')
   const url = getThemeString(theme, 'backgroundImage').trim()
@@ -1925,6 +1939,7 @@ const normalizePagesForSave = (pages: SitePage[]) =>
     sortOrder: index,
     ...(page.importedAssetPath ? { importedAssetPath: page.importedAssetPath } : {}),
     ...(page.importedOriginalTitle ? { importedOriginalTitle: page.importedOriginalTitle } : {}),
+    ...(page.headerTrackingCode !== undefined ? { headerTrackingCode: page.headerTrackingCode } : {}),
     metaCapiEnabled: Boolean(page.metaCapiEnabled),
     metaEventName: normalizeMetaEventName(page.metaEventName, 'none'),
     metaTrigger: normalizeMetaTrigger(page.metaTrigger)
@@ -2804,6 +2819,16 @@ export const Sites: React.FC = () => {
     : section === 'forms'
       ? (isFormSite(selectedSite) ? selectedSite : null)
       : null
+  const importedPopupDetected = useMemo(
+    () => isImportedHtmlSite(editorSite) && importedHtmlHasPopup(selectedImportData),
+    [editorSite, selectedImportData]
+  )
+  const canConfigurePopup = Boolean(editorSite && isLanding(editorSite) && (
+    !isImportedHtmlSite(editorSite) ||
+    importedPopupDetected ||
+    hasThemePopupConfig(editorSite.theme)
+  ))
+  const popupPanelSelected = selectedBlockId === POPUP_SELECTED_ID && canConfigurePopup
   const activeAIGeneration = aiEditorGeneration && editorSite?.id === aiEditorGeneration.siteId ? aiEditorGeneration : null
   const editorAIGenerating = Boolean(activeAIGeneration)
   const formCanvasHasFields = Boolean(editorSite && isFormSite(editorSite) && canvasBlocks.some(block => fieldBlockTypes.has(block.blockType)))
@@ -3009,6 +3034,12 @@ export const Sites: React.FC = () => {
       setSelectedBlockId('')
     }
   }, [canvasBlocks, selectedBlockId])
+
+  useEffect(() => {
+    if (selectedBlockId === POPUP_SELECTED_ID && !canConfigurePopup) {
+      setSelectedBlockId('')
+    }
+  }, [canConfigurePopup, selectedBlockId])
 
   useEffect(() => {
     const handleAIDraftCreated = (event: Event) => {
@@ -4946,10 +4977,22 @@ export const Sites: React.FC = () => {
                         className={`${styles.seoToolbarButton} ${styles.headerToolbarButton}`}
                         onClick={() => setHeaderModalOpen(true)}
                         disabled={editorAIGenerating}
-                        title="Header global y header de esta pagina"
+                        title="Codigos del header global y de esta pagina"
                       >
                         <PanelTop size={15} />
                         <span>Header</span>
+                      </button>
+                    )}
+                    {canConfigurePopup && (
+                      <button
+                        type="button"
+                        className={`${styles.seoToolbarButton} ${styles.headerToolbarButton} ${popupPanelSelected ? styles.headerToolbarButtonActive : ''}`}
+                        onClick={() => selectEditorBlock(POPUP_SELECTED_ID)}
+                        disabled={editorAIGenerating}
+                        title="Configurar Pop up"
+                      >
+                        <MousePointerClick size={15} />
+                        <span>Pop up</span>
                       </button>
                     )}
                   </div>
@@ -5049,18 +5092,12 @@ export const Sites: React.FC = () => {
         {editorSite && isLanding(editorSite) && headerModalOpen && (
           <HeaderToolbarModal
             site={editorSite}
+            pages={pages}
             activePage={activePage}
-            globalHeader={globalHeaderBlock}
-            pageHeader={activePageHeaderBlock}
             metaPixelConnected={metaPixelConnected}
-            saving={saving}
             onClose={() => setHeaderModalOpen(false)}
-            onCreateHeader={handleCreateHeaderBlock}
-            onPatchBlock={(block, patch) => patchBlockLocal(block.id, patch)}
-            onPatchSettings={patchBlockSettingsLocal}
-            onSaveBlock={(blockId) => handleSaveBlock(blockId)}
-            onSelectBlock={(blockId) => selectEditorBlock(blockId)}
             onPatchSite={updateSelectedSite}
+            onPatchTheme={patchSiteTheme}
             onSaveSite={() => handleSaveSite(undefined, { silent: true })}
           />
         )}
@@ -5356,6 +5393,7 @@ export const Sites: React.FC = () => {
                 <PropertiesPanel
                   site={editorSite}
                   block={selectedBlock}
+                  surfaceSelectionId={selectedBlockId}
                   blocks={canvasBlocks}
                   allBlocks={blocks}
                   forms={forms}
@@ -5364,6 +5402,7 @@ export const Sites: React.FC = () => {
                   pages={pages}
                   activePageId={activePage?.id || DEFAULT_FUNNEL_PAGE_ID}
                   metaPixelConnected={metaPixelConnected}
+                  importedPopupDetected={importedPopupDetected}
                   connectedSocialProfiles={connectedSocialProfiles}
                   loadingSocialProfiles={loadingSocialProfiles}
                   onPatchSite={updateSelectedSite}
@@ -11393,37 +11432,37 @@ const HeaderBlockControls: React.FC<{
 
 const HeaderToolbarModal: React.FC<{
   site: PublicSite
+  pages: SitePage[]
   activePage: SitePage | null
-  globalHeader: SiteBlock | null
-  pageHeader: SiteBlock | null
   metaPixelConnected: boolean
-  saving: boolean
   onClose: () => void
-  onCreateHeader: (scope: HeaderScope) => void | Promise<void>
-  onPatchBlock: (block: SiteBlock, patch: Partial<SiteBlock>) => void
-  onPatchSettings: (block: SiteBlock, patch: Record<string, unknown>) => void
-  onSaveBlock: (blockId: string) => void | Promise<void>
-  onSelectBlock: (blockId: string) => void
   onPatchSite: (patch: Partial<PublicSite>) => void
+  onPatchTheme: (patch: Partial<SiteTheme>) => void
   onSaveSite: () => void | Promise<void>
 }> = ({
   site,
+  pages,
   activePage,
-  globalHeader,
-  pageHeader,
   metaPixelConnected,
-  saving,
   onClose,
-  onCreateHeader,
-  onPatchBlock,
-  onPatchSettings,
-  onSaveBlock,
-  onSelectBlock,
   onPatchSite,
+  onPatchTheme,
   onSaveSite
 }) => {
   const [savingModal, setSavingModal] = useState(false)
   const activePageTitle = activePage?.title || 'esta pagina'
+  const theme = site.theme || {}
+  const globalHeaderCode = getThemeString(theme, 'headerTrackingCode')
+  const pageHeaderCode = typeof activePage?.headerTrackingCode === 'string' ? activePage.headerTrackingCode : ''
+
+  const patchActivePage = (patch: Partial<SitePage>) => {
+    if (!activePage) return
+    onPatchTheme({
+      pages: normalizePagesForSave(pages.map(page => (
+        page.id === activePage.id ? { ...page, ...patch } : page
+      )))
+    })
+  }
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -11437,8 +11476,6 @@ const HeaderToolbarModal: React.FC<{
   const saveAndClose = async () => {
     setSavingModal(true)
     try {
-      if (globalHeader) await onSaveBlock(globalHeader.id)
-      if (pageHeader) await onSaveBlock(pageHeader.id)
       await onSaveSite()
       onClose()
     } finally {
@@ -11457,7 +11494,7 @@ const HeaderToolbarModal: React.FC<{
       >
         <div className={styles.seoModalHeader}>
           <div>
-            <span>Configuracion del embudo</span>
+            <span>Codigos de tracking</span>
             <h2 id="header-modal-title">Header</h2>
           </div>
           <button type="button" className={styles.seoModalClose} onClick={onClose} aria-label="Cerrar Header">
@@ -11469,7 +11506,7 @@ const HeaderToolbarModal: React.FC<{
           <section className={styles.seoSection}>
             <div className={styles.headerModalIntro}>
               <SeoSectionTitle icon={<PanelTop size={17} />} title="Header global" />
-              <p>Aparece en todas las paginas del embudo.</p>
+              <p>Pega aqui el codigo que debe cargarse en todas las paginas del embudo.</p>
             </div>
             {metaPixelConnected && (
               <div className={`${styles.metaCard} ${styles.headerModalMetaCard} ${site.metaCapiEnabled ? styles.metaCardActive : ''}`}>
@@ -11492,39 +11529,40 @@ const HeaderToolbarModal: React.FC<{
                 </label>
               </div>
             )}
-            <HeaderBlockControls
-              scope={HEADER_SCOPE_GLOBAL}
-              block={globalHeader}
-              saving={saving || savingModal}
-              emptyTitle="No hay header global"
-              emptyDescription="Crealo una vez y se vera en todo el embudo."
-              createLabel="Crear global"
-              onCreateHeader={onCreateHeader}
-              onPatchBlock={onPatchBlock}
-              onPatchSettings={onPatchSettings}
-              onSaveBlock={onSaveBlock}
-              onSelectBlock={onSelectBlock}
-            />
+            <label className={styles.seoField}>
+              <span>Codigo global en header</span>
+              <textarea
+                className={styles.headerCodeTextarea}
+                rows={8}
+                spellCheck={false}
+                value={globalHeaderCode}
+                placeholder="<script>...</script>"
+                onChange={(event) => onPatchTheme({ headerTrackingCode: event.target.value })}
+                onBlur={() => { void onSaveSite() }}
+              />
+              <small>Se insertara antes de cerrar el &lt;/head&gt; en todas las paginas publicas.</small>
+            </label>
           </section>
 
           <section className={styles.seoSection}>
             <div className={styles.headerModalIntro}>
               <SeoSectionTitle icon={<PanelTop size={17} />} title="Header de esta pagina" />
-              <p>Solo aparece en {activePageTitle}.</p>
+              <p>Usalo cuando {activePageTitle} necesita un codigo diferente o adicional.</p>
             </div>
-            <HeaderBlockControls
-              scope={HEADER_SCOPE_PAGE}
-              block={pageHeader}
-              saving={saving || savingModal}
-              emptyTitle="Esta pagina no tiene header propio"
-              emptyDescription="Agregalo si esta pagina necesita un aviso, menu o texto diferente."
-              createLabel="Crear para esta pagina"
-              onCreateHeader={onCreateHeader}
-              onPatchBlock={onPatchBlock}
-              onPatchSettings={onPatchSettings}
-              onSaveBlock={onSaveBlock}
-              onSelectBlock={onSelectBlock}
-            />
+            <label className={styles.seoField}>
+              <span>Codigo solo para esta pagina</span>
+              <textarea
+                className={styles.headerCodeTextarea}
+                rows={8}
+                spellCheck={false}
+                value={pageHeaderCode}
+                placeholder="<script>...</script>"
+                disabled={!activePage}
+                onChange={(event) => patchActivePage({ headerTrackingCode: event.target.value })}
+                onBlur={() => { void onSaveSite() }}
+              />
+              <small>Se agregara despues del codigo global y solo se cargara en esta pagina.</small>
+            </label>
           </section>
         </div>
 
@@ -13599,6 +13637,7 @@ const FieldPreview: React.FC<{
 interface PropertiesPanelProps {
   site: PublicSite
   block: SiteBlock | null
+  surfaceSelectionId?: string
   blocks: SiteBlock[]
   allBlocks?: SiteBlock[]
   forms: PublicSite[]
@@ -13607,6 +13646,7 @@ interface PropertiesPanelProps {
   pages: SitePage[]
   activePageId: string
   metaPixelConnected: boolean
+  importedPopupDetected: boolean
   connectedSocialProfiles: ConnectedSocialProfile[]
   loadingSocialProfiles: boolean
   onPatchSite: (patch: Partial<PublicSite>) => void
@@ -13745,6 +13785,133 @@ const FormGlobalStyleControls: React.FC<{
         <DimensionField label="Borde boton" value={getThemeNumber(theme, 'submitBorderWidth', 1, 0, 8)} min={0} max={8} onChange={(value) => onPatchTheme({ submitBorderWidth: value })} onCommit={onSaveSite} />
       </div>
     </div>
+  )
+}
+
+const PopupInspector: React.FC<{
+  site: PublicSite
+  importedPopupDetected: boolean
+  onPatchTheme: (patch: Partial<SiteTheme>) => void
+  onSaveSite: () => void
+}> = ({ site, importedPopupDetected, onPatchTheme, onSaveSite }) => {
+  const theme = site.theme || {}
+  const popupEnabled = Boolean(theme.popupEnabled)
+  const popupTrigger = theme.popupTrigger === 'exit_intent' ? 'exit_intent' : 'delay'
+  const delaySeconds = getThemeNumber(theme, 'popupDelaySeconds', 8, 0, 120)
+
+  return (
+    <aside className={styles.propertiesPanel}>
+      <div className={styles.panelHeader}>
+        <strong>Pop up</strong>
+        <span>{popupEnabled ? 'Activo' : 'Apagado'}</span>
+      </div>
+      <div className={styles.propertiesBody}>
+        <div className={styles.settingsGroup}>
+          {importedPopupDetected && (
+            <div className={styles.popupDetectedCard}>
+              <strong>Detectado en el HTML</strong>
+              <p>Encontramos un popup o modal dentro del sitio importado. Si activas este panel, Ristak mostrara el popup configurado aqui.</p>
+            </div>
+          )}
+
+          <div className={`${styles.metaCard} ${popupEnabled ? styles.metaCardActive : ''}`}>
+            <span className={styles.metaMark} aria-hidden="true">P</span>
+            <div className={styles.metaCardInfo}>
+              <strong>{popupEnabled ? 'Pop up encendido' : 'Pop up apagado'}</strong>
+              <small>{popupEnabled ? 'Se mostrara en la pagina publicada' : 'Activalo solo si esta pagina necesita un aviso o llamada a la accion'}</small>
+            </div>
+            <label className={styles.metaSwitch}>
+              <input
+                type="checkbox"
+                checked={popupEnabled}
+                aria-label="Activar Pop up"
+                onChange={(event) => {
+                  const enabled = event.target.checked
+                  onPatchTheme({
+                    popupEnabled: enabled,
+                    popupTitle: theme.popupTitle || 'Antes de irte',
+                    popupBody: theme.popupBody || 'Dejanos tus datos y te contactamos para ayudarte.',
+                    popupButtonText: theme.popupButtonText || 'Quiero informacion',
+                    popupDelaySeconds: theme.popupDelaySeconds ?? 8,
+                    popupTrigger: theme.popupTrigger || 'delay'
+                  })
+                  window.setTimeout(onSaveSite, 0)
+                }}
+              />
+              <span className={styles.metaSwitchTrack} />
+            </label>
+          </div>
+
+          <div className={styles.panelSubheader}>Contenido</div>
+          <label className={styles.field}>
+            <span>Titulo</span>
+            <input
+              value={theme.popupTitle || ''}
+              placeholder="Antes de irte"
+              onChange={(event) => onPatchTheme({ popupTitle: event.target.value })}
+              onBlur={onSaveSite}
+            />
+          </label>
+          <label className={styles.field}>
+            <span>Mensaje</span>
+            <textarea
+              rows={4}
+              value={theme.popupBody || ''}
+              placeholder="Dejanos tus datos y te contactamos para ayudarte."
+              onChange={(event) => onPatchTheme({ popupBody: event.target.value })}
+              onBlur={onSaveSite}
+            />
+          </label>
+          <div className={styles.twoColumn}>
+            <label className={styles.field}>
+              <span>Texto boton</span>
+              <input
+                value={theme.popupButtonText || ''}
+                placeholder="Quiero informacion"
+                onChange={(event) => onPatchTheme({ popupButtonText: event.target.value })}
+                onBlur={onSaveSite}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>URL boton</span>
+              <input
+                value={theme.popupButtonUrl || ''}
+                placeholder="https://..."
+                onChange={(event) => onPatchTheme({ popupButtonUrl: event.target.value })}
+                onBlur={onSaveSite}
+              />
+            </label>
+          </div>
+
+          <div className={styles.panelSubheader}>Aparicion</div>
+          <div className={styles.twoColumn}>
+            <label className={styles.field}>
+              <span>Cuando</span>
+              <select
+                value={popupTrigger}
+                onChange={(event) => onPatchTheme({ popupTrigger: event.target.value as SiteTheme['popupTrigger'] })}
+                onBlur={onSaveSite}
+              >
+                <option value="delay">Despues de unos segundos</option>
+                <option value="exit_intent">Cuando intenta salir</option>
+              </select>
+            </label>
+            <label className={styles.field}>
+              <span>Segundos</span>
+              <input
+                type="number"
+                min={0}
+                max={120}
+                value={delaySeconds}
+                disabled={popupTrigger === 'exit_intent'}
+                onChange={(event) => onPatchTheme({ popupDelaySeconds: Math.min(120, Math.max(0, Number(event.target.value) || 0)) })}
+                onBlur={onSaveSite}
+              />
+            </label>
+          </div>
+        </div>
+      </div>
+    </aside>
   )
 }
 
@@ -14131,6 +14298,7 @@ const CustomFieldBindingControl: React.FC<{
 const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   site,
   block,
+  surfaceSelectionId,
   blocks,
   allBlocks,
   forms,
@@ -14139,6 +14307,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   pages,
   activePageId,
   metaPixelConnected,
+  importedPopupDetected,
   connectedSocialProfiles,
   loadingSocialProfiles,
   onPatchSite,
@@ -14150,6 +14319,17 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   onSaveCategory,
   onSave
 }) => {
+  if (surfaceSelectionId === POPUP_SELECTED_ID) {
+    return (
+      <PopupInspector
+        site={site}
+        importedPopupDetected={importedPopupDetected}
+        onPatchTheme={onPatchTheme}
+        onSaveSite={onSaveSite}
+      />
+    )
+  }
+
   if (!block) {
     return (
       <PageInspector

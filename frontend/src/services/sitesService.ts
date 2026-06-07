@@ -97,6 +97,7 @@ export interface SitePage {
   sortOrder: number
   importedAssetPath?: string
   importedOriginalTitle?: string
+  headerTrackingCode?: string
   metaCapiEnabled?: boolean
   metaEventName?: string
   metaTrigger?: SiteMetaTrigger
@@ -143,6 +144,14 @@ export interface SiteTheme {
   seoMetaTags?: string
   seoCanonicalLinks?: string
   seoLanguage?: string
+  headerTrackingCode?: string
+  popupEnabled?: boolean
+  popupTitle?: string
+  popupBody?: string
+  popupButtonText?: string
+  popupButtonUrl?: string
+  popupDelaySeconds?: number
+  popupTrigger?: 'delay' | 'exit_intent'
   submitText?: string
   submitSubtitle?: string
   submitBg?: string
