@@ -11219,7 +11219,7 @@ const FunnelPagesPanel: React.FC<FunnelPagesPanelProps> = ({
                       canDelete={pageCanDelete}
                       canDuplicate={pageCanDuplicate}
                       onSelect={() => handleSelectPage(page.id)}
-                      onOpenMenu={() => setMenuPageId(current => current === page.id ? null : page.id)}
+                      onMenuOpenChange={(nextOpen) => setMenuPageId(nextOpen ? page.id : null)}
                       onStartRename={() => {
                         setMenuPageId(null)
                         onSelectPage(page.id)
@@ -11296,7 +11296,7 @@ interface FunnelPageDropdownItemProps {
   canDelete: boolean
   canDuplicate: boolean
   onSelect: () => void
-  onOpenMenu: () => void
+  onMenuOpenChange: (open: boolean) => void
   onStartRename: () => void
   onDuplicate: () => void
   onDelete: () => void
@@ -11317,7 +11317,7 @@ const FunnelPageDropdownItem: React.FC<FunnelPageDropdownItemProps> = ({
   canDelete,
   canDuplicate,
   onSelect,
-  onOpenMenu,
+  onMenuOpenChange,
   onStartRename,
   onDuplicate,
   onDelete,
@@ -11375,54 +11375,62 @@ const FunnelPageDropdownItem: React.FC<FunnelPageDropdownItemProps> = ({
 
         {!locked && (
           <div className={styles.pagesDropdownActionWrap}>
-            <button
-              type="button"
-              className={styles.pagesDropdownMenuButton}
-              aria-label="Opciones de pagina"
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              onClick={(event) => {
-                event.stopPropagation()
-                onOpenMenu()
-              }}
-              onPointerDown={(event) => event.stopPropagation()}
-              onKeyDown={(event) => event.stopPropagation()}
-            >
-              <MoreVertical size={15} />
-            </button>
-
-            {menuOpen && (
-              <div
+            <DropdownMenu open={menuOpen} onOpenChange={onMenuOpenChange}>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className={styles.pagesDropdownMenuButton}
+                  aria-label="Opciones de pagina"
+                  aria-haspopup="menu"
+                  aria-expanded={menuOpen}
+                  onClick={(event) => event.stopPropagation()}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
+                  <MoreVertical size={15} />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                sideOffset={8}
                 className={styles.pagesDropdownActionMenu}
-                role="menu"
+                data-page-menu-portal="true"
                 onClick={(event) => event.stopPropagation()}
                 onPointerDown={(event) => event.stopPropagation()}
               >
-                <button type="button" role="menuitem" className={styles.pagesDropdownActionItem} onClick={onStartRename}>
+                <DropdownMenuItem
+                  className={styles.pagesDropdownActionItem}
+                  onSelect={(event) => {
+                    event.stopPropagation()
+                    onStartRename()
+                  }}
+                >
                   Cambiar nombre
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
+                </DropdownMenuItem>
+                <DropdownMenuItem
                   className={styles.pagesDropdownActionItem}
                   disabled={!canDuplicate}
-                  onClick={onDuplicate}
+                  onSelect={(event) => {
+                    event.stopPropagation()
+                    onDuplicate()
+                  }}
                 >
                   <Copy size={14} />
                   Duplicar pagina
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
+                </DropdownMenuItem>
+                <DropdownMenuItem
                   className={`${styles.pagesDropdownActionItem} ${styles.pagesDropdownActionDanger}`}
                   disabled={!canDelete}
-                  onClick={onDelete}
+                  onSelect={(event) => {
+                    event.stopPropagation()
+                    onDelete()
+                  }}
                 >
                   <Trash2 size={14} />
                   Eliminar pagina
-                </button>
-              </div>
-            )}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         )}
       </div>

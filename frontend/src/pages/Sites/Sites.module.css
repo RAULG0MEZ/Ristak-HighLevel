@@ -10932,10 +10932,7 @@
 }
 
 .pagesDropdownActionMenu {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 12;
+  z-index: 4600;
   min-width: 206px;
   display: grid;
   gap: 4px;
@@ -10962,6 +10959,7 @@
   font-size: 0.88rem;
   font-weight: var(--font-weight-semibold, 600);
   text-align: left;
+  cursor: pointer;
 }
 
 .pagesDropdownActionItem:hover:not(:disabled),
