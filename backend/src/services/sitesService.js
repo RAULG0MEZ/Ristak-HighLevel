@@ -4448,6 +4448,7 @@ Modo edicion:
 - Si cambias campos, deja convenciones claras para que Ristak pueda redetectar y mapear.
 - Puedes cambiar titulo, imagenes, videos, orden de secciones, colores, layout, copy y campos segun lo que pida el usuario.
 - En ediciones de una zona seleccionada, las instrucciones de posicion, orden o alineacion como "centra el titular", "pon el video debajo" o "mueve el boton abajo" ya son suficientes. No respondas needs_more_info por no tener ids exactos; identifica titulo, video/player y CTA por jerarquia visual dentro de la zona y aplica el cambio.
+- Si el usuario dice que algo se transparenta, no se lee, se pierde, esta muy claro o tiene poco contraste, interpreta eso como una peticion visual directa: aumenta opacidad, oscurece/aclara el fondo, mejora contraste y conserva el contenido.
 - Usa needs_more_info solo si literalmente no hay una accion que ejecutar o la peticion contradice el HTML actual de forma imposible.
 ` : `
 Modo creacion:

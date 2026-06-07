@@ -5778,14 +5778,20 @@ type ImportedAIRegionElement = {
   tagName: string
   editId?: string
   editType?: ImportedEditableSelection['editType']
+  role?: string
   label?: string
   text?: string
+  rect?: string
+  coverage?: string
+  visual?: string
+  issue?: string
   html?: string
 }
 
 type ImportedAIRegionSelection = {
   pageId: string
   pageTitle: string
+  visualSummary?: string
   bounds: {
     x: number
     y: number
@@ -6243,9 +6249,100 @@ const importedAIRegionCandidateSelector = [
   'div'
 ].join(', ')
 
+const importedAIRegionEditorChromeSelector = [
+  '.rstk-imported-region-box',
+  '.rstk-imported-region-selected-box',
+  '.rstk-imported-image-action',
+  '[data-rstk-imported-editor-overlay]'
+].join(', ')
+
 const compactImportedRegionText = (value = '', maxLength = 260) => {
   const normalized = value.replace(/\s+/g, ' ').trim()
   return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 3)}...` : normalized
+}
+
+const getImportedCssAlpha = (value = '') => {
+  const normalized = value.trim().toLowerCase()
+  if (!normalized || normalized === 'transparent') return 0
+  const rgbaMatch = normalized.match(/rgba?\(([^)]+)\)/)
+  if (!rgbaMatch) return 1
+  const parts = rgbaMatch[1]
+    .split(/[,\s/]+/)
+    .map(part => part.trim())
+    .filter(Boolean)
+  if (parts.length < 4) return 1
+  const alpha = Number(parts[3])
+  return Number.isFinite(alpha) ? Math.max(0, Math.min(1, alpha)) : 1
+}
+
+const formatImportedRegionNumber = (value: number) => {
+  if (!Number.isFinite(value)) return '0'
+  return Math.abs(value) >= 10 ? String(Math.round(value)) : value.toFixed(1).replace(/\.0$/, '')
+}
+
+const formatImportedRegionRect = (rect: DOMRect, region: { left: number; top: number }) => (
+  `x=${Math.round(rect.left - region.left)}, y=${Math.round(rect.top - region.top)}, w=${Math.round(rect.width)}, h=${Math.round(rect.height)}`
+)
+
+const getImportedRegionElementRole = (
+  element: HTMLElement,
+  selection: ImportedEditableSelection | null,
+  isSection: boolean
+) => {
+  const tagName = element.tagName.toLowerCase()
+  const textHint = `${selection?.label || ''} ${element.getAttribute('aria-label') || ''} ${element.getAttribute('title') || ''} ${element.className || ''} ${element.id || ''}`.toLowerCase()
+  if (selection?.editType === 'video' || ['iframe', 'video', 'embed', 'object'].includes(tagName) || /\b(video|player|wistia|youtube|vimeo|loom)\b/.test(textHint)) return 'video/player'
+  if (selection?.editType === 'heading' || /^h[1-6]$/.test(tagName) || /\b(title|headline|heading|hero-title|titular)\b/.test(textHint)) return 'titular'
+  if (selection?.editType === 'button' || tagName === 'button' || tagName === 'a' || /\b(button|btn|cta)\b/.test(textHint)) return 'boton/cta'
+  if (selection?.editType === 'image' || selection?.editType === 'background_image' || tagName === 'img') return 'imagen/fondo'
+  if (['input', 'textarea', 'select', 'label', 'form'].includes(tagName) || selection?.editType === 'placeholder' || selection?.editType === 'form_label') return 'formulario/campo'
+  if (isSection || ['section', 'article', 'main', 'header', 'aside'].includes(tagName)) return 'seccion/contenedor'
+  if (['div', 'figure'].includes(tagName)) return 'contenedor'
+  return 'texto/contenido'
+}
+
+const getImportedRegionVisualSummaryForElement = (element: HTMLElement, rect: DOMRect) => {
+  const view = element.ownerDocument.defaultView
+  const style = view?.getComputedStyle(element)
+  if (!style) return ''
+
+  const backgroundColor = style.backgroundColor
+  const color = style.color
+  const backgroundAlpha = getImportedCssAlpha(backgroundColor)
+  const colorAlpha = getImportedCssAlpha(color)
+  const opacity = Number(style.opacity || '1')
+  const parts = [
+    `size=${Math.round(rect.width)}x${Math.round(rect.height)}`,
+    style.display && style.display !== 'block' ? `display=${style.display}` : '',
+    style.position && style.position !== 'static' ? `position=${style.position}` : '',
+    style.zIndex && style.zIndex !== 'auto' ? `z=${style.zIndex}` : '',
+    backgroundAlpha > 0 ? `fondo=${backgroundColor}${backgroundAlpha < 0.92 ? ` alpha=${formatImportedRegionNumber(backgroundAlpha)}` : ''}` : '',
+    color ? `texto=${color}${colorAlpha < 0.92 ? ` alpha=${formatImportedRegionNumber(colorAlpha)}` : ''}` : '',
+    Number.isFinite(opacity) && opacity < 0.98 ? `opacidad=${formatImportedRegionNumber(opacity)}` : '',
+    style.backgroundImage && style.backgroundImage !== 'none' ? 'tiene background-image' : '',
+    style.borderRadius && style.borderRadius !== '0px' ? `radio=${style.borderRadius}` : '',
+    style.borderWidth && style.borderWidth !== '0px' ? `borde=${style.borderWidth} ${style.borderStyle} ${style.borderColor}` : '',
+    style.boxShadow && style.boxShadow !== 'none' ? 'tiene sombra' : '',
+    style.filter && style.filter !== 'none' ? `filter=${style.filter}` : '',
+    style.getPropertyValue('backdrop-filter') ? `backdrop=${style.getPropertyValue('backdrop-filter')}` : '',
+    style.mixBlendMode && style.mixBlendMode !== 'normal' ? `blend=${style.mixBlendMode}` : ''
+  ].filter(Boolean)
+
+  return compactImportedRegionText(parts.join('; '), 520)
+}
+
+const getImportedRegionVisualIssue = (element: HTMLElement) => {
+  const style = element.ownerDocument.defaultView?.getComputedStyle(element)
+  if (!style) return ''
+  const backgroundAlpha = getImportedCssAlpha(style.backgroundColor)
+  const colorAlpha = getImportedCssAlpha(style.color)
+  const opacity = Number(style.opacity || '1')
+  const issues = [
+    backgroundAlpha > 0 && backgroundAlpha < 0.82 ? 'fondo semi-transparente' : '',
+    colorAlpha > 0 && colorAlpha < 0.86 ? 'texto semi-transparente' : '',
+    Number.isFinite(opacity) && opacity < 0.9 ? 'elemento con baja opacidad' : ''
+  ].filter(Boolean)
+  return issues.join(', ')
 }
 
 const getRectIntersection = (
@@ -6269,6 +6366,16 @@ const collectImportedAIRegionElements = (
   return Array.from(doc.querySelectorAll(importedAIRegionCandidateSelector))
     .map(element => {
       const htmlElement = element as HTMLElement
+      if (htmlElement.closest(importedAIRegionEditorChromeSelector)) {
+        return {
+          element: htmlElement,
+          selection: null,
+          isSection: false,
+          coverageOfElement: 0,
+          coverageOfRegion: 0,
+          useful: false
+        }
+      }
       const rect = htmlElement.getBoundingClientRect()
       const elementArea = Math.max(1, rect.width * rect.height)
       const intersection = getRectIntersection(region, rect)
@@ -6294,17 +6401,52 @@ const collectImportedAIRegionElements = (
       return (b.coverageOfElement + b.coverageOfRegion) - (a.coverageOfElement + a.coverageOfRegion)
     })
     .slice(0, 14)
-    .map(({ element, selection, isSection }) => {
+    .map(({ element, selection, isSection, coverageOfElement, coverageOfRegion }) => {
+      const rect = element.getBoundingClientRect()
       const sectionLabel = isSection ? getImportedEditableAttribute(element, 'section') : ''
+      const role = getImportedRegionElementRole(element, selection, isSection)
+      const issue = getImportedRegionVisualIssue(element)
       return {
         tagName: element.tagName.toLowerCase(),
         editId: selection?.editId,
         editType: selection?.editType,
+        role,
         label: selection?.label || sectionLabel || element.getAttribute('aria-label') || element.getAttribute('title') || '',
         text: compactImportedRegionText(element.textContent || ''),
+        rect: formatImportedRegionRect(rect, region),
+        coverage: `elemento=${Math.round(coverageOfElement * 100)}%, zona=${Math.round(coverageOfRegion * 100)}%`,
+        visual: getImportedRegionVisualSummaryForElement(element, rect),
+        issue,
         html: compactImportedRegionText(element.outerHTML || '', 720)
       }
     })
+}
+
+const getImportedRegionRectY = (element: ImportedAIRegionElement) => {
+  const match = element.rect?.match(/\by=(-?\d+)/)
+  return match ? Number(match[1]) : 0
+}
+
+const buildImportedAIRegionVisualSummary = (
+  selection: Pick<ImportedAIRegionSelection, 'bounds' | 'elements'>
+) => {
+  const ordered = [...selection.elements].sort((a, b) => getImportedRegionRectY(a) - getImportedRegionRectY(b))
+  const containers = selection.elements.filter(element => /contenedor|seccion/.test(element.role || '')).slice(0, 4)
+  const visualIssues = selection.elements.filter(element => element.issue).slice(0, 8)
+  const important = ordered.filter(element => /titular|video|boton|imagen|seccion|contenedor/.test(element.role || '')).slice(0, 10)
+
+  return [
+    `Zona renderizada: ${Math.round(selection.bounds.width)}x${Math.round(selection.bounds.height)} px.`,
+    containers.length
+      ? `Contenedores probables: ${containers.map(element => `${element.tagName} ${element.label || element.role || ''} [${element.rect || ''}] ${element.visual || ''}`.trim()).join(' | ')}`
+      : '',
+    visualIssues.length
+      ? `Problemas visuales detectados: ${visualIssues.map(element => `${element.role || element.tagName} ${element.label || ''}: ${element.issue} (${element.visual || ''})`.trim()).join(' | ')}`
+      : '',
+    important.length
+      ? `Orden visual aproximado de arriba a abajo: ${important.map((element, index) => `${index + 1}. ${element.role || element.tagName} ${element.label || ''} [${element.rect || ''}] texto="${element.text || ''}" visual="${element.visual || ''}"`.trim()).join(' || ')}`
+      : ''
+  ].filter(Boolean).join('\n')
 }
 
 const buildImportedAIRegionPrompt = (
@@ -6317,9 +6459,14 @@ const buildImportedAIRegionPrompt = (
     ? selection.elements.map((element, index) => {
       const meta = [
         `tag=${element.tagName}`,
+        element.role ? `role=${element.role}` : '',
         element.editId ? `editId=${element.editId}` : '',
         element.editType ? `editType=${element.editType}` : '',
         element.label ? `label=${element.label}` : '',
+        element.rect ? `rect=${element.rect}` : '',
+        element.coverage ? `coverage=${element.coverage}` : '',
+        element.visual ? `visual=${element.visual}` : '',
+        element.issue ? `issue=${element.issue}` : '',
         element.text ? `text=${element.text}` : ''
       ].filter(Boolean).join(', ')
       return `${index + 1}. ${meta}\nHTML: ${element.html || ''}`
@@ -6335,6 +6482,9 @@ Pagina activa: ${selection.pageTitle} (${selection.pageId})
 Site: ${site.title || site.name}
 Rectangulo seleccionado en viewport: x=${Math.round(selection.bounds.x)}, y=${Math.round(selection.bounds.y)}, ancho=${Math.round(selection.bounds.width)}, alto=${Math.round(selection.bounds.height)}, viewport=${Math.round(selection.bounds.viewportWidth)}x${Math.round(selection.bounds.viewportHeight)}.
 
+Resumen visual renderizado de la zona:
+${selection.visualSummary || 'Sin resumen visual disponible.'}
+
 Elementos detectados dentro de la zona:
 ${elementLines}
 
@@ -6348,6 +6498,7 @@ Reglas para esta edicion:
 - Si hay varios candidatos, usa el mas importante por jerarquia visual: titular principal, video/player dentro de la zona y CTA principal.
 - No respondas con needs_more_info ni con preguntas para cambios de posicion, alineacion, orden, tamano, video, boton, titular o layout. Haz tu mejor edicion con el HTML actual.
 - Si el usuario pide titular arriba, video debajo y boton debajo, convierte esa zona en un layout vertical centrado y conserva los estilos visuales importantes.
+- Si el usuario menciona que algo "se transparenta", "se ve muy transparente", "no se lee", "se pierde", "muy claro" o "poco contraste", usa el resumen visual para localizar fondos/textos con alpha u opacidad baja y vuelve esa parte mas solida/legible sin cambiar contenido.
 - Si la solicitud pide insertar un video, acepta URL o codigo iframe/embed y colocalo como un elemento editable de video con data-rstk-editable="true", data-rstk-edit-type="video", data-rstk-label y data-rstk-edit-id.
 - Conserva formularios, campos, rutas de datos y acciones de botones existentes salvo que el usuario pida cambiarlos.
 `.trim()
@@ -7207,7 +7358,15 @@ const ImportedHtmlEditorPanel: React.FC<{
 
           const viewportWidth = doc.defaultView?.innerWidth || doc.documentElement.clientWidth || 0
           const viewportHeight = doc.defaultView?.innerHeight || doc.documentElement.clientHeight || 0
-          setAiRegionSelection({
+          const selectedElements = collectImportedAIRegionElements(doc, {
+            left,
+            top,
+            right: left + width,
+            bottom: top + height,
+            width,
+            height
+          })
+          const nextRegionSelection: ImportedAIRegionSelection = {
             pageId: activeImportedPage?.id || DEFAULT_FUNNEL_PAGE_ID,
             pageTitle: activeImportedPage?.title || 'Pagina',
             bounds: {
@@ -7218,14 +7377,11 @@ const ImportedHtmlEditorPanel: React.FC<{
               viewportWidth,
               viewportHeight
             },
-            elements: collectImportedAIRegionElements(doc, {
-              left,
-              top,
-              right: left + width,
-              bottom: top + height,
-              width,
-              height
-            })
+            elements: selectedElements
+          }
+          nextRegionSelection.visualSummary = buildImportedAIRegionVisualSummary(nextRegionSelection)
+          setAiRegionSelection({
+            ...nextRegionSelection
           })
           setAiRegionPrompt('')
           setAiRegionError('')
