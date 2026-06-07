@@ -572,6 +572,36 @@
   margin-top: 1px;
 }
 
+.importedAIRegionAttempt {
+  display: grid;
+  gap: 5px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.08);
+  padding: 10px;
+}
+
+.importedAIRegionAttempt span {
+  color: var(--color-text-tertiary);
+  font-size: 0.7rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.importedAIRegionAttempt strong {
+  color: var(--color-text-primary);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.importedAIRegionAttempt small {
+  color: var(--color-text-tertiary);
+  font-size: 0.74rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
 .importedButtonActionHeader {
   min-width: 0;
   display: grid;

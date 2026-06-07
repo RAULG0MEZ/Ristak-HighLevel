@@ -6040,6 +6040,15 @@ type ImportedAIRegionSelection = {
   elements: ImportedAIRegionElement[]
 }
 
+type ImportedAIRegionAttempt = {
+  status: 'running' | 'error' | 'unchanged'
+  message: string
+  at: string
+  pageTitle: string
+  elementCount: number
+  prompt: string
+}
+
 type ImportedButtonEditorState = {
   selection: ImportedEditableSelection
   value: string
@@ -7395,6 +7404,7 @@ const ImportedHtmlEditorPanel: React.FC<{
   const [aiRegionPrompt, setAiRegionPrompt] = useState('')
   const [aiRegionSaving, setAiRegionSaving] = useState(false)
   const [aiRegionError, setAiRegionError] = useState('')
+  const [aiRegionLastAttempt, setAiRegionLastAttempt] = useState<ImportedAIRegionAttempt | null>(null)
   const [fieldEditor, setFieldEditor] = useState<ImportedFormFieldEditorState | null>(null)
   const [contentSaving, setContentSaving] = useState(false)
   const [contentError, setContentError] = useState('')
@@ -7454,10 +7464,21 @@ const ImportedHtmlEditorPanel: React.FC<{
     setAiRegionSelection(null)
     setAiRegionPrompt('')
     setAiRegionError('')
+    setAiRegionLastAttempt(null)
     aiRegionVoiceDictation.cancelVoice()
     setFieldEditor(null)
     setContentError('')
-  }, [activeImportedPage?.id, aiRegionVoiceDictation.cancelVoice, site.id, previewVersion])
+  }, [activeImportedPage?.id, aiRegionVoiceDictation.cancelVoice, site.id])
+
+  useEffect(() => {
+    selectedIframeElementRef.current?.classList.remove('rstk-imported-selected')
+    selectedIframeElementRef.current = null
+    setInlineEditor(null)
+    setButtonEditor(null)
+    setChoiceEditor(null)
+    setFieldEditor(null)
+    setContentError('')
+  }, [previewVersion])
 
   const getInlineEditorPosition = useCallback((element: HTMLElement) => {
     const iframe = iframeRef.current
@@ -7605,6 +7626,7 @@ const ImportedHtmlEditorPanel: React.FC<{
     setAiRegionSelection(null)
     setAiRegionPrompt('')
     setAiRegionError('')
+    setAiRegionLastAttempt(null)
     setAiRegionMode(true)
   }, [aiRegionVoiceDictation.cancelVoice])
 
@@ -7614,7 +7636,20 @@ const ImportedHtmlEditorPanel: React.FC<{
     setAiRegionSelection(null)
     setAiRegionPrompt('')
     setAiRegionError('')
+    setAiRegionLastAttempt(null)
   }, [aiRegionVoiceDictation.cancelVoice])
+
+  const setAIRegionAttemptStatus = (
+    selection: ImportedAIRegionSelection,
+    nextAttempt: Pick<ImportedAIRegionAttempt, 'status' | 'message' | 'prompt'>
+  ) => {
+    setAiRegionLastAttempt({
+      ...nextAttempt,
+      at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      pageTitle: selection.pageTitle || activeImportedPage?.title || 'Página actual',
+      elementCount: selection.elements.length || 1
+    })
+  }
 
   const applyAIRegionEdit = async () => {
     if (!aiRegionSelection) return
@@ -7626,6 +7661,11 @@ const ImportedHtmlEditorPanel: React.FC<{
 
     setAiRegionSaving(true)
     setAiRegionError('')
+    setAIRegionAttemptStatus(aiRegionSelection, {
+      status: 'running',
+      message: 'La IA está intentando aplicar el cambio en la zona seleccionada.',
+      prompt
+    })
     try {
       const beforePreviewHtml = previewHtml
       const regionVisualContext = aiRegionSelection.visualContext ||
@@ -7651,7 +7691,20 @@ const ImportedHtmlEditorPanel: React.FC<{
       }
 
       if (result.status === 'needs_more_info' || !result.site || !result.import) {
-        setAiRegionError('La IA no pudo aplicar ese cambio. Intenta decirlo como acción directa: "centra el título, pon el video debajo y el botón debajo del video".')
+        const message = result.reply
+          ? `La IA no aplicó cambios: ${result.reply}`
+          : 'La IA no pudo aplicar ese cambio. Intenta decirlo como acción directa: "centra el título, pon el video debajo y el botón debajo del video".'
+        setAiRegionError(message)
+        setAIRegionAttemptStatus(aiRegionSelection, {
+          status: 'error',
+          message,
+          prompt
+        })
+        console.error('[Sites] AI region edit did not apply changes', {
+          siteId: site.id,
+          pageId: aiRegionSelection.pageId,
+          result
+        })
         return
       }
 
@@ -7661,7 +7714,19 @@ const ImportedHtmlEditorPanel: React.FC<{
       if (beforeFingerprint && afterFingerprint && beforeFingerprint === afterFingerprint) {
         setPreviewHtml(refreshedHtml)
         setPreviewVersion(current => current + 1)
-        setAiRegionError('La IA respondió, pero no cambió el HTML visible de esa zona. Ya le mandé la captura/contexto específico; intenta aplicar de nuevo o escribe una instrucción más directa sobre qué elemento cambiar.')
+        const message = 'La IA respondió, pero no cambió el HTML visible de esa zona. Conservé tu selección para que puedas aplicar de nuevo o ajustar la instrucción.'
+        setAiRegionError(message)
+        setAIRegionAttemptStatus(aiRegionSelection, {
+          status: 'unchanged',
+          message,
+          prompt
+        })
+        console.error('[Sites] AI region edit returned unchanged HTML', {
+          siteId: site.id,
+          pageId: aiRegionSelection.pageId,
+          elementCount: aiRegionSelection.elements.length,
+          prompt
+        })
         return
       }
 
@@ -7669,11 +7734,23 @@ const ImportedHtmlEditorPanel: React.FC<{
       setAiRegionMode(false)
       setAiRegionSelection(null)
       setAiRegionPrompt('')
+      setAiRegionLastAttempt(null)
       setPreviewHtml(refreshedHtml)
       setPreviewVersion(current => current + 1)
       showToast('success', 'Zona actualizada', 'La IA aplicó el cambio solo en la parte que seleccionaste.')
     } catch (error) {
-      setAiRegionError(error instanceof Error ? error.message : 'No se pudo editar esa zona con IA.')
+      const message = error instanceof Error ? error.message : 'No se pudo editar esa zona con IA.'
+      setAiRegionError(message)
+      setAIRegionAttemptStatus(aiRegionSelection, {
+        status: 'error',
+        message,
+        prompt
+      })
+      console.error('[Sites] AI region edit failed', {
+        siteId: site.id,
+        pageId: aiRegionSelection.pageId,
+        error
+      })
     } finally {
       setAiRegionSaving(false)
     }
@@ -8439,6 +8516,21 @@ const ImportedHtmlEditorPanel: React.FC<{
               <div className={styles.importedAIRegionError}>
                 <AlertTriangle size={14} />
                 <span>{aiRegionError}</span>
+              </div>
+            )}
+            {aiRegionLastAttempt && (
+              <div className={styles.importedAIRegionAttempt}>
+                <span>
+                  {aiRegionLastAttempt.status === 'running'
+                    ? 'Procesando'
+                    : aiRegionLastAttempt.status === 'unchanged'
+                      ? 'Sin cambios aplicados'
+                      : 'Último error'}
+                </span>
+                <strong>{aiRegionLastAttempt.message}</strong>
+                <small>
+                  {aiRegionLastAttempt.at} · {aiRegionLastAttempt.pageTitle} · {aiRegionLastAttempt.elementCount} elementos detectados
+                </small>
               </div>
             )}
             <div className={styles.importedButtonActionFooter}>
