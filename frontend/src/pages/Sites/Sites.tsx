@@ -2646,6 +2646,7 @@ export const Sites: React.FC = () => {
   const [loadingImportData, setLoadingImportData] = useState(false)
   const [savingImportMapping, setSavingImportMapping] = useState(false)
   const selectedSiteRef = useRef<PublicSite | null>(null)
+  const pendingAIGenerationSiteRef = useRef<PublicSite | null>(null)
   const importFileInputRef = useRef<HTMLInputElement | null>(null)
   const pendingImportSiteTypeRef = useRef<SiteType>('landing_page')
   const paletteDragPayloadRef = useRef<PaletteDragPayload | null>(null)
@@ -3154,8 +3155,9 @@ export const Sites: React.FC = () => {
     if (routeState.siteId) {
       if (suppressEditorRouteRestoreRef.current) return
 
-      const pendingGenerationSite = selectedSiteRef.current
-      if (aiEditorGeneration?.siteId === routeState.siteId && pendingGenerationSite?.id === routeState.siteId) {
+      const pendingGenerationSite = pendingAIGenerationSiteRef.current || selectedSiteRef.current
+      const isPendingGenerationRoute = routeState.siteId.startsWith('ai-pending-')
+      if ((aiEditorGeneration?.siteId === routeState.siteId || isPendingGenerationRoute) && pendingGenerationSite?.id === routeState.siteId) {
         if (selectedSite?.id !== pendingGenerationSite.id) {
           setSelectedSite(pendingGenerationSite)
         }
@@ -3165,6 +3167,12 @@ export const Sites: React.FC = () => {
         if (routeState.blockId !== selectedBlockId) {
           setSelectedBlockId(routeState.blockId)
         }
+        return
+      }
+
+      if (isPendingGenerationRoute) {
+        setCreateFlow(getCreateFlowForSection(routeState.section))
+        navigateSitesCreateFlow(routeState.section, getCreateFlowForSection(routeState.section), { replace: true })
         return
       }
 
@@ -3193,6 +3201,7 @@ export const Sites: React.FC = () => {
     aiEditorGeneration?.siteId,
     activePageId,
     loading,
+    navigateSitesCreateFlow,
     routeState.blockId,
     routeState.createFlow,
     routeState.device,
@@ -3754,6 +3763,7 @@ export const Sites: React.FC = () => {
       title: string,
       message: string
     ) => {
+      pendingAIGenerationSiteRef.current = null
       setAiEditorGeneration(null)
       if (editSite) {
         const restoredSite = normalizeSiteForEditor(editSite)
@@ -3782,6 +3792,7 @@ export const Sites: React.FC = () => {
       showToast(toastType, title, message)
     }
 
+    pendingAIGenerationSiteRef.current = editSite ? null : pendingSite
     setCreating(true)
     setAiCreationModal(null)
     setImportReview(null)
@@ -3841,6 +3852,7 @@ export const Sites: React.FC = () => {
       setSelectedImportData(result.import)
       setImportReview({ site: normalizedSite, importData: result.import })
       setAiCreationModal(null)
+      pendingAIGenerationSiteRef.current = null
       setAiEditorGeneration(null)
       navigate(buildSitesEditorPath({
         section: getSiteSection(normalizedSite),
