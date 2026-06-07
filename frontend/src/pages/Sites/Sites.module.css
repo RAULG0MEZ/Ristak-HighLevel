@@ -2385,7 +2385,8 @@
 :global(body.dark) .importFieldRow input:focus,
 :global([data-theme="dark"]) .importFieldRow input:focus {
   border-color: rgba(34, 197, 94, 0.55);
-  outline: 3px solid rgba(34, 197, 94, 0.16);
+  outline: none;
+  box-shadow: var(--ristak-focus-ring);
 }
 
 :global(body.dark) .importFieldRow input:disabled,

@@ -265,8 +265,8 @@ body.light .error {
 
 .phoneLoginBox .input:focus {
   background: #ffffff;
-  border-color: #111111;
-  box-shadow: 0 0 0 4px rgba(17, 24, 39, 0.08);
+  border-color: var(--ristak-focus-border);
+  box-shadow: var(--ristak-focus-ring);
 }
 
 .phoneLoginBox .submitButton {

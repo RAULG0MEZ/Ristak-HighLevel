@@ -1729,8 +1729,8 @@ body.dark .warningBox {
 }
 
 .switchInput:focus-visible + .switchSlider {
-  outline: 2px solid #8b5cf6;
-  outline-offset: 2px;
+  outline: none;
+  box-shadow: var(--ristak-focus-ring);
 }
 
 .switchInput:disabled + .switchSlider {

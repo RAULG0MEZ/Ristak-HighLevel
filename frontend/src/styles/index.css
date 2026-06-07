@@ -313,6 +313,9 @@ body.dark {
     --ristak-dropdown-border-focus: rgba(148, 163, 184, 0.34);
     --ristak-dropdown-ring: none;
     --ristak-dropdown-panel-shadow: 0 18px 46px -30px rgba(15, 23, 42, 0.46);
+    --ristak-focus-border: rgba(148, 163, 184, 0.38);
+    --ristak-focus-ring: 0 0 0 3px rgba(148, 163, 184, 0.12);
+    --ristak-focus-ring-strong: 0 0 0 3px rgba(var(--color-primary-rgb), 0.16);
   }
 }
 
@@ -539,67 +542,56 @@ body.dark .glow-sm {
 }
 
 /* ============================================
-   ELIMINAR TODOS LOS OUTLINES Y RINGS
-   DEBE ESTAR AL FINAL PARA MÁXIMA PRIORIDAD
+   FOCO GLOBAL SIN CONTORNOS NEGROS NATIVOS
    ============================================ */
 
-/* Resetear variables de Tailwind para rings */
 *,
 *::before,
-*::after,
-button,
-a,
-div,
-input,
-select,
-textarea {
-  --tw-ring-color: transparent !important;
-  --tw-ring-shadow: 0 0 #0000 !important;
-  --tw-ring-offset-shadow: 0 0 #0000 !important;
-  --tw-ring-offset-width: 0px !important;
-  --tw-shadow: 0 0 #0000 !important;
-  --tw-shadow-colored: 0 0 #0000 !important;
+*::after {
+  --tw-ring-color: rgba(var(--color-primary-rgb), 0.16);
+  --tw-ring-shadow: 0 0 #0000;
+  --tw-ring-offset-shadow: 0 0 #0000;
+  --tw-ring-offset-width: 0px;
 }
 
-/* Eliminar TODOS los outlines en TODOS los estados */
-*,
-*::before,
-*::after,
-*:hover,
-*:focus,
-*:active,
-*:focus-visible,
-*:focus-within,
-button,
-button:hover,
-button:focus,
-button:active,
-button:focus-visible,
-a,
-a:hover,
-a:focus,
-a:active,
-a:focus-visible,
-div,
-div:hover,
-div:focus,
-div:active,
-div:focus-visible,
-input,
-input:hover,
-input:focus,
-input:active,
-input:focus-visible,
-select,
-select:hover,
-select:focus,
-select:active,
-select:focus-visible,
-textarea,
-textarea:hover,
-textarea:focus,
-textarea:active,
-textarea:focus-visible {
+body:not([data-phone-app='active']):not([data-phone-chat-theme='active']) :is(
+  button,
+  a[href],
+  input,
+  select,
+  textarea,
+  summary,
+  [role='button'],
+  [role='tab'],
+  [role='menuitem'],
+  [role='option'],
+  [role='switch'],
+  [role='checkbox'],
+  [tabindex]:not([tabindex='-1']),
+  [contenteditable='true'],
+  svg[tabindex],
+  path[tabindex],
+  [data-ristak-focusable]
+):focus,
+body:not([data-phone-app='active']):not([data-phone-chat-theme='active']) :is(
+  button,
+  a[href],
+  input,
+  select,
+  textarea,
+  summary,
+  [role='button'],
+  [role='tab'],
+  [role='menuitem'],
+  [role='option'],
+  [role='switch'],
+  [role='checkbox'],
+  [tabindex]:not([tabindex='-1']),
+  [contenteditable='true'],
+  svg[tabindex],
+  path[tabindex],
+  [data-ristak-focusable]
+):active {
   outline: none !important;
   outline-width: 0 !important;
   outline-style: none !important;
@@ -607,15 +599,62 @@ textarea:focus-visible {
   outline-offset: 0 !important;
 }
 
-/* Eliminar box-shadow que podría parecer outline */
-button:focus-visible,
-a:focus-visible,
-div:focus-visible,
-[role="button"]:focus-visible,
-[tabindex]:focus-visible {
+body:not([data-phone-app='active']):not([data-phone-chat-theme='active']) :is(
+  button,
+  a[href],
+  input,
+  select,
+  textarea,
+  summary,
+  [role='button'],
+  [role='tab'],
+  [role='menuitem'],
+  [role='option'],
+  [role='switch'],
+  [role='checkbox'],
+  [tabindex]:not([tabindex='-1']),
+  [contenteditable='true'],
+  [data-ristak-focusable]
+):focus:not(:focus-visible) {
+  outline: none !important;
   box-shadow: none !important;
   -webkit-box-shadow: none !important;
   -moz-box-shadow: none !important;
+}
+
+body:not([data-phone-app='active']):not([data-phone-chat-theme='active']) :is(
+  button,
+  a[href],
+  input,
+  select,
+  textarea,
+  summary,
+  [role='button'],
+  [role='tab'],
+  [role='menuitem'],
+  [role='option'],
+  [role='switch'],
+  [role='checkbox'],
+  [tabindex]:not([tabindex='-1']),
+  [contenteditable='true'],
+  [data-ristak-focusable]
+):focus-visible {
+  outline: none !important;
+  border-color: var(--ristak-focus-border) !important;
+  box-shadow: var(--ristak-focus-ring) !important;
+  -webkit-box-shadow: var(--ristak-focus-ring) !important;
+  -moz-box-shadow: var(--ristak-focus-ring) !important;
+}
+
+body:not([data-phone-app='active']):not([data-phone-chat-theme='active']) :is(
+  svg[tabindex],
+  path[tabindex]
+):focus,
+body:not([data-phone-app='active']):not([data-phone-chat-theme='active']) :is(
+  svg[tabindex],
+  path[tabindex]
+):focus-visible {
+  outline: none !important;
 }
 
 button::-moz-focus-inner,
@@ -639,31 +678,29 @@ a,
 input,
 select,
 textarea {
-  forced-color-adjust: none;
+  forced-color-adjust: auto;
 }
 
 * {
   -webkit-tap-highlight-color: transparent;
 }
 
-button:hover,
-button:focus,
-button:active,
-a:hover,
-a:focus,
-a:active,
-[role="button"]:hover,
-[role="button"]:focus,
-[role="button"]:active,
-[tabindex]:hover,
-[tabindex]:focus,
-[tabindex]:active,
-input:hover,
-input:focus,
-select:hover,
-select:focus,
-textarea:hover,
-textarea:focus {
+body:not([data-phone-app='active']):not([data-phone-chat-theme='active']) :is(
+  button,
+  a[href],
+  [role='button'],
+  [role='tab'],
+  [role='menuitem'],
+  [tabindex]:not([tabindex='-1'])
+):hover:not(:focus-visible),
+body:not([data-phone-app='active']):not([data-phone-chat-theme='active']) :is(
+  button,
+  a[href],
+  [role='button'],
+  [role='tab'],
+  [role='menuitem'],
+  [tabindex]:not([tabindex='-1'])
+):active:not(:focus-visible) {
   box-shadow: none !important;
 }
 
