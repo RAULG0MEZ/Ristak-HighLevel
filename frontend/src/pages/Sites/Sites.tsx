@@ -2277,7 +2277,7 @@ const defaultBlockPayload = (blockType: SiteBlockType, siteOrId: PublicSite | st
     blockType,
     label,
     content: isField ? '' : label,
-    placeholder: isField ? 'Escribe aqui' : '',
+    placeholder: isField ? (blockType === 'dropdown' ? 'Selecciona una opcion' : 'Escribe aqui') : '',
     required: false,
     options: isChoiceBlock(blockType)
       ? [
@@ -2309,6 +2309,22 @@ const makePreviewBlock = (blockType: SiteBlockType, site: PublicSite, pageId?: s
     createdAt: '',
     updatedAt: ''
   }
+}
+
+const hydrateFormSitesForBuilder = async (list: PublicSite[]) => {
+  const formSites = list.filter(site => isFormSite(site))
+  if (!formSites.length) return list
+
+  const hydratedForms = await Promise.all(formSites.map(async (site) => {
+    try {
+      return normalizeSiteForEditor(await sitesService.getSite(site.id))
+    } catch {
+      return site
+    }
+  }))
+  const hydratedById = new Map(hydratedForms.map(site => [site.id, site]))
+
+  return list.map(site => hydratedById.get(site.id) || site)
 }
 
 export const Sites: React.FC = () => {
@@ -2684,10 +2700,11 @@ export const Sites: React.FC = () => {
         sitesService.listSites(),
         sitesService.getDomain()
       ])
-      setSites(list)
+      const builderSites = await hydrateFormSitesForBuilder(list)
+      setSites(builderSites)
       setDomainConfig(nextDomainConfig)
       setDomainInput(nextDomainConfig.domain)
-      const nextId = selectId || (selectedSite?.id && list.some(site => site.id === selectedSite.id) ? selectedSite.id : '')
+      const nextId = selectId || (selectedSite?.id && builderSites.some(site => site.id === selectedSite.id) ? selectedSite.id : '')
       if (nextId) {
         const site = normalizeSiteForEditor(await sitesService.getSite(nextId))
         setSelectedSite(site)
@@ -4712,6 +4729,7 @@ const SitesAICreationModal: React.FC<{
   const [voiceError, setVoiceError] = useState('')
   const [assistantReply, setAssistantReply] = useState('')
   const [submitError, setSubmitError] = useState('')
+  const canWritePrompt = true
 
   useEffect(() => {
     return () => {
@@ -5001,7 +5019,7 @@ const editableTypeLabels: Record<ImportedEditableSelection['editType'], string> 
   text: 'Texto',
   button: 'Boton',
   form_label: 'Texto de campo',
-  placeholder: 'Placeholder',
+  placeholder: 'Texto dentro del campo',
   image: 'Imagen',
   background_image: 'Imagen de fondo',
   section: 'Seccion'
@@ -5767,7 +5785,7 @@ const importedStandardFieldOptions = [
   { value: 'full_name', label: 'Nombre completo' },
   { value: 'first_name', label: 'Nombre' },
   { value: 'last_name', label: 'Apellido' },
-  { value: 'email', label: 'Email' },
+  { value: 'email', label: 'Correo electronico' },
   { value: 'phone', label: 'Telefono / WhatsApp' },
   { value: 'message', label: 'Mensaje o nota' }
 ]
@@ -9485,8 +9503,15 @@ const CanvasPreviewBlock: React.FC<CanvasPreviewBlockProps> = ({
     const formSiteId = getSettingString(settings, 'formSiteId')
     const form = forms.find(item => item.id === formSiteId)
     const embeddedBlocks = Array.isArray(settings.embeddedBlocks) ? settings.embeddedBlocks as SiteBlock[] : []
+    const selectedFormFields = Array.isArray(form?.blocks)
+      ? form.blocks.filter(field => fieldBlockTypes.has(field.blockType))
+      : []
     const description = form ? `Usando formulario: ${form.name}` : getSettingString(settings, 'description')
-    const fields = embeddedBlocks.length ? embeddedBlocks : [{ id: 'placeholder', blockType: 'short_text', label: 'Campo', required: true, placeholder: 'Respuesta' } as SiteBlock]
+    const fields = embeddedBlocks.length
+      ? embeddedBlocks
+      : selectedFormFields.length
+        ? selectedFormFields
+        : [{ id: 'placeholder', blockType: 'short_text', label: 'Campo', required: true, placeholder: 'Respuesta' } as SiteBlock]
     return (
       <section className="rstk-embedded-form">
         <InlineEditable as="h2" value={block.content} placeholder="Formulario" disabled={!editable} onChange={(value) => patchBlock({ content: value })} onCommit={save} />
@@ -9539,19 +9564,6 @@ const CanvasPreviewBlock: React.FC<CanvasPreviewBlockProps> = ({
   return <FieldPreview block={block} editable={editable} onPatchBlock={patchBlock} onSave={save} />
 }
 
-// Read-only field preview (rstk markup) for embedded form fields on the canvas.
-const FieldStaticPreview: React.FC<{ block: SiteBlock }> = ({ block }) => (
-  <section className="rstk-field">
-    <label>{block.label || 'Pregunta'}{block.required ? <span className="rstk-required">*</span> : null}</label>
-    {block.content ? <p className="rstk-help">{block.content}</p> : null}
-    {block.blockType === 'paragraph'
-      ? <textarea readOnly rows={4} placeholder={block.placeholder || ''} />
-      : block.blockType === 'phone' && isPhoneCountrySelectorEnabled(block)
-        ? <PhoneCountryInputPreview placeholder={block.placeholder || ''} />
-      : <input readOnly placeholder={block.placeholder || 'Respuesta'} />}
-  </section>
-)
-
 const EmbedPreview: React.FC<{ rawCode: string }> = ({ rawCode }) => {
   const embed = resolveEmbedPreview(rawCode)
 
@@ -9593,6 +9605,64 @@ const PhoneCountryInputPreview: React.FC<{ placeholder?: string }> = ({ placehol
   )
 }
 
+const getFieldPreviewInputType = (blockType: SiteBlockType) => {
+  if (blockType === 'email') return 'email'
+  if (blockType === 'phone') return 'tel'
+  if (blockType === 'date') return 'date'
+  if (blockType === 'number' || blockType === 'currency') return 'number'
+  return 'text'
+}
+
+const getPreviewOptions = (block: SiteBlock): SiteBlockOption[] => {
+  const options = getOptions(block)
+  return options.length ? options : [{ id: 'preview-option', label: 'Opcion', value: 'Opcion', action: 'continue' }]
+}
+
+const FieldControlPreview: React.FC<{ block: SiteBlock }> = ({ block }) => {
+  if (block.blockType === 'paragraph') {
+    return <textarea readOnly rows={4} placeholder={block.placeholder || ''} />
+  }
+
+  if (block.blockType === 'dropdown') {
+    return (
+      <select defaultValue="" aria-label={block.label || 'Pregunta'}>
+        <option value="">{block.placeholder || 'Selecciona una opcion'}</option>
+        {getPreviewOptions(block).map(option => (
+          <option key={option.id || option.label} value={option.value || option.label}>{option.label}</option>
+        ))}
+      </select>
+    )
+  }
+
+  if (block.blockType === 'radio' || block.blockType === 'checkboxes') {
+    return (
+      <div className="rstk-options">
+        {getPreviewOptions(block).map(option => (
+          <label key={option.id || option.label} className="rstk-option">
+            <input type={block.blockType === 'checkboxes' ? 'checkbox' : 'radio'} name={block.id || block.label} readOnly />
+            <span>{option.label}</span>
+          </label>
+        ))}
+      </div>
+    )
+  }
+
+  if (block.blockType === 'phone' && isPhoneCountrySelectorEnabled(block)) {
+    return <PhoneCountryInputPreview placeholder={block.placeholder || ''} />
+  }
+
+  return <input type={getFieldPreviewInputType(block.blockType)} readOnly placeholder={block.placeholder || 'Respuesta'} />
+}
+
+// Read-only field preview (rstk markup) for embedded form fields on the canvas.
+const FieldStaticPreview: React.FC<{ block: SiteBlock }> = ({ block }) => (
+  <section className="rstk-field">
+    <label>{block.label || 'Pregunta'}{block.required ? <span className="rstk-required">*</span> : null}</label>
+    {block.content ? <p className="rstk-help">{block.content}</p> : null}
+    <FieldControlPreview block={block} />
+  </section>
+)
+
 // Field blocks: rstk-field markup with inline-editable label/help. The input is
 // a non-interactive preview; placeholder/validation/options are edited in the panel.
 const FieldPreview: React.FC<{
@@ -9601,8 +9671,6 @@ const FieldPreview: React.FC<{
   onPatchBlock: (patch: Partial<SiteBlock>) => void
   onSave: () => void
 }> = ({ block, editable, onPatchBlock, onSave }) => {
-  const inputType = block.blockType === 'email' ? 'email' : block.blockType === 'phone' ? 'tel' : block.blockType === 'date' ? 'date' : block.blockType === 'number' || block.blockType === 'currency' ? 'number' : 'text'
-
   return (
     <section className="rstk-field">
       <label>
@@ -9612,22 +9680,7 @@ const FieldPreview: React.FC<{
       {(editable || block.content) && (
         <InlineEditable as="p" className="rstk-help" multiline value={block.content} placeholder="Texto de ayuda (opcional)" disabled={!editable} onChange={(value) => onPatchBlock({ content: value })} onCommit={onSave} />
       )}
-      {block.blockType === 'paragraph' ? (
-        <textarea readOnly rows={4} placeholder={block.placeholder || ''} />
-      ) : isChoiceBlock(block.blockType) ? (
-        <div className="rstk-options">
-          {getOptions(block).map(option => (
-            <label key={option.id || option.label} className="rstk-option">
-              <input type={block.blockType === 'checkboxes' ? 'checkbox' : 'radio'} readOnly />
-              <span>{option.label}</span>
-            </label>
-          ))}
-        </div>
-      ) : block.blockType === 'phone' && isPhoneCountrySelectorEnabled(block) ? (
-        <PhoneCountryInputPreview placeholder={block.placeholder || ''} />
-      ) : (
-        <input type={inputType} readOnly placeholder={block.placeholder || ''} />
-      )}
+      <FieldControlPreview block={block} />
     </section>
   )
 }
@@ -9721,7 +9774,7 @@ const FormGlobalStyleControls: React.FC<{
       </div>
       <div className={styles.twoColumn}>
         <ColorField label="Borde caja" value={getThemePaint(theme, 'formFieldBorder', '#dbe3ef')} allowGradient onChange={(value) => onPatchTheme({ formFieldBorder: value })} onCommit={onSaveSite} />
-        <ColorField label="Placeholder" value={getThemePaint(theme, 'formPlaceholderColor', '#94a3b8')} allowGradient onChange={(value) => onPatchTheme({ formPlaceholderColor: value })} onCommit={onSaveSite} />
+        <ColorField label="Texto de ejemplo" value={getThemePaint(theme, 'formPlaceholderColor', '#94a3b8')} allowGradient onChange={(value) => onPatchTheme({ formPlaceholderColor: value })} onCommit={onSaveSite} />
       </div>
 
       <div className={styles.twoColumn}>
@@ -9742,7 +9795,7 @@ const FormGlobalStyleControls: React.FC<{
           </select>
         </label>
         <label className={styles.field}>
-          <span>Estilo dropdown</span>
+          <span>Estilo lista</span>
           <select value={normalizeFormSelectStyle(theme.formSelectStyle)} onChange={(event) => onPatchTheme({ formSelectStyle: event.target.value as FormSelectStyle })} onBlur={onSaveSite}>
             {formSelectStyleOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
@@ -10089,13 +10142,13 @@ const customFieldTypeLabel = (value = '') => {
   const type = normalizeCustomFieldDataType(value)
   if (type === 'text') return 'Texto corto'
   if (type === 'textarea') return 'Parrafo'
-  if (type === 'radio') return 'Radio buttons'
-  if (type === 'dropdown') return 'Dropdown'
-  if (type === 'checkboxes') return 'Checkboxes'
+  if (type === 'radio') return 'Opcion unica'
+  if (type === 'dropdown') return 'Lista desplegable'
+  if (type === 'checkboxes') return 'Varias opciones'
   if (type === 'number') return 'Numero'
   if (type === 'currency') return 'Moneda'
   if (type === 'date') return 'Fecha'
-  if (type === 'email') return 'Email'
+  if (type === 'email') return 'Correo'
   if (type === 'phone') return 'Telefono'
   return value || 'Campo'
 }
@@ -10231,8 +10284,8 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
     : block.blockType === SECTION_BLOCK_TYPE
       ? 'Titulo visible opcional'
       : block.blockType === 'embed'
-      ? 'Codigo embed, iframe o URL'
-      : 'Contenido'
+        ? 'Codigo externo, iframe o URL'
+        : 'Contenido'
   const contentRows = block.blockType === 'embed' ? 7 : isField || block.blockType === SECTION_BLOCK_TYPE ? 2 : 3
 
   return (
@@ -10248,7 +10301,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         )}
 
         <label className={styles.field}>
-          <span>{isField ? 'Label / pregunta' : block.blockType === SECTION_BLOCK_TYPE ? 'Nombre de la franja' : 'Nombre del bloque'}</span>
+          <span>{isField ? 'Pregunta visible' : block.blockType === SECTION_BLOCK_TYPE ? 'Nombre de la franja' : 'Nombre del bloque'}</span>
           <input value={block.label} onChange={(event) => onPatchBlock({ label: event.target.value })} onBlur={onSave} />
         </label>
 
@@ -10269,7 +10322,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           <>
             <div className={styles.twoColumn}>
               <label className={styles.field}>
-                <span>Placeholder</span>
+                <span>Texto dentro del campo</span>
                 <input value={block.placeholder} onChange={(event) => onPatchBlock({ placeholder: event.target.value })} onBlur={onSave} />
               </label>
               <label className={styles.field}>
@@ -10284,14 +10337,14 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
 
             <div className={styles.twoColumn}>
               <label className={styles.field}>
-                <span>Validacion basica</span>
+                <span>Validacion</span>
                 <select
                   value={getSettingString(settings, 'validation')}
                   onChange={(event) => onPatchSettings({ validation: event.target.value })}
                   onBlur={onSave}
                 >
                   <option value="">Ninguna</option>
-                  <option value="email">Email</option>
+                  <option value="email">Correo</option>
                   <option value="phone">Telefono</option>
                   <option value="number">Numero</option>
                   <option value="currency">Moneda</option>
@@ -10803,7 +10856,7 @@ const LandingBlockSettings: React.FC<LandingBlockSettingsProps> = ({ site, block
           </select>
         </label>
         <label className={styles.field}>
-          <span>Descripcion del form</span>
+          <span>Descripcion del formulario</span>
           <textarea rows={2} value={getSettingString(settings, 'description')} onChange={(event) => onPatchSettings({ description: event.target.value })} onBlur={onSave} />
         </label>
         <label className={styles.field}>

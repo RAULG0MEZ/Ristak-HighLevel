@@ -7927,9 +7927,9 @@ const RSTK_BASE_CSS = `
 	  .rstk-option input{width:19px;height:19px;padding:0;flex:0 0 auto;accent-color:var(--rstk-accent)}
 	  .rstk-kind-form .rstk-options .rstk-option{min-height:var(--rstk-form-field-height,50px);border-width:var(--rstk-form-field-border-width,1px);border-color:var(--rstk-form-field-border,var(--rstk-input-border));border-radius:var(--rstk-form-field-radius,var(--rstk-field-radius,var(--rstk-radius)));background:var(--rstk-form-field-bg,var(--rstk-input-bg));color:var(--rstk-form-field-text,var(--rstk-input-ink));font-family:var(--rstk-form-font,var(--rstk-font));font-size:var(--rstk-form-input-size,1rem);font-style:var(--rstk-form-font-style,normal);font-weight:var(--rstk-form-weight,700);text-decoration:var(--rstk-form-text-decoration,none);padding:var(--rstk-form-field-pad-y,13px) var(--rstk-form-field-pad-x,14px)}
 	  .rstk-kind-form .rstk-option:has(input:checked){border-color:var(--rstk-form-choice-selected-border,var(--rstk-accent));background:var(--rstk-form-choice-selected-bg,color-mix(in srgb,var(--rstk-accent) 8%,var(--rstk-form-field-bg,var(--rstk-input-bg))))}
-	  .rstk-kind-form.rstk-choice-cards .rstk-option,.rstk-kind-form.rstk-choice-pills .rstk-option{position:relative}
+	  .rstk-kind-form.rstk-choice-cards .rstk-option,.rstk-kind-form.rstk-choice-pills .rstk-option{position:relative;gap:0}
 	  .rstk-kind-form.rstk-choice-cards .rstk-option input,.rstk-kind-form.rstk-choice-pills .rstk-option input{position:absolute;opacity:0;pointer-events:none}
-	  .rstk-kind-form.rstk-choice-cards .rstk-option{padding-left:calc(var(--rstk-form-field-pad-x,14px) + 10px);box-shadow:inset 4px 0 0 transparent}
+	  .rstk-kind-form.rstk-choice-cards .rstk-option{padding-left:var(--rstk-form-field-pad-x,14px);box-shadow:inset 4px 0 0 transparent}
 	  .rstk-kind-form.rstk-choice-cards .rstk-option:has(input:checked){box-shadow:inset 4px 0 0 var(--rstk-form-choice-selected-border,var(--rstk-accent))}
 	  .rstk-kind-form.rstk-choice-pills .rstk-options{display:flex;flex-wrap:wrap;gap:8px}
 	  .rstk-kind-form.rstk-choice-pills .rstk-option{flex:0 1 auto;min-height:40px;border-radius:999px;padding:9px 16px}
@@ -9603,7 +9603,7 @@ function normalizeSubmissionResponses(blocks, responses = {}) {
 
     if (!missing) {
       if (block.blockType === 'email' && !normalizeEmail(value)) {
-        errors.push(`${block.label || 'Email'} debe ser un correo valido`)
+        errors.push(`${block.label || 'Correo electronico'} debe ser un correo valido`)
       }
 
       if (block.blockType === 'phone' && cleanString(value).replace(/[^\d]/g, '').length < 7) {

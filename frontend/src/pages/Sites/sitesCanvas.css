@@ -303,9 +303,9 @@
   padding: var(--rstk-form-field-pad-y, 13px) var(--rstk-form-field-pad-x, 14px);
 }
 .rstkCanvas.rstk-kind-form .rstk-option:has(input:checked) { border-color: var(--rstk-form-choice-selected-border, var(--rstk-accent)); background: var(--rstk-form-choice-selected-bg, color-mix(in srgb, var(--rstk-accent) 8%, var(--rstk-form-field-bg, var(--rstk-input-bg)))); }
-.rstkCanvas.rstk-kind-form.rstk-choice-cards .rstk-option, .rstkCanvas.rstk-kind-form.rstk-choice-pills .rstk-option { position: relative; }
+.rstkCanvas.rstk-kind-form.rstk-choice-cards .rstk-option, .rstkCanvas.rstk-kind-form.rstk-choice-pills .rstk-option { position: relative; gap: 0; }
 .rstkCanvas.rstk-kind-form.rstk-choice-cards .rstk-option input, .rstkCanvas.rstk-kind-form.rstk-choice-pills .rstk-option input { position: absolute; opacity: 0; pointer-events: none; }
-.rstkCanvas.rstk-kind-form.rstk-choice-cards .rstk-option { position: relative; padding-left: calc(var(--rstk-form-field-pad-x, 14px) + 10px); box-shadow: inset 4px 0 0 transparent; }
+.rstkCanvas.rstk-kind-form.rstk-choice-cards .rstk-option { position: relative; padding-left: var(--rstk-form-field-pad-x, 14px); box-shadow: inset 4px 0 0 transparent; }
 .rstkCanvas.rstk-kind-form.rstk-choice-cards .rstk-option:has(input:checked) { box-shadow: inset 4px 0 0 var(--rstk-form-choice-selected-border, var(--rstk-accent)); }
 .rstkCanvas.rstk-kind-form.rstk-choice-pills .rstk-options { display: flex; flex-wrap: wrap; gap: 8px; }
 .rstkCanvas.rstk-kind-form.rstk-choice-pills .rstk-option { flex: 0 1 auto; min-height: 40px; border-radius: 999px; padding: 9px 16px; }
