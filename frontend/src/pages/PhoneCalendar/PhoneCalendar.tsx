@@ -62,6 +62,14 @@ const STATUS_LABELS: Record<CalendarEvent['appointmentStatus'], string> = {
 type AccessState = 'checking' | 'allowed' | 'blocked'
 type SheetView = 'calendar' | 'contactPicker' | null
 type CalendarView = 'month' | 'week' | 'day' | 'year' | 'years'
+type SwitchableCalendarView = Exclude<CalendarView, 'years'>
+
+const TABLET_VIEW_OPTIONS: Array<{ view: SwitchableCalendarView; label: string }> = [
+  { view: 'day', label: 'Día' },
+  { view: 'week', label: 'Semana' },
+  { view: 'month', label: 'Mes' },
+  { view: 'year', label: 'Año' }
+]
 
 interface DayCell {
   date: Date
@@ -1166,6 +1174,10 @@ export const PhoneCalendar: React.FC = () => {
   const showCalendarSurface = calendarView !== 'day'
   const showAgenda = calendarView === 'month'
   const nowInCalendar = toDateInTimeZone(new Date().toISOString(), timezone) ?? new Date()
+  const handleSelectCalendarView = (view: SwitchableCalendarView) => {
+    setCalendarView(view)
+    setCurrentDate(selectedDate)
+  }
 
   const renderEventItem = (event: CalendarEvent) => {
     const eventColor = getEventColor(event)
@@ -1200,7 +1212,7 @@ export const PhoneCalendar: React.FC = () => {
   }
 
   return (
-    <main className={styles.phonePage} aria-label="Calendario móvil de Ristak">
+    <main className={styles.phonePage} data-calendar-view={calendarView} aria-label="Calendario móvil de Ristak">
       <PhonePageTransition active="calendar" className={styles.phoneFrame}>
 	        <header className={styles.header}>
 	          <div className={styles.headerToolbar}>
@@ -1213,6 +1225,25 @@ export const PhoneCalendar: React.FC = () => {
 	              {calendarView !== 'years' && <ChevronLeft size={21} />}
 	              <span>{periodChipLabel}</span>
 	            </button>
+
+	            <div className={styles.tabletViewSwitcher} role="tablist" aria-label="Vista de calendario">
+	              {TABLET_VIEW_OPTIONS.map(({ view, label }) => {
+	                const active = calendarView === view || (calendarView === 'years' && view === 'year')
+
+	                return (
+	                  <button
+	                    key={view}
+	                    type="button"
+	                    role="tab"
+	                    aria-selected={active}
+	                    className={active ? styles.tabletViewSwitcherActive : ''}
+	                    onClick={() => handleSelectCalendarView(view)}
+	                  >
+	                    {label}
+	                  </button>
+	                )
+	              })}
+	            </div>
 
 	            <div className={styles.headerCapsule} aria-label="Acciones rápidas">
 	              <button type="button" className={styles.todayTopButton} onClick={handleToday} aria-label="Hoy">
@@ -1265,6 +1296,21 @@ export const PhoneCalendar: React.FC = () => {
 	                              <b key={event.id} style={{ backgroundColor: getEventColor(event) }} />
 	                            ))}
 	                          </i>
+	                        )}
+	                        {cell.events.length > 0 && (
+	                          <span className={styles.monthEventList}>
+	                            {cell.events.slice(0, 3).map((event) => (
+	                              <span
+	                                key={event.id}
+	                                className={styles.monthEventPill}
+	                                style={{ '--event-color': getEventColor(event) } as React.CSSProperties}
+	                              >
+	                                <b aria-hidden="true" />
+	                                <strong>{event.title || 'Sin título'}</strong>
+	                                <em>{formatEventTime(event.startTime)}</em>
+	                              </span>
+	                            ))}
+	                          </span>
 	                        )}
 	                      </button>
 	                    )
