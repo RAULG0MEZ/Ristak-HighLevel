@@ -2010,7 +2010,7 @@
 }
 
 .messageAudioInbound {
-  grid-template-columns: 34px minmax(0, 1fr) 52px;
+  grid-template-columns: 34px minmax(0, 1fr) 62px;
   grid-template-rows: 38px 18px;
   grid-template-areas:
     "play wave avatar"
@@ -2073,6 +2073,31 @@
   filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.92));
 }
 
+.messageAudioSpeedButton {
+  grid-area: avatar;
+  align-self: center;
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 58px;
+  height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  color: #ffffff;
+  background: rgba(101, 105, 103, 0.92);
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
 .messageAudioPlayButton {
   grid-area: play;
   display: inline-flex;
@@ -2118,11 +2143,6 @@
   border-radius: 999px;
   background: var(--message-audio-wave);
   transform-origin: center;
-}
-
-.messageAudioWaveformPlaying .messageAudioWaveBar {
-  animation: messageAudioWavePulse 920ms ease-in-out infinite;
-  animation-delay: var(--bar-delay, 0ms);
 }
 
 .messageAudioProgressDot {
@@ -2212,19 +2232,6 @@
 
 .phoneChatPage[data-phone-chat-tone="dark"] .messageRow_outbound .messageAudioProgressDot {
   box-shadow: 0 0 0 3px rgba(0, 92, 75, 0.78);
-}
-
-@keyframes messageAudioWavePulse {
-  0%,
-  100% {
-    opacity: 0.62;
-    transform: scaleY(0.78);
-  }
-
-  50% {
-    opacity: 1;
-    transform: scaleY(1.16);
-  }
 }
 
 .messageMeta {
@@ -4352,6 +4359,23 @@
   padding-inline: clamp(18px, 4vw, 54px);
 }
 
+.phoneChatPage[data-phone-chat-device="tablet"] .messageAudioBubble {
+  width: min(340px, 46vw);
+  max-width: 340px;
+}
+
+.phoneChatPage[data-phone-chat-device="tablet"] .messageAudio {
+  min-height: 62px;
+}
+
+.phoneChatPage[data-phone-chat-device="tablet"] .messageAudioInbound {
+  grid-template-columns: 34px minmax(0, 1fr) 62px;
+}
+
+.phoneChatPage[data-phone-chat-device="tablet"] .messageAudioOutbound {
+  grid-template-columns: 52px 34px minmax(0, 1fr);
+}
+
 .phoneChatPage[data-phone-chat-device="tablet"] .composerShell {
   padding-inline: clamp(8px, 1.4vw, 18px);
 }
@@ -4485,8 +4509,7 @@
   .sheetPanel,
   .settingsSheetBackdrop,
   .settingsSheet,
-  .cameraShareScreen,
-  .messageAudioWaveformPlaying .messageAudioWaveBar {
+  .cameraShareScreen {
     animation-duration: 1ms;
     transition-duration: 1ms !important;
   }

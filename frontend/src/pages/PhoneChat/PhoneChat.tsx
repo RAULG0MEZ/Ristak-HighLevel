@@ -98,6 +98,7 @@ const VOICE_WAVE_MAX_HEIGHT = 34
 const VOICE_WAVE_SILENCE_THRESHOLD = 4
 const VOICE_WAVE_SIGNAL_RANGE = 30
 const MESSAGE_AUDIO_WAVE_BAR_COUNT = 22
+const MESSAGE_AUDIO_RATE_OPTIONS = [1, 1.5, 2] as const
 const VOICE_MIME_CANDIDATES = [
   'audio/ogg;codecs=opus',
   'audio/mp4',
@@ -109,6 +110,7 @@ const VOICE_WAVE_BASE_PATTERN = [8, 16, 24, 31, 18, 13, 23, 30, 21, 9, 6, 15, 27
 type AccessState = 'checking' | 'allowed' | 'blocked'
 type PhoneChatDeviceMode = PortableDeviceMode | 'checking'
 type ComposerStatus = 'idle' | 'sending'
+type MessageAudioRate = typeof MESSAGE_AUDIO_RATE_OPTIONS[number]
 type PaymentMode = 'single' | 'partial'
 type ActionSheet = 'attachments' | 'templates' | 'payment' | 'appointment' | 'settings' | 'newChat' | 'chatMore' | null
 type ChatFilter = 'all' | 'unread' | 'appointments' | 'customers' | 'leads'
@@ -1646,6 +1648,8 @@ export const PhoneChat: React.FC = () => {
   const [voiceWaveBars, setVoiceWaveBars] = useState<number[]>(createInitialVoiceBars)
   const [voicePreviewPlaying, setVoicePreviewPlaying] = useState(false)
   const [playingAudioMessageId, setPlayingAudioMessageId] = useState<string | null>(null)
+  const [audioLoadingMessageId, setAudioLoadingMessageId] = useState<string | null>(null)
+  const [messageAudioRates, setMessageAudioRates] = useState<Record<string, MessageAudioRate>>({})
   const [messageAudioPlayback, setMessageAudioPlayback] = useState<Record<string, MessageAudioPlaybackState>>({})
   const [composerStatus, setComposerStatus] = useState<ComposerStatus>('idle')
   const [whatsappStatus, setWhatsappStatus] = useState<WhatsAppApiStatus | null>(null)
@@ -2776,12 +2780,33 @@ export const PhoneChat: React.FC = () => {
   }, [activeContactId, conversationOpen, messages.length, messagesLoading, messagesSignature])
 
   useEffect(() => {
-    if (!playingAudioMessageId) return
-    if (messages.some((message) => message.id === playingAudioMessageId)) return
+    const messageIds = new Set(messages.map((message) => message.id))
 
-    messageAudioRefs.current[playingAudioMessageId]?.pause()
-    setPlayingAudioMessageId(null)
-  }, [messages, playingAudioMessageId])
+    if (playingAudioMessageId && !messageIds.has(playingAudioMessageId)) {
+      messageAudioRefs.current[playingAudioMessageId]?.pause()
+      setPlayingAudioMessageId(null)
+    }
+
+    if (audioLoadingMessageId && !messageIds.has(audioLoadingMessageId)) {
+      setAudioLoadingMessageId(null)
+    }
+
+    setMessageAudioRates((current) => {
+      let changed = false
+      const next: Record<string, MessageAudioRate> = {}
+
+      Object.entries(current).forEach(([messageId, rate]) => {
+        if (messageIds.has(messageId)) {
+          next[messageId] = rate
+          return
+        }
+
+        changed = true
+      })
+
+      return changed ? next : current
+    })
+  }, [audioLoadingMessageId, messages, playingAudioMessageId])
 
   useEffect(() => {
     return () => {
@@ -4613,6 +4638,36 @@ export const PhoneChat: React.FC = () => {
     return Math.min(100, Math.max(0, ((playback?.currentTime || 0) / duration) * 100))
   }
 
+  const getMessageAudioRate = (messageId: string): MessageAudioRate => {
+    return messageAudioRates[messageId] || MESSAGE_AUDIO_RATE_OPTIONS[0]
+  }
+
+  const getNextMessageAudioRate = (rate: MessageAudioRate): MessageAudioRate => {
+    const currentIndex = MESSAGE_AUDIO_RATE_OPTIONS.indexOf(rate)
+    const nextIndex = currentIndex < 0 ? 1 : (currentIndex + 1) % MESSAGE_AUDIO_RATE_OPTIONS.length
+
+    return MESSAGE_AUDIO_RATE_OPTIONS[nextIndex]
+  }
+
+  const formatMessageAudioRate = (rate: MessageAudioRate) => {
+    return `${Number.isInteger(rate) ? rate.toFixed(0) : rate}x`
+  }
+
+  const handleCycleMessageAudioRate = (message: ChatMessage, event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation()
+
+    if (message.direction === 'outbound') return
+
+    const nextRate = getNextMessageAudioRate(getMessageAudioRate(message.id))
+    setMessageAudioRates((current) => ({
+      ...current,
+      [message.id]: nextRate
+    }))
+
+    const audio = messageAudioRefs.current[message.id]
+    if (audio) audio.playbackRate = nextRate
+  }
+
   const handleToggleMessageAudio = (message: ChatMessage) => {
     const audio = messageAudioRefs.current[message.id] ||
       (typeof document === 'undefined'
@@ -4622,6 +4677,7 @@ export const PhoneChat: React.FC = () => {
 
     if (playingAudioMessageId === message.id && !audio.paused) {
       audio.pause()
+      setAudioLoadingMessageId((current) => current === message.id ? null : current)
       updateMessageAudioPlayback(message.id, audio)
       return
     }
@@ -4637,14 +4693,19 @@ export const PhoneChat: React.FC = () => {
 
     if (audio.ended) audio.currentTime = 0
 
+    audio.playbackRate = getMessageAudioRate(message.id)
+    setAudioLoadingMessageId(message.id)
+
     audio.play()
       .then(() => {
         setPlayingAudioMessageId(message.id)
+        setAudioLoadingMessageId(null)
         updateMessageAudioPlayback(message.id, audio)
       })
       .catch(() => {
         showToast('error', 'No se pudo escuchar', 'Toca el audio otra vez. Si sigue igual, revisa que el celular permita reproducir sonido.')
         setPlayingAudioMessageId(null)
+        setAudioLoadingMessageId((current) => current === message.id ? null : current)
       })
   }
 
@@ -4707,12 +4768,12 @@ export const PhoneChat: React.FC = () => {
     </span>
   )
 
-  const renderMessageAudioWaveform = (message: ChatMessage, isPlaying: boolean) => {
+  const renderMessageAudioWaveform = (message: ChatMessage) => {
     const progress = getMessageAudioProgress(message)
 
     return (
       <div
-        className={`${styles.messageAudioWaveform} ${isPlaying ? styles.messageAudioWaveformPlaying : ''}`}
+        className={styles.messageAudioWaveform}
         style={{ '--audio-progress': `${progress}%` } as React.CSSProperties}
         aria-hidden="true"
       >
@@ -4752,6 +4813,9 @@ export const PhoneChat: React.FC = () => {
       ? `Foto de ${getBusinessPhoneLabel(businessPhone)}`
       : `Foto de ${getContactName(activeContact)}`
     const isPlaying = playingAudioMessageId === message.id
+    const isLoading = audioLoadingMessageId === message.id
+    const playbackRate = getMessageAudioRate(message.id)
+    const showSpeedControl = !isOutbound && (isPlaying || isLoading)
 
     return (
       <div className={`${styles.messageAudio} ${isOutbound ? styles.messageAudioOutbound : styles.messageAudioInbound}`}>
@@ -4763,29 +4827,54 @@ export const PhoneChat: React.FC = () => {
           data-message-audio-id={message.id}
           preload="metadata"
           src={audioSrc}
-          onLoadedMetadata={(event) => updateMessageAudioPlayback(message.id, event.currentTarget)}
+          onLoadedMetadata={(event) => {
+            event.currentTarget.playbackRate = playbackRate
+            updateMessageAudioPlayback(message.id, event.currentTarget)
+          }}
           onTimeUpdate={(event) => updateMessageAudioPlayback(message.id, event.currentTarget)}
+          onWaiting={() => setAudioLoadingMessageId(message.id)}
           onPlay={() => setPlayingAudioMessageId(message.id)}
+          onPlaying={(event) => {
+            event.currentTarget.playbackRate = playbackRate
+            setAudioLoadingMessageId((current) => current === message.id ? null : current)
+            setPlayingAudioMessageId(message.id)
+            updateMessageAudioPlayback(message.id, event.currentTarget)
+          }}
           onPause={(event) => {
             updateMessageAudioPlayback(message.id, event.currentTarget)
             setPlayingAudioMessageId((current) => current === message.id ? null : current)
+            setAudioLoadingMessageId((current) => current === message.id ? null : current)
           }}
           onEnded={(event) => {
             event.currentTarget.currentTime = 0
             updateMessageAudioPlayback(message.id, event.currentTarget)
             setPlayingAudioMessageId((current) => current === message.id ? null : current)
+            setAudioLoadingMessageId((current) => current === message.id ? null : current)
+          }}
+          onError={() => {
+            setPlayingAudioMessageId((current) => current === message.id ? null : current)
+            setAudioLoadingMessageId((current) => current === message.id ? null : current)
           }}
         />
-        {renderMessageAudioAvatar(avatarUrl, avatarFallback, avatarLabel)}
+        {showSpeedControl ? (
+          <button
+            type="button"
+            className={styles.messageAudioSpeedButton}
+            onClick={(event) => handleCycleMessageAudioRate(message, event)}
+            aria-label={`Cambiar velocidad, ahora ${formatMessageAudioRate(playbackRate)}`}
+          >
+            {formatMessageAudioRate(playbackRate)}
+          </button>
+        ) : renderMessageAudioAvatar(avatarUrl, avatarFallback, avatarLabel)}
         <button
           type="button"
           className={styles.messageAudioPlayButton}
           onClick={() => handleToggleMessageAudio(message)}
-          aria-label={isPlaying ? 'Pausar audio' : 'Reproducir audio'}
+          aria-label={isLoading ? 'Cargando audio' : isPlaying ? 'Pausar audio' : 'Reproducir audio'}
         >
-          {isPlaying ? <Pause size={20} /> : <Play size={22} />}
+          {isLoading ? <Loader2 size={20} className={styles.spinIcon} /> : isPlaying ? <Pause size={20} /> : <Play size={22} />}
         </button>
-        {renderMessageAudioWaveform(message, isPlaying)}
+        {renderMessageAudioWaveform(message)}
         <span className={styles.messageAudioDetails}>
           <span className={styles.messageAudioDuration}>{formatVoiceDuration(getMessageAudioDurationMs(message))}</span>
           {renderMessageMeta(message, styles.messageAudioMeta, { showTransport: false })}
