@@ -1950,6 +1950,7 @@
 }
 
 .messageBubble p {
+  display: inline;
   margin: 0;
   overflow-wrap: anywhere;
   font-size: 15px;
@@ -1995,9 +1996,9 @@
   display: grid;
   align-items: center;
   width: 100%;
-  min-height: 58px;
+  min-height: 62px;
   column-gap: 7px;
-  row-gap: 2px;
+  row-gap: 3px;
   color: var(--phone-chat-text);
 }
 
@@ -2131,6 +2132,7 @@
   border: 0;
   color: var(--message-audio-control);
   background: transparent;
+  transform: translateY(3px);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
@@ -2149,17 +2151,19 @@
   grid-area: wave;
   display: flex;
   align-items: center;
-  gap: 3px;
+  justify-content: space-between;
+  gap: 2px;
   min-width: 0;
   height: 24px;
   padding: 0 2px;
   overflow: hidden;
+  transform: translateY(3px);
 }
 
 .messageAudioWaveBar {
   display: inline-block;
-  flex: 0 0 2.75px;
-  width: 2.75px;
+  flex: 0 0 2.5px;
+  width: 2.5px;
   height: var(--bar-height, 12px);
   min-height: 3px;
   border-radius: 999px;
@@ -2191,6 +2195,7 @@
   align-items: center;
   min-width: 0;
   column-gap: 8px;
+  transform: translateY(6px);
 }
 
 .messageAudioInbound .messageAudioDetails {
@@ -2263,13 +2268,25 @@
 .messageMeta {
   display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 4px;
-  float: right;
-  margin: 4px 0 0 9px;
+  float: none;
+  margin: 0 0 -2px 8px;
   color: var(--phone-chat-muted);
   font-size: 11px;
   font-weight: 560;
+  line-height: 1;
+  vertical-align: -2px;
+}
+
+.messageBubble > .messageMeta:first-child {
+  margin-left: 0;
+}
+
+.messageImage + .messageMeta {
+  display: flex;
+  justify-content: flex-end;
+  margin: 5px 0 -2px;
 }
 
 .messageRow_outbound .messageMeta {
@@ -4386,12 +4403,12 @@
 }
 
 .phoneChatPage[data-phone-chat-device="tablet"] .messageAudioBubble {
-  width: min(324px, 46vw);
-  max-width: 324px;
+  width: min(390px, 48vw);
+  max-width: 390px;
 }
 
 .phoneChatPage[data-phone-chat-device="tablet"] .messageAudio {
-  min-height: 58px;
+  min-height: 64px;
 }
 
 .phoneChatPage[data-phone-chat-device="tablet"] .messageAudioInbound {
@@ -4400,6 +4417,16 @@
 
 .phoneChatPage[data-phone-chat-device="tablet"] .messageAudioOutbound {
   grid-template-columns: 48px 32px minmax(0, 1fr);
+}
+
+.phoneChatPage[data-phone-chat-device="tablet"] .messageAudioWaveform {
+  gap: 2px;
+  padding-inline: 0;
+}
+
+.phoneChatPage[data-phone-chat-device="tablet"] .messageAudioWaveBar {
+  flex-basis: 2.5px;
+  width: 2.5px;
 }
 
 .phoneChatPage[data-phone-chat-device="tablet"] .composerShell {
