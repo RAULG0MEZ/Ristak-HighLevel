@@ -97,7 +97,7 @@ const VOICE_WAVE_MIN_HEIGHT = 4
 const VOICE_WAVE_MAX_HEIGHT = 34
 const VOICE_WAVE_SILENCE_THRESHOLD = 4
 const VOICE_WAVE_SIGNAL_RANGE = 30
-const MESSAGE_AUDIO_WAVE_BAR_COUNT = 28
+const MESSAGE_AUDIO_WAVE_BAR_COUNT = 22
 const VOICE_MIME_CANDIDATES = [
   'audio/ogg;codecs=opus',
   'audio/mp4',
@@ -4544,7 +4544,7 @@ export const PhoneChat: React.FC = () => {
         />
       )}
       <span className={styles.messageAudioMicBadge} aria-hidden="true">
-        <Mic size={24} />
+        <Mic size={21} />
       </span>
     </span>
   )
@@ -4625,11 +4625,13 @@ export const PhoneChat: React.FC = () => {
           onClick={() => handleToggleMessageAudio(message)}
           aria-label={isPlaying ? 'Pausar audio' : 'Reproducir audio'}
         >
-          {isPlaying ? <Pause size={22} /> : <Play size={24} />}
+          {isPlaying ? <Pause size={20} /> : <Play size={22} />}
         </button>
         {renderMessageAudioWaveform(message, isPlaying)}
-        <span className={styles.messageAudioDuration}>{formatVoiceDuration(getMessageAudioDurationMs(message))}</span>
-        {renderMessageMeta(message, styles.messageAudioMeta, { showTransport: false })}
+        <span className={styles.messageAudioDetails}>
+          <span className={styles.messageAudioDuration}>{formatVoiceDuration(getMessageAudioDurationMs(message))}</span>
+          {renderMessageMeta(message, styles.messageAudioMeta, { showTransport: false })}
+        </span>
       </div>
     )
   }

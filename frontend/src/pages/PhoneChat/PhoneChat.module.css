@@ -1950,15 +1950,15 @@
 }
 
 .messageAudioBubble {
-  width: min(346px, calc(100vw - 76px));
-  max-width: min(82%, 346px);
-  min-height: 112px;
-  padding: 12px 14px 10px;
-  border-radius: 20px 20px 20px 5px;
+  width: min(300px, calc(100vw - 96px));
+  max-width: min(78%, 300px);
+  min-height: 0;
+  padding: 9px 10px 7px;
+  border-radius: 18px 18px 18px 5px;
 }
 
 .messageRow_outbound .messageAudioBubble {
-  border-radius: 20px 20px 5px 20px;
+  border-radius: 18px 18px 5px 18px;
 }
 
 .messageAudio {
@@ -1968,26 +1968,28 @@
   display: grid;
   align-items: center;
   width: 100%;
-  min-height: 88px;
-  column-gap: 10px;
-  row-gap: 6px;
+  min-height: 64px;
+  column-gap: 8px;
+  row-gap: 3px;
   color: var(--phone-chat-text);
 }
 
 .messageAudioOutbound {
   --message-audio-dot: #0d0e10;
   --message-audio-control: #4d5451;
-  grid-template-columns: 62px 42px minmax(0, 1fr) auto;
+  grid-template-columns: 52px 34px minmax(0, 1fr);
+  grid-template-rows: 38px 18px;
   grid-template-areas:
-    "avatar play wave wave"
-    "avatar spacer duration meta";
+    "avatar play wave"
+    "avatar details details";
 }
 
 .messageAudioInbound {
-  grid-template-columns: 42px minmax(0, 1fr) auto 62px;
+  grid-template-columns: 34px minmax(0, 1fr) 52px;
+  grid-template-rows: 38px 18px;
   grid-template-areas:
-    "play wave wave avatar"
-    "spacer duration meta avatar";
+    "play wave avatar"
+    "details details avatar";
 }
 
 .messageAudioNative {
@@ -2000,11 +2002,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 58px;
-  height: 58px;
+  width: 50px;
+  height: 50px;
   border-radius: 50%;
   color: #34433c;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 850;
   letter-spacing: 0;
   user-select: none;
@@ -2037,8 +2039,8 @@
 .messageAudioMicBadge {
   position: absolute;
   z-index: 2;
-  right: -5px;
-  bottom: -6px;
+  right: -4px;
+  bottom: -5px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2051,8 +2053,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 42px;
-  height: 42px;
+  width: 34px;
+  height: 34px;
   padding: 0;
   border: 0;
   color: var(--message-audio-control);
@@ -2077,15 +2079,15 @@
   align-items: center;
   gap: 3px;
   min-width: 0;
-  height: 38px;
+  height: 34px;
   padding: 0 2px;
   overflow: hidden;
 }
 
 .messageAudioWaveBar {
   display: inline-block;
-  flex: 0 0 4px;
-  width: 4px;
+  flex: 0 0 3px;
+  width: 3px;
   height: var(--bar-height, 12px);
   min-height: 4px;
   border-radius: 999px;
@@ -2102,9 +2104,9 @@
   position: absolute;
   z-index: 2;
   top: 50%;
-  left: var(--audio-progress, 0%);
-  width: 16px;
-  height: 16px;
+  left: clamp(8px, var(--audio-progress, 0%), calc(100% - 8px));
+  width: 15px;
+  height: 15px;
   border-radius: 50%;
   background: var(--message-audio-dot);
   transform: translate(-50%, -50%);
@@ -2115,15 +2117,34 @@
   box-shadow: 0 0 0 3px rgba(216, 253, 210, 0.78);
 }
 
+.messageAudioDetails {
+  grid-area: details;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-width: 0;
+  column-gap: 8px;
+}
+
+.messageAudioInbound .messageAudioDetails {
+  display: flex;
+  gap: 18px;
+  justify-content: flex-start;
+  padding-left: 42px;
+}
+
 .messageAudioDuration {
-  grid-area: duration;
-  align-self: start;
+  justify-self: center;
   color: var(--phone-chat-muted);
-  font-size: 18px;
-  font-weight: 500;
-  line-height: 1;
+  font-size: 13px;
+  font-weight: 560;
+  line-height: 1.1;
   letter-spacing: 0;
   white-space: nowrap;
+}
+
+.messageAudioInbound .messageAudioDuration {
+  justify-self: auto;
 }
 
 .messageRow_outbound .messageAudioDuration {
@@ -2131,16 +2152,15 @@
 }
 
 .messageAudioMeta {
-  grid-area: meta;
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
-  align-self: start;
+  justify-self: end;
   color: var(--phone-chat-muted);
-  font-size: 16px;
-  font-weight: 520;
-  line-height: 1;
+  font-size: 11px;
+  font-weight: 560;
+  line-height: 1.1;
   letter-spacing: 0;
   white-space: nowrap;
 }
