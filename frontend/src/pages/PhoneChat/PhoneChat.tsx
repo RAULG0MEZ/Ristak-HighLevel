@@ -6940,27 +6940,6 @@ export const PhoneChat: React.FC = () => {
               </button>
             </div>
 
-            <button
-              type="button"
-              className={styles.contactInfoArchiveSummaryButton}
-              onClick={() => {
-                setContactInfoArchiveTab('media')
-                setContactInfoArchiveOpen(true)
-              }}
-            >
-              <span className={styles.contactInfoArchiveSummaryIcon}>
-                <ImageIcon size={18} />
-              </span>
-              <span className={styles.contactInfoArchiveSummaryText}>
-                <strong>Archivos del chat</strong>
-                <small>{archiveSummary}</small>
-              </span>
-              <span className={styles.contactInfoArchiveSummaryAction}>
-                Ver más
-                <ChevronRight size={16} />
-              </span>
-            </button>
-
             {contactInfoDetailPanel === 'payments' && (
               <div className={styles.contactInfoDetailPanel}>
                 <h3>Pagos realizados</h3>
@@ -7002,6 +6981,29 @@ export const PhoneChat: React.FC = () => {
                 )}
               </div>
             )}
+          </section>
+
+          <section className={`${styles.contactInfoSection} ${styles.contactInfoArchiveSection}`}>
+            <button
+              type="button"
+              className={styles.contactInfoArchiveSummaryButton}
+              onClick={() => {
+                setContactInfoArchiveTab('media')
+                setContactInfoArchiveOpen(true)
+              }}
+            >
+              <span className={styles.contactInfoArchiveSummaryIcon}>
+                <ImageIcon size={18} />
+              </span>
+              <span className={styles.contactInfoArchiveSummaryText}>
+                <strong>Archivos del chat</strong>
+                <small>{archiveSummary}</small>
+              </span>
+              <span className={styles.contactInfoArchiveSummaryAction}>
+                Ver más
+                <ChevronRight size={16} />
+              </span>
+            </button>
           </section>
 
           <section className={styles.contactInfoSection}>

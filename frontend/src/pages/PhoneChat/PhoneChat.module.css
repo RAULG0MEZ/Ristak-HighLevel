@@ -1728,15 +1728,18 @@
   line-height: 1.35;
 }
 
+.contactInfoArchiveSection {
+  gap: 0;
+}
+
 .contactInfoArchiveSummaryButton {
   display: grid;
   grid-template-columns: 36px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
   min-width: 0;
-  padding: 10px 0 8px;
+  padding: 2px 0;
   border: 0;
-  border-top: 1px solid var(--phone-chat-border);
   border-radius: 0 !important;
   color: var(--phone-chat-text);
   background: transparent !important;
