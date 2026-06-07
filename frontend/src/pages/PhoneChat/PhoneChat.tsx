@@ -6000,7 +6000,7 @@ export const PhoneChat: React.FC = () => {
             >
               <div className={`${styles.messageBubble} ${styles.aiMessageBubble}`}>
                 <p>{message.content}</p>
-                <span>{formatMessageTime(message.createdAt)}</span>
+                <span className={styles.messageMeta}>{formatMessageTime(message.createdAt)}</span>
               </div>
             </div>
           ))}
@@ -6008,7 +6008,7 @@ export const PhoneChat: React.FC = () => {
             <div className={`${styles.messageRow} ${styles.messageRow_inbound}`}>
               <div className={`${styles.messageBubble} ${styles.aiMessageBubble}`}>
                 <p>Pensando...</p>
-                <span><Loader2 size={13} className={styles.spinIcon} /></span>
+                <span className={styles.messageMeta}><Loader2 size={13} className={styles.spinIcon} /></span>
               </div>
             </div>
           )}
