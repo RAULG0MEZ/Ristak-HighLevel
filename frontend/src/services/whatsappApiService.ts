@@ -188,6 +188,7 @@ export interface WhatsAppApiAudioSendPayload {
   audioUrl?: string
   durationMs?: number
   externalId?: string
+  transport?: 'api' | 'qr'
   phoneNumberId?: string
 }
 

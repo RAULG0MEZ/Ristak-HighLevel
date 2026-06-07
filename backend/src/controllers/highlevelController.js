@@ -108,6 +108,73 @@ function hashId(prefix, value) {
   return `${prefix}_${crypto.createHash('sha256').update(raw).digest('hex').slice(0, 32)}`;
 }
 
+const HIGHLEVEL_ATTACHMENT_MIME_BY_EXTENSION = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  mp4: 'video/mp4',
+  mov: 'video/quicktime',
+  webm: 'video/webm',
+  mp3: 'audio/mpeg',
+  m4a: 'audio/mp4',
+  ogg: 'audio/ogg',
+  wav: 'audio/wav',
+  pdf: 'application/pdf',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  csv: 'text/csv',
+  txt: 'text/plain',
+  zip: 'application/zip'
+};
+
+function getHighLevelAttachmentPathname(url = '') {
+  const value = cleanString(url);
+  if (!value) return '';
+
+  try {
+    return new URL(value).pathname || value;
+  } catch {
+    return value.split('?')[0].split('#')[0];
+  }
+}
+
+function getHighLevelAttachmentInfo(url = '') {
+  const mediaUrl = cleanString(url);
+  const pathname = getHighLevelAttachmentPathname(mediaUrl);
+  const rawFilename = pathname.split('/').filter(Boolean).pop() || '';
+  const mediaFilename = (() => {
+    try {
+      return decodeURIComponent(rawFilename);
+    } catch {
+      return rawFilename;
+    }
+  })();
+  const extension = cleanString(mediaFilename.split('.').pop()).toLowerCase();
+  const mediaMimeType = HIGHLEVEL_ATTACHMENT_MIME_BY_EXTENSION[extension] || '';
+  const messageType = mediaMimeType.startsWith('image/')
+    ? 'image'
+    : mediaMimeType.startsWith('video/')
+      ? 'video'
+      : mediaMimeType.startsWith('audio/')
+        ? 'audio'
+        : mediaMimeType.startsWith('application/') || mediaMimeType.startsWith('text/')
+          ? 'document'
+          : 'file';
+
+  return {
+    mediaUrl,
+    mediaMimeType,
+    mediaFilename,
+    messageType
+  };
+}
+
 function normalizeGhlChatChannel(value) {
   const normalized = cleanString(value).toLowerCase().replace(/[\s-]+/g, '_');
   const compact = normalized.replace(/_/g, '');
@@ -1690,16 +1757,14 @@ function getHighLevelResponseStatus(response = {}) {
   return 'pending';
 }
 
-async function saveHighLevelWhatsAppMirror({ contact, channel, text, fromNumber, toNumber, externalId, requestBody, response }) {
+async function saveHighLevelWhatsAppMirror({ contact, channel, text, attachments = [], fromNumber, toNumber, externalId, requestBody, response }) {
   const now = new Date().toISOString();
   const remoteMessageId = getHighLevelMessageId(response, externalId);
   const deliveryStatus = getHighLevelResponseStatus(response);
-  const localMessageId = hashId(
-    'ghl_msg',
-    remoteMessageId || `${contact.id}:${channel.key}:${text}:${now}`
-  );
   const contactPhone = normalizePhoneForStorage(toNumber || contact.phone) || cleanString(toNumber || contact.phone);
   const businessPhone = normalizePhoneForStorage(fromNumber) || cleanString(fromNumber);
+  const attachmentItems = attachments.map(getHighLevelAttachmentInfo).filter(item => item.mediaUrl);
+  const mirrorItems = attachmentItems.length ? attachmentItems : [null];
   const rawPayload = safeJsonStringify({
     provider: 'highlevel',
     channel: channel.key,
@@ -1707,63 +1772,79 @@ async function saveHighLevelWhatsAppMirror({ contact, channel, text, fromNumber,
     response
   });
 
-  await db.run(`
-    INSERT INTO whatsapp_api_messages (
-      id, ycloud_message_id, wamid, waba_id, business_phone_number_id,
-      whatsapp_api_contact_id, contact_id,
-      phone, from_phone, to_phone, business_phone, transport, direction, message_type,
-      message_text, status, message_timestamp, raw_payload_json, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(id) DO UPDATE SET
-      contact_id = COALESCE(excluded.contact_id, whatsapp_api_messages.contact_id),
-      phone = COALESCE(NULLIF(excluded.phone, ''), whatsapp_api_messages.phone),
-      from_phone = COALESCE(NULLIF(excluded.from_phone, ''), whatsapp_api_messages.from_phone),
-      to_phone = COALESCE(NULLIF(excluded.to_phone, ''), whatsapp_api_messages.to_phone),
-      business_phone = COALESCE(NULLIF(excluded.business_phone, ''), whatsapp_api_messages.business_phone),
-      transport = COALESCE(NULLIF(excluded.transport, ''), whatsapp_api_messages.transport),
-      direction = COALESCE(NULLIF(excluded.direction, ''), whatsapp_api_messages.direction),
-      message_type = COALESCE(NULLIF(excluded.message_type, ''), whatsapp_api_messages.message_type),
-      message_text = COALESCE(NULLIF(excluded.message_text, ''), whatsapp_api_messages.message_text),
-      status = COALESCE(NULLIF(excluded.status, ''), whatsapp_api_messages.status),
-      message_timestamp = COALESCE(excluded.message_timestamp, whatsapp_api_messages.message_timestamp),
-      raw_payload_json = excluded.raw_payload_json,
-      updated_at = CURRENT_TIMESTAMP
-  `, [
-    localMessageId,
-    remoteMessageId || null,
-    null,
-    null,
-    null,
-    null,
-    contact.id,
-    contactPhone || null,
-    businessPhone || null,
-    contactPhone || null,
-    businessPhone || null,
-    channel.transport,
-    'outbound',
-    'text',
-    text,
-    deliveryStatus,
-    now,
-    rawPayload
-  ]);
+  let firstLocalMessageId = '';
+  for (const [index, attachment] of mirrorItems.entries()) {
+    const localMessageId = hashId(
+      'ghl_msg',
+      remoteMessageId
+        ? `${remoteMessageId}:${index}`
+        : `${contact.id}:${channel.key}:${text}:${attachment?.mediaUrl || ''}:${now}:${index}`
+    );
+    if (!firstLocalMessageId) firstLocalMessageId = localMessageId;
+
+    await db.run(`
+      INSERT INTO whatsapp_api_messages (
+        id, ycloud_message_id, wamid, waba_id, business_phone_number_id,
+        whatsapp_api_contact_id, contact_id,
+        phone, from_phone, to_phone, business_phone, transport, direction, message_type,
+        message_text, media_url, media_mime_type, media_filename,
+        status, message_timestamp, raw_payload_json, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(id) DO UPDATE SET
+        contact_id = COALESCE(excluded.contact_id, whatsapp_api_messages.contact_id),
+        phone = COALESCE(NULLIF(excluded.phone, ''), whatsapp_api_messages.phone),
+        from_phone = COALESCE(NULLIF(excluded.from_phone, ''), whatsapp_api_messages.from_phone),
+        to_phone = COALESCE(NULLIF(excluded.to_phone, ''), whatsapp_api_messages.to_phone),
+        business_phone = COALESCE(NULLIF(excluded.business_phone, ''), whatsapp_api_messages.business_phone),
+        transport = COALESCE(NULLIF(excluded.transport, ''), whatsapp_api_messages.transport),
+        direction = COALESCE(NULLIF(excluded.direction, ''), whatsapp_api_messages.direction),
+        message_type = COALESCE(NULLIF(excluded.message_type, ''), whatsapp_api_messages.message_type),
+        message_text = COALESCE(NULLIF(excluded.message_text, ''), whatsapp_api_messages.message_text),
+        media_url = COALESCE(NULLIF(excluded.media_url, ''), whatsapp_api_messages.media_url),
+        media_mime_type = COALESCE(NULLIF(excluded.media_mime_type, ''), whatsapp_api_messages.media_mime_type),
+        media_filename = COALESCE(NULLIF(excluded.media_filename, ''), whatsapp_api_messages.media_filename),
+        status = COALESCE(NULLIF(excluded.status, ''), whatsapp_api_messages.status),
+        message_timestamp = COALESCE(excluded.message_timestamp, whatsapp_api_messages.message_timestamp),
+        raw_payload_json = excluded.raw_payload_json,
+        updated_at = CURRENT_TIMESTAMP
+    `, [
+      localMessageId,
+      remoteMessageId || null,
+      null,
+      null,
+      null,
+      null,
+      contact.id,
+      contactPhone || null,
+      businessPhone || null,
+      contactPhone || null,
+      businessPhone || null,
+      channel.transport,
+      'outbound',
+      attachment?.messageType || 'text',
+      index === 0 ? text : '',
+      attachment?.mediaUrl || null,
+      attachment?.mediaMimeType || null,
+      attachment?.mediaFilename || null,
+      deliveryStatus,
+      now,
+      rawPayload
+    ]);
+  }
 
   return {
-    localMessageId,
+    localMessageId: firstLocalMessageId,
     status: deliveryStatus
   };
 }
 
-async function saveHighLevelMetaMirror({ contact, channel, text, externalId, requestBody, response }) {
+async function saveHighLevelMetaMirror({ contact, channel, text, attachments = [], externalId, requestBody, response }) {
   const now = new Date().toISOString();
   const platform = channel.platform;
   const remoteMessageId = getHighLevelMessageId(response, externalId);
   const deliveryStatus = getHighLevelResponseStatus(response);
-  const localMessageId = hashId(
-    'ghl_meta_msg',
-    remoteMessageId || `${contact.id}:${platform}:${text}:${now}`
-  );
+  const attachmentItems = attachments.map(getHighLevelAttachmentInfo).filter(item => item.mediaUrl);
+  const mirrorItems = attachmentItems.length ? attachmentItems : [null];
   const profile = await db.get(
     `SELECT id, sender_id, recipient_id, page_id, instagram_account_id
      FROM meta_social_contacts
@@ -1779,51 +1860,64 @@ async function saveHighLevelMetaMirror({ contact, channel, text, externalId, req
     response
   });
 
-  await db.run(`
-    INSERT INTO meta_social_messages (
-      id, platform, meta_message_id, meta_social_contact_id, contact_id,
-      sender_id, recipient_id, page_id, instagram_account_id,
-      direction, status, message_type, message_text, media_url, media_mime_type,
-      postback_payload, message_timestamp, raw_payload_json, referral_json, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(id) DO UPDATE SET
-      meta_social_contact_id = COALESCE(excluded.meta_social_contact_id, meta_social_messages.meta_social_contact_id),
-      contact_id = COALESCE(excluded.contact_id, meta_social_messages.contact_id),
-      sender_id = COALESCE(NULLIF(excluded.sender_id, ''), meta_social_messages.sender_id),
-      recipient_id = COALESCE(NULLIF(excluded.recipient_id, ''), meta_social_messages.recipient_id),
-      page_id = COALESCE(NULLIF(excluded.page_id, ''), meta_social_messages.page_id),
-      instagram_account_id = COALESCE(NULLIF(excluded.instagram_account_id, ''), meta_social_messages.instagram_account_id),
-      direction = COALESCE(NULLIF(excluded.direction, ''), meta_social_messages.direction),
-      status = COALESCE(NULLIF(excluded.status, ''), meta_social_messages.status),
-      message_type = COALESCE(NULLIF(excluded.message_type, ''), meta_social_messages.message_type),
-      message_text = COALESCE(NULLIF(excluded.message_text, ''), meta_social_messages.message_text),
-      message_timestamp = COALESCE(excluded.message_timestamp, meta_social_messages.message_timestamp),
-      raw_payload_json = excluded.raw_payload_json,
-      updated_at = CURRENT_TIMESTAMP
-  `, [
-    localMessageId,
-    platform,
-    remoteMessageId || null,
-    profile?.id || null,
-    contact.id,
-    profile?.recipient_id || profile?.page_id || profile?.instagram_account_id || null,
-    profile?.sender_id || null,
-    profile?.page_id || null,
-    profile?.instagram_account_id || null,
-    'outbound',
-    deliveryStatus,
-    'message',
-    text,
-    null,
-    null,
-    null,
-    now,
-    rawPayload,
-    null
-  ]);
+  let firstLocalMessageId = '';
+  for (const [index, attachment] of mirrorItems.entries()) {
+    const localMessageId = hashId(
+      'ghl_meta_msg',
+      remoteMessageId
+        ? `${remoteMessageId}:${index}`
+        : `${contact.id}:${platform}:${text}:${attachment?.mediaUrl || ''}:${now}:${index}`
+    );
+    if (!firstLocalMessageId) firstLocalMessageId = localMessageId;
+
+    await db.run(`
+      INSERT INTO meta_social_messages (
+        id, platform, meta_message_id, meta_social_contact_id, contact_id,
+        sender_id, recipient_id, page_id, instagram_account_id,
+        direction, status, message_type, message_text, media_url, media_mime_type,
+        postback_payload, message_timestamp, raw_payload_json, referral_json, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(id) DO UPDATE SET
+        meta_social_contact_id = COALESCE(excluded.meta_social_contact_id, meta_social_messages.meta_social_contact_id),
+        contact_id = COALESCE(excluded.contact_id, meta_social_messages.contact_id),
+        sender_id = COALESCE(NULLIF(excluded.sender_id, ''), meta_social_messages.sender_id),
+        recipient_id = COALESCE(NULLIF(excluded.recipient_id, ''), meta_social_messages.recipient_id),
+        page_id = COALESCE(NULLIF(excluded.page_id, ''), meta_social_messages.page_id),
+        instagram_account_id = COALESCE(NULLIF(excluded.instagram_account_id, ''), meta_social_messages.instagram_account_id),
+        direction = COALESCE(NULLIF(excluded.direction, ''), meta_social_messages.direction),
+        status = COALESCE(NULLIF(excluded.status, ''), meta_social_messages.status),
+        message_type = COALESCE(NULLIF(excluded.message_type, ''), meta_social_messages.message_type),
+        message_text = COALESCE(NULLIF(excluded.message_text, ''), meta_social_messages.message_text),
+        media_url = COALESCE(NULLIF(excluded.media_url, ''), meta_social_messages.media_url),
+        media_mime_type = COALESCE(NULLIF(excluded.media_mime_type, ''), meta_social_messages.media_mime_type),
+        message_timestamp = COALESCE(excluded.message_timestamp, meta_social_messages.message_timestamp),
+        raw_payload_json = excluded.raw_payload_json,
+        updated_at = CURRENT_TIMESTAMP
+    `, [
+      localMessageId,
+      platform,
+      remoteMessageId || null,
+      profile?.id || null,
+      contact.id,
+      profile?.recipient_id || profile?.page_id || profile?.instagram_account_id || null,
+      profile?.sender_id || null,
+      profile?.page_id || null,
+      profile?.instagram_account_id || null,
+      'outbound',
+      deliveryStatus,
+      attachment?.messageType || 'message',
+      index === 0 ? text : '',
+      attachment?.mediaUrl || null,
+      attachment?.mediaMimeType || null,
+      null,
+      now,
+      rawPayload,
+      null
+    ]);
+  }
 
   return {
-    localMessageId,
+    localMessageId: firstLocalMessageId,
     status: deliveryStatus
   };
 }
@@ -1902,6 +1996,7 @@ export const sendConversationMessage = async (req, res) => {
           contact,
           channel: channelConfig,
           text,
+          attachments: attachmentUrls,
           externalId,
           requestBody,
           response
@@ -1910,6 +2005,7 @@ export const sendConversationMessage = async (req, res) => {
           contact,
           channel: channelConfig,
           text,
+          attachments: attachmentUrls,
           fromNumber: cleanFromNumber,
           toNumber: cleanToNumber,
           externalId,

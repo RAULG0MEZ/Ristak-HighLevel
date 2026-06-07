@@ -2185,6 +2185,14 @@ export const getContactJourney = async (req, res) => {
     // fechas— y fusiona la info dando prioridad a la atribución de anuncio. Aquí solo se
     // aplica la regla temporal: después del primer pago, solo se conservan los eventos
     // de WhatsApp que vengan con atribución de anuncio.
+    const isStoredChatMessageEvent = (event) => Boolean(
+      event?.data?.whatsapp_api_message_id ||
+      event?.data?.whatsapp_message_id ||
+      event?.data?.message_type ||
+      event?.data?.direction ||
+      event?.data?.transport
+    )
+
     const addWhatsAppJourneyEvents = (events) => {
       events
         .filter(event => event?.date)
@@ -2193,7 +2201,7 @@ export const getContactJourney = async (req, res) => {
           const eventTime = getDateTime(event.date)
           const isAfterFirstPayment = firstPaymentTime !== null && eventTime >= firstPaymentTime
 
-          if (isAfterFirstPayment && !event.data?.is_ad_attributed) {
+          if (isAfterFirstPayment && !event.data?.is_ad_attributed && !isStoredChatMessageEvent(event)) {
             return
           }
 

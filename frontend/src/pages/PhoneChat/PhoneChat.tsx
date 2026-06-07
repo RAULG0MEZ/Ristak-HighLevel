@@ -4215,11 +4215,6 @@ export const PhoneChat: React.FC = () => {
       return
     }
 
-    if (resolvedTransport === 'qr' && (attachmentsToSend.length > 0 || voiceToSend)) {
-      showToast('warning', 'QR solo manda texto', 'Quita el archivo o manda una plantilla aprobada.')
-      return
-    }
-
     const optimisticId = `local-${Date.now()}`
     const sentAt = new Date().toISOString()
     setComposerStatus('sending')
@@ -4299,6 +4294,7 @@ export const PhoneChat: React.FC = () => {
           audioDataUrl: voiceToSend.dataUrl,
           durationMs: voiceToSend.durationMs,
           externalId: `${optimisticId}-audio`,
+          transport: resolvedTransport,
           phoneNumberId: selectedBusinessPhone?.id || undefined
         })
         setMessages((current) => current.map((message) => (
@@ -5787,6 +5783,16 @@ export const PhoneChat: React.FC = () => {
         value: formatCustomFieldValue(field.value)
       }))
       .filter((field) => field.value.trim().length > 0)
+    const archiveTabs: Array<{ id: ContactInfoArchiveTab; label: string; count: number }> = [
+      { id: 'media', label: 'Fotos y videos', count: contactInfoArchiveCounts.media },
+      { id: 'links', label: 'Enlaces', count: contactInfoArchiveCounts.links },
+      { id: 'documents', label: 'Documentos', count: contactInfoArchiveCounts.documents }
+    ]
+    const archiveEmptyText = contactInfoArchiveTab === 'media'
+      ? 'Aún no hay fotos ni videos guardados en este chat.'
+      : contactInfoArchiveTab === 'links'
+        ? 'Aún no hay enlaces guardados en este chat.'
+        : 'Aún no hay documentos guardados en este chat.'
 
     return (
       <section
@@ -5819,6 +5825,38 @@ export const PhoneChat: React.FC = () => {
               </span>
             )}
             {contactInfoError && <span className={styles.contactInfoError}>{contactInfoError}</span>}
+          </section>
+
+          <section className={styles.contactInfoSection}>
+            <h3>Archivos del chat</h3>
+            <div className={styles.contactInfoArchiveTabs} role="tablist" aria-label="Archivos enviados en el chat">
+              {archiveTabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={contactInfoArchiveTab === tab.id}
+                  className={contactInfoArchiveTab === tab.id ? styles.contactInfoArchiveTabActive : ''}
+                  onClick={() => setContactInfoArchiveTab(tab.id)}
+                >
+                  <span>{tab.label}</span>
+                  <small>{tab.count}</small>
+                </button>
+              ))}
+            </div>
+            {contactInfoVisibleArchiveItems.length > 0 ? (
+              contactInfoArchiveTab === 'media' ? (
+                <div className={styles.contactInfoMediaGrid}>
+                  {contactInfoVisibleArchiveItems.map(renderContactInfoArchiveItem)}
+                </div>
+              ) : (
+                <div className={styles.contactInfoArchiveList}>
+                  {contactInfoVisibleArchiveItems.map(renderContactInfoArchiveItem)}
+                </div>
+              )
+            ) : (
+              <p className={styles.contactInfoDetailEmpty}>{archiveEmptyText}</p>
+            )}
           </section>
 
           <section className={styles.contactInfoSection}>

@@ -4251,10 +4251,12 @@ export async function sendWhatsAppApiAudioMessage({
   externalId,
   publicBaseUrl,
   durationMs,
+  transport = 'api',
   phoneNumberId
 } = {}) {
   const config = await loadConfig({ includeSecrets: true })
-  if (!config.enabled || !config.apiKey) {
+  const cleanTransport = cleanString(transport).toLowerCase() === 'qr' ? 'qr' : 'api'
+  if (cleanTransport !== 'qr' && (!config.enabled || !config.apiKey)) {
     throw new Error('WhatsApp_API no está conectado')
   }
 
@@ -4269,12 +4271,16 @@ export async function sendWhatsAppApiAudioMessage({
   let savedAudio = null
 
   if (!link) {
-    const baseUrl = requirePublicHttpsBaseUrl(publicBaseUrl || process.env.RENDER_EXTERNAL_URL || process.env.PUBLIC_URL)
     savedAudio = await saveWhatsAppAudioDataUrl(audioDataUrl)
-    link = `${baseUrl}${savedAudio.publicPath}`
+    if (cleanTransport === 'qr') {
+      link = buildLocalMediaUrl(savedAudio, publicBaseUrl)
+    } else {
+      const baseUrl = requirePublicHttpsBaseUrl(publicBaseUrl || process.env.RENDER_EXTERNAL_URL || process.env.PUBLIC_URL)
+      link = `${baseUrl}${savedAudio.publicPath}`
+    }
   }
 
-  if (!/^https:\/\//i.test(link)) {
+  if (cleanTransport !== 'qr' && !/^https:\/\//i.test(link)) {
     throw new Error('El audio necesita un enlace público HTTPS para poder enviarse por WhatsApp.')
   }
 
@@ -4288,6 +4294,22 @@ export async function sendWhatsAppApiAudioMessage({
     filterUnsubscribed: true,
     filterBlocked: true,
     ...(externalId ? { externalId } : {})
+  }
+
+  if (cleanTransport === 'qr') {
+    return sendAudioViaQrFallback({
+      phoneNumberId,
+      fromPhone,
+      toPhone,
+      requestAudio: {
+        ...requestBody.audio,
+        ...(savedAudio?.mimeType ? { mimeType: savedAudio.mimeType } : {})
+      },
+      audioDataUrl,
+      externalId,
+      localMedia: savedAudio,
+      durationMs
+    })
   }
 
   const fallbackDecision = await getOfficialApiFallbackDecision({
