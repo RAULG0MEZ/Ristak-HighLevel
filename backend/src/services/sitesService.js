@@ -1394,6 +1394,91 @@ function getImportedEditTypeFromAttrs(attrsText = '') {
   return normalizeImportedEditableContentType(getImportedEditableAttr(parseHtmlAttributes(attrsText), 'type'))
 }
 
+const IMPORTED_HTML_VOID_TAGS = new Set([
+  'area',
+  'base',
+  'br',
+  'col',
+  'embed',
+  'hr',
+  'img',
+  'input',
+  'link',
+  'meta',
+  'param',
+  'source',
+  'track',
+  'wbr'
+])
+
+function isImportedHtmlSelfClosingTag(tagName = '', openingTag = '') {
+  return IMPORTED_HTML_VOID_TAGS.has(cleanString(tagName).toLowerCase()) || /\/\s*>$/.test(openingTag)
+}
+
+function findImportedHtmlElementEnd(html = '', tagName = '', openEnd = 0) {
+  const source = String(html || '')
+  const tag = cleanString(tagName).toLowerCase()
+  if (!tag) return -1
+
+  const tagPattern = new RegExp(`<\\/?${escapeRegExp(tag)}\\b[^>]*>`, 'gi')
+  tagPattern.lastIndex = openEnd
+
+  let depth = 1
+  let match
+  while ((match = tagPattern.exec(source))) {
+    const token = match[0] || ''
+    if (/^<\s*\//.test(token)) {
+      depth -= 1
+      if (depth === 0) return tagPattern.lastIndex
+      continue
+    }
+
+    if (!isImportedHtmlSelfClosingTag(tag, token)) {
+      depth += 1
+    }
+  }
+
+  return -1
+}
+
+function replaceImportedEditableElementById(html = '', editId = '', editType = '', buildReplacement = null) {
+  const source = String(html || '')
+  if (!editId || !editType || typeof buildReplacement !== 'function') {
+    return { html: source, updated: false }
+  }
+
+  const openingPattern = /<([a-z][\w:-]*)\b([^>]*)>/gi
+  let match
+  while ((match = openingPattern.exec(source))) {
+    const tagName = match[1] || ''
+    const attrsText = match[2] || ''
+    if (!hasImportedEditId(attrsText, editId) || getImportedEditTypeFromAttrs(attrsText) !== editType) continue
+
+    const openingTag = match[0] || ''
+    const start = match.index
+    const openEnd = openingPattern.lastIndex
+    const selfClosing = isImportedHtmlSelfClosingTag(tagName, openingTag)
+    const end = selfClosing ? openEnd : findImportedHtmlElementEnd(source, tagName, openEnd)
+    if (end < openEnd) continue
+
+    const replacement = buildReplacement({
+      attrsText,
+      openingTag,
+      tagName,
+      selfClosing
+    })
+
+    if (typeof replacement !== 'string' || !replacement) continue
+
+    return {
+      html: `${source.slice(0, start)}${replacement}${source.slice(end)}`,
+      updated: true
+    }
+  }
+
+  return { html: source, updated: false }
+}
+
 function setHtmlAttribute(openingTag = '', _attrsText = '', attrName = '', value = '') {
   const escapedValue = escapeHtml(value)
   const attrPattern = new RegExp(`(\\s${escapeRegExp(attrName)}\\s*=\\s*)("[^"]*"|'[^']*'|[^\\s>]+)`, 'i')
@@ -1971,6 +2056,25 @@ function applyImportedEditableContentUpdate(html = '', input = {}) {
     })
   } else if (editType === 'video') {
     const mediaMarkup = buildImportedVideoMediaMarkup(value)
+    const preciseVideoUpdate = replaceImportedEditableElementById(nextHtml, editId, 'video', ({
+      attrsText,
+      openingTag,
+      tagName,
+      selfClosing
+    }) => {
+      const tag = cleanString(tagName).toLowerCase()
+      if (selfClosing || ['iframe', 'video', 'object', 'embed', 'wistia-player'].includes(tag)) {
+        return buildImportedVideoReplacement(value, attrsText, editId)
+      }
+
+      const videoSource = normalizeImportedVideoEmbed(value).src
+      const openingTagWithSource = setHtmlAttribute(openingTag, attrsText, 'data-rstk-video-url', videoSource)
+      return `${openingTagWithSource}${mediaMarkup}</${tagName}>`
+    })
+    if (preciseVideoUpdate.updated) {
+      updated = true
+      nextHtml = preciseVideoUpdate.html
+    }
     nextHtml = nextHtml.replace(/<(iframe|video|object)\b([^>]*)>[\s\S]*?<\/\1>/gi, (match, _tagName, attrsText = '') => {
       if (updated || !hasImportedEditId(attrsText, editId) || getImportedEditTypeFromAttrs(attrsText) !== 'video') return match
       updated = true
