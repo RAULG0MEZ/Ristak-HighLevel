@@ -7010,7 +7010,7 @@ export async function reorderBlocks(siteId, blockIds = [], { pageId } = {}) {
   const pageBlocks = normalizedPageId
     ? existing.filter(block => {
         const blockPageId = cleanString(block.settings?.pageId || block.settings?.page_id)
-        return blockPageId === normalizedPageId || (!blockPageId && normalizedPageId === DEFAULT_FUNNEL_PAGE_ID)
+        return isGlobalHeaderBlock(block) || blockPageId === normalizedPageId || (!blockPageId && normalizedPageId === DEFAULT_FUNNEL_PAGE_ID)
       })
     : existing
   const existingIds = new Set(pageBlocks.map(block => block.id))
@@ -7727,13 +7727,25 @@ function getBlockPageId(block, pages) {
   return pages.some(page => page.id === pageId) ? pageId : pages[0]?.id || DEFAULT_FUNNEL_PAGE_ID
 }
 
+function getHeaderScope(block) {
+  return block?.blockType === 'header_panel' && cleanString(block?.settings?.headerScope || block?.settings?.header_scope) === 'global'
+    ? 'global'
+    : 'page'
+}
+
+function isGlobalHeaderBlock(block) {
+  return Boolean(block && block.blockType === 'header_panel' && getHeaderScope(block) === 'global')
+}
+
 function getPageBlocks(site, pageId) {
   const blocks = Array.isArray(site?.blocks) ? site.blocks : []
   if (site?.siteType !== 'landing_page' && site?.siteType !== 'standard_form') return blocks
 
   const pages = normalizeSitePages(site)
   const activePage = pages.find(page => page.id === pageId) || pages[0]
-  return blocks.filter(block => getBlockPageId(block, pages) === activePage.id)
+  return blocks.filter(block => (
+    site?.siteType === 'landing_page' && isGlobalHeaderBlock(block)
+  ) || getBlockPageId(block, pages) === activePage.id)
 }
 
 function getStandardFormContentPages(site) {

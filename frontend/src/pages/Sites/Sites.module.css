@@ -4476,6 +4476,10 @@
   box-shadow: 0 30px 90px -38px rgba(2, 6, 23, 0.82);
 }
 
+.headerModal {
+  width: min(720px, 100%);
+}
+
 .seoModalHeader {
   display: flex;
   align-items: center;
@@ -4523,6 +4527,86 @@
   gap: 14px;
   overflow: auto;
   padding: 16px 20px 18px;
+}
+
+.headerModalBody {
+  gap: 16px;
+}
+
+.headerModalIntro {
+  display: grid;
+  gap: 6px;
+}
+
+.headerModalIntro p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.headerModalMetaCard {
+  width: 100%;
+  height: auto;
+  min-height: 54px;
+  justify-content: flex-start;
+}
+
+.headerModalMetaCard .metaSwitch {
+  margin-left: auto;
+}
+
+.headerModalEmpty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px dashed rgba(148, 163, 184, 0.26);
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.06);
+  padding: 14px;
+}
+
+.headerModalEmpty strong {
+  display: block;
+  color: var(--color-text-primary);
+  font-size: 0.9rem;
+  font-weight: 900;
+}
+
+.headerModalEmpty p {
+  margin: 4px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.headerModalControls {
+  display: grid;
+  gap: 10px;
+}
+
+.headerModalInlineActions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.headerModalInlineActions button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  background: var(--color-background-primary);
+  color: var(--color-text-primary);
+  padding: 0 11px;
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.headerModalInlineActions button:hover {
+  background: rgba(148, 163, 184, 0.1);
 }
 
 .seoSection {
@@ -10115,6 +10199,10 @@
   background: rgba(249, 115, 22, 0.14);
 }
 
+.headerToolbarButton {
+  color: var(--color-text-primary);
+}
+
 .seoToolbarAlert {
   min-width: 24px;
   height: 22px;
@@ -10575,8 +10663,12 @@
 .editorToolbarTop .editorToolbarLeft .seoToolbarButton {
   height: 34px;
   min-height: 34px;
-  max-width: min(310px, 30vw);
+  max-width: 118px;
   padding-inline: 10px;
+}
+
+.editorToolbarTop .editorToolbarLeft .headerToolbarButton {
+  max-width: 126px;
 }
 
 .editorToolbarTop .editorToolbarLeft .seoToolbarButton > span:first-of-type {

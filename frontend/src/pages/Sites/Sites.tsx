@@ -453,6 +453,9 @@ const LANDING_DEFAULT_PAGE_PADDING = 36
 const HEADER_PANEL_BLOCK_TYPE: SiteBlockType = 'header_panel'
 const FOOTER_PANEL_BLOCK_TYPE: SiteBlockType = 'footer_panel'
 const PANEL_BLOCK_TYPES = new Set<SiteBlockType>([HEADER_PANEL_BLOCK_TYPE, FOOTER_PANEL_BLOCK_TYPE])
+type HeaderScope = 'global' | 'page'
+const HEADER_SCOPE_GLOBAL: HeaderScope = 'global'
+const HEADER_SCOPE_PAGE: HeaderScope = 'page'
 const SPACING_OVERLAP_MIN = -80
 const makeLandingSpacing = (top: number, bottom: number, right = 0, left = 0) => ({
   blockMarginLinked: false,
@@ -1899,6 +1902,23 @@ const getBlockPageId = (block: SiteBlock, pages: SitePage[]) => {
   return pages.some(page => page.id === pageId) ? pageId : pages[0]?.id || DEFAULT_FUNNEL_PAGE_ID
 }
 
+const getHeaderScope = (block?: SiteBlock | null): HeaderScope => (
+  block?.blockType === HEADER_PANEL_BLOCK_TYPE &&
+  (getSettingString(block.settings || {}, 'headerScope') || getSettingString(block.settings || {}, 'header_scope')) === HEADER_SCOPE_GLOBAL
+    ? HEADER_SCOPE_GLOBAL
+    : HEADER_SCOPE_PAGE
+)
+
+const isGlobalHeaderBlock = (block?: SiteBlock | null) => (
+  Boolean(block && block.blockType === HEADER_PANEL_BLOCK_TYPE && getHeaderScope(block) === HEADER_SCOPE_GLOBAL)
+)
+
+const isPageHeaderBlock = (block: SiteBlock, pages: SitePage[], pageId?: string | null) => (
+  block.blockType === HEADER_PANEL_BLOCK_TYPE &&
+  !isGlobalHeaderBlock(block) &&
+  Boolean(pageId && getBlockPageId(block, pages) === pageId)
+)
+
 const isSectionBlock = (block?: SiteBlock | null) => block?.blockType === SECTION_BLOCK_TYPE
 const isPanelBlock = (block?: SiteBlock | null) => Boolean(block && PANEL_BLOCK_TYPES.has(block.blockType))
 const isTopLevelLandingBlock = (block?: SiteBlock | null) => isSectionBlock(block) || isPanelBlock(block)
@@ -2637,6 +2657,7 @@ export const Sites: React.FC = () => {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [editorFocusMode, setEditorFocusMode] = useState(routeState.focus)
   const [seoModalOpen, setSeoModalOpen] = useState(false)
+  const [headerModalOpen, setHeaderModalOpen] = useState(false)
   const [pendingImportSiteType, setPendingImportSiteType] = useState<SiteType>('landing_page')
   const [importReview, setImportReview] = useState<ImportReviewState | null>(null)
   const [selectedImportData, setSelectedImportData] = useState<ImportedSiteImport | null>(null)
@@ -2730,9 +2751,17 @@ export const Sites: React.FC = () => {
   const activePage = pages.find(page => page.id === activePageId) || pages[0] || null
   const canvasBlocks = useMemo(
     () => hasEditablePages(selectedSite) && activePage
-      ? blocks.filter(block => getBlockPageId(block, pages) === activePage.id)
+      ? blocks.filter(block => isGlobalHeaderBlock(block) || getBlockPageId(block, pages) === activePage.id)
       : blocks,
     [activePage, blocks, pages, selectedSite]
+  )
+  const globalHeaderBlock = useMemo(
+    () => blocks.find(isGlobalHeaderBlock) || null,
+    [blocks]
+  )
+  const activePageHeaderBlock = useMemo(
+    () => activePage ? blocks.find(block => isPageHeaderBlock(block, pages, activePage.id)) || null : null,
+    [activePage, blocks, pages]
   )
   const selectedBlock = canvasBlocks.find(block => block.id === selectedBlockId) || null
   const activeDragBlock = canvasBlocks.find(block => block.id === activeDragId) || null
@@ -2817,6 +2846,7 @@ export const Sites: React.FC = () => {
   useEffect(() => {
     setEditorFocusMode(routeState.focus)
     setSeoModalOpen(false)
+    setHeaderModalOpen(false)
   }, [editorSite?.id, routeState.focus])
 
   useEffect(() => {
@@ -3531,7 +3561,7 @@ export const Sites: React.FC = () => {
         ...(selectedSite.theme || {}),
         pages: normalizePagesForSave(orderedPages)
       })
-      const sourceBlocks = blocks.filter(block => getBlockPageId(block, pages) === pageId)
+      const sourceBlocks = blocks.filter(block => !isGlobalHeaderBlock(block) && getBlockPageId(block, pages) === pageId)
       for (const block of sourceBlocks) {
         site = await sitesService.createBlock(selectedSite.id, cloneBlockForPage(block, nextPage.id))
       }
@@ -3575,7 +3605,7 @@ export const Sites: React.FC = () => {
           try {
             let site = selectedSite
             const pageBlockIds = blocks
-              .filter(block => getBlockPageId(block, pages) === pageId)
+              .filter(block => !isGlobalHeaderBlock(block) && getBlockPageId(block, pages) === pageId)
               .map(block => block.id)
             for (const blockId of pageBlockIds) {
               site = await sitesService.deleteBlock(selectedSite.id, blockId)
@@ -4227,11 +4257,23 @@ export const Sites: React.FC = () => {
           ...(payload.settings || {}),
           pageId: activePage.id
         }
+        if (blockType === HEADER_PANEL_BLOCK_TYPE && !getSettingString(payload.settings || {}, 'headerScope')) {
+          payload.settings = {
+            ...(payload.settings || {}),
+            headerScope: HEADER_SCOPE_PAGE
+          }
+        }
       } else if (hasEditablePages(selectedSite) && activePage) {
         payload.settings = {
           ...(payload.settings || {}),
           ...initialSettings,
           pageId: activePage.id
+        }
+        if (blockType === HEADER_PANEL_BLOCK_TYPE && !getSettingString(payload.settings || {}, 'headerScope')) {
+          payload.settings = {
+            ...(payload.settings || {}),
+            headerScope: HEADER_SCOPE_PAGE
+          }
         }
       } else if (Object.keys(initialSettings).length > 0) {
         payload.settings = {
@@ -4269,6 +4311,54 @@ export const Sites: React.FC = () => {
       if (added) selectEditorBlock(added.id)
     } catch (error) {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo agregar el bloque')
+    }
+  }
+
+  const handleCreateHeaderBlock = async (scope: HeaderScope) => {
+    if (!selectedSite || !isLanding(selectedSite)) return
+    if (scope === HEADER_SCOPE_GLOBAL && globalHeaderBlock) {
+      selectEditorBlock(globalHeaderBlock.id)
+      return
+    }
+    if (scope === HEADER_SCOPE_PAGE && activePageHeaderBlock) {
+      selectEditorBlock(activePageHeaderBlock.id)
+      return
+    }
+    if (scope === HEADER_SCOPE_PAGE && !activePage) return
+
+    const previousBlockIds = new Set((selectedSite.blocks || []).map(block => block.id))
+    const payload = defaultBlockPayload(HEADER_PANEL_BLOCK_TYPE, selectedSite) as Partial<SiteBlock> & { blockType: SiteBlockType }
+    const settings: Record<string, unknown> = {
+      ...(payload.settings || {}),
+      headerScope: scope
+    }
+    if (scope === HEADER_SCOPE_PAGE && activePage) {
+      settings.pageId = activePage.id
+      payload.label = 'Header de pagina'
+    } else {
+      delete settings.pageId
+      payload.label = 'Header global'
+    }
+    payload.settings = settings
+
+    setSaving(true)
+    try {
+      const site = await sitesService.createBlock(selectedSite.id, payload)
+      const sitePages = normalizeFunnelPages(site)
+      const added = [...(site.blocks || [])]
+        .filter(block => !previousBlockIds.has(block.id))
+        .find(block => (
+          scope === HEADER_SCOPE_GLOBAL
+            ? isGlobalHeaderBlock(block)
+            : activePage && isPageHeaderBlock(block, sitePages, activePage.id)
+        ))
+      syncSelectedSite(site)
+      if (added) selectEditorBlock(added.id)
+      showToast('success', scope === HEADER_SCOPE_GLOBAL ? 'Header global creado' : 'Header de pagina creado', 'Ya puedes editarlo desde Header.')
+    } catch (error) {
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo crear el header')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -4783,7 +4873,7 @@ export const Sites: React.FC = () => {
                       title={seoValidation?.totalIssues ? `SEO tiene ${seoValidation.totalIssues} pendientes` : 'SEO completo'}
                     >
                       <Search size={15} />
-                      <span>SEO & optimizacion de busqueda</span>
+                      <span>SEO</span>
                       {Boolean(seoValidation?.totalIssues) && (
                         <span className={styles.seoToolbarAlert} aria-label={`${seoValidation?.totalIssues} pendientes de SEO`}>
                           <AlertTriangle size={13} />
@@ -4791,6 +4881,18 @@ export const Sites: React.FC = () => {
                         </span>
                       )}
                     </button>
+                    {isLanding(editorSite) && (
+                      <button
+                        type="button"
+                        className={`${styles.seoToolbarButton} ${styles.headerToolbarButton}`}
+                        onClick={() => setHeaderModalOpen(true)}
+                        disabled={editorAIGenerating}
+                        title="Header global y header de esta pagina"
+                      >
+                        <PanelTop size={15} />
+                        <span>Header</span>
+                      </button>
+                    )}
                   </div>
                   <div className={styles.editorActions}>
                     <div className={styles.editorRouteControls}>
@@ -4882,6 +4984,25 @@ export const Sites: React.FC = () => {
             onPatchSite={updateSelectedSite}
             onPatchTheme={patchSiteTheme}
             onSave={() => handleSaveSite(undefined, { silent: true })}
+          />
+        )}
+
+        {editorSite && isLanding(editorSite) && headerModalOpen && (
+          <HeaderToolbarModal
+            site={editorSite}
+            activePage={activePage}
+            globalHeader={globalHeaderBlock}
+            pageHeader={activePageHeaderBlock}
+            metaPixelConnected={metaPixelConnected}
+            saving={saving}
+            onClose={() => setHeaderModalOpen(false)}
+            onCreateHeader={handleCreateHeaderBlock}
+            onPatchBlock={(block, patch) => patchBlockLocal(block.id, patch)}
+            onPatchSettings={patchBlockSettingsLocal}
+            onSaveBlock={(blockId) => handleSaveBlock(blockId)}
+            onSelectBlock={(blockId) => selectEditorBlock(blockId)}
+            onPatchSite={updateSelectedSite}
+            onSaveSite={() => handleSaveSite(undefined, { silent: true })}
           />
         )}
 
@@ -11101,6 +11222,226 @@ const SeoOptimizationModal: React.FC<{
   )
 }
 
+const HeaderBlockControls: React.FC<{
+  scope: HeaderScope
+  block: SiteBlock | null
+  saving: boolean
+  emptyTitle: string
+  emptyDescription: string
+  createLabel: string
+  onCreateHeader: (scope: HeaderScope) => void | Promise<void>
+  onPatchBlock: (block: SiteBlock, patch: Partial<SiteBlock>) => void
+  onPatchSettings: (block: SiteBlock, patch: Record<string, unknown>) => void
+  onSaveBlock: (blockId: string) => void | Promise<void>
+  onSelectBlock: (blockId: string) => void
+}> = ({
+  scope,
+  block,
+  saving,
+  emptyTitle,
+  emptyDescription,
+  createLabel,
+  onCreateHeader,
+  onPatchBlock,
+  onPatchSettings,
+  onSaveBlock,
+  onSelectBlock
+}) => {
+  if (!block) {
+    return (
+      <div className={styles.headerModalEmpty}>
+        <div>
+          <strong>{emptyTitle}</strong>
+          <p>{emptyDescription}</p>
+        </div>
+        <Button variant="secondary" size="lg" onClick={() => onCreateHeader(scope)} disabled={saving}>
+          <Plus size={15} />
+          {createLabel}
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className={styles.headerModalControls}>
+      <label className={styles.seoField}>
+        <span>Texto del header</span>
+        <input
+          value={block.content || ''}
+          placeholder="Nombre que vera la gente"
+          onChange={(event) => onPatchBlock(block, { content: event.target.value })}
+          onBlur={() => onSaveBlock(block.id)}
+        />
+      </label>
+      <label className={styles.seoField}>
+        <span>Enlaces</span>
+        <textarea
+          rows={3}
+          value={stringifyPanelLinks(block.settings || {})}
+          placeholder="Nombre del enlace | https://..."
+          onChange={(event) => onPatchSettings(block, { panelLinks: parsePanelLinks(event.target.value) })}
+          onBlur={() => onSaveBlock(block.id)}
+        />
+      </label>
+      <div className={styles.headerModalInlineActions}>
+        <button type="button" onClick={() => onSelectBlock(block.id)}>
+          <MousePointerClick size={14} />
+          Ver en canvas
+        </button>
+      </div>
+    </div>
+  )
+}
+
+const HeaderToolbarModal: React.FC<{
+  site: PublicSite
+  activePage: SitePage | null
+  globalHeader: SiteBlock | null
+  pageHeader: SiteBlock | null
+  metaPixelConnected: boolean
+  saving: boolean
+  onClose: () => void
+  onCreateHeader: (scope: HeaderScope) => void | Promise<void>
+  onPatchBlock: (block: SiteBlock, patch: Partial<SiteBlock>) => void
+  onPatchSettings: (block: SiteBlock, patch: Record<string, unknown>) => void
+  onSaveBlock: (blockId: string) => void | Promise<void>
+  onSelectBlock: (blockId: string) => void
+  onPatchSite: (patch: Partial<PublicSite>) => void
+  onSaveSite: () => void | Promise<void>
+}> = ({
+  site,
+  activePage,
+  globalHeader,
+  pageHeader,
+  metaPixelConnected,
+  saving,
+  onClose,
+  onCreateHeader,
+  onPatchBlock,
+  onPatchSettings,
+  onSaveBlock,
+  onSelectBlock,
+  onPatchSite,
+  onSaveSite
+}) => {
+  const [savingModal, setSavingModal] = useState(false)
+  const activePageTitle = activePage?.title || 'esta pagina'
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
+  const saveAndClose = async () => {
+    setSavingModal(true)
+    try {
+      if (globalHeader) await onSaveBlock(globalHeader.id)
+      if (pageHeader) await onSaveBlock(pageHeader.id)
+      await onSaveSite()
+      onClose()
+    } finally {
+      setSavingModal(false)
+    }
+  }
+
+  return (
+    <div className={styles.seoModalBackdrop} role="presentation" onMouseDown={onClose}>
+      <section
+        className={`${styles.seoModal} ${styles.headerModal}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="header-modal-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className={styles.seoModalHeader}>
+          <div>
+            <span>Configuracion del embudo</span>
+            <h2 id="header-modal-title">Header</h2>
+          </div>
+          <button type="button" className={styles.seoModalClose} onClick={onClose} aria-label="Cerrar Header">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className={`${styles.seoModalBody} ${styles.headerModalBody}`}>
+          <section className={styles.seoSection}>
+            <div className={styles.headerModalIntro}>
+              <SeoSectionTitle icon={<PanelTop size={17} />} title="Header global" />
+              <p>Aparece en todas las paginas del embudo.</p>
+            </div>
+            {metaPixelConnected && (
+              <div className={`${styles.metaCard} ${styles.headerModalMetaCard} ${site.metaCapiEnabled ? styles.metaCardActive : ''}`}>
+                <span className={styles.metaMark} aria-hidden="true">∞</span>
+                <div className={styles.metaCardInfo}>
+                  <strong>{site.metaCapiEnabled ? 'Meta encendido' : 'Meta apagado'}</strong>
+                  <small>{site.metaCapiEnabled ? 'Se mediran visitas y conversiones' : 'Activalo para enviar eventos'}</small>
+                </div>
+                <label className={styles.metaSwitch}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(site.metaCapiEnabled)}
+                    aria-label="Activar medicion de Meta"
+                    onChange={(event) => {
+                      onPatchSite({ metaCapiEnabled: event.target.checked })
+                      window.setTimeout(() => { void onSaveSite() }, 0)
+                    }}
+                  />
+                  <span className={styles.metaSwitchTrack} />
+                </label>
+              </div>
+            )}
+            <HeaderBlockControls
+              scope={HEADER_SCOPE_GLOBAL}
+              block={globalHeader}
+              saving={saving || savingModal}
+              emptyTitle="No hay header global"
+              emptyDescription="Crealo una vez y se vera en todo el embudo."
+              createLabel="Crear global"
+              onCreateHeader={onCreateHeader}
+              onPatchBlock={onPatchBlock}
+              onPatchSettings={onPatchSettings}
+              onSaveBlock={onSaveBlock}
+              onSelectBlock={onSelectBlock}
+            />
+          </section>
+
+          <section className={styles.seoSection}>
+            <div className={styles.headerModalIntro}>
+              <SeoSectionTitle icon={<PanelTop size={17} />} title="Header de esta pagina" />
+              <p>Solo aparece en {activePageTitle}.</p>
+            </div>
+            <HeaderBlockControls
+              scope={HEADER_SCOPE_PAGE}
+              block={pageHeader}
+              saving={saving || savingModal}
+              emptyTitle="Esta pagina no tiene header propio"
+              emptyDescription="Agregalo si esta pagina necesita un aviso, menu o texto diferente."
+              createLabel="Crear para esta pagina"
+              onCreateHeader={onCreateHeader}
+              onPatchBlock={onPatchBlock}
+              onPatchSettings={onPatchSettings}
+              onSaveBlock={onSaveBlock}
+              onSelectBlock={onSelectBlock}
+            />
+          </section>
+        </div>
+
+        <div className={styles.seoModalActions}>
+          <Button variant="secondary" size="lg" onClick={onClose}>Cancelar</Button>
+          <Button size="lg" onClick={saveAndClose} loading={savingModal}>
+            <Save size={15} />
+            Guardar Header
+          </Button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
 interface FunnelPagesPanelProps {
   pages: SitePage[]
   activePageId: string
@@ -13453,30 +13794,6 @@ const PageInspector: React.FC<{
           {isFormSite(site) && (
             <FormGlobalStyleControls site={site} onPatchTheme={onPatchTheme} onSaveSite={onSaveSite} />
           )}
-          {metaPixelConnected && (
-            <>
-              <div className={styles.panelSubheader}>Medicion Meta</div>
-              <div className={`${styles.metaCard} ${site.metaCapiEnabled ? styles.metaCardActive : ''}`}>
-                <span className={styles.metaMark} aria-hidden="true">∞</span>
-                <div className={styles.metaCardInfo}>
-                  <strong>{site.metaCapiEnabled ? 'Meta encendido' : 'Meta apagado'}</strong>
-                  <small>{site.metaCapiEnabled ? 'Se mediran visitas y conversiones' : 'Activalo para enviar eventos'}</small>
-                </div>
-                <label className={styles.metaSwitch}>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(site.metaCapiEnabled)}
-                    aria-label="Activar medicion de Meta"
-                    onChange={(event) => {
-                      onPatchSite({ metaCapiEnabled: event.target.checked })
-                      window.setTimeout(onSaveSite, 0)
-                    }}
-                  />
-                  <span className={styles.metaSwitchTrack} />
-                </label>
-              </div>
-            </>
-          )}
           {metaPixelConnected && isLanding(site) && activePage && (
             <>
               <div className={styles.panelSubheader}>Conversion de esta pagina</div>
@@ -14074,9 +14391,12 @@ const LandingBlockSettings: React.FC<LandingBlockSettingsProps> = ({ site, block
   const settings = block.settings || {}
 
   if (isPanelBlock(block)) {
+    const panelTitle = block.blockType === HEADER_PANEL_BLOCK_TYPE
+      ? getHeaderScope(block) === HEADER_SCOPE_GLOBAL ? 'Header global' : 'Header de esta pagina'
+      : 'Panel inferior'
     return (
       <div className={styles.settingsGroup}>
-        <div className={styles.panelSubheader}>{block.blockType === HEADER_PANEL_BLOCK_TYPE ? 'Panel superior' : 'Panel inferior'}</div>
+        <div className={styles.panelSubheader}>{panelTitle}</div>
         <label className={styles.field}>
           <span>Enlaces del panel</span>
           <textarea
