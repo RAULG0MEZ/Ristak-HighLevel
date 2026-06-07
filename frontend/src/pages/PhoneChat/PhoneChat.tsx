@@ -5068,38 +5068,34 @@ export const PhoneChat: React.FC = () => {
             Mostrando lo guardado, actualizando conversación
           </div>
         )}
-        {conversationMessageItems.map((item) => {
-          if (item.type === 'day') {
-            return (
-              <div
-                key={`day-${item.key}`}
-                className={styles.messageDaySeparator}
-                data-message-day-key={item.key}
-              >
-                <span>{item.label}</span>
+        {conversationMessageGroups.map((group) => (
+          <section key={`day-${group.key}`} className={styles.messageDayGroup} data-message-day-key={group.key}>
+            {group.label && (
+              <div className={styles.messageDaySeparator}>
+                <span>{group.label}</span>
               </div>
-            )
-          }
+            )}
+            {group.messages.map((message) => {
+              const isAudioMessage = message.attachment?.type === 'audio' && Boolean(message.attachment.dataUrl || message.attachment.url)
 
-          const message = item.message
-          const isAudioMessage = message.attachment?.type === 'audio' && Boolean(message.attachment.dataUrl || message.attachment.url)
-
-          return (
-            <div
-              key={item.key}
-              className={`${styles.messageRow} ${styles[`messageRow_${message.direction}`]}`}
-            >
-              <div className={`${styles.messageBubble} ${isAudioMessage ? styles.messageAudioBubble : ''}`}>
-                {message.attachment?.type === 'image' && (message.attachment.dataUrl || message.attachment.url) && (
-                  <img className={styles.messageImage} src={message.attachment.dataUrl || message.attachment.url} alt={message.attachment.name || 'Foto enviada'} />
-                )}
-                {isAudioMessage && renderAudioMessage(message)}
-                {!isAudioMessage && message.text && <p>{message.text}</p>}
-                {!isAudioMessage && renderMessageMeta(message)}
-              </div>
-            </div>
-          )
-        })}
+              return (
+                <div
+                  key={message.id}
+                  className={`${styles.messageRow} ${styles[`messageRow_${message.direction}`]}`}
+                >
+                  <div className={`${styles.messageBubble} ${isAudioMessage ? styles.messageAudioBubble : ''}`}>
+                    {message.attachment?.type === 'image' && (message.attachment.dataUrl || message.attachment.url) && (
+                      <img className={styles.messageImage} src={message.attachment.dataUrl || message.attachment.url} alt={message.attachment.name || 'Foto enviada'} />
+                    )}
+                    {isAudioMessage && renderAudioMessage(message)}
+                    {!isAudioMessage && message.text && <p>{message.text}</p>}
+                    {!isAudioMessage && renderMessageMeta(message)}
+                  </div>
+                </div>
+              )
+            })}
+          </section>
+        ))}
       </>
     )
   }

@@ -1846,31 +1846,16 @@
     var(--phone-chat-conversation-bg);
 }
 
-.messageDaySeparator span {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 60px;
-  min-height: 28px;
-  padding: 0 14px;
-  border: 1px solid color-mix(in srgb, var(--phone-chat-border) 74%, transparent);
-  border-radius: 999px;
-  color: var(--phone-chat-text);
-  background: color-mix(in srgb, var(--phone-chat-surface) 90%, transparent);
-  box-shadow:
-    0 1px 2px rgba(var(--phone-chat-primary-rgb), 0.07),
-    0 8px 18px rgba(var(--phone-chat-primary-rgb), 0.05);
-  font-size: 13px;
-  font-weight: 900;
-  line-height: 1;
-  text-align: center;
-  white-space: nowrap;
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  transition:
-    opacity 180ms ease,
-    background-color 180ms ease,
-    box-shadow 180ms ease;
+.messageDayGroup {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 1px 0 12px;
+}
+
+.messageDayGroup + .messageDayGroup {
+  margin-top: 18px;
 }
 
 .messageDaySeparator {
@@ -1878,25 +1863,41 @@
   top: 8px;
   z-index: 5;
   display: flex;
+  align-self: center;
   justify-content: center;
-  width: 100%;
-  margin: 11px 0 9px;
+  width: fit-content;
+  max-width: calc(100% - 64px);
+  margin: 7px auto 13px;
   pointer-events: none;
-  transform: translateZ(0);
+  opacity: 0.96;
+  transform: translate3d(0, 0, 0);
 }
 
 .messageDaySeparator span {
-  color: #111111;
-  background: rgba(255, 255, 255, 0.86);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 25px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--phone-chat-border) 58%, transparent);
+  border-radius: 999px;
+  color: color-mix(in srgb, var(--phone-chat-text) 88%, var(--phone-chat-muted) 12%);
+  background: color-mix(in srgb, var(--phone-chat-system) 78%, var(--phone-chat-surface) 22%);
+  box-shadow: none;
+  font-size: 12.5px;
+  font-weight: 850;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 :global(body[data-phone-chat-tone="dark"]) .messageDaySeparator span {
   color: var(--phone-chat-text);
   border-color: rgba(233, 237, 239, 0.08);
-  background: rgba(32, 44, 51, 0.88);
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.2),
-    0 10px 22px rgba(0, 0, 0, 0.18);
+  background: rgba(32, 44, 51, 0.86);
+  box-shadow: none;
 }
 
 .messageRow {
