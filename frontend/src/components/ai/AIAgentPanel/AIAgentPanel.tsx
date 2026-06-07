@@ -1717,6 +1717,21 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
   }, [onOpenChange, visible])
 
   useEffect(() => {
+    if (embedded) return
+
+    const launcherVisible = !open
+    if (launcherVisible) {
+      document.body.dataset.aiAgentLauncher = 'visible'
+    } else {
+      delete document.body.dataset.aiAgentLauncher
+    }
+
+    return () => {
+      delete document.body.dataset.aiAgentLauncher
+    }
+  }, [embedded, open])
+
+  useEffect(() => {
     const textarea = textareaRef.current
     if (!textarea) return
 
