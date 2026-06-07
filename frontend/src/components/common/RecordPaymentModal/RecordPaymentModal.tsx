@@ -464,7 +464,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     ) : (
       <CustomSelect
         value={value}
-        onChange={onChange}
+        onValueChange={onChange}
         options={options.filter((option) => !option.disabled)}
         placeholder={placeholder || title}
         className={styles.customSelectControl}
@@ -1640,7 +1640,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                   }))
                 ]}
                 value={selectedProduct?.id || selectedProduct?._id || selectedProduct?.localId || ''}
-                onChange={(value) => {
+                onValueChange={(value) => {
                   const product = products.find(p => (p.id || p._id || p.localId) === value)
                   setSelectedProduct(product || null)
                   setSelectedPrice(null)
@@ -1694,7 +1694,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                     <label className={styles.label}>Moneda</label>
                     <CustomSelect
                       value={newProductCurrency}
-                      onChange={setNewProductCurrency}
+                      onValueChange={setNewProductCurrency}
                       options={currencyOptions}
                     />
                   </div>
@@ -1748,7 +1748,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                     }))
                   ]}
                   value={selectedPrice?.id || selectedPrice?._id || selectedPrice?.localId || ''}
-                  onChange={(value) => {
+                  onValueChange={(value) => {
                     const price = prices.find(p => (p.id || p._id || p.localId) === value)
                     setSelectedPrice(price || null)
                   }}
@@ -2208,7 +2208,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                     ) : (
                       <CustomSelect
                         value={sendMethod}
-                        onChange={(value) => setSendMethod(value as SendMethod)}
+                        onValueChange={(value) => setSendMethod(value as SendMethod)}
                         options={sendMethodOptions}
                         portal
                       />
@@ -2295,7 +2295,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                   ) : (
                     <CustomSelect
                       value={sendMethod}
-                      onChange={(value) => setSendMethod(value as SendMethod)}
+                      onValueChange={(value) => setSendMethod(value as SendMethod)}
                       options={sendMethodOptions}
                       portal
                     />

@@ -30,6 +30,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  justify-self: end;
   gap: 12px;
   flex-wrap: wrap;
   min-width: 0;
@@ -42,6 +43,7 @@
 
   .datePickerWrapper {
     margin-top: var(--spacing-sm);
+    justify-self: stretch;
     justify-content: flex-start;
   }
 }

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Bot, CheckCircle, Eye, EyeOff, Globe2, ListChecks, Trash2, XCircle } from 'lucide-react'
-import { Button, Card } from '@/components/common'
+import { Button, Card, CustomSelect } from '@/components/common'
 import { useNotification } from '@/contexts/NotificationContext'
 import { aiAgentService, type AIAgentConfigStatus, type AIAgentRecommendationMode, type AIAgentResponseStyle } from '@/services/aiAgentService'
 import styles from './AIAgentSettings.module.css'
@@ -596,8 +596,7 @@ export const AIAgentSettings: React.FC = () => {
 
           <div className={styles.field}>
             <label className={styles.label}>Modelo</label>
-            <select
-              className={styles.select}
+            <CustomSelect
               value={form.model}
               onChange={(event) => updateField('model', event.target.value)}
               disabled={loading || disconnecting}
@@ -611,14 +610,13 @@ export const AIAgentSettings: React.FC = () => {
                   ))}
                 </optgroup>
               ))}
-            </select>
+            </CustomSelect>
             <p className={styles.helper}>{selectedModel.description}</p>
           </div>
 
           <div className={styles.field}>
             <label className={styles.label}>Respuesta</label>
-            <select
-              className={styles.select}
+            <CustomSelect
               value={form.responseStyle}
               onChange={(event) => updateField('responseStyle', event.target.value as AIAgentResponseStyle)}
               disabled={loading || disconnecting}
@@ -628,13 +626,12 @@ export const AIAgentSettings: React.FC = () => {
                   {option.label}
                 </option>
               ))}
-            </select>
+            </CustomSelect>
           </div>
 
           <div className={styles.field}>
             <label className={styles.label}>Recomendaciones</label>
-            <select
-              className={styles.select}
+            <CustomSelect
               value={form.recommendationMode}
               onChange={(event) => updateField('recommendationMode', event.target.value as AIAgentRecommendationMode)}
               disabled={loading || disconnecting}
@@ -644,7 +641,7 @@ export const AIAgentSettings: React.FC = () => {
                   {option.label}
                 </option>
               ))}
-            </select>
+            </CustomSelect>
           </div>
         </div>
 

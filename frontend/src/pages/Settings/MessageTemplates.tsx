@@ -31,7 +31,7 @@ import {
   Video,
   X
 } from 'lucide-react'
-import { Button, Loading } from '@/components/common'
+import { Button, Loading, CustomSelect } from '@/components/common'
 import { useNotification } from '@/contexts/NotificationContext'
 import {
   messageTemplatesService,
@@ -1282,7 +1282,7 @@ export const MessageTemplates: React.FC<MessageTemplatesProps> = ({
             </div>
             <label className={styles.filterControl}>
               <span>Numero</span>
-              <select
+              <CustomSelect
                 value={templatePhoneFilter}
                 onChange={(event) => setTemplatePhoneFilter(event.target.value)}
                 disabled={!whatsappPhones.length}
@@ -1291,11 +1291,11 @@ export const MessageTemplates: React.FC<MessageTemplatesProps> = ({
                 {whatsappPhones.map((phone) => (
                   <option key={phone.id} value={phone.id}>{getPhoneFilterLabel(phone)}</option>
                 ))}
-              </select>
+              </CustomSelect>
             </label>
             <label className={styles.filterControl}>
               <span>Tipo</span>
-              <select
+              <CustomSelect
                 value={templateCategoryFilter}
                 onChange={(event) => setTemplateCategoryFilter(event.target.value as 'all' | MessageTemplateCategory)}
               >
@@ -1303,18 +1303,18 @@ export const MessageTemplates: React.FC<MessageTemplatesProps> = ({
                 {categoryOptions.map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
-              </select>
+              </CustomSelect>
             </label>
             <label className={styles.filterControl}>
               <span>Estado</span>
-              <select
+              <CustomSelect
                 value={templateStatusFilter}
                 onChange={(event) => setTemplateStatusFilter(event.target.value as TemplateReviewStatusFilter)}
               >
                 {reviewStatusFilterOptions.map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
-              </select>
+              </CustomSelect>
             </label>
             <span className={styles.filterCount}>{visibleTemplates.length} de {bundle.templates.length}</span>
             {hasTemplateFilters && (
@@ -1340,12 +1340,12 @@ export const MessageTemplates: React.FC<MessageTemplatesProps> = ({
               </button>
               <label>
                 <span>Mover a</span>
-                <select value={bulkTargetFolderId} onChange={(event) => setBulkTargetFolderId(event.target.value)}>
+                <CustomSelect value={bulkTargetFolderId} onChange={(event) => setBulkTargetFolderId(event.target.value)}>
                   <option value={ROOT_FOLDER_KEY}>Sin carpeta</option>
                   {folderOptions.map((option) => (
                     <option key={option.id} value={option.id}>{option.label}</option>
                   ))}
-                </select>
+                </CustomSelect>
               </label>
               <Button variant="outline" size="sm" onClick={() => moveSelectionToFolder()} loading={bulkWorking}>
                 <FolderInput size={15} />
@@ -1582,15 +1582,15 @@ export const MessageTemplates: React.FC<MessageTemplatesProps> = ({
           </label>
           <label className={styles.field}>
             <span>Categoría</span>
-            <select value={draft.category} onChange={(event) => updateDraft('category', event.target.value as MessageTemplateCategory)}>
+            <CustomSelect value={draft.category} onChange={(event) => updateDraft('category', event.target.value as MessageTemplateCategory)}>
               {categoryOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
+            </CustomSelect>
           </label>
           <label className={styles.field}>
             <span>Idioma</span>
-            <select value={draft.language} onChange={(event) => updateDraft('language', event.target.value)}>
+            <CustomSelect value={draft.language} onChange={(event) => updateDraft('language', event.target.value)}>
               {languageOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
+            </CustomSelect>
           </label>
         </div>
 
@@ -1655,9 +1655,9 @@ export const MessageTemplates: React.FC<MessageTemplatesProps> = ({
             <div className={styles.buttonsEditor}>
               {(draft.buttons || []).map((button, index) => (
                 <div key={button.id || index} className={styles.buttonEditorRow}>
-                  <select value={button.type} onChange={(event) => updateButton(index, { type: event.target.value as MessageTemplateButtonType })}>
+                  <CustomSelect value={button.type} onChange={(event) => updateButton(index, { type: event.target.value as MessageTemplateButtonType })}>
                     {buttonTypeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                  </select>
+                  </CustomSelect>
                   <input
                     value={button.label}
                     onChange={(event) => updateButton(index, { label: event.target.value.slice(0, 25) })}

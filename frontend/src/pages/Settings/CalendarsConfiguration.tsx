@@ -1209,13 +1209,11 @@ export const CalendarsConfiguration: React.FC = () => {
     const selectedSourceLabel = options.find((option) => option.value === calendarSourcePreference)?.label ?? 'Todos'
 
     return (
-      <label className={pageStyles.sourceControl}>
+      <div className={pageStyles.sourceControl}>
         <SlidersHorizontal size={16} />
         <span className={pageStyles.sourceLabel}>Origen</span>
-        <span className={pageStyles.sourceValue}>{selectedSourceLabel}</span>
-        <ChevronDown size={14} className={pageStyles.sourceChevron} />
-        <select
-          className={pageStyles.sourceSelect}
+        <CustomSelect
+          className={pageStyles.sourceDropdown}
           aria-label="Elegir origen de calendarios"
           value={calendarSourcePreference}
           onChange={(event) => void handleCalendarSourcePreferenceChange(event.target.value)}
@@ -1225,8 +1223,8 @@ export const CalendarsConfiguration: React.FC = () => {
               {option.label}
             </option>
           ))}
-        </select>
-      </label>
+        </CustomSelect>
+      </div>
     )
   }
 
@@ -1328,7 +1326,7 @@ export const CalendarsConfiguration: React.FC = () => {
                   />
                   <CustomSelect
                     value={selectedCalendar.slotDurationUnit}
-                    onChange={(value) => updateSelectedCalendar({ slotDurationUnit: value })}
+                    onValueChange={(value) => updateSelectedCalendar({ slotDurationUnit: value })}
                     options={[
                       { value: 'mins', label: 'Minutos' },
                       { value: 'hours', label: 'Horas' }
@@ -1348,7 +1346,7 @@ export const CalendarsConfiguration: React.FC = () => {
                   />
                   <CustomSelect
                     value={selectedCalendar.slotIntervalUnit}
-                    onChange={(value) => updateSelectedCalendar({ slotIntervalUnit: value })}
+                    onValueChange={(value) => updateSelectedCalendar({ slotIntervalUnit: value })}
                     options={[
                       { value: 'mins', label: 'Minutos' },
                       { value: 'hours', label: 'Horas' }
@@ -1361,7 +1359,7 @@ export const CalendarsConfiguration: React.FC = () => {
                 <span>Disponibilidad</span>
                 <CustomSelect
                   value={selectedCalendar.availabilityType !== undefined ? String(selectedCalendar.availabilityType) : ''}
-                  onChange={(value) => updateSelectedCalendar({
+                  onValueChange={(value) => updateSelectedCalendar({
                     availabilityType: value === '' ? undefined : parseInt(value, 10)
                   })}
                   options={[
@@ -1391,7 +1389,7 @@ export const CalendarsConfiguration: React.FC = () => {
                   />
                   <CustomSelect
                     value={selectedCalendar.allowBookingAfterUnit || 'hours'}
-                    onChange={(value) => updateSelectedCalendar({ allowBookingAfterUnit: value })}
+                    onValueChange={(value) => updateSelectedCalendar({ allowBookingAfterUnit: value })}
                     options={[
                       { value: 'hours', label: 'Horas' },
                       { value: 'days', label: 'Días' },
@@ -1413,7 +1411,7 @@ export const CalendarsConfiguration: React.FC = () => {
                   />
                   <CustomSelect
                     value={selectedCalendar.allowBookingForUnit || 'days'}
-                    onChange={(value) => updateSelectedCalendar({ allowBookingForUnit: value })}
+                    onValueChange={(value) => updateSelectedCalendar({ allowBookingForUnit: value })}
                     options={[
                       { value: 'days', label: 'Días' },
                       { value: 'weeks', label: 'Semanas' },
@@ -1462,7 +1460,7 @@ export const CalendarsConfiguration: React.FC = () => {
                   />
                   <CustomSelect
                     value={selectedCalendar.preBufferUnit || 'mins'}
-                    onChange={(value) => updateSelectedCalendar({ preBufferUnit: value })}
+                    onValueChange={(value) => updateSelectedCalendar({ preBufferUnit: value })}
                     options={[
                       { value: 'mins', label: 'Minutos' },
                       { value: 'hours', label: 'Horas' }
@@ -1482,7 +1480,7 @@ export const CalendarsConfiguration: React.FC = () => {
                   />
                   <CustomSelect
                     value={selectedCalendar.slotBufferUnit || 'mins'}
-                    onChange={(value) => updateSelectedCalendar({ slotBufferUnit: value })}
+                    onValueChange={(value) => updateSelectedCalendar({ slotBufferUnit: value })}
                     options={[
                       { value: 'mins', label: 'Minutos' },
                       { value: 'hours', label: 'Horas' }

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Bell, CalendarDays, Check, CheckCircle, ChevronDown, Clock, CreditCard, Database, Globe2, Loader2, Lock, MessageCircle, Save, Smartphone, Upload, User, X } from 'lucide-react'
-import { Button, Card } from '@/components/common'
+import { Button, Card, CustomSelect } from '@/components/common'
 import { useAuth } from '@/contexts/AuthContext'
 import { useLabels } from '@/contexts/LabelsContext'
 import { useNotification } from '@/contexts/NotificationContext'
@@ -1122,9 +1122,8 @@ export const AccountSettings: React.FC = () => {
               <div className={styles.lockedFieldRow}>
                 <div className={styles.field}>
                   <label className={styles.label} htmlFor="account-timezone">Zona horaria</label>
-                  <select
+                  <CustomSelect
                     id="account-timezone"
-                    className={styles.select}
                     value={timezoneDraft}
                     onChange={(event) => setTimezoneDraft(event.target.value)}
                     disabled={savingTimezone}
@@ -1135,7 +1134,7 @@ export const AccountSettings: React.FC = () => {
                     {timezoneOptions.map((tz) => (
                       <option key={tz.value} value={tz.value}>{tz.optionLabel}</option>
                     ))}
-                  </select>
+                  </CustomSelect>
                 </div>
                 <Button
                   variant="primary"
@@ -1165,9 +1164,8 @@ export const AccountSettings: React.FC = () => {
               <div className={styles.accountLocaleGrid}>
                 <div className={styles.field}>
                   <label className={styles.label} htmlFor="account-country">País de la cuenta</label>
-                  <select
+                  <CustomSelect
                     id="account-country"
-                    className={styles.select}
                     value={accountLocaleDraft.countryCode}
                     onChange={(event) => handleCountryChange(event.target.value)}
                     disabled={accountLocaleSaving}
@@ -1177,14 +1175,13 @@ export const AccountSettings: React.FC = () => {
                         {country.label} (+{country.dialCode})
                       </option>
                     ))}
-                  </select>
+                  </CustomSelect>
                 </div>
 
                 <div className={styles.field}>
                   <label className={styles.label} htmlFor="account-currency">Moneda de cobro</label>
-                  <select
+                  <CustomSelect
                     id="account-currency"
-                    className={styles.select}
                     value={accountLocaleDraft.currency}
                     onChange={(event) => setAccountLocaleDraft((current) => ({ ...current, currency: event.target.value }))}
                     disabled={accountLocaleSaving}
@@ -1194,7 +1191,7 @@ export const AccountSettings: React.FC = () => {
                         {currencyOption.label}
                       </option>
                     ))}
-                  </select>
+                  </CustomSelect>
                 </div>
 
                 <div className={styles.localePreview}>

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Card, Button, Icon, Modal } from '@/components/common'
+import { Card, Button, Icon, Modal, CustomSelect } from '@/components/common'
 import { ArrowLeft, ArrowRight, CheckCircle, ExternalLink, Pencil, Power, RefreshCw, Trash2, XCircle } from 'lucide-react'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useTheme } from '@/contexts/ThemeContext'
@@ -1274,8 +1274,7 @@ export const MetaAdsIntegration: React.FC = () => {
                   </button>
                 </div>
               ) : adAccounts.length > 0 ? (
-                <select
-                  className={styles.formInput}
+                <CustomSelect
                   onChange={(event) => {
                     const account = adAccounts.find(a => a.id === event.target.value)
                     if (account) handleSelectAdAccount(account)
@@ -1288,7 +1287,7 @@ export const MetaAdsIntegration: React.FC = () => {
                       {account.name} ({account.id}) - {account.currency}
                     </option>
                   ))}
-                </select>
+                </CustomSelect>
               ) : (
                 <input
                   type="text"
@@ -1339,8 +1338,7 @@ export const MetaAdsIntegration: React.FC = () => {
                     Cargando pixeles...
                   </div>
                 ) : pixels.length > 0 ? (
-                  <select
-                    className={styles.formInput}
+                  <CustomSelect
                     onChange={(event) => {
                       const pixel = pixels.find(p => p.id === event.target.value)
                       if (pixel) handleSelectPixel(pixel)
@@ -1353,7 +1351,7 @@ export const MetaAdsIntegration: React.FC = () => {
                         {pixel.name} ({pixel.id})
                       </option>
                     ))}
-                  </select>
+                  </CustomSelect>
                 ) : (
                   <input
                     type="text"
@@ -1418,8 +1416,7 @@ export const MetaAdsIntegration: React.FC = () => {
                     Cargando páginas...
                   </div>
                 ) : pages.length > 0 ? (
-                  <select
-                    className={styles.formInput}
+                  <CustomSelect
                     onChange={(event) => {
                       const page = pages.find(item => item.id === event.target.value)
                       if (page) handleSelectAndSavePage(page)
@@ -1433,7 +1430,7 @@ export const MetaAdsIntegration: React.FC = () => {
                         {page.name} ({page.id}){page.category ? ` - ${page.category}` : ''}
                       </option>
                     ))}
-                  </select>
+                  </CustomSelect>
                 ) : (
                   <div className={styles.emptyPagesState}>
                     <p>
@@ -1478,8 +1475,7 @@ export const MetaAdsIntegration: React.FC = () => {
                     Cargando Instagram...
                   </div>
                 ) : instagramAccounts.length > 0 ? (
-                  <select
-                    className={styles.formInput}
+                  <CustomSelect
                     onChange={(event) => {
                       const account = instagramAccounts.find(item => item.sourceId === event.target.value)
                       if (account) handleSelectInstagramAccount(account)
@@ -1493,7 +1489,7 @@ export const MetaAdsIntegration: React.FC = () => {
                         {account.username ? `@${account.username}` : account.name} ({account.sourceId})
                       </option>
                     ))}
-                  </select>
+                  </CustomSelect>
                 ) : (
                   <div className={styles.emptyPagesState}>
                     <p>

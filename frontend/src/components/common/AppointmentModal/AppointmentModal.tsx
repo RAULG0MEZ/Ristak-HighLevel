@@ -1205,7 +1205,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
     ) : (
       <CustomSelect
         value={value}
-        onChange={onChange}
+        onValueChange={onChange}
         options={options.filter((option) => !option.disabled)}
         placeholder={placeholder || title}
         disabled={disabled}
@@ -1726,7 +1726,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
                                 }))
                               ]}
                               value={selectedDate}
-                              onChange={(value) => {
+                              onValueChange={(value) => {
                                 setSelectedDate(value);
                                 setSelectedSlot(''); // Reset slot cuando cambia la fecha
                               }}
@@ -1754,7 +1754,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
                                   : [{ value: '', label: 'Primero selecciona una fecha' }]
                               }
                               value={selectedSlot}
-                              onChange={(value) => {
+                              onValueChange={(value) => {
                                 setSelectedSlot(value);
 
                                 // Construir startTime y endTime en ISO format

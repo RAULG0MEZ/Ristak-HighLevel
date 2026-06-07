@@ -13,7 +13,7 @@ import {
   Trash2,
   X
 } from 'lucide-react'
-import { Button } from '@/components/common'
+import { Button, CustomSelect } from '@/components/common'
 import { useNotification } from '@/contexts/NotificationContext'
 import {
   customFieldsService,
@@ -598,7 +598,7 @@ export const CustomFields: React.FC = () => {
           {selectedCount > 0 && (
             <div className={styles.selectionBar}>
               <strong>{selectedCount} seleccionado{selectedCount === 1 ? '' : 's'}</strong>
-              <select
+              <CustomSelect
                 defaultValue=""
                 disabled={movingFields}
                 onChange={(event) => {
@@ -612,7 +612,7 @@ export const CustomFields: React.FC = () => {
                   <option key={folder.id} value={folder.id}>{folder.name}</option>
                 ))}
                 <option value="__new_folder">Crear carpeta...</option>
-              </select>
+              </CustomSelect>
               <button type="button" onClick={clearSelection} disabled={movingFields}>
                 Limpiar
               </button>
@@ -745,7 +745,7 @@ export const CustomFields: React.FC = () => {
 
               <label className={styles.field}>
                 <span>Tipo</span>
-                <select
+                <CustomSelect
                   value={draft.dataType}
                   disabled={Boolean(editingField)}
                   onChange={(event) => patchDraft({ dataType: event.target.value as CustomFieldDataType })}
@@ -753,7 +753,7 @@ export const CustomFields: React.FC = () => {
                   {fieldTypes.map(type => (
                     <option key={type.value} value={type.value}>{type.label}</option>
                   ))}
-                </select>
+                </CustomSelect>
               </label>
 
               <div className={styles.typeHint}>
@@ -764,12 +764,12 @@ export const CustomFields: React.FC = () => {
               {!editingField && (
                 <label className={styles.field}>
                   <span>Carpeta</span>
-                  <select value={draft.folderId} onChange={(event) => patchDraft({ folderId: event.target.value })}>
+                  <CustomSelect value={draft.folderId} onChange={(event) => patchDraft({ folderId: event.target.value })}>
                     <option value="">Sin carpeta</option>
                     {folders.map(folder => (
                       <option key={folder.id} value={folder.id}>{folder.name}</option>
                     ))}
-                  </select>
+                  </CustomSelect>
                 </label>
               )}
 

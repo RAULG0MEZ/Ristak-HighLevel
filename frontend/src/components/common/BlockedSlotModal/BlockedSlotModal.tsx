@@ -634,7 +634,7 @@ export const BlockedSlotModal: React.FC<BlockedSlotModalProps> = ({
                     label: user.name || user.email || user.id
                 }))}
                 value={formData.assignedUserId}
-                onChange={(value) => setFormData({ ...formData, assignedUserId: value })}
+                onValueChange={(value) => setFormData({ ...formData, assignedUserId: value })}
                 placeholder="Selecciona un usuario"
               />
             ) : (

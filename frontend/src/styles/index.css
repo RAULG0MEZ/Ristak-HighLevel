@@ -310,8 +310,8 @@ body.dark {
     --ristak-dropdown-bg-hover: var(--color-background-tertiary);
     --ristak-dropdown-border: var(--color-border-subtle);
     --ristak-dropdown-border-hover: rgba(148, 163, 184, 0.28);
-    --ristak-dropdown-border-focus: rgba(var(--color-primary-rgb), 0.38);
-    --ristak-dropdown-ring: 0 0 0 3px rgba(var(--color-primary-rgb), 0.1);
+    --ristak-dropdown-border-focus: rgba(148, 163, 184, 0.34);
+    --ristak-dropdown-ring: none;
     --ristak-dropdown-panel-shadow: 0 18px 46px -30px rgba(15, 23, 42, 0.46);
   }
 }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
-import { KpiCard, Card, Button, Table, DateRangePicker, PageContainer, TabList, Badge, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, ContactDetailsModal, Loading, TreeFilter } from '@/components/common'
+import { KpiCard, Card, Button, Table, DateRangePicker, PageContainer, TabList, Badge, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, ContactDetailsModal, Loading, TreeFilter, CustomSelect } from '@/components/common'
 import type { Column } from '@/components/common'
 import {
   Users,
@@ -104,7 +104,7 @@ const ContactPhoneField: React.FC<{ defaultValue?: string; autoFocus?: boolean }
   return (
     <div className={styles.phoneCountryField}>
       <input type="hidden" name="phone" value={composedPhone} />
-      <select
+      <CustomSelect
         value={country.value}
         onChange={(event) => setCountryCode(event.target.value)}
         aria-label="Pais y lada"
@@ -114,7 +114,7 @@ const ContactPhoneField: React.FC<{ defaultValue?: string; autoFocus?: boolean }
             {getCountryFlagEmoji(option.value)} +{option.dialCode} {option.label}
           </option>
         ))}
-      </select>
+      </CustomSelect>
       <input
         type="tel"
         inputMode="tel"

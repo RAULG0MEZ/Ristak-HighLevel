@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '../Button/Button'
+import { CustomSelect } from '../CustomSelect/CustomSelect'
 import { RefreshCw, Maximize2, Minimize2, Search, Edit, Trash2, X, Check } from 'lucide-react'
 import { trackingService, TrackingSession, SessionsResponse } from '@/services/trackingService'
 import { useTimezone } from '@/contexts/TimezoneContext'
@@ -603,18 +604,10 @@ export const SessionsTable: React.FC<SessionsTableProps> = ({
           }}>
             <div style={{ display: 'flex', gap: '12px', flex: 1, maxWidth: '700px' }}>
               {/* Dropdown de columnas */}
-              <select
+              <CustomSelect
                 value={searchColumn}
                 onChange={(e) => setSearchColumn(e.target.value)}
                 style={{
-                  padding: '8px 12px',
-                  border: '1px solid var(--design-table-border, var(--color-border))',
-                  borderRadius: 'var(--design-control-radius, 6px)',
-                  fontSize: '0.875rem',
-                  backgroundColor: 'var(--design-table-control-bg, var(--color-background))',
-                  color: 'var(--color-text)',
-                  outline: 'none',
-                  cursor: 'pointer',
                   minWidth: '180px'
                 }}
               >
@@ -659,7 +652,7 @@ export const SessionsTable: React.FC<SessionsTableProps> = ({
                   <option value="geo_country">Country</option>
                   <option value="geo_city">City</option>
                 </optgroup>
-              </select>
+              </CustomSelect>
 
               {/* Input de búsqueda */}
               <div style={{ position: 'relative', flex: 1 }}>

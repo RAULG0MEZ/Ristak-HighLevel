@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { Card, Button, Modal } from '@/components/common'
+import { Card, Button, Modal, CustomSelect } from '@/components/common'
 import {
   Zap,
   CheckCircle,
@@ -591,15 +591,15 @@ export const HighLevelIntegration: React.FC = () => {
                     onKeyPress={(e) => e.key === 'Enter' && handleAddFilter()}
                     disabled={addingFilter}
                   />
-                  <select
-                    className={styles.filterTypeSelect}
+                  <CustomSelect
+                    style={{ minWidth: 150 }}
                     value={newFilterType}
                     onChange={(e) => setNewFilterType(e.target.value as 'contains' | 'exact')}
                     disabled={addingFilter}
                   >
                     <option value="contains">Contiene</option>
                     <option value="exact">Es exactamente</option>
-                  </select>
+                  </CustomSelect>
                 </div>
                 <Button
                   onClick={handleAddFilter}

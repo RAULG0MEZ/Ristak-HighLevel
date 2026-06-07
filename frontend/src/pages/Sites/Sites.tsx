@@ -78,6 +78,7 @@ import {
   Button,
   Loading,
   NumberInput,
+  CustomSelect,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -6254,11 +6255,11 @@ const SitesAICreationModal: React.FC<{
   const modelPicker = (
     <label className={styles.aiCreationModelPicker}>
       <span>{editMode ? 'ChatGPT para este cambio' : 'ChatGPT para crear el sitio'}</span>
-      <select value={chatgptModel} onChange={(event) => setChatgptModel(event.target.value)}>
+      <CustomSelect value={chatgptModel} onChange={(event) => setChatgptModel(event.target.value)}>
         {chatgptSiteModelOptions.map(option => (
           <option key={option.value} value={option.value}>{option.label}</option>
         ))}
-      </select>
+      </CustomSelect>
       <small>{selectedChatGPTModel.description} Ordenado de $ a $$$$$.</small>
     </label>
   )
@@ -7798,7 +7799,7 @@ const ImportedActionChainEditor: React.FC<{
     return (
       <label className={styles.importedActionField}>
         <span>Acción</span>
-        <select
+        <CustomSelect
           value="none"
           disabled={disabled}
           onChange={(event) => {
@@ -7810,7 +7811,7 @@ const ImportedActionChainEditor: React.FC<{
           {actionOptions.map(option => (
             <option key={option.value} value={option.value}>{option.label}{option.demo ? ' (demo)' : ''}</option>
           ))}
-        </select>
+        </CustomSelect>
       </label>
     )
   }
@@ -7822,7 +7823,7 @@ const ImportedActionChainEditor: React.FC<{
           <div className={styles.importedActionStepHeader}>
             <label className={styles.importedActionField}>
               <span>{index === 0 ? 'Acción' : `Acción ${index + 1}`}</span>
-              <select
+              <CustomSelect
                 value={step.action}
                 disabled={disabled}
                 onChange={(event) => {
@@ -7844,7 +7845,7 @@ const ImportedActionChainEditor: React.FC<{
                 {getImportedActionOptionsForStep(visibleActions, index, actionOptions).map(option => (
                   <option key={option.value} value={option.value}>{option.label}{option.demo ? ' (demo)' : ''}</option>
                 ))}
-              </select>
+              </CustomSelect>
             </label>
             {visibleActions.length > 1 && (
               <button type="button" onClick={() => removeAction(index)} disabled={disabled} aria-label={`Quitar acción ${index + 1}`}>
@@ -7870,7 +7871,7 @@ const ImportedActionChainEditor: React.FC<{
           {step.action === 'specific_page' && (
             <label className={styles.importedActionField}>
               <span>Página destino</span>
-              <select
+              <CustomSelect
                 value={step.buttonPageId || ''}
                 disabled={disabled}
                 onChange={(event) => setAction(index, { buttonPageId: event.target.value })}
@@ -7879,7 +7880,7 @@ const ImportedActionChainEditor: React.FC<{
                 {targetPages.map(page => (
                   <option key={page.id} value={page.id}>{page.title || page.id}</option>
                 ))}
-              </select>
+              </CustomSelect>
             </label>
           )}
 
@@ -9846,7 +9847,7 @@ const ImportedHtmlReviewModal: React.FC<{
                       </div>
                       <label>
                         <span>Guardar como</span>
-                        <select
+                        <CustomSelect
                           value={destinationType}
                           onChange={(event) => updateDestinationType(
                             formIndex,
@@ -9859,12 +9860,12 @@ const ImportedHtmlReviewModal: React.FC<{
                           <option value="custom">Campo personalizado</option>
                           <option value="new_custom">Nuevo campo personalizado</option>
                           <option value="ignored">No guardar</option>
-                        </select>
+                        </CustomSelect>
                       </label>
                       {destinationType === 'standard' ? (
                         <label>
                           <span>Dato</span>
-                          <select
+                          <CustomSelect
                             value={field.destinationKey || inferImportedStandardKey(field)}
                             onChange={(event) => patchField(formIndex, fieldIndex, {
                               destinationKey: event.target.value,
@@ -9874,12 +9875,12 @@ const ImportedHtmlReviewModal: React.FC<{
                             {importedStandardFieldOptions.map(option => (
                               <option key={option.value} value={option.value}>{option.label}</option>
                             ))}
-                          </select>
+                          </CustomSelect>
                         </label>
                       ) : destinationType === 'custom' ? (
                         <label>
                           <span>Campo personalizado</span>
-                          <select
+                          <CustomSelect
                             value={selectedCustomFieldId}
                             onChange={(event) => {
                               const customField = activeCustomFields.find(item => item.definitionId === event.target.value)
@@ -9898,7 +9899,7 @@ const ImportedHtmlReviewModal: React.FC<{
                                 {customField.label || customField.name || customField.fieldKey}
                               </option>
                             ))}
-                          </select>
+                          </CustomSelect>
                         </label>
                       ) : destinationType === 'new_custom' ? (
                         <label>
@@ -11595,7 +11596,7 @@ const SeoOptimizationModal: React.FC<{
             <SeoSectionTitle icon={<Globe2 size={17} />} title="Idioma" issues={validation.languageIssues} />
             <label className={styles.seoField}>
               <span>Idioma</span>
-              <select
+              <CustomSelect
                 value={language}
                 onChange={(event) => patchThemeText('seoLanguage', event.target.value)}
                 onBlur={onSave}
@@ -11603,7 +11604,7 @@ const SeoOptimizationModal: React.FC<{
                 {seoLanguageOptions.map(option => (
                   <option key={option} value={option}>{option}</option>
                 ))}
-              </select>
+              </CustomSelect>
             </label>
             <SeoCheckLine ok={checks.languagePresent}>La pagina tiene idioma seleccionado.</SeoCheckLine>
           </section>
@@ -13304,11 +13305,11 @@ const InlineBlockStyleControls: React.FC<{
             <div className={styles.textToolbar}>
               <label className={styles.textFontSelect}>
                 <span>Fuente</span>
-                <select value={currentFontFamily} onChange={(event) => onPatchSettings({ fontFamily: event.target.value })} onBlur={onSave}>
+                <CustomSelect value={currentFontFamily} onChange={(event) => onPatchSettings({ fontFamily: event.target.value })} onBlur={onSave}>
                   {fontOptions.map(option => (
                     <option key={option.label} value={option.value}>{option.label}</option>
                   ))}
-                </select>
+                </CustomSelect>
               </label>
               <div className={styles.textFormatButtons} role="group" aria-label="Formato de texto">
                 <button
@@ -14087,11 +14088,11 @@ const FormGlobalStyleControls: React.FC<{
         <div className={styles.textToolbar}>
           <label className={styles.textFontSelect}>
             <span>Tipografia</span>
-            <select value={currentFontFamily} onChange={(event) => onPatchTheme({ formFontFamily: event.target.value })} onBlur={onSaveSite}>
+            <CustomSelect value={currentFontFamily} onChange={(event) => onPatchTheme({ formFontFamily: event.target.value })} onBlur={onSaveSite}>
               {fontOptions.map(option => (
                 <option key={option.label} value={option.value}>{option.label}</option>
               ))}
-            </select>
+            </CustomSelect>
           </label>
           <div className={styles.textFormatButtons} role="group" aria-label="Formato global de formulario">
             <button type="button" className={isBold ? styles.textFormatActive : ''} aria-pressed={isBold} title="Negrita" aria-label="Negrita" onClick={() => patchTextFormat({ formFontWeight: isBold ? 'normal' : 'bold' })}>
@@ -14138,15 +14139,15 @@ const FormGlobalStyleControls: React.FC<{
       <div className={styles.twoColumn}>
         <label className={styles.field}>
           <span>Estilo opciones</span>
-          <select value={normalizeFormChoiceStyle(theme.formChoiceStyle)} onChange={(event) => onPatchTheme({ formChoiceStyle: event.target.value as FormChoiceStyle })} onBlur={onSaveSite}>
+          <CustomSelect value={normalizeFormChoiceStyle(theme.formChoiceStyle)} onChange={(event) => onPatchTheme({ formChoiceStyle: event.target.value as FormChoiceStyle })} onBlur={onSaveSite}>
             {formChoiceStyleOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
+          </CustomSelect>
         </label>
         <label className={styles.field}>
           <span>Estilo lista</span>
-          <select value={normalizeFormSelectStyle(theme.formSelectStyle)} onChange={(event) => onPatchTheme({ formSelectStyle: event.target.value as FormSelectStyle })} onBlur={onSaveSite}>
+          <CustomSelect value={normalizeFormSelectStyle(theme.formSelectStyle)} onChange={(event) => onPatchTheme({ formSelectStyle: event.target.value as FormSelectStyle })} onBlur={onSaveSite}>
             {formSelectStyleOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
+          </CustomSelect>
         </label>
       </div>
       <div className={styles.twoColumn}>
@@ -14225,7 +14226,7 @@ const PopupInspector: React.FC<{
           <div className={styles.twoColumn}>
             <label className={styles.field}>
               <span>Activacion</span>
-              <select
+              <CustomSelect
                 value={popupTrigger}
                 onChange={(event) => onPatchTheme({ popupTrigger: event.target.value as SiteTheme['popupTrigger'] })}
                 onBlur={onSaveSite}
@@ -14233,7 +14234,7 @@ const PopupInspector: React.FC<{
                 {Object.entries(popupTriggerLabels).map(([value, label]) => (
                   <option key={value} value={value}>{label}</option>
                 ))}
-              </select>
+              </CustomSelect>
             </label>
             <label className={styles.field}>
               <span>Segundos</span>
@@ -14269,15 +14270,15 @@ const PopupInspector: React.FC<{
           <div className={styles.twoColumn}>
             <label className={styles.field}>
               <span>Mostrar</span>
-              <select value={closeDisplay} onChange={(event) => onPatchTheme({ popupCloseDisplay: event.target.value as SiteTheme['popupCloseDisplay'] })} onBlur={onSaveSite}>
+              <CustomSelect value={closeDisplay} onChange={(event) => onPatchTheme({ popupCloseDisplay: event.target.value as SiteTheme['popupCloseDisplay'] })} onBlur={onSaveSite}>
                 {Object.entries(popupCloseDisplayLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-              </select>
+              </CustomSelect>
             </label>
             <label className={styles.field}>
               <span>Icono</span>
-              <select value={closeIcon} onChange={(event) => onPatchTheme({ popupCloseIcon: event.target.value as SiteTheme['popupCloseIcon'] })} onBlur={onSaveSite}>
+              <CustomSelect value={closeIcon} onChange={(event) => onPatchTheme({ popupCloseIcon: event.target.value as SiteTheme['popupCloseIcon'] })} onBlur={onSaveSite}>
                 {Object.entries(popupCloseIconLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-              </select>
+              </CustomSelect>
             </label>
           </div>
           {closeDisplay !== 'icon' && (
@@ -14363,7 +14364,7 @@ const PageInspector: React.FC<{
           <div className={styles.twoColumn}>
             <label className={styles.field}>
               <span>Tipo</span>
-              <select
+              <CustomSelect
                 value={getThemeString(theme, 'backgroundMediaType') || 'image'}
                 onChange={(event) => onPatchTheme({ backgroundMediaType: event.target.value as SiteTheme['backgroundMediaType'] })}
                 onBlur={onSaveSite}
@@ -14371,11 +14372,11 @@ const PageInspector: React.FC<{
                 {backgroundMediaTypeOptions.map(option => (
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
-              </select>
+              </CustomSelect>
             </label>
             <label className={styles.field}>
               <span>Visualizacion</span>
-              <select
+              <CustomSelect
                 value={getBackgroundVisualValue(theme)}
                 onChange={(event) => onPatchTheme(backgroundVisualPatch(event.target.value))}
                 onBlur={onSaveSite}
@@ -14383,7 +14384,7 @@ const PageInspector: React.FC<{
                 {backgroundVisualOptions.map(option => (
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
-              </select>
+              </CustomSelect>
             </label>
           </div>
 
@@ -14449,7 +14450,7 @@ const PageInspector: React.FC<{
               <div className={styles.twoColumn}>
                 <label className={styles.field}>
                   <span>Cuando</span>
-                  <select
+                  <CustomSelect
                     value={normalizeMetaTrigger(activePage.metaTrigger)}
                     disabled={!site.metaCapiEnabled || !activePageHasConversion}
                     onChange={(event) => patchActivePage({ metaTrigger: event.target.value as SiteMetaTrigger })}
@@ -14458,11 +14459,11 @@ const PageInspector: React.FC<{
                     {metaTriggerOptions.map(option => (
                       <option key={option.value} value={option.value}>{option.label}</option>
                     ))}
-                  </select>
+                  </CustomSelect>
                 </label>
                 <label className={styles.field}>
                   <span>Evento</span>
-                  <select
+                  <CustomSelect
                     value={activePageEventName}
                     disabled={!site.metaCapiEnabled}
                     onChange={(event) => {
@@ -14477,7 +14478,7 @@ const PageInspector: React.FC<{
                     {metaEventOptions.map(option => (
                       <option key={option.value} value={option.value}>{option.label}</option>
                     ))}
-                  </select>
+                  </CustomSelect>
                 </label>
               </div>
             </>
@@ -14494,7 +14495,7 @@ const PageInspector: React.FC<{
               </div>
               <label className={styles.field}>
                 <span>Evento de submit</span>
-                <select
+                <CustomSelect
                   value={formEventName}
                   disabled={!site.metaCapiEnabled}
                   onChange={(event) => onPatchSite({ metaEventName: event.target.value })}
@@ -14503,13 +14504,13 @@ const PageInspector: React.FC<{
                   {metaEventOptions.map(option => (
                     <option key={option.value} value={option.value}>{option.label}</option>
                   ))}
-                </select>
+                </CustomSelect>
               </label>
 	              {isStandardForm(site) && (
                 <>
                   <label className={styles.field}>
                     <span>Al enviar formulario</span>
-                    <select
+                    <CustomSelect
                       value={getThemeFormCompletionAction(theme)}
                       onChange={(event) => onPatchTheme({ formCompletionAction: event.target.value as FormCompletionAction })}
                       onBlur={onSaveSite}
@@ -14517,7 +14518,7 @@ const PageInspector: React.FC<{
                       <option value="next_page_if_qualified">Mostrar Agradecimiento o Descalificacion segun resultado</option>
                       <option value="next_page">Siempre mostrar pagina Agradecimiento</option>
                       <option value="form_default">Mostrar mensaje en este formulario</option>
-                    </select>
+                    </CustomSelect>
                   </label>
                   <label className={styles.field}>
                     <span>Mensaje si califica</span>
@@ -14620,7 +14621,7 @@ const CustomFieldBindingControl: React.FC<{
       <div className={styles.panelSubheader}>Guardado de respuesta</div>
       <label className={styles.field}>
         <span>Guardar respuesta en</span>
-        <select
+        <CustomSelect
           value={currentDefinitionId}
           onChange={(event) => {
             const definitionId = event.target.value
@@ -14657,7 +14658,7 @@ const CustomFieldBindingControl: React.FC<{
               ))}
             </optgroup>
           ))}
-        </select>
+        </CustomSelect>
       </label>
       {selectedField ? (
         <p className={styles.customFieldHint}>
@@ -14784,7 +14785,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             <div className={styles.twoColumn}>
               <label className={styles.field}>
                 <span>Validacion</span>
-                <select
+                <CustomSelect
                   value={getSettingString(settings, 'validation')}
                   onChange={(event) => onPatchSettings({ validation: event.target.value })}
                   onBlur={onSave}
@@ -14795,7 +14796,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                   <option value="number">Numero</option>
                   <option value="currency">Moneda</option>
                   <option value="date">Fecha</option>
-                </select>
+                </CustomSelect>
               </label>
               <label className={styles.checkboxLabel}>
                 <input
@@ -14945,7 +14946,7 @@ const OptionsRulesEditor: React.FC<OptionsRulesEditorProps> = ({ block, blocks, 
             </label>
             <label className={styles.field}>
               <span>Regla</span>
-              <select
+              <CustomSelect
                 value={getVisibleRuleAction(option.action)}
                 onChange={(event) => {
                   const action = event.target.value as SiteOptionAction
@@ -14954,17 +14955,17 @@ const OptionsRulesEditor: React.FC<OptionsRulesEditorProps> = ({ block, blocks, 
                 onBlur={onSave}
               >
                 {ruleActions.map(action => <option key={action.value} value={action.value}>{action.label}</option>)}
-              </select>
+              </CustomSelect>
             </label>
           </div>
 
           {option.action === 'jump' && (
             <label className={styles.field}>
               <span>Saltar a pregunta</span>
-              <select value={option.targetBlockId || ''} onChange={(event) => patchOption(index, { targetBlockId: event.target.value })} onBlur={onSave}>
+              <CustomSelect value={option.targetBlockId || ''} onChange={(event) => patchOption(index, { targetBlockId: event.target.value })} onBlur={onSave}>
                 <option value="">Selecciona una pregunta</option>
                 {fieldTargets.map(target => <option key={target.id} value={target.id}>{getTargetLabel(target)}</option>)}
-              </select>
+              </CustomSelect>
             </label>
           )}
 
@@ -15017,13 +15018,13 @@ const ButtonActionFields: React.FC<{
     <>
       <label className={styles.field}>
         <span>Accion del boton</span>
-        <select value={action} onChange={(event) => onPatchSettings({ buttonAction: event.target.value })} onBlur={onSave}>
+        <CustomSelect value={action} onChange={(event) => onPatchSettings({ buttonAction: event.target.value })} onBlur={onSave}>
           <option value="url">Enviar a una URL</option>
           <option value="next_page">Ir a la siguiente pagina del embudo</option>
           <option value="specific_page">Ir a una pagina especifica del embudo</option>
           <option value="open_popup">Abrir pop up</option>
           <option value="close_popup">Cerrar pop up</option>
-        </select>
+        </CustomSelect>
       </label>
 
       {action === 'url' && (
@@ -15036,10 +15037,10 @@ const ButtonActionFields: React.FC<{
       {action === 'specific_page' && (
         <label className={styles.field}>
           <span>Pagina destino</span>
-          <select value={getSettingString(settings, 'buttonPageId')} onChange={(event) => onPatchSettings({ buttonPageId: event.target.value })} onBlur={onSave}>
+          <CustomSelect value={getSettingString(settings, 'buttonPageId')} onChange={(event) => onPatchSettings({ buttonPageId: event.target.value })} onBlur={onSave}>
             <option value="">Selecciona una pagina</option>
             {targetPages.map(page => <option key={page.id} value={page.id}>{page.title}</option>)}
-          </select>
+          </CustomSelect>
         </label>
       )}
     </>
@@ -15077,7 +15078,7 @@ const LandingBlockSettings: React.FC<LandingBlockSettingsProps> = ({ site, block
         <div className={styles.panelSubheader}>Tipo de franja</div>
         <label className={styles.field}>
           <span>Columnas</span>
-          <select
+          <CustomSelect
             value={String(getSectionColumns(block))}
             onChange={(event) => onPatchSettings({ sectionColumns: Number(event.target.value) })}
             onBlur={onSave}
@@ -15085,7 +15086,7 @@ const LandingBlockSettings: React.FC<LandingBlockSettingsProps> = ({ site, block
             <option value="1">Una columna</option>
             <option value="2">Dos columnas</option>
             <option value="3">Tres columnas</option>
-          </select>
+          </CustomSelect>
         </label>
         <DimensionField
           label="Espacio entre columnas"
@@ -15145,7 +15146,7 @@ const LandingBlockSettings: React.FC<LandingBlockSettingsProps> = ({ site, block
         <div className={styles.panelSubheader}>Perfil de red social</div>
         <label className={styles.field}>
           <span>Red social</span>
-          <select
+          <CustomSelect
             value={platform}
             onChange={(event) => onPatchSettings({
               platform: event.target.value,
@@ -15161,11 +15162,11 @@ const LandingBlockSettings: React.FC<LandingBlockSettingsProps> = ({ site, block
             {socialPlatformOptions.map(option => (
               <option key={option.value} value={option.value}>{option.label}</option>
             ))}
-          </select>
+          </CustomSelect>
         </label>
         <label className={styles.field}>
           <span>Perfil conectado</span>
-          <select
+          <CustomSelect
             value={selectedConnectedProfileId}
             disabled={loadingSocialProfiles || connectedProfilesForPlatform.length === 0}
             onChange={(event) => {
@@ -15190,7 +15191,7 @@ const LandingBlockSettings: React.FC<LandingBlockSettingsProps> = ({ site, block
             {connectedProfilesForPlatform.map(profile => (
               <option key={profile.id} value={profile.id}>{socialProfileOptionLabel(profile)}</option>
             ))}
-          </select>
+          </CustomSelect>
         </label>
         <p className={styles.muted}>
           {connectedProfilesForPlatform.length > 0
@@ -15261,7 +15262,7 @@ const LandingBlockSettings: React.FC<LandingBlockSettingsProps> = ({ site, block
       <div className={styles.settingsGroup}>
         <label className={styles.field}>
           <span>Calendario a embeber</span>
-          <select
+          <CustomSelect
             value={selectedCalendarId}
             onChange={(event) => {
               const calendar = calendars.find(item => item.id === event.target.value)
@@ -15277,7 +15278,7 @@ const LandingBlockSettings: React.FC<LandingBlockSettingsProps> = ({ site, block
             {calendars.map(calendar => (
               <option key={calendar.id} value={calendar.id}>{calendar.name}</option>
             ))}
-          </select>
+          </CustomSelect>
         </label>
         {selectedCalendar ? (
           <p className={styles.muted}>
@@ -15299,12 +15300,12 @@ const LandingBlockSettings: React.FC<LandingBlockSettingsProps> = ({ site, block
       <div className={styles.settingsGroup}>
         <label className={styles.field}>
           <span>Formulario existente</span>
-          <select value={getSettingString(settings, 'formSiteId')} onChange={(event) => onPatchSettings({ formSiteId: event.target.value, embeddedBlocks: undefined })} onBlur={onSave}>
+          <CustomSelect value={getSettingString(settings, 'formSiteId')} onChange={(event) => onPatchSettings({ formSiteId: event.target.value, embeddedBlocks: undefined })} onBlur={onSave}>
             <option value="">Formulario inline dentro de este sitio embudo</option>
             {forms.filter(form => form.id !== site.id).map(form => (
               <option key={form.id} value={form.id}>{form.name}</option>
             ))}
-          </select>
+          </CustomSelect>
         </label>
         <label className={styles.field}>
           <span>Descripcion del formulario</span>
@@ -15312,11 +15313,11 @@ const LandingBlockSettings: React.FC<LandingBlockSettingsProps> = ({ site, block
         </label>
         <label className={styles.field}>
           <span>Al terminar el formulario</span>
-          <select value={getFormCompletionAction(settings)} onChange={(event) => onPatchSettings({ completionAction: event.target.value })} onBlur={onSave}>
+          <CustomSelect value={getFormCompletionAction(settings)} onChange={(event) => onPatchSettings({ completionAction: event.target.value })} onBlur={onSave}>
             <option value="next_page">Ir a la siguiente pagina al terminar</option>
             <option value="next_page_if_qualified">Ir a la siguiente pagina solo si califica</option>
             <option value="form_default">Mantener la configuracion actual del formulario</option>
-          </select>
+          </CustomSelect>
         </label>
         <button
           type="button"

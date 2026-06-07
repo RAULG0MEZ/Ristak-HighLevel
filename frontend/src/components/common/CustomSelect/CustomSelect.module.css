@@ -142,6 +142,16 @@
   color: var(--color-text-primary);
 }
 
+.option:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.option:disabled:hover {
+  background: transparent;
+  color: var(--color-text-secondary);
+}
+
 .optionSelected {
   background: rgba(var(--color-primary-rgb), 0.08);
   color: var(--color-primary);
@@ -155,6 +165,20 @@
 .checkIcon {
   color: var(--color-primary);
   flex-shrink: 0;
+}
+
+.optionGroup {
+  display: flex;
+  flex-direction: column;
+}
+
+.optionGroupLabel {
+  padding: 8px 12px 5px;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 
 .disabled {

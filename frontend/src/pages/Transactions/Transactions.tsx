@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
-import { KpiCard, Card, Button, Table, DateRangePicker, ContactSearchInput, PageContainer, TabList, TreeFilter, RecordPaymentModal, Badge, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, Loading, NumberInput } from '@/components/common'
+import { KpiCard, Card, Button, Table, DateRangePicker, ContactSearchInput, PageContainer, TabList, TreeFilter, RecordPaymentModal, Badge, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, Loading, NumberInput, CustomSelect } from '@/components/common'
 import type { Column, BadgeVariant } from '@/components/common'
 import { useNotification } from '@/contexts/NotificationContext'
 import { Contact } from '@/types'
@@ -2034,25 +2034,25 @@ export const Transactions: React.FC = () => {
               </div>
               <div className={styles.formGroup}>
                 <label>Moneda</label>
-                <select name="currency" defaultValue={modal.transaction?.currency || defaultCurrency || 'MXN'}>
+                <CustomSelect name="currency" defaultValue={modal.transaction?.currency || defaultCurrency || 'MXN'}>
                   {CURRENCY_OPTIONS.map((currencyOption) => (
                     <option key={currencyOption.value} value={currencyOption.value}>{currencyOption.value}</option>
                   ))}
-                </select>
+                </CustomSelect>
               </div>
               <div className={styles.formGroup}>
                 <label>Método de pago</label>
-                <select name="method" defaultValue={modal.transaction?.method || 'card'}>
+                <CustomSelect name="method" defaultValue={modal.transaction?.method || 'card'}>
                   <option value="card">Tarjeta</option>
                   <option value="transfer">Transferencia</option>
                   <option value="cash">Efectivo</option>
                   <option value="paypal">PayPal</option>
                   <option value="other">Otro</option>
-                </select>
+                </CustomSelect>
               </div>
               <div className={styles.formGroup}>
                 <label>Estado</label>
-                <select name="status" defaultValue={modal.transaction?.status || 'draft'}>
+                <CustomSelect name="status" defaultValue={modal.transaction?.status || 'draft'}>
                   <option value="draft">Borrador</option>
                   <option value="sent">Enviado</option>
                   <option value="pending">Pendiente</option>
@@ -2062,7 +2062,7 @@ export const Transactions: React.FC = () => {
                   <option value="void">Anulado</option>
                   <option value="refunded">Reembolsado</option>
                   <option value="failed">Fallido</option>
-                </select>
+                </CustomSelect>
               </div>
               <div className={styles.formGroup}>
                 <label>Fecha de pago / emisión</label>
@@ -2187,7 +2187,7 @@ export const Transactions: React.FC = () => {
                 </div>
                 <div className={styles.formGroup}>
                   <label>Tipo de programación</label>
-                  <select
+                  <CustomSelect
                     name="scheduleMode"
                     value={paymentPlanCreateModal.scheduleMode}
                     onChange={(event) => setPaymentPlanCreateModal(prev => ({
@@ -2197,14 +2197,14 @@ export const Transactions: React.FC = () => {
                   >
                     <option value="recurring">Recurrente</option>
                     <option value="one_time">Fecha específica</option>
-                  </select>
+                  </CustomSelect>
                 </div>
 
                 {paymentPlanCreateModal.scheduleMode === 'recurring' && (
                   <>
                     <div className={styles.formGroup}>
                       <label>Recurrencia</label>
-                      <select
+                      <CustomSelect
                         name="frequency"
                         value={paymentPlanCreateModal.frequency}
                         onChange={(event) => setPaymentPlanCreateModal(prev => ({
@@ -2216,7 +2216,7 @@ export const Transactions: React.FC = () => {
                         <option value="weekly">Semanal</option>
                         <option value="monthly">Mensual</option>
                         <option value="yearly">Anual</option>
-                      </select>
+                      </CustomSelect>
                     </div>
                     <div className={styles.formGroup}>
                       <label>Intervalo</label>
@@ -2230,7 +2230,7 @@ export const Transactions: React.FC = () => {
 
                     <div className={styles.formGroup}>
                       <label>Termina</label>
-                      <select
+                      <CustomSelect
                         name="endType"
                         value={paymentPlanCreateModal.endType}
                         onChange={(event) => setPaymentPlanCreateModal(prev => ({
@@ -2241,7 +2241,7 @@ export const Transactions: React.FC = () => {
                         <option value="never">Nunca</option>
                         <option value="count">Después de N cobros</option>
                         <option value="by">En una fecha</option>
-                      </select>
+                      </CustomSelect>
                     </div>
                     {paymentPlanCreateModal.endType === 'count' && (
                       <div className={styles.formGroup}>
@@ -2286,11 +2286,11 @@ export const Transactions: React.FC = () => {
                     {paymentPlanCreateModal.frequency === 'weekly' && (
                       <div className={styles.formGroup}>
                         <label>Día de la semana</label>
-                        <select name="dayOfWeek" defaultValue="mo">
+                        <CustomSelect name="dayOfWeek" defaultValue="mo">
                           {WEEKDAY_OPTIONS.map(option => (
                             <option key={option.value} value={option.value}>{option.label}</option>
                           ))}
-                        </select>
+                        </CustomSelect>
                       </div>
                     )}
 
@@ -2298,7 +2298,7 @@ export const Transactions: React.FC = () => {
                       <>
                         <div className={styles.formGroup}>
                           <label>Regla mensual</label>
-                          <select
+                          <CustomSelect
                             name="monthlyMode"
                             value={paymentPlanCreateModal.monthlyMode}
                             onChange={(event) => setPaymentPlanCreateModal(prev => ({
@@ -2308,48 +2308,48 @@ export const Transactions: React.FC = () => {
                           >
                             <option value="dayOfMonth">Día del mes</option>
                             <option value="weekOfMonth">Semana del mes</option>
-                          </select>
+                          </CustomSelect>
                         </div>
                         {paymentPlanCreateModal.frequency === 'yearly' && (
                           <div className={styles.formGroup}>
                             <label>Mes del año</label>
-                            <select name="monthOfYear" defaultValue="jan">
+                            <CustomSelect name="monthOfYear" defaultValue="jan">
                               {MONTH_OPTIONS.map(option => (
                                 <option key={option.value} value={option.value}>{option.label}</option>
                               ))}
-                            </select>
+                            </CustomSelect>
                           </div>
                         )}
 
                         {paymentPlanCreateModal.monthlyMode === 'dayOfMonth' ? (
                           <div className={styles.formGroup}>
                             <label>Día del mes</label>
-                            <select name="dayOfMonth" defaultValue="1">
+                            <CustomSelect name="dayOfMonth" defaultValue="1">
                               <option value="-1">Último día del mes</option>
                               {Array.from({ length: 28 }).map((_, index) => (
                                 <option key={index + 1} value={index + 1}>{index + 1}</option>
                               ))}
-                            </select>
+                            </CustomSelect>
                           </div>
                         ) : (
                           <>
                             <div className={styles.formGroup}>
                               <label>Semana del mes</label>
-                              <select name="numOfWeek" defaultValue="1">
+                              <CustomSelect name="numOfWeek" defaultValue="1">
                                 <option value="1">Primera</option>
                                 <option value="2">Segunda</option>
                                 <option value="3">Tercera</option>
                                 <option value="4">Cuarta</option>
                                 <option value="-1">Última</option>
-                              </select>
+                              </CustomSelect>
                             </div>
                             <div className={styles.formGroup}>
                               <label>Día de la semana</label>
-                              <select name="dayOfWeek" defaultValue="mo">
+                              <CustomSelect name="dayOfWeek" defaultValue="mo">
                                 {WEEKDAY_OPTIONS.map(option => (
                                   <option key={option.value} value={option.value}>{option.label}</option>
                                 ))}
-                              </select>
+                              </CustomSelect>
                             </div>
                           </>
                         )}

@@ -224,34 +224,18 @@
 }
 
 .sourceControl {
-  position: relative;
   display: inline-grid;
-  grid-template-columns: auto auto minmax(68px, auto) auto;
+  grid-template-columns: auto auto minmax(150px, 1fr);
   align-items: center;
   gap: 8px;
-  min-height: 38px;
-  padding: 0 12px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 8px;
-  background: var(--color-background-primary);
+  min-width: min(260px, 100%);
   color: var(--color-text-secondary);
   font-size: 12px;
   font-weight: 650;
-  cursor: pointer;
-  overflow: hidden;
-}
-
-.sourceControl:focus-within,
-.sourceControl:hover {
-  border-color: rgba(148, 163, 184, 0.32);
-  background: rgba(148, 163, 184, 0.06);
 }
 
 .sourceControl > svg,
-.sourceLabel,
-.sourceValue {
-  position: relative;
-  z-index: 1;
+.sourceLabel {
   pointer-events: none;
 }
 
@@ -266,30 +250,8 @@
   white-space: nowrap;
 }
 
-.sourceSelect {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  width: 100% !important;
-  height: 100% !important;
-  min-height: 0 !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  border: 0 !important;
-  border-radius: inherit !important;
-  appearance: none !important;
-  background: transparent !important;
-  background-image: none !important;
-  box-shadow: none !important;
-  color: transparent !important;
-  cursor: pointer;
-  opacity: 0;
-  outline: none;
-}
-
-.sourceSelect option {
-  color: #111827;
-  background: #ffffff;
+.sourceDropdown {
+  min-width: 150px;
 }
 
 .sourceChevron {

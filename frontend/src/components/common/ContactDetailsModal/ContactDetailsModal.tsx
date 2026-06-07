@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { Modal, Icon, Badge, type BadgeVariant } from '@/components/common'
+import { Modal, Icon, Badge, CustomSelect, type BadgeVariant } from '@/components/common'
 import { ContactJourney } from '@/components/common/ContactJourney'
 import { normalizeTrafficSource } from '@/utils/trafficSourceNormalizer'
 import { CONTACT_STAGE_BADGE_VARIANTS, getContactStageBadge } from '@/utils/contactStageBadge'
@@ -654,8 +654,7 @@ export function ContactDetailsModal({
                           </span>
                         </div>
                       </div>
-                      <select
-                        className={styles.whatsappPreferenceSelect}
+                      <CustomSelect
                         value={getPreferredWhatsAppPhoneNumberId(selectedContact)}
                         onChange={(event) => updatePreferredWhatsAppPhoneNumber(event.target.value)}
                         disabled={savingWhatsAppPreference || !onUpdatePreferredWhatsAppPhoneNumber}
@@ -666,7 +665,7 @@ export function ContactDetailsModal({
                             {getWhatsAppPhoneLabel(phone)}{phone.is_default_sender ? ' · Principal' : ''}
                           </option>
                         ))}
-                      </select>
+                      </CustomSelect>
                       {savingWhatsAppPreference && (
                         <p className={styles.whatsappPreferenceHint}>Guardando cambio...</p>
                       )}
