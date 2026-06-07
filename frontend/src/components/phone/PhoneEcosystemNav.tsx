@@ -35,7 +35,7 @@ export const PhoneEcosystemNav: React.FC<PhoneEcosystemNavProps> = ({ active, ba
   const navigate = useNavigate()
   const activeIndex = getPhoneSectionIndex(active)
   const [indicatorIndex, setIndicatorIndex] = useState(() => readStoredPhoneNavIndex(activeIndex))
-  const [indicatorDragOffset, setIndicatorDragOffset] = useState(0)
+  const [indicatorDragPosition, setIndicatorDragPosition] = useState<number | null>(null)
   const [swiping, setSwiping] = useState(false)
   const swipeGestureRef = useRef<NavSwipeGesture | null>(null)
   const suppressClickRef = useRef(false)
@@ -51,7 +51,7 @@ export const PhoneEcosystemNav: React.FC<PhoneEcosystemNavProps> = ({ active, ba
 
     const frame = window.requestAnimationFrame(() => {
       setIndicatorIndex(activeIndex)
-      setIndicatorDragOffset(0)
+      setIndicatorDragPosition(null)
       window.sessionStorage.setItem(PHONE_NAV_ACTIVE_INDEX_KEY, String(activeIndex))
     })
 
@@ -78,8 +78,7 @@ export const PhoneEcosystemNav: React.FC<PhoneEcosystemNavProps> = ({ active, ba
     }, NAV_SWIPE_CLICK_SUPPRESS_MS)
   }, [])
 
-  const navigateBySwipe = useCallback((delta: -1 | 1) => {
-    const nextIndex = clampPhoneNavIndex(activeIndex + delta)
+  const navigateToIndex = useCallback((nextIndex: number) => {
     if (nextIndex === activeIndex) return false
 
     const nextItem = PHONE_NAV_ITEMS[nextIndex]
@@ -92,21 +91,35 @@ export const PhoneEcosystemNav: React.FC<PhoneEcosystemNavProps> = ({ active, ba
 
   const clearSwipeGesture = useCallback(() => {
     swipeGestureRef.current = null
-    setIndicatorDragOffset(0)
+    setIndicatorDragPosition(null)
     setSwiping(false)
   }, [])
 
-  const getIndicatorDragOffset = useCallback((dock: HTMLElement, deltaX: number) => {
-    const dockWidth = dock.getBoundingClientRect().width
-    const itemWidth = dockWidth > 0 ? dockWidth / PHONE_NAV_ITEMS.length : 0
-    if (!itemWidth) return 0
+  const getDockItemWidth = useCallback((dock: HTMLElement) => {
+    const indicator = dock.querySelector<HTMLElement>('[data-phone-nav-indicator="true"]')
+    const itemWidth = indicator?.getBoundingClientRect().width || 0
+    return itemWidth > 0 ? itemWidth : dock.getBoundingClientRect().width / PHONE_NAV_ITEMS.length
+  }, [])
 
-    const swipeDelta = deltaX > 0 ? 1 : -1
-    const targetIndex = clampPhoneNavIndex(activeIndex + swipeDelta)
-    const maxOffset = itemWidth * (targetIndex === activeIndex ? NAV_SWIPE_EDGE_RESISTANCE : 1)
-    const nextOffset = Math.max(-maxOffset, Math.min(maxOffset, deltaX))
-    return Math.round(nextOffset)
-  }, [activeIndex])
+  const getIndicatorDragPosition = useCallback((dock: HTMLElement, deltaX: number) => {
+    const itemWidth = getDockItemWidth(dock)
+    if (!itemWidth) return null
+
+    const maxPosition = itemWidth * (PHONE_NAV_ITEMS.length - 1)
+    const rawPosition = (activeIndex * itemWidth) + deltaX
+
+    if (rawPosition < 0) return Math.round(rawPosition * NAV_SWIPE_EDGE_RESISTANCE)
+    if (rawPosition > maxPosition) return Math.round(maxPosition + ((rawPosition - maxPosition) * NAV_SWIPE_EDGE_RESISTANCE))
+
+    return Math.round(rawPosition)
+  }, [activeIndex, getDockItemWidth])
+
+  const getSwipeTargetIndex = useCallback((dock: HTMLElement, deltaX: number) => {
+    const itemWidth = getDockItemWidth(dock)
+    if (!itemWidth) return activeIndex
+
+    return clampPhoneNavIndex(Math.round(activeIndex + (deltaX / itemWidth)))
+  }, [activeIndex, getDockItemWidth])
 
   const handlePointerDown = useCallback((event: React.PointerEvent<HTMLElement>) => {
     if (!swipeEnabled || event.pointerType === 'mouse' && event.button !== 0) return
@@ -139,9 +152,9 @@ export const PhoneEcosystemNav: React.FC<PhoneEcosystemNavProps> = ({ active, ba
       setSwiping(true)
     }
 
-    setIndicatorDragOffset(getIndicatorDragOffset(event.currentTarget, deltaX))
+    setIndicatorDragPosition(getIndicatorDragPosition(event.currentTarget, deltaX))
     event.preventDefault()
-  }, [clearSwipeGesture, getIndicatorDragOffset])
+  }, [clearSwipeGesture, getIndicatorDragPosition])
 
   const handlePointerEnd = useCallback((event: React.PointerEvent<HTMLElement>) => {
     const gesture = swipeGestureRef.current
@@ -150,17 +163,18 @@ export const PhoneEcosystemNav: React.FC<PhoneEcosystemNavProps> = ({ active, ba
     const deltaX = event.clientX - gesture.startX
     const distanceX = Math.abs(deltaX)
     const wasHorizontal = gesture.horizontal
+    const targetIndex = getSwipeTargetIndex(event.currentTarget, deltaX)
     clearSwipeGesture()
 
     if (!wasHorizontal || distanceX < NAV_SWIPE_CHANGE_THRESHOLD) return
 
     event.preventDefault()
     suppressNextClick()
-    navigateBySwipe(deltaX > 0 ? 1 : -1)
-  }, [clearSwipeGesture, navigateBySwipe, suppressNextClick])
+    navigateToIndex(targetIndex)
+  }, [clearSwipeGesture, getSwipeTargetIndex, navigateToIndex, suppressNextClick])
 
-  const indicatorTranslate = indicatorDragOffset
-    ? `calc(${indicatorIndex * 100}% ${indicatorDragOffset > 0 ? '+' : '-'} ${Math.abs(indicatorDragOffset)}px)`
+  const indicatorTranslate = indicatorDragPosition !== null
+    ? `${indicatorDragPosition}px`
     : `${indicatorIndex * 100}%`
 
   return (
@@ -179,6 +193,7 @@ export const PhoneEcosystemNav: React.FC<PhoneEcosystemNavProps> = ({ active, ba
     >
       <span
         className={styles.activeIndicator}
+        data-phone-nav-indicator="true"
         style={{ transform: `translate3d(${indicatorTranslate}, 0, 0)` }}
         aria-hidden="true"
       />
