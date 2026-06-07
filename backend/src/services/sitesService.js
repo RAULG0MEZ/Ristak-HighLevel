@@ -160,6 +160,40 @@ const IMPORTED_STATIC_FALLBACK_STYLE = `<style data-rstk-import-static-fallback>
 }
 </style>`
 const IMPORTED_FORM_STANDARD_FIELDS = new Set(['full_name', 'first_name', 'last_name', 'phone', 'email', 'message'])
+const IMPORTED_AMBIGUOUS_PERSON_NAME_ALIASES = [
+  'name',
+  'nombre',
+  'nombres',
+  'tu_nombre',
+  'your_name'
+]
+const IMPORTED_NAME_CONTEXT_EXCLUSION_TOKENS = new Set([
+  'pet',
+  'pets',
+  'mascota',
+  'mascotas',
+  'dog',
+  'dogs',
+  'perro',
+  'perros',
+  'cat',
+  'cats',
+  'gato',
+  'gatos',
+  'animal',
+  'animals',
+  'empresa',
+  'compania',
+  'compañia',
+  'company',
+  'business',
+  'negocio',
+  'organization',
+  'organizacion',
+  'organización',
+  'brand',
+  'marca'
+])
 const IMPORTED_FORM_CUSTOM_FIELD_HINTS = new Map([
   ['fecha_de_nacimiento', 'birth_date'],
   ['fecha_nacimiento', 'birth_date'],
@@ -635,6 +669,49 @@ function hasImportedAlias(haystack = '', aliases = []) {
   })
 }
 
+function getImportedFieldHaystack(field = {}) {
+  return [
+    normalizeImportedFieldKey(field.explicitField, ''),
+    field.sourceName,
+    field.name,
+    field.htmlId,
+    field.type,
+    field.label,
+    field.placeholder,
+    field.nearbyText
+  ].map(value => normalizeImportedFieldKey(value, '')).filter(Boolean).join(' ')
+}
+
+function getImportedFieldContextTokens(field = {}) {
+  return new Set(
+    getImportedFieldHaystack(field)
+      .split(/[\s_]+/)
+      .map(token => normalizeImportedFieldKey(token, ''))
+      .filter(Boolean)
+  )
+}
+
+function hasImportedNameContextExclusion(field = {}) {
+  const tokens = getImportedFieldContextTokens(field)
+  return [...tokens].some(token => IMPORTED_NAME_CONTEXT_EXCLUSION_TOKENS.has(token))
+}
+
+function isImportedAmbiguousPersonNameField(field = {}) {
+  const haystack = getImportedFieldHaystack(field)
+  if (!hasImportedAlias(haystack, IMPORTED_AMBIGUOUS_PERSON_NAME_ALIASES)) return false
+  return !hasImportedNameContextExclusion(field)
+}
+
+function isImportedAmbiguousMappedPersonNameField(field = {}) {
+  return isImportedAmbiguousPersonNameField({
+    sourceName: field.sourceName,
+    name: field.sourceName,
+    type: field.type,
+    label: field.label,
+    placeholder: field.label
+  })
+}
+
 function getImportedStandardAliasKey(haystack = '') {
   if (hasImportedAlias(haystack, IMPORTED_STANDARD_FIELD_ALIASES.email)) return 'email'
   if (hasImportedAlias(haystack, IMPORTED_STANDARD_FIELD_ALIASES.phone)) return 'phone'
@@ -914,16 +991,8 @@ function assignImportedFormIds(html = '', forms = []) {
 
 function inferImportedFieldDestination(field = {}) {
   const explicit = normalizeImportedFieldKey(field.explicitField, '')
-  const haystack = [
-    explicit,
-    field.sourceName,
-    field.name,
-    field.htmlId,
-    field.type,
-    field.label,
-    field.placeholder,
-    field.nearbyText
-  ].map(value => normalizeImportedFieldKey(value, '')).filter(Boolean).join(' ')
+  const haystack = getImportedFieldHaystack(field)
+  const suppressAmbiguousName = hasImportedNameContextExclusion(field) && hasImportedAlias(haystack, IMPORTED_AMBIGUOUS_PERSON_NAME_ALIASES)
 
   if (explicit && IMPORTED_FORM_STANDARD_FIELDS.has(explicit)) {
     return { destinationType: 'standard', destinationKey: explicit, confidence: 0.98 }
@@ -948,6 +1017,16 @@ function inferImportedFieldDestination(field = {}) {
 
   const standardAlias = getImportedStandardAliasKey(haystack)
   if (standardAlias) {
+    if (suppressAmbiguousName && ['first_name', 'full_name'].includes(standardAlias)) {
+      const customHint = getImportedCustomHintDestination(haystack)
+      if (customHint) return customHint
+      return {
+        destinationType: 'custom',
+        destinationKey: normalizeImportedFieldKey(field.label || field.placeholder || field.sourceName || field.name || field.id, 'custom_field'),
+        confidence: 0.56
+      }
+    }
+
     const confidence = standardAlias === 'first_name' || standardAlias === 'last_name'
       ? 0.9
       : standardAlias === 'full_name'
@@ -974,12 +1053,8 @@ function inferImportedFieldDestination(field = {}) {
 }
 
 function buildDefaultImportedFormMappings(forms = []) {
-  return forms.map(form => ({
-    formId: form.id,
-    formTitle: form.title,
-    purpose: form.purpose || 'lead_capture',
-    submitText: form.submitText || 'Enviar',
-    fields: form.fields.map(field => {
+  return forms.map(form => {
+    const fields = form.fields.map(field => {
       const inferred = inferImportedFieldDestination(field)
       return {
         fieldId: field.id,
@@ -994,7 +1069,39 @@ function buildDefaultImportedFormMappings(forms = []) {
         options: field.options || []
       }
     })
-  }))
+    const hasLastName = fields.some(field => (
+      field.destinationType === 'standard' &&
+      field.destinationKey === 'last_name' &&
+      !field.ignored
+    ))
+    const ambiguousPersonNameFields = fields.filter(isImportedAmbiguousMappedPersonNameField)
+
+    return {
+      formId: form.id,
+      formTitle: form.title,
+      purpose: form.purpose || 'lead_capture',
+      submitText: form.submitText || 'Enviar',
+      fields: fields.map(mappedField => {
+        const isOnlyAmbiguousPersonName = ambiguousPersonNameFields.length === 1 &&
+          ambiguousPersonNameFields[0].fieldId === mappedField.fieldId
+
+        if (
+          isOnlyAmbiguousPersonName &&
+          mappedField.destinationType === 'standard' &&
+          ['first_name', 'full_name'].includes(mappedField.destinationKey)
+        ) {
+          return {
+            ...mappedField,
+            destinationKey: hasLastName ? 'first_name' : 'full_name',
+            saveMode: 'standard',
+            confidence: Math.max(Number(mappedField.confidence || 0), 0.9)
+          }
+        }
+
+        return mappedField
+      })
+    }
+  })
 }
 
 function countImportedDetectedFields(forms = []) {
