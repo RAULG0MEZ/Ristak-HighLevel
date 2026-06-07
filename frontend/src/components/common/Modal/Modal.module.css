@@ -65,6 +65,15 @@
   transition: none;
 }
 
+.bottomSheetBackdropClosing {
+  pointer-events: none;
+}
+
+.bottomSheetBackdropClosing::before {
+  animation: none;
+  transition: opacity 180ms ease-out;
+}
+
 .bottomSheetModal {
   z-index: 1;
   max-height: min(86dvh, 820px);

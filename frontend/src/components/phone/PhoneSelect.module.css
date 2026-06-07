@@ -83,6 +83,15 @@
   transition: none;
 }
 
+.overlayClosing {
+  pointer-events: none;
+}
+
+.overlayClosing::before {
+  animation: none;
+  transition: opacity 180ms ease-out;
+}
+
 .sheet {
   position: relative;
   z-index: 1;

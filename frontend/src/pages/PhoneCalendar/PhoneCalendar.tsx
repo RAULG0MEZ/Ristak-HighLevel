@@ -1532,7 +1532,7 @@ export const PhoneCalendar: React.FC = () => {
 
       {sheetView && (
         <div
-          className={`${styles.sheetBackdrop} ${isCalendarSheetDragging ? styles.sheetBackdropInteractive : ''}`}
+          className={`${styles.sheetBackdrop} ${isCalendarSheetDragging ? styles.sheetBackdropInteractive : ''} ${calendarSheetDismiss.closing ? styles.sheetBackdropClosing : ''}`}
           style={calendarSheetDismiss.backdropStyle}
           onClick={calendarSheetDismiss.requestClose}
         >

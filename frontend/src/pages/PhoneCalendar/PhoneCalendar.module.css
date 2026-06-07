@@ -1094,6 +1094,15 @@
   transition: none;
 }
 
+.sheetBackdropClosing {
+  pointer-events: none;
+}
+
+.sheetBackdropClosing::before {
+  animation: none;
+  transition: opacity 180ms ease-out;
+}
+
 .sheet {
   position: relative;
   z-index: 1;

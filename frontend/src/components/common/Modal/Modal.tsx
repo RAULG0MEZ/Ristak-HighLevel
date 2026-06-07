@@ -141,7 +141,7 @@ export const Modal: React.FC<ModalProps> = ({
 
   const modalContent = (
     <div
-      className={`${styles.backdrop} ${isSystemModal ? styles.systemBackdrop : ''} ${draggableSheet ? styles.bottomSheetBackdrop : ''} ${draggableSheet && bottomSheetDragging ? styles.bottomSheetBackdropInteractive : ''} ${backdropClassName}`.trim()}
+      className={`${styles.backdrop} ${isSystemModal ? styles.systemBackdrop : ''} ${draggableSheet ? styles.bottomSheetBackdrop : ''} ${draggableSheet && bottomSheetDragging ? styles.bottomSheetBackdropInteractive : ''} ${draggableSheet && bottomSheetDismiss.closing ? styles.bottomSheetBackdropClosing : ''} ${backdropClassName}`.trim()}
       style={draggableSheet ? bottomSheetDismiss.backdropStyle : undefined}
       onClick={handleBackdropClick}
       data-phone-modal-root="true"
