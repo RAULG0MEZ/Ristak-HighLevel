@@ -800,6 +800,25 @@ function sanitizeImportedIframeTag(attrsText = '', report = []) {
   return `<iframe${id ? ` id="${escapeHtml(id)}"` : ''}${className ? ` class="${escapeHtml(className)}"` : ''}${dataAttrs} src="${escapeHtml(src)}" title="${escapeHtml(title)}"${width ? ` width="${escapeHtml(width)}"` : ''}${height ? ` height="${escapeHtml(height)}"` : ''}${style ? ` style="${escapeHtml(style)}"` : ''} loading="lazy" referrerpolicy="no-referrer-when-downgrade" sandbox="${EMBED_SANDBOX_URL}" allow="${escapeHtml(allow)}" allowfullscreen></iframe>`
 }
 
+function replaceImportedWistiaPlayers(html = '', report = []) {
+  let converted = 0
+  const replacePlayer = (match, attrsText = '') => {
+    const mediaId = getWistiaMediaIdFromValue(attrsText || match)
+    if (!mediaId) return match
+    converted += 1
+    return buildImportedVideoMediaMarkup(buildWistiaIframeUrl(mediaId))
+  }
+
+  const nextHtml = String(html || '')
+    .replace(/<wistia-player\b([^>]*)>[\s\S]*?<\/wistia-player>/gi, replacePlayer)
+    .replace(/<wistia-player\b([^>]*?)\s*\/>/gi, replacePlayer)
+
+  if (converted) {
+    report.push(`Se convirtieron ${converted} videos Wistia para que funcionen en la vista previa`)
+  }
+  return nextHtml
+}
+
 function sanitizeImportedHtml(html = '') {
   const report = []
   let sanitized = String(html || '')
@@ -811,6 +830,8 @@ function sanitizeImportedHtml(html = '') {
   if (Buffer.byteLength(sanitized, 'utf8') > IMPORTED_HTML_MAX_BYTES) {
     throw new Error('El HTML es demasiado grande. Sube un archivo de maximo 2 MB.')
   }
+
+  sanitized = replaceImportedWistiaPlayers(sanitized, report)
 
   const removals = [
     { pattern: /<script\b[\s\S]*?<\/script>/gi, label: 'scripts' },
@@ -1277,6 +1298,7 @@ const IMPORTED_DIRECT_VIDEO_PATTERN = /\.(mp4|webm|ogg|mov)(?:$|[?#])/i
 function isLikelyImportedVideoElement(tagName = '', attrs = {}) {
   const tag = cleanString(tagName).toLowerCase()
   if (tag === 'video') return true
+  if (tag === 'wistia-player') return true
 
   const srcHint = `${attrs.src || ''} ${attrs.data || ''} ${attrs.poster || ''} ${attrs.type || ''}`
   const textHint = [
@@ -1427,6 +1449,32 @@ function setStyleBackgroundUrl(style = '', url = '') {
   return `${prefix}${prefix ? '; ' : ''}background-image: ${safeBackground}`
 }
 
+function getWistiaMediaIdFromValue(value = '') {
+  const raw = decodeHtmlAttribute(cleanString(value))
+  if (!raw) return ''
+
+  const patterns = [
+    /(?:media-id|data-media-id)\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))/i,
+    /(?:hashedId|mediaId)\s*[:=]\s*(?:"([^"]+)"|'([^']+)'|([a-z0-9]+))/i,
+    /wistia_async_([a-z0-9]+)/i,
+    /fast\.wistia\.(?:com|net)\/embed\/([a-z0-9]+)\.js/i,
+    /(?:fast\.)?wistia\.(?:com|net)\/embed\/iframe\/([a-z0-9]+)/i,
+    /(?:fast\.)?wistia\.(?:com|net)\/embed\/medias\/([a-z0-9]+)\/swatch/i,
+    /wistia\.com\/medias\/([a-z0-9]+)/i
+  ]
+
+  for (const pattern of patterns) {
+    const match = raw.match(pattern)
+    const mediaId = cleanString(match?.[1] || match?.[2] || match?.[3] || '')
+    if (/^[a-z0-9]+$/i.test(mediaId)) return mediaId
+  }
+  return ''
+}
+
+function buildWistiaIframeUrl(mediaId = '') {
+  return `https://fast.wistia.net/embed/iframe/${encodeURIComponent(mediaId)}`
+}
+
 function getImportedVideoValueSource(value = '') {
   const raw = decodeHtmlAttribute(cleanString(value))
   if (!raw) return { raw: '', candidate: '', title: 'Video', allow: DEFAULT_EMBED_ALLOW }
@@ -1452,11 +1500,11 @@ function getImportedVideoValueSource(value = '') {
     }
   }
 
-  const wistiaAsyncId = raw.match(/wistia_async_([a-z0-9]+)/i)?.[1] || ''
-  if (wistiaAsyncId) {
+  const wistiaMediaId = getWistiaMediaIdFromValue(raw)
+  if (wistiaMediaId) {
     return {
       raw,
-      candidate: `https://fast.wistia.net/embed/iframe/${wistiaAsyncId}`,
+      candidate: buildWistiaIframeUrl(wistiaMediaId),
       title: 'Video Wistia',
       allow: DEFAULT_EMBED_ALLOW
     }
@@ -1476,6 +1524,11 @@ function normalizeImportedVideoEmbed(value = '') {
     const error = new Error('Pega una URL o codigo embed de video.')
     error.status = 400
     throw error
+  }
+
+  const rawWistiaId = getWistiaMediaIdFromValue(`${source.raw} ${source.candidate}`)
+  if (rawWistiaId) {
+    return { kind: 'iframe', src: buildWistiaIframeUrl(rawWistiaId), title: source.title || 'Wistia', allow: source.allow }
   }
 
   const safeCandidate = safeEmbedUrl(source.candidate)
@@ -1512,10 +1565,10 @@ function normalizeImportedVideoEmbed(value = '') {
       }
     }
 
-    const wistiaId = source.raw.match(/wistia\.(?:com|net)\/(?:medias|embed\/iframe)\/([a-z0-9]+)/i)?.[1] ||
+    const wistiaId = getWistiaMediaIdFromValue(`${source.raw} ${parsed.toString()}`) ||
       (host.endsWith('wistia.com') || host.endsWith('wistia.net') ? pathParts[pathParts.length - 1] : '')
     if (wistiaId && /^[a-z0-9]+$/i.test(wistiaId)) {
-      return { kind: 'iframe', src: `https://fast.wistia.net/embed/iframe/${encodeURIComponent(wistiaId)}`, title: source.title || 'Wistia', allow: source.allow }
+      return { kind: 'iframe', src: buildWistiaIframeUrl(wistiaId), title: source.title || 'Wistia', allow: source.allow }
     }
 
     if (host.endsWith('loom.com')) {
@@ -1924,6 +1977,16 @@ function applyImportedEditableContentUpdate(html = '', input = {}) {
       return buildImportedVideoReplacement(value, attrsText, editId)
     })
     nextHtml = nextHtml.replace(/<embed\b([^>]*?)\s*(\/?)>/gi, (match, attrsText = '') => {
+      if (updated || !hasImportedEditId(attrsText, editId) || getImportedEditTypeFromAttrs(attrsText) !== 'video') return match
+      updated = true
+      return buildImportedVideoReplacement(value, attrsText, editId)
+    })
+    nextHtml = nextHtml.replace(/<wistia-player\b([^>]*)>[\s\S]*?<\/wistia-player>/gi, (match, attrsText = '') => {
+      if (updated || !hasImportedEditId(attrsText, editId) || getImportedEditTypeFromAttrs(attrsText) !== 'video') return match
+      updated = true
+      return buildImportedVideoReplacement(value, attrsText, editId)
+    })
+    nextHtml = nextHtml.replace(/<wistia-player\b([^>]*?)\s*\/>/gi, (match, attrsText = '') => {
       if (updated || !hasImportedEditId(attrsText, editId) || getImportedEditTypeFromAttrs(attrsText) !== 'video') return match
       updated = true
       return buildImportedVideoReplacement(value, attrsText, editId)

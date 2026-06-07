@@ -2167,6 +2167,76 @@ const safeEmbedUrl = (value: string) => {
   }
 }
 
+function extractImportedWistiaMediaId(value: string) {
+  const raw = decodeHtmlEntities(String(value || '')).trim()
+  if (!raw) return ''
+
+  const patterns = [
+    /(?:media-id|data-media-id)\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))/i,
+    /(?:hashedId|mediaId)\s*[:=]\s*(?:"([^"]+)"|'([^']+)'|([a-z0-9]+))/i,
+    /wistia_async_([a-z0-9]+)/i,
+    /fast\.wistia\.(?:com|net)\/embed\/([a-z0-9]+)\.js/i,
+    /(?:fast\.)?wistia\.(?:com|net)\/embed\/iframe\/([a-z0-9]+)/i,
+    /(?:fast\.)?wistia\.(?:com|net)\/embed\/medias\/([a-z0-9]+)\/swatch/i,
+    /wistia\.com\/medias\/([a-z0-9]+)/i
+  ]
+
+  for (const pattern of patterns) {
+    const match = raw.match(pattern)
+    const mediaId = String(match?.[1] || match?.[2] || match?.[3] || '').trim()
+    if (/^[a-z0-9]+$/i.test(mediaId)) return mediaId
+  }
+  return ''
+}
+
+const getWistiaEmbedUrl = (mediaId: string) => `https://fast.wistia.net/embed/iframe/${encodeURIComponent(mediaId)}`
+
+const getIframeSrcFromHtml = (html: string) => {
+  if (!/<iframe\b/i.test(html) || typeof DOMParser === 'undefined') return ''
+  try {
+    const document = new DOMParser().parseFromString(html, 'text/html')
+    return safeEmbedUrl(document.querySelector('iframe')?.getAttribute('src') || '')
+  } catch {
+    return ''
+  }
+}
+
+const normalizeImportedVideoPreviewUrl = (url: string) => {
+  const safeUrl = safeEmbedUrl(url)
+  if (!safeUrl) return ''
+
+  try {
+    const parsed = new URL(safeUrl)
+    const host = parsed.hostname.replace(/^www\./i, '').toLowerCase()
+    const pathParts = parsed.pathname.split('/').filter(Boolean)
+    const wistiaId = extractImportedWistiaMediaId(parsed.toString())
+    if (wistiaId) return getWistiaEmbedUrl(wistiaId)
+
+    if (host === 'youtu.be' && pathParts[0]) {
+      return `https://www.youtube.com/embed/${encodeURIComponent(pathParts[0])}`
+    }
+
+    if (host.endsWith('youtube.com') || host.endsWith('youtube-nocookie.com')) {
+      const videoId = parsed.searchParams.get('v') || (pathParts[0] === 'shorts' ? pathParts[1] : '') || (pathParts[0] === 'embed' ? pathParts[1] : '')
+      return videoId ? `https://www.youtube.com/embed/${encodeURIComponent(videoId)}` : safeUrl
+    }
+
+    if (host.endsWith('vimeo.com')) {
+      const videoId = pathParts[0] === 'video' ? pathParts[1] : pathParts[0]
+      return videoId && /^\d+$/.test(videoId) ? `https://player.vimeo.com/video/${encodeURIComponent(videoId)}` : safeUrl
+    }
+
+    if (host.endsWith('loom.com')) {
+      const videoId = pathParts[0] === 'embed' ? pathParts[1] : pathParts[0] === 'share' ? pathParts[1] : ''
+      return videoId ? `https://www.loom.com/embed/${encodeURIComponent(videoId)}` : safeUrl
+    }
+
+    return safeUrl
+  } catch {
+    return ''
+  }
+}
+
 const normalizeEmbedHeight = (value: string | null | undefined) => {
   const match = String(value || '').match(/(\d{2,4})/)
   if (!match) return undefined
@@ -2194,6 +2264,11 @@ const buildEmbedSrcDoc = (html: string) => `<!doctype html>
 const resolveEmbedPreview = (rawValue: string): EmbedPreviewConfig => {
   const raw = rawValue.trim()
   if (!raw || raw.toLowerCase() === 'embed') return { kind: 'empty' }
+
+  const wistiaId = extractImportedWistiaMediaId(raw)
+  if (wistiaId) {
+    return { kind: 'url', src: getWistiaEmbedUrl(wistiaId), title: 'Video Wistia', allow: DEFAULT_EMBED_ALLOW, height: EMBED_DEFAULT_HEIGHT }
+  }
 
   const directUrl = safeEmbedUrl(raw)
   if (directUrl) {
@@ -2224,6 +2299,24 @@ const resolveEmbedPreview = (rawValue: string): EmbedPreviewConfig => {
   }
 
   return { kind: 'empty' }
+}
+
+const resolveImportedVideoPreview = (rawValue: string): EmbedPreviewConfig => {
+  const raw = rawValue.trim()
+  if (!raw) return { kind: 'empty' }
+
+  const wistiaId = extractImportedWistiaMediaId(raw)
+  if (wistiaId) {
+    return { kind: 'url', src: getWistiaEmbedUrl(wistiaId), title: 'Video Wistia', allow: DEFAULT_EMBED_ALLOW, height: 220 }
+  }
+
+  const iframeSrc = getIframeSrcFromHtml(raw)
+  const normalizedUrl = normalizeImportedVideoPreviewUrl(iframeSrc || raw)
+  if (normalizedUrl) {
+    return { kind: 'url', src: normalizedUrl, title: 'Vista previa del video', allow: DEFAULT_EMBED_ALLOW, height: 220 }
+  }
+
+  return resolveEmbedPreview(raw)
 }
 
 const createEmbeddedBlocks = (siteId: string): SiteBlock[] => [
@@ -5927,6 +6020,7 @@ const getImportedVisualElementType = (element: Element) => {
   const tagName = element.tagName.toLowerCase()
   if (/^h[1-6]$/.test(tagName)) return 'titular'
   if (tagName === 'img') return 'imagen'
+  if (tagName === 'wistia-player' || ['iframe', 'video', 'embed', 'object'].includes(tagName)) return 'video'
   if (tagName === 'button' || tagName === 'a') return 'botón/enlace'
   if (tagName === 'form') return 'formulario'
   if (['input', 'select', 'textarea', 'label'].includes(tagName)) return 'campo'
@@ -6089,6 +6183,11 @@ const buildImportedPreviewVisualContext = async (
     'button',
     'a',
     'img',
+    'iframe',
+    'video',
+    'embed',
+    'object',
+    'wistia-player',
     'form',
     'label',
     'input',
@@ -6167,7 +6266,7 @@ const getImportedEditableAttribute = (element: Element, key: keyof typeof import
 const inferImportedEditableType = (element: HTMLElement): ImportedEditableContentType => {
   const tagName = element.tagName.toLowerCase()
   if (tagName === 'img') return 'image'
-  if (['iframe', 'video', 'embed', 'object'].includes(tagName)) return 'video'
+  if (tagName === 'wistia-player' || ['iframe', 'video', 'embed', 'object'].includes(tagName)) return 'video'
   if (element.getAttribute('style')?.match(/background(?:-image)?\s*:/i)) return 'background_image'
   if (tagName === 'input' || tagName === 'textarea') {
     const type = element.getAttribute('type')?.toLowerCase() || ''
@@ -6199,6 +6298,10 @@ const getEditableElementValue = (element: HTMLElement, editType: ImportedEditabl
   if (editType === 'video') {
     if (['iframe', 'embed'].includes(tagName)) return element.getAttribute('src') || ''
     if (tagName === 'object') return element.getAttribute('data') || ''
+    if (tagName === 'wistia-player') {
+      const mediaId = element.getAttribute('media-id') || element.getAttribute('data-media-id') || ''
+      return mediaId ? getWistiaEmbedUrl(mediaId) : ''
+    }
     if (tagName === 'video') {
       return element.getAttribute('src') ||
         (element.querySelector('source') as HTMLSourceElement | null)?.getAttribute('src') ||
@@ -8101,6 +8204,9 @@ const ImportedHtmlEditorPanel: React.FC<{
     inlineEditor.value.trim() !== inlineEditor.selection.value.trim() &&
     !contentSaving
   )
+  const inlineVideoPreview: EmbedPreviewConfig = inlineEditor?.mode === 'video'
+    ? resolveImportedVideoPreview(inlineEditor.value)
+    : { kind: 'empty' }
 
   return (
     <div className={styles.importedEditorPanel}>
@@ -8473,6 +8579,36 @@ const ImportedHtmlEditorPanel: React.FC<{
                 name="rstk-imported-inline-video"
                 {...importedEditorNoAutocompleteAttrs}
               />
+              {inlineVideoPreview.kind === 'url' && (
+                <div className={styles.importedInlineVideoPreview}>
+                  <iframe
+                    src={inlineVideoPreview.src}
+                    title={inlineVideoPreview.title}
+                    loading="lazy"
+                    referrerPolicy="no-referrer-when-downgrade"
+                    sandbox={EMBED_SANDBOX_URL}
+                    allow={inlineVideoPreview.allow || DEFAULT_EMBED_ALLOW}
+                    allowFullScreen
+                  />
+                </div>
+              )}
+              {inlineVideoPreview.kind === 'html' && (
+                <div className={styles.importedInlineVideoPreview}>
+                  <iframe
+                    srcDoc={inlineVideoPreview.srcDoc}
+                    title={inlineVideoPreview.title}
+                    loading="lazy"
+                    referrerPolicy="no-referrer-when-downgrade"
+                    sandbox={EMBED_SANDBOX_HTML}
+                    allow={DEFAULT_EMBED_ALLOW}
+                  />
+                </div>
+              )}
+              {inlineVideoPreview.kind === 'empty' && inlineEditor.value.trim() && (
+                <div className={styles.importedInlineVideoHint}>
+                  No se pudo mostrar aqui, pero Ristak intentara guardarlo como video seguro.
+                </div>
+              )}
               <div className={styles.importedInlineEditorActions}>
                 <Button type="button" variant="secondary" size="sm" onClick={clearInlineSelection} disabled={contentSaving}>
                   Cancelar
