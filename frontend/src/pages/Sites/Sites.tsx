@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   DndContext,
   DragOverlay,
@@ -223,6 +223,108 @@ const DEFAULT_FUNNEL_PAGE_ID = 'page-1'
 const FORM_THANK_YOU_PAGE_ID = 'page-2'
 const FORM_DISQUALIFIED_PAGE_ID = 'page-3'
 const FORM_FINAL_PAGE_IDS = new Set([FORM_THANK_YOU_PAGE_ID, FORM_DISQUALIFIED_PAGE_ID])
+
+const sitesSectionPathById: Record<SitesSection, string> = {
+  landings: 'landings',
+  forms: 'forms',
+  leads: 'responses',
+  domains: 'domains'
+}
+const sitesSectionByPath: Record<string, SitesSection> = {
+  landings: 'landings',
+  forms: 'forms',
+  leads: 'leads',
+  responses: 'leads',
+  domains: 'domains'
+}
+const sitesCreateFlowPaths: Record<CreateFlow, string> = {
+  closed: '',
+  'landing-start': 'start',
+  'landing-template': 'template',
+  'form-kind': 'kind',
+  'form-start': 'start',
+  'form-template': 'template',
+  'interactive-start': 'interactive-start',
+  'interactive-template': 'interactive-template'
+}
+interface SitesRouteState {
+  section: SitesSection
+  createFlow: CreateFlow
+  siteId: string
+  pageId: string
+  blockId: string
+  device: DeviceMode
+  focus: boolean
+}
+
+const getSiteSection = (site?: PublicSite | null): SitesSection => site?.siteType === 'landing_page' ? 'landings' : 'forms'
+
+const getCreateFlowForRoute = (section: SitesSection, step?: string): CreateFlow => {
+  if (section === 'landings') return step === 'template' ? 'landing-template' : 'landing-start'
+  if (section === 'forms') {
+    if (step === 'interactive-start') return 'interactive-start'
+    if (step === 'interactive-template') return 'interactive-template'
+    if (step === 'start') return 'form-start'
+    if (step === 'template') return 'form-template'
+    return 'form-kind'
+  }
+  return 'closed'
+}
+
+const parseSitesRoute = (pathname: string, search: string): SitesRouteState => {
+  const searchParams = new URLSearchParams(search)
+  const segments = pathname
+    .replace(/^\/+|\/+$/g, '')
+    .split('/')
+    .filter(Boolean)
+  const sitesIndex = segments.indexOf('sites')
+  const routeSegments = sitesIndex >= 0 ? segments.slice(sitesIndex + 1) : []
+  const section = sitesSectionByPath[routeSegments[0] || ''] || 'landings'
+  const firstDetail = routeSegments[1] || ''
+  const isNewRoute = firstDetail === 'new' || firstDetail === 'create'
+  const siteId = isNewRoute ? '' : decodeURIComponent(firstDetail || searchParams.get('siteEditor') || '')
+  const pageMarkerIndex = routeSegments.findIndex(segment => segment === 'pages')
+  const pageId = pageMarkerIndex >= 0 && routeSegments[pageMarkerIndex + 1]
+    ? decodeURIComponent(routeSegments[pageMarkerIndex + 1])
+    : ''
+  const createFlow = isNewRoute ? getCreateFlowForRoute(section, routeSegments[2]) : 'closed'
+  const device = searchParams.get('device') === 'mobile' ? 'mobile' : 'desktop'
+
+  return {
+    section,
+    createFlow,
+    siteId,
+    pageId,
+    blockId: searchParams.get('block') || '',
+    device,
+    focus: searchParams.get('focus') === '1'
+  }
+}
+
+const buildSitesSectionPath = (section: SitesSection) => `/sites/${sitesSectionPathById[section]}`
+
+const buildSitesCreatePath = (section: SitesSection, createFlow: CreateFlow) => {
+  const step = sitesCreateFlowPaths[createFlow] || sitesCreateFlowPaths[getCreateFlowForRoute(section)]
+  return `${buildSitesSectionPath(section)}/new${step ? `/${step}` : ''}`
+}
+
+const buildSitesEditorPath = (options: {
+  section: SitesSection
+  siteId: string
+  pageId?: string
+  blockId?: string
+  device?: DeviceMode
+  focus?: boolean
+}) => {
+  const pageSegment = options.pageId ? `/pages/${encodeURIComponent(options.pageId)}` : ''
+  const query = new URLSearchParams()
+  if (options.device === 'mobile') query.set('device', 'mobile')
+  if (options.blockId) query.set('block', options.blockId)
+  if (options.focus) query.set('focus', '1')
+  const queryText = query.toString()
+
+  return `${buildSitesSectionPath(options.section)}/${encodeURIComponent(options.siteId)}${pageSegment}${queryText ? `?${queryText}` : ''}`
+}
 const PREVIEW_LOADING_HTML = `<!doctype html>
 <html lang="es">
   <head>
@@ -2398,9 +2500,14 @@ const hydrateFormSitesForBuilder = async (list: PublicSite[]) => {
 export const Sites: React.FC = () => {
   const { showToast, showConfirm } = useNotification()
   const navigate = useNavigate()
+  const location = useLocation()
+  const routeState = useMemo(
+    () => parseSitesRoute(location.pathname, location.search),
+    [location.pathname, location.search]
+  )
   const { configured: aiAgentConfigured } = useAIAgentAvailability()
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
-  const [section, setSection] = useState<SitesSection>('landings')
+  const [section, setSection] = useState<SitesSection>(routeState.section)
   const [sites, setSites] = useState<PublicSite[]>([])
   const [domainConfig, setDomainConfig] = useState<SitesDomainConfig>(emptySitesDomainConfig)
   const [domainInput, setDomainInput] = useState('')
@@ -2410,14 +2517,14 @@ export const Sites: React.FC = () => {
   const [connectedSocialProfiles, setConnectedSocialProfiles] = useState<ConnectedSocialProfile[]>([])
   const [loadingSocialProfiles, setLoadingSocialProfiles] = useState(false)
   const [selectedSite, setSelectedSite] = useState<PublicSite | null>(null)
-  const [selectedBlockId, setSelectedBlockId] = useState<string>('')
+  const [selectedBlockId, setSelectedBlockId] = useState<string>(routeState.blockId)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [creating, setCreating] = useState(false)
   const [verifying, setVerifying] = useState(false)
-  const [device, setDevice] = useState<DeviceMode>('desktop')
-  const [createFlow, setCreateFlow] = useState<CreateFlow>('closed')
-  const [activePageId, setActivePageId] = useState<string>(DEFAULT_FUNNEL_PAGE_ID)
+  const [device, setDevice] = useState<DeviceMode>(routeState.device)
+  const [createFlow, setCreateFlow] = useState<CreateFlow>(routeState.createFlow)
+  const [activePageId, setActivePageId] = useState<string>(routeState.pageId || DEFAULT_FUNNEL_PAGE_ID)
   const [draggingPageId, setDraggingPageId] = useState<string | null>(null)
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
   const [paletteDragging, setPaletteDragging] = useState(false)
@@ -2428,7 +2535,7 @@ export const Sites: React.FC = () => {
   const [leadRows, setLeadRows] = useState<LeadRow[]>([])
   const [loadingLeads, setLoadingLeads] = useState(false)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
-  const [editorFocusMode, setEditorFocusMode] = useState(false)
+  const [editorFocusMode, setEditorFocusMode] = useState(routeState.focus)
   const [seoModalOpen, setSeoModalOpen] = useState(false)
   const [pendingImportSiteType, setPendingImportSiteType] = useState<SiteType>('landing_page')
   const [importReview, setImportReview] = useState<ImportReviewState | null>(null)
@@ -2525,6 +2632,52 @@ export const Sites: React.FC = () => {
   const isFocusedSitesMode = createFlow !== 'closed' || Boolean(editorSite)
   const createFlowHeaderCopy = getCreateFlowHeaderCopy(createFlow)
   const canvasTheme = editorSite ? buildCanvasTheme(editorSite, device) : null
+  const navigateSitesSection = useCallback((nextSection: SitesSection, options?: { replace?: boolean }) => {
+    navigate(buildSitesSectionPath(nextSection), { replace: options?.replace })
+  }, [navigate])
+  const navigateSitesCreateFlow = useCallback((nextSection: SitesSection, nextFlow: CreateFlow, options?: { replace?: boolean }) => {
+    navigate(buildSitesCreatePath(nextSection, nextFlow), { replace: options?.replace })
+  }, [navigate])
+  const navigateSitesEditor = useCallback((options?: {
+    site?: PublicSite | null
+    pageId?: string
+    blockId?: string
+    device?: DeviceMode
+    focus?: boolean
+    replace?: boolean
+  }) => {
+    const site = options?.site || editorSite
+    if (!site?.id) return
+    const nextPageId = options?.pageId ?? activePage?.id ?? activePageId
+    const nextBlockId = options?.blockId ?? selectedBlockId
+    const nextDevice = options?.device ?? device
+    const nextFocus = options?.focus ?? editorFocusMode
+    navigate(buildSitesEditorPath({
+      section: getSiteSection(site),
+      siteId: site.id,
+      pageId: nextPageId,
+      blockId: nextBlockId,
+      device: nextDevice,
+      focus: nextFocus
+    }), { replace: options?.replace })
+  }, [activePage?.id, activePageId, device, editorFocusMode, editorSite, navigate, selectedBlockId])
+  const selectEditorPage = useCallback((pageId: string, options?: { replace?: boolean }) => {
+    setActivePageId(pageId)
+    setSelectedBlockId('')
+    navigateSitesEditor({ pageId, blockId: '', replace: options?.replace })
+  }, [navigateSitesEditor])
+  const selectEditorDevice = useCallback((nextDevice: DeviceMode) => {
+    setDevice(nextDevice)
+    navigateSitesEditor({ device: nextDevice })
+  }, [navigateSitesEditor])
+  const selectEditorBlock = useCallback((blockId: string) => {
+    setSelectedBlockId(blockId)
+    navigateSitesEditor({ blockId })
+  }, [navigateSitesEditor])
+  const setEditorFocus = useCallback((nextFocus: boolean) => {
+    setEditorFocusMode(nextFocus)
+    navigateSitesEditor({ focus: nextFocus })
+  }, [navigateSitesEditor])
   const landingSectionLanes = useMemo(
     () => editorSite && isLanding(editorSite) ? buildLandingSectionLanes(canvasBlocks) : [],
     [canvasBlocks, editorSite]
@@ -2541,9 +2694,9 @@ export const Sites: React.FC = () => {
   const canvasPalettePreviewBlock = paletteDragging ? palettePreviewBlock : null
 
   useEffect(() => {
-    setEditorFocusMode(false)
+    setEditorFocusMode(routeState.focus)
     setSeoModalOpen(false)
-  }, [editorSite?.id])
+  }, [editorSite?.id, routeState.focus])
 
   useEffect(() => {
     window.dispatchEvent(new CustomEvent(SITES_EDITOR_ACTIVE_EVENT, {
@@ -2612,8 +2765,7 @@ export const Sites: React.FC = () => {
   }, [editorSite])
 
   useEffect(() => {
-    const initialEditorId = new URLSearchParams(window.location.search).get('siteEditor') || undefined
-    loadSites(initialEditorId)
+    loadSites(routeState.siteId || new URLSearchParams(window.location.search).get('siteEditor') || undefined, routeState.pageId || undefined)
     loadCalendarsForBuilder()
     loadCustomFieldsForBuilder()
   }, [])
@@ -2658,9 +2810,9 @@ export const Sites: React.FC = () => {
     const firstPage = pages[0]
     if (!firstPage) return
     if (!pages.some(page => page.id === activePageId)) {
-      setActivePageId(firstPage.id)
+      selectEditorPage(firstPage.id, { replace: true })
     }
-  }, [activePageId, pages, selectedSite])
+  }, [activePageId, pages, selectEditorPage, selectedSite])
 
   useEffect(() => {
     if (!canvasBlocks.length) {
@@ -2681,14 +2833,22 @@ export const Sites: React.FC = () => {
       if (!rawSite?.id) return
       const site = normalizeSiteForEditor(rawSite)
       const importData = wrappedDetail ? (detail as { import?: ImportedSiteImport }).import : null
+      const nextPageId = normalizeFunnelPages(site)[0]?.id || DEFAULT_FUNNEL_PAGE_ID
 
       setSites(current => [site, ...current.filter(item => item.id !== site.id)])
       setSelectedSite(site)
-      setActivePageId(normalizeFunnelPages(site)[0]?.id || DEFAULT_FUNNEL_PAGE_ID)
+      setActivePageId(nextPageId)
       setSelectedBlockId('')
-      setSection(site.siteType === 'landing_page' ? 'landings' : 'forms')
+      setSection(getSiteSection(site))
       setCreateFlow('closed')
       setHasUnsavedChanges(false)
+      navigate(buildSitesEditorPath({
+        section: getSiteSection(site),
+        siteId: site.id,
+        pageId: nextPageId,
+        device,
+        focus: editorFocusMode
+      }))
       if (importData?.siteId) {
         setSelectedImportData(importData)
         if (wrappedDetail && (detail as { reviewMapping?: boolean }).reviewMapping) {
@@ -2701,7 +2861,7 @@ export const Sites: React.FC = () => {
     return () => {
       window.removeEventListener(SITES_AI_DRAFT_CREATED_EVENT, handleAIDraftCreated)
     }
-  }, [])
+  }, [device, editorFocusMode, navigate])
 
   useEffect(() => {
     if (section === 'leads') {
@@ -2764,7 +2924,7 @@ export const Sites: React.FC = () => {
     }
   }, [hasUnsavedChanges, performUrlNavigation, requestLeaveEditor])
 
-  const loadSites = async (selectId?: string) => {
+  const loadSites = async (selectId?: string, selectPageId?: string) => {
     setLoading(true)
     try {
       const [list, nextDomainConfig] = await Promise.all([
@@ -2778,10 +2938,11 @@ export const Sites: React.FC = () => {
       const nextId = selectId || (selectedSite?.id && builderSites.some(site => site.id === selectedSite.id) ? selectedSite.id : '')
       if (nextId) {
         const site = normalizeSiteForEditor(await sitesService.getSite(nextId))
+        const nextPages = normalizeFunnelPages(site)
         setSelectedSite(site)
-        setSection(site.siteType === 'landing_page' ? 'landings' : 'forms')
-        setActivePageId(normalizeFunnelPages(site)[0]?.id || DEFAULT_FUNNEL_PAGE_ID)
-        setSelectedBlockId('')
+        setSection(getSiteSection(site))
+        setActivePageId(nextPages.some(page => page.id === selectPageId) ? selectPageId! : nextPages[0]?.id || DEFAULT_FUNNEL_PAGE_ID)
+        setSelectedBlockId(routeState.blockId || '')
       } else {
         setSelectedSite(null)
         setSelectedBlockId('')
@@ -2834,14 +2995,23 @@ export const Sites: React.FC = () => {
     }
   }
 
-  const openSite = async (siteId: string) => {
+  const openSite = async (siteId: string, pageId?: string, options?: { replaceRoute?: boolean }) => {
     try {
       const site = normalizeSiteForEditor(await sitesService.getSite(siteId))
+      const nextPages = normalizeFunnelPages(site)
+      const nextPageId = nextPages.some(page => page.id === pageId) ? pageId! : nextPages[0]?.id || DEFAULT_FUNNEL_PAGE_ID
       setSelectedSite(site)
-      setActivePageId(normalizeFunnelPages(site)[0]?.id || DEFAULT_FUNNEL_PAGE_ID)
+      setActivePageId(nextPageId)
       setSelectedBlockId('')
       setCreateFlow('closed')
       setHasUnsavedChanges(false)
+      navigate(buildSitesEditorPath({
+        section: getSiteSection(site),
+        siteId: site.id,
+        pageId: nextPageId,
+        device,
+        focus: editorFocusMode
+      }), { replace: options?.replaceRoute })
     } catch (error) {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo abrir el site')
     }
@@ -2853,10 +3023,53 @@ export const Sites: React.FC = () => {
     })
   }
 
+  useEffect(() => {
+    if (loading) return
+
+    setSection(current => current === routeState.section ? current : routeState.section)
+    setDevice(current => current === routeState.device ? current : routeState.device)
+    setEditorFocusMode(current => current === routeState.focus ? current : routeState.focus)
+    setCreateFlow(current => current === routeState.createFlow ? current : routeState.createFlow)
+
+    if (routeState.siteId) {
+      if (selectedSite?.id !== routeState.siteId) {
+        void openSite(routeState.siteId, routeState.pageId || undefined, { replaceRoute: true })
+        return
+      }
+
+      if (routeState.pageId && routeState.pageId !== activePageId) {
+        setActivePageId(routeState.pageId)
+      }
+      if (routeState.blockId !== selectedBlockId) {
+        setSelectedBlockId(routeState.blockId)
+      }
+      return
+    }
+
+    if (selectedSite || selectedBlockId || activePageId !== DEFAULT_FUNNEL_PAGE_ID) {
+      setSelectedSite(null)
+      setSelectedBlockId('')
+      setActivePageId(DEFAULT_FUNNEL_PAGE_ID)
+    }
+  }, [
+    activePageId,
+    loading,
+    routeState.blockId,
+    routeState.createFlow,
+    routeState.device,
+    routeState.focus,
+    routeState.pageId,
+    routeState.section,
+    routeState.siteId,
+    selectedBlockId,
+    selectedSite?.id
+  ])
+
   const changeSection = async (nextSection: SitesSection) => {
     setSection(nextSection)
     setCreateFlow('closed')
     setHasUnsavedChanges(false)
+    navigateSitesSection(nextSection)
 
     if (nextSection === 'landings' || nextSection === 'forms') {
       setSelectedSite(null)
@@ -2879,6 +3092,7 @@ export const Sites: React.FC = () => {
           setSelectedBlockId('')
           setCreateFlow('closed')
           setHasUnsavedChanges(false)
+          navigateSitesSection(section)
         })
       }
       return
@@ -2901,7 +3115,9 @@ export const Sites: React.FC = () => {
       setPaletteDragPayload(null)
       setPaletteInsertIndex(null)
       setPaletteSectionTarget(null)
-      setCreateFlow(getCreateFlowForSection(section))
+      const nextFlow = getCreateFlowForSection(section)
+      setCreateFlow(nextFlow)
+      navigateSitesCreateFlow(section, nextFlow)
       setHasUnsavedChanges(false)
     })
   }
@@ -2930,6 +3146,7 @@ export const Sites: React.FC = () => {
       setEditorFocusMode(false)
       setSeoModalOpen(false)
       clearSiteEditorUrlParam()
+      navigateSitesSection(section)
       setHasUnsavedChanges(false)
     })
   }
@@ -2940,6 +3157,7 @@ export const Sites: React.FC = () => {
 
       if (previousStep !== 'closed') {
         setCreateFlow(previousStep)
+        navigateSitesCreateFlow(section, previousStep)
         return
       }
     }
@@ -2992,6 +3210,13 @@ export const Sites: React.FC = () => {
       syncSelectedSite(site)
       if (entry.pageId) setActivePageId(entry.pageId)
       setSelectedBlockId(direction === 'undo' ? entry.selectedBefore : entry.selectedAfter)
+      if (entry.pageId) {
+        navigateSitesEditor({
+          site,
+          pageId: entry.pageId,
+          blockId: direction === 'undo' ? entry.selectedBefore : entry.selectedAfter
+        })
+      }
       setHasUnsavedChanges(false)
       showToast(
         'info',
@@ -3096,7 +3321,9 @@ export const Sites: React.FC = () => {
       }
       const site = await saveSiteTheme(selectedSite, theme)
       syncSelectedSite(site)
-      setActivePageId(nextActivePageId || activePageId)
+      const targetPageId = nextActivePageId || activePageId
+      setActivePageId(targetPageId)
+      navigateSitesEditor({ site, pageId: targetPageId, blockId: '' })
       setHasUnsavedChanges(false)
     } catch (error) {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudieron guardar las paginas')
@@ -3158,6 +3385,7 @@ export const Sites: React.FC = () => {
       }
       syncSelectedSite(site)
       setActivePageId(nextPage.id)
+      navigateSitesEditor({ site, pageId: nextPage.id, blockId: '' })
       setHasUnsavedChanges(false)
       showToast('success', 'Pagina duplicada', 'Ya esta lista para editar.')
     } catch (error) {
@@ -3206,6 +3434,7 @@ export const Sites: React.FC = () => {
             })
             syncSelectedSite(site)
             setActivePageId(nextActive || DEFAULT_FUNNEL_PAGE_ID)
+            navigateSitesEditor({ site, pageId: nextActive || DEFAULT_FUNNEL_PAGE_ID, blockId: '' })
             setHasUnsavedChanges(false)
             showToast('success', 'Pagina eliminada', `${getSiteTypeLabel(selectedSite)} se actualizo.`)
           } catch (error) {
@@ -3308,13 +3537,21 @@ export const Sites: React.FC = () => {
       }
 
       site = normalizeSiteForEditor(site)
+      const nextPageId = normalizeFunnelPages(site)[0]?.id || DEFAULT_FUNNEL_PAGE_ID
       setSites(current => [site, ...current])
       setSelectedSite(site)
-      setActivePageId(normalizeFunnelPages(site)[0]?.id || DEFAULT_FUNNEL_PAGE_ID)
+      setActivePageId(nextPageId)
       setSelectedBlockId('')
-      setSection(siteType === 'landing_page' ? 'landings' : 'forms')
+      setSection(getSiteSection(site))
       setCreateFlow('closed')
       setHasUnsavedChanges(false)
+      navigate(buildSitesEditorPath({
+        section: getSiteSection(site),
+        siteId: site.id,
+        pageId: nextPageId,
+        device,
+        focus: editorFocusMode
+      }))
       showToast('success', 'Sitio creado', 'Ya estas en el editor visual')
     } catch (error) {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo crear el sitio')
@@ -3422,6 +3659,7 @@ export const Sites: React.FC = () => {
       }
 
       const normalizedSite = normalizeSiteForEditor(result.site)
+      const nextPageId = normalizeFunnelPages(normalizedSite)[0]?.id || DEFAULT_FUNNEL_PAGE_ID
       setSites(current => {
         const withoutPending = current.filter(item => item.id !== pendingSiteId)
         const exists = withoutPending.some(item => item.id === normalizedSite.id)
@@ -3431,14 +3669,21 @@ export const Sites: React.FC = () => {
       setSelectedSite(normalizedSite)
       selectedSiteRef.current = normalizedSite
       setSelectedBlockId('')
-      setActivePageId(normalizeFunnelPages(normalizedSite)[0]?.id || DEFAULT_FUNNEL_PAGE_ID)
-      setSection(normalizedSite.siteType === 'landing_page' ? 'landings' : 'forms')
+      setActivePageId(nextPageId)
+      setSection(getSiteSection(normalizedSite))
       setCreateFlow('closed')
       setHasUnsavedChanges(false)
       setSelectedImportData(result.import)
       setImportReview({ site: normalizedSite, importData: result.import })
       setAiCreationModal(null)
       setAiEditorGeneration(null)
+      navigate(buildSitesEditorPath({
+        section: getSiteSection(normalizedSite),
+        siteId: normalizedSite.id,
+        pageId: nextPageId,
+        device,
+        focus: editorFocusMode
+      }))
       showToast(
         'success',
         editSite ? 'Página actualizada con IA' : 'Página creada con IA',
@@ -3487,16 +3732,24 @@ export const Sites: React.FC = () => {
         metaCapiEnabled: metaPixelConnected
       })
       const site = normalizeSiteForEditor(result.site)
+      const nextPageId = normalizeFunnelPages(site)[0]?.id || DEFAULT_FUNNEL_PAGE_ID
       setSites(current => [site, ...current])
       setSelectedSite(site)
       selectedSiteRef.current = site
       setSelectedBlockId('')
-      setActivePageId(DEFAULT_FUNNEL_PAGE_ID)
-      setSection(siteType === 'landing_page' ? 'landings' : 'forms')
+      setActivePageId(nextPageId)
+      setSection(getSiteSection(site))
       setCreateFlow('closed')
       setHasUnsavedChanges(false)
       setSelectedImportData(result.import)
       setImportReview({ site, importData: result.import })
+      navigate(buildSitesEditorPath({
+        section: getSiteSection(site),
+        siteId: site.id,
+        pageId: nextPageId,
+        device,
+        focus: editorFocusMode
+      }))
       showToast('success', 'HTML importado', 'Revisa los campos detectados antes de publicar.')
     } catch (error) {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo importar el HTML')
@@ -3695,6 +3948,7 @@ export const Sites: React.FC = () => {
             if (selectedSite?.id === siteToDelete.id) {
               setSelectedSite(null)
               setSelectedBlockId('')
+              navigateSitesSection(getSiteSection(siteToDelete))
             }
             setHasUnsavedChanges(false)
             showToast('success', 'Eliminado', 'Sitio eliminado')
@@ -3834,7 +4088,7 @@ export const Sites: React.FC = () => {
         )
         syncSelectedSite(site)
       }
-      if (added) setSelectedBlockId(added.id)
+      if (added) selectEditorBlock(added.id)
     } catch (error) {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo agregar el bloque')
     }
@@ -3970,6 +4224,7 @@ export const Sites: React.FC = () => {
         .map(block => block.id)
       if (deletedBlockIds.includes(selectedBlockId)) {
         setSelectedBlockId('')
+        navigateSitesEditor({ site, blockId: '' })
       }
       pushEditorHistory({
         action: 'delete',
@@ -4373,7 +4628,7 @@ export const Sites: React.FC = () => {
                             ? !isFormFinalPage(page) && getFormContentPages(pages).length > 1
                             : pages.length > 1}
                           canDuplicatePage={(page) => !isStandardForm(editorSite) || !isFormFinalPage(page)}
-                          onSelectPage={setActivePageId}
+                          onSelectPage={selectEditorPage}
                           onAddPage={handleAddPage}
                           onDuplicatePage={handleDuplicatePage}
                           onDeletePage={handleDeletePage}
@@ -4400,14 +4655,14 @@ export const Sites: React.FC = () => {
                       </label>
                     </div>
                     <div className={styles.deviceToggle} role="group" aria-label="Vista previa del dispositivo">
-                      <button type="button" className={device === 'desktop' ? styles.deviceActive : ''} onClick={() => setDevice('desktop')} disabled={editorAIGenerating} title="Escritorio">
+                      <button type="button" className={device === 'desktop' ? styles.deviceActive : ''} onClick={() => selectEditorDevice('desktop')} disabled={editorAIGenerating} title="Escritorio">
                         <Monitor size={15} />
                       </button>
-                      <button type="button" className={device === 'mobile' ? styles.deviceActive : ''} onClick={() => setDevice('mobile')} disabled={editorAIGenerating} title="Movil">
+                      <button type="button" className={device === 'mobile' ? styles.deviceActive : ''} onClick={() => selectEditorDevice('mobile')} disabled={editorAIGenerating} title="Movil">
                         <Smartphone size={15} />
                       </button>
                     </div>
-                    <button type="button" className={styles.editorIconAction} onClick={() => setEditorFocusMode(true)} disabled={editorAIGenerating} title="Modo enfoque" aria-label="Modo enfoque">
+                    <button type="button" className={styles.editorIconAction} onClick={() => setEditorFocus(true)} disabled={editorAIGenerating} title="Modo enfoque" aria-label="Modo enfoque">
                       <Maximize2 size={14} />
                     </button>
                     <Button variant="secondary" size="lg" onClick={handlePreviewSite} disabled={editorAIGenerating}>
@@ -4495,7 +4750,10 @@ export const Sites: React.FC = () => {
                 onCreate={handleCreateSite}
                 onCreateWithAI={handleCreateSiteWithAI}
                 onImportHtml={handleOpenImportHtml}
-                onAdvance={setCreateFlow}
+                onAdvance={(nextFlow) => {
+                  setCreateFlow(nextFlow)
+                  navigateSitesCreateFlow(section, nextFlow)
+                }}
               />
             ) : section === 'leads' ? (
               <LeadsPanel rows={leadRows} loading={loadingLeads} onRefresh={loadLeads} />
@@ -4533,15 +4791,15 @@ export const Sites: React.FC = () => {
               <section className={styles.builder}>
               {isCanvasFocusMode && (
                 <div className={styles.focusModeBar} role="toolbar" aria-label="Controles de enfoque">
-                  <button type="button" className={styles.focusExitButton} onClick={() => setEditorFocusMode(false)}>
+                  <button type="button" className={styles.focusExitButton} onClick={() => setEditorFocus(false)}>
                     <X size={16} />
                     <span>Salir de enfoque</span>
                   </button>
                   <div className={styles.deviceToggle} role="group" aria-label="Vista previa del dispositivo">
-                    <button type="button" className={device === 'desktop' ? styles.deviceActive : ''} onClick={() => setDevice('desktop')} title="Escritorio" aria-label="Escritorio">
+                    <button type="button" className={device === 'desktop' ? styles.deviceActive : ''} onClick={() => selectEditorDevice('desktop')} title="Escritorio" aria-label="Escritorio">
                       <Monitor size={15} />
                     </button>
-                    <button type="button" className={device === 'mobile' ? styles.deviceActive : ''} onClick={() => setDevice('mobile')} title="Movil" aria-label="Movil">
+                    <button type="button" className={device === 'mobile' ? styles.deviceActive : ''} onClick={() => selectEditorDevice('mobile')} title="Movil" aria-label="Movil">
                       <Smartphone size={15} />
                     </button>
                   </div>
@@ -4575,7 +4833,7 @@ export const Sites: React.FC = () => {
                   aiAgentAvailable={aiAgentConfigured}
                   importData={selectedImportData}
                   loadingImportData={loadingImportData}
-                  onSelectPage={setActivePageId}
+                  onSelectPage={selectEditorPage}
                   onPreview={handlePreviewSite}
                   onPublish={() => handleSaveSite('published')}
                   onEditWithAI={() => handleEditImportedHtmlWithAI(editorSite)}
@@ -4620,7 +4878,7 @@ export const Sites: React.FC = () => {
                         pageSelected={selectedBlockId === PAGE_SELECTED_ID}
                         fluidAboveDesign={isLanding(editorSite) && device === 'desktop'}
                         onClear={() => {
-                          setSelectedBlockId(PAGE_SELECTED_ID)
+                          selectEditorBlock(PAGE_SELECTED_ID)
                           setPaletteInsertIndex(null)
                         }}
                         onDragOver={handleCanvasDragOver}
@@ -4657,7 +4915,7 @@ export const Sites: React.FC = () => {
                                         paletteInsertIndex={paletteInsertIndex}
                                         paletteSectionTarget={paletteSectionTarget}
                                         paletteDragging={paletteDragging}
-                                        onSelectBlock={setSelectedBlockId}
+                                        onSelectBlock={selectEditorBlock}
                                         onDeleteBlock={handleDeleteBlock}
                                         onMoveBlock={handleMoveBlock}
                                         getBlockMoveState={getBlockMoveState}
@@ -4697,7 +4955,7 @@ export const Sites: React.FC = () => {
                                           activePageId={activePage?.id || DEFAULT_FUNNEL_PAGE_ID}
                                           canMoveUp={moveState.canMoveUp}
                                           canMoveDown={moveState.canMoveDown}
-                                          onSelect={() => setSelectedBlockId(block.id)}
+                                          onSelect={() => selectEditorBlock(block.id)}
                                           onDelete={() => handleDeleteBlock(block.id)}
                                           onMoveUp={() => handleMoveBlock(block.id, 'up')}
                                           onMoveDown={() => handleMoveBlock(block.id, 'down')}
