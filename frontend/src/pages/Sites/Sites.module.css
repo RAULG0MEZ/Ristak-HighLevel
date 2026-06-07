@@ -1362,6 +1362,42 @@
   text-align: center;
 }
 
+.aiEditorGeneration {
+  min-height: calc(100dvh - 220px);
+  display: grid;
+  place-items: center;
+  padding: clamp(18px, 4vw, 44px);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 24% 20%, rgba(34, 197, 94, 0.16), transparent 28%),
+    linear-gradient(135deg, rgba(15, 23, 42, 0.94), rgba(2, 6, 23, 0.98));
+  overflow: hidden;
+}
+
+.aiEditorGenerationShell {
+  width: min(760px, 100%);
+  border: 1px solid rgba(226, 232, 240, 0.16);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.88);
+  color: #f8fafc;
+  box-shadow: 0 34px 90px -46px rgba(0, 0, 0, 0.92);
+}
+
+.aiEditorGenerationKicker {
+  display: block;
+  padding: 28px 34px 0;
+  color: #86efac;
+  font-size: 0.74rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.aiEditorGeneration .aiCreationThinking {
+  padding-top: 18px;
+}
+
 :global(body.dark) .aiCreationOverlay,
 :global([data-theme="dark"]) .aiCreationOverlay {
   background: rgba(3, 7, 18, 0.72);
@@ -1992,6 +2028,27 @@
 
   .aiCreationFunnelGrid {
     grid-template-columns: 1fr;
+  }
+
+  .aiEditorGeneration {
+    min-height: calc(100dvh - 170px);
+    padding: 12px;
+  }
+
+  .aiEditorGenerationShell {
+    border-radius: 10px;
+  }
+
+  .aiEditorGenerationKicker {
+    padding: 22px 22px 0;
+  }
+
+  .aiEditorGeneration .aiCreationThinking {
+    padding: 18px 22px 22px;
+  }
+
+  .aiEditorGeneration .aiCreationSteps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .aiCreationFunnelCard {

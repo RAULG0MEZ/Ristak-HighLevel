@@ -150,6 +150,12 @@ type SitesAICreationModalState = {
   editSite?: PublicSite | null
 } | null
 
+type AIEditorGenerationState = {
+  siteId: string
+  siteKind: SitesAICreationKind
+  editMode: boolean
+} | null
+
 type SitesAICreationModalSubmit = {
   siteKind: SitesAICreationKind
   prompt: string
@@ -412,6 +418,60 @@ const getAIAgentSiteKindForSite = (site: PublicSite): SitesAICreationKind => {
   if (site.siteType === 'interactive_form') return 'interactive_form'
   if (site.siteType === 'standard_form') return 'form'
   return 'landing'
+}
+const getSiteTypeForAICreationKind = (siteKind: SitesAICreationKind): SiteType => {
+  if (siteKind === 'interactive_form') return 'interactive_form'
+  if (siteKind === 'form') return 'standard_form'
+  return 'landing_page'
+}
+const getPendingAIGenerationName = (siteKind: SitesAICreationKind) => {
+  if (siteKind === 'interactive_form') return 'Generando formulario interactivo con IA'
+  if (siteKind === 'form') return 'Generando formulario con IA'
+  return 'Generando página con IA'
+}
+const makePendingAIGenerationSite = (siteKind: SitesAICreationKind): PublicSite => {
+  const now = new Date().toISOString()
+  const siteType = getSiteTypeForAICreationKind(siteKind)
+  const name = getPendingAIGenerationName(siteKind)
+
+  return normalizeSiteForEditor({
+    id: `ai-pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    name,
+    slug: 'generando-con-ia',
+    siteType,
+    status: 'draft',
+    domain: '',
+    title: name,
+    description: 'Ristak está generando esta página con inteligencia artificial.',
+    theme: {
+      template: siteType === 'interactive_form' ? 'interactive' : siteType === 'standard_form' ? 'compact' : 'ristak',
+      pages: [
+        {
+          id: DEFAULT_FUNNEL_PAGE_ID,
+          title: siteType === 'landing_page' ? 'Página inicial' : 'Formulario',
+          sortOrder: 0
+        }
+      ]
+    },
+    metaCapiEnabled: false,
+    metaEventName: 'Lead',
+    renderDomainVerified: false,
+    renderDomainCheckedAt: null,
+    renderDomainError: null,
+    publishedAt: null,
+    createdAt: now,
+    updatedAt: now,
+    submissionsCount: 0,
+    trackingStats: {
+      views: 0,
+      visitors: 0,
+      sessions: 0,
+      conversions: 0,
+      conversionRate: 0
+    },
+    blocks: [],
+    submissions: []
+  })
 }
 const fileToBase64 = (file: File) => new Promise<string>((resolve, reject) => {
   const reader = new FileReader()
@@ -2374,6 +2434,7 @@ export const Sites: React.FC = () => {
   const [importReview, setImportReview] = useState<ImportReviewState | null>(null)
   const [selectedImportData, setSelectedImportData] = useState<ImportedSiteImport | null>(null)
   const [aiCreationModal, setAiCreationModal] = useState<SitesAICreationModalState>(null)
+  const [aiEditorGeneration, setAiEditorGeneration] = useState<AIEditorGenerationState>(null)
   const [loadingImportData, setLoadingImportData] = useState(false)
   const [savingImportMapping, setSavingImportMapping] = useState(false)
   const selectedSiteRef = useRef<PublicSite | null>(null)
@@ -2452,6 +2513,8 @@ export const Sites: React.FC = () => {
     : section === 'forms'
       ? (isFormSite(selectedSite) ? selectedSite : null)
       : null
+  const activeAIGeneration = aiEditorGeneration && editorSite?.id === aiEditorGeneration.siteId ? aiEditorGeneration : null
+  const editorAIGenerating = Boolean(activeAIGeneration)
   const formCanvasHasFields = Boolean(editorSite && isFormSite(editorSite) && canvasBlocks.some(block => fieldBlockTypes.has(block.blockType)))
   const formCanvasActionLabel = editorSite && activePage && isStandardForm(editorSite) && !isLastFormContentPage(editorSite, pages, activePage.id)
     ? 'Continuar'
@@ -3297,41 +3360,98 @@ export const Sites: React.FC = () => {
       ].join('\n')
     ].filter(Boolean)
     const messages: SitesAICreationMessage[] = [{ role: 'user', content: promptParts.join('\n\n') }]
+    const pendingSite = editSite ? normalizeSiteForEditor(editSite) : makePendingAIGenerationSite(siteKind)
+    const pendingSiteId = pendingSite.id
+    const pendingPages = normalizeFunnelPages(pendingSite)
+
+    const restoreAfterGenerationProblem = (
+      toastType: 'warning' | 'error',
+      title: string,
+      message: string
+    ) => {
+      setAiEditorGeneration(null)
+      if (editSite) {
+        const restoredSite = normalizeSiteForEditor(editSite)
+        const restoredPages = normalizeFunnelPages(restoredSite)
+        setSelectedSite(restoredSite)
+        selectedSiteRef.current = restoredSite
+        setActivePageId(restoredPages[0]?.id || DEFAULT_FUNNEL_PAGE_ID)
+      } else {
+        setSites(current => current.filter(item => item.id !== pendingSiteId))
+        if (selectedSiteRef.current?.id === pendingSiteId) {
+          setSelectedSite(null)
+          selectedSiteRef.current = null
+        }
+      }
+      setAiCreationModal({ siteKind, editSite: editSite || null })
+      showToast(toastType, title, message)
+    }
 
     setCreating(true)
+    setAiCreationModal(null)
+    setImportReview(null)
+    setSelectedImportData(null)
+    setSelectedBlockId('')
+    setActivePageId(pendingPages[0]?.id || DEFAULT_FUNNEL_PAGE_ID)
+    setSection(pendingSite.siteType === 'landing_page' ? 'landings' : 'forms')
+    setCreateFlow('closed')
+    setHasUnsavedChanges(false)
+    setEditorFocusMode(false)
+    setAiEditorGeneration({ siteId: pendingSiteId, siteKind, editMode: Boolean(editSite) })
+    setSites(current => {
+      const withoutPending = current.filter(item => item.id !== pendingSiteId)
+      const exists = withoutPending.some(item => item.id === pendingSite.id)
+      if (exists) return withoutPending.map(item => item.id === pendingSite.id ? { ...item, ...pendingSite } : item)
+      return [pendingSite, ...withoutPending]
+    })
+    setSelectedSite(pendingSite)
+    selectedSiteRef.current = pendingSite
+
     try {
       const result = editSite
         ? await sitesService.editImportedHtmlWithAI(editSite.id, { siteKind, messages, model: chatgptModel })
         : await sitesService.createWithAIHtml({ siteKind, messages, metaCapiEnabled: metaPixelConnected, model: chatgptModel })
 
       if (result.status === 'needs_more_info' || !result.site || !result.import) {
-        return result.reply || 'Dame un poco mas de contexto para crear una pagina bien armada.'
+        restoreAfterGenerationProblem(
+          'warning',
+          'La IA necesita más detalles',
+          result.reply || 'Dame un poco más de contexto para crear una página bien armada.'
+        )
+        return null
       }
 
       const normalizedSite = normalizeSiteForEditor(result.site)
       setSites(current => {
-        const exists = current.some(item => item.id === normalizedSite.id)
-        if (exists) return current.map(item => item.id === normalizedSite.id ? { ...item, ...normalizedSite } : item)
-        return [normalizedSite, ...current]
+        const withoutPending = current.filter(item => item.id !== pendingSiteId)
+        const exists = withoutPending.some(item => item.id === normalizedSite.id)
+        if (exists) return withoutPending.map(item => item.id === normalizedSite.id ? { ...item, ...normalizedSite } : item)
+        return [normalizedSite, ...withoutPending]
       })
       setSelectedSite(normalizedSite)
       selectedSiteRef.current = normalizedSite
       setSelectedBlockId('')
-      setActivePageId(DEFAULT_FUNNEL_PAGE_ID)
+      setActivePageId(normalizeFunnelPages(normalizedSite)[0]?.id || DEFAULT_FUNNEL_PAGE_ID)
       setSection(normalizedSite.siteType === 'landing_page' ? 'landings' : 'forms')
       setCreateFlow('closed')
       setHasUnsavedChanges(false)
       setSelectedImportData(result.import)
       setImportReview({ site: normalizedSite, importData: result.import })
       setAiCreationModal(null)
+      setAiEditorGeneration(null)
       showToast(
         'success',
-        editSite ? 'Pagina actualizada con IA' : 'Pagina creada con IA',
-        'Ristak ya reviso el HTML. Confirma la ruta de datos antes de publicar.'
+        editSite ? 'Página actualizada con IA' : 'Página creada con IA',
+        'Ristak ya revisó el HTML. Confirma la ruta de datos antes de publicar.'
       )
       return null
     } catch (error) {
-      return error instanceof Error ? error.message : 'No se pudo generar la pagina con IA'
+      restoreAfterGenerationProblem(
+        'error',
+        'No se pudo generar la página',
+        error instanceof Error ? error.message : 'Intenta otra vez con una descripción más clara.'
+      )
+      return null
     } finally {
       setCreating(false)
     }
@@ -4217,6 +4337,7 @@ export const Sites: React.FC = () => {
                       <input
                         value={editorSite.name}
                         aria-label="Nombre interno del site"
+                        disabled={editorAIGenerating}
                         onChange={(event) => updateSelectedSite({ name: event.target.value })}
                         onBlur={() => handleSaveSite(undefined, { silent: true })}
                       />
@@ -4225,6 +4346,7 @@ export const Sites: React.FC = () => {
                       type="button"
                       className={`${styles.seoToolbarButton} ${seoValidation?.totalIssues ? styles.seoToolbarButtonWarning : ''}`}
                       onClick={() => setSeoModalOpen(true)}
+                      disabled={editorAIGenerating}
                       title={seoValidation?.totalIssues ? `SEO tiene ${seoValidation.totalIssues} pendientes` : 'SEO completo'}
                     >
                       <Search size={15} />
@@ -4243,7 +4365,7 @@ export const Sites: React.FC = () => {
                         <FunnelPagesPanel
                           pages={pages}
                           activePageId={activePage?.id || DEFAULT_FUNNEL_PAGE_ID}
-                          locked={!canManagePages(editorSite)}
+                          locked={!canManagePages(editorSite) || editorAIGenerating}
                           draggingPageId={draggingPageId}
                           colorFinalPages={isStandardForm(editorSite)}
                           isFixedPage={isStandardForm(editorSite) ? isFormFinalPage : undefined}
@@ -4270,6 +4392,7 @@ export const Sites: React.FC = () => {
                             value={getRouteEditorValue(editorSite)}
                             aria-label="Ruta pública"
                             placeholder={editorSite.siteType === 'landing_page' ? 'embudo-01' : 'formulario-01'}
+                            disabled={editorAIGenerating}
                             onChange={(event) => updateSelectedSite({ slug: normalizeRouteEditorInput(event.target.value, domainConfig) })}
                             onBlur={() => handleSaveSite(undefined, { silent: true })}
                           />
@@ -4277,25 +4400,25 @@ export const Sites: React.FC = () => {
                       </label>
                     </div>
                     <div className={styles.deviceToggle} role="group" aria-label="Vista previa del dispositivo">
-                      <button type="button" className={device === 'desktop' ? styles.deviceActive : ''} onClick={() => setDevice('desktop')} title="Escritorio">
+                      <button type="button" className={device === 'desktop' ? styles.deviceActive : ''} onClick={() => setDevice('desktop')} disabled={editorAIGenerating} title="Escritorio">
                         <Monitor size={15} />
                       </button>
-                      <button type="button" className={device === 'mobile' ? styles.deviceActive : ''} onClick={() => setDevice('mobile')} title="Movil">
+                      <button type="button" className={device === 'mobile' ? styles.deviceActive : ''} onClick={() => setDevice('mobile')} disabled={editorAIGenerating} title="Movil">
                         <Smartphone size={15} />
                       </button>
                     </div>
-                    <button type="button" className={styles.editorIconAction} onClick={() => setEditorFocusMode(true)} title="Modo enfoque" aria-label="Modo enfoque">
+                    <button type="button" className={styles.editorIconAction} onClick={() => setEditorFocusMode(true)} disabled={editorAIGenerating} title="Modo enfoque" aria-label="Modo enfoque">
                       <Maximize2 size={14} />
                     </button>
-                    <Button variant="secondary" size="lg" onClick={handlePreviewSite}>
+                    <Button variant="secondary" size="lg" onClick={handlePreviewSite} disabled={editorAIGenerating}>
                       <Eye size={15} />
                       Previsualizar
                     </Button>
-                    <Button variant="secondary" size="lg" onClick={() => handleSaveSite()} loading={saving}>
+                    <Button variant="secondary" size="lg" onClick={() => handleSaveSite()} loading={saving} disabled={editorAIGenerating}>
                       <Save size={15} />
                       Guardar
                     </Button>
-                    <Button size="lg" onClick={() => handleSaveSite('published')} loading={saving}>
+                    <Button size="lg" onClick={() => handleSaveSite('published')} loading={saving} disabled={editorAIGenerating}>
                       <Send size={15} />
                       Publicar
                     </Button>
@@ -4436,7 +4559,12 @@ export const Sites: React.FC = () => {
                   </button>
                 </div>
               )}
-              {isImportedHtmlSite(editorSite) ? (
+              {activeAIGeneration ? (
+                <AIEditorGenerationPanel
+                  editMode={activeAIGeneration.editMode}
+                  siteKind={activeAIGeneration.siteKind}
+                />
+              ) : isImportedHtmlSite(editorSite) ? (
                 <ImportedHtmlEditorPanel
                   site={editorSite}
                   pages={pages}
@@ -4834,6 +4962,43 @@ const formatAICreationVoiceDuration = (totalSeconds: number) => {
   const seconds = totalSeconds % 60
 
   return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
+const AIEditorGenerationPanel: React.FC<{
+  editMode: boolean
+  siteKind: SitesAICreationKind
+}> = ({ editMode, siteKind }) => {
+  const targetLabel = siteKind === 'interactive_form'
+    ? 'formulario interactivo'
+    : siteKind === 'form'
+      ? 'formulario'
+      : 'página'
+
+  return (
+    <div className={styles.aiEditorGeneration} role="status" aria-live="polite" aria-busy="true">
+      <div className={styles.aiEditorGenerationShell}>
+        <span className={styles.aiEditorGenerationKicker}>Generando con inteligencia artificial</span>
+        <div className={styles.aiCreationThinking}>
+          <div className={styles.aiCreationThinkingHeader}>
+            <Sparkles size={24} />
+            <span>{editMode ? 'La IA está ajustando tu página' : `La IA está creando tu ${targetLabel}`}</span>
+          </div>
+          <div className={styles.aiCreationScan} aria-hidden="true">
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+          <div className={styles.aiCreationSteps}>
+            <span>Creando HTML</span>
+            <span>Eligiendo imágenes</span>
+            <span>Preparando formularios</span>
+            <span>Revisando campos</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 const SitesAICreationModal: React.FC<{
