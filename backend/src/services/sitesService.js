@@ -175,6 +175,7 @@ const IMPORTED_EDITABLE_CONTENT_TYPES = new Set([
   'placeholder',
   'image',
   'background_image',
+  'video',
   'choice_option'
 ])
 const IMPORTED_FORM_STANDARD_FIELDS = new Set(['full_name', 'first_name', 'last_name', 'phone', 'email', 'message'])
@@ -776,6 +777,28 @@ function injectImportedStaticFallback(html = '', report = []) {
   return `${IMPORTED_STATIC_FALLBACK_STYLE}${html}`
 }
 
+function sanitizeImportedIframeTag(attrsText = '', report = []) {
+  const attrs = parseHtmlAttributes(attrsText)
+  const src = safeEmbedUrl(attrs.src || '')
+  if (!src) {
+    report.push('Se quito 1 iframe inseguro')
+    return ''
+  }
+
+  const title = limitString(attrs.title || attrs['aria-label'] || 'Contenido externo', 120)
+  const allow = limitString(attrs.allow || DEFAULT_EMBED_ALLOW, 280) || DEFAULT_EMBED_ALLOW
+  const className = cleanString(attrs.class)
+  const id = cleanString(attrs.id)
+  const style = cleanString(attrs.style)
+  const width = cleanString(attrs.width)
+  const height = cleanString(attrs.height)
+  const dataAttrs = Object.entries(attrs)
+    .filter(([key]) => /^data-(rstk|ristak|ristack)-/i.test(key))
+    .map(([key, value]) => ` ${key}="${escapeHtml(value)}"`)
+    .join('')
+  return `<iframe${id ? ` id="${escapeHtml(id)}"` : ''}${className ? ` class="${escapeHtml(className)}"` : ''}${dataAttrs} src="${escapeHtml(src)}" title="${escapeHtml(title)}"${width ? ` width="${escapeHtml(width)}"` : ''}${height ? ` height="${escapeHtml(height)}"` : ''}${style ? ` style="${escapeHtml(style)}"` : ''} loading="lazy" referrerpolicy="no-referrer-when-downgrade" sandbox="${EMBED_SANDBOX_URL}" allow="${escapeHtml(allow)}" allowfullscreen></iframe>`
+}
+
 function sanitizeImportedHtml(html = '') {
   const report = []
   let sanitized = String(html || '')
@@ -790,7 +813,6 @@ function sanitizeImportedHtml(html = '') {
 
   const removals = [
     { pattern: /<script\b[\s\S]*?<\/script>/gi, label: 'scripts' },
-    { pattern: /<iframe\b[\s\S]*?<\/iframe>/gi, label: 'iframes' },
     { pattern: /<object\b[\s\S]*?<\/object>/gi, label: 'objects' },
     { pattern: /<embed\b[\s\S]*?>/gi, label: 'embeds' },
     { pattern: /<meta\b[^>]*http-equiv\s*=\s*["']?refresh["']?[^>]*>/gi, label: 'meta refresh' },
@@ -802,6 +824,10 @@ function sanitizeImportedHtml(html = '') {
     if (count) report.push(`Se quitaron ${count} ${removal.label}`)
     sanitized = sanitized.replace(removal.pattern, '')
   }
+
+  sanitized = sanitized.replace(/<iframe\b([^>]*)>[\s\S]*?<\/iframe>/gi, (_match, attrsText = '') => (
+    sanitizeImportedIframeTag(attrsText, report)
+  ))
 
   sanitized = sanitized.replace(/\s(on[a-z]+)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, (_match, attr) => {
     report.push(`Se quito atributo ${attr}`)
@@ -1184,6 +1210,60 @@ function annotateImportedImages(html = '', usedIds = new Set()) {
   })
 }
 
+const IMPORTED_VIDEO_HINT_PATTERN = /\b(video|videos|vsl|player|embed|iframe|youtube|youtu|vimeo|wistia|loom|vidyard|webinar|presentacion|presentation|reproductor|curso|clase)\b/i
+const IMPORTED_DIRECT_VIDEO_PATTERN = /\.(mp4|webm|ogg|mov)(?:$|[?#])/i
+
+function isLikelyImportedVideoElement(tagName = '', attrs = {}) {
+  const tag = cleanString(tagName).toLowerCase()
+  if (tag === 'video') return true
+
+  const srcHint = `${attrs.src || ''} ${attrs.data || ''} ${attrs.poster || ''} ${attrs.type || ''}`
+  const textHint = [
+    attrs.id,
+    attrs.class,
+    attrs.title,
+    attrs['aria-label'],
+    attrs.name,
+    attrs.role,
+    attrs['data-video'],
+    attrs['data-video-url'],
+    attrs['data-src'],
+    attrs['data-embed'],
+    attrs['data-wistia-id'],
+    attrs['data-youtube-id'],
+    attrs['data-vimeo-id']
+  ].map(value => cleanString(value)).filter(Boolean).join(' ')
+  const combinedHint = `${srcHint} ${textHint}`
+
+  if (['iframe', 'embed', 'object'].includes(tag)) {
+    return IMPORTED_VIDEO_HINT_PATTERN.test(combinedHint) ||
+      IMPORTED_DIRECT_VIDEO_PATTERN.test(combinedHint) ||
+      /(?:youtube\.com|youtu\.be|vimeo\.com|wistia\.(?:com|net)|loom\.com|vidyard\.com)/i.test(combinedHint)
+  }
+
+  if (!['div', 'section', 'article', 'figure', 'aside'].includes(tag)) return false
+  if (IMPORTED_VIDEO_HINT_PATTERN.test(combinedHint)) return true
+
+  const style = cleanString(attrs.style)
+  const hasMediaShape = /aspect-ratio\s*:\s*(16\s*\/\s*9|1\.7)/i.test(style) ||
+    /\b(min-)?height\s*:\s*(1[8-9]\d|[2-9]\d{2})px/i.test(style)
+  const hasDarkSurface = /background(?:-color)?\s*:\s*(#000|#000000|black|rgb\(\s*0\s*,\s*0\s*,\s*0\s*\))/i.test(style)
+  return hasMediaShape && hasDarkSurface
+}
+
+function annotateImportedVideos(html = '', usedIds = new Set()) {
+  return String(html || '').replace(/<([a-z][\w:-]*)\b([^>]*?)\s*(\/?)>/gi, (match, tagName = '', attrsText = '', selfClose = '') => {
+    const attrs = parseHtmlAttributes(attrsText)
+    if (hasImportedEditableAttr(attrs, 'type')) return match
+    if (!isLikelyImportedVideoElement(tagName, attrs)) return match
+    return addImportedEditableAttributesToTag(tagName, attrsText, selfClose, {
+      type: 'video',
+      label: getImportedElementLabel(tagName, attrs, 'Video'),
+      usedIds
+    })
+  })
+}
+
 function annotateImportedBackgroundImages(html = '', usedIds = new Set()) {
   return String(html || '').replace(/<([a-z][\w:-]*)\b([^>]*)>/gi, (match, tagName, attrsText = '') => {
     const tag = cleanString(tagName).toLowerCase()
@@ -1218,6 +1298,7 @@ function annotateImportedEditableHtml(html = '') {
   nextHtml = annotateImportedTextTags(nextHtml, usedIds)
   nextHtml = annotateImportedInputs(nextHtml, usedIds)
   nextHtml = annotateImportedImages(nextHtml, usedIds)
+  nextHtml = annotateImportedVideos(nextHtml, usedIds)
   nextHtml = annotateImportedBackgroundImages(nextHtml, usedIds)
   return nextHtml
 }
@@ -1265,6 +1346,126 @@ function setStyleBackgroundUrl(style = '', url = '') {
   }
   const prefix = cleanString(style).replace(/;?\s*$/, '')
   return `${prefix}${prefix ? '; ' : ''}background-image: ${safeBackground}`
+}
+
+function getImportedVideoValueSource(value = '') {
+  const raw = decodeHtmlAttribute(cleanString(value))
+  if (!raw) return { raw: '', candidate: '', title: 'Video', allow: DEFAULT_EMBED_ALLOW }
+
+  const iframeTag = raw.match(/<iframe\b[\s\S]*?>/i)?.[0] || ''
+  if (iframeTag) {
+    return {
+      raw,
+      candidate: getIframeAttribute(iframeTag, 'src'),
+      title: getIframeAttribute(iframeTag, 'title') || 'Video',
+      allow: getIframeAttribute(iframeTag, 'allow') || DEFAULT_EMBED_ALLOW
+    }
+  }
+
+  const videoTag = raw.match(/<video\b[\s\S]*?>/i)?.[0] || ''
+  if (videoTag) {
+    const sourceMatch = raw.match(/<source\b[^>]*\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i)
+    return {
+      raw,
+      candidate: getIframeAttribute(videoTag, 'src') || sourceMatch?.[1] || sourceMatch?.[2] || sourceMatch?.[3] || '',
+      title: 'Video',
+      allow: DEFAULT_EMBED_ALLOW
+    }
+  }
+
+  const wistiaAsyncId = raw.match(/wistia_async_([a-z0-9]+)/i)?.[1] || ''
+  if (wistiaAsyncId) {
+    return {
+      raw,
+      candidate: `https://fast.wistia.net/embed/iframe/${wistiaAsyncId}`,
+      title: 'Video Wistia',
+      allow: DEFAULT_EMBED_ALLOW
+    }
+  }
+
+  return {
+    raw,
+    candidate: raw,
+    title: 'Video',
+    allow: DEFAULT_EMBED_ALLOW
+  }
+}
+
+function normalizeImportedVideoEmbed(value = '') {
+  const source = getImportedVideoValueSource(value)
+  if (!source.candidate) {
+    const error = new Error('Pega una URL o codigo embed de video.')
+    error.status = 400
+    throw error
+  }
+
+  const safeCandidate = safeEmbedUrl(source.candidate)
+  if (!safeCandidate) {
+    const error = new Error('Usa una URL de video con http o https, o un iframe valido.')
+    error.status = 400
+    throw error
+  }
+
+  try {
+    const parsed = new URL(safeCandidate)
+    const host = parsed.hostname.replace(/^www\./i, '').toLowerCase()
+    const pathParts = parsed.pathname.split('/').filter(Boolean)
+    const directVideo = IMPORTED_DIRECT_VIDEO_PATTERN.test(parsed.pathname)
+    if (directVideo) {
+      return { kind: 'video', src: parsed.toString(), title: source.title, allow: source.allow }
+    }
+
+    if (host === 'youtu.be' && pathParts[0]) {
+      return { kind: 'iframe', src: `https://www.youtube.com/embed/${encodeURIComponent(pathParts[0])}`, title: source.title || 'YouTube', allow: source.allow }
+    }
+
+    if (host.endsWith('youtube.com') || host.endsWith('youtube-nocookie.com')) {
+      const videoId = parsed.searchParams.get('v') || (pathParts[0] === 'shorts' ? pathParts[1] : '') || (pathParts[0] === 'embed' ? pathParts[1] : '')
+      if (videoId) {
+        return { kind: 'iframe', src: `https://www.youtube.com/embed/${encodeURIComponent(videoId)}`, title: source.title || 'YouTube', allow: source.allow }
+      }
+    }
+
+    if (host.endsWith('vimeo.com')) {
+      const videoId = pathParts[0] === 'video' ? pathParts[1] : pathParts[0]
+      if (videoId && /^\d+$/.test(videoId)) {
+        return { kind: 'iframe', src: `https://player.vimeo.com/video/${encodeURIComponent(videoId)}`, title: source.title || 'Vimeo', allow: source.allow }
+      }
+    }
+
+    const wistiaId = source.raw.match(/wistia\.(?:com|net)\/(?:medias|embed\/iframe)\/([a-z0-9]+)/i)?.[1] ||
+      (host.endsWith('wistia.com') || host.endsWith('wistia.net') ? pathParts[pathParts.length - 1] : '')
+    if (wistiaId && /^[a-z0-9]+$/i.test(wistiaId)) {
+      return { kind: 'iframe', src: `https://fast.wistia.net/embed/iframe/${encodeURIComponent(wistiaId)}`, title: source.title || 'Wistia', allow: source.allow }
+    }
+
+    if (host.endsWith('loom.com')) {
+      const videoId = pathParts[0] === 'embed' ? pathParts[1] : pathParts[0] === 'share' ? pathParts[1] : ''
+      if (videoId) {
+        return { kind: 'iframe', src: `https://www.loom.com/embed/${encodeURIComponent(videoId)}`, title: source.title || 'Loom', allow: source.allow }
+      }
+    }
+
+    return { kind: 'iframe', src: parsed.toString(), title: source.title, allow: source.allow }
+  } catch {
+    const error = new Error('No pudimos leer esa URL de video.')
+    error.status = 400
+    throw error
+  }
+}
+
+function buildImportedVideoMediaMarkup(value = '') {
+  const video = normalizeImportedVideoEmbed(value)
+  if (video.kind === 'video') {
+    return `<video src="${escapeHtml(video.src)}" controls playsinline preload="metadata" style="width:100%;height:100%;min-height:220px;aspect-ratio:16/9;display:block;background:#000;border:0;border-radius:inherit;object-fit:cover;"></video>`
+  }
+  return `<iframe src="${escapeHtml(video.src)}" title="${escapeHtml(video.title || 'Video')}" loading="lazy" referrerpolicy="no-referrer-when-downgrade" sandbox="${EMBED_SANDBOX_URL}" allow="${escapeHtml(video.allow || DEFAULT_EMBED_ALLOW)}" allowfullscreen style="width:100%;height:100%;min-height:220px;aspect-ratio:16/9;display:block;background:#000;border:0;border-radius:inherit;"></iframe>`
+}
+
+function buildImportedVideoReplacement(value = '', attrsText = '', editId = '') {
+  const attrs = parseHtmlAttributes(attrsText)
+  const label = getImportedElementLabel('video', attrs, 'Video')
+  return `<div class="rstk-imported-video-slot" data-rstk-editable="true" data-rstk-edit-type="video" data-rstk-label="${escapeHtml(label)}" data-rstk-edit-id="${escapeHtml(editId)}" style="width:100%;aspect-ratio:16/9;min-height:220px;overflow:hidden;background:#000;border-radius:inherit;">${buildImportedVideoMediaMarkup(value)}</div>`
 }
 
 function getImportedEditableTextValue(input = {}) {
@@ -1479,6 +1680,24 @@ function applyImportedEditableContentUpdate(html = '', input = {}) {
       const attrs = parseHtmlAttributes(attrsText)
       updated = true
       return setHtmlAttribute(match, attrsText, 'style', setStyleBackgroundUrl(attrs.style || '', value))
+    })
+  } else if (editType === 'video') {
+    const mediaMarkup = buildImportedVideoMediaMarkup(value)
+    nextHtml = nextHtml.replace(/<(iframe|video|object)\b([^>]*)>[\s\S]*?<\/\1>/gi, (match, _tagName, attrsText = '') => {
+      if (updated || !hasImportedEditId(attrsText, editId) || getImportedEditTypeFromAttrs(attrsText) !== 'video') return match
+      updated = true
+      return buildImportedVideoReplacement(value, attrsText, editId)
+    })
+    nextHtml = nextHtml.replace(/<embed\b([^>]*?)\s*(\/?)>/gi, (match, attrsText = '') => {
+      if (updated || !hasImportedEditId(attrsText, editId) || getImportedEditTypeFromAttrs(attrsText) !== 'video') return match
+      updated = true
+      return buildImportedVideoReplacement(value, attrsText, editId)
+    })
+    nextHtml = nextHtml.replace(/<(div|section|article|figure|aside)\b([^>]*)>([\s\S]*?)<\/\1>/gi, (match, tagName, attrsText = '') => {
+      if (updated || !hasImportedEditId(attrsText, editId) || getImportedEditTypeFromAttrs(attrsText) !== 'video') return match
+      updated = true
+      const openingTag = setHtmlAttribute(`<${tagName}${attrsText}>`, attrsText, 'data-rstk-video-url', normalizeImportedVideoEmbed(value).src)
+      return `${openingTag}${mediaMarkup}</${tagName}>`
     })
   } else if (editType === 'placeholder') {
     nextHtml = nextHtml.replace(/<input\b([^>]*?)\s*(\/?)>/gi, (match, attrsText = '') => {
@@ -3880,8 +4099,9 @@ Marcado para edicion rapida:
 - Marca los elementos importantes que el usuario podria querer cambiar sin tocar codigo.
 - Usa data-rstk-editable="true", data-rstk-edit-type, data-rstk-label y data-rstk-edit-id.
 - Cuando puedas, agrega tambien aliases data-ristak-* o data-ristack-* para compatibilidad.
-- Tipos permitidos: heading, text, button, form_label, placeholder, image, background_image.
-- Marca titulares, subtitulares, parrafos breves, botones, labels de formularios, placeholders, imagenes, logos y elementos con fondo de imagen.
+- Tipos permitidos: heading, text, button, form_label, placeholder, image, background_image, video.
+- Marca titulares, subtitulares, parrafos breves, botones, labels de formularios, placeholders, imagenes, logos, elementos con fondo de imagen y espacios de video/iframe/embed.
+- Si incluyes un video, usa URL o iframe seguro y marca el contenedor con data-rstk-edit-type="video" para que el usuario pueda reemplazarlo despues.
 - En botones editables, cuando sepas la accion, agrega data-rstk-button-actions como JSON de acciones. Ejemplo: data-rstk-button-actions='[{"action":"submit"},{"action":"next_page"}]'.
 - Acciones permitidas: submit, next_page, specific_page, url, disqualify, automation, notify_team, add_tag, send_whatsapp, create_payment, none. Las de automation/notificaciones/pagos pueden quedar como demo.
 - Mantén tambien data-rstk-button-action con la primera accion para compatibilidad. Si el boton abre enlace, agrega data-rstk-button-url. Si va a una pagina interna, agrega data-rstk-button-page-id cuando exista un id claro.
@@ -3956,7 +4176,7 @@ Modo edicion:
 - Si recibes importedPages con varias paginas, conserva el embudo multipagina y responde con page.pages incluyendo todas las paginas completas. Mantén ids, title y filename de cada pagina salvo que el usuario pida renombrar, agregar, quitar o reordenar paginas.
 - Conserva formularios, ids, name, data-rstk-form, data-rstk-form-id, data-rstk-field, data-ristak-field, data-rstk-custom-field, data-rstk-edit-id, data-rstk-editable, data-rstk-edit-type, data-rstk-label, data-rstk-section, data-rstk-button-actions, data-rstk-button-action, data-rstk-button-url, data-rstk-button-page-id, data-rstk-button-message, data-rstk-choice-actions y sus aliases data-ristak-* / data-ristack-* cuando el usuario no pida cambiarlos.
 - Si cambias campos, deja convenciones claras para que Ristak pueda redetectar y mapear.
-- Puedes cambiar titulo, imagenes, orden de secciones, colores, layout, copy y campos segun lo que pida el usuario.
+- Puedes cambiar titulo, imagenes, videos, orden de secciones, colores, layout, copy y campos segun lo que pida el usuario.
 ` : `
 Modo creacion:
 - Si el usuario pidio formulario, incluyelo completo y bien mapeado.
@@ -9434,7 +9654,7 @@ async function renderImportedPublicSiteHtml(site, { pageId = '', trackingEnabled
     pageId: activePage?.id || DEFAULT_FUNNEL_PAGE_ID,
     pageTitle: activePage?.title || site.title || site.name
   })
-  return injectImportedHtmlRuntime(html, injection)
+  return injectImportedHtmlRuntime(annotateImportedEditableHtml(html), injection)
 }
 
 export async function getImportedSiteAssetResponse(siteId, assetPath, { trackingEnabled = true } = {}) {
@@ -9459,7 +9679,7 @@ export async function getImportedSiteAssetResponse(siteId, assetPath, { tracking
       site,
       assetPath: asset.assetPath,
       contentType: 'text/html; charset=utf-8',
-      body: Buffer.from(injectImportedHtmlRuntime(asset.content.toString('utf8'), injection), 'utf8'),
+      body: Buffer.from(injectImportedHtmlRuntime(annotateImportedEditableHtml(asset.content.toString('utf8')), injection), 'utf8'),
       cacheControl: trackingEnabled ? 'public, max-age=300' : 'no-store'
     }
   }

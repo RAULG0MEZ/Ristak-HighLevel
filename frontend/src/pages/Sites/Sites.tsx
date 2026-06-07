@@ -5768,10 +5768,33 @@ type ImportedEditableSelection = {
 
 type ImportedInlineEditorState = {
   selection: ImportedEditableSelection
-  mode: 'text' | 'image'
+  mode: 'text' | 'image' | 'video'
   value: string
   top: number
   left: number
+}
+
+type ImportedAIRegionElement = {
+  tagName: string
+  editId?: string
+  editType?: ImportedEditableSelection['editType']
+  label?: string
+  text?: string
+  html?: string
+}
+
+type ImportedAIRegionSelection = {
+  pageId: string
+  pageTitle: string
+  bounds: {
+    x: number
+    y: number
+    width: number
+    height: number
+    viewportWidth: number
+    viewportHeight: number
+  }
+  elements: ImportedAIRegionElement[]
 }
 
 type ImportedButtonEditorState = {
@@ -5818,6 +5841,7 @@ const editableTypeLabels: Record<ImportedEditableSelection['editType'], string> 
   placeholder: 'Texto dentro del campo',
   image: 'Imagen',
   background_image: 'Imagen de fondo',
+  video: 'Video',
   choice_option: 'Opcion',
   section: 'Seccion'
 }
@@ -5840,6 +5864,7 @@ const getImportedEditableAttribute = (element: Element, key: keyof typeof import
 const inferImportedEditableType = (element: HTMLElement): ImportedEditableContentType => {
   const tagName = element.tagName.toLowerCase()
   if (tagName === 'img') return 'image'
+  if (['iframe', 'video', 'embed', 'object'].includes(tagName)) return 'video'
   if (element.getAttribute('style')?.match(/background(?:-image)?\s*:/i)) return 'background_image'
   if (tagName === 'input' || tagName === 'textarea') {
     const type = element.getAttribute('type')?.toLowerCase() || ''
@@ -5853,7 +5878,7 @@ const inferImportedEditableType = (element: HTMLElement): ImportedEditableConten
 
 const normalizeImportedEditableType = (value: string, element: HTMLElement): ImportedEditableContentType => {
   const type = value.trim().toLowerCase().replace(/[-\s]+/g, '_')
-  if (['heading', 'text', 'button', 'form_label', 'placeholder', 'image', 'background_image', 'choice_option'].includes(type)) {
+  if (['heading', 'text', 'button', 'form_label', 'placeholder', 'image', 'background_image', 'video', 'choice_option'].includes(type)) {
     return type as ImportedEditableContentType
   }
   return inferImportedEditableType(element)
@@ -5868,6 +5893,19 @@ const getEditableElementValue = (element: HTMLElement, editType: ImportedEditabl
   const tagName = element.tagName.toLowerCase()
   if (editType === 'image' && tagName === 'img') return element.getAttribute('src') || ''
   if (editType === 'background_image') return extractCssBackgroundImageUrl(element.getAttribute('style') || '')
+  if (editType === 'video') {
+    if (['iframe', 'embed'].includes(tagName)) return element.getAttribute('src') || ''
+    if (tagName === 'object') return element.getAttribute('data') || ''
+    if (tagName === 'video') {
+      return element.getAttribute('src') ||
+        (element.querySelector('source') as HTMLSourceElement | null)?.getAttribute('src') ||
+        ''
+    }
+    return element.getAttribute('data-rstk-video-url') ||
+      element.getAttribute('data-ristak-video-url') ||
+      element.getAttribute('data-rstk-video-embed') ||
+      ''
+  }
   if (editType === 'placeholder') return element.getAttribute('placeholder') || ''
   if (editType === 'button' && tagName === 'input') return element.getAttribute('value') || ''
   return (element.textContent || '').replace(/\s+/g, ' ').trim()
@@ -6046,6 +6084,135 @@ const readImportedEditableSelection = (element: HTMLElement): ImportedEditableSe
     tagName: element.tagName.toLowerCase(),
     ...readImportedButtonSettings(element, editType)
   }
+}
+
+const importedAIRegionCandidateSelector = [
+  importedEditableSelector,
+  importedSectionSelector,
+  'iframe',
+  'video',
+  'embed',
+  'object',
+  'img',
+  'button',
+  'a',
+  'input',
+  'textarea',
+  'select',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'p',
+  'label',
+  'section',
+  'article',
+  'figure',
+  'aside',
+  'div'
+].join(', ')
+
+const compactImportedRegionText = (value = '', maxLength = 260) => {
+  const normalized = value.replace(/\s+/g, ' ').trim()
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 3)}...` : normalized
+}
+
+const getRectIntersection = (
+  a: { left: number; top: number; right: number; bottom: number },
+  b: { left: number; top: number; right: number; bottom: number }
+) => {
+  const left = Math.max(a.left, b.left)
+  const top = Math.max(a.top, b.top)
+  const right = Math.min(a.right, b.right)
+  const bottom = Math.min(a.bottom, b.bottom)
+  const width = Math.max(0, right - left)
+  const height = Math.max(0, bottom - top)
+  return { width, height, area: width * height }
+}
+
+const collectImportedAIRegionElements = (
+  doc: Document,
+  region: { left: number; top: number; right: number; bottom: number; width: number; height: number }
+): ImportedAIRegionElement[] => {
+  const regionArea = Math.max(1, region.width * region.height)
+  return Array.from(doc.querySelectorAll(importedAIRegionCandidateSelector))
+    .map(element => {
+      const htmlElement = element as HTMLElement
+      const rect = htmlElement.getBoundingClientRect()
+      const elementArea = Math.max(1, rect.width * rect.height)
+      const intersection = getRectIntersection(region, rect)
+      const selection = readImportedEditableSelection(htmlElement)
+      const isSection = Boolean(getImportedEditableAttribute(htmlElement, 'section'))
+      const visible = rect.width > 4 && rect.height > 4 && intersection.area > 80
+      const coverageOfElement = intersection.area / elementArea
+      const coverageOfRegion = intersection.area / regionArea
+      const tooBroad = elementArea > regionArea * 12 && coverageOfRegion < 0.72 && !selection
+      const useful = visible && !tooBroad && (coverageOfElement > 0.12 || coverageOfRegion > 0.16 || Boolean(selection) || isSection)
+      return {
+        element: htmlElement,
+        selection,
+        isSection,
+        coverageOfElement,
+        coverageOfRegion,
+        useful
+      }
+    })
+    .filter(item => item.useful)
+    .sort((a, b) => {
+      if (Boolean(a.selection) !== Boolean(b.selection)) return a.selection ? -1 : 1
+      return (b.coverageOfElement + b.coverageOfRegion) - (a.coverageOfElement + a.coverageOfRegion)
+    })
+    .slice(0, 14)
+    .map(({ element, selection, isSection }) => {
+      const sectionLabel = isSection ? getImportedEditableAttribute(element, 'section') : ''
+      return {
+        tagName: element.tagName.toLowerCase(),
+        editId: selection?.editId,
+        editType: selection?.editType,
+        label: selection?.label || sectionLabel || element.getAttribute('aria-label') || element.getAttribute('title') || '',
+        text: compactImportedRegionText(element.textContent || ''),
+        html: compactImportedRegionText(element.outerHTML || '', 720)
+      }
+    })
+}
+
+const buildImportedAIRegionPrompt = (
+  userPrompt: string,
+  selection: ImportedAIRegionSelection,
+  site: PublicSite
+) => {
+  const elementLines = selection.elements.length
+    ? selection.elements.map((element, index) => {
+      const meta = [
+        `tag=${element.tagName}`,
+        element.editId ? `editId=${element.editId}` : '',
+        element.editType ? `editType=${element.editType}` : '',
+        element.label ? `label=${element.label}` : '',
+        element.text ? `text=${element.text}` : ''
+      ].filter(Boolean).join(', ')
+      return `${index + 1}. ${meta}\nHTML: ${element.html || ''}`
+    }).join('\n\n')
+    : 'No se detectaron elementos editables claros dentro del rectangulo. Usa las coordenadas y el contexto visual del HTML actual.'
+
+  return `
+El usuario selecciono una zona especifica del HTML importado y quiere que la IA modifique SOLO esa zona salvo que sea indispensable ajustar CSS cercano para que se vea bien.
+
+Pagina activa: ${selection.pageTitle} (${selection.pageId})
+Site: ${site.title || site.name}
+Rectangulo seleccionado en viewport: x=${Math.round(selection.bounds.x)}, y=${Math.round(selection.bounds.y)}, ancho=${Math.round(selection.bounds.width)}, alto=${Math.round(selection.bounds.height)}, viewport=${Math.round(selection.bounds.viewportWidth)}x${Math.round(selection.bounds.viewportHeight)}.
+
+Elementos detectados dentro de la zona:
+${elementLines}
+
+Solicitud del usuario:
+${userPrompt.trim()}
+
+Reglas para esta edicion:
+- Devuelve el HTML completo actualizado, conservando todas las paginas del embudo si existen.
+- No cambies otras secciones que el usuario no selecciono.
+- Si la solicitud pide insertar un video, acepta URL o codigo iframe/embed y colocalo como un elemento editable de video con data-rstk-editable="true", data-rstk-edit-type="video", data-rstk-label y data-rstk-edit-id.
+- Conserva formularios, campos, rutas de datos y acciones de botones existentes salvo que el usuario pida cambiarlos.
+`.trim()
 }
 
 const getDefaultImportedAdditionalAction = (actions: ImportedButtonActionStep[]): ImportedButtonAction => {
@@ -6289,6 +6456,11 @@ const ImportedHtmlEditorPanel: React.FC<{
   const [inlineEditor, setInlineEditor] = useState<ImportedInlineEditorState | null>(null)
   const [buttonEditor, setButtonEditor] = useState<ImportedButtonEditorState | null>(null)
   const [choiceEditor, setChoiceEditor] = useState<ImportedChoiceEditorState | null>(null)
+  const [aiRegionMode, setAiRegionMode] = useState(false)
+  const [aiRegionSelection, setAiRegionSelection] = useState<ImportedAIRegionSelection | null>(null)
+  const [aiRegionPrompt, setAiRegionPrompt] = useState('')
+  const [aiRegionSaving, setAiRegionSaving] = useState(false)
+  const [aiRegionError, setAiRegionError] = useState('')
   const [contentSaving, setContentSaving] = useState(false)
   const [contentError, setContentError] = useState('')
   const importedPages = pages.length ? pages : [{ id: DEFAULT_FUNNEL_PAGE_ID, title: 'Pagina 1', sortOrder: 0 }]
@@ -6335,6 +6507,10 @@ const ImportedHtmlEditorPanel: React.FC<{
     setInlineEditor(null)
     setButtonEditor(null)
     setChoiceEditor(null)
+    setAiRegionMode(false)
+    setAiRegionSelection(null)
+    setAiRegionPrompt('')
+    setAiRegionError('')
     setContentError('')
   }, [activeImportedPage?.id, site.id, previewVersion])
 
@@ -6350,7 +6526,7 @@ const ImportedHtmlEditorPanel: React.FC<{
     }
   }, [])
 
-  const openInlineEditorForElement = useCallback((element: HTMLElement, selection: ImportedEditableSelection, mode: 'text' | 'image') => {
+  const openInlineEditorForElement = useCallback((element: HTMLElement, selection: ImportedEditableSelection, mode: 'text' | 'image' | 'video') => {
     const position = getInlineEditorPosition(element)
     setInlineEditor({
       selection,
@@ -6447,6 +6623,63 @@ const ImportedHtmlEditorPanel: React.FC<{
     }
   }, [activeImportedPage?.id, clearInlineSelection, loadInlinePreview, onContentUpdated, showToast, site.id])
 
+  const startAIRegionMode = useCallback(() => {
+    selectedIframeElementRef.current?.classList.remove('rstk-imported-selected')
+    selectedIframeElementRef.current = null
+    setInlineEditor(null)
+    setButtonEditor(null)
+    setChoiceEditor(null)
+    setContentError('')
+    setAiRegionSelection(null)
+    setAiRegionPrompt('')
+    setAiRegionError('')
+    setAiRegionMode(true)
+  }, [])
+
+  const cancelAIRegionMode = useCallback(() => {
+    setAiRegionMode(false)
+    setAiRegionSelection(null)
+    setAiRegionPrompt('')
+    setAiRegionError('')
+  }, [])
+
+  const applyAIRegionEdit = async () => {
+    if (!aiRegionSelection) return
+    const prompt = aiRegionPrompt.trim()
+    if (!prompt) {
+      setAiRegionError('Escribe que quieres que cambie la IA en esa zona.')
+      return
+    }
+
+    setAiRegionSaving(true)
+    setAiRegionError('')
+    try {
+      const result = await sitesService.editImportedHtmlWithAI(site.id, {
+        siteKind: getAIAgentSiteKindForSite(site),
+        messages: [{
+          role: 'user',
+          content: buildImportedAIRegionPrompt(prompt, aiRegionSelection, site)
+        }]
+      })
+
+      if (result.status === 'needs_more_info' || !result.site || !result.import) {
+        setAiRegionError(result.reply || 'La IA necesita un poco mas de detalle para editar esa zona.')
+        return
+      }
+
+      onContentUpdated({ site: result.site, import: result.import })
+      setAiRegionMode(false)
+      setAiRegionSelection(null)
+      setAiRegionPrompt('')
+      await loadInlinePreview()
+      showToast('success', 'Zona actualizada', 'La IA aplico el cambio solo en la parte que seleccionaste.')
+    } catch (error) {
+      setAiRegionError(error instanceof Error ? error.message : 'No se pudo editar esa zona con IA.')
+    } finally {
+      setAiRegionSaving(false)
+    }
+  }
+
   useEffect(() => {
     if (previewLoading || !previewHtml) return
     const iframe = iframeRef.current
@@ -6518,14 +6751,44 @@ const ImportedHtmlEditorPanel: React.FC<{
           box-shadow: 0 14px 36px rgba(15, 23, 42, 0.22) !important;
           cursor: pointer !important;
         }
+        body.rstk-imported-region-selecting,
+        body.rstk-imported-region-selecting * {
+          cursor: crosshair !important;
+          user-select: none !important;
+        }
+        .rstk-imported-region-box {
+          position: fixed !important;
+          z-index: 2147483647 !important;
+          border: 2px solid rgba(14, 165, 233, 0.96) !important;
+          border-radius: 6px !important;
+          background: rgba(14, 165, 233, 0.14) !important;
+          box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.16) !important;
+          pointer-events: none !important;
+        }
+        .rstk-imported-region-selected-box {
+          position: fixed !important;
+          z-index: 2147483646 !important;
+          border: 2px solid rgba(14, 165, 233, 0.96) !important;
+          border-radius: 6px !important;
+          background: rgba(14, 165, 233, 0.08) !important;
+          box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.12) !important;
+          pointer-events: none !important;
+        }
       `
       doc.head?.appendChild(style)
 
-      let imageActionButton: HTMLButtonElement | null = null
+      let mediaActionButton: HTMLButtonElement | null = null
+      let regionBox: HTMLDivElement | null = null
+      let removeRegionDragHandlers = () => {}
 
-      const removeImageActionButton = () => {
-        imageActionButton?.remove()
-        imageActionButton = null
+      const removeMediaActionButton = () => {
+        mediaActionButton?.remove()
+        mediaActionButton = null
+      }
+
+      const removeRegionBox = () => {
+        regionBox?.remove()
+        regionBox = null
       }
 
       const selectElement = (element: HTMLElement) => {
@@ -6587,37 +6850,43 @@ const ImportedHtmlEditorPanel: React.FC<{
         element.addEventListener('keydown', handleKeydown)
       }
 
-      const showImageActionButton = (element: HTMLElement, selection: ImportedEditableSelection) => {
-        removeImageActionButton()
+      const showMediaActionButton = (element: HTMLElement, selection: ImportedEditableSelection) => {
+        removeMediaActionButton()
         const rect = element.getBoundingClientRect()
-        imageActionButton = doc.createElement('button')
-        imageActionButton.type = 'button'
-        imageActionButton.className = 'rstk-imported-image-action'
-        imageActionButton.textContent = 'Cambiar imagen'
-        imageActionButton.style.left = `${Math.max(8, rect.left + 8)}px`
-        imageActionButton.style.top = `${Math.max(8, rect.top + 8)}px`
-        imageActionButton.addEventListener('click', (buttonEvent) => {
+        mediaActionButton = doc.createElement('button')
+        mediaActionButton.type = 'button'
+        mediaActionButton.className = 'rstk-imported-image-action'
+        mediaActionButton.textContent = selection.editType === 'video' ? 'Cambiar video' : 'Cambiar imagen'
+        mediaActionButton.style.left = `${Math.max(8, rect.left + 8)}px`
+        mediaActionButton.style.top = `${Math.max(8, rect.top + 8)}px`
+        mediaActionButton.addEventListener('click', (buttonEvent) => {
           buttonEvent.preventDefault()
           buttonEvent.stopPropagation()
           selectElement(element)
-          openInlineEditorForElement(element, selection, 'image')
+          openInlineEditorForElement(element, selection, selection.editType === 'video' ? 'video' : 'image')
         })
-        doc.body.appendChild(imageActionButton)
+        doc.body.appendChild(mediaActionButton)
       }
 
       const handleFrameMouseOver = (event: MouseEvent) => {
+        if (aiRegionMode) return
         const target = event.target as Element | null
         if (!target || typeof target.closest !== 'function') return
         const editableElement = target.closest(importedEditableSelector) as HTMLElement | null
         if (!editableElement) return
         const selection = readImportedEditableSelection(editableElement)
         if (!selection) return
-        if (selection.editType === 'image' || selection.editType === 'background_image') {
-          showImageActionButton(editableElement, selection)
+        if (selection.editType === 'image' || selection.editType === 'background_image' || selection.editType === 'video') {
+          showMediaActionButton(editableElement, selection)
         }
       }
 
       const handleFrameClick = (event: MouseEvent) => {
+        if (aiRegionMode) {
+          event.preventDefault()
+          event.stopPropagation()
+          return
+        }
         const target = event.target as Element | null
         if (!target || typeof target.closest !== 'function') return
 
@@ -6630,7 +6899,7 @@ const ImportedHtmlEditorPanel: React.FC<{
             (choiceInput.id ? doc.querySelector(`label[for="${choiceInput.id.replace(/"/g, '\\"')}"]`) : null) ||
             choiceInput) as HTMLElement
           selectElement(visualElement)
-          removeImageActionButton()
+          removeMediaActionButton()
           openChoiceEditorForSelection(choiceSelection)
           return
         }
@@ -6642,11 +6911,15 @@ const ImportedHtmlEditorPanel: React.FC<{
           event.preventDefault()
           event.stopPropagation()
           selectElement(editableElement)
-          removeImageActionButton()
-          if (selection.editType === 'image' || selection.editType === 'background_image') {
+          removeMediaActionButton()
+          setAiRegionMode(false)
+          setAiRegionSelection(null)
+          setAiRegionPrompt('')
+          setAiRegionError('')
+          if (selection.editType === 'image' || selection.editType === 'background_image' || selection.editType === 'video') {
             setButtonEditor(null)
             setChoiceEditor(null)
-            openInlineEditorForElement(editableElement, selection, 'image')
+            openInlineEditorForElement(editableElement, selection, selection.editType === 'video' ? 'video' : 'image')
           } else if (selection.editType === 'button') {
             openButtonEditorForSelection(selection)
           } else if (selection.editType === 'placeholder') {
@@ -6670,20 +6943,127 @@ const ImportedHtmlEditorPanel: React.FC<{
           setButtonEditor(null)
           setChoiceEditor(null)
           setContentError('')
-          removeImageActionButton()
+          removeMediaActionButton()
           return
         }
 
         clearInlineSelection()
-        removeImageActionButton()
+        removeMediaActionButton()
+      }
+
+      const handleRegionMouseDown = (event: MouseEvent) => {
+        if (!aiRegionMode) return
+        event.preventDefault()
+        event.stopPropagation()
+        removeMediaActionButton()
+        removeRegionBox()
+        selectedIframeElementRef.current?.classList.remove('rstk-imported-selected')
+        selectedIframeElementRef.current = null
+        setInlineEditor(null)
+        setButtonEditor(null)
+        setChoiceEditor(null)
+        setContentError('')
+
+        const startX = event.clientX
+        const startY = event.clientY
+        regionBox = doc.createElement('div')
+        regionBox.className = 'rstk-imported-region-box'
+        doc.body.appendChild(regionBox)
+
+        const updateRegionBox = (currentX: number, currentY: number) => {
+          if (!regionBox) return
+          const left = Math.min(startX, currentX)
+          const top = Math.min(startY, currentY)
+          const width = Math.abs(currentX - startX)
+          const height = Math.abs(currentY - startY)
+          regionBox.style.left = `${left}px`
+          regionBox.style.top = `${top}px`
+          regionBox.style.width = `${width}px`
+          regionBox.style.height = `${height}px`
+        }
+
+        const handleMove = (moveEvent: MouseEvent) => {
+          moveEvent.preventDefault()
+          moveEvent.stopPropagation()
+          updateRegionBox(moveEvent.clientX, moveEvent.clientY)
+        }
+
+        const handleUp = (upEvent: MouseEvent) => {
+          upEvent.preventDefault()
+          upEvent.stopPropagation()
+          doc.removeEventListener('mousemove', handleMove, true)
+          doc.removeEventListener('mouseup', handleUp, true)
+          removeRegionDragHandlers = () => {}
+          updateRegionBox(upEvent.clientX, upEvent.clientY)
+
+          const left = Math.min(startX, upEvent.clientX)
+          const top = Math.min(startY, upEvent.clientY)
+          const width = Math.abs(upEvent.clientX - startX)
+          const height = Math.abs(upEvent.clientY - startY)
+          if (width < 16 || height < 16) {
+            removeRegionBox()
+            setAiRegionError('Dibuja un rectangulo mas grande sobre la zona que quieres editar.')
+            return
+          }
+
+          const viewportWidth = doc.defaultView?.innerWidth || doc.documentElement.clientWidth || 0
+          const viewportHeight = doc.defaultView?.innerHeight || doc.documentElement.clientHeight || 0
+          setAiRegionSelection({
+            pageId: activeImportedPage?.id || DEFAULT_FUNNEL_PAGE_ID,
+            pageTitle: activeImportedPage?.title || 'Pagina',
+            bounds: {
+              x: left,
+              y: top,
+              width,
+              height,
+              viewportWidth,
+              viewportHeight
+            },
+            elements: collectImportedAIRegionElements(doc, {
+              left,
+              top,
+              right: left + width,
+              bottom: top + height,
+              width,
+              height
+            })
+          })
+          setAiRegionPrompt('')
+          setAiRegionError('')
+          setAiRegionMode(false)
+          removeRegionBox()
+        }
+
+        doc.addEventListener('mousemove', handleMove, true)
+        doc.addEventListener('mouseup', handleUp, true)
+        removeRegionDragHandlers = () => {
+          doc.removeEventListener('mousemove', handleMove, true)
+          doc.removeEventListener('mouseup', handleUp, true)
+        }
+      }
+
+      doc.body?.classList.toggle('rstk-imported-region-selecting', aiRegionMode)
+      if (!aiRegionMode && aiRegionSelection?.pageId === (activeImportedPage?.id || DEFAULT_FUNNEL_PAGE_ID)) {
+        regionBox = doc.createElement('div')
+        regionBox.className = 'rstk-imported-region-selected-box'
+        regionBox.style.left = `${aiRegionSelection.bounds.x}px`
+        regionBox.style.top = `${aiRegionSelection.bounds.y}px`
+        regionBox.style.width = `${aiRegionSelection.bounds.width}px`
+        regionBox.style.height = `${aiRegionSelection.bounds.height}px`
+        doc.body.appendChild(regionBox)
       }
 
       doc.addEventListener('mouseover', handleFrameMouseOver, true)
+      doc.addEventListener('mousedown', handleRegionMouseDown, true)
       doc.addEventListener('click', handleFrameClick, true)
       cleanupDocument = () => {
         doc.removeEventListener('mouseover', handleFrameMouseOver, true)
+        doc.removeEventListener('mousedown', handleRegionMouseDown, true)
         doc.removeEventListener('click', handleFrameClick, true)
-        removeImageActionButton()
+        removeRegionDragHandlers()
+        removeMediaActionButton()
+        removeRegionBox()
+        doc.body?.classList.remove('rstk-imported-region-selecting')
         style.remove()
       }
     }
@@ -6697,7 +7077,7 @@ const ImportedHtmlEditorPanel: React.FC<{
       iframe.removeEventListener('load', installEditorHooks)
       cleanupDocument()
     }
-  }, [clearInlineSelection, openButtonEditorForSelection, openChoiceEditorForSelection, openInlineEditorForElement, previewHtml, previewLoading, previewVersion, saveEditableContent])
+  }, [activeImportedPage?.id, activeImportedPage?.title, aiRegionMode, aiRegionSelection, clearInlineSelection, openButtonEditorForSelection, openChoiceEditorForSelection, openInlineEditorForElement, previewHtml, previewLoading, previewVersion, saveEditableContent])
 
   const routeValue = getRouteEditorValue(site)
   const saveRoute = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -6837,7 +7217,7 @@ const ImportedHtmlEditorPanel: React.FC<{
               className={styles.importedPreviewFrame}
               title={`Vista previa de ${activeImportedPage?.title || site.name}`}
               srcDoc={previewHtml}
-              sandbox="allow-same-origin"
+              sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
               referrerPolicy="no-referrer-when-downgrade"
             />
           )}
@@ -6859,16 +7239,83 @@ const ImportedHtmlEditorPanel: React.FC<{
       <aside className={styles.importedSidePanel}>
         <div className={styles.importedSidePanelActions}>
           {aiAgentAvailable && (
-            <Button type="button" variant="secondary" onClick={onEditWithAI} disabled={saving}>
-              <Sparkles size={15} />
-              Modificar con IA
-            </Button>
+            <>
+              <Button type="button" variant="secondary" onClick={onEditWithAI} disabled={saving || aiRegionSaving}>
+                <Sparkles size={15} />
+                Modificar con IA
+              </Button>
+              <Button
+                type="button"
+                variant={aiRegionMode ? 'primary' : 'secondary'}
+                onClick={aiRegionMode ? cancelAIRegionMode : startAIRegionMode}
+                disabled={saving || aiRegionSaving || previewLoading || Boolean(previewError)}
+              >
+                <MousePointerClick size={15} />
+                {aiRegionMode ? 'Cancelar seleccion' : 'Seleccionar y modificar con IA'}
+              </Button>
+            </>
           )}
           <Button type="button" variant="secondary" onClick={onEditFields} disabled={loadingImportData}>
             {loadingImportData ? <RefreshCw size={15} /> : <Settings2 size={15} />}
             Editar ruta de datos
           </Button>
         </div>
+
+        {aiRegionMode && (
+          <div className={styles.importedAIRegionBox}>
+            <div className={styles.importedButtonActionHeader}>
+              <MousePointerClick size={17} />
+              <div>
+                <span>Seleccion con IA</span>
+                <strong>Dibuja un rectangulo</strong>
+              </div>
+            </div>
+            <p>Arrastra sobre la vista previa la parte exacta que quieres cambiar.</p>
+          </div>
+        )}
+
+        {aiRegionSelection && (
+          <div className={styles.importedAIRegionBox}>
+            <div className={styles.importedButtonActionHeader}>
+              <Sparkles size={17} />
+              <div>
+                <span>Zona seleccionada</span>
+                <strong>{aiRegionSelection.elements.length || 1} elementos detectados</strong>
+              </div>
+            </div>
+            <label className={styles.importedActionField}>
+              <span>Que quieres que cambie la IA?</span>
+              <textarea
+                rows={5}
+                value={aiRegionPrompt}
+                onChange={(event) => setAiRegionPrompt(event.target.value)}
+                placeholder="Ejemplo: Inserta este video de Wistia aqui y conserva el diseño..."
+                disabled={aiRegionSaving}
+              />
+            </label>
+            {aiRegionError && (
+              <div className={styles.importedAIRegionError}>
+                <AlertTriangle size={14} />
+                <span>{aiRegionError}</span>
+              </div>
+            )}
+            <div className={styles.importedButtonActionFooter}>
+              <Button type="button" variant="secondary" size="sm" onClick={cancelAIRegionMode} disabled={aiRegionSaving}>
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void applyAIRegionEdit()}
+                disabled={!aiRegionPrompt.trim() || aiRegionSaving}
+                loading={aiRegionSaving}
+              >
+                <Sparkles size={14} />
+                Aplicar con IA
+              </Button>
+            </div>
+          </div>
+        )}
 
         {buttonEditor && (
           <div className={styles.importedButtonActionBox}>
@@ -6953,10 +7400,16 @@ const ImportedHtmlEditorPanel: React.FC<{
           className={styles.importedInlineEditor}
           style={{ top: inlineEditor.top, left: inlineEditor.left }}
           role="dialog"
-          aria-label={inlineEditor.mode === 'image' ? 'Cambiar imagen' : 'Editar texto'}
+          aria-label={inlineEditor.mode === 'image' ? 'Cambiar imagen' : inlineEditor.mode === 'video' ? 'Cambiar video' : 'Editar texto'}
         >
           <div className={styles.importedInlineEditorHeader}>
-            <span>{inlineEditor.mode === 'image' ? 'Cambiar imagen' : editableTypeLabels[inlineEditor.selection.editType]}</span>
+            <span>
+              {inlineEditor.mode === 'image'
+                ? 'Cambiar imagen'
+                : inlineEditor.mode === 'video'
+                  ? 'Cambiar video'
+                  : editableTypeLabels[inlineEditor.selection.editType]}
+            </span>
             <button type="button" onClick={clearInlineSelection} aria-label="Cerrar editor rapido">
               <X size={14} />
             </button>
@@ -6977,6 +7430,25 @@ const ImportedHtmlEditorPanel: React.FC<{
                 <Button type="button" size="sm" onClick={() => void saveInlineEditor()} disabled={!canSaveInlineEditor} loading={contentSaving}>
                   <Save size={14} />
                   Guardar URL
+                </Button>
+              </div>
+            </>
+          ) : inlineEditor.mode === 'video' ? (
+            <>
+              <textarea
+                rows={4}
+                value={inlineEditor.value}
+                onChange={(event) => setInlineEditor(current => current ? { ...current, value: event.target.value } : current)}
+                placeholder="Pega URL o codigo embed: YouTube, Vimeo, Wistia..."
+                disabled={contentSaving}
+              />
+              <div className={styles.importedInlineEditorActions}>
+                <Button type="button" variant="secondary" size="sm" onClick={clearInlineSelection} disabled={contentSaving}>
+                  Cancelar
+                </Button>
+                <Button type="button" size="sm" onClick={() => void saveInlineEditor()} disabled={!canSaveInlineEditor} loading={contentSaving}>
+                  <Save size={14} />
+                  Guardar video
                 </Button>
               </div>
             </>

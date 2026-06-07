@@ -352,6 +352,7 @@ export type ImportedEditableContentType =
   | 'placeholder'
   | 'image'
   | 'background_image'
+  | 'video'
   | 'choice_option'
 
 export type ImportedButtonAction =
