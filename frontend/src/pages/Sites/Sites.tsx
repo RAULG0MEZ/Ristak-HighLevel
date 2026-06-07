@@ -2144,6 +2144,32 @@ const buildLandingBlockOrderGroups = (
   return groups.sort((a, b) => a.sortOrder - b.sortOrder)
 }
 
+const findNearestRemainingBlockId = (
+  beforeBlockIds: string[],
+  candidateBlocks: SiteBlock[],
+  anchorBlockId: string,
+  deletedBlockIds: string[]
+) => {
+  const candidateIds = new Set(candidateBlocks.map(block => block.id))
+  if (!candidateIds.size) return ''
+
+  const deletedIds = new Set(deletedBlockIds)
+  const anchorIndex = beforeBlockIds.indexOf(anchorBlockId)
+  const startIndex = anchorIndex >= 0 ? anchorIndex : beforeBlockIds.length
+
+  for (let index = startIndex + 1; index < beforeBlockIds.length; index += 1) {
+    const id = beforeBlockIds[index]
+    if (candidateIds.has(id) && !deletedIds.has(id)) return id
+  }
+
+  for (let index = startIndex - 1; index >= 0; index -= 1) {
+    const id = beforeBlockIds[index]
+    if (candidateIds.has(id) && !deletedIds.has(id)) return id
+  }
+
+  return candidateBlocks[0]?.id || ''
+}
+
 const getButtonAction = (settings: Record<string, unknown>): ButtonAction => {
   const action = getSettingString(settings, 'buttonAction') as ButtonAction
   return ['url', 'next_page', 'specific_page', 'open_popup', 'close_popup'].includes(action) ? action : 'url'
@@ -3507,7 +3533,7 @@ export const Sites: React.FC = () => {
     const normalizedSite = normalizeSiteForEditor(site)
     selectedSiteRef.current = normalizedSite
     setSelectedSite(normalizedSite)
-    setSelectedBlockId(current => normalizedSite.blocks?.some(block => block.id === current) ? current : '')
+    setSelectedBlockId(current => normalizedSite.blocks?.some(block => block.id === current) || isEditorSurfaceSelection(current) ? current : '')
     setSites(current => current.map(item => item.id === normalizedSite.id ? { ...item, ...normalizedSite } : item))
   }
 
@@ -4701,16 +4727,24 @@ export const Sites: React.FC = () => {
       const normalizedSite = normalizeSiteForEditor(site)
       const normalizedPages = normalizeFunnelPages(normalizedSite)
       const pageId = deletingPopupBlock ? POPUP_SELECTED_ID : hasEditablePages(selectedSite) ? activePage?.id : undefined
-      const afterBlockIds = (normalizedSite.blocks || [])
+      const afterBlocks = (normalizedSite.blocks || [])
         .filter(block => deletingPopupBlock
           ? isPopupBlock(block)
           : !isPopupBlock(block) && (!pageId || getBlockPageId(block, normalizedPages) === pageId))
         .sort((a, b) => a.sortOrder - b.sortOrder)
-        .map(block => block.id)
+      const afterBlockIds = afterBlocks.map(block => block.id)
       const deletedSelectedBlock = deletedBlockIds.includes(selectedBlockId)
-      const selectedAfter = deletedSelectedBlock
-        ? (deletingPopupBlock ? POPUP_SELECTED_ID : PAGE_SELECTED_ID)
-        : selectedBlockId
+      let selectedAfter = selectedBlockId
+      if (deletedSelectedBlock) {
+        const deletedRootBlock = sourceBlocks.find(block => block.id === blockId) || blocks.find(block => block.id === blockId) || null
+        const sameLevelCandidates = editorSite && isLanding(editorSite) && isTopLevelLandingBlock(deletedRootBlock)
+          ? afterBlocks.filter(isTopLevelLandingBlock)
+          : afterBlocks
+        const nextBlockId =
+          findNearestRemainingBlockId(beforeBlockIds, sameLevelCandidates, blockId, deletedBlockIds) ||
+          findNearestRemainingBlockId(beforeBlockIds, afterBlocks, blockId, deletedBlockIds)
+        selectedAfter = nextBlockId || (deletingPopupBlock ? POPUP_SELECTED_ID : PAGE_SELECTED_ID)
+      }
       setActiveDragId(null)
       resetPaletteDrag()
       if (deletedSelectedBlock) {
