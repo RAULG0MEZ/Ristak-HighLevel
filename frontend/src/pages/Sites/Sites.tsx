@@ -8127,12 +8127,12 @@ const ImportedHtmlEditorPanel: React.FC<{
           outline-offset: 4px !important;
           border-radius: 4px !important;
           box-shadow: none !important;
-          transition: outline-color 140ms ease, box-shadow 140ms ease !important;
+          transition: outline-color 140ms ease, outline-width 140ms ease, box-shadow 140ms ease !important;
         }
         ${importedEditableSelector}:hover {
-          outline: 1px solid rgba(71, 85, 105, 0.72) !important;
+          outline: 1px dashed rgba(100, 116, 139, 0.34) !important;
           border-radius: 4px !important;
-          box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.12) !important;
+          box-shadow: none !important;
         }
         ${importedChoiceSelector},
         ${importedFormFieldSelector},
@@ -8142,25 +8142,35 @@ const ImportedHtmlEditorPanel: React.FC<{
         ${importedChoiceSelector}:hover,
         ${importedFormFieldSelector}:hover,
         label:has(${importedChoiceSelector}):hover {
-          outline: 1px solid rgba(71, 85, 105, 0.58) !important;
+          outline: 1px dashed rgba(100, 116, 139, 0.34) !important;
           outline-offset: 4px !important;
           border-radius: 4px !important;
-          box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.1) !important;
+          box-shadow: none !important;
         }
         ${importedSectionSelector} {
           scroll-margin: 40px !important;
         }
         .rstk-imported-selected {
-          outline: 2px solid #16a34a !important;
+          outline: 2px dashed #2563eb !important;
+          outline-offset: 5px !important;
           border-radius: 6px !important;
-          box-shadow: 0 0 0 5px rgba(22, 163, 74, 0.16) !important;
+          box-shadow:
+            0 0 0 1px rgba(15, 23, 42, 0.18),
+            0 0 0 4px rgba(37, 99, 235, 0.14) !important;
+        }
+        .rstk-imported-selected:hover {
+          outline-width: 2.5px !important;
+          outline-color: #1d4ed8 !important;
         }
         .rstk-imported-editing {
           cursor: text !important;
-          outline: 2px solid #16a34a !important;
+          outline: 2px dashed #2563eb !important;
+          outline-offset: 5px !important;
           border-radius: 6px !important;
-          background: rgba(34, 197, 94, 0.08) !important;
-          box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.16) !important;
+          background: rgba(37, 99, 235, 0.06) !important;
+          box-shadow:
+            0 0 0 1px rgba(15, 23, 42, 0.18),
+            0 0 0 4px rgba(37, 99, 235, 0.14) !important;
         }
         .rstk-imported-image-action {
           position: fixed !important;

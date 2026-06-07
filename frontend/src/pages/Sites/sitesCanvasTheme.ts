@@ -471,6 +471,7 @@ export const buildCanvasTheme = (site: PublicSite, device: 'desktop' | 'mobile' 
   const pageVideo = backgroundMediaType === 'video' ? cssMediaUrl(theme.backgroundImage) : ''
   const pageOverlay = backgroundPaint ? paintLayer(backgroundPaint) : 'none'
   const pageBg = backgroundPaint && isCssColor(backgroundPaint) ? normalizeCssColor(backgroundPaint, v.pageBg) : v.pageBg
+  const pageIsDark = isCssColor(pageBg) && relLuminance(pageBg) < 0.5
   const rawTextPaint = normalizeCssPaint(theme.textColor, '')
   const textPaint = rawTextPaint && (theme.textColorCustom || rawTextPaint.toLowerCase() !== DEFAULT_ACCENT.toLowerCase()) ? rawTextPaint : ''
   const ink = textPaint ? paintFallbackColor(textPaint, v.ink) : v.ink
@@ -498,6 +499,10 @@ export const buildCanvasTheme = (site: PublicSite, device: 'desktop' | 'mobile' 
     '--rstk-accent-strong': accentStrong,
     '--rstk-on-accent': v.onAccent,
     '--rstk-ring': ring,
+    '--rstk-selection-border': pageIsDark ? '#60a5fa' : '#2563eb',
+    '--rstk-selection-border-hover': pageIsDark ? '#93c5fd' : '#1d4ed8',
+    '--rstk-selection-shadow': pageIsDark ? 'rgba(96, 165, 250, 0.24)' : 'rgba(37, 99, 235, 0.16)',
+    '--rstk-selection-contrast': pageIsDark ? 'rgba(15, 23, 42, 0.36)' : 'rgba(15, 23, 42, 0.2)',
     '--rstk-input-bg': v.inputBg,
     '--rstk-input-ink': v.inputInk,
     '--rstk-input-border': v.inputBorder,
