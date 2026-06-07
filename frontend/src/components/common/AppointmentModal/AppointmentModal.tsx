@@ -303,6 +303,8 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState(INITIAL_FORM_STATE);
   const isCreateMode = mode === 'create';
+  const [isEditingExisting, setIsEditingExisting] = useState(false);
+  const isReadOnlyMode = !isCreateMode && !isEditingExisting;
 
   // Contact search
   const [searchQuery, setSearchQuery] = useState('');
@@ -334,6 +336,12 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
   const contactLocked = Boolean(lockInitialContact && initialContact?.id && isCreateMode);
   const showGuestsSection = Boolean(enableGuests && isCreateMode);
   const showContactAssignment = !contactLocked;
+
+  useEffect(() => {
+    if (isOpen && !isCreateMode) {
+      setIsEditingExisting(false);
+    }
+  }, [event?.id, isCreateMode, isOpen]);
 
   // Validación de slots DESHABILITADA en modo custom: Como admin, puedes agendar en cualquier horario
   // En modo default: Solo permite seleccionar de los slots disponibles según configuración del calendario
@@ -1133,6 +1141,25 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
     .formatToParts(startDate ?? new Date())
     .find((part) => part.type === 'timeZoneName')?.value ?? selectedTimeZone;
   const isMobileSheet = presentation === 'mobileSheet';
+  const modalTitle = isMobileSheet
+    ? isCreateMode
+      ? 'Nueva cita'
+      : isReadOnlyMode
+        ? 'Detalle de cita'
+        : 'Editar cita'
+    : '';
+  const assignedUser = formData.assignedUserId
+    ? users.find((user) => user.id === formData.assignedUserId)
+    : null;
+  const assignedUserLabel = assignedUser
+    ? assignedUser.name || assignedUser.email || `${assignedUser.firstName || ''} ${assignedUser.lastName || ''}`.trim()
+    : formData.assignedUserId
+      ? 'Persona asignada'
+      : 'Sin asignar';
+  const contactName = selectedContact ? getContactDisplayName(selectedContact) : '';
+  const contactDelivery = selectedContact ? getContactDelivery(selectedContact) : '';
+  const addressLabel = formData.address.trim() || 'Sin ubicación';
+  const notesLabel = formData.notes.trim() || 'Sin notas';
   const calendarOptions: SelectOption[] = calendarsLoading
     ? [{ value: '', label: 'Cargando calendarios...' }]
     : !calendars?.length
@@ -1210,7 +1237,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
       <Modal
         isOpen={isOpen}
         onClose={onClose}
-        title={isMobileSheet ? (isCreateMode ? 'Nueva cita' : 'Editar cita') : ''}
+        title={modalTitle}
         size="lg"
         className={isMobileSheet ? styles.mobileSheetModal : undefined}
         backdropClassName={isMobileSheet ? styles.mobileSheetBackdrop : undefined}
@@ -1276,7 +1303,45 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
           </div>
         </div>
 
-	        <div className={styles.twoColumnLayout}>
+        {isReadOnlyMode ? (
+          <section className={styles.detailSummary} aria-label="Resumen de la cita">
+            <div className={styles.detailSummaryGrid}>
+              <article className={styles.detailSummaryItem}>
+                <span>Horario</span>
+                <strong>{dateLabel}</strong>
+                <p>{timeLabel}</p>
+              </article>
+
+              <article className={styles.detailSummaryItem}>
+                <span>Contacto</span>
+                <strong>{contactName || 'Sin contacto asignado'}</strong>
+                {contactDelivery && <p>{contactDelivery}</p>}
+              </article>
+
+              <article className={styles.detailSummaryItem}>
+                <span>Calendario</span>
+                <strong>{calendar?.name || 'Sin calendario'}</strong>
+                <p>{selectedTimeZone}</p>
+              </article>
+
+              <article className={styles.detailSummaryItem}>
+                <span>Asignación</span>
+                <strong>{loadingUsers ? 'Cargando...' : assignedUserLabel}</strong>
+              </article>
+            </div>
+
+            <div className={styles.detailSummaryBlock}>
+              <span>Ubicación</span>
+              <p>{addressLabel}</p>
+            </div>
+
+            <div className={styles.detailSummaryBlock}>
+              <span>Notas</span>
+              <p>{notesLabel}</p>
+            </div>
+          </section>
+        ) : (
+		        <div className={styles.twoColumnLayout}>
 	          {/* COLUMNA IZQUIERDA: Contacto o invitados */}
 	          <div className={styles.leftColumn}>
 	            <h4 className={styles.columnTitle}>
@@ -1829,16 +1894,29 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
             </div>
           </div>
         </div>
+        )}
 
-        <div className={styles.actions}>
-          <Button
-            variant="primary"
-            onClick={handleSave}
-            disabled={isSaving}
-          >
-            {isSaving ? 'Guardando...' : isCreateMode ? 'Crear cita' : 'Guardar cambios'}
-          </Button>
-        </div>
+        {isReadOnlyMode ? (
+          <div className={`${styles.actions} ${styles.viewActions}`}>
+            <Button
+              variant="primary"
+              onClick={() => setIsEditingExisting(true)}
+              disabled={isSaving}
+            >
+              Editar cita
+            </Button>
+          </div>
+        ) : (
+          <div className={styles.actions}>
+            <Button
+              variant="primary"
+              onClick={handleSave}
+              disabled={isSaving}
+            >
+              {isSaving ? 'Guardando...' : isCreateMode ? 'Crear cita' : 'Guardar cambios'}
+            </Button>
+          </div>
+        )}
       </div>
     </Modal>
 

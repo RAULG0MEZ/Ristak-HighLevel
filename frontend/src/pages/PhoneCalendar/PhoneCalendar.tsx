@@ -1090,6 +1090,17 @@ export const PhoneCalendar: React.FC = () => {
     setIsEventModalOpen(true)
   }
 
+  const handleOpenMonthEvent = (
+    clickEvent: React.MouseEvent<HTMLButtonElement>,
+    event: CalendarEvent,
+    date: Date
+  ) => {
+    clickEvent.stopPropagation()
+    setSelectedDate(date)
+    setCurrentDate(date)
+    handleOpenEvent(event)
+  }
+
   const handleSearchResult = (event: CalendarEvent) => {
     const eventDate = toDateInTimeZone(event.startTime, timezone) ?? new Date(event.startTime)
     setSelectedDate(eventDate)
@@ -1283,36 +1294,44 @@ export const PhoneCalendar: React.FC = () => {
 	                    const isSelected = isSameDay(cell.date, selectedDate)
 	                    const isToday = isSameDay(cell.date, nowInCalendar)
 	                    return (
-	                      <button
-	                        key={formatDateKey(cell.date)}
-	                        type="button"
-	                        className={`${styles.monthDay} ${!cell.isCurrentMonth ? styles.monthDayMuted : ''} ${isSelected ? styles.monthDaySelected : ''} ${isToday ? styles.monthDayToday : ''}`}
-	                        onClick={() => handleSelectDate(cell.date)}
-	                      >
-	                        <span>{cell.date.getDate()}</span>
-	                        {cell.events.length > 0 && (
-	                          <i className={styles.monthMarkers}>
-	                            {cell.events.slice(0, 3).map((event) => (
-	                              <b key={event.id} style={{ backgroundColor: getEventColor(event) }} />
-	                            ))}
-	                          </i>
-	                        )}
-	                        {cell.events.length > 0 && (
-	                          <span className={styles.monthEventList}>
-	                            {cell.events.slice(0, 3).map((event) => (
-	                              <span
-	                                key={event.id}
-	                                className={styles.monthEventPill}
-	                                style={{ '--event-color': getEventColor(event) } as React.CSSProperties}
-	                              >
-	                                <b aria-hidden="true" />
-	                                <strong>{event.title || 'Sin título'}</strong>
-	                                <em>{formatEventTime(event.startTime)}</em>
-	                              </span>
-	                            ))}
-	                          </span>
-	                        )}
-	                      </button>
+		                      <div
+		                        key={formatDateKey(cell.date)}
+		                        className={`${styles.monthDay} ${!cell.isCurrentMonth ? styles.monthDayMuted : ''} ${isSelected ? styles.monthDaySelected : ''} ${isToday ? styles.monthDayToday : ''}`}
+		                      >
+		                        <button
+		                          type="button"
+		                          className={styles.monthDaySelectButton}
+		                          onClick={() => handleSelectDate(cell.date)}
+		                          aria-label={`Ver citas del ${cell.date.getDate()} de ${MONTH_NAMES[cell.date.getMonth()]}`}
+		                        >
+		                          <span>{cell.date.getDate()}</span>
+		                          {cell.events.length > 0 && (
+		                            <i className={styles.monthMarkers}>
+		                              {cell.events.slice(0, 3).map((event) => (
+		                                <b key={event.id} style={{ backgroundColor: getEventColor(event) }} />
+		                              ))}
+		                            </i>
+		                          )}
+		                        </button>
+		                        {cell.events.length > 0 && (
+		                          <span className={styles.monthEventList}>
+		                            {cell.events.slice(0, 3).map((event) => (
+		                              <button
+		                                type="button"
+		                                key={event.id}
+		                                className={styles.monthEventPill}
+		                                style={{ '--event-color': getEventColor(event) } as React.CSSProperties}
+		                                onClick={(clickEvent) => handleOpenMonthEvent(clickEvent, event, cell.date)}
+		                                aria-label={`Ver cita ${event.title || 'Sin título'} a las ${formatEventTime(event.startTime)}`}
+		                              >
+		                                <b aria-hidden="true" />
+		                                <strong>{event.title || 'Sin título'}</strong>
+		                                <em>{formatEventTime(event.startTime)}</em>
+		                              </button>
+		                            ))}
+		                          </span>
+		                        )}
+		                      </div>
 	                    )
 	                  })}
 	                </div>

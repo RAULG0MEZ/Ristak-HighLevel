@@ -142,7 +142,7 @@
   color: var(--phone-calendar-muted);
 }
 
-:global(body[data-phone-chat-tone="dark"]) .monthDayToday > span:first-child,
+:global(body[data-phone-chat-tone="dark"]) .monthDayToday .monthDaySelectButton > span:first-child,
 :global(body[data-phone-chat-tone="dark"]) .yearMonthSelected strong,
 :global(body[data-phone-chat-tone="dark"]) .miniDayToday > span,
 :global(body[data-phone-chat-tone="dark"]) .yearButtonToday,
@@ -150,7 +150,7 @@
   color: var(--chat-green);
 }
 
-:global(body[data-phone-chat-tone="dark"]) .monthDaySelected > span:first-child,
+:global(body[data-phone-chat-tone="dark"]) .monthDaySelected .monthDaySelectButton > span:first-child,
 :global(body[data-phone-chat-tone="dark"]) .miniDaySelected > span,
 :global(body[data-phone-chat-tone="dark"]) .yearButtonSelected,
 :global(body[data-phone-chat-tone="dark"]) .weekDaySelected strong,
@@ -404,8 +404,6 @@
 
 .monthDay {
   position: relative;
-  appearance: none;
-  -webkit-appearance: none;
   display: grid;
   grid-template-rows: minmax(20px, auto) 7px;
   place-items: center;
@@ -421,7 +419,27 @@
   line-height: 1;
 }
 
-.monthDay > span {
+.monthDaySelectButton {
+  appearance: none;
+  -webkit-appearance: none;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: grid;
+  grid-template-rows: minmax(20px, auto) 7px;
+  place-items: center;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.monthDaySelectButton > span {
   font-size: inherit;
   line-height: 1;
 }
@@ -436,11 +454,11 @@
   opacity: 0.72;
 }
 
-.monthDayToday > span:first-child {
+.monthDayToday .monthDaySelectButton > span:first-child {
   color: var(--chat-green);
 }
 
-.monthDaySelected > span:first-child {
+.monthDaySelected .monthDaySelectButton > span:first-child {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1759,11 +1777,19 @@
     border-right: 0;
   }
 
-  .monthDay > span:first-child {
+  .monthDaySelectButton {
+    grid-template-rows: auto minmax(0, 1fr);
+    justify-items: end;
+    align-content: start;
+    place-items: start end;
+    padding: 10px 10px 8px;
+  }
+
+  .monthDaySelectButton > span:first-child {
     justify-self: end;
   }
 
-  .monthDaySelected > span:first-child {
+  .monthDaySelected .monthDaySelectButton > span:first-child {
     width: 34px;
     height: 34px;
   }
@@ -1773,15 +1799,19 @@
   }
 
   .monthEventList {
+    position: relative;
+    z-index: 1;
     display: grid;
     align-content: start;
     gap: 5px;
     width: 100%;
     min-width: 0;
-    margin-top: 8px;
+    margin-top: 36px;
   }
 
   .monthEventPill {
+    appearance: none;
+    -webkit-appearance: none;
     display: grid;
     grid-template-columns: 4px minmax(0, 1fr) auto;
     align-items: center;
@@ -1789,10 +1819,21 @@
     min-height: 22px;
     padding: 0 6px 0 0;
     border-radius: 5px;
+    border: 0;
     color: color-mix(in srgb, var(--event-color, #38bdf8) 42%, var(--phone-calendar-text) 58%);
     background: color-mix(in srgb, var(--event-color, #38bdf8) 12%, transparent);
+    font-family: inherit;
     font-size: 13px;
     line-height: 1;
+    text-align: left;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .monthEventPill:hover,
+  .monthEventPill:focus-visible {
+    background: color-mix(in srgb, var(--event-color, #38bdf8) 20%, transparent);
+    outline: none;
   }
 
   .monthEventPill b {
