@@ -45,6 +45,7 @@ import {
   User,
   X
 } from 'lucide-react'
+import { FaMicrophone } from 'react-icons/fa'
 import { MdArchive } from 'react-icons/md'
 import { AppointmentModal, Icon, RecordPaymentModal } from '@/components/common'
 import { PhoneEcosystemNav } from '@/components/phone/PhoneEcosystemNav'
@@ -4763,7 +4764,7 @@ export const PhoneChat: React.FC = () => {
         />
       )}
       <span className={styles.messageAudioMicBadge} aria-hidden="true">
-        <Mic size={21} />
+        <FaMicrophone size={19} />
       </span>
     </span>
   )
@@ -4780,15 +4781,14 @@ export const PhoneChat: React.FC = () => {
         <span className={styles.messageAudioProgressDot} />
         {Array.from({ length: MESSAGE_AUDIO_WAVE_BAR_COUNT }, (_, index) => {
           const baseHeight = VOICE_WAVE_BASE_PATTERN[(index + (message.direction === 'outbound' ? 2 : 0)) % VOICE_WAVE_BASE_PATTERN.length]
-          const height = Math.max(4, Math.round(baseHeight * 0.78))
+          const height = Math.min(18, Math.max(3, Math.round(baseHeight * 0.52)))
 
           return (
             <span
               key={index}
               className={styles.messageAudioWaveBar}
               style={{
-                '--bar-height': `${height}px`,
-                '--bar-delay': `${index * 34}ms`
+                '--bar-height': `${height}px`
               } as React.CSSProperties}
             />
           )
@@ -4872,7 +4872,7 @@ export const PhoneChat: React.FC = () => {
           onClick={() => handleToggleMessageAudio(message)}
           aria-label={isLoading ? 'Cargando audio' : isPlaying ? 'Pausar audio' : 'Reproducir audio'}
         >
-          {isLoading ? <Loader2 size={20} className={styles.spinIcon} /> : isPlaying ? <Pause size={20} /> : <Play size={22} />}
+          {isLoading ? <Loader2 size={19} className={styles.spinIcon} /> : isPlaying ? <Pause size={18} /> : <Play size={20} />}
         </button>
         {renderMessageAudioWaveform(message)}
         <span className={styles.messageAudioDetails}>

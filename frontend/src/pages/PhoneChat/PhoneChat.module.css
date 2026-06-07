@@ -1978,7 +1978,7 @@
   width: min(300px, calc(100vw - 96px));
   max-width: min(78%, 300px);
   min-height: 0;
-  padding: 9px 10px 7px;
+  padding: 8px 10px 6px;
   border-radius: 18px 18px 18px 5px;
 }
 
@@ -1990,28 +1990,30 @@
   --message-audio-wave: rgba(82, 88, 86, 0.34);
   --message-audio-dot: #20c06b;
   --message-audio-control: #59605d;
+  --message-audio-avatar-cutout: var(--phone-chat-inbound);
   display: grid;
   align-items: center;
   width: 100%;
-  min-height: 64px;
-  column-gap: 8px;
-  row-gap: 3px;
+  min-height: 58px;
+  column-gap: 7px;
+  row-gap: 2px;
   color: var(--phone-chat-text);
 }
 
 .messageAudioOutbound {
   --message-audio-dot: #0d0e10;
   --message-audio-control: #4d5451;
-  grid-template-columns: 52px 34px minmax(0, 1fr);
-  grid-template-rows: 38px 18px;
+  --message-audio-avatar-cutout: var(--phone-chat-outbound);
+  grid-template-columns: 48px 32px minmax(0, 1fr);
+  grid-template-rows: 32px 17px;
   grid-template-areas:
     "avatar play wave"
     "avatar details details";
 }
 
 .messageAudioInbound {
-  grid-template-columns: 34px minmax(0, 1fr) 62px;
-  grid-template-rows: 38px 18px;
+  grid-template-columns: 32px minmax(0, 1fr) 58px;
+  grid-template-rows: 32px 17px;
   grid-template-areas:
     "play wave avatar"
     "details details avatar";
@@ -2027,11 +2029,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 50px;
-  height: 50px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
   color: #34433c;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 850;
   letter-spacing: 0;
   user-select: none;
@@ -2064,13 +2066,32 @@
 .messageAudioMicBadge {
   position: absolute;
   z-index: 2;
-  right: -4px;
+  right: -5px;
   bottom: -5px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #20b968;
-  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.92));
+  width: 22px;
+  height: 24px;
+  border-radius: 999px;
+  color: #45524c;
+  filter:
+    drop-shadow(0 0 0 var(--message-audio-avatar-cutout))
+    drop-shadow(0 0 4px var(--message-audio-avatar-cutout));
+  isolation: isolate;
+}
+
+.messageAudioMicBadge::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -3px -4px -4px;
+  border-radius: 999px;
+  background: var(--message-audio-avatar-cutout);
+}
+
+.messageAudioMicBadge svg {
+  display: block;
 }
 
 .messageAudioSpeedButton {
@@ -2080,14 +2101,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 58px;
-  height: 34px;
-  padding: 0 10px;
+  width: 54px;
+  height: 31px;
+  padding: 0 9px;
   border: 0;
   border-radius: 999px;
   color: #ffffff;
   background: rgba(101, 105, 103, 0.92);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 800;
   line-height: 1;
   letter-spacing: 0;
@@ -2103,8 +2124,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   border: 0;
   color: var(--message-audio-control);
@@ -2129,17 +2150,17 @@
   align-items: center;
   gap: 3px;
   min-width: 0;
-  height: 34px;
+  height: 24px;
   padding: 0 2px;
   overflow: hidden;
 }
 
 .messageAudioWaveBar {
   display: inline-block;
-  flex: 0 0 3px;
-  width: 3px;
+  flex: 0 0 2.75px;
+  width: 2.75px;
   height: var(--bar-height, 12px);
-  min-height: 4px;
+  min-height: 3px;
   border-radius: 999px;
   background: var(--message-audio-wave);
   transform-origin: center;
@@ -2150,8 +2171,8 @@
   z-index: 2;
   top: 50%;
   left: clamp(8px, var(--audio-progress, 0%), calc(100% - 8px));
-  width: 15px;
-  height: 15px;
+  width: 13px;
+  height: 13px;
   border-radius: 50%;
   background: var(--message-audio-dot);
   transform: translate(-50%, -50%);
@@ -2173,9 +2194,9 @@
 
 .messageAudioInbound .messageAudioDetails {
   display: flex;
-  gap: 18px;
+  gap: 16px;
   justify-content: flex-start;
-  padding-left: 42px;
+  padding-left: 39px;
 }
 
 .messageAudioDuration {
@@ -2217,6 +2238,10 @@
 .phoneChatPage[data-phone-chat-tone="dark"] .messageAudio {
   --message-audio-wave: rgba(220, 230, 226, 0.36);
   --message-audio-control: #c2cbcf;
+}
+
+.phoneChatPage[data-phone-chat-tone="dark"] .messageAudioMicBadge {
+  color: #e9edef;
 }
 
 .phoneChatPage[data-phone-chat-tone="dark"] .messageAudioAvatarFallback {
@@ -4360,20 +4385,20 @@
 }
 
 .phoneChatPage[data-phone-chat-device="tablet"] .messageAudioBubble {
-  width: min(340px, 46vw);
-  max-width: 340px;
+  width: min(324px, 46vw);
+  max-width: 324px;
 }
 
 .phoneChatPage[data-phone-chat-device="tablet"] .messageAudio {
-  min-height: 62px;
+  min-height: 58px;
 }
 
 .phoneChatPage[data-phone-chat-device="tablet"] .messageAudioInbound {
-  grid-template-columns: 34px minmax(0, 1fr) 62px;
+  grid-template-columns: 32px minmax(0, 1fr) 58px;
 }
 
 .phoneChatPage[data-phone-chat-device="tablet"] .messageAudioOutbound {
-  grid-template-columns: 52px 34px minmax(0, 1fr);
+  grid-template-columns: 48px 32px minmax(0, 1fr);
 }
 
 .phoneChatPage[data-phone-chat-device="tablet"] .composerShell {
