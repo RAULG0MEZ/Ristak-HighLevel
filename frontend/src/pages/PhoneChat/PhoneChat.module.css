@@ -1571,12 +1571,12 @@
   align-items: center;
   justify-content: center;
   gap: 2px;
-  min-height: 27px;
+  min-height: 24px;
   margin-top: 4px;
-  padding: 0 10px;
-  border-radius: 999px;
+  padding: 0;
+  border-radius: 0;
   color: var(--phone-chat-accent);
-  background: color-mix(in srgb, var(--phone-chat-accent-soft) 68%, transparent);
+  background: transparent;
   font-size: 12px;
   font-weight: 850;
 }
@@ -1623,8 +1623,10 @@
   padding: 10px 0 8px;
   border: 0;
   border-top: 1px solid var(--phone-chat-border);
+  border-radius: 0;
   color: var(--phone-chat-text);
   background: transparent;
+  box-shadow: none;
   text-align: left;
 }
 
@@ -1634,7 +1636,7 @@
   justify-content: center;
   width: 34px;
   height: 34px;
-  border-radius: 8px;
+  border-radius: 6px;
   color: var(--phone-chat-accent);
   background: var(--phone-chat-accent-soft);
 }

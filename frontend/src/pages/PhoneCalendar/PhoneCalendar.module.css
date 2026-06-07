@@ -196,7 +196,6 @@
 :global(body[data-phone-chat-tone="dark"]) .searchBox,
 :global(body[data-phone-chat-tone="dark"]) .sheetSearchBox,
 :global(body[data-phone-chat-tone="dark"]) .searchResult,
-:global(body[data-phone-chat-tone="dark"]) .contactOption,
 :global(body[data-phone-chat-tone="dark"]) .settingRow,
 :global(body[data-phone-chat-tone="dark"]) .settingBlock,
 :global(body[data-phone-chat-tone="dark"]) .permissionBox,
@@ -1350,6 +1349,13 @@
   background: transparent;
   text-align: left;
   -webkit-tap-highlight-color: transparent;
+}
+
+:global(body[data-phone-chat-tone="dark"]) .contactOption {
+  border-bottom-color: var(--phone-chat-border);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .contactAvatar {
