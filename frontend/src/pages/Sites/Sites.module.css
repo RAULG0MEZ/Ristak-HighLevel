@@ -11774,3 +11774,306 @@
     min-width: 0;
   }
 }
+
+/* Editor visual cleanup: keep the focused sites builder aligned with the
+   quieter dashboard chrome without changing the canvas content itself. */
+.pageFrame .containerFocused {
+  --sites-editor-card-bg: var(--color-background-secondary);
+  --sites-editor-control-bg: var(--color-background-primary);
+  --sites-editor-hover-bg: rgba(148, 163, 184, 0.1);
+  --sites-editor-border: var(--color-border-subtle, rgba(148, 163, 184, 0.18));
+  --sites-editor-border-strong: rgba(148, 163, 184, 0.28);
+  --sites-editor-focus: rgba(var(--color-primary-rgb), 0.12);
+}
+
+.pageFrame .containerFocused .sitesShellFocused .paletteGroup {
+  gap: 4px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.pageFrame .containerFocused .sitesShellFocused .paletteGroupLabel {
+  min-height: 22px;
+  display: flex;
+  align-items: center;
+  color: var(--color-text-tertiary);
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  padding: 0 6px;
+}
+
+.pageFrame .containerFocused .sitesShellFocused .paletteGroupHint {
+  display: none;
+}
+
+.pageFrame .containerFocused .sitesShellFocused .paletteItem {
+  min-height: 36px;
+  gap: 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  padding: 0 8px;
+  color: var(--color-text-primary);
+  font-size: 0.84rem;
+  font-weight: 680;
+  box-shadow: none;
+}
+
+.pageFrame .containerFocused .sitesShellFocused .paletteItem:hover {
+  border: 0;
+  background: var(--sites-editor-hover-bg);
+  color: var(--color-text-primary);
+  transform: none;
+}
+
+.pageFrame .containerFocused .sitesShellFocused .paletteIcon {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--color-text-secondary);
+}
+
+.pageFrame .containerFocused .sitesShellFocused .paletteGrip {
+  display: none;
+}
+
+.pageFrame .containerFocused .sitesShellFocused .propertiesBody {
+  gap: 12px;
+  padding: 12px 10px 18px;
+}
+
+.pageFrame .containerFocused .sitesShellFocused .settingsGroup,
+.pageFrame .containerFocused .sitesShellFocused .textFormatPanel,
+.pageFrame .containerFocused .sitesShellFocused .formGlobalControls,
+.pageFrame .containerFocused .sitesShellFocused .customFieldBinding,
+.pageFrame .containerFocused .sitesShellFocused .optionRules,
+.pageFrame .containerFocused .sitesShellFocused .optionRuleCard,
+.pageFrame .containerFocused .sitesShellFocused .popupDetectedCard,
+.pageFrame .containerFocused .sitesShellFocused .metaCard {
+  gap: 10px;
+  border: 1px solid var(--sites-editor-border);
+  border-radius: 8px;
+  background: var(--sites-editor-card-bg);
+  padding: 12px;
+  box-shadow: none;
+}
+
+.pageFrame .containerFocused .sitesShellFocused .propertiesBody .panelSubheader {
+  margin: 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  color: var(--color-text-tertiary);
+  padding: 0 0 9px;
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  line-height: 1;
+}
+
+.pageFrame .containerFocused .sitesShellFocused .field input,
+.pageFrame .containerFocused .sitesShellFocused .field textarea,
+.pageFrame .containerFocused .sitesShellFocused .field select,
+.pageFrame .containerFocused .sitesShellFocused .inlineField input,
+.pageFrame .containerFocused .sitesShellFocused .inlineField select,
+.pageFrame .containerFocused .sitesShellFocused .compactField select,
+.pageFrame .containerFocused .sitesShellFocused .dimensionField select,
+.pageFrame .containerFocused .sitesShellFocused .textFontSelect select,
+.pageFrame .containerFocused .sitesShellFocused .metaCardField select,
+.pageFrame .containerFocused .sitesShellFocused .dimensionBox,
+.pageFrame .containerFocused .sitesShellFocused .colorRow,
+.pageFrame .containerFocused .sitesShellFocused .spacingBox > div,
+.pageFrame .containerFocused .sitesShellFocused .alignmentControl > div {
+  border: 1px solid var(--sites-editor-border);
+  border-radius: 8px;
+  background: var(--sites-editor-control-bg);
+  box-shadow: none;
+}
+
+.pageFrame .containerFocused .sitesShellFocused .field select,
+.pageFrame .containerFocused .sitesShellFocused .inlineField select,
+.pageFrame .containerFocused .sitesShellFocused .compactField select,
+.pageFrame .containerFocused .sitesShellFocused .dimensionField select,
+.pageFrame .containerFocused .sitesShellFocused .textFontSelect select,
+.pageFrame .containerFocused .sitesShellFocused .metaCardField select {
+  min-height: 36px !important;
+  border: 1px solid var(--sites-editor-border) !important;
+  border-radius: 8px !important;
+  background-color: var(--sites-editor-control-bg) !important;
+  color: var(--color-text-primary) !important;
+  box-shadow: none !important;
+  font-weight: 750;
+}
+
+.pageFrame .containerFocused .sitesShellFocused .field input:focus,
+.pageFrame .containerFocused .sitesShellFocused .field textarea:focus,
+.pageFrame .containerFocused .sitesShellFocused .field select:focus,
+.pageFrame .containerFocused .sitesShellFocused .inlineField input:focus,
+.pageFrame .containerFocused .sitesShellFocused .inlineField select:focus,
+.pageFrame .containerFocused .sitesShellFocused .textFontSelect select:focus,
+.pageFrame .containerFocused .sitesShellFocused .metaCardField select:focus,
+.pageFrame .containerFocused .sitesShellFocused .dimensionBox:focus-within,
+.pageFrame .containerFocused .sitesShellFocused .colorRow:focus-within,
+.pageFrame .containerFocused .sitesShellFocused .spacingBox > div:focus-within,
+.pageFrame .containerFocused .sitesShellFocused .alignmentControl > div:focus-within {
+  border-color: rgba(var(--color-primary-rgb), 0.36);
+  box-shadow: 0 0 0 3px var(--sites-editor-focus);
+}
+
+.pageFrame .containerFocused .sitesShellFocused .spacingBox {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.pageFrame .containerFocused .sitesShellFocused .spacingBox > div,
+.pageFrame .containerFocused .sitesShellFocused .dimensionBox {
+  height: 36px;
+}
+
+.pageFrame .containerFocused .sitesShellFocused .textFormatButtons {
+  border: 1px solid var(--sites-editor-border);
+  border-radius: 8px;
+  background: var(--sites-editor-control-bg);
+  padding: 3px;
+}
+
+.pageFrame .containerFocused .sitesShellFocused .textFormatButtons button {
+  border-radius: 6px;
+}
+
+.pageFrame .containerFocused .sitesShellFocused .textFormatButtons button:hover,
+.pageFrame .containerFocused .sitesShellFocused .textFormatActive,
+.pageFrame .containerFocused .sitesShellFocused .alignmentActive,
+.pageFrame .containerFocused .sitesShellFocused .spacingLinkButtonActive {
+  background: rgba(var(--color-primary-rgb), 0.11) !important;
+  color: var(--color-primary) !important;
+}
+
+.pageFrame .containerFocused .editorHeader .publicRouteBox {
+  border-color: transparent;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.pageFrame .containerFocused .editorHeader .publicRouteBox:hover,
+.pageFrame .containerFocused .editorHeader .publicRouteBox:focus-within {
+  border-color: transparent;
+  background: var(--sites-editor-hover-bg);
+  box-shadow: none;
+}
+
+.pageFrame .containerFocused .editorHeader .publicRouteDomain {
+  border-right: 0;
+  background: transparent;
+  color: var(--color-text-tertiary);
+}
+
+.pageFrame .containerFocused .editorHeader .publicRouteSlash {
+  color: var(--color-text-tertiary);
+  padding-left: 4px;
+}
+
+.pageFrame .containerFocused .editorHeader .publicRouteBox input {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.pageFrame .containerFocused .pagesDropdownTrigger {
+  border: 1px solid var(--sites-editor-border);
+  border-radius: 8px;
+  background: var(--sites-editor-control-bg);
+  box-shadow: none;
+}
+
+.pageFrame .containerFocused .pagesDropdownTrigger:hover,
+.pageFrame .containerFocused .pagesDropdownTrigger:focus-visible,
+.pageFrame .containerFocused .pagesDropdownOpen .pagesDropdownTrigger {
+  border-color: rgba(var(--color-primary-rgb), 0.32);
+  background: var(--sites-editor-control-bg);
+  box-shadow: 0 0 0 3px var(--sites-editor-focus);
+}
+
+.pageFrame .containerFocused .pagesDropdownPanel {
+  border: 1px solid var(--sites-editor-border);
+  border-radius: 8px;
+  background: var(--sites-editor-card-bg);
+  padding: 12px;
+  box-shadow: 0 24px 80px -52px rgba(0, 0, 0, 0.68);
+}
+
+.pageFrame .containerFocused .pagesDropdownHeader {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  padding: 2px 4px 12px;
+}
+
+.pageFrame .containerFocused .pagesDropdownHeader strong {
+  background: rgba(var(--color-primary-rgb), 0.1);
+  color: var(--color-primary);
+}
+
+.pageFrame .containerFocused .pagesDropdownList {
+  gap: 8px;
+  padding-top: 10px;
+}
+
+.pageFrame .containerFocused .pagesDropdownItem {
+  min-height: 58px;
+  grid-template-columns: 34px minmax(0, 1fr) 40px;
+  gap: 10px;
+  border: 1px solid var(--sites-editor-border);
+  border-radius: 8px;
+  background: var(--sites-editor-control-bg);
+  padding: 0 10px;
+}
+
+.pageFrame .containerFocused .pagesDropdownItem:hover,
+.pageFrame .containerFocused .pagesDropdownItemActive {
+  border-color: rgba(var(--color-primary-rgb), 0.28);
+  background: rgba(var(--color-primary-rgb), 0.08);
+}
+
+.pageFrame .containerFocused .pagesDropdownDragHandle {
+  width: 34px;
+  height: 42px;
+  border-radius: 7px;
+}
+
+.pageFrame .containerFocused .pagesDropdownSelectButton {
+  min-height: 42px;
+  border-radius: 7px;
+}
+
+.pageFrame .containerFocused .pagesDropdownMenuButton {
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  border-color: var(--sites-editor-border);
+  border-radius: 7px;
+  background: var(--sites-editor-card-bg);
+}
+
+.pageFrame .containerFocused .pagesDropdownMenuButton:hover,
+.pageFrame .containerFocused .pagesDropdownMenuButton[data-state="open"],
+.pageFrame .containerFocused .pagesDropdownMenuButton[aria-expanded="true"] {
+  border-color: rgba(var(--color-primary-rgb), 0.28);
+  background: rgba(var(--color-primary-rgb), 0.08);
+}
+
+.pageFrame .containerFocused .pagesDropdownAddButton {
+  min-height: 54px;
+  border: 1px dashed var(--sites-editor-border-strong);
+  border-radius: 8px;
+  background: transparent;
+}
+
+.pageFrame .containerFocused .pagesDropdownAddButton:hover {
+  border-color: rgba(var(--color-primary-rgb), 0.34);
+  background: rgba(var(--color-primary-rgb), 0.08);
+}
