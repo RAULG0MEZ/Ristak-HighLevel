@@ -2534,6 +2534,7 @@
   background: var(--message-audio-dot);
   transform: translate(-50%, -50%);
   box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.68);
+  will-change: left;
 }
 
 .messageRow_outbound .messageAudioProgressDot {
@@ -3076,12 +3077,11 @@
   position: relative;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 3px;
   min-width: 0;
   height: 42px;
   overflow: hidden;
-  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 4%, #000 96%, transparent 100%);
-  mask-image: linear-gradient(90deg, transparent 0, #000 4%, #000 96%, transparent 100%);
 }
 
 .voiceComposerWaveform::before {
@@ -3106,9 +3106,7 @@
   min-height: 4px;
   border-radius: 999px;
   background: rgba(92, 92, 97, 0.9);
-  animation: voiceComposerWavePulse 980ms ease-in-out infinite alternate;
-  animation-delay: var(--voice-bar-delay);
-  transition: height 80ms linear, background-color 180ms ease, opacity 180ms ease;
+  transition: height 90ms linear, background-color 180ms ease, opacity 180ms ease;
 }
 
 .voiceComposerWaveformRecording .voiceComposerWaveBar {
@@ -3121,7 +3119,6 @@
 
 .voiceComposerPanelProcessing .voiceComposerWaveBar {
   opacity: 0.46;
-  animation-play-state: paused;
 }
 
 .voiceComposerActions {
@@ -3189,16 +3186,6 @@
 
 .voicePreviewAudio {
   display: none;
-}
-
-@keyframes voiceComposerWavePulse {
-  from {
-    transform: translateY(0) scaleY(0.82);
-  }
-
-  to {
-    transform: translateY(0) scaleY(1.08);
-  }
 }
 
 @media (max-width: 380px) {

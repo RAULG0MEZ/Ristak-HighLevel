@@ -100,8 +100,11 @@ const VOICE_HOLD_TO_PREVIEW_MS = 430
 const VOICE_WAVE_BAR_COUNT = 54
 const VOICE_WAVE_MIN_HEIGHT = 4
 const VOICE_WAVE_MAX_HEIGHT = 34
+const VOICE_WAVE_SAMPLE_INTERVAL_MS = 64
 const VOICE_WAVE_SILENCE_THRESHOLD = 4
 const VOICE_WAVE_SIGNAL_RANGE = 30
+const VOICE_WAVE_ATTACK = 0.38
+const VOICE_WAVE_RELEASE = 0.58
 const MESSAGE_AUDIO_WAVE_BAR_COUNT = 32
 const MESSAGE_AUDIO_RATE_OPTIONS = [1, 1.5, 2] as const
 const VOICE_MIME_CANDIDATES = [
@@ -661,9 +664,7 @@ function formatVoiceDuration(durationMs = 0) {
 }
 
 function createInitialVoiceBars() {
-  return Array.from({ length: VOICE_WAVE_BAR_COUNT }, (_, index) => {
-    return VOICE_WAVE_BASE_PATTERN[index % VOICE_WAVE_BASE_PATTERN.length]
-  })
+  return Array.from({ length: VOICE_WAVE_BAR_COUNT }, () => VOICE_WAVE_MIN_HEIGHT)
 }
 
 function getVoiceBarHeight(samples: Uint8Array) {
@@ -674,6 +675,11 @@ function getVoiceBarHeight(samples: Uint8Array) {
   const responsiveLevel = Math.sqrt(gatedLevel)
 
   return Math.round(VOICE_WAVE_MIN_HEIGHT + responsiveLevel * (VOICE_WAVE_MAX_HEIGHT - VOICE_WAVE_MIN_HEIGHT))
+}
+
+function smoothVoiceBarHeight(nextHeight: number, previousHeight: number) {
+  const factor = nextHeight > previousHeight ? VOICE_WAVE_ATTACK : VOICE_WAVE_RELEASE
+  return Math.round(previousHeight + (nextHeight - previousHeight) * factor)
 }
 
 function getAudioContextConstructor() {
@@ -1972,6 +1978,7 @@ export const PhoneChat: React.FC = () => {
   const voiceAnalyserRef = useRef<AnalyserNode | null>(null)
   const voiceAnimationFrameRef = useRef<number | null>(null)
   const voiceLastWaveUpdateRef = useRef(0)
+  const voiceSmoothedWaveHeightRef = useRef(VOICE_WAVE_MIN_HEIGHT)
   const voiceHoldTimerRef = useRef<number | null>(null)
   const voicePressStartedAtRef = useRef<number | null>(null)
   const voicePressShouldStopOnReleaseRef = useRef(false)
@@ -1989,6 +1996,8 @@ export const PhoneChat: React.FC = () => {
   }, [])
   const voiceSendAfterStopRef = useRef(false)
   const messageAudioRefs = useRef<Record<string, HTMLAudioElement | null>>({})
+  const messageAudioAnimationFrameRef = useRef<number | null>(null)
+  const messageAudioAnimationMessageIdRef = useRef<string | null>(null)
   const chatSwipeGestureRef = useRef<ChatSwipeGesture | null>(null)
   const handledRouteAppointmentRef = useRef<string | null>(null)
   const closeSheetNow = useCallback(() => setSheet(null), [])
@@ -3120,6 +3129,7 @@ export const PhoneChat: React.FC = () => {
 
     if (playingAudioMessageId && !messageIds.has(playingAudioMessageId)) {
       messageAudioRefs.current[playingAudioMessageId]?.pause()
+      stopMessageAudioProgressLoop(playingAudioMessageId)
       setPlayingAudioMessageId(null)
     }
 
@@ -3149,6 +3159,7 @@ export const PhoneChat: React.FC = () => {
       clearVoiceTimer()
       clearVoiceHoldTimer()
       stopVoiceMeter()
+      stopMessageAudioProgressLoop()
       voiceAudioRef.current?.pause()
       Object.values(messageAudioRefs.current).forEach((audio) => audio?.pause())
       voiceRecorderRef.current = null
@@ -3178,6 +3189,7 @@ export const PhoneChat: React.FC = () => {
     voiceAudioSourceRef.current?.disconnect()
     voiceAudioSourceRef.current = null
     voiceAnalyserRef.current = null
+    voiceSmoothedWaveHeightRef.current = VOICE_WAVE_MIN_HEIGHT
 
     if (voiceAudioContextRef.current) {
       voiceAudioContextRef.current.close().catch(() => undefined)
@@ -3202,16 +3214,19 @@ export const PhoneChat: React.FC = () => {
       voiceAudioContextRef.current = audioContext
       voiceAudioSourceRef.current = source
       voiceAnalyserRef.current = analyser
-      voiceLastWaveUpdateRef.current = 0
+      voiceLastWaveUpdateRef.current = performance.now()
+      voiceSmoothedWaveHeightRef.current = VOICE_WAVE_MIN_HEIGHT
 
       audioContext.resume().catch(() => undefined)
 
       const drawWave = (timestamp: number) => {
         if (!voiceAnalyserRef.current) return
 
-        if (timestamp - voiceLastWaveUpdateRef.current > 70) {
+        if (timestamp - voiceLastWaveUpdateRef.current >= VOICE_WAVE_SAMPLE_INTERVAL_MS) {
           voiceAnalyserRef.current.getByteTimeDomainData(samples)
-          const nextHeight = getVoiceBarHeight(samples)
+          const rawHeight = getVoiceBarHeight(samples)
+          const nextHeight = smoothVoiceBarHeight(rawHeight, voiceSmoothedWaveHeightRef.current)
+          voiceSmoothedWaveHeightRef.current = nextHeight
           setVoiceWaveBars((current) => [...current.slice(1), nextHeight])
           voiceLastWaveUpdateRef.current = timestamp
         }
@@ -5056,8 +5071,8 @@ export const PhoneChat: React.FC = () => {
       }
 
       if (
-        Math.abs(previous.currentTime - next.currentTime) < 0.05 &&
-        Math.abs(previous.duration - next.duration) < 0.05
+        Math.abs(previous.currentTime - next.currentTime) < 0.012 &&
+        Math.abs(previous.duration - next.duration) < 0.012
       ) {
         return current
       }
@@ -5067,6 +5082,35 @@ export const PhoneChat: React.FC = () => {
         [messageId]: next
       }
     })
+  }
+
+  const stopMessageAudioProgressLoop = (messageId?: string) => {
+    if (messageId && messageAudioAnimationMessageIdRef.current !== messageId) return
+
+    if (messageAudioAnimationFrameRef.current === null) return
+    window.cancelAnimationFrame(messageAudioAnimationFrameRef.current)
+    messageAudioAnimationFrameRef.current = null
+    messageAudioAnimationMessageIdRef.current = null
+  }
+
+  const startMessageAudioProgressLoop = (messageId: string, audio: HTMLAudioElement) => {
+    stopMessageAudioProgressLoop()
+    messageAudioAnimationMessageIdRef.current = messageId
+
+    const drawPlayback = () => {
+      updateMessageAudioPlayback(messageId, audio)
+
+      if (audio.paused || audio.ended) {
+        messageAudioAnimationFrameRef.current = null
+        messageAudioAnimationMessageIdRef.current = null
+        return
+      }
+
+      messageAudioAnimationFrameRef.current = window.requestAnimationFrame(drawPlayback)
+    }
+
+    updateMessageAudioPlayback(messageId, audio)
+    messageAudioAnimationFrameRef.current = window.requestAnimationFrame(drawPlayback)
   }
 
   const getMessageAudioDurationMs = (message: ChatMessage) => {
@@ -5125,6 +5169,7 @@ export const PhoneChat: React.FC = () => {
     if (playingAudioMessageId === message.id && !audio.paused) {
       audio.pause()
       setAudioLoadingMessageId((current) => current === message.id ? null : current)
+      stopMessageAudioProgressLoop(message.id)
       updateMessageAudioPlayback(message.id, audio)
       return
     }
@@ -5147,6 +5192,7 @@ export const PhoneChat: React.FC = () => {
       .then(() => {
         setPlayingAudioMessageId(message.id)
         setAudioLoadingMessageId(null)
+        startMessageAudioProgressLoop(message.id, audio)
         updateMessageAudioPlayback(message.id, audio)
       })
       .catch(() => {
@@ -5279,25 +5325,32 @@ export const PhoneChat: React.FC = () => {
           }}
           onTimeUpdate={(event) => updateMessageAudioPlayback(message.id, event.currentTarget)}
           onWaiting={() => setAudioLoadingMessageId(message.id)}
-          onPlay={() => setPlayingAudioMessageId(message.id)}
+          onPlay={(event) => {
+            setPlayingAudioMessageId(message.id)
+            startMessageAudioProgressLoop(message.id, event.currentTarget)
+          }}
           onPlaying={(event) => {
             event.currentTarget.playbackRate = playbackRate
             setAudioLoadingMessageId((current) => current === message.id ? null : current)
             setPlayingAudioMessageId(message.id)
+            startMessageAudioProgressLoop(message.id, event.currentTarget)
             updateMessageAudioPlayback(message.id, event.currentTarget)
           }}
           onPause={(event) => {
+            stopMessageAudioProgressLoop(message.id)
             updateMessageAudioPlayback(message.id, event.currentTarget)
             setPlayingAudioMessageId((current) => current === message.id ? null : current)
             setAudioLoadingMessageId((current) => current === message.id ? null : current)
           }}
           onEnded={(event) => {
             event.currentTarget.currentTime = 0
+            stopMessageAudioProgressLoop(message.id)
             updateMessageAudioPlayback(message.id, event.currentTarget)
             setPlayingAudioMessageId((current) => current === message.id ? null : current)
             setAudioLoadingMessageId((current) => current === message.id ? null : current)
           }}
           onError={() => {
+            stopMessageAudioProgressLoop(message.id)
             setPlayingAudioMessageId((current) => current === message.id ? null : current)
             setAudioLoadingMessageId((current) => current === message.id ? null : current)
           }}
@@ -5697,8 +5750,7 @@ export const PhoneChat: React.FC = () => {
           key={`voice-composer-bar-${index}`}
           className={styles.voiceComposerWaveBar}
           style={{
-            '--voice-bar-height': `${height}px`,
-            '--voice-bar-delay': `${index * 18}ms`
+            '--voice-bar-height': `${height}px`
           } as React.CSSProperties}
         />
       ))}
