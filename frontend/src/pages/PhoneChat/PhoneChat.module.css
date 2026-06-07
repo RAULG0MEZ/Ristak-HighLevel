@@ -514,9 +514,15 @@
 
 .chatList {
   min-height: 0;
-  padding: 2px 0 92px;
+  padding: 2px 0 calc(126px + env(safe-area-inset-bottom));
   overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scroll-padding-bottom: calc(148px + env(safe-area-inset-bottom));
   -webkit-overflow-scrolling: touch;
+}
+
+.chatListElasticContent {
+  min-height: 100%;
 }
 
 .archiveRow,
@@ -2216,11 +2222,13 @@
 .messagesPane {
   position: relative;
   min-height: 0;
-  padding: 8px 8px 8px;
+  padding: 8px 8px calc(22px + env(safe-area-inset-bottom));
   overflow-y: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior-y: contain;
+  overscroll-behavior-x: none;
   overflow-anchor: none;
   scroll-behavior: auto;
+  scroll-padding-bottom: calc(44px + env(safe-area-inset-bottom));
   -webkit-overflow-scrolling: touch;
   background:
     radial-gradient(circle at 8px 8px, rgba(160, 137, 106, 0.12) 0 2px, transparent 2.5px) 0 0 / 58px 58px,

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Bell,
   BellRing,
@@ -22,7 +22,7 @@ import { PhoneEcosystemNav } from '@/components/phone/PhoneEcosystemNav'
 import { PhonePageTransition } from '@/components/phone/PhonePageTransition'
 import { useAuth } from '@/contexts/AuthContext'
 import { useNotification } from '@/contexts/NotificationContext'
-import { useAppConfig, usePhoneTheme, type PhoneThemePreference } from '@/hooks'
+import { useAppConfig, usePhoneElasticScroll, usePhoneTheme, type PhoneThemePreference } from '@/hooks'
 import { calendarsService, type Calendar } from '@/services/calendarsService'
 import { contactsService } from '@/services/contactsService'
 import { mobileAppService } from '@/services/mobileAppService'
@@ -133,6 +133,10 @@ export const PhoneSettings: React.FC = () => {
   const [customFieldsError, setCustomFieldsError] = useState('')
   const [requestingPush, setRequestingPush] = useState(false)
   const [permission, setPermission] = useState(getNotificationPermission)
+  const [backButtonCollapsed, setBackButtonCollapsed] = useState(false)
+  const lastSettingsScrollTopRef = useRef(0)
+
+  usePhoneElasticScroll()
 
   const refreshPermission = useCallback(() => {
     if (mobileAppService.isNative()) {
@@ -155,6 +159,30 @@ export const PhoneSettings: React.FC = () => {
       document.removeEventListener('visibilitychange', refreshPermission)
     }
   }, [refreshPermission])
+
+  useEffect(() => {
+    setBackButtonCollapsed(false)
+    lastSettingsScrollTopRef.current = 0
+  }, [activeSection])
+
+  const handleSettingsFrameScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
+    const nextScrollTop = event.currentTarget.scrollTop
+    const previousScrollTop = lastSettingsScrollTopRef.current
+
+    if (!activeSection || nextScrollTop <= 8) {
+      setBackButtonCollapsed(false)
+      lastSettingsScrollTopRef.current = nextScrollTop
+      return
+    }
+
+    if (nextScrollTop > previousScrollTop + 4) {
+      setBackButtonCollapsed(true)
+    } else if (nextScrollTop < previousScrollTop - 4) {
+      setBackButtonCollapsed(false)
+    }
+
+    lastSettingsScrollTopRef.current = nextScrollTop
+  }, [activeSection])
 
   const saveConfigPreference = useCallback(<T,>(setter: (value: T) => Promise<void>, value: T) => {
     setter(value).catch(() => showToast('error', 'No se guardó el ajuste', 'Intenta otra vez.'))
@@ -589,25 +617,34 @@ export const PhoneSettings: React.FC = () => {
 
   return (
     <main className={styles.phoneSettingsPage} aria-label="Ajustes móviles de Ristak">
-      <PhonePageTransition active="settings" className={styles.phoneFrame}>
-        <header className={styles.header}>
-          <p>Ristak</p>
-          <h1>
-            <span className={styles.desktopTitle}>{activeSection ? sectionTitle : 'Ajustes'}</span>
-            <span className={styles.mobileTitle}>{activeSection ? mobileSectionTitle : 'Ajustes'}</span>
-          </h1>
+      <PhonePageTransition
+        active="settings"
+        className={styles.phoneFrame}
+        data-phone-elastic-scroll="true"
+        onScroll={handleSettingsFrameScroll}
+      >
+        <div className={styles.elasticContent} data-phone-elastic-target="true">
           {activeSection && (
-            <button type="button" className={styles.backButton} onClick={() => setActiveSection(null)} aria-label="Volver a ajustes">
-              <ChevronLeft size={22} />
-              Ajustes
-            </button>
+            <div className={`${styles.backDock} ${backButtonCollapsed ? styles.backDockCollapsed : ''}`}>
+              <button type="button" className={styles.backButton} onClick={() => setActiveSection(null)} aria-label="Volver a ajustes">
+                <ChevronLeft size={22} />
+                <span>Ajustes</span>
+              </button>
+            </div>
           )}
-          {activeSection === 'custom-fields' && (
-            <span className={styles.headerSubtitle}>Activa los checkboxes de aquellos que queremos seleccionar.</span>
-          )}
-        </header>
-        <div className={styles.content} data-phone-scrollable="true">
-          {renderSection()}
+          <header className={styles.header}>
+            <p>Ristak</p>
+            <h1>
+              <span className={styles.desktopTitle}>{activeSection ? sectionTitle : 'Ajustes'}</span>
+              <span className={styles.mobileTitle}>{activeSection ? mobileSectionTitle : 'Ajustes'}</span>
+            </h1>
+            {activeSection === 'custom-fields' && (
+              <span className={styles.headerSubtitle}>Activa los checkboxes de aquellos que queremos seleccionar.</span>
+            )}
+          </header>
+          <div className={styles.content} data-phone-scrollable="true">
+            {renderSection()}
+          </div>
         </div>
       </PhonePageTransition>
       <PhoneEcosystemNav active="settings" />

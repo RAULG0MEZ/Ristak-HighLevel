@@ -21,7 +21,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDateRange } from '@/contexts/DateRangeContext'
-import { useHighLevelConnected } from '@/hooks'
+import { useHighLevelConnected, usePhoneElasticScroll } from '@/hooks'
 import { AccountSettings } from '@/pages/Settings/AccountSettings'
 import { AIAgentSettings } from '@/pages/Settings/AIAgentSettings'
 import { calendarsService, type AppointmentStats, type Calendar, type CalendarEvent } from '@/services/calendarsService'
@@ -364,6 +364,8 @@ export const PhoneApp: React.FC = () => {
   const { locationId, accessToken } = useAuth()
   const { dateRange, setPreset } = useDateRange()
   const [accessState, setAccessState] = useState<AccessState>(getAccessState)
+  usePhoneElasticScroll({ enabled: accessState === 'allowed' })
+
   const [phoneData, setPhoneData] = useState<PhoneAppData>(() => createEmptyPhoneData())
   const [loading, setLoading] = useState(true)
   const [cacheRefreshing, setCacheRefreshing] = useState(false)

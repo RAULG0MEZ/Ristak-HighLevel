@@ -16,7 +16,7 @@ import { PhonePageTransition } from '@/components/phone/PhonePageTransition'
 import { useAuth } from '@/contexts/AuthContext'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useTimezone } from '@/contexts/TimezoneContext'
-import { useAppConfig, useBottomSheetDismiss } from '@/hooks'
+import { useAppConfig, useBottomSheetDismiss, usePhoneElasticScroll } from '@/hooks'
 import apiClient from '@/services/apiClient'
 import { calendarsService, type Calendar, type CalendarEvent } from '@/services/calendarsService'
 import { contactsService } from '@/services/contactsService'
@@ -265,6 +265,8 @@ export const PhoneCalendar: React.FC = () => {
   const [defaultCalendarId] = useAppConfig<string>('default_calendar_id', '')
 
   const [accessState, setAccessState] = useState<AccessState>(getAccessState)
+  usePhoneElasticScroll({ enabled: accessState === 'allowed' })
+
   const [calendars, setCalendars] = useState<Calendar[]>([])
   const [selectedCalendar, setSelectedCalendar] = useState<Calendar | null>(null)
   const [events, setEvents] = useState<CalendarEvent[]>([])

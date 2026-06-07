@@ -6,7 +6,7 @@ import { PhoneEcosystemNav } from '@/components/phone/PhoneEcosystemNav'
 import { PhonePageTransition } from '@/components/phone/PhonePageTransition'
 import { PhoneSelect } from '@/components/phone/PhoneSelect'
 import { useNotification } from '@/contexts/NotificationContext'
-import { useAppConfig, useHighLevelConnected } from '@/hooks'
+import { useAppConfig, useHighLevelConnected, usePhoneElasticScroll } from '@/hooks'
 import apiClient from '@/services/apiClient'
 import { getPhoneDailyCacheKey, readPhoneDailyCache, writePhoneDailyCache } from '@/services/phoneDailyCache'
 import { transactionsService, type Transaction } from '@/services/transactionsService'
@@ -193,6 +193,8 @@ export const PhonePayments: React.FC = () => {
   const detectedLocaleDefaults = getDetectedAccountLocaleDefaults()
   const [defaultCurrency] = useAppConfig<string>(ACCOUNT_CURRENCY_CONFIG_KEY, detectedLocaleDefaults.currency)
   const [accessState, setAccessState] = useState<AccessState>(getAccessState)
+  usePhoneElasticScroll({ enabled: accessState === 'allowed' })
+
   const [view, setView] = useState<PaymentView>(() => getInitialView(searchParams.get('mode')))
   const [recentPaymentsOpen, setRecentPaymentsOpen] = useState(false)
   const [recentPaymentsPeriod, setRecentPaymentsPeriod] = useState<RecentPaymentsPeriod>('30d')

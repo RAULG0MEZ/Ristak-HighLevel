@@ -59,7 +59,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useLabels } from '@/contexts/LabelsContext'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useTimezone } from '@/contexts/TimezoneContext'
-import { useAppConfig, useBottomSheetDismiss, useHighLevelConnected, usePhoneTheme, type PhoneThemePreference } from '@/hooks'
+import { useAppConfig, useBottomSheetDismiss, useHighLevelConnected, usePhoneElasticScroll, usePhoneTheme, type PhoneThemePreference } from '@/hooks'
 import { aiAgentService, type AIAgentMessage, type AIAgentViewContext } from '@/services/aiAgentService'
 import apiClient from '@/services/apiClient'
 import { calendarsService, type Calendar, type CalendarEvent } from '@/services/calendarsService'
@@ -2143,6 +2143,8 @@ export const PhoneChat: React.FC = () => {
   const voiceAnalyserRef = useRef<AnalyserNode | null>(null)
   const voiceAnimationFrameRef = useRef<number | null>(null)
   const voiceLastWaveUpdateRef = useRef(0)
+
+  usePhoneElasticScroll({ enabled: accessState === 'allowed' })
   const voiceSmoothedWaveHeightRef = useRef(VOICE_WAVE_MIN_HEIGHT)
   const voiceHoldTimerRef = useRef<number | null>(null)
   const voicePressStartedAtRef = useRef<number | null>(null)
@@ -7788,7 +7790,9 @@ export const PhoneChat: React.FC = () => {
           </header>
 
           <div className={styles.chatList} data-phone-chat-scrollable="true">
-            {renderChats()}
+            <div className={styles.chatListElasticContent} data-phone-elastic-target="true">
+              {renderChats()}
+            </div>
           </div>
           {deviceMode === 'tablet' && !chatSearchExpanded && (
             <div className={styles.tabletChatDock}>
@@ -7866,7 +7870,7 @@ export const PhoneChat: React.FC = () => {
             data-phone-chat-scroll-settling={conversationScrollSettling ? 'true' : undefined}
             onScroll={handleMessagesPaneScroll}
           >
-            <div ref={messagesContentRef} className={styles.messagesContent}>
+            <div ref={messagesContentRef} className={styles.messagesContent} data-phone-elastic-target="true">
               {renderMessages()}
             </div>
           </div>

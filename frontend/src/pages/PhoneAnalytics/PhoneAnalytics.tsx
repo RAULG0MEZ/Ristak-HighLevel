@@ -18,6 +18,7 @@ import {
 import { PhoneEcosystemNav } from '@/components/phone/PhoneEcosystemNav'
 import { PhonePageTransition } from '@/components/phone/PhonePageTransition'
 import { useLabels } from '@/contexts/LabelsContext'
+import { usePhoneElasticScroll } from '@/hooks'
 import {
   dashboardService,
   type DashboardMetrics,
@@ -288,6 +289,8 @@ function MobileDualLineChart({
 
 export const PhoneAnalytics: React.FC = () => {
   const { labels } = useLabels()
+  usePhoneElasticScroll()
+
   const [period, setPeriod] = useState<AnalyticsPeriod>('30d')
   const [periodMenuOpen, setPeriodMenuOpen] = useState(false)
   const [chartView, setChartView] = useState<ChartView>('revenue-spend')
