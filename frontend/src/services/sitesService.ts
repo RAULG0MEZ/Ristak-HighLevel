@@ -347,6 +347,7 @@ export type ImportedEditableContentType =
   | 'placeholder'
   | 'image'
   | 'background_image'
+  | 'choice_option'
 
 export type ImportedButtonAction =
   | 'none'
@@ -355,6 +356,20 @@ export type ImportedButtonAction =
   | 'specific_page'
   | 'submit'
   | 'disqualify'
+  | 'automation'
+  | 'notify_team'
+  | 'add_tag'
+  | 'send_whatsapp'
+  | 'create_payment'
+
+export interface ImportedButtonActionStep {
+  id?: string
+  action: ImportedButtonAction
+  buttonUrl?: string
+  buttonPageId?: string
+  buttonMessage?: string
+  automationName?: string
+}
 
 export interface ImportedEditableContentUpdate {
   editId: string
@@ -362,10 +377,16 @@ export interface ImportedEditableContentUpdate {
   value: string
   fileBase64?: string
   filename?: string
+  buttonActions?: ImportedButtonActionStep[]
   buttonAction?: ImportedButtonAction
   buttonUrl?: string
   buttonPageId?: string
   buttonMessage?: string
+  choiceActions?: ImportedButtonActionStep[]
+  choiceName?: string
+  choiceValue?: string
+  choiceInputType?: 'radio' | 'checkbox'
+  choiceIndex?: number
 }
 
 export type SitesAICreationKind = 'landing' | 'form' | 'interactive_form'

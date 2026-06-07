@@ -174,7 +174,8 @@ const IMPORTED_EDITABLE_CONTENT_TYPES = new Set([
   'form_label',
   'placeholder',
   'image',
-  'background_image'
+  'background_image',
+  'choice_option'
 ])
 const IMPORTED_FORM_STANDARD_FIELDS = new Set(['full_name', 'first_name', 'last_name', 'phone', 'email', 'message'])
 const IMPORTED_AMBIGUOUS_PERSON_NAME_ALIASES = [
@@ -1134,7 +1135,14 @@ function annotateImportedInputs(html = '', usedIds = new Set()) {
   let nextHtml = String(html || '').replace(/<input\b([^>]*?)\s*(\/?)>/gi, (match, attrsText = '', selfClose = '') => {
     const attrs = parseHtmlAttributes(attrsText)
     const type = cleanString(attrs.type || 'text').toLowerCase()
-    if (['hidden', 'reset', 'file', 'checkbox', 'radio'].includes(type)) return match
+    if (['radio', 'checkbox'].includes(type)) {
+      return addImportedEditableAttributesToTag('input', attrsText, selfClose, {
+        type: 'choice_option',
+        label: getImportedElementLabel('input', attrs, attrs.value || attrs.name || 'Opcion'),
+        usedIds
+      })
+    }
+    if (['hidden', 'reset', 'file'].includes(type)) return match
     if (['submit', 'button'].includes(type)) {
       return addImportedEditableAttributesToTag('input', attrsText, selfClose, {
         type: 'button',
@@ -1269,7 +1277,19 @@ function getImportedEditableTextValue(input = {}) {
   return value
 }
 
-const IMPORTED_BUTTON_ACTIONS = new Set(['none', 'url', 'next_page', 'specific_page', 'submit', 'disqualify'])
+const IMPORTED_BUTTON_ACTIONS = new Set([
+  'none',
+  'url',
+  'next_page',
+  'specific_page',
+  'submit',
+  'disqualify',
+  'automation',
+  'notify_team',
+  'add_tag',
+  'send_whatsapp',
+  'create_payment'
+])
 
 function normalizeImportedButtonAction(value = '') {
   const action = cleanString(value).toLowerCase().replace(/[-\s]+/g, '_')
@@ -1278,6 +1298,8 @@ function normalizeImportedButtonAction(value = '') {
 
 function hasImportedButtonActionPatch(input = {}) {
   return [
+    input.buttonActions,
+    input.button_actions,
     input.buttonAction,
     input.button_action,
     input.buttonUrl,
@@ -1289,19 +1311,15 @@ function hasImportedButtonActionPatch(input = {}) {
   ].some(value => value !== undefined)
 }
 
-function getImportedButtonActionPatch(input = {}) {
-  if (!hasImportedButtonActionPatch(input)) return null
+function normalizeImportedActionStep(input = {}, index = 0) {
+  const source = input && typeof input === 'object' ? input : {}
+  const action = normalizeImportedButtonAction(source.action || source.buttonAction || source.button_action || source.type)
+  if (!action || action === 'none') return null
 
-  const action = normalizeImportedButtonAction(input.buttonAction || input.button_action || 'none')
-  if (!action) {
-    const error = new Error('Accion de boton importado invalida')
-    error.status = 400
-    throw error
-  }
-
-  const buttonUrl = cleanString(input.buttonUrl || input.button_url)
-  const buttonPageId = cleanString(input.buttonPageId || input.button_page_id)
-  const buttonMessage = limitString(cleanString(input.buttonMessage || input.button_message), 500)
+  const buttonUrl = cleanString(source.buttonUrl || source.button_url || source.url)
+  const buttonPageId = cleanString(source.buttonPageId || source.button_page_id || source.pageId || source.page_id)
+  const buttonMessage = limitString(cleanString(source.buttonMessage || source.button_message || source.message), 500)
+  const automationName = limitString(cleanString(source.automationName || source.automation_name || source.automation || source.label), 140)
 
   if (action === 'url' && !safeHref(buttonUrl, '')) {
     const error = new Error('Usa una URL valida para el boton')
@@ -1316,10 +1334,49 @@ function getImportedButtonActionPatch(input = {}) {
   }
 
   return {
+    id: cleanString(source.id) || `action-${index + 1}`,
     action,
     buttonUrl,
     buttonPageId,
-    buttonMessage
+    buttonMessage,
+    automationName
+  }
+}
+
+function normalizeImportedActionSteps(input = {}) {
+  const rawActions = Array.isArray(input.buttonActions)
+    ? input.buttonActions
+    : Array.isArray(input.button_actions)
+      ? input.button_actions
+      : null
+
+  if (rawActions) {
+    return rawActions
+      .map((item, index) => normalizeImportedActionStep(item, index))
+      .filter(Boolean)
+      .slice(0, 8)
+  }
+
+  const legacyAction = normalizeImportedButtonAction(input.buttonAction || input.button_action || 'none')
+  if (!legacyAction || legacyAction === 'none') return []
+  return [normalizeImportedActionStep({
+    id: 'action-1',
+    action: legacyAction,
+    buttonUrl: input.buttonUrl || input.button_url,
+    buttonPageId: input.buttonPageId || input.button_page_id,
+    buttonMessage: input.buttonMessage || input.button_message
+  }, 0)].filter(Boolean)
+}
+
+function getImportedButtonActionPatch(input = {}) {
+  if (!hasImportedButtonActionPatch(input)) return null
+
+  const actions = normalizeImportedActionSteps(input)
+  const primary = actions[0] || { action: 'none', buttonUrl: '', buttonPageId: '', buttonMessage: '', automationName: '' }
+
+  return {
+    ...primary,
+    actions
   }
 }
 
@@ -1333,6 +1390,7 @@ function setImportedButtonActionAttributes(openingTag = '', attrsText = '', patc
 
   let nextTag = openingTag
   nextTag = setHtmlAttribute(nextTag, attrsText, 'data-rstk-button-action', patch.action)
+  nextTag = setHtmlAttribute(nextTag, attrsText, 'data-rstk-button-actions', jsonString(patch.actions || []))
   nextTag = setHtmlAttribute(nextTag, attrsText, 'data-rstk-button-url', patch.action === 'url' ? safeHref(patch.buttonUrl, '') : '')
   nextTag = setHtmlAttribute(nextTag, attrsText, 'data-rstk-button-page-id', ['specific_page', 'disqualify'].includes(patch.action) ? patch.buttonPageId : '')
   nextTag = setHtmlAttribute(nextTag, attrsText, 'data-rstk-button-message', patch.action === 'disqualify' ? patch.buttonMessage : '')
@@ -1352,11 +1410,52 @@ function setImportedButtonActionAttributes(openingTag = '', attrsText = '', patc
   return nextTag
 }
 
+function getImportedChoiceActionPatch(input = {}) {
+  const rawActions = Array.isArray(input.choiceActions)
+    ? input.choiceActions
+    : Array.isArray(input.choice_actions)
+      ? input.choice_actions
+      : []
+
+  return {
+    actions: rawActions
+      .map((item, index) => normalizeImportedActionStep(item, index))
+      .filter(Boolean)
+      .slice(0, 8),
+    choiceName: cleanString(input.choiceName || input.choice_name),
+    choiceValue: cleanString(input.choiceValue || input.choice_value),
+    choiceInputType: ['radio', 'checkbox'].includes(cleanString(input.choiceInputType || input.choice_input_type).toLowerCase())
+      ? cleanString(input.choiceInputType || input.choice_input_type).toLowerCase()
+      : '',
+    choiceIndex: Number.isFinite(Number(input.choiceIndex ?? input.choice_index))
+      ? Math.max(0, Number(input.choiceIndex ?? input.choice_index))
+      : null
+  }
+}
+
+function getImportedChoiceKey(attrs = {}) {
+  return cleanString(attrs.name || attrs.id || attrs.value || 'choice')
+}
+
+function setImportedChoiceActionAttributes(openingTag = '', attrsText = '', patch = null, editId = '') {
+  if (!patch) return openingTag
+  let nextTag = openingTag
+  nextTag = setHtmlAttribute(nextTag, attrsText, 'data-rstk-choice-id', editId)
+  nextTag = setHtmlAttribute(nextTag, attrsText, 'data-rstk-choice-actions', jsonString(patch.actions || []))
+  nextTag = setHtmlAttribute(nextTag, attrsText, 'data-rstk-choice-name', patch.choiceName)
+  nextTag = setHtmlAttribute(nextTag, attrsText, 'data-rstk-choice-value', patch.choiceValue)
+  nextTag = setHtmlAttribute(nextTag, attrsText, 'data-rstk-editable', 'true')
+  nextTag = setHtmlAttribute(nextTag, attrsText, 'data-rstk-edit-type', 'choice_option')
+  nextTag = setHtmlAttribute(nextTag, attrsText, 'data-rstk-edit-id', editId)
+  return nextTag
+}
+
 function applyImportedEditableContentUpdate(html = '', input = {}) {
   const editId = cleanString(input.editId || input.edit_id)
   const editType = normalizeImportedEditableContentType(input.editType || input.edit_type)
   const value = getImportedEditableTextValue(input)
   const buttonActionPatch = editType === 'button' ? getImportedButtonActionPatch(input) : null
+  const choiceActionPatch = editType === 'choice_option' ? getImportedChoiceActionPatch(input) : null
 
   if (!editId || !editType) {
     const error = new Error('Seleccion invalida para editar contenido')
@@ -1404,6 +1503,25 @@ function applyImportedEditableContentUpdate(html = '', input = {}) {
       updated = true
       const openingTag = setImportedButtonActionAttributes(`<${tagName}${attrsText}>`, attrsText, buttonActionPatch)
       return `${openingTag}${escapeHtml(value)}</${tagName}>`
+    })
+  } else if (editType === 'choice_option') {
+    const choiceCounters = new Map()
+    nextHtml = nextHtml.replace(/<input\b([^>]*?)\s*(\/?)>/gi, (match, attrsText = '') => {
+      if (updated) return match
+      const attrs = parseHtmlAttributes(attrsText)
+      const type = cleanString(attrs.type || 'text').toLowerCase()
+      if (!['radio', 'checkbox'].includes(type)) return match
+      const key = `${type}:${getImportedChoiceKey(attrs)}`
+      const currentIndex = choiceCounters.get(key) || 0
+      choiceCounters.set(key, currentIndex + 1)
+      const attrEditId = getImportedEditableAttr(attrs, 'id') || cleanString(attrs['data-rstk-choice-id'])
+      const nameMatch = !choiceActionPatch?.choiceName || [attrs.name, attrs.id].map(cleanString).includes(choiceActionPatch.choiceName)
+      const valueMatch = !choiceActionPatch?.choiceValue || cleanString(attrs.value) === choiceActionPatch.choiceValue
+      const typeMatch = !choiceActionPatch?.choiceInputType || type === choiceActionPatch.choiceInputType
+      const indexMatch = choiceActionPatch?.choiceIndex === null || currentIndex === choiceActionPatch?.choiceIndex
+      if (attrEditId !== editId && !(nameMatch && valueMatch && typeMatch && indexMatch)) return match
+      updated = true
+      return setImportedChoiceActionAttributes(match, attrsText, choiceActionPatch, editId)
     })
   } else {
     nextHtml = nextHtml.replace(/<(h[1-6]|p|label|a|span|strong|em|small|li)\b([^>]*)>([\s\S]*?)<\/\1>/gi, (match, tagName, attrsText = '') => {
@@ -3761,8 +3879,10 @@ Marcado para edicion rapida:
 - Cuando puedas, agrega tambien aliases data-ristak-* o data-ristack-* para compatibilidad.
 - Tipos permitidos: heading, text, button, form_label, placeholder, image, background_image.
 - Marca titulares, subtitulares, parrafos breves, botones, labels de formularios, placeholders, imagenes, logos y elementos con fondo de imagen.
-- En botones editables, cuando sepas la accion, agrega data-rstk-button-action con uno de estos valores: submit, next_page, specific_page, url, disqualify, none.
-- Si el boton abre enlace, agrega data-rstk-button-url. Si va a una pagina interna, agrega data-rstk-button-page-id cuando exista un id claro.
+- En botones editables, cuando sepas la accion, agrega data-rstk-button-actions como JSON de acciones. Ejemplo: data-rstk-button-actions='[{"action":"submit"},{"action":"next_page"}]'.
+- Acciones permitidas: submit, next_page, specific_page, url, disqualify, automation, notify_team, add_tag, send_whatsapp, create_payment, none. Las de automation/notificaciones/pagos pueden quedar como demo.
+- Mantén tambien data-rstk-button-action con la primera accion para compatibilidad. Si el boton abre enlace, agrega data-rstk-button-url. Si va a una pagina interna, agrega data-rstk-button-page-id cuando exista un id claro.
+- En radio buttons y checkboxes que puedan calificar/descalificar, agrega data-rstk-choice-actions con JSON. Ejemplo: data-rstk-choice-actions='[{"action":"disqualify","buttonMessage":"Esta opcion no califica"}]'.
 - Marca secciones principales con data-rstk-section y un nombre claro.
 - No envuelvas textos editables en demasiadas etiquetas. Deja un elemento claro para cada texto importante.
 
@@ -3802,7 +3922,7 @@ ${editMode ? `
 Modo edicion:
 - Recibiras el HTML actual y la peticion del usuario.
 - Devuelve el HTML completo actualizado, no solo un fragmento.
-- Conserva formularios, ids, name, data-rstk-form, data-rstk-form-id, data-rstk-field, data-ristak-field, data-rstk-custom-field, data-rstk-edit-id, data-rstk-editable, data-rstk-edit-type, data-rstk-label, data-rstk-section, data-rstk-button-action, data-rstk-button-url, data-rstk-button-page-id, data-rstk-button-message y sus aliases data-ristak-* / data-ristack-* cuando el usuario no pida cambiarlos.
+- Conserva formularios, ids, name, data-rstk-form, data-rstk-form-id, data-rstk-field, data-ristak-field, data-rstk-custom-field, data-rstk-edit-id, data-rstk-editable, data-rstk-edit-type, data-rstk-label, data-rstk-section, data-rstk-button-actions, data-rstk-button-action, data-rstk-button-url, data-rstk-button-page-id, data-rstk-button-message, data-rstk-choice-actions y sus aliases data-ristak-* / data-ristack-* cuando el usuario no pida cambiarlos.
 - Si cambias campos, deja convenciones claras para que Ristak pueda redetectar y mapear.
 - Puedes cambiar titulo, imagenes, orden de secciones, colores, layout, copy y campos segun lo que pida el usuario.
 ` : `
@@ -8605,6 +8725,29 @@ function buildImportedFormCaptureScript(site, imported, { pageId = DEFAULT_FUNNE
         });
         return raw;
       };
+      const parseChoiceActions = (field) => {
+        const raw = field.getAttribute('data-rstk-choice-actions') || field.getAttribute('data-ristak-choice-actions') || field.getAttribute('data-ristack-choice-actions') || '';
+        if (!raw) return [];
+        try {
+          const parsed = JSON.parse(raw);
+          return Array.isArray(parsed) ? parsed.filter(item => item && item.action && item.action !== 'none') : [];
+        } catch (_) {
+          return [];
+        }
+      };
+      const collectSelectedChoiceActions = (form) => {
+        const actions = [];
+        Array.from(form.querySelectorAll('input[type="radio"]:checked, input[type="checkbox"]:checked')).forEach((field) => {
+          parseChoiceActions(field).forEach(action => {
+            actions.push({
+              ...action,
+              choiceName: field.getAttribute('name') || field.getAttribute('id') || '',
+              choiceValue: field.value || ''
+            });
+          });
+        });
+        return actions;
+      };
       const resolveFormId = (form, index) => (
         form.getAttribute('data-ristack-form') ||
         form.getAttribute('data-ristak-form') ||
@@ -8636,6 +8779,8 @@ function buildImportedFormCaptureScript(site, imported, { pageId = DEFAULT_FUNNE
           setMessage(form, 'Enviando...', 'loading');
           try {
             const rawFields = collectRawFields(form);
+            const selectedChoiceActions = collectSelectedChoiceActions(form);
+            const disqualifyingAction = selectedChoiceActions.find(item => item.action === 'disqualify') || null;
             const response = await fetch('/api/sites/public/submit', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -8652,7 +8797,10 @@ function buildImportedFormCaptureScript(site, imported, { pageId = DEFAULT_FUNNE
                   sessionId: TRACKING.sessionId || null,
                   tracking: TRACKING,
                   fbp: readCookie('_fbp'),
-                  fbc: readCookie('_fbc')
+                  fbc: readCookie('_fbc'),
+                  importedChoiceActions: selectedChoiceActions,
+                  importedDisqualified: Boolean(disqualifyingAction),
+                  importedDisqualifiedMessage: disqualifyingAction && disqualifyingAction.buttonMessage ? disqualifyingAction.buttonMessage : ''
                 }
               })
             });
@@ -8681,6 +8829,15 @@ function buildImportedFormCaptureScript(site, imported, { pageId = DEFAULT_FUNNE
             form.reset();
             setMessage(form, submission.message || 'Listo. Recibimos tu informacion.', 'success');
             window.dispatchEvent(new CustomEvent('ristak:submitted', { detail: submission }));
+            if (selectedChoiceActions.length && window.ristakRunImportedActions) {
+              const followUpActions = selectedChoiceActions.filter(item => item.action !== 'submit');
+              if (followUpActions.length) {
+                await window.ristakRunImportedActions(form, followUpActions, {
+                  source: 'choice_option',
+                  submission
+                });
+              }
+            }
           } catch (error) {
             setMessage(form, error && error.message ? error.message : 'No se pudo enviar el formulario', 'error');
           } finally {
@@ -8727,63 +8884,139 @@ function buildImportedButtonActionScript(site, { pageId = DEFAULT_FUNNEL_PAGE_ID
         message.textContent = text;
         message.style.color = state === 'error' ? '#b91c1c' : '#166534';
       };
-
-      document.addEventListener('click', (event) => {
-        const button = event.target && event.target.closest
-          ? event.target.closest('[data-rstk-button-action]')
-          : null;
-        if (!button) return;
-
-        const action = String(button.getAttribute('data-rstk-button-action') || '').trim();
+      const parseActions = (raw) => {
+        if (!raw) return [];
+        try {
+          const parsed = JSON.parse(raw);
+          return Array.isArray(parsed) ? parsed.filter(item => item && item.action && item.action !== 'none') : [];
+        } catch (_) {
+          return [];
+        }
+      };
+      const legacyActionFromElement = (element) => {
+        const action = String(element.getAttribute('data-rstk-button-action') || element.getAttribute('data-ristak-button-action') || element.getAttribute('data-ristack-button-action') || '').trim();
+        if (!action || action === 'none') return [];
+        return [{
+          action,
+          buttonUrl: element.getAttribute('data-rstk-button-url') || element.getAttribute('data-ristak-button-url') || element.getAttribute('data-ristack-button-url') || element.getAttribute('href') || '',
+          buttonPageId: element.getAttribute('data-rstk-button-page-id') || element.getAttribute('data-ristak-button-page-id') || element.getAttribute('data-ristack-button-page-id') || '',
+          buttonMessage: element.getAttribute('data-rstk-button-message') || element.getAttribute('data-ristak-button-message') || element.getAttribute('data-ristack-button-message') || ''
+        }];
+      };
+      const actionsFromElement = (element) => {
+        const actions = parseActions(
+          element.getAttribute('data-rstk-button-actions') ||
+          element.getAttribute('data-ristak-button-actions') ||
+          element.getAttribute('data-ristack-button-actions') ||
+          ''
+        );
+        return actions.length ? actions : legacyActionFromElement(element);
+      };
+      const isSubmitter = (button) => (
+        button &&
+        button.matches &&
+        button.matches('button:not([type]), button[type="submit"], input[type="submit"], input[type="image"]')
+      );
+      const submitFormAndWait = (form, button) => new Promise((resolve, reject) => {
+        if (!form) {
+          resolve(null);
+          return;
+        }
+        let done = false;
+        const timeout = window.setTimeout(() => {
+          if (done) return;
+          done = true;
+          window.removeEventListener('ristak:submitted', handleSubmitted);
+          reject(new Error('No se pudo confirmar el envio del formulario'));
+        }, 10000);
+        const handleSubmitted = (submitEvent) => {
+          if (done) return;
+          done = true;
+          window.clearTimeout(timeout);
+          window.removeEventListener('ristak:submitted', handleSubmitted);
+          resolve(submitEvent.detail || null);
+        };
+        window.addEventListener('ristak:submitted', handleSubmitted);
+        if (typeof form.requestSubmit === 'function') {
+          form.requestSubmit(isSubmitter(button) ? button : undefined);
+        } else {
+          form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        }
+      });
+      const splitActions = (actions) => {
+        const terminalNames = new Set(['url', 'next_page', 'specific_page']);
+        const terminal = actions.find(item => terminalNames.has(item.action) || (item.action === 'disqualify' && item.buttonPageId));
+        const beforeTerminal = actions.filter(item => item !== terminal);
+        return { beforeTerminal, terminal };
+      };
+      const runOneAction = async (source, action, context = {}) => {
+        if (!action || !action.action || action.action === 'none') return;
+        if (action.action === 'submit') {
+          await submitFormAndWait(source.closest ? source.closest('form') : context.form, source);
+          return;
+        }
+        if (action.action === 'automation' || action.action === 'notify_team' || action.action === 'add_tag' || action.action === 'send_whatsapp' || action.action === 'create_payment') {
+          window.dispatchEvent(new CustomEvent('ristak:imported-action-demo', {
+            detail: {
+              action: action.action,
+              label: action.automationName || '',
+              pageId: CURRENT_PAGE_ID,
+              context
+            }
+          }));
+          showActionMessage(source, 'Accion demo registrada: ' + action.action, 'success');
+          return;
+        }
+        if (action.action === 'disqualify') {
+          const message = action.buttonMessage || 'Gracias. Por ahora esta solicitud no califica.';
+          window.dispatchEvent(new CustomEvent('ristak:disqualified', { detail: { message, pageId: CURRENT_PAGE_ID, context } }));
+          if (!action.buttonPageId) showActionMessage(source, message, 'error');
+        }
+      };
+      const runTerminalAction = (source, action) => {
         if (!action) return;
-
-        if (action === 'none') {
-          event.preventDefault();
-          return;
-        }
-
-        if (action === 'submit') {
-          const form = button.closest('form');
-          if (!form) return;
-          event.preventDefault();
-          if (typeof form.requestSubmit === 'function') {
-            form.requestSubmit(button);
-          } else {
-            form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-          }
-          return;
-        }
-
-        event.preventDefault();
-
-        if (action === 'url') {
-          const targetUrl = button.getAttribute('data-rstk-button-url') || button.getAttribute('href') || '';
+        if (action.action === 'url') {
+          const targetUrl = action.buttonUrl || (source.getAttribute ? source.getAttribute('href') : '') || '';
           if (targetUrl) window.location.href = targetUrl;
           return;
         }
-
-        if (action === 'next_page') {
+        if (action.action === 'next_page') {
           const nextPageId = getNextPageId();
           if (nextPageId) window.location.href = getPageHref(nextPageId);
           return;
         }
-
-        if (action === 'specific_page') {
-          const targetPageId = button.getAttribute('data-rstk-button-page-id') || '';
+        if (action.action === 'specific_page' || action.action === 'disqualify') {
+          const targetPageId = action.buttonPageId || '';
           if (targetPageId) window.location.href = getPageHref(targetPageId);
+        }
+      };
+      const runImportedActions = async (source, actions, context = {}) => {
+        const cleanActions = Array.isArray(actions) ? actions.filter(item => item && item.action && item.action !== 'none') : [];
+        if (!cleanActions.length) return;
+        const { beforeTerminal, terminal } = splitActions(cleanActions);
+        for (const action of beforeTerminal) {
+          await runOneAction(source, action, context);
+        }
+        runTerminalAction(source, terminal);
+      };
+      window.ristakRunImportedActions = runImportedActions;
+
+      document.addEventListener('click', (event) => {
+        const button = event.target && event.target.closest
+          ? event.target.closest('[data-rstk-button-action], [data-rstk-button-actions], [data-ristak-button-action], [data-ristak-button-actions], [data-ristack-button-action], [data-ristack-button-actions]')
+          : null;
+        if (!button) return;
+
+        const actions = actionsFromElement(button);
+        if (!actions.length) {
+          event.preventDefault();
           return;
         }
 
-        if (action === 'disqualify') {
-          const targetPageId = button.getAttribute('data-rstk-button-page-id') || '';
-          const message = button.getAttribute('data-rstk-button-message') || 'Gracias. Por ahora esta solicitud no califica.';
-          window.dispatchEvent(new CustomEvent('ristak:disqualified', { detail: { message, pageId: CURRENT_PAGE_ID } }));
-          if (targetPageId) {
-            window.location.href = getPageHref(targetPageId);
-          } else {
-            showActionMessage(button, message, 'error');
-          }
-        }
+        event.preventDefault();
+        runImportedActions(button, actions, { source: 'button' }).catch(error => {
+          showActionMessage(button, error && error.message ? error.message : 'No se pudo ejecutar la accion', 'error');
+        });
       }, true);
     })();
   </script>`
@@ -10491,6 +10724,11 @@ async function createImportedSubmissionFromRequest({ req, body, site, host }) {
     userAgent: req.headers['user-agent'] || '',
     submittedAt: new Date().toISOString()
   }
+  const importedDisqualified = meta.importedDisqualified === true || meta.imported_disqualified === true
+  const submissionStatus = importedDisqualified ? 'disqualified' : 'received'
+  const responseMessage = importedDisqualified
+    ? cleanString(meta.importedDisqualifiedMessage || meta.imported_disqualified_message) || 'Gracias. Por ahora esta solicitud no califica.'
+    : 'Listo. Recibimos tu informacion.'
   const contactId = await upsertImportedContactFromSubmission({
     site,
     contact,
@@ -10505,7 +10743,7 @@ async function createImportedSubmissionFromRequest({ req, body, site, host }) {
     INSERT INTO public_site_submissions (
       id, site_id, contact_id, domain, response_json, raw_fields_json,
       mapped_fields_json, derived_fields_json, meta_json, status, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'received', CURRENT_TIMESTAMP)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
   `, [
     submissionId,
     site.id,
@@ -10515,7 +10753,8 @@ async function createImportedSubmissionFromRequest({ req, body, site, host }) {
     jsonString(layers.rawFields),
     jsonString(layers.mappedFields),
     jsonString(layers.derivedFields),
-    jsonString(meta)
+    jsonString(meta),
+    submissionStatus
   ])
 
   const capi = await sendSiteLeadMetaEvent({
@@ -10550,8 +10789,8 @@ async function createImportedSubmissionFromRequest({ req, body, site, host }) {
     contactId,
     contactName: contact.fullName,
     contactEmail: contact.email,
-    status: 'received',
-    message: 'Listo. Recibimos tu informacion.',
+    status: submissionStatus,
+    message: responseMessage,
     rawFields: layers.rawFields,
     mappedFields: layers.mappedFields,
     derivedFields: layers.derivedFields,
