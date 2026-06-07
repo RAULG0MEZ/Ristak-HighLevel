@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { KpiCard, Card, Button, PageContainer, AppointmentModal, BlockedSlotModal, TabList, Loading } from '@/components/common';
-import { ChevronLeft, ChevronRight, Plus, ChevronDown, Check, Calendar as CalendarIcon, Search, X, Settings } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, ChevronDown, Check, Search, X, Settings, Bell, MessageSquare, Clock } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNotification } from '@/contexts/NotificationContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -32,6 +32,24 @@ const viewTabs = [
   { value: 'month', label: 'Mes' },
   { value: 'week', label: 'Semana' },
   { value: 'day', label: 'Día' }
+];
+
+const automaticMessageCards = [
+  {
+    title: '24 h antes',
+    detail: 'Recordatorio de cita',
+    Icon: Bell
+  },
+  {
+    title: '2 h antes',
+    detail: 'Confirmación rápida',
+    Icon: Clock
+  },
+  {
+    title: 'Después de la cita',
+    detail: 'Mensaje de seguimiento',
+    Icon: MessageSquare
+  }
 ];
 
 type ViewMode = 'month' | 'week' | 'day';
@@ -1442,28 +1460,29 @@ export const Appointments: React.FC = () => {
         </div>
       </div>
 
-      {/* KPIs */}
-      <div className={styles.statsGrid}>
-        <KpiCard
-          title="Citas pendientes · mes seleccionado"
-          value={stats.pending}
-        />
-        <KpiCard
-          title="Asistencias · mes seleccionado"
-          value={stats.showed}
-        />
-        <KpiCard
-          title="Citas canceladas · mes seleccionado"
-          value={stats.cancelled}
-        />
-        <KpiCard
-          title="Citas reprogramadas · mes seleccionado"
-          value={stats.rescheduled}
-        />
-      </div>
-
       {/* Grid principal */}
       <div className={`${styles.mainGrid}${viewMode === 'month' ? ` ${styles.mainGridMonth}` : ''}`}>
+        <div className={styles.calendarColumn}>
+          {/* KPIs */}
+          <div className={styles.statsGrid}>
+            <KpiCard
+              title="Citas pendientes · mes seleccionado"
+              value={stats.pending}
+            />
+            <KpiCard
+              title="Asistencias · mes seleccionado"
+              value={stats.showed}
+            />
+            <KpiCard
+              title="Citas canceladas · mes seleccionado"
+              value={stats.cancelled}
+            />
+            <KpiCard
+              title="Citas reprogramadas · mes seleccionado"
+              value={stats.rescheduled}
+            />
+          </div>
+
         {/* Calendario */}
         <Card className={`${styles.calendarCard}${viewMode === 'month' ? ` ${styles.calendarCardMonth}` : ''}`}>
           <div className={`${styles.calendarCardContent}${viewMode === 'month' ? ` ${styles.calendarContentMonth}` : ''}`}>
@@ -2125,6 +2144,9 @@ export const Appointments: React.FC = () => {
           )}
           </div>
         </Card>
+        </div>
+
+        <aside className={styles.sideColumn}>
 
         {/* Próximas citas */}
         <Card className={styles.upcomingCard}>
@@ -2160,6 +2182,28 @@ export const Appointments: React.FC = () => {
             )}
           </div>
         </Card>
+
+        <Card className={styles.automationCard}>
+          <div className={styles.cardHeader}>
+            <h3>Mensajes automáticos</h3>
+          </div>
+
+          <div className={styles.automationList}>
+            {automaticMessageCards.map(({ title, detail, Icon }) => (
+              <div key={title} className={styles.automationItem}>
+                <div className={styles.automationIcon}>
+                  <Icon size={16} aria-hidden="true" />
+                </div>
+                <div className={styles.automationCopy}>
+                  <div className={styles.automationTitle}>{title}</div>
+                  <div className={styles.automationDetail}>{detail}</div>
+                </div>
+                <span className={styles.automationBadge}>Próximamente</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+        </aside>
       </div>
 
       {/* Modal de detalles/edición de cita */}
