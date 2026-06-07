@@ -184,6 +184,7 @@ export async function previewSiteHandler(req, res) {
       return res.status(404).json({ success: false, error: 'Site no encontrado' })
     }
 
+    res.set('Cache-Control', 'no-store')
     res.status(200).type('html').send(await renderPublicSiteHtml(site, {
       pageId: req.query?.page,
       trackingEnabled: false

@@ -613,17 +613,21 @@ export const sitesService = {
     if (options.test) searchParams.set('test', '1')
     const params = searchParams.toString() ? `?${searchParams.toString()}` : ''
     const response = await fetch(`${API_BASE_URL}/api/sites/${siteId}/preview${params}`, {
-      headers: getAuthHeaders()
+      headers: getAuthHeaders(),
+      cache: 'no-store'
     })
 
     if (!response.ok) {
-      let message = 'No se pudo generar la previsualizacion'
+      let message = 'No se pudo generar la previsualización'
       const errorResponse = response.clone()
       try {
         const payload = await response.json()
         message = payload?.error || message
       } catch {
         message = await errorResponse.text().catch(() => message)
+      }
+      if (/token/i.test(message)) {
+        message = 'No se pudo abrir la previsualización. Actualiza la página e inténtalo otra vez.'
       }
       throw new Error(message)
     }

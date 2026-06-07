@@ -347,10 +347,16 @@ const PREVIEW_LOADING_HTML = `<!doctype html>
     <title>Previsualizando...</title>
     <style>
       :root {
-        color-scheme: light;
+        color-scheme: light dark;
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         background: #f7f9fc;
         color: #162033;
+        --preview-bg: #f7f9fc;
+        --preview-panel: #ffffff;
+        --preview-text: #162033;
+        --preview-muted: #596579;
+        --preview-ring: rgba(22, 32, 51, 0.08);
+        --preview-shadow: rgba(37, 99, 235, 0.18);
       }
 
       * {
@@ -365,6 +371,7 @@ const PREVIEW_LOADING_HTML = `<!doctype html>
         background:
           radial-gradient(circle at top, rgba(38, 99, 235, 0.11), transparent 34rem),
           linear-gradient(180deg, #ffffff 0%, #f3f6fb 100%);
+        color: var(--preview-text);
       }
 
       main {
@@ -382,7 +389,7 @@ const PREVIEW_LOADING_HTML = `<!doctype html>
         aspect-ratio: 1;
         border-radius: 50%;
         background: conic-gradient(from 0deg, #2563eb, #16a34a, #f59e0b, #ef4444, #7c3aed, #2563eb);
-        box-shadow: 0 1.35rem 3rem rgba(37, 99, 235, 0.18);
+        box-shadow: 0 1.35rem 3rem var(--preview-shadow);
         animation: preview-spin 1.05s linear infinite;
       }
 
@@ -391,8 +398,8 @@ const PREVIEW_LOADING_HTML = `<!doctype html>
         position: absolute;
         inset: 0.55rem;
         border-radius: inherit;
-        background: #f7f9fc;
-        box-shadow: inset 0 0 0 1px rgba(22, 32, 51, 0.08);
+        background: var(--preview-bg);
+        box-shadow: inset 0 0 0 1px var(--preview-ring);
       }
 
       .preview-wheel::after {
@@ -403,7 +410,7 @@ const PREVIEW_LOADING_HTML = `<!doctype html>
         width: 0.85rem;
         aspect-ratio: 1;
         border-radius: 50%;
-        background: #ffffff;
+        background: var(--preview-panel);
         box-shadow: 0 0.35rem 0.9rem rgba(22, 32, 51, 0.16);
         transform: translateX(-50%);
       }
@@ -419,9 +426,28 @@ const PREVIEW_LOADING_HTML = `<!doctype html>
       p {
         max-width: 25rem;
         margin: 0.55rem auto 0;
-        color: #596579;
+        color: var(--preview-muted);
         font-size: 1rem;
         line-height: 1.55;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          background: #0b1020;
+          color: #eef3ff;
+          --preview-bg: #0b1020;
+          --preview-panel: #111827;
+          --preview-text: #eef3ff;
+          --preview-muted: #a7b0c3;
+          --preview-ring: rgba(255, 255, 255, 0.08);
+          --preview-shadow: rgba(16, 185, 129, 0.2);
+        }
+
+        body {
+          background:
+            radial-gradient(circle at top, rgba(16, 185, 129, 0.16), transparent 34rem),
+            linear-gradient(180deg, #080d18 0%, #101827 100%);
+        }
       }
 
       @keyframes preview-spin {
@@ -441,8 +467,8 @@ const PREVIEW_LOADING_HTML = `<!doctype html>
     <main aria-live="polite" aria-busy="true">
       <div class="preview-wheel" role="img" aria-label="Cargando"></div>
       <section>
-        <h1>Cargando previsualizacion</h1>
-        <p>Estamos preparando tu pagina para verla completa.</p>
+        <h1>Cargando previsualización</h1>
+        <p>Estamos preparando tu página para verla completa.</p>
       </section>
     </main>
   </body>
