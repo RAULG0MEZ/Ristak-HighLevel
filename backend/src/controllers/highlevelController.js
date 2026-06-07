@@ -11,6 +11,7 @@ import { createInstallmentPaymentFlow } from '../services/paymentFlowService.js'
 import { sendPaymentNotification } from '../services/pushNotificationsService.js';
 import { formatInvoiceMultilineText, formatInvoicePayloadText } from '../utils/invoiceTextFormatter.js';
 import { normalizePhoneForStorage } from '../utils/phoneUtils.js';
+import { buildLocalMediaUrl, saveWhatsAppAudioDataUrl } from '../services/whatsappApiService.js';
 import * as localCalendarService from '../services/localCalendarService.js';
 import {
   createLocalPrice,
@@ -95,6 +96,19 @@ function cleanString(value) {
   return String(value || '').trim();
 }
 
+function normalizeBaseUrl(value = '') {
+  return cleanString(value).replace(/\/+$/, '');
+}
+
+function getPublicBaseUrl(req) {
+  return normalizeBaseUrl(
+    process.env.RENDER_EXTERNAL_URL ||
+    process.env.PUBLIC_URL ||
+    req.body?.baseUrl ||
+    `${req.protocol}://${req.get('host')}`
+  );
+}
+
 function safeJsonStringify(value, fallback = 'null') {
   try {
     return JSON.stringify(value ?? null);
@@ -172,6 +186,50 @@ function getHighLevelAttachmentInfo(url = '') {
     mediaMimeType,
     mediaFilename,
     messageType
+  };
+}
+
+async function prepareHighLevelVoiceAttachment({ audioDataUrl, audioUrl, durationMs, req }) {
+  const cleanAudioUrl = cleanString(audioUrl);
+  if (cleanAudioUrl) {
+    return {
+      url: cleanAudioUrl,
+      audio: {
+        link: cleanAudioUrl,
+        url: cleanAudioUrl,
+        voice: true,
+        ...(durationMs ? { durationMs } : {})
+      },
+      localMedia: null
+    };
+  }
+
+  if (!cleanString(audioDataUrl)) return null;
+
+  const savedAudio = await saveWhatsAppAudioDataUrl(audioDataUrl);
+  const publicUrl = buildLocalMediaUrl(savedAudio, getPublicBaseUrl(req));
+
+  if (!/^https?:\/\//i.test(publicUrl)) {
+    throw new Error('HighLevel necesita un enlace público para mandar la nota de voz.');
+  }
+
+  return {
+    url: publicUrl,
+    audio: {
+      link: publicUrl,
+      url: publicUrl,
+      mimeType: savedAudio.mimeType,
+      voice: true,
+      ...(durationMs ? { durationMs } : {})
+    },
+    localMedia: {
+      publicUrl,
+      publicPath: savedAudio.publicPath,
+      mimeType: savedAudio.mimeType,
+      filename: savedAudio.filename,
+      size: savedAudio.size,
+      originalMimeType: savedAudio.originalMimeType
+    }
   };
 }
 
@@ -1929,6 +1987,9 @@ export const sendConversationMessage = async (req, res) => {
       channel,
       message,
       attachments,
+      audioDataUrl,
+      audioUrl,
+      durationMs,
       fromNumber,
       toNumber,
       conversationProviderId,
@@ -1947,14 +2008,25 @@ export const sendConversationMessage = async (req, res) => {
       });
     }
 
-    if (!text && attachmentUrls.length === 0) {
+    const voiceAttachment = await prepareHighLevelVoiceAttachment({
+      audioDataUrl,
+      audioUrl,
+      durationMs,
+      req
+    });
+    const resolvedAttachmentUrls = [
+      ...attachmentUrls,
+      ...(voiceAttachment?.url ? [voiceAttachment.url] : [])
+    ];
+
+    if (!text && resolvedAttachmentUrls.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'Escribe un mensaje antes de enviarlo.'
+        error: 'Escribe un mensaje o graba una nota de voz antes de enviarlo.'
       });
     }
 
-    if (attachmentUrls.some(url => !/^https?:\/\//i.test(url))) {
+    if (resolvedAttachmentUrls.some(url => !/^https?:\/\//i.test(url))) {
       return res.status(400).json({
         success: false,
         error: 'HighLevel solo acepta archivos publicados como enlaces.'
@@ -1985,7 +2057,7 @@ export const sendConversationMessage = async (req, res) => {
       contactId: highLevelContactId,
       status: 'pending',
       ...(text && { message: text }),
-      ...(attachmentUrls.length > 0 && { attachments: attachmentUrls }),
+      ...(resolvedAttachmentUrls.length > 0 && { attachments: resolvedAttachmentUrls }),
       ...(cleanFromNumber && { fromNumber: cleanFromNumber }),
       ...(cleanToNumber && { toNumber: cleanToNumber }),
       ...(cleanString(conversationProviderId) && { conversationProviderId: cleanString(conversationProviderId) })
@@ -1996,7 +2068,7 @@ export const sendConversationMessage = async (req, res) => {
           contact,
           channel: channelConfig,
           text,
-          attachments: attachmentUrls,
+          attachments: resolvedAttachmentUrls,
           externalId,
           requestBody,
           response
@@ -2005,7 +2077,7 @@ export const sendConversationMessage = async (req, res) => {
           contact,
           channel: channelConfig,
           text,
-          attachments: attachmentUrls,
+          attachments: resolvedAttachmentUrls,
           fromNumber: cleanFromNumber,
           toNumber: cleanToNumber,
           externalId,
@@ -2024,7 +2096,9 @@ export const sendConversationMessage = async (req, res) => {
         contactId: contact.id,
         highLevelContactId,
         localMessageId: localMirror.localMessageId,
-        status: localMirror.status
+        status: localMirror.status,
+        ...(voiceAttachment?.audio ? { audio: voiceAttachment.audio } : {}),
+        ...(voiceAttachment?.localMedia ? { localMedia: voiceAttachment.localMedia } : {})
       }
     });
   } catch (error) {

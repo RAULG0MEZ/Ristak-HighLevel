@@ -4138,13 +4138,13 @@ export const PhoneChat: React.FC = () => {
       const channel = activeHighLevelChatChannel
       const channelLabel = GHL_CHAT_CHANNEL_LABELS[channel]
 
-      if (!text) {
-        showToast('warning', 'Escribe el mensaje', 'HighLevel necesita texto para mandar desde este chat.')
+      if (!text && !voiceToSend) {
+        showToast('warning', 'Escribe o graba algo', 'Manda texto o una nota de voz desde este chat.')
         return
       }
 
-      if (attachmentsToSend.length > 0 || voiceToSend) {
-        showToast('warning', 'Solo texto por ahora', 'HighLevel desde este chat todavía no manda fotos ni audios.')
+      if (attachmentsToSend.length > 0) {
+        showToast('warning', 'Solo texto o voz por ahora', 'HighLevel desde este chat todavía no manda fotos.')
         return
       }
 
@@ -4169,6 +4169,10 @@ export const PhoneChat: React.FC = () => {
         if (composerInputRef.current) {
           composerInputRef.current.textContent = ''
         }
+        setDraftAttachments([])
+        stopVoicePreview(true)
+        voiceSendAfterStopRef.current = false
+        setVoiceDraft(null)
       }
 
       const optimisticMessage: ChatMessage = {
@@ -4179,7 +4183,18 @@ export const PhoneChat: React.FC = () => {
         status: 'enviando',
         businessPhone: selectedBusinessPhoneValue || '',
         businessPhoneNumberId: selectedBusinessPhone?.id || '',
-        transport: transportLabel
+        transport: transportLabel,
+        ...(voiceToSend
+          ? {
+              attachment: {
+                type: 'audio' as const,
+                dataUrl: voiceToSend.dataUrl,
+                name: voiceToSend.name,
+                mimeType: voiceToSend.type,
+                durationMs: voiceToSend.durationMs
+              }
+            }
+          : {})
       }
 
       setMessages((current) => [...current, optimisticMessage])
@@ -4187,7 +4202,7 @@ export const PhoneChat: React.FC = () => {
         contact.id === activeContact.id
           ? {
               ...contact,
-              lastMessageText: text,
+              lastMessageText: voiceToSend ? 'Mensaje de voz' : text,
               lastMessageDate: sentAt,
               lastMessageDirection: 'outbound',
               lastMessageChannel: channel,
@@ -4201,6 +4216,8 @@ export const PhoneChat: React.FC = () => {
           contactId: activeContact.id,
           channel,
           message: text,
+          audioDataUrl: voiceToSend?.dataUrl,
+          durationMs: voiceToSend?.durationMs,
           fromNumber: selectedBusinessPhoneValue || undefined,
           toNumber: activeContact.phone || undefined,
           externalId: optimisticId
@@ -4208,13 +4225,24 @@ export const PhoneChat: React.FC = () => {
         const resultData = result.data || result
         const resultStatus = String(resultData.status || '').trim() || 'pending'
         const resultDelivered = ['sent', 'delivered', 'read'].includes(resultStatus.toLowerCase())
+        const responseAudioUrl = resultData.audio?.link || resultData.audio?.url || resultData.localMedia?.publicUrl || ''
+        const responseAudioMimeType = resultData.audio?.mimeType || resultData.localMedia?.mimeType || ''
+        const responseAudioDurationMs = Number(resultData.audio?.durationMs || 0) || voiceToSend?.durationMs
         setMessages((current) => current.map((message) => (
           message.id === optimisticId
             ? {
                 ...message,
                 id: resultData.localMessageId || message.id,
                 status: resultStatus,
-                transport: resultData.transport || message.transport
+                transport: resultData.transport || message.transport,
+                attachment: message.attachment?.type === 'audio'
+                  ? {
+                      ...message.attachment,
+                      ...(responseAudioUrl ? { url: responseAudioUrl } : {}),
+                      ...(responseAudioMimeType ? { mimeType: responseAudioMimeType } : {}),
+                      ...(responseAudioDurationMs ? { durationMs: responseAudioDurationMs } : {})
+                    }
+                  : message.attachment
               }
             : message
         )))
@@ -4232,7 +4260,10 @@ export const PhoneChat: React.FC = () => {
             ? { ...message, status: 'error', errorReason: errorMessage }
             : message
         )))
-        if (!preserveComposer && !messageTextRef.current.trim() && composerInputRef.current) {
+        if (!preserveComposer) {
+          setVoiceDraft(voiceToSend)
+        }
+        if (!preserveComposer && text && !messageTextRef.current.trim() && composerInputRef.current) {
           setComposerMessageText(text)
           composerInputRef.current.textContent = text
         }
@@ -4350,6 +4381,7 @@ export const PhoneChat: React.FC = () => {
           from: selectedBusinessPhoneValue,
           audioDataUrl: voiceToSend.dataUrl,
           durationMs: voiceToSend.durationMs,
+          voice: true,
           externalId: `${optimisticId}-audio`,
           transport: resolvedTransport,
           phoneNumberId: selectedBusinessPhone?.id || undefined

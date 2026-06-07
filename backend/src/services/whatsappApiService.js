@@ -454,7 +454,7 @@ function requirePublicHttpsBaseUrl(baseUrl = '') {
   return normalized
 }
 
-function buildLocalMediaUrl(localMedia, publicBaseUrl = '') {
+export function buildLocalMediaUrl(localMedia, publicBaseUrl = '') {
   const publicPath = cleanString(localMedia?.publicPath)
   if (!publicPath) return ''
 
@@ -616,7 +616,7 @@ async function saveWhatsAppImageDataUrl(dataUrl = '') {
   }
 }
 
-async function saveWhatsAppAudioDataUrl(dataUrl = '') {
+export async function saveWhatsAppAudioDataUrl(dataUrl = '') {
   const parsed = parseAudioDataUrl(dataUrl)
   const originalMimeType = parsed.mimeType
   const media = audioNeedsWhatsAppConversion(parsed)
@@ -4263,6 +4263,7 @@ export async function sendWhatsAppApiAudioMessage({
   externalId,
   publicBaseUrl,
   durationMs,
+  voice,
   transport = 'api',
   phoneNumberId
 } = {}) {
@@ -4275,6 +4276,7 @@ export async function sendWhatsAppApiAudioMessage({
   const fromPhone = normalizePhoneForStorage(from || config.senderPhone) || cleanString(from || config.senderPhone)
   const toPhone = normalizePhoneForStorage(to) || cleanString(to)
   const cleanAudioUrl = cleanString(audioUrl)
+  const isVoiceNote = voice === undefined ? Boolean(audioDataUrl) : Boolean(voice)
 
   if (!fromPhone) throw new Error('Falta el número emisor de WhatsApp_API')
   if (!toPhone) throw new Error('Falta el número destino')
@@ -4301,7 +4303,8 @@ export async function sendWhatsAppApiAudioMessage({
     to: toPhone,
     type: 'audio',
     audio: {
-      link
+      link,
+      ...(isVoiceNote ? { voice: true } : {})
     },
     filterUnsubscribed: true,
     filterBlocked: true,
@@ -4315,7 +4318,8 @@ export async function sendWhatsAppApiAudioMessage({
       toPhone,
       requestAudio: {
         ...requestBody.audio,
-        ...(savedAudio?.mimeType ? { mimeType: savedAudio.mimeType } : {})
+        ...(savedAudio?.mimeType ? { mimeType: savedAudio.mimeType } : {}),
+        ...(isVoiceNote ? { voice: true } : {})
       },
       audioDataUrl,
       externalId,
@@ -4370,7 +4374,8 @@ export async function sendWhatsAppApiAudioMessage({
         toPhone,
         requestAudio: {
           ...requestBody.audio,
-          ...(savedAudio?.mimeType ? { mimeType: savedAudio.mimeType } : {})
+          ...(savedAudio?.mimeType ? { mimeType: savedAudio.mimeType } : {}),
+          ...(isVoiceNote ? { voice: true } : {})
         },
         audioDataUrl,
         externalId,

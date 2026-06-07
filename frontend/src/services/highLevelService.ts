@@ -16,6 +16,9 @@ export interface HighLevelConversationMessagePayload {
   channel: HighLevelChatChannel
   message: string
   attachments?: string[]
+  audioDataUrl?: string
+  audioUrl?: string
+  durationMs?: number
   fromNumber?: string
   toNumber?: string
   conversationProviderId?: string
@@ -35,6 +38,19 @@ export interface HighLevelConversationMessageResponse {
     contactId?: string
     highLevelContactId?: string
     localMessageId?: string
+    audio?: {
+      link?: string
+      url?: string
+      mimeType?: string
+      durationMs?: number
+      voice?: boolean
+    }
+    localMedia?: {
+      publicUrl?: string
+      publicPath?: string
+      mimeType?: string
+      filename?: string
+    } | null
   }
   messageId?: string
   conversationId?: string
@@ -46,6 +62,19 @@ export interface HighLevelConversationMessageResponse {
   contactId?: string
   highLevelContactId?: string
   localMessageId?: string
+  audio?: {
+    link?: string
+    url?: string
+    mimeType?: string
+    durationMs?: number
+    voice?: boolean
+  }
+  localMedia?: {
+    publicUrl?: string
+    publicPath?: string
+    mimeType?: string
+    filename?: string
+  } | null
 }
 
 class HighLevelService {

@@ -187,6 +187,7 @@ export interface WhatsAppApiAudioSendPayload {
   audioDataUrl?: string
   audioUrl?: string
   durationMs?: number
+  voice?: boolean
   externalId?: string
   transport?: 'api' | 'qr'
   phoneNumberId?: string
@@ -207,6 +208,7 @@ export interface WhatsAppApiSendResponse {
     mimetype?: string
     durationMs?: number
     ptt?: boolean
+    voice?: boolean
   }
   localMedia?: {
     publicUrl?: string
