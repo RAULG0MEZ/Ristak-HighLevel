@@ -6142,6 +6142,17 @@ export const PhoneChat: React.FC = () => {
     )
   }
 
+  const renderChatHeaderActions = (className = styles.topRightActions) => (
+    <div className={className}>
+      <button type="button" className={styles.roundButton} onClick={() => handlePickPhoto('camera', 'cameraShare')} aria-label="Abrir cámara">
+        <Camera size={24} />
+      </button>
+      <button type="button" className={styles.newChatButton} onClick={() => setSheet('newChat')} aria-label="Nuevo chat">
+        <Plus size={32} />
+      </button>
+    </div>
+  )
+
   if (accessState === 'checking') {
     return (
       <main className={styles.loadingPage}>
@@ -6192,39 +6203,40 @@ export const PhoneChat: React.FC = () => {
       >
         <section className={styles.chatListScreen} aria-label="Lista de chats">
           <header className={`${styles.chatListHeader} ${chatSearchExpanded ? styles.chatListHeaderSearchExpanded : ''}`}>
-            <div className={styles.topActionRow} aria-hidden={chatSearchExpanded}>
-              <span className={styles.topActionSpacer} aria-hidden="true" />
-              <div className={styles.topRightActions}>
-                <button type="button" className={styles.roundButton} onClick={() => handlePickPhoto('camera', 'cameraShare')} aria-label="Abrir cámara">
-                  <Camera size={24} />
-                </button>
-                <button type="button" className={styles.newChatButton} onClick={() => setSheet('newChat')} aria-label="Nuevo chat">
-                  <Plus size={32} />
-                </button>
+            {deviceMode === 'tablet' && !chatSearchExpanded && (
+              <PhoneEcosystemNav active="chat" badges={{ chat: unreadTotal }} placement="top" />
+            )}
+            {deviceMode !== 'tablet' && (
+              <div className={styles.topActionRow} aria-hidden={chatSearchExpanded}>
+                <span className={styles.topActionSpacer} aria-hidden="true" />
+                {renderChatHeaderActions()}
               </div>
-            </div>
+            )}
             <div className={styles.chatTitleRow} aria-hidden={chatSearchExpanded}>
               <h1>Chats</h1>
-              {chatPhoneFilterEnabled && (
-                <label className={styles.chatPhoneSelector}>
-                  <span>Número</span>
-                  <PhoneSelect
-                    value={effectiveSelectedChatPhoneId}
-                    onChange={(value) => saveConfigPreference(setSelectedChatPhoneId, value)}
-                    ariaLabel="Elegir número de WhatsApp para ver chats"
-                    options={[
-                      { value: 'all', label: 'Ver todos' },
-                      ...businessPhones.map((phone, index) => ({
-                        value: phone.id,
-                        label: `Ver chats de ${getBusinessPhoneLabel(phone) || `número ${index + 1}`}`
-                      }))
-                    ]}
-                    title="Número"
-                    placeholder="Número"
-                    buttonClassName={styles.chatPhoneSelect}
-                  />
-                </label>
-              )}
+              <div className={styles.chatTitleRight}>
+                {chatPhoneFilterEnabled && (
+                  <label className={styles.chatPhoneSelector}>
+                    <span>Número</span>
+                    <PhoneSelect
+                      value={effectiveSelectedChatPhoneId}
+                      onChange={(value) => saveConfigPreference(setSelectedChatPhoneId, value)}
+                      ariaLabel="Elegir número de WhatsApp para ver chats"
+                      options={[
+                        { value: 'all', label: 'Ver todos' },
+                        ...businessPhones.map((phone, index) => ({
+                          value: phone.id,
+                          label: `Ver chats de ${getBusinessPhoneLabel(phone) || `número ${index + 1}`}`
+                        }))
+                      ]}
+                      title="Número"
+                      placeholder="Número"
+                      buttonClassName={styles.chatPhoneSelect}
+                    />
+                  </label>
+                )}
+                {deviceMode === 'tablet' && renderChatHeaderActions(styles.chatTitleActions)}
+              </div>
             </div>
             <div className={styles.searchBox}>
               <Search size={22} />

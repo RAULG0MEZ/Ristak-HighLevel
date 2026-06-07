@@ -308,6 +308,21 @@
   min-width: 0;
 }
 
+.chatTitleRight {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.chatTitleActions {
+  display: none;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 10px;
+}
+
 .chatPhoneSelector {
   display: grid;
   flex: 0 1 176px;
@@ -4186,11 +4201,37 @@
 }
 
 .phoneChatPage[data-phone-chat-device="tablet"] .chatListHeader {
+  gap: 10px;
   padding: calc(env(safe-area-inset-top) + 10px) 16px 10px;
 }
 
 .phoneChatPage[data-phone-chat-device="tablet"] .chatListHeader h1 {
   font-size: 36px;
+}
+
+.phoneChatPage[data-phone-chat-device="tablet"] .chatTitleRow {
+  align-items: center;
+  min-height: 44px;
+  max-height: none;
+}
+
+.phoneChatPage[data-phone-chat-device="tablet"] .chatTitleRight {
+  flex: 1 1 auto;
+}
+
+.phoneChatPage[data-phone-chat-device="tablet"] .chatTitleActions {
+  display: inline-flex;
+}
+
+.phoneChatPage[data-phone-chat-device="tablet"] .roundButton,
+.phoneChatPage[data-phone-chat-device="tablet"] .newChatButton {
+  width: 42px;
+  height: 42px;
+}
+
+.phoneChatPage[data-phone-chat-device="tablet"] .newChatButton svg {
+  width: 30px;
+  height: 30px;
 }
 
 .phoneChatPage[data-phone-chat-device="tablet"] .chatList {

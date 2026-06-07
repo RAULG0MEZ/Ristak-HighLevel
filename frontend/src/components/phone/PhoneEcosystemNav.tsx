@@ -13,11 +13,13 @@ import styles from './PhoneEcosystemNav.module.css'
 interface PhoneEcosystemNavProps {
   active: PhoneSection
   badges?: Partial<Record<PhoneSection, number>>
+  placement?: 'bottom' | 'top'
 }
 
-export const PhoneEcosystemNav: React.FC<PhoneEcosystemNavProps> = ({ active, badges = {} }) => {
+export const PhoneEcosystemNav: React.FC<PhoneEcosystemNavProps> = ({ active, badges = {}, placement = 'bottom' }) => {
   const activeIndex = getPhoneSectionIndex(active)
   const [indicatorIndex, setIndicatorIndex] = useState(() => readStoredPhoneNavIndex(activeIndex))
+  const className = placement === 'top' ? `${styles.dock} ${styles.dockTop}` : styles.dock
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -35,7 +37,7 @@ export const PhoneEcosystemNav: React.FC<PhoneEcosystemNavProps> = ({ active, ba
 
   return (
     <nav
-      className={styles.dock}
+      className={className}
       aria-label="Secciones de Ristak Chat"
       onContextMenu={(event) => event.preventDefault()}
       onDragStart={(event) => event.preventDefault()}

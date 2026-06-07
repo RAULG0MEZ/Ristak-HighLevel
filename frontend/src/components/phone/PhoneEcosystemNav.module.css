@@ -135,6 +135,26 @@
   transform: translateY(-1px);
 }
 
+.dockTop {
+  position: relative;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  z-index: 2;
+  width: 100%;
+  min-height: 52px;
+  padding: 5px 7px;
+  border-color: var(--phone-chat-border, rgba(17, 24, 39, 0.08));
+  background: color-mix(in srgb, var(--phone-chat-surface, #ffffff) 94%, transparent);
+  box-shadow: none;
+}
+
+.dockTop .iconWrap {
+  min-width: 30px;
+  min-height: 30px;
+}
+
 @media (max-width: 360px) {
   .dock {
     --dock-padding-x: 5px;
