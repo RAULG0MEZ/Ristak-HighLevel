@@ -704,6 +704,18 @@ function formatScheduledMessageLabel(value?: string | null) {
   return `Programado ${formatMessageDate(value)} ${time}`.trim()
 }
 
+function formatSchedulePreviewLabel(value?: string | null) {
+  if (!value) return 'Elige fecha y hora'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Elige fecha y hora'
+
+  const time = formatMessageTime(value)
+  const sameDay = date.toDateString() === new Date().toDateString()
+  if (sameDay) return `Se enviará a las ${time}`
+
+  return `Se enviará el ${formatMessageDate(value)} a las ${time}`.trim()
+}
+
 function capitalizeFirst(value: string) {
   if (!value) return value
   return value.charAt(0).toUpperCase() + value.slice(1)
@@ -8470,8 +8482,7 @@ export const PhoneChat: React.FC = () => {
         </div>
 
         <div className={styles.schedulePreview} aria-live="polite">
-          <Clock size={17} />
-          <span>{previewDate ? formatScheduledMessageLabel(previewDate.toISOString()) : 'Elige fecha y hora'}</span>
+          <span>{formatSchedulePreviewLabel(previewDate?.toISOString())}</span>
         </div>
 
         {scheduleError && (

@@ -4050,6 +4050,18 @@
   background: var(--phone-chat-panel);
 }
 
+.scheduleSheet .sheetHeader {
+  min-height: 58px;
+}
+
+.scheduleSheet .sheetHeader h2 {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  line-height: 1.16;
+  padding-bottom: 2px;
+}
+
 .sheetPanelInteractive {
   animation: none;
 }
@@ -4212,6 +4224,7 @@
   gap: 14px;
   align-content: start;
   min-height: 0;
+  overflow: hidden;
   padding: 0 0 4px;
 }
 
@@ -4222,7 +4235,7 @@
 
 .scheduleTimeRow {
   display: grid;
-  grid-template-columns: minmax(0, 0.88fr) minmax(0, 0.72fr) auto;
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 0.76fr) minmax(92px, 0.96fr);
   align-items: end;
   gap: 10px;
 }
@@ -4230,6 +4243,7 @@
 .scheduleField {
   display: grid;
   gap: 6px;
+  width: 100%;
   min-width: 0;
 }
 
@@ -4240,10 +4254,13 @@
 }
 
 .scheduleField input {
+  box-sizing: border-box;
+  display: block;
   width: 100%;
+  max-width: 100%;
   min-width: 0;
   height: 48px;
-  padding: 0 12px;
+  padding: 0 14px;
   border: 1px solid var(--phone-chat-border);
   border-radius: 12px;
   color: var(--phone-chat-text);
@@ -4252,7 +4269,17 @@
   font-size: 16px;
   font-weight: 720;
   letter-spacing: 0;
+  line-height: 48px;
+  text-align: center;
   outline: none;
+  overflow: hidden;
+}
+
+.scheduleField input[type="date"]::-webkit-date-and-time-value {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  text-align: center;
 }
 
 .scheduleField input:focus {
@@ -4261,8 +4288,11 @@
 }
 
 .schedulePeriodToggle {
+  box-sizing: border-box;
   display: grid;
-  grid-template-columns: repeat(2, 45px);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
+  min-width: 0;
   height: 48px;
   padding: 3px;
   border: 1px solid var(--phone-chat-border);
@@ -4286,13 +4316,15 @@
 }
 
 .schedulePreview {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  width: 100%;
   min-width: 0;
   color: var(--phone-chat-muted);
   font-size: 13px;
   font-weight: 780;
+  text-align: center;
 }
 
 .schedulePreview span {
