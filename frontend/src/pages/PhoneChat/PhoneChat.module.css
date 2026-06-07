@@ -3457,6 +3457,14 @@
   padding-bottom: max(12px, env(safe-area-inset-bottom));
 }
 
+.clabeSheet {
+  grid-template-rows: auto auto minmax(0, 1fr);
+  align-content: stretch;
+  height: min(78dvh, 660px);
+  min-height: 0;
+  background: var(--phone-chat-panel);
+}
+
 .settingsSheet {
   grid-template-rows: auto auto minmax(0, 1fr);
   align-content: stretch;
@@ -3662,6 +3670,10 @@
 
 .attachmentGrid .actionTemplate {
   background: var(--phone-chat-primary);
+}
+
+.attachmentGrid .actionClabe {
+  background: #0f766e;
 }
 
 .newChatStack {
@@ -3912,6 +3924,200 @@
 .templateStatusBlocked {
   color: #991b1b;
   background: #fee2e2;
+}
+
+.clabeStack {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-height: 0;
+  padding: 0 0 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.clabeActionsBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 38px;
+}
+
+.clabeActionsBar span {
+  color: var(--phone-chat-muted);
+  font-size: 12px;
+  font-weight: 820;
+}
+
+.clabeActionsBar button,
+.clabeEmpty button,
+.clabeSaveButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 38px;
+  border: 0;
+  border-radius: 999px;
+  font-weight: 840;
+}
+
+.clabeActionsBar button,
+.clabeEmpty button {
+  padding: 0 12px;
+  color: var(--phone-chat-text);
+  background: var(--phone-chat-surface-soft);
+  font-size: 12px;
+}
+
+.clabeForm {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 18px;
+  background: var(--phone-chat-surface-soft);
+}
+
+.clabeForm label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.clabeForm label span {
+  color: var(--phone-chat-muted);
+  font-size: 12px;
+  font-weight: 820;
+}
+
+.clabeForm input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--phone-chat-border);
+  border-radius: 14px;
+  color: var(--phone-chat-text);
+  background: var(--phone-chat-surface);
+  font: inherit;
+  font-size: 16px;
+}
+
+.clabeFormSplit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 9px;
+}
+
+.clabeSaveButton {
+  width: 100%;
+  color: #ffffff;
+  background: var(--phone-chat-primary);
+  font-size: 14px;
+}
+
+.clabeSaveButton:disabled {
+  opacity: 0.72;
+}
+
+.clabeList {
+  display: grid;
+  gap: 8px;
+  min-height: 0;
+}
+
+.clabeRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 0;
+  border: 0;
+  border-bottom: 1px solid var(--phone-chat-border);
+  color: var(--phone-chat-text);
+  background: transparent;
+  text-align: left;
+}
+
+.clabeRow:last-child {
+  border-bottom: 0;
+}
+
+.clabeRow:disabled {
+  opacity: 0.72;
+}
+
+.clabeRowIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  color: #ffffff;
+  background: #0f766e;
+}
+
+.clabeRowMain {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.clabeRowMain strong,
+.clabeRowMain small,
+.clabeRowMain em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clabeRowMain strong {
+  font-size: 15px;
+  font-weight: 840;
+}
+
+.clabeRowMain small {
+  color: var(--phone-chat-text);
+  font-size: 13px;
+  font-weight: 740;
+}
+
+.clabeRowMain em {
+  color: var(--phone-chat-muted);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 620;
+}
+
+.clabeEmpty {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  min-height: 180px;
+  padding: 24px 18px;
+  color: var(--phone-chat-muted);
+  text-align: center;
+}
+
+.clabeEmpty > svg {
+  color: #0f766e;
+}
+
+.clabeEmpty strong {
+  color: var(--phone-chat-text);
+  font-size: 17px;
+  font-weight: 860;
+}
+
+.clabeEmpty span {
+  max-width: 280px;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .sheetList {

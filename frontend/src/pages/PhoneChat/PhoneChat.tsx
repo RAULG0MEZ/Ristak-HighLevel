@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowRight,
+  Banknote,
   Bell,
   BellOff,
   Bot,
@@ -84,6 +85,7 @@ const SCROLLABLE_CHAT_SELECTOR = '[data-phone-chat-scrollable="true"], [data-pho
 const CHAT_READ_STATE_KEY = 'ristak_phone_chat_read_state_v1'
 const CHAT_ARCHIVED_STATE_KEY = 'ristak_phone_chat_archived_state_v1'
 const CHAT_MUTED_STATE_KEY = 'ristak_phone_chat_muted_state_v1'
+const PAYMENT_BANK_CLABES_CONFIG_KEY = 'payment_bank_clabes'
 const AI_AGENT_CHAT_ID = 'ristak-ai-agent-mobile-chat'
 const AI_AGENT_MESSAGES_KEY = 'ristak_phone_chat_ai_agent_messages_v1'
 const CHAT_SWIPE_ACTION_WIDTH = 184
@@ -115,7 +117,7 @@ type PhoneChatDeviceMode = PortableDeviceMode | 'checking'
 type ComposerStatus = 'idle' | 'sending'
 type MessageAudioRate = typeof MESSAGE_AUDIO_RATE_OPTIONS[number]
 type PaymentMode = 'single' | 'partial'
-type ActionSheet = 'attachments' | 'templates' | 'payment' | 'appointment' | 'settings' | 'newChat' | 'chatMore' | null
+type ActionSheet = 'attachments' | 'templates' | 'clabe' | 'payment' | 'appointment' | 'settings' | 'newChat' | 'chatMore' | null
 type ChatFilter = 'all' | 'unread' | 'appointments' | 'customers' | 'leads'
 type TemplateMode = 'choice' | 'send' | 'create'
 type ChatSettingsSection = 'appearance' | 'templates' | 'numbers' | 'notifications' | 'agent' | 'chats' | 'display' | null
@@ -125,6 +127,25 @@ type PhotoPickDestination = 'chat' | 'cameraShare'
 type ContactInfoDetailPanel = 'payments' | 'appointments' | null
 type ContactInfoArchiveTab = 'media' | 'links' | 'documents'
 type ChatAttachmentType = 'image' | 'audio' | 'video' | 'document' | 'file'
+type SendMessageOptions = {
+  textOverride?: string
+  preserveComposer?: boolean
+}
+
+interface BankClabeAccount {
+  id: string
+  alias: string
+  clabe: string
+  bank?: string
+  accountHolder?: string
+}
+
+interface BankClabeFormState {
+  alias: string
+  clabe: string
+  bank: string
+  accountHolder: string
+}
 
 interface ChatSwipeGesture {
   contactId: string
@@ -1721,6 +1742,62 @@ function createDefaultAppointmentRange(timeZone: string) {
   }
 }
 
+function createEmptyClabeForm(): BankClabeFormState {
+  return {
+    alias: '',
+    clabe: '',
+    bank: '',
+    accountHolder: ''
+  }
+}
+
+function normalizeClabe(value = '') {
+  return value.replace(/\D/g, '').slice(0, 18)
+}
+
+function formatClabe(value = '') {
+  const digits = normalizeClabe(value)
+  const chunks = [
+    digits.slice(0, 3),
+    digits.slice(3, 6),
+    digits.slice(6, 17),
+    digits.slice(17, 18)
+  ].filter(Boolean)
+
+  return chunks.join(' ')
+}
+
+function sanitizeBankClabes(value: BankClabeAccount[] | unknown): BankClabeAccount[] {
+  if (!Array.isArray(value)) return []
+
+  const normalized: Array<BankClabeAccount | null> = value
+    .map((item): BankClabeAccount | null => {
+      if (!item || typeof item !== 'object') return null
+      const account = item as Partial<BankClabeAccount>
+      const clabe = normalizeClabe(account.clabe || '')
+      if (clabe.length !== 18) return null
+
+      return {
+        id: String(account.id || `clabe-${clabe}`),
+        alias: String(account.alias || '').trim() || 'CLABE',
+        clabe,
+        bank: String(account.bank || '').trim(),
+        accountHolder: String(account.accountHolder || '').trim()
+      }
+    })
+
+  return normalized.filter((item): item is BankClabeAccount => Boolean(item))
+}
+
+function buildClabeMessage(account: BankClabeAccount) {
+  return [
+    'Te comparto los datos para transferencia:',
+    account.accountHolder ? `Titular: ${account.accountHolder}` : '',
+    account.bank ? `Banco: ${account.bank}` : '',
+    `CLABE: ${formatClabe(account.clabe)}`
+  ].filter(Boolean).join('\n')
+}
+
 export const PhoneChat: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
@@ -1744,6 +1821,7 @@ export const PhoneChat: React.FC = () => {
   const [showLastMessagePreview, setShowLastMessagePreview] = useAppConfig<boolean>('mobile_chat_show_last_preview', true)
   const [showUnreadIndicators, setShowUnreadIndicators] = useAppConfig<boolean>('mobile_chat_show_unread_indicators', true)
   const [aiReplySuggestionsEnabled, setAiReplySuggestionsEnabled] = useAppConfig<boolean>('mobile_chat_ai_reply_suggestions_enabled', false)
+  const [bankClabes, setBankClabes, savingBankClabes] = useAppConfig<BankClabeAccount[]>(PAYMENT_BANK_CLABES_CONFIG_KEY, [])
   const { connected: highLevelConnected } = useHighLevelConnected()
   const {
     safePreference: safeChatThemePreference,
@@ -1824,6 +1902,9 @@ export const PhoneChat: React.FC = () => {
   const [newTemplateBody, setNewTemplateBody] = useState('')
   const [newTemplateCategory, setNewTemplateCategory] = useState<MessageTemplateCategory>('utility')
   const [newTemplateLanguage, setNewTemplateLanguage] = useState('es_MX')
+  const [clabeFormOpen, setClabeFormOpen] = useState(false)
+  const [clabeDraft, setClabeDraft] = useState<BankClabeFormState>(createEmptyClabeForm)
+  const [sendingClabeId, setSendingClabeId] = useState<string | null>(null)
   const [aiMessages, setAiMessages] = useState<AIAgentMessage[]>(() => {
     const storedMessages = readAIAgentMobileMessages()
     return storedMessages.length > 0 ? storedMessages : [createAIAgentWelcomeMessage()]
@@ -2164,6 +2245,7 @@ export const PhoneChat: React.FC = () => {
           : activeContact
             ? 'Canal no disponible'
             : 'Sin contacto'
+  const savedBankClabes = useMemo(() => sanitizeBankClabes(bankClabes), [bankClabes])
   const activeTemplateAlerts = useMemo(() => (
     (whatsappStatus?.alerts?.items || []).filter((alert) => String(alert.entity_type || '').toLowerCase() === 'template')
   ), [whatsappStatus?.alerts?.items])
@@ -2894,6 +2976,9 @@ export const PhoneChat: React.FC = () => {
     }
     if (sheet !== 'chatMore') {
       setChatActionContactId(null)
+    }
+    if (sheet !== 'clabe') {
+      setClabeFormOpen(false)
     }
   }, [sheet])
 
@@ -3774,6 +3859,60 @@ export const PhoneChat: React.FC = () => {
     setSheet('templates')
   }
 
+  const handleOpenClabeSheet = () => {
+    setClabeFormOpen(false)
+    setSheet('clabe')
+  }
+
+  const handleSaveClabe = async () => {
+    const clabe = normalizeClabe(clabeDraft.clabe)
+
+    if (clabe.length !== 18) {
+      showToast('warning', 'CLABE incompleta', 'La CLABE interbancaria debe tener 18 números.')
+      return
+    }
+
+    if (savedBankClabes.some((account) => account.clabe === clabe)) {
+      showToast('warning', 'CLABE ya guardada', 'Esa CLABE ya aparece en tu lista.')
+      return
+    }
+
+    const nextAccount: BankClabeAccount = {
+      id: `clabe-${Date.now()}`,
+      alias: clabeDraft.alias.trim() || `CLABE ${clabe.slice(-4)}`,
+      clabe,
+      bank: clabeDraft.bank.trim(),
+      accountHolder: clabeDraft.accountHolder.trim()
+    }
+
+    try {
+      await setBankClabes([nextAccount, ...savedBankClabes])
+      setClabeDraft(createEmptyClabeForm())
+      setClabeFormOpen(false)
+      showToast('success', 'CLABE guardada', 'Ya puedes enviarla desde este chat.')
+    } catch {
+      showToast('error', 'No se guardó', 'Intenta guardar la CLABE otra vez.')
+    }
+  }
+
+  const handleSendClabe = async (account: BankClabeAccount) => {
+    if (!activeContact) {
+      showToast('error', 'Sin contacto', 'Abre un chat antes de enviar una CLABE.')
+      return
+    }
+
+    setSendingClabeId(account.id)
+    actionSheetDismiss.requestClose()
+    try {
+      await handleSendMessage('api', {
+        textOverride: buildClabeMessage(account),
+        preserveComposer: true
+      })
+    } finally {
+      setSendingClabeId(null)
+    }
+  }
+
   const handleShowMessageError = (message: ChatMessage) => {
     const reason = message.errorReason || 'WhatsApp no entregó la razón exacta. Intenta reenviar o revisa el estado de la conexión.'
     showToast('error', 'No se pudo enviar', reason)
@@ -3929,10 +4068,13 @@ export const PhoneChat: React.FC = () => {
     setDraftAttachments((current) => current.filter((attachment) => attachment.id !== attachmentId))
   }
 
-  const handleSendMessage = async (transport: 'api' | 'qr' = 'api') => {
-    const text = messageTextRef.current.trim()
-    const attachmentsToSend = draftAttachments
-    const voiceToSend = voiceDraft
+  const handleSendMessage = async (transport: 'api' | 'qr' = 'api', options: SendMessageOptions = {}) => {
+    const textOverride = options.textOverride?.trim()
+    const hasTextOverride = Boolean(textOverride)
+    const preserveComposer = Boolean(hasTextOverride && options.preserveComposer)
+    const text = hasTextOverride ? textOverride || '' : messageTextRef.current.trim()
+    const attachmentsToSend = hasTextOverride ? [] : draftAttachments
+    const voiceToSend = hasTextOverride ? null : voiceDraft
     if (!activeContact || (!text && attachmentsToSend.length === 0 && !voiceToSend)) return
 
     if (sendingThroughHighLevel) {
@@ -3965,9 +4107,11 @@ export const PhoneChat: React.FC = () => {
             : 'ghl_instagram'
 
       setComposerStatus('sending')
-      setComposerMessageText('')
-      if (composerInputRef.current) {
-        composerInputRef.current.textContent = ''
+      if (!preserveComposer) {
+        setComposerMessageText('')
+        if (composerInputRef.current) {
+          composerInputRef.current.textContent = ''
+        }
       }
 
       const optimisticMessage: ChatMessage = {
@@ -4031,7 +4175,7 @@ export const PhoneChat: React.FC = () => {
             ? { ...message, status: 'error', errorReason: errorMessage }
             : message
         )))
-        if (!messageTextRef.current.trim() && composerInputRef.current) {
+        if (!preserveComposer && !messageTextRef.current.trim() && composerInputRef.current) {
           setComposerMessageText(text)
           composerInputRef.current.textContent = text
         }
@@ -4079,14 +4223,16 @@ export const PhoneChat: React.FC = () => {
     const optimisticId = `local-${Date.now()}`
     const sentAt = new Date().toISOString()
     setComposerStatus('sending')
-    setComposerMessageText('')
-    if (composerInputRef.current) {
-      composerInputRef.current.textContent = ''
+    if (!preserveComposer) {
+      setComposerMessageText('')
+      if (composerInputRef.current) {
+        composerInputRef.current.textContent = ''
+      }
+      setDraftAttachments([])
+      stopVoicePreview(true)
+      voiceSendAfterStopRef.current = false
+      setVoiceDraft(null)
     }
-    setDraftAttachments([])
-    stopVoicePreview(true)
-    voiceSendAfterStopRef.current = false
-    setVoiceDraft(null)
     const optimisticMessages: ChatMessage[] = voiceToSend
       ? [{
           id: `${optimisticId}-audio`,
@@ -4205,9 +4351,11 @@ export const PhoneChat: React.FC = () => {
           ? { ...message, status: 'error', errorReason: errorMessage }
           : message
       )))
-      setDraftAttachments(attachmentsToSend)
-      setVoiceDraft(voiceToSend)
-      if (text && !messageTextRef.current.trim() && composerInputRef.current) {
+      if (!preserveComposer) {
+        setDraftAttachments(attachmentsToSend)
+        setVoiceDraft(voiceToSend)
+      }
+      if (!preserveComposer && text && !messageTextRef.current.trim() && composerInputRef.current) {
         setComposerMessageText(text)
         composerInputRef.current.textContent = text
       }
@@ -6587,9 +6735,108 @@ export const PhoneChat: React.FC = () => {
     )
   }
 
+  const renderClabeSheet = () => (
+    <div className={styles.clabeStack} data-bottom-sheet-scrollable="true">
+      <div className={styles.clabeActionsBar}>
+        <span>{savedBankClabes.length} guardada{savedBankClabes.length === 1 ? '' : 's'}</span>
+        <button type="button" onClick={() => setClabeFormOpen((current) => !current)}>
+          <Plus size={16} />
+          Agregar
+        </button>
+      </div>
+
+      {clabeFormOpen && (
+        <div className={styles.clabeForm}>
+          <label>
+            <span>Nombre</span>
+            <input
+              value={clabeDraft.alias}
+              onChange={(event) => setClabeDraft((current) => ({ ...current, alias: event.target.value }))}
+              placeholder="Cuenta principal"
+              disabled={savingBankClabes}
+            />
+          </label>
+          <label>
+            <span>CLABE</span>
+            <input
+              value={formatClabe(clabeDraft.clabe)}
+              onChange={(event) => setClabeDraft((current) => ({ ...current, clabe: normalizeClabe(event.target.value) }))}
+              inputMode="numeric"
+              placeholder="000 000 00000000000 0"
+              disabled={savingBankClabes}
+            />
+          </label>
+          <div className={styles.clabeFormSplit}>
+            <label>
+              <span>Banco</span>
+              <input
+                value={clabeDraft.bank}
+                onChange={(event) => setClabeDraft((current) => ({ ...current, bank: event.target.value }))}
+                placeholder="BBVA"
+                disabled={savingBankClabes}
+              />
+            </label>
+            <label>
+              <span>Titular</span>
+              <input
+                value={clabeDraft.accountHolder}
+                onChange={(event) => setClabeDraft((current) => ({ ...current, accountHolder: event.target.value }))}
+                placeholder="Ristak"
+                disabled={savingBankClabes}
+              />
+            </label>
+          </div>
+          <button type="button" className={styles.clabeSaveButton} onClick={handleSaveClabe} disabled={savingBankClabes}>
+            {savingBankClabes ? <Loader2 size={16} className={styles.spinIcon} /> : <Check size={16} />}
+            Guardar CLABE
+          </button>
+        </div>
+      )}
+
+      {savedBankClabes.length > 0 ? (
+        <div className={styles.clabeList}>
+          {savedBankClabes.map((account) => (
+            <button
+              key={account.id}
+              type="button"
+              className={styles.clabeRow}
+              onClick={() => handleSendClabe(account)}
+              disabled={Boolean(sendingClabeId)}
+            >
+              <span className={styles.clabeRowIcon}>
+                {sendingClabeId === account.id ? <Loader2 size={18} className={styles.spinIcon} /> : <Banknote size={19} />}
+              </span>
+              <span className={styles.clabeRowMain}>
+                <strong>{account.alias}</strong>
+                <small>{formatClabe(account.clabe)}</small>
+                {(account.bank || account.accountHolder) && (
+                  <em>{[account.bank, account.accountHolder].filter(Boolean).join(' · ')}</em>
+                )}
+              </span>
+              <Send size={17} />
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className={styles.clabeEmpty}>
+          <Banknote size={27} />
+          <strong>No hay CLABEs guardadas</strong>
+          <span>Agrega una CLABE para enviarla rápido cuando un cliente quiera pagar por transferencia.</span>
+          {!clabeFormOpen && (
+            <button type="button" onClick={() => setClabeFormOpen(true)}>
+              <Plus size={16} />
+              Agregar CLABE
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+
   const renderAttachmentsSheet = () => {
     const attachmentActions = [
       { label: 'Plantillas', Icon: FileText, className: styles.actionTemplate, onClick: handleOpenTemplatesSheet },
+      { label: 'CLABE', Icon: Banknote, className: styles.actionClabe, onClick: handleOpenClabeSheet },
       { label: 'Fotos', Icon: ImageIcon, className: styles.actionBlue, onClick: () => handlePickPhoto('photos') },
       { label: 'Cámara', Icon: Camera, className: styles.actionDark, onClick: () => handlePickPhoto('camera') },
       { label: 'Ubicación', Icon: MapPin, className: styles.actionGreen, onClick: () => handleUnavailableAttachment('Ubicación') },
@@ -6990,12 +7237,12 @@ export const PhoneChat: React.FC = () => {
 
       {sheet && (
         <div
-          className={`${styles.sheetBackdrop} ${sheet === 'settings' ? styles.settingsSheetBackdrop : ''} ${sheet === 'payment' || sheet === 'settings' || sheet === 'chatMore' ? styles.darkSheetBackdrop : ''} ${sheet === 'chatMore' ? styles.chatMoreSheetBackdrop : ''} ${actionSheetDismiss.closing ? styles.sheetBackdropClosing : ''}`}
+          className={`${styles.sheetBackdrop} ${sheet === 'settings' ? styles.settingsSheetBackdrop : ''} ${sheet === 'payment' || sheet === 'settings' || sheet === 'chatMore' || sheet === 'clabe' ? styles.darkSheetBackdrop : ''} ${sheet === 'chatMore' ? styles.chatMoreSheetBackdrop : ''} ${actionSheetDismiss.closing ? styles.sheetBackdropClosing : ''}`}
           style={actionSheetDismiss.backdropStyle}
           onClick={actionSheetDismiss.requestClose}
         >
           <section
-            className={`${styles.sheetPanel} ${sheet === 'payment' ? styles.paymentSheet : ''} ${sheet === 'attachments' ? styles.attachmentsSheet : ''} ${sheet === 'templates' ? styles.templatesSheet : ''} ${sheet === 'settings' ? styles.settingsSheet : ''} ${sheet === 'newChat' ? styles.newChatSheet : ''} ${sheet === 'chatMore' ? styles.chatMoreSheet : ''} ${actionSheetDismiss.closing ? styles.sheetPanelClosing : ''}`}
+            className={`${styles.sheetPanel} ${sheet === 'payment' ? styles.paymentSheet : ''} ${sheet === 'attachments' ? styles.attachmentsSheet : ''} ${sheet === 'templates' ? styles.templatesSheet : ''} ${sheet === 'clabe' ? styles.clabeSheet : ''} ${sheet === 'settings' ? styles.settingsSheet : ''} ${sheet === 'newChat' ? styles.newChatSheet : ''} ${sheet === 'chatMore' ? styles.chatMoreSheet : ''} ${actionSheetDismiss.closing ? styles.sheetPanelClosing : ''}`}
             style={actionSheetDismiss.sheetStyle}
             onClick={(event) => event.stopPropagation()}
             aria-label="Acciones del chat"
@@ -7011,6 +7258,7 @@ export const PhoneChat: React.FC = () => {
                   <h2>
                     {sheet === 'payment' && 'Registrar pago'}
                     {sheet === 'templates' && 'Plantillas'}
+                    {sheet === 'clabe' && 'CLABE'}
                     {sheet === 'settings' && 'Ajustes del chat'}
                     {sheet === 'newChat' && 'Nuevo chat'}
                     {sheet === 'chatMore' && 'Más acciones'}
@@ -7022,6 +7270,7 @@ export const PhoneChat: React.FC = () => {
             {sheet === 'newChat' && renderNewChatSheet()}
             {sheet === 'attachments' && renderAttachmentsSheet()}
             {sheet === 'templates' && renderTemplatesSheet()}
+            {sheet === 'clabe' && renderClabeSheet()}
             {sheet === 'settings' && renderChatSettingsSheet()}
             {sheet === 'chatMore' && renderChatMoreSheet()}
 
