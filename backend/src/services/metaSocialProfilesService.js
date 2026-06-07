@@ -5,6 +5,7 @@ import { logger } from '../utils/logger.js'
 import { getMetaConfig } from './metaAdsService.js'
 
 const THREADS_GRAPH_URL = 'https://graph.threads.net/v1.0'
+const META_PROFILE_PLATFORMS = new Set(['facebook', 'instagram'])
 
 function cleanString(value) {
   if (value === null || value === undefined) return ''
@@ -47,6 +48,14 @@ function formatFollowers(value) {
 
 function profileKey(platform, sourceId) {
   return `${platform}:${sourceId}`
+}
+
+function normalizePlatform(value) {
+  return cleanString(value).toLowerCase()
+}
+
+function isMetaProfilePlatform(value) {
+  return META_PROFILE_PLATFORMS.has(normalizePlatform(value))
 }
 
 async function fetchMetaConnection(initialUrl) {
@@ -220,6 +229,7 @@ async function fetchMetaPages(accessToken, params) {
 }
 
 export async function getConnectedMetaSocialProfiles(options = {}) {
+  const hasExplicitAccessToken = Boolean(cleanString(options.accessToken))
   const config = options.accessToken
     ? {
         access_token: cleanString(options.accessToken),
@@ -235,9 +245,19 @@ export async function getConnectedMetaSocialProfiles(options = {}) {
   const configuredPageId = cleanString(config?.page_id)
   const configuredInstagramAccountId = cleanString(config?.instagram_account_id)
   const updatedAt = new Date().toISOString()
+  const restrictToConfiguredProfiles = options.restrictToConfiguredProfiles !== false && !hasExplicitAccessToken
 
   if (!accessToken) {
-    return { connected: false, updatedAt, profiles: [] }
+    return { connected: false, updatedAt, profiles: [], message: 'Meta no tiene token guardado' }
+  }
+
+  if (restrictToConfiguredProfiles && !configuredPageId && !configuredInstagramAccountId) {
+    return {
+      connected: false,
+      updatedAt,
+      profiles: [],
+      message: 'No hay página de Facebook o Instagram conectada'
+    }
   }
 
   const richFields = [
@@ -284,15 +304,17 @@ export async function getConnectedMetaSocialProfiles(options = {}) {
   for (const page of pages) {
     const facebook = normalizeFacebookProfile(page, updatedAt, configuredPageId)
     const instagram = normalizeInstagramProfile(page, updatedAt, configuredPageId, configuredInstagramAccountId)
-    if (facebook) profiles.push(facebook)
-    if (instagram) profiles.push(instagram)
+    if (facebook && (!restrictToConfiguredProfiles || facebook.sourceId === configuredPageId)) profiles.push(facebook)
+    if (instagram && (!restrictToConfiguredProfiles || instagram.sourceId === configuredInstagramAccountId)) profiles.push(instagram)
   }
 
-  try {
-    const threads = await fetchThreadsProfile(accessToken, updatedAt)
-    if (threads) profiles.push(threads)
-  } catch (error) {
-    logger.warn(`No se pudo leer perfil Threads conectado: ${error.message}`)
+  if (!restrictToConfiguredProfiles) {
+    try {
+      const threads = await fetchThreadsProfile(accessToken, updatedAt)
+      if (threads) profiles.push(threads)
+    } catch (error) {
+      logger.warn(`No se pudo leer perfil Threads conectado: ${error.message}`)
+    }
   }
 
   return {
@@ -358,26 +380,62 @@ function findProfileForSettings(settings = {}, profiles = []) {
   )) || null
 }
 
+function shouldRefreshSocialSettings(settings = {}, today, force) {
+  if (settings.socialAutoSync !== true) return false
+  if (!isMetaProfilePlatform(settings.socialSourcePlatform || settings.platform)) return false
+  if (!cleanString(settings.socialSourceProfileId) && !cleanString(settings.socialSourceId)) return false
+  if (!force && cleanString(settings.socialSyncedAt).slice(0, 10) === today) return false
+  return true
+}
+
+async function getPublishedSocialProfileSyncTargets({ force, today }) {
+  const [siteCandidates, blockCandidates] = await Promise.all([
+    db.all(`
+      SELECT id, theme_json
+      FROM public_sites
+      WHERE LOWER(COALESCE(status, '')) = 'published'
+        AND theme_json LIKE '%socialAutoSync%'
+    `),
+    db.all(`
+      SELECT b.id, b.site_id, b.settings_json
+      FROM public_site_blocks b
+      INNER JOIN public_sites s ON s.id = b.site_id
+      WHERE b.block_type = 'social_profile'
+        AND LOWER(COALESCE(s.status, '')) = 'published'
+    `)
+  ])
+
+  const siteRows = siteCandidates.filter(row => (
+    shouldRefreshSocialSettings(parseJson(row.theme_json, {}), today, force)
+  ))
+  const blockRows = blockCandidates.filter(row => (
+    shouldRefreshSocialSettings(parseJson(row.settings_json, {}), today, force)
+  ))
+
+  return { siteRows, blockRows }
+}
+
 export async function refreshConnectedSocialProfileBlocks({ force = false } = {}) {
-  const { connected, profiles } = await getConnectedMetaSocialProfiles()
-  if (!connected || profiles.length === 0) {
-    return { success: false, updated: 0, message: 'No hay perfiles Meta conectados' }
+  const today = new Date().toISOString().slice(0, 10)
+  const { siteRows, blockRows } = await getPublishedSocialProfileSyncTargets({ force, today })
+
+  if (siteRows.length === 0 && blockRows.length === 0) {
+    return {
+      success: false,
+      updated: 0,
+      message: 'No hay perfiles sociales publicados con actualización automática'
+    }
   }
 
-  const today = new Date().toISOString().slice(0, 10)
-  const rows = await db.all(
-    "SELECT id, site_id, settings_json FROM public_site_blocks WHERE block_type = 'social_profile'"
-  )
+  const { connected, profiles, message } = await getConnectedMetaSocialProfiles()
+  if (!connected || profiles.length === 0) {
+    return { success: false, updated: 0, message: message || 'No hay perfiles Meta conectados' }
+  }
 
   let updated = 0
-  const siteRows = await db.all(
-    "SELECT id, theme_json FROM public_sites WHERE theme_json LIKE '%socialAutoSync%'"
-  )
 
   for (const row of siteRows) {
     const theme = parseJson(row.theme_json, {})
-    if (theme.socialAutoSync !== true) continue
-    if (!force && cleanString(theme.socialSyncedAt).slice(0, 10) === today) continue
 
     const profile = findProfileForSettings(theme, profiles)
     if (!profile) continue
@@ -389,10 +447,8 @@ export async function refreshConnectedSocialProfileBlocks({ force = false } = {}
     updated += 1
   }
 
-  for (const row of rows) {
+  for (const row of blockRows) {
     const settings = parseJson(row.settings_json, {})
-    if (settings.socialAutoSync !== true) continue
-    if (!force && cleanString(settings.socialSyncedAt).slice(0, 10) === today) continue
 
     const profile = findProfileForSettings(settings, profiles)
     if (!profile) continue

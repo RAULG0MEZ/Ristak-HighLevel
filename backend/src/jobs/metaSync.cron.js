@@ -25,9 +25,9 @@ export function startMetaSyncCron() {
     }
   })
 
-  // Refresca una vez al dia los seguidores usados por bloques de perfil social.
+  // Refresca una vez al dia los seguidores usados por perfiles sociales publicados.
   cron.schedule('17 5 * * *', async () => {
-    logger.info('Ejecutando actualización diaria de perfiles sociales Meta...')
+    logger.info('Revisando perfiles sociales publicados antes de actualizar datos de Meta...')
     try {
       const result = await refreshConnectedSocialProfileBlocks()
       if (result.success) {

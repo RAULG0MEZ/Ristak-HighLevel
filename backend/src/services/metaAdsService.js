@@ -813,7 +813,7 @@ export async function syncMetaAds(startDate, onProgress = null) {
   try {
     const config = await getMetaConfig()
     if (!config?.ad_account_id || !config?.access_token) {
-      throw new Error('No hay configuración completa de Meta Ads. Configura cuenta de anuncios y token primero.')
+      throw new Error('No hay cuenta publicitaria de Meta conectada. Conecta una cuenta de anuncios y token primero.')
     }
 
     const { ad_account_id, access_token } = config
@@ -1000,13 +1000,13 @@ export async function updateRecentAds() {
 
     const config = await getMetaConfig()
     if (!config?.ad_account_id || !config?.access_token) {
-      logger.warn('No hay configuración de Meta. Saltando actualización de ads recientes.')
+      logger.warn('No hay cuenta publicitaria de Meta conectada. Saltando actualización de ads recientes.')
       syncProgress = {
         status: 'error',
-        step: 'Meta Ads sin configurar',
+        step: 'Meta Ads sin cuenta publicitaria conectada',
         total: 0,
         current: 0,
-        message: 'No hay configuración completa de Meta Ads',
+        message: 'No hay cuenta publicitaria conectada en Meta Ads',
         monthsTotal: 0,
         monthsCurrent: 0
       }
