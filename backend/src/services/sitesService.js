@@ -4897,13 +4897,26 @@ function getImportedAIRegionUserRequestText(text = '') {
   return match ? match[1] : raw
 }
 
+function getImportedAIRegionNormalizedUserRequestText(text = '') {
+  return decodeHtmlEntities(getImportedAIRegionUserRequestText(text)).toLowerCase()
+}
+
 function shouldApplyImportedAIRegionCenteredLayoutFallback(text = '') {
-  const normalized = decodeHtmlEntities(getImportedAIRegionUserRequestText(text)).toLowerCase()
+  const normalized = getImportedAIRegionNormalizedUserRequestText(text)
   const asksForLayout = /\b(centrad|centrar|center|alinear|alineado|dise[nñ]o|orden|primero|luego|debajo|abajo|arriba|apilad|vertical)\b/i.test(normalized)
   const mentionsTitle = /\b(titular|titulo|t[ií]tulo|headline|encabezado)\b/i.test(normalized)
   const mentionsVideo = /\b(video|player|wistia|vsl|presentacion|presentaci[oó]n)\b/i.test(normalized)
   const mentionsButton = /\b(bot[oó]n|cta|agendar|llamada|agenda)\b/i.test(normalized)
   return asksForLayout && mentionsTitle && mentionsVideo && mentionsButton
+}
+
+function shouldApplyImportedAIRegionVideoOnlyFallback(text = '') {
+  const normalized = getImportedAIRegionNormalizedUserRequestText(text)
+  const asksToRemove = /\b(borra|borrar|borres|quita|quitar|quites|elimina|eliminar|elimin[aá]|limpia|limpiar|deja|dejar|solo|solamente|unicamente|únicamente)\b/i.test(normalized)
+  const mentionsVideo = /\b(video|player|wistia|youtube|iframe|embed|vsl|presentacion|presentaci[oó]n)\b/i.test(normalized)
+  const mentionsOtherContent = /\b(contenedor|contenedores|caja|cajas|card|cards|bloque|bloques|elemento|elementos|texto|textos|titular|titulo|t[ií]tulo|subtitulo|subt[ií]tulo|bot[oó]n|cta)\b/i.test(normalized)
+  const asksBigCentered = /\b(grande|centrad|centrar|center|ancho|completo|full|principal)\b/i.test(normalized)
+  return asksToRemove && mentionsVideo && (mentionsOtherContent || asksBigCentered)
 }
 
 function parseImportedAIRegionMetaLine(line = '') {
@@ -4982,7 +4995,7 @@ function pickImportedAIRegionLayoutHints(hints = []) {
 function findImportedHtmlContainerEnclosingRanges(html = '', ranges = []) {
   const source = String(html || '')
   const usableRanges = ranges.filter(range => range && Number.isFinite(range.start) && Number.isFinite(range.end))
-  if (usableRanges.length < 2) return null
+  if (usableRanges.length < 1) return null
 
   const minStart = Math.min(...usableRanges.map(range => range.start))
   const maxEnd = Math.max(...usableRanges.map(range => range.end))
@@ -5031,16 +5044,91 @@ function setImportedHtmlSnippetStyle(snippet = '', stylePatch = '') {
   })
 }
 
+function getImportedAIRegionEditableRanges(html = '', hints = []) {
+  const ranges = []
+  const seen = new Set()
+  hints.forEach(hint => {
+    const editId = cleanString(hint.editId)
+    if (!editId || seen.has(editId)) return
+    const range = findImportedEditableElementById(html, editId, hint.editType || '')
+    if (!range) return
+    seen.add(editId)
+    ranges.push(range)
+  })
+  return ranges
+}
+
+function getImportedAIRegionVideoHint(hints = []) {
+  const editableHints = hints.filter(hint => cleanString(hint.editId))
+  return editableHints.find(hint => hint.role === 'video/player' || hint.editType === 'video') ||
+    editableHints.find(hint => getImportedAIRegionHintScore(hint, ['video', 'player', 'wistia', 'youtube', 'iframe', 'embed']) > 0)
+}
+
+function buildImportedAIRegionVideoOnlyMarkup(videoHtml = '') {
+  const styledVideoHtml = setImportedHtmlSnippetStyle(
+    videoHtml,
+    'width:100% !important;max-width:980px !important;min-height:420px !important;aspect-ratio:16/9 !important;margin:0 auto !important;display:block !important;'
+  )
+  return `
+  <div class="rstk-ai-region-video-only-inner" data-rstk-ai-region-layout="video-only" style="width:min(1040px,100%);margin:0 auto;padding:clamp(30px,6vw,78px) clamp(16px,4vw,44px);display:flex;align-items:center;justify-content:center;text-align:center;">
+    <div class="rstk-ai-region-video-only-media" style="width:100%;display:flex;align-items:center;justify-content:center;">${styledVideoHtml}</div>
+  </div>`.trim()
+}
+
+function applyImportedAIRegionVideoOnlyFallbackToHtml(html = '', promptText = '') {
+  const source = String(html || '')
+  if (!shouldApplyImportedAIRegionVideoOnlyFallback(promptText)) {
+    return { html: source, applied: false, reason: 'La solicitud no pidio dejar solo el video.' }
+  }
+
+  const hints = parseImportedAIRegionElementHints(promptText)
+  const videoHint = getImportedAIRegionVideoHint(hints)
+  if (!videoHint) {
+    return { html: source, applied: false, reason: 'No se detecto un video dentro de la zona seleccionada.' }
+  }
+
+  const videoRange = findImportedEditableElementById(source, videoHint.editId, videoHint.editType || '')
+  if (!videoRange) {
+    return { html: source, applied: false, reason: 'El video detectado ya no coincide con el HTML guardado.' }
+  }
+
+  const selectedRanges = getImportedAIRegionEditableRanges(source, hints)
+  const container = findImportedHtmlContainerEnclosingRanges(
+    source,
+    selectedRanges.length > 1 ? selectedRanges : [videoRange]
+  )
+  const videoMarkup = buildImportedAIRegionVideoOnlyMarkup(videoRange.html)
+
+  if (!container || cleanString(container.tagName).toLowerCase() === cleanString(videoRange.tagName).toLowerCase() && container.start === videoRange.start) {
+    return {
+      html: `${source.slice(0, videoRange.start)}<div class="rstk-ai-region-video-only">${videoMarkup}</div>${source.slice(videoRange.end)}`,
+      applied: true,
+      reason: 'Se reemplazo el elemento de video por una version grande y centrada.'
+    }
+  }
+
+  const openingTag = mergeImportedHtmlClass(container.openingTag, container.attrsText, 'rstk-ai-region-video-only')
+  const replacement = `${openingTag}
+${videoMarkup}
+</${container.tagName}>`
+
+  return {
+    html: `${source.slice(0, container.start)}${replacement}${source.slice(container.end)}`,
+    applied: true,
+    reason: 'Se reemplazo la zona seleccionada por solo el video grande y centrado.'
+  }
+}
+
 function applyImportedAIRegionCenteredLayoutFallbackToHtml(html = '', promptText = '') {
   const source = String(html || '')
   if (!shouldApplyImportedAIRegionCenteredLayoutFallback(promptText)) {
-    return { html: source, applied: false }
+    return { html: source, applied: false, reason: 'La solicitud no pidio layout centrado con titular, video y boton.' }
   }
 
   const hints = parseImportedAIRegionElementHints(promptText)
   const layoutHints = pickImportedAIRegionLayoutHints(hints)
   if (!layoutHints.title || !layoutHints.video || !layoutHints.button) {
-    return { html: source, applied: false }
+    return { html: source, applied: false, reason: 'Faltan titular, video o boton detectados en la seleccion.' }
   }
 
   const titleRange = findImportedEditableElementById(source, layoutHints.title.editId, layoutHints.title.editType || '')
@@ -5050,11 +5138,11 @@ function applyImportedAIRegionCenteredLayoutFallbackToHtml(html = '', promptText
   const videoRange = findImportedEditableElementById(source, layoutHints.video.editId, layoutHints.video.editType || '')
   const buttonRange = findImportedEditableElementById(source, layoutHints.button.editId, layoutHints.button.editType || '')
   if (!titleRange || !videoRange || !buttonRange) {
-    return { html: source, applied: false }
+    return { html: source, applied: false, reason: 'Los elementos detectados ya no coinciden con el HTML guardado.' }
   }
 
   const container = findImportedHtmlContainerEnclosingRanges(source, [titleRange, subtitleRange, videoRange, buttonRange])
-  if (!container) return { html: source, applied: false }
+  if (!container) return { html: source, applied: false, reason: 'No se encontro un contenedor comun para reordenar la zona.' }
 
   const titleHtml = setImportedHtmlSnippetStyle(titleRange.html, 'text-align:center !important; margin-left:auto !important; margin-right:auto !important; max-width:860px !important;')
   const subtitleHtml = subtitleRange
@@ -5074,7 +5162,8 @@ function applyImportedAIRegionCenteredLayoutFallbackToHtml(html = '', promptText
 
   return {
     html: `${source.slice(0, container.start)}${replacement}${source.slice(container.end)}`,
-    applied: true
+    applied: true,
+    reason: 'Se reordeno la zona como titular, subtitulo, video y boton.'
   }
 }
 
@@ -5138,12 +5227,21 @@ function normalizeImportedAIHtmlPageForActivePage(page = {}, currentImport = {},
   }
 }
 
-function buildImportedAIRegionFallbackPage({ currentImport = {}, importedPages = [], activePageId = '', promptText = '', siteKind = 'landing' } = {}) {
+function buildImportedAIRegionFallbackPageResult({ currentImport = {}, importedPages = [], activePageId = '', promptText = '', siteKind = 'landing' } = {}) {
   const sourcePage = findImportedAIActivePageContext(importedPages, activePageId)
   const sourceHtml = sourcePage?.html || currentImport.htmlSanitized || currentImport.htmlOriginal || ''
-  const fallback = applyImportedAIRegionCenteredLayoutFallbackToHtml(sourceHtml, promptText)
+  const fallbackType = shouldApplyImportedAIRegionVideoOnlyFallback(promptText)
+    ? 'video_only'
+    : 'centered_title_video_button'
+  const fallback = fallbackType === 'video_only'
+    ? applyImportedAIRegionVideoOnlyFallbackToHtml(sourceHtml, promptText)
+    : applyImportedAIRegionCenteredLayoutFallbackToHtml(sourceHtml, promptText)
   if (!fallback.applied || normalizeImportedHtmlForChangeDetection(fallback.html) === normalizeImportedHtmlForChangeDetection(sourceHtml)) {
-    return null
+    return {
+      page: null,
+      type: fallbackType,
+      reason: fallback.reason || 'No hubo cambios visibles en el HTML.'
+    }
   }
 
   const title = sourcePage?.title || getImportedHtmlTitle(fallback.html, currentImport.originalFilename || 'Pagina importada')
@@ -5159,23 +5257,31 @@ function buildImportedAIRegionFallbackPage({ currentImport = {}, importedPages =
 
   if (Array.isArray(importedPages) && importedPages.length > 1 && sourcePage) {
     return {
-      ...basePage,
-      html: '',
-      pages: importedPages.map(existingPage => (
-        cleanString(existingPage.id) === cleanString(sourcePage.id)
-          ? {
-            ...existingPage,
-            title,
-            description: basePage.description,
-            filename: existingPage.filename || basePage.filename,
-            html: fallback.html
-          }
-          : existingPage
-      ))
+      page: {
+        ...basePage,
+        html: '',
+        pages: importedPages.map(existingPage => (
+          cleanString(existingPage.id) === cleanString(sourcePage.id)
+            ? {
+              ...existingPage,
+              title,
+              description: basePage.description,
+              filename: existingPage.filename || basePage.filename,
+              html: fallback.html
+            }
+            : existingPage
+        ))
+      },
+      type: fallbackType,
+      reason: fallback.reason || 'Fallback aplicado.'
     }
   }
 
-  return basePage
+  return {
+    page: basePage,
+    type: fallbackType,
+    reason: fallback.reason || 'Fallback aplicado.'
+  }
 }
 
 export async function listSites() {
@@ -6615,7 +6721,67 @@ export async function createSiteWithAIHtml(input = {}) {
   }
 }
 
+function createSitesAIEditDebug({ traceId, siteId, activePageId, model, importedPages = [], visualContext = null, messages = [] } = {}) {
+  const promptText = getSitesAIConversationText(messages)
+  return {
+    traceId,
+    siteId: cleanString(siteId),
+    activePageId: cleanString(activePageId),
+    model: cleanString(model),
+    pageCount: Array.isArray(importedPages) ? importedPages.length : 0,
+    visualContext: Boolean(visualContext?.summary || visualContext?.screenshotDataUrl),
+    selectedElements: Array.isArray(visualContext?.elements) ? visualContext.elements.length : 0,
+    requestPreview: limitString(getImportedAIRegionUserRequestText(promptText), 420),
+    aiStatus: '',
+    aiReply: '',
+    changedByAI: false,
+    fallbackAttempted: false,
+    fallbackApplied: false,
+    fallbackType: '',
+    fallbackReason: '',
+    finalStatus: '',
+    steps: []
+  }
+}
+
+function addSitesAIEditDebugStep(debug, message = '') {
+  const cleanMessage = limitString(message, 420)
+  if (!debug || !cleanMessage) return
+  debug.steps.push(cleanMessage)
+}
+
+function getSitesAIEditDebugPayload(debug = {}) {
+  return {
+    traceId: debug.traceId,
+    siteId: debug.siteId,
+    activePageId: debug.activePageId,
+    model: debug.model,
+    pageCount: debug.pageCount,
+    visualContext: debug.visualContext,
+    selectedElements: debug.selectedElements,
+    requestPreview: debug.requestPreview,
+    aiStatus: debug.aiStatus,
+    aiReply: limitString(debug.aiReply, 900),
+    changedByAI: Boolean(debug.changedByAI),
+    fallbackAttempted: Boolean(debug.fallbackAttempted),
+    fallbackApplied: Boolean(debug.fallbackApplied),
+    fallbackType: debug.fallbackType,
+    fallbackReason: debug.fallbackReason,
+    finalStatus: debug.finalStatus,
+    steps: Array.isArray(debug.steps) ? debug.steps.slice(-12) : []
+  }
+}
+
+function logSitesAIEditDebug(debug = {}, event = 'step', extra = {}) {
+  logger.info('[Sites AI HTML edit]', {
+    event,
+    ...getSitesAIEditDebugPayload(debug),
+    ...extra
+  })
+}
+
 export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
+  const traceId = crypto.randomUUID()
   const currentSite = await getSite(siteId, { includeBlocks: true, includeSubmissions: true })
   if (!currentSite) {
     const error = new Error('Site no encontrado')
@@ -6635,7 +6801,12 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
   if (messages.length === 0) {
     return {
       status: 'needs_more_info',
-      reply: 'Dime que quieres cambiar del HTML: titulo, imagen, orden de secciones, colores, textos o campos del formulario.'
+      reply: 'Dime que quieres cambiar del HTML: titulo, imagen, orden de secciones, colores, textos o campos del formulario.',
+      debug: {
+        traceId,
+        finalStatus: 'needs_more_info',
+        steps: ['No llego ninguna instruccion para editar el HTML.']
+      }
     }
   }
 
@@ -6651,24 +6822,60 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
   const importedPages = await getImportedSitePagesForAIContext(currentSite, currentImport)
   const visualContext = normalizeSitesAIVisualContext(input.visualContext || input.visual_context)
   const activePageId = getImportedAIActivePageId(input, visualContext)
-  const aiPayload = await callSitesAIHtmlEditor({
-    apiKey,
+  const debug = createSitesAIEditDebug({
+    traceId,
+    siteId,
+    activePageId,
     model,
-    siteKind,
-    messages,
-    agentConfig,
-    site: currentSite,
-    importedSite: currentImport,
     importedPages,
     visualContext,
-    activePageId
+    messages
   })
+  addSitesAIEditDebugStep(debug, `Inicio de edicion IA para pagina ${activePageId || 'activa'} con ${debug.selectedElements} elementos visuales.`)
+  logSitesAIEditDebug(debug, 'request_started')
+
+  let aiPayload = null
+  try {
+    aiPayload = await callSitesAIHtmlEditor({
+      apiKey,
+      model,
+      siteKind,
+      messages,
+      agentConfig,
+      site: currentSite,
+      importedSite: currentImport,
+      importedPages,
+      visualContext,
+      activePageId
+    })
+  } catch (error) {
+    debug.finalStatus = 'openai_error'
+    addSitesAIEditDebugStep(debug, `OpenAI fallo antes de devolver HTML: ${error.message}`)
+    logger.error('[Sites AI HTML edit]', {
+      event: 'openai_error',
+      ...getSitesAIEditDebugPayload(debug),
+      error
+    })
+    throw error
+  }
 
   const status = cleanString(aiPayload?.status)
+  debug.aiStatus = status || (hasSitesAIHtmlPayload(aiPayload) ? 'html_payload' : 'empty_payload')
+  debug.aiReply = limitString(aiPayload?.reply, 1000)
+  addSitesAIEditDebugStep(debug, `OpenAI respondio con estado ${debug.aiStatus || 'sin estado'}.`)
+  if (debug.aiReply) addSitesAIEditDebugStep(debug, `Respuesta de IA: ${debug.aiReply}`)
+  logSitesAIEditDebug(debug, 'openai_response', {
+    hasHtmlPayload: hasSitesAIHtmlPayload(aiPayload)
+  })
+
   if (status === 'needs_more_info' || !hasSitesAIHtmlPayload(aiPayload)) {
+    debug.finalStatus = 'needs_more_info'
+    addSitesAIEditDebugStep(debug, 'No se guardo porque OpenAI no devolvio HTML actualizable.')
+    logSitesAIEditDebug(debug, 'needs_more_info')
     return {
       status: 'needs_more_info',
-      reply: limitString(aiPayload?.reply, 1000) || 'Me falta saber que cambio quieres hacer en esta pagina HTML.'
+      reply: limitString(aiPayload?.reply, 1000) || 'Me falta saber que cambio quieres hacer en esta pagina HTML.',
+      debug: getSitesAIEditDebugPayload(debug)
     }
   }
 
@@ -6686,63 +6893,97 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
     mergeImportedPages,
     activePageId
   )
-  if (shouldApplyImportedAIRegionCenteredLayoutFallback(promptText)) {
+  debug.changedByAI = didAIChangeImportedHtml(page, currentImport, mergeImportedPages)
+  addSitesAIEditDebugStep(debug, debug.changedByAI
+    ? 'El HTML devuelto por OpenAI tiene diferencias contra la pagina guardada.'
+    : 'OpenAI devolvio HTML igual o sin cambios visibles contra la pagina guardada.')
+
+  if (shouldApplyImportedAIRegionCenteredLayoutFallback(promptText) || shouldApplyImportedAIRegionVideoOnlyFallback(promptText)) {
+    debug.fallbackAttempted = true
     const layoutFallbackPages = await getImportedSitePagesForAIContext(currentSite, currentImport, { htmlLimit: 0 })
-    const layoutFallbackPage = buildImportedAIRegionFallbackPage({
+    const layoutFallbackResult = buildImportedAIRegionFallbackPageResult({
       currentImport,
       importedPages: layoutFallbackPages.length ? layoutFallbackPages : mergeImportedPages,
       activePageId,
       promptText,
       siteKind
     })
+    const layoutFallbackPage = layoutFallbackResult.page
+    debug.fallbackType = layoutFallbackResult.type
+    debug.fallbackReason = layoutFallbackResult.reason
+    addSitesAIEditDebugStep(debug, `Fallback ${layoutFallbackResult.type}: ${layoutFallbackResult.reason}`)
 
     if (layoutFallbackPage && didAIChangeImportedHtml(layoutFallbackPage, currentImport, layoutFallbackPages.length ? layoutFallbackPages : mergeImportedPages)) {
+      debug.fallbackApplied = true
       const layoutResult = await replaceImportedSiteHtml(siteId, {
         html: layoutFallbackPage.html,
         pages: layoutFallbackPage.pages,
         title: layoutFallbackPage.title || currentSite.title,
         description: layoutFallbackPage.description || currentSite.description
       })
+      debug.finalStatus = 'updated_with_fallback'
+      addSitesAIEditDebugStep(debug, 'Se guardo el HTML usando fallback determinista porque era mas confiable para esta instruccion.')
+      logSitesAIEditDebug(debug, 'updated_with_fallback')
 
       return {
         status: 'updated',
-        reply: 'Ristak aplico el reordenamiento de la zona seleccionada: titular, subtitulo, video y boton.',
+        reply: layoutFallbackResult.type === 'video_only'
+          ? 'Ristak dejo solo el video grande y centrado en la zona seleccionada.'
+          : 'Ristak aplico el reordenamiento de la zona seleccionada: titular, subtitulo, video y boton.',
         site: layoutResult.site,
-        import: layoutResult.import
+        import: layoutResult.import,
+        debug: getSitesAIEditDebugPayload(debug)
       }
     }
+    logSitesAIEditDebug(debug, 'fallback_not_applied')
   }
 
-  if (!didAIChangeImportedHtml(page, currentImport, mergeImportedPages)) {
+  if (!debug.changedByAI) {
     const fallbackImportedPages = mergeImportedPages.length > 1
       ? mergeImportedPages
       : importedPages
-    const fallbackPage = buildImportedAIRegionFallbackPage({
+    debug.fallbackAttempted = true
+    const fallbackResultPage = buildImportedAIRegionFallbackPageResult({
       currentImport,
       importedPages: fallbackImportedPages,
       activePageId,
       promptText,
       siteKind
     })
+    const fallbackPage = fallbackResultPage.page
+    debug.fallbackType = fallbackResultPage.type
+    debug.fallbackReason = fallbackResultPage.reason
+    addSitesAIEditDebugStep(debug, `Fallback por HTML sin cambios ${fallbackResultPage.type}: ${fallbackResultPage.reason}`)
     if (fallbackPage && didAIChangeImportedHtml(fallbackPage, currentImport, fallbackImportedPages)) {
+      debug.fallbackApplied = true
       const fallbackResult = await replaceImportedSiteHtml(siteId, {
         html: fallbackPage.html,
         pages: fallbackPage.pages,
         title: fallbackPage.title || currentSite.title,
         description: fallbackPage.description || currentSite.description
       })
+      debug.finalStatus = 'updated_with_fallback_after_unchanged_ai'
+      addSitesAIEditDebugStep(debug, 'Se guardo fallback porque OpenAI no cambio el HTML visible.')
+      logSitesAIEditDebug(debug, 'updated_with_fallback_after_unchanged_ai')
 
       return {
         status: 'updated',
-        reply: 'La IA no hizo cambios visibles, asi que Ristak aplico el ajuste de layout en la zona seleccionada.',
+        reply: fallbackResultPage.type === 'video_only'
+          ? 'La IA no hizo cambios visibles, asi que Ristak dejo solo el video grande y centrado en la zona seleccionada.'
+          : 'La IA no hizo cambios visibles, asi que Ristak aplico el ajuste de layout en la zona seleccionada.',
         site: fallbackResult.site,
-        import: fallbackResult.import
+        import: fallbackResult.import,
+        debug: getSitesAIEditDebugPayload(debug)
       }
     }
 
+    debug.finalStatus = 'unchanged'
+    addSitesAIEditDebugStep(debug, 'No se guardo nada porque ni OpenAI ni el fallback produjeron un cambio visible.')
+    logSitesAIEditDebug(debug, 'unchanged')
     return {
       status: 'needs_more_info',
-      reply: 'La IA devolvio el mismo HTML sin cambios visibles. Reintenta indicando exactamente que debe cambiar en la zona seleccionada.'
+      reply: 'La IA devolvio el mismo HTML sin cambios visibles. Reintenta indicando exactamente que debe cambiar en la zona seleccionada.',
+      debug: getSitesAIEditDebugPayload(debug)
     }
   }
 
@@ -6752,12 +6993,16 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
     title: page.title || currentSite.title,
     description: page.description || currentSite.description
   })
+  debug.finalStatus = 'updated_with_ai_html'
+  addSitesAIEditDebugStep(debug, 'Se guardo el HTML devuelto por OpenAI.')
+  logSitesAIEditDebug(debug, 'updated_with_ai_html')
 
   return {
     status: 'updated',
     reply: limitString(aiPayload?.reply, 1000) || 'Listo, actualice el HTML y volvi a revisar los formularios.',
     site: result.site,
-    import: result.import
+    import: result.import,
+    debug: getSitesAIEditDebugPayload(debug)
   }
 }
 
