@@ -296,7 +296,7 @@ export interface SitesDomainConfig {
   }
 }
 
-export type ImportedFieldDestinationType = 'standard' | 'custom' | 'ignored'
+export type ImportedFieldDestinationType = 'standard' | 'custom' | 'new_custom' | 'ignored'
 
 export interface ImportedSiteFieldMapping {
   fieldId: string
@@ -306,6 +306,11 @@ export interface ImportedSiteFieldMapping {
   destinationType: ImportedFieldDestinationType
   destinationKey: string
   saveMode?: string
+  customFieldDefinitionId?: string
+  customFieldKey?: string
+  customFieldLabel?: string
+  customFieldDataType?: string
+  customFieldSyncTarget?: string
   confidence?: number
   ignored?: boolean
   options?: Array<{ label: string; value: string }>

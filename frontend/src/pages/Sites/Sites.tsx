@@ -4659,6 +4659,7 @@ export const Sites: React.FC = () => {
           <ImportedHtmlReviewModal
             review={importReview}
             saving={savingImportMapping}
+            customFields={customFields}
             onClose={() => setImportReview(null)}
             onConfirm={handleConfirmImportMapping}
           />
@@ -5733,7 +5734,7 @@ const ImportedHtmlEditorPanel: React.FC<{
       fields: fields.length,
       routed: fields.filter(field => !field.ignored && field.destinationType !== 'ignored').length,
       standard: fields.filter(field => !field.ignored && field.destinationType === 'standard').length,
-      custom: fields.filter(field => !field.ignored && field.destinationType === 'custom').length,
+      custom: fields.filter(field => !field.ignored && ['custom', 'new_custom'].includes(field.destinationType)).length,
       ignored: fields.filter(field => field.ignored || field.destinationType === 'ignored').length
     }
   }, [importData])
@@ -6618,13 +6619,64 @@ const cloneImportedFormMappings = (mappings: ImportedSiteFormMapping[]) =>
     fields: form.fields.map(field => ({ ...field }))
   }))
 
+const getImportedActiveCustomFields = (customFields: CustomFieldDefinition[]) =>
+  customFields
+    .filter(field => !field.archived)
+    .sort((a, b) => {
+      const folderCompare = (a.folderName || '').localeCompare(b.folderName || '')
+      if (folderCompare !== 0) return folderCompare
+      return (a.label || a.fieldKey || a.key).localeCompare(b.label || b.fieldKey || b.key)
+    })
+
+const getImportedFieldRouteType = (field: ImportedSiteFieldMapping): ImportedSiteFieldMapping['destinationType'] => {
+  if (field.ignored || field.destinationType === 'ignored' || field.saveMode === 'ignored') return 'ignored'
+  if (field.destinationType === 'standard' || field.saveMode === 'standard') return 'standard'
+  if (field.destinationType === 'custom' && (field.customFieldDefinitionId || field.customFieldKey)) return 'custom'
+  if (field.destinationType === 'new_custom' || field.saveMode === 'new_custom') return 'new_custom'
+  return 'new_custom'
+}
+
+const findImportedCustomFieldDefinition = (
+  customFields: CustomFieldDefinition[],
+  field: ImportedSiteFieldMapping
+) => {
+  const definitionId = field.customFieldDefinitionId || ''
+  const customKey = normalizeImportedDestinationKey(field.customFieldKey || field.destinationKey || '', '')
+  return customFields.find(customField => (
+    (definitionId && customField.definitionId === definitionId) ||
+    (customKey && normalizeImportedDestinationKey(customField.fieldKey || customField.key, '') === customKey)
+  )) || null
+}
+
+const buildExistingImportedCustomFieldPatch = (field: CustomFieldDefinition): Partial<ImportedSiteFieldMapping> => ({
+  destinationType: 'custom',
+  ignored: false,
+  saveMode: 'custom',
+  destinationKey: field.fieldKey || field.key,
+  customFieldDefinitionId: field.definitionId,
+  customFieldKey: field.fieldKey || field.key,
+  customFieldLabel: field.label || field.name || field.fieldKey || field.key,
+  customFieldDataType: field.dataType || 'text',
+  customFieldSyncTarget: field.syncTarget || 'local'
+})
+
+const clearImportedCustomFieldPatch: Partial<ImportedSiteFieldMapping> = {
+  customFieldDefinitionId: '',
+  customFieldKey: '',
+  customFieldLabel: '',
+  customFieldDataType: '',
+  customFieldSyncTarget: ''
+}
+
 const ImportedHtmlReviewModal: React.FC<{
   review: ImportReviewState
   saving: boolean
+  customFields: CustomFieldDefinition[]
   onClose: () => void
   onConfirm: (formMappings: ImportedSiteFormMapping[]) => void
-}> = ({ review, saving, onClose, onConfirm }) => {
+}> = ({ review, saving, customFields, onClose, onConfirm }) => {
   const [draft, setDraft] = useState<ImportedSiteFormMapping[]>(() => cloneImportedFormMappings(review.importData.formMappings || []))
+  const activeCustomFields = useMemo(() => getImportedActiveCustomFields(customFields), [customFields])
 
   useEffect(() => {
     setDraft(cloneImportedFormMappings(review.importData.formMappings || []))
@@ -6643,16 +6695,43 @@ const ImportedHtmlReviewModal: React.FC<{
   }
 
   const updateDestinationType = (formIndex: number, fieldIndex: number, field: ImportedSiteFieldMapping, destinationType: ImportedSiteFieldMapping['destinationType']) => {
-    const nextKey = destinationType === 'standard'
-      ? inferImportedStandardKey(field)
-      : destinationType === 'custom'
-        ? normalizeImportedDestinationKey(field.destinationKey || field.sourceName || field.label, 'campo_personalizado')
-        : field.destinationKey
+    if (destinationType === 'standard') {
+      patchField(formIndex, fieldIndex, {
+        ...clearImportedCustomFieldPatch,
+        destinationType,
+        ignored: false,
+        saveMode: destinationType,
+        destinationKey: inferImportedStandardKey(field)
+      })
+      return
+    }
+
+    if (destinationType === 'custom') {
+      const selectedField = findImportedCustomFieldDefinition(activeCustomFields, field) || activeCustomFields[0]
+      if (selectedField) {
+        patchField(formIndex, fieldIndex, buildExistingImportedCustomFieldPatch(selectedField))
+        return
+      }
+      destinationType = 'new_custom'
+    }
+
+    if (destinationType === 'new_custom') {
+      patchField(formIndex, fieldIndex, {
+        ...clearImportedCustomFieldPatch,
+        destinationType,
+        ignored: false,
+        saveMode: destinationType,
+        destinationKey: normalizeImportedDestinationKey(field.destinationKey || field.sourceName || field.label, 'campo_personalizado')
+      })
+      return
+    }
+
     patchField(formIndex, fieldIndex, {
-      destinationType,
-      ignored: destinationType === 'ignored',
-      saveMode: destinationType,
-      destinationKey: nextKey
+      ...clearImportedCustomFieldPatch,
+      destinationType: 'ignored',
+      ignored: true,
+      saveMode: 'ignored',
+      destinationKey: field.destinationKey
     })
   }
 
@@ -6691,7 +6770,11 @@ const ImportedHtmlReviewModal: React.FC<{
               </div>
               <div className={styles.importFieldList}>
                 {form.fields.map((field, fieldIndex) => {
-                  const destinationType = field.ignored ? 'ignored' : field.destinationType || 'custom'
+                  const destinationType = getImportedFieldRouteType(field)
+                  const selectedCustomField = destinationType === 'custom'
+                    ? findImportedCustomFieldDefinition(activeCustomFields, field)
+                    : null
+                  const selectedCustomFieldId = field.customFieldDefinitionId || selectedCustomField?.definitionId || ''
                   return (
                     <div key={`${field.fieldId}-${fieldIndex}`} className={styles.importFieldRow}>
                       <div className={styles.importFieldSource}>
@@ -6711,6 +6794,7 @@ const ImportedHtmlReviewModal: React.FC<{
                         >
                           <option value="standard">Dato del contacto</option>
                           <option value="custom">Campo personalizado</option>
+                          <option value="new_custom">Nuevo campo personalizado</option>
                           <option value="ignored">No guardar</option>
                         </select>
                       </label>
@@ -6729,17 +6813,45 @@ const ImportedHtmlReviewModal: React.FC<{
                             ))}
                           </select>
                         </label>
-                      ) : (
+                      ) : destinationType === 'custom' ? (
+                        <label>
+                          <span>Campo personalizado</span>
+                          <select
+                            value={selectedCustomFieldId}
+                            onChange={(event) => {
+                              const customField = activeCustomFields.find(item => item.definitionId === event.target.value)
+                              if (!customField) return
+                              patchField(formIndex, fieldIndex, buildExistingImportedCustomFieldPatch(customField))
+                            }}
+                          >
+                            {!activeCustomFields.length && (
+                              <option value="">No hay campos disponibles</option>
+                            )}
+                            {selectedCustomFieldId && !selectedCustomField && (
+                              <option value={selectedCustomFieldId}>{field.customFieldLabel || field.destinationKey || 'Campo guardado'}</option>
+                            )}
+                            {activeCustomFields.map(customField => (
+                              <option key={customField.definitionId} value={customField.definitionId}>
+                                {customField.label || customField.name || customField.fieldKey}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ) : destinationType === 'new_custom' ? (
                         <label>
                           <span>Nombre interno</span>
                           <input
                             value={field.destinationKey || ''}
-                            disabled={destinationType === 'ignored'}
                             placeholder="campo_personalizado"
                             onChange={(event) => patchField(formIndex, fieldIndex, {
                               destinationKey: normalizeImportedDestinationKey(event.target.value, field.sourceName || field.label)
                             })}
                           />
+                        </label>
+                      ) : (
+                        <label>
+                          <span>Dato</span>
+                          <input value="No se guarda" disabled readOnly />
                         </label>
                       )}
                     </div>

@@ -1619,9 +1619,9 @@ function buildDefaultImportedFormMappings(forms = []) {
         sourceName: field.sourceName,
         label: field.label || field.placeholder || field.sourceName,
         type: field.type,
-        destinationType: inferred.destinationType,
+        destinationType: inferred.destinationType === 'custom' ? 'new_custom' : inferred.destinationType,
         destinationKey: inferred.destinationKey,
-        saveMode: inferred.destinationType === 'standard' ? 'standard' : 'custom',
+        saveMode: inferred.destinationType === 'standard' ? 'standard' : 'new_custom',
         confidence: inferred.confidence,
         ignored: false,
         options: field.options || []
@@ -10862,7 +10862,7 @@ function getImportedRawFieldValue(rawFields = {}, mapping = {}) {
 }
 
 function inferImportedDataType(mapping = {}, value = '') {
-  const type = normalizeImportedFieldKey(mapping.type || mapping.dataType, '')
+  const type = normalizeImportedFieldKey(mapping.customFieldDataType || mapping.custom_field_data_type || mapping.type || mapping.dataType, '')
   if (type === 'textarea') return 'textarea'
   if (type === 'select') return Array.isArray(value) ? 'multiselect' : 'select'
   if (['radio', 'dropdown'].includes(type)) return 'select'
@@ -10873,18 +10873,40 @@ function inferImportedDataType(mapping = {}, value = '') {
 }
 
 function addImportedCustomField(customFields, field = {}, value, context = {}) {
-  const key = normalizeImportedFieldKey(field.destinationKey || field.key || field.sourceName || field.label, 'custom_field')
+  const definitionId = cleanString(
+    field.customFieldDefinitionId ||
+    field.custom_field_definition_id ||
+    field.definitionId ||
+    field.definition_id ||
+    field.customFieldId ||
+    field.custom_field_id
+  )
+  const key = normalizeImportedFieldKey(
+    field.customFieldKey ||
+    field.custom_field_key ||
+    field.fieldKey ||
+    field.field_key ||
+    field.destinationKey ||
+    field.key ||
+    field.sourceName ||
+    field.label,
+    'custom_field'
+  )
   if (!key || isEmptyImportedValue(value)) return
+  const label = cleanString(field.customFieldLabel || field.custom_field_label || field.label) || key
+  const dataType = cleanString(field.customFieldDataType || field.custom_field_data_type) || inferImportedDataType(field, value)
 
   customFields.push({
+    id: definitionId || key,
+    definitionId,
     key,
     fieldKey: key,
-    label: cleanString(field.label) || key,
-    name: cleanString(field.label) || key,
-    dataType: inferImportedDataType(field, value),
+    label,
+    name: label,
+    dataType,
     options: Array.isArray(field.options) ? field.options : [],
     value,
-    syncTarget: 'local',
+    syncTarget: cleanString(field.customFieldSyncTarget || field.custom_field_sync_target || field.syncTarget || field.sync_target || 'local'),
     sourceType: 'imported_html',
     sourceId: context.importId || '',
     sourceSiteId: context.siteId || '',
