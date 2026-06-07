@@ -7825,6 +7825,10 @@ const ImportedHtmlEditorPanel: React.FC<{
       cleanupDocument()
       const doc = iframe.contentDocument
       if (!doc) return
+      if (doc.location.href !== 'about:srcdoc') {
+        iframe.srcdoc = previewHtml
+        return
+      }
 
       const contextPage = activeImportedPage || importedPages[0] || { id: DEFAULT_FUNNEL_PAGE_ID, title: 'Página 1', sortOrder: 0 }
       void buildImportedPreviewVisualContext(iframe, site, contextPage)
@@ -8039,6 +8043,23 @@ const ImportedHtmlEditorPanel: React.FC<{
           (labelledFieldElement ? getImportedFormFieldElementFromTarget(labelledFieldElement) : null)
       }
 
+      const blockImportedPreviewActivation = (event: Event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        if (typeof event.stopImmediatePropagation === 'function') {
+          event.stopImmediatePropagation()
+        }
+      }
+
+      const getImportedPreviewActionTarget = (target: Element | null) => {
+        if (!target || typeof target.closest !== 'function') return null
+        return target.closest('a[href], button, input[type="submit"], input[type="button"], input[type="image"], [role="button"], [data-submit]') as HTMLElement | null
+      }
+
+      const handleFrameSubmit = (event: SubmitEvent) => {
+        blockImportedPreviewActivation(event)
+      }
+
       const handleFrameMouseOver = (event: MouseEvent) => {
         if (aiRegionMode) return
         const target = event.target as Element | null
@@ -8054,17 +8075,19 @@ const ImportedHtmlEditorPanel: React.FC<{
 
       const handleFrameClick = (event: MouseEvent) => {
         if (aiRegionMode) {
-          event.preventDefault()
-          event.stopPropagation()
+          blockImportedPreviewActivation(event)
           return
         }
         const target = event.target as Element | null
         if (!target || typeof target.closest !== 'function') return
+        const actionTarget = getImportedPreviewActionTarget(target)
+        if (actionTarget) {
+          blockImportedPreviewActivation(event)
+        }
 
         const formFieldElement = getFormFieldFromFrameTarget(target)
         if (formFieldElement) {
-          event.preventDefault()
-          event.stopPropagation()
+          blockImportedPreviewActivation(event)
           formFieldElement.blur()
           const fieldSelection = readImportedFormFieldSelection(formFieldElement, doc)
           const visualElement = (formFieldElement.closest('label') ||
@@ -8078,8 +8101,7 @@ const ImportedHtmlEditorPanel: React.FC<{
 
         const choiceInput = getImportedChoiceInputFromTarget(target, doc)
         if (choiceInput) {
-          event.preventDefault()
-          event.stopPropagation()
+          blockImportedPreviewActivation(event)
           const choiceSelection = readImportedChoiceSelection(choiceInput, doc)
           const visualElement = (choiceInput.closest('label') ||
             (choiceInput.id ? doc.querySelector(`label[for="${choiceInput.id.replace(/"/g, '\\"')}"]`) : null) ||
@@ -8094,8 +8116,7 @@ const ImportedHtmlEditorPanel: React.FC<{
         if (editableElement) {
           const selection = readImportedEditableSelection(editableElement)
           if (!selection) return
-          event.preventDefault()
-          event.stopPropagation()
+          blockImportedPreviewActivation(event)
           selectElement(editableElement)
           removeMediaActionButton()
           setAiRegionMode(false)
@@ -8122,8 +8143,7 @@ const ImportedHtmlEditorPanel: React.FC<{
 
         const sectionElement = target.closest(importedSectionSelector) as HTMLElement | null
         if (sectionElement) {
-          event.preventDefault()
-          event.stopPropagation()
+          blockImportedPreviewActivation(event)
           selectElement(sectionElement)
           setInlineEditor(null)
           setButtonEditor(null)
@@ -8141,10 +8161,12 @@ const ImportedHtmlEditorPanel: React.FC<{
         const target = event.target as Element | null
         if (!aiRegionMode) {
           if (target && typeof target.closest === 'function') {
+            if (getImportedPreviewActionTarget(target)) {
+              blockImportedPreviewActivation(event)
+            }
             const formFieldElement = getFormFieldFromFrameTarget(target)
             if (formFieldElement) {
-              event.preventDefault()
-              event.stopPropagation()
+              blockImportedPreviewActivation(event)
               formFieldElement.blur()
             }
           }
@@ -8259,10 +8281,14 @@ const ImportedHtmlEditorPanel: React.FC<{
       doc.addEventListener('mouseover', handleFrameMouseOver, true)
       doc.addEventListener('mousedown', handleRegionMouseDown, true)
       doc.addEventListener('click', handleFrameClick, true)
+      doc.addEventListener('auxclick', handleFrameClick, true)
+      doc.addEventListener('submit', handleFrameSubmit, true)
       cleanupDocument = () => {
         doc.removeEventListener('mouseover', handleFrameMouseOver, true)
         doc.removeEventListener('mousedown', handleRegionMouseDown, true)
         doc.removeEventListener('click', handleFrameClick, true)
+        doc.removeEventListener('auxclick', handleFrameClick, true)
+        doc.removeEventListener('submit', handleFrameSubmit, true)
         removeRegionDragHandlers()
         removeMediaActionButton()
         removeRegionBox()
@@ -8490,7 +8516,7 @@ const ImportedHtmlEditorPanel: React.FC<{
               className={styles.importedPreviewFrame}
               title={`Vista previa de ${activeImportedPage?.title || site.name}`}
               srcDoc={previewHtml}
-              sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
+              sandbox="allow-same-origin allow-scripts"
               referrerPolicy="no-referrer-when-downgrade"
             />
           )}
