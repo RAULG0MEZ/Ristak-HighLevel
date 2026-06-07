@@ -18,7 +18,7 @@
         var pathname = window.location.pathname || '/'
         var isPhoneRoute = pathname === '/phone' || pathname.indexOf('/phone/') === 0
         var isPhoneChatRoute = pathname === '/phone/chat' || pathname.indexOf('/phone/chat/') === 0
-        var title = isPhoneRoute ? 'Ristak Chat' : 'Ristak'
+        var title = 'Ristak'
         var themeColor = isPhoneRoute ? '#050505' : '#ffffff'
         var manifest = isPhoneChatRoute
           ? '/manifest.phone-chat.webmanifest'

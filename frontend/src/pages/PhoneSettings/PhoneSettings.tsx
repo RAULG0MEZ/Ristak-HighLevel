@@ -513,10 +513,10 @@ export const PhoneSettings: React.FC = () => {
   }
 
   return (
-    <main className={styles.phoneSettingsPage} aria-label="Ajustes móviles de Ristak Chat">
+    <main className={styles.phoneSettingsPage} aria-label="Ajustes móviles de Ristak">
       <PhonePageTransition active="settings" className={styles.phoneFrame}>
         <header className={styles.header}>
-          <p>Ristak Chat</p>
+          <p>Ristak</p>
           <h1>
             <span className={styles.desktopTitle}>{activeSection ? sectionTitle : 'Ajustes'}</span>
             <span className={styles.mobileTitle}>{activeSection ? mobileSectionTitle : 'Ajustes'}</span>

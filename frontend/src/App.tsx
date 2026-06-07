@@ -71,7 +71,7 @@ const ROUTE_BRANDING: Record<'ristak' | 'phone' | 'phoneChat', AppBranding> = {
     themeColor: '#ffffff'
   },
   phone: {
-    title: 'Ristak Chat',
+    title: 'Ristak',
     favicon: '/ristak-chat-icon-192.png',
     faviconType: 'image/png',
     manifest: '/manifest.phone.webmanifest',
@@ -79,7 +79,7 @@ const ROUTE_BRANDING: Record<'ristak' | 'phone' | 'phoneChat', AppBranding> = {
     themeColor: '#050505'
   },
   phoneChat: {
-    title: 'Ristak Chat',
+    title: 'Ristak',
     favicon: '/ristak-chat-home-icon-192.png',
     faviconType: 'image/png',
     manifest: '/manifest.phone-chat.webmanifest',

@@ -5,7 +5,7 @@ import { useNotification } from '@/contexts/NotificationContext'
 import styles from './Settings.module.css'
 
 const MOBILE_CHAT_PATH = '/phone/chat'
-const MOBILE_APP_NAME = 'Ristak Chat'
+const MOBILE_APP_NAME = 'Ristak'
 
 const safariSteps = [
   {
@@ -22,7 +22,7 @@ const safariSteps = [
   },
   {
     title: 'Agrega al inicio',
-    description: 'Elige “Agregar a pantalla de inicio”, deja el nombre Ristak Chat y toca Agregar.'
+    description: 'Elige “Agregar a pantalla de inicio”, deja el nombre Ristak y toca Agregar.'
   }
 ]
 

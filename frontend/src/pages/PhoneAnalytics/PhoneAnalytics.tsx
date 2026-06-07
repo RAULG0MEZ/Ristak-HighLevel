@@ -309,7 +309,7 @@ export const PhoneAnalytics: React.FC = () => {
   const activePeriod = PERIOD_OPTIONS.find((option) => option.id === period) || PERIOD_OPTIONS[0]
 
   useEffect(() => {
-    document.title = 'Analíticas móviles | Ristak Chat'
+    document.title = 'Analíticas móviles | Ristak'
   }, [])
 
   useEffect(() => {
@@ -523,11 +523,11 @@ export const PhoneAnalytics: React.FC = () => {
   }
 
   return (
-    <main className={styles.phoneAnalyticsPage} aria-label="Analíticas de Ristak Chat">
+    <main className={styles.phoneAnalyticsPage} aria-label="Analíticas de Ristak">
       <PhonePageTransition active="analytics" className={styles.phoneFrame} data-phone-scrollable="true">
         <header className={styles.header}>
           <div className={styles.headerContent}>
-            <p className={styles.eyebrow}>Ristak Chat</p>
+            <p className={styles.eyebrow}>Ristak</p>
             <div className={styles.titleRow}>
               <h1>Analíticas</h1>
               <button

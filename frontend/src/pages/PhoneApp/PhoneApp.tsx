@@ -378,7 +378,7 @@ export const PhoneApp: React.FC = () => {
   const endIso = formatDateToISO(endDate)
 
   useEffect(() => {
-    document.title = `${activeSection.label} mobile | Ristak Chat`
+    document.title = `${activeSection.label} mobile | Ristak`
   }, [activeSection.label])
 
   useEffect(() => {

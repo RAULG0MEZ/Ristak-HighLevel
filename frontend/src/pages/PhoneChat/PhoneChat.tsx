@@ -20,6 +20,7 @@ import {
   Globe2,
   Image as ImageIcon,
   Layers,
+  Link2,
   Loader2,
   Mail,
   MapPin,
@@ -43,6 +44,7 @@ import {
   Tag,
   Trash2,
   User,
+  Video,
   X
 } from 'lucide-react'
 import { FaMicrophone } from 'react-icons/fa'
@@ -121,6 +123,8 @@ type WhatsAppNumberMode = 'merged' | 'separated'
 type ConversationSortMode = 'recent' | 'unread'
 type PhotoPickDestination = 'chat' | 'cameraShare'
 type ContactInfoDetailPanel = 'payments' | 'appointments' | null
+type ContactInfoArchiveTab = 'media' | 'links' | 'documents'
+type ChatAttachmentType = 'image' | 'audio' | 'video' | 'document' | 'file'
 
 interface ChatSwipeGesture {
   contactId: string
@@ -213,7 +217,7 @@ interface ChatMessage {
   businessPhoneNumberId?: string
   transport?: 'api' | 'qr' | string
   attachment?: {
-    type: 'image' | 'audio'
+    type: ChatAttachmentType
     dataUrl?: string
     url?: string
     name?: string
@@ -274,6 +278,18 @@ interface ContactInfoAppointment {
   title: string
   status?: string | null
   startTime: string
+}
+
+interface ContactInfoArchiveItem {
+  id: string
+  tab: ContactInfoArchiveTab
+  type: Exclude<ChatAttachmentType, 'audio'> | 'link'
+  url: string
+  title: string
+  caption: string
+  date: string
+  direction: 'inbound' | 'outbound'
+  mimeType?: string
 }
 
 function getPhoneChatDeviceMode(): PhoneChatDeviceMode {
@@ -717,7 +733,7 @@ function createQuickTemplatePayload({
   return {
     folderId: null,
     name,
-    description: 'Creada desde Ristak Chat',
+    description: 'Creada desde Ristak',
     category,
     language,
     status: 'draft',
@@ -2368,8 +2384,8 @@ export const PhoneChat: React.FC = () => {
 
   useEffect(() => {
     document.title = aiAgentConversationOpen
-      ? 'Agente de IA | Ristak Chat'
-      : activeContact ? `${getContactName(activeContact)} | Ristak Chat` : 'Ristak Chat'
+      ? 'Agente de IA | Ristak'
+      : activeContact ? `${getContactName(activeContact)} | Ristak` : 'Ristak'
   }, [activeContact, aiAgentConversationOpen])
 
   useEffect(() => {
@@ -4232,7 +4248,7 @@ export const PhoneChat: React.FC = () => {
 
   const getAIAgentViewContext = (visibleText?: string): AIAgentViewContext => ({
     path: '/phone/chat',
-    title: document.title || 'Ristak Chat',
+    title: document.title || 'Ristak',
     routeLabel: 'Chat móvil',
     visibleText: visibleText || 'El usuario está usando la pantalla móvil de chats de Ristak.'
   })
@@ -6419,7 +6435,7 @@ export const PhoneChat: React.FC = () => {
             <MonitorX size={28} />
           </div>
           <div className={styles.blockedCopy}>
-            <p className={styles.eyebrow}>Ristak Chat</p>
+            <p className={styles.eyebrow}>Ristak</p>
             <h1 id="phone-chat-blocked-title">Sólo móvil o tablet</h1>
             <p>Esta app de chat está hecha para usarse desde el celular, como una app guardada en tu pantalla de inicio.</p>
           </div>
@@ -6442,7 +6458,7 @@ export const PhoneChat: React.FC = () => {
       <div className={styles.portraitLock} role="status" aria-live="polite">
         <Smartphone size={34} />
         <strong>Usa el celular en vertical</strong>
-        <span>Ristak Chat está bloqueado en modo vertical para que la pantalla no se desacomode.</span>
+        <span>Ristak está bloqueado en modo vertical para que la pantalla no se desacomode.</span>
       </div>
 
       <PhonePageTransition
@@ -6729,7 +6745,7 @@ export const PhoneChat: React.FC = () => {
               <div className={styles.sheetHeader}>
                 <div>
                   {sheet !== 'payment' && (
-                    <p>{activeContact ? getContactName(activeContact) : aiAgentConversationOpen ? 'Agente de IA' : 'Ristak Chat'}</p>
+                    <p>{activeContact ? getContactName(activeContact) : aiAgentConversationOpen ? 'Agente de IA' : 'Ristak'}</p>
                   )}
                   <h2>
                     {sheet === 'payment' && 'Registrar pago'}

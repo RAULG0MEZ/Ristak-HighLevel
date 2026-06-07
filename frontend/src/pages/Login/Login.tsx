@@ -51,7 +51,7 @@ export const Login: React.FC = () => {
             <div className={styles.logoContainer}>
               <LoginBrandLogo isPhoneLogin={isPhoneLogin} />
             </div>
-            <h1 className={`${styles.title} ${styles.visuallyHidden}`}>{isPhoneLogin ? 'Ristak Chat' : 'Ristak'}</h1>
+            <h1 className={`${styles.title} ${styles.visuallyHidden}`}>Ristak</h1>
             <p className={styles.subtitle}>Revisando tu acceso...</p>
           </div>
         </div>
@@ -103,7 +103,7 @@ export const Login: React.FC = () => {
           <div className={styles.logoContainer}>
             <LoginBrandLogo isPhoneLogin={isPhoneLogin} />
           </div>
-          <h1 className={`${styles.title} ${styles.visuallyHidden}`}>{isPhoneLogin ? 'Ristak Chat' : 'Ristak'}</h1>
+          <h1 className={`${styles.title} ${styles.visuallyHidden}`}>Ristak</h1>
           <p className={styles.subtitle}>
             {isPhoneLogin ? 'Entra para ver tus chats, pagos y citas desde el celular.' : 'Ingresa a tu cuenta'}
           </p>

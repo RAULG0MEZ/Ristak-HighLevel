@@ -41,7 +41,7 @@ export const PhoneEcosystemNav: React.FC<PhoneEcosystemNavProps> = ({ active, ba
     <nav
       className={dockClassName}
       style={style}
-      aria-label="Secciones de Ristak Chat"
+      aria-label="Secciones de Ristak"
       onContextMenu={(event) => event.preventDefault()}
       onDragStart={(event) => event.preventDefault()}
     >
