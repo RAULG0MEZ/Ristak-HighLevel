@@ -1344,18 +1344,19 @@
   padding: 8px 4px;
   border: 0;
   border-bottom: 1px solid rgba(17, 17, 17, 0.08);
-  border-radius: 0;
+  border-radius: 0 !important;
   color: #050505;
-  background: transparent;
+  background: transparent !important;
+  box-shadow: none !important;
   text-align: left;
   -webkit-tap-highlight-color: transparent;
 }
 
 :global(body[data-phone-chat-tone="dark"]) .contactOption {
   border-bottom-color: var(--phone-chat-border);
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 .contactAvatar {
