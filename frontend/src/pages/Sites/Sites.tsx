@@ -5454,18 +5454,15 @@ const importedChoiceSelector = 'input[type="radio"], input[type="checkbox"]'
 
 const importedButtonActionOptions: Array<{ value: ImportedButtonAction; label: string; demo?: boolean }> = [
   { value: 'submit', label: 'Enviar formulario' },
-  { value: 'next_page', label: 'Ir a la siguiente pagina' },
-  { value: 'specific_page', label: 'Ir a una pagina especifica' },
+  { value: 'next_page', label: 'Ir a la siguiente página' },
+  { value: 'specific_page', label: 'Ir a una página específica' },
   { value: 'url', label: 'Abrir enlace' },
   { value: 'disqualify', label: 'Descalificar / detener' },
-  { value: 'automation', label: 'Enviar automatizacion', demo: true },
-  { value: 'notify_team', label: 'Notificar al equipo', demo: true },
-  { value: 'add_tag', label: 'Agregar etiqueta al contacto', demo: true },
-  { value: 'send_whatsapp', label: 'Enviar WhatsApp', demo: true },
-  { value: 'create_payment', label: 'Crear pago', demo: true }
+  { value: 'automation', label: 'Enviar automatización', demo: true }
 ]
 
-const importedButtonActions = new Set<ImportedButtonAction>(['none', ...importedButtonActionOptions.map(option => option.value)])
+const importedSelectableButtonActions = new Set<ImportedButtonAction>(importedButtonActionOptions.map(option => option.value))
+const importedButtonActions = new Set<ImportedButtonAction>(['none', ...importedSelectableButtonActions])
 
 const normalizeImportedButtonAction = (value: string): ImportedButtonAction => {
   const action = value.trim().toLowerCase().replace(/[-\s]+/g, '_') as ImportedButtonAction
@@ -5500,9 +5497,9 @@ const parseImportedActionList = (rawValue: string): ImportedButtonActionStep[] =
   try {
     const parsed = JSON.parse(rawValue)
     if (!Array.isArray(parsed)) return []
-    return parsed
+    return getUniqueImportedActionSteps(parsed
       .map((item, index) => normalizeImportedActionStep(item, `action-${index + 1}`))
-      .filter((item): item is ImportedButtonActionStep => Boolean(item))
+      .filter((item): item is ImportedButtonActionStep => Boolean(item)))
   } catch {
     return []
   }
@@ -5630,21 +5627,36 @@ const readImportedEditableSelection = (element: HTMLElement): ImportedEditableSe
 
 const getDefaultImportedAdditionalAction = (actions: ImportedButtonActionStep[]): ImportedButtonAction => {
   const used = new Set(actions.map(action => action.action))
-  if (!used.has('submit')) return 'submit'
-  if (!used.has('next_page')) return 'next_page'
-  if (!used.has('automation')) return 'automation'
-  return 'notify_team'
+  return importedButtonActionOptions.find(option => !used.has(option.value))?.value || 'none'
+}
+
+const getUniqueImportedActionSteps = (actions: ImportedButtonActionStep[]) => {
+  const used = new Set<ImportedButtonAction>()
+  return actions.filter(step => {
+    if (!step || !importedSelectableButtonActions.has(step.action) || used.has(step.action)) return false
+    used.add(step.action)
+    return true
+  })
+}
+
+const areImportedActionsUnique = (actions: ImportedButtonActionStep[]) => (
+  actions.length === getUniqueImportedActionSteps(actions).length
+)
+
+const getImportedActionOptionsForStep = (actions: ImportedButtonActionStep[], index: number) => {
+  const usedByOtherSteps = new Set(actions.filter((_, currentIndex) => currentIndex !== index).map(step => step.action))
+  return importedButtonActionOptions.filter(option => option.value === actions[index]?.action || !usedByOtherSteps.has(option.value))
 }
 
 const isImportedActionStepValid = (step: ImportedButtonActionStep) => {
-  if (!step || step.action === 'none') return false
+  if (!step || step.action === 'none' || !importedSelectableButtonActions.has(step.action)) return false
   if (step.action === 'url') return Boolean(step.buttonUrl?.trim())
   if (step.action === 'specific_page') return Boolean(step.buttonPageId?.trim())
   return true
 }
 
 const areImportedActionsValid = (actions: ImportedButtonActionStep[]) =>
-  actions.length === 0 || actions.every(isImportedActionStepValid)
+  actions.length === 0 || (areImportedActionsUnique(actions) && actions.every(isImportedActionStepValid))
 
 const ImportedActionChainEditor: React.FC<{
   actions: ImportedButtonActionStep[]
@@ -5654,19 +5666,22 @@ const ImportedActionChainEditor: React.FC<{
   onChange: (actions: ImportedButtonActionStep[]) => void
 }> = ({ actions, targetPages, disabled = false, emptyLabel = 'Solo dejarlo como texto', onChange }) => {
   const setAction = (index: number, patch: Partial<ImportedButtonActionStep>) => {
-    onChange(actions.map((step, currentIndex) => currentIndex === index ? { ...step, ...patch } : step))
+    onChange(getUniqueImportedActionSteps(actions.map((step, currentIndex) => currentIndex === index ? { ...step, ...patch } : step)))
   }
   const removeAction = (index: number) => {
     onChange(actions.filter((_, currentIndex) => currentIndex !== index))
   }
   const addAction = () => {
-    onChange([...actions, makeImportedActionStep(getDefaultImportedAdditionalAction(actions))])
+    const action = getDefaultImportedAdditionalAction(actions)
+    if (action === 'none') return
+    onChange([...actions, makeImportedActionStep(action)])
   }
+  const canAddAction = !disabled && importedButtonActionOptions.some(option => !actions.some(step => step.action === option.value))
 
   if (actions.length === 0) {
     return (
       <label className={styles.importedActionField}>
-        <span>Accion</span>
+        <span>Acción</span>
         <select
           value="none"
           disabled={disabled}
@@ -5690,7 +5705,7 @@ const ImportedActionChainEditor: React.FC<{
         <div key={step.id || `${step.action}-${index}`} className={styles.importedActionStep}>
           <div className={styles.importedActionStepHeader}>
             <label className={styles.importedActionField}>
-              <span>{index === 0 ? 'Accion' : `Accion ${index + 1}`}</span>
+              <span>{index === 0 ? 'Acción' : `Acción ${index + 1}`}</span>
               <select
                 value={step.action}
                 disabled={disabled}
@@ -5710,13 +5725,13 @@ const ImportedActionChainEditor: React.FC<{
                 }}
               >
                 {index === 0 && <option value="none">{emptyLabel}</option>}
-                {importedButtonActionOptions.map(option => (
+                {getImportedActionOptionsForStep(actions, index).map(option => (
                   <option key={option.value} value={option.value}>{option.label}{option.demo ? ' (demo)' : ''}</option>
                 ))}
               </select>
             </label>
             {actions.length > 1 && (
-              <button type="button" onClick={() => removeAction(index)} disabled={disabled} aria-label={`Quitar accion ${index + 1}`}>
+              <button type="button" onClick={() => removeAction(index)} disabled={disabled} aria-label={`Quitar acción ${index + 1}`}>
                 <X size={14} />
               </button>
             )}
@@ -5736,13 +5751,13 @@ const ImportedActionChainEditor: React.FC<{
 
           {step.action === 'specific_page' && (
             <label className={styles.importedActionField}>
-              <span>Pagina destino</span>
+              <span>Página destino</span>
               <select
                 value={step.buttonPageId || ''}
                 disabled={disabled}
                 onChange={(event) => setAction(index, { buttonPageId: event.target.value })}
               >
-                <option value="">Selecciona una pagina</option>
+                <option value="">Selecciona una página</option>
                 {targetPages.map(page => (
                   <option key={page.id} value={page.id}>{page.title || page.id}</option>
                 ))}
@@ -5763,13 +5778,13 @@ const ImportedActionChainEditor: React.FC<{
                 />
               </label>
               <label className={styles.importedActionField}>
-                <span>Pagina destino opcional</span>
+                <span>Página destino opcional</span>
                 <select
                   value={step.buttonPageId || ''}
                   disabled={disabled}
                   onChange={(event) => setAction(index, { buttonPageId: event.target.value })}
                 >
-                  <option value="">Mostrar mensaje en esta pagina</option>
+                  <option value="">Mostrar mensaje en esta página</option>
                   {targetPages.map(page => (
                     <option key={page.id} value={page.id}>{page.title || page.id}</option>
                   ))}
@@ -5778,18 +5793,12 @@ const ImportedActionChainEditor: React.FC<{
             </>
           )}
 
-          {['automation', 'notify_team', 'add_tag', 'send_whatsapp', 'create_payment'].includes(step.action) && (
+          {step.action === 'automation' && (
             <label className={styles.importedActionField}>
-              <span>Configuracion demo</span>
+              <span>Configuración demo</span>
               <input
                 value={step.automationName || ''}
-                placeholder={
-                  step.action === 'automation' ? 'Nombre de automatizacion' :
-                    step.action === 'add_tag' ? 'Etiqueta a agregar' :
-                      step.action === 'send_whatsapp' ? 'Plantilla de WhatsApp' :
-                        step.action === 'create_payment' ? 'Concepto del pago' :
-                          'Aviso para el equipo'
-                }
+                placeholder="Nombre de automatización"
                 disabled={disabled}
                 onChange={(event) => setAction(index, { automationName: event.target.value })}
               />
@@ -5798,9 +5807,9 @@ const ImportedActionChainEditor: React.FC<{
         </div>
       ))}
 
-      <button type="button" className={styles.importedAddActionButton} onClick={addAction} disabled={disabled}>
+      <button type="button" className={styles.importedAddActionButton} onClick={addAction} disabled={!canAddAction}>
         <Plus size={14} />
-        Agregar accion
+        Agregar acción
       </button>
     </div>
   )
@@ -6443,13 +6452,13 @@ const ImportedHtmlEditorPanel: React.FC<{
             <div className={styles.importedButtonActionHeader}>
               <MousePointerClick size={17} />
               <div>
-                <span>Boton seleccionado</span>
-                <strong>{buttonEditor.selection.label || 'Boton'}</strong>
+                <span>Botón seleccionado</span>
+                <strong>{buttonEditor.selection.label || 'Botón'}</strong>
               </div>
             </div>
 
             <label className={styles.importedActionField}>
-              <span>Texto del boton</span>
+              <span>Texto del botón</span>
               <input
                 value={buttonEditor.value}
                 disabled={contentSaving}
@@ -6470,7 +6479,7 @@ const ImportedHtmlEditorPanel: React.FC<{
               </Button>
               <Button type="button" size="sm" onClick={() => void saveButtonEditor()} disabled={!canSaveButtonEditor} loading={contentSaving}>
                 <Save size={14} />
-                Guardar boton
+                Guardar botón
               </Button>
             </div>
           </div>
