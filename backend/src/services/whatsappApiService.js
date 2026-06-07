@@ -36,6 +36,7 @@ const MAX_WHATSAPP_IMAGE_BYTES = 8 * 1024 * 1024
 const WHATSAPP_AUDIO_UPLOAD_ROOT = join(__dirname, '../../uploads/whatsapp-audio')
 const WHATSAPP_AUDIO_PUBLIC_PATH = '/uploads/whatsapp-audio'
 const MAX_WHATSAPP_AUDIO_BYTES = 16 * 1024 * 1024
+const WHATSAPP_VOICE_NOTE_MIME_TYPE = 'audio/ogg; codecs=opus'
 const WHATSAPP_API_PROFILE_PICTURE_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 const WHATSAPP_API_PROFILE_PICTURE_BATCH_LIMIT = 40
 const IMAGE_EXTENSION_BY_MIME = {
@@ -54,13 +55,6 @@ const AUDIO_EXTENSION_BY_MIME = {
   'audio/wav': 'wav',
   'audio/x-wav': 'wav'
 }
-const WHATSAPP_DIRECT_AUDIO_MIME_TYPES = new Set([
-  'audio/aac',
-  'audio/amr',
-  'audio/mp4',
-  'audio/mpeg',
-  'audio/ogg'
-])
 const API_FALLBACK_PHONE_STATUSES = new Set([
   'BANNED',
   'BLOCKED',
@@ -529,8 +523,15 @@ function parseAudioDataUrl(value = '') {
 }
 
 function audioNeedsWhatsAppConversion({ mimeType, params }) {
-  if (mimeType === 'audio/ogg') return !String(params || '').includes('opus')
-  return !WHATSAPP_DIRECT_AUDIO_MIME_TYPES.has(mimeType)
+  return !(mimeType === 'audio/ogg' && String(params || '').includes('opus'))
+}
+
+function normalizeVoiceNoteMimeType({ mimeType, params } = {}) {
+  const cleanMimeType = cleanString(mimeType).toLowerCase()
+  if (cleanMimeType === 'audio/ogg' && String(params || '').toLowerCase().includes('opus')) {
+    return WHATSAPP_VOICE_NOTE_MIME_TYPE
+  }
+  return cleanMimeType
 }
 
 function runFfmpeg(args = []) {
@@ -621,12 +622,12 @@ async function saveWhatsAppAudioDataUrl(dataUrl = '') {
   const media = audioNeedsWhatsAppConversion(parsed)
     ? {
         buffer: await convertAudioToOggOpus(parsed),
-        mimeType: 'audio/ogg',
+        mimeType: WHATSAPP_VOICE_NOTE_MIME_TYPE,
         extension: 'ogg'
       }
     : {
         buffer: parsed.buffer,
-        mimeType: parsed.mimeType,
+        mimeType: normalizeVoiceNoteMimeType(parsed) || parsed.mimeType,
         extension: parsed.extension
       }
   const dayKey = new Date().toISOString().slice(0, 10)
@@ -641,6 +642,7 @@ async function saveWhatsAppAudioDataUrl(dataUrl = '') {
     mimeType: media.mimeType,
     originalMimeType,
     size: media.buffer.length,
+    filePath,
     publicPath: `${WHATSAPP_AUDIO_PUBLIC_PATH}/${dayKey}/${filename}`,
     filename
   }
@@ -3945,26 +3947,34 @@ async function sendImageViaQrFallback({ fromPhone, toPhone, requestImage, imageD
   }
 }
 
-async function sendAudioViaQrFallback({ fromPhone, toPhone, requestAudio, audioDataUrl, externalId, phoneNumberId, localMedia, durationMs, fallbackReason, originalError } = {}) {
+async function sendAudioViaQrFallback({ fromPhone, toPhone, requestAudio, audioDataUrl, externalId, phoneNumberId, localMedia, publicBaseUrl, durationMs, fallbackReason, originalError } = {}) {
   try {
+    const localMediaUrl = buildLocalMediaUrl(localMedia, publicBaseUrl)
+    const publicAudioUrl = cleanString(requestAudio?.link || requestAudio?.url || localMediaUrl)
+    const qrAudioUrl = cleanString(localMedia?.filePath || publicAudioUrl)
     const response = await sendWhatsAppQrAudioMessage({
       phoneNumberId,
       from: fromPhone,
       to: toPhone,
-      audioDataUrl,
-      audioUrl: requestAudio?.link,
+      audioDataUrl: qrAudioUrl ? undefined : audioDataUrl,
+      audioUrl: qrAudioUrl,
+      audioPublicUrl: publicAudioUrl,
       externalId,
       durationMs
     })
     const finalAudio = {
       ...(requestAudio || {}),
       ...(response.audio || {}),
+      link: cleanString(response.audio?.link || publicAudioUrl),
+      url: cleanString(response.audio?.url || response.audio?.link || publicAudioUrl),
+      mimeType: cleanString(response.audio?.mimeType || requestAudio?.mimeType || localMedia?.mimeType),
+      ptt: true,
       ...(durationMs ? { durationMs } : {})
     }
 
     await upsertMessage({
       payload: {
-        id: response.id || externalId || hashId('waqr_audio_event', `${fromPhone}|${toPhone}|${requestAudio?.link || ''}`),
+        id: response.id || externalId || hashId('waqr_audio_event', `${fromPhone}|${toPhone}|${publicAudioUrl || qrAudioUrl}`),
         type: fallbackReason ? 'whatsapp.qr.message.fallback_sent' : 'whatsapp.qr.message.sent',
         transport: 'qr',
         fallbackReason: fallbackReason || null,
@@ -3987,7 +3997,9 @@ async function sendAudioViaQrFallback({ fromPhone, toPhone, requestAudio, audioD
     return {
       ...decorateQrFallbackResponse(response, fallbackReason),
       audio: finalAudio,
-      localMedia
+      localMedia: localMedia
+        ? { ...localMedia, publicUrl: localMediaUrl }
+        : localMedia
     }
   } catch (fallbackError) {
     if (originalError) throw buildQrFallbackError(originalError, fallbackError)
@@ -4308,6 +4320,7 @@ export async function sendWhatsAppApiAudioMessage({
       audioDataUrl,
       externalId,
       localMedia: savedAudio,
+      publicBaseUrl,
       durationMs
     })
   }
@@ -4322,10 +4335,14 @@ export async function sendWhatsAppApiAudioMessage({
       phoneNumberId: fallbackDecision.phoneRow?.id || phoneNumberId,
       fromPhone,
       toPhone,
-      requestAudio: requestBody.audio,
+      requestAudio: {
+        ...requestBody.audio,
+        ...(savedAudio?.mimeType ? { mimeType: savedAudio.mimeType } : {})
+      },
       audioDataUrl,
       externalId,
       localMedia: savedAudio,
+      publicBaseUrl,
       durationMs,
       fallbackReason: fallbackDecision.reason
     })
@@ -4351,10 +4368,14 @@ export async function sendWhatsAppApiAudioMessage({
         phoneNumberId: retryDecision.phoneRow?.id || phoneNumberId,
         fromPhone,
         toPhone,
-        requestAudio: requestBody.audio,
+        requestAudio: {
+          ...requestBody.audio,
+          ...(savedAudio?.mimeType ? { mimeType: savedAudio.mimeType } : {})
+        },
         audioDataUrl,
         externalId,
         localMedia: savedAudio,
+        publicBaseUrl,
         durationMs,
         fallbackReason: retryDecision.reason,
         originalError: error
@@ -4391,7 +4412,8 @@ export async function sendWhatsAppApiAudioMessage({
     ...response,
     audio: {
       ...requestBody.audio,
-      ...(response.audio || {})
+      ...(response.audio || {}),
+      ...(durationMs ? { durationMs } : {})
     },
     localMedia: savedAudio
   }

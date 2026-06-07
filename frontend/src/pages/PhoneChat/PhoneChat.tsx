@@ -4363,9 +4363,24 @@ export const PhoneChat: React.FC = () => {
           transport: resolvedTransport,
           phoneNumberId: selectedBusinessPhone?.id || undefined
         })
+        const responseAudioUrl = result.audio?.link || result.audio?.url || result.localMedia?.publicUrl || ''
+        const responseAudioMimeType = result.audio?.mimeType || result.audio?.mimetype || result.localMedia?.mimeType || ''
+        const responseAudioDurationMs = Number(result.audio?.durationMs || 0) || voiceToSend.durationMs
         setMessages((current) => current.map((message) => (
           message.id === `${optimisticId}-audio`
-            ? { ...message, status: result.status || 'sent', transport: result.transport || message.transport }
+            ? {
+                ...message,
+                status: result.status || 'sent',
+                transport: result.transport || message.transport,
+                attachment: message.attachment?.type === 'audio'
+                  ? {
+                      ...message.attachment,
+                      ...(responseAudioUrl ? { url: responseAudioUrl } : {}),
+                      ...(responseAudioMimeType ? { mimeType: responseAudioMimeType } : {}),
+                      durationMs: responseAudioDurationMs
+                    }
+                  : message.attachment
+              }
             : message
         )))
       } else if (attachmentsToSend.length > 0) {
@@ -5260,6 +5275,17 @@ export const PhoneChat: React.FC = () => {
     )
   }
 
+  const renderAudioUnavailableMessage = (message: ChatMessage) => (
+    <div className={styles.messageAudioUnavailable}>
+      <span className={styles.messageAudioUnavailableIcon} aria-hidden="true">
+        <Mic size={17} />
+      </span>
+      <span className={styles.messageAudioUnavailableText}>
+        {message.direction === 'outbound' ? 'Nota de voz enviada' : 'Nota de voz'}
+      </span>
+    </div>
+  )
+
   const renderMessageFile = (message: ChatMessage) => {
     const attachment = message.attachment
     if (!attachment || !['document', 'file'].includes(attachment.type)) return null
@@ -5550,10 +5576,11 @@ export const PhoneChat: React.FC = () => {
               </div>
             )}
             {group.messages.map((message) => {
-              const isAudioMessage = message.attachment?.type === 'audio' && Boolean(message.attachment.dataUrl || message.attachment.url)
+              const isAudioAttachment = message.attachment?.type === 'audio'
+              const isAudioMessage = isAudioAttachment && Boolean(message.attachment?.dataUrl || message.attachment?.url)
               const isVideoMessage = message.attachment?.type === 'video' && Boolean(message.attachment.dataUrl || message.attachment.url)
               const isFileMessage = Boolean(message.attachment && ['document', 'file'].includes(message.attachment.type))
-              const hasRichAttachment = isAudioMessage || isVideoMessage || isFileMessage
+              const hasRichAttachment = isAudioAttachment || isVideoMessage || isFileMessage
 
               return (
                 <div
@@ -5575,6 +5602,7 @@ export const PhoneChat: React.FC = () => {
                     )}
                     {isFileMessage && renderMessageFile(message)}
                     {isAudioMessage && renderAudioMessage(message)}
+                    {isAudioAttachment && !isAudioMessage && renderAudioUnavailableMessage(message)}
                     {!hasRichAttachment && message.text && <p>{message.text}</p>}
                     {hasRichAttachment && !isAudioMessage && message.text && <p>{message.text}</p>}
                     {!isAudioMessage && renderMessageMeta(message)}

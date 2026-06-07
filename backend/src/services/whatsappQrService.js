@@ -34,6 +34,7 @@ const AUDIO_MIME_BY_EXTENSION = {
   wav: 'audio/wav',
   webm: 'audio/webm'
 }
+const WHATSAPP_VOICE_NOTE_MIME_TYPE = 'audio/ogg; codecs=opus'
 
 const liveSessions = new Map()
 const qrSendAckWaiters = new Map()
@@ -114,6 +115,21 @@ function inferAudioMimeType({ mimeType, url } = {}) {
   const cleanMimeType = cleanString(mimeType).toLowerCase()
   if (cleanMimeType) return cleanMimeType
   return AUDIO_MIME_BY_EXTENSION[getFileExtensionFromUrl(url)] || 'audio/mpeg'
+}
+
+function normalizeVoiceNoteMimeType(mimeType = '') {
+  const cleanMimeType = cleanString(mimeType).toLowerCase()
+  if (!cleanMimeType) return WHATSAPP_VOICE_NOTE_MIME_TYPE
+  if (cleanMimeType === 'audio/ogg' || cleanMimeType.startsWith('audio/ogg;')) {
+    return WHATSAPP_VOICE_NOTE_MIME_TYPE
+  }
+  return cleanMimeType
+}
+
+function getAudioDurationSeconds(durationMs) {
+  const value = Number(durationMs || 0)
+  if (!Number.isFinite(value) || value <= 0) return 0
+  return Math.max(1, Math.round(value / 1000))
 }
 
 function buildQrMediaPayload({ dataUrl, url, label }) {
@@ -1534,7 +1550,7 @@ export async function sendWhatsAppQrImageMessage({ phoneNumberId, from, to, imag
   }
 }
 
-export async function sendWhatsAppQrAudioMessage({ phoneNumberId, from, to, audioDataUrl, audioUrl, externalId, durationMs } = {}) {
+export async function sendWhatsAppQrAudioMessage({ phoneNumberId, from, to, audioDataUrl, audioUrl, audioPublicUrl, externalId, durationMs } = {}) {
   const phone = await resolveQrPhone({ phoneNumberId, from })
   const toPhone = normalizePhoneForStorage(to) || cleanString(to)
 
@@ -1551,15 +1567,18 @@ export async function sendWhatsAppQrAudioMessage({ phoneNumberId, from, to, audi
     url: audioUrl,
     label: 'el audio'
   })
-  const mimeType = inferAudioMimeType({ mimeType: media.mimeType, url: media.sourceUrl })
+  const mimeType = normalizeVoiceNoteMimeType(inferAudioMimeType({ mimeType: media.mimeType, url: media.sourceUrl }))
+  const seconds = getAudioDurationSeconds(durationMs)
   const sock = await ensureOpenSocket(phone)
   const recipient = await resolveRecipientJid(sock, toPhone)
   const response = await sock.sendMessage(recipient.jid, {
     audio: media.content,
     mimetype: mimeType,
-    ptt: false
+    ptt: true,
+    ...(seconds ? { seconds } : {})
   })
   const sendResult = await finalizeQrSendResponse({ response, recipient, externalId })
+  const audioLink = cleanString(audioPublicUrl) || media.sourceUrl || cleanString(audioUrl)
 
   return {
     id: sendResult.id,
@@ -1569,8 +1588,12 @@ export async function sendWhatsAppQrAudioMessage({ phoneNumberId, from, to, audi
     recipientJid: sendResult.recipientJid,
     type: 'audio',
     audio: {
-      link: media.sourceUrl,
+      link: audioLink,
+      url: audioLink,
       mimeType,
+      mimetype: mimeType,
+      ptt: true,
+      ...(seconds ? { seconds } : {}),
       ...(durationMs ? { durationMs } : {})
     },
     status: sendResult.status,

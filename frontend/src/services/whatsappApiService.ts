@@ -200,6 +200,20 @@ export interface WhatsAppApiSendResponse {
   fallback?: boolean
   fallbackFrom?: string
   fallbackReason?: string
+  audio?: {
+    link?: string
+    url?: string
+    mimeType?: string
+    mimetype?: string
+    durationMs?: number
+    ptt?: boolean
+  }
+  localMedia?: {
+    publicUrl?: string
+    publicPath?: string
+    mimeType?: string
+    filename?: string
+  } | null
 }
 
 export interface WhatsAppQrSession {
