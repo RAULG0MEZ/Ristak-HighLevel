@@ -2182,9 +2182,9 @@ export const getContactJourney = async (req, res) => {
 
     // El backend emite los eventos de WhatsApp tal cual (uno por mensaje). El frontend
     // los agrupa a uno por día —usando la MISMA zona horaria con la que muestra las
-    // fechas— y fusiona la info dando prioridad a la atribución de anuncio. Aquí solo se
-    // aplica la regla temporal: después del primer pago, solo se conservan los eventos
-    // de WhatsApp que vengan con atribución de anuncio.
+    // fechas— y fusiona la info dando prioridad a la atribución de anuncio. Los mensajes
+    // reales del chat se entregan completos para no romper conversación ni archivos; la
+    // regla temporal de conversión se aplica sólo al timeline de Info del contacto.
     const isStoredChatMessageEvent = (event) => Boolean(
       event?.data?.whatsapp_api_message_id ||
       event?.data?.whatsapp_message_id ||

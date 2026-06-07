@@ -1395,6 +1395,35 @@ function isAdAttributedJourneyEvent(event: JourneyEvent) {
   )
 }
 
+function getJourneyEventTime(event: JourneyEvent) {
+  const time = Date.parse(event.date || '')
+  return Number.isFinite(time) ? time : null
+}
+
+function getFirstSuccessfulJourneyPaymentTime(events: JourneyEvent[]) {
+  const paymentTimes = events
+    .filter((event) => event.type === 'payment')
+    .filter((event) => {
+      const status = String(event.data?.status || '').trim().toLowerCase()
+      const amount = Number(event.data?.amount || 0)
+      return amount > 0 && (!status || SUCCESS_PAYMENT_STATUSES.has(status))
+    })
+    .map(getJourneyEventTime)
+    .filter((time): time is number => time !== null)
+    .sort((left, right) => left - right)
+
+  return paymentTimes[0] ?? null
+}
+
+function shouldShowWhatsAppInContactInfoJourney(event: JourneyEvent, firstPaymentTime: number | null) {
+  if (firstPaymentTime === null) return true
+
+  const eventTime = getJourneyEventTime(event)
+  if (eventTime === null || eventTime < firstPaymentTime) return true
+
+  return isAdAttributedJourneyEvent(event)
+}
+
 function getWhatsAppJourneyEventScore(event: JourneyEvent) {
   const data = event.data || {}
   const completenessFields = [
@@ -1470,10 +1499,12 @@ function buildContactInfoJourney(
 ) {
   const whatsappEvents: JourneyEvent[] = []
   const otherEvents: JourneyEvent[] = []
+  const firstPaymentTime = getFirstSuccessfulJourneyPaymentTime(events)
 
   events.forEach((event) => {
     if (!event?.date) return
     if (isWhatsAppJourneyEvent(event)) {
+      if (!shouldShowWhatsAppInContactInfoJourney(event, firstPaymentTime)) return
       whatsappEvents.push(event)
     } else {
       otherEvents.push(event)
