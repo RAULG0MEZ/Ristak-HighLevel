@@ -4686,6 +4686,11 @@ const aiCreationAudioMimeTypes = [
   'audio/mpeg',
   'audio/wav'
 ]
+const AI_CREATION_VOICE_WAVE_BAR_COUNT = 56
+const AI_CREATION_VOICE_WAVE_MIN_HEIGHT = 4
+const AI_CREATION_VOICE_WAVE_MAX_HEIGHT = 28
+const AI_CREATION_VOICE_SILENCE_THRESHOLD = 4
+const AI_CREATION_VOICE_SIGNAL_RANGE = 30
 
 const funnelStyleOptions: Array<{
   id: FunnelStyleId
@@ -4699,58 +4704,58 @@ const funnelStyleOptions: Array<{
   {
     id: 'vsl',
     title: 'Video de venta',
-    subtitle: 'Para explicar, generar confianza y vender con mas profundidad.',
+    subtitle: 'Para explicar, generar confianza y vender con más profundidad.',
     badge: 'VSL',
-    bestFor: 'Comprar, agendar o aplicar despues de ver una oferta.',
+    bestFor: 'Comprar, agendar o aplicar después de ver una oferta.',
     prompt: [
-      'Tipo de embudo elegido: Landing tipo VSL / pagina de venta con video.',
-      'Estructura esperada: hero con promesa clara, subtitulo para audiencia/resultado, video destacado, CTA, prueba social, problema/dolor, mecanismo o solucion, autoridad, oferta, CTA repetido, preguntas frecuentes y CTA final.',
-      'El diseno debe dejar el video como pieza central y usar secciones largas pero escaneables.'
+      'Tipo de embudo elegido: Landing tipo VSL / página de venta con video.',
+      'Estructura esperada: hero con promesa clara, subtítulo para audiencia/resultado, video destacado, CTA, prueba social, problema/dolor, mecanismo o solución, autoridad, oferta, CTA repetido, preguntas frecuentes y CTA final.',
+      'El diseño debe dejar el video como pieza central y usar secciones largas pero escaneables.'
     ].join('\n'),
-    sections: ['Hero + video', 'Problema', 'Metodo', 'Oferta', 'FAQ']
+    sections: ['Hero + video', 'Problema', 'Método', 'Oferta', 'FAQ']
   },
   {
     id: 'lead_gen',
     title: 'Formulario visible',
-    subtitle: 'Para conseguir prospectos rapido y pedir datos de contacto.',
+    subtitle: 'Para conseguir prospectos rápido y pedir datos de contacto.',
     badge: 'Lead gen',
-    bestFor: 'Clinicas, servicios, consultorios, inmobiliarias o agencias.',
+    bestFor: 'Clínicas, servicios, consultorios, inmobiliarias o agencias.',
     prompt: [
       'Tipo de embudo elegido: Landing tipo Lead Gen con formulario visible a la derecha.',
-      'Estructura esperada: hero dividido en dos columnas, texto/bullets/prueba rapida a la izquierda, formulario con nombre, telefono, correo y selector de servicio a la derecha, barra de confianza, beneficios, como funciona, testimonios, objeciones frecuentes y CTA final.',
-      'El formulario debe estar visible desde el primer pantallazo en desktop y facil de usar en movil.'
+      'Estructura esperada: hero dividido en dos columnas, texto/bullets/prueba rápida a la izquierda, formulario con nombre, teléfono, correo y selector de servicio a la derecha, barra de confianza, beneficios, cómo funciona, testimonios, objeciones frecuentes y CTA final.',
+      'El formulario debe estar visible desde el primer pantallazo en desktop y fácil de usar en móvil.'
     ].join('\n'),
     sections: ['Hero dividido', 'Formulario', 'Confianza', 'Beneficios', 'Pasos']
   },
   {
     id: 'opt_in',
     title: 'Recurso gratis',
-    subtitle: 'Para regalar una guia, clase, checklist, webinar o PDF.',
+    subtitle: 'Para regalar una guía, clase, checklist, webinar o PDF.',
     badge: 'Opt-in',
     bestFor: 'Capturar correos o WhatsApp antes de vender directo.',
     prompt: [
       'Tipo de embudo elegido: Landing tipo Opt-in / Lead magnet.',
-      'Estructura esperada: hero dividido con promesa del recurso, bullets de contenido, formulario o boton de registro, mockup visual del recurso, que recibira, por que importa, para quien es, quien lo creo, CTA repetido y preguntas frecuentes.',
-      'El diseno debe incluir un mockup visual convincente del recurso gratuito.'
+      'Estructura esperada: hero dividido con promesa del recurso, bullets de contenido, formulario o botón de registro, mockup visual del recurso, qué recibirá, por qué importa, para quién es, quién lo creó, CTA repetido y preguntas frecuentes.',
+      'El diseño debe incluir un mockup visual convincente del recurso gratuito.'
     ].join('\n'),
     sections: ['Hero + recurso', 'Contenido', 'Importancia', 'Autoridad', 'FAQ']
   }
 ]
 
 const funnelPrimaryActions: Array<{ id: FunnelPrimaryActionId; label: string; prompt: string }> = [
-  { id: 'buy', label: 'Comprar', prompt: 'La accion principal sera comprar.' },
-  { id: 'schedule', label: 'Agendar', prompt: 'La accion principal sera agendar una llamada, cita o valoracion.' },
-  { id: 'form', label: 'Formulario', prompt: 'La accion principal sera llenar un formulario de solicitud o contacto.' },
-  { id: 'whatsapp', label: 'WhatsApp', prompt: 'La accion principal sera mandar mensaje por WhatsApp.' },
-  { id: 'download', label: 'Descargar', prompt: 'La accion principal sera descargar u obtener acceso a un recurso gratuito.' }
+  { id: 'buy', label: 'Comprar', prompt: 'La acción principal será comprar.' },
+  { id: 'schedule', label: 'Agendar', prompt: 'La acción principal será agendar una llamada, cita o valoración.' },
+  { id: 'form', label: 'Formulario', prompt: 'La acción principal será llenar un formulario de solicitud o contacto.' },
+  { id: 'whatsapp', label: 'WhatsApp', prompt: 'La acción principal será mandar mensaje por WhatsApp.' },
+  { id: 'download', label: 'Descargar', prompt: 'La acción principal será descargar u obtener acceso a un recurso gratuito.' }
 ]
 
 const chatgptSiteModelOptions = [
-  { value: 'gpt-5.5', label: 'ChatGPT 5.5', description: 'Recomendado para paginas premium y buen balance de velocidad.' },
-  { value: 'gpt-5.5-pro', label: 'ChatGPT 5.5 Pro', description: 'Maxima calidad para copy, estructura y diseno; puede tardar mas.' },
+  { value: 'gpt-5.5', label: 'ChatGPT 5.5', description: 'Recomendado para páginas premium y buen balance de velocidad.' },
+  { value: 'gpt-5.5-pro', label: 'ChatGPT 5.5 Pro', description: 'Máxima calidad para copy, estructura y diseño; puede tardar más.' },
   { value: 'gpt-5.4-pro', label: 'ChatGPT 5.4 Pro', description: 'Muy fuerte para embudos complejos y ofertas con detalle.' },
-  { value: 'gpt-5.4', label: 'ChatGPT 5.4', description: 'Buen modelo para paginas completas con buena velocidad.' },
-  { value: 'gpt-5.3-chat-latest', label: 'ChatGPT 5.3', description: 'Version ChatGPT solida para paginas rapidas.' }
+  { value: 'gpt-5.4', label: 'ChatGPT 5.4', description: 'Buen modelo para páginas completas con buena velocidad.' },
+  { value: 'gpt-5.3-chat-latest', label: 'ChatGPT 5.3', description: 'Versión ChatGPT sólida para páginas rápidas.' }
 ]
 
 const DEFAULT_SITE_CHATGPT_MODEL = 'gpt-5.5'
@@ -4761,14 +4766,14 @@ const getChatGPTSiteModelOption = (model?: string) => chatgptSiteModelOptions.fi
 const getSitesAICreationKindLabel = (siteKind: SitesAICreationKind) => {
   if (siteKind === 'interactive_form') return 'formulario interactivo'
   if (siteKind === 'form') return 'formulario'
-  return 'pagina o embudo'
+  return 'página o embudo'
 }
 
 const getSitesAICreationPlaceholder = (siteKind: SitesAICreationKind, editMode: boolean) => {
-  if (editMode) return 'Dime que quieres cambiar: titulo, foto principal, orden de secciones, campos, estilo, colores...'
-  if (siteKind === 'form') return 'Ejemplo: formulario para agendar valoracion dental, pedir nombre, telefono, correo, tratamiento y fecha preferida...'
-  if (siteKind === 'interactive_form') return 'Ejemplo: quiz de 4 pasos para calificar prospectos, con captura final de nombre y telefono...'
-  return 'Ejemplo: embudo para clinica estetica con foto principal, beneficios, testimonios y formulario para agendar...'
+  if (editMode) return 'Dime qué quieres cambiar: título, foto principal, orden de secciones, campos, estilo, colores...'
+  if (siteKind === 'form') return 'Ejemplo: formulario para agendar valoración dental, pedir nombre, teléfono, correo, tratamiento y fecha preferida...'
+  if (siteKind === 'interactive_form') return 'Ejemplo: quiz de 4 pasos para calificar prospectos, con captura final de nombre y teléfono...'
+  return 'Ejemplo: embudo para clínica estética con foto principal, beneficios, testimonios y formulario para agendar...'
 }
 
 const formatAICreationFileSize = (bytes: number) => {
@@ -4801,6 +4806,36 @@ const getAICreationAudioMimeType = () => {
   return aiCreationAudioMimeTypes.find(mimeType => MediaRecorder.isTypeSupported(mimeType)) || ''
 }
 
+const createAICreationVoiceBars = () => (
+  Array.from({ length: AI_CREATION_VOICE_WAVE_BAR_COUNT }, () => AI_CREATION_VOICE_WAVE_MIN_HEIGHT)
+)
+
+const getAICreationVoiceBarHeight = (samples: Uint8Array) => {
+  const average = samples.reduce((sum, value) => sum + Math.abs(value - 128), 0) / samples.length
+  const gatedLevel = average <= AI_CREATION_VOICE_SILENCE_THRESHOLD
+    ? 0
+    : Math.min(1, (average - AI_CREATION_VOICE_SILENCE_THRESHOLD) / AI_CREATION_VOICE_SIGNAL_RANGE)
+  const responsiveLevel = Math.sqrt(gatedLevel)
+
+  return Math.round(AI_CREATION_VOICE_WAVE_MIN_HEIGHT + responsiveLevel * (AI_CREATION_VOICE_WAVE_MAX_HEIGHT - AI_CREATION_VOICE_WAVE_MIN_HEIGHT))
+}
+
+const getAICreationAudioContextConstructor = () => {
+  const audioWindow = window as Window & {
+    AudioContext?: typeof AudioContext
+    webkitAudioContext?: typeof AudioContext
+  }
+
+  return audioWindow.AudioContext || audioWindow.webkitAudioContext || null
+}
+
+const formatAICreationVoiceDuration = (totalSeconds: number) => {
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
 const SitesAICreationModal: React.FC<{
   state: NonNullable<SitesAICreationModalState>
   creating: boolean
@@ -4812,6 +4847,11 @@ const SitesAICreationModal: React.FC<{
   const promptInputRef = useRef<HTMLTextAreaElement | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const audioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
+  const analyserRef = useRef<AnalyserNode | null>(null)
+  const voiceAnimationFrameRef = useRef<number | null>(null)
+  const voiceLastWaveUpdateRef = useRef(0)
   const voiceChunksRef = useRef<Blob[]>([])
   const [prompt, setPrompt] = useState('')
   const [attachments, setAttachments] = useState<SitesAICreationAttachment[]>([])
@@ -4820,6 +4860,8 @@ const SitesAICreationModal: React.FC<{
   const [chatgptModel, setChatgptModel] = useState(DEFAULT_SITE_CHATGPT_MODEL)
   const [attachmentError, setAttachmentError] = useState('')
   const [voiceState, setVoiceState] = useState<'idle' | 'recording' | 'transcribing'>('idle')
+  const [voiceBars, setVoiceBars] = useState<number[]>(createAICreationVoiceBars)
+  const [voiceElapsed, setVoiceElapsed] = useState(0)
   const [voiceError, setVoiceError] = useState('')
   const [assistantReply, setAssistantReply] = useState('')
   const [submitError, setSubmitError] = useState('')
@@ -4827,6 +4869,8 @@ const SitesAICreationModal: React.FC<{
   const selectedFunnelStyle = getFunnelStyleOption(funnelStyle || undefined)
   const selectedChatGPTModel = getChatGPTSiteModelOption(chatgptModel)
   const canWritePrompt = !shouldPickFunnelStyle || Boolean(selectedFunnelStyle)
+  const voiceIsActive = voiceState !== 'idle'
+  const formattedVoiceElapsed = formatAICreationVoiceDuration(voiceElapsed)
 
   useEffect(() => {
     return () => {
@@ -4838,9 +4882,20 @@ const SitesAICreationModal: React.FC<{
           // Best effort cleanup for browser recorder state.
         }
       }
-      mediaStreamRef.current?.getTracks().forEach(track => track.stop())
+      stopVoiceStream()
     }
   }, [])
+
+  useEffect(() => {
+    if (voiceState !== 'recording') return
+
+    const startedAt = Date.now()
+    const timer = window.setInterval(() => {
+      setVoiceElapsed(Math.floor((Date.now() - startedAt) / 1000))
+    }, 250)
+
+    return () => window.clearInterval(timer)
+  }, [voiceState])
 
   useEffect(() => {
     if (!canWritePrompt) return
@@ -4873,8 +4928,62 @@ const SitesAICreationModal: React.FC<{
   )
 
   const stopVoiceStream = () => {
+    if (voiceAnimationFrameRef.current !== null) {
+      window.cancelAnimationFrame(voiceAnimationFrameRef.current)
+      voiceAnimationFrameRef.current = null
+    }
+
+    audioSourceRef.current?.disconnect()
+    audioSourceRef.current = null
+    analyserRef.current = null
+
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => undefined)
+      audioContextRef.current = null
+    }
+
     mediaStreamRef.current?.getTracks().forEach(track => track.stop())
     mediaStreamRef.current = null
+  }
+
+  const startVoiceMeter = async () => {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    mediaStreamRef.current = stream
+
+    const AudioContextConstructor = getAICreationAudioContextConstructor()
+    if (!AudioContextConstructor) return stream
+
+    const audioContext = new AudioContextConstructor()
+    const analyser = audioContext.createAnalyser()
+    const source = audioContext.createMediaStreamSource(stream)
+
+    analyser.fftSize = 256
+    analyser.smoothingTimeConstant = 0.72
+    const samples = new Uint8Array(analyser.fftSize)
+    source.connect(analyser)
+
+    audioContextRef.current = audioContext
+    audioSourceRef.current = source
+    analyserRef.current = analyser
+    voiceLastWaveUpdateRef.current = 0
+
+    const drawWave = (timestamp: number) => {
+      if (!analyserRef.current) return
+
+      if (timestamp - voiceLastWaveUpdateRef.current > 55) {
+        analyserRef.current.getByteTimeDomainData(samples)
+        const nextHeight = getAICreationVoiceBarHeight(samples)
+
+        setVoiceBars(current => [...current.slice(1), nextHeight])
+        voiceLastWaveUpdateRef.current = timestamp
+      }
+
+      voiceAnimationFrameRef.current = window.requestAnimationFrame(drawWave)
+    }
+
+    voiceAnimationFrameRef.current = window.requestAnimationFrame(drawWave)
+
+    return stream
   }
 
   const appendPromptText = (text: string) => {
@@ -4902,15 +5011,16 @@ const SitesAICreationModal: React.FC<{
     setAssistantReply('')
     setSubmitError('')
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      setVoiceError('Este navegador no permite grabar audio aqui.')
+      setVoiceError('Este navegador no permite grabar audio aquí.')
       return
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      setVoiceBars(createAICreationVoiceBars())
+      setVoiceElapsed(0)
+      const stream = await startVoiceMeter()
       const mimeType = getAICreationAudioMimeType()
       const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
-      mediaStreamRef.current = stream
       mediaRecorderRef.current = recorder
       voiceChunksRef.current = []
 
@@ -4929,10 +5039,14 @@ const SitesAICreationModal: React.FC<{
         void aiAgentService.transcribeVoice(audioBlob)
           .then(result => {
             appendPromptText(result.text)
+            setVoiceBars(createAICreationVoiceBars())
+            setVoiceElapsed(0)
             setVoiceState('idle')
           })
           .catch(error => {
             setVoiceError(error instanceof Error ? error.message : 'No se pudo transcribir el audio.')
+            setVoiceBars(createAICreationVoiceBars())
+            setVoiceElapsed(0)
             setVoiceState('idle')
           })
       }
@@ -4941,7 +5055,9 @@ const SitesAICreationModal: React.FC<{
       setVoiceState('recording')
     } catch (error) {
       stopVoiceStream()
-      setVoiceError(error instanceof Error ? error.message : 'No se pudo activar el microfono.')
+      setVoiceBars(createAICreationVoiceBars())
+      setVoiceElapsed(0)
+      setVoiceError(error instanceof Error ? error.message : 'No se pudo activar el micrófono.')
       setVoiceState('idle')
     }
   }
@@ -4959,18 +5075,18 @@ const SitesAICreationModal: React.FC<{
     `Archivo: ${attachment.name} (${formatAICreationFileSize(attachment.size)})`,
     attachment.text
       ? `Contenido:\n${attachment.text}`
-      : 'Usalo solo como referencia de nombre/tipo; si es imagen o PDF sin texto, crea la pagina con la descripcion del usuario.'
+      : 'Úsalo solo como referencia de nombre/tipo; si es imagen o PDF sin texto, crea la página con la descripción del usuario.'
   ].join('\n'))
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (shouldPickFunnelStyle && !selectedFunnelStyle) {
-      setSubmitError('Primero elige que tipo de embudo quieres crear.')
+      setSubmitError('Primero elige qué tipo de embudo quieres crear.')
       return
     }
     const cleanPrompt = prompt.trim()
     if (!cleanPrompt) {
-      setSubmitError(shouldPickFunnelStyle ? 'Ahora cuentame de que trata el embudo.' : 'Escribe que quieres construir primero.')
+      setSubmitError(shouldPickFunnelStyle ? 'Ahora cuéntame de qué trata el embudo.' : 'Escribe qué quieres construir primero.')
       return
     }
     setSubmitError('')
@@ -4986,7 +5102,7 @@ const SitesAICreationModal: React.FC<{
     })
     if (reply) {
       setAssistantReply(reply)
-      setSubmitError(editMode ? 'La IA necesita una instruccion mas clara para editar.' : 'La IA necesita un poco mas de contexto.')
+      setSubmitError(editMode ? 'La IA necesita una instrucción más clara para editar.' : 'La IA necesita un poco más de contexto.')
     }
   }
 
@@ -4997,7 +5113,7 @@ const SitesAICreationModal: React.FC<{
           <div className={styles.aiCreationThinking}>
             <div className={styles.aiCreationThinkingHeader}>
               <Sparkles size={24} />
-              <span>{editMode ? 'La IA esta ajustando tu pagina' : 'La IA esta creando tu pagina'}</span>
+              <span>{editMode ? 'La IA está ajustando tu página' : 'La IA está creando tu página'}</span>
             </div>
             <div className={styles.aiCreationScan} aria-hidden="true">
               <span />
@@ -5007,7 +5123,7 @@ const SitesAICreationModal: React.FC<{
             </div>
             <div className={styles.aiCreationSteps}>
               <span>Armando estructura</span>
-              <span>Eligiendo imagenes</span>
+              <span>Eligiendo imágenes</span>
               <span>Preparando formularios</span>
               <span>Revisando campos</span>
             </div>
@@ -5026,10 +5142,10 @@ const SitesAICreationModal: React.FC<{
                 </h2>
                 <p>
                   {editMode
-                    ? 'Ristak modifica esta pagina y vuelve a revisar sus formularios.'
+                    ? 'Ristak modifica esta página y vuelve a revisar sus formularios.'
                     : shouldPickFunnelStyle && !selectedFunnelStyle
-                      ? 'Escoge la estructura y el ChatGPT que lo va a construir. Despues nos dices el negocio y objetivo.'
-                      : 'Describe la pagina y Ristak la crea como codigo propio listo para revisar.'}
+                      ? 'Escoge la estructura y el ChatGPT que lo va a construir. Después nos dices el negocio y objetivo.'
+                      : 'Describe la página y Ristak la crea como código propio listo para revisar.'}
                 </p>
               </div>
               <button type="button" className={styles.aiCreationClose} onClick={onClose} aria-label="Cerrar">
@@ -5041,7 +5157,7 @@ const SitesAICreationModal: React.FC<{
               {shouldPickFunnelStyle && !selectedFunnelStyle ? (
                 <div className={styles.aiCreationFunnelPicker}>
                   <div className={styles.aiCreationFunnelIntro}>
-                    <strong>Que tipo de landing quieres crear?</strong>
+                    <strong>¿Qué tipo de landing quieres crear?</strong>
                     <p>Elige una base visual y el ChatGPT que va a crear el embudo.</p>
                   </div>
                   {modelPicker}
@@ -5090,7 +5206,7 @@ const SitesAICreationModal: React.FC<{
 
                   {shouldPickFunnelStyle && selectedFunnelStyle && (
                     <div className={styles.aiCreationActionPicker}>
-                      <span>Accion principal</span>
+                      <span>Acción principal</span>
                       <div>
                         {funnelPrimaryActions.map(action => (
                           <button
@@ -5107,7 +5223,7 @@ const SitesAICreationModal: React.FC<{
                   )}
 
                   <label className={styles.aiCreationPrompt}>
-                    <span>{editMode ? 'Cambio que quieres hacer' : shouldPickFunnelStyle ? 'De que trata este embudo' : 'Que quieres construir'}</span>
+                    <span>{editMode ? 'Cambio que quieres hacer' : shouldPickFunnelStyle ? 'De qué trata este embudo' : 'Qué quieres construir'}</span>
                     <textarea
                       ref={promptInputRef}
                       value={prompt}
@@ -5119,6 +5235,25 @@ const SitesAICreationModal: React.FC<{
                       placeholder={getSitesAICreationPlaceholder(state.siteKind, editMode)}
                       rows={7}
                     />
+                    {voiceIsActive && (
+                      <div className={`${styles.aiCreationVoiceComposer} ${voiceState === 'recording' ? styles.aiCreationVoiceRecording : styles.aiCreationVoiceProcessing}`} role="status" aria-live="polite">
+                        <div className={styles.aiCreationVoiceWaveArea}>
+                          <div className={styles.aiCreationVoiceWaveform} aria-hidden="true">
+                            {voiceBars.map((height, index) => (
+                              <span
+                                key={`ai-creation-voice-bar-${index}`}
+                                className={styles.aiCreationVoiceBar}
+                                style={{ '--voice-bar-height': `${height}px` } as React.CSSProperties}
+                              />
+                            ))}
+                          </div>
+                          <span className={styles.aiCreationVoiceLabel}>
+                            {voiceState === 'transcribing' ? 'Transcribiendo audio...' : 'Escuchando...'}
+                          </span>
+                        </div>
+                        <span className={styles.aiCreationVoiceTimer}>{formattedVoiceElapsed}</span>
+                      </div>
+                    )}
                   </label>
                 </>
               )}
@@ -5167,10 +5302,10 @@ const SitesAICreationModal: React.FC<{
                     className={voiceState === 'recording' ? styles.aiCreationMicActive : ''}
                     onClick={() => voiceState === 'recording' ? stopVoice() : void startVoice()}
                     disabled={voiceState === 'transcribing'}
-                    title={voiceState === 'recording' ? 'Detener audio' : 'Dictar con microfono'}
+                    title={voiceState === 'recording' ? 'Detener audio' : 'Dictar con micrófono'}
                   >
                     <Mic size={16} />
-                    <span>{voiceState === 'recording' ? 'Grabando' : voiceState === 'transcribing' ? 'Transcribiendo' : 'Microfono'}</span>
+                    <span>{voiceState === 'recording' ? 'Detener' : voiceState === 'transcribing' ? 'Transcribiendo' : 'Micrófono'}</span>
                   </button>
                 </div>
               ) : (
@@ -5183,7 +5318,7 @@ const SitesAICreationModal: React.FC<{
                 {canWritePrompt && (
                   <Button type="submit">
                     <Sparkles size={15} />
-                    {editMode ? 'Actualizar pagina' : 'Crear pagina'}
+                    {editMode ? 'Actualizar página' : 'Crear página'}
                   </Button>
                 )}
               </div>
