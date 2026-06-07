@@ -2027,6 +2027,15 @@ export const PhoneChat: React.FC = () => {
       event.currentTarget.scrollLeft = 0
     }
   }, [])
+  const scrollMessagesPaneToBottom = useCallback(() => {
+    const pane = messagesPaneRef.current
+    if (pane) {
+      pane.scrollTop = pane.scrollHeight
+      pane.scrollLeft = 0
+    }
+    messagesEndRef.current?.scrollIntoView({ block: 'end', inline: 'nearest' })
+    messagesPaneNearBottomRef.current = true
+  }, [])
 
   const activeContact = useMemo(
     () => aiAgentConversationOpen ? null : chats.find((contact) => contact.id === activeContactId) || null,
@@ -3065,13 +3074,29 @@ export const PhoneChat: React.FC = () => {
 
     if (!shouldScrollToEnd) return
 
-    const frame = window.requestAnimationFrame(() => {
-      messagesEndRef.current?.scrollIntoView({ block: 'end' })
-      messagesPaneNearBottomRef.current = true
-    })
+    const frameIds: number[] = []
+    const timeoutIds: number[] = []
+    const queueFrame = (callback: () => void) => {
+      const frame = window.requestAnimationFrame(callback)
+      frameIds.push(frame)
+    }
+    const queueTimeout = (delay: number) => {
+      const timeout = window.setTimeout(scrollMessagesPaneToBottom, delay)
+      timeoutIds.push(timeout)
+    }
 
-    return () => window.cancelAnimationFrame(frame)
-  }, [activeContactId, conversationOpen, messages.length, messagesLoading, messagesSignature])
+    queueFrame(() => {
+      scrollMessagesPaneToBottom()
+      queueFrame(scrollMessagesPaneToBottom)
+    })
+    queueTimeout(90)
+    queueTimeout(240)
+
+    return () => {
+      frameIds.forEach((frame) => window.cancelAnimationFrame(frame))
+      timeoutIds.forEach((timeout) => window.clearTimeout(timeout))
+    }
+  }, [activeContactId, conversationOpen, messages.length, messagesLoading, messagesSignature, scrollMessagesPaneToBottom])
 
   useEffect(() => {
     const messageIds = new Set(messages.map((message) => message.id))
