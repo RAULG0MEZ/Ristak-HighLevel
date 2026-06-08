@@ -63,7 +63,7 @@ const baseNavigation: NavItem[] = [
   { id: 'transactions', name: 'Pagos', href: '/transactions', icon: Banknote },
   { id: 'contacts', name: 'Contactos', href: '/contacts', icon: Users },
   { id: 'divider-1', name: '', href: '#', icon: LayoutDashboard, isDivider: true }, // Divisor visual
-  { id: 'campaigns', name: 'Publicidad', href: '/campaigns', icon: Megaphone },
+  { id: 'campaigns', name: 'Publicidad', href: '/campaigns/classic', icon: Megaphone },
   { id: 'sites', name: 'Sitios', href: '/sites', icon: PanelTop },
   { id: 'reports', name: 'Reportes', href: '/reports', icon: FileBarChart }
 ]

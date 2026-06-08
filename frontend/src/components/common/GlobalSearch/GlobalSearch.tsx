@@ -66,7 +66,7 @@ const buildSearchParams = (item: GlobalSearchItem) => {
   if (adId) params.set('adId', String(adId))
   if (lastDate) params.set('date', String(lastDate).slice(0, 10))
 
-  return { pathname: '/campaigns', search: `?${params.toString()}` }
+  return { pathname: '/campaigns/classic', search: `?${params.toString()}` }
 }
 
 const filterCategoriesByQuery = (
