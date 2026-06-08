@@ -2642,7 +2642,7 @@ const defaultBlockPayload = (blockType: SiteBlockType, siteOrId: PublicSite | st
       settings: blockSettings({
         textAlign: 'center',
         kicker: 'Nuevo',
-        subtitle: 'Subtitulo del sitio embudo',
+        subtitle: 'Subtitulo del sitio web',
         buttonText: 'Comenzar',
         buttonUrl: '#form',
         ...DEFAULT_BUTTON_SETTINGS
@@ -6013,7 +6013,7 @@ const formatSitesAIPreviewVisualContextForPrompt = (context: SitesAIPreviewVisua
 const getSitesAICreationKindLabel = (siteKind: SitesAICreationKind) => {
   if (siteKind === 'interactive_form') return 'formulario interactivo'
   if (siteKind === 'form') return 'formulario'
-  return 'página o embudo'
+  return 'página o sitio'
 }
 
 const getSitesAICreationPlaceholder = (siteKind: SitesAICreationKind, editMode: boolean) => {
@@ -10337,7 +10337,7 @@ const SitesLibraryPanel: React.FC<SitesLibraryPanelProps> = ({
         </button>
 
         {sites.map(site => {
-          const siteKindLabel = isLanding(site) ? 'embudo' : 'formulario'
+          const siteKindLabel = isLanding(site) ? 'sitio' : 'formulario'
 
           return (
             <article
@@ -11947,7 +11947,7 @@ const HeaderToolbarModal: React.FC<{
 }) => {
   const [savingModal, setSavingModal] = useState(false)
   const activePageTitle = activePage?.title || 'esta pagina'
-  const siteKindLabel = isFormSite(site) ? 'formulario' : 'embudo'
+  const siteKindLabel = isFormSite(site) ? 'formulario' : 'sitio'
   const theme = site.theme || {}
   const globalHeaderCode = getThemeString(theme, 'headerTrackingCode')
   const pageHeaderCode = typeof activePage?.headerTrackingCode === 'string' ? activePage.headerTrackingCode : ''
