@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Card, Button, Icon, Modal, CustomSelect } from '@/components/common'
+import { Button, Icon, Modal, CustomSelect, PageHeader } from '@/components/common'
 import { ArrowLeft, ArrowRight, CheckCircle, ExternalLink, Pencil, Power, RefreshCw, Trash2, XCircle } from 'lucide-react'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useTheme } from '@/contexts/ThemeContext'
@@ -1524,47 +1524,24 @@ export const MetaAdsIntegration: React.FC = () => {
 
   return (
     <div className={styles.container}>
-      <Card className={styles.mainCard}>
-        <div className={styles.pageHeader}>
-          <div className={styles.headerContent}>
-            <div className={styles.headerLeft}>
-              <span className={styles.logoMark} aria-hidden="true">
-                <img
-                  src={theme === 'light'
-                    ? 'https://img.icons8.com/fluency/96/meta.png'
-                    : 'https://img.icons8.com/ios-filled/150/FFFFFF/meta.png'
-                  }
-                  alt=""
-                />
-              </span>
-              <div>
-                <h2 className={styles.pageTitle}>Meta</h2>
-                <p className={styles.pageSubtitle}>
-                  Conecta anuncios, Página, Messenger e Instagram DM desde un solo lugar.
-                </p>
-              </div>
-            </div>
-            <div className={styles.headerRight}>
-              {isMetaConfigured ? (
-                <div className={styles.statusConnected}>
-                  <CheckCircle size={16} />
-                  <span>Configurado</span>
-                </div>
-              ) : (
-                <div className={styles.statusDisconnected}>
-                  <XCircle size={16} />
-                  <span>No configurado</span>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+      <PageHeader
+        eyebrow="Integración"
+        title="Meta"
+        subtitle="Conecta anuncios, Página, Messenger e Instagram DM desde un solo lugar."
+        actions={isMetaConfigured ? (
+          <span className={styles.statusConnected}>
+            <CheckCircle size={16} />
+            <span>Configurado</span>
+          </span>
+        ) : (
+          <span className={styles.statusDisconnected}>
+            <XCircle size={16} />
+            <span>No configurado</span>
+          </span>
+        )}
+      />
 
-        <div className={[
-          styles.workspace,
-          !shouldShowWizard ? styles.connectedWorkspace : ''
-        ].filter(Boolean).join(' ')}>
-          <div className={styles.primaryColumn}>
+      <div className={styles.sections}>
             {!shouldShowWizard && (
               <section className={`${styles.section} ${styles.connectedSection}`}>
                 <div className={styles.connectedHeader}>
@@ -1609,17 +1586,14 @@ export const MetaAdsIntegration: React.FC = () => {
                   </div>
                 </div>
 
-                <div className={styles.connectedPagesPanel}>
-                  <div className={styles.connectedPagesHeader}>
-                    <div>
-                      <h4 className={styles.connectedPagesTitle}>Páginas conectadas</h4>
-                      <p className={styles.connectedPagesDescription}>
-                        Activa cada canal solo cuando quieras que Ristak reciba y mande mensajes desde esa cuenta.
-                      </p>
-                    </div>
-                  </div>
+                <div className={styles.connectedPagesHeader}>
+                  <h4 className={styles.connectedPagesTitle}>Páginas conectadas</h4>
+                  <p className={styles.connectedPagesDescription}>
+                    Activa cada canal solo cuando quieras que Ristak reciba y mande mensajes desde esa cuenta.
+                  </p>
+                </div>
 
-                  <div className={styles.connectedPagesList}>
+                <div className={styles.connectedPagesList}>
                     <div className={[
                       styles.connectedPageCard,
                       !hasPageId ? styles.connectedPageCardLocked : ''
@@ -1682,10 +1656,8 @@ export const MetaAdsIntegration: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                </div>
               </section>
             )}
-
             {shouldShowWizard && (
             <section className={`${styles.section} ${styles.wizardSection}`}>
               <div className={styles.sectionHeader}>
@@ -1889,89 +1861,7 @@ export const MetaAdsIntegration: React.FC = () => {
                 </div>
               </div>
             </section>
-          </div>
-
-          {shouldShowWizard && (
-          <aside className={styles.statusRail}>
-            <div className={styles.railBlock}>
-              <div className={styles.railHeader}>
-                <CheckCircle size={18} />
-                <span>Estado Meta</span>
-              </div>
-              <strong className={styles.railPrimaryValue}>
-                {isMetaConfigured ? 'Configuración activa' : 'Configuración pendiente'}
-              </strong>
-              <span className={styles.railSecondaryValue}>
-                {isMetaConfigured ? 'Cuenta lista para reportes y sincronización.' : 'Completa Access Token y cuenta de anuncios.'}
-              </span>
-              <div className={styles.railMeta}>
-                <span>Token</span>
-                <strong>{hasAccessToken ? 'Listo' : '-'}</strong>
-                <span>Cuenta</span>
-                <strong>{hasAdAccount ? getSelectedAdAccountLabel() : '-'}</strong>
-                <span>Pixel</span>
-                <strong>{hasPixel ? getSelectedPixelLabel() : '-'}</strong>
-                <span>Page</span>
-                <strong>{hasPageId ? getSelectedPageLabel() : '-'}</strong>
-                <span>Instagram</span>
-                <strong>{hasInstagramAccount ? getSelectedInstagramLabel() : '-'}</strong>
-              </div>
-            </div>
-
-            <div className={styles.railBlock}>
-              <div className={styles.railHeader}>
-                <RefreshCw size={18} />
-                <span>Extras</span>
-              </div>
-
-              {credentials.pixelId && !isRenderDomain && (
-                <div className={styles.railSwitchRow}>
-                  <div>
-                    <span className={styles.railSwitchLabel}>Incluir en snippet</span>
-                    <span className={styles.railSecondaryValue}>Agrega el Meta Pixel al Web Tracking.</span>
-                  </div>
-                  <label className={styles.switchContainer}>
-                    <input
-                      type="checkbox"
-                      checked={includeMetaPixel === true}
-                      onChange={(event) => handleToggleMetaPixel(event.target.checked)}
-                      disabled={isSyncingSnippet || savingPixelPref}
-                      className={styles.switchInput}
-                    />
-                    <span className={styles.switchSlider}></span>
-                  </label>
-                </div>
-              )}
-
-              {isSyncingSnippet && (
-                <div className={styles.inlineStatus}>
-                  <RefreshCw size={16} className={styles.spinning} />
-                  Sincronizando snippet...
-                </div>
-              )}
-
-              {credentials.accessToken && credentials.adAccountId && (
-                <button
-                  type="button"
-                  className={styles.railButton}
-                  onClick={handleSyncMetaAds}
-                  disabled={isSyncingMetaAds}
-                >
-                  <RefreshCw size={16} className={isSyncingMetaAds ? styles.spinning : ''} />
-                  {isSyncingMetaAds ? 'Sincronizando' : 'Sincronizar anuncios'}
-                </button>
-              )}
-
-              {!hasRailActions && (
-                <span className={styles.railSecondaryValue}>
-                  Completa el flujo principal para activar estas acciones.
-                </span>
-              )}
-            </div>
-          </aside>
-          )}
-        </div>
-      </Card>
+      </div>
 
       <Modal
         isOpen={isDisconnectModalOpen}

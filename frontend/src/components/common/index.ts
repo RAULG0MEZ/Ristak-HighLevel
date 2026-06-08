@@ -5,6 +5,7 @@ export { Modal } from './Modal'
 export { TabList } from './TabList'
 export { Logo } from './Logo'
 export { PageContainer } from './PageContainer'
+export { PageHeader } from './PageHeader'
 
 // Componentes de datos
 export { KpiCard } from './KpiCard'
