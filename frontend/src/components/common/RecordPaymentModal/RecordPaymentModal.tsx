@@ -1519,7 +1519,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
               </div>
             ) : (
               <div className={styles.searchWrapper}>
-                <div className={isEmbedded ? styles.contactSearchBox : styles.searchInput}>
+                <div className={isEmbedded ? styles.contactSearchBox : styles.searchInput} data-ristak-unstyled={isEmbedded || undefined}>
                   <Search size={16} className={styles.searchIcon} />
                   <input
                     type="text"

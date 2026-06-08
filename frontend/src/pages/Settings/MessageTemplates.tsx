@@ -1254,7 +1254,7 @@ export const MessageTemplates: React.FC<MessageTemplatesProps> = ({
 
         <main className={styles.tablePanel}>
           <div className={styles.toolbar}>
-            <label className={styles.searchBox}>
+            <label className={styles.searchBox} data-ristak-unstyled>
               <Search size={16} />
               <input
                 value={searchTerm}

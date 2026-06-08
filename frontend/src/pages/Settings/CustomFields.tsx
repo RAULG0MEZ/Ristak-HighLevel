@@ -588,7 +588,7 @@ export const CustomFields: React.FC = () => {
 
         <main className={styles.tablePanel}>
           <div className={styles.toolbar}>
-            <label className={styles.search}>
+            <label className={styles.search} data-ristak-unstyled>
               <Search size={16} />
               <input value={search} placeholder="Buscar por nombre, ID o tipo" onChange={(event) => setSearch(event.target.value)} />
             </label>

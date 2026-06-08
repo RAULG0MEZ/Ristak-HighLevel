@@ -405,7 +405,7 @@ export const WhatsAppSettings: React.FC = () => {
       <label className={styles.fieldLabel}>
         <span>Llave de conexión de WhatsApp API</span>
         <div className={styles.apiKeyRow}>
-          <div className={styles.inputWrap}>
+          <div className={styles.inputWrap} data-ristak-unstyled>
             <KeyRound size={17} />
             <input
               type="password"
@@ -555,7 +555,7 @@ export const WhatsAppSettings: React.FC = () => {
 
         <main className={styles.tablePanel}>
           <div className={styles.toolbar}>
-            <label className={styles.search}>
+            <label className={styles.search} data-ristak-unstyled>
               <Search size={16} />
               <input value={phoneSearch} placeholder="Buscar por numero, nombre o estado" onChange={(event) => setPhoneSearch(event.target.value)} />
             </label>
@@ -708,7 +708,7 @@ export const WhatsAppSettings: React.FC = () => {
 
         <main className={styles.tablePanel}>
           <div className={styles.toolbar}>
-            <label className={styles.search}>
+            <label className={styles.search} data-ristak-unstyled>
               <Search size={16} />
               <input value={alertSearch} placeholder="Buscar por alerta o detalle" onChange={(event) => setAlertSearch(event.target.value)} />
             </label>

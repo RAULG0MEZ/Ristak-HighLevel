@@ -236,7 +236,7 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ className }) => {
 
   return (
     <div ref={rootRef} className={cn(styles.root, className)}>
-      <div className={styles.inputWrap}>
+      <div className={styles.inputWrap} data-ristak-unstyled>
         <Search size={17} className={styles.inputIcon} />
         <input
           ref={inputRef}
