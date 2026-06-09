@@ -6812,11 +6812,14 @@ type ImportedChoiceSelection = {
   choiceValue: string
   choiceInputType: 'radio' | 'checkbox'
   choiceIndex: number
+  required: boolean
+  options: ImportedFormFieldOption[]
   actions: ImportedButtonActionStep[]
 }
 
 type ImportedChoiceEditorState = {
   selection: ImportedChoiceSelection
+  options: ImportedFormFieldOption[]
   actions: ImportedButtonActionStep[]
 }
 
@@ -7354,8 +7357,9 @@ const readImportedChoiceSelection = (input: HTMLInputElement, doc: Document): Im
   const choiceName = input.getAttribute('name') || input.getAttribute('id') || 'choice'
   const choiceValue = input.getAttribute('value') || getImportedChoiceLabel(input, doc)
   const form = input.closest('form')
-  const groupInputs = Array.from((form || doc).querySelectorAll(`input[type="${input.type}"][name="${choiceName.replace(/"/g, '\\"')}"]`))
+  const groupInputs = Array.from((form || doc).querySelectorAll<HTMLInputElement>(`input[type="${input.type}"][name="${choiceName.replace(/"/g, '\\"')}"]`))
   const choiceIndex = Math.max(0, groupInputs.indexOf(input))
+  const required = groupInputs.some(choiceInput => getImportedFormFieldRequired(choiceInput))
   const editId = input.getAttribute('data-rstk-choice-id') ||
     input.getAttribute('data-rstk-edit-id') ||
     `choice:${choiceName}:${choiceValue}:${choiceIndex}`
@@ -7366,6 +7370,8 @@ const readImportedChoiceSelection = (input: HTMLInputElement, doc: Document): Im
     choiceValue,
     choiceInputType: input.type === 'checkbox' ? 'checkbox' : 'radio',
     choiceIndex,
+    required,
+    options: readImportedFormFieldOptions(input, doc),
     actions: parseImportedActionList(getImportedButtonAttribute(input, [
       'data-rstk-choice-actions',
       'data-ristak-choice-actions',
@@ -8343,6 +8349,7 @@ const ImportedHtmlEditorPanel: React.FC<{
     setFieldEditor(null)
     setChoiceEditor({
       selection,
+      options: selection.options.length ? selection.options : [{ label: selection.label || 'Opción 1', value: selection.choiceValue || selection.label || 'Opción 1' }],
       actions: getUniqueImportedActionSteps(selection.actions, currentPageActionOptions)
     })
     setContentError('')
@@ -8617,14 +8624,17 @@ const ImportedHtmlEditorPanel: React.FC<{
       style.textContent = `
         ${importedEditableSelector} {
           cursor: pointer !important;
-          outline: 1px dashed rgba(100, 116, 139, 0.34) !important;
-          outline-offset: 4px !important;
+          outline: 1px solid transparent !important;
+          outline-offset: 3px !important;
           border-radius: 4px !important;
           box-shadow: none !important;
-          transition: outline-color 140ms ease, outline-width 140ms ease, box-shadow 140ms ease !important;
+          transition: outline-color 140ms ease, outline-width 140ms ease, box-shadow 140ms ease, background-color 140ms ease !important;
         }
         ${importedEditableSelector}:hover {
-          outline: 1px dashed rgba(100, 116, 139, 0.34) !important;
+          outline-color: rgba(100, 116, 139, 0.44) !important;
+          outline-style: dashed !important;
+          outline-width: 1px !important;
+          background: rgba(148, 163, 184, 0.03) !important;
           border-radius: 4px !important;
           box-shadow: none !important;
         }
@@ -8636,8 +8646,11 @@ const ImportedHtmlEditorPanel: React.FC<{
         ${importedChoiceSelector}:hover,
         ${importedFormFieldSelector}:hover,
         label:has(${importedChoiceSelector}):hover {
-          outline: 1px dashed rgba(100, 116, 139, 0.34) !important;
+          outline-color: rgba(100, 116, 139, 0.44) !important;
+          outline-style: dashed !important;
+          outline-width: 1px !important;
           outline-offset: 4px !important;
+          background: rgba(148, 163, 184, 0.03) !important;
           border-radius: 4px !important;
           box-shadow: none !important;
         }
@@ -9144,8 +9157,43 @@ const ImportedHtmlEditorPanel: React.FC<{
   const canSaveChoiceEditor = Boolean(
     choiceEditor &&
     !contentSaving &&
-    areImportedActionsValid(choiceEditor.actions, currentPageActionOptions)
+    areImportedActionsValid(choiceEditor.actions, currentPageActionOptions) &&
+    choiceEditor.options.length > 0
   )
+  const cleanChoiceOptions = (choiceEditor?.options || [])
+    .map(option => ({
+      label: option.label.trim(),
+      value: (option.value || option.label).trim()
+    }))
+    .filter(option => option.label || option.value)
+  const patchChoiceOption = (index: number, patch: Partial<ImportedFormFieldOption>) => {
+    setChoiceEditor(current => {
+      if (!current) return current
+      return {
+        ...current,
+        options: current.options.map((option, optionIndex) => optionIndex === index ? { ...option, ...patch } : option)
+      }
+    })
+  }
+  const addChoiceOption = () => {
+    setChoiceEditor(current => {
+      if (!current) return current
+      const label = `Opción ${current.options.length + 1}`
+      return {
+        ...current,
+        options: [...current.options, { label, value: label }]
+      }
+    })
+  }
+  const removeChoiceOption = (index: number) => {
+    setChoiceEditor(current => {
+      if (!current) return current
+      return {
+        ...current,
+        options: current.options.filter((_, optionIndex) => optionIndex !== index)
+      }
+    })
+  }
   const fieldEditorHasOptions = Boolean(
     fieldEditor &&
     (fieldEditor.selection.tagName === 'select' || ['radio', 'checkbox'].includes(fieldEditor.selection.inputType))
@@ -9210,18 +9258,30 @@ const ImportedHtmlEditorPanel: React.FC<{
   const saveChoiceEditor = async () => {
     if (!choiceEditor) return
     const choiceActions = getUniqueImportedActionSteps(choiceEditor.actions, currentPageActionOptions)
+    const selectedChoiceOption = cleanChoiceOptions[choiceEditor.selection.choiceIndex] || cleanChoiceOptions[0] || {
+      label: choiceEditor.selection.label,
+      value: choiceEditor.selection.choiceValue
+    }
     await saveEditableContent({
       editId: choiceEditor.selection.editId,
       editType: 'choice_option' as ImportedEditableContentType,
-      label: choiceEditor.selection.label,
-      value: choiceEditor.selection.label,
+      label: selectedChoiceOption.label || choiceEditor.selection.label,
+      value: selectedChoiceOption.label || choiceEditor.selection.label,
       tagName: 'input'
-    }, choiceEditor.selection.label, undefined, {
+    }, selectedChoiceOption.label || choiceEditor.selection.label, undefined, {
       choiceActions,
       choiceName: choiceEditor.selection.choiceName,
-      choiceValue: choiceEditor.selection.choiceValue,
+      choiceValue: selectedChoiceOption.value || choiceEditor.selection.choiceValue,
       choiceInputType: choiceEditor.selection.choiceInputType,
-      choiceIndex: choiceEditor.selection.choiceIndex
+      choiceIndex: choiceEditor.selection.choiceIndex,
+      fieldLabel: selectedChoiceOption.label || choiceEditor.selection.label,
+      fieldPlaceholder: selectedChoiceOption.label || choiceEditor.selection.label,
+      fieldRequired: choiceEditor.selection.required,
+      fieldOptions: cleanChoiceOptions,
+      fieldName: choiceEditor.selection.choiceName,
+      fieldHtmlId: '',
+      fieldTag: 'input',
+      fieldInputType: choiceEditor.selection.choiceInputType
     })
   }
 
@@ -9511,6 +9571,41 @@ const ImportedHtmlEditorPanel: React.FC<{
             <div className={styles.importedChoiceMeta}>
               <span>{choiceEditor.selection.choiceInputType === 'radio' ? 'Radio button' : 'Checkbox'}</span>
               <strong>{choiceEditor.selection.choiceName}</strong>
+            </div>
+            <div className={styles.importedFieldOptionsEditor}>
+              <div className={styles.importedFieldOptionsHeader}>
+                <span>Opciones del grupo</span>
+                <button type="button" onClick={addChoiceOption} disabled={contentSaving || choiceEditor.options.length >= 30}>
+                  <Plus size={13} />
+                  Agregar
+                </button>
+              </div>
+              {choiceEditor.options.map((option, index) => (
+                <div key={`${index}-${option.value}`} className={styles.importedFieldOptionRow}>
+                  <input
+                    value={option.label}
+                    disabled={contentSaving}
+                    placeholder={`Opción ${index + 1}`}
+                    name={`rstk-imported-choice-option-label-${index}`}
+                    {...importedEditorNoAutocompleteAttrs}
+                    onChange={(event) => patchChoiceOption(index, {
+                      label: event.target.value,
+                      value: option.value === option.label ? event.target.value : option.value
+                    })}
+                  />
+                  <input
+                    value={option.value}
+                    disabled={contentSaving}
+                    placeholder="valor"
+                    name={`rstk-imported-choice-option-value-${index}`}
+                    {...importedEditorNoAutocompleteAttrs}
+                    onChange={(event) => patchChoiceOption(index, { value: event.target.value })}
+                  />
+                  <button type="button" onClick={() => removeChoiceOption(index)} disabled={contentSaving || choiceEditor.options.length <= 1} aria-label={`Quitar opción ${index + 1}`}>
+                    <X size={13} />
+                  </button>
+                </div>
+              ))}
             </div>
             <ImportedActionChainEditor
               actions={choiceEditor.actions}

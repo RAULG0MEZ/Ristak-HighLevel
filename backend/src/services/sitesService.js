@@ -2211,6 +2211,13 @@ function applyImportedEditableContentUpdate(html = '', input = {}) {
       return `${openingTag}${escapeHtml(value)}</${tagName}>`
     })
   } else if (editType === 'choice_option') {
+    const fieldPatch = getImportedFormFieldPatch(input, value)
+    const choiceGroupUpdate = fieldPatch.options.length && ['radio', 'checkbox'].includes(fieldPatch.fieldInputType)
+      ? replaceImportedChoiceFieldGroup(nextHtml, editId, fieldPatch)
+      : { html: nextHtml, updated: false }
+    if (choiceGroupUpdate.updated) {
+      nextHtml = choiceGroupUpdate.html
+    }
     const choiceCounters = new Map()
     nextHtml = nextHtml.replace(/<input\b([^>]*?)\s*(\/?)>/gi, (match, attrsText = '') => {
       if (updated) return match
