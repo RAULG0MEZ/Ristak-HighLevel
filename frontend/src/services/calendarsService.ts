@@ -75,15 +75,23 @@ export interface Calendar {
     enabled: boolean;
     LookBusyPercentage: number;
   };
-  source?: 'ristak' | 'ghl';
+  source?: 'ristak' | 'ghl' | 'google';
+  googleCalendarId?: string;
+  googleAccessRole?: string;
   syncStatus?: 'pending' | 'synced' | 'error';
   syncError?: string | null;
+  publicBookingPath?: string;
+  publicBaseDomain?: string;
+  publicUrlEnabled?: boolean;
+  publicUrl?: string;
+  publicUrlUnavailableReason?: string;
 }
 
 export interface CalendarEvent {
   id: string;
   title: string;
   calendarId: string;
+  googleEventId?: string | null;
   locationId: string;
   contactId?: string;
   groupId?: string;
@@ -106,6 +114,49 @@ export interface CalendarEvent {
     source: string;
   };
   masterEventId?: string;
+}
+
+export interface GoogleCalendarIntegrationStatus {
+  connected: boolean;
+  calendarId: string;
+  serviceAccountEmail: string;
+  projectId: string;
+  privateKeyId: string;
+  calendarSummary: string;
+  calendarTimeZone: string;
+  lastTestAt: string | null;
+  lastTestStatus: 'success' | 'error' | null;
+  lastTestMessage: string;
+  lastSyncAt: string | null;
+  lastSyncStatus: 'success' | 'error' | null;
+  lastSyncMessage: string;
+  syncedCalendarsCount: number;
+  syncedEventsCount: number;
+  connectedAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface GoogleCalendarServiceAccountReveal {
+  serviceAccountJson: string;
+}
+
+export interface GoogleCalendarMergeCalendar extends Calendar {
+  appointmentsCount?: number;
+}
+
+export interface GoogleCalendarMergePreview {
+  connected: boolean;
+  mergeAvailable: boolean;
+  googleCalendar: Calendar | null;
+  sourceCalendars: GoogleCalendarMergeCalendar[];
+  totalAppointments: number;
+}
+
+export interface GoogleCalendarMergeResult extends GoogleCalendarMergePreview {
+  moved: number;
+  removedSourceCalendars?: number;
+  synced: number;
+  failed: number;
 }
 
 export interface AppointmentStats {
@@ -138,18 +189,60 @@ export const calendarsService = {
   /**
    * Obtener todos los calendarios de la ubicación
    */
-  async getCalendars(locationId?: string | null, accessToken?: string | null): Promise<Calendar[]> {
+  async getCalendars(
+    locationId?: string | null,
+    accessToken?: string | null,
+    sourcePreference?: 'combined' | 'ristak' | 'ghl' | 'google'
+  ): Promise<Calendar[]> {
     try {
       const data = await apiClient.get<Calendar[]>('/calendars', {
         params: {
           ...(locationId ? { locationId } : {}),
-          ...(accessToken ? { accessToken } : {})
+          ...(accessToken ? { accessToken } : {}),
+          ...(sourcePreference ? { sourcePreference } : {})
         }
       });
       return Array.isArray(data) ? data : [];
     } catch (error) {
       return [];
     }
+  },
+
+  async getGoogleIntegration(): Promise<GoogleCalendarIntegrationStatus> {
+    return apiClient.get<GoogleCalendarIntegrationStatus>('/calendars/google-integration');
+  },
+
+  async revealGoogleServiceAccount(): Promise<GoogleCalendarServiceAccountReveal> {
+    return apiClient.get<GoogleCalendarServiceAccountReveal>('/calendars/google-integration/reveal/service-account');
+  },
+
+  async saveGoogleIntegration(payload: {
+    calendarId: string;
+    serviceAccountJson: string;
+  }): Promise<GoogleCalendarIntegrationStatus> {
+    return apiClient.put<GoogleCalendarIntegrationStatus>('/calendars/google-integration', payload);
+  },
+
+  async testGoogleIntegration(): Promise<GoogleCalendarIntegrationStatus> {
+    return apiClient.post<GoogleCalendarIntegrationStatus>('/calendars/google-integration/test');
+  },
+
+  async syncGoogleIntegration(): Promise<GoogleCalendarIntegrationStatus> {
+    return apiClient.post<GoogleCalendarIntegrationStatus>('/calendars/google-integration/sync');
+  },
+
+  async getGoogleMergePreview(): Promise<GoogleCalendarMergePreview> {
+    return apiClient.get<GoogleCalendarMergePreview>('/calendars/google-integration/merge-preview');
+  },
+
+  async mergeGoogleAppointments(sourceCalendarIds?: string[]): Promise<GoogleCalendarMergeResult> {
+    return apiClient.post<GoogleCalendarMergeResult>('/calendars/google-integration/merge', {
+      ...(sourceCalendarIds?.length ? { sourceCalendarIds } : {})
+    });
+  },
+
+  async deleteGoogleIntegration(): Promise<GoogleCalendarIntegrationStatus> {
+    return apiClient.delete<GoogleCalendarIntegrationStatus>('/calendars/google-integration');
   },
 
   /**
@@ -385,6 +478,20 @@ export const calendarsService = {
         ...(accessToken ? { accessToken } : {})
       });
       return data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  /**
+   * Eliminar calendario local de Ristak.
+   */
+  async deleteCalendar(calendarId: string, accessToken?: string): Promise<boolean> {
+    try {
+      await apiClient.delete(`/calendars/${calendarId}`, undefined, {
+        params: accessToken ? { accessToken } : {}
+      });
+      return true;
     } catch (error) {
       throw error;
     }

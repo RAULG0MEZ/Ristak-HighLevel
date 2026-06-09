@@ -1,16 +1,15 @@
 import { db } from '../config/database.js';
 import { logger } from '../utils/logger.js';
 import { resolveDateRange, resolveDateRangeWithGHLTimezone } from '../utils/dateUtils.js';
-import { normalizeTrafficSource } from '../utils/trafficSourceNormalizer.js';
 import { getGroupExpression } from '../services/analyticsService.js';
 import { getManualBusinessExpensesTotalForRange } from '../services/manualBusinessExpensesService.js';
-import { getWhatsAppTrafficSourcesForRange } from '../services/whatsappAnalyticsService.js';
 import { getContactSourceBreakdown } from '../services/contactSourceService.js';
-import { getTrafficDistributions, getLeadsContactIds } from '../services/originDistributionService.js';
+import { getTrafficDistributions, getWhatsAppApiSourceBreakdown, getWhatsAppApiNumberBreakdown, getLeadsContactIds } from '../services/originDistributionService.js';
+import { normalizeTrafficSource } from '../utils/trafficSourceNormalizer.js';
 import { DateTime } from 'luxon';
 import { getContactsWithAppointmentsHybrid, getContactsWithShowedAppointmentsHybrid } from '../services/appointmentsMerge.js';
 import { getHiddenContactFilters, buildHiddenContactsCondition } from '../utils/hiddenContactsFilter.js';
-import { nonTestPaymentCondition } from '../utils/paymentMode.js';
+import { nonTestPaymentCondition, SUCCESS_PAYMENT_STATUSES, successfulPaymentStatusCondition } from '../utils/paymentMode.js';
 
 const isPostgres = Boolean(process.env.DATABASE_URL);
 
@@ -132,8 +131,9 @@ const computeFinancialSnapshot = async (range) => {
   const hiddenFilters = await getHiddenContactFilters();
   const hiddenCondition = buildHiddenContactsCondition(hiddenFilters, 'c', false);
 
-  const paymentsFilters = ['status = ?', nonTestPaymentCondition()];
-  const paymentsParams = ['succeeded'];
+  const successfulPayments = successfulPaymentStatusCondition();
+  const paymentsFilters = [successfulPayments.sql, nonTestPaymentCondition()];
+  const paymentsParams = [...successfulPayments.params];
   const { filters: dateFilters, params: dateParams } = buildDateFilters(range);
   paymentsFilters.push(...dateFilters);
   paymentsParams.push(...dateParams);
@@ -177,7 +177,6 @@ const computeFinancialSnapshot = async (range) => {
 
   // Calcular promedio de pagos INDIVIDUALES (no total_paid de contactos)
   // IMPORTANTE: Solo pagos exitosos según Mandamiento #11
-  const SUCCESS_PAYMENT_STATUSES = ['succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success'];
   const statusPlaceholders = SUCCESS_PAYMENT_STATUSES.map(() => '?').join(',');
 
   const paymentsAvgFilters = [`LOWER(status) IN (${statusPlaceholders})`, nonTestPaymentCondition()];
@@ -386,23 +385,24 @@ export const getChartData = async (req, res) => {
     // Usar getGroupExpression() con timezone dinámico
     const dateExpression = getGroupExpression('date', groupBy, timezone);
 
+    const successfulPayments = successfulPaymentStatusCondition();
     const ingresosQuery = `SELECT
        ${dateExpression} as periodo,
        SUM(amount) as total_ingresos
      FROM payments
-     WHERE status = 'succeeded'
+     WHERE ${successfulPayments.sql}
      AND ${nonTestPaymentCondition()}
-     AND date >= $1 AND date <= $2
+     AND date >= ? AND date <= ?
      ${hiddenCondition ? `AND contact_id IN (SELECT c.id FROM contacts c WHERE ${hiddenCondition})` : ''}
      GROUP BY periodo
      ORDER BY periodo`;
-    const ingresosParams = [range.startUtc, range.endUtc];
+    const ingresosParams = [...successfulPayments.params, range.startUtc, range.endUtc];
 
     const gastosQuery = `SELECT
        ${dateExpression} as periodo,
        SUM(spend) as total_gastos
      FROM meta_ads
-     WHERE date >= $1 AND date <= $2
+     WHERE date >= ? AND date <= ?
      GROUP BY periodo
      ORDER BY periodo`;
     // IMPORTANTE: meta_ads.date es TEXT "YYYY-MM-DD", usar startZoned.toISODate()
@@ -481,25 +481,27 @@ export const getRoasData = async (req, res) => {
     const hiddenCondition = buildHiddenContactsCondition(hiddenFilters, 'c', false);
 
     // Agrupar por mes con timezone dinámico
-    const monthExpression = getGroupExpression('date', 'month', timezone);
+    const monthExpression = getGroupExpression('i.date', 'month', timezone);
 
+    const successfulPayments = successfulPaymentStatusCondition();
     const query = `
       SELECT
         ${monthExpression} as periodo,
         COALESCE(SUM(i.amount), 0) as ingresos,
         COALESCE(SUM(g.spend), 0) as gastos
       FROM (
-        SELECT date, amount FROM payments WHERE status = 'succeeded' AND ${nonTestPaymentCondition()} AND date >= $1 AND date <= $2
+        SELECT date, amount FROM payments WHERE ${successfulPayments.sql} AND ${nonTestPaymentCondition()} AND date >= ? AND date <= ?
         ${hiddenCondition ? `AND contact_id IN (SELECT c.id FROM contacts c WHERE ${hiddenCondition})` : ''}
       ) i
       LEFT JOIN (
-        SELECT date, spend FROM meta_ads WHERE date >= $3 AND date <= $4
+        SELECT date, spend FROM meta_ads WHERE date >= ? AND date <= ?
       ) g ON ${getGroupExpression('i.date', 'month', timezone)} = ${getGroupExpression('g.date', 'month', timezone)}
       GROUP BY periodo
       ORDER BY periodo
     `;
     // IMPORTANTE: meta_ads.date es TEXT "YYYY-MM-DD", payments.date es DATETIME
     const params = [
+      ...successfulPayments.params,
       range.startUtc,
       range.endUtc,
       range.startZoned.toISODate(),
@@ -836,19 +838,20 @@ export const getSalesData = async (req, res) => {
     // Usar getGroupExpression() con timezone dinámico
     const dateExpression = getGroupExpression('date', groupBy, timezone);
 
+    const successfulPayments = successfulPaymentStatusCondition();
     const query = `
       SELECT
         ${dateExpression} as periodo,
         COUNT(*) as total
       FROM payments
-      WHERE status = 'succeeded'
+      WHERE ${successfulPayments.sql}
       AND ${nonTestPaymentCondition()}
-      AND date >= $1 AND date <= $2
+      AND date >= ? AND date <= ?
       ${hiddenCondition ? `AND contact_id IN (SELECT c.id FROM contacts c WHERE ${hiddenCondition})` : ''}
       GROUP BY periodo
       ORDER BY periodo
     `;
-    const params = [range.startUtc, range.endUtc];
+    const params = [...successfulPayments.params, range.startUtc, range.endUtc];
 
     const data = await db.all(query, params);
 
@@ -920,8 +923,8 @@ export const getTrafficSources = async (req, res) => {
     const shouldIncludeWeb = String(includeWeb) !== '0'
     const shouldIncludeWhatsapp = String(includeWhatsapp) !== '0'
 
-    // Cada visitante debe contar una sola vez. Tomamos su primera sesión del rango y
-    // normalizamos en JS con la misma lógica robusta que usa Analytics.
+    // Cada visitante web cuenta una sola vez. Tomamos su primera sesión del rango,
+    // igual que hacía este endpoint antes, y después sumamos conversaciones de WhatsApp.
     const query = `
       SELECT
         visitor_id,
@@ -963,17 +966,12 @@ export const getTrafficSources = async (req, res) => {
       sourcesMap.set(sourceName, (sourcesMap.get(sourceName) || 0) + 1)
     })
 
-    const whatsappSources = shouldIncludeWhatsapp
-      ? await getWhatsAppTrafficSourcesForRange({
-          startDate,
-          endDate,
-          limit: 50
-        })
-      : []
-
-    whatsappSources.forEach(source => {
-      sourcesMap.set(source.name, (sourcesMap.get(source.name) || 0) + Number(source.value || 0))
-    })
+    if (shouldIncludeWhatsapp) {
+      const whatsappSources = await getWhatsAppApiSourceBreakdown(range, { limit: 100 })
+      whatsappSources.forEach(({ name, value }) => {
+        sourcesMap.set(name, (sourcesMap.get(name) || 0) + value)
+      })
+    }
 
     // Mapear colores por plataforma
     const colorMap = {
@@ -1004,7 +1002,6 @@ export const getTrafficSources = async (req, res) => {
       'Desconocido': '#64748b'
     }
 
-    // Convertir Map a array y ordenar por valor
     const data = Array.from(sourcesMap.entries())
       .map(([name, value]) => ({
         name,
@@ -1012,7 +1009,7 @@ export const getTrafficSources = async (req, res) => {
         color: colorMap[name] || '#6b7280'
       }))
       .sort((a, b) => b.value - a.value)
-      .slice(0, 10) // Top 10 fuentes
+      .slice(0, 10)
 
     res.json({ success: true, data })
   } catch (error) {
@@ -1026,7 +1023,7 @@ export const getTrafficSources = async (req, res) => {
  * - appointments: contactos con cita (date_added) dentro del rango.
  * - conversions: contactos cuyo PRIMER pago exitoso cae en el rango (clientes nuevos),
  *   misma definición que la etapa "Clientes" del embudo en vista "Todos".
- * En ambos casos se agrupa por la fuente resuelta del contacto (sesión web + WhatsApp/Meta).
+ * En ambos casos se agrupa por la fuente resuelta del contacto (sesión web + Meta).
  * @param {'appointments'|'conversions'} metric
  * @param {{ startUtc: string, endUtc: string }} range
  * @returns {Promise<Array<{ name: string, value: number }>>}
@@ -1058,7 +1055,6 @@ async function getSourceBreakdownByMetric(metric, range) {
     contactIds = rows.map(row => row.id)
   } else {
     // conversions: clientes nuevos = contactos cuyo primer pago exitoso cae en el rango
-    const SUCCESS_PAYMENT_STATUSES = ['succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success']
     const statusPlaceholders = SUCCESS_PAYMENT_STATUSES.map(() => '?').join(', ')
     const conditions = ['first_p.first_payment_date >= ?', 'first_p.first_payment_date <= ?']
     if (hiddenConditionC) conditions.push(hiddenConditionC)
@@ -1097,18 +1093,19 @@ export const getOriginDistribution = async (req, res) => {
 
     const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate })
 
-    const [traffic, leadIds, appointments, conversions] = await Promise.all([
+    const [traffic, leadIds, appointments, conversions, whatsappNumbers] = await Promise.all([
       getTrafficDistributions(range),
       getLeadsContactIds(range),
       getSourceBreakdownByMetric('appointments', range),
-      getSourceBreakdownByMetric('conversions', range)
+      getSourceBreakdownByMetric('conversions', range),
+      getWhatsAppApiNumberBreakdown(range)
     ])
 
     const leads = await getContactSourceBreakdown(leadIds, { limit: 10 })
 
     res.json({
       success: true,
-      data: { traffic, leads, appointments, conversions }
+      data: { traffic, leads, appointments, conversions, whatsappNumbers }
     })
   } catch (error) {
     logger.error(`Error en getOriginDistribution: ${error.message}`)
@@ -1149,6 +1146,7 @@ export const getFinancialOverview = async (req, res) => {
 
     let revenueQuery = '';
     let revenueParams = [];
+    const successfulPayments = successfulPaymentStatusCondition('p');
 
     if (!useContactAttribution) {
       // Vista "Todos": ingresos por fecha real de pago
@@ -1158,14 +1156,14 @@ export const getFinancialOverview = async (req, res) => {
           COALESCE(SUM(p.amount), 0) as revenue
         FROM payments p
         LEFT JOIN contacts c ON c.id = p.contact_id
-        WHERE p.status = 'succeeded'
+        WHERE ${successfulPayments.sql}
           AND ${nonTestPaymentCondition('p')}
-          AND p.date >= $1 AND p.date <= $2
+          AND p.date >= ? AND p.date <= ?
           ${hiddenCondition ? `AND ${hiddenCondition}` : ''}
         GROUP BY day
         ORDER BY day ASC
       `;
-      revenueParams = [range.startUtc, range.endUtc];
+      revenueParams = [...successfulPayments.params, range.startUtc, range.endUtc];
     } else {
       // Vista "Al registro" / "Identificados de anuncios": ingresos por fecha de creación del contacto
       revenueQuery = `
@@ -1175,9 +1173,9 @@ export const getFinancialOverview = async (req, res) => {
         FROM contacts c
         LEFT JOIN payments p
           ON p.contact_id = c.id
-          AND p.status = 'succeeded'
+          AND ${successfulPayments.sql}
           AND ${nonTestPaymentCondition('p')}
-        WHERE c.created_at >= $1 AND c.created_at <= $2
+        WHERE c.created_at >= ? AND c.created_at <= ?
           ${isAttributed ? `AND c.attribution_ad_id IS NOT NULL AND EXISTS (
             SELECT 1 FROM meta_ads ma
             WHERE ma.ad_id = c.attribution_ad_id
@@ -1187,7 +1185,7 @@ export const getFinancialOverview = async (req, res) => {
         GROUP BY day
         ORDER BY day ASC
       `;
-      revenueParams = [range.startUtc, range.endUtc];
+      revenueParams = [...successfulPayments.params, range.startUtc, range.endUtc];
     }
 
     // Query para TODOS los gastos de publicidad
@@ -1196,7 +1194,7 @@ export const getFinancialOverview = async (req, res) => {
         ${spendDayExpression} as day,
         SUM(spend) as spend
       FROM meta_ads
-      WHERE date >= $1 AND date <= $2
+      WHERE date >= ? AND date <= ?
       GROUP BY day
       ORDER BY day ASC
     `;
@@ -1487,7 +1485,6 @@ export const getFunnelData = async (req, res) => {
       customersCount = parseInt(customersData?.count || 0);
     } else {
       // Vista "Todos": Contactos cuyo PRIMER pago está en el rango
-      const SUCCESS_PAYMENT_STATUSES = ['succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success']
       const statusPlaceholders = SUCCESS_PAYMENT_STATUSES.map(() => '?').join(',')
 
       const conditions = ['first_p.first_payment_date >= $' + (SUCCESS_PAYMENT_STATUSES.length + 1),

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { useSearchParams } from 'react-router-dom'
-import { KpiCard, Card, Button, Table, DateRangePicker, ContactSearchInput, PageContainer, TabList, TreeFilter, RecordPaymentModal, Badge, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, Loading } from '@/components/common'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { KpiCard, Card, Button, Table, DateRangePicker, ContactSearchInput, PageContainer, TabList, TreeFilter, RecordPaymentModal, Badge, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, Loading, NumberInput, CustomSelect } from '@/components/common'
 import type { Column, BadgeVariant } from '@/components/common'
 import { useNotification } from '@/contexts/NotificationContext'
 import { Contact } from '@/types'
@@ -29,8 +29,9 @@ import {
 } from 'lucide-react'
 import { useDateRange } from '@/contexts/DateRangeContext'
 import { useTimezone } from '@/contexts/TimezoneContext'
-import { useHighLevelConnected } from '@/hooks'
+import { useAppConfig, useHighLevelConnected } from '@/hooks'
 import { formatCurrency, formatDateToISO, formatEndDateToISO, formatNumber, parseLocalDateString, formatName } from '@/utils/format'
+import { ACCOUNT_CURRENCY_CONFIG_KEY, CURRENCY_OPTIONS, getDetectedAccountLocaleDefaults } from '@/utils/accountLocale'
 import { transactionsService, type Transaction, type TransactionSummary, type PaymentPlan } from '@/services/transactionsService'
 import { highLevelService } from '@/services/highLevelService'
 import styles from './Transactions.module.css'
@@ -43,6 +44,7 @@ interface ModalData {
 }
 
 type PaymentsTableTab = 'transactions' | 'payment-plans'
+type TransactionsViewMode = 'all' | 'by-date'
 type StatusFilters = Record<string, string[]>
 
 interface PaymentPlanModalData {
@@ -60,6 +62,67 @@ interface PaymentPlanCreateModalData {
   endType: 'never' | 'count' | 'by'
   monthlyMode: 'dayOfMonth' | 'weekOfMonth'
 }
+
+interface TransactionsRouteState {
+  tab: PaymentsTableTab
+  viewMode: TransactionsViewMode
+  transactionId: string
+  paymentPlanId: string
+  createTransaction: boolean
+  createPaymentPlan: boolean
+}
+
+const transactionViewModes: TransactionsViewMode[] = ['all', 'by-date']
+const isTransactionsViewMode = (value?: string): value is TransactionsViewMode => transactionViewModes.includes(value as TransactionsViewMode)
+
+const parseTransactionsRoute = (pathname: string): TransactionsRouteState => {
+  const segments = pathname.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean)
+  const transactionsIndex = segments.indexOf('transactions')
+  const routeSegments = transactionsIndex >= 0 ? segments.slice(transactionsIndex + 1) : []
+  const first = routeSegments[0]
+
+  if (first === 'payment-plans') {
+    return {
+      tab: 'payment-plans',
+      viewMode: 'all',
+      transactionId: '',
+      paymentPlanId: routeSegments[1] && routeSegments[1] !== 'new' ? decodeURIComponent(routeSegments[1]) : '',
+      createTransaction: false,
+      createPaymentPlan: routeSegments[1] === 'new'
+    }
+  }
+
+  if (first === 'new') {
+    return {
+      tab: 'transactions',
+      viewMode: 'all',
+      transactionId: '',
+      paymentPlanId: '',
+      createTransaction: true,
+      createPaymentPlan: false
+    }
+  }
+
+  const viewMode = isTransactionsViewMode(routeSegments[1]) ? routeSegments[1] : isTransactionsViewMode(first) ? first : 'all'
+  const detailIndex = routeSegments[0] === 'transactions' ? 2 : 1
+  const detail = routeSegments[detailIndex]
+
+  return {
+    tab: 'transactions',
+    viewMode,
+    transactionId: detail && detail !== 'new' ? decodeURIComponent(detail) : '',
+    paymentPlanId: '',
+    createTransaction: detail === 'new',
+    createPaymentPlan: false
+  }
+}
+
+const buildTransactionsPath = (viewMode: TransactionsViewMode) => `/transactions/transactions/${viewMode}`
+const buildCreateTransactionPath = (viewMode: TransactionsViewMode) => `${buildTransactionsPath(viewMode)}/new`
+const buildTransactionDetailPath = (viewMode: TransactionsViewMode, transactionId: string) =>
+  `${buildTransactionsPath(viewMode)}/${encodeURIComponent(transactionId)}`
+const buildPaymentPlansPath = () => '/transactions/payment-plans'
+const buildPaymentPlanDetailPath = (planId: string) => `${buildPaymentPlansPath()}/${encodeURIComponent(planId)}`
 
 const toDateInputValue = (value?: string | null): string => {
   if (!value) return formatDateToISO(new Date())
@@ -146,6 +209,8 @@ const PAYMENT_PLAN_STATUS_ORDER = [
   'failed',
   'deleted'
 ]
+
+const DELETE_CONFIRMATION_WORD = 'ELIMINAR'
 
 const getDayOfWeekCode = (date: Date) => {
   const codes = ['su', 'mo', 'tu', 'we', 'th', 'fr', 'sa']
@@ -261,9 +326,14 @@ const buildPaymentPlanSchedule = ({
 
 export const Transactions: React.FC = () => {
   const { dateRange, setDateRange } = useDateRange()
+  const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
+  const routeState = useMemo(() => parseTransactionsRoute(location.pathname), [location.pathname])
   const { formatLocalDateShort } = useTimezone()
   const { showConfirm, showToast } = useNotification()
+  const detectedLocaleDefaults = useMemo(getDetectedAccountLocaleDefaults, [])
+  const [defaultCurrency] = useAppConfig<string>(ACCOUNT_CURRENCY_CONFIG_KEY, detectedLocaleDefaults.currency)
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [paymentPlans, setPaymentPlans] = useState<PaymentPlan[]>([])
   const [summary, setSummary] = useState<TransactionSummary | null>(null)
@@ -286,18 +356,27 @@ export const Transactions: React.FC = () => {
     endType: 'never',
     monthlyMode: 'dayOfMonth'
   })
-  const [paymentTableTab, setPaymentTableTab] = useState<PaymentsTableTab>('transactions')
+  const [paymentTableTab, setPaymentTableTab] = useState<PaymentsTableTab>(routeState.tab)
+  const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([])
+  const [transactionsPendingDeletion, setTransactionsPendingDeletion] = useState<Transaction[]>([])
+  const [transactionDeleteConfirmation, setTransactionDeleteConfirmation] = useState('')
+  const [deletingTransactions, setDeletingTransactions] = useState(false)
 
   // Los planes de pago dependen de una integración de terceros (HighLevel).
   // Sin ella, Ristak solo registra transacciones locales: no hay tab de planes.
   const { connected: highLevelConnected } = useHighLevelConnected()
   const [transactionStatusFilters, setTransactionStatusFilters] = useState<StatusFilters>({})
   const [paymentPlanStatusFilters, setPaymentPlanStatusFilters] = useState<StatusFilters>({})
-  const [viewMode, setViewMode] = useState<'all' | 'by-date'>('all') // Por defecto 'all' (Todos)
+  const [viewMode, setViewMode] = useState<TransactionsViewMode>(routeState.viewMode)
   const [showRecordPaymentModal, setShowRecordPaymentModal] = useState(false)
   const [isClient, setIsClient] = useState(false)
   const [hasLoadedTransactions, setHasLoadedTransactions] = useState(false)
   const handledOpenPaymentRef = useRef<string | null>(null)
+  const handledOpenPaymentPlanRef = useRef<string | null>(null)
+
+  const navigatePaymentsTable = (nextTab: PaymentsTableTab, nextViewMode = viewMode) => {
+    navigate(nextTab === 'payment-plans' ? buildPaymentPlansPath() : buildTransactionsPath(nextViewMode))
+  }
 
   useEffect(() => {
     if (paymentTableTab === 'transactions') {
@@ -316,12 +395,38 @@ export const Transactions: React.FC = () => {
   useEffect(() => {
     if (!highLevelConnected && paymentTableTab === 'payment-plans') {
       setPaymentTableTab('transactions')
+      navigate(buildTransactionsPath(viewMode), { replace: true })
     }
-  }, [highLevelConnected, paymentTableTab])
+  }, [highLevelConnected, navigate, paymentTableTab, viewMode])
+
+  useEffect(() => {
+    if (!highLevelConnected && routeState.tab === 'payment-plans') {
+      return
+    }
+    setPaymentTableTab(current => current === routeState.tab ? current : routeState.tab)
+    setViewMode(current => current === routeState.viewMode ? current : routeState.viewMode)
+  }, [highLevelConnected, routeState.tab, routeState.viewMode])
 
   useEffect(() => {
     setIsClient(true)
   }, [])
+
+  useEffect(() => {
+    if (selectedTransactionIds.length === 0) return
+
+    const availableIds = new Set(transactions.map(transaction => transaction.id))
+    const nextSelectedIds = selectedTransactionIds.filter(id => availableIds.has(id))
+
+    if (nextSelectedIds.length !== selectedTransactionIds.length) {
+      setSelectedTransactionIds(nextSelectedIds)
+    }
+  }, [selectedTransactionIds, transactions])
+
+  useEffect(() => {
+    if (paymentTableTab !== 'transactions' && selectedTransactionIds.length > 0) {
+      setSelectedTransactionIds([])
+    }
+  }, [paymentTableTab, selectedTransactionIds.length])
 
   const fetchData = async (forceSync = false) => {
     setLoading(true)
@@ -368,7 +473,9 @@ export const Transactions: React.FC = () => {
   }
 
   const handlePaymentTableTabChange = (value: string) => {
-    setPaymentTableTab(value as PaymentsTableTab)
+    if (value !== 'transactions' && value !== 'payment-plans') return
+    setPaymentTableTab(value)
+    navigatePaymentsTable(value)
   }
 
   const handleSync = async () => {
@@ -422,6 +529,12 @@ export const Transactions: React.FC = () => {
       purchases: 0
     }
     setModal({ type: 'edit', transaction, selectedContact: mockContact })
+    navigate(buildTransactionDetailPath(viewMode, transaction.id))
+  }
+
+  const closeTransactionModal = () => {
+    setModal({ type: null, selectedContact: null })
+    navigate(buildTransactionsPath(viewMode), { replace: true })
   }
 
   const closePaymentPlanModal = () => {
@@ -430,9 +543,11 @@ export const Transactions: React.FC = () => {
       loading: false,
       saving: false
     })
+    navigate(buildPaymentPlansPath(), { replace: true })
   }
 
   const openPaymentPlanCreateModal = () => {
+    setPaymentTableTab('payment-plans')
     setPaymentPlanCreateModal({
       open: true,
       selectedContact: null,
@@ -442,6 +557,7 @@ export const Transactions: React.FC = () => {
       endType: 'never',
       monthlyMode: 'dayOfMonth'
     })
+    navigate('/transactions/payment-plans/new')
   }
 
   const closePaymentPlanCreateModal = () => {
@@ -454,9 +570,12 @@ export const Transactions: React.FC = () => {
       endType: 'never',
       monthlyMode: 'dayOfMonth'
     })
+    navigate(buildPaymentPlansPath(), { replace: true })
   }
 
   const handleOpenPaymentPlan = async (plan: PaymentPlan) => {
+    setPaymentTableTab('payment-plans')
+    navigate(buildPaymentPlanDetailPath(plan.id))
     setPaymentPlanModal({
       plan,
       loading: true,
@@ -717,9 +836,10 @@ export const Transactions: React.FC = () => {
 
   useEffect(() => {
     const openType = searchParams.get('open')
-    const paymentId = searchParams.get('id')
+    const legacyPaymentId = openType === 'payment' ? searchParams.get('id') : ''
+    const paymentId = routeState.transactionId || legacyPaymentId
 
-    if (openType !== 'payment' || !paymentId) {
+    if (!paymentId) {
       handledOpenPaymentRef.current = null
       return
     }
@@ -732,6 +852,7 @@ export const Transactions: React.FC = () => {
     let isMounted = true
 
     const clearOpenParams = () => {
+      if (!legacyPaymentId) return
       const nextParams = new URLSearchParams(searchParams)
       nextParams.delete('open')
       nextParams.delete('id')
@@ -761,24 +882,168 @@ export const Transactions: React.FC = () => {
     return () => {
       isMounted = false
     }
-  }, [searchParams, setSearchParams, showToast, transactions])
+  }, [routeState.transactionId, searchParams, setSearchParams, showToast, transactions])
 
-  const handleDelete = async (id: string) => {
-    showConfirm(
-      'Eliminar pago',
-      '¿Estás seguro de eliminar este pago? Esta acción no se puede deshacer.',
-      async () => {
-        try {
-          await transactionsService.deleteTransaction(id)
-          setTransactions(prev => prev.filter(t => t.id !== id))
-          showToast('success', 'Pago eliminado correctamente', 'El registro de pago se eliminó de forma permanente del sistema')
-          fetchData()
-        } catch (error) {
-          // Error already shown to user via toast
-          showToast('error', 'No se pudo eliminar el pago', 'Hubo un problema al intentar eliminar el registro. Intenta nuevamente.')
-        }
+  useEffect(() => {
+    if (!routeState.createTransaction) return
+    setPaymentTableTab('transactions')
+    setShowRecordPaymentModal(true)
+  }, [routeState.createTransaction])
+
+  useEffect(() => {
+    if (!routeState.createTransaction && showRecordPaymentModal) {
+      setShowRecordPaymentModal(false)
+    }
+  }, [routeState.createTransaction, showRecordPaymentModal])
+
+  useEffect(() => {
+    if (!routeState.createPaymentPlan) return
+    setPaymentTableTab('payment-plans')
+    setPaymentPlanCreateModal({
+      open: true,
+      selectedContact: null,
+      saving: false,
+      scheduleMode: 'recurring',
+      frequency: 'monthly',
+      endType: 'never',
+      monthlyMode: 'dayOfMonth'
+    })
+  }, [routeState.createPaymentPlan])
+
+  useEffect(() => {
+    if (!routeState.createPaymentPlan && paymentPlanCreateModal.open) {
+      setPaymentPlanCreateModal({
+        open: false,
+        selectedContact: null,
+        saving: false,
+        scheduleMode: 'recurring',
+        frequency: 'monthly',
+        endType: 'never',
+        monthlyMode: 'dayOfMonth'
+      })
+    }
+  }, [paymentPlanCreateModal.open, routeState.createPaymentPlan])
+
+  useEffect(() => {
+    const planId = routeState.paymentPlanId
+    if (!planId) {
+      handledOpenPaymentPlanRef.current = null
+      return
+    }
+
+    if (handledOpenPaymentPlanRef.current === planId) return
+    handledOpenPaymentPlanRef.current = planId
+    setPaymentTableTab('payment-plans')
+    setPaymentPlanModal({
+      plan: { id: planId } as PaymentPlan,
+      loading: true,
+      saving: false
+    })
+
+    let isMounted = true
+    transactionsService.getPaymentPlan(planId)
+      .then(plan => {
+        if (!isMounted) return
+        setPaymentPlanModal({
+          plan,
+          loading: false,
+          saving: false
+        })
+      })
+      .catch(() => {
+        if (!isMounted) return
+        setPaymentPlanModal(prev => ({ ...prev, loading: false }))
+        showToast('error', 'No se pudo abrir el plan', 'El resultado existe, pero no se pudo cargar el detalle.')
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [routeState.paymentPlanId, showToast])
+
+  useEffect(() => {
+    if (!routeState.transactionId && modal.type === 'edit') {
+      setModal({ type: null, selectedContact: null })
+    }
+  }, [modal.type, routeState.transactionId])
+
+  useEffect(() => {
+    if (!routeState.paymentPlanId && paymentPlanModal.plan) {
+      setPaymentPlanModal({
+        plan: null,
+        loading: false,
+        saving: false
+      })
+    }
+  }, [paymentPlanModal.plan, routeState.paymentPlanId])
+
+  const openTransactionDeleteModal = (targetTransactions: Transaction[]) => {
+    if (targetTransactions.length === 0) return
+
+    setTransactionsPendingDeletion(targetTransactions)
+    setTransactionDeleteConfirmation('')
+  }
+
+  const closeTransactionDeleteModal = () => {
+    if (deletingTransactions) return
+
+    setTransactionsPendingDeletion([])
+    setTransactionDeleteConfirmation('')
+  }
+
+  const handleConfirmDeleteTransactions = async () => {
+    if (transactionsPendingDeletion.length === 0) return
+    if (transactionDeleteConfirmation.trim().toUpperCase() !== DELETE_CONFIRMATION_WORD) return
+
+    setDeletingTransactions(true)
+    const deletingIds = transactionsPendingDeletion.map(transaction => transaction.id)
+    const failedTransactions: Transaction[] = []
+
+    for (const transaction of transactionsPendingDeletion) {
+      try {
+        await transactionsService.deleteTransaction(transaction.id)
+      } catch {
+        failedTransactions.push(transaction)
       }
+    }
+
+    const deletedIds = new Set(
+      deletingIds.filter(id => !failedTransactions.some(transaction => transaction.id === id))
     )
+
+    if (deletedIds.size > 0) {
+      setTransactions(prev => prev.filter(transaction => !deletedIds.has(transaction.id)))
+      setSelectedTransactionIds(prev => prev.filter(id => !deletedIds.has(id)))
+    }
+
+    setDeletingTransactions(false)
+    setTransactionsPendingDeletion([])
+    setTransactionDeleteConfirmation('')
+
+    if (failedTransactions.length > 0) {
+      showToast(
+        'error',
+        'No se pudieron eliminar todos',
+        `Se eliminaron ${deletedIds.size} y fallaron ${failedTransactions.length}. Intenta otra vez con los pendientes.`
+      )
+    } else {
+      showToast(
+        'success',
+        transactionsPendingDeletion.length === 1 ? 'Pago eliminado' : 'Pagos eliminados',
+        transactionsPendingDeletion.length === 1
+          ? 'El pago se eliminó correctamente.'
+          : `Se eliminaron ${transactionsPendingDeletion.length} pagos correctamente.`
+      )
+    }
+
+    fetchData()
+  }
+
+  const handleDelete = (id: string) => {
+    const transaction = transactions.find(item => item.id === id)
+    if (!transaction) return
+
+    openTransactionDeleteModal([transaction])
   }
 
   const handleVoidTransaction = async (id: string) => {
@@ -898,7 +1163,7 @@ export const Transactions: React.FC = () => {
       email: contactSnapshot.email || '',
       phone: contactSnapshot.phone || '',
       amount: parseFloat(formData.get('amount') as string) || 0,
-      currency: (formData.get('currency') as string) || modal.transaction?.currency || 'MXN',
+      currency: (formData.get('currency') as string) || modal.transaction?.currency || defaultCurrency || 'MXN',
       method: formData.get('method') as any,
       status: formData.get('status') as any,
       reference: formData.get('reference') as string,
@@ -917,7 +1182,7 @@ export const Transactions: React.FC = () => {
         setTransactions(prev => prev.map(t => t.id === updatedTransaction.id ? updatedTransaction : t))
         showToast('success', 'Pago actualizado correctamente', `Se actualizó el registro de pago de ${formatCurrency(updatedTransaction.amount)}`)
       }
-      setModal({ type: null, selectedContact: null })
+      closeTransactionModal()
       fetchData()
     } catch (error: any) {
       showToast('error', 'No se pudo guardar el pago', error?.message || 'Hubo un problema al guardar la información. Verifica los datos e intenta nuevamente.')
@@ -1280,6 +1545,13 @@ export const Transactions: React.FC = () => {
     )
   }, [transactionStatusFilters, transactions])
 
+  const selectedTransactions = useMemo(() => {
+    if (selectedTransactionIds.length === 0) return []
+
+    const selectedIds = new Set(selectedTransactionIds)
+    return transactions.filter(transaction => selectedIds.has(transaction.id))
+  }, [selectedTransactionIds, transactions])
+
   const filteredPaymentPlans = useMemo(() => {
     const selectedStatuses = paymentPlanStatusFilters.status || []
     if (!selectedStatuses.length) return paymentPlans
@@ -1320,6 +1592,21 @@ export const Transactions: React.FC = () => {
       onFilterChange={handleStatusFilterChange}
     />
   )
+
+  const transactionSelectionToolbar = selectedTransactions.length > 0 ? (
+    <div className={styles.selectionToolbar}>
+      <span>{selectedTransactions.length} seleccionado{selectedTransactions.length === 1 ? '' : 's'}</span>
+      <Button
+        type="button"
+        variant="danger"
+        size="sm"
+        onClick={() => openTransactionDeleteModal(selectedTransactions)}
+      >
+        <Trash2 size={16} />
+        Eliminar
+      </Button>
+    </div>
+  ) : null
 
   const paymentPlanColumns: Column<PaymentPlan>[] = [
     {
@@ -1507,7 +1794,12 @@ export const Transactions: React.FC = () => {
                   }
                 ]}
                 activeTab={viewMode}
-                onTabChange={(value) => setViewMode(value as 'all' | 'by-date')}
+                onTabChange={(value) => {
+                  if (isTransactionsViewMode(value)) {
+                    setViewMode(value)
+                    navigate(buildTransactionsPath(value))
+                  }
+                }}
                 variant="compact"
               />
               {viewMode === 'by-date' && (
@@ -1539,7 +1831,10 @@ export const Transactions: React.FC = () => {
             {paymentTableTab === 'transactions' && (
               <Button
                 variant="secondary"
-                onClick={() => setShowRecordPaymentModal(true)}
+                onClick={() => {
+                  setShowRecordPaymentModal(true)
+                  navigate(buildCreateTransactionPath(viewMode))
+                }}
               >
                 <Plus size={16} />
                 Registrar pago
@@ -1612,6 +1907,13 @@ export const Transactions: React.FC = () => {
             tableId="transactions"
             initialSortBy="date"
             initialSortOrder="desc"
+            selectionActions={transactionSelectionToolbar}
+            rowSelection={{
+              selectedKeys: selectedTransactionIds,
+              onChange: setSelectedTransactionIds,
+              getRowLabel: (item) => item.title || item.contactName || 'pago',
+              selectVisibleLabel: 'Seleccionar pagos visibles'
+            }}
           />
         ) : (
           <Table
@@ -1637,8 +1939,57 @@ export const Transactions: React.FC = () => {
         )}
       </Card>
 
+      {isClient && transactionsPendingDeletion.length > 0 && createPortal(
+        <div className={styles.modalOverlay} onClick={closeTransactionDeleteModal}>
+          <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+            <div className={styles.modalHeader}>
+              <div>
+                <h2>Eliminar pago{transactionsPendingDeletion.length === 1 ? '' : 's'}</h2>
+                <p className={styles.modalSubtitle}>Esta acción borra los registros seleccionados y no se puede deshacer.</p>
+              </div>
+              <button
+                className={styles.closeButton}
+                onClick={closeTransactionDeleteModal}
+                disabled={deletingTransactions}
+                type="button"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <p>
+              Vas a eliminar <strong>{transactionsPendingDeletion.length}</strong> pago{transactionsPendingDeletion.length === 1 ? '' : 's'}.
+              Para confirmar, escribe <strong>{DELETE_CONFIRMATION_WORD}</strong> en la caja de abajo.
+            </p>
+            <div className={styles.formGroup}>
+              <label>Palabra de confirmación</label>
+              <input
+                value={transactionDeleteConfirmation}
+                onChange={(event) => setTransactionDeleteConfirmation(event.target.value)}
+                placeholder={DELETE_CONFIRMATION_WORD}
+                disabled={deletingTransactions}
+                autoFocus
+              />
+            </div>
+            <div className={styles.formActions}>
+              <Button type="button" variant="ghost" onClick={closeTransactionDeleteModal} disabled={deletingTransactions}>
+                Cancelar
+              </Button>
+              <Button
+                variant="danger"
+                onClick={handleConfirmDeleteTransactions}
+                loading={deletingTransactions}
+                disabled={transactionDeleteConfirmation.trim().toUpperCase() !== DELETE_CONFIRMATION_WORD || deletingTransactions}
+              >
+                Sí, eliminar
+              </Button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
       {isClient && modal.type && createPortal(
-        <div className={styles.modalOverlay} onClick={() => setModal({ type: null, selectedContact: null })}>
+        <div className={styles.modalOverlay} onClick={closeTransactionModal}>
           <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
             <h2>{modal.type === 'create' ? 'Nuevo Pago' : 'Editar Pago'}</h2>
             <form className={styles.form} onSubmit={(e) => {
@@ -1684,24 +2035,25 @@ export const Transactions: React.FC = () => {
               </div>
               <div className={styles.formGroup}>
                 <label>Moneda</label>
-                <select name="currency" defaultValue={modal.transaction?.currency || 'MXN'}>
-                  <option value="MXN">MXN</option>
-                  <option value="USD">USD</option>
-                </select>
+                <CustomSelect name="currency" defaultValue={modal.transaction?.currency || defaultCurrency || 'MXN'}>
+                  {CURRENCY_OPTIONS.map((currencyOption) => (
+                    <option key={currencyOption.value} value={currencyOption.value}>{currencyOption.value}</option>
+                  ))}
+                </CustomSelect>
               </div>
               <div className={styles.formGroup}>
                 <label>Método de pago</label>
-                <select name="method" defaultValue={modal.transaction?.method || 'card'}>
+                <CustomSelect name="method" defaultValue={modal.transaction?.method || 'card'}>
                   <option value="card">Tarjeta</option>
                   <option value="transfer">Transferencia</option>
                   <option value="cash">Efectivo</option>
                   <option value="paypal">PayPal</option>
                   <option value="other">Otro</option>
-                </select>
+                </CustomSelect>
               </div>
               <div className={styles.formGroup}>
                 <label>Estado</label>
-                <select name="status" defaultValue={modal.transaction?.status || 'draft'}>
+                <CustomSelect name="status" defaultValue={modal.transaction?.status || 'draft'}>
                   <option value="draft">Borrador</option>
                   <option value="sent">Enviado</option>
                   <option value="pending">Pendiente</option>
@@ -1711,7 +2063,7 @@ export const Transactions: React.FC = () => {
                   <option value="void">Anulado</option>
                   <option value="refunded">Reembolsado</option>
                   <option value="failed">Fallido</option>
-                </select>
+                </CustomSelect>
               </div>
               <div className={styles.formGroup}>
                 <label>Fecha de pago / emisión</label>
@@ -1756,7 +2108,7 @@ export const Transactions: React.FC = () => {
                 />
               </div>
               <div className={styles.formActions}>
-                <Button type="button" variant="ghost" onClick={() => setModal({ type: null, selectedContact: null })}>
+                <Button type="button" variant="ghost" onClick={closeTransactionModal}>
                   Cancelar
                 </Button>
                 <Button type="submit">
@@ -1836,7 +2188,7 @@ export const Transactions: React.FC = () => {
                 </div>
                 <div className={styles.formGroup}>
                   <label>Tipo de programación</label>
-                  <select
+                  <CustomSelect
                     name="scheduleMode"
                     value={paymentPlanCreateModal.scheduleMode}
                     onChange={(event) => setPaymentPlanCreateModal(prev => ({
@@ -1846,14 +2198,14 @@ export const Transactions: React.FC = () => {
                   >
                     <option value="recurring">Recurrente</option>
                     <option value="one_time">Fecha específica</option>
-                  </select>
+                  </CustomSelect>
                 </div>
 
                 {paymentPlanCreateModal.scheduleMode === 'recurring' && (
                   <>
                     <div className={styles.formGroup}>
                       <label>Recurrencia</label>
-                      <select
+                      <CustomSelect
                         name="frequency"
                         value={paymentPlanCreateModal.frequency}
                         onChange={(event) => setPaymentPlanCreateModal(prev => ({
@@ -1865,13 +2217,12 @@ export const Transactions: React.FC = () => {
                         <option value="weekly">Semanal</option>
                         <option value="monthly">Mensual</option>
                         <option value="yearly">Anual</option>
-                      </select>
+                      </CustomSelect>
                     </div>
                     <div className={styles.formGroup}>
                       <label>Intervalo</label>
-                      <input
+                      <NumberInput
                         name="interval"
-                        type="number"
                         min="1"
                         defaultValue="1"
                         required
@@ -1880,7 +2231,7 @@ export const Transactions: React.FC = () => {
 
                     <div className={styles.formGroup}>
                       <label>Termina</label>
-                      <select
+                      <CustomSelect
                         name="endType"
                         value={paymentPlanCreateModal.endType}
                         onChange={(event) => setPaymentPlanCreateModal(prev => ({
@@ -1891,14 +2242,13 @@ export const Transactions: React.FC = () => {
                         <option value="never">Nunca</option>
                         <option value="count">Después de N cobros</option>
                         <option value="by">En una fecha</option>
-                      </select>
+                      </CustomSelect>
                     </div>
                     {paymentPlanCreateModal.endType === 'count' && (
                       <div className={styles.formGroup}>
                         <label>Número de cobros</label>
-                        <input
+                        <NumberInput
                           name="count"
-                          type="number"
                           min="1"
                           max="9999"
                           defaultValue="12"
@@ -1927,9 +2277,8 @@ export const Transactions: React.FC = () => {
                     )}
                     <div className={styles.formGroup}>
                       <label>Enviar factura días antes del cobro</label>
-                      <input
+                      <NumberInput
                         name="daysBefore"
-                        type="number"
                         min="0"
                         defaultValue="0"
                       />
@@ -1938,11 +2287,11 @@ export const Transactions: React.FC = () => {
                     {paymentPlanCreateModal.frequency === 'weekly' && (
                       <div className={styles.formGroup}>
                         <label>Día de la semana</label>
-                        <select name="dayOfWeek" defaultValue="mo">
+                        <CustomSelect name="dayOfWeek" defaultValue="mo">
                           {WEEKDAY_OPTIONS.map(option => (
                             <option key={option.value} value={option.value}>{option.label}</option>
                           ))}
-                        </select>
+                        </CustomSelect>
                       </div>
                     )}
 
@@ -1950,7 +2299,7 @@ export const Transactions: React.FC = () => {
                       <>
                         <div className={styles.formGroup}>
                           <label>Regla mensual</label>
-                          <select
+                          <CustomSelect
                             name="monthlyMode"
                             value={paymentPlanCreateModal.monthlyMode}
                             onChange={(event) => setPaymentPlanCreateModal(prev => ({
@@ -1960,48 +2309,48 @@ export const Transactions: React.FC = () => {
                           >
                             <option value="dayOfMonth">Día del mes</option>
                             <option value="weekOfMonth">Semana del mes</option>
-                          </select>
+                          </CustomSelect>
                         </div>
                         {paymentPlanCreateModal.frequency === 'yearly' && (
                           <div className={styles.formGroup}>
                             <label>Mes del año</label>
-                            <select name="monthOfYear" defaultValue="jan">
+                            <CustomSelect name="monthOfYear" defaultValue="jan">
                               {MONTH_OPTIONS.map(option => (
                                 <option key={option.value} value={option.value}>{option.label}</option>
                               ))}
-                            </select>
+                            </CustomSelect>
                           </div>
                         )}
 
                         {paymentPlanCreateModal.monthlyMode === 'dayOfMonth' ? (
                           <div className={styles.formGroup}>
                             <label>Día del mes</label>
-                            <select name="dayOfMonth" defaultValue="1">
+                            <CustomSelect name="dayOfMonth" defaultValue="1">
                               <option value="-1">Último día del mes</option>
                               {Array.from({ length: 28 }).map((_, index) => (
                                 <option key={index + 1} value={index + 1}>{index + 1}</option>
                               ))}
-                            </select>
+                            </CustomSelect>
                           </div>
                         ) : (
                           <>
                             <div className={styles.formGroup}>
                               <label>Semana del mes</label>
-                              <select name="numOfWeek" defaultValue="1">
+                              <CustomSelect name="numOfWeek" defaultValue="1">
                                 <option value="1">Primera</option>
                                 <option value="2">Segunda</option>
                                 <option value="3">Tercera</option>
                                 <option value="4">Cuarta</option>
                                 <option value="-1">Última</option>
-                              </select>
+                              </CustomSelect>
                             </div>
                             <div className={styles.formGroup}>
                               <label>Día de la semana</label>
-                              <select name="dayOfWeek" defaultValue="mo">
+                              <CustomSelect name="dayOfWeek" defaultValue="mo">
                                 {WEEKDAY_OPTIONS.map(option => (
                                   <option key={option.value} value={option.value}>{option.label}</option>
                                 ))}
-                              </select>
+                              </CustomSelect>
                             </div>
                           </>
                         )}
@@ -2177,9 +2526,13 @@ export const Transactions: React.FC = () => {
 
       <RecordPaymentModal
         isOpen={showRecordPaymentModal}
-        onClose={() => setShowRecordPaymentModal(false)}
+        onClose={() => {
+          setShowRecordPaymentModal(false)
+          navigate(buildTransactionsPath(viewMode), { replace: true })
+        }}
         onSuccess={() => {
           setShowRecordPaymentModal(false)
+          navigate(buildTransactionsPath(viewMode), { replace: true })
           // El modal ya sincronizó el invoice específico desde GHL.
           // Solo recargar desde BD local (sin sync completo).
           fetchData()

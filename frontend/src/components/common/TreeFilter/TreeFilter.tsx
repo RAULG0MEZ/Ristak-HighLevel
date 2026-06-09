@@ -65,6 +65,11 @@ interface TreeFilterProps {
     countries?: Array<{ name: string; count: number }>
     placements?: Array<{ name: string; count: number }>
     conversions?: Array<{ stage: string; name: string; count: number }>
+    trackingSources?: Array<{ name: string; value: string; count: number }>
+    siteTypes?: Array<{ name: string; value: string; count: number }>
+    nativeSites?: Array<{ name: string; value: string; count: number }>
+    nativeForms?: Array<{ name: string; value: string; count: number }>
+    nativeConversions?: Array<{ name: string; value: string; count: number }>
     statuses?: Array<{ name: string; value?: string; count: number }>
     adsHierarchy?: Array<AdHierarchyNode>
   }
@@ -123,6 +128,86 @@ export function TreeFilter({
           field: 'status',
           value: status.value || status.name,
           count: status.count
+        }))
+      })
+    }
+
+    // Categoría: Origen del tracking
+    if (availableData.trackingSources?.length) {
+      tree.push({
+        id: 'tracking_sources',
+        label: 'Origen tracking',
+        icon: Layers,
+        children: availableData.trackingSources.map(source => ({
+          id: `tracking_source_${source.value}`,
+          label: source.name,
+          field: 'tracking_source',
+          value: source.value,
+          count: source.count
+        }))
+      })
+    }
+
+    // Categoría: Tipo de Site nativo
+    if (availableData.siteTypes?.length) {
+      tree.push({
+        id: 'site_types',
+        label: 'Tipo de Site',
+        icon: Layers,
+        children: availableData.siteTypes.map(siteType => ({
+          id: `site_type_${siteType.value}`,
+          label: siteType.name,
+          field: 'site_type',
+          value: siteType.value,
+          count: siteType.count
+        }))
+      })
+    }
+
+    // Categoría: Sites nativos
+    if (availableData.nativeSites?.length) {
+      tree.push({
+        id: 'native_sites',
+        label: 'Sites nativos',
+        icon: FileText,
+        children: availableData.nativeSites.map(site => ({
+          id: `native_site_${site.value}`,
+          label: site.name,
+          field: 'site_id',
+          value: site.value,
+          count: site.count
+        }))
+      })
+    }
+
+    // Categoría: Formularios nativos
+    if (availableData.nativeForms?.length) {
+      tree.push({
+        id: 'native_forms',
+        label: 'Formularios',
+        icon: FileText,
+        children: availableData.nativeForms.map(form => ({
+          id: `native_form_${form.value}`,
+          label: form.name,
+          field: 'form_site_id',
+          value: form.value,
+          count: form.count
+        }))
+      })
+    }
+
+    // Categoría: Conversiones de Sites
+    if (availableData.nativeConversions?.length) {
+      tree.push({
+        id: 'native_conversions',
+        label: 'Conversiones Sites',
+        icon: UserCheck,
+        children: availableData.nativeConversions.map(conversion => ({
+          id: `native_conversion_${conversion.value}`,
+          label: conversion.name,
+          field: 'native_conversion_source',
+          value: conversion.value,
+          count: conversion.count
         }))
       })
     }
@@ -435,12 +520,15 @@ export function TreeFilter({
       {/* Botón principal */}
       <HelpTooltip content={filterTooltip}>
         <button
+          type="button"
           onClick={handleToggleOpen}
+          aria-expanded={isOpen}
+          data-ristak-dropdown-trigger
           className={`
             flex items-center gap-2 px-3 py-2
             rounded-lg transition-all duration-200
             bg-[var(--color-background-secondary)]
-            ${isOpen ? 'ring-2 ring-[var(--color-accent)]/50' : 'hover:bg-[var(--color-background-tertiary)]'}
+            ${isOpen ? '' : 'hover:bg-[var(--color-background-tertiary)]'}
           `}
           style={{ border: '1px solid var(--color-border-subtle)' }}
         >
@@ -463,6 +551,7 @@ export function TreeFilter({
           className="absolute top-full left-0 mt-2 z-50 bg-[var(--color-background-primary)] rounded-lg shadow-xl animate-fadeIn flex"
           style={{ border: '1px solid var(--color-border-subtle)' }}
           onMouseLeave={handleCategoryLeave}
+          data-ristak-dropdown-panel
         >
           {/* Panel izquierdo: Categorías principales */}
           <div className="w-48" style={{ borderRight: '1px solid var(--color-border-subtle)' }}>
@@ -520,6 +609,9 @@ export function TreeFilter({
                     <div
                       key={category.id}
                       onMouseEnter={() => handleCategoryHover(category.id)}
+                      data-ristak-dropdown-item
+                      data-active={isHovered ? 'true' : undefined}
+                      data-selected={selectedCount > 0 ? 'true' : undefined}
                       className={`
                         flex items-center justify-between px-3 py-2 cursor-pointer
                         transition-all duration-150
@@ -598,6 +690,8 @@ export function TreeFilter({
                             return (
                               <div
                                 key={item.id}
+                                data-ristak-dropdown-item
+                                data-selected={isSelected ? 'true' : undefined}
                                 onClick={() => {
                                   if (item.field && item.value) {
                                     handleFilterToggle(item.field, String(item.value))
@@ -666,6 +760,8 @@ export function TreeFilter({
                           return (
                             <div
                               key={item.id}
+                              data-ristak-dropdown-item
+                              data-selected={isSelected ? 'true' : undefined}
                               onClick={() => {
                                 if (item.field && item.value) {
                                   handleFilterToggle(item.field, String(item.value))

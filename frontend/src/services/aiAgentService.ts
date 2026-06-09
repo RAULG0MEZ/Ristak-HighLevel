@@ -55,6 +55,12 @@ export interface AIAgentMessageMemory {
   products?: AIAgentProductMemory[]
 }
 
+export interface AIAgentTraceSummary {
+  traceId: string
+  status: 'running' | 'completed' | 'waiting_user' | 'failed' | string
+  detailUrl?: string
+}
+
 export interface AIAgentMessage {
   id?: string
   role: AIAgentRole
@@ -67,6 +73,7 @@ export interface AIAgentMessage {
     url: string
   }>
   clarificationOptions?: AIAgentClarificationOption[]
+  trace?: AIAgentTraceSummary | null
   createdAt?: string
 }
 
@@ -87,6 +94,10 @@ export interface AIAgentConfigStatus {
   configured: boolean
   model: string
   tokenPreview: string | null
+  credentialStatus?: 'missing' | 'ready' | 'reconnect_required'
+  needsReconnect?: boolean
+  connectionIssue?: string | null
+  connectionIssueCode?: string | null
   businessContext: string
   marketContext: string
   idealCustomer: string
@@ -134,11 +145,39 @@ interface AIAgentChatResult {
   clarificationOptions?: AIAgentClarificationOption[]
   usage?: unknown
   agentMemory?: AIAgentMessageMemory | null
+  trace?: AIAgentTraceSummary | null
 }
 
 interface AIAgentTranscriptionResult {
   text: string
   model: string
+}
+
+export interface AIAgentRunTrace {
+  id: string
+  traceId: string
+  status: string
+  domain?: string | null
+  action?: string | null
+  sourceOfTruth?: string | null
+  inputSummary?: string | null
+  outputSummary?: string | null
+  errorMessage?: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+  completedAt?: string | null
+  steps: Array<{
+    id: string
+    index: number
+    type: string
+    toolName?: string | null
+    status: string
+    input?: unknown
+    output?: unknown
+    errorMessage?: string | null
+    startedAt?: string | null
+    completedAt?: string | null
+  }>
 }
 
 interface AIAgentBusinessContextAnswerResult {
@@ -150,6 +189,8 @@ interface AIAgentBusinessContextAnswerResult {
 type AIAgentRequestOptions = {
   signal?: AbortSignal
 }
+
+export const AI_AGENT_RECONNECT_REQUIRED_CODE = 'OPENAI_CREDENTIAL_RECONNECT_REQUIRED'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || ''
 
@@ -180,7 +221,7 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   }
 
   if (!response.ok) {
-    throw new Error(payload?.error || payload?.message || 'Error en el agente AI')
+    throw createAIAgentRequestError(payload, response.status, 'Error en el agente AI')
   }
 
   return (payload?.data ?? payload) as T
@@ -226,6 +267,10 @@ export const aiAgentService = {
     })
   },
 
+  getRunTrace(traceId: string): Promise<AIAgentRunTrace> {
+    return request<AIAgentRunTrace>(`/runs/${encodeURIComponent(traceId)}`)
+  },
+
   async transcribeVoice(audioBlob: Blob): Promise<AIAgentTranscriptionResult> {
     const response = await fetch(`${API_BASE_URL}/api/ai-agent/transcribe`, {
       method: 'POST',
@@ -245,9 +290,34 @@ export const aiAgentService = {
     }
 
     if (!response.ok) {
-      throw new Error(payload?.error || payload?.message || 'Error al transcribir el audio')
+      throw createAIAgentRequestError(payload, response.status, 'Error al transcribir el audio')
     }
 
     return (payload?.data ?? payload) as AIAgentTranscriptionResult
   }
+}
+
+function createAIAgentRequestError(payload: any, status: number, fallback: string) {
+  const error = new Error(payload?.error || payload?.message || fallback) as Error & {
+    status?: number
+    code?: string
+    needsReconnect?: boolean
+    trace?: AIAgentTraceSummary | null
+  }
+
+  error.status = status
+  error.code = payload?.code
+  error.needsReconnect = Boolean(payload?.needsReconnect || payload?.code === AI_AGENT_RECONNECT_REQUIRED_CODE)
+  error.trace = payload?.trace || null
+
+  return error
+}
+
+export function isAIAgentReconnectError(error: unknown) {
+  const candidate = error as { code?: string; needsReconnect?: boolean; status?: number } | null
+  return Boolean(
+    candidate?.needsReconnect ||
+    candidate?.code === AI_AGENT_RECONNECT_REQUIRED_CODE ||
+    candidate?.status === 409
+  )
 }

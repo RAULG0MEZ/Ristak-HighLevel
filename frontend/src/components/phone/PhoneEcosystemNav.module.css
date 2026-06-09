@@ -1,0 +1,191 @@
+.dock {
+  --dock-padding-x: 8px;
+  --dock-padding-y: 6px;
+
+  position: fixed;
+  right: max(10px, env(safe-area-inset-right));
+  bottom: max(8px, env(safe-area-inset-bottom));
+  left: max(10px, env(safe-area-inset-left));
+  z-index: 70;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0;
+  min-height: 58px;
+  padding: var(--dock-padding-y) var(--dock-padding-x);
+  border: 1px solid var(--phone-chat-border, rgba(17, 24, 39, 0.08));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--phone-chat-surface, #ffffff) 90%, transparent);
+  box-shadow: 0 8px 22px rgba(var(--phone-chat-primary-rgb, 15, 23, 42), 0.08);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: pan-y;
+  isolation: isolate;
+  overflow: visible;
+  transition:
+    opacity 220ms ease,
+    transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform, opacity;
+}
+
+.dock a {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  min-width: 0;
+  border-radius: 999px;
+  color: var(--phone-chat-text, #111111);
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+  -webkit-touch-callout: none;
+  touch-action: pan-y;
+  transition:
+    color 220ms ease,
+    transform 220ms ease;
+}
+
+.dock[data-swipe-ready='true'] {
+  cursor: grab;
+}
+
+.dock[data-swipe-dragging='true'] {
+  cursor: grabbing;
+}
+
+.dock a:active {
+  transform: scale(0.96);
+}
+
+.activeIndicator {
+  position: absolute;
+  top: var(--dock-padding-y);
+  bottom: var(--dock-padding-y);
+  left: var(--dock-padding-x);
+  z-index: 0;
+  display: block;
+  width: calc((100% - (var(--dock-padding-x) * 2)) / 5);
+  border-radius: 999px;
+  background: var(--phone-chat-surface-soft, #ececec);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #ffffff 52%, transparent),
+    0 8px 18px rgba(var(--phone-chat-primary-rgb, 15, 23, 42), 0.08);
+  pointer-events: none;
+  transition:
+    transform 420ms cubic-bezier(0.2, 0.88, 0.2, 1),
+    width 220ms ease,
+    background-color 220ms ease;
+  will-change: transform;
+}
+
+.dock[data-swipe-dragging='true'] .activeIndicator {
+  transition: none;
+}
+
+.dock a *,
+.dock svg,
+.dock img {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+  -webkit-touch-callout: none;
+  pointer-events: none;
+}
+
+.dock span {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.iconWrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+  min-width: 32px;
+  min-height: 32px;
+  transition: transform 220ms ease;
+}
+
+.dock a .iconWrap {
+  overflow: visible;
+}
+
+.iconWrap i {
+  position: absolute;
+  top: -7px;
+  right: -12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  color: #07140d;
+  background: var(--phone-chat-accent, #25d366);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--phone-chat-surface, #ffffff) 92%, transparent);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.active {
+  color: var(--phone-chat-primary, #050505);
+}
+
+.active .iconWrap {
+  transform: translateY(-1px);
+}
+
+.dockTop {
+  position: relative;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  z-index: 2;
+  width: 100%;
+  min-height: 52px;
+  padding: 5px 7px;
+  border-color: var(--phone-chat-border, rgba(17, 24, 39, 0.08));
+  background: color-mix(in srgb, var(--phone-chat-surface, #ffffff) 94%, transparent);
+  box-shadow: none;
+}
+
+.dockTop .iconWrap {
+  min-width: 30px;
+  min-height: 30px;
+}
+
+@media (max-width: 360px) {
+  .dock {
+    --dock-padding-x: 5px;
+
+    right: max(6px, env(safe-area-inset-right));
+    left: max(6px, env(safe-area-inset-left));
+    min-height: 54px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dock a,
+  .dock,
+  .activeIndicator,
+  .active .iconWrap {
+    transition: none;
+  }
+}

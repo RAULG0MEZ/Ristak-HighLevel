@@ -12,7 +12,7 @@ import { useMemo } from 'react'
  * ```tsx
  * const isRenderDomain = useIsRenderDomain()
  * if (isRenderDomain) {
- *   // Bloquear tracking, ocultar Analytics, etc.
+ *   // Mostrar instrucciones de dominio personalizado para el rastreo web.
  * }
  * ```
  */

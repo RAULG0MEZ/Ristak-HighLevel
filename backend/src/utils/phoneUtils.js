@@ -7,6 +7,21 @@ function stripInternationalPrefix(digits = '') {
   return digits
 }
 
+function normalizeDialCode(value = '') {
+  return normalizePhoneDigits(value).slice(0, 4)
+}
+
+function normalizeMexicoPhoneDigits(digits = '') {
+  const national = digits.slice(-10)
+  if (national.length !== 10) return ''
+
+  // WhatsApp Mexico can expose mobile JIDs as 521 + 10 digits. Business/contact
+  // storage must stay in E.164 for Mexico without that WhatsApp-only carrier digit.
+  if (digits.startsWith('521') && digits.length >= 13) return `52${national}`
+  if (digits.startsWith('52') && digits.length >= 12) return `52${national}`
+  return ''
+}
+
 export function getPhoneNationalDigits(value = '') {
   const digits = stripInternationalPrefix(normalizePhoneDigits(value))
   if (digits.length < 7) return ''
@@ -17,23 +32,38 @@ export function normalizePhoneForStorage(value = '', { defaultCountryCode = '52'
   const digits = stripInternationalPrefix(normalizePhoneDigits(value))
   if (digits.length < 7) return ''
 
-  const national = digits.slice(-10)
+  const countryCode = normalizeDialCode(defaultCountryCode)
+  const mexicoPhone = normalizeMexicoPhoneDigits(digits)
 
-  // WhatsApp Mexico can expose mobile JIDs as 521 + 10 digits. Business/contact
-  // storage must stay in E.164 for Mexico without that WhatsApp-only carrier digit.
-  if (digits.startsWith('521') && digits.length >= 13 && national.length === 10) {
-    return `+52${national}`
-  }
+  if (mexicoPhone) return `+${mexicoPhone}`
 
-  if (digits.startsWith('52') && digits.length >= 12 && national.length === 10) {
-    return `+52${national}`
-  }
-
-  if (digits.length === 10 && defaultCountryCode) {
-    return `+${defaultCountryCode}${digits}`
+  if (digits.length === 10 && countryCode) {
+    return `+${countryCode}${digits}`
   }
 
   return `+${digits}`
+}
+
+export function composePhoneWithDialCode(value = '', dialCode = '52') {
+  const raw = String(value || '').trim()
+  const digits = stripInternationalPrefix(normalizePhoneDigits(raw))
+  const countryCode = normalizeDialCode(dialCode)
+
+  if (digits.length < 7) return ''
+  if (!countryCode) return normalizePhoneForStorage(raw)
+
+  const mexicoPhone = countryCode === '52' ? normalizeMexicoPhoneDigits(digits) : ''
+  if (mexicoPhone) return `+${mexicoPhone}`
+
+  if (raw.startsWith('+') || raw.startsWith('00')) {
+    return normalizePhoneForStorage(raw, { defaultCountryCode: countryCode })
+  }
+
+  if (digits.startsWith(countryCode) && digits.length > countryCode.length + 6) {
+    return normalizePhoneForStorage(digits, { defaultCountryCode: countryCode })
+  }
+
+  return normalizePhoneForStorage(`${countryCode}${digits}`, { defaultCountryCode: countryCode })
 }
 
 export function buildPhoneMatchCandidates(value = '') {

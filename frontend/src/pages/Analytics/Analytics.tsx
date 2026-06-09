@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useDateRange } from '../../contexts/DateRangeContext'
 import { useTimezone } from '../../contexts/TimezoneContext'
 import { useLabels } from '../../contexts/LabelsContext'
@@ -27,7 +28,6 @@ import {
   type ContactConversionsByDate
 } from '../../services/analyticsService'
 import { trackingService, type TrackingSession } from '../../services/trackingService'
-import { whatsappWebService, type WhatsAppWebAnalytics } from '../../services/whatsappWebService'
 import { formatDateToISO, parseLocalDateString, formatUrlParameter, formatChartNumber } from '../../utils/format'
 import { normalizeTrafficSource } from '../../utils/trafficSourceNormalizer'
 
@@ -35,6 +35,16 @@ type ViewType = 'day' | 'month' | 'year'
 type MonthPreset = 'last12' | 'thisYear' | 'custom'
 type AnalyticsMainChartView = 'traffic' | 'visitors-registrations' | 'sessions-visitors' | 'identity-returning'
 type AnalyticsConversionChartView = 'registrations-customers' | 'appointments-attendances' | 'prospects-customers' | 'messages-appointments' | 'appointments-patients'
+type WhatsAppAnalytics = {
+  metrics?: {
+    inboundMessages?: number
+    conversations?: number
+    contacts?: number
+    attributionRate?: number
+  }
+  trend?: Array<{ label: string; messages?: number }>
+  status?: { connected?: boolean; hasData?: boolean }
+}
 
 const monthNamesShort = [
   'ene', 'feb', 'mar', 'abr', 'may', 'jun',
@@ -46,6 +56,25 @@ const viewTabs = [
   { value: 'month', label: 'Mes' },
   { value: 'year', label: 'Año' }
 ]
+
+const analyticsViewTypes: ViewType[] = ['day', 'month', 'year']
+const analyticsMainChartViews: AnalyticsMainChartView[] = ['traffic', 'visitors-registrations', 'sessions-visitors', 'identity-returning']
+const analyticsConversionChartViews: AnalyticsConversionChartView[] = ['registrations-customers', 'appointments-attendances', 'prospects-customers', 'messages-appointments', 'appointments-patients']
+const isAnalyticsViewType = (value?: string): value is ViewType => analyticsViewTypes.includes(value as ViewType)
+const isAnalyticsMainChartView = (value?: string): value is AnalyticsMainChartView => analyticsMainChartViews.includes(value as AnalyticsMainChartView)
+const isAnalyticsConversionChartView = (value?: string): value is AnalyticsConversionChartView => analyticsConversionChartViews.includes(value as AnalyticsConversionChartView)
+const parseAnalyticsRoute = (pathname: string) => {
+  const segments = pathname.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean)
+  const analyticsIndex = segments.indexOf('analytics')
+  const routeSegments = analyticsIndex >= 0 ? segments.slice(analyticsIndex + 1) : []
+  return {
+    viewType: isAnalyticsViewType(routeSegments[0]) ? routeSegments[0] : 'day',
+    mainChart: isAnalyticsMainChartView(routeSegments[1]) ? routeSegments[1] : 'traffic',
+    conversionChart: isAnalyticsConversionChartView(routeSegments[2]) ? routeSegments[2] : 'registrations-customers'
+  }
+}
+const buildAnalyticsPath = (viewType: ViewType, mainChart: AnalyticsMainChartView, conversionChart: AnalyticsConversionChartView) =>
+  `/analytics/${viewType}/${mainChart}/${conversionChart}`
 
 const monthRangeOptions = [
   { value: 'last12', label: 'Últimos 12 meses' },
@@ -260,6 +289,20 @@ type ChartMetricConfig = {
   emptyMessage: string
 }
 
+const ANALYTICS_CHART_COLORS = {
+  traffic: '#22c55e',
+  visitors: '#38bdf8',
+  sessions: '#f59e0b',
+  registrations: '#a78bfa',
+  prospects: '#c084fc',
+  identified: '#10b981',
+  returning: '#f43f5e',
+  messages: '#25d366',
+  appointments: '#f59e0b',
+  attendances: '#60a5fa',
+  customers: '#34d399'
+}
+
 type ConversionStage = 'prospect' | 'appointment_scheduled' | 'appointment_attended' | 'customer'
 
 const CONVERSION_STAGES: ConversionStage[] = [
@@ -311,6 +354,45 @@ const getSessionConversionStage = (session: Session): ConversionStage | null => 
   }
 
   return 'prospect'
+}
+
+const TRACKING_VIEW_EVENTS = new Set(['session_start', 'page_view', 'native_site_view'])
+
+const isTrackingViewEvent = (session: Session) =>
+  TRACKING_VIEW_EVENTS.has(session.event_name || 'page_view')
+
+const isNativeSiteSession = (session: Session) =>
+  (session.tracking_source || '').toLowerCase() === 'native_site' || Boolean(session.site_id)
+
+const getTrackingSourceValue = (session: Session) =>
+  isNativeSiteSession(session) ? 'native_site' : 'external_pixel'
+
+const getTrackingSourceLabel = (source: string) =>
+  source === 'native_site' ? 'Sites nativos' : 'Pixel externo'
+
+const getSiteTypeLabel = (siteType?: string | null) => {
+  if (siteType === 'landing_page') return 'Landing'
+  if (siteType === 'interactive_form') return 'Formulario interactivo'
+  if (siteType === 'standard_form') return 'Formulario'
+  return 'Sin tipo'
+}
+
+const getNativeFormId = (session: Session) => {
+  if (session.form_site_id) return session.form_site_id
+  if (session.site_type === 'standard_form' || session.site_type === 'interactive_form') return session.site_id || ''
+  return ''
+}
+
+const getNativeFormName = (session: Session) => {
+  if (session.form_site_name) return session.form_site_name
+  if (session.site_type === 'standard_form' || session.site_type === 'interactive_form') return session.site_name || session.site_slug || 'Formulario'
+  return ''
+}
+
+const getNativeConversionFilterValue = (session: Session) => {
+  if (session.event_name !== 'native_site_conversion') return ''
+  const formId = getNativeFormId(session)
+  return formId ? `form:${formId}` : `site:${session.site_id || ''}`
 }
 
 const parseTimestamp = (timestamp?: string | null): Date | null => {
@@ -389,6 +471,8 @@ const buildTrafficChartData = (
   const stats: Record<string, { totalVisits: number; uniqueVisitors: Set<string> }> = {}
 
   sessions.forEach((session: Session) => {
+    if (!isTrackingViewEvent(session)) return
+
     const periodKey = getPeriodKeyFromTimestamp(session.started_at, viewType, convertToLocalTime)
     if (!periodKey) return
 
@@ -499,9 +583,11 @@ const buildSessionTrendData = (
     }
 
     const bucket = stats.get(periodKey)!
-    bucket.pageViews++
-    bucket.visitors.add(session.visitor_id)
-    bucket.sessionIds.add(session.session_id)
+    if (isTrackingViewEvent(session)) {
+      bucket.pageViews++
+      bucket.visitors.add(session.visitor_id)
+      bucket.sessionIds.add(session.session_id)
+    }
 
     if (session.contact_id) {
       bucket.contactIds.add(session.contact_id)
@@ -648,13 +734,16 @@ const mapTrendToChartData = <T extends { label: string }>(
 }))
 
 const Analytics: React.FC = () => {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const routeState = React.useMemo(() => parseAnalyticsRoute(location.pathname), [location.pathname])
   const { dateRange, setDateRange } = useDateRange()
   const { convertToLocalTime } = useTimezone()
   const { labels: appLabels } = useLabels()
   const [loading, setLoading] = useState(false)
   const [hasLoadedAnalytics, setHasLoadedAnalytics] = useState(false)
   const [webTrackingConfigured, setWebTrackingConfigured] = useState(false)
-  const [whatsAppAnalytics, setWhatsAppAnalytics] = useState<WhatsAppWebAnalytics | null>(null)
+  const [whatsAppAnalytics, setWhatsAppAnalytics] = useState<WhatsAppAnalytics | null>(null)
 
   const leadLabel = appLabels.lead?.trim() || 'Prospecto'
   const leadsLabel = appLabels.leads?.trim() || `${leadLabel}s`
@@ -686,7 +775,7 @@ const Analytics: React.FC = () => {
   const [osData, setOsData] = useState<any[]>([])
   const [browserData, setBrowserData] = useState<any[]>([])
   const [topVisitors, setTopVisitors] = useState<any[]>([])
-  const [viewType, setViewType] = useState<ViewType>('day')
+  const [viewType, setViewType] = useState<ViewType>(routeState.viewType)
   const [monthPreset, setMonthPreset] = useState<MonthPreset>('last12')
   const [yearRange, setYearRange] = useState(defaultYearRange)
   const [selectedMainChartView, setSelectedMainChartView] = useState<AnalyticsMainChartView>('traffic')
@@ -756,31 +845,30 @@ const Analytics: React.FC = () => {
           contactsData,
           prevContactsData,
           contactConversionRows,
-          trackingConfig,
-          whatsappAnalyticsData
+          trackingConfig
         ] = await Promise.all([
           getSessionsByDateRange(startDate, endDate),
           getSessionsByDateRange(prevStartDate, prevEndDate),
           getContactsByDate(startDate, endDate),
           getContactsByDate(prevStartDate, prevEndDate),
           getContactConversionsByDate(startDate, endDate),
-          trackingService.getTrackingConfig().catch(() => null),
-          whatsappWebService.getAnalytics({ start: startDate, end: endDate, groupBy: viewType }).catch(() => null)
+          trackingService.getTrackingConfig().catch(() => null)
         ])
 
-        setWebTrackingConfigured(Boolean(trackingConfig?.isConfigured))
-        setWhatsAppAnalytics(whatsappAnalyticsData)
+        setWebTrackingConfigured(Boolean(trackingConfig?.isConfigured) || currentSessions.length > 0)
+        setWhatsAppAnalytics(null)
         setContactConversionsByDate(contactConversionRows || [])
 
         if (currentSessions.length > 0) {
+          const currentViewSessions = currentSessions.filter(isTrackingViewEvent)
+          const prevViewSessions = prevSessions.filter(isTrackingViewEvent)
           // Calcular métricas principales
-          const uniqueVids = new Set(currentSessions.map((s: Session) => s.visitor_id)).size
+          const uniqueVids = new Set(currentViewSessions.map((s: Session) => s.visitor_id)).size
 
-          // CADA registro es un page_view ahora (cada navegación)
-          const totalPageViews = currentSessions.length
+          const totalPageViews = currentViewSessions.length
 
           // Contar sesiones únicas (por session_id)
-          const uniqueSessionIds = new Set(currentSessions.map((s: Session) => s.session_id)).size
+          const uniqueSessionIds = new Set(currentViewSessions.map((s: Session) => s.session_id)).size
 
           // Registros = contactos con visitor_id creados en el período (con fallback a array vacío)
           const registros = (contactsData || []).reduce((sum, item) => sum + item.count, 0)
@@ -792,7 +880,7 @@ const Analytics: React.FC = () => {
 
           // Usuarios recurrentes: contar visitor_ids que tienen múltiples session_ids diferentes
           const visitorSessionMap: { [key: string]: Set<string> } = {}
-          currentSessions.forEach((s: Session) => {
+          currentViewSessions.forEach((s: Session) => {
             if (!visitorSessionMap[s.visitor_id]) {
               visitorSessionMap[s.visitor_id] = new Set()
             }
@@ -805,17 +893,17 @@ const Analytics: React.FC = () => {
             (totalPageViews / uniqueSessionIds) : 0
 
           // Calcular métricas del período anterior para trends
-          const prevUniqueVids = prevSessions.length > 0 ?
-            new Set(prevSessions.map((s: Session) => s.visitor_id)).size : 0
-          const prevTotalPageViews = prevSessions.length
-          const prevUniqueSessionIds = prevSessions.length > 0 ?
-            new Set(prevSessions.map((s: Session) => s.session_id)).size : 0
+          const prevUniqueVids = prevViewSessions.length > 0 ?
+            new Set(prevViewSessions.map((s: Session) => s.visitor_id)).size : 0
+          const prevTotalPageViews = prevViewSessions.length
+          const prevUniqueSessionIds = prevViewSessions.length > 0 ?
+            new Set(prevViewSessions.map((s: Session) => s.session_id)).size : 0
           const prevRegistros = (prevContactsData || []).reduce((sum, item) => sum + item.count, 0)
           const prevConversionRate = prevUniqueVids > 0 ? ((prevRegistros / prevUniqueVids) * 100) : 0
 
           // Usuarios recurrentes del período anterior
           const prevVisitorSessionMap: { [key: string]: Set<string> } = {}
-          prevSessions.forEach((s: Session) => {
+          prevViewSessions.forEach((s: Session) => {
             if (!prevVisitorSessionMap[s.visitor_id]) {
               prevVisitorSessionMap[s.visitor_id] = new Set()
             }
@@ -883,12 +971,19 @@ const Analytics: React.FC = () => {
             browsers: [],
             os: [],
             placements: [],
-            conversions: []
+            conversions: [],
+            trackingSources: [],
+            siteTypes: [],
+            nativeSites: [],
+            nativeForms: [],
+            nativeConversions: []
           }
 
           // Páginas
           const pageMap: { [key: string]: number } = {}
           currentSessions.forEach((session: Session) => {
+            if (!isTrackingViewEvent(session)) return
+
             if (session.page_url) {
               const urlPath = session.page_url.split('?')[0]
               const pageName = urlPath.split('/').pop() || 'home'
@@ -932,6 +1027,11 @@ const Analytics: React.FC = () => {
           const browsersMap: { [key: string]: Set<string> } = {}
           const osMap: { [key: string]: Set<string> } = {}
           const placementsMap: { [key: string]: Set<string> } = {}
+          const trackingSourceMap: { [key: string]: Set<string> } = {}
+          const siteTypesMap: { [key: string]: Set<string> } = {}
+          const nativeSitesMap: { [key: string]: { name: string; visitors: Set<string> } } = {}
+          const nativeFormsMap: { [key: string]: { name: string; visitors: Set<string> } } = {}
+          const nativeConversionsMap: { [key: string]: { name: string; conversions: Set<string> } } = {}
           const conversionsMap = CONVERSION_STAGES.reduce<Record<ConversionStage, Set<string>>>((acc, stage) => {
             acc[stage] = new Set()
             return acc
@@ -940,6 +1040,52 @@ const Analytics: React.FC = () => {
           currentSessions.forEach((session: Session) => {
             const visitorId = session.visitor_id
             const conversionStage = getSessionConversionStage(session)
+            const trackingSource = getTrackingSourceValue(session)
+
+            if (!trackingSourceMap[trackingSource]) trackingSourceMap[trackingSource] = new Set()
+            trackingSourceMap[trackingSource].add(visitorId)
+
+            if (isNativeSiteSession(session)) {
+              const siteType = session.site_type || 'unknown'
+              if (!siteTypesMap[siteType]) siteTypesMap[siteType] = new Set()
+              siteTypesMap[siteType].add(visitorId)
+
+              if (session.site_id) {
+                if (!nativeSitesMap[session.site_id]) {
+                  nativeSitesMap[session.site_id] = {
+                    name: session.site_name || session.site_slug || 'Site sin nombre',
+                    visitors: new Set()
+                  }
+                }
+                nativeSitesMap[session.site_id].visitors.add(visitorId)
+              }
+
+              const formId = getNativeFormId(session)
+              if (formId) {
+                if (!nativeFormsMap[formId]) {
+                  nativeFormsMap[formId] = {
+                    name: getNativeFormName(session) || 'Formulario sin nombre',
+                    visitors: new Set()
+                  }
+                }
+                nativeFormsMap[formId].visitors.add(visitorId)
+              }
+
+              const nativeConversionValue = getNativeConversionFilterValue(session)
+              if (nativeConversionValue) {
+                const conversionKey = session.submission_id || session.contact_id || visitorId
+                const label = nativeConversionValue.startsWith('form:')
+                  ? `Formulario: ${getNativeFormName(session) || session.site_name || 'Sin nombre'}`
+                  : `Landing: ${session.site_name || session.site_slug || 'Sin nombre'}`
+                if (!nativeConversionsMap[nativeConversionValue]) {
+                  nativeConversionsMap[nativeConversionValue] = {
+                    name: label,
+                    conversions: new Set()
+                  }
+                }
+                nativeConversionsMap[nativeConversionValue].conversions.add(conversionKey)
+              }
+            }
 
             if (conversionStage) {
               conversionsMap[conversionStage].add(visitorId)
@@ -1090,6 +1236,26 @@ const Analytics: React.FC = () => {
             .map(([name, visitorSet]) => ({ name, count: visitorSet.size }))
             .sort((a, b) => b.count - a.count)
 
+          filterData.trackingSources = Object.entries(trackingSourceMap)
+            .map(([value, visitorSet]) => ({ value, name: getTrackingSourceLabel(value), count: visitorSet.size }))
+            .sort((a, b) => b.count - a.count)
+
+          filterData.siteTypes = Object.entries(siteTypesMap)
+            .map(([value, visitorSet]) => ({ value, name: getSiteTypeLabel(value), count: visitorSet.size }))
+            .sort((a, b) => b.count - a.count)
+
+          filterData.nativeSites = Object.entries(nativeSitesMap)
+            .map(([value, item]) => ({ value, name: item.name, count: item.visitors.size }))
+            .sort((a, b) => b.count - a.count)
+
+          filterData.nativeForms = Object.entries(nativeFormsMap)
+            .map(([value, item]) => ({ value, name: item.name, count: item.visitors.size }))
+            .sort((a, b) => b.count - a.count)
+
+          filterData.nativeConversions = Object.entries(nativeConversionsMap)
+            .map(([value, item]) => ({ value, name: item.name, count: item.conversions.size }))
+            .sort((a, b) => b.count - a.count)
+
           filterData.conversions = conversionFilters.map(item => ({
             stage: item.stage,
             name: item.label,
@@ -1121,8 +1287,9 @@ const Analytics: React.FC = () => {
           setAvailableFilterData(filterData)
 
           // Calcular stats para las cards - VISITANTES ÚNICOS
+          const chartPercentageDenominator = Math.max(uniqueVids, 1)
           const browsersForChart: { [key: string]: Set<string> } = {}
-          currentSessions.forEach((session: Session) => {
+          currentViewSessions.forEach((session: Session) => {
             const browser = session.browser || 'Desconocido'
             if (!browsersForChart[browser]) browsersForChart[browser] = new Set()
             browsersForChart[browser].add(session.visitor_id)
@@ -1131,14 +1298,14 @@ const Analytics: React.FC = () => {
             .map(([browser, visitorSet]) => ({
               name: browser,
               users: visitorSet.size,
-              percentage: ((visitorSet.size / uniqueVids) * 100).toFixed(1)
+              percentage: ((visitorSet.size / chartPercentageDenominator) * 100).toFixed(1)
             }))
             .sort((a, b) => b.users - a.users)
             .slice(0, 5)
           setBrowserData(browserStats)
 
           const platformsForChart: { [key: string]: Set<string> } = {}
-          currentSessions.forEach((session: Session) => {
+          currentViewSessions.forEach((session: Session) => {
             // Usar normalizador con prioridad: referrer_url → site_source_name → utm_source → source_platform
             const platform = normalizeTrafficSource({
               referrer_url: session.referrer_url,
@@ -1153,7 +1320,7 @@ const Analytics: React.FC = () => {
             .map(([platform, visitorSet]) => ({
               name: platform,
               users: visitorSet.size,
-              percentage: ((visitorSet.size / uniqueVids) * 100).toFixed(1)
+              percentage: ((visitorSet.size / chartPercentageDenominator) * 100).toFixed(1)
             }))
             .sort((a, b) => b.users - a.users)
             .slice(0, 5)
@@ -1161,7 +1328,7 @@ const Analytics: React.FC = () => {
 
           // Calcular placements para "Top de ubicaciones" (Facebook Feed, Instagram Reels, etc.) - VISITANTES ÚNICOS
           const placementsForChart: { [key: string]: Set<string> } = {}
-          currentSessions.forEach((session: Session) => {
+          currentViewSessions.forEach((session: Session) => {
             const rawPlacement = session.placement || 'Sin ubicación'
             const placement = formatPlacementName(rawPlacement)
             if (!placementsForChart[placement]) placementsForChart[placement] = new Set()
@@ -1171,14 +1338,14 @@ const Analytics: React.FC = () => {
             .map(([placement, visitorSet]) => ({
               name: placement,
               users: visitorSet.size,
-              percentage: ((visitorSet.size / uniqueVids) * 100).toFixed(1)
+              percentage: ((visitorSet.size / chartPercentageDenominator) * 100).toFixed(1)
             }))
             .sort((a, b) => b.users - a.users)
             .slice(0, 5)
           setPlacementsData(placementStats)
 
           const devicesForChart: { [key: string]: Set<string> } = {}
-          currentSessions.forEach((session: Session) => {
+          currentViewSessions.forEach((session: Session) => {
             const device = session.device_type || 'Desconocido'
             if (!devicesForChart[device]) devicesForChart[device] = new Set()
             devicesForChart[device].add(session.visitor_id)
@@ -1187,14 +1354,14 @@ const Analytics: React.FC = () => {
             .map(([device, visitorSet]) => ({
               name: device,
               users: visitorSet.size,
-              percentage: ((visitorSet.size / uniqueVids) * 100).toFixed(1)
+              percentage: ((visitorSet.size / chartPercentageDenominator) * 100).toFixed(1)
             }))
             .sort((a, b) => b.users - a.users)
             .slice(0, 5)
           setDevicesData(deviceStats)
 
           const operatingSystemsForChart: { [key: string]: Set<string> } = {}
-          currentSessions.forEach((session: Session) => {
+          currentViewSessions.forEach((session: Session) => {
             const os = session.os || 'Desconocido'
             if (!operatingSystemsForChart[os]) operatingSystemsForChart[os] = new Set()
             operatingSystemsForChart[os].add(session.visitor_id)
@@ -1203,7 +1370,7 @@ const Analytics: React.FC = () => {
             .map(([os, visitorSet]) => ({
               name: os,
               users: visitorSet.size,
-              percentage: ((visitorSet.size / uniqueVids) * 100).toFixed(1)
+              percentage: ((visitorSet.size / chartPercentageDenominator) * 100).toFixed(1)
             }))
             .sort((a, b) => b.users - a.users)
             .slice(0, 5)
@@ -1211,7 +1378,7 @@ const Analytics: React.FC = () => {
 
           // Calcular top visitors (visitantes con más requests)
           const visitorCounts: { [key: string]: number } = {}
-          currentSessions.forEach((s: Session) => {
+          currentViewSessions.forEach((s: Session) => {
             visitorCounts[s.visitor_id] = (visitorCounts[s.visitor_id] || 0) + 1
           })
           const topVisitorsList = Object.entries(visitorCounts)
@@ -1343,6 +1510,21 @@ const Analytics: React.FC = () => {
               case 'conversion_stage':
                 if (getSessionConversionStage(session) === value) fieldMatch = true
                 break
+              case 'tracking_source':
+                if (getTrackingSourceValue(session) === value) fieldMatch = true
+                break
+              case 'site_type':
+                if ((session.site_type || 'unknown') === value) fieldMatch = true
+                break
+              case 'site_id':
+                if (session.site_id === value) fieldMatch = true
+                break
+              case 'form_site_id':
+                if (getNativeFormId(session) === value) fieldMatch = true
+                break
+              case 'native_conversion_source':
+                if (getNativeConversionFilterValue(session) === value) fieldMatch = true
+                break
             }
           }
 
@@ -1392,12 +1574,14 @@ const Analytics: React.FC = () => {
       return
     }
 
+    const viewSessionsToProcess = sessionsToProcess.filter(isTrackingViewEvent)
+
     // Recalcular KPIs principales con las sesiones filtradas
-    const uniqueVids = new Set(sessionsToProcess.map((s: Session) => s.visitor_id)).size
-    const totalPageViews = sessionsToProcess.length
+    const uniqueVids = new Set(viewSessionsToProcess.map((s: Session) => s.visitor_id)).size
+    const totalPageViews = viewSessionsToProcess.length
 
     // Contar sesiones únicas (por session_id)
-    const uniqueSessionIds = new Set(sessionsToProcess.map((s: Session) => s.session_id)).size
+    const uniqueSessionIds = new Set(viewSessionsToProcess.map((s: Session) => s.session_id)).size
 
     // Registros = contactos únicos que aparecen en las sesiones filtradas
     const sesionesConContacto = sessionsToProcess.filter((s: Session) => {
@@ -1422,7 +1606,7 @@ const Analytics: React.FC = () => {
 
     // Usuarios recurrentes: contar visitor_ids que tienen múltiples session_ids diferentes
     const visitorSessionMap: { [key: string]: Set<string> } = {}
-    sessionsToProcess.forEach((s: Session) => {
+    viewSessionsToProcess.forEach((s: Session) => {
       if (!visitorSessionMap[s.visitor_id]) {
         visitorSessionMap[s.visitor_id] = new Set()
       }
@@ -1486,24 +1670,25 @@ const Analytics: React.FC = () => {
 
     // Recalcular stats para las cards
     const browsersForFilter: { [key: string]: Set<string> } = {}
-    sessionsToProcess.forEach((session: Session) => {
+    viewSessionsToProcess.forEach((session: Session) => {
       const browser = session.browser || 'Desconocido'
       if (!browsersForFilter[browser]) browsersForFilter[browser] = new Set()
       browsersForFilter[browser].add(session.visitor_id)
     })
-    const uniqueVisitorsInFilter = new Set(sessionsToProcess.map(s => s.visitor_id)).size
+    const uniqueVisitorsInFilter = new Set(viewSessionsToProcess.map(s => s.visitor_id)).size
+    const percentageDenominator = Math.max(uniqueVisitorsInFilter, 1)
     const browserStats = Object.entries(browsersForFilter)
       .map(([browser, visitorSet]) => ({
         name: browser,
         users: visitorSet.size,
-        percentage: ((visitorSet.size / uniqueVisitorsInFilter) * 100).toFixed(1)
+        percentage: ((visitorSet.size / percentageDenominator) * 100).toFixed(1)
       }))
       .sort((a, b) => b.users - a.users)
       .slice(0, 5)
     setBrowserData(browserStats)
 
     const platformsForFilter: { [key: string]: Set<string> } = {}
-    sessionsToProcess.forEach((session: Session) => {
+    viewSessionsToProcess.forEach((session: Session) => {
       // Usar normalizador con prioridad: referrer_url → site_source_name → utm_source → source_platform
       const platform = normalizeTrafficSource({
         referrer_url: session.referrer_url,
@@ -1518,7 +1703,7 @@ const Analytics: React.FC = () => {
       .map(([platform, visitorSet]) => ({
         name: platform,
         users: visitorSet.size,
-        percentage: ((visitorSet.size / uniqueVisitorsInFilter) * 100).toFixed(1)
+        percentage: ((visitorSet.size / percentageDenominator) * 100).toFixed(1)
       }))
       .sort((a, b) => b.users - a.users)
       .slice(0, 5)
@@ -1526,7 +1711,7 @@ const Analytics: React.FC = () => {
 
     // Calcular placements para "Top de ubicaciones" (Facebook Feed, Instagram Reels, etc.) - VISITANTES ÚNICOS
     const placementsForFilter: { [key: string]: Set<string> } = {}
-    sessionsToProcess.forEach((session: Session) => {
+    viewSessionsToProcess.forEach((session: Session) => {
       const rawPlacement = session.placement || 'Sin ubicación'
       const placement = formatPlacementName(rawPlacement)
       if (!placementsForFilter[placement]) placementsForFilter[placement] = new Set()
@@ -1536,31 +1721,32 @@ const Analytics: React.FC = () => {
       .map(([placement, visitorSet]) => ({
         name: placement,
         users: visitorSet.size,
-        percentage: ((visitorSet.size / uniqueVisitorsInFilter) * 100).toFixed(1)
+        percentage: ((visitorSet.size / percentageDenominator) * 100).toFixed(1)
       }))
       .sort((a, b) => b.users - a.users)
       .slice(0, 5)
     setPlacementsData(placementStats)
 
     const devicesFiltered: { [key: string]: Set<string> } = {}
-    sessionsToProcess.forEach((session: Session) => {
+    viewSessionsToProcess.forEach((session: Session) => {
       const device = session.device_type || 'Desconocido'
       if (!devicesFiltered[device]) devicesFiltered[device] = new Set()
       devicesFiltered[device].add(session.visitor_id)
     })
-    const uniqueVisitorsFiltered = new Set(sessionsToProcess.map(s => s.visitor_id)).size
+    const uniqueVisitorsFiltered = new Set(viewSessionsToProcess.map(s => s.visitor_id)).size
+    const devicePercentageDenominator = Math.max(uniqueVisitorsFiltered, 1)
     const deviceStats = Object.entries(devicesFiltered)
       .map(([device, visitorSet]) => ({
         name: device,
         users: visitorSet.size,
-        percentage: ((visitorSet.size / uniqueVisitorsFiltered) * 100).toFixed(1)
+        percentage: ((visitorSet.size / devicePercentageDenominator) * 100).toFixed(1)
       }))
       .sort((a, b) => b.users - a.users)
       .slice(0, 5)
     setDevicesData(deviceStats)
 
     const operatingSystemsForFilter: { [key: string]: Set<string> } = {}
-    sessionsToProcess.forEach((session: Session) => {
+    viewSessionsToProcess.forEach((session: Session) => {
       const os = session.os || 'Desconocido'
       if (!operatingSystemsForFilter[os]) operatingSystemsForFilter[os] = new Set()
       operatingSystemsForFilter[os].add(session.visitor_id)
@@ -1569,14 +1755,14 @@ const Analytics: React.FC = () => {
       .map(([os, visitorSet]) => ({
         name: os,
         users: visitorSet.size,
-        percentage: ((visitorSet.size / uniqueVisitorsInFilter) * 100).toFixed(1)
+        percentage: ((visitorSet.size / percentageDenominator) * 100).toFixed(1)
       }))
       .sort((a, b) => b.users - a.users)
       .slice(0, 5)
     setOsData(osStats)
 
     const visitorCounts: { [key: string]: number } = {}
-    sessionsToProcess.forEach((s: Session) => {
+    viewSessionsToProcess.forEach((s: Session) => {
       visitorCounts[s.visitor_id] = (visitorCounts[s.visitor_id] || 0) + 1
     })
     const topVisitorsList = Object.entries(visitorCounts)
@@ -1689,8 +1875,9 @@ const Analytics: React.FC = () => {
   useEffect(() => {
     if (!webTrackingConfigured && selectedMainChartView !== 'traffic') {
       setSelectedMainChartView('traffic')
+      navigateAnalyticsView({ mainChart: 'traffic', replace: true })
     }
-  }, [selectedMainChartView, webTrackingConfigured])
+  }, [navigateAnalyticsView, selectedMainChartView, webTrackingConfigured])
 
   useEffect(() => {
     if (!webTrackingConfigured && Object.keys(selectedFilters).length > 0) {
@@ -1735,7 +1922,9 @@ const Analytics: React.FC = () => {
 
     const validValues = conversionChartOptions.map(opt => opt.value)
     if (!validValues.includes(selectedConversionChartView)) {
-      setSelectedConversionChartView(conversionChartOptions[0]?.value as AnalyticsConversionChartView)
+      const nextChart = conversionChartOptions[0]?.value as AnalyticsConversionChartView
+      setSelectedConversionChartView(nextChart)
+      navigateAnalyticsView({ conversionChart: nextChart, replace: true })
     }
   }, [conversionChartOptions, conversionChartTouched, selectedConversionChartView, webTrackingConfigured])
 
@@ -1764,8 +1953,8 @@ const Analytics: React.FC = () => {
         title: 'Mensajes de WhatsApp',
         description: `Mensajes recibidos por ${periodLabel}`,
         label1: 'Mensajes',
-        color: 'var(--design-chart-primary, #10b981)',
-        color2: 'var(--design-chart-tertiary, #3b82f6)',
+        color: ANALYTICS_CHART_COLORS.messages,
+        color2: ANALYTICS_CHART_COLORS.appointments,
         data: whatsAppTrendData,
         emptyMessage: 'Sin mensajes de WhatsApp disponibles en este rango'
       }
@@ -1778,8 +1967,8 @@ const Analytics: React.FC = () => {
           description: `Cuántos visitantes terminan identificándose por ${periodLabel}`,
           label1: 'Visitantes únicos',
           label2: 'Registros',
-          color: 'var(--design-chart-tertiary, #3b82f6)',
-          color2: 'var(--design-chart-accent, #8b5cf6)',
+          color: ANALYTICS_CHART_COLORS.visitors,
+          color2: ANALYTICS_CHART_COLORS.registrations,
           data: mergeVisitorRegistrationData(dailyTraffic, dailyConversions),
           emptyMessage: 'Sin datos de visitantes o registros disponibles'
         }
@@ -1789,8 +1978,8 @@ const Analytics: React.FC = () => {
           description: `Frecuencia de regreso y volumen real por ${periodLabel}`,
           label1: 'Sesiones',
           label2: 'Visitantes únicos',
-          color: 'var(--design-chart-warning, #f59e0b)',
-          color2: 'var(--design-chart-tertiary, #3b82f6)',
+          color: ANALYTICS_CHART_COLORS.sessions,
+          color2: ANALYTICS_CHART_COLORS.visitors,
           data: mapTrendToChartData(sessionTrendData, 'uniqueSessions', 'uniqueVisitors'),
           emptyMessage: 'Sin sesiones disponibles'
         }
@@ -1800,8 +1989,8 @@ const Analytics: React.FC = () => {
           description: `Calidad del tráfico: contactos identificados y usuarios que regresan por ${periodLabel}`,
           label1: 'Contactos identificados',
           label2: 'Visitantes recurrentes',
-          color: 'var(--design-chart-primary, #10b981)',
-          color2: 'var(--design-chart-secondary, #64748b)',
+          color: ANALYTICS_CHART_COLORS.identified,
+          color2: ANALYTICS_CHART_COLORS.returning,
           data: mapTrendToChartData(sessionTrendData, 'identifiedContacts', 'returningVisitors'),
           emptyMessage: 'Sin visitantes identificados o recurrentes'
         }
@@ -1812,8 +2001,8 @@ const Analytics: React.FC = () => {
           description: `Visualizaciones de página y visitantes únicos por ${periodLabel}`,
           label1: 'Visualizaciones',
           label2: 'Visitantes únicos',
-          color: 'var(--design-chart-primary, #10b981)',
-          color2: 'var(--design-chart-tertiary, #3b82f6)',
+          color: ANALYTICS_CHART_COLORS.traffic,
+          color2: ANALYTICS_CHART_COLORS.visitors,
           data: dailyTraffic,
           emptyMessage: 'Sin datos de tráfico disponibles'
         }
@@ -1828,8 +2017,8 @@ const Analytics: React.FC = () => {
           description: `Controla si la agenda se está convirtiendo en show-ups por ${periodLabel}`,
           label1: 'Citas agendadas',
           label2: 'Citas asistidas',
-          color: 'var(--design-chart-warning, #f59e0b)',
-          color2: 'var(--design-chart-tertiary, #3b82f6)',
+          color: ANALYTICS_CHART_COLORS.appointments,
+          color2: ANALYTICS_CHART_COLORS.attendances,
           data: mapTrendToChartData(conversionTrendData, 'appointments', 'attendances'),
           emptyMessage: 'Sin citas o asistencias disponibles'
         }
@@ -1839,8 +2028,8 @@ const Analytics: React.FC = () => {
           description: `Compara ${leadsLabelLower} en etapa inicial contra ${customersLabelLower} por ${periodLabel}`,
           label1: leadsLabel,
           label2: customersLabel,
-          color: 'var(--design-chart-accent, #8b5cf6)',
-          color2: 'var(--design-chart-primary, #10b981)',
+          color: ANALYTICS_CHART_COLORS.prospects,
+          color2: ANALYTICS_CHART_COLORS.customers,
           data: mapTrendToChartData(conversionTrendData, 'prospects', 'customers'),
           emptyMessage: `Sin ${leadsLabelLower} o ${customersLabelLower} disponibles`
         }
@@ -1850,8 +2039,8 @@ const Analytics: React.FC = () => {
           description: `Cuántos mensajes de WhatsApp llegan versus citas agendadas por ${periodLabel}`,
           label1: 'Mensajes',
           label2: 'Citas',
-          color: 'var(--design-chart-primary, #10b981)',
-          color2: 'var(--design-chart-warning, #f59e0b)',
+          color: ANALYTICS_CHART_COLORS.messages,
+          color2: ANALYTICS_CHART_COLORS.appointments,
           data: mergeWhatsAppWithAppointments(whatsAppTrendData, conversionTrendData),
           emptyMessage: 'Sin mensajes o citas disponibles'
         }
@@ -1861,8 +2050,8 @@ const Analytics: React.FC = () => {
           description: `Cuántas citas agendadas se convierten en ${customersLabelLower} por ${periodLabel}`,
           label1: 'Citas',
           label2: customersLabel,
-          color: 'var(--design-chart-warning, #f59e0b)',
-          color2: 'var(--design-chart-primary, #10b981)',
+          color: ANALYTICS_CHART_COLORS.appointments,
+          color2: ANALYTICS_CHART_COLORS.customers,
           data: mapTrendToChartData(conversionTrendData, 'appointments', 'customers'),
           emptyMessage: `Sin citas o ${customersLabelLower} disponibles`
         }
@@ -1873,8 +2062,8 @@ const Analytics: React.FC = () => {
           description: `Mide cuántos registros terminan siendo ${customersLabelLower} por ${periodLabel}`,
           label1: 'Registros',
           label2: customersLabel,
-          color: 'var(--design-chart-accent, #8b5cf6)',
-          color2: 'var(--design-chart-primary, #10b981)',
+          color: ANALYTICS_CHART_COLORS.registrations,
+          color2: ANALYTICS_CHART_COLORS.customers,
           data: mapTrendToChartData(conversionTrendData, 'registrations', 'customers'),
           emptyMessage: `Sin registros o ${customersLabelLower} disponibles`
         }
@@ -1989,7 +2178,12 @@ const Analytics: React.FC = () => {
               <TabList
                 tabs={viewTabs}
                 activeTab={viewType}
-                onTabChange={(value) => setViewType(value as ViewType)}
+                onTabChange={(value) => {
+                  if (isAnalyticsViewType(value)) {
+                    setViewType(value)
+                    navigateAnalyticsView({ viewType: value })
+                  }
+                }}
                 variant="compact"
               />
             </div>
@@ -2018,7 +2212,12 @@ const Analytics: React.FC = () => {
                 variant="title"
                 options={mainChartOptions}
                 value={selectedMainChartView}
-                onChange={(value) => setSelectedMainChartView(value as AnalyticsMainChartView)}
+                onChange={(value) => {
+                  if (isAnalyticsMainChartView(value)) {
+                    setSelectedMainChartView(value)
+                    navigateAnalyticsView({ mainChart: value })
+                  }
+                }}
               />
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                 {mainChartConfig.description}

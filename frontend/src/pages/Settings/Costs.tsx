@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
-import { Card, Button } from '@/components/common'
+import { Card, Button, NumberInput, CustomSelect } from '@/components/common'
 import { Plus, X, Pencil, DollarSign, Loader2, TrendingDown, Info } from 'lucide-react'
 import { useNotification } from '@/contexts/NotificationContext'
 import { costsService, type Cost, type CreateCostDto } from '@/services/costsService'
@@ -191,7 +191,7 @@ export const Costs: React.FC = () => {
       if (!activated) return
     }
 
-    navigate('/reports')
+    navigate('/reports/table/month/cashflow')
   }
 
   const loadCosts = async () => {
@@ -473,8 +473,7 @@ export const Costs: React.FC = () => {
               {/* Tipo */}
               <div className={styles.formGroup}>
                 <label>Tipo *</label>
-                <select
-                  className={styles.select}
+                <CustomSelect
                   value={type}
                   onChange={(e) => setType(e.target.value as CreateCostDto['type'])}
                 >
@@ -483,7 +482,7 @@ export const Costs: React.FC = () => {
                   <option value="rent">Renta</option>
                   <option value="service">Servicio</option>
                   <option value="other">Otro</option>
-                </select>
+                </CustomSelect>
               </div>
 
               {/* Tipo de cálculo */}
@@ -522,8 +521,7 @@ export const Costs: React.FC = () => {
                   <span className={styles.prefix}>
                     {calculationType === 'percentage' ? '%' : '$'}
                   </span>
-                  <input
-                    type="number"
+                  <NumberInput
                     className={styles.input}
                     placeholder={calculationType === 'percentage' ? '0-100' : '0.00'}
                     value={value}
@@ -539,15 +537,14 @@ export const Costs: React.FC = () => {
               {calculationType === 'percentage' && (
                 <div className={styles.formGroup}>
                   <label>Aplica sobre</label>
-                  <select
-                    className={styles.select}
+                  <CustomSelect
                     value={appliesTo}
                     onChange={(e) => setAppliesTo(e.target.value as any)}
                   >
                     <option value="revenue">Ingresos totales</option>
                     <option value="profit">Ganancias netas</option>
                     <option value="">No aplica</option>
-                  </select>
+                  </CustomSelect>
                 </div>
               )}
             </div>

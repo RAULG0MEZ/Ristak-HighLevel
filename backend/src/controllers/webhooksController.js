@@ -22,10 +22,53 @@ import {
 } from '../services/contactIdentityService.js';
 import { normalizePhoneForStorage } from '../utils/phoneUtils.js';
 import { detectWhatsAppAttributionFields } from '../utils/whatsappAttribution.js';
+import {
+  META_SIGNATURE_HEADER,
+  getMetaWebhookVerifyToken,
+  processMetaSocialWebhook
+} from '../services/metaSocialMessagingService.js';
 
 function firstValue(...values) {
   return values.find(value => value !== undefined && value !== null && value !== '');
 }
+
+export const verifyMetaSocialWebhook = async (req, res) => {
+  try {
+    const mode = String(req.query['hub.mode'] || '').trim();
+    const token = String(req.query['hub.verify_token'] || '').trim();
+    const challenge = String(req.query['hub.challenge'] || '').trim();
+    const expectedToken = await getMetaWebhookVerifyToken();
+
+    if (mode === 'subscribe' && token && token === expectedToken) {
+      logger.info('Webhook de Meta verificado correctamente');
+      return res.status(200).send(challenge);
+    }
+
+    logger.warn('Intento de verificación Meta rechazado');
+    return res.sendStatus(403);
+  } catch (error) {
+    logger.error(`Error verificando webhook Meta: ${error.message}`);
+    return res.sendStatus(500);
+  }
+};
+
+export const handleMetaSocialWebhook = async (req, res) => {
+  try {
+    await processMetaSocialWebhook({
+      payload: req.body || {},
+      rawBody: req.rawBody || JSON.stringify(req.body || {}),
+      signatureHeader: req.get(META_SIGNATURE_HEADER) || ''
+    });
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    logger.error(`Error procesando webhook Meta: ${error.message}`);
+    res.status(error.statusCode || 200).json({
+      success: error.statusCode ? false : true,
+      error: error.statusCode ? error.message : undefined
+    });
+  }
+};
 
 function extractInvoiceWebhookPayload(data) {
   return data.invoice || data.invoiceData || data.data || data.resource || data.object || {};
@@ -62,6 +105,35 @@ function maybeJsonObject(value) {
   } catch {
     return {};
   }
+}
+
+function extractPaymentPlanWebhookPayload(data) {
+  return data.paymentPlan ||
+    data.payment_plan ||
+    data.invoiceSchedule ||
+    data.invoice_schedule ||
+    data.data?.paymentPlan ||
+    data.data?.payment_plan ||
+    data.data?.invoiceSchedule ||
+    data.data?.invoice_schedule ||
+    data.data ||
+    data.resource ||
+    data.object ||
+    {};
+}
+
+function extractArrayValue(...values) {
+  return values.find(value => Array.isArray(value)) || [];
+}
+
+function booleanToDbValue(value) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['false', '0', 'test', 'sandbox'].includes(normalized)) return 0;
+    if (['true', '1', 'live', 'production'].includes(normalized)) return 1;
+  }
+  return value ? 1 : 0;
 }
 
 function sourceTypeIndicatesInvoice(value) {
@@ -133,6 +205,98 @@ async function getConfiguredPaymentModeFallback() {
 function normalizePaymentAmount(value) {
   const amount = Number(value || 0);
   return Number.isFinite(amount) ? Math.round(amount * 100) / 100 : 0;
+}
+
+function resolvePaymentPlanId(data, plan) {
+  return firstValue(
+    data.paymentPlanId,
+    data.payment_plan_id,
+    data.invoiceScheduleId,
+    data.invoice_schedule_id,
+    data.scheduleId,
+    data.schedule_id,
+    data.entityId,
+    data.entity_id,
+    data.resourceId,
+    data.resource_id,
+    plan.paymentPlanId,
+    plan.payment_plan_id,
+    plan.invoiceScheduleId,
+    plan.invoice_schedule_id,
+    plan.scheduleId,
+    plan.schedule_id,
+    plan.id,
+    plan._id
+  );
+}
+
+function resolvePaymentPlanScheduleConfig(data, plan) {
+  return maybeJsonObject(firstValue(
+    plan.schedule,
+    plan.scheduleConfig,
+    plan.schedule_config,
+    data.schedule,
+    data.scheduleConfig,
+    data.schedule_config
+  ));
+}
+
+function resolvePaymentPlanContact(data, plan) {
+  return maybeJsonObject(firstValue(
+    plan.contact,
+    plan.contactDetails,
+    plan.contact_details,
+    plan.customer,
+    data.contact,
+    data.contactDetails,
+    data.contact_details,
+    data.customer
+  ));
+}
+
+function resolvePaymentPlanRecurrenceLabel(plan, scheduleConfig) {
+  const recurrence = maybeJsonObject(firstValue(
+    plan.recurrence,
+    plan.rrule,
+    scheduleConfig.recurrence,
+    scheduleConfig.rrule
+  ));
+  const frequency = firstValue(
+    plan.recurrenceLabel,
+    plan.recurrence_label,
+    plan.frequency,
+    recurrence.frequency,
+    recurrence.freq,
+    scheduleConfig.frequency,
+    scheduleConfig.freq
+  );
+  const interval = firstValue(recurrence.interval, scheduleConfig.interval);
+
+  if (!frequency) return null;
+  return interval ? `${frequency} cada ${interval}` : String(frequency);
+}
+
+function resolvePaymentPlanStatus(data, plan) {
+  const explicitStatus = firstValue(
+    plan.scheduleStatus,
+    plan.schedule_status,
+    plan.status,
+    plan.state,
+    data.scheduleStatus,
+    data.schedule_status,
+    data.status,
+    data.state
+  );
+
+  if (explicitStatus) return explicitStatus;
+
+  const eventType = String(firstValue(data.type, data.eventType, data.event, data.eventName) || '').toLowerCase();
+  if (eventType.includes('cancel')) return 'cancelled';
+  if (eventType.includes('delete')) return 'deleted';
+  if (eventType.includes('pause')) return 'paused';
+  if (eventType.includes('complete') || eventType.includes('paid')) return 'completed';
+  if (eventType.includes('fail')) return 'failed';
+  return 'active';
 }
 
 function normalizeLookupText(value) {
@@ -715,6 +879,154 @@ export const handlePaymentWebhook = async (req, res) => {
   } catch (error) {
     logger.error(`Error en handlePaymentWebhook: ${error.message}`);
     // Siempre devolver 200 para que HighLevel no reintente
+    res.status(200).json({ success: true, message: 'Webhook recibido' });
+  }
+};
+
+/**
+ * Procesa webhook de plan de pagos / invoice schedule.
+ */
+export const handlePaymentPlanWebhook = async (req, res) => {
+  try {
+    const data = req.body || {};
+    const plan = extractPaymentPlanWebhookPayload(data);
+    const planId = resolvePaymentPlanId(data, plan);
+
+    logger.info(`📥 Webhook de plan de pagos recibido: ${planId || 'sin ID'}`);
+
+    if (!planId) {
+      logger.warn('Webhook de plan de pagos sin ID, ignorando');
+      return res.status(200).json({ success: true, message: 'Webhook recibido' });
+    }
+
+    const scheduleConfig = resolvePaymentPlanScheduleConfig(data, plan);
+    const contact = resolvePaymentPlanContact(data, plan);
+    const items = extractArrayValue(
+      plan.items,
+      plan.invoiceItems,
+      plan.invoice_items,
+      plan.lineItems,
+      plan.line_items,
+      data.items,
+      data.invoiceItems,
+      data.invoice_items,
+      scheduleConfig.items
+    );
+    const firstItem = items[0] || {};
+    const contactId = firstValue(
+      data.contact_id,
+      data.contactId,
+      plan.contact_id,
+      plan.contactId,
+      contact.id,
+      contact._id
+    );
+    const contactName = firstValue(
+      contact.name,
+      contact.fullName,
+      contact.full_name,
+      [contact.firstName, contact.lastName].filter(Boolean).join(' ').trim(),
+      [contact.first_name, contact.last_name].filter(Boolean).join(' ').trim(),
+      plan.contactName,
+      plan.contact_name,
+      data.contactName,
+      data.contact_name
+    );
+    const phone = normalizePhoneForStorage(firstValue(contact.phoneNo, contact.phone, plan.phone, data.phone)) ||
+      firstValue(contact.phoneNo, contact.phone, plan.phone, data.phone) ||
+      null;
+    const createdAt = firstValue(plan.createdAt, plan.created_at, data.createdAt, data.created_at);
+    const raw = plan && typeof plan === 'object' ? plan : data;
+
+    if (contactId) {
+      const existingContact = await db.get('SELECT id FROM contacts WHERE id = ?', [contactId]);
+      if (!existingContact) {
+        const usePostgres = process.env.DATABASE_URL ? true : false;
+        const contactQuery = usePostgres
+          ? `INSERT INTO contacts (id, full_name, phone, source, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING`
+          : `INSERT OR IGNORE INTO contacts (id, full_name, phone, source, created_at) VALUES (?, ?, ?, ?, ?)`;
+
+        await db.run(contactQuery, [
+          contactId,
+          contactName || 'Contacto sin nombre',
+          phone,
+          'payment-plan-webhook',
+          createdAt || new Date().toISOString()
+        ]);
+      }
+    }
+
+    await db.run(
+      `INSERT INTO payment_plans (
+        id, ghl_schedule_id, contact_id, contact_name, email, phone,
+        name, title, status, total, currency, description, recurrence_label,
+        start_date, next_run_at, end_date, live_mode, item_count,
+        schedule_json, raw_json, source, last_synced_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'webhook', CURRENT_TIMESTAMP, COALESCE(?, CURRENT_TIMESTAMP), CURRENT_TIMESTAMP)
+      ON CONFLICT(id) DO UPDATE SET
+        ghl_schedule_id = excluded.ghl_schedule_id,
+        contact_id = excluded.contact_id,
+        contact_name = excluded.contact_name,
+        email = excluded.email,
+        phone = excluded.phone,
+        name = excluded.name,
+        title = excluded.title,
+        status = excluded.status,
+        total = excluded.total,
+        currency = excluded.currency,
+        description = excluded.description,
+        recurrence_label = excluded.recurrence_label,
+        start_date = excluded.start_date,
+        next_run_at = excluded.next_run_at,
+        end_date = excluded.end_date,
+        live_mode = excluded.live_mode,
+        item_count = excluded.item_count,
+        schedule_json = excluded.schedule_json,
+        raw_json = excluded.raw_json,
+        source = excluded.source,
+        last_synced_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP`,
+      [
+        planId,
+        firstValue(plan.ghl_schedule_id, plan.scheduleId, plan.schedule_id, data.scheduleId, data.schedule_id, planId),
+        contactId || null,
+        contactName || null,
+        firstValue(contact.email, plan.email, data.email) || null,
+        phone,
+        firstValue(plan.name, plan.title, plan.invoiceName, plan.invoice_name, data.name, data.title, 'Plan de pago'),
+        firstValue(plan.title, plan.name, data.title, data.name, 'Plan de pago'),
+        resolvePaymentPlanStatus(data, plan),
+        normalizePaymentAmount(firstValue(plan.total, plan.amount, plan.grandTotal, plan.grand_total, plan.balance, data.total, data.amount, firstItem.amount)),
+        firstValue(plan.currency, scheduleConfig.currency, data.currency, 'MXN'),
+        firstValue(firstItem.description, firstItem.name, plan.description, plan.termsNotes, plan.terms_notes, data.description) || null,
+        resolvePaymentPlanRecurrenceLabel(plan, scheduleConfig),
+        firstValue(plan.startDate, plan.start_date, scheduleConfig.startDate, scheduleConfig.start_date, scheduleConfig.rrule?.startDate, data.startDate, data.start_date) || null,
+        firstValue(
+          plan.nextRunAt,
+          plan.next_run_at,
+          plan.nextInvoiceDate,
+          plan.next_invoice_date,
+          plan.executeAt,
+          plan.execute_at,
+          scheduleConfig.executeAt,
+          scheduleConfig.execute_at,
+          scheduleConfig.rrule?.startDate,
+          data.nextRunAt,
+          data.next_run_at
+        ) || null,
+        firstValue(plan.endDate, plan.end_date, scheduleConfig.endDate, scheduleConfig.end_date, scheduleConfig.rrule?.endDate, data.endDate, data.end_date) || null,
+        booleanToDbValue(firstValue(plan.liveMode, plan.live_mode, data.liveMode, data.live_mode, data.livemode)),
+        Number(firstValue(plan.itemCount, plan.item_count, data.itemCount, data.item_count, items.length) || 0),
+        JSON.stringify(scheduleConfig || {}),
+        JSON.stringify(raw || {}),
+        createdAt || null
+      ]
+    );
+
+    logger.info(`✅ Plan de pagos ${planId} procesado exitosamente`);
+    res.status(200).json({ success: true, message: 'Plan de pagos procesado' });
+  } catch (error) {
+    logger.error(`Error en handlePaymentPlanWebhook: ${error.message}`);
     res.status(200).json({ success: true, message: 'Webhook recibido' });
   }
 };

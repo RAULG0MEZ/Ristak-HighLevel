@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { KpiCard, Card, DateRangePicker, AreaChart, PageContainer, OriginDistributionCard, ConversionFunnelChart, ViewSelector, Loading, ContactDetailsModal, VisitorDetailsModal, TabList, Modal } from '@/components/common'
 import {
   DollarSign,
@@ -22,7 +22,7 @@ import { useDateRange } from '@/contexts/DateRangeContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { useLabels } from '@/contexts/LabelsContext'
 import { useTimezone } from '@/contexts/TimezoneContext'
-import { useAppConfig, useIsRenderDomain } from '@/hooks'
+import { useAppConfig } from '@/hooks'
 import { dashboardService, type DashboardMetrics, type ChartData, type DashboardVisitorDetail } from '@/services/dashboardService'
 import { trackingService } from '@/services/trackingService'
 import { reportsService, type ContactListItem } from '@/services/reportsService'
@@ -58,6 +58,18 @@ type ChartPeriodPreference =
   | 'calendar-month'
   | 'calendar-quarter'
   | 'calendar-year'
+
+const dashboardChartViews: ChartView[] = ['revenue-spend', 'visitors-leads', 'leads-appointments', 'appointments-attendances', 'attendances-sales']
+const isDashboardChartView = (value?: string): value is ChartView => dashboardChartViews.includes(value as ChartView)
+const parseDashboardRoute = (pathname: string): ChartView => {
+  const segments = pathname.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean)
+  const dashboardIndex = segments.indexOf('dashboard')
+  const routeSegments = dashboardIndex >= 0 ? segments.slice(dashboardIndex + 1) : []
+  const chartIndex = routeSegments.indexOf('chart')
+  const chartValue = chartIndex >= 0 ? routeSegments[chartIndex + 1] : routeSegments[0]
+  return isDashboardChartView(chartValue) ? chartValue : 'revenue-spend'
+}
+const buildDashboardChartPath = (chartView: ChartView) => `/dashboard/chart/${chartView}`
 
 interface DashboardChartPoint {
   label: string
@@ -454,13 +466,13 @@ const formatPeriodRange = (from: string, to: string) => {
 }
 
 export const Dashboard: React.FC = () => {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const routeChartView = React.useMemo(() => parseDashboardRoute(location.pathname), [location.pathname])
   const { dateRange, setDateRange } = useDateRange()
   const { user, locationId, accessToken } = useAuth()
   const { labels } = useLabels()
   const { formatLocalDateTime } = useTimezone()
-
-  // Detectar si estamos en dominio .onrender.com
-  const isRenderDomain = useIsRenderDomain()
 
   // Sistema híbrido de configuración
   const [showAnalyticsConfig] = useAppConfig<string | number | boolean>('show_analytics', '1')
@@ -470,7 +482,7 @@ export const Dashboard: React.FC = () => {
   })
   const chartPeriodPreference = normalizeChartPeriodPreference(chartPeriodConfig)
 
-  const analyticsPreferenceEnabled = !isRenderDomain && parseAnalyticsFlag(showAnalyticsConfig)
+  const analyticsPreferenceEnabled = parseAnalyticsFlag(showAnalyticsConfig)
   const [webTrackingConfigured, setWebTrackingConfigured] = useState(false)
   const analyticsEnabled = analyticsPreferenceEnabled && webTrackingConfigured
   const showFunnelVisitors = analyticsEnabled && parseAnalyticsFlag(showFunnelVisitorsConfig)
@@ -487,7 +499,7 @@ export const Dashboard: React.FC = () => {
   const [funnelLoading, setFunnelLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [chartLoading, setChartLoading] = useState(true)
-  const [selectedChartView, setSelectedChartView] = useState<ChartView>('revenue-spend')
+  const [selectedChartView, setSelectedChartView] = useState<ChartView>(routeChartView)
   const [extendedChartDataLoaded, setExtendedChartDataLoaded] = useState(false)
   const [extendedChartDataLoading, setExtendedChartDataLoading] = useState(false)
   const [contactModalOpen, setContactModalOpen] = useState(false)
@@ -869,10 +881,15 @@ export const Dashboard: React.FC = () => {
   }, [setChartPeriodConfig])
 
   useEffect(() => {
+    setSelectedChartView(current => current === routeChartView ? current : routeChartView)
+  }, [routeChartView])
+
+  useEffect(() => {
     if (!analyticsEnabled && selectedChartView === 'visitors-leads') {
       setSelectedChartView('revenue-spend')
+      navigate(buildDashboardChartPath('revenue-spend'), { replace: true })
     }
-  }, [analyticsEnabled, selectedChartView])
+  }, [analyticsEnabled, navigate, selectedChartView])
 
   // Cargar datasets extendidos del gráfico solo cuando sean necesarios
   const loadExtendedChartData = React.useCallback(async () => {
@@ -1616,7 +1633,7 @@ export const Dashboard: React.FC = () => {
             icon={<Target className="w-5 h-5" />}
           />
           <KpiCard
-            title="Costos Totales"
+            title="Gastos negocio"
             value={formatCurrency(metrics.totalCostos.value)}
             delta={metrics.totalCostos.variation}
             deltaLabel="vs periodo anterior"
@@ -1666,7 +1683,12 @@ export const Dashboard: React.FC = () => {
                   className="min-w-[220px]"
                   options={chartViewOptions}
                   value={selectedChartView}
-                  onChange={(value) => setSelectedChartView(value as ChartView)}
+                  onChange={(value) => {
+                    if (isDashboardChartView(value)) {
+                      setSelectedChartView(value)
+                      navigate(buildDashboardChartPath(value))
+                    }
+                  }}
                 />
                 <div className="flex flex-wrap items-center gap-4 px-2 text-xs text-[var(--color-text-secondary)]">
                   {chartLegendItems.map((item) => (

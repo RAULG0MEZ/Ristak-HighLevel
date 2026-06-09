@@ -1,34 +1,22 @@
 import { useEffect, useRef } from 'react'
 import { useAppConfig } from './useAppConfig'
-import { useIsRenderDomain } from './useIsRenderDomain'
 import { trackingService } from '@/services/trackingService'
 
 type VisitorSource = 'platform' | 'tracking'
 
 /**
- * Mantiene sincronizadas las preferencias dependientes del dominio
- * (como la visibilidad de Analíticas) sin importar desde qué host
- * se cargó la aplicación.
+ * Mantiene Analíticas visibles sin importar desde qué host se cargó la app.
  *
- * - En dominios .onrender.com: se fuerza show_analytics = false y visitor_source = 'platform'
- * - En dominios personalizados: se habilitan automáticamente cuando exista configuración de tracking
+ * Si el rastreo web ya está configurado, también activa esa fuente de visitantes.
+ * Si no está configurado, no cambia la fuente existente.
  */
 export const useDomainFeatureSync = () => {
-  const isRenderDomain = useIsRenderDomain()
-  const [showAnalytics, setShowAnalytics] = useAppConfig<boolean>('show_analytics', false)
+  const [showAnalytics, setShowAnalytics] = useAppConfig<boolean>('show_analytics', true)
   const [visitorSource, setVisitorSource] = useAppConfig<VisitorSource>('visitor_source', 'platform')
   const syncingRef = useRef(false)
 
   useEffect(() => {
     let cancelled = false
-
-    const desiredAnalytics = isRenderDomain ? false : true
-    const desiredVisitor: VisitorSource = isRenderDomain ? 'platform' : 'tracking'
-
-    // Ya estamos en el estado esperado, no hacer nada
-    if (showAnalytics === desiredAnalytics && visitorSource === desiredVisitor) {
-      return
-    }
 
     const syncPreferences = async () => {
       if (syncingRef.current) return
@@ -38,49 +26,30 @@ export const useDomainFeatureSync = () => {
       let visitorChanged = false
 
       try {
-        if (isRenderDomain) {
-          if (showAnalytics !== false) {
-            await setShowAnalytics(false)
-            analyticsChanged = true
-          }
-          if (visitorSource !== 'platform') {
-            await setVisitorSource('platform')
-            visitorChanged = true
-          }
-        } else {
-          let shouldEnable = true
+        if (!showAnalytics) {
+          await setShowAnalytics(true)
+          analyticsChanged = true
+        }
 
-          try {
-            const config = await trackingService.getTrackingConfig()
-            shouldEnable = Boolean(config?.trackingDomain?.trim()) ||
-              Boolean(config?.showAnalytics) ||
-              Boolean(config?.isConfigured)
-          } catch {
-            // Si la API falla, preferimos habilitar (fail-open) para no ocultar Analíticas por error transitorio
-            shouldEnable = true
-          }
-
-          if (!shouldEnable) return
-
-          if (!showAnalytics) {
-            await setShowAnalytics(true)
-            analyticsChanged = true
-          }
-          if (visitorSource !== 'tracking') {
+        try {
+          const config = await trackingService.getTrackingConfig()
+          if (config?.isConfigured && visitorSource !== 'tracking') {
             await setVisitorSource('tracking')
             visitorChanged = true
           }
+        } catch {
+          // Si la API falla, Analíticas se queda visible y no cambiamos la fuente de visitantes.
         }
 
         if (!cancelled) {
           if (analyticsChanged) {
             window.dispatchEvent(new CustomEvent('analytics-preference-changed', {
-              detail: { showAnalytics: !isRenderDomain }
+              detail: { showAnalytics: true }
             }))
           }
           if (visitorChanged) {
             window.dispatchEvent(new CustomEvent('visitor-source-changed', {
-              detail: { visitorSource: isRenderDomain ? 'platform' : 'tracking' }
+              detail: { visitorSource: 'tracking' }
             }))
           }
         }
@@ -95,5 +64,5 @@ export const useDomainFeatureSync = () => {
     return () => {
       cancelled = true
     }
-  }, [isRenderDomain, showAnalytics, visitorSource, setShowAnalytics, setVisitorSource])
+  }, [showAnalytics, visitorSource, setShowAnalytics, setVisitorSource])
 }

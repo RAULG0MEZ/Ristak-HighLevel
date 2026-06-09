@@ -17,7 +17,7 @@ export const firstText = (...values) => {
 }
 
 /**
- * Carga la PRIMERA atribución de WhatsApp de cada contacto (oficial + web).
+ * Carga la PRIMERA atribución de WhatsApp de cada contacto (oficial + API).
  * Devuelve un Map<contact_id, row>.
  */
 export async function loadFirstWhatsAppAttributions(contactIds = []) {
@@ -36,6 +36,7 @@ export async function loadFirstWhatsAppAttributions(contactIds = []) {
       referral_headline,
       referral_body,
       referral_ctwa_clid,
+      ad_id_thru_message,
       NULL as referral_source_app,
       NULL as referral_entry_point,
       created_at,
@@ -51,7 +52,7 @@ export async function loadFirstWhatsAppAttributions(contactIds = []) {
     }
   })
 
-  const webRows = await db.all(`
+  const apiRows = await db.all(`
     SELECT
       msg.contact_id,
       COALESCE(attr.detected_source_url, msg.detected_source_url) as referral_source_url,
@@ -60,12 +61,13 @@ export async function loadFirstWhatsAppAttributions(contactIds = []) {
       COALESCE(attr.detected_headline, msg.detected_headline) as referral_headline,
       COALESCE(attr.detected_body, msg.detected_body) as referral_body,
       COALESCE(attr.detected_ctwa_clid, msg.detected_ctwa_clid) as referral_ctwa_clid,
+      COALESCE(attr.detected_source_id, msg.detected_source_id) as ad_id_thru_message,
       COALESCE(attr.detected_source_app, msg.detected_source_app) as referral_source_app,
       COALESCE(attr.detected_entry_point, msg.detected_entry_point) as referral_entry_point,
       COALESCE(msg.message_timestamp, msg.created_at) as created_at,
-      'whatsapp_web' as attribution_source
-    FROM whatsapp_web_messages msg
-    LEFT JOIN whatsapp_web_attribution attr ON attr.whatsapp_web_message_id = msg.id
+      'whatsapp_api' as attribution_source
+    FROM whatsapp_api_messages msg
+    LEFT JOIN whatsapp_api_attribution attr ON attr.whatsapp_api_message_id = msg.id
     WHERE msg.contact_id IN (${placeholders})
       AND msg.direction = 'inbound'
       AND (
@@ -78,7 +80,7 @@ export async function loadFirstWhatsAppAttributions(contactIds = []) {
     ORDER BY COALESCE(msg.message_timestamp, msg.created_at) ASC, msg.id ASC
   `, ids)
 
-  webRows.forEach(row => {
+  apiRows.forEach(row => {
     if (row.contact_id && !byContact.has(row.contact_id)) {
       byContact.set(row.contact_id, row)
     }

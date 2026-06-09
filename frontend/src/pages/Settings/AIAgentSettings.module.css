@@ -56,6 +56,7 @@
 }
 
 .statusConnected,
+.statusWarning,
 .statusDisconnected {
   display: inline-flex;
   align-items: center;
@@ -78,6 +79,12 @@
   color: var(--color-text-tertiary);
   background: rgba(148, 163, 184, 0.08);
   border: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.statusWarning {
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.28);
 }
 
 .section {
@@ -283,6 +290,10 @@
   font-size: 12px;
   line-height: 1.45;
   color: var(--color-text-tertiary);
+}
+
+.helperWarning {
+  color: #b45309;
 }
 
 .saveStatus {

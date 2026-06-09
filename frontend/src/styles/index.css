@@ -303,7 +303,246 @@ body.dark {
     --color-info: var(--color-status-info);
     --color-info-light: rgba(var(--color-primary-rgb), 0.22);
     --color-info-dark: #2563eb;
+
+    --design-control-height: 40px;
+    --design-control-radius: var(--radius-md);
+    --design-control-bg: color-mix(in srgb, var(--color-background-secondary) 88%, var(--color-background-primary) 12%);
+    --design-control-bg-hover: color-mix(in srgb, var(--design-control-bg) 92%, var(--color-primary) 8%);
+    --design-control-border: var(--color-border-subtle);
+    --design-control-border-hover: rgba(148, 163, 184, 0.34);
+    --design-control-border-focus: rgba(var(--color-primary-rgb), 0.42);
+    --design-control-text: var(--color-text-primary);
+    --design-control-muted: var(--color-text-tertiary);
+    --design-control-padding-x: 12px;
+    --design-control-shadow: none;
+    --design-control-focus-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.12);
+    --design-panel-bg: var(--color-background-secondary);
+    --design-panel-border: var(--color-border-subtle);
+    --design-section-border: rgba(148, 163, 184, 0.16);
+    --design-section-bg: transparent;
+    --design-section-title: var(--color-text-tertiary);
+    --design-section-radius: 0;
+
+    --ristak-dropdown-trigger-height: var(--design-control-height);
+    --ristak-dropdown-radius: var(--design-control-radius);
+    --ristak-dropdown-bg: var(--design-control-bg);
+    --ristak-dropdown-bg-hover: var(--design-control-bg-hover);
+    --ristak-dropdown-border: var(--design-control-border);
+    --ristak-dropdown-border-hover: var(--design-control-border-hover);
+    --ristak-dropdown-border-focus: var(--design-control-border-focus);
+    --ristak-dropdown-ring: var(--design-control-focus-shadow);
+    --ristak-dropdown-panel-shadow: 0 18px 46px -30px rgba(15, 23, 42, 0.46);
+    --ristak-focus-border: var(--design-control-border-focus);
+    --ristak-focus-ring: var(--design-control-focus-shadow);
+    --ristak-focus-ring-strong: 0 0 0 3px rgba(var(--color-primary-rgb), 0.16);
   }
+}
+
+body.light {
+  --design-control-bg: #ffffff;
+  --design-control-bg-hover: #ffffff;
+  --design-control-border: rgba(203, 213, 225, 0.86);
+  --design-control-border-hover: rgba(148, 163, 184, 0.58);
+  --design-control-border-focus: rgba(var(--color-primary-rgb), 0.42);
+  --design-panel-bg: #ffffff;
+  --design-section-border: rgba(203, 213, 225, 0.68);
+}
+
+body.dark {
+  --design-control-bg: color-mix(in srgb, var(--color-background-secondary) 90%, #ffffff 3%);
+  --design-control-bg-hover: color-mix(in srgb, var(--color-background-secondary) 82%, #ffffff 7%);
+  --design-control-border: rgba(148, 163, 184, 0.22);
+  --design-control-border-hover: rgba(148, 163, 184, 0.34);
+  --design-panel-bg: var(--color-background-secondary);
+  --design-section-border: rgba(148, 163, 184, 0.16);
+}
+
+body:not([data-phone-app='active']) :where(select):not(:where(.rstkCanvas select, .rstk-block-style select, .rstk-phone-input select)) {
+  width: 100%;
+  min-height: var(--ristak-dropdown-trigger-height) !important;
+  padding: 0 34px 0 12px !important;
+  border: 1px solid var(--ristak-dropdown-border) !important;
+  border-radius: var(--ristak-dropdown-radius) !important;
+  background-color: var(--ristak-dropdown-bg) !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+  background-position: right 12px center !important;
+  background-repeat: no-repeat !important;
+  background-size: 14px 14px !important;
+  color: var(--color-text-primary) !important;
+  font-size: var(--font-size-sm) !important;
+  font-weight: var(--font-weight-medium) !important;
+  line-height: 1.25rem !important;
+  box-shadow: none !important;
+  outline: none !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  transition: border-color var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast) !important;
+}
+
+body:not([data-phone-app='active']) :where(select):not(:where(.rstkCanvas select, .rstk-block-style select, .rstk-phone-input select)):hover:not(:disabled) {
+  border-color: var(--ristak-dropdown-border-hover) !important;
+  background-color: var(--ristak-dropdown-bg-hover) !important;
+}
+
+body:not([data-phone-app='active']) :where(select):not(:where(.rstkCanvas select, .rstk-block-style select, .rstk-phone-input select)):focus,
+body:not([data-phone-app='active']) :where(select):not(:where(.rstkCanvas select, .rstk-block-style select, .rstk-phone-input select)):focus-visible {
+  border-color: var(--ristak-dropdown-border-focus) !important;
+  box-shadow: var(--ristak-dropdown-ring) !important;
+  outline: none !important;
+}
+
+body:not([data-phone-app='active']) :where(select):not(:where(.rstkCanvas select, .rstk-block-style select, .rstk-phone-input select)):disabled {
+  cursor: not-allowed !important;
+  opacity: 0.55 !important;
+}
+
+body:not([data-phone-app='active']):not([data-phone-chat-theme='active']) :where(
+  input:not([type]),
+  input[type='text'],
+  input[type='email'],
+  input[type='password'],
+  input[type='number'],
+  input[type='tel'],
+  input[type='url'],
+  input[type='search'],
+  input[type='date'],
+  input[type='time'],
+  input[type='datetime-local'],
+  input[type='month'],
+  input[type='week'],
+  textarea
+):not(:where(.rstkCanvas *, .rstk-block-style *, .rstk-phone-input *, [data-ristak-unstyled], [data-ristak-unstyled] *)) {
+  width: 100%;
+  min-height: var(--design-control-height);
+  border: 1px solid var(--design-control-border);
+  border-radius: var(--design-control-radius);
+  background-color: var(--design-control-bg);
+  color: var(--design-control-text);
+  box-shadow: var(--design-control-shadow);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25rem;
+  outline: none;
+  transition: border-color var(--transition-fast), background-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+:where(body:not([data-phone-app='active']):not([data-phone-chat-theme='active'])) :where(
+  input:not([type]),
+  input[type='text'],
+  input[type='email'],
+  input[type='password'],
+  input[type='number'],
+  input[type='tel'],
+  input[type='url'],
+  input[type='search'],
+  input[type='date'],
+  input[type='time'],
+  input[type='datetime-local'],
+  input[type='month'],
+  input[type='week']
+):not(:where(.rstkCanvas *, .rstk-block-style *, .rstk-phone-input *, [data-ristak-unstyled], [data-ristak-unstyled] *)) {
+  padding: 0 var(--design-control-padding-x);
+}
+
+body:not([data-phone-app='active']):not([data-phone-chat-theme='active']) :where(textarea):not(:where(.rstkCanvas *, .rstk-block-style *, [data-ristak-unstyled], [data-ristak-unstyled] *)) {
+  min-height: 92px;
+  padding: 10px var(--design-control-padding-x);
+  resize: vertical;
+}
+
+body:not([data-phone-app='active']):not([data-phone-chat-theme='active']) :where(
+  input:not([type]),
+  input[type='text'],
+  input[type='email'],
+  input[type='password'],
+  input[type='number'],
+  input[type='tel'],
+  input[type='url'],
+  input[type='search'],
+  input[type='date'],
+  input[type='time'],
+  input[type='datetime-local'],
+  input[type='month'],
+  input[type='week'],
+  textarea
+):not(:where(.rstkCanvas *, .rstk-block-style *, .rstk-phone-input *, [data-ristak-unstyled], [data-ristak-unstyled] *)):hover:not(:disabled):not([readonly]) {
+  border-color: var(--design-control-border-hover);
+  background-color: var(--design-control-bg-hover);
+}
+
+body:not([data-phone-app='active']):not([data-phone-chat-theme='active']) :where(
+  input:not([type]),
+  input[type='text'],
+  input[type='email'],
+  input[type='password'],
+  input[type='number'],
+  input[type='tel'],
+  input[type='url'],
+  input[type='search'],
+  input[type='date'],
+  input[type='time'],
+  input[type='datetime-local'],
+  input[type='month'],
+  input[type='week'],
+  textarea
+):not(:where(.rstkCanvas *, .rstk-block-style *, .rstk-phone-input *, [data-ristak-unstyled], [data-ristak-unstyled] *)):focus {
+  border-color: var(--design-control-border-focus);
+  background-color: var(--design-control-bg);
+  box-shadow: var(--design-control-focus-shadow);
+}
+
+body:not([data-phone-app='active']) [data-ristak-dropdown-trigger] {
+  min-height: var(--ristak-dropdown-trigger-height);
+  border: 1px solid var(--ristak-dropdown-border) !important;
+  border-radius: var(--ristak-dropdown-radius) !important;
+  background: var(--ristak-dropdown-bg) !important;
+  color: var(--color-text-primary) !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+body:not([data-phone-app='active']) [data-ristak-dropdown-trigger]:hover:not(:disabled) {
+  border-color: var(--ristak-dropdown-border-hover) !important;
+  background: var(--ristak-dropdown-bg-hover) !important;
+}
+
+body:not([data-phone-app='active']) [data-ristak-dropdown-trigger]:focus,
+body:not([data-phone-app='active']) [data-ristak-dropdown-trigger]:focus-visible,
+body:not([data-phone-app='active']) [data-ristak-dropdown-trigger][aria-expanded='true'],
+body:not([data-phone-app='active']) [data-ristak-dropdown-trigger][data-state='open'] {
+  border-color: var(--ristak-dropdown-border-focus) !important;
+  box-shadow: var(--ristak-dropdown-ring) !important;
+  outline: none !important;
+}
+
+body:not([data-phone-app='active']) [data-ristak-dropdown-panel] {
+  border: 1px solid var(--ristak-dropdown-border) !important;
+  border-radius: var(--ristak-dropdown-radius) !important;
+  background: var(--ristak-dropdown-bg) !important;
+  color: var(--color-text-primary);
+  box-shadow: var(--ristak-dropdown-panel-shadow) !important;
+  overflow: hidden;
+}
+
+body:not([data-phone-app='active']) [data-ristak-dropdown-item] {
+  min-height: 36px;
+  border-radius: 0 !important;
+  color: var(--color-text-primary);
+  outline: none !important;
+}
+
+body:not([data-phone-app='active']) [data-ristak-dropdown-item]:hover,
+body:not([data-phone-app='active']) [data-ristak-dropdown-item]:focus,
+body:not([data-phone-app='active']) [data-ristak-dropdown-item]:focus-visible,
+body:not([data-phone-app='active']) [data-ristak-dropdown-item][data-highlighted],
+body:not([data-phone-app='active']) [data-ristak-dropdown-item][data-active='true'] {
+  background: var(--ristak-dropdown-bg-hover) !important;
+}
+
+body:not([data-phone-app='active']) [data-ristak-dropdown-item][data-selected='true'] {
+  background: rgba(var(--color-primary-rgb), 0.12) !important;
+  color: var(--color-text-primary) !important;
+  font-weight: var(--font-weight-semibold);
 }
 
 .glass {
@@ -436,67 +675,56 @@ body.dark .glow-sm {
 }
 
 /* ============================================
-   ELIMINAR TODOS LOS OUTLINES Y RINGS
-   DEBE ESTAR AL FINAL PARA MÁXIMA PRIORIDAD
+   FOCO GLOBAL SIN CONTORNOS NEGROS NATIVOS
    ============================================ */
 
-/* Resetear variables de Tailwind para rings */
 *,
 *::before,
-*::after,
-button,
-a,
-div,
-input,
-select,
-textarea {
-  --tw-ring-color: transparent !important;
-  --tw-ring-shadow: 0 0 #0000 !important;
-  --tw-ring-offset-shadow: 0 0 #0000 !important;
-  --tw-ring-offset-width: 0px !important;
-  --tw-shadow: 0 0 #0000 !important;
-  --tw-shadow-colored: 0 0 #0000 !important;
+*::after {
+  --tw-ring-color: rgba(var(--color-primary-rgb), 0.16);
+  --tw-ring-shadow: 0 0 #0000;
+  --tw-ring-offset-shadow: 0 0 #0000;
+  --tw-ring-offset-width: 0px;
 }
 
-/* Eliminar TODOS los outlines en TODOS los estados */
-*,
-*::before,
-*::after,
-*:hover,
-*:focus,
-*:active,
-*:focus-visible,
-*:focus-within,
-button,
-button:hover,
-button:focus,
-button:active,
-button:focus-visible,
-a,
-a:hover,
-a:focus,
-a:active,
-a:focus-visible,
-div,
-div:hover,
-div:focus,
-div:active,
-div:focus-visible,
-input,
-input:hover,
-input:focus,
-input:active,
-input:focus-visible,
-select,
-select:hover,
-select:focus,
-select:active,
-select:focus-visible,
-textarea,
-textarea:hover,
-textarea:focus,
-textarea:active,
-textarea:focus-visible {
+body:not([data-phone-app='active']):not([data-phone-chat-theme='active']) :is(
+  button,
+  a[href],
+  input,
+  select,
+  textarea,
+  summary,
+  [role='button'],
+  [role='tab'],
+  [role='menuitem'],
+  [role='option'],
+  [role='switch'],
+  [role='checkbox'],
+  [tabindex]:not([tabindex='-1']),
+  [contenteditable='true'],
+  svg[tabindex],
+  path[tabindex],
+  [data-ristak-focusable]
+):focus,
+body:not([data-phone-app='active']):not([data-phone-chat-theme='active']) :is(
+  button,
+  a[href],
+  input,
+  select,
+  textarea,
+  summary,
+  [role='button'],
+  [role='tab'],
+  [role='menuitem'],
+  [role='option'],
+  [role='switch'],
+  [role='checkbox'],
+  [tabindex]:not([tabindex='-1']),
+  [contenteditable='true'],
+  svg[tabindex],
+  path[tabindex],
+  [data-ristak-focusable]
+):active {
   outline: none !important;
   outline-width: 0 !important;
   outline-style: none !important;
@@ -504,15 +732,62 @@ textarea:focus-visible {
   outline-offset: 0 !important;
 }
 
-/* Eliminar box-shadow que podría parecer outline */
-button:focus-visible,
-a:focus-visible,
-div:focus-visible,
-[role="button"]:focus-visible,
-[tabindex]:focus-visible {
+body:not([data-phone-app='active']):not([data-phone-chat-theme='active']) :is(
+  button,
+  a[href],
+  input,
+  select,
+  textarea,
+  summary,
+  [role='button'],
+  [role='tab'],
+  [role='menuitem'],
+  [role='option'],
+  [role='switch'],
+  [role='checkbox'],
+  [tabindex]:not([tabindex='-1']),
+  [contenteditable='true'],
+  [data-ristak-focusable]
+):focus:not(:focus-visible) {
+  outline: none !important;
   box-shadow: none !important;
   -webkit-box-shadow: none !important;
   -moz-box-shadow: none !important;
+}
+
+body:not([data-phone-app='active']):not([data-phone-chat-theme='active']) :is(
+  button,
+  a[href],
+  input,
+  select,
+  textarea,
+  summary,
+  [role='button'],
+  [role='tab'],
+  [role='menuitem'],
+  [role='option'],
+  [role='switch'],
+  [role='checkbox'],
+  [tabindex]:not([tabindex='-1']),
+  [contenteditable='true'],
+  [data-ristak-focusable]
+):focus-visible {
+  outline: none !important;
+  border-color: var(--ristak-focus-border) !important;
+  box-shadow: var(--ristak-focus-ring) !important;
+  -webkit-box-shadow: var(--ristak-focus-ring) !important;
+  -moz-box-shadow: var(--ristak-focus-ring) !important;
+}
+
+body:not([data-phone-app='active']):not([data-phone-chat-theme='active']) :is(
+  svg[tabindex],
+  path[tabindex]
+):focus,
+body:not([data-phone-app='active']):not([data-phone-chat-theme='active']) :is(
+  svg[tabindex],
+  path[tabindex]
+):focus-visible {
+  outline: none !important;
 }
 
 button::-moz-focus-inner,
@@ -536,31 +811,29 @@ a,
 input,
 select,
 textarea {
-  forced-color-adjust: none;
+  forced-color-adjust: auto;
 }
 
 * {
   -webkit-tap-highlight-color: transparent;
 }
 
-button:hover,
-button:focus,
-button:active,
-a:hover,
-a:focus,
-a:active,
-[role="button"]:hover,
-[role="button"]:focus,
-[role="button"]:active,
-[tabindex]:hover,
-[tabindex]:focus,
-[tabindex]:active,
-input:hover,
-input:focus,
-select:hover,
-select:focus,
-textarea:hover,
-textarea:focus {
+body:not([data-phone-app='active']):not([data-phone-chat-theme='active']) :is(
+  button,
+  a[href],
+  [role='button'],
+  [role='tab'],
+  [role='menuitem'],
+  [tabindex]:not([tabindex='-1'])
+):hover:not(:focus-visible),
+body:not([data-phone-app='active']):not([data-phone-chat-theme='active']) :is(
+  button,
+  a[href],
+  [role='button'],
+  [role='tab'],
+  [role='menuitem'],
+  [tabindex]:not([tabindex='-1'])
+):active:not(:focus-visible) {
   box-shadow: none !important;
 }
 
@@ -849,6 +1122,21 @@ body.dark [data-ristak-user-menu] {
 
 body.light [data-ristak-user-menu] {
   background: rgba(255, 255, 255, 0.96) !important;
+}
+
+body [data-ristak-notification-menu] {
+  background: color-mix(in srgb, var(--color-background-secondary) 98%, var(--color-background-tertiary) 2%) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-radius: 0.9rem !important;
+}
+
+body [data-ristak-notification-item] {
+  background: color-mix(in srgb, var(--color-background-tertiary) 84%, var(--color-background-secondary) 16%) !important;
+}
+
+body [data-ristak-notification-item][data-unread='true'] {
+  background: color-mix(in srgb, var(--color-background-tertiary) 78%, rgb(var(--color-primary-rgb)) 22%) !important;
 }
 
 body[data-design-preset] {
@@ -1644,4 +1932,617 @@ body[data-design-preset='editorial'] [class*='scopeButtonActive'] {
     padding-left: 1rem;
     padding-right: 1rem;
   }
+}
+
+/* ============================================
+   RISTAK NATIVE CONTROL SKIN
+   Mantiene formularios funcionales, pero evita que los controles
+   se vean como UI cruda del navegador.
+   ============================================ */
+@layer base {
+  :root {
+    --native-control-bg: color-mix(in srgb, var(--color-background-secondary) 88%, var(--color-primary) 12%);
+    --native-control-bg-hover: color-mix(in srgb, var(--color-background-tertiary) 86%, var(--color-primary) 14%);
+    --native-control-border: color-mix(in srgb, var(--color-border) 72%, var(--color-primary) 28%);
+    --native-control-border-hover: color-mix(in srgb, var(--color-border) 42%, var(--color-primary) 58%);
+    --native-control-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 10px 28px rgba(15, 23, 42, 0.08);
+    --native-control-radius: 12px;
+    --native-control-height: 42px;
+    --native-control-icon: var(--color-text-tertiary);
+  }
+
+  body.light {
+    --native-control-bg: color-mix(in srgb, #ffffff 92%, var(--color-primary) 8%);
+    --native-control-bg-hover: color-mix(in srgb, #ffffff 86%, var(--color-primary) 14%);
+    --native-control-shadow: 0 10px 26px rgba(15, 23, 42, 0.06);
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--color-primary) 76%, white 24%);
+    color: var(--color-text-onAccent);
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+  }
+
+  select,
+  input[type='date'],
+  input[type='time'],
+  input[type='datetime-local'],
+  input[type='month'],
+  input[type='week'],
+  input[type='color'],
+  input[type='file']::file-selector-button {
+    border: 1px solid var(--native-control-border) !important;
+    border-radius: var(--native-control-radius) !important;
+    color: var(--color-text-primary) !important;
+    background-color: var(--native-control-bg) !important;
+    box-shadow: var(--native-control-shadow) !important;
+    transition:
+      border-color var(--transition-fast),
+      background-color var(--transition-fast),
+      color var(--transition-fast),
+      transform var(--transition-fast) !important;
+  }
+
+  select,
+  input[type='date'],
+  input[type='time'],
+  input[type='datetime-local'],
+  input[type='month'],
+  input[type='week'] {
+    min-height: var(--native-control-height);
+    padding: 0 42px 0 14px !important;
+  }
+
+  select {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    background-image:
+      linear-gradient(45deg, transparent 50%, var(--native-control-icon) 50%),
+      linear-gradient(135deg, var(--native-control-icon) 50%, transparent 50%),
+      linear-gradient(to right, color-mix(in srgb, var(--color-border) 55%, transparent), color-mix(in srgb, var(--color-border) 55%, transparent)) !important;
+    background-position:
+      calc(100% - 19px) calc(50% - 3px),
+      calc(100% - 14px) calc(50% - 3px),
+      calc(100% - 36px) 50% !important;
+    background-size: 5px 5px, 5px 5px, 1px 22px !important;
+    background-repeat: no-repeat !important;
+  }
+
+  select:hover:not(:disabled),
+  input[type='date']:hover:not(:disabled),
+  input[type='time']:hover:not(:disabled),
+  input[type='datetime-local']:hover:not(:disabled),
+  input[type='month']:hover:not(:disabled),
+  input[type='week']:hover:not(:disabled),
+  input[type='color']:hover:not(:disabled),
+  input[type='file']::file-selector-button:hover {
+    border-color: var(--native-control-border-hover) !important;
+    background-color: var(--native-control-bg-hover) !important;
+  }
+
+  select:focus-visible,
+  input[type='date']:focus-visible,
+  input[type='time']:focus-visible,
+  input[type='datetime-local']:focus-visible,
+  input[type='month']:focus-visible,
+  input[type='week']:focus-visible,
+  input[type='color']:focus-visible {
+    border-color: var(--color-primary) !important;
+    background-color: var(--native-control-bg-hover) !important;
+  }
+
+  select:disabled,
+  input[type='date']:disabled,
+  input[type='time']:disabled,
+  input[type='datetime-local']:disabled,
+  input[type='month']:disabled,
+  input[type='week']:disabled,
+  input[type='color']:disabled,
+  input[type='file']:disabled::file-selector-button {
+    cursor: not-allowed !important;
+    opacity: var(--opacity-disabled) !important;
+  }
+
+  select option,
+  select optgroup {
+    background: var(--color-background-secondary) !important;
+    color: var(--color-text-primary) !important;
+  }
+
+  input[type='date']::-webkit-calendar-picker-indicator,
+  input[type='time']::-webkit-calendar-picker-indicator,
+  input[type='datetime-local']::-webkit-calendar-picker-indicator,
+  input[type='month']::-webkit-calendar-picker-indicator,
+  input[type='week']::-webkit-calendar-picker-indicator {
+    width: 18px;
+    height: 18px;
+    margin-right: -28px;
+    border-radius: 8px;
+    cursor: pointer;
+    opacity: 0.72;
+    filter: grayscale(1) opacity(0.82);
+    background-color: color-mix(in srgb, var(--color-primary) 16%, transparent);
+    padding: 5px;
+    transition: opacity var(--transition-fast), background-color var(--transition-fast);
+  }
+
+  input[type='date']::-webkit-calendar-picker-indicator:hover,
+  input[type='time']::-webkit-calendar-picker-indicator:hover,
+  input[type='datetime-local']::-webkit-calendar-picker-indicator:hover,
+  input[type='month']::-webkit-calendar-picker-indicator:hover,
+  input[type='week']::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+    background-color: color-mix(in srgb, var(--color-primary) 26%, transparent);
+  }
+
+  input[type='color'] {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    width: 44px;
+    min-width: 44px;
+    height: 38px;
+    padding: 4px !important;
+    cursor: pointer;
+  }
+
+  input[type='color']::-webkit-color-swatch-wrapper {
+    padding: 0;
+  }
+
+  input[type='color']::-webkit-color-swatch {
+    border: 1px solid color-mix(in srgb, var(--color-border) 65%, transparent);
+    border-radius: 9px;
+  }
+
+  input[type='color']::-moz-color-swatch {
+    border: 1px solid color-mix(in srgb, var(--color-border) 65%, transparent);
+    border-radius: 9px;
+  }
+
+  input[type='file'] {
+    color: var(--color-text-secondary);
+  }
+
+  input[type='file']::file-selector-button {
+    min-height: 36px;
+    margin: 0 12px 0 0;
+    padding: 0 14px;
+    color: var(--color-text-primary) !important;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  input[type='checkbox'],
+  input[type='radio'] {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    display: inline-grid;
+    place-content: center;
+    width: 19px !important;
+    min-width: 19px !important;
+    height: 19px !important;
+    min-height: 19px !important;
+    margin: 0;
+    border: 1.5px solid var(--native-control-border) !important;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent),
+      var(--native-control-bg) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+    cursor: pointer;
+    transition:
+      border-color var(--transition-fast),
+      background-color var(--transition-fast),
+      transform var(--transition-fast) !important;
+  }
+
+  input[type='checkbox'] {
+    border-radius: 6px !important;
+  }
+
+  input[type='radio'] {
+    border-radius: var(--radius-full) !important;
+  }
+
+  input[type='checkbox']:hover:not(:disabled),
+  input[type='radio']:hover:not(:disabled) {
+    border-color: var(--color-primary) !important;
+    background-color: var(--native-control-bg-hover) !important;
+    transform: translateY(-1px);
+  }
+
+  input[type='checkbox']:checked,
+  input[type='radio']:checked {
+    border-color: var(--color-primary) !important;
+    background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover)) !important;
+  }
+
+  input[type='checkbox']:checked::after {
+    content: '';
+    width: 5px;
+    height: 9px;
+    border: solid var(--color-text-onAccent);
+    border-width: 0 2px 2px 0;
+    transform: translateY(-1px) rotate(45deg);
+  }
+
+  input[type='radio']::after {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: var(--radius-full);
+    background: var(--color-text-onAccent);
+    transform: scale(0);
+    transition: transform var(--transition-fast);
+  }
+
+  input[type='radio']:checked::after {
+    transform: scale(1);
+  }
+
+  input[type='checkbox']:disabled,
+  input[type='radio']:disabled {
+    cursor: not-allowed !important;
+    opacity: var(--opacity-disabled) !important;
+    transform: none !important;
+  }
+
+  input[type='range'] {
+    appearance: none;
+    -webkit-appearance: none;
+    height: 6px;
+    border-radius: var(--radius-full);
+    background: linear-gradient(90deg, var(--color-primary), color-mix(in srgb, var(--color-primary) 24%, var(--color-border) 76%));
+    cursor: pointer;
+  }
+
+  input[type='range']::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--color-background-secondary);
+    border-radius: var(--radius-full);
+    background: var(--color-primary);
+    box-shadow: 0 8px 18px rgba(var(--color-primary-rgb), 0.28);
+  }
+
+  input[type='range']::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--color-background-secondary);
+    border-radius: var(--radius-full);
+    background: var(--color-primary);
+    box-shadow: 0 8px 18px rgba(var(--color-primary-rgb), 0.28);
+  }
+}
+
+/* Final hardening: estas reglas viven fuera de @layer para ganarle a resets viejos y CSS modules agresivos. */
+html body select,
+html body input[type='date'],
+html body input[type='time'],
+html body input[type='datetime-local'],
+html body input[type='month'],
+html body input[type='week'] {
+  border: 1px solid var(--native-control-border) !important;
+  border-radius: var(--native-control-radius) !important;
+  min-height: var(--native-control-height) !important;
+  padding: 0 42px 0 14px !important;
+  color: var(--color-text-primary) !important;
+  background-color: var(--native-control-bg) !important;
+  box-shadow: var(--native-control-shadow) !important;
+}
+
+html body select {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--native-control-icon) 50%),
+    linear-gradient(135deg, var(--native-control-icon) 50%, transparent 50%),
+    linear-gradient(to right, color-mix(in srgb, var(--color-border) 55%, transparent), color-mix(in srgb, var(--color-border) 55%, transparent)) !important;
+  background-position:
+    calc(100% - 19px) calc(50% - 3px),
+    calc(100% - 14px) calc(50% - 3px),
+    calc(100% - 36px) 50% !important;
+  background-size: 5px 5px, 5px 5px, 1px 22px !important;
+  background-repeat: no-repeat !important;
+}
+
+html body input[type='checkbox'],
+html body input[type='radio'] {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  position: relative !important;
+  display: inline-grid !important;
+  place-content: center !important;
+  width: 19px !important;
+  min-width: 19px !important;
+  height: 19px !important;
+  min-height: 19px !important;
+  margin: 0 !important;
+  border: 1.5px solid var(--native-control-border) !important;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent), var(--native-control-bg) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+  cursor: pointer !important;
+}
+
+html body input[type='checkbox'] {
+  border-radius: 6px !important;
+}
+
+html body input[type='radio'] {
+  border-radius: var(--radius-full) !important;
+}
+
+html body input[type='checkbox']::after,
+html body input[type='radio']::after {
+  position: static !important;
+  left: auto !important;
+  top: auto !important;
+}
+
+html body input[type='checkbox']:checked,
+html body input[type='radio']:checked {
+  border-color: var(--color-primary) !important;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-hover)) !important;
+}
+
+html body input[type='checkbox']:checked::after {
+  content: '' !important;
+  width: 5px !important;
+  height: 9px !important;
+  border: solid var(--color-text-onAccent) !important;
+  border-width: 0 2px 2px 0 !important;
+  transform: translateY(-1px) rotate(45deg) !important;
+}
+
+html body input[type='radio']::after {
+  content: '' !important;
+  width: 7px !important;
+  height: 7px !important;
+  border: 0 !important;
+  border-radius: var(--radius-full) !important;
+  background: var(--color-text-onAccent) !important;
+  transform: scale(0) !important;
+}
+
+html body input[type='radio']:checked::after {
+  transform: scale(1) !important;
+}
+
+html body input[type='color'] {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  width: 44px !important;
+  min-width: 44px !important;
+  height: 38px !important;
+  padding: 4px !important;
+  border: 1px solid var(--native-control-border) !important;
+  border-radius: var(--native-control-radius) !important;
+  background: var(--native-control-bg) !important;
+  box-shadow: var(--native-control-shadow) !important;
+  cursor: pointer !important;
+}
+
+html body input[type='file']::file-selector-button {
+  min-height: 36px !important;
+  margin: 0 12px 0 0 !important;
+  padding: 0 14px !important;
+  border: 1px solid var(--native-control-border) !important;
+  border-radius: var(--native-control-radius) !important;
+  color: var(--color-text-primary) !important;
+  background: var(--native-control-bg) !important;
+  box-shadow: var(--native-control-shadow) !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+}
+
+html[data-phone-chat-theme='active'],
+body[data-phone-chat-theme='active'],
+body.light[data-phone-chat-theme='active'],
+body.dark[data-phone-chat-theme='active'],
+body[data-design-preset][data-phone-chat-theme='active'] {
+  --font-app: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', Inter, sans-serif;
+  --font-display: var(--font-app);
+  --font-mono: 'SF Mono', Consolas, monospace;
+  --phone-chat-font: var(--font-app);
+  --phone-chat-bg: #fbfaf6;
+  --phone-chat-surface: #ffffff;
+  --phone-chat-surface-soft: #f5f3ee;
+  --phone-chat-conversation-bg: #f1eadf;
+  --phone-chat-text: #0b0b0d;
+  --phone-chat-muted: #77736c;
+  --phone-chat-border: rgba(20, 20, 20, 0.09);
+  --phone-chat-primary: #101010;
+  --phone-chat-primary-rgb: 16, 16, 16;
+  --phone-chat-text-on-primary: #ffffff;
+  --phone-chat-accent: #25d366;
+  --phone-chat-accent-rgb: 37, 211, 102;
+  --phone-chat-accent-soft: #dff8e8;
+  --phone-chat-inbound: #ffffff;
+  --phone-chat-outbound: #d8fdd2;
+  --phone-chat-outbound-text: #0b0b0d;
+  --phone-chat-outbound-meta: #5f6b62;
+  --phone-chat-system: rgba(255, 255, 255, 0.82);
+  --phone-chat-composer-bg: #f6f2eb;
+  --phone-chat-input-placeholder: #8e8e93;
+  --phone-chat-panel: #f4f4f4;
+  --phone-chat-shadow: 0 18px 38px rgba(17, 24, 39, 0.1);
+  --color-background-primary: #fbfaf6;
+  --color-background-secondary: #ffffff;
+  --color-background-tertiary: #f5f3ee;
+  --color-background-glass: rgba(255, 255, 255, 0.88);
+  --color-background-glassBorder: rgba(20, 20, 20, 0.08);
+  --color-text-primary: #0b0b0d;
+  --color-text-secondary: #343434;
+  --color-text-tertiary: #77736c;
+  --color-text-muted: #9b968d;
+  --color-text-onAccent: #ffffff;
+  --color-border: rgba(20, 20, 20, 0.11);
+  --color-border-subtle: rgba(20, 20, 20, 0.07);
+  --color-primary: #101010;
+  --color-primary-rgb: 16, 16, 16;
+  --color-primary-hover: #000000;
+  --color-primary-dark: #000000;
+  --color-primary-light: rgba(16, 16, 16, 0.08);
+  --color-primary-alpha: rgba(16, 16, 16, 0.14);
+  --color-status-success: #25d366;
+  --color-status-info: #128c7e;
+  --badge-primary-bg: #dff8e8;
+  --badge-primary-text: #165c40;
+  --effect-glassMorphism-background: rgba(255, 255, 255, 0.88);
+  --effect-glassMorphism-backdropFilter: blur(18px) saturate(1.08);
+  --effect-glassMorphism-border: 1px solid rgba(20, 20, 20, 0.08);
+  --design-card-bg: #ffffff;
+  --design-card-border: rgba(20, 20, 20, 0.08);
+  --design-card-shadow: 0 18px 42px -30px rgba(16, 16, 16, 0.3);
+  --design-card-radius: 1rem;
+  --design-control-radius: 999px;
+  --design-table-bg: #ffffff;
+  --design-table-toolbar-bg: #f5f3ee;
+  --design-table-head-bg: #f0eee8;
+  --design-table-control-bg: #f5f3ee;
+  --design-table-empty-bg: #f5f3ee;
+  --design-table-border: rgba(20, 20, 20, 0.08);
+  --native-control-bg: #ffffff;
+  --native-control-bg-hover: #f5f3ee;
+  --native-control-border: rgba(20, 20, 20, 0.12);
+  --native-control-border-hover: rgba(16, 16, 16, 0.26);
+  --native-control-icon: #101010;
+  --native-control-shadow: none;
+  --native-control-radius: 999px;
+  --native-control-height: 42px;
+}
+
+html[data-phone-app='active'],
+body[data-phone-app='active'],
+#root[data-phone-app='active'] {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+body[data-phone-chat-theme='active'] {
+  color: #0b0b0d;
+  background: #fbfaf6;
+}
+
+body[data-phone-chat-theme='active'] select option {
+  color: #0b0b0d;
+  background-color: #ffffff;
+}
+
+body[data-phone-chat-theme='active'] select option:hover,
+body[data-phone-chat-theme='active'] select option:checked {
+  color: #ffffff;
+  background-color: #101010;
+}
+
+html[data-phone-chat-theme='active'][data-phone-chat-tone='dark'],
+body[data-phone-chat-theme='active'][data-phone-chat-tone='dark'],
+body.light[data-phone-chat-theme='active'][data-phone-chat-tone='dark'],
+body.dark[data-phone-chat-theme='active'][data-phone-chat-tone='dark'],
+body[data-design-preset][data-phone-chat-theme='active'][data-phone-chat-tone='dark'] {
+  --phone-chat-bg: #0b0f14;
+  --phone-chat-surface: #17202a;
+  --phone-chat-surface-soft: #202b36;
+  --phone-chat-conversation-bg: #0b141a;
+  --phone-chat-text: #e9edef;
+  --phone-chat-muted: #a9b4bd;
+  --phone-chat-border: rgba(233, 237, 239, 0.1);
+  --phone-chat-primary: #25d366;
+  --phone-chat-primary-rgb: 37, 211, 102;
+  --phone-chat-text-on-primary: #07140d;
+  --phone-chat-accent: #25d366;
+  --phone-chat-accent-rgb: 37, 211, 102;
+  --phone-chat-accent-soft: rgba(37, 211, 102, 0.16);
+  --phone-chat-inbound: #202c33;
+  --phone-chat-outbound: #005c4b;
+  --phone-chat-outbound-text: #e9edef;
+  --phone-chat-outbound-meta: #b7c4ca;
+  --phone-chat-system: rgba(32, 44, 51, 0.86);
+  --phone-chat-composer-bg: #101820;
+  --phone-chat-input-placeholder: #7f8b95;
+  --phone-chat-panel: #101820;
+  --phone-chat-shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
+  --color-background-primary: #0b0f14;
+  --color-background-secondary: #17202a;
+  --color-background-tertiary: #202b36;
+  --color-background-glass: rgba(23, 32, 42, 0.9);
+  --color-background-glassBorder: rgba(233, 237, 239, 0.1);
+  --color-text-primary: #e9edef;
+  --color-text-secondary: #d3d9de;
+  --color-text-tertiary: #a9b4bd;
+  --color-text-muted: #7f8b95;
+  --color-text-onAccent: #07140d;
+  --color-border: rgba(233, 237, 239, 0.12);
+  --color-border-subtle: rgba(233, 237, 239, 0.08);
+  --color-primary: #25d366;
+  --color-primary-rgb: 37, 211, 102;
+  --color-primary-hover: #37df78;
+  --color-primary-dark: #128c7e;
+  --color-primary-light: rgba(37, 211, 102, 0.16);
+  --color-primary-alpha: rgba(37, 211, 102, 0.2);
+  --badge-primary-bg: rgba(37, 211, 102, 0.18);
+  --badge-primary-text: #b9f6d0;
+  --effect-glassMorphism-background: rgba(23, 32, 42, 0.9);
+  --effect-glassMorphism-border: 1px solid rgba(233, 237, 239, 0.1);
+  --design-card-bg: #17202a;
+  --design-card-border: rgba(233, 237, 239, 0.1);
+  --design-card-shadow: 0 18px 42px -30px rgba(0, 0, 0, 0.8);
+  --design-table-bg: #17202a;
+  --design-table-toolbar-bg: #101820;
+  --design-table-head-bg: #202b36;
+  --design-table-control-bg: #202b36;
+  --design-table-empty-bg: #101820;
+  --design-table-border: rgba(233, 237, 239, 0.1);
+  --native-control-bg: #17202a;
+  --native-control-bg-hover: #202b36;
+  --native-control-border: rgba(233, 237, 239, 0.14);
+  --native-control-border-hover: rgba(37, 211, 102, 0.42);
+  --native-control-icon: #25d366;
+  color-scheme: dark;
+}
+
+body[data-phone-chat-theme='active'][data-phone-chat-tone='dark'] {
+  color: #e9edef;
+  background: #0b0f14;
+}
+
+body[data-phone-chat-theme='active'][data-phone-chat-tone='dark'] select option {
+  color: #e9edef;
+  background-color: #17202a;
+}
+
+body[data-phone-chat-theme='active'][data-phone-chat-tone='dark'] select option:hover,
+body[data-phone-chat-theme='active'][data-phone-chat-tone='dark'] select option:checked {
+  color: #07140d;
+  background-color: #25d366;
+}
+
+body[data-phone-chat-theme='active'] :is(
+  [class*='archiveRow'],
+  [class*='chatItem'],
+  [class*='chatSwipeRow'],
+  [class*='chatSwipeContent'],
+  [class*='chatSwipeAction'],
+  [class*='chatSwipeActions']
+) {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  outline: 0 !important;
+}
+
+body[data-phone-chat-theme='active'] [class*='chatSwipeContent'] {
+  clip-path: inset(0 round 0) !important;
+  -webkit-clip-path: inset(0 round 0) !important;
 }

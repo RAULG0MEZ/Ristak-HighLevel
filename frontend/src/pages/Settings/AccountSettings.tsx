@@ -1,12 +1,23 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, CheckCircle, ChevronDown, Clock, Loader2, Lock, Save, Upload, User, X } from 'lucide-react'
-import { Button, Card } from '@/components/common'
+import { Bell, CalendarDays, Check, CheckCircle, ChevronDown, Clock, CreditCard, Database, Globe2, Loader2, Lock, MessageCircle, Save, Smartphone, Upload, User, X } from 'lucide-react'
+import { Button, Card, CustomSelect } from '@/components/common'
 import { useAuth } from '@/contexts/AuthContext'
 import { useLabels } from '@/contexts/LabelsContext'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useTimezone } from '@/contexts/TimezoneContext'
 import { useAppConfig } from '@/hooks'
+import apiClient from '@/services/apiClient'
+import { pushNotificationsService } from '@/services/pushNotificationsService'
+import {
+  ACCOUNT_COUNTRY_CONFIG_KEY,
+  ACCOUNT_CURRENCY_CONFIG_KEY,
+  ACCOUNT_DIAL_CODE_CONFIG_KEY,
+  COUNTRY_OPTIONS,
+  CURRENCY_OPTIONS,
+  getCountryDefaults,
+  getDetectedAccountLocaleDefaults
+} from '@/utils/accountLocale'
 import styles from './Settings.module.css'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
@@ -14,6 +25,15 @@ const PROFILE_PHOTO_KEY = 'admin_profile_photo'
 const MAX_PROFILE_PHOTO_SIZE = 1.5 * 1024 * 1024
 const CUSTOMER_LABEL_OPTIONS = ['Cliente', 'Paciente', 'Proyecto', 'Miembro', 'Alumno']
 const LEAD_LABEL_OPTIONS = ['Interesado', 'Prospecto', 'Mensaje', 'Lead', 'Consulta']
+
+interface StorageStatus {
+  sizeGB: number
+  sizePretty?: string
+  limitGB: number
+  percentUsed: number
+  warningThreshold: number
+  needsAttention: boolean
+}
 
 const ALL_TIMEZONES: string[] =
   typeof (Intl as any).supportedValuesOf === 'function'
@@ -35,7 +55,6 @@ interface TimezoneDisplayInfo {
   value: string
   offset: string
   currentTime: string
-  currentDateTime: string
   optionLabel: string
 }
 
@@ -94,22 +113,6 @@ const formatTimezoneTime = (timeZone: string, atDate: Date): string => {
   }
 }
 
-const formatTimezoneDateTime = (timeZone: string, atDate: Date): string => {
-  try {
-    return new Intl.DateTimeFormat('es-MX', {
-      timeZone,
-      weekday: 'short',
-      day: '2-digit',
-      month: 'short',
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
-    }).format(atDate)
-  } catch {
-    return 'Hora no disponible'
-  }
-}
-
 const buildTimezoneDisplayInfo = (timeZone: string, atDate: Date): TimezoneDisplayInfo => {
   const offset = formatTimezoneOffset(timeZone, atDate)
   const currentTime = formatTimezoneTime(timeZone, atDate)
@@ -118,21 +121,53 @@ const buildTimezoneDisplayInfo = (timeZone: string, atDate: Date): TimezoneDispl
     value: timeZone,
     offset,
     currentTime,
-    currentDateTime: formatTimezoneDateTime(timeZone, atDate),
     optionLabel: `${timeZone} (${offset}) - ${currentTime}`
   }
 }
 
+const getNotificationPermissionLabel = () => {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    return 'Este celular no permite notificaciones de la app.'
+  }
+  if (Notification.permission === 'granted') return 'Este celular ya puede recibir notificaciones.'
+  if (Notification.permission === 'denied') return 'El celular bloqueó las notificaciones. Actívalas desde los ajustes del navegador.'
+  return 'Toca Activar para permitir notificaciones en este celular.'
+}
+
+const splitFallbackName = (value = '') => {
+  const parts = value.trim().split(/\s+/).filter(Boolean)
+  if (!parts.length) return { firstName: '', lastName: '' }
+  return {
+    firstName: parts[0],
+    lastName: parts.slice(1).join(' ')
+  }
+}
+
 export const AccountSettings: React.FC = () => {
-  const { user, logout } = useAuth()
+  const { user, logout, updateProfile } = useAuth()
   const { labels, updateLabels } = useLabels()
   const { showToast } = useNotification()
   const { timezone, updateTimezone } = useTimezone()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const detectedLocaleDefaults = useMemo(getDetectedAccountLocaleDefaults, [])
 
   const [profilePhoto, setProfilePhoto, savingProfilePhoto] = useAppConfig<string>(PROFILE_PHOTO_KEY, '')
+  const [accountCountry, setAccountCountry, savingAccountCountry] = useAppConfig<string>(ACCOUNT_COUNTRY_CONFIG_KEY, detectedLocaleDefaults.countryCode)
+  const [accountCurrency, setAccountCurrency, savingAccountCurrency] = useAppConfig<string>(ACCOUNT_CURRENCY_CONFIG_KEY, detectedLocaleDefaults.currency)
+  const [accountDialCode, setAccountDialCode, savingAccountDialCode] = useAppConfig<string>(ACCOUNT_DIAL_CODE_CONFIG_KEY, detectedLocaleDefaults.dialCode)
+  const [calendarPushEnabled, setCalendarPushEnabled, savingCalendarPush] = useAppConfig<boolean>('calendar_push_notifications_enabled', false)
+  const [chatPushEnabled, setChatPushEnabled, savingChatPush] = useAppConfig<boolean>('chat_push_notifications_enabled', true)
+  const [paymentPushEnabled, setPaymentPushEnabled, savingPaymentPush] = useAppConfig<boolean>('payment_push_notifications_enabled', true)
+  const [pushCalendarIds] = useAppConfig<string[]>('calendar_push_notification_calendar_ids', [])
   const [profilePhotoDraft, setProfilePhotoDraft] = useState('')
   const [isEditingPhoto, setIsEditingPhoto] = useState(false)
+  const [profileDraft, setProfileDraft] = useState({
+    firstName: '',
+    lastName: '',
+    phone: '',
+    businessName: ''
+  })
+  const [savingProfileDetails, setSavingProfileDetails] = useState(false)
 
   const [newUsername, setNewUsername] = useState('')
   const [isEditingUsername, setIsEditingUsername] = useState(false)
@@ -153,17 +188,38 @@ export const AccountSettings: React.FC = () => {
   const [timezoneDraft, setTimezoneDraft] = useState(timezone)
   const [savingTimezone, setSavingTimezone] = useState(false)
   const [timezoneClock, setTimezoneClock] = useState(() => new Date())
+  const [accountLocaleDraft, setAccountLocaleDraft] = useState({
+    countryCode: detectedLocaleDefaults.countryCode,
+    currency: detectedLocaleDefaults.currency,
+    dialCode: detectedLocaleDefaults.dialCode
+  })
+  const [savingAccountLocale, setSavingAccountLocale] = useState(false)
+  const [storageStatus, setStorageStatus] = useState<StorageStatus | null>(null)
+  const [storageStatusError, setStorageStatusError] = useState(false)
+  const [requestingPush, setRequestingPush] = useState(false)
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null)
   const customerTriggerRef = useRef<HTMLButtonElement>(null)
   const leadTriggerRef = useRef<HTMLButtonElement>(null)
+  const localeBootstrappedRef = useRef(false)
 
   const currentUsername = user?.username || 'admin'
+  const accountEmail = user?.email || (currentUsername.includes('@') ? currentUsername : '')
   const visibleProfilePhoto = isEditingPhoto ? profilePhotoDraft : profilePhoto
+  const profileNameFallback = user?.name && user.name !== user.username ? user.name : ''
+  const fallbackNameParts = useMemo(() => splitFallbackName(profileNameFallback), [profileNameFallback])
+  const normalizedUserProfile = useMemo(() => ({
+    firstName: user?.firstName || fallbackNameParts.firstName,
+    lastName: user?.lastName || fallbackNameParts.lastName,
+    phone: user?.phone || '',
+    businessName: user?.businessName || ''
+  }), [fallbackNameParts, user?.businessName, user?.firstName, user?.lastName, user?.phone])
+  const profileDetailsChanged =
+    profileDraft.firstName !== normalizedUserProfile.firstName ||
+    profileDraft.lastName !== normalizedUserProfile.lastName ||
+    profileDraft.phone !== normalizedUserProfile.phone ||
+    profileDraft.businessName !== normalizedUserProfile.businessName
   const usernameChanged = newUsername.trim() && newUsername.trim() !== currentUsername
-  const browserTimezone = useMemo(
-    () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-    []
-  )
+  const storagePercent = Math.max(0, Math.min(100, storageStatus?.percentUsed ?? 0))
   const timezoneOptions = useMemo(
     () => ALL_TIMEZONES.map((tz) => buildTimezoneDisplayInfo(tz, timezoneClock)),
     [timezoneClock]
@@ -172,10 +228,11 @@ export const AccountSettings: React.FC = () => {
     () => buildTimezoneDisplayInfo(timezoneDraft || timezone || 'UTC', timezoneClock),
     [timezoneDraft, timezone, timezoneClock]
   )
-  const browserTimezoneInfo = useMemo(
-    () => buildTimezoneDisplayInfo(browserTimezone, timezoneClock),
-    [browserTimezone, timezoneClock]
-  )
+  const accountLocaleChanged =
+    accountLocaleDraft.countryCode !== accountCountry ||
+    accountLocaleDraft.currency !== accountCurrency ||
+    accountLocaleDraft.dialCode !== accountDialCode
+  const accountLocaleSaving = savingAccountLocale || savingAccountCountry || savingAccountCurrency || savingAccountDialCode
 
   useEffect(() => {
     setCustomLabels({
@@ -185,8 +242,62 @@ export const AccountSettings: React.FC = () => {
   }, [labels])
 
   useEffect(() => {
+    setProfileDraft(normalizedUserProfile)
+  }, [normalizedUserProfile])
+
+  useEffect(() => {
     setTimezoneDraft(timezone)
   }, [timezone])
+
+  useEffect(() => {
+    setAccountLocaleDraft({
+      countryCode: accountCountry || detectedLocaleDefaults.countryCode,
+      currency: accountCurrency || detectedLocaleDefaults.currency,
+      dialCode: accountDialCode || detectedLocaleDefaults.dialCode
+    })
+  }, [accountCountry, accountCurrency, accountDialCode, detectedLocaleDefaults])
+
+  useEffect(() => {
+    if (localeBootstrappedRef.current) return
+    localeBootstrappedRef.current = true
+
+    let cancelled = false
+
+    const bootstrapDetectedLocale = async () => {
+      try {
+        const keys = [
+          ACCOUNT_COUNTRY_CONFIG_KEY,
+          ACCOUNT_CURRENCY_CONFIG_KEY,
+          ACCOUNT_DIAL_CODE_CONFIG_KEY
+        ].join(',')
+        const response = await apiClient.get<{ config?: Record<string, string | null> }>('/config', {
+          params: { keys }
+        })
+        if (cancelled) return
+
+        const stored = response.config || {}
+        const storedCountry = stored[ACCOUNT_COUNTRY_CONFIG_KEY]
+        const countryDefaults = getCountryDefaults(storedCountry || detectedLocaleDefaults.countryCode)
+        const nextCountry = storedCountry || detectedLocaleDefaults.countryCode
+        const nextCurrency = stored[ACCOUNT_CURRENCY_CONFIG_KEY] || countryDefaults.currency
+        const nextDialCode = stored[ACCOUNT_DIAL_CODE_CONFIG_KEY] || countryDefaults.dialCode
+        const saves: Array<Promise<void>> = []
+
+        if (!stored[ACCOUNT_COUNTRY_CONFIG_KEY]) saves.push(setAccountCountry(nextCountry))
+        if (!stored[ACCOUNT_CURRENCY_CONFIG_KEY]) saves.push(setAccountCurrency(nextCurrency))
+        if (!stored[ACCOUNT_DIAL_CODE_CONFIG_KEY]) saves.push(setAccountDialCode(nextDialCode))
+        if (saves.length) await Promise.all(saves)
+      } catch {
+        // La pantalla ya muestra defaults locales; si no se puede guardar ahora, el usuario puede tocar Guardar.
+      }
+    }
+
+    bootstrapDetectedLocale()
+
+    return () => {
+      cancelled = true
+    }
+  }, [detectedLocaleDefaults, setAccountCountry, setAccountCurrency, setAccountDialCode])
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -195,6 +306,30 @@ export const AccountSettings: React.FC = () => {
 
     return () => {
       window.clearInterval(intervalId)
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadStorageStatus = async () => {
+      try {
+        const data = await apiClient.get<StorageStatus>('/dashboard/storage-status')
+        if (!cancelled) {
+          setStorageStatus(data)
+          setStorageStatusError(false)
+        }
+      } catch {
+        if (!cancelled) {
+          setStorageStatusError(true)
+        }
+      }
+    }
+
+    loadStorageStatus()
+
+    return () => {
+      cancelled = true
     }
   }, [])
 
@@ -210,6 +345,38 @@ export const AccountSettings: React.FC = () => {
       setTimezoneDraft(timezone)
     } finally {
       setSavingTimezone(false)
+    }
+  }
+
+  const handleCountryChange = (countryCode: string) => {
+    const country = getCountryDefaults(countryCode)
+    setAccountLocaleDraft({
+      countryCode: country.value,
+      currency: country.currency,
+      dialCode: country.dialCode
+    })
+  }
+
+  const handleSaveAccountLocale = async () => {
+    if (!accountLocaleChanged) return
+
+    setSavingAccountLocale(true)
+    try {
+      await Promise.all([
+        setAccountCountry(accountLocaleDraft.countryCode),
+        setAccountCurrency(accountLocaleDraft.currency),
+        setAccountDialCode(accountLocaleDraft.dialCode)
+      ])
+      showToast('success', 'Configuración guardada', 'Ristak usará ese país, lada y moneda como default.')
+    } catch (error: any) {
+      setAccountLocaleDraft({
+        countryCode: accountCountry || detectedLocaleDefaults.countryCode,
+        currency: accountCurrency || detectedLocaleDefaults.currency,
+        dialCode: accountDialCode || detectedLocaleDefaults.dialCode
+      })
+      showToast('error', 'No se guardó', error?.message || 'Intenta guardar la configuración otra vez.')
+    } finally {
+      setSavingAccountLocale(false)
     }
   }
 
@@ -296,6 +463,26 @@ export const AccountSettings: React.FC = () => {
       )
     } catch (error: any) {
       showToast('error', 'Error', error?.message || 'No se pudo guardar la foto')
+    }
+  }
+
+  const handleSaveProfileDetails = async () => {
+    if (!profileDetailsChanged) return
+
+    setSavingProfileDetails(true)
+    try {
+      await updateProfile({
+        firstName: profileDraft.firstName.trim(),
+        lastName: profileDraft.lastName.trim(),
+        phone: profileDraft.phone.trim(),
+        businessName: profileDraft.businessName.trim()
+      })
+      showToast('success', 'Datos guardados', 'Tu nombre, teléfono y negocio quedaron actualizados.')
+    } catch (error: any) {
+      setProfileDraft(normalizedUserProfile)
+      showToast('error', 'No se guardó', error?.message || 'Intenta guardar tus datos otra vez.')
+    } finally {
+      setSavingProfileDetails(false)
     }
   }
 
@@ -442,6 +629,40 @@ export const AccountSettings: React.FC = () => {
     }
   }
 
+  const handleRequestPushNotifications = async () => {
+    setRequestingPush(true)
+    try {
+      const result = await pushNotificationsService.subscribeToAppNotifications({
+        calendarIds: pushCalendarIds
+      })
+
+      if (result.status === 'subscribed') {
+        showToast('success', 'Notificaciones activadas', 'Este celular ya puede recibir notificaciones de Ristak.')
+      } else {
+        showToast('warning', 'No se activaron', result.reason)
+      }
+    } catch (error: any) {
+      showToast('error', 'No se activaron', error?.message || 'Intenta nuevamente.')
+    } finally {
+      setRequestingPush(false)
+    }
+  }
+
+  const handleToggleNotification = async (
+    enabled: boolean,
+    save: (value: boolean) => Promise<void>,
+    titleOn: string,
+    titleOff: string
+  ) => {
+    const nextValue = !enabled
+    try {
+      await save(nextValue)
+      showToast('success', nextValue ? titleOn : titleOff)
+    } catch (error: any) {
+      showToast('error', 'No se guardó', error?.message || 'Intenta nuevamente.')
+    }
+  }
+
   return (
     <div className={styles.settingsContent}>
       <Card>
@@ -545,6 +766,97 @@ export const AccountSettings: React.FC = () => {
                     </Button>
                   </>
                 )}
+              </div>
+            </section>
+
+            <section className={`${styles.accountSection} ${styles.accountSectionWide}`}>
+              <div className={styles.accountSectionHeader}>
+                <div>
+                  <h3 className={styles.accountSectionTitle}>Datos de cuenta</h3>
+                  <p className={styles.accountSectionDescription}>
+                    El nombre del negocio aparece en el menú lateral. Si lo dejas vacío, se mostrará el correo.
+                  </p>
+                </div>
+              </div>
+
+              <div className={styles.profileDetailsGrid}>
+                <div className={styles.field}>
+                  <label className={styles.label} htmlFor="account-first-name">Nombre</label>
+                  <input
+                    id="account-first-name"
+                    className={styles.input}
+                    type="text"
+                    value={profileDraft.firstName}
+                    onChange={(event) => setProfileDraft((current) => ({ ...current, firstName: event.target.value }))}
+                    disabled={savingProfileDetails}
+                    autoComplete="given-name"
+                  />
+                </div>
+
+                <div className={styles.field}>
+                  <label className={styles.label} htmlFor="account-last-name">Apellido</label>
+                  <input
+                    id="account-last-name"
+                    className={styles.input}
+                    type="text"
+                    value={profileDraft.lastName}
+                    onChange={(event) => setProfileDraft((current) => ({ ...current, lastName: event.target.value }))}
+                    disabled={savingProfileDetails}
+                    autoComplete="family-name"
+                  />
+                </div>
+
+                <div className={styles.field}>
+                  <label className={styles.label} htmlFor="account-email">Correo</label>
+                  <input
+                    id="account-email"
+                    className={`${styles.input} ${styles.inputReadOnly}`}
+                    type="text"
+                    value={accountEmail || 'Sin correo guardado'}
+                    readOnly
+                    autoComplete="email"
+                  />
+                </div>
+
+                <div className={styles.field}>
+                  <label className={styles.label} htmlFor="account-phone">Teléfono</label>
+                  <input
+                    id="account-phone"
+                    className={styles.input}
+                    type="tel"
+                    value={profileDraft.phone}
+                    onChange={(event) => setProfileDraft((current) => ({ ...current, phone: event.target.value }))}
+                    disabled={savingProfileDetails}
+                    autoComplete="tel"
+                    placeholder="+52 656 000 0000"
+                  />
+                </div>
+
+                <div className={`${styles.field} ${styles.profileDetailsWide}`}>
+                  <label className={styles.label} htmlFor="account-business-name">Nombre del negocio</label>
+                  <input
+                    id="account-business-name"
+                    className={styles.input}
+                    type="text"
+                    value={profileDraft.businessName}
+                    onChange={(event) => setProfileDraft((current) => ({ ...current, businessName: event.target.value }))}
+                    disabled={savingProfileDetails}
+                    autoComplete="organization"
+                    placeholder="Tu negocio"
+                  />
+                </div>
+              </div>
+
+              <div className={styles.sectionActions}>
+                <Button
+                  variant="primary"
+                  onClick={handleSaveProfileDetails}
+                  loading={savingProfileDetails}
+                  disabled={savingProfileDetails || !profileDetailsChanged}
+                >
+                  <Save size={16} />
+                  Guardar
+                </Button>
               </div>
             </section>
 
@@ -706,6 +1018,8 @@ export const AccountSettings: React.FC = () => {
                       className={styles.dropdownTrigger}
                       onClick={() => handleOpenDropdown('customer')}
                       disabled={savingLabels}
+                      aria-expanded={openDropdown === 'customer'}
+                      data-ristak-dropdown-trigger
                     >
                       <span>{customLabels.customer || 'Seleccionar...'}</span>
                       <ChevronDown size={18} className={openDropdown === 'customer' ? styles.iconRotated : ''} />
@@ -722,6 +1036,8 @@ export const AccountSettings: React.FC = () => {
                       className={styles.dropdownTrigger}
                       onClick={() => handleOpenDropdown('lead')}
                       disabled={savingLabels}
+                      aria-expanded={openDropdown === 'lead'}
+                      data-ristak-dropdown-trigger
                     >
                       <span>{customLabels.lead || 'Seleccionar...'}</span>
                       <ChevronDown size={18} className={openDropdown === 'lead' ? styles.iconRotated : ''} />
@@ -740,13 +1056,15 @@ export const AccountSettings: React.FC = () => {
                       zIndex: 9999
                     }}
                   >
-                    <div className={styles.dropdownMenu}>
+                    <div className={styles.dropdownMenu} data-ristak-dropdown-panel>
                       {openDropdown === 'customer'
                         ? CUSTOMER_LABEL_OPTIONS.map((option) => (
                             <button
                               key={option}
                               type="button"
                               className={`${styles.dropdownItem} ${customLabels.customer === option ? styles.dropdownItemActive : ''}`}
+                              data-ristak-dropdown-item
+                              data-selected={customLabels.customer === option ? 'true' : undefined}
                               onClick={() => {
                                 setOpenDropdown(null)
                                 handleSaveLabels(option, customLabels.lead)
@@ -761,6 +1079,8 @@ export const AccountSettings: React.FC = () => {
                               key={option}
                               type="button"
                               className={`${styles.dropdownItem} ${customLabels.lead === option ? styles.dropdownItemActive : ''}`}
+                              data-ristak-dropdown-item
+                              data-selected={customLabels.lead === option ? 'true' : undefined}
                               onClick={() => {
                                 setOpenDropdown(null)
                                 handleSaveLabels(customLabels.customer, option)
@@ -802,9 +1122,8 @@ export const AccountSettings: React.FC = () => {
               <div className={styles.lockedFieldRow}>
                 <div className={styles.field}>
                   <label className={styles.label} htmlFor="account-timezone">Zona horaria</label>
-                  <select
+                  <CustomSelect
                     id="account-timezone"
-                    className={styles.select}
                     value={timezoneDraft}
                     onChange={(event) => setTimezoneDraft(event.target.value)}
                     disabled={savingTimezone}
@@ -815,7 +1134,7 @@ export const AccountSettings: React.FC = () => {
                     {timezoneOptions.map((tz) => (
                       <option key={tz.value} value={tz.value}>{tz.optionLabel}</option>
                     ))}
-                  </select>
+                  </CustomSelect>
                 </div>
                 <Button
                   variant="primary"
@@ -827,21 +1146,190 @@ export const AccountSettings: React.FC = () => {
                   Guardar
                 </Button>
               </div>
-              <div className={styles.timezonePreview} aria-live="polite">
-                <div className={styles.timezonePreviewItem}>
-                  <span className={styles.timezonePreviewLabel}>Zona seleccionada</span>
-                  <strong className={styles.timezonePreviewValue}>{selectedTimezoneInfo.currentDateTime}</strong>
-                  <span className={styles.timezonePreviewMeta}>
-                    {selectedTimezoneInfo.value} · {selectedTimezoneInfo.offset}
-                  </span>
+
+            </section>
+
+            <section className={`${styles.accountSection} ${styles.accountSectionWide}`}>
+              <div className={styles.accountSectionHeader}>
+                <div>
+                  <h3 className={styles.accountSectionTitle}>
+                    <Globe2 size={16} /> País y cobros
+                  </h3>
+                  <p className={styles.accountSectionDescription}>
+                    Ristak usa esto para poner la lada en teléfonos sin + y para dejar lista la moneda de nuevos cobros.
+                  </p>
                 </div>
-                <div className={styles.timezonePreviewItem}>
-                  <span className={styles.timezonePreviewLabel}>Reloj del navegador</span>
-                  <strong className={styles.timezonePreviewValue}>{browserTimezoneInfo.currentDateTime}</strong>
-                  <span className={styles.timezonePreviewMeta}>
-                    {browserTimezoneInfo.value} · {browserTimezoneInfo.offset}
-                  </span>
+              </div>
+
+              <div className={styles.accountLocaleGrid}>
+                <div className={styles.field}>
+                  <label className={styles.label} htmlFor="account-country">País de la cuenta</label>
+                  <CustomSelect
+                    id="account-country"
+                    value={accountLocaleDraft.countryCode}
+                    onChange={(event) => handleCountryChange(event.target.value)}
+                    disabled={accountLocaleSaving}
+                  >
+                    {COUNTRY_OPTIONS.map((country) => (
+                      <option key={country.value} value={country.value}>
+                        {country.label} (+{country.dialCode})
+                      </option>
+                    ))}
+                  </CustomSelect>
                 </div>
+
+                <div className={styles.field}>
+                  <label className={styles.label} htmlFor="account-currency">Moneda de cobro</label>
+                  <CustomSelect
+                    id="account-currency"
+                    value={accountLocaleDraft.currency}
+                    onChange={(event) => setAccountLocaleDraft((current) => ({ ...current, currency: event.target.value }))}
+                    disabled={accountLocaleSaving}
+                  >
+                    {CURRENCY_OPTIONS.map((currencyOption) => (
+                      <option key={currencyOption.value} value={currencyOption.value}>
+                        {currencyOption.label}
+                      </option>
+                    ))}
+                  </CustomSelect>
+                </div>
+
+                <div className={styles.localePreview}>
+                  <span>Teléfonos sin lada se guardan con +{accountLocaleDraft.dialCode}</span>
+                  <span>Cobros nuevos salen en {accountLocaleDraft.currency}</span>
+                </div>
+
+                <Button
+                  variant="primary"
+                  onClick={handleSaveAccountLocale}
+                  loading={accountLocaleSaving}
+                  disabled={accountLocaleSaving || !accountLocaleChanged}
+                >
+                  <Save size={16} />
+                  Guardar
+                </Button>
+              </div>
+            </section>
+
+            <section className={`${styles.accountSection} ${styles.accountSectionWide}`}>
+              <div className={styles.accountSectionHeader}>
+                <div>
+                  <h3 className={styles.accountSectionTitle}>
+                    <Bell size={16} /> Notificaciones
+                  </h3>
+                  <p className={styles.accountSectionDescription}>
+                    Elige qué notificaciones quieres recibir en los celulares donde abras Ristak desde el icono de inicio.
+                  </p>
+                </div>
+              </div>
+
+              <div className={styles.notificationDeviceCard}>
+                <span className={styles.notificationDeviceIcon}>
+                  <Smartphone size={18} />
+                </span>
+                <div>
+                  <strong>Este celular</strong>
+                  <small>{getNotificationPermissionLabel()}</small>
+                </div>
+                <Button
+                  variant="secondary"
+                  onClick={handleRequestPushNotifications}
+                  loading={requestingPush}
+                  disabled={requestingPush}
+                >
+                  <Bell size={16} />
+                  Activar
+                </Button>
+              </div>
+
+              <div className={styles.notificationSettingsGrid}>
+                <button
+                  type="button"
+                  className={`${styles.notificationSettingCard} ${chatPushEnabled ? styles.notificationSettingCardActive : ''}`}
+                  onClick={() => handleToggleNotification(chatPushEnabled, setChatPushEnabled, 'Notificaciones de chat encendidas', 'Notificaciones de chat apagadas')}
+                  disabled={savingChatPush}
+                  aria-pressed={chatPushEnabled}
+                >
+                  <span className={styles.notificationSettingIcon}>
+                    <MessageCircle size={18} />
+                  </span>
+                  <span>
+                    <strong>Chat</strong>
+                    <small>Mensajes nuevos de WhatsApp.</small>
+                  </span>
+                  <i>{chatPushEnabled ? 'Activo' : 'Apagado'}</i>
+                </button>
+
+                <button
+                  type="button"
+                  className={`${styles.notificationSettingCard} ${calendarPushEnabled ? styles.notificationSettingCardActive : ''}`}
+                  onClick={() => handleToggleNotification(calendarPushEnabled, setCalendarPushEnabled, 'Notificaciones de citas encendidas', 'Notificaciones de citas apagadas')}
+                  disabled={savingCalendarPush}
+                  aria-pressed={calendarPushEnabled}
+                >
+                  <span className={styles.notificationSettingIcon}>
+                    <CalendarDays size={18} />
+                  </span>
+                  <span>
+                    <strong>Citas</strong>
+                    <small>Cuando alguien agenda una cita.</small>
+                  </span>
+                  <i>{calendarPushEnabled ? 'Activo' : 'Apagado'}</i>
+                </button>
+
+                <button
+                  type="button"
+                  className={`${styles.notificationSettingCard} ${paymentPushEnabled ? styles.notificationSettingCardActive : ''}`}
+                  onClick={() => handleToggleNotification(paymentPushEnabled, setPaymentPushEnabled, 'Notificaciones de pagos encendidas', 'Notificaciones de pagos apagadas')}
+                  disabled={savingPaymentPush}
+                  aria-pressed={paymentPushEnabled}
+                >
+                  <span className={styles.notificationSettingIcon}>
+                    <CreditCard size={18} />
+                  </span>
+                  <span>
+                    <strong>Pagos</strong>
+                    <small>Cuando se registre un pago.</small>
+                  </span>
+                  <i>{paymentPushEnabled ? 'Activo' : 'Apagado'}</i>
+                </button>
+              </div>
+            </section>
+
+            <section className={`${styles.accountSection} ${styles.accountSectionWide} ${styles.storageUsageSection}`}>
+              <div className={styles.storageUsageHeader}>
+                <div>
+                  <h3 className={styles.accountSectionTitle}>
+                    <Database size={16} /> Base de datos
+                  </h3>
+                  <p className={styles.accountSectionDescription}>Storage utilizado en Render.</p>
+                </div>
+                <strong className={styles.storageUsageValue}>
+                  {storageStatus
+                    ? `${storageStatus.percentUsed}%`
+                    : storageStatusError
+                      ? 'No disponible'
+                      : 'Cargando...'}
+                </strong>
+              </div>
+
+              <div
+                className={styles.storageUsageTrack}
+                role="meter"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(storagePercent)}
+                aria-label="Uso de base de datos"
+              >
+                <span
+                  className={`${styles.storageUsageBar} ${storageStatus?.needsAttention ? styles.storageUsageBarWarning : ''}`}
+                  style={{ width: `${storagePercent}%` }}
+                />
+              </div>
+
+              <div className={styles.storageUsageMeta}>
+                <span>{storageStatus?.sizePretty || `${storageStatus?.sizeGB ?? 0} GB`} usados</span>
+                <span>{storageStatus ? `${storageStatus.limitGB} GB disponibles` : 'Esperando lectura'}</span>
               </div>
             </section>
           </div>

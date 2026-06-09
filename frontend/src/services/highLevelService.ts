@@ -9,6 +9,88 @@ interface HighLevelConfig {
   ghlInvoiceLiveMode?: boolean
 }
 
+export type HighLevelChatChannel = 'whatsapp_api' | 'sms_qr' | 'messenger' | 'instagram'
+
+export interface HighLevelConversationMessagePayload {
+  contactId: string
+  channel: HighLevelChatChannel
+  message: string
+  attachments?: string[]
+  audioDataUrl?: string
+  audioUrl?: string
+  durationMs?: number
+  fromNumber?: string
+  toNumber?: string
+  conversationProviderId?: string
+  externalId?: string
+}
+
+export interface HighLevelConversationMessageResponse {
+  success?: boolean
+  data?: {
+    messageId?: string
+    conversationId?: string
+    channel?: HighLevelChatChannel
+    requestedChannel?: HighLevelChatChannel
+    channelLabel?: string
+    requestedChannelLabel?: string
+    type?: string
+    transport?: string
+    status?: string
+    contactId?: string
+    highLevelContactId?: string
+    localMessageId?: string
+    fallbackApplied?: boolean
+    fallbackReason?: string | null
+    replyWindowOpen?: boolean | null
+    replyWindowSource?: string | null
+    lastInboundAt?: string | null
+    audio?: {
+      link?: string
+      url?: string
+      mimeType?: string
+      durationMs?: number
+      voice?: boolean
+    }
+    localMedia?: {
+      publicUrl?: string
+      publicPath?: string
+      mimeType?: string
+      filename?: string
+    } | null
+  }
+  messageId?: string
+  conversationId?: string
+  channel?: HighLevelChatChannel
+  requestedChannel?: HighLevelChatChannel
+  channelLabel?: string
+  requestedChannelLabel?: string
+  type?: string
+  transport?: string
+  status?: string
+  contactId?: string
+  highLevelContactId?: string
+  localMessageId?: string
+  fallbackApplied?: boolean
+  fallbackReason?: string | null
+  replyWindowOpen?: boolean | null
+  replyWindowSource?: string | null
+  lastInboundAt?: string | null
+  audio?: {
+    link?: string
+    url?: string
+    mimeType?: string
+    durationMs?: number
+    voice?: boolean
+  }
+  localMedia?: {
+    publicUrl?: string
+    publicPath?: string
+    mimeType?: string
+    filename?: string
+  } | null
+}
+
 class HighLevelService {
   // Obtener configuración actual
   async getConfig(): Promise<HighLevelConfig> {
@@ -254,6 +336,23 @@ class HighLevelService {
     } catch (error) {
       throw error
     }
+  }
+
+  async sendConversationMessage(payload: HighLevelConversationMessagePayload): Promise<HighLevelConversationMessageResponse> {
+    const response = await fetch('/api/highlevel/conversations/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    })
+
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      throw new Error(data.error || 'No se pudo enviar el mensaje por HighLevel')
+    }
+
+    return data
   }
 
 }

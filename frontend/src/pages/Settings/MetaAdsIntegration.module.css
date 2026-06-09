@@ -1,4 +1,7 @@
 .container {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
   width: 100%;
   overflow: visible;
   padding-bottom: 200px;
@@ -42,9 +45,9 @@
   flex-shrink: 0;
   width: 46px;
   height: 46px;
-  border: 1px solid rgba(8, 102, 255, 0.24);
+  border: 1px solid rgba(var(--color-primary-rgb), 0.24);
   border-radius: 8px;
-  background: rgba(8, 102, 255, 0.09);
+  background: rgba(var(--color-primary-rgb), 0.09);
 }
 
 .logoMark img {
@@ -83,9 +86,9 @@
 }
 
 .statusConnected {
-  color: var(--color-status-success);
-  background: rgba(16, 185, 129, 0.1);
-  border: 1px solid rgba(16, 185, 129, 0.28);
+  color: var(--color-primary);
+  background: rgba(var(--color-primary-rgb), 0.1);
+  border: 1px solid rgba(var(--color-primary-rgb), 0.28);
 }
 
 .statusDisconnected {
@@ -94,39 +97,34 @@
   border: 1px solid rgba(239, 68, 68, 0.22);
 }
 
-.workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 260px;
-  gap: 18px;
-  align-items: start;
-}
-
-.connectedWorkspace {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.primaryColumn {
+.sections {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 22px;
   min-width: 0;
 }
 
 .section {
-  padding: 18px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 8px;
-  background: rgba(148, 163, 184, 0.04);
+  padding: 22px 0 0;
+  border: 0;
+  border-top: 1px solid var(--color-border-subtle);
+  border-radius: 0;
+  background: transparent;
+}
+
+.sections > .section:first-child {
+  padding-top: 0;
+  border-top: 0;
 }
 
 .wizardSection {
-  padding: 24px;
+  padding: 24px 0 0;
 }
 
 .connectedSection {
-  padding: 24px;
-  border-color: rgba(16, 185, 129, 0.22);
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(8, 102, 255, 0.045));
+  padding: 24px 0 0;
+  border-top-color: rgba(var(--color-primary-rgb), 0.22);
+  background: transparent;
 }
 
 .connectedHeader {
@@ -143,10 +141,10 @@
   flex-shrink: 0;
   width: 54px;
   height: 54px;
-  border: 1px solid rgba(16, 185, 129, 0.3);
+  border: 1px solid rgba(var(--color-primary-rgb), 0.3);
   border-radius: 8px;
-  color: var(--color-status-success);
-  background: rgba(16, 185, 129, 0.12);
+  color: var(--color-primary);
+  background: rgba(var(--color-primary-rgb), 0.12);
 }
 
 .connectedCopy {
@@ -181,7 +179,7 @@
 
 .connectedMetaGrid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
   margin-top: 20px;
 }
@@ -214,8 +212,134 @@
   white-space: nowrap;
 }
 
+.connectedPagesPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.045);
+}
+
+.connectedPagesHeader {
+  margin-top: 22px;
+}
+
+.connectedPagesTitle {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 15px;
+  font-weight: 820;
+  line-height: 1.25;
+}
+
+.connectedPagesDescription {
+  max-width: 720px;
+  margin: 4px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.connectedPagesList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.connectedPageCard {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: var(--color-background);
+}
+
+.connectedPageCardLocked {
+  opacity: 0.72;
+}
+
+.connectedPageIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+}
+
+.connectedPageIconFacebook {
+  color: #1877f2;
+  background: rgba(24, 119, 242, 0.1);
+}
+
+.connectedPageIconInstagram {
+  color: #e1306c;
+  background: rgba(225, 48, 108, 0.1);
+}
+
+.connectedPageMain {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.connectedPageMain strong {
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connectedPageMain span {
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connectedPageControl {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-shrink: 0;
+}
+
+.connectedPageStatus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 999px;
+  color: var(--color-text-secondary);
+  background: rgba(148, 163, 184, 0.07);
+  font-size: 11px;
+  font-weight: 780;
+  white-space: nowrap;
+}
+
+.connectedPageStatusActive {
+  border-color: rgba(var(--color-primary-rgb), 0.3);
+  color: var(--color-primary);
+  background: rgba(var(--color-primary-rgb), 0.1);
+}
+
 .connectedExtrasSection {
-  padding: 18px;
+  padding: 18px 0 0;
 }
 
 .connectedExtrasRows {
@@ -266,16 +390,16 @@
   flex-shrink: 0;
   width: 34px;
   height: 34px;
-  border: 1px solid rgba(8, 102, 255, 0.22);
+  border: 1px solid rgba(var(--color-primary-rgb), 0.22);
   border-radius: 8px;
-  color: #0866ff;
-  background: rgba(8, 102, 255, 0.07);
+  color: var(--color-primary);
+  background: rgba(var(--color-primary-rgb), 0.07);
 }
 
 .whatsappSectionIcon {
-  border-color: rgba(37, 211, 102, 0.28);
-  color: #25d366;
-  background: rgba(37, 211, 102, 0.1);
+  border-color: rgba(var(--color-primary-rgb), 0.28);
+  color: var(--color-primary);
+  background: rgba(var(--color-primary-rgb), 0.1);
 }
 
 .stepCount {
@@ -326,8 +450,8 @@
 
 .progressItem:hover,
 .progressActive {
-  border-color: rgba(8, 102, 255, 0.32);
-  background: rgba(8, 102, 255, 0.06);
+  border-color: rgba(var(--color-primary-rgb), 0.32);
+  background: rgba(var(--color-primary-rgb), 0.06);
 }
 
 .progressItem:disabled {
@@ -354,9 +478,9 @@
 }
 
 .progressDone .progressDot {
-  color: var(--color-status-success);
-  border-color: rgba(16, 185, 129, 0.28);
-  background: rgba(16, 185, 129, 0.1);
+  color: var(--color-primary);
+  border-color: rgba(var(--color-primary-rgb), 0.28);
+  background: rgba(var(--color-primary-rgb), 0.1);
 }
 
 .progressCopy {
@@ -410,7 +534,7 @@
 }
 
 .stepEyebrow {
-  color: #0866ff;
+  color: var(--color-primary);
   font-size: 11px;
   font-weight: 820;
   letter-spacing: 0.06em;
@@ -461,8 +585,8 @@
 }
 
 .inlineDocLink:hover {
-  border-color: rgba(8, 102, 255, 0.34);
-  color: #0866ff;
+  border-color: rgba(var(--color-primary-rgb), 0.34);
+  color: var(--color-primary);
 }
 
 .setupGuide {
@@ -470,9 +594,9 @@
   flex-direction: column;
   gap: 14px;
   padding: 14px;
-  border: 1px solid rgba(8, 102, 255, 0.16);
+  border: 1px solid rgba(var(--color-primary-rgb), 0.16);
   border-radius: 8px;
-  background: rgba(8, 102, 255, 0.045);
+  background: rgba(var(--color-primary-rgb), 0.045);
 }
 
 .guideLinks {
@@ -507,10 +631,10 @@
   justify-content: center;
   width: 24px;
   height: 24px;
-  border: 1px solid rgba(8, 102, 255, 0.24);
+  border: 1px solid rgba(var(--color-primary-rgb), 0.24);
   border-radius: 7px;
-  color: #0866ff;
-  background: rgba(8, 102, 255, 0.08);
+  color: var(--color-primary);
+  background: rgba(var(--color-primary-rgb), 0.08);
   font-size: 11px;
   font-weight: 820;
 }
@@ -668,10 +792,10 @@
   width: 100%;
   min-height: 48px;
   padding: 0 10px 0 12px;
-  border: 1px solid rgba(8, 102, 255, 0.22);
+  border: 1px solid rgba(var(--color-primary-rgb), 0.22);
   border-radius: 8px;
   color: var(--color-text-primary);
-  background: rgba(8, 102, 255, 0.06);
+  background: rgba(var(--color-primary-rgb), 0.06);
 }
 
 .secretTokenChip {
@@ -680,8 +804,8 @@
 
 .secretTokenChip:hover,
 .secretTokenChip:focus {
-  border-color: rgba(8, 102, 255, 0.42);
-  background: rgba(8, 102, 255, 0.08);
+  border-color: rgba(var(--color-primary-rgb), 0.42);
+  background: rgba(var(--color-primary-rgb), 0.08);
 }
 
 .secretTokenChip:focus {
@@ -768,6 +892,10 @@
   border-top: 1px solid rgba(148, 163, 184, 0.16);
 }
 
+.stepActionsEnd {
+  justify-content: flex-end;
+}
+
 .statusRail {
   position: sticky;
   top: 18px;
@@ -791,7 +919,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #0866ff;
+  color: var(--color-primary);
   font-size: 12px;
   font-weight: 800;
 }
@@ -860,7 +988,7 @@
 }
 
 .eventSection {
-  padding: 18px;
+  padding: 18px 0 0;
 }
 
 .eventRow {
@@ -962,8 +1090,8 @@
 }
 
 .switchInput:checked + .switchSlider {
-  border-color: rgba(8, 102, 255, 0.42);
-  background: #0866ff;
+  border-color: rgba(var(--color-primary-rgb), 0.42);
+  background: var(--color-primary);
 }
 
 .switchInput:checked + .switchSlider:before {
@@ -1016,6 +1144,10 @@
     grid-template-columns: 1fr;
   }
 
+  .connectedPagesList {
+    grid-template-columns: 1fr;
+  }
+
   .headerRight {
     justify-content: flex-start;
   }
@@ -1044,7 +1176,7 @@
   }
 
   .section {
-    padding: 14px;
+    padding: 14px 0 0;
   }
 
   .headerLeft {
@@ -1057,10 +1189,16 @@
 
   .inputActionRow,
   .stepActions,
+  .connectedPageCard,
   .connectedExtraRow {
     grid-template-columns: 1fr;
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .connectedPageControl {
+    justify-content: space-between;
+    width: 100%;
   }
 
   .inputActionRow button,

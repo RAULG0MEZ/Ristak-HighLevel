@@ -146,10 +146,10 @@ export const formatEndDateToISO = (date: Date): string => {
   return `${year}-${month}-${day}T23:59:59`
 }
 
-export const formatCurrency = (value: number): string => {
+export const formatCurrency = (value: number, currency = 'MXN'): string => {
   return new Intl.NumberFormat('es-MX', {
     style: 'currency',
-    currency: 'MXN',
+    currency,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   }).format(value)

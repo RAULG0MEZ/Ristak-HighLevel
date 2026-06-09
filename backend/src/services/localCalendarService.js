@@ -8,10 +8,17 @@ import { normalizeToUtcIso, getAccountTimezone, isValidTimezone } from '../utils
 import { finalizePreparedPhoneUpsert, prepareContactPhoneUpsert } from './contactIdentityService.js'
 import GHLClient from './ghlClient.js'
 import * as highlevelCalendarService from './highlevelCalendarService.js'
+import { getSitesPublicDomain } from './sitesService.js'
 
 const LOCAL_CALENDAR_PREFIX = 'rstk_cal'
 const LOCAL_APPOINTMENT_PREFIX = 'rstk_appt'
 const DEFAULT_EVENT_COLOR = '#3b82f6'
+const GOOGLE_CALENDAR_CONFIG_KEY = 'google_calendar_service_account_config'
+const DEFAULT_RISTAK_CALENDAR_NAME = 'calendario ristak'
+const DEFAULT_RISTAK_CALENDAR_DESC = 'calendario principal creado en ristak'
+const DEFAULT_CALENDAR_CONFIG_KEY = 'default_calendar_id'
+const ATTRIBUTION_CALENDAR_IDS_CONFIG_KEY = 'attribution_calendar_ids'
+const SOURCE_PREFERENCE_CONFIG_KEY = 'calendar_source_preference'
 
 function makeId(prefix) {
   return `${prefix}_${crypto.randomUUID()}`
@@ -43,6 +50,276 @@ function parseJson(value, fallback) {
   }
 }
 
+function parseConfigArray(value, fallback = []) {
+  const parsed = parseJson(value, fallback)
+  if (!Array.isArray(parsed)) return fallback
+
+  const normalized = parsed
+    .map(item => cleanString(item))
+    .filter(Boolean)
+
+  return [...new Set(normalized)]
+}
+
+function normalizeSqlConfigValue(value) {
+  if (value === undefined || value === null) return null
+  return typeof value === 'string' ? value : JSON.stringify(value)
+}
+
+async function getAppConfigValue(configKey) {
+  const normalizedKey = cleanString(configKey)
+  if (!normalizedKey) return null
+
+  const row = await db.get('SELECT config_value FROM app_config WHERE config_key = ?', [normalizedKey])
+  return row ? row.config_value : null
+}
+
+async function setAppConfigValue(configKey, value) {
+  const normalizedKey = cleanString(configKey)
+  if (!normalizedKey) return
+
+  await db.run(`
+    INSERT INTO app_config (config_key, config_value, updated_at)
+    VALUES (?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(config_key) DO UPDATE SET
+      config_value = excluded.config_value,
+      updated_at = CURRENT_TIMESTAMP
+  `, [normalizedKey, normalizeSqlConfigValue(value)])
+}
+
+function normalizeCalendarSource(value) {
+  const normalized = cleanString(value || '').toLowerCase()
+
+  if (['ghl', 'google', 'ristak'].includes(normalized)) {
+    return normalized
+  }
+
+  return 'ristak'
+}
+
+function normalizeCalendarSourcePreference(value) {
+  const normalized = cleanString(value).toLowerCase()
+  if (['combined', 'ristak', 'ghl', 'google'].includes(normalized)) {
+    return normalized
+  }
+  return 'combined'
+}
+
+function isLikelySeedRistakCalendar(calendar = {}) {
+  const source = normalizeCalendarSource(calendar.source)
+  const id = cleanString(calendar.id)
+  const name = cleanString(calendar.name).toLowerCase()
+  const description = cleanString(calendar.description).toLowerCase()
+  const slug = cleanString(calendar.slug).toLowerCase()
+
+  if (!id.startsWith(LOCAL_CALENDAR_PREFIX) || source !== 'ristak') return false
+
+  return (
+    name.includes(DEFAULT_RISTAK_CALENDAR_NAME)
+    || description.includes(DEFAULT_RISTAK_CALENDAR_DESC)
+    || slug === 'calendario-ristak'
+  )
+}
+
+function sanitizeCalendarConfigValue(value, fallback = null) {
+  if (value === undefined || value === null) return fallback
+  return typeof value === 'string' ? value : String(value)
+}
+
+async function getConnectedSourceFlags() {
+  const [googleConfig, highlevelConfig] = await Promise.all([
+    db.get('SELECT config_value FROM app_config WHERE config_key = ?', [GOOGLE_CALENDAR_CONFIG_KEY]),
+    db.get('SELECT 1 FROM highlevel_config LIMIT 1')
+  ])
+  const googleConfigValue = sanitizeCalendarConfigValue(googleConfig?.config_value, '').trim()
+  const googleConfigData = parseJson(googleConfigValue, {})
+  const googleCalendarId = cleanString(googleConfigData?.calendarId)
+
+  return {
+    google: Boolean(googleCalendarId && googleConfigData?.credentialsEncrypted),
+    googleCalendarId,
+    ghl: Boolean(highlevelConfig)
+  }
+}
+
+function filterCalendarsByConnection(calendars = []) {
+  return calendars.map(calendar => ({
+    ...calendar,
+    source: normalizeCalendarSource(calendar.source)
+  }))
+}
+
+function isConfiguredGoogleCalendar(calendar = {}, connectedSources = {}) {
+  if (calendar.source !== 'google') return true
+
+  const configuredGoogleCalendarId = cleanString(connectedSources.googleCalendarId).toLowerCase()
+  if (!configuredGoogleCalendarId) return true
+
+  return cleanString(calendar.googleCalendarId || calendar.id).toLowerCase() === configuredGoogleCalendarId
+}
+
+function pickCalendarByPreference(calendars = [], sourcePreference = 'combined', { includeInactive = false } = {}) {
+  const normalizedPreference = normalizeCalendarSourcePreference(sourcePreference)
+
+  const sourceOrder = normalizedPreference === 'ghl'
+    ? ['ghl']
+    : normalizedPreference === 'google'
+      ? ['google']
+      : normalizedPreference === 'ristak'
+        ? ['ristak']
+        : ['ghl', 'google', 'ristak']
+
+  const isUsable = calendar => includeInactive || calendar.isActive !== false
+
+  for (const source of sourceOrder) {
+    const calendar = calendars.find(item => item.source === source && isUsable(item))
+    if (calendar) return calendar
+  }
+
+  if (!includeInactive) {
+    return null
+  }
+
+  for (const source of sourceOrder) {
+    const calendar = calendars.find(item => item.source === source)
+    if (calendar) return calendar
+  }
+
+  return null
+}
+
+function shouldHideSeedCalendarForCombined(calendars = [], connectedSources = { google: false, ghl: false }) {
+  return (connectedSources.google || connectedSources.ghl)
+    && calendars.some(calendar => ['google', 'ghl'].includes(calendar.source))
+}
+
+async function getCalendarAppointmentCounts(calendarIds = []) {
+  const ids = [...new Set(calendarIds.map(id => cleanString(id)).filter(Boolean))]
+  if (!ids.length) return new Map()
+
+  const placeholders = ids.map(() => '?').join(', ')
+  const rows = await db.all(`
+    SELECT calendar_id, COUNT(*) AS appointments_count
+    FROM appointments
+    WHERE calendar_id IN (${placeholders})
+      AND deleted_at IS NULL
+      AND COALESCE(sync_status, '') != 'pending_delete'
+    GROUP BY calendar_id
+  `, ids)
+
+  return new Map(rows.map(row => [
+    cleanString(row.calendar_id),
+    toInt(row.appointments_count, 0)
+  ]))
+}
+
+function calendarHasAppointments(calendar = {}, appointmentCounts = new Map()) {
+  return toInt(appointmentCounts.get(cleanString(calendar.id)), 0) > 0
+}
+
+function isEmptySeedRistakCalendar(calendar = {}, appointmentCounts = new Map()) {
+  return isLikelySeedRistakCalendar(calendar) && !calendarHasAppointments(calendar, appointmentCounts)
+}
+
+export async function reconcileCalendarDefaults({ sourcePreference = null } = {}) {
+  await ensureDefaultLocalCalendar()
+
+  const rows = await db.all('SELECT * FROM calendars ORDER BY is_active DESC, LOWER(name) ASC')
+  const connectedSources = await getConnectedSourceFlags()
+  const calendars = filterCalendarsByConnection(rows.map(calendarRowToApi))
+    .filter(calendar => isConfiguredGoogleCalendar(calendar, connectedSources))
+  const hasConnectedExternalSources = Boolean(connectedSources.google || connectedSources.ghl)
+
+  if (!calendars.length) {
+    return {
+      changed: false,
+      defaultCalendarId: null,
+      previousDefaultCalendarId: null,
+      hasExternalCalendars: false
+    }
+  }
+
+  const preference = normalizeCalendarSourcePreference(sourcePreference || sanitizeCalendarConfigValue(
+    await getAppConfigValue(SOURCE_PREFERENCE_CONFIG_KEY),
+    'combined'
+  ))
+
+  const configuredDefaultCalendarId = sanitizeCalendarConfigValue(await getAppConfigValue(DEFAULT_CALENDAR_CONFIG_KEY), '').trim()
+  const configuredDefaultCalendar = configuredDefaultCalendarId
+    ? calendars.find(calendar => calendar.id === configuredDefaultCalendarId)
+    : null
+
+  const hasExternalCalendars = hasConnectedExternalSources
+    && calendars.some(calendar => ['google', 'ghl'].includes(calendar.source))
+  let nextDefaultCalendarId = configuredDefaultCalendar?.id || null
+
+  const appointmentCounts = await getCalendarAppointmentCounts(calendars.map(calendar => calendar.id))
+  const officialSeedCalendar = calendars.find(calendar => (
+    isLikelySeedRistakCalendar(calendar) && calendarHasAppointments(calendar, appointmentCounts)
+  ))
+
+  if (hasExternalCalendars && !nextDefaultCalendarId && officialSeedCalendar?.id) {
+    nextDefaultCalendarId = officialSeedCalendar.id
+  }
+
+  if (hasExternalCalendars && (!nextDefaultCalendarId || isEmptySeedRistakCalendar(configuredDefaultCalendar || {}, appointmentCounts))) {
+    const externalPreference = preference === 'google'
+      ? 'google'
+      : preference === 'ghl'
+        ? 'ghl'
+        : preference === 'ristak'
+          ? 'ristak'
+          : 'combined'
+
+    const externalCandidate = pickCalendarByPreference(
+      calendars.filter(calendar => ['google', 'ghl'].includes(calendar.source)),
+      externalPreference,
+      { includeInactive: true }
+    ) || pickCalendarByPreference(calendars, externalPreference, { includeInactive: true })
+
+    if (externalCandidate?.id) {
+      nextDefaultCalendarId = externalCandidate.id
+    }
+  }
+
+  if (!hasExternalCalendars) {
+    const shouldUseLocalFallback = !nextDefaultCalendarId
+      || configuredDefaultCalendar?.source === 'google'
+      || configuredDefaultCalendar?.source === 'ghl'
+
+    if (shouldUseLocalFallback) {
+      const localCandidate = calendars.find(calendar => isLikelySeedRistakCalendar(calendar))
+        || calendars.find(calendar => calendar.source === 'ristak')
+        || calendars[0]
+
+      nextDefaultCalendarId = localCandidate?.id || null
+    }
+  }
+
+  const updates = {}
+  if (nextDefaultCalendarId && nextDefaultCalendarId !== configuredDefaultCalendarId) {
+    updates.default_calendar_id = nextDefaultCalendarId
+  }
+
+  if (Object.keys(updates).length > 0) {
+    await setAppConfigValue(DEFAULT_CALENDAR_CONFIG_KEY, updates.default_calendar_id)
+
+    const attributionRaw = await getAppConfigValue(ATTRIBUTION_CALENDAR_IDS_CONFIG_KEY)
+    const attributionIds = parseConfigArray(attributionRaw)
+    if (!attributionIds.length) {
+      await setAppConfigValue(ATTRIBUTION_CALENDAR_IDS_CONFIG_KEY, [updates.default_calendar_id])
+    }
+  }
+
+  return {
+    changed: Object.keys(updates).length > 0,
+    defaultCalendarId: nextDefaultCalendarId,
+    previousDefaultCalendarId: configuredDefaultCalendarId,
+    hasExternalCalendars,
+    sourcePreference: preference
+  }
+}
+
 function jsonOrNull(value) {
   if (value === null || value === undefined || value === '') return null
   if (typeof value === 'string') return value
@@ -62,6 +339,81 @@ function slugify(value, fallback = '') {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 80) || `calendario-${Date.now()}`
+}
+
+function decodeSegment(value) {
+  try {
+    return cleanString(decodeURIComponent(String(value || '')))
+  } catch {
+    return cleanString(value)
+  }
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
+function jsonForInlineScript(value) {
+  return JSON.stringify(value).replace(/</g, '\\u003c')
+}
+
+function publicCalendarSlug(calendar = {}) {
+  return cleanString(calendar.slug || calendar.widgetSlug || calendar.id) || slugify(calendar.name || calendar.id)
+}
+
+function publicCalendarPath(calendar = {}) {
+  return `/calendar/${encodeURIComponent(publicCalendarSlug(calendar))}`
+}
+
+export async function getCalendarPublicUrlStatus() {
+  const domainConfig = await getSitesPublicDomain()
+
+  if (!domainConfig.domain) {
+    return {
+      enabled: false,
+      domain: '',
+      reason: ''
+    }
+  }
+
+  if (!domainConfig.renderDomainVerified) {
+    return {
+      enabled: false,
+      domain: domainConfig.domain,
+      reason: 'El dominio publico general existe, pero todavia no responde a esta app.'
+    }
+  }
+
+  return {
+    enabled: true,
+    domain: domainConfig.domain,
+    reason: ''
+  }
+}
+
+export function attachPublicCalendarUrl(calendar = {}, status = null) {
+  const path = publicCalendarPath(calendar)
+  const enabled = Boolean(status?.enabled && calendar.isActive !== false)
+  return {
+    ...calendar,
+    publicBookingPath: path,
+    publicBaseDomain: status?.domain || '',
+    publicUrlEnabled: enabled,
+    publicUrl: enabled ? `https://${status.domain}${path}` : '',
+    publicUrlUnavailableReason: calendar.isActive === false
+      ? 'Este calendario esta inactivo.'
+      : status?.reason || ''
+  }
+}
+
+export async function attachPublicCalendarUrls(calendars = []) {
+  const status = await getCalendarPublicUrlStatus()
+  return calendars.map(calendar => attachPublicCalendarUrl(calendar, status))
 }
 
 function normalizeTeamMembers(value) {
@@ -96,10 +448,13 @@ function calendarRowToApi(row = {}) {
   const teamMembers = normalizeTeamMembers(row.team_members)
   const locationConfigurations = normalizeLocationConfigurations(row.location_configurations)
   const openHours = normalizeOpenHours(row.open_hours)
+  const rawJson = parseJson(row.raw_json, {})
 
   return {
     id: row.id,
     ghlCalendarId: row.ghl_calendar_id || null,
+    googleCalendarId: rawJson?.googleCalendarId || rawJson?.google_calendar_id || '',
+    googleAccessRole: rawJson?.accessRole || rawJson?.access_role || '',
     locationId: row.location_id || '',
     groupId: row.group_id || undefined,
     name: row.name || 'Calendario',
@@ -323,14 +678,433 @@ export async function getLocalCalendar(calendarId) {
   return row ? calendarRowToApi(row) : null
 }
 
+export async function getPublicCalendarBySlug(slugOrId) {
+  const value = decodeSegment(slugOrId)
+  if (!value) return null
+
+  const row = await db.get(`
+    SELECT *
+    FROM calendars
+    WHERE COALESCE(is_active, 1) != 0
+      AND (id = ? OR slug = ? OR widget_slug = ?)
+    ORDER BY
+      CASE WHEN id = ? THEN 0 ELSE 1 END,
+      LOWER(name) ASC
+    LIMIT 1
+  `, [value, value, value, value])
+
+  return row ? calendarRowToApi(row) : null
+}
+
+export function renderPublicCalendarHtml(calendar, { host = '' } = {}) {
+  const slug = publicCalendarSlug(calendar)
+  const duration = Math.max(1, toInt(calendar.slotDuration, 60))
+  const title = calendar.eventTitle || calendar.name || 'Cita'
+  const payload = {
+    slug,
+    name: calendar.name || 'Calendario',
+    description: calendar.description || '',
+    eventTitle: title,
+    duration,
+    color: calendar.eventColor || DEFAULT_EVENT_COLOR,
+    host
+  }
+
+  return `<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(calendar.name || 'Calendario')}</title>
+  <meta name="description" content="${escapeHtml(calendar.description || `Agenda ${title}`)}">
+  <style>
+    :root{--accent:${escapeHtml(calendar.eventColor || DEFAULT_EVENT_COLOR)};--accent-soft:color-mix(in srgb,var(--accent) 10%,#fff);--ink:#1f2937;--heading:#111827;--muted:#6b7280;--line:#e5e7eb;--bg:#f8fafc;--surface:#fff;--danger:#b42318;--ok:#047857}
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;letter-spacing:0;line-height:1.5}
+    button,input,textarea{font:inherit}
+    .page{min-height:100vh;width:min(1180px,calc(100% - 32px));margin:0 auto;padding:clamp(24px,4vw,54px) 0;display:grid;place-items:center}
+    .shell{width:100%;min-height:min(760px,calc(100vh - 80px));display:grid;grid-template-columns:340px minmax(390px,1fr) minmax(260px,300px);background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:0 32px 90px -60px rgba(15,23,42,.45);overflow:hidden}
+    .intro{position:relative;padding:38px 34px;border-right:1px solid var(--line);display:grid;align-content:start;gap:20px}
+    .back{width:42px;height:42px;border:1px solid var(--line);border-radius:999px;background:#fff;color:var(--accent);display:grid;place-items:center;cursor:pointer}
+    .avatar{width:104px;height:104px;border-radius:4px;background:linear-gradient(135deg,var(--accent-soft),#fff);border:1px solid var(--line);display:grid;place-items:center;color:var(--accent);font-size:3rem;font-weight:850}
+    .host{margin:8px 0 0;color:var(--muted);font-size:.95rem;font-weight:750}
+    h1{margin:0;color:var(--heading);font-size:clamp(1.75rem,3vw,2.35rem);line-height:1.08;letter-spacing:0;font-weight:850}
+    h2{margin:0;color:var(--heading);font-size:1.45rem;line-height:1.2;font-weight:800}
+    h3{margin:0;color:var(--heading);font-size:1rem;font-weight:800}
+    p{margin:0;color:var(--muted)}
+    .description{font-size:.98rem}
+    .meta{display:grid;gap:12px;margin-top:6px;color:var(--muted);font-weight:750}
+    .meta span{display:flex;align-items:center;gap:10px}
+    .calendarPane{padding:38px 36px;display:grid;grid-template-rows:auto auto 1fr auto;gap:24px}
+    .paneTitle{display:grid;gap:6px}
+    .monthBar{display:grid;grid-template-columns:42px 1fr 42px;align-items:center;gap:12px}
+    .monthBar strong{text-align:center;font-size:1.08rem;font-weight:750;color:#374151}
+    .navBtn{width:42px;height:42px;border:0;border-radius:999px;background:#fff;color:#4b5563;display:grid;place-items:center;cursor:pointer}
+    .navBtn:hover,.navBtn:focus-visible{background:var(--accent-soft);color:var(--accent);outline:0}
+    .weekdays,.days{display:grid;grid-template-columns:repeat(7,1fr);justify-items:center}
+    .weekdays{gap:8px;color:#374151;font-size:.78rem;font-weight:750;text-transform:uppercase}
+    .days{gap:10px 8px}
+    .day{width:44px;height:44px;border:0;border-radius:999px;background:transparent;color:#6b7280;cursor:default;font-weight:650}
+    .day.available{color:var(--accent);cursor:pointer;font-weight:800}
+    .day.available:hover,.day.available:focus-visible{background:var(--accent-soft);outline:0}
+    .day.selected{background:var(--accent);color:#fff}
+    .day.today:not(.selected){box-shadow:inset 0 0 0 1px var(--accent)}
+    .day.outside{visibility:hidden}
+    .day:disabled{opacity:.34}
+    .timezone{display:flex;align-items:flex-start;gap:10px;color:var(--muted);font-size:.92rem;font-weight:650}
+    .timesPane{border-left:1px solid var(--line);padding:38px 24px;display:grid;grid-template-rows:auto minmax(0,1fr);gap:18px}
+    .selectedDate{display:grid;gap:4px;min-height:58px}
+    .slotList{display:grid;align-content:start;gap:10px;max-height:330px;overflow:auto;padding-right:2px}
+    .slot{width:100%;min-height:46px;border:1px solid var(--accent);border-radius:8px;background:#fff;color:var(--accent);font-weight:800;cursor:pointer}
+    .slot:hover,.slot.selected{background:var(--accent);color:#fff}
+    .slotEmpty{display:grid;place-items:center;min-height:160px;border:1px dashed var(--line);border-radius:12px;color:var(--muted);text-align:center;padding:18px}
+    form{display:none;gap:10px;border-top:1px solid var(--line);padding-top:16px}
+    form.visible{display:grid}
+    label{display:grid;gap:5px;font-size:.82rem;font-weight:750;color:#374151}
+    input,textarea{width:100%;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);padding:10px 11px;outline:none}
+    textarea{resize:vertical}
+    input:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 16%,transparent)}
+    button.submit{min-height:44px;border:1px solid var(--accent);border-radius:8px;background:var(--accent);color:#fff;font-weight:850;cursor:pointer}
+    button:disabled{opacity:.58;cursor:not-allowed}
+    .message{min-height:20px;font-size:.88rem;font-weight:750;color:var(--muted)}
+    .message.error{color:var(--danger)}
+    .message.ok{color:var(--ok)}
+    .loading{opacity:.62;pointer-events:none}
+    @media (max-width:1020px){.shell{grid-template-columns:320px minmax(360px,1fr)}.timesPane{grid-column:2;border-left:0;border-top:1px solid var(--line);padding-top:24px}.slotList{grid-template-columns:repeat(auto-fit,minmax(132px,1fr));max-height:none}}
+    @media (max-width:760px){.page{width:min(100% - 18px,1180px);padding:14px 0;place-items:start}.shell{grid-template-columns:1fr;min-height:0;border-radius:14px}.intro,.calendarPane,.timesPane{padding:24px 20px;border-right:0}.calendarPane,.timesPane{border-top:1px solid var(--line)}.avatar{width:82px;height:82px;font-size:2.25rem}.days{gap:6px 4px}.day{width:38px;height:38px}.slotList{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="shell">
+      <section class="intro">
+        <button class="back" type="button" onclick="history.length > 1 ? history.back() : null" aria-label="Regresar">
+          <svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true"><path d="M15 18 9 12l6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div class="avatar" aria-hidden="true">${escapeHtml((calendar.name || 'R').trim()[0] || 'R')}</div>
+        <p class="host">${escapeHtml(calendar.eventTitle || 'Evento')}</p>
+        <h1>${escapeHtml(calendar.name || 'Agenda tu cita')}</h1>
+        <p class="description">${escapeHtml(calendar.description || 'Selecciona una fecha y horario disponible para confirmar tu cita.')}</p>
+        <div class="meta">
+          <span><svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>${duration} min</span>
+          <span><svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true"><path d="M20 6 9 17l-5-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Confirmacion ${calendar.autoConfirm ? 'automatica' : 'pendiente'}</span>
+        </div>
+      </section>
+
+      <section class="calendarPane" data-calendar-pane>
+        <div class="paneTitle">
+          <h2>Selecciona fecha y hora</h2>
+          <p>Elige un dia disponible para ver horarios.</p>
+        </div>
+        <div class="monthBar">
+          <button class="navBtn" type="button" data-prev aria-label="Mes anterior">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="m15 18-6-6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <strong data-month-label></strong>
+          <button class="navBtn" type="button" data-next aria-label="Mes siguiente">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="m9 18 6-6-6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+        <div class="weekdays" aria-hidden="true">
+          <span>Dom</span><span>Lun</span><span>Mar</span><span>Mie</span><span>Jue</span><span>Vie</span><span>Sab</span>
+        </div>
+        <div class="days" data-days></div>
+        <div class="timezone">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+          <span>Zona horaria<br><strong data-timezone></strong></span>
+        </div>
+      </section>
+
+      <section class="timesPane">
+        <div class="selectedDate">
+          <h3 data-selected-title>Selecciona una fecha</h3>
+          <p data-selected-subtitle>Los horarios apareceran aqui.</p>
+        </div>
+        <div class="slotList" data-slots>
+          <div class="slotEmpty">Elige un dia con disponibilidad.</div>
+        </div>
+        <form data-form>
+          <h2>Tus datos</h2>
+          <label>Nombre completo<input name="name" autocomplete="name" required placeholder="Tu nombre"></label>
+          <label>Telefono / WhatsApp<input name="phone" autocomplete="tel" inputmode="tel" required placeholder="10 digitos"></label>
+          <label>Correo<input name="email" autocomplete="email" type="email" placeholder="tu@email.com"></label>
+          <label>Notas<textarea name="notes" rows="3" placeholder="Algo que debamos saber"></textarea></label>
+          <button class="submit" type="submit" disabled data-submit>Selecciona un horario</button>
+          <p class="message" data-message role="status"></p>
+        </form>
+      </section>
+    </div>
+  </main>
+  <script>
+    (() => {
+      const calendar = ${jsonForInlineScript(payload)};
+      const calendarPane = document.querySelector('[data-calendar-pane]');
+      const daysEl = document.querySelector('[data-days]');
+      const slotsEl = document.querySelector('[data-slots]');
+      const monthLabel = document.querySelector('[data-month-label]');
+      const prevButton = document.querySelector('[data-prev]');
+      const nextButton = document.querySelector('[data-next]');
+      const timezoneLabel = document.querySelector('[data-timezone]');
+      const selectedTitle = document.querySelector('[data-selected-title]');
+      const selectedSubtitle = document.querySelector('[data-selected-subtitle]');
+      const form = document.querySelector('[data-form]');
+      const submit = document.querySelector('[data-submit]');
+      const message = document.querySelector('[data-message]');
+      const monthNames = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+      let selectedSlot = '';
+      let selectedDateKey = '';
+      let visibleMonth = new Date();
+      visibleMonth.setDate(1);
+      let slotsByDate = new Map();
+      let timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+
+      const pad = (value) => String(value).padStart(2, '0');
+      const dateKey = (date) => date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
+      const monthKey = (date) => date.getFullYear() + '-' + pad(date.getMonth() + 1);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const setMessage = (text, type = '') => {
+        message.textContent = text || '';
+        message.className = 'message' + (type ? ' ' + type : '');
+      };
+
+      const getZonedParts = (value) => {
+        const parts = new Intl.DateTimeFormat('en-CA', {
+          timeZone: timezone,
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        }).formatToParts(new Date(value));
+        const record = {};
+        parts.forEach(part => {
+          if (part.type !== 'literal') record[part.type] = part.value;
+        });
+        return record.year + '-' + record.month + '-' + record.day;
+      };
+
+      const formatDay = (iso) => new Intl.DateTimeFormat('es-MX', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        timeZone: timezone
+      }).format(new Date(iso));
+
+      const formatCalendarDate = (date) => new Intl.DateTimeFormat('es-MX', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+      }).format(date);
+
+      const formatTime = (iso) => new Intl.DateTimeFormat('es-MX', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: timezone
+      }).format(new Date(iso));
+
+      const setLoading = (loading) => {
+        calendarPane.classList.toggle('loading', loading);
+        slotsEl.classList.toggle('loading', loading);
+      };
+
+      const resetForm = () => {
+        selectedSlot = '';
+        form.classList.remove('visible');
+        form.reset();
+        submit.disabled = true;
+        submit.textContent = 'Selecciona un horario';
+        setMessage('');
+      };
+
+      const renderMonth = () => {
+        monthLabel.textContent = monthNames[visibleMonth.getMonth()] + ' ' + visibleMonth.getFullYear();
+        const first = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth(), 1);
+        const last = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 0);
+        const cells = [];
+
+        for (let i = 0; i < first.getDay(); i += 1) cells.push(null);
+        for (let day = 1; day <= last.getDate(); day += 1) {
+          cells.push(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth(), day));
+        }
+        while (cells.length % 7 !== 0) cells.push(null);
+
+        daysEl.innerHTML = cells.map((date) => {
+          if (!date) return '<span class="day outside"></span>';
+          const key = dateKey(date);
+          const hasSlots = (slotsByDate.get(key) || []).length > 0;
+          const isPast = date < today;
+          const classes = [
+            'day',
+            hasSlots && !isPast ? 'available' : '',
+            key === selectedDateKey ? 'selected' : '',
+            key === dateKey(today) ? 'today' : ''
+          ].filter(Boolean).join(' ');
+          return '<button type="button" class="' + classes + '" data-date="' + key + '"' + (!hasSlots || isPast ? ' disabled' : '') + '>' + date.getDate() + '</button>';
+        }).join('');
+      };
+
+      const renderSlotsForDate = (key) => {
+        const slots = slotsByDate.get(key) || [];
+        resetForm();
+
+        if (!key) {
+          selectedTitle.textContent = 'Selecciona una fecha';
+          selectedSubtitle.textContent = 'Los horarios apareceran aqui.';
+          slotsEl.innerHTML = '<div class="slotEmpty">Elige un dia con disponibilidad.</div>';
+          return;
+        }
+
+        const [year, month, day] = key.split('-').map(Number);
+        const selectedDate = new Date(year, month - 1, day);
+        selectedTitle.textContent = formatCalendarDate(selectedDate);
+        selectedSubtitle.textContent = slots.length ? 'Elige un horario disponible.' : 'No hay horarios en este dia.';
+
+        if (!slots.length) {
+          slotsEl.innerHTML = '<div class="slotEmpty">No hay horarios disponibles este dia.</div>';
+          return;
+        }
+
+        slotsEl.innerHTML = slots.map(slot => '<button type="button" class="slot" data-slot="' + slot + '">' + formatTime(slot) + '</button>').join('');
+      };
+
+      const ingestSlots = (days) => {
+        const next = new Map();
+        (Array.isArray(days) ? days : []).forEach(day => {
+          if (day.timezone) timezone = day.timezone;
+          (Array.isArray(day.slots) ? day.slots : []).forEach(slot => {
+            const key = getZonedParts(slot);
+            if (!next.has(key)) next.set(key, []);
+            next.get(key).push(slot);
+          });
+        });
+        slotsByDate = next;
+        timezoneLabel.textContent = timezone;
+      };
+
+      slotsEl.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-slot]');
+        if (!button) return;
+        selectedSlot = button.getAttribute('data-slot') || '';
+        slotsEl.querySelectorAll('.slot').forEach(item => item.classList.remove('selected'));
+        button.classList.add('selected');
+        form.classList.add('visible');
+        submit.disabled = false;
+        submit.textContent = 'Agendar cita';
+        setMessage('Horario seleccionado: ' + formatDay(selectedSlot) + ' a las ' + formatTime(selectedSlot));
+      });
+
+      daysEl.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-date]');
+        if (!button || button.disabled) return;
+        selectedDateKey = button.getAttribute('data-date') || '';
+        renderMonth();
+        renderSlotsForDate(selectedDateKey);
+      });
+
+      const loadSlots = async () => {
+        setLoading(true);
+        try {
+          const start = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth(), 1);
+          const end = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 0);
+          const params = new URLSearchParams({
+            startDate: dateKey(start),
+            endDate: dateKey(end),
+            timezone
+          });
+          const response = await fetch('/api/calendars/public/' + encodeURIComponent(calendar.slug) + '/free-slots?' + params.toString());
+          const payload = await response.json();
+          if (!response.ok || payload.success === false) throw new Error(payload.error || 'No se pudieron cargar horarios');
+          ingestSlots(payload.data || []);
+          renderMonth();
+          if (selectedDateKey && selectedDateKey.startsWith(monthKey(visibleMonth))) {
+            renderSlotsForDate(selectedDateKey);
+          } else {
+            selectedDateKey = '';
+            renderSlotsForDate('');
+          }
+        } catch (error) {
+          daysEl.innerHTML = '';
+          slotsEl.innerHTML = '<div class="slotEmpty">No se pudieron cargar horarios. Intenta mas tarde.</div>';
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      prevButton.addEventListener('click', () => {
+        visibleMonth = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() - 1, 1);
+        selectedDateKey = '';
+        loadSlots();
+      });
+
+      nextButton.addEventListener('click', () => {
+        visibleMonth = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 1);
+        selectedDateKey = '';
+        loadSlots();
+      });
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!selectedSlot) {
+          setMessage('Selecciona un horario primero.', 'error');
+          return;
+        }
+
+        const formData = new FormData(form);
+        submit.disabled = true;
+        submit.textContent = 'Agendando...';
+        setMessage('');
+
+        try {
+          const response = await fetch('/api/calendars/public/' + encodeURIComponent(calendar.slug) + '/appointments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              startTime: selectedSlot,
+              timezone,
+              sourceUrl: window.location.href,
+              name: formData.get('name'),
+              phone: formData.get('phone'),
+              email: formData.get('email'),
+              notes: formData.get('notes')
+            })
+          });
+          const payload = await response.json();
+          if (!response.ok || payload.success === false) throw new Error(payload.error || 'No se pudo agendar');
+          const successText = payload.data?.message || 'Listo. Tu cita quedo agendada.';
+          selectedSlot = '';
+          form.reset();
+          form.classList.remove('visible');
+          await loadSlots();
+          setMessage(successText, 'ok');
+        } catch (error) {
+          setMessage(error.message || 'No se pudo agendar la cita.', 'error');
+        } finally {
+          submit.disabled = !selectedSlot;
+          submit.textContent = selectedSlot ? 'Agendar cita' : 'Selecciona un horario';
+        }
+      });
+
+      loadSlots();
+    })();
+  </script>
+</body>
+</html>`
+}
+
 export async function listLocalCalendars({ sourcePreference = 'combined' } = {}) {
   const filters = []
   const params = []
+  const normalizedSourcePreference = normalizeCalendarSourcePreference(sourcePreference)
+  const connectedSources = await getConnectedSourceFlags()
 
-  if (sourcePreference === 'ristak') {
+  if (normalizedSourcePreference === 'ristak') {
     filters.push("source = 'ristak'")
-  } else if (sourcePreference === 'ghl') {
+  } else if (normalizedSourcePreference === 'ghl') {
     filters.push("source = 'ghl'")
+  } else if (normalizedSourcePreference === 'google') {
+    filters.push("source = 'google'")
   }
 
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : ''
@@ -340,7 +1114,18 @@ export async function listLocalCalendars({ sourcePreference = 'combined' } = {})
     ORDER BY is_active DESC, LOWER(name) ASC
   `, params)
 
-  return rows.map(calendarRowToApi)
+  const calendars = filterCalendarsByConnection(rows.map(calendarRowToApi))
+    .filter(calendar => isConfiguredGoogleCalendar(calendar, connectedSources))
+  const shouldHideSeed = normalizedSourcePreference === 'combined'
+    && shouldHideSeedCalendarForCombined(calendars, connectedSources)
+
+  if (!shouldHideSeed) {
+    return calendars
+  }
+
+  const appointmentCounts = await getCalendarAppointmentCounts(calendars.map(calendar => calendar.id))
+  const visibleCalendars = calendars.filter(calendar => !isEmptySeedRistakCalendar(calendar, appointmentCounts))
+  return visibleCalendars.length ? visibleCalendars : calendars
 }
 
 export async function updateLocalCalendar(calendarId, updateData = {}, { syncStatus = 'pending' } = {}) {
@@ -357,6 +1142,16 @@ export async function updateLocalCalendar(calendarId, updateData = {}, { syncSta
     source: existing.source,
     syncStatus: existing.source === 'ghl' && syncStatus === 'pending' ? 'synced' : syncStatus
   })
+}
+
+export async function deleteLocalCalendar(calendarId) {
+  const existing = await getLocalCalendar(calendarId)
+  if (!existing) return null
+
+  await db.run('DELETE FROM appointments WHERE calendar_id = ?', [existing.id])
+  await db.run('DELETE FROM calendars WHERE id = ?', [existing.id])
+
+  return existing
 }
 
 export async function ensureDefaultLocalCalendar() {
@@ -383,6 +1178,7 @@ function appointmentRowToApi(row = {}) {
   return {
     id: row.id,
     ghlAppointmentId: row.ghl_appointment_id || null,
+    googleEventId: row.google_event_id || null,
     calendarId: row.calendar_id || '',
     locationId: row.location_id || '',
     contactId: row.contact_id || undefined,
@@ -400,6 +1196,9 @@ function appointmentRowToApi(row = {}) {
     syncStatus: row.sync_status || 'pending',
     syncError: row.sync_error || null,
     syncedAt: row.synced_at || null,
+    googleSyncStatus: row.google_sync_status || null,
+    googleSyncError: row.google_sync_error || null,
+    googleSyncedAt: row.google_synced_at || null,
     contactName: row.contact_name || '',
     contactEmail: row.contact_email || '',
     contactPhone: row.contact_phone || ''
@@ -410,12 +1209,14 @@ function normalizeAppointmentRecord(raw = {}, options = {}) {
   const appointment = raw.appointment && typeof raw.appointment === 'object' ? raw.appointment : raw
   const source = options.source || appointment.source || (appointment.id && !String(appointment.id).startsWith(LOCAL_APPOINTMENT_PREFIX) ? 'ghl' : 'ristak')
   const ghlAppointmentId = cleanString(options.ghlAppointmentId || appointment.ghlAppointmentId || appointment.ghl_appointment_id || (source === 'ghl' ? appointment.id : '')) || null
+  const googleEventId = cleanString(options.googleEventId || appointment.googleEventId || appointment.google_event_id || (source === 'google' ? appointment.id : '')) || null
   const appointmentStatus = cleanString(appointment.appointmentStatus || appointment.appointment_status || appointment.status || 'confirmed') || 'confirmed'
   const id = cleanString(options.id || appointment.localId || appointment.local_id || appointment.id) || makeId(LOCAL_APPOINTMENT_PREFIX)
 
   return {
     id,
     ghlAppointmentId,
+    googleEventId,
     calendarId: cleanString(options.calendarId || appointment.calendarId || appointment.calendar_id || ''),
     contactId: cleanString(appointment.contactId || appointment.contact_id || '') || null,
     locationId: cleanString(options.locationId || appointment.locationId || appointment.location_id || '') || null,
@@ -431,7 +1232,9 @@ function normalizeAppointmentRecord(raw = {}, options = {}) {
     dateUpdated: appointment.dateUpdated || appointment.date_updated || appointment.updatedAt || appointment.updated_at || new Date().toISOString(),
     source,
     syncStatus: options.syncStatus || appointment.syncStatus || appointment.sync_status || (source === 'ghl' ? 'synced' : 'pending'),
-    syncError: options.syncError || appointment.syncError || appointment.sync_error || null
+    syncError: options.syncError || appointment.syncError || appointment.sync_error || null,
+    googleSyncStatus: options.googleSyncStatus || appointment.googleSyncStatus || appointment.google_sync_status || (source === 'google' ? 'synced' : null),
+    googleSyncError: options.googleSyncError || appointment.googleSyncError || appointment.google_sync_error || null
   }
 }
 
@@ -456,14 +1259,24 @@ export async function upsertLocalAppointment(raw = {}, options = {}) {
     normalized.id = existingByGhl.id
   }
 
+  const existingByGoogle = !existingByGhl && normalized.googleEventId
+    ? await db.get('SELECT id FROM appointments WHERE google_event_id = ?', [normalized.googleEventId])
+    : null
+
+  if (existingByGoogle?.id) {
+    normalized.id = existingByGoogle.id
+  }
+
   await db.run(`
     INSERT INTO appointments (
-      id, ghl_appointment_id, calendar_id, contact_id, location_id, title, status,
+      id, ghl_appointment_id, google_event_id, calendar_id, contact_id, location_id, title, status,
       appointment_status, assigned_user_id, notes, address, start_time, end_time,
-      date_added, date_updated, source, sync_status, sync_error, synced_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      date_added, date_updated, source, sync_status, sync_error, synced_at,
+      google_sync_status, google_sync_error, google_synced_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (id) DO UPDATE SET
       ghl_appointment_id = COALESCE(excluded.ghl_appointment_id, appointments.ghl_appointment_id),
+      google_event_id = COALESCE(excluded.google_event_id, appointments.google_event_id),
       calendar_id = COALESCE(excluded.calendar_id, appointments.calendar_id),
       contact_id = COALESCE(excluded.contact_id, appointments.contact_id),
       location_id = COALESCE(excluded.location_id, appointments.location_id),
@@ -481,10 +1294,14 @@ export async function upsertLocalAppointment(raw = {}, options = {}) {
       sync_status = excluded.sync_status,
       sync_error = excluded.sync_error,
       synced_at = CASE WHEN excluded.sync_status = 'synced' THEN CURRENT_TIMESTAMP ELSE appointments.synced_at END,
+      google_sync_status = COALESCE(excluded.google_sync_status, appointments.google_sync_status),
+      google_sync_error = excluded.google_sync_error,
+      google_synced_at = CASE WHEN excluded.google_sync_status = 'synced' THEN CURRENT_TIMESTAMP ELSE appointments.google_synced_at END,
       deleted_at = NULL
   `, [
     normalized.id,
     normalized.ghlAppointmentId,
+    normalized.googleEventId,
     normalized.calendarId || null,
     normalized.contactId,
     normalized.locationId,
@@ -501,7 +1318,10 @@ export async function upsertLocalAppointment(raw = {}, options = {}) {
     normalized.source,
     normalized.syncStatus,
     normalized.syncError,
-    normalized.syncStatus === 'synced' ? new Date().toISOString() : null
+    normalized.syncStatus === 'synced' ? new Date().toISOString() : null,
+    normalized.googleSyncStatus,
+    normalized.googleSyncError,
+    normalized.googleSyncStatus === 'synced' ? new Date().toISOString() : null
   ])
 
   if (normalized.contactId) {
@@ -545,9 +1365,9 @@ export async function getLocalAppointment(appointmentId) {
       c.phone AS contact_phone
     FROM appointments a
     LEFT JOIN contacts c ON c.id = a.contact_id
-    WHERE a.id = ? OR a.ghl_appointment_id = ?
+    WHERE a.id = ? OR a.ghl_appointment_id = ? OR a.google_event_id = ?
     LIMIT 1
-  `, [appointmentId, appointmentId])
+  `, [appointmentId, appointmentId, appointmentId])
 
   return row ? appointmentRowToApi(row) : null
 }
@@ -912,7 +1732,7 @@ export async function syncLocalCalendarsToHighLevel(locationId, apiToken) {
 async function ensureHighLevelContactForAppointment(client, appointment = {}) {
   if (!appointment.contactId) return null
 
-  if (!String(appointment.contactId).startsWith('rstk_') && !String(appointment.contactId).startsWith('waweb_contact_')) {
+  if (!String(appointment.contactId).startsWith('rstk_') && !String(appointment.contactId).startsWith('waapi_contact_')) {
     return appointment.contactId
   }
 
@@ -1108,6 +1928,7 @@ export async function syncLocalAppointmentsToHighLevel(locationId, apiToken) {
 
 export default {
   createLocalCalendar,
+  reconcileCalendarDefaults,
   ensureDefaultLocalCalendar,
   getLocalCalendar,
   listLocalCalendars,

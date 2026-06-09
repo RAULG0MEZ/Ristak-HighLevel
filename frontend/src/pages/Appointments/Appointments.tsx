@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { KpiCard, Card, Button, PageContainer, AppointmentModal, BlockedSlotModal, TabList, Loading } from '@/components/common';
-import { ChevronLeft, ChevronRight, Plus, ChevronDown, Check, Calendar as CalendarIcon, Search, X, Settings } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, ChevronDown, Check, Search, X, Settings, Bell, MessageSquare, Clock } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNotification } from '@/contexts/NotificationContext';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -32,6 +32,24 @@ const viewTabs = [
   { value: 'month', label: 'Mes' },
   { value: 'week', label: 'Semana' },
   { value: 'day', label: 'Día' }
+];
+
+const automaticMessageCards = [
+  {
+    title: '24 h antes',
+    detail: 'Recordatorio de cita',
+    Icon: Bell
+  },
+  {
+    title: '2 h antes',
+    detail: 'Confirmación rápida',
+    Icon: Clock
+  },
+  {
+    title: 'Después de la cita',
+    detail: 'Mensaje de seguimiento',
+    Icon: MessageSquare
+  }
 ];
 
 type ViewMode = 'month' | 'week' | 'day';
@@ -134,6 +152,61 @@ const formatDateKey = (date: Date): string => {
   return `${year}-${month}-${day}`;
 };
 
+const appointmentViews: ViewMode[] = ['month', 'week', 'day'];
+const isAppointmentView = (value?: string): value is ViewMode => appointmentViews.includes(value as ViewMode);
+
+const parseDateKey = (value?: string): Date => {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return new Date();
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+};
+
+const getAppointmentRouteState = (pathname: string) => {
+  const segments = pathname
+    .replace(/^\/+|\/+$/g, '')
+    .split('/')
+    .filter(Boolean);
+  const appointmentsIndex = segments.indexOf('appointments');
+  const routeSegments = appointmentsIndex >= 0 ? segments.slice(appointmentsIndex + 1) : [];
+  const first = routeSegments[0];
+
+  if (first === 'appointments' && routeSegments[1]) {
+    return {
+      viewMode: 'day' as ViewMode,
+      currentDate: new Date(),
+      calendarId: '',
+      appointmentId: decodeURIComponent(routeSegments[1]),
+      create: false
+    };
+  }
+
+  if (first === 'new') {
+    return {
+      viewMode: 'day' as ViewMode,
+      currentDate: new Date(),
+      calendarId: '',
+      appointmentId: '',
+      create: true
+    };
+  }
+
+  const viewMode = isAppointmentView(first) ? first : 'month';
+  const currentDate = parseDateKey(routeSegments[1]);
+  const calendarIndex = routeSegments.indexOf('calendar');
+
+  return {
+    viewMode,
+    currentDate,
+    calendarId: calendarIndex >= 0 && routeSegments[calendarIndex + 1] ? decodeURIComponent(routeSegments[calendarIndex + 1]) : '',
+    appointmentId: '',
+    create: false
+  };
+};
+
+const buildAppointmentsPath = (viewMode: ViewMode, date: Date, calendarId?: string) =>
+  `/appointments/${viewMode}/${formatDateKey(date)}${calendarId ? `/calendar/${encodeURIComponent(calendarId)}` : ''}`;
+
 export const Appointments: React.FC = () => {
   const { locationId, accessToken } = useAuth();
   const { showToast } = useNotification();
@@ -168,11 +241,16 @@ export const Appointments: React.FC = () => {
     };
   };
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
+  const routeState = useMemo(
+    () => getAppointmentRouteState(location.pathname),
+    [location.pathname]
+  );
 
   // Estado del calendario
-  const [viewMode, setViewMode] = useState<ViewMode>('month');
-  const [currentDate, setCurrentDate] = useState<Date>(new Date());
+  const [viewMode, setViewMode] = useState<ViewMode>(routeState.viewMode);
+  const [currentDate, setCurrentDate] = useState<Date>(routeState.currentDate);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
 
   // Datos
@@ -217,6 +295,8 @@ export const Appointments: React.FC = () => {
   const [isCalendarDropdownOpen, setIsCalendarDropdownOpen] = useState(false);
   const [defaultCalendarId] = useAppConfig<string>('default_calendar_id', '');
 
+
+
   // Drag & Drop state
   const [draggedEvent, setDraggedEvent] = useState<CalendarEvent | null>(null);
   const [dragOverDate, setDragOverDate] = useState<Date | null>(null);
@@ -239,6 +319,24 @@ export const Appointments: React.FC = () => {
     setSelectedCalendar(calendar);
     persistLastSelectedCalendar(calendar?.id ?? null);
   }, [persistLastSelectedCalendar]);
+
+  const navigateCalendarView = useCallback((next?: {
+    viewMode?: ViewMode;
+    date?: Date;
+    calendarId?: string;
+    replace?: boolean;
+  }) => {
+    const nextViewMode = next?.viewMode ?? viewMode;
+    const nextDate = next?.date ?? currentDate;
+    const nextCalendarId = next?.calendarId ?? selectedCalendar?.id ?? routeState.calendarId;
+    navigate(buildAppointmentsPath(nextViewMode, nextDate, nextCalendarId), { replace: next?.replace });
+  }, [currentDate, navigate, routeState.calendarId, selectedCalendar?.id, viewMode]);
+
+  const setCalendarView = useCallback((nextViewMode: ViewMode, nextDate = currentDate) => {
+    setViewMode(nextViewMode);
+    setCurrentDate(nextDate);
+    navigateCalendarView({ viewMode: nextViewMode, date: nextDate });
+  }, [currentDate, navigateCalendarView]);
 
   // Dropdowns de navegación
   const [isMonthDropdownOpen, setIsMonthDropdownOpen] = useState(false);
@@ -319,8 +417,12 @@ export const Appointments: React.FC = () => {
       // Seleccionar calendario: último usado en esta sesión > predeterminado (configuración) > primer activo
       let calendarToSelect: Calendar | undefined;
 
+      if (routeState.calendarId) {
+        calendarToSelect = calendarsData.find((cal) => cal.id === routeState.calendarId && cal.isActive);
+      }
+
       const lastSelectedId = getStoredLastCalendarId();
-      if (lastSelectedId) {
+      if (!calendarToSelect && lastSelectedId) {
         calendarToSelect = calendarsData.find((cal) => cal.id === lastSelectedId && cal.isActive);
       }
 
@@ -343,7 +445,7 @@ export const Appointments: React.FC = () => {
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locationId, accessToken, defaultCalendarId, selectCalendar]);
+  }, [locationId, accessToken, defaultCalendarId, routeState.calendarId, selectCalendar]);
 
   const loadEvents = useCallback(async () => {
     if (!selectedCalendar) return;
@@ -387,6 +489,18 @@ export const Appointments: React.FC = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationId, accessToken, selectedCalendar, currentDate, getDateRange]);
+
+  useEffect(() => {
+    setViewMode(current => current === routeState.viewMode ? current : routeState.viewMode);
+    setCurrentDate(current => formatDateKey(current) === formatDateKey(routeState.currentDate) ? current : routeState.currentDate);
+
+    if (routeState.calendarId && calendars.length) {
+      const routeCalendar = calendars.find(calendar => calendar.id === routeState.calendarId);
+      if (routeCalendar && selectedCalendar?.id !== routeCalendar.id) {
+        selectCalendar(routeCalendar);
+      }
+    }
+  }, [calendars, routeState.calendarId, routeState.currentDate, routeState.viewMode, selectCalendar, selectedCalendar?.id]);
 
   // Cargar eventos próximos desde HOY (independiente del calendario visible)
   const loadUpcomingEvents = useCallback(async () => {
@@ -572,6 +686,7 @@ export const Appointments: React.FC = () => {
       newDate.setDate(newDate.getDate() - 1);
     }
     setCurrentDate(newDate);
+    navigateCalendarView({ date: newDate });
   };
 
   const handleNext = () => {
@@ -584,10 +699,13 @@ export const Appointments: React.FC = () => {
       newDate.setDate(newDate.getDate() + 1);
     }
     setCurrentDate(newDate);
+    navigateCalendarView({ date: newDate });
   };
 
   const handleToday = () => {
-    setCurrentDate(new Date());
+    const today = new Date();
+    setCurrentDate(today);
+    navigateCalendarView({ date: today });
   };
 
   const appointmentSearchItems = useMemo(() => {
@@ -637,10 +755,7 @@ export const Appointments: React.FC = () => {
   const handleSelectSearchResult = (event: CalendarEvent) => {
     // Navegar a la fecha de la cita
     const eventDate = toDateInTimeZone(event.startTime, timezone) ?? new Date(event.startTime);
-    setCurrentDate(eventDate);
-
-    // Cambiar a vista de día para mejor visualización
-    setViewMode('day');
+    setCalendarView('day', eventDate);
 
     // Cerrar dropdown y limpiar búsqueda
     setIsSearchDropdownOpen(false);
@@ -669,6 +784,7 @@ export const Appointments: React.FC = () => {
     });
     setCreateScheduleMode('default'); // Botón normal usa modo por defecto
     setIsCreateModalOpen(true);
+    navigate('/appointments/new');
   };
 
   // Doble click en día para crear cita con esa fecha
@@ -689,6 +805,7 @@ export const Appointments: React.FC = () => {
     });
     setCreateScheduleMode('custom'); // Doble click en día usa modo personalizado
     setIsCreateModalOpen(true);
+    navigate('/appointments/new');
   };
 
   const handleCreateAppointment = async (payload: {
@@ -715,6 +832,7 @@ export const Appointments: React.FC = () => {
       );
       showToast('success', 'Cita programada', accessToken ? 'La nueva cita se creó correctamente.' : 'La cita quedó guardada en Ristak y se sincronizará cuando conectes HighLevel.');
       setIsCreateModalOpen(false);
+      navigateCalendarView({ replace: true });
       await loadEvents();
       await loadUpcomingEvents();
     } catch (error) {
@@ -724,17 +842,34 @@ export const Appointments: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    if (!routeState.create) return;
+    if (!selectedCalendar || isCreateModalOpen) return;
+
+    const { start: startISO, end: endISO } = buildCreateDefaultTimes(currentDate, 0);
+    setCreateDefaults({
+      start: startISO,
+      end: endISO,
+      timeZone: timezone,
+      title: selectedCalendar?.eventTitle || ''
+    });
+    setCreateScheduleMode('default');
+    setIsCreateModalOpen(true);
+  }, [currentDate, isCreateModalOpen, routeState.create, selectedCalendar, timezone]);
+
   // Manejar apertura del modal de cita
   const handleEventClick = (event: CalendarEvent) => {
     setSelectedEvent(event);
     setIsModalOpen(true);
+    navigate(`/appointments/appointments/${encodeURIComponent(event.id)}`);
   };
 
   useEffect(() => {
     const openType = searchParams.get('open');
-    const appointmentId = searchParams.get('id');
+    const legacyAppointmentId = openType === 'appointment' ? searchParams.get('id') : '';
+    const appointmentId = routeState.appointmentId || legacyAppointmentId;
 
-    if (openType !== 'appointment' || !appointmentId) {
+    if (!appointmentId) {
       handledOpenAppointmentRef.current = null;
       return;
     }
@@ -751,6 +886,7 @@ export const Appointments: React.FC = () => {
     let isMounted = true;
 
     const clearOpenParams = () => {
+      if (!legacyAppointmentId) return;
       const nextParams = new URLSearchParams(searchParams);
       nextParams.delete('open');
       nextParams.delete('id');
@@ -778,8 +914,9 @@ export const Appointments: React.FC = () => {
           setCurrentDate(eventDate);
         }
 
-        setViewMode('day');
-        handleEventClick(normalizedEvent);
+        setCalendarView('day', eventDate);
+        setSelectedEvent(normalizedEvent);
+        setIsModalOpen(true);
       } catch {
         if (isMounted) {
           showToast('error', 'No se pudo abrir la cita', 'El resultado existe, pero no se pudo cargar el detalle.');
@@ -796,15 +933,18 @@ export const Appointments: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [accessToken, calendars, loading, locationId, searchParams, selectCalendar, setSearchParams, showToast]);
+  }, [accessToken, calendars, loading, locationId, routeState.appointmentId, searchParams, selectCalendar, setCalendarView, setSearchParams, showToast, timezone]);
 
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setSelectedEvent(null);
+    navigateCalendarView({ replace: true });
   };
 
   // Actualizar cita
-  const handleSaveAppointment = async (eventId: string, updates: Partial<CalendarEvent>) => {
+  const handleSaveAppointment = async (eventId: string, updates?: Partial<CalendarEvent>) => {
+    if (!updates) return;
+
     try {
       await calendarsService.updateAppointment(eventId, updates, accessToken || undefined);
       showToast('success', 'Cita actualizada', accessToken ? 'Los cambios se guardaron correctamente.' : 'Los cambios quedaron guardados en Ristak y pendientes de sync.');
@@ -976,6 +1116,8 @@ export const Appointments: React.FC = () => {
       assignedUserId: draggedEvent.assignedUserId,
       address: draggedEvent.address,
       notes: draggedEvent.notes,
+      locationId: draggedEvent.locationId || locationId || '',
+      dateAdded: draggedEvent.dateAdded || new Date().toISOString(),
       timeZone: timezone
     };
 
@@ -1100,7 +1242,8 @@ export const Appointments: React.FC = () => {
     });
     setCreateScheduleMode('custom'); // Selección de tiempo usa modo personalizado
     setIsCreateModalOpen(true);
-  }, [isSelecting, selectionStart, selectionEnd, selectedCalendar, timezone]);
+    navigate('/appointments/new');
+  }, [isSelecting, navigate, selectionStart, selectionEnd, selectedCalendar, timezone]);
 
   // useEffect para manejar mouseUp global (finalizar selección de tiempo)
   useEffect(() => {
@@ -1138,6 +1281,7 @@ export const Appointments: React.FC = () => {
     });
     setCreateScheduleMode('custom'); // Doble click en hora usa modo personalizado
     setIsCreateModalOpen(true);
+    navigate('/appointments/new');
   };
 
   // Color del evento según estado (compatible con dark mode)
@@ -1176,9 +1320,12 @@ export const Appointments: React.FC = () => {
           {/* Selector de calendarios */}
           <div className={styles.calendarSelector}>
             <button
+              type="button"
               className={styles.calendarDropdownButton}
               onClick={() => setIsCalendarDropdownOpen(!isCalendarDropdownOpen)}
               disabled={loading || calendars.length === 0}
+              aria-expanded={isCalendarDropdownOpen}
+              data-ristak-dropdown-trigger
             >
               <span className={styles.dropdownButtonText}>
                 {selectedCalendar?.name || 'Selecciona un calendario'}
@@ -1195,7 +1342,7 @@ export const Appointments: React.FC = () => {
                 className={styles.dropdownOverlay}
                 onClick={() => setIsCalendarDropdownOpen(false)}
               />
-              <div className={styles.dropdownMenu}>
+              <div className={styles.dropdownMenu} data-ristak-dropdown-panel>
                 {calendars.length === 0 ? (
                   <div className={styles.dropdownEmpty}>
                     No hay calendarios disponibles
@@ -1205,10 +1352,13 @@ export const Appointments: React.FC = () => {
                     <button
                       key={calendar.id}
                       className={`${styles.dropdownItem} ${selectedCalendar?.id === calendar.id ? styles.dropdownItemActive : ''}`}
-                      onClick={() => {
-                        selectCalendar(calendar);
-                        setIsCalendarDropdownOpen(false);
-                      }}
+                      data-ristak-dropdown-item
+                      data-selected={selectedCalendar?.id === calendar.id ? 'true' : undefined}
+	                      onClick={() => {
+	                        selectCalendar(calendar);
+                          navigateCalendarView({ calendarId: calendar.id });
+	                        setIsCalendarDropdownOpen(false);
+	                      }}
                     >
                       <span className={styles.dropdownItemText}>{calendar.name}</span>
                       {selectedCalendar?.id === calendar.id && (
@@ -1263,14 +1413,16 @@ export const Appointments: React.FC = () => {
                   className={styles.searchOverlay}
                   onClick={() => setIsSearchDropdownOpen(false)}
                 />
-                <div className={styles.searchDropdown}>
+                <div className={styles.searchDropdown} data-ristak-dropdown-panel>
                   {searchResults.map((event) => {
                     const eventDate = new Date(event.startTime);
                     return (
-                      <button
-                        key={event.id}
-                        className={styles.searchResultItem}
-                        onClick={() => handleSelectSearchResult(event)}
+	                      <button
+	                        key={event.id}
+                          type="button"
+	                        className={styles.searchResultItem}
+                          data-ristak-dropdown-item
+	                        onClick={() => handleSelectSearchResult(event)}
                       >
                         <div className={styles.searchResultInfo}>
                           <div className={styles.searchResultTitle}>
@@ -1294,7 +1446,7 @@ export const Appointments: React.FC = () => {
                   className={styles.searchOverlay}
                   onClick={() => setIsSearchDropdownOpen(false)}
                 />
-                <div className={styles.searchDropdown}>
+                <div className={styles.searchDropdown} data-ristak-dropdown-panel>
                   <div className={styles.searchEmpty}>
                     No se encontraron citas
                   </div>
@@ -1315,28 +1467,29 @@ export const Appointments: React.FC = () => {
         </div>
       </div>
 
-      {/* KPIs */}
-      <div className={styles.statsGrid}>
-        <KpiCard
-          title="Citas pendientes · mes seleccionado"
-          value={stats.pending}
-        />
-        <KpiCard
-          title="Asistencias · mes seleccionado"
-          value={stats.showed}
-        />
-        <KpiCard
-          title="Citas canceladas · mes seleccionado"
-          value={stats.cancelled}
-        />
-        <KpiCard
-          title="Citas reprogramadas · mes seleccionado"
-          value={stats.rescheduled}
-        />
-      </div>
-
       {/* Grid principal */}
       <div className={`${styles.mainGrid}${viewMode === 'month' ? ` ${styles.mainGridMonth}` : ''}`}>
+        <div className={styles.calendarColumn}>
+          {/* KPIs */}
+          <div className={styles.statsGrid}>
+            <KpiCard
+              title="Citas pendientes · mes seleccionado"
+              value={stats.pending}
+            />
+            <KpiCard
+              title="Asistencias · mes seleccionado"
+              value={stats.showed}
+            />
+            <KpiCard
+              title="Citas canceladas · mes seleccionado"
+              value={stats.cancelled}
+            />
+            <KpiCard
+              title="Citas reprogramadas · mes seleccionado"
+              value={stats.rescheduled}
+            />
+          </div>
+
         {/* Calendario */}
         <Card className={`${styles.calendarCard}${viewMode === 'month' ? ` ${styles.calendarCardMonth}` : ''}`}>
           <div className={`${styles.calendarCardContent}${viewMode === 'month' ? ` ${styles.calendarContentMonth}` : ''}`}>
@@ -1364,11 +1517,15 @@ export const Appointments: React.FC = () => {
             </div>
 
             <TabList
-              tabs={viewTabs}
-              activeTab={viewMode}
-              onTabChange={(value) => setViewMode(value as ViewMode)}
-              variant="compact"
-            />
+	              tabs={viewTabs}
+	              activeTab={viewMode}
+	              onTabChange={(value) => {
+                  if (isAppointmentView(value)) {
+                    setCalendarView(value);
+                  }
+                }}
+	              variant="compact"
+	            />
 
             <div className={styles.dateNav}>
               <Button variant="secondary" onClick={handleToday} size="sm">
@@ -1397,12 +1554,13 @@ export const Appointments: React.FC = () => {
                           <button
                             key={index}
                             className={`${styles.selectorItem} ${currentDate.getMonth() === index ? styles.selectorItemActive : ''}`}
-                            onClick={() => {
-                              const newDate = new Date(currentDate);
-                              newDate.setMonth(index);
-                              setCurrentDate(newDate);
-                              setIsMonthDropdownOpen(false);
-                            }}
+	                            onClick={() => {
+	                              const newDate = new Date(currentDate);
+	                              newDate.setMonth(index);
+	                              setCurrentDate(newDate);
+                                navigateCalendarView({ date: newDate });
+	                              setIsMonthDropdownOpen(false);
+	                            }}
                           >
                             {month}
                           </button>
@@ -1429,12 +1587,13 @@ export const Appointments: React.FC = () => {
                           <button
                             key={year}
                             className={`${styles.selectorItem} ${currentDate.getFullYear() === year ? styles.selectorItemActive : ''}`}
-                            onClick={() => {
-                              const newDate = new Date(currentDate);
-                              newDate.setFullYear(year);
-                              setCurrentDate(newDate);
-                              setIsYearDropdownOpen(false);
-                            }}
+	                            onClick={() => {
+	                              const newDate = new Date(currentDate);
+	                              newDate.setFullYear(year);
+	                              setCurrentDate(newDate);
+                                navigateCalendarView({ date: newDate });
+	                              setIsYearDropdownOpen(false);
+	                            }}
                           >
                             {year}
                           </button>
@@ -1992,6 +2151,9 @@ export const Appointments: React.FC = () => {
           )}
           </div>
         </Card>
+        </div>
+
+        <aside className={styles.sideColumn}>
 
         {/* Próximas citas */}
         <Card className={styles.upcomingCard}>
@@ -2027,6 +2189,28 @@ export const Appointments: React.FC = () => {
             )}
           </div>
         </Card>
+
+        <Card className={styles.automationCard}>
+          <div className={styles.cardHeader}>
+            <h3>Mensajes automáticos</h3>
+          </div>
+
+          <div className={styles.automationList}>
+            {automaticMessageCards.map(({ title, detail, Icon }) => (
+              <div key={title} className={styles.automationItem}>
+                <div className={styles.automationIcon}>
+                  <Icon size={16} aria-hidden="true" />
+                </div>
+                <div className={styles.automationCopy}>
+                  <div className={styles.automationTitle}>{title}</div>
+                  <div className={styles.automationDetail}>{detail}</div>
+                </div>
+                <span className={styles.automationBadge}>Próximamente</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+        </aside>
       </div>
 
       {/* Modal de detalles/edición de cita */}
@@ -2036,8 +2220,8 @@ export const Appointments: React.FC = () => {
         event={selectedEvent}
         calendar={selectedCalendar}
         mode="view"
-        accessToken={accessToken}
-        locationId={locationId}
+        accessToken={accessToken ?? undefined}
+        locationId={locationId ?? undefined}
         onSave={handleSaveAppointment}
         onDelete={handleDeleteAppointment}
       />
@@ -2045,7 +2229,10 @@ export const Appointments: React.FC = () => {
       {/* Modal de creación de cita */}
       <AppointmentModal
         isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
+        onClose={() => {
+          setIsCreateModalOpen(false);
+          navigateCalendarView({ replace: true });
+        }}
         calendar={selectedCalendar}
         mode="create"
         defaultStart={createDefaults.start}
@@ -2053,8 +2240,8 @@ export const Appointments: React.FC = () => {
         defaultTimeZone={createDefaults.timeZone}
         defaultTitle={createDefaults.title}
         defaultScheduleMode={createScheduleMode}
-        accessToken={accessToken}
-        locationId={locationId}
+        accessToken={accessToken ?? undefined}
+        locationId={locationId ?? undefined}
         onSave={handleCreateAppointment}
       />
 
@@ -2071,8 +2258,8 @@ export const Appointments: React.FC = () => {
         defaultStart={createDefaults.start}
         defaultEnd={createDefaults.end}
         defaultTimeZone={timezone}
-        accessToken={accessToken}
-        locationId={locationId}
+        accessToken={accessToken ?? undefined}
+        locationId={locationId ?? undefined}
         onSave={handleSaveBlockedSlot}
         onDelete={handleDeleteBlockedSlot}
       />

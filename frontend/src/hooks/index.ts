@@ -1,8 +1,13 @@
 // Hooks personalizados de la app
 export { useAppConfig, useTableConfig } from './useAppConfig'
+export { usePhoneTheme, isPhoneThemePreference, type PhoneThemePreference, type PhoneThemeTone } from './usePhoneTheme'
+export { usePhoneElasticScroll } from './usePhoneElasticScroll'
+export { usePhoneWakeLock } from './usePhoneWakeLock'
 export { useChartHover } from './useChartHover'
 export { useMetaTimezone } from './useMetaTimezone'
 export { useLogoContrast } from './useLogoContrast'
 export { useIsRenderDomain } from './useIsRenderDomain'
 export { useDomainFeatureSync } from './useDomainFeatureSync'
 export { useHighLevelConnected } from './useHighLevelConnected'
+export { useAIAgentAvailability } from './useAIAgentAvailability'
+export { useBottomSheetDismiss } from './useBottomSheetDismiss'

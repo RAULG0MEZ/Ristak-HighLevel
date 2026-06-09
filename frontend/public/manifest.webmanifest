@@ -1,0 +1,94 @@
+{
+  "id": "/dashboard",
+  "name": "Ristak",
+  "short_name": "Ristak",
+  "description": "Panel de Ristak para revisar marketing, contactos, citas, ventas y pagos.",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/ristak-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/ristak-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "short_name": "Dashboard",
+      "url": "/dashboard",
+      "icons": [
+        {
+          "src": "/ristak-icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Contactos",
+      "short_name": "Contactos",
+      "url": "/contacts",
+      "icons": [
+        {
+          "src": "/ristak-icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Citas",
+      "short_name": "Citas",
+      "url": "/appointments",
+      "icons": [
+        {
+          "src": "/ristak-icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Reportes",
+      "short_name": "Reportes",
+      "url": "/reports",
+      "icons": [
+        {
+          "src": "/ristak-icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Configuracion",
+      "short_name": "Ajustes",
+      "url": "/settings",
+      "icons": [
+        {
+          "src": "/ristak-icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ]
+}

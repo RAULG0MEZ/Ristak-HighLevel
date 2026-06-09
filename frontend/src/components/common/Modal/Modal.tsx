@@ -1,11 +1,13 @@
-import React, { useEffect } from 'react'
+import React, { useCallback, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Info, AlertCircle, ShieldAlert } from 'lucide-react'
+import { useBottomSheetDismiss } from '@/hooks'
 import { Button } from '../Button'
 import styles from './Modal.module.css'
 
 type ModalType = 'confirm' | 'alert' | 'info' | 'custom'
 type ModalSize = 'sm' | 'md' | 'lg' | 'xl'
+type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'outline'
 
 interface ModalProps {
   isOpen: boolean
@@ -17,7 +19,14 @@ interface ModalProps {
   confirmText?: string
   cancelText?: string
   onConfirm?: () => void
+  onCancel?: () => void
   showCloseButton?: boolean
+  className?: string
+  backdropClassName?: string
+  contentClassName?: string
+  closeIcon?: React.ReactNode
+  closeAriaLabel?: string
+  draggableSheet?: boolean
   children?: React.ReactNode
 }
 
@@ -27,6 +36,37 @@ const icons = {
   info: <Info size={22} />,
   custom: null
 }
+
+const destructiveConfirmTextSignals = [
+  'eliminar',
+  'borrar',
+  'desconectar',
+  'revocar',
+  'anular',
+  'reembolsar',
+  'salir sin guardar',
+  'cancelar plan',
+  'cancelar pago',
+  'cancelar factura'
+]
+
+const destructiveTitleSignals = [
+  ...destructiveConfirmTextSignals,
+  'cancelar suscripcion',
+  'cancelar subscripcion'
+]
+
+const genericConfirmTexts = new Set(['aceptar', 'confirmar', 'si', 'si continuar', 'si, continuar'])
+
+const normalizeModalText = (text = '') =>
+  text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+
+const includesSignal = (text: string, signals: string[]) =>
+  signals.some(signal => text.includes(signal))
 
 export const Modal: React.FC<ModalProps> = ({
   isOpen,
@@ -38,9 +78,37 @@ export const Modal: React.FC<ModalProps> = ({
   confirmText = 'Aceptar',
   cancelText = 'Cancelar',
   onConfirm,
+  onCancel,
   showCloseButton = true,
+  className = '',
+  backdropClassName = '',
+  contentClassName = '',
+  closeIcon,
+  closeAriaLabel = 'Cerrar modal',
+  draggableSheet = false,
   children
 }) => {
+  const normalizedConfirmText = normalizeModalText(confirmText)
+  const isGenericConfirmText = genericConfirmTexts.has(normalizedConfirmText)
+  const isDestructiveConfirm = type === 'confirm' && (
+    includesSignal(normalizedConfirmText, destructiveConfirmTextSignals) ||
+    (isGenericConfirmText && includesSignal(normalizeModalText(title), destructiveTitleSignals))
+  )
+  const confirmButtonVariant: ButtonVariant = isDestructiveConfirm ? 'danger' : 'primary'
+  const isSystemModal = type !== 'custom'
+
+  const handleCancel = useCallback(() => {
+    onCancel?.()
+    onClose()
+  }, [onCancel, onClose])
+  const bottomSheetDismiss = useBottomSheetDismiss({
+    isOpen: isOpen && draggableSheet,
+    onClose: handleCancel
+  })
+  const closeWithSheetAnimation = bottomSheetDismiss.requestClose
+  const bottomSheetMoving = bottomSheetDismiss.dragging || bottomSheetDismiss.closing || bottomSheetDismiss.dragOffset > 0
+  const bottomSheetDragging = bottomSheetDismiss.dragging || bottomSheetDismiss.dragOffset > 0
+
   useEffect(() => {
     if (!isOpen) return
 
@@ -48,7 +116,8 @@ export const Modal: React.FC<ModalProps> = ({
 
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
-        onClose()
+        if (draggableSheet) closeWithSheetAnimation()
+        else handleCancel()
       }
     }
 
@@ -59,19 +128,32 @@ export const Modal: React.FC<ModalProps> = ({
       document.removeEventListener('keydown', handleEscape)
       document.body.style.overflow = previousBodyOverflow
     }
-  }, [isOpen, onClose])
+  }, [closeWithSheetAnimation, draggableSheet, handleCancel, isOpen])
 
   if (!isOpen) return null
 
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {
-      onClose()
+      if (draggableSheet) closeWithSheetAnimation()
+      else handleCancel()
     }
   }
 
   const modalContent = (
-    <div className={styles.backdrop} onClick={handleBackdropClick} data-phone-modal-root="true">
-      <div className={`${styles.modal} ${styles[type]} ${styles[size]}`}>
+    <div
+      className={`${styles.backdrop} ${isSystemModal ? styles.systemBackdrop : ''} ${draggableSheet ? styles.bottomSheetBackdrop : ''} ${draggableSheet && bottomSheetDragging ? styles.bottomSheetBackdropInteractive : ''} ${draggableSheet && bottomSheetDismiss.closing ? styles.bottomSheetBackdropClosing : ''} ${backdropClassName}`.trim()}
+      style={draggableSheet ? bottomSheetDismiss.backdropStyle : undefined}
+      onClick={handleBackdropClick}
+      data-phone-modal-root="true"
+    >
+      <div
+        className={`${styles.modal} ${styles[type]} ${styles[size]} ${isDestructiveConfirm ? styles.destructive : ''} ${draggableSheet ? styles.bottomSheetModal : ''} ${draggableSheet && bottomSheetMoving ? styles.bottomSheetModalInteractive : ''} ${className}`.trim()}
+        style={draggableSheet ? bottomSheetDismiss.sheetStyle : undefined}
+        {...(draggableSheet ? bottomSheetDismiss.sheetDragProps : {})}
+      >
+        {draggableSheet && (
+          <div className={styles.bottomSheetHandle} aria-hidden="true" />
+        )}
         {/* Solo mostrar header si hay título o botón de cerrar */}
         {(title || showCloseButton) && (
           <div className={styles.header}>
@@ -86,17 +168,17 @@ export const Modal: React.FC<ModalProps> = ({
             {showCloseButton && (
               <button
                 className={styles.closeButton}
-                onClick={onClose}
-                aria-label="Cerrar modal"
+                onClick={draggableSheet ? closeWithSheetAnimation : handleCancel}
+                aria-label={closeAriaLabel}
               >
-                <X size={20} />
+                {closeIcon ?? <X size={20} />}
               </button>
             )}
           </div>
         )}
 
         {(message || children) && (
-          <div className={styles.content} data-phone-scrollable="true">
+          <div className={`${styles.content} ${contentClassName}`.trim()} data-phone-scrollable="true">
             {message && <p className={styles.message}>{message}</p>}
             {children}
           </div>
@@ -108,13 +190,13 @@ export const Modal: React.FC<ModalProps> = ({
               <>
                 <Button
                   variant="secondary"
-                  onClick={onClose}
+                  onClick={handleCancel}
                   size="medium"
                 >
                   {cancelText}
                 </Button>
                 <Button
-                  variant="primary"
+                  variant={confirmButtonVariant}
                   onClick={() => {
                     onConfirm?.()
                     onClose()

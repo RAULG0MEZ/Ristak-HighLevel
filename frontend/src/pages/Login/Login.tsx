@@ -1,29 +1,32 @@
 import React, { useState, FormEvent } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Lock, User, Terminal, Copy, Check } from 'lucide-react'
 import { Button } from '@/components/common'
 import { useAuth } from '@/contexts/AuthContext'
+import { PHONE_APP_HOME_PATH, getPostAuthRedirectPath, type RedirectLocation } from '@/utils/phoneAccess'
 import styles from './Login.module.css'
-
-type RedirectLocation = {
-  pathname?: string
-  search?: string
-  hash?: string
-}
 
 type LoginLocationState = {
   from?: RedirectLocation
 } | null
 
-function getRedirectPath(from?: RedirectLocation) {
-  const pathname = from?.pathname
-
-  if (!pathname?.startsWith('/') || pathname === '/login' || pathname === '/setup') {
-    return '/dashboard'
-  }
-
-  return `${pathname}${from.search || ''}${from.hash || ''}`
-}
+const LoginBrandLogo: React.FC<{ isPhoneLogin: boolean }> = ({ isPhoneLogin }) => (
+  <div className={`${styles.logo} ${isPhoneLogin ? styles.phoneLogo : ''}`}>
+    <picture className={styles.logoPicture}>
+      <source
+        type="image/webp"
+        srcSet="/logo-web-320.webp?v=1 320w, /logo-web-640.webp?v=1 640w"
+        sizes={isPhoneLogin ? '280px' : '240px'}
+      />
+      <img
+        src="/logo-web.png?v=2"
+        alt="Ristak"
+        className={styles.logoImage}
+        decoding="async"
+      />
+    </picture>
+  </div>
+)
 
 export const Login: React.FC = () => {
   const [username, setUsername] = useState('')
@@ -33,10 +36,36 @@ export const Login: React.FC = () => {
   const [showRecovery, setShowRecovery] = useState(false)
   const [copied, setCopied] = useState(false)
 
-  const { login } = useAuth()
+  const { isAuthenticated, isLoading: isAuthLoading, login, needsSetup } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
-  const redirectPath = getRedirectPath((location.state as LoginLocationState)?.from)
+  const fromLocation = (location.state as LoginLocationState)?.from
+  const isPhoneLogin = location.pathname.startsWith('/phone')
+  const redirectPath = getPostAuthRedirectPath(fromLocation, isPhoneLogin ? PHONE_APP_HOME_PATH : '/dashboard')
+
+  if (isAuthLoading) {
+    return (
+      <div className={`${styles.container} ${isPhoneLogin ? styles.phoneContainer : ''}`}>
+        <div className={`${styles.loginBox} ${isPhoneLogin ? styles.phoneLoginBox : ''}`}>
+          <div className={styles.header}>
+            <div className={styles.logoContainer}>
+              <LoginBrandLogo isPhoneLogin={isPhoneLogin} />
+            </div>
+            <h1 className={`${styles.title} ${styles.visuallyHidden}`}>Ristak</h1>
+            <p className={styles.subtitle}>Revisando tu acceso...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (needsSetup) {
+    return <Navigate to="/setup" state={{ from: (location.state as LoginLocationState)?.from || location }} replace />
+  }
+
+  if (isAuthenticated) {
+    return <Navigate to={redirectPath} replace />
+  }
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -72,16 +101,16 @@ export const Login: React.FC = () => {
   }
 
   return (
-    <div className={styles.container}>
-      <div className={styles.loginBox}>
+    <div className={`${styles.container} ${isPhoneLogin ? styles.phoneContainer : ''}`}>
+      <div className={`${styles.loginBox} ${isPhoneLogin ? styles.phoneLoginBox : ''}`}>
         <div className={styles.header}>
           <div className={styles.logoContainer}>
-            <div className={styles.logo}>
-              <Lock size={32} strokeWidth={1.5} />
-            </div>
+            <LoginBrandLogo isPhoneLogin={isPhoneLogin} />
           </div>
-          <h1 className={styles.title}>Ristak</h1>
-          <p className={styles.subtitle}>Ingresa a tu cuenta</p>
+          <h1 className={`${styles.title} ${styles.visuallyHidden}`}>Ristak</h1>
+          <p className={styles.subtitle}>
+            {isPhoneLogin ? 'Entra para ver tus chats, pagos y citas desde el celular.' : 'Ingresa a tu cuenta'}
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className={styles.form}>

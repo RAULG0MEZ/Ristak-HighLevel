@@ -1,0 +1,15878 @@
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  arrayMove,
+  defaultAnimateLayoutChanges,
+  type AnimateLayoutChanges,
+  useSortable,
+  verticalListSortingStrategy
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import {
+  AlertTriangle,
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
+  ArrowDown,
+  ArrowLeft,
+  ArrowUp,
+  Bold,
+  CalendarDays,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  CornerDownRight,
+  DollarSign,
+  Eye,
+  ExternalLink,
+  FileText,
+  Filter,
+  FormInput,
+  Globe2,
+  GripVertical,
+  Image,
+  Instagram,
+  Italic,
+  LayoutTemplate,
+  Link2,
+  ListChecks,
+  Maximize2,
+  Mic,
+  Monitor,
+  MoreVertical,
+  Music2,
+  MousePointerClick,
+  PanelBottom,
+  PanelTop,
+  Paperclip,
+  Pencil,
+  Play,
+  Plus,
+  RefreshCw,
+  Save,
+  Search,
+  Send,
+  Settings2,
+  Sparkles,
+  Smartphone,
+  Trash2,
+  Type,
+  Underline,
+  Unlink2,
+  Upload,
+  Video,
+  X
+} from 'lucide-react'
+import {
+  Button,
+  Loading,
+  NumberInput,
+  CustomSelect,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger
+} from '@/components/common'
+import { useNotification } from '@/contexts/NotificationContext'
+import { useAIAgentAvailability } from '@/hooks'
+import {
+  blockLabels,
+  fieldBlockTypes,
+  formBlockTypes,
+  type ImportedButtonAction,
+  type ImportedButtonActionStep,
+  type ImportedEditableContentType,
+  type ImportedSiteCreateResult,
+  type ImportedSiteFieldMapping,
+  type ImportedSiteFormMapping,
+  type ImportedSiteImport,
+  type SitesAIPreviewVisualElement,
+  type SitesAIPreviewVisualContext,
+  landingBlockTypes,
+  siteTemplates,
+  sitesService,
+  type PublicSite,
+  type SitesAICreationKind,
+  type SitesAICreationMessage,
+  type SitesAIEditDebug,
+  type SitesDomainConfig,
+  type SiteBlock,
+  type SiteBlockOption,
+  type SiteBlockType,
+  type SiteMetaTrigger,
+  type SiteOptionAction,
+  type SitePage,
+  type SiteSubmission,
+  type SiteTemplateMeta,
+  type SiteTemplateId,
+  type SiteTheme,
+  type SiteType
+} from '@/services/sitesService'
+import { aiAgentService } from '@/services/aiAgentService'
+import { campaignsService, type ConnectedSocialProfile } from '@/services/campaignsService'
+import { calendarsService, type Calendar as CalendarType } from '@/services/calendarsService'
+import {
+  customFieldsService,
+  isSystemCustomFieldDefinition,
+  type CustomFieldDefinition
+} from '@/services/customFieldsService'
+import { COUNTRY_OPTIONS, getCountryDefaults, getCountryFlagEmoji, getDetectedAccountLocaleDefaults } from '@/utils/accountLocale'
+import styles from './Sites.module.css'
+import './sitesCanvas.css'
+import { buildCanvasTheme } from './sitesCanvasTheme'
+
+type SitesSection = 'landings' | 'forms' | 'leads' | 'domains'
+type DeviceMode = 'desktop' | 'mobile'
+type CreateFlow =
+  | 'closed'
+  | 'landing-start'
+  | 'landing-template'
+  | 'form-kind'
+  | 'form-start'
+  | 'form-template'
+  | 'interactive-start'
+  | 'interactive-template'
+
+interface LeadRow extends SiteSubmission {
+  siteName: string
+}
+
+interface ImportReviewState {
+  site: PublicSite
+  importData: ImportedSiteImport
+}
+
+type SitesAICreationModalState = {
+  siteKind: SitesAICreationKind
+  editSite?: PublicSite | null
+} | null
+
+type AIEditorGenerationState = {
+  siteId: string
+  siteKind: SitesAICreationKind
+  editMode: boolean
+} | null
+
+type CompletedAIGenerationRedirect = {
+  pendingSiteId: string
+  siteId: string
+  editorPath: string
+} | null
+
+type SitesAICreationModalSubmit = {
+  siteKind: SitesAICreationKind
+  prompt: string
+  attachmentNotes: string[]
+  funnelStyle?: FunnelStyleId
+  primaryAction?: FunnelPrimaryActionId
+  chatgptModel?: string
+  editSite?: PublicSite | null
+  visualContext?: SitesAIPreviewVisualContext | null
+}
+
+type FunnelStyleId = 'vsl' | 'lead_gen' | 'opt_in'
+type FunnelPrimaryActionId = 'buy' | 'schedule' | 'form' | 'whatsapp' | 'download'
+
+const sectionItems: Array<{ id: SitesSection; label: string; icon: React.ReactNode }> = [
+  { id: 'landings', label: 'Sitios web', icon: <LayoutTemplate size={17} /> },
+  { id: 'forms', label: 'Formularios', icon: <FormInput size={17} /> },
+  { id: 'leads', label: 'Respuestas', icon: <ListChecks size={17} /> },
+  { id: 'domains', label: 'Dominios', icon: <Globe2 size={17} /> }
+]
+
+const emptySitesDomainConfig: SitesDomainConfig = {
+  domain: '',
+  renderDomainVerified: false,
+  renderDomainCheckedAt: null,
+  renderDomainError: null
+}
+
+const metaEventOptions = [
+  { value: 'none', label: 'Sin evento (solo PageView)' },
+  { value: 'Lead', label: 'Lead' },
+  { value: 'Schedule', label: 'Schedule' },
+  { value: 'Purchase', label: 'Purchase' },
+  { value: 'FormSubmitted', label: 'FormSubmitted' },
+  { value: 'ViewContent', label: 'ViewContent' },
+  { value: 'CompleteRegistration', label: 'CompleteRegistration' },
+  { value: 'Contact', label: 'Contact' }
+]
+
+const metaTriggerOptions: Array<{ value: SiteMetaTrigger; label: string }> = [
+  { value: 'page_view', label: 'Al aterrizar' },
+  { value: 'form_submit', label: 'Al enviar formulario' }
+]
+
+const normalizeMetaEventName = (value?: string, fallback = 'Lead') =>
+  metaEventOptions.some(option => option.value === value) ? value || fallback : fallback
+
+const normalizeMetaTrigger = (value?: string): SiteMetaTrigger =>
+  value === 'form_submit' ? 'form_submit' : 'page_view'
+
+const ruleActions: Array<{ value: SiteOptionAction; label: string }> = [
+  { value: 'continue', label: 'Continuar' },
+  { value: 'jump', label: 'Saltar a otra pregunta' },
+  { value: 'disqualify', label: 'Descalificar inmediatamente' },
+  { value: 'disqualify_after_submit', label: 'Descalificar al finalizar formulario' },
+  { value: 'redirect', label: 'Dirigir a sitio' }
+]
+const visibleRuleActionValues = new Set<SiteOptionAction>(ruleActions.map(action => action.value))
+const normalizeVisibleRuleAction = (action?: SiteOptionAction): SiteOptionAction => (
+  action && visibleRuleActionValues.has(action) ? action : 'continue'
+)
+
+const SITES_AI_DRAFT_CREATED_EVENT = 'ristak-sites-ai-draft-created'
+const SITES_EDITOR_ACTIVE_EVENT = 'ristak-sites-editor-active'
+const DEFAULT_FUNNEL_PAGE_ID = 'page-1'
+const FORM_THANK_YOU_PAGE_ID = 'page-2'
+const FORM_DISQUALIFIED_PAGE_ID = 'page-3'
+const FORM_FINAL_PAGE_IDS = new Set([FORM_THANK_YOU_PAGE_ID, FORM_DISQUALIFIED_PAGE_ID])
+
+const sitesSectionPathById: Record<SitesSection, string> = {
+  landings: 'web',
+  forms: 'forms',
+  leads: 'responses',
+  domains: 'domains'
+}
+const sitesSectionByPath: Record<string, SitesSection> = {
+  web: 'landings',
+  landings: 'landings',
+  forms: 'forms',
+  leads: 'leads',
+  responses: 'leads',
+  domains: 'domains'
+}
+const sitesCreateFlowPaths: Record<CreateFlow, string> = {
+  closed: '',
+  'landing-start': 'start',
+  'landing-template': 'template',
+  'form-kind': 'kind',
+  'form-start': 'start',
+  'form-template': 'template',
+  'interactive-start': 'interactive-start',
+  'interactive-template': 'interactive-template'
+}
+interface SitesRouteState {
+  section: SitesSection
+  createFlow: CreateFlow
+  siteId: string
+  pageId: string
+  blockId: string
+  device: DeviceMode
+  focus: boolean
+}
+
+const getSiteSection = (site?: PublicSite | null): SitesSection => site?.siteType === 'landing_page' ? 'landings' : 'forms'
+
+const getCreateFlowForRoute = (section: SitesSection, step?: string): CreateFlow => {
+  if (section === 'landings') return step === 'template' ? 'landing-template' : 'landing-start'
+  if (section === 'forms') {
+    if (step === 'interactive-start') return 'interactive-start'
+    if (step === 'interactive-template') return 'interactive-template'
+    if (step === 'start') return 'form-start'
+    if (step === 'template') return 'form-template'
+    return 'form-kind'
+  }
+  return 'closed'
+}
+
+const parseSitesRoute = (pathname: string, search: string): SitesRouteState => {
+  const searchParams = new URLSearchParams(search)
+  const segments = pathname
+    .replace(/^\/+|\/+$/g, '')
+    .split('/')
+    .filter(Boolean)
+  const sitesIndex = segments.indexOf('sites')
+  const routeSegments = sitesIndex >= 0 ? segments.slice(sitesIndex + 1) : []
+  const section = sitesSectionByPath[routeSegments[0] || ''] || 'landings'
+  const firstDetail = routeSegments[1] || ''
+  const isNewRoute = firstDetail === 'new' || firstDetail === 'create'
+  const siteId = isNewRoute ? '' : decodeURIComponent(firstDetail || searchParams.get('siteEditor') || '')
+  const pageMarkerIndex = routeSegments.findIndex(segment => segment === 'pages')
+  const pageId = pageMarkerIndex >= 0 && routeSegments[pageMarkerIndex + 1]
+    ? decodeURIComponent(routeSegments[pageMarkerIndex + 1])
+    : ''
+  const createFlow = isNewRoute ? getCreateFlowForRoute(section, routeSegments[2]) : 'closed'
+  const device = searchParams.get('device') === 'mobile' ? 'mobile' : 'desktop'
+
+  return {
+    section,
+    createFlow,
+    siteId,
+    pageId,
+    blockId: searchParams.get('block') || '',
+    device,
+    focus: searchParams.get('focus') === '1'
+  }
+}
+
+const buildSitesSectionPath = (section: SitesSection) => `/sites/${sitesSectionPathById[section]}`
+
+const buildSitesCreatePath = (section: SitesSection, createFlow: CreateFlow) => {
+  const step = sitesCreateFlowPaths[createFlow] || sitesCreateFlowPaths[getCreateFlowForRoute(section)]
+  return `${buildSitesSectionPath(section)}/new${step ? `/${step}` : ''}`
+}
+
+const buildSitesEditorPath = (options: {
+  section: SitesSection
+  siteId: string
+  pageId?: string
+  device?: DeviceMode
+  focus?: boolean
+}) => {
+  const pageSegment = options.pageId ? `/pages/${encodeURIComponent(options.pageId)}` : ''
+  const query = new URLSearchParams()
+  if (options.device === 'mobile') query.set('device', 'mobile')
+  if (options.focus) query.set('focus', '1')
+  const queryText = query.toString()
+
+  return `${buildSitesSectionPath(options.section)}/${encodeURIComponent(options.siteId)}${pageSegment}${queryText ? `?${queryText}` : ''}`
+}
+const PREVIEW_LOADING_HTML = `<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Previsualizando...</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #f7f9fc;
+        color: #162033;
+        --preview-bg: #f7f9fc;
+        --preview-panel: #ffffff;
+        --preview-text: #162033;
+        --preview-muted: #596579;
+        --preview-ring: rgba(22, 32, 51, 0.08);
+        --preview-shadow: rgba(37, 99, 235, 0.18);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(circle at top, rgba(38, 99, 235, 0.11), transparent 34rem),
+          linear-gradient(180deg, #ffffff 0%, #f3f6fb 100%);
+        color: var(--preview-text);
+      }
+
+      main {
+        width: min(92vw, 34rem);
+        display: grid;
+        justify-items: center;
+        gap: 1.35rem;
+        padding: 2rem;
+        text-align: center;
+      }
+
+      .preview-wheel {
+        position: relative;
+        width: clamp(4.5rem, 18vw, 6rem);
+        aspect-ratio: 1;
+        border-radius: 50%;
+        background: conic-gradient(from 0deg, #2563eb, #16a34a, #f59e0b, #ef4444, #7c3aed, #2563eb);
+        box-shadow: 0 1.35rem 3rem var(--preview-shadow);
+        animation: preview-spin 1.05s linear infinite;
+      }
+
+      .preview-wheel::before {
+        content: "";
+        position: absolute;
+        inset: 0.55rem;
+        border-radius: inherit;
+        background: var(--preview-bg);
+        box-shadow: inset 0 0 0 1px var(--preview-ring);
+      }
+
+      .preview-wheel::after {
+        content: "";
+        position: absolute;
+        top: 0.28rem;
+        left: 50%;
+        width: 0.85rem;
+        aspect-ratio: 1;
+        border-radius: 50%;
+        background: var(--preview-panel);
+        box-shadow: 0 0.35rem 0.9rem rgba(22, 32, 51, 0.16);
+        transform: translateX(-50%);
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(1.45rem, 5vw, 2rem);
+        font-weight: 750;
+        line-height: 1.12;
+        letter-spacing: 0;
+      }
+
+      p {
+        max-width: 25rem;
+        margin: 0.55rem auto 0;
+        color: var(--preview-muted);
+        font-size: 1rem;
+        line-height: 1.55;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          background: #0b1020;
+          color: #eef3ff;
+          --preview-bg: #0b1020;
+          --preview-panel: #111827;
+          --preview-text: #eef3ff;
+          --preview-muted: #a7b0c3;
+          --preview-ring: rgba(255, 255, 255, 0.08);
+          --preview-shadow: rgba(16, 185, 129, 0.2);
+        }
+
+        body {
+          background:
+            radial-gradient(circle at top, rgba(16, 185, 129, 0.16), transparent 34rem),
+            linear-gradient(180deg, #080d18 0%, #101827 100%);
+        }
+      }
+
+      @keyframes preview-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .preview-wheel {
+          animation: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main aria-live="polite" aria-busy="true">
+      <div class="preview-wheel" role="img" aria-label="Cargando"></div>
+      <section>
+        <h1>Cargando previsualización</h1>
+        <p>Estamos preparando tu página para verla completa.</p>
+      </section>
+    </main>
+  </body>
+</html>`
+
+const writePreviewLoadingPage = (previewWindow: Window) => {
+  previewWindow.document.open()
+  previewWindow.document.write(PREVIEW_LOADING_HTML)
+  previewWindow.document.close()
+}
+
+const PAGE_SELECTED_ID = '__page__'
+const POPUP_SELECTED_ID = '__popup__'
+const POPUP_SURFACE_ID = 'site-popup'
+const isEditorSurfaceSelection = (id: string) => id === PAGE_SELECTED_ID || id === POPUP_SELECTED_ID
+const LANDING_DEFAULT_PAGE_PADDING = 36
+const HEADER_PANEL_BLOCK_TYPE: SiteBlockType = 'header_panel'
+const FOOTER_PANEL_BLOCK_TYPE: SiteBlockType = 'footer_panel'
+const PANEL_BLOCK_TYPES = new Set<SiteBlockType>([HEADER_PANEL_BLOCK_TYPE, FOOTER_PANEL_BLOCK_TYPE])
+type HeaderScope = 'global' | 'page'
+const HEADER_SCOPE_GLOBAL: HeaderScope = 'global'
+const HEADER_SCOPE_PAGE: HeaderScope = 'page'
+const SPACING_OVERLAP_MIN = -80
+const makeLandingSpacing = (top: number, bottom: number, right = 0, left = 0) => ({
+  blockMarginLinked: false,
+  blockMarginTop: top,
+  blockMarginRight: right,
+  blockMarginBottom: bottom,
+  blockMarginLeft: left,
+  blockPaddingLinked: true,
+  blockPadding: 0,
+  blockPaddingTop: 0,
+  blockPaddingRight: 0,
+  blockPaddingBottom: 0,
+  blockPaddingLeft: 0
+})
+const LANDING_DEFAULT_BLOCK_SPACING: Partial<Record<SiteBlockType, ReturnType<typeof makeLandingSpacing>>> = {
+  headline: makeLandingSpacing(0, 10),
+  title: makeLandingSpacing(0, 10),
+  subheading: makeLandingSpacing(6, 14),
+  subtitle: makeLandingSpacing(6, 14),
+  description: makeLandingSpacing(6, 16),
+  text: makeLandingSpacing(8, 16),
+  image: makeLandingSpacing(16, 18),
+  video: makeLandingSpacing(16, 18),
+  embed: makeLandingSpacing(16, 18),
+  calendar_embed: makeLandingSpacing(16, 18),
+  button: makeLandingSpacing(18, 18),
+  hero: makeLandingSpacing(0, 0),
+  benefits: makeLandingSpacing(0, 0),
+  testimonials: makeLandingSpacing(0, 0),
+  services: makeLandingSpacing(0, 0),
+  faq: makeLandingSpacing(0, 0),
+  form_embed: makeLandingSpacing(18, 0),
+  cta: makeLandingSpacing(0, 0),
+  header_panel: makeLandingSpacing(0, 0),
+  footer_panel: makeLandingSpacing(0, 0)
+}
+const getLandingDefaultBlockSpacing = (blockType: SiteBlockType) =>
+  LANDING_DEFAULT_BLOCK_SPACING[blockType] || makeLandingSpacing(10, 14)
+const isZeroSpacingValue = (value: unknown) => {
+  if (value === undefined || value === null || value === '') return true
+  const numberValue = Number(value)
+  return Number.isFinite(numberValue) && numberValue === 0
+}
+const hasLegacyLandingBlockSpacing = (block: SiteBlock) => {
+  if (fieldBlockTypes.has(block.blockType) || block.blockType === SECTION_BLOCK_TYPE || PANEL_BLOCK_TYPES.has(block.blockType)) return false
+  const settings = block.settings || {}
+  const top = Number(settings.blockMarginTop)
+  const bottom = Number(settings.blockMarginBottom)
+  const hasOldVerticalMargin = top === 50 || bottom === 50
+  if (!hasOldVerticalMargin) return false
+  if (!isZeroSpacingValue(settings.blockMarginRight) || !isZeroSpacingValue(settings.blockMarginLeft)) return false
+  return ['blockPadding', 'blockPaddingTop', 'blockPaddingRight', 'blockPaddingBottom', 'blockPaddingLeft']
+    .every(key => isZeroSpacingValue(settings[key]))
+}
+const normalizeLegacyLandingBlockSpacing = (block: SiteBlock): SiteBlock => {
+  if (!hasLegacyLandingBlockSpacing(block)) return block
+  return {
+    ...block,
+    settings: {
+      ...(block.settings || {}),
+      ...getLandingDefaultBlockSpacing(block.blockType)
+    }
+  }
+}
+const normalizeSiteForEditor = (site: PublicSite): PublicSite => ({
+  ...site,
+  blocks: site.blocks?.map(normalizeLegacyLandingBlockSpacing)
+})
+const isImportedHtmlSite = (site?: PublicSite | null) =>
+  Boolean(site?.theme?.importedHtml || site?.theme?.template === 'imported_html')
+const IMPORTED_POPUP_PATTERN = /(<dialog\b|role=["']dialog["']|aria-modal=["']true["']|(?:id|class|data-[\w-]+)=["'][^"']*(?:popup|pop-up|modal|dialog|lightbox|overlay|exit-intent|newsletter)[^"']*["'])/i
+const importedHtmlHasPopup = (importData?: ImportedSiteImport | null) => {
+  const html = `${importData?.htmlSanitized || ''}\n${importData?.htmlOriginal || ''}`
+  return IMPORTED_POPUP_PATTERN.test(html)
+}
+const getAIAgentSiteKindForSite = (site: PublicSite): SitesAICreationKind => {
+  if (site.siteType === 'interactive_form') return 'interactive_form'
+  if (site.siteType === 'standard_form') return 'form'
+  return 'landing'
+}
+const getSiteTypeForAICreationKind = (siteKind: SitesAICreationKind): SiteType => {
+  if (siteKind === 'interactive_form') return 'interactive_form'
+  if (siteKind === 'form') return 'standard_form'
+  return 'landing_page'
+}
+const getPendingAIGenerationName = (siteKind: SitesAICreationKind) => {
+  if (siteKind === 'interactive_form') return 'Generando formulario interactivo con IA'
+  if (siteKind === 'form') return 'Generando formulario con IA'
+  return 'Generando página con IA'
+}
+const makePendingAIGenerationSite = (siteKind: SitesAICreationKind): PublicSite => {
+  const now = new Date().toISOString()
+  const siteType = getSiteTypeForAICreationKind(siteKind)
+  const name = getPendingAIGenerationName(siteKind)
+
+  return normalizeSiteForEditor({
+    id: `ai-pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    name,
+    slug: 'generando-con-ia',
+    siteType,
+    status: 'draft',
+    domain: '',
+    title: name,
+    description: 'Ristak está generando esta página con inteligencia artificial.',
+    theme: {
+      template: siteType === 'interactive_form' ? 'interactive' : siteType === 'standard_form' ? 'compact' : 'ristak',
+      pages: [
+        {
+          id: DEFAULT_FUNNEL_PAGE_ID,
+          title: siteType === 'landing_page' ? 'Página inicial' : 'Formulario',
+          sortOrder: 0
+        }
+      ]
+    },
+    metaCapiEnabled: false,
+    metaEventName: 'Lead',
+    renderDomainVerified: false,
+    renderDomainCheckedAt: null,
+    renderDomainError: null,
+    publishedAt: null,
+    createdAt: now,
+    updatedAt: now,
+    submissionsCount: 0,
+    trackingStats: {
+      views: 0,
+      visitors: 0,
+      sessions: 0,
+      conversions: 0,
+      conversionRate: 0
+    },
+    blocks: [],
+    submissions: []
+  })
+}
+const fileToBase64 = (file: File) => new Promise<string>((resolve, reject) => {
+  const reader = new FileReader()
+  reader.onload = () => resolve(String(reader.result || ''))
+  reader.onerror = () => reject(reader.error || new Error('No se pudo leer el archivo'))
+  reader.readAsDataURL(file)
+})
+const DEFAULT_BUTTON_SETTINGS = {
+  buttonAlign: 'center',
+  buttonRadius: 28,
+  buttonHeight: 54,
+  buttonPaddingX: 28
+}
+const GOOGLE_FONT_OPTIONS = [
+  { label: 'Sistema', value: '' },
+  { label: 'Inter', value: "'Inter', system-ui, sans-serif" },
+  { label: 'Inter Tight', value: "'Inter Tight', 'Inter', system-ui, sans-serif" },
+  { label: 'Roboto', value: "'Roboto', Arial, sans-serif" },
+  { label: 'Open Sans', value: "'Open Sans', Arial, sans-serif" },
+  { label: 'Lato', value: "'Lato', Arial, sans-serif" },
+  { label: 'Montserrat', value: "'Montserrat', Arial, sans-serif" },
+  { label: 'Poppins', value: "'Poppins', Arial, sans-serif" },
+  { label: 'Oswald', value: "'Oswald', Arial, sans-serif" },
+  { label: 'Raleway', value: "'Raleway', Arial, sans-serif" },
+  { label: 'Nunito', value: "'Nunito', Arial, sans-serif" },
+  { label: 'Work Sans', value: "'Work Sans', Arial, sans-serif" },
+  { label: 'Manrope', value: "'Manrope', Arial, sans-serif" },
+  { label: 'Barlow', value: "'Barlow', Arial, sans-serif" },
+  { label: 'Archivo', value: "'Archivo', Arial, sans-serif" },
+  { label: 'Bebas Neue', value: "'Bebas Neue', Impact, sans-serif" },
+  { label: 'Playfair Display', value: "'Playfair Display', Georgia, serif" },
+  { label: 'Merriweather', value: "'Merriweather', Georgia, serif" },
+  { label: 'Libre Baskerville', value: "'Libre Baskerville', Georgia, serif" },
+  { label: 'Georgia', value: "Georgia, 'Times New Roman', serif" }
+]
+const SECTION_BLOCK_TYPE: SiteBlockType = 'section'
+const DEFAULT_SECTION_GAP = 24
+const isTopLevelLandingBlockType = (blockType?: SiteBlockType) =>
+  blockType === SECTION_BLOCK_TYPE || Boolean(blockType && PANEL_BLOCK_TYPES.has(blockType))
+const hasDataTransferType = (dataTransfer: DataTransfer, type: string) =>
+  Array.from(dataTransfer.types || []).includes(type)
+const MAX_SITES_EDITOR_HISTORY = 40
+const isNativeUndoTarget = (target: EventTarget | null) => {
+  const element = target instanceof HTMLElement ? target : null
+  return Boolean(element?.closest('input, textarea, select, [contenteditable="true"], [data-rstk-edit]'))
+}
+
+type PaletteDragPayload = {
+  blockType: SiteBlockType
+  initialSettings?: Record<string, unknown>
+}
+
+type PaletteSectionTarget = {
+  sectionId: string
+  sectionColumn: number
+}
+
+type PaletteDragPosition = {
+  x: number
+  y: number
+}
+
+type BlockMoveDirection = 'up' | 'down'
+type BlockMoveState = {
+  canMoveUp: boolean
+  canMoveDown: boolean
+}
+
+type EditorHistoryEntry = {
+  action: 'reorder' | 'delete'
+  siteId: string
+  pageId?: string
+  selectedBefore: string
+  selectedAfter: string
+  beforeBlockIds: string[]
+  afterBlockIds: string[]
+  deletedRootBlockId?: string
+  deletedBlocks?: SiteBlock[]
+}
+
+type AddBlockOptions = {
+  insertIndex?: number
+  initialSettings?: Record<string, unknown>
+  sectionId?: string
+  sectionColumn?: number
+}
+
+type PaletteItem = {
+  id: string
+  label: string
+  blockType: SiteBlockType
+  initialSettings?: Record<string, unknown>
+}
+
+interface LandingSectionLane {
+  id: string
+  section: SiteBlock | null
+  columns: number
+  columnBlocks: SiteBlock[][]
+  sortOrder: number
+}
+
+type LandingBlockOrderGroup = {
+  id: string
+  sortOrder: number
+  blocks: SiteBlock[]
+}
+
+type ButtonAction = 'url' | 'next_page' | 'specific_page' | 'open_popup' | 'close_popup'
+type FormCompletionAction = 'form_default' | 'next_page' | 'next_page_if_qualified'
+type PopupTrigger = NonNullable<SiteTheme['popupTrigger']>
+type PopupCloseDisplay = NonNullable<SiteTheme['popupCloseDisplay']>
+type PopupCloseIcon = NonNullable<SiteTheme['popupCloseIcon']>
+
+const blockIcons: Partial<Record<SiteBlockType, React.ReactNode>> = {
+  headline: <Type size={15} />,
+  subheading: <Type size={15} />,
+  title: <Type size={15} />,
+  subtitle: <Type size={15} />,
+  description: <FileText size={15} />,
+  text: <FileText size={15} />,
+  embed: <Globe2 size={15} />,
+  calendar_embed: <CalendarDays size={15} />,
+  section: <LayoutTemplate size={15} />,
+  header_panel: <PanelTop size={15} />,
+  footer_panel: <PanelBottom size={15} />,
+  hero: <LayoutTemplate size={15} />,
+  image: <Image size={15} />,
+  video: <Video size={15} />,
+  button: <MousePointerClick size={15} />,
+  benefits: <ListChecks size={15} />,
+  testimonials: <FileText size={15} />,
+  services: <LayoutTemplate size={15} />,
+  form_embed: <FormInput size={15} />,
+  social_profile: <Instagram size={15} />,
+  faq: <ListChecks size={15} />,
+  cta: <Send size={15} />,
+  short_text: <FormInput size={15} />,
+  paragraph: <FileText size={15} />,
+  currency: <DollarSign size={15} />,
+  number: <FormInput size={15} />,
+  dropdown: <ListChecks size={15} />,
+  radio: <ListChecks size={15} />,
+  checkboxes: <ListChecks size={15} />,
+  phone: <FormInput size={15} />,
+  email: <FormInput size={15} />,
+  date: <FormInput size={15} />
+}
+
+const isChoiceBlock = (blockType: SiteBlockType) =>
+  blockType === 'dropdown' || blockType === 'radio' || blockType === 'checkboxes'
+
+const nativeBorderBlockTypes = new Set<SiteBlockType>(['hero', 'section', 'cta', 'benefits', 'testimonials', 'services', 'faq', 'form_embed', 'social_profile', 'image', 'video', 'embed', 'calendar_embed'])
+
+const isLanding = (site?: PublicSite | null) => site?.siteType === 'landing_page'
+const isStandardForm = (site?: PublicSite | null) => site?.siteType === 'standard_form'
+const isInteractiveForm = (site?: PublicSite | null) => site?.siteType === 'interactive_form'
+const isFormSite = (site?: PublicSite | null) => site?.siteType === 'standard_form' || site?.siteType === 'interactive_form'
+const hasEditablePages = (site?: PublicSite | null) => isLanding(site) || isInteractiveForm(site) || isStandardForm(site)
+const canManagePages = (site?: PublicSite | null) => hasEditablePages(site)
+const isFormFinalPageId = (pageId?: string) => Boolean(pageId && FORM_FINAL_PAGE_IDS.has(pageId))
+const isFormFinalPage = (page?: SitePage | null) => isFormFinalPageId(page?.id)
+
+const formatDate = (value?: string | null) => {
+  if (!value) return 'Sin fecha'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('es-MX', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(date)
+}
+
+const slugifyName = (value: string) => value
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, '_')
+  .replace(/^_+|_+$/g, '') || 'field'
+
+const getStatusLabel = (site: PublicSite, domainConfig: SitesDomainConfig) => {
+  if (site.status !== 'published') return site.status === 'draft' ? 'Borrador' : 'Archivado'
+  if (!domainConfig.domain) return 'Sin dominio'
+  return domainConfig.renderDomainVerified ? 'Publicado' : 'Dominio pendiente'
+}
+
+const getStatusClass = (site: PublicSite, domainConfig: SitesDomainConfig) => {
+  if (site.status !== 'published') return styles.statusMuted
+  if (!domainConfig.domain || !domainConfig.renderDomainVerified) return styles.statusWarning
+  return styles.statusSuccess
+}
+
+const isPublicSiteLive = (site: PublicSite, domainConfig: SitesDomainConfig) =>
+  site.status === 'published' && Boolean(domainConfig.domain && domainConfig.renderDomainVerified)
+
+const normalizeRouteInput = (value: string) => value
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+  .replace(/^\/+/, '')
+  .replace(/[^a-z0-9]+/g, '-')
+  .replace(/^-+|-+$/g, '')
+
+const getRoutePath = (site?: PublicSite | null) => `/${normalizeRouteInput(site?.slug || '')}`
+const getTrackingSafeRoutePath = (site: PublicSite) => `${getRoutePath(site).replace(/\/$/, '')}/test`
+
+const buildPublicUrl = (site: PublicSite, domainConfig: SitesDomainConfig) =>
+  domainConfig.domain ? `https://${domainConfig.domain}${getTrackingSafeRoutePath(site)}` : ''
+
+const buildLivePublicUrl = (site: PublicSite, domainConfig: SitesDomainConfig) =>
+  domainConfig.domain ? `https://${domainConfig.domain}${getRoutePath(site)}` : ''
+
+const getPublicRouteLabel = (site: PublicSite, domainConfig: SitesDomainConfig) =>
+  domainConfig.domain ? `${domainConfig.domain}${getRoutePath(site)}` : getRoutePath(site)
+
+const getPublicDomainPreview = (domainConfig: SitesDomainConfig) => {
+  const domain = domainConfig.domain.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '')
+  return domain || 'www.ejemplo-de-tu-dominio.com'
+}
+
+const getDefaultSiteNamePrefix = (siteType: SiteType) =>
+  siteType === 'landing_page' ? 'Sitio' : 'Formulario'
+
+const getDefaultRoutePrefix = (siteType: SiteType) =>
+  normalizeRouteInput(getDefaultSiteNamePrefix(siteType))
+
+const getRouteEditorValue = (site?: PublicSite | null) => normalizeRouteInput(site?.slug || '')
+
+const normalizeRouteEditorInput = (value: string, domainConfig: SitesDomainConfig) => {
+  const raw = value.trim()
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      return normalizeRouteInput(new URL(raw).pathname)
+    } catch {
+      return normalizeRouteInput(raw)
+    }
+  }
+
+  const withoutProtocol = raw.replace(/^https?:\/\//i, '')
+  const domain = getPublicDomainPreview(domainConfig).replace(/^https?:\/\//i, '').replace(/\/+$/, '')
+  const withoutDomain = withoutProtocol.toLowerCase().startsWith(`${domain.toLowerCase()}/`)
+    ? withoutProtocol.slice(domain.length)
+    : raw
+
+  return normalizeRouteInput(withoutDomain)
+}
+
+const getNextSiteIdentity = (siteType: SiteType, existingSites: PublicSite[]) => {
+  const namePrefix = getDefaultSiteNamePrefix(siteType)
+  const routePrefix = getDefaultRoutePrefix(siteType)
+  const used = new Set(existingSites.map(site => normalizeRouteInput(site.slug)))
+  let index = 1
+  let suffix = String(index).padStart(2, '0')
+  let slug = `${routePrefix}-${suffix}`
+
+  while (used.has(slug)) {
+    index += 1
+    suffix = String(index).padStart(2, '0')
+    slug = `${routePrefix}-${suffix}`
+  }
+
+  return {
+    name: `${namePrefix} ${suffix}`,
+    slug
+  }
+}
+
+const legacyPublicTitleDefaults = new Set([
+  'nuevo sitio embudo',
+  'nuevo sitio de embudo',
+  'nuevo formulario',
+  'nuevo formulario interactivo'
+])
+
+const isLegacyPublicTitleDefault = (site?: PublicSite | null) =>
+  Boolean(site?.title && legacyPublicTitleDefaults.has(site.title.trim().toLowerCase()))
+
+const getPublicTitleEditorValue = (site?: PublicSite | null) =>
+  isLegacyPublicTitleDefault(site) ? '' : site?.title || ''
+
+const getPublicTitleForSave = (site: PublicSite) =>
+  isLegacyPublicTitleDefault(site) ? '' : site.title
+
+const templateMetaById = (id?: string) => siteTemplates.find(template => template.id === id)
+
+const getTemplateThemeDefaults = (id: SiteTemplateId, siteType: SiteType): Partial<SiteTheme> => {
+  const defaults = { ...(templateMetaById(id)?.defaultTheme || {}) }
+  if (siteType !== 'landing_page') return defaults
+
+  return {
+    ...defaults,
+    pageMaxWidth: defaults.pageMaxWidth ?? 1440,
+    pagePadding: defaults.pagePadding ?? LANDING_DEFAULT_PAGE_PADDING
+  }
+}
+
+const makeTemplateFunnelPage = (id: string, title: string, sortOrder: number): SitePage => ({
+  id,
+  title,
+  sortOrder,
+  metaCapiEnabled: false,
+  metaEventName: 'none',
+  metaTrigger: 'page_view'
+})
+
+const getTemplateFunnelPages = (id: SiteTemplateId): SitePage[] => {
+  if (id === 'launch') {
+    return [
+      makeTemplateFunnelPage(DEFAULT_FUNNEL_PAGE_ID, 'Registro', 0),
+      makeTemplateFunnelPage('page-2', 'Detalles', 1),
+      makeTemplateFunnelPage('page-3', 'Gracias', 2)
+    ]
+  }
+
+  if (id === 'local') {
+    return [
+      makeTemplateFunnelPage(DEFAULT_FUNNEL_PAGE_ID, 'Oferta local', 0),
+      makeTemplateFunnelPage('page-2', 'Contacto', 1),
+      makeTemplateFunnelPage('page-3', 'Gracias', 2)
+    ]
+  }
+
+  if (id === 'facebook' || id === 'instagram' || id === 'tiktok') {
+    return [
+      makeTemplateFunnelPage(DEFAULT_FUNNEL_PAGE_ID, 'Anuncio', 0),
+      makeTemplateFunnelPage('page-2', 'Gracias', 1)
+    ]
+  }
+
+  if (id === 'executive') {
+    return [
+      makeTemplateFunnelPage(DEFAULT_FUNNEL_PAGE_ID, 'Diagnostico', 0),
+      makeTemplateFunnelPage('page-2', 'Agenda', 1),
+      makeTemplateFunnelPage('page-3', 'Gracias', 2)
+    ]
+  }
+
+  if (id === 'vsl') {
+    return [
+      makeTemplateFunnelPage(DEFAULT_FUNNEL_PAGE_ID, 'Carta de ventas', 0),
+      makeTemplateFunnelPage('page-2', 'Agenda', 1),
+      makeTemplateFunnelPage('page-3', 'Gracias', 2)
+    ]
+  }
+
+  if (id === 'premium') {
+    return [
+      makeTemplateFunnelPage(DEFAULT_FUNNEL_PAGE_ID, 'Presentacion', 0),
+      makeTemplateFunnelPage('page-2', 'Agenda privada', 1),
+      makeTemplateFunnelPage('page-3', 'Gracias', 2)
+    ]
+  }
+
+  return [
+    makeTemplateFunnelPage(DEFAULT_FUNNEL_PAGE_ID, 'Opt-in', 0),
+    makeTemplateFunnelPage('page-2', 'Agenda', 1),
+    makeTemplateFunnelPage('page-3', 'Gracias', 2)
+  ]
+}
+
+const getDefaultFormPages = (): SitePage[] => [
+  makeTemplateFunnelPage(DEFAULT_FUNNEL_PAGE_ID, 'Formulario', 0),
+  makeTemplateFunnelPage(FORM_THANK_YOU_PAGE_ID, 'Agradecimiento', 1),
+  makeTemplateFunnelPage(FORM_DISQUALIFIED_PAGE_ID, 'Descalificacion', 2)
+]
+
+const resolveTemplateId = (site?: PublicSite | null): SiteTemplateId => {
+  const explicit = site?.theme?.template
+  if (explicit && templateMetaById(explicit)) return explicit
+  if (site?.siteType === 'interactive_form') return 'interactive'
+  if (site?.siteType === 'landing_page') return 'ristak'
+  return 'ristak'
+}
+
+const isDarkTemplate = (id: SiteTemplateId) => id === 'tiktok' || id === 'vsl' || id === 'interactive' || id === 'premium'
+
+const isHex6 = (value?: string) => !!value && /^#[0-9a-f]{6}$/i.test(value)
+
+const isCssColor = (value?: string): value is string => {
+  const raw = String(value || '').trim()
+  if (!raw) return false
+  if (raw === 'transparent') return true
+  if (isHex6(raw)) return true
+  const match = raw.match(/^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*(0|1|0?\.\d+))?\s*\)$/i)
+  if (!match) return false
+  const channels = match.slice(1, 4).map(Number)
+  const alpha = match[4] === undefined ? 1 : Number(match[4])
+  return channels.every(channel => channel >= 0 && channel <= 255) && alpha >= 0 && alpha <= 1
+}
+
+const isCssGradient = (value?: string): value is string => {
+  const raw = String(value || '').trim()
+  return /^(linear|radial|conic)-gradient\(/i.test(raw) && !/[;{}<>]/.test(raw)
+}
+
+const isCssPaint = (value?: string): value is string => isCssColor(value) || isCssGradient(value)
+
+const normalizeCssColor = (value: string, fallback: string) => {
+  const raw = String(value || '').trim().toLowerCase()
+  if (!raw) return fallback
+  if (raw === 'transparent') return 'rgba(0, 0, 0, 0)'
+  if (isHex6(raw)) return raw
+  if (!isCssColor(raw)) return fallback
+  const match = raw.match(/^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*(0|1|0?\.\d+))?\s*\)$/i)
+  if (!match) return fallback
+  const [r, g, b] = match.slice(1, 4).map(valuePart => Math.round(Number(valuePart)))
+  const alpha = match[4] === undefined ? 1 : Math.round(Number(match[4]) * 100) / 100
+  return alpha >= 1 ? rgbToHex(r, g, b) : `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
+const normalizeCssPaint = (value: string, fallback: string) => {
+  const raw = String(value || '').trim()
+  if (isCssGradient(raw)) return raw
+  return normalizeCssColor(raw, fallback)
+}
+
+const splitCssArgs = (value: string) => {
+  const parts: string[] = []
+  let current = ''
+  let depth = 0
+
+  for (const char of value) {
+    if (char === '(') depth += 1
+    if (char === ')') depth = Math.max(0, depth - 1)
+    if (char === ',' && depth === 0) {
+      parts.push(current.trim())
+      current = ''
+      continue
+    }
+    current += char
+  }
+
+  if (current.trim()) parts.push(current.trim())
+  return parts
+}
+
+const extractCssColor = (value: string, fallback = '#111827') => {
+  const raw = String(value || '').trim()
+  const match = raw.match(/(#[0-9a-f]{6}|rgba?\([^)]*\)|transparent)/i)
+  return match ? normalizeCssColor(match[1], fallback) : fallback
+}
+
+const paintFallbackColor = (paint: string, fallback = '#111827') =>
+  isCssGradient(paint) ? extractCssColor(paint, fallback) : normalizeCssColor(paint, fallback)
+
+const parseCssColor = (value: string, fallback = '#000000') => {
+  const raw = normalizeCssColor(value, fallback)
+  if (raw.startsWith('#')) {
+    const h = raw.replace('#', '')
+    return {
+      r: parseInt(h.slice(0, 2), 16),
+      g: parseInt(h.slice(2, 4), 16),
+      b: parseInt(h.slice(4, 6), 16),
+      a: 1
+    }
+  }
+  const match = raw.match(/^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*(0|1|0?\.\d+))?\s*\)$/i)
+  if (!match) return parseCssColor(fallback, '#000000')
+  return {
+    r: Number(match[1]),
+    g: Number(match[2]),
+    b: Number(match[3]),
+    a: match[4] === undefined ? 1 : Number(match[4])
+  }
+}
+
+function rgbToHex(r: number, g: number, b: number) {
+  return `#${[r, g, b].map(channel => Math.max(0, Math.min(255, Math.round(channel))).toString(16).padStart(2, '0')).join('')}`
+}
+
+const cssColorToHex = (value: string, fallback = '#000000') => {
+  const { r, g, b } = parseCssColor(value, fallback)
+  return rgbToHex(r, g, b)
+}
+
+const relLum = (hex: string): number => {
+  const h = cssColorToHex(hex).replace('#', '')
+  const lin = (c: number) => {
+    const x = c / 255
+    return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4)
+  }
+  return 0.2126 * lin(parseInt(h.slice(0, 2), 16)) + 0.7152 * lin(parseInt(h.slice(2, 4), 16)) + 0.0722 * lin(parseInt(h.slice(4, 6), 16))
+}
+
+// Readable foreground for a solid accent/button background. Mirrors the backend
+// onAccent resolution so the editor never renders white text on a white button.
+const onAccentFor = (hex: string): string => (isCssColor(hex) && relLum(hex) > 0.6 ? '#08080a' : '#ffffff')
+
+// Mirrors the backend palette resolution so the editor canvas matches the published site.
+const userBgColor = (site: PublicSite): string | null => {
+  const v = site.theme?.backgroundColor
+  if (typeof v !== 'string' || !isCssPaint(v)) return null
+  const paint = normalizeCssPaint(v, '#ffffff')
+  const color = paintFallbackColor(paint, '#ffffff')
+  return color.toLowerCase() !== '#ffffff' ? color : null
+}
+const userAccentColor = (site: PublicSite): string | null => {
+  const v = site.theme?.accentColor
+  if (typeof v !== 'string' || !isCssPaint(v)) return null
+  const paint = normalizeCssPaint(v, '#111827')
+  const color = paintFallbackColor(paint, '#111827')
+  return color.toLowerCase() !== '#111827' ? color : null
+}
+const resolvedPageBg = (site: PublicSite): string => {
+  const id = resolveTemplateId(site)
+  if (id === 'facebook') return '#f0f2f5'
+  if (id === 'instagram') return '#ffffff'
+  if (id === 'tiktok') return '#000000'
+  return userBgColor(site) || (site.siteType === 'landing_page' ? '#08080a' : '#ffffff')
+}
+const isSiteDark = (site: PublicSite): boolean => {
+  const id = resolveTemplateId(site)
+  if (id === 'tiktok') return true
+  if (id === 'facebook' || id === 'instagram') return false
+  return relLum(resolvedPageBg(site)) < 0.5
+}
+
+const defaultAccentForSite = (site: PublicSite): string =>
+  userAccentColor(site) || templateMetaById(resolveTemplateId(site))?.accent || (isSiteDark(site) ? '#ffffff' : '#111827')
+
+const platformChromeFor = (id: SiteTemplateId): SocialPlatform | null => {
+  if (id === 'facebook' || id === 'instagram' || id === 'tiktok') return id
+  return null
+}
+
+const getCreateButtonLabel = (section: SitesSection) => {
+  if (section === 'landings') return 'Crear sitio web'
+  if (section === 'forms') return 'Crear formulario'
+  return 'Nuevo sitio'
+}
+
+const getLibraryTitle = (section: SitesSection) => {
+  if (section === 'landings') return 'Sitios web'
+  if (section === 'forms') return 'Formularios'
+  return 'Sitios'
+}
+
+const getLibraryDescription = (section: SitesSection) => {
+  if (section === 'landings') return 'Biblioteca de paginas publicas, sitios web y embudos listos para editar.'
+  if (section === 'forms') return 'Biblioteca de formularios publicos para capturar prospectos y respuestas.'
+  return 'Biblioteca de sitios publicos.'
+}
+
+const getLibraryEmptyMessage = (section: SitesSection) => {
+  if (section === 'landings') return 'Crea un sitio web para verlo aqui como tarjeta editable.'
+  if (section === 'forms') return 'Crea un formulario para verlo aqui como tarjeta editable.'
+  return getEmptyEditorMessage(section)
+}
+
+const getSiteTypeLabel = (site: PublicSite) => {
+  if (site.siteType === 'landing_page') return site.theme?.pageMode === 'website' ? 'Sitio web' : 'Embudo'
+  if (site.siteType === 'interactive_form') return 'Formulario interactivo'
+  return 'Formulario'
+}
+
+const getCreateFlowForSection = (section: SitesSection): CreateFlow => {
+  if (section === 'forms') return 'form-start'
+  return 'landing-start'
+}
+
+const getCreateFlowHeaderCopy = (step: CreateFlow) => {
+  if (step === 'landing-start') {
+    return {
+      title: 'Nuevo sitio web',
+      subtitle: 'Como quieres iniciar tu sitio web?'
+    }
+  }
+
+  if (step === 'landing-template') {
+    return {
+      title: 'Nuevo sitio web',
+      subtitle: 'Elige el estilo de tu sitio web'
+    }
+  }
+
+  if (step === 'form-kind') {
+    return {
+      title: 'Nuevo formulario',
+      subtitle: 'Elige como quieres que la persona responda tu formulario.'
+    }
+  }
+
+  if (step === 'form-start') {
+    return {
+      title: 'Nuevo formulario',
+      subtitle: 'Elige si quieres empezar en blanco, con plantilla o con IA.'
+    }
+  }
+
+  if (step === 'form-template') {
+    return {
+      title: 'Nuevo formulario',
+      subtitle: 'Elige el estilo de tu formulario'
+    }
+  }
+
+  if (step === 'interactive-start') {
+    return {
+      title: 'Formulario interactivo multipagina',
+      subtitle: 'Ahora elige si quieres empezar en blanco, con plantilla o con IA.'
+    }
+  }
+
+  if (step === 'interactive-template') {
+    return {
+      title: 'Nuevo formulario interactivo',
+      subtitle: 'Elige el estilo de tu formulario interactivo'
+    }
+  }
+
+  return {
+    title: 'Sitios',
+    subtitle: 'Constructor visual controlado para sitios web, formularios, leads y publicacion por dominio verificado.'
+  }
+}
+
+const getPreviousCreateFlowStep = (step: CreateFlow): CreateFlow => {
+  if (step === 'landing-template') return 'landing-start'
+  if (step === 'form-start') return 'closed'
+  if (step === 'interactive-start') return 'form-start'
+  if (step === 'form-template') return 'form-start'
+  if (step === 'interactive-template') return 'interactive-start'
+  return 'closed'
+}
+
+const getEmptyEditorMessage = (section: SitesSection) => {
+  if (section === 'landings') return 'Crea un sitio web para entrar al editor visual.'
+  if (section === 'forms') return 'Crea un formulario para entrar al editor visual.'
+  return 'Crea un sitio web o formulario para entrar al editor visual.'
+}
+
+const getLibraryPreviewBlocks = (site: PublicSite) => {
+  const blocks = [...(site.blocks || [])].sort((a, b) => a.sortOrder - b.sortOrder)
+  if (!hasEditablePages(site)) return blocks.slice(0, 4)
+
+  const pages = normalizeFunnelPages(site)
+  const firstPageId = pages[0]?.id || DEFAULT_FUNNEL_PAGE_ID
+  return blocks
+    .filter(block => getBlockPageId(block, pages) === firstPageId)
+    .slice(0, 4)
+}
+
+const getSettingString = (settings: Record<string, unknown>, key: string) => {
+  const value = settings?.[key]
+  return typeof value === 'string' ? value : ''
+}
+
+const isPhoneCountrySelectorEnabled = (block: SiteBlock) => {
+  const settings = block.settings || {}
+  return settings.phoneCountrySelectorEnabled !== false &&
+    settings.countrySelectorEnabled !== false &&
+    settings.phoneCountrySelector !== false
+}
+
+const getSettingNumber = (settings: Record<string, unknown>, key: string, fallback: number, min: number, max: number) => {
+  const value = Number(settings?.[key])
+  if (!Number.isFinite(value)) return fallback
+  return Math.min(max, Math.max(min, value))
+}
+
+const getThemeNumber = (theme: SiteTheme | undefined, key: keyof SiteTheme, fallback: number, min: number, max: number) => {
+  const value = Number(theme?.[key])
+  if (!Number.isFinite(value)) return fallback
+  return Math.min(max, Math.max(min, value))
+}
+
+const getSettingHex = (settings: Record<string, unknown>, key: string, fallback: string) => {
+  const value = getSettingString(settings, key)
+  return isCssColor(value) ? normalizeCssColor(value, fallback) : fallback
+}
+
+const getSettingPaint = (settings: Record<string, unknown>, key: string, fallback: string) => {
+  const value = getSettingString(settings, key)
+  return isCssPaint(value) ? normalizeCssPaint(value, fallback) : fallback
+}
+
+const getThemePaint = (theme: SiteTheme | undefined, key: keyof SiteTheme, fallback: string) => {
+  const value = theme?.[key]
+  return typeof value === 'string' && isCssPaint(value) ? normalizeCssPaint(value, fallback) : fallback
+}
+
+const getThemeString = (theme: SiteTheme | undefined, key: keyof SiteTheme) => {
+  const value = theme?.[key]
+  return typeof value === 'string' ? value : ''
+}
+
+const getPopupTrigger = (theme?: SiteTheme | null): PopupTrigger => {
+  const trigger = theme?.popupTrigger
+  return trigger === 'delay' || trigger === 'exit_intent' || trigger === 'never' ? trigger : 'never'
+}
+
+const popupTriggerLabels: Record<PopupTrigger, string> = {
+  never: 'Nunca',
+  delay: 'Despues de unos segundos',
+  exit_intent: 'Cuando intenta salir'
+}
+
+const popupCloseDisplayLabels: Record<PopupCloseDisplay, string> = {
+  icon: 'Solo icono',
+  text: 'Solo texto',
+  both: 'Icono y texto'
+}
+
+const popupCloseIconLabels: Record<PopupCloseIcon, string> = {
+  x: 'X',
+  arrow: 'Flechita',
+  chevron: 'Chevron',
+  none: 'Sin icono'
+}
+
+const normalizePopupCloseDisplay = (value?: SiteTheme['popupCloseDisplay']): PopupCloseDisplay => (
+  value === 'text' || value === 'both' || value === 'icon' ? value : 'icon'
+)
+
+const normalizePopupCloseIcon = (value?: SiteTheme['popupCloseIcon']): PopupCloseIcon => (
+  value === 'arrow' || value === 'chevron' || value === 'none' || value === 'x' ? value : 'x'
+)
+
+const getPopupCloseIconText = (value?: SiteTheme['popupCloseIcon']) => {
+  const icon = normalizePopupCloseIcon(value)
+  if (icon === 'arrow') return '←'
+  if (icon === 'chevron') return '‹'
+  if (icon === 'none') return ''
+  return '×'
+}
+
+const hasThemePopupConfig = (theme?: SiteTheme | null) => Boolean(
+  theme?.popupEnabled ||
+  getPopupTrigger(theme) !== 'never' ||
+  getThemeString(theme || undefined, 'popupTitle').trim() ||
+  getThemeString(theme || undefined, 'popupBody').trim() ||
+  getThemeString(theme || undefined, 'popupButtonText').trim() ||
+  getThemeString(theme || undefined, 'popupButtonUrl').trim() ||
+  getThemeString(theme || undefined, 'popupBackgroundColor').trim() ||
+  getThemeString(theme || undefined, 'popupBackdropColor').trim()
+)
+
+const getThemeBackgroundVideo = (theme: SiteTheme | undefined) => {
+  const mediaType = getThemeString(theme, 'backgroundMediaType')
+  const url = getThemeString(theme, 'backgroundImage').trim()
+  if (mediaType !== 'video' || !url) return ''
+  if (!/^https?:\/\//i.test(url) && !url.startsWith('/') && !/^data:video\//i.test(url)) return ''
+  return url.replace(/["\\\n\r]/g, '')
+}
+
+const spacingSides = [
+  { id: 'Top', label: 'Arriba' },
+  { id: 'Right', label: 'Derecha' },
+  { id: 'Bottom', label: 'Abajo' },
+  { id: 'Left', label: 'Izquierda' }
+] as const
+
+type SpacingBase = 'blockPadding' | 'blockMargin'
+type HorizontalAlign = 'left' | 'center' | 'right'
+type ButtonAlign = HorizontalAlign | 'full'
+type SocialPlatform = 'facebook' | 'instagram' | 'tiktok' | 'threads'
+type FormChoiceStyle = NonNullable<SiteTheme['formChoiceStyle']>
+type FormSelectStyle = NonNullable<SiteTheme['formSelectStyle']>
+
+const horizontalAlignOptions: Array<{ value: HorizontalAlign; label: string; icon: React.ReactNode }> = [
+  { value: 'left', label: 'Izquierda', icon: <AlignLeft size={14} /> },
+  { value: 'center', label: 'Centro', icon: <AlignCenter size={14} /> },
+  { value: 'right', label: 'Derecha', icon: <AlignRight size={14} /> }
+]
+
+const buttonAlignOptions: Array<{ value: ButtonAlign; label: string; icon: React.ReactNode }> = [
+  ...horizontalAlignOptions,
+  { value: 'full', label: 'Completo', icon: <Maximize2 size={14} /> }
+]
+
+const backgroundMediaTypeOptions = [
+  { value: 'image', label: 'Imagen' },
+  { value: 'video', label: 'Video' }
+] as const
+
+const backgroundVisualOptions = [
+  { value: 'cover', label: 'Centro completo' },
+  { value: 'full_width', label: 'Rellenar 100% ancho' },
+  { value: 'no-repeat', label: 'No repetir' },
+  { value: 'repeat', label: 'Repetir' },
+  { value: 'repeat-x', label: 'Repetir horizontal' },
+  { value: 'repeat-y', label: 'Repetir vertical' },
+  { value: 'repeat-x-fixed-top', label: 'Repetir horizontal fijo arriba' }
+] as const
+
+const formChoiceStyleOptions: Array<{ value: FormChoiceStyle; label: string }> = [
+  { value: 'native', label: 'Clasico con circulo' },
+  { value: 'cards', label: 'Fila seleccionada' },
+  { value: 'pills', label: 'Pildoras' },
+  { value: 'minimal', label: 'Linea simple' }
+]
+
+const formSelectStyleOptions: Array<{ value: FormSelectStyle; label: string }> = [
+  { value: 'classic', label: 'Clasico' },
+  { value: 'filled', label: 'Relleno moderno' },
+  { value: 'underline', label: 'Linea inferior' }
+]
+
+const socialPlatformOptions: Array<{ value: SocialPlatform; label: string }> = [
+  { value: 'facebook', label: 'Facebook' },
+  { value: 'instagram', label: 'Instagram' },
+  { value: 'tiktok', label: 'TikTok' },
+  { value: 'threads', label: 'Threads' }
+]
+
+const normalizeFormChoiceStyle = (value: unknown): FormChoiceStyle => {
+  const raw = String(value || '').trim()
+  return formChoiceStyleOptions.some(option => option.value === raw) ? raw as FormChoiceStyle : 'native'
+}
+
+const normalizeFormSelectStyle = (value: unknown): FormSelectStyle => {
+  const raw = String(value || '').trim()
+  return formSelectStyleOptions.some(option => option.value === raw) ? raw as FormSelectStyle : 'classic'
+}
+
+const normalizeSocialPlatform = (value: unknown): SocialPlatform => {
+  const raw = String(value || '').trim()
+  return socialPlatformOptions.some(option => option.value === raw) ? raw as SocialPlatform : 'facebook'
+}
+
+const socialProfileOptionLabel = (profile: ConnectedSocialProfile) => {
+  const platform = socialPlatformOptions.find(option => option.value === profile.platform)?.label || profile.platform
+  const followers = profile.followersLabel ? ` - ${profile.followersLabel} seguidores` : ''
+  const owner = profile.pageName && profile.pageName !== profile.name ? ` (${profile.pageName})` : ''
+  return `${platform}: ${profile.name}${owner}${followers}`
+}
+
+const connectedSocialProfileBlockPatch = (profile: ConnectedSocialProfile): Record<string, unknown> => ({
+  platform: profile.platform,
+  brandName: profile.name,
+  brandSubtitle: profile.platform === 'instagram'
+    ? 'Perfil de Instagram conectado'
+    : profile.platform === 'facebook'
+      ? 'Pagina de Facebook conectada'
+      : 'Perfil conectado',
+  brandAvatar: profile.avatarUrl || '',
+  followers: profile.followersLabel || '',
+  brandVerified: true,
+  socialAutoSync: true,
+  socialSourceProfileId: profile.id,
+  socialSourcePlatform: profile.platform,
+  socialSourceId: profile.sourceId,
+  socialSourcePageId: profile.pageId || '',
+  socialSourceName: profile.name,
+  socialSyncedAt: profile.updatedAt || new Date().toISOString()
+})
+
+const getPreferredConnectedSocialProfile = (
+  profiles: ConnectedSocialProfile[],
+  platform: SocialPlatform
+): ConnectedSocialProfile | null => {
+  const platformProfiles = profiles.filter(profile => profile.platform === platform)
+  if (!platformProfiles.length) return null
+
+  const configuredProfile = platformProfiles.find(profile => (
+    platform === 'facebook'
+      ? profile.isConfiguredPage
+      : platform === 'instagram'
+        ? profile.isConfiguredInstagram
+        : profile.isConfiguredPage || profile.isConfiguredInstagram
+  ))
+
+  return configuredProfile || platformProfiles[0]
+}
+
+const socialProfileDefaultsForSite = (site?: PublicSite | null): Record<string, unknown> => {
+  const theme = site?.theme || {}
+  const templatePlatform = platformChromeFor(resolveTemplateId(site))
+  const sourcePlatform = normalizeSocialPlatform(theme.socialSourcePlatform)
+  const platform = templatePlatform || sourcePlatform || 'facebook'
+
+  return {
+    platform,
+    brandName: theme.brandName || getPublicTitleEditorValue(site) || site?.name || 'Tu marca',
+    brandSubtitle: theme.brandSubtitle || (platform === 'instagram' ? 'Publicacion pagada' : 'Patrocinado'),
+    brandAvatar: theme.brandAvatar || '',
+    followers: theme.followers || '',
+    brandVerified: theme.brandVerified === undefined ? true : theme.brandVerified !== false,
+    socialAutoSync: theme.socialAutoSync,
+    socialSourceProfileId: theme.socialSourceProfileId || '',
+    socialSourcePlatform: theme.socialSourcePlatform || '',
+    socialSourceId: theme.socialSourceId || '',
+    socialSourcePageId: theme.socialSourcePageId || '',
+    socialSourceName: theme.socialSourceName || '',
+    socialSyncedAt: theme.socialSyncedAt || ''
+  }
+}
+
+const getBackgroundVisualValue = (theme: SiteTheme | undefined) => {
+  if (theme?.backgroundAttachment === 'fixed' && theme.backgroundRepeat === 'repeat-x' && theme.backgroundPosition === 'center top') return 'repeat-x-fixed-top'
+  if (theme?.backgroundRepeat === 'repeat') return 'repeat'
+  if (theme?.backgroundRepeat === 'repeat-x') return 'repeat-x'
+  if (theme?.backgroundRepeat === 'repeat-y') return 'repeat-y'
+  if (theme?.backgroundRepeat === 'no-repeat' && theme.backgroundFit === 'full_width') return 'full_width'
+  if (theme?.backgroundRepeat === 'no-repeat' && theme.backgroundFit === 'contain') return 'no-repeat'
+  return 'cover'
+}
+
+const backgroundVisualPatch = (value: string): Partial<SiteTheme> => {
+  if (value === 'full_width') return { backgroundFit: 'full_width', backgroundRepeat: 'no-repeat', backgroundPosition: 'center top', backgroundAttachment: 'scroll' }
+  if (value === 'no-repeat') return { backgroundFit: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center center', backgroundAttachment: 'scroll' }
+  if (value === 'repeat') return { backgroundFit: 'auto', backgroundRepeat: 'repeat', backgroundPosition: 'center top', backgroundAttachment: 'scroll' }
+  if (value === 'repeat-x') return { backgroundFit: 'auto', backgroundRepeat: 'repeat-x', backgroundPosition: 'center top', backgroundAttachment: 'scroll' }
+  if (value === 'repeat-y') return { backgroundFit: 'auto', backgroundRepeat: 'repeat-y', backgroundPosition: 'left top', backgroundAttachment: 'scroll' }
+  if (value === 'repeat-x-fixed-top') return { backgroundFit: 'auto', backgroundRepeat: 'repeat-x', backgroundPosition: 'center top', backgroundAttachment: 'fixed' }
+  return { backgroundFit: 'cover', backgroundRepeat: 'no-repeat', backgroundPosition: 'center center', backgroundAttachment: 'scroll' }
+}
+
+const isHorizontalAlign = (value: unknown): value is HorizontalAlign =>
+  value === 'left' || value === 'center' || value === 'right'
+
+const isButtonAlign = (value: unknown): value is ButtonAlign =>
+  isHorizontalAlign(value) || value === 'full'
+
+const getHorizontalAlign = (settings: Record<string, unknown>, key: string, fallback: HorizontalAlign = 'left'): HorizontalAlign => {
+  const value = settings[key]
+  return isHorizontalAlign(value) ? value : fallback
+}
+
+const getButtonAlign = (settings: Record<string, unknown>, fallback: ButtonAlign = 'center'): ButtonAlign => {
+  const value = settings.buttonAlign
+  return isButtonAlign(value) ? value : fallback
+}
+
+const justifyForAlign = (align: HorizontalAlign | ButtonAlign) => {
+  if (align === 'center') return 'center'
+  if (align === 'right') return 'end'
+  if (align === 'full') return 'stretch'
+  return 'start'
+}
+
+const marginVarsForAlign = (align: HorizontalAlign | ButtonAlign) => {
+  if (align === 'center') return { left: 'auto', right: 'auto' }
+  if (align === 'right') return { left: 'auto', right: '0' }
+  return { left: '0', right: align === 'full' ? '0' : 'auto' }
+}
+
+const textBoldDefaultBlockTypes = new Set<SiteBlockType>([
+  'headline',
+  'title',
+  'hero',
+  'section',
+  'benefits',
+  'testimonials',
+  'services',
+  'faq',
+  'form_embed',
+  'cta'
+])
+
+const getParentSectionBlock = (block: SiteBlock, blocks: SiteBlock[]) => {
+  const sectionId = getBlockSectionId(block)
+  if (!sectionId) return null
+  return blocks.find(item => item.id === sectionId && isSectionBlock(item)) || null
+}
+
+const getPageTextPaint = (site: PublicSite) =>
+  getThemePaint(site.theme, 'textColor', isSiteDark(site) ? '#ffffff' : '#111827')
+
+const getBlockTextAlignFallback = (site: PublicSite, block: SiteBlock, blocks: SiteBlock[] = []): HorizontalAlign => {
+  const parent = isLanding(site) && !isTopLevelLandingBlock(block) ? getParentSectionBlock(block, blocks) : null
+  if (parent) {
+    return getHorizontalAlign(parent.settings || {}, 'textAlign', 'center')
+  }
+
+  if (block.blockType === HEADER_PANEL_BLOCK_TYPE) return 'left'
+  if (block.blockType === FOOTER_PANEL_BLOCK_TYPE) return 'center'
+  if (block.blockType === SECTION_BLOCK_TYPE || block.blockType === 'hero' || block.blockType === 'cta') return 'center'
+  if (['benefits', 'testimonials', 'services', 'faq'].includes(block.blockType)) return 'center'
+  if (!fieldBlockTypes.has(block.blockType) && ['interactive', 'vsl'].includes(resolveTemplateId(site))) return 'center'
+  return 'left'
+}
+
+const getBlockFontSizeFallback = (site: PublicSite, block: SiteBlock) => {
+  if (isLanding(site)) {
+    if (block.blockType === 'hero') return 58
+    if (block.blockType === 'headline' || block.blockType === 'title') return 52
+    if (block.blockType === 'cta') return 42
+    if (block.blockType === SECTION_BLOCK_TYPE || ['benefits', 'testimonials', 'services', 'faq', 'form_embed'].includes(block.blockType)) return 32
+    if (block.blockType === 'subheading' || block.blockType === 'subtitle' || block.blockType === 'description') return 20
+    if (block.blockType === 'text') return 17
+  }
+
+  if (block.blockType === 'headline' || block.blockType === 'title') return 38
+  if (block.blockType === 'subheading' || block.blockType === 'subtitle' || block.blockType === 'description') return 18
+  return 18
+}
+
+const getBlockContentMaxWidthFallback = (site: PublicSite, block: SiteBlock) => {
+  if (isLanding(site)) {
+    if (block.blockType === 'hero') return 16
+    if (['benefits', 'testimonials', 'services', 'faq'].includes(block.blockType)) return 20
+    if (block.blockType === 'cta') return 52
+    if (block.blockType === 'subheading' || block.blockType === 'subtitle') return 60
+    if (block.blockType === 'description') return 58
+  }
+
+  if (block.blockType === 'subheading' || block.blockType === 'subtitle' || block.blockType === 'description') return 60
+  return 66
+}
+
+const getBlockRadiusFallback = (_site: PublicSite, _block: SiteBlock) => 0
+
+const getBlockBorderWidthFallback = (site: PublicSite, block: SiteBlock) => {
+  if (block.blockType === 'social_profile') return 0
+  if (block.blockType === 'image' || block.blockType === 'video' || block.blockType === 'embed' || block.blockType === 'calendar_embed') return 1
+  if (isLanding(site) && ['hero', 'section', 'cta', 'benefits', 'testimonials', 'services', 'faq', 'form_embed', 'social_profile'].includes(block.blockType)) return 0
+  return nativeBorderBlockTypes.has(block.blockType) ? 1 : 0
+}
+
+const getCardRadiusFallback = (site: PublicSite) => isLanding(site) ? 0 : 8
+const getCardBorderWidthFallback = (site: PublicSite) => isLanding(site) ? 0 : 1
+
+const getInheritedBlockStyleSettings = (site: PublicSite, block: SiteBlock, blocks: SiteBlock[]) => {
+  const parent = isLanding(site) && !isTopLevelLandingBlock(block) ? getParentSectionBlock(block, blocks) : null
+  if (!parent) return {}
+  const settings = parent.settings || {}
+  const inheritedKeys = [
+    'blockBg',
+    'blockText',
+    'contentMaxWidth',
+    'fontFamily',
+    'fontWeight',
+    'fontStyle',
+    'textDecoration',
+    'textStrokeColor',
+    'textStrokeWidth',
+    'textAlign'
+  ]
+
+  return inheritedKeys.reduce<Record<string, unknown>>((acc, key) => {
+    if (settings[key] !== undefined && settings[key] !== '') acc[key] = settings[key]
+    return acc
+  }, {})
+}
+
+const getPanelStyleSettings = (site: PublicSite, block: SiteBlock, blocks: SiteBlock[]) => {
+  const inherited = getInheritedBlockStyleSettings(site, block, blocks)
+  const defaults: Record<string, unknown> = {
+    textAlign: getBlockTextAlignFallback(site, block, blocks),
+    buttonAlign: 'center',
+    fontSize: getBlockFontSizeFallback(site, block),
+    contentMaxWidth: getBlockContentMaxWidthFallback(site, block),
+    blockText: getPageTextPaint(site),
+    blockBg: 'transparent',
+    blockRadius: getBlockRadiusFallback(site, block),
+    blockBorderWidth: getBlockBorderWidthFallback(site, block),
+    cardAlign: 'left',
+    cardRadius: getCardRadiusFallback(site),
+    cardBorderWidth: getCardBorderWidthFallback(site),
+    listColumns: 3,
+    mediaAlign: 'center',
+    mediaWidth: 100,
+    mediaRadius: 18,
+    fieldBg: '#ffffff',
+    fieldBorder: '#dbe3ef',
+    fieldRadius: 12,
+    buttonRadius: 28,
+    buttonHeight: 54,
+    buttonPaddingX: 28,
+    buttonFontSize: 16,
+    buttonBorderWidth: 1
+  }
+
+  if (textBoldDefaultBlockTypes.has(block.blockType)) defaults.fontWeight = 'bold'
+
+  return {
+    ...defaults,
+    ...inherited,
+    ...(block.settings || {})
+  }
+}
+
+const hasSpacingSideValue = (settings: Record<string, unknown>, base: SpacingBase) =>
+  spacingSides.some(side => settings[`${base}${side.id}`] !== undefined)
+
+const getSpacingValue = (
+  settings: Record<string, unknown>,
+  base: SpacingBase,
+  side: typeof spacingSides[number]['id'],
+  fallback: number,
+  min: number,
+  max: number
+) => {
+  const sideKey = `${base}${side}`
+  if (settings[sideKey] !== undefined) return getSettingNumber(settings, sideKey, fallback, min, max)
+  if (settings[base] !== undefined) return getSettingNumber(settings, base, fallback, min, max)
+  return fallback
+}
+
+const getSpacingShorthand = (
+  values: Record<typeof spacingSides[number]['id'], number>
+) => spacingSides
+  .map(side => `${values[side.id]}px`)
+  .join(' ')
+
+const getSpacingValues = (
+  settings: Record<string, unknown>,
+  base: SpacingBase,
+  fallback: number,
+  min: number,
+  max: number
+) => spacingSides
+  .reduce<Record<typeof spacingSides[number]['id'], number>>((acc, side) => {
+    acc[side.id] = getSpacingValue(settings, base, side.id, fallback, min, max)
+    return acc
+  }, { Top: fallback, Right: fallback, Bottom: fallback, Left: fallback })
+
+const hasNegativeSpacing = (values: Record<typeof spacingSides[number]['id'], number>) =>
+  spacingSides.some(side => values[side.id] < 0)
+
+const getPositiveSpacing = (values: Record<typeof spacingSides[number]['id'], number>) =>
+  spacingSides.reduce<Record<typeof spacingSides[number]['id'], number>>((acc, side) => {
+    acc[side.id] = Math.max(0, values[side.id])
+    return acc
+  }, { Top: 0, Right: 0, Bottom: 0, Left: 0 })
+
+const getNegativeSpacing = (values: Record<typeof spacingSides[number]['id'], number>) =>
+  spacingSides.reduce<Record<typeof spacingSides[number]['id'], number>>((acc, side) => {
+    acc[side.id] = Math.min(0, values[side.id])
+    return acc
+  }, { Top: 0, Right: 0, Bottom: 0, Left: 0 })
+
+const combineSpacingValues = (
+  first: Record<typeof spacingSides[number]['id'], number>,
+  second: Record<typeof spacingSides[number]['id'], number>
+) => spacingSides.reduce<Record<typeof spacingSides[number]['id'], number>>((acc, side) => {
+  acc[side.id] = first[side.id] + second[side.id]
+  return acc
+}, { Top: 0, Right: 0, Bottom: 0, Left: 0 })
+
+// Mirrors backend renderBlockStyleVars so per-block overrides resolve to the same
+// CSS variables the published .rstk-block-style wrapper consumes.
+const getBlockCanvasStyle = (block: SiteBlock): React.CSSProperties => {
+  const normalizedBlock = normalizeLegacyLandingBlockSpacing(block)
+  const settings = normalizedBlock.settings || {}
+  const style: Record<string, string> = {}
+  const bg = getSettingString(settings, 'blockBg')
+  const text = getSettingString(settings, 'blockText')
+  const buttonBg = getSettingString(settings, 'buttonBg')
+  const buttonText = getSettingString(settings, 'buttonTextColor')
+  const buttonBorder = getSettingString(settings, 'buttonBorderColor')
+  const cardBg = getSettingString(settings, 'cardBg')
+  const cardBorder = getSettingString(settings, 'cardBorderColor')
+  const fontFamily = getSettingString(settings, 'fontFamily')
+  const textStrokeColor = getSettingString(settings, 'textStrokeColor')
+  const fieldBg = getSettingString(settings, 'fieldBg')
+  const fieldBorder = getSettingString(settings, 'fieldBorder')
+  const blockBorder = getSettingString(settings, 'blockBorderColor')
+  const blockHasNativeBorder = nativeBorderBlockTypes.has(block.blockType)
+  const supportsButton = block.blockType === 'hero' || block.blockType === 'button' || block.blockType === 'cta'
+
+  if (isCssPaint(bg)) style['--rstk-block-bg'] = normalizeCssPaint(bg, '#ffffff')
+  if (isCssPaint(text)) {
+    const normalized = normalizeCssPaint(text, '#111827')
+    style['--rstk-block-text'] = paintFallbackColor(normalized, '#111827')
+    if (isCssGradient(normalized)) style['--rstk-block-text-paint'] = normalized
+  }
+  if (isCssPaint(buttonBg)) {
+    const normalized = normalizeCssPaint(buttonBg, '#111827')
+    style['--rstk-button-bg'] = normalized
+    style['--rstk-button-hover-bg'] = normalized
+  }
+  if (isCssPaint(buttonText)) {
+    const normalized = normalizeCssPaint(buttonText, '#ffffff')
+    style['--rstk-button-text'] = paintFallbackColor(normalized, '#ffffff')
+    if (isCssGradient(normalized)) style['--rstk-button-text-paint'] = normalized
+  }
+  if (isCssPaint(buttonBorder)) style['--rstk-button-border'] = paintFallbackColor(normalizeCssPaint(buttonBorder, '#111827'), '#111827')
+  if (isCssPaint(cardBg)) style['--rstk-card-bg'] = normalizeCssPaint(cardBg, '#ffffff')
+  if (isCssPaint(cardBorder)) style['--rstk-card-border'] = paintFallbackColor(normalizeCssPaint(cardBorder, '#dbe3ef'), '#dbe3ef')
+  if (fontFamily) style['--rstk-block-font'] = fontFamily.replace(/[;"{}<>]/g, '')
+  if (settings.fontStyle === 'italic') style['--rstk-block-font-style'] = 'italic'
+  if (settings.textDecoration === 'underline') style['--rstk-block-text-decoration'] = 'underline'
+  if (settings.textStrokeWidth !== undefined) style['--rstk-text-stroke-width'] = `${getSettingNumber(settings, 'textStrokeWidth', 0, 0, 12)}px`
+  if (isCssPaint(textStrokeColor)) style['--rstk-text-stroke-color'] = paintFallbackColor(normalizeCssPaint(textStrokeColor, '#111827'), '#111827')
+  if (isCssPaint(fieldBg)) style['--rstk-field-bg'] = normalizeCssPaint(fieldBg, '#ffffff')
+  if (isCssPaint(fieldBorder)) style['--rstk-field-border'] = paintFallbackColor(normalizeCssPaint(fieldBorder, '#dbe3ef'), '#dbe3ef')
+  if (isCssPaint(blockBorder)) style['--rstk-block-border'] = paintFallbackColor(normalizeCssPaint(blockBorder, '#dbe3ef'), '#dbe3ef')
+  if (settings.fontWeight === 'bold') style['--rstk-block-weight'] = '850'
+  if (settings.fontWeight === 'normal') style['--rstk-block-weight'] = '400'
+
+  if (settings.textAlign !== undefined) {
+    const align = getHorizontalAlign(settings, 'textAlign', 'left')
+    const margins = marginVarsForAlign(align)
+    style['--rstk-block-align'] = align
+    style['--rstk-block-justify'] = justifyForAlign(align)
+    style['--rstk-content-margin-left'] = margins.left
+    style['--rstk-content-margin-right'] = margins.right
+  }
+  if (settings.contentMaxWidth !== undefined) style['--rstk-content-max'] = `${getSettingNumber(settings, 'contentMaxWidth', 66, 10, 120)}ch`
+  if (settings.fontSize !== undefined) style['--rstk-block-size'] = `${getSettingNumber(settings, 'fontSize', 18, 12, 96)}px`
+  const hasBlockPadding = settings.blockPadding !== undefined || hasSpacingSideValue(settings, 'blockPadding')
+  const hasBlockMargin = settings.blockMargin !== undefined || hasSpacingSideValue(settings, 'blockMargin')
+  const paddingValues = hasBlockPadding
+    ? getSpacingValues(settings, 'blockPadding', 0, SPACING_OVERLAP_MIN, 160)
+    : null
+  const marginValues = hasBlockMargin
+    ? getSpacingValues(settings, 'blockMargin', 0, SPACING_OVERLAP_MIN, 200)
+    : null
+
+  if (paddingValues) {
+    style['--rstk-block-pad'] = getSpacingShorthand(getPositiveSpacing(paddingValues))
+  }
+
+  if (marginValues || paddingValues && hasNegativeSpacing(paddingValues)) {
+    const safeMargin = marginValues || { Top: 0, Right: 0, Bottom: 0, Left: 0 }
+    const paddingOverlap = paddingValues ? getNegativeSpacing(paddingValues) : { Top: 0, Right: 0, Bottom: 0, Left: 0 }
+    style['--rstk-block-margin'] = getSpacingShorthand(combineSpacingValues(safeMargin, paddingOverlap))
+  }
+  if (settings.blockRadius !== undefined) style['--rstk-block-radius'] = `${getSettingNumber(settings, 'blockRadius', 8, 0, 48)}px`
+  if (settings.blockBorderWidth !== undefined) {
+    const width = `${getSettingNumber(settings, 'blockBorderWidth', 0, 0, 12)}px`
+    style['--rstk-block-border-width'] = width
+    if (!blockHasNativeBorder) style['--rstk-block-shell-border-width'] = width
+  }
+  if (supportsButton) {
+    const align = getButtonAlign(settings, 'center')
+    const margins = marginVarsForAlign(align)
+    style['--rstk-button-justify'] = justifyForAlign(align)
+    style['--rstk-button-margin-left'] = margins.left
+    style['--rstk-button-margin-right'] = margins.right
+    style['--rstk-button-width'] = align === 'full' ? '100%' : 'fit-content'
+  }
+  if (settings.buttonRadius !== undefined) style['--rstk-block-button-radius'] = `${getSettingNumber(settings, 'buttonRadius', 28, 0, 80)}px`
+  if (settings.buttonHeight !== undefined) style['--rstk-button-height'] = `${getSettingNumber(settings, 'buttonHeight', 54, 34, 88)}px`
+  if (settings.buttonPaddingX !== undefined) style['--rstk-button-pad-x'] = `${getSettingNumber(settings, 'buttonPaddingX', 28, 8, 72)}px`
+  if (settings.buttonFontSize !== undefined) style['--rstk-button-size'] = `${getSettingNumber(settings, 'buttonFontSize', 16, 11, 32)}px`
+  if (settings.buttonBorderWidth !== undefined) style['--rstk-button-border-width'] = `${getSettingNumber(settings, 'buttonBorderWidth', 1, 0, 8)}px`
+  if (settings.mediaWidth !== undefined) style['--rstk-media-width'] = `${getSettingNumber(settings, 'mediaWidth', 100, 30, 100)}%`
+  if (settings.mediaAlign !== undefined) {
+    const align = getHorizontalAlign(settings, 'mediaAlign', 'center')
+    const margins = marginVarsForAlign(align)
+    style['--rstk-media-justify'] = justifyForAlign(align)
+    style['--rstk-media-margin-left'] = margins.left
+    style['--rstk-media-margin-right'] = margins.right
+  }
+  if (settings.mediaRadius !== undefined) style['--rstk-media-radius'] = `${getSettingNumber(settings, 'mediaRadius', 18, 0, 48)}px`
+  if (settings.embedHeight !== undefined) style['--rstk-embed-height'] = `${getSettingNumber(settings, 'embedHeight', EMBED_DEFAULT_HEIGHT, EMBED_MIN_HEIGHT, EMBED_MAX_HEIGHT)}px`
+  if (settings.cardRadius !== undefined) style['--rstk-card-radius'] = `${getSettingNumber(settings, 'cardRadius', 18, 0, 48)}px`
+  if (settings.cardBorderWidth !== undefined) style['--rstk-card-border-width'] = `${getSettingNumber(settings, 'cardBorderWidth', 1, 0, 8)}px`
+  if (settings.listColumns !== undefined) style['--rstk-list-columns'] = `repeat(${getSettingNumber(settings, 'listColumns', 3, 1, 4)}, minmax(0, 1fr))`
+  if (settings.cardAlign !== undefined) style['--rstk-card-align'] = getHorizontalAlign(settings, 'cardAlign', 'left')
+  if (settings.fieldRadius !== undefined) style['--rstk-field-radius'] = `${getSettingNumber(settings, 'fieldRadius', 12, 0, 32)}px`
+  if (block.blockType === SECTION_BLOCK_TYPE) {
+    style['--rstk-section-columns'] = `${getSectionColumns(block)}`
+    style['--rstk-section-gap'] = `${getSettingNumber(settings, 'sectionGap', DEFAULT_SECTION_GAP, 0, 80)}px`
+  }
+
+  return style as React.CSSProperties
+}
+
+const getBlockStyleClassName = (block: SiteBlock, extra = '') => {
+  const settings = block.settings || {}
+  return [
+    'rstk-block-style',
+    block.blockType === HEADER_PANEL_BLOCK_TYPE ? 'rstkHeaderPanelBlock' : '',
+    block.blockType === FOOTER_PANEL_BLOCK_TYPE ? 'rstkFooterPanelBlock' : '',
+    getSettingString(settings, 'blockText') ? 'rstkBlockTextOverride' : '',
+    isCssGradient(getSettingString(settings, 'blockText')) ? 'rstkTextGradient' : '',
+    isCssGradient(getSettingString(settings, 'buttonTextColor')) ? 'rstkButtonTextGradient' : '',
+    settings.fontFamily ? 'rstkFontOverride' : '',
+    settings.fontSize !== undefined ? 'rstkSizeOverride' : '',
+    settings.fontWeight === 'bold' || settings.fontWeight === 'normal' ? 'rstkWeightOverride' : '',
+    settings.fontStyle === 'italic' ? 'rstkItalicOverride' : '',
+    settings.textDecoration === 'underline' ? 'rstkUnderlineOverride' : '',
+    settings.textStrokeWidth !== undefined ? 'rstkStrokeOverride' : '',
+    extra
+  ].filter(Boolean).join(' ')
+}
+
+const cloneJson = <T,>(value: T): T => {
+  try {
+    return JSON.parse(JSON.stringify(value)) as T
+  } catch {
+    return value
+  }
+}
+
+const normalizePageList = (rawPages: SitePage[] = []): SitePage[] => {
+  const seen = new Set<string>()
+  const normalized = rawPages
+    .map((page, index) => ({
+      id: page?.id || `${DEFAULT_FUNNEL_PAGE_ID}-${index + 1}`,
+      title: page?.title || `Pagina ${index + 1}`,
+      sortOrder: Number.isFinite(Number(page?.sortOrder)) ? Number(page.sortOrder) : index,
+      ...(page?.parentPageId ? { parentPageId: page.parentPageId } : {}),
+      ...(page?.slug ? { slug: page.slug } : {}),
+      ...(page?.importedAssetPath ? { importedAssetPath: page.importedAssetPath } : {}),
+      ...(page?.importedOriginalTitle ? { importedOriginalTitle: page.importedOriginalTitle } : {}),
+      ...(page?.headerTrackingCode !== undefined ? { headerTrackingCode: page.headerTrackingCode } : {}),
+      metaCapiEnabled: Boolean(page?.metaCapiEnabled),
+      metaEventName: normalizeMetaEventName(page?.metaEventName, 'none'),
+      metaTrigger: normalizeMetaTrigger(page?.metaTrigger)
+    }))
+    .filter(page => {
+      if (!page.id || seen.has(page.id)) return false
+      seen.add(page.id)
+      return true
+    })
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((page, index) => ({ ...page, sortOrder: index }))
+
+  return normalized
+}
+
+const normalizeFormPages = (site?: PublicSite | null): SitePage[] => {
+  const normalized = normalizePageList(Array.isArray(site?.theme?.pages) ? site.theme.pages : [])
+  const byId = new Map(normalized.map(page => [page.id, page]))
+  const defaults = getDefaultFormPages()
+  const contentPages = normalized.filter(page => !isFormFinalPage(page))
+  const inputPages = contentPages.length ? contentPages : [byId.get(DEFAULT_FUNNEL_PAGE_ID) || defaults[0]]
+  const mergeFinalPage = (page: SitePage): SitePage => {
+    const existing = byId.get(page.id)
+    return {
+      ...page,
+      title: existing?.title || page.title,
+      ...(existing?.headerTrackingCode !== undefined ? { headerTrackingCode: existing.headerTrackingCode } : {}),
+      metaCapiEnabled: Boolean(existing?.metaCapiEnabled),
+      metaEventName: normalizeMetaEventName(existing?.metaEventName, 'none'),
+      metaTrigger: normalizeMetaTrigger(existing?.metaTrigger)
+    }
+  }
+
+  return [
+    ...inputPages,
+    mergeFinalPage(defaults[1]),
+    mergeFinalPage(defaults[2])
+  ].map((page, index) => ({ ...page, sortOrder: index }))
+}
+
+const normalizeFunnelPages = (site?: PublicSite | null): SitePage[] => {
+  if (isImportedHtmlSite(site)) {
+    const normalized = normalizePageList(Array.isArray(site?.theme?.pages) ? site.theme.pages : [])
+    return normalized.length ? normalized : [{ id: DEFAULT_FUNNEL_PAGE_ID, title: 'Pagina 1', sortOrder: 0 }]
+  }
+
+  if (isStandardForm(site)) return normalizeFormPages(site)
+
+  const normalized = normalizePageList(Array.isArray(site?.theme?.pages) ? site.theme.pages : [])
+  return normalized.length ? normalized : [{ id: DEFAULT_FUNNEL_PAGE_ID, title: 'Pagina 1', sortOrder: 0 }]
+}
+
+const getFormContentPages = (pages: SitePage[]) => pages.filter(page => !isFormFinalPage(page))
+
+const getOrderedPagesForSite = (site: PublicSite, nextPages: SitePage[]) => (
+  isStandardForm(site)
+    ? normalizeFormPages({ ...site, theme: { ...(site.theme || {}), pages: nextPages } })
+    : nextPages
+)
+
+const getFormAddPageIndex = (site: PublicSite, pages: SitePage[]) => (
+  isStandardForm(site)
+    ? pages.findIndex(isFormFinalPage) >= 0
+      ? pages.findIndex(isFormFinalPage)
+      : pages.length
+    : pages.length
+)
+
+const isLastFormContentPage = (site: PublicSite, pages: SitePage[], pageId?: string) => {
+  if (!isStandardForm(site) || !pageId || isFormFinalPageId(pageId)) return true
+  const contentPages = getFormContentPages(pages)
+  return contentPages[contentPages.length - 1]?.id === pageId
+}
+
+const makeFunnelPage = (index: number, extra?: Partial<SitePage>): SitePage => ({
+  id: `page-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+  title: `Pagina ${index + 1}`,
+  sortOrder: index,
+  metaCapiEnabled: false,
+  metaEventName: 'none',
+  metaTrigger: 'page_view',
+  ...extra
+})
+
+const normalizePagesForSave = (pages: SitePage[]) =>
+  pages.map((page, index) => ({
+    id: page.id,
+    title: page.title || `Pagina ${index + 1}`,
+    sortOrder: index,
+    ...(page.parentPageId ? { parentPageId: page.parentPageId } : {}),
+    ...(page.slug ? { slug: page.slug } : {}),
+    ...(page.importedAssetPath ? { importedAssetPath: page.importedAssetPath } : {}),
+    ...(page.importedOriginalTitle ? { importedOriginalTitle: page.importedOriginalTitle } : {}),
+    ...(page.headerTrackingCode !== undefined ? { headerTrackingCode: page.headerTrackingCode } : {}),
+    metaCapiEnabled: Boolean(page.metaCapiEnabled),
+    metaEventName: normalizeMetaEventName(page.metaEventName, 'none'),
+    metaTrigger: normalizeMetaTrigger(page.metaTrigger)
+  }))
+
+// --- Website page hierarchy (subpages) helpers ---
+const MAX_WEBSITE_PAGE_DEPTH = 2 // top-level = 0, subpage = 1, sub-subpage = 2
+
+const getSitePageMode = (site?: PublicSite | null): 'funnel' | 'website' =>
+  isLanding(site) && !isImportedHtmlSite(site) && site?.theme?.pageMode === 'website' ? 'website' : 'funnel'
+
+const getPageDepth = (page: SitePage | undefined, pages: SitePage[]): number => {
+  if (!page) return 0
+  const byId = new Map(pages.map(p => [p.id, p]))
+  const seen = new Set<string>()
+  let depth = 0
+  let current: SitePage | undefined = page
+  while (current?.parentPageId) {
+    if (seen.has(current.id)) break
+    seen.add(current.id)
+    const parent = byId.get(current.parentPageId)
+    if (!parent) break
+    depth += 1
+    current = parent
+  }
+  return depth
+}
+
+const getDescendantPageIds = (pageId: string, pages: SitePage[]): string[] => {
+  const result: string[] = []
+  const collect = (parentId: string) => {
+    for (const page of pages) {
+      if ((page.parentPageId || '') === parentId) {
+        result.push(page.id)
+        collect(page.id)
+      }
+    }
+  }
+  collect(pageId)
+  return result
+}
+
+// Flatten pages into render order: each top-level page is followed by its
+// descendants (depth-first), so the dropdown can render an indented tree.
+const buildOrderedPageTree = (pages: SitePage[]): Array<{ page: SitePage; depth: number }> => {
+  const childrenOf = (parentId: string) =>
+    pages.filter(page => (page.parentPageId || '') === parentId).sort((a, b) => a.sortOrder - b.sortOrder)
+  const result: Array<{ page: SitePage; depth: number }> = []
+  const placed = new Set<string>()
+  const walk = (parentId: string, depth: number) => {
+    for (const page of childrenOf(parentId)) {
+      if (placed.has(page.id)) continue
+      placed.add(page.id)
+      result.push({ page, depth })
+      walk(page.id, depth + 1)
+    }
+  }
+  walk('', 0)
+  // Defensive: surface any orphaned page (missing parent) as top-level.
+  for (const page of pages) {
+    if (!placed.has(page.id)) result.push({ page, depth: 0 })
+  }
+  return result
+}
+
+// Ensure every page has a slug unique among its siblings (same parent). Pages
+// whose slug is empty get one derived from their title. Used before saving a
+// website-mode site so hierarchical URLs stay valid.
+const ensureWebsiteSlugs = (pages: SitePage[]): SitePage[] => {
+  const usedByParent = new Map<string, Set<string>>()
+  return pages.map(page => {
+    const parentKey = page.parentPageId || ''
+    if (!usedByParent.has(parentKey)) usedByParent.set(parentKey, new Set())
+    const used = usedByParent.get(parentKey) as Set<string>
+    let slug = normalizeRouteInput(page.slug || '') || normalizeRouteInput(page.title || '') || 'pagina'
+    if (used.has(slug)) {
+      let i = 2
+      while (used.has(`${slug}-${i}`)) i += 1
+      slug = `${slug}-${i}`
+    }
+    used.add(slug)
+    return page.slug === slug ? page : { ...page, slug }
+  })
+}
+
+const getBlockPageId = (block: SiteBlock, pages: SitePage[]) => {
+  const pageId = getSettingString(block.settings || {}, 'pageId')
+  return pages.some(page => page.id === pageId) ? pageId : pages[0]?.id || DEFAULT_FUNNEL_PAGE_ID
+}
+
+const getHeaderScope = (block?: SiteBlock | null): HeaderScope => (
+  block?.blockType === HEADER_PANEL_BLOCK_TYPE &&
+  (getSettingString(block.settings || {}, 'headerScope') || getSettingString(block.settings || {}, 'header_scope')) === HEADER_SCOPE_GLOBAL
+    ? HEADER_SCOPE_GLOBAL
+    : HEADER_SCOPE_PAGE
+)
+
+const isGlobalHeaderBlock = (block?: SiteBlock | null) => (
+  Boolean(block && block.blockType === HEADER_PANEL_BLOCK_TYPE && getHeaderScope(block) === HEADER_SCOPE_GLOBAL)
+)
+
+const isPageHeaderBlock = (block: SiteBlock, pages: SitePage[], pageId?: string | null) => (
+  block.blockType === HEADER_PANEL_BLOCK_TYPE &&
+  !isGlobalHeaderBlock(block) &&
+  Boolean(pageId && getBlockPageId(block, pages) === pageId)
+)
+
+const isSectionBlock = (block?: SiteBlock | null) => block?.blockType === SECTION_BLOCK_TYPE
+const isPanelBlock = (block?: SiteBlock | null) => Boolean(block && PANEL_BLOCK_TYPES.has(block.blockType))
+const isTopLevelLandingBlock = (block?: SiteBlock | null) => isSectionBlock(block) || isPanelBlock(block)
+const isPopupBlock = (block?: SiteBlock | null) => {
+  if (!block) return false
+  const settings = block.settings || {}
+  return getSettingString(settings, 'popupId') === POPUP_SURFACE_ID ||
+    getSettingString(settings, 'renderLocation') === 'popup'
+}
+const isPopupEditableBlockType = (blockType: SiteBlockType) => !PANEL_BLOCK_TYPES.has(blockType)
+const getPopupBlockSettings = (settings: Record<string, unknown> = {}) => ({
+  ...settings,
+  popupId: POPUP_SURFACE_ID,
+  renderLocation: 'popup'
+})
+const getPopupPaletteBlockTypes = (site: PublicSite) => (
+  (isLanding(site) ? landingBlockTypes : formBlockTypes).filter(isPopupEditableBlockType)
+)
+
+const getSectionColumns = (block?: SiteBlock | null) => {
+  const value = Number(block?.settings?.sectionColumns ?? block?.settings?.columns)
+  if (!Number.isFinite(value)) return 1
+  return Math.min(3, Math.max(1, Math.round(value)))
+}
+
+const getBlockSectionId = (block: SiteBlock) => getSettingString(block.settings || {}, 'sectionId')
+
+const getBlockSectionColumn = (block: SiteBlock) => {
+  const value = Number(block.settings?.sectionColumn)
+  if (!Number.isFinite(value)) return 0
+  return Math.min(2, Math.max(0, Math.round(value)))
+}
+
+const getSectionColumnLabel = (columns: number) =>
+  columns === 1 ? 'Franja 1 columna' : `Franja ${columns} columnas`
+
+const makeLandingLane = (section: SiteBlock | null, sortOrder: number): LandingSectionLane => {
+  const columns = section ? getSectionColumns(section) : 1
+  return {
+    id: section?.id || '__legacy-section__',
+    section,
+    columns,
+    columnBlocks: Array.from({ length: columns }, () => []),
+    sortOrder
+  }
+}
+
+const buildLandingSectionLanes = (pageBlocks: SiteBlock[]): LandingSectionLane[] => {
+  const sortedBlocks = [...pageBlocks].sort((a, b) => a.sortOrder - b.sortOrder)
+  const sectionLanes = sortedBlocks
+    .filter(isSectionBlock)
+    .map(block => makeLandingLane(block, block.sortOrder))
+  const sectionById = new Map(sectionLanes.map(lane => [lane.id, lane]))
+  let legacyLane: LandingSectionLane | null = null
+
+  const ensureLegacyLane = () => {
+    if (!legacyLane) {
+      legacyLane = makeLandingLane(null, -1)
+      sectionLanes.unshift(legacyLane)
+    }
+    return legacyLane
+  }
+
+  sortedBlocks.forEach(block => {
+    if (isSectionBlock(block)) return
+    if (isPanelBlock(block)) return
+
+    const explicitSectionId = getBlockSectionId(block)
+    const explicitLane = explicitSectionId ? sectionById.get(explicitSectionId) : null
+    const previousLane = explicitLane || [...sectionLanes]
+      .filter(lane => lane.section && lane.sortOrder <= block.sortOrder)
+      .sort((a, b) => b.sortOrder - a.sortOrder)[0]
+    const lane = previousLane || ensureLegacyLane()
+    const columnIndex = Math.min(lane.columns - 1, getBlockSectionColumn(block))
+    lane.columnBlocks[columnIndex].push(block)
+  })
+
+  return sectionLanes
+    .filter(lane => lane.section || lane.columnBlocks.some(column => column.length > 0))
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map(lane => ({
+      ...lane,
+      columnBlocks: lane.columnBlocks.map(column => [...column].sort((a, b) => a.sortOrder - b.sortOrder))
+    }))
+}
+
+const buildLandingBlockOrderGroups = (
+  pageBlocks: SiteBlock[],
+  lanes: LandingSectionLane[] = buildLandingSectionLanes(pageBlocks)
+): LandingBlockOrderGroup[] => {
+  const sortedBlocks = [...pageBlocks].sort((a, b) => a.sortOrder - b.sortOrder)
+  const laneBySectionId = new Map(lanes.filter(lane => lane.section).map(lane => [lane.section!.id, lane]))
+  const groupedIds = new Set<string>()
+  const groups = sortedBlocks
+    .filter(isTopLevelLandingBlock)
+    .map(anchor => {
+      const groupBlocks = [anchor]
+      groupedIds.add(anchor.id)
+
+      if (isSectionBlock(anchor)) {
+        const lane = laneBySectionId.get(anchor.id)
+        const laneChildIds = new Set((lane?.columnBlocks || []).flat().map(block => block.id))
+        const sectionChildren = sortedBlocks.filter(block => laneChildIds.has(block.id))
+        sectionChildren.forEach(block => groupedIds.add(block.id))
+        groupBlocks.push(...sectionChildren)
+      }
+
+      return {
+        id: anchor.id,
+        sortOrder: anchor.sortOrder,
+        blocks: groupBlocks
+      }
+    })
+
+  sortedBlocks
+    .filter(block => !groupedIds.has(block.id))
+    .forEach(block => {
+      groupedIds.add(block.id)
+      groups.push({
+        id: block.id,
+        sortOrder: block.sortOrder,
+        blocks: [block]
+      })
+    })
+
+  return groups.sort((a, b) => a.sortOrder - b.sortOrder)
+}
+
+const findNearestRemainingBlockId = (
+  beforeBlockIds: string[],
+  candidateBlocks: SiteBlock[],
+  anchorBlockId: string,
+  deletedBlockIds: string[]
+) => {
+  const candidateIds = new Set(candidateBlocks.map(block => block.id))
+  if (!candidateIds.size) return ''
+
+  const deletedIds = new Set(deletedBlockIds)
+  const anchorIndex = beforeBlockIds.indexOf(anchorBlockId)
+  const startIndex = anchorIndex >= 0 ? anchorIndex : beforeBlockIds.length
+
+  for (let index = startIndex + 1; index < beforeBlockIds.length; index += 1) {
+    const id = beforeBlockIds[index]
+    if (candidateIds.has(id) && !deletedIds.has(id)) return id
+  }
+
+  for (let index = startIndex - 1; index >= 0; index -= 1) {
+    const id = beforeBlockIds[index]
+    if (candidateIds.has(id) && !deletedIds.has(id)) return id
+  }
+
+  return candidateBlocks[0]?.id || ''
+}
+
+const getButtonAction = (settings: Record<string, unknown>): ButtonAction => {
+  const action = getSettingString(settings, 'buttonAction') as ButtonAction
+  return ['url', 'next_page', 'specific_page', 'open_popup', 'close_popup'].includes(action) ? action : 'url'
+}
+
+const getFormCompletionAction = (settings: Record<string, unknown>): FormCompletionAction => {
+  const action = getSettingString(settings, 'completionAction') as FormCompletionAction
+  return ['form_default', 'next_page', 'next_page_if_qualified'].includes(action) ? action : 'form_default'
+}
+
+const getThemeFormCompletionAction = (theme?: SiteTheme): FormCompletionAction => {
+  const action = theme?.formCompletionAction
+  return action === 'form_default' || action === 'next_page' || action === 'next_page_if_qualified' ? action : 'next_page_if_qualified'
+}
+
+const normalizeOption = (option: string | SiteBlockOption, index: number): SiteBlockOption => {
+  if (typeof option === 'string') {
+    return {
+      id: `option-${index}`,
+      label: option,
+      value: option,
+      action: 'continue'
+    }
+  }
+
+  const label = option.label || option.value || `Opcion ${index + 1}`
+  return {
+    id: option.id || `option-${index}`,
+    label,
+    value: option.value || label,
+    action: normalizeVisibleRuleAction(option.action),
+    targetBlockId: option.targetBlockId || '',
+    message: option.message || '',
+    redirectUrl: option.redirectUrl || '',
+    tag: option.tag || '',
+    category: option.category || ''
+  }
+}
+
+const getOptions = (block: SiteBlock): SiteBlockOption[] =>
+  (block.options || []).map(normalizeOption)
+
+const stringifyItems = (settings: Record<string, unknown>) => {
+  const items = Array.isArray(settings.items) ? settings.items : []
+  return items.map(item => {
+    if (item && typeof item === 'object') {
+      const record = item as Record<string, unknown>
+      return [record.title, record.text, record.author].filter(Boolean).join(' | ')
+    }
+    return String(item || '')
+  }).join('\n')
+}
+
+const parseItems = (value: string) => value
+  .split('\n')
+  .map(line => line.trim())
+  .filter(Boolean)
+  .map(line => {
+    const [title, text, author] = line.split('|').map(part => part.trim())
+    return { title, text: text || '', author: author || '' }
+  })
+
+const getPanelLinks = (settings: Record<string, unknown>) => {
+  const links = Array.isArray(settings.panelLinks) ? settings.panelLinks : []
+  return links
+    .map(item => {
+      if (item && typeof item === 'object') {
+        const record = item as Record<string, unknown>
+        return {
+          label: String(record.label || record.title || record.name || '').trim(),
+          url: String(record.url || record.href || '#').trim() || '#'
+        }
+      }
+      const [label, url] = String(item || '').split('|').map(part => part.trim())
+      return { label, url: url || '#' }
+    })
+    .filter(item => item.label)
+}
+
+const stringifyPanelLinks = (settings: Record<string, unknown>) =>
+  getPanelLinks(settings).map(item => `${item.label} | ${item.url}`).join('\n')
+
+const parsePanelLinks = (value: string) => value
+  .split('\n')
+  .map(line => line.trim())
+  .filter(Boolean)
+  .map(line => {
+    const [label, url] = line.split('|').map(part => part.trim())
+    return { label, url: url || '#' }
+  })
+
+interface CanvasItem { title: string; text: string; author: string }
+
+// Mirrors backend getItems/getItemTone/stripToneMarker so canvas lists render
+// identically to the published page (incl. +/- pro/con markers).
+const getCanvasItems = (settings: Record<string, unknown>): CanvasItem[] => {
+  const items = Array.isArray(settings.items) ? settings.items : []
+  return items
+    .map((item) => {
+      if (item && typeof item === 'object') {
+        const record = item as Record<string, unknown>
+        return {
+          title: String(record.title || record.label || record.name || ''),
+          text: String(record.text || record.content || record.description || ''),
+          author: String(record.author || record.role || '')
+        }
+      }
+      return { title: String(item || ''), text: '', author: '' }
+    })
+    .filter(item => item.title || item.text)
+}
+
+const getItemTone = (item: CanvasItem): 'pro' | 'con' | 'neutral' => {
+  const raw = String(item.title || item.text || '').trim()
+  if (/^[+✓✔]/.test(raw)) return 'pro'
+  if (/^[-–—✗✘x×]/i.test(raw)) return 'con'
+  return 'neutral'
+}
+
+const stripToneMarker = (value: string) => String(value || '').replace(/^\s*[+\-–—✓✔✗✘x×]\s*/i, '').trim()
+
+type EmbedPreviewConfig =
+  | { kind: 'empty' }
+  | { kind: 'url'; src: string; title: string; allow?: string; height?: number }
+  | { kind: 'html'; srcDoc: string; title: string; height?: number }
+
+const DEFAULT_EMBED_ALLOW = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share'
+const EMBED_SANDBOX_URL = 'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox'
+const EMBED_SANDBOX_HTML = 'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox'
+const EMBED_DEFAULT_HEIGHT = 360
+const EMBED_MIN_HEIGHT = 180
+const EMBED_MAX_HEIGHT = 760
+
+const decodeHtmlEntities = (value: string) => value
+  .replace(/&amp;/g, '&')
+  .replace(/&quot;/g, '"')
+  .replace(/&#039;/g, "'")
+  .replace(/&#39;/g, "'")
+  .replace(/&#x27;/gi, "'")
+  .replace(/&lt;/g, '<')
+  .replace(/&gt;/g, '>')
+
+const safeEmbedUrl = (value: string) => {
+  const raw = decodeHtmlEntities(value).trim()
+  if (!raw) return ''
+  const candidate = raw.startsWith('//')
+    ? `https:${raw}`
+    : /^www\./i.test(raw)
+      ? `https://${raw}`
+      : raw
+
+  try {
+    const parsed = new URL(candidate)
+    return ['http:', 'https:'].includes(parsed.protocol) ? parsed.toString() : ''
+  } catch {
+    return ''
+  }
+}
+
+function extractImportedWistiaMediaId(value: string) {
+  const raw = decodeHtmlEntities(String(value || '')).trim()
+  if (!raw) return ''
+
+  const patterns = [
+    /(?:media-id|data-media-id)\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))/i,
+    /(?:hashedId|mediaId)\s*[:=]\s*(?:"([^"]+)"|'([^']+)'|([a-z0-9]+))/i,
+    /wistia_async_([a-z0-9]+)/i,
+    /fast\.wistia\.(?:com|net)\/embed\/([a-z0-9]+)\.js/i,
+    /(?:fast\.)?wistia\.(?:com|net)\/embed\/iframe\/([a-z0-9]+)/i,
+    /(?:fast\.)?wistia\.(?:com|net)\/embed\/medias\/([a-z0-9]+)\/swatch/i,
+    /wistia\.com\/medias\/([a-z0-9]+)/i
+  ]
+
+  for (const pattern of patterns) {
+    const match = raw.match(pattern)
+    const mediaId = String(match?.[1] || match?.[2] || match?.[3] || '').trim()
+    if (/^[a-z0-9]+$/i.test(mediaId)) return mediaId
+  }
+  return ''
+}
+
+const getWistiaEmbedUrl = (mediaId: string) => `https://fast.wistia.net/embed/iframe/${encodeURIComponent(mediaId)}`
+
+const getIframeSrcFromHtml = (html: string) => {
+  if (!/<iframe\b/i.test(html) || typeof DOMParser === 'undefined') return ''
+  try {
+    const document = new DOMParser().parseFromString(html, 'text/html')
+    return safeEmbedUrl(document.querySelector('iframe')?.getAttribute('src') || '')
+  } catch {
+    return ''
+  }
+}
+
+const normalizeImportedVideoPreviewUrl = (url: string) => {
+  const safeUrl = safeEmbedUrl(url)
+  if (!safeUrl) return ''
+
+  try {
+    const parsed = new URL(safeUrl)
+    const host = parsed.hostname.replace(/^www\./i, '').toLowerCase()
+    const pathParts = parsed.pathname.split('/').filter(Boolean)
+    const wistiaId = extractImportedWistiaMediaId(parsed.toString())
+    if (wistiaId) return getWistiaEmbedUrl(wistiaId)
+
+    if (host === 'youtu.be' && pathParts[0]) {
+      return `https://www.youtube.com/embed/${encodeURIComponent(pathParts[0])}`
+    }
+
+    if (host.endsWith('youtube.com') || host.endsWith('youtube-nocookie.com')) {
+      const videoId = parsed.searchParams.get('v') || (pathParts[0] === 'shorts' ? pathParts[1] : '') || (pathParts[0] === 'embed' ? pathParts[1] : '')
+      return videoId ? `https://www.youtube.com/embed/${encodeURIComponent(videoId)}` : safeUrl
+    }
+
+    if (host.endsWith('vimeo.com')) {
+      const videoId = pathParts[0] === 'video' ? pathParts[1] : pathParts[0]
+      return videoId && /^\d+$/.test(videoId) ? `https://player.vimeo.com/video/${encodeURIComponent(videoId)}` : safeUrl
+    }
+
+    if (host.endsWith('loom.com')) {
+      const videoId = pathParts[0] === 'embed' ? pathParts[1] : pathParts[0] === 'share' ? pathParts[1] : ''
+      return videoId ? `https://www.loom.com/embed/${encodeURIComponent(videoId)}` : safeUrl
+    }
+
+    return safeUrl
+  } catch {
+    return ''
+  }
+}
+
+const normalizeEmbedHeight = (value: string | null | undefined) => {
+  const match = String(value || '').match(/(\d{2,4})/)
+  if (!match) return undefined
+  const height = Number(match[1])
+  if (!Number.isFinite(height)) return undefined
+  return Math.min(EMBED_MAX_HEIGHT, Math.max(EMBED_MIN_HEIGHT, height))
+}
+
+const buildEmbedSrcDoc = (html: string) => `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <base target="_blank">
+    <style>
+      * { box-sizing: border-box; }
+      html, body { margin: 0; min-height: 100%; background: transparent; color: #111827; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      body { padding: 0; overflow-wrap: anywhere; }
+      iframe, img, video { max-width: 100%; }
+      iframe { border: 0; }
+    </style>
+  </head>
+  <body>${html}</body>
+</html>`
+
+const resolveEmbedPreview = (rawValue: string): EmbedPreviewConfig => {
+  const raw = rawValue.trim()
+  if (!raw || raw.toLowerCase() === 'embed') return { kind: 'empty' }
+
+  const wistiaId = extractImportedWistiaMediaId(raw)
+  if (wistiaId) {
+    return { kind: 'url', src: getWistiaEmbedUrl(wistiaId), title: 'Video Wistia', allow: DEFAULT_EMBED_ALLOW, height: EMBED_DEFAULT_HEIGHT }
+  }
+
+  const directUrl = safeEmbedUrl(raw)
+  if (directUrl) {
+    return { kind: 'url', src: directUrl, title: 'Embed', height: EMBED_DEFAULT_HEIGHT }
+  }
+
+  if (/<iframe\b/i.test(raw) && typeof DOMParser !== 'undefined') {
+    try {
+      const document = new DOMParser().parseFromString(raw, 'text/html')
+      const iframe = document.querySelector('iframe')
+      const iframeUrl = safeEmbedUrl(iframe?.getAttribute('src') || '')
+      if (iframeUrl) {
+        return {
+          kind: 'url',
+          src: iframeUrl,
+          title: iframe?.getAttribute('title') || 'Embed',
+          allow: iframe?.getAttribute('allow') || undefined,
+          height: normalizeEmbedHeight(iframe?.getAttribute('height') || iframe?.style.height)
+        }
+      }
+    } catch {
+      // Fall through to srcDoc rendering.
+    }
+  }
+
+  if (/<[a-z][\s\S]*>/i.test(raw)) {
+    return { kind: 'html', srcDoc: buildEmbedSrcDoc(raw), title: 'Codigo embed', height: EMBED_DEFAULT_HEIGHT }
+  }
+
+  return { kind: 'empty' }
+}
+
+const resolveImportedVideoPreview = (rawValue: string): EmbedPreviewConfig => {
+  const raw = rawValue.trim()
+  if (!raw) return { kind: 'empty' }
+
+  const wistiaId = extractImportedWistiaMediaId(raw)
+  if (wistiaId) {
+    return { kind: 'url', src: getWistiaEmbedUrl(wistiaId), title: 'Video Wistia', allow: DEFAULT_EMBED_ALLOW, height: 220 }
+  }
+
+  const iframeSrc = getIframeSrcFromHtml(raw)
+  const normalizedUrl = normalizeImportedVideoPreviewUrl(iframeSrc || raw)
+  if (normalizedUrl) {
+    return { kind: 'url', src: normalizedUrl, title: 'Vista previa del video', allow: DEFAULT_EMBED_ALLOW, height: 220 }
+  }
+
+  return resolveEmbedPreview(raw)
+}
+
+const createEmbeddedBlocks = (siteId: string): SiteBlock[] => [
+  {
+    id: `embedded_${crypto.randomUUID()}`,
+    siteId,
+    blockType: 'short_text',
+    label: 'Nombre completo',
+    content: '',
+    placeholder: 'Tu nombre',
+    required: true,
+    options: [],
+    settings: { internalName: 'full_name' },
+    sortOrder: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: `embedded_${crypto.randomUUID()}`,
+    siteId,
+    blockType: 'phone',
+    label: 'Telefono / WhatsApp',
+    content: '',
+    placeholder: '10 digitos',
+    required: true,
+    options: [],
+    settings: { internalName: 'phone', validation: 'phone', phoneCountrySelectorEnabled: true },
+    sortOrder: 1,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: `embedded_${crypto.randomUUID()}`,
+    siteId,
+    blockType: 'email',
+    label: 'Correo electronico',
+    content: '',
+    placeholder: 'tu@email.com',
+    required: true,
+    options: [],
+    settings: { internalName: 'email', validation: 'email' },
+    sortOrder: 2,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  }
+]
+
+const defaultBlockPayload = (blockType: SiteBlockType, siteOrId: PublicSite | string, siteType?: SiteType) => {
+  const site = typeof siteOrId === 'string' ? null : siteOrId
+  const siteId = typeof siteOrId === 'string' ? siteOrId : siteOrId.id
+  const resolvedSiteType = site?.siteType || siteType
+  const isField = fieldBlockTypes.has(blockType)
+  const label = blockLabels[blockType]
+  const baseSettings: Record<string, unknown> = isField
+    ? {
+        internalName: slugifyName(label),
+        validation: blockType === 'email' ? 'email' : blockType === 'phone' ? 'phone' : '',
+        ...(blockType === 'phone' ? { phoneCountrySelectorEnabled: true } : {})
+      }
+    : {}
+  const landingSettings = resolvedSiteType === 'landing_page' && !isField ? getLandingDefaultBlockSpacing(blockType) : {}
+  const blockSettings = (settings: Record<string, unknown> = {}) => ({
+    ...landingSettings,
+    ...settings
+  })
+
+  if (blockType === 'hero') {
+    return {
+      blockType,
+      label,
+      content: 'Titular principal',
+      settings: blockSettings({
+        textAlign: 'center',
+        kicker: 'Nuevo',
+        subtitle: 'Subtitulo del sitio web',
+        buttonText: 'Comenzar',
+        buttonUrl: '#form',
+        ...DEFAULT_BUTTON_SETTINGS
+      })
+    }
+  }
+
+  if (blockType === 'section') {
+    return {
+      blockType,
+      label,
+      content: '',
+      settings: blockSettings({
+        subtitle: '',
+        sectionColumns: 1,
+        sectionGap: DEFAULT_SECTION_GAP,
+        blockBg: 'transparent',
+        blockText: resolvedSiteType === 'landing_page' ? '#f4f4f6' : '#111827',
+        blockPaddingTop: 48,
+        blockPaddingRight: 42,
+        blockPaddingBottom: 48,
+        blockPaddingLeft: 42,
+        blockMarginTop: 0,
+        blockMarginRight: 0,
+        blockMarginBottom: 0,
+        blockMarginLeft: 0,
+        textAlign: 'center',
+        blockRadius: 0,
+        blockBorderWidth: 0
+      })
+    }
+  }
+
+  if (blockType === HEADER_PANEL_BLOCK_TYPE) {
+    return {
+      blockType,
+      label,
+      content: 'Tu marca',
+      settings: blockSettings({
+        panelLinks: [
+          { label: 'Inicio', url: '#' },
+          { label: 'Contacto', url: '#form' }
+        ],
+        blockPaddingTop: 18,
+        blockPaddingRight: 42,
+        blockPaddingBottom: 18,
+        blockPaddingLeft: 42,
+        blockBg: 'transparent',
+        textAlign: 'left',
+        blockRadius: 0,
+        blockBorderWidth: 0
+      })
+    }
+  }
+
+  if (blockType === FOOTER_PANEL_BLOCK_TYPE) {
+    return {
+      blockType,
+      label,
+      content: 'Tu informacion esta protegida.',
+      settings: blockSettings({
+        panelLinks: [
+          { label: 'API docs', url: '/docs' },
+          { label: 'Instagram', url: '#' },
+          { label: 'Facebook', url: '#' }
+        ],
+        blockPaddingTop: 24,
+        blockPaddingRight: 42,
+        blockPaddingBottom: 28,
+        blockPaddingLeft: 42,
+        blockBg: 'transparent',
+        textAlign: 'center',
+        blockRadius: 0,
+        blockBorderWidth: 0
+      })
+    }
+  }
+
+  if (blockType === 'cta') {
+    return {
+      blockType,
+      label,
+      content: 'Listo para empezar?',
+      settings: blockSettings({
+        textAlign: 'center',
+        subtitle: 'Deja tus datos y te contactamos.',
+        buttonText: 'Enviar solicitud',
+        buttonUrl: '#form',
+        ...DEFAULT_BUTTON_SETTINGS
+      })
+    }
+  }
+
+  if (blockType === 'button') {
+    return {
+      blockType,
+      label,
+      content: 'Boton',
+      settings: blockSettings({ buttonText: 'Continuar', buttonUrl: '#form', ...DEFAULT_BUTTON_SETTINGS })
+    }
+  }
+
+  if (['benefits', 'testimonials', 'services', 'faq'].includes(blockType)) {
+    return {
+      blockType,
+      label,
+      content: label,
+      settings: blockSettings({ items: [{ title: 'Elemento 1', text: 'Descripcion breve.' }, { title: 'Elemento 2', text: 'Descripcion breve.' }] })
+    }
+  }
+
+  if (blockType === 'form_embed') {
+    return {
+      blockType,
+      label,
+      content: 'Formulario',
+      settings: blockSettings({ description: 'Completa tus datos.', embeddedBlocks: createEmbeddedBlocks(siteId) })
+    }
+  }
+
+  if (blockType === 'social_profile') {
+    return {
+      blockType,
+      label,
+      content: 'Perfil de red social',
+      settings: blockSettings(socialProfileDefaultsForSite(site))
+    }
+  }
+
+  if (blockType === 'embed') {
+    return {
+      blockType,
+      label,
+      content: '',
+      settings: blockSettings()
+    }
+  }
+
+  if (blockType === 'calendar_embed') {
+    return {
+      blockType,
+      label,
+      content: '',
+      settings: blockSettings({ calendarId: '', calendarSlug: '', calendarName: '' })
+    }
+  }
+
+  return {
+    blockType,
+    label,
+    content: isField ? '' : label,
+    placeholder: isField ? (blockType === 'dropdown' ? 'Selecciona una opcion' : 'Escribe aqui') : '',
+    required: false,
+    options: isChoiceBlock(blockType)
+      ? [
+          { label: 'Opcion 1', value: 'Opcion 1', action: 'continue' as SiteOptionAction },
+          { label: 'Opcion 2', value: 'Opcion 2', action: 'continue' as SiteOptionAction }
+        ]
+      : [],
+    settings: blockSettings(baseSettings)
+  }
+}
+
+const makePreviewBlock = (blockType: SiteBlockType, site: PublicSite, pageId?: string, initialSettings: Record<string, unknown> = {}): SiteBlock => {
+  const payload = defaultBlockPayload(blockType, site)
+  return {
+    id: '__palette-preview__',
+    siteId: site.id,
+    blockType,
+    label: payload.label || blockLabels[blockType],
+    content: payload.content || '',
+    placeholder: payload.placeholder || '',
+    required: Boolean(payload.required),
+    options: payload.options || [],
+    settings: {
+      ...(payload.settings || {}),
+      ...initialSettings,
+      ...(pageId ? { pageId } : {})
+    },
+    sortOrder: -1,
+    createdAt: '',
+    updatedAt: ''
+  }
+}
+
+const hydrateFormSitesForBuilder = async (list: PublicSite[]) => {
+  const formSites = list.filter(site => isFormSite(site))
+  if (!formSites.length) return list
+
+  const hydratedForms = await Promise.all(formSites.map(async (site) => {
+    try {
+      return normalizeSiteForEditor(await sitesService.getSite(site.id))
+    } catch {
+      return site
+    }
+  }))
+  const hydratedById = new Map(hydratedForms.map(site => [site.id, site]))
+
+  return list.map(site => hydratedById.get(site.id) || site)
+}
+
+export const Sites: React.FC = () => {
+  const { showToast, showConfirm } = useNotification()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const routeState = useMemo(
+    () => parseSitesRoute(location.pathname, location.search),
+    [location.pathname, location.search]
+  )
+  const routeHasBlockParam = useMemo(() => new URLSearchParams(location.search).has('block'), [location.search])
+  const { configured: aiAgentConfigured } = useAIAgentAvailability()
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
+  const [section, setSection] = useState<SitesSection>(routeState.section)
+  const [sites, setSites] = useState<PublicSite[]>([])
+  const [domainConfig, setDomainConfig] = useState<SitesDomainConfig>(emptySitesDomainConfig)
+  const [domainInput, setDomainInput] = useState('')
+  const [calendars, setCalendars] = useState<CalendarType[]>([])
+  const [customFields, setCustomFields] = useState<CustomFieldDefinition[]>([])
+  const [metaPixelConnected, setMetaPixelConnected] = useState(false)
+  const [connectedSocialProfiles, setConnectedSocialProfiles] = useState<ConnectedSocialProfile[]>([])
+  const [loadingSocialProfiles, setLoadingSocialProfiles] = useState(false)
+  const [selectedSite, setSelectedSite] = useState<PublicSite | null>(null)
+  const [selectedBlockId, setSelectedBlockId] = useState<string>(routeState.blockId)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [verifying, setVerifying] = useState(false)
+  const [device, setDevice] = useState<DeviceMode>(routeState.device)
+  const [createFlow, setCreateFlow] = useState<CreateFlow>(routeState.createFlow)
+  const [activePageId, setActivePageId] = useState<string>(routeState.pageId || DEFAULT_FUNNEL_PAGE_ID)
+  const [draggingPageId, setDraggingPageId] = useState<string | null>(null)
+  const [activeDragId, setActiveDragId] = useState<string | null>(null)
+  const [paletteDragging, setPaletteDragging] = useState(false)
+  const [paletteDragPayload, setPaletteDragPayload] = useState<PaletteDragPayload | null>(null)
+  const [paletteInsertIndex, setPaletteInsertIndex] = useState<number | null>(null)
+  const [paletteSectionTarget, setPaletteSectionTarget] = useState<PaletteSectionTarget | null>(null)
+  const [paletteDragPosition, setPaletteDragPosition] = useState<PaletteDragPosition | null>(null)
+  const [leadRows, setLeadRows] = useState<LeadRow[]>([])
+  const [loadingLeads, setLoadingLeads] = useState(false)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [editorFocusMode, setEditorFocusMode] = useState(routeState.focus)
+  const [seoModalOpen, setSeoModalOpen] = useState(false)
+  const [headerModalOpen, setHeaderModalOpen] = useState(false)
+  const [pendingImportSiteType, setPendingImportSiteType] = useState<SiteType>('landing_page')
+  const [importReview, setImportReview] = useState<ImportReviewState | null>(null)
+  const [selectedImportData, setSelectedImportData] = useState<ImportedSiteImport | null>(null)
+  const [aiCreationModal, setAiCreationModal] = useState<SitesAICreationModalState>(null)
+  const [aiEditorGeneration, setAiEditorGeneration] = useState<AIEditorGenerationState>(null)
+  const [importedPreviewContexts, setImportedPreviewContexts] = useState<Record<string, SitesAIPreviewVisualContext>>({})
+  const [loadingImportData, setLoadingImportData] = useState(false)
+  const [savingImportMapping, setSavingImportMapping] = useState(false)
+  const selectedSiteRef = useRef<PublicSite | null>(null)
+  const pendingAIGenerationSiteRef = useRef<PublicSite | null>(null)
+  const completedAIGenerationRedirectRef = useRef<CompletedAIGenerationRedirect>(null)
+  const importFileInputRef = useRef<HTMLInputElement | null>(null)
+  const pendingImportSiteTypeRef = useRef<SiteType>('landing_page')
+  const paletteDragPayloadRef = useRef<PaletteDragPayload | null>(null)
+  const undoStackRef = useRef<EditorHistoryEntry[]>([])
+  const redoStackRef = useRef<EditorHistoryEntry[]>([])
+  const historyBusyRef = useRef(false)
+  const guardHistoryArmedRef = useRef(false)
+  const allowNavigationRef = useRef(false)
+  const suppressEditorRouteRestoreRef = useRef(false)
+
+  const markEditorExitInProgress = () => {
+    suppressEditorRouteRestoreRef.current = true
+  }
+
+  useEffect(() => {
+    selectedSiteRef.current = selectedSite
+  }, [selectedSite])
+
+  useEffect(() => {
+    let cancelled = false
+    const site = selectedSite
+
+    if (!site || !isImportedHtmlSite(site)) {
+      setSelectedImportData(null)
+      setLoadingImportData(false)
+      return
+    }
+
+    setLoadingImportData(true)
+    sitesService.getImportMapping(site.id)
+      .then((importData) => {
+        if (!cancelled) setSelectedImportData(importData)
+      })
+      .catch(() => {
+        if (!cancelled) setSelectedImportData(null)
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingImportData(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedSite?.id])
+
+  useEffect(() => {
+    undoStackRef.current = []
+    redoStackRef.current = []
+  }, [selectedSite?.id])
+
+  const handleImportedPreviewContextChange = useCallback((siteId: string, context: SitesAIPreviewVisualContext) => {
+    setImportedPreviewContexts(current => {
+      const previous = current[siteId]
+      if (
+        previous?.pageId === context.pageId &&
+        previous?.summary === context.summary &&
+        previous?.screenshotDataUrl === context.screenshotDataUrl
+      ) {
+        return current
+      }
+      return { ...current, [siteId]: context }
+    })
+  }, [])
+
+  const landings = useMemo(
+    () => sites.filter(site => site.siteType === 'landing_page'),
+    [sites]
+  )
+  const forms = useMemo(
+    () => sites.filter(site => site.siteType === 'standard_form' || site.siteType === 'interactive_form'),
+    [sites]
+  )
+  const blocks = useMemo(
+    () => [...(selectedSite?.blocks || [])].sort((a, b) => a.sortOrder - b.sortOrder),
+    [selectedSite?.blocks]
+  )
+  const pages = useMemo(
+    () => hasEditablePages(selectedSite) ? normalizeFunnelPages(selectedSite) : [],
+    [selectedSite]
+  )
+  const activePage = pages.find(page => page.id === activePageId) || pages[0] || null
+  const canvasBlocks = useMemo(
+    () => hasEditablePages(selectedSite) && activePage
+      ? blocks.filter(block => !isPopupBlock(block) && (isGlobalHeaderBlock(block) || getBlockPageId(block, pages) === activePage.id))
+      : blocks.filter(block => !isPopupBlock(block)),
+    [activePage, blocks, pages, selectedSite]
+  )
+  const popupBlocks = useMemo(
+    () => blocks.filter(isPopupBlock),
+    [blocks]
+  )
+  const globalHeaderBlock = useMemo(
+    () => blocks.find(isGlobalHeaderBlock) || null,
+    [blocks]
+  )
+  const activePageHeaderBlock = useMemo(
+    () => activePage ? blocks.find(block => isPageHeaderBlock(block, pages, activePage.id)) || null : null,
+    [activePage, blocks, pages]
+  )
+  const selectedBlock = [...canvasBlocks, ...popupBlocks].find(block => block.id === selectedBlockId) || null
+  const editorSite = section === 'landings'
+    ? (isLanding(selectedSite) ? selectedSite : null)
+    : section === 'forms'
+      ? (isFormSite(selectedSite) ? selectedSite : null)
+      : null
+  const importedPopupDetected = useMemo(
+    () => isImportedHtmlSite(editorSite) && importedHtmlHasPopup(selectedImportData),
+    [editorSite, selectedImportData]
+  )
+  const canConfigurePopup = Boolean(editorSite && isLanding(editorSite) && (
+    !isImportedHtmlSite(editorSite) ||
+    importedPopupDetected ||
+    hasThemePopupConfig(editorSite.theme)
+  ))
+  const popupSurfaceSelected = canConfigurePopup && (selectedBlockId === POPUP_SELECTED_ID || popupBlocks.some(block => block.id === selectedBlockId))
+  const editableCanvasBlocks = popupSurfaceSelected ? popupBlocks : canvasBlocks
+  const activeDragBlock = editableCanvasBlocks.find(block => block.id === activeDragId) || null
+  const activeAIGeneration = aiEditorGeneration && editorSite?.id === aiEditorGeneration.siteId ? aiEditorGeneration : null
+  const editorAIGenerating = Boolean(activeAIGeneration)
+  const formCanvasHasFields = Boolean(editorSite && isFormSite(editorSite) && canvasBlocks.some(block => fieldBlockTypes.has(block.blockType)))
+  const formCanvasActionLabel = editorSite && activePage && isStandardForm(editorSite) && !isLastFormContentPage(editorSite, pages, activePage.id)
+    ? 'Continuar'
+    : undefined
+  const seoValidation = editorSite ? getSeoValidationState(editorSite) : null
+  const editorActive = Boolean(editorSite)
+  const isCanvasFocusMode = editorFocusMode && Boolean(editorSite)
+  const isFocusedSitesMode = createFlow !== 'closed' || Boolean(editorSite)
+  const createFlowHeaderCopy = getCreateFlowHeaderCopy(createFlow)
+  const canvasTheme = editorSite ? buildCanvasTheme(editorSite, device) : null
+  const navigateSitesSection = useCallback((nextSection: SitesSection, options?: { replace?: boolean }) => {
+    navigate(buildSitesSectionPath(nextSection), { replace: options?.replace })
+  }, [navigate])
+  const navigateSitesCreateFlow = useCallback((nextSection: SitesSection, nextFlow: CreateFlow, options?: { replace?: boolean }) => {
+    navigate(buildSitesCreatePath(nextSection, nextFlow), { replace: options?.replace })
+  }, [navigate])
+  const navigateSitesEditor = useCallback((options?: {
+    site?: PublicSite | null
+    pageId?: string
+    blockId?: string
+    device?: DeviceMode
+    focus?: boolean
+    replace?: boolean
+  }) => {
+    const site = options?.site || editorSite
+    if (!site?.id) return
+    const nextPageId = options?.pageId ?? activePage?.id ?? activePageId
+    const nextDevice = options?.device ?? device
+    const nextFocus = options?.focus ?? editorFocusMode
+    const nextPath = buildSitesEditorPath({
+      section: getSiteSection(site),
+      siteId: site.id,
+      pageId: nextPageId,
+      device: nextDevice,
+      focus: nextFocus
+    })
+    const currentPath = `${location.pathname}${location.search}`
+    if (nextPath === currentPath) return
+    navigate(nextPath, { replace: options?.replace })
+  }, [activePage?.id, activePageId, device, editorFocusMode, editorSite, location.pathname, location.search, navigate])
+  const selectEditorPage = useCallback((pageId: string, options?: { replace?: boolean }) => {
+    setActivePageId(pageId)
+    setSelectedBlockId('')
+    navigateSitesEditor({ pageId, blockId: '', replace: options?.replace })
+  }, [navigateSitesEditor])
+  const selectEditorDevice = useCallback((nextDevice: DeviceMode) => {
+    setDevice(nextDevice)
+    navigateSitesEditor({ device: nextDevice })
+  }, [navigateSitesEditor])
+  const selectEditorBlock = useCallback((blockId: string) => {
+    setSelectedBlockId(blockId)
+  }, [])
+  const setEditorFocus = useCallback((nextFocus: boolean) => {
+    setEditorFocusMode(nextFocus)
+    navigateSitesEditor({ focus: nextFocus })
+  }, [navigateSitesEditor])
+  const landingSectionLanes = useMemo(
+    () => editorSite && isLanding(editorSite) ? buildLandingSectionLanes(canvasBlocks) : [],
+    [canvasBlocks, editorSite]
+  )
+  const popupSectionLanes = useMemo(
+    () => editorSite && isLanding(editorSite) ? buildLandingSectionLanes(popupBlocks) : [],
+    [editorSite, popupBlocks]
+  )
+  const hasLandingCanvasContent = landingSectionLanes.length > 0 || canvasBlocks.some(isPanelBlock)
+  const palettePreviewBlock = editorSite && paletteDragPayload
+    ? makePreviewBlock(
+      paletteDragPayload.blockType,
+      editorSite,
+      hasEditablePages(editorSite) ? activePage?.id : undefined,
+      popupSurfaceSelected
+        ? getPopupBlockSettings(paletteDragPayload.initialSettings || {})
+        : paletteDragPayload.initialSettings
+    )
+    : null
+  const canvasPalettePreviewBlock = paletteDragging ? palettePreviewBlock : null
+
+  useEffect(() => {
+    setEditorFocusMode(routeState.focus)
+    setSeoModalOpen(false)
+    setHeaderModalOpen(false)
+  }, [editorSite?.id, routeState.focus])
+
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent(SITES_EDITOR_ACTIVE_EVENT, {
+      detail: { active: editorActive, focusMode: isCanvasFocusMode }
+    }))
+  }, [editorActive, isCanvasFocusMode])
+
+  useEffect(() => {
+    return () => {
+      window.dispatchEvent(new CustomEvent(SITES_EDITOR_ACTIVE_EVENT, {
+        detail: { active: false, focusMode: false }
+      }))
+    }
+  }, [])
+
+  const performUrlNavigation = useCallback((href: string) => {
+    const target = new URL(href, window.location.href)
+
+    if (target.origin === window.location.origin) {
+      navigate(`${target.pathname}${target.search}${target.hash}`)
+      return
+    }
+
+    window.location.href = target.href
+  }, [navigate])
+
+  const handleCancelLeaveEditor = useCallback(() => {
+    if (hasUnsavedChanges && !guardHistoryArmedRef.current) {
+      window.history.pushState({ ristakSitesUnsavedGuard: true }, '', window.location.href)
+      guardHistoryArmedRef.current = true
+    }
+  }, [hasUnsavedChanges])
+
+  const handleConfirmLeaveEditor = useCallback((action?: () => void) => {
+    allowNavigationRef.current = true
+    guardHistoryArmedRef.current = false
+    setHasUnsavedChanges(false)
+
+    action?.()
+
+    window.setTimeout(() => {
+      allowNavigationRef.current = false
+    }, 500)
+  }, [])
+
+  const requestLeaveEditor = useCallback((action: () => void) => {
+    if (!hasUnsavedChanges) {
+      action()
+      return
+    }
+
+    showConfirm(
+      'Cambios sin guardar',
+      'Hay cambios en el editor que todavia no se han guardado o publicado. Si sales ahora, esos ajustes se van a perder.',
+      () => handleConfirmLeaveEditor(action),
+      'Salir sin guardar',
+      'Seguir editando',
+      handleCancelLeaveEditor
+    )
+  }, [handleCancelLeaveEditor, handleConfirmLeaveEditor, hasUnsavedChanges, showConfirm])
+
+  const markEditorDirty = useCallback(() => {
+    if (editorSite) {
+      setHasUnsavedChanges(true)
+    }
+  }, [editorSite])
+
+  useEffect(() => {
+    loadSites(routeState.siteId || new URLSearchParams(window.location.search).get('siteEditor') || undefined, routeState.pageId || undefined)
+    loadCalendarsForBuilder()
+    loadCustomFieldsForBuilder()
+  }, [])
+
+  useEffect(() => {
+    let mounted = true
+
+    setLoadingSocialProfiles(true)
+    campaignsService.getMetaConfig()
+      .then(response => {
+        if (!mounted) return
+        setMetaPixelConnected(Boolean(
+          response.configured &&
+          response.config?.adAccountId &&
+          response.config?.accessToken &&
+          response.config?.pixelId
+        ))
+      })
+      .catch(() => {
+        if (mounted) setMetaPixelConnected(false)
+      })
+
+    campaignsService.getConnectedSocialProfiles()
+      .then(response => {
+        if (!mounted) return
+        setConnectedSocialProfiles(response.profiles)
+      })
+      .catch(() => {
+        if (mounted) setConnectedSocialProfiles([])
+      })
+      .finally(() => {
+        if (mounted) setLoadingSocialProfiles(false)
+      })
+
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!hasEditablePages(selectedSite)) return
+    const firstPage = pages[0]
+    if (!firstPage) return
+    if (!pages.some(page => page.id === activePageId)) {
+      selectEditorPage(firstPage.id, { replace: true })
+    }
+  }, [activePageId, pages, selectEditorPage, selectedSite])
+
+  useEffect(() => {
+    const selectableBlocks = [...canvasBlocks, ...popupBlocks]
+    if (!selectableBlocks.length) {
+      if (selectedBlockId && !isEditorSurfaceSelection(selectedBlockId)) setSelectedBlockId('')
+      return
+    }
+    if (isEditorSurfaceSelection(selectedBlockId)) return
+    if (selectedBlockId && !selectableBlocks.some(block => block.id === selectedBlockId)) {
+      setSelectedBlockId('')
+    }
+  }, [canvasBlocks, popupBlocks, selectedBlockId])
+
+  useEffect(() => {
+    if ((selectedBlockId === POPUP_SELECTED_ID || popupBlocks.some(block => block.id === selectedBlockId)) && !canConfigurePopup) {
+      setSelectedBlockId('')
+    }
+  }, [canConfigurePopup, popupBlocks, selectedBlockId])
+
+  useEffect(() => {
+    const handleAIDraftCreated = (event: Event) => {
+      const detail = (event as CustomEvent<PublicSite | { site?: PublicSite; import?: ImportedSiteImport; reviewMapping?: boolean }>).detail
+      const wrappedDetail = Boolean(detail && typeof detail === 'object' && 'site' in detail)
+      const rawSite = wrappedDetail ? (detail as { site?: PublicSite }).site : detail as PublicSite | undefined
+      if (!rawSite?.id) return
+      const site = normalizeSiteForEditor(rawSite)
+      const importData = wrappedDetail ? (detail as { import?: ImportedSiteImport }).import : null
+      const nextPageId = normalizeFunnelPages(site)[0]?.id || DEFAULT_FUNNEL_PAGE_ID
+
+      setSites(current => [site, ...current.filter(item => item.id !== site.id)])
+      setSelectedSite(site)
+      setActivePageId(nextPageId)
+      setSelectedBlockId('')
+      setSection(getSiteSection(site))
+      setCreateFlow('closed')
+      setHasUnsavedChanges(false)
+      navigate(buildSitesEditorPath({
+        section: getSiteSection(site),
+        siteId: site.id,
+        pageId: nextPageId,
+        device,
+        focus: editorFocusMode
+      }))
+      if (importData?.siteId) {
+        setSelectedImportData(importData)
+        if (wrappedDetail && (detail as { reviewMapping?: boolean }).reviewMapping) {
+          setImportReview({ site, importData })
+        }
+      }
+    }
+
+    window.addEventListener(SITES_AI_DRAFT_CREATED_EVENT, handleAIDraftCreated)
+    return () => {
+      window.removeEventListener(SITES_AI_DRAFT_CREATED_EVENT, handleAIDraftCreated)
+    }
+  }, [device, editorFocusMode, navigate])
+
+  useEffect(() => {
+    if (section === 'leads') {
+      loadLeads()
+    }
+  }, [section, sites.length])
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) {
+      guardHistoryArmedRef.current = false
+      return
+    }
+
+    if (!guardHistoryArmedRef.current) {
+      window.history.pushState({ ristakSitesUnsavedGuard: true }, '', window.location.href)
+      guardHistoryArmedRef.current = true
+    }
+
+    const handleDocumentClick = (event: MouseEvent) => {
+      if (
+        allowNavigationRef.current ||
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.shiftKey
+      ) {
+        return
+      }
+
+      const target = event.target instanceof Element ? event.target : null
+      const anchor = target?.closest('a[href]') as HTMLAnchorElement | null
+      if (!anchor || anchor.target === '_blank' || anchor.hasAttribute('download')) return
+
+      const href = anchor.getAttribute('href')
+      if (!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:')) return
+
+      const targetUrl = new URL(anchor.href, window.location.href)
+      if (targetUrl.href === window.location.href) return
+
+      event.preventDefault()
+      event.stopPropagation()
+      requestLeaveEditor(() => performUrlNavigation(targetUrl.href))
+    }
+
+    const handlePopState = () => {
+      if (allowNavigationRef.current) return
+
+      guardHistoryArmedRef.current = false
+      requestLeaveEditor(() => window.history.back())
+    }
+
+    document.addEventListener('click', handleDocumentClick, true)
+    window.addEventListener('popstate', handlePopState)
+
+    return () => {
+      document.removeEventListener('click', handleDocumentClick, true)
+      window.removeEventListener('popstate', handlePopState)
+    }
+  }, [hasUnsavedChanges, performUrlNavigation, requestLeaveEditor])
+
+  const loadSites = async (selectId?: string, selectPageId?: string) => {
+    setLoading(true)
+    try {
+      const [list, nextDomainConfig] = await Promise.all([
+        sitesService.listSites(),
+        sitesService.getDomain()
+      ])
+      const builderSites = await hydrateFormSitesForBuilder(list)
+      setSites(builderSites)
+      setDomainConfig(nextDomainConfig)
+      setDomainInput(nextDomainConfig.domain)
+      const nextId = selectId || (selectedSite?.id && builderSites.some(site => site.id === selectedSite.id) ? selectedSite.id : '')
+      if (nextId) {
+        const site = normalizeSiteForEditor(await sitesService.getSite(nextId))
+        const nextPages = normalizeFunnelPages(site)
+        setSelectedSite(site)
+        setSection(getSiteSection(site))
+        setActivePageId(nextPages.some(page => page.id === selectPageId) ? selectPageId! : nextPages[0]?.id || DEFAULT_FUNNEL_PAGE_ID)
+        setSelectedBlockId(routeState.blockId || '')
+      } else {
+        setSelectedSite(null)
+        setSelectedBlockId('')
+      }
+    } catch (error) {
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudieron cargar los sites')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadCalendarsForBuilder = async () => {
+    try {
+      setCalendars(await calendarsService.getCalendars())
+    } catch {
+      setCalendars([])
+    }
+  }
+
+  const loadCustomFieldsForBuilder = async () => {
+    try {
+      const catalog = await customFieldsService.listCatalog()
+      setCustomFields((catalog.fields || []).filter(field => !isSystemCustomFieldDefinition(field)))
+    } catch {
+      setCustomFields([])
+    }
+  }
+
+  const loadLeads = async () => {
+    if (!sites.length) {
+      setLeadRows([])
+      return
+    }
+
+    setLoadingLeads(true)
+    try {
+      const details = await Promise.all(sites.map(site => sitesService.getSite(site.id)))
+      const rows = details.flatMap(site =>
+        (site.submissions || []).map(submission => ({
+          ...submission,
+          siteName: site.name
+        }))
+      )
+      rows.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      setLeadRows(rows)
+    } catch (error) {
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudieron cargar los leads')
+    } finally {
+      setLoadingLeads(false)
+    }
+  }
+
+  const openSite = async (siteId: string, pageId?: string, options?: { replaceRoute?: boolean }) => {
+    try {
+      const site = normalizeSiteForEditor(await sitesService.getSite(siteId))
+      const nextPages = normalizeFunnelPages(site)
+      const nextPageId = nextPages.some(page => page.id === pageId) ? pageId! : nextPages[0]?.id || DEFAULT_FUNNEL_PAGE_ID
+      setSelectedSite(site)
+      setActivePageId(nextPageId)
+      setSelectedBlockId('')
+      setCreateFlow('closed')
+      setHasUnsavedChanges(false)
+      navigate(buildSitesEditorPath({
+        section: getSiteSection(site),
+        siteId: site.id,
+        pageId: nextPageId,
+        device,
+        focus: editorFocusMode
+      }), { replace: options?.replaceRoute })
+    } catch (error) {
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo abrir el site')
+    }
+  }
+
+  const selectSite = (siteId: string) => {
+    requestLeaveEditor(() => {
+      void openSite(siteId)
+    })
+  }
+
+  useEffect(() => {
+    if (loading) return
+
+    setSection(current => current === routeState.section ? current : routeState.section)
+    setDevice(current => current === routeState.device ? current : routeState.device)
+    setEditorFocusMode(current => current === routeState.focus ? current : routeState.focus)
+    setCreateFlow(current => current === routeState.createFlow ? current : routeState.createFlow)
+
+    if (routeState.siteId) {
+      if (suppressEditorRouteRestoreRef.current) return
+
+      const pendingGenerationSite = pendingAIGenerationSiteRef.current || selectedSiteRef.current
+      const isPendingGenerationRoute = routeState.siteId.startsWith('ai-pending-')
+      const completedGenerationRedirect = completedAIGenerationRedirectRef.current
+      if (isPendingGenerationRoute && completedGenerationRedirect?.pendingSiteId === routeState.siteId) {
+        navigate(completedGenerationRedirect.editorPath, { replace: true })
+        return
+      }
+      if (completedGenerationRedirect?.siteId === routeState.siteId) {
+        completedAIGenerationRedirectRef.current = null
+      }
+      if ((aiEditorGeneration?.siteId === routeState.siteId || isPendingGenerationRoute) && pendingGenerationSite?.id === routeState.siteId) {
+        if (selectedSite?.id !== pendingGenerationSite.id) {
+          setSelectedSite(pendingGenerationSite)
+        }
+        if (routeState.pageId && routeState.pageId !== activePageId) {
+          setActivePageId(routeState.pageId)
+        }
+        if (routeHasBlockParam && routeState.blockId !== selectedBlockId) {
+          setSelectedBlockId(routeState.blockId)
+        }
+        return
+      }
+
+      if (isPendingGenerationRoute) {
+        setCreateFlow(getCreateFlowForSection(routeState.section))
+        navigateSitesCreateFlow(routeState.section, getCreateFlowForSection(routeState.section), { replace: true })
+        return
+      }
+
+      if (selectedSite?.id !== routeState.siteId) {
+        void openSite(routeState.siteId, routeState.pageId || undefined, { replaceRoute: true })
+        return
+      }
+
+      if (routeState.pageId && routeState.pageId !== activePageId) {
+        setActivePageId(routeState.pageId)
+      }
+      if (routeHasBlockParam && routeState.blockId !== selectedBlockId) {
+        setSelectedBlockId(routeState.blockId)
+      }
+      return
+    }
+
+    const completedGenerationRedirect = completedAIGenerationRedirectRef.current
+    if (completedGenerationRedirect) {
+      navigate(completedGenerationRedirect.editorPath, { replace: true })
+      return
+    }
+
+    suppressEditorRouteRestoreRef.current = false
+
+    if (selectedSite || selectedBlockId || activePageId !== DEFAULT_FUNNEL_PAGE_ID) {
+      setSelectedSite(null)
+      setSelectedBlockId('')
+      setActivePageId(DEFAULT_FUNNEL_PAGE_ID)
+    }
+  }, [
+    aiEditorGeneration?.siteId,
+    activePageId,
+    loading,
+    navigate,
+    navigateSitesCreateFlow,
+    routeState.blockId,
+    routeState.createFlow,
+    routeState.device,
+    routeState.focus,
+    routeState.pageId,
+    routeState.section,
+    routeState.siteId,
+    routeHasBlockParam,
+    selectedBlockId,
+    selectedSite?.id
+  ])
+
+  const changeSection = async (nextSection: SitesSection) => {
+    markEditorExitInProgress()
+    setSection(nextSection)
+    setCreateFlow('closed')
+    setHasUnsavedChanges(false)
+    navigateSitesSection(nextSection)
+
+    if (nextSection === 'landings' || nextSection === 'forms') {
+      setSelectedSite(null)
+      setSelectedBlockId('')
+    }
+  }
+
+  const handleSectionChange = (nextSection: SitesSection) => {
+    if (nextSection === 'domains') {
+      requestLeaveEditor(() => {
+        performUrlNavigation('/settings/domains')
+      })
+      return
+    }
+
+    if (nextSection === section) {
+      if ((section === 'landings' || section === 'forms') && (editorSite || createFlow !== 'closed')) {
+        requestLeaveEditor(() => {
+          markEditorExitInProgress()
+          setSelectedSite(null)
+          setSelectedBlockId('')
+          setCreateFlow('closed')
+          setHasUnsavedChanges(false)
+          navigateSitesSection(section)
+        })
+      }
+      return
+    }
+
+    requestLeaveEditor(() => {
+      void changeSection(nextSection)
+    })
+  }
+
+  const handleStartCreateFlow = () => {
+    requestLeaveEditor(() => {
+      markEditorExitInProgress()
+      selectedSiteRef.current = null
+      setSelectedSite(null)
+      setSelectedBlockId('')
+      setActivePageId(DEFAULT_FUNNEL_PAGE_ID)
+      setDraggingPageId(null)
+      setActiveDragId(null)
+      setPaletteDragging(false)
+      setPaletteDragPayload(null)
+      setPaletteInsertIndex(null)
+      setPaletteSectionTarget(null)
+      const nextFlow = getCreateFlowForSection(section)
+      setCreateFlow(nextFlow)
+      navigateSitesCreateFlow(section, nextFlow)
+      setHasUnsavedChanges(false)
+    })
+  }
+
+  const clearSiteEditorUrlParam = () => {
+    const url = new URL(window.location.href)
+    if (!url.searchParams.has('siteEditor')) return
+
+    url.searchParams.delete('siteEditor')
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`)
+  }
+
+  const handleBackToLibrary = () => {
+    requestLeaveEditor(() => {
+      markEditorExitInProgress()
+      selectedSiteRef.current = null
+      setSelectedSite(null)
+      setSelectedBlockId('')
+      setActivePageId(DEFAULT_FUNNEL_PAGE_ID)
+      setDraggingPageId(null)
+      setActiveDragId(null)
+      setPaletteDragging(false)
+      setPaletteDragPayload(null)
+      setPaletteInsertIndex(null)
+      setPaletteSectionTarget(null)
+      setCreateFlow('closed')
+      setEditorFocusMode(false)
+      setSeoModalOpen(false)
+      clearSiteEditorUrlParam()
+      navigateSitesSection(section)
+      setHasUnsavedChanges(false)
+    })
+  }
+
+  const handleFocusedBack = () => {
+    if (!editorSite && createFlow !== 'closed') {
+      const previousStep = getPreviousCreateFlowStep(createFlow)
+
+      if (previousStep !== 'closed') {
+        setCreateFlow(previousStep)
+        navigateSitesCreateFlow(section, previousStep)
+        return
+      }
+    }
+
+    handleBackToLibrary()
+  }
+
+  const syncSelectedSite = (site: PublicSite) => {
+    const normalizedSite = normalizeSiteForEditor(site)
+    selectedSiteRef.current = normalizedSite
+    setSelectedSite(normalizedSite)
+    setSelectedBlockId(current => normalizedSite.blocks?.some(block => block.id === current) || isEditorSurfaceSelection(current) ? current : '')
+    setSites(current => current.map(item => item.id === normalizedSite.id ? { ...item, ...normalizedSite } : item))
+  }
+
+  const pushEditorHistory = (entry: EditorHistoryEntry) => {
+    if (historyBusyRef.current) return
+    undoStackRef.current = [...undoStackRef.current, cloneJson(entry)].slice(-MAX_SITES_EDITOR_HISTORY)
+    redoStackRef.current = []
+  }
+
+  const applyEditorHistoryEntry = async (entry: EditorHistoryEntry, direction: 'undo' | 'redo') => {
+    if (historyBusyRef.current) return false
+
+    historyBusyRef.current = true
+    setSaving(true)
+    try {
+      let site: PublicSite | null = null
+
+      if (entry.action === 'reorder') {
+        site = await sitesService.reorderBlocks(
+          entry.siteId,
+          direction === 'undo' ? entry.beforeBlockIds : entry.afterBlockIds,
+          entry.pageId
+        )
+      } else if (entry.action === 'delete') {
+        if (direction === 'undo') {
+          if (!entry.deletedBlocks?.length) return false
+          site = await sitesService.restoreBlocks(entry.siteId, entry.deletedBlocks)
+          if (entry.beforeBlockIds.length) {
+            site = await sitesService.reorderBlocks(entry.siteId, entry.beforeBlockIds, entry.pageId)
+          }
+        } else if (entry.deletedRootBlockId) {
+          site = await sitesService.deleteBlock(entry.siteId, entry.deletedRootBlockId)
+        }
+      }
+
+      if (!site) return false
+
+      syncSelectedSite(site)
+      if (entry.pageId) setActivePageId(entry.pageId)
+      setSelectedBlockId(direction === 'undo' ? entry.selectedBefore : entry.selectedAfter)
+      if (entry.pageId) {
+        navigateSitesEditor({
+          site,
+          pageId: entry.pageId,
+          blockId: direction === 'undo' ? entry.selectedBefore : entry.selectedAfter
+        })
+      }
+      setHasUnsavedChanges(false)
+      showToast(
+        'info',
+        direction === 'undo' ? 'Cambio deshecho' : 'Cambio rehecho',
+        direction === 'undo' ? 'El editor regreso al paso anterior.' : 'El editor aplico otra vez el cambio.'
+      )
+      return true
+    } catch (error) {
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo actualizar el historial')
+      return false
+    } finally {
+      historyBusyRef.current = false
+      setSaving(false)
+    }
+  }
+
+  const handleEditorUndo = async () => {
+    const entry = undoStackRef.current.pop()
+    if (!entry) return
+
+    const applied = await applyEditorHistoryEntry(entry, 'undo')
+    if (applied) {
+      redoStackRef.current = [...redoStackRef.current, entry].slice(-MAX_SITES_EDITOR_HISTORY)
+    } else {
+      undoStackRef.current = [...undoStackRef.current, entry].slice(-MAX_SITES_EDITOR_HISTORY)
+    }
+  }
+
+  const handleEditorRedo = async () => {
+    const entry = redoStackRef.current.pop()
+    if (!entry) return
+
+    const applied = await applyEditorHistoryEntry(entry, 'redo')
+    if (applied) {
+      undoStackRef.current = [...undoStackRef.current, entry].slice(-MAX_SITES_EDITOR_HISTORY)
+    } else {
+      redoStackRef.current = [...redoStackRef.current, entry].slice(-MAX_SITES_EDITOR_HISTORY)
+    }
+  }
+
+  useEffect(() => {
+    if (!editorSite) return
+
+    const handleEditorKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey || isNativeUndoTarget(event.target)) return
+
+      const key = event.key.toLowerCase()
+      const wantsUndo = key === 'z' && !event.shiftKey
+      const wantsRedo = key === 'y' || (key === 'z' && event.shiftKey)
+      if (!wantsUndo && !wantsRedo) return
+
+      event.preventDefault()
+      if (historyBusyRef.current) return
+      void (wantsUndo ? handleEditorUndo() : handleEditorRedo())
+    }
+
+    window.addEventListener('keydown', handleEditorKeyDown)
+    return () => window.removeEventListener('keydown', handleEditorKeyDown)
+  }, [editorSite])
+
+  const updateSelectedSite = (patch: Partial<PublicSite>) => {
+    markEditorDirty()
+    const current = selectedSiteRef.current
+    if (!current) return
+    const next = { ...current, ...patch }
+    selectedSiteRef.current = next
+    setSelectedSite(next)
+  }
+
+  const patchSiteTheme = (patch: Partial<SiteTheme>) => {
+    markEditorDirty()
+    const current = selectedSiteRef.current
+    if (!current) return
+    const next = { ...current, theme: { ...(current.theme || {}), ...patch } }
+    selectedSiteRef.current = next
+    setSelectedSite(next)
+  }
+
+  const saveSiteTheme = async (site: PublicSite, theme: SiteTheme) => {
+    return sitesService.updateSite(site.id, {
+      name: site.name,
+      slug: normalizeRouteInput(site.slug) || normalizeRouteInput(site.name) || getDefaultRoutePrefix(site.siteType),
+      siteType: site.siteType,
+      status: site.status,
+      title: getPublicTitleForSave(site),
+      description: site.description,
+      theme,
+      metaCapiEnabled: site.metaCapiEnabled,
+      metaEventName: site.metaEventName
+    })
+  }
+
+  const persistFunnelPages = async (nextPages: SitePage[], nextActivePageId?: string) => {
+    if (!selectedSite || !hasEditablePages(selectedSite)) return
+    const orderedPages = getOrderedPagesForSite(selectedSite, nextPages)
+    const finalPages = getSitePageMode(selectedSite) === 'website' ? ensureWebsiteSlugs(orderedPages) : orderedPages
+
+    setSaving(true)
+    try {
+      const theme = {
+        ...(selectedSite.theme || {}),
+        pages: normalizePagesForSave(finalPages)
+      }
+      const site = await saveSiteTheme(selectedSite, theme)
+      syncSelectedSite(site)
+      const targetPageId = nextActivePageId || activePageId
+      setActivePageId(targetPageId)
+      navigateSitesEditor({ site, pageId: targetPageId, blockId: '' })
+      setHasUnsavedChanges(false)
+    } catch (error) {
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudieron guardar las paginas')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleAddPage = () => {
+    if (!selectedSite || !hasEditablePages(selectedSite) || !canManagePages(selectedSite)) return
+    const nextPage = makeFunnelPage(isStandardForm(selectedSite) ? getFormContentPages(pages).length : pages.length)
+    const insertIndex = getFormAddPageIndex(selectedSite, pages)
+    const nextPages = [
+      ...pages.slice(0, insertIndex),
+      nextPage,
+      ...pages.slice(insertIndex)
+    ]
+    void persistFunnelPages(nextPages, nextPage.id)
+  }
+
+  const handleAddSubpage = (parentId: string) => {
+    if (!selectedSite || !hasEditablePages(selectedSite) || !canManagePages(selectedSite)) return
+    if (getSitePageMode(selectedSite) !== 'website') return
+    const parent = pages.find(page => page.id === parentId)
+    if (!parent || getPageDepth(parent, pages) >= MAX_WEBSITE_PAGE_DEPTH) return
+    const nextPage = makeFunnelPage(pages.length, { parentPageId: parentId })
+    nextPage.title = 'Subpagina'
+    // Insert right after the parent's existing subtree so the flat order keeps subtrees contiguous.
+    const descendants = new Set(getDescendantPageIds(parentId, pages))
+    const parentIndex = pages.findIndex(page => page.id === parentId)
+    let insertIndex = parentIndex + 1
+    while (insertIndex < pages.length && descendants.has(pages[insertIndex].id)) insertIndex += 1
+    const nextPages = [
+      ...pages.slice(0, insertIndex),
+      nextPage,
+      ...pages.slice(insertIndex)
+    ]
+    void persistFunnelPages(nextPages, nextPage.id)
+  }
+
+  const handleChangePageMode = async (mode: 'funnel' | 'website') => {
+    if (!selectedSite || !isLanding(selectedSite) || isImportedHtmlSite(selectedSite)) return
+    if (getSitePageMode(selectedSite) === mode) return
+    const orderedPages = getOrderedPagesForSite(selectedSite, pages)
+    const finalPages = mode === 'website' ? ensureWebsiteSlugs(orderedPages) : orderedPages
+    setSaving(true)
+    try {
+      const theme = {
+        ...(selectedSite.theme || {}),
+        pageMode: mode,
+        pages: normalizePagesForSave(finalPages)
+      }
+      const site = await saveSiteTheme(selectedSite, theme)
+      syncSelectedSite(site)
+      setHasUnsavedChanges(false)
+      showToast('success', mode === 'website' ? 'Modo Sitio web' : 'Modo Embudo', mode === 'website'
+        ? 'Ahora puedes organizar paginas con subpaginas.'
+        : 'Las paginas vuelven a un orden lineal de embudo.')
+    } catch (error) {
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo cambiar el modo del sitio')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const cloneBlockForPage = (block: SiteBlock, pageId: string): Partial<SiteBlock> & { blockType: SiteBlockType } => ({
+    blockType: block.blockType,
+    label: block.label,
+    content: block.content,
+    placeholder: block.placeholder,
+    required: block.required,
+    options: cloneJson(block.options),
+    settings: {
+      ...cloneJson(block.settings || {}),
+      pageId
+    }
+  })
+
+  const handleDuplicatePage = async (pageId: string) => {
+    if (!selectedSite || !hasEditablePages(selectedSite) || !canManagePages(selectedSite)) return
+    if (isStandardForm(selectedSite) && isFormFinalPageId(pageId)) return
+
+    const sourceIndex = pages.findIndex(page => page.id === pageId)
+    if (sourceIndex < 0) return
+
+    const websiteMode = getSitePageMode(selectedSite) === 'website'
+    // In website mode duplicate the whole subtree (page + descendants); in funnel
+    // mode there are no descendants, so this naturally clones a single page.
+    const subtreeIds = websiteMode ? [pageId, ...getDescendantPageIds(pageId, pages)] : [pageId]
+    const subtreeSet = new Set(subtreeIds)
+    const subtreePages = pages.filter(page => subtreeSet.has(page.id))
+
+    const idMap = new Map<string, string>()
+    subtreePages.forEach((page, i) => {
+      idMap.set(page.id, `page-${Date.now()}-${Math.random().toString(16).slice(2, 8)}-${i}`)
+    })
+
+    const clonedPages: SitePage[] = subtreePages.map(page => {
+      const isRoot = page.id === pageId
+      const remappedParent = isRoot
+        ? page.parentPageId
+        : idMap.get(page.parentPageId || '') || page.parentPageId
+      const cloned: SitePage = {
+        ...page,
+        id: idMap.get(page.id) as string,
+        title: isRoot ? `${page.title} copia` : page.title
+      }
+      if (remappedParent) cloned.parentPageId = remappedParent
+      else delete cloned.parentPageId
+      // Drop the slug so it is regenerated uniquely among siblings on save.
+      delete cloned.slug
+      return cloned
+    })
+
+    // Insert the cloned subtree right after the source subtree.
+    let endIndex = sourceIndex + 1
+    while (endIndex < pages.length && subtreeSet.has(pages[endIndex].id)) endIndex += 1
+    const nextPages = [
+      ...pages.slice(0, endIndex),
+      ...clonedPages,
+      ...pages.slice(endIndex)
+    ]
+    const orderedPages = getOrderedPagesForSite(selectedSite, nextPages)
+    const finalPages = websiteMode ? ensureWebsiteSlugs(orderedPages) : orderedPages
+    const newRootId = idMap.get(pageId) as string
+
+    setSaving(true)
+    try {
+      let site = await saveSiteTheme(selectedSite, {
+        ...(selectedSite.theme || {}),
+        pages: normalizePagesForSave(finalPages)
+      })
+      for (const oldId of subtreeIds) {
+        const sourceBlocks = blocks.filter(block => !isGlobalHeaderBlock(block) && getBlockPageId(block, pages) === oldId)
+        for (const block of sourceBlocks) {
+          site = await sitesService.createBlock(selectedSite.id, cloneBlockForPage(block, idMap.get(oldId) as string))
+        }
+      }
+      syncSelectedSite(site)
+      setActivePageId(newRootId)
+      navigateSitesEditor({ site, pageId: newRootId, blockId: '' })
+      setHasUnsavedChanges(false)
+      showToast('success', subtreeIds.length > 1 ? 'Pagina y subpaginas duplicadas' : 'Pagina duplicada', 'Ya esta lista para editar.')
+    } catch (error) {
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo duplicar la pagina')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDeletePage = async (pageId: string) => {
+    if (!selectedSite || !hasEditablePages(selectedSite) || !canManagePages(selectedSite)) return
+    if (isStandardForm(selectedSite) && isFormFinalPageId(pageId)) {
+      showToast('warning', 'Pagina fija', 'Esta pagina se usa para cerrar el formulario y no se puede eliminar.')
+      return
+    }
+    const websiteMode = getSitePageMode(selectedSite) === 'website'
+    const idsToDelete = websiteMode ? [pageId, ...getDescendantPageIds(pageId, pages)] : [pageId]
+    const idsToDeleteSet = new Set(idsToDelete)
+    const remainingPageCount = isStandardForm(selectedSite)
+      ? getFormContentPages(pages).filter(page => !idsToDeleteSet.has(page.id)).length
+      : pages.filter(page => !idsToDeleteSet.has(page.id)).length
+    if (remainingPageCount < 1) {
+      showToast('warning', 'No se puede eliminar', `${getSiteTypeLabel(selectedSite)} debe tener al menos una pagina.`)
+      return
+    }
+
+    const hasSubpages = idsToDelete.length > 1
+    showConfirm(
+      hasSubpages ? 'Eliminar pagina y subpaginas' : 'Eliminar pagina',
+      hasSubpages
+        ? 'Se eliminaran esta pagina, sus subpaginas y todos sus bloques. Esta accion no se puede deshacer.'
+        : 'Se eliminara esta pagina y todos sus bloques. Esta accion no se puede deshacer.',
+      () => {
+        const deletePage = async () => {
+          const pageIndex = pages.findIndex(page => page.id === pageId)
+          const nextPages = pages.filter(page => !idsToDeleteSet.has(page.id))
+          const orderedPages = getOrderedPagesForSite(selectedSite, nextPages)
+          const nextActive = idsToDeleteSet.has(activePageId)
+            ? orderedPages[Math.max(0, pageIndex - 1)]?.id || orderedPages[0]?.id
+            : activePageId
+
+          setSaving(true)
+          try {
+            let site = selectedSite
+            const pageBlockIds = blocks
+              .filter(block => !isGlobalHeaderBlock(block) && idsToDeleteSet.has(getBlockPageId(block, pages)))
+              .map(block => block.id)
+            for (const blockId of pageBlockIds) {
+              site = await sitesService.deleteBlock(selectedSite.id, blockId)
+            }
+            site = await saveSiteTheme(site, {
+              ...(site.theme || {}),
+              pages: normalizePagesForSave(orderedPages)
+            })
+            syncSelectedSite(site)
+            setActivePageId(nextActive || DEFAULT_FUNNEL_PAGE_ID)
+            navigateSitesEditor({ site, pageId: nextActive || DEFAULT_FUNNEL_PAGE_ID, blockId: '' })
+            setHasUnsavedChanges(false)
+            showToast('success', 'Pagina eliminada', `${getSiteTypeLabel(selectedSite)} se actualizo.`)
+          } catch (error) {
+            showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo eliminar la pagina')
+          } finally {
+            setSaving(false)
+          }
+        }
+
+        void deletePage()
+      },
+      'Eliminar',
+      'Cancelar'
+    )
+  }
+
+  const handleReorderPages = (sourcePageId: string, targetPageId: string) => {
+    if (!selectedSite || !canManagePages(selectedSite)) return
+    if (!sourcePageId || sourcePageId === targetPageId) return
+    if (isStandardForm(selectedSite)) {
+      if (isFormFinalPageId(sourcePageId) || isFormFinalPageId(targetPageId)) return
+      const contentPages = getFormContentPages(pages)
+      const oldIndex = contentPages.findIndex(page => page.id === sourcePageId)
+      const newIndex = contentPages.findIndex(page => page.id === targetPageId)
+      if (oldIndex < 0 || newIndex < 0) return
+      void persistFunnelPages([
+        ...arrayMove(contentPages, oldIndex, newIndex),
+        ...pages.filter(isFormFinalPage)
+      ], activePageId)
+      return
+    }
+    if (getSitePageMode(selectedSite) === 'website') {
+      const source = pages.find(page => page.id === sourcePageId)
+      const target = pages.find(page => page.id === targetPageId)
+      if (!source || !target) return
+      // Only reorder among siblings (same parent); moving a page across levels is not allowed.
+      if ((source.parentPageId || '') !== (target.parentPageId || '')) return
+      const subtreeSet = new Set([sourcePageId, ...getDescendantPageIds(sourcePageId, pages)])
+      const subtreePages = pages.filter(page => subtreeSet.has(page.id))
+      const without = pages.filter(page => !subtreeSet.has(page.id))
+      const targetIndex = without.findIndex(page => page.id === targetPageId)
+      if (targetIndex < 0) return
+      const reordered = [
+        ...without.slice(0, targetIndex),
+        ...subtreePages,
+        ...without.slice(targetIndex)
+      ]
+      void persistFunnelPages(reordered, activePageId)
+      return
+    }
+    const oldIndex = pages.findIndex(page => page.id === sourcePageId)
+    const newIndex = pages.findIndex(page => page.id === targetPageId)
+    if (oldIndex < 0 || newIndex < 0) return
+    void persistFunnelPages(arrayMove(pages, oldIndex, newIndex), activePageId)
+  }
+
+  const handleRenamePage = (pageId: string, title: string) => {
+    if (!selectedSite || !canManagePages(selectedSite)) return
+    const cleanTitle = title.trim()
+    if (!cleanTitle) return
+    const websiteMode = getSitePageMode(selectedSite) === 'website'
+    const nextPages = pages.map((page, index) => page.id === pageId
+      ? { ...page, title: cleanTitle || `Pagina ${index + 1}`, ...(websiteMode ? { slug: undefined } : {}) }
+      : page
+    )
+    void persistFunnelPages(nextPages, activePageId)
+  }
+
+  const handleCreateSite = async (siteType: SiteType, mode: 'blank' | 'template' = 'template', templateId?: SiteTemplateId) => {
+    setCreating(true)
+    try {
+      const isBlank = mode === 'blank'
+      const template: SiteTemplateId = templateId
+        || (siteType === 'interactive_form' ? 'interactive' : siteType === 'landing_page' ? 'ristak' : 'ristak')
+      const siteIdentity = getNextSiteIdentity(siteType, sites)
+      const templateDefaults = isBlank ? {} : getTemplateThemeDefaults(template, siteType)
+      let site = await sitesService.createSite({
+        name: siteIdentity.name,
+        siteType,
+        slug: siteIdentity.slug,
+        title: '',
+        theme: {
+          ...templateDefaults,
+          template,
+          ...(isBlank
+            ? {
+                blankCanvas: true,
+                backgroundColor: siteType === 'landing_page' ? '#ffffff' : '#f8fafc',
+                backgroundImage: ''
+              }
+            : {}),
+          ...(siteType === 'landing_page'
+            ? {
+                pageMaxWidth: templateDefaults.pageMaxWidth ?? 1440,
+                pageMode: isBlank ? 'website' : 'funnel',
+                pages: normalizePagesForSave(
+                  isBlank
+                    ? [makeTemplateFunnelPage(DEFAULT_FUNNEL_PAGE_ID, 'Pagina 1', 0)]
+                    : getTemplateFunnelPages(template)
+                )
+              }
+            : siteType === 'interactive_form'
+              ? {
+                  pages: normalizePagesForSave([makeTemplateFunnelPage(DEFAULT_FUNNEL_PAGE_ID, 'Pagina 1', 0)])
+                }
+            : siteType === 'standard_form'
+              ? {
+                  pages: normalizePagesForSave(getDefaultFormPages()),
+                  formCompletionAction: 'next_page_if_qualified'
+                }
+            : {})
+        },
+        metaCapiEnabled: metaPixelConnected,
+        metaEventName: 'none'
+      })
+
+      if (isBlank && site.blocks?.length) {
+        for (const block of site.blocks || []) {
+          site = await sitesService.deleteBlock(site.id, block.id)
+        }
+      }
+
+      site = normalizeSiteForEditor(site)
+      const nextPageId = normalizeFunnelPages(site)[0]?.id || DEFAULT_FUNNEL_PAGE_ID
+      setSites(current => [site, ...current])
+      setSelectedSite(site)
+      setActivePageId(nextPageId)
+      setSelectedBlockId('')
+      setSection(getSiteSection(site))
+      setCreateFlow('closed')
+      setHasUnsavedChanges(false)
+      navigate(buildSitesEditorPath({
+        section: getSiteSection(site),
+        siteId: site.id,
+        pageId: nextPageId,
+        device,
+        focus: editorFocusMode
+      }))
+      showToast('success', 'Sitio creado', 'Ya estas en el editor visual')
+    } catch (error) {
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo crear el sitio')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const handleCreateSiteWithAI = (siteKind: SitesAICreationKind, editSite?: PublicSite) => {
+    if (!aiAgentConfigured) return
+
+    setAiCreationModal({ siteKind, editSite: editSite || null })
+  }
+
+  const handleSubmitAICreationModal = async ({
+    siteKind,
+    prompt,
+    attachmentNotes,
+    funnelStyle,
+    primaryAction,
+    chatgptModel,
+    editSite,
+    visualContext
+  }: SitesAICreationModalSubmit): Promise<string | null> => {
+    const selectedFunnelStyle = getFunnelStyleOption(funnelStyle)
+    const selectedPrimaryAction = getFunnelPrimaryAction(primaryAction)
+    const selectedChatGPTModel = getChatGPTSiteModelOption(chatgptModel, Boolean(editSite))
+    const editVisualContext = editSite ? visualContext || importedPreviewContexts[editSite.id] || null : null
+    const promptParts = [
+      editSite
+        ? `Modifica esta página importada con IA según la petición del usuario. Mantén formularios, campos, tracking y acciones de botones funcionando.`
+        : `Crea una página completa con IA libre en HTML/CSS para importarla en Ristak.`,
+      selectedFunnelStyle ? selectedFunnelStyle.prompt : '',
+      selectedPrimaryAction ? selectedPrimaryAction.prompt : '',
+      selectedChatGPTModel ? `ChatGPT seleccionado por el usuario: ${selectedChatGPTModel.label}.` : '',
+      editVisualContext ? formatSitesAIPreviewVisualContextForPrompt(editVisualContext) : '',
+      `Petición del usuario:\n${prompt.trim()}`,
+      attachmentNotes.length ? `Archivos de referencia:\n${attachmentNotes.join('\n\n')}` : '',
+      [
+        'Reglas de experiencia:',
+        '- Usa textos cortos, titulares compactos y párrafos fáciles de escanear.',
+        '- Si algún texto necesita ser largo, ajusta font-size, line-height y ancho para que no rompa el diseño.',
+        '- Usa fotos HTTPS visibles cuando ayuden al objetivo.',
+        '- Marca textos e imagenes editables con los atributos internos de Ristak.',
+        '- Prepara formularios con campos claros para que Ristak detecte y mapee datos automaticamente.'
+      ].join('\n')
+    ].filter(Boolean)
+    const messages: SitesAICreationMessage[] = [{ role: 'user', content: promptParts.join('\n\n') }]
+    const pendingSite = editSite ? normalizeSiteForEditor(editSite) : makePendingAIGenerationSite(siteKind)
+    const pendingSiteId = pendingSite.id
+    const pendingPages = normalizeFunnelPages(pendingSite)
+    const pendingSection = getSiteSection(pendingSite)
+    const pendingPageId = pendingPages[0]?.id || DEFAULT_FUNNEL_PAGE_ID
+
+    const restoreAfterGenerationProblem = (
+      toastType: 'warning' | 'error',
+      title: string,
+      message: string
+    ) => {
+      pendingAIGenerationSiteRef.current = null
+      completedAIGenerationRedirectRef.current = null
+      setAiEditorGeneration(null)
+      if (editSite) {
+        const restoredSite = normalizeSiteForEditor(editSite)
+        const restoredPages = normalizeFunnelPages(restoredSite)
+        setSelectedSite(restoredSite)
+        selectedSiteRef.current = restoredSite
+        setActivePageId(restoredPages[0]?.id || DEFAULT_FUNNEL_PAGE_ID)
+        navigate(buildSitesEditorPath({
+          section: getSiteSection(restoredSite),
+          siteId: restoredSite.id,
+          pageId: restoredPages[0]?.id || DEFAULT_FUNNEL_PAGE_ID,
+          device,
+          focus: editorFocusMode
+        }), { replace: true })
+      } else {
+        setSites(current => current.filter(item => item.id !== pendingSiteId))
+        if (selectedSiteRef.current?.id === pendingSiteId) {
+          setSelectedSite(null)
+          selectedSiteRef.current = null
+        }
+        setSection(pendingSection)
+        setCreateFlow(getCreateFlowForSection(pendingSection))
+        navigate(buildSitesCreatePath(pendingSection, getCreateFlowForSection(pendingSection)), { replace: true })
+      }
+      setAiCreationModal({ siteKind, editSite: editSite || null })
+      showToast(toastType, title, message)
+    }
+
+    pendingAIGenerationSiteRef.current = editSite ? null : pendingSite
+    completedAIGenerationRedirectRef.current = null
+    setCreating(true)
+    setAiCreationModal(null)
+    setImportReview(null)
+    setSelectedImportData(null)
+    setSelectedBlockId('')
+    setActivePageId(pendingPageId)
+    setSection(pendingSection)
+    setCreateFlow('closed')
+    setHasUnsavedChanges(false)
+    setEditorFocusMode(false)
+    setAiEditorGeneration({ siteId: pendingSiteId, siteKind, editMode: Boolean(editSite) })
+    setSites(current => {
+      const withoutPending = current.filter(item => item.id !== pendingSiteId)
+      const exists = withoutPending.some(item => item.id === pendingSite.id)
+      if (exists) return withoutPending.map(item => item.id === pendingSite.id ? { ...item, ...pendingSite } : item)
+      return [pendingSite, ...withoutPending]
+    })
+    setSelectedSite(pendingSite)
+    selectedSiteRef.current = pendingSite
+    navigate(buildSitesEditorPath({
+      section: pendingSection,
+      siteId: pendingSiteId,
+      pageId: pendingPageId,
+      device,
+      focus: false
+    }), { replace: true })
+
+    try {
+      const result = editSite
+        ? await sitesService.editImportedHtmlWithAI(editSite.id, { siteKind, messages, model: chatgptModel, visualContext: editVisualContext })
+        : await sitesService.createWithAIHtml({ siteKind, messages, metaCapiEnabled: metaPixelConnected, model: chatgptModel })
+
+      if (result.status === 'needs_more_info' || !result.site || !result.import) {
+        restoreAfterGenerationProblem(
+          'warning',
+          'La IA necesita más detalles',
+          result.reply || 'Dame un poco más de contexto para crear una página bien armada.'
+        )
+        return null
+      }
+
+      const normalizedSite = normalizeSiteForEditor(result.site)
+      const nextPageId = normalizeFunnelPages(normalizedSite)[0]?.id || DEFAULT_FUNNEL_PAGE_ID
+      const finalEditorPath = buildSitesEditorPath({
+        section: getSiteSection(normalizedSite),
+        siteId: normalizedSite.id,
+        pageId: nextPageId,
+        device,
+        focus: editorFocusMode
+      })
+      completedAIGenerationRedirectRef.current = editSite
+        ? null
+        : {
+          pendingSiteId,
+          siteId: normalizedSite.id,
+          editorPath: finalEditorPath
+        }
+      setSites(current => {
+        const withoutPending = current.filter(item => item.id !== pendingSiteId)
+        const exists = withoutPending.some(item => item.id === normalizedSite.id)
+        if (exists) return withoutPending.map(item => item.id === normalizedSite.id ? { ...item, ...normalizedSite } : item)
+        return [normalizedSite, ...withoutPending]
+      })
+      setSelectedSite(normalizedSite)
+      selectedSiteRef.current = normalizedSite
+      setSelectedBlockId('')
+      setActivePageId(nextPageId)
+      setSection(getSiteSection(normalizedSite))
+      setCreateFlow('closed')
+      setHasUnsavedChanges(false)
+      setSelectedImportData(result.import)
+      setImportReview({ site: normalizedSite, importData: result.import })
+      setAiCreationModal(null)
+      pendingAIGenerationSiteRef.current = null
+      setAiEditorGeneration(null)
+      navigate(finalEditorPath, { replace: true })
+      showToast(
+        'success',
+        editSite ? 'Página actualizada con IA' : 'Página creada con IA',
+        'Ristak ya revisó el HTML. Confirma la ruta de datos antes de publicar.'
+      )
+      return null
+    } catch (error) {
+      restoreAfterGenerationProblem(
+        'error',
+        'No se pudo generar la página',
+        error instanceof Error ? error.message : 'Intenta otra vez con una descripción más clara.'
+      )
+      return null
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const handleOpenImportHtml = (siteType: SiteType) => {
+    pendingImportSiteTypeRef.current = siteType
+    setPendingImportSiteType(siteType)
+    if (importFileInputRef.current) {
+      importFileInputRef.current.value = ''
+      importFileInputRef.current.click()
+    }
+  }
+
+  const handleImportHtmlFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    if (!/\.(html?|zip)$/i.test(file.name)) {
+      showToast('error', 'Archivo no valido', 'Sube un archivo .html o un .zip con tu sitio.')
+      return
+    }
+
+    setCreating(true)
+    try {
+      const siteType = pendingImportSiteTypeRef.current || pendingImportSiteType
+      const fileBase64 = await fileToBase64(file)
+      const result = await sitesService.importHtmlSite({
+        siteType,
+        filename: file.name,
+        fileBase64,
+        metaCapiEnabled: metaPixelConnected
+      })
+      const site = normalizeSiteForEditor(result.site)
+      const nextPageId = normalizeFunnelPages(site)[0]?.id || DEFAULT_FUNNEL_PAGE_ID
+      setSites(current => [site, ...current])
+      setSelectedSite(site)
+      selectedSiteRef.current = site
+      setSelectedBlockId('')
+      setActivePageId(nextPageId)
+      setSection(getSiteSection(site))
+      setCreateFlow('closed')
+      setHasUnsavedChanges(false)
+      setSelectedImportData(result.import)
+      setImportReview({ site, importData: result.import })
+      navigate(buildSitesEditorPath({
+        section: getSiteSection(site),
+        siteId: site.id,
+        pageId: nextPageId,
+        device,
+        focus: editorFocusMode
+      }))
+      showToast('success', 'HTML importado', 'Revisa los campos detectados antes de publicar.')
+    } catch (error) {
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo importar el HTML')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const handleConfirmImportMapping = async (formMappings: ImportedSiteFormMapping[]) => {
+    if (!importReview) return
+    setSavingImportMapping(true)
+    try {
+      const importData = await sitesService.updateImportMapping(importReview.site.id, formMappings)
+      setSelectedImportData(importData)
+      setImportReview(null)
+      showToast('success', 'Ruta de datos guardada', 'Ristak ya sabe donde guardar cada dato de este HTML.')
+    } catch (error) {
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo guardar el mapeo')
+    } finally {
+      setSavingImportMapping(false)
+    }
+  }
+
+  const handleOpenImportMappingEditor = async (site: PublicSite) => {
+    if (!isImportedHtmlSite(site)) return
+
+    setLoadingImportData(true)
+    try {
+      const importData = selectedImportData?.siteId === site.id
+        ? selectedImportData
+        : await sitesService.getImportMapping(site.id)
+      setSelectedImportData(importData)
+      setImportReview({ site, importData })
+    } catch (error) {
+      showToast('error', 'No se pudo abrir la ruta de datos', error instanceof Error ? error.message : 'Intentalo otra vez.')
+    } finally {
+      setLoadingImportData(false)
+    }
+  }
+
+  const handleImportedContentUpdated = (result: ImportedSiteCreateResult) => {
+    const normalizedSite = normalizeSiteForEditor(result.site)
+    setSites(current => current.map(item => item.id === normalizedSite.id ? { ...item, ...normalizedSite } : item))
+    selectedSiteRef.current = normalizedSite
+    setSelectedSite(normalizedSite)
+    setSelectedImportData(result.import)
+  }
+
+  const handleSaveSite = async (statusOverride?: PublicSite['status'], options: { silent?: boolean } = {}) => {
+    const siteToSave = selectedSiteRef.current || selectedSite
+    if (!siteToSave) return
+
+    if (statusOverride === 'published' && (!domainConfig.domain || !domainConfig.renderDomainVerified)) {
+      showToast('error', 'Dominio requerido', 'Configura y verifica un dominio antes de publicar este sitio.')
+      return
+    }
+
+    setSaving(true)
+    try {
+      const site = await sitesService.updateSite(siteToSave.id, {
+        name: siteToSave.name,
+        slug: normalizeRouteInput(siteToSave.slug) || normalizeRouteInput(siteToSave.name) || getDefaultRoutePrefix(siteToSave.siteType),
+        siteType: siteToSave.siteType,
+        status: statusOverride || siteToSave.status,
+        title: getPublicTitleForSave(siteToSave),
+        description: siteToSave.description,
+        theme: siteToSave.theme,
+        metaCapiEnabled: siteToSave.metaCapiEnabled,
+        metaEventName: siteToSave.metaEventName
+      })
+      syncSelectedSite(site)
+      setHasUnsavedChanges(false)
+      if (!options.silent) {
+        showToast('success', statusOverride === 'published' ? 'Publicado' : 'Guardado', 'Sitio actualizado')
+      }
+    } catch (error) {
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo guardar')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handlePreviewSite = async () => {
+    if (!editorSite) return
+    const previewWindow = window.open('', '_blank')
+    if (!previewWindow) {
+      showToast('error', 'Preview bloqueado', 'Permite popups para abrir la previsualizacion.')
+      return
+    }
+
+    writePreviewLoadingPage(previewWindow)
+    try {
+      const html = await sitesService.getPreviewHtml(editorSite.id, hasEditablePages(editorSite) ? activePage?.id : undefined, { test: true })
+      previewWindow.document.open()
+      previewWindow.document.write(html)
+      previewWindow.document.close()
+    } catch (error) {
+      previewWindow.close()
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo previsualizar')
+    }
+  }
+
+  const handlePreviewLibrarySite = async (site: PublicSite) => {
+    if (isPublicSiteLive(site, domainConfig)) {
+      const liveWindow = window.open(buildLivePublicUrl(site, domainConfig), '_blank')
+      if (!liveWindow) {
+        showToast('error', 'Ventana bloqueada', 'Permite popups para abrir el sitio en vivo.')
+      } else {
+        liveWindow.opener = null
+      }
+      return
+    }
+
+    const previewWindow = window.open('', '_blank')
+    if (!previewWindow) {
+      showToast('error', 'Preview bloqueado', 'Permite popups para abrir la previsualizacion.')
+      return
+    }
+
+    writePreviewLoadingPage(previewWindow)
+    try {
+      const pageId = hasEditablePages(site) ? normalizeFunnelPages(site)[0]?.id : undefined
+      const html = await sitesService.getPreviewHtml(site.id, pageId, { test: true })
+      previewWindow.document.open()
+      previewWindow.document.write(html)
+      previewWindow.document.close()
+    } catch (error) {
+      previewWindow.close()
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo previsualizar')
+    }
+  }
+
+  const handleVerifyDomain = async () => {
+    setVerifying(true)
+    try {
+      const result = await sitesService.verifyDomain(domainInput)
+      setDomainConfig(result)
+      setDomainInput(result.domain)
+      if (result.verification?.verified) {
+        showToast('success', 'Dominio verificado y guardado', 'El dominio ya responde con esta app')
+      } else {
+        showToast('warning', 'Dominio pendiente', result.verification?.error || result.renderDomainError || 'El dominio todavia no responde con esta app')
+      }
+    } catch (error) {
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo verificar el dominio')
+    } finally {
+      setVerifying(false)
+    }
+  }
+
+  const handleUpdateLibraryRoute = async (siteToUpdate: PublicSite, nextRoute: string) => {
+    const nextSlug = normalizeRouteInput(nextRoute) || getDefaultRoutePrefix(siteToUpdate.siteType)
+
+    try {
+      const site = await sitesService.updateSite(siteToUpdate.id, {
+        name: siteToUpdate.name,
+        slug: nextSlug,
+        siteType: siteToUpdate.siteType,
+        status: siteToUpdate.status,
+        title: getPublicTitleForSave(siteToUpdate),
+        description: siteToUpdate.description,
+        theme: siteToUpdate.theme,
+        metaCapiEnabled: siteToUpdate.metaCapiEnabled,
+        metaEventName: siteToUpdate.metaEventName
+      })
+      const normalizedSite = normalizeSiteForEditor(site)
+
+      setSites(current => current.map(item => item.id === normalizedSite.id ? { ...item, ...normalizedSite } : item))
+      if (selectedSiteRef.current?.id === normalizedSite.id) {
+        selectedSiteRef.current = normalizedSite
+        setSelectedSite(normalizedSite)
+      }
+      showToast('success', 'Ruta actualizada', `Ahora se abre en /${getRouteEditorValue(normalizedSite)}`)
+    } catch (error) {
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo guardar la ruta')
+      throw error
+    }
+  }
+
+  const handleDeleteSite = async (siteToDelete = selectedSite) => {
+    if (!siteToDelete) return
+    showConfirm(
+      'Eliminar sitio',
+      `Se eliminara "${siteToDelete.name}" y sus respuestas. Esta accion no se puede deshacer.`,
+      () => {
+        const deleteSite = async () => {
+          try {
+            await sitesService.deleteSite(siteToDelete.id)
+            const nextSites = sites.filter(site => site.id !== siteToDelete.id)
+            setSites(nextSites)
+            if (selectedSite?.id === siteToDelete.id) {
+              markEditorExitInProgress()
+              setSelectedSite(null)
+              setSelectedBlockId('')
+              navigateSitesSection(getSiteSection(siteToDelete))
+            }
+            setHasUnsavedChanges(false)
+            showToast('success', 'Eliminado', 'Sitio eliminado')
+          } catch (error) {
+            showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo eliminar')
+          }
+        }
+
+        void deleteSite()
+      },
+      'Eliminar',
+      'Cancelar'
+    )
+  }
+
+  const handleAddBlock = async (blockType: SiteBlockType, addOptions: AddBlockOptions | number = {}) => {
+    if (!selectedSite) return
+    try {
+      const options = typeof addOptions === 'number' ? { insertIndex: addOptions } : addOptions
+      const previousBlockIds = new Set((selectedSite.blocks || []).map(block => block.id))
+      const payload = defaultBlockPayload(blockType, selectedSite)
+      const initialSettings = options.initialSettings || {}
+      let blockIdsBeforeContent = previousBlockIds
+      let autoCreatedSection: SiteBlock | null = null
+      if (popupSurfaceSelected) {
+        if (!isPopupEditableBlockType(blockType)) {
+          showToast('error', 'Bloque no disponible', 'Ese panel no se puede usar dentro del pop up.')
+          return
+        }
+
+        payload.settings = getPopupBlockSettings({
+          ...(payload.settings || {}),
+          ...initialSettings
+        })
+
+        let site = await sitesService.createBlock(selectedSite.id, payload)
+        syncSelectedSite(site)
+        const added = [...(site.blocks || [])]
+          .filter(block => !blockIdsBeforeContent.has(block.id))
+          .find(isPopupBlock)
+
+        if (added && Number.isFinite(options.insertIndex)) {
+          const popupSiteBlocks = [...(site.blocks || [])]
+            .filter(isPopupBlock)
+            .sort((a, b) => a.sortOrder - b.sortOrder)
+          const withoutInserted = popupSiteBlocks.filter(block => block.id !== added.id)
+          const boundedIndex = Math.max(0, Math.min(Number(options.insertIndex), withoutInserted.length))
+          const orderedBlocks = [
+            ...withoutInserted.slice(0, boundedIndex),
+            added,
+            ...withoutInserted.slice(boundedIndex)
+          ]
+
+          site = await sitesService.reorderBlocks(
+            selectedSite.id,
+            orderedBlocks.map(block => block.id),
+            POPUP_SELECTED_ID
+          )
+          syncSelectedSite(site)
+        }
+
+        if (added) selectEditorBlock(added.id)
+        return
+      }
+      if (isLanding(selectedSite) && activePage) {
+        const pageSectionIds = new Set(canvasBlocks.filter(isSectionBlock).map(block => block.id))
+        const isSection = blockType === SECTION_BLOCK_TYPE
+        const isPanel = PANEL_BLOCK_TYPES.has(blockType)
+        const selectedTarget = selectedBlock
+          ? isSectionBlock(selectedBlock)
+            ? { sectionId: selectedBlock.id, sectionColumn: 0 }
+            : getBlockSectionId(selectedBlock) && pageSectionIds.has(getBlockSectionId(selectedBlock))
+              ? { sectionId: getBlockSectionId(selectedBlock), sectionColumn: getBlockSectionColumn(selectedBlock) }
+              : null
+          : null
+        const singleSectionTarget = pageSectionIds.size === 1
+          ? { sectionId: [...pageSectionIds][0], sectionColumn: 0 }
+          : null
+        let targetSectionId = options.sectionId && pageSectionIds.has(options.sectionId)
+          ? options.sectionId
+          : selectedTarget?.sectionId || singleSectionTarget?.sectionId || ''
+        let targetColumn = Number.isFinite(Number(options.sectionColumn))
+          ? Math.min(2, Math.max(0, Math.round(Number(options.sectionColumn))))
+          : selectedTarget?.sectionColumn || singleSectionTarget?.sectionColumn || 0
+        if (isSection) {
+          const columns = getSettingNumber(initialSettings, 'sectionColumns', 1, 1, 3)
+          payload.label = getSectionColumnLabel(columns)
+          payload.content = ''
+          payload.settings = {
+            ...(payload.settings || {}),
+            ...initialSettings,
+            sectionColumns: columns,
+            sectionGap: getSettingNumber(initialSettings, 'sectionGap', DEFAULT_SECTION_GAP, 0, 80)
+          }
+        } else if (!isPanel) {
+          if (!targetSectionId) {
+            const sectionPayload = defaultBlockPayload(SECTION_BLOCK_TYPE, selectedSite)
+            const columns = 1
+            sectionPayload.label = getSectionColumnLabel(columns)
+            sectionPayload.content = ''
+            sectionPayload.settings = {
+              ...(sectionPayload.settings || {}),
+              sectionColumns: columns,
+              sectionGap: DEFAULT_SECTION_GAP,
+              pageId: activePage.id
+            }
+
+            const siteWithSection = await sitesService.createBlock(selectedSite.id, sectionPayload)
+            const sectionPages = normalizeFunnelPages(siteWithSection)
+            autoCreatedSection = [...(siteWithSection.blocks || [])]
+              .filter(block => !previousBlockIds.has(block.id))
+              .find(block => isSectionBlock(block) && getBlockPageId(block, sectionPages) === activePage.id) || null
+
+            if (!autoCreatedSection) {
+              throw new Error('No se pudo crear la franja para este contenido')
+            }
+
+            targetSectionId = autoCreatedSection.id
+            targetColumn = 0
+            blockIdsBeforeContent = new Set((siteWithSection.blocks || []).map(block => block.id))
+            syncSelectedSite(siteWithSection)
+          }
+
+          payload.settings = {
+            ...(payload.settings || {}),
+            ...initialSettings,
+            sectionId: targetSectionId,
+            sectionColumn: targetColumn
+          }
+        } else {
+          payload.settings = {
+            ...(payload.settings || {}),
+            ...initialSettings
+          }
+        }
+
+        payload.settings = {
+          ...(payload.settings || {}),
+          pageId: activePage.id
+        }
+        if (blockType === HEADER_PANEL_BLOCK_TYPE && !getSettingString(payload.settings || {}, 'headerScope')) {
+          payload.settings = {
+            ...(payload.settings || {}),
+            headerScope: HEADER_SCOPE_PAGE
+          }
+        }
+      } else if (hasEditablePages(selectedSite) && activePage) {
+        payload.settings = {
+          ...(payload.settings || {}),
+          ...initialSettings,
+          pageId: activePage.id
+        }
+        if (blockType === HEADER_PANEL_BLOCK_TYPE && !getSettingString(payload.settings || {}, 'headerScope')) {
+          payload.settings = {
+            ...(payload.settings || {}),
+            headerScope: HEADER_SCOPE_PAGE
+          }
+        }
+      } else if (Object.keys(initialSettings).length > 0) {
+        payload.settings = {
+          ...(payload.settings || {}),
+          ...initialSettings
+        }
+      }
+      let site = await sitesService.createBlock(selectedSite.id, payload)
+      const sitePages = normalizeFunnelPages(site)
+      const activePageForAdd = activePage?.id || DEFAULT_FUNNEL_PAGE_ID
+      syncSelectedSite(site)
+      const added = [...(site.blocks || [])]
+        .filter(block => !blockIdsBeforeContent.has(block.id))
+        .find(block => !hasEditablePages(site) || getBlockPageId(block, sitePages) === activePageForAdd)
+      if (added && Number.isFinite(options.insertIndex)) {
+        const pageBlocks = [...(site.blocks || [])]
+          .filter(block => !hasEditablePages(site) || getBlockPageId(block, sitePages) === activePageForAdd)
+          .sort((a, b) => a.sortOrder - b.sortOrder)
+        const insertedBlocks = autoCreatedSection ? [autoCreatedSection, added] : [added]
+        const insertedIds = new Set(insertedBlocks.map(block => block.id))
+        const withoutInserted = pageBlocks.filter(block => !insertedIds.has(block.id))
+        const boundedIndex = Math.max(0, Math.min(Number(options.insertIndex), withoutInserted.length))
+        const orderedBlocks = [
+          ...withoutInserted.slice(0, boundedIndex),
+          ...insertedBlocks,
+          ...withoutInserted.slice(boundedIndex)
+        ]
+        site = await sitesService.reorderBlocks(
+          selectedSite.id,
+          orderedBlocks.map(block => block.id),
+          hasEditablePages(site) ? activePage?.id : undefined
+        )
+        syncSelectedSite(site)
+      }
+      if (added) selectEditorBlock(added.id)
+    } catch (error) {
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo agregar el bloque')
+    }
+  }
+
+  const handleCreateHeaderBlock = async (scope: HeaderScope) => {
+    if (!selectedSite || !isLanding(selectedSite)) return
+    if (scope === HEADER_SCOPE_GLOBAL && globalHeaderBlock) {
+      selectEditorBlock(globalHeaderBlock.id)
+      return
+    }
+    if (scope === HEADER_SCOPE_PAGE && activePageHeaderBlock) {
+      selectEditorBlock(activePageHeaderBlock.id)
+      return
+    }
+    if (scope === HEADER_SCOPE_PAGE && !activePage) return
+
+    const previousBlockIds = new Set((selectedSite.blocks || []).map(block => block.id))
+    const payload = defaultBlockPayload(HEADER_PANEL_BLOCK_TYPE, selectedSite) as Partial<SiteBlock> & { blockType: SiteBlockType }
+    const settings: Record<string, unknown> = {
+      ...(payload.settings || {}),
+      headerScope: scope
+    }
+    if (scope === HEADER_SCOPE_PAGE && activePage) {
+      settings.pageId = activePage.id
+      payload.label = 'Header de pagina'
+    } else {
+      delete settings.pageId
+      payload.label = 'Header global'
+    }
+    payload.settings = settings
+
+    setSaving(true)
+    try {
+      const site = await sitesService.createBlock(selectedSite.id, payload)
+      const sitePages = normalizeFunnelPages(site)
+      const added = [...(site.blocks || [])]
+        .filter(block => !previousBlockIds.has(block.id))
+        .find(block => (
+          scope === HEADER_SCOPE_GLOBAL
+            ? isGlobalHeaderBlock(block)
+            : activePage && isPageHeaderBlock(block, sitePages, activePage.id)
+        ))
+      syncSelectedSite(site)
+      if (added) selectEditorBlock(added.id)
+      showToast('success', scope === HEADER_SCOPE_GLOBAL ? 'Header global creado' : 'Header de pagina creado', 'Ya puedes editarlo desde Header.')
+    } catch (error) {
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo crear el header')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const patchBlockLocal = (blockId: string, patch: Partial<SiteBlock>) => {
+    markEditorDirty()
+    const current = selectedSiteRef.current
+    if (!current?.blocks) return
+    const next = {
+      ...current,
+      blocks: current.blocks.map(block => block.id === blockId ? { ...block, ...patch } : block)
+    }
+    selectedSiteRef.current = next
+    setSelectedSite(next)
+  }
+
+  const patchSelectedBlock = (patch: Partial<SiteBlock>) => {
+    if (!selectedBlock) return
+    patchBlockLocal(selectedBlock.id, patch)
+  }
+
+  const patchSelectedBlockSettings = (patch: Record<string, unknown>) => {
+    if (!selectedBlock) return
+    patchSelectedBlock({
+      settings: {
+        ...(selectedBlock.settings || {}),
+        ...patch
+      }
+    })
+  }
+
+  const patchBlockSettingsLocal = (block: SiteBlock, patch: Record<string, unknown>) => {
+    const currentBlock = (selectedSiteRef.current?.blocks || []).find(item => item.id === block.id) || block
+    patchBlockLocal(block.id, {
+      settings: {
+        ...(currentBlock.settings || {}),
+        ...patch
+      }
+    })
+  }
+
+  const patchBlockCategorySettingsLocal = (sourceBlock: SiteBlock, patch: Record<string, unknown>) => {
+    markEditorDirty()
+    const current = selectedSiteRef.current
+    if (!current?.blocks) return
+    const sourceIsPopupBlock = isPopupBlock(sourceBlock)
+    const sourcePageId = isLanding(current) ? getBlockPageId(sourceBlock, pages) : ''
+    const next = {
+      ...current,
+      blocks: current.blocks.map(block => {
+        const sameType = block.blockType === sourceBlock.blockType
+        const sameSurface = sourceIsPopupBlock ? isPopupBlock(block) : !isPopupBlock(block)
+        const samePage = sourceIsPopupBlock || !isLanding(current) || getBlockPageId(block, pages) === sourcePageId
+        return sameType && samePage
+          && sameSurface
+          ? { ...block, settings: { ...(block.settings || {}), ...patch } }
+          : block
+      })
+    }
+    selectedSiteRef.current = next
+    setSelectedSite(next)
+  }
+
+  const handleSaveBlockCategory = async (sourceBlock = selectedBlock) => {
+    const siteToSave = selectedSiteRef.current || selectedSite
+    if (!siteToSave?.blocks || !sourceBlock) return
+    const sourceIsPopupBlock = isPopupBlock(sourceBlock)
+    const sourcePageId = isLanding(siteToSave) ? getBlockPageId(sourceBlock, pages) : ''
+    const targets = siteToSave.blocks.filter(block => {
+      const sameType = block.blockType === sourceBlock.blockType
+      const sameSurface = sourceIsPopupBlock ? isPopupBlock(block) : !isPopupBlock(block)
+      const samePage = sourceIsPopupBlock || !isLanding(siteToSave) || getBlockPageId(block, pages) === sourcePageId
+      return sameType && samePage && sameSurface
+    })
+    if (!targets.length) return
+
+    try {
+      let site = siteToSave
+      for (const block of targets) {
+        site = await sitesService.updateBlock(siteToSave.id, block.id, block)
+      }
+      syncSelectedSite(site)
+      setHasUnsavedChanges(false)
+    } catch (error) {
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo guardar el estilo')
+    }
+  }
+
+  const handleSaveBlock = async (blockId = selectedBlock?.id) => {
+    const siteToSave = selectedSiteRef.current || selectedSite
+    if (!siteToSave?.blocks || !blockId) return
+    const block = siteToSave.blocks.find(item => item.id === blockId)
+    if (!block) return
+
+    try {
+      const site = await sitesService.updateBlock(siteToSave.id, block.id, block)
+      syncSelectedSite(site)
+      setHasUnsavedChanges(false)
+    } catch (error) {
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo guardar el bloque')
+    }
+  }
+
+  const getDeletedBlockIds = (blockId: string) => {
+    const block = canvasBlocks.find(item => item.id === blockId) || popupBlocks.find(item => item.id === blockId) || blocks.find(item => item.id === blockId)
+    const sourceBlocks = isPopupBlock(block) ? popupBlocks : canvasBlocks
+    const sourceLanes = isPopupBlock(block) ? popupSectionLanes : landingSectionLanes
+    if (!editorSite || !isLanding(editorSite) || !isSectionBlock(block)) return [blockId]
+
+    const lane = sourceLanes.find(item => item.section?.id === blockId)
+    const laneBlockIds = (lane?.columnBlocks || []).flat().map(item => item.id)
+    const explicitChildIds = sourceBlocks
+      .filter(item => item.id !== blockId && getBlockSectionId(item) === blockId)
+      .map(item => item.id)
+
+    return [...new Set([...laneBlockIds, ...explicitChildIds, blockId])]
+  }
+
+  const getDeletedBlocks = (blockId: string) => {
+    const deletedIds = new Set(getDeletedBlockIds(blockId))
+    return blocks.filter(block => deletedIds.has(block.id)).map(block => cloneJson(block))
+  }
+
+  const handleDeleteBlock = async (blockId: string) => {
+    if (!selectedSite) return
+    try {
+      const deletingPopupBlock = popupBlocks.some(block => block.id === blockId)
+      const sourceBlocks = deletingPopupBlock ? popupBlocks : canvasBlocks
+      const beforeBlockIds = sourceBlocks.map(block => block.id)
+      const deletedBlockIds = getDeletedBlockIds(blockId)
+      const deletedBlocks = getDeletedBlocks(blockId)
+      const selectedBefore = selectedBlockId
+      const site = await sitesService.deleteBlock(selectedSite.id, blockId)
+      syncSelectedSite(site)
+      const normalizedSite = normalizeSiteForEditor(site)
+      const normalizedPages = normalizeFunnelPages(normalizedSite)
+      const pageId = deletingPopupBlock ? POPUP_SELECTED_ID : hasEditablePages(selectedSite) ? activePage?.id : undefined
+      const afterBlocks = (normalizedSite.blocks || [])
+        .filter(block => deletingPopupBlock
+          ? isPopupBlock(block)
+          : !isPopupBlock(block) && (!pageId || getBlockPageId(block, normalizedPages) === pageId))
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+      const afterBlockIds = afterBlocks.map(block => block.id)
+      const deletedSelectedBlock = deletedBlockIds.includes(selectedBlockId)
+      let selectedAfter = selectedBlockId
+      if (deletedSelectedBlock) {
+        const deletedRootBlock = sourceBlocks.find(block => block.id === blockId) || blocks.find(block => block.id === blockId) || null
+        const sameLevelCandidates = editorSite && isLanding(editorSite) && isTopLevelLandingBlock(deletedRootBlock)
+          ? afterBlocks.filter(isTopLevelLandingBlock)
+          : afterBlocks
+        const nextBlockId =
+          findNearestRemainingBlockId(beforeBlockIds, sameLevelCandidates, blockId, deletedBlockIds) ||
+          findNearestRemainingBlockId(beforeBlockIds, afterBlocks, blockId, deletedBlockIds)
+        selectedAfter = nextBlockId || (deletingPopupBlock ? POPUP_SELECTED_ID : PAGE_SELECTED_ID)
+      }
+      setActiveDragId(null)
+      resetPaletteDrag()
+      if (deletedSelectedBlock) {
+        setSelectedBlockId(selectedAfter)
+        navigateSitesEditor({ site, blockId: selectedAfter })
+      }
+      pushEditorHistory({
+        action: 'delete',
+        siteId: selectedSite.id,
+        pageId,
+        selectedBefore,
+        selectedAfter,
+        beforeBlockIds,
+        afterBlockIds,
+        deletedRootBlockId: blockId,
+        deletedBlocks
+      })
+    } catch (error) {
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo eliminar el bloque')
+    }
+  }
+
+  const requestDeleteBlock = (blockId: string) => {
+    const block = canvasBlocks.find(item => item.id === blockId) || popupBlocks.find(item => item.id === blockId) || blocks.find(item => item.id === blockId)
+    const deletesContainer = Boolean(block && isLanding(selectedSite) && isSectionBlock(block))
+    const deletedCount = getDeletedBlockIds(blockId).length
+    const targetLabel = deletesContainer ? 'contenedor' : 'elemento'
+    const detail = deletesContainer && deletedCount > 1
+      ? 'Tambien se quitaran los elementos que esten dentro.'
+      : 'Se quitara del editor.'
+
+    showConfirm(
+      `Eliminar ${targetLabel}`,
+      `¿Seguro que quieres eliminar este ${targetLabel}? ${detail}`,
+      () => {
+        void handleDeleteBlock(blockId)
+      },
+      'Eliminar',
+      'Cancelar'
+    )
+  }
+
+  const persistCanvasBlockOrder = async (orderedBlocks: SiteBlock[], options: { popup?: boolean } = {}) => {
+    if (!selectedSite) return false
+
+    const wasAlreadyDirty = hasUnsavedChanges
+    const sourceBlocks = options.popup ? popupBlocks : canvasBlocks
+    const beforeBlockIds = sourceBlocks.map(block => block.id)
+    const afterBlockIds = orderedBlocks.map(block => block.id)
+    if (beforeBlockIds.join('|') === afterBlockIds.join('|')) return true
+    const selectedBefore = selectedBlockId
+    const pageId = options.popup ? POPUP_SELECTED_ID : hasEditablePages(selectedSite) ? activePage?.id : undefined
+    const nextPageBlocks = orderedBlocks.map((block, index) => ({ ...block, sortOrder: index }))
+    const nextPageBlocksById = new Map(nextPageBlocks.map(block => [block.id, block]))
+    const nextBlocks = blocks.map(block => nextPageBlocksById.get(block.id) || block)
+    const optimisticSite = { ...selectedSite, blocks: nextBlocks }
+
+    setHasUnsavedChanges(true)
+    selectedSiteRef.current = optimisticSite
+    setSelectedSite(optimisticSite)
+
+    try {
+      const site = await sitesService.reorderBlocks(
+        selectedSite.id,
+        nextPageBlocks.map(block => block.id),
+        pageId
+      )
+      syncSelectedSite(site)
+      pushEditorHistory({
+        action: 'reorder',
+        siteId: selectedSite.id,
+        pageId,
+        selectedBefore,
+        selectedAfter: selectedBefore,
+        beforeBlockIds,
+        afterBlockIds
+      })
+      if (!wasAlreadyDirty) {
+        setHasUnsavedChanges(false)
+      }
+      return true
+    } catch (error) {
+      showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo reordenar')
+      return false
+    }
+  }
+
+  const getLandingColumnBlocksForMove = (block: SiteBlock) => {
+    for (const lane of landingSectionLanes) {
+      const column = lane.columnBlocks.find(columnBlocks => columnBlocks.some(item => item.id === block.id))
+      if (column) return column
+    }
+    return []
+  }
+
+  const getBlockMoveState = (block: SiteBlock): BlockMoveState => {
+    if (!editorSite) return { canMoveUp: false, canMoveDown: false }
+
+    if (isPopupBlock(block)) {
+      const index = popupBlocks.findIndex(item => item.id === block.id)
+      return {
+        canMoveUp: index > 0,
+        canMoveDown: index >= 0 && index < popupBlocks.length - 1
+      }
+    }
+
+    if (isLanding(editorSite)) {
+      if (isTopLevelLandingBlock(block)) {
+        const groups = buildLandingBlockOrderGroups(canvasBlocks, landingSectionLanes)
+        const groupIndex = groups.findIndex(group => group.id === block.id)
+        return {
+          canMoveUp: groupIndex > 0,
+          canMoveDown: groupIndex >= 0 && groupIndex < groups.length - 1
+        }
+      }
+
+      const columnBlocks = getLandingColumnBlocksForMove(block)
+      const columnIndex = columnBlocks.findIndex(item => item.id === block.id)
+      return {
+        canMoveUp: columnIndex > 0,
+        canMoveDown: columnIndex >= 0 && columnIndex < columnBlocks.length - 1
+      }
+    }
+
+    const index = canvasBlocks.findIndex(item => item.id === block.id)
+    return {
+      canMoveUp: index > 0,
+      canMoveDown: index >= 0 && index < canvasBlocks.length - 1
+    }
+  }
+
+  const handleMoveBlock = async (blockId: string, direction: BlockMoveDirection) => {
+    if (!selectedSite) return
+    const block = editableCanvasBlocks.find(item => item.id === blockId)
+    if (!block) return
+
+    const offset = direction === 'up' ? -1 : 1
+    let nextPageBlocks: SiteBlock[] | null = null
+
+    if (isPopupBlock(block)) {
+      const oldIndex = popupBlocks.findIndex(item => item.id === block.id)
+      const newIndex = oldIndex + offset
+      if (oldIndex < 0 || newIndex < 0 || newIndex >= popupBlocks.length) return
+      await persistCanvasBlockOrder(arrayMove(popupBlocks, oldIndex, newIndex), { popup: true })
+      return
+    }
+
+    if (isLanding(selectedSite)) {
+      if (isTopLevelLandingBlock(block)) {
+        const groups = buildLandingBlockOrderGroups(canvasBlocks, landingSectionLanes)
+        const groupIndex = groups.findIndex(group => group.id === block.id)
+        const nextGroupIndex = groupIndex + offset
+        if (groupIndex < 0 || nextGroupIndex < 0 || nextGroupIndex >= groups.length) return
+        nextPageBlocks = arrayMove(groups, groupIndex, nextGroupIndex).flatMap(group => group.blocks)
+      } else {
+        const columnBlocks = getLandingColumnBlocksForMove(block)
+        const columnIndex = columnBlocks.findIndex(item => item.id === block.id)
+        const nextColumnIndex = columnIndex + offset
+        const targetBlock = columnBlocks[nextColumnIndex]
+        if (columnIndex < 0 || !targetBlock) return
+        const oldIndex = canvasBlocks.findIndex(item => item.id === block.id)
+        const newIndex = canvasBlocks.findIndex(item => item.id === targetBlock.id)
+        if (oldIndex < 0 || newIndex < 0) return
+        nextPageBlocks = arrayMove(canvasBlocks, oldIndex, newIndex)
+      }
+    } else {
+      const oldIndex = canvasBlocks.findIndex(item => item.id === block.id)
+      const newIndex = oldIndex + offset
+      if (oldIndex < 0 || newIndex < 0 || newIndex >= canvasBlocks.length) return
+      nextPageBlocks = arrayMove(canvasBlocks, oldIndex, newIndex)
+    }
+
+    if (nextPageBlocks) {
+      await persistCanvasBlockOrder(nextPageBlocks)
+    }
+  }
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveDragId(String(event.active.id))
+  }
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    setActiveDragId(null)
+    if (!selectedSite || !event.over || event.active.id === event.over.id) return
+
+    const sourceBlocks = popupSurfaceSelected ? popupBlocks : canvasBlocks
+    const oldIndex = sourceBlocks.findIndex(block => block.id === event.active.id)
+    const newIndex = sourceBlocks.findIndex(block => block.id === event.over?.id)
+    if (oldIndex < 0 || newIndex < 0) return
+
+    await persistCanvasBlockOrder(arrayMove(sourceBlocks, oldIndex, newIndex), { popup: popupSurfaceSelected })
+  }
+
+  const getInsertIndexFromNodes = (nodes: HTMLElement[], y: number, fallbackIndex: number) => {
+    const targetNode = nodes.find(node => {
+      const rect = node.getBoundingClientRect()
+      return y < rect.top + rect.height / 2
+    })
+    if (!targetNode) return fallbackIndex
+
+    const index = Number(targetNode.dataset.rstkBlockIndex)
+    return Number.isFinite(index) ? index : fallbackIndex
+  }
+
+  const getPaletteInsertIndex = (event: React.DragEvent<HTMLDivElement>, payload?: PaletteDragPayload | null) => {
+    if (popupSurfaceSelected) {
+      const popupSurface = (event.currentTarget as HTMLElement).querySelector('[data-rstk-popup-surface="true"]')
+      if (!popupSurface) return popupBlocks.length
+      const blockNodes = Array.from(popupSurface.querySelectorAll<HTMLElement>('[data-rstk-block-index]'))
+      return getInsertIndexFromNodes(blockNodes, event.clientY, popupBlocks.length)
+    }
+
+    const shell = (event.currentTarget as HTMLElement).querySelector('.rstk-shell')
+    if (!shell) return canvasBlocks.length
+
+    const selector = editorSite && isLanding(editorSite) && isTopLevelLandingBlockType(payload?.blockType)
+      ? '[data-rstk-page-block="true"]'
+      : '[data-rstk-block-index]'
+    const blockNodes = Array.from(shell.querySelectorAll<HTMLElement>(selector))
+    return getInsertIndexFromNodes(blockNodes, event.clientY, canvasBlocks.length)
+  }
+
+  const getPalettePayload = (dataTransfer: DataTransfer): PaletteDragPayload | null => {
+    const blockType = dataTransfer.getData('application/ristak-block') as SiteBlockType
+    if (!blockType) return null
+
+    const rawSettings = dataTransfer.getData('application/ristak-block-settings')
+    let initialSettings: Record<string, unknown> | undefined
+    if (rawSettings) {
+      try {
+        const parsed = JSON.parse(rawSettings)
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          initialSettings = parsed as Record<string, unknown>
+        }
+      } catch {
+        initialSettings = undefined
+      }
+    }
+
+    return { blockType, initialSettings }
+  }
+
+  const setActivePaletteDragPayload = (payload: PaletteDragPayload | null) => {
+    paletteDragPayloadRef.current = payload
+    setPaletteDragPayload(payload)
+  }
+
+  const getPalettePayloadForDrag = (dataTransfer: DataTransfer) =>
+    getPalettePayload(dataTransfer) || paletteDragPayloadRef.current
+
+  const getDropSectionTarget = (event: React.DragEvent<HTMLDivElement>): PaletteSectionTarget | null => {
+    const target = event.target as HTMLElement | null
+    const column = target?.closest<HTMLElement>('[data-rstk-section-column]')
+    const sectionId = column?.dataset.rstkSectionId || target?.closest<HTMLElement>('[data-rstk-section-id]')?.dataset.rstkSectionId || ''
+    const columnIndex = Number(column?.dataset.rstkSectionColumn)
+    return sectionId
+      ? {
+          sectionId,
+          sectionColumn: Number.isFinite(columnIndex) ? columnIndex : 0
+	        }
+      : null
+  }
+
+  const getSectionColumnInsertIndex = (event: React.DragEvent<HTMLDivElement>, target: PaletteSectionTarget) => {
+    const eventTarget = event.target as HTMLElement | null
+    const column = eventTarget?.closest<HTMLElement>('[data-rstk-section-column]')
+    const columnMatchesTarget = column
+      && column.dataset.rstkSectionId === target.sectionId
+      && Number(column.dataset.rstkSectionColumn) === target.sectionColumn
+
+    if (columnMatchesTarget) {
+      const blockNodes = Array.from(column.querySelectorAll<HTMLElement>('[data-rstk-block-id]'))
+        .filter(node => node.parentElement === column)
+      const blockIndexes = blockNodes
+        .map(node => Number(node.dataset.rstkBlockIndex))
+        .filter(index => Number.isFinite(index))
+      const lastIndex = blockIndexes.length ? Math.max(...blockIndexes) : null
+
+      return getInsertIndexFromNodes(
+        blockNodes,
+        event.clientY,
+        lastIndex === null ? getSectionFallbackInsertIndex(target.sectionId) : lastIndex + 1
+      )
+    }
+
+    return getSectionFallbackInsertIndex(target.sectionId)
+  }
+
+  const getSectionFallbackInsertIndex = (sectionId: string) => {
+    const sectionIndex = canvasBlocks.findIndex(block => block.id === sectionId)
+    return sectionIndex >= 0 ? sectionIndex + 1 : canvasBlocks.length
+  }
+
+  const getPaletteDropPlacement = (event: React.DragEvent<HTMLDivElement>, payload: PaletteDragPayload) => {
+    if (popupSurfaceSelected) {
+      return {
+        insertIndex: getPaletteInsertIndex(event, payload),
+        target: null
+      }
+    }
+
+    if (editorSite && isLanding(editorSite) && !isTopLevelLandingBlockType(payload.blockType)) {
+      const target = getDropSectionTarget(event)
+      return {
+        insertIndex: target ? getSectionColumnInsertIndex(event, target) : canvasBlocks.length,
+        target
+      }
+    }
+
+    return {
+      insertIndex: getPaletteInsertIndex(event, payload),
+      target: null
+    }
+  }
+
+  const resetPaletteDrag = () => {
+    setPaletteDragging(false)
+    setActivePaletteDragPayload(null)
+    setPaletteInsertIndex(null)
+    setPaletteSectionTarget(null)
+    setPaletteDragPosition(null)
+  }
+
+  const setPaletteDragEventPosition = (event: React.DragEvent<HTMLElement>) => {
+    if (event.clientX || event.clientY) {
+      setPaletteDragPosition({ x: event.clientX, y: event.clientY })
+    }
+  }
+
+  const isPaletteDragEvent = (event: React.DragEvent<HTMLElement>) =>
+    hasDataTransferType(event.dataTransfer, 'application/ristak-block') || Boolean(paletteDragPayloadRef.current)
+
+  const leaveCanvasPaletteDrag = () => {
+    setPaletteDragging(false)
+    setPaletteInsertIndex(null)
+    setPaletteSectionTarget(null)
+  }
+
+  const handleCanvasDrop = async (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    setPaletteDragEventPosition(event)
+    const payload = getPalettePayloadForDrag(event.dataTransfer)
+    const placement = payload ? getPaletteDropPlacement(event, payload) : null
+    const insertIndex = placement?.insertIndex ?? paletteInsertIndex ?? (popupSurfaceSelected ? popupBlocks.length : canvasBlocks.length)
+    const target = placement?.target || paletteSectionTarget
+    resetPaletteDrag()
+    if (!payload) return
+    await handleAddBlock(payload.blockType, {
+      insertIndex,
+      initialSettings: payload.initialSettings,
+      sectionId: target?.sectionId,
+      sectionColumn: target?.sectionColumn
+    })
+  }
+
+  const handleCanvasDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    if (isPaletteDragEvent(event)) {
+      event.preventDefault()
+      event.dataTransfer.dropEffect = 'move'
+      setPaletteDragEventPosition(event)
+      const payload = getPalettePayloadForDrag(event.dataTransfer)
+      if (!paletteDragging) setPaletteDragging(true)
+      if (payload && (
+        payload.blockType !== paletteDragPayload?.blockType ||
+        JSON.stringify(payload.initialSettings || {}) !== JSON.stringify(paletteDragPayload?.initialSettings || {})
+      )) {
+        setActivePaletteDragPayload(payload)
+      }
+      if (payload) {
+        const placement = getPaletteDropPlacement(event, payload)
+        setPaletteInsertIndex(placement.insertIndex)
+        setPaletteSectionTarget(placement.target)
+      }
+    }
+  }
+
+  const handleCanvasDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    if (!isPaletteDragEvent(event)) return
+    setPaletteDragEventPosition(event)
+    const nextTarget = event.relatedTarget as Node | null
+    if (nextTarget && event.currentTarget.contains(nextTarget)) return
+    if (!event.clientX && !event.clientY) return
+
+    const rect = event.currentTarget.getBoundingClientRect()
+    const stillInside = event.clientX >= rect.left
+      && event.clientX <= rect.right
+      && event.clientY >= rect.top
+      && event.clientY <= rect.bottom
+    if (!stillInside) {
+      leaveCanvasPaletteDrag()
+    }
+  }
+
+  if (loading) {
+    return <Loading page="dashboard" />
+  }
+
+  return (
+    <div className={styles.pageFrame}>
+      <input
+        ref={importFileInputRef}
+        type="file"
+        accept=".html,.htm,.zip,text/html,application/zip,application/x-zip-compressed"
+        className={styles.hiddenFileInput}
+        onChange={handleImportHtmlFile}
+      />
+      <div className={`${styles.container} ${isFocusedSitesMode ? styles.containerFocused : ''} ${isCanvasFocusMode ? styles.containerEditorFocus : ''}`}>
+        <header className={`${styles.header} ${editorSite ? styles.editorHeader : ''}`}>
+          {editorSite ? (
+            <>
+              <div className={styles.editorUnifiedToolbar}>
+                <div className={styles.editorToolbarTop}>
+                  <div className={styles.editorToolbarLeft}>
+                    <button type="button" className={styles.backButton} onClick={handleBackToLibrary}>
+                      <ArrowLeft size={15} />
+                      <span>Volver</span>
+                    </button>
+                    {editorSite.status !== 'draft' && (
+                      <span className={`${styles.statusPill} ${getStatusClass(editorSite, domainConfig)}`}>{getStatusLabel(editorSite, domainConfig)}</span>
+                    )}
+                    <label className={`${styles.editorNameField} ${styles.editorToolbarNameField}`}>
+                      <input
+                        value={editorSite.name}
+                        aria-label="Nombre interno del site"
+                        disabled={editorAIGenerating}
+                        onChange={(event) => updateSelectedSite({ name: event.target.value })}
+                        onBlur={() => handleSaveSite(undefined, { silent: true })}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className={`${styles.seoToolbarButton} ${seoValidation?.totalIssues ? styles.seoToolbarButtonWarning : ''}`}
+                      onClick={() => setSeoModalOpen(true)}
+                      disabled={editorAIGenerating}
+                      title={seoValidation?.totalIssues ? `SEO tiene ${seoValidation.totalIssues} pendientes` : 'SEO completo'}
+                    >
+                      <Search size={15} />
+                      <span>SEO</span>
+                      {Boolean(seoValidation?.totalIssues) && (
+                        <span className={styles.seoToolbarAlert} aria-label={`${seoValidation?.totalIssues} pendientes de SEO`}>
+                          <AlertTriangle size={13} />
+                          <strong>{seoValidation?.totalIssues}</strong>
+                        </span>
+                      )}
+                    </button>
+                    {hasEditablePages(editorSite) && (
+                      <button
+                        type="button"
+                        className={`${styles.seoToolbarButton} ${styles.headerToolbarButton}`}
+                        onClick={() => setHeaderModalOpen(true)}
+                        disabled={editorAIGenerating}
+                        title="Codigos del header global y de esta pagina"
+                      >
+                        <PanelTop size={15} />
+                        <span>Header</span>
+                      </button>
+                    )}
+                    {canConfigurePopup && (
+                      <button
+                        type="button"
+                        className={`${styles.seoToolbarButton} ${styles.headerToolbarButton} ${popupSurfaceSelected ? styles.headerToolbarButtonActive : ''}`}
+                        onClick={() => selectEditorBlock(popupSurfaceSelected ? PAGE_SELECTED_ID : POPUP_SELECTED_ID)}
+                        disabled={editorAIGenerating}
+                        title="Configurar Pop up"
+                      >
+                        <MousePointerClick size={15} />
+                        <span>Pop up</span>
+                      </button>
+                    )}
+                  </div>
+                  <div className={styles.editorActions}>
+                    <div className={styles.editorRouteControls}>
+                      {hasEditablePages(editorSite) && (
+                        <FunnelPagesPanel
+                          pages={pages}
+                          activePageId={activePage?.id || DEFAULT_FUNNEL_PAGE_ID}
+                          locked={!canManagePages(editorSite) || editorAIGenerating}
+                          draggingPageId={draggingPageId}
+                          colorFinalPages={isStandardForm(editorSite)}
+                          isFixedPage={isStandardForm(editorSite) ? isFormFinalPage : undefined}
+                          pageMode={getSitePageMode(editorSite)}
+                          onChangeMode={isLanding(editorSite) && !isImportedHtmlSite(editorSite) ? handleChangePageMode : undefined}
+                          onAddSubpage={handleAddSubpage}
+                          getPageDepth={(page) => getPageDepth(page, pages)}
+                          canDeletePage={(page) => isStandardForm(editorSite)
+                            ? !isFormFinalPage(page) && getFormContentPages(pages).length > 1
+                            : pages.length > 1}
+                          canDuplicatePage={(page) => !isStandardForm(editorSite) || !isFormFinalPage(page)}
+                          onSelectPage={selectEditorPage}
+                          onAddPage={handleAddPage}
+                          onDuplicatePage={handleDuplicatePage}
+                          onDeletePage={handleDeletePage}
+                          onDragPage={setDraggingPageId}
+                          onReorderPages={handleReorderPages}
+                          onRenamePage={handleRenamePage}
+                        />
+                      )}
+                      <label className={styles.routeField}>
+                        <span className={`${styles.publicRouteBox} ${domainConfig.domain ? '' : styles.publicRouteBoxStandalone}`}>
+                          <span className={styles.publicRouteDomain} title={getPublicDomainPreview(domainConfig)}>
+                            {getPublicDomainPreview(domainConfig)}
+                          </span>
+                          <span className={styles.publicRouteSlash} aria-hidden="true">/</span>
+                          <input
+                            value={getRouteEditorValue(editorSite)}
+                            aria-label="Ruta pública"
+                            placeholder={editorSite.siteType === 'landing_page' ? 'sitio-01' : 'formulario-01'}
+                            disabled={editorAIGenerating}
+                            onChange={(event) => updateSelectedSite({ slug: normalizeRouteEditorInput(event.target.value, domainConfig) })}
+                            onBlur={() => handleSaveSite(undefined, { silent: true })}
+                          />
+                        </span>
+                      </label>
+                    </div>
+                    <div className={styles.deviceToggle} role="group" aria-label="Vista previa del dispositivo">
+                      <button type="button" className={device === 'desktop' ? styles.deviceActive : ''} onClick={() => selectEditorDevice('desktop')} disabled={editorAIGenerating} title="Escritorio">
+                        <Monitor size={15} />
+                      </button>
+                      <button type="button" className={device === 'mobile' ? styles.deviceActive : ''} onClick={() => selectEditorDevice('mobile')} disabled={editorAIGenerating} title="Movil">
+                        <Smartphone size={15} />
+                      </button>
+                    </div>
+                    <button type="button" className={styles.editorIconAction} onClick={() => setEditorFocus(true)} disabled={editorAIGenerating} title="Modo enfoque" aria-label="Modo enfoque">
+                      <Maximize2 size={14} />
+                    </button>
+                    <Button variant="secondary" size="lg" onClick={handlePreviewSite} disabled={editorAIGenerating}>
+                      <Eye size={15} />
+                      Previsualizar
+                    </Button>
+                    <Button variant="secondary" size="lg" onClick={() => handleSaveSite()} loading={saving} disabled={editorAIGenerating}>
+                      <Save size={15} />
+                      Guardar
+                    </Button>
+                    <Button size="lg" onClick={() => handleSaveSite('published')} loading={saving} disabled={editorAIGenerating}>
+                      <Send size={15} />
+                      Publicar
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div>
+              <div className={styles.titleRow}>
+                {isFocusedSitesMode && (
+                  <button type="button" className={styles.backButton} onClick={handleFocusedBack}>
+                    <ArrowLeft size={16} />
+                    Volver
+                  </button>
+                )}
+                <h1 className={styles.title}>{createFlowHeaderCopy.title}</h1>
+              </div>
+              <p className={styles.subtitle}>{createFlowHeaderCopy.subtitle}</p>
+            </div>
+          )}
+        </header>
+
+        {editorSite && seoModalOpen && (
+          <SeoOptimizationModal
+            site={editorSite}
+            onClose={() => setSeoModalOpen(false)}
+            onPatchSite={updateSelectedSite}
+            onPatchTheme={patchSiteTheme}
+            onSave={() => handleSaveSite(undefined, { silent: true })}
+          />
+        )}
+
+        {editorSite && hasEditablePages(editorSite) && headerModalOpen && (
+          <HeaderToolbarModal
+            site={editorSite}
+            pages={pages}
+            activePage={activePage}
+            metaPixelConnected={metaPixelConnected}
+            onClose={() => setHeaderModalOpen(false)}
+            onPatchSite={updateSelectedSite}
+            onPatchTheme={patchSiteTheme}
+            onSaveSite={() => handleSaveSite(undefined, { silent: true })}
+          />
+        )}
+
+        {aiCreationModal && (
+          <SitesAICreationModal
+            state={aiCreationModal}
+            creating={creating}
+            onClose={() => {
+              if (!creating) setAiCreationModal(null)
+            }}
+            onSubmit={handleSubmitAICreationModal}
+          />
+        )}
+
+        <div className={`${styles.sitesShell} ${isFocusedSitesMode ? styles.sitesShellFocused : ''}`}>
+          {!isFocusedSitesMode && (
+            <nav className={styles.sectionTabs} role="tablist" aria-label="Secciones de sitios">
+              {sectionItems.map(item => {
+                const isActive = section === item.id
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={isActive}
+                    className={`${styles.sectionTab} ${isActive ? styles.sectionTabActive : ''}`}
+                    onClick={() => handleSectionChange(item.id)}
+                  >
+                    {item.icon}
+                    <span>{item.label}</span>
+                    {item.id === 'domains' && <ExternalLink size={14} aria-hidden="true" />}
+                  </button>
+                )
+              })}
+            </nav>
+          )}
+
+          <main className={styles.mainSurface}>
+            {createFlow !== 'closed' ? (
+              <CreateFlowPanel
+                step={createFlow}
+                creating={creating}
+                aiAgentAvailable={aiAgentConfigured}
+                onCreate={handleCreateSite}
+                onCreateWithAI={handleCreateSiteWithAI}
+                onImportHtml={handleOpenImportHtml}
+                onAdvance={(nextFlow) => {
+                  setCreateFlow(nextFlow)
+                  navigateSitesCreateFlow(section, nextFlow)
+                }}
+              />
+            ) : section === 'leads' ? (
+              <LeadsPanel rows={leadRows} loading={loadingLeads} onRefresh={loadLeads} />
+            ) : section === 'domains' ? (
+              <DomainsPanel
+                domainConfig={domainConfig}
+                domainInput={domainInput}
+                verifying={verifying}
+                onDomainChange={(value) => {
+                  setDomainInput(value)
+                  setDomainConfig(current => ({
+                    ...current,
+                    domain: value,
+                    renderDomainVerified: false,
+                    renderDomainError: null
+                  }))
+                }}
+                onVerifyDomain={handleVerifyDomain}
+              />
+            ) : (section === 'landings' || section === 'forms') && !editorSite ? (
+              <SitesLibraryPanel
+                section={section}
+                sites={section === 'landings' ? landings : forms}
+                forms={forms}
+                calendars={calendars}
+                selectedSiteId={selectedSite?.id || ''}
+                onCreate={handleStartCreateFlow}
+                onEdit={selectSite}
+                onPreview={(site) => void handlePreviewLibrarySite(site)}
+                onUpdateRoute={handleUpdateLibraryRoute}
+                onDelete={(site) => void handleDeleteSite(site)}
+                domainConfig={domainConfig}
+              />
+            ) : editorSite ? (
+              <section className={styles.builder}>
+              {isCanvasFocusMode && (
+                <div className={styles.focusModeBar} role="toolbar" aria-label="Controles de enfoque">
+                  <button type="button" className={styles.focusExitButton} onClick={() => setEditorFocus(false)}>
+                    <X size={16} />
+                    <span>Salir de enfoque</span>
+                  </button>
+                  <div className={styles.deviceToggle} role="group" aria-label="Vista previa del dispositivo">
+                    <button type="button" className={device === 'desktop' ? styles.deviceActive : ''} onClick={() => selectEditorDevice('desktop')} title="Escritorio" aria-label="Escritorio">
+                      <Monitor size={15} />
+                    </button>
+                    <button type="button" className={device === 'mobile' ? styles.deviceActive : ''} onClick={() => selectEditorDevice('mobile')} title="Movil" aria-label="Movil">
+                      <Smartphone size={15} />
+                    </button>
+                  </div>
+                  <button type="button" className={styles.focusActionButton} onClick={handlePreviewSite}>
+                    <Eye size={15} />
+                    <span>Vista</span>
+                  </button>
+                  <button type="button" className={styles.focusActionButton} onClick={() => handleSaveSite()} disabled={saving}>
+                    <Save size={15} />
+                    <span>Guardar</span>
+                  </button>
+                  <button type="button" className={styles.focusPrimaryButton} onClick={() => handleSaveSite('published')} disabled={saving}>
+                    <Send size={15} />
+                    <span>Publicar</span>
+                  </button>
+                </div>
+              )}
+              {activeAIGeneration ? (
+                <AIEditorGenerationPanel
+                  editMode={activeAIGeneration.editMode}
+                  siteKind={activeAIGeneration.siteKind}
+                />
+              ) : isImportedHtmlSite(editorSite) ? (
+                <ImportedHtmlEditorPanel
+                  site={editorSite}
+                  pages={pages}
+                  activePageId={activePage?.id || DEFAULT_FUNNEL_PAGE_ID}
+                  domainConfig={domainConfig}
+                  device={device}
+                  saving={saving}
+                  aiAgentAvailable={aiAgentConfigured}
+                  importData={selectedImportData}
+                  loadingImportData={loadingImportData}
+                  onSelectPage={selectEditorPage}
+                  onPreview={handlePreviewSite}
+                  onPublish={() => handleSaveSite('published')}
+                  onEditFields={() => void handleOpenImportMappingEditor(editorSite)}
+                  onPreviewContextChange={handleImportedPreviewContextChange}
+                  onContentUpdated={handleImportedContentUpdated}
+                  onUpdateRoute={handleUpdateLibraryRoute}
+                  onDelete={() => void handleDeleteSite(editorSite)}
+                />
+              ) : (
+              <div className={`${styles.builderGrid} ${isLanding(editorSite) ? styles.builderGridLanding : styles.builderGridForm}`}>
+                <div className={styles.blocksRail}>
+	                  <Palette
+		                    blockTypes={popupSurfaceSelected ? getPopupPaletteBlockTypes(editorSite) : isLanding(editorSite) ? landingBlockTypes : formBlockTypes}
+		                    existingBlocks={editableCanvasBlocks}
+		                    onAdd={handleAddBlock}
+	                    onPaletteDragStart={(payload, position) => {
+	                      setActivePaletteDragPayload(payload)
+	                      setPaletteDragPosition(position)
+	                      setPaletteDragging(false)
+	                      setPaletteInsertIndex(null)
+	                      setPaletteSectionTarget(null)
+	                    }}
+                    onPaletteDragMove={setPaletteDragPosition}
+                    onPaletteDragEnd={resetPaletteDrag}
+                  />
+                </div>
+
+                <section className={styles.canvasColumn}>
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragStart={handleDragStart}
+                    onDragEnd={handleDragEnd}
+                    onDragCancel={() => setActiveDragId(null)}
+                  >
+	                    <SortableContext items={editableCanvasBlocks.map(block => block.id)} strategy={verticalListSortingStrategy}>
+                      <CanvasStage
+                        designWidth={canvasTheme!.designWidth}
+                        canvasClassName={`rstkCanvas ${canvasTheme!.bodyClass}`}
+                        canvasStyle={canvasTheme!.vars}
+                        active={paletteDragging}
+	                        pageSelected={selectedBlockId === PAGE_SELECTED_ID}
+	                        fluidAboveDesign={isLanding(editorSite) && device === 'desktop'}
+                        onClear={() => {
+                          selectEditorBlock(PAGE_SELECTED_ID)
+                          setPaletteInsertIndex(null)
+                        }}
+                        onDragOver={handleCanvasDragOver}
+                        onDragLeave={handleCanvasDragLeave}
+                        onDrop={handleCanvasDrop}
+                        overlay={popupSurfaceSelected ? (
+                          <div
+                            className={`rstkCanvas ${canvasTheme!.bodyClass} rstkPopupEditorHost`}
+                            style={{ ...canvasTheme!.vars, ['--rstk-scale' as string]: 1 } as React.CSSProperties}
+                          >
+                            <PopupCanvasSurface
+                              site={editorSite}
+                              blocks={popupBlocks}
+                              selectedBlockId={selectedBlockId}
+                              forms={forms}
+                              calendars={calendars}
+                              pages={pages}
+                              activePageId={activePage?.id || DEFAULT_FUNNEL_PAGE_ID}
+                              selected={selectedBlockId === POPUP_SELECTED_ID}
+                              palettePreviewBlock={canvasPalettePreviewBlock}
+                              paletteInsertIndex={paletteInsertIndex}
+                              onSelectPopup={() => selectEditorBlock(POPUP_SELECTED_ID)}
+                              onClosePopup={() => selectEditorBlock(PAGE_SELECTED_ID)}
+                              onSelectBlock={selectEditorBlock}
+                              onDeleteBlock={requestDeleteBlock}
+                              onMoveBlock={handleMoveBlock}
+                              getBlockMoveState={getBlockMoveState}
+                              onPatchBlock={patchBlockLocal}
+                              onPatchBlockSettings={patchBlockSettingsLocal}
+                              onSaveBlock={handleSaveBlock}
+                            />
+                          </div>
+                        ) : null}
+                      >
+                        <div className="rstk-frame">
+                          <CanvasBackgroundVideo theme={editorSite.theme} />
+                          <main className="rstk-page">
+                            <div className="rstk-shell">
+                              <div className="rstk-form">
+                                {isLanding(editorSite) ? (
+                                  !hasLandingCanvasContent ? (
+                                    canvasPalettePreviewBlock && isTopLevelLandingBlockType(paletteDragPayload?.blockType) ? (
+                                      <PaletteInsertPreview block={canvasPalettePreviewBlock} site={editorSite} forms={forms} calendars={calendars} />
+                                    ) : (
+                                      <div className="rstkDropEmpty">
+                                        <Plus size={22} />
+                                        <p>Arrastra primero una franja de 1, 2 o 3 columnas.</p>
+                                      </div>
+                                    )
+                                  ) : (
+                                    <>
+                                      <LandingCanvasSections
+                                        lanes={landingSectionLanes}
+                                        blocks={canvasBlocks}
+                                        selectedBlockId={selectedBlock?.id || ''}
+                                        site={editorSite}
+                                        forms={forms}
+                                        calendars={calendars}
+                                        pages={pages}
+                                        activePageId={activePage?.id || DEFAULT_FUNNEL_PAGE_ID}
+                                        palettePreviewBlock={canvasPalettePreviewBlock}
+                                        paletteInsertIndex={paletteInsertIndex}
+                                        paletteSectionTarget={paletteSectionTarget}
+                                        paletteDragging={paletteDragging}
+                                        onSelectBlock={selectEditorBlock}
+                                        onDeleteBlock={requestDeleteBlock}
+                                        onMoveBlock={handleMoveBlock}
+                                        getBlockMoveState={getBlockMoveState}
+                                        onPatchBlock={patchBlockLocal}
+                                        onPatchBlockSettings={patchBlockSettingsLocal}
+                                        onSaveBlock={handleSaveBlock}
+                                      />
+                                    </>
+                                  )
+                                ) : canvasBlocks.length === 0 ? (
+                                canvasPalettePreviewBlock ? (
+                                  <PaletteInsertPreview block={canvasPalettePreviewBlock} site={editorSite} forms={forms} calendars={calendars} />
+                                ) : (
+                                  <div className="rstkDropEmpty">
+                                    <Plus size={22} />
+                                    <p>Arrastra bloques desde la barra de la izquierda o haz click para agregarlos.</p>
+                                  </div>
+                                )
+                              ) : (
+                                <>
+                                  {canvasPalettePreviewBlock && paletteInsertIndex === 0 && (
+                                    <PaletteInsertPreview block={canvasPalettePreviewBlock} site={editorSite} forms={forms} calendars={calendars} />
+                                  )}
+                                  {canvasBlocks.map((block, index) => {
+                                    const moveState = getBlockMoveState(block)
+                                    return (
+                                      <React.Fragment key={block.id}>
+                                        <SortableCanvasBlock
+                                          block={block}
+                                          blocks={canvasBlocks}
+                                          index={index}
+                                          selected={selectedBlock?.id === block.id}
+                                          site={editorSite}
+                                          forms={forms}
+                                          calendars={calendars}
+                                          pages={pages}
+                                          activePageId={activePage?.id || DEFAULT_FUNNEL_PAGE_ID}
+                                          canMoveUp={moveState.canMoveUp}
+                                          canMoveDown={moveState.canMoveDown}
+                                          onSelect={() => selectEditorBlock(block.id)}
+                                          onDelete={() => requestDeleteBlock(block.id)}
+                                          onMoveUp={() => handleMoveBlock(block.id, 'up')}
+                                          onMoveDown={() => handleMoveBlock(block.id, 'down')}
+                                          onPatchBlock={(patch) => patchBlockLocal(block.id, patch)}
+                                          onPatchSettings={(patch) => patchBlockSettingsLocal(block, patch)}
+                                          onSave={() => handleSaveBlock(block.id)}
+                                        />
+                                        {canvasPalettePreviewBlock && paletteInsertIndex === index + 1 && (
+                                          <PaletteInsertPreview block={canvasPalettePreviewBlock} site={editorSite} forms={forms} calendars={calendars} />
+                                        )}
+                                      </React.Fragment>
+                                    )
+                                  })}
+                                </>
+                              )}
+                              {formCanvasHasFields && (
+                                <div className="rstk-actions">
+                                  <button type="button" data-submit><SubmitButtonContent theme={editorSite.theme} label={formCanvasActionLabel} /></button>
+                                </div>
+                              )}
+                              </div>
+                            </div>
+                          </main>
+                        </div>
+                      </CanvasStage>
+                    </SortableContext>
+	                    <DragOverlay dropAnimation={{ duration: 340, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' }}>
+                      {activeDragBlock ? (
+                        <div className={`rstkCanvas ${canvasTheme!.bodyClass}`} style={{ ...canvasTheme!.vars, width: 460, ['--rstk-scale' as string]: 1 } as React.CSSProperties}>
+                          <div className={getBlockStyleClassName(activeDragBlock)} style={getBlockCanvasStyle(activeDragBlock)}>
+                            <CanvasPreviewBlock block={activeDragBlock} site={editorSite} forms={forms} calendars={calendars} />
+                          </div>
+                        </div>
+                      ) : null}
+                    </DragOverlay>
+                  </DndContext>
+                </section>
+
+                <PropertiesPanel
+                  site={editorSite}
+	                  block={selectedBlock}
+	                  surfaceSelectionId={selectedBlockId}
+	                  blocks={editableCanvasBlocks}
+	                  allBlocks={blocks}
+	                  popupBlocks={popupBlocks}
+                  forms={forms}
+                  calendars={calendars}
+                  customFields={customFields}
+                  pages={pages}
+                  activePageId={activePage?.id || DEFAULT_FUNNEL_PAGE_ID}
+                  metaPixelConnected={metaPixelConnected}
+                  importedPopupDetected={importedPopupDetected}
+                  connectedSocialProfiles={connectedSocialProfiles}
+                  loadingSocialProfiles={loadingSocialProfiles}
+                  onPatchSite={updateSelectedSite}
+                  onPatchTheme={patchSiteTheme}
+                  onSaveSite={() => handleSaveSite(undefined, { silent: true })}
+                  onPatchBlock={(patch) => patchSelectedBlock(patch)}
+                  onPatchSettings={(patch) => patchSelectedBlockSettings(patch)}
+                  onPatchCategorySettings={(block, patch) => patchBlockCategorySettingsLocal(block, patch)}
+                  onSaveCategory={(block) => handleSaveBlockCategory(block)}
+                  onSave={() => handleSaveBlock()}
+                />
+
+              </div>
+              )}
+            </section>
+          ) : (
+            <div className={styles.emptyEditor}>
+              <LayoutTemplate size={34} />
+              <p>{getEmptyEditorMessage(section)}</p>
+              <Button onClick={handleStartCreateFlow}>
+                <Plus size={16} />
+                {getCreateButtonLabel(section)}
+              </Button>
+            </div>
+          )}
+        </main>
+        {palettePreviewBlock && paletteDragPosition && (
+          <div
+            className={`rstkPaletteFloatingPreview ${paletteDragging ? 'rstkPaletteFloatingPreviewCanvas' : ''}`}
+            style={{ left: paletteDragPosition.x, top: paletteDragPosition.y }}
+            aria-hidden="true"
+          >
+            <span className="rstkPaletteFloatingPreviewIcon">{blockIcons[palettePreviewBlock.blockType]}</span>
+            <span>{blockLabels[palettePreviewBlock.blockType] || palettePreviewBlock.label}</span>
+          </div>
+        )}
+        {importReview && (
+          <ImportedHtmlReviewModal
+            review={importReview}
+            saving={savingImportMapping}
+            customFields={customFields}
+            onClose={() => setImportReview(null)}
+            onConfirm={handleConfirmImportMapping}
+          />
+        )}
+      </div>
+    </div>
+    </div>
+  )
+}
+
+type SitesAICreationAttachment = {
+  id: string
+  name: string
+  size: number
+  text: string
+}
+
+const AI_CREATION_TEXT_ATTACHMENT_MAX_CHARS = 8000
+const aiCreationTextFilePattern = /\.(txt|md|markdown|html?|css|json|csv|xml)$/i
+const aiCreationAudioMimeTypes = [
+  'audio/webm;codecs=opus',
+  'audio/webm',
+  'audio/mp4',
+  'audio/mpeg',
+  'audio/wav'
+]
+const AI_CREATION_VOICE_WAVE_BAR_COUNT = 56
+const AI_CREATION_VOICE_WAVE_MIN_HEIGHT = 4
+const AI_CREATION_VOICE_WAVE_MAX_HEIGHT = 28
+const AI_CREATION_VOICE_SILENCE_THRESHOLD = 4
+const AI_CREATION_VOICE_SIGNAL_RANGE = 30
+
+const funnelStyleOptions: Array<{
+  id: FunnelStyleId
+  title: string
+  subtitle: string
+  badge: string
+  bestFor: string
+  prompt: string
+  sections: string[]
+}> = [
+  {
+    id: 'vsl',
+    title: 'Video de venta',
+    subtitle: 'Para explicar, generar confianza y vender con más profundidad.',
+    badge: 'VSL',
+    bestFor: 'Comprar, agendar o aplicar después de ver una oferta.',
+    prompt: [
+      'Tipo de embudo elegido: Landing tipo VSL / página de venta con video.',
+      'Estructura esperada: hero con promesa clara, subtítulo para audiencia/resultado, video destacado, CTA, prueba social, problema/dolor, mecanismo o solución, autoridad, oferta, CTA repetido, preguntas frecuentes y CTA final.',
+      'El diseño debe dejar el video como pieza central y usar secciones largas pero escaneables.'
+    ].join('\n'),
+    sections: ['Hero + video', 'Problema', 'Método', 'Oferta', 'FAQ']
+  },
+  {
+    id: 'lead_gen',
+    title: 'Formulario visible',
+    subtitle: 'Para conseguir prospectos rápido y pedir datos de contacto.',
+    badge: 'Lead gen',
+    bestFor: 'Clínicas, servicios, consultorios, inmobiliarias o agencias.',
+    prompt: [
+      'Tipo de embudo elegido: Landing tipo Lead Gen con formulario visible a la derecha.',
+      'Estructura esperada: hero dividido en dos columnas, texto/bullets/prueba rápida a la izquierda, formulario con nombre, teléfono, correo y selector de servicio a la derecha, barra de confianza, beneficios, cómo funciona, testimonios, objeciones frecuentes y CTA final.',
+      'El formulario debe estar visible desde el primer pantallazo en desktop y fácil de usar en móvil.'
+    ].join('\n'),
+    sections: ['Hero dividido', 'Formulario', 'Confianza', 'Beneficios', 'Pasos']
+  },
+  {
+    id: 'opt_in',
+    title: 'Recurso gratis',
+    subtitle: 'Para regalar una guía, clase, checklist, webinar o PDF.',
+    badge: 'Opt-in',
+    bestFor: 'Capturar correos o WhatsApp antes de vender directo.',
+    prompt: [
+      'Tipo de embudo elegido: Landing tipo Opt-in / Lead magnet.',
+      'Estructura esperada: hero dividido con promesa del recurso, bullets de contenido, formulario o botón de registro, mockup visual del recurso, qué recibirá, por qué importa, para quién es, quién lo creó, CTA repetido y preguntas frecuentes.',
+      'El diseño debe incluir un mockup visual convincente del recurso gratuito.'
+    ].join('\n'),
+    sections: ['Hero + recurso', 'Contenido', 'Importancia', 'Autoridad', 'FAQ']
+  }
+]
+
+const funnelPrimaryActions: Array<{ id: FunnelPrimaryActionId; label: string; prompt: string }> = [
+  { id: 'buy', label: 'Comprar', prompt: 'La acción principal será comprar.' },
+  { id: 'schedule', label: 'Agendar', prompt: 'La acción principal será agendar una llamada, cita o valoración.' },
+  { id: 'form', label: 'Formulario', prompt: 'La acción principal será llenar un formulario de solicitud o contacto.' },
+  { id: 'whatsapp', label: 'WhatsApp', prompt: 'La acción principal será mandar mensaje por WhatsApp.' },
+  { id: 'download', label: 'Descargar', prompt: 'La acción principal será descargar u obtener acceso a un recurso gratuito.' }
+]
+
+const chatgptSiteModelOptions = [
+  { value: 'gpt-5.4-nano', label: 'ChatGPT 5.4 nano · $', description: 'El más barato para cambios pequeños. $0.20 entrada / $1.25 salida por 1M tokens.' },
+  { value: 'gpt-5.4-mini', label: 'ChatGPT 5.4 mini · $$', description: 'Rápido y económico para ajustes simples. $0.75 entrada / $4.50 salida por 1M tokens.' },
+  { value: 'gpt-5.4', label: 'ChatGPT 5.4 · $$$', description: 'Buen balance para páginas completas. $2.50 entrada / $15.00 salida por 1M tokens.' },
+  { value: 'gpt-5.5', label: 'ChatGPT 5.5 · $$$$ · recomendado', description: 'Recomendado para crear páginas completas con mejor criterio visual. $5.00 entrada / $30.00 salida por 1M tokens.' },
+  { value: 'gpt-5.4-pro', label: 'ChatGPT 5.4 Pro · $$$$$', description: 'Más cómputo para rediseños grandes. $30.00 entrada / $180.00 salida por 1M tokens.' },
+  { value: 'gpt-5.5-pro', label: 'ChatGPT 5.5 Pro · $$$$$', description: 'El más caro para máxima calidad. $30.00 entrada / $180.00 salida por 1M tokens.' }
+]
+
+const DEFAULT_SITE_CHATGPT_MODEL = 'gpt-5.5'
+const DEFAULT_SITE_CHATGPT_EDIT_MODEL = 'gpt-5.4-nano'
+const getFunnelStyleOption = (id?: FunnelStyleId) => funnelStyleOptions.find(option => option.id === id) || null
+const getFunnelPrimaryAction = (id?: FunnelPrimaryActionId) => funnelPrimaryActions.find(option => option.id === id) || null
+const getDefaultSiteChatGPTModel = (editMode: boolean) => editMode ? DEFAULT_SITE_CHATGPT_EDIT_MODEL : DEFAULT_SITE_CHATGPT_MODEL
+const getChatGPTSiteModelOption = (model?: string, editMode = false) =>
+  chatgptSiteModelOptions.find(option => option.value === model) ||
+  chatgptSiteModelOptions.find(option => option.value === getDefaultSiteChatGPTModel(editMode)) ||
+  chatgptSiteModelOptions[0]
+
+const limitSitesAIContextText = (value: string, maxLength = 5200) => {
+  const text = String(value || '').replace(/\s+/g, ' ').trim()
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1).trim()}…` : text
+}
+
+const formatSitesAIPreviewVisualContextForPrompt = (context: SitesAIPreviewVisualContext) => [
+  'Vista previa actual detectada por Ristak:',
+  `- Página activa: ${context.pageTitle || context.pageId || 'Sin nombre'}`,
+  `- Captura interna: ${context.screenshotDataUrl ? 'adjunta como imagen de referencia' : 'no disponible; usa el resumen visual y el HTML'}`,
+  `- Elementos visibles detectados: ${context.elements.length}`,
+  `Resumen visual:\n${limitSitesAIContextText(context.summary)}`
+].join('\n')
+
+const getSitesAICreationKindLabel = (siteKind: SitesAICreationKind) => {
+  if (siteKind === 'interactive_form') return 'formulario interactivo'
+  if (siteKind === 'form') return 'formulario'
+  return 'página o sitio'
+}
+
+const getSitesAICreationPlaceholder = (siteKind: SitesAICreationKind, editMode: boolean) => {
+  if (editMode) return 'Dime qué quieres cambiar: título, foto principal, orden de secciones, campos, estilo, colores...'
+  if (siteKind === 'form') return 'Ejemplo: formulario para agendar valoración dental, pedir nombre, teléfono, correo, tratamiento y fecha preferida...'
+  if (siteKind === 'interactive_form') return 'Ejemplo: quiz de 4 pasos para calificar prospectos, con captura final de nombre y teléfono...'
+  return 'Ejemplo: embudo para clínica estética con foto principal, beneficios, testimonios y formulario para agendar...'
+}
+
+const formatAICreationFileSize = (bytes: number) => {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 KB'
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+const makeAICreationId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+const readAICreationAttachment = async (file: File): Promise<SitesAICreationAttachment> => {
+  let text = ''
+  if (file.type.startsWith('text/') || aiCreationTextFilePattern.test(file.name)) {
+    text = (await file.text()).slice(0, AI_CREATION_TEXT_ATTACHMENT_MAX_CHARS)
+  }
+
+  return {
+    id: makeAICreationId(),
+    name: file.name,
+    size: file.size,
+    text
+  }
+}
+
+const getAICreationAudioMimeType = () => {
+  if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') return ''
+  return aiCreationAudioMimeTypes.find(mimeType => MediaRecorder.isTypeSupported(mimeType)) || ''
+}
+
+const createAICreationVoiceBars = () => (
+  Array.from({ length: AI_CREATION_VOICE_WAVE_BAR_COUNT }, () => AI_CREATION_VOICE_WAVE_MIN_HEIGHT)
+)
+
+const getAICreationVoiceBarHeight = (samples: Uint8Array) => {
+  const average = samples.reduce((sum, value) => sum + Math.abs(value - 128), 0) / samples.length
+  const gatedLevel = average <= AI_CREATION_VOICE_SILENCE_THRESHOLD
+    ? 0
+    : Math.min(1, (average - AI_CREATION_VOICE_SILENCE_THRESHOLD) / AI_CREATION_VOICE_SIGNAL_RANGE)
+  const responsiveLevel = Math.sqrt(gatedLevel)
+
+  return Math.round(AI_CREATION_VOICE_WAVE_MIN_HEIGHT + responsiveLevel * (AI_CREATION_VOICE_WAVE_MAX_HEIGHT - AI_CREATION_VOICE_WAVE_MIN_HEIGHT))
+}
+
+const getAICreationAudioContextConstructor = () => {
+  const audioWindow = window as Window & {
+    AudioContext?: typeof AudioContext
+    webkitAudioContext?: typeof AudioContext
+  }
+
+  return audioWindow.AudioContext || audioWindow.webkitAudioContext || null
+}
+
+const formatAICreationVoiceDuration = (totalSeconds: number) => {
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
+type AIVoiceDictationState = 'idle' | 'recording' | 'transcribing'
+
+const appendDictatedText = (current: string, nextText: string) => {
+  const cleanText = nextText.trim()
+  if (!cleanText) return current
+  return current.trim() ? `${current.trim()}\n\n${cleanText}` : cleanText
+}
+
+function useAIVoiceDictation({
+  onTranscription,
+  onError,
+  onStart
+}: {
+  onTranscription: (text: string) => void
+  onError: (message: string) => void
+  onStart?: () => void
+}) {
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const mediaStreamRef = useRef<MediaStream | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const audioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
+  const analyserRef = useRef<AnalyserNode | null>(null)
+  const voiceAnimationFrameRef = useRef<number | null>(null)
+  const voiceLastWaveUpdateRef = useRef(0)
+  const voiceChunksRef = useRef<Blob[]>([])
+  const cancelRequestedRef = useRef(false)
+  const onTranscriptionRef = useRef(onTranscription)
+  const onErrorRef = useRef(onError)
+  const onStartRef = useRef(onStart)
+  const [voiceState, setVoiceState] = useState<AIVoiceDictationState>('idle')
+  const [voiceBars, setVoiceBars] = useState<number[]>(createAICreationVoiceBars)
+  const [voiceElapsed, setVoiceElapsed] = useState(0)
+
+  useEffect(() => {
+    onTranscriptionRef.current = onTranscription
+  }, [onTranscription])
+
+  useEffect(() => {
+    onErrorRef.current = onError
+  }, [onError])
+
+  useEffect(() => {
+    onStartRef.current = onStart
+  }, [onStart])
+
+  const resetVoiceUi = useCallback(() => {
+    setVoiceBars(createAICreationVoiceBars())
+    setVoiceElapsed(0)
+    setVoiceState('idle')
+  }, [])
+
+  const stopVoiceStream = useCallback(() => {
+    if (voiceAnimationFrameRef.current !== null) {
+      window.cancelAnimationFrame(voiceAnimationFrameRef.current)
+      voiceAnimationFrameRef.current = null
+    }
+
+    audioSourceRef.current?.disconnect()
+    audioSourceRef.current = null
+    analyserRef.current = null
+
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => undefined)
+      audioContextRef.current = null
+    }
+
+    mediaStreamRef.current?.getTracks().forEach(track => track.stop())
+    mediaStreamRef.current = null
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      cancelRequestedRef.current = true
+      const recorder = mediaRecorderRef.current
+      if (recorder && recorder.state !== 'inactive') {
+        try {
+          recorder.stop()
+        } catch {
+          // Best effort cleanup for browser recorder state.
+        }
+      }
+      stopVoiceStream()
+    }
+  }, [stopVoiceStream])
+
+  useEffect(() => {
+    if (voiceState !== 'recording') return
+
+    const startedAt = Date.now()
+    const timer = window.setInterval(() => {
+      setVoiceElapsed(Math.floor((Date.now() - startedAt) / 1000))
+    }, 250)
+
+    return () => window.clearInterval(timer)
+  }, [voiceState])
+
+  const startVoiceMeter = useCallback(async () => {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    mediaStreamRef.current = stream
+
+    const AudioContextConstructor = getAICreationAudioContextConstructor()
+    if (!AudioContextConstructor) return stream
+
+    const audioContext = new AudioContextConstructor()
+    const analyser = audioContext.createAnalyser()
+    const source = audioContext.createMediaStreamSource(stream)
+
+    analyser.fftSize = 256
+    analyser.smoothingTimeConstant = 0.72
+    const samples = new Uint8Array(analyser.fftSize)
+    source.connect(analyser)
+
+    audioContextRef.current = audioContext
+    audioSourceRef.current = source
+    analyserRef.current = analyser
+    voiceLastWaveUpdateRef.current = 0
+
+    const drawWave = (timestamp: number) => {
+      if (!analyserRef.current) return
+
+      if (timestamp - voiceLastWaveUpdateRef.current > 55) {
+        analyserRef.current.getByteTimeDomainData(samples)
+        const nextHeight = getAICreationVoiceBarHeight(samples)
+
+        setVoiceBars(current => [...current.slice(1), nextHeight])
+        voiceLastWaveUpdateRef.current = timestamp
+      }
+
+      voiceAnimationFrameRef.current = window.requestAnimationFrame(drawWave)
+    }
+
+    voiceAnimationFrameRef.current = window.requestAnimationFrame(drawWave)
+
+    return stream
+  }, [])
+
+  const startVoice = useCallback(async () => {
+    onErrorRef.current('')
+    onStartRef.current?.()
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      onErrorRef.current('Este navegador no permite grabar audio aquí.')
+      return
+    }
+
+    try {
+      cancelRequestedRef.current = false
+      setVoiceBars(createAICreationVoiceBars())
+      setVoiceElapsed(0)
+      const stream = await startVoiceMeter()
+      const mimeType = getAICreationAudioMimeType()
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+      mediaRecorderRef.current = recorder
+      voiceChunksRef.current = []
+
+      recorder.ondataavailable = (event) => {
+        if (event.data?.size) voiceChunksRef.current.push(event.data)
+      }
+      recorder.onstop = () => {
+        const shouldCancel = cancelRequestedRef.current
+        const chunks = voiceChunksRef.current
+        const audioBlob = new Blob(chunks, { type: mimeType || chunks[0]?.type || 'audio/webm' })
+        stopVoiceStream()
+        voiceChunksRef.current = []
+        mediaRecorderRef.current = null
+        if (shouldCancel) {
+          cancelRequestedRef.current = false
+          resetVoiceUi()
+          return
+        }
+        if (!audioBlob.size) {
+          resetVoiceUi()
+          return
+        }
+        setVoiceState('transcribing')
+        void aiAgentService.transcribeVoice(audioBlob)
+          .then(result => {
+            onTranscriptionRef.current(result.text)
+            resetVoiceUi()
+          })
+          .catch(error => {
+            onErrorRef.current(error instanceof Error ? error.message : 'No se pudo transcribir el audio.')
+            resetVoiceUi()
+          })
+      }
+
+      recorder.start()
+      setVoiceState('recording')
+    } catch (error) {
+      stopVoiceStream()
+      setVoiceBars(createAICreationVoiceBars())
+      setVoiceElapsed(0)
+      onErrorRef.current(error instanceof Error ? error.message : 'No se pudo activar el micrófono.')
+      setVoiceState('idle')
+    }
+  }, [resetVoiceUi, startVoiceMeter, stopVoiceStream])
+
+  const stopVoice = useCallback(() => {
+    cancelRequestedRef.current = false
+    const recorder = mediaRecorderRef.current
+    if (recorder && recorder.state !== 'inactive') recorder.stop()
+  }, [])
+
+  const cancelVoice = useCallback(() => {
+    cancelRequestedRef.current = true
+    const recorder = mediaRecorderRef.current
+    if (recorder && recorder.state !== 'inactive') {
+      try {
+        recorder.stop()
+      } catch {
+        stopVoiceStream()
+        resetVoiceUi()
+      }
+      return
+    }
+    stopVoiceStream()
+    resetVoiceUi()
+  }, [resetVoiceUi, stopVoiceStream])
+
+  return {
+    voiceState,
+    voiceBars,
+    voiceElapsed,
+    formattedVoiceElapsed: formatAICreationVoiceDuration(voiceElapsed),
+    voiceIsActive: voiceState !== 'idle',
+    startVoice,
+    stopVoice,
+    cancelVoice
+  }
+}
+
+const AIVoiceDictationControl: React.FC<{
+  voice: ReturnType<typeof useAIVoiceDictation>
+  disabled?: boolean
+  className?: string
+}> = ({ voice, disabled = false, className = '' }) => {
+  const isRecording = voice.voiceState === 'recording'
+  const isTranscribing = voice.voiceState === 'transcribing'
+  const label = isRecording ? 'Detener dictado' : isTranscribing ? 'Transcribiendo audio' : 'Dictar con micrófono'
+
+  return (
+    <div className={`${styles.aiVoiceDictation} ${voice.voiceIsActive ? styles.aiVoiceDictationActive : ''} ${className}`}>
+      <button
+        type="button"
+        className={`${styles.aiVoiceMicButton} ${isRecording ? styles.aiVoiceMicActive : ''}`}
+        onClick={() => isRecording ? voice.stopVoice() : void voice.startVoice()}
+        disabled={disabled || isTranscribing}
+        title={label}
+        aria-label={label}
+      >
+        <Mic size={17} />
+      </button>
+      {voice.voiceIsActive && (
+        <div className={`${styles.aiCreationVoiceComposer} ${styles.aiVoiceComposerInline} ${isRecording ? styles.aiCreationVoiceRecording : styles.aiCreationVoiceProcessing}`} role="status" aria-live="polite">
+          <div className={styles.aiCreationVoiceWaveArea}>
+            <div className={styles.aiCreationVoiceWaveform} aria-hidden="true">
+              {voice.voiceBars.map((height, index) => (
+                <span
+                  key={`ai-dictation-voice-bar-${index}`}
+                  className={styles.aiCreationVoiceBar}
+                  style={{ '--voice-bar-height': `${height}px` } as React.CSSProperties}
+                />
+              ))}
+            </div>
+            <span className={styles.aiCreationVoiceLabel}>
+              {isTranscribing ? 'Transcribiendo audio...' : 'Escuchando...'}
+            </span>
+          </div>
+          <span className={styles.aiCreationVoiceTimer}>{voice.formattedVoiceElapsed}</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const AIEditorGenerationPanel: React.FC<{
+  editMode: boolean
+  siteKind: SitesAICreationKind
+}> = ({ editMode, siteKind }) => {
+  const targetLabel = siteKind === 'interactive_form'
+    ? 'formulario interactivo'
+    : siteKind === 'form'
+      ? 'formulario'
+      : 'página'
+
+  return (
+    <div className={styles.aiEditorGeneration} role="status" aria-live="polite" aria-busy="true">
+      <div className={styles.aiEditorGenerationShell}>
+        <span className={styles.aiEditorGenerationKicker}>Generando con inteligencia artificial</span>
+        <div className={styles.aiCreationThinking}>
+          <div className={styles.aiCreationThinkingHeader}>
+            <Sparkles size={24} />
+            <span>{editMode ? 'La IA está ajustando tu página' : `La IA está creando tu ${targetLabel}`}</span>
+          </div>
+          <div className={styles.aiCreationScan} aria-hidden="true">
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
+          <div className={styles.aiCreationSteps}>
+            <span>Creando HTML</span>
+            <span>Eligiendo imágenes</span>
+            <span>Preparando formularios</span>
+            <span>Revisando campos</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const SitesAICreationModal: React.FC<{
+  state: NonNullable<SitesAICreationModalState>
+  creating: boolean
+  onClose: () => void
+  onSubmit: (payload: SitesAICreationModalSubmit) => Promise<string | null>
+}> = ({ state, creating, onClose, onSubmit }) => {
+  const editMode = Boolean(state.editSite)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const promptInputRef = useRef<HTMLTextAreaElement | null>(null)
+  const [prompt, setPrompt] = useState('')
+  const [attachments, setAttachments] = useState<SitesAICreationAttachment[]>([])
+  const [funnelStyle, setFunnelStyle] = useState<FunnelStyleId | ''>('')
+  const [primaryAction, setPrimaryAction] = useState<FunnelPrimaryActionId | ''>('')
+  const [chatgptModel, setChatgptModel] = useState(() => getDefaultSiteChatGPTModel(editMode))
+  const [attachmentError, setAttachmentError] = useState('')
+  const [voiceError, setVoiceError] = useState('')
+  const [assistantReply, setAssistantReply] = useState('')
+  const [submitError, setSubmitError] = useState('')
+  const shouldPickFunnelStyle = state.siteKind === 'landing' && !editMode
+  const selectedFunnelStyle = getFunnelStyleOption(funnelStyle || undefined)
+  const selectedChatGPTModel = getChatGPTSiteModelOption(chatgptModel, editMode)
+  const canWritePrompt = !shouldPickFunnelStyle || Boolean(selectedFunnelStyle)
+  const appendPromptText = useCallback((text: string) => {
+    setPrompt(current => appendDictatedText(current, text))
+  }, [])
+  const voiceDictation = useAIVoiceDictation({
+    onTranscription: appendPromptText,
+    onError: setVoiceError,
+    onStart: () => {
+      setVoiceError('')
+      setAssistantReply('')
+      setSubmitError('')
+    }
+  })
+
+  useEffect(() => {
+    if (!canWritePrompt) return
+    const focusTimeout = window.setTimeout(() => promptInputRef.current?.focus(), 0)
+    return () => window.clearTimeout(focusTimeout)
+  }, [canWritePrompt])
+
+  const selectFunnelStyle = (nextStyle: FunnelStyleId) => {
+    setFunnelStyle(nextStyle)
+    setPrimaryAction(current => {
+      if (current) return current
+      if (nextStyle === 'opt_in') return 'download'
+      if (nextStyle === 'lead_gen') return 'form'
+      return 'schedule'
+    })
+    setSubmitError('')
+    setAssistantReply('')
+  }
+
+  const modelPicker = (
+    <label className={styles.aiCreationModelPicker}>
+      <span>{editMode ? 'ChatGPT para este cambio' : 'ChatGPT para crear el sitio'}</span>
+      <CustomSelect value={chatgptModel} onChange={(event) => setChatgptModel(event.target.value)}>
+        {chatgptSiteModelOptions.map(option => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </CustomSelect>
+      <small>{selectedChatGPTModel.description} Ordenado de $ a $$$$$.</small>
+    </label>
+  )
+
+  const handlePickFiles = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || [])
+    event.target.value = ''
+    if (!files.length) return
+
+    setAttachmentError('')
+    try {
+      const nextAttachments = await Promise.all(files.slice(0, 5).map(readAICreationAttachment))
+      setAttachments(current => [...current, ...nextAttachments].slice(0, 5))
+    } catch (error) {
+      setAttachmentError(error instanceof Error ? error.message : 'No se pudo leer el archivo.')
+    }
+  }
+
+  const removeAttachment = (id: string) => {
+    setAttachments(current => current.filter(attachment => attachment.id !== id))
+  }
+
+  const buildAttachmentNotes = () => attachments.map(attachment => [
+    `Archivo: ${attachment.name} (${formatAICreationFileSize(attachment.size)})`,
+    attachment.text
+      ? `Contenido:\n${attachment.text}`
+      : 'Úsalo solo como referencia de nombre/tipo; si es imagen o PDF sin texto, crea la página con la descripción del usuario.'
+  ].join('\n'))
+
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (shouldPickFunnelStyle && !selectedFunnelStyle) {
+      setSubmitError('Primero elige qué tipo de embudo quieres crear.')
+      return
+    }
+    const cleanPrompt = prompt.trim()
+    if (!cleanPrompt) {
+      setSubmitError(shouldPickFunnelStyle ? 'Ahora cuéntame de qué trata el embudo.' : 'Escribe qué quieres construir primero.')
+      return
+    }
+    setSubmitError('')
+    setAssistantReply('')
+    const reply = await onSubmit({
+      siteKind: state.siteKind,
+      prompt: cleanPrompt,
+      attachmentNotes: buildAttachmentNotes(),
+      funnelStyle: funnelStyle || undefined,
+      primaryAction: primaryAction || undefined,
+      chatgptModel,
+      editSite: state.editSite || null
+    })
+    if (reply) {
+      setAssistantReply(reply)
+      setSubmitError(editMode ? 'La IA necesita una instrucción más clara para editar.' : 'La IA necesita un poco más de contexto.')
+    }
+  }
+
+  return (
+    <div className={styles.aiCreationOverlay} role="dialog" aria-modal="true" aria-labelledby="ai-creation-title">
+      <div className={`${styles.aiCreationDialog} ${creating ? styles.aiCreationDialogBusy : ''}`}>
+        {creating ? (
+          <div className={styles.aiCreationThinking}>
+            <div className={styles.aiCreationThinkingHeader}>
+              <Sparkles size={24} />
+              <span>{editMode ? 'La IA está ajustando tu página' : 'La IA está creando tu página'}</span>
+            </div>
+            <div className={styles.aiCreationScan} aria-hidden="true">
+              <span />
+              <span />
+              <span />
+              <span />
+            </div>
+            <div className={styles.aiCreationSteps}>
+              <span>Armando estructura</span>
+              <span>Eligiendo imágenes</span>
+              <span>Preparando formularios</span>
+              <span>Revisando campos</span>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={(event) => void submit(event)}>
+            <header className={styles.aiCreationHeader}>
+              <div>
+                <span>{editMode ? 'Editar con IA' : 'Generar con inteligencia artificial'}</span>
+                <h2 id="ai-creation-title">
+                  {editMode
+                    ? 'Dime que cambio quieres'
+                    : shouldPickFunnelStyle && !selectedFunnelStyle
+                      ? 'Elige el tipo de embudo'
+                      : `Crear ${getSitesAICreationKindLabel(state.siteKind)}`}
+                </h2>
+                <p>
+                  {editMode
+                    ? 'Ristak modifica esta página y vuelve a revisar sus formularios.'
+                    : shouldPickFunnelStyle && !selectedFunnelStyle
+                      ? 'Escoge la estructura y el ChatGPT que lo va a construir. Después nos dices el negocio y objetivo.'
+                      : 'Describe la página y Ristak la crea como código propio listo para revisar.'}
+                </p>
+              </div>
+              <button type="button" className={styles.aiCreationClose} onClick={onClose} aria-label="Cerrar">
+                <X size={18} />
+              </button>
+            </header>
+
+            <div className={styles.aiCreationBody}>
+              {shouldPickFunnelStyle && !selectedFunnelStyle ? (
+                <div className={styles.aiCreationFunnelPicker}>
+                  <div className={styles.aiCreationFunnelIntro}>
+                    <strong>¿Qué tipo de landing quieres crear?</strong>
+                    <p>Elige una base visual y el ChatGPT que va a crear el embudo.</p>
+                  </div>
+                  {modelPicker}
+                  <div className={styles.aiCreationFunnelGrid}>
+                    {funnelStyleOptions.map(option => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        className={styles.aiCreationFunnelCard}
+                        onClick={() => selectFunnelStyle(option.id)}
+                      >
+                        <span className={`${styles.aiCreationFunnelMockup} ${styles[`aiCreationFunnelMockup${option.id === 'lead_gen' ? 'LeadGen' : option.id === 'opt_in' ? 'OptIn' : 'Vsl'}`]}`}>
+                          <span className={styles.aiCreationFunnelMockupTop} />
+                          <span className={styles.aiCreationFunnelMockupMain}>
+                            <span />
+                            <span />
+                          </span>
+                          <span className={styles.aiCreationFunnelMockupFooter} />
+                        </span>
+                        <span className={styles.aiCreationFunnelCardBody}>
+                          <span>{option.badge}</span>
+                          <strong>{option.title}</strong>
+                          <p>{option.subtitle}</p>
+                          <small>{option.bestFor}</small>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {shouldPickFunnelStyle && selectedFunnelStyle && (
+                    <div className={styles.aiCreationSelectedFunnel}>
+                      <div>
+                        <span>{selectedFunnelStyle.badge}</span>
+                        <strong>{selectedFunnelStyle.title}</strong>
+                        <p>{selectedFunnelStyle.sections.join(' / ')}</p>
+                      </div>
+                      <button type="button" onClick={() => setFunnelStyle('')}>
+                        Cambiar tipo
+                      </button>
+                    </div>
+                  )}
+
+                  {modelPicker}
+
+                  {editMode && (
+                    <div className={styles.aiCreationVisualContext}>
+                      <Eye size={16} />
+                      <span>Ristak usará la vista previa actual como imagen de referencia para que la IA ubique textos, imágenes, botones y formularios. No necesitas compartir pantalla.</span>
+                    </div>
+                  )}
+
+                  {shouldPickFunnelStyle && selectedFunnelStyle && (
+                    <div className={styles.aiCreationActionPicker}>
+                      <span>Acción principal</span>
+                      <div>
+                        {funnelPrimaryActions.map(action => (
+                          <button
+                            key={action.id}
+                            type="button"
+                            className={primaryAction === action.id ? styles.aiCreationActionActive : ''}
+                            onClick={() => setPrimaryAction(action.id)}
+                          >
+                            {action.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <label className={styles.aiCreationPrompt}>
+                    <span>{editMode ? 'Cambio que quieres hacer' : shouldPickFunnelStyle ? 'De qué trata este embudo' : 'Qué quieres construir'}</span>
+                    <textarea
+                      ref={promptInputRef}
+                      value={prompt}
+                      onChange={(event) => {
+                        setPrompt(event.target.value)
+                        setAssistantReply('')
+                        setSubmitError('')
+                      }}
+                      placeholder={getSitesAICreationPlaceholder(state.siteKind, editMode)}
+                      rows={7}
+                    />
+                  </label>
+                </>
+              )}
+
+              {attachments.length > 0 && (
+                <div className={styles.aiCreationAttachments}>
+                  {attachments.map(attachment => (
+                    <span key={attachment.id}>
+                      <FileText size={14} />
+                      <strong>{attachment.name}</strong>
+                      <small>{formatAICreationFileSize(attachment.size)}</small>
+                      <button type="button" onClick={() => removeAttachment(attachment.id)} aria-label={`Quitar ${attachment.name}`}>
+                        <X size={13} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {(assistantReply || submitError || voiceError || attachmentError) && (
+                <div className={styles.aiCreationNotice}>
+                  <AlertTriangle size={16} />
+                  <span>{assistantReply || submitError || voiceError || attachmentError}</span>
+                </div>
+              )}
+
+              <input
+                ref={fileInputRef}
+                className={styles.hiddenFileInput}
+                type="file"
+                multiple
+                accept=".txt,.md,.html,.htm,.css,.json,.csv,.xml,image/*,.pdf"
+                onChange={(event) => void handlePickFiles(event)}
+              />
+            </div>
+
+            <footer className={styles.aiCreationFooter}>
+              {canWritePrompt ? (
+                <div className={styles.aiCreationToolRow}>
+                  <button type="button" onClick={() => fileInputRef.current?.click()} title="Subir archivo">
+                    <Paperclip size={16} />
+                    <span>Archivo</span>
+                  </button>
+                  <AIVoiceDictationControl
+                    voice={voiceDictation}
+                    disabled={!canWritePrompt || creating}
+                    className={styles.aiCreationFooterVoice}
+                  />
+                </div>
+              ) : (
+                <span className={styles.aiCreationFooterHint}>Primero elige una estructura.</span>
+              )}
+              <div className={styles.aiCreationActions}>
+                <Button type="button" variant="secondary" onClick={onClose}>
+                  Cancelar
+                </Button>
+                {canWritePrompt && (
+                  <Button type="submit">
+                    <Sparkles size={15} />
+                    {editMode ? 'Actualizar página' : 'Crear página'}
+                  </Button>
+                )}
+              </div>
+            </footer>
+          </form>
+        )}
+      </div>
+    </div>
+  )
+}
+
+type ImportedEditableSelection = {
+  editId: string
+  editType: ImportedEditableContentType | 'section'
+  label: string
+  value: string
+  tagName: string
+  buttonActions?: ImportedButtonActionStep[]
+  buttonAction?: ImportedButtonAction
+  buttonUrl?: string
+  buttonPageId?: string
+  buttonMessage?: string
+}
+
+type ImportedInlineEditorState = {
+  selection: ImportedEditableSelection
+  mode: 'text' | 'image' | 'video'
+  value: string
+  top: number
+  left: number
+}
+
+type ImportedAIRegionElement = {
+  tagName: string
+  editId?: string
+  editType?: ImportedEditableSelection['editType']
+  role?: string
+  label?: string
+  text?: string
+  sourcePath?: string
+  rect?: string
+  coverage?: string
+  visual?: string
+  issue?: string
+  html?: string
+}
+
+type ImportedAIRegionSelection = {
+  pageId: string
+  pageTitle: string
+  visualSummary?: string
+  visualContext?: SitesAIPreviewVisualContext | null
+  bounds: {
+    x: number
+    y: number
+    width: number
+    height: number
+    viewportWidth: number
+    viewportHeight: number
+  }
+  elements: ImportedAIRegionElement[]
+}
+
+type ImportedAIRegionAttempt = {
+  status: 'running' | 'success' | 'error' | 'unchanged'
+  message: string
+  at: string
+  pageTitle: string
+  elementCount: number
+  prompt: string
+  debug?: SitesAIEditDebug
+}
+
+type ImportedButtonEditorState = {
+  selection: ImportedEditableSelection
+  value: string
+  buttonActions: ImportedButtonActionStep[]
+}
+
+type ImportedChoiceSelection = {
+  editId: string
+  label: string
+  choiceName: string
+  choiceValue: string
+  choiceInputType: 'radio' | 'checkbox'
+  choiceIndex: number
+  required: boolean
+  options: ImportedFormFieldOption[]
+  actions: ImportedButtonActionStep[]
+}
+
+type ImportedChoiceEditorState = {
+  selection: ImportedChoiceSelection
+  options: ImportedFormFieldOption[]
+  actions: ImportedButtonActionStep[]
+}
+
+type ImportedFormFieldOption = { label: string; value: string }
+
+type ImportedFormFieldSelection = {
+  editId: string
+  label: string
+  placeholder: string
+  required: boolean
+  tagName: 'input' | 'textarea' | 'select'
+  inputType: string
+  fieldName: string
+  fieldHtmlId: string
+  options: ImportedFormFieldOption[]
+}
+
+type ImportedFormFieldEditorState = {
+  selection: ImportedFormFieldSelection
+  label: string
+  placeholder: string
+  required: boolean
+  options: ImportedFormFieldOption[]
+}
+
+const importedEditableSelector = [
+  '[data-rstk-edit-id]',
+  '[data-ristak-edit-id]',
+  '[data-ristack-edit-id]',
+  '[data-rstk-editable="true"]',
+  '[data-ristak-editable="true"]',
+  '[data-ristack-editable="true"]'
+].join(', ')
+
+const importedSectionSelector = [
+  '[data-rstk-section]',
+  '[data-ristak-section]',
+  '[data-ristack-section]'
+].join(', ')
+
+const IMPORTED_AI_VISUAL_MAX_ELEMENTS = 42
+const IMPORTED_AI_VISUAL_SCREENSHOT_WIDTH = 900
+const IMPORTED_AI_VISUAL_SCREENSHOT_HEIGHT = 1150
+
+const escapeSvgText = (value: string) => String(value || '').replace(/[&<>"']/g, (char) => ({
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&apos;'
+}[char] || char))
+
+const getImportedVisualElementType = (element: Element) => {
+  const tagName = element.tagName.toLowerCase()
+  if (/^h[1-6]$/.test(tagName)) return 'titular'
+  if (tagName === 'img') return 'imagen'
+  if (tagName === 'wistia-player' || ['iframe', 'video', 'embed', 'object'].includes(tagName)) return 'video'
+  if (tagName === 'button' || tagName === 'a') return 'botón/enlace'
+  if (tagName === 'form') return 'formulario'
+  if (['input', 'select', 'textarea', 'label'].includes(tagName)) return 'campo'
+  if (element.matches(importedSectionSelector)) return 'sección'
+  return 'texto'
+}
+
+const getImportedVisualElementText = (element: Element) => {
+  const tagName = element.tagName.toLowerCase()
+  if (tagName === 'img') {
+    const image = element as HTMLImageElement
+    return limitSitesAIContextText(image.alt || image.getAttribute('aria-label') || image.src || 'Imagen', 160)
+  }
+  if (tagName === 'input' || tagName === 'textarea') {
+    const input = element as HTMLInputElement | HTMLTextAreaElement
+    return limitSitesAIContextText(input.placeholder || input.name || input.id || input.getAttribute('aria-label') || 'Campo', 160)
+  }
+  if (tagName === 'select') {
+    const select = element as HTMLSelectElement
+    return limitSitesAIContextText(select.name || select.id || select.getAttribute('aria-label') || 'Selector', 160)
+  }
+  return limitSitesAIContextText(element.textContent || element.getAttribute('aria-label') || element.getAttribute('title') || '', 180)
+}
+
+const createImportedVisualSummary = (
+  doc: Document,
+  elements: SitesAIPreviewVisualElement[],
+  pageTitle: string
+) => {
+  const headings = Array.from(doc.querySelectorAll('h1, h2, h3'))
+    .map(element => limitSitesAIContextText(element.textContent || '', 140))
+    .filter(Boolean)
+    .slice(0, 8)
+  const images = Array.from(doc.querySelectorAll('img'))
+    .map((image, index) => {
+      const label = limitSitesAIContextText(image.alt || image.getAttribute('aria-label') || image.src || `Imagen ${index + 1}`, 140)
+      return `${index + 1}. ${label}`
+    })
+    .slice(0, 8)
+  const buttons = Array.from(doc.querySelectorAll('button, a'))
+    .map(element => limitSitesAIContextText(element.textContent || element.getAttribute('aria-label') || element.getAttribute('href') || '', 120))
+    .filter(Boolean)
+    .slice(0, 10)
+  const fields = Array.from(doc.querySelectorAll('input, textarea, select'))
+    .map(element => {
+      const input = element as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+      return limitSitesAIContextText(input.getAttribute('data-rstk-field') || input.getAttribute('data-ristak-field') || input.name || input.id || input.getAttribute('placeholder') || input.getAttribute('aria-label') || input.tagName.toLowerCase(), 120)
+    })
+    .filter(Boolean)
+    .slice(0, 14)
+
+  return [
+    `Página: ${pageTitle || doc.title || 'Sin título'}`,
+    headings.length ? `Titulares visibles: ${headings.join(' | ')}` : '',
+    images.length ? `Imágenes visibles: ${images.join(' | ')}` : '',
+    buttons.length ? `Botones/enlaces visibles: ${buttons.join(' | ')}` : '',
+    fields.length ? `Campos detectados: ${fields.join(' | ')}` : '',
+    elements.length ? `Mapa visual: ${elements.map(element => `${element.type}: ${element.text}`).filter(Boolean).slice(0, 24).join(' | ')}` : ''
+  ].filter(Boolean).join('\n')
+}
+
+const renderImportedVisualContextSvg = (
+  context: Omit<SitesAIPreviewVisualContext, 'screenshotDataUrl' | 'screenshotFormat' | 'capturedAt'>
+) => {
+  const width = IMPORTED_AI_VISUAL_SCREENSHOT_WIDTH
+  const height = IMPORTED_AI_VISUAL_SCREENSHOT_HEIGHT
+  const title = escapeSvgText(context.pageTitle || 'Vista previa')
+  const elementsMarkup = context.elements.map((element, index) => {
+    const x = Math.max(22, Math.min(width - 180, element.x))
+    const y = Math.max(86, Math.min(height - 74, element.y))
+    const rectWidth = Math.max(90, Math.min(width - x - 22, element.width))
+    const rectHeight = Math.max(28, Math.min(86, element.height))
+    const fill = element.type === 'imagen'
+      ? '#dbeafe'
+      : element.type === 'formulario' || element.type === 'campo'
+        ? '#dcfce7'
+        : element.type === 'botón/enlace'
+          ? '#fef3c7'
+          : '#f8fafc'
+    const stroke = element.type === 'imagen'
+      ? '#2563eb'
+      : element.type === 'formulario' || element.type === 'campo'
+        ? '#16a34a'
+        : element.type === 'botón/enlace'
+          ? '#d97706'
+          : '#64748b'
+    return `
+      <g>
+        <rect x="${x}" y="${y}" width="${rectWidth}" height="${rectHeight}" rx="10" fill="${fill}" stroke="${stroke}" stroke-width="2" opacity="0.96" />
+        <text x="${x + 12}" y="${y + 21}" fill="#0f172a" font-size="13" font-weight="800">${escapeSvgText(element.type)}</text>
+        <text x="${x + 12}" y="${y + 43}" fill="#334155" font-size="15">${escapeSvgText(limitSitesAIContextText(element.text || element.label || `Elemento ${index + 1}`, 78))}</text>
+      </g>
+    `
+  }).join('')
+
+  return `
+    <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+      <rect width="${width}" height="${height}" fill="#eef2f7"/>
+      <rect x="18" y="18" width="${width - 36}" height="48" rx="14" fill="#0f172a"/>
+      <text x="38" y="49" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="800">${title}</text>
+      <rect x="18" y="82" width="${width - 36}" height="${height - 100}" rx="18" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+      ${elementsMarkup}
+    </svg>
+  `.trim()
+}
+
+const svgToPngDataUrl = (svg: string) => new Promise<string>((resolve) => {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    resolve('')
+    return
+  }
+
+  const image = new window.Image()
+  const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' })
+  const objectUrl = URL.createObjectURL(svgBlob)
+
+  image.onload = () => {
+    try {
+      const canvas = document.createElement('canvas')
+      canvas.width = IMPORTED_AI_VISUAL_SCREENSHOT_WIDTH
+      canvas.height = IMPORTED_AI_VISUAL_SCREENSHOT_HEIGHT
+      const context = canvas.getContext('2d')
+      if (!context) {
+        resolve('')
+        return
+      }
+      context.drawImage(image, 0, 0)
+      resolve(canvas.toDataURL('image/png'))
+    } catch {
+      resolve('')
+    } finally {
+      URL.revokeObjectURL(objectUrl)
+    }
+  }
+  image.onerror = () => {
+    URL.revokeObjectURL(objectUrl)
+    resolve('')
+  }
+  image.src = objectUrl
+})
+
+const buildImportedPreviewVisualContext = async (
+  iframe: HTMLIFrameElement,
+  site: PublicSite,
+  page: SitePage
+): Promise<SitesAIPreviewVisualContext | null> => {
+  const doc = iframe.contentDocument
+  const frameWindow = iframe.contentWindow
+  if (!doc || !frameWindow) return null
+
+  const viewportWidth = Math.max(1, doc.documentElement.clientWidth || iframe.clientWidth || 900)
+  const viewportHeight = Math.max(1, doc.documentElement.clientHeight || iframe.clientHeight || 900)
+  const candidates = Array.from(doc.querySelectorAll([
+    importedSectionSelector,
+    importedEditableSelector,
+    'h1',
+    'h2',
+    'h3',
+    'p',
+    'button',
+    'a',
+    'img',
+    'iframe',
+    'video',
+    'embed',
+    'object',
+    'wistia-player',
+    'form',
+    'label',
+    'input',
+    'select',
+    'textarea'
+  ].join(', ')))
+
+  const elements = candidates
+    .map((element): SitesAIPreviewVisualElement | null => {
+      const rect = element.getBoundingClientRect()
+      const styles = frameWindow.getComputedStyle(element)
+      if (rect.width < 10 || rect.height < 8 || styles.display === 'none' || styles.visibility === 'hidden' || Number(styles.opacity) === 0) return null
+      const text = getImportedVisualElementText(element)
+      if (!text && element.tagName.toLowerCase() !== 'form') return null
+      return {
+        type: getImportedVisualElementType(element),
+        label: element.getAttribute('data-rstk-label') || element.getAttribute('aria-label') || element.tagName.toLowerCase(),
+        text: text || 'Formulario',
+        x: Math.round((Math.max(0, rect.left) / viewportWidth) * IMPORTED_AI_VISUAL_SCREENSHOT_WIDTH),
+        y: Math.round((Math.max(0, rect.top) / viewportHeight) * (IMPORTED_AI_VISUAL_SCREENSHOT_HEIGHT - 120) + 92),
+        width: Math.round((Math.min(rect.width, viewportWidth) / viewportWidth) * IMPORTED_AI_VISUAL_SCREENSHOT_WIDTH),
+        height: Math.round(Math.min(rect.height, 92))
+      }
+    })
+    .filter(Boolean)
+    .slice(0, IMPORTED_AI_VISUAL_MAX_ELEMENTS) as SitesAIPreviewVisualElement[]
+
+  const baseContext = {
+    siteId: site.id,
+    pageId: page.id || DEFAULT_FUNNEL_PAGE_ID,
+    pageTitle: page.title || site.title || site.name,
+    summary: '',
+    elements
+  }
+  const summary = createImportedVisualSummary(doc, elements, baseContext.pageTitle)
+  const screenshotDataUrl = await svgToPngDataUrl(renderImportedVisualContextSvg({ ...baseContext, summary }))
+
+  return {
+    ...baseContext,
+    summary,
+    screenshotDataUrl,
+    screenshotFormat: screenshotDataUrl ? 'internal-preview-png' : undefined,
+    capturedAt: new Date().toISOString()
+  }
+}
+
+const editableTypeLabels: Record<ImportedEditableSelection['editType'], string> = {
+  heading: 'Titulo',
+  text: 'Texto',
+  button: 'Boton',
+  form_label: 'Texto de campo',
+  placeholder: 'Texto dentro del campo',
+  form_field: 'Campo de formulario',
+  image: 'Imagen',
+  background_image: 'Imagen de fondo',
+  video: 'Video',
+  choice_option: 'Opcion',
+  section: 'Seccion'
+}
+
+const importedEditableAttributeAliases = {
+  id: ['data-rstk-edit-id', 'data-ristak-edit-id', 'data-ristack-edit-id'],
+  type: ['data-rstk-edit-type', 'data-ristak-edit-type', 'data-ristack-edit-type'],
+  label: ['data-rstk-label', 'data-ristak-label', 'data-ristack-label'],
+  section: ['data-rstk-section', 'data-ristak-section', 'data-ristack-section']
+}
+
+const getImportedEditableAttribute = (element: Element, key: keyof typeof importedEditableAttributeAliases) => {
+  for (const alias of importedEditableAttributeAliases[key]) {
+    const value = element.getAttribute(alias)
+    if (value) return value.trim()
+  }
+  return ''
+}
+
+const inferImportedEditableType = (element: HTMLElement): ImportedEditableContentType => {
+  const tagName = element.tagName.toLowerCase()
+  if (tagName === 'img') return 'image'
+  if (tagName === 'wistia-player' || ['iframe', 'video', 'embed', 'object'].includes(tagName)) return 'video'
+  if (element.getAttribute('style')?.match(/background(?:-image)?\s*:/i)) return 'background_image'
+  if (tagName === 'input' || tagName === 'textarea') {
+    const type = element.getAttribute('type')?.toLowerCase() || ''
+    return ['button', 'submit'].includes(type) ? 'button' : 'placeholder'
+  }
+  if (/^h[1-6]$/.test(tagName)) return 'heading'
+  if (tagName === 'label') return 'form_label'
+  if (tagName === 'button') return 'button'
+  return 'text'
+}
+
+const normalizeImportedEditableType = (value: string, element: HTMLElement): ImportedEditableContentType => {
+  const type = value.trim().toLowerCase().replace(/[-\s]+/g, '_')
+  if (['heading', 'text', 'button', 'form_label', 'placeholder', 'form_field', 'image', 'background_image', 'video', 'choice_option'].includes(type)) {
+    return type as ImportedEditableContentType
+  }
+  return inferImportedEditableType(element)
+}
+
+const extractCssBackgroundImageUrl = (styleValue: string) => {
+  const match = styleValue.match(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*?))\s*\)/i)
+  return (match?.[1] || match?.[2] || match?.[3] || '').trim()
+}
+
+const getEditableElementValue = (element: HTMLElement, editType: ImportedEditableSelection['editType']) => {
+  const tagName = element.tagName.toLowerCase()
+  if (editType === 'image' && tagName === 'img') return element.getAttribute('src') || ''
+  if (editType === 'background_image') return extractCssBackgroundImageUrl(element.getAttribute('style') || '')
+  if (editType === 'video') {
+    if (['iframe', 'embed'].includes(tagName)) return element.getAttribute('src') || ''
+    if (tagName === 'object') return element.getAttribute('data') || ''
+    if (tagName === 'wistia-player') {
+      const mediaId = element.getAttribute('media-id') || element.getAttribute('data-media-id') || ''
+      return mediaId ? getWistiaEmbedUrl(mediaId) : ''
+    }
+    if (tagName === 'video') {
+      return element.getAttribute('src') ||
+        (element.querySelector('source') as HTMLSourceElement | null)?.getAttribute('src') ||
+        ''
+    }
+    return element.getAttribute('data-rstk-video-url') ||
+      element.getAttribute('data-ristak-video-url') ||
+      element.getAttribute('data-rstk-video-embed') ||
+      ''
+  }
+  if (editType === 'placeholder') return element.getAttribute('placeholder') || ''
+  if (editType === 'form_field') return getImportedEditableAttribute(element, 'label') || element.getAttribute('placeholder') || element.getAttribute('name') || ''
+  if (editType === 'button' && tagName === 'input') return element.getAttribute('value') || ''
+  return (element.textContent || '').replace(/\s+/g, ' ').trim()
+}
+
+const importedChoiceSelector = 'input[type="radio"], input[type="checkbox"]'
+const importedFormFieldSelector = [
+  '[data-rstk-edit-type="form_field"]',
+  '[data-ristak-edit-type="form_field"]',
+  '[data-ristack-edit-type="form_field"]'
+].join(', ')
+
+const importedEditorNoAutocompleteAttrs = {
+  autoComplete: 'off',
+  autoCorrect: 'off',
+  autoCapitalize: 'off',
+  spellCheck: false,
+  'data-lpignore': 'true',
+  'data-1p-ignore': 'true',
+  'data-form-type': 'other'
+} as const
+
+type ImportedButtonActionOption = { value: ImportedButtonAction; label: string; demo?: boolean }
+
+const importedButtonActionOptions: ImportedButtonActionOption[] = [
+  { value: 'submit', label: 'Enviar formulario' },
+  { value: 'next_page', label: 'Ir a la siguiente página' },
+  { value: 'specific_page', label: 'Ir a una página específica' },
+  { value: 'url', label: 'Abrir enlace' },
+  { value: 'open_popup', label: 'Abrir pop up' },
+  { value: 'close_popup', label: 'Cerrar popup' },
+  { value: 'automation', label: 'Enviar automatización', demo: true }
+]
+
+const importedSelectableButtonActions = new Set<ImportedButtonAction>(importedButtonActionOptions.map(option => option.value))
+const importedButtonActions = new Set<ImportedButtonAction>(['none', ...importedSelectableButtonActions])
+
+const importedSubmittableFieldSelector = [
+  'form input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"])',
+  'form textarea',
+  'form select',
+  importedFormFieldSelector
+].join(', ')
+
+const hasImportedSubmittableFormFields = (html = '') => {
+  if (!html.trim() || typeof DOMParser === 'undefined') return false
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    return Boolean(doc.querySelector(importedSubmittableFieldSelector))
+  } catch {
+    return false
+  }
+}
+
+const getImportedButtonActionOptionsForPage = (canSubmitForm: boolean) => (
+  importedButtonActionOptions.filter(option => option.value !== 'submit' || canSubmitForm)
+)
+
+const getImportedActionOptionSet = (actionOptions: ImportedButtonActionOption[]) => (
+  new Set<ImportedButtonAction>(actionOptions.map(option => option.value))
+)
+
+const normalizeImportedButtonAction = (value: string): ImportedButtonAction => {
+  const action = value.trim().toLowerCase().replace(/[-\s]+/g, '_') as ImportedButtonAction
+  return importedButtonActions.has(action) ? action : 'none'
+}
+
+const makeImportedActionStep = (action: ImportedButtonAction, patch: Partial<ImportedButtonActionStep> = {}): ImportedButtonActionStep => ({
+  id: patch.id || `action-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 8)}`,
+  action,
+  buttonUrl: patch.buttonUrl || '',
+  buttonPageId: patch.buttonPageId || '',
+  buttonMessage: patch.buttonMessage || '',
+  automationName: patch.automationName || '',
+})
+
+const normalizeImportedActionStep = (value: unknown, fallbackId = ''): ImportedButtonActionStep | null => {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  const action = normalizeImportedButtonAction(String(record.action || record.buttonAction || record.type || 'none'))
+  if (action === 'none') return null
+  return makeImportedActionStep(action, {
+    id: String(record.id || fallbackId || ''),
+    buttonUrl: String(record.buttonUrl || record.button_url || record.url || ''),
+    buttonPageId: String(record.buttonPageId || record.button_page_id || record.pageId || ''),
+    buttonMessage: String(record.buttonMessage || record.button_message || record.message || ''),
+    automationName: String(record.automationName || record.automation_name || record.automation || '')
+  })
+}
+
+const parseImportedActionList = (rawValue: string): ImportedButtonActionStep[] => {
+  if (!rawValue.trim()) return []
+  try {
+    const parsed = JSON.parse(rawValue)
+    if (!Array.isArray(parsed)) return []
+    return getUniqueImportedActionSteps(parsed
+      .map((item, index) => normalizeImportedActionStep(item, `action-${index + 1}`))
+      .filter((item): item is ImportedButtonActionStep => Boolean(item)))
+  } catch {
+    return []
+  }
+}
+
+const getImportedButtonAttribute = (element: HTMLElement, names: string[]) => {
+  for (const name of names) {
+    const value = element.getAttribute(name)
+    if (value) return value.trim()
+  }
+  return ''
+}
+
+const readImportedButtonSettings = (element: HTMLElement, editType: ImportedEditableSelection['editType']) => {
+  if (editType !== 'button') return {}
+
+  const tagName = element.tagName.toLowerCase()
+  const explicitActions = parseImportedActionList(getImportedButtonAttribute(element, [
+    'data-rstk-button-actions',
+    'data-ristak-button-actions',
+    'data-ristack-button-actions'
+  ]))
+  const explicitAction = getImportedButtonAttribute(element, [
+    'data-rstk-button-action',
+    'data-ristak-button-action',
+    'data-ristack-button-action',
+    'data-rstk-action',
+    'data-ristak-action',
+    'data-ristack-action'
+  ])
+  const href = tagName === 'a' ? (element.getAttribute('href') || '').trim() : ''
+  const type = (element.getAttribute('type') || '').trim().toLowerCase()
+  const inferredAction = explicitAction
+    ? normalizeImportedButtonAction(explicitAction)
+    : tagName === 'a' && href && !href.startsWith('#')
+      ? 'url'
+      : ['submit', 'image'].includes(type)
+        ? 'submit'
+        : 'none'
+  const legacyAction = inferredAction === 'none' ? null : makeImportedActionStep(inferredAction, {
+    id: 'action-1',
+    buttonUrl: getImportedButtonAttribute(element, ['data-rstk-button-url', 'data-ristak-button-url', 'data-ristack-button-url']) || (inferredAction === 'url' ? href : ''),
+    buttonPageId: getImportedButtonAttribute(element, ['data-rstk-button-page-id', 'data-ristak-button-page-id', 'data-ristack-button-page-id']),
+    buttonMessage: getImportedButtonAttribute(element, ['data-rstk-button-message', 'data-ristak-button-message', 'data-ristack-button-message'])
+  })
+  const buttonActions = explicitActions.length ? explicitActions : legacyAction ? [legacyAction] : []
+  const firstAction = buttonActions[0]
+
+  return {
+    buttonActions,
+    buttonAction: firstAction?.action || 'none',
+    buttonUrl: firstAction?.buttonUrl || '',
+    buttonPageId: firstAction?.buttonPageId || '',
+    buttonMessage: firstAction?.buttonMessage || ''
+  }
+}
+
+const getImportedChoiceLabel = (input: HTMLInputElement, doc: Document) => {
+  const id = input.getAttribute('id') || ''
+  const explicitLabel = input.getAttribute('aria-label') || input.getAttribute('data-rstk-label') || input.getAttribute('data-ristak-label')
+  if (explicitLabel) return explicitLabel.trim()
+  const wrappingLabel = input.closest('label')
+  if (wrappingLabel?.textContent?.trim()) return wrappingLabel.textContent.replace(/\s+/g, ' ').trim()
+  if (id) {
+    const label = doc.querySelector(`label[for="${id.replace(/"/g, '\\"')}"]`)
+    if (label?.textContent?.trim()) return label.textContent.replace(/\s+/g, ' ').trim()
+  }
+  return input.getAttribute('value') || input.getAttribute('name') || 'Opcion'
+}
+
+const getImportedChoiceInputFromTarget = (target: Element, doc: Document) => {
+  const directInput = target.closest(importedChoiceSelector) as HTMLInputElement | null
+  if (directInput) return directInput
+  const label = target.closest('label') as HTMLLabelElement | null
+  if (label) {
+    const nestedInput = label.querySelector(importedChoiceSelector) as HTMLInputElement | null
+    if (nestedInput) return nestedInput
+    const htmlFor = label.getAttribute('for')
+    if (htmlFor) {
+      const linkedInput = doc.getElementById(htmlFor) as HTMLInputElement | null
+      if (linkedInput && ['radio', 'checkbox'].includes(linkedInput.type)) return linkedInput
+    }
+  }
+  return null
+}
+
+const readImportedChoiceSelection = (input: HTMLInputElement, doc: Document): ImportedChoiceSelection => {
+  const choiceName = input.getAttribute('name') || input.getAttribute('id') || 'choice'
+  const choiceValue = input.getAttribute('value') || getImportedChoiceLabel(input, doc)
+  const form = input.closest('form')
+  const groupInputs = Array.from((form || doc).querySelectorAll<HTMLInputElement>(`input[type="${input.type}"][name="${choiceName.replace(/"/g, '\\"')}"]`))
+  const choiceIndex = Math.max(0, groupInputs.indexOf(input))
+  const required = groupInputs.some(choiceInput => getImportedFormFieldRequired(choiceInput))
+  const editId = input.getAttribute('data-rstk-choice-id') ||
+    input.getAttribute('data-rstk-edit-id') ||
+    `choice:${choiceName}:${choiceValue}:${choiceIndex}`
+  return {
+    editId,
+    label: getImportedChoiceLabel(input, doc),
+    choiceName,
+    choiceValue,
+    choiceInputType: input.type === 'checkbox' ? 'checkbox' : 'radio',
+    choiceIndex,
+    required,
+    options: readImportedFormFieldOptions(input, doc),
+    actions: parseImportedActionList(getImportedButtonAttribute(input, [
+      'data-rstk-choice-actions',
+      'data-ristak-choice-actions',
+      'data-ristack-choice-actions'
+    ]))
+  }
+}
+
+const getImportedFormFieldRequired = (element: HTMLElement) => {
+  const explicit = (
+    element.getAttribute('data-rstk-field-required') ||
+    element.getAttribute('data-ristak-field-required') ||
+    element.getAttribute('data-ristack-field-required') ||
+    ''
+  ).trim().toLowerCase()
+
+  if (['0', 'false', 'no', 'off', 'optional'].includes(explicit)) return false
+  if (['1', 'true', 'yes', 'on', 'required'].includes(explicit)) return true
+  if (element.hasAttribute('required')) return true
+  if ((element.getAttribute('aria-required') || '').trim().toLowerCase() === 'true') return true
+  return true
+}
+
+const getImportedFormFieldElementFromTarget = (target: Element) => {
+  const fieldElement = target.closest(importedFormFieldSelector) as HTMLElement | null
+  if (!fieldElement) return null
+  const tagName = fieldElement.tagName.toLowerCase()
+  if (!['input', 'textarea', 'select'].includes(tagName)) return null
+  const inputType = tagName === 'input' ? (fieldElement.getAttribute('type') || 'text').toLowerCase() : tagName
+  if (['hidden', 'submit', 'button', 'reset', 'image'].includes(inputType)) return null
+  return fieldElement as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+}
+
+const getImportedFormFieldLabel = (element: HTMLElement, doc: Document) => {
+  const explicitLabel = getImportedEditableAttribute(element, 'label') || element.getAttribute('aria-label') || ''
+  if (explicitLabel.trim()) return explicitLabel.trim()
+  const id = element.getAttribute('id') || ''
+  if (id) {
+    const label = doc.querySelector(`label[for="${id.replace(/"/g, '\\"')}"]`)
+    if (label?.textContent?.trim()) return label.textContent.replace(/\s+/g, ' ').trim()
+  }
+  const wrappingLabel = element.closest('label')
+  if (wrappingLabel?.textContent?.trim()) return wrappingLabel.textContent.replace(/\s+/g, ' ').trim()
+  return element.getAttribute('placeholder') || element.getAttribute('name') || element.getAttribute('id') || 'Campo'
+}
+
+const readImportedFormFieldOptions = (
+  element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+  doc: Document
+): ImportedFormFieldOption[] => {
+  const tagName = element.tagName.toLowerCase()
+  if (tagName === 'select') {
+    return Array.from((element as HTMLSelectElement).options || [])
+      .map(option => ({
+        label: (option.textContent || option.value || '').trim(),
+        value: (option.value || option.textContent || '').trim()
+      }))
+      .filter(option => option.label || option.value)
+      .filter(option => option.value || option.label.toLowerCase() !== 'selecciona una opcion')
+  }
+
+  const input = element as HTMLInputElement
+  const inputType = (input.getAttribute('type') || '').toLowerCase()
+  if (!['radio', 'checkbox'].includes(inputType)) return []
+
+  const choiceName = input.getAttribute('name') || input.getAttribute('id') || ''
+  if (!choiceName) return [{
+    label: getImportedChoiceLabel(input, doc),
+    value: input.getAttribute('value') || getImportedChoiceLabel(input, doc)
+  }]
+
+  const form = input.closest('form')
+  return Array.from((form || doc).querySelectorAll<HTMLInputElement>(`input[type="${inputType}"][name="${choiceName.replace(/"/g, '\\"')}"]`))
+    .map(optionInput => {
+      const label = getImportedChoiceLabel(optionInput, doc)
+      return {
+        label,
+        value: optionInput.getAttribute('value') || label
+      }
+    })
+    .filter(option => option.label || option.value)
+}
+
+const readImportedFormFieldSelection = (
+  element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+  doc: Document
+): ImportedFormFieldSelection => {
+  const tagName = element.tagName.toLowerCase() as ImportedFormFieldSelection['tagName']
+  const inputType = tagName === 'input' ? (element.getAttribute('type') || 'text').toLowerCase() : tagName
+  const fieldName = element.getAttribute('name') || element.getAttribute('id') || ''
+  const label = getImportedFormFieldLabel(element, doc)
+  const options = readImportedFormFieldOptions(element, doc)
+  const groupRequired = ['radio', 'checkbox'].includes(inputType) && fieldName
+    ? Array.from((element.closest('form') || doc).querySelectorAll<HTMLInputElement>(`input[type="${inputType}"][name="${fieldName.replace(/"/g, '\\"')}"]`))
+      .some(input => getImportedFormFieldRequired(input))
+    : getImportedFormFieldRequired(element)
+
+  return {
+    editId: getImportedEditableAttribute(element, 'id') || `field:${fieldName || label}`,
+    label,
+    placeholder: element.getAttribute('placeholder') || '',
+    required: groupRequired,
+    tagName,
+    inputType,
+    fieldName,
+    fieldHtmlId: element.getAttribute('id') || '',
+    options
+  }
+}
+
+const readImportedEditableSelection = (element: HTMLElement): ImportedEditableSelection | null => {
+  const editId = getImportedEditableAttribute(element, 'id')
+  if (!editId) return null
+  const editType = normalizeImportedEditableType(getImportedEditableAttribute(element, 'type'), element)
+  const label = getImportedEditableAttribute(element, 'label') || editableTypeLabels[editType]
+  return {
+    editId,
+    editType,
+    label,
+    value: getEditableElementValue(element, editType),
+    tagName: element.tagName.toLowerCase(),
+    ...readImportedButtonSettings(element, editType)
+  }
+}
+
+const importedAIRegionCandidateSelector = [
+  importedEditableSelector,
+  importedSectionSelector,
+  'iframe',
+  'video',
+  'embed',
+  'object',
+  'img',
+  'button',
+  'a',
+  'input',
+  'textarea',
+  'select',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'p',
+  'label',
+  'section',
+  'article',
+  'figure',
+  'aside',
+  'div'
+].join(', ')
+
+const importedAIRegionEditorChromeSelector = [
+  '.rstk-imported-region-box',
+  '.rstk-imported-region-selected-box',
+  '.rstk-imported-image-action',
+  '[data-rstk-imported-editor-overlay]'
+].join(', ')
+
+const compactImportedRegionText = (value = '', maxLength = 260) => {
+  const normalized = value.replace(/\s+/g, ' ').trim()
+  return normalized.length > maxLength ? `${normalized.slice(0, maxLength - 3)}...` : normalized
+}
+
+const getImportedCssAlpha = (value = '') => {
+  const normalized = value.trim().toLowerCase()
+  if (!normalized || normalized === 'transparent') return 0
+  const rgbaMatch = normalized.match(/rgba?\(([^)]+)\)/)
+  if (!rgbaMatch) return 1
+  const parts = rgbaMatch[1]
+    .split(/[,\s/]+/)
+    .map(part => part.trim())
+    .filter(Boolean)
+  if (parts.length < 4) return 1
+  const alpha = Number(parts[3])
+  return Number.isFinite(alpha) ? Math.max(0, Math.min(1, alpha)) : 1
+}
+
+const formatImportedRegionNumber = (value: number) => {
+  if (!Number.isFinite(value)) return '0'
+  return Math.abs(value) >= 10 ? String(Math.round(value)) : value.toFixed(1).replace(/\.0$/, '')
+}
+
+const formatImportedRegionRect = (rect: DOMRect, region: { left: number; top: number }) => (
+  `x=${Math.round(rect.left - region.left)}, y=${Math.round(rect.top - region.top)}, w=${Math.round(rect.width)}, h=${Math.round(rect.height)}`
+)
+
+const getImportedRegionElementSourcePath = (element: HTMLElement) => {
+  const parts: string[] = []
+  let current: HTMLElement | null = element
+  while (current && current.nodeType === 1 && current.tagName.toLowerCase() !== 'html' && parts.length < 7) {
+    const tagName = current.tagName.toLowerCase()
+    const editId = getImportedEditableAttribute(current, 'id')
+    const section = getImportedEditableAttribute(current, 'section')
+    const id = current.getAttribute('id')
+    const classNames = String(current.getAttribute('class') || '')
+      .split(/\s+/)
+      .map(value => value.trim())
+      .filter(Boolean)
+      .filter(value => !value.startsWith('rstk-imported-'))
+      .slice(0, 2)
+    const siblings = current.parentElement
+      ? Array.from(current.parentElement.children).filter(sibling => sibling.tagName === current?.tagName)
+      : []
+    const siblingIndex = siblings.length > 1 ? `:nth-of-type(${siblings.indexOf(current) + 1})` : ''
+    parts.unshift([
+      tagName,
+      id ? `#${id}` : '',
+      classNames.length ? `.${classNames.join('.')}` : '',
+      editId ? `[edit-id="${editId}"]` : '',
+      section ? `[section="${section}"]` : '',
+      siblingIndex
+    ].filter(Boolean).join(''))
+    current = current.parentElement
+  }
+  return parts.join(' > ')
+}
+
+const getImportedRegionElementRole = (
+  element: HTMLElement,
+  selection: ImportedEditableSelection | null,
+  isSection: boolean
+) => {
+  const tagName = element.tagName.toLowerCase()
+  const textHint = `${selection?.label || ''} ${element.getAttribute('aria-label') || ''} ${element.getAttribute('title') || ''} ${element.className || ''} ${element.id || ''}`.toLowerCase()
+  if (selection?.editType === 'video' || ['iframe', 'video', 'embed', 'object'].includes(tagName) || /\b(video|player|wistia|youtube|vimeo|loom)\b/.test(textHint)) return 'video/player'
+  if (selection?.editType === 'heading' || /^h[1-6]$/.test(tagName) || /\b(title|headline|heading|hero-title|titular)\b/.test(textHint)) return 'titular'
+  if (selection?.editType === 'button' || tagName === 'button' || tagName === 'a' || /\b(button|btn|cta)\b/.test(textHint)) return 'boton/cta'
+  if (selection?.editType === 'image' || selection?.editType === 'background_image' || tagName === 'img') return 'imagen/fondo'
+  if (['input', 'textarea', 'select', 'label', 'form'].includes(tagName) || selection?.editType === 'placeholder' || selection?.editType === 'form_label') return 'formulario/campo'
+  if (isSection || ['section', 'article', 'main', 'header', 'aside'].includes(tagName)) return 'seccion/contenedor'
+  if (['div', 'figure'].includes(tagName)) return 'contenedor'
+  return 'texto/contenido'
+}
+
+const getImportedRegionVisualSummaryForElement = (element: HTMLElement, rect: DOMRect) => {
+  const view = element.ownerDocument.defaultView
+  const style = view?.getComputedStyle(element)
+  if (!style) return ''
+
+  const backgroundColor = style.backgroundColor
+  const color = style.color
+  const backgroundAlpha = getImportedCssAlpha(backgroundColor)
+  const colorAlpha = getImportedCssAlpha(color)
+  const opacity = Number(style.opacity || '1')
+  const parts = [
+    `size=${Math.round(rect.width)}x${Math.round(rect.height)}`,
+    style.display && style.display !== 'block' ? `display=${style.display}` : '',
+    style.position && style.position !== 'static' ? `position=${style.position}` : '',
+    style.zIndex && style.zIndex !== 'auto' ? `z=${style.zIndex}` : '',
+    backgroundAlpha > 0 ? `fondo=${backgroundColor}${backgroundAlpha < 0.92 ? ` alpha=${formatImportedRegionNumber(backgroundAlpha)}` : ''}` : '',
+    color ? `texto=${color}${colorAlpha < 0.92 ? ` alpha=${formatImportedRegionNumber(colorAlpha)}` : ''}` : '',
+    Number.isFinite(opacity) && opacity < 0.98 ? `opacidad=${formatImportedRegionNumber(opacity)}` : '',
+    style.backgroundImage && style.backgroundImage !== 'none' ? 'tiene background-image' : '',
+    style.borderRadius && style.borderRadius !== '0px' ? `radio=${style.borderRadius}` : '',
+    style.borderWidth && style.borderWidth !== '0px' ? `borde=${style.borderWidth} ${style.borderStyle} ${style.borderColor}` : '',
+    style.boxShadow && style.boxShadow !== 'none' ? 'tiene sombra' : '',
+    style.filter && style.filter !== 'none' ? `filter=${style.filter}` : '',
+    style.getPropertyValue('backdrop-filter') ? `backdrop=${style.getPropertyValue('backdrop-filter')}` : '',
+    style.mixBlendMode && style.mixBlendMode !== 'normal' ? `blend=${style.mixBlendMode}` : ''
+  ].filter(Boolean)
+
+  return compactImportedRegionText(parts.join('; '), 520)
+}
+
+const getImportedRegionVisualIssue = (element: HTMLElement) => {
+  const style = element.ownerDocument.defaultView?.getComputedStyle(element)
+  if (!style) return ''
+  const backgroundAlpha = getImportedCssAlpha(style.backgroundColor)
+  const colorAlpha = getImportedCssAlpha(style.color)
+  const opacity = Number(style.opacity || '1')
+  const issues = [
+    backgroundAlpha > 0 && backgroundAlpha < 0.82 ? 'fondo semi-transparente' : '',
+    colorAlpha > 0 && colorAlpha < 0.86 ? 'texto semi-transparente' : '',
+    Number.isFinite(opacity) && opacity < 0.9 ? 'elemento con baja opacidad' : ''
+  ].filter(Boolean)
+  return issues.join(', ')
+}
+
+const getRectIntersection = (
+  a: { left: number; top: number; right: number; bottom: number },
+  b: { left: number; top: number; right: number; bottom: number }
+) => {
+  const left = Math.max(a.left, b.left)
+  const top = Math.max(a.top, b.top)
+  const right = Math.min(a.right, b.right)
+  const bottom = Math.min(a.bottom, b.bottom)
+  const width = Math.max(0, right - left)
+  const height = Math.max(0, bottom - top)
+  return { width, height, area: width * height }
+}
+
+const collectImportedAIRegionElements = (
+  doc: Document,
+  region: { left: number; top: number; right: number; bottom: number; width: number; height: number }
+): ImportedAIRegionElement[] => {
+  const regionArea = Math.max(1, region.width * region.height)
+  return Array.from(doc.querySelectorAll(importedAIRegionCandidateSelector))
+    .map(element => {
+      const htmlElement = element as HTMLElement
+      if (htmlElement.closest(importedAIRegionEditorChromeSelector)) {
+        return {
+          element: htmlElement,
+          selection: null,
+          isSection: false,
+          coverageOfElement: 0,
+          coverageOfRegion: 0,
+          useful: false
+        }
+      }
+      const rect = htmlElement.getBoundingClientRect()
+      const elementArea = Math.max(1, rect.width * rect.height)
+      const intersection = getRectIntersection(region, rect)
+      const selection = readImportedEditableSelection(htmlElement)
+      const isSection = Boolean(getImportedEditableAttribute(htmlElement, 'section'))
+      const visible = rect.width > 4 && rect.height > 4 && intersection.area > 80
+      const coverageOfElement = intersection.area / elementArea
+      const coverageOfRegion = intersection.area / regionArea
+      const tooBroad = elementArea > regionArea * 12 && coverageOfRegion < 0.72 && !selection
+      const useful = visible && !tooBroad && (coverageOfElement > 0.12 || coverageOfRegion > 0.16 || Boolean(selection) || isSection)
+      return {
+        element: htmlElement,
+        selection,
+        isSection,
+        coverageOfElement,
+        coverageOfRegion,
+        useful
+      }
+    })
+    .filter(item => item.useful)
+    .sort((a, b) => {
+      if (Boolean(a.selection) !== Boolean(b.selection)) return a.selection ? -1 : 1
+      return (b.coverageOfElement + b.coverageOfRegion) - (a.coverageOfElement + a.coverageOfRegion)
+    })
+    .slice(0, 14)
+    .map(({ element, selection, isSection, coverageOfElement, coverageOfRegion }) => {
+      const rect = element.getBoundingClientRect()
+      const sectionLabel = isSection ? getImportedEditableAttribute(element, 'section') : ''
+      const role = getImportedRegionElementRole(element, selection, isSection)
+      const issue = getImportedRegionVisualIssue(element)
+      return {
+        tagName: element.tagName.toLowerCase(),
+        editId: selection?.editId,
+        editType: selection?.editType,
+        role,
+        label: selection?.label || sectionLabel || element.getAttribute('aria-label') || element.getAttribute('title') || '',
+        text: compactImportedRegionText(element.textContent || ''),
+        sourcePath: getImportedRegionElementSourcePath(element),
+        rect: formatImportedRegionRect(rect, region),
+        coverage: `elemento=${Math.round(coverageOfElement * 100)}%, zona=${Math.round(coverageOfRegion * 100)}%`,
+        visual: getImportedRegionVisualSummaryForElement(element, rect),
+        issue,
+        html: compactImportedRegionText(element.outerHTML || '', 720)
+      }
+    })
+}
+
+const getImportedRegionRectY = (element: ImportedAIRegionElement) => {
+  const match = element.rect?.match(/\by=(-?\d+)/)
+  return match ? Number(match[1]) : 0
+}
+
+const buildImportedAIRegionVisualSummary = (
+  selection: Pick<ImportedAIRegionSelection, 'bounds' | 'elements'>
+) => {
+  const ordered = [...selection.elements].sort((a, b) => getImportedRegionRectY(a) - getImportedRegionRectY(b))
+  const containers = selection.elements.filter(element => /contenedor|seccion/.test(element.role || '')).slice(0, 4)
+  const visualIssues = selection.elements.filter(element => element.issue).slice(0, 8)
+  const important = ordered.filter(element => /titular|video|boton|imagen|seccion|contenedor/.test(element.role || '')).slice(0, 10)
+
+  return [
+    `Zona renderizada: ${Math.round(selection.bounds.width)}x${Math.round(selection.bounds.height)} px.`,
+    containers.length
+      ? `Contenedores probables: ${containers.map(element => `${element.tagName} ${element.label || element.role || ''} [${element.rect || ''}] ${element.visual || ''}`.trim()).join(' | ')}`
+      : '',
+    visualIssues.length
+      ? `Problemas visuales detectados: ${visualIssues.map(element => `${element.role || element.tagName} ${element.label || ''}: ${element.issue} (${element.visual || ''})`.trim()).join(' | ')}`
+      : '',
+    important.length
+      ? `Orden visual aproximado de arriba a abajo: ${important.map((element, index) => `${index + 1}. ${element.role || element.tagName} ${element.label || ''} [${element.rect || ''}] texto="${element.text || ''}" visual="${element.visual || ''}"`.trim()).join(' || ')}`
+      : ''
+  ].filter(Boolean).join('\n')
+}
+
+const parseImportedRegionRect = (value = '') => {
+  const match = value.match(/\bx=(-?\d+),\s*y=(-?\d+),\s*w=(\d+),\s*h=(\d+)/)
+  if (!match) return { x: 0, y: 0, width: 120, height: 44 }
+  return {
+    x: Number(match[1]) || 0,
+    y: Number(match[2]) || 0,
+    width: Number(match[3]) || 120,
+    height: Number(match[4]) || 44
+  }
+}
+
+const getImportedRegionSvgFill = (element: ImportedAIRegionElement) => {
+  if (element.issue) return '#fee2e2'
+  if (element.role === 'titular') return '#e0f2fe'
+  if (element.role === 'video/player') return '#111827'
+  if (element.role === 'boton/cta') return '#dbeafe'
+  if (element.role === 'imagen/fondo') return '#dcfce7'
+  if (element.role === 'formulario/campo') return '#f8fafc'
+  if (/contenedor|seccion/.test(element.role || '')) return '#eff6ff'
+  return '#ffffff'
+}
+
+const getImportedRegionSvgStroke = (element: ImportedAIRegionElement) => {
+  if (element.issue) return '#ef4444'
+  if (element.role === 'titular') return '#0284c7'
+  if (element.role === 'video/player') return '#0f172a'
+  if (element.role === 'boton/cta') return '#2563eb'
+  if (element.role === 'imagen/fondo') return '#16a34a'
+  if (element.role === 'formulario/campo') return '#64748b'
+  if (/contenedor|seccion/.test(element.role || '')) return '#60a5fa'
+  return '#94a3b8'
+}
+
+const renderImportedAIRegionContextSvg = (selection: ImportedAIRegionSelection) => {
+  const width = IMPORTED_AI_VISUAL_SCREENSHOT_WIDTH
+  const height = IMPORTED_AI_VISUAL_SCREENSHOT_HEIGHT
+  const regionWidth = Math.max(1, selection.bounds.width)
+  const regionHeight = Math.max(1, selection.bounds.height)
+  const scale = Math.min((width - 64) / regionWidth, (height - 192) / regionHeight, 1.45)
+  const offsetX = Math.round((width - regionWidth * scale) / 2)
+  const offsetY = 132
+  const markup = selection.elements.map((element, index) => {
+    const rect = parseImportedRegionRect(element.rect || '')
+    const x = Math.max(30, Math.min(width - 60, offsetX + rect.x * scale))
+    const y = Math.max(118, Math.min(height - 50, offsetY + rect.y * scale))
+    const rectWidth = Math.max(28, Math.min(width - x - 24, rect.width * scale))
+    const rectHeight = Math.max(18, Math.min(height - y - 24, rect.height * scale))
+    const fill = getImportedRegionSvgFill(element)
+    const stroke = getImportedRegionSvgStroke(element)
+    const textColor = element.role === 'video/player' ? '#f8fafc' : '#0f172a'
+    return `
+      <g>
+        <rect x="${x}" y="${y}" width="${rectWidth}" height="${rectHeight}" rx="8" fill="${fill}" stroke="${stroke}" stroke-width="${element.issue ? 3 : 2}" opacity="0.92"/>
+        <text x="${x + 8}" y="${y + 18}" fill="${textColor}" font-size="12" font-weight="800">${escapeSvgText(`${index + 1}. ${element.role || element.tagName}`)}</text>
+        <text x="${x + 8}" y="${y + 36}" fill="${textColor}" font-size="12">${escapeSvgText(limitSitesAIContextText(element.text || element.label || element.tagName, 70))}</text>
+      </g>
+    `
+  }).join('')
+
+  return `
+    <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+      <rect width="${width}" height="${height}" fill="#0f172a"/>
+      <rect x="20" y="20" width="${width - 40}" height="88" rx="18" fill="#111827" stroke="#38bdf8" stroke-width="2"/>
+      <text x="44" y="54" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="900">${escapeSvgText(`Zona seleccionada: ${selection.pageTitle}`)}</text>
+      <text x="44" y="84" fill="#bae6fd" font-family="Inter, Arial, sans-serif" font-size="16">${escapeSvgText(`${Math.round(selection.bounds.width)}x${Math.round(selection.bounds.height)} px · ${selection.elements.length} elementos detectados`)}</text>
+      <rect x="${offsetX}" y="${offsetY}" width="${regionWidth * scale}" height="${regionHeight * scale}" rx="16" fill="#f8fafc" stroke="#38bdf8" stroke-width="3"/>
+      ${markup}
+    </svg>
+  `.trim()
+}
+
+const buildImportedAIRegionVisualContext = async (
+  site: PublicSite,
+  selection: ImportedAIRegionSelection
+): Promise<SitesAIPreviewVisualContext> => {
+  const elements = selection.elements.slice(0, IMPORTED_AI_VISUAL_MAX_ELEMENTS).map((element): SitesAIPreviewVisualElement => {
+    const rect = parseImportedRegionRect(element.rect || '')
+    return {
+      type: element.role || element.editType || element.tagName,
+      label: element.label || element.sourcePath || element.tagName,
+      text: [
+        element.text || element.label || element.tagName,
+        element.issue ? `Problema visual: ${element.issue}` : '',
+        element.visual ? `Visual: ${element.visual}` : '',
+        element.sourcePath ? `Código: ${element.sourcePath}` : ''
+      ].filter(Boolean).join(' | '),
+      x: rect.x,
+      y: rect.y,
+      width: rect.width,
+      height: rect.height
+    }
+  })
+  const summary = [
+    'Contexto específico de la zona seleccionada por el usuario.',
+    selection.visualSummary || buildImportedAIRegionVisualSummary(selection),
+    'Ubicación del código detrás de la zona:',
+    selection.elements.slice(0, 12).map((element, index) => (
+      `${index + 1}. ${element.role || element.tagName} ${element.label || ''} -> ${element.sourcePath || 'sin ruta'} | ${element.html || ''}`
+    )).join('\n')
+  ].filter(Boolean).join('\n\n')
+  const screenshotDataUrl = await svgToPngDataUrl(renderImportedAIRegionContextSvg(selection))
+
+  return {
+    siteId: site.id,
+    pageId: selection.pageId,
+    pageTitle: `${selection.pageTitle} · zona seleccionada`,
+    summary,
+    screenshotDataUrl,
+    screenshotFormat: screenshotDataUrl ? 'internal-preview-png' : undefined,
+    capturedAt: new Date().toISOString(),
+    elements
+  }
+}
+
+const buildImportedAIRegionPrompt = (
+  userPrompt: string,
+  selection: ImportedAIRegionSelection,
+  site: PublicSite,
+  options: { forceApply?: boolean; previousReply?: string } = {}
+) => {
+  const elementLines = selection.elements.length
+    ? selection.elements.map((element, index) => {
+      const meta = [
+        `tag=${element.tagName}`,
+        element.role ? `role=${element.role}` : '',
+        element.editId ? `editId=${element.editId}` : '',
+        element.editType ? `editType=${element.editType}` : '',
+        element.label ? `label=${element.label}` : '',
+        element.sourcePath ? `sourcePath=${element.sourcePath}` : '',
+        element.rect ? `rect=${element.rect}` : '',
+        element.coverage ? `coverage=${element.coverage}` : '',
+        element.visual ? `visual=${element.visual}` : '',
+        element.issue ? `issue=${element.issue}` : '',
+        element.text ? `text=${element.text}` : ''
+      ].filter(Boolean).join(', ')
+      return `${index + 1}. ${meta}\nHTML: ${element.html || ''}`
+    }).join('\n\n')
+    : 'No se detectaron elementos editables claros dentro del rectangulo. Usa las coordenadas y el contexto visual del HTML actual.'
+
+  return `
+El usuario selecciono una zona especifica del HTML importado y quiere que la IA modifique SOLO esa zona salvo que sea indispensable ajustar CSS cercano para que se vea bien.
+${options.forceApply ? '\nLa respuesta anterior pidio mas informacion, pero esta peticion ya es suficiente. No preguntes otra vez; aplica la mejor interpretacion posible.' : ''}
+${options.previousReply ? `\nRespuesta anterior que NO debe repetirse: ${options.previousReply}` : ''}
+
+Pagina activa: ${selection.pageTitle} (${selection.pageId})
+Site: ${site.title || site.name}
+Rectangulo seleccionado en viewport: x=${Math.round(selection.bounds.x)}, y=${Math.round(selection.bounds.y)}, ancho=${Math.round(selection.bounds.width)}, alto=${Math.round(selection.bounds.height)}, viewport=${Math.round(selection.bounds.viewportWidth)}x${Math.round(selection.bounds.viewportHeight)}.
+
+Resumen visual renderizado de la zona:
+${selection.visualSummary || 'Sin resumen visual disponible.'}
+
+Elementos detectados dentro de la zona:
+${elementLines}
+
+Solicitud del usuario:
+${userPrompt.trim()}
+
+Reglas para esta edicion:
+- Devuelve el HTML completo actualizado, conservando todas las paginas del embudo si existen.
+- No cambies otras secciones que el usuario no selecciono.
+- La instruccion del usuario es suficiente aunque no mencione ids exactos. Si dice titular, video, boton, arriba, abajo, centrado, hero, orden o layout, identifica esos elementos dentro del rectangulo seleccionado y aplica el cambio.
+- Si hay varios candidatos, usa el mas importante por jerarquia visual: titular principal, video/player dentro de la zona y CTA principal.
+- No respondas con needs_more_info ni con preguntas para cambios de posicion, alineacion, orden, tamano, video, boton, titular o layout. Haz tu mejor edicion con el HTML actual.
+- Si el usuario pide titular arriba, video debajo y boton debajo, convierte esa zona en un layout vertical centrado y conserva los estilos visuales importantes.
+- Si el usuario menciona que algo "se transparenta", "se ve muy transparente", "no se lee", "se pierde", "muy claro" o "poco contraste", usa el resumen visual para localizar fondos/textos con alpha u opacidad baja y vuelve esa parte mas solida/legible sin cambiar contenido.
+- Si la solicitud pide insertar un video, acepta URL o codigo iframe/embed y colocalo como un elemento editable de video con data-rstk-editable="true", data-rstk-edit-type="video", data-rstk-label y data-rstk-edit-id.
+- Conserva formularios, campos, rutas de datos y acciones de botones existentes salvo que el usuario pida cambiarlos.
+  `.trim()
+}
+
+const buildImportedAIPagePrompt = (
+  userPrompt: string,
+  site: PublicSite,
+  page: SitePage | undefined,
+  visualContext: SitesAIPreviewVisualContext | null,
+  options: { forceApply?: boolean; previousReply?: string } = {}
+) => `
+El usuario quiere modificar la pagina HTML completa desde el panel derecho del editor. No selecciono una zona especifica, asi que puedes usar toda la pagina activa como contexto.
+${options.forceApply ? '\nLa respuesta anterior pidio mas informacion, pero esta peticion ya es suficiente. No preguntes otra vez; aplica la mejor interpretacion posible.' : ''}
+${options.previousReply ? `\nRespuesta anterior que NO debe repetirse: ${options.previousReply}` : ''}
+
+Pagina activa: ${page?.title || site.title || site.name} (${page?.id || DEFAULT_FUNNEL_PAGE_ID})
+Site: ${site.title || site.name}
+
+Resumen visual de la pagina:
+${visualContext?.summary || 'Sin resumen visual disponible.'}
+
+Solicitud del usuario:
+${userPrompt.trim()}
+
+Reglas para esta edicion:
+- Devuelve el HTML completo actualizado, conservando todas las paginas del embudo si existen.
+- Aplica el cambio a la pagina activa completa.
+- Conserva formularios, campos, rutas de datos, tracking y acciones de botones salvo que el usuario pida cambiarlos.
+- Si el usuario pide cambiar copy, layout, video, contraste, imagenes o botones, aplica el cambio directamente con el HTML actual.
+- Usa needs_more_info solo si no hay una accion concreta que ejecutar.
+`.trim()
+
+const normalizeImportedAIRegionPreviewHtml = (html = '') => (
+  html
+    .replace(/<script\b[\s\S]*?<\/script>/gi, '')
+    .replace(/\sdata-rstk-imported-editor-overlay="[^"]*"/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+)
+
+const getDefaultImportedAdditionalAction = (
+  actions: ImportedButtonActionStep[],
+  actionOptions = importedButtonActionOptions
+): ImportedButtonAction => {
+  const used = new Set(actions.map(action => action.action))
+  return actionOptions.find(option => !used.has(option.value))?.value || 'none'
+}
+
+const getUniqueImportedActionSteps = (
+  actions: ImportedButtonActionStep[],
+  actionOptions = importedButtonActionOptions
+) => {
+  const selectableActions = getImportedActionOptionSet(actionOptions)
+  const used = new Set<ImportedButtonAction>()
+  return actions.filter(step => {
+    if (!step || !selectableActions.has(step.action) || used.has(step.action)) return false
+    used.add(step.action)
+    return true
+  })
+}
+
+const areImportedActionsUnique = (
+  actions: ImportedButtonActionStep[],
+  actionOptions = importedButtonActionOptions
+) => (
+  actions.length === getUniqueImportedActionSteps(actions, actionOptions).length
+)
+
+const getImportedActionOptionsForStep = (
+  actions: ImportedButtonActionStep[],
+  index: number,
+  actionOptions = importedButtonActionOptions
+) => {
+  const usedByOtherSteps = new Set(actions.filter((_, currentIndex) => currentIndex !== index).map(step => step.action))
+  return actionOptions.filter(option => option.value === actions[index]?.action || !usedByOtherSteps.has(option.value))
+}
+
+const isImportedActionStepValid = (
+  step: ImportedButtonActionStep,
+  actionOptions = importedButtonActionOptions
+) => {
+  const selectableActions = getImportedActionOptionSet(actionOptions)
+  if (!step || step.action === 'none' || !selectableActions.has(step.action)) return false
+  if (step.action === 'url') return Boolean(step.buttonUrl?.trim())
+  if (step.action === 'specific_page') return Boolean(step.buttonPageId?.trim())
+  return true
+}
+
+const areImportedActionsValid = (
+  actions: ImportedButtonActionStep[],
+  actionOptions = importedButtonActionOptions
+) => (
+  actions.length === 0 || (
+    areImportedActionsUnique(actions, actionOptions) &&
+    actions.every(step => isImportedActionStepValid(step, actionOptions))
+  )
+)
+
+const ImportedActionChainEditor: React.FC<{
+  actions: ImportedButtonActionStep[]
+  targetPages: SitePage[]
+  actionOptions?: ImportedButtonActionOption[]
+  disabled?: boolean
+  emptyLabel?: string
+  onChange: (actions: ImportedButtonActionStep[]) => void
+}> = ({ actions, targetPages, actionOptions = importedButtonActionOptions, disabled = false, emptyLabel = 'Solo dejarlo como texto', onChange }) => {
+  const visibleActions = getUniqueImportedActionSteps(actions, actionOptions)
+  const selectableActions = getImportedActionOptionSet(actionOptions)
+  const setAction = (index: number, patch: Partial<ImportedButtonActionStep>) => {
+    onChange(getUniqueImportedActionSteps(visibleActions.map((step, currentIndex) => currentIndex === index ? { ...step, ...patch } : step), actionOptions))
+  }
+  const removeAction = (index: number) => {
+    onChange(visibleActions.filter((_, currentIndex) => currentIndex !== index))
+  }
+  const addAction = () => {
+    const action = getDefaultImportedAdditionalAction(visibleActions, actionOptions)
+    if (action === 'none') return
+    onChange([...visibleActions, makeImportedActionStep(action)])
+  }
+  const canAddAction = !disabled && actionOptions.some(option => !visibleActions.some(step => step.action === option.value))
+
+  if (visibleActions.length === 0) {
+    return (
+      <label className={styles.importedActionField}>
+        <span>Acción</span>
+        <CustomSelect
+          value="none"
+          disabled={disabled}
+          onChange={(event) => {
+            const action = normalizeImportedButtonAction(event.target.value)
+            onChange(action === 'none' || !selectableActions.has(action) ? [] : [makeImportedActionStep(action)])
+          }}
+        >
+          <option value="none">{emptyLabel}</option>
+          {actionOptions.map(option => (
+            <option key={option.value} value={option.value}>{option.label}{option.demo ? ' (demo)' : ''}</option>
+          ))}
+        </CustomSelect>
+      </label>
+    )
+  }
+
+  return (
+    <div className={styles.importedActionChain}>
+      {visibleActions.map((step, index) => (
+        <div key={step.id || `${step.action}-${index}`} className={styles.importedActionStep}>
+          <div className={styles.importedActionStepHeader}>
+            <label className={styles.importedActionField}>
+              <span>{index === 0 ? 'Acción' : `Acción ${index + 1}`}</span>
+              <CustomSelect
+                value={step.action}
+                disabled={disabled}
+                onChange={(event) => {
+                  const nextAction = normalizeImportedButtonAction(event.target.value)
+                  if (nextAction === 'none' || !selectableActions.has(nextAction)) {
+                    onChange([])
+                    return
+                  }
+                  setAction(index, {
+                    action: nextAction,
+                    buttonUrl: '',
+                    buttonPageId: '',
+                    buttonMessage: '',
+                    automationName: ''
+                  })
+                }}
+              >
+                {index === 0 && <option value="none">{emptyLabel}</option>}
+                {getImportedActionOptionsForStep(visibleActions, index, actionOptions).map(option => (
+                  <option key={option.value} value={option.value}>{option.label}{option.demo ? ' (demo)' : ''}</option>
+                ))}
+              </CustomSelect>
+            </label>
+            {visibleActions.length > 1 && (
+              <button type="button" onClick={() => removeAction(index)} disabled={disabled} aria-label={`Quitar acción ${index + 1}`}>
+                <X size={14} />
+              </button>
+            )}
+          </div>
+
+          {step.action === 'url' && (
+            <label className={styles.importedActionField}>
+              <span>Enlace</span>
+              <input
+                value={step.buttonUrl || ''}
+                placeholder="https://..."
+                disabled={disabled}
+                name={`rstk-imported-action-url-${index}`}
+                {...importedEditorNoAutocompleteAttrs}
+                onChange={(event) => setAction(index, { buttonUrl: event.target.value })}
+              />
+            </label>
+          )}
+
+          {step.action === 'specific_page' && (
+            <label className={styles.importedActionField}>
+              <span>Página destino</span>
+              <CustomSelect
+                value={step.buttonPageId || ''}
+                disabled={disabled}
+                onChange={(event) => setAction(index, { buttonPageId: event.target.value })}
+              >
+                <option value="">Selecciona una página</option>
+                {targetPages.map(page => (
+                  <option key={page.id} value={page.id}>{page.title || page.id}</option>
+                ))}
+              </CustomSelect>
+            </label>
+          )}
+
+          {step.action === 'automation' && (
+            <label className={styles.importedActionField}>
+              <span>Configuración demo</span>
+              <input
+                value={step.automationName || ''}
+                placeholder="Nombre de automatización"
+                disabled={disabled}
+                name={`rstk-imported-action-automation-${index}`}
+                {...importedEditorNoAutocompleteAttrs}
+                onChange={(event) => setAction(index, { automationName: event.target.value })}
+              />
+            </label>
+          )}
+        </div>
+      ))}
+
+      <button type="button" className={styles.importedAddActionButton} onClick={addAction} disabled={!canAddAction}>
+        <Plus size={14} />
+        Agregar acción
+      </button>
+    </div>
+  )
+}
+
+const ImportedHtmlEditorPanel: React.FC<{
+  site: PublicSite
+  pages: SitePage[]
+  activePageId: string
+  domainConfig: SitesDomainConfig
+  device: DeviceMode
+  saving: boolean
+  aiAgentAvailable: boolean
+  importData: ImportedSiteImport | null
+  loadingImportData: boolean
+  onSelectPage: (pageId: string) => void
+  onPreview: () => void
+  onPublish: () => void
+  onEditFields: () => void
+  onPreviewContextChange: (siteId: string, context: SitesAIPreviewVisualContext) => void
+  onContentUpdated: (result: ImportedSiteCreateResult) => void
+  onUpdateRoute: (site: PublicSite, route: string) => Promise<void>
+  onDelete: () => void
+}> = ({
+  site,
+  pages,
+  activePageId,
+  domainConfig,
+  device,
+  saving,
+  aiAgentAvailable,
+  importData,
+  loadingImportData,
+  onSelectPage,
+  onPreview,
+  onPublish,
+  onEditFields,
+  onPreviewContextChange,
+  onContentUpdated,
+  onUpdateRoute,
+  onDelete
+}) => {
+  const { showToast } = useNotification()
+  const iframeRef = useRef<HTMLIFrameElement | null>(null)
+  const selectedIframeElementRef = useRef<HTMLElement | null>(null)
+  const previewVisualContextRef = useRef<SitesAIPreviewVisualContext | null>(null)
+  const inlineImageFileInputRef = useRef<HTMLInputElement | null>(null)
+  const [routeEditing, setRouteEditing] = useState(false)
+  const [routeDraft, setRouteDraft] = useState(getRouteEditorValue(site))
+  const [routeSaving, setRouteSaving] = useState(false)
+  const [previewHtml, setPreviewHtml] = useState('')
+  const [previewLoading, setPreviewLoading] = useState(true)
+  const [previewError, setPreviewError] = useState('')
+  const [previewVersion, setPreviewVersion] = useState(0)
+  const [inlineEditor, setInlineEditor] = useState<ImportedInlineEditorState | null>(null)
+  const [buttonEditor, setButtonEditor] = useState<ImportedButtonEditorState | null>(null)
+  const [choiceEditor, setChoiceEditor] = useState<ImportedChoiceEditorState | null>(null)
+  const [aiRegionMode, setAiRegionMode] = useState(false)
+  const [aiRegionSelection, setAiRegionSelection] = useState<ImportedAIRegionSelection | null>(null)
+  const [aiRegionPrompt, setAiRegionPrompt] = useState('')
+  const [aiRegionSaving, setAiRegionSaving] = useState(false)
+  const [aiRegionError, setAiRegionError] = useState('')
+  const [aiRegionLastAttempt, setAiRegionLastAttempt] = useState<ImportedAIRegionAttempt | null>(null)
+  const [fieldEditor, setFieldEditor] = useState<ImportedFormFieldEditorState | null>(null)
+  const [contentSaving, setContentSaving] = useState(false)
+  const [contentError, setContentError] = useState('')
+  const importedPages = pages.length ? pages : [{ id: DEFAULT_FUNNEL_PAGE_ID, title: 'Página 1', sortOrder: 0 }]
+  const activeImportedPage = importedPages.find(page => page.id === activePageId) || importedPages[0]
+  const mappingStats = useMemo(() => {
+    const formMappings = Array.isArray(importData?.formMappings) ? importData.formMappings : []
+    const fields = formMappings.flatMap(form => Array.isArray(form.fields) ? form.fields : [])
+    return {
+      forms: formMappings.length,
+      fields: fields.length,
+      routed: fields.filter(field => !field.ignored && field.destinationType !== 'ignored').length,
+      standard: fields.filter(field => !field.ignored && field.destinationType === 'standard').length,
+      custom: fields.filter(field => !field.ignored && ['custom', 'new_custom'].includes(field.destinationType)).length,
+      ignored: fields.filter(field => field.ignored || field.destinationType === 'ignored').length
+    }
+  }, [importData])
+  const appendAIRegionPromptText = useCallback((text: string) => {
+    setAiRegionPrompt(current => appendDictatedText(current, text))
+  }, [])
+  const aiRegionVoiceDictation = useAIVoiceDictation({
+    onTranscription: appendAIRegionPromptText,
+    onError: setAiRegionError,
+    onStart: () => setAiRegionError('')
+  })
+
+  useEffect(() => {
+    if (!routeEditing) setRouteDraft(getRouteEditorValue(site))
+  }, [routeEditing, site.id, site.slug])
+
+  const loadInlinePreview = useCallback(async () => {
+    setPreviewLoading(true)
+    setPreviewError('')
+    try {
+      const html = await sitesService.getPreviewHtml(site.id, activeImportedPage?.id, { test: true })
+      setPreviewHtml(html)
+      setPreviewVersion(current => current + 1)
+    } catch (error) {
+      setPreviewHtml('')
+      setPreviewError(error instanceof Error ? error.message : 'No se pudo cargar la vista previa')
+    } finally {
+      setPreviewLoading(false)
+    }
+  }, [activeImportedPage?.id, site.id, site.updatedAt])
+
+  useEffect(() => {
+    void loadInlinePreview()
+  }, [loadInlinePreview])
+
+  const currentPageCanSubmitForm = useMemo(() => (
+    hasImportedSubmittableFormFields(previewHtml)
+  ), [previewHtml])
+  const currentPageActionOptions = useMemo(() => (
+    getImportedButtonActionOptionsForPage(currentPageCanSubmitForm)
+  ), [currentPageCanSubmitForm])
+
+  useEffect(() => {
+    selectedIframeElementRef.current?.classList.remove('rstk-imported-selected')
+    selectedIframeElementRef.current = null
+    setInlineEditor(null)
+    setButtonEditor(null)
+    setChoiceEditor(null)
+    setAiRegionMode(false)
+    setAiRegionSelection(null)
+    setAiRegionPrompt('')
+    setAiRegionError('')
+    setAiRegionLastAttempt(null)
+    aiRegionVoiceDictation.cancelVoice()
+    setFieldEditor(null)
+    setContentError('')
+  }, [activeImportedPage?.id, aiRegionVoiceDictation.cancelVoice, site.id])
+
+  useEffect(() => {
+    selectedIframeElementRef.current?.classList.remove('rstk-imported-selected')
+    selectedIframeElementRef.current = null
+    setInlineEditor(null)
+    setButtonEditor(null)
+    setChoiceEditor(null)
+    setFieldEditor(null)
+    setContentError('')
+  }, [previewVersion])
+
+  const getInlineEditorPosition = useCallback((element: HTMLElement) => {
+    const iframe = iframeRef.current
+    const iframeRect = iframe?.getBoundingClientRect()
+    const elementRect = element.getBoundingClientRect()
+    const rawLeft = (iframeRect?.left || 0) + elementRect.left + 10
+    const rawTop = (iframeRect?.top || 0) + elementRect.top + 10
+    return {
+      left: Math.min(Math.max(rawLeft, 16), Math.max(16, window.innerWidth - 360)),
+      top: Math.min(Math.max(rawTop, 16), Math.max(16, window.innerHeight - 220))
+    }
+  }, [])
+
+  const openInlineEditorForElement = useCallback((element: HTMLElement, selection: ImportedEditableSelection, mode: 'text' | 'image' | 'video') => {
+    const position = getInlineEditorPosition(element)
+    setFieldEditor(null)
+    setInlineEditor({
+      selection,
+      mode,
+      value: selection.value,
+      ...position
+    })
+    setContentError('')
+  }, [getInlineEditorPosition])
+
+  const openButtonEditorForSelection = useCallback((selection: ImportedEditableSelection) => {
+    setInlineEditor(null)
+    setChoiceEditor(null)
+    setFieldEditor(null)
+    setButtonEditor({
+      selection,
+      value: selection.value,
+      buttonActions: getUniqueImportedActionSteps(
+        selection.buttonActions?.length
+          ? selection.buttonActions
+          : selection.buttonAction && selection.buttonAction !== 'none'
+            ? [makeImportedActionStep(selection.buttonAction, {
+              id: 'action-1',
+              buttonUrl: selection.buttonUrl,
+              buttonPageId: selection.buttonPageId,
+              buttonMessage: selection.buttonMessage
+            })]
+            : [],
+        currentPageActionOptions
+      )
+    })
+    setContentError('')
+  }, [currentPageActionOptions])
+
+  const openChoiceEditorForSelection = useCallback((selection: ImportedChoiceSelection) => {
+    setInlineEditor(null)
+    setButtonEditor(null)
+    setFieldEditor(null)
+    setChoiceEditor({
+      selection,
+      options: selection.options.length ? selection.options : [{ label: selection.label || 'Opción 1', value: selection.choiceValue || selection.label || 'Opción 1' }],
+      actions: getUniqueImportedActionSteps(selection.actions, currentPageActionOptions)
+    })
+    setContentError('')
+  }, [currentPageActionOptions])
+
+  const openFieldEditorForSelection = useCallback((selection: ImportedFormFieldSelection) => {
+    setInlineEditor(null)
+    setButtonEditor(null)
+    setChoiceEditor(null)
+    setFieldEditor({
+      selection,
+      label: selection.label,
+      placeholder: selection.placeholder,
+      required: selection.required,
+      options: selection.options.length ? selection.options : []
+    })
+    setContentError('')
+  }, [])
+
+  const clearInlineSelection = useCallback(() => {
+    selectedIframeElementRef.current?.classList.remove('rstk-imported-selected')
+    selectedIframeElementRef.current = null
+    setInlineEditor(null)
+    setButtonEditor(null)
+    setChoiceEditor(null)
+    setFieldEditor(null)
+  }, [])
+
+  const saveEditableContent = useCallback(async (
+    selection: ImportedEditableSelection,
+    value: string,
+    fileUpload?: { fileBase64: string; filename: string },
+    buttonPatch?: {
+      buttonActions?: ImportedButtonActionStep[]
+      buttonAction?: ImportedButtonAction
+      buttonUrl?: string
+      buttonPageId?: string
+      buttonMessage?: string
+      choiceActions?: ImportedButtonActionStep[]
+      choiceName?: string
+      choiceValue?: string
+      choiceInputType?: 'radio' | 'checkbox'
+      choiceIndex?: number
+      fieldLabel?: string
+      fieldPlaceholder?: string
+      fieldRequired?: boolean
+      fieldOptions?: ImportedFormFieldOption[]
+      fieldName?: string
+      fieldHtmlId?: string
+      fieldTag?: string
+      fieldInputType?: string
+    }
+  ) => {
+    if (selection.editType === 'section') return false
+    const cleanValue = value.trim()
+    if (!cleanValue && !fileUpload) {
+      setContentError('Escribe el nuevo contenido antes de guardar.')
+      return false
+    }
+
+    setContentSaving(true)
+    setContentError('')
+    try {
+      const result = await sitesService.updateImportedContent(site.id, {
+        editId: selection.editId,
+        editType: selection.editType,
+        value: cleanValue || selection.value,
+        pageId: activeImportedPage?.id || DEFAULT_FUNNEL_PAGE_ID,
+        ...(fileUpload || {}),
+        ...(buttonPatch || {})
+      })
+      onContentUpdated(result)
+      clearInlineSelection()
+      await loadInlinePreview()
+      showToast('success', 'Cambio guardado', 'La página conserva formularios, campos y tracking.')
+      return true
+    } catch (error) {
+      setContentError(error instanceof Error ? error.message : 'No se pudo guardar el cambio')
+      return false
+    } finally {
+      setContentSaving(false)
+    }
+  }, [activeImportedPage?.id, clearInlineSelection, loadInlinePreview, onContentUpdated, showToast, site.id])
+
+  const startAIRegionMode = useCallback(() => {
+    selectedIframeElementRef.current?.classList.remove('rstk-imported-selected')
+    selectedIframeElementRef.current = null
+    aiRegionVoiceDictation.cancelVoice()
+    setInlineEditor(null)
+    setButtonEditor(null)
+    setChoiceEditor(null)
+    setContentError('')
+    setAiRegionSelection(null)
+    setAiRegionError('')
+    setAiRegionLastAttempt(null)
+    setAiRegionMode(true)
+  }, [aiRegionVoiceDictation.cancelVoice])
+
+  const cancelAIRegionMode = useCallback(() => {
+    aiRegionVoiceDictation.cancelVoice()
+    setAiRegionMode(false)
+    setAiRegionSelection(null)
+    setAiRegionError('')
+  }, [aiRegionVoiceDictation.cancelVoice])
+
+  const setAIRegionAttemptStatus = (
+    selection: ImportedAIRegionSelection | null,
+    nextAttempt: Pick<ImportedAIRegionAttempt, 'status' | 'message' | 'prompt'> & { debug?: SitesAIEditDebug }
+  ) => {
+    const activePageId = activeImportedPage?.id || DEFAULT_FUNNEL_PAGE_ID
+    const fullPageVisualContext = previewVisualContextRef.current?.siteId === site.id &&
+      previewVisualContextRef.current?.pageId === activePageId
+      ? previewVisualContextRef.current
+      : null
+    setAiRegionLastAttempt({
+      ...nextAttempt,
+      at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      pageTitle: selection?.pageTitle || activeImportedPage?.title || 'Página actual',
+      elementCount: selection?.elements.length || fullPageVisualContext?.elements.length || 0
+    })
+  }
+
+  const applyAIRegionEdit = async () => {
+    const prompt = aiRegionPrompt.trim()
+    if (!prompt) {
+      setAiRegionError(aiRegionSelection
+        ? 'Escribe que quieres que cambie la IA en esa zona.'
+        : 'Escribe que quieres que cambie la IA en la pagina.'
+      )
+      return
+    }
+
+    const currentSelection = aiRegionSelection
+    const activePageId = currentSelection?.pageId || activeImportedPage?.id || DEFAULT_FUNNEL_PAGE_ID
+    const fullPageVisualContext = previewVisualContextRef.current?.siteId === site.id &&
+      previewVisualContextRef.current?.pageId === activePageId
+      ? previewVisualContextRef.current
+      : null
+    const editVisualContext = currentSelection?.visualContext || fullPageVisualContext
+
+    setAiRegionSaving(true)
+    setAiRegionError('')
+    setAIRegionAttemptStatus(currentSelection, {
+      status: 'running',
+      message: currentSelection
+        ? 'La IA está intentando aplicar el cambio en la zona seleccionada.'
+        : 'La IA está intentando aplicar el cambio en toda la página.',
+      prompt
+    })
+    try {
+      const beforePreviewHtml = previewHtml
+      const runRegionEdit = (options: { forceApply?: boolean; previousReply?: string } = {}) => (
+        sitesService.editImportedHtmlWithAI(site.id, {
+          siteKind: getAIAgentSiteKindForSite(site),
+          model: DEFAULT_SITE_CHATGPT_EDIT_MODEL,
+          pageId: activePageId,
+          visualContext: editVisualContext,
+          aiRegionRequest: prompt,
+          messages: [{
+            role: 'user',
+            content: currentSelection
+              ? buildImportedAIRegionPrompt(prompt, currentSelection, site, options)
+              : buildImportedAIPagePrompt(prompt, site, activeImportedPage, editVisualContext, options)
+          }]
+        })
+      )
+
+      let result = await runRegionEdit()
+      const targetMissing = result.reason === 'selection_target_missing'
+      if (!targetMissing && (result.status === 'needs_more_info' || !result.site || !result.import)) {
+        result = await runRegionEdit({
+          forceApply: true,
+          previousReply: result.reply || 'La IA pidió más información.'
+        })
+      }
+
+      if (result.status === 'needs_more_info' || !result.site || !result.import) {
+        const missingTarget = result.reason === 'selection_target_missing'
+        const message = result.reply
+          ? missingTarget
+            ? result.reply
+            : `La IA no aplicó cambios: ${result.reply}`
+          : 'La IA no pudo aplicar ese cambio. Intenta decirlo como acción directa: "centra el título, pon el video debajo y el botón debajo del video".'
+        setAiRegionError(message)
+        setAIRegionAttemptStatus(currentSelection, {
+          status: 'error',
+          message,
+          prompt,
+          debug: result.debug
+        })
+        return
+      }
+
+      const refreshedHtml = await sitesService.getPreviewHtml(site.id, activePageId, { test: true })
+      const beforeFingerprint = normalizeImportedAIRegionPreviewHtml(beforePreviewHtml)
+      const afterFingerprint = normalizeImportedAIRegionPreviewHtml(refreshedHtml)
+      if (beforeFingerprint && afterFingerprint && beforeFingerprint === afterFingerprint) {
+        setPreviewHtml(refreshedHtml)
+        setPreviewVersion(current => current + 1)
+        const message = currentSelection
+          ? 'La IA respondió, pero no cambió el HTML visible de esa zona. Conservé tu selección para que puedas aplicar de nuevo o ajustar la instrucción.'
+          : 'La IA respondió, pero no cambió el HTML visible de la página. Puedes aplicar de nuevo con una instrucción más directa.'
+        setAiRegionError(message)
+        setAIRegionAttemptStatus(currentSelection, {
+          status: 'unchanged',
+          message,
+          prompt,
+          debug: result.debug
+        })
+        return
+      }
+
+      onContentUpdated({ site: result.site, import: result.import })
+      setAiRegionMode(false)
+      setAiRegionError('')
+      setAIRegionAttemptStatus(currentSelection, {
+        status: 'success',
+        message: result.reply || 'La IA aplicó cambios en el HTML visible.',
+        prompt,
+        debug: result.debug
+      })
+      setPreviewHtml(refreshedHtml)
+      setPreviewVersion(current => current + 1)
+      showToast(
+        'success',
+        currentSelection ? 'Zona actualizada' : 'Página actualizada',
+        currentSelection
+          ? 'La IA aplicó el cambio solo en la parte que seleccionaste.'
+          : 'La IA aplicó el cambio en toda la página activa.'
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'No se pudo editar esa zona con IA.'
+      setAiRegionError(message)
+      setAIRegionAttemptStatus(currentSelection, {
+        status: 'error',
+        message,
+        prompt
+      })
+    } finally {
+      setAiRegionSaving(false)
+    }
+  }
+
+  useEffect(() => {
+    if (previewLoading || !previewHtml) return
+    const iframe = iframeRef.current
+    if (!iframe) return
+
+    let cleanupDocument = () => {}
+    let cancelled = false
+    const installEditorHooks = () => {
+      if (cancelled) return
+      cleanupDocument()
+      const doc = iframe.contentDocument
+      if (!doc) return
+      if (doc.location.href !== 'about:srcdoc') {
+        iframe.srcdoc = previewHtml
+        return
+      }
+
+      const contextPage = activeImportedPage || importedPages[0] || { id: DEFAULT_FUNNEL_PAGE_ID, title: 'Página 1', sortOrder: 0 }
+      void buildImportedPreviewVisualContext(iframe, site, contextPage)
+        .then(context => {
+          if (!cancelled && context) {
+            previewVisualContextRef.current = context
+            onPreviewContextChange(site.id, context)
+          }
+        })
+
+      const style = doc.createElement('style')
+      style.setAttribute('data-rstk-imported-editor-overlay', 'true')
+      style.textContent = `
+        ${importedEditableSelector} {
+          cursor: pointer !important;
+          outline: 1px solid transparent !important;
+          outline-offset: 3px !important;
+          border-radius: 4px !important;
+          box-shadow: none !important;
+          transition: outline-color 140ms ease, outline-width 140ms ease, box-shadow 140ms ease, background-color 140ms ease !important;
+        }
+        ${importedEditableSelector}:hover {
+          outline-color: rgba(100, 116, 139, 0.44) !important;
+          outline-style: dashed !important;
+          outline-width: 1px !important;
+          background: rgba(148, 163, 184, 0.03) !important;
+          border-radius: 4px !important;
+          box-shadow: none !important;
+        }
+        ${importedChoiceSelector},
+        ${importedFormFieldSelector},
+        label:has(${importedChoiceSelector}) {
+          cursor: pointer !important;
+        }
+        ${importedChoiceSelector}:hover,
+        ${importedFormFieldSelector}:hover,
+        label:has(${importedChoiceSelector}):hover {
+          outline-color: rgba(100, 116, 139, 0.44) !important;
+          outline-style: dashed !important;
+          outline-width: 1px !important;
+          outline-offset: 4px !important;
+          background: rgba(148, 163, 184, 0.03) !important;
+          border-radius: 4px !important;
+          box-shadow: none !important;
+        }
+        ${importedSectionSelector} {
+          scroll-margin: 40px !important;
+        }
+        .rstk-imported-selected {
+          outline: 2px dashed #2563eb !important;
+          outline-offset: 5px !important;
+          border-radius: 6px !important;
+          box-shadow:
+            0 0 0 1px rgba(15, 23, 42, 0.18),
+            0 0 0 4px rgba(37, 99, 235, 0.14) !important;
+        }
+        .rstk-imported-selected:hover {
+          outline-width: 2.5px !important;
+          outline-color: #1d4ed8 !important;
+        }
+        .rstk-imported-editing {
+          cursor: text !important;
+          outline: 2px dashed #2563eb !important;
+          outline-offset: 5px !important;
+          border-radius: 6px !important;
+          background: rgba(37, 99, 235, 0.06) !important;
+          box-shadow:
+            0 0 0 1px rgba(15, 23, 42, 0.18),
+            0 0 0 4px rgba(37, 99, 235, 0.14) !important;
+        }
+        .rstk-imported-image-action {
+          position: fixed !important;
+          z-index: 2147483647 !important;
+          display: inline-flex !important;
+          align-items: center !important;
+          gap: 7px !important;
+          min-height: 34px !important;
+          border: 1px solid rgba(148, 163, 184, 0.24) !important;
+          border-radius: 8px !important;
+          background: rgba(15, 17, 23, 0.96) !important;
+          color: #f8fafc !important;
+          padding: 0 11px !important;
+          font: 800 13px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+          box-shadow: 0 18px 46px rgba(0, 0, 0, 0.44) !important;
+          cursor: pointer !important;
+          color-scheme: dark !important;
+        }
+        .rstk-imported-image-action:hover {
+          border-color: rgba(34, 197, 94, 0.48) !important;
+          background: rgba(22, 24, 31, 0.98) !important;
+          color: #bbf7d0 !important;
+        }
+        body.rstk-imported-region-selecting,
+        body.rstk-imported-region-selecting * {
+          cursor: crosshair !important;
+          user-select: none !important;
+        }
+        .rstk-imported-region-box {
+          position: fixed !important;
+          z-index: 2147483647 !important;
+          border: 2px solid rgba(14, 165, 233, 0.96) !important;
+          border-radius: 6px !important;
+          background: rgba(14, 165, 233, 0.14) !important;
+          box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.16) !important;
+          pointer-events: none !important;
+        }
+        .rstk-imported-region-selected-box {
+          position: fixed !important;
+          z-index: 2147483646 !important;
+          border: 2px solid rgba(14, 165, 233, 0.96) !important;
+          border-radius: 6px !important;
+          background: rgba(14, 165, 233, 0.08) !important;
+          box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.12) !important;
+          pointer-events: none !important;
+        }
+      `
+      doc.head?.appendChild(style)
+
+      let mediaActionButton: HTMLButtonElement | null = null
+      let regionBox: HTMLDivElement | null = null
+      let removeRegionDragHandlers = () => {}
+
+      Array.from(doc.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>('input, textarea, select')).forEach(control => {
+        control.setAttribute('autocomplete', 'off')
+        control.setAttribute('autocorrect', 'off')
+        control.setAttribute('autocapitalize', 'off')
+        control.setAttribute('spellcheck', 'false')
+        control.setAttribute('data-lpignore', 'true')
+        control.setAttribute('data-1p-ignore', 'true')
+        control.setAttribute('data-form-type', 'other')
+      })
+
+      const removeMediaActionButton = () => {
+        mediaActionButton?.remove()
+        mediaActionButton = null
+      }
+
+      const removeRegionBox = () => {
+        regionBox?.remove()
+        regionBox = null
+      }
+
+      const selectElement = (element: HTMLElement) => {
+        selectedIframeElementRef.current?.classList.remove('rstk-imported-selected')
+        selectedIframeElementRef.current = element
+        element.classList.add('rstk-imported-selected')
+      }
+
+      const beginTextEdit = (element: HTMLElement, selection: ImportedEditableSelection) => {
+        const originalValue = selection.value
+        setInlineEditor(null)
+        setContentError('')
+        element.classList.add('rstk-imported-editing')
+        element.setAttribute('contenteditable', 'plaintext-only')
+        element.setAttribute('spellcheck', 'true')
+        element.focus({ preventScroll: true })
+
+        const frameSelection = doc.defaultView?.getSelection()
+        if (frameSelection) {
+          const range = doc.createRange()
+          range.selectNodeContents(element)
+          frameSelection.removeAllRanges()
+          frameSelection.addRange(range)
+        }
+
+        let done = false
+        const cleanupTextEdit = (save: boolean) => {
+          if (done) return
+          done = true
+          element.removeEventListener('blur', handleBlur)
+          element.removeEventListener('keydown', handleKeydown)
+          element.removeAttribute('contenteditable')
+          element.removeAttribute('spellcheck')
+          element.classList.remove('rstk-imported-editing')
+          const nextValue = (element.textContent || '').replace(/\s+/g, ' ').trim()
+          if (!save) {
+            element.textContent = originalValue
+            return
+          }
+          if (nextValue && nextValue !== originalValue.trim()) {
+            void saveEditableContent(selection, nextValue)
+          }
+        }
+
+        const handleBlur = () => cleanupTextEdit(true)
+        const handleKeydown = (keyboardEvent: KeyboardEvent) => {
+          if (keyboardEvent.key === 'Escape') {
+            keyboardEvent.preventDefault()
+            cleanupTextEdit(false)
+            return
+          }
+          if (keyboardEvent.key === 'Enter' && !keyboardEvent.shiftKey) {
+            keyboardEvent.preventDefault()
+            element.blur()
+          }
+        }
+
+        element.addEventListener('blur', handleBlur)
+        element.addEventListener('keydown', handleKeydown)
+      }
+
+      const showMediaActionButton = (element: HTMLElement, selection: ImportedEditableSelection) => {
+        removeMediaActionButton()
+        const rect = element.getBoundingClientRect()
+        mediaActionButton = doc.createElement('button')
+        mediaActionButton.type = 'button'
+        mediaActionButton.className = 'rstk-imported-image-action'
+        mediaActionButton.textContent = selection.editType === 'video' ? 'Cambiar video' : 'Cambiar imagen'
+        mediaActionButton.style.left = `${Math.max(8, rect.left + 8)}px`
+        mediaActionButton.style.top = `${Math.max(8, rect.top + 8)}px`
+        mediaActionButton.addEventListener('click', (buttonEvent) => {
+          buttonEvent.preventDefault()
+          buttonEvent.stopPropagation()
+          selectElement(element)
+          openInlineEditorForElement(element, selection, selection.editType === 'video' ? 'video' : 'image')
+        })
+        doc.body.appendChild(mediaActionButton)
+      }
+
+      const getFormFieldFromFrameTarget = (target: Element) => {
+        const labelTarget = target.closest('label') as HTMLLabelElement | null
+        const nestedFieldElement = labelTarget?.querySelector(importedFormFieldSelector) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null
+        const labelledFieldElement = !nestedFieldElement && labelTarget?.htmlFor
+          ? doc.getElementById(labelTarget.htmlFor) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null
+          : null
+        return getImportedFormFieldElementFromTarget(target) ||
+          (nestedFieldElement ? getImportedFormFieldElementFromTarget(nestedFieldElement) : null) ||
+          (labelledFieldElement ? getImportedFormFieldElementFromTarget(labelledFieldElement) : null)
+      }
+
+      const blockImportedPreviewActivation = (event: Event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        if (typeof event.stopImmediatePropagation === 'function') {
+          event.stopImmediatePropagation()
+        }
+      }
+
+      const getImportedPreviewActionTarget = (target: Element | null) => {
+        if (!target || typeof target.closest !== 'function') return null
+        return target.closest('a[href], button, input[type="submit"], input[type="button"], input[type="image"], [role="button"], [data-submit]') as HTMLElement | null
+      }
+
+      const handleFrameSubmit = (event: SubmitEvent) => {
+        blockImportedPreviewActivation(event)
+      }
+
+      const handleFrameMouseOver = (event: MouseEvent) => {
+        if (aiRegionMode) return
+        const target = event.target as Element | null
+        if (!target || typeof target.closest !== 'function') return
+        const editableElement = target.closest(importedEditableSelector) as HTMLElement | null
+        if (!editableElement) return
+        const selection = readImportedEditableSelection(editableElement)
+        if (!selection) return
+        if (selection.editType === 'image' || selection.editType === 'background_image' || selection.editType === 'video') {
+          showMediaActionButton(editableElement, selection)
+        }
+      }
+
+      const handleFrameClick = (event: MouseEvent) => {
+        if (aiRegionMode) {
+          blockImportedPreviewActivation(event)
+          return
+        }
+        const target = event.target as Element | null
+        if (!target || typeof target.closest !== 'function') return
+        const actionTarget = getImportedPreviewActionTarget(target)
+        if (actionTarget) {
+          blockImportedPreviewActivation(event)
+        }
+
+        const formFieldElement = getFormFieldFromFrameTarget(target)
+        if (formFieldElement) {
+          blockImportedPreviewActivation(event)
+          formFieldElement.blur()
+          const fieldSelection = readImportedFormFieldSelection(formFieldElement, doc)
+          const visualElement = (formFieldElement.closest('label') ||
+            (fieldSelection.fieldHtmlId ? doc.querySelector(`label[for="${fieldSelection.fieldHtmlId.replace(/"/g, '\\"')}"]`) : null) ||
+            formFieldElement) as HTMLElement
+          selectElement(visualElement)
+          removeMediaActionButton()
+          openFieldEditorForSelection(fieldSelection)
+          return
+        }
+
+        const choiceInput = getImportedChoiceInputFromTarget(target, doc)
+        if (choiceInput) {
+          blockImportedPreviewActivation(event)
+          const choiceSelection = readImportedChoiceSelection(choiceInput, doc)
+          const visualElement = (choiceInput.closest('label') ||
+            (choiceInput.id ? doc.querySelector(`label[for="${choiceInput.id.replace(/"/g, '\\"')}"]`) : null) ||
+            choiceInput) as HTMLElement
+          selectElement(visualElement)
+          removeMediaActionButton()
+          openChoiceEditorForSelection(choiceSelection)
+          return
+        }
+
+        const editableElement = target.closest(importedEditableSelector) as HTMLElement | null
+        if (editableElement) {
+          const selection = readImportedEditableSelection(editableElement)
+          if (!selection) return
+          blockImportedPreviewActivation(event)
+          selectElement(editableElement)
+          removeMediaActionButton()
+          setAiRegionMode(false)
+          setAiRegionSelection(null)
+          setAiRegionError('')
+          if (selection.editType === 'image' || selection.editType === 'background_image' || selection.editType === 'video') {
+            setButtonEditor(null)
+            setChoiceEditor(null)
+            openInlineEditorForElement(editableElement, selection, selection.editType === 'video' ? 'video' : 'image')
+          } else if (selection.editType === 'button') {
+            openButtonEditorForSelection(selection)
+          } else if (selection.editType === 'placeholder') {
+            setButtonEditor(null)
+            setChoiceEditor(null)
+            openInlineEditorForElement(editableElement, selection, 'text')
+          } else {
+            setButtonEditor(null)
+            setChoiceEditor(null)
+            beginTextEdit(editableElement, selection)
+          }
+          return
+        }
+
+        const sectionElement = target.closest(importedSectionSelector) as HTMLElement | null
+        if (sectionElement) {
+          blockImportedPreviewActivation(event)
+          selectElement(sectionElement)
+          setInlineEditor(null)
+          setButtonEditor(null)
+          setChoiceEditor(null)
+          setContentError('')
+          removeMediaActionButton()
+          return
+        }
+
+        clearInlineSelection()
+        removeMediaActionButton()
+      }
+
+      const handleRegionMouseDown = (event: MouseEvent) => {
+        const target = event.target as Element | null
+        if (!aiRegionMode) {
+          if (target && typeof target.closest === 'function') {
+            if (getImportedPreviewActionTarget(target)) {
+              blockImportedPreviewActivation(event)
+            }
+            const formFieldElement = getFormFieldFromFrameTarget(target)
+            if (formFieldElement) {
+              blockImportedPreviewActivation(event)
+              formFieldElement.blur()
+            }
+          }
+          return
+        }
+        event.preventDefault()
+        event.stopPropagation()
+        removeMediaActionButton()
+        removeRegionBox()
+        selectedIframeElementRef.current?.classList.remove('rstk-imported-selected')
+        selectedIframeElementRef.current = null
+        setInlineEditor(null)
+        setButtonEditor(null)
+        setChoiceEditor(null)
+        setContentError('')
+
+        const startX = event.clientX
+        const startY = event.clientY
+        regionBox = doc.createElement('div')
+        regionBox.className = 'rstk-imported-region-box'
+        doc.body.appendChild(regionBox)
+
+        const updateRegionBox = (currentX: number, currentY: number) => {
+          if (!regionBox) return
+          const left = Math.min(startX, currentX)
+          const top = Math.min(startY, currentY)
+          const width = Math.abs(currentX - startX)
+          const height = Math.abs(currentY - startY)
+          regionBox.style.left = `${left}px`
+          regionBox.style.top = `${top}px`
+          regionBox.style.width = `${width}px`
+          regionBox.style.height = `${height}px`
+        }
+
+        const handleMove = (moveEvent: MouseEvent) => {
+          moveEvent.preventDefault()
+          moveEvent.stopPropagation()
+          updateRegionBox(moveEvent.clientX, moveEvent.clientY)
+        }
+
+        const handleUp = async (upEvent: MouseEvent) => {
+          upEvent.preventDefault()
+          upEvent.stopPropagation()
+          doc.removeEventListener('mousemove', handleMove, true)
+          doc.removeEventListener('mouseup', handleUp, true)
+          removeRegionDragHandlers = () => {}
+          updateRegionBox(upEvent.clientX, upEvent.clientY)
+
+          const left = Math.min(startX, upEvent.clientX)
+          const top = Math.min(startY, upEvent.clientY)
+          const width = Math.abs(upEvent.clientX - startX)
+          const height = Math.abs(upEvent.clientY - startY)
+          if (width < 16 || height < 16) {
+            removeRegionBox()
+            setAiRegionError('Dibuja un rectángulo más grande sobre la zona que quieres editar.')
+            return
+          }
+
+          const viewportWidth = doc.defaultView?.innerWidth || doc.documentElement.clientWidth || 0
+          const viewportHeight = doc.defaultView?.innerHeight || doc.documentElement.clientHeight || 0
+          const selectedElements = collectImportedAIRegionElements(doc, {
+            left,
+            top,
+            right: left + width,
+            bottom: top + height,
+            width,
+            height
+          })
+          const nextRegionSelection: ImportedAIRegionSelection = {
+            pageId: activeImportedPage?.id || DEFAULT_FUNNEL_PAGE_ID,
+            pageTitle: activeImportedPage?.title || 'Página',
+            bounds: {
+              x: left,
+              y: top,
+              width,
+              height,
+              viewportWidth,
+              viewportHeight
+            },
+            elements: selectedElements
+          }
+          nextRegionSelection.visualSummary = buildImportedAIRegionVisualSummary(nextRegionSelection)
+          nextRegionSelection.visualContext = await buildImportedAIRegionVisualContext(site, nextRegionSelection)
+          setAiRegionSelection({
+            ...nextRegionSelection
+          })
+          setAiRegionError('')
+          setAiRegionMode(false)
+          removeRegionBox()
+        }
+
+        doc.addEventListener('mousemove', handleMove, true)
+        doc.addEventListener('mouseup', handleUp, true)
+        removeRegionDragHandlers = () => {
+          doc.removeEventListener('mousemove', handleMove, true)
+          doc.removeEventListener('mouseup', handleUp, true)
+        }
+      }
+
+      doc.body?.classList.toggle('rstk-imported-region-selecting', aiRegionMode)
+      if (!aiRegionMode && aiRegionSelection?.pageId === (activeImportedPage?.id || DEFAULT_FUNNEL_PAGE_ID)) {
+        regionBox = doc.createElement('div')
+        regionBox.className = 'rstk-imported-region-selected-box'
+        regionBox.style.left = `${aiRegionSelection.bounds.x}px`
+        regionBox.style.top = `${aiRegionSelection.bounds.y}px`
+        regionBox.style.width = `${aiRegionSelection.bounds.width}px`
+        regionBox.style.height = `${aiRegionSelection.bounds.height}px`
+        doc.body.appendChild(regionBox)
+      }
+
+      doc.addEventListener('mouseover', handleFrameMouseOver, true)
+      doc.addEventListener('mousedown', handleRegionMouseDown, true)
+      doc.addEventListener('click', handleFrameClick, true)
+      doc.addEventListener('auxclick', handleFrameClick, true)
+      doc.addEventListener('submit', handleFrameSubmit, true)
+      cleanupDocument = () => {
+        doc.removeEventListener('mouseover', handleFrameMouseOver, true)
+        doc.removeEventListener('mousedown', handleRegionMouseDown, true)
+        doc.removeEventListener('click', handleFrameClick, true)
+        doc.removeEventListener('auxclick', handleFrameClick, true)
+        doc.removeEventListener('submit', handleFrameSubmit, true)
+        removeRegionDragHandlers()
+        removeMediaActionButton()
+        removeRegionBox()
+        doc.body?.classList.remove('rstk-imported-region-selecting')
+        style.remove()
+      }
+    }
+
+    iframe.addEventListener('load', installEditorHooks)
+    const installTimeout = window.setTimeout(installEditorHooks, 0)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(installTimeout)
+      iframe.removeEventListener('load', installEditorHooks)
+      cleanupDocument()
+    }
+  }, [activeImportedPage?.id, activeImportedPage?.title, aiRegionMode, aiRegionSelection, clearInlineSelection, importedPages, onPreviewContextChange, openButtonEditorForSelection, openChoiceEditorForSelection, openFieldEditorForSelection, openInlineEditorForElement, previewHtml, previewLoading, previewVersion, saveEditableContent, site.id, site.name, site.title])
+
+  const routeValue = getRouteEditorValue(site)
+  const saveRoute = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const nextRoute = normalizeRouteEditorInput(routeDraft, domainConfig) || getDefaultRoutePrefix(site.siteType)
+    if (nextRoute === routeValue) {
+      setRouteDraft(routeValue)
+      setRouteEditing(false)
+      return
+    }
+
+    setRouteSaving(true)
+    try {
+      await onUpdateRoute(site, nextRoute)
+      setRouteEditing(false)
+    } finally {
+      setRouteSaving(false)
+    }
+  }
+
+  const saveInlineEditor = async () => {
+    if (!inlineEditor || inlineEditor.selection.editType === 'section') return
+    await saveEditableContent(inlineEditor.selection, inlineEditor.value)
+  }
+
+  const handleInlineImageFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file || !inlineEditor || inlineEditor.mode !== 'image') return
+
+    if (!file.type.startsWith('image/')) {
+      setContentError('Sube una imagen valida.')
+      return
+    }
+
+    try {
+      const fileBase64 = await fileToBase64(file)
+      await saveEditableContent(inlineEditor.selection, inlineEditor.value, {
+        fileBase64,
+        filename: file.name
+      })
+    } catch (error) {
+      setContentError(error instanceof Error ? error.message : 'No se pudo leer la imagen.')
+    }
+  }
+
+  const targetImportedPages = importedPages.filter(page => page.id !== activeImportedPage?.id)
+  const canSaveButtonEditor = Boolean(
+    buttonEditor &&
+    buttonEditor.value.trim() &&
+    !contentSaving &&
+    areImportedActionsValid(buttonEditor.buttonActions, currentPageActionOptions)
+  )
+  const canSaveChoiceEditor = Boolean(
+    choiceEditor &&
+    !contentSaving &&
+    areImportedActionsValid(choiceEditor.actions, currentPageActionOptions) &&
+    choiceEditor.options.length > 0
+  )
+  const cleanChoiceOptions = (choiceEditor?.options || [])
+    .map(option => ({
+      label: option.label.trim(),
+      value: (option.value || option.label).trim()
+    }))
+    .filter(option => option.label || option.value)
+  const patchChoiceOption = (index: number, patch: Partial<ImportedFormFieldOption>) => {
+    setChoiceEditor(current => {
+      if (!current) return current
+      return {
+        ...current,
+        options: current.options.map((option, optionIndex) => optionIndex === index ? { ...option, ...patch } : option)
+      }
+    })
+  }
+  const addChoiceOption = () => {
+    setChoiceEditor(current => {
+      if (!current) return current
+      const label = `Opción ${current.options.length + 1}`
+      return {
+        ...current,
+        options: [...current.options, { label, value: label }]
+      }
+    })
+  }
+  const removeChoiceOption = (index: number) => {
+    setChoiceEditor(current => {
+      if (!current) return current
+      return {
+        ...current,
+        options: current.options.filter((_, optionIndex) => optionIndex !== index)
+      }
+    })
+  }
+  const fieldEditorHasOptions = Boolean(
+    fieldEditor &&
+    (fieldEditor.selection.tagName === 'select' || ['radio', 'checkbox'].includes(fieldEditor.selection.inputType))
+  )
+  const cleanFieldOptions = (fieldEditor?.options || [])
+    .map(option => ({
+      label: option.label.trim(),
+      value: (option.value || option.label).trim()
+    }))
+    .filter(option => option.label || option.value)
+  const canSaveFieldEditor = Boolean(
+    fieldEditor &&
+    fieldEditor.label.trim() &&
+    !contentSaving &&
+    (!fieldEditorHasOptions || cleanFieldOptions.length > 0)
+  )
+
+  const patchFieldOption = (index: number, patch: Partial<ImportedFormFieldOption>) => {
+    setFieldEditor(current => {
+      if (!current) return current
+      return {
+        ...current,
+        options: current.options.map((option, optionIndex) => optionIndex === index ? { ...option, ...patch } : option)
+      }
+    })
+  }
+
+  const addFieldOption = () => {
+    setFieldEditor(current => {
+      if (!current) return current
+      const label = `Opción ${current.options.length + 1}`
+      return {
+        ...current,
+        options: [...current.options, { label, value: label }]
+      }
+    })
+  }
+
+  const removeFieldOption = (index: number) => {
+    setFieldEditor(current => {
+      if (!current) return current
+      return {
+        ...current,
+        options: current.options.filter((_, optionIndex) => optionIndex !== index)
+      }
+    })
+  }
+
+  const saveButtonEditor = async () => {
+    if (!buttonEditor || buttonEditor.selection.editType !== 'button') return
+    const buttonActions = getUniqueImportedActionSteps(buttonEditor.buttonActions, currentPageActionOptions)
+    const firstAction = buttonActions[0]
+    await saveEditableContent(buttonEditor.selection, buttonEditor.value, undefined, {
+      buttonActions,
+      buttonAction: firstAction?.action || 'none',
+      buttonUrl: firstAction?.buttonUrl?.trim() || '',
+      buttonPageId: firstAction?.buttonPageId?.trim() || '',
+      buttonMessage: firstAction?.buttonMessage?.trim() || ''
+    })
+  }
+
+  const saveChoiceEditor = async () => {
+    if (!choiceEditor) return
+    const choiceActions = getUniqueImportedActionSteps(choiceEditor.actions, currentPageActionOptions)
+    const selectedChoiceOption = cleanChoiceOptions[choiceEditor.selection.choiceIndex] || cleanChoiceOptions[0] || {
+      label: choiceEditor.selection.label,
+      value: choiceEditor.selection.choiceValue
+    }
+    await saveEditableContent({
+      editId: choiceEditor.selection.editId,
+      editType: 'choice_option' as ImportedEditableContentType,
+      label: selectedChoiceOption.label || choiceEditor.selection.label,
+      value: selectedChoiceOption.label || choiceEditor.selection.label,
+      tagName: 'input'
+    }, selectedChoiceOption.label || choiceEditor.selection.label, undefined, {
+      choiceActions,
+      choiceName: choiceEditor.selection.choiceName,
+      choiceValue: selectedChoiceOption.value || choiceEditor.selection.choiceValue,
+      choiceInputType: choiceEditor.selection.choiceInputType,
+      choiceIndex: choiceEditor.selection.choiceIndex,
+      fieldLabel: selectedChoiceOption.label || choiceEditor.selection.label,
+      fieldPlaceholder: selectedChoiceOption.label || choiceEditor.selection.label,
+      fieldRequired: choiceEditor.selection.required,
+      fieldOptions: cleanChoiceOptions,
+      fieldName: choiceEditor.selection.choiceName,
+      fieldHtmlId: '',
+      fieldTag: 'input',
+      fieldInputType: choiceEditor.selection.choiceInputType
+    })
+  }
+
+  const saveFieldEditor = async () => {
+    if (!fieldEditor) return
+    await saveEditableContent({
+      editId: fieldEditor.selection.editId,
+      editType: 'form_field' as ImportedEditableContentType,
+      label: fieldEditor.label,
+      value: fieldEditor.label,
+      tagName: fieldEditor.selection.tagName
+    }, fieldEditor.label, undefined, {
+      fieldLabel: fieldEditor.label.trim(),
+      fieldPlaceholder: fieldEditor.placeholder.trim(),
+      fieldRequired: fieldEditor.required,
+      fieldOptions: cleanFieldOptions,
+      fieldName: fieldEditor.selection.fieldName,
+      fieldHtmlId: fieldEditor.selection.fieldHtmlId,
+      fieldTag: fieldEditor.selection.tagName,
+      fieldInputType: fieldEditor.selection.inputType
+    })
+  }
+
+  const canSaveInlineEditor = Boolean(
+    inlineEditor &&
+    inlineEditor.selection.editType !== 'section' &&
+    inlineEditor.value.trim() &&
+    inlineEditor.value.trim() !== inlineEditor.selection.value.trim() &&
+    !contentSaving
+  )
+  const inlineVideoPreview: EmbedPreviewConfig = inlineEditor?.mode === 'video'
+    ? resolveImportedVideoPreview(inlineEditor.value)
+    : { kind: 'empty' }
+
+  return (
+    <div className={styles.importedEditorPanel}>
+      <section className={styles.importedPreviewPane}>
+        <div className={styles.importedPreviewToolbar}>
+          <div>
+            <span>Vista editable</span>
+            <strong>{site.title || site.name}</strong>
+          </div>
+          <div className={styles.importedPreviewTools}>
+            <span>{device === 'mobile' ? 'Movil' : 'Escritorio'}</span>
+            <button
+              type="button"
+              className={styles.importedPreviewRefresh}
+              onClick={() => void loadInlinePreview()}
+              disabled={previewLoading}
+              title="Recargar vista previa"
+              aria-label="Recargar vista previa"
+            >
+              <RefreshCw size={15} />
+            </button>
+          </div>
+        </div>
+
+        <div className={`${styles.importedPreviewStage} ${device === 'mobile' ? styles.importedPreviewStageMobile : ''}`}>
+          {previewLoading && (
+            <div className={styles.importedPreviewState}>
+              <RefreshCw size={18} />
+              <span>Cargando vista previa...</span>
+            </div>
+          )}
+          {!previewLoading && previewError && (
+            <div className={styles.importedPreviewState}>
+              <AlertTriangle size={18} />
+              <span>{previewError}</span>
+            </div>
+          )}
+          {!previewLoading && !previewError && previewHtml && (
+            <iframe
+              ref={iframeRef}
+              key={`${site.id}-${activeImportedPage?.id || DEFAULT_FUNNEL_PAGE_ID}-${previewVersion}-${device}`}
+              className={styles.importedPreviewFrame}
+              title={`Vista previa de ${activeImportedPage?.title || site.name}`}
+              srcDoc={previewHtml}
+              sandbox="allow-same-origin allow-scripts"
+              referrerPolicy="no-referrer-when-downgrade"
+            />
+          )}
+          {!previewLoading && !previewError && !previewHtml && (
+            <div className={styles.importedPreviewState}>
+              <FileText size={18} />
+              <span>La vista previa todavia no tiene contenido.</span>
+            </div>
+          )}
+        </div>
+        {contentError && (
+          <div className={styles.importedInlineError}>
+            <AlertTriangle size={15} />
+            <span>{contentError}</span>
+          </div>
+        )}
+      </section>
+
+      <aside className={styles.importedSidePanel}>
+        {aiAgentAvailable && (
+          <div className={styles.importedAIRegionBox}>
+            <div className={styles.importedButtonActionHeader}>
+              <Sparkles size={17} />
+              <div>
+                <span>Modificar con IA</span>
+                <strong>
+                  {aiRegionMode
+                    ? 'Dibuja una zona'
+                    : aiRegionSelection
+                      ? `${aiRegionSelection.elements.length || 1} elementos detectados`
+                      : 'Toda la pagina activa'}
+                </strong>
+              </div>
+            </div>
+            <label className={styles.importedActionField}>
+              <span>{aiRegionSelection ? 'Que quieres cambiar en esta zona?' : 'Que quieres cambiar en esta pagina?'}</span>
+              <textarea
+                rows={5}
+                value={aiRegionPrompt}
+                onChange={(event) => setAiRegionPrompt(event.target.value)}
+                placeholder={aiRegionSelection
+                  ? 'Ejemplo: centra el titular, pon el video debajo y deja el boton al final...'
+                  : 'Ejemplo: mejora el hero, reemplaza el video o reorganiza la pagina...'}
+                disabled={aiRegionSaving}
+                name="rstk-imported-ai-region-prompt"
+                {...importedEditorNoAutocompleteAttrs}
+              />
+            </label>
+            {aiRegionMode ? (
+              <p>Arrastra sobre la vista previa la parte exacta que quieres cambiar. La instruccion se queda aqui lista para aplicar.</p>
+            ) : aiRegionSelection ? (
+              <p>La IA usara esta zona como contexto. Puedes cambiar la seleccion o escribir algo para toda la pagina despues.</p>
+            ) : (
+              <p>Si no seleccionas zona, la IA revisa toda la pagina activa y aplica el cambio completo.</p>
+            )}
+            {aiRegionError && (
+              <div className={styles.importedAIRegionError}>
+                <AlertTriangle size={14} />
+                <span>{aiRegionError}</span>
+              </div>
+            )}
+            {aiRegionLastAttempt && (
+              <div className={styles.importedAIRegionAttempt}>
+                <span>
+                  {aiRegionLastAttempt.status === 'running'
+                    ? 'Procesando'
+                    : aiRegionLastAttempt.status === 'success'
+                      ? 'Cambio aplicado'
+                    : aiRegionLastAttempt.status === 'unchanged'
+                      ? 'Sin cambios aplicados'
+                      : 'Último error'}
+                </span>
+                <strong>{aiRegionLastAttempt.message}</strong>
+                <small>
+                  {aiRegionLastAttempt.at} · {aiRegionLastAttempt.pageTitle} · {aiRegionLastAttempt.elementCount} elementos detectados
+                </small>
+                {aiRegionLastAttempt.debug && (
+                  <div className={styles.importedAIRegionDebug}>
+                    <span>Respuesta y diagnostico</span>
+                    {aiRegionLastAttempt.debug.traceId && (
+                      <small>Rastro para logs: {aiRegionLastAttempt.debug.traceId}</small>
+                    )}
+                    {aiRegionLastAttempt.debug.aiReply && (
+                      <p><b>Respuesta de IA:</b> {aiRegionLastAttempt.debug.aiReply}</p>
+                    )}
+                    <p>
+                      <b>Que hizo Ristak:</b>{' '}
+                      {aiRegionLastAttempt.debug.agentApplied
+                        ? `Ejecuto ${aiRegionLastAttempt.debug.agentOperation || 'una operacion interna'} y guardo el HTML verificado.`
+                        : aiRegionLastAttempt.debug.finalStatus === 'selection_target_missing'
+                        ? 'Detuvo el guardado porque la zona seleccionada no incluye el elemento que pediste cambiar.'
+                        : aiRegionLastAttempt.debug.fallbackApplied
+                        ? `Aplico ${aiRegionLastAttempt.debug.fallbackType || 'un ajuste automatico'} porque era mas confiable para esta zona.`
+                        : aiRegionLastAttempt.debug.changedByAI
+                          ? 'Guardo el HTML que devolvio la IA.'
+                          : 'No detecto cambios visibles en el HTML.'}
+                    </p>
+                    {aiRegionLastAttempt.debug.agentReason && (
+                      <p><b>Operacion:</b> {aiRegionLastAttempt.debug.agentReason}</p>
+                    )}
+                    {aiRegionLastAttempt.debug.agentOperations?.length ? (
+                      <ul>
+                        {aiRegionLastAttempt.debug.agentOperations.map((operation, index) => (
+                          <li key={`${aiRegionLastAttempt.debug?.traceId || 'agent'}-${index}`}>{operation}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {aiRegionLastAttempt.debug.fallbackReason && (
+                      <p><b>Detalle:</b> {aiRegionLastAttempt.debug.fallbackReason}</p>
+                    )}
+                    {aiRegionLastAttempt.debug.steps?.length ? (
+                      <ul>
+                        {aiRegionLastAttempt.debug.steps.map((step, index) => (
+                          <li key={`${aiRegionLastAttempt.debug?.traceId || 'trace'}-${index}`}>{step}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            )}
+            <div className={`${styles.importedButtonActionFooter} ${styles.importedAIRegionFooter}`}>
+              <AIVoiceDictationControl
+                voice={aiRegionVoiceDictation}
+                disabled={aiRegionSaving}
+                className={styles.importedAIRegionFooterVoice}
+              />
+              <Button
+                type="button"
+                variant={aiRegionMode ? 'primary' : 'secondary'}
+                size="sm"
+                onClick={aiRegionMode ? cancelAIRegionMode : startAIRegionMode}
+                disabled={saving || aiRegionSaving || previewLoading || Boolean(previewError)}
+              >
+                <MousePointerClick size={14} />
+                {aiRegionMode ? 'Cancelar seleccion' : 'Seleccionar y modificar con IA'}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void applyAIRegionEdit()}
+                disabled={!aiRegionPrompt.trim() || aiRegionSaving}
+                loading={aiRegionSaving}
+              >
+                <Sparkles size={14} />
+                Aplicar con IA
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <div className={styles.importedSidePanelActions}>
+          <Button type="button" variant="secondary" onClick={onEditFields} disabled={loadingImportData}>
+            {loadingImportData ? <RefreshCw size={15} /> : <Settings2 size={15} />}
+            Editar ruta de datos
+          </Button>
+        </div>
+
+        {buttonEditor && (
+          <div className={styles.importedButtonActionBox}>
+            <div className={styles.importedButtonActionHeader}>
+              <MousePointerClick size={17} />
+              <div>
+                <span>Botón seleccionado</span>
+                <strong>{buttonEditor.selection.label || 'Botón'}</strong>
+              </div>
+            </div>
+
+            <label className={styles.importedActionField}>
+              <span>Texto del botón</span>
+              <input
+                value={buttonEditor.value}
+                disabled={contentSaving}
+                name="rstk-imported-button-text"
+                {...importedEditorNoAutocompleteAttrs}
+                onChange={(event) => setButtonEditor(current => current ? { ...current, value: event.target.value } : current)}
+              />
+            </label>
+
+            <ImportedActionChainEditor
+              actions={buttonEditor.buttonActions}
+              targetPages={targetImportedPages}
+              actionOptions={currentPageActionOptions}
+              disabled={contentSaving}
+              onChange={(buttonActions) => setButtonEditor(current => current ? { ...current, buttonActions } : current)}
+            />
+
+            <div className={styles.importedButtonActionFooter}>
+              <Button type="button" variant="secondary" size="sm" onClick={clearInlineSelection} disabled={contentSaving}>
+                Cancelar
+              </Button>
+              <Button type="button" size="sm" onClick={() => void saveButtonEditor()} disabled={!canSaveButtonEditor} loading={contentSaving}>
+                <Save size={14} />
+                Guardar botón
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {choiceEditor && (
+          <div className={styles.importedButtonActionBox}>
+            <div className={styles.importedButtonActionHeader}>
+              <ListChecks size={17} />
+              <div>
+                <span>Opcion seleccionada</span>
+                <strong>{choiceEditor.selection.label}</strong>
+              </div>
+            </div>
+            <div className={styles.importedChoiceMeta}>
+              <span>{choiceEditor.selection.choiceInputType === 'radio' ? 'Radio button' : 'Checkbox'}</span>
+              <strong>{choiceEditor.selection.choiceName}</strong>
+            </div>
+            <div className={styles.importedFieldOptionsEditor}>
+              <div className={styles.importedFieldOptionsHeader}>
+                <span>Opciones del grupo</span>
+                <button type="button" onClick={addChoiceOption} disabled={contentSaving || choiceEditor.options.length >= 30}>
+                  <Plus size={13} />
+                  Agregar
+                </button>
+              </div>
+              {choiceEditor.options.map((option, index) => (
+                <div key={`${index}-${option.value}`} className={styles.importedFieldOptionRow}>
+                  <input
+                    value={option.label}
+                    disabled={contentSaving}
+                    placeholder={`Opción ${index + 1}`}
+                    name={`rstk-imported-choice-option-label-${index}`}
+                    {...importedEditorNoAutocompleteAttrs}
+                    onChange={(event) => patchChoiceOption(index, {
+                      label: event.target.value,
+                      value: option.value === option.label ? event.target.value : option.value
+                    })}
+                  />
+                  <input
+                    value={option.value}
+                    disabled={contentSaving}
+                    placeholder="valor"
+                    name={`rstk-imported-choice-option-value-${index}`}
+                    {...importedEditorNoAutocompleteAttrs}
+                    onChange={(event) => patchChoiceOption(index, { value: event.target.value })}
+                  />
+                  <button type="button" onClick={() => removeChoiceOption(index)} disabled={contentSaving || choiceEditor.options.length <= 1} aria-label={`Quitar opción ${index + 1}`}>
+                    <X size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <ImportedActionChainEditor
+              actions={choiceEditor.actions}
+              targetPages={targetImportedPages}
+              actionOptions={currentPageActionOptions}
+              disabled={contentSaving}
+              emptyLabel="No hacer nada especial"
+              onChange={(actions) => setChoiceEditor(current => current ? { ...current, actions } : current)}
+            />
+            <div className={styles.importedButtonActionFooter}>
+              <Button type="button" variant="secondary" size="sm" onClick={clearInlineSelection} disabled={contentSaving}>
+                Cancelar
+              </Button>
+              <Button type="button" size="sm" onClick={() => void saveChoiceEditor()} disabled={!canSaveChoiceEditor} loading={contentSaving}>
+                <Save size={14} />
+                Guardar opcion
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {fieldEditor && (
+          <div className={styles.importedButtonActionBox}>
+            <div className={styles.importedButtonActionHeader}>
+              <FormInput size={17} />
+              <div>
+                <span>Campo seleccionado</span>
+                <strong>{fieldEditor.selection.label || 'Campo'}</strong>
+              </div>
+            </div>
+
+            <label className={styles.importedActionField}>
+              <span>Etiqueta del campo</span>
+              <input
+                value={fieldEditor.label}
+                disabled={contentSaving}
+                name="rstk-imported-field-label"
+                {...importedEditorNoAutocompleteAttrs}
+                onChange={(event) => setFieldEditor(current => current ? { ...current, label: event.target.value } : current)}
+              />
+            </label>
+
+            {!['radio', 'checkbox'].includes(fieldEditor.selection.inputType) && (
+              <label className={styles.importedActionField}>
+                <span>Texto dentro del campo</span>
+                <input
+                  value={fieldEditor.placeholder}
+                  disabled={contentSaving}
+                  placeholder="Ej. Nombre completo"
+                  name="rstk-imported-field-placeholder"
+                  {...importedEditorNoAutocompleteAttrs}
+                  onChange={(event) => setFieldEditor(current => current ? { ...current, placeholder: event.target.value } : current)}
+                />
+              </label>
+            )}
+
+            <label className={styles.importedRequiredToggle}>
+              <input
+                type="checkbox"
+                checked={fieldEditor.required}
+                disabled={contentSaving}
+                onChange={(event) => setFieldEditor(current => current ? { ...current, required: event.target.checked } : current)}
+              />
+              <span>Campo obligatorio</span>
+            </label>
+
+            {fieldEditorHasOptions && (
+              <div className={styles.importedFieldOptionsEditor}>
+                <div className={styles.importedFieldOptionsHeader}>
+                  <span>Opciones del campo</span>
+                  <button type="button" onClick={addFieldOption} disabled={contentSaving || fieldEditor.options.length >= 30}>
+                    <Plus size={13} />
+                    Agregar
+                  </button>
+                </div>
+                {fieldEditor.options.map((option, index) => (
+                  <div key={`${index}-${option.value}`} className={styles.importedFieldOptionRow}>
+                    <input
+                      value={option.label}
+                      disabled={contentSaving}
+                      placeholder={`Opción ${index + 1}`}
+                      name={`rstk-imported-field-option-label-${index}`}
+                      {...importedEditorNoAutocompleteAttrs}
+                      onChange={(event) => patchFieldOption(index, {
+                        label: event.target.value,
+                        value: option.value === option.label ? event.target.value : option.value
+                      })}
+                    />
+                    <input
+                      value={option.value}
+                      disabled={contentSaving}
+                      placeholder="valor"
+                      name={`rstk-imported-field-option-value-${index}`}
+                      {...importedEditorNoAutocompleteAttrs}
+                      onChange={(event) => patchFieldOption(index, { value: event.target.value })}
+                    />
+                    <button type="button" onClick={() => removeFieldOption(index)} disabled={contentSaving || fieldEditor.options.length <= 1} aria-label={`Quitar opción ${index + 1}`}>
+                      <X size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className={styles.importedButtonActionFooter}>
+              <Button type="button" variant="secondary" size="sm" onClick={clearInlineSelection} disabled={contentSaving}>
+                Cancelar
+              </Button>
+              <Button type="button" size="sm" onClick={() => void saveFieldEditor()} disabled={!canSaveFieldEditor} loading={contentSaving}>
+                <Save size={14} />
+                Guardar campo
+              </Button>
+            </div>
+          </div>
+        )}
+      </aside>
+
+      <input
+        ref={inlineImageFileInputRef}
+        className={styles.hiddenFileInput}
+        type="file"
+        accept="image/*"
+        onChange={(event) => void handleInlineImageFile(event)}
+      />
+      {inlineEditor && (
+        <div
+          className={styles.importedInlineEditor}
+          style={{ top: inlineEditor.top, left: inlineEditor.left }}
+          role="dialog"
+          aria-label={inlineEditor.mode === 'image' ? 'Cambiar imagen' : inlineEditor.mode === 'video' ? 'Cambiar video' : 'Editar texto'}
+        >
+          <div className={styles.importedInlineEditorHeader}>
+            <span>
+              {inlineEditor.mode === 'image'
+                ? 'Cambiar imagen'
+                : inlineEditor.mode === 'video'
+                  ? 'Cambiar video'
+                  : editableTypeLabels[inlineEditor.selection.editType]}
+            </span>
+            <button type="button" onClick={clearInlineSelection} aria-label="Cerrar editor rapido">
+              <X size={14} />
+            </button>
+          </div>
+          {inlineEditor.mode === 'image' ? (
+            <>
+              <input
+                value={inlineEditor.value}
+                onChange={(event) => setInlineEditor(current => current ? { ...current, value: event.target.value } : current)}
+                placeholder="https://..."
+                disabled={contentSaving}
+                name="rstk-imported-inline-image-url"
+                {...importedEditorNoAutocompleteAttrs}
+              />
+              <div className={styles.importedInlineEditorActions}>
+                <Button type="button" variant="secondary" size="sm" onClick={() => inlineImageFileInputRef.current?.click()} disabled={contentSaving}>
+                  <Upload size={14} />
+                  Subir foto
+                </Button>
+                <Button type="button" size="sm" onClick={() => void saveInlineEditor()} disabled={!canSaveInlineEditor} loading={contentSaving}>
+                  <Save size={14} />
+                  Guardar URL
+                </Button>
+              </div>
+            </>
+          ) : inlineEditor.mode === 'video' ? (
+            <>
+              <textarea
+                rows={4}
+                value={inlineEditor.value}
+                onChange={(event) => setInlineEditor(current => current ? { ...current, value: event.target.value } : current)}
+                placeholder="Pega URL o codigo embed: YouTube, Vimeo, Wistia..."
+                disabled={contentSaving}
+                name="rstk-imported-inline-video"
+                {...importedEditorNoAutocompleteAttrs}
+              />
+              {inlineVideoPreview.kind === 'url' && (
+                <div className={styles.importedInlineVideoPreview}>
+                  <iframe
+                    src={inlineVideoPreview.src}
+                    title={inlineVideoPreview.title}
+                    loading="lazy"
+                    referrerPolicy="no-referrer-when-downgrade"
+                    sandbox={EMBED_SANDBOX_URL}
+                    allow={inlineVideoPreview.allow || DEFAULT_EMBED_ALLOW}
+                    allowFullScreen
+                  />
+                </div>
+              )}
+              {inlineVideoPreview.kind === 'html' && (
+                <div className={styles.importedInlineVideoPreview}>
+                  <iframe
+                    srcDoc={inlineVideoPreview.srcDoc}
+                    title={inlineVideoPreview.title}
+                    loading="lazy"
+                    referrerPolicy="no-referrer-when-downgrade"
+                    sandbox={EMBED_SANDBOX_HTML}
+                    allow={DEFAULT_EMBED_ALLOW}
+                  />
+                </div>
+              )}
+              {inlineVideoPreview.kind === 'empty' && inlineEditor.value.trim() && (
+                <div className={styles.importedInlineVideoHint}>
+                  No se pudo mostrar aqui, pero Ristak intentara guardarlo como video seguro.
+                </div>
+              )}
+              <div className={styles.importedInlineEditorActions}>
+                <Button type="button" variant="secondary" size="sm" onClick={clearInlineSelection} disabled={contentSaving}>
+                  Cancelar
+                </Button>
+                <Button type="button" size="sm" onClick={() => void saveInlineEditor()} disabled={!canSaveInlineEditor} loading={contentSaving}>
+                  <Save size={14} />
+                  Guardar video
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <textarea
+                rows={inlineEditor.selection.editType === 'placeholder' || inlineEditor.selection.editType === 'button' ? 2 : 4}
+                value={inlineEditor.value}
+                onChange={(event) => setInlineEditor(current => current ? { ...current, value: event.target.value } : current)}
+                disabled={contentSaving}
+                name="rstk-imported-inline-text"
+                {...importedEditorNoAutocompleteAttrs}
+              />
+              <div className={styles.importedInlineEditorActions}>
+                <Button type="button" variant="secondary" size="sm" onClick={clearInlineSelection} disabled={contentSaving}>
+                  Cancelar
+                </Button>
+                <Button type="button" size="sm" onClick={() => void saveInlineEditor()} disabled={!canSaveInlineEditor} loading={contentSaving}>
+                  <Save size={14} />
+                  Guardar
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const importedStandardFieldOptions = [
+  { value: 'full_name', label: 'Nombre completo' },
+  { value: 'first_name', label: 'Nombre' },
+  { value: 'last_name', label: 'Apellido' },
+  { value: 'email', label: 'Correo electronico' },
+  { value: 'phone', label: 'Telefono / WhatsApp' },
+  { value: 'message', label: 'Mensaje o nota' }
+]
+
+const normalizeImportedDestinationKey = (value: string, fallback: string) =>
+  (value || fallback || 'campo_personalizado')
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'campo_personalizado'
+
+const importedStandardFieldAliases: Record<string, string[]> = {
+  email: [
+    'email',
+    'e_mail',
+    'emailaddress',
+    'email_address',
+    'mail',
+    'correo',
+    'correo_electronico',
+    'correoelectronico',
+    'correo_contacto',
+    'contact_email',
+    'customer_email',
+    'client_email',
+    'lead_email',
+    'tu_email'
+  ],
+  phone: [
+    'phone',
+    'phone_number',
+    'phonenumber',
+    'phone_no',
+    'tel',
+    'telephone',
+    'telefono',
+    'numero_telefono',
+    'numero_de_telefono',
+    'telefono_contacto',
+    'numero_contacto',
+    'contact_phone',
+    'contact_number',
+    'contacto',
+    'contact',
+    'mobile',
+    'mobile_phone',
+    'mobile_number',
+    'movil',
+    'cel',
+    'cell',
+    'cellphone',
+    'cell_phone',
+    'celular',
+    'numero_celular',
+    'whatsapp',
+    'whats_app',
+    'whatsapp_number',
+    'whatsapp_phone',
+    'numero_whatsapp',
+    'wpp',
+    'wa'
+  ],
+  first_name: [
+    'first_name',
+    'firstname',
+    'first',
+    'fname',
+    'given_name',
+    'givenname',
+    'forename',
+    'nombre',
+    'nombres',
+    'primer_nombre',
+    'nombre_1',
+    'name_first',
+    'contact_first_name',
+    'customer_first_name',
+    'client_first_name',
+    'lead_first_name',
+    'tu_nombre'
+  ],
+  last_name: [
+    'last_name',
+    'lastname',
+    'last',
+    'lname',
+    'surname',
+    'family_name',
+    'familyname',
+    'apellido',
+    'apellidos',
+    'primer_apellido',
+    'segundo_apellido',
+    'apellido_paterno',
+    'apellido_materno',
+    'name_last',
+    'contact_last_name',
+    'customer_last_name',
+    'client_last_name',
+    'lead_last_name'
+  ],
+  full_name: [
+    'full_name',
+    'fullname',
+    'complete_name',
+    'name',
+    'nombre_completo',
+    'nombre_y_apellido',
+    'nombre_y_apellidos',
+    'nombre_apellido',
+    'nombre_apellidos',
+    'contact_name',
+    'customer_name',
+    'client_name',
+    'lead_name',
+    'person_name',
+    'nombre_contacto',
+    'nombre_cliente',
+    'your_name'
+  ],
+  message: [
+    'message',
+    'mensaje',
+    'comments',
+    'comment',
+    'comentario',
+    'comentarios',
+    'observacion',
+    'observaciones',
+    'notes',
+    'note',
+    'nota',
+    'notas',
+    'details',
+    'detalle',
+    'detalles',
+    'description',
+    'descripcion'
+  ]
+}
+
+const hasImportedStandardAlias = (text: string, aliases: string[]) =>
+  aliases.some(alias => {
+    const normalized = normalizeImportedDestinationKey(alias, '')
+    if (!normalized) return false
+    return new RegExp(`(?:^|\\s)${normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\s|$)`).test(text)
+  })
+
+const inferImportedStandardKey = (field: ImportedSiteFieldMapping) => {
+  const current = normalizeImportedDestinationKey(field.destinationKey, '')
+  if (importedStandardFieldOptions.some(option => option.value === current)) return current
+  const type = normalizeImportedDestinationKey(field.type, '')
+  const text = [
+    field.type,
+    field.sourceName,
+    field.label
+  ].map(value => normalizeImportedDestinationKey(value || '', '')).filter(Boolean).join(' ')
+  if (type === 'email') return 'email'
+  if (type === 'tel') return 'phone'
+  if (hasImportedStandardAlias(text, importedStandardFieldAliases.email)) return 'email'
+  if (hasImportedStandardAlias(text, importedStandardFieldAliases.phone)) return 'phone'
+  if (hasImportedStandardAlias(text, importedStandardFieldAliases.last_name)) return 'last_name'
+  if (hasImportedStandardAlias(text, importedStandardFieldAliases.first_name)) return 'first_name'
+  if (hasImportedStandardAlias(text, importedStandardFieldAliases.full_name)) return 'full_name'
+  if (hasImportedStandardAlias(text, importedStandardFieldAliases.message)) return 'message'
+  return 'full_name'
+}
+
+const cloneImportedFormMappings = (mappings: ImportedSiteFormMapping[]) =>
+  mappings.map(form => ({
+    ...form,
+    fields: form.fields.map(field => ({ ...field }))
+  }))
+
+const getImportedActiveCustomFields = (customFields: CustomFieldDefinition[]) =>
+  customFields
+    .filter(field => !field.archived && !isSystemCustomFieldDefinition(field))
+    .sort((a, b) => {
+      const folderCompare = (a.folderName || '').localeCompare(b.folderName || '')
+      if (folderCompare !== 0) return folderCompare
+      return (a.label || a.fieldKey || a.key).localeCompare(b.label || b.fieldKey || b.key)
+    })
+
+const getImportedFieldRouteType = (field: ImportedSiteFieldMapping): ImportedSiteFieldMapping['destinationType'] => {
+  if (field.ignored || field.destinationType === 'ignored' || field.saveMode === 'ignored') return 'ignored'
+  if (field.destinationType === 'standard' || field.saveMode === 'standard') return 'standard'
+  if (field.destinationType === 'custom' && (field.customFieldDefinitionId || field.customFieldKey)) return 'custom'
+  if (field.destinationType === 'new_custom' || field.saveMode === 'new_custom') return 'new_custom'
+  return 'new_custom'
+}
+
+const findImportedCustomFieldDefinition = (
+  customFields: CustomFieldDefinition[],
+  field: ImportedSiteFieldMapping
+) => {
+  const definitionId = field.customFieldDefinitionId || ''
+  const customKey = normalizeImportedDestinationKey(field.customFieldKey || field.destinationKey || '', '')
+  return customFields.find(customField => (
+    (definitionId && customField.definitionId === definitionId) ||
+    (customKey && normalizeImportedDestinationKey(customField.fieldKey || customField.key, '') === customKey)
+  )) || null
+}
+
+const buildExistingImportedCustomFieldPatch = (field: CustomFieldDefinition): Partial<ImportedSiteFieldMapping> => ({
+  destinationType: 'custom',
+  ignored: false,
+  saveMode: 'custom',
+  destinationKey: field.fieldKey || field.key,
+  customFieldDefinitionId: field.definitionId,
+  customFieldKey: field.fieldKey || field.key,
+  customFieldLabel: field.label || field.name || field.fieldKey || field.key,
+  customFieldDataType: field.dataType || 'text',
+  customFieldSyncTarget: field.syncTarget || 'local'
+})
+
+const clearImportedCustomFieldPatch: Partial<ImportedSiteFieldMapping> = {
+  customFieldDefinitionId: '',
+  customFieldKey: '',
+  customFieldLabel: '',
+  customFieldDataType: '',
+  customFieldSyncTarget: ''
+}
+
+const ImportedHtmlReviewModal: React.FC<{
+  review: ImportReviewState
+  saving: boolean
+  customFields: CustomFieldDefinition[]
+  onClose: () => void
+  onConfirm: (formMappings: ImportedSiteFormMapping[]) => void
+}> = ({ review, saving, customFields, onClose, onConfirm }) => {
+  const [draft, setDraft] = useState<ImportedSiteFormMapping[]>(() => cloneImportedFormMappings(review.importData.formMappings || []))
+  const activeCustomFields = useMemo(() => getImportedActiveCustomFields(customFields), [customFields])
+
+  useEffect(() => {
+    setDraft(cloneImportedFormMappings(review.importData.formMappings || []))
+  }, [review.importData])
+
+  const patchField = (formIndex: number, fieldIndex: number, patch: Partial<ImportedSiteFieldMapping>) => {
+    setDraft(current => current.map((form, currentFormIndex) => {
+      if (currentFormIndex !== formIndex) return form
+      return {
+        ...form,
+        fields: form.fields.map((field, currentFieldIndex) => (
+          currentFieldIndex === fieldIndex ? { ...field, ...patch } : field
+        ))
+      }
+    }))
+  }
+
+  const updateDestinationType = (formIndex: number, fieldIndex: number, field: ImportedSiteFieldMapping, destinationType: ImportedSiteFieldMapping['destinationType']) => {
+    if (destinationType === 'standard') {
+      patchField(formIndex, fieldIndex, {
+        ...clearImportedCustomFieldPatch,
+        destinationType,
+        ignored: false,
+        saveMode: destinationType,
+        destinationKey: inferImportedStandardKey(field)
+      })
+      return
+    }
+
+    if (destinationType === 'custom') {
+      const selectedField = findImportedCustomFieldDefinition(activeCustomFields, field) || activeCustomFields[0]
+      if (selectedField) {
+        patchField(formIndex, fieldIndex, buildExistingImportedCustomFieldPatch(selectedField))
+        return
+      }
+      destinationType = 'new_custom'
+    }
+
+    if (destinationType === 'new_custom') {
+      patchField(formIndex, fieldIndex, {
+        ...clearImportedCustomFieldPatch,
+        destinationType,
+        ignored: false,
+        saveMode: destinationType,
+        destinationKey: normalizeImportedDestinationKey(field.destinationKey || field.sourceName || field.label, 'campo_personalizado')
+      })
+      return
+    }
+
+    patchField(formIndex, fieldIndex, {
+      ...clearImportedCustomFieldPatch,
+      destinationType: 'ignored',
+      ignored: true,
+      saveMode: 'ignored',
+      destinationKey: field.destinationKey
+    })
+  }
+
+  return (
+    <div className={styles.importReviewOverlay} role="dialog" aria-modal="true" aria-labelledby="import-review-title">
+      <div className={styles.importReviewDialog}>
+        <header className={styles.importReviewHeader}>
+          <div>
+            <span>Ruta de datos</span>
+            <h2 id="import-review-title">Enruta los campos del formulario</h2>
+            <p>Ristak ya lo hace automatico; aqui puedes ajustar donde se guarda cada dato de {review.importData.originalFilename || review.site.name}.</p>
+          </div>
+          <button type="button" className={styles.importReviewClose} onClick={onClose} aria-label="Cerrar">
+            <X size={18} />
+          </button>
+        </header>
+
+        {review.importData.securityReport?.length > 0 && (
+          <div className={styles.importSecurityNote}>
+            <AlertTriangle size={16} />
+            <span>Se limpiaron partes inseguras del archivo antes de publicarlo.</span>
+          </div>
+        )}
+
+        <div className={styles.importReviewForms}>
+          {draft.length === 0 ? (
+            <div className={styles.importEmptyFields}>
+              <CheckCircle2 size={20} />
+              <p>No encontramos formularios en este HTML. Puedes previsualizarlo y publicarlo como pagina informativa.</p>
+            </div>
+          ) : draft.map((form, formIndex) => (
+            <section key={form.formId || formIndex} className={styles.importFormSection}>
+              <div className={styles.importFormHeader}>
+                <strong>{form.formTitle || `Formulario ${formIndex + 1}`}</strong>
+                <span>{form.fields.length} campos detectados</span>
+              </div>
+              <div className={styles.importFieldList}>
+                {form.fields.map((field, fieldIndex) => {
+                  const destinationType = getImportedFieldRouteType(field)
+                  const selectedCustomField = destinationType === 'custom'
+                    ? findImportedCustomFieldDefinition(activeCustomFields, field)
+                    : null
+                  const selectedCustomFieldId = field.customFieldDefinitionId || selectedCustomField?.definitionId || ''
+                  return (
+                    <div key={`${field.fieldId}-${fieldIndex}`} className={styles.importFieldRow}>
+                      <div className={styles.importFieldSource}>
+                        <strong>{field.label || field.sourceName || `Campo ${fieldIndex + 1}`}</strong>
+                        <span>{field.sourceName || field.fieldId}</span>
+                      </div>
+                      <label>
+                        <span>Guardar como</span>
+                        <CustomSelect
+                          value={destinationType}
+                          onChange={(event) => updateDestinationType(
+                            formIndex,
+                            fieldIndex,
+                            field,
+                            event.target.value as ImportedSiteFieldMapping['destinationType']
+                          )}
+                        >
+                          <option value="standard">Dato del contacto</option>
+                          <option value="custom">Campo personalizado</option>
+                          <option value="new_custom">Nuevo campo personalizado</option>
+                          <option value="ignored">No guardar</option>
+                        </CustomSelect>
+                      </label>
+                      {destinationType === 'standard' ? (
+                        <label>
+                          <span>Dato</span>
+                          <CustomSelect
+                            value={field.destinationKey || inferImportedStandardKey(field)}
+                            onChange={(event) => patchField(formIndex, fieldIndex, {
+                              destinationKey: event.target.value,
+                              ignored: false
+                            })}
+                          >
+                            {importedStandardFieldOptions.map(option => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </CustomSelect>
+                        </label>
+                      ) : destinationType === 'custom' ? (
+                        <label>
+                          <span>Campo personalizado</span>
+                          <CustomSelect
+                            value={selectedCustomFieldId}
+                            onChange={(event) => {
+                              const customField = activeCustomFields.find(item => item.definitionId === event.target.value)
+                              if (!customField) return
+                              patchField(formIndex, fieldIndex, buildExistingImportedCustomFieldPatch(customField))
+                            }}
+                          >
+                            {!activeCustomFields.length && (
+                              <option value="">No hay campos disponibles</option>
+                            )}
+                            {selectedCustomFieldId && !selectedCustomField && (
+                              <option value={selectedCustomFieldId}>{field.customFieldLabel || field.destinationKey || 'Campo guardado'}</option>
+                            )}
+                            {activeCustomFields.map(customField => (
+                              <option key={customField.definitionId} value={customField.definitionId}>
+                                {customField.label || customField.name || customField.fieldKey}
+                              </option>
+                            ))}
+                          </CustomSelect>
+                        </label>
+                      ) : destinationType === 'new_custom' ? (
+                        <label>
+                          <span>Nombre interno</span>
+                          <input
+                            value={field.destinationKey || ''}
+                            placeholder="campo_personalizado"
+                            onChange={(event) => patchField(formIndex, fieldIndex, {
+                              destinationKey: normalizeImportedDestinationKey(event.target.value, field.sourceName || field.label)
+                            })}
+                          />
+                        </label>
+                      ) : (
+                        <label>
+                          <span>Dato</span>
+                          <input value="No se guarda" disabled readOnly />
+                        </label>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </section>
+          ))}
+        </div>
+
+        <footer className={styles.importReviewFooter}>
+          <Button variant="secondary" onClick={onClose} disabled={saving}>
+            Cerrar
+          </Button>
+          <Button onClick={() => onConfirm(draft)} loading={saving}>
+            <Check size={15} />
+            Guardar ruta de datos
+          </Button>
+        </footer>
+      </div>
+    </div>
+  )
+}
+
+interface SitesLibraryPanelProps {
+  section: SitesSection
+  sites: PublicSite[]
+  forms: PublicSite[]
+  calendars: CalendarType[]
+  selectedSiteId: string
+  domainConfig: SitesDomainConfig
+  onCreate: () => void
+  onEdit: (siteId: string) => void
+  onPreview: (site: PublicSite) => void
+  onUpdateRoute: (site: PublicSite, slug: string) => Promise<void>
+  onDelete: (site: PublicSite) => void
+}
+
+const LibrarySitePreview: React.FC<{
+  site: PublicSite
+  forms: PublicSite[]
+  calendars: CalendarType[]
+}> = ({ site, forms, calendars }) => {
+  const pages = hasEditablePages(site) ? normalizeFunnelPages(site) : []
+  const activePageId = pages[0]?.id || DEFAULT_FUNNEL_PAGE_ID
+  const blocks = getLibraryPreviewBlocks(site)
+  const canvasTheme = buildCanvasTheme(site, 'desktop')
+  const hasFields = isFormSite(site) && blocks.some(block => fieldBlockTypes.has(block.blockType))
+  const isLandingPreview = isLanding(site)
+  const previewDesignWidth = canvasTheme.designWidth
+  const previewHeight = isLandingPreview ? 680 : 540
+  const previewScale = Math.min(
+    isLandingPreview ? 0.205 : 0.52,
+    (isLandingPreview ? 304 : 286) / previewDesignWidth
+  )
+  const previewFrameStyle = {
+    minHeight: previewHeight,
+    padding: isLandingPreview ? '28px 24px 56px' : '20px 16px 42px'
+  } as React.CSSProperties
+  const previewScalerStyle = {
+    width: Math.round(previewDesignWidth * previewScale),
+    height: Math.round(previewHeight * previewScale)
+  } as React.CSSProperties
+  const previewCanvasStyle = {
+    ...canvasTheme.vars,
+    width: previewDesignWidth,
+    minHeight: previewHeight,
+    transform: `scale(${previewScale})`,
+    ['--rstk-scale' as string]: previewScale
+  } as React.CSSProperties
+
+  return (
+    <div className={styles.libraryPreviewViewport} aria-hidden="true" inert>
+      <div className={styles.libraryPreviewScaler} style={previewScalerStyle}>
+        <div
+          className={`rstkCanvas ${canvasTheme.bodyClass} ${styles.libraryPreviewCanvas}`}
+          style={previewCanvasStyle}
+        >
+          <div className="rstk-frame" style={previewFrameStyle}>
+            <CanvasBackgroundVideo theme={site.theme} />
+            <main className="rstk-page">
+              <div className="rstk-shell">
+                {blocks.length ? (
+                  blocks.map(block => (
+                    <div key={block.id} className={getBlockStyleClassName(block)} style={getBlockCanvasStyle(block)}>
+                      <CanvasPreviewBlock
+                        block={block}
+                        site={site}
+                        blocks={blocks}
+                        forms={forms}
+                        calendars={calendars}
+                        pages={pages}
+                        activePageId={activePageId}
+                      />
+                    </div>
+                  ))
+                ) : (
+                  <div className="rstkDropEmpty">
+                    {isLandingPreview ? <LayoutTemplate size={22} /> : <FormInput size={22} />}
+                    <p>Sin bloques todavia</p>
+                  </div>
+                )}
+                {hasFields && (
+                  <div className="rstk-actions">
+                    <button type="button" data-submit><SubmitButtonContent theme={site.theme} /></button>
+                  </div>
+                )}
+              </div>
+            </main>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const SitesLibraryPanel: React.FC<SitesLibraryPanelProps> = ({
+  section,
+  sites,
+  forms,
+  calendars,
+  selectedSiteId,
+  domainConfig,
+  onCreate,
+  onEdit,
+  onPreview,
+  onUpdateRoute,
+  onDelete
+}) => {
+  const isLandingLibrary = section === 'landings'
+  const [routeEditingId, setRouteEditingId] = useState<string | null>(null)
+  const [routeDraft, setRouteDraft] = useState('')
+  const [routeSavingId, setRouteSavingId] = useState<string | null>(null)
+  const stopCardAction = (event: React.SyntheticEvent) => event.stopPropagation()
+  const startRouteEdit = (site: PublicSite) => {
+    setRouteEditingId(site.id)
+    setRouteDraft(getRouteEditorValue(site))
+  }
+  const cancelRouteEdit = () => {
+    if (routeSavingId) return
+    setRouteEditingId(null)
+    setRouteDraft('')
+  }
+  const saveRouteEdit = async (site: PublicSite) => {
+    const nextSlug = normalizeRouteEditorInput(routeDraft, domainConfig) || getDefaultRoutePrefix(site.siteType)
+    if (nextSlug === getRouteEditorValue(site)) {
+      cancelRouteEdit()
+      return
+    }
+
+    setRouteSavingId(site.id)
+    try {
+      await onUpdateRoute(site, nextSlug)
+      cancelRouteEdit()
+    } catch {
+      // The parent already shows the error; keep the input open so the route can be fixed.
+    } finally {
+      setRouteSavingId(null)
+    }
+  }
+  const routeEditingSite = routeEditingId ? sites.find(site => site.id === routeEditingId) || null : null
+
+  return (
+    <section className={styles.libraryPanel}>
+      <div className={styles.libraryHeader}>
+        <div>
+          <span>{isLandingLibrary ? 'Sitios web y embudos' : 'Captura de prospectos'}</span>
+          <h2>{getLibraryTitle(section)}</h2>
+          <p>{getLibraryDescription(section)}</p>
+        </div>
+      </div>
+
+      <div className={styles.libraryGrid}>
+        <button type="button" className={styles.createLibraryCard} onClick={onCreate}>
+          <span className={styles.createLibraryIcon}>
+            <Plus size={22} />
+          </span>
+          <strong>{getCreateButtonLabel(section)}</strong>
+          <small>
+            {sites.length === 0
+              ? getLibraryEmptyMessage(section)
+              : isLandingLibrary
+                ? 'Agrega otra pagina o embudo a tu biblioteca.'
+                : 'Agrega otro formulario publico a tu biblioteca.'}
+          </small>
+        </button>
+
+        {sites.map(site => {
+          const siteKindLabel = isLanding(site) ? 'sitio' : 'formulario'
+
+          return (
+            <article
+              key={site.id}
+              className={`${styles.libraryCard} ${selectedSiteId === site.id ? styles.libraryCardActive : ''}`}
+            >
+              <div className={styles.libraryCardPreview}>
+                <LibrarySitePreview site={site} forms={forms} calendars={calendars} />
+                <span className={styles.libraryPreviewType}>{getSiteTypeLabel(site)}</span>
+                <div className={styles.libraryCardHoverActions} data-library-card-action="true">
+                  <button type="button" onClick={() => onEdit(site.id)}>
+                    <Pencil size={16} />
+                    <span>Editar</span>
+                  </button>
+                  <button type="button" onClick={() => onPreview(site)}>
+                    {isPublicSiteLive(site, domainConfig) ? <ExternalLink size={16} /> : <Eye size={16} />}
+                    <span>{isPublicSiteLive(site, domainConfig) ? 'Ver en vivo' : 'Previsualizar'}</span>
+                  </button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className={styles.libraryCardMenuButton}
+                        aria-label={`Acciones para ${site.name}`}
+                        data-library-card-action="true"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onMouseDown={(event) => event.stopPropagation()}
+                        onMouseUp={(event) => event.stopPropagation()}
+                        onClick={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => event.stopPropagation()}
+                      >
+                        <MoreVertical size={17} />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      align="end"
+                      sideOffset={6}
+                      className={styles.pageMenu}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <DropdownMenuItem onSelect={(event) => { event.stopPropagation(); onEdit(site.id) }}>
+                        <Pencil size={15} />
+                        Editar {siteKindLabel}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={(event) => { event.stopPropagation(); startRouteEdit(site) }}>
+                        <Settings2 size={15} />
+                        Cambiar ruta
+                      </DropdownMenuItem>
+                      <DropdownMenuItem className={styles.pageMenuDanger} onSelect={(event) => { event.stopPropagation(); onDelete(site) }}>
+                        <Trash2 size={15} />
+                        Eliminar {siteKindLabel}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
+
+              <div className={styles.libraryCardBody}>
+                <div className={styles.libraryCardTitleRow}>
+                  <strong>{site.name}</strong>
+                  <span className={`${styles.statusPill} ${getStatusClass(site, domainConfig)}`}>{getStatusLabel(site, domainConfig)}</span>
+                </div>
+                <span className={styles.siteDomain}>{getPublicRouteLabel(site, domainConfig)}</span>
+              </div>
+            </article>
+          )
+        })}
+      </div>
+
+      {routeEditingSite && (
+        <div className={styles.libraryRouteOverlay} onMouseDown={(event) => {
+          if (event.target === event.currentTarget) cancelRouteEdit()
+        }}>
+          <form
+            className={styles.libraryRouteEditor}
+            data-library-card-action="true"
+            onMouseDown={stopCardAction}
+            onClick={stopCardAction}
+            onSubmit={(event) => {
+              event.preventDefault()
+              void saveRouteEdit(routeEditingSite)
+            }}
+          >
+            <div className={styles.libraryRouteEditorHeader}>
+              <div>
+                <span>Ruta publica</span>
+                <strong>{routeEditingSite.name}</strong>
+              </div>
+              <button type="button" className={styles.libraryRouteClose} disabled={routeSavingId === routeEditingSite.id} onClick={cancelRouteEdit} aria-label="Cerrar editor de ruta">
+                <X size={17} />
+              </button>
+            </div>
+            <label className={styles.libraryRouteField}>
+              <span className={styles.libraryRouteDomain} title={getPublicDomainPreview(domainConfig)}>
+                {getPublicDomainPreview(domainConfig)}
+              </span>
+              <span className={styles.libraryRouteSlash} aria-hidden="true">/</span>
+              <input
+                value={routeDraft}
+                aria-label={`Ruta de ${routeEditingSite.name}`}
+                autoFocus
+                disabled={routeSavingId === routeEditingSite.id}
+                placeholder={routeEditingSite.siteType === 'landing_page' ? 'sitio-01' : 'formulario-01'}
+                onFocus={(event) => event.currentTarget.select()}
+                onChange={(event) => setRouteDraft(normalizeRouteEditorInput(event.target.value, domainConfig))}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    event.preventDefault()
+                    cancelRouteEdit()
+                  }
+                }}
+              />
+              <span className={styles.libraryRouteEditHint} aria-hidden="true">
+                <Pencil size={16} />
+              </span>
+            </label>
+            <div className={styles.libraryRouteActions}>
+              <button type="button" disabled={routeSavingId === routeEditingSite.id} onClick={cancelRouteEdit}>Cancelar</button>
+              <button type="submit" disabled={routeSavingId === routeEditingSite.id}>
+                <Check size={16} />
+                Guardar ruta
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </section>
+  )
+}
+
+interface CreateFlowPanelProps {
+  step: CreateFlow
+  creating: boolean
+  aiAgentAvailable: boolean
+  onCreate: (siteType: SiteType, mode?: 'blank' | 'template', templateId?: SiteTemplateId) => void
+  onCreateWithAI: (siteKind: SitesAICreationKind) => void
+  onImportHtml: (siteType: SiteType) => void
+  onAdvance: (step: CreateFlow) => void
+}
+
+type TemplateGalleryCategory = {
+  id: string
+  title: string
+  description: string
+  ids: SiteTemplateId[]
+  siteType?: SiteType
+}
+
+const LANDING_TEMPLATE_CATEGORIES: TemplateGalleryCategory[] = [
+  {
+    id: 'full-page',
+    title: 'Web grandes',
+    description: 'Embudos completos con pagina principal, captura, agenda o confirmacion.',
+    ids: ['ristak', 'executive', 'local']
+  },
+  {
+    id: 'sales-pages',
+    title: 'Cartas y lanzamientos',
+    description: 'Flujos completos para vender, registrar interesados y cerrar con pagina de gracias.',
+    ids: ['vsl', 'launch', 'premium']
+  },
+  {
+    id: 'social',
+    title: 'Redes sociales',
+    description: 'Flujos cortos para anuncios sociales con captura y confirmacion final.',
+    ids: ['facebook', 'instagram', 'tiktok']
+  }
+]
+
+const FORM_TEMPLATE_CATEGORIES: TemplateGalleryCategory[] = [
+  {
+    id: 'capture-forms',
+    title: 'Captura rapida',
+    description: 'Formularios cortos para pedir datos, cotizar o preparar una llamada.',
+    ids: ['compact', 'quote', 'callback'],
+    siteType: 'standard_form'
+  },
+  {
+    id: 'registration-forms',
+    title: 'Registros y cupos',
+    description: 'Formularios para eventos, listas de espera, clases, preventas o confirmaciones.',
+    ids: ['event', 'waitlist'],
+    siteType: 'standard_form'
+  },
+  {
+    id: 'social-forms',
+    title: 'Redes sociales',
+    description: 'Formularios pequenos con apariencia nativa de Facebook, Instagram o TikTok.',
+    ids: ['facebook', 'instagram', 'tiktok'],
+    siteType: 'standard_form'
+  }
+]
+
+const INTERACTIVE_TEMPLATE_CATEGORIES: TemplateGalleryCategory[] = [
+  {
+    id: 'guided',
+    title: 'Quiz y formularios guiados',
+    description: 'Una pregunta por pantalla para calificar prospectos paso a paso.',
+    ids: ['interactive', 'callback', 'quote'],
+    siteType: 'interactive_form'
+  },
+  {
+    id: 'guided-registration',
+    title: 'Registros paso a paso',
+    description: 'Secuencias simples para confirmar interes antes de pedir todos los datos.',
+    ids: ['event', 'waitlist'],
+    siteType: 'interactive_form'
+  },
+  {
+    id: 'social-guided',
+    title: 'Redes sociales',
+    description: 'Quiz con apariencia de plataforma social para mantener el mismo contexto visual.',
+    ids: ['facebook', 'instagram', 'tiktok'],
+    siteType: 'interactive_form'
+  }
+]
+
+const getTemplatePreviewStyle = (meta: SiteTemplateMeta): React.CSSProperties => {
+  const image = typeof meta.defaultTheme?.backgroundImage === 'string' ? meta.defaultTheme.backgroundImage : ''
+  const paint = typeof meta.defaultTheme?.backgroundColor === 'string' ? meta.defaultTheme.backgroundColor : ''
+  if (!image) {
+    return { background: meta.swatchBg, color: meta.swatchInk }
+  }
+
+  const overlay = paint.startsWith('linear-gradient(')
+    ? paint
+    : 'linear-gradient(135deg, rgba(15,23,42,.16), rgba(15,23,42,.04))'
+
+  return {
+    backgroundColor: meta.swatchBg,
+    backgroundImage: `${overlay}, url("${image.replace(/["\\\n\r]/g, '')}")`,
+    backgroundPosition: 'center',
+    backgroundSize: 'cover',
+    color: meta.swatchInk
+  }
+}
+
+const TemplateCard: React.FC<{ id: SiteTemplateId; disabled: boolean; siteType?: SiteType; onPick: () => void }> = ({ id, disabled, siteType, onPick }) => {
+  const meta = templateMetaById(id)
+  if (!meta) return null
+  return (
+    <button type="button" className={styles.templateCard} disabled={disabled} onClick={onPick}>
+      <span className={styles.templatePreview} style={getTemplatePreviewStyle(meta)}>
+        <span className={styles.templatePreviewBar}>
+          <span className={styles.templateDot} style={{ background: meta.accent }} />
+          <span className={styles.templatePreviewName}>{meta.label}</span>
+          <span className={styles.templateBadge}>{meta.badge}</span>
+        </span>
+        <span className={styles.templatePreviewLines}><span /><span /></span>
+        {siteType === 'landing_page' ? (
+          <span className={styles.templatePreviewFlow}>
+            <span style={{ background: meta.accent }} />
+            <span />
+            <span />
+          </span>
+        ) : (
+          <span className={styles.templatePreviewBtn} style={{ background: meta.accent }} />
+        )}
+      </span>
+      <span className={styles.templateCardBody}>
+        <strong>{meta.label}</strong>
+        <p>{meta.description}</p>
+      </span>
+    </button>
+  )
+}
+
+const TemplateCategoryGallery: React.FC<{
+  categories: TemplateGalleryCategory[]
+  disabled: boolean
+  defaultSiteType?: SiteType
+  onPick: (id: SiteTemplateId, category: TemplateGalleryCategory) => void
+}> = ({ categories, disabled, defaultSiteType, onPick }) => (
+  <div className={styles.templateCategoryStack}>
+    {categories.map(category => (
+      <section key={category.id} className={styles.templateCategory}>
+        <div className={styles.templateCategoryHeader}>
+          <strong>{category.title}</strong>
+          <p>{category.description}</p>
+        </div>
+        <div className={styles.templateGallery}>
+          {category.ids.map(id => (
+            <TemplateCard
+              key={`${category.id}-${id}`}
+              id={id}
+              disabled={disabled}
+              siteType={category.siteType || defaultSiteType}
+              onPick={() => onPick(id, category)}
+            />
+          ))}
+        </div>
+      </section>
+    ))}
+  </div>
+)
+
+const CreateFlowPanel: React.FC<CreateFlowPanelProps> = ({ step, creating, aiAgentAvailable, onCreate, onCreateWithAI, onImportHtml, onAdvance }) => {
+  return (
+    <section className={styles.createPanel}>
+      {step === 'landing-start' && (
+        <div className={styles.choiceGrid}>
+          <button type="button" disabled={creating} onClick={() => onCreate('landing_page', 'blank', 'ristak')}>
+            <FileText size={22} />
+            <strong>En blanco</strong>
+            <p>Canvas limpio para agregar solo los bloques que necesitas.</p>
+            <ChevronRight size={18} />
+          </button>
+          <button type="button" disabled={creating} onClick={() => onAdvance('landing-template')}>
+            <LayoutTemplate size={22} />
+            <strong>Desde plantilla</strong>
+            <p>Elige embudos completos para web, ventas, lanzamientos o redes sociales.</p>
+            <ChevronRight size={18} />
+          </button>
+          {aiAgentAvailable && (
+            <button type="button" disabled={creating} onClick={() => onCreateWithAI('landing')}>
+              <Sparkles size={22} />
+              <strong>Usando IA</strong>
+              <p>Genera una pagina HTML completa; Ristak la importa y revisa sus formularios.</p>
+              <ChevronRight size={18} />
+            </button>
+          )}
+          <button type="button" disabled={creating} onClick={() => onImportHtml('landing_page')}>
+            <Upload size={22} />
+            <strong>Subir HTML o ZIP</strong>
+            <p>Usa tu pagina actual o un sitio comprimido; Ristak detecta sus formularios para guardar contactos.</p>
+            <ChevronRight size={18} />
+          </button>
+        </div>
+      )}
+
+      {step === 'landing-template' && (
+        <TemplateCategoryGallery
+          categories={LANDING_TEMPLATE_CATEGORIES}
+          disabled={creating}
+          defaultSiteType="landing_page"
+          onPick={(id) => onCreate('landing_page', 'template', id)}
+        />
+      )}
+
+      {step === 'form-kind' && (
+        <div className={styles.choiceGrid}>
+          <button type="button" disabled={creating} onClick={() => onAdvance('form-start')}>
+            <FileText size={22} />
+            <strong>Formulario + paginas finales</strong>
+            <p>La persona responde y despues ve agradecimiento o descalificacion segun sus respuestas.</p>
+            <ChevronRight size={18} />
+          </button>
+          <button type="button" disabled={creating} onClick={() => onAdvance('interactive-start')}>
+            <FormInput size={22} />
+            <strong>Interactivo o multipagina</strong>
+            <p>Divide las preguntas en pasos o paginas para guiar mejor a la persona que responde.</p>
+            <ChevronRight size={18} />
+          </button>
+        </div>
+      )}
+
+      {step === 'form-start' && (
+        <div className={styles.choiceGrid}>
+          <button type="button" disabled={creating} onClick={() => onCreate('standard_form', 'blank', 'compact')}>
+            <FileText size={22} />
+            <strong>En blanco</strong>
+            <p>Formulario limpio con paginas finales listas para personalizar.</p>
+            <ChevronRight size={18} />
+          </button>
+          <button type="button" disabled={creating} onClick={() => onAdvance('form-template')}>
+            <FormInput size={22} />
+            <strong>Desde plantilla</strong>
+            <p>Elige formularios de captura, registros o redes sociales.</p>
+            <ChevronRight size={18} />
+          </button>
+          {aiAgentAvailable && (
+            <button type="button" disabled={creating} onClick={() => onCreateWithAI('form')}>
+              <Sparkles size={22} />
+              <strong>Usando IA</strong>
+              <p>Genera un formulario HTML completo y prepara sus campos para guardar contactos.</p>
+              <ChevronRight size={18} />
+            </button>
+          )}
+          <button type="button" disabled={creating} onClick={() => onImportHtml('standard_form')}>
+            <Upload size={22} />
+            <strong>Subir HTML o ZIP</strong>
+            <p>Conserva tu formulario actual, aunque venga con varias paginas, y decide como guardar cada campo.</p>
+            <ChevronRight size={18} />
+          </button>
+        </div>
+      )}
+
+      {step === 'interactive-start' && (
+        <div className={styles.choiceGrid}>
+          <button type="button" disabled={creating} onClick={() => onCreate('interactive_form', 'blank', 'interactive')}>
+            <FileText size={22} />
+            <strong>En blanco</strong>
+            <p>Formulario interactivo limpio para crear pasos y agregar preguntas por pantalla.</p>
+            <ChevronRight size={18} />
+          </button>
+          <button type="button" disabled={creating} onClick={() => onAdvance('interactive-template')}>
+            <FormInput size={22} />
+            <strong>Desde plantilla</strong>
+            <p>Elige quiz guiados, registros paso a paso o formatos de redes sociales.</p>
+            <ChevronRight size={18} />
+          </button>
+          {aiAgentAvailable && (
+            <button type="button" disabled={creating} onClick={() => onCreateWithAI('interactive_form')}>
+              <Sparkles size={22} />
+              <strong>Usando IA</strong>
+              <p>Genera una experiencia HTML por pasos y Ristak revisa como guardar cada campo.</p>
+              <ChevronRight size={18} />
+            </button>
+          )}
+          <button type="button" disabled={creating} onClick={() => onImportHtml('interactive_form')}>
+            <Upload size={22} />
+            <strong>Subir HTML o ZIP</strong>
+            <p>Importa formularios multipagina y revisa que datos se guardan en el contacto.</p>
+            <ChevronRight size={18} />
+          </button>
+        </div>
+      )}
+
+      {step === 'interactive-template' && (
+        <>
+          <p className={styles.galleryHint}>Elige si quieres un quiz limpio de negocio o una apariencia de red social.</p>
+          <TemplateCategoryGallery
+            categories={INTERACTIVE_TEMPLATE_CATEGORIES}
+            disabled={creating}
+            defaultSiteType="interactive_form"
+            onPick={(id) => onCreate('interactive_form', 'template', id)}
+          />
+        </>
+      )}
+
+      {step === 'form-template' && (
+        <>
+          <p className={styles.galleryHint}>Elige un formulario de captura, registro o redes sociales.</p>
+          <TemplateCategoryGallery
+            categories={FORM_TEMPLATE_CATEGORIES}
+            disabled={creating}
+            defaultSiteType="standard_form"
+            onPick={(id) => onCreate('standard_form', 'template', id)}
+          />
+        </>
+      )}
+
+    </section>
+  )
+}
+
+const clampNumber = (value: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, Number.isFinite(value) ? value : min))
+
+interface DimensionFieldProps {
+  label: string
+  value: number
+  min: number
+  max: number
+  step?: number
+  unit?: string
+  onChange: (value: number) => void
+  onCommit: () => void
+}
+
+// Numeric box only: spacing/size edits should feel exact, not like a fader.
+const DimensionField: React.FC<DimensionFieldProps> = ({ label, value, min, max, step = 1, unit = 'px', onChange, onCommit }) => {
+  const set = (raw: number) => onChange(clampNumber(raw, min, max))
+  return (
+    <label className={styles.dimensionField}>
+      <span>{label}</span>
+      <div className={styles.dimensionTextRow}>
+        <div className={styles.dimensionBox}>
+          <NumberInput
+            min={min}
+            max={max}
+            step={step}
+            value={value}
+            onValueChange={set}
+            onBlur={onCommit}
+          />
+          <small>{unit}</small>
+        </div>
+      </div>
+    </label>
+  )
+}
+
+const AlignmentControl: React.FC<{
+  label: string
+  value: string
+  options: Array<{ value: string; label: string; icon: React.ReactNode }>
+  onChange: (value: string) => void
+  onCommit: () => void
+}> = ({ label, value, options, onChange, onCommit }) => (
+  <div className={styles.alignmentControl}>
+    <span>{label}</span>
+    <div role="group" aria-label={label}>
+      {options.map(option => (
+        <button
+          key={option.value}
+          type="button"
+          className={value === option.value ? styles.alignmentActive : ''}
+          onClick={() => {
+            onChange(option.value)
+            window.setTimeout(onCommit, 0)
+          }}
+          title={option.label}
+          aria-label={option.label}
+        >
+          {option.icon}
+          <small>{option.label}</small>
+        </button>
+      ))}
+    </div>
+  </div>
+)
+
+interface LinkedSpacingFieldProps {
+  label: string
+  base: SpacingBase
+  settings: Record<string, unknown>
+  min?: number
+  max?: number
+  fallback?: number
+  unit?: string
+  onChange: (patch: Record<string, unknown>) => void
+  onCommit: () => void
+}
+
+const LinkedSpacingField: React.FC<LinkedSpacingFieldProps> = ({
+  label,
+  base,
+  settings,
+  min = 0,
+  max = 160,
+  fallback = 0,
+  unit = 'px',
+  onChange,
+  onCommit
+}) => {
+  const linkKey = `${base}Linked`
+  const linked = settings[linkKey] !== false
+  const values = spacingSides.reduce<Record<typeof spacingSides[number]['id'], number>>((acc, side) => {
+    acc[side.id] = getSpacingValue(settings, base, side.id, fallback, min, max)
+    return acc
+  }, { Top: fallback, Right: fallback, Bottom: fallback, Left: fallback })
+
+  const patchAllSides = (next: number, nextLinked = linked) => {
+    const value = clampNumber(next, min, max)
+    onChange({
+      [linkKey]: nextLinked,
+      [base]: value,
+      [`${base}Top`]: value,
+      [`${base}Right`]: value,
+      [`${base}Bottom`]: value,
+      [`${base}Left`]: value
+    })
+  }
+
+  const patchSide = (side: typeof spacingSides[number]['id'], next: number) => {
+    const value = clampNumber(next, min, max)
+    if (linked) {
+      patchAllSides(value, true)
+      return
+    }
+    onChange({
+      [linkKey]: false,
+      [`${base}${side}`]: value
+    })
+  }
+
+  const toggleLinked = () => {
+    if (linked) {
+      onChange({ [linkKey]: false })
+      window.setTimeout(onCommit, 0)
+      return
+    }
+    patchAllSides(values.Top, true)
+    window.setTimeout(onCommit, 0)
+  }
+
+  return (
+    <div className={styles.spacingControl}>
+      <div className={styles.spacingHeader}>
+        <span>{label}</span>
+        <button
+          type="button"
+          className={`${styles.spacingLinkButton} ${linked ? styles.spacingLinkButtonActive : ''}`}
+          onClick={toggleLinked}
+          title={linked ? 'Desvincular lados' : 'Vincular lados'}
+          aria-label={linked ? 'Desvincular lados' : 'Vincular lados'}
+        >
+          {linked ? <Link2 size={15} /> : <Unlink2 size={15} />}
+        </button>
+      </div>
+      <div className={styles.spacingGrid}>
+        {spacingSides.map(side => (
+          <label key={side.id} className={styles.spacingBox}>
+            <span>{side.label}</span>
+            <div>
+              <NumberInput
+                min={min}
+                max={max}
+                step={1}
+                value={values[side.id]}
+                onValueChange={(value) => patchSide(side.id, value)}
+                onBlur={onCommit}
+              />
+              <small>{unit}</small>
+            </div>
+          </label>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+interface ColorFieldProps {
+  label: string
+  value: string
+  allowGradient?: boolean
+  onChange: (color: string) => void
+  onCommit: () => void
+}
+
+type EditableGradientStop = {
+  color: string
+  position: number
+}
+
+type EditableGradient = {
+  angle: number
+  stops: EditableGradientStop[]
+}
+
+const gradientPresets = [
+  { label: 'Azul claro', value: 'linear-gradient(135deg, #dbeafe 0%, #22d3ee 100%)' },
+  { label: 'Noche', value: 'linear-gradient(135deg, #111827 0%, #2563eb 100%)' },
+  { label: 'Verde venta', value: 'linear-gradient(135deg, #dcfce7 0%, #16a34a 100%)' },
+  { label: 'Promo', value: 'linear-gradient(135deg, #ffedd5 0%, #f97316 100%)' },
+  { label: 'Premium', value: 'linear-gradient(135deg, #101010 0%, #d4af37 100%)' },
+  { label: 'Rosa', value: 'linear-gradient(135deg, #fce7f3 0%, #db2777 100%)' }
+]
+
+const clampPercent = (value: number) => clampNumber(value, 0, 100)
+const MAX_GRADIENT_STOPS = 5
+
+const parseGradientStop = (value: string, fallbackColor: string, fallbackPosition: number): EditableGradientStop => {
+  const color = extractCssColor(value, fallbackColor)
+  const positionMatch = value.replace(/rgba?\([^)]*\)/gi, '').match(/(-?\d+(?:\.\d+)?)%/)
+  const position = positionMatch ? clampPercent(Number(positionMatch[1])) : fallbackPosition
+  return { color, position }
+}
+
+const parseEditableGradient = (value: string, fallbackColor = '#111827'): EditableGradient => {
+  const fallback: EditableGradient = {
+    angle: 135,
+    stops: [
+      { color: normalizeCssColor(fallbackColor, '#111827'), position: 0 },
+      { color: '#ffffff', position: 100 }
+    ]
+  }
+
+  const raw = String(value || '').trim()
+  const match = raw.match(/^linear-gradient\((.*)\)$/i)
+  if (!match) return fallback
+
+  const args = splitCssArgs(match[1])
+  const first = args[0] || ''
+  const angleMatch = first.match(/^(-?\d+(?:\.\d+)?)deg$/i)
+  const angle = angleMatch ? clampNumber(Number(angleMatch[1]), 0, 360) : 135
+  const stopArgs = angleMatch ? args.slice(1) : args
+  if (stopArgs.length < 2) return fallback
+
+  return {
+    angle,
+    stops: stopArgs.slice(0, MAX_GRADIENT_STOPS).map((stopArg, index, list) => (
+      parseGradientStop(
+        stopArg,
+        index === 0 ? fallback.stops[0].color : fallback.stops[1].color,
+        list.length === 1 ? 100 : (index / (list.length - 1)) * 100
+      )
+    ))
+  }
+}
+
+const formatEditableGradient = (gradient: EditableGradient) =>
+  `linear-gradient(${Math.round(gradient.angle)}deg, ${[...gradient.stops]
+    .sort((a, b) => a.position - b.position)
+    .map(stop => `${stop.color} ${Math.round(stop.position)}%`)
+    .join(', ')})`
+
+const defaultGradientFromPaint = (paint: string) => {
+  if (isCssGradient(paint)) return paint
+  const start = normalizeCssColor(paint, '#111827')
+  const end = relLum(start) > 0.58 ? '#2563eb' : '#ffffff'
+  return formatEditableGradient({
+    angle: 135,
+    stops: [
+      { color: start, position: 0 },
+      { color: end, position: 100 }
+    ]
+  })
+}
+
+const rgbToHsv = ({ r, g, b }: { r: number; g: number; b: number }) => {
+  const rn = r / 255
+  const gn = g / 255
+  const bn = b / 255
+  const max = Math.max(rn, gn, bn)
+  const min = Math.min(rn, gn, bn)
+  const delta = max - min
+  let h = 0
+
+  if (delta) {
+    if (max === rn) h = ((gn - bn) / delta) % 6
+    else if (max === gn) h = (bn - rn) / delta + 2
+    else h = (rn - gn) / delta + 4
+    h *= 60
+  }
+
+  return {
+    h: h < 0 ? h + 360 : h,
+    s: max === 0 ? 0 : delta / max,
+    v: max
+  }
+}
+
+const hsvToRgb = (h: number, s: number, v: number) => {
+  const c = v * s
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1))
+  const m = v - c
+  const ranges = h < 60
+    ? [c, x, 0]
+    : h < 120
+      ? [x, c, 0]
+      : h < 180
+        ? [0, c, x]
+        : h < 240
+          ? [0, x, c]
+          : h < 300
+            ? [x, 0, c]
+            : [c, 0, x]
+
+  return {
+    r: Math.round((ranges[0] + m) * 255),
+    g: Math.round((ranges[1] + m) * 255),
+    b: Math.round((ranges[2] + m) * 255)
+  }
+}
+
+const formatCssColor = ({ r, g, b, a }: { r: number; g: number; b: number; a: number }) => {
+  const alpha = Math.max(0, Math.min(1, Math.round(a * 100) / 100))
+  return alpha >= 1 ? rgbToHex(r, g, b) : `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${alpha})`
+}
+
+const swatchBackground = (color: string) => isCssGradient(color)
+  ? ({ backgroundImage: color } as React.CSSProperties)
+  : ({
+      backgroundColor: color,
+      backgroundImage: 'linear-gradient(45deg, rgba(148, 163, 184, 0.28) 25%, transparent 25%), linear-gradient(-45deg, rgba(148, 163, 184, 0.28) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(148, 163, 184, 0.28) 75%), linear-gradient(-45deg, transparent 75%, rgba(148, 163, 184, 0.28) 75%)',
+      backgroundPosition: '0 0, 0 6px, 6px -6px, -6px 0',
+      backgroundSize: '12px 12px'
+    } as React.CSSProperties)
+
+// Ristak paint control: solid color or editable multi-stop gradient.
+const ColorField: React.FC<ColorFieldProps> = ({ label, value, allowGradient = true, onChange, onCommit }) => {
+  const rootRef = useRef<HTMLDivElement>(null)
+  const paint = allowGradient ? normalizeCssPaint(value, '#000000') : normalizeCssColor(value, '#000000')
+  const isGradient = allowGradient && isCssGradient(paint)
+  const gradient = useMemo(() => parseEditableGradient(paint, paintFallbackColor(paint, '#111827')), [paint])
+  const [activeStopIndex, setActiveStopIndex] = useState(0)
+  const safeActiveStopIndex = Math.min(activeStopIndex, Math.max(0, gradient.stops.length - 1))
+  const activeStop = gradient.stops[safeActiveStopIndex]
+  const activeColor = isGradient ? (activeStop?.color || '#000000') : paint
+  const rgba = parseCssColor(activeColor, '#000000')
+  const hsv = rgbToHsv(rgba)
+  const hueRgb = hsvToRgb(hsv.h, 1, 1)
+  const hueColor = rgbToHex(hueRgb.r, hueRgb.g, hueRgb.b)
+  const alphaColor = formatCssColor({ r: rgba.r, g: rgba.g, b: rgba.b, a: 1 })
+  const [text, setText] = useState(paint)
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => { setText(allowGradient ? normalizeCssPaint(value, '#000000') : normalizeCssColor(value, '#000000')) }, [allowGradient, value])
+
+  useEffect(() => {
+    if (!open) return undefined
+    const close = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false)
+        onCommit()
+      }
+    }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [onCommit, open])
+
+  const emitPaint = (nextPaint: string) => {
+    setText(nextPaint)
+    onChange(nextPaint)
+  }
+
+  const patchGradient = (patch: Partial<EditableGradient> & { stops?: EditableGradientStop[] }) => {
+    const nextGradient = {
+      ...gradient,
+      ...patch,
+      stops: patch.stops || gradient.stops
+    }
+    emitPaint(formatEditableGradient(nextGradient))
+  }
+
+  const patchActiveColor = (next: { h?: number; s?: number; v?: number; a?: number }) => {
+    const nextH = next.h ?? hsv.h
+    const nextS = next.s ?? hsv.s
+    const nextV = next.v ?? hsv.v
+    const nextA = next.a ?? rgba.a
+    const rgb = hsvToRgb(nextH, nextS, nextV)
+    const formatted = formatCssColor({ ...rgb, a: nextA })
+    if (!isGradient) {
+      emitPaint(formatted)
+      return
+    }
+    const stops = [...gradient.stops]
+    stops[safeActiveStopIndex] = { ...stops[safeActiveStopIndex], color: formatted }
+    patchGradient({ stops })
+  }
+
+  const setMode = (mode: 'solid' | 'gradient') => {
+    if (mode === 'gradient') {
+      emitPaint(defaultGradientFromPaint(paint))
+      return
+    }
+    emitPaint(paintFallbackColor(paint, '#111827'))
+  }
+
+  const patchStopText = (index: number, nextColor: string) => {
+    const normalized = normalizeCssColor(nextColor.startsWith('#') || nextColor.startsWith('rgb') || nextColor === 'transparent' ? nextColor : `#${nextColor}`, '')
+    if (!normalized) return
+    const stops = [...gradient.stops]
+    stops[index] = { ...stops[index], color: normalized }
+    patchGradient({ stops })
+  }
+
+  const patchStopPosition = (index: number, nextPosition: number) => {
+    const stops = [...gradient.stops]
+    stops[index] = { ...stops[index], position: clampPercent(nextPosition) }
+    patchGradient({ stops })
+  }
+
+  const addGradientStop = () => {
+    if (gradient.stops.length >= MAX_GRADIENT_STOPS) return
+    const sorted = [...gradient.stops].sort((a, b) => a.position - b.position)
+    const largestGap = sorted.slice(0, -1).reduce((best, stop, index) => {
+      const next = sorted[index + 1]
+      const gap = next.position - stop.position
+      return gap > best.gap ? { gap, index, stop, next } : best
+    }, { gap: -1, index: 0, stop: sorted[0], next: sorted[1] })
+    const position = largestGap.stop && largestGap.next
+      ? clampPercent(largestGap.stop.position + largestGap.gap / 2)
+      : 50
+    const color = largestGap.next?.color || activeStop?.color || '#ffffff'
+    const stops = [...gradient.stops, { color, position }]
+    setActiveStopIndex(stops.length - 1)
+    patchGradient({ stops })
+  }
+
+  const removeActiveGradientStop = () => {
+    if (gradient.stops.length <= 2) return
+    const stops = gradient.stops.filter((_, index) => index !== safeActiveStopIndex)
+    setActiveStopIndex(Math.max(0, Math.min(safeActiveStopIndex, stops.length - 1)))
+    patchGradient({ stops })
+  }
+
+  const handleStopRailPointer = (event: React.PointerEvent<HTMLElement>, index: number) => {
+    const rail = event.currentTarget.closest(`.${styles.gradientStopRail}`) as HTMLDivElement | null
+    if (!rail) return
+    const rect = rail.getBoundingClientRect()
+    const x = Math.min(rect.width, Math.max(0, event.clientX - rect.left))
+    patchStopPosition(index, (x / rect.width) * 100)
+  }
+
+  const commitText = () => {
+    const raw = text.trim()
+    if (allowGradient && isCssGradient(raw)) {
+      onChange(raw)
+      onCommit()
+      return
+    }
+    const normalized = normalizeCssColor(raw.startsWith('#') || raw.startsWith('rgb') || raw === 'transparent' ? raw : `#${raw}`, '')
+    if (normalized) {
+      onChange(normalized)
+      onCommit()
+    } else {
+      setText(paint)
+    }
+  }
+
+  const handlePlanePointer = (event: React.PointerEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    const x = Math.min(rect.width, Math.max(0, event.clientX - rect.left))
+    const y = Math.min(rect.height, Math.max(0, event.clientY - rect.top))
+    patchActiveColor({ s: x / rect.width, v: 1 - y / rect.height })
+  }
+
+  return (
+    <div ref={rootRef} className={styles.colorField} data-paint-control="gradient-v3" data-paint-mode={isGradient ? 'gradient' : 'solid'}>
+      <div className={styles.colorFieldHeader}>
+        <span>{label}</span>
+      </div>
+      <div className={styles.colorRow} data-open={open ? 'true' : 'false'}>
+        <button
+          type="button"
+          className={styles.colorSwatchButton}
+          style={swatchBackground(paint)}
+          onClick={() => setOpen(current => !current)}
+          aria-label={`Elegir ${label}`}
+        />
+        <input
+          className={styles.colorHex}
+          value={text}
+          spellCheck={false}
+          maxLength={allowGradient ? 360 : 28}
+          onChange={(event) => setText(event.target.value)}
+          onBlur={commitText}
+          onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); commitText() } }}
+        />
+      </div>
+      {open && (
+        <div className={styles.colorPopover}>
+          <div
+            className={styles.colorPlane}
+            style={{ backgroundColor: hueColor }}
+            onPointerDown={(event) => {
+              event.currentTarget.setPointerCapture(event.pointerId)
+              handlePlanePointer(event)
+            }}
+            onPointerMove={(event) => { if (event.buttons) handlePlanePointer(event) }}
+          >
+            <span
+              className={styles.colorPlaneHandle}
+              style={{ left: `${hsv.s * 100}%`, top: `${(1 - hsv.v) * 100}%` }}
+            />
+          </div>
+          <label className={styles.colorSlider}>
+            <span>Tono</span>
+            <input
+              type="range"
+              min={0}
+              max={360}
+              value={Math.round(hsv.h)}
+              onChange={(event) => patchActiveColor({ h: Number(event.target.value) })}
+              onBlur={onCommit}
+            />
+          </label>
+          <label className={styles.alphaSlider}>
+            <span>Transparencia</span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={Math.round(rgba.a * 100)}
+              style={{ ['--alpha-color' as string]: alphaColor } as React.CSSProperties}
+              onChange={(event) => patchActiveColor({ a: Number(event.target.value) / 100 })}
+              onBlur={onCommit}
+            />
+          </label>
+          {allowGradient && (
+            <section className={`${styles.gradientPanel} ${!isGradient ? styles.gradientPanelCollapsed : ''}`} aria-label={`Degradado para ${label}`}>
+              {!isGradient ? (
+                <button type="button" className={styles.gradientCreateButton} onClick={() => setMode('gradient')}>
+                  <Plus size={14} />
+                  <span>Crear degradado</span>
+                </button>
+              ) : (
+                <>
+                  <div className={styles.gradientPanelHeader}>
+                    <span>Degradado</span>
+                    <button type="button" className={styles.gradientClearButton} onClick={() => setMode('solid')} aria-label="Quitar degradado">
+                      <X size={14} />
+                      <span>Quitar</span>
+                    </button>
+                  </div>
+                  <div className={styles.gradientEditor}>
+                    <div className={styles.gradientPresetGrid} aria-label="Paletas de degradado">
+                      {gradientPresets.map(preset => (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          style={swatchBackground(preset.value)}
+                          onClick={() => emitPaint(preset.value)}
+                          title={preset.label}
+                          aria-label={preset.label}
+                        />
+                      ))}
+                    </div>
+                    <div className={styles.gradientStops}>
+                      <div
+                        className={styles.gradientStopRail}
+                        style={{ backgroundImage: formatEditableGradient(gradient) }}
+                        aria-label="Distancia entre colores del degradado"
+                      >
+                        {gradient.stops.map((stop, index) => (
+                          <button
+                            key={`${stop.color}-${index}`}
+                            type="button"
+                            className={styles.gradientStopHandle}
+                            data-active={safeActiveStopIndex === index ? 'true' : 'false'}
+                            style={{ left: `${stop.position}%`, ...swatchBackground(stop.color) }}
+                            onPointerDown={(event) => {
+                              event.currentTarget.setPointerCapture(event.pointerId)
+                              setActiveStopIndex(index)
+                              handleStopRailPointer(event, index)
+                            }}
+                            onPointerMove={(event) => {
+                              if (event.buttons) handleStopRailPointer(event, index)
+                            }}
+                            onPointerUp={onCommit}
+                            aria-label={`Mover color ${index + 1}`}
+                          />
+                        ))}
+                      </div>
+                      <div className={styles.gradientStopActions}>
+                        <button type="button" onClick={addGradientStop} disabled={gradient.stops.length >= MAX_GRADIENT_STOPS}>
+                          Agregar punto
+                        </button>
+                        <button type="button" onClick={removeActiveGradientStop} disabled={gradient.stops.length <= 2}>
+                          Quitar punto
+                        </button>
+                      </div>
+                      <label className={styles.colorSlider}>
+                        <span>Direccion</span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={360}
+                          value={Math.round(gradient.angle)}
+                          onChange={(event) => patchGradient({ angle: Number(event.target.value) })}
+                          onBlur={onCommit}
+                        />
+                      </label>
+                      {gradient.stops.map((stop, index) => (
+                        <div key={index} className={styles.gradientStopRow} data-active={safeActiveStopIndex === index ? 'true' : 'false'}>
+                          <button
+                            type="button"
+                            className={styles.gradientStopButton}
+                            style={swatchBackground(stop.color)}
+                            onClick={() => setActiveStopIndex(index)}
+                            aria-label={`Editar color ${index + 1}`}
+                          />
+                          <input
+                            value={stop.color}
+                            spellCheck={false}
+                            onFocus={() => setActiveStopIndex(index)}
+                            onChange={(event) => patchStopText(index, event.target.value)}
+                            onBlur={onCommit}
+                          />
+                          <div className={styles.gradientStopPosition}>
+                            <NumberInput
+                              min={0}
+                              max={100}
+                              value={Math.round(stop.position)}
+                              onFocus={() => setActiveStopIndex(index)}
+                              onValueChange={(value) => patchStopPosition(index, value)}
+                              onBlur={onCommit}
+                            />
+                            <small>%</small>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </section>
+          )}
+          <div className={styles.colorPopoverActions}>
+            <button type="button" onClick={() => patchActiveColor({ a: 0 })}>Transparente</button>
+            <button type="button" onClick={() => { setOpen(false); onCommit() }}>Listo</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const CanvasBackgroundVideo: React.FC<{ theme?: SiteTheme }> = ({ theme }) => {
+  const src = getThemeBackgroundVideo(theme)
+  if (!src) return null
+
+  return (
+    <video className="rstk-bg-video" src={src} autoPlay muted loop playsInline aria-hidden="true" />
+  )
+}
+
+const CanvasAvatar: React.FC<{ name: string; avatar?: string }> = ({ name, avatar }) => (
+  <span className={styles.chromeAvatar}>
+    {avatar ? <img src={avatar} alt={name} /> : (name.trim()[0] || 'R').toUpperCase()}
+  </span>
+)
+
+const SocialPlatformBadge: React.FC<{ platform: SocialPlatform }> = ({ platform }) => {
+  const platformClass = platform === 'facebook'
+    ? styles.socialPlatformFacebook
+    : platform === 'instagram'
+      ? styles.socialPlatformInstagram
+      : platform === 'threads'
+        ? styles.socialPlatformThreads
+        : styles.socialPlatformTiktok
+
+  return (
+    <span className={`${styles.socialPlatformBadge} ${platformClass}`} aria-hidden="true">
+      {platform === 'instagram' && <Instagram size={16} strokeWidth={2.2} />}
+      {platform === 'tiktok' && <Music2 size={16} strokeWidth={2.2} />}
+      {platform === 'threads' && <span className={styles.socialPlatformThreadsGlyph}>@</span>}
+    </span>
+  )
+}
+
+const CanvasChrome: React.FC<{
+  platform: SocialPlatform
+  site: PublicSite
+  embedded?: boolean
+  onPatchTheme: (patch: Partial<SiteTheme>) => void
+  onSave: () => void
+}> = ({ platform, site, embedded = false }) => {
+  const theme = site.theme || {}
+  const name = theme.brandName || site.title || site.name || 'Tu marca'
+  const subtitle = theme.brandSubtitle || (platform === 'instagram' ? 'Publicacion pagada' : 'Patrocinado')
+  const followers = String(theme.followers || '')
+  const secondary = followers ? `${followers} seguidores` : subtitle
+  const platformClass = platform === 'facebook'
+    ? styles.chromeFacebook
+    : platform === 'instagram'
+      ? styles.chromeInstagram
+      : platform === 'threads'
+        ? styles.chromeThreads
+        : styles.chromeTiktok
+
+  return (
+    <div className={`${styles.canvasChrome} ${embedded ? styles.canvasChromeEmbedded : ''} ${platformClass}`} aria-label={`Perfil de ${platform}`}>
+      <div className={styles.socialImageWrap}>
+        <CanvasAvatar name={name} avatar={theme.brandAvatar} />
+        <SocialPlatformBadge platform={platform} />
+      </div>
+      <div className={styles.chromeMeta}>
+        <div className={styles.chromeName}>
+          {name}
+          {theme.brandVerified !== false && (
+            <svg viewBox="0 0 24 24" width="14" height="14" className={styles.chromeVerified}><path fill="#1877f2" d="M12 2.2l2.3 1.7 2.85.05.95 2.7 2.25 1.8-.95 2.75.95 2.75-2.25 1.8-.95 2.7L14.3 18.6 12 20.3l-2.3-1.7-2.85-.05-.95-2.7L3.95 14.3l.95-2.75-.95-2.75 2.25-1.8.95-2.7L9.7 3.9z"/><path d="M8.4 12.3l2.4 2.4 4.8-4.9" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          )}
+        </div>
+        <div className={styles.chromeSub}>{secondary}</div>
+      </div>
+    </div>
+  )
+}
+
+const SubmitButtonContent: React.FC<{ theme?: SiteTheme; label?: string; subtitle?: string }> = ({ theme, label: labelOverride, subtitle: subtitleOverride }) => {
+  const label = labelOverride || getThemeString(theme, 'submitText') || 'Enviar'
+  const subtitle = subtitleOverride !== undefined ? subtitleOverride : getThemeString(theme, 'submitSubtitle')
+
+  return (
+    <>
+      <span className="rstk-button-label">{label}</span>
+      {subtitle ? <span className="rstk-button-subtitle">{subtitle}</span> : null}
+    </>
+  )
+}
+
+const paletteGroups: Array<{ label: string; items: PaletteItem[] }> = [
+  {
+    label: 'Paneles',
+    items: [
+      { id: HEADER_PANEL_BLOCK_TYPE, label: blockLabels[HEADER_PANEL_BLOCK_TYPE], blockType: HEADER_PANEL_BLOCK_TYPE },
+      { id: FOOTER_PANEL_BLOCK_TYPE, label: blockLabels[FOOTER_PANEL_BLOCK_TYPE], blockType: FOOTER_PANEL_BLOCK_TYPE }
+    ]
+  },
+  {
+    label: 'Franjas',
+    items: [1, 2, 3].map(columns => ({
+      id: `section-${columns}`,
+      label: getSectionColumnLabel(columns),
+      blockType: SECTION_BLOCK_TYPE,
+      initialSettings: { sectionColumns: columns }
+    }))
+  },
+  {
+    label: 'Contenido',
+    items: ['title', 'subtitle', 'text', 'image', 'video', 'button', 'benefits', 'testimonials', 'services', 'faq', 'cta', 'embed', 'calendar_embed', 'form_embed', 'social_profile']
+      .map(blockType => ({ id: blockType, label: blockLabels[blockType as SiteBlockType], blockType: blockType as SiteBlockType }))
+  },
+  {
+    label: 'Campos',
+    items: ['short_text', 'paragraph', 'email', 'phone', 'number', 'currency', 'date', 'dropdown', 'radio', 'checkboxes', 'description']
+      .map(blockType => ({ id: blockType, label: blockLabels[blockType as SiteBlockType], blockType: blockType as SiteBlockType }))
+  }
+]
+
+const hideNativeDragPreview = (dataTransfer: DataTransfer) => {
+  if (typeof document === 'undefined') return
+  const ghost = document.createElement('span')
+  ghost.style.position = 'fixed'
+  ghost.style.top = '-1000px'
+  ghost.style.left = '-1000px'
+  ghost.style.width = '1px'
+  ghost.style.height = '1px'
+  ghost.style.opacity = '0'
+  ghost.style.pointerEvents = 'none'
+  document.body.appendChild(ghost)
+  dataTransfer.setDragImage(ghost, 0, 0)
+  window.setTimeout(() => ghost.remove(), 0)
+}
+
+const seoLanguageOptions = ['es - Spanish', 'en - English', 'pt - Portuguese', 'fr - French']
+
+interface SeoValidationState {
+  checks: {
+    titlePresent: boolean
+    titleLength: boolean
+    descriptionPresent: boolean
+    descriptionLength: boolean
+    keywordsPresent: boolean
+    authorPresent: boolean
+    imagePresent: boolean
+    metaTagsPresent: boolean
+    outgoingLinksLimit: boolean
+    languagePresent: boolean
+  }
+  contentIssues: number
+  keywordsIssues: number
+  authorIssues: number
+  imageIssues: number
+  linkIssues: number
+  languageIssues: number
+  totalIssues: number
+}
+
+const cleanSeoValue = (value: unknown) => typeof value === 'string' ? value.trim() : ''
+
+const countSeoLines = (value: string) => value
+  .split('\n')
+  .map(line => line.trim())
+  .filter(Boolean).length
+
+const getSeoValidationState = (site?: PublicSite | null): SeoValidationState => {
+  const theme = site?.theme || {}
+  const title = cleanSeoValue(getPublicTitleEditorValue(site))
+  const description = cleanSeoValue(site?.description)
+  const keywords = cleanSeoValue(theme.seoKeywords)
+  const author = cleanSeoValue(theme.seoAuthor)
+  const image = cleanSeoValue(theme.seoImage)
+  const metaTags = cleanSeoValue(theme.seoMetaTags)
+  const outgoingLinks = cleanSeoValue(theme.seoCanonicalLinks)
+  const language = cleanSeoValue(theme.seoLanguage || 'es - Spanish')
+  const outgoingLinkCount = countSeoLines(outgoingLinks)
+  const checks = {
+    titlePresent: title.length > 0,
+    titleLength: title.length > 0 && title.length <= 70,
+    descriptionPresent: description.length > 0,
+    descriptionLength: description.length > 0 && description.length <= 155,
+    keywordsPresent: keywords.length > 0,
+    authorPresent: author.length > 0,
+    imagePresent: image.length > 0,
+    metaTagsPresent: metaTags.length > 0,
+    outgoingLinksLimit: outgoingLinks.length > 0 && outgoingLinkCount < 300,
+    languagePresent: language.length > 0
+  }
+  const countIssues = (items: boolean[]) => items.filter(ok => !ok).length
+  const contentIssues = countIssues([
+    checks.titlePresent,
+    checks.titleLength,
+    checks.descriptionPresent,
+    checks.descriptionLength
+  ])
+  const keywordsIssues = countIssues([checks.keywordsPresent])
+  const authorIssues = countIssues([checks.authorPresent])
+  const imageIssues = countIssues([checks.imagePresent])
+  const linkIssues = countIssues([checks.metaTagsPresent, checks.outgoingLinksLimit])
+  const languageIssues = countIssues([checks.languagePresent])
+
+  return {
+    checks,
+    contentIssues,
+    keywordsIssues,
+    authorIssues,
+    imageIssues,
+    linkIssues,
+    languageIssues,
+    totalIssues: contentIssues + keywordsIssues + authorIssues + imageIssues + linkIssues + languageIssues
+  }
+}
+
+const SeoCheckLine: React.FC<{ ok: boolean; children: React.ReactNode }> = ({ ok, children }) => (
+  <p className={`${styles.seoCheckLine} ${ok ? styles.seoCheckOk : styles.seoCheckWarning}`}>
+    {ok ? <Check size={14} /> : <AlertTriangle size={14} />}
+    <span>{children}</span>
+  </p>
+)
+
+const SeoSectionTitle: React.FC<{
+  icon: React.ReactNode
+  title: string
+  issues?: number
+}> = ({ icon, title, issues = 0 }) => (
+  <div className={styles.seoSectionTitle}>
+    <span className={styles.seoSectionIcon}>{icon}</span>
+    <strong>{title}</strong>
+    {issues > 0 && <span className={styles.seoIssueBadge}>{issues}</span>}
+  </div>
+)
+
+const SeoOptimizationModal: React.FC<{
+  site: PublicSite
+  onClose: () => void
+  onPatchSite: (patch: Partial<PublicSite>) => void
+  onPatchTheme: (patch: Partial<SiteTheme>) => void
+  onSave: () => void
+}> = ({ site, onClose, onPatchSite, onPatchTheme, onSave }) => {
+  const theme = site.theme || {}
+  const publicTitle = getPublicTitleEditorValue(site)
+  const description = site.description || ''
+  const keywords = theme.seoKeywords || ''
+  const author = theme.seoAuthor || ''
+  const seoImage = theme.seoImage || ''
+  const metaTags = theme.seoMetaTags || ''
+  const canonicalLinks = theme.seoCanonicalLinks || ''
+  const language = theme.seoLanguage || 'es - Spanish'
+  const validation = getSeoValidationState(site)
+  const { checks } = validation
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
+  const patchThemeText = (key: keyof SiteTheme, value: string) => {
+    onPatchTheme({ [key]: value } as Partial<SiteTheme>)
+  }
+
+  const addThemeLine = (key: keyof SiteTheme, currentValue: string, line: string) => {
+    const next = currentValue.trim() ? `${currentValue.trim()}\n${line}` : line
+    patchThemeText(key, next)
+  }
+
+  const saveAndClose = () => {
+    onSave()
+    onClose()
+  }
+
+  return (
+    <div className={styles.seoModalBackdrop} role="presentation" onMouseDown={onClose}>
+      <section
+        className={styles.seoModal}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="seo-modal-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className={styles.seoModalHeader}>
+          <div>
+            <span>Configuracion del sitio</span>
+            <h2 id="seo-modal-title">SEO & optimizacion de busqueda</h2>
+          </div>
+          <button type="button" className={styles.seoModalClose} onClick={onClose} aria-label="Cerrar SEO">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className={styles.seoModalBody}>
+          <section className={styles.seoSection}>
+            <SeoSectionTitle icon={<FileText size={17} />} title="Contenido" issues={validation.contentIssues} />
+            <label className={styles.seoField}>
+              <span>Titulo publico</span>
+              <input
+                value={publicTitle}
+                placeholder="Nombre que vera la gente"
+                onChange={(event) => onPatchSite({ title: event.target.value })}
+                onBlur={onSave}
+              />
+            </label>
+            <SeoCheckLine ok={checks.titlePresent}>La pagina tiene un titulo.</SeoCheckLine>
+            <SeoCheckLine ok={checks.titleLength}>El titulo tiene menos de 70 caracteres.</SeoCheckLine>
+            <label className={styles.seoField}>
+              <span>Descripcion</span>
+              <textarea
+                value={description}
+                placeholder="Explica en una frase clara que ofrece esta pagina."
+                rows={4}
+                onChange={(event) => onPatchSite({ description: event.target.value })}
+                onBlur={onSave}
+              />
+            </label>
+            <SeoCheckLine ok={checks.descriptionPresent}>La pagina tiene una descripcion para buscadores.</SeoCheckLine>
+            <SeoCheckLine ok={checks.descriptionLength}>La descripcion tiene menos de 155 caracteres.</SeoCheckLine>
+          </section>
+
+          <section className={styles.seoSection}>
+            <SeoSectionTitle icon={<Search size={17} />} title="Palabras clave" issues={validation.keywordsIssues} />
+            <label className={styles.seoField}>
+              <span>Palabras clave</span>
+              <textarea
+                value={keywords}
+                placeholder="servicio, ciudad, problema que resuelves"
+                rows={3}
+                onChange={(event) => patchThemeText('seoKeywords', event.target.value)}
+                onBlur={onSave}
+              />
+            </label>
+            <SeoCheckLine ok={checks.keywordsPresent}>La pagina tiene palabras clave.</SeoCheckLine>
+          </section>
+
+          <section className={styles.seoSection}>
+            <SeoSectionTitle icon={<Pencil size={17} />} title="Autor" issues={validation.authorIssues} />
+            <label className={styles.seoField}>
+              <span>Autor</span>
+              <input
+                value={author}
+                placeholder="Nombre de la persona o negocio"
+                onChange={(event) => patchThemeText('seoAuthor', event.target.value)}
+                onBlur={onSave}
+              />
+            </label>
+            <SeoCheckLine ok={checks.authorPresent}>La pagina tiene nombre de autor.</SeoCheckLine>
+          </section>
+
+          <section className={styles.seoSection}>
+            <SeoSectionTitle icon={<Image size={17} />} title="Imagenes" issues={validation.imageIssues} />
+            <label className={styles.seoField}>
+              <span>Imagen principal para compartir</span>
+              <div className={styles.seoUrlField}>
+                <input
+                  value={seoImage}
+                  placeholder="https://..."
+                  onChange={(event) => patchThemeText('seoImage', event.target.value)}
+                  onBlur={onSave}
+                />
+                <Image size={17} />
+              </div>
+            </label>
+            <SeoCheckLine ok={checks.imagePresent}>La pagina tiene imagen para compartir.</SeoCheckLine>
+          </section>
+
+          <section className={styles.seoSection}>
+            <SeoSectionTitle icon={<Link2 size={17} />} title="Enlaces y etiquetas" issues={validation.linkIssues} />
+            <div className={styles.seoFieldHeader}>
+              <span>Metaetiquetas personalizadas</span>
+              <button
+                type="button"
+                onClick={() => addThemeLine('seoMetaTags', metaTags, '<meta name="robots" content="index, follow">')}
+              >
+                <Plus size={15} />
+                Anadir
+              </button>
+            </div>
+            <textarea
+              className={styles.seoTextarea}
+              value={metaTags}
+              placeholder='<meta name="robots" content="index, follow">'
+              rows={3}
+              onChange={(event) => patchThemeText('seoMetaTags', event.target.value)}
+              onBlur={onSave}
+            />
+            <SeoCheckLine ok={checks.metaTagsPresent}>La pagina tiene metaetiquetas personalizadas.</SeoCheckLine>
+            <div className={styles.seoFieldHeader}>
+              <span>Enlaces canonicos</span>
+              <button
+                type="button"
+                onClick={() => addThemeLine('seoCanonicalLinks', canonicalLinks, getRoutePath(site))}
+              >
+                <Plus size={15} />
+                Anadir
+              </button>
+            </div>
+            <textarea
+              className={styles.seoTextarea}
+              value={canonicalLinks}
+              placeholder="/sitio-01"
+              rows={3}
+              onChange={(event) => patchThemeText('seoCanonicalLinks', event.target.value)}
+              onBlur={onSave}
+            />
+            <SeoCheckLine ok={checks.outgoingLinksLimit}>
+              La pagina tiene menos de 300 enlaces salientes.
+            </SeoCheckLine>
+          </section>
+
+          <section className={styles.seoSection}>
+            <SeoSectionTitle icon={<Globe2 size={17} />} title="Idioma" issues={validation.languageIssues} />
+            <label className={styles.seoField}>
+              <span>Idioma</span>
+              <CustomSelect
+                value={language}
+                onChange={(event) => patchThemeText('seoLanguage', event.target.value)}
+                onBlur={onSave}
+              >
+                {seoLanguageOptions.map(option => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </CustomSelect>
+            </label>
+            <SeoCheckLine ok={checks.languagePresent}>La pagina tiene idioma seleccionado.</SeoCheckLine>
+          </section>
+        </div>
+
+        <div className={styles.seoModalActions}>
+          <Button variant="secondary" size="lg" onClick={onClose}>Cancelar</Button>
+          <Button size="lg" onClick={saveAndClose}>
+            <Save size={15} />
+            Guardar SEO
+          </Button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+const HeaderBlockControls: React.FC<{
+  scope: HeaderScope
+  block: SiteBlock | null
+  saving: boolean
+  emptyTitle: string
+  emptyDescription: string
+  createLabel: string
+  onCreateHeader: (scope: HeaderScope) => void | Promise<void>
+  onPatchBlock: (block: SiteBlock, patch: Partial<SiteBlock>) => void
+  onPatchSettings: (block: SiteBlock, patch: Record<string, unknown>) => void
+  onSaveBlock: (blockId: string) => void | Promise<void>
+  onSelectBlock: (blockId: string) => void
+}> = ({
+  scope,
+  block,
+  saving,
+  emptyTitle,
+  emptyDescription,
+  createLabel,
+  onCreateHeader,
+  onPatchBlock,
+  onPatchSettings,
+  onSaveBlock,
+  onSelectBlock
+}) => {
+  if (!block) {
+    return (
+      <div className={styles.headerModalEmpty}>
+        <div>
+          <strong>{emptyTitle}</strong>
+          <p>{emptyDescription}</p>
+        </div>
+        <Button variant="secondary" size="lg" onClick={() => onCreateHeader(scope)} disabled={saving}>
+          <Plus size={15} />
+          {createLabel}
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className={styles.headerModalControls}>
+      <label className={styles.seoField}>
+        <span>Texto del header</span>
+        <input
+          value={block.content || ''}
+          placeholder="Nombre que vera la gente"
+          onChange={(event) => onPatchBlock(block, { content: event.target.value })}
+          onBlur={() => onSaveBlock(block.id)}
+        />
+      </label>
+      <label className={styles.seoField}>
+        <span>Enlaces</span>
+        <textarea
+          rows={3}
+          value={stringifyPanelLinks(block.settings || {})}
+          placeholder="Nombre del enlace | https://..."
+          onChange={(event) => onPatchSettings(block, { panelLinks: parsePanelLinks(event.target.value) })}
+          onBlur={() => onSaveBlock(block.id)}
+        />
+      </label>
+      <div className={styles.headerModalInlineActions}>
+        <button type="button" onClick={() => onSelectBlock(block.id)}>
+          <MousePointerClick size={14} />
+          Ver en canvas
+        </button>
+      </div>
+    </div>
+  )
+}
+
+const HeaderToolbarModal: React.FC<{
+  site: PublicSite
+  pages: SitePage[]
+  activePage: SitePage | null
+  metaPixelConnected: boolean
+  onClose: () => void
+  onPatchSite: (patch: Partial<PublicSite>) => void
+  onPatchTheme: (patch: Partial<SiteTheme>) => void
+  onSaveSite: () => void | Promise<void>
+}> = ({
+  site,
+  pages,
+  activePage,
+  metaPixelConnected,
+  onClose,
+  onPatchSite,
+  onPatchTheme,
+  onSaveSite
+}) => {
+  const [savingModal, setSavingModal] = useState(false)
+  const activePageTitle = activePage?.title || 'esta pagina'
+  const siteKindLabel = isFormSite(site) ? 'formulario' : 'sitio'
+  const theme = site.theme || {}
+  const globalHeaderCode = getThemeString(theme, 'headerTrackingCode')
+  const pageHeaderCode = typeof activePage?.headerTrackingCode === 'string' ? activePage.headerTrackingCode : ''
+
+  const patchActivePage = (patch: Partial<SitePage>) => {
+    if (!activePage) return
+    onPatchTheme({
+      pages: normalizePagesForSave(pages.map(page => (
+        page.id === activePage.id ? { ...page, ...patch } : page
+      )))
+    })
+  }
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
+  const saveAndClose = async () => {
+    setSavingModal(true)
+    try {
+      await onSaveSite()
+      onClose()
+    } finally {
+      setSavingModal(false)
+    }
+  }
+
+  return (
+    <div className={styles.seoModalBackdrop} role="presentation" onMouseDown={onClose}>
+      <section
+        className={`${styles.seoModal} ${styles.headerModal}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="header-modal-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className={styles.seoModalHeader}>
+          <div>
+            <span>Codigos de tracking</span>
+            <h2 id="header-modal-title">Header</h2>
+          </div>
+          <button type="button" className={styles.seoModalClose} onClick={onClose} aria-label="Cerrar Header">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className={`${styles.seoModalBody} ${styles.headerModalBody}`}>
+          <section className={styles.seoSection}>
+            <div className={styles.headerModalIntro}>
+              <SeoSectionTitle icon={<PanelTop size={17} />} title="Header global" />
+              <p>Pega aqui el codigo que debe cargarse en todas las paginas del {siteKindLabel}.</p>
+            </div>
+            {metaPixelConnected && (
+              <div className={`${styles.metaCard} ${styles.headerModalMetaCard} ${site.metaCapiEnabled ? styles.metaCardActive : ''}`}>
+                <span className={styles.metaMark} aria-hidden="true">∞</span>
+                <div className={styles.metaCardInfo}>
+                  <strong>{site.metaCapiEnabled ? 'Meta encendido' : 'Meta apagado'}</strong>
+                  <small>{site.metaCapiEnabled ? 'Se mediran visitas y conversiones' : 'Activalo para enviar eventos'}</small>
+                </div>
+                <label className={styles.metaSwitch}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(site.metaCapiEnabled)}
+                    aria-label="Activar medicion de Meta"
+                    onChange={(event) => {
+                      onPatchSite({ metaCapiEnabled: event.target.checked })
+                      window.setTimeout(() => { void onSaveSite() }, 0)
+                    }}
+                  />
+                  <span className={styles.metaSwitchTrack} />
+                </label>
+              </div>
+            )}
+            <label className={styles.seoField}>
+              <span>Codigo global en header</span>
+              <textarea
+                className={styles.headerCodeTextarea}
+                rows={8}
+                spellCheck={false}
+                value={globalHeaderCode}
+                placeholder="<script>...</script>"
+                onChange={(event) => onPatchTheme({ headerTrackingCode: event.target.value })}
+                onBlur={() => { void onSaveSite() }}
+              />
+              <small>Se insertara antes de cerrar el &lt;/head&gt; en todas las paginas publicas.</small>
+            </label>
+          </section>
+
+          <section className={styles.seoSection}>
+            <div className={styles.headerModalIntro}>
+              <SeoSectionTitle icon={<PanelTop size={17} />} title="Header de esta pagina" />
+              <p>Usalo cuando {activePageTitle} necesita un codigo diferente o adicional.</p>
+            </div>
+            <label className={styles.seoField}>
+              <span>Codigo solo para esta pagina</span>
+              <textarea
+                className={styles.headerCodeTextarea}
+                rows={8}
+                spellCheck={false}
+                value={pageHeaderCode}
+                placeholder="<script>...</script>"
+                disabled={!activePage}
+                onChange={(event) => patchActivePage({ headerTrackingCode: event.target.value })}
+                onBlur={() => { void onSaveSite() }}
+              />
+              <small>Se agregara despues del codigo global y solo se cargara en esta pagina.</small>
+            </label>
+          </section>
+        </div>
+
+        <div className={styles.seoModalActions}>
+          <Button variant="secondary" size="lg" onClick={onClose}>Cancelar</Button>
+          <Button size="lg" onClick={saveAndClose} loading={savingModal}>
+            <Save size={15} />
+            Guardar Header
+          </Button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+interface FunnelPagesPanelProps {
+  pages: SitePage[]
+  activePageId: string
+  locked?: boolean
+  draggingPageId: string | null
+  colorFinalPages?: boolean
+  isFixedPage?: (page: SitePage) => boolean
+  pageMode?: 'funnel' | 'website'
+  onChangeMode?: (mode: 'funnel' | 'website') => void
+  onAddSubpage?: (parentId: string) => void
+  getPageDepth?: (page: SitePage) => number
+  canDeletePage?: (page: SitePage) => boolean
+  canDuplicatePage?: (page: SitePage) => boolean
+  onSelectPage: (pageId: string) => void
+  onAddPage: () => void
+  onDuplicatePage: (pageId: string) => void
+  onDeletePage: (pageId: string) => void
+  onDragPage: (pageId: string | null) => void
+  onReorderPages: (sourcePageId: string, targetPageId: string) => void
+  onRenamePage: (pageId: string, title: string) => void
+}
+
+const FunnelPagesPanel: React.FC<FunnelPagesPanelProps> = ({
+  pages,
+  activePageId,
+  locked = false,
+  draggingPageId,
+  colorFinalPages = false,
+  isFixedPage = () => false,
+  pageMode = 'funnel',
+  onChangeMode,
+  onAddSubpage,
+  getPageDepth,
+  canDeletePage = () => pages.length > 1,
+  canDuplicatePage = () => true,
+  onSelectPage,
+  onAddPage,
+  onDuplicatePage,
+  onDeletePage,
+  onDragPage,
+  onReorderPages,
+  onRenamePage
+}) => {
+  const [renamingPageId, setRenamingPageId] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement | null>(null)
+  const activePage = pages.find(page => page.id === activePageId) || pages[0] || null
+  const hasFixedPageSection = colorFinalPages
+  const websiteMode = pageMode === 'website' && !hasFixedPageSection
+  const movablePages = hasFixedPageSection ? pages.filter(page => !isFixedPage(page)) : pages
+  const fixedPages = hasFixedPageSection ? pages.filter(isFixedPage) : []
+  // In website mode render an indented tree (top page → subpages); otherwise a flat list.
+  const orderedItems = websiteMode
+    ? buildOrderedPageTree(movablePages)
+    : movablePages.map(page => ({ page, depth: 0 }))
+
+  useEffect(() => {
+    if (!open) return
+
+    const handleDocumentClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null
+      if (!target) return
+      if (dropdownRef.current?.contains(target)) return
+      if (target.closest('[data-radix-popper-content-wrapper]')) return
+      setOpen(false)
+    }
+
+    const handleDocumentKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+
+    document.addEventListener('click', handleDocumentClick)
+    document.addEventListener('keydown', handleDocumentKeyDown)
+
+    return () => {
+      document.removeEventListener('click', handleDocumentClick)
+      document.removeEventListener('keydown', handleDocumentKeyDown)
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open) {
+      setRenamingPageId(null)
+    }
+  }, [open])
+
+  const handleSelectPage = (pageId: string) => {
+    onSelectPage(pageId)
+    setOpen(false)
+  }
+
+  const pageSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
+
+  const handlePageDragStart = (event: DragStartEvent) => {
+    const pageId = String(event.active.id)
+    const page = movablePages.find(item => item.id === pageId)
+    if (!page || locked || isFixedPage(page)) return
+    onDragPage(pageId)
+  }
+
+  const handlePageDragEnd = (event: DragEndEvent) => {
+    const sourcePageId = String(event.active.id)
+    const targetPageId = event.over?.id ? String(event.over.id) : ''
+    onDragPage(null)
+    if (!targetPageId || sourcePageId === targetPageId) return
+    if (hasFixedPageSection && fixedPages.some(page => page.id === targetPageId)) return
+    onReorderPages(sourcePageId, targetPageId)
+  }
+
+  return (
+    <div ref={dropdownRef} className={`${styles.pagesDropdown} ${open ? styles.pagesDropdownOpen : ''}`}>
+      <button
+        type="button"
+        className={styles.pagesDropdownTrigger}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen(current => !current)}
+      >
+        <FileText size={15} />
+        <span className={styles.pagesDropdownTriggerText}>
+          <strong>{activePage?.title || 'Pagina 1'}</strong>
+        </span>
+        <ChevronDown size={15} className={styles.pagesDropdownChevron} />
+      </button>
+
+      {open && (
+        <div className={styles.pagesDropdownPanel} role="dialog" aria-label="Paginas del sitio">
+          {onChangeMode && (
+            <div style={{ padding: '10px 12px 0' }}>
+              <div
+                role="group"
+                aria-label="Tipo de sitio"
+                style={{ display: 'flex', gap: 4, padding: 3, borderRadius: 8, background: 'rgba(148,163,184,0.16)' }}
+              >
+                {([['website', 'Sitio web'], ['funnel', 'Embudo']] as const).map(([value, label]) => {
+                  const selected = (pageMode || 'funnel') === value
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      disabled={locked}
+                      onClick={() => { onChangeMode(value) }}
+                      style={{
+                        flex: 1,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        padding: '6px 8px',
+                        borderRadius: 6,
+                        border: 'none',
+                        cursor: locked ? 'default' : 'pointer',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: selected ? '#0f172a' : '#475569',
+                        background: selected ? '#ffffff' : 'transparent',
+                        boxShadow: selected ? '0 1px 2px rgba(15,23,42,0.12)' : 'none'
+                      }}
+                    >
+                      {value === 'website' ? <Globe2 size={14} /> : <Filter size={14} />}
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+          <div className={styles.pagesDropdownHeader}>
+            <span>{websiteMode ? 'Paginas y subpaginas' : 'Paginas'}</span>
+            <strong>{pages.length}</strong>
+          </div>
+          <DndContext
+            sensors={pageSensors}
+            collisionDetection={closestCenter}
+            onDragStart={handlePageDragStart}
+            onDragEnd={handlePageDragEnd}
+            onDragCancel={() => onDragPage(null)}
+          >
+            <SortableContext items={orderedItems.map(item => item.page.id)} strategy={verticalListSortingStrategy}>
+              <div className={styles.pagesDropdownList}>
+                {orderedItems.map(({ page, depth }, index) => {
+                  const fixedPage = isFixedPage(page)
+                  const pageCanDelete = !locked && canDeletePage(page)
+                  const pageCanDuplicate = !locked && canDuplicatePage(page)
+                  const pageDepth = getPageDepth ? getPageDepth(page) : depth
+                  const canAddSubpage = websiteMode && !locked && Boolean(onAddSubpage) && pageDepth < MAX_WEBSITE_PAGE_DEPTH
+                  const pageToneClass = colorFinalPages && page.id === FORM_THANK_YOU_PAGE_ID
+                    ? styles.pagesDropdownItemThankYou
+                    : colorFinalPages && page.id === FORM_DISQUALIFIED_PAGE_ID
+                      ? styles.pagesDropdownItemDisqualified
+                      : ''
+
+                  return (
+                    <FunnelPageDropdownItem
+                      key={page.id}
+                      page={page}
+                      index={index}
+                      depth={websiteMode ? depth : 0}
+                      active={activePageId === page.id}
+                      dragging={draggingPageId === page.id}
+                      locked={locked}
+                      fixedPage={fixedPage}
+                      renaming={renamingPageId === page.id}
+                      pageToneClass={pageToneClass}
+                      canDelete={pageCanDelete}
+                      canDuplicate={pageCanDuplicate}
+                      showAddSubpage={canAddSubpage}
+                      onAddSubpage={onAddSubpage ? () => { onAddSubpage(page.id) } : undefined}
+                      onSelect={() => handleSelectPage(page.id)}
+                      onStartRename={() => {
+                        onSelectPage(page.id)
+                        setRenamingPageId(page.id)
+                      }}
+                      onDuplicate={() => {
+                        onDuplicatePage(page.id)
+                      }}
+                      onDelete={() => {
+                        onDeletePage(page.id)
+                      }}
+                      onRenamePage={onRenamePage}
+                      onDoneRename={() => setRenamingPageId(null)}
+                    />
+                  )
+                })}
+                {!locked && (
+                  <button type="button" className={styles.pagesDropdownAddButton} onClick={() => { onAddPage() }}>
+                    <Plus size={15} />
+                    {websiteMode ? 'Agregar pagina principal' : 'Agregar pagina'}
+                  </button>
+                )}
+              </div>
+            </SortableContext>
+          </DndContext>
+
+          {fixedPages.length > 0 && (
+            <div className={styles.pagesDropdownFixedSection} aria-label="Paginas de resultado del formulario">
+              <div className={styles.pagesDropdownFixedHeader}>
+                <span>Resultado del formulario</span>
+                <strong>Orden fijo</strong>
+              </div>
+              <div className={styles.pagesDropdownList}>
+                {fixedPages.map((page, index) => {
+                  const pageToneClass = page.id === FORM_THANK_YOU_PAGE_ID
+                    ? styles.pagesDropdownItemThankYou
+                    : page.id === FORM_DISQUALIFIED_PAGE_ID
+                      ? styles.pagesDropdownItemDisqualified
+                      : ''
+
+                  return (
+                    <FunnelFixedPageDropdownItem
+                      key={page.id}
+                      page={page}
+                      index={movablePages.length + index}
+                      active={activePageId === page.id}
+                      locked={locked}
+                      pageToneClass={pageToneClass}
+                      onSelect={() => handleSelectPage(page.id)}
+                    />
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+interface FunnelPageDropdownItemProps {
+  page: SitePage
+  index: number
+  depth?: number
+  active: boolean
+  dragging: boolean
+  locked: boolean
+  fixedPage: boolean
+  renaming: boolean
+  pageToneClass: string
+  canDelete: boolean
+  canDuplicate: boolean
+  showAddSubpage?: boolean
+  onAddSubpage?: () => void
+  onSelect: () => void
+  onStartRename: () => void
+  onDuplicate: () => void
+  onDelete: () => void
+  onRenamePage: (pageId: string, title: string) => void
+  onDoneRename: () => void
+}
+
+const FunnelPageDropdownItem: React.FC<FunnelPageDropdownItemProps> = ({
+  page,
+  index,
+  depth = 0,
+  active,
+  dragging,
+  locked,
+  fixedPage,
+  renaming,
+  pageToneClass,
+  canDelete,
+  canDuplicate,
+  showAddSubpage = false,
+  onAddSubpage,
+  onSelect,
+  onStartRename,
+  onDuplicate,
+  onDelete,
+  onRenamePage,
+  onDoneRename
+}) => {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const title = page.title || `Pagina ${index + 1}`
+  const dragDisabled = locked || fixedPage
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: page.id,
+    disabled: dragDisabled
+  })
+  const rowStyle: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging || menuOpen ? 4 : undefined,
+    marginLeft: depth ? depth * 18 : undefined
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={rowStyle}
+      className={`${styles.pagesDropdownItemWrap} ${dragging || isDragging ? styles.pagesDropdownItemDragging : ''}`}
+    >
+      <div
+        className={`${styles.pagesDropdownItem} ${pageToneClass} ${fixedPage ? styles.pagesDropdownItemFixed : ''} ${locked ? styles.pagesDropdownItemLocked : ''} ${active ? styles.pagesDropdownItemActive : ''}`}
+      >
+        <span
+          className={`${styles.pagesDropdownDragHandle} ${dragDisabled ? styles.pagesDropdownDragHandleDisabled : ''}`}
+          {...(!dragDisabled ? attributes : {})}
+          {...(!dragDisabled ? listeners : {})}
+          aria-label={!dragDisabled ? `Arrastrar ${title}` : undefined}
+          title={!dragDisabled ? 'Arrastra para ordenar' : 'Esta pagina no se puede mover'}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <GripVertical size={18} />
+        </span>
+
+        {renaming && !locked ? (
+          <div className={styles.pagesDropdownTitleCell}>
+            <EditablePageTitle
+              pageId={page.id}
+              title={title}
+              inputClassName={styles.pagesDropdownTitleInput}
+              onFocus={() => undefined}
+              onRename={onRenamePage}
+              onDone={onDoneRename}
+            />
+          </div>
+        ) : (
+          <button type="button" className={styles.pagesDropdownSelectButton} onClick={onSelect}>
+            {depth > 0 && <CornerDownRight size={13} style={{ opacity: 0.5, flexShrink: 0 }} />}
+            <span className={styles.pagesDropdownTitleText}>{title}</span>
+          </button>
+        )}
+
+        {!locked && (
+          <div className={styles.pagesDropdownActionWrap}>
+            <DropdownMenu onOpenChange={setMenuOpen}>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className={styles.pagesDropdownMenuButton}
+                  aria-label="Opciones de pagina"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
+                  <MoreVertical size={15} />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                sideOffset={8}
+                className={styles.pagesDropdownActionMenu}
+              >
+                <DropdownMenuItem
+                  className={styles.pagesDropdownActionItem}
+                  onSelect={(event) => {
+                    event.stopPropagation()
+                    onStartRename()
+                  }}
+                >
+                  Cambiar nombre
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className={styles.pagesDropdownActionItem}
+                  disabled={!canDuplicate}
+                  onSelect={(event) => {
+                    event.stopPropagation()
+                    onDuplicate()
+                  }}
+                >
+                  <Copy size={14} />
+                  Duplicar pagina
+                </DropdownMenuItem>
+                {showAddSubpage && onAddSubpage && (
+                  <DropdownMenuItem
+                    className={styles.pagesDropdownActionItem}
+                    onSelect={(event) => {
+                      event.stopPropagation()
+                      onAddSubpage()
+                    }}
+                  >
+                    <CornerDownRight size={14} />
+                    Agregar subpagina
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem
+                  className={`${styles.pagesDropdownActionItem} ${styles.pagesDropdownActionDanger}`}
+                  disabled={!canDelete}
+                  onSelect={(event) => {
+                    event.stopPropagation()
+                    onDelete()
+                  }}
+                >
+                  <Trash2 size={14} />
+                  Eliminar pagina
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+interface FunnelFixedPageDropdownItemProps {
+  page: SitePage
+  index: number
+  active: boolean
+  locked: boolean
+  pageToneClass: string
+  onSelect: () => void
+}
+
+const FunnelFixedPageDropdownItem: React.FC<FunnelFixedPageDropdownItemProps> = ({
+  page,
+  index,
+  active,
+  locked,
+  pageToneClass,
+  onSelect
+}) => {
+  const title = page.title || `Pagina ${index + 1}`
+
+  return (
+    <div className={styles.pagesDropdownItemWrap}>
+      <div
+        className={`${styles.pagesDropdownItem} ${styles.pagesDropdownItemFixed} ${styles.pagesDropdownItemFixedResult} ${pageToneClass} ${locked ? styles.pagesDropdownItemLocked : ''} ${active ? styles.pagesDropdownItemActive : ''}`}
+      >
+        <button type="button" className={styles.pagesDropdownSelectButton} onClick={onSelect}>
+          <span className={styles.pagesDropdownTitleText}>{title}</span>
+        </button>
+      </div>
+    </div>
+  )
+}
+
+const EditablePageTitle: React.FC<{
+  pageId: string
+  title: string
+  inputClassName?: string
+  onFocus: () => void
+  onRename: (pageId: string, title: string) => void
+  onDone: () => void
+}> = ({ pageId, title, inputClassName, onFocus, onRename, onDone }) => {
+  const [draft, setDraft] = useState(title)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const cancelRenameRef = useRef(false)
+
+  useEffect(() => setDraft(title), [title])
+  useEffect(() => {
+    window.setTimeout(() => {
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    }, 0)
+  }, [])
+
+  const commit = () => {
+    if (cancelRenameRef.current) {
+      cancelRenameRef.current = false
+      setDraft(title)
+      onDone()
+      return
+    }
+
+    const next = draft.trim() || title
+    setDraft(next)
+    if (next !== title) onRename(pageId, next)
+    onDone()
+  }
+
+  return (
+    <input
+      ref={inputRef}
+      className={inputClassName || styles.pageTitleInput}
+      value={draft}
+      draggable={false}
+      aria-label="Nombre de pagina"
+      onFocus={onFocus}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        event.stopPropagation()
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          event.currentTarget.blur()
+        }
+        if (event.key === 'Escape') {
+          cancelRenameRef.current = true
+          event.currentTarget.blur()
+        }
+      }}
+    />
+  )
+}
+
+const Palette: React.FC<{
+  blockTypes: SiteBlockType[]
+  existingBlocks?: SiteBlock[]
+  onAdd: (blockType: SiteBlockType, options?: AddBlockOptions) => void
+  onPaletteDragStart: (payload: PaletteDragPayload, position: PaletteDragPosition | null) => void
+  onPaletteDragMove: (position: PaletteDragPosition | null) => void
+  onPaletteDragEnd: () => void
+}> = ({ blockTypes, existingBlocks = [], onAdd, onPaletteDragStart, onPaletteDragMove, onPaletteDragEnd }) => {
+  const allowed = new Set(blockTypes)
+  const existingPanelTypes = new Set(existingBlocks.filter(isPanelBlock).map(block => block.blockType))
+  const groups = paletteGroups
+    .map(group => ({
+      label: group.label,
+      items: group.items.filter(item => allowed.has(item.blockType) && (!PANEL_BLOCK_TYPES.has(item.blockType) || !existingPanelTypes.has(item.blockType)))
+    }))
+    .filter(group => group.items.length > 0)
+
+  return (
+    <aside className={styles.palette}>
+      <div className={styles.panelHeader}>
+        <strong>Bloques</strong>
+      </div>
+      <div className={styles.paletteGroups}>
+        {groups.map(group => (
+          <div key={group.label} className={styles.paletteGroup}>
+            <span className={styles.paletteGroupLabel}>
+              <span>{group.label}</span>
+              <span className={styles.paletteGroupHint}>(Arrastra)</span>
+            </span>
+            <div className={styles.paletteItems}>
+              {group.items.map(item => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={styles.paletteItem}
+                  draggable
+                  onDragStart={(event) => {
+                    event.dataTransfer.effectAllowed = 'move'
+                    event.dataTransfer.dropEffect = 'move'
+                    event.dataTransfer.setData('application/ristak-block', item.blockType)
+                    if (item.initialSettings) {
+                      event.dataTransfer.setData('application/ristak-block-settings', JSON.stringify(item.initialSettings))
+                    }
+                    hideNativeDragPreview(event.dataTransfer)
+                    const rect = event.currentTarget.getBoundingClientRect()
+                    onPaletteDragStart(
+                      { blockType: item.blockType, initialSettings: item.initialSettings },
+                      event.clientX || event.clientY
+                        ? { x: event.clientX, y: event.clientY }
+                        : { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+                    )
+                  }}
+                  onDrag={(event) => {
+                    if (event.clientX || event.clientY) {
+                      onPaletteDragMove({ x: event.clientX, y: event.clientY })
+                    }
+                  }}
+                  onDragEnd={onPaletteDragEnd}
+                  onClick={() => onAdd(item.blockType, { initialSettings: item.initialSettings })}
+                >
+                  <span className={styles.paletteIcon}>
+                    {item.blockType === SECTION_BLOCK_TYPE ? (
+                      <span
+                        className={styles.sectionPalettePreview}
+                        style={{ gridTemplateColumns: `repeat(${getSettingNumber(item.initialSettings || {}, 'sectionColumns', 1, 1, 3)}, minmax(0, 1fr))` }}
+                        aria-hidden="true"
+                      >
+                        {Array.from({ length: getSettingNumber(item.initialSettings || {}, 'sectionColumns', 1, 1, 3) }).map((_, index) => (
+                          <span key={index} />
+                        ))}
+                      </span>
+                    ) : blockIcons[item.blockType]}
+                  </span>
+                  <span>{item.label}</span>
+                  <GripVertical className={styles.paletteGrip} size={14} />
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </aside>
+  )
+}
+
+// Inline, in-place text editing that renders as the real rstk element, so the
+// typography/gradients/spacing match the published page exactly. Content is set
+// imperatively to avoid React rewriting the DOM mid-edit (which jumps the caret).
+interface InlineEditableProps {
+  as?: 'h1' | 'h2' | 'p' | 'span' | 'div' | 'a' | 'strong'
+  className?: string
+  value: string
+  placeholder?: string
+  disabled?: boolean
+  multiline?: boolean
+  onChange: (value: string) => void
+  onCommit?: () => void
+}
+
+const InlineEditable: React.FC<InlineEditableProps> = ({
+  as = 'div', className, value, placeholder, disabled, multiline, onChange, onCommit
+}) => {
+  const ref = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    const el = ref.current
+    if (el && el.textContent !== value) el.textContent = value
+  }, [value])
+
+  const Tag = as as React.ElementType
+  return (
+    <Tag
+      ref={ref}
+      className={className}
+      contentEditable={!disabled}
+      suppressContentEditableWarning
+      spellCheck={false}
+      role="textbox"
+      data-rstk-edit=""
+      data-empty={value ? 'false' : 'true'}
+      data-placeholder={placeholder || ''}
+      onInput={(event: React.FormEvent<HTMLElement>) => {
+        const text = event.currentTarget.textContent || ''
+        event.currentTarget.setAttribute('data-empty', text ? 'false' : 'true')
+        onChange(text)
+      }}
+      onBlur={() => onCommit?.()}
+      onKeyDown={(event: React.KeyboardEvent<HTMLElement>) => {
+        if (!multiline && event.key === 'Enter') {
+          event.preventDefault()
+          event.currentTarget.blur()
+        }
+      }}
+    />
+  )
+}
+
+const InlineButtonEditable: React.FC<Omit<InlineEditableProps, 'as' | 'className'>> = (props) => (
+  <a className="rstk-button-link" href="#" onClick={(event) => event.preventDefault()}>
+    <InlineEditable {...props} as="span" className="rstk-button-label" />
+  </a>
+)
+
+// Renders the canvas page at its true desktop width and transform-scales it to
+// fit the column — a faithful "monitor comprimido" of the published page.
+interface CanvasStageProps {
+  designWidth: number
+  canvasClassName: string
+  canvasStyle: React.CSSProperties
+  active?: boolean
+  pageSelected?: boolean
+  fluidAboveDesign?: boolean
+  onClear?: () => void
+  onDragOver?: React.DragEventHandler<HTMLDivElement>
+  onDragLeave?: React.DragEventHandler<HTMLDivElement>
+  onDrop?: React.DragEventHandler<HTMLDivElement>
+  overlay?: React.ReactNode
+  children: React.ReactNode
+}
+
+const CanvasStage: React.FC<CanvasStageProps> = ({
+  designWidth, canvasClassName, canvasStyle, active, pageSelected, fluidAboveDesign, onClear, onDragOver, onDragLeave, onDrop, overlay, children
+}) => {
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const stageRef = useRef<HTMLDivElement>(null)
+  const [scale, setScale] = useState(1)
+  const [renderWidth, setRenderWidth] = useState(designWidth)
+  const [stageHeight, setStageHeight] = useState(0)
+
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current
+    const stage = stageRef.current
+    if (!viewport || !stage) return
+    const recompute = () => {
+      const avail = Math.max(1, viewport.clientWidth - (fluidAboveDesign ? 0 : 8))
+      const nextRenderWidth = fluidAboveDesign && avail > designWidth ? avail : designWidth
+      const next = Math.max(0.2, Math.min(1, avail / nextRenderWidth))
+      setRenderWidth(nextRenderWidth)
+      setScale(next)
+      setStageHeight(stage.offsetHeight * next)
+    }
+    recompute()
+    const observer = new ResizeObserver(recompute)
+    observer.observe(viewport)
+    observer.observe(stage)
+    return () => observer.disconnect()
+  }, [designWidth, fluidAboveDesign])
+
+  return (
+    <div
+      ref={viewportRef}
+      className={`canvasViewport ${fluidAboveDesign ? 'canvasViewportFlush' : ''} ${active ? 'canvasViewportActive' : ''}`}
+      style={canvasStyle}
+      onClick={onClear}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
+      <div
+        className="canvasScaler"
+        style={{ ...canvasStyle, width: Math.round(renderWidth * scale), height: Math.round(stageHeight) } as React.CSSProperties}
+      >
+        <div
+          ref={stageRef}
+          className={`canvasStage ${canvasClassName} ${pageSelected ? 'canvasPageSelected' : ''}`}
+          style={{ ...canvasStyle, width: renderWidth, transform: `scale(${scale})`, ['--rstk-scale' as string]: scale } as React.CSSProperties}
+        >
+          {children}
+        </div>
+      </div>
+      {overlay}
+    </div>
+  )
+}
+
+interface SortableCanvasBlockProps {
+  block: SiteBlock
+  blocks: SiteBlock[]
+  index: number
+  selected: boolean
+  site: PublicSite
+  forms: PublicSite[]
+  calendars: CalendarType[]
+  pages: SitePage[]
+  activePageId: string
+  canMoveUp: boolean
+  canMoveDown: boolean
+  onSelect: () => void
+  onDelete: () => void
+  onMoveUp: () => void
+  onMoveDown: () => void
+  onPatchBlock: (patch: Partial<SiteBlock>) => void
+  onPatchSettings: (patch: Record<string, unknown>) => void
+  onSave: () => void
+}
+
+const sortableTransition = {
+  duration: 520,
+  easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)'
+}
+
+const sortableAnimateLayoutChanges: AnimateLayoutChanges = (args) => {
+  if (args.isSorting || args.wasDragging) {
+    return defaultAnimateLayoutChanges(args)
+  }
+
+  return false
+}
+
+const SortableCanvasBlock: React.FC<SortableCanvasBlockProps> = ({
+  block,
+  blocks,
+  index,
+  selected,
+  site,
+  forms,
+  calendars,
+  pages,
+  activePageId,
+  canMoveUp,
+  canMoveDown,
+  onSelect,
+  onDelete,
+  onMoveUp,
+  onMoveDown,
+  onPatchBlock,
+  onPatchSettings,
+  onSave
+}) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: block.id,
+    animateLayoutChanges: sortableAnimateLayoutChanges,
+    transition: sortableTransition
+  })
+
+  return (
+	    <div
+	      ref={setNodeRef}
+	      data-rstk-block-id={block.id}
+	      data-rstk-block-index={index}
+	      data-rstk-page-block={isPanelBlock(block) ? 'true' : undefined}
+	      style={{
+        transform: CSS.Transform.toString(transform),
+	        transition: transition || 'transform 520ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+        opacity: isDragging ? 0.34 : undefined,
+        zIndex: isDragging ? 8 : undefined,
+        ...getBlockCanvasStyle(block)
+      }}
+      className={getBlockStyleClassName(block, `rstkSel ${selected ? 'rstkSelActive' : ''} ${isDragging ? 'rstkSelDragging' : ''}`)}
+      onClick={(event) => {
+        event.stopPropagation()
+        onSelect()
+      }}
+    >
+      <div className="rstkBlockTools">
+        <button type="button" className="rstkBlockTool rstkBlockToolDrag" {...attributes} {...listeners} aria-label="Reordenar bloque">
+          <GripVertical size={15} />
+        </button>
+        <button
+          type="button"
+          className="rstkBlockTool"
+          disabled={!canMoveUp}
+          onClick={(event) => { event.stopPropagation(); onMoveUp() }}
+          aria-label="Subir bloque"
+        >
+          <ArrowUp size={14} />
+        </button>
+        <button
+          type="button"
+          className="rstkBlockTool"
+          disabled={!canMoveDown}
+          onClick={(event) => { event.stopPropagation(); onMoveDown() }}
+          aria-label="Bajar bloque"
+        >
+          <ArrowDown size={14} />
+        </button>
+        <button
+          type="button"
+          className="rstkBlockTool rstkBlockToolDelete"
+          onClick={(event) => { event.stopPropagation(); onDelete() }}
+          onPointerDown={(event) => event.stopPropagation()}
+          aria-label="Eliminar bloque"
+          title="Eliminar"
+        >
+          <Trash2 size={14} />
+        </button>
+      </div>
+      <CanvasPreviewBlock
+        block={block}
+        site={site}
+        blocks={blocks}
+        forms={forms}
+        calendars={calendars}
+        pages={pages}
+        activePageId={activePageId}
+        selected={selected}
+        onPatchBlock={onPatchBlock}
+        onPatchSettings={onPatchSettings}
+        onSave={onSave}
+      />
+    </div>
+  )
+}
+
+interface PopupCanvasSurfaceProps {
+  site: PublicSite
+  blocks: SiteBlock[]
+  selectedBlockId: string
+  forms: PublicSite[]
+  calendars: CalendarType[]
+  pages: SitePage[]
+  activePageId: string
+  selected: boolean
+  palettePreviewBlock: SiteBlock | null
+  paletteInsertIndex: number | null
+  onSelectPopup: () => void
+  onClosePopup: () => void
+  onSelectBlock: (blockId: string) => void
+  onDeleteBlock: (blockId: string) => void
+  onMoveBlock: (blockId: string, direction: BlockMoveDirection) => void
+  getBlockMoveState: (block: SiteBlock) => BlockMoveState
+  onPatchBlock: (blockId: string, patch: Partial<SiteBlock>) => void
+  onPatchBlockSettings: (block: SiteBlock, patch: Record<string, unknown>) => void
+  onSaveBlock: (blockId: string) => void
+}
+
+const PopupCanvasSurface: React.FC<PopupCanvasSurfaceProps> = ({
+  site,
+  blocks,
+  selectedBlockId,
+  forms,
+  calendars,
+  pages,
+  activePageId,
+  selected,
+  palettePreviewBlock,
+  paletteInsertIndex,
+  onSelectPopup,
+  onClosePopup,
+  onSelectBlock,
+  onDeleteBlock,
+  onMoveBlock,
+  getBlockMoveState,
+  onPatchBlock,
+  onPatchBlockSettings,
+  onSaveBlock
+}) => {
+  const theme = site.theme || {}
+  const closeDisplay = normalizePopupCloseDisplay(theme.popupCloseDisplay)
+  const closeIcon = getPopupCloseIconText(theme.popupCloseIcon)
+  const closeText = getThemeString(theme, 'popupCloseText') || 'Cerrar'
+  const showCloseIcon = closeDisplay !== 'text' && closeIcon
+  const showCloseText = closeDisplay !== 'icon'
+  const modalStyle = {
+    background: getThemePaint(theme, 'popupBackgroundColor', isSiteDark(site) ? '#0f172a' : '#ffffff'),
+    color: getThemePaint(theme, 'popupTextColor', isSiteDark(site) ? '#f8fafc' : '#111827'),
+    borderColor: getThemePaint(theme, 'popupBorderColor', 'rgba(148, 163, 184, 0.32)'),
+    borderWidth: getThemeNumber(theme, 'popupBorderWidth', 1, 0, 12),
+    borderRadius: getThemeNumber(theme, 'popupRadius', 18, 0, 60),
+    padding: getThemeNumber(theme, 'popupPadding', 24, 0, 96),
+    maxWidth: getThemeNumber(theme, 'popupMaxWidth', 560, 320, 960)
+  }
+
+  return (
+    <div
+      className="rstkPopupEditorLayer"
+      onClick={(event) => {
+        event.stopPropagation()
+        onSelectPopup()
+      }}
+    >
+      <div
+        className="rstkPopupEditorBackdrop"
+        style={{ background: getThemePaint(theme, 'popupBackdropColor', 'rgba(2, 6, 23, 0.62)') }}
+      />
+      <section
+        className={`rstkPopupEditorModal ${selected ? 'rstkPopupEditorModalSelected' : ''}`}
+        data-rstk-popup-surface="true"
+        style={{
+          background: modalStyle.background,
+          color: modalStyle.color,
+          borderColor: modalStyle.borderColor,
+          borderWidth: modalStyle.borderWidth,
+          borderRadius: modalStyle.borderRadius,
+          padding: modalStyle.padding,
+          width: `min(${modalStyle.maxWidth}px, calc(100% - 48px))`
+        }}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Pop up editable"
+        onClick={(event) => {
+          event.stopPropagation()
+          onSelectPopup()
+        }}
+      >
+        <button
+          type="button"
+          className="rstkPopupEditorClose"
+          onClick={(event) => {
+            event.stopPropagation()
+            onClosePopup()
+          }}
+          aria-label="Cerrar"
+        >
+          {showCloseIcon && <span aria-hidden="true">{closeIcon}</span>}
+          {showCloseText && <strong>{closeText}</strong>}
+        </button>
+        <div className="rstkPopupEditorContent">
+          {palettePreviewBlock && paletteInsertIndex === 0 && (
+            <PaletteInsertPreview block={palettePreviewBlock} site={site} forms={forms} calendars={calendars} />
+          )}
+          {blocks.length === 0 ? (
+            palettePreviewBlock ? null : (
+              <div className="rstkDropEmpty rstkPopupDropEmpty">
+                <Plus size={22} />
+                <p>Arrastra bloques aqui o haz click en la barra izquierda.</p>
+              </div>
+            )
+          ) : (
+            blocks.map((block, index) => {
+              const moveState = getBlockMoveState(block)
+              return (
+                <React.Fragment key={block.id}>
+                  <SortableCanvasBlock
+                    block={block}
+                    blocks={blocks}
+                    index={index}
+                    selected={selectedBlockId === block.id}
+                    site={site}
+                    forms={forms}
+                    calendars={calendars}
+                    pages={pages}
+                    activePageId={activePageId}
+                    canMoveUp={moveState.canMoveUp}
+                    canMoveDown={moveState.canMoveDown}
+                    onSelect={() => onSelectBlock(block.id)}
+                    onDelete={() => onDeleteBlock(block.id)}
+                    onMoveUp={() => onMoveBlock(block.id, 'up')}
+                    onMoveDown={() => onMoveBlock(block.id, 'down')}
+                    onPatchBlock={(patch) => onPatchBlock(block.id, patch)}
+                    onPatchSettings={(patch) => onPatchBlockSettings(block, patch)}
+                    onSave={() => onSaveBlock(block.id)}
+                  />
+                  {palettePreviewBlock && paletteInsertIndex === index + 1 && (
+                    <PaletteInsertPreview block={palettePreviewBlock} site={site} forms={forms} calendars={calendars} />
+                  )}
+                </React.Fragment>
+              )
+            })
+          )}
+          {palettePreviewBlock && blocks.length > 0 && paletteInsertIndex !== null && paletteInsertIndex >= blocks.length && (
+            <PaletteInsertPreview block={palettePreviewBlock} site={site} forms={forms} calendars={calendars} />
+          )}
+        </div>
+      </section>
+    </div>
+  )
+}
+
+interface LandingCanvasSectionsProps {
+  lanes: LandingSectionLane[]
+  blocks: SiteBlock[]
+  selectedBlockId: string
+  site: PublicSite
+  forms: PublicSite[]
+  calendars: CalendarType[]
+  pages: SitePage[]
+  activePageId: string
+  palettePreviewBlock: SiteBlock | null
+  paletteInsertIndex: number | null
+  paletteSectionTarget: PaletteSectionTarget | null
+  paletteDragging: boolean
+  onSelectBlock: (blockId: string) => void
+  onDeleteBlock: (blockId: string) => void
+  onMoveBlock: (blockId: string, direction: BlockMoveDirection) => void
+  getBlockMoveState: (block: SiteBlock) => BlockMoveState
+  onPatchBlock: (blockId: string, patch: Partial<SiteBlock>) => void
+  onPatchBlockSettings: (block: SiteBlock, patch: Record<string, unknown>) => void
+  onSaveBlock: (blockId: string) => void
+}
+
+const LandingCanvasSections: React.FC<LandingCanvasSectionsProps> = ({
+  lanes,
+  blocks,
+  selectedBlockId,
+  site,
+  forms,
+  calendars,
+  pages,
+  activePageId,
+  palettePreviewBlock,
+  paletteInsertIndex,
+  paletteSectionTarget,
+  paletteDragging,
+  onSelectBlock,
+  onDeleteBlock,
+  onMoveBlock,
+  getBlockMoveState,
+  onPatchBlock,
+  onPatchBlockSettings,
+  onSaveBlock
+}) => {
+  const blockIndexById = new Map(blocks.map((block, index) => [block.id, index]))
+  const laneBySectionId = new Map(lanes.filter(lane => lane.section).map(lane => [lane.section!.id, lane]))
+  const legacyLane = lanes.find(lane => !lane.section)
+  const showTopLevelPreview = Boolean(palettePreviewBlock && isTopLevelLandingBlockType(palettePreviewBlock.blockType))
+  let legacyRendered = false
+
+  return (
+    <>
+      {blocks.map((block) => {
+        const blockInsertIndex = blockIndexById.get(block.id) ?? 0
+        const topLevelPreviewBefore = showTopLevelPreview && paletteInsertIndex === blockInsertIndex
+
+        if (isPanelBlock(block)) {
+          const moveState = getBlockMoveState(block)
+          return (
+            <React.Fragment key={block.id}>
+              {topLevelPreviewBefore && palettePreviewBlock && (
+                <PaletteInsertPreview block={palettePreviewBlock} forms={forms} calendars={calendars} />
+              )}
+              <SortableCanvasBlock
+                block={block}
+                blocks={blocks}
+                index={blockInsertIndex}
+                selected={selectedBlockId === block.id}
+                site={site}
+                forms={forms}
+                calendars={calendars}
+                pages={pages}
+                activePageId={activePageId}
+                canMoveUp={moveState.canMoveUp}
+                canMoveDown={moveState.canMoveDown}
+                onSelect={() => onSelectBlock(block.id)}
+                onDelete={() => onDeleteBlock(block.id)}
+                onMoveUp={() => onMoveBlock(block.id, 'up')}
+                onMoveDown={() => onMoveBlock(block.id, 'down')}
+                onPatchBlock={(patch) => onPatchBlock(block.id, patch)}
+                onPatchSettings={(patch) => onPatchBlockSettings(block, patch)}
+                onSave={() => onSaveBlock(block.id)}
+              />
+            </React.Fragment>
+          )
+        }
+
+        if (!isSectionBlock(block)) {
+          if (!legacyLane || legacyRendered || getBlockSectionId(block)) return null
+          legacyRendered = true
+          return (
+            <LegacyLandingSection
+              key={legacyLane.id}
+              lane={legacyLane}
+              blocks={blocks}
+              blockIndexById={blockIndexById}
+              selectedBlockId={selectedBlockId}
+              site={site}
+              forms={forms}
+              calendars={calendars}
+	              pages={pages}
+	              activePageId={activePageId}
+	              palettePreviewBlock={palettePreviewBlock}
+	              paletteInsertIndex={paletteInsertIndex}
+	              paletteSectionTarget={paletteSectionTarget}
+	              onSelectBlock={onSelectBlock}
+              onDeleteBlock={onDeleteBlock}
+              onMoveBlock={onMoveBlock}
+              getBlockMoveState={getBlockMoveState}
+              onPatchBlock={onPatchBlock}
+              onPatchBlockSettings={onPatchBlockSettings}
+              onSaveBlock={onSaveBlock}
+            />
+          )
+        }
+
+	        const lane = laneBySectionId.get(block.id)
+	        if (!lane) return null
+	        return (
+	          <React.Fragment key={lane.id}>
+	            {topLevelPreviewBefore && palettePreviewBlock && (
+	              <PaletteInsertPreview block={palettePreviewBlock} forms={forms} calendars={calendars} />
+	            )}
+	            <SortableLandingSection
+	              lane={lane}
+              blocks={blocks}
+              blockIndexById={blockIndexById}
+              selectedBlockId={selectedBlockId}
+              site={site}
+              forms={forms}
+              calendars={calendars}
+              pages={pages}
+	              activePageId={activePageId}
+	              paletteDragging={paletteDragging}
+	              palettePreviewBlock={palettePreviewBlock}
+	              paletteInsertIndex={paletteInsertIndex}
+	              paletteSectionTarget={paletteSectionTarget}
+	              onSelectBlock={onSelectBlock}
+              onDeleteBlock={onDeleteBlock}
+              onMoveBlock={onMoveBlock}
+              getBlockMoveState={getBlockMoveState}
+              onPatchBlock={onPatchBlock}
+              onPatchBlockSettings={onPatchBlockSettings}
+              onSaveBlock={onSaveBlock}
+            />
+	          </React.Fragment>
+	        )
+	      })}
+	      {showTopLevelPreview && palettePreviewBlock && paletteInsertIndex !== null && paletteInsertIndex >= blocks.length && (
+	        <PaletteInsertPreview block={palettePreviewBlock} forms={forms} calendars={calendars} />
+	      )}
+	      {legacyLane && !legacyRendered && (
+	        <LegacyLandingSection
+          lane={legacyLane}
+          blocks={blocks}
+          blockIndexById={blockIndexById}
+          selectedBlockId={selectedBlockId}
+          site={site}
+          forms={forms}
+          calendars={calendars}
+	          pages={pages}
+	          activePageId={activePageId}
+	          palettePreviewBlock={palettePreviewBlock}
+	          paletteInsertIndex={paletteInsertIndex}
+	          paletteSectionTarget={paletteSectionTarget}
+	          onSelectBlock={onSelectBlock}
+          onDeleteBlock={onDeleteBlock}
+          onMoveBlock={onMoveBlock}
+          getBlockMoveState={getBlockMoveState}
+          onPatchBlock={onPatchBlock}
+          onPatchBlockSettings={onPatchBlockSettings}
+          onSaveBlock={onSaveBlock}
+        />
+      )}
+    </>
+  )
+}
+
+interface LandingSectionRenderProps {
+  lane: LandingSectionLane
+  blocks: SiteBlock[]
+  blockIndexById: Map<string, number>
+  selectedBlockId: string
+  site: PublicSite
+  forms: PublicSite[]
+  calendars: CalendarType[]
+  pages: SitePage[]
+  activePageId: string
+  paletteDragging?: boolean
+  palettePreviewBlock?: SiteBlock | null
+  paletteInsertIndex?: number | null
+  paletteSectionTarget?: PaletteSectionTarget | null
+  onSelectBlock: (blockId: string) => void
+  onDeleteBlock: (blockId: string) => void
+  onMoveBlock: (blockId: string, direction: BlockMoveDirection) => void
+  getBlockMoveState: (block: SiteBlock) => BlockMoveState
+  onPatchBlock: (blockId: string, patch: Partial<SiteBlock>) => void
+  onPatchBlockSettings: (block: SiteBlock, patch: Record<string, unknown>) => void
+  onSaveBlock: (blockId: string) => void
+}
+
+const LandingSectionColumns: React.FC<LandingSectionRenderProps> = ({
+  lane,
+  blocks,
+  blockIndexById,
+  selectedBlockId,
+  site,
+  forms,
+  calendars,
+  pages,
+  activePageId,
+  paletteDragging,
+  palettePreviewBlock,
+  paletteInsertIndex,
+  paletteSectionTarget,
+  onSelectBlock,
+  onDeleteBlock,
+  onMoveBlock,
+  getBlockMoveState,
+  onPatchBlock,
+  onPatchBlockSettings,
+  onSaveBlock
+}) => {
+  const showContentPreview = Boolean(
+    palettePreviewBlock
+    && !isTopLevelLandingBlockType(palettePreviewBlock.blockType)
+    && typeof paletteInsertIndex === 'number'
+    && paletteSectionTarget
+    && lane.section
+    && paletteSectionTarget.sectionId === lane.section.id
+  )
+
+  return (
+    <div className="rstk-section-columns">
+      {lane.columnBlocks.map((columnBlocks, columnIndex) => {
+        const isTargetColumn = showContentPreview && paletteSectionTarget?.sectionColumn === columnIndex
+        const previewBeforeBlockId = isTargetColumn
+          ? columnBlocks.find(block => paletteInsertIndex! <= (blockIndexById.get(block.id) ?? 0))?.id || ''
+          : ''
+        const showPreviewAfterColumn = isTargetColumn && columnBlocks.length > 0 && !previewBeforeBlockId
+
+        return (
+          <div
+            key={`${lane.id}-${columnIndex}`}
+            className={`rstk-section-column ${paletteDragging && lane.section ? 'rstk-section-column-active' : ''} ${isTargetColumn ? 'rstk-section-column-target' : ''}`}
+            data-rstk-section-id={lane.section?.id || undefined}
+            data-rstk-section-column={lane.section ? columnIndex : undefined}
+          >
+            {isTargetColumn && columnBlocks.length === 0 && palettePreviewBlock && (
+              <PaletteInsertPreview block={palettePreviewBlock} forms={forms} calendars={calendars} />
+            )}
+            {columnBlocks.map(block => {
+              const moveState = getBlockMoveState(block)
+              return (
+                <React.Fragment key={block.id}>
+                  {isTargetColumn && previewBeforeBlockId === block.id && palettePreviewBlock && (
+                    <PaletteInsertPreview block={palettePreviewBlock} forms={forms} calendars={calendars} />
+                  )}
+                  <SortableCanvasBlock
+                    block={block}
+                    blocks={blocks}
+                    index={blockIndexById.get(block.id) ?? 0}
+                    selected={selectedBlockId === block.id}
+                    site={site}
+                    forms={forms}
+                    calendars={calendars}
+                    pages={pages}
+                    activePageId={activePageId}
+                    canMoveUp={moveState.canMoveUp}
+                    canMoveDown={moveState.canMoveDown}
+                    onSelect={() => onSelectBlock(block.id)}
+                    onDelete={() => onDeleteBlock(block.id)}
+                    onMoveUp={() => onMoveBlock(block.id, 'up')}
+                    onMoveDown={() => onMoveBlock(block.id, 'down')}
+                    onPatchBlock={(patch) => onPatchBlock(block.id, patch)}
+                    onPatchSettings={(patch) => onPatchBlockSettings(block, patch)}
+                    onSave={() => onSaveBlock(block.id)}
+                  />
+                </React.Fragment>
+              )
+            })}
+            {showPreviewAfterColumn && palettePreviewBlock && (
+              <PaletteInsertPreview block={palettePreviewBlock} forms={forms} calendars={calendars} />
+            )}
+            {lane.section && columnBlocks.length === 0 && !isTargetColumn && (
+              <div className="rstkColumnDropZone">Suelta contenido aqui</div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+const SortableLandingSection: React.FC<LandingSectionRenderProps> = ({
+  lane,
+  blocks,
+  blockIndexById,
+  selectedBlockId,
+  site,
+  forms,
+  calendars,
+  pages,
+  activePageId,
+  paletteDragging,
+  palettePreviewBlock,
+  paletteInsertIndex,
+  paletteSectionTarget,
+  onSelectBlock,
+  onDeleteBlock,
+  onMoveBlock,
+  getBlockMoveState,
+  onPatchBlock,
+  onPatchBlockSettings,
+  onSaveBlock
+}) => {
+  const section = lane.section!
+  const settings = section.settings || {}
+  const selected = selectedBlockId === section.id
+  const [toolbarEdge, setToolbarEdge] = useState<'top' | 'bottom'>('top')
+  const moveState = getBlockMoveState(section)
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: section.id,
+    animateLayoutChanges: sortableAnimateLayoutChanges,
+    transition: sortableTransition
+  })
+  const hasHeading = Boolean(section.content || getSettingString(settings, 'subtitle'))
+  const updateToolbarEdge = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    const distanceToTop = Math.abs(event.clientY - rect.top)
+    const distanceToBottom = Math.abs(rect.bottom - event.clientY)
+    const nextEdge = distanceToBottom < distanceToTop ? 'bottom' : 'top'
+    setToolbarEdge(current => current === nextEdge ? current : nextEdge)
+  }, [])
+
+  return (
+	    <section
+	      ref={setNodeRef}
+	      data-rstk-block-id={section.id}
+	      data-rstk-block-index={blockIndexById.get(section.id) ?? 0}
+	      data-rstk-page-block="true"
+	      data-rstk-section-index={blockIndexById.get(section.id) ?? 0}
+      data-rstk-section-id={section.id}
+      className={getBlockStyleClassName(section, `rstk-section-lane rstkSel ${selected ? 'rstkSelActive' : ''} ${toolbarEdge === 'bottom' ? 'rstkSectionToolsBottom' : ''} ${isDragging ? 'rstkSelDragging' : ''}`)}
+      style={{
+        transform: CSS.Transform.toString(transform),
+	        transition: transition || 'transform 520ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+        opacity: isDragging ? 0.34 : undefined,
+        zIndex: isDragging ? 8 : undefined,
+        ...getBlockCanvasStyle(section)
+      }}
+      onPointerEnter={updateToolbarEdge}
+      onPointerMove={updateToolbarEdge}
+      onPointerDown={updateToolbarEdge}
+      onClick={(event) => {
+        event.stopPropagation()
+        onSelectBlock(section.id)
+      }}
+    >
+      <div className="rstkBlockTools">
+        <button type="button" className="rstkBlockTool rstkBlockToolDrag" {...attributes} {...listeners} aria-label="Reordenar franja">
+          <GripVertical size={15} />
+        </button>
+        <button
+          type="button"
+          className="rstkBlockTool"
+          disabled={!moveState.canMoveUp}
+          onClick={(event) => { event.stopPropagation(); onMoveBlock(section.id, 'up') }}
+          aria-label="Subir franja"
+        >
+          <ArrowUp size={14} />
+        </button>
+        <button
+          type="button"
+          className="rstkBlockTool"
+          disabled={!moveState.canMoveDown}
+          onClick={(event) => { event.stopPropagation(); onMoveBlock(section.id, 'down') }}
+          aria-label="Bajar franja"
+        >
+          <ArrowDown size={14} />
+        </button>
+        <button
+          type="button"
+          className="rstkBlockTool rstkBlockToolDelete"
+          onClick={(event) => { event.stopPropagation(); onDeleteBlock(section.id) }}
+          onPointerDown={(event) => event.stopPropagation()}
+          aria-label="Eliminar contenedor"
+          title="Eliminar"
+        >
+          <Trash2 size={14} />
+        </button>
+      </div>
+      <div className="rstk-section-inner">
+        {hasHeading && (
+          <div className="rstk-section-heading">
+            <InlineEditable as="h2" value={section.content} placeholder="Titulo opcional" onChange={(value) => onPatchBlock(section.id, { content: value })} onCommit={() => onSaveBlock(section.id)} />
+            <InlineEditable as="p" multiline value={getSettingString(settings, 'subtitle')} placeholder="Texto breve opcional" onChange={(value) => onPatchBlockSettings(section, { subtitle: value })} onCommit={() => onSaveBlock(section.id)} />
+          </div>
+        )}
+        <LandingSectionColumns
+          lane={lane}
+          blocks={blocks}
+          blockIndexById={blockIndexById}
+          selectedBlockId={selectedBlockId}
+          site={site}
+          forms={forms}
+          calendars={calendars}
+          pages={pages}
+	          activePageId={activePageId}
+	          paletteDragging={paletteDragging}
+	          palettePreviewBlock={palettePreviewBlock}
+	          paletteInsertIndex={paletteInsertIndex}
+	          paletteSectionTarget={paletteSectionTarget}
+	          onSelectBlock={onSelectBlock}
+          onDeleteBlock={onDeleteBlock}
+          onMoveBlock={onMoveBlock}
+          getBlockMoveState={getBlockMoveState}
+          onPatchBlock={onPatchBlock}
+          onPatchBlockSettings={onPatchBlockSettings}
+          onSaveBlock={onSaveBlock}
+        />
+      </div>
+    </section>
+  )
+}
+
+const LegacyLandingSection: React.FC<Omit<LandingSectionRenderProps, 'paletteDragging'>> = (props) => (
+  <section className="rstk-section-lane rstk-section-lane-legacy">
+    <div className="rstk-section-inner">
+      <LandingSectionColumns {...props} />
+    </div>
+  </section>
+)
+
+const PaletteInsertPreview: React.FC<{
+  block: SiteBlock
+  site?: PublicSite
+  forms: PublicSite[]
+  calendars: CalendarType[]
+}> = ({ block, site, forms, calendars }) => (
+  <div className={getBlockStyleClassName(block, 'rstkPalettePreview')} style={getBlockCanvasStyle(block)}>
+    <CanvasPreviewBlock block={block} site={site} forms={forms} calendars={calendars} />
+  </div>
+)
+
+const InlineButtonRouting: React.FC<{
+  settings: Record<string, unknown>
+  pages: SitePage[]
+  activePageId: string
+  onPatchSettings: (patch: Record<string, unknown>) => void
+  onSave: () => void
+}> = ({ settings, pages, activePageId, onPatchSettings, onSave }) => (
+  <div className={styles.inlineBlockTools} onClick={(event) => event.stopPropagation()}>
+    <ButtonActionFields settings={settings} pages={pages} activePageId={activePageId} onPatchSettings={onPatchSettings} onSave={onSave} />
+  </div>
+)
+
+const InlineBlockStyleControls: React.FC<{
+  site: PublicSite
+  block: SiteBlock
+  blocks: SiteBlock[]
+  onPatchSettings: (patch: Record<string, unknown>) => void
+  onSave: () => void
+}> = ({ site, block, blocks, onPatchSettings, onSave }) => {
+  const settings = getPanelStyleSettings(site, block, blocks)
+  const defaultAccent = defaultAccentForSite(site)
+  const isSection = block.blockType === SECTION_BLOCK_TYPE
+  const isLandingContent = isLanding(site) && !isSection
+  const supportsButton = block.blockType === 'hero' || block.blockType === 'button' || block.blockType === 'cta'
+  const supportsField = fieldBlockTypes.has(block.blockType)
+  const isHardEmbed = block.blockType === 'embed' || block.blockType === 'calendar_embed'
+  const supportsTextStyle = isSection || ['headline', 'title', 'subheading', 'subtitle', 'description', 'text', 'hero', 'cta', 'benefits', 'testimonials', 'services', 'faq', 'form_embed', 'social_profile'].includes(block.blockType)
+  const supportsMedia = block.blockType === 'image' || block.blockType === 'video'
+  const supportsCards = ['benefits', 'testimonials', 'services', 'faq'].includes(block.blockType)
+  const defaultBorderWidth = getBlockBorderWidthFallback(site, block)
+  const blockTextPaint = getSettingPaint(settings, 'blockText', getPageTextPaint(site))
+  const isBold = settings.fontWeight === 'bold'
+  const isItalic = settings.fontStyle === 'italic'
+  const isUnderline = settings.textDecoration === 'underline'
+  const currentFontFamily = getSettingString(settings, 'fontFamily')
+  const fontOptions = currentFontFamily && !GOOGLE_FONT_OPTIONS.some(option => option.value === currentFontFamily)
+    ? [...GOOGLE_FONT_OPTIONS, { label: 'Fuente actual', value: currentFontFamily }]
+    : GOOGLE_FONT_OPTIONS
+  const patchTextFormat = (patch: Record<string, unknown>) => {
+    onPatchSettings(patch)
+    window.setTimeout(onSave, 0)
+  }
+
+  return (
+    <div className={styles.blockStyleControls} onClick={(event) => event.stopPropagation()}>
+      {supportsTextStyle && (
+        <>
+          <div className={styles.panelSubheader}>Personalizacion del texto</div>
+          <div className={styles.textFormatPanel}>
+            <div className={styles.textToolbar}>
+              <label className={styles.textFontSelect}>
+                <span>Fuente</span>
+                <CustomSelect value={currentFontFamily} onChange={(event) => onPatchSettings({ fontFamily: event.target.value })} onBlur={onSave}>
+                  {fontOptions.map(option => (
+                    <option key={option.label} value={option.value}>{option.label}</option>
+                  ))}
+                </CustomSelect>
+              </label>
+              <div className={styles.textFormatButtons} role="group" aria-label="Formato de texto">
+                <button
+                  type="button"
+                  className={isBold ? styles.textFormatActive : ''}
+                  aria-pressed={isBold}
+                  title="Negrita"
+                  aria-label="Negrita"
+                  onClick={() => patchTextFormat({ fontWeight: isBold ? 'normal' : 'bold' })}
+                >
+                  <Bold size={15} />
+                </button>
+                <button
+                  type="button"
+                  className={isItalic ? styles.textFormatActive : ''}
+                  aria-pressed={isItalic}
+                  title="Italica"
+                  aria-label="Italica"
+                  onClick={() => patchTextFormat({ fontStyle: isItalic ? '' : 'italic' })}
+                >
+                  <Italic size={15} />
+                </button>
+                <button
+                  type="button"
+                  className={isUnderline ? styles.textFormatActive : ''}
+                  aria-pressed={isUnderline}
+                  title="Subrayado"
+                  aria-label="Subrayado"
+                  onClick={() => patchTextFormat({ textDecoration: isUnderline ? '' : 'underline' })}
+                >
+                  <Underline size={15} />
+                </button>
+              </div>
+            </div>
+            <AlignmentControl
+              label="Alineacion"
+              value={getHorizontalAlign(settings, 'textAlign', getBlockTextAlignFallback(site, block, blocks))}
+              options={horizontalAlignOptions}
+              onChange={(value) => onPatchSettings({ textAlign: value })}
+              onCommit={onSave}
+            />
+            <div className={styles.twoColumn}>
+              <DimensionField
+                label="Tamano de letra"
+                value={getSettingNumber(settings, 'fontSize', getBlockFontSizeFallback(site, block), 12, 96)}
+                min={12}
+                max={96}
+                unit="px"
+                onChange={(value) => onPatchSettings({ fontSize: value })}
+                onCommit={onSave}
+              />
+              <DimensionField
+                label="Ancho texto"
+                value={getSettingNumber(settings, 'contentMaxWidth', getBlockContentMaxWidthFallback(site, block), 10, 120)}
+                min={10}
+                max={120}
+                unit="ch"
+                onChange={(value) => onPatchSettings({ contentMaxWidth: value })}
+                onCommit={onSave}
+              />
+            </div>
+            <div className={styles.twoColumn}>
+              <ColorField
+                label="Color"
+                value={blockTextPaint}
+                allowGradient
+                onChange={(value) => onPatchSettings({ blockText: value })}
+                onCommit={onSave}
+              />
+              <ColorField
+                label="Color contorno"
+                value={getSettingPaint(settings, 'textStrokeColor', paintFallbackColor(blockTextPaint, '#111827'))}
+                allowGradient
+                onChange={(value) => onPatchSettings({ textStrokeColor: value })}
+                onCommit={onSave}
+              />
+            </div>
+            <DimensionField
+              label="Contorno"
+              value={getSettingNumber(settings, 'textStrokeWidth', 0, 0, 12)}
+              min={0}
+              max={12}
+              unit="px"
+              onChange={(value) => onPatchSettings({ textStrokeWidth: value })}
+              onCommit={onSave}
+            />
+          </div>
+        </>
+      )}
+
+      {supportsButton && (
+        <>
+          <div className={styles.panelSubheader}>Personalizacion del boton</div>
+          <AlignmentControl
+            label="Alineacion"
+            value={getButtonAlign(settings, 'center')}
+            options={buttonAlignOptions}
+            onChange={(value) => onPatchSettings({ buttonAlign: value })}
+            onCommit={onSave}
+          />
+          <div className={styles.twoColumn}>
+            <ColorField
+              label="Fondo del boton"
+              value={getSettingPaint(settings, 'buttonBg', defaultAccent)}
+              allowGradient
+              onChange={(value) => onPatchSettings({ buttonBg: value })}
+              onCommit={onSave}
+            />
+            <ColorField
+              label="Texto del boton"
+              value={getSettingPaint(settings, 'buttonTextColor', onAccentFor(defaultAccent))}
+              allowGradient
+              onChange={(value) => onPatchSettings({ buttonTextColor: value })}
+              onCommit={onSave}
+            />
+          </div>
+          <div className={styles.twoColumn}>
+            <DimensionField
+              label="Radio boton"
+              value={getSettingNumber(settings, 'buttonRadius', 28, 0, 80)}
+              min={0}
+              max={80}
+              onChange={(value) => onPatchSettings({ buttonRadius: value })}
+              onCommit={onSave}
+            />
+            <DimensionField
+              label="Alto boton"
+              value={getSettingNumber(settings, 'buttonHeight', 54, 34, 88)}
+              min={34}
+              max={88}
+              onChange={(value) => onPatchSettings({ buttonHeight: value })}
+              onCommit={onSave}
+            />
+          </div>
+          <div className={styles.twoColumn}>
+            <DimensionField
+              label="Relleno lados"
+              value={getSettingNumber(settings, 'buttonPaddingX', 28, 8, 72)}
+              min={8}
+              max={72}
+              onChange={(value) => onPatchSettings({ buttonPaddingX: value })}
+              onCommit={onSave}
+            />
+            <DimensionField
+              label="Texto boton"
+              value={getSettingNumber(settings, 'buttonFontSize', 16, 11, 32)}
+              min={11}
+              max={32}
+              onChange={(value) => onPatchSettings({ buttonFontSize: value })}
+              onCommit={onSave}
+            />
+          </div>
+          <div className={styles.twoColumn}>
+            <DimensionField
+              label="Borde boton"
+              value={getSettingNumber(settings, 'buttonBorderWidth', 1, 0, 8)}
+              min={0}
+              max={8}
+              onChange={(value) => onPatchSettings({ buttonBorderWidth: value })}
+              onCommit={onSave}
+            />
+            <ColorField
+              label="Color borde"
+              value={getSettingPaint(settings, 'buttonBorderColor', getSettingPaint(settings, 'buttonBg', defaultAccent))}
+              allowGradient
+              onChange={(value) => onPatchSettings({ buttonBorderColor: value })}
+              onCommit={onSave}
+            />
+          </div>
+        </>
+      )}
+
+      {supportsField && (
+        <>
+          <div className={styles.panelSubheader}>Personalizacion del campo</div>
+          <div className={styles.twoColumn}>
+            <ColorField
+              label="Caja del campo"
+              value={getSettingPaint(settings, 'fieldBg', '#ffffff')}
+              allowGradient
+              onChange={(value) => onPatchSettings({ fieldBg: value })}
+              onCommit={onSave}
+            />
+            <ColorField
+              label="Borde del campo"
+              value={getSettingPaint(settings, 'fieldBorder', '#dbe3ef')}
+              allowGradient
+              onChange={(value) => onPatchSettings({ fieldBorder: value })}
+              onCommit={onSave}
+            />
+          </div>
+          <DimensionField
+            label="Radio campo"
+            value={getSettingNumber(settings, 'fieldRadius', 12, 0, 32)}
+            min={0}
+            max={32}
+            onChange={(value) => onPatchSettings({ fieldRadius: value })}
+            onCommit={onSave}
+          />
+        </>
+      )}
+
+      {supportsMedia && (
+        <>
+          <div className={styles.panelSubheader}>{block.blockType === 'image' ? 'Personalizacion de imagen' : 'Personalizacion de video'}</div>
+          <AlignmentControl
+            label="Alineacion"
+            value={getHorizontalAlign(settings, 'mediaAlign', 'center')}
+            options={horizontalAlignOptions}
+            onChange={(value) => onPatchSettings({ mediaAlign: value })}
+            onCommit={onSave}
+          />
+          <div className={styles.twoColumn}>
+            <DimensionField
+              label={block.blockType === 'image' ? 'Ancho imagen' : 'Ancho video'}
+              value={getSettingNumber(settings, 'mediaWidth', 100, 30, 100)}
+              min={30}
+              max={100}
+              unit="%"
+              onChange={(value) => onPatchSettings({ mediaWidth: value })}
+              onCommit={onSave}
+            />
+            <DimensionField
+              label="Radio media"
+              value={getSettingNumber(settings, 'mediaRadius', 18, 0, 48)}
+              min={0}
+              max={48}
+              onChange={(value) => onPatchSettings({ mediaRadius: value })}
+              onCommit={onSave}
+            />
+          </div>
+        </>
+      )}
+
+      {supportsCards && (
+        <>
+          <div className={styles.panelSubheader}>Personalizacion de tarjetas</div>
+          <AlignmentControl
+            label="Texto tarjeta"
+            value={getHorizontalAlign(settings, 'cardAlign', 'left')}
+            options={horizontalAlignOptions}
+            onChange={(value) => onPatchSettings({ cardAlign: value })}
+            onCommit={onSave}
+          />
+          <div className={styles.twoColumn}>
+            <DimensionField
+              label="Columnas"
+              value={getSettingNumber(settings, 'listColumns', 3, 1, 4)}
+              min={1}
+              max={4}
+              unit=""
+              onChange={(value) => onPatchSettings({ listColumns: value })}
+              onCommit={onSave}
+            />
+            <DimensionField
+              label="Radio tarjeta"
+              value={getSettingNumber(settings, 'cardRadius', 18, 0, 48)}
+              min={0}
+              max={48}
+              onChange={(value) => onPatchSettings({ cardRadius: value })}
+              onCommit={onSave}
+            />
+          </div>
+          <div className={styles.twoColumn}>
+            <ColorField
+              label="Fondo tarjeta"
+              value={getSettingPaint(settings, 'cardBg', 'transparent')}
+              allowGradient
+              onChange={(value) => onPatchSettings({ cardBg: value })}
+              onCommit={onSave}
+            />
+            <ColorField
+              label="Borde tarjeta"
+              value={getSettingPaint(settings, 'cardBorderColor', '#dbe3ef')}
+              allowGradient
+              onChange={(value) => onPatchSettings({ cardBorderColor: value })}
+              onCommit={onSave}
+            />
+          </div>
+          <DimensionField
+            label="Grosor tarjeta"
+            value={getSettingNumber(settings, 'cardBorderWidth', 1, 0, 8)}
+            min={0}
+            max={8}
+            onChange={(value) => onPatchSettings({ cardBorderWidth: value })}
+            onCommit={onSave}
+          />
+        </>
+      )}
+
+      <div className={styles.panelSubheader}>{isSection ? 'Estilo de franja' : isLandingContent ? 'Estilo del contenedor' : 'Estilo del bloque'}</div>
+      <LinkedSpacingField
+        label={isSection ? 'Relleno de franja' : 'Relleno'}
+        base="blockPadding"
+        settings={settings}
+        min={SPACING_OVERLAP_MIN}
+        max={160}
+        fallback={getSettingNumber(settings, 'blockPadding', 0, SPACING_OVERLAP_MIN, 160)}
+        onChange={onPatchSettings}
+        onCommit={onSave}
+      />
+      <LinkedSpacingField
+        label={isSection ? 'Margen de franja' : 'Margen'}
+        base="blockMargin"
+        settings={settings}
+        min={SPACING_OVERLAP_MIN}
+        max={200}
+        fallback={getSettingNumber(settings, 'blockMargin', 0, SPACING_OVERLAP_MIN, 200)}
+        onChange={onPatchSettings}
+        onCommit={onSave}
+      />
+      {!isHardEmbed && (
+        <>
+          <ColorField
+            label={isSection ? 'Fondo de franja' : 'Fondo del contenedor'}
+            value={getSettingPaint(settings, 'blockBg', 'transparent')}
+            allowGradient
+            onChange={(value) => onPatchSettings({ blockBg: value })}
+            onCommit={onSave}
+          />
+          <div className={styles.twoColumn}>
+            <DimensionField
+              label="Radio"
+              value={getSettingNumber(settings, 'blockRadius', 8, 0, 48)}
+              min={0}
+              max={48}
+              onChange={(value) => onPatchSettings({ blockRadius: value })}
+              onCommit={onSave}
+            />
+            <DimensionField
+              label="Grosor borde"
+              value={getSettingNumber(settings, 'blockBorderWidth', defaultBorderWidth, 0, 12)}
+              min={0}
+              max={12}
+              onChange={(value) => onPatchSettings({ blockBorderWidth: value })}
+              onCommit={onSave}
+            />
+          </div>
+          <ColorField
+            label="Color borde"
+            value={getSettingPaint(settings, 'blockBorderColor', '#dbe3ef')}
+            allowGradient
+            onChange={(value) => onPatchSettings({ blockBorderColor: value })}
+            onCommit={onSave}
+          />
+        </>
+      )}
+    </div>
+  )
+}
+
+interface CanvasPreviewBlockProps {
+  block: SiteBlock
+  site?: PublicSite
+  blocks?: SiteBlock[]
+  forms: PublicSite[]
+  calendars: CalendarType[]
+  pages?: SitePage[]
+  activePageId?: string
+  selected?: boolean
+  onPatchBlock?: (patch: Partial<SiteBlock>) => void
+  onPatchSettings?: (patch: Record<string, unknown>) => void
+  onSave?: () => void
+}
+
+const CanvasPreviewBlock: React.FC<CanvasPreviewBlockProps> = ({
+  block,
+  site,
+  blocks = [],
+  forms,
+  calendars,
+  pages = [],
+  activePageId = DEFAULT_FUNNEL_PAGE_ID,
+  selected = false,
+  onPatchBlock,
+  onPatchSettings,
+  onSave
+}) => {
+  const settings = block.settings || {}
+  const editable = Boolean(onPatchBlock && onSave)
+  const patchBlock = onPatchBlock || (() => {})
+  const patchSettings = onPatchSettings || (() => {})
+  const save = onSave || (() => {})
+
+  if (block.blockType === 'social_profile') {
+    const platform = normalizeSocialPlatform(settings.platform)
+    const fallbackTheme = site?.theme || {}
+    const brandName = getSettingString(settings, 'brandName') || fallbackTheme.brandName || site?.title || site?.name || 'Tu marca'
+    const socialSite = {
+      ...(site || {}),
+      id: site?.id || block.siteId,
+      name: site?.name || brandName,
+      title: site?.title || brandName,
+      theme: {
+        ...fallbackTheme,
+        template: platform,
+        brandName,
+        brandSubtitle: getSettingString(settings, 'brandSubtitle') || fallbackTheme.brandSubtitle || (platform === 'instagram' ? 'Publicacion pagada' : 'Patrocinado'),
+        brandAvatar: getSettingString(settings, 'brandAvatar') || fallbackTheme.brandAvatar || '',
+        followers: getSettingString(settings, 'followers') || fallbackTheme.followers || '',
+        brandVerified: settings.brandVerified === undefined ? fallbackTheme.brandVerified : settings.brandVerified !== false
+      }
+    } as PublicSite
+
+    return <CanvasChrome platform={platform} site={socialSite} embedded onPatchTheme={() => {}} onSave={() => {}} />
+  }
+
+  if (block.blockType === HEADER_PANEL_BLOCK_TYPE || block.blockType === FOOTER_PANEL_BLOCK_TYPE) {
+    const links = getPanelLinks(settings)
+    const isHeader = block.blockType === HEADER_PANEL_BLOCK_TYPE
+    return (
+      <div className={`rstk-site-panel ${isHeader ? 'rstk-site-panel-header' : 'rstk-site-panel-footer'}`}>
+        <InlineEditable
+          as={isHeader ? 'strong' : 'p'}
+          className="rstk-site-panel-copy"
+          multiline={!isHeader}
+          value={block.content}
+          placeholder={isHeader ? 'Nombre de marca' : 'Texto del pie de pagina'}
+          disabled={!editable}
+          onChange={(value) => patchBlock({ content: value })}
+          onCommit={save}
+        />
+        {links.length > 0 && (
+          <nav className="rstk-site-panel-links" aria-label={isHeader ? 'Enlaces superiores' : 'Enlaces inferiores'}>
+            {links.map((link, index) => (
+              <a key={`${link.label}-${index}`} href={link.url}>{link.label}</a>
+            ))}
+          </nav>
+        )}
+      </div>
+    )
+  }
+
+  if (block.blockType === 'hero') {
+    return (
+      <section className="rstk-hero">
+        <InlineEditable as="p" className="rstk-kicker" value={getSettingString(settings, 'kicker')} placeholder="Kicker (opcional)" disabled={!editable} onChange={(value) => patchSettings({ kicker: value })} onCommit={save} />
+        <InlineEditable as="h1" className="rstk-headline" multiline value={block.content} placeholder={block.label || 'Titular principal'} disabled={!editable} onChange={(value) => patchBlock({ content: value })} onCommit={save} />
+        <InlineEditable as="p" className="rstk-subheading" multiline value={getSettingString(settings, 'subtitle')} placeholder="Subtitulo" disabled={!editable} onChange={(value) => patchSettings({ subtitle: value })} onCommit={save} />
+        <InlineButtonEditable value={getSettingString(settings, 'buttonText')} placeholder="Texto del boton" disabled={!editable} onChange={(value) => patchSettings({ buttonText: value })} onCommit={save} />
+      </section>
+    )
+  }
+
+  if (['headline', 'title'].includes(block.blockType)) {
+    return (
+      <InlineEditable as="h1" className="rstk-headline" multiline value={block.content} placeholder={block.label || 'Titulo'} disabled={!editable} onChange={(value) => patchBlock({ content: value })} onCommit={save} />
+    )
+  }
+
+  if (['subheading', 'subtitle', 'description'].includes(block.blockType)) {
+    return (
+      <InlineEditable as="p" className="rstk-subheading" multiline value={block.content} placeholder={block.label || 'Subtitulo'} disabled={!editable} onChange={(value) => patchBlock({ content: value })} onCommit={save} />
+    )
+  }
+
+  if (block.blockType === 'text') {
+    return (
+      <InlineEditable as="div" className="rstk-text" multiline value={block.content || ''} placeholder="Texto de contenido" disabled={!editable} onChange={(value) => patchBlock({ content: value })} onCommit={save} />
+    )
+  }
+
+  if (block.blockType === 'section') {
+    const columns = getSectionColumns(block)
+    return (
+      <section className="rstk-section-break">
+        <h2>{getSectionColumnLabel(columns)}</h2>
+        <p>Franja para agregar contenido en {columns} {columns === 1 ? 'columna' : 'columnas'}.</p>
+      </section>
+    )
+  }
+
+  if (block.blockType === 'image') {
+    const mediaUrl = getSettingString(settings, 'mediaUrl') || block.content
+    return mediaUrl
+      ? <figure className="rstk-media"><img src={mediaUrl} alt={block.label || 'Imagen'} loading="lazy" /></figure>
+      : <div className="rstk-media rstk-media-empty">Imagen sin URL</div>
+  }
+
+  if (block.blockType === 'video') {
+    const videoUrl = getSettingString(settings, 'mediaUrl') || block.content
+    return videoUrl
+      ? <div className="rstk-video"><iframe src={videoUrl} title={block.label || 'Video'} loading="lazy" allowFullScreen /></div>
+      : <div className="rstk-media rstk-media-empty"><span className="rstk-play"><Play size={22} /></span>Agrega la URL del video</div>
+  }
+
+  if (block.blockType === 'button') {
+    return (
+      <InlineButtonEditable value={getSettingString(settings, 'buttonText') || block.content || ''} placeholder="Boton" disabled={!editable} onChange={(value) => patchSettings({ buttonText: value })} onCommit={save} />
+    )
+  }
+
+  if (block.blockType === 'benefits') {
+    const items = getCanvasItems(settings)
+    return (
+      <section className="rstk-section-list rstk-checklist">
+        <InlineEditable as="h2" value={block.content} placeholder={block.label || 'Titulo de seccion'} disabled={!editable} onChange={(value) => patchBlock({ content: value })} onCommit={save} />
+        <ul className="rstk-check-list">
+          {(items.length ? items : [{ title: 'Agrega elementos en el panel', text: '', author: '' }]).map((item, index) => {
+            const tone = getItemTone(item)
+            const title = stripToneMarker(item.title)
+            const text = stripToneMarker(item.text)
+            return (
+              <li key={index} className={`rstk-check rstk-check-${tone}`}>
+                <span className="rstk-check-icon" aria-hidden="true">{tone === 'con' ? <X size={15} /> : <Check size={15} />}</span>
+                <span className="rstk-check-body">
+                  {title && <strong>{title}</strong>}
+                  {text && <span>{text}</span>}
+                </span>
+              </li>
+            )
+          })}
+        </ul>
+      </section>
+    )
+  }
+
+  if (['testimonials', 'services', 'faq'].includes(block.blockType)) {
+    const items = getCanvasItems(settings)
+    return (
+      <section className="rstk-section-list">
+        <InlineEditable as="h2" value={block.content} placeholder={block.label || 'Titulo de seccion'} disabled={!editable} onChange={(value) => patchBlock({ content: value })} onCommit={save} />
+        <div className="rstk-list-grid">
+          {(items.length ? items : [{ title: 'Elemento', text: 'Agrega elementos en el panel', author: '' }]).map((item, index) => (
+            <article key={index}>
+              {item.title && <strong>{item.title}</strong>}
+              {item.text && <p>{item.text}</p>}
+              {item.author && <small>{item.author}</small>}
+            </article>
+          ))}
+        </div>
+      </section>
+    )
+  }
+
+  if (block.blockType === 'form_embed') {
+    const formSiteId = getSettingString(settings, 'formSiteId')
+    const form = forms.find(item => item.id === formSiteId)
+    const embeddedBlocks = Array.isArray(settings.embeddedBlocks) ? settings.embeddedBlocks as SiteBlock[] : []
+    const selectedFormFields = Array.isArray(form?.blocks)
+      ? form.blocks.filter(field => fieldBlockTypes.has(field.blockType))
+      : []
+    const description = form ? `Usando formulario: ${form.name}` : getSettingString(settings, 'description')
+    const fields = embeddedBlocks.length
+      ? embeddedBlocks
+      : selectedFormFields.length
+        ? selectedFormFields
+        : [{ id: 'placeholder', blockType: 'short_text', label: 'Campo', required: true, placeholder: 'Respuesta' } as SiteBlock]
+    return (
+      <section className="rstk-embedded-form">
+        <InlineEditable as="h2" value={block.content} placeholder="Formulario" disabled={!editable} onChange={(value) => patchBlock({ content: value })} onCommit={save} />
+        {description && <p className="rstk-help">{description}</p>}
+        {fields.map(field => <FieldStaticPreview key={field.id} block={field} />)}
+        <div className="rstk-actions rstk-embed-actions">
+          <button type="button" data-submit>Enviar</button>
+        </div>
+      </section>
+    )
+  }
+
+  if (block.blockType === 'cta') {
+    return (
+      <section className="rstk-cta">
+        <InlineEditable as="h2" value={block.content} placeholder={block.label || 'CTA final'} disabled={!editable} onChange={(value) => patchBlock({ content: value })} onCommit={save} />
+        <InlineEditable as="p" multiline value={getSettingString(settings, 'subtitle')} placeholder="Subtitulo" disabled={!editable} onChange={(value) => patchSettings({ subtitle: value })} onCommit={save} />
+        <InlineButtonEditable value={getSettingString(settings, 'buttonText')} placeholder="Texto del boton" disabled={!editable} onChange={(value) => patchSettings({ buttonText: value })} onCommit={save} />
+      </section>
+    )
+  }
+
+  if (block.blockType === 'calendar_embed') {
+    const calendarName = getSettingString(settings, 'calendarName')
+    const calendarSlug = getSettingString(settings, 'calendarSlug')
+    if (calendarSlug) {
+      return (
+        <iframe
+          className="rstk-embed rstk-calendar-embed"
+          src={sitesService.getCalendarPreviewUrl(calendarSlug)}
+          title={calendarName || `Calendario /${calendarSlug}`}
+          loading="lazy"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+        />
+      )
+    }
+
+    return (
+      <div className="rstk-embed rstk-embed-empty">
+        <CalendarDays size={20} />
+        <span style={{ marginTop: 6 }}>{calendarName || (calendarSlug ? `Calendario /${calendarSlug}` : 'Selecciona un calendario para embeber')}</span>
+      </div>
+    )
+  }
+
+  if (block.blockType === 'embed') {
+    return <EmbedPreview rawCode={block.content} />
+  }
+
+  return <FieldPreview block={block} editable={editable} onPatchBlock={patchBlock} onSave={save} />
+}
+
+const EmbedPreview: React.FC<{ rawCode: string }> = ({ rawCode }) => {
+  const embed = resolveEmbedPreview(rawCode)
+
+  if (embed.kind === 'empty') {
+    return <div className="rstk-embed rstk-embed-empty">Pega una URL, iframe o codigo embed/html</div>
+  }
+
+  return (
+    <iframe
+      className={`rstk-embed ${embed.kind === 'html' ? 'rstk-embed-code' : ''}`}
+      title={embed.title}
+      src={embed.kind === 'url' ? embed.src : undefined}
+      srcDoc={embed.kind === 'html' ? embed.srcDoc : undefined}
+      loading="lazy"
+      referrerPolicy="no-referrer-when-downgrade"
+      sandbox={embed.kind === 'url' ? EMBED_SANDBOX_URL : EMBED_SANDBOX_HTML}
+      allow={embed.kind === 'url' ? embed.allow || DEFAULT_EMBED_ALLOW : DEFAULT_EMBED_ALLOW}
+      allowFullScreen
+      style={{ minHeight: `${embed.height || EMBED_DEFAULT_HEIGHT}px` }}
+    />
+  )
+}
+
+const PhoneCountryInputPreview: React.FC<{ placeholder?: string }> = ({ placeholder }) => {
+  const detected = getDetectedAccountLocaleDefaults()
+  const selectedCountry = getCountryDefaults(detected.countryCode)
+
+  return (
+    <div className="rstk-phone-input">
+      <select aria-label="Pais y lada" defaultValue={selectedCountry.value}>
+        {COUNTRY_OPTIONS.map(country => (
+          <option key={country.value} value={country.value}>
+            {getCountryFlagEmoji(country.value)} +{country.dialCode}
+          </option>
+        ))}
+      </select>
+      <input type="tel" readOnly placeholder={placeholder || 'Numero'} />
+    </div>
+  )
+}
+
+const getFieldPreviewInputType = (blockType: SiteBlockType) => {
+  if (blockType === 'email') return 'email'
+  if (blockType === 'phone') return 'tel'
+  if (blockType === 'date') return 'date'
+  if (blockType === 'number' || blockType === 'currency') return 'number'
+  return 'text'
+}
+
+const getPreviewOptions = (block: SiteBlock): SiteBlockOption[] => {
+  const options = getOptions(block)
+  return options.length ? options : [{ id: 'preview-option', label: 'Opcion', value: 'Opcion', action: 'continue' }]
+}
+
+const FieldControlPreview: React.FC<{ block: SiteBlock }> = ({ block }) => {
+  if (block.blockType === 'paragraph') {
+    return <textarea readOnly rows={4} placeholder={block.placeholder || ''} />
+  }
+
+  if (block.blockType === 'dropdown') {
+    return (
+      <select defaultValue="" aria-label={block.label || 'Pregunta'}>
+        <option value="">{block.placeholder || 'Selecciona una opcion'}</option>
+        {getPreviewOptions(block).map(option => (
+          <option key={option.id || option.label} value={option.value || option.label}>{option.label}</option>
+        ))}
+      </select>
+    )
+  }
+
+  if (block.blockType === 'radio' || block.blockType === 'checkboxes') {
+    return (
+      <div className="rstk-options">
+        {getPreviewOptions(block).map(option => (
+          <label key={option.id || option.label} className="rstk-option">
+            <input type={block.blockType === 'checkboxes' ? 'checkbox' : 'radio'} name={block.id || block.label} readOnly />
+            <span>{option.label}</span>
+          </label>
+        ))}
+      </div>
+    )
+  }
+
+  if (block.blockType === 'phone' && isPhoneCountrySelectorEnabled(block)) {
+    return <PhoneCountryInputPreview placeholder={block.placeholder || ''} />
+  }
+
+  return <input type={getFieldPreviewInputType(block.blockType)} readOnly placeholder={block.placeholder || 'Respuesta'} />
+}
+
+// Read-only field preview (rstk markup) for embedded form fields on the canvas.
+const FieldStaticPreview: React.FC<{ block: SiteBlock }> = ({ block }) => (
+  <section className="rstk-field">
+    <label>{block.label || 'Pregunta'}{block.required ? <span className="rstk-required">*</span> : null}</label>
+    {block.content ? <p className="rstk-help">{block.content}</p> : null}
+    <FieldControlPreview block={block} />
+  </section>
+)
+
+// Field blocks: rstk-field markup with inline-editable label/help. The input is
+// a non-interactive preview; placeholder/validation/options are edited in the panel.
+const FieldPreview: React.FC<{
+  block: SiteBlock
+  editable: boolean
+  onPatchBlock: (patch: Partial<SiteBlock>) => void
+  onSave: () => void
+}> = ({ block, editable, onPatchBlock, onSave }) => {
+  return (
+    <section className="rstk-field">
+      <label>
+        <InlineEditable as="span" value={block.label} placeholder="Pregunta" disabled={!editable} onChange={(value) => onPatchBlock({ label: value })} onCommit={onSave} />
+        {block.required ? <span className="rstk-required">*</span> : null}
+      </label>
+      {(editable || block.content) && (
+        <InlineEditable as="p" className="rstk-help" multiline value={block.content} placeholder="Texto de ayuda (opcional)" disabled={!editable} onChange={(value) => onPatchBlock({ content: value })} onCommit={onSave} />
+      )}
+      <FieldControlPreview block={block} />
+    </section>
+  )
+}
+
+interface PropertiesPanelProps {
+  site: PublicSite
+  block: SiteBlock | null
+  surfaceSelectionId?: string
+  blocks: SiteBlock[]
+  allBlocks?: SiteBlock[]
+  popupBlocks?: SiteBlock[]
+  forms: PublicSite[]
+  calendars: CalendarType[]
+  customFields: CustomFieldDefinition[]
+  pages: SitePage[]
+  activePageId: string
+  metaPixelConnected: boolean
+  importedPopupDetected: boolean
+  connectedSocialProfiles: ConnectedSocialProfile[]
+  loadingSocialProfiles: boolean
+  onPatchSite: (patch: Partial<PublicSite>) => void
+  onPatchTheme: (patch: Partial<SiteTheme>) => void
+  onSaveSite: () => void
+  onPatchBlock: (patch: Partial<SiteBlock>) => void
+  onPatchSettings: (patch: Record<string, unknown>) => void
+  onPatchCategorySettings: (block: SiteBlock, patch: Record<string, unknown>) => void
+  onSaveCategory: (block: SiteBlock) => void
+  onSave: () => void
+}
+
+const FormGlobalStyleControls: React.FC<{
+  site: PublicSite
+  onPatchTheme: (patch: Partial<SiteTheme>) => void
+  onSaveSite: () => void
+}> = ({ site, onPatchTheme, onSaveSite }) => {
+  if (!isFormSite(site)) return null
+
+  const theme = site.theme || {}
+  const defaultAccent = defaultAccentForSite(site)
+  const inputText = isSiteDark(site) ? '#ffffff' : '#111827'
+  const accentRgb = cssColorToHex(defaultAccent, '#111827').replace('#', '').match(/.{2}/g)?.map(hex => parseInt(hex, 16)).join(', ') || '17, 24, 39'
+  const defaultChoiceSelectedBg = `rgba(${accentRgb}, 0.10)`
+  const currentFontFamily = getThemeString(theme, 'formFontFamily')
+  const fontOptions = currentFontFamily && !GOOGLE_FONT_OPTIONS.some(option => option.value === currentFontFamily)
+    ? [...GOOGLE_FONT_OPTIONS, { label: 'Fuente actual', value: currentFontFamily }]
+    : GOOGLE_FONT_OPTIONS
+  const isBold = theme.formFontWeight === 'bold'
+  const isItalic = theme.formFontStyle === 'italic'
+  const isUnderline = theme.formTextDecoration === 'underline'
+  const patchTextFormat = (patch: Partial<SiteTheme>) => {
+    onPatchTheme(patch)
+    window.setTimeout(onSaveSite, 0)
+  }
+
+  return (
+    <div className={styles.formGlobalControls}>
+      <div className={styles.panelSubheader}>Formulario global</div>
+      <div className={styles.textFormatPanel}>
+        <div className={styles.textToolbar}>
+          <label className={styles.textFontSelect}>
+            <span>Tipografia</span>
+            <CustomSelect value={currentFontFamily} onChange={(event) => onPatchTheme({ formFontFamily: event.target.value })} onBlur={onSaveSite}>
+              {fontOptions.map(option => (
+                <option key={option.label} value={option.value}>{option.label}</option>
+              ))}
+            </CustomSelect>
+          </label>
+          <div className={styles.textFormatButtons} role="group" aria-label="Formato global de formulario">
+            <button type="button" className={isBold ? styles.textFormatActive : ''} aria-pressed={isBold} title="Negrita" aria-label="Negrita" onClick={() => patchTextFormat({ formFontWeight: isBold ? 'normal' : 'bold' })}>
+              <Bold size={15} />
+            </button>
+            <button type="button" className={isItalic ? styles.textFormatActive : ''} aria-pressed={isItalic} title="Italica" aria-label="Italica" onClick={() => patchTextFormat({ formFontStyle: isItalic ? 'normal' : 'italic' })}>
+              <Italic size={15} />
+            </button>
+            <button type="button" className={isUnderline ? styles.textFormatActive : ''} aria-pressed={isUnderline} title="Subrayado" aria-label="Subrayado" onClick={() => patchTextFormat({ formTextDecoration: isUnderline ? 'none' : 'underline' })}>
+              <Underline size={15} />
+            </button>
+          </div>
+        </div>
+        <div className={styles.twoColumn}>
+          <DimensionField label="Texto pregunta" value={getThemeNumber(theme, 'formLabelSize', 15, 11, 28)} min={11} max={28} onChange={(value) => onPatchTheme({ formLabelSize: value })} onCommit={onSaveSite} />
+          <DimensionField label="Texto respuesta" value={getThemeNumber(theme, 'formInputSize', 16, 11, 28)} min={11} max={28} onChange={(value) => onPatchTheme({ formInputSize: value })} onCommit={onSaveSite} />
+        </div>
+        <DimensionField label="Texto ayuda" value={getThemeNumber(theme, 'formHelpSize', 14, 10, 24)} min={10} max={24} onChange={(value) => onPatchTheme({ formHelpSize: value })} onCommit={onSaveSite} />
+      </div>
+
+      <div className={styles.twoColumn}>
+        <ColorField label="Pregunta" value={getThemePaint(theme, 'formLabelColor', getThemePaint(theme, 'textColor', inputText))} allowGradient onChange={(value) => onPatchTheme({ formLabelColor: value })} onCommit={onSaveSite} />
+        <ColorField label="Ayuda" value={getThemePaint(theme, 'formHelpColor', '#64748b')} allowGradient onChange={(value) => onPatchTheme({ formHelpColor: value })} onCommit={onSaveSite} />
+      </div>
+      <div className={styles.twoColumn}>
+        <ColorField label="Caja" value={getThemePaint(theme, 'formFieldBg', '#ffffff')} allowGradient onChange={(value) => onPatchTheme({ formFieldBg: value })} onCommit={onSaveSite} />
+        <ColorField label="Texto caja" value={getThemePaint(theme, 'formFieldText', inputText)} allowGradient onChange={(value) => onPatchTheme({ formFieldText: value })} onCommit={onSaveSite} />
+      </div>
+      <div className={styles.twoColumn}>
+        <ColorField label="Borde caja" value={getThemePaint(theme, 'formFieldBorder', '#dbe3ef')} allowGradient onChange={(value) => onPatchTheme({ formFieldBorder: value })} onCommit={onSaveSite} />
+        <ColorField label="Texto de ejemplo" value={getThemePaint(theme, 'formPlaceholderColor', '#94a3b8')} allowGradient onChange={(value) => onPatchTheme({ formPlaceholderColor: value })} onCommit={onSaveSite} />
+      </div>
+
+      <div className={styles.twoColumn}>
+        <DimensionField label="Alto caja" value={getThemeNumber(theme, 'formFieldHeight', 50, 34, 96)} min={34} max={96} onChange={(value) => onPatchTheme({ formFieldHeight: value })} onCommit={onSaveSite} />
+        <DimensionField label="Radio caja" value={getThemeNumber(theme, 'formFieldRadius', 12, 0, 36)} min={0} max={36} onChange={(value) => onPatchTheme({ formFieldRadius: value })} onCommit={onSaveSite} />
+      </div>
+      <div className={styles.twoColumn}>
+        <DimensionField label="Borde caja" value={getThemeNumber(theme, 'formFieldBorderWidth', 1, 0, 8)} min={0} max={8} onChange={(value) => onPatchTheme({ formFieldBorderWidth: value })} onCommit={onSaveSite} />
+        <DimensionField label="Relleno lados" value={getThemeNumber(theme, 'formFieldPaddingX', 14, 6, 48)} min={6} max={48} onChange={(value) => onPatchTheme({ formFieldPaddingX: value })} onCommit={onSaveSite} />
+      </div>
+      <DimensionField label="Relleno vertical" value={getThemeNumber(theme, 'formFieldPaddingY', 13, 6, 36)} min={6} max={36} onChange={(value) => onPatchTheme({ formFieldPaddingY: value })} onCommit={onSaveSite} />
+
+      <div className={styles.twoColumn}>
+        <label className={styles.field}>
+          <span>Estilo opciones</span>
+          <CustomSelect value={normalizeFormChoiceStyle(theme.formChoiceStyle)} onChange={(event) => onPatchTheme({ formChoiceStyle: event.target.value as FormChoiceStyle })} onBlur={onSaveSite}>
+            {formChoiceStyleOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </CustomSelect>
+        </label>
+        <label className={styles.field}>
+          <span>Estilo lista</span>
+          <CustomSelect value={normalizeFormSelectStyle(theme.formSelectStyle)} onChange={(event) => onPatchTheme({ formSelectStyle: event.target.value as FormSelectStyle })} onBlur={onSaveSite}>
+            {formSelectStyleOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </CustomSelect>
+        </label>
+      </div>
+      <div className={styles.twoColumn}>
+        <ColorField label="Opcion seleccionada" value={getThemePaint(theme, 'formChoiceSelectedBg', defaultChoiceSelectedBg)} allowGradient onChange={(value) => onPatchTheme({ formChoiceSelectedBg: value })} onCommit={onSaveSite} />
+        <ColorField label="Borde seleccionado" value={getThemePaint(theme, 'formChoiceSelectedBorder', defaultAccent)} allowGradient onChange={(value) => onPatchTheme({ formChoiceSelectedBorder: value })} onCommit={onSaveSite} />
+      </div>
+
+      <div className={styles.panelSubheader}>Boton de envio</div>
+      <div className={styles.twoColumn}>
+        <label className={styles.field}>
+          <span>Texto del boton</span>
+          <input value={theme.submitText || ''} placeholder="Enviar" onChange={(event) => onPatchTheme({ submitText: event.target.value })} onBlur={onSaveSite} />
+        </label>
+        <label className={styles.field}>
+          <span>Subtexto</span>
+          <input value={theme.submitSubtitle || ''} placeholder="Tarda menos de un minuto" onChange={(event) => onPatchTheme({ submitSubtitle: event.target.value })} onBlur={onSaveSite} />
+        </label>
+      </div>
+      <div className={styles.twoColumn}>
+        <ColorField label="Fondo boton" value={getThemePaint(theme, 'submitBg', defaultAccent)} allowGradient onChange={(value) => onPatchTheme({ submitBg: value })} onCommit={onSaveSite} />
+        <ColorField label="Texto boton" value={getThemePaint(theme, 'submitTextColor', onAccentFor(defaultAccent))} allowGradient onChange={(value) => onPatchTheme({ submitTextColor: value })} onCommit={onSaveSite} />
+      </div>
+      <div className={styles.twoColumn}>
+        <ColorField label="Borde boton" value={getThemePaint(theme, 'submitBorderColor', defaultAccent)} allowGradient onChange={(value) => onPatchTheme({ submitBorderColor: value })} onCommit={onSaveSite} />
+        <DimensionField label="Radio boton" value={getThemeNumber(theme, 'submitRadius', 12, 0, 80)} min={0} max={80} onChange={(value) => onPatchTheme({ submitRadius: value })} onCommit={onSaveSite} />
+      </div>
+      <div className={styles.twoColumn}>
+        <DimensionField label="Alto boton" value={getThemeNumber(theme, 'submitHeight', 50, 34, 96)} min={34} max={96} onChange={(value) => onPatchTheme({ submitHeight: value })} onCommit={onSaveSite} />
+        <DimensionField label="Texto boton" value={getThemeNumber(theme, 'submitFontSize', 16, 11, 32)} min={11} max={32} onChange={(value) => onPatchTheme({ submitFontSize: value })} onCommit={onSaveSite} />
+      </div>
+      <div className={styles.twoColumn}>
+        <DimensionField label="Relleno boton" value={getThemeNumber(theme, 'submitPaddingX', 22, 8, 72)} min={8} max={72} onChange={(value) => onPatchTheme({ submitPaddingX: value })} onCommit={onSaveSite} />
+        <DimensionField label="Borde boton" value={getThemeNumber(theme, 'submitBorderWidth', 1, 0, 8)} min={0} max={8} onChange={(value) => onPatchTheme({ submitBorderWidth: value })} onCommit={onSaveSite} />
+      </div>
+    </div>
+  )
+}
+
+const PopupInspector: React.FC<{
+  site: PublicSite
+  popupBlocks: SiteBlock[]
+  importedPopupDetected: boolean
+  onPatchTheme: (patch: Partial<SiteTheme>) => void
+  onSaveSite: () => void
+}> = ({ site, popupBlocks, importedPopupDetected, onPatchTheme, onSaveSite }) => {
+  const theme = site.theme || {}
+  const popupTrigger = getPopupTrigger(theme)
+  const delaySeconds = getThemeNumber(theme, 'popupDelaySeconds', 8, 0, 120)
+  const closeDisplay = normalizePopupCloseDisplay(theme.popupCloseDisplay)
+  const closeIcon = normalizePopupCloseIcon(theme.popupCloseIcon)
+  const statusLabel = popupBlocks.length > 0 ? `${popupBlocks.length} ${popupBlocks.length === 1 ? 'bloque' : 'bloques'}` : 'Sin contenido'
+
+  return (
+    <aside className={styles.propertiesPanel}>
+      <div className={styles.panelHeader}>
+        <strong>Pop up</strong>
+        <span>{statusLabel}</span>
+      </div>
+      <div className={styles.propertiesBody}>
+        <div className={styles.settingsGroup}>
+          {importedPopupDetected && (
+            <div className={styles.popupDetectedCard}>
+              <strong>Detectado en el HTML</strong>
+              <p>Encontramos un popup o modal dentro del sitio importado. Si activas este panel, Ristak mostrara el popup configurado aqui.</p>
+            </div>
+          )}
+
+          <div className={`${styles.metaCard} ${popupBlocks.length ? styles.metaCardActive : ''}`}>
+            <span className={styles.metaMark} aria-hidden="true">P</span>
+            <div className={styles.metaCardInfo}>
+              <strong>{popupBlocks.length ? 'Pop up editable' : 'Pop up vacio'}</strong>
+            </div>
+          </div>
+
+          <div className={styles.panelSubheader}>Cuando se activa</div>
+          <div className={styles.twoColumn}>
+            <label className={styles.field}>
+              <span>Activacion</span>
+              <CustomSelect
+                value={popupTrigger}
+                onChange={(event) => onPatchTheme({ popupTrigger: event.target.value as SiteTheme['popupTrigger'] })}
+                onBlur={onSaveSite}
+              >
+                {Object.entries(popupTriggerLabels).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </CustomSelect>
+            </label>
+            <label className={styles.field}>
+              <span>Segundos</span>
+              <input
+                type="number"
+                min={0}
+                max={120}
+                value={delaySeconds}
+                disabled={popupTrigger !== 'delay'}
+                onChange={(event) => onPatchTheme({ popupDelaySeconds: Math.min(120, Math.max(0, Number(event.target.value) || 0)) })}
+                onBlur={onSaveSite}
+              />
+            </label>
+          </div>
+
+          <div className={styles.panelSubheader}>Caja del pop up</div>
+          <div className={styles.twoColumn}>
+            <ColorField label="Fondo" value={getThemePaint(theme, 'popupBackgroundColor', isSiteDark(site) ? '#0f172a' : '#ffffff')} allowGradient onChange={(value) => onPatchTheme({ popupBackgroundColor: value })} onCommit={onSaveSite} />
+            <ColorField label="Texto" value={getThemePaint(theme, 'popupTextColor', isSiteDark(site) ? '#f8fafc' : '#111827')} allowGradient onChange={(value) => onPatchTheme({ popupTextColor: value })} onCommit={onSaveSite} />
+          </div>
+          <ColorField label="Fondo exterior" value={getThemePaint(theme, 'popupBackdropColor', 'rgba(2, 6, 23, 0.62)')} allowGradient onChange={(value) => onPatchTheme({ popupBackdropColor: value })} onCommit={onSaveSite} />
+          <div className={styles.twoColumn}>
+            <DimensionField label="Ancho" value={getThemeNumber(theme, 'popupMaxWidth', 560, 320, 960)} min={320} max={960} step={10} onChange={(value) => onPatchTheme({ popupMaxWidth: value })} onCommit={onSaveSite} />
+            <DimensionField label="Relleno" value={getThemeNumber(theme, 'popupPadding', 24, 0, 96)} min={0} max={96} onChange={(value) => onPatchTheme({ popupPadding: value })} onCommit={onSaveSite} />
+          </div>
+          <div className={styles.twoColumn}>
+            <DimensionField label="Radio" value={getThemeNumber(theme, 'popupRadius', 18, 0, 60)} min={0} max={60} onChange={(value) => onPatchTheme({ popupRadius: value })} onCommit={onSaveSite} />
+            <DimensionField label="Borde" value={getThemeNumber(theme, 'popupBorderWidth', 1, 0, 12)} min={0} max={12} onChange={(value) => onPatchTheme({ popupBorderWidth: value })} onCommit={onSaveSite} />
+          </div>
+          <ColorField label="Color borde" value={getThemePaint(theme, 'popupBorderColor', 'rgba(148, 163, 184, 0.32)')} allowGradient onChange={(value) => onPatchTheme({ popupBorderColor: value })} onCommit={onSaveSite} />
+
+          <div className={styles.panelSubheader}>Boton de cerrar</div>
+          <div className={styles.twoColumn}>
+            <label className={styles.field}>
+              <span>Mostrar</span>
+              <CustomSelect value={closeDisplay} onChange={(event) => onPatchTheme({ popupCloseDisplay: event.target.value as SiteTheme['popupCloseDisplay'] })} onBlur={onSaveSite}>
+                {Object.entries(popupCloseDisplayLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </CustomSelect>
+            </label>
+            <label className={styles.field}>
+              <span>Icono</span>
+              <CustomSelect value={closeIcon} onChange={(event) => onPatchTheme({ popupCloseIcon: event.target.value as SiteTheme['popupCloseIcon'] })} onBlur={onSaveSite}>
+                {Object.entries(popupCloseIconLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </CustomSelect>
+            </label>
+          </div>
+          {closeDisplay !== 'icon' && (
+            <label className={styles.field}>
+              <span>Texto</span>
+              <input value={theme.popupCloseText || ''} placeholder="Cerrar" onChange={(event) => onPatchTheme({ popupCloseText: event.target.value })} onBlur={onSaveSite} />
+            </label>
+          )}
+        </div>
+      </div>
+    </aside>
+  )
+}
+
+const PageInspector: React.FC<{
+  site: PublicSite
+  pages: SitePage[]
+  activePageId: string
+  metaPixelConnected: boolean
+  onPatchSite: (patch: Partial<PublicSite>) => void
+  onPatchTheme: (patch: Partial<SiteTheme>) => void
+  onSaveSite: () => void
+}> = ({ site, pages, activePageId, metaPixelConnected, onPatchSite, onPatchTheme, onSaveSite }) => {
+  const theme = site.theme || {}
+  const activePage = pages.find(page => page.id === activePageId) || pages[0] || null
+  const activePageEventName = activePage?.metaCapiEnabled
+    ? normalizeMetaEventName(activePage.metaEventName, 'none')
+    : 'none'
+  const activePageHasConversion = activePageEventName !== 'none'
+  const formEventName = normalizeMetaEventName(site.metaEventName, 'none')
+  const formHasConversion = formEventName !== 'none'
+  const patchActivePage = (patch: Partial<SitePage>) => {
+    if (!activePage) return
+
+    onPatchTheme({
+      pages: normalizePagesForSave(pages.map(page => (
+        page.id === activePage.id ? { ...page, ...patch } : page
+      )))
+    })
+  }
+  return (
+    <aside className={styles.propertiesPanel}>
+      <div className={styles.panelHeader}>
+        <strong>Pagina</strong>
+        <span>{isLanding(site) ? (site.theme?.pageMode === 'website' ? 'Sitio web' : 'Embudo') : 'Formulario'}</span>
+      </div>
+      <div className={styles.propertiesBody}>
+        <>
+            <div className={styles.settingsGroup}>
+              <div className={styles.panelSubheader}>Colores</div>
+          <div className={styles.twoColumn}>
+            <ColorField
+              label="Fondo de pagina"
+              value={getThemePaint(theme, 'backgroundColor', userBgColor(site) || resolvedPageBg(site))}
+              allowGradient
+              onChange={(value) => onPatchTheme({ backgroundColor: value })}
+              onCommit={onSaveSite}
+            />
+            <ColorField
+              label="Texto de pagina"
+              value={getThemePaint(theme, 'textColor', isSiteDark(site) ? '#ffffff' : '#111827')}
+              allowGradient
+              onChange={(value) => onPatchTheme({ textColor: value, textColorCustom: true })}
+              onCommit={onSaveSite}
+            />
+          </div>
+          <ColorField
+            label="Acento"
+            value={getThemePaint(theme, 'accentColor', userAccentColor(site) || (isSiteDark(site) ? '#ffffff' : '#111827'))}
+            allowGradient
+            onChange={(value) => onPatchTheme({ accentColor: value })}
+            onCommit={onSaveSite}
+          />
+          <label className={styles.field}>
+            <span>URL de fondo</span>
+            <input
+              value={getThemeString(theme, 'backgroundImage')}
+              placeholder={theme.backgroundMediaType === 'video' ? 'https://.../video.mp4' : 'https://...'}
+              onChange={(event) => onPatchTheme({ backgroundImage: event.target.value })}
+              onBlur={onSaveSite}
+            />
+          </label>
+          <div className={styles.twoColumn}>
+            <label className={styles.field}>
+              <span>Tipo</span>
+              <CustomSelect
+                value={getThemeString(theme, 'backgroundMediaType') || 'image'}
+                onChange={(event) => onPatchTheme({ backgroundMediaType: event.target.value as SiteTheme['backgroundMediaType'] })}
+                onBlur={onSaveSite}
+              >
+                {backgroundMediaTypeOptions.map(option => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </CustomSelect>
+            </label>
+            <label className={styles.field}>
+              <span>Visualizacion</span>
+              <CustomSelect
+                value={getBackgroundVisualValue(theme)}
+                onChange={(event) => onPatchTheme(backgroundVisualPatch(event.target.value))}
+                onBlur={onSaveSite}
+              >
+                {backgroundVisualOptions.map(option => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </CustomSelect>
+            </label>
+          </div>
+
+          <div className={styles.panelSubheader}>Dimensiones</div>
+          <DimensionField
+            label="Ancho maximo"
+            value={isLanding(site) && Number(theme.pageMaxWidth) === 1160 ? 1440 : getThemeNumber(theme, 'pageMaxWidth', isLanding(site) ? 1440 : 520, 360, 1440)}
+            min={360}
+            max={1440}
+            step={10}
+            onChange={(value) => onPatchTheme({ pageMaxWidth: value })}
+            onCommit={onSaveSite}
+          />
+          <div className={styles.twoColumn}>
+            <DimensionField
+              label="Relleno de pagina"
+              value={getThemeNumber(theme, 'pagePadding', isLanding(site) ? LANDING_DEFAULT_PAGE_PADDING : 22, 0, 120)}
+              min={0}
+              max={120}
+              onChange={(value) => onPatchTheme({ pagePadding: value })}
+              onCommit={onSaveSite}
+            />
+            <DimensionField
+              label="Radio"
+              value={getThemeNumber(theme, 'pageRadius', isLanding(site) ? 0 : 24, 0, 40)}
+              min={0}
+              max={40}
+              onChange={(value) => onPatchTheme({ pageRadius: value })}
+              onCommit={onSaveSite}
+            />
+          </div>
+	          <div className={styles.panelSubheader}>Borde de pagina</div>
+	          <div className={styles.twoColumn}>
+            <DimensionField
+              label="Grosor"
+              value={getThemeNumber(theme, 'pageBorderWidth', 0, 0, 12)}
+              min={0}
+              max={12}
+              onChange={(value) => onPatchTheme({ pageBorderWidth: value })}
+              onCommit={onSaveSite}
+            />
+            <ColorField
+              label="Color"
+              value={getThemePaint(theme, 'pageBorderColor', '#dbe3ef')}
+              allowGradient
+              onChange={(value) => onPatchTheme({ pageBorderColor: value })}
+              onCommit={onSaveSite}
+            />
+          </div>
+          {metaPixelConnected && isLanding(site) && activePage && (
+            <>
+              <div className={styles.panelSubheader}>Conversion de esta pagina</div>
+              <div className={`${styles.metaCard} ${activePageHasConversion && site.metaCapiEnabled ? styles.metaCardActive : ''}`}>
+                <span className={styles.metaMark} aria-hidden="true">∞</span>
+                <div className={styles.metaCardInfo}>
+                  <strong>{activePageHasConversion ? 'Evento configurado' : 'Sin evento'}</strong>
+                  <small>{!site.metaCapiEnabled ? 'Requiere Meta del sitio' : activePageHasConversion ? 'Se envia desde esta pagina' : 'Solo PageView global'}</small>
+                </div>
+              </div>
+              <div className={styles.twoColumn}>
+                <label className={styles.field}>
+                  <span>Cuando</span>
+                  <CustomSelect
+                    value={normalizeMetaTrigger(activePage.metaTrigger)}
+                    disabled={!site.metaCapiEnabled || !activePageHasConversion}
+                    onChange={(event) => patchActivePage({ metaTrigger: event.target.value as SiteMetaTrigger })}
+                    onBlur={onSaveSite}
+                  >
+                    {metaTriggerOptions.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </CustomSelect>
+                </label>
+                <label className={styles.field}>
+                  <span>Evento</span>
+                  <CustomSelect
+                    value={activePageEventName}
+                    disabled={!site.metaCapiEnabled}
+                    onChange={(event) => {
+                      const metaEventName = event.target.value
+                      patchActivePage({
+                        metaEventName,
+                        metaCapiEnabled: metaEventName !== 'none'
+                      })
+                    }}
+                    onBlur={onSaveSite}
+                  >
+                    {metaEventOptions.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </CustomSelect>
+                </label>
+              </div>
+            </>
+          )}
+          {metaPixelConnected && isFormSite(site) && (
+            <>
+              <div className={styles.panelSubheader}>Conversion del formulario</div>
+              <div className={`${styles.metaCard} ${formHasConversion && site.metaCapiEnabled ? styles.metaCardActive : ''}`}>
+                <span className={styles.metaMark} aria-hidden="true">∞</span>
+                <div className={styles.metaCardInfo}>
+                  <strong>{formHasConversion ? 'Evento de submit' : 'Sin evento'}</strong>
+                  <small>{!site.metaCapiEnabled ? 'Requiere Meta del sitio' : formHasConversion ? 'Se envia al enviar formulario' : 'Solo PageView global'}</small>
+                </div>
+              </div>
+              <label className={styles.field}>
+                <span>Evento de submit</span>
+                <CustomSelect
+                  value={formEventName}
+                  disabled={!site.metaCapiEnabled}
+                  onChange={(event) => onPatchSite({ metaEventName: event.target.value })}
+                  onBlur={onSaveSite}
+                >
+                  {metaEventOptions.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </CustomSelect>
+              </label>
+	              {isStandardForm(site) && (
+                <>
+                  <label className={styles.field}>
+                    <span>Al enviar formulario</span>
+                    <CustomSelect
+                      value={getThemeFormCompletionAction(theme)}
+                      onChange={(event) => onPatchTheme({ formCompletionAction: event.target.value as FormCompletionAction })}
+                      onBlur={onSaveSite}
+                    >
+                      <option value="next_page_if_qualified">Mostrar Agradecimiento o Descalificacion segun resultado</option>
+                      <option value="next_page">Siempre mostrar pagina Agradecimiento</option>
+                      <option value="form_default">Mostrar mensaje en este formulario</option>
+                    </CustomSelect>
+                  </label>
+                  <label className={styles.field}>
+                    <span>Mensaje si califica</span>
+                    <textarea
+                      rows={2}
+                      value={theme.finalMessages?.success || ''}
+                      placeholder="Listo. Recibimos tu informacion."
+                      onChange={(event) => onPatchTheme({ finalMessages: { ...(theme.finalMessages || {}), success: event.target.value } })}
+                      onBlur={onSaveSite}
+                    />
+                  </label>
+                  <label className={styles.field}>
+                    <span>Mensaje si no califica</span>
+                    <textarea
+                      rows={2}
+                      value={theme.finalMessages?.disqualified || ''}
+                      placeholder="Gracias por responder. Por ahora no parece ser el siguiente paso ideal."
+                      onChange={(event) => onPatchTheme({ finalMessages: { ...(theme.finalMessages || {}), disqualified: event.target.value } })}
+                      onBlur={onSaveSite}
+                    />
+                  </label>
+                </>
+              )}
+            </>
+          )}
+          {isFormSite(site) && (
+            <FormGlobalStyleControls site={site} onPatchTheme={onPatchTheme} onSaveSite={onSaveSite} />
+          )}
+        </div>
+        </>
+      </div>
+    </aside>
+  )
+}
+
+const customFieldTypeCompatibility: Partial<Record<SiteBlockType, string[]>> = {
+  short_text: ['text'],
+  paragraph: ['textarea', 'text'],
+  number: ['number'],
+  currency: ['currency', 'number'],
+  dropdown: ['dropdown', 'select', 'radio'],
+  radio: ['radio', 'dropdown', 'select'],
+  checkboxes: ['checkboxes', 'multiselect'],
+  phone: ['phone'],
+  email: ['email'],
+  date: ['date']
+}
+
+const normalizeCustomFieldDataType = (value = '') => {
+  if (value === 'select') return 'dropdown'
+  if (value === 'multiselect') return 'checkboxes'
+  return value
+}
+
+const customFieldTypeLabel = (value = '') => {
+  const type = normalizeCustomFieldDataType(value)
+  if (type === 'text') return 'Texto corto'
+  if (type === 'textarea') return 'Parrafo'
+  if (type === 'radio') return 'Opcion unica'
+  if (type === 'dropdown') return 'Lista desplegable'
+  if (type === 'checkboxes') return 'Varias opciones'
+  if (type === 'number') return 'Numero'
+  if (type === 'currency') return 'Moneda'
+  if (type === 'date') return 'Fecha'
+  if (type === 'email') return 'Correo'
+  if (type === 'phone') return 'Telefono'
+  return value || 'Campo'
+}
+
+const isCustomFieldCompatibleWithBlock = (blockType: SiteBlockType, field: CustomFieldDefinition) => {
+  const allowed = customFieldTypeCompatibility[blockType]
+  if (!allowed) return false
+  const dataType = normalizeCustomFieldDataType(field.dataType)
+  return allowed.includes(dataType)
+}
+
+const CustomFieldBindingControl: React.FC<{
+  block: SiteBlock
+  customFields: CustomFieldDefinition[]
+  onPatchSettings: (patch: Record<string, unknown>) => void
+  onSave: () => void
+}> = ({ block, customFields, onPatchSettings, onSave }) => {
+  const settings = block.settings || {}
+  const currentDefinitionId = getSettingString(settings, 'customFieldDefinitionId')
+  const compatibleFields = customFields
+    .filter(field => !field.archived && !isSystemCustomFieldDefinition(field) && isCustomFieldCompatibleWithBlock(block.blockType, field))
+    .sort((a, b) => (
+      String(a.folderName || '').localeCompare(String(b.folderName || '')) ||
+      String(a.label || '').localeCompare(String(b.label || ''))
+    ))
+  const selectedField = compatibleFields.find(field => field.definitionId === currentDefinitionId) ||
+    customFields.find(field => field.definitionId === currentDefinitionId && !isSystemCustomFieldDefinition(field))
+  const groups = compatibleFields.reduce((acc, field) => {
+    const folderName = field.folderName || 'Sin carpeta'
+    const current = acc.get(folderName) || []
+    current.push(field)
+    acc.set(folderName, current)
+    return acc
+  }, new Map<string, CustomFieldDefinition[]>())
+
+  return (
+    <div className={styles.customFieldBinding}>
+      <div className={styles.panelSubheader}>Guardado de respuesta</div>
+      <label className={styles.field}>
+        <span>Guardar respuesta en</span>
+        <CustomSelect
+          value={currentDefinitionId}
+          onChange={(event) => {
+            const definitionId = event.target.value
+            const field = compatibleFields.find(item => item.definitionId === definitionId)
+
+            if (!field) {
+              onPatchSettings({
+                customFieldDefinitionId: '',
+                customFieldKey: '',
+                customFieldLabel: '',
+                customFieldDataType: ''
+              })
+              window.setTimeout(onSave, 0)
+              return
+            }
+
+            onPatchSettings({
+              customFieldDefinitionId: field.definitionId,
+              customFieldKey: field.fieldKey || field.key,
+              customFieldLabel: field.label,
+              customFieldDataType: field.dataType
+            })
+            window.setTimeout(onSave, 0)
+          }}
+          onBlur={onSave}
+        >
+          <option value="">No guardar en campo personalizado</option>
+          {[...groups.entries()].map(([folderName, groupFields]) => (
+            <optgroup key={folderName} label={folderName}>
+              {groupFields.map(field => (
+                <option key={field.definitionId} value={field.definitionId}>
+                  {field.label} - {field.fieldKey || field.key}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </CustomSelect>
+      </label>
+      {selectedField ? (
+        <p className={styles.customFieldHint}>
+          Se guardara como <code>{selectedField.fieldKey || selectedField.key}</code> ({customFieldTypeLabel(selectedField.dataType)}).
+        </p>
+      ) : (
+        <p className={styles.customFieldHint}>
+          Crea campos compatibles en Configuracion para guardar este dato dentro del contacto.
+        </p>
+      )}
+    </div>
+  )
+}
+
+const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
+  site,
+  block,
+  surfaceSelectionId,
+  blocks,
+  allBlocks,
+  popupBlocks = [],
+  forms,
+  calendars,
+  customFields,
+  pages,
+  activePageId,
+  metaPixelConnected,
+  importedPopupDetected,
+  connectedSocialProfiles,
+  loadingSocialProfiles,
+  onPatchSite,
+  onPatchTheme,
+  onSaveSite,
+  onPatchBlock,
+  onPatchSettings,
+  onPatchCategorySettings,
+  onSaveCategory,
+  onSave
+}) => {
+  if (surfaceSelectionId === POPUP_SELECTED_ID) {
+    return (
+      <PopupInspector
+        site={site}
+        popupBlocks={popupBlocks}
+        importedPopupDetected={importedPopupDetected}
+        onPatchTheme={onPatchTheme}
+        onSaveSite={onSaveSite}
+      />
+    )
+  }
+
+  if (!block) {
+    return (
+      <PageInspector
+        site={site}
+        pages={pages}
+        activePageId={activePageId}
+        metaPixelConnected={metaPixelConnected}
+        onPatchSite={onPatchSite}
+        onPatchTheme={onPatchTheme}
+        onSaveSite={onSaveSite}
+      />
+    )
+  }
+
+  const isField = fieldBlockTypes.has(block.blockType)
+  const settings = block.settings || {}
+  const contentLabel = isField
+    ? 'Texto de ayuda'
+    : block.blockType === SECTION_BLOCK_TYPE
+      ? 'Titulo visible opcional'
+      : block.blockType === 'embed'
+        ? 'Codigo externo, iframe o URL'
+        : 'Contenido'
+  const contentRows = block.blockType === 'embed' ? 7 : isField || block.blockType === SECTION_BLOCK_TYPE ? 2 : 3
+
+  return (
+    <aside className={styles.propertiesPanel}>
+      <div className={styles.panelHeader}>
+        <strong>Propiedades</strong>
+        <span>{blockLabels[block.blockType]}</span>
+      </div>
+
+      <div className={styles.propertiesBody}>
+        <label className={styles.field}>
+          <span>{isField ? 'Pregunta visible' : block.blockType === SECTION_BLOCK_TYPE ? 'Nombre de la franja' : 'Nombre del bloque'}</span>
+          <input value={block.label} onChange={(event) => onPatchBlock({ label: event.target.value })} onBlur={onSave} />
+        </label>
+
+        {block.blockType !== 'calendar_embed' && (
+          <label className={styles.field}>
+            <span>{contentLabel}</span>
+            <textarea
+              rows={contentRows}
+              value={block.content}
+              placeholder={block.blockType === 'embed' ? '<iframe src="https://..."></iframe> o codigo HTML del widget' : undefined}
+              onChange={(event) => onPatchBlock({ content: event.target.value })}
+              onBlur={onSave}
+            />
+          </label>
+        )}
+
+        {isField && (
+          <>
+            <div className={styles.twoColumn}>
+              <label className={styles.field}>
+                <span>Texto dentro del campo</span>
+                <input value={block.placeholder} onChange={(event) => onPatchBlock({ placeholder: event.target.value })} onBlur={onSave} />
+              </label>
+              <label className={styles.field}>
+                <span>Nombre interno</span>
+                <input
+                  value={getSettingString(settings, 'internalName')}
+                  onChange={(event) => onPatchSettings({ internalName: event.target.value })}
+                  onBlur={onSave}
+                />
+              </label>
+            </div>
+
+            <div className={styles.twoColumn}>
+              <label className={styles.field}>
+                <span>Validacion</span>
+                <CustomSelect
+                  value={getSettingString(settings, 'validation')}
+                  onChange={(event) => onPatchSettings({ validation: event.target.value })}
+                  onBlur={onSave}
+                >
+                  <option value="">Ninguna</option>
+                  <option value="email">Correo</option>
+                  <option value="phone">Telefono</option>
+                  <option value="number">Numero</option>
+                  <option value="currency">Moneda</option>
+                  <option value="date">Fecha</option>
+                </CustomSelect>
+              </label>
+              <label className={styles.checkboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={block.required}
+                  onChange={(event) => {
+                    onPatchBlock({ required: event.target.checked })
+                    window.setTimeout(onSave, 0)
+                  }}
+                />
+                <span>Campo requerido</span>
+              </label>
+            </div>
+
+            {block.blockType === 'phone' && (
+              <label className={styles.checkboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={isPhoneCountrySelectorEnabled(block)}
+                  onChange={(event) => {
+                    onPatchSettings({ phoneCountrySelectorEnabled: event.target.checked })
+                    window.setTimeout(onSave, 0)
+                  }}
+                />
+                <span>Mostrar pais y lada</span>
+              </label>
+            )}
+
+            <CustomFieldBindingControl
+              block={block}
+              customFields={customFields}
+              onPatchSettings={onPatchSettings}
+              onSave={onSave}
+            />
+          </>
+        )}
+
+        {isChoiceBlock(block.blockType) && (
+          <OptionsRulesEditor block={block} blocks={allBlocks || blocks} pages={pages} onPatchBlock={onPatchBlock} onSave={onSave} />
+        )}
+
+        {!isField && (
+          <LandingBlockSettings
+            site={site}
+            block={block}
+            forms={forms}
+            calendars={calendars}
+            pages={pages}
+            activePageId={activePageId}
+            connectedSocialProfiles={connectedSocialProfiles}
+            loadingSocialProfiles={loadingSocialProfiles}
+            onPatchSettings={onPatchSettings}
+            onSave={onSave}
+          />
+        )}
+
+        <InlineBlockStyleControls
+          site={site}
+          block={block}
+          blocks={blocks}
+          onPatchSettings={onPatchSettings}
+          onSave={onSave}
+        />
+
+        {isFormSite(site) && isField && (
+          <FormGlobalStyleControls site={site} onPatchTheme={onPatchTheme} onSaveSite={onSaveSite} />
+        )}
+
+      </div>
+    </aside>
+  )
+}
+
+interface OptionsRulesEditorProps {
+  block: SiteBlock
+  blocks: SiteBlock[]
+  pages: SitePage[]
+  onPatchBlock: (patch: Partial<SiteBlock>) => void
+  onSave: () => void
+}
+
+const OptionsRulesEditor: React.FC<OptionsRulesEditorProps> = ({ block, blocks, pages, onPatchBlock, onSave }) => {
+  const options = getOptions(block)
+  const fieldTargets = blocks.filter(item => fieldBlockTypes.has(item.blockType) && item.id !== block.id)
+  const getTargetLabel = (target: SiteBlock) => {
+    const page = pages.find(item => item.id === getBlockPageId(target, pages))
+    return page ? `${target.label} - ${page.title}` : target.label
+  }
+
+  const patchOption = (index: number, patch: Partial<SiteBlockOption>) => {
+    const next = options.map((option, optionIndex) => optionIndex === index ? { ...option, ...patch } : option)
+    onPatchBlock({ options: next })
+  }
+
+  const addOption = () => {
+    onPatchBlock({
+      options: [
+        ...options,
+        {
+          id: `option-${Date.now()}`,
+          label: `Opcion ${options.length + 1}`,
+          value: `Opcion ${options.length + 1}`,
+          action: 'continue'
+        }
+      ]
+    })
+  }
+
+  const removeOption = (index: number) => {
+    onPatchBlock({ options: options.filter((_, optionIndex) => optionIndex !== index) })
+  }
+
+  const getVisibleRuleAction = (action?: SiteOptionAction) => (
+    action && visibleRuleActionValues.has(action) ? action : 'continue'
+  )
+
+  const buildRuleActionPatch = (option: SiteBlockOption, action: SiteOptionAction): Partial<SiteBlockOption> => ({
+    action,
+    targetBlockId: action === 'jump' ? option.targetBlockId || '' : '',
+    redirectUrl: action === 'redirect' ? option.redirectUrl || '' : '',
+    message: '',
+    tag: '',
+    category: ''
+  })
+
+  return (
+    <div className={styles.optionRules}>
+      <div className={styles.optionRulesHeader}>
+        <strong>Opciones y reglas</strong>
+        <button type="button" onClick={addOption}>
+          <Plus size={14} />
+          Agregar
+        </button>
+      </div>
+      {options.map((option, index) => (
+        <div key={option.id || index} className={styles.optionRuleCard}>
+          <div className={styles.twoColumn}>
+            <label className={styles.field}>
+              <span>Opcion</span>
+              <input
+                value={option.label}
+                onChange={(event) => patchOption(index, { label: event.target.value, value: event.target.value })}
+                onBlur={onSave}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Regla</span>
+              <CustomSelect
+                value={getVisibleRuleAction(option.action)}
+                onChange={(event) => {
+                  const action = event.target.value as SiteOptionAction
+                  patchOption(index, buildRuleActionPatch(option, action))
+                }}
+                onBlur={onSave}
+              >
+                {ruleActions.map(action => <option key={action.value} value={action.value}>{action.label}</option>)}
+              </CustomSelect>
+            </label>
+          </div>
+
+          {option.action === 'jump' && (
+            <label className={styles.field}>
+              <span>Saltar a pregunta</span>
+              <CustomSelect value={option.targetBlockId || ''} onChange={(event) => patchOption(index, { targetBlockId: event.target.value })} onBlur={onSave}>
+                <option value="">Selecciona una pregunta</option>
+                {fieldTargets.map(target => <option key={target.id} value={target.id}>{getTargetLabel(target)}</option>)}
+              </CustomSelect>
+            </label>
+          )}
+
+          {option.action === 'redirect' && (
+            <label className={styles.field}>
+              <span>Sitio</span>
+              <input
+                value={option.redirectUrl || ''}
+                placeholder="https://tusitio.com"
+                onChange={(event) => patchOption(index, { redirectUrl: event.target.value })}
+                onBlur={onSave}
+              />
+            </label>
+          )}
+
+          <button type="button" className={styles.removeOption} onClick={() => removeOption(index)}>
+            <Trash2 size={14} />
+            Quitar opcion
+          </button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+interface LandingBlockSettingsProps {
+  site: PublicSite
+  block: SiteBlock
+  forms: PublicSite[]
+  calendars: CalendarType[]
+  pages: SitePage[]
+  activePageId: string
+  connectedSocialProfiles: ConnectedSocialProfile[]
+  loadingSocialProfiles: boolean
+  onPatchSettings: (patch: Record<string, unknown>) => void
+  onSave: () => void
+}
+
+const ButtonActionFields: React.FC<{
+  settings: Record<string, unknown>
+  pages: SitePage[]
+  activePageId: string
+  onPatchSettings: (patch: Record<string, unknown>) => void
+  onSave: () => void
+}> = ({ settings, pages, activePageId, onPatchSettings, onSave }) => {
+  const action = getButtonAction(settings)
+  const targetPages = pages.filter(page => page.id !== activePageId)
+
+  return (
+    <>
+      <label className={styles.field}>
+        <span>Accion del boton</span>
+        <CustomSelect value={action} onChange={(event) => onPatchSettings({ buttonAction: event.target.value })} onBlur={onSave}>
+          <option value="url">Enviar a una URL</option>
+          <option value="next_page">Ir a la siguiente pagina del embudo</option>
+          <option value="specific_page">Ir a una pagina especifica del embudo</option>
+          <option value="open_popup">Abrir pop up</option>
+          <option value="close_popup">Cerrar pop up</option>
+        </CustomSelect>
+      </label>
+
+      {action === 'url' && (
+        <label className={styles.field}>
+          <span>URL</span>
+          <input value={getSettingString(settings, 'buttonUrl')} onChange={(event) => onPatchSettings({ buttonUrl: event.target.value })} onBlur={onSave} />
+        </label>
+      )}
+
+      {action === 'specific_page' && (
+        <label className={styles.field}>
+          <span>Pagina destino</span>
+          <CustomSelect value={getSettingString(settings, 'buttonPageId')} onChange={(event) => onPatchSettings({ buttonPageId: event.target.value })} onBlur={onSave}>
+            <option value="">Selecciona una pagina</option>
+            {targetPages.map(page => <option key={page.id} value={page.id}>{page.title}</option>)}
+          </CustomSelect>
+        </label>
+      )}
+    </>
+  )
+}
+
+const SocialProfileSettings: React.FC<{
+  site: PublicSite
+  settings: Record<string, unknown>
+  connectedSocialProfiles: ConnectedSocialProfile[]
+  loadingSocialProfiles: boolean
+  onPatchSettings: (patch: Record<string, unknown>) => void
+  onSave: () => void
+}> = ({ site, settings, connectedSocialProfiles, loadingSocialProfiles, onPatchSettings, onSave }) => {
+  const platform = normalizeSocialPlatform(settings.platform || platformChromeFor(resolveTemplateId(site)))
+  const connectedProfilesForPlatform = connectedSocialProfiles.filter(profile => profile.platform === platform)
+  const selectedConnectedProfileId = getSettingString(settings, 'socialSourceProfileId')
+  const hasManualSelection = settings.socialAutoSync === false
+  const preferredConnectedProfile = getPreferredConnectedSocialProfile(connectedSocialProfiles, platform)
+
+  useEffect(() => {
+    if (loadingSocialProfiles) return
+    if (hasManualSelection) return
+    if (selectedConnectedProfileId) return
+    if (!preferredConnectedProfile) return
+
+    onPatchSettings(connectedSocialProfileBlockPatch(preferredConnectedProfile))
+    window.setTimeout(onSave, 0)
+  }, [
+    hasManualSelection,
+    loadingSocialProfiles,
+    onPatchSettings,
+    onSave,
+    platform,
+    preferredConnectedProfile,
+    selectedConnectedProfileId
+  ])
+
+  return (
+    <div className={styles.settingsGroup}>
+      <div className={styles.panelSubheader}>Perfil de red social</div>
+      <label className={styles.field}>
+        <span>Red social</span>
+        <CustomSelect
+          value={platform}
+          onChange={(event) => onPatchSettings({
+            platform: event.target.value,
+            socialSourceProfileId: '',
+            socialSourcePlatform: '',
+            socialSourceId: '',
+            socialSourcePageId: '',
+            socialSourceName: ''
+          })}
+          onBlur={onSave}
+        >
+          {socialPlatformOptions.map(option => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </CustomSelect>
+      </label>
+      <label className={styles.field}>
+        <span>Perfil conectado</span>
+        <CustomSelect
+          value={selectedConnectedProfileId}
+          disabled={loadingSocialProfiles || connectedProfilesForPlatform.length === 0}
+          onChange={(event) => {
+            const profile = connectedProfilesForPlatform.find(item => item.id === event.target.value)
+            if (profile) {
+              onPatchSettings(connectedSocialProfileBlockPatch(profile))
+              window.setTimeout(onSave, 0)
+              return
+            }
+            onPatchSettings({
+              socialAutoSync: false,
+              socialSourceProfileId: '',
+              socialSourcePlatform: '',
+              socialSourceId: '',
+              socialSourcePageId: '',
+              socialSourceName: ''
+            })
+          }}
+          onBlur={onSave}
+        >
+          <option value="">{loadingSocialProfiles ? 'Buscando perfiles...' : 'Escribir manualmente'}</option>
+          {connectedProfilesForPlatform.map(profile => (
+            <option key={profile.id} value={profile.id}>{socialProfileOptionLabel(profile)}</option>
+          ))}
+        </CustomSelect>
+      </label>
+      <p className={styles.muted}>
+        {connectedProfilesForPlatform.length > 0
+          ? 'Elige un perfil para llenar los datos. Despues puedes cambiar el texto, foto o seguidores aqui mismo.'
+          : 'Puedes llenar este perfil manualmente y moverlo dentro del formulario como cualquier bloque.'}
+      </p>
+      <label className={styles.field}>
+        <span>Nombre que se vera</span>
+        <input value={getSettingString(settings, 'brandName')} placeholder={site.title || site.name || 'Tu marca'} onChange={(event) => onPatchSettings({ brandName: event.target.value })} onBlur={onSave} />
+      </label>
+      <label className={styles.field}>
+        <span>Texto secundario</span>
+        <input value={getSettingString(settings, 'brandSubtitle')} placeholder={platform === 'instagram' ? 'Publicacion pagada' : 'Patrocinado'} onChange={(event) => onPatchSettings({ brandSubtitle: event.target.value })} onBlur={onSave} />
+      </label>
+      <label className={styles.field}>
+        <span>Foto de perfil (URL)</span>
+        <input value={getSettingString(settings, 'brandAvatar')} placeholder="Pega la liga de la imagen" onChange={(event) => onPatchSettings({ brandAvatar: event.target.value })} onBlur={onSave} />
+      </label>
+      <div className={styles.twoColumn}>
+        <label className={styles.field}>
+          <span>Seguidores</span>
+          <input value={getSettingString(settings, 'followers')} placeholder="12 mil" onChange={(event) => onPatchSettings({ followers: event.target.value })} onBlur={onSave} />
+        </label>
+        <label className={styles.checkboxLabel}>
+          <input
+            type="checkbox"
+            checked={settings.brandVerified !== false}
+            onChange={(event) => {
+              onPatchSettings({ brandVerified: event.target.checked })
+              window.setTimeout(onSave, 0)
+            }}
+          />
+          <span>Mostrar verificado</span>
+        </label>
+      </div>
+    </div>
+  )
+}
+
+const LandingBlockSettings: React.FC<LandingBlockSettingsProps> = ({ site, block, forms, calendars, pages, activePageId, connectedSocialProfiles, loadingSocialProfiles, onPatchSettings, onSave }) => {
+  const settings = block.settings || {}
+
+  if (isPanelBlock(block)) {
+    const panelTitle = block.blockType === HEADER_PANEL_BLOCK_TYPE
+      ? getHeaderScope(block) === HEADER_SCOPE_GLOBAL ? 'Header global' : 'Header de esta pagina'
+      : 'Panel inferior'
+    return (
+      <div className={styles.settingsGroup}>
+        <div className={styles.panelSubheader}>{panelTitle}</div>
+        <label className={styles.field}>
+          <span>Enlaces del panel</span>
+          <textarea
+            rows={4}
+            value={stringifyPanelLinks(settings)}
+            placeholder="Nombre del enlace | https://..."
+            onChange={(event) => onPatchSettings({ panelLinks: parsePanelLinks(event.target.value) })}
+            onBlur={onSave}
+          />
+        </label>
+        <p className={styles.muted}>Escribe un enlace por linea. Si no quieres enlaces, deja esta caja vacia.</p>
+      </div>
+    )
+  }
+
+  if (block.blockType === SECTION_BLOCK_TYPE) {
+    return (
+      <div className={styles.settingsGroup}>
+        <div className={styles.panelSubheader}>Tipo de franja</div>
+        <label className={styles.field}>
+          <span>Columnas</span>
+          <CustomSelect
+            value={String(getSectionColumns(block))}
+            onChange={(event) => onPatchSettings({ sectionColumns: Number(event.target.value) })}
+            onBlur={onSave}
+          >
+            <option value="1">Una columna</option>
+            <option value="2">Dos columnas</option>
+            <option value="3">Tres columnas</option>
+          </CustomSelect>
+        </label>
+        <DimensionField
+          label="Espacio entre columnas"
+          value={getSettingNumber(settings, 'sectionGap', DEFAULT_SECTION_GAP, 0, 80)}
+          min={0}
+          max={80}
+          onChange={(value) => onPatchSettings({ sectionGap: value })}
+          onCommit={onSave}
+        />
+      </div>
+    )
+  }
+
+  if (['hero', 'cta'].includes(block.blockType)) {
+    return (
+      <div className={styles.settingsGroup}>
+        {block.blockType === 'hero' && (
+          <label className={styles.field}>
+            <span>Kicker</span>
+            <input value={getSettingString(settings, 'kicker')} onChange={(event) => onPatchSettings({ kicker: event.target.value })} onBlur={onSave} />
+          </label>
+        )}
+        <label className={styles.field}>
+          <span>Subtitulo</span>
+          <textarea rows={2} value={getSettingString(settings, 'subtitle')} onChange={(event) => onPatchSettings({ subtitle: event.target.value })} onBlur={onSave} />
+        </label>
+        <div className={styles.twoColumn}>
+          <label className={styles.field}>
+            <span>Texto del boton</span>
+            <input value={getSettingString(settings, 'buttonText')} onChange={(event) => onPatchSettings({ buttonText: event.target.value })} onBlur={onSave} />
+          </label>
+          <ButtonActionFields settings={settings} pages={pages} activePageId={activePageId} onPatchSettings={onPatchSettings} onSave={onSave} />
+        </div>
+      </div>
+    )
+  }
+
+  if (block.blockType === 'button') {
+    return (
+      <div className={styles.twoColumn}>
+        <label className={styles.field}>
+          <span>Texto del boton</span>
+          <input value={getSettingString(settings, 'buttonText')} onChange={(event) => onPatchSettings({ buttonText: event.target.value })} onBlur={onSave} />
+        </label>
+        <ButtonActionFields settings={settings} pages={pages} activePageId={activePageId} onPatchSettings={onPatchSettings} onSave={onSave} />
+      </div>
+    )
+  }
+
+  if (block.blockType === 'social_profile') {
+    return (
+      <SocialProfileSettings
+        site={site}
+        settings={settings}
+        connectedSocialProfiles={connectedSocialProfiles}
+        loadingSocialProfiles={loadingSocialProfiles}
+        onPatchSettings={onPatchSettings}
+        onSave={onSave}
+      />
+    )
+  }
+
+  if (block.blockType === 'image' || block.blockType === 'video') {
+    return (
+      <label className={styles.field}>
+        <span>{block.blockType === 'image' ? 'URL de imagen' : 'URL de video'}</span>
+        <input value={getSettingString(settings, 'mediaUrl')} onChange={(event) => onPatchSettings({ mediaUrl: event.target.value })} onBlur={onSave} />
+      </label>
+    )
+  }
+
+  if (['benefits', 'testimonials', 'services', 'faq'].includes(block.blockType)) {
+    return (
+      <label className={styles.field}>
+        <span>Items (uno por linea: titulo | texto | autor)</span>
+        <textarea
+          rows={5}
+          value={stringifyItems(settings)}
+          onChange={(event) => onPatchSettings({ items: parseItems(event.target.value) })}
+          onBlur={onSave}
+        />
+      </label>
+    )
+  }
+
+  if (block.blockType === 'calendar_embed') {
+    const selectedCalendarId = getSettingString(settings, 'calendarId')
+    const selectedCalendar = calendars.find(calendar => calendar.id === selectedCalendarId)
+
+    return (
+      <div className={styles.settingsGroup}>
+        <label className={styles.field}>
+          <span>Calendario a embeber</span>
+          <CustomSelect
+            value={selectedCalendarId}
+            onChange={(event) => {
+              const calendar = calendars.find(item => item.id === event.target.value)
+              onPatchSettings({
+                calendarId: calendar?.id || '',
+                calendarSlug: calendar?.slug || calendar?.widgetSlug || '',
+                calendarName: calendar?.name || ''
+              })
+            }}
+            onBlur={onSave}
+          >
+            <option value="">Selecciona un calendario</option>
+            {calendars.map(calendar => (
+              <option key={calendar.id} value={calendar.id}>{calendar.name}</option>
+            ))}
+          </CustomSelect>
+        </label>
+        {selectedCalendar ? (
+          <p className={styles.muted}>
+            {selectedCalendar.publicUrlEnabled
+              ? `Se mostrara como iframe usando ${selectedCalendar.publicBookingPath || '/calendar/...'}`
+              : selectedCalendar.publicUrlUnavailableReason || 'Conecta el dominio publico general para que funcione publicamente.'}
+          </p>
+        ) : (
+          <p className={styles.muted}>Este bloque usa la URL publica del calendario en el mismo dominio del site.</p>
+        )}
+      </div>
+    )
+  }
+
+  if (block.blockType === 'form_embed') {
+    const embeddedBlocks = Array.isArray(settings.embeddedBlocks) ? settings.embeddedBlocks as SiteBlock[] : []
+
+    return (
+      <div className={styles.settingsGroup}>
+        <label className={styles.field}>
+          <span>Formulario existente</span>
+          <CustomSelect value={getSettingString(settings, 'formSiteId')} onChange={(event) => onPatchSettings({ formSiteId: event.target.value, embeddedBlocks: undefined })} onBlur={onSave}>
+            <option value="">Formulario inline dentro de este sitio embudo</option>
+            {forms.filter(form => form.id !== site.id).map(form => (
+              <option key={form.id} value={form.id}>{form.name}</option>
+            ))}
+          </CustomSelect>
+        </label>
+        <label className={styles.field}>
+          <span>Descripcion del formulario</span>
+          <textarea rows={2} value={getSettingString(settings, 'description')} onChange={(event) => onPatchSettings({ description: event.target.value })} onBlur={onSave} />
+        </label>
+        <label className={styles.field}>
+          <span>Al terminar el formulario</span>
+          <CustomSelect value={getFormCompletionAction(settings)} onChange={(event) => onPatchSettings({ completionAction: event.target.value })} onBlur={onSave}>
+            <option value="next_page">Ir a la siguiente pagina al terminar</option>
+            <option value="next_page_if_qualified">Ir a la siguiente pagina solo si califica</option>
+            <option value="form_default">Mantener la configuracion actual del formulario</option>
+          </CustomSelect>
+        </label>
+        <button
+          type="button"
+          className={styles.inlineCreateButton}
+          onClick={() => {
+            onPatchSettings({ formSiteId: '', embeddedBlocks: createEmbeddedBlocks(site.id) })
+            window.setTimeout(onSave, 0)
+          }}
+        >
+          <Plus size={15} />
+          Crear formulario inline basico
+        </button>
+        {embeddedBlocks.length > 0 && (
+          <p className={styles.muted}>{embeddedBlocks.length} campos inline guardados en este bloque.</p>
+        )}
+      </div>
+    )
+  }
+
+  return null
+}
+
+const LeadsPanel: React.FC<{ rows: LeadRow[]; loading: boolean; onRefresh: () => void }> = ({ rows, loading, onRefresh }) => (
+  <section className={styles.dataPanel}>
+    <div className={styles.builderHeader}>
+      <div>
+        <h2>Respuestas</h2>
+        <p>Respuestas recibidas desde sitios web y formularios publicos.</p>
+      </div>
+      <Button variant="secondary" onClick={onRefresh} loading={loading}>
+        <RefreshCw size={16} />
+        Refrescar
+      </Button>
+    </div>
+
+    <div className={styles.leadsTable}>
+      <div className={styles.leadsHeader}>
+        <span>Lead</span>
+        <span>Sitio</span>
+        <span>Estado</span>
+        <span>Reglas</span>
+        <span>Fecha</span>
+      </div>
+      {rows.length === 0 ? (
+        <div className={styles.emptyState}>
+          <ListChecks size={24} />
+          <p>No hay respuestas todavia.</p>
+        </div>
+      ) : rows.map(row => {
+        const rules = row.meta?.rules && typeof row.meta.rules === 'object' ? row.meta.rules as Record<string, unknown> : {}
+        const tags = Array.isArray(rules.tags) ? rules.tags.join(', ') : ''
+        const categories = Array.isArray(rules.categories) ? rules.categories.join(', ') : ''
+        return (
+          <article key={row.id} className={styles.leadRow}>
+            <span>{row.contactName || row.contactEmail || row.contactPhone || 'Lead sin nombre'}</span>
+            <span>{row.siteName}</span>
+            <span className={`${styles.statusPill} ${row.status === 'disqualified' ? styles.statusWarning : styles.statusSuccess}`}>
+              {row.status === 'disqualified' ? 'Descalificado' : 'Recibido'}
+            </span>
+            <span>{[tags, categories].filter(Boolean).join(' / ') || 'Sin reglas'}</span>
+            <span>{formatDate(row.createdAt)}</span>
+          </article>
+        )
+      })}
+    </div>
+  </section>
+)
+
+interface DomainsPanelProps {
+  domainConfig: SitesDomainConfig
+  domainInput: string
+  verifying: boolean
+  onDomainChange: (value: string) => void
+  onVerifyDomain: () => void
+}
+
+const DomainsPanel: React.FC<DomainsPanelProps> = ({
+  domainConfig,
+  domainInput,
+  verifying,
+  onDomainChange,
+  onVerifyDomain
+}) => {
+  const domainStatus = !domainConfig.domain
+    ? { label: 'Sin dominio', className: styles.statusMuted }
+    : domainConfig.renderDomainVerified
+      ? { label: 'Verificado', className: styles.statusSuccess }
+      : { label: 'Pendiente', className: styles.statusWarning }
+
+  return (
+    <section className={styles.dataPanel}>
+      <div className={styles.builderHeader}>
+        <div>
+          <h2>Dominios</h2>
+          <p>Conecta un solo dominio general para enrutar todos los formularios y sitios web.</p>
+        </div>
+        <span className={`${styles.statusPill} ${domainStatus.className}`}>{domainStatus.label}</span>
+      </div>
+
+      <div className={styles.domainEditor}>
+        <label className={styles.field}>
+          <span>Dominio publico general</span>
+          <input
+            value={domainInput}
+            placeholder="www.doctorramirez.com"
+            onChange={(event) => onDomainChange(event.target.value)}
+          />
+        </label>
+        {domainConfig.renderDomainError && <p className={styles.domainError}>{domainConfig.renderDomainError}</p>}
+        <div className={styles.editorActions}>
+          <Button onClick={onVerifyDomain} loading={verifying} disabled={!domainInput.trim()}>
+            <CheckCircle2 size={16} />
+            Verificar dominio
+          </Button>
+        </div>
+      </div>
+    </section>
+  )
+}

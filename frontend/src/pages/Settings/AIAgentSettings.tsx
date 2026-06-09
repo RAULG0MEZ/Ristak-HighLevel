@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Bot, CheckCircle, Eye, EyeOff, Globe2, ListChecks, Trash2, XCircle } from 'lucide-react'
-import { Button, Card } from '@/components/common'
+import { AlertTriangle, Bot, CheckCircle, Eye, EyeOff, Globe2, ListChecks, Trash2, XCircle } from 'lucide-react'
+import { Button, Card, CustomSelect } from '@/components/common'
 import { useNotification } from '@/contexts/NotificationContext'
 import { aiAgentService, type AIAgentConfigStatus, type AIAgentRecommendationMode, type AIAgentResponseStyle } from '@/services/aiAgentService'
 import styles from './AIAgentSettings.module.css'
@@ -14,6 +14,10 @@ const emptyStatus: AIAgentConfigStatus = {
   configured: false,
   model: DEFAULT_AI_MODEL,
   tokenPreview: null,
+  credentialStatus: 'missing',
+  needsReconnect: false,
+  connectionIssue: null,
+  connectionIssueCode: null,
   businessContext: '',
   marketContext: '',
   idealCustomer: '',
@@ -298,6 +302,7 @@ export const AIAgentSettings: React.FC = () => {
   }
 
   const selectedModel = modelOptions.find((option) => option.value === form.model) || modelOptions[0]
+  const needsReconnect = Boolean(status.needsReconnect)
   const apiKeyNeedsMore = isEditingApiKey && Boolean(apiKey.trim() && !isApiKeyReady(apiKey))
   const saveStatusText = loading
     ? 'Cargando...'
@@ -307,6 +312,8 @@ export const AIAgentSettings: React.FC = () => {
       ? 'Guardando...'
       : apiKeyNeedsMore
         ? 'Completa el token para guardarlo'
+        : needsReconnect && !isEditingApiKey
+          ? 'Reconecta OpenAI para usar voz y chat'
         : saveState === 'pending'
           ? 'Guardando en automático...'
           : saveState === 'error'
@@ -493,7 +500,12 @@ export const AIAgentSettings: React.FC = () => {
           </div>
 
           <div className={styles.headerActions}>
-            {status.configured ? (
+            {needsReconnect ? (
+              <div className={styles.statusWarning}>
+                <AlertTriangle size={15} />
+                Reconectar
+              </div>
+            ) : status.configured ? (
               <div className={styles.statusConnected}>
                 <CheckCircle size={15} />
                 Conectado
@@ -505,7 +517,7 @@ export const AIAgentSettings: React.FC = () => {
               </div>
             )}
 
-            {status.configured && (
+            {(status.configured || needsReconnect) && (
               <Button
                 variant="danger"
                 onClick={handleDisconnect}
@@ -531,8 +543,8 @@ export const AIAgentSettings: React.FC = () => {
               <input
                 className={`${styles.input} ${styles.tokenInput} ${!isEditingApiKey ? styles.inputReadOnly : ''}`}
                 type={isEditingApiKey && showApiKey ? 'text' : 'password'}
-                value={isEditingApiKey ? apiKey : status.configured ? 'token-configurado' : ''}
-                placeholder={status.configured ? 'Token configurado' : 'Sin token configurado'}
+                value={isEditingApiKey ? apiKey : status.configured ? 'token-configurado' : needsReconnect ? 'token-no-disponible' : ''}
+                placeholder={status.configured ? 'Token configurado' : needsReconnect ? 'Token requiere reconexión' : 'Sin token configurado'}
                 autoComplete="off"
                 onChange={(event) => {
                   if (isEditingApiKey) {
@@ -565,15 +577,17 @@ export const AIAgentSettings: React.FC = () => {
                     (isEditingApiKey && (!apiKey.trim() || !isApiKeyReady(apiKey)))
                   }
                 >
-                  {isEditingApiKey ? 'Guardar' : 'Cambiar'}
+                  {isEditingApiKey ? 'Guardar' : needsReconnect ? 'Reconectar' : 'Cambiar'}
                 </button>
               </div>
             </div>
-            <p className={styles.helper}>
+            <p className={`${styles.helper} ${needsReconnect && !isEditingApiKey ? styles.helperWarning : ''}`}>
               {isEditingApiKey
                 ? apiKeyNeedsMore
                   ? 'El token debe iniciar con sk- y estar completo.'
                   : 'Pega el token nuevo y guárdalo manualmente.'
+                : needsReconnect
+                  ? 'El token guardado ya no se puede leer. Pega tu token de OpenAI otra vez para activar voz y chat.'
                 : status.tokenPreview
                   ? `Actual: ${status.tokenPreview}`
                   : 'Pulsa Cambiar para configurar el token.'}
@@ -582,8 +596,7 @@ export const AIAgentSettings: React.FC = () => {
 
           <div className={styles.field}>
             <label className={styles.label}>Modelo</label>
-            <select
-              className={styles.select}
+            <CustomSelect
               value={form.model}
               onChange={(event) => updateField('model', event.target.value)}
               disabled={loading || disconnecting}
@@ -597,14 +610,13 @@ export const AIAgentSettings: React.FC = () => {
                   ))}
                 </optgroup>
               ))}
-            </select>
+            </CustomSelect>
             <p className={styles.helper}>{selectedModel.description}</p>
           </div>
 
           <div className={styles.field}>
             <label className={styles.label}>Respuesta</label>
-            <select
-              className={styles.select}
+            <CustomSelect
               value={form.responseStyle}
               onChange={(event) => updateField('responseStyle', event.target.value as AIAgentResponseStyle)}
               disabled={loading || disconnecting}
@@ -614,13 +626,12 @@ export const AIAgentSettings: React.FC = () => {
                   {option.label}
                 </option>
               ))}
-            </select>
+            </CustomSelect>
           </div>
 
           <div className={styles.field}>
             <label className={styles.label}>Recomendaciones</label>
-            <select
-              className={styles.select}
+            <CustomSelect
               value={form.recommendationMode}
               onChange={(event) => updateField('recommendationMode', event.target.value as AIAgentRecommendationMode)}
               disabled={loading || disconnecting}
@@ -630,7 +641,7 @@ export const AIAgentSettings: React.FC = () => {
                   {option.label}
                 </option>
               ))}
-            </select>
+            </CustomSelect>
           </div>
         </div>
 

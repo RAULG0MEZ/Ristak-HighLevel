@@ -11,11 +11,8 @@
   height: 100dvh;
   min-height: 100dvh;
   max-height: 100dvh;
-  color: var(--color-text-primary);
-  background:
-    linear-gradient(180deg, rgba(16, 185, 129, 0.08), transparent 34%),
-    linear-gradient(135deg, rgba(245, 158, 11, 0.08), transparent 42%),
-    var(--phone-frame-bg);
+  color: var(--phone-app-text);
+  background: var(--phone-frame-bg);
   overflow: visible;
   overscroll-behavior: none;
 }
@@ -36,6 +33,56 @@
   box-shadow: none;
   contain: size layout paint;
   overflow: hidden;
+}
+
+:global(body[data-phone-chat-tone="dark"]) .phonePage {
+  color-scheme: dark;
+}
+
+:global(body[data-phone-chat-tone="dark"]) .phoneFrame,
+:global(body[data-phone-chat-tone="dark"]) .header,
+:global(body[data-phone-chat-tone="dark"]) .periodPanel,
+:global(body[data-phone-chat-tone="dark"]) .content,
+:global(body[data-phone-chat-tone="dark"]) .settingsShell,
+:global(body[data-phone-chat-tone="dark"]) .loadingPage,
+:global(body[data-phone-chat-tone="dark"]) .blockedPage {
+  background: var(--phone-frame-bg);
+}
+
+:global(body[data-phone-chat-tone="dark"]) .iconButton,
+:global(body[data-phone-chat-tone="dark"]) .periodButton,
+:global(body[data-phone-chat-tone="dark"]) .sectionTabs,
+:global(body[data-phone-chat-tone="dark"]) .settingsSwitcher,
+:global(body[data-phone-chat-tone="dark"]) .settingsSwitchButton {
+  color: var(--phone-app-text);
+  background: var(--phone-app-soft);
+}
+
+:global(body[data-phone-chat-tone="dark"]) .headerMain h1,
+:global(body[data-phone-chat-tone="dark"]) .sectionTitle,
+:global(body[data-phone-chat-tone="dark"]) .cardTitle,
+:global(body[data-phone-chat-tone="dark"]) .metricValue,
+:global(body[data-phone-chat-tone="dark"]) .listItem strong,
+:global(body[data-phone-chat-tone="dark"]) .blockedCopy h1 {
+  color: var(--phone-app-text);
+}
+
+:global(body[data-phone-chat-tone="dark"]) .eyebrow,
+:global(body[data-phone-chat-tone="dark"]) .cardSubtitle,
+:global(body[data-phone-chat-tone="dark"]) .metricDetail,
+:global(body[data-phone-chat-tone="dark"]) .listItem small,
+:global(body[data-phone-chat-tone="dark"]) .blockedCopy p:last-child {
+  color: var(--phone-app-muted);
+}
+
+:global(body[data-phone-chat-tone="dark"]) .metricTile,
+:global(body[data-phone-chat-tone="dark"]) .summaryCard,
+:global(body[data-phone-chat-tone="dark"]) .chartCard,
+:global(body[data-phone-chat-tone="dark"]) .listCard,
+:global(body[data-phone-chat-tone="dark"]) .actionCard,
+:global(body[data-phone-chat-tone="dark"]) .blockedPanel {
+  border-color: var(--phone-app-border);
+  background: var(--phone-app-surface);
 }
 
 .header {
@@ -72,9 +119,9 @@
   flex: 0 0 auto;
   width: 44px;
   height: 44px;
-  border-radius: 8px;
-  color: #ffffff;
-  background: #111827;
+  border-radius: 999px;
+  color: #07140d;
+  background: var(--phone-chat-accent, #111827);
   font-size: 18px;
   font-weight: 900;
   letter-spacing: 0;
@@ -82,8 +129,8 @@
 
 .headerMain h1 {
   margin: 2px 0 0;
-  color: var(--color-text-primary);
-  font-size: clamp(22px, 6.2vw, 30px);
+  color: var(--phone-app-text);
+  font-size: clamp(34px, 10vw, 48px);
   font-weight: 850;
   line-height: 1.08;
   letter-spacing: 0;
@@ -95,7 +142,7 @@
 
 .eyebrow {
   margin: 0;
-  color: var(--color-text-tertiary);
+  color: var(--phone-app-muted);
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -116,10 +163,10 @@
   justify-content: center;
   width: 44px;
   height: 44px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 8px;
-  color: var(--color-text-primary);
-  background: color-mix(in srgb, var(--color-background-secondary) 90%, transparent);
+  border: 0;
+  border-radius: 999px;
+  color: var(--phone-app-text);
+  background: var(--phone-app-soft);
   text-decoration: none;
   transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
 }
@@ -141,7 +188,7 @@
   display: grid;
   gap: 10px;
   min-width: 0;
-  padding: 12px 14px;
+  padding: 10px 18px 12px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.1);
 }
 
@@ -181,7 +228,7 @@
   min-height: 34px;
   padding: 0 8px;
   border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 8px;
+  border-radius: 999px;
   color: var(--color-text-secondary);
   background: color-mix(in srgb, var(--color-background-secondary) 86%, transparent);
   font-size: 12px;
@@ -190,9 +237,9 @@
 }
 
 .periodButtonActive {
-  color: #052e16;
-  border-color: rgba(16, 185, 129, 0.42);
-  background: #86efac;
+  color: #165c40;
+  border-color: #b8ddb0;
+  background: #dcf8d3;
 }
 
 .sectionTabs {
@@ -202,7 +249,7 @@
   display: flex;
   gap: 8px;
   min-width: 0;
-  padding: 10px 14px 11px;
+  padding: 10px 18px 11px;
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scrollbar-width: none;
@@ -222,7 +269,7 @@
   min-height: 36px;
   padding: 0 10px;
   border: 1px solid rgba(148, 163, 184, 0.14);
-  border-radius: 8px;
+  border-radius: 999px;
   color: var(--color-text-secondary);
   background: color-mix(in srgb, var(--color-background-secondary) 88%, transparent);
   font-size: 12px;
@@ -231,9 +278,9 @@
 }
 
 .sectionTabActive {
-  color: var(--color-text-primary);
-  border-color: rgba(59, 130, 246, 0.46);
-  background: color-mix(in srgb, var(--color-background-tertiary) 82%, #3b82f6 18%);
+  color: #111111;
+  border-color: rgba(17, 17, 17, 0.18);
+  background: #ececec;
 }
 
 .errorBanner {
@@ -247,12 +294,23 @@
   font-weight: 700;
 }
 
+.cacheBanner {
+  margin: 0 0 12px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  color: var(--color-text-secondary);
+  background: color-mix(in srgb, var(--color-background-tertiary) 76%, transparent);
+  font-size: 12px;
+  font-weight: 780;
+  text-align: center;
+}
+
 .content {
   position: relative;
   grid-row: 4;
   z-index: 1;
   min-height: 0;
-  padding: 14px 14px max(20px, env(safe-area-inset-bottom));
+  padding: 14px 18px calc(102px + env(safe-area-inset-bottom));
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;

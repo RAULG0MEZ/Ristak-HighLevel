@@ -44,7 +44,7 @@ export const Settings: React.FC = () => {
     },
     {
       to: '/settings/meta-ads',
-      label: 'Meta Ads',
+      label: 'Meta',
       icon: (
         <img
           src={theme === 'dark'
@@ -75,6 +75,11 @@ export const Settings: React.FC = () => {
       to: '/settings/costs',
       label: 'Costos',
       icon: <TrendingDown size={18} />
+    },
+    {
+      to: '/settings/custom-fields',
+      label: 'Campos personalizados',
+      icon: <Hash size={18} />
     },
     {
       to: '/settings/ai-agent',
@@ -119,7 +124,7 @@ export const Settings: React.FC = () => {
 
           <div className={styles.mainContent}>
             <Routes>
-              <Route index element={<Navigate to="highlevel" replace />} />
+              <Route index element={<Navigate to="account" replace />} />
               <Route path="highlevel" element={<HighLevelIntegration />} />
               <Route path="costs" element={<Costs />} />
               <Route path="meta-ads" element={<MetaAdsIntegration />} />
@@ -130,6 +135,7 @@ export const Settings: React.FC = () => {
               <Route path="payments" element={<PaymentsConfiguration />} />
               <Route path="ai-agent" element={<AIAgentSettings />} />
               <Route path="api-access" element={<APIAccessSettings />} />
+              <Route path="mobile-app" element={<MobileAppSettings />} />
               <Route path="account" element={<AccountSettings />} />
             </Routes>
           </div>

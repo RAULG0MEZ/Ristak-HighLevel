@@ -3,6 +3,9 @@ import { Modal } from '../Modal'
 import { Button } from '../Button'
 import { TabList } from '../TabList'
 import { CustomSelect } from '../CustomSelect'
+import { NumberInput } from '../NumberInput'
+import { PhoneDateField } from '@/components/phone/PhoneDateField'
+import { PhoneSelect } from '@/components/phone/PhoneSelect'
 import {
   Search,
   Loader2,
@@ -12,7 +15,6 @@ import {
   Check,
   AlertCircle,
   Send,
-  Calendar,
   Percent,
   Plus,
   Trash2,
@@ -20,7 +22,9 @@ import {
 } from 'lucide-react'
 import styles from './RecordPaymentModal.module.css'
 import { useNotification } from '@/contexts/NotificationContext'
+import { useAppConfig } from '@/hooks'
 import { formatCurrency as formatMxCurrency } from '@/utils/format'
+import { ACCOUNT_CURRENCY_CONFIG_KEY, CURRENCY_OPTIONS, getDetectedAccountLocaleDefaults } from '@/utils/accountLocale'
 import { highLevelService } from '@/services/highLevelService'
 import { transactionsService } from '@/services/transactionsService'
 
@@ -28,7 +32,7 @@ const IVA_RATE = 0.16
 const DEFAULT_INVOICE_TITLE = 'Pago'
 const CONTACT_SEARCH_DELAY_MS = 90
 
-const formatCurrency = (value: number, _currency = 'MXN'): string => formatMxCurrency(value)
+const formatCurrency = (value: number, currency = 'MXN'): string => formatMxCurrency(value, currency)
 
 const normalizeAmount = (value: string | number): number => {
   if (typeof value === 'number') {
@@ -48,6 +52,39 @@ type RemainingFrequency = 'custom' | 'weekly' | 'biweekly' | 'monthly'
 type SendMethod = 'whatsapp' | 'sms' | 'email' | 'email_whatsapp' | 'email_sms' | 'all'
 type InvoiceSendMethod = 'email' | 'sms' | 'both'
 
+const INSTALLMENT_VALUE_TYPE_OPTIONS = [
+  { value: 'percentage', label: 'Porcentaje' },
+  { value: 'amount', label: 'Monto fijo' }
+]
+
+const INSTALLMENT_SHORT_TYPE_OPTIONS = [
+  { value: 'percentage', label: '%' },
+  { value: 'amount', label: '$' }
+]
+
+const FIRST_PAYMENT_METHOD_OPTIONS = [
+  { value: '', label: 'Seleccionar método', disabled: true },
+  { value: 'bank_transfer', label: 'Transferencia' },
+  { value: 'cash', label: 'Efectivo' },
+  { value: 'deposit', label: 'Depósito' },
+  { value: 'card', label: 'Tarjeta / link' }
+]
+
+const REMAINING_FREQUENCY_OPTIONS = [
+  { value: 'monthly', label: 'Mensual' },
+  { value: 'biweekly', label: 'Quincenal' },
+  { value: 'weekly', label: 'Semanal' },
+  { value: 'custom', label: 'Personalizada' }
+]
+
+const MANUAL_PAYMENT_METHOD_OPTIONS = [
+  { value: 'cash', label: 'Efectivo' },
+  { value: 'bank_transfer', label: 'Transferencia bancaria' },
+  { value: 'card', label: 'Tarjeta' },
+  { value: 'check', label: 'Cheque' },
+  { value: 'other', label: 'Otro' }
+]
+
 interface InstallmentDraft {
   id: string
   type: InstallmentValueType
@@ -60,6 +97,8 @@ interface RecordPaymentModalProps {
   onClose: () => void
   onSuccess?: () => void
   initialPaymentMode?: PaymentMode
+  initialContact?: Partial<Contact> | null
+  lockInitialContact?: boolean
   /**
    * 'modal' (default) renderiza dentro del overlay Modal.
    * 'embedded' renderiza el mismo flujo sin overlay, para incrustarlo en una
@@ -75,6 +114,31 @@ interface Contact {
   phone: string
   firstName?: string
   lastName?: string
+}
+
+const normalizePaymentContact = (contact?: Partial<Contact> | null): Contact | null => {
+  if (!contact?.id) return null
+
+  return {
+    id: contact.id,
+    name: contact.name || '',
+    email: contact.email || '',
+    phone: contact.phone || '',
+    firstName: contact.firstName || '',
+    lastName: contact.lastName || ''
+  }
+}
+
+const getContactInitials = (contact?: Partial<Contact> | null) => {
+  const source = contact?.name || `${contact?.firstName || ''} ${contact?.lastName || ''}`.trim() || contact?.email || contact?.phone || ''
+  const initials = source
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('')
+
+  return initials || 'C'
 }
 
 const EMAIL_SEND_METHODS = new Set<SendMethod>(['email', 'email_whatsapp', 'email_sms', 'all'])
@@ -285,6 +349,8 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   onClose,
   onSuccess,
   initialPaymentMode = 'single',
+  initialContact = null,
+  lockInitialContact = false,
   variant = 'modal'
 }) => {
   const [loading, setLoading] = useState(false)
@@ -364,6 +430,48 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   const [highLevelConnected, setHighLevelConnected] = useState(false)
 
   const { showToast } = useNotification()
+  const detectedLocaleDefaults = useMemo(getDetectedAccountLocaleDefaults, [])
+  const [defaultCurrency] = useAppConfig<string>(ACCOUNT_CURRENCY_CONFIG_KEY, detectedLocaleDefaults.currency)
+  const currencyOptions = useMemo(
+    () => CURRENCY_OPTIONS.map((option) => ({ value: option.value, label: option.value })),
+    []
+  )
+  const renderPaymentSelect = ({
+    value,
+    onChange,
+    options,
+    title,
+    placeholder,
+    invalid = false
+  }: {
+    value: string;
+    onChange: (value: string) => void;
+    options: Array<{ value: string; label: string; disabled?: boolean }>;
+    title: string;
+    placeholder?: string;
+    invalid?: boolean;
+  }) => (
+    variant === 'embedded' ? (
+      <PhoneSelect
+        value={value}
+        onChange={onChange}
+        options={options}
+        title={title}
+        placeholder={placeholder || title}
+        invalid={invalid}
+        buttonClassName={styles.phoneSelectButton}
+      />
+    ) : (
+      <CustomSelect
+        value={value}
+        onValueChange={onChange}
+        options={options.filter((option) => !option.disabled)}
+        placeholder={placeholder || title}
+        className={styles.customSelectControl}
+        portal
+      />
+    )
+  )
 
   const canChoosePaymentMode = chargeType === 'direct' || Boolean(selectedProduct && selectedPrice)
   const activePaymentMode: PaymentMode = canChoosePaymentMode ? paymentMode : 'single'
@@ -405,6 +513,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   )
   const sendMethodOptions = useMemo(() => getSendMethodOptions(selectedContact), [selectedContact?.email, selectedContact?.phone])
   const selectedSendMethodOption = sendMethodOptions.find(option => option.value === sendMethod)
+  const contactLocked = Boolean(lockInitialContact && initialContact?.id)
 
   useEffect(() => {
     if (sendMethodOptions.length === 0) return
@@ -414,18 +523,20 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   }, [sendMethodOptions, selectedSendMethodOption])
 
   const resetForm = () => {
+    const resolvedInitialContact = normalizePaymentContact(initialContact)
+
     setStep('form')
     setLoading(false)
     setSearchQuery('')
     setSearchingContact(false)
     setContacts([])
-    setSelectedContact(null)
+    setSelectedContact(resolvedInitialContact)
     setShowContactDropdown(false)
     setChargeType('direct')
     setAmount('')
     setPaymentTitle('')
     setDescription('')
-    setCurrency('MXN')
+    setCurrency(defaultCurrency || 'MXN')
     setIncludeIVA(false)
     setPaymentMode(initialPaymentMode)
     setFirstPaymentEnabled(true)
@@ -448,11 +559,11 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     setNewProductDescription('')
     setNewProductPriceName('')
     setNewProductAmount('')
-    setNewProductCurrency('MXN')
+    setNewProductCurrency(defaultCurrency || 'MXN')
     setInvoicePayload(null)
     setInvoiceSummary(null)
     setPaymentOption('send')
-    setSendMethod(DEFAULT_SEND_METHOD)
+    setSendMethod(resolvedInitialContact ? getDefaultSendMethod(getSendMethodOptions(resolvedInitialContact)) : DEFAULT_SEND_METHOD)
     setManualPaymentData(defaultManualPaymentData())
   }
 
@@ -518,10 +629,17 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     resetForm()
     loadConfig()
     loadIntegrationStatus()
-  }, [isOpen, initialPaymentMode])
+  }, [isOpen, initialPaymentMode, initialContact?.id, initialContact?.email, initialContact?.phone, initialContact?.name, defaultCurrency])
 
   // Search contacts
   useEffect(() => {
+    if (contactLocked) {
+      setContacts([])
+      setShowContactDropdown(false)
+      setSearchingContact(false)
+      return
+    }
+
     const query = searchQuery.trim()
 
     if (query.length < 2) {
@@ -605,7 +723,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       window.clearTimeout(timer)
       controller.abort()
     }
-  }, [searchQuery, highLevelConnected])
+  }, [searchQuery, highLevelConnected, contactLocked])
 
   useEffect(() => {
     if (isOpen && chargeType === 'product' && products.length === 0) {
@@ -624,9 +742,9 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     if (selectedPrice) {
       const priceAmount = selectedPrice.amount || selectedPrice.price
       setCustomAmount(priceAmount ? String(priceAmount) : '')
-      setCurrency(selectedPrice.currency || 'MXN')
+      setCurrency(selectedPrice.currency || defaultCurrency || 'MXN')
     }
-  }, [selectedPrice])
+  }, [selectedPrice, defaultCurrency])
 
   useEffect(() => {
     if (activePaymentMode !== 'partial' || remainingFrequency === 'custom') return
@@ -695,7 +813,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
     setNewProductDescription('')
     setNewProductPriceName('')
     setNewProductAmount('')
-    setNewProductCurrency(currency || 'MXN')
+    setNewProductCurrency(currency || defaultCurrency || 'MXN')
   }
 
   const handleCreateProduct = async () => {
@@ -722,12 +840,12 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
           description: newProductDescription.trim(),
           productType: 'DIGITAL',
           availableInStore: false,
-          currency: newProductCurrency || currency || 'MXN',
+          currency: newProductCurrency || currency || defaultCurrency || 'MXN',
           prices: [
             {
               name: newProductPriceName.trim() || productName,
               amount: productAmount,
-              currency: newProductCurrency || currency || 'MXN',
+              currency: newProductCurrency || currency || defaultCurrency || 'MXN',
               type: 'one_time',
               description: newProductDescription.trim()
             }
@@ -751,7 +869,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
       setSelectedPrice(firstPrice)
       if (firstPrice) {
         setCustomAmount(String(firstPrice.amount || firstPrice.price || productAmount))
-        setCurrency(firstPrice.currency || newProductCurrency || 'MXN')
+        setCurrency(firstPrice.currency || newProductCurrency || defaultCurrency || 'MXN')
       }
       setShowCreateProduct(false)
       resetNewProductForm()
@@ -802,6 +920,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
   }
 
   const handleClearContact = () => {
+    if (contactLocked) return
     setSelectedContact(null)
     setSearchQuery('')
   }
@@ -1346,6 +1465,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
 
     const taxAmount = includeIVA ? normalizeAmount(subtotalAmount * IVA_RATE) : 0
     const totalAmount = includeIVA ? normalizeAmount(subtotalAmount + taxAmount) : subtotalAmount
+    const isEmbedded = variant === 'embedded'
 
     const renderPaymentModeField = () => {
       // Las parcialidades dependen de HighLevel. En modo local solo hay pago único.
@@ -1378,68 +1498,88 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
 
     return (
       <div className={styles.content}>
-        <div className={styles.field}>
-          <label className={styles.label}>Cliente</label>
+        {!contactLocked && (
+          <div className={styles.field}>
+            <label className={styles.label}>Cliente</label>
 
-          {selectedContact ? (
-            <div className={styles.selectedContact}>
-              <div className={styles.contactInfo}>
-                <p className={styles.contactName}>{selectedContact.name || 'Sin nombre'}</p>
-                <p className={styles.contactDetail}>{selectedContact.email || selectedContact.phone}</p>
-              </div>
-              <button
-                type="button"
-                onClick={handleClearContact}
-                className={styles.clearButton}
-                title="Cambiar contacto"
-              >
-                <X size={16} />
-              </button>
-            </div>
-          ) : (
-            <div className={styles.searchWrapper}>
-              <div className={styles.searchInput}>
-                <Search size={16} className={styles.searchIcon} />
-                <input
-                  type="text"
-                  placeholder="Buscar por nombre, email o teléfono..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className={styles.input}
-                />
-                {searchingContact && <Loader2 size={16} className={styles.loadingIcon} />}
-              </div>
-
-              {showContactDropdown && (
-                <div className={styles.dropdown}>
-                  {searchingContact && contacts.length === 0 ? (
-                    <div className={styles.dropdownEmpty}>
-                      Buscando contactos...
-                    </div>
-                  ) : contacts.length > 0 ? (
-                    contacts.map((contact) => (
-                      <button
-                        key={contact.id}
-                        type="button"
-                        className={styles.dropdownItem}
-                        onClick={() => handleSelectContact(contact)}
-                      >
-                        <p className={styles.dropdownName}>{contact.name || 'Sin nombre'}</p>
-                        <p className={styles.dropdownDetail}>
-                          {contact.email || contact.phone || 'Sin información de contacto'}
-                        </p>
-                      </button>
-                    ))
-                  ) : (
-                    <div className={styles.dropdownEmpty}>
-                      No se encontraron contactos
-                    </div>
-                  )}
+            {selectedContact ? (
+              <div className={styles.selectedContact}>
+                <div className={styles.contactInfo}>
+                  <p className={styles.contactName}>{selectedContact.name || 'Sin nombre'}</p>
+                  <p className={styles.contactDetail}>{selectedContact.email || selectedContact.phone}</p>
                 </div>
-              )}
-            </div>
-          )}
-        </div>
+                <button
+                  type="button"
+                  onClick={handleClearContact}
+                  className={styles.clearButton}
+                  title="Cambiar contacto"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            ) : (
+              <div className={styles.searchWrapper}>
+                <div className={isEmbedded ? styles.contactSearchBox : styles.searchInput} data-ristak-unstyled={isEmbedded || undefined}>
+                  <Search size={16} className={styles.searchIcon} />
+                  <input
+                    type="text"
+                    placeholder={isEmbedded ? 'Buscar contacto' : 'Buscar por nombre, email o teléfono...'}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className={styles.input}
+                    aria-label="Buscar contacto para cobrar"
+                  />
+                  {searchingContact && <Loader2 size={16} className={styles.loadingIcon} />}
+                </div>
+
+                {showContactDropdown && (
+                  <div
+                    className={isEmbedded ? styles.contactList : styles.dropdown}
+                    data-phone-scrollable="true"
+                    data-ristak-dropdown-panel={!isEmbedded ? 'true' : undefined}
+                  >
+                    {searchingContact && contacts.length === 0 ? (
+                      <div className={isEmbedded ? styles.contactListState : styles.dropdownEmpty}>
+                        Buscando contactos...
+                      </div>
+                    ) : contacts.length > 0 ? (
+                      contacts.map((contact) => (
+                        <button
+                          key={contact.id}
+	                          type="button"
+	                          className={isEmbedded ? styles.contactOption : styles.dropdownItem}
+                            data-ristak-dropdown-item={!isEmbedded ? 'true' : undefined}
+	                          onClick={() => handleSelectContact(contact)}
+                        >
+                          {isEmbedded ? (
+                            <>
+                              <span className={styles.contactAvatar}>{getContactInitials(contact)}</span>
+                              <span className={styles.contactMain}>
+                                <strong>{contact.name || 'Sin nombre'}</strong>
+                                <small>{contact.email || contact.phone || 'Sin información de contacto'}</small>
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <p className={styles.dropdownName}>{contact.name || 'Sin nombre'}</p>
+                              <p className={styles.dropdownDetail}>
+                                {contact.email || contact.phone || 'Sin información de contacto'}
+                              </p>
+                            </>
+                          )}
+                        </button>
+                      ))
+                    ) : (
+                      <div className={isEmbedded ? styles.contactListState : styles.dropdownEmpty}>
+                        No se encontraron contactos
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className={styles.field}>
           <label className={styles.label}>Tipo de cobro</label>
@@ -1457,12 +1597,12 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                   setSelectedPrice(null)
                   setPrices([])
                   setCustomAmount('')
-                  setCurrency('MXN')
+                  setCurrency(defaultCurrency || 'MXN')
                   setShowCreateProduct(false)
                 } else {
                   setChargeType('product')
                   setAmount('')
-                  setNewProductCurrency(currency || 'MXN')
+                  setNewProductCurrency(currency || defaultCurrency || 'MXN')
                 }
               }}
               variant="compact"
@@ -1484,7 +1624,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                   size="sm"
                   onClick={() => {
                     setShowCreateProduct(prev => !prev)
-                    if (!showCreateProduct) setNewProductCurrency(currency || 'MXN')
+                    if (!showCreateProduct) setNewProductCurrency(currency || defaultCurrency || 'MXN')
                   }}
                 >
                   <Plus size={14} />
@@ -1500,7 +1640,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                   }))
                 ]}
                 value={selectedProduct?.id || selectedProduct?._id || selectedProduct?.localId || ''}
-                onChange={(value) => {
+                onValueChange={(value) => {
                   const product = products.find(p => (p.id || p._id || p.localId) === value)
                   setSelectedProduct(product || null)
                   setSelectedPrice(null)
@@ -1528,8 +1668,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                     <label className={styles.label}>Precio</label>
                     <div className={styles.amountInput}>
                       <DollarSign size={16} className={styles.dollarIcon} />
-                      <input
-                        type="number"
+                      <NumberInput
                         step="0.01"
                         min="0"
                         className={styles.input}
@@ -1555,11 +1694,8 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                     <label className={styles.label}>Moneda</label>
                     <CustomSelect
                       value={newProductCurrency}
-                      onChange={setNewProductCurrency}
-                      options={[
-                        { value: 'MXN', label: 'MXN' },
-                        { value: 'USD', label: 'USD' }
-                      ]}
+                      onValueChange={setNewProductCurrency}
+                      options={currencyOptions}
                     />
                   </div>
                 </div>
@@ -1612,7 +1748,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                     }))
                   ]}
                   value={selectedPrice?.id || selectedPrice?._id || selectedPrice?.localId || ''}
-                  onChange={(value) => {
+                  onValueChange={(value) => {
                     const price = prices.find(p => (p.id || p._id || p.localId) === value)
                     setSelectedPrice(price || null)
                   }}
@@ -1630,8 +1766,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                   <label className={styles.label}>Monto a cobrar (personalizable)</label>
                   <div className={styles.amountInput}>
                     <DollarSign size={16} className={styles.dollarIcon} />
-                    <input
-                      type="number"
+                    <NumberInput
                       step="0.01"
                       min="0"
                       placeholder="0.00"
@@ -1653,8 +1788,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
             <label className={styles.label}>Monto ({currency})</label>
             <div className={styles.amountInput}>
               <DollarSign size={16} className={styles.dollarIcon} />
-              <input
-                type="number"
+              <NumberInput
                 step="0.01"
                 min="0"
                 placeholder="0.00"
@@ -1745,17 +1879,15 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                   <div className={styles.fieldGrid}>
                     <div className={styles.manualField}>
                       <label>Tipo de valor</label>
-                      <select
-                        value={firstPaymentType}
-                        onChange={(e) => {
-                          setFirstPaymentType(e.target.value as InstallmentValueType)
+                      {renderPaymentSelect({
+                        value: firstPaymentType,
+                        onChange: (value) => {
+                          setFirstPaymentType(value as InstallmentValueType)
                           setAutoDistributeRemaining(true)
-                        }}
-                        className={styles.select}
-                      >
-                        <option value="percentage">Porcentaje</option>
-                        <option value="amount">Monto fijo</option>
-                      </select>
+                        },
+                        options: INSTALLMENT_VALUE_TYPE_OPTIONS,
+                        title: 'Tipo de valor'
+                      })}
                     </div>
                     <div className={styles.manualField}>
                       <label>{firstPaymentType === 'percentage' ? 'Porcentaje' : 'Monto'}</label>
@@ -1763,8 +1895,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                         {firstPaymentType === 'percentage'
                           ? <Percent size={16} className={styles.dollarIcon} />
                           : <DollarSign size={16} className={styles.dollarIcon} />}
-                        <input
-                          type="number"
+                        <NumberInput
                           step="0.01"
                           min="0"
                           value={firstPaymentValue}
@@ -1779,30 +1910,25 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                     <div className={styles.manualField}>
                       <label>Fecha límite</label>
                       <div className={styles.dateInput}>
-                        <Calendar size={16} className={styles.dollarIcon} />
-                        <input
-                          type="date"
+                        <PhoneDateField
                           value={firstPaymentDate}
                           min={toDateInputValue(new Date())}
-                          onChange={(e) => setFirstPaymentDate(e.target.value)}
-                          className={styles.input}
+                          onChange={setFirstPaymentDate}
+                          title="Fecha límite"
+                          buttonClassName={styles.phoneDateButton}
                         />
                       </div>
                     </div>
                     <div className={styles.manualField}>
                       <label>Método de pago</label>
-                      <select
-                        value={firstPaymentMethod}
-                        onChange={(e) => setFirstPaymentMethod(e.target.value as FirstPaymentMethod)}
-                        className={`${styles.select} ${firstPaymentMethodMissing ? styles.selectError : ''}`}
-                        aria-invalid={firstPaymentMethodMissing}
-                      >
-                        <option value="" disabled>Seleccionar método</option>
-                        <option value="bank_transfer">Transferencia</option>
-                        <option value="cash">Efectivo</option>
-                        <option value="deposit">Depósito</option>
-                        <option value="card">Tarjeta / link</option>
-                      </select>
+                      {renderPaymentSelect({
+                        value: firstPaymentMethod,
+                        onChange: (value) => setFirstPaymentMethod(value as FirstPaymentMethod),
+                        options: FIRST_PAYMENT_METHOD_OPTIONS,
+                        title: 'Método de pago',
+                        placeholder: 'Seleccionar método',
+                        invalid: firstPaymentMethodMissing
+                      })}
                     </div>
                   </div>
                   {firstPaymentMethodMissing && (
@@ -1838,16 +1964,12 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                 <div className={styles.fieldGrid}>
                   <div className={styles.manualField}>
                     <label>Frecuencia de cobro</label>
-                    <select
-                      value={remainingFrequency}
-                      onChange={(e) => setRemainingFrequency(e.target.value as RemainingFrequency)}
-                      className={styles.select}
-                    >
-                      <option value="monthly">Mensual</option>
-                      <option value="biweekly">Quincenal</option>
-                      <option value="weekly">Semanal</option>
-                      <option value="custom">Personalizada</option>
-                    </select>
+                    {renderPaymentSelect({
+                      value: remainingFrequency,
+                      onChange: (value) => setRemainingFrequency(value as RemainingFrequency),
+                      options: REMAINING_FREQUENCY_OPTIONS,
+                      title: 'Frecuencia de cobro'
+                    })}
                   </div>
                   <div className={styles.calcChip}>
                     <span>Suma de pagos restantes</span>
@@ -1877,19 +1999,16 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                         <div className={styles.installmentSeq}>{installment.sequence}</div>
                         <label className={styles.installmentCell}>
                           <span className={styles.cellLabel}>Tipo</span>
-                          <select
-                            value={installment.type}
-                            onChange={(e) => updateRemainingInstallment(installment.id, { type: e.target.value as InstallmentValueType })}
-                            className={styles.select}
-                          >
-                            <option value="percentage">%</option>
-                            <option value="amount">$</option>
-                          </select>
+                          {renderPaymentSelect({
+                            value: installment.type,
+                            onChange: (value) => updateRemainingInstallment(installment.id, { type: value as InstallmentValueType }),
+                            options: INSTALLMENT_SHORT_TYPE_OPTIONS,
+                            title: `Tipo de parcialidad ${installment.sequence}`
+                          })}
                         </label>
                         <label className={styles.installmentCell}>
                           <span className={styles.cellLabel}>Valor</span>
-                          <input
-                            type="number"
+                          <NumberInput
                             step="0.01"
                             min="0"
                             value={installment.value}
@@ -1900,13 +2019,13 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                         </label>
                         <label className={`${styles.installmentCell} ${styles.installmentDate}`}>
                           <span className={styles.cellLabel}>Fecha de cobro</span>
-                          <input
-                            type="date"
+                          <PhoneDateField
                             value={installment.dueDate}
-                            onChange={(e) => updateRemainingInstallment(installment.id, { dueDate: e.target.value })}
-                            className={styles.input}
+                            onChange={(value) => updateRemainingInstallment(installment.id, { dueDate: value })}
                             disabled={remainingFrequency !== 'custom'}
-                            aria-label={`Fecha de parcialidad ${installment.sequence}`}
+                            title={`Fecha de parcialidad ${installment.sequence}`}
+                            ariaLabel={`Fecha de parcialidad ${installment.sequence}`}
+                            buttonClassName={styles.phoneDateButton}
                           />
                         </label>
                         <div className={styles.installmentMonto}>
@@ -2089,7 +2208,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                     ) : (
                       <CustomSelect
                         value={sendMethod}
-                        onChange={(value) => setSendMethod(value as SendMethod)}
+                        onValueChange={(value) => setSendMethod(value as SendMethod)}
                         options={sendMethodOptions}
                         portal
                       />
@@ -2176,7 +2295,7 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
                   ) : (
                     <CustomSelect
                       value={sendMethod}
-                      onChange={(value) => setSendMethod(value as SendMethod)}
+                      onValueChange={(value) => setSendMethod(value as SendMethod)}
                       options={sendMethodOptions}
                       portal
                     />
@@ -2215,26 +2334,21 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
             <div className={styles.manualGrid}>
               <div className={styles.manualField}>
                 <label>Fecha de pago</label>
-                <input
-                  type="date"
+                <PhoneDateField
                   value={manualPaymentData.paymentDate}
-                  onChange={(e) => setManualPaymentData({ ...manualPaymentData, paymentDate: e.target.value })}
-                  className={styles.input}
+                  onChange={(value) => setManualPaymentData({ ...manualPaymentData, paymentDate: value })}
+                  title="Fecha de pago"
+                  buttonClassName={styles.phoneDateButton}
                 />
               </div>
               <div className={styles.manualField}>
                 <label>Método de pago</label>
-                <select
-                  value={manualPaymentData.paymentMethod}
-                  onChange={(e) => setManualPaymentData({ ...manualPaymentData, paymentMethod: e.target.value })}
-                  className={styles.select}
-                >
-                  <option value="cash">Efectivo</option>
-                  <option value="bank_transfer">Transferencia bancaria</option>
-                  <option value="card">Tarjeta</option>
-                  <option value="check">Cheque</option>
-                  <option value="other">Otro</option>
-                </select>
+                {renderPaymentSelect({
+                  value: manualPaymentData.paymentMethod,
+                  onChange: (value) => setManualPaymentData({ ...manualPaymentData, paymentMethod: value }),
+                  options: MANUAL_PAYMENT_METHOD_OPTIONS,
+                  title: 'Método de pago'
+                })}
               </div>
             </div>
             {manualPaymentData.paymentMethod === 'bank_transfer' && (
@@ -2364,13 +2478,15 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
 
     return (
       <div className={styles.footer}>
-        <Button
-          variant="secondary"
-          onClick={onClose}
-          disabled={loading}
-        >
-          Cancelar
-        </Button>
+        {variant !== 'embedded' && (
+          <Button
+            variant="secondary"
+            onClick={onClose}
+            disabled={loading}
+          >
+            Cancelar
+          </Button>
+        )}
         <Button
           variant="primary"
           onClick={handleContinue}
@@ -2395,12 +2511,12 @@ export const RecordPaymentModal: React.FC<RecordPaymentModalProps> = ({
 
     return (
       <div className={styles.embeddedRoot}>
-        <div className={styles.embeddedScroll} data-phone-scrollable="true">
+        <div className={styles.embeddedScroll} data-phone-chat-scrollable="true" data-phone-scrollable="true">
           {step === 'processing' && renderProcessing()}
           {step === 'form' && renderForm()}
           {step === 'options' && renderPaymentOptions()}
+          {renderFooter()}
         </div>
-        {renderFooter()}
       </div>
     )
   }

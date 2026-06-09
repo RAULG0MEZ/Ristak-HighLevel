@@ -18,11 +18,12 @@ interface ModalData {
   confirmText?: string
   cancelText?: string
   onConfirm?: () => void
+  onCancel?: () => void
 }
 
 interface NotificationContextType {
   showToast: (type: ToastType, title: string, message?: string, duration?: number) => void
-  showConfirm: (title: string, message: string, onConfirm: () => void, confirmText?: string, cancelText?: string) => void
+  showConfirm: (title: string, message: string, onConfirm: () => void, confirmText?: string, cancelText?: string, onCancel?: () => void) => void
   showAlert: (title: string, message: string, confirmText?: string) => void
   showInfo: (title: string, message: string, confirmText?: string) => void
   toasts: ToastData[]
@@ -32,6 +33,11 @@ interface NotificationContextType {
 }
 
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined)
+
+function isOpenPhoneApp() {
+  if (typeof document === 'undefined') return false
+  return document.body.dataset.phoneApp === 'active'
+}
 
 export const useNotification = () => {
   const context = useContext(NotificationContext)
@@ -58,7 +64,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   ) => {
     const id = Date.now().toString()
     const newToast: ToastData = { id, type, title, message, duration }
-    setToasts(prev => [...prev, newToast])
+    setToasts(prev => isOpenPhoneApp() ? [newToast] : [...prev, newToast])
   }, [])
 
   const removeToast = useCallback((id: string) => {
@@ -70,7 +76,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     message: string,
     onConfirm: () => void,
     confirmText: string = 'Aceptar',
-    cancelText: string = 'Cancelar'
+    cancelText: string = 'Cancelar',
+    onCancel?: () => void
   ) => {
     setModal({
       isOpen: true,
@@ -79,7 +86,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       message,
       confirmText,
       cancelText,
-      onConfirm
+      onConfirm,
+      onCancel
     })
   }, [])
 

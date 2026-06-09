@@ -66,7 +66,7 @@ const buildSearchParams = (item: GlobalSearchItem) => {
   if (adId) params.set('adId', String(adId))
   if (lastDate) params.set('date', String(lastDate).slice(0, 10))
 
-  return { pathname: '/campaigns', search: `?${params.toString()}` }
+  return { pathname: '/campaigns/classic', search: `?${params.toString()}` }
 }
 
 const filterCategoriesByQuery = (
@@ -236,7 +236,7 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ className }) => {
 
   return (
     <div ref={rootRef} className={cn(styles.root, className)}>
-      <div className={styles.inputWrap}>
+      <div className={styles.inputWrap} data-ristak-unstyled>
         <Search size={17} className={styles.inputIcon} />
         <input
           ref={inputRef}
@@ -267,20 +267,10 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ className }) => {
             <X size={15} />
           </button>
         )}
-        <button
-          type="button"
-          className={styles.searchButton}
-          onClick={selectActiveItem}
-          title="Abrir primer resultado"
-          aria-label="Abrir primer resultado"
-          disabled={flatResults.length === 0}
-        >
-          <Search size={16} />
-        </button>
       </div>
 
       {showDropdown && (
-        <div id="global-search-results" className={styles.dropdown} role="listbox">
+        <div id="global-search-results" className={styles.dropdown} role="listbox" data-ristak-dropdown-panel>
           {loading && categories.length === 0 && (
             <div className={styles.stateRow}>Buscando...</div>
           )}
@@ -307,6 +297,8 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ className }) => {
                       key={`${item.type}-${item.id}`}
                       type="button"
                       className={cn(styles.resultItem, isActive && styles.resultItemActive)}
+                      data-ristak-dropdown-item
+                      data-active={isActive ? 'true' : undefined}
                       onMouseEnter={() => setActiveIndex(itemIndex)}
                       onClick={() => selectItem(item)}
                       role="option"

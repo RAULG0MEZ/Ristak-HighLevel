@@ -4,11 +4,31 @@ import {
   deleteAIAgentConfig,
   getAIAgentStatus,
   getOpenAIApiKey,
+  isAIAgentCredentialError,
   saveRefinedAIAgentBusinessContextAnswer,
   saveAIAgentConfig,
   transcribeVoiceAudio,
   verifyOpenAIApiKey
 } from '../services/aiAgentService.js'
+import { getAgentRunTrace } from '../services/agentExecutionLedgerService.js'
+
+function sendAIAgentError(res, error, fallback, statusCode = 500) {
+  if (isAIAgentCredentialError(error)) {
+    return res.status(error.statusCode || 409).json({
+      success: false,
+      error: error.message,
+      code: error.code,
+      needsReconnect: true,
+      ...(error.agentTrace ? { trace: error.agentTrace } : {})
+    })
+  }
+
+  return res.status(statusCode).json({
+    success: false,
+    error: error.message || fallback,
+    ...(error.agentTrace ? { trace: error.agentTrace } : {})
+  })
+}
 
 export async function getConfig(req, res) {
   try {
@@ -20,10 +40,7 @@ export async function getConfig(req, res) {
     })
   } catch (error) {
     logger.error('Error obteniendo configuración del agente AI:', error)
-    res.status(500).json({
-      success: false,
-      error: 'Error al obtener la configuración del agente AI'
-    })
+    sendAIAgentError(res, error, 'Error al obtener la configuración del agente AI')
   }
 }
 
@@ -111,16 +128,17 @@ export async function saveBusinessContextAnswer(req, res) {
     })
   } catch (error) {
     logger.error('Error guardando respuesta de contexto del agente AI:', error)
+    if (isAIAgentCredentialError(error)) {
+      return sendAIAgentError(res, error, 'OpenAI necesita reconectarse')
+    }
+
     const statusCode = error.message?.includes('API Key')
       ? 409
       : error.message?.includes('no válido') || error.message?.includes('respuesta')
         ? 400
         : 500
 
-    res.status(statusCode).json({
-      success: false,
-      error: error.message || 'Error al guardar el contexto del negocio'
-    })
+    sendAIAgentError(res, error, 'Error al guardar el contexto del negocio', statusCode)
   }
 }
 
@@ -160,10 +178,30 @@ export async function chat(req, res) {
     })
   } catch (error) {
     logger.error('Error en chat del agente AI:', error)
-    res.status(500).json({
-      success: false,
-      error: error.message || 'Error al generar respuesta del agente AI'
+    sendAIAgentError(res, error, 'Error al generar respuesta del agente AI')
+  }
+}
+
+export async function getRunTrace(req, res) {
+  try {
+    const trace = await getAgentRunTrace(req.params?.traceId, {
+      userId: req.user?.userId
     })
+
+    if (!trace) {
+      return res.status(404).json({
+        success: false,
+        error: 'No encontré ese rastro del agente'
+      })
+    }
+
+    res.json({
+      success: true,
+      data: trace
+    })
+  } catch (error) {
+    logger.error('Error obteniendo rastro del agente AI:', error)
+    sendAIAgentError(res, error, 'Error al obtener el rastro del agente AI')
   }
 }
 
@@ -199,9 +237,6 @@ export async function transcribeVoice(req, res) {
     })
   } catch (error) {
     logger.error('Error transcribiendo voz del agente AI:', error)
-    res.status(500).json({
-      success: false,
-      error: error.message || 'Error al transcribir el audio'
-    })
+    sendAIAgentError(res, error, 'Error al transcribir el audio')
   }
 }

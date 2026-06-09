@@ -665,9 +665,9 @@ body.dark .select:focus {
 }
 
 .statusConnected {
-  color: var(--color-status-success);
-  background: rgba(16, 185, 129, 0.1);
-  border-color: rgba(16, 185, 129, 0.22);
+  color: var(--color-primary);
+  background: rgba(var(--color-primary-rgb), 0.1);
+  border-color: rgba(var(--color-primary-rgb), 0.22);
 }
 
 .statusDisconnected {
@@ -745,10 +745,11 @@ body.dark .select:focus {
   min-width: 0;
   flex-direction: column;
   gap: 16px;
-  padding: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 8px;
-  background: rgba(148, 163, 184, 0.045);
+  padding: 16px 0 0;
+  border: 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 0;
+  background: transparent;
 }
 
 .accountSectionWide {
@@ -843,10 +844,10 @@ body.dark .select:focus {
   align-items: center;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid rgba(16, 185, 129, 0.22);
+  border: 1px solid rgba(var(--color-primary-rgb), 0.22);
   border-radius: 999px;
-  background: rgba(16, 185, 129, 0.08);
-  color: var(--color-status-success);
+  background: rgba(var(--color-primary-rgb), 0.08);
+  color: var(--color-primary);
   font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
@@ -881,10 +882,41 @@ body.dark .select:focus {
   gap: 12px;
 }
 
+.profileDetailsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.profileDetailsWide {
+  grid-column: 1 / -1;
+}
+
 .labelsGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
+}
+
+.accountLocaleGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.localePreview {
+  display: grid;
+  gap: 4px;
+  min-height: 42px;
+  padding: 6px 0;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.accountLocaleGrid > button {
+  justify-self: end;
 }
 
 .labelField {
@@ -1014,43 +1046,347 @@ body.dark .select:focus {
   font-weight: 700;
 }
 
-.timezonePreview {
+.notificationDeviceCard {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 13px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 8px;
+  background: rgba(148, 163, 184, 0.055);
+}
+
+.notificationDeviceIcon,
+.notificationSettingIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  color: var(--color-primary);
+  background: rgba(var(--color-primary-rgb), 0.12);
+}
+
+.notificationDeviceCard strong,
+.notificationSettingCard strong {
+  display: block;
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 780;
+}
+
+.notificationDeviceCard small,
+.notificationSettingCard small {
+  display: block;
+  margin-top: 3px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.notificationSettingsGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 
-.timezonePreviewItem {
+.notificationSettingCard {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 11px;
+  min-height: 104px;
+  padding: 13px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  color: var(--color-text-primary);
+  background: var(--color-background-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.notificationSettingCard:hover:not(:disabled) {
+  border-color: rgba(var(--color-primary-rgb), 0.28);
+  background: rgba(var(--color-primary-rgb), 0.045);
+}
+
+.notificationSettingCard:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.notificationSettingCardActive {
+  border-color: rgba(var(--color-primary-rgb), 0.36);
+  background: rgba(var(--color-primary-rgb), 0.07);
+}
+
+.notificationSettingCard i {
+  grid-column: 1 / -1;
+  width: fit-content;
+  min-height: 24px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  color: var(--color-text-tertiary);
+  background: rgba(148, 163, 184, 0.12);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.notificationSettingCardActive i {
+  color: var(--color-primary);
+  background: rgba(var(--color-primary-rgb), 0.14);
+}
+
+.mobileGuideGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.88fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.mobileGuideSummary {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 4px;
-  padding: 12px;
+  gap: 16px;
+}
+
+.mobileGuideHeroIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 58px;
+  height: 58px;
+  border: 1px solid rgba(var(--color-primary-rgb), 0.22);
+  border-radius: 8px;
+  color: var(--color-primary);
+  background: rgba(var(--color-primary-rgb), 0.12);
+}
+
+.mobileGuideNote {
+  display: grid;
+  gap: 5px;
+  padding: 13px 14px;
   border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 8px;
-  background: var(--color-background-primary);
+  background: rgba(148, 163, 184, 0.055);
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
 }
 
-.timezonePreviewLabel {
-  color: var(--color-text-tertiary);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
-
-.timezonePreviewValue {
-  overflow-wrap: anywhere;
+.mobileGuideNote strong {
   color: var(--color-text-primary);
+  font-size: 13px;
+}
+
+.mobileRoutePanel {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 14px;
+  padding-left: 24px;
+  border-left: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.mobileRouteHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--color-text-primary);
+}
+
+.mobileRouteHeader svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--color-primary);
+}
+
+.mobileRouteHeader h3 {
+  margin: 0;
   font-size: 14px;
   font-weight: 750;
   line-height: 1.25;
 }
 
-.timezonePreviewMeta {
-  overflow-wrap: anywhere;
+.mobileRouteHeader p {
+  margin: 4px 0 0;
   color: var(--color-text-tertiary);
   font-size: 12px;
-  line-height: 1.35;
+  line-height: 1.45;
+}
+
+.mobileRouteField {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.mobileRouteField label {
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.mobileRouteValueRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mobileRouteValue {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 40px;
+  flex: 1 1 auto;
+  overflow-x: auto;
+  padding: 0 11px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  background: var(--color-background-primary);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.mobilePreviewLink {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  color: var(--color-text-primary);
+  background: rgba(148, 163, 184, 0.055);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.mobilePreviewLink:hover {
+  border-color: rgba(148, 163, 184, 0.3);
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.mobileStepsHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.mobileStepsIcons {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-primary);
+}
+
+.mobileStepList {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mobileStepItem {
+  display: flex;
+  min-width: 0;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.mobileStepNumber {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: 999px;
+  color: var(--color-primary);
+  background: rgba(var(--color-primary-rgb), 0.12);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.mobileStepItem h4 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.mobileStepItem p {
+  margin: 5px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.storageUsageSection {
+  gap: 12px;
+}
+
+.storageUsageHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.storageUsageValue {
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 750;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.storageUsageTrack {
+  position: relative;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.16);
+}
+
+.storageUsageBar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  min-width: 2px;
+  border-radius: inherit;
+  background: var(--color-primary);
+}
+
+.storageUsageBarWarning {
+  background: var(--color-status-warning);
+}
+
+.storageUsageMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .spinIcon {
@@ -1092,9 +1428,25 @@ body.dark .select:focus {
 
   .accountGrid,
   .passwordGrid,
+  .profileDetailsGrid,
   .labelsGrid,
-  .timezonePreview {
+  .accountLocaleGrid,
+  .notificationSettingsGrid,
+  .mobileGuideGrid,
+  .mobileStepList {
     grid-template-columns: 1fr;
+  }
+
+  .mobileRoutePanel {
+    padding-top: 18px;
+    padding-left: 0;
+    border-top: 1px solid rgba(148, 163, 184, 0.16);
+    border-left: 0;
+  }
+
+  .mobileRouteValueRow {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .accountSectionWide {
@@ -1112,7 +1464,10 @@ body.dark .select:focus {
   }
 
   .profileSummary,
-  .lockedFieldRow {
+  .lockedFieldRow,
+  .notificationDeviceCard,
+  .storageUsageHeader,
+  .storageUsageMeta {
     align-items: stretch;
     flex-direction: column;
   }

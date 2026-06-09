@@ -11,7 +11,9 @@ import {
   Eye,
   Gauge,
   Megaphone,
+  MessageCircle,
   MonitorX,
+  Package,
   RefreshCw,
   TrendingUp,
   Users,
@@ -19,12 +21,14 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useDateRange } from '@/contexts/DateRangeContext'
+import { useHighLevelConnected, usePhoneElasticScroll } from '@/hooks'
 import { AccountSettings } from '@/pages/Settings/AccountSettings'
 import { AIAgentSettings } from '@/pages/Settings/AIAgentSettings'
 import { calendarsService, type AppointmentStats, type Calendar, type CalendarEvent } from '@/services/calendarsService'
 import { campaignsService, type Campaign } from '@/services/campaignsService'
 import { contactsService, type ContactStats } from '@/services/contactsService'
 import { dashboardService, type ChartData, type DashboardMetrics } from '@/services/dashboardService'
+import { getPhoneDailyCacheKey, readPhoneDailyCache, writePhoneDailyCache } from '@/services/phoneDailyCache'
 import { reportsService, type ContactListItem, type ReportMetricRow, type ReportsSummary } from '@/services/reportsService'
 import { transactionsService, type Transaction, type TransactionSummary } from '@/services/transactionsService'
 import { formatCurrency, formatDate, formatDateToISO, formatNumber, formatRoas } from '@/utils/format'
@@ -38,6 +42,7 @@ const SCROLLABLE_PHONE_SELECTOR = '[data-phone-scrollable="true"]'
 const SCROLLABLE_PHONE_NAV_SELECTOR = '[data-phone-nav-scrollable="true"]'
 
 const PHONE_SECTION_IDS = [
+  'chat',
   'dashboard',
   'appointments',
   'transactions',
@@ -85,6 +90,7 @@ interface PhoneAppData {
 }
 
 const PHONE_SECTIONS: PhoneSectionConfig[] = [
+  { id: 'chat', label: 'Chat', Icon: MessageCircle },
   { id: 'dashboard', label: 'Dashboard', Icon: Gauge },
   { id: 'appointments', label: 'Citas', Icon: CalendarDays },
   { id: 'transactions', label: 'Pagos', Icon: CreditCard },
@@ -96,26 +102,26 @@ const PHONE_SECTIONS: PhoneSectionConfig[] = [
 ]
 
 const PERIOD_OPTIONS: PeriodOption[] = [
-  { id: 'today', label: 'Hoy' },
+  { id: 'today', label: 'Today' },
   { id: 'last7days', label: '7d' },
-  { id: 'thisMonth', label: 'Mes' },
+  { id: 'thisMonth', label: 'Month' },
   { id: 'last30days', label: '30d' },
   { id: 'last90days', label: '90d' }
 ]
 
 const STATUS_LABELS: Record<string, string> = {
-  confirmed: 'Confirmada',
-  pending: 'Pendiente',
-  cancelled: 'Cancelada',
-  showed: 'Asistió',
-  noshow: 'No asistió',
-  rescheduled: 'Reprogramada',
-  paid: 'Pagado',
-  sent: 'Enviado',
-  overdue: 'Vencido',
-  refunded: 'Reembolso',
-  failed: 'Fallido',
-  draft: 'Borrador'
+  confirmed: 'Confirmed',
+  pending: 'Pending',
+  cancelled: 'Cancelled',
+  showed: 'Showed',
+  noshow: 'No-show',
+  rescheduled: 'Rescheduled',
+  paid: 'Paid',
+  sent: 'Sent',
+  overdue: 'Overdue',
+  refunded: 'Refund',
+  failed: 'Failed',
+  draft: 'Draft'
 }
 
 const SECTION_BY_ID = PHONE_SECTIONS.reduce((acc, section) => {
@@ -195,6 +201,17 @@ function createEmptyPhoneData(): PhoneAppData {
     calendars: [],
     appointmentEvents: [],
     appointmentStats: createEmptyAppointmentStats()
+  }
+}
+
+function compactPhoneDataForCache(data: PhoneAppData): PhoneAppData {
+  return {
+    ...data,
+    transactions: data.transactions.slice(0, 80),
+    contacts: data.contacts.slice(0, 80),
+    campaigns: data.campaigns.slice(0, 80),
+    reportMetrics: data.reportMetrics.slice(-120),
+    appointmentEvents: data.appointmentEvents.slice(0, 160)
   }
 }
 
@@ -343,12 +360,15 @@ function toTrendFromReports(data: ReportMetricRow[], key: keyof ReportMetricRow,
 }
 
 export const PhoneApp: React.FC = () => {
-  const params = useParams()
+  const params = useParams<{ section?: string }>()
   const { locationId, accessToken } = useAuth()
   const { dateRange, setPreset } = useDateRange()
   const [accessState, setAccessState] = useState<AccessState>(getAccessState)
+  usePhoneElasticScroll({ enabled: accessState === 'allowed' })
+
   const [phoneData, setPhoneData] = useState<PhoneAppData>(() => createEmptyPhoneData())
   const [loading, setLoading] = useState(true)
+  const [cacheRefreshing, setCacheRefreshing] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
   const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -361,7 +381,7 @@ export const PhoneApp: React.FC = () => {
   const endIso = formatDateToISO(endDate)
 
   useEffect(() => {
-    document.title = `${activeSection.label} móvil | Ristak`
+    document.title = `${activeSection.label} mobile | Ristak`
   }, [activeSection.label])
 
   useEffect(() => {
@@ -500,6 +520,7 @@ export const PhoneApp: React.FC = () => {
     if (accessState !== 'allowed' || !activeSectionId) return
     if (activeSectionId === 'settings') {
       setLoading(false)
+      setCacheRefreshing(false)
       setLoadError(null)
       return
     }
@@ -507,8 +528,22 @@ export const PhoneApp: React.FC = () => {
     let cancelled = false
 
     const loadPhoneData = async () => {
-      setLoading(true)
       setLoadError(null)
+      const cacheKey = getPhoneDailyCacheKey('phone-app', 'data', locationId || 'default', startIso, endIso)
+      const cachedPhoneData = readPhoneDailyCache<PhoneAppData>(cacheKey)
+      const showedCachedData = Boolean(cachedPhoneData)
+
+      if (cachedPhoneData) {
+        setPhoneData({
+          ...createEmptyPhoneData(),
+          ...cachedPhoneData.data
+        })
+        setLoading(false)
+        setCacheRefreshing(true)
+      } else {
+        setLoading(true)
+        setCacheRefreshing(false)
+      }
 
       const groupBy = getDaysBetween(startDate, endDate) > 95 ? 'month' : 'day'
       const inclusiveEnd = getInclusiveEnd(endDate)
@@ -568,7 +603,7 @@ export const PhoneApp: React.FC = () => {
 
         if (cancelled) return
 
-        setPhoneData({
+        const nextPhoneData = {
           dashboardMetrics,
           financialChart,
           funnelData,
@@ -587,14 +622,20 @@ export const PhoneApp: React.FC = () => {
           calendars,
           appointmentEvents,
           appointmentStats: calendarsService.calculateStats(appointmentEvents)
-        })
+        }
+
+        setPhoneData(nextPhoneData)
+        writePhoneDailyCache(cacheKey, compactPhoneDataForCache(nextPhoneData), { maxEntryChars: 520_000 })
       } catch {
         if (!cancelled) {
-          setLoadError('No se pudieron cargar todas las métricas móviles.')
+          if (!showedCachedData) {
+            setLoadError('No se pudieron cargar los datos móviles.')
+          }
         }
       } finally {
         if (!cancelled) {
           setLoading(false)
+          setCacheRefreshing(false)
         }
       }
     }
@@ -610,21 +651,21 @@ export const PhoneApp: React.FC = () => {
     const metrics = phoneData.dashboardMetrics
     return [
       {
-        label: 'Ingresos',
+        label: 'Revenue',
         value: formatCompactCurrency(metrics.ingresosNetos.value),
         detail: formatCurrency(metrics.ingresosNetos.value),
         delta: metrics.ingresosNetos.variation,
         tone: 'green' as const
       },
       {
-        label: 'Gasto ads',
+        label: 'Ad spend',
         value: formatCompactCurrency(metrics.gastosPublicidad.value),
         detail: formatCurrency(metrics.gastosPublicidad.value),
         delta: metrics.gastosPublicidad.variation,
         tone: 'orange' as const
       },
       {
-        label: 'Ganancia neta',
+        label: 'Net profit',
         value: formatCompactCurrency(metrics.gananciaNeta.value),
         detail: formatCurrency(metrics.gananciaNeta.value),
         delta: metrics.gananciaNeta.variation,
@@ -707,10 +748,10 @@ export const PhoneApp: React.FC = () => {
     const sales = salesTrend.reduce((total, item) => total + item.value, 0)
 
     return [
-      { label: 'Visitantes', value: visitors, percent: 100 },
+      { label: 'Visitors', value: visitors, percent: 100 },
       { label: 'Leads', value: leads, percent: visitors ? (leads / visitors) * 100 : 0 },
-      { label: 'Citas', value: appointments, percent: leads ? (appointments / leads) * 100 : 0 },
-      { label: 'Ventas', value: sales, percent: leads ? (sales / leads) * 100 : 0 }
+      { label: 'Appointments', value: appointments, percent: leads ? (appointments / leads) * 100 : 0 },
+      { label: 'Sales', value: sales, percent: leads ? (sales / leads) * 100 : 0 }
     ]
   }, [appointmentsTrend, leadsTrend, salesTrend, visitorsTrend])
 
@@ -734,14 +775,14 @@ export const PhoneApp: React.FC = () => {
             <MonitorX size={28} />
           </div>
           <div className={styles.blockedCopy}>
-            <p className={styles.eyebrow}>Ruta phone</p>
-            <h1 id="phone-app-blocked-title">Solo en móvil o tablet</h1>
+            <p className={styles.eyebrow}>Phone route</p>
+            <h1 id="phone-app-blocked-title">Mobile or tablet only</h1>
             <p>
-              Esta vista está optimizada para analizar Ristak desde teléfono o tablet. Ábrela desde un dispositivo portátil para ver el dashboard móvil completo.
+              This view is optimized to analyze Ristak from a phone or tablet. Open it from a portable device to see the full mobile dashboard.
             </p>
           </div>
           <Link className={styles.dashboardLink} to="/dashboard">
-            Volver al dashboard
+            Back to dashboard
           </Link>
         </section>
       </main>
@@ -749,7 +790,7 @@ export const PhoneApp: React.FC = () => {
   }
 
   return (
-    <main className={styles.phonePage} aria-label="Aplicación móvil de Ristak">
+    <main className={styles.phonePage} aria-label="Ristak mobile app">
       <div className={styles.phoneFrame}>
         <header className={styles.header}>
           <div className={styles.headerMain}>
@@ -764,21 +805,21 @@ export const PhoneApp: React.FC = () => {
               type="button"
               className={styles.iconButton}
               onClick={() => setRefreshKey((value) => value + 1)}
-              aria-label="Actualizar métricas"
-              title="Actualizar métricas"
+              aria-label="Refresh metrics"
+              title="Refresh metrics"
             >
-              <RefreshCw size={18} className={loading ? styles.spinIcon : undefined} />
+              <RefreshCw size={18} className={loading || cacheRefreshing ? styles.spinIcon : undefined} />
             </button>
-            <Link className={styles.iconButton} to="/phone/agent-chat" aria-label="Abrir agente AI" title="Abrir agente AI">
+            <Link className={styles.iconButton} to="/phone/agent-ai" aria-label="Open AI agent" title="Open AI agent">
               <Bot size={18} />
             </Link>
           </div>
         </header>
 
         {activeSectionId !== 'settings' && (
-          <section className={styles.periodPanel} aria-label="Rango de fechas">
+          <section className={styles.periodPanel} aria-label="Date range">
             <div className={styles.periodCopy}>
-              <span>Periodo</span>
+              <span>Period</span>
               <strong>{formatPeriodLabel(startDate, endDate)}</strong>
             </div>
             <div className={styles.periodControls}>
@@ -796,7 +837,7 @@ export const PhoneApp: React.FC = () => {
           </section>
         )}
 
-        <nav className={styles.sectionTabs} aria-label="Secciones móviles" data-phone-nav-scrollable="true">
+        <nav className={styles.sectionTabs} aria-label="Mobile sections" data-phone-nav-scrollable="true">
           {PHONE_SECTIONS.map((section) => {
             const Icon = section.Icon
             const isActive = section.id === activeSectionId
@@ -814,6 +855,12 @@ export const PhoneApp: React.FC = () => {
         </nav>
 
         <section className={styles.content} data-phone-scrollable="true">
+          {cacheRefreshing && (
+            <div className={styles.cacheBanner} role="status">
+              Mostrando lo guardado, actualizando datos
+            </div>
+          )}
+
           {loadError && (
             <div className={styles.errorBanner} role="status">
               {loadError}
@@ -915,18 +962,18 @@ function DashboardSection({ tiles, financeTrend, funnelData, trafficSources }: D
         ))}
       </div>
 
-      <Panel title="Ingresos vs ads" actionLabel="Finanzas">
-        <DualTrend data={financeTrend} labelA="Ingresos" labelB="Ads" formatValue={formatCompactCurrency} />
+      <Panel title="Revenue vs ads" actionLabel="Finance">
+        <DualTrend data={financeTrend} labelA="Revenue" labelB="Ads" formatValue={formatCompactCurrency} />
       </Panel>
 
-      <Panel title="Embudo" actionLabel="Conversión">
+      <Panel title="Funnel" actionLabel="Conversion">
         <ProgressList
           items={funnelData.map((item) => ({ label: item.stage, value: item.value }))}
           formatValue={formatNumber}
         />
       </Panel>
 
-      <Panel title="Fuentes de tráfico" actionLabel="Canales">
+      <Panel title="Traffic sources" actionLabel="Channels">
         <ProgressList
           items={trafficSources.map((source) => ({ label: source.name, value: source.value, color: source.color }))}
           formatValue={formatNumber}
@@ -947,18 +994,18 @@ function AppointmentsSection({ stats, events, calendars, trend }: AppointmentsSe
   return (
     <div className={styles.sectionStack}>
       <div className={styles.metricGrid}>
-        <MetricTile label="Próximas" value={formatNumber(stats.pending)} detail="Confirmadas futuras" tone="blue" />
-        <MetricTile label="Asistieron" value={formatNumber(stats.showed)} detail="Citas completadas" tone="green" />
-        <MetricTile label="No asistió" value={formatNumber(stats.noshow)} detail="Seguimiento" tone="orange" />
-        <MetricTile label="Calendarios" value={formatNumber(calendars.length)} detail="Activos en HighLevel" tone="purple" />
+        <MetricTile label="Upcoming" value={formatNumber(stats.pending)} detail="Future confirmed" tone="blue" />
+        <MetricTile label="Showed" value={formatNumber(stats.showed)} detail="Completed appointments" tone="green" />
+        <MetricTile label="No-show" value={formatNumber(stats.noshow)} detail="Follow-up" tone="orange" />
+        <MetricTile label="Calendars" value={formatNumber(calendars.length)} detail="Active in HighLevel" tone="purple" />
       </div>
 
-      <Panel title="Citas por periodo" actionLabel="Actividad">
+      <Panel title="Appointments by period" actionLabel="Activity">
         <MiniBars data={trend} formatValue={formatNumber} />
       </Panel>
 
-      <Panel title="Agenda inmediata" actionLabel={`${events.length} citas`}>
-        <ListStack emptyLabel="Sin citas próximas en el rango.">
+      <Panel title="Immediate agenda" actionLabel={`${events.length} appointments`}>
+        <ListStack emptyLabel="No upcoming appointments in this range.">
           {events.map((event) => (
             <ListItem
               key={event.id}
@@ -979,6 +1026,7 @@ interface TransactionsSectionProps {
 }
 
 function TransactionsSection({ summary, transactions }: TransactionsSectionProps) {
+  const { connected: highLevelConnected } = useHighLevelConnected()
   const revenueDelta = calculateDelta(summary.totalRevenue, summary.totalRevenuePrev)
   const paidDelta = calculateDelta(summary.completedPayments, summary.completedPaymentsPrev)
 
@@ -991,35 +1039,47 @@ function TransactionsSection({ summary, transactions }: TransactionsSectionProps
         >
           <CreditCard size={18} />
           <span>
-            <strong>Cobrar cliente</strong>
-            <small>Enviar link o registrar pago manual</small>
+            <strong>Registrar pago</strong>
+            <small>Envía un enlace de pago o guarda un pago manual</small>
           </span>
         </Link>
         <Link
-          to="/phone/payments?mode=partial"
+          to="/phone/payments?mode=products"
           className={styles.paymentActionButton}
         >
-          <CalendarDays size={18} />
+          <Package size={18} />
           <span>
-            <strong>Plan de pagos</strong>
-            <small>Abrir parcialidades del formulario</small>
+            <strong>Productos</strong>
+            <small>Crear, editar o eliminar productos para cobrar</small>
           </span>
         </Link>
+        {highLevelConnected && (
+          <Link
+            to="/phone/payments?mode=partial"
+            className={styles.paymentActionButton}
+          >
+            <CalendarDays size={18} />
+            <span>
+              <strong>Plan de pagos</strong>
+              <small>Abre parcialidades automáticas</small>
+            </span>
+          </Link>
+        )}
       </div>
 
       <div className={styles.metricGrid}>
-        <MetricTile label="Cobrado" value={formatCompactCurrency(summary.totalRevenue)} detail={formatCurrency(summary.totalRevenue)} delta={revenueDelta} tone="green" />
-        <MetricTile label="Pagos" value={formatNumber(summary.completedPayments)} detail="Completados" delta={paidDelta} tone="blue" />
-        <MetricTile label="Ticket" value={formatCompactCurrency(summary.averageTicket)} detail="Promedio" tone="purple" />
-        <MetricTile label="Reembolsos" value={formatCompactCurrency(summary.refunds)} detail="Del periodo" tone="orange" />
+        <MetricTile label="Collected" value={formatCompactCurrency(summary.totalRevenue)} detail={formatCurrency(summary.totalRevenue)} delta={revenueDelta} tone="green" />
+        <MetricTile label="Payments" value={formatNumber(summary.completedPayments)} detail="Completed" delta={paidDelta} tone="blue" />
+        <MetricTile label="Ticket" value={formatCompactCurrency(summary.averageTicket)} detail="Average" tone="purple" />
+        <MetricTile label="Refunds" value={formatCompactCurrency(summary.refunds)} detail="For this period" tone="orange" />
       </div>
 
-      <Panel title="Pagos recientes" actionLabel={`${transactions.length} visibles`}>
-        <ListStack emptyLabel="No hay pagos recientes para este periodo.">
+      <Panel title="Recent payments" actionLabel={`${transactions.length} visible`}>
+        <ListStack emptyLabel="No recent payments for this period.">
           {transactions.map((transaction) => (
             <ListItem
               key={transaction.id}
-              title={transaction.contactName || transaction.email || 'Cliente'}
+              title={transaction.contactName || transaction.email || 'Customer'}
               meta={`${formatDateTime(transaction.date || transaction.createdAt)} · ${getStatusLabel(transaction.status)}`}
               value={formatCompactCurrency(transaction.amount)}
             />
@@ -1040,23 +1100,23 @@ function ContactsSection({ stats, contacts, leadsTrend }: ContactsSectionProps) 
   return (
     <div className={styles.sectionStack}>
       <div className={styles.metricGrid}>
-        <MetricTile label="Contactos" value={formatNumber(stats.total)} detail="Registrados" delta={calculateDelta(stats.total, stats.totalPrev)} tone="blue" />
-        <MetricTile label="Con cita" value={formatNumber(stats.withAppointments)} detail="Agendados" delta={calculateDelta(stats.withAppointments, stats.withAppointmentsPrev)} tone="purple" />
-        <MetricTile label="Clientes" value={formatNumber(stats.customers)} detail="Compradores" delta={calculateDelta(stats.customers, stats.customersPrev)} tone="green" />
-        <MetricTile label="LTV prom." value={formatCompactCurrency(stats.avgLtv)} detail="Valor promedio" tone="orange" />
+        <MetricTile label="Contacts" value={formatNumber(stats.total)} detail="Registered" delta={calculateDelta(stats.total, stats.totalPrev)} tone="blue" />
+        <MetricTile label="With appointment" value={formatNumber(stats.withAppointments)} detail="Scheduled" delta={calculateDelta(stats.withAppointments, stats.withAppointmentsPrev)} tone="purple" />
+        <MetricTile label="Customers" value={formatNumber(stats.customers)} detail="Buyers" delta={calculateDelta(stats.customers, stats.customersPrev)} tone="green" />
+        <MetricTile label="Avg. LTV" value={formatCompactCurrency(stats.avgLtv)} detail="Average value" tone="orange" />
       </div>
 
-      <Panel title="Leads nuevos" actionLabel="Tendencia">
+      <Panel title="New leads" actionLabel="Trend">
         <MiniBars data={leadsTrend} formatValue={formatNumber} />
       </Panel>
 
-      <Panel title="Contactos recientes" actionLabel={`${contacts.length} visibles`}>
-        <ListStack emptyLabel="No hay contactos en este periodo.">
+      <Panel title="Recent contacts" actionLabel={`${contacts.length} visible`}>
+        <ListStack emptyLabel="No contacts in this period.">
           {contacts.map((contact) => (
             <ListItem
               key={contact.id}
               title={getContactLabel(contact)}
-              meta={`${contact.email || contact.phone || 'Sin contacto'} · ${formatDate(contact.created_at, { includeYear: true })}`}
+              meta={`${contact.email || contact.phone || 'No contact info'} · ${formatDate(contact.created_at, { includeYear: true })}`}
               value={formatCompactCurrency(contact.ltv || contact.lifetimeLtv || 0)}
             />
           ))}
@@ -1083,19 +1143,19 @@ function CampaignsSection({ totals, campaigns }: CampaignsSectionProps) {
   return (
     <div className={styles.sectionStack}>
       <div className={styles.metricGrid}>
-        <MetricTile label="Inversión" value={formatCompactCurrency(totals.spend)} detail={formatCurrency(totals.spend)} tone="orange" />
+        <MetricTile label="Spend" value={formatCompactCurrency(totals.spend)} detail={formatCurrency(totals.spend)} tone="orange" />
         <MetricTile label="Revenue" value={formatCompactCurrency(totals.revenue)} detail={formatCurrency(totals.revenue)} tone="green" />
-        <MetricTile label="ROAS" value={formatRoas(roas)} detail="Publicidad" tone="purple" />
-        <MetricTile label="Leads" value={formatNumber(totals.leads)} detail={`${formatNumber(totals.clicks)} clics`} tone="blue" />
+        <MetricTile label="ROAS" value={formatRoas(roas)} detail="Ads" tone="purple" />
+        <MetricTile label="Leads" value={formatNumber(totals.leads)} detail={`${formatNumber(totals.clicks)} clicks`} tone="blue" />
       </div>
 
-      <Panel title="Campañas top" actionLabel={`${campaigns.length} campañas`}>
-        <ListStack emptyLabel="No hay campañas con datos en este periodo.">
+      <Panel title="Top campaigns" actionLabel={`${campaigns.length} campaigns`}>
+        <ListStack emptyLabel="No campaigns with data in this period.">
           {campaigns.map((campaign) => (
             <ListItem
               key={campaign.id}
               title={campaign.name}
-              meta={`${formatCompactCurrency(campaign.spend)} invertidos · ${formatNumber(campaign.leads || 0)} leads`}
+              meta={`${formatCompactCurrency(campaign.spend)} spent · ${formatNumber(campaign.leads || 0)} leads`}
               value={formatRoas(campaign.roas || (campaign.spend ? (campaign.revenue || 0) / campaign.spend : 0))}
             />
           ))}
@@ -1125,23 +1185,23 @@ function ReportsSection({ totals, reportsSummary, profitTrend, rows }: ReportsSe
   return (
     <div className={styles.sectionStack}>
       <div className={styles.metricGrid}>
-        <MetricTile label="Ingresos" value={formatCompactCurrency(totals.revenue)} detail={formatCurrency(totals.revenue)} tone="green" />
-        <MetricTile label="Gasto" value={formatCompactCurrency(totals.spend)} detail={formatCurrency(totals.spend)} tone="orange" />
+        <MetricTile label="Revenue" value={formatCompactCurrency(totals.revenue)} detail={formatCurrency(totals.revenue)} tone="green" />
+        <MetricTile label="Spend" value={formatCompactCurrency(totals.spend)} detail={formatCurrency(totals.spend)} tone="orange" />
         <MetricTile label="Profit" value={formatCompactCurrency(totals.profit)} detail={formatCurrency(totals.profit)} tone="blue" />
-        <MetricTile label="ROAS" value={formatRoas(summaryRoas)} detail="Reporte" tone="purple" />
+        <MetricTile label="ROAS" value={formatRoas(summaryRoas)} detail="Report" tone="purple" />
       </div>
 
-      <Panel title="Profit por periodo" actionLabel="Reporte">
+      <Panel title="Profit by period" actionLabel="Report">
         <MiniBars data={profitTrend} formatValue={formatCompactCurrency} />
       </Panel>
 
-      <Panel title="Corte rápido" actionLabel={`${rows.length} filas`}>
-        <ListStack emptyLabel="No hay filas de reporte en este periodo.">
+      <Panel title="Quick cut" actionLabel={`${rows.length} rows`}>
+        <ListStack emptyLabel="No report rows in this period.">
           {rows.map((row) => (
             <ListItem
               key={row.date}
               title={formatDate(row.date, { includeYear: true })}
-              meta={`${formatNumber(row.visitors)} visitas · ${formatNumber(row.leads)} leads · ${formatNumber(row.customers)} clientes`}
+              meta={`${formatNumber(row.visitors)} visits · ${formatNumber(row.leads)} leads · ${formatNumber(row.customers)} customers`}
               value={formatCompactCurrency(row.profit)}
             />
           ))}
@@ -1174,12 +1234,12 @@ function AnalyticsSection({ visitorsTrend, leadsTrend, salesTrend, conversion }:
         ))}
       </div>
 
-      <Panel title="Visitantes" actionLabel="Tráfico">
+      <Panel title="Visitors" actionLabel="Traffic">
         <MiniBars data={visitorsTrend} formatValue={formatNumber} />
       </Panel>
 
-      <Panel title="Leads vs ventas" actionLabel="Conversión">
-        <DualTrend data={mergeTrendSeries(leadsTrend, salesTrend)} labelA="Leads" labelB="Ventas" formatValue={formatCompactNumber} />
+      <Panel title="Leads vs sales" actionLabel="Conversion">
+        <DualTrend data={mergeTrendSeries(leadsTrend, salesTrend)} labelA="Leads" labelB="Sales" formatValue={formatCompactNumber} />
       </Panel>
     </div>
   )
@@ -1192,7 +1252,7 @@ function SettingsSection() {
 
   return (
     <div className={styles.settingsShell}>
-      <div className={styles.settingsSwitcher} role="tablist" aria-label="Configuración móvil">
+      <div className={styles.settingsSwitcher} role="tablist" aria-label="Mobile settings">
         <button
           type="button"
           role="tab"
@@ -1201,7 +1261,7 @@ function SettingsSection() {
           onClick={() => setActivePanel('account')}
         >
           <Users size={16} />
-          Cuenta
+          Account
         </button>
         <button
           type="button"
@@ -1211,7 +1271,7 @@ function SettingsSection() {
           onClick={() => setActivePanel('agent')}
         >
           <Bot size={16} />
-          Agente IA
+          AI Agent
         </button>
       </div>
 
@@ -1312,7 +1372,7 @@ function MiniBars({ data, formatValue }: MiniBarsProps) {
   const maxValue = Math.max(1, ...data.map((item) => item.value))
 
   if (!data.length) {
-    return <EmptyState label="No hay datos de tendencia para este periodo." />
+    return <EmptyState label="No trend data for this period." />
   }
 
   return (
@@ -1342,7 +1402,7 @@ function DualTrend({ data, labelA, labelB, formatValue }: DualTrendProps) {
   const latest = data[data.length - 1]
 
   if (!data.length) {
-    return <EmptyState label="No hay datos comparativos para este periodo." />
+    return <EmptyState label="No comparison data for this period." />
   }
 
   return (
@@ -1378,7 +1438,7 @@ function ProgressList({ items, formatValue }: ProgressListProps) {
   const maxValue = Math.max(1, ...items.map((item) => item.value))
 
   if (!items.length) {
-    return <EmptyState label="No hay datos disponibles para este periodo." />
+    return <EmptyState label="No data available for this period." />
   }
 
   return (
@@ -1448,7 +1508,7 @@ function EmptyState({ label }: { label: string }) {
 
 function PhoneSkeleton() {
   return (
-    <div className={styles.skeletonStack} aria-label="Cargando métricas móviles">
+    <div className={styles.skeletonStack} aria-label="Loading mobile metrics">
       <div className={styles.skeletonGrid}>
         <span />
         <span />

@@ -307,14 +307,14 @@ async function getLatestWhatsappAttribution(contact) {
     [contact.id, ...uniquePhoneCandidates]
   )
 
-  const webPhoneFilter = uniquePhoneCandidates.length
+  const apiPhoneFilter = uniquePhoneCandidates.length
     ? ` OR msg.phone IN (${uniquePhoneCandidates.map(() => '?').join(', ')})
         OR attr.phone IN (${uniquePhoneCandidates.map(() => '?').join(', ')})`
     : ''
 
-  const webRows = await db.all(
+  const apiRows = await db.all(
     `SELECT
-       'whatsapp_web' as attribution_source,
+       'whatsapp_api' as attribution_source,
        COALESCE(attr.detected_ctwa_clid, msg.detected_ctwa_clid) as referral_ctwa_clid,
        COALESCE(attr.detected_source_id, msg.detected_source_id) as referral_source_id,
        COALESCE(attr.detected_source_type, msg.detected_source_type) as referral_source_type,
@@ -322,9 +322,9 @@ async function getLatestWhatsappAttribution(contact) {
        COALESCE(attr.detected_headline, msg.detected_headline) as referral_headline,
        COALESCE(attr.detected_source_id, msg.detected_source_id) as ad_id_thru_message,
        COALESCE(attr.created_at, msg.created_at) as created_at
-     FROM whatsapp_web_messages msg
-     LEFT JOIN whatsapp_web_attribution attr ON attr.whatsapp_web_message_id = msg.id
-     WHERE (msg.contact_id = ? OR attr.contact_id = ?${webPhoneFilter})
+     FROM whatsapp_api_messages msg
+     LEFT JOIN whatsapp_api_attribution attr ON attr.whatsapp_api_message_id = msg.id
+     WHERE (msg.contact_id = ? OR attr.contact_id = ?${apiPhoneFilter})
        AND msg.direction = 'inbound'
        AND (
          COALESCE(attr.detected_ctwa_clid, msg.detected_ctwa_clid, '') != ''
@@ -335,7 +335,7 @@ async function getLatestWhatsappAttribution(contact) {
     [contact.id, contact.id, ...uniquePhoneCandidates, ...uniquePhoneCandidates]
   )
 
-  const rows = [...legacyRows, ...webRows]
+  const rows = [...legacyRows, ...apiRows]
   if (!rows.length) return null
 
   return rows.sort((a, b) => {

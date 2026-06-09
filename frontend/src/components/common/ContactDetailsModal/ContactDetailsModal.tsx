@@ -1,18 +1,18 @@
 import { useState, useMemo, useEffect } from 'react'
-import { Modal, Icon, Badge, type BadgeVariant } from '@/components/common'
+import { Modal, Icon, Badge, CustomSelect, type BadgeVariant } from '@/components/common'
 import { ContactJourney } from '@/components/common/ContactJourney'
 import { normalizeTrafficSource } from '@/utils/trafficSourceNormalizer'
 import { CONTACT_STAGE_BADGE_VARIANTS, getContactStageBadge } from '@/utils/contactStageBadge'
 import { buildSearchIndex, prepareSearchQuery, searchIndexIncludes } from '@/utils/searchText'
 import { useLabels } from '@/contexts/LabelsContext'
 import { useTimezone } from '@/contexts/TimezoneContext'
-import type { ContactCustomField, ContactCustomFieldValue } from '@/types'
+import type { ContactCustomField, ContactCustomFieldValue, ContactMetaAttribution } from '@/types'
 import styles from './ContactDetailsModal.module.css'
 
 interface ContactPaymentDetail {
   id: string
   amount: number
-  status?: string
+  status?: string | null
   date: string
   payment_mode?: 'live' | 'test'
   paymentMode?: 'live' | 'test'
@@ -26,32 +26,35 @@ interface ContactAppointmentDetail {
 }
 
 interface ContactFirstSession {
-  started_at: string
-  page_url?: string
-  landing_page?: string
-  referrer_url?: string
-  utm_source?: string
-  utm_medium?: string
-  utm_campaign?: string
-  utm_content?: string
-  utm_term?: string
-  source_platform?: string
-  site_source_name?: string
-  campaign_name?: string
-  ad_name?: string
-  ad_id?: string
-  device_type?: string
-  browser?: string
-  geo_city?: string
-  geo_region?: string
-  geo_country?: string
+  started_at?: string | null
+  page_url?: string | null
+  landing_page?: string | null
+  referrer_url?: string | null
+  utm_source?: string | null
+  utm_medium?: string | null
+  utm_campaign?: string | null
+  utm_content?: string | null
+  utm_term?: string | null
+  source_platform?: string | null
+  site_source_name?: string | null
+  campaign_name?: string | null
+  adset_name?: string | null
+  ad_name?: string | null
+  ad_id?: string | null
+  device_type?: string | null
+  browser?: string | null
+  os?: string | null
+  placement?: string | null
+  geo_city?: string | null
+  geo_region?: string | null
+  geo_country?: string | null
 }
 
 interface ContactDetail {
   id: string
-  name?: string
-  email?: string
-  phone?: string
+  name?: string | null
+  email?: string | null
+  phone?: string | null
   created_at: string | Date
   ltv?: number
   purchases?: number
@@ -59,13 +62,14 @@ interface ContactDetail {
   appointments?: ContactAppointmentDetail[]
   firstAppointmentDate?: string | null
   nextAppointmentDate?: string | null
-  source?: string
-  ad_name?: string
-  ad_id?: string
+  source?: string | null
+  ad_name?: string | null
+  ad_id?: string | null
   campaign_id?: string | null
   campaign_name?: string | null
   adset_id?: string | null
   adset_name?: string | null
+  metaAttribution?: ContactMetaAttribution | null
   lifetimeLtv?: number
   lifetimePurchases?: number
   isCustomer?: boolean
@@ -75,6 +79,17 @@ interface ContactDetail {
   is_sale?: boolean
   firstSession?: ContactFirstSession | null
   customFields?: ContactCustomField[]
+  preferredWhatsAppPhoneNumberId?: string | null
+  preferred_whatsapp_phone_number_id?: string | null
+}
+
+interface WhatsAppPhoneOption {
+  id: string
+  phone_number?: string | null
+  display_phone_number?: string | null
+  verified_name?: string | null
+  label?: string | null
+  is_default_sender?: boolean
 }
 
 interface ContactDetailsModalProps {
@@ -86,6 +101,8 @@ interface ContactDetailsModalProps {
   loading: boolean
   type?: 'interesados' | 'sales' | 'appointments' | 'attendances' | null
   onUpdateCustomFields?: (contactId: string, customFields: ContactCustomField[]) => Promise<ContactCustomField[]>
+  whatsappPhoneNumbers?: WhatsAppPhoneOption[]
+  onUpdatePreferredWhatsAppPhoneNumber?: (contactId: string, phoneNumberId: string) => Promise<Partial<ContactDetail> | void>
 }
 
 const getCustomFieldIdentity = (field: ContactCustomField, index: number) =>
@@ -93,6 +110,55 @@ const getCustomFieldIdentity = (field: ContactCustomField, index: number) =>
 
 const getCustomFieldLabel = (field: ContactCustomField, index: number) =>
   field.label || field.name || field.key || field.fieldKey || field.id || `Campo personalizado ${index + 1}`
+
+const getWhatsAppPhoneLabel = (phone: WhatsAppPhoneOption) => {
+  const number = phone.display_phone_number || phone.phone_number || phone.id
+  const name = phone.label || phone.verified_name || ''
+  return name && name !== number ? `${name} · ${number}` : number
+}
+
+const getPreferredWhatsAppPhoneNumberId = (contact?: ContactDetail | null) =>
+  String(contact?.preferredWhatsAppPhoneNumberId || contact?.preferred_whatsapp_phone_number_id || '')
+
+const getResolvedAttributionDisplay = (contact?: ContactDetail | null) => ({
+  campaignName: contact?.metaAttribution?.campaignName || contact?.campaign_name || null,
+  adsetName: contact?.metaAttribution?.adsetName || contact?.adset_name || null,
+  adName: contact?.metaAttribution?.adName || contact?.ad_name || null,
+  adId: contact?.metaAttribution?.adId || contact?.ad_id || null
+})
+
+const WHATSAPP_RESERVED_CUSTOM_FIELD_KEYS = new Set([
+  'whatsapp_api_provider',
+  'whatsapp_api_first_message',
+  'whatsapp_api_source_id',
+  'whatsapp_api_ctwa_clid',
+  'whatsapp_api_source_url'
+])
+
+const normalizeCustomFieldToken = (value?: string | null) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+
+const isWhatsAppReservedCustomField = (field: ContactCustomField) => {
+  const tokens = [
+    field.id,
+    field.key,
+    field.fieldKey,
+    field.label,
+    field.name
+  ].map(normalizeCustomFieldToken).filter(Boolean)
+
+  return tokens.some(token =>
+    WHATSAPP_RESERVED_CUSTOM_FIELD_KEYS.has(token) ||
+    token.startsWith('whatsapp_api_') ||
+    token.includes('_ctwa_') ||
+    token === 'ctwa' ||
+    token === 'ctwa_clid'
+  )
+}
 
 const isObjectValue = (value: ContactCustomFieldValue | undefined): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -159,7 +225,9 @@ export function ContactDetailsModal({
   data,
   loading,
   type,
-  onUpdateCustomFields
+  onUpdateCustomFields,
+  whatsappPhoneNumbers = [],
+  onUpdatePreferredWhatsAppPhoneNumber
 }: ContactDetailsModalProps) {
   const [selectedContact, setSelectedContact] = useState<ContactDetail | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -170,8 +238,14 @@ export function ContactDetailsModal({
   const [customFieldDrafts, setCustomFieldDrafts] = useState<Record<string, string>>({})
   const [savingCustomField, setSavingCustomField] = useState<string | null>(null)
   const [customFieldError, setCustomFieldError] = useState<string | null>(null)
+  const [savingWhatsAppPreference, setSavingWhatsAppPreference] = useState(false)
+  const [whatsappPreferenceError, setWhatsappPreferenceError] = useState<string | null>(null)
   const { labels } = useLabels()
   const { formatLocalDateShort, formatLocalDateTime, timezone } = useTimezone()
+  const visibleCustomFields = useMemo(
+    () => (selectedContact?.customFields || []).filter(field => !isWhatsAppReservedCustomField(field)),
+    [selectedContact?.customFields]
+  )
 
   // Seleccionar automáticamente el primer contacto cuando se abre el modal
   useEffect(() => {
@@ -187,6 +261,8 @@ export function ContactDetailsModal({
       setCustomFieldDrafts({})
       setSavingCustomField(null)
       setCustomFieldError(null)
+      setSavingWhatsAppPreference(false)
+      setWhatsappPreferenceError(null)
     }
   }, [isOpen, data])
 
@@ -195,15 +271,17 @@ export function ContactDetailsModal({
     setRefundsExpanded(false)
     setAppointmentsExpanded(false)
     setCustomFieldsExpanded(false)
-    setCustomFieldDrafts(buildCustomFieldDrafts(selectedContact?.customFields || []))
+    setCustomFieldDrafts({})
     setSavingCustomField(null)
     setCustomFieldError(null)
+    setSavingWhatsAppPreference(false)
+    setWhatsappPreferenceError(null)
   }, [selectedContact?.id])
 
   useEffect(() => {
     if (!selectedContact) return
-    setCustomFieldDrafts(buildCustomFieldDrafts(selectedContact.customFields || []))
-  }, [selectedContact?.id, selectedContact?.customFields])
+    setCustomFieldDrafts(buildCustomFieldDrafts(visibleCustomFields))
+  }, [selectedContact?.id, visibleCustomFields])
 
   const preparedContactSearch = useMemo(() => prepareSearchQuery(searchQuery), [searchQuery])
   const contactSearchIndexes = useMemo(() => {
@@ -237,7 +315,7 @@ export function ContactDetailsModal({
       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
       .join(' ')
 
-  const getStatusLabel = (status?: string): { text: string; variant: BadgeVariant } => {
+  const getStatusLabel = (status?: string | null): { text: string; variant: BadgeVariant } => {
     if (!status) return { text: '', variant: 'neutral' }
     const statusLower = status.toLowerCase()
 
@@ -294,6 +372,7 @@ export function ContactDetailsModal({
 
   const saveCustomField = async (field: ContactCustomField, index: number) => {
     if (!selectedContact || !onUpdateCustomFields) return
+    if (isWhatsAppReservedCustomField(field)) return
 
     const identity = getCustomFieldIdentity(field, index)
     const draft = customFieldDrafts[identity] ?? formatCustomFieldDraft(field.value)
@@ -307,12 +386,36 @@ export function ContactDetailsModal({
 
       const customFields = await onUpdateCustomFields(selectedContact.id, [updatedField])
       setSelectedContact(prev => prev?.id === selectedContact.id ? { ...prev, customFields } : prev)
-      setCustomFieldDrafts(buildCustomFieldDrafts(customFields))
+      setCustomFieldDrafts(buildCustomFieldDrafts(customFields.filter(field => !isWhatsAppReservedCustomField(field))))
     } catch (error) {
       const message = error instanceof Error ? error.message : 'No se pudo guardar el campo personalizado.'
       setCustomFieldError(message)
     } finally {
       setSavingCustomField(null)
+    }
+  }
+
+  const updatePreferredWhatsAppPhoneNumber = async (phoneNumberId: string) => {
+    if (!selectedContact || !onUpdatePreferredWhatsAppPhoneNumber) return
+
+    setSavingWhatsAppPreference(true)
+    setWhatsappPreferenceError(null)
+
+    try {
+      const updatedContact = await onUpdatePreferredWhatsAppPhoneNumber(selectedContact.id, phoneNumberId)
+      setSelectedContact(prev => prev?.id === selectedContact.id
+        ? {
+            ...prev,
+            ...(updatedContact || {}),
+            preferredWhatsAppPhoneNumberId: phoneNumberId,
+            preferred_whatsapp_phone_number_id: phoneNumberId
+          }
+        : prev
+      )
+    } catch (error) {
+      setWhatsappPreferenceError(error instanceof Error ? error.message : 'No se pudo guardar el número para responder.')
+    } finally {
+      setSavingWhatsAppPreference(false)
     }
   }
 
@@ -333,6 +436,10 @@ export function ContactDetailsModal({
       !isTestPayment(p) && (p.amount < 0 || p.status?.toLowerCase() === 'refunded' || p.status?.toLowerCase() === 'cancelled')
     ) || []
   }, [selectedContact])
+  const resolvedAttribution = useMemo(
+    () => getResolvedAttributionDisplay(selectedContact),
+    [selectedContact]
+  )
 
   return (
     <Modal
@@ -528,6 +635,47 @@ export function ContactDetailsModal({
                   </div>
                 </div>
 
+                {whatsappPhoneNumbers.length > 0 && (
+                  <div className={styles.detailSection}>
+                    <h5 className={styles.detailSectionTitle}>WhatsApp para responder</h5>
+                    <div className={styles.whatsappPreference}>
+                      <div className={styles.whatsappPreferenceHeader}>
+                        <Icon name="whatsapp" size={16} />
+                        <div>
+                          <strong>
+                            {getPreferredWhatsAppPhoneNumberId(selectedContact)
+                              ? 'Número fijo para este contacto'
+                              : 'Automático por conversación'}
+                          </strong>
+                          <span>
+                            {getPreferredWhatsAppPhoneNumberId(selectedContact)
+                              ? 'Ristak siempre responderá a este contacto desde el número elegido.'
+                              : 'Ristak responderá desde el número por donde llegó el mensaje. Si no hay historial, usa el principal.'}
+                          </span>
+                        </div>
+                      </div>
+                      <CustomSelect
+                        value={getPreferredWhatsAppPhoneNumberId(selectedContact)}
+                        onChange={(event) => updatePreferredWhatsAppPhoneNumber(event.target.value)}
+                        disabled={savingWhatsAppPreference || !onUpdatePreferredWhatsAppPhoneNumber}
+                      >
+                        <option value="">Automático: usar el número por donde llegó</option>
+                        {whatsappPhoneNumbers.map((phone) => (
+                          <option key={phone.id} value={phone.id}>
+                            {getWhatsAppPhoneLabel(phone)}{phone.is_default_sender ? ' · Principal' : ''}
+                          </option>
+                        ))}
+                      </CustomSelect>
+                      {savingWhatsAppPreference && (
+                        <p className={styles.whatsappPreferenceHint}>Guardando cambio...</p>
+                      )}
+                      {whatsappPreferenceError && (
+                        <p className={styles.customFieldError}>{whatsappPreferenceError}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className={styles.detailSection}>
                   <button
                     type="button"
@@ -540,16 +688,16 @@ export function ContactDetailsModal({
                       Campos personalizados
                     </span>
                     <span className={styles.customFieldsToggleMeta}>
-                      {(selectedContact.customFields || []).length}
+                      {visibleCustomFields.length}
                     </span>
                   </button>
 
                   {customFieldsExpanded && (
                     <div className={styles.customFieldsList}>
-                      {(selectedContact.customFields || []).length === 0 ? (
+                      {visibleCustomFields.length === 0 ? (
                         <p className={styles.emptyText}>Sin campos personalizados</p>
                       ) : (
-                        selectedContact.customFields?.map((field, index) => {
+                        visibleCustomFields.map((field, index) => {
                           const identity = getCustomFieldIdentity(field, index)
                           const isSaving = savingCustomField === identity
                           const isComplex = isComplexCustomField(field)
@@ -621,7 +769,7 @@ export function ContactDetailsModal({
                         <Icon name="calendar" size={16} />
                         <div>
                           <span className={styles.detailItemLabel}>Primera visita:</span>
-                          <span> {formatLocalDateTime(selectedContact.firstSession.started_at)}</span>
+                          <span> {formatLocalDateTime(selectedContact.firstSession.started_at || selectedContact.created_at)}</span>
                         </div>
                       </div>
 
@@ -687,7 +835,7 @@ export function ContactDetailsModal({
                 )}
 
                 {/* Atribución (solo si NO hay firstSession) */}
-                {!selectedContact.firstSession && (selectedContact.source || selectedContact.campaign_name || selectedContact.adset_name || selectedContact.ad_name || selectedContact.ad_id) && (
+                {!selectedContact.firstSession && (selectedContact.source || resolvedAttribution.campaignName || resolvedAttribution.adsetName || resolvedAttribution.adName) && (
                   <div className={styles.detailSection}>
                     <h5 className={styles.detailSectionTitle}>
                       De dónde llegó el contacto:
@@ -702,30 +850,30 @@ export function ContactDetailsModal({
                           </div>
                         </div>
                       )}
-                      {selectedContact.campaign_name && (
+                      {resolvedAttribution.campaignName && (
                         <div className={styles.detailItem}>
                           <Icon name="megaphone" size={16} />
                           <div>
                             <span className={styles.detailItemLabel}>Campaña:</span>
-                            <span> {selectedContact.campaign_name}</span>
+                            <span> {resolvedAttribution.campaignName}</span>
                           </div>
                         </div>
                       )}
-                      {selectedContact.adset_name && (
+                      {resolvedAttribution.adsetName && (
                         <div className={styles.detailItem}>
                           <Icon name="layers" size={16} />
                           <div>
                             <span className={styles.detailItemLabel}>Conjunto de anuncios:</span>
-                            <span> {selectedContact.adset_name}</span>
+                            <span> {resolvedAttribution.adsetName}</span>
                           </div>
                         </div>
                       )}
-                      {selectedContact.ad_name && (
+                      {resolvedAttribution.adName && (
                         <div className={styles.detailItem}>
                           <Icon name="file-text" size={16} />
                           <div>
                             <span className={styles.detailItemLabel}>Anuncio:</span>
-                            <span> {selectedContact.ad_name}</span>
+                            <span> {resolvedAttribution.adName}</span>
                           </div>
                         </div>
                       )}

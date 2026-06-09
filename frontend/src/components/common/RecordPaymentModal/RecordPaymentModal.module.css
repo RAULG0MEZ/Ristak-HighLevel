@@ -101,6 +101,27 @@
   box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
 }
 
+.phoneSelectButton {
+  min-height: 41px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  background-image: none;
+  backdrop-filter: blur(8px);
+}
+
+.phoneDateButton {
+  min-height: 41px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.customSelectControl {
+  width: 100%;
+}
+
 .fieldWarning {
   display: flex;
   align-items: center;
@@ -240,6 +261,38 @@
   position: relative;
 }
 
+.contactSearchBox {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  min-height: 48px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 999px;
+  color: #4b5563;
+  background: #ffffff;
+}
+
+.contactSearchBox .searchIcon,
+.contactSearchBox .loadingIcon {
+  position: static;
+}
+
+.contactSearchBox .loadingIcon {
+  justify-self: end;
+}
+
+.contactSearchBox .input {
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+}
+
 .searchInput {
   position: relative;
   display: flex;
@@ -329,6 +382,87 @@
   color: var(--color-text-tertiary);
 }
 
+.contactList {
+  min-height: 0;
+  max-height: 280px;
+  margin-top: 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.contactOption {
+  appearance: none;
+  -webkit-appearance: none;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 72px;
+  padding: 8px 4px;
+  border: 0;
+  border-bottom: 1px solid rgba(17, 17, 17, 0.08);
+  border-radius: 0;
+  color: #050505;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.contactAvatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  color: #ffffff;
+  background: #00a884;
+  font-size: 15px;
+  font-weight: 850;
+  overflow: hidden;
+}
+
+.contactMain {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.contactOption strong,
+.contactOption small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contactOption strong {
+  color: #050505;
+  font-size: 17px;
+  font-weight: 830;
+  line-height: 1.12;
+}
+
+.contactOption small {
+  color: #7a7a7a;
+  font-size: 14px;
+  font-weight: 620;
+  line-height: 1.2;
+}
+
+.contactListState {
+  display: grid;
+  place-items: center;
+  min-height: 108px;
+  padding: 18px;
+  color: #8e8e93;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 650;
+}
+
 /* Amount input */
 .amountInput {
   position: relative;
@@ -349,8 +483,8 @@
 
 .dateInput {
   position: relative;
-  display: flex;
-  align-items: center;
+  display: block;
+  width: 100%;
 }
 
 .dateInput .input {
@@ -494,9 +628,10 @@
   flex-direction: column;
   gap: 12px;
   padding: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 8px;
-  background: rgba(148, 163, 184, 0.05);
+  border: 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 0;
+  background: transparent;
 }
 
 .quickProductActions {
@@ -1289,10 +1424,7 @@ body.dark .tooltipInfo {
   gap: 12px;
   padding: 24px 32px;
   border-top: 1px solid var(--color-border);
-  position: sticky;
-  bottom: 0;
   background: var(--color-surface);
-  z-index: 10;
 }
 
 @media (min-width: 1920px) {
@@ -1481,30 +1613,246 @@ body.dark .tooltipInfo {
 
 /* Variante embebida (página móvil de pagos, sin overlay de Modal) */
 .embeddedRoot {
+  --record-payment-embedded-bg: var(--phone-chat-surface, var(--color-background-secondary, #ffffff));
+  --record-payment-embedded-panel: var(--phone-chat-panel, var(--color-background-tertiary, #f0f0f0));
+  --record-payment-embedded-soft: var(--phone-chat-surface-soft, var(--color-background-tertiary, #f5f5f5));
+  --record-payment-embedded-text: var(--phone-chat-text, var(--color-text-primary, #0f172a));
+  --record-payment-embedded-muted: var(--phone-chat-muted, var(--color-text-tertiary, #64748b));
+  --record-payment-embedded-border: var(--phone-chat-border, var(--color-border, rgba(0, 0, 0, 0.08)));
+  --color-background: var(--record-payment-embedded-bg);
+  --color-surface: var(--record-payment-embedded-panel);
+  --color-text-primary: var(--record-payment-embedded-text);
+  --color-text-secondary: color-mix(in srgb, var(--record-payment-embedded-text) 78%, var(--record-payment-embedded-muted) 22%);
+  --color-text-tertiary: var(--record-payment-embedded-muted);
+  --color-border: var(--record-payment-embedded-border);
+  --color-primary: var(--phone-chat-accent, #111111);
+  --color-primary-rgb: var(--phone-chat-accent-rgb, 17, 17, 17);
+  --color-primary-light: color-mix(in srgb, var(--color-primary) 16%, transparent);
+  --color-primary-alpha: color-mix(in srgb, var(--color-primary) 26%, transparent);
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  background: var(--color-surface);
+  color: var(--record-payment-embedded-text);
+  background: var(--record-payment-embedded-bg);
+  overflow: hidden;
 }
 
 .embeddedScroll {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.embeddedScroll::-webkit-scrollbar {
+  display: none;
 }
 
 .embeddedRoot .content,
 .embeddedRoot .optionsContent {
-  padding: 16px 16px 24px;
-  gap: 16px;
+  box-sizing: border-box;
+  width: min(100%, 430px);
+  margin: 0 auto;
+  padding: 8px clamp(18px, 5vw, 24px) 8px;
+  gap: 15px;
+  background: var(--record-payment-embedded-bg);
+}
+
+.embeddedRoot .content::-webkit-scrollbar,
+.embeddedRoot .optionsContent::-webkit-scrollbar {
+  display: none;
 }
 
 .embeddedRoot .footer {
   position: sticky;
-  bottom: 0;
-  padding: 14px 16px calc(env(safe-area-inset-bottom, 0px) + 14px);
-  background: var(--color-surface);
+  bottom: var(--record-payment-footer-bottom-offset, 0px);
+  z-index: 3;
+  box-sizing: border-box;
+  width: min(100%, 430px);
+  margin: 6px auto 0;
+  justify-content: stretch;
+  padding: 10px clamp(18px, 5vw, 24px) calc(env(safe-area-inset-bottom, 0px) + 30px);
+  border-top: 0;
+  background: var(--record-payment-embedded-bg);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.embeddedRoot .footer > button,
+.embeddedRoot .confirmButtonWrapper,
+.embeddedRoot .confirmButtonWrapper > button {
+  width: 100%;
+}
+
+.embeddedRoot .footer > button,
+.embeddedRoot .confirmButtonWrapper > button {
+  min-height: 52px;
+  border: 0 !important;
+  border-radius: 999px !important;
+  color: var(--phone-chat-text-on-primary, #07140d) !important;
+  background: var(--phone-chat-accent, #25d366) !important;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18) !important;
+  font-size: 16px !important;
+  font-weight: 850 !important;
+  letter-spacing: 0;
+}
+
+.embeddedRoot .footer > button:not(:only-child) {
+  color: var(--record-payment-embedded-text) !important;
+  background: var(--record-payment-embedded-panel) !important;
+  border: 1px solid var(--record-payment-embedded-border) !important;
+  box-shadow: none !important;
+}
+
+.embeddedRoot .footer > button:active,
+.embeddedRoot .confirmButtonWrapper > button:active {
+  transform: scale(0.985);
+}
+
+.embeddedRoot .input,
+.embeddedRoot .select,
+.embeddedRoot .textArea,
+.embeddedRoot .searchInput input {
+  min-height: 44px;
+  border-radius: 12px;
+  color: var(--record-payment-embedded-text);
+  background: var(--record-payment-embedded-panel);
+  border-color: var(--record-payment-embedded-border);
+  font-size: 16px;
+  font-weight: 650;
+  box-shadow: none;
+}
+
+.embeddedRoot .input::placeholder,
+.embeddedRoot .textArea::placeholder,
+.embeddedRoot .searchInput input::placeholder {
+  color: var(--record-payment-embedded-muted);
+}
+
+.embeddedRoot .contactSearchBox {
+  min-height: 48px;
+  background: var(--record-payment-embedded-panel);
+  color: var(--record-payment-embedded-muted);
+}
+
+.embeddedRoot .contactSearchBox .input {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--record-payment-embedded-text);
+  background: transparent;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.embeddedRoot .contactSearchBox .input::placeholder {
+  color: var(--record-payment-embedded-muted);
+}
+
+.embeddedRoot .textArea {
+  min-height: 86px;
+  border-radius: 16px;
+}
+
+.embeddedRoot .radioGroup,
+.embeddedRoot [data-ristak-tablist] {
+  border-color: var(--record-payment-embedded-border);
+  background: var(--record-payment-embedded-panel);
+}
+
+.embeddedRoot [data-ristak-tablist-tab][data-active="true"],
+.embeddedRoot .radioOptionActive {
+  color: var(--record-payment-embedded-text);
+  background: var(--record-payment-embedded-soft);
+}
+
+.embeddedRoot .selectedContact,
+.embeddedRoot .planTotalChip,
+.embeddedRoot .calcChip {
+  background: color-mix(in srgb, var(--phone-chat-accent, #25d366) 14%, var(--record-payment-embedded-bg) 86%);
+  border-color: color-mix(in srgb, var(--phone-chat-accent, #25d366) 34%, var(--record-payment-embedded-border) 66%);
+}
+
+.embeddedRoot .label,
+.embeddedRoot .manualField label,
+.embeddedRoot .cellLabel {
+  color: var(--record-payment-embedded-muted);
+  font-size: 12px;
+  font-weight: 760;
+  letter-spacing: 0;
+}
+
+.embeddedRoot .phoneSelectButton,
+.embeddedRoot .phoneDateButton {
+  min-height: 44px;
+  border-radius: 12px;
+  color: var(--record-payment-embedded-text);
+  background: var(--record-payment-embedded-panel);
+  border-color: var(--record-payment-embedded-border);
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.embeddedRoot .planSection,
+.embeddedRoot .summaryCard,
+.embeddedRoot .optionButton {
+  background: var(--record-payment-embedded-bg);
+  border-color: var(--record-payment-embedded-border);
+}
+
+.embeddedRoot .summaryCard {
+  padding: 14px;
+  border-radius: 14px;
+}
+
+.embeddedRoot .fieldGrid,
+.embeddedRoot .manualGrid {
+  gap: 12px;
+  grid-template-columns: 1fr;
+}
+
+.embeddedRoot .planStep,
+.embeddedRoot .allocation {
+  background: var(--record-payment-embedded-panel);
+  border-color: var(--record-payment-embedded-border);
+}
+
+.embeddedRoot .dropdown {
+  color: var(--record-payment-embedded-text);
+  background: var(--record-payment-embedded-panel);
+  border-color: var(--record-payment-embedded-border);
+}
+
+.embeddedRoot .dropdownItem {
+  border-bottom-color: var(--record-payment-embedded-border);
+}
+
+.embeddedRoot .dropdownItem:hover {
+  background: var(--record-payment-embedded-soft);
+}
+
+.embeddedRoot .contactList {
+  max-height: min(310px, 42dvh);
+}
+
+.embeddedRoot .contactOption {
+  color: var(--record-payment-embedded-text);
+  border-bottom-color: var(--record-payment-embedded-border);
+  background: transparent;
+  box-shadow: none;
+}
+
+.embeddedRoot .contactOption strong {
+  color: var(--record-payment-embedded-text);
+}
+
+.embeddedRoot .contactOption small,
+.embeddedRoot .contactListState {
+  color: var(--record-payment-embedded-muted);
 }

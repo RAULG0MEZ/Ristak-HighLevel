@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react'
+import React, { useState, useMemo, useEffect, useRef } from 'react'
 import {
   Search,
   ChevronUp,
@@ -17,7 +17,7 @@ import styles from './Table.module.css'
 
 export interface Column<T> {
   key: string
-  header: string
+  header: React.ReactNode
   render?: (value: any, item: T) => React.ReactNode
   searchValue?: (value: any, item: T) => unknown | unknown[]
   searchable?: boolean
@@ -30,6 +30,33 @@ export interface Column<T> {
 interface FilterOption {
   label: string
   value: string
+}
+
+interface RowSelection<T> {
+  selectedKeys: string[]
+  onChange: (selectedKeys: string[]) => void
+  isRowDisabled?: (item: T) => boolean
+  getRowLabel?: (item: T) => string
+  selectVisibleLabel?: string
+}
+
+interface IndeterminateCheckboxProps extends React.InputHTMLAttributes<HTMLInputElement> {
+  indeterminate?: boolean
+}
+
+function IndeterminateCheckbox({
+  indeterminate = false,
+  ...props
+}: IndeterminateCheckboxProps) {
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.indeterminate = indeterminate
+    }
+  }, [indeterminate])
+
+  return <input ref={inputRef} type="checkbox" {...props} />
 }
 
 // Sorts flat rows that encode a parent→child tree (campaign → adset → ad) via their `level`
@@ -137,7 +164,9 @@ interface TableProps<T> {
   focusedRowKey?: string | null
   rowClassName?: (item: T) => string | undefined
   toolbarStart?: React.ReactNode
+  selectionActions?: React.ReactNode
   searchPosition?: 'left' | 'right'
+  rowSelection?: RowSelection<T>
 }
 
 export function Table<T extends Record<string, any>>({
@@ -162,7 +191,9 @@ export function Table<T extends Record<string, any>>({
   focusedRowKey,
   rowClassName,
   toolbarStart,
-  searchPosition = 'left'
+  selectionActions,
+  searchPosition = 'left',
+  rowSelection
 }: TableProps<T>) {
   // Sistema híbrido de configuración de tablas
   const [savedTableConfig, updateTableConfig] = useTableConfig(tableId || 'default')
@@ -378,6 +409,50 @@ export function Table<T extends Record<string, any>>({
   }, [filteredData, currentPage, pageSize, paginated])
 
   const totalPages = Math.ceil(filteredData.length / pageSize)
+  const totalVisibleColumns = visibleColumns.length + (rowSelection ? 1 : 0)
+  const selectedKeySet = useMemo(() => new Set(rowSelection?.selectedKeys ?? []), [rowSelection?.selectedKeys])
+  const visibleSelectableRows = useMemo(() => {
+    if (!rowSelection) return []
+    return paginatedData.filter(item => !rowSelection.isRowDisabled?.(item))
+  }, [paginatedData, rowSelection])
+  const visibleSelectableKeys = useMemo(
+    () => visibleSelectableRows.map(item => keyExtractor(item)),
+    [keyExtractor, visibleSelectableRows]
+  )
+  const allVisibleRowsSelected =
+    visibleSelectableKeys.length > 0 &&
+    visibleSelectableKeys.every(key => selectedKeySet.has(key))
+  const someVisibleRowsSelected =
+    visibleSelectableKeys.some(key => selectedKeySet.has(key))
+  const hasSelectionActions = Boolean(selectionActions)
+  const columnEditMode = editMode && !hasSelectionActions
+
+  const handleToggleVisibleRows = () => {
+    if (!rowSelection) return
+
+    const nextSelected = new Set(rowSelection.selectedKeys)
+    if (allVisibleRowsSelected) {
+      visibleSelectableKeys.forEach(key => nextSelected.delete(key))
+    } else {
+      visibleSelectableKeys.forEach(key => nextSelected.add(key))
+    }
+
+    rowSelection.onChange(Array.from(nextSelected))
+  }
+
+  const handleToggleRowSelection = (item: T) => {
+    if (!rowSelection || rowSelection.isRowDisabled?.(item)) return
+
+    const rowKey = keyExtractor(item)
+    const nextSelected = new Set(rowSelection.selectedKeys)
+    if (nextSelected.has(rowKey)) {
+      nextSelected.delete(rowKey)
+    } else {
+      nextSelected.add(rowKey)
+    }
+
+    rowSelection.onChange(Array.from(nextSelected))
+  }
 
   useEffect(() => {
     const safeTotalPages = Math.max(totalPages, 1)
@@ -404,6 +479,12 @@ export function Table<T extends Record<string, any>>({
     }
   }
 
+  useEffect(() => {
+    if (hasSelectionActions && editMode) {
+      setEditMode(false)
+    }
+  }, [editMode, hasSelectionActions])
+
   const searchControl = searchable ? (
     <div className={styles.searchContainer}>
       <Search size={18} className={styles.searchIcon} />
@@ -427,7 +508,7 @@ export function Table<T extends Record<string, any>>({
   }
 
   if (loading) {
-    const skeletonColumnCount = Math.max(visibleColumns.length, 4)
+    const skeletonColumnCount = Math.max(totalVisibleColumns, 4)
     const skeletonRows = Math.min(Math.max(pageSize, 6), 10)
 
     return (
@@ -489,23 +570,29 @@ export function Table<T extends Record<string, any>>({
         <div className={styles.tableActions}>
           {searchPosition === 'right' && searchControl}
 
-          <button
-            className={`${styles.actionButton} ${editMode ? styles.active : ''}`}
-            onClick={() => setEditMode(!editMode)}
-            title={editMode ? "Finalizar edición" : "Editar columnas"}
-          >
-            {editMode ? (
-              <>
-                <Check size={18} />
-                <span className={styles.buttonText}>Listo</span>
-              </>
-            ) : (
-              <>
-                <Settings size={18} />
-                <span className={styles.buttonText}>Editar</span>
-              </>
-            )}
-          </button>
+          {hasSelectionActions ? (
+            <div className={styles.selectionActions}>
+              {selectionActions}
+            </div>
+          ) : (
+            <button
+              className={`${styles.actionButton} ${columnEditMode ? styles.active : ''}`}
+              onClick={() => setEditMode(!editMode)}
+              title={columnEditMode ? "Finalizar edición" : "Editar columnas"}
+            >
+              {columnEditMode ? (
+                <>
+                  <Check size={18} />
+                  <span className={styles.buttonText}>Listo</span>
+                </>
+              ) : (
+                <>
+                  <Settings size={18} />
+                  <span className={styles.buttonText}>Editar</span>
+                </>
+              )}
+            </button>
+          )}
 
         </div>
       </div>
@@ -514,10 +601,10 @@ export function Table<T extends Record<string, any>>({
         <table className={styles.table} data-ristak-table-element>
           <thead>
             {/* Fila de columnas ocultas en modo edición */}
-            {editMode && (
+            {columnEditMode && (
               <tr className={styles.hiddenColumnsRow}>
                 <td
-                  colSpan={visibleColumns.length || 1}
+                  colSpan={totalVisibleColumns || 1}
                   className={styles.hiddenColumnsCell}
                   onDragOver={handleDragOver}
                   onDragEnter={(e) => handleDragEnter(e, 'hidden')}
@@ -552,31 +639,44 @@ export function Table<T extends Record<string, any>>({
             )}
 
             {/* Headers normales */}
-            {visibleColumns.length > 0 && (
+            {totalVisibleColumns > 0 && (
               <tr>
+                {rowSelection && (
+                  <th className={styles.selectionCell} style={{ width: 44 }}>
+                    <IndeterminateCheckbox
+                      className={styles.selectionCheckbox}
+                      aria-label={rowSelection.selectVisibleLabel || 'Seleccionar filas visibles'}
+                      checked={allVisibleRowsSelected}
+                      indeterminate={!allVisibleRowsSelected && someVisibleRowsSelected}
+                      disabled={visibleSelectableKeys.length === 0}
+                      onClick={(event) => event.stopPropagation()}
+                      onChange={handleToggleVisibleRows}
+                    />
+                  </th>
+                )}
                 {visibleColumns.map((column) => (
                   <th
                     key={column.key}
-                    draggable={!column.fixed && editMode}
+                    draggable={!column.fixed && columnEditMode}
                     onDragStart={(e) => !column.fixed && handleDragStart(e, column.key)}
                     onDragEnd={handleDragEnd}
                     onDragOver={!column.fixed ? handleDragOver : undefined}
                     onDragEnter={(e) => !column.fixed && handleDragEnter(e, column.key)}
                     onDrop={(e) => !column.fixed && handleDrop(e, column.key)}
-                    className={`${column.sortable && !editMode ? styles.sortable : ''} ${editMode && !column.fixed ? styles.draggable : ''} ${draggedColumn === column.key ? styles.dragging : ''} ${dragOverColumn === column.key && draggedColumn && draggedColumn !== column.key ? styles.dragOver : ''}`}
+                    className={`${column.sortable && !columnEditMode ? styles.sortable : ''} ${columnEditMode && !column.fixed ? styles.draggable : ''} ${draggedColumn === column.key ? styles.dragging : ''} ${dragOverColumn === column.key && draggedColumn && draggedColumn !== column.key ? styles.dragOver : ''}`}
                     style={{ width: column.width }}
                   >
                     <div className={styles.headerCell}>
-                      {editMode && !column.fixed && (
+                      {columnEditMode && !column.fixed && (
                         <GripVertical size={14} className={styles.gripIcon} />
                       )}
                       <span
-                        onClick={() => !editMode && column.sortable && handleSort(column.key)}
+                        onClick={() => !columnEditMode && column.sortable && handleSort(column.key)}
                         className={styles.headerText}
                       >
                         {column.header}
                       </span>
-                      {editMode && !column.fixed && (
+                      {columnEditMode && !column.fixed && (
                         <button
                           onClick={(e) => { e.stopPropagation(); toggleColumnVisibility(column.key) }}
                           className={styles.hideButton}
@@ -585,7 +685,7 @@ export function Table<T extends Record<string, any>>({
                           <XIcon size={14} />
                         </button>
                       )}
-                      {!editMode && column.sortable && sortBy === column.key && (
+                      {!columnEditMode && column.sortable && sortBy === column.key && (
                         <span className={styles.sortIcon}>
                           {sortOrder === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                         </span>
@@ -599,7 +699,7 @@ export function Table<T extends Record<string, any>>({
           <tbody>
             {paginatedData.length === 0 ? (
               <tr>
-                <td colSpan={visibleColumns.length || 1} className={styles.empty}>
+                <td colSpan={totalVisibleColumns || 1} className={styles.empty}>
                   {searchTerm ? 'No se encontraron resultados' : emptyMessage}
                 </td>
               </tr>
@@ -636,6 +736,19 @@ export function Table<T extends Record<string, any>>({
                     data-row-key={rowKey}
                     style={rowStyle}
                   >
+                    {rowSelection && (
+                      <td className={styles.selectionCell} onClick={(event) => event.stopPropagation()}>
+                        {!rowSelection.isRowDisabled?.(item) && (
+                          <input
+                            className={styles.selectionCheckbox}
+                            type="checkbox"
+                            checked={selectedKeySet.has(rowKey)}
+                            aria-label={`Seleccionar ${rowSelection.getRowLabel?.(item) || 'fila'}`}
+                            onChange={() => handleToggleRowSelection(item)}
+                          />
+                        )}
+                      </td>
+                    )}
                     {visibleColumns.map((column) => (
                       <td key={column.key} style={{
                         color: item.level === 'ad'

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
 import { Layout } from '@/components/layout/Layout'
 import { Sidebar } from '@/components/layout/Sidebar'
@@ -17,6 +17,7 @@ const AI_AGENT_MIN_WIDTH = 360
 const AI_AGENT_DEFAULT_WIDTH = 640
 const AI_AGENT_MAX_WIDTH = 1600
 const AI_AGENT_MIN_MAIN_WIDTH = 320
+const SITES_EDITOR_ACTIVE_EVENT = 'ristak-sites-editor-active'
 
 function getInitialAIAgentOpenState() {
   try {
@@ -57,40 +58,17 @@ export const AppShell: React.FC = () => {
     getInitialAIAgentWidth()
   )
   const [syncProgressVisible, setSyncProgressVisible] = useState(false)
-  const [locationName, setLocationName] = useState<string>('Mi Negocio')
-  const [locationLogo, setLocationLogo] = useState<string | null>(null)
   const [aiAgentOpen, setAIAgentOpen] = useState(getInitialAIAgentOpenState)
   const [aiAgentWidth, setAIAgentWidth] = useState(getInitialAIAgentWidth)
   const [aiAgentResizing, setAIAgentResizing] = useState(false)
+  const [sitesEditorActive, setSitesEditorActive] = useState(false)
+  const [sitesEditorFocusMode, setSitesEditorFocusMode] = useState(false)
   const resizePointerIdRef = useRef<number | null>(null)
   const aiAgentWidthRef = useRef(aiAgentWidth)
   const lastSavedAIAgentWidthRef = useRef(aiAgentWidth)
 
   // Asegurar que las configuraciones sensibles al dominio estén sincronizadas
   useDomainFeatureSync()
-
-  // Obtener nombre y logo del location de HighLevel
-  useEffect(() => {
-    const fetchLocationData = async () => {
-      try {
-        const response = await fetch('/api/integrations/status')
-        const data = await response.json()
-        if (data.highlevel?.locationData) {
-          const locationData = data.highlevel.locationData
-          if (locationData.name) {
-            setLocationName(locationData.name)
-          }
-          if (locationData.logoUrl) {
-            setLocationLogo(locationData.logoUrl)
-          }
-        }
-      } catch (error) {
-        // Silently handle error - keep default name
-      }
-    }
-
-    fetchLocationData()
-  }, [])
 
   // Detectar cuando el panel de progreso está activo
   useEffect(() => {
@@ -126,6 +104,25 @@ export const AppShell: React.FC = () => {
       requestAIAgentClose()
     }
   }, [aiAgentOpen, syncProgressVisible])
+
+  useLayoutEffect(() => {
+    const handleSitesEditorActive = (event: Event) => {
+      const detail = (event as CustomEvent<{ active?: boolean; focusMode?: boolean }>).detail
+      const active = Boolean(detail?.active)
+      setSitesEditorActive(active)
+      setSitesEditorFocusMode(active && Boolean(detail?.focusMode))
+    }
+
+    window.addEventListener(SITES_EDITOR_ACTIVE_EVENT, handleSitesEditorActive)
+    return () => window.removeEventListener(SITES_EDITOR_ACTIVE_EVENT, handleSitesEditorActive)
+  }, [])
+
+  useEffect(() => {
+    if (sitesEditorActive && aiAgentOpen) {
+      setAIAgentOpen(false)
+      requestAIAgentClose()
+    }
+  }, [aiAgentOpen, sitesEditorActive])
 
   useEffect(() => {
     const handleResize = () => {
@@ -219,20 +216,24 @@ export const AppShell: React.FC = () => {
     saveAIAgentWidth(clampedWidth)
   }
 
+  const shellStyle = {
+    '--ai-agent-width': `${aiAgentWidth}px`
+  } as React.CSSProperties
+
   return (
     <>
       {syncProgressVisible && <SyncProgressBar onClose={handleProgressBarClose} />}
 
       <div
-        className={`${styles.shell} ${aiAgentOpen ? styles.shellWithAIAgent : ''} ${aiAgentResizing ? styles.shellResizingAIAgent : ''}`}
-        style={{ '--ai-agent-width': `${aiAgentWidth}px` } as React.CSSProperties}
+        className={`${styles.shell} ${aiAgentOpen ? styles.shellWithAIAgent : ''} ${aiAgentResizing ? styles.shellResizingAIAgent : ''} ${sitesEditorFocusMode ? styles.shellSitesEditorFocus : ''}`}
+        style={shellStyle}
       >
         <div className={styles.mainPane}>
           <Layout
-            sidebar={<Sidebar locationName={locationName} locationLogo={locationLogo} />}
+            sidebar={<Sidebar onLogout={handleLogout} />}
           >
             <div className="flex flex-col min-h-full">
-              <Header onLogout={handleLogout} />
+              {!sitesEditorActive && <Header />}
               <div className="flex-1 overflow-auto">
                 <Outlet />
               </div>
@@ -240,27 +241,29 @@ export const AppShell: React.FC = () => {
           </Layout>
         </div>
 
-        <div className={styles.aiAgentSlot}>
-          {aiAgentOpen && (
-            <button
-              type="button"
-              className={styles.aiAgentResizeHandle}
-              onPointerDown={handleResizePointerDown}
-              onPointerMove={handleResizePointerMove}
-              onPointerUp={stopResizingAIAgentPanel}
-              onPointerCancel={stopResizingAIAgentPanel}
-              onKeyDown={handleResizeKeyDown}
-              role="slider"
-              aria-label="Cambiar ancho del chat"
-              aria-orientation="horizontal"
-              aria-valuemin={AI_AGENT_MIN_WIDTH}
-              aria-valuemax={AI_AGENT_MAX_WIDTH}
-              aria-valuenow={aiAgentWidth}
-              title="Arrastra para cambiar el ancho del chat"
-            />
-          )}
-          <AIAgentPanel variant="docked" onOpenChange={setAIAgentOpen} />
-        </div>
+        {!sitesEditorActive && (
+          <div className={styles.aiAgentSlot}>
+            {aiAgentOpen && (
+              <button
+                type="button"
+                className={styles.aiAgentResizeHandle}
+                onPointerDown={handleResizePointerDown}
+                onPointerMove={handleResizePointerMove}
+                onPointerUp={stopResizingAIAgentPanel}
+                onPointerCancel={stopResizingAIAgentPanel}
+                onKeyDown={handleResizeKeyDown}
+                role="slider"
+                aria-label="Cambiar ancho del chat"
+                aria-orientation="horizontal"
+                aria-valuemin={AI_AGENT_MIN_WIDTH}
+                aria-valuemax={AI_AGENT_MAX_WIDTH}
+                aria-valuenow={aiAgentWidth}
+                title="Arrastra para cambiar el ancho del chat"
+              />
+            )}
+            <AIAgentPanel variant="docked" onOpenChange={setAIAgentOpen} />
+          </div>
+        )}
       </div>
     </>
   )

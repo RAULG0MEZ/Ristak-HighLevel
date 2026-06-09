@@ -6,6 +6,7 @@ interface DateTimePickerProps {
   value: string // ISO string: "2025-02-10T17:00:00"
   onChange: (value: string) => void
   label?: string
+  placeholder?: string
   required?: boolean
   minDate?: string
 }
@@ -17,7 +18,7 @@ const MONTHS = [
 
 const WEEKDAYS = ['D', 'L', 'M', 'M', 'J', 'V', 'S']
 
-export function DateTimePicker({ value, onChange, label, required, minDate }: DateTimePickerProps) {
+export function DateTimePicker({ value, onChange, label, placeholder, required, minDate }: DateTimePickerProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [viewDate, setViewDate] = useState<Date>(value ? new Date(value) : new Date())
   const containerRef = useRef<HTMLDivElement>(null)
@@ -26,7 +27,7 @@ export function DateTimePicker({ value, onChange, label, required, minDate }: Da
   const currentDate = value ? new Date(value) : null
   const displayText = currentDate
     ? `${currentDate.getDate()} ${MONTHS[currentDate.getMonth()].slice(0, 3)} ${currentDate.getFullYear()}, ${formatTime(currentDate)}`
-    : 'Seleccionar fecha y hora'
+    : placeholder || 'Seleccionar fecha y hora'
 
   // Close on click outside
   useEffect(() => {
@@ -132,12 +133,27 @@ export function DateTimePicker({ value, onChange, label, required, minDate }: Da
   const days = getDaysInMonth(viewDate.getFullYear(), viewDate.getMonth())
 
   // Generate hour and minute options
-  const hours = Array.from({ length: 12 }, (_, i) => i + 1)
-  const minutes = Array.from({ length: 60 }, (_, i) => i)
-
   const currentHour = currentDate ? currentDate.getHours() % 12 || 12 : 1
   const currentMinute = currentDate ? currentDate.getMinutes() : 0
   const currentPeriod = currentDate && currentDate.getHours() >= 12 ? 'pm' : 'am'
+  const resolveHour24 = (hour12: number, period: 'am' | 'pm') => (
+    period === 'pm' && hour12 !== 12
+      ? hour12 + 12
+      : period === 'am' && hour12 === 12
+        ? 0
+        : hour12
+  )
+  const updateTimeParts = (hour12: number, minute: number, period: 'am' | 'pm') => {
+    handleTimeChange(resolveHour24(hour12, period), minute)
+  }
+  const adjustHour = (delta: number) => {
+    const nextHour = ((currentHour - 1 + delta + 12) % 12) + 1
+    updateTimeParts(nextHour, currentMinute, currentPeriod)
+  }
+  const adjustMinute = (delta: number) => {
+    const nextMinute = (currentMinute + delta + 60) % 60
+    updateTimeParts(currentHour, nextMinute, currentPeriod)
+  }
 
   return (
     <div className={styles.container} ref={containerRef}>
@@ -152,6 +168,8 @@ export function DateTimePicker({ value, onChange, label, required, minDate }: Da
         type="button"
         className={styles.trigger}
         onClick={() => setIsOpen(!isOpen)}
+        aria-expanded={isOpen}
+        data-ristak-dropdown-trigger
       >
         <Calendar size={16} />
         <span>{displayText}</span>
@@ -170,7 +188,7 @@ export function DateTimePicker({ value, onChange, label, required, minDate }: Da
       </button>
 
       {isOpen && (
-        <div className={styles.dropdown}>
+        <div className={styles.dropdown} data-ristak-dropdown-panel>
           <div className={styles.dropdownContent}>
             {/* Calendar */}
             <div className={styles.calendar}>
@@ -234,68 +252,46 @@ export function DateTimePicker({ value, onChange, label, required, minDate }: Da
               {/* Hours */}
               <div className={styles.timeColumn}>
                 <div className={styles.timeColumnLabel}>Hora</div>
-                <select
-                  className={styles.timeSelect}
-                  value={currentHour}
-                  onChange={(e) => {
-                    const hour = parseInt(e.target.value)
-                    const hour24 = currentPeriod === 'pm' && hour !== 12
-                      ? hour + 12
-                      : currentPeriod === 'am' && hour === 12
-                      ? 0
-                      : hour
-                    handleTimeChange(hour24, currentMinute)
-                  }}
-                >
-                  {hours.map((hour) => (
-                    <option key={hour} value={hour}>
-                      {hour.toString().padStart(2, '0')}
-                    </option>
-                  ))}
-                </select>
+                <div className={styles.timeStepper}>
+                  <button type="button" onClick={() => adjustHour(-1)} aria-label="Hora anterior">
+                    <ChevronLeft size={14} />
+                  </button>
+                  <strong>{currentHour.toString().padStart(2, '0')}</strong>
+                  <button type="button" onClick={() => adjustHour(1)} aria-label="Hora siguiente">
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
               </div>
 
               {/* Minutes */}
               <div className={styles.timeColumn}>
                 <div className={styles.timeColumnLabel}>Min</div>
-                <select
-                  className={styles.timeSelect}
-                  value={currentMinute}
-                  onChange={(e) => {
-                    const minute = parseInt(e.target.value)
-                    const hour24 = currentPeriod === 'pm' && currentHour !== 12
-                      ? currentHour + 12
-                      : currentPeriod === 'am' && currentHour === 12
-                      ? 0
-                      : currentHour
-                    handleTimeChange(hour24, minute)
-                  }}
-                >
-                  {minutes.filter(m => m % 5 === 0).map((minute) => (
-                    <option key={minute} value={minute}>
-                      {minute.toString().padStart(2, '0')}
-                    </option>
-                  ))}
-                </select>
+                <div className={styles.timeStepper}>
+                  <button type="button" onClick={() => adjustMinute(-5)} aria-label="Cinco minutos menos">
+                    <ChevronLeft size={14} />
+                  </button>
+                  <strong>{currentMinute.toString().padStart(2, '0')}</strong>
+                  <button type="button" onClick={() => adjustMinute(5)} aria-label="Cinco minutos más">
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
               </div>
 
               {/* AM/PM */}
               <div className={styles.timeColumn}>
                 <div className={styles.timeColumnLabel}>Periodo</div>
-                <select
-                  className={styles.timeSelect}
-                  value={currentPeriod}
-                  onChange={(e) => {
-                    const period = e.target.value
-                    const hour24 = period === 'pm'
-                      ? (currentHour === 12 ? 12 : currentHour + 12)
-                      : (currentHour === 12 ? 0 : currentHour)
-                    handleTimeChange(hour24, currentMinute)
-                  }}
-                >
-                  <option value="am">a.m.</option>
-                  <option value="pm">p.m.</option>
-                </select>
+                <div className={styles.periodToggle} role="group" aria-label="Periodo">
+                  {(['am', 'pm'] as const).map((period) => (
+                    <button
+                      key={period}
+                      type="button"
+                      className={currentPeriod === period ? styles.periodActive : ''}
+                      onClick={() => updateTimeParts(currentHour, currentMinute, period)}
+                    >
+                      {period === 'am' ? 'a.m.' : 'p.m.'}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>

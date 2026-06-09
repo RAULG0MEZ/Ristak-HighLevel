@@ -1,5 +1,6 @@
 import express from 'express';
 import * as calendarsController from '../controllers/calendarsController.js';
+import { requireAuth } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
@@ -8,11 +9,27 @@ const router = express.Router();
  * Base: /api/calendars
  */
 
+// Slots y reservas publicas para URLs compartibles de calendario
+router.get('/public/:slug/free-slots', calendarsController.getPublicFreeSlots);
+router.post('/public/:slug/appointments', calendarsController.createPublicAppointment);
+
+router.use(requireAuth);
+
 // Obtener todos los calendarios
 router.get('/', calendarsController.getCalendars);
 
 // Crear calendario local de Ristak
 router.post('/', calendarsController.createCalendar);
+
+// Integración Google Calendar por Service Account
+router.get('/google-integration', calendarsController.getGoogleCalendarIntegration);
+router.get('/google-integration/reveal/service-account', calendarsController.revealGoogleCalendarServiceAccount);
+router.put('/google-integration', calendarsController.saveGoogleCalendarIntegration);
+router.post('/google-integration/test', calendarsController.testGoogleCalendarIntegration);
+router.post('/google-integration/sync', calendarsController.syncGoogleCalendarIntegration);
+router.get('/google-integration/merge-preview', calendarsController.getGoogleCalendarMergePreview);
+router.post('/google-integration/merge', calendarsController.mergeGoogleCalendarAppointments);
+router.delete('/google-integration', calendarsController.deleteGoogleCalendarIntegration);
 
 // Obtener eventos/citas
 router.get('/events', calendarsController.getEvents);

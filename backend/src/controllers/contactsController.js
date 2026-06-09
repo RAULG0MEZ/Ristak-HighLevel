@@ -4,12 +4,20 @@ import { updateContactsStats } from '../utils/updateContactsStats.js'
 import { resolveDateRange, resolveDateRangeWithGHLTimezone } from '../utils/dateUtils.js'
 import { buildContactStats } from '../services/analyticsService.js'
 import { getGHLClient } from '../services/ghlClient.js'
-import { prepareContactPhoneUpsert } from '../services/contactIdentityService.js'
+import { findContactByPhoneCandidates, prepareContactPhoneUpsert } from '../services/contactIdentityService.js'
 import { getHiddenContactFilters, buildHiddenContactsCondition } from '../utils/hiddenContactsFilter.js'
 import { nonTestPaymentCondition } from '../utils/paymentMode.js'
 import { buildContactSearchClause, buildContactSearchRank } from '../utils/searchText.js'
 import { normalizeWhatsAppAttributionPlatform } from '../utils/trafficSourceNormalizer.js'
 import { loadFirstWhatsAppAttributions, buildContactAttributionFields } from '../services/contactSourceService.js'
+import { findWhatsAppProfilePictureUrl, warmWhatsAppApiProfilePictures } from '../services/whatsappApiService.js'
+import { warmWhatsAppQrProfilePictures } from '../services/whatsappQrService.js'
+import {
+  listContactCustomFieldDefinitions,
+  prepareContactCustomFieldsForStorage,
+  updateContactCustomFieldDefinition,
+  upsertContactCustomFieldDefinition
+} from '../services/contactCustomFieldDefinitionsService.js'
 import {
   buildHighLevelCustomFieldsPayload,
   mergeContactCustomFields,
@@ -17,6 +25,7 @@ import {
   serializeContactCustomFieldsForDb
 } from '../utils/contactCustomFields.js'
 import { normalizePhoneForStorage } from '../utils/phoneUtils.js'
+import { normalizePhoneForAccount } from '../utils/accountLocale.js'
 import fetch from 'node-fetch'
 
 const normalizePhone = (phone) => {
@@ -54,6 +63,838 @@ const APPOINTMENT_ATTENDED_STATUSES = new Set(['showed', 'attended', 'completed'
 const sqlList = values => [...values].map(value => `'${value}'`).join(', ')
 const ACTIVE_APPOINTMENT_CONDITION = `LOWER(COALESCE(appointment_status, status, '')) NOT IN (${sqlList(APPOINTMENT_CANCELED_STATUSES)})`
 const ATTENDED_APPOINTMENT_CONDITION = `LOWER(COALESCE(appointment_status, status, '')) IN (${sqlList(APPOINTMENT_ATTENDED_STATUSES)})`
+const CONTACT_WHATSAPP_PROFILE_SELECTS = `
+        (
+          SELECT raw_profile_json
+          FROM whatsapp_api_contacts
+          WHERE contact_id = c.id OR phone = c.phone
+          ORDER BY updated_at DESC
+          LIMIT 1
+        ) AS whatsapp_raw_profile_json,
+        (
+          SELECT profile_picture_url
+          FROM whatsapp_api_contacts
+          WHERE contact_id = c.id OR phone = c.phone
+          ORDER BY CASE WHEN NULLIF(profile_picture_url, '') IS NULL THEN 1 ELSE 0 END,
+                   profile_picture_updated_at DESC,
+                   updated_at DESC
+          LIMIT 1
+        ) AS whatsapp_profile_picture_url,
+        (
+          SELECT profile_picture_updated_at
+          FROM whatsapp_api_contacts
+          WHERE contact_id = c.id OR phone = c.phone
+          ORDER BY profile_picture_updated_at DESC, updated_at DESC
+          LIMIT 1
+        ) AS whatsapp_profile_picture_updated_at`
+const CONTACT_META_PROFILE_SELECT = `
+        (
+          SELECT profile_picture_url
+          FROM meta_social_contacts
+          WHERE contact_id = c.id
+          ORDER BY updated_at DESC
+          LIMIT 1
+        ) AS meta_social_profile_picture_url`
+
+const cleanString = (value) => String(value || '').trim()
+const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object || {}, key)
+const isTruthyQueryValue = (value) => ['1', 'true', 'yes', 'si', 'sí'].includes(cleanString(value).toLowerCase())
+const hasTextValue = (value) => cleanString(value).length > 0
+const sourceTypeLooksLikeAd = (value) => {
+  const normalized = cleanString(value).toLowerCase().replace(/[\s-]+/g, '_')
+  return ['ad', 'ads', 'advertisement', 'click_to_whatsapp', 'ctwa'].includes(normalized)
+}
+
+const hasRealWhatsAppAdAttribution = (data = {}) => {
+  const hasAdIdentifier = [
+    data.referral_source_id,
+    data.source_id,
+    data.ad_id,
+    data.ad_id_thru_message,
+    data.attribution_ad_id,
+    data.referral_ctwa_clid,
+    data.ctwa_clid,
+    data.attribution_ctwa_clid
+  ].some(hasTextValue)
+
+  if (hasAdIdentifier) return true
+
+  const sourceUrl = cleanString(data.referral_source_url || data.source_url || data.attribution_url)
+  if (!sourceUrl) return false
+
+  return [
+    data.referral_source_type,
+    data.source_type,
+    data.referral_source_app,
+    data.source_app,
+    data.referral_entry_point,
+    data.entry_point
+  ].some(sourceTypeLooksLikeAd)
+}
+const HIGHLEVEL_MESSAGE_REFRESH_LIMIT = 12
+const HIGHLEVEL_REFRESHABLE_STATUS = new Set(['', 'pending', 'queued', 'processing', 'scheduled', 'sent', 'accepted'])
+const HIGHLEVEL_STATUS_PRIORITY = {
+  '': 0,
+  pending: 1,
+  queued: 1,
+  processing: 1,
+  scheduled: 1,
+  sent: 2,
+  accepted: 2,
+  delivered: 3,
+  failed: 4,
+  undelivered: 4,
+  rejected: 4,
+  read: 5
+}
+
+const parseJsonObject = (value) => {
+  if (!value) return null
+  if (typeof value === 'object') return value
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+const safeJsonStringify = (value, fallback = null) => {
+  try {
+    return JSON.stringify(value ?? null)
+  } catch {
+    return fallback
+  }
+}
+
+const normalizeHighLevelConversationStatus = (value = '') => {
+  const status = cleanString(value).toLowerCase().replace(/[\s-]+/g, '_')
+  if (!status) return ''
+  if (['read', 'seen', 'opened', 'played'].includes(status)) return 'read'
+  if (['delivered', 'delivery_ack'].includes(status)) return 'delivered'
+  if (['sent', 'accepted', 'complete', 'completed', 'success', 'succeeded'].includes(status)) return 'sent'
+  if (['queued', 'pending', 'processing', 'scheduled'].includes(status)) return 'pending'
+  if (['failed', 'error', 'undelivered', 'bounced', 'rejected'].includes(status)) return 'failed'
+  return ''
+}
+
+const firstDefinedValue = (...values) => values.find(value => value !== undefined && value !== null && value !== '')
+
+const getHighLevelMessageObject = (response = {}) => {
+  const candidates = [
+    response.message,
+    response.data?.message,
+    response.data?.messages?.[0],
+    response.messages?.[0],
+    response.data,
+    response
+  ]
+  return candidates.find(candidate => candidate && typeof candidate === 'object' && !Array.isArray(candidate)) || {}
+}
+
+const extractHighLevelConversationStatus = (response = {}) => {
+  const message = getHighLevelMessageObject(response)
+  return normalizeHighLevelConversationStatus(firstDefinedValue(
+    message.status,
+    message.messageStatus,
+    message.message_status,
+    message.deliveryStatus,
+    message.delivery_status,
+    message.statusName,
+    response.status,
+    response.messageStatus,
+    response.message_status,
+    response.deliveryStatus,
+    response.delivery_status,
+    response.data?.status,
+    response.data?.messageStatus,
+    response.data?.message_status,
+    response.data?.deliveryStatus,
+    response.data?.delivery_status
+  ))
+}
+
+const shouldRefreshHighLevelStatus = (status = '') => {
+  return HIGHLEVEL_REFRESHABLE_STATUS.has(normalizeHighLevelConversationStatus(status) || cleanString(status).toLowerCase())
+}
+
+const pickBestHighLevelStatus = (currentStatus = '', nextStatus = '') => {
+  const current = normalizeHighLevelConversationStatus(currentStatus) || cleanString(currentStatus).toLowerCase()
+  const next = normalizeHighLevelConversationStatus(nextStatus)
+  if (!next) return current || ''
+  if (!current) return next
+  return (HIGHLEVEL_STATUS_PRIORITY[next] || 0) >= (HIGHLEVEL_STATUS_PRIORITY[current] || 0) ? next : current
+}
+
+const buildHighLevelStatusPayload = (rawPayload, response) => {
+  const current = parseJsonObject(rawPayload) || {}
+  return safeJsonStringify({
+    ...current,
+    lastStatusRefresh: {
+      provider: 'highlevel',
+      refreshedAt: new Date().toISOString(),
+      response
+    }
+  }, rawPayload || null)
+}
+
+async function refreshHighLevelConversationMessageStatuses(contactId) {
+  try {
+    const [whatsappRows, metaRows] = await Promise.all([
+      db.all(
+        `SELECT id, ycloud_message_id, wamid, status, raw_payload_json
+         FROM whatsapp_api_messages
+         WHERE contact_id = ?
+           AND LOWER(COALESCE(direction, '')) = 'outbound'
+           AND COALESCE(ycloud_message_id, wamid, '') != ''
+           AND LOWER(COALESCE(transport, '')) IN ('ghl_whatsapp', 'ghl_sms')
+         ORDER BY COALESCE(message_timestamp, created_at) DESC
+         LIMIT ?`,
+        [contactId, HIGHLEVEL_MESSAGE_REFRESH_LIMIT]
+      ),
+      db.all(
+        `SELECT id, meta_message_id, status, raw_payload_json
+         FROM meta_social_messages
+         WHERE contact_id = ?
+           AND LOWER(COALESCE(direction, '')) = 'outbound'
+           AND COALESCE(meta_message_id, '') != ''
+           AND raw_payload_json LIKE ?
+         ORDER BY COALESCE(message_timestamp, created_at) DESC
+         LIMIT ?`,
+        [contactId, '%"provider":"highlevel"%', HIGHLEVEL_MESSAGE_REFRESH_LIMIT]
+      ).catch(error => {
+        logger.warn(`[HighLevel Conversations] No se pudieron leer mensajes sociales para refrescar estados: ${error.message}`)
+        return []
+      })
+    ])
+
+    const rows = [
+      ...whatsappRows.map(row => ({ ...row, table: 'whatsapp', remoteId: row.ycloud_message_id || row.wamid })),
+      ...metaRows.map(row => ({ ...row, table: 'meta', remoteId: row.meta_message_id }))
+    ].filter(row => row.remoteId && shouldRefreshHighLevelStatus(row.status))
+
+    if (rows.length === 0) return
+
+    const ghlClient = await getGHLClient()
+    await Promise.all(rows.map(async row => {
+      try {
+        const response = await ghlClient.getConversationMessage(row.remoteId)
+        const remoteStatus = extractHighLevelConversationStatus(response)
+        const nextStatus = pickBestHighLevelStatus(row.status, remoteStatus)
+        if (!nextStatus || nextStatus === cleanString(row.status).toLowerCase()) return
+
+        const rawPayload = buildHighLevelStatusPayload(row.raw_payload_json, response)
+        if (row.table === 'meta') {
+          await db.run(
+            `UPDATE meta_social_messages
+             SET status = ?, raw_payload_json = COALESCE(?, raw_payload_json), updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?`,
+            [nextStatus, rawPayload, row.id]
+          )
+          return
+        }
+
+        await db.run(
+          `UPDATE whatsapp_api_messages
+           SET status = ?, raw_payload_json = COALESCE(?, raw_payload_json), updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          [nextStatus, rawPayload, row.id]
+        )
+      } catch (error) {
+        logger.warn(`[HighLevel Conversations] No se pudo refrescar estado del mensaje ${row.remoteId}: ${error.message}`)
+      }
+    }))
+  } catch (error) {
+    logger.warn(`[HighLevel Conversations] No se pudieron refrescar estados para el contacto ${contactId}: ${error.message}`)
+  }
+}
+
+const getWhatsAppMediaFromPayload = (rawPayload, messageType = '') => {
+  const payload = parseJsonObject(rawPayload)
+  if (!payload) return {}
+
+  const normalizedType = cleanString(messageType).toLowerCase()
+  const mediaObjects = [
+    payload[normalizedType],
+    payload.audio,
+    payload.image,
+    payload.video,
+    payload.document,
+    payload.sticker,
+    payload.whatsappMessage?.[normalizedType],
+    payload.whatsappInboundMessage?.[normalizedType],
+    payload.message?.[normalizedType]
+  ].filter(item => item && typeof item === 'object')
+
+  const media = mediaObjects[0] || null
+  if (!media) return {}
+
+  return {
+    media_url: cleanString(media.link || media.url || media.href),
+    media_id: cleanString(media.id || media.mediaId || media.media_id),
+    media_mime_type: cleanString(media.mimeType || media.mime_type),
+    media_filename: cleanString(media.filename || media.fileName || media.name),
+    media_duration_ms: Number(media.durationMs || media.duration_ms || 0) || null
+  }
+}
+
+const splitName = (name = '') => {
+  const parts = cleanString(name).split(/\s+/).filter(Boolean)
+  return {
+    firstName: parts[0] || '',
+    lastName: parts.slice(1).join(' ')
+  }
+}
+
+const createManualContactId = () => `manual_contact_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+
+const getProfilePhotoFromRawProfile = (rawProfile) => findWhatsAppProfilePictureUrl(rawProfile)
+
+const getContactProfilePhotoUrl = (contact = {}) =>
+  cleanString(contact.profile_photo_url) ||
+  cleanString(contact.profile_picture_url) ||
+  cleanString(contact.whatsapp_profile_picture_url) ||
+  cleanString(contact.whatsapp_qr_profile_picture_url) ||
+  cleanString(contact.meta_social_profile_picture_url) ||
+  cleanString(contact.avatar_url) ||
+  cleanString(contact.photo_url) ||
+  cleanString(contact.picture_url) ||
+  getProfilePhotoFromRawProfile(contact.whatsapp_raw_profile_json)
+
+const mapContactRowForResponse = (contact = {}) => {
+  let status = 'lead'
+  if (Number(contact.purchases_count || 0) > 0) {
+    status = 'customer'
+  } else if (contact.has_appointments || contact.appointment_date) {
+    status = 'appointment'
+  }
+
+  return {
+    id: contact.id,
+    createdAt: contact.created_at,
+    name: contact.full_name || '',
+    email: contact.email || '',
+    phone: contact.phone || '',
+    ltv: parseFloat(contact.total_paid || 0),
+    status,
+    lastPurchase: contact.last_purchase_date,
+    purchases: contact.purchases_count || 0,
+    hasAppointments: Boolean(contact.has_appointments),
+    hasShowedAppointment: Boolean(contact.has_showed_appointment),
+    hasAttendedAppointment: Boolean(contact.has_showed_appointment),
+    source: contact.source,
+    profilePhotoUrl: getContactProfilePhotoUrl(contact) || null,
+    ad_name: contact.attribution_ad_name,
+    ad_id: contact.attribution_ad_id,
+    preferredWhatsAppPhoneNumberId: contact.preferred_whatsapp_phone_number_id || '',
+    preferred_whatsapp_phone_number_id: contact.preferred_whatsapp_phone_number_id || '',
+    customFields: parseContactCustomFields(contact.custom_fields),
+    notes: ''
+  }
+}
+
+const mapChatContactRowForResponse = (contact = {}) => ({
+  ...mapContactRowForResponse(contact),
+  lastMessageText: contact.last_message_text || '',
+  lastMessageType: contact.last_message_type || '',
+  lastMessageChannel: contact.last_message_channel || '',
+  lastMessageDate: contact.last_message_date || contact.created_at,
+  lastMessageDirection: contact.last_message_direction || '',
+  lastBusinessPhone: contact.last_business_phone || '',
+  lastBusinessPhoneNumberId: contact.last_business_phone_number_id || '',
+  lastInboundBusinessPhone: contact.last_inbound_business_phone || '',
+  lastInboundBusinessPhoneNumberId: contact.last_inbound_business_phone_number_id || '',
+  messageCount: Number(contact.message_count || 0),
+  unreadCount: Number(contact.unread_count || 0)
+})
+
+const applyWarmedProfilePictures = (rows = [], warmedPictures = new Map()) => {
+  if (!warmedPictures?.size) return rows
+
+  const now = new Date().toISOString()
+  return rows.map(row => {
+    const key = cleanString(row?.id) || cleanString(row?.phone)
+    const profilePictureUrl = warmedPictures.get(key)
+    return profilePictureUrl
+      ? {
+          ...row,
+          whatsapp_profile_picture_url: profilePictureUrl,
+          whatsapp_profile_picture_updated_at: row.whatsapp_profile_picture_updated_at || now
+        }
+      : row
+  })
+}
+
+const warmWhatsAppProfilePicturesForRows = async (rows = [], {
+  apiLimit = 40,
+  qrLimit = 16
+} = {}) => {
+  if (!Array.isArray(rows) || rows.length === 0) return rows
+
+  let hydratedRows = rows
+
+  try {
+    const apiPictures = await warmWhatsAppApiProfilePictures(hydratedRows, { limit: apiLimit })
+    hydratedRows = applyWarmedProfilePictures(hydratedRows, apiPictures)
+  } catch (error) {
+    logger.warn(`No se pudieron preparar fotos por WhatsApp API: ${error.message}`)
+  }
+
+  try {
+    const qrPictures = await warmWhatsAppQrProfilePictures(hydratedRows, { limit: qrLimit })
+    hydratedRows = applyWarmedProfilePictures(hydratedRows, qrPictures)
+  } catch (error) {
+    logger.warn(`No se pudieron preparar fotos por QR: ${error.message}`)
+  }
+
+  return hydratedRows
+}
+
+const mapMetaAttributionRow = (row, matchType) => {
+  if (!row) return null
+
+  return {
+    source: 'meta_ads',
+    matchType,
+    campaignId: row.campaign_id || null,
+    campaignName: row.campaign_name || null,
+    adsetId: row.adset_id || null,
+    adsetName: row.adset_name || null,
+    adId: row.ad_id || null,
+    adName: row.ad_name || null,
+    creativeThumbnailUrl: row.creative_thumbnail_url || null,
+    creativeImageUrl: row.creative_image_url || null,
+    creativeVideoUrl: row.creative_video_url || null,
+    creativePreviewUrl: row.creative_preview_url || null,
+    date: row.date || null
+  }
+}
+
+const getMetaAttributionForContact = async (contact = {}, firstSession = null, whatsappAttribution = null) => {
+  const uniqueValues = (values = [], normalize = value => cleanString(value)) => {
+    const seen = new Set()
+    const result = []
+
+    values.forEach(value => {
+      const normalized = normalize(value)
+      if (!normalized || seen.has(normalized)) return
+      seen.add(normalized)
+      result.push(normalized)
+    })
+
+    return result
+  }
+
+  const selectMetaFields = `
+    SELECT
+      date,
+      campaign_id,
+      campaign_name,
+      adset_id,
+      adset_name,
+      ad_id,
+      ad_name,
+      creative_thumbnail_url,
+      creative_image_url,
+      creative_video_url,
+      creative_preview_url
+    FROM meta_ads
+`
+
+  const adIdCandidates = uniqueValues([
+    contact.attribution_ad_id,
+    firstSession?.ad_id,
+    whatsappAttribution?.referral_source_id,
+    whatsappAttribution?.ad_id_thru_message
+  ])
+
+  if (adIdCandidates.length > 0) {
+    const rows = await db.all(
+      `${selectMetaFields}
+       WHERE ad_id IN (${adIdCandidates.map(() => '?').join(', ')})
+       ORDER BY date DESC`,
+      adIdCandidates
+    )
+
+    for (const candidate of adIdCandidates) {
+      const match = rows.find(row => cleanString(row.ad_id) === candidate)
+      if (match) return mapMetaAttributionRow(match, 'ad_id')
+    }
+  }
+
+  const adNameCandidates = uniqueValues([
+    firstSession?.ad_name,
+    contact.attribution_ad_name
+  ], value => cleanString(value).toLowerCase())
+
+  if (adNameCandidates.length > 0) {
+    const rows = await db.all(
+      `${selectMetaFields}
+       WHERE LOWER(ad_name) IN (${adNameCandidates.map(() => '?').join(', ')})
+       ORDER BY date DESC`,
+      adNameCandidates
+    )
+
+    for (const candidate of adNameCandidates) {
+      const match = rows.find(row => cleanString(row.ad_name).toLowerCase() === candidate)
+      if (match) return mapMetaAttributionRow(match, 'ad_name_exact')
+    }
+  }
+
+  return null
+}
+
+const buildResolvedMetaAdFields = (contact = {}, metaAttribution = null) => ({
+  ad_name: metaAttribution?.adName || contact.meta_ad_name || contact.attribution_ad_name || contact.ad_name || null,
+  ad_id: metaAttribution?.adId || contact.attribution_ad_id || contact.ad_id || null,
+  campaign_id: metaAttribution?.campaignId || contact.campaign_id || null,
+  campaign_name: metaAttribution?.campaignName || contact.campaign_name || null,
+  adset_id: metaAttribution?.adsetId || contact.adset_id || null,
+  adset_name: metaAttribution?.adsetName || contact.adset_name || null
+})
+
+const loadMetaAdsByAdIds = async (adIds = []) => {
+  const uniqueIds = [...new Set(adIds.map(cleanString).filter(Boolean))]
+  const byAdId = new Map()
+  if (uniqueIds.length === 0) return byAdId
+
+  const rows = await db.all(
+    `SELECT
+       date,
+       campaign_id,
+       campaign_name,
+       adset_id,
+       adset_name,
+       ad_id,
+       ad_name,
+       creative_thumbnail_url,
+       creative_image_url,
+       creative_video_url,
+       creative_preview_url
+     FROM meta_ads
+     WHERE ad_id IN (${uniqueIds.map(() => '?').join(', ')})
+     ORDER BY date DESC`,
+    uniqueIds
+  )
+
+  rows.forEach(row => {
+    const adId = cleanString(row.ad_id)
+    if (adId && !byAdId.has(adId)) {
+      byAdId.set(adId, mapMetaAttributionRow(row, 'ad_id'))
+    }
+  })
+
+  return byAdId
+}
+
+const enrichWhatsAppJourneyEventsWithMetaAds = async (events = []) => {
+  const adIds = events.flatMap(event => {
+    const data = event?.data || {}
+    return [
+      data.attribution_ad_id,
+      data.referral_source_id,
+      data.ad_id_thru_message
+    ]
+  })
+  const metaByAdId = await loadMetaAdsByAdIds(adIds)
+  if (metaByAdId.size === 0) return events
+
+  return events.map(event => {
+    const data = event?.data || {}
+    const adId = cleanString(data.attribution_ad_id || data.referral_source_id || data.ad_id_thru_message)
+    const metaAttribution = metaByAdId.get(adId)
+    if (!metaAttribution) return event
+
+    return {
+      ...event,
+      data: {
+        ...data,
+        campaign_id: metaAttribution.campaignId || data.campaign_id || null,
+        campaign_name: metaAttribution.campaignName || data.campaign_name || null,
+        adset_id: metaAttribution.adsetId || data.adset_id || null,
+        adset_name: metaAttribution.adsetName || data.adset_name || null,
+        attribution_ad_id: metaAttribution.adId || data.attribution_ad_id || data.referral_source_id || null,
+        attribution_ad_name: metaAttribution.adName || data.attribution_ad_name || data.referral_headline || null,
+        creative_thumbnail_url: metaAttribution.creativeThumbnailUrl || data.creative_thumbnail_url || null,
+        creative_image_url: metaAttribution.creativeImageUrl || data.creative_image_url || null,
+        creative_video_url: metaAttribution.creativeVideoUrl || data.creative_video_url || null,
+        creative_preview_url: metaAttribution.creativePreviewUrl || data.creative_preview_url || null
+      }
+    }
+  })
+}
+
+export const getContactCustomFieldDefinitions = async (req, res) => {
+  try {
+    const includeArchived = String(req.query?.includeArchived || req.query?.include_archived || '').toLowerCase() === 'true'
+    const definitions = await listContactCustomFieldDefinitions({
+      includeArchived,
+      userId: req.user?.userId
+    })
+
+    res.json({
+      success: true,
+      data: definitions
+    })
+  } catch (error) {
+    logger.error(`Error listando campos personalizados de contacto: ${error.message}`)
+    res.status(500).json({
+      success: false,
+      error: 'No se pudieron cargar los campos personalizados'
+    })
+  }
+}
+
+export const createContactCustomFieldDefinition = async (req, res) => {
+  try {
+    const definition = await upsertContactCustomFieldDefinition(req.body || {}, {
+      sourceType: 'manual',
+      ownerUserId: req.user?.userId,
+      syncTarget: req.body?.syncTarget || req.body?.sync_target || 'local'
+    })
+
+    if (!definition) {
+      return res.status(400).json({
+        success: false,
+        error: 'Ese campo pertenece a los datos principales del contacto'
+      })
+    }
+
+    res.status(201).json({
+      success: true,
+      data: definition
+    })
+  } catch (error) {
+    logger.error(`Error creando campo personalizado de contacto: ${error.message}`)
+    res.status(error.status || 500).json({
+      success: false,
+      error: error.message || 'No se pudo crear el campo personalizado'
+    })
+  }
+}
+
+export const updateContactCustomFieldDefinitionHandler = async (req, res) => {
+  try {
+    const definition = await updateContactCustomFieldDefinition(req.params.definitionId, req.body || {})
+
+    if (!definition) {
+      return res.status(404).json({
+        success: false,
+        error: 'Campo personalizado no encontrado'
+      })
+    }
+
+    res.json({
+      success: true,
+      data: definition
+    })
+  } catch (error) {
+    logger.error(`Error actualizando campo personalizado de contacto: ${error.message}`)
+    res.status(error.status || 500).json({
+      success: false,
+      error: error.message || 'No se pudo actualizar el campo personalizado'
+    })
+  }
+}
+
+/**
+ * Obtiene conversaciones con actividad de WhatsApp.
+ */
+export const getChatContacts = async (req, res) => {
+  try {
+    const { q = '', limit = 60, businessPhoneNumberId = '', businessPhone = '' } = req.query
+    const limitNumber = Math.min(Number(limit) || 60, 100)
+    const shouldWarmProfilePictures = isTruthyQueryValue(req.query.warmProfilePictures || req.query.warmProfiles)
+    const searchTerm = cleanString(q)
+    const phoneNumberIdFilter = cleanString(businessPhoneNumberId)
+    const businessPhoneFilter = normalizePhoneForStorage(businessPhone)
+    const whatsappMessageConditions = ['contact_id IS NOT NULL']
+    const whatsappMessageParams = []
+    const conditions = []
+    const params = []
+    const includeMetaSocialMessages = !phoneNumberIdFilter && !businessPhoneFilter
+
+    if (phoneNumberIdFilter || businessPhoneFilter) {
+      const phoneClauses = []
+      if (phoneNumberIdFilter) {
+        phoneClauses.push('business_phone_number_id = ?')
+        whatsappMessageParams.push(phoneNumberIdFilter)
+      }
+      if (businessPhoneFilter) {
+        phoneClauses.push('business_phone = ?')
+        whatsappMessageParams.push(businessPhoneFilter)
+      }
+      whatsappMessageConditions.push(`(${phoneClauses.join(' OR ')})`)
+    }
+
+    if (searchTerm) {
+      const searchClause = buildContactSearchClause('c', searchTerm)
+      conditions.push(searchClause.condition)
+      params.push(...searchClause.params)
+    }
+
+    const hiddenFilters = await getHiddenContactFilters()
+    const hiddenCondition = buildHiddenContactsCondition(hiddenFilters, 'c', false)
+    if (hiddenCondition) {
+      conditions.push(hiddenCondition)
+    }
+
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+    const messageRowsSql = `
+        SELECT
+          contact_id,
+          'whatsapp:' || id AS message_row_id,
+          message_text,
+          message_type,
+          direction,
+          business_phone,
+          business_phone_number_id,
+          COALESCE(message_timestamp, created_at) AS message_date,
+          created_at,
+          'whatsapp' AS message_channel
+        FROM whatsapp_api_messages
+        WHERE ${whatsappMessageConditions.join(' AND ')}
+        ${includeMetaSocialMessages ? `
+        UNION ALL
+        SELECT
+          contact_id,
+          'meta:' || id AS message_row_id,
+          message_text,
+          message_type,
+          direction,
+          NULL AS business_phone,
+          NULL AS business_phone_number_id,
+          COALESCE(message_timestamp, created_at) AS message_date,
+          created_at,
+          platform AS message_channel
+        FROM meta_social_messages
+        WHERE contact_id IS NOT NULL
+        ` : ''}
+    `
+
+    const rows = await db.all(`
+      WITH message_rows AS (
+        ${messageRowsSql}
+      ),
+      chat_stats AS (
+        SELECT
+          contact_id,
+          COUNT(*) AS message_count,
+          MAX(message_date) AS last_message_date
+        FROM message_rows
+        GROUP BY contact_id
+      ),
+      payment_stats AS (
+        SELECT
+          contact_id,
+          SUM(CASE
+                WHEN amount > 0 AND LOWER(status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')
+                AND ${nonTestPaymentCondition()}
+                THEN amount ELSE 0 END) AS total_paid,
+          SUM(CASE
+                WHEN amount > 0 AND LOWER(status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')
+                AND ${nonTestPaymentCondition()}
+                THEN 1 ELSE 0 END) AS purchases_count,
+          MAX(CASE
+                WHEN amount > 0 AND LOWER(status) IN ('succeeded', 'paid', 'completed', 'complete', 'fulfilled', 'success')
+                AND ${nonTestPaymentCondition()}
+                THEN date ELSE NULL END) AS last_purchase_date
+        FROM payments
+        GROUP BY contact_id
+      )
+      SELECT
+        c.id,
+        c.phone,
+        c.email,
+        c.full_name,
+        c.first_name,
+        c.last_name,
+        c.source,
+        c.attribution_ad_name,
+        c.attribution_ad_id,
+        c.preferred_whatsapp_phone_number_id,
+        c.custom_fields,
+${CONTACT_WHATSAPP_PROFILE_SELECTS},
+${CONTACT_META_PROFILE_SELECT},
+        COALESCE(ps.total_paid, 0) AS total_paid,
+        COALESCE(ps.purchases_count, 0) AS purchases_count,
+        ps.last_purchase_date AS last_purchase_date,
+        c.appointment_date,
+        c.created_at,
+        (
+          SELECT COUNT(*) > 0
+          FROM appointments
+          WHERE contact_id = c.id
+            AND ${ACTIVE_APPOINTMENT_CONDITION}
+        ) AS has_appointments,
+        (
+          COALESCE(ps.purchases_count, 0) > 0
+          OR EXISTS (
+            SELECT 1
+            FROM appointment_attendance_signals aas
+            WHERE aas.contact_id = c.id
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM appointments
+            WHERE contact_id = c.id
+              AND ${ATTENDED_APPOINTMENT_CONDITION}
+          )
+        ) AS has_showed_appointment,
+        chat_stats.message_count,
+        chat_stats.last_message_date,
+        lm.message_text AS last_message_text,
+        lm.message_type AS last_message_type,
+        lm.message_channel AS last_message_channel,
+        lm.direction AS last_message_direction,
+        lm.business_phone AS last_business_phone,
+        lm.business_phone_number_id AS last_business_phone_number_id,
+        lim.business_phone AS last_inbound_business_phone,
+        lim.business_phone_number_id AS last_inbound_business_phone_number_id,
+        0 AS unread_count
+      FROM chat_stats
+      JOIN contacts c ON c.id = chat_stats.contact_id
+      LEFT JOIN payment_stats ps ON ps.contact_id = c.id
+      LEFT JOIN message_rows lm ON lm.message_row_id = (
+        SELECT message_row_id
+        FROM message_rows
+        WHERE contact_id = c.id
+        ORDER BY message_date DESC, created_at DESC
+        LIMIT 1
+      )
+      LEFT JOIN message_rows lim ON lim.message_row_id = (
+        SELECT message_row_id
+        FROM message_rows
+        WHERE contact_id = c.id
+          AND direction = 'inbound'
+          AND (business_phone_number_id IS NOT NULL OR business_phone IS NOT NULL)
+        ORDER BY message_date DESC, created_at DESC
+        LIMIT 1
+      )
+      ${whereClause}
+      ORDER BY chat_stats.last_message_date DESC
+      LIMIT ?
+    `, [...whatsappMessageParams, ...params, limitNumber])
+
+    const responseRows = shouldWarmProfilePictures
+      ? await warmWhatsAppProfilePicturesForRows(rows, {
+          apiLimit: 60,
+          qrLimit: 24
+        })
+      : rows
+
+    res.json({
+      success: true,
+      data: responseRows.map(mapChatContactRowForResponse)
+    })
+  } catch (error) {
+    logger.error(`Error obteniendo chats: ${error.message}`)
+    res.status(500).json({
+      success: false,
+      error: 'Error obteniendo chats'
+    })
+  }
+}
 
 /**
  * Obtiene todos los contactos con paginación y filtros
@@ -73,6 +914,7 @@ export const getContacts = async (req, res) => {
     const pageNumber = Number(page) || 1
     const limitNumber = Math.min(Number(limit) || 50, 500)
     const offset = Math.max((pageNumber - 1) * limitNumber, 0)
+    const shouldWarmProfilePictures = isTruthyQueryValue(req.query.warmProfilePictures || req.query.warmProfiles)
 
     const range = await resolveDateRangeWithGHLTimezone({ startDate, endDate })
     const rangeLabel = range.isFiltered
@@ -191,7 +1033,10 @@ export const getContacts = async (req, res) => {
         c.attribution_ctwa_clid,
         c.attribution_ad_name,
         c.attribution_ad_id,
+        c.preferred_whatsapp_phone_number_id,
         c.custom_fields,
+${CONTACT_WHATSAPP_PROFILE_SELECTS},
+${CONTACT_META_PROFILE_SELECT},
         COALESCE(ps.total_paid, 0) AS total_paid,
         COALESCE(ps.purchases_count, 0) AS purchases_count,
         ps.last_purchase_date AS last_purchase_date,
@@ -226,14 +1071,20 @@ export const getContacts = async (req, res) => {
 
     const contactsParams = [...params, ...(searchRank?.params ?? []), limitNumber, offset]
     const contacts = await db.all(contactsQuery, contactsParams)
+    const hydratedContacts = shouldWarmProfilePictures
+      ? await warmWhatsAppProfilePicturesForRows(contacts, {
+          apiLimit: Math.min(limitNumber, 80),
+          qrLimit: Math.min(limitNumber, 24)
+        })
+      : contacts
 
     const firstSessionsByContact = new Map()
     const firstSessionsByVisitor = new Map()
     const firstSessionsByEmail = new Map()
-    const contactIds = Array.from(new Set(contacts.map(c => c.id).filter(Boolean)))
-    const visitorIds = Array.from(new Set(contacts.map(c => c.visitor_id).filter(Boolean)))
+    const contactIds = Array.from(new Set(hydratedContacts.map(c => c.id).filter(Boolean)))
+    const visitorIds = Array.from(new Set(hydratedContacts.map(c => c.visitor_id).filter(Boolean)))
     const emails = Array.from(new Set(
-      contacts
+      hydratedContacts
         .map(c => c.email)
         .filter(Boolean)
         .map(email => String(email).toLowerCase())
@@ -311,7 +1162,7 @@ export const getContacts = async (req, res) => {
     const whatsappAttributionsByContact = await loadFirstWhatsAppAttributions(contactIds)
 
     // Mapear campos de base de datos a nombres esperados por frontend
-    const mappedContacts = contacts.map(c => {
+    const mappedContacts = hydratedContacts.map(c => {
       const firstSession = getFirstSessionForContact(c)
       const attributionFields = buildContactAttributionFields(c, whatsappAttributionsByContact.get(c.id))
 
@@ -344,6 +1195,9 @@ export const getContacts = async (req, res) => {
         whatsappAttributionPlatform: attributionFields.whatsappAttributionPlatform,
         ad_name: c.attribution_ad_name,
         ad_id: c.attribution_ad_id,
+        preferredWhatsAppPhoneNumberId: c.preferred_whatsapp_phone_number_id || '',
+        preferred_whatsapp_phone_number_id: c.preferred_whatsapp_phone_number_id || '',
+        profilePhotoUrl: getContactProfilePhotoUrl(c) || null,
         customFields: parseContactCustomFields(c.custom_fields),
         firstSession: firstSession ? {
           started_at: firstSession.started_at,
@@ -377,7 +1231,7 @@ export const getContacts = async (req, res) => {
     const totalPages = Math.ceil(totalContacts / limitNumber)
 
     logger.debug(
-      `Contactos obtenidos (${rangeLabel}) -> ${contacts.length} registros en esta página, ${totalContacts} total`
+      `Contactos obtenidos (${rangeLabel}) -> ${hydratedContacts.length} registros en esta página, ${totalContacts} total`
     )
 
     res.json({
@@ -409,7 +1263,7 @@ export const getContactById = async (req, res) => {
   try {
     const { id } = req.params
 
-    const contact = await db.get(
+    let contact = await db.get(
       `WITH payment_stats AS (
         SELECT
           contact_id,
@@ -444,6 +1298,10 @@ export const getContactById = async (req, res) => {
         c.attribution_ctwa_clid,
         c.attribution_ad_name,
         c.attribution_ad_id,
+        c.preferred_whatsapp_phone_number_id,
+        c.custom_fields,
+${CONTACT_WHATSAPP_PROFILE_SELECTS},
+${CONTACT_META_PROFILE_SELECT},
         COALESCE(ps.total_paid, 0) AS total_paid,
         COALESCE(ps.purchases_count, 0) AS purchases_count,
         ps.last_purchase_date AS last_purchase_date,
@@ -481,6 +1339,12 @@ export const getContactById = async (req, res) => {
         error: 'Contacto no encontrado'
       })
     }
+
+    const [hydratedContact] = await warmWhatsAppProfilePicturesForRows([contact], {
+      apiLimit: 1,
+      qrLimit: 1
+    })
+    contact = hydratedContact || contact
 
     // Obtener pagos del contacto
     const payments = await db.all(
@@ -715,7 +1579,10 @@ export const getContactById = async (req, res) => {
     }
 
     const whatsappAttributionsByContact = await loadFirstWhatsAppAttributions([id])
-    const attributionFields = buildContactAttributionFields(contact, whatsappAttributionsByContact.get(id))
+    const whatsappAttribution = whatsappAttributionsByContact.get(id)
+    const attributionFields = buildContactAttributionFields(contact, whatsappAttribution)
+    const metaAttribution = await getMetaAttributionForContact(contact, firstSession, whatsappAttribution)
+    const resolvedAdFields = buildResolvedMetaAdFields(contact, metaAttribution)
 
     // Mapear campos de base de datos a nombres esperados por frontend
     const mappedContact = {
@@ -729,8 +1596,15 @@ export const getContactById = async (req, res) => {
       lastPurchase: contact.last_purchase_date,
       purchases: contact.purchases_count || 0,
       source: contact.source,
-      ad_name: contact.attribution_ad_name,
-      ad_id: contact.attribution_ad_id,
+      ad_name: resolvedAdFields.ad_name,
+      ad_id: resolvedAdFields.ad_id,
+      campaign_id: resolvedAdFields.campaign_id,
+      campaign_name: resolvedAdFields.campaign_name,
+      adset_id: resolvedAdFields.adset_id,
+      adset_name: resolvedAdFields.adset_name,
+      preferredWhatsAppPhoneNumberId: contact.preferred_whatsapp_phone_number_id || '',
+      preferred_whatsapp_phone_number_id: contact.preferred_whatsapp_phone_number_id || '',
+      profilePhotoUrl: getContactProfilePhotoUrl(contact) || null,
       customFields: parseContactCustomFields(contact.custom_fields),
       notes: '',
       payments,
@@ -745,6 +1619,7 @@ export const getContactById = async (req, res) => {
       attribution_medium: attributionFields.attribution_medium,
       attribution_ctwa_clid: attributionFields.attribution_ctwa_clid,
       whatsappAttributionPlatform: attributionFields.whatsappAttributionPlatform,
+      metaAttribution,
       firstSession: firstSession ? {
         started_at: firstSession.started_at,
         page_url: firstSession.page_url,
@@ -834,6 +1709,8 @@ export const searchContacts = async (req, res) => {
         c.source,
         c.attribution_ad_name,
         c.attribution_ad_id,
+${CONTACT_WHATSAPP_PROFILE_SELECTS},
+${CONTACT_META_PROFILE_SELECT},
         (
           SELECT COUNT(*) > 0
           FROM appointments
@@ -861,9 +1738,13 @@ export const searchContacts = async (req, res) => {
       LIMIT 20`,
       [...searchClause.params, ...searchRank.params]
     )
+    const hydratedContacts = await warmWhatsAppProfilePicturesForRows(contacts, {
+      apiLimit: 20,
+      qrLimit: 10
+    })
 
     // Mapear campos de base de datos a nombres esperados por frontend
-    const mappedContacts = contacts.map(c => {
+    const mappedContacts = hydratedContacts.map(c => {
       // Determinar status basado en la actividad del contacto
       let status = 'lead'
       if (c.purchases_count > 0) {
@@ -888,6 +1769,7 @@ export const searchContacts = async (req, res) => {
         source: c.source,
         ad_name: c.attribution_ad_name,
         ad_id: c.attribution_ad_id,
+        profilePhotoUrl: getContactProfilePhotoUrl(c) || null,
         notes: ''
       }
     })
@@ -902,6 +1784,106 @@ export const searchContacts = async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Error buscando contactos'
+    })
+  }
+}
+
+/**
+ * Crea un contacto local directamente en la base de datos
+ */
+export const createContact = async (req, res) => {
+  try {
+    const {
+      name,
+      full_name,
+      first_name,
+      last_name,
+      email,
+      phone,
+      source,
+      createdAt
+    } = req.body || {}
+
+    const firstNameInput = cleanString(first_name)
+    const lastNameInput = cleanString(last_name)
+    const fullName = cleanString(full_name || name || [firstNameInput, lastNameInput].filter(Boolean).join(' '))
+    const normalizedEmail = cleanString(email).toLowerCase() || null
+    const normalizedPhone = phone ? await normalizePhoneForAccount(phone) : null
+
+    if (!fullName && !normalizedEmail && !normalizedPhone) {
+      return res.status(400).json({
+        success: false,
+        error: 'Agrega al menos nombre, correo o teléfono para crear el contacto'
+      })
+    }
+
+    if (normalizedEmail) {
+      const existingByEmail = await db.get(
+        'SELECT id, full_name FROM contacts WHERE LOWER(email) = ? LIMIT 1',
+        [normalizedEmail]
+      )
+
+      if (existingByEmail) {
+        return res.status(409).json({
+          success: false,
+          error: 'Ya existe un contacto con ese correo. Búscalo en la lista y edítalo si necesitas cambiar algo.'
+        })
+      }
+    }
+
+    if (normalizedPhone) {
+      const existingByPhone = await findContactByPhoneCandidates(normalizedPhone)
+      if (existingByPhone) {
+        return res.status(409).json({
+          success: false,
+          error: 'Ya existe un contacto con ese teléfono. Búscalo en la lista y edítalo si necesitas cambiar algo.'
+        })
+      }
+    }
+
+    const id = createManualContactId()
+    const nameParts = fullName ? splitName(fullName) : {
+      firstName: firstNameInput,
+      lastName: lastNameInput
+    }
+    const createdAtValue = createdAt && !Number.isNaN(Date.parse(createdAt))
+      ? new Date(createdAt).toISOString()
+      : new Date().toISOString()
+    const sourceValue = cleanString(source) || 'ristak_manual'
+
+    await db.run(
+      `INSERT INTO contacts (
+        id, phone, email, full_name, first_name, last_name, source, custom_fields, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ${process.env.DATABASE_URL ? '?::jsonb' : '?'}, ?, CURRENT_TIMESTAMP)`,
+      [
+        id,
+        normalizedPhone,
+        normalizedEmail,
+        fullName || normalizedEmail || normalizedPhone || 'Contacto manual',
+        nameParts.firstName || null,
+        nameParts.lastName || null,
+        sourceValue,
+        serializeContactCustomFieldsForDb([]),
+        createdAtValue
+      ]
+    )
+
+    const contact = await db.get('SELECT * FROM contacts WHERE id = ?', [id])
+
+    logger.info(`Contacto manual creado: ${id} (${contact.full_name || contact.email || contact.phone || 'sin nombre'})`)
+
+    res.status(201).json({
+      success: true,
+      data: mapContactRowForResponse(contact)
+    })
+  } catch (error) {
+    logger.error(`Error creando contacto: ${error.message}`)
+    const isUniqueError = /unique|duplicate/i.test(error.message || '')
+    res.status(isUniqueError ? 409 : 500).json({
+      success: false,
+      error: isUniqueError
+        ? 'Ya existe un contacto con ese correo o teléfono.'
+        : 'Error creando contacto'
     })
   }
 }
@@ -978,6 +1960,11 @@ export const updateContact = async (req, res) => {
       dnd,
       dndSettings
     } = req.body
+    const hasPreferredWhatsAppPhoneNumberUpdate = hasOwn(req.body, 'preferredWhatsAppPhoneNumberId') ||
+      hasOwn(req.body, 'preferred_whatsapp_phone_number_id')
+    const preferredWhatsAppPhoneNumberInput = hasOwn(req.body, 'preferredWhatsAppPhoneNumberId')
+      ? req.body.preferredWhatsAppPhoneNumberId
+      : req.body.preferred_whatsapp_phone_number_id
 
     // Verificar que el contacto existe
     const existing = await db.get('SELECT id, custom_fields FROM contacts WHERE id = ?', [id])
@@ -996,11 +1983,18 @@ export const updateContact = async (req, res) => {
       })
     }
 
-    const highLevelCustomFields = hasCustomFieldsUpdate
-      ? buildHighLevelCustomFieldsPayload(customFields)
+    const preparedCustomFields = hasCustomFieldsUpdate
+      ? await prepareContactCustomFieldsForStorage(customFields, {
+        sourceType: 'manual',
+        ownerUserId: req.user?.userId
+      })
       : null
+    const highLevelCustomFields = hasCustomFieldsUpdate
+      ? buildHighLevelCustomFieldsPayload(preparedCustomFields)
+      : null
+    const shouldSyncHighLevelCustomFields = Array.isArray(highLevelCustomFields) && highLevelCustomFields.length > 0
     const normalizedPhone = phone !== undefined
-      ? (normalizePhoneForStorage(phone) || phone || null)
+      ? (await normalizePhoneForAccount(phone) || phone || null)
       : undefined
     const phoneUpsert = phone !== undefined
       ? await prepareContactPhoneUpsert({ contactId: id, phone: normalizedPhone })
@@ -1034,8 +2028,27 @@ export const updateContact = async (req, res) => {
       updates.push('attribution_ad_id = ?')
       params.push(attribution_ad_id)
     }
+    if (hasPreferredWhatsAppPhoneNumberUpdate) {
+      const preferredWhatsAppPhoneNumberId = cleanString(preferredWhatsAppPhoneNumberInput)
+      if (preferredWhatsAppPhoneNumberId) {
+        const phoneNumber = await db.get(
+          'SELECT id FROM whatsapp_api_phone_numbers WHERE id = ?',
+          [preferredWhatsAppPhoneNumberId]
+        )
 
-    if (updates.length === 0 && tags === undefined && !hasCustomFieldsUpdate && dnd === undefined) {
+        if (!phoneNumber) {
+          return res.status(400).json({
+            success: false,
+            error: 'Ese número de WhatsApp no está conectado'
+          })
+        }
+      }
+
+      updates.push('preferred_whatsapp_phone_number_id = ?')
+      params.push(preferredWhatsAppPhoneNumberId || null)
+    }
+
+    if (updates.length === 0 && tags === undefined && !hasCustomFieldsUpdate && dnd === undefined && !hasPreferredWhatsAppPhoneNumberUpdate) {
       return res.status(400).json({
         success: false,
         error: 'No hay campos para actualizar'
@@ -1053,7 +2066,7 @@ export const updateContact = async (req, res) => {
       if (phone) ghlUpdateData.phone = phoneUpsert?.phone || normalizedPhone
       if (source) ghlUpdateData.source = source
       if (tags !== undefined) ghlUpdateData.tags = tags
-      if (hasCustomFieldsUpdate) ghlUpdateData.customFields = highLevelCustomFields
+      if (shouldSyncHighLevelCustomFields) ghlUpdateData.customFields = highLevelCustomFields
       if (dnd !== undefined) {
         ghlUpdateData.dnd = dnd
         if (dndSettings) ghlUpdateData.dndSettings = dndSettings
@@ -1064,7 +2077,7 @@ export const updateContact = async (req, res) => {
         logger.info(`Contacto actualizado en HighLevel: ${id}`)
       }
     } catch (error) {
-      if (hasCustomFieldsUpdate) {
+      if (shouldSyncHighLevelCustomFields) {
         logger.warn(`No se pudieron actualizar custom fields en HighLevel para ${id}: ${error.message}`)
         return res.status(502).json({
           success: false,
@@ -1079,7 +2092,7 @@ export const updateContact = async (req, res) => {
     if (hasCustomFieldsUpdate) {
       mergedCustomFields = mergeContactCustomFields(
         parseContactCustomFields(existing.custom_fields),
-        customFields
+        preparedCustomFields
       )
       updates.push(`custom_fields = ${process.env.DATABASE_URL ? '?::jsonb' : '?'}`)
       params.push(serializeContactCustomFieldsForDb(mergedCustomFields))
@@ -1102,6 +2115,7 @@ export const updateContact = async (req, res) => {
     )
     const updatedData = {
       ...updated,
+      preferredWhatsAppPhoneNumberId: updated.preferred_whatsapp_phone_number_id || '',
       customFields: parseContactCustomFields(updated.custom_fields)
     }
 
@@ -1250,11 +2264,14 @@ export const getContactJourney = async (req, res) => {
       SELECT
         contacts.*,
         meta_ads.campaign_name,
+        meta_ads.campaign_id,
         meta_ads.adset_name,
+        meta_ads.adset_id,
         meta_ads.ad_name as meta_ad_name
       FROM contacts
       LEFT JOIN meta_ads ON meta_ads.ad_id = contacts.attribution_ad_id
       WHERE contacts.id = ?
+      ORDER BY meta_ads.date DESC
       LIMIT 1
     `, [id])
     if (!contact) {
@@ -1265,6 +2282,8 @@ export const getContactJourney = async (req, res) => {
     }
 
     const journey = []
+    await refreshHighLevelConversationMessageStatuses(id)
+
     const successfulPaymentsCondition = `
       contact_id = ?
       AND amount > 0
@@ -1290,9 +2309,17 @@ export const getContactJourney = async (req, res) => {
 
     // El backend emite los eventos de WhatsApp tal cual (uno por mensaje). El frontend
     // los agrupa a uno por día —usando la MISMA zona horaria con la que muestra las
-    // fechas— y fusiona la info dando prioridad a la atribución de anuncio. Aquí solo se
-    // aplica la regla temporal: después del primer pago, solo se conservan los eventos
-    // de WhatsApp que vengan con atribución de anuncio.
+    // fechas— y fusiona la info dando prioridad a la atribución de anuncio. Los mensajes
+    // reales del chat se entregan completos para no romper conversación ni archivos; la
+    // regla temporal de conversión se aplica sólo al timeline de Info del contacto.
+    const isStoredChatMessageEvent = (event) => Boolean(
+      event?.data?.whatsapp_api_message_id ||
+      event?.data?.whatsapp_message_id ||
+      event?.data?.message_type ||
+      event?.data?.direction ||
+      event?.data?.transport
+    )
+
     const addWhatsAppJourneyEvents = (events) => {
       events
         .filter(event => event?.date)
@@ -1301,7 +2328,7 @@ export const getContactJourney = async (req, res) => {
           const eventTime = getDateTime(event.date)
           const isAfterFirstPayment = firstPaymentTime !== null && eventTime >= firstPaymentTime
 
-          if (isAfterFirstPayment && !event.data?.is_ad_attributed) {
+          if (isAfterFirstPayment && !event.data?.is_ad_attributed && !isStoredChatMessageEvent(event)) {
             return
           }
 
@@ -1391,30 +2418,48 @@ export const getContactJourney = async (req, res) => {
         referral_ctwa_clid: msg.referral_ctwa_clid,
         attribution_source: 'whatsapp_attribution',
         attribution_record_id: msg.id,
-        is_ad_attributed: true
+        ad_id_thru_message: msg.ad_id_thru_message
       }
+      const isAdAttributed = hasRealWhatsAppAdAttribution({
+        ...data,
+        ad_id_thru_message: msg.ad_id_thru_message
+      })
 
       whatsappJourneyEvents.push({
         type: 'whatsapp_message',
         date: msg.created_at,
         data: {
           ...data,
-          ad_platform: detectWhatsAppAdPlatform(data)
+          is_ad_attributed: isAdAttributed,
+          ad_platform: isAdAttributed ? detectWhatsAppAdPlatform(data) : null
         }
       })
     })
 
-    const whatsappBusinessMessages = await db.all(
+    const whatsappApiMessages = await db.all(
       `SELECT
-          msg.id as whatsapp_web_message_id,
-          msg.message_id,
+          msg.id as whatsapp_api_message_id,
+          msg.ycloud_message_id,
+          msg.wamid,
           msg.message_text,
           msg.message_type,
-          msg.push_name,
           msg.message_timestamp,
           msg.created_at,
           msg.phone,
+          msg.from_phone,
+          msg.to_phone,
+          msg.business_phone,
+          msg.business_phone_number_id,
+          msg.transport,
           msg.direction,
+          msg.status,
+          msg.error_code,
+          msg.error_message,
+          msg.media_url,
+          msg.media_mime_type,
+          msg.media_filename,
+          msg.media_duration_ms,
+          msg.raw_payload_json,
           COALESCE(attr.id, '') as attribution_id,
           COALESCE(attr.detected_ctwa_clid, msg.detected_ctwa_clid) as detected_ctwa_clid,
           COALESCE(attr.detected_source_id, msg.detected_source_id) as detected_source_id,
@@ -1426,28 +2471,33 @@ export const getContactJourney = async (req, res) => {
           COALESCE(attr.detected_body, msg.detected_body) as detected_body,
           COALESCE(attr.detected_conversion_data, msg.detected_conversion_data) as detected_conversion_data,
           COALESCE(attr.detected_ctwa_payload, msg.detected_ctwa_payload) as detected_ctwa_payload
-       FROM whatsapp_web_messages msg
-       LEFT JOIN whatsapp_web_attribution attr ON attr.whatsapp_web_message_id = msg.id
+       FROM whatsapp_api_messages msg
+       LEFT JOIN whatsapp_api_attribution attr ON attr.whatsapp_api_message_id = msg.id
        WHERE msg.contact_id = ?
-         AND msg.direction = 'inbound'
        ORDER BY COALESCE(msg.message_timestamp, msg.created_at) ASC`,
       [id]
     )
 
-    whatsappBusinessMessages.forEach(msg => {
-      const isAdAttributed = Boolean(
-        msg.attribution_id ||
-        msg.detected_ctwa_clid ||
-        msg.detected_source_id ||
-        msg.detected_source_url ||
-        msg.detected_headline
-      )
+    whatsappApiMessages.forEach(msg => {
+      const payloadMedia = getWhatsAppMediaFromPayload(msg.raw_payload_json, msg.message_type)
+      const media = {
+        media_url: cleanString(msg.media_url) || payloadMedia.media_url,
+        media_id: payloadMedia.media_id,
+        media_mime_type: cleanString(msg.media_mime_type) || payloadMedia.media_mime_type,
+        media_filename: cleanString(msg.media_filename) || payloadMedia.media_filename,
+        media_duration_ms: Number(msg.media_duration_ms || 0) || payloadMedia.media_duration_ms
+      }
       const data = {
         source: 'WhatsApp',
         phone: msg.phone,
-        push_name: msg.push_name,
+        from_phone: msg.from_phone,
+        to_phone: msg.to_phone,
+        business_phone: msg.business_phone,
+        business_phone_number_id: msg.business_phone_number_id,
+        transport: msg.transport || 'api',
         message_text: msg.message_text,
         message_type: msg.message_type,
+        ...media,
         referral_source_url: msg.detected_source_url,
         referral_source_type: msg.detected_source_type,
         referral_ctwa_clid: msg.detected_ctwa_clid,
@@ -1458,26 +2508,95 @@ export const getContactJourney = async (req, res) => {
         referral_entry_point: msg.detected_entry_point,
         referral_conversion_data: msg.detected_conversion_data,
         referral_ctwa_payload: msg.detected_ctwa_payload,
-        attribution_source: 'whatsapp_web',
+        attribution_source: 'whatsapp_api',
         attribution_record_id: msg.attribution_id || null,
-        whatsapp_web_message_id: msg.whatsapp_web_message_id,
-        whatsapp_message_id: msg.message_id,
-        is_ad_attributed: isAdAttributed
+        whatsapp_api_message_id: msg.whatsapp_api_message_id,
+        whatsapp_message_id: msg.wamid || msg.ycloud_message_id,
+        direction: msg.direction || 'inbound',
+        status: msg.status || null,
+        error_code: msg.error_code || null,
+        error_message: msg.error_message || null
       }
+      const isAdAttributed = hasRealWhatsAppAdAttribution(data)
 
       whatsappJourneyEvents.push({
         type: 'whatsapp_message',
         date: msg.message_timestamp || msg.created_at,
         data: {
           ...data,
-          ad_platform: detectWhatsAppAdPlatform(data)
+          is_ad_attributed: isAdAttributed,
+          ad_platform: isAdAttributed ? detectWhatsAppAdPlatform(data) : null
         }
       })
     })
 
-    addWhatsAppJourneyEvents(whatsappJourneyEvents)
+    const enrichedWhatsAppJourneyEvents = await enrichWhatsAppJourneyEventsWithMetaAds(whatsappJourneyEvents)
+    addWhatsAppJourneyEvents(enrichedWhatsAppJourneyEvents)
+
+    const metaSocialMessages = await db.all(
+      `SELECT
+          msg.id as meta_social_message_id,
+          msg.meta_message_id,
+          msg.platform,
+          msg.message_text,
+          msg.message_type,
+          msg.media_url,
+          msg.media_mime_type,
+          msg.message_timestamp,
+          msg.created_at,
+          msg.sender_id,
+          msg.recipient_id,
+          msg.page_id,
+          msg.instagram_account_id,
+          msg.direction,
+          msg.status,
+          msg.postback_payload,
+          msg.referral_json,
+          profile.profile_name,
+          profile.username
+       FROM meta_social_messages msg
+       LEFT JOIN meta_social_contacts profile ON profile.id = msg.meta_social_contact_id
+       WHERE msg.contact_id = ?
+       ORDER BY COALESCE(msg.message_timestamp, msg.created_at) ASC`,
+      [id]
+    )
+
+    metaSocialMessages.forEach(msg => {
+      const platform = cleanString(msg.platform)
+      const source = platform === 'instagram' ? 'Instagram DM' : 'Messenger'
+
+      journey.push({
+        type: 'meta_message',
+        date: msg.message_timestamp || msg.created_at,
+        data: {
+          source,
+          social_platform: platform,
+          sender_id: msg.sender_id,
+          recipient_id: msg.recipient_id,
+          page_id: msg.page_id,
+          instagram_account_id: msg.instagram_account_id,
+          profile_name: msg.profile_name,
+          username: msg.username,
+          message_text: msg.message_text,
+          message_type: msg.message_type,
+          media_url: msg.media_url,
+          media_mime_type: msg.media_mime_type,
+          postback_payload: msg.postback_payload,
+          referral_json: msg.referral_json,
+          attribution_source: 'meta_social',
+          meta_social_message_id: msg.meta_social_message_id,
+          meta_message_id: msg.meta_message_id,
+          direction: msg.direction || 'inbound',
+          status: msg.status || null,
+          transport: platform === 'instagram' ? 'instagram' : 'messenger'
+        }
+      })
+    })
 
     // 3. Contacto creado
+    const adAttributedWhatsAppEvent = enrichedWhatsAppJourneyEvents.find(event => event?.data?.is_ad_attributed)
+    const resolvedContactAdFields = buildResolvedMetaAdFields(contact, null)
+
     journey.push({
       type: 'contact_created',
       date: contact.created_at,
@@ -1486,10 +2605,12 @@ export const getContactJourney = async (req, res) => {
         email: contact.email,
         phone: contact.phone,
         source: contact.source,
-        attribution_ad_name: contact.attribution_ad_name || contact.meta_ad_name,
-        attribution_ad_id: contact.attribution_ad_id,
-        campaign_name: contact.campaign_name,
-        adset_name: contact.adset_name
+        attribution_ad_name: adAttributedWhatsAppEvent?.data?.attribution_ad_name || resolvedContactAdFields.ad_name,
+        attribution_ad_id: adAttributedWhatsAppEvent?.data?.attribution_ad_id || resolvedContactAdFields.ad_id,
+        campaign_id: adAttributedWhatsAppEvent?.data?.campaign_id || resolvedContactAdFields.campaign_id,
+        campaign_name: adAttributedWhatsAppEvent?.data?.campaign_name || resolvedContactAdFields.campaign_name,
+        adset_id: adAttributedWhatsAppEvent?.data?.adset_id || resolvedContactAdFields.adset_id,
+        adset_name: adAttributedWhatsAppEvent?.data?.adset_name || resolvedContactAdFields.adset_name
       }
     })
 

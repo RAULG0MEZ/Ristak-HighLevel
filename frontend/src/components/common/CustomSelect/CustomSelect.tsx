@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown, Check } from 'lucide-react'
 import styles from './CustomSelect.module.css'
@@ -6,33 +6,135 @@ import styles from './CustomSelect.module.css'
 interface Option {
   value: string
   label: string
+  disabled?: boolean
+}
+
+interface OptionGroup {
+  label: string
+  options: Option[]
+}
+
+type OptionEntry = Option | OptionGroup
+
+type CustomSelectChangeEvent = {
+  target: {
+    name?: string
+    value: string
+  }
+  currentTarget: {
+    name?: string
+    value: string
+  }
 }
 
 interface CustomSelectProps {
-  options: Option[]
-  value: string
-  onChange: (value: string) => void
+  options?: Option[]
+  value?: string | number
+  defaultValue?: string | number
+  onChange?: (event: CustomSelectChangeEvent) => void
+  onValueChange?: (value: string) => void
+  onBlur?: React.FocusEventHandler<HTMLButtonElement>
   placeholder?: string
   disabled?: boolean
   className?: string
+  style?: React.CSSProperties
   portal?: boolean
+  name?: string
+  id?: string
+  required?: boolean
+  children?: React.ReactNode
+  'aria-label'?: string
+  'aria-labelledby'?: string
 }
+
+const isOptionGroup = (entry: OptionEntry): entry is OptionGroup => 'options' in entry
+
+type OptionElementProps = {
+  value?: string | number
+  disabled?: boolean
+  label?: string
+  children?: React.ReactNode
+}
+
+const getTextFromReactNode = (node: React.ReactNode): string => {
+  return React.Children.toArray(node)
+    .map(child => {
+      if (typeof child === 'string' || typeof child === 'number') return String(child)
+      if (React.isValidElement<{ children?: React.ReactNode }>(child)) {
+        return getTextFromReactNode(child.props.children)
+      }
+      return ''
+    })
+    .join('')
+    .trim()
+}
+
+const parseOptionChildren = (children: React.ReactNode): OptionEntry[] => {
+  return React.Children.toArray(children).flatMap((child): OptionEntry[] => {
+    if (!React.isValidElement<OptionElementProps>(child)) return []
+
+    if (child.type === 'optgroup') {
+      return [{
+        label: String(child.props.label || ''),
+        options: parseOptionChildren(child.props.children).flatMap(entry => isOptionGroup(entry) ? entry.options : [entry])
+      }]
+    }
+
+    if (child.type === 'option') {
+      const label = getTextFromReactNode(child.props.children)
+      return [{
+        value: String(child.props.value ?? label),
+        label,
+        disabled: Boolean(child.props.disabled)
+      }]
+    }
+
+    return []
+  })
+}
+
+const flattenOptions = (entries: OptionEntry[]) =>
+  entries.flatMap(entry => isOptionGroup(entry) ? entry.options : [entry])
 
 export const CustomSelect: React.FC<CustomSelectProps> = ({
   options,
   value,
+  defaultValue,
   onChange,
+  onValueChange,
+  onBlur,
   placeholder = 'Selecciona una opción',
   disabled = false,
   className = '',
-  portal = false
+  style,
+  portal = false,
+  name,
+  id,
+  required,
+  children,
+  'aria-label': ariaLabel,
+  'aria-labelledby': ariaLabelledBy
 }) => {
   const [isOpen, setIsOpen] = useState(false)
   const [portalStyle, setPortalStyle] = useState<React.CSSProperties>({})
   const containerRef = useRef<HTMLDivElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
-  const selectedOption = options.find(opt => opt.value === value)
+  const optionEntries = useMemo<OptionEntry[]>(() => {
+    if (options) return options.map(option => ({ ...option, value: String(option.value) }))
+    return parseOptionChildren(children)
+  }, [children, options])
+  const flatOptions = useMemo(() => flattenOptions(optionEntries), [optionEntries])
+  const firstEnabledOption = flatOptions.find(option => !option.disabled)
+  const isControlled = value !== undefined
+  const [internalValue, setInternalValue] = useState(() => String(defaultValue ?? value ?? firstEnabledOption?.value ?? ''))
+  const selectedValue = String(isControlled ? value : internalValue)
+  const selectedOption = flatOptions.find(opt => opt.value === selectedValue)
+
+  useEffect(() => {
+    if (isControlled || internalValue || defaultValue !== undefined || !firstEnabledOption) return
+    setInternalValue(firstEnabledOption.value)
+  }, [defaultValue, firstEnabledOption, internalValue, isControlled])
 
   const updatePortalPosition = useCallback(() => {
     if (!portal || !containerRef.current) return
@@ -40,7 +142,7 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
     const rect = containerRef.current.getBoundingClientRect()
     const viewportPadding = 8
     const dropdownGap = 4
-    const estimatedHeight = Math.min(options.length * 44 + 8, 280)
+    const estimatedHeight = Math.min(flatOptions.length * 44 + 8, 280)
     const spaceBelow = window.innerHeight - rect.bottom - viewportPadding
     const spaceAbove = rect.top - viewportPadding
     const openAbove = spaceBelow < estimatedHeight && spaceAbove > spaceBelow
@@ -57,7 +159,7 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
       zIndex: 10000,
       '--custom-select-options-max-height': `${dropdownHeight}px`
     } as React.CSSProperties)
-  }, [options.length, portal])
+  }, [flatOptions.length, portal])
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -92,8 +194,24 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
     }
   }, [isOpen, portal, updatePortalPosition])
 
-  const handleSelect = (optionValue: string) => {
-    onChange(optionValue)
+  const handleSelect = (option: Option) => {
+    if (option.disabled) return
+
+    const optionValue = option.value
+    if (!isControlled) {
+      setInternalValue(optionValue)
+    }
+    onValueChange?.(optionValue)
+
+    const changeEvent: CustomSelectChangeEvent = {
+      target: { name, value: optionValue },
+      currentTarget: { name, value: optionValue }
+    }
+    onChange?.(changeEvent)
+
+    if (!isControlled && changeEvent.currentTarget.value !== optionValue) {
+      setInternalValue(changeEvent.currentTarget.value)
+    }
     setIsOpen(false)
   }
 
@@ -102,18 +220,47 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
       ref={dropdownRef}
       className={`${styles.dropdown} ${portal ? styles.portalDropdown : ''}`}
       style={portal ? portalStyle : undefined}
+      data-ristak-dropdown-panel
     >
       <div className={styles.options}>
-        {options.map((option) => {
-          const isSelected = option.value === value
+        {optionEntries.map((entry) => {
+          if (isOptionGroup(entry)) {
+            return (
+              <div key={`group-${entry.label}`} className={styles.optionGroup}>
+                <div className={styles.optionGroupLabel}>{entry.label}</div>
+                {entry.options.map((option) => {
+                  const isSelected = option.value === selectedValue
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`${styles.option} ${isSelected ? styles.optionSelected : ''}`}
+                      onClick={() => handleSelect(option)}
+                      disabled={option.disabled}
+                      data-ristak-dropdown-item
+                      data-selected={isSelected ? 'true' : undefined}
+                    >
+                      <span>{option.label}</span>
+                      {isSelected && <Check size={16} className={styles.checkIcon} />}
+                    </button>
+                  )
+                })}
+              </div>
+            )
+          }
+
+          const isSelected = entry.value === selectedValue
           return (
             <button
-              key={option.value}
+              key={entry.value}
               type="button"
               className={`${styles.option} ${isSelected ? styles.optionSelected : ''}`}
-              onClick={() => handleSelect(option.value)}
+              onClick={() => handleSelect(entry)}
+              disabled={entry.disabled}
+              data-ristak-dropdown-item
+              data-selected={isSelected ? 'true' : undefined}
             >
-              <span>{option.label}</span>
+              <span>{entry.label}</span>
               {isSelected && <Check size={16} className={styles.checkIcon} />}
             </button>
           )
@@ -126,12 +273,20 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
     <div
       ref={containerRef}
       className={`${styles.container} ${className} ${disabled ? styles.disabled : ''}`}
+      style={style}
     >
       <button
+        id={id}
         type="button"
         className={`${styles.trigger} ${isOpen ? styles.open : ''}`}
         onClick={() => !disabled && setIsOpen(!isOpen)}
+        onBlur={onBlur}
         disabled={disabled}
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+        aria-label={ariaLabel}
+        aria-labelledby={ariaLabelledBy}
+        data-ristak-dropdown-trigger
       >
         <span className={selectedOption ? styles.selected : styles.placeholder}>
           {selectedOption?.label || placeholder}
@@ -141,6 +296,15 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({
           className={`${styles.chevron} ${isOpen ? styles.chevronOpen : ''}`}
         />
       </button>
+      {name && (
+        <input
+          type="hidden"
+          name={name}
+          value={selectedValue}
+          required={required}
+          disabled={disabled}
+        />
+      )}
 
       {portal ? createPortal(dropdown, document.body) : dropdown}
     </div>

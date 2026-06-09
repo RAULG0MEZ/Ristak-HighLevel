@@ -16,6 +16,15 @@ class ApiClient {
     this.baseURL = baseURL
   }
 
+  private getAuthHeaders() {
+    try {
+      const token = localStorage.getItem('auth_token')
+      return token ? { Authorization: `Bearer ${token}` } : {}
+    } catch {
+      return {}
+    }
+  }
+
   private async request<T>(
     endpoint: string,
     options: ApiRequestOptions = {}
@@ -31,12 +40,15 @@ class ApiClient {
       url += `?${searchParams.toString()}`
     }
 
+    const headers = new Headers(fetchOptions.headers)
+    headers.set('Content-Type', 'application/json')
+    Object.entries(this.getAuthHeaders()).forEach(([key, value]) => {
+      headers.set(key, value)
+    })
+
     const response = await fetch(url, {
       ...fetchOptions,
-      headers: {
-        'Content-Type': 'application/json',
-        ...fetchOptions.headers,
-      },
+      headers,
     })
 
     // Handle 204 No Content
@@ -91,6 +103,14 @@ class ApiClient {
     return this.request<T>(endpoint, {
       ...options,
       method: 'PUT',
+      body: JSON.stringify(body),
+    })
+  }
+
+  async patch<T>(endpoint: string, body?: any, options?: ApiRequestOptions): Promise<T> {
+    return this.request<T>(endpoint, {
+      ...options,
+      method: 'PATCH',
       body: JSON.stringify(body),
     })
   }

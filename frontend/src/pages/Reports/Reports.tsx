@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Card,
   KpiCard,
@@ -27,7 +28,7 @@ import {
 } from '@/services/reportsService'
 import { costsService, type Cost } from '@/services/costsService'
 import { formatCurrency, formatNumber, formatDate, formatDateToISO, parseLocalDateString } from '@/utils/format'
-import { useAppConfig, useChartHover, useIsRenderDomain, useMetaTimezone, useTableConfig } from '@/hooks'
+import { useAppConfig, useChartHover, useMetaTimezone, useTableConfig } from '@/hooks'
 import { DEFAULT_BAR_RADIUS, getTopRoundedBarPath } from '@/components/common/chartShapes'
 import { ChartTooltip } from '@/components/common/ChartTooltip/ChartTooltip'
 import styles from './Reports.module.css'
@@ -148,6 +149,31 @@ const displayTabs = [
     description: 'Vista resumida por tarjetas y gráficas para comparar indicadores sin entrar al detalle de cada fila.'
   }
 ]
+
+const reportDisplayModes: DisplayMode[] = ['table', 'metrics']
+const reportViewTypes: ViewType[] = ['day', 'month', 'year']
+const reportTypes: ReportType[] = ['cashflow', 'attribution', 'campaigns']
+
+const isReportDisplayMode = (value?: string): value is DisplayMode =>
+  reportDisplayModes.includes(value as DisplayMode)
+
+const isReportViewType = (value?: string): value is ViewType =>
+  reportViewTypes.includes(value as ViewType)
+
+const isReportType = (value?: string): value is ReportType =>
+  reportTypes.includes(value as ReportType)
+
+const buildReportsPath = (displayMode: DisplayMode, viewType: ViewType, reportType: ReportType) =>
+  `/reports/${displayMode}/${viewType}/${reportType}`
+
+const parseReportsPath = (pathname: string) => {
+  const parts = pathname.replace(/^\/reports\/?/, '').split('/').filter(Boolean)
+  const displayMode = isReportDisplayMode(parts[0]) ? parts[0] : 'table'
+  const viewType = isReportViewType(parts[1]) ? parts[1] : 'month'
+  const reportType = isReportType(parts[2]) ? parts[2] : 'cashflow'
+
+  return { displayMode, viewType, reportType }
+}
 
 const monthRangeOptions = [
   { value: 'last12', label: 'Últimos 12 meses' },
@@ -1274,15 +1300,15 @@ const BusinessExpenseCell: React.FC<BusinessExpenseCellProps> = ({ value, row, s
 }
 
 export const Reports: React.FC = () => {
+  const location = useLocation()
+  const navigate = useNavigate()
   const { dateRange, setDateRange } = useDateRange()
   const { showToast } = useNotification()
   const { labels } = useLabels()
+  const routeState = useMemo(() => parseReportsPath(location.pathname), [location.pathname])
 
   // Detectar discrepancia de timezone con Meta
   const timezoneInfo = useMetaTimezone()
-
-  // Detectar si estamos en dominio .onrender.com
-  const isRenderDomain = useIsRenderDomain()
 
   // Sistema híbrido de configuración
   const [visitorSourceConfig] = useAppConfig<'platform' | 'tracking'>('visitor_source', 'platform')
@@ -1292,18 +1318,17 @@ export const Reports: React.FC = () => {
     '0'
   )
 
-  // FORZAR valores si estamos en dominio .onrender.com
-  const visitorSource = isRenderDomain ? 'platform' : visitorSourceConfig
-  const analyticsEnabled = isRenderDomain ? false : parseAnalyticsFlag(showAnalyticsConfig)
+  const visitorSource = visitorSourceConfig
+  const analyticsEnabled = parseAnalyticsFlag(showAnalyticsConfig)
 
-  const [reportType, setReportType] = useState<ReportType>('cashflow')
+  const [reportType, setReportType] = useState<ReportType>(routeState.reportType)
   const reportTypeRef = React.useRef<ReportType>(reportType)
 
   useEffect(() => {
     reportTypeRef.current = reportType
   }, [reportType])
-  const [viewType, setViewType] = useState<ViewType>('month')
-  const [displayMode, setDisplayMode] = useState<DisplayMode>('table')
+  const [viewType, setViewType] = useState<ViewType>(routeState.viewType)
+  const [displayMode, setDisplayMode] = useState<DisplayMode>(routeState.displayMode)
   const [monthPreset, setMonthPreset] = useState<'last12' | 'thisYear' | 'custom'>('last12')
   const [yearRange, setYearRange] = useState(defaultYearRange)
 
@@ -1354,6 +1379,32 @@ export const Reports: React.FC = () => {
     subtitle: '',
     transactions: []
   })
+
+  useEffect(() => {
+    const nextPath = buildReportsPath(routeState.displayMode, routeState.viewType, routeState.reportType)
+    if (location.pathname !== nextPath) {
+      navigate({ pathname: nextPath, search: location.search }, { replace: true })
+      return
+    }
+
+    setDisplayMode(current => current === routeState.displayMode ? current : routeState.displayMode)
+    setViewType(current => current === routeState.viewType ? current : routeState.viewType)
+    setReportType(current => current === routeState.reportType ? current : routeState.reportType)
+  }, [location.pathname, location.search, navigate, routeState.displayMode, routeState.reportType, routeState.viewType])
+
+  const navigateReportsView = useCallback((next: {
+    displayMode?: DisplayMode
+    viewType?: ViewType
+    reportType?: ReportType
+  }) => {
+    const nextDisplayMode = next.displayMode || displayMode
+    const nextViewType = next.viewType || viewType
+    const nextReportType = next.reportType || reportType
+    const nextPath = buildReportsPath(nextDisplayMode, nextViewType, nextReportType)
+
+    if (location.pathname === nextPath) return
+    navigate({ pathname: nextPath, search: location.search })
+  }, [displayMode, location.pathname, location.search, navigate, reportType, viewType])
 
   const baseRange = {
     start: dateRange.start instanceof Date ? dateRange.start : new Date(dateRange.start),
@@ -1700,6 +1751,7 @@ export const Reports: React.FC = () => {
   // Limpiar y recargar datos del modal cuando cambian las fechas
   useEffect(() => {
     if (modalState.open && modalState.type) {
+      const currentModalType = modalState.type
       // Limpiar datos anteriores inmediatamente
       setModalState(prev => ({ ...prev, contacts: [], loading: true }))
 
@@ -1714,7 +1766,7 @@ export const Reports: React.FC = () => {
           const result = await reportsService.getContactsList({
             from,
             to,
-            type: modalState.type === 'customers' ? 'customers' : modalState.type,
+            type: currentModalType === 'customers' ? 'customers' : currentModalType,
             scope: currentScope
           })
           setModalState(prev => ({
@@ -1867,7 +1919,12 @@ export const Reports: React.FC = () => {
       },
       {
         key: 'spend',
-        header: 'Invertido, anuncios',
+        header: (
+          <div style={{ textAlign: 'center', lineHeight: '1.2' }}>
+            <div>Invertido</div>
+            <div style={{ fontSize: '0.75em', opacity: 0.7 }}>(Anuncios)</div>
+          </div>
+        ),
         sortable: true,
         render: (value: number) => <span className={styles.secondaryText}>{formatCurrency(value)}</span>
       },
@@ -2303,24 +2360,30 @@ export const Reports: React.FC = () => {
 
               {/* Todos los tabs juntos en la misma fila */}
               <div className={styles.tabsContainer}>
-                <TabList
-                  tabs={scopeTabs}
-                  activeTab={reportType}
-                  onTabChange={(value) => setReportType(value as ReportType)}
-                  variant="compact"
-                />
-                <TabList
-                  tabs={displayTabs}
-                  activeTab={displayMode}
-                  onTabChange={(value) => setDisplayMode(value as DisplayMode)}
-                  variant="compact"
-                />
-                <TabList
-                  tabs={viewTabs}
-                  activeTab={viewType}
-                  onTabChange={(value) => setViewType(value as ViewType)}
-                  variant="compact"
-                />
+	                <TabList
+	                  tabs={scopeTabs}
+	                  activeTab={reportType}
+	                  onTabChange={(value) => {
+	                    if (isReportType(value)) navigateReportsView({ reportType: value })
+	                  }}
+	                  variant="compact"
+	                />
+	                <TabList
+	                  tabs={displayTabs}
+	                  activeTab={displayMode}
+	                  onTabChange={(value) => {
+	                    if (isReportDisplayMode(value)) navigateReportsView({ displayMode: value })
+	                  }}
+	                  variant="compact"
+	                />
+	                <TabList
+	                  tabs={viewTabs}
+	                  activeTab={viewType}
+	                  onTabChange={(value) => {
+	                    if (isReportViewType(value)) navigateReportsView({ viewType: value })
+	                  }}
+	                  variant="compact"
+	                />
               </div>
             </div>
           </div>
@@ -2388,7 +2451,12 @@ export const Reports: React.FC = () => {
             appointments: contact.appointments,
             source: contact.source,
             ad_name: contact.ad_name,
-            ad_id: contact.ad_id
+            ad_id: contact.ad_id,
+            campaign_id: contact.campaign_id,
+            campaign_name: contact.campaign_name,
+            adset_id: contact.adset_id,
+            adset_name: contact.adset_name,
+            metaAttribution: contact.metaAttribution
           }))}
           loading={modalState.loading}
           type={modalState.type === 'customers' ? 'sales' : modalState.type === 'sales' ? 'sales' : (modalState.type === 'appointments' || modalState.type === 'attendances') ? 'appointments' : 'interesados'}

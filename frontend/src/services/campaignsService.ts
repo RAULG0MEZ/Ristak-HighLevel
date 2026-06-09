@@ -20,6 +20,23 @@ export interface Campaign {
   adsets?: AdSet[]
 }
 
+export interface ConnectedSocialProfile {
+  id: string
+  platform: 'facebook' | 'instagram' | 'threads' | 'tiktok'
+  sourceId: string
+  pageId?: string
+  pageName?: string
+  name: string
+  username?: string
+  category?: string | null
+  avatarUrl?: string | null
+  followers?: number | null
+  followersLabel?: string
+  isConfiguredPage?: boolean
+  isConfiguredInstagram?: boolean
+  updatedAt?: string
+}
+
 export interface AdSet {
   id: string
   name: string
@@ -118,6 +135,14 @@ export interface CampaignContact {
   hasShowedAppointment?: boolean
   hasAttendedAppointment?: boolean
   customFields?: ContactCustomField[]
+}
+
+export interface CampaignVisitorListParams {
+  startDate: string
+  endDate: string
+  campaign_id?: string
+  adset_id?: string
+  ad_id?: string
 }
 
 interface CreativePreviewResponse {
@@ -305,6 +330,23 @@ class CampaignsService {
     }
   }
 
+  async getVisitorsList(params: CampaignVisitorListParams): Promise<any[]> {
+    try {
+      const queryParams: Record<string, string> = {
+        startDate: params.startDate,
+        endDate: params.endDate,
+        ...(params.campaign_id ? { campaign_id: params.campaign_id } : {}),
+        ...(params.adset_id ? { adset_id: params.adset_id } : {}),
+        ...(params.ad_id ? { ad_id: params.ad_id } : {})
+      }
+      const data = await apiClient.get<{ data?: any[] } | any[]>('/tracking/visitors', { params: queryParams })
+      if (Array.isArray(data)) return data
+      return Array.isArray(data?.data) ? data.data : []
+    } catch (error) {
+      return []
+    }
+  }
+
   async getFunnelMetrics(startDate: string, endDate: string): Promise<{
     label: string
     visitors: number
@@ -333,8 +375,10 @@ class CampaignsService {
     configured: boolean
     config: {
       adAccountId: string
+      accessToken: string
       pixelId: string | null
       pixelApiToken: string | null
+      pageId: string | null
       timezoneId: number | null
       timezoneName: string | null
       timezoneOffsetHoursUtc: number | null
@@ -346,6 +390,9 @@ class CampaignsService {
         configured: boolean
         config: {
           adAccountId: string
+          accessToken: string
+          pageId: string | null
+          instagramAccountId: string | null
           pixelId: string | null
           pixelApiToken: string | null
           timezoneId: number | null
@@ -454,6 +501,37 @@ class CampaignsService {
       }
     } catch (error) {
       return { success: false, pages: [] }
+    }
+  }
+
+  async getConnectedSocialProfiles(params: {
+    accessToken?: string
+    pageId?: string
+    instagramAccountId?: string
+  } = {}): Promise<{
+    success: boolean
+    connected: boolean
+    updatedAt: string | null
+    profiles: ConnectedSocialProfile[]
+    error?: string
+  }> {
+    try {
+      const data = await apiClient.get('/meta/social-profiles', {
+        params
+      }) as {
+        connected?: boolean
+        updatedAt?: string
+        profiles?: ConnectedSocialProfile[]
+      }
+
+      return {
+        success: true,
+        connected: Boolean(data.connected),
+        updatedAt: data.updatedAt || null,
+        profiles: Array.isArray(data.profiles) ? data.profiles : []
+      }
+    } catch (error) {
+      return { success: false, connected: false, updatedAt: null, profiles: [] }
     }
   }
 

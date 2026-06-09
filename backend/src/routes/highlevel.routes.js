@@ -17,6 +17,8 @@ import {
   listPrices,
   createProduct,
   createPrice,
+  updateProduct,
+  deleteProduct,
   syncProducts,
   createInvoice,
   createInvoiceSchedule,
@@ -31,12 +33,16 @@ import {
   text2Pay,
   searchContacts,
   getContactById,
+  sendConversationMessage,
   saveInvoiceConfig,
   getLocationUsers,
   getUsersByIds
 } from '../controllers/highlevelController.js'
+import { requireAuth } from '../middleware/authMiddleware.js'
 
 const router = express.Router()
+
+router.use(requireAuth)
 
 router.post('/test-connection', testConnection)
 router.post('/test', testConnection) // Alias para compatibilidad
@@ -57,6 +63,9 @@ router.post('/custom-labels', updateCustomLabels)
 router.post('/contacts/search', searchContacts)
 router.get('/contacts/:id', getContactById)
 
+// Conversations
+router.post('/conversations/messages', sendConversationMessage)
+
 // Users
 router.get('/users', getLocationUsers)
 router.post('/users/by-ids', getUsersByIds)
@@ -68,6 +77,8 @@ router.post('/invoice-config', saveInvoiceConfig)
 router.get('/products', listProducts)
 router.post('/products', createProduct)
 router.post('/products/sync', syncProducts)
+router.put('/products/:productId', updateProduct)
+router.delete('/products/:productId', deleteProduct)
 router.get('/products/:productId/prices', listPrices)
 router.post('/products/:productId/prices', createPrice)
 router.post('/invoices', createInvoice)

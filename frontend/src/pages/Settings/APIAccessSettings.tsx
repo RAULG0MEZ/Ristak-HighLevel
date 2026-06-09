@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { ArrowRight, BookOpen, CheckCircle, Copy, KeyRound, RefreshCw, Trash2, XCircle } from 'lucide-react'
+import { ArrowRight, BookOpen, CheckCircle, ChevronDown, Copy, KeyRound, RefreshCw, Trash2, XCircle } from 'lucide-react'
 import { Button, Card } from '@/components/common'
 import { useAuth } from '@/contexts/AuthContext'
 import { useNotification } from '@/contexts/NotificationContext'
@@ -15,6 +15,12 @@ interface ApiTokenMetadata {
   revokedAt: string | null
 }
 
+interface WebhookEndpoint {
+  label: string
+  description: string
+  path: string
+}
+
 export const APIAccessSettings: React.FC = () => {
   const { user } = useAuth()
   const { showToast, showConfirm } = useNotification()
@@ -24,10 +30,43 @@ export const APIAccessSettings: React.FC = () => {
   const [isLoadingApiToken, setIsLoadingApiToken] = useState(false)
   const [isRotatingApiToken, setIsRotatingApiToken] = useState(false)
   const [isRevokingApiToken, setIsRevokingApiToken] = useState(false)
+  const [areWebhooksOpen, setAreWebhooksOpen] = useState(false)
 
-  const origin = API_URL || window.location.origin
+  const origin = (API_URL || window.location.origin).replace(/\/+$/, '')
   const externalApiBaseUrl = `${origin}/api/external`
   const mcpServerUrl = `${origin}/api/mcp`
+  const webhookEndpoints: WebhookEndpoint[] = [
+    {
+      label: 'Contactos',
+      description: 'Recibe datos del contacto, incluyendo campos personalizados cuando el sistema los mande.',
+      path: '/webhook/contact'
+    },
+    {
+      label: 'Citas',
+      description: 'Recibe citas nuevas o actualizadas con estados como confirmed, cancelled, showed o noshow.',
+      path: '/webhook/appointment'
+    },
+    {
+      label: 'Citas asistidas',
+      description: 'Úsala cuando el sistema mande un evento separado para marcar que la persona sí asistió.',
+      path: '/webhook/appointment/showed'
+    },
+    {
+      label: 'Pagos',
+      description: 'Recibe pagos con estados como paid, succeeded, refunded, partial o pending.',
+      path: '/webhook/payment'
+    },
+    {
+      label: 'Plan de pagos',
+      description: 'Recibe cambios de planes programados: activo, pausado, cancelado, completado o fallido.',
+      path: '/webhook/payment-plan'
+    },
+    {
+      label: 'Reembolsos',
+      description: 'Recibe reembolsos y marca el pago relacionado como reembolsado.',
+      path: '/webhook/refund'
+    }
+  ]
 
   const authHeaders = () => {
     const token = localStorage.getItem('auth_token')
@@ -265,6 +304,123 @@ export const APIAccessSettings: React.FC = () => {
             </Button>
           </div>
 
+          <div style={{
+            marginTop: '1.5rem',
+            paddingTop: '1.5rem',
+            borderTop: '1px solid rgba(148, 163, 184, 0.16)'
+          }}>
+            <button
+              type="button"
+              onClick={() => setAreWebhooksOpen((current) => !current)}
+              aria-expanded={areWebhooksOpen}
+              aria-controls="api-webhooks-panel"
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '1rem',
+                padding: '0.875rem 0',
+                border: 0,
+                background: 'transparent',
+                cursor: 'pointer',
+                textAlign: 'left'
+              }}>
+              <span style={{ display: 'grid', gap: '0.25rem', minWidth: 0 }}>
+                <span style={{
+                  color: 'var(--color-text-primary)',
+                  fontSize: '1rem',
+                  fontWeight: 600
+                }}>
+                  Webhooks
+                </span>
+                <span style={{
+                  color: 'var(--color-text-tertiary)',
+                  fontSize: '0.875rem',
+                  lineHeight: 1.45
+                }}>
+                  URLs POST listas para recibir eventos externos.
+                </span>
+              </span>
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                color: 'var(--color-text-secondary)',
+                fontSize: '0.8125rem',
+                fontWeight: 600,
+                whiteSpace: 'nowrap'
+              }}>
+                {webhookEndpoints.length} URLs
+                <ChevronDown
+                  size={18}
+                  style={{
+                    transition: 'transform 160ms ease',
+                    transform: areWebhooksOpen ? 'rotate(180deg)' : 'rotate(0deg)'
+                  }}
+                />
+              </span>
+            </button>
+
+            {areWebhooksOpen && (
+              <div id="api-webhooks-panel" style={{ paddingTop: '0.25rem' }}>
+                <p style={{
+                  fontSize: '0.875rem',
+                  color: 'var(--color-text-tertiary)',
+                  margin: '0 0 1rem 0',
+                  maxWidth: '48rem'
+                }}>
+                  Copia la URL del evento y pégala en el sistema que lo va a mandar. Cuando ese sistema haga POST, Ristak recibirá la información.
+                </p>
+
+                <div style={{ display: 'grid', gap: '0.875rem' }}>
+                  {webhookEndpoints.map((endpoint) => {
+                    const url = `${origin}${endpoint.path}`
+
+                    return (
+                      <div
+                        key={endpoint.path}
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 18rem), 1fr))',
+                          gap: '1rem',
+                          alignItems: 'center',
+                          padding: '0.875rem 0',
+                          borderBottom: '1px solid rgba(148, 163, 184, 0.12)'
+                        }}
+                      >
+                        <div>
+                          <p style={{
+                            margin: '0 0 0.25rem 0',
+                            color: 'var(--color-text-primary)',
+                            fontSize: '0.925rem',
+                            fontWeight: 600
+                          }}>
+                            {endpoint.label}
+                          </p>
+                          <p style={{
+                            margin: 0,
+                            color: 'var(--color-text-tertiary)',
+                            fontSize: '0.78rem',
+                            lineHeight: 1.45
+                          }}>
+                            {endpoint.description}
+                          </p>
+                        </div>
+
+                        <ReadonlyField
+                          label={`URL POST para ${endpoint.label}`}
+                          value={url}
+                          onCopy={() => copyText(url, `webhook de ${endpoint.label}`)}
+                        />
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
           <a
             href="/api-docs"
             target="_blank"
@@ -354,13 +510,14 @@ const ReadonlyField: React.FC<FieldProps> = ({ label, value, onCopy }) => (
     }}>
       {label}
     </label>
-    <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+    <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', minWidth: 0 }}>
       <input
         type="text"
         value={value}
         readOnly
         style={{
           width: '100%',
+          minWidth: 0,
           height: '2.75rem',
           padding: '0 1rem',
           background: 'rgba(148, 163, 184, 0.06)',

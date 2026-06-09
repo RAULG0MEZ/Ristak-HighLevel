@@ -1,16 +1,12 @@
 .container {
   --chart-loading-fill: var(--app-skeleton-base);
-  --funnel-progress-fill: linear-gradient(90deg, #050505 0%, #0a0a0a 100%);
-
-  padding: 1.5rem;
-}
-
-:global(body.dark) .container {
   --funnel-progress-fill: linear-gradient(
     90deg,
-    var(--design-chart-secondary, var(--color-text-secondary)),
-    var(--design-chart-muted, var(--color-text-tertiary))
+    var(--design-chart-primary, var(--color-primary)) 0%,
+    color-mix(in srgb, var(--design-chart-primary, var(--color-primary)) 82%, var(--color-background-secondary) 18%) 100%
   );
+
+  padding: 1.5rem;
 }
 
 .header {
@@ -58,8 +54,8 @@
 }
 
 .visibilityButton:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
+  outline: none;
+  box-shadow: var(--ristak-focus-ring);
 }
 
 .visibilityButton:disabled {
@@ -214,8 +210,8 @@
 }
 
 .stageButton:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 4px;
+  outline: none;
+  box-shadow: var(--ristak-focus-ring);
   border-radius: 0.5rem;
 }
 
@@ -288,7 +284,7 @@
 .conversionRate {
   font-size: 0.75rem;
   font-weight: 600;
-  color: var(--design-chart-primary, var(--color-success));
+  color: var(--design-chart-primary, var(--color-status-success));
 }
 
 .progressBar {
@@ -303,19 +299,6 @@
   background: var(--funnel-progress-fill);
   border-radius: 9999px;
   transition: width 1s ease-out;
-}
-
-:global(body:not(.dark) [data-ristak-chart='funnel'] [class*='progressFill']) {
-  background: linear-gradient(90deg, #050505 0%, #0a0a0a 100%) !important;
-}
-
-:global(body.dark [data-ristak-chart='funnel'] [data-funnel-progress-fill]) {
-  background: linear-gradient(
-    90deg,
-    var(--design-chart-secondary, var(--color-text-secondary)),
-    var(--design-chart-muted, var(--color-text-tertiary))
-  ) !important;
-  opacity: 1 !important;
 }
 
 .connector {
@@ -365,7 +348,7 @@
 }
 
 .insightHighlight {
-  color: var(--design-chart-primary, var(--color-success));
+  color: var(--design-chart-primary, var(--color-status-success));
   font-size: 1rem;
 }
 

@@ -5,6 +5,7 @@ export { Modal } from './Modal'
 export { TabList } from './TabList'
 export { Logo } from './Logo'
 export { PageContainer } from './PageContainer'
+export { PageHeader } from './PageHeader'
 
 // Componentes de datos
 export { KpiCard } from './KpiCard'
@@ -43,6 +44,8 @@ export { Icon } from './Icon'
 export { Badge } from './Badge'
 export type { BadgeVariant } from './Badge'
 export { CustomSelect } from './CustomSelect'
+export { NumberInput } from './NumberInput'
+export type { NumberInputProps } from './NumberInput'
 export { Loading } from './Loading'
 export {
   DropdownMenu,

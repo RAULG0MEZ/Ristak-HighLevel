@@ -78,6 +78,13 @@
   width: clamp(260px, 32vw, 420px);
 }
 
+.selectionActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+}
+
 .actionGroup {
   display: flex;
   gap: var(--spacing-xs);
@@ -185,6 +192,77 @@
   text-transform: uppercase;
   letter-spacing: var(--design-table-header-spacing, 0.025em);
   border-bottom: 1px solid var(--design-table-border, rgba(148, 163, 184, 0.18));
+}
+
+.selectionCell {
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
+  padding-left: var(--spacing-sm) !important;
+  padding-right: var(--spacing-sm) !important;
+  text-align: center !important;
+}
+
+.selectionCheckbox {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--color-primary);
+  transition: opacity var(--transition-fast);
+}
+
+html body input.selectionCheckbox {
+  width: 16px !important;
+  min-width: 16px !important;
+  height: 16px !important;
+  min-height: 16px !important;
+  border-radius: 4px !important;
+  transform: none !important;
+}
+
+body.light input.selectionCheckbox:not(:checked):hover:not(:disabled) {
+  border-color: var(--color-primary) !important;
+  background: color-mix(in srgb, var(--color-primary) 8%, #ffffff 92%) !important;
+  box-shadow: inset 0 0 0 1px rgba(var(--color-primary-rgb), 0.16) !important;
+}
+
+body.light input.selectionCheckbox:checked,
+body.light input.selectionCheckbox:checked:hover:not(:disabled) {
+  border-color: var(--color-primary) !important;
+  background: var(--color-primary) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+body.light input.selectionCheckbox:checked::after,
+body.light input.selectionCheckbox:checked:hover::after {
+  border-color: var(--color-text-onAccent) !important;
+  opacity: 1 !important;
+}
+
+.selectionCheckbox:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.table tbody .selectionCheckbox:not(:checked) {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.table tbody tr:hover .selectionCheckbox,
+.table tbody tr:focus-within .selectionCheckbox,
+.table tbody .selectionCheckbox:checked {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .table tbody .selectionCheckbox:not(:checked) {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 .headerCell {
@@ -372,6 +450,10 @@
     min-width: 0;
     width: auto;
     flex: 1;
+  }
+
+  .selectionActions {
+    margin-left: auto;
   }
 }
 
