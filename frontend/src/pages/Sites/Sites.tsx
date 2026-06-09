@@ -14745,9 +14745,6 @@ const PageInspector: React.FC<{
               onCommit={onSaveSite}
             />
           </div>
-          {isFormSite(site) && (
-            <FormGlobalStyleControls site={site} onPatchTheme={onPatchTheme} onSaveSite={onSaveSite} />
-          )}
           {metaPixelConnected && isLanding(site) && activePage && (
             <>
               <div className={styles.panelSubheader}>Conversion de esta pagina</div>
@@ -14854,6 +14851,9 @@ const PageInspector: React.FC<{
                 </>
               )}
             </>
+          )}
+          {isFormSite(site) && (
+            <FormGlobalStyleControls site={site} onPatchTheme={onPatchTheme} onSaveSite={onSaveSite} />
           )}
         </div>
         </>
