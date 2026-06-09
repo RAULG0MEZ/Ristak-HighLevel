@@ -115,6 +115,7 @@ const MESSAGE_INFO_SWIPE_ACTIVATE_THRESHOLD = 9
 const MESSAGE_INFO_SWIPE_RENDER_STEP = 2
 const MESSAGE_ACTION_LONG_PRESS_MS = 460
 const MESSAGE_ACTION_MOVE_TOLERANCE = 9
+const MESSAGE_ACTION_LONG_PRESS_VIBRATION_MS = 14
 const MAX_VOICE_MESSAGE_BYTES = 16 * 1024 * 1024
 const MAX_DOCUMENT_ATTACHMENT_BYTES = 20 * 1024 * 1024
 const DOCUMENT_ATTACHMENT_ACCEPT = [
@@ -1419,6 +1420,15 @@ function getMessageActionText(message: ChatMessage) {
   const text = message.text.trim()
   if (text) return text
   return getMessageAttachmentActionLabel(message) || 'Mensaje'
+}
+
+function triggerMessageActionHapticFeedback() {
+  if (typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') return
+  try {
+    navigator.vibrate(MESSAGE_ACTION_LONG_PRESS_VIBRATION_MS)
+  } catch {
+    // intentionally ignore
+  }
 }
 
 async function copyTextToClipboard(text: string) {
@@ -4686,11 +4696,9 @@ export const PhoneChat: React.FC = () => {
     const align: MessageActionMenuAlign = message.direction === 'outbound' ? 'end' : 'start'
     const preferredLeft = align === 'end' ? rect.right - menuWidth : rect.left
     const left = Math.max(12, Math.min(Math.round(preferredLeft), viewportWidth - menuWidth - 12))
-    const placement: MessageActionMenuPlacement = rect.bottom > viewportHeight - 250 && rect.top > 210 ? 'above' : 'below'
     const estimatedMenuHeight = scheduled ? 126 : 300
-    const top = placement === 'above'
-      ? Math.max(12, Math.round(rect.top - estimatedMenuHeight - 12))
-      : Math.max(12, Math.min(Math.round(rect.top), viewportHeight - 96))
+    const maxSafeTop = viewportHeight - estimatedMenuHeight - 12
+    const top = Math.max(12, Math.min(Math.round(rect.top), Math.max(12, Math.round(maxSafeTop))))
 
     setMessageActionMenu({
       messageId: message.id,
@@ -4702,7 +4710,7 @@ export const PhoneChat: React.FC = () => {
         bubbleWidth,
         height: Math.round(rect.height)
       },
-      placement,
+      placement: 'below',
       align
     })
   }, [actionSheetDismiss, clearMessageActionPress, conversationVisible])
@@ -4717,6 +4725,9 @@ export const PhoneChat: React.FC = () => {
     clearMessageActionPress()
     const element = event.currentTarget
     const timerId = window.setTimeout(() => {
+      if (event.pointerType !== 'mouse') {
+        triggerMessageActionHapticFeedback()
+      }
       openMessageActionMenu(message, element)
     }, MESSAGE_ACTION_LONG_PRESS_MS)
 
@@ -7604,7 +7615,7 @@ export const PhoneChat: React.FC = () => {
             disabled={voiceProcessing}
             aria-label={voiceRecording ? 'Eliminar grabación' : 'Eliminar audio'}
           >
-            <Trash2 size={32} />
+            <Trash2 size={24} />
           </button>
           <button
             type="button"
@@ -7613,16 +7624,16 @@ export const PhoneChat: React.FC = () => {
             disabled={voiceProcessing}
             aria-label={primaryLabel}
           >
-            <PrimaryIcon size={voiceProcessing ? 25 : voiceRecording || voicePreviewPlaying ? 28 : 26} className={voiceProcessing ? styles.spinIcon : undefined} />
+            <PrimaryIcon size={voiceProcessing ? 19 : voiceRecording || voicePreviewPlaying ? 22 : 20} className={voiceProcessing ? styles.spinIcon : undefined} />
           </button>
           <button
             type="button"
-            className={`${styles.voiceComposerButton} ${styles.voiceSendAudioButton}`}
+            className={`${styles.voiceComposerButton} ${styles.composerSendButton}`}
             onClick={handleSendVoiceFromPanel}
             disabled={voiceProcessing}
             aria-label="Enviar audio"
           >
-            <Send size={36} />
+            {voiceProcessing ? <Loader2 size={18} className={styles.spinIcon} /> : <ArrowRight size={18} />}
           </button>
         </div>
       </div>
@@ -7689,7 +7700,7 @@ export const PhoneChat: React.FC = () => {
     return (
       <div className={`${styles.senderBar} ${styles.replyWindowSenderBar}`}>
         <span className={styles.replyWindowNotice}>
-          <Clock size={14} />
+          <Clock size={12} />
           Fuera de 24 h · se enviará por QR
         </span>
       </div>
@@ -7718,7 +7729,7 @@ export const PhoneChat: React.FC = () => {
         disabled={aiSending || !aiMessageText.trim()}
         aria-label="Enviar mensaje al agente"
       >
-        {aiSending ? <Loader2 size={20} className={styles.spinIcon} /> : <Send size={22} />}
+        {aiSending ? <Loader2 size={18} className={styles.spinIcon} /> : <Send size={18} />}
       </button>
     </div>
   )
@@ -9408,14 +9419,14 @@ export const PhoneChat: React.FC = () => {
                   {composerBlockedByReplyWindow ? (
                     <div className={styles.replyWindowBlockedComposer}>
                       <span className={styles.replyWindowBlockedIcon}>
-                        <Clock size={18} />
+                        <Clock size={12} />
                       </span>
                       <span className={styles.replyWindowBlockedText}>
                         <strong>Fuera de 24 horas</strong>
                         <small>Manda una plantilla para volver a escribirle.</small>
                       </span>
                       <button type="button" onClick={handleOpenTemplatesSheet} aria-label="Enviar plantilla">
-                        <FileText size={20} />
+                        <FileText size={14} />
                       </button>
                     </div>
                   ) : (
@@ -9425,7 +9436,7 @@ export const PhoneChat: React.FC = () => {
                       ) : (
                         <>
                           <button type="button" className={styles.composerPlus} onClick={() => setSheet('attachments')} aria-label="Abrir adjuntos">
-                            <Plus size={34} />
+                            <Plus size={24} />
                           </button>
                           <div className={`${styles.messageInputWrap} ${canOpenScheduleSheet ? styles.messageInputWrapWithSchedule : ''}`}>
                             <div
@@ -9458,7 +9469,7 @@ export const PhoneChat: React.FC = () => {
                                 aria-label="Programar mensaje"
                                 title="Programar mensaje"
                               >
-                                <Clock size={19} />
+                                <Clock size={12} />
                               </button>
                             )}
                           </div>
@@ -9472,7 +9483,7 @@ export const PhoneChat: React.FC = () => {
                               aria-hidden={hasComposerContent}
                               aria-label="Cámara"
                             >
-                              <Camera size={29} />
+                              <Camera size={20} />
                             </button>
                             <button
                               type="button"
@@ -9483,7 +9494,7 @@ export const PhoneChat: React.FC = () => {
                               onClick={handleVoiceOrSendButtonClick}
                               aria-label={voiceRecording ? 'Detener grabación' : canSendMessage ? 'Enviar mensaje' : 'Grabar mensaje de voz'}
                             >
-                              {canSendMessage ? <ArrowRight size={23} /> : <Mic size={30} />}
+                              {canSendMessage ? <ArrowRight size={18} /> : <Mic size={20} />}
                             </button>
                           </div>
                         </>
