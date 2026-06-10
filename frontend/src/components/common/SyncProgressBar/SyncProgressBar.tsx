@@ -7,6 +7,7 @@ import {
   CreditCard,
   Loader2,
   Megaphone,
+  MessageCircle,
   Users
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
@@ -23,6 +24,7 @@ interface SyncProgress {
   contacts: SyncModuleProgress
   appointments: SyncModuleProgress
   payments: SyncModuleProgress
+  conversations?: SyncModuleProgress
   metaAds?: SyncModuleProgress & { synced?: boolean; count?: number }
 }
 
@@ -37,7 +39,7 @@ interface SyncProgressBarProps {
   onClose?: () => void
 }
 
-type StepKey = 'contacts' | 'appointments' | 'payments' | 'metaAds'
+type StepKey = 'contacts' | 'appointments' | 'payments' | 'conversations' | 'metaAds'
 type StepState = 'pending' | 'active' | 'completed' | 'error'
 
 type StatusMeta = {
@@ -86,6 +88,12 @@ const STEP_CONFIGS: StepConfig[] = [
     label: 'Pagos',
     icon: CreditCard,
     description: 'Integrando transacciones recientes'
+  },
+  {
+    key: 'conversations',
+    label: 'Chats',
+    icon: MessageCircle,
+    description: 'Importando historial de conversaciones'
   },
   {
     key: 'metaAds',
@@ -251,7 +259,7 @@ export const SyncProgressBar: React.FC<SyncProgressBarProps> = ({ onClose }) => 
     const resolvedSteps = STEP_CONFIGS
       .map<StepData | null>((config) => {
         const moduleData = progress[config.key as keyof SyncProgress] as SyncModuleProgress | undefined
-        if (config.key === 'metaAds' && !moduleData) {
+        if ((config.key === 'metaAds' || config.key === 'conversations') && !moduleData) {
           return null
         }
 
