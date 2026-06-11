@@ -7642,11 +7642,10 @@ const importedSelectableButtonActions = new Set<ImportedButtonAction>(importedBu
 const importedChoiceOnlyActions: ImportedButtonAction[] = ['disqualify_after_submit']
 const importedButtonActions = new Set<ImportedButtonAction>(['none', ...importedSelectableButtonActions, ...importedChoiceOnlyActions])
 
-// Quick per-option action selector for choice fields (filtering people).
+// Quick per-option action selector for choice fields. Disqualification flows
+// se arman enviando la opcion a una pagina especifica (p.ej. "no calificas").
 const importedChoiceQuickActions: Array<{ value: '' | ImportedButtonAction; label: string }> = [
   { value: '', label: 'No hacer nada' },
-  { value: 'disqualify', label: 'Descalificar inmediatamente' },
-  { value: 'disqualify_after_submit', label: 'Descalificar al enviar formulario' },
   { value: 'submit', label: 'Enviar formulario' },
   { value: 'specific_page', label: 'Enviar a página específica' },
   { value: 'url', label: 'Redirigir a URL' }
@@ -10011,7 +10010,7 @@ const ImportedHtmlEditorPanel: React.FC<{
               </div>
             </div>
             <p className={styles.importedFormFieldsHint}>
-              Edita cada campo desde aqui: etiqueta, opciones, obligatorio y acciones para calificar o descalificar.
+              Edita cada campo desde aqui: etiqueta, opciones, obligatorio y a donde manda cada opcion.
             </p>
             <div className={styles.importedFormFieldsList}>
               {panelFormFields.map(field => (
@@ -10304,7 +10303,7 @@ const ImportedHtmlEditorPanel: React.FC<{
               ))}
             </div>
             <p className={styles.importedFieldOptionsHint}>
-              Usa "Descalificar" en las opciones que no son tu cliente ideal; "Enviar a página específica" y "Redirigir a URL" navegan después de enviar el formulario.
+              "Enviar a página específica" y "Redirigir a URL" navegan después de enviar el formulario: úsalas para mandar a cada opción a su camino (por ejemplo, una página de "no calificas").
             </p>
             <div className={styles.importedButtonActionFooter}>
               <Button type="button" variant="secondary" size="sm" onClick={clearInlineSelection} disabled={contentSaving}>
@@ -10444,7 +10443,7 @@ const ImportedHtmlEditorPanel: React.FC<{
                   </div>
                 ))}
                 <p className={styles.importedFieldOptionsHint}>
-                  Usa "Descalificar" en las opciones que no son tu cliente ideal; "Enviar a página específica" y "Redirigir a URL" navegan después de enviar el formulario.
+                  "Enviar a página específica" y "Redirigir a URL" navegan después de enviar el formulario: úsalas para mandar a cada opción a su camino (por ejemplo, una página de "no calificas").
                 </p>
               </div>
             )}
