@@ -1,7 +1,7 @@
 import { tool } from '@openai/agents'
 import { z } from 'zod'
 import { db } from '../../config/database.js'
-import { listLocalCalendars } from '../../services/localCalendarService.js'
+import { listLocalCalendars, getLocalFreeSlots } from '../../services/localCalendarService.js'
 import { createAppointment, updateAppointment, deleteEvent } from '../../controllers/calendarsController.js'
 import { invokeController, toToolResult } from '../invokeController.js'
 
@@ -66,6 +66,23 @@ export const listAppointmentsTool = tool({
 
     const rows = await db.all(sql, params)
     return { ok: true, total: rows.length, appointments: rows.map(APPOINTMENT_FIELDS) }
+  }
+})
+
+export const getFreeSlotsTool = tool({
+  name: 'get_free_slots',
+  description: 'Obtiene los horarios disponibles de un calendario en un rango de fechas, según su configuración de horarios y las citas ya agendadas. Úsala antes de proponer horarios al usuario.',
+  parameters: z.object({
+    calendarId: z.string().describe('ID del calendario (usa list_calendars)'),
+    startDate: z.string().describe('Fecha inicial YYYY-MM-DD'),
+    endDate: z.string().describe('Fecha final YYYY-MM-DD')
+  }),
+  execute: async ({ calendarId, startDate, endDate }) => {
+    const slots = await getLocalFreeSlots(calendarId, startDate, endDate, null)
+    if (!Array.isArray(slots) || !slots.length) {
+      return { ok: true, total: 0, slots: [], note: 'Sin horarios disponibles en ese rango (o el calendario no existe).' }
+    }
+    return { ok: true, total: slots.length, slots }
   }
 })
 
@@ -151,6 +168,6 @@ export const cancelAppointmentTool = tool({
   }
 })
 
-export const appointmentReadTools = [listCalendarsTool, listAppointmentsTool]
+export const appointmentReadTools = [listCalendarsTool, listAppointmentsTool, getFreeSlotsTool]
 export const appointmentWriteTools = [createAppointmentTool, updateAppointmentTool, cancelAppointmentTool]
 export const appointmentTools = [...appointmentReadTools, ...appointmentWriteTools]

@@ -11,18 +11,20 @@
 import { contactReadTools, contactTools } from './tools/contactTools.js'
 import { appointmentTools, appointmentReadTools } from './tools/appointmentTools.js'
 import { paymentTools, paymentReadTools } from './tools/paymentTools.js'
+import { paymentFlowTools } from './tools/paymentFlowTools.js'
 import { expenseTools } from './tools/expenseTools.js'
 import { adsTools } from './tools/adsTools.js'
 import { socialTools } from './tools/socialTools.js'
 import { memoryTools } from './tools/memoryTools.js'
 
+// Columnas reales de ai_agent_config (snake_case, como las devuelve getAIAgentConfig)
 const BUSINESS_CONTEXT_FIELDS = {
-  business: 'businessContext',
-  market: 'marketContext',
-  idealCustomer: 'idealCustomer',
-  location: 'locationContext',
-  competitors: 'competitorsContext',
-  brandVoice: 'brandVoice'
+  business: 'business_context',
+  market: 'market_context',
+  idealCustomer: 'ideal_customer',
+  location: 'location_context',
+  competitors: 'competitors_context',
+  brandVoice: 'brand_voice'
 }
 
 export const AGENT_CATEGORIES = [
@@ -37,6 +39,7 @@ Tu trabajo: consultar disponibilidad y citas, agendarlas, reprogramarlas, cancel
 Reglas de tu especialidad:
 - Antes de agendar, identifica el contacto con search_contacts; si no existe, créalo con create_contact.
 - Usa list_calendars para elegir el calendario correcto; si hay varios y no es obvio, pregunta cuál usar.
+- Antes de proponer horarios, consulta la disponibilidad real con get_free_slots; no propongas horarios sin verificar.
 - Las horas que te dé el usuario están en la zona horaria de la cuenta (te la doy abajo). Pasa los horarios a las herramientas en ISO 8601 incluyendo el offset de esa zona.
 - Cuando confirmes una cita al usuario, repite fecha, hora local y nombre del contacto.`,
     tools: [...appointmentTools, ...contactReadTools, ...memoryTools]
@@ -47,14 +50,17 @@ Reglas de tu especialidad:
     icon: 'credit-card',
     description: 'Registrar, editar y consultar pagos y transacciones.',
     contextFields: ['business', 'brandVoice'],
-    instructions: `Eres el especialista en PAGOS y transacciones de este negocio.
-Tu trabajo: registrar pagos manuales, editarlos, eliminarlos y responder preguntas de ingresos/transacciones.
+    instructions: `Eres el especialista en PAGOS, cobros y transacciones de este negocio.
+Tu trabajo: registrar pagos manuales, editarlos, eliminarlos, responder preguntas de ingresos, crear links de pago y planes de parcialidades, y gestionar cobros programados.
 Reglas de tu especialidad:
-- Antes de registrar un pago, identifica el contacto con search_contacts; usa su contactId.
+- Antes de registrar un pago o cobrar, identifica el contacto con search_contacts; usa su contactId.
 - Si el usuario no especifica moneda, usa la de la cuenta (no inventes otra).
 - Para totales o resúmenes usa list_payments con el rango de fechas correcto y reporta el totalAmount que devuelve.
-- Nunca modifiques o elimines un pago sin confirmar primero con el usuario el pago exacto (monto, fecha, contacto).`,
-    tools: [...paymentTools, ...contactReadTools, ...memoryTools]
+- Para cobrar un producto del catálogo, busca su precio real con list_products.
+- Links de pago y parcialidades: SIEMPRE pregunta primero por cuál canal enviar el cobro (correo, WhatsApp, SMS o todos), resume el cobro completo y pide aprobación; solo entonces llama la herramienta con confirm=true. Estas funciones requieren HighLevel conectado: si la herramienta devuelve error de configuración, explícalo.
+- En un plan de parcialidades, la suma del primer pago + pagos restantes debe ser exactamente el total.
+- Nunca modifiques, canceles o elimines un pago/cobro sin confirmar primero con el usuario el registro exacto (monto, fecha, contacto).`,
+    tools: [...paymentTools, ...paymentFlowTools, ...contactReadTools, ...memoryTools]
   },
   {
     id: 'redes',
@@ -126,6 +132,7 @@ Reglas:
     tools: [
       ...appointmentTools,
       ...paymentTools,
+      ...paymentFlowTools,
       ...contactTools,
       ...expenseTools,
       ...adsTools,

@@ -1,4 +1,4 @@
-import { Agent, Runner, OpenAIProvider, user, assistant } from '@openai/agents'
+import { Agent, Runner, OpenAIProvider, assistant, webSearchTool } from '@openai/agents'
 import { logger } from '../utils/logger.js'
 import { getAccountTimezone } from '../utils/dateUtils.js'
 import { getAIAgentConfig } from '../services/aiAgentService.js'
@@ -17,13 +17,16 @@ const MAX_TURNS = 12
 const DEFAULT_MODEL = 'gpt-5.5'
 const CONTEXT_FIELD_LIMIT = 4000
 
+const MAX_CHAT_ATTACHMENTS = 8
+const MAX_ATTACHMENT_TEXT_CHARS = 18000
+
 const CONTEXT_FIELD_LABELS = {
-  businessContext: 'Contexto del negocio',
-  marketContext: 'Mercado y nicho',
-  idealCustomer: 'Cliente ideal',
-  locationContext: 'Zona geográfica',
-  competitorsContext: 'Competidores y referencias',
-  brandVoice: 'Tono y voz de marca'
+  business_context: 'Contexto del negocio',
+  market_context: 'Mercado y nicho',
+  ideal_customer: 'Cliente ideal',
+  location_context: 'Zona geográfica',
+  competitors_context: 'Competidores y referencias',
+  brand_voice: 'Tono y voz de marca'
 }
 
 const BASE_INSTRUCTIONS = `Eres un agente IA de Ristak, el panel de operación de este negocio. Respondes SIEMPRE en español, claro y directo, como un colaborador de confianza.
@@ -34,6 +37,7 @@ Reglas generales (no negociables):
 - Para acciones destructivas (eliminar contacto, cita, pago o costo) SIEMPRE pide confirmación explícita al usuario en un mensaje y ejecuta solo cuando responda que sí.
 - Si una herramienta devuelve { ok: false }, lee el error, corrige y reintenta o explica al usuario qué falta.
 - Si no encuentras datos, dilo claramente ("no encontré...") en lugar de suponer.
+- Puedes ver imágenes, PDFs y archivos de texto que el usuario adjunte; los videos llegan solo como miniatura.
 - Responde corto: resultados primero, detalle solo si aporta.`
 
 function truncate(value, limit) {
@@ -80,18 +84,99 @@ Interpreta fechas relativas ("hoy", "mañana", "este mes") con esta fecha y zona
   return sections.join('\n\n')
 }
 
-function buildInputItems(messages) {
+function isDataUrl(value) {
+  return typeof value === 'string' && value.startsWith('data:') && value.includes(';base64,')
+}
+
+/**
+ * Convierte un adjunto del chat (imagen, video, PDF, texto, archivo) en partes
+ * de contenido del protocolo del Agents SDK. Misma lógica que el flujo legacy.
+ */
+function attachmentToContentParts(attachment) {
+  if (!attachment || typeof attachment !== 'object') return []
+
+  const name = String(attachment.name || 'archivo').slice(0, 180)
+  const kind = String(attachment.kind || '').toLowerCase()
+  const summary = `Adjunto: ${name} (tipo=${attachment.mimeType || kind || 'desconocido'})`
+  const parts = []
+
+  if (kind === 'image' && isDataUrl(attachment.dataUrl)) {
+    parts.push({ type: 'input_image', image: attachment.dataUrl })
+  } else if (kind === 'video' && isDataUrl(attachment.thumbnailDataUrl)) {
+    parts.push({ type: 'input_text', text: `${summary}\nEste video se envió con una miniatura visual para analizar el encuadre/contenido visible.` })
+    parts.push({ type: 'input_image', image: attachment.thumbnailDataUrl })
+  } else if (typeof attachment.text === 'string' && attachment.text.trim()) {
+    parts.push({ type: 'input_text', text: `${summary}\nContenido del archivo ${name}:\n${attachment.text.slice(0, MAX_ATTACHMENT_TEXT_CHARS)}` })
+  } else if (isDataUrl(attachment.dataUrl)) {
+    parts.push({ type: 'input_file', filename: name, file: attachment.dataUrl })
+  } else {
+    parts.push({ type: 'input_text', text: `${summary} (sin contenido legible adjunto)` })
+  }
+
+  return parts
+}
+
+export function buildInputItems(messages) {
   const recent = (Array.isArray(messages) ? messages : [])
-    .filter((message) => message && typeof message.content === 'string' && message.content.trim())
+    .filter((message) => {
+      if (!message) return false
+      const hasText = typeof message.content === 'string' && message.content.trim()
+      const hasAttachments = Array.isArray(message.attachments) && message.attachments.length
+      return hasText || hasAttachments
+    })
     .slice(-MESSAGE_HISTORY_LIMIT)
 
   return recent.map((message) => {
-    let text = message.content.trim()
+    let text = typeof message.content === 'string' ? message.content.trim() : ''
     if (message.role === 'user' && message.selectedClarificationOption?.value) {
       text = `${text}\n[Opción seleccionada: ${message.selectedClarificationOption.value}]`
     }
-    return message.role === 'assistant' ? assistant(text) : user(text)
+
+    if (message.role === 'assistant') {
+      return assistant(text)
+    }
+
+    const attachmentParts = (Array.isArray(message.attachments) ? message.attachments : [])
+      .slice(0, MAX_CHAT_ATTACHMENTS)
+      .flatMap(attachmentToContentParts)
+
+    const content = [
+      ...(text ? [{ type: 'input_text', text }] : []),
+      ...attachmentParts
+    ]
+
+    return {
+      role: 'user',
+      content: content.length ? content : [{ type: 'input_text', text: '(mensaje vacío)' }]
+    }
   })
+}
+
+/**
+ * Extrae fuentes (citas de URL de la búsqueda web) de las respuestas crudas del modelo.
+ */
+function extractSources(rawResponses = []) {
+  const sources = []
+  const seen = new Set()
+
+  for (const response of rawResponses) {
+    for (const item of response?.output || []) {
+      const contentParts = Array.isArray(item?.content) ? item.content : []
+      for (const part of contentParts) {
+        const annotations = part?.annotations || part?.providerData?.annotations || []
+        for (const annotation of annotations) {
+          const type = annotation?.type || annotation?.Type
+          const url = annotation?.url
+          if (type === 'url_citation' && url && !seen.has(url)) {
+            seen.add(url)
+            sources.push({ title: annotation.title || url, url })
+          }
+        }
+      }
+    }
+  }
+
+  return sources.slice(0, 10)
 }
 
 function aggregateUsage(rawResponses = []) {
@@ -166,24 +251,26 @@ export async function runSpecializedAgentReply({ apiKey, category: categoryId, m
 
     const model = String(agentConfig?.model || DEFAULT_MODEL)
     const nowIso = new Date().toLocaleString('es-MX', { timeZone: timezone, dateStyle: 'full', timeStyle: 'short' })
+    const webSearchEnabled = [true, 1, '1', 'true'].includes(agentConfig?.web_search_enabled)
+    const tools = webSearchEnabled ? [...category.tools, webSearchTool()] : category.tools
 
     await updateAgentRun(agentRun, {
       domain: category.id,
       action: 'specialized_chat',
       model,
-      route: { engine: 'openai-agents-sdk', category: category.id, toolCount: category.tools.length }
+      route: { engine: 'openai-agents-sdk', category: category.id, toolCount: tools.length, webSearchEnabled }
     })
     await recordAgentStep(agentRun, {
       stepType: 'route',
       status: 'completed',
-      output: { engine: 'openai-agents-sdk', category: category.id, model }
+      output: { engine: 'openai-agents-sdk', category: category.id, model, webSearchEnabled }
     })
 
     const agent = new Agent({
       name: `Ristak · ${category.label}`,
       model,
       instructions: buildInstructions({ category, agentConfig, memories, viewContext, timezone, nowIso }),
-      tools: category.tools
+      tools
     })
 
     const runner = new Runner({
@@ -201,6 +288,7 @@ export async function runSpecializedAgentReply({ apiKey, category: categoryId, m
     const reply = String(result.finalOutput || '').trim() ||
       'No pude generar una respuesta. Intenta reformular tu mensaje.'
     const usage = aggregateUsage(result.rawResponses || [])
+    const sources = extractSources(result.rawResponses || [])
 
     await recordAgentStep(agentRun, {
       stepType: 'final_response',
@@ -213,7 +301,7 @@ export async function runSpecializedAgentReply({ apiKey, category: categoryId, m
       reply,
       model,
       category: category.id,
-      sources: [],
+      sources,
       clarificationOptions: [],
       agentMemory: null,
       usage,

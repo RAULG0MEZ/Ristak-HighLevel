@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { AGENT_CATEGORIES, getAgentCategory, listAgentCategories } from '../src/agents/registry.js'
 import { invokeController, toToolResult } from '../src/agents/invokeController.js'
+import { buildInputItems } from '../src/agents/runner.js'
 
 const EXPECTED_CATEGORIES = ['citas', 'pagos', 'redes', 'anuncios', 'contactos', 'costos', 'general']
 
@@ -46,9 +47,21 @@ test('los agentes especializados NO mezclan herramientas de otros dominios', () 
 
 test('el agente general sí tiene acceso a todos los dominios', () => {
   const names = getAgentCategory('general').tools.map((tool) => tool.name)
-  for (const required of ['create_appointment', 'record_payment', 'create_contact', 'create_cost', 'get_ads_metrics', 'list_social_profiles']) {
+  for (const required of ['create_appointment', 'record_payment', 'create_contact', 'create_cost', 'get_ads_metrics', 'list_social_profiles', 'create_payment_link', 'get_free_slots']) {
     assert.ok(names.includes(required), `general sin ${required}`)
   }
+})
+
+test('pagos incluye los cobros avanzados portados del agente original', () => {
+  const names = getAgentCategory('pagos').tools.map((tool) => tool.name)
+  for (const required of ['list_products', 'create_payment_link', 'create_installment_plan', 'list_scheduled_payments', 'reschedule_scheduled_payment', 'cancel_scheduled_payment']) {
+    assert.ok(names.includes(required), `pagos sin ${required}`)
+  }
+})
+
+test('citas incluye disponibilidad de horarios (get_free_slots)', () => {
+  const names = getAgentCategory('citas').tools.map((tool) => tool.name)
+  assert.ok(names.includes('get_free_slots'))
 })
 
 test('getAgentCategory normaliza y rechaza categorías inválidas', () => {
@@ -79,6 +92,45 @@ test('invokeController captura status y payload del controller', async () => {
   const errorResult = await invokeController(fakeHandler, { body: {} })
   assert.equal(errorResult.statusCode, 400)
   assert.deepEqual(toToolResult(errorResult), { ok: false, statusCode: 400, error: 'Falta nombre' })
+})
+
+test('buildInputItems convierte adjuntos a partes del protocolo del SDK', () => {
+  const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg=='
+  const pdf = 'data:application/pdf;base64,JVBERi0xLjQ='
+  const items = buildInputItems([
+    { role: 'user', content: 'Hola' },
+    { role: 'assistant', content: 'Hola, ¿en qué ayudo?' },
+    {
+      role: 'user',
+      content: 'Analiza esto',
+      attachments: [
+        { kind: 'image', name: 'foto.png', mimeType: 'image/png', dataUrl: pixel },
+        { kind: 'pdf', name: 'contrato.pdf', mimeType: 'application/pdf', dataUrl: pdf },
+        { kind: 'text', name: 'notas.txt', mimeType: 'text/plain', text: 'contenido extraído' }
+      ]
+    }
+  ])
+
+  assert.equal(items.length, 3)
+  const last = items[2]
+  assert.equal(last.role, 'user')
+  assert.ok(Array.isArray(last.content))
+  const types = last.content.map((part) => part.type)
+  assert.deepEqual(types, ['input_text', 'input_image', 'input_file', 'input_text'])
+  assert.equal(last.content[1].image, pixel)
+  assert.equal(last.content[2].file, pdf)
+  assert.equal(last.content[2].filename, 'contrato.pdf')
+  assert.ok(last.content[3].text.includes('contenido extraído'))
+})
+
+test('buildInputItems limita el historial y conserva la opción de aclaración', () => {
+  const many = Array.from({ length: 30 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: `m${i}` }))
+  many.push({ role: 'user', content: 'final', selectedClarificationOption: { label: 'Opción A', value: 'opcion_a' } })
+  const items = buildInputItems(many)
+  assert.equal(items.length, 12)
+  const lastContent = items[items.length - 1].content
+  const text = Array.isArray(lastContent) ? lastContent[0].text : lastContent
+  assert.ok(String(text).includes('opcion_a'))
 })
 
 test('invokeController propaga excepciones del controller', async () => {

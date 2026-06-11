@@ -1,6 +1,5 @@
 import { logger } from '../utils/logger.js'
 import {
-  createAgentReply,
   deleteAIAgentConfig,
   getAIAgentStatus,
   getOpenAIApiKey,
@@ -166,24 +165,17 @@ export async function chat(req, res) {
       })
     }
 
-    const category = getAgentCategory(req.body?.category)
+    // Todo el chat pasa por los agentes especializados (OpenAI Agents SDK).
+    // Sin categoría (clientes viejos) se usa el agente general, que tiene todas las herramientas.
+    const category = getAgentCategory(req.body?.category) || getAgentCategory('general')
 
-    // Agentes especializados (OpenAI Agents SDK) cuando hay categoría válida.
-    // Los mensajes con archivos adjuntos van por el flujo legacy, que ya los procesa.
-    const result = category && !hasAttachments
-      ? await runSpecializedAgentReply({
-          apiKey,
-          category: category.id,
-          messages,
-          viewContext: req.body?.viewContext || {},
-          userId: req.user?.userId
-        })
-      : await createAgentReply({
-          apiKey,
-          messages,
-          viewContext: req.body?.viewContext || {},
-          userId: req.user?.userId
-        })
+    const result = await runSpecializedAgentReply({
+      apiKey,
+      category: category.id,
+      messages,
+      viewContext: req.body?.viewContext || {},
+      userId: req.user?.userId
+    })
 
     res.json({
       success: true,
