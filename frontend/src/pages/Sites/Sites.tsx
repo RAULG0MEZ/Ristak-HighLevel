@@ -7407,6 +7407,7 @@ type ImportedButtonActionOption = { value: ImportedButtonAction; label: string; 
 
 const importedButtonActionOptions: ImportedButtonActionOption[] = [
   { value: 'submit', label: 'Enviar formulario' },
+  { value: 'disqualify', label: 'Descalificar (no califica)' },
   { value: 'next_page', label: 'Ir a la siguiente página' },
   { value: 'specific_page', label: 'Ir a una página específica' },
   { value: 'url', label: 'Abrir enlace' },
@@ -7435,8 +7436,9 @@ const hasImportedSubmittableFormFields = (html = '') => {
   }
 }
 
+// 'submit' and 'disqualify' only make sense on pages with a submittable form.
 const getImportedButtonActionOptionsForPage = (canSubmitForm: boolean) => (
-  importedButtonActionOptions.filter(option => option.value !== 'submit' || canSubmitForm)
+  importedButtonActionOptions.filter(option => !['submit', 'disqualify'].includes(option.value) || canSubmitForm)
 )
 
 const getImportedActionOptionSet = (actionOptions: ImportedButtonActionOption[]) => (
@@ -8443,6 +8445,20 @@ const ImportedActionChainEditor: React.FC<{
                   <option key={page.id} value={page.id}>{page.title || page.id}</option>
                 ))}
               </CustomSelect>
+            </label>
+          )}
+
+          {step.action === 'disqualify' && (
+            <label className={styles.importedActionField}>
+              <span>Mensaje al descalificar (opcional)</span>
+              <input
+                value={step.buttonMessage || ''}
+                placeholder="Gracias, por ahora no calificas"
+                disabled={disabled}
+                name={`rstk-imported-action-disqualify-${index}`}
+                {...importedEditorNoAutocompleteAttrs}
+                onChange={(event) => setAction(index, { buttonMessage: event.target.value })}
+              />
             </label>
           )}
 
