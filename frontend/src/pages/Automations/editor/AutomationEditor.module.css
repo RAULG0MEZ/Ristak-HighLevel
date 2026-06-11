@@ -128,8 +128,7 @@
   /* Cursor normal: la "manita" solo aparece al arrastrar de verdad */
   cursor: default;
   touch-action: none;
-  /* Puntos sutiles: guían sin competir con los nodos ni cansar la vista */
-  background-image: radial-gradient(rgba(148, 163, 184, 0.16) 1px, transparent 1px);
+  /* Puntos sutiles (el gradiente vive inline: su alpha depende del zoom) */
 }
 
 .canvasPanning {
@@ -149,7 +148,8 @@
   top: 0;
   left: 0;
   transform-origin: 0 0;
-  will-change: transform;
+  /* Sin will-change: la capa GPU cacheada reescalaba el raster y se veía
+     borroso al arrastrar o hacer hover; re-rasterizar nítido cuesta poco */
 }
 
 .edgesSvg {

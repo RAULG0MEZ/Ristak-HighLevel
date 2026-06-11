@@ -647,6 +647,10 @@ export const AutomationCanvas: React.FC<AutomationCanvasProps> = ({
       <div
         className={cn(styles.canvas, panning && styles.canvasPanning, draft && styles.canvasConnecting)}
         style={{
+          // Al alejarse los puntos se desvanecen (en vez de juntarse y ensuciar la vista)
+          backgroundImage: `radial-gradient(rgba(148, 163, 184, ${
+            (0.16 * Math.min(1, Math.max(0, (viewport.zoom - 0.4) / 0.3))).toFixed(3)
+          }) 1px, transparent 1px)`,
           backgroundSize: `${22 * viewport.zoom}px ${22 * viewport.zoom}px`,
           backgroundPosition: `${viewport.x}px ${viewport.y}px`
         }}
