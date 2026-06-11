@@ -440,19 +440,27 @@ export interface TriggerFilter {
   /** Campo personalizado elegido cuando field === 'custom' */
   customKey?: string
   customLabel?: string
-  match: 'is' | 'not'
+  match: 'is' | 'not' | 'contains' | 'not_contains'
   value: string
 }
+
+export const TRIGGER_FILTER_OPERATORS: Array<{ value: TriggerFilter['match']; label: string }> = [
+  { value: 'is', label: 'coincide con' },
+  { value: 'not', label: 'NO coincide con' },
+  { value: 'contains', label: 'contiene' },
+  { value: 'not_contains', label: 'NO contiene' }
+]
 
 export interface TriggerFilterField {
   id: string
   label: string
   /** Frase con artículo para la oración ("la fuente", "el país"…) */
   phrase: string
-  catalog?: 'tags' | 'contactFields' | 'users'
+  catalog?: 'tags' | 'contactFields' | 'users' | 'calendars' | 'campaigns'
 }
 
 export const TRIGGER_FILTER_FIELDS: TriggerFilterField[] = [
+  { id: 'message', label: 'Mensaje', phrase: 'el mensaje' },
   { id: 'source', label: 'Fuente', phrase: 'la fuente' },
   { id: 'tag', label: 'Etiqueta', phrase: 'la etiqueta', catalog: 'tags' },
   { id: 'stage', label: 'Pipeline / etapa', phrase: 'la etapa' },
@@ -460,6 +468,8 @@ export const TRIGGER_FILTER_FIELDS: TriggerFilterField[] = [
   { id: 'email', label: 'Email (dato de contacto)', phrase: 'el email' },
   { id: 'phone', label: 'Teléfono', phrase: 'el teléfono' },
   { id: 'assigned', label: 'Usuario asignado', phrase: 'el usuario asignado', catalog: 'users' },
+  { id: 'calendar', label: 'Calendario', phrase: 'el calendario', catalog: 'calendars' },
+  { id: 'campaign', label: 'Campaña', phrase: 'la campaña', catalog: 'campaigns' },
   { id: 'custom', label: 'Campo personalizado…', phrase: 'el campo' }
 ]
 
@@ -486,9 +496,13 @@ export function triggerFiltersSentence(value: unknown): string {
       const phrase = filter.field === 'custom'
         ? `el campo "${filter.customLabel || filter.customKey}"`
         : field?.phrase || 'el campo'
-      return filter.match === 'not'
-        ? ` y ${phrase} NO coincida con "${filter.value}"`
-        : ` y ${phrase} coincida con "${filter.value}"`
+      const verbs: Record<string, string> = {
+        is: 'coincida con',
+        not: 'NO coincida con',
+        contains: 'contenga',
+        not_contains: 'NO contenga'
+      }
+      return ` y ${phrase} ${verbs[filter.match] || 'coincida con'} "${filter.value}"`
     })
     .join('')
 }

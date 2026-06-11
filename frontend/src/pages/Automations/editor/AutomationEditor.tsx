@@ -349,7 +349,7 @@ export const AutomationEditor: React.FC = () => {
     setConfig({
       nodeId: node.id,
       anchor: anchor || {
-        x: (node.position.x + NODE_WIDTH) * viewport.zoom + viewport.x + 14,
+        x: (node.position.x + NODE_WIDTH) * viewport.zoom + viewport.x + 36,
         y: node.position.y * viewport.zoom + viewport.y
       },
       committed: false
@@ -381,7 +381,7 @@ export const AutomationEditor: React.FC = () => {
             nodeId: startNode.id,
             triggerId: entry.id,
             anchor: {
-              x: (startNode.position.x + 320) * viewport.zoom + viewport.x + 14,
+              x: (startNode.position.x + 320) * viewport.zoom + viewport.x + 36,
               y: startNode.position.y * viewport.zoom + viewport.y
             },
             committed: true

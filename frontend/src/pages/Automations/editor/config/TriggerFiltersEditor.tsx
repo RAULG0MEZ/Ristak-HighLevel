@@ -2,6 +2,7 @@ import React from 'react'
 import { Plus, X } from 'lucide-react'
 import {
   TRIGGER_FILTER_FIELDS,
+  TRIGGER_FILTER_OPERATORS,
   asTriggerFilters,
   type TriggerFilter
 } from '../crmFields'
@@ -72,12 +73,12 @@ export const TriggerFiltersEditor: React.FC<{
               <div className={styles.configRow} style={{ marginTop: 6 }}>
                 <div style={{ width: 150, flexShrink: 0 }}>
                   <CustomSelect
-                    options={[
-                      { value: 'is', label: 'coincide con' },
-                      { value: 'not', label: 'NO coincide con' }
-                    ]}
+                    options={TRIGGER_FILTER_OPERATORS.map((operator) => ({
+                      value: operator.value,
+                      label: operator.label
+                    }))}
                     value={filter.match || 'is'}
-                    onValueChange={(next) => update(index, { match: next === 'not' ? 'not' : 'is' })}
+                    onValueChange={(next) => update(index, { match: next as TriggerFilter['match'] })}
                     aria-label="Coincidencia"
                   />
                 </div>

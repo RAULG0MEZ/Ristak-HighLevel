@@ -363,7 +363,7 @@ export const AutomationCanvas: React.FC<AutomationCanvasProps> = ({
             const layout = layoutsRef.current[node.id]
             const { x, y, zoom } = viewportRef.current
             actions.onOpenConfig(node, {
-              x: (node.position.x + (layout?.width || NODE_WIDTH)) * zoom + x + 16,
+              x: (node.position.x + (layout?.width || NODE_WIDTH)) * zoom + x + 36,
               y: node.position.y * zoom + y
             })
           }

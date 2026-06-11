@@ -570,8 +570,9 @@ export const NodeConfigBubble: React.FC<NodeConfigBubbleProps> = ({
           />
         )}
 
-        {/* Lo demás vive detrás de "Opciones avanzadas" */}
-        {!definition.configComponent && definition.fields.some((field) => field.advanced) && (
+        {/* Lo demás vive detrás de "Opciones avanzadas" (los disparadores
+            no la usan: ahí todo extra se agrega con "+ Añadir filtro") */}
+        {!definition.configComponent && definition.kind !== 'trigger' && definition.fields.some((field) => field.advanced) && (
           <>
             <button
               type="button"
