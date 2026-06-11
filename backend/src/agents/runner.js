@@ -9,11 +9,11 @@ import {
   completeAgentRun,
   buildAgentTracePayload
 } from '../services/agentExecutionLedgerService.js'
-import { getAgentCategory, resolveCategoryContextFields } from './registry.js'
+import { AGENT_CATEGORIES, getAgentCategory, resolveCategoryContextFields } from './registry.js'
 import { loadAgentMemories } from './tools/memoryTools.js'
 
 const MESSAGE_HISTORY_LIMIT = 12
-const MAX_TURNS = 12
+const MAX_TURNS = 16
 const DEFAULT_MODEL = 'gpt-5.5'
 const CONTEXT_FIELD_LIMIT = 4000
 
@@ -203,6 +203,15 @@ async function recordToolSteps(agentRun, newItems = []) {
   }
 
   for (const item of newItems) {
+    if (item?.type === 'handoff_output_item') {
+      await recordAgentStep(agentRun, {
+        stepType: 'handoff',
+        toolName: item.targetAgent?.name || 'unknown_agent',
+        status: 'completed',
+        output: { from: item.sourceAgent?.name || null, to: item.targetAgent?.name || null }
+      })
+      continue
+    }
     if (item?.type !== 'tool_call_item') continue
     const raw = item.rawItem || {}
     const callId = raw.callId || raw.call_id || raw.id
@@ -221,17 +230,78 @@ async function recordToolSteps(agentRun, newItems = []) {
   }
 }
 
+const SPECIALIST_HANDOFF_RULES = `## Si el tema no es tuyo
+Tienes herramientas transfer_to_<agente> para pasar la conversación a otro especialista.
+Si el mensaje del usuario NO corresponde a tu especialidad (ej. te preguntan de pagos y tú eres el de citas), NO intentes resolverlo ni digas que no puedes: transfiere de inmediato al especialista correcto y no escribas nada más. Para temas que cruzan varias áreas, transfiere a "general".`
+
+const TRIAGE_INSTRUCTIONS = `Eres el recepcionista de los agentes IA de Ristak. Tu ÚNICO trabajo es leer el último mensaje del usuario (con el contexto de la conversación) y transferirlo al especialista correcto con la herramienta transfer_to_<agente>:
+- citas: agendar, reprogramar, cancelar o consultar citas, calendarios y horarios disponibles.
+- pagos: registrar/editar pagos, links de cobro, parcialidades, ingresos y transacciones.
+- contactos: crear, editar, buscar, depurar o consultar contactos (CRM).
+- anuncios: métricas y análisis de campañas de Meta Ads.
+- redes: perfiles sociales conectados, bandeja y conversaciones de Facebook/Instagram.
+- costos: comisiones y costos variables de los reportes.
+- general: preguntas que cruzan varias áreas, dudas del negocio en general o cualquier cosa que no encaje arriba.
+
+Reglas:
+- SIEMPRE transfiere; no respondas tú el fondo de la pregunta.
+- Solo contesta tú directamente saludos ("hola") o "¿qué puedes hacer?": ahí preséntate en 2-3 líneas con las áreas disponibles, en español.
+- En caso de duda entre dos especialistas, usa general.`
+
 /**
- * Ejecuta el agente especializado de una categoría y devuelve la respuesta con
- * la misma forma que el chat legacy: { reply, model, sources, clarificationOptions, usage, trace }.
+ * Construye los agentes especializados con handoffs cruzados y el triage.
+ * El nombre de cada agente es el id de su categoría, así las herramientas de
+ * transferencia quedan como transfer_to_citas, transfer_to_pagos, etc.
+ */
+function buildAgentGraph({ agentConfig, memoriesByCategory, viewContext, timezone, nowIso, model, webSearchEnabled }) {
+  const specialists = AGENT_CATEGORIES.map((category) => {
+    const instructions = [
+      buildInstructions({
+        category,
+        agentConfig,
+        memories: memoriesByCategory[category.id] || [],
+        viewContext,
+        timezone,
+        nowIso
+      }),
+      SPECIALIST_HANDOFF_RULES
+    ].join('\n\n')
+
+    return new Agent({
+      name: category.id,
+      model,
+      handoffDescription: `${category.label}: ${category.description}`,
+      instructions,
+      tools: webSearchEnabled ? [...category.tools, webSearchTool()] : category.tools,
+      handoffs: []
+    })
+  })
+
+  for (const agent of specialists) {
+    agent.handoffs = specialists.filter((other) => other !== agent)
+  }
+
+  const triage = new Agent({
+    name: 'triage',
+    model,
+    instructions: TRIAGE_INSTRUCTIONS,
+    handoffs: [...specialists]
+  })
+
+  const byCategory = Object.fromEntries(specialists.map((agent) => [agent.name, agent]))
+  return { triage, byCategory }
+}
+
+/**
+ * Ejecuta el chat de agentes especializados y devuelve la respuesta con la misma
+ * forma que el chat legacy: { reply, model, category, sources, usage, trace }.
+ *
+ * Sin categoría (o con 'auto') entra el triage, que clasifica el mensaje y lo
+ * transfiere al especialista; con categoría explícita entra ese especialista,
+ * que también puede transferir si el tema no es suyo.
  */
 export async function runSpecializedAgentReply({ apiKey, category: categoryId, messages, viewContext = {}, userId = null }) {
-  const category = getAgentCategory(categoryId)
-  if (!category) {
-    const error = new Error(`Especialidad de agente desconocida: ${categoryId}`)
-    error.statusCode = 400
-    throw error
-  }
+  const requestedCategory = getAgentCategory(categoryId)
 
   const latestUserMessage = [...(messages || [])].reverse().find((message) => message?.role === 'user')?.content || ''
 
@@ -243,34 +313,42 @@ export async function runSpecializedAgentReply({ apiKey, category: categoryId, m
   }
 
   try {
-    const [agentConfig, memories, timezone] = await Promise.all([
+    const [agentConfig, timezone, ...memoryLists] = await Promise.all([
       getAIAgentConfig({ userId }),
-      loadAgentMemories(category.id),
-      getAccountTimezone().catch(() => 'America/Mexico_City')
+      getAccountTimezone().catch(() => 'America/Mexico_City'),
+      ...AGENT_CATEGORIES.map((category) => loadAgentMemories(category.id))
     ])
+    const memoriesByCategory = Object.fromEntries(
+      AGENT_CATEGORIES.map((category, index) => [category.id, memoryLists[index]])
+    )
 
     const model = String(agentConfig?.model || DEFAULT_MODEL)
     const nowIso = new Date().toLocaleString('es-MX', { timeZone: timezone, dateStyle: 'full', timeStyle: 'short' })
     const webSearchEnabled = [true, 1, '1', 'true'].includes(agentConfig?.web_search_enabled)
-    const tools = webSearchEnabled ? [...category.tools, webSearchTool()] : category.tools
+
+    const { triage, byCategory } = buildAgentGraph({
+      agentConfig,
+      memoriesByCategory,
+      viewContext,
+      timezone,
+      nowIso,
+      model,
+      webSearchEnabled
+    })
+
+    const entryAgent = requestedCategory ? byCategory[requestedCategory.id] : triage
+    const entryCategory = requestedCategory?.id || 'auto'
 
     await updateAgentRun(agentRun, {
-      domain: category.id,
+      domain: entryCategory,
       action: 'specialized_chat',
       model,
-      route: { engine: 'openai-agents-sdk', category: category.id, toolCount: tools.length, webSearchEnabled }
+      route: { engine: 'openai-agents-sdk', entry: entryAgent.name, requested: entryCategory, webSearchEnabled }
     })
     await recordAgentStep(agentRun, {
       stepType: 'route',
       status: 'completed',
-      output: { engine: 'openai-agents-sdk', category: category.id, model, webSearchEnabled }
-    })
-
-    const agent = new Agent({
-      name: `Ristak · ${category.label}`,
-      model,
-      instructions: buildInstructions({ category, agentConfig, memories, viewContext, timezone, nowIso }),
-      tools
+      output: { engine: 'openai-agents-sdk', entry: entryAgent.name, requested: entryCategory, model, webSearchEnabled }
     })
 
     const runner = new Runner({
@@ -278,12 +356,16 @@ export async function runSpecializedAgentReply({ apiKey, category: categoryId, m
       tracingDisabled: true
     })
 
-    const result = await runner.run(agent, buildInputItems(messages), {
+    const result = await runner.run(entryAgent, buildInputItems(messages), {
       maxTurns: MAX_TURNS,
-      context: { category: category.id, userId }
+      context: { category: entryCategory, userId }
     })
 
     await recordToolSteps(agentRun, result.newItems || [])
+
+    // El agente que terminó la conversación define la categoría final
+    const lastAgentName = result.lastAgent?.name || entryAgent.name
+    const finalCategory = byCategory[lastAgentName] ? lastAgentName : (requestedCategory?.id || 'general')
 
     const reply = String(result.finalOutput || '').trim() ||
       'No pude generar una respuesta. Intenta reformular tu mensaje.'
@@ -293,14 +375,15 @@ export async function runSpecializedAgentReply({ apiKey, category: categoryId, m
     await recordAgentStep(agentRun, {
       stepType: 'final_response',
       status: 'completed',
-      output: { reply: truncate(reply, 1600), model }
+      output: { reply: truncate(reply, 1600), model, finalCategory }
     })
+    await updateAgentRun(agentRun, { domain: finalCategory })
     await completeAgentRun(agentRun, { status: 'completed', reply, model, usage })
 
     return {
       reply,
       model,
-      category: category.id,
+      category: finalCategory,
       sources,
       clarificationOptions: [],
       agentMemory: null,

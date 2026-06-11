@@ -1709,51 +1709,7 @@
   }
 }
 
-/* Selector de especialidad del agente IA */
-.agentPicker {
-  display: flex;
-  gap: 6px;
-  padding: 8px 12px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
-  flex-shrink: 0;
-}
-
-.agentPicker::-webkit-scrollbar {
-  display: none;
-}
-
-.agentChip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 10px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 999px !important;
-  background: rgba(148, 163, 184, 0.06);
-  color: var(--color-text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-  white-space: nowrap;
-  flex-shrink: 0;
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-}
-
-.agentChip:hover:not(:disabled) {
-  color: var(--color-text-primary);
-  background: rgba(148, 163, 184, 0.1);
-  border-color: rgba(148, 163, 184, 0.28);
-}
-
-.agentChipActive,
-.agentChipActive:hover:not(:disabled) {
-  color: var(--color-text-primary);
-  background: color-mix(in srgb, var(--color-text-primary) 10%, transparent);
-  border-color: color-mix(in srgb, var(--color-text-primary) 28%, transparent);
-}
-
+/* Tarjetas de especialidad del agente IA (primera pantalla del chat) */
 .agentGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

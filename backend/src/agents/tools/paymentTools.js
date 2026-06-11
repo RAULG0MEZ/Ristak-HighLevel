@@ -17,12 +17,33 @@ const PAYMENT_FIELDS = (row) => ({
   reference: row.reference
 })
 
+// En la tabla payments conviven estatus locales y de HighLevel/Stripe:
+// "pagado" puede venir como paid, succeeded o completed.
+const PAID_STATUSES = ['paid', 'succeeded', 'completed']
+
+/**
+ * payments.date se guarda como texto "YYYY-MM-DD HH:MM:SS" (con espacio) en
+ * SQLite. Un parámetro ISO con "T" rompe la comparación de strings (el espacio
+ * ordena antes que la T), así que normalizamos al formato con espacio, que
+ * también castea bien a timestamp en Postgres.
+ */
+function normalizePaymentDateParam(value, { endOfDay = false } = {}) {
+  const raw = String(value || '').trim()
+    .replace('T', ' ')
+    .replace(/Z$/, '')
+    .replace(/[+-]\d{2}:?\d{2}$/, '')
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return endOfDay ? `${raw} 23:59:59` : `${raw} 00:00:00`
+  }
+  return raw
+}
+
 export const listPaymentsTool = tool({
   name: 'list_payments',
-  description: 'Lista pagos/transacciones con filtros por contacto, estatus o rango de fechas. Incluye el total sumado de los pagos listados.',
+  description: 'Lista pagos/transacciones con filtros por contacto, estatus o rango de fechas. El filtro "paid" agrupa todos los estatus de pago exitoso (paid, succeeded, completed). Devuelve totalPaid (suma de pagos exitosos) y totalPending por separado.',
   parameters: z.object({
     contactId: z.string().nullable().describe('Filtrar por contacto'),
-    status: z.string().nullable().describe('Filtrar por estatus: paid | pending | failed | refunded'),
+    status: z.string().nullable().describe('Filtrar por estatus: paid (incluye succeeded/completed) | pending | failed | refunded'),
     startDate: z.string().nullable().describe('Fecha mínima ISO 8601'),
     endDate: z.string().nullable().describe('Fecha máxima ISO 8601'),
     limit: z.number().int().min(1).max(100).nullable().describe('Máximo de pagos (default 30)')
@@ -39,24 +60,34 @@ export const listPaymentsTool = tool({
       sql += ' AND p.contact_id = ?'
       params.push(contactId)
     }
-    if (status) {
+    const normalizedStatus = status ? String(status).toLowerCase() : null
+    if (normalizedStatus === 'paid') {
+      sql += ` AND p.status IN (${PAID_STATUSES.map(() => '?').join(', ')})`
+      params.push(...PAID_STATUSES)
+    } else if (normalizedStatus) {
       sql += ' AND p.status = ?'
-      params.push(String(status).toLowerCase())
+      params.push(normalizedStatus)
     }
     if (startDate) {
       sql += ' AND p.date >= ?'
-      params.push(startDate)
+      params.push(normalizePaymentDateParam(startDate))
     }
     if (endDate) {
       sql += ' AND p.date <= ?'
-      params.push(endDate)
+      params.push(normalizePaymentDateParam(endDate, { endOfDay: true }))
     }
     sql += ' ORDER BY p.date DESC LIMIT ?'
     params.push(limit || 30)
 
     const rows = await db.all(sql, params)
     const totalAmount = rows.reduce((sum, row) => sum + Number(row.amount || 0), 0)
-    return { ok: true, total: rows.length, totalAmount, payments: rows.map(PAYMENT_FIELDS) }
+    const totalPaid = rows
+      .filter((row) => PAID_STATUSES.includes(String(row.status || '').toLowerCase()))
+      .reduce((sum, row) => sum + Number(row.amount || 0), 0)
+    const totalPending = rows
+      .filter((row) => String(row.status || '').toLowerCase() === 'pending')
+      .reduce((sum, row) => sum + Number(row.amount || 0), 0)
+    return { ok: true, total: rows.length, totalAmount, totalPaid, totalPending, payments: rows.map(PAYMENT_FIELDS) }
   }
 })
 

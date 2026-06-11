@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { ArrowUp, Bot, Calendar, CalendarPlus, Check, Copy, CreditCard, Eraser, File as FileIcon, FileText, GitBranch, Image as ImageIcon, KeyRound, MessageCircle, Mic, Paperclip, Pause, Percent, SendHorizonal, Sparkles, TrendingUp, Users, Video as VideoIcon, X } from 'lucide-react'
+import { ArrowUp, Bot, Calendar, Check, Copy, CreditCard, Eraser, File as FileIcon, FileText, Image as ImageIcon, KeyRound, MessageCircle, Mic, Paperclip, Pause, Percent, SendHorizonal, Sparkles, TrendingUp, Users, Video as VideoIcon, X } from 'lucide-react'
 import { aiAgentService, type AIAgentAttachment, type AIAgentAttachmentKind, type AIAgentBusinessContextField, type AIAgentCategory, type AIAgentClarificationOption, type AIAgentConfigInput, type AIAgentConfigStatus, type AIAgentMessage, type AIAgentViewContext } from '@/services/aiAgentService'
 import { sitesService, type SitesAICreationMessage } from '@/services/sitesService'
 import { useNotification } from '@/contexts/NotificationContext'
@@ -15,7 +15,6 @@ const VOICE_WAVE_MAX_HEIGHT = 30
 const VOICE_WAVE_SILENCE_THRESHOLD = 4
 const VOICE_WAVE_SIGNAL_RANGE = 30
 const DEFAULT_AI_MODEL = 'gpt-5.5'
-const AI_AGENT_CATEGORY_KEY = 'ristak.aiAgentFloating.category'
 
 const FALLBACK_AGENT_CATEGORIES: AIAgentCategory[] = [
   { id: 'citas', label: 'Citas', icon: 'calendar', description: 'Agendar, reprogramar, cancelar y consultar citas y calendarios.' },
@@ -37,13 +36,6 @@ const AGENT_CATEGORY_ICONS: Record<string, typeof Sparkles> = {
   sparkles: Sparkles
 }
 
-function getStoredAgentCategory(): string {
-  try {
-    return localStorage.getItem(AI_AGENT_CATEGORY_KEY) || ''
-  } catch {
-    return ''
-  }
-}
 const MAX_ATTACHMENTS = 8
 const MAX_DIRECT_ATTACHMENT_BYTES = 8 * 1024 * 1024
 const MAX_ATTACHMENT_TOTAL_BYTES = 18 * 1024 * 1024
@@ -91,33 +83,6 @@ type SitesCreationMode = {
   metaCapiEnabled?: boolean
   siteTitle?: string
 }
-
-const quickActions = [
-  {
-    label: 'Cobrar cliente',
-    description: 'Arranca el flujo para cobrar más rápido.',
-    prompt: 'Quiero cobrarle a un cliente. Inicia el flujo de cobro: identifica el contacto correcto, revisa si tiene tarjeta guardada o cobros previos, confirma monto, concepto y método recomendado, y dime la forma más rápida de enviar link de pago o cobrar con tarjeta guardada.',
-    Icon: CreditCard
-  },
-  {
-    label: 'Agendar cita',
-    description: 'Resuelve contacto, calendario y horario.',
-    prompt: 'Quiero agendar una cita. Inicia el flujo de agenda: identifica el contacto correcto, revisa el calendario disponible y confirma fecha, hora, duración, notas y cualquier dato faltante antes de crearla.',
-    Icon: CalendarPlus
-  },
-  {
-    label: 'Mandar a workflow',
-    description: 'Resuelve contacto y workflow antes de ejecutar.',
-    prompt: 'Quiero mandar a un contacto a un workflow. Ayúdame a encontrar el contacto correcto y seleccionar el workflow adecuado antes de ejecutarlo.',
-    Icon: GitBranch
-  },
-  {
-    label: 'Anuncios rentables',
-    description: 'Mejor y peor campaña con recomendaciones.',
-    prompt: 'Analiza mis anuncios empezando por la campaña que ahorita está siendo más rentable. Usa el rango visible actual si existe; si no, revisa el periodo reciente más útil. Primero dime la campaña más rentable y por qué con ROAS, utilidad, ingresos atribuidos y gasto. Después dime la campaña menos rentable y qué está fallando. Cierra con recomendaciones concretas para escalar, mantener, optimizar o cortar campañas, adsets y anuncios.',
-    Icon: TrendingUp
-  }
-]
 
 const routeLabels: Record<string, string> = {
   '/phone/agent-chat': 'Mobile AI agent',
@@ -1573,7 +1538,9 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
   const [input, setInput] = useState('')
   const [sitesCreationMode, setSitesCreationMode] = useState<SitesCreationMode | null>(null)
   const [agentCategories, setAgentCategories] = useState<AIAgentCategory[]>(FALLBACK_AGENT_CATEGORIES)
-  const [selectedAgentCategory, setSelectedAgentCategory] = useState<string>(getStoredAgentCategory)
+  // La especialidad vive solo en la conversación actual: el primer mensaje la
+  // define (ruteo automático del backend) o el usuario la elige con una tarjeta.
+  const [selectedAgentCategory, setSelectedAgentCategory] = useState<string>('')
   const [attachments, setAttachments] = useState<AIAgentAttachmentDraft[]>([])
   const [attachmentError, setAttachmentError] = useState('')
   const [apiKeyInput, setApiKeyInput] = useState('')
@@ -1753,9 +1720,6 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
 
   const selectAgentCategory = useCallback((categoryId: string) => {
     setSelectedAgentCategory(categoryId)
-    try {
-      localStorage.setItem(AI_AGENT_CATEGORY_KEY, categoryId)
-    } catch { /* almacenamiento no disponible */ }
   }, [])
 
   useEffect(() => {
@@ -2128,11 +2092,9 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
     setMessages(nextMessages)
     setSending(true)
 
-    // Cada mensaje viaja con la especialidad activa; sin selección usamos el agente general
-    const effectiveCategory = selectedAgentCategory || 'general'
-    if (!selectedAgentCategory) {
-      selectAgentCategory('general')
-    }
+    // Sin especialidad elegida, el backend rutea automáticamente ('auto'):
+    // el primer mensaje dicta a qué agente va la conversación.
+    const effectiveCategory = selectedAgentCategory || 'auto'
 
     try {
       const result = await aiAgentService.sendMessage(prepareMessagesForApi(nextMessages), getViewContext(), {
@@ -2141,6 +2103,11 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
       })
 
       if (activeChatRequestRef.current?.id !== requestId) return
+
+      // Adopta la especialidad que terminó atendiendo (el agente puede transferir)
+      if (result.category && result.category !== selectedAgentCategory) {
+        setSelectedAgentCategory(result.category)
+      }
 
       setMessages((current) => [
         ...current,
@@ -2481,6 +2448,8 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
     setChatCopied(false)
     setCopyingChat(false)
     setAttachmentError('')
+    // Conversación nueva = especialidad nueva: vuelve al ruteo automático
+    setSelectedAgentCategory('')
     setSitesCreationMode(null)
     focusComposer()
   }
@@ -2500,10 +2469,15 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
     : styles.textComposer
   const panelTitle = sitesCreationMode ? 'Creador HTML con IA' : embedded ? 'Ristak AI' : 'Agente AI'
   const needsReconnect = Boolean(status.needsReconnect)
+  const activeAgentLabel = selectedAgentCategory
+    ? agentCategories.find((c) => c.id === selectedAgentCategory)?.label || null
+    : null
   const statusLabel = status.configured
     ? sitesCreationMode
       ? sitesCreationMode.editSiteId ? 'Editando HTML importado' : 'Creando HTML importable'
-      : embedded ? 'Listo para ayudarte' : 'Conectado a OpenAI'
+      : activeAgentLabel
+        ? `Agente de ${activeAgentLabel.toLowerCase()}`
+        : embedded ? 'Listo para ayudarte' : 'Conectado a OpenAI'
     : needsReconnect ? 'Reconecta OpenAI' : 'Configúralo aquí mismo'
 
   return (
@@ -2599,88 +2573,45 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
             </div>
           )}
 
-          {status.configured && !sitesCreationMode && (
-            <div className={styles.agentPicker} role="tablist" aria-label="Especialidad del agente">
-              {agentCategories.map((agentCategory) => {
-                const CategoryIcon = AGENT_CATEGORY_ICONS[agentCategory.icon] || Sparkles
-                const isActive = selectedAgentCategory === agentCategory.id
-                return (
-                  <button
-                    key={agentCategory.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={isActive}
-                    className={`${styles.agentChip} ${isActive ? styles.agentChipActive : ''}`}
-                    onClick={() => selectAgentCategory(agentCategory.id)}
-                    title={agentCategory.description}
-                    disabled={savingConfig || sending}
-                  >
-                    <CategoryIcon size={13} />
-                    <span>{agentCategory.label}</span>
-                  </button>
-                )
-              })}
-            </div>
-          )}
-
           <div className={styles.body} data-ai-agent-scrollable="true">
             {messages.length === 0 ? (
               <div className={styles.empty}>
-                {status.configured && !selectedAgentCategory && !sitesCreationMode ? (
+                {status.configured && !sitesCreationMode ? (
                   <>
                     <p className={styles.emptyText}>
-                      Elige una especialidad para empezar. Cada agente conoce solo su área y trabaja con datos reales del negocio.
+                      {selectedAgentCategory
+                        ? `Agente de ${agentCategories.find((c) => c.id === selectedAgentCategory)?.label?.toLowerCase() || 'negocio'} listo. Escribe lo que necesitas.`
+                        : 'Escribe lo que necesitas y te dirijo al agente correcto, o entra directo a una especialidad:'}
                     </p>
-                    <div className={styles.agentGrid}>
-                      {agentCategories.map((agentCategory) => {
-                        const CategoryIcon = AGENT_CATEGORY_ICONS[agentCategory.icon] || Sparkles
-                        return (
-                          <button
-                            key={agentCategory.id}
-                            type="button"
-                            className={styles.suggestionButton}
-                            onClick={() => selectAgentCategory(agentCategory.id)}
-                            disabled={savingConfig}
-                          >
-                            <span className={styles.suggestionIcon}>
-                              <CategoryIcon size={16} />
-                            </span>
-                            <span className={styles.suggestionCopy}>
-                              <span className={styles.suggestionLabel}>{agentCategory.label}</span>
-                              <span className={styles.suggestionDescription}>{agentCategory.description}</span>
-                            </span>
-                          </button>
-                        )
-                      })}
-                    </div>
+                    {!selectedAgentCategory && (
+                      <div className={styles.agentGrid}>
+                        {agentCategories.map((agentCategory) => {
+                          const CategoryIcon = AGENT_CATEGORY_ICONS[agentCategory.icon] || Sparkles
+                          return (
+                            <button
+                              key={agentCategory.id}
+                              type="button"
+                              className={styles.suggestionButton}
+                              onClick={() => selectAgentCategory(agentCategory.id)}
+                              disabled={savingConfig}
+                            >
+                              <span className={styles.suggestionIcon}>
+                                <CategoryIcon size={16} />
+                              </span>
+                              <span className={styles.suggestionCopy}>
+                                <span className={styles.suggestionLabel}>{agentCategory.label}</span>
+                                <span className={styles.suggestionDescription}>{agentCategory.description}</span>
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
                   </>
                 ) : (
                   <p className={styles.emptyText}>
-                    {status.configured && selectedAgentCategory
-                      ? `Agente de ${agentCategories.find((c) => c.id === selectedAgentCategory)?.label?.toLowerCase() || 'negocio'} listo. ${agentCategories.find((c) => c.id === selectedAgentCategory)?.description || ''}`
-                      : 'Pregúntame por ventas, citas, campañas, contactos o por lo que estás viendo en esta pantalla.'}
+                    Pregúntame por ventas, citas, campañas, contactos o por lo que estás viendo en esta pantalla.
                   </p>
-                )}
-                {status.configured && selectedAgentCategory === 'general' && (
-                  <div className={styles.suggestions}>
-                    {quickActions.map(({ label, description, prompt, Icon }) => (
-                      <button
-                        key={label}
-                        type="button"
-                        className={styles.suggestionButton}
-                        onClick={() => sendMessage(prompt, undefined, { forceChat: true })}
-                        disabled={savingConfig}
-                      >
-                        <span className={styles.suggestionIcon}>
-                          <Icon size={16} />
-                        </span>
-                        <span className={styles.suggestionCopy}>
-                          <span className={styles.suggestionLabel}>{label}</span>
-                          <span className={styles.suggestionDescription}>{description}</span>
-                        </span>
-                      </button>
-                    ))}
-                  </div>
                 )}
               </div>
             ) : (

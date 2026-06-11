@@ -10,7 +10,7 @@ import {
   verifyOpenAIApiKey
 } from '../services/aiAgentService.js'
 import { getAgentRunTrace } from '../services/agentExecutionLedgerService.js'
-import { runSpecializedAgentReply, listAgentCategories, getAgentCategory } from '../agents/index.js'
+import { runSpecializedAgentReply, listAgentCategories } from '../agents/index.js'
 
 function sendAIAgentError(res, error, fallback, statusCode = 500) {
   if (isAIAgentCredentialError(error)) {
@@ -166,12 +166,11 @@ export async function chat(req, res) {
     }
 
     // Todo el chat pasa por los agentes especializados (OpenAI Agents SDK).
-    // Sin categoría (clientes viejos) se usa el agente general, que tiene todas las herramientas.
-    const category = getAgentCategory(req.body?.category) || getAgentCategory('general')
-
+    // Sin categoría (o con 'auto'), el triage clasifica el mensaje y lo
+    // transfiere al especialista correcto; el primer mensaje dirige la conversación.
     const result = await runSpecializedAgentReply({
       apiKey,
-      category: category.id,
+      category: req.body?.category || 'auto',
       messages,
       viewContext: req.body?.viewContext || {},
       userId: req.user?.userId

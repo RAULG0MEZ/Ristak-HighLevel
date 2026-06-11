@@ -15,7 +15,7 @@ import { paymentFlowTools } from './tools/paymentFlowTools.js'
 import { expenseTools } from './tools/expenseTools.js'
 import { adsTools } from './tools/adsTools.js'
 import { socialTools } from './tools/socialTools.js'
-import { memoryTools } from './tools/memoryTools.js'
+import { createMemoryTools } from './tools/memoryTools.js'
 
 // Columnas reales de ai_agent_config (snake_case, como las devuelve getAIAgentConfig)
 const BUSINESS_CONTEXT_FIELDS = {
@@ -42,7 +42,7 @@ Reglas de tu especialidad:
 - Antes de proponer horarios, consulta la disponibilidad real con get_free_slots; no propongas horarios sin verificar.
 - Las horas que te dé el usuario están en la zona horaria de la cuenta (te la doy abajo). Pasa los horarios a las herramientas en ISO 8601 incluyendo el offset de esa zona.
 - Cuando confirmes una cita al usuario, repite fecha, hora local y nombre del contacto.`,
-    tools: [...appointmentTools, ...contactReadTools, ...memoryTools]
+    tools: [...appointmentTools, ...contactReadTools, ...createMemoryTools('citas')]
   },
   {
     id: 'pagos',
@@ -60,7 +60,7 @@ Reglas de tu especialidad:
 - Links de pago y parcialidades: SIEMPRE pregunta primero por cuál canal enviar el cobro (correo, WhatsApp, SMS o todos), resume el cobro completo y pide aprobación; solo entonces llama la herramienta con confirm=true. Estas funciones requieren HighLevel conectado: si la herramienta devuelve error de configuración, explícalo.
 - En un plan de parcialidades, la suma del primer pago + pagos restantes debe ser exactamente el total.
 - Nunca modifiques, canceles o elimines un pago/cobro sin confirmar primero con el usuario el registro exacto (monto, fecha, contacto).`,
-    tools: [...paymentTools, ...paymentFlowTools, ...contactReadTools, ...memoryTools]
+    tools: [...paymentTools, ...paymentFlowTools, ...contactReadTools, ...createMemoryTools('pagos')]
   },
   {
     id: 'redes',
@@ -74,7 +74,7 @@ Reglas de tu especialidad:
 - Si los datos salen vacíos, verifica primero con list_social_profiles si hay perfiles conectados y dilo claramente.
 - Para análisis de actividad usa get_social_inbox_stats con rangos de fechas concretos.
 - Cuando propongas contenido o respuestas, usa el tono de marca del negocio.`,
-    tools: [...socialTools, ...contactReadTools, ...memoryTools]
+    tools: [...socialTools, ...contactReadTools, ...createMemoryTools('redes')]
   },
   {
     id: 'anuncios',
@@ -88,7 +88,7 @@ Reglas de tu especialidad:
 - Si las métricas salen vacías, verifica con get_ads_connection_status si Meta está conectado y dilo claramente.
 - Usa rangos de fechas concretos (YYYY-MM-DD). Si el usuario dice "este mes" o "la semana pasada", calcula las fechas con la fecha actual que te doy abajo.
 - Al comparar campañas, ordena por gasto y señala CPC alto o bajo rendimiento con números, no adjetivos.`,
-    tools: [...adsTools, ...memoryTools]
+    tools: [...adsTools, ...createMemoryTools('anuncios')]
   },
   {
     id: 'contactos',
@@ -102,7 +102,7 @@ Reglas de tu especialidad:
 - Siempre busca primero con search_contacts antes de crear, para evitar duplicados.
 - Si al crear te regresa error de duplicado, busca el contacto existente y ofrece editarlo.
 - Verifica el formato de teléfono con lada de país (ej. +52 para México).`,
-    tools: [...contactTools, ...memoryTools]
+    tools: [...contactTools, ...createMemoryTools('contactos')]
   },
   {
     id: 'costos',
@@ -116,7 +116,7 @@ Reglas de tu especialidad:
 - "percentage" es un porcentaje sobre ingresos (0-100); "fixed" es monto fijo. Confirma con el usuario cuál aplica si hay ambigüedad.
 - Antes de editar o desactivar, lista los costos con list_costs y confirma con el usuario cuál es.
 - Explica el efecto del cambio en los reportes (ej. "esto restará 3.6% de cada venta con tarjeta").`,
-    tools: [...expenseTools, ...memoryTools]
+    tools: [...expenseTools, ...createMemoryTools('costos')]
   },
   {
     id: 'general',
@@ -137,7 +137,7 @@ Reglas:
       ...expenseTools,
       ...adsTools,
       ...socialTools,
-      ...memoryTools
+      ...createMemoryTools('general')
     ]
   }
 ]
