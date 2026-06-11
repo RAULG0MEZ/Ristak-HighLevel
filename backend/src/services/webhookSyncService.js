@@ -32,6 +32,29 @@ export function buildWebhookCustomValues(baseUrl) {
 }
 
 /**
+ * Detecta el parentId (carpeta) donde HighLevel agrupa los custom values de
+ * webhook. Devuelve el parentId más frecuente entre los webhooks existentes
+ * que ya estén dentro de una carpeta, o null si ninguno tiene carpeta.
+ * @param {Array<{name?: string, parentId?: string}>} customValues
+ * @returns {string | null}
+ */
+export function detectWebhookFolderId(customValues = []) {
+  const counts = new Map()
+  for (const cv of customValues) {
+    const isWebhook = cv?.name?.toLowerCase().startsWith('webhook')
+    if (isWebhook && cv.parentId) {
+      counts.set(cv.parentId, (counts.get(cv.parentId) || 0) + 1)
+    }
+  }
+  let best = null
+  let bestCount = 0
+  for (const [parentId, count] of counts) {
+    if (count > bestCount) { best = parentId; bestCount = count }
+  }
+  return best
+}
+
+/**
  * Lee la configuración de HighLevel (single-tenant).
  * @returns {Promise<{location_id: string, api_token: string} | null>}
  */
@@ -80,13 +103,28 @@ export async function syncWebhookCustomValues({ config, baseUrl } = {}) {
   const existingCustomValues = getData.customValues || []
   logger.info(`📋 ${existingCustomValues.length} custom values existentes en HighLevel`)
 
+  // Detectar la carpeta donde HighLevel agrupa los webhooks (campo parentId).
+  // Los custom values creados manualmente en la UI viven dentro de una carpeta;
+  // reutilizamos ese mismo parentId para que los que creemos no queden sueltos.
+  const folderId = detectWebhookFolderId(existingCustomValues)
+  if (folderId) {
+    logger.info(`📁 Carpeta de webhooks detectada: ${folderId} (se respetará al crear/mover)`)
+  } else {
+    logger.info('📂 No se detectó carpeta de webhooks; los nuevos se crearán sueltos')
+  }
+
   const results = []
 
   for (const [name, value] of Object.entries(webhooks)) {
     try {
       const existing = existingCustomValues.find(cv => cv.name === name)
 
-      if (existing && existing.value === value) {
+      // El cuerpo incluye parentId solo si hay carpeta detectada.
+      const body = { name, value }
+      if (folderId) body.parentId = folderId
+
+      // Sin cambios: mismo valor Y (sin carpeta objetivo o ya está en ella).
+      if (existing && existing.value === value && (!folderId || existing.parentId === folderId)) {
         results.push({ name, status: 'unchanged', value })
         logger.info(`✅ Webhook ya correcto: ${name}`)
         continue
@@ -97,12 +135,13 @@ export async function syncWebhookCustomValues({ config, baseUrl } = {}) {
         const updateResponse = await fetch(updateUrl, {
           method: 'PUT',
           headers: jsonHeaders,
-          body: JSON.stringify({ name, value })
+          body: JSON.stringify(body)
         })
 
         if (updateResponse.ok) {
-          results.push({ name, status: 'updated', value })
-          logger.info(`🔄 Webhook actualizado: ${name}`)
+          const movedToFolder = folderId && existing.parentId !== folderId
+          results.push({ name, status: 'updated', value, movedToFolder: !!movedToFolder })
+          logger.info(`🔄 Webhook actualizado: ${name}${movedToFolder ? ' (movido a la carpeta)' : ''}`)
         } else {
           const errorData = await updateResponse.json().catch(() => ({}))
           results.push({ name, status: 'error', error: errorData })
@@ -112,12 +151,12 @@ export async function syncWebhookCustomValues({ config, baseUrl } = {}) {
         const createResponse = await fetch(listUrl, {
           method: 'POST',
           headers: jsonHeaders,
-          body: JSON.stringify({ name, value })
+          body: JSON.stringify(body)
         })
 
         if (createResponse.ok) {
-          results.push({ name, status: 'created', value })
-          logger.info(`✨ Webhook creado: ${name}`)
+          results.push({ name, status: 'created', value, inFolder: !!folderId })
+          logger.info(`✨ Webhook creado: ${name}${folderId ? ' (en la carpeta)' : ''}`)
         } else {
           const errorData = await createResponse.json().catch(() => ({}))
           results.push({ name, status: 'error', error: errorData })
