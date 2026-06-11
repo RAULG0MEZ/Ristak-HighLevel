@@ -381,10 +381,20 @@
   white-space: nowrap;
 }
 
+/* Acciones rápidas FUERA del contenedor, arriba a la derecha (al hover) */
 .nodeQuickActions {
+  position: absolute;
+  top: -38px;
+  right: 0;
+  z-index: 8;
   display: none;
   align-items: center;
   gap: 2px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--color-background-secondary);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  box-shadow: 0 10px 24px -12px rgba(15, 23, 42, 0.4);
 }
 
 .node:hover .nodeQuickActions {
@@ -1133,11 +1143,20 @@
   white-space: nowrap;
 }
 
+/* Switch alineado a la izquierda, texto a su derecha */
 .toggleField {
   display: flex;
+  flex-direction: row;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  justify-content: flex-start;
+  gap: 9px;
+}
+
+.toggleLabel {
+  font-size: 12px;
+  color: var(--color-text-primary);
+  line-height: 1.4;
+  cursor: pointer;
 }
 
 .toggleSwitch {
@@ -1174,18 +1193,22 @@
 
 /* ------------------- Secciones y bloques de configuración ----------------- */
 
+/* Secciones sin caja: solo título + separador (menos ruido visual) */
 .configSection {
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 11px;
-  padding: 10px;
-  margin-bottom: 12px;
+  border: none;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 0;
+  padding: 12px 0 0;
+  margin: 14px 0 12px;
 }
 
 .configSectionTitle {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
-  color: var(--color-text-secondary);
-  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-tertiary);
+  margin-bottom: 10px;
 }
 
 .configWarning {
@@ -1719,24 +1742,25 @@
   padding: 2px 8px;
 }
 
+/* Pill verde "Escribiendo… N segundos" (como ManyChat) */
 .chatDelayRow {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
   width: 100%;
-  border: 1px dashed rgba(148, 163, 184, 0.4);
+  border: 1px solid rgba(16, 185, 129, 0.45);
   border-radius: 999px;
-  background: transparent;
-  color: var(--color-text-tertiary);
+  background: rgba(16, 185, 129, 0.07);
+  color: rgb(16, 185, 129);
   font-size: 11px;
   font-weight: 600;
-  padding: 4px 8px;
+  padding: 5px 8px;
   cursor: pointer;
 }
 
 .chatDelayRow:hover {
-  background: rgba(148, 163, 184, 0.08);
+  background: rgba(16, 185, 129, 0.14);
 }
 
 /* ----------------------- Editor de bloques de mensaje --------------------- */
@@ -2048,6 +2072,219 @@
   border-color: rgba(220, 38, 38, 0.55);
   background: rgba(220, 38, 38, 0.1);
   color: var(--color-status-error);
+}
+
+/* ------------- Panel de configuración acoplado a la derecha --------------- */
+
+.configPanel {
+  width: 372px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid rgba(148, 163, 184, 0.16);
+  background: var(--color-background-primary);
+  animation: panelIn 0.16s ease;
+}
+
+@keyframes panelIn {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.configPanel .bubbleHeader {
+  flex-shrink: 0;
+}
+
+.configPanel .bubbleBody {
+  padding: 12px 14px 18px;
+}
+
+/* Globo de mensaje dentro del panel (estilo ManyChat) */
+.panelBubble {
+  position: relative;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 12px;
+  padding: 8px;
+  margin-bottom: 12px;
+}
+
+.panelBubble:hover {
+  border-color: rgba(148, 163, 184, 0.3);
+}
+
+.panelBubble .composerWrap {
+  border: none;
+  background: transparent;
+}
+
+.addButtonInBubble {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  border: 1.5px dashed rgba(148, 163, 184, 0.4);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.addButtonInBubble:hover:not(:disabled) {
+  border-color: rgba(var(--color-primary-rgb), 0.5);
+  color: var(--color-text-primary);
+}
+
+.addButtonInBubble:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.bubbleButtonEditor {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+/* Bloque de retraso ("Escribiendo…") */
+.panelDelay {
+  position: relative;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  border-radius: 12px;
+  padding: 10px;
+  margin-bottom: 12px;
+}
+
+.panelDelayTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-bottom: 8px;
+}
+
+/* Acciones del bloque al hover (subir/bajar/quitar) */
+.blockHoverActions {
+  position: absolute;
+  top: -12px;
+  right: 8px;
+  z-index: 5;
+  display: none;
+  align-items: center;
+  gap: 1px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--color-background-secondary);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  box-shadow: 0 6px 16px -8px rgba(15, 23, 42, 0.4);
+}
+
+.panelBubble:hover .blockHoverActions,
+.panelDelay:hover .blockHoverActions {
+  display: inline-flex;
+}
+
+/* Respuestas rápidas (pill centrado) */
+.quickRepliesArea {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.quickReplyPill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  align-self: center;
+  border: 1.5px dashed rgba(148, 163, 184, 0.45);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+.quickReplyPill:hover {
+  border-color: rgba(var(--color-primary-rgb), 0.5);
+  color: var(--color-text-primary);
+}
+
+/* Lista "Añade uno de los bloques de contenido" */
+.contentBlocksTitle {
+  font-size: 11.5px;
+  color: var(--color-text-tertiary);
+  margin: 14px 0 8px;
+}
+
+.contentBlockCard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  border: 1.5px dashed rgba(148, 163, 184, 0.35);
+  border-radius: 12px;
+  background: transparent;
+  padding: 9px 10px;
+  margin-bottom: 7px;
+  cursor: pointer;
+  transition: border-color 0.13s ease, background 0.13s ease;
+}
+
+.contentBlockCard:hover {
+  border-color: rgba(var(--color-primary-rgb), 0.5);
+  background: rgba(var(--color-primary-rgb), 0.05);
+}
+
+.contentBlockIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  background: rgba(148, 163, 184, 0.14);
+  color: var(--color-text-secondary);
+}
+
+.contentBlockText {
+  min-width: 0;
+}
+
+.contentBlockTitle {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  line-height: 1.3;
+}
+
+.contentBlockDescription {
+  display: block;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  line-height: 1.35;
 }
 
 /* ------------------- Configuración global del flujo ----------------------- */

@@ -93,6 +93,8 @@ interface DragState {
   /** Posiciones originales del grupo cuando se arrastran varios nodos */
   groupStart: Record<string, { x: number; y: number }> | null
   moved: boolean
+  /** Shift/Cmd al iniciar: el clic alterna selección, no abre configuración */
+  withModifier: boolean
 }
 
 interface ConnectionDraft {
@@ -351,6 +353,10 @@ export const AutomationCanvas: React.FC<AutomationCanvasProps> = ({
             const node = nodesRef.current.find((candidate) => candidate.id === currentDrag.nodeId)
             if (node) actions.onMoveNode(currentDrag.nodeId, node.position, true)
           }
+        } else if (!currentDrag.withModifier) {
+          // Clic simple sobre el evento: abre su configuración en el panel
+          const node = nodesRef.current.find((candidate) => candidate.id === currentDrag.nodeId)
+          if (node) actions.onOpenConfig(node, { x: 0, y: 0 })
         }
         return
       }
@@ -453,7 +459,8 @@ export const AutomationCanvas: React.FC<AutomationCanvasProps> = ({
       pointerStart: { x: event.clientX, y: event.clientY },
       nodeStart: { ...node.position },
       groupStart,
-      moved: false
+      moved: false,
+      withModifier: event.shiftKey || event.metaKey || event.ctrlKey
     })
   }
 
@@ -645,13 +652,14 @@ export const AutomationCanvas: React.FC<AutomationCanvasProps> = ({
               <marker
                 id="automation-arrow"
                 viewBox="0 0 10 10"
-                refX="8"
+                refX="9"
                 refY="5"
                 markerWidth="7"
                 markerHeight="7"
                 orient="auto-start-reverse"
               >
-                <path d="M 0 1 L 8 5 L 0 9" fill="none" stroke="rgba(100,116,139,0.9)" strokeWidth="1.6" strokeLinecap="round" />
+                {/* Triángulo relleno */}
+                <path d="M 0 0.5 L 9.5 5 L 0 9.5 Z" fill="rgba(100, 116, 139, 0.95)" />
               </marker>
             </defs>
 

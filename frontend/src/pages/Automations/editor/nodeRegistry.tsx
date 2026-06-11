@@ -136,9 +136,11 @@ export interface MessageButton {
   url?: string
 }
 
+export type MessageBlockType = 'text' | 'delay' | 'image' | 'video' | 'audio' | 'file'
+
 export interface MessageBlock {
   id: string
-  type: 'text' | 'delay'
+  type: MessageBlockType
   /** Texto compilado con tokens {{contact.x}} (en UI se ven como chips) */
   compiledText?: string
   buttons?: MessageButton[]
@@ -146,7 +148,16 @@ export interface MessageBlock {
   /** Para bloques de espera interna entre mensajes */
   amount?: number
   unit?: 'seconds' | 'minutes'
+  /** Mostrar "escribiendo…" durante el retraso */
+  showTyping?: boolean
+  /** Adjuntos (imagen, video, audio, archivo): URL del recurso.
+   *  ADAPTADOR PENDIENTE: cuando exista subida de archivos, reemplazar por
+   *  el selector de medios real. */
+  url?: string
+  caption?: string
 }
+
+export const MEDIA_BLOCK_TYPES: MessageBlockType[] = ['image', 'video', 'audio', 'file']
 
 /** Máximo de salidas/ramas por nodo (incluye botones y quick replies) */
 export const MAX_BRANCHES = 10
@@ -203,12 +214,20 @@ function firstTextBlock(config: Record<string, unknown>): string {
 function validateMessageBlocks(config: Record<string, unknown>): string[] {
   const blocks = asMessageBlocks(config.messageBlocks)
   const errors: string[] = []
-  if (blocks.length === 0 || !blocks.some((block) => block.type === 'text' && (block.compiledText || '').trim())) {
-    errors.push('Agrega al menos un mensaje con texto')
+  const hasContent = blocks.some(
+    (block) =>
+      (block.type === 'text' && (block.compiledText || '').trim()) ||
+      (MEDIA_BLOCK_TYPES.includes(block.type) && (block.url || '').trim())
+  )
+  if (!hasContent) {
+    errors.push('Agrega al menos un mensaje con contenido')
   }
   blocks.forEach((block, index) => {
     if (block.type === 'delay' && (Number(block.amount) || 0) <= 0) {
       errors.push(`La espera interna del bloque ${index + 1} debe ser mayor a cero`)
+    }
+    if (MEDIA_BLOCK_TYPES.includes(block.type) && !(block.url || '').trim()) {
+      errors.push(`El adjunto del bloque ${index + 1} necesita una URL`)
     }
     ;[...(block.buttons || []), ...(block.quickReplies || [])].forEach((button) => {
       if (!String(button.label || '').trim()) {

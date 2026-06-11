@@ -87,7 +87,6 @@ export const WhatsAppConfigEditor: React.FC<{ config: Config; onChange: (config:
             value={config.messageBlocks}
             onChange={(messageBlocks: MessageBlock[]) => set({ messageBlocks })}
             supportsQuickReplies={false}
-            addMessageLabel="Agregar mensaje"
           />
         )}
 

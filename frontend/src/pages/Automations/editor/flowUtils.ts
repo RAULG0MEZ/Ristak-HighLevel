@@ -161,12 +161,8 @@ export function canConnect(
     return { valid: false, reason: 'Esa conexión ya existe' }
   }
 
-  // Evitar ciclos: si desde el destino se puede llegar al origen, se formaría un ciclo.
-  // Se ignora la conexión actual de esta misma salida porque será reemplazada.
-  const remaining = edges.filter(
-    (edge) => !(edge.sourceNodeId === sourceNodeId && edge.sourceHandle === sourceHandle)
-  )
-  if (hasPath(remaining, targetNodeId, sourceNodeId)) {
+  // Evitar ciclos: si desde el destino se puede llegar al origen, se formaría un ciclo
+  if (hasPath(edges, targetNodeId, sourceNodeId)) {
     return { valid: false, reason: 'Esta conexión crearía un ciclo en el flujo' }
   }
 
@@ -174,8 +170,8 @@ export function canConnect(
 }
 
 /**
- * Conecta dos nodos. Cada salida tiene una sola conexión: si la salida ya
- * estaba conectada, la conexión anterior se reemplaza.
+ * Conecta dos nodos. Una misma salida puede tener varias conexiones hacia
+ * pasos distintos (no hace falta crear ramas para bifurcar el flujo).
  */
 export function connectNodes(
   edges: AutomationEdge[],
@@ -184,11 +180,8 @@ export function connectNodes(
   targetNodeId: string,
   label?: string
 ): AutomationEdge[] {
-  const withoutPrevious = edges.filter(
-    (edge) => !(edge.sourceNodeId === sourceNodeId && edge.sourceHandle === sourceHandle)
-  )
   return [
-    ...withoutPrevious,
+    ...edges,
     {
       id: genId('edge'),
       sourceNodeId,

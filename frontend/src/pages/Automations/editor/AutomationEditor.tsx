@@ -42,6 +42,7 @@ import automationsService, {
 import { AutomationCanvas, type PendingEdge, type PickerRequest } from './AutomationCanvas'
 import { StepPickerBubble, rememberRecentStep } from './StepPickerBubble'
 import { NodeConfigBubble } from './NodeConfigBubble'
+import { VariableCategoriesContext } from './composer/MessageComposer'
 import { Settings as SettingsIcon } from 'lucide-react'
 import {
   getNodeDefinition,
@@ -177,6 +178,28 @@ export const AutomationEditor: React.FC = () => {
   }, [automation])
 
   const { nodes, edges } = state.present
+
+  // Variables congruentes con los disparadores del flujo (citas → Citas,
+  // pagos → Pagos…). Contacto/personalizados/conversación siempre presentes.
+  const variableCategories = useMemo(() => {
+    const TRIGGER_CATEGORY_MAP: Record<string, string> = {
+      'trigger-appointment-status': 'appointment',
+      'trigger-appointment-booked': 'appointment',
+      'trigger-payment-received': 'payment',
+      'trigger-refund': 'payment',
+      'trigger-form-submitted': 'form'
+    }
+    const startNode = nodes.find(isStartNode)
+    const triggers = startNode ? getStartTriggers(startNode) : []
+    const contextual = [
+      ...new Set(
+        triggers
+          .map((trigger) => TRIGGER_CATEGORY_MAP[trigger.type])
+          .filter((category): category is string => Boolean(category))
+      )
+    ]
+    return [...contextual, 'contact', 'custom', 'conversation', 'automation']
+  }, [nodes])
 
   // ------------------------------------------------------------------
   // Carga inicial + modo editor a pantalla completa
@@ -973,6 +996,7 @@ export const AutomationEditor: React.FC = () => {
       : null
 
   return (
+    <VariableCategoriesContext.Provider value={variableCategories}>
     <div className={styles.editorShell}>
       {/* ----------------------------- Toolbar ---------------------------- */}
       <header className={styles.toolbar}>
@@ -1149,17 +1173,17 @@ export const AutomationEditor: React.FC = () => {
           />
         )}
 
-        {config && configNode && configDefinition && (
-          <NodeConfigBubble
-            definition={configDefinition}
-            config={(configTrigger ? configTrigger.config : configNode.config) || {}}
-            anchor={config.anchor}
-            bounds={canvasBounds}
-            onChange={handleConfigChange}
-            onClose={() => setConfig(null)}
-          />
-        )}
       </AutomationCanvas>
+
+      {/* Panel de configuración acoplado a la derecha (estilo ManyChat) */}
+      {config && configNode && configDefinition && (
+        <NodeConfigBubble
+          definition={configDefinition}
+          config={(configTrigger ? configTrigger.config : configNode.config) || {}}
+          onChange={handleConfigChange}
+          onClose={() => setConfig(null)}
+        />
+      )}
       </div>
 
       {/* ----------------------- Configuración del flujo --------------------- */}
@@ -1206,5 +1230,6 @@ export const AutomationEditor: React.FC = () => {
         )}
       </Modal>
     </div>
+    </VariableCategoriesContext.Provider>
   )
 }

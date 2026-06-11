@@ -45,6 +45,13 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+/**
+ * Categorías de variables relevantes según los disparadores del flujo:
+ * si el flujo arranca con una cita, aparecen las variables de Citas; si
+ * arranca con un pago, las de Pagos, etc. (null = mostrar todas)
+ */
+export const VariableCategoriesContext = React.createContext<string[] | null>(null)
+
 export const MessageComposer: React.FC<MessageComposerProps> = ({
   value,
   onChange,
@@ -77,6 +84,8 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
     () => new Map(variables.map((variable) => [variable.fieldId, variable])),
     [variables]
   )
+
+  const allowedCategories = React.useContext(VariableCategoriesContext)
 
   // ------------------------------------------------------------------
   // DOM ↔ texto compilado
@@ -220,15 +229,23 @@ export const MessageComposer: React.FC<MessageComposerProps> = ({
   // ------------------------------------------------------------------
   const filteredByCategory = useMemo(() => {
     const normalized = query.trim().toLowerCase()
-    return VARIABLE_CATEGORIES.map((category) => ({
-      category,
-      items: variables.filter(
-        (variable) =>
-          variable.category === category.id &&
-          (!normalized || variable.label.toLowerCase().includes(normalized))
-      )
-    })).filter((group) => group.items.length > 0)
-  }, [variables, query])
+    // Solo categorías congruentes con los disparadores, en su orden
+    const categories = allowedCategories
+      ? allowedCategories
+          .map((id) => VARIABLE_CATEGORIES.find((category) => category.id === id))
+          .filter((category): category is (typeof VARIABLE_CATEGORIES)[number] => Boolean(category))
+      : VARIABLE_CATEGORIES
+    return categories
+      .map((category) => ({
+        category,
+        items: variables.filter(
+          (variable) =>
+            variable.category === category.id &&
+            (!normalized || variable.label.toLowerCase().includes(normalized))
+        )
+      }))
+      .filter((group) => group.items.length > 0)
+  }, [variables, query, allowedCategories])
 
   const popoverRef = useRef<HTMLDivElement>(null)
   useEffect(() => {

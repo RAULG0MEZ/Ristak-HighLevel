@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, Copy, Maximize2, Minimize2, Plus, Trash2, X } from 'lucide-react'
+import { Check, Copy, Plus, Trash2, X } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { CustomSelect } from '@/components/common'
 import { validateNodeConfig, type ConfigField, type NodeDefinition } from './nodeRegistry'
@@ -29,14 +29,9 @@ type ConfigValue = Record<string, unknown>
 interface NodeConfigBubbleProps {
   definition: NodeDefinition
   config: ConfigValue
-  anchor: { x: number; y: number }
-  bounds: { width: number; height: number }
   onChange: (config: ConfigValue) => void
   onClose: () => void
 }
-
-const BUBBLE_WIDTH = 380
-const BUBBLE_WIDTH_EXPANDED = 520
 
 const str = (value: unknown): string =>
   typeof value === 'string' ? value : value === undefined || value === null ? '' : String(value)
@@ -44,31 +39,17 @@ const str = (value: unknown): string =>
 export const NodeConfigBubble: React.FC<NodeConfigBubbleProps> = ({
   definition,
   config,
-  anchor,
-  bounds,
   onChange,
   onClose
 }) => {
   const rootRef = useRef<HTMLDivElement>(null)
   const [copied, setCopied] = useState(false)
-  const [expanded, setExpanded] = useState(false)
 
   const errors = useMemo(() => validateNodeConfig(definition, config), [definition, config])
 
   const setValue = (key: string, value: unknown) => {
     onChange({ ...config, [key]: value })
   }
-
-  // Cerrar con clic fuera
-  useEffect(() => {
-    const handlePointerDown = (event: PointerEvent) => {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
-        onClose()
-      }
-    }
-    document.addEventListener('pointerdown', handlePointerDown, true)
-    return () => document.removeEventListener('pointerdown', handlePointerDown, true)
-  }, [onClose])
 
   // Genera la URL del webhook entrante la primera vez que se abre
   const needsEndpoint =
@@ -440,20 +421,12 @@ export const NodeConfigBubble: React.FC<NodeConfigBubbleProps> = ({
     }
   }
 
-  // ------------------------------------------------------------------
-  // Posicionamiento (overlay, nunca empuja el layout)
-  // ------------------------------------------------------------------
-  const width = expanded ? BUBBLE_WIDTH_EXPANDED : BUBBLE_WIDTH
-  const left = Math.max(12, Math.min(anchor.x, bounds.width - width - 12))
-  const top = Math.max(12, Math.min(anchor.y, Math.max(12, bounds.height - 320)))
-
   return (
     <div
       ref={rootRef}
       data-automation-interactive="true"
-      className={cn(styles.bubble, expanded && styles.bubbleExpanded)}
-      style={{ left, top, width }}
-      role="dialog"
+      className={styles.configPanel}
+      role="complementary"
       aria-label={`Configurar ${definition.label}`}
       onPointerDown={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
@@ -473,14 +446,6 @@ export const NodeConfigBubble: React.FC<NodeConfigBubbleProps> = ({
           {definition.label}
           {definition.description && <div className={styles.bubbleSubtitle}>{definition.description}</div>}
         </div>
-        <button
-          type="button"
-          className={styles.bubbleClose}
-          onClick={() => setExpanded((value) => !value)}
-          title={expanded ? 'Reducir' : 'Expandir'}
-        >
-          {expanded ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-        </button>
         <button type="button" className={styles.bubbleClose} onClick={onClose} title="Cerrar (Esc)">
           <X size={14} />
         </button>
@@ -516,7 +481,6 @@ export const NodeConfigBubble: React.FC<NodeConfigBubbleProps> = ({
               value={config.messageBlocks}
               onChange={(messageBlocks: MessageBlock[]) => onChange({ ...config, messageBlocks })}
               supportsQuickReplies={Boolean(definition.supportsQuickReplies)}
-              addMessageLabel={definition.addButtonLabel || 'Agregar mensaje'}
             />
           </>
         )}

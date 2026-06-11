@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { AlertCircle, Clock, Copy, GitBranch, Link2, Plus, Settings2, Trash2, X, Zap } from 'lucide-react'
+import { AlertCircle, Clock, Copy, FileText, GitBranch, Image, Link2, Music, Plus, Trash2, Video, X, Zap } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import type { AutomationNode } from '@/services/automationsService'
 import {
@@ -162,18 +162,6 @@ export const AutomationNodeCard: React.FC<AutomationNodeCardProps> = ({
     onPatchConfig(node, { messageBlocks: [...asMessageBlocks(config.messageBlocks), block] }, true)
   }
 
-  const branchCount = outputs.length
-  const canAddBranch =
-    Boolean(definition?.supportsMultipleBranches) && branchCount < (definition?.maxBranches || MAX_BRANCHES)
-
-  const addBranch = () => {
-    const branches = Array.isArray(config.extraBranches)
-      ? (config.extraBranches as Array<{ id: string; label: string }>)
-      : []
-    onPatchConfig(node, {
-      extraBranches: [...branches, { id: genId('extra'), label: `Rama ${branches.length + 1}` }]
-    })
-  }
 
   return (
     <div
@@ -242,26 +230,7 @@ export const AutomationNodeCard: React.FC<AutomationNodeCardProps> = ({
           )}
         </span>
         {!isStart && (
-          <span
-            className={styles.nodeStatusDot}
-            data-state={hasErrors ? 'error' : configured ? 'ok' : 'incomplete'}
-            title={hasErrors ? 'Con errores' : configured ? 'Configurado' : 'Falta configurar'}
-          />
-        )}
-        {!isStart && (
           <span className={styles.nodeQuickActions}>
-            <button
-              type="button"
-              className={styles.nodeQuickButton}
-              title="Configurar paso"
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.stopPropagation()
-                onOpenConfig(node)
-              }}
-            >
-              <Settings2 size={13} />
-            </button>
             <button
               type="button"
               className={styles.nodeQuickButton}
@@ -387,12 +356,12 @@ export const AutomationNodeCard: React.FC<AutomationNodeCardProps> = ({
                     </span>
                   )}
                 </button>
-              ) : (
+              ) : block.type === 'delay' ? (
                 <button
                   key={block.id}
                   type="button"
                   className={styles.chatDelayRow}
-                  title="Editar la espera interna"
+                  title="Editar el retraso"
                   onPointerDown={(event) => event.stopPropagation()}
                   onClick={(event) => {
                     event.stopPropagation()
@@ -400,7 +369,25 @@ export const AutomationNodeCard: React.FC<AutomationNodeCardProps> = ({
                   }}
                 >
                   <Clock size={11} />
-                  Espera {Number(block.amount) || 0} {block.unit === 'minutes' ? 'min' : 'seg'}
+                  {block.showTyping !== false ? 'Escribiendo' : 'Espera'} {Number(block.amount) || 0}{' '}
+                  {block.unit === 'minutes' ? 'min' : 'seg'}
+                </button>
+              ) : (
+                <button
+                  key={block.id}
+                  type="button"
+                  className={styles.chatBubble}
+                  title="Editar el adjunto"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onOpenConfig(node)
+                  }}
+                >
+                  <span className={styles.chatBubbleText}>
+                    {block.type === 'image' ? <Image size={11} /> : block.type === 'video' ? <Video size={11} /> : block.type === 'audio' ? <Music size={11} /> : <FileText size={11} />}{' '}
+                    {block.caption || block.url || 'Adjunto sin URL'}
+                  </span>
                 </button>
               )
             )}
@@ -486,21 +473,6 @@ export const AutomationNodeCard: React.FC<AutomationNodeCardProps> = ({
           </>
         )}
 
-        {/* CTA para crear ramas adicionales (hasta 10 salidas por nodo) */}
-        {!isStart && canAddBranch && (
-          <button
-            type="button"
-            className={cn(styles.nodeCtaButton, styles.nodeCtaButtonSubtle)}
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={(event) => {
-              event.stopPropagation()
-              addBranch()
-            }}
-          >
-            <GitBranch size={11} />
-            Agregar rama
-          </button>
-        )}
       </div>
 
       {/* Salidas (Entonces / Siguiente paso / ramas) */}
