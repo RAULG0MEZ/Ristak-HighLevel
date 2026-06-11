@@ -688,6 +688,24 @@ export const updateContactCustomFieldDefinitionHandler = async (req, res) => {
       })
     }
 
+    // Motor de automatizaciones: campo cambiado y etiquetas
+    {
+      const changedFields = []
+      if (full_name !== undefined && full_name !== existing.full_name) changedFields.push('name')
+      if (email !== undefined && email !== existing.email) changedFields.push('email')
+      if (phone !== undefined && phone !== existing.phone) changedFields.push('phone')
+      if (source !== undefined && source !== existing.source) changedFields.push('source')
+      if (Array.isArray(customFields)) customFields.forEach(field => { if (field?.key) changedFields.push(field.key) })
+      import('../services/automationEngine.js').then(engine => {
+        if (changedFields.length > 0) {
+          engine.handleAutomationEvent('contact-updated', { contactId: id, changedFields }).catch(() => {})
+        }
+        tagEvents.forEach(event => {
+          engine.handleAutomationEvent('tag-changed', { contactId: id, ...event }).catch(() => {})
+        })
+      }).catch(() => {})
+    }
+
     res.json({
       success: true,
       data: definition
@@ -1890,6 +1908,10 @@ export const createContact = async (req, res) => {
 
     logger.info(`Contacto manual creado: ${id} (${contact.full_name || contact.email || contact.phone || 'sin nombre'})`)
 
+    import('../services/automationEngine.js')
+      .then(engine => engine.handleAutomationEvent('contact-created', { contactId: id }))
+      .catch(() => {})
+
     res.status(201).json({
       success: true,
       data: mapContactRowForResponse(contact)
@@ -2150,6 +2172,21 @@ export const updateContact = async (req, res) => {
       )
       updates.push(`custom_fields = ${process.env.DATABASE_URL ? '?::jsonb' : '?'}`)
       params.push(serializeContactCustomFieldsForDb(mergedCustomFields))
+    }
+
+    // Etiquetas locales: persistir y detectar añadidas/eliminadas
+    let tagEvents = []
+    if (Array.isArray(tags)) {
+      let previousTags = []
+      try { const parsed = JSON.parse(existing.tags || '[]'); if (Array.isArray(parsed)) previousTags = parsed } catch {}
+      const prevSet = new Set(previousTags.map(t => String(t).toLowerCase()))
+      const nextSet = new Set(tags.map(t => String(t).toLowerCase()))
+      tagEvents = [
+        ...tags.filter(t => !prevSet.has(String(t).toLowerCase())).map(tag => ({ tag, tagAction: 'added' })),
+        ...previousTags.filter(t => !nextSet.has(String(t).toLowerCase())).map(tag => ({ tag, tagAction: 'removed' }))
+      ]
+      updates.push('tags = ?')
+      params.push(JSON.stringify(tags))
     }
 
     // Actualizar en la base de datos local

@@ -570,6 +570,8 @@ export const handleContactWebhook = async (req, res) => {
           custom_fields = COALESCE(excluded.custom_fields, contacts.custom_fields),
           updated_at = CURRENT_TIMESTAMP`;
 
+    const contactExistedBefore = !!(await db.get('SELECT id FROM contacts WHERE id = ?', [contactId]));
+
     await db.run(query, [
       contactId,
       phoneUpsert.phone || null,
@@ -620,6 +622,13 @@ export const handleContactWebhook = async (req, res) => {
 
     logger.info(`✅ Contacto ${contactId} procesado exitosamente${visitorId ? ` (visitor_id: ${visitorId})` : ''}`);
     res.status(200).json({ success: true, message: 'Contacto procesado' });
+
+    import('../services/automationEngine.js')
+      .then(engine => engine.handleAutomationEvent(
+        contactExistedBefore ? 'contact-updated' : 'contact-created',
+        { contactId, changedFields: [] }
+      ))
+      .catch(() => {});
 
   } catch (error) {
     logger.error(`Error en handleContactWebhook: ${error.message}`);
@@ -871,6 +880,10 @@ export const handlePaymentWebhook = async (req, res) => {
         currency,
         paymentMode
       });
+
+      import('../services/automationEngine.js')
+        .then(engine => engine.handleAutomationEvent('payment-received', { contactId, amount, product: description || '' }))
+        .catch(() => {});
     }
 
     logger.info(`✅ Pago ${paymentId} procesado exitosamente para contacto ${contactId}`);
@@ -1150,6 +1163,21 @@ export const handleAppointmentWebhook = async (req, res) => {
       await triggerWhatsappAppointmentBookedEvent(contactId, { calendarId: appointmentCalendarId });
     }
 
+    if (contactId) {
+      import('../services/automationEngine.js')
+        .then(engine => {
+          const statusEvent = appointmentStatusNormalized.includes('cancel') ? 'cancelled'
+            : appointmentStatusNormalized.includes('no')
+              ? 'no_show'
+              : appointmentStatusNormalized || 'booked';
+          if (!isCancelledAppointment) {
+            engine.handleAutomationEvent('appointment-booked', { contactId, calendarId: appointmentCalendarId }).catch(() => {});
+          }
+          engine.handleAutomationEvent('appointment-status', { contactId, calendarId: appointmentCalendarId, status: statusEvent }).catch(() => {});
+        })
+        .catch(() => {});
+    }
+
     logger.info(`✅ Cita ${appointmentId} procesada exitosamente para contacto ${contactId}`);
     res.status(200).json({ success: true, message: 'Cita procesada' });
 
@@ -1332,6 +1360,12 @@ export const handleAppointmentShowedWebhook = async (req, res) => {
       contact_id: contactId
     });
 
+    if (contactId) {
+      import('../services/automationEngine.js')
+        .then(engine => engine.handleAutomationEvent('appointment-status', { contactId, status: 'completed' }))
+        .catch(() => {});
+    }
+
   } catch (error) {
     logger.error(`Error en handleAppointmentShowedWebhook: ${error.message}`);
     // Siempre devolver 200 para que HighLevel no reintente
@@ -1374,6 +1408,9 @@ export const handleRefundWebhook = async (req, res) => {
     if (payment.contact_id) {
       await updateSingleContactStats(payment.contact_id);
       logger.info(`✅ Reembolso ${refundId} procesado exitosamente para contacto ${payment.contact_id}`);
+      import('../services/automationEngine.js')
+        .then(engine => engine.handleAutomationEvent('refund', { contactId: payment.contact_id, amount: payment.amount }))
+        .catch(() => {});
     } else {
       logger.info(`✅ Reembolso ${refundId} procesado exitosamente`);
     }
@@ -1692,6 +1729,31 @@ export const handleConversationWebhook = async (req, res) => {
   } catch (error) {
     logger.error(`Error en handleConversationWebhook: ${error.message}`);
     // Siempre devolver 200 para que HighLevel no reintente
+    res.status(200).json({ success: true, message: 'Webhook recibido' });
+  }
+};
+
+
+/**
+ * Webhook público para el disparador "Webhook entrante" de automatizaciones:
+ * POST /webhooks/automation/:endpointId — el contacto se resuelve por
+ * phone/email del cuerpo si vienen.
+ */
+export const handleAutomationIncomingWebhook = async (req, res) => {
+  try {
+    const body = req.body || {};
+    import('../services/automationEngine.js')
+      .then(engine => engine.handleAutomationEvent('webhook-received', {
+        endpointId: req.params.endpointId,
+        phone: body.phone || body.telefono || '',
+        email: body.email || body.correo || '',
+        contactName: body.name || body.nombre || '',
+        payload: body
+      }))
+      .catch(() => {});
+    res.status(200).json({ success: true, message: 'Webhook recibido' });
+  } catch (error) {
+    logger.error(`Error en webhook de automatización: ${error.message}`);
     res.status(200).json({ success: true, message: 'Webhook recibido' });
   }
 };

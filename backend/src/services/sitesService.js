@@ -13922,6 +13922,15 @@ async function createImportedSubmissionFromRequest({ req, body, site, host }) {
     submissionStatus
   ])
 
+  // Motor de automatizaciones: formulario enviado
+  import('./automationEngine.js')
+    .then(engine => engine.handleAutomationEvent('form-submitted', {
+      contactId,
+      formId: site.id,
+      formName: site.name || ''
+    }))
+    .catch(() => {})
+
   const capi = await sendSiteLeadMetaEvent({
     site,
     submissionId,
@@ -14063,6 +14072,15 @@ export async function createSubmissionFromRequest(req, body = {}) {
     jsonString(meta),
     ruleEvaluation.status
   ])
+
+  // Motor de automatizaciones: formulario enviado
+  import('./automationEngine.js')
+    .then(engine => engine.handleAutomationEvent('form-submitted', {
+      contactId,
+      formId: site.id,
+      formName: site.name || ''
+    }))
+    .catch(() => {})
 
   const capi = await sendSiteLeadMetaEvent({
     site,

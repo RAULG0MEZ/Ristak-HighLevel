@@ -150,25 +150,109 @@ export function filtersMatch(filters, ctx) {
   })
 }
 
+const APPOINTMENT_STATUS_ALIASES = {
+  showed: 'completed',
+  noshow: 'no_show',
+  'no-show': 'no_show'
+}
+
 function triggerMatches(trigger, eventType, ctx) {
   const config = trigger.config || {}
   if (!filtersMatch(config.filters, ctx)) return false
 
-  if (eventType === 'message-received') {
-    if (trigger.type !== 'trigger-customer-replied') return false
-    const channel = str(config.channel) || 'any'
-    if (channel !== 'any' && channel !== ctx.channel) return false
-    return keywordsMatch(config, ctx.messageText)
-  }
+  switch (eventType) {
+    case 'message-received': {
+      if (trigger.type !== 'trigger-customer-replied') return false
+      const channel = str(config.channel) || 'any'
+      if (channel !== 'any' && channel !== ctx.channel) return false
+      return keywordsMatch(config, ctx.messageText)
+    }
 
-  if (eventType === 'contact-created') {
-    if (trigger.type !== 'trigger-contact-created') return false
-    const source = str(config.source)
-    if (source && normalizeText(source) !== normalizeText(ctx.contact?.source)) return false
-    return true
-  }
+    case 'contact-created': {
+      if (trigger.type !== 'trigger-contact-created') return false
+      const source = str(config.source)
+      return !source || normalizeText(source) === normalizeText(ctx.contact?.source)
+    }
 
-  return false
+    case 'contact-updated': {
+      if (trigger.type !== 'trigger-contact-updated') return false
+      const field = str(config.field)
+      if (!field) return true
+      const changed = (ctx.changedFields || []).map(normalizeText)
+      return changed.includes(normalizeText(field)) || changed.includes(normalizeText(field.replace(/^custom:/, '')))
+    }
+
+    case 'tag-changed': {
+      if (trigger.type !== 'trigger-contact-tag') return false
+      const operator = str(config.operator) || 'added'
+      const tag = normalizeText(config.tag)
+      if (!tag) return false
+      if (operator === 'contains') return (ctx.contact?.tags || []).map(normalizeText).includes(tag)
+      return ctx.tagAction === operator && normalizeText(ctx.tag) === tag
+    }
+
+    case 'form-submitted': {
+      if (trigger.type !== 'trigger-form-submitted') return false
+      const form = str(config.form)
+      return !form || form === str(ctx.formId)
+    }
+
+    case 'appointment-booked': {
+      if (trigger.type !== 'trigger-appointment-booked') return false
+      const calendar = str(config.calendar)
+      return !calendar || calendar === str(ctx.calendarId)
+    }
+
+    case 'appointment-status': {
+      if (trigger.type !== 'trigger-appointment-status') return false
+      const wanted = str(config.status) || 'confirmed'
+      const actualRaw = normalizeText(ctx.status)
+      const actual = APPOINTMENT_STATUS_ALIASES[actualRaw] || actualRaw
+      if (wanted !== actual) return false
+      const calendar = str(config.calendar)
+      return !calendar || calendar === str(ctx.calendarId)
+    }
+
+    case 'payment-received': {
+      if (trigger.type !== 'trigger-payment-received') return false
+      const operator = str(config.amountOperator) || 'any'
+      if (operator !== 'any') {
+        const amount = Number(ctx.amount) || 0
+        const expected = Number(config.amount) || 0
+        if (operator === 'gt' && !(amount > expected)) return false
+        if (operator === 'gte' && !(amount >= expected)) return false
+        if (operator === 'lt' && !(amount < expected)) return false
+        if (operator === 'eq' && amount !== expected) return false
+      }
+      const product = str(config.product)
+      return !product || normalizeText(product) === normalizeText(ctx.product)
+    }
+
+    case 'refund':
+      return trigger.type === 'trigger-refund'
+
+    case 'webhook-received': {
+      if (trigger.type !== 'trigger-incoming-webhook') return false
+      const endpointId = str(config.endpointId)
+      return !endpointId || endpointId === str(ctx.endpointId)
+    }
+
+    default:
+      return false
+  }
+}
+
+const EVENT_DESCRIPTIONS = {
+  'message-received': (ctx) => `el contacto respondió por ${ctx.channel}`,
+  'contact-created': () => 'se creó el contacto',
+  'contact-updated': (ctx) => `cambió ${(ctx.changedFields || []).join(', ') || 'un campo'} del contacto`,
+  'tag-changed': (ctx) => `etiqueta "${ctx.tag}" ${ctx.tagAction === 'removed' ? 'eliminada' : 'añadida'}`,
+  'form-submitted': (ctx) => `envió el formulario${ctx.formName ? ` "${ctx.formName}"` : ''}`,
+  'appointment-booked': () => 'agendó una cita',
+  'appointment-status': (ctx) => `la cita cambió a ${ctx.status}`,
+  'payment-received': (ctx) => `se recibió un pago${ctx.amount ? ` de $${ctx.amount}` : ''}`,
+  refund: () => 'se procesó un reembolso',
+  'webhook-received': () => 'se recibió un webhook'
 }
 
 // ---------------------------------------------------------------------------
@@ -316,18 +400,25 @@ const DURATION_MS = {
 async function applyTagAction(node, ctx, remove) {
   const tag = str(node.config?.tag)
   if (!tag || !ctx.contact?.id) return `Etiqueta no aplicada (sin ${tag ? 'contacto' : 'etiqueta'})`
-  const row = await db.get('SELECT custom_fields FROM contacts WHERE id = ?', [ctx.contact.id])
-  const fields = parseJson(row?.custom_fields, {})
-  const bag = typeof fields === 'object' && fields !== null && !Array.isArray(fields) ? fields : {}
-  const tags = Array.isArray(bag.tags) ? bag.tags : []
-  bag.tags = remove
-    ? tags.filter((candidate) => normalizeText(candidate) !== normalizeText(tag))
-    : [...new Set([...tags, tag])]
-  await db.run('UPDATE contacts SET custom_fields = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [
-    JSON.stringify(bag),
+  const row = await db.get('SELECT tags FROM contacts WHERE id = ?', [ctx.contact.id])
+  const tags = parseJson(row?.tags, [])
+  const list = Array.isArray(tags) ? tags : []
+  const next = remove
+    ? list.filter((candidate) => normalizeText(candidate) !== normalizeText(tag))
+    : [...new Set([...list, tag])]
+  await db.run('UPDATE contacts SET tags = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [
+    JSON.stringify(next),
     ctx.contact.id
   ])
-  ctx.contact.tags = bag.tags
+  ctx.contact.tags = next
+  // El cambio de etiqueta puede disparar otras automatizaciones
+  setImmediate(() => {
+    handleAutomationEvent('tag-changed', {
+      contactId: ctx.contact.id,
+      tag,
+      tagAction: remove ? 'removed' : 'added'
+    }).catch(() => undefined)
+  })
   return remove ? `Etiqueta "${tag}" quitada` : `Etiqueta "${tag}" añadida`
 }
 
@@ -521,7 +612,10 @@ async function loadContact(contactId, fallback = {}) {
     source: row?.source || bag.source || '',
     country: row?.country || bag.country || '',
     customFields: bag,
-    tags: Array.isArray(bag.tags) ? bag.tags : []
+    tags: (() => {
+      const parsed = parseJson(row?.tags, [])
+      return Array.isArray(parsed) ? parsed : []
+    })()
   }
 }
 
@@ -584,49 +678,78 @@ export async function handleIncomingMessage({ contactId, phone, contactName, tex
     }
 
     // 3) Inscribir en automatizaciones cuyo disparador coincide
-    for (const automation of automations) {
-      const flow = automation.flow
-      const startNode = getStartNode(flow)
-      if (!startNode) continue
-      const matched = getTriggers(startNode).find((trigger) => triggerMatches(trigger, 'message-received', baseCtx))
-      if (!matched) continue
-
-      const settings = flow.settings || {}
-      if (settings.preventDuplicateActiveEnrollment !== false) {
-        const active = await db.get(
-          `SELECT id FROM automation_enrollments WHERE automation_id = ? AND contact_id = ? AND status IN ('active','waiting')`,
-          [automation.id, contact.id]
-        )
-        if (active) continue
-      }
-      if (settings.allowReentry === false) {
-        const any = await db.get(
-          `SELECT id FROM automation_enrollments WHERE automation_id = ? AND contact_id = ?`,
-          [automation.id, contact.id]
-        )
-        if (any) continue
-      }
-
-      const ctx = { ...baseCtx, automationName: automation.name }
-      const enrollment = await createEnrollment(automation, contact, ctx)
-      addLog(enrollment, {
-        nodeId: 'start',
-        label: 'Cuando...',
-        status: 'ok',
-        detail: `Disparador: el contacto respondió por ${channel}`
-      })
-      const edge = edgesFrom(flow, startNode.id)[0]
-      if (edge) {
-        logger.info(`[Automatizaciones] "${automation.name}": inscrito ${contact.fullName || contact.phone}`)
-        await runFrom(flow, enrollment, edge.targetNodeId, ctx)
-      } else {
-        addLog(enrollment, { nodeId: 'start', label: 'Cuando...', status: 'error', detail: 'El disparador no está conectado a ningún paso' })
-        enrollment.status = 'exited'
-        await saveEnrollment(enrollment)
-      }
-    }
+    await enrollMatching(automations, 'message-received', baseCtx)
   } catch (error) {
     logger.error(`[Automatizaciones] Error procesando mensaje entrante: ${error.message}`)
+  }
+}
+
+async function enrollMatching(automations, eventType, baseCtx) {
+  const contact = baseCtx.contact || {}
+  for (const automation of automations) {
+    const flow = automation.flow
+    const startNode = getStartNode(flow)
+    if (!startNode) continue
+    const matched = getTriggers(startNode).find((trigger) => triggerMatches(trigger, eventType, baseCtx))
+    if (!matched) continue
+
+    const settings = flow.settings || {}
+    if (contact.id && settings.preventDuplicateActiveEnrollment !== false) {
+      const active = await db.get(
+        `SELECT id FROM automation_enrollments WHERE automation_id = ? AND contact_id = ? AND status IN ('active','waiting')`,
+        [automation.id, contact.id]
+      )
+      if (active) continue
+    }
+    if (contact.id && settings.allowReentry === false) {
+      const any = await db.get(
+        `SELECT id FROM automation_enrollments WHERE automation_id = ? AND contact_id = ?`,
+        [automation.id, contact.id]
+      )
+      if (any) continue
+    }
+
+    const ctx = { ...baseCtx, automationName: automation.name }
+    const enrollment = await createEnrollment(automation, contact, ctx)
+    const describe = EVENT_DESCRIPTIONS[eventType]
+    addLog(enrollment, {
+      nodeId: 'start',
+      label: 'Cuando...',
+      status: 'ok',
+      detail: `Disparador: ${describe ? describe(ctx) : eventType}`
+    })
+    const edge = edgesFrom(flow, startNode.id)[0]
+    if (edge) {
+      logger.info(`[Automatizaciones] "${automation.name}": inscrito ${contact.fullName || contact.phone || 'contacto'} (${eventType})`)
+      await runFrom(flow, enrollment, edge.targetNodeId, ctx)
+    } else {
+      addLog(enrollment, { nodeId: 'start', label: 'Cuando...', status: 'error', detail: 'El disparador no está conectado a ningún paso' })
+      enrollment.status = 'exited'
+      await saveEnrollment(enrollment)
+    }
+  }
+}
+
+/**
+ * Entrada genérica para cualquier evento del CRM.
+ * data: { contactId?, phone?, email?, contactName?, ...campos del evento }
+ */
+export async function handleAutomationEvent(eventType, data = {}) {
+  try {
+    let contact = await loadContact(data.contactId, { phone: data.phone, name: data.contactName })
+    // Resolver contacto por teléfono o email cuando no llega id (webhooks)
+    if (!contact.id && (data.phone || data.email)) {
+      const row = await db.get(
+        'SELECT id FROM contacts WHERE (phone = ? AND ? != \'\') OR (email = ? AND ? != \'\') LIMIT 1',
+        [data.phone || '', data.phone || '', data.email || '', data.email || '']
+      )
+      if (row) contact = await loadContact(row.id)
+    }
+    const ctx = { ...data, contact, messageText: data.messageText || '', channel: data.channel || '' }
+    const automations = await listPublishedAutomations()
+    await enrollMatching(automations, eventType, ctx)
+  } catch (error) {
+    logger.error(`[Automatizaciones] Error en evento ${eventType}: ${error.message}`)
   }
 }
 

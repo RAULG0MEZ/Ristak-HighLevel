@@ -2882,6 +2882,8 @@ async function initTables() {
     for (const column of ['resume_at DATETIME', 'wait_kind TEXT', "context TEXT DEFAULT '{}'"]) {
       await db.run(`ALTER TABLE automation_enrollments ADD COLUMN ${column}`).catch(() => {})
     }
+    // Etiquetas locales de contactos (array JSON), usadas por automatizaciones
+    await db.run(`ALTER TABLE contacts ADD COLUMN tags TEXT DEFAULT '[]'`).catch(() => {})
 
     // Mensajes automáticos de citas (recordatorios y confirmaciones).
     // Cada fila es una "cajita" configurable desde la página de Calendarios.
