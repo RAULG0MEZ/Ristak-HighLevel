@@ -2690,6 +2690,56 @@ async function initTables() {
     `)
     await db.run('CREATE INDEX IF NOT EXISTS idx_ai_agent_memories_category ON ai_agent_memories(category, updated_at)')
 
+    // Agente conversacional (atiende chats de WhatsApp): configuración global,
+    // estado por conversación/contacto y bitácora de eventos auditables.
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS conversational_agent_config (
+        id INTEGER PRIMARY KEY,
+        enabled INTEGER DEFAULT 0,
+        objective TEXT DEFAULT 'citas',
+        custom_objective TEXT,
+        success_action TEXT DEFAULT 'ready_for_human',
+        required_data TEXT,
+        handoff_rules TEXT,
+        extra_instructions TEXT,
+        allow_emojis INTEGER DEFAULT 0,
+        hide_attended INTEGER DEFAULT 0,
+        default_calendar_id TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS conversational_agent_state (
+        contact_id TEXT PRIMARY KEY,
+        status TEXT NOT NULL DEFAULT 'active',
+        signal TEXT,
+        signal_reason TEXT,
+        signal_summary TEXT,
+        signal_at DATETIME,
+        last_inbound_message_id TEXT,
+        last_reply_at DATETIME,
+        updated_by TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE CASCADE
+      )
+    `)
+    await db.run('CREATE INDEX IF NOT EXISTS idx_conv_agent_state_signal ON conversational_agent_state(signal, signal_at)')
+    await db.run('CREATE INDEX IF NOT EXISTS idx_conv_agent_state_status ON conversational_agent_state(status, updated_at)')
+
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS conversational_agent_events (
+        id TEXT PRIMARY KEY,
+        contact_id TEXT,
+        event_type TEXT NOT NULL,
+        detail_json TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    await db.run('CREATE INDEX IF NOT EXISTS idx_conv_agent_events_contact ON conversational_agent_events(contact_id, created_at)')
+
     const userOptionalColumns = [
       ['first_name', 'TEXT'],
       ['last_name', 'TEXT'],
@@ -2896,6 +2946,18 @@ async function initTables() {
     }
     // Etiquetas locales de contactos (array JSON), usadas por automatizaciones
     await db.run(`ALTER TABLE contacts ADD COLUMN tags TEXT DEFAULT '[]'`).catch(() => {})
+
+    // Archivos adjuntos de automatizaciones (imágenes, videos, audios, docs)
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS automation_assets (
+        id TEXT PRIMARY KEY,
+        filename TEXT,
+        content_type TEXT NOT NULL,
+        content_base64 TEXT NOT NULL,
+        size_bytes INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
 
     // Mensajes automáticos de citas (recordatorios y confirmaciones).
     // Cada fila es una "cajita" configurable desde la página de Calendarios.

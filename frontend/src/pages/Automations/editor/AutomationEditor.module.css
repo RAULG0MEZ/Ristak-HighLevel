@@ -3221,3 +3221,78 @@
   color: var(--color-text-secondary);
   margin-bottom: 6px;
 }
+
+/* ------------------- Adjuntos: subir + previsualizar ------------------- */
+
+.mediaPreviewImage {
+  display: block;
+  width: 100%;
+  max-height: 160px;
+  object-fit: cover;
+  border-radius: 10px;
+  margin-bottom: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.mediaPreviewAudio {
+  display: block;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.mediaPreviewFile {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: rgb(var(--color-primary-rgb));
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.mediaUploadButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1.5px dashed rgba(148, 163, 184, 0.5);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mediaUploadButton:hover {
+  border-color: rgb(var(--color-primary-rgb));
+  color: rgb(var(--color-primary-rgb));
+}
+
+.mediaUploadSpinner {
+  animation: mediaSpin 0.9s linear infinite;
+}
+
+@keyframes mediaSpin {
+  to { transform: rotate(360deg); }
+}
+
+.mediaUploadError {
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--color-status-error, #ef4444);
+}
+
+/* Miniatura en la tarjeta del nodo */
+.nodeMediaThumb {
+  display: block;
+  width: 100%;
+  max-height: 110px;
+  object-fit: cover;
+  border-radius: 9px;
+  margin: 4px 0;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}

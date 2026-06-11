@@ -3529,6 +3529,18 @@ export async function captureQrChatMessage({
       logger.warn(`[Citas] No se pudo evaluar confirmación automática (QR): ${error.message}`)
     })
 
+    if (result.contactId) {
+      import('../agents/conversational/runner.js')
+        .then(runner => runner.handleInboundMessageForConversationalAgent({
+          contactId: result.contactId,
+          phone: result.phone,
+          messageId: result.messageId
+        }))
+        .catch(error => {
+          logger.warn(`[Agente conversacional] No se pudo atender el mensaje entrante (QR): ${error.message}`)
+        })
+    }
+
     await sendChatMessageNotification({
       contactId: result.contactId,
       contactName: result.contactName,
@@ -3860,6 +3872,20 @@ export async function processYCloudWhatsAppWebhook({ payload, rawBody, signature
         }))
         .catch(error => {
           logger.warn(`[Automatizaciones] No se pudo procesar el mensaje entrante: ${error.message}`)
+        }))).catch(() => {})
+
+    // Agente conversacional: atiende la conversación si está activado
+    // (import dinámico para evitar dependencia circular)
+    Promise.all(messageResults
+      .filter(result => result?.direction === 'inbound' && result?.isNew !== false && result?.contactId)
+      .map(result => import('../agents/conversational/runner.js')
+        .then(runner => runner.handleInboundMessageForConversationalAgent({
+          contactId: result.contactId,
+          phone: result.phone,
+          messageId: result.messageId
+        }))
+        .catch(error => {
+          logger.warn(`[Agente conversacional] No se pudo atender el mensaje entrante: ${error.message}`)
         }))).catch(() => {})
 
     await Promise.all(messageResults

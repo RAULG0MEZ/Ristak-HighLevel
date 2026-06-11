@@ -41,6 +41,7 @@ import apiAccessRoutes from './routes/apiAccess.routes.js'
 import oauthRoutes from './routes/oauth.routes.js'
 import hiddenContactsRoutes from './routes/hiddenContacts.routes.js'
 import aiAgentRoutes from './routes/aiAgent.routes.js'
+import conversationalAgentRoutes from './routes/conversationalAgent.routes.js'
 import searchRoutes from './routes/search.routes.js'
 import externalRoutes from './routes/external.routes.js'
 import mcpRoutes from './routes/mcp.routes.js'
@@ -124,6 +125,7 @@ app.use('/api', costsRoutes)
 app.use('/api/maintenance', maintenanceRoutes)
 app.use('/api/hidden-contacts', hiddenContactsRoutes)
 app.use('/api/ai-agent', requireFeature('ai'), aiAgentRoutes)
+app.use('/api/conversational-agent', requireFeature('ai'), conversationalAgentRoutes)
 app.use('/api/search', searchRoutes)
 app.use('/api/external', externalRoutes)
 app.use('/api/mcp', mcpRoutes)

@@ -14,6 +14,8 @@ import {
   AlignLeft,
   Clock,
   GripVertical,
+  Loader2,
+  Upload,
   X as XIcon,
   FileText,
   Image,
@@ -34,6 +36,7 @@ import {
   type MessageButton
 } from '../nodeRegistry'
 import { genId } from '../flowUtils'
+import automationsService from '@/services/automationsService'
 import { MessageComposer } from '../composer/MessageComposer'
 import { TextInput, Toggle } from './configPrimitives'
 import styles from '../AutomationEditor.module.css'
@@ -67,6 +70,13 @@ const CONTENT_BLOCKS: ContentBlockOption[] = [
   { type: 'file', title: 'Archivo', description: 'Adjunta un documento o archivo', icon: FileText },
   { type: 'delay', title: 'Retraso', description: 'Espera unos segundos entre los textos', icon: Clock }
 ]
+
+const MEDIA_ACCEPT: Record<string, string> = {
+  image: 'image/*',
+  video: 'video/*',
+  audio: 'audio/*',
+  file: '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip'
+}
 
 const MEDIA_LABELS: Record<string, string> = {
   image: 'Imagen',
@@ -214,6 +224,26 @@ export const MessageBlocksEditor: React.FC<MessageBlocksEditorProps> = ({
   // Retraso abierto en popover: id del bloque + rect de su pastilla
   const [delayEditor, setDelayEditor] = useState<{ id: string; anchor: DOMRect } | null>(null)
 
+  // Subidas en curso (id del bloque) y errores por bloque
+  const [uploading, setUploading] = useState<Record<string, boolean>>({})
+  const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({})
+
+  const uploadFile = (index: number, blockId: string, file: File) => {
+    setUploading((current) => ({ ...current, [blockId]: true }))
+    setUploadErrors((current) => ({ ...current, [blockId]: '' }))
+    const reader = new FileReader()
+    reader.onload = () => {
+      void automationsService
+        .uploadAsset(String(reader.result), file.name)
+        .then((asset) => updateBlock(index, { url: asset.url }))
+        .catch((error: Error) => {
+          setUploadErrors((current) => ({ ...current, [blockId]: error.message || 'No se pudo subir el archivo' }))
+        })
+        .finally(() => setUploading((current) => ({ ...current, [blockId]: false })))
+    }
+    reader.readAsDataURL(file)
+  }
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
     if (!over || active.id === over.id) return
@@ -341,8 +371,10 @@ export const MessageBlocksEditor: React.FC<MessageBlocksEditorProps> = ({
           )
         }
 
-        // Adjuntos: imagen, video, audio, archivo
+        // Adjuntos: imagen, video, audio, archivo (subir a Ristak o pegar URL)
         const MediaIcon = CONTENT_BLOCKS.find((option) => option.type === block.type)?.icon || Link2
+        const isUploading = Boolean(uploading[block.id])
+        const uploadError = uploadErrors[block.id]
         return (
           <SortableBlock key={block.id} id={block.id} onRemove={() => removeBlock(index)}>
           <div className={styles.panelBubble}>
@@ -350,11 +382,48 @@ export const MessageBlocksEditor: React.FC<MessageBlocksEditorProps> = ({
               <MediaIcon size={13} />
               {MEDIA_LABELS[block.type] || 'Adjunto'}
             </div>
-            <TextInput
-              value={block.url || ''}
-              placeholder="URL del archivo (https://…)"
-              onChange={(event) => updateBlock(index, { url: event.target.value })}
-            />
+
+            {/* Previsualización del archivo ya subido */}
+            {block.url && block.type === 'image' && (
+              <img src={block.url} alt={block.caption || 'Imagen'} className={styles.mediaPreviewImage} />
+            )}
+            {block.url && block.type === 'video' && (
+              <video src={block.url} controls className={styles.mediaPreviewImage} />
+            )}
+            {block.url && block.type === 'audio' && (
+              <audio src={block.url} controls className={styles.mediaPreviewAudio} />
+            )}
+            {block.url && block.type === 'file' && (
+              <a href={block.url} target="_blank" rel="noreferrer" className={styles.mediaPreviewFile}>
+                <Link2 size={12} />
+                {block.url.startsWith('/api/automations/assets/') ? 'Ver archivo subido' : block.url}
+              </a>
+            )}
+
+            <label className={styles.mediaUploadButton}>
+              {isUploading ? <Loader2 size={13} className={styles.mediaUploadSpinner} /> : <Upload size={13} />}
+              {isUploading ? 'Subiendo…' : block.url ? 'Cambiar archivo' : `Cargar ${MEDIA_LABELS[block.type]?.toLowerCase() || 'archivo'}`}
+              <input
+                type="file"
+                accept={MEDIA_ACCEPT[block.type]}
+                style={{ display: 'none' }}
+                disabled={isUploading}
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  if (file) uploadFile(index, block.id, file)
+                  event.target.value = ''
+                }}
+              />
+            </label>
+            {uploadError && <div className={styles.mediaUploadError}>{uploadError}</div>}
+
+            <div style={{ marginTop: 6 }}>
+              <TextInput
+                value={block.url || ''}
+                placeholder="…o pega una URL (https://…)"
+                onChange={(event) => updateBlock(index, { url: event.target.value })}
+              />
+            </div>
             <div style={{ marginTop: 6 }}>
               <TextInput
                 value={block.caption || ''}

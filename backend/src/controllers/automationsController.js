@@ -11,7 +11,9 @@ import {
   reorderFolders,
   deleteFolder,
   listEnrollments,
-  getEnrollmentStats
+  getEnrollmentStats,
+  saveAutomationAsset,
+  getAutomationAsset
 } from '../services/automationsService.js'
 
 function sendError(res, error, fallback = 'Error procesando la solicitud') {
@@ -135,5 +137,32 @@ export async function getEnrollmentStatsHandler(req, res) {
   } catch (error) {
     logger.error(`Error obteniendo estadísticas: ${error.message}`)
     sendError(res, error, 'Error obteniendo estadísticas')
+  }
+}
+
+
+export async function uploadAssetHandler(req, res) {
+  try {
+    const asset = await saveAutomationAsset(req.body || {})
+    res.status(201).json({ success: true, data: asset })
+  } catch (error) {
+    logger.error(`Error subiendo archivo de automatización: ${error.message}`)
+    sendError(res, error, 'Error subiendo el archivo')
+  }
+}
+
+export async function serveAssetHandler(req, res) {
+  try {
+    const asset = await getAutomationAsset(req.params.assetId)
+    const buffer = Buffer.from(asset.content_base64, 'base64')
+    res.setHeader('Content-Type', asset.content_type)
+    res.setHeader('Content-Length', buffer.length)
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+    if (asset.filename) {
+      res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(asset.filename)}"`)
+    }
+    res.end(buffer)
+  } catch (error) {
+    res.status(error.status || 500).json({ success: false, error: error.message })
   }
 }

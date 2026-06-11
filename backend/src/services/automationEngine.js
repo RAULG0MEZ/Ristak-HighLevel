@@ -437,6 +437,50 @@ async function applyTagAction(node, ctx, remove) {
   return remove ? `Etiqueta "${tag}" quitada` : `Etiqueta "${tag}" añadida`
 }
 
+/** Envía un bloque adjunto: si es un archivo subido a Ristak se manda como
+    data URL (el servicio de WhatsApp lo publica); si es URL externa, directo */
+async function sendMediaBlock({ block, to, phoneNumberId, ctx }) {
+  const {
+    sendWhatsAppApiImageMessage,
+    sendWhatsAppApiAudioMessage,
+    sendWhatsAppApiDocumentMessage
+  } = await import('./whatsappApiService.js')
+
+  const caption = renderTemplate(str(block.caption), ctx).trim() || undefined
+  let dataUrl = null
+  let externalUrl = null
+  let filename = str(block.caption) || 'archivo'
+  let mimeType
+
+  const assetMatch = /\/api\/automations\/assets\/([\w-]+)/.exec(str(block.url))
+  if (assetMatch) {
+    const row = await db.get('SELECT * FROM automation_assets WHERE id = ?', [assetMatch[1]])
+    if (!row) throw new Error('El archivo adjunto ya no existe')
+    dataUrl = `data:${row.content_type};base64,${row.content_base64}`
+    mimeType = row.content_type
+    filename = row.filename || filename
+  } else {
+    externalUrl = str(block.url)
+  }
+
+  if (block.type === 'image') {
+    await sendWhatsAppApiImageMessage({ to, imageDataUrl: dataUrl || undefined, imageUrl: externalUrl || undefined, caption, phoneNumberId })
+  } else if (block.type === 'audio') {
+    await sendWhatsAppApiAudioMessage({ to, audioDataUrl: dataUrl || undefined, audioUrl: externalUrl || undefined, phoneNumberId })
+  } else {
+    // video y archivo se envían como documento (conserva calidad y nombre)
+    await sendWhatsAppApiDocumentMessage({
+      to,
+      documentDataUrl: dataUrl || undefined,
+      documentUrl: externalUrl || undefined,
+      filename,
+      mimeType,
+      caption,
+      phoneNumberId
+    })
+  }
+}
+
 async function sendWhatsAppBlocks(node, ctx) {
   const { sendWhatsAppApiTextMessage, sendWhatsAppApiTemplateMessage } = await import('./whatsappApiService.js')
   const config = node.config || {}
@@ -480,8 +524,11 @@ async function sendWhatsAppBlocks(node, ctx) {
         Math.max(0, (Number(block.amount) || 0) * (block.unit === 'minutes' ? 60 : 1))
       )
       if (seconds > 0) await sleep(seconds * 1000)
+    } else if (['image', 'video', 'audio', 'file'].includes(block.type) && str(block.url)) {
+      await sendMediaBlock({ block, to, phoneNumberId, ctx })
+      sent += 1
     } else {
-      notes.push(`adjunto "${block.type}" omitido`)
+      notes.push(`adjunto "${block.type}" sin archivo: omitido`)
     }
   }
   if (sent === 0) throw new Error('El mensaje está vacío: configura al menos un globo de texto')

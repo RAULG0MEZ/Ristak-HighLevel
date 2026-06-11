@@ -325,3 +325,51 @@ export async function getEnrollmentStats(automationId) {
   )
   return { active, total: Number(totals?.total) || 0, byNode }
 }
+
+
+// ---------------------------------------------------------------------------
+// Archivos adjuntos (imágenes/videos/audios/docs de los bloques de mensaje)
+// ---------------------------------------------------------------------------
+
+const ASSET_LIMITS = {
+  image: 8 * 1024 * 1024,
+  video: 16 * 1024 * 1024,
+  audio: 16 * 1024 * 1024,
+  application: 20 * 1024 * 1024
+}
+
+export async function saveAutomationAsset({ fileBase64, filename }) {
+  const match = /^data:([\w.+-]+\/[\w.+-]+);base64,(.+)$/s.exec(String(fileBase64 || ''))
+  if (!match) {
+    const error = new Error('Archivo inválido: envía un data URL en base64')
+    error.status = 400
+    throw error
+  }
+  const contentType = match[1].toLowerCase()
+  const base64 = match[2]
+  const family = contentType.split('/')[0]
+  const limit = ASSET_LIMITS[family] || ASSET_LIMITS.application
+  const sizeBytes = Math.floor(base64.length * 0.75)
+  if (sizeBytes > limit) {
+    const error = new Error(`El archivo pesa demasiado (máximo ${Math.round(limit / 1024 / 1024)} MB)`)
+    error.status = 400
+    throw error
+  }
+  const id = makeId('asset')
+  await db.run(
+    `INSERT INTO automation_assets (id, filename, content_type, content_base64, size_bytes)
+     VALUES (?, ?, ?, ?, ?)`,
+    [id, String(filename || '').slice(0, 200) || null, contentType, base64, sizeBytes]
+  )
+  return { id, url: `/api/automations/assets/${id}`, contentType, sizeBytes }
+}
+
+export async function getAutomationAsset(assetId) {
+  const row = await db.get('SELECT * FROM automation_assets WHERE id = ?', [assetId])
+  if (!row) {
+    const error = new Error('Archivo no encontrado')
+    error.status = 404
+    throw error
+  }
+  return row
+}

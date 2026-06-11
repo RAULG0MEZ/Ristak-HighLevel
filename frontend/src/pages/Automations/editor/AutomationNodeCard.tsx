@@ -397,10 +397,14 @@ export const AutomationNodeCard: React.FC<AutomationNodeCardProps> = ({
                     onOpenConfig(node)
                   }}
                 >
-                  <span className={styles.chatBubbleText}>
-                    {block.type === 'image' ? <Image size={11} /> : block.type === 'video' ? <Video size={11} /> : block.type === 'audio' ? <Music size={11} /> : <FileText size={11} />}{' '}
-                    {block.caption || block.url || 'Adjunto sin URL'}
-                  </span>
+                  {block.type === 'image' && block.url ? (
+                    <img src={block.url} alt={block.caption || 'Imagen'} className={styles.nodeMediaThumb} draggable={false} />
+                  ) : (
+                    <span className={styles.chatBubbleText}>
+                      {block.type === 'image' ? <Image size={11} /> : block.type === 'video' ? <Video size={11} /> : block.type === 'audio' ? <Music size={11} /> : <FileText size={11} />}{' '}
+                      {block.caption || block.url || 'Adjunto sin archivo'}
+                    </span>
+                  )}
                 </button>
               )
             )}

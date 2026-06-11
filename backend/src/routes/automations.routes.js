@@ -12,12 +12,20 @@ import {
   reorderFoldersHandler,
   deleteFolderHandler,
   getEnrollmentsHandler,
-  getEnrollmentStatsHandler
+  getEnrollmentStatsHandler,
+  uploadAssetHandler,
+  serveAssetHandler
 } from '../controllers/automationsController.js'
 
 const router = express.Router()
 
+// Público: los archivos deben poder leerse desde WhatsApp/Meta sin sesión
+router.get('/assets/:assetId', serveAssetHandler)
+
 router.use(requireAuth)
+
+// Subida de archivos de bloques (imagen, video, audio, documento)
+router.post('/assets', express.json({ limit: '30mb' }), uploadAssetHandler)
 
 // Carpetas (antes de /:automationId para que "folders" no se interprete como id)
 router.post('/folders', createFolderHandler)
