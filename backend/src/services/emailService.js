@@ -51,6 +51,30 @@ async function readStoredPassword() {
   }
 }
 
+/**
+ * Traduce errores técnicos de nodemailer a mensajes accionables.
+ * El caso real más común es el typo "smpt." en lugar de "smtp.".
+ */
+function friendlySmtpError(error, host) {
+  const code = String(error?.code || '').toUpperCase()
+  const responseCode = Number(error?.responseCode) || 0
+
+  if (code === 'EDNS' || code === 'ENOTFOUND' || /ENOTFOUND/i.test(error?.message || '')) {
+    const suggestion = /smpt/i.test(host) ? ` ¿Quisiste decir "${host.replace(/smpt/gi, 'smtp')}"?` : ''
+    return `El servidor "${host}" no existe. Revisa que esté bien escrito (por ejemplo smtp.gmail.com).${suggestion}`
+  }
+
+  if (code === 'EAUTH' || responseCode === 535 || responseCode === 534) {
+    return 'El servidor rechazó el usuario o password. Si usas Gmail, necesitas un app password (no tu contraseña normal): actívalo en myaccount.google.com/apppasswords.'
+  }
+
+  if (['ETIMEDOUT', 'ESOCKET', 'ECONNECTION', 'ECONNREFUSED'].includes(code)) {
+    return `No se pudo alcanzar ${host}. Revisa el servidor y el puerto (587 o 465 normalmente).`
+  }
+
+  return `No se pudo conectar al servidor SMTP: ${error.message}`
+}
+
 function buildTransporter(config, password) {
   const port = Number(config.port) || 587
   return nodemailer.createTransport({
@@ -142,7 +166,7 @@ export async function connectEmail(payload = {}) {
     await transporter.verify()
   } catch (error) {
     logger.warn(`Verificación SMTP fallida para ${host}: ${error.message}`)
-    throw httpError(400, `No se pudo conectar al servidor SMTP: ${error.message}`)
+    throw httpError(400, friendlySmtpError(error, host))
   }
 
   const now = new Date().toISOString()
@@ -202,8 +226,9 @@ export async function sendEmail({ to, subject, text, html, replyTo } = {}) {
     }
   } catch (error) {
     logger.error(`Error enviando correo a ${recipient}: ${error.message}`)
-    await setAppConfig(EMAIL_CONFIG_KEY, { ...config, lastError: error.message })
-    throw httpError(502, `No se pudo enviar el correo: ${error.message}`)
+    const friendly = friendlySmtpError(error, config.host)
+    await setAppConfig(EMAIL_CONFIG_KEY, { ...config, lastError: friendly })
+    throw httpError(502, friendly)
   }
 }
 
