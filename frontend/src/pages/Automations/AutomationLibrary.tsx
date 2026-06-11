@@ -436,7 +436,6 @@ export const AutomationLibrary: React.FC<AutomationLibraryProps> = ({ currentAut
             >
               {/* Checkbox al hover (como en Contactos/Pagos) */}
               <span className={styles.libRowLead}>
-                <Workflow size={14} className={styles.libRowIcon} />
                 <button
                   type="button"
                   className={cn(styles.libCheckbox, isChecked && styles.libCheckboxOn)}
@@ -449,14 +448,16 @@ export const AutomationLibrary: React.FC<AutomationLibraryProps> = ({ currentAut
                   {isChecked && <Check size={10} />}
                 </button>
               </span>
-              <span className={styles.libRowName} title={automation.name}>
-                {automation.name}
+              <span className={styles.libRowText}>
+                <span className={styles.libRowName} title={automation.name}>
+                  {automation.name}
+                </span>
+                <span
+                  className={styles.nodeStatusDot}
+                  data-state={STATUS_DOT[automation.status]}
+                  title={AUTOMATION_STATUS_LABELS[automation.status]}
+                />
               </span>
-              <span
-                className={styles.nodeStatusDot}
-                data-state={STATUS_DOT[automation.status]}
-                title={AUTOMATION_STATUS_LABELS[automation.status]}
-              />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button

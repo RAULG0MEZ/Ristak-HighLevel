@@ -1640,7 +1640,7 @@
 }
 
 .leftNav {
-  width: 280px;
+  width: 300px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -1837,7 +1837,7 @@
 .libPathText {
   flex: 1;
   min-width: 0;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--color-text-primary);
   overflow: hidden;
@@ -1854,10 +1854,28 @@
   align-items: center;
   gap: 8px;
   width: 100%;
+  min-height: 34px;
   border-radius: 9px;
-  padding: 6px 4px 6px 8px;
+  padding: 4px 4px 4px 8px;
   cursor: pointer;
   user-select: none;
+}
+
+/* Nombre + circulito de estado pegado al texto */
+.libRowText {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.libRowText .libRowName {
+  flex: 0 1 auto;
+}
+
+.libRowText .nodeStatusDot {
+  flex-shrink: 0;
 }
 
 .libRow:hover {
@@ -1876,7 +1894,7 @@
 .libRowName {
   flex: 1;
   min-width: 0;
-  font-size: 12.5px;
+  font-size: 13.5px;
   color: var(--color-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1925,7 +1943,8 @@
 }
 
 .libRowMenu {
-  display: none;
+  display: inline-flex;
+  visibility: hidden;
   align-items: center;
   justify-content: center;
   width: 24px;
@@ -1940,7 +1959,7 @@
 
 .libRow:hover .libRowMenu,
 .libRowMenu[data-state='open'] {
-  display: inline-flex;
+  visibility: visible;
 }
 
 .libRowMenu:hover {
