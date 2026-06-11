@@ -7709,6 +7709,109 @@ const readImportedEditableSelection = (element: HTMLElement): ImportedEditableSe
   }
 }
 
+// --- Side-panel summary of the form fields detected on the current page ---
+interface ImportedPanelFormField {
+  key: string
+  kind: 'choice' | 'field'
+  label: string
+  typeLabel: string
+  optionsCount: number
+  hasDisqualify: boolean
+  fieldName: string
+  inputType: string
+  tagName: 'input' | 'textarea' | 'select'
+}
+
+const importedPanelFieldTypeLabels: Record<string, string> = {
+  text: 'Texto',
+  email: 'Email',
+  tel: 'Telefono',
+  number: 'Numero',
+  date: 'Fecha',
+  url: 'URL',
+  password: 'Contraseña',
+  textarea: 'Texto largo',
+  select: 'Desplegable',
+  radio: 'Opcion unica',
+  checkbox: 'Casillas'
+}
+
+const escapeImportedSelectorValue = (value: string) => value.replace(/"/g, '\\"')
+
+const readImportedChoiceGroupHasDisqualify = (input: HTMLInputElement, doc: Document) => {
+  const choiceName = input.getAttribute('name') || input.getAttribute('id') || ''
+  const groupInputs = choiceName
+    ? Array.from((input.closest('form') || doc).querySelectorAll<HTMLInputElement>(
+      `input[type="${input.type}"][name="${escapeImportedSelectorValue(choiceName)}"]`
+    ))
+    : [input]
+  return groupInputs.some(item => parseImportedActionList(getImportedButtonAttribute(item, [
+    'data-rstk-choice-actions',
+    'data-ristak-choice-actions',
+    'data-ristack-choice-actions'
+  ])).some(action => action.action === 'disqualify'))
+}
+
+const collectImportedPanelFormFields = (doc: Document): ImportedPanelFormField[] => {
+  const result: ImportedPanelFormField[] = []
+  const seenChoiceGroups = new Set<string>()
+  const elements = Array.from(doc.querySelectorAll<HTMLElement>('input, textarea, select'))
+
+  for (const element of elements) {
+    const tagName = element.tagName.toLowerCase() as ImportedPanelFormField['tagName']
+    const inputType = tagName === 'input' ? (element.getAttribute('type') || 'text').toLowerCase() : tagName
+    if (['hidden', 'submit', 'button', 'reset', 'image', 'file'].includes(inputType)) continue
+    const fieldName = element.getAttribute('name') || element.getAttribute('id') || ''
+
+    if (['radio', 'checkbox'].includes(inputType)) {
+      const groupKey = `${inputType}:${fieldName}`
+      if (fieldName && seenChoiceGroups.has(groupKey)) continue
+      if (fieldName) seenChoiceGroups.add(groupKey)
+      const input = element as HTMLInputElement
+      result.push({
+        key: `${groupKey}:${result.length}`,
+        kind: 'choice',
+        label: fieldName || getImportedChoiceLabel(input, doc) || 'Opciones',
+        typeLabel: importedPanelFieldTypeLabels[inputType],
+        optionsCount: readImportedFormFieldOptions(input, doc).length,
+        hasDisqualify: readImportedChoiceGroupHasDisqualify(input, doc),
+        fieldName,
+        inputType,
+        tagName: 'input'
+      })
+      continue
+    }
+
+    const fieldElement = element as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    result.push({
+      key: `${tagName}:${fieldName}:${result.length}`,
+      kind: 'field',
+      label: getImportedFormFieldLabel(fieldElement, doc),
+      typeLabel: importedPanelFieldTypeLabels[inputType] || 'Campo',
+      optionsCount: tagName === 'select' ? readImportedFormFieldOptions(fieldElement, doc).length : 0,
+      hasDisqualify: false,
+      fieldName,
+      inputType,
+      tagName
+    })
+  }
+
+  return result.slice(0, 40)
+}
+
+const findImportedPanelFieldElement = (field: ImportedPanelFormField, doc: Document): HTMLElement | null => {
+  const safeName = escapeImportedSelectorValue(field.fieldName)
+  if (field.kind === 'choice') {
+    return field.fieldName
+      ? doc.querySelector<HTMLElement>(`input[type="${field.inputType}"][name="${safeName}"], input[type="${field.inputType}"][id="${safeName}"]`)
+      : doc.querySelector<HTMLElement>(`input[type="${field.inputType}"]`)
+  }
+  if (field.fieldName) {
+    return doc.querySelector<HTMLElement>(`${field.tagName}[name="${safeName}"], ${field.tagName}[id="${safeName}"]`)
+  }
+  return doc.querySelector<HTMLElement>(field.tagName)
+}
+
 const importedAIRegionCandidateSelector = [
   importedEditableSelector,
   importedSectionSelector,
@@ -8426,6 +8529,7 @@ const ImportedHtmlEditorPanel: React.FC<{
   const [aiRegionError, setAiRegionError] = useState('')
   const [aiRegionLastAttempt, setAiRegionLastAttempt] = useState<ImportedAIRegionAttempt | null>(null)
   const [fieldEditor, setFieldEditor] = useState<ImportedFormFieldEditorState | null>(null)
+  const [panelFormFields, setPanelFormFields] = useState<ImportedPanelFormField[]>([])
   const [contentSaving, setContentSaving] = useState(false)
   const [contentError, setContentError] = useState('')
   const importedPages = pages.length ? pages : [{ id: DEFAULT_FUNNEL_PAGE_ID, title: 'Página 1', sortOrder: 0 }]
@@ -8589,6 +8693,28 @@ const ImportedHtmlEditorPanel: React.FC<{
     setChoiceEditor(null)
     setFieldEditor(null)
   }, [])
+
+  // Open a detected form field's editor from the side panel: locate it in the
+  // preview, highlight it and reuse the same choice/field editors as a click.
+  const openPanelFormField = useCallback((field: ImportedPanelFormField) => {
+    const doc = iframeRef.current?.contentDocument
+    if (!doc) return
+    const element = findImportedPanelFieldElement(field, doc)
+    if (!element) {
+      showToast('warning', 'Campo no encontrado', 'Recarga la vista previa e intentalo de nuevo.')
+      return
+    }
+    selectedIframeElementRef.current?.classList.remove('rstk-imported-selected')
+    const highlightTarget = (element.closest('label') as HTMLElement | null) || element
+    highlightTarget.classList.add('rstk-imported-selected')
+    selectedIframeElementRef.current = highlightTarget
+    element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    if (field.kind === 'choice') {
+      openChoiceEditorForSelection(readImportedChoiceSelection(element as HTMLInputElement, doc))
+    } else {
+      openFieldEditorForSelection(readImportedFormFieldSelection(element as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, doc))
+    }
+  }, [openChoiceEditorForSelection, openFieldEditorForSelection, showToast])
 
   const saveEditableContent = useCallback(async (
     selection: ImportedEditableSelection,
@@ -9289,6 +9415,7 @@ const ImportedHtmlEditorPanel: React.FC<{
       doc.addEventListener('click', handleFrameClick, true)
       doc.addEventListener('auxclick', handleFrameClick, true)
       doc.addEventListener('submit', handleFrameSubmit, true)
+      setPanelFormFields(collectImportedPanelFormFields(doc))
       cleanupDocument = () => {
         doc.removeEventListener('mouseover', handleFrameMouseOver, true)
         doc.removeEventListener('mousedown', handleRegionMouseDown, true)
@@ -9719,6 +9846,42 @@ const ImportedHtmlEditorPanel: React.FC<{
                 <Sparkles size={14} />
                 Aplicar con IA
               </Button>
+            </div>
+          </div>
+        )}
+
+        {panelFormFields.length > 0 && !buttonEditor && !choiceEditor && !fieldEditor && (
+          <div className={styles.importedFormFieldsBox}>
+            <div className={styles.importedButtonActionHeader}>
+              <ListChecks size={17} />
+              <div>
+                <span>Formulario de esta pagina</span>
+                <strong>{panelFormFields.length} {panelFormFields.length === 1 ? 'campo' : 'campos'}</strong>
+              </div>
+            </div>
+            <p className={styles.importedFormFieldsHint}>
+              Edita cada campo desde aqui: etiqueta, opciones, obligatorio y acciones para calificar o descalificar.
+            </p>
+            <div className={styles.importedFormFieldsList}>
+              {panelFormFields.map(field => (
+                <button
+                  key={field.key}
+                  type="button"
+                  className={styles.importedFormFieldRow}
+                  onClick={() => openPanelFormField(field)}
+                  disabled={contentSaving}
+                >
+                  <span className={styles.importedFormFieldRowMain}>
+                    <strong>{field.label}</strong>
+                    <small>
+                      {field.typeLabel}
+                      {field.optionsCount > 0 ? ` · ${field.optionsCount} ${field.optionsCount === 1 ? 'opcion' : 'opciones'}` : ''}
+                    </small>
+                  </span>
+                  {field.hasDisqualify && <span className={styles.importedFormFieldBadge}>Descalifica</span>}
+                  <Pencil size={13} />
+                </button>
+              ))}
             </div>
           </div>
         )}

@@ -1215,8 +1215,15 @@ function addImportedSectionAttributesToTag(tagName = 'section', attrsText = '', 
 
 function isSimpleEditableTextHtml(innerHtml = '') {
   const text = stripHtmlTags(innerHtml)
-  if (!text || text.length > 700) return false
+  if (!text || text.length > 1200) return false
   return !/<(script|style|form|fieldset|input|textarea|select|option|button|a|img|picture|svg|video|iframe|table|ul|ol|li|section|article|header|footer|main|div)\b/i.test(innerHtml)
+}
+
+// Containers (div/span/li/...) only qualify as editable text when they hold
+// plain inline text — not when they wrap headings/paragraphs/labels, which are
+// annotated on their own.
+function isSimpleEditableInlineTextHtml(innerHtml = '') {
+  return isSimpleEditableTextHtml(innerHtml) && !/<(p|h[1-6]|label|blockquote|figcaption|span)\b/i.test(innerHtml)
 }
 
 function getImportedElementLabel(tagName = '', attrs = {}, fallback = '') {
@@ -1241,7 +1248,7 @@ function getImportedTextEditType(tagName = '', attrs = {}) {
   if (tag === 'button') return 'button'
   if (tag === 'a') {
     const buttonHint = `${attrs.role || ''} ${attrs.class || ''} ${attrs.id || ''}`.toLowerCase()
-    return /\b(button|btn|cta|call|action)\b/.test(buttonHint) ? 'button' : 'text'
+    return /\b(button|btn|boton|cta|call|action)\b/.test(buttonHint) ? 'button' : 'text'
   }
   return 'text'
 }
@@ -1257,6 +1264,32 @@ function annotateImportedTextTags(html = '', usedIds = new Set()) {
     })
     return `${openTag}${innerHtml}</${tagName}>`
   })
+}
+
+// Modern pages carry visible copy in generic containers (Tailwind spans/divs,
+// list items, table cells). Annotate the innermost ones that hold simple text so
+// they are editable too. The tempered pattern (no same-tag nesting inside the
+// match) keeps the regex anchored to innermost elements.
+const IMPORTED_SIMPLE_TEXT_CONTAINER_TAGS = ['span', 'li', 'td', 'th', 'blockquote', 'figcaption', 'div']
+
+function annotateImportedSimpleTextContainers(html = '', usedIds = new Set()) {
+  let nextHtml = String(html || '')
+  for (const tag of IMPORTED_SIMPLE_TEXT_CONTAINER_TAGS) {
+    const pattern = new RegExp(`<${tag}\\b([^>]*)>((?:(?!<${tag}\\b|</${tag})[\\s\\S])*?)</${tag}>`, 'gi')
+    nextHtml = nextHtml.replace(pattern, (match, attrsText = '', innerHtml = '') => {
+      const attrs = parseHtmlAttributes(attrsText)
+      if (hasImportedEditableAttr(attrs, 'editable') || hasImportedEditableAttr(attrs, 'type')) return match
+      if (!isSimpleEditableInlineTextHtml(innerHtml)) return match
+      if (isLikelyImportedVideoElement(tag, attrs)) return match
+      const openTag = addImportedEditableAttributesToTag(tag, attrsText, '', {
+        type: 'text',
+        label: getImportedElementLabel(tag, attrs, stripHtmlTags(innerHtml)),
+        usedIds
+      })
+      return `${openTag}${innerHtml}</${tag}>`
+    })
+  }
+  return nextHtml
 }
 
 function annotateImportedInputs(html = '', usedIds = new Set()) {
@@ -1409,6 +1442,7 @@ function annotateImportedEditableHtml(html = '') {
   const usedIds = collectImportedEditableIds(html)
   let nextHtml = annotateImportedSections(html)
   nextHtml = annotateImportedTextTags(nextHtml, usedIds)
+  nextHtml = annotateImportedSimpleTextContainers(nextHtml, usedIds)
   nextHtml = annotateImportedInputs(nextHtml, usedIds)
   nextHtml = annotateImportedImages(nextHtml, usedIds)
   nextHtml = annotateImportedVideos(nextHtml, usedIds)
@@ -2244,6 +2278,21 @@ function applyImportedEditableContentUpdate(html = '', input = {}) {
       updated = true
       return `<${tagName}${attrsText}>${escapeHtml(value)}</${tagName}>`
     })
+    // Generic containers annotated as editable text (innermost match, see
+    // annotateImportedSimpleTextContainers).
+    if (!updated) {
+      for (const tag of IMPORTED_SIMPLE_TEXT_CONTAINER_TAGS) {
+        if (updated) break
+        const pattern = new RegExp(`<${tag}\\b([^>]*)>((?:(?!<${tag}\\b|</${tag})[\\s\\S])*?)</${tag}>`, 'gi')
+        nextHtml = nextHtml.replace(pattern, (match, attrsText = '') => {
+          if (updated || !hasImportedEditId(attrsText, editId)) return match
+          const currentType = getImportedEditTypeFromAttrs(attrsText)
+          if (currentType && currentType !== editType) return match
+          updated = true
+          return `<${tag}${attrsText}>${escapeHtml(value)}</${tag}>`
+        })
+      }
+    }
   }
 
   if (!updated) {
