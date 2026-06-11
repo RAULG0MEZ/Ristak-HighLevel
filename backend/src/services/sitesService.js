@@ -11626,6 +11626,17 @@ function buildImportedFormCaptureScript(site, imported, { pageId = DEFAULT_FUNNE
             form.reset();
             setMessage(form, submission.message || 'Listo. Recibimos tu informacion.', 'success');
             window.dispatchEvent(new CustomEvent('ristak:submitted', { detail: submission }));
+            if (submission.status !== 'disqualified') {
+              const navigationAction = selectedChoiceActions.find(item => (
+                (item.action === 'url' && item.buttonUrl) ||
+                (item.action === 'specific_page' && item.buttonPageId)
+              ));
+              if (navigationAction && typeof window.ristakRunImportedActions === 'function') {
+                window.setTimeout(() => {
+                  window.ristakRunImportedActions(form, [navigationAction], { source: 'choice_option' });
+                }, 200);
+              }
+            }
             if (selectedChoiceActions.length && window.ristakRunImportedActions) {
               const followUpActions = selectedChoiceActions.filter(item => item.action !== 'submit');
               if (followUpActions.length) {

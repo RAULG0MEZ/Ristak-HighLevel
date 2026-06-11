@@ -896,6 +896,25 @@
   white-space: nowrap;
 }
 
+.importedFieldOptionAction input {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  background: var(--color-background-primary);
+  color: var(--color-text-primary);
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.importedFieldOptionAction input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.12);
+  outline: none;
+}
+
 .importedFieldOptionsHint {
   margin: 4px 0 0;
   color: var(--color-text-tertiary);

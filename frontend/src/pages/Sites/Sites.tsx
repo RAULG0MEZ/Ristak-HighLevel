@@ -7647,12 +7647,31 @@ const importedChoiceQuickActions: Array<{ value: '' | ImportedButtonAction; labe
   { value: '', label: 'No hacer nada' },
   { value: 'disqualify', label: 'Descalificar inmediatamente' },
   { value: 'disqualify_after_submit', label: 'Descalificar al enviar formulario' },
-  { value: 'submit', label: 'Enviar formulario' }
+  { value: 'submit', label: 'Enviar formulario' },
+  { value: 'specific_page', label: 'Enviar a página específica' },
+  { value: 'url', label: 'Redirigir a URL' }
 ]
 
 const getImportedOptionQuickAction = (option: ImportedFormFieldOption): '' | ImportedButtonAction => (
   option.actions?.find(step => importedChoiceQuickActions.some(item => item.value && item.value === step.action))?.action || ''
 )
+
+// Patch the option's quick action step in place (keeps id/action intact).
+const patchImportedOptionActionStep = (
+  option: ImportedFormFieldOption,
+  patch: Partial<ImportedButtonActionStep>
+): Partial<ImportedFormFieldOption> => ({
+  actions: option.actions?.length ? [{ ...option.actions[0], ...patch }] : option.actions
+})
+
+// specific_page needs a destination and url needs a link before saving.
+const areImportedOptionQuickActionsValid = (options: ImportedFormFieldOption[]) => options.every(option => {
+  const step = option.actions?.[0]
+  if (!step) return true
+  if (step.action === 'specific_page') return Boolean(step.buttonPageId)
+  if (step.action === 'url') return Boolean(step.buttonUrl?.trim())
+  return true
+})
 
 const importedSubmittableFieldSelector = [
   'form input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"])',
@@ -9775,7 +9794,8 @@ const ImportedHtmlEditorPanel: React.FC<{
     choiceEditor &&
     !contentSaving &&
     areImportedActionsValid(choiceEditor.actions, currentPageActionOptions) &&
-    choiceEditor.options.length > 0
+    choiceEditor.options.length > 0 &&
+    areImportedOptionQuickActionsValid(choiceEditor.options)
   )
   const cleanChoiceOptions = (choiceEditor?.options || [])
     .map((option): ImportedFormFieldOption => ({
@@ -9827,7 +9847,8 @@ const ImportedHtmlEditorPanel: React.FC<{
     fieldEditor &&
     fieldEditor.label.trim() &&
     !contentSaving &&
-    (!fieldEditorHasOptions || cleanFieldOptions.length > 0)
+    (!fieldEditorHasOptions || cleanFieldOptions.length > 0) &&
+    areImportedOptionQuickActionsValid(fieldEditor?.options || [])
   )
 
   const patchFieldOption = (index: number, patch: Partial<ImportedFormFieldOption>) => {
@@ -10251,11 +10272,39 @@ const ImportedHtmlEditorPanel: React.FC<{
                       ))}
                     </CustomSelect>
                   </label>
+                  {getImportedOptionQuickAction(option) === 'specific_page' && (
+                    <label className={styles.importedFieldOptionAction}>
+                      <span>Página</span>
+                      <CustomSelect
+                        value={option.actions?.[0]?.buttonPageId || ''}
+                        disabled={contentSaving}
+                        onChange={(event) => patchChoiceOption(index, patchImportedOptionActionStep(option, { buttonPageId: event.target.value }))}
+                      >
+                        <option value="">Selecciona una página</option>
+                        {targetImportedPages.map(page => (
+                          <option key={page.id} value={page.id}>{page.title || page.id}</option>
+                        ))}
+                      </CustomSelect>
+                    </label>
+                  )}
+                  {getImportedOptionQuickAction(option) === 'url' && (
+                    <label className={styles.importedFieldOptionAction}>
+                      <span>URL</span>
+                      <input
+                        value={option.actions?.[0]?.buttonUrl || ''}
+                        disabled={contentSaving}
+                        placeholder="https://..."
+                        name={`rstk-imported-choice-option-url-${index}`}
+                        {...importedEditorNoAutocompleteAttrs}
+                        onChange={(event) => patchChoiceOption(index, patchImportedOptionActionStep(option, { buttonUrl: event.target.value }))}
+                      />
+                    </label>
+                  )}
                 </div>
               ))}
             </div>
             <p className={styles.importedFieldOptionsHint}>
-              Usa "Descalificar" en las opciones que no son tu cliente ideal: Ristak marca el contacto como no calificado.
+              Usa "Descalificar" en las opciones que no son tu cliente ideal; "Enviar a página específica" y "Redirigir a URL" navegan después de enviar el formulario.
             </p>
             <div className={styles.importedButtonActionFooter}>
               <Button type="button" variant="secondary" size="sm" onClick={clearInlineSelection} disabled={contentSaving}>
@@ -10364,10 +10413,38 @@ const ImportedHtmlEditorPanel: React.FC<{
                         ))}
                       </CustomSelect>
                     </label>
+                    {getImportedOptionQuickAction(option) === 'specific_page' && (
+                      <label className={styles.importedFieldOptionAction}>
+                        <span>Página</span>
+                        <CustomSelect
+                          value={option.actions?.[0]?.buttonPageId || ''}
+                          disabled={contentSaving}
+                          onChange={(event) => patchFieldOption(index, patchImportedOptionActionStep(option, { buttonPageId: event.target.value }))}
+                        >
+                          <option value="">Selecciona una página</option>
+                          {targetImportedPages.map(page => (
+                            <option key={page.id} value={page.id}>{page.title || page.id}</option>
+                          ))}
+                        </CustomSelect>
+                      </label>
+                    )}
+                    {getImportedOptionQuickAction(option) === 'url' && (
+                      <label className={styles.importedFieldOptionAction}>
+                        <span>URL</span>
+                        <input
+                          value={option.actions?.[0]?.buttonUrl || ''}
+                          disabled={contentSaving}
+                          placeholder="https://..."
+                          name={`rstk-imported-field-option-url-${index}`}
+                          {...importedEditorNoAutocompleteAttrs}
+                          onChange={(event) => patchFieldOption(index, patchImportedOptionActionStep(option, { buttonUrl: event.target.value }))}
+                        />
+                      </label>
+                    )}
                   </div>
                 ))}
                 <p className={styles.importedFieldOptionsHint}>
-                  Usa "Descalificar" en las opciones que no son tu cliente ideal: Ristak marca el contacto como no calificado.
+                  Usa "Descalificar" en las opciones que no son tu cliente ideal; "Enviar a página específica" y "Redirigir a URL" navegan después de enviar el formulario.
                 </p>
               </div>
             )}
