@@ -667,7 +667,7 @@ async function initTables() {
       CREATE TABLE IF NOT EXISTS ai_agent_config (
         id ${usePostgres ? 'SERIAL PRIMARY KEY' : 'INTEGER PRIMARY KEY AUTOINCREMENT'},
         openai_api_key_encrypted TEXT,
-        model TEXT DEFAULT 'gpt-5.5',
+        model TEXT DEFAULT 'gpt-5.4-nano',
         business_context TEXT,
         market_context TEXT,
         ideal_customer TEXT,

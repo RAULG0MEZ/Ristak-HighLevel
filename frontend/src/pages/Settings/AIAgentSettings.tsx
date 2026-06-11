@@ -6,7 +6,7 @@ import { aiAgentService, type AIAgentConfigStatus, type AIAgentRecommendationMod
 import { ConversationalAgentSettings } from './ConversationalAgentSettings'
 import styles from './AIAgentSettings.module.css'
 
-const DEFAULT_AI_MODEL = 'gpt-5.5'
+const DEFAULT_AI_MODEL = 'gpt-5.4-nano'
 const AUTOSAVE_DELAY_MS = 900
 
 type SaveState = 'idle' | 'pending' | 'saving' | 'saved' | 'error'

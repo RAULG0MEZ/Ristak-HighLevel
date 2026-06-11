@@ -14,7 +14,7 @@ const VOICE_WAVE_MIN_HEIGHT = 4
 const VOICE_WAVE_MAX_HEIGHT = 30
 const VOICE_WAVE_SILENCE_THRESHOLD = 4
 const VOICE_WAVE_SIGNAL_RANGE = 30
-const DEFAULT_AI_MODEL = 'gpt-5.5'
+const DEFAULT_AI_MODEL = 'gpt-5.4-nano'
 
 const FALLBACK_AGENT_CATEGORIES: AIAgentCategory[] = [
   { id: 'citas', label: 'Citas', icon: 'calendar', description: 'Agendar, reprogramar, cancelar y consultar citas y calendarios.' },

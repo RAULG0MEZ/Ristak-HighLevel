@@ -14,7 +14,7 @@ import { loadAgentMemories } from './tools/memoryTools.js'
 
 const MESSAGE_HISTORY_LIMIT = 12
 const MAX_TURNS = 16
-const DEFAULT_MODEL = 'gpt-5.5'
+const DEFAULT_MODEL = 'gpt-5.4-nano'
 const CONTEXT_FIELD_LIMIT = 4000
 
 const MAX_CHAT_ATTACHMENTS = 8
