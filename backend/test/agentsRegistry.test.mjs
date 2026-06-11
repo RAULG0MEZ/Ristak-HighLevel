@@ -61,7 +61,7 @@ test('pagos incluye los cobros avanzados portados del agente original', () => {
 
 test('publicidad incluye el toolset de creación de Meta Ads', () => {
   const names = getAgentCategory('publicidad').tools.map((tool) => tool.name)
-  for (const required of ['create_campaign', 'create_ad_set', 'create_ad_creative', 'create_ad', 'create_custom_audience', 'create_lookalike_audience', 'search_targeting_interests', 'update_entity_status', 'update_ad_set_budget', 'list_meta_pages']) {
+  for (const required of ['create_campaign', 'create_ad_set', 'create_ad_creative', 'create_ad', 'create_custom_audience', 'create_lookalike_audience', 'search_targeting_interests', 'search_targeting_locations', 'update_entity_status', 'update_ad_set_budget', 'list_meta_pages']) {
     assert.ok(names.includes(required), `publicidad sin ${required}`)
   }
 })

@@ -132,7 +132,10 @@ export const createCampaignTool = tool({
         objective,
         status: 'PAUSED',
         buying_type: 'AUCTION',
-        special_ad_categories: specialAdCategories || []
+        special_ad_categories: specialAdCategories || [],
+        // Requerido por versiones recientes del Marketing API; desactivado = cada
+        // conjunto controla su propio presupuesto (más control, sin sorpresas)
+        is_adset_budget_sharing_enabled: false
       }
     })
     if (!result.ok) return result
@@ -185,6 +188,8 @@ export const createAdSetTool = tool({
     dailyBudgetMxn: z.number().positive().describe('Presupuesto diario en MXN (ej. 150 = $150/día)'),
     optimizationGoal: z.enum(['LINK_CLICKS', 'LANDING_PAGE_VIEWS', 'REACH', 'IMPRESSIONS', 'LEAD_GENERATION', 'OFFSITE_CONVERSIONS', 'CONVERSATIONS']).describe('Qué optimiza Meta'),
     countries: z.array(z.string()).describe('Códigos de país ISO-2, ej. ["MX"]'),
+    cities: z.array(z.string()).nullable().describe('Claves de ciudad de Meta para acotar a ciudades específicas (usa search_targeting_locations); null = todo el país'),
+    genders: z.enum(['all', 'female', 'male']).nullable().describe('Género objetivo (default all)'),
     ageMin: z.number().int().min(18).max(65).nullable().describe('Edad mínima (default 18)'),
     ageMax: z.number().int().min(18).max(65).nullable().describe('Edad máxima (default 65)'),
     interestIds: z.array(z.string()).nullable().describe('IDs de intereses (usa search_targeting_interests)'),
@@ -192,17 +197,23 @@ export const createAdSetTool = tool({
     pixelId: z.string().nullable().describe('Pixel para OFFSITE_CONVERSIONS (si la cuenta tiene uno configurado se usa solo)'),
     confirm: z.boolean().describe('true solo si el usuario ya aprobó presupuesto y segmentación')
   }),
-  execute: async ({ name, campaignId, dailyBudgetMxn, optimizationGoal, countries, ageMin, ageMax, interestIds, customAudienceIds, pixelId, confirm }) => {
+  execute: async ({ name, campaignId, dailyBudgetMxn, optimizationGoal, countries, cities, genders, ageMin, ageMax, interestIds, customAudienceIds, pixelId, confirm }) => {
     const blocked = requireConfirm(confirm, 'el conjunto de anuncios')
     if (blocked) return blocked
     const ctx = await getMetaContext()
     if (ctx.error) return { ok: false, error: ctx.error }
 
+    const geoLocations = cities?.length
+      ? { cities: cities.map((key) => ({ key })) }
+      : { countries }
+
     const targeting = {
-      geo_locations: { countries },
+      geo_locations: geoLocations,
       age_min: ageMin || 18,
       age_max: ageMax || 65
     }
+    if (genders === 'female') targeting.genders = [2]
+    if (genders === 'male') targeting.genders = [1]
     if (interestIds?.length) targeting.flexible_spec = [{ interests: interestIds.map((id) => ({ id })) }]
     if (customAudienceIds?.length) targeting.custom_audiences = customAudienceIds.map((id) => ({ id }))
 
@@ -485,11 +496,44 @@ export const createLookalikeAudienceTool = tool({
   }
 })
 
+export const searchTargetingLocationsTool = tool({
+  name: 'search_targeting_locations',
+  description: 'Busca ciudades o regiones de Meta por nombre (ej. "Ciudad de México", "Guadalajara") y devuelve sus claves para segmentar por ciudad en create_ad_set.',
+  parameters: z.object({
+    query: z.string().describe('Nombre de la ciudad o región'),
+    countryCode: z.string().nullable().describe('Limitar a un país ISO-2, ej. MX'),
+    limit: z.number().int().min(1).max(25).nullable().describe('Máximo (default 8)')
+  }),
+  execute: async ({ query, countryCode, limit }) => {
+    const ctx = await getMetaContext()
+    if (ctx.error) return { ok: false, error: ctx.error }
+    const params = {
+      type: 'adgeolocation',
+      location_types: JSON.stringify(['city', 'region']),
+      q: query,
+      limit: limit || 8
+    }
+    if (countryCode) params.country_code = countryCode
+    const result = await metaApi('search', { accessToken: ctx.accessToken, params })
+    if (!result.ok) return result
+    return {
+      ok: true,
+      locations: (result.data?.data || []).map((loc) => ({
+        key: loc.key,
+        name: loc.name,
+        type: loc.type,
+        region: loc.region || null,
+        country: loc.country_name || loc.country_code || null
+      }))
+    }
+  }
+})
+
 export const searchTargetingInterestsTool = tool({
   name: 'search_targeting_interests',
-  description: 'Busca intereses de segmentación en Meta por palabra clave (ej. "odontología", "fitness") y devuelve sus IDs y tamaño de audiencia, para usarlos en create_ad_set.',
+  description: 'Busca intereses de segmentación en Meta por palabra clave y devuelve sus IDs y tamaño de audiencia, para usarlos en create_ad_set. Si en español no hay resultados, reintenta con el término en inglés (ej. "pregnancy" en vez de "embarazo", "dentistry" en vez de "odontología") — el catálogo de Meta responde mejor en inglés.',
   parameters: z.object({
-    query: z.string().describe('Palabra clave del interés'),
+    query: z.string().describe('Palabra clave del interés (prueba español y luego inglés)'),
     limit: z.number().int().min(1).max(25).nullable().describe('Máximo (default 10)')
   }),
   execute: async ({ query, limit }) => {
@@ -527,5 +571,6 @@ export const adsBuilderTools = [
   listCustomAudiencesTool,
   createCustomAudienceTool,
   createLookalikeAudienceTool,
-  searchTargetingInterestsTool
+  searchTargetingInterestsTool,
+  searchTargetingLocationsTool
 ]
