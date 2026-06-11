@@ -332,19 +332,7 @@ export const AutomationLibrary: React.FC<AutomationLibraryProps> = ({ currentAut
         </button>
       </div>
 
-      {/* Búsqueda */}
-      <div className={styles.leftNavSearch}>
-        <Search size={12} />
-        <input
-          data-ristak-unstyled
-          value={query}
-          placeholder="Buscar…"
-          onChange={(event) => setQuery(event.target.value)}
-          aria-label="Buscar automatización"
-        />
-      </div>
-
-      {/* Acciones en bloque (aparecen arriba de la lista al seleccionar) */}
+      {/* Acciones en bloque (encima del buscador) */}
       {selectionActive && (
         <div className={styles.libBulkBar}>
           <span className={styles.libBulkCount}>{selected.size} seleccionadas</span>
@@ -369,6 +357,18 @@ export const AutomationLibrary: React.FC<AutomationLibraryProps> = ({ currentAut
           </button>
         </div>
       )}
+
+      {/* Búsqueda */}
+      <div className={styles.leftNavSearch}>
+        <Search size={12} />
+        <input
+          data-ristak-unstyled
+          value={query}
+          placeholder="Buscar…"
+          onChange={(event) => setQuery(event.target.value)}
+          aria-label="Buscar automatización"
+        />
+      </div>
 
       {/* Lista unificada */}
       <div className={styles.leftNavList}>
