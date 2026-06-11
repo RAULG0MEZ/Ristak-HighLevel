@@ -24,6 +24,7 @@ interface EnrollmentRecordsModalProps {
 
 const STATUS_LABELS: Record<string, { label: string; variant: 'success' | 'neutral' | 'warning' | 'default' }> = {
   active: { label: 'Activo', variant: 'success' },
+  waiting: { label: 'Esperando', variant: 'warning' },
   completed: { label: 'Completado', variant: 'neutral' },
   exited: { label: 'Salió', variant: 'warning' },
   goal_met: { label: 'Objetivo cumplido', variant: 'success' }
@@ -78,7 +79,7 @@ export const EnrollmentRecordsModal: React.FC<EnrollmentRecordsModalProps> = ({
         (enrollment.log || []).map((entry) => ({
           contact: enrollment.contactName,
           step: entry.label || nodeName(entry.nodeId),
-          status: entry.status || 'ok',
+          status: (entry as { detail?: string }).detail || entry.status || 'ok',
           at: entry.at || enrollment.updatedAt
         }))
       )

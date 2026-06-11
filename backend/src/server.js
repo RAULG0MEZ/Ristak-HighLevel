@@ -160,6 +160,9 @@ app.use((err, req, res, next) => {
 
 // Iniciar servidor. Render requiere escuchar en 0.0.0.0 y el puerto de PORT.
 app.listen(PORT, '0.0.0.0', async () => {
+  import('./services/automationEngine.js')
+    .then((engine) => engine.startAutomationScheduler())
+    .catch((error) => logger.error(`No se pudo iniciar el motor de automatizaciones: ${error.message}`))
   logger.success(`🚀 Servidor corriendo en puerto ${PORT}`)
   logger.info(`Entorno: ${process.env.NODE_ENV || 'development'}`)
 

@@ -3845,6 +3845,23 @@ export async function processYCloudWhatsAppWebhook({ payload, rawBody, signature
       ? await processWhatsAppMessageEventPayload({ payload, businessPhoneHints })
       : []
 
+    // Motor de automatizaciones: disparar/reanudar flujos con cada mensaje
+    // entrante (import dinámico para evitar dependencia circular)
+    Promise.all(messageResults
+      .filter(result => result?.direction === 'inbound' && result?.isNew !== false)
+      .map(result => import('./automationEngine.js')
+        .then(engine => engine.handleIncomingMessage({
+          contactId: result.contactId,
+          phone: result.phone,
+          contactName: result.contactName,
+          text: result.messageText,
+          channel: 'whatsapp',
+          businessPhoneNumberId: result.businessPhoneNumberId || null
+        }))
+        .catch(error => {
+          logger.warn(`[Automatizaciones] No se pudo procesar el mensaje entrante: ${error.message}`)
+        }))).catch(() => {})
+
     await Promise.all(messageResults
       .filter(result => result?.direction === 'inbound' && result?.isNew !== false)
       .map(result => maybeConfirmAppointmentFromReply({

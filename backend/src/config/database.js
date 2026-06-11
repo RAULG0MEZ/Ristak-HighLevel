@@ -2878,6 +2878,10 @@ async function initTables() {
       )
     `)
     await db.run('CREATE INDEX IF NOT EXISTS idx_automation_enrollments_auto ON automation_enrollments(automation_id, status)')
+    // Columnas de espera del motor (tablas creadas antes de este cambio)
+    for (const column of ['resume_at DATETIME', 'wait_kind TEXT', "context TEXT DEFAULT '{}'"]) {
+      await db.run(`ALTER TABLE automation_enrollments ADD COLUMN ${column}`).catch(() => {})
+    }
 
     // Mensajes automáticos de citas (recordatorios y confirmaciones).
     // Cada fila es una "cajita" configurable desde la página de Calendarios.

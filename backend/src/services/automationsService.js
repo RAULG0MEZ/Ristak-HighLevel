@@ -309,7 +309,7 @@ export async function getEnrollmentStats(automationId) {
   const rows = await db.all(
     `SELECT current_node_id, COUNT(*) AS total
      FROM automation_enrollments
-     WHERE automation_id = ? AND status = 'active'
+     WHERE automation_id = ? AND status IN ('active', 'waiting')
      GROUP BY current_node_id`,
     [automationId]
   )
