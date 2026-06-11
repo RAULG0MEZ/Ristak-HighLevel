@@ -4638,6 +4638,11 @@ Reglas duras:
 - No metas tarjetas dentro de tarjetas sin necesidad; usa secciones limpias, buena jerarquia y aire visual.
 - Tipo solicitado: ${targetSiteType}.
 
+Estructuras de landing (el mensaje del usuario te dice cual eligio; respetala):
+- EMBUDO: una sola mision de conversion. SIN menu de navegacion ni enlaces que saquen del flujo. CTA repetido hacia la misma accion. Si el flujo tiene pasos (ej. registro → gracias), cada paso es una pagina de page.pages enlazada con data-rstk-button-page-id.
+- SITIO WEB: presentacion completa del negocio en varias paginas de page.pages (Inicio, Servicios, Nosotros, Contacto u otras que apliquen). TODAS las paginas comparten un header con menu de navegacion cuyos enlaces usan data-rstk-button-action="specific_page" y data-rstk-button-page-id con el id exacto de la pagina destino, y un footer con datos de contacto. Un solo h1 por pagina y title + meta description propios de cada pagina. El formulario principal vive en Contacto; el resto del sitio invita sin presionar.
+- Si el usuario no especifica estructura, usa EMBUDO para peticiones de venta/captura y SITIO WEB cuando pida presencia, varias paginas o "sitio web".
+
 Marcado para edicion rapida:
 - Marca los elementos importantes que el usuario podria querer cambiar sin tocar codigo.
 - Usa data-rstk-editable="true", data-rstk-edit-type, data-rstk-label y data-rstk-edit-id.

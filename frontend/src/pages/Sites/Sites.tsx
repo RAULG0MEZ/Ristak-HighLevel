@@ -176,14 +176,18 @@ type SitesAICreationModalSubmit = {
   siteKind: SitesAICreationKind
   prompt: string
   attachmentNotes: string[]
+  structureKind?: SiteStructureKind
   funnelStyle?: FunnelStyleId
+  websiteStyle?: WebsiteStyleId
   primaryAction?: FunnelPrimaryActionId
   chatgptModel?: string
   editSite?: PublicSite | null
   visualContext?: SitesAIPreviewVisualContext | null
 }
 
+type SiteStructureKind = 'funnel' | 'website'
 type FunnelStyleId = 'vsl' | 'lead_gen' | 'opt_in'
+type WebsiteStyleId = 'services' | 'personal' | 'business'
 type FunnelPrimaryActionId = 'buy' | 'schedule' | 'form' | 'whatsapp' | 'download'
 
 const sectionItems: Array<{ id: SitesSection; label: string; icon: React.ReactNode }> = [
@@ -4234,13 +4238,17 @@ export const Sites: React.FC = () => {
     siteKind,
     prompt,
     attachmentNotes,
+    structureKind,
     funnelStyle,
+    websiteStyle,
     primaryAction,
     chatgptModel,
     editSite,
     visualContext
   }: SitesAICreationModalSubmit): Promise<string | null> => {
+    const selectedStructure = getSiteStructureOption(structureKind)
     const selectedFunnelStyle = getFunnelStyleOption(funnelStyle)
+    const selectedWebsiteStyle = getWebsiteStyleOption(websiteStyle)
     const selectedPrimaryAction = getFunnelPrimaryAction(primaryAction)
     const selectedChatGPTModel = getChatGPTSiteModelOption(chatgptModel, Boolean(editSite))
     const editVisualContext = editSite ? visualContext || importedPreviewContexts[editSite.id] || null : null
@@ -4248,7 +4256,9 @@ export const Sites: React.FC = () => {
       editSite
         ? `Modifica esta página importada con IA según la petición del usuario. Mantén formularios, campos, tracking y acciones de botones funcionando.`
         : `Crea una página completa con IA libre en HTML/CSS para importarla en Ristak.`,
+      selectedStructure ? selectedStructure.prompt : '',
       selectedFunnelStyle ? selectedFunnelStyle.prompt : '',
+      selectedWebsiteStyle ? selectedWebsiteStyle.prompt : '',
       selectedPrimaryAction ? selectedPrimaryAction.prompt : '',
       selectedChatGPTModel ? `ChatGPT seleccionado por el usuario: ${selectedChatGPTModel.label}.` : '',
       editVisualContext ? formatSitesAIPreviewVisualContextForPrompt(editVisualContext) : '',
@@ -6150,6 +6160,99 @@ const AI_CREATION_VOICE_WAVE_MAX_HEIGHT = 28
 const AI_CREATION_VOICE_SILENCE_THRESHOLD = 4
 const AI_CREATION_VOICE_SIGNAL_RANGE = 30
 
+// Step 0 of the AI flow: what the user is building. Plain-language copy so
+// non-marketers understand the difference before picking.
+const siteStructureOptions: Array<{
+  id: SiteStructureKind
+  badge: string
+  title: string
+  subtitle: string
+  optimizes: string
+  prompt: string
+}> = [
+  {
+    id: 'website',
+    badge: 'Sitio web',
+    title: 'Sitio web completo',
+    subtitle: 'Como el local de tu negocio en internet: varias páginas con menú para que conozcan quién eres, qué haces y cómo contactarte.',
+    optimizes: 'Se optimiza para verte profesional, generar confianza y que te encuentren en Google.',
+    prompt: [
+      'Estructura elegida: SITIO WEB completo (no es un embudo).',
+      '- Crea un sitio multipagina y devuelvelo en page.pages: Inicio mas las paginas que apliquen (Servicios, Nosotros, Contacto, etc.), cada una con id, title y filename claros.',
+      '- Todas las paginas comparten un header con menu de navegacion y un footer con datos de contacto. Los enlaces del menu llevan a las otras paginas con data-rstk-button-action="specific_page" y data-rstk-button-page-id con el id exacto de la pagina destino.',
+      '- Optimiza para presentacion y confianza: un solo h1 por pagina, title y meta description propios por pagina, jerarquia clara y secciones escaneables.',
+      '- La pagina de Contacto incluye un formulario bien mapeado; el resto del sitio puede invitar a contactar sin presionar como un embudo.'
+    ].join('\n')
+  },
+  {
+    id: 'funnel',
+    badge: 'Embudo',
+    title: 'Embudo de ventas',
+    subtitle: 'Un camino directo, paso a paso, para que la persona haga UNA sola cosa: comprar, agendar o dejar sus datos.',
+    optimizes: 'Se optimiza para campañas y anuncios: sin menú ni distracciones, solo el siguiente paso.',
+    prompt: [
+      'Estructura elegida: EMBUDO de conversion.',
+      '- Una sola mision: llevar al visitante a UNA accion principal. Sin menu de navegacion ni enlaces que distraigan.',
+      '- CTA repetido hacia la misma accion a lo largo de la pagina.',
+      '- Si el flujo tiene pasos naturales (ej. registro → gracias), devuelve cada paso como pagina separada en page.pages.'
+    ].join('\n')
+  }
+]
+
+const getSiteStructureOption = (id?: SiteStructureKind | '') => siteStructureOptions.find(option => option.id === id) || null
+
+const websiteStyleOptions: Array<{
+  id: WebsiteStyleId
+  title: string
+  subtitle: string
+  badge: string
+  bestFor: string
+  prompt: string
+  sections: string[]
+}> = [
+  {
+    id: 'services',
+    title: 'Negocio de servicios',
+    subtitle: 'Para clínicas, despachos, agencias, restaurantes o cualquier negocio local.',
+    badge: 'Servicios',
+    bestFor: 'Mostrar tus servicios, dónde estás y cómo contactarte.',
+    prompt: [
+      'Tipo de sitio web elegido: Negocio de servicios.',
+      'Paginas esperadas: Inicio (hero con propuesta clara, servicios destacados, prueba social y CTA a contacto), Servicios (detalle de cada servicio con beneficios), Nosotros (historia, equipo, por que confiar) y Contacto (formulario, telefono, direccion y horarios).',
+      'El menu lleva a todas las paginas y el footer repite contacto y ubicacion.'
+    ].join('\n'),
+    sections: ['Inicio', 'Servicios', 'Nosotros', 'Contacto']
+  },
+  {
+    id: 'personal',
+    title: 'Marca personal',
+    subtitle: 'Para profesionales, creadores, coaches o consultores que venden con su nombre.',
+    badge: 'Personal',
+    bestFor: 'Presentarte, mostrar lo que haces y abrir la puerta a trabajar contigo.',
+    prompt: [
+      'Tipo de sitio web elegido: Marca personal.',
+      'Paginas esperadas: Inicio (quien eres y que resuelves, foto o presencia personal, CTA a contacto), Sobre mi (historia, trayectoria, autoridad), Lo que hago (servicios, proyectos o contenido) y Contacto (formulario y redes).',
+      'El tono es cercano y humano; la cara y la historia de la persona son protagonistas.'
+    ].join('\n'),
+    sections: ['Inicio', 'Sobre mí', 'Lo que hago', 'Contacto']
+  },
+  {
+    id: 'business',
+    title: 'Empresa o producto',
+    subtitle: 'Para empresas, marcas o productos que necesitan una presencia formal.',
+    badge: 'Empresa',
+    bestFor: 'Explicar tu producto, resolver dudas y canalizar interesados.',
+    prompt: [
+      'Tipo de sitio web elegido: Empresa o producto.',
+      'Paginas esperadas: Inicio (propuesta de valor, beneficios clave, prueba social), Producto o Soluciones (que hace, como funciona, para quien), Preguntas frecuentes (objeciones y dudas reales) y Contacto (formulario para interesados).',
+      'El diseño transmite solidez: jerarquia clara, datos concretos y llamados a contacto presentes sin ser agresivos.'
+    ].join('\n'),
+    sections: ['Inicio', 'Producto', 'Preguntas', 'Contacto']
+  }
+]
+
+const getWebsiteStyleOption = (id?: WebsiteStyleId | '') => websiteStyleOptions.find(option => option.id === id) || null
+
 const funnelStyleOptions: Array<{
   id: FunnelStyleId
   title: string
@@ -6635,17 +6738,25 @@ const SitesAICreationModal: React.FC<{
   const promptInputRef = useRef<HTMLTextAreaElement | null>(null)
   const [prompt, setPrompt] = useState('')
   const [attachments, setAttachments] = useState<SitesAICreationAttachment[]>([])
+  const [structureKind, setStructureKind] = useState<SiteStructureKind | ''>('')
   const [funnelStyle, setFunnelStyle] = useState<FunnelStyleId | ''>('')
+  const [websiteStyle, setWebsiteStyle] = useState<WebsiteStyleId | ''>('')
   const [primaryAction, setPrimaryAction] = useState<FunnelPrimaryActionId | ''>('')
   const [chatgptModel, setChatgptModel] = useState(() => getDefaultSiteChatGPTModel(editMode))
   const [attachmentError, setAttachmentError] = useState('')
   const [voiceError, setVoiceError] = useState('')
   const [assistantReply, setAssistantReply] = useState('')
   const [submitError, setSubmitError] = useState('')
-  const shouldPickFunnelStyle = state.siteKind === 'landing' && !editMode
+  // Landing creation walks: structure (web/embudo) → style of that structure → prompt.
+  const shouldPickStructure = state.siteKind === 'landing' && !editMode
+  const selectedStructure = getSiteStructureOption(structureKind)
+  const shouldPickFunnelStyle = shouldPickStructure && structureKind === 'funnel'
+  const shouldPickWebsiteStyle = shouldPickStructure && structureKind === 'website'
   const selectedFunnelStyle = getFunnelStyleOption(funnelStyle || undefined)
+  const selectedWebsiteStyle = getWebsiteStyleOption(websiteStyle || undefined)
+  const selectedStyleSummary = shouldPickFunnelStyle ? selectedFunnelStyle : shouldPickWebsiteStyle ? selectedWebsiteStyle : null
   const selectedChatGPTModel = getChatGPTSiteModelOption(chatgptModel, editMode)
-  const canWritePrompt = !shouldPickFunnelStyle || Boolean(selectedFunnelStyle)
+  const canWritePrompt = !shouldPickStructure || Boolean(selectedStyleSummary)
   const appendPromptText = useCallback((text: string) => {
     setPrompt(current => appendDictatedText(current, text))
   }, [])
@@ -6665,6 +6776,14 @@ const SitesAICreationModal: React.FC<{
     return () => window.clearTimeout(focusTimeout)
   }, [canWritePrompt])
 
+  const selectStructure = (nextStructure: SiteStructureKind) => {
+    setStructureKind(nextStructure)
+    setFunnelStyle('')
+    setWebsiteStyle('')
+    setSubmitError('')
+    setAssistantReply('')
+  }
+
   const selectFunnelStyle = (nextStyle: FunnelStyleId) => {
     setFunnelStyle(nextStyle)
     setPrimaryAction(current => {
@@ -6673,6 +6792,13 @@ const SitesAICreationModal: React.FC<{
       if (nextStyle === 'lead_gen') return 'form'
       return 'schedule'
     })
+    setSubmitError('')
+    setAssistantReply('')
+  }
+
+  const selectWebsiteStyle = (nextStyle: WebsiteStyleId) => {
+    setWebsiteStyle(nextStyle)
+    setPrimaryAction(current => current || 'form')
     setSubmitError('')
     setAssistantReply('')
   }
@@ -6716,13 +6842,25 @@ const SitesAICreationModal: React.FC<{
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    if (shouldPickStructure && !selectedStructure) {
+      setSubmitError('Primero elige si quieres un sitio web o un embudo.')
+      return
+    }
     if (shouldPickFunnelStyle && !selectedFunnelStyle) {
       setSubmitError('Primero elige qué tipo de embudo quieres crear.')
       return
     }
+    if (shouldPickWebsiteStyle && !selectedWebsiteStyle) {
+      setSubmitError('Primero elige qué tipo de sitio web quieres crear.')
+      return
+    }
     const cleanPrompt = prompt.trim()
     if (!cleanPrompt) {
-      setSubmitError(shouldPickFunnelStyle ? 'Ahora cuéntame de qué trata el embudo.' : 'Escribe qué quieres construir primero.')
+      setSubmitError(shouldPickWebsiteStyle
+        ? 'Ahora cuéntame de qué trata tu sitio web.'
+        : shouldPickFunnelStyle
+          ? 'Ahora cuéntame de qué trata el embudo.'
+          : 'Escribe qué quieres construir primero.')
       return
     }
     setSubmitError('')
@@ -6731,7 +6869,9 @@ const SitesAICreationModal: React.FC<{
       siteKind: state.siteKind,
       prompt: cleanPrompt,
       attachmentNotes: buildAttachmentNotes(),
+      structureKind: structureKind || undefined,
       funnelStyle: funnelStyle || undefined,
+      websiteStyle: websiteStyle || undefined,
       primaryAction: primaryAction || undefined,
       chatgptModel,
       editSite: state.editSite || null
@@ -6772,16 +6912,24 @@ const SitesAICreationModal: React.FC<{
                 <h2 id="ai-creation-title">
                   {editMode
                     ? 'Dime que cambio quieres'
-                    : shouldPickFunnelStyle && !selectedFunnelStyle
-                      ? 'Elige el tipo de embudo'
-                      : `Crear ${getSitesAICreationKindLabel(state.siteKind)}`}
+                    : shouldPickStructure && !selectedStructure
+                      ? '¿Sitio web o embudo?'
+                      : shouldPickFunnelStyle && !selectedFunnelStyle
+                        ? 'Elige el tipo de embudo'
+                        : shouldPickWebsiteStyle && !selectedWebsiteStyle
+                          ? 'Elige el tipo de sitio web'
+                          : `Crear ${getSitesAICreationKindLabel(state.siteKind)}`}
                 </h2>
                 <p>
                   {editMode
                     ? 'Ristak modifica esta página y vuelve a revisar sus formularios.'
-                    : shouldPickFunnelStyle && !selectedFunnelStyle
-                      ? 'Escoge la estructura y el ChatGPT que lo va a construir. Después nos dices el negocio y objetivo.'
-                      : 'Describe la página y Ristak la crea como código propio listo para revisar.'}
+                    : shouldPickStructure && !selectedStructure
+                      ? 'Cada uno sirve para algo distinto. Elige el que va con lo que necesitas hoy.'
+                      : shouldPickFunnelStyle && !selectedFunnelStyle
+                        ? 'Escoge la estructura y el ChatGPT que lo va a construir. Después nos dices el negocio y objetivo.'
+                        : shouldPickWebsiteStyle && !selectedWebsiteStyle
+                          ? 'Escoge cómo se va a organizar tu sitio. Después nos cuentas de tu negocio.'
+                          : 'Describe la página y Ristak la crea como código propio listo para revisar.'}
                 </p>
               </div>
               <button type="button" className={styles.aiCreationClose} onClick={onClose} aria-label="Cerrar">
@@ -6790,11 +6938,47 @@ const SitesAICreationModal: React.FC<{
             </header>
 
             <div className={styles.aiCreationBody}>
-              {shouldPickFunnelStyle && !selectedFunnelStyle ? (
+              {shouldPickStructure && !selectedStructure ? (
                 <div className={styles.aiCreationFunnelPicker}>
                   <div className={styles.aiCreationFunnelIntro}>
-                    <strong>¿Qué tipo de landing quieres crear?</strong>
+                    <strong>¿Qué quieres construir?</strong>
+                    <p>Piensa en qué necesitas que haga la gente cuando llegue a tu página.</p>
+                  </div>
+                  <div className={styles.aiCreationStructureGrid}>
+                    {siteStructureOptions.map(option => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        className={styles.aiCreationStructureCard}
+                        onClick={() => selectStructure(option.id)}
+                      >
+                        <span className={`${styles.aiCreationFunnelMockup} ${option.id === 'website' ? styles.aiCreationStructureMockupWebsite : styles.aiCreationStructureMockupFunnel}`}>
+                          <span className={styles.aiCreationFunnelMockupTop} />
+                          <span className={styles.aiCreationFunnelMockupMain}>
+                            <span />
+                            <span />
+                          </span>
+                          <span className={styles.aiCreationFunnelMockupFooter} />
+                        </span>
+                        <span className={styles.aiCreationFunnelCardBody}>
+                          <span>{option.badge}</span>
+                          <strong>{option.title}</strong>
+                          <p>{option.subtitle}</p>
+                          <small>{option.optimizes}</small>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : shouldPickFunnelStyle && !selectedFunnelStyle ? (
+                <div className={styles.aiCreationFunnelPicker}>
+                  <div className={styles.aiCreationFunnelIntro}>
+                    <strong>¿Qué tipo de embudo quieres crear?</strong>
                     <p>Elige una base visual y el ChatGPT que va a crear el embudo.</p>
+                    <button type="button" className={styles.aiCreationStructureBack} onClick={() => setStructureKind('')}>
+                      <ArrowLeft size={13} />
+                      Cambiar a sitio web
+                    </button>
                   </div>
                   {modelPicker}
                   <div className={styles.aiCreationFunnelGrid}>
@@ -6823,16 +7007,53 @@ const SitesAICreationModal: React.FC<{
                     ))}
                   </div>
                 </div>
+              ) : shouldPickWebsiteStyle && !selectedWebsiteStyle ? (
+                <div className={styles.aiCreationFunnelPicker}>
+                  <div className={styles.aiCreationFunnelIntro}>
+                    <strong>¿Qué tipo de sitio web quieres crear?</strong>
+                    <p>Elige cómo se va a organizar y el ChatGPT que lo va a construir.</p>
+                    <button type="button" className={styles.aiCreationStructureBack} onClick={() => setStructureKind('')}>
+                      <ArrowLeft size={13} />
+                      Cambiar a embudo
+                    </button>
+                  </div>
+                  {modelPicker}
+                  <div className={styles.aiCreationFunnelGrid}>
+                    {websiteStyleOptions.map(option => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        className={styles.aiCreationFunnelCard}
+                        onClick={() => selectWebsiteStyle(option.id)}
+                      >
+                        <span className={`${styles.aiCreationFunnelMockup} ${styles.aiCreationStructureMockupWebsite}`}>
+                          <span className={styles.aiCreationFunnelMockupTop} />
+                          <span className={styles.aiCreationFunnelMockupMain}>
+                            <span />
+                            <span />
+                          </span>
+                          <span className={styles.aiCreationFunnelMockupFooter} />
+                        </span>
+                        <span className={styles.aiCreationFunnelCardBody}>
+                          <span>{option.badge}</span>
+                          <strong>{option.title}</strong>
+                          <p>{option.subtitle}</p>
+                          <small>{option.bestFor}</small>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               ) : (
                 <>
-                  {shouldPickFunnelStyle && selectedFunnelStyle && (
+                  {shouldPickStructure && selectedStructure && selectedStyleSummary && (
                     <div className={styles.aiCreationSelectedFunnel}>
                       <div>
-                        <span>{selectedFunnelStyle.badge}</span>
-                        <strong>{selectedFunnelStyle.title}</strong>
-                        <p>{selectedFunnelStyle.sections.join(' / ')}</p>
+                        <span>{selectedStructure.badge} · {selectedStyleSummary.badge}</span>
+                        <strong>{selectedStyleSummary.title}</strong>
+                        <p>{selectedStyleSummary.sections.join(' / ')}</p>
                       </div>
-                      <button type="button" onClick={() => setFunnelStyle('')}>
+                      <button type="button" onClick={() => { setFunnelStyle(''); setWebsiteStyle('') }}>
                         Cambiar tipo
                       </button>
                     </div>
@@ -6847,7 +7068,7 @@ const SitesAICreationModal: React.FC<{
                     </div>
                   )}
 
-                  {shouldPickFunnelStyle && selectedFunnelStyle && (
+                  {shouldPickStructure && selectedStyleSummary && (
                     <div className={styles.aiCreationActionPicker}>
                       <span>Acción principal</span>
                       <div>
@@ -6866,7 +7087,7 @@ const SitesAICreationModal: React.FC<{
                   )}
 
                   <label className={styles.aiCreationPrompt}>
-                    <span>{editMode ? 'Cambio que quieres hacer' : shouldPickFunnelStyle ? 'De qué trata este embudo' : 'Qué quieres construir'}</span>
+                    <span>{editMode ? 'Cambio que quieres hacer' : shouldPickWebsiteStyle ? 'De qué trata tu sitio web' : shouldPickFunnelStyle ? 'De qué trata este embudo' : 'Qué quieres construir'}</span>
                     <textarea
                       ref={promptInputRef}
                       value={prompt}

@@ -1392,6 +1392,116 @@
   gap: 12px;
 }
 
+.aiCreationStructureGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.aiCreationStructureCard {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: 168px minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #0f172a;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.aiCreationStructureCard:hover {
+  border-color: rgba(22, 101, 52, 0.42);
+  box-shadow: 0 18px 44px -34px rgba(15, 23, 42, 0.7);
+  transform: translateY(-1px);
+}
+
+.aiCreationStructureBack {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  border: 0;
+  background: transparent;
+  color: #166534;
+  padding: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.aiCreationStructureBack:hover {
+  text-decoration: underline;
+}
+
+/* Website mockup: navbar with menu items, hero band and two content columns. */
+.aiCreationStructureMockupWebsite .aiCreationFunnelMockupTop {
+  width: 100%;
+  background:
+    linear-gradient(#0f172a 0 0) 0 50% / 26% 100% no-repeat,
+    linear-gradient(#94a3b8 0 0) 56% 50% / 10% 50% no-repeat,
+    linear-gradient(#94a3b8 0 0) 74% 50% / 10% 50% no-repeat,
+    linear-gradient(#22c55e 0 0) 100% 50% / 16% 100% no-repeat,
+    #e2e8f0;
+}
+
+.aiCreationStructureMockupWebsite .aiCreationFunnelMockupMain {
+  grid-template-rows: minmax(0, 1fr) 22px;
+}
+
+.aiCreationStructureMockupWebsite .aiCreationFunnelMockupMain > span:first-child {
+  background:
+    linear-gradient(#334155 0 0) 50% 16px / 64% 11px no-repeat,
+    linear-gradient(#cbd5e1 0 0) 50% 34px / 46% 7px no-repeat,
+    #f1f5f9;
+  border: 1px solid #e2e8f0;
+}
+
+.aiCreationStructureMockupWebsite .aiCreationFunnelMockupMain > span:last-child {
+  background:
+    linear-gradient(#e2e8f0 0 0) 0 50% / 31% 100% no-repeat,
+    linear-gradient(#e2e8f0 0 0) 50% 50% / 31% 100% no-repeat,
+    linear-gradient(#e2e8f0 0 0) 100% 50% / 31% 100% no-repeat;
+}
+
+.aiCreationStructureMockupWebsite .aiCreationFunnelMockupFooter {
+  width: 100%;
+  background: #cbd5e1;
+}
+
+/* Funnel mockup: narrow centered column with one CTA path. */
+.aiCreationStructureMockupFunnel {
+  justify-items: center;
+}
+
+.aiCreationStructureMockupFunnel .aiCreationFunnelMockupTop {
+  width: 52%;
+  background: #0f172a;
+}
+
+.aiCreationStructureMockupFunnel .aiCreationFunnelMockupMain {
+  width: 64%;
+  grid-template-rows: minmax(0, 1fr) 14px;
+  justify-items: center;
+}
+
+.aiCreationStructureMockupFunnel .aiCreationFunnelMockupMain > span:first-child {
+  width: 100%;
+  background: #111827;
+}
+
+.aiCreationStructureMockupFunnel .aiCreationFunnelMockupMain > span:last-child {
+  width: 72%;
+  background: #cbd5e1;
+}
+
+.aiCreationStructureMockupFunnel .aiCreationFunnelMockupFooter {
+  width: 44%;
+  background: #22c55e;
+}
+
 .aiCreationFunnelCard {
   min-width: 0;
   display: grid;
