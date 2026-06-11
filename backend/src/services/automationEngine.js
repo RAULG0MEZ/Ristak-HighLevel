@@ -466,7 +466,14 @@ async function sendMediaBlock({ block, to, phoneNumberId, ctx }) {
   if (block.type === 'image') {
     await sendWhatsAppApiImageMessage({ to, imageDataUrl: dataUrl || undefined, imageUrl: externalUrl || undefined, caption, phoneNumberId })
   } else if (block.type === 'audio') {
-    await sendWhatsAppApiAudioMessage({ to, audioDataUrl: dataUrl || undefined, audioUrl: externalUrl || undefined, phoneNumberId })
+    await sendWhatsAppApiAudioMessage({
+      to,
+      audioDataUrl: dataUrl || undefined,
+      audioUrl: externalUrl || undefined,
+      // Nota de voz de WhatsApp (ogg/opus) salvo que el usuario lo apague
+      voice: block.voiceNote !== false,
+      phoneNumberId
+    })
   } else {
     // video y archivo se envían como documento (conserva calidad y nombre)
     await sendWhatsAppApiDocumentMessage({

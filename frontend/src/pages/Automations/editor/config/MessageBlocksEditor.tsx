@@ -228,20 +228,63 @@ export const MessageBlocksEditor: React.FC<MessageBlocksEditorProps> = ({
   const [uploading, setUploading] = useState<Record<string, boolean>>({})
   const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({})
 
+  /** Reduce imágenes en el navegador (máx. 1600px, WebP/JPEG) antes de subir.
+      El backend además convierte audio→Ogg Opus (nota de voz) y video→MP4. */
+  const compressImageInBrowser = (file: File): Promise<File> =>
+    new Promise((resolve) => {
+      if (!file.type.startsWith('image/') || file.type === 'image/gif' || file.type === 'image/svg+xml' || file.size < 150 * 1024) {
+        resolve(file)
+        return
+      }
+      const url = URL.createObjectURL(file)
+      const image = new window.Image()
+      image.onload = () => {
+        URL.revokeObjectURL(url)
+        const scale = Math.min(1, 1600 / Math.max(image.width, image.height))
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.round(image.width * scale)
+        canvas.height = Math.round(image.height * scale)
+        const context = canvas.getContext('2d')
+        if (!context) {
+          resolve(file)
+          return
+        }
+        context.drawImage(image, 0, 0, canvas.width, canvas.height)
+        canvas.toBlob(
+          (blob) => {
+            if (blob && blob.size < file.size) {
+              resolve(new File([blob], file.name.replace(/\.\w+$/, '') + '.webp', { type: 'image/webp' }))
+            } else {
+              resolve(file)
+            }
+          },
+          'image/webp',
+          0.82
+        )
+      }
+      image.onerror = () => {
+        URL.revokeObjectURL(url)
+        resolve(file)
+      }
+      image.src = url
+    })
+
   const uploadFile = (index: number, blockId: string, file: File) => {
     setUploading((current) => ({ ...current, [blockId]: true }))
     setUploadErrors((current) => ({ ...current, [blockId]: '' }))
-    const reader = new FileReader()
-    reader.onload = () => {
-      void automationsService
-        .uploadAsset(String(reader.result), file.name)
-        .then((asset) => updateBlock(index, { url: asset.url }))
-        .catch((error: Error) => {
-          setUploadErrors((current) => ({ ...current, [blockId]: error.message || 'No se pudo subir el archivo' }))
-        })
-        .finally(() => setUploading((current) => ({ ...current, [blockId]: false })))
-    }
-    reader.readAsDataURL(file)
+    void compressImageInBrowser(file).then((prepared) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        void automationsService
+          .uploadAsset(String(reader.result), prepared.name)
+          .then((asset) => updateBlock(index, { url: asset.url }))
+          .catch((error: Error) => {
+            setUploadErrors((current) => ({ ...current, [blockId]: error.message || 'No se pudo subir el archivo' }))
+          })
+          .finally(() => setUploading((current) => ({ ...current, [blockId]: false })))
+      }
+      reader.readAsDataURL(prepared)
+    })
   }
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -392,6 +435,15 @@ export const MessageBlocksEditor: React.FC<MessageBlocksEditorProps> = ({
             )}
             {block.url && block.type === 'audio' && (
               <audio src={block.url} controls className={styles.mediaPreviewAudio} />
+            )}
+            {block.type === 'audio' && (
+              <div style={{ marginBottom: 8 }}>
+                <Toggle
+                  checked={block.voiceNote !== false}
+                  onChange={(checked) => updateBlock(index, { voiceNote: checked })}
+                  label="Enviar como nota de voz de WhatsApp"
+                />
+              </div>
             )}
             {block.url && block.type === 'file' && (
               <a href={block.url} target="_blank" rel="noreferrer" className={styles.mediaPreviewFile}>

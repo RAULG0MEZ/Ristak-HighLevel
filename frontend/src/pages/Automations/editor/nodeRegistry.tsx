@@ -160,6 +160,8 @@ export interface MessageBlock {
    *  el selector de medios real. */
   url?: string
   caption?: string
+  /** Audio: enviar como nota de voz de WhatsApp (ogg/opus). Default true */
+  voiceNote?: boolean
 }
 
 export const MEDIA_BLOCK_TYPES: MessageBlockType[] = ['image', 'video', 'audio', 'file']

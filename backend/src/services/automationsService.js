@@ -331,37 +331,53 @@ export async function getEnrollmentStats(automationId) {
 // Archivos adjuntos (imágenes/videos/audios/docs de los bloques de mensaje)
 // ---------------------------------------------------------------------------
 
-const ASSET_LIMITS = {
-  image: 8 * 1024 * 1024,
-  video: 16 * 1024 * 1024,
-  audio: 16 * 1024 * 1024,
+// Límite de ENTRADA (antes de comprimir): la compresión reduce el peso final
+const ASSET_INPUT_LIMITS = {
+  image: 15 * 1024 * 1024,
+  video: 24 * 1024 * 1024,
+  audio: 20 * 1024 * 1024,
   application: 20 * 1024 * 1024
 }
 
 export async function saveAutomationAsset({ fileBase64, filename }) {
-  const match = /^data:([\w.+-]+\/[\w.+-]+);base64,(.+)$/s.exec(String(fileBase64 || ''))
+  const match = /^data:([\w.+-]+\/[\w.+-]+(?:;[\w.+=-]+)?);base64,(.+)$/s.exec(String(fileBase64 || ''))
   if (!match) {
     const error = new Error('Archivo inválido: envía un data URL en base64')
     error.status = 400
     throw error
   }
-  const contentType = match[1].toLowerCase()
-  const base64 = match[2]
-  const family = contentType.split('/')[0]
-  const limit = ASSET_LIMITS[family] || ASSET_LIMITS.application
-  const sizeBytes = Math.floor(base64.length * 0.75)
-  if (sizeBytes > limit) {
+  const inputType = match[1].toLowerCase()
+  const inputBuffer = Buffer.from(match[2], 'base64')
+  const family = inputType.split('/')[0]
+  const limit = ASSET_INPUT_LIMITS[family] || ASSET_INPUT_LIMITS.application
+  if (inputBuffer.length > limit) {
     const error = new Error(`El archivo pesa demasiado (máximo ${Math.round(limit / 1024 / 1024)} MB)`)
     error.status = 400
     throw error
   }
+
+  // Compresión automática estilo WhatsApp: imagen→WebP, audio→Ogg Opus
+  // (formato de nota de voz), video→MP4 H.264. Nunca bloquea la subida.
+  const { compressMediaBuffer } = await import('./mediaCompressionService.js')
+  const { buffer, contentType, note } = await compressMediaBuffer({
+    buffer: inputBuffer,
+    contentType: inputType
+  })
+
   const id = makeId('asset')
   await db.run(
     `INSERT INTO automation_assets (id, filename, content_type, content_base64, size_bytes)
      VALUES (?, ?, ?, ?, ?)`,
-    [id, String(filename || '').slice(0, 200) || null, contentType, base64, sizeBytes]
+    [id, String(filename || '').slice(0, 200) || null, contentType, buffer.toString('base64'), buffer.length]
   )
-  return { id, url: `/api/automations/assets/${id}`, contentType, sizeBytes }
+  return {
+    id,
+    url: `/api/automations/assets/${id}`,
+    contentType,
+    sizeBytes: buffer.length,
+    originalSizeBytes: inputBuffer.length,
+    compression: note
+  }
 }
 
 export async function getAutomationAsset(assetId) {
