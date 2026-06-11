@@ -117,15 +117,6 @@ export const WhatsAppConfigEditor: React.FC<{ config: Config; onChange: (config:
       </ConfigSection>
 
       {/* ------------------------------- Preview ------------------------------ */}
-      {messageType === 'template' && str(config.templateName) && (
-        <ConfigSection title="Vista previa">
-          <div className={styles.waPreview}>
-            <div className={styles.waPreviewBubble}>
-              {`Plantilla: ${str(config.templateName)}${str(config.templateLanguage) ? ` (${str(config.templateLanguage)})` : ''}`}
-            </div>
-          </div>
-        </ConfigSection>
-      )}
 
     </div>
   )

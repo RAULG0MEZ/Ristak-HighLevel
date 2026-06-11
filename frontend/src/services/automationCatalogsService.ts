@@ -129,8 +129,18 @@ async function loadRawWhatsAppTemplates(): Promise<WhatsAppApiTemplate[]> {
   if (!rawTemplatesPromise) {
     rawTemplatesPromise = whatsappApiService
       .getTemplates('APPROVED')
-      .then((response) => {
-        rawTemplatesCache = response.items || []
+      .then(async (response) => {
+        let items = response.items || []
+        if (items.length === 0) {
+          // Tabla local sin sincronizar: trae las plantillas desde YCloud
+          try {
+            await whatsappApiService.refresh()
+            items = (await whatsappApiService.getTemplates('APPROVED')).items || []
+          } catch {
+            // sin credenciales o sin conexión: se queda vacío
+          }
+        }
+        rawTemplatesCache = items
         return rawTemplatesCache
       })
       .catch(() => {

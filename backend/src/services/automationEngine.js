@@ -518,10 +518,48 @@ async function sendWhatsAppBlocks(node, ctx) {
         )
         if (seconds > 0) await sleep(seconds * 1000)
       } else if (str(block.templateId) || str(block.templateName)) {
+        // Variables {{n}}: se rellenan con datos del contacto si traen tokens
+        const rawVariables = block.templateVariables || {}
+        const variables = {}
+        Object.entries(rawVariables).forEach(([key, value]) => {
+          const rendered = renderTemplate(String(value ?? ''), ctx).trim()
+          if (rendered) variables[key] = rendered
+        })
+
+        // Encabezado multimedia: el archivo subido se publica y va como link
+        let components
+        const headerUrl = str(block.headerMediaUrl)
+        if (headerUrl) {
+          const { saveWhatsAppImageDataUrl, buildLocalMediaUrl } = await import('./whatsappApiService.js')
+          let link = headerUrl
+          const assetMatch = /\/api\/automations\/assets\/([\w-]+)/.exec(headerUrl)
+          if (assetMatch) {
+            const row = await db.get('SELECT * FROM automation_assets WHERE id = ?', [assetMatch[1]])
+            if (row && row.content_type.startsWith('image/')) {
+              const media = await saveWhatsAppImageDataUrl(`data:${row.content_type};base64,${row.content_base64}`)
+              link = buildLocalMediaUrl(media)
+            }
+          }
+          if (link && /^https?:/.test(link)) {
+            components = [
+              { type: 'header', parameters: [{ type: 'image', image: { link } }] },
+              ...(Object.keys(variables).length
+                ? [{
+                    type: 'body',
+                    parameters: Object.keys(variables)
+                      .sort((a, b) => Number(a) - Number(b))
+                      .map((key) => ({ type: 'text', text: variables[key] }))
+                  }]
+                : [])
+            ]
+          }
+        }
+
         await sendWhatsAppApiTemplateMessage({
           to,
           templateId: str(block.templateId) || undefined,
           templateName: str(block.templateName) || undefined,
+          ...(components ? { components } : { variables }),
           phoneNumberId
         })
         sentNames.push(str(block.templateName) || str(block.templateId))

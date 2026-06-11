@@ -35,12 +35,16 @@ const TemplateText: React.FC<{ text: string }> = ({ text }) => {
   )
 }
 
-export const WhatsAppTemplatePreview: React.FC<{ templateId: string }> = ({ templateId }) => {
+/** Carga la plantilla completa (undefined = cargando, null = no encontrada) */
+export function useWhatsAppTemplate(templateId: string): WhatsAppApiTemplate | null | undefined {
   const [template, setTemplate] = useState<WhatsAppApiTemplate | null | undefined>(undefined)
-
   useEffect(() => {
     let cancelled = false
     setTemplate(undefined)
+    if (!templateId) {
+      setTemplate(null)
+      return
+    }
     void getWhatsAppTemplate(templateId).then((data) => {
       if (!cancelled) setTemplate(data)
     })
@@ -48,6 +52,26 @@ export const WhatsAppTemplatePreview: React.FC<{ templateId: string }> = ({ temp
       cancelled = true
     }
   }, [templateId])
+  return template
+}
+
+/** Extrae del template lo que el usuario debe llenar */
+export function templateInputs(template: WhatsAppApiTemplate | null | undefined): {
+  variables: string[]
+  headerFormat: string
+} {
+  if (!template) return { variables: [], headerFormat: '' }
+  const components = (template.components || []) as Component[]
+  const header = components.find((component) => String(component.type).toUpperCase() === 'HEADER')
+  const body = components.find((component) => String(component.type).toUpperCase() === 'BODY')
+  const text = `${header?.text || ''}\n${body?.text || ''}`
+  const variables = [...new Set([...text.matchAll(/\{\{\s*(\d+)\s*\}\}/g)].map((match) => match[1]))]
+  const headerFormat = String(header?.format || '').toUpperCase()
+  return { variables, headerFormat: headerFormat === 'TEXT' ? '' : headerFormat }
+}
+
+export const WhatsAppTemplatePreview: React.FC<{ templateId: string }> = ({ templateId }) => {
+  const template = useWhatsAppTemplate(templateId)
 
   if (!templateId) return null
   if (template === undefined) {

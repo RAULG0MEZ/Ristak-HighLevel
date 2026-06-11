@@ -165,6 +165,10 @@ export interface MessageBlock {
   /** Bloque de plantilla de WhatsApp */
   templateId?: string
   templateName?: string
+  /** Valores de las variables {{n}} de la plantilla (aceptan {{contact.x}}) */
+  templateVariables?: Record<string, string>
+  /** Archivo del encabezado (imagen/video/documento) si la plantilla lo pide */
+  headerMediaUrl?: string
 }
 
 export const MEDIA_BLOCK_TYPES: MessageBlockType[] = ['image', 'video', 'audio', 'file']
