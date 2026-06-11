@@ -1,5 +1,8 @@
 import React from 'react'
-import { Modal, CustomSelect } from '@/components/common'
+import {
+  Modal
+} from '@/components/common'
+import { CustomSelect } from './config/configPrimitives'
 import type { FlowSettings } from '@/services/automationsService'
 import {
   CatalogSelect,

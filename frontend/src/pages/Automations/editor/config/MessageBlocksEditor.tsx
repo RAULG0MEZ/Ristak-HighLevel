@@ -13,7 +13,7 @@ import {
   Video,
   X
 } from 'lucide-react'
-import { CustomSelect } from '@/components/common'
+import { CustomSelect } from './configPrimitives'
 import {
   MAX_BUTTONS_PER_MESSAGE,
   MEDIA_BLOCK_TYPES,

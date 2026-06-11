@@ -1,6 +1,12 @@
 import React, { useEffect, useState } from 'react'
 import { cn } from '@/utils/cn'
-import { CustomSelect } from '@/components/common'
+import { CustomSelect as BaseCustomSelect } from '@/components/common'
+
+/** CustomSelect con portal: el dropdown se dibuja por delante del panel
+ *  de configuración (los contenedores con scroll lo recortaban). */
+export const CustomSelect: React.FC<React.ComponentProps<typeof BaseCustomSelect>> = (props) => (
+  <BaseCustomSelect portal {...props} />
+)
 import { getCatalog, type CatalogKind, type CatalogOption } from '@/services/automationCatalogsService'
 import { CONTACT_VARIABLES } from '../nodeRegistry'
 import styles from '../AutomationEditor.module.css'

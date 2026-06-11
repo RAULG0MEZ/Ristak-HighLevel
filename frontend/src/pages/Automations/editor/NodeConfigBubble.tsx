@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, Copy, Plus, Trash2, X } from 'lucide-react'
+import { Check, Copy, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { cn } from '@/utils/cn'
-import { CustomSelect } from '@/components/common'
+import { CustomSelect } from './config/configPrimitives'
 import { validateNodeConfig, type ConfigField, type NodeDefinition } from './nodeRegistry'
 import { genId } from './flowUtils'
 import {
@@ -51,6 +51,22 @@ export const NodeConfigBubble: React.FC<NodeConfigBubbleProps> = ({
 }) => {
   const rootRef = useRef<HTMLDivElement>(null)
   const [copied, setCopied] = useState(false)
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [draftTitle, setDraftTitle] = useState('')
+  const titleInputRef = useRef<HTMLInputElement>(null)
+
+  const customTitle = str(config.customTitle).trim()
+
+  const startTitleEdit = () => {
+    setDraftTitle(customTitle)
+    setEditingTitle(true)
+    window.setTimeout(() => titleInputRef.current?.focus(), 0)
+  }
+
+  const commitTitle = () => {
+    setEditingTitle(false)
+    onChange({ ...config, customTitle: draftTitle.trim().slice(0, 80) })
+  }
 
   const errors = useMemo(() => validateNodeConfig(definition, config), [definition, config])
 
@@ -455,7 +471,33 @@ export const NodeConfigBubble: React.FC<NodeConfigBubbleProps> = ({
           <definition.icon size={14} />
         </span>
         <div className={styles.bubbleTitle}>
-          {definition.label}
+          {editingTitle ? (
+            <input
+              ref={titleInputRef}
+              data-ristak-unstyled
+              className={styles.panelTitleInput}
+              value={draftTitle}
+              maxLength={80}
+              placeholder={definition.label}
+              onChange={(event) => setDraftTitle(event.target.value)}
+              onBlur={commitTitle}
+              onKeyDown={(event) => {
+                event.stopPropagation()
+                if (event.key === 'Enter') commitTitle()
+                if (event.key === 'Escape') setEditingTitle(false)
+              }}
+            />
+          ) : (
+            <button
+              type="button"
+              className={styles.panelTitleButton}
+              title="Cambiar el título de esta acción"
+              onClick={startTitleEdit}
+            >
+              {customTitle || definition.label}
+              <Pencil size={12} className={styles.panelTitlePencil} />
+            </button>
+          )}
           {definition.description && <div className={styles.bubbleSubtitle}>{definition.description}</div>}
         </div>
         <button type="button" className={styles.bubbleClose} onClick={onClose} title="Cerrar (Esc)">
@@ -464,18 +506,6 @@ export const NodeConfigBubble: React.FC<NodeConfigBubbleProps> = ({
       </div>
 
       <div className={styles.bubbleBody}>
-        {/* Título de acción: siempre arriba; se muestra debajo del nombre
-            de la acción en la cajita (no lo reemplaza) */}
-        <Field label="Título de acción (opcional)">
-          <TextInput
-            value={str(config.customTitle)}
-            maxLength={80}
-            placeholder={definition.label}
-            onChange={(event) => setValue('customTitle', event.target.value)}
-          />
-        </Field>
-        <div className={styles.configDivider} />
-
         {errors.length > 0 && (
           <div className={styles.configErrors}>
             {errors.map((error) => (

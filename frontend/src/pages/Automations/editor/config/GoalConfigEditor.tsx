@@ -1,5 +1,5 @@
 import React from 'react'
-import { CustomSelect } from '@/components/common'
+import { CustomSelect } from './configPrimitives'
 import { CHANNEL_OPTIONS_WITH_ANY } from '../nodeRegistry'
 import { CatalogSelect, ConfigSection, DurationInput, Field, TextInput } from './configPrimitives'
 import { AdvancedConditionBuilder } from './AdvancedConditionBuilder'

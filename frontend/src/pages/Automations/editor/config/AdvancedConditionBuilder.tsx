@@ -1,7 +1,7 @@
 import React from 'react'
 import { Braces, Plus, Trash2, Type } from 'lucide-react'
 import { cn } from '@/utils/cn'
-import { CustomSelect } from '@/components/common'
+import { CustomSelect } from './configPrimitives'
 import {
   CRM_FIELDS,
   CRM_FIELD_CATEGORIES,

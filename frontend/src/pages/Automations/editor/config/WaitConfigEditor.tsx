@@ -10,7 +10,7 @@ import {
   MousePointerClick,
   Repeat
 } from 'lucide-react'
-import { CustomSelect } from '@/components/common'
+import { CustomSelect } from './configPrimitives'
 import { CHANNEL_OPTIONS_WITH_ANY } from '../nodeRegistry'
 import type { AdvancedConditionConfig } from '../crmFields'
 import {

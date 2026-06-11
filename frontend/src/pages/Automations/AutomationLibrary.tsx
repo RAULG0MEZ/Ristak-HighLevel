@@ -20,14 +20,14 @@ import {
 import { cn } from '@/utils/cn'
 import {
   Button,
-  CustomSelect,
-  Modal,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger
+Modal,
+DropdownMenu,
+DropdownMenuContent,
+DropdownMenuItem,
+DropdownMenuSeparator,
+DropdownMenuTrigger
 } from '@/components/common'
+import { CustomSelect } from './editor/config/configPrimitives'
 import { useNotification } from '@/contexts/NotificationContext'
 import automationsService, {
   AUTOMATION_STATUS_LABELS,
