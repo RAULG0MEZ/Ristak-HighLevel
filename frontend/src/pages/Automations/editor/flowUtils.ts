@@ -266,6 +266,11 @@ function messageToBlocks(message: string): Array<Record<string, unknown>> {
  * modelo viejo, y canales que ya no existen (SMS/Email) → "cualquier canal".
  */
 export function migrateLegacyFlow(nodes: AutomationNode[]): AutomationNode[] {
+  // "Enviar mensaje (Facebook)" era un duplicado de Messenger
+  nodes = nodes.map((node) =>
+    node.type === 'channel-facebook-message' ? { ...node, type: 'channel-messenger' } : node
+  )
+
   return nodes.map((node) => {
     let next = node
     const config = { ...(node.config || {}) }

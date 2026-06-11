@@ -1,9 +1,18 @@
 import React from 'react'
 import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent
+} from '@dnd-kit/core'
+import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import {
   AlignLeft,
-  ArrowDown,
-  ArrowUp,
   Clock,
+  GripVertical,
   FileText,
   Image,
   Link2,
@@ -74,6 +83,39 @@ function newBlock(type: MessageBlockType): MessageBlock {
   return { id: genId('blk'), type, url: '', caption: '' }
 }
 
+/** Envoltorio arrastrable de un bloque: asa + basura al hover, animación dnd-kit */
+const SortableBlock: React.FC<{
+  id: string
+  onRemove: () => void
+  children: React.ReactNode
+}> = ({ id, onRemove, children }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 5 : undefined }}
+      className={isDragging ? styles.blockDragging : undefined}
+    >
+      <div className={styles.blockSortWrap}>
+        <span className={styles.blockHoverActions}>
+          <span
+            className={styles.blockDragHandle}
+            title="Arrastra para reordenar"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical size={12} />
+          </span>
+          <button type="button" className={styles.configIconButton} title="Quitar bloque" onClick={onRemove}>
+            <Trash2 size={11} />
+          </button>
+        </span>
+        {children}
+      </div>
+    </div>
+  )
+}
+
 export const MessageBlocksEditor: React.FC<MessageBlocksEditorProps> = ({
   value,
   onChange,
@@ -87,34 +129,16 @@ export const MessageBlocksEditor: React.FC<MessageBlocksEditorProps> = ({
 
   const removeBlock = (index: number) => onChange(blocks.filter((_, candidate) => candidate !== index))
 
-  const moveBlock = (index: number, direction: -1 | 1) => {
-    const target = index + direction
-    if (target < 0 || target >= blocks.length) return
-    const next = blocks.slice()
-    const [moved] = next.splice(index, 1)
-    next.splice(target, 0, moved)
-    onChange(next)
-  }
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
 
-  const blockHoverActions = (index: number) => (
-    <span className={styles.blockHoverActions}>
-      <button type="button" className={styles.configIconButtonPlain} title="Subir" disabled={index === 0} onClick={() => moveBlock(index, -1)}>
-        <ArrowUp size={11} />
-      </button>
-      <button
-        type="button"
-        className={styles.configIconButtonPlain}
-        title="Bajar"
-        disabled={index === blocks.length - 1}
-        onClick={() => moveBlock(index, 1)}
-      >
-        <ArrowDown size={11} />
-      </button>
-      <button type="button" className={styles.configIconButton} title="Quitar bloque" onClick={() => removeBlock(index)}>
-        <Trash2 size={11} />
-      </button>
-    </span>
-  )
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const from = blocks.findIndex((block) => block.id === active.id)
+    const to = blocks.findIndex((block) => block.id === over.id)
+    if (from === -1 || to === -1) return
+    onChange(arrayMove(blocks, from, to))
+  }
 
   // ------------------------------------------------------------------
   // Botones dentro de un globo de texto
@@ -168,13 +192,15 @@ export const MessageBlocksEditor: React.FC<MessageBlocksEditorProps> = ({
 
   return (
     <div>
-      {/* ----------------------- Secuencia de bloques ----------------------- */}
+      {/* ------- Secuencia de bloques (arrastra el asa para reordenar) ------- */}
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={blocks.map((block) => block.id)} strategy={verticalListSortingStrategy}>
       {blocks.map((block, index) => {
         if (block.type === 'text') {
           const buttons = block.buttons || []
           return (
-            <div key={block.id} className={styles.panelBubble}>
-              {blockHoverActions(index)}
+            <SortableBlock key={block.id} id={block.id} onRemove={() => removeBlock(index)}>
+            <div className={styles.panelBubble}>
               <MessageComposer
                 value={block.compiledText || ''}
                 onChange={(compiled) => updateBlock(index, { compiledText: compiled })}
@@ -197,13 +223,14 @@ export const MessageBlocksEditor: React.FC<MessageBlocksEditorProps> = ({
                 Añadir botón{buttons.length >= MAX_BUTTONS_PER_MESSAGE ? ' (máx. 3)' : ''}
               </button>
             </div>
+            </SortableBlock>
           )
         }
 
         if (block.type === 'delay') {
           return (
-            <div key={block.id} className={styles.panelDelay}>
-              {blockHoverActions(index)}
+            <SortableBlock key={block.id} id={block.id} onRemove={() => removeBlock(index)}>
+            <div className={styles.panelDelay}>
               <div className={styles.panelDelayTitle}>
                 <Clock size={13} />
                 Retraso
@@ -234,14 +261,15 @@ export const MessageBlocksEditor: React.FC<MessageBlocksEditorProps> = ({
                 label='Mostrar "escribiendo…" durante el retraso'
               />
             </div>
+            </SortableBlock>
           )
         }
 
         // Adjuntos: imagen, video, audio, archivo
         const MediaIcon = CONTENT_BLOCKS.find((option) => option.type === block.type)?.icon || Link2
         return (
-          <div key={block.id} className={styles.panelBubble}>
-            {blockHoverActions(index)}
+          <SortableBlock key={block.id} id={block.id} onRemove={() => removeBlock(index)}>
+          <div className={styles.panelBubble}>
             <div className={styles.panelDelayTitle}>
               <MediaIcon size={13} />
               {MEDIA_LABELS[block.type] || 'Adjunto'}
@@ -259,8 +287,11 @@ export const MessageBlocksEditor: React.FC<MessageBlocksEditorProps> = ({
               />
             </div>
           </div>
+          </SortableBlock>
         )
       })}
+        </SortableContext>
+      </DndContext>
 
       {/* --------------------- Respuestas rápidas (pill) -------------------- */}
       {supportsQuickReplies && (

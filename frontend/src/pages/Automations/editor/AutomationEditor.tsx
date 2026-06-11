@@ -543,6 +543,20 @@ export const AutomationEditor: React.FC = () => {
         })
       },
       onInvalidConnection: (reason: string) => showToast('warning', 'Conexión no válida', reason),
+      // Tarjeta "Elegir primer paso" en automatizaciones vacías
+      onCreateFirstStep: (type: string, position: { x: number; y: number }) => {
+        const current = stateRef.current.present
+        const startNode = current.nodes.find(isStartNode)
+        if (!startNode) return
+        const node = createNode(type, position)
+        const edges = connectNodes(current.edges, startNode.id, 'out', node.id)
+        commitFlow([...current.nodes, node], edges)
+        setSelectedNodeId(node.id)
+        const definition = getNodeDefinition(type)
+        if (definition && (definition.fields.length > 0 || definition.configComponent)) {
+          openConfigForNode(node)
+        }
+      },
       onDeleteEdge: (edgeId: string) => {
         const current = stateRef.current.present
         dispatch({
@@ -1250,6 +1264,36 @@ export const AutomationEditor: React.FC = () => {
             bounds={canvasBounds}
             onChange={handleConfigChange}
             onClose={() => setConfig(null)}
+            onDelete={
+              configTrigger
+                ? () => {
+                    const current = stateRef.current.present
+                    const nextNodes = current.nodes.map((node) =>
+                      node.id === configNode.id
+                        ? {
+                            ...node,
+                            config: {
+                              ...node.config,
+                              triggers: getStartTriggers(configNode).filter(
+                                (trigger) => trigger.id !== configTrigger.id
+                              )
+                            }
+                          }
+                        : node
+                    )
+                    commitFlow(nextNodes)
+                    setConfig(null)
+                  }
+                : !isStartNode(configNode)
+                  ? () => {
+                      const current = stateRef.current.present
+                      const result = removeNode(current.nodes, current.edges, configNode.id)
+                      dispatch({ type: 'commit', flow: result })
+                      setSelectedNodeId(null)
+                      setConfig(null)
+                    }
+                  : undefined
+            }
             showErrorsSignal={configErrorsSignal}
           />
         )}

@@ -2,8 +2,12 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlignCenterHorizontal,
   AlignCenterVertical,
+  Clock3,
   Copy,
+  GitBranch,
   LayoutGrid,
+  Shuffle,
+  Target,
   Maximize,
   Minus,
   Plus,
@@ -13,6 +17,7 @@ import {
   X
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
+import { WhatsAppIcon, MessengerIcon, InstagramIcon } from './BrandIcons'
 import type {
   AutomationEdge,
   AutomationNode,
@@ -37,6 +42,20 @@ export interface PendingEdge {
   point: { x: number; y: number }
 }
 
+/** Sugerencias de la tarjeta "Elegir primer paso" (automatización vacía) */
+const FIRST_STEP_CONTENT = [
+  { type: 'channel-whatsapp', label: 'WhatsApp', icon: WhatsAppIcon, color: '#25D366' },
+  { type: 'channel-messenger', label: 'Messenger', icon: MessengerIcon, color: '#0084FF' },
+  { type: 'channel-instagram', label: 'Instagram', icon: InstagramIcon, color: '#E4405F' }
+]
+
+const FIRST_STEP_LOGIC = [
+  { type: 'logic-condition', label: 'Condición', icon: GitBranch, color: '#8b5cf6' },
+  { type: 'logic-wait', label: 'Esperar', icon: Clock3, color: '#f59e0b' },
+  { type: 'randomizer', label: 'Aleatorizador', icon: Shuffle, color: '#6366f1' },
+  { type: 'logic-goal', label: 'Evento objetivo', icon: Target, color: '#10b981' }
+]
+
 export interface CanvasActions {
   onSelectNode: (nodeId: string | null) => void
   /** Shift/Cmd + clic sobre un nodo alterna su selección */
@@ -49,6 +68,8 @@ export interface CanvasActions {
   onMoveNodes: (positions: Record<string, { x: number; y: number }>, commit: boolean) => void
   onConnect: (sourceNodeId: string, sourceHandle: string, targetNodeId: string) => void
   onInvalidConnection: (reason: string) => void
+  /** Crea el primer paso desde la tarjeta fantasma de bienvenida */
+  onCreateFirstStep?: (type: string, position: { x: number; y: number }) => void
   onDeleteEdge: (edgeId: string) => void
   onDeleteNode: (node: AutomationNode) => void
   onDuplicateNode: (node: AutomationNode) => void
@@ -588,6 +609,19 @@ export const AutomationCanvas: React.FC<AutomationCanvasProps> = ({
 
   const draftGeometry = draft ? edgePath(draft.from.x, draft.from.y, draft.to.x, draft.to.y) : null
 
+  // Tarjeta fantasma "Elegir primer paso": solo en automatizaciones vacías
+  const startNodeOnly = nodes.length === 1 && nodes[0].type === 'start' && edges.length === 0 ? nodes[0] : null
+  const firstStepGhost = useMemo(() => {
+    if (!startNodeOnly || !actions.onCreateFirstStep) return null
+    const layout = layouts[startNodeOnly.id]
+    const sx = startNodeOnly.position.x + (layout?.width || NODE_WIDTH)
+    const sy = startNodeOnly.position.y + (layout?.outputs.out ?? 40)
+    const x = startNodeOnly.position.x + (layout?.width || NODE_WIDTH) + 190
+    const y = startNodeOnly.position.y - 24
+    return { x, y, geometry: edgePath(sx, sy, x - 6, y + 34) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startNodeOnly, layouts])
+
   // Flecha fantasma: del conector de origen al punto exacto donde se soltó,
   // visible mientras el selector de pasos está abierto.
   const pendingGeometry = useMemo(() => {
@@ -728,7 +762,54 @@ export const AutomationCanvas: React.FC<AutomationCanvasProps> = ({
                 />
               </g>
             )}
+            {firstStepGhost && (
+              <path className={styles.edgeDraft} d={firstStepGhost.geometry.path} markerEnd="url(#automation-arrow)" />
+            )}
           </svg>
+
+          {/* Tarjeta fantasma: primeros pasos sugeridos */}
+          {firstStepGhost && (
+            <div
+              className={styles.firstStepGhost}
+              style={{ left: firstStepGhost.x, top: firstStepGhost.y }}
+              data-automation-interactive="true"
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <div className={styles.firstStepTitle}>Elegir primer paso 👇</div>
+              <div className={styles.firstStepSection}>Contenido</div>
+              {FIRST_STEP_CONTENT.map((item) => (
+                <button
+                  key={item.type}
+                  type="button"
+                  className={styles.firstStepItem}
+                  onClick={() =>
+                    actions.onCreateFirstStep?.(item.type, { x: firstStepGhost.x, y: firstStepGhost.y })
+                  }
+                >
+                  <span className={styles.firstStepIcon} style={{ color: item.color }}>
+                    <item.icon size={16} />
+                  </span>
+                  {item.label}
+                </button>
+              ))}
+              <div className={styles.firstStepSection}>Lógico</div>
+              {FIRST_STEP_LOGIC.map((item) => (
+                <button
+                  key={item.type}
+                  type="button"
+                  className={styles.firstStepItem}
+                  onClick={() =>
+                    actions.onCreateFirstStep?.(item.type, { x: firstStepGhost.x, y: firstStepGhost.y })
+                  }
+                >
+                  <span className={styles.firstStepIcon} style={{ color: item.color }}>
+                    <item.icon size={15} />
+                  </span>
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Caja de selección (Shift + arrastrar) */}
           {marqueeRect && (

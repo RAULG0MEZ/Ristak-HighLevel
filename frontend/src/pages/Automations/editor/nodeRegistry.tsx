@@ -1,4 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
+import { WhatsAppIcon, MessengerIcon, InstagramIcon } from './BrandIcons'
 import {
   Banknote,
   Bot,
@@ -253,7 +254,7 @@ export interface NodeDefinition {
   brand?: string
   category: string
   description?: string
-  icon: LucideIcon
+  icon: React.ComponentType<{ size?: number | string; color?: string }>
   accent: NodeAccent
   /** Encabezado con banda de color (lógica, IA, extras) o plano (contenido) */
   tintedHeader?: boolean
@@ -904,7 +905,7 @@ interface ChannelNodeOptions {
   type: string
   label: string
   brand: string
-  icon: LucideIcon
+  icon: React.ComponentType<{ size?: number | string; color?: string }>
   accent: NodeAccent
   description: string
   addButtonLabel: string
@@ -976,7 +977,7 @@ const CHANNEL_NODES: NodeDefinition[] = [
     brand: 'WhatsApp',
     category: 'action-content',
     description: 'Envía mensajes de WhatsApp',
-    icon: MessageSquareText,
+    icon: WhatsAppIcon,
     accent: 'teal',
     addButtonLabel: 'Agregar mensaje',
     allowedChannels: ['whatsapp'],
@@ -1030,8 +1031,8 @@ const CHANNEL_NODES: NodeDefinition[] = [
   channelMessageNode({
     type: 'channel-messenger',
     label: 'Messenger',
-    brand: 'Facebook',
-    icon: MessageCircle,
+    brand: 'Messenger',
+    icon: MessengerIcon,
     accent: 'blue',
     description: 'Envía mensajes por Messenger',
     addButtonLabel: 'Agregar mensaje',
@@ -1044,7 +1045,7 @@ const CHANNEL_NODES: NodeDefinition[] = [
     type: 'channel-instagram',
     label: 'Instagram Direct',
     brand: 'Instagram',
-    icon: Instagram,
+    icon: InstagramIcon,
     accent: 'pink',
     description: 'Envía DMs por Instagram',
     addButtonLabel: 'Agregar DM',
@@ -1052,19 +1053,6 @@ const CHANNEL_NODES: NodeDefinition[] = [
     supportsQuickReplies: true,
     senderKey: 'account',
     senderLabel: 'Cuenta de Instagram (opcional)'
-  }),
-  channelMessageNode({
-    type: 'channel-facebook-message',
-    label: 'Enviar mensaje',
-    brand: 'Facebook',
-    icon: Facebook,
-    accent: 'blue',
-    description: 'Envía un mensaje por Facebook (Messenger)',
-    addButtonLabel: 'Agregar mensaje',
-    channel: 'messenger',
-    supportsQuickReplies: true,
-    senderKey: 'page',
-    senderLabel: 'Página remitente (opcional)'
   })
 ]
 

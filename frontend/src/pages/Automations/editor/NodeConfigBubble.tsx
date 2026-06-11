@@ -36,6 +36,8 @@ interface NodeConfigBubbleProps {
   bounds: { width: number; height: number }
   onChange: (config: ConfigValue) => void
   onClose: () => void
+  /** Borra el elemento (paso o disparador) y cierra el panel */
+  onDelete?: () => void
   /** Señal externa (contador) para mostrar los errores: el editor la sube
       cuando el usuario intenta irse a otro elemento con esta config inválida */
   showErrorsSignal?: number
@@ -53,6 +55,7 @@ export const NodeConfigBubble: React.FC<NodeConfigBubbleProps> = ({
   bounds,
   onChange,
   onClose,
+  onDelete,
   showErrorsSignal = 0
 }) => {
   const rootRef = useRef<HTMLDivElement>(null)
@@ -536,6 +539,16 @@ export const NodeConfigBubble: React.FC<NodeConfigBubbleProps> = ({
           )}
           {definition.description && <div className={styles.bubbleSubtitle}>{definition.description}</div>}
         </div>
+        {onDelete && (
+          <button
+            type="button"
+            className={styles.bubbleClose}
+            onClick={onDelete}
+            title="Eliminar este elemento"
+          >
+            <Trash2 size={13} />
+          </button>
+        )}
         <button type="button" className={styles.bubbleClose} onClick={requestClose} title="Cerrar (Esc)">
           <X size={14} />
         </button>
@@ -609,16 +622,6 @@ export const NodeConfigBubble: React.FC<NodeConfigBubbleProps> = ({
           </>
         )}
 
-        {/* Vista previa en tiempo real: la regla en lenguaje natural */}
-        {(() => {
-          const sentence = definition.summary(config).text
-          return sentence ? (
-            <div className={styles.sentencePreview}>
-              <div className={styles.configSectionTitle}>Vista previa</div>
-              {sentence}
-            </div>
-          ) : null
-        })()}
 
 
         {/* Ramas extra del nodo (hasta 10 salidas) */}

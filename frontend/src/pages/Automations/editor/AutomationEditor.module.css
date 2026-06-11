@@ -2801,8 +2801,42 @@
   box-shadow: 0 6px 16px -8px rgba(15, 23, 42, 0.4);
 }
 
-.panelBubble:hover .blockHoverActions,
-.panelDelay:hover .blockHoverActions {
+.blockSortWrap {
+  position: relative;
+}
+
+.blockSortWrap:hover .blockHoverActions {
+  display: inline-flex;
+}
+
+.blockDragHandle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--color-text-tertiary);
+  cursor: grab;
+  touch-action: none;
+}
+
+.blockDragHandle:hover {
+  background: rgba(148, 163, 184, 0.16);
+  color: var(--color-text-primary);
+}
+
+.blockDragHandle:active {
+  cursor: grabbing;
+}
+
+.blockDragging .panelBubble,
+.blockDragging .panelDelay {
+  box-shadow: 0 18px 34px -16px rgba(15, 23, 42, 0.5);
+  opacity: 0.95;
+}
+
+.blockDragging .blockHoverActions {
   display: inline-flex;
 }
 
@@ -3079,4 +3113,61 @@
   font-size: 12px;
   color: var(--color-text-tertiary);
   text-align: center;
+}
+
+/* --------------- Tarjeta fantasma "Elegir primer paso" --------------- */
+
+.firstStepGhost {
+  position: absolute;
+  width: 230px;
+  padding: 14px 12px;
+  border: 1.5px dashed rgba(148, 163, 184, 0.55);
+  border-radius: 16px;
+  background: var(--color-background-primary);
+  z-index: 3;
+}
+
+.firstStepTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-bottom: 8px;
+  padding: 0 6px;
+}
+
+.firstStepSection {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-tertiary);
+  padding: 8px 6px 4px;
+}
+
+.firstStepItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+}
+
+.firstStepItem:hover {
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.firstStepIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  flex-shrink: 0;
 }
