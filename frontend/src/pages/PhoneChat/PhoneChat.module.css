@@ -6465,3 +6465,87 @@
   font-weight: 400;
   color: var(--color-text-secondary, rgba(255, 255, 255, 0.6));
 }
+
+/* Agente conversacional */
+.agentBotButtonActive {
+  color: #1d4ed8;
+}
+
+.agentPriorityRowIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.phoneChatPage[data-phone-chat-tone="dark"] .agentPriorityRowIcon {
+  color: #93c5fd;
+  background: rgba(37, 99, 235, 0.22);
+}
+
+.chatMoreAgent {
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
+.phoneChatPage[data-phone-chat-tone="dark"] .chatMoreAgent {
+  color: #93c5fd;
+  background: rgba(37, 99, 235, 0.22);
+}
+
+.agentChatStatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(var(--phone-chat-primary-rgb), 0.07);
+  color: var(--phone-chat-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.agentChatStatus svg {
+  flex: 0 0 auto;
+}
+
+.agentMenuBody {
+  display: grid;
+  gap: 12px;
+  padding-bottom: 8px;
+}
+
+.agentMenuField {
+  display: grid;
+  gap: 6px;
+}
+
+.agentMenuField > span {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--phone-chat-muted);
+}
+
+.agentMenuBack {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  margin-bottom: 10px;
+  padding: 6px 10px 6px 6px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(var(--phone-chat-primary-rgb), 0.07);
+  color: var(--phone-chat-text);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.agentMenuHint {
+  margin: 2px 2px 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--phone-chat-muted);
+}

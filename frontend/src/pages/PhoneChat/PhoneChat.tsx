@@ -69,6 +69,14 @@ import { useNotification } from '@/contexts/NotificationContext'
 import { useTimezone } from '@/contexts/TimezoneContext'
 import { useAppConfig, useBottomSheetDismiss, useHighLevelConnected, usePhoneElasticScroll, usePhoneTheme, type PhoneThemePreference } from '@/hooks'
 import { aiAgentService, type AIAgentMessage, type AIAgentViewContext } from '@/services/aiAgentService'
+import {
+  conversationalAgentService,
+  type ConversationAgentState,
+  type ConversationStateAction,
+  type ConversationalAgentConfig,
+  type ConversationalObjective,
+  type ConversationalSuccessAction
+} from '@/services/conversationalAgentService'
 import apiClient from '@/services/apiClient'
 import { calendarsService, type Calendar, type CalendarEvent } from '@/services/calendarsService'
 import { contactsService, type JourneyEvent } from '@/services/contactsService'
@@ -176,7 +184,8 @@ type PhoneChatDeviceMode = PortableDeviceMode | 'checking'
 type ComposerStatus = 'idle' | 'sending'
 type MessageAudioRate = typeof MESSAGE_AUDIO_RATE_OPTIONS[number]
 type PaymentMode = 'single' | 'partial'
-type ActionSheet = 'attachments' | 'templates' | 'clabe' | 'payment' | 'appointment' | 'settings' | 'newChat' | 'chatMore' | 'schedule' | null
+type ActionSheet = 'attachments' | 'templates' | 'clabe' | 'payment' | 'appointment' | 'settings' | 'newChat' | 'chatMore' | 'schedule' | 'agentMenu' | null
+type AgentMenuSection = 'menu' | 'ready_human' | 'ready_advance'
 type ChatFilter = 'all' | 'unread' | 'appointments' | 'customers' | 'leads'
 type TemplateMode = 'choice' | 'send' | 'create'
 type ChatSettingsSection = 'appearance' | 'templates' | 'numbers' | 'notifications' | 'agent' | 'chats' | 'display' | null
@@ -2432,6 +2441,11 @@ export const PhoneChat: React.FC = () => {
   const [chatQuery, setChatQuery] = useState('')
   const [chatFilter, setChatFilter] = useState<ChatFilter>('all')
   const [archivedViewOpen, setArchivedViewOpen] = useState(false)
+  const [agentPriorityViewOpen, setAgentPriorityViewOpen] = useState(false)
+  const [agentConfig, setAgentConfig] = useState<ConversationalAgentConfig | null>(null)
+  const [agentStates, setAgentStates] = useState<Record<string, ConversationAgentState>>({})
+  const [agentMenuSection, setAgentMenuSection] = useState<AgentMenuSection>('menu')
+  const [agentConfigSaving, setAgentConfigSaving] = useState(false)
   const [archivedChatIds, setArchivedChatIds] = useState<string[]>(() => readStoredChatIds(CHAT_ARCHIVED_STATE_KEY))
   const [mutedChatIds, setMutedChatIds] = useState<string[]>(() => readStoredChatIds(CHAT_MUTED_STATE_KEY))
   const [starredMessageIds, setStarredMessageIds] = useState<string[]>(() => readStoredChatIds(CHAT_STARRED_MESSAGES_KEY))
@@ -3032,9 +3046,36 @@ export const PhoneChat: React.FC = () => {
   const mutedChatIdSet = useMemo(() => new Set(mutedChatIds), [mutedChatIds])
   const starredMessageIdSet = useMemo(() => new Set(starredMessageIds), [starredMessageIds])
   const archivedChatCount = archivedChatIds.length
+  const agentEnabled = Boolean(agentConfig?.enabled)
+  const agentPriorityStates = useMemo(
+    () => Object.values(agentStates).filter((state) => Boolean(state.signal) && state.signal !== 'discarded'),
+    [agentStates]
+  )
+  const agentPriorityChatIdSet = useMemo(
+    () => new Set(agentPriorityStates.map((state) => state.contactId)),
+    [agentPriorityStates]
+  )
+  const agentPriorityCount = agentPriorityStates.length
+  const agentHiddenChatIdSet = useMemo(() => {
+    if (!agentEnabled || !agentConfig?.hideAttended) return new Set<string>()
+    return new Set(
+      Object.values(agentStates)
+        .filter((state) => state.status === 'active' && !state.signal)
+        .map((state) => state.contactId)
+    )
+  }, [agentConfig?.hideAttended, agentEnabled, agentStates])
   const listBaseChats = useMemo(
-    () => chats.filter((contact) => archivedViewOpen ? archivedChatIdSet.has(contact.id) : !archivedChatIdSet.has(contact.id)),
-    [archivedChatIdSet, archivedViewOpen, chats]
+    () => chats.filter((contact) => {
+      if (agentPriorityViewOpen) return agentPriorityChatIdSet.has(contact.id)
+      if (archivedViewOpen) return archivedChatIdSet.has(contact.id)
+      if (archivedChatIdSet.has(contact.id)) return false
+      // Las conversaciones con señal del agente viven en su propia sección
+      if (agentEnabled && agentPriorityChatIdSet.has(contact.id)) return false
+      // "Ocultar atendidas por el agente": solo reaparecen con señal o humano
+      if (agentHiddenChatIdSet.has(contact.id)) return false
+      return true
+    }),
+    [agentEnabled, agentHiddenChatIdSet, agentPriorityChatIdSet, agentPriorityViewOpen, archivedChatIdSet, archivedViewOpen, chats]
   )
   const customerLabel = labels.customer?.trim() || 'Cliente'
   const leadLabel = labels.lead?.trim() || 'Interesado'
@@ -3233,6 +3274,57 @@ export const PhoneChat: React.FC = () => {
     requestedContactParam,
     selectedChatPhoneFilterActive
   ])
+
+  const loadAgentData = useCallback(async () => {
+    try {
+      const [config, states] = await Promise.all([
+        conversationalAgentService.getConfig(),
+        conversationalAgentService.listStates()
+      ])
+      setAgentConfig(config)
+      setAgentStates(() => {
+        const next: Record<string, ConversationAgentState> = {}
+        for (const state of states) {
+          next[state.contactId] = state
+        }
+        return next
+      })
+    } catch {
+      // El agente conversacional puede no estar disponible (feature apagada);
+      // el chat sigue funcionando normal sin él.
+    }
+  }, [])
+
+  useEffect(() => {
+    loadAgentData()
+  }, [loadAgentData])
+
+  const saveAgentConfigPatch = useCallback(async (patch: Partial<{
+    enabled: boolean
+    objective: ConversationalObjective
+    successAction: ConversationalSuccessAction
+    hideAttended: boolean
+  }>) => {
+    setAgentConfigSaving(true)
+    try {
+      const next = await conversationalAgentService.saveConfig(patch)
+      setAgentConfig(next)
+    } catch (error: any) {
+      showToast('error', 'Agente conversacional', error?.message || 'No se pudo guardar el cambio')
+    } finally {
+      setAgentConfigSaving(false)
+    }
+  }, [showToast])
+
+  const handleAgentStateAction = useCallback(async (contactId: string, action: ConversationStateAction, successMessage: string) => {
+    try {
+      const state = await conversationalAgentService.updateState(contactId, action)
+      setAgentStates((current) => ({ ...current, [contactId]: state }))
+      showToast('success', 'Agente conversacional', successMessage)
+    } catch (error: any) {
+      showToast('error', 'Agente conversacional', error?.message || 'No se pudo actualizar la conversación')
+    }
+  }, [showToast])
 
   const loadContactResults = useCallback(async (query: string) => {
     setContactsLoading(true)
@@ -7387,6 +7479,36 @@ export const PhoneChat: React.FC = () => {
           </div>
         )}
         {showAIAgentListItem && renderAIAgentChatButton()}
+        {agentPriorityViewOpen && (
+          <button
+            type="button"
+            className={`${styles.archiveRow} ${styles.archiveRowActive}`}
+            onClick={() => setAgentPriorityViewOpen(false)}
+          >
+            <span className={`${styles.archiveRowIcon} ${styles.agentPriorityRowIcon}`}>
+              <ChevronLeft size={22} />
+            </span>
+            <strong>Prioritarios del agente</strong>
+            <span>{agentPriorityCount}</span>
+          </button>
+        )}
+        {agentEnabled && !agentPriorityViewOpen && !archivedViewOpen && agentPriorityCount > 0 && (
+          <button
+            type="button"
+            className={styles.archiveRow}
+            onClick={() => {
+              setArchivedViewOpen(false)
+              setAgentPriorityViewOpen(true)
+            }}
+            aria-label={`Ver ${agentPriorityCount} conversaciones prioritarias del agente`}
+          >
+            <span className={`${styles.archiveRowIcon} ${styles.agentPriorityRowIcon}`}>
+              <Bot size={22} />
+            </span>
+            <strong>Prioritarios del agente</strong>
+            <span>{agentPriorityCount}</span>
+          </button>
+        )}
         {archivedViewOpen && (
           <button
             type="button"
@@ -7400,7 +7522,7 @@ export const PhoneChat: React.FC = () => {
             <span>{archivedChatCount}</span>
           </button>
         )}
-        {showArchivedChats && !archivedViewOpen && (chats.length > 0 || archivedChatCount > 0) && (
+        {showArchivedChats && !archivedViewOpen && !agentPriorityViewOpen && (chats.length > 0 || archivedChatCount > 0) && (
           <button
             type="button"
             className={styles.archiveRow}
@@ -7421,9 +7543,11 @@ export const PhoneChat: React.FC = () => {
             <span className={styles.emptyChatsIcon}>
               <MessageCircle size={30} />
             </span>
-            <strong>{archivedViewOpen ? 'No hay chats archivados' : chats.length === 0 ? 'Aún no hay chats' : 'No hay chats en este filtro'}</strong>
+            <strong>{agentPriorityViewOpen ? 'Sin conversaciones prioritarias' : archivedViewOpen ? 'No hay chats archivados' : chats.length === 0 ? 'Aún no hay chats' : 'No hay chats en este filtro'}</strong>
             <small>
-              {archivedViewOpen
+              {agentPriorityViewOpen
+                ? 'Cuando el agente marque una conversación lista para humano, agendar o comprar, aparecerá aquí.'
+                : archivedViewOpen
                 ? 'Cuando archives una conversación, aparecerá en esta sección.'
                 : chats.length === 0 ? 'Cuando llegue un mensaje de WhatsApp, Messenger o Instagram aparecerá aquí.' : 'Cambia el filtro o busca un contacto para iniciar una conversación.'}
             </small>
@@ -9577,6 +9701,60 @@ export const PhoneChat: React.FC = () => {
     }
 
     const isMuted = mutedChatIdSet.has(chatActionContact.id)
+    const agentState = agentStates[chatActionContact.id] || null
+    const agentChatStatus = agentState?.status || 'active'
+    const agentStatusLabels: Record<string, string> = {
+      active: 'El agente atiende este chat.',
+      paused: 'Agente pausado en este chat.',
+      human: 'Conversación tomada por un humano.',
+      skipped: 'Chatbot omitido en este chat.',
+      completed: 'El agente ya cumplió el objetivo aquí.',
+      discarded: 'Conversación descartada por el agente.'
+    }
+
+    const runAgentAction = (action: ConversationStateAction, successMessage: string) => {
+      handleAgentStateAction(chatActionContact.id, action, successMessage)
+      actionSheetDismiss.requestClose()
+      setChatActionContactId(null)
+      closeSwipeActions()
+    }
+
+    const agentActions = !agentEnabled
+      ? []
+      : agentChatStatus === 'active'
+        ? [
+            {
+              label: 'Tomar conversación',
+              description: 'El agente deja de responder y tú sigues el chat.',
+              Icon: User,
+              className: styles.chatMoreAgent,
+              onClick: () => runAgentAction('take_over', `Tomaste la conversación de ${getContactName(chatActionContact)}.`)
+            },
+            {
+              label: 'Pausar agente',
+              description: 'Pausa al agente solo en esta conversación.',
+              Icon: Pause,
+              className: styles.chatMoreAgent,
+              onClick: () => runAgentAction('pause', 'El agente quedó pausado en este chat.')
+            },
+            {
+              label: 'Omitir chatbot',
+              description: 'El agente nunca atenderá este chat.',
+              Icon: X,
+              className: styles.chatMoreAgent,
+              onClick: () => runAgentAction('skip', 'El chatbot quedó omitido en este chat.')
+            }
+          ]
+        : [
+            {
+              label: 'Reactivar agente',
+              description: 'El agente vuelve a atender esta conversación.',
+              Icon: Play,
+              className: styles.chatMoreAgent,
+              onClick: () => runAgentAction('activate', 'El agente volvió a atender este chat.')
+            }
+          ]
+
     const actions = [
       {
         label: 'Agendar cita',
@@ -9598,11 +9776,18 @@ export const PhoneChat: React.FC = () => {
         Icon: isMuted ? Bell : BellOff,
         className: styles.chatMoreMute,
         onClick: () => handleToggleMuteChat(chatActionContact)
-      }
+      },
+      ...agentActions
     ]
 
     return (
       <div className={styles.chatMoreList}>
+        {agentEnabled && (
+          <div className={styles.agentChatStatus}>
+            <Bot size={16} />
+            <span>{agentStatusLabels[agentChatStatus] || agentStatusLabels.active}</span>
+          </div>
+        )}
         {actions.map(({ label, description, Icon: ActionIcon, className, onClick }) => (
           <button key={label} type="button" onClick={onClick}>
             <span className={className}>
@@ -9614,6 +9799,192 @@ export const PhoneChat: React.FC = () => {
             </span>
           </button>
         ))}
+      </div>
+    )
+  }
+
+  const agentObjectiveOptions: Array<{ value: ConversationalObjective; label: string }> = [
+    { value: 'citas', label: 'Cerrar citas' },
+    { value: 'ventas', label: 'Cerrar ventas' },
+    { value: 'datos', label: 'Conseguir datos específicos' },
+    { value: 'filtrar', label: 'Filtrar curiosos' },
+    { value: 'detectar', label: 'Detectar prospectos listos' },
+    { value: 'custom', label: 'Objetivo personalizado' }
+  ]
+
+  const agentSuccessActionOptions: Array<{ value: ConversationalSuccessAction; label: string }> = [
+    { value: 'book_appointment', label: 'Agendar directamente' },
+    { value: 'ready_for_human', label: 'Mandar a prioridad (humano)' },
+    { value: 'ready_to_buy', label: 'Mandar a prioridad (compra)' },
+    { value: 'internal_signal', label: 'Solo señal interna' }
+  ]
+
+  const agentSignalLabels: Record<string, string> = {
+    ready_for_human: 'Lista para humano',
+    ready_to_schedule: 'Lista para agendar',
+    ready_to_buy: 'Lista para comprar',
+    appointment_booked: 'Cita agendada por el agente',
+    discarded: 'Descartada'
+  }
+
+  const handleOpenChatFromAgentList = (state: ConversationAgentState) => {
+    const existing = chats.find((item) => item.id === state.contactId)
+    const fallbackContact = {
+      id: state.contactId,
+      name: state.contactName || state.contactPhone || 'Contacto',
+      full_name: state.contactName || state.contactPhone || 'Contacto',
+      phone: state.contactPhone || '',
+      createdAt: state.signalAt || new Date().toISOString(),
+      ltv: 0,
+      status: 'lead',
+      purchases: 0
+    } as Contact
+    handleSelectContact(existing || fallbackContact)
+  }
+
+  const renderAgentSignalList = (states: ConversationAgentState[], emptyText: string) => {
+    if (!states.length) {
+      return (
+        <div className={styles.emptySheetState}>
+          <Bot size={24} />
+          <strong>Nada por aquí</strong>
+          <span>{emptyText}</span>
+        </div>
+      )
+    }
+
+    return (
+      <div className={styles.chatMoreList}>
+        {states.map((state) => (
+          <button key={state.contactId} type="button" onClick={() => handleOpenChatFromAgentList(state)}>
+            <span className={styles.agentPriorityRowIcon}>
+              <Bot size={22} />
+            </span>
+            <span>
+              <strong>{state.contactName || state.contactPhone || 'Contacto'}</strong>
+              <small>
+                {[agentSignalLabels[state.signal || ''] || state.signal, state.signalReason].filter(Boolean).join(' · ')}
+              </small>
+            </span>
+          </button>
+        ))}
+      </div>
+    )
+  }
+
+  const renderAgentMenuSheet = () => {
+    if (agentMenuSection === 'ready_human') {
+      return (
+        <>
+          <button type="button" className={styles.agentMenuBack} onClick={() => setAgentMenuSection('menu')}>
+            <ChevronLeft size={18} />
+            Volver al agente
+          </button>
+          {renderAgentSignalList(
+            agentPriorityStates.filter((state) => state.signal === 'ready_for_human'),
+            'Cuando el agente detecte que alguien necesita humano, aparecerá aquí.'
+          )}
+        </>
+      )
+    }
+
+    if (agentMenuSection === 'ready_advance') {
+      return (
+        <>
+          <button type="button" className={styles.agentMenuBack} onClick={() => setAgentMenuSection('menu')}>
+            <ChevronLeft size={18} />
+            Volver al agente
+          </button>
+          {renderAgentSignalList(
+            agentPriorityStates.filter((state) => state.signal === 'ready_to_schedule' || state.signal === 'ready_to_buy' || state.signal === 'appointment_booked'),
+            'Cuando alguien esté listo para agendar o comprar, aparecerá aquí.'
+          )}
+        </>
+      )
+    }
+
+    const readyHumanCount = agentPriorityStates.filter((state) => state.signal === 'ready_for_human').length
+    const readyAdvanceCount = agentPriorityStates.filter((state) => state.signal === 'ready_to_schedule' || state.signal === 'ready_to_buy' || state.signal === 'appointment_booked').length
+
+    return (
+      <div className={styles.agentMenuBody}>
+        <label className={styles.toggleRow}>
+          <span>
+            <strong>Agente conversacional</strong>
+            <small>Atiende los chats entrantes con la información real del negocio.</small>
+          </span>
+          <input
+            type="checkbox"
+            checked={Boolean(agentConfig?.enabled)}
+            disabled={agentConfigSaving || !agentConfig}
+            onChange={(event) => saveAgentConfigPatch({ enabled: event.target.checked })}
+          />
+        </label>
+
+        <label className={styles.agentMenuField}>
+          <span>Objetivo del agente</span>
+          <PhoneSelect
+            value={agentConfig?.objective || 'citas'}
+            onChange={(value) => saveAgentConfigPatch({ objective: value as ConversationalObjective })}
+            ariaLabel="Objetivo del agente conversacional"
+            options={agentObjectiveOptions}
+            title="Objetivo"
+            placeholder="Objetivo"
+            disabled={agentConfigSaving || !agentConfig}
+          />
+        </label>
+
+        <label className={styles.agentMenuField}>
+          <span>Cuando cumpla el objetivo</span>
+          <PhoneSelect
+            value={agentConfig?.successAction || 'ready_for_human'}
+            onChange={(value) => saveAgentConfigPatch({ successAction: value as ConversationalSuccessAction })}
+            ariaLabel="Acción al cumplir el objetivo"
+            options={agentSuccessActionOptions}
+            title="Al cumplir el objetivo"
+            placeholder="Acción"
+            disabled={agentConfigSaving || !agentConfig}
+          />
+        </label>
+
+        <label className={styles.toggleRow}>
+          <span>
+            <strong>Ocultar conversaciones atendidas</strong>
+            <small>Solo reaparecen cuando el agente cumple el objetivo o necesita humano.</small>
+          </span>
+          <input
+            type="checkbox"
+            checked={Boolean(agentConfig?.hideAttended)}
+            disabled={agentConfigSaving || !agentConfig}
+            onChange={(event) => saveAgentConfigPatch({ hideAttended: event.target.checked })}
+          />
+        </label>
+
+        <div className={styles.chatMoreList}>
+          <button type="button" onClick={() => setAgentMenuSection('ready_human')}>
+            <span className={styles.agentPriorityRowIcon}>
+              <User size={22} />
+            </span>
+            <span>
+              <strong>Listas para humano</strong>
+              <small>{readyHumanCount === 1 ? '1 conversación esperando' : `${readyHumanCount} conversaciones esperando`}</small>
+            </span>
+          </button>
+          <button type="button" onClick={() => setAgentMenuSection('ready_advance')}>
+            <span className={styles.agentPriorityRowIcon}>
+              <CalendarDays size={22} />
+            </span>
+            <span>
+              <strong>Listas para agendar o comprar</strong>
+              <small>{readyAdvanceCount === 1 ? '1 conversación lista' : `${readyAdvanceCount} conversaciones listas`}</small>
+            </span>
+          </button>
+        </div>
+
+        <p className={styles.agentMenuHint}>
+          La configuración completa (datos mínimos, casos para humano, instrucciones extra y prueba del agente) está en
+          Configuración → Agente AI → Agente conversacional.
+        </p>
       </div>
     )
   }
@@ -9688,7 +10059,18 @@ export const PhoneChat: React.FC = () => {
           <header className={`${styles.chatListHeader} ${chatSearchExpanded ? styles.chatListHeaderSearchExpanded : ''}`}>
             {deviceMode !== 'tablet' && (
               <div className={styles.topActionRow} aria-hidden={chatSearchExpanded}>
-                <span className={styles.topActionSpacer} aria-hidden="true" />
+                <button
+                  type="button"
+                  className={`${styles.roundButton} ${agentEnabled ? styles.agentBotButtonActive : ''}`}
+                  onClick={() => {
+                    setAgentMenuSection('menu')
+                    setSheet('agentMenu')
+                    loadAgentData()
+                  }}
+                  aria-label="Agente conversacional"
+                >
+                  <Bot size={24} />
+                </button>
                 {renderChatHeaderActions()}
               </div>
             )}
@@ -10001,6 +10383,7 @@ export const PhoneChat: React.FC = () => {
                     {sheet === 'settings' && 'Ajustes del chat'}
                     {sheet === 'newChat' && 'Nuevo chat'}
                     {sheet === 'chatMore' && 'Más acciones'}
+                    {sheet === 'agentMenu' && (agentMenuSection === 'ready_human' ? 'Listas para humano' : agentMenuSection === 'ready_advance' ? 'Listas para avanzar' : 'Agente conversacional')}
                     {sheet === 'schedule' && (scheduleEditingMessageId ? 'Editar programación' : 'Programar mensaje')}
                   </h2>
                 </div>
@@ -10013,6 +10396,7 @@ export const PhoneChat: React.FC = () => {
             {sheet === 'clabe' && renderClabeSheet()}
             {sheet === 'settings' && renderChatSettingsSheet()}
             {sheet === 'chatMore' && renderChatMoreSheet()}
+            {sheet === 'agentMenu' && renderAgentMenuSheet()}
             {sheet === 'schedule' && renderScheduleSheet()}
 
             {sheet === 'payment' && (
