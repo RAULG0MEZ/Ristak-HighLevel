@@ -129,25 +129,40 @@ function filterFieldValue(filter, ctx) {
     case 'country': return contact.country || ''
     case 'tag': return (contact.tags || []).join(' , ')
     case 'custom': return String((contact.customFields || {})[filter.customKey] ?? '')
+    // Campos del evento (cita, pago, anuncio…)
+    case 'calendar': return ctx.calendarId || null
+    case 'appointment_type': return ctx.appointmentType || null
+    case 'product': return ctx.product || null
+    case 'currency': return ctx.currency || null
+    case 'provider': return ctx.provider || null
+    case 'campaign': return ctx.campaign || null
     default: return null // campo sin dato local: no bloquea
   }
 }
 
+function evaluateFilter(filter, ctx) {
+  const actualRaw = filterFieldValue(filter, ctx)
+  if (actualRaw === null) return true
+  const actual = normalizeText(actualRaw)
+  const expected = normalizeText(filter.value)
+  switch (filter.match) {
+    case 'not': return actual !== expected
+    case 'contains': return actual.includes(expected)
+    case 'not_contains': return !actual.includes(expected)
+    default: return actual === expected
+  }
+}
+
 export function filtersMatch(filters, ctx) {
-  const list = Array.isArray(filters) ? filters : []
-  return list.every((filter) => {
-    if (!filter?.field || !String(filter.value || '').trim()) return true
-    const actualRaw = filterFieldValue(filter, ctx)
-    if (actualRaw === null) return true
-    const actual = normalizeText(actualRaw)
-    const expected = normalizeText(filter.value)
-    switch (filter.match) {
-      case 'not': return actual !== expected
-      case 'contains': return actual.includes(expected)
-      case 'not_contains': return !actual.includes(expected)
-      default: return actual === expected
-    }
-  })
+  // Los filtros se unen en secuencia con Y / O (connector del propio filtro)
+  const list = (Array.isArray(filters) ? filters : []).filter(
+    (filter) => filter?.field && String(filter.value || '').trim()
+  )
+  return list.reduce((accumulated, filter, index) => {
+    const met = evaluateFilter(filter, ctx)
+    if (index === 0) return met
+    return filter.connector === 'or' ? accumulated || met : accumulated && met
+  }, true)
 }
 
 const APPOINTMENT_STATUS_ALIASES = {

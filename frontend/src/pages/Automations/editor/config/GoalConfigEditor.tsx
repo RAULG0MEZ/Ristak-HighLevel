@@ -1,5 +1,10 @@
-import React from 'react'
+import React, { useState } from 'react'
+import { ChevronRight } from 'lucide-react'
+import { cn } from '@/utils/cn'
 import { CustomSelect } from './configPrimitives'
+import { TriggerFiltersEditor } from './TriggerFiltersEditor'
+import type { TriggerFilter } from '../crmFields'
+import styles from '../AutomationEditor.module.css'
 import { CHANNEL_OPTIONS_WITH_ANY } from '../nodeRegistry'
 import { CatalogSelect, ConfigSection, DurationInput, Field, TextInput } from './configPrimitives'
 import { AdvancedConditionBuilder } from './AdvancedConditionBuilder'
@@ -35,17 +40,10 @@ export const GoalConfigEditor: React.FC<{ config: Config; onChange: (config: Con
 }) => {
   const set = (patch: Config) => onChange({ ...config, ...patch })
   const goalType = str(config.goalType)
+  const [showAdvanced, setShowAdvanced] = useState(false)
 
   return (
     <div>
-      <Field label="Nombre del objetivo">
-        <TextInput
-          value={str(config.name)}
-          placeholder="Ej. Compró el plan"
-          onChange={(event) => set({ name: event.target.value })}
-        />
-      </Field>
-
       <Field label="Tipo de objetivo">
         <CustomSelect
           options={GOAL_TYPES}
@@ -122,27 +120,6 @@ export const GoalConfigEditor: React.FC<{ config: Config; onChange: (config: Con
               />
             </Field>
           )}
-          <Field label="Producto / servicio (opcional)">
-            <CatalogSelect
-              catalog="products"
-              value={str(config.product)}
-              onChange={(value) => set({ product: value })}
-              placeholder="Cualquier producto"
-              aria-label="Producto"
-            />
-          </Field>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <div style={{ flex: 1 }}>
-              <Field label="Moneda (opcional)">
-                <TextInput value={str(config.currency)} placeholder="MXN" onChange={(event) => set({ currency: event.target.value })} />
-              </Field>
-            </div>
-            <div style={{ flex: 1 }}>
-              <Field label="Proveedor (opcional)">
-                <TextInput value={str(config.provider)} placeholder="Ej. Stripe" onChange={(event) => set({ provider: event.target.value })} />
-              </Field>
-            </div>
-          </div>
         </>
       )}
 
@@ -163,22 +140,6 @@ export const GoalConfigEditor: React.FC<{ config: Config; onChange: (config: Con
               aria-label="Estado de la cita"
             />
           </Field>
-          <Field label="Calendario (opcional)">
-            <CatalogSelect
-              catalog="calendars"
-              value={str(config.calendar)}
-              onChange={(value, label) => set({ calendar: value, calendarName: label })}
-              placeholder="Cualquier calendario"
-              aria-label="Calendario"
-            />
-          </Field>
-          <Field label="Tipo de cita (opcional)">
-            <TextInput
-              value={str(config.appointmentType)}
-              placeholder="Ej. demo, consulta…"
-              onChange={(event) => set({ appointmentType: event.target.value })}
-            />
-          </Field>
         </>
       )}
 
@@ -193,22 +154,6 @@ export const GoalConfigEditor: React.FC<{ config: Config; onChange: (config: Con
               aria-label="Formulario"
             />
           </Field>
-          <Field label="Campo del formulario (opcional)">
-            <TextInput
-              value={str(config.formFieldKey)}
-              placeholder="Ej. interés"
-              onChange={(event) => set({ formFieldKey: event.target.value })}
-            />
-          </Field>
-          {str(config.formFieldKey) && (
-            <Field label="El campo debe contener">
-              <TextInput
-                value={str(config.formFieldValue)}
-                placeholder="Valor esperado"
-                onChange={(event) => set({ formFieldValue: event.target.value })}
-              />
-            </Field>
-          )}
         </>
       )}
 
@@ -319,15 +264,6 @@ export const GoalConfigEditor: React.FC<{ config: Config; onChange: (config: Con
               aria-label="Evento de anuncio"
             />
           </Field>
-          <Field label="Campaña (opcional)">
-            <CatalogSelect
-              catalog="campaigns"
-              value={str(config.campaign)}
-              onChange={(value) => set({ campaign: value })}
-              placeholder="Cualquier campaña"
-              aria-label="Campaña"
-            />
-          </Field>
         </>
       )}
 
@@ -359,9 +295,34 @@ export const GoalConfigEditor: React.FC<{ config: Config; onChange: (config: Con
         </ConfigSection>
       )}
 
+      {/* Lo específico se agrega con filtros congruentes al tipo elegido */}
+      {goalType && goalType !== 'advanced' && (
+        <TriggerFiltersEditor
+          value={config.filters}
+          onChange={(filters: TriggerFilter[]) => set({ filters })}
+          contextKey={`goal-${goalType}`}
+        />
+      )}
+
       {/* -------------------- evaluación y comportamiento -------------------- */}
 
       {goalType && (
+        <>
+          <button
+            type="button"
+            className={styles.advancedToggle}
+            onClick={() => setShowAdvanced((value) => !value)}
+          >
+            <ChevronRight
+              size={12}
+              className={cn(styles.varCategoryChevron, showAdvanced && styles.varCategoryChevronOpen)}
+            />
+            Opciones avanzadas
+          </button>
+        </>
+      )}
+
+      {goalType && showAdvanced && (
         <>
           <ConfigSection title="Cuándo evaluar el objetivo">
             <CustomSelect

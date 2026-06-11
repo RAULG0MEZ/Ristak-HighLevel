@@ -46,6 +46,7 @@ import { VariableCategoriesContext } from './composer/MessageComposer'
 import { Settings as SettingsIcon } from 'lucide-react'
 import {
   getNodeDefinition,
+  validateNodeConfig,
   type NodeDefinition,
   type NodeKind
 } from './nodeRegistry'
@@ -140,6 +141,10 @@ export const AutomationEditor: React.FC = () => {
   const flowSettingsRef = useRef(flowSettings)
   flowSettingsRef.current = flowSettings
   const [config, setConfig] = useState<ConfigState | null>(null)
+  const configRef = useRef<typeof config>(null)
+  useEffect(() => {
+    configRef.current = config
+  }, [config])
   const [nodeErrors, setNodeErrors] = useState<Record<string, string[]>>({})
   const [saveState, setSaveState] = useState<SaveState>('saved')
   const [previewOpen, setPreviewOpen] = useState(false)
@@ -344,7 +349,29 @@ export const AutomationEditor: React.FC = () => {
   // ------------------------------------------------------------------
   // Selección / creación de pasos desde los globos
   // ------------------------------------------------------------------
+  // Si la config abierta está incompleta, no se permite cerrarla ni cambiar
+  // de elemento: se muestran los errores (el usuario completa o borra el paso)
+  const [configErrorsSignal, setConfigErrorsSignal] = useState(0)
+  const canLeaveConfig = useCallback((): boolean => {
+    const current = configRef.current
+    if (!current) return true
+    const node = stateRef.current.present.nodes.find((candidate) => candidate.id === current.nodeId)
+    if (!node) return true
+    const trigger = current.triggerId
+      ? getStartTriggers(node).find((candidate) => candidate.id === current.triggerId)
+      : null
+    const definition = getNodeDefinition(trigger ? trigger.type : node.type)
+    if (!definition) return true
+    const errors = validateNodeConfig(definition, (trigger ? trigger.config : node.config) || {})
+    if (errors.length > 0) {
+      setConfigErrorsSignal((value) => value + 1)
+      return false
+    }
+    return true
+  }, [])
+
   const openConfigForNode = useCallback((node: AutomationNode, anchor?: { x: number; y: number }) => {
+    if (configRef.current && configRef.current.nodeId !== node.id && !canLeaveConfig()) return
     const viewport = viewportRef.current
     setConfig({
       nodeId: node.id,
@@ -354,7 +381,7 @@ export const AutomationEditor: React.FC = () => {
       },
       committed: false
     })
-  }, [])
+  }, [canLeaveConfig])
 
   const handlePickStep = useCallback(
     (definition: NodeDefinition) => {
@@ -445,6 +472,7 @@ export const AutomationEditor: React.FC = () => {
   const canvasActions = useMemo(
     () => ({
       onSelectNode: (nodeId: string | null) => {
+        if (nodeId === null && !canLeaveConfig()) return
         setSelectedNodeId(nodeId)
         setMultiSelectedIds(nodeId ? new Set([nodeId]) : new Set())
         if (nodeId === null) {
@@ -547,6 +575,7 @@ export const AutomationEditor: React.FC = () => {
         openConfigForNode(node, anchor)
       },
       onRequestPicker: (request: PickerRequest) => {
+        if (!canLeaveConfig()) return
         setConfig(null)
         if (request.source) {
           setPicker({
@@ -594,6 +623,7 @@ export const AutomationEditor: React.FC = () => {
         })
       },
       onEditTrigger: (node: AutomationNode, triggerId: string, anchor: { x: number; y: number }) => {
+        if (configRef.current && configRef.current.triggerId !== triggerId && !canLeaveConfig()) return
         setPicker(null)
         setSelectedNodeId(node.id)
         setConfig({ nodeId: node.id, triggerId, anchor, committed: false })
@@ -1220,6 +1250,7 @@ export const AutomationEditor: React.FC = () => {
             bounds={canvasBounds}
             onChange={handleConfigChange}
             onClose={() => setConfig(null)}
+            showErrorsSignal={configErrorsSignal}
           />
         )}
       </AutomationCanvas>

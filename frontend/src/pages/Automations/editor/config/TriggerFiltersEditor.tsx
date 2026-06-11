@@ -1,25 +1,41 @@
 import React from 'react'
 import { Plus, X } from 'lucide-react'
 import {
-  TRIGGER_FILTER_FIELDS,
   TRIGGER_FILTER_OPERATORS,
   asTriggerFilters,
+  filterFieldsFor,
   type TriggerFilter
 } from '../crmFields'
-import { CatalogSelect, Field, TextInput, CustomSelect } from './configPrimitives'
+import { CatalogSelect, TextInput, CustomSelect } from './configPrimitives'
+import { DrillSelect, type DrillGroup } from './DrillSelect'
 import styles from '../AutomationEditor.module.css'
 
 /**
- * Filtros avanzados de un disparador ("+ Añadir filtro"):
- * cada filtro se lee como "la fuente coincide con Facebook" y soporta
- * coincide / NO coincide. Solo aparecen si el usuario los agrega.
+ * Filtros de un disparador u objetivo ("+ Añadir filtro"): solo ofrece
+ * campos congruentes con el evento (mensaje, cita, pago…) más los datos
+ * del contacto, agrupados en categorías tipo Finder. Cada filtro se une
+ * al anterior con Y / O (la columna está reservada desde el inicio para
+ * que nada se empuje).
  */
 
 export const TriggerFiltersEditor: React.FC<{
   value: unknown
   onChange: (filters: TriggerFilter[]) => void
-}> = ({ value, onChange }) => {
+  /** Tipo del disparador (u objetivo) para mostrar solo campos congruentes */
+  contextKey?: string
+}> = ({ value, onChange, contextKey }) => {
   const filters = asTriggerFilters(value)
+  const fields = filterFieldsFor(contextKey)
+
+  const groups: DrillGroup[] = []
+  fields.forEach((field) => {
+    let group = groups.find((candidate) => candidate.id === field.category)
+    if (!group) {
+      group = { id: field.category, label: field.category, items: [] }
+      groups.push(group)
+    }
+    group.items.push({ value: field.id, label: field.label })
+  })
 
   const update = (index: number, patch: Partial<TriggerFilter>) => {
     onChange(filters.map((filter, i) => (i === index ? { ...filter, ...patch } : filter)))
@@ -28,17 +44,29 @@ export const TriggerFiltersEditor: React.FC<{
   return (
     <div>
       {filters.map((filter, index) => {
-        const field = TRIGGER_FILTER_FIELDS.find((candidate) => candidate.id === filter.field)
+        const field = fields.find((candidate) => candidate.id === filter.field)
         return (
           <div key={index} className={styles.filterRow}>
             <div className={styles.configRow}>
-              <span className={styles.conditionRuleTitle}>{index === 0 ? 'Y' : 'Y'}</span>
+              {/* Columna fija: Y / O (la primera fila siempre une con Y) */}
+              <span className={styles.filterConnector}>
+                {index === 0 ? (
+                  <span className={styles.filterConnectorStatic}>Y</span>
+                ) : (
+                  <CustomSelect
+                    options={[
+                      { value: 'and', label: 'Y' },
+                      { value: 'or', label: 'O' }
+                    ]}
+                    value={filter.connector === 'or' ? 'or' : 'and'}
+                    onValueChange={(next) => update(index, { connector: next === 'or' ? 'or' : 'and' })}
+                    aria-label="Unir con"
+                  />
+                )}
+              </span>
               <div className={styles.configRowGrow}>
-                <CustomSelect
-                  options={TRIGGER_FILTER_FIELDS.map((candidate) => ({
-                    value: candidate.id,
-                    label: candidate.label
-                  }))}
+                <DrillSelect
+                  groups={groups}
                   value={filter.field}
                   onValueChange={(next) =>
                     update(index, { field: next, value: '', customKey: '', customLabel: '' })
@@ -108,7 +136,7 @@ export const TriggerFiltersEditor: React.FC<{
       <button
         type="button"
         className={styles.configSmallButton}
-        onClick={() => onChange([...filters, { field: '', match: 'is', value: '' }])}
+        onClick={() => onChange([...filters, { field: '', match: 'is', value: '', connector: 'and' }])}
       >
         <Plus size={11} />
         Añadir filtro
@@ -116,5 +144,3 @@ export const TriggerFiltersEditor: React.FC<{
     </div>
   )
 }
-
-void Field

@@ -449,6 +449,8 @@
 }
 
 .nodeSummaryText {
+  overflow-wrap: anywhere;
+  word-break: break-word;
   font-size: 12px;
   color: var(--color-text-secondary);
   line-height: 1.45;
@@ -456,6 +458,8 @@
 }
 
 .nodeSummaryBox {
+  overflow-wrap: anywhere;
+  word-break: break-word;
   font-size: 12px;
   color: var(--color-text-primary);
   background: rgba(148, 163, 184, 0.12);
@@ -622,6 +626,8 @@
 }
 
 .triggerChipText {
+  overflow-wrap: anywhere;
+  word-break: break-word;
   min-width: 0;
   flex: 1;
 }
@@ -829,6 +835,8 @@
 }
 
 .bubbleSubtitle {
+  overflow-wrap: anywhere;
+  word-break: break-word;
   font-size: 11.5px;
   color: var(--color-text-tertiary);
   line-height: 1.4;
@@ -1441,6 +1449,8 @@
 }
 
 .sentencePreview {
+  overflow-wrap: anywhere;
+  word-break: break-word;
   margin-top: 14px;
   border-top: 1px solid rgba(148, 163, 184, 0.14);
   padding: 12px 10px 4px;
@@ -1586,6 +1596,8 @@
 }
 
 .configErrorLine {
+  overflow-wrap: anywhere;
+  word-break: break-word;
   font-size: 11.5px;
   color: var(--color-status-error);
   line-height: 1.35;
@@ -2227,6 +2239,8 @@
 /* --------------------- Globos de chat dentro del nodo --------------------- */
 
 .chatBubble {
+  overflow-wrap: anywhere;
+  word-break: break-word;
   display: block;
   width: 100%;
   text-align: left;
@@ -2897,4 +2911,172 @@
   flex: 1;
   color: var(--color-text-tertiary);
   font-size: 13px;
+}
+
+
+/* ------------------------- Filtros: columna Y/O ------------------------- */
+
+/* Reservada desde el inicio: agregar O no empuja las cajitas */
+.filterConnector {
+  width: 52px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+}
+
+.filterConnector > * {
+  width: 100%;
+}
+
+.filterConnectorStatic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 30px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-tertiary);
+}
+
+/* --------------------- Drill-down con categorías --------------------- */
+
+.drillTrigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 5px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 9px;
+  background: var(--color-background-primary);
+  color: var(--color-text-primary);
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.drillTrigger:hover {
+  border-color: rgba(148, 163, 184, 0.6);
+}
+
+.drillTriggerText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drillTriggerPlaceholder {
+  color: var(--color-text-tertiary);
+}
+
+.drillDropdown {
+  position: fixed;
+  z-index: 4000;
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 11px;
+  background: var(--color-background-primary);
+  box-shadow: 0 18px 40px -18px rgba(15, 23, 42, 0.45);
+  overflow: hidden;
+}
+
+.drillSearch {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 6px;
+  color: var(--color-text-tertiary);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.drillSearch input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: 12.5px;
+}
+
+.drillList {
+  overflow-y: auto;
+  padding: 5px;
+}
+
+.drillItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.drillItem:hover {
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.drillItemLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drillItemCount {
+  font-size: 10.5px;
+  color: var(--color-text-tertiary);
+}
+
+.drillBack {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 7px 9px;
+  margin-bottom: 2px;
+  border: none;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  text-align: left;
+}
+
+.drillBack:hover {
+  color: var(--color-text-primary);
+}
+
+.drillGroupLabel {
+  padding: 7px 9px 3px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-tertiary);
+}
+
+.drillEmpty {
+  padding: 14px 10px;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  text-align: center;
 }

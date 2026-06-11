@@ -442,6 +442,8 @@ export interface TriggerFilter {
   customLabel?: string
   match: 'is' | 'not' | 'contains' | 'not_contains'
   value: string
+  /** Cómo se une con el filtro anterior: Y (default) u O */
+  connector?: 'and' | 'or'
 }
 
 export const TRIGGER_FILTER_OPERATORS: Array<{ value: TriggerFilter['match']; label: string }> = [
@@ -456,22 +458,61 @@ export interface TriggerFilterField {
   label: string
   /** Frase con artículo para la oración ("la fuente", "el país"…) */
   phrase: string
-  catalog?: 'tags' | 'contactFields' | 'users' | 'calendars' | 'campaigns'
+  catalog?: 'tags' | 'contactFields' | 'users' | 'calendars' | 'campaigns' | 'products'
+  /** Categoría del drill-down (Contacto, Mensaje, Citas…) */
+  category: string
+  /** Contextos donde aplica; sin lista = siempre (datos del contacto) */
+  appliesTo?: string[]
 }
 
 export const TRIGGER_FILTER_FIELDS: TriggerFilterField[] = [
-  { id: 'message', label: 'Mensaje', phrase: 'el mensaje' },
-  { id: 'source', label: 'Fuente', phrase: 'la fuente' },
-  { id: 'tag', label: 'Etiqueta', phrase: 'la etiqueta', catalog: 'tags' },
-  { id: 'stage', label: 'Pipeline / etapa', phrase: 'la etapa' },
-  { id: 'country', label: 'País', phrase: 'el país' },
-  { id: 'email', label: 'Email (dato de contacto)', phrase: 'el email' },
-  { id: 'phone', label: 'Teléfono', phrase: 'el teléfono' },
-  { id: 'assigned', label: 'Usuario asignado', phrase: 'el usuario asignado', catalog: 'users' },
-  { id: 'calendar', label: 'Calendario', phrase: 'el calendario', catalog: 'calendars' },
-  { id: 'campaign', label: 'Campaña', phrase: 'la campaña', catalog: 'campaigns' },
-  { id: 'custom', label: 'Campo personalizado…', phrase: 'el campo' }
+  // Del evento (solo aparecen cuando el disparador los produce)
+  { id: 'message', label: 'Mensaje', phrase: 'el mensaje', category: 'Mensaje', appliesTo: ['message'] },
+  { id: 'calendar', label: 'Calendario', phrase: 'el calendario', catalog: 'calendars', category: 'Cita', appliesTo: ['appointment'] },
+  { id: 'appointment_type', label: 'Tipo de cita', phrase: 'el tipo de cita', category: 'Cita', appliesTo: ['appointment'] },
+  { id: 'product', label: 'Producto / servicio', phrase: 'el producto', catalog: 'products', category: 'Pago', appliesTo: ['payment'] },
+  { id: 'currency', label: 'Moneda', phrase: 'la moneda', category: 'Pago', appliesTo: ['payment'] },
+  { id: 'provider', label: 'Proveedor de pago', phrase: 'el proveedor', category: 'Pago', appliesTo: ['payment'] },
+  { id: 'campaign', label: 'Campaña', phrase: 'la campaña', catalog: 'campaigns', category: 'Anuncio', appliesTo: ['ads'] },
+  { id: 'form_field', label: 'Campo del formulario', phrase: 'el campo del formulario', category: 'Formulario', appliesTo: ['form'] },
+  // Del contacto (siempre disponibles)
+  { id: 'source', label: 'Fuente', phrase: 'la fuente', category: 'Contacto' },
+  { id: 'tag', label: 'Etiqueta', phrase: 'la etiqueta', catalog: 'tags', category: 'Contacto' },
+  { id: 'stage', label: 'Pipeline / etapa', phrase: 'la etapa', category: 'Contacto' },
+  { id: 'country', label: 'País', phrase: 'el país', category: 'Contacto' },
+  { id: 'email', label: 'Email (dato de contacto)', phrase: 'el email', category: 'Contacto' },
+  { id: 'phone', label: 'Teléfono', phrase: 'el teléfono', category: 'Contacto' },
+  { id: 'assigned', label: 'Usuario asignado', phrase: 'el usuario asignado', catalog: 'users', category: 'Contacto' },
+  { id: 'custom', label: 'Campo personalizado…', phrase: 'el campo', category: 'Contacto' }
 ]
+
+/** Contextos de evento que produce cada disparador / tipo de objetivo */
+const TRIGGER_FILTER_CONTEXTS: Record<string, string[]> = {
+  'trigger-customer-replied': ['message'],
+  'trigger-appointment-booked': ['appointment'],
+  'trigger-appointment-status': ['appointment'],
+  'trigger-payment-received': ['payment'],
+  'trigger-refund': ['payment'],
+  'trigger-form-submitted': ['form'],
+  'trigger-facebook-ad-click': ['ads'],
+  'trigger-click-to-whatsapp': ['ads', 'message'],
+  'trigger-facebook-comment': ['message'],
+  'trigger-instagram-comment': ['message'],
+  // Tipos de objetivo (reutilizan el mismo sistema de filtros)
+  'goal-payment': ['payment'],
+  'goal-appointment': ['appointment'],
+  'goal-form': ['form'],
+  'goal-conversation': ['message'],
+  'goal-ads': ['ads']
+}
+
+/** Campos de filtro congruentes con el disparador: los del evento + contacto */
+export function filterFieldsFor(contextKey?: string): TriggerFilterField[] {
+  const contexts = (contextKey && TRIGGER_FILTER_CONTEXTS[contextKey]) || []
+  return TRIGGER_FILTER_FIELDS.filter(
+    (field) => !field.appliesTo || field.appliesTo.some((context) => contexts.includes(context))
+  )
+}
 
 export function asTriggerFilters(value: unknown): TriggerFilter[] {
   return Array.isArray(value) ? (value as TriggerFilter[]) : []
@@ -502,7 +543,8 @@ export function triggerFiltersSentence(value: unknown): string {
         contains: 'contenga',
         not_contains: 'NO contenga'
       }
-      return ` y ${phrase} ${verbs[filter.match] || 'coincida con'} "${filter.value}"`
+      const joiner = filter.connector === 'or' ? ' o ' : ' y '
+      return `${joiner}${phrase} ${verbs[filter.match] || 'coincida con'} "${filter.value}"`
     })
     .join('')
 }

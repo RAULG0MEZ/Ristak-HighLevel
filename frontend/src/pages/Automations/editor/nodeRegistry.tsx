@@ -1702,7 +1702,6 @@ const OTHER_ACTIONS: NodeDefinition[] = [
     },
     validate: (config) => {
       const errors: string[] = []
-      if (!str(config.name).trim()) errors.push('Ponle nombre al objetivo')
       const goalType = str(config.goalType)
       if (!goalType) {
         errors.push('Selecciona el tipo de objetivo')

@@ -78,3 +78,16 @@ test('evaluateConditionNode: grupo negado y operador OR', () => {
   }
   assert.equal(evaluateConditionNode(config, ctx).handle, 'yes')
 })
+
+test('filtersMatch: conector O entre filtros', () => {
+  const filters = [
+    { field: 'source', match: 'is', value: 'Google' },
+    { field: 'message', match: 'contains', value: 'precio', connector: 'or' }
+  ]
+  assert.equal(filtersMatch(filters, ctx), true) // fuente falla pero mensaje sí (O)
+  const andFilters = [
+    { field: 'source', match: 'is', value: 'Google' },
+    { field: 'message', match: 'contains', value: 'precio', connector: 'and' }
+  ]
+  assert.equal(filtersMatch(andFilters, ctx), false)
+})

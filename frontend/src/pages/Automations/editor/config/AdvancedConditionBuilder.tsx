@@ -18,6 +18,7 @@ import {
 import { MAX_BRANCHES } from '../nodeRegistry'
 import { CatalogSelect, Field, TextInput } from './configPrimitives'
 import { VariableTextInput } from '../composer/MessageComposer'
+import { DrillSelect } from './DrillSelect'
 import styles from '../AutomationEditor.module.css'
 
 /**
@@ -240,7 +241,15 @@ export const AdvancedConditionBuilder: React.FC<AdvancedConditionBuilderProps> =
           </button>
         </div>
 
-        <CustomSelect
+        <DrillSelect
+          groups={CRM_FIELD_CATEGORIES.map((category) => ({
+            id: category.id,
+            label: category.label,
+            items: CRM_FIELDS.filter((candidate) => candidate.category === category.id).map((candidate) => ({
+              value: candidate.id,
+              label: candidate.label
+            }))
+          }))}
           value={rule.field}
           onValueChange={(next) =>
             updateRule(branchIndex, groupIndex, ruleIndex, {
@@ -254,17 +263,7 @@ export const AdvancedConditionBuilder: React.FC<AdvancedConditionBuilderProps> =
           }
           placeholder="Selecciona un campo del CRM"
           aria-label="Campo"
-        >
-          {CRM_FIELD_CATEGORIES.map((category) => (
-            <optgroup key={category.id} label={category.label}>
-              {CRM_FIELDS.filter((candidate) => candidate.category === category.id).map((candidate) => (
-                <option key={candidate.id} value={candidate.id}>
-                  {candidate.label}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </CustomSelect>
+        />
 
         {field?.needsCustomKey && (
           <div style={{ marginTop: 6 }}>

@@ -9,6 +9,7 @@ export const CustomSelect: React.FC<React.ComponentProps<typeof BaseCustomSelect
 )
 import { getCatalog, type CatalogKind, type CatalogOption } from '@/services/automationCatalogsService'
 import { CONTACT_VARIABLES } from '../nodeRegistry'
+import { DrillSelect } from './DrillSelect'
 import styles from '../AutomationEditor.module.css'
 
 /**
@@ -126,6 +127,24 @@ export const CatalogSelect: React.FC<CatalogSelectProps> = ({
 
   if (options.length === 0) {
     return <span className={styles.configHelp}>No hay opciones disponibles todavía.</span>
+  }
+
+  // Campos de contacto: drill-down con categorías (datos básicos vs personalizados)
+  if (catalog === 'contactFields') {
+    const basics = options.filter((option) => !option.value.startsWith('custom:'))
+    const custom = options.filter((option) => option.value.startsWith('custom:'))
+    return (
+      <DrillSelect
+        groups={[
+          { id: 'basics', label: 'Datos del contacto', items: basics.map((option) => ({ value: option.value, label: option.label })) },
+          { id: 'custom', label: 'Campos personalizados', items: custom.map((option) => ({ value: option.value, label: option.label })) }
+        ]}
+        value={value}
+        onValueChange={(next, label) => onChange(next, label)}
+        placeholder={placeholder || 'Selecciona el campo'}
+        aria-label={rest['aria-label']}
+      />
+    )
   }
 
   return (

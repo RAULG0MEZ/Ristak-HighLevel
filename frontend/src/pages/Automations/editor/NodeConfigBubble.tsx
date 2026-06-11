@@ -36,6 +36,9 @@ interface NodeConfigBubbleProps {
   bounds: { width: number; height: number }
   onChange: (config: ConfigValue) => void
   onClose: () => void
+  /** Señal externa (contador) para mostrar los errores: el editor la sube
+      cuando el usuario intenta irse a otro elemento con esta config inválida */
+  showErrorsSignal?: number
 }
 
 const PANEL_WIDTH = 372
@@ -49,7 +52,8 @@ export const NodeConfigBubble: React.FC<NodeConfigBubbleProps> = ({
   anchor,
   bounds,
   onChange,
-  onClose
+  onClose,
+  showErrorsSignal = 0
 }) => {
   const rootRef = useRef<HTMLDivElement>(null)
   const [copied, setCopied] = useState(false)
@@ -72,6 +76,21 @@ export const NodeConfigBubble: React.FC<NodeConfigBubbleProps> = ({
   }
 
   const errors = useMemo(() => validateNodeConfig(definition, config), [definition, config])
+
+  // Los errores NO aparecen mientras se está configurando: solo al intentar
+  // cerrar o cambiar de elemento con la configuración incompleta.
+  const [attemptedClose, setAttemptedClose] = useState(false)
+  useEffect(() => {
+    if (showErrorsSignal > 0) setAttemptedClose(true)
+  }, [showErrorsSignal])
+
+  const requestClose = () => {
+    if (errors.length > 0) {
+      setAttemptedClose(true)
+      return
+    }
+    onClose()
+  }
 
   const setValue = (key: string, value: unknown) => {
     onChange({ ...config, [key]: value })
@@ -479,7 +498,7 @@ export const NodeConfigBubble: React.FC<NodeConfigBubbleProps> = ({
         if (event.key === 'Escape') {
           event.preventDefault()
           event.stopPropagation()
-          onClose()
+          requestClose()
         }
       }}
     >
@@ -517,13 +536,13 @@ export const NodeConfigBubble: React.FC<NodeConfigBubbleProps> = ({
           )}
           {definition.description && <div className={styles.bubbleSubtitle}>{definition.description}</div>}
         </div>
-        <button type="button" className={styles.bubbleClose} onClick={onClose} title="Cerrar (Esc)">
+        <button type="button" className={styles.bubbleClose} onClick={requestClose} title="Cerrar (Esc)">
           <X size={14} />
         </button>
       </div>
 
       <div className={styles.bubbleBody}>
-        {errors.length > 0 && (
+        {attemptedClose && errors.length > 0 && (
           <div className={styles.configErrors}>
             {errors.map((error) => (
               <span key={error} className={styles.configErrorLine}>
@@ -567,6 +586,7 @@ export const NodeConfigBubble: React.FC<NodeConfigBubbleProps> = ({
           <TriggerFiltersEditor
             value={config.filters}
             onChange={(filters: TriggerFilter[]) => setValue('filters', filters)}
+            contextKey={definition.type}
           />
         )}
 
