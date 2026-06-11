@@ -11,6 +11,7 @@ import {
   verifyOpenAIApiKey
 } from '../services/aiAgentService.js'
 import { getAgentRunTrace } from '../services/agentExecutionLedgerService.js'
+import { runSpecializedAgentReply, listAgentCategories, getAgentCategory } from '../agents/index.js'
 
 function sendAIAgentError(res, error, fallback, statusCode = 500) {
   if (isAIAgentCredentialError(error)) {
@@ -165,12 +166,24 @@ export async function chat(req, res) {
       })
     }
 
-    const result = await createAgentReply({
-      apiKey,
-      messages,
-      viewContext: req.body?.viewContext || {},
-      userId: req.user?.userId
-    })
+    const category = getAgentCategory(req.body?.category)
+
+    // Agentes especializados (OpenAI Agents SDK) cuando hay categoría válida.
+    // Los mensajes con archivos adjuntos van por el flujo legacy, que ya los procesa.
+    const result = category && !hasAttachments
+      ? await runSpecializedAgentReply({
+          apiKey,
+          category: category.id,
+          messages,
+          viewContext: req.body?.viewContext || {},
+          userId: req.user?.userId
+        })
+      : await createAgentReply({
+          apiKey,
+          messages,
+          viewContext: req.body?.viewContext || {},
+          userId: req.user?.userId
+        })
 
     res.json({
       success: true,
@@ -179,6 +192,21 @@ export async function chat(req, res) {
   } catch (error) {
     logger.error('Error en chat del agente AI:', error)
     sendAIAgentError(res, error, 'Error al generar respuesta del agente AI')
+  }
+}
+
+export async function listAgents(req, res) {
+  try {
+    res.json({
+      success: true,
+      data: listAgentCategories()
+    })
+  } catch (error) {
+    logger.error('Error listando agentes especializados:', error)
+    res.status(500).json({
+      success: false,
+      error: 'Error al listar los agentes disponibles'
+    })
   }
 }
 

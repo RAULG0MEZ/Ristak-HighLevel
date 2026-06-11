@@ -2678,6 +2678,18 @@ async function initTables() {
     await db.run('CREATE INDEX IF NOT EXISTS idx_agent_pending_actions_run ON agent_pending_actions(run_id, status)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_agent_tool_idempotency_run ON agent_tool_idempotency(run_id, tool_name)')
 
+    // Memoria persistente de los agentes IA por especialidad (citas, pagos, etc.)
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS ai_agent_memories (
+        id TEXT PRIMARY KEY,
+        category TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+    await db.run('CREATE INDEX IF NOT EXISTS idx_ai_agent_memories_category ON ai_agent_memories(category, updated_at)')
+
     const userOptionalColumns = [
       ['first_name', 'TEXT'],
       ['last_name', 'TEXT'],

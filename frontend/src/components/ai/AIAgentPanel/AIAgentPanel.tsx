@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { ArrowUp, Bot, CalendarPlus, Check, Copy, CreditCard, Eraser, File as FileIcon, FileText, GitBranch, Image as ImageIcon, KeyRound, MessageCircle, Mic, Paperclip, Pause, SendHorizonal, Sparkles, TrendingUp, Video as VideoIcon, X } from 'lucide-react'
-import { aiAgentService, type AIAgentAttachment, type AIAgentAttachmentKind, type AIAgentBusinessContextField, type AIAgentClarificationOption, type AIAgentConfigInput, type AIAgentConfigStatus, type AIAgentMessage, type AIAgentViewContext } from '@/services/aiAgentService'
+import { ArrowUp, Bot, Calendar, CalendarPlus, Check, Copy, CreditCard, Eraser, File as FileIcon, FileText, GitBranch, Image as ImageIcon, KeyRound, MessageCircle, Mic, Paperclip, Pause, Percent, SendHorizonal, Sparkles, TrendingUp, Users, Video as VideoIcon, X } from 'lucide-react'
+import { aiAgentService, type AIAgentAttachment, type AIAgentAttachmentKind, type AIAgentBusinessContextField, type AIAgentCategory, type AIAgentClarificationOption, type AIAgentConfigInput, type AIAgentConfigStatus, type AIAgentMessage, type AIAgentViewContext } from '@/services/aiAgentService'
 import { sitesService, type SitesAICreationMessage } from '@/services/sitesService'
 import { useNotification } from '@/contexts/NotificationContext'
 import { AI_AGENT_CLOSE_REQUEST_EVENT, AI_AGENT_OPEN_REQUEST_EVENT, type AIAgentOpenRequestDetail, type AIAgentSitesCreationKind } from '@/utils/aiAgentEvents'
@@ -15,6 +15,35 @@ const VOICE_WAVE_MAX_HEIGHT = 30
 const VOICE_WAVE_SILENCE_THRESHOLD = 4
 const VOICE_WAVE_SIGNAL_RANGE = 30
 const DEFAULT_AI_MODEL = 'gpt-5.5'
+const AI_AGENT_CATEGORY_KEY = 'ristak.aiAgentFloating.category'
+
+const FALLBACK_AGENT_CATEGORIES: AIAgentCategory[] = [
+  { id: 'citas', label: 'Citas', icon: 'calendar', description: 'Agendar, reprogramar, cancelar y consultar citas y calendarios.' },
+  { id: 'pagos', label: 'Pagos', icon: 'credit-card', description: 'Registrar, editar y consultar pagos y transacciones.' },
+  { id: 'redes', label: 'Redes sociales', icon: 'message-circle', description: 'Perfiles conectados, bandeja social y conversaciones.' },
+  { id: 'anuncios', label: 'Anuncios', icon: 'trending-up', description: 'Métricas y análisis de campañas de Meta Ads.' },
+  { id: 'contactos', label: 'Contactos', icon: 'users', description: 'Crear, editar, buscar y depurar contactos.' },
+  { id: 'costos', label: 'Costos variables', icon: 'percent', description: 'Configurar comisiones y costos variables.' },
+  { id: 'general', label: 'General', icon: 'sparkles', description: 'Asistente general con acceso a todas las áreas.' }
+]
+
+const AGENT_CATEGORY_ICONS: Record<string, typeof Sparkles> = {
+  calendar: Calendar,
+  'credit-card': CreditCard,
+  'message-circle': MessageCircle,
+  'trending-up': TrendingUp,
+  users: Users,
+  percent: Percent,
+  sparkles: Sparkles
+}
+
+function getStoredAgentCategory(): string {
+  try {
+    return localStorage.getItem(AI_AGENT_CATEGORY_KEY) || ''
+  } catch {
+    return ''
+  }
+}
 const MAX_ATTACHMENTS = 8
 const MAX_DIRECT_ATTACHMENT_BYTES = 8 * 1024 * 1024
 const MAX_ATTACHMENT_TOTAL_BYTES = 18 * 1024 * 1024
@@ -1543,6 +1572,8 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
   const [messages, setMessages] = useState<AIAgentMessage[]>([])
   const [input, setInput] = useState('')
   const [sitesCreationMode, setSitesCreationMode] = useState<SitesCreationMode | null>(null)
+  const [agentCategories, setAgentCategories] = useState<AIAgentCategory[]>(FALLBACK_AGENT_CATEGORIES)
+  const [selectedAgentCategory, setSelectedAgentCategory] = useState<string>(getStoredAgentCategory)
   const [attachments, setAttachments] = useState<AIAgentAttachmentDraft[]>([])
   const [attachmentError, setAttachmentError] = useState('')
   const [apiKeyInput, setApiKeyInput] = useState('')
@@ -1706,6 +1737,26 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [messages, sending, savingConfig, visible])
+
+  useEffect(() => {
+    if (!status.configured) return
+    let cancelled = false
+    aiAgentService.getAgents()
+      .then((categories) => {
+        if (!cancelled && Array.isArray(categories) && categories.length) {
+          setAgentCategories(categories)
+        }
+      })
+      .catch(() => { /* usa el fallback local */ })
+    return () => { cancelled = true }
+  }, [status.configured])
+
+  const selectAgentCategory = useCallback((categoryId: string) => {
+    setSelectedAgentCategory(categoryId)
+    try {
+      localStorage.setItem(AI_AGENT_CATEGORY_KEY, categoryId)
+    } catch { /* almacenamiento no disponible */ }
+  }, [])
 
   useEffect(() => {
     if (!sending && !savingConfig) {
@@ -2077,9 +2128,16 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
     setMessages(nextMessages)
     setSending(true)
 
+    // Cada mensaje viaja con la especialidad activa; sin selección usamos el agente general
+    const effectiveCategory = selectedAgentCategory || 'general'
+    if (!selectedAgentCategory) {
+      selectAgentCategory('general')
+    }
+
     try {
       const result = await aiAgentService.sendMessage(prepareMessagesForApi(nextMessages), getViewContext(), {
-        signal: controller.signal
+        signal: controller.signal,
+        category: effectiveCategory
       })
 
       if (activeChatRequestRef.current?.id !== requestId) return
@@ -2541,13 +2599,69 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
             </div>
           )}
 
+          {status.configured && !sitesCreationMode && (
+            <div className={styles.agentPicker} role="tablist" aria-label="Especialidad del agente">
+              {agentCategories.map((agentCategory) => {
+                const CategoryIcon = AGENT_CATEGORY_ICONS[agentCategory.icon] || Sparkles
+                const isActive = selectedAgentCategory === agentCategory.id
+                return (
+                  <button
+                    key={agentCategory.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={isActive}
+                    className={`${styles.agentChip} ${isActive ? styles.agentChipActive : ''}`}
+                    onClick={() => selectAgentCategory(agentCategory.id)}
+                    title={agentCategory.description}
+                    disabled={savingConfig || sending}
+                  >
+                    <CategoryIcon size={13} />
+                    <span>{agentCategory.label}</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
           <div className={styles.body} data-ai-agent-scrollable="true">
             {messages.length === 0 ? (
               <div className={styles.empty}>
-                <p className={styles.emptyText}>
-                  Pregúntame por ventas, citas, campañas, contactos o por lo que estás viendo en esta pantalla.
-                </p>
-                {status.configured && (
+                {status.configured && !selectedAgentCategory && !sitesCreationMode ? (
+                  <>
+                    <p className={styles.emptyText}>
+                      Elige una especialidad para empezar. Cada agente conoce solo su área y trabaja con datos reales del negocio.
+                    </p>
+                    <div className={styles.agentGrid}>
+                      {agentCategories.map((agentCategory) => {
+                        const CategoryIcon = AGENT_CATEGORY_ICONS[agentCategory.icon] || Sparkles
+                        return (
+                          <button
+                            key={agentCategory.id}
+                            type="button"
+                            className={styles.suggestionButton}
+                            onClick={() => selectAgentCategory(agentCategory.id)}
+                            disabled={savingConfig}
+                          >
+                            <span className={styles.suggestionIcon}>
+                              <CategoryIcon size={16} />
+                            </span>
+                            <span className={styles.suggestionCopy}>
+                              <span className={styles.suggestionLabel}>{agentCategory.label}</span>
+                              <span className={styles.suggestionDescription}>{agentCategory.description}</span>
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </>
+                ) : (
+                  <p className={styles.emptyText}>
+                    {status.configured && selectedAgentCategory
+                      ? `Agente de ${agentCategories.find((c) => c.id === selectedAgentCategory)?.label?.toLowerCase() || 'negocio'} listo. ${agentCategories.find((c) => c.id === selectedAgentCategory)?.description || ''}`
+                      : 'Pregúntame por ventas, citas, campañas, contactos o por lo que estás viendo en esta pantalla.'}
+                  </p>
+                )}
+                {status.configured && selectedAgentCategory === 'general' && (
                   <div className={styles.suggestions}>
                     {quickActions.map(({ label, description, prompt, Icon }) => (
                       <button

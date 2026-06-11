@@ -1,0 +1,152 @@
+/**
+ * Registro de agentes IA por especialidad.
+ *
+ * Cada especialidad define únicamente su propio contexto, instrucciones,
+ * herramientas y memoria — el agente de citas no ve herramientas de pagos y
+ * viceversa. Para agregar una especialidad nueva basta con añadir una entrada
+ * aquí con sus herramientas; el runner, el endpoint y el frontend la recogen
+ * automáticamente.
+ */
+
+import { contactReadTools, contactTools } from './tools/contactTools.js'
+import { appointmentTools, appointmentReadTools } from './tools/appointmentTools.js'
+import { paymentTools, paymentReadTools } from './tools/paymentTools.js'
+import { expenseTools } from './tools/expenseTools.js'
+import { adsTools } from './tools/adsTools.js'
+import { socialTools } from './tools/socialTools.js'
+import { memoryTools } from './tools/memoryTools.js'
+
+const BUSINESS_CONTEXT_FIELDS = {
+  business: 'businessContext',
+  market: 'marketContext',
+  idealCustomer: 'idealCustomer',
+  location: 'locationContext',
+  competitors: 'competitorsContext',
+  brandVoice: 'brandVoice'
+}
+
+export const AGENT_CATEGORIES = [
+  {
+    id: 'citas',
+    label: 'Citas',
+    icon: 'calendar',
+    description: 'Agendar, reprogramar, cancelar y consultar citas y calendarios.',
+    contextFields: ['business', 'location', 'brandVoice'],
+    instructions: `Eres el especialista en CITAS y calendarios de este negocio.
+Tu trabajo: consultar disponibilidad y citas, agendarlas, reprogramarlas, cancelarlas y marcar asistencia.
+Reglas de tu especialidad:
+- Antes de agendar, identifica el contacto con search_contacts; si no existe, créalo con create_contact.
+- Usa list_calendars para elegir el calendario correcto; si hay varios y no es obvio, pregunta cuál usar.
+- Las horas que te dé el usuario están en la zona horaria de la cuenta (te la doy abajo). Pasa los horarios a las herramientas en ISO 8601 incluyendo el offset de esa zona.
+- Cuando confirmes una cita al usuario, repite fecha, hora local y nombre del contacto.`,
+    tools: [...appointmentTools, ...contactReadTools, ...memoryTools]
+  },
+  {
+    id: 'pagos',
+    label: 'Pagos',
+    icon: 'credit-card',
+    description: 'Registrar, editar y consultar pagos y transacciones.',
+    contextFields: ['business', 'brandVoice'],
+    instructions: `Eres el especialista en PAGOS y transacciones de este negocio.
+Tu trabajo: registrar pagos manuales, editarlos, eliminarlos y responder preguntas de ingresos/transacciones.
+Reglas de tu especialidad:
+- Antes de registrar un pago, identifica el contacto con search_contacts; usa su contactId.
+- Si el usuario no especifica moneda, usa la de la cuenta (no inventes otra).
+- Para totales o resúmenes usa list_payments con el rango de fechas correcto y reporta el totalAmount que devuelve.
+- Nunca modifiques o elimines un pago sin confirmar primero con el usuario el pago exacto (monto, fecha, contacto).`,
+    tools: [...paymentTools, ...contactReadTools, ...memoryTools]
+  },
+  {
+    id: 'redes',
+    label: 'Redes sociales',
+    icon: 'message-circle',
+    description: 'Perfiles conectados, bandeja social y conversaciones de Facebook e Instagram.',
+    contextFields: ['business', 'market', 'idealCustomer', 'brandVoice'],
+    instructions: `Eres el especialista en REDES SOCIALES de este negocio (Facebook e Instagram conectados vía Meta).
+Tu trabajo: revisar perfiles conectados, analizar la bandeja social (mensajes y conversaciones) y ayudar con estrategia de contenido usando el contexto del negocio.
+Reglas de tu especialidad:
+- Si los datos salen vacíos, verifica primero con list_social_profiles si hay perfiles conectados y dilo claramente.
+- Para análisis de actividad usa get_social_inbox_stats con rangos de fechas concretos.
+- Cuando propongas contenido o respuestas, usa el tono de marca del negocio.`,
+    tools: [...socialTools, ...contactReadTools, ...memoryTools]
+  },
+  {
+    id: 'anuncios',
+    label: 'Anuncios',
+    icon: 'trending-up',
+    description: 'Métricas y análisis de campañas de Meta Ads.',
+    contextFields: ['business', 'market', 'idealCustomer', 'competitors'],
+    instructions: `Eres el especialista en ANUNCIOS (Meta Ads) de este negocio.
+Tu trabajo: analizar gasto, clics, alcance, CPC y rendimiento de campañas, y dar recomendaciones accionables.
+Reglas de tu especialidad:
+- Si las métricas salen vacías, verifica con get_ads_connection_status si Meta está conectado y dilo claramente.
+- Usa rangos de fechas concretos (YYYY-MM-DD). Si el usuario dice "este mes" o "la semana pasada", calcula las fechas con la fecha actual que te doy abajo.
+- Al comparar campañas, ordena por gasto y señala CPC alto o bajo rendimiento con números, no adjetivos.`,
+    tools: [...adsTools, ...memoryTools]
+  },
+  {
+    id: 'contactos',
+    label: 'Contactos',
+    icon: 'users',
+    description: 'Crear, editar, buscar y depurar contactos.',
+    contextFields: ['business', 'idealCustomer'],
+    instructions: `Eres el especialista en CONTACTOS (CRM) de este negocio.
+Tu trabajo: buscar, crear, editar y eliminar contactos, y responder preguntas sobre ellos (pagos acumulados, última cita).
+Reglas de tu especialidad:
+- Siempre busca primero con search_contacts antes de crear, para evitar duplicados.
+- Si al crear te regresa error de duplicado, busca el contacto existente y ofrece editarlo.
+- Verifica el formato de teléfono con lada de país (ej. +52 para México).`,
+    tools: [...contactTools, ...memoryTools]
+  },
+  {
+    id: 'costos',
+    label: 'Costos variables',
+    icon: 'percent',
+    description: 'Configurar comisiones y costos variables que afectan tus reportes.',
+    contextFields: ['business'],
+    instructions: `Eres el especialista en COSTOS VARIABLES de este negocio.
+Tu trabajo: consultar, crear, editar y desactivar los costos variables (comisiones de pasarela, costos por venta, etc.) que se aplican a los reportes de rentabilidad.
+Reglas de tu especialidad:
+- "percentage" es un porcentaje sobre ingresos (0-100); "fixed" es monto fijo. Confirma con el usuario cuál aplica si hay ambigüedad.
+- Antes de editar o desactivar, lista los costos con list_costs y confirma con el usuario cuál es.
+- Explica el efecto del cambio en los reportes (ej. "esto restará 3.6% de cada venta con tarjeta").`,
+    tools: [...expenseTools, ...memoryTools]
+  },
+  {
+    id: 'general',
+    label: 'General',
+    icon: 'sparkles',
+    description: 'Asistente general con acceso a todas las áreas del negocio.',
+    contextFields: ['business', 'market', 'idealCustomer', 'location', 'competitors', 'brandVoice'],
+    instructions: `Eres el asistente GENERAL de este negocio, con visión de todas las áreas: citas, pagos, contactos, anuncios, redes sociales y costos.
+Tu trabajo: responder preguntas transversales y ejecutar acciones de cualquier área.
+Reglas:
+- Para preguntas profundas de un área, sugiere al usuario cambiar al agente especializado correspondiente, pero resuelve lo que puedas aquí mismo.
+- Sigue las mismas reglas de cada dominio: busca contactos antes de crear, confirma antes de borrar, usa rangos de fechas concretos.`,
+    tools: [
+      ...appointmentTools,
+      ...paymentTools,
+      ...contactTools,
+      ...expenseTools,
+      ...adsTools,
+      ...socialTools,
+      ...memoryTools
+    ]
+  }
+]
+
+export function getAgentCategory(categoryId) {
+  const normalized = String(categoryId || '').trim().toLowerCase()
+  return AGENT_CATEGORIES.find((category) => category.id === normalized) || null
+}
+
+export function listAgentCategories() {
+  return AGENT_CATEGORIES.map(({ id, label, icon, description }) => ({ id, label, icon, description }))
+}
+
+export function resolveCategoryContextFields(category) {
+  const fields = category?.contextFields || Object.keys(BUSINESS_CONTEXT_FIELDS)
+  return fields.map((key) => BUSINESS_CONTEXT_FIELDS[key]).filter(Boolean)
+}
+
+export { BUSINESS_CONTEXT_FIELDS }
