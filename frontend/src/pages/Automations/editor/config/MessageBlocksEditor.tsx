@@ -38,7 +38,7 @@ import {
 import { genId } from '../flowUtils'
 import automationsService from '@/services/automationsService'
 import { MessageComposer } from '../composer/MessageComposer'
-import { TextInput, Toggle } from './configPrimitives'
+import { CatalogSelect, TextInput, Toggle } from './configPrimitives'
 import styles from '../AutomationEditor.module.css'
 
 /**
@@ -51,6 +51,8 @@ interface MessageBlocksEditorProps {
   value: unknown
   onChange: (blocks: MessageBlock[]) => void
   supportsQuickReplies?: boolean
+  /** 'chat' = globos normales; 'template' = secuencia de plantillas + retrasos */
+  variant?: 'chat' | 'template'
 }
 
 interface ContentBlockOption {
@@ -69,6 +71,12 @@ const CONTENT_BLOCKS: ContentBlockOption[] = [
   { type: 'audio', title: 'Audio', description: 'Envía una nota de voz o audio', icon: Music },
   { type: 'file', title: 'Archivo', description: 'Adjunta un documento o archivo', icon: FileText },
   { type: 'delay', title: 'Retraso', description: 'Espera unos segundos entre los textos', icon: Clock }
+]
+
+// En modo plantilla solo se encadenan plantillas y tiempos de espera
+const TEMPLATE_BLOCKS: ContentBlockOption[] = [
+  { type: 'template', title: 'Plantilla', description: 'Envía otra plantilla aprobada de WhatsApp', icon: FileText },
+  { type: 'delay', title: 'Retraso', description: 'Espera unos segundos entre plantillas', icon: Clock }
 ]
 
 const MEDIA_ACCEPT: Record<string, string> = {
@@ -91,6 +99,9 @@ function newBlock(type: MessageBlockType): MessageBlock {
   }
   if (type === 'delay') {
     return { id: genId('blk'), type, amount: 3, unit: 'seconds', showTyping: true }
+  }
+  if (type === 'template') {
+    return { id: genId('blk'), type, templateId: '', templateName: '' }
   }
   return { id: genId('blk'), type, url: '', caption: '' }
 }
@@ -209,7 +220,8 @@ const SortableBlock: React.FC<{
 export const MessageBlocksEditor: React.FC<MessageBlocksEditorProps> = ({
   value,
   onChange,
-  supportsQuickReplies = false
+  supportsQuickReplies = false,
+  variant = 'chat'
 }) => {
   const blocks = asMessageBlocks(value)
 
@@ -414,6 +426,26 @@ export const MessageBlocksEditor: React.FC<MessageBlocksEditorProps> = ({
           )
         }
 
+        if (block.type === 'template') {
+          return (
+            <SortableBlock key={block.id} id={block.id} onRemove={() => removeBlock(index)}>
+              <div className={styles.panelBubble}>
+                <div className={styles.panelDelayTitle}>
+                  <FileText size={13} />
+                  Plantilla de WhatsApp
+                </div>
+                <CatalogSelect
+                  catalog="whatsappTemplates"
+                  value={block.templateId || ''}
+                  onChange={(templateId, templateName) => updateBlock(index, { templateId, templateName })}
+                  placeholder="Selecciona la plantilla aprobada"
+                  aria-label="Plantilla"
+                />
+              </div>
+            </SortableBlock>
+          )
+        }
+
         // Adjuntos: imagen, video, audio, archivo (subir a Ristak o pegar URL)
         const MediaIcon = CONTENT_BLOCKS.find((option) => option.type === block.type)?.icon || Link2
         const isUploading = Boolean(uploading[block.id])
@@ -521,8 +553,10 @@ export const MessageBlocksEditor: React.FC<MessageBlocksEditorProps> = ({
       )}
 
       {/* ---------------------- Bloques de contenido ------------------------ */}
-      <div className={styles.contentBlocksTitle}>Añade uno de los bloques de contenido:</div>
-      {CONTENT_BLOCKS.map((option) => (
+      <div className={styles.contentBlocksTitle}>
+        {variant === 'template' ? 'Encadena plantillas y tiempos de espera:' : 'Añade uno de los bloques de contenido:'}
+      </div>
+      {(variant === 'template' ? TEMPLATE_BLOCKS : CONTENT_BLOCKS).map((option) => (
         <button
           key={option.type}
           type="button"

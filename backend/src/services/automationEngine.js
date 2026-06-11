@@ -503,13 +503,34 @@ async function sendWhatsAppBlocks(node, ctx) {
   }
 
   if (str(config.messageType) === 'template') {
-    await sendWhatsAppApiTemplateMessage({
-      to,
-      templateId: str(config.templateId) || undefined,
-      templateName: str(config.templateName) || undefined,
-      phoneNumberId
-    })
-    return `Plantilla "${str(config.templateName) || str(config.templateId)}" enviada`
+    const blocks = Array.isArray(config.messageBlocks) ? config.messageBlocks : []
+    const sequence = blocks.filter((block) => block.type === 'template' || block.type === 'delay')
+    // Compatibilidad: configs viejas con un solo templateId suelto
+    if (!sequence.some((block) => block.type === 'template') && str(config.templateId)) {
+      sequence.push({ type: 'template', templateId: str(config.templateId), templateName: str(config.templateName) })
+    }
+    const sentNames = []
+    for (const block of sequence) {
+      if (block.type === 'delay') {
+        const seconds = Math.min(
+          MAX_INLINE_DELAY_SECONDS,
+          Math.max(0, (Number(block.amount) || 0) * (block.unit === 'minutes' ? 60 : 1))
+        )
+        if (seconds > 0) await sleep(seconds * 1000)
+      } else if (str(block.templateId) || str(block.templateName)) {
+        await sendWhatsAppApiTemplateMessage({
+          to,
+          templateId: str(block.templateId) || undefined,
+          templateName: str(block.templateName) || undefined,
+          phoneNumberId
+        })
+        sentNames.push(str(block.templateName) || str(block.templateId))
+      }
+    }
+    if (sentNames.length === 0) throw new Error('No hay plantilla seleccionada')
+    return sentNames.length === 1
+      ? `Plantilla "${sentNames[0]}" enviada`
+      : `${sentNames.length} plantillas enviadas (${sentNames.join(', ')})`
   }
 
   const blocks = Array.isArray(config.messageBlocks) ? config.messageBlocks : []

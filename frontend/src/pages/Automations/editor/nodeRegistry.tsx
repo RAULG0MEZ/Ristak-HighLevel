@@ -141,7 +141,7 @@ export interface MessageButton {
   url?: string
 }
 
-export type MessageBlockType = 'text' | 'delay' | 'image' | 'video' | 'audio' | 'file'
+export type MessageBlockType = 'text' | 'delay' | 'image' | 'video' | 'audio' | 'file' | 'template'
 
 export interface MessageBlock {
   id: string
@@ -162,6 +162,9 @@ export interface MessageBlock {
   caption?: string
   /** Audio: enviar como nota de voz de WhatsApp (ogg/opus). Default true */
   voiceNote?: boolean
+  /** Bloque de plantilla de WhatsApp */
+  templateId?: string
+  templateName?: string
 }
 
 export const MEDIA_BLOCK_TYPES: MessageBlockType[] = ['image', 'video', 'audio', 'file']
@@ -1006,7 +1009,9 @@ const CHANNEL_NODES: NodeDefinition[] = [
     validate: (config) => {
       const errors: string[] = []
       if (str(config.messageType) === 'template') {
-        if (!str(config.templateId)) errors.push('Selecciona la plantilla de WhatsApp')
+        const blocks = Array.isArray(config.messageBlocks) ? (config.messageBlocks as MessageBlock[]) : []
+        const hasTemplateBlock = blocks.some((block) => block.type === 'template' && str(block.templateId))
+        if (!str(config.templateId) && !hasTemplateBlock) errors.push('Selecciona al menos una plantilla de WhatsApp')
       } else {
         errors.push(...validateMessageBlocks(config))
       }

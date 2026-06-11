@@ -28,6 +28,20 @@ export const WhatsAppConfigEditor: React.FC<{ config: Config; onChange: (config:
   const { options: numbers, loading: loadingNumbers } = useCatalogOptions('whatsappNumbers')
   const messageType = str(config.messageType) || 'text'
 
+  // Compatibilidad: si la config vieja solo tenía templateId, se ve como bloque
+  const rawBlocks = Array.isArray(config.messageBlocks) ? (config.messageBlocks as MessageBlock[]) : []
+  const templateBlocks =
+    rawBlocks.some((block) => block.type === 'template') || !str(config.templateId)
+      ? rawBlocks.filter((block) => block.type === 'template' || block.type === 'delay')
+      : [
+          {
+            id: 'tpl_legacy',
+            type: 'template' as const,
+            templateId: str(config.templateId),
+            templateName: str(config.templateName)
+          }
+        ]
+
   return (
     <div>
       {/* ------------------------------ Remitente ----------------------------- */}
@@ -90,17 +104,13 @@ export const WhatsAppConfigEditor: React.FC<{ config: Config; onChange: (config:
 
         {messageType === 'template' && (
           <>
-            <Field label="Plantilla">
-              <CatalogSelect
-                catalog="whatsappTemplates"
-                value={str(config.templateId)}
-                onChange={(value, label) => set({ templateId: value, templateName: label })}
-                placeholder="Selecciona la plantilla aprobada"
-                aria-label="Plantilla"
-              />
-            </Field>
+            <MessageBlocksEditor
+              value={templateBlocks}
+              onChange={(messageBlocks: MessageBlock[]) => set({ messageBlocks })}
+              variant="template"
+            />
             <p className={styles.configHelp}>
-              La plantilla ya incluye su idioma y sus variables configuradas: solo elígela y listo.
+              Cada plantilla ya incluye su idioma y sus variables: encadena varias con retrasos entre ellas si lo necesitas.
             </p>
           </>
         )}

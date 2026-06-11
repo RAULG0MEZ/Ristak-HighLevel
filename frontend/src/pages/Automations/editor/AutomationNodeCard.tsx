@@ -397,7 +397,11 @@ export const AutomationNodeCard: React.FC<AutomationNodeCardProps> = ({
                     onOpenConfig(node)
                   }}
                 >
-                  {block.type === 'image' && block.url ? (
+                  {block.type === 'template' ? (
+                    <span className={styles.chatBubbleText}>
+                      <FileText size={11} /> Plantilla{block.templateName ? `: ${block.templateName}` : ''}
+                    </span>
+                  ) : block.type === 'image' && block.url ? (
                     <img src={block.url} alt={block.caption || 'Imagen'} className={styles.nodeMediaThumb} draggable={false} />
                   ) : (
                     <span className={styles.chatBubbleText}>
