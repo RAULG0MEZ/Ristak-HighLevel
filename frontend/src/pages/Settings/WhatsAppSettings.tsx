@@ -34,7 +34,7 @@ type ConnectedSection = 'numbers' | 'templates' | 'alerts'
 type PhoneFilter = 'all' | 'main' | 'qr' | 'attention'
 type AlertFilter = 'all' | 'critical' | 'warning' | 'info'
 
-const YCLOUD_REGISTER_URL = 'https://www.ycloud.com/console/#/app/dashboard/createChannel/whatsapp-business-app?redirect=/app/dashboard/account'
+const YCLOUD_REGISTER_URL = 'https://www.ycloud.com/console/#/entry/register'
 const YCLOUD_CONSOLE_URL = 'https://www.ycloud.com/console/#/app/dashboard/analytics'
 const META_WHATSAPP_PAYMENT_CONFIG_URL = 'https://business.facebook.com/latest/settings/whatsapp_account'
 
