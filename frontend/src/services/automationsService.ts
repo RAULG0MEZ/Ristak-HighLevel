@@ -168,29 +168,49 @@ export const AUTOMATION_STATUS_LABELS: Record<AutomationStatus, string> = {
 // Llamadas a la API
 // ---------------------------------------------------------------------------
 
+/**
+ * Caché en memoria: la librería y el editor pintan al instante con lo último
+ * conocido (sin parpadeo de carga) mientras se revalida en segundo plano.
+ */
+export const automationsCache = {
+  overview: null as AutomationsOverview | null,
+  automations: new Map<string, Automation>()
+}
+
 export const automationsService = {
   async getOverview(): Promise<AutomationsOverview> {
-    return apiClient.get<AutomationsOverview>('/automations')
+    const overview = await apiClient.get<AutomationsOverview>('/automations')
+    automationsCache.overview = overview
+    return overview
   },
 
   async getAutomation(automationId: string): Promise<Automation> {
-    return apiClient.get<Automation>(`/automations/${automationId}`)
+    const automation = await apiClient.get<Automation>(`/automations/${automationId}`)
+    automationsCache.automations.set(automation.id, automation)
+    return automation
   },
 
   async createAutomation(input: { name: string; folderId?: string | null }): Promise<Automation> {
-    return apiClient.post<Automation>('/automations', input)
+    const automation = await apiClient.post<Automation>('/automations', input)
+    automationsCache.automations.set(automation.id, automation)
+    return automation
   },
 
   async updateAutomation(automationId: string, input: AutomationUpdateInput): Promise<Automation> {
-    return apiClient.put<Automation>(`/automations/${automationId}`, input)
+    const automation = await apiClient.put<Automation>(`/automations/${automationId}`, input)
+    automationsCache.automations.set(automation.id, automation)
+    return automation
   },
 
   async duplicateAutomation(automationId: string): Promise<Automation> {
-    return apiClient.post<Automation>(`/automations/${automationId}/duplicate`)
+    const automation = await apiClient.post<Automation>(`/automations/${automationId}/duplicate`)
+    automationsCache.automations.set(automation.id, automation)
+    return automation
   },
 
   async deleteAutomation(automationId: string): Promise<void> {
     await apiClient.delete(`/automations/${automationId}`)
+    automationsCache.automations.delete(automationId)
   },
 
   async createFolder(input: { name: string }): Promise<AutomationFolder> {

@@ -31,6 +31,7 @@ import { CustomSelect } from './editor/config/configPrimitives'
 import { useNotification } from '@/contexts/NotificationContext'
 import automationsService, {
   AUTOMATION_STATUS_LABELS,
+  automationsCache,
   type AutomationFolder,
   type AutomationStatus,
   type AutomationSummary
@@ -49,13 +50,6 @@ interface AutomationLibraryProps {
   currentAutomationId?: string
 }
 
-const STATUS_DOT: Record<AutomationStatus, string> = {
-  draft: 'incomplete',
-  published: 'ok',
-  paused: 'incomplete',
-  archived: 'error'
-}
-
 interface NameModal {
   kind: 'rename-automation' | 'rename-folder' | 'create-folder'
   targetId?: string
@@ -67,8 +61,8 @@ export const AutomationLibrary: React.FC<AutomationLibraryProps> = ({ currentAut
   const { showToast, showConfirm } = useNotification()
 
   const [collapsed, setCollapsed] = useState(false)
-  const [folders, setFolders] = useState<AutomationFolder[]>([])
-  const [automations, setAutomations] = useState<AutomationSummary[]>([])
+  const [folders, setFolders] = useState<AutomationFolder[]>(automationsCache.overview?.folders || [])
+  const [automations, setAutomations] = useState<AutomationSummary[]>(automationsCache.overview?.automations || [])
   const [folderId, setFolderId] = useState<string | null>(null)
   const [initialized, setInitialized] = useState(false)
   const [query, setQuery] = useState('')
@@ -452,11 +446,9 @@ export const AutomationLibrary: React.FC<AutomationLibraryProps> = ({ currentAut
                 <span className={styles.libRowName} title={automation.name}>
                   {automation.name}
                 </span>
-                <span
-                  className={styles.nodeStatusDot}
-                  data-state={STATUS_DOT[automation.status]}
-                  title={AUTOMATION_STATUS_LABELS[automation.status]}
-                />
+                <span className={styles.libStatusPill} data-status={automation.status}>
+                  {AUTOMATION_STATUS_LABELS[automation.status]}
+                </span>
               </span>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

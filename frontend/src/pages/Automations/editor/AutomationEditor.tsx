@@ -31,6 +31,7 @@ import {
 } from '@/components/common'
 import { useNotification } from '@/contexts/NotificationContext'
 import automationsService, {
+  automationsCache,
   AUTOMATION_STATUS_LABELS,
   defaultFlowSettings,
   type Automation,
@@ -245,24 +246,40 @@ export const AutomationEditor: React.FC = () => {
 
   useEffect(() => {
     let cancelled = false
+
+    const initFrom = (data: Automation) => {
+      setAutomation(data)
+      setName(data.name)
+      viewportRef.current = data.flow.viewport || { x: 0, y: 0, zoom: 1 }
+      setFlowSettings({ ...defaultFlowSettings(), ...(data.flow.settings || {}) })
+      // Migra nodos de versiones anteriores (If/Else, Telegram, canales retirados)
+      dispatch({
+        type: 'init',
+        flow: { nodes: migrateLegacyFlow(data.flow.nodes), edges: data.flow.edges }
+      })
+      savedRevisionRef.current = 0
+      setSaveState('saved')
+    }
+
+    // Sin parpadeo: si ya lo conocemos, se pinta al instante desde el caché
+    // y se revalida en segundo plano (solo se aplica si aún no editas nada)
+    const cached = automationsCache.automations.get(automationId)
+    if (cached) initFrom(cached)
+
     automationsService
       .getAutomation(automationId)
       .then((data) => {
         if (cancelled) return
-        setAutomation(data)
-        setName(data.name)
-        viewportRef.current = data.flow.viewport || { x: 0, y: 0, zoom: 1 }
-        setFlowSettings({ ...defaultFlowSettings(), ...(data.flow.settings || {}) })
-        // Migra nodos de versiones anteriores (If/Else, Telegram, canales retirados)
-        dispatch({
-          type: 'init',
-          flow: { nodes: migrateLegacyFlow(data.flow.nodes), edges: data.flow.edges }
-        })
-        savedRevisionRef.current = 0
-        setSaveState('saved')
+        if (!cached) {
+          initFrom(data)
+          return
+        }
+        const untouched =
+          stateRef.current.past.length === 0 && stateRef.current.future.length === 0
+        if (untouched && data.updatedAt !== cached.updatedAt) initFrom(data)
       })
       .catch(() => {
-        if (!cancelled) setLoadError(true)
+        if (!cancelled && !cached) setLoadError(true)
       })
     return () => {
       cancelled = true
@@ -1087,50 +1104,29 @@ export const AutomationEditor: React.FC = () => {
           aria-label="Nombre de la automatización"
         />
 
-        <Badge variant={STATUS_BADGE_VARIANT[status]}>{AUTOMATION_STATUS_LABELS[status]}</Badge>
+        {/* Deshacer / Rehacer junto al título */}
+        <button
+          type="button"
+          className={styles.iconButton}
+          title="Deshacer (Ctrl+Z)"
+          disabled={state.past.length === 0}
+          onClick={() => dispatch({ type: 'undo' })}
+        >
+          <Undo2 size={14} />
+        </button>
+        <button
+          type="button"
+          className={styles.iconButton}
+          title="Rehacer (Ctrl+Shift+Z)"
+          disabled={state.future.length === 0}
+          onClick={() => dispatch({ type: 'redo' })}
+        >
+          <Redo2 size={14} />
+        </button>
 
         <div className={styles.toolbarSpacer} />
 
-        <span className={cn(styles.saveIndicator, saveState === 'error' && styles.saveIndicatorError)}>
-          {saveState === 'saving' && <Loader2 size={12} className="animate-spin" />}
-          {saveState === 'saved' && <Check size={12} />}
-          {saveState === 'error' && <CloudOff size={12} />}
-          {saveState === 'saving'
-            ? 'Guardando…'
-            : saveState === 'saved'
-              ? 'Guardado'
-              : saveState === 'error'
-                ? 'Error al guardar'
-                : 'Cambios sin guardar'}
-        </span>
-
         <div className={styles.toolbarGroup}>
-          <button
-            type="button"
-            className={styles.iconButton}
-            title="Deshacer (Ctrl+Z)"
-            disabled={state.past.length === 0}
-            onClick={() => dispatch({ type: 'undo' })}
-          >
-            <Undo2 size={14} />
-          </button>
-          <button
-            type="button"
-            className={styles.iconButton}
-            title="Rehacer (Ctrl+Shift+Z)"
-            disabled={state.future.length === 0}
-            onClick={() => dispatch({ type: 'redo' })}
-          >
-            <Redo2 size={14} />
-          </button>
-          <button
-            type="button"
-            className={styles.iconButton}
-            title="Guardar ahora"
-            onClick={() => void persistFlow()}
-          >
-            <Save size={14} />
-          </button>
           <Button
             variant="secondary"
             size="sm"
@@ -1156,6 +1152,26 @@ export const AutomationEditor: React.FC = () => {
         </div>
 
         <div className={styles.toolbarGroup}>
+          <span className={cn(styles.saveIndicator, saveState === 'error' && styles.saveIndicatorError)}>
+            {saveState === 'saving' && <Loader2 size={12} className="animate-spin" />}
+            {saveState === 'saved' && <Check size={12} />}
+            {saveState === 'error' && <CloudOff size={12} />}
+            {saveState === 'saving'
+              ? 'Guardando…'
+              : saveState === 'saved'
+                ? 'Guardado'
+                : saveState === 'error'
+                  ? 'Error al guardar'
+                  : 'Cambios sin guardar'}
+          </span>
+          <Button
+            variant="secondary"
+            size="sm"
+            leftIcon={<Save size={13} />}
+            onClick={() => void persistFlow()}
+          >
+            Guardar
+          </Button>
           <Button variant="secondary" size="sm" leftIcon={<Eye size={13} />} onClick={() => setPreviewOpen(true)}>
             Vista previa
           </Button>
