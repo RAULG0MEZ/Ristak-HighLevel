@@ -447,16 +447,30 @@ export const NodeConfigBubble: React.FC<NodeConfigBubbleProps> = ({
     }
   }
 
-  // El panel aparece a la derecha del evento, casi a la altura completa del
-  // canvas, para que la edición no se sienta lejos de la cajita.
+  // El panel aparece a la derecha del evento y A SU ALTURA: si el contenido
+  // es alto y no cabe, se desplaza hacia arriba solo lo necesario.
   const left = Math.max(12, Math.min(anchor.x, bounds.width - PANEL_WIDTH - 12))
+  const [top, setTop] = useState(() => Math.max(12, anchor.y))
+
+  useEffect(() => {
+    const element = rootRef.current
+    if (!element) return
+    const reposition = () => {
+      const height = element.offsetHeight
+      setTop(Math.max(12, Math.min(anchor.y, bounds.height - height - 12)))
+    }
+    reposition()
+    const observer = new ResizeObserver(reposition)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [anchor.y, bounds.height])
 
   return (
     <div
       ref={rootRef}
       data-automation-interactive="true"
       className={styles.configPanel}
-      style={{ left }}
+      style={{ left, top }}
       role="complementary"
       aria-label={`Configurar ${definition.label}`}
       onPointerDown={(event) => event.stopPropagation()}
