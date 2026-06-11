@@ -4,6 +4,17 @@ import { db, getAppConfig, setAppConfig } from '../config/database.js'
 import { getAccountTimezone } from '../utils/dateUtils.js'
 import { sendWhatsAppApiTextMessage } from './whatsappApiService.js'
 import { logger } from '../utils/logger.js'
+import {
+  DEFAULT_REMINDER_TEXT,
+  DEFAULT_CONFIRMATION_TEXT,
+  parseHHMM,
+  formatOffsetLabel,
+  offsetToMs,
+  computeReminderSendAt,
+  renderMessageText
+} from './appointmentReminderLogic.js'
+
+export { DEFAULT_REMINDER_TEXT, DEFAULT_CONFIRMATION_TEXT, formatOffsetLabel, computeReminderSendAt }
 
 const SEEDED_CONFIG_KEY = 'appointment_reminders_seeded'
 
@@ -16,18 +27,6 @@ const MESSAGE_TYPES = new Set(['reminder', 'confirmation'])
 const OFFSET_UNITS = new Set(['minutes', 'hours', 'days'])
 const SENDER_MODES = new Set(['contact', 'default', 'specific'])
 const SMART_OVERFLOWS = new Set(['before', 'next_day'])
-
-const OFFSET_UNIT_MS = {
-  minutes: 60 * 1000,
-  hours: 60 * 60 * 1000,
-  days: 24 * 60 * 60 * 1000
-}
-
-export const DEFAULT_REMINDER_TEXT =
-  'Hola {{contact.first_name}}, te recordamos tu cita "{{cita.titulo}}" el {{cita.fecha}} a las {{cita.hora}}. ¡Te esperamos!'
-
-export const DEFAULT_CONFIRMATION_TEXT =
-  'Hola {{contact.first_name}}, ¿confirmas tu cita "{{cita.titulo}}" el {{cita.fecha}} a las {{cita.hora}}? Responde SÍ para confirmarla.'
 
 function cleanString(value) {
   if (value === null || value === undefined) return ''
@@ -50,22 +49,6 @@ function createSendId() {
 
 function nowIso() {
   return new Date().toISOString()
-}
-
-function parseHHMM(value, fallback) {
-  const match = /^(\d{1,2}):(\d{2})$/.exec(cleanString(value))
-  if (!match) return fallback
-  const hour = Number(match[1])
-  const minute = Number(match[2])
-  if (hour > 23 || minute > 59) return fallback
-  return { hour, minute }
-}
-
-export function formatOffsetLabel(offsetValue, offsetUnit) {
-  const value = Number(offsetValue) || 0
-  if (offsetUnit === 'minutes') return `${value} min antes`
-  if (offsetUnit === 'hours') return value === 1 ? '1 hora antes' : `${value} horas antes`
-  return value === 1 ? '1 día antes' : `${value} días antes`
 }
 
 function normalizeReminderRow(row = {}) {
@@ -92,10 +75,6 @@ function normalizeReminderRow(row = {}) {
     createdAt: cleanString(row.created_at),
     updatedAt: cleanString(row.updated_at)
   }
-}
-
-function offsetToMs(reminder) {
-  return reminder.offsetValue * (OFFSET_UNIT_MS[reminder.offsetUnit] || OFFSET_UNIT_MS.days)
 }
 
 async function listSenderOptions() {
@@ -241,68 +220,6 @@ export async function ensureDefaultAppointmentReminder() {
   }
 
   await setAppConfig(SEEDED_CONFIG_KEY, '1')
-}
-
-/**
- * Calcula el instante UTC en que debe salir el mensaje para una cita.
- * Aplica la ventana de horario inteligente en la zona horaria de la cuenta.
- */
-export function computeReminderSendAt(startTimeIso, reminder, timezone) {
-  const start = DateTime.fromISO(cleanString(startTimeIso).replace(' ', 'T'), { zone: 'utc' })
-  if (!start.isValid) return null
-
-  let sendAt = start.minus({ milliseconds: offsetToMs(reminder) })
-
-  if (reminder.smartEnabled) {
-    const startParts = parseHHMM(reminder.smartStart, { hour: 9, minute: 0 })
-    const endParts = parseHHMM(reminder.smartEnd, { hour: 21, minute: 0 })
-    const local = sendAt.setZone(timezone)
-    const windowStart = local.set({ hour: startParts.hour, minute: startParts.minute, second: 0, millisecond: 0 })
-    const windowEnd = local.set({ hour: endParts.hour, minute: endParts.minute, second: 0, millisecond: 0 })
-
-    if (windowEnd > windowStart) {
-      let adjusted = local
-      if (local < windowStart) {
-        // Quedó en la madrugada: o el día anterior antes de cerrar la ventana,
-        // o ese mismo día cuando abre la ventana.
-        adjusted = reminder.smartOverflow === 'next_day' ? windowStart : windowEnd.minus({ days: 1 })
-      } else if (local > windowEnd) {
-        adjusted = reminder.smartOverflow === 'next_day' ? windowStart.plus({ days: 1 }) : windowEnd
-      }
-      sendAt = adjusted.toUTC()
-    }
-  }
-
-  // Nunca después de la cita: si el ajuste lo empuja más allá del inicio,
-  // se respeta la hora original sin ajuste inteligente.
-  if (sendAt >= start) {
-    sendAt = start.minus({ milliseconds: offsetToMs(reminder) })
-  }
-
-  return sendAt
-}
-
-function renderMessageText(template, { contact = {}, appointment = {}, timezone }) {
-  const fullName = cleanString(contact.full_name) ||
-    [cleanString(contact.first_name), cleanString(contact.last_name)].filter(Boolean).join(' ')
-  const firstName = cleanString(contact.first_name) || fullName.split(' ')[0] || ''
-
-  const start = DateTime
-    .fromISO(cleanString(appointment.start_time).replace(' ', 'T'), { zone: 'utc' })
-    .setZone(timezone)
-    .setLocale('es')
-
-  const values = {
-    'contact.name': fullName,
-    'contact.full_name': fullName,
-    'contact.first_name': firstName,
-    'contact.phone': cleanString(contact.phone),
-    'cita.titulo': cleanString(appointment.title) || 'tu cita',
-    'cita.fecha': start.isValid ? start.toFormat("cccc d 'de' LLLL") : '',
-    'cita.hora': start.isValid ? start.toFormat('h:mm a').toLowerCase() : ''
-  }
-
-  return cleanString(template).replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key) => values[key] ?? '')
 }
 
 async function resolveSenderPhone(reminder, contact) {

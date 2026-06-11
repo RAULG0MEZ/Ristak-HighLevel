@@ -1,44 +1,9 @@
 import { db } from '../config/database.js'
 import { logger } from '../utils/logger.js'
 
-// Detección de respuestas afirmativas a mensajes de confirmación de cita.
-// Mantenerlo conservador: solo respuestas cortas y claramente afirmativas
-// confirman la cita; cualquier otra cosa se deja para revisión humana.
-const AFFIRMATIVE_TOKENS = new Set([
-  'si', 'sii', 'siii', 'sip', 'simon', 'yes', 'ok', 'okay', 'okey', 'oki',
-  'vale', 'va', 'sale', 'dale', 'claro', 'confirmo', 'confirmado', 'confirmada',
-  'confirmar', 'perfecto', 'listo', 'deacuerdo', 'correcto', 'porsupuesto',
-  'ahivoy', 'ahiestare', 'asistire', 'cuentaconmigo'
-])
+import { isAffirmativeReply } from './appointmentReminderLogic.js'
 
-const AFFIRMATIVE_EMOJI = /[👍✅👌🙌]/u
-
-function normalizeReplyText(text = '') {
-  return String(text)
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-export function isAffirmativeReply(text = '') {
-  const raw = String(text || '').trim()
-  if (!raw) return false
-  if (raw.length <= 8 && AFFIRMATIVE_EMOJI.test(raw)) return true
-
-  const normalized = normalizeReplyText(raw)
-  if (!normalized || normalized.length > 60) return false
-
-  if (AFFIRMATIVE_TOKENS.has(normalized.replace(/\s/g, ''))) return true
-
-  // Frases cortas tipo "si confirmo", "si claro ahi estare", "ok perfecto".
-  const words = normalized.split(' ')
-  if (words.length <= 6 && words.some(word => AFFIRMATIVE_TOKENS.has(word))) return true
-
-  return false
-}
+export { isAffirmativeReply }
 
 /**
  * Cuando un contacto responde afirmativamente a un mensaje de confirmación
