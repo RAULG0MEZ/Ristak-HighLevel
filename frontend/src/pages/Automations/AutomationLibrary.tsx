@@ -27,7 +27,11 @@ DropdownMenuItem,
 DropdownMenuSeparator,
 DropdownMenuTrigger
 } from '@/components/common'
-import { CustomSelect } from './editor/config/configPrimitives'
+import { CustomSelect as BaseCustomSelect } from '@/components/common'
+
+const CustomSelect: React.FC<React.ComponentProps<typeof BaseCustomSelect>> = (props) => (
+  <BaseCustomSelect portal {...props} />
+)
 import { useNotification } from '@/contexts/NotificationContext'
 import automationsService, {
   AUTOMATION_STATUS_LABELS,

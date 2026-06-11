@@ -43,6 +43,7 @@ import {
   verticalListSortingStrategy
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import automationsService from '@/services/automationsService'
 
 interface SidebarProps {
   onNavigate?: () => void
@@ -271,6 +272,14 @@ const SortableItem: React.FC<SortableItemProps> = ({ item, isActive, isDragging,
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, onLogout }) => {
+  // Precalienta la librería de automatizaciones (abre sin parpadeo)
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void automationsService.getOverview().catch(() => undefined)
+    }, 2500)
+    return () => window.clearTimeout(timer)
+  }, [])
+
   const location = useLocation()
   const {
     theme,

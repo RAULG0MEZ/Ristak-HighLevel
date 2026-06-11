@@ -1,6 +1,6 @@
 import { customFieldsService } from './customFieldsService'
 import { calendarsService } from './calendarsService'
-import { whatsappApiService } from './whatsappApiService'
+import { whatsappApiService, type WhatsAppApiTemplate } from './whatsappApiService'
 import { sitesService } from './sitesService'
 
 /**
@@ -120,9 +120,36 @@ async function loadWhatsAppNumbers(): Promise<CatalogOption[]> {
   }))
 }
 
+// Plantillas completas (con components: cuerpo, botones…) para previsualizar
+let rawTemplatesCache: WhatsAppApiTemplate[] | null = null
+let rawTemplatesPromise: Promise<WhatsAppApiTemplate[]> | null = null
+
+async function loadRawWhatsAppTemplates(): Promise<WhatsAppApiTemplate[]> {
+  if (rawTemplatesCache) return rawTemplatesCache
+  if (!rawTemplatesPromise) {
+    rawTemplatesPromise = whatsappApiService
+      .getTemplates('APPROVED')
+      .then((response) => {
+        rawTemplatesCache = response.items || []
+        return rawTemplatesCache
+      })
+      .catch(() => {
+        rawTemplatesPromise = null
+        return []
+      })
+  }
+  return rawTemplatesPromise
+}
+
+/** Devuelve la plantilla completa (para mostrar exactamente qué envía) */
+export async function getWhatsAppTemplate(templateId: string): Promise<WhatsAppApiTemplate | null> {
+  const templates = await loadRawWhatsAppTemplates()
+  return templates.find((template) => template.id === templateId) || null
+}
+
 async function loadWhatsAppTemplates(): Promise<CatalogOption[]> {
-  const response = await whatsappApiService.getTemplates('APPROVED')
-  return (response.items || []).map((template) => ({
+  const templates = await loadRawWhatsAppTemplates()
+  return templates.map((template) => ({
     value: template.id,
     label: template.name,
     meta: template.language

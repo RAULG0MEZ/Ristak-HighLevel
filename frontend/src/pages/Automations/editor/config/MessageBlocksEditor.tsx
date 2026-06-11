@@ -39,6 +39,7 @@ import { genId } from '../flowUtils'
 import automationsService from '@/services/automationsService'
 import { MessageComposer } from '../composer/MessageComposer'
 import { CatalogSelect, TextInput, Toggle } from './configPrimitives'
+import { WhatsAppTemplatePreview } from './WhatsAppTemplatePreview'
 import styles from '../AutomationEditor.module.css'
 
 /**
@@ -441,6 +442,8 @@ export const MessageBlocksEditor: React.FC<MessageBlocksEditorProps> = ({
                   placeholder="Selecciona la plantilla aprobada"
                   aria-label="Plantilla"
                 />
+                {/* Lo que la plantilla envía de verdad: texto, variables y botones */}
+                {block.templateId && <WhatsAppTemplatePreview templateId={block.templateId} />}
               </div>
             </SortableBlock>
           )
