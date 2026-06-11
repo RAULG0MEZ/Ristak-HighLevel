@@ -1706,6 +1706,14 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
   }, [messages, sending, savingConfig, visible])
 
   useEffect(() => {
+    // Versiones anteriores guardaban la especialidad en localStorage y dejaba
+    // el chat "atorado" en un agente; límpiala para todos los navegadores.
+    try {
+      localStorage.removeItem('ristak.aiAgentFloating.category')
+    } catch { /* almacenamiento no disponible */ }
+  }, [])
+
+  useEffect(() => {
     if (!status.configured) return
     let cancelled = false
     aiAgentService.getAgents()
