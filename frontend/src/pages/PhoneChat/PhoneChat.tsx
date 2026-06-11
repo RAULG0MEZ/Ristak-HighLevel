@@ -57,7 +57,7 @@ import {
 } from 'lucide-react'
 import { FaMicrophone } from 'react-icons/fa'
 import { MdArchive } from 'react-icons/md'
-import { AppointmentModal, Icon, RecordPaymentModal } from '@/components/common'
+import { AppointmentModal, Icon, Modal, RecordPaymentModal } from '@/components/common'
 import { PhoneEcosystemNav } from '@/components/phone/PhoneEcosystemNav'
 import { PhonePageTransition } from '@/components/phone/PhonePageTransition'
 import { PhoneSelect } from '@/components/phone/PhoneSelect'
@@ -79,7 +79,7 @@ import {
 import { mobileAppService, type MobileChatAttachment, type MobileDocumentAttachment, type MobilePhotoAttachment } from '@/services/mobileAppService'
 import { getPhoneDailyCacheKey, readPhoneDailyCache, writePhoneDailyCache } from '@/services/phoneDailyCache'
 import { pushNotificationsService } from '@/services/pushNotificationsService'
-import { whatsappApiService, type ScheduledChatMessage, type WhatsAppApiStatus, type WhatsAppApiTemplate } from '@/services/whatsappApiService'
+import { whatsappApiService, type ScheduledChatMessage, type WhatsAppApiPendingRestore, type WhatsAppApiPhoneNumber, type WhatsAppApiStatus, type WhatsAppApiTemplate } from '@/services/whatsappApiService'
 import type { Contact, ContactCustomField, ContactCustomFieldDefinition } from '@/types'
 import { getContactStageBadge } from '@/utils/contactStageBadge'
 import {
@@ -365,6 +365,24 @@ interface VoiceDraftAttachment {
 interface MessageAudioPlaybackState {
   currentTime: number
   duration: number
+}
+
+const QR_RISK_ACCEPTED_STORAGE_KEY = 'ristak_phone_qr_risk_accepted'
+
+function readQrRiskAcceptedIds(): Record<string, boolean> {
+  try {
+    return JSON.parse(window.localStorage.getItem(QR_RISK_ACCEPTED_STORAGE_KEY) || '{}')
+  } catch {
+    return {}
+  }
+}
+
+function writeQrRiskAcceptedIds(value: Record<string, boolean>) {
+  try {
+    window.localStorage.setItem(QR_RISK_ACCEPTED_STORAGE_KEY, JSON.stringify(value))
+  } catch {
+    // almacenamiento no disponible; el consentimiento se pedirá otra vez
+  }
 }
 
 interface ChatContact extends Contact {
@@ -2465,6 +2483,14 @@ export const PhoneChat: React.FC = () => {
   const [schedulingMessage, setSchedulingMessage] = useState(false)
   const [cancelingScheduledMessageId, setCancelingScheduledMessageId] = useState<string | null>(null)
   const [whatsappStatus, setWhatsappStatus] = useState<WhatsAppApiStatus | null>(null)
+  const [numberIssueOpen, setNumberIssueOpen] = useState(false)
+  const [numberIssueApplyAll, setNumberIssueApplyAll] = useState(false)
+  const [numberIssueSwitchingTo, setNumberIssueSwitchingTo] = useState<string | null>(null)
+  const [qrRiskPhone, setQrRiskPhone] = useState<WhatsAppApiPhoneNumber | null>(null)
+  const [qrRiskAcceptedIds, setQrRiskAcceptedIds] = useState<Record<string, boolean>>(() => readQrRiskAcceptedIds())
+  const [restorePrompt, setRestorePrompt] = useState<WhatsAppApiPendingRestore | null>(null)
+  const [restoringNumber, setRestoringNumber] = useState(false)
+  const dismissedRestoreIdsRef = useRef<Set<string>>(new Set())
   const [calendars, setCalendars] = useState<Calendar[]>([])
   const [calendarsLoading, setCalendarsLoading] = useState(false)
   const [selectedCalendarId, setSelectedCalendarId] = useState('')
@@ -5604,6 +5630,97 @@ export const PhoneChat: React.FC = () => {
     }
   }
 
+  const numberIssueAlternativePhones = useMemo(() => (
+    businessPhones.filter((phone) => (
+      phone.id !== selectedBusinessPhone?.id &&
+      (!phone.availability || phone.availability.available)
+    ))
+  ), [businessPhones, selectedBusinessPhone?.id])
+
+  const handleSwitchConversationNumber = useCallback(async (targetPhone: WhatsAppApiPhoneNumber) => {
+    if (!activeContact || !targetPhone?.id) return
+    const failingPhone = selectedBusinessPhone
+    const targetLabel = targetPhone.display_phone_number || targetPhone.phone_number || 'el otro número'
+    setNumberIssueSwitchingTo(targetPhone.id)
+    try {
+      if (numberIssueApplyAll && failingPhone?.id) {
+        const result = await whatsappApiService.rerouteContacts(
+          failingPhone.id,
+          targetPhone.id,
+          `Número ${failingPhone.display_phone_number || failingPhone.phone_number || failingPhone.id} no disponible`
+        )
+        setChats((current) => current.map((contact) => (
+          contact.preferredWhatsAppPhoneNumberId === failingPhone.id || contact.id === activeContact.id
+            ? { ...contact, preferredWhatsAppPhoneNumberId: targetPhone.id, preferred_whatsapp_phone_number_id: targetPhone.id }
+            : contact
+        )))
+        showToast('success', 'Contactos movidos', `${result.moved} contacto(s) ahora responden por ${targetLabel}. Envía de nuevo tu mensaje.`)
+      } else {
+        await contactsService.updateContact(activeContact.id, {
+          preferredWhatsAppPhoneNumberId: targetPhone.id,
+          routingSource: 'contingency',
+          routingReason: 'Cambio temporal: el número original no está disponible'
+        } as Partial<Contact>)
+        setChats((current) => current.map((contact) => (
+          contact.id === activeContact.id
+            ? { ...contact, preferredWhatsAppPhoneNumberId: targetPhone.id, preferred_whatsapp_phone_number_id: targetPhone.id }
+            : contact
+        )))
+        showToast('success', 'Número cambiado', `Esta conversación ahora responde por ${targetLabel}. Envía de nuevo tu mensaje.`)
+      }
+      setNumberIssueOpen(false)
+    } catch (error: any) {
+      showToast('error', 'No se pudo cambiar el número', getErrorMessage(error, 'Intenta otra vez.'))
+    } finally {
+      setNumberIssueSwitchingTo(null)
+    }
+  }, [activeContact, numberIssueApplyAll, selectedBusinessPhone, showToast])
+
+  const handleAcceptQrRisk = useCallback(() => {
+    if (!qrRiskPhone?.id) return
+    setQrRiskAcceptedIds((current) => {
+      const next = { ...current, [qrRiskPhone.id]: true }
+      writeQrRiskAcceptedIds(next)
+      return next
+    })
+    setQrRiskPhone(null)
+    setNumberIssueOpen(false)
+    showToast('success', 'Respaldo QR activado', 'Tus mensajes saldrán por WhatsApp Web mientras la API de este número no esté disponible. Envía de nuevo tu mensaje.')
+  }, [qrRiskPhone, showToast])
+
+  useEffect(() => {
+    const pending = whatsappStatus?.pendingRestores || []
+    if (!pending.length) return
+    const next = pending.find((item) => !dismissedRestoreIdsRef.current.has(item.phoneNumberId))
+    if (next) {
+      setRestorePrompt((current) => current || next)
+    }
+  }, [whatsappStatus?.pendingRestores])
+
+  const handleDismissRestorePrompt = useCallback(() => {
+    if (restorePrompt) {
+      dismissedRestoreIdsRef.current.add(restorePrompt.phoneNumberId)
+    }
+    setRestorePrompt(null)
+  }, [restorePrompt])
+
+  const handleConfirmRestore = useCallback(async () => {
+    if (!restorePrompt || restoringNumber) return
+    setRestoringNumber(true)
+    try {
+      const result = await whatsappApiService.restoreContacts(restorePrompt.phoneNumberId)
+      dismissedRestoreIdsRef.current.add(restorePrompt.phoneNumberId)
+      setRestorePrompt(null)
+      showToast('success', 'Contactos restaurados', `${result.restored} contacto(s) regresaron a ${restorePrompt.phone}. Los que cambiaste manualmente se quedaron como estaban.`)
+      loadChats({ silent: true, useCache: false }).catch(() => null)
+      whatsappApiService.getStatus().then(setWhatsappStatus).catch(() => null)
+    } catch (error: any) {
+      showToast('error', 'No se pudo restaurar', getErrorMessage(error, 'Intenta otra vez.'))
+    } finally {
+      setRestoringNumber(false)
+    }
+  }, [loadChats, restorePrompt, restoringNumber, showToast])
+
   const handleSendMessage = async (transport: 'api' | 'qr' = 'api', options: SendMessageOptions = {}) => {
     const textOverride = options.textOverride?.trim()
     const hasTextOverride = Boolean(textOverride)
@@ -5771,7 +5888,19 @@ export const PhoneChat: React.FC = () => {
       return
     }
 
-    const resolvedTransport: 'api' | 'qr' = selectedQrReady && (transport === 'qr' || !apiReplyWindowOpen || !whatsappConnected)
+    // El número emisor no puede enviar: en lugar de fallar el envío, ofrecer soluciones.
+    const sendAvailability = selectedBusinessPhone?.availability
+    if (sendAvailability && !sendAvailability.available) {
+      setNumberIssueOpen(true)
+      return
+    }
+    const apiUnavailableForSelected = Boolean(sendAvailability && !sendAvailability.apiAvailable)
+    if (apiUnavailableForSelected && sendAvailability?.qrReady && selectedBusinessPhone?.id && !qrRiskAcceptedIds[selectedBusinessPhone.id]) {
+      setQrRiskPhone(selectedBusinessPhone)
+      return
+    }
+
+    const resolvedTransport: 'api' | 'qr' = selectedQrReady && (transport === 'qr' || !apiReplyWindowOpen || !whatsappConnected || apiUnavailableForSelected)
       ? 'qr'
       : 'api'
 
@@ -9632,6 +9761,125 @@ export const PhoneChat: React.FC = () => {
           </section>
         </div>
       )}
+
+      <Modal
+        isOpen={numberIssueOpen}
+        onClose={() => setNumberIssueOpen(false)}
+        title="Este número no está disponible"
+        type="custom"
+        size="md"
+        draggableSheet
+      >
+        <div className={styles.numberIssueBody}>
+          <p className={styles.numberIssueReason}>
+            {(selectedBusinessPhone?.display_phone_number || selectedBusinessPhone?.phone_number || 'El número de este chat')}{' '}
+            no puede enviar mensajes ahora.
+            {selectedBusinessPhone?.availability?.apiReason ? ` ${selectedBusinessPhone.availability.apiReason}` : ''}
+          </p>
+
+          {selectedBusinessPhone?.availability?.qrReady && (
+            <button
+              type="button"
+              className={styles.numberIssueOption}
+              onClick={() => setQrRiskPhone(selectedBusinessPhone)}
+            >
+              Usar el respaldo por QR de este número
+              <span className={styles.numberIssueOptionHint}>WhatsApp Web del mismo número</span>
+            </button>
+          )}
+
+          {numberIssueAlternativePhones.length > 0 && (
+            <>
+              <p className={styles.numberIssueSectionTitle}>Cambiar la comunicación a otro número:</p>
+              <label className={styles.numberIssueApplyAll}>
+                <input
+                  type="checkbox"
+                  checked={numberIssueApplyAll}
+                  onChange={(event) => setNumberIssueApplyAll(event.target.checked)}
+                />
+                Mover también el resto de contactos de este número
+              </label>
+              {numberIssueAlternativePhones.map((phone) => (
+                <button
+                  key={phone.id}
+                  type="button"
+                  className={styles.numberIssueOption}
+                  disabled={Boolean(numberIssueSwitchingTo)}
+                  onClick={() => handleSwitchConversationNumber(phone)}
+                >
+                  {numberIssueSwitchingTo === phone.id ? 'Cambiando…' : (phone.display_phone_number || phone.phone_number || phone.id)}
+                  {phone.verified_name ? <span className={styles.numberIssueOptionHint}>{phone.verified_name}</span> : null}
+                </button>
+              ))}
+            </>
+          )}
+
+          <button
+            type="button"
+            className={styles.numberIssueOption}
+            onClick={() => {
+              setNumberIssueOpen(false)
+              navigate('/settings/whatsapp')
+            }}
+          >
+            Conectar o configurar otro número
+          </button>
+          <button
+            type="button"
+            className={`${styles.numberIssueOption} ${styles.numberIssueOptionSecondary}`}
+            onClick={() => setNumberIssueOpen(false)}
+          >
+            Esperar a que este número vuelva
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(qrRiskPhone)}
+        onClose={() => setQrRiskPhone(null)}
+        title="Respaldo por WhatsApp Web (QR)"
+        type="confirm"
+        size="md"
+        draggableSheet
+        confirmText="Acepto el riesgo y continuar"
+        cancelText="Cancelar"
+        onConfirm={handleAcceptQrRisk}
+        onCancel={() => setQrRiskPhone(null)}
+      >
+        <div className={styles.numberIssueBody}>
+          <p>
+            Vas a enviar mensajes con la sesión de WhatsApp Web de{' '}
+            {qrRiskPhone?.display_phone_number || qrRiskPhone?.phone_number || 'este número'}, no con la API oficial de Meta.
+          </p>
+          <p>
+            WhatsApp puede cerrar esa sesión, restringir o incluso bloquear el número. Úsalo como respaldo
+            temporal mientras la API vuelve a estar disponible.
+          </p>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={Boolean(restorePrompt)}
+        onClose={handleDismissRestorePrompt}
+        title="Un número volvió a estar disponible"
+        type="confirm"
+        size="md"
+        draggableSheet
+        confirmText={restoringNumber ? 'Regresando…' : 'Sí, regresar contactos'}
+        cancelText="Mantener como están"
+        onConfirm={handleConfirmRestore}
+        onCancel={handleDismissRestorePrompt}
+      >
+        <div className={styles.numberIssueBody}>
+          <p>
+            {restorePrompt?.phone || 'El número original'} ya puede enviar mensajes otra vez.
+            ¿Quieres regresar {restorePrompt?.contactCount || 0} contacto(s) que se movieron por contingencia a ese número?
+          </p>
+          <p className={styles.numberIssueOptionHint}>
+            Los contactos que cambiaste manualmente se quedarán como están.
+          </p>
+        </div>
+      </Modal>
 
       <AppointmentModal
         isOpen={appointmentOpen}

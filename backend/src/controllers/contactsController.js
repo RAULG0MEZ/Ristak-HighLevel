@@ -2168,15 +2168,19 @@ export const updateContact = async (req, res) => {
       const newPreferredId = cleanString(preferredWhatsAppPhoneNumberInput)
       if (previousPreferredId !== newPreferredId) {
         const routingReason = cleanString(req.body.routingReason || req.body.preferredWhatsAppPhoneNumberReason)
+        // 'contingency' = movido porque su número no estaba disponible (elegible para
+        // restauración automática); 'manual' = decisión deliberada del usuario.
+        const routingSource = cleanString(req.body.routingSource) === 'contingency' ? 'contingency' : 'manual'
         await db.run(`
           INSERT INTO whatsapp_routing_events (id, contact_id, previous_phone_number_id, new_phone_number_id, reason, source)
-          VALUES (?, ?, ?, ?, ?, 'manual')
+          VALUES (?, ?, ?, ?, ?, ?)
         `, [
           randomUUID(),
           id,
           previousPreferredId || null,
           newPreferredId || null,
-          routingReason || 'Cambio manual de número preferido'
+          routingReason || 'Cambio manual de número preferido',
+          routingSource
         ]).catch(error => {
           logger.warn(`No se pudo registrar el cambio de número de ${id}: ${error.message}`)
         })

@@ -921,6 +921,35 @@ export const WhatsAppSettings: React.FC = () => {
           </p>
         </div>
       </Modal>
+
+      <Modal
+        isOpen={Boolean(apiStatus?.needsDefaultSelection)}
+        onClose={() => null}
+        title="Elige tu número principal"
+        type="custom"
+        size="md"
+        showCloseButton={false}
+      >
+        <div className={styles.qrConsentBody}>
+          <p>
+            Hay varios números de WhatsApp conectados y ninguno está marcado como principal.
+            El número principal se usa para contactos nuevos, importaciones, campañas y
+            automatizaciones cuando un chat no tiene un número asignado.
+          </p>
+          {(apiStatus?.phoneNumbers || []).map((phone) => (
+            <button
+              key={phone.id}
+              type="button"
+              className={styles.defaultPickerOption}
+              disabled={Boolean(defaultingPhoneId)}
+              onClick={() => makePhoneDefault(phone)}
+            >
+              {defaultingPhoneId === phone.id ? 'Guardando…' : getPhoneLabel(phone)}
+              {phone.verified_name ? <span className={styles.defaultPickerOptionHint}>{phone.verified_name}</span> : null}
+            </button>
+          ))}
+        </div>
+      </Modal>
     </div>
   )
 }

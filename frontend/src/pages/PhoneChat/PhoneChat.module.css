@@ -6184,3 +6184,66 @@
     transition-duration: 1ms !important;
   }
 }
+
+.numberIssueBody {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 2px;
+}
+
+.numberIssueReason {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--color-text-secondary, rgba(255, 255, 255, 0.72));
+}
+
+.numberIssueSectionTitle {
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-secondary, rgba(255, 255, 255, 0.72));
+}
+
+.numberIssueApplyAll {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary, rgba(255, 255, 255, 0.72));
+}
+
+.numberIssueOption {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.14));
+  border-radius: 12px;
+  background: var(--color-surface-2, rgba(255, 255, 255, 0.05));
+  color: var(--color-text-primary, #fff);
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.numberIssueOption:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.numberIssueOptionSecondary {
+  background: transparent;
+  font-weight: 500;
+  color: var(--color-text-secondary, rgba(255, 255, 255, 0.72));
+}
+
+.numberIssueOptionHint {
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--color-text-secondary, rgba(255, 255, 255, 0.6));
+}

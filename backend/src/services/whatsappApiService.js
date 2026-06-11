@@ -2084,6 +2084,120 @@ async function getStats() {
   }
 }
 
+// Contactos cuyo último evento de ruteo es una contingencia: si el número original ya volvió,
+// se le ofrece al usuario regresarlos. Los cambiados manualmente después quedan fuera porque
+// su último evento ya no es 'contingency'.
+async function getPendingContingencyRestoreCounts() {
+  const rows = await db.all(`
+    SELECT e.previous_phone_number_id, COUNT(*) AS contact_count
+    FROM whatsapp_routing_events e
+    JOIN (
+      SELECT contact_id, MAX(created_at) AS max_created
+      FROM whatsapp_routing_events
+      GROUP BY contact_id
+    ) latest ON latest.contact_id = e.contact_id AND latest.max_created = e.created_at
+    WHERE e.source = 'contingency'
+      AND e.previous_phone_number_id IS NOT NULL
+    GROUP BY e.previous_phone_number_id
+  `).catch(() => [])
+
+  const counts = new Map()
+  for (const row of rows) {
+    counts.set(cleanString(row.previous_phone_number_id), Number(row.contact_count) || 0)
+  }
+  return counts
+}
+
+export async function rerouteWhatsAppPhoneNumberContacts({ phoneNumberId, targetPhoneNumberId, reason } = {}) {
+  const sourceId = cleanString(phoneNumberId)
+  const targetId = cleanString(targetPhoneNumberId)
+  if (!sourceId || !targetId) throw new Error('Faltan el número de origen y el número destino')
+  if (sourceId === targetId) throw new Error('Elige un número distinto al que no está disponible')
+
+  const target = await db.get('SELECT id FROM whatsapp_api_phone_numbers WHERE id = ?', [targetId])
+  if (!target) throw new Error('Ese número destino no está conectado')
+
+  // Contactos operando por el número caído: con preferencia explícita hacia él, o sin
+  // preferencia pero cuyo último mensaje entrante llegó por él.
+  const contacts = await db.all(`
+    SELECT c.id, c.preferred_whatsapp_phone_number_id
+    FROM contacts c
+    WHERE c.preferred_whatsapp_phone_number_id = ?
+       OR (
+         COALESCE(c.preferred_whatsapp_phone_number_id, '') = ''
+         AND (
+           SELECT m.business_phone_number_id
+           FROM whatsapp_api_messages m
+           WHERE m.contact_id = c.id
+             AND m.direction = 'inbound'
+             AND m.business_phone_number_id IS NOT NULL
+           ORDER BY COALESCE(m.message_timestamp, m.created_at) DESC
+           LIMIT 1
+         ) = ?
+       )
+  `, [sourceId, sourceId]).catch(() => [])
+
+  const cleanReason = cleanString(reason) || 'Cambio temporal: el número original no está disponible'
+  let moved = 0
+  for (const contact of contacts) {
+    await db.run(
+      'UPDATE contacts SET preferred_whatsapp_phone_number_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [targetId, contact.id]
+    )
+    await db.run(`
+      INSERT INTO whatsapp_routing_events (id, contact_id, previous_phone_number_id, new_phone_number_id, reason, source)
+      VALUES (?, ?, ?, ?, ?, 'contingency')
+    `, [
+      crypto.randomUUID(),
+      contact.id,
+      cleanString(contact.preferred_whatsapp_phone_number_id) || sourceId,
+      targetId,
+      cleanReason
+    ])
+    moved += 1
+  }
+
+  return { moved, from: sourceId, to: targetId }
+}
+
+export async function restoreWhatsAppPhoneNumberContacts({ phoneNumberId } = {}) {
+  const sourceId = cleanString(phoneNumberId)
+  if (!sourceId) throw new Error('Falta el número a restaurar')
+
+  const rows = await db.all(`
+    SELECT e.contact_id, e.previous_phone_number_id, e.new_phone_number_id
+    FROM whatsapp_routing_events e
+    JOIN (
+      SELECT contact_id, MAX(created_at) AS max_created
+      FROM whatsapp_routing_events
+      GROUP BY contact_id
+    ) latest ON latest.contact_id = e.contact_id AND latest.max_created = e.created_at
+    WHERE e.source = 'contingency'
+      AND e.previous_phone_number_id = ?
+  `, [sourceId]).catch(() => [])
+
+  let restored = 0
+  for (const row of rows) {
+    await db.run(
+      'UPDATE contacts SET preferred_whatsapp_phone_number_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [sourceId, row.contact_id]
+    )
+    await db.run(`
+      INSERT INTO whatsapp_routing_events (id, contact_id, previous_phone_number_id, new_phone_number_id, reason, source)
+      VALUES (?, ?, ?, ?, ?, 'restore')
+    `, [
+      crypto.randomUUID(),
+      row.contact_id,
+      cleanString(row.new_phone_number_id) || null,
+      sourceId,
+      'El número original volvió a estar disponible'
+    ])
+    restored += 1
+  }
+
+  return { restored, phoneNumberId: sourceId }
+}
+
 export async function getWhatsAppApiStatus() {
   const config = await loadConfig()
   const [stats, phoneNumbers, balance, templates, alerts, qrSessions] = await Promise.all([
@@ -2100,10 +2214,45 @@ export async function getWhatsAppApiStatus() {
 
   const connected = Boolean(config.enabled && config.hasApiKey && config.webhookEndpointId)
   const requiresPhoneSelection = false
-  const selectedPhone = phoneNumbers.find(phone => phone.id === config.phoneNumberId) ||
-    phoneNumbers.find(phone => phone.phone_number === config.senderPhone) ||
-    phoneNumbers.find(phone => Number(phone.is_default_sender || 0) === 1) ||
-    phoneNumbers[0] ||
+
+  // Disponibilidad operativa por número: API oficial sana, respaldo QR listo, o nada.
+  const phoneNumbersWithAvailability = await Promise.all(phoneNumbers.map(async (phone) => {
+    const apiRestrictionReason = connected
+      ? await getOfficialApiRestrictionReason({ phoneRow: phone, config }).catch(() => '')
+      : 'WhatsApp API no está conectado.'
+    const apiAvailable = connected && !apiRestrictionReason
+    const qrReady = isQrFallbackReady(phone)
+    return {
+      ...phone,
+      availability: {
+        apiAvailable,
+        apiReason: apiAvailable ? '' : (apiRestrictionReason || 'WhatsApp API no está conectado.'),
+        qrReady,
+        available: apiAvailable || qrReady
+      }
+    }
+  }))
+
+  const needsDefaultSelection = Boolean(
+    connected &&
+    phoneNumbersWithAvailability.length > 1 &&
+    !phoneNumbersWithAvailability.some(phone => Number(phone.is_default_sender || 0) === 1)
+  )
+
+  const pendingRestoreCounts = await getPendingContingencyRestoreCounts().catch(() => new Map())
+  const pendingRestores = phoneNumbersWithAvailability
+    .filter(phone => (pendingRestoreCounts.get(phone.id) || 0) > 0 && phone.availability.apiAvailable)
+    .map(phone => ({
+      phoneNumberId: phone.id,
+      phone: phone.phone_number || phone.display_phone_number || '',
+      verifiedName: phone.verified_name || '',
+      contactCount: pendingRestoreCounts.get(phone.id) || 0
+    }))
+
+  const selectedPhone = phoneNumbersWithAvailability.find(phone => phone.id === config.phoneNumberId) ||
+    phoneNumbersWithAvailability.find(phone => phone.phone_number === config.senderPhone) ||
+    phoneNumbersWithAvailability.find(phone => Number(phone.is_default_sender || 0) === 1) ||
+    phoneNumbersWithAvailability[0] ||
     null
   const highestSeverity = alerts.reduce((highest, alert) => {
     return !highest || alertSeverityRank(alert.severity) > alertSeverityRank(highest) ? alert.severity : highest
@@ -2137,8 +2286,10 @@ export async function getWhatsAppApiStatus() {
       status: config.webhookStatus || '',
       enabledEvents: REQUIRED_WEBHOOK_EVENTS
     },
-    phoneNumbers,
+    phoneNumbers: phoneNumbersWithAvailability,
     selectedPhone,
+    needsDefaultSelection,
+    pendingRestores,
     balance,
     templates: {
       total: stats.templates,
