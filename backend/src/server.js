@@ -12,6 +12,7 @@ import { startHighLevelSyncCron } from './jobs/highlevelSync.cron.js'
 import { startMetaVersionCron, updateMetaVersion } from './jobs/metaVersionCron.js'
 import { startScheduledChatMessagesCron } from './jobs/scheduledChatMessages.cron.js'
 import { startAppointmentRemindersCron } from './jobs/appointmentReminders.cron.js'
+import { startWhatsAppQrWatchdogCron } from './jobs/whatsappQrWatchdog.cron.js'
 import { initializeVersion } from './services/metaVersionService.js'
 import { verifyAndUpdateWebhooks } from './startup/webhookVerification.js'
 import { repairPendingPaymentFlows } from './services/paymentFlowService.js'
@@ -188,6 +189,7 @@ app.listen(PORT, '0.0.0.0', async () => {
   startMetaVersionCron()           // Revisa versión Meta API una vez al mes
   startScheduledChatMessagesCron() // Envía mensajes de chat cuando llegue su hora programada
   startAppointmentRemindersCron()  // Envía recordatorios y confirmaciones de citas
+  startWhatsAppQrWatchdogCron()    // Reabre sesiones de WhatsApp Web al arrancar y las mantiene vivas
 })
 
 // Manejo de errores de proceso
