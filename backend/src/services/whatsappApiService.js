@@ -1668,12 +1668,31 @@ function getOfficialApiErrorText(error) {
   ].map(cleanString).filter(Boolean).join(' ')
 }
 
-function getOfficialApiRestrictionErrorReason(error) {
-  const statusCode = Number(error?.statusCode || 0)
+// Errores que pertenecen a UNA conversacion, no al numero ni a la cuenta:
+// 131047 = ventana de 24 horas vencida, 131026 = destinatario no puede recibir,
+// 131021 = enviarse a si mismo, 470 = fuera de ventana (codigo legado).
+const API_CONVERSATION_SCOPED_ERROR_CODES = /\b(131047|131026|131021|470)\b/
+
+function getOfficialApiConversationWindowReason(error) {
   const text = getOfficialApiErrorText(error)
   if (!text) return ''
+  if (/\b(131047|470)\b/.test(text) || /24.?HOUR|24 HORAS|CUSTOMER SERVICE WINDOW|OUTSIDE.*WINDOW/i.test(text)) {
+    return 'La conversacion lleva mas de 24 horas sin respuesta del cliente; WhatsApp API solo permite plantillas.'
+  }
+  return ''
+}
 
-  const hasBusinessScope = /\b(WABA|BUSINESS ACCOUNT|PHONE NUMBER|SENDER|FROM|ACCOUNT|QUALITY|MESSAGING LIMIT)\b/i.test(text)
+function getOfficialApiRestrictionErrorReason(error) {
+  const statusCode = Number(error?.statusCode || 0)
+  // OJO: para decidir el ALCANCE del error se usa solo el mensaje del error,
+  // nunca el JSON crudo del webhook: ese JSON siempre trae "from" y "wabaId",
+  // hacia que todo error pareciera "de cuenta" y un simple 131047 (ventana de
+  // 24 horas) terminaba marcando el numero y la cuenta como bloqueados.
+  const text = cleanString(error?.message) || getOfficialApiErrorText(error)
+  if (!text) return ''
+
+  if (API_CONVERSATION_SCOPED_ERROR_CODES.test(text)) return ''
+  const hasBusinessScope = /\b(WABA|BUSINESS ACCOUNT|PHONE NUMBER|SENDER|QUALITY|MESSAGING LIMIT)\b/i.test(text)
   if (API_FALLBACK_RECIPIENT_ERROR_PATTERN.test(text) && !hasBusinessScope) return ''
   if (statusCode === 429) return 'WhatsApp API rechazo el envio por limite de volumen.'
   if (API_FALLBACK_ERROR_PATTERN.test(text)) {
@@ -1686,7 +1705,10 @@ async function getOfficialApiFallbackDecision({ config, fromPhone, phoneNumberId
   const phoneRow = await findBusinessPhoneRowForSender({ phoneNumberId, fromPhone })
   const signalReason = await getOfficialApiRestrictionReason({ phoneRow, config })
   const errorReason = error ? getOfficialApiRestrictionErrorReason(error) : ''
-  const reason = errorReason || signalReason
+  // La ventana de 24 horas tambien amerita respaldo QR, pero es un asunto de
+  // ESTA conversacion: decide el fallback sin marcar nada como restringido.
+  const windowReason = error && !errorReason ? getOfficialApiConversationWindowReason(error) : ''
+  const reason = errorReason || windowReason || signalReason
 
   return {
     phoneRow,
@@ -3274,20 +3296,26 @@ async function upsertMessage({ payload, message, direction, businessPhoneHints =
     attribution.ctwaPayload || null
   ])
 
+  const failureText = `${errorCode} ${errorMessage}`.trim()
   const restrictionReason = incomingStatus === 'failed'
-    ? getOfficialApiRestrictionErrorReason({
-        message: `${errorCode} ${errorMessage}`.trim(),
-        ycloud: normalizedMessage
-      })
+    ? getOfficialApiRestrictionErrorReason({ message: failureText })
+    : ''
+  // Ventana de 24 horas (131047 y parecidos): el mensaje se reintenta por QR,
+  // pero NO se crea ninguna alerta de bloqueo porque el numero y la cuenta
+  // estan perfectamente sanos.
+  const conversationWindowReason = incomingStatus === 'failed' && !restrictionReason
+    ? getOfficialApiConversationWindowReason({ message: failureText })
     : ''
 
-  if (cleanTransport === 'api' && identity.direction === 'outbound' && restrictionReason) {
-    await activateOfficialApiRestrictionFromFailedMessage({
-      normalizedMessage,
-      businessPhoneNumberId,
-      businessPhone: identity.businessPhone,
-      reason: restrictionReason
-    })
+  if (cleanTransport === 'api' && identity.direction === 'outbound' && (restrictionReason || conversationWindowReason)) {
+    if (restrictionReason) {
+      await activateOfficialApiRestrictionFromFailedMessage({
+        normalizedMessage,
+        businessPhoneNumberId,
+        businessPhone: identity.businessPhone,
+        reason: restrictionReason
+      })
+    }
     await retryFailedOfficialApiMessageViaQr({
       normalizedMessage,
       identity,
@@ -3295,7 +3323,7 @@ async function upsertMessage({ payload, message, direction, businessPhoneHints =
       messageId,
       messageType,
       messageText,
-      reason: restrictionReason,
+      reason: restrictionReason || conversationWindowReason,
       existingMessage
     })
   }
