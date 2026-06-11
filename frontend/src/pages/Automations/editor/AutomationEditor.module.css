@@ -391,23 +391,26 @@
   white-space: nowrap;
 }
 
-/* Acciones rápidas FUERA del contenedor, arriba a la derecha (al hover) */
+/* Acciones rápidas FUERA del contenedor, centradas arriba: visibles al
+   seleccionar el evento (y también al hover) */
 .nodeQuickActions {
   position: absolute;
-  top: -38px;
-  right: 0;
+  top: -46px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 8;
   display: none;
   align-items: center;
-  gap: 2px;
-  padding: 4px;
-  border-radius: 10px;
+  gap: 4px;
+  padding: 5px;
+  border-radius: 12px;
   background: var(--color-background-secondary);
   border: 1px solid rgba(148, 163, 184, 0.24);
   box-shadow: 0 10px 24px -12px rgba(15, 23, 42, 0.4);
 }
 
-.node:hover .nodeQuickActions {
+.node:hover .nodeQuickActions,
+.nodeSelected .nodeQuickActions {
   display: inline-flex;
 }
 
@@ -415,10 +418,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
   border: none;
-  border-radius: 7px;
+  border-radius: 9px;
   background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;

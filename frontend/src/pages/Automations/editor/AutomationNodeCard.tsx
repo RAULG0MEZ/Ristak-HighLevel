@@ -238,7 +238,7 @@ export const AutomationNodeCard: React.FC<AutomationNodeCardProps> = ({
                 onDuplicate(node)
               }}
             >
-              <Copy size={13} />
+              <Copy size={16} />
             </button>
             <button
               type="button"
@@ -250,7 +250,7 @@ export const AutomationNodeCard: React.FC<AutomationNodeCardProps> = ({
                 onDelete(node)
               }}
             >
-              <Trash2 size={13} />
+              <Trash2 size={16} />
             </button>
           </span>
         )}
