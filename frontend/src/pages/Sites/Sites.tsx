@@ -2056,6 +2056,29 @@ const getDescendantPageIds = (pageId: string, pages: SitePage[]): string[] => {
   return result
 }
 
+// Height of a page's subtree relative to the page itself (0 = no subpages).
+const getPageSubtreeHeight = (pageId: string, pages: SitePage[]): number => {
+  const children = pages.filter(page => (page.parentPageId || '') === pageId)
+  if (!children.length) return 0
+  return 1 + Math.max(...children.map(child => getPageSubtreeHeight(child.id, pages)))
+}
+
+// A page can demote (become a subpage) when a previous sibling exists and the
+// moved subtree still fits within MAX_WEBSITE_PAGE_DEPTH.
+const getPreviousSiblingPage = (page: SitePage, pages: SitePage[]): SitePage | null => {
+  const siblings = pages.filter(item => (item.parentPageId || '') === (page.parentPageId || ''))
+  const index = siblings.findIndex(item => item.id === page.id)
+  return index > 0 ? siblings[index - 1] : null
+}
+
+const canPromoteWebsitePage = (page: SitePage, pages: SitePage[]) => getPageDepth(page, pages) > 0
+
+const canDemoteWebsitePage = (page: SitePage, pages: SitePage[]) => {
+  const previousSibling = getPreviousSiblingPage(page, pages)
+  if (!previousSibling) return false
+  return getPageDepth(page, pages) + 1 + getPageSubtreeHeight(page.id, pages) <= MAX_WEBSITE_PAGE_DEPTH
+}
+
 // Flatten pages into render order: each top-level page is followed by its
 // descendants (depth-first), so the dropdown can render an indented tree.
 const buildOrderedPageTree = (pages: SitePage[]): Array<{ page: SitePage; depth: number }> => {
@@ -3836,6 +3859,56 @@ export const Sites: React.FC = () => {
     void persistFunnelPages(nextPages, nextPage.id)
   }
 
+  // Move a subtree right after another page's subtree in the flat list.
+  const movePageSubtreeAfter = (subtree: SitePage[], anchorPageId: string, remaining: SitePage[]) => {
+    const anchorSubtree = new Set([anchorPageId, ...getDescendantPageIds(anchorPageId, remaining)])
+    const anchorIndex = remaining.findIndex(page => page.id === anchorPageId)
+    let insertIndex = anchorIndex + 1
+    while (insertIndex < remaining.length && anchorSubtree.has(remaining[insertIndex].id)) insertIndex += 1
+    return [
+      ...remaining.slice(0, insertIndex),
+      ...subtree,
+      ...remaining.slice(insertIndex)
+    ]
+  }
+
+  const handlePromotePage = (pageId: string) => {
+    if (!selectedSite || !hasEditablePages(selectedSite) || !canManagePages(selectedSite)) return
+    if (getSitePageMode(selectedSite) !== 'website') return
+    const page = pages.find(item => item.id === pageId)
+    if (!page?.parentPageId) return
+    const parent = pages.find(item => item.id === page.parentPageId)
+    if (!parent) return
+
+    const subtreeIds = new Set([pageId, ...getDescendantPageIds(pageId, pages)])
+    const subtree = pages.filter(item => subtreeIds.has(item.id)).map(item => {
+      if (item.id !== pageId) return item
+      const promoted = { ...item, slug: undefined }
+      if (parent.parentPageId) promoted.parentPageId = parent.parentPageId
+      else delete promoted.parentPageId
+      return promoted
+    })
+    const remaining = pages.filter(item => !subtreeIds.has(item.id))
+    void persistFunnelPages(movePageSubtreeAfter(subtree, parent.id, remaining), activePageId)
+  }
+
+  const handleDemotePage = (pageId: string) => {
+    if (!selectedSite || !hasEditablePages(selectedSite) || !canManagePages(selectedSite)) return
+    if (getSitePageMode(selectedSite) !== 'website') return
+    const page = pages.find(item => item.id === pageId)
+    if (!page || !canDemoteWebsitePage(page, pages)) return
+    const previousSibling = getPreviousSiblingPage(page, pages)
+    if (!previousSibling) return
+
+    const subtreeIds = new Set([pageId, ...getDescendantPageIds(pageId, pages)])
+    const subtree = pages.filter(item => subtreeIds.has(item.id)).map(item => item.id === pageId
+      ? { ...item, parentPageId: previousSibling.id, slug: undefined }
+      : item
+    )
+    const remaining = pages.filter(item => !subtreeIds.has(item.id))
+    void persistFunnelPages(movePageSubtreeAfter(subtree, previousSibling.id, remaining), activePageId)
+  }
+
   const handleChangePageMode = async (mode: 'funnel' | 'website') => {
     if (!selectedSite || !isLanding(selectedSite) || isImportedHtmlSite(selectedSite)) return
     if (getSitePageMode(selectedSite) === mode) return
@@ -4447,6 +4520,16 @@ export const Sites: React.FC = () => {
     }
   }
 
+  const handleOpenLiveEditorSite = () => {
+    if (!editorSite || !isPublicSiteLive(editorSite, domainConfig)) return
+    const liveWindow = window.open(buildLivePublicUrl(editorSite, domainConfig), '_blank')
+    if (!liveWindow) {
+      showToast('error', 'Ventana bloqueada', 'Permite popups para abrir el sitio en vivo.')
+      return
+    }
+    liveWindow.opener = null
+  }
+
   const handlePreviewSite = async () => {
     if (!editorSite) return
     const previewWindow = window.open('', '_blank')
@@ -4590,10 +4673,69 @@ export const Sites: React.FC = () => {
           return
         }
 
-        payload.settings = getPopupBlockSettings({
-          ...(payload.settings || {}),
-          ...initialSettings
-        })
+        // The popup follows the same rule as the page: content always lives
+        // inside a franja; if there is none yet, one is created automatically.
+        const popupSectionIds = new Set(popupBlocks.filter(isSectionBlock).map(block => block.id))
+        if (blockType === SECTION_BLOCK_TYPE) {
+          const columns = getSettingNumber(initialSettings, 'sectionColumns', 1, 1, 3)
+          payload.label = getSectionColumnLabel(columns)
+          payload.content = ''
+          payload.settings = getPopupBlockSettings({
+            ...(payload.settings || {}),
+            ...initialSettings,
+            sectionColumns: columns,
+            sectionGap: getSettingNumber(initialSettings, 'sectionGap', DEFAULT_SECTION_GAP, 0, 80)
+          })
+        } else {
+          const selectedTarget = selectedBlock && isPopupBlock(selectedBlock)
+            ? isSectionBlock(selectedBlock)
+              ? { sectionId: selectedBlock.id, sectionColumn: 0 }
+              : getBlockSectionId(selectedBlock) && popupSectionIds.has(getBlockSectionId(selectedBlock))
+                ? { sectionId: getBlockSectionId(selectedBlock), sectionColumn: getBlockSectionColumn(selectedBlock) }
+                : null
+            : null
+          const singleSectionTarget = popupSectionIds.size === 1
+            ? { sectionId: [...popupSectionIds][0], sectionColumn: 0 }
+            : null
+          let targetSectionId = options.sectionId && popupSectionIds.has(options.sectionId)
+            ? options.sectionId
+            : selectedTarget?.sectionId || singleSectionTarget?.sectionId || ''
+          let targetColumn = Number.isFinite(Number(options.sectionColumn))
+            ? Math.min(2, Math.max(0, Math.round(Number(options.sectionColumn))))
+            : selectedTarget?.sectionColumn || singleSectionTarget?.sectionColumn || 0
+
+          if (!targetSectionId) {
+            const sectionPayload = defaultBlockPayload(SECTION_BLOCK_TYPE, selectedSite)
+            sectionPayload.label = getSectionColumnLabel(1)
+            sectionPayload.content = ''
+            sectionPayload.settings = getPopupBlockSettings({
+              ...(sectionPayload.settings || {}),
+              sectionColumns: 1,
+              sectionGap: DEFAULT_SECTION_GAP
+            })
+
+            const siteWithSection = await sitesService.createBlock(selectedSite.id, sectionPayload)
+            autoCreatedSection = [...(siteWithSection.blocks || [])]
+              .filter(block => !previousBlockIds.has(block.id))
+              .find(block => isSectionBlock(block) && isPopupBlock(block)) || null
+
+            if (!autoCreatedSection) {
+              throw new Error('No se pudo crear la franja para este contenido')
+            }
+
+            targetSectionId = autoCreatedSection.id
+            targetColumn = 0
+            blockIdsBeforeContent = new Set((siteWithSection.blocks || []).map(block => block.id))
+            syncSelectedSite(siteWithSection)
+          }
+
+          payload.settings = getPopupBlockSettings({
+            ...(payload.settings || {}),
+            ...initialSettings,
+            sectionId: targetSectionId,
+            sectionColumn: targetColumn
+          })
+        }
 
         let site = await sitesService.createBlock(selectedSite.id, payload)
         syncSelectedSite(site)
@@ -4605,11 +4747,13 @@ export const Sites: React.FC = () => {
           const popupSiteBlocks = [...(site.blocks || [])]
             .filter(isPopupBlock)
             .sort((a, b) => a.sortOrder - b.sortOrder)
-          const withoutInserted = popupSiteBlocks.filter(block => block.id !== added.id)
+          const insertedBlocks = autoCreatedSection ? [autoCreatedSection, added] : [added]
+          const insertedIds = new Set(insertedBlocks.map(block => block.id))
+          const withoutInserted = popupSiteBlocks.filter(block => !insertedIds.has(block.id))
           const boundedIndex = Math.max(0, Math.min(Number(options.insertIndex), withoutInserted.length))
           const orderedBlocks = [
             ...withoutInserted.slice(0, boundedIndex),
-            added,
+            ...insertedBlocks,
             ...withoutInserted.slice(boundedIndex)
           ]
 
@@ -5043,8 +5187,8 @@ export const Sites: React.FC = () => {
     }
   }
 
-  const getLandingColumnBlocksForMove = (block: SiteBlock) => {
-    for (const lane of landingSectionLanes) {
+  const getLandingColumnBlocksForMove = (block: SiteBlock, lanes: LandingSectionLane[] = landingSectionLanes) => {
+    for (const lane of lanes) {
       const column = lane.columnBlocks.find(columnBlocks => columnBlocks.some(item => item.id === block.id))
       if (column) return column
     }
@@ -5055,6 +5199,22 @@ export const Sites: React.FC = () => {
     if (!editorSite) return { canMoveUp: false, canMoveDown: false }
 
     if (isPopupBlock(block)) {
+      if (isLanding(editorSite)) {
+        if (isTopLevelLandingBlock(block)) {
+          const groups = buildLandingBlockOrderGroups(popupBlocks, popupSectionLanes)
+          const groupIndex = groups.findIndex(group => group.id === block.id)
+          return {
+            canMoveUp: groupIndex > 0,
+            canMoveDown: groupIndex >= 0 && groupIndex < groups.length - 1
+          }
+        }
+        const columnBlocks = getLandingColumnBlocksForMove(block, popupSectionLanes)
+        const columnIndex = columnBlocks.findIndex(item => item.id === block.id)
+        return {
+          canMoveUp: columnIndex > 0,
+          canMoveDown: columnIndex >= 0 && columnIndex < columnBlocks.length - 1
+        }
+      }
       const index = popupBlocks.findIndex(item => item.id === block.id)
       return {
         canMoveUp: index > 0,
@@ -5096,6 +5256,26 @@ export const Sites: React.FC = () => {
     let nextPageBlocks: SiteBlock[] | null = null
 
     if (isPopupBlock(block)) {
+      if (isLanding(selectedSite)) {
+        if (isTopLevelLandingBlock(block)) {
+          const groups = buildLandingBlockOrderGroups(popupBlocks, popupSectionLanes)
+          const groupIndex = groups.findIndex(group => group.id === block.id)
+          const nextGroupIndex = groupIndex + offset
+          if (groupIndex < 0 || nextGroupIndex < 0 || nextGroupIndex >= groups.length) return
+          await persistCanvasBlockOrder(arrayMove(groups, groupIndex, nextGroupIndex).flatMap(group => group.blocks), { popup: true })
+          return
+        }
+        const columnBlocks = getLandingColumnBlocksForMove(block, popupSectionLanes)
+        const columnIndex = columnBlocks.findIndex(item => item.id === block.id)
+        const nextColumnIndex = columnIndex + offset
+        const targetBlock = columnBlocks[nextColumnIndex]
+        if (columnIndex < 0 || !targetBlock) return
+        const oldIndex = popupBlocks.findIndex(item => item.id === block.id)
+        const newIndex = popupBlocks.findIndex(item => item.id === targetBlock.id)
+        if (oldIndex < 0 || newIndex < 0) return
+        await persistCanvasBlockOrder(arrayMove(popupBlocks, oldIndex, newIndex), { popup: true })
+        return
+      }
       const oldIndex = popupBlocks.findIndex(item => item.id === block.id)
       const newIndex = oldIndex + offset
       if (oldIndex < 0 || newIndex < 0 || newIndex >= popupBlocks.length) return
@@ -5164,7 +5344,10 @@ export const Sites: React.FC = () => {
     if (popupSurfaceSelected) {
       const popupSurface = (event.currentTarget as HTMLElement).querySelector('[data-rstk-popup-surface="true"]')
       if (!popupSurface) return popupBlocks.length
-      const blockNodes = Array.from(popupSurface.querySelectorAll<HTMLElement>('[data-rstk-block-index]'))
+      const popupSelector = editorSite && isLanding(editorSite) && isTopLevelLandingBlockType(payload?.blockType)
+        ? '[data-rstk-page-block="true"]'
+        : '[data-rstk-block-index]'
+      const blockNodes = Array.from(popupSurface.querySelectorAll<HTMLElement>(popupSelector))
       return getInsertIndexFromNodes(blockNodes, event.clientY, popupBlocks.length)
     }
 
@@ -5245,12 +5428,20 @@ export const Sites: React.FC = () => {
   }
 
   const getSectionFallbackInsertIndex = (sectionId: string) => {
-    const sectionIndex = canvasBlocks.findIndex(block => block.id === sectionId)
-    return sectionIndex >= 0 ? sectionIndex + 1 : canvasBlocks.length
+    const sourceBlocks = popupSurfaceSelected ? popupBlocks : canvasBlocks
+    const sectionIndex = sourceBlocks.findIndex(block => block.id === sectionId)
+    return sectionIndex >= 0 ? sectionIndex + 1 : sourceBlocks.length
   }
 
   const getPaletteDropPlacement = (event: React.DragEvent<HTMLDivElement>, payload: PaletteDragPayload) => {
     if (popupSurfaceSelected) {
+      if (editorSite && isLanding(editorSite) && !isTopLevelLandingBlockType(payload.blockType)) {
+        const target = getDropSectionTarget(event)
+        return {
+          insertIndex: target ? getSectionColumnInsertIndex(event, target) : popupBlocks.length,
+          target
+        }
+      }
       return {
         insertIndex: getPaletteInsertIndex(event, payload),
         target: null
@@ -5439,6 +5630,8 @@ export const Sites: React.FC = () => {
                           pageMode={getSitePageMode(editorSite)}
                           onChangeMode={isLanding(editorSite) && !isImportedHtmlSite(editorSite) ? handleChangePageMode : undefined}
                           onAddSubpage={handleAddSubpage}
+                          onPromotePage={handlePromotePage}
+                          onDemotePage={handleDemotePage}
                           getPageDepth={(page) => getPageDepth(page, pages)}
                           canDeletePage={(page) => isStandardForm(editorSite)
                             ? !isFormFinalPage(page) && getFormContentPages(pages).length > 1
@@ -5455,10 +5648,9 @@ export const Sites: React.FC = () => {
                       )}
                       <label className={styles.routeField}>
                         <span className={`${styles.publicRouteBox} ${domainConfig.domain ? '' : styles.publicRouteBoxStandalone}`}>
-                          <span className={styles.publicRouteDomain} title={getPublicDomainPreview(domainConfig)}>
-                            {getPublicDomainPreview(domainConfig)}
+                          <span className={styles.publicRouteDomain} title={`${getPublicDomainPreview(domainConfig)}/`}>
+                            {getPublicDomainPreview(domainConfig)}/
                           </span>
-                          <span className={styles.publicRouteSlash} aria-hidden="true">/</span>
                           <input
                             value={getRouteEditorValue(editorSite)}
                             aria-label="Ruta pública"
@@ -5481,6 +5673,12 @@ export const Sites: React.FC = () => {
                     <button type="button" className={styles.editorIconAction} onClick={() => setEditorFocus(true)} disabled={editorAIGenerating} title="Modo enfoque" aria-label="Modo enfoque">
                       <Maximize2 size={14} />
                     </button>
+                    {isPublicSiteLive(editorSite, domainConfig) && (
+                      <Button variant="secondary" size="lg" onClick={handleOpenLiveEditorSite} disabled={editorAIGenerating}>
+                        <ExternalLink size={15} />
+                        Ver en vivo
+                      </Button>
+                    )}
                     <Button variant="secondary" size="lg" onClick={handlePreviewSite} disabled={editorAIGenerating}>
                       <Eye size={15} />
                       Previsualizar
@@ -5721,6 +5919,7 @@ export const Sites: React.FC = () => {
                             <PopupCanvasSurface
                               site={editorSite}
                               blocks={popupBlocks}
+                              lanes={popupSectionLanes}
                               selectedBlockId={selectedBlockId}
                               forms={forms}
                               calendars={calendars}
@@ -5729,6 +5928,8 @@ export const Sites: React.FC = () => {
                               selected={selectedBlockId === POPUP_SELECTED_ID}
                               palettePreviewBlock={canvasPalettePreviewBlock}
                               paletteInsertIndex={paletteInsertIndex}
+                              paletteSectionTarget={paletteSectionTarget}
+                              paletteDragging={paletteDragging}
                               onSelectPopup={() => selectEditorBlock(POPUP_SELECTED_ID)}
                               onClosePopup={() => selectEditorBlock(PAGE_SELECTED_ID)}
                               onSelectBlock={selectEditorBlock}
@@ -12198,6 +12399,8 @@ interface FunnelPagesPanelProps {
   pageMode?: 'funnel' | 'website'
   onChangeMode?: (mode: 'funnel' | 'website') => void
   onAddSubpage?: (parentId: string) => void
+  onPromotePage?: (pageId: string) => void
+  onDemotePage?: (pageId: string) => void
   getPageDepth?: (page: SitePage) => number
   canDeletePage?: (page: SitePage) => boolean
   canDuplicatePage?: (page: SitePage) => boolean
@@ -12220,6 +12423,8 @@ const FunnelPagesPanel: React.FC<FunnelPagesPanelProps> = ({
   pageMode = 'funnel',
   onChangeMode,
   onAddSubpage,
+  onPromotePage,
+  onDemotePage,
   getPageDepth,
   canDeletePage = () => pages.length > 1,
   canDuplicatePage = () => true,
@@ -12247,7 +12452,10 @@ const FunnelPagesPanel: React.FC<FunnelPagesPanelProps> = ({
   useEffect(() => {
     if (!open) return
 
-    const handleDocumentClick = (event: MouseEvent) => {
+    // Listen on pointerdown (not click): with a Radix menu open the body loses
+    // pointer-events, so the click that follows releasing the trigger lands on
+    // <html> and would close the whole panel.
+    const handleDocumentPointerDown = (event: PointerEvent) => {
       const target = event.target as HTMLElement | null
       if (!target) return
       if (dropdownRef.current?.contains(target)) return
@@ -12259,11 +12467,11 @@ const FunnelPagesPanel: React.FC<FunnelPagesPanelProps> = ({
       if (event.key === 'Escape') setOpen(false)
     }
 
-    document.addEventListener('click', handleDocumentClick)
+    document.addEventListener('pointerdown', handleDocumentPointerDown)
     document.addEventListener('keydown', handleDocumentKeyDown)
 
     return () => {
-      document.removeEventListener('click', handleDocumentClick)
+      document.removeEventListener('pointerdown', handleDocumentPointerDown)
       document.removeEventListener('keydown', handleDocumentKeyDown)
     }
   }, [open])
@@ -12374,6 +12582,8 @@ const FunnelPagesPanel: React.FC<FunnelPagesPanelProps> = ({
                   const pageCanDuplicate = !locked && canDuplicatePage(page)
                   const pageDepth = getPageDepth ? getPageDepth(page) : depth
                   const canAddSubpage = websiteMode && !locked && Boolean(onAddSubpage) && pageDepth < MAX_WEBSITE_PAGE_DEPTH
+                  const pageCanPromote = websiteMode && !locked && Boolean(onPromotePage) && canPromoteWebsitePage(page, movablePages)
+                  const pageCanDemote = websiteMode && !locked && Boolean(onDemotePage) && canDemoteWebsitePage(page, movablePages)
                   const pageToneClass = colorFinalPages && page.id === FORM_THANK_YOU_PAGE_ID
                     ? styles.pagesDropdownItemThankYou
                     : colorFinalPages && page.id === FORM_DISQUALIFIED_PAGE_ID
@@ -12395,7 +12605,12 @@ const FunnelPagesPanel: React.FC<FunnelPagesPanelProps> = ({
                       canDelete={pageCanDelete}
                       canDuplicate={pageCanDuplicate}
                       showAddSubpage={canAddSubpage}
+                      websiteMode={websiteMode}
+                      canPromote={pageCanPromote}
+                      canDemote={pageCanDemote}
                       onAddSubpage={onAddSubpage ? () => { onAddSubpage(page.id) } : undefined}
+                      onPromote={onPromotePage ? () => { onPromotePage(page.id) } : undefined}
+                      onDemote={onDemotePage ? () => { onDemotePage(page.id) } : undefined}
                       onSelect={() => handleSelectPage(page.id)}
                       onStartRename={() => {
                         onSelectPage(page.id)
@@ -12470,7 +12685,12 @@ interface FunnelPageDropdownItemProps {
   canDelete: boolean
   canDuplicate: boolean
   showAddSubpage?: boolean
+  websiteMode?: boolean
+  canPromote?: boolean
+  canDemote?: boolean
   onAddSubpage?: () => void
+  onPromote?: () => void
+  onDemote?: () => void
   onSelect: () => void
   onStartRename: () => void
   onDuplicate: () => void
@@ -12492,7 +12712,12 @@ const FunnelPageDropdownItem: React.FC<FunnelPageDropdownItemProps> = ({
   canDelete,
   canDuplicate,
   showAddSubpage = false,
+  websiteMode = false,
+  canPromote = false,
+  canDemote = false,
   onAddSubpage,
+  onPromote,
+  onDemote,
   onSelect,
   onStartRename,
   onDuplicate,
@@ -12554,7 +12779,21 @@ const FunnelPageDropdownItem: React.FC<FunnelPageDropdownItemProps> = ({
 
         {!locked && (
           <div className={styles.pagesDropdownActionWrap}>
-            <DropdownMenu onOpenChange={setMenuOpen}>
+            {showAddSubpage && onAddSubpage && (
+              <button
+                type="button"
+                className={styles.pagesDropdownSubpageButton}
+                title="Agregar subpagina"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onAddSubpage()
+                }}
+              >
+                <Plus size={13} />
+                Subpagina
+              </button>
+            )}
+            <DropdownMenu modal={false} onOpenChange={setMenuOpen}>
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
@@ -12601,6 +12840,32 @@ const FunnelPageDropdownItem: React.FC<FunnelPageDropdownItemProps> = ({
                   >
                     <CornerDownRight size={14} />
                     Agregar subpagina
+                  </DropdownMenuItem>
+                )}
+                {websiteMode && onPromote && (
+                  <DropdownMenuItem
+                    className={styles.pagesDropdownActionItem}
+                    disabled={!canPromote}
+                    onSelect={(event) => {
+                      event.stopPropagation()
+                      onPromote()
+                    }}
+                  >
+                    <ArrowLeft size={14} />
+                    Subir de nivel
+                  </DropdownMenuItem>
+                )}
+                {websiteMode && onDemote && (
+                  <DropdownMenuItem
+                    className={styles.pagesDropdownActionItem}
+                    disabled={!canDemote}
+                    onSelect={(event) => {
+                      event.stopPropagation()
+                      onDemote()
+                    }}
+                  >
+                    <CornerDownRight size={14} />
+                    Bajar de nivel
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem
@@ -13063,6 +13328,7 @@ const SortableCanvasBlock: React.FC<SortableCanvasBlockProps> = ({
 interface PopupCanvasSurfaceProps {
   site: PublicSite
   blocks: SiteBlock[]
+  lanes: LandingSectionLane[]
   selectedBlockId: string
   forms: PublicSite[]
   calendars: CalendarType[]
@@ -13071,6 +13337,8 @@ interface PopupCanvasSurfaceProps {
   selected: boolean
   palettePreviewBlock: SiteBlock | null
   paletteInsertIndex: number | null
+  paletteSectionTarget: PaletteSectionTarget | null
+  paletteDragging: boolean
   onSelectPopup: () => void
   onClosePopup: () => void
   onSelectBlock: (blockId: string) => void
@@ -13085,6 +13353,7 @@ interface PopupCanvasSurfaceProps {
 const PopupCanvasSurface: React.FC<PopupCanvasSurfaceProps> = ({
   site,
   blocks,
+  lanes,
   selectedBlockId,
   forms,
   calendars,
@@ -13093,6 +13362,8 @@ const PopupCanvasSurface: React.FC<PopupCanvasSurfaceProps> = ({
   selected,
   palettePreviewBlock,
   paletteInsertIndex,
+  paletteSectionTarget,
+  paletteDragging,
   onSelectPopup,
   onClosePopup,
   onSelectBlock,
@@ -13164,50 +13435,37 @@ const PopupCanvasSurface: React.FC<PopupCanvasSurfaceProps> = ({
           {showCloseText && <strong>{closeText}</strong>}
         </button>
         <div className="rstkPopupEditorContent">
-          {palettePreviewBlock && paletteInsertIndex === 0 && (
-            <PaletteInsertPreview block={palettePreviewBlock} site={site} forms={forms} calendars={calendars} />
-          )}
           {blocks.length === 0 ? (
-            palettePreviewBlock ? null : (
+            palettePreviewBlock && isTopLevelLandingBlockType(palettePreviewBlock.blockType) ? (
+              <PaletteInsertPreview block={palettePreviewBlock} site={site} forms={forms} calendars={calendars} />
+            ) : (
               <div className="rstkDropEmpty rstkPopupDropEmpty">
                 <Plus size={22} />
-                <p>Arrastra bloques aqui o haz click en la barra izquierda.</p>
+                <p>Arrastra primero una franja de 1, 2 o 3 columnas.</p>
               </div>
             )
           ) : (
-            blocks.map((block, index) => {
-              const moveState = getBlockMoveState(block)
-              return (
-                <React.Fragment key={block.id}>
-                  <SortableCanvasBlock
-                    block={block}
-                    blocks={blocks}
-                    index={index}
-                    selected={selectedBlockId === block.id}
-                    site={site}
-                    forms={forms}
-                    calendars={calendars}
-                    pages={pages}
-                    activePageId={activePageId}
-                    canMoveUp={moveState.canMoveUp}
-                    canMoveDown={moveState.canMoveDown}
-                    onSelect={() => onSelectBlock(block.id)}
-                    onDelete={() => onDeleteBlock(block.id)}
-                    onMoveUp={() => onMoveBlock(block.id, 'up')}
-                    onMoveDown={() => onMoveBlock(block.id, 'down')}
-                    onPatchBlock={(patch) => onPatchBlock(block.id, patch)}
-                    onPatchSettings={(patch) => onPatchBlockSettings(block, patch)}
-                    onSave={() => onSaveBlock(block.id)}
-                  />
-                  {palettePreviewBlock && paletteInsertIndex === index + 1 && (
-                    <PaletteInsertPreview block={palettePreviewBlock} site={site} forms={forms} calendars={calendars} />
-                  )}
-                </React.Fragment>
-              )
-            })
-          )}
-          {palettePreviewBlock && blocks.length > 0 && paletteInsertIndex !== null && paletteInsertIndex >= blocks.length && (
-            <PaletteInsertPreview block={palettePreviewBlock} site={site} forms={forms} calendars={calendars} />
+            <LandingCanvasSections
+              lanes={lanes}
+              blocks={blocks}
+              selectedBlockId={selectedBlockId}
+              site={site}
+              forms={forms}
+              calendars={calendars}
+              pages={pages}
+              activePageId={activePageId}
+              palettePreviewBlock={palettePreviewBlock}
+              paletteInsertIndex={paletteInsertIndex}
+              paletteSectionTarget={paletteSectionTarget}
+              paletteDragging={paletteDragging}
+              onSelectBlock={onSelectBlock}
+              onDeleteBlock={onDeleteBlock}
+              onMoveBlock={onMoveBlock}
+              getBlockMoveState={getBlockMoveState}
+              onPatchBlock={onPatchBlock}
+              onPatchBlockSettings={onPatchBlockSettings}
+              onSaveBlock={onSaveBlock}
+            />
           )}
         </div>
       </section>
