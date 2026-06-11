@@ -10,6 +10,7 @@ import {
   Settings,
   BarChart3,
   PanelTop,
+  Workflow,
   GripVertical,
   Check,
   ChevronDown,
@@ -66,6 +67,7 @@ const baseNavigation: NavItem[] = [
   { id: 'divider-1', name: '', href: '#', icon: LayoutDashboard, isDivider: true }, // Divisor visual
   { id: 'campaigns', name: 'Publicidad', href: '/campaigns/classic', icon: Megaphone },
   { id: 'sites', name: 'Sitios', href: '/sites', icon: PanelTop },
+  { id: 'automations', name: 'Automatizaciones', href: '/automations', icon: Workflow },
   { id: 'reports', name: 'Reportes', href: '/reports/table/month/cashflow', icon: FileBarChart }
 ]
 
