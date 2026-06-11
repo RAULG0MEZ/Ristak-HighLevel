@@ -16,6 +16,7 @@ import {
   isDashboardHost,
   listSites,
   refreshSitesPublicDomain,
+  removeSitesPublicDomain,
   renderDomainErrorHtml,
   renderPublicSiteHtml,
   reorderBlocks,
@@ -336,6 +337,15 @@ export async function verifySitesDomainHandler(req, res) {
   } catch (error) {
     logger.error(`Error verificando dominio publico de Sites: ${error.message}`)
     sendError(res, error, 'Error verificando dominio')
+  }
+}
+
+export async function removeSitesDomainHandler(req, res) {
+  try {
+    res.json({ success: true, data: await removeSitesPublicDomain() })
+  } catch (error) {
+    logger.error(`Error eliminando dominio publico de Sites: ${error.message}`)
+    sendError(res, error, 'Error eliminando dominio')
   }
 }
 

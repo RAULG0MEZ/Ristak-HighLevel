@@ -690,6 +690,10 @@ export const sitesService = {
     return apiClient.post<SitesDomainConfig>('/sites/domain/verify', { domain })
   },
 
+  removeDomain() {
+    return apiClient.delete<SitesDomainConfig>('/sites/domain')
+  },
+
   verifySiteDomain(siteId: string, domain?: string) {
     return apiClient.post<SitesDomainConfig>(`/sites/${siteId}/verify-domain`, domain === undefined ? undefined : { domain })
   },

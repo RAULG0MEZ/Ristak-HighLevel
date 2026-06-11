@@ -7961,6 +7961,20 @@ export async function getSitesPublicDomain() {
   return getSitesPublicDomainConfig()
 }
 
+/**
+ * Quita el dominio público de la cuenta. Las páginas siguen existiendo y
+ * vuelven a servirse solo desde el host por defecto de la app.
+ */
+export async function removeSitesPublicDomain() {
+  await Promise.all([
+    setAppConfig(SITES_PUBLIC_DOMAIN_CONFIG_KEYS.domain, null),
+    setAppConfig(SITES_PUBLIC_DOMAIN_CONFIG_KEYS.verified, null),
+    setAppConfig(SITES_PUBLIC_DOMAIN_CONFIG_KEYS.checkedAt, null),
+    setAppConfig(SITES_PUBLIC_DOMAIN_CONFIG_KEYS.error, null)
+  ])
+  return getSitesPublicDomainConfig()
+}
+
 export async function refreshSitesPublicDomain(input = {}) {
   const current = await getSitesPublicDomainConfig()
   const hasDomainCandidate = Object.prototype.hasOwnProperty.call(input, 'domain')

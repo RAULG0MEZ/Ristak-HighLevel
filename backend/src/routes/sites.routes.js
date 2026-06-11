@@ -15,6 +15,7 @@ import {
   metaPageEventPublicHandler,
   previewCalendarHandler,
   previewSiteHandler,
+  removeSitesDomainHandler,
   reorderBlocksHandler,
   restoreBlocksHandler,
   submitPublicSiteHandler,
@@ -43,6 +44,7 @@ router.post('/ai-create-html', createSiteWithAIHtmlHandler)
 router.post('/import-html', importSiteHtmlHandler)
 router.get('/domain', getSitesDomainHandler)
 router.post('/domain/verify', verifySitesDomainHandler)
+router.delete('/domain', removeSitesDomainHandler)
 router.get('/:siteId/import-mapping', getImportedSiteMappingHandler)
 router.get('/:siteId', getSiteHandler)
 router.put('/:siteId', updateSiteHandler)
