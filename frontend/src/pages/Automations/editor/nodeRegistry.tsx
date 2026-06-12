@@ -89,6 +89,7 @@ export type ConfigFieldType =
   | 'datetime'
   | 'time'
   | 'keyValue'
+  | 'customFieldValues'
   | 'percentBranches'
   | 'branches'
   | 'webhookUrl'
@@ -1098,9 +1099,17 @@ const CONTACT_ACTIONS: NodeDefinition[] = [
       { key: 'source', label: 'Fuente (opcional)', type: 'text', placeholder: 'Ej. automatización' },
       { key: 'tags', label: 'Etiquetas iniciales', type: 'catalogTags', catalog: 'tags' },
       { key: 'assignedUser', label: 'Usuario asignado (opcional)', type: 'catalogSelect', catalog: 'users', advanced: true },
-      { key: 'customFields', label: 'Campos personalizados', type: 'keyValue' }
+      { key: 'customFields', label: 'Campos personalizados', type: 'customFieldValues' }
     ],
     outputs: () => SINGLE_OUTPUT,
+    validate: (config) => arr<Record<string, unknown>>(config.customFields).flatMap((row, index) => {
+      const fieldKey = str(row.key)
+      const value = str(row.value)
+      if (!fieldKey && !value) return []
+      if (!fieldKey) return [`Campo personalizado ${index + 1}: elige el campo`]
+      if (!value) return [`Campo personalizado ${index + 1}: captura el valor`]
+      return []
+    }),
     summary: (config) => {
       const parts = [str(config.firstName), str(config.phone)].filter(Boolean)
       return {
@@ -1135,7 +1144,7 @@ const CONTACT_ACTIONS: NodeDefinition[] = [
         key: 'customKey',
         label: 'Campo personalizado',
         type: 'catalogSelect',
-        catalog: 'contactFields',
+        catalog: 'customFields',
         showIf: (config) => str(config.searchBy) === 'custom'
       },
       {

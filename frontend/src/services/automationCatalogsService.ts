@@ -1,5 +1,9 @@
 import apiClient from './apiClient'
-import { customFieldsService } from './customFieldsService'
+import {
+  customFieldsService,
+  isSystemCustomFieldDefinition,
+  type CustomFieldDefinition
+} from './customFieldsService'
 import { calendarsService } from './calendarsService'
 import { whatsappApiService, type WhatsAppApiTemplate } from './whatsappApiService'
 import { sitesService } from './sitesService'
@@ -25,6 +29,7 @@ export type CatalogKind =
   | 'tags'
   | 'users'
   | 'contactFields'
+  | 'customFields'
   | 'calendars'
   | 'forms'
   | 'whatsappNumbers'
@@ -87,15 +92,25 @@ async function loadTags(): Promise<CatalogOption[]> {
   }))
 }
 
-async function loadContactFields(): Promise<CatalogOption[]> {
+const customFieldValue = (field: CustomFieldDefinition) =>
+  String(field.key || field.fieldKey || field.definitionId || '').trim()
+
+async function loadCustomFields(): Promise<CatalogOption[]> {
   const catalog = await customFieldsService.listCatalog()
-  const custom = (catalog.fields || [])
-    .filter((field) => !field.archived)
+  return (catalog.fields || [])
+    .filter((field) => !field.archived && !isSystemCustomFieldDefinition(field) && customFieldValue(field))
     .map((field) => ({
-      value: `custom:${field.key || field.fieldKey || field.definitionId}`,
-      label: field.label || field.name,
+      value: customFieldValue(field),
+      label: field.label || field.name || customFieldValue(field),
       meta: field.dataType
     }))
+}
+
+async function loadContactFields(): Promise<CatalogOption[]> {
+  const custom = (await loadCustomFields()).map((field) => ({
+    ...field,
+    value: `custom:${field.value}`
+  }))
   return [...STANDARD_CONTACT_FIELDS, ...custom]
 }
 
@@ -187,6 +202,7 @@ const loaders: Record<CatalogKind, () => Promise<CatalogOption[]>> = {
   tags: loadTags,
   users: async () => MOCK_USERS,
   contactFields: loadContactFields,
+  customFields: loadCustomFields,
   calendars: loadCalendars,
   forms: loadForms,
   whatsappNumbers: loadWhatsAppNumbers,
@@ -200,6 +216,7 @@ const loaders: Record<CatalogKind, () => Promise<CatalogOption[]>> = {
 const fallbacks: Partial<Record<CatalogKind, CatalogOption[]>> = {
   tags: [],
   contactFields: STANDARD_CONTACT_FIELDS,
+  customFields: [],
   calendars: [],
   forms: [],
   whatsappNumbers: [],

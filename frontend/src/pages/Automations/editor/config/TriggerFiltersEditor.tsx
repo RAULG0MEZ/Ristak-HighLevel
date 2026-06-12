@@ -89,10 +89,10 @@ export const TriggerFiltersEditor: React.FC<{
             {filter.field === 'custom' && (
               <div style={{ marginTop: 6 }}>
                 <CatalogSelect
-                  catalog="contactFields"
+                  catalog="customFields"
                   value={filter.customKey || ''}
                   onChange={(next, label) => update(index, { customKey: next, customLabel: label })}
-                  placeholder="¿Cuál campo personalizado?"
+                  placeholder="Elige el campo personalizado"
                   aria-label="Campo personalizado"
                 />
               </div>

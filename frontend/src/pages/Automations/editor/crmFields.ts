@@ -216,6 +216,7 @@ export interface ConditionRule {
   field: string
   /** Subcampo cuando el campo es personalizado (clave del campo) */
   customKey?: string
+  customLabel?: string
   operator: string
   value?: string
   /** Segundo valor para operadores "entre" */
@@ -359,7 +360,10 @@ export function summarizeAdvancedCondition(config: unknown): string {
   if (!firstRule) return ''
   const field = getCrmField(firstRule.field)
   const operator = getOperatorsForField(firstRule.field).find((op) => op.value === firstRule.operator)
-  const base = `Si ${[field?.label.toLowerCase(), operator?.label, operatorNeedsValue(firstRule.field, firstRule.operator) ? `"${firstRule.valueLabel || firstRule.value}"` : '']
+  const fieldLabel = field?.needsCustomKey && firstRule.customLabel
+    ? firstRule.customLabel.toLowerCase()
+    : field?.label.toLowerCase()
+  const base = `Si ${[fieldLabel, operator?.label, operatorNeedsValue(firstRule.field, firstRule.operator) ? `"${firstRule.valueLabel || firstRule.value}"` : '']
     .filter(Boolean)
     .join(' ')}`
 
@@ -424,7 +428,8 @@ export function summarizeCondition(config: unknown): string {
   const first = rules[0]
   const field = getCrmField(first.field)
   const operator = getOperatorsForField(first.field).find((op) => op.value === first.operator)
-  const base = [field?.label, operator?.label, operatorNeedsValue(first.field, first.operator) ? (first.valueLabel || first.value) : '']
+  const fieldLabel = field?.needsCustomKey && first.customLabel ? first.customLabel : field?.label
+  const base = [fieldLabel, operator?.label, operatorNeedsValue(first.field, first.operator) ? (first.valueLabel || first.value) : '']
     .filter(Boolean)
     .join(' ')
   if (rules.length === 1) return base

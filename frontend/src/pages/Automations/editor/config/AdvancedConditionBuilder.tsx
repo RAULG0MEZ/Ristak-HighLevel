@@ -261,6 +261,7 @@ export const AdvancedConditionBuilder: React.FC<AdvancedConditionBuilderProps> =
               valueLabel: '',
               valueTo: '',
               customKey: '',
+              customLabel: '',
               valueMode: 'fixed'
             })
           }
@@ -271,10 +272,10 @@ export const AdvancedConditionBuilder: React.FC<AdvancedConditionBuilderProps> =
         {field?.needsCustomKey && (
           <div style={{ marginTop: 6 }}>
             <CatalogSelect
-              catalog="contactFields"
+              catalog="customFields"
               value={rule.customKey || ''}
-              onChange={(next) => updateRule(branchIndex, groupIndex, ruleIndex, { customKey: next })}
-              placeholder="¿Cuál campo?"
+              onChange={(next, label) => updateRule(branchIndex, groupIndex, ruleIndex, { customKey: next, customLabel: label })}
+              placeholder="Elige el campo personalizado"
               aria-label="Campo personalizado"
             />
           </div>

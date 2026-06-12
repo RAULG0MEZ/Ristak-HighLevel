@@ -332,6 +332,54 @@ export const NodeConfigBubble: React.FC<NodeConfigBubbleProps> = ({
         )
       }
 
+      case 'customFieldValues': {
+        const rows = Array.isArray(config[field.key])
+          ? (config[field.key] as Array<{ key?: string; keyName?: string; value?: string }>)
+          : []
+        const updateRow = (index: number, patch: { key?: string; keyName?: string; value?: string }) => {
+          setValue(field.key, rows.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)))
+        }
+        return (
+          <Field key={field.key} label={field.label} help={field.help}>
+            {rows.map((row, index) => (
+              <div key={index} className={styles.configRow} style={{ marginBottom: 6 }}>
+                <div className={styles.configRowGrow}>
+                  <CatalogSelect
+                    catalog="customFields"
+                    value={str(row.key)}
+                    onChange={(value, label) => updateRow(index, { key: value, keyName: label })}
+                    placeholder="Campo personalizado"
+                    aria-label="Campo personalizado"
+                  />
+                </div>
+                <TextInput
+                  className={styles.configRowGrow}
+                  placeholder="Valor"
+                  value={str(row.value)}
+                  onChange={(event) => updateRow(index, { value: event.target.value })}
+                />
+                <button
+                  type="button"
+                  className={styles.configIconButton}
+                  title="Quitar"
+                  onClick={() => setValue(field.key, rows.filter((_, rowIndex) => rowIndex !== index))}
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              className={styles.configSmallButton}
+              onClick={() => setValue(field.key, [...rows, { key: '', value: '' }])}
+            >
+              <Plus size={11} />
+              Agregar campo
+            </button>
+          </Field>
+        )
+      }
+
       case 'percentBranches':
       case 'branches': {
         const withPercent = field.type === 'percentBranches'

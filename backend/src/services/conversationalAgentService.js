@@ -1166,6 +1166,8 @@ export async function listAgentFilterOptions() {
     db.all(`
       SELECT field_key, label
       FROM contact_custom_field_definitions
+      WHERE archived = 0
+        AND COALESCE(source_type, 'manual') != 'system'
       ORDER BY label ASC
       LIMIT 300
     `).catch(() => [])

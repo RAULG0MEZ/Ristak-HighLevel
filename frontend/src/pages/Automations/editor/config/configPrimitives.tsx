@@ -140,6 +140,32 @@ export const CatalogSelect: React.FC<CatalogSelectProps> = ({
     return <span className={styles.configHelp}>Cargando opciones…</span>
   }
 
+  if (catalog === 'customFields') {
+    const selectOptions = options.map((option) => ({
+      value: option.value,
+      label: option.meta ? `${option.label} · ${option.meta}` : option.label
+    }))
+    const hasSavedValue = Boolean(value) && !selectOptions.some((option) => option.value === value)
+    if (hasSavedValue) {
+      selectOptions.unshift({ value, label: `${value} · guardado` })
+    }
+    if (selectOptions.length === 0) {
+      return <span className={styles.configHelp}>No hay campos personalizados activos todavía.</span>
+    }
+    return (
+      <CustomSelect
+        options={selectOptions}
+        value={value}
+        onValueChange={(next) => {
+          const selected = options.find((option) => option.value === next)
+          onChange(next, selected?.label || next)
+        }}
+        placeholder={placeholder || 'Selecciona el campo personalizado'}
+        aria-label={rest['aria-label']}
+      />
+    )
+  }
+
   if (options.length === 0) {
     return <span className={styles.configHelp}>No hay opciones disponibles todavía.</span>
   }

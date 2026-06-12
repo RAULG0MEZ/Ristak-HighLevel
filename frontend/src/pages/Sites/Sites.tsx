@@ -10904,9 +10904,8 @@ const getImportedActiveCustomFields = (customFields: CustomFieldDefinition[]) =>
 const getImportedFieldRouteType = (field: ImportedSiteFieldMapping): ImportedSiteFieldMapping['destinationType'] => {
   if (field.ignored || field.destinationType === 'ignored' || field.saveMode === 'ignored') return 'ignored'
   if (field.destinationType === 'standard' || field.saveMode === 'standard') return 'standard'
-  if (field.destinationType === 'custom' && (field.customFieldDefinitionId || field.customFieldKey)) return 'custom'
-  if (field.destinationType === 'new_custom' || field.saveMode === 'new_custom') return 'new_custom'
-  return 'new_custom'
+  if (field.destinationType === 'custom' || field.saveMode === 'custom' || field.destinationType === 'new_custom' || field.saveMode === 'new_custom') return 'custom'
+  return 'custom'
 }
 
 const findImportedCustomFieldDefinition = (
@@ -10967,6 +10966,29 @@ const ImportedHtmlReviewModal: React.FC<{
     }))
   }
 
+  const customRouteNeedsSelection = (field: ImportedSiteFieldMapping) => (
+    getImportedFieldRouteType(field) === 'custom' &&
+    !findImportedCustomFieldDefinition(activeCustomFields, field)
+  )
+
+  const hasUnresolvedCustomRoutes = draft.some(form => form.fields.some(customRouteNeedsSelection))
+
+  const normalizeDraftForConfirm = () => draft.map(form => ({
+    ...form,
+    fields: form.fields.map(field => {
+      if (getImportedFieldRouteType(field) !== 'custom') return field
+      const selectedField = findImportedCustomFieldDefinition(activeCustomFields, field)
+      if (selectedField) return { ...field, ...buildExistingImportedCustomFieldPatch(selectedField) }
+      return {
+        ...field,
+        ...clearImportedCustomFieldPatch,
+        destinationType: 'ignored' as const,
+        ignored: true,
+        saveMode: 'ignored'
+      }
+    })
+  }))
+
   const updateDestinationType = (formIndex: number, fieldIndex: number, field: ImportedSiteFieldMapping, destinationType: ImportedSiteFieldMapping['destinationType']) => {
     if (destinationType === 'standard') {
       patchField(formIndex, fieldIndex, {
@@ -10985,16 +11007,12 @@ const ImportedHtmlReviewModal: React.FC<{
         patchField(formIndex, fieldIndex, buildExistingImportedCustomFieldPatch(selectedField))
         return
       }
-      destinationType = 'new_custom'
-    }
-
-    if (destinationType === 'new_custom') {
       patchField(formIndex, fieldIndex, {
         ...clearImportedCustomFieldPatch,
-        destinationType,
+        destinationType: 'custom',
         ignored: false,
-        saveMode: destinationType,
-        destinationKey: normalizeImportedDestinationKey(field.destinationKey || field.sourceName || field.label, 'campo_personalizado')
+        saveMode: 'custom',
+        destinationKey: ''
       })
       return
     }
@@ -11067,7 +11085,6 @@ const ImportedHtmlReviewModal: React.FC<{
                         >
                           <option value="standard">Dato del contacto</option>
                           <option value="custom">Campo personalizado</option>
-                          <option value="new_custom">Nuevo campo personalizado</option>
                           <option value="ignored">No guardar</option>
                         </CustomSelect>
                       </label>
@@ -11092,14 +11109,24 @@ const ImportedHtmlReviewModal: React.FC<{
                           <CustomSelect
                             value={selectedCustomFieldId}
                             onChange={(event) => {
+                              if (!event.target.value) {
+                                patchField(formIndex, fieldIndex, {
+                                  ...clearImportedCustomFieldPatch,
+                                  destinationType: 'custom',
+                                  ignored: false,
+                                  saveMode: 'custom',
+                                  destinationKey: ''
+                                })
+                                return
+                              }
                               const customField = activeCustomFields.find(item => item.definitionId === event.target.value)
                               if (!customField) return
                               patchField(formIndex, fieldIndex, buildExistingImportedCustomFieldPatch(customField))
                             }}
                           >
-                            {!activeCustomFields.length && (
-                              <option value="">No hay campos disponibles</option>
-                            )}
+                            <option value="" disabled>
+                              {activeCustomFields.length ? 'Elige un campo guardado' : 'No hay campos disponibles'}
+                            </option>
                             {selectedCustomFieldId && !selectedCustomField && (
                               <option value={selectedCustomFieldId}>{field.customFieldLabel || field.destinationKey || 'Campo guardado'}</option>
                             )}
@@ -11109,17 +11136,6 @@ const ImportedHtmlReviewModal: React.FC<{
                               </option>
                             ))}
                           </CustomSelect>
-                        </label>
-                      ) : destinationType === 'new_custom' ? (
-                        <label>
-                          <span>Nombre interno</span>
-                          <input
-                            value={field.destinationKey || ''}
-                            placeholder="campo_personalizado"
-                            onChange={(event) => patchField(formIndex, fieldIndex, {
-                              destinationKey: normalizeImportedDestinationKey(event.target.value, field.sourceName || field.label)
-                            })}
-                          />
                         </label>
                       ) : (
                         <label>
@@ -11139,9 +11155,9 @@ const ImportedHtmlReviewModal: React.FC<{
           <Button variant="secondary" onClick={onClose} disabled={saving}>
             Cerrar
           </Button>
-          <Button onClick={() => onConfirm(draft)} loading={saving}>
+          <Button onClick={() => onConfirm(normalizeDraftForConfirm())} loading={saving} disabled={hasUnresolvedCustomRoutes}>
             <Check size={15} />
-            Guardar ruta de datos
+            {hasUnresolvedCustomRoutes ? 'Elige campos guardados' : 'Guardar ruta de datos'}
           </Button>
         </footer>
       </div>

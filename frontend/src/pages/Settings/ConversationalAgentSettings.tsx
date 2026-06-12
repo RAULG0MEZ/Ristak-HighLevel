@@ -85,6 +85,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, calendars, filterOptions, 
   const strategyText = strategyIsCustom ? agent.closingStrategyCustom : systemStrategy
   const entryCount = agent.filters.entry.groups.reduce((total, group) => total + group.conditions.length, 0)
   const exitCount = agent.filters.exit.groups.reduce((total, group) => total + group.conditions.length, 0)
+  const customFieldOptions = filterOptions?.customFields || []
 
   const updateExtra = (index: number, patch: Partial<AgentSuccessExtra>) => {
     onChange({ successExtras: agent.successExtras.map((extra, i) => (i === index ? { ...extra, ...patch } : extra)) })
@@ -287,12 +288,21 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, calendars, filterOptions, 
                     </select>
                     {extra.type === 'set_custom_field' ? (
                       <>
-                        <input
-                          className={styles.ruleInput}
+                        <select
+                          className={styles.ruleSelect}
                           value={extra.field || ''}
-                          placeholder="Campo"
                           onChange={(event) => updateExtra(index, { field: event.target.value })}
-                        />
+                        >
+                          <option value="">
+                            {customFieldOptions.length ? 'Elige el campo' : 'No hay campos personalizados activos'}
+                          </option>
+                          {extra.field && !customFieldOptions.some((field) => field.key === extra.field) && (
+                            <option value={extra.field}>{extra.field} · guardado</option>
+                          )}
+                          {customFieldOptions.map((field) => (
+                            <option key={field.key} value={field.key}>{field.label}</option>
+                          ))}
+                        </select>
                         <input
                           className={styles.ruleInput}
                           value={extra.value || ''}
