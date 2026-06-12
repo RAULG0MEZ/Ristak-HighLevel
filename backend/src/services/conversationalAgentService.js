@@ -40,15 +40,23 @@ export const SUCCESS_ACTIONS = [
 const VALID_OBJECTIVES = new Set(CONVERSATIONAL_OBJECTIVES.map((item) => item.id))
 const VALID_SUCCESS_ACTIONS = new Set(SUCCESS_ACTIONS.map((item) => item.id))
 const VALID_STATUSES = new Set(['active', 'paused', 'human', 'skipped', 'completed', 'discarded'])
+const DEFAULT_CONVERSATIONAL_AGENT_MODEL = process.env.OPENAI_CONVERSATIONAL_AGENT_MODEL || 'gpt-5.4-nano'
+const AI_MODEL_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,99}$/
 
 function toBoolean(value) {
   return [true, 1, '1', 'true'].includes(value)
+}
+
+export function normalizeConversationalAgentModel(value) {
+  const model = String(value || '').trim().slice(0, 100)
+  return AI_MODEL_ID_PATTERN.test(model) ? model : DEFAULT_CONVERSATIONAL_AGENT_MODEL
 }
 
 function mapConfigRow(row) {
   if (!row) {
     return {
       enabled: false,
+      model: DEFAULT_CONVERSATIONAL_AGENT_MODEL,
       objective: 'citas',
       customObjective: '',
       successAction: 'ready_for_human',
@@ -66,6 +74,7 @@ function mapConfigRow(row) {
 
   return {
     enabled: toBoolean(row.enabled),
+    model: normalizeConversationalAgentModel(row.model),
     objective: VALID_OBJECTIVES.has(row.objective) ? row.objective : 'citas',
     customObjective: row.custom_objective || '',
     successAction: VALID_SUCCESS_ACTIONS.has(row.success_action) ? row.success_action : 'ready_for_human',
@@ -91,6 +100,7 @@ export async function saveConversationalAgentConfig(input = {}) {
 
   const next = {
     enabled: input.enabled === undefined ? current.enabled : toBoolean(input.enabled),
+    model: input.model === undefined ? current.model : normalizeConversationalAgentModel(input.model),
     objective: VALID_OBJECTIVES.has(input.objective) ? input.objective : current.objective,
     customObjective: input.customObjective === undefined ? current.customObjective : String(input.customObjective || '').slice(0, 2000),
     successAction: VALID_SUCCESS_ACTIONS.has(input.successAction) ? input.successAction : current.successAction,
@@ -112,14 +122,14 @@ export async function saveConversationalAgentConfig(input = {}) {
   if (existing) {
     await db.run(`
       UPDATE conversational_agent_config
-      SET enabled = ?, objective = ?, custom_objective = ?, success_action = ?,
+      SET enabled = ?, model = ?, objective = ?, custom_objective = ?, success_action = ?,
           required_data = ?, handoff_rules = ?, extra_instructions = ?,
           allow_emojis = ?, hide_attended = ?, default_calendar_id = ?,
           closing_strategy_mode = ?, closing_strategy_custom = ?,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = 1
     `, [
-      next.enabled ? 1 : 0, next.objective, next.customObjective, next.successAction,
+      next.enabled ? 1 : 0, next.model, next.objective, next.customObjective, next.successAction,
       next.requiredData, next.handoffRules, next.extraInstructions,
       next.allowEmojis ? 1 : 0, next.hideAttended ? 1 : 0, next.defaultCalendarId,
       next.closingStrategyMode, next.closingStrategyCustom
@@ -127,13 +137,13 @@ export async function saveConversationalAgentConfig(input = {}) {
   } else {
     await db.run(`
       INSERT INTO conversational_agent_config (
-        id, enabled, objective, custom_objective, success_action,
+        id, enabled, model, objective, custom_objective, success_action,
         required_data, handoff_rules, extra_instructions,
         allow_emojis, hide_attended, default_calendar_id,
         closing_strategy_mode, closing_strategy_custom
-      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
-      next.enabled ? 1 : 0, next.objective, next.customObjective, next.successAction,
+      next.enabled ? 1 : 0, next.model, next.objective, next.customObjective, next.successAction,
       next.requiredData, next.handoffRules, next.extraInstructions,
       next.allowEmojis ? 1 : 0, next.hideAttended ? 1 : 0, next.defaultCalendarId,
       next.closingStrategyMode, next.closingStrategyCustom
@@ -143,7 +153,7 @@ export async function saveConversationalAgentConfig(input = {}) {
   await recordConversationalAgentEvent({
     contactId: null,
     eventType: 'config_updated',
-    detail: { enabled: next.enabled, objective: next.objective, successAction: next.successAction }
+    detail: { enabled: next.enabled, model: next.model, objective: next.objective, successAction: next.successAction }
   })
 
   return getConversationalAgentConfig()

@@ -2843,6 +2843,7 @@ async function initTables() {
       CREATE TABLE IF NOT EXISTS conversational_agent_config (
         id INTEGER PRIMARY KEY,
         enabled INTEGER DEFAULT 0,
+        model TEXT DEFAULT 'gpt-5.4-nano',
         objective TEXT DEFAULT 'citas',
         custom_objective TEXT,
         success_action TEXT DEFAULT 'ready_for_human',
@@ -2861,6 +2862,7 @@ async function initTables() {
 
     // Columnas agregadas después del despliegue inicial del agente conversacional
     for (const [columnName, columnType] of [
+      ['model', "TEXT DEFAULT 'gpt-5.4-nano'"],
       ['closing_strategy_mode', "TEXT DEFAULT 'system'"],
       ['closing_strategy_custom', 'TEXT']
     ]) {

@@ -19,7 +19,8 @@ import {
   matchAgentForMessage,
   assignAgentToConversation,
   buildRuleContext,
-  exitRulesMatch
+  exitRulesMatch,
+  normalizeConversationalAgentModel
 } from '../../services/conversationalAgentService.js'
 import { buildConversationalInstructions } from './prompt.js'
 import { createConversationalTools } from './tools.js'
@@ -27,7 +28,7 @@ import { buildInputItems } from '../runner.js'
 
 const HISTORY_LIMIT = 20
 const MAX_TURNS = 10
-const DEFAULT_MODEL = 'gpt-5.5'
+const DEFAULT_MODEL = process.env.OPENAI_CONVERSATIONAL_AGENT_MODEL || 'gpt-5.4-nano'
 const MAX_REPLY_CHARS = 1000
 const DEBOUNCE_MS = 4000
 
@@ -70,13 +71,13 @@ async function loadConversationHistory(contactId) {
   })
 }
 
-async function buildAgentForRun({ config, contactId, contactName, dryRun }) {
+async function buildAgentForRun({ config, conversationModel, contactId, contactName, dryRun }) {
   const [aiConfig, timezone] = await Promise.all([
     getAIAgentConfig({}),
     getAccountTimezone().catch(() => 'America/Mexico_City')
   ])
 
-  const model = String(aiConfig?.model || DEFAULT_MODEL)
+  const model = normalizeConversationalAgentModel(conversationModel || config?.model || DEFAULT_MODEL)
   const nowIso = new Date().toLocaleString('es-MX', { timeZone: timezone, dateStyle: 'full', timeStyle: 'short' })
 
   let businessName = null
@@ -255,6 +256,7 @@ export async function handleInboundMessageForConversationalAgent({ contactId, ph
 
       const { agent, ctx, model } = await buildAgentForRun({
         config: agentConfig,
+        conversationModel: config.model,
         contactId,
         contactName: contact?.full_name || null,
         dryRun: false
@@ -321,6 +323,7 @@ export async function runConversationalAgentPreview({ messages = [], configOverr
     throw error
   }
 
+  const globalConfig = await getConversationalAgentConfig()
   let baseConfig = agentId ? await getConversationalAgent(agentId) : null
   if (!baseConfig) {
     baseConfig = (await listConversationalAgents())[0] || null
@@ -347,6 +350,7 @@ export async function runConversationalAgentPreview({ messages = [], configOverr
 
   const { agent, ctx, model } = await buildAgentForRun({
     config,
+    conversationModel: globalConfig.model,
     contactId: null,
     contactName: null,
     dryRun: true

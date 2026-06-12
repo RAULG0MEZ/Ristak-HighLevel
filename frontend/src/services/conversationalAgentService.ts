@@ -6,6 +6,7 @@ export type ClosingStrategyMode = 'system' | 'custom'
 
 export interface ConversationalAgentConfig {
   enabled: boolean
+  model: string
   objective: ConversationalObjective
   customObjective: string
   successAction: ConversationalSuccessAction
@@ -25,6 +26,7 @@ export interface ConversationalAgentConfig {
 
 export interface ConversationalAgentConfigInput {
   enabled?: boolean
+  model?: string
   objective?: ConversationalObjective
   customObjective?: string
   successAction?: ConversationalSuccessAction

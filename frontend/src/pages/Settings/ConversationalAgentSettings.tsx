@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Bot, ChevronDown, MessageCircle, Play, Plus, RotateCcw, Send, Trash2, X } from 'lucide-react'
 import { Button, Card, CustomSelect, TagPicker } from '@/components/common'
+import { DEFAULT_AI_MODEL, aiModelOptionGroups, aiModelOptions, getKnownAIModel } from '@/constants/aiModels'
 import { useNotification } from '@/contexts/NotificationContext'
 import {
   conversationalAgentService,
@@ -547,7 +548,7 @@ export const ConversationalAgentSettings: React.FC = () => {
     scheduleAgentSave(agentId)
   }
 
-  const handleGlobalChange = async (patch: { enabled?: boolean; hideAttended?: boolean }) => {
+  const handleGlobalChange = async (patch: { enabled?: boolean; hideAttended?: boolean; model?: string }) => {
     try {
       const next = await conversationalAgentService.saveConfig(patch)
       setConfig(next)
@@ -587,6 +588,8 @@ export const ConversationalAgentSettings: React.FC = () => {
   }
 
   const systemStrategy = config?.systemClosingStrategy || ''
+  const selectedModelValue = getKnownAIModel(config?.model || DEFAULT_AI_MODEL)
+  const selectedModel = aiModelOptions.find((option) => option.value === selectedModelValue) || aiModelOptions[0]
 
   return (
     <div className={styles.container}>
@@ -620,6 +623,30 @@ export const ConversationalAgentSettings: React.FC = () => {
               <Plus size={16} />
               Nuevo agente
             </Button>
+          </div>
+        </div>
+
+        <div className={styles.settingsGrid}>
+          <div className={styles.field}>
+            <label className={styles.label}>Modelo de IA para chats</label>
+            <CustomSelect
+              value={selectedModelValue}
+              onChange={(event) => handleGlobalChange({ model: event.target.value })}
+              disabled={loading || !config}
+            >
+              {aiModelOptionGroups.map((group) => (
+                <optgroup key={group.label} label={group.label}>
+                  {group.options.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </CustomSelect>
+            <p className={styles.helper}>
+              {selectedModel.description} Independiente del Agente AI general.
+            </p>
           </div>
         </div>
 
