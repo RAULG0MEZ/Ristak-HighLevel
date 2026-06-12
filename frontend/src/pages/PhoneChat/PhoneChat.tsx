@@ -371,6 +371,11 @@ const GHL_CHAT_CHANNEL_LABELS: Record<HighLevelChatChannel, string> = {
   messenger: 'Messenger',
   instagram: 'Instagram'
 }
+type ContactChannelBadgeKind = 'whatsapp' | 'messenger' | 'instagram' | 'email' | 'sms'
+type ContactChannelBadge = {
+  kind: ContactChannelBadgeKind
+  label: string
+}
 
 interface ChatMessage {
   id: string
@@ -1538,12 +1543,57 @@ function getHighLevelChatChannelLabel(channel?: string | null) {
   return normalized ? GHL_CHAT_CHANNEL_LABELS[normalized] : ''
 }
 
+function normalizeChannelProbe(value?: string | null) {
+  return String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+}
+
+function getContactChannelBadge(contact?: (Partial<Contact> & {
+  lastMessageChannel?: string | null
+  lastMessageTransport?: string | null
+}) | null): ContactChannelBadge | null {
+  const channelValues = [
+    contact?.lastMessageChannel,
+    contact?.lastMessageTransport,
+    contact?.whatsappAttributionPlatform,
+    contact?.attribution_session_source,
+    contact?.source
+  ]
+
+  for (const value of channelValues) {
+    const channel = normalizeGhlChatChannelValue(value)
+    if (channel === 'instagram') return { kind: 'instagram', label: 'Instagram' }
+    if (channel === 'messenger') return { kind: 'messenger', label: 'Messenger' }
+    if (channel === 'sms_qr') return { kind: 'sms', label: 'SMS' }
+    if (channel === 'whatsapp_api') return { kind: 'whatsapp', label: 'WhatsApp' }
+
+    const normalized = normalizeChannelProbe(value)
+    if (!normalized) continue
+    if (normalized.includes('instagram') || normalized === 'ig') return { kind: 'instagram', label: 'Instagram' }
+    if (normalized.includes('messenger') || normalized === 'fb_messenger') return { kind: 'messenger', label: 'Messenger' }
+    if (normalized.includes('email') || normalized.includes('mail') || normalized.includes('correo')) return { kind: 'email', label: 'Correo' }
+    if (normalized.includes('sms')) return { kind: 'sms', label: 'SMS' }
+    if (normalized.includes('whatsapp') || normalized === 'api' || normalized === 'qr') return { kind: 'whatsapp', label: 'WhatsApp' }
+  }
+
+  return null
+}
+
 function getAvatarChannelClass(contact?: (Partial<Contact> & { lastMessageChannel?: string | null }) | null) {
-  const channel = normalizeGhlChatChannelValue(contact?.lastMessageChannel)
-  if (channel === 'instagram') return styles.avatarInstagram
-  if (channel === 'messenger') return styles.avatarMessenger
-  if (channel === 'whatsapp_api' || channel === 'sms_qr') return styles.avatarWhatsapp
+  const badge = getContactChannelBadge(contact)
+  if (badge?.kind === 'instagram') return styles.avatarInstagram
+  if (badge?.kind === 'messenger') return styles.avatarMessenger
+  if (badge?.kind === 'email') return styles.avatarEmail
+  if (badge?.kind === 'sms') return styles.avatarSms
+  if (badge?.kind === 'whatsapp') return styles.avatarWhatsapp
   return ''
+}
+
+function getAvatarChannelBadgeClass(kind: ContactChannelBadgeKind) {
+  if (kind === 'instagram') return styles.avatarChannelBadgeInstagram
+  if (kind === 'messenger') return styles.avatarChannelBadgeMessenger
+  if (kind === 'email') return styles.avatarChannelBadgeEmail
+  if (kind === 'sms') return styles.avatarChannelBadgeSms
+  return styles.avatarChannelBadgeWhatsapp
 }
 
 function getMessageTransportBadge(transport?: string | null) {
@@ -6900,15 +6950,34 @@ export const PhoneChat: React.FC = () => {
     }
   }
 
-  const renderAvatar = (contact: Contact) => {
+  const renderChannelBadgeIcon = (kind: ContactChannelBadgeKind) => {
+    if (kind === 'whatsapp') return <Icon name="whatsapp" size={12} />
+    if (kind === 'messenger') return <Icon name="facebook" size={12} />
+    if (kind === 'instagram') return <Icon name="instagram" size={12} />
+    if (kind === 'email') return <Mail size={12} />
+    return <MessageCircle size={12} />
+  }
+
+  const renderAvatar = (contact: Contact, options: { showChannelBadge?: boolean } = {}) => {
     const photoUrl = getContactProfilePhoto(contact as Partial<Contact> & Record<string, unknown>)
-    const avatarChannelClass = getAvatarChannelClass(contact as ChatContact)
+    const chatContact = contact as ChatContact
+    const avatarChannelClass = getAvatarChannelClass(chatContact)
+    const channelBadge = options.showChannelBadge ? getContactChannelBadge(chatContact) : null
 
     return (
       <span className={`${styles.avatar} ${avatarChannelClass}`}>
         {photoUrl ? (
           <img src={photoUrl} alt="" loading="lazy" referrerPolicy="no-referrer" />
         ) : getContactInitials(contact)}
+        {channelBadge && (
+          <span
+            className={`${styles.avatarChannelBadge} ${getAvatarChannelBadgeClass(channelBadge.kind)}`}
+            title={`Canal: ${channelBadge.label}`}
+            aria-label={`Canal: ${channelBadge.label}`}
+          >
+            {renderChannelBadgeIcon(channelBadge.kind)}
+          </span>
+        )}
       </span>
     )
   }
@@ -6965,7 +7034,7 @@ export const PhoneChat: React.FC = () => {
 
     const content = (
       <>
-        {renderAvatar(contact)}
+        {renderAvatar(contact, { showChannelBadge: source === 'chat' })}
         <span className={styles.chatMain}>
           <strong>{getContactName(contact)}</strong>
           <small>{subtitle}</small>
@@ -10567,7 +10636,7 @@ export const PhoneChat: React.FC = () => {
                   onClick={handleOpenContactInfo}
                   aria-label="Ver información del contacto"
                 >
-                  {renderAvatar(activeContact)}
+                  {renderAvatar(activeContact, { showChannelBadge: true })}
                   <span className={styles.conversationIdentity}>
                     <strong>{getContactName(activeContact)}</strong>
                     <span>{getContactDetail(activeContact)}</span>
