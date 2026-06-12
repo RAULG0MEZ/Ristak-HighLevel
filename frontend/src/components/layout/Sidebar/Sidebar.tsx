@@ -19,7 +19,8 @@ import {
   Palette,
   Rocket,
   Sun,
-  BotMessageSquare
+  BotMessageSquare,
+  Workflow
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { useAppConfig, useAppVersion } from '@/hooks'
@@ -75,7 +76,7 @@ const baseNavigation: NavItem[] = [
   { id: 'analytics', name: 'Analíticas', href: '/analytics', icon: BarChart3 },
   { id: 'divider-1', name: '', href: '#', icon: LayoutDashboard, isDivider: true },
   { id: 'campaigns', name: 'Publicidad', href: '/campaigns/classic', icon: Megaphone },
-  { id: 'automations', name: 'Automatizaciones', href: '/automations', icon: BotMessageSquare },
+  { id: 'automations', name: 'Automatizaciones', href: '/automations', icon: Workflow },
   { id: 'sites', name: 'Sitios', href: '/sites', icon: PanelTop },
 ]
 
