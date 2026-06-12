@@ -496,6 +496,11 @@ interface ContactInfoCustomFieldView {
   definition?: ContactCustomFieldDefinition | null
 }
 
+interface ContactInfoJourneyDetail {
+  label: string
+  value: string
+}
+
 function getPhoneChatDeviceMode(): PhoneChatDeviceMode {
   if (typeof window === 'undefined') return 'checking'
   return getPortableDeviceMode()
@@ -1837,8 +1842,22 @@ function buildContactCustomFieldsForSave(contact: Contact, customField: ContactI
   ]
 }
 
+function isJourneyFormEvent(event: JourneyEvent) {
+  if (event.type !== 'page_visit') return false
+  const data = event.data || {}
+  const eventName = String(data.event_name || '').toLowerCase()
+  const conversionType = String(data.conversion_type || '').toLowerCase()
+
+  return Boolean(
+    data.submission_id ||
+    data.form_site_name ||
+    eventName.includes('form') ||
+    conversionType.includes('form')
+  )
+}
+
 function getJourneyEventLabel(event: JourneyEvent, leadLabel: string) {
-  if (event.type === 'page_visit') return 'Visitó una página'
+  if (event.type === 'page_visit') return isJourneyFormEvent(event) ? 'Llenó formulario' : 'Visitó una página'
   if (event.type === 'contact_created') return `Se hizo ${leadLabel.toLowerCase()}`
   if (event.type === 'appointment') return 'Agendó una cita'
   if (event.type === 'payment') return 'Registró un pago'
@@ -2140,10 +2159,14 @@ function getJourneyEventDescription(event: JourneyEvent) {
 
   if (event.type === 'page_visit') {
     const source = getJourneyPlatformLabel(event)
-    const pageName = getPageName(data.page_url || data.landing_page)
+    const pageName = getReadableValue(data.form_site_name || data.public_page_title) || getPageName(data.page_url || data.landing_page)
     const campaign = getReadableValue(data.campaign_name || data.utm_campaign)
 
-    return [source, pageName, campaign ? `Campaña ${campaign}` : ''].filter(Boolean).join(' · ') || 'Visita registrada'
+    return [
+      isJourneyFormEvent(event) ? 'Formulario enviado' : source,
+      pageName,
+      campaign ? `Campaña ${campaign}` : ''
+    ].filter(Boolean).join(' · ') || 'Visita registrada'
   }
 
   if (event.type === 'contact_created') {
@@ -2190,6 +2213,137 @@ function getJourneyEventDescription(event: JourneyEvent) {
   }
 
   return ''
+}
+
+function getJourneyDetailText(value: unknown) {
+  if (value === null || value === undefined) return ''
+  if (typeof value === 'boolean') return value ? 'Sí' : 'No'
+  if (typeof value === 'number') return getReadableValue(value)
+
+  const normalized = String(value).trim()
+  if (!normalized || ['null', 'undefined', 'nan'].includes(normalized.toLowerCase())) return ''
+
+  return getReadableValue(normalized)
+}
+
+function addJourneyDetail(
+  details: ContactInfoJourneyDetail[],
+  seen: Set<string>,
+  label: string,
+  value: unknown
+) {
+  const text = getJourneyDetailText(value)
+  if (!text) return
+
+  const key = `${label}:${text}`.toLowerCase()
+  if (seen.has(key)) return
+
+  seen.add(key)
+  details.push({ label, value: text })
+}
+
+function addJourneyDateDetail(
+  details: ContactInfoJourneyDetail[],
+  seen: Set<string>,
+  label: string,
+  value: unknown,
+  formatDateTime: (value: string) => string
+) {
+  const text = getJourneyDetailText(value)
+  if (!text) return
+
+  const time = Date.parse(text)
+  addJourneyDetail(details, seen, label, Number.isFinite(time) ? formatDateTime(text) : text)
+}
+
+function getJourneyDirectionLabel(value?: string | null) {
+  const normalized = String(value || '').toLowerCase()
+  if (normalized === 'outbound') return 'Enviado por ti'
+  if (normalized === 'inbound') return 'Enviado por el contacto'
+  return ''
+}
+
+function getJourneyLocationLabel(data: Record<string, any>) {
+  return [data.geo_city, data.geo_region, data.geo_country]
+    .map((value) => getReadableValue(value))
+    .filter(Boolean)
+    .join(', ')
+}
+
+function getJourneyEventDetails(
+  event: JourneyEvent,
+  formatDateTime: (value: string) => string
+): ContactInfoJourneyDetail[] {
+  const data = event.data || {}
+  const details: ContactInfoJourneyDetail[] = []
+  const seen = new Set<string>()
+
+  if (event.type === 'page_visit') {
+    addJourneyDetail(details, seen, 'Formulario', data.form_site_name)
+    addJourneyDetail(details, seen, 'Página', data.public_page_title || getPageName(data.page_url || data.landing_page))
+    addJourneyDetail(details, seen, 'Sitio', data.site_name || data.site_slug)
+    addJourneyDetail(details, seen, 'Origen', getJourneyPlatformLabel(event) || data.site_source_name || data.utm_source)
+    addJourneyDetail(details, seen, 'Medio', data.utm_medium)
+    addJourneyDetail(details, seen, 'Campaña', data.campaign_name || data.utm_campaign)
+    addJourneyDetail(details, seen, 'Anuncio', data.ad_name || data.utm_content)
+    addJourneyDetail(details, seen, 'Dispositivo', [data.device_type, data.browser].map((value) => getReadableValue(value)).filter(Boolean).join(' · '))
+    addJourneyDetail(details, seen, 'Ubicación', getJourneyLocationLabel(data))
+    addJourneyDetail(details, seen, 'Conversión', data.conversion_type)
+    addJourneyDetail(details, seen, 'Envío', data.submission_id)
+    return details
+  }
+
+  if (event.type === 'contact_created') {
+    addJourneyDetail(details, seen, 'Nombre', data.name)
+    addJourneyDetail(details, seen, 'Teléfono', data.phone)
+    addJourneyDetail(details, seen, 'Correo', data.email)
+    addJourneyDetail(details, seen, 'Fuente', data.source)
+    addJourneyDetail(details, seen, 'Campaña', data.campaign_name)
+    addJourneyDetail(details, seen, 'Conjunto', data.adset_name)
+    addJourneyDetail(details, seen, 'Anuncio', data.attribution_ad_name || data.meta_ad_name)
+    return details
+  }
+
+  if (event.type === 'appointment') {
+    addJourneyDetail(details, seen, 'Cita', data.title)
+    addJourneyDateDetail(details, seen, 'Inicio', data.start_time, formatDateTime)
+    addJourneyDateDetail(details, seen, 'Fin', data.end_time, formatDateTime)
+    addJourneyDetail(details, seen, 'Estado', formatPlainStatus(data.status))
+    addJourneyDetail(details, seen, 'Ubicación', data.address)
+    addJourneyDetail(details, seen, 'Notas', data.notes)
+    return details
+  }
+
+  if (event.type === 'payment') {
+    const amount = Number(data.amount || 0)
+    addJourneyDetail(details, seen, 'Monto', amount > 0 ? formatCurrency(amount) : '')
+    addJourneyDetail(details, seen, 'Estado', formatPlainStatus(data.status))
+    addJourneyDetail(details, seen, 'Concepto', data.title)
+    addJourneyDetail(details, seen, 'Tipo', data.type)
+    addJourneyDetail(details, seen, 'Proveedor', data.payment_provider)
+    return details
+  }
+
+  if (event.type === 'whatsapp_message' || event.type === 'meta_message') {
+    const messageText = data.message_text || data.message || data.body
+    addJourneyDetail(details, seen, 'Dirección', getJourneyDirectionLabel(data.direction))
+    addJourneyDetail(details, seen, 'Mensaje', messageText)
+    addJourneyDetail(details, seen, 'Tipo', getMessageTypeLabel(String(data.message_type || ''), 'Mensaje'))
+    addJourneyDetail(details, seen, 'Estado', formatPlainStatus(data.status))
+    addJourneyDetail(details, seen, 'Canal', getJourneyPlatformLabel(event) || getHighLevelChatChannelLabel(data.transport) || data.transport || data.source)
+    addJourneyDetail(details, seen, 'Contacto', data.profile_name || data.username || data.phone)
+    addJourneyDetail(details, seen, 'De', data.from_phone || data.sender_id)
+    addJourneyDetail(details, seen, 'Para', data.to_phone || data.recipient_id)
+    addJourneyDetail(details, seen, 'Número negocio', data.business_phone)
+    addJourneyDetail(details, seen, 'Campaña', data.campaign_name)
+    addJourneyDetail(details, seen, 'Conjunto', data.adset_name)
+    addJourneyDetail(details, seen, 'Anuncio', data.attribution_ad_name || data.ad_name || data.referral_headline)
+    addJourneyDetail(details, seen, 'CTA', data.referral_body)
+    addJourneyDetail(details, seen, 'Origen anuncio', data.referral_source_url)
+    addJourneyDetail(details, seen, 'Error', data.error_message || data.error_code)
+  }
+
+  return details
 }
 
 function getResolvedMetaAttribution(contact?: Contact | null, journey: JourneyEvent[] = []): Contact['metaAttribution'] | null {
@@ -8558,19 +8712,33 @@ export const PhoneChat: React.FC = () => {
               <section className={styles.contactInfoDetailSection}>
                 {contactInfoJourneyEvents.length > 0 ? (
                   <div className={styles.contactInfoTimeline}>
-                    {contactInfoJourneyEvents.map((event, index) => (
-                      <div key={`${event.type}-${event.date}-${index}`} className={styles.contactInfoTimelineItem}>
-                        <span className={`${styles.contactInfoTimelineIcon} ${getJourneyEventIconClass(event)}`}>
-                          {getJourneyEventIcon(event)}
-                          {getJourneyEventNetworkBadge(event)}
-                        </span>
-                        <div>
-                          <strong>{getJourneyEventLabel(event, leadLabel)}</strong>
-                          <small>{getJourneyEventDescription(event)}</small>
-                          <em>{formatLocalDateTime(event.date)}</em>
+                    {contactInfoJourneyEvents.map((event, index) => {
+                      const details = getJourneyEventDetails(event, formatLocalDateTime)
+
+                      return (
+                        <div key={`${event.type}-${event.date}-${index}`} className={styles.contactInfoTimelineItem}>
+                          <span className={`${styles.contactInfoTimelineIcon} ${getJourneyEventIconClass(event)}`}>
+                            {getJourneyEventIcon(event)}
+                            {getJourneyEventNetworkBadge(event)}
+                          </span>
+                          <div>
+                            <strong>{getJourneyEventLabel(event, leadLabel)}</strong>
+                            <small>{getJourneyEventDescription(event)}</small>
+                            <em>{formatLocalDateTime(event.date)}</em>
+                            {details.length > 0 && (
+                              <dl className={styles.contactInfoTimelineDetails}>
+                                {details.map((detail) => (
+                                  <div key={`${detail.label}-${detail.value}`}>
+                                    <dt>{detail.label}</dt>
+                                    <dd>{detail.value}</dd>
+                                  </div>
+                                ))}
+                              </dl>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 ) : (
                   <p className={styles.contactInfoDetailEmpty}>Aún no hay actividad guardada para este contacto.</p>

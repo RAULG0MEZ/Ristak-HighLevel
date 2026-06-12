@@ -2599,6 +2599,7 @@ export const getContactJourney = async (req, res) => {
         type: 'page_visit',
         date: session.started_at,
         data: {
+          event_name: session.event_name,
           page_url: session.page_url,
           landing_page: session.landing_page,
           referrer_url: session.referrer_url,
@@ -2615,7 +2616,18 @@ export const getContactJourney = async (req, res) => {
           browser: session.browser,
           geo_city: session.geo_city,
           geo_region: session.geo_region,
-          geo_country: session.geo_country
+          geo_country: session.geo_country,
+          tracking_source: session.tracking_source,
+          site_id: session.site_id,
+          site_slug: session.site_slug,
+          site_name: session.site_name,
+          site_type: session.site_type,
+          form_site_id: session.form_site_id,
+          form_site_name: session.form_site_name,
+          public_page_id: session.public_page_id,
+          public_page_title: session.public_page_title,
+          conversion_type: session.conversion_type,
+          submission_id: session.submission_id
         }
       })
     })
