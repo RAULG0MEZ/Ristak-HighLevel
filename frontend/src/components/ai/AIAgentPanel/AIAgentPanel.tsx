@@ -2634,15 +2634,6 @@ export const AIAgentPanel: React.FC<AIAgentPanelProps> = ({ variant = 'floating'
                     </span>
                     {Boolean(message.attachments?.length) && renderAttachmentList(message.attachments || [])}
                     <div className={styles.bubble}>{renderMessageContent(getDisplayMessageContent(message))}</div>
-                    {message.role === 'assistant' && message.trace?.traceId && (
-                      <div
-                        className={`${styles.tracePill} ${message.trace.status === 'failed' ? styles.tracePillError : ''}`}
-                        title={`Rastro completo: ${message.trace.traceId}`}
-                      >
-                        <span>{formatTraceStatus(message.trace.status)}</span>
-                        <code>{message.trace.traceId.slice(-8)}</code>
-                      </div>
-                    )}
                     {message.role === 'assistant' && Boolean(message.clarificationOptions?.length) && (
                       <div className={styles.optionButtons} aria-label="Opciones para aclarar la pregunta">
                         {message.clarificationOptions?.map((option, optionIndex) => (
