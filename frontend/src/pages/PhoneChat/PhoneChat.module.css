@@ -6468,7 +6468,89 @@
 
 /* Agente conversacional */
 .agentBotButtonActive {
-  color: #1d4ed8;
+  position: relative;
+  overflow: visible;
+  color: #fff;
+  background: linear-gradient(145deg, #1e3a8a 0%, #2563eb 55%, #60a5fa 100%);
+  animation: agentBotGlow 2.4s ease-in-out infinite;
+}
+
+.agentBotButtonIdle {
+  color: var(--phone-chat-muted, #94a3b8);
+  opacity: 0.38;
+}
+
+.agentBotIconLive {
+  position: relative;
+  z-index: 1;
+  animation: agentBotFloat 2.8s ease-in-out infinite;
+}
+
+.agentBotRing {
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1.5px dashed rgba(147, 197, 253, 0.85);
+  animation: agentBotRingSpin 2.6s linear infinite;
+  pointer-events: none;
+}
+
+.agentBotSpark1,
+.agentBotSpark2,
+.agentBotSpark3 {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  margin: -2.5px;
+  border-radius: 50%;
+  background: #fcd34d;
+  box-shadow: 0 0 5px #fbbf24;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.agentBotSpark1 { animation: agentBotSparkFly1 1.9s ease-out infinite 0s; }
+.agentBotSpark2 { animation: agentBotSparkFly2 1.9s ease-out infinite -0.63s; }
+.agentBotSpark3 { animation: agentBotSparkFly3 1.9s ease-out infinite -1.26s; }
+
+@keyframes agentBotGlow {
+  0%, 100% {
+    filter: drop-shadow(0 0 5px rgba(59, 130, 246, 0.85)) drop-shadow(0 0 11px rgba(59, 130, 246, 0.5));
+    transform: scale(1);
+  }
+  50% {
+    filter: drop-shadow(0 0 9px rgba(96, 165, 250, 1)) drop-shadow(0 0 22px rgba(59, 130, 246, 0.95));
+    transform: scale(1.06);
+  }
+}
+
+@keyframes agentBotFloat {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-1.5px) scale(1.07); }
+}
+
+@keyframes agentBotRingSpin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes agentBotSparkFly1 {
+  0%, 54% { transform: translate(0, 0) scale(0); opacity: 0; }
+  58% { transform: translate(0, 0) scale(1.5); opacity: 1; }
+  100% { transform: translate(23px, -8px) scale(0.2); opacity: 0; }
+}
+
+@keyframes agentBotSparkFly2 {
+  0%, 54% { transform: translate(0, 0) scale(0); opacity: 0; }
+  58% { transform: translate(0, 0) scale(1.5); opacity: 1; }
+  100% { transform: translate(21px, 9px) scale(0.2); opacity: 0; }
+}
+
+@keyframes agentBotSparkFly3 {
+  0%, 54% { transform: translate(0, 0) scale(0); opacity: 0; }
+  58% { transform: translate(0, 0) scale(1.3); opacity: 1; }
+  100% { transform: translate(27px, 1px) scale(0.15); opacity: 0; }
 }
 
 .agentPriorityRowIcon {

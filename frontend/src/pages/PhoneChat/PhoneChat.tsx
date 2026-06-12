@@ -10114,7 +10114,7 @@ export const PhoneChat: React.FC = () => {
               <div className={styles.topActionRow} aria-hidden={chatSearchExpanded}>
                 <button
                   type="button"
-                  className={`${styles.roundButton} ${agentEnabled ? styles.agentBotButtonActive : ''}`}
+                  className={`${styles.roundButton} ${agentEnabled ? styles.agentBotButtonActive : styles.agentBotButtonIdle}`}
                   onClick={() => {
                     setAgentMenuSection('menu')
                     setSheet('agentMenu')
@@ -10122,7 +10122,15 @@ export const PhoneChat: React.FC = () => {
                   }}
                   aria-label="Agente conversacional"
                 >
-                  <Bot size={24} />
+                  {agentEnabled && (
+                    <>
+                      <span className={styles.agentBotRing} aria-hidden="true" />
+                      <span className={styles.agentBotSpark1} aria-hidden="true" />
+                      <span className={styles.agentBotSpark2} aria-hidden="true" />
+                      <span className={styles.agentBotSpark3} aria-hidden="true" />
+                    </>
+                  )}
+                  <Bot size={24} className={agentEnabled ? styles.agentBotIconLive : undefined} />
                 </button>
                 {renderChatHeaderActions()}
               </div>
