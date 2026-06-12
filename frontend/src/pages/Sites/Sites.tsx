@@ -112,6 +112,8 @@ import {
   type SiteBlock,
   type SiteBlockOption,
   type SiteBlockType,
+  type SiteMetaCustomParameter,
+  type SiteMetaEventParameters,
   type SiteMetaTrigger,
   type SiteOptionAction,
   type SitePage,
@@ -225,6 +227,102 @@ const normalizeMetaEventName = (value?: string, fallback = 'Lead') =>
 
 const normalizeMetaTrigger = (value?: string): SiteMetaTrigger =>
   value === 'form_submit' ? 'form_submit' : 'page_view'
+
+type SiteMetaParameterFieldKey = Exclude<keyof SiteMetaEventParameters, 'custom'>
+
+const metaParameterFieldLabels: Record<SiteMetaParameterFieldKey, string> = {
+  value: 'Valor conversion',
+  predictedLtv: 'Valor lead',
+  currency: 'Moneda',
+  contentName: 'Contenido',
+  contentCategory: 'Categoria',
+  contentIds: 'IDs contenido',
+  contentType: 'Tipo contenido',
+  numItems: 'Cantidad',
+  orderId: 'Orden',
+  status: 'Estado',
+  searchString: 'Busqueda'
+}
+
+const metaParameterFieldPlaceholders: Record<SiteMetaParameterFieldKey, string> = {
+  value: '1200',
+  predictedLtv: '3500',
+  currency: 'MXN',
+  contentName: 'Oferta principal',
+  contentCategory: 'Consulta',
+  contentIds: 'sku-1, sku-2',
+  contentType: 'product',
+  numItems: '1',
+  orderId: 'ORD-123',
+  status: 'qualified',
+  searchString: 'servicio premium'
+}
+
+const metaParameterFieldsByEvent: Record<string, SiteMetaParameterFieldKey[]> = {
+  Lead: ['value', 'predictedLtv', 'currency', 'status'],
+  Schedule: ['value', 'predictedLtv', 'currency', 'status'],
+  FormSubmitted: ['value', 'predictedLtv', 'currency', 'status'],
+  CompleteRegistration: ['value', 'predictedLtv', 'currency', 'status'],
+  Contact: ['value', 'predictedLtv', 'currency', 'status'],
+  Purchase: ['value', 'currency', 'orderId', 'contentIds', 'contentName', 'contentType', 'numItems'],
+  ViewContent: ['value', 'currency', 'contentName', 'contentCategory', 'contentIds', 'contentType']
+}
+
+const getMetaParameterFieldsForEvent = (eventName?: string): SiteMetaParameterFieldKey[] =>
+  metaParameterFieldsByEvent[normalizeMetaEventName(eventName, 'none')] || []
+
+const cleanMetaParameterString = (value: unknown) => String(value ?? '').trim()
+
+const normalizeMetaCustomParameter = (parameter?: Partial<SiteMetaCustomParameter> | null): SiteMetaCustomParameter => ({
+  ...(cleanMetaParameterString(parameter?.id) ? { id: cleanMetaParameterString(parameter?.id) } : {}),
+  key: cleanMetaParameterString(parameter?.key).replace(/[^a-zA-Z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '').slice(0, 64),
+  value: cleanMetaParameterString(parameter?.value)
+})
+
+const normalizeMetaEventParameters = (parameters?: SiteMetaEventParameters | null): SiteMetaEventParameters => {
+  const source = parameters && typeof parameters === 'object' ? parameters : {}
+  const normalized: SiteMetaEventParameters = {}
+
+  Object.keys(metaParameterFieldLabels).forEach((fieldKey) => {
+    const key = fieldKey as SiteMetaParameterFieldKey
+    const value = cleanMetaParameterString(source[key])
+    if (value) {
+      normalized[key] = key === 'currency' ? value.toUpperCase().slice(0, 3) : value
+    }
+  })
+
+  const custom = Array.isArray(source.custom)
+    ? source.custom
+      .map(normalizeMetaCustomParameter)
+      .filter(parameter => parameter.key || parameter.value)
+      .slice(0, 12)
+    : []
+
+  if (custom.length) normalized.custom = custom
+  return normalized
+}
+
+const hasMetaEventParameters = (parameters?: SiteMetaEventParameters | null) => {
+  const normalized = normalizeMetaEventParameters(parameters)
+  return Object.keys(metaParameterFieldLabels).some(fieldKey => Boolean(cleanMetaParameterString(normalized[fieldKey as SiteMetaParameterFieldKey]))) ||
+    Boolean(normalized.custom?.some(parameter => parameter.key || parameter.value))
+}
+
+const pruneMetaEventParametersForEvent = (parameters?: SiteMetaEventParameters | null, eventName?: string): SiteMetaEventParameters => {
+  const normalized = normalizeMetaEventParameters(parameters)
+  const fields = getMetaParameterFieldsForEvent(eventName)
+  if (!fields.length) return {}
+  const allowed = new Set(fields)
+  const pruned: SiteMetaEventParameters = {}
+
+  allowed.forEach((key) => {
+    const value = cleanMetaParameterString(normalized[key])
+    if (value) pruned[key] = value
+  })
+
+  if (normalized.custom?.length) pruned.custom = normalized.custom
+  return pruned
+}
 
 const ruleActions: Array<{ value: SiteOptionAction; label: string }> = [
   { value: 'continue', label: 'Continuar' },
@@ -1926,7 +2024,10 @@ const normalizePageList = (rawPages: SitePage[] = []): SitePage[] => {
       ...(page?.headerTrackingCode !== undefined ? { headerTrackingCode: page.headerTrackingCode } : {}),
       metaCapiEnabled: Boolean(page?.metaCapiEnabled),
       metaEventName: normalizeMetaEventName(page?.metaEventName, 'none'),
-      metaTrigger: normalizeMetaTrigger(page?.metaTrigger)
+      metaTrigger: normalizeMetaTrigger(page?.metaTrigger),
+      ...(hasMetaEventParameters(page?.metaEventParameters)
+        ? { metaEventParameters: pruneMetaEventParametersForEvent(page?.metaEventParameters, page?.metaEventName) }
+        : {})
     }))
     .filter(page => {
       if (!page.id || seen.has(page.id)) return false
@@ -1953,7 +2054,10 @@ const normalizeFormPages = (site?: PublicSite | null): SitePage[] => {
       ...(existing?.headerTrackingCode !== undefined ? { headerTrackingCode: existing.headerTrackingCode } : {}),
       metaCapiEnabled: Boolean(existing?.metaCapiEnabled),
       metaEventName: normalizeMetaEventName(existing?.metaEventName, 'none'),
-      metaTrigger: normalizeMetaTrigger(existing?.metaTrigger)
+      metaTrigger: normalizeMetaTrigger(existing?.metaTrigger),
+      ...(hasMetaEventParameters(existing?.metaEventParameters)
+        ? { metaEventParameters: pruneMetaEventParametersForEvent(existing?.metaEventParameters, existing?.metaEventName) }
+        : {})
     }
   }
 
@@ -2020,7 +2124,10 @@ const normalizePagesForSave = (pages: SitePage[]) =>
     ...(page.headerTrackingCode !== undefined ? { headerTrackingCode: page.headerTrackingCode } : {}),
     metaCapiEnabled: Boolean(page.metaCapiEnabled),
     metaEventName: normalizeMetaEventName(page.metaEventName, 'none'),
-    metaTrigger: normalizeMetaTrigger(page.metaTrigger)
+    metaTrigger: normalizeMetaTrigger(page.metaTrigger),
+    ...(hasMetaEventParameters(page.metaEventParameters)
+      ? { metaEventParameters: pruneMetaEventParametersForEvent(page.metaEventParameters, page.metaEventName) }
+      : {})
   }))
 
 // --- Website page hierarchy (subpages) helpers ---
@@ -12795,6 +12902,121 @@ const HeaderBlockControls: React.FC<{
   )
 }
 
+const MetaEventParametersEditor: React.FC<{
+  eventName: string
+  parameters?: SiteMetaEventParameters
+  disabled?: boolean
+  onChange: (parameters: SiteMetaEventParameters) => void
+  onCommit: () => void
+}> = ({ eventName, parameters, disabled, onChange, onCommit }) => {
+  const fields = getMetaParameterFieldsForEvent(eventName)
+  const normalized = normalizeMetaEventParameters(parameters)
+  const customRows = normalized.custom || []
+  const visibleCustomRows = [
+    ...customRows,
+    { id: '__new_meta_parameter__', key: '', value: '' }
+  ]
+
+  const commitNext = (next: SiteMetaEventParameters) => {
+    onChange(pruneMetaEventParametersForEvent(next, eventName))
+  }
+
+  const patchField = (key: SiteMetaParameterFieldKey, value: string) => {
+    const next: SiteMetaEventParameters = { ...normalized }
+    const cleanValue = key === 'currency'
+      ? cleanMetaParameterString(value).toUpperCase().slice(0, 3)
+      : cleanMetaParameterString(value)
+    if (cleanValue) {
+      next[key] = cleanValue
+    } else {
+      delete next[key]
+    }
+    commitNext(next)
+  }
+
+  const patchCustomRow = (index: number, patch: Partial<SiteMetaCustomParameter>) => {
+    const rows = customRows.map(row => ({ ...row }))
+    while (rows.length <= index) {
+      rows.push({ id: `meta-param-${Date.now()}-${rows.length}`, key: '', value: '' })
+    }
+    rows[index] = normalizeMetaCustomParameter({ ...rows[index], ...patch })
+    const next: SiteMetaEventParameters = {
+      ...normalized,
+      custom: rows
+        .map(normalizeMetaCustomParameter)
+        .filter(parameter => parameter.key || parameter.value)
+        .slice(0, 12)
+    }
+    if (!next.custom?.length) delete next.custom
+    commitNext(next)
+  }
+
+  const removeCustomRow = (index: number) => {
+    const nextCustom = customRows.filter((_, rowIndex) => rowIndex !== index)
+    const next: SiteMetaEventParameters = {
+      ...normalized,
+      custom: nextCustom
+    }
+    if (!next.custom?.length) delete next.custom
+    commitNext(next)
+    onCommit()
+  }
+
+  if (!fields.length) return null
+
+  return (
+    <div className={styles.metaParametersForm}>
+      <div className={styles.metaParametersGrid}>
+        {fields.map(fieldKey => (
+          <label key={fieldKey} className={styles.metaParameterField}>
+            <span>{metaParameterFieldLabels[fieldKey]}</span>
+            <input
+              value={normalized[fieldKey] || ''}
+              placeholder={metaParameterFieldPlaceholders[fieldKey]}
+              disabled={disabled}
+              inputMode={fieldKey === 'value' || fieldKey === 'predictedLtv' || fieldKey === 'numItems' ? 'decimal' : undefined}
+              onChange={(event) => patchField(fieldKey, event.target.value)}
+              onBlur={onCommit}
+            />
+          </label>
+        ))}
+      </div>
+      <div className={styles.metaCustomParameters}>
+        <span>Parametros custom</span>
+        {visibleCustomRows.map((parameter, index) => {
+          const isNewRow = index >= customRows.length
+          return (
+            <div key={parameter.id || `meta-param-${index}`} className={styles.metaCustomParameterRow}>
+              <input
+                value={parameter.key}
+                placeholder="parametro_meta"
+                disabled={disabled}
+                onChange={(event) => patchCustomRow(index, { key: event.target.value })}
+                onBlur={onCommit}
+              />
+              <input
+                value={parameter.value}
+                placeholder="valor"
+                disabled={disabled}
+                onChange={(event) => patchCustomRow(index, { value: event.target.value })}
+                onBlur={onCommit}
+              />
+              <button
+                type="button"
+                disabled={disabled || isNewRow}
+                title="Eliminar parametro"
+                onClick={() => removeCustomRow(index)}
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 const MetaPageConversionToolbar: React.FC<{
   site: PublicSite
   pages: SitePage[]
@@ -12812,11 +13034,19 @@ const MetaPageConversionToolbar: React.FC<{
   onPatchTheme,
   onSaveSite
 }) => {
+  const [paramsOpen, setParamsOpen] = useState(false)
   const metaEnabled = Boolean(site.metaCapiEnabled)
   const activePageEventName = activePage.metaCapiEnabled
     ? normalizeMetaEventName(activePage.metaEventName, 'none')
     : 'none'
   const activePageHasConversion = activePageEventName !== 'none'
+  const activePageHasParameters = hasMetaEventParameters(activePage.metaEventParameters)
+
+  useEffect(() => {
+    if (!metaEnabled || !activePageHasConversion) {
+      setParamsOpen(false)
+    }
+  }, [activePageHasConversion, metaEnabled])
 
   const saveSoon = () => {
     window.setTimeout(() => { void onSaveSite() }, 0)
@@ -12877,7 +13107,8 @@ const MetaPageConversionToolbar: React.FC<{
             const metaEventName = event.target.value
             patchActivePage({
               metaEventName,
-              metaCapiEnabled: metaEventName !== 'none'
+              metaCapiEnabled: metaEventName !== 'none',
+              metaEventParameters: pruneMetaEventParametersForEvent(activePage.metaEventParameters, metaEventName)
             })
             saveSoon()
           }}
@@ -12887,6 +13118,37 @@ const MetaPageConversionToolbar: React.FC<{
           ))}
         </CustomSelect>
       </label>
+      <button
+        type="button"
+        className={[
+          styles.metaParametersToggle,
+          paramsOpen ? styles.metaParametersToggleActive : '',
+          activePageHasParameters ? styles.metaParametersToggleFilled : ''
+        ].filter(Boolean).join(' ')}
+        disabled={disabled || !metaEnabled || !activePageHasConversion}
+        aria-expanded={paramsOpen}
+        title="Parametros opcionales de Meta"
+        onClick={() => setParamsOpen(open => !open)}
+      >
+        <Settings2 size={14} />
+        <span>Params</span>
+        <ChevronDown size={13} />
+      </button>
+      {paramsOpen && metaEnabled && activePageHasConversion && (
+        <div className={styles.metaParametersPopover}>
+          <div className={styles.metaParametersHeader}>
+            <strong>Parametros Meta</strong>
+            <span>{activePageEventName}</span>
+          </div>
+          <MetaEventParametersEditor
+            eventName={activePageEventName}
+            parameters={activePage.metaEventParameters}
+            disabled={disabled}
+            onChange={(metaEventParameters) => patchActivePage({ metaEventParameters })}
+            onCommit={saveSoon}
+          />
+        </div>
+      )}
     </div>
   )
 }
@@ -15641,9 +15903,18 @@ const PageInspector: React.FC<{
   onPatchTheme: (patch: Partial<SiteTheme>) => void
   onSaveSite: () => void
 }> = ({ site, pages, activePageId, metaPixelConnected, onPatchSite, onPatchTheme, onSaveSite }) => {
+  const [formMetaParamsOpen, setFormMetaParamsOpen] = useState(false)
   const theme = site.theme || {}
   const formEventName = normalizeMetaEventName(site.metaEventName, 'none')
   const formHasConversion = formEventName !== 'none'
+  const formHasParameters = hasMetaEventParameters(theme.metaEventParameters)
+
+  useEffect(() => {
+    if (!site.metaCapiEnabled || !formHasConversion) {
+      setFormMetaParamsOpen(false)
+    }
+  }, [formHasConversion, site.metaCapiEnabled])
+
   return (
     <aside className={styles.propertiesPanel}>
       <div className={styles.panelHeader}>
@@ -15774,7 +16045,13 @@ const PageInspector: React.FC<{
                 <CustomSelect
                   value={formEventName}
                   disabled={!site.metaCapiEnabled}
-                  onChange={(event) => onPatchSite({ metaEventName: event.target.value })}
+                  onChange={(event) => {
+                    const metaEventName = event.target.value
+                    onPatchSite({ metaEventName })
+                    onPatchTheme({
+                      metaEventParameters: pruneMetaEventParametersForEvent(theme.metaEventParameters, metaEventName)
+                    })
+                  }}
                   onBlur={onSaveSite}
                 >
                   {metaEventOptions.map(option => (
@@ -15782,6 +16059,34 @@ const PageInspector: React.FC<{
                   ))}
                 </CustomSelect>
               </label>
+              {formHasConversion && (
+                <div className={styles.metaParametersInspector}>
+                  <button
+                    type="button"
+                    className={[
+                      styles.metaParametersInspectorToggle,
+                      formMetaParamsOpen ? styles.metaParametersInspectorToggleActive : '',
+                      formHasParameters ? styles.metaParametersInspectorToggleFilled : ''
+                    ].filter(Boolean).join(' ')}
+                    disabled={!site.metaCapiEnabled}
+                    aria-expanded={formMetaParamsOpen}
+                    onClick={() => setFormMetaParamsOpen(open => !open)}
+                  >
+                    <Settings2 size={14} />
+                    <span>Parametros Meta</span>
+                    <ChevronDown size={13} />
+                  </button>
+                  {formMetaParamsOpen && (
+                    <MetaEventParametersEditor
+                      eventName={formEventName}
+                      parameters={theme.metaEventParameters}
+                      disabled={!site.metaCapiEnabled}
+                      onChange={(metaEventParameters) => onPatchTheme({ metaEventParameters })}
+                      onCommit={onSaveSite}
+                    />
+                  )}
+                </div>
+              )}
 	              {isStandardForm(site) && (
                 <>
                   <label className={styles.field}>

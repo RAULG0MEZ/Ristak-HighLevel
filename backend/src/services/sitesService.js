@@ -105,6 +105,28 @@ const SITE_META_NO_EVENT = 'none'
 const SITE_META_EVENTS = new Set(['Lead', 'Schedule', 'Purchase', 'FormSubmitted', 'ViewContent', 'CompleteRegistration', 'Contact'])
 const META_STANDARD_PIXEL_EVENTS = new Set(['Lead', 'Schedule', 'Purchase', 'ViewContent', 'CompleteRegistration', 'Contact'])
 const SITE_META_TRIGGERS = new Set(['page_view', 'form_submit'])
+const SITE_META_PARAMETER_FIELDS = {
+  Lead: ['value', 'predictedLtv', 'currency', 'status'],
+  Schedule: ['value', 'predictedLtv', 'currency', 'status'],
+  FormSubmitted: ['value', 'predictedLtv', 'currency', 'status'],
+  CompleteRegistration: ['value', 'predictedLtv', 'currency', 'status'],
+  Contact: ['value', 'predictedLtv', 'currency', 'status'],
+  Purchase: ['value', 'currency', 'orderId', 'contentIds', 'contentName', 'contentType', 'numItems'],
+  ViewContent: ['value', 'currency', 'contentName', 'contentCategory', 'contentIds', 'contentType']
+}
+const SITE_META_PARAMETER_ALIASES = {
+  value: ['value', 'conversionValue', 'conversion_value'],
+  predictedLtv: ['predictedLtv', 'predicted_ltv', 'leadValue', 'lead_value', 'prospectValue', 'prospect_value'],
+  currency: ['currency', 'moneda'],
+  contentName: ['contentName', 'content_name'],
+  contentCategory: ['contentCategory', 'content_category'],
+  contentIds: ['contentIds', 'content_ids'],
+  contentType: ['contentType', 'content_type'],
+  numItems: ['numItems', 'num_items'],
+  orderId: ['orderId', 'order_id'],
+  status: ['status', 'estado'],
+  searchString: ['searchString', 'search_string']
+}
 const SITES_PUBLIC_DOMAIN_CONFIG_KEYS = {
   domain: 'sites_public_domain',
   verified: 'sites_public_domain_verified',
@@ -469,6 +491,156 @@ function normalizeSiteMetaEventName(value, { allowNone = false, fallback = 'Lead
 function normalizeSiteMetaTrigger(value) {
   const trigger = cleanString(value)
   return SITE_META_TRIGGERS.has(trigger) ? trigger : 'page_view'
+}
+
+function getMetaParameterFieldsForEvent(eventName) {
+  return SITE_META_PARAMETER_FIELDS[normalizeSiteMetaEventName(eventName, { allowNone: true, fallback: SITE_META_NO_EVENT })] || []
+}
+
+function firstMetaParameterValue(source = {}, key) {
+  const aliases = SITE_META_PARAMETER_ALIASES[key] || [key]
+  for (const alias of aliases) {
+    const value = source?.[alias]
+    if (value !== undefined && value !== null && cleanString(value)) return cleanString(value)
+  }
+  return ''
+}
+
+function normalizeSiteMetaCustomParameterKey(value = '') {
+  const key = cleanString(value)
+    .replace(/[^a-zA-Z0-9_]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 64)
+
+  if (!key) return ''
+  return /^[a-zA-Z_]/.test(key) ? key : `param_${key}`
+}
+
+function normalizeSiteMetaEventParameters(value = {}) {
+  const source = value && typeof value === 'object' ? value : parseJson(value, {})
+  const normalized = {}
+
+  Object.keys(SITE_META_PARAMETER_ALIASES).forEach(key => {
+    const fieldValue = firstMetaParameterValue(source, key)
+    if (fieldValue) normalized[key] = key === 'currency' ? fieldValue.toUpperCase().slice(0, 3) : fieldValue
+  })
+
+  const customSource = Array.isArray(source.custom)
+    ? source.custom
+    : Array.isArray(source.customParameters)
+      ? source.customParameters
+      : Array.isArray(source.custom_parameters)
+        ? source.custom_parameters
+        : []
+
+  const custom = customSource
+    .map((parameter = {}) => ({
+      id: cleanString(parameter.id),
+      key: cleanString(parameter.key || parameter.name),
+      value: cleanString(parameter.value)
+    }))
+    .filter(parameter => parameter.key || parameter.value)
+    .slice(0, 12)
+
+  if (custom.length) normalized.custom = custom
+
+  return normalized
+}
+
+function hasSiteMetaEventParameters(parameters = {}) {
+  const normalized = normalizeSiteMetaEventParameters(parameters)
+  return Object.keys(SITE_META_PARAMETER_ALIASES).some(key => cleanString(normalized[key])) ||
+    (Array.isArray(normalized.custom) && normalized.custom.some(parameter => cleanString(parameter.key) || cleanString(parameter.value)))
+}
+
+function pruneSiteMetaEventParametersForEvent(parameters = {}, eventName = SITE_META_NO_EVENT) {
+  const normalized = normalizeSiteMetaEventParameters(parameters)
+  const fields = getMetaParameterFieldsForEvent(eventName)
+  if (!fields.length) return {}
+  const allowed = new Set(fields)
+  const pruned = {}
+
+  allowed.forEach(key => {
+    const value = cleanString(normalized[key])
+    if (value) pruned[key] = value
+  })
+
+  if (Array.isArray(normalized.custom) && normalized.custom.length) {
+    pruned.custom = normalized.custom
+  }
+
+  return pruned
+}
+
+function parseMetaNumber(value) {
+  const raw = cleanString(value).replace(/[$,\s]/g, '')
+  if (!raw) return null
+  const number = Number(raw)
+  return Number.isFinite(number) ? number : null
+}
+
+function parseMetaContentIds(value) {
+  return cleanString(value)
+    .split(',')
+    .map(item => cleanString(item))
+    .filter(Boolean)
+    .slice(0, 50)
+}
+
+function buildSiteMetaConfiguredCustomData(parameters = {}, eventName = SITE_META_NO_EVENT) {
+  const pruned = pruneSiteMetaEventParametersForEvent(parameters, eventName)
+  const customData = {}
+
+  const value = parseMetaNumber(pruned.value)
+  if (value !== null) customData.value = value
+
+  const predictedLtv = parseMetaNumber(pruned.predictedLtv)
+  if (predictedLtv !== null) customData.predicted_ltv = predictedLtv
+
+  const currency = cleanString(pruned.currency).toUpperCase().slice(0, 3)
+  if (/^[A-Z]{3}$/.test(currency)) customData.currency = currency
+
+  const contentIds = parseMetaContentIds(pruned.contentIds)
+  if (contentIds.length) customData.content_ids = contentIds
+
+  const numItems = parseMetaNumber(pruned.numItems)
+  if (numItems !== null) customData.num_items = Math.max(0, Math.round(numItems))
+
+  ;[
+    ['contentName', 'content_name'],
+    ['contentCategory', 'content_category'],
+    ['contentType', 'content_type'],
+    ['orderId', 'order_id'],
+    ['status', 'status'],
+    ['searchString', 'search_string']
+  ].forEach(([sourceKey, targetKey]) => {
+    const value = cleanString(pruned[sourceKey])
+    if (value) customData[targetKey] = value
+  })
+
+  if (Array.isArray(pruned.custom)) {
+    pruned.custom.forEach(parameter => {
+      const key = normalizeSiteMetaCustomParameterKey(parameter.key)
+      const value = cleanString(parameter.value)
+      if (key && value) customData[key] = value
+    })
+  }
+
+  return customData
+}
+
+function mergeSiteMetaCustomData(base = {}, configured = {}) {
+  const reserved = {}
+  ;['source', 'site_id', 'site_name', 'public_page_id', 'public_page_title', 'conversion_type'].forEach(key => {
+    if (base[key] !== undefined) reserved[key] = base[key]
+  })
+
+  const merged = { ...base, ...configured, ...reserved }
+  Object.keys(merged).forEach(key => {
+    if (merged[key] === undefined || merged[key] === null || merged[key] === '') delete merged[key]
+  })
+  return merged
 }
 
 function normalizeFormCompletionAction(value, fallback = 'form_default') {
@@ -6196,6 +6368,17 @@ export async function createSite(input = {}) {
   if (isSocialTemplate(theme.template)) {
     theme[SOCIAL_PROFILE_BLOCK_READY_KEY] = true
   }
+  const initialMetaEventName = normalizeSiteMetaEventName(input.metaEventName, { allowNone: true, fallback: SITE_META_NO_EVENT })
+  const initialMetaEventParameters = pruneSiteMetaEventParametersForEvent(
+    theme.metaEventParameters || theme.meta_event_parameters,
+    initialMetaEventName
+  )
+  delete theme.meta_event_parameters
+  if (hasSiteMetaEventParameters(initialMetaEventParameters)) {
+    theme.metaEventParameters = initialMetaEventParameters
+  } else {
+    delete theme.metaEventParameters
+  }
   const status = validateSiteStatus(input.status || 'draft')
 
   await db.run(`
@@ -6214,7 +6397,7 @@ export async function createSite(input = {}) {
     description || null,
     jsonString(theme),
     normalizeBoolean(input.metaCapiEnabled),
-    normalizeSiteMetaEventName(input.metaEventName, { allowNone: true, fallback: SITE_META_NO_EVENT })
+    initialMetaEventName
   ])
 
   if (!blankCanvas) {
@@ -7651,6 +7834,17 @@ export async function updateSite(siteId, input = {}) {
   } else if (nextSiteType === 'interactive_form' && (!Array.isArray(nextTheme.pages) || nextTheme.pages.length === 0)) {
     nextTheme.pages = normalizeSitePages({ siteType: nextSiteType, theme: nextTheme })
   }
+  const nextMetaEventName = normalizeSiteMetaEventName(input.metaEventName || current.metaEventName, { allowNone: true })
+  const nextMetaEventParameters = pruneSiteMetaEventParametersForEvent(
+    nextTheme.metaEventParameters || nextTheme.meta_event_parameters,
+    nextMetaEventName
+  )
+  delete nextTheme.meta_event_parameters
+  if (hasSiteMetaEventParameters(nextMetaEventParameters)) {
+    nextTheme.metaEventParameters = nextMetaEventParameters
+  } else {
+    delete nextTheme.metaEventParameters
+  }
 
   await db.run(`
     UPDATE public_sites SET
@@ -7686,7 +7880,7 @@ export async function updateSite(siteId, input = {}) {
     input.description === undefined ? current.description : cleanString(input.description) || null,
     jsonString(nextTheme),
     input.metaCapiEnabled === undefined ? normalizeBoolean(current.metaCapiEnabled) : normalizeBoolean(input.metaCapiEnabled),
-    normalizeSiteMetaEventName(input.metaEventName || current.metaEventName, { allowNone: true }),
+    nextMetaEventName,
     domainChanged ? 1 : 0,
     domainChanged ? 1 : 0,
     domainChanged ? 1 : 0,
@@ -8823,6 +9017,11 @@ function normalizePageList(rawPages = []) {
       const headerTrackingCode = typeof (page?.headerTrackingCode ?? page?.header_tracking_code) === 'string'
         ? page.headerTrackingCode ?? page.header_tracking_code
         : ''
+      const metaEventName = normalizeSiteMetaEventName(page?.metaEventName || page?.meta_event_name, { allowNone: true, fallback: SITE_META_NO_EVENT })
+      const metaEventParameters = pruneSiteMetaEventParametersForEvent(
+        page?.metaEventParameters || page?.meta_event_parameters,
+        metaEventName
+      )
       const parentPageId = cleanString(page?.parentPageId || page?.parent_page_id)
       const slug = slugifyPageSegment(page?.slug)
 
@@ -8831,8 +9030,9 @@ function normalizePageList(rawPages = []) {
         title: cleanString(page?.title) || `Pagina ${index + 1}`,
         sortOrder: Number.isFinite(Number(page?.sortOrder)) ? Number(page.sortOrder) : index,
         metaCapiEnabled: Boolean(normalizeBoolean(page?.metaCapiEnabled ?? page?.meta_capi_enabled)),
-        metaEventName: normalizeSiteMetaEventName(page?.metaEventName || page?.meta_event_name, { allowNone: true, fallback: SITE_META_NO_EVENT }),
+        metaEventName,
         metaTrigger: normalizeSiteMetaTrigger(page?.metaTrigger || page?.meta_trigger),
+        ...(hasSiteMetaEventParameters(metaEventParameters) ? { metaEventParameters } : {}),
         ...(parentPageId ? { parentPageId } : {}),
         ...(slug ? { slug } : {}),
         ...(importedAssetPath ? { importedAssetPath } : {}),
@@ -8865,7 +9065,10 @@ function normalizeFormPages(site) {
       ...(existing?.headerTrackingCode !== undefined ? { headerTrackingCode: existing.headerTrackingCode } : {}),
       metaCapiEnabled: Boolean(existing?.metaCapiEnabled),
       metaEventName: normalizeSiteMetaEventName(existing?.metaEventName, { allowNone: true, fallback: SITE_META_NO_EVENT }),
-      metaTrigger: normalizeSiteMetaTrigger(existing?.metaTrigger)
+      metaTrigger: normalizeSiteMetaTrigger(existing?.metaTrigger),
+      ...(hasSiteMetaEventParameters(existing?.metaEventParameters)
+        ? { metaEventParameters: pruneSiteMetaEventParametersForEvent(existing.metaEventParameters, existing.metaEventName) }
+        : {})
     }
   }
 
@@ -9195,7 +9398,8 @@ function getPageMetaConfig(site, pageId) {
   return {
     page,
     eventName,
-    trigger: normalizeSiteMetaTrigger(page.metaTrigger)
+    trigger: normalizeSiteMetaTrigger(page.metaTrigger),
+    parameters: pruneSiteMetaEventParametersForEvent(page.metaEventParameters, eventName)
   }
 }
 
@@ -9209,6 +9413,15 @@ function getFormSubmitMetaEventName(site, pageId) {
   }
 
   return normalizeSiteMetaEventName(site.metaEventName, { allowNone: true })
+}
+
+function getFormSubmitMetaEventParameters(site, pageId, eventName) {
+  if (site?.siteType === 'landing_page') {
+    const page = getSitePage(site, pageId)
+    return pruneSiteMetaEventParametersForEvent(page?.metaEventParameters, eventName)
+  }
+
+  return pruneSiteMetaEventParametersForEvent(site?.theme?.metaEventParameters || site?.theme?.meta_event_parameters, eventName)
 }
 
 function resolveButtonHref(settings = {}, context = {}) {
@@ -11491,6 +11704,11 @@ async function buildMetaPixelSnippet(site, trackingEnabled, activePage = null) {
   const submitEventName = getFormSubmitMetaEventName(site, activePage?.id)
   const pageMeta = getPageMetaConfig(site, activePage?.id)
   const pageViewEventName = pageMeta?.trigger === 'page_view' ? pageMeta.eventName : ''
+  const submitConfiguredCustomData = buildSiteMetaConfiguredCustomData(
+    getFormSubmitMetaEventParameters(site, activePage?.id, submitEventName),
+    submitEventName
+  )
+  const pageConfiguredCustomData = buildSiteMetaConfiguredCustomData(pageMeta?.parameters, pageViewEventName)
 
   return `
   <script>
@@ -11520,7 +11738,11 @@ async function buildMetaPixelSnippet(site, trackingEnabled, activePage = null) {
       }
     };
     window.ristakMetaTrackSiteSubmit = function(eventId, customData, eventName) {
-      window.ristakMetaTrackSiteEvent(eventName || ${JSON.stringify(submitEventName)}, eventId, customData);
+      window.ristakMetaTrackSiteEvent(
+        eventName || ${JSON.stringify(submitEventName)},
+        eventId,
+        Object.assign({}, ${scriptJson(submitConfiguredCustomData)}, customData || {})
+      );
     };
     window.ristakMetaSendServerEvent = function(payload) {
       fetch('/api/sites/public/meta-event', {
@@ -11544,6 +11766,7 @@ async function buildMetaPixelSnippet(site, trackingEnabled, activePage = null) {
         public_page_id: ${JSON.stringify(activePage?.id || '')},
         public_page_title: ${JSON.stringify(activePage?.title || '')}
       };
+      Object.assign(pageData, ${scriptJson(pageConfiguredCustomData)});
       window.ristakMetaTrackSiteEvent(${JSON.stringify(pageViewEventName)}, pageEventId, pageData);
       window.ristakMetaSendServerEvent({
         siteId: ${JSON.stringify(site.id)},
@@ -12052,7 +12275,11 @@ function buildImportedButtonActionScript(site, { pageId = DEFAULT_FUNNEL_PAGE_ID
 
 async function buildImportedHtmlRuntimeInjection(site, imported, { trackingEnabled = true, pageId = DEFAULT_FUNNEL_PAGE_ID, pageTitle = '' } = {}) {
   const activePageId = cleanString(pageId) || DEFAULT_FUNNEL_PAGE_ID
-  const metaPixelSnippet = await buildMetaPixelSnippet(site, trackingEnabled, { id: activePageId, title: pageTitle || site.title || site.name })
+  const activePage = getSitePage(site, activePageId) || { id: activePageId, title: pageTitle || site.title || site.name }
+  const metaPixelSnippet = await buildMetaPixelSnippet(site, trackingEnabled, {
+    ...activePage,
+    title: activePage.title || pageTitle || site.title || site.name
+  })
   const nativeTrackingScript = trackingEnabled
     ? buildNativeSiteTrackingScript({
       siteId: site.id,
@@ -13408,12 +13635,15 @@ async function sendSiteLeadMetaEvent({ site, submissionId, submittedPageId, cont
         event_source_url: cleanString(requestMeta.meta?.pageUrl) || `https://${site.domain}`,
         event_id: eventId,
         user_data: userData,
-        custom_data: {
+        custom_data: mergeSiteMetaCustomData({
           source: 'ristak_site',
           site_id: site.id,
           site_name: site.name,
           content_name: site.title || site.name
-        }
+        }, buildSiteMetaConfiguredCustomData(
+          getFormSubmitMetaEventParameters(site, submittedPageId, eventName),
+          eventName
+        ))
       }
     ]
   }
@@ -13513,7 +13743,7 @@ async function sendSitePageMetaEvent({ site, page, eventName, eventId, contactId
         event_source_url: cleanString(requestMeta.meta?.pageUrl) || `https://${site.domain}`,
         event_id: eventId,
         user_data: userData,
-        custom_data: {
+        custom_data: mergeSiteMetaCustomData({
           source: 'ristak_site',
           conversion_type: 'page_view',
           site_id: site.id,
@@ -13521,7 +13751,7 @@ async function sendSitePageMetaEvent({ site, page, eventName, eventId, contactId
           public_page_id: page?.id || '',
           public_page_title: page?.title || '',
           content_name: page?.title || site.title || site.name
-        }
+        }, buildSiteMetaConfiguredCustomData(page?.metaEventParameters, eventName))
       }
     ]
   }

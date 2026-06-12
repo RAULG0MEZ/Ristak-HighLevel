@@ -10419,6 +10419,7 @@
 .metaConversionToolbar {
   height: var(--editor-control-h, 44px);
   flex: 0 0 auto;
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -10503,6 +10504,203 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.metaParametersToggle {
+  height: 28px;
+  min-width: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 7px;
+  background: var(--color-background-primary);
+  color: var(--color-text-secondary);
+  padding: 0 7px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.metaParametersToggle:hover:not(:disabled),
+.metaParametersToggleActive {
+  border-color: rgba(var(--color-primary-rgb), 0.34);
+  background: rgba(var(--color-primary-rgb), 0.1);
+  color: var(--color-text-primary);
+}
+
+.metaParametersToggleFilled {
+  color: var(--color-text-primary);
+}
+
+.metaParametersToggle:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.metaParametersPopover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 70;
+  width: min(420px, calc(100vw - 32px));
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--sites-editor-border, rgba(148, 163, 184, 0.2));
+  border-radius: var(--radius-md, 8px);
+  background: var(--ristak-dropdown-bg, var(--color-background-primary));
+  padding: 12px;
+  box-shadow: 0 10px 24px -20px rgba(15, 23, 42, 0.45);
+}
+
+.metaParametersHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.metaParametersHeader strong {
+  color: var(--color-text-primary);
+  font-size: 0.78rem;
+  font-weight: 850;
+  line-height: 1.1;
+}
+
+.metaParametersHeader span {
+  color: var(--color-text-tertiary);
+  font-size: 0.64rem;
+  font-weight: 850;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.metaParametersForm {
+  display: grid;
+  gap: 11px;
+}
+
+.metaParametersGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.metaParameterField {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.metaParameterField > span,
+.metaCustomParameters > span {
+  color: var(--color-text-tertiary);
+  font-size: 0.62rem;
+  font-weight: 850;
+  letter-spacing: 0.03em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.metaParameterField input,
+.metaCustomParameterRow input {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 7px;
+  background: var(--color-background-primary);
+  color: var(--color-text-primary);
+  padding: 0 8px;
+  font-size: 0.72rem;
+  font-weight: 720;
+  outline: none;
+}
+
+.metaParameterField input:focus,
+.metaCustomParameterRow input:focus {
+  border-color: var(--ristak-focus-border, rgba(var(--color-primary-rgb), 0.5));
+  box-shadow: var(--ristak-focus-ring, 0 0 0 3px rgba(var(--color-primary-rgb), 0.12));
+}
+
+.metaCustomParameters {
+  display: grid;
+  gap: 7px;
+}
+
+.metaCustomParameterRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 30px;
+  gap: 6px;
+  align-items: center;
+}
+
+.metaCustomParameterRow button {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 7px;
+  background: var(--color-background-primary);
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+}
+
+.metaCustomParameterRow button:hover:not(:disabled) {
+  border-color: var(--color-status-error);
+  color: var(--color-status-error);
+}
+
+.metaCustomParameterRow button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.metaParametersInspector {
+  display: grid;
+  gap: 10px;
+}
+
+.metaParametersInspectorToggle {
+  width: 100%;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  background: var(--color-background-primary);
+  color: var(--color-text-secondary);
+  padding: 0 10px;
+  font-size: 0.74rem;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.metaParametersInspectorToggle span {
+  flex: 1 1 auto;
+  text-align: left;
+}
+
+.metaParametersInspectorToggle:hover:not(:disabled),
+.metaParametersInspectorToggleActive {
+  border-color: rgba(var(--color-primary-rgb), 0.34);
+  background: rgba(var(--color-primary-rgb), 0.08);
+  color: var(--color-text-primary);
+}
+
+.metaParametersInspectorToggleFilled {
+  color: var(--color-text-primary);
+}
+
+.metaParametersInspectorToggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .seoToolbarAlert {

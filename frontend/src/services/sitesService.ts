@@ -103,6 +103,28 @@ export interface SitePage {
   metaCapiEnabled?: boolean
   metaEventName?: string
   metaTrigger?: SiteMetaTrigger
+  metaEventParameters?: SiteMetaEventParameters
+}
+
+export interface SiteMetaCustomParameter {
+  id?: string
+  key: string
+  value: string
+}
+
+export interface SiteMetaEventParameters {
+  value?: string
+  predictedLtv?: string
+  currency?: string
+  contentName?: string
+  contentCategory?: string
+  contentIds?: string
+  contentType?: string
+  numItems?: string
+  orderId?: string
+  status?: string
+  searchString?: string
+  custom?: SiteMetaCustomParameter[]
 }
 
 export interface SiteTheme {
@@ -128,6 +150,7 @@ export interface SiteTheme {
   pageBorderColor?: string
   pageMaxWidth?: number
   metaConversionTarget?: 'same_page' | 'next_page'
+  metaEventParameters?: SiteMetaEventParameters
   formCompletionAction?: SiteFormCompletionAction
   brandName?: string
   brandSubtitle?: string
