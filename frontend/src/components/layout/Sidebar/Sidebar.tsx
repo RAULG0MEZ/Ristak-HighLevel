@@ -47,7 +47,6 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import automationsService from '@/services/automationsService'
-import { requestAIAgentOpen } from '@/utils/aiAgentEvents'
 
 interface SidebarProps {
   onNavigate?: () => void
@@ -77,7 +76,6 @@ const baseNavigation: NavItem[] = [
   { id: 'campaigns', name: 'Publicidad', href: '/campaigns/classic', icon: Megaphone },
   { id: 'automations', name: 'Automatizaciones', href: '/automations', icon: Workflow },
   { id: 'sites', name: 'Sitios', href: '/sites', icon: PanelTop },
-  { id: 'ai-agent', name: 'Agente AI', href: '#', icon: BotMessageSquare, isAction: true, action: () => requestAIAgentOpen() },
 ]
 
 // La pestaña de Inicialización siempre va primera y solo se muestra mientras el
@@ -219,6 +217,68 @@ const SettingsNavGroup: React.FC<SettingsNavGroupProps> = ({ pathname, open, onT
                   </div>
                 )}
               </React.Fragment>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+interface AIAgentNavGroupProps {
+  pathname: string
+  open: boolean
+  onToggle: () => void
+  onNavigate?: () => void
+}
+
+const AIAgentNavGroup: React.FC<AIAgentNavGroupProps> = ({ pathname, open, onToggle, onNavigate }) => {
+  const isAIAgentRoute = pathname.startsWith('/settings/ai-agent')
+  const children = [
+    { to: '/settings/ai-agent', label: 'General', exact: true },
+    { to: '/settings/ai-agent/conversational', label: 'Agente conversacional', exact: false }
+  ]
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        data-ristak-sidebar-nav-item
+        data-active={isAIAgentRoute && !open ? 'true' : undefined}
+        className={cn(getNavLinkClasses(isAIAgentRoute && !open, 'w-full'))}
+      >
+        <BotMessageSquare className="h-5 w-5 flex-shrink-0" />
+        <span className="flex-1 text-left">Agente AI</span>
+        <ChevronDown
+          className={cn(
+            'h-4 w-4 flex-shrink-0 text-[var(--color-text-tertiary)] transition-transform',
+            open && 'rotate-180'
+          )}
+        />
+      </button>
+
+      {open && (
+        <div className="ml-[1.55rem] mt-1 space-y-0.5 border-l border-[rgba(148,163,184,0.16)] pl-2.5">
+          {children.map((child) => {
+            const childActive = child.exact ? pathname === child.to : pathname.startsWith(child.to)
+            return (
+              <Link
+                key={child.to}
+                to={child.to}
+                onClick={onNavigate}
+                data-ristak-sidebar-nav-item
+                data-active={childActive ? 'true' : undefined}
+                className={cn(
+                  'block rounded-md px-2.5 py-[7px] text-[13px] font-medium transition-colors',
+                  childActive
+                    ? 'bg-[rgba(148,163,184,0.16)] text-[var(--color-text-primary)]'
+                    : 'text-[var(--color-text-tertiary)] hover:bg-[rgba(148,163,184,0.1)] hover:text-[var(--color-text-primary)]'
+                )}
+              >
+                {child.label}
+              </Link>
             )
           })}
         </div>
@@ -388,13 +448,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, onLogout }) => {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [isEditMode, setIsEditMode] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
-  const isSettingsRoute = location.pathname.startsWith('/settings')
+  const isAIAgentRoute = location.pathname.startsWith('/settings/ai-agent')
+  const isSettingsRoute = location.pathname.startsWith('/settings') && !isAIAgentRoute
   const [settingsOpen, setSettingsOpen] = useState(isSettingsRoute)
+  const [aiAgentOpen, setAiAgentOpen] = useState(isAIAgentRoute)
 
-  // Sincronizar el estado del grupo con la ruta actual
+  // Sincronizar el estado de los grupos con la ruta actual
   useEffect(() => {
     setSettingsOpen(isSettingsRoute)
   }, [isSettingsRoute])
+
+  useEffect(() => {
+    setAiAgentOpen(isAIAgentRoute)
+  }, [isAIAgentRoute])
   const longPressTimerRef = React.useRef<number | null>(null)
   const longPressStartPos = React.useRef<{ x: number; y: number } | null>(null)
   const userMenuRef = React.useRef<HTMLDivElement>(null)
@@ -743,6 +809,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, onLogout }) => {
               ) : null}
             </DragOverlay>
 
+            <AIAgentNavGroup
+              pathname={location.pathname}
+              open={aiAgentOpen}
+              onToggle={() => setAiAgentOpen((current) => !current)}
+              onNavigate={handleNavigate}
+            />
             <SettingsNavGroup
               pathname={location.pathname}
               open={settingsOpen}
@@ -779,6 +851,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, onLogout }) => {
               )
             })}
 
+            <AIAgentNavGroup
+              pathname={location.pathname}
+              open={aiAgentOpen}
+              onToggle={() => setAiAgentOpen((current) => !current)}
+              onNavigate={handleNavigate}
+            />
             <SettingsNavGroup
               pathname={location.pathname}
               open={settingsOpen}

@@ -28,13 +28,5 @@ export const settingsNavigation: SettingsNavItem[] = [
   { to: '/settings/costs', label: 'Costos' },
   { to: '/settings/custom-fields', label: 'Campos personalizados' },
   { to: '/settings/tags', label: 'Etiquetas' },
-  {
-    to: '/settings/ai-agent',
-    label: 'Agente AI',
-    children: [
-      { to: '/settings/ai-agent', label: 'General', end: true },
-      { to: '/settings/ai-agent/conversational', label: 'Agente conversacional' }
-    ]
-  },
   { to: '/settings/api-access', label: 'Acceso API' }
 ]
