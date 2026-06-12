@@ -507,7 +507,10 @@ export function ContactDetailsModal({
 
         {/* Main content */}
         <div className={styles.mainContent}>
-          {/* Left panel - Lista de contactos */}
+          {/* Left panel - Lista de contactos.
+              Con un solo contacto no tiene sentido el buscador ni la lista:
+              se oculta y la ficha ocupa todo el ancho. */}
+          {data.length !== 1 && (
           <div className={selectedContact ? styles.leftPanel : styles.leftPanelFull}>
             {/* Search bar */}
             <div className={styles.searchContainer}>
@@ -599,6 +602,7 @@ export function ContactDetailsModal({
               </div>
             )}
           </div>
+          )}
 
           {/* Right panel - Detalles del contacto */}
           {selectedContact && (

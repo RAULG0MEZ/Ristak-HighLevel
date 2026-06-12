@@ -196,6 +196,8 @@ export const TagPicker: React.FC<TagPickerProps> = (props) => {
         <Search size={14} />
         <input
           ref={searchInputRef}
+          type="text"
+          data-ristak-unstyled
           className={styles.searchInput}
           value={search}
           placeholder="Buscar etiqueta…"
