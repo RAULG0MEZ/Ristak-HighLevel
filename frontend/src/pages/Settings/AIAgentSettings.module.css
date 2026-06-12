@@ -1379,13 +1379,25 @@
   color: var(--color-text-tertiary);
 }
 
-.conditionCriterionSelect {
-  flex: 0 1 200px;
-  min-width: 140px;
+.conditionFieldSelect {
+  flex: 0 1 210px;
+  min-width: 150px;
   max-width: 300px;
 }
 
-.conditionParamRow > .ruleSelect:not(.conditionTypeSelect):not(.conditionCriterionSelect) {
+.conditionSubfieldSelect {
+  flex: 1 1 210px;
+  min-width: 170px;
+  max-width: 340px;
+}
+
+.conditionOperatorSelect {
+  flex: 0 1 170px;
+  min-width: 130px;
+  max-width: 240px;
+}
+
+.conditionParamRow > .ruleSelect:not(.conditionTypeSelect):not(.conditionFieldSelect):not(.conditionSubfieldSelect):not(.conditionOperatorSelect) {
   flex: 1 1 200px;
   min-width: 140px;
 }

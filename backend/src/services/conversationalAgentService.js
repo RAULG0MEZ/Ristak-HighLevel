@@ -207,14 +207,24 @@ export const CONDITION_SCHEMA = {
   },
   // base: es un contacto (siempre cierto); los parámetros afinan su perfil
   contact: {
-    name: ['contains', 'is'],
-    email: ['has', 'no_has', 'is', 'contains'],
-    phone: ['contains'],
-    source: ['is', 'contains'],
+    name: ['contains', 'not_contains', 'is', 'is_not', 'starts_with', 'ends_with', 'not_empty', 'empty'],
+    first_name: ['contains', 'not_contains', 'is', 'is_not', 'starts_with', 'ends_with', 'not_empty', 'empty'],
+    last_name: ['contains', 'not_contains', 'is', 'is_not', 'starts_with', 'ends_with', 'not_empty', 'empty'],
+    email: ['contains', 'not_contains', 'is', 'is_not', 'starts_with', 'ends_with', 'has', 'no_has'],
+    phone: ['contains', 'not_contains', 'is', 'is_not', 'starts_with', 'ends_with', 'not_empty', 'empty'],
+    source: ['contains', 'not_contains', 'is', 'is_not', 'starts_with', 'ends_with', 'not_empty', 'empty'],
+    attribution_source: ['contains', 'not_contains', 'is', 'is_not', 'starts_with', 'ends_with', 'not_empty', 'empty'],
+    attribution_medium: ['contains', 'not_contains', 'is', 'is_not', 'starts_with', 'ends_with', 'not_empty', 'empty'],
+    attribution_ad: ['contains', 'not_contains', 'is', 'is_not', 'starts_with', 'ends_with', 'not_empty', 'empty'],
+    visitor_id: ['contains', 'not_contains', 'is', 'is_not', 'starts_with', 'ends_with', 'not_empty', 'empty'],
+    ghl_contact_id: ['contains', 'not_contains', 'is', 'is_not', 'starts_with', 'ends_with', 'not_empty', 'empty'],
+    preferred_phone: ['is', 'is_not', 'not_empty', 'empty'],
     customer: ['is_customer', 'not_customer'],
-    created: ['within'],
+    created: ['within', 'older_than', 'before', 'after', 'between'],
+    updated: ['within', 'older_than', 'before', 'after', 'between'],
+    last_purchase: ['within', 'older_than', 'before', 'after', 'between'],
     assigned: ['to', 'not_to', 'any', 'none'],
-    custom_field: ['is', 'contains', 'has_value', 'empty']
+    custom_field: ['is', 'is_not', 'contains', 'not_contains', 'starts_with', 'ends_with', 'has_value', 'empty']
   },
   // base: agendó/tiene una cita (presence cambia el sentido a "no tiene")
   appointments: {
@@ -290,9 +300,13 @@ function normalizeParam(category, param) {
   } else if (field === 'date') {
     base.date = cleanDate(param.date)
     if (operator === 'between') base.dateEnd = cleanDate(param.dateEnd)
-  } else if (field === 'window' || field === 'created') {
+  } else if (field === 'window' || (CONTACT_DATE_FIELDS.has(field) && (operator === 'within' || operator === 'older_than'))) {
     base.offsetValue = Math.min(Math.max(Number(param.offsetValue) || 0, 0), 100000)
     base.offsetUnit = OFFSET_UNITS.has(param.offsetUnit) ? param.offsetUnit : (field === 'created' ? 'days' : 'minutes')
+    if (CONTACT_DATE_FIELDS.has(field)) base.offsetUnit = OFFSET_UNITS.has(param.offsetUnit) ? param.offsetUnit : 'days'
+  } else if (CONTACT_DATE_FIELDS.has(field)) {
+    base.date = cleanDate(param.date)
+    if (operator === 'between') base.dateEnd = cleanDate(param.dateEnd)
   } else if (field === 'amount') {
     base.amount = Number(param.amount) || 0
     if (operator === 'between') base.amountMax = Number(param.amountMax) || 0
@@ -701,6 +715,7 @@ const PAYMENT_STATUS_MAP = {
   payment_refunded: new Set(['refunded', 'refund', 'partially_refunded'])
 }
 const OFFSET_MS = { minutes: 60000, hours: 3600000, days: 86400000 }
+const CONTACT_DATE_FIELDS = new Set(['created', 'updated', 'last_purchase'])
 
 /**
  * Construye una sola vez el contexto que necesitan las condiciones (etiquetas,
@@ -712,8 +727,11 @@ export async function buildRuleContext({ contactId = null, messageText = '', cha
 
   const [contact, appointmentRows, paymentRows, adRows, latestInbound, timezone] = await Promise.all([
     contactId ? db.get(`
-      SELECT id, tags, full_name, phone, email, source, purchases_count, total_paid,
-             created_at, attribution_session_source, custom_fields
+      SELECT id, tags, full_name, first_name, last_name, phone, email, source,
+             purchases_count, total_paid, last_purchase_date, visitor_id,
+             attribution_session_source, attribution_medium, attribution_ad_name,
+             attribution_ad_id, preferred_whatsapp_phone_number_id, ghl_contact_id,
+             created_at, updated_at, custom_fields
       FROM contacts WHERE id = ?
     `, [contactId]).catch(() => null) : null,
     contactId ? db.all(`
@@ -812,13 +830,22 @@ export async function buildRuleContext({ contactId = null, messageText = '', cha
     businessPhoneNumberId: String(latestInbound?.business_phone_number_id || ''),
     contactInfo: contact ? {
       name: normalizeMatchText(contact.full_name || ''),
+      firstName: normalizeMatchText(contact.first_name || ''),
+      lastName: normalizeMatchText(contact.last_name || ''),
       phone: String(contact.phone || '').trim(),
       email: String(contact.email || '').trim(),
       source: normalizeMatchText(contact.source || ''),
       attributionSource: normalizeMatchText(contact.attribution_session_source || ''),
+      attributionMedium: normalizeMatchText(contact.attribution_medium || ''),
+      attributionAd: normalizeMatchText([contact.attribution_ad_name, contact.attribution_ad_id].filter(Boolean).join(' ')),
+      visitorId: normalizeMatchText(contact.visitor_id || ''),
+      ghlContactId: normalizeMatchText(contact.ghl_contact_id || ''),
+      preferredPhone: String(contact.preferred_whatsapp_phone_number_id || '').trim(),
       purchasesCount: Number(contact.purchases_count) || 0,
       totalPaid: Number(contact.total_paid) || 0,
-      createdAt: contact.created_at || null
+      createdAt: contact.created_at || null,
+      updatedAt: contact.updated_at || null,
+      lastPurchaseDate: contact.last_purchase_date || null
     } : null,
     customFields: normalizeCustomFieldsMap(parseJsonField(contact?.custom_fields, null)),
     localMinutes,
@@ -870,6 +897,48 @@ function textMatches(operator, ctx, param) {
     case 'equals': return !single || ctx.text === single
     default: return false
   }
+}
+
+function textValueMatches(rawValue, operator, expectedValue) {
+  const actual = normalizeMatchText(rawValue)
+  const expected = normalizeMatchText(expectedValue)
+  if (operator === 'empty' || operator === 'no_has') return !actual
+  if (operator === 'not_empty' || operator === 'has' || operator === 'has_value') return Boolean(actual)
+  if (!expected) return true
+  if (operator === 'is') return actual === expected
+  if (operator === 'is_not') return actual !== expected
+  if (operator === 'not_contains') return !actual.includes(expected)
+  if (operator === 'starts_with') return actual.startsWith(expected)
+  if (operator === 'ends_with') return actual.endsWith(expected)
+  return actual.includes(expected)
+}
+
+function anyTextValueMatches(rawValues, operator, expectedValue) {
+  const values = rawValues.map(normalizeMatchText).filter(Boolean)
+  if (operator === 'empty' || operator === 'no_has') return values.length === 0
+  if (operator === 'not_empty' || operator === 'has' || operator === 'has_value') return values.length > 0
+  if (operator === 'is_not' || operator === 'not_contains') {
+    return values.every((value) => textValueMatches(value, operator, expectedValue))
+  }
+  return values.some((value) => textValueMatches(value, operator, expectedValue))
+}
+
+function dateValueMatches(rawDate, param, ctx) {
+  if (!rawDate) return false
+  const parsed = Date.parse(rawDate)
+  if (!Number.isFinite(parsed)) return false
+  if (param.operator === 'within' || param.operator === 'older_than') {
+    const offset = (param.offsetValue || 0) * (OFFSET_MS[param.offsetUnit] || OFFSET_MS.days)
+    return param.operator === 'older_than'
+      ? ctx.now - parsed > offset
+      : ctx.now - parsed <= offset
+  }
+  if (!param.date) return true
+  const actualDate = String(rawDate || '').slice(0, 10)
+  if (param.operator === 'before') return actualDate < param.date
+  if (param.operator === 'after') return actualDate > param.date
+  if (param.operator === 'between') return Boolean(param.dateEnd) && actualDate >= param.date && actualDate <= param.dateEnd
+  return actualDate === param.date
 }
 
 /**
@@ -967,31 +1036,39 @@ function contactParamMatches(param, ctx) {
   const value = normalizeMatchText(param.value)
   switch (param.field) {
     case 'name':
-      if (!value) return true
-      return param.operator === 'is' ? info.name === value : info.name.includes(value)
+      return textValueMatches(info.name, param.operator, value)
+    case 'first_name':
+      return textValueMatches(info.firstName, param.operator, value)
+    case 'last_name':
+      return textValueMatches(info.lastName, param.operator, value)
     case 'email':
-      if (param.operator === 'has') return Boolean(info.email)
-      if (param.operator === 'no_has') return !info.email
-      if (!value) return true
-      return param.operator === 'is'
-        ? normalizeMatchText(info.email) === value
-        : normalizeMatchText(info.email).includes(value)
+      return textValueMatches(info.email, param.operator, value)
     case 'phone':
-      return !value || normalizeMatchText(info.phone).includes(value)
+      return textValueMatches(info.phone, param.operator, value)
     case 'source':
-      if (!value) return true
-      return param.operator === 'is'
-        ? (info.source === value || info.attributionSource === value)
-        : (info.source.includes(value) || info.attributionSource.includes(value))
+      return anyTextValueMatches([info.source, info.attributionSource], param.operator, value)
+    case 'attribution_source':
+      return textValueMatches(info.attributionSource, param.operator, value)
+    case 'attribution_medium':
+      return textValueMatches(info.attributionMedium, param.operator, value)
+    case 'attribution_ad':
+      return textValueMatches(info.attributionAd, param.operator, value)
+    case 'visitor_id':
+      return textValueMatches(info.visitorId, param.operator, value)
+    case 'ghl_contact_id':
+      return textValueMatches(info.ghlContactId, param.operator, value)
+    case 'preferred_phone':
+      return textValueMatches(info.preferredPhone, param.operator, param.value)
     case 'customer':
       return param.operator === 'is_customer'
         ? (info.purchasesCount > 0 || info.totalPaid > 0)
         : (info.purchasesCount === 0 && info.totalPaid === 0)
-    case 'created': {
-      if (!info.createdAt) return false
-      const offset = (param.offsetValue || 0) * (OFFSET_MS[param.offsetUnit] || OFFSET_MS.days)
-      return ctx.now - Date.parse(info.createdAt) <= offset
-    }
+    case 'created':
+      return dateValueMatches(info.createdAt, param, ctx)
+    case 'updated':
+      return dateValueMatches(info.updatedAt, param, ctx)
+    case 'last_purchase':
+      return dateValueMatches(info.lastPurchaseDate, param, ctx)
     case 'assigned': {
       const matchesValue = Boolean(value) && (ctx.assigneeNames.some((name) => name.includes(value)) || ctx.assigneeIds.includes(value))
       if (param.operator === 'to') return matchesValue
@@ -1002,10 +1079,7 @@ function contactParamMatches(param, ctx) {
     case 'custom_field': {
       if (!param.fieldKey) return true
       const fieldValue = normalizeMatchText(ctx.customFields[normalizeMatchText(param.fieldKey)] ?? ctx.customFields[param.fieldKey] ?? '')
-      if (param.operator === 'has_value') return Boolean(fieldValue)
-      if (param.operator === 'empty') return !fieldValue
-      if (!value) return true
-      return param.operator === 'is' ? fieldValue === value : fieldValue.includes(value)
+      return textValueMatches(fieldValue, param.operator, value)
     }
     default:
       return false

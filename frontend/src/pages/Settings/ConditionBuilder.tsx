@@ -95,6 +95,54 @@ function offsetPhrase(param: AgentConditionParam, suffix: string) {
   return `${param.offsetValue || 0} ${unit} ${suffix}`
 }
 
+function textOperatorPhrase(subject: string, param: AgentConditionParam) {
+  const value = param.value || '…'
+  switch (param.operator) {
+    case 'is':
+      return `${subject} es "${value}"`
+    case 'is_not':
+      return `${subject} no es "${value}"`
+    case 'not_contains':
+      return `${subject} no contiene "${value}"`
+    case 'starts_with':
+      return `${subject} empieza con "${value}"`
+    case 'ends_with':
+      return `${subject} termina con "${value}"`
+    case 'empty':
+    case 'no_has':
+      return `${subject} está vacío`
+    case 'not_empty':
+    case 'has':
+    case 'has_value':
+      return `${subject} no está vacío`
+    default:
+      return `${subject} contiene "${value}"`
+  }
+}
+
+function textOperators(subject: string, placeholder: string): OperatorDef[] {
+  return [
+    { id: 'contains', label: 'contiene', valueKind: 'text', placeholder, phrase: (p) => textOperatorPhrase(subject, p) },
+    { id: 'not_contains', label: 'no contiene', valueKind: 'text', placeholder, phrase: (p) => textOperatorPhrase(subject, p) },
+    { id: 'is', label: 'es igual a', valueKind: 'text', placeholder, phrase: (p) => textOperatorPhrase(subject, p) },
+    { id: 'is_not', label: 'no es igual a', valueKind: 'text', placeholder, phrase: (p) => textOperatorPhrase(subject, p) },
+    { id: 'starts_with', label: 'empieza con', valueKind: 'text', placeholder, phrase: (p) => textOperatorPhrase(subject, p) },
+    { id: 'ends_with', label: 'termina con', valueKind: 'text', placeholder, phrase: (p) => textOperatorPhrase(subject, p) },
+    { id: 'not_empty', label: 'no está vacío', valueKind: 'none', phrase: (p) => textOperatorPhrase(subject, p) },
+    { id: 'empty', label: 'está vacío', valueKind: 'none', phrase: (p) => textOperatorPhrase(subject, p) }
+  ]
+}
+
+function dateOperators(subject: string): OperatorDef[] {
+  return [
+    { id: 'within', label: 'hace menos de', valueKind: 'offset', phrase: (p) => `${subject} hace menos de ${offsetPhrase(p, '')}`.trim() },
+    { id: 'older_than', label: 'hace más de', valueKind: 'offset', phrase: (p) => `${subject} hace más de ${offsetPhrase(p, '')}`.trim() },
+    { id: 'before', label: 'antes de', valueKind: 'date', phrase: (p) => `${subject} antes de ${p.date || '…'}` },
+    { id: 'after', label: 'después de', valueKind: 'date', phrase: (p) => `${subject} después de ${p.date || '…'}` },
+    { id: 'between', label: 'entre fechas', valueKind: 'dateRange', phrase: (p) => `${subject} entre ${p.date || '…'} y ${p.dateEnd || '…'}` }
+  ]
+}
+
 export const CONDITION_CATEGORIES: CategoryDef[] = [
   {
     id: 'channel',
@@ -165,45 +213,90 @@ export const CONDITION_CATEGORIES: CategoryDef[] = [
     params: [
       {
         field: 'name',
-        menuLabel: 'Nombre del contacto',
-        operators: [
-          { id: 'contains', label: 'contiene', valueKind: 'text', placeholder: 'Parte del nombre', phrase: (p) => `el nombre contiene "${p.value || '…'}"` },
-          { id: 'is', label: 'es exactamente', valueKind: 'text', placeholder: 'Nombre exacto', phrase: (p) => `el nombre es "${p.value || '…'}"` }
-        ]
+        menuLabel: 'Nombre completo',
+        operators: textOperators('el nombre completo', 'Nombre completo')
+      },
+      {
+        field: 'first_name',
+        menuLabel: 'Nombre',
+        operators: textOperators('el nombre', 'Nombre')
+      },
+      {
+        field: 'last_name',
+        menuLabel: 'Apellido',
+        operators: textOperators('el apellido', 'Apellido')
       },
       {
         field: 'email',
         menuLabel: 'Correo electrónico',
         operators: [
-          { id: 'has', label: 'tiene correo registrado', valueKind: 'none', phrase: () => 'tiene correo registrado' },
-          { id: 'no_has', label: 'no tiene correo', valueKind: 'none', phrase: () => 'no tiene correo registrado' },
-          { id: 'is', label: 'el correo es', valueKind: 'text', placeholder: 'correo@ejemplo.com', phrase: (p) => `el correo es ${p.value || '…'}` },
-          { id: 'contains', label: 'el correo contiene', valueKind: 'text', placeholder: 'ej. @gmail.com', phrase: (p) => `el correo contiene "${p.value || '…'}"` }
+          { id: 'contains', label: 'contiene', valueKind: 'text', placeholder: 'ej. @gmail.com', phrase: (p) => textOperatorPhrase('el correo', p) },
+          { id: 'not_contains', label: 'no contiene', valueKind: 'text', placeholder: 'ej. @gmail.com', phrase: (p) => textOperatorPhrase('el correo', p) },
+          { id: 'is', label: 'es igual a', valueKind: 'text', placeholder: 'correo@ejemplo.com', phrase: (p) => textOperatorPhrase('el correo', p) },
+          { id: 'is_not', label: 'no es igual a', valueKind: 'text', placeholder: 'correo@ejemplo.com', phrase: (p) => textOperatorPhrase('el correo', p) },
+          { id: 'starts_with', label: 'empieza con', valueKind: 'text', placeholder: 'inicio del correo', phrase: (p) => textOperatorPhrase('el correo', p) },
+          { id: 'ends_with', label: 'termina con', valueKind: 'text', placeholder: '@dominio.com', phrase: (p) => textOperatorPhrase('el correo', p) },
+          { id: 'has', label: 'no está vacío', valueKind: 'none', phrase: (p) => textOperatorPhrase('el correo', p) },
+          { id: 'no_has', label: 'está vacío', valueKind: 'none', phrase: (p) => textOperatorPhrase('el correo', p) }
         ]
       },
       {
         field: 'phone',
-        menuLabel: 'Número de teléfono',
-        operators: [
-          { id: 'contains', label: 'contiene', valueKind: 'text', placeholder: 'ej. 33 o +52', phrase: (p) => `el teléfono contiene "${p.value || '…'}"` }
-        ]
+        menuLabel: 'Teléfono',
+        operators: textOperators('el teléfono', 'ej. 33 o +52')
       },
       {
         field: 'custom_field',
         menuLabel: 'Campo personalizado',
         operators: [
           { id: 'is', label: 'es', valueKind: 'customFieldValue', phrase: (p, h) => `${h.customFieldLabel(p.fieldKey)} es "${p.value || '…'}"` },
+          { id: 'is_not', label: 'no es', valueKind: 'customFieldValue', phrase: (p, h) => `${h.customFieldLabel(p.fieldKey)} no es "${p.value || '…'}"` },
           { id: 'contains', label: 'contiene', valueKind: 'customFieldValue', phrase: (p, h) => `${h.customFieldLabel(p.fieldKey)} contiene "${p.value || '…'}"` },
-          { id: 'has_value', label: 'tiene algún valor', valueKind: 'customField', phrase: (p, h) => `${h.customFieldLabel(p.fieldKey)} tiene valor` },
+          { id: 'not_contains', label: 'no contiene', valueKind: 'customFieldValue', phrase: (p, h) => `${h.customFieldLabel(p.fieldKey)} no contiene "${p.value || '…'}"` },
+          { id: 'starts_with', label: 'empieza con', valueKind: 'customFieldValue', phrase: (p, h) => `${h.customFieldLabel(p.fieldKey)} empieza con "${p.value || '…'}"` },
+          { id: 'ends_with', label: 'termina con', valueKind: 'customFieldValue', phrase: (p, h) => `${h.customFieldLabel(p.fieldKey)} termina con "${p.value || '…'}"` },
+          { id: 'has_value', label: 'no está vacío', valueKind: 'customField', phrase: (p, h) => `${h.customFieldLabel(p.fieldKey)} no está vacío` },
           { id: 'empty', label: 'está vacío', valueKind: 'customField', phrase: (p, h) => `${h.customFieldLabel(p.fieldKey)} está vacío` }
         ]
       },
       {
         field: 'source',
-        menuLabel: 'De dónde vino el contacto',
+        menuLabel: 'Fuente',
+        operators: textOperators('la fuente', 'ej. meta_ads, google')
+      },
+      {
+        field: 'attribution_source',
+        menuLabel: 'Fuente de sesión',
+        operators: textOperators('la fuente de sesión', 'ej. facebook, google')
+      },
+      {
+        field: 'attribution_medium',
+        menuLabel: 'Medio',
+        operators: textOperators('el medio', 'ej. cpc, organic')
+      },
+      {
+        field: 'attribution_ad',
+        menuLabel: 'Anuncio atribuido',
+        operators: textOperators('el anuncio atribuido', 'Nombre o ID del anuncio')
+      },
+      {
+        field: 'visitor_id',
+        menuLabel: 'Visitor ID',
+        operators: textOperators('el visitor ID', 'ID del visitante')
+      },
+      {
+        field: 'ghl_contact_id',
+        menuLabel: 'ID de HighLevel',
+        operators: textOperators('el ID de HighLevel', 'ID de contacto')
+      },
+      {
+        field: 'preferred_phone',
+        menuLabel: 'Número WhatsApp preferido',
         operators: [
-          { id: 'is', label: 'es', valueKind: 'text', placeholder: 'ej. meta_ads, google', phrase: (p) => `vino de "${p.value || '…'}"` },
-          { id: 'contains', label: 'contiene', valueKind: 'text', placeholder: 'Parte del origen', phrase: (p) => `el origen contiene "${p.value || '…'}"` }
+          { id: 'is', label: 'es', valueKind: 'businessPhone', phrase: (p, h) => `usa ${h.phoneLabel(p.value)} como número preferido` },
+          { id: 'is_not', label: 'no es', valueKind: 'businessPhone', phrase: (p, h) => `no usa ${h.phoneLabel(p.value)} como número preferido` },
+          { id: 'not_empty', label: 'no está vacío', valueKind: 'none', phrase: () => 'tiene número WhatsApp preferido' },
+          { id: 'empty', label: 'está vacío', valueKind: 'none', phrase: () => 'no tiene número WhatsApp preferido' }
         ]
       },
       {
@@ -216,10 +309,18 @@ export const CONDITION_CATEGORIES: CategoryDef[] = [
       },
       {
         field: 'created',
-        menuLabel: 'Qué tan nuevo es el contacto',
-        operators: [
-          { id: 'within', label: 'se registró hace menos de', valueKind: 'offset', phrase: (p) => `se registró hace menos de ${offsetPhrase(p, '')}`.trim() }
-        ]
+        menuLabel: 'Fecha de creación',
+        operators: dateOperators('se creó')
+      },
+      {
+        field: 'updated',
+        menuLabel: 'Fecha de actualización',
+        operators: dateOperators('se actualizó')
+      },
+      {
+        field: 'last_purchase',
+        menuLabel: 'Última compra',
+        operators: dateOperators('compró')
       },
       {
         field: 'assigned',
@@ -410,29 +511,11 @@ function getOperatorDef(categoryId: string, field: string, operatorId: string): 
   return paramDef.operators.find((operator) => operator.id === operatorId) || paramDef.operators[0]
 }
 
-const CONDITION_CRITERION_SEPARATOR = '::'
-
-function conditionCriterionId(field: string, operator: string) {
-  return `${field}${CONDITION_CRITERION_SEPARATOR}${operator}`
-}
-
-function parseConditionCriterionId(id: string) {
-  const [field, operator] = id.split(CONDITION_CRITERION_SEPARATOR)
-  return { field, operator }
-}
-
-function conditionCriterionLabel(category: CategoryDef, param: ParamDef, operator: OperatorDef) {
-  if (category.params.length === 1) return operator.label
-  return `${param.menuLabel}: ${operator.label}`
-}
-
-function getConditionCriterionOptions(category: CategoryDef) {
-  return category.params.flatMap((param) => param.operators.map((operator) => ({
-    id: conditionCriterionId(param.field, operator.id),
-    field: param.field,
-    operator: operator.id,
-    label: conditionCriterionLabel(category, param, operator)
-  })))
+function getConditionFieldOptions(category: CategoryDef) {
+  return category.params.map((param) => ({
+    id: param.field,
+    label: param.menuLabel
+  }))
 }
 
 function defaultParamFor(categoryId: ConditionCategory, field: string, operatorId?: string): AgentConditionParam {
@@ -441,8 +524,9 @@ function defaultParamFor(categoryId: ConditionCategory, field: string, operatorI
   if (operator.valueKind === 'channel') param.value = 'whatsapp'
   if (operator.valueKind === 'list' || operator.valueKind === 'tagList' || operator.valueKind === 'weekdays') param.values = []
   if (operator.valueKind === 'offset') {
-    param.offsetValue = field === 'created' ? 7 : 30
-    param.offsetUnit = field === 'created' ? 'days' : 'minutes'
+    const isContactDateField = field === 'created' || field === 'updated' || field === 'last_purchase'
+    param.offsetValue = isContactDateField ? 7 : 30
+    param.offsetUnit = isContactDateField ? 'days' : 'minutes'
   }
   if (operator.valueKind === 'timeRange') {
     param.timeStart = '09:00'
@@ -890,42 +974,47 @@ export const ConditionBuilder: React.FC<ConditionBuilderProps> = ({ groups, cale
           </>
         )
       case 'customField':
+        return null
       case 'customFieldValue':
         return (
-          <>
-            <select
-              className={styles.ruleSelect}
-              value={param.fieldKey || ''}
-              onChange={(event) => updateParam(groupIndex, conditionIndex, paramIndex, { fieldKey: event.target.value })}
-            >
-              <option value="">Elige el campo</option>
-              {(options?.customFields || []).map((field) => (
-                <option key={field.key} value={field.key}>{field.label}</option>
-              ))}
-            </select>
-            {operator.valueKind === 'customFieldValue' && (
-              <input
-                className={styles.ruleInput}
-                value={param.value || ''}
-                placeholder="Valor"
-                onChange={(event) => updateParam(groupIndex, conditionIndex, paramIndex, { value: event.target.value })}
-              />
-            )}
-          </>
+          <input
+            className={styles.ruleInput}
+            value={param.value || ''}
+            placeholder="Valor"
+            onChange={(event) => updateParam(groupIndex, conditionIndex, paramIndex, { value: event.target.value })}
+          />
         )
       default:
         return null
     }
   }
 
+  const renderParamSubfield = (param: AgentConditionParam, groupIndex: number, conditionIndex: number, paramIndex: number) => {
+    if (param.field !== 'custom_field') return null
+    return (
+      <select
+        className={`${styles.ruleSelect} ${styles.conditionSubfieldSelect}`}
+        aria-label="Campo personalizado"
+        value={param.fieldKey || ''}
+        onChange={(event) => updateParam(groupIndex, conditionIndex, paramIndex, { fieldKey: event.target.value })}
+      >
+        <option value="">Elige campo</option>
+        {(options?.customFields || []).map((field) => (
+          <option key={field.key} value={field.key}>{field.label}</option>
+        ))}
+      </select>
+    )
+  }
+
   const renderEditingCondition = (condition: AgentCondition, groupIndex: number, conditionIndex: number, key: string) => {
     const category = getCategory(condition.category)
     const usedPresence = condition.params.some((param) => param.field === 'presence')
-    const criterionOptions = getConditionCriterionOptions(category)
+    const fieldOptions = getConditionFieldOptions(category)
+    const showFieldSelect = category.params.length > 1
     const canAddCriterion = category.params.length > 1 || condition.params.length === 0
     const criterionMenuItems = canAddCriterion
-      ? criterionOptions
-        .filter((item) => item.field !== 'presence' || !usedPresence)
+      ? fieldOptions
+        .filter((item) => item.id !== 'presence' || !usedPresence)
         .map((item) => ({ id: item.id, label: item.label }))
       : []
     const conditionTypeSelect = (
@@ -961,7 +1050,10 @@ export const ConditionBuilder: React.FC<ConditionBuilderProps> = ({ groups, cale
 
         {condition.params.map((param, paramIndex) => {
           const currentOperator = getOperatorDef(condition.category, param.field, param.operator)
-          const currentCriterionId = conditionCriterionId(param.field, currentOperator.id)
+          const paramDef = getParamDef(condition.category, param.field)
+          const availableFieldOptions = fieldOptions.filter((item) => (
+            item.id !== 'presence' || param.field === 'presence' || !usedPresence
+          ))
           return (
             <div
               key={paramIndex}
@@ -975,23 +1067,41 @@ export const ConditionBuilder: React.FC<ConditionBuilderProps> = ({ groups, cale
               ) : (
                 <span className={styles.conditionParamJoin}>y</span>
               )}
+              {showFieldSelect && (
+                <select
+                  className={`${styles.ruleSelect} ${styles.conditionFieldSelect}`}
+                  aria-label="Campo"
+                  value={param.field}
+                  onChange={(event) => {
+                    replaceParam(groupIndex, conditionIndex, paramIndex, defaultParamFor(condition.category, event.target.value))
+                  }}
+                >
+                  {availableFieldOptions.map((item) => (
+                    <option key={item.id} value={item.id}>{item.label}</option>
+                  ))}
+                </select>
+              )}
+              {renderParamSubfield(param, groupIndex, conditionIndex, paramIndex)}
               <select
-                className={`${styles.ruleSelect} ${styles.conditionCriterionSelect}`}
-                aria-label="Condición"
-                value={currentCriterionId}
+                className={`${styles.ruleSelect} ${styles.conditionOperatorSelect}`}
+                aria-label="Operador"
+                value={currentOperator.id}
                 onChange={(event) => {
-                  const nextCriterion = parseConditionCriterionId(event.target.value)
-                  const nextOperator = getOperatorDef(condition.category, nextCriterion.field, nextCriterion.operator)
-                  const fresh = defaultParamFor(condition.category, nextCriterion.field, nextOperator.id)
-                  if (nextCriterion.field === param.field && nextOperator.valueKind === currentOperator.valueKind) {
+                  const nextOperator = getOperatorDef(condition.category, param.field, event.target.value)
+                  if (nextOperator.valueKind === currentOperator.valueKind || param.field === 'custom_field') {
                     replaceParam(groupIndex, conditionIndex, paramIndex, { ...param, operator: nextOperator.id })
                   } else {
-                    replaceParam(groupIndex, conditionIndex, paramIndex, fresh)
+                    const fresh = defaultParamFor(condition.category, param.field, nextOperator.id)
+                    replaceParam(groupIndex, conditionIndex, paramIndex, {
+                      ...fresh,
+                      fieldKey: param.fieldKey,
+                      value: param.value
+                    })
                   }
                 }}
               >
-                {criterionOptions.map((item) => (
-                  <option key={item.id} value={item.id}>{item.label}</option>
+                {paramDef.operators.map((operator) => (
+                  <option key={operator.id} value={operator.id}>{operator.label}</option>
                 ))}
               </select>
               {renderParamValue(condition, param, groupIndex, conditionIndex, paramIndex)}
@@ -1019,10 +1129,9 @@ export const ConditionBuilder: React.FC<ConditionBuilderProps> = ({ groups, cale
             small
             items={criterionMenuItems}
             onSelect={(id) => {
-              const nextCriterion = parseConditionCriterionId(id)
               updateCondition(groupIndex, conditionIndex, {
                 ...condition,
-                params: [...condition.params, defaultParamFor(condition.category, nextCriterion.field, nextCriterion.operator)]
+                params: [...condition.params, defaultParamFor(condition.category, id)]
               })
             }}
           />
