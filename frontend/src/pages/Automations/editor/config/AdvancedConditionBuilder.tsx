@@ -100,7 +100,7 @@ export const AdvancedConditionBuilder: React.FC<AdvancedConditionBuilderProps> =
         type="button"
         className={styles.composerToolButton}
         title={variableMode ? 'Usar valor fijo' : 'Comparar contra una variable'}
-        onClick={() => set({ valueMode: variableMode ? 'fixed' : 'variable', value: '' })}
+        onClick={() => set({ valueMode: variableMode ? 'fixed' : 'variable', value: '', valueLabel: '' })}
       >
         {variableMode ? <Type size={12} /> : <Braces size={12} />}
       </button>
@@ -112,7 +112,7 @@ export const AdvancedConditionBuilder: React.FC<AdvancedConditionBuilderProps> =
           <div className={styles.configRowGrow}>
             <VariableTextInput
               value={rule.value || ''}
-              onChange={(compiled) => set({ value: compiled })}
+              onChange={(compiled) => set({ value: compiled, valueLabel: '' })}
               placeholder="Inserta una variable…"
               aria-label="Valor dinámico"
             />
@@ -129,7 +129,7 @@ export const AdvancedConditionBuilder: React.FC<AdvancedConditionBuilderProps> =
         <CatalogSelect
           catalog={field.valueCatalog}
           value={rule.value || ''}
-          onChange={(next) => set({ value: next })}
+          onChange={(next, label) => set({ value: next, valueLabel: label })}
           placeholder="Selecciona el valor"
           aria-label="Valor"
         />
@@ -139,7 +139,9 @@ export const AdvancedConditionBuilder: React.FC<AdvancedConditionBuilderProps> =
         <CustomSelect
           options={field.options}
           value={rule.value || ''}
-          onValueChange={(next) => set({ value: next })}
+          onValueChange={(next) =>
+            set({ value: next, valueLabel: field.options?.find((option) => option.value === next)?.label || next })
+          }
           placeholder="Selecciona el valor"
           aria-label="Valor"
         />
@@ -153,7 +155,7 @@ export const AdvancedConditionBuilder: React.FC<AdvancedConditionBuilderProps> =
             className={styles.configRowGrow}
             value={rule.value || ''}
             placeholder="Cantidad"
-            onChange={(event) => set({ value: event.target.value })}
+            onChange={(event) => set({ value: event.target.value, valueLabel: '' })}
           />
           {field.type === 'duration' && (
             <div className={styles.configRowGrow}>
@@ -181,7 +183,7 @@ export const AdvancedConditionBuilder: React.FC<AdvancedConditionBuilderProps> =
               className={styles.configRowGrow}
               value={rule.value || ''}
               placeholder="Desde"
-              onChange={(event) => set({ value: event.target.value })}
+              onChange={(event) => set({ value: event.target.value, valueLabel: '' })}
             />
             <TextInput
               type={inputType}
@@ -196,7 +198,7 @@ export const AdvancedConditionBuilder: React.FC<AdvancedConditionBuilderProps> =
             type={inputType}
             value={rule.value || ''}
             placeholder="Valor a comparar"
-            onChange={(event) => set({ value: event.target.value })}
+            onChange={(event) => set({ value: event.target.value, valueLabel: '' })}
           />
         )
     }
@@ -256,6 +258,7 @@ export const AdvancedConditionBuilder: React.FC<AdvancedConditionBuilderProps> =
               field: next,
               operator: '',
               value: '',
+              valueLabel: '',
               valueTo: '',
               customKey: '',
               valueMode: 'fixed'

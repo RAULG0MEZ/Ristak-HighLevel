@@ -396,7 +396,7 @@ const TRIGGERS: NodeDefinition[] = [
         removed: 'pierda la etiqueta',
         contains: 'tenga la etiqueta'
       }
-      const tag = str(config.tag)
+      const tag = str(config.tagName) || str(config.tag)
       return {
         text: tag
           ? `Cuando un contacto ${verbs[str(config.operator)] || 'reciba la etiqueta'} "${tag}"${triggerFiltersSentence(config.filters)}`
@@ -1237,7 +1237,7 @@ const CONTACT_ACTIONS: NodeDefinition[] = [
     ],
     outputs: () => SINGLE_OUTPUT,
     summary: (config) => ({
-      text: str(config.tag) ? `Añadir la etiqueta "${str(config.tag)}" al contacto` : undefined,
+      text: (str(config.tagName) || str(config.tag)) ? `Añadir la etiqueta "${str(config.tagName) || str(config.tag)}" al contacto` : undefined,
       empty: 'Selecciona la etiqueta'
     })
   },
@@ -1255,7 +1255,7 @@ const CONTACT_ACTIONS: NodeDefinition[] = [
     ],
     outputs: () => SINGLE_OUTPUT,
     summary: (config) => ({
-      text: str(config.tag) ? `Quitar la etiqueta "${str(config.tag)}" del contacto` : undefined,
+      text: (str(config.tagName) || str(config.tag)) ? `Quitar la etiqueta "${str(config.tagName) || str(config.tag)}" del contacto` : undefined,
       empty: 'Selecciona la etiqueta'
     })
   },
@@ -1745,7 +1745,7 @@ const OTHER_ACTIONS: NodeDefinition[] = [
             lost: 'Pierde etiqueta',
             not_has: 'No tiene etiqueta'
           }
-          return `${operators[str(config.tagOperator)] || 'Tiene etiqueta'} ${str(config.tag)}`
+          return `${operators[str(config.tagOperator)] || 'Tiene etiqueta'} ${str(config.tagName) || str(config.tag)}`
         },
         payment: () => (str(config.paymentEvent) === 'refund' ? 'Reembolso procesado' : str(config.paymentEvent) === 'failed' ? 'Pago fallido' : 'Pago recibido'),
         appointment: () => {

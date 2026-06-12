@@ -224,6 +224,8 @@ export interface ConditionRule {
   unit?: string
   /** Valor fijo o variable dinámica ({{contact.x}}) */
   valueMode?: 'fixed' | 'variable'
+  /** Nombre legible del valor cuando viene de un catálogo (etiqueta, calendario…) */
+  valueLabel?: string
 }
 
 export interface ConditionConfig {
@@ -357,7 +359,7 @@ export function summarizeAdvancedCondition(config: unknown): string {
   if (!firstRule) return ''
   const field = getCrmField(firstRule.field)
   const operator = getOperatorsForField(firstRule.field).find((op) => op.value === firstRule.operator)
-  const base = `Si ${[field?.label.toLowerCase(), operator?.label, operatorNeedsValue(firstRule.field, firstRule.operator) ? `"${firstRule.value}"` : '']
+  const base = `Si ${[field?.label.toLowerCase(), operator?.label, operatorNeedsValue(firstRule.field, firstRule.operator) ? `"${firstRule.valueLabel || firstRule.value}"` : '']
     .filter(Boolean)
     .join(' ')}`
 
@@ -422,7 +424,7 @@ export function summarizeCondition(config: unknown): string {
   const first = rules[0]
   const field = getCrmField(first.field)
   const operator = getOperatorsForField(first.field).find((op) => op.value === first.operator)
-  const base = [field?.label, operator?.label, operatorNeedsValue(first.field, first.operator) ? first.value : '']
+  const base = [field?.label, operator?.label, operatorNeedsValue(first.field, first.operator) ? (first.valueLabel || first.value) : '']
     .filter(Boolean)
     .join(' ')
   if (rules.length === 1) return base
@@ -452,6 +454,8 @@ export interface TriggerFilter {
   customLabel?: string
   match: TriggerFilterMatch
   value: string
+  /** Nombre legible del valor cuando viene de un catálogo (etiqueta, calendario…) */
+  valueLabel?: string
   /** Cómo se une con el filtro anterior: Y (default) u O */
   connector?: 'and' | 'or'
 }
@@ -589,7 +593,9 @@ export function triggerFiltersSentence(value: unknown): string {
         not_empty: 'no esté vacío'
       }
       const joiner = filter.connector === 'or' ? ' o ' : ' y '
-      const valuePart = triggerOperatorNeedsValue(filter.match) ? ` "${filter.value}"` : ''
+      const valuePart = triggerOperatorNeedsValue(filter.match)
+        ? ` "${filter.valueLabel || filter.value}"`
+        : ''
       return `${joiner}${phrase} ${verbs[filter.match] || 'coincida con'}${valuePart}`
     })
     .join('')

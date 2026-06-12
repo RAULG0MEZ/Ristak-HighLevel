@@ -75,7 +75,7 @@ export const GoalConfigEditor: React.FC<{ config: Config; onChange: (config: Con
             <CatalogSelect
               catalog="tags"
               value={str(config.tag)}
-              onChange={(value) => set({ tag: value })}
+              onChange={(value, label) => set({ tag: value, tagName: label })}
               placeholder="Selecciona la etiqueta"
               aria-label="Etiqueta"
             />
@@ -234,7 +234,7 @@ export const GoalConfigEditor: React.FC<{ config: Config; onChange: (config: Con
               <CatalogSelect
                 catalog="contactFields"
                 value={str(config.contactField)}
-                onChange={(value) => set({ contactField: value })}
+                onChange={(value, label) => set({ contactField: value, contactFieldName: label })}
                 placeholder="Selecciona el campo"
                 aria-label="Campo"
               />

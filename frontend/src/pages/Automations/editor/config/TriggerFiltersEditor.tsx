@@ -70,7 +70,7 @@ export const TriggerFiltersEditor: React.FC<{
                   groups={groups}
                   value={filter.field}
                   onValueChange={(next) =>
-                    update(index, { field: next, value: '', customKey: '', customLabel: '' })
+                    update(index, { field: next, value: '', valueLabel: '', customKey: '', customLabel: '' })
                   }
                   placeholder="Elige el campo"
                   aria-label="Campo del filtro"
@@ -117,7 +117,12 @@ export const TriggerFiltersEditor: React.FC<{
                       <CustomSelect
                         options={field.options}
                         value={filter.value}
-                        onValueChange={(next) => update(index, { value: next })}
+                        onValueChange={(next) =>
+                          update(index, {
+                            value: next,
+                            valueLabel: field.options?.find((option) => option.value === next)?.label || next
+                          })
+                        }
                         placeholder="Valor"
                         aria-label="Valor del filtro"
                       />
@@ -125,7 +130,7 @@ export const TriggerFiltersEditor: React.FC<{
                       <CatalogSelect
                         catalog={field.catalog}
                         value={filter.value}
-                        onChange={(next) => update(index, { value: next })}
+                        onChange={(next, label) => update(index, { value: next, valueLabel: label })}
                         placeholder="Valor"
                         aria-label="Valor del filtro"
                       />
@@ -133,7 +138,7 @@ export const TriggerFiltersEditor: React.FC<{
                       <TextInput
                         value={filter.value}
                         placeholder="Valor"
-                        onChange={(event) => update(index, { value: event.target.value })}
+                        onChange={(event) => update(index, { value: event.target.value, valueLabel: '' })}
                       />
                     )}
                   </div>
