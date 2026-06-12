@@ -928,32 +928,53 @@ export const ConditionBuilder: React.FC<ConditionBuilderProps> = ({ groups, cale
         .filter((item) => item.field !== 'presence' || !usedPresence)
         .map((item) => ({ id: item.id, label: item.label }))
       : []
+    const conditionTypeSelect = (
+      <select
+        className={`${styles.ruleSelect} ${styles.conditionTypeSelect}`}
+        aria-label="Tipo de condición"
+        value={condition.category}
+        onChange={(event) => updateCondition(groupIndex, conditionIndex, defaultCondition(event.target.value as ConditionCategory))}
+      >
+        {CONDITION_CATEGORIES.map((item) => (
+          <option key={item.id} value={item.id}>{item.label}</option>
+        ))}
+      </select>
+    )
+    const doneButton = (
+      <button type="button" className={styles.ruleDelete} onClick={() => setEditing(key, false)} aria-label="Listo">
+        <Check size={14} />
+      </button>
+    )
 
     return (
       <div className={styles.conditionEditPanel}>
-        <div className={styles.conditionEditHeader}>
-          <span className={styles.conditionPrefix}>{conditionIndex === 0 ? 'Si' : 'Y'}</span>
-          <select
-            className={`${styles.ruleSelect} ${styles.conditionTypeSelect}`}
-            aria-label="Tipo de condición"
-            value={condition.category}
-            onChange={(event) => updateCondition(groupIndex, conditionIndex, defaultCondition(event.target.value as ConditionCategory))}
-          >
-            {CONDITION_CATEGORIES.map((item) => (
-              <option key={item.id} value={item.id}>{item.label}</option>
-            ))}
-          </select>
-          {condition.params.length === 0 && <span className={styles.conditionBaseHint}>{category.baseLabel}</span>}
-          <button type="button" className={styles.ruleDelete} onClick={() => setEditing(key, false)} aria-label="Listo">
-            <Check size={14} />
-          </button>
-        </div>
+        {condition.params.length === 0 && (
+          <div className={`${styles.conditionParamRow} ${styles.conditionParamRowPrimary}`}>
+            <span className={styles.conditionPrefix}>{conditionIndex === 0 ? 'Si' : 'Y'}</span>
+            {conditionTypeSelect}
+            <span className={styles.conditionBaseHint}>{category.baseLabel}</span>
+            <span className={styles.conditionInlineActions}>
+              {doneButton}
+            </span>
+          </div>
+        )}
 
         {condition.params.map((param, paramIndex) => {
           const currentOperator = getOperatorDef(condition.category, param.field, param.operator)
           const currentCriterionId = conditionCriterionId(param.field, currentOperator.id)
           return (
-            <div key={paramIndex} className={styles.conditionParamRow}>
+            <div
+              key={paramIndex}
+              className={`${styles.conditionParamRow} ${paramIndex === 0 ? styles.conditionParamRowPrimary : ''}`}
+            >
+              {paramIndex === 0 ? (
+                <>
+                  <span className={styles.conditionPrefix}>{conditionIndex === 0 ? 'Si' : 'Y'}</span>
+                  {conditionTypeSelect}
+                </>
+              ) : (
+                <span className={styles.conditionParamJoin}>y</span>
+              )}
               <select
                 className={`${styles.ruleSelect} ${styles.conditionCriterionSelect}`}
                 aria-label="Condición"
@@ -974,17 +995,20 @@ export const ConditionBuilder: React.FC<ConditionBuilderProps> = ({ groups, cale
                 ))}
               </select>
               {renderParamValue(condition, param, groupIndex, conditionIndex, paramIndex)}
-              <button
-                type="button"
-                className={styles.ruleDelete}
-                onClick={() => updateCondition(groupIndex, conditionIndex, {
-                  ...condition,
-                  params: condition.params.filter((_, pi) => pi !== paramIndex)
-                })}
-                aria-label="Quitar parámetro"
-              >
-                <X size={13} />
-              </button>
+              <span className={styles.conditionInlineActions}>
+                <button
+                  type="button"
+                  className={styles.ruleDelete}
+                  onClick={() => updateCondition(groupIndex, conditionIndex, {
+                    ...condition,
+                    params: condition.params.filter((_, pi) => pi !== paramIndex)
+                  })}
+                  aria-label="Quitar parámetro"
+                >
+                  <X size={13} />
+                </button>
+                {paramIndex === 0 && doneButton}
+              </span>
             </div>
           )
         })}
