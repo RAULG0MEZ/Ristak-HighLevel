@@ -73,6 +73,7 @@ function normalizeReminderRow(row = {}) {
     smartEnd: cleanString(row.smart_end) || '21:00',
     smartOverflow: SMART_OVERFLOWS.has(cleanString(row.smart_overflow)) ? cleanString(row.smart_overflow) : 'before',
     noConfirmAction: NO_CONFIRM_ACTIONS.has(cleanString(row.no_confirm_action)) ? cleanString(row.no_confirm_action) : 'no_action',
+    bypassAutomations: Number(row.bypass_automations || 0) === 1,
     position: Number(row.position || 0),
     createdAt: cleanString(row.created_at),
     updatedAt: cleanString(row.updated_at)
@@ -135,7 +136,8 @@ function sanitizeReminderInput(input = {}, base = {}) {
     smartStart,
     smartEnd,
     smartOverflow: SMART_OVERFLOWS.has(cleanString(merged.smartOverflow)) ? cleanString(merged.smartOverflow) : 'before',
-    noConfirmAction: NO_CONFIRM_ACTIONS.has(cleanString(merged.noConfirmAction)) ? cleanString(merged.noConfirmAction) : 'no_action'
+    noConfirmAction: NO_CONFIRM_ACTIONS.has(cleanString(merged.noConfirmAction)) ? cleanString(merged.noConfirmAction) : 'no_action',
+    bypassAutomations: merged.bypassAutomations === true ? 1 : 0
   }
 }
 
@@ -148,13 +150,15 @@ export async function createAppointmentReminder(input = {}) {
     INSERT INTO appointment_reminders (
       id, name, enabled, message_type, ai_enabled, channel, sender_mode,
       sender_phone_number_id, offset_value, offset_unit, message_text,
-      smart_enabled, smart_start, smart_end, smart_overflow, no_confirm_action, position
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      smart_enabled, smart_start, smart_end, smart_overflow, no_confirm_action,
+      bypass_automations, position
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
     id, data.name, data.enabled, data.messageType, data.aiEnabled, data.channel,
     data.senderMode, data.senderPhoneNumberId, data.offsetValue, data.offsetUnit,
     data.messageText, data.smartEnabled, data.smartStart, data.smartEnd,
-    data.smartOverflow, data.noConfirmAction, Number(positionRow?.next || 0)
+    data.smartOverflow, data.noConfirmAction, data.bypassAutomations,
+    Number(positionRow?.next || 0)
   ])
 
   return normalizeReminderRow(await db.get('SELECT * FROM appointment_reminders WHERE id = ?', [id]))
@@ -179,13 +183,13 @@ export async function updateAppointmentReminder(reminderId, input = {}) {
     SET name = ?, enabled = ?, message_type = ?, ai_enabled = ?, sender_mode = ?,
       sender_phone_number_id = ?, offset_value = ?, offset_unit = ?, message_text = ?,
       smart_enabled = ?, smart_start = ?, smart_end = ?, smart_overflow = ?,
-      no_confirm_action = ?, updated_at = CURRENT_TIMESTAMP
+      no_confirm_action = ?, bypass_automations = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `, [
     name, data.enabled, data.messageType, data.aiEnabled, data.senderMode,
     data.senderPhoneNumberId, data.offsetValue, data.offsetUnit, data.messageText,
     data.smartEnabled, data.smartStart, data.smartEnd, data.smartOverflow,
-    data.noConfirmAction, id
+    data.noConfirmAction, data.bypassAutomations, id
   ])
 
   // Si cambió la configuración de tiempo, los envíos pendientes se recalculan

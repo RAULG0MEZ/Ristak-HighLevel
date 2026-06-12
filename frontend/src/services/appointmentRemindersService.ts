@@ -27,6 +27,7 @@ export interface AppointmentReminder {
   smartEnd: string
   smartOverflow: ReminderSmartOverflow
   noConfirmAction: ReminderNoConfirmAction
+  bypassAutomations: boolean
   position: number
   createdAt: string
   updatedAt: string

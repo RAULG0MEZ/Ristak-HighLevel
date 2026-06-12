@@ -3274,6 +3274,32 @@ async function initTables() {
       await db.run("ALTER TABLE appointment_reminders ADD COLUMN no_confirm_action TEXT DEFAULT 'no_action'")
     } catch (_) { /* columna ya existe */ }
 
+    try {
+      await db.run("ALTER TABLE appointment_reminders ADD COLUMN bypass_automations INTEGER DEFAULT 0")
+    } catch (_) { /* columna ya existe */ }
+
+    // Ventanas de confirmación con IA: acumula mensajes durante 3 min antes de clasificar.
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS appointment_confirmation_windows (
+        id TEXT PRIMARY KEY,
+        contact_id TEXT NOT NULL,
+        appointment_id TEXT NOT NULL,
+        reminder_send_id TEXT NOT NULL,
+        status TEXT DEFAULT 'waiting',
+        accumulated_messages TEXT DEFAULT '[]',
+        bypass_automations INTEGER DEFAULT 0,
+        last_message_at DATETIME NOT NULL,
+        result TEXT,
+        result_detail TEXT,
+        processed_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(contact_id, appointment_id)
+      )
+    `)
+    await db.run('CREATE INDEX IF NOT EXISTS idx_conf_windows_contact ON appointment_confirmation_windows(contact_id, status)')
+    await db.run('CREATE INDEX IF NOT EXISTS idx_conf_windows_last_msg ON appointment_confirmation_windows(last_message_at, status)')
+
     logger.success('Todas las tablas inicializadas correctamente')
   } catch (error) {
     logger.error('Error inicializando tablas:', error)

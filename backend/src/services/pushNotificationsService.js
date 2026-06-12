@@ -775,7 +775,7 @@ async function sendMobileNotificationRows(rows = [], payload = {}) {
   return sent
 }
 
-async function sendAppNotificationPayload(payload = {}, { calendarId = '' } = {}) {
+export async function sendAppNotificationPayload(payload = {}, { calendarId = '' } = {}) {
   if (!pushConfigured && !nativePushConfigured) {
     return { sent: 0, webSent: 0, nativeSent: 0, skipped: true, reason: 'not_configured' }
   }

@@ -8,7 +8,7 @@ import fetch from 'node-fetch'
 import { db, getAppConfig, setAppConfig } from '../config/database.js'
 import { findContactByPhoneCandidates, generateContactId } from './contactIdentityService.js'
 import { sendChatMessageNotification } from './pushNotificationsService.js'
-import { maybeConfirmAppointmentFromReply } from './appointmentConfirmationService.js'
+import { maybeConfirmAppointmentFromReply, handleInboundForConfirmation } from './appointmentConfirmationService.js'
 import {
   QR_CONSENT_TEXT,
   disconnectWhatsAppQrConnection,
@@ -3524,14 +3524,28 @@ export async function captureQrChatMessage({
   }
 
   if (cleanDirection === 'inbound' && result.isNew) {
-    await maybeConfirmAppointmentFromReply({
+    // Ventana de confirmación con IA: registrar mensaje y determinar si se deben
+    // pausar otros agentes/automatizaciones durante la espera de 3 minutos.
+    let confirmWindow = { windowActive: false, bypassAutomations: false }
+    await handleInboundForConfirmation({
       contactId: result.contactId,
       text: result.messageText
-    }).catch(error => {
-      logger.warn(`[Citas] No se pudo evaluar confirmación automática (QR): ${error.message}`)
+    }).then(w => { confirmWindow = w }).catch(error => {
+      logger.warn(`[Citas] Error en ventana de confirmación (QR): ${error.message}`)
     })
 
-    if (result.contactId) {
+    if (!confirmWindow.windowActive) {
+      await maybeConfirmAppointmentFromReply({
+        contactId: result.contactId,
+        text: result.messageText
+      }).catch(error => {
+        logger.warn(`[Citas] No se pudo evaluar confirmación automática (QR): ${error.message}`)
+      })
+    }
+
+    const shouldBypass = confirmWindow.windowActive && confirmWindow.bypassAutomations
+
+    if (result.contactId && !shouldBypass) {
       import('../agents/conversational/runner.js')
         .then(runner => runner.handleInboundMessageForConversationalAgent({
           contactId: result.contactId,
@@ -3859,10 +3873,39 @@ export async function processYCloudWhatsAppWebhook({ payload, rawBody, signature
       ? await processWhatsAppMessageEventPayload({ payload, businessPhoneHints })
       : []
 
+    // Ventanas de confirmación con IA: registrar mensajes y obtener estado de bypass.
+    const confirmWindows = new Map()
+    await Promise.all(messageResults
+      .filter(result => result?.direction === 'inbound' && result?.isNew !== false)
+      .map(result => handleInboundForConfirmation({
+        contactId: result.contactId,
+        text: result.messageText
+      }).then(w => { confirmWindows.set(result.contactId, w) })
+        .catch(error => {
+          logger.warn(`[Citas] Error en ventana de confirmación: ${error.message}`)
+        })))
+
+    await Promise.all(messageResults
+      .filter(result => result?.direction === 'inbound' && result?.isNew !== false)
+      .map(result => {
+        const win = confirmWindows.get(result.contactId)
+        if (win?.windowActive) return Promise.resolve()
+        return maybeConfirmAppointmentFromReply({
+          contactId: result.contactId,
+          text: result.messageText
+        }).catch(error => {
+          logger.warn(`[Citas] No se pudo evaluar confirmación automática: ${error.message}`)
+        })
+      }))
+
     // Motor de automatizaciones: disparar/reanudar flujos con cada mensaje
     // entrante (import dinámico para evitar dependencia circular)
     Promise.all(messageResults
       .filter(result => result?.direction === 'inbound' && result?.isNew !== false)
+      .filter(result => {
+        const win = confirmWindows.get(result.contactId)
+        return !(win?.windowActive && win?.bypassAutomations)
+      })
       .map(result => import('./automationEngine.js')
         .then(engine => engine.handleIncomingMessage({
           contactId: result.contactId,
@@ -3880,6 +3923,10 @@ export async function processYCloudWhatsAppWebhook({ payload, rawBody, signature
     // (import dinámico para evitar dependencia circular)
     Promise.all(messageResults
       .filter(result => result?.direction === 'inbound' && result?.isNew !== false && result?.contactId)
+      .filter(result => {
+        const win = confirmWindows.get(result.contactId)
+        return !(win?.windowActive && win?.bypassAutomations)
+      })
       .map(result => import('../agents/conversational/runner.js')
         .then(runner => runner.handleInboundMessageForConversationalAgent({
           contactId: result.contactId,
@@ -3889,15 +3936,6 @@ export async function processYCloudWhatsAppWebhook({ payload, rawBody, signature
         .catch(error => {
           logger.warn(`[Agente conversacional] No se pudo atender el mensaje entrante: ${error.message}`)
         }))).catch(() => {})
-
-    await Promise.all(messageResults
-      .filter(result => result?.direction === 'inbound' && result?.isNew !== false)
-      .map(result => maybeConfirmAppointmentFromReply({
-        contactId: result.contactId,
-        text: result.messageText
-      }).catch(error => {
-        logger.warn(`[Citas] No se pudo evaluar confirmación automática: ${error.message}`)
-      })))
 
     await Promise.all(messageResults
       .filter(result => result?.direction === 'inbound' && result?.isNew !== false)
