@@ -10372,7 +10372,7 @@ export const PhoneChat: React.FC = () => {
           </>
         ) : (
           <p className={styles.agentMenuHint}>
-            Aún no hay agentes creados. Créalos en Configuración → Agente AI → Agente conversacional.
+            Aún no hay agentes creados. Créalos en Agente AI → Agente conversacional.
           </p>
         )}
 
@@ -10412,7 +10412,7 @@ export const PhoneChat: React.FC = () => {
 
         <p className={styles.agentMenuHint}>
           La configuración completa (datos mínimos, casos para humano, instrucciones extra y prueba del agente) está en
-          Configuración → Agente AI → Agente conversacional.
+          Agente AI → Agente conversacional.
         </p>
       </div>
     )

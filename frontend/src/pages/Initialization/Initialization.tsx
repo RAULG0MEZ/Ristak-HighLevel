@@ -84,7 +84,7 @@ const STEP_META: Record<InitStepId, StepMeta> = {
     title: 'Conecta OpenAI',
     description: 'Agrega tu clave de OpenAI para activar el agente de inteligencia artificial.',
     icon: Bot,
-    to: '/settings/ai-agent'
+    to: '/ai-agent/general'
   },
   'google-calendar': {
     title: 'Conecta Google Calendar',

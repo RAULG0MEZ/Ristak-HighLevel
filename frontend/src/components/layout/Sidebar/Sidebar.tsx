@@ -234,10 +234,10 @@ interface AIAgentNavGroupProps {
 }
 
 const AIAgentNavGroup: React.FC<AIAgentNavGroupProps> = ({ pathname, open, onToggle, onNavigate }) => {
-  const isAIAgentRoute = pathname.startsWith('/settings/ai-agent')
+  const isAIAgentRoute = pathname.startsWith('/ai-agent')
   const children = [
-    { to: '/settings/ai-agent', label: 'General', exact: true },
-    { to: '/settings/ai-agent/conversational', label: 'Agente conversacional', exact: false }
+    { to: '/ai-agent/general', label: 'General', exact: true },
+    { to: '/ai-agent/conversational', label: 'Agente conversacional', exact: false }
   ]
 
   return (
@@ -449,8 +449,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, onLogout }) => {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [isEditMode, setIsEditMode] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
-  const isAIAgentRoute = location.pathname.startsWith('/settings/ai-agent')
-  const isSettingsRoute = location.pathname.startsWith('/settings') && !isAIAgentRoute
+  const isAIAgentRoute = location.pathname.startsWith('/ai-agent')
+  const isSettingsRoute = location.pathname.startsWith('/settings')
   const [settingsOpen, setSettingsOpen] = useState(isSettingsRoute)
   const [aiAgentOpen, setAiAgentOpen] = useState(isAIAgentRoute)
 
