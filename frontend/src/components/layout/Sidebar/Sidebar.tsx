@@ -19,8 +19,7 @@ import {
   Palette,
   Rocket,
   Sun,
-  BotMessageSquare,
-  Workflow
+  BotMessageSquare
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { useAppConfig, useAppVersion } from '@/hooks'
