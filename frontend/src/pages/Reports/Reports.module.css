@@ -346,10 +346,6 @@
   border-bottom: 1px solid var(--design-table-border, var(--color-border-subtle));
 }
 
-.metricsRow:nth-child(even) td {
-  background: var(--design-table-row-even, transparent);
-}
-
 .metricsRow:last-child td {
   border-bottom: none;
   padding-bottom: 0;

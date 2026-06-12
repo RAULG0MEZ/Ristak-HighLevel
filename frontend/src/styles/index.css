@@ -1704,10 +1704,6 @@ body[data-design-preset]:not([data-design-preset='classic']) table td {
   border-color: var(--design-table-border) !important;
 }
 
-body[data-design-preset]:not([data-design-preset='classic']) table tbody tr:nth-child(even) {
-  background: var(--design-table-row-even);
-}
-
 body[data-design-preset='atelier'] [data-dashboard-kpi-grid] [data-ristak-kpi-card]:first-child {
   background: var(--design-card-bg) !important;
 }
