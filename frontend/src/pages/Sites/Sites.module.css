@@ -10158,8 +10158,10 @@
 
 .editorUnifiedToolbar {
   min-width: 0;
+  position: relative;
   display: grid;
   gap: 7px;
+  overflow: visible;
 }
 
 .editorToolbarTop {
@@ -10169,6 +10171,7 @@
   grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
   align-items: center;
   gap: 12px;
+  overflow: visible;
 }
 
 .editorToolbarLeft {
@@ -10177,9 +10180,8 @@
   display: flex;
   align-items: center;
   gap: 9px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: 0 8px 0 0;
+  overflow: visible;
+  padding: 0;
   scrollbar-width: none;
 }
 
@@ -10414,6 +10416,376 @@
   border-color: rgba(59, 130, 246, 0.42);
   background: rgba(59, 130, 246, 0.14);
   color: #bfdbfe;
+}
+
+.editorSettingsDropdown {
+  position: relative;
+  z-index: 90;
+  flex: 0 0 auto;
+}
+
+.editorSettingsButton {
+  height: var(--editor-control-h, 44px);
+  min-height: var(--editor-control-h, 44px);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--sites-editor-border, rgba(148, 163, 184, 0.18));
+  border-radius: var(--radius-md, 8px);
+  background: var(--sites-editor-control-bg, var(--color-background-primary));
+  color: var(--color-text-primary);
+  padding: 0 11px;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 850;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: none;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.editorSettingsButton:hover:not(:disabled),
+.editorSettingsButtonActive {
+  border-color: rgba(var(--color-primary-rgb), 0.32);
+  background: rgba(var(--color-primary-rgb), 0.1);
+  color: var(--color-text-primary);
+}
+
+.editorSettingsButtonWarning {
+  border-color: rgba(249, 115, 22, 0.34);
+  background: rgba(249, 115, 22, 0.1);
+}
+
+.editorSettingsButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.editorSettingsBadge {
+  min-width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(249, 115, 22, 0.14);
+  color: #ea580c;
+  padding: 0 6px;
+  font-size: 0.7rem;
+  font-weight: 900;
+}
+
+.editorSettingsPanel {
+  position: absolute;
+  top: calc(100% + 9px);
+  left: 0;
+  z-index: 3600;
+  width: min(440px, calc(100vw - 32px));
+  max-height: min(720px, calc(100dvh - 112px));
+  display: grid;
+  gap: 0;
+  overflow: auto;
+  border: 1px solid var(--ristak-dropdown-border, rgba(148, 163, 184, 0.24));
+  border-radius: var(--radius-md, 8px);
+  background: var(--ristak-dropdown-bg, var(--color-background-primary));
+  color: var(--color-text-primary);
+  padding: 8px 12px;
+  box-shadow: var(--ristak-dropdown-panel-shadow, 0 18px 46px -30px rgba(15, 23, 42, 0.46));
+  scrollbar-gutter: stable;
+}
+
+.editorSettingsSection {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  padding: 13px 0;
+  border-top: 1px solid color-mix(in srgb, var(--color-border-subtle, rgba(148, 163, 184, 0.2)) 74%, transparent);
+}
+
+.editorSettingsSection:first-child {
+  border-top: 0;
+}
+
+.editorSettingsSectionHeader {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.editorSettingsSectionHeader > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.editorSettingsSectionHeader strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font-size: 0.82rem;
+  font-weight: 850;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editorSettingsSectionHeader small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-tertiary);
+  font-size: 0.7rem;
+  font-weight: 720;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editorSettingsSectionHeader > button {
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: var(--radius-sm, 7px);
+  background: var(--color-background-secondary);
+  color: var(--color-text-primary);
+  padding: 0 10px;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 820;
+  cursor: pointer;
+}
+
+.editorSettingsSectionHeader > button:hover {
+  border-color: rgba(var(--color-primary-rgb), 0.3);
+  background: rgba(var(--color-primary-rgb), 0.1);
+}
+
+.editorSettingsSectionIcon,
+.editorSettingsMetaLogo {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm, 7px);
+  background: color-mix(in srgb, var(--color-background-tertiary) 82%, var(--color-primary) 18%);
+  color: var(--color-text-secondary);
+}
+
+.editorSettingsMetaLogo {
+  background: #1877f2;
+  color: #ffffff;
+}
+
+.editorSettingsRouteField {
+  min-width: 0;
+  height: 38px;
+  display: grid;
+  grid-template-columns: minmax(116px, max-content) minmax(0, 1fr);
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-background-secondary);
+}
+
+.editorSettingsRouteField > span {
+  min-width: 0;
+  overflow: hidden;
+  border-right: 1px solid rgba(148, 163, 184, 0.18);
+  color: var(--color-text-tertiary);
+  padding: 0 10px;
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editorSettingsRouteField input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-primary);
+  padding: 0 10px;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 780;
+  outline: none;
+}
+
+.editorSettingsRouteField:focus-within {
+  border-color: var(--ristak-focus-border, rgba(var(--color-primary-rgb), 0.5));
+  box-shadow: var(--ristak-focus-ring, 0 0 0 3px rgba(var(--color-primary-rgb), 0.12));
+}
+
+.editorSettingsRoutePreview {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--color-text-secondary);
+  font-size: 0.74rem;
+  font-weight: 760;
+  line-height: 1.25;
+}
+
+.editorSettingsRoutePreview span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editorSettingsMetaControls {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.editorSettingsMetaStatus {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-background-secondary);
+  padding: 8px 10px;
+}
+
+.editorSettingsMetaStatusActive {
+  border-color: rgba(var(--color-primary-rgb), 0.26);
+  background: rgba(var(--color-primary-rgb), 0.08);
+}
+
+.editorSettingsMetaStatus > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.editorSettingsMetaStatus strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font-size: 0.8rem;
+  font-weight: 850;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editorSettingsMetaStatus small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-tertiary);
+  font-size: 0.68rem;
+  font-weight: 720;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editorSettingsTwoColumn {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.editorSettingsField {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.editorSettingsField > span {
+  color: var(--color-text-tertiary);
+  font-size: 0.62rem;
+  font-weight: 850;
+  letter-spacing: 0.03em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.editorSettingsField [data-ristak-dropdown-trigger] {
+  width: 100%;
+  height: 34px;
+  min-height: 34px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: var(--radius-sm, 7px);
+  background: var(--color-background-secondary);
+  color: var(--color-text-primary);
+  padding: 0 9px;
+  font-size: 0.76rem;
+  font-weight: 760;
+}
+
+.editorSettingsField [data-ristak-dropdown-trigger] > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editorSettingsInlineToggle {
+  width: 100%;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: var(--radius-sm, 7px);
+  background: var(--color-background-secondary);
+  color: var(--color-text-secondary);
+  padding: 0 10px;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 820;
+  cursor: pointer;
+}
+
+.editorSettingsInlineToggle:hover:not(:disabled),
+.editorSettingsInlineToggleActive {
+  border-color: rgba(var(--color-primary-rgb), 0.3);
+  background: rgba(var(--color-primary-rgb), 0.1);
+  color: var(--color-text-primary);
+}
+
+.editorSettingsInlineToggleFilled {
+  color: var(--color-primary);
+}
+
+.editorSettingsInlineToggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.editorSettingsInlineToggle svg:last-child {
+  margin-left: auto;
+  transition: transform 0.16s ease;
+}
+
+.editorSettingsInlineToggleActive svg:last-child {
+  transform: rotate(180deg);
+}
+
+.editorSettingsEmptyLine {
+  border: 1px dashed rgba(148, 163, 184, 0.22);
+  border-radius: var(--radius-md, 8px);
+  color: var(--color-text-tertiary);
+  padding: 10px 11px;
+  font-size: 0.76rem;
+  font-weight: 760;
+  line-height: 1.35;
 }
 
 .metaConversionToolbar {
@@ -11636,6 +12008,11 @@
 @media (max-width: 1220px) {
   .editorToolbarTop .editorToolbarLeft .seoToolbarButton {
     max-width: min(310px, 48vw);
+  }
+
+  .editorSettingsPanel {
+    left: auto;
+    right: 0;
   }
 
   .editorRouteControls {

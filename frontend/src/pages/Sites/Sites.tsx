@@ -5704,45 +5704,24 @@ export const Sites: React.FC = () => {
                         onBlur={() => handleSaveSite(undefined, { silent: true })}
                       />
                     </label>
-                    <button
-                      type="button"
-                      className={`${styles.seoToolbarButton} ${seoValidation?.totalIssues ? styles.seoToolbarButtonWarning : ''}`}
-                      onClick={() => setSeoModalOpen(true)}
+                    <EditorSettingsDropdown
+                      site={editorSite}
+                      pages={pages}
+                      activePage={activePage}
+                      domainConfig={domainConfig}
+                      seoIssues={seoValidation?.totalIssues || 0}
+                      metaPixelConnected={metaPixelConnected}
                       disabled={editorAIGenerating}
-                      title={seoValidation?.totalIssues ? `SEO tiene ${seoValidation.totalIssues} pendientes` : 'SEO completo'}
-                    >
-                      <Search size={15} />
-                      <span>SEO</span>
-                      {Boolean(seoValidation?.totalIssues) && (
-                        <span className={styles.seoToolbarAlert} aria-label={`${seoValidation?.totalIssues} pendientes de SEO`}>
-                          <AlertTriangle size={13} />
-                          <strong>{seoValidation?.totalIssues}</strong>
-                        </span>
-                      )}
-                    </button>
-                    {hasEditablePages(editorSite) && (
-                      <button
-                        type="button"
-                        className={`${styles.seoToolbarButton} ${styles.headerToolbarButton}`}
-                        onClick={() => setHeaderModalOpen(true)}
-                        disabled={editorAIGenerating}
-                        title="Codigos del header global y de esta pagina"
-                      >
-                        <PanelTop size={15} />
-                        <span>Header</span>
-                      </button>
-                    )}
-                    {metaPixelConnected && isLanding(editorSite) && activePage && (
-                      <MetaPageConversionToolbar
-                        site={editorSite}
-                        pages={pages}
-                        activePage={activePage}
-                        disabled={editorAIGenerating}
-                        onPatchSite={updateSelectedSite}
-                        onPatchTheme={patchSiteTheme}
-                        onSaveSite={() => handleSaveSite(undefined, { silent: true })}
-                      />
-                    )}
+                      canEditHeader={hasEditablePages(editorSite)}
+                      routeValue={getRouteEditorValue(editorSite)}
+                      routePlaceholder={editorSite.siteType === 'landing_page' ? 'sitio-01' : 'formulario-01'}
+                      onRouteChange={(value) => updateSelectedSite({ slug: normalizeRouteEditorInput(value, domainConfig) })}
+                      onPatchSite={updateSelectedSite}
+                      onPatchTheme={patchSiteTheme}
+                      onSaveSite={() => handleSaveSite(undefined, { silent: true })}
+                      onOpenSeo={() => setSeoModalOpen(true)}
+                      onOpenHeader={() => setHeaderModalOpen(true)}
+                    />
                     {canConfigurePopup && (
                       <button
                         type="button"
@@ -5785,21 +5764,6 @@ export const Sites: React.FC = () => {
                           onRenamePage={handleRenamePage}
                         />
                       )}
-                      <label className={styles.routeField}>
-                        <span className={`${styles.publicRouteBox} ${domainConfig.domain ? '' : styles.publicRouteBoxStandalone}`}>
-                          <span className={styles.publicRouteDomain} title={`${getPublicDomainPreview(domainConfig)}/`}>
-                            {getPublicDomainPreview(domainConfig)}/
-                          </span>
-                          <input
-                            value={getRouteEditorValue(editorSite)}
-                            aria-label="Ruta pública"
-                            placeholder={editorSite.siteType === 'landing_page' ? 'sitio-01' : 'formulario-01'}
-                            disabled={editorAIGenerating}
-                            onChange={(event) => updateSelectedSite({ slug: normalizeRouteEditorInput(event.target.value, domainConfig) })}
-                            onBlur={() => handleSaveSite(undefined, { silent: true })}
-                          />
-                        </span>
-                      </label>
                     </div>
                     <div className={styles.deviceToggle} role="group" aria-label="Vista previa del dispositivo">
                       <button type="button" className={device === 'desktop' ? styles.deviceActive : ''} onClick={() => selectEditorDevice('desktop')} disabled={editorAIGenerating} title="Escritorio">
@@ -5865,9 +5829,7 @@ export const Sites: React.FC = () => {
             site={editorSite}
             pages={pages}
             activePage={activePage}
-            metaPixelConnected={metaPixelConnected}
             onClose={() => setHeaderModalOpen(false)}
-            onPatchSite={updateSelectedSite}
             onPatchTheme={patchSiteTheme}
             onSaveSite={() => handleSaveSite(undefined, { silent: true })}
           />
@@ -13169,12 +13131,23 @@ const MetaPageConversionToolbar: React.FC<{
   )
 }
 
-const HeaderToolbarModal: React.FC<{
+const MetaBrandMark: React.FC<{ size?: number }> = ({ size = 18 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path
+      d="M3.25 14.45c0-4.38 2.03-7.58 4.55-7.58 1.82 0 3.18 1.28 4.2 3.3 1.02-2.02 2.38-3.3 4.2-3.3 2.52 0 4.55 3.2 4.55 7.58 0 2.34-.88 3.68-2.38 3.68-1.56 0-2.72-1.36-4.28-4.08L12 10.43l-2.09 3.62c-1.56 2.72-2.72 4.08-4.28 4.08-1.5 0-2.38-1.34-2.38-3.68Z"
+      stroke="currentColor"
+      strokeWidth="2.25"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+)
+
+const MetaPageConversionSettingsPanel: React.FC<{
   site: PublicSite
   pages: SitePage[]
-  activePage: SitePage | null
-  metaPixelConnected: boolean
-  onClose: () => void
+  activePage: SitePage
+  disabled?: boolean
   onPatchSite: (patch: Partial<PublicSite>) => void
   onPatchTheme: (patch: Partial<SiteTheme>) => void
   onSaveSite: () => void | Promise<void>
@@ -13182,9 +13155,310 @@ const HeaderToolbarModal: React.FC<{
   site,
   pages,
   activePage,
-  metaPixelConnected,
-  onClose,
+  disabled,
   onPatchSite,
+  onPatchTheme,
+  onSaveSite
+}) => {
+  const [paramsOpen, setParamsOpen] = useState(false)
+  const metaEnabled = Boolean(site.metaCapiEnabled)
+  const activePageEventName = activePage.metaCapiEnabled
+    ? normalizeMetaEventName(activePage.metaEventName, 'none')
+    : 'none'
+  const activePageHasConversion = activePageEventName !== 'none'
+  const activePageHasParameters = hasMetaEventParameters(activePage.metaEventParameters)
+
+  useEffect(() => {
+    if (!metaEnabled || !activePageHasConversion) setParamsOpen(false)
+  }, [activePageHasConversion, metaEnabled])
+
+  const saveSoon = () => {
+    window.setTimeout(() => { void onSaveSite() }, 0)
+  }
+
+  const patchActivePage = (patch: Partial<SitePage>) => {
+    onPatchTheme({
+      pages: normalizePagesForSave(pages.map(page => (
+        page.id === activePage.id ? { ...page, ...patch } : page
+      )))
+    })
+  }
+
+  return (
+    <div className={styles.editorSettingsMetaControls}>
+      <div className={`${styles.editorSettingsMetaStatus} ${metaEnabled ? styles.editorSettingsMetaStatusActive : ''}`}>
+        <span className={styles.editorSettingsMetaLogo} aria-hidden="true">
+          <MetaBrandMark size={18} />
+        </span>
+        <div>
+          <strong>{metaEnabled ? 'Meta encendido' : 'Meta apagado'}</strong>
+          <small>{metaEnabled ? 'Pixel y CAPI activos para esta pagina' : 'Activa Meta para disparar conversiones'}</small>
+        </div>
+        <label className={styles.metaSwitch}>
+          <input
+            type="checkbox"
+            checked={metaEnabled}
+            disabled={disabled}
+            aria-label="Activar medicion de Meta"
+            onChange={(event) => {
+              onPatchSite({ metaCapiEnabled: event.target.checked })
+              saveSoon()
+            }}
+          />
+          <span className={styles.metaSwitchTrack} />
+        </label>
+      </div>
+
+      <div className={styles.editorSettingsTwoColumn}>
+        <label className={styles.editorSettingsField}>
+          <span>Cuando</span>
+          <CustomSelect
+            value={normalizeMetaTrigger(activePage.metaTrigger)}
+            disabled={disabled || !metaEnabled || !activePageHasConversion}
+            portal
+            onChange={(event) => {
+              patchActivePage({ metaTrigger: event.target.value as SiteMetaTrigger })
+              saveSoon()
+            }}
+          >
+            {metaTriggerOptions.map(option => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </CustomSelect>
+        </label>
+
+        <label className={styles.editorSettingsField}>
+          <span>Evento</span>
+          <CustomSelect
+            value={activePageEventName}
+            disabled={disabled || !metaEnabled}
+            portal
+            onChange={(event) => {
+              const metaEventName = event.target.value
+              patchActivePage({
+                metaEventName,
+                metaCapiEnabled: metaEventName !== 'none',
+                metaEventParameters: pruneMetaEventParametersForEvent(activePage.metaEventParameters, metaEventName)
+              })
+              saveSoon()
+            }}
+          >
+            {metaEventOptions.map(option => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </CustomSelect>
+        </label>
+      </div>
+
+      <button
+        type="button"
+        className={[
+          styles.editorSettingsInlineToggle,
+          paramsOpen ? styles.editorSettingsInlineToggleActive : '',
+          activePageHasParameters ? styles.editorSettingsInlineToggleFilled : ''
+        ].filter(Boolean).join(' ')}
+        disabled={disabled || !metaEnabled || !activePageHasConversion}
+        aria-expanded={paramsOpen}
+        onClick={() => setParamsOpen(open => !open)}
+      >
+        <Settings2 size={14} />
+        <span>Parametros</span>
+        <ChevronDown size={13} />
+      </button>
+
+      {paramsOpen && metaEnabled && activePageHasConversion && (
+        <MetaEventParametersEditor
+          eventName={activePageEventName}
+          parameters={activePage.metaEventParameters}
+          disabled={disabled}
+          onChange={(metaEventParameters) => patchActivePage({ metaEventParameters })}
+          onCommit={saveSoon}
+        />
+      )}
+    </div>
+  )
+}
+
+const EditorSettingsDropdown: React.FC<{
+  site: PublicSite
+  pages: SitePage[]
+  activePage: SitePage | null
+  domainConfig: SitesDomainConfig
+  seoIssues: number
+  metaPixelConnected: boolean
+  disabled?: boolean
+  canEditHeader: boolean
+  routeValue: string
+  routePlaceholder: string
+  onRouteChange: (value: string) => void
+  onPatchSite: (patch: Partial<PublicSite>) => void
+  onPatchTheme: (patch: Partial<SiteTheme>) => void
+  onSaveSite: () => void | Promise<void>
+  onOpenSeo: () => void
+  onOpenHeader: () => void
+}> = ({
+  site,
+  pages,
+  activePage,
+  domainConfig,
+  seoIssues,
+  metaPixelConnected,
+  disabled,
+  canEditHeader,
+  routeValue,
+  routePlaceholder,
+  onRouteChange,
+  onPatchSite,
+  onPatchTheme,
+  onSaveSite,
+  onOpenSeo,
+  onOpenHeader
+}) => {
+  const [open, setOpen] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement | null>(null)
+  const publicDomain = getPublicDomainPreview(domainConfig)
+  const routePreview = `${publicDomain}/${routeValue || routePlaceholder}`
+
+  useEffect(() => {
+    if (!open) return
+
+    const handleMouseDown = (event: MouseEvent) => {
+      if (!dropdownRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+
+    document.addEventListener('mousedown', handleMouseDown)
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [open])
+
+  const openNestedPanel = (callback: () => void) => {
+    setOpen(false)
+    callback()
+  }
+
+  return (
+    <div ref={dropdownRef} className={styles.editorSettingsDropdown}>
+      <button
+        type="button"
+        className={`${styles.editorSettingsButton} ${open ? styles.editorSettingsButtonActive : ''} ${seoIssues ? styles.editorSettingsButtonWarning : ''}`}
+        disabled={disabled}
+        aria-expanded={open}
+        onClick={() => setOpen(current => !current)}
+        title="Ajustes del sitio"
+      >
+        <Settings2 size={15} />
+        <span>Ajustes</span>
+        {Boolean(seoIssues) && (
+          <span className={styles.editorSettingsBadge} aria-label={`${seoIssues} pendientes de SEO`}>
+            {seoIssues}
+          </span>
+        )}
+        <ChevronDown size={13} />
+      </button>
+
+      {open && (
+        <div className={styles.editorSettingsPanel}>
+          <section className={styles.editorSettingsSection}>
+            <div className={styles.editorSettingsSectionHeader}>
+              <span className={styles.editorSettingsSectionIcon}><Link2 size={15} /></span>
+              <div>
+                <strong>Ruta publica</strong>
+                <small>{routePreview}</small>
+              </div>
+            </div>
+            <label className={styles.editorSettingsRouteField}>
+              <span>{publicDomain}/</span>
+              <input
+                value={routeValue}
+                aria-label="Ruta publica"
+                placeholder={routePlaceholder}
+                disabled={disabled}
+                onChange={(event) => onRouteChange(event.target.value)}
+                onBlur={() => { void onSaveSite() }}
+              />
+            </label>
+            <div className={styles.editorSettingsRoutePreview}>
+              <ExternalLink size={13} />
+              <span>{routePreview}</span>
+            </div>
+          </section>
+
+          {canEditHeader && (
+            <section className={styles.editorSettingsSection}>
+              <div className={styles.editorSettingsSectionHeader}>
+                <span className={styles.editorSettingsSectionIcon}><PanelTop size={15} /></span>
+                <div>
+                  <strong>Headers</strong>
+                  <small>Codigo global y codigo de esta pagina</small>
+                </div>
+                <button type="button" onClick={() => openNestedPanel(onOpenHeader)}>
+                  Editar
+                </button>
+              </div>
+            </section>
+          )}
+
+          <section className={styles.editorSettingsSection}>
+            <div className={styles.editorSettingsSectionHeader}>
+              <span className={styles.editorSettingsMetaLogo} aria-hidden="true">
+                <MetaBrandMark size={16} />
+              </span>
+              <div>
+                <strong>Meta Pixel + CAPI</strong>
+                <small>{metaPixelConnected ? 'Conversiones de esta pagina' : 'Conecta Meta en Configuracion'}</small>
+              </div>
+            </div>
+            {metaPixelConnected && isLanding(site) && activePage ? (
+              <MetaPageConversionSettingsPanel
+                site={site}
+                pages={pages}
+                activePage={activePage}
+                disabled={disabled}
+                onPatchSite={onPatchSite}
+                onPatchTheme={onPatchTheme}
+                onSaveSite={onSaveSite}
+              />
+            ) : (
+              <div className={styles.editorSettingsEmptyLine}>Meta no esta disponible para esta vista.</div>
+            )}
+          </section>
+
+          <section className={styles.editorSettingsSection}>
+            <div className={styles.editorSettingsSectionHeader}>
+              <span className={styles.editorSettingsSectionIcon}><Search size={15} /></span>
+              <div>
+                <strong>SEO</strong>
+                <small>{seoIssues ? `${seoIssues} pendientes detectados` : 'SEO completo'}</small>
+              </div>
+              <button type="button" onClick={() => openNestedPanel(onOpenSeo)}>
+                Revisar
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const HeaderToolbarModal: React.FC<{
+  site: PublicSite
+  pages: SitePage[]
+  activePage: SitePage | null
+  onClose: () => void
+  onPatchTheme: (patch: Partial<SiteTheme>) => void
+  onSaveSite: () => void | Promise<void>
+}> = ({
+  site,
+  pages,
+  activePage,
+  onClose,
   onPatchTheme,
   onSaveSite
 }) => {
@@ -13248,27 +13522,6 @@ const HeaderToolbarModal: React.FC<{
               <SeoSectionTitle icon={<PanelTop size={17} />} title="Header global" />
               <p>Pega aqui el codigo que debe cargarse en todas las paginas del {siteKindLabel}.</p>
             </div>
-            {metaPixelConnected && (
-              <div className={`${styles.metaCard} ${styles.headerModalMetaCard} ${site.metaCapiEnabled ? styles.metaCardActive : ''}`}>
-                <span className={styles.metaMark} aria-hidden="true">∞</span>
-                <div className={styles.metaCardInfo}>
-                  <strong>{site.metaCapiEnabled ? 'Meta encendido' : 'Meta apagado'}</strong>
-                  <small>{site.metaCapiEnabled ? 'Se mediran visitas y conversiones' : 'Activalo para enviar eventos'}</small>
-                </div>
-                <label className={styles.metaSwitch}>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(site.metaCapiEnabled)}
-                    aria-label="Activar medicion de Meta"
-                    onChange={(event) => {
-                      onPatchSite({ metaCapiEnabled: event.target.checked })
-                      window.setTimeout(() => { void onSaveSite() }, 0)
-                    }}
-                  />
-                  <span className={styles.metaSwitchTrack} />
-                </label>
-              </div>
-            )}
             <label className={styles.seoField}>
               <span>Codigo global en header</span>
               <textarea
