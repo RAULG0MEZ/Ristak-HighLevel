@@ -994,29 +994,30 @@ export const ConditionBuilder: React.FC<ConditionBuilderProps> = ({ groups, cale
               const editing = editingKeys.has(key)
 
               return (
-                <div key={key} className={`${styles.conditionRow} ${editing ? styles.conditionRowEditing : ''}`}>
+                <div key={key} className={styles.conditionRowWrapper}>
                   <span className={styles.rulePrefix}>
                     {conditionIndex === 0 ? 'Si' : 'Y'}
                   </span>
-
-                  {editing ? (
-                    renderEditingCondition(condition, groupIndex, conditionIndex, key)
-                  ) : (
-                    <>
-                      <span className={styles.conditionSentence}>{conditionSummary(condition, calendars, options)}</span>
-                      <div className={styles.conditionActions}>
-                        <button type="button" className={styles.ruleDelete} onClick={() => setEditing(key, true)} aria-label="Editar condición">
-                          <Pencil size={13} />
-                        </button>
-                        <button type="button" className={styles.ruleDelete} onClick={() => duplicateCondition(groupIndex, conditionIndex)} aria-label="Duplicar condición">
-                          <Copy size={13} />
-                        </button>
-                        <button type="button" className={styles.ruleDelete} onClick={() => removeCondition(groupIndex, conditionIndex)} aria-label="Eliminar condición">
-                          <X size={14} />
-                        </button>
-                      </div>
-                    </>
-                  )}
+                  <div className={`${styles.conditionRow} ${editing ? styles.conditionRowEditing : ''}`}>
+                    {editing ? (
+                      renderEditingCondition(condition, groupIndex, conditionIndex, key)
+                    ) : (
+                      <>
+                        <span className={styles.conditionSentence}>{conditionSummary(condition, calendars, options)}</span>
+                        <div className={styles.conditionActions}>
+                          <button type="button" className={styles.ruleDelete} onClick={() => setEditing(key, true)} aria-label="Editar condición">
+                            <Pencil size={13} />
+                          </button>
+                          <button type="button" className={styles.ruleDelete} onClick={() => duplicateCondition(groupIndex, conditionIndex)} aria-label="Duplicar condición">
+                            <Copy size={13} />
+                          </button>
+                          <button type="button" className={styles.ruleDelete} onClick={() => removeCondition(groupIndex, conditionIndex)} aria-label="Eliminar condición">
+                            <X size={14} />
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
               )
             })}
