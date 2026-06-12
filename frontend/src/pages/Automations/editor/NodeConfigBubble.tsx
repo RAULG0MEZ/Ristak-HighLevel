@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Check, ChevronRight, Copy, Pencil, Plus, Trash2, X } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { CustomSelect } from './config/configPrimitives'
@@ -36,9 +36,6 @@ interface NodeConfigBubbleProps {
   bounds: { width: number; height: number }
   onChange: (config: ConfigValue) => void
   onClose: () => void
-  /** Señal externa (contador) para mostrar los errores: el editor la sube
-      cuando el usuario intenta irse a otro elemento con esta config inválida */
-  showErrorsSignal?: number
 }
 
 const PANEL_WIDTH = 372
@@ -52,8 +49,7 @@ export const NodeConfigBubble: React.FC<NodeConfigBubbleProps> = ({
   anchor,
   bounds,
   onChange,
-  onClose,
-  showErrorsSignal = 0
+  onClose
 }) => {
   const rootRef = useRef<HTMLDivElement>(null)
   const [copied, setCopied] = useState(false)
@@ -75,20 +71,7 @@ export const NodeConfigBubble: React.FC<NodeConfigBubbleProps> = ({
     onChange({ ...config, customTitle: draftTitle.trim().slice(0, 80) })
   }
 
-  const errors = useMemo(() => validateNodeConfig(definition, config), [definition, config])
-
-  // Los errores NO aparecen mientras se está configurando: solo al intentar
-  // cerrar o cambiar de elemento con la configuración incompleta.
-  const [attemptedClose, setAttemptedClose] = useState(false)
-  useEffect(() => {
-    if (showErrorsSignal > 0) setAttemptedClose(true)
-  }, [showErrorsSignal])
-
   const requestClose = () => {
-    if (errors.length > 0) {
-      setAttemptedClose(true)
-      return
-    }
     onClose()
   }
 
@@ -542,16 +525,6 @@ export const NodeConfigBubble: React.FC<NodeConfigBubbleProps> = ({
       </div>
 
       <div className={styles.bubbleBody}>
-        {attemptedClose && errors.length > 0 && (
-          <div className={styles.configErrors}>
-            {errors.map((error) => (
-              <span key={error} className={styles.configErrorLine}>
-                {error}
-              </span>
-            ))}
-          </div>
-        )}
-
         {definition.configComponent === 'conditions' && (
           <AdvancedConditionBuilder
             value={config}

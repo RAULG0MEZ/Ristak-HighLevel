@@ -111,6 +111,7 @@ export interface AutomationSummary {
   name: string
   description: string
   status: AutomationStatus
+  hasUnpublishedChanges?: boolean
   createdAt: string
   updatedAt: string
   publishedAt: string | null

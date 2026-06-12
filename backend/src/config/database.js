@@ -3119,11 +3119,23 @@ async function initTables() {
         description TEXT,
         status TEXT DEFAULT 'draft',
         flow ${usePostgres ? "JSONB DEFAULT '{}'::jsonb" : "TEXT DEFAULT '{}'"},
+        published_flow ${usePostgres ? 'JSONB' : 'TEXT'},
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         published_at DATETIME
       )
     `)
+
+    try {
+      await db.run(`ALTER TABLE automations ADD COLUMN published_flow ${usePostgres ? 'JSONB' : 'TEXT'}`)
+    } catch (err) {
+      if (!err.message.includes('duplicate column') && !err.message.includes('already exists')) {
+        logger.warn(`Advertencia al migrar automations.published_flow: ${err.message}`)
+      }
+    }
+    await db
+      .run("UPDATE automations SET published_flow = flow WHERE status = 'published' AND published_flow IS NULL")
+      .catch((err) => logger.warn(`Advertencia al poblar automations.published_flow: ${err.message}`))
 
     await db.run('CREATE INDEX IF NOT EXISTS idx_automations_folder ON automations(folder_id)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_automations_status ON automations(status)')

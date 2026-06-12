@@ -791,7 +791,7 @@ async function loadContact(contactId, fallback = {}) {
 }
 
 async function listPublishedAutomations() {
-  const rows = await db.all(`SELECT id, name, flow FROM automations WHERE status = 'published'`)
+  const rows = await db.all(`SELECT id, name, COALESCE(published_flow, flow) AS flow FROM automations WHERE status = 'published'`)
   return rows.map((row) => ({ id: row.id, name: row.name, flow: parseJson(row.flow, { nodes: [], edges: [] }) }))
 }
 

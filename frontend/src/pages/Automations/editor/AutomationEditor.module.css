@@ -88,6 +88,36 @@
   color: var(--color-status-error);
 }
 
+.publishPendingBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(217, 156, 16, 0.24);
+  background: rgba(217, 156, 16, 0.1);
+  color: var(--color-status-warning);
+  font-size: 11.5px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.publishButton {
+  position: relative;
+}
+
+.publishButtonDirty::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-status-warning);
+  box-shadow: 0 0 0 2px var(--color-background-primary);
+}
+
 .iconButton {
   display: inline-flex;
   align-items: center;
@@ -303,6 +333,8 @@
 
 .nodeError {
   border-color: rgba(220, 38, 38, 0.75);
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12),
+    0 16px 34px -16px rgba(15, 23, 42, 0.45);
 }
 
 .nodeDropTarget {
@@ -623,6 +655,21 @@
 
 .triggerChipError {
   border-color: rgba(220, 38, 38, 0.55);
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.triggerChipError:hover {
+  border-color: rgba(220, 38, 38, 0.75);
+  background: rgba(220, 38, 38, 0.12);
+}
+
+.triggerChipError .triggerChipIcon {
+  background: rgba(220, 38, 38, 0.12);
+  color: var(--color-status-error);
+}
+
+.triggerChipError .triggerChipDetail {
+  color: var(--color-status-error);
 }
 
 .triggerChipIcon {

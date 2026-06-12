@@ -52,6 +52,7 @@ import styles from './editor/AutomationEditor.module.css'
 interface AutomationLibraryProps {
   /** Automatización abierta en el editor (se resalta) */
   currentAutomationId?: string
+  onOpenAutomation?: (automationId: string) => void
 }
 
 interface NameModal {
@@ -60,7 +61,7 @@ interface NameModal {
   value: string
 }
 
-export const AutomationLibrary: React.FC<AutomationLibraryProps> = ({ currentAutomationId }) => {
+export const AutomationLibrary: React.FC<AutomationLibraryProps> = ({ currentAutomationId, onOpenAutomation }) => {
   const navigate = useNavigate()
   const { showToast, showConfirm } = useNotification()
 
@@ -75,6 +76,14 @@ export const AutomationLibrary: React.FC<AutomationLibraryProps> = ({ currentAut
   const [nameModal, setNameModal] = useState<NameModal | null>(null)
   const [moveModal, setMoveModal] = useState<{ ids: string[]; folderId: string } | null>(null)
   const [saving, setSaving] = useState(false)
+
+  const openAutomation = (automationId: string) => {
+    if (onOpenAutomation) {
+      onOpenAutomation(automationId)
+      return
+    }
+    navigate(`/automations/${automationId}`)
+  }
 
   const reload = async () => {
     try {
@@ -200,7 +209,7 @@ export const AutomationLibrary: React.FC<AutomationLibraryProps> = ({ currentAut
         name: 'Automatización sin título',
         folderId
       })
-      navigate(`/automations/${automation.id}`)
+      openAutomation(automation.id)
     } catch {
       showToast('error', 'No se pudo crear la automatización')
     }
@@ -428,7 +437,7 @@ export const AutomationLibrary: React.FC<AutomationLibraryProps> = ({ currentAut
                 if (selectionActive) {
                   toggleSelected(automation.id)
                 } else if (!isCurrent) {
-                  navigate(`/automations/${automation.id}`)
+                  openAutomation(automation.id)
                 }
               }}
             >
@@ -466,7 +475,7 @@ export const AutomationLibrary: React.FC<AutomationLibraryProps> = ({ currentAut
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" side="top">
-                  <DropdownMenuItem onSelect={() => navigate(`/automations/${automation.id}`)}>
+                  <DropdownMenuItem onSelect={() => openAutomation(automation.id)}>
                     <Settings2 size={13} style={{ marginRight: 8 }} />
                     Configuración
                   </DropdownMenuItem>

@@ -33,6 +33,18 @@ function parseFlow(rawFlow) {
   }
 }
 
+function sameFlow(left, right) {
+  if (!left || !right) return false
+  const leftFlow = normalizeFlow(left)
+  const rightFlow = normalizeFlow(right)
+  const comparable = (flow) => ({
+    nodes: flow.nodes,
+    edges: flow.edges,
+    settings: flow.settings || {}
+  })
+  return JSON.stringify(comparable(leftFlow)) === JSON.stringify(comparable(rightFlow))
+}
+
 function mapFolderRow(row) {
   return {
     id: row.id,
@@ -45,6 +57,9 @@ function mapFolderRow(row) {
 }
 
 function mapAutomationRow(row, { includeFlow = false } = {}) {
+  const canComparePublication = row.flow !== undefined && row.published_flow !== undefined
+  const draftFlow = canComparePublication ? parseFlow(row.flow) : null
+  const publishedFlow = canComparePublication && row.published_flow ? parseFlow(row.published_flow) : null
   const automation = {
     id: row.id,
     folderId: row.folder_id || null,
@@ -53,11 +68,16 @@ function mapAutomationRow(row, { includeFlow = false } = {}) {
     status: row.status || 'draft',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    publishedAt: row.published_at || null
+    publishedAt: row.published_at || null,
+    hasUnpublishedChanges: Boolean(
+      publishedFlow &&
+        ['published', 'paused'].includes(row.status || 'draft') &&
+        !sameFlow(draftFlow, publishedFlow)
+    )
   }
 
   if (includeFlow) {
-    automation.flow = normalizeFlow(parseFlow(row.flow))
+    automation.flow = normalizeFlow(draftFlow || parseFlow(row.flow))
   }
 
   return automation
@@ -221,13 +241,14 @@ export async function updateAutomation(automationId, input = {}) {
 
   let status = current.status
   let publishedAt = current.publishedAt
+  let publishedFlow = row.published_flow ? normalizeFlow(parseFlow(row.published_flow)) : null
   if (input.status !== undefined) {
     if (!AUTOMATION_STATUSES.includes(input.status)) {
       throw badRequest('Estado de automatización inválido')
     }
     status = input.status
 
-    if (status === 'published' && current.status !== 'published') {
+    if (status === 'published') {
       const errors = validateFlowForPublish(flow)
       if (errors.length > 0) {
         const error = badRequest(errors.join('. '))
@@ -235,15 +256,25 @@ export async function updateAutomation(automationId, input = {}) {
         throw error
       }
       publishedAt = new Date().toISOString()
+      publishedFlow = flow
     }
   }
 
   await db.run(
     `UPDATE automations
      SET name = ?, description = ?, folder_id = ?, status = ?, flow = ${flowPlaceholder},
-         published_at = ?, updated_at = CURRENT_TIMESTAMP
+         published_flow = ${flowPlaceholder}, published_at = ?, updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`,
-    [name, description, folderId, status, JSON.stringify(flow), publishedAt, automationId]
+    [
+      name,
+      description,
+      folderId,
+      status,
+      JSON.stringify(flow),
+      publishedFlow ? JSON.stringify(publishedFlow) : null,
+      publishedAt,
+      automationId
+    ]
   )
 
   return getAutomation(automationId)

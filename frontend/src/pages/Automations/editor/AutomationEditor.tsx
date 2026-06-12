@@ -120,6 +120,77 @@ interface PreviewStep {
   branch?: boolean
 }
 
+type EditorFlow = Pick<Automation['flow'], 'nodes' | 'edges' | 'viewport' | 'settings'>
+
+const DEFAULT_VIEWPORT: AutomationViewport = { x: 0, y: 0, zoom: 1 }
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function normalizeViewport(value: unknown): AutomationViewport {
+  if (!isRecord(value)) return DEFAULT_VIEWPORT
+  return {
+    x: Number(value.x) || 0,
+    y: Number(value.y) || 0,
+    zoom: Math.min(2.5, Math.max(0.2, Number(value.zoom) || 1))
+  }
+}
+
+function fallbackStartNode(): AutomationNode {
+  return {
+    id: 'start',
+    type: 'start',
+    category: 'trigger',
+    label: 'Cuando...',
+    position: { x: 120, y: 220 },
+    config: { triggers: [] }
+  }
+}
+
+function normalizeEditorFlow(flow: Automation['flow'] | null | undefined): EditorFlow {
+  const rawNodes = Array.isArray(flow?.nodes) ? flow.nodes : []
+  const nodes = rawNodes
+    .filter((node): node is AutomationNode => isRecord(node) && Boolean(node.id) && Boolean(node.type))
+    .map((node) => ({
+      ...node,
+      id: String(node.id),
+      type: String(node.type),
+      position: isRecord(node.position)
+        ? { x: Number(node.position.x) || 0, y: Number(node.position.y) || 0 }
+        : { x: 0, y: 0 },
+      config: isRecord(node.config) ? node.config : {}
+    }))
+  const nodesWithStart = nodes.some(isStartNode) ? nodes : [fallbackStartNode(), ...nodes]
+  const migratedNodes = migrateLegacyFlow(nodesWithStart)
+  const nodeIds = new Set(migratedNodes.map((node) => node.id))
+  const rawEdges: unknown[] = Array.isArray(flow?.edges) ? flow.edges : []
+  const edges = rawEdges
+    .filter(
+      (edge): edge is Record<string, unknown> =>
+        isRecord(edge) &&
+        Boolean(edge.id) &&
+        nodeIds.has(String(edge.sourceNodeId)) &&
+        nodeIds.has(String(edge.targetNodeId))
+    )
+    .map((edge) => ({
+      ...edge,
+      id: String(edge.id),
+      sourceNodeId: String(edge.sourceNodeId),
+      sourceHandle: edge.sourceHandle ? String(edge.sourceHandle) : 'out',
+      targetNodeId: String(edge.targetNodeId),
+      targetHandle: edge.targetHandle ? String(edge.targetHandle) : 'in',
+      animated: edge.animated !== false
+    }))
+
+  return {
+    nodes: migratedNodes,
+    edges,
+    viewport: normalizeViewport(flow?.viewport),
+    settings: isRecord(flow?.settings) ? (flow.settings as FlowSettings) : undefined
+  }
+}
+
 export const AutomationEditor: React.FC = () => {
   const { automationId = '' } = useParams()
   const navigate = useNavigate()
@@ -154,6 +225,9 @@ export const AutomationEditor: React.FC = () => {
   const viewportRef = useRef<AutomationViewport>({ x: 0, y: 0, zoom: 1 })
   const viewportDirtyRef = useRef(false)
   const savedRevisionRef = useRef(0)
+  const savedSettingsRevisionRef = useRef(0)
+  const settingsRevisionRef = useRef(settingsRevision)
+  settingsRevisionRef.current = settingsRevision
   const stateRef = useRef(state)
   stateRef.current = state
   const automationRef = useRef(automation)
@@ -230,6 +304,85 @@ export const AutomationEditor: React.FC = () => {
     return [...contextual, 'contact', 'custom', 'conversation', 'automation']
   }, [nodes])
 
+  const markDraftAsUnpublished = useCallback(() => {
+    setAutomation((value) => {
+      if (!value || !['published', 'paused'].includes(value.status) || value.hasUnpublishedChanges) {
+        return value
+      }
+      return { ...value, hasUnpublishedChanges: true }
+    })
+  }, [])
+
+  const hasUnpublishedChanges = Boolean(automation?.hasUnpublishedChanges)
+  const shouldWarnBeforeLeaving = Boolean(
+    automation && ['published', 'paused'].includes(automation.status) && hasUnpublishedChanges
+  )
+
+  useEffect(() => {
+    if (!shouldWarnBeforeLeaving) return
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [shouldWarnBeforeLeaving])
+
+  const confirmLeavingIfNeeded = useCallback(
+    (onContinue: () => void) => {
+      if (!shouldWarnBeforeLeaving) {
+        onContinue()
+        return
+      }
+      showConfirm(
+        'Cambios sin publicar',
+        'Esta automatización ya tenía una versión en vivo, pero hiciste cambios nuevos que todavía no publicas. Si sales ahora, se guardan como borrador y la versión activa seguirá igual.',
+        onContinue,
+        'Salir sin publicar',
+        'Seguir editando'
+      )
+    },
+    [shouldWarnBeforeLeaving, showConfirm]
+  )
+
+  const navigateFromEditor = useCallback(
+    (to: string) => {
+      confirmLeavingIfNeeded(() => navigate(to))
+    },
+    [confirmLeavingIfNeeded, navigate]
+  )
+
+  useEffect(() => {
+    if (!shouldWarnBeforeLeaving) return
+    const handleDocumentClick = (event: MouseEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return
+      }
+      const anchor = (event.target as HTMLElement | null)?.closest?.('a[href]') as HTMLAnchorElement | null
+      if (!anchor || anchor.target) return
+      const href = anchor.getAttribute('href')
+      if (!href || href.startsWith('#')) return
+      const nextUrl = new URL(href, window.location.origin)
+      if (nextUrl.origin !== window.location.origin) return
+      const nextPath = `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`
+      const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`
+      if (nextPath === currentPath) return
+
+      event.preventDefault()
+      event.stopPropagation()
+      confirmLeavingIfNeeded(() => navigate(nextPath))
+    }
+    document.addEventListener('click', handleDocumentClick, true)
+    return () => document.removeEventListener('click', handleDocumentClick, true)
+  }, [confirmLeavingIfNeeded, navigate, shouldWarnBeforeLeaving])
+
   // ------------------------------------------------------------------
   // Carga inicial + modo editor a pantalla completa
   // ------------------------------------------------------------------
@@ -248,16 +401,17 @@ export const AutomationEditor: React.FC = () => {
     let cancelled = false
 
     const initFrom = (data: Automation) => {
-      setAutomation(data)
+      const safeFlow = normalizeEditorFlow(data.flow)
+      setAutomation({ ...data, flow: safeFlow })
       setName(data.name)
-      viewportRef.current = data.flow.viewport || { x: 0, y: 0, zoom: 1 }
-      setFlowSettings({ ...defaultFlowSettings(), ...(data.flow.settings || {}) })
-      // Migra nodos de versiones anteriores (If/Else, Telegram, canales retirados)
-      dispatch({
-        type: 'init',
-        flow: { nodes: migrateLegacyFlow(data.flow.nodes), edges: data.flow.edges }
-      })
+      viewportRef.current = safeFlow.viewport
+      viewportDirtyRef.current = false
+      setFlowSettings({ ...defaultFlowSettings(), ...(safeFlow.settings || {}) })
+      setSettingsRevision(0)
+      dispatch({ type: 'init', flow: { nodes: safeFlow.nodes, edges: safeFlow.edges } })
       savedRevisionRef.current = 0
+      savedSettingsRevisionRef.current = 0
+      setNodeErrors({})
       setSaveState('saved')
     }
 
@@ -293,9 +447,10 @@ export const AutomationEditor: React.FC = () => {
     const current = automationRef.current
     if (!current) return false
     const revision = stateRef.current.revision
+    const settingsRevision = settingsRevisionRef.current
     setSaveState('saving')
     try {
-      await automationsService.updateAutomation(current.id, {
+      const updated = await automationsService.updateAutomation(current.id, {
         flow: {
           nodes: stateRef.current.present.nodes,
           edges: stateRef.current.present.edges,
@@ -303,9 +458,23 @@ export const AutomationEditor: React.FC = () => {
           settings: flowSettingsRef.current
         }
       })
+      setAutomation((value) =>
+        value
+          ? {
+              ...value,
+              updatedAt: updated.updatedAt,
+              hasUnpublishedChanges: updated.hasUnpublishedChanges ?? value.hasUnpublishedChanges
+            }
+          : value
+      )
       savedRevisionRef.current = revision
+      savedSettingsRevisionRef.current = settingsRevision
       viewportDirtyRef.current = false
-      setSaveState(stateRef.current.revision === revision ? 'saved' : 'dirty')
+      setSaveState(
+        stateRef.current.revision === revision && settingsRevisionRef.current === settingsRevision
+          ? 'saved'
+          : 'dirty'
+      )
       return true
     } catch {
       setSaveState('error')
@@ -315,21 +484,28 @@ export const AutomationEditor: React.FC = () => {
 
   useEffect(() => {
     if (!automation) return
-    if (state.revision === savedRevisionRef.current && settingsRevision === 0) return
+    const hasDraftChanges =
+      state.revision !== savedRevisionRef.current ||
+      settingsRevision !== savedSettingsRevisionRef.current
+    if (!hasDraftChanges) return
     setSaveState('dirty')
-    setNodeErrors({})
+    markDraftAsUnpublished()
     const timer = window.setTimeout(() => {
       void persistFlow()
     }, 1200)
     return () => window.clearTimeout(timer)
-  }, [automation, persistFlow, state.revision, settingsRevision])
+  }, [automation, markDraftAsUnpublished, persistFlow, state.revision, settingsRevision])
 
   // Al desmontar: guardar lo pendiente sin bloquear la navegación
   useEffect(() => {
     return () => {
       const current = automationRef.current
       if (!current) return
-      if (stateRef.current.revision !== savedRevisionRef.current || viewportDirtyRef.current) {
+      if (
+        stateRef.current.revision !== savedRevisionRef.current ||
+        settingsRevisionRef.current !== savedSettingsRevisionRef.current ||
+        viewportDirtyRef.current
+      ) {
         void automationsService
           .updateAutomation(current.id, {
             flow: {
@@ -366,29 +542,51 @@ export const AutomationEditor: React.FC = () => {
   // ------------------------------------------------------------------
   // Selección / creación de pasos desde los globos
   // ------------------------------------------------------------------
-  // Si la config abierta está incompleta, no se permite cerrarla ni cambiar
-  // de elemento: se muestran los errores (el usuario completa o borra el paso)
-  const [configErrorsSignal, setConfigErrorsSignal] = useState(0)
-  const canLeaveConfig = useCallback((): boolean => {
-    const current = configRef.current
-    if (!current) return true
-    const node = stateRef.current.present.nodes.find((candidate) => candidate.id === current.nodeId)
-    if (!node) return true
-    const trigger = current.triggerId
-      ? getStartTriggers(node).find((candidate) => candidate.id === current.triggerId)
-      : null
-    const definition = getNodeDefinition(trigger ? trigger.type : node.type)
-    if (!definition) return true
-    const errors = validateNodeConfig(definition, (trigger ? trigger.config : node.config) || {})
-    if (errors.length > 0) {
-      setConfigErrorsSignal((value) => value + 1)
-      return false
+  const collectNodeConfigErrors = useCallback((node: AutomationNode): string[] => {
+    if (isStartNode(node)) {
+      return getStartTriggers(node).flatMap((trigger) => {
+        const definition = getNodeDefinition(trigger.type)
+        if (!definition) return ['Hay un disparador de un tipo desconocido']
+        return validateNodeConfig(definition, trigger.config || {}).map(
+          (error) => `${definition.label}: ${error}`
+        )
+      })
     }
-    return true
+    const definition = getNodeDefinition(node.type)
+    if (!definition) return ['Este paso tiene un tipo desconocido']
+    return validateNodeConfig(definition, node.config || {})
   }, [])
 
+  const syncNodeConfigErrors = useCallback(
+    (node: AutomationNode) => {
+      const errors = collectNodeConfigErrors(node)
+      setNodeErrors((current) => {
+        const next = { ...current }
+        if (errors.length > 0) next[node.id] = errors
+        else delete next[node.id]
+        return next
+      })
+      return errors
+    },
+    [collectNodeConfigErrors]
+  )
+
+  const markOpenConfigErrors = useCallback(() => {
+    const current = configRef.current
+    if (!current) return
+    const node = stateRef.current.present.nodes.find((candidate) => candidate.id === current.nodeId)
+    if (node) syncNodeConfigErrors(node)
+  }, [syncNodeConfigErrors])
+
+  const closeConfig = useCallback(() => {
+    markOpenConfigErrors()
+    setConfig(null)
+  }, [markOpenConfigErrors])
+
   const openConfigForNode = useCallback((node: AutomationNode, anchor?: { x: number; y: number }) => {
-    if (configRef.current && configRef.current.nodeId !== node.id && !canLeaveConfig()) return
+    if (configRef.current && configRef.current.nodeId !== node.id) {
+      markOpenConfigErrors()
+    }
     const viewport = viewportRef.current
     setConfig({
       nodeId: node.id,
@@ -398,7 +596,7 @@ export const AutomationEditor: React.FC = () => {
       },
       committed: false
     })
-  }, [canLeaveConfig])
+  }, [markOpenConfigErrors])
 
   const handlePickStep = useCallback(
     (definition: NodeDefinition) => {
@@ -488,10 +686,10 @@ export const AutomationEditor: React.FC = () => {
   const canvasActions = useMemo(
     () => ({
       onSelectNode: (nodeId: string | null) => {
-        if (nodeId === null && !canLeaveConfig()) return
         setSelectedNodeId(nodeId)
         setMultiSelectedIds(nodeId ? new Set([nodeId]) : new Set())
         if (nodeId === null) {
+          markOpenConfigErrors()
           setSelectedEdgeId(null)
           setPicker(null)
           setConfig(null)
@@ -586,6 +784,11 @@ export const AutomationEditor: React.FC = () => {
         const current = stateRef.current.present
         const result = removeNode(current.nodes, current.edges, node.id)
         dispatch({ type: 'commit', flow: result })
+        setNodeErrors((errors) => {
+          const next = { ...errors }
+          delete next[node.id]
+          return next
+        })
         setSelectedNodeId(null)
         setConfig((value) => (value?.nodeId === node.id ? null : value))
       },
@@ -621,7 +824,7 @@ export const AutomationEditor: React.FC = () => {
         openConfigForNode(node, anchor)
       },
       onRequestPicker: (request: PickerRequest) => {
-        if (!canLeaveConfig()) return
+        markOpenConfigErrors()
         setConfig(null)
         if (request.source) {
           setPicker({
@@ -656,6 +859,7 @@ export const AutomationEditor: React.FC = () => {
         })
       },
       onAddTrigger: (node: AutomationNode, anchor: { x: number; y: number }) => {
+        markOpenConfigErrors()
         setConfig(null)
         setSelectedNodeId(node.id)
         setPicker({
@@ -669,7 +873,9 @@ export const AutomationEditor: React.FC = () => {
         })
       },
       onEditTrigger: (node: AutomationNode, triggerId: string, anchor: { x: number; y: number }) => {
-        if (configRef.current && configRef.current.triggerId !== triggerId && !canLeaveConfig()) return
+        if (configRef.current && configRef.current.triggerId !== triggerId) {
+          markOpenConfigErrors()
+        }
         setPicker(null)
         setSelectedNodeId(node.id)
         setConfig({ nodeId: node.id, triggerId, anchor, committed: false })
@@ -683,6 +889,10 @@ export const AutomationEditor: React.FC = () => {
             : candidate
         )
         commitFlow(nextNodes)
+        const nextNode = nextNodes.find((candidate) => candidate.id === node.id)
+        if (nextNode && nodeErrors[node.id]?.length) {
+          syncNodeConfigErrors(nextNode)
+        }
         setConfig((value) => (value?.triggerId === triggerId ? null : value))
       },
       onViewportChange: (viewport: AutomationViewport) => {
@@ -792,13 +1002,23 @@ export const AutomationEditor: React.FC = () => {
         showToast('success', 'Flujo ordenado', 'Puedes deshacer con Ctrl+Z')
       }
     }),
-    [commitFlow, findFreeOutput, openConfigForNode, selectedNodeId, showToast]
+    [
+      commitFlow,
+      findFreeOutput,
+      markOpenConfigErrors,
+      nodeErrors,
+      openConfigForNode,
+      selectedNodeId,
+      showToast,
+      syncNodeConfigErrors
+    ]
   )
 
   // ------------------------------------------------------------------
   // FAB "+"
   // ------------------------------------------------------------------
   const handleFabClick = () => {
+    markOpenConfigErrors()
     setConfig(null)
     const current = stateRef.current.present
     const selected = selectedNodeId ? current.nodes.find((node) => node.id === selectedNodeId) : undefined
@@ -849,7 +1069,7 @@ export const AutomationEditor: React.FC = () => {
       if (event.key === 'Escape') {
         if (picker || config) {
           setPicker(null)
-          setConfig(null)
+          if (config) closeConfig()
         } else {
           setSelectedNodeId(null)
           setSelectedEdgeId(null)
@@ -881,7 +1101,7 @@ export const AutomationEditor: React.FC = () => {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [canvasActions, config, picker, selectedEdgeId, selectedNodeId, multiSelectedIds])
+  }, [canvasActions, closeConfig, config, picker, selectedEdgeId, selectedNodeId, multiSelectedIds])
 
   // ------------------------------------------------------------------
   // Nombre, estado, publicar, vista previa
@@ -912,7 +1132,7 @@ export const AutomationEditor: React.FC = () => {
         setNodeErrors(validation.nodeErrors)
         const summary = validation.issues.slice(0, 3).map((issue) => issue.message).join('. ')
         const extra = validation.issues.length > 3 ? ` (+${validation.issues.length - 3} más)` : ''
-        showToast('error', 'No se puede publicar', `${summary}${extra}`)
+        showToast('error', 'No se puede publicar', `Corrige los campos faltantes: ${summary}${extra}`)
         return
       }
     }
@@ -924,13 +1144,29 @@ export const AutomationEditor: React.FC = () => {
         showToast('error', 'No se pudo guardar', 'Revisa tu conexión e intenta de nuevo')
         return
       }
+      const hadPendingChanges = Boolean(current.hasUnpublishedChanges)
       const updated = await automationsService.updateAutomation(current.id, { status })
       setAutomation((value) =>
-        value ? { ...value, status: updated.status, publishedAt: updated.publishedAt } : value
+        value
+          ? {
+              ...value,
+              status: updated.status,
+              publishedAt: updated.publishedAt,
+              updatedAt: updated.updatedAt,
+              hasUnpublishedChanges: updated.hasUnpublishedChanges ?? false
+            }
+          : value
       )
       setNodeErrors({})
       if (status === 'published') {
-        showToast('success', 'Automatización publicada', 'Tu automatización está en vivo')
+        savedRevisionRef.current = stateRef.current.revision
+        savedSettingsRevisionRef.current = settingsRevisionRef.current
+        setSaveState('saved')
+        showToast(
+          'success',
+          hadPendingChanges ? 'Cambios publicados' : 'Automatización publicada',
+          'Tu automatización está en vivo'
+        )
       } else if (status === 'paused') {
         showToast('info', 'Automatización pausada')
       } else if (status === 'draft') {
@@ -943,7 +1179,7 @@ export const AutomationEditor: React.FC = () => {
     }
   }
 
-  const handleDuplicateAutomation = async () => {
+  const duplicateCurrentAutomation = async () => {
     const current = automationRef.current
     if (!current) return
     try {
@@ -954,6 +1190,12 @@ export const AutomationEditor: React.FC = () => {
     } catch {
       showToast('error', 'No se pudo duplicar la automatización')
     }
+  }
+
+  const handleDuplicateAutomation = () => {
+    confirmLeavingIfNeeded(() => {
+      void duplicateCurrentAutomation()
+    })
   }
 
   const handleDeleteAutomation = () => {
@@ -1039,7 +1281,7 @@ export const AutomationEditor: React.FC = () => {
       <div className={styles.editorShell}>
         <div className={styles.editorLoading}>
           No se encontró la automatización.&nbsp;
-          <Button variant="secondary" size="sm" onClick={() => navigate('/automations')}>
+          <Button variant="secondary" size="sm" onClick={() => navigateFromEditor('/automations')}>
             Volver a Automatizaciones
           </Button>
         </div>
@@ -1080,13 +1322,25 @@ export const AutomationEditor: React.FC = () => {
       const triggers = getStartTriggers(configNode).map((trigger) =>
         trigger.id === config.triggerId ? { ...trigger, config: nextConfig } : trigger
       )
-      updateNodeConfig(configNode.id, { ...configNode.config, triggers }, withHistory)
+      const mergedConfig = { ...configNode.config, triggers }
+      updateNodeConfig(configNode.id, mergedConfig, withHistory)
+      if (nodeErrors[configNode.id]?.length) {
+        syncNodeConfigErrors({ ...configNode, config: mergedConfig })
+      }
     } else {
       updateNodeConfig(configNode.id, nextConfig, withHistory)
+      if (nodeErrors[configNode.id]?.length) {
+        syncNodeConfigErrors({ ...configNode, config: nextConfig })
+      }
     }
   }
 
   const status = automation.status
+  const publishButtonLabel = hasUnpublishedChanges
+    ? 'Publicar'
+    : status === 'paused'
+      ? 'Reanudar'
+      : 'Publicar'
 
   // Flecha fantasma mientras el selector está abierto tras soltar el conector
   const pendingEdge: PendingEdge | null =
@@ -1103,7 +1357,7 @@ export const AutomationEditor: React.FC = () => {
           type="button"
           className={styles.toolbarBack}
           title="Volver a Automatizaciones"
-          onClick={() => navigate('/automations')}
+          onClick={() => navigateFromEditor('/automations')}
         >
           <ArrowLeft size={15} />
         </button>
@@ -1191,7 +1445,13 @@ export const AutomationEditor: React.FC = () => {
             Vista previa
           </Button>
 
-          {status === 'published' ? (
+          {hasUnpublishedChanges && (
+            <span className={styles.publishPendingBadge}>
+              Cambios sin publicar
+            </span>
+          )}
+
+          {status === 'published' && !hasUnpublishedChanges ? (
             <Button
               variant="secondary"
               size="sm"
@@ -1205,11 +1465,12 @@ export const AutomationEditor: React.FC = () => {
             <Button
               variant="primary"
               size="sm"
+              className={cn(styles.publishButton, hasUnpublishedChanges && styles.publishButtonDirty)}
               leftIcon={<Play size={13} />}
               loading={statusBusy}
               onClick={() => void changeStatus('published')}
             >
-              {status === 'paused' ? 'Reanudar' : 'Publicar En Vivo'}
+              {publishButtonLabel}
             </Button>
           )}
 
@@ -1220,7 +1481,7 @@ export const AutomationEditor: React.FC = () => {
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => void handleDuplicateAutomation()}>
+              <DropdownMenuItem onSelect={handleDuplicateAutomation}>
                 <Copy size={13} style={{ marginRight: 8 }} />
                 Duplicar automatización
               </DropdownMenuItem>
@@ -1248,7 +1509,10 @@ export const AutomationEditor: React.FC = () => {
 
       {/* ------------------------------ Canvas ----------------------------- */}
       <div className={styles.editorMain}>
-        <AutomationLibrary currentAutomationId={automation.id} />
+        <AutomationLibrary
+          currentAutomationId={automation.id}
+          onOpenAutomation={(targetId) => navigateFromEditor(`/automations/${targetId}`)}
+        />
         <AutomationCanvas
         nodes={nodes}
         edges={edges}
@@ -1295,8 +1559,7 @@ export const AutomationEditor: React.FC = () => {
             anchor={config.anchor}
             bounds={canvasBounds}
             onChange={handleConfigChange}
-            onClose={() => setConfig(null)}
-            showErrorsSignal={configErrorsSignal}
+            onClose={closeConfig}
           />
         )}
       </AutomationCanvas>
