@@ -18,10 +18,11 @@ import {
   Moon,
   Palette,
   Rocket,
-  Sun
+  Sun,
+  BotMessageSquare
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
-import { useAppConfig, useAppVersion, useIsRenderDomain } from '@/hooks'
+import { useAppConfig, useAppVersion } from '@/hooks'
 import { useTheme } from '@/contexts/ThemeContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { useInitialization } from '@/contexts/InitializationContext'
@@ -46,6 +47,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import automationsService from '@/services/automationsService'
+import { requestAIAgentOpen } from '@/utils/aiAgentEvents'
 
 interface SidebarProps {
   onNavigate?: () => void
@@ -60,6 +62,8 @@ interface NavItem {
   href: string
   icon: IconType
   isDivider?: boolean
+  isAction?: boolean
+  action?: () => void
 }
 
 const baseNavigation: NavItem[] = [
@@ -67,19 +71,14 @@ const baseNavigation: NavItem[] = [
   { id: 'appointments', name: 'Citas', href: '/appointments', icon: Calendar },
   { id: 'transactions', name: 'Pagos', href: '/transactions', icon: Banknote },
   { id: 'contacts', name: 'Contactos', href: '/contacts', icon: Users },
-  { id: 'divider-1', name: '', href: '#', icon: LayoutDashboard, isDivider: true }, // Divisor visual
+  { id: 'reports', name: 'Reportes', href: '/reports/table/month/cashflow', icon: FileBarChart },
+  { id: 'analytics', name: 'Analíticas', href: '/analytics', icon: BarChart3 },
+  { id: 'divider-1', name: '', href: '#', icon: LayoutDashboard, isDivider: true },
   { id: 'campaigns', name: 'Publicidad', href: '/campaigns/classic', icon: Megaphone },
-  { id: 'sites', name: 'Sitios', href: '/sites', icon: PanelTop },
   { id: 'automations', name: 'Automatizaciones', href: '/automations', icon: Workflow },
-  { id: 'reports', name: 'Reportes', href: '/reports/table/month/cashflow', icon: FileBarChart }
+  { id: 'sites', name: 'Sitios', href: '/sites', icon: PanelTop },
+  { id: 'ai-agent', name: 'Agente AI', href: '#', icon: BotMessageSquare, isAction: true, action: () => requestAIAgentOpen() },
 ]
-
-const analyticsNavigation: NavItem = {
-  id: 'analytics',
-  name: 'Analíticas',
-  href: '/analytics',
-  icon: BarChart3
-}
 
 // La pestaña de Inicialización siempre va primera y solo se muestra mientras el
 // onboarding de integraciones no esté completo (o el usuario no lo haya ocultado).
@@ -90,8 +89,8 @@ const initializationNavigation: NavItem = {
   icon: Rocket
 }
 
-const getNavigationItems = (_showAnalytics: boolean, _isRenderDomain: boolean): NavItem[] => {
-  return [...baseNavigation, analyticsNavigation]
+const getNavigationItems = (): NavItem[] => {
+  return [...baseNavigation]
 }
 
 const getInitials = (name?: string, email?: string) => {
@@ -231,12 +230,25 @@ const SettingsNavGroup: React.FC<SettingsNavGroupProps> = ({ pathname, open, onT
 const NavigationItem: React.FC<NavigationItemProps> = ({ item, isActive, onNavigate }) => {
   const Icon = item.icon
 
-  // Si es un divisor, renderizar una línea horizontal
   if (item.isDivider) {
     return (
       <div className="py-2">
         <div className="border-t border-[rgba(148,163,184,0.12)]" />
       </div>
+    )
+  }
+
+  if (item.isAction) {
+    return (
+      <button
+        type="button"
+        onClick={() => item.action?.()}
+        data-ristak-sidebar-nav-item
+        className={getNavLinkClasses(false, 'w-full')}
+      >
+        <Icon className="h-5 w-5 flex-shrink-0" />
+        <span>{item.name}</span>
+      </button>
     )
   }
 
@@ -273,11 +285,42 @@ const SortableItem: React.FC<SortableItemProps> = ({ item, isActive, isDragging,
     transition
   }
 
-  // Si es un divisor, renderizar una línea horizontal
   if (item.isDivider) {
     return (
       <div ref={setNodeRef} style={style} className="relative py-2">
         <div className="border-t border-[rgba(148,163,184,0.12)]" />
+      </div>
+    )
+  }
+
+  if (item.isAction) {
+    return (
+      <div ref={setNodeRef} style={style} className="relative">
+        <button
+          type="button"
+          onClick={() => {
+            if (isDragging || isEditMode) return
+            item.action?.()
+          }}
+          data-ristak-sidebar-nav-item
+          className={getNavLinkClasses(false, cn('w-full', isSortableDragging ? 'opacity-50' : undefined))}
+        >
+          {isEditMode && (
+            <button
+              type="button"
+              className={cn(
+                'cursor-grab active:cursor-grabbing p-0.5 rounded hover:bg-white/[0.1] transition-colors',
+                'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]'
+              )}
+              {...attributes}
+              {...listeners}
+            >
+              <GripVertical className="h-4 w-4" />
+            </button>
+          )}
+          <Icon className="h-5 w-5 flex-shrink-0" />
+          <span>{item.name}</span>
+        </button>
       </div>
     )
   }
@@ -339,11 +382,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, onLogout }) => {
   } = useTheme()
   const { user } = useAuth()
   const { isInitialized } = useInitialization()
-  const [analyticsEnabled] = useAppConfig<boolean>('show_analytics', false)
   const [sidebarOrder, setSidebarOrder] = useAppConfig<string[]>('sidebar_navigation_order', [])
-  const isRenderDomain = useIsRenderDomain() // Detectar si es dominio .onrender.com
-  const appVersion = useAppVersion() // Versión instalada (se muestra al pie del menú de usuario)
-  const [navigation, setNavigation] = useState<NavItem[]>(() => getNavigationItems(false, isRenderDomain))
+  const appVersion = useAppVersion()
+  const [navigation, setNavigation] = useState<NavItem[]>(() => getNavigationItems())
   const [activeId, setActiveId] = useState<string | null>(null)
   const [isEditMode, setIsEditMode] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
@@ -416,27 +457,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, onLogout }) => {
 
   // Aplicar orden guardado a los items
   const applyOrder = (items: NavItem[], order: string[]): NavItem[] => {
-    const placeSitesAfterCampaigns = (orderedItems: NavItem[]) => {
-      const sitesIndex = orderedItems.findIndex(item => item.id === 'sites')
-      const campaignsIndex = orderedItems.findIndex(item => item.id === 'campaigns')
-
-      if (sitesIndex === -1 || campaignsIndex === -1 || sitesIndex === campaignsIndex + 1) {
-        return orderedItems
-      }
-
-      const nextItems = [...orderedItems]
-      const [sitesItem] = nextItems.splice(sitesIndex, 1)
-      const nextCampaignsIndex = nextItems.findIndex(item => item.id === 'campaigns')
-      nextItems.splice(nextCampaignsIndex + 1, 0, sitesItem)
-      return nextItems
-    }
-
-    if (!order.length) return placeSitesAfterCampaigns(items)
+    if (!order.length) return items
 
     const itemsById = new Map(items.map(item => [item.id, item]))
     const orderedItems: NavItem[] = []
 
-    // Agregar items en el orden guardado
     order.forEach(id => {
       const item = itemsById.get(id)
       if (item) {
@@ -445,12 +470,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, onLogout }) => {
       }
     })
 
-    // Agregar items nuevos que no están en el orden guardado
+    // Items nuevos no presentes en el orden guardado van al final
     itemsById.forEach(item => {
       orderedItems.push(item)
     })
 
-    return placeSitesAfterCampaigns(orderedItems)
+    return orderedItems
   }
 
   useEffect(() => {
@@ -474,27 +499,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate, onLogout }) => {
     isInitialized ? items : [initializationNavigation, ...items]
 
   useEffect(() => {
-    const showAnalytics = Boolean(analyticsEnabled)
-    const items = getNavigationItems(showAnalytics, isRenderDomain)
+    const items = getNavigationItems()
     setNavigation(withInitialization(applyOrder(items, sidebarOrder)))
-  }, [analyticsEnabled, sidebarOrder, isRenderDomain, isInitialized])
-
-  useEffect(() => {
-    const handleAnalyticsChange = (event: Event) => {
-      const customEvent = event as CustomEvent<{ showAnalytics?: boolean }>
-      if (typeof customEvent.detail?.showAnalytics === 'boolean') {
-        const showAnalytics = customEvent.detail.showAnalytics
-        const items = getNavigationItems(showAnalytics, isRenderDomain)
-        setNavigation(withInitialization(applyOrder(items, sidebarOrder)))
-      }
-    }
-
-    window.addEventListener('analytics-preference-changed', handleAnalyticsChange)
-
-    return () => {
-      window.removeEventListener('analytics-preference-changed', handleAnalyticsChange)
-    }
-  }, [sidebarOrder, isRenderDomain, isInitialized])
+  }, [sidebarOrder, isInitialized])
 
   const handleDragStart = (event: DragStartEvent) => {
     if (!isEditMode) {
