@@ -201,6 +201,41 @@ export interface ConversationalAgentEvent {
   createdAt: string
 }
 
+export interface ConversationalAgentMetricByAgent {
+  agentId: string
+  name: string
+  enabled: boolean
+  model: string
+  assignedConversations: number
+  completedConversations: number
+  pausedConversations: number
+  humanTakeovers: number
+  skippedConversations: number
+  discardedConversations: number
+  totalConversations: number
+  lastActivityAt: string | null
+}
+
+export interface ConversationalAgentMetrics {
+  totalAgents: number
+  activeAgents: number
+  assignedConversations: number
+  agentsWithAssignedConversations: number
+  completedConversations: number
+  pausedConversations: number
+  humanTakeovers: number
+  skippedConversations: number
+  discardedConversations: number
+  totalTrackedConversations: number
+  totalEvents: number
+  successEvents: number
+  errorEvents: number
+  assignedEvents: number
+  replyEvents: number
+  successRate: number
+  byAgent: ConversationalAgentMetricByAgent[]
+}
+
 export interface ConversationalAgentLiveCache {
   config: ConversationalAgentConfig | null
   states: ConversationAgentState[]
@@ -355,6 +390,10 @@ export const conversationalAgentService = {
 
   getFilterOptions(): Promise<AgentFilterOptions> {
     return request<AgentFilterOptions>('/filter-options')
+  },
+
+  getMetrics(): Promise<ConversationalAgentMetrics> {
+    return request<ConversationalAgentMetrics>('/metrics')
   },
 
   async createAgent(input: ConversationalAgentDefInput = {}): Promise<ConversationalAgentDef> {

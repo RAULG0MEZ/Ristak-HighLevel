@@ -16,6 +16,7 @@ import {
   type ConversationalAgentConfig,
   type ConversationalAgentDef,
   type ConversationalAgentDefInput,
+  type ConversationalAgentMetrics,
   type ConversationalAgentTestResult,
   type ConversationalObjective,
   type ConversationalSuccessAction,
@@ -890,6 +891,7 @@ export const ConversationalAgentSettings: React.FC = () => {
   const { showToast, showConfirm } = useNotification()
   const [config, setConfig] = useState<ConversationalAgentConfig | null>(null)
   const [agents, setAgents] = useState<ConversationalAgentDef[]>([])
+  const [metrics, setMetrics] = useState<ConversationalAgentMetrics | null>(null)
   const [calendars, setCalendars] = useState<Calendar[]>([])
   const [filterOptions, setFilterOptions] = useState<AgentFilterOptions | undefined>(undefined)
   const [loading, setLoading] = useState(true)
@@ -899,20 +901,31 @@ export const ConversationalAgentSettings: React.FC = () => {
   const agentsRef = useRef<ConversationalAgentDef[]>([])
   agentsRef.current = agents
 
+  const refreshMetrics = useCallback(async () => {
+    try {
+      const nextMetrics = await conversationalAgentService.getMetrics()
+      setMetrics(nextMetrics)
+    } catch {
+      // La configuración sigue funcionando; las métricas se reintentan al recargar.
+    }
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     const load = async () => {
       setLoading(true)
       try {
-        const [nextConfig, nextAgents, calendarList, nextOptions] = await Promise.all([
+        const [nextConfig, nextAgents, nextMetrics, calendarList, nextOptions] = await Promise.all([
           conversationalAgentService.getConfig(),
           conversationalAgentService.listAgents(),
+          conversationalAgentService.getMetrics().catch(() => null),
           calendarsService.getCalendars(),
           conversationalAgentService.getFilterOptions().catch(() => undefined)
         ])
         if (cancelled) return
         setConfig(nextConfig)
         setAgents(nextAgents)
+        setMetrics(nextMetrics)
         setCalendars(calendarList.filter((cal) => cal.isActive !== false))
         setFilterOptions(nextOptions)
       } catch (error: any) {
@@ -983,6 +996,7 @@ export const ConversationalAgentSettings: React.FC = () => {
       }
       setAgents((current) => [...current, agent])
       setSelectedAgentId(agent.id)
+      void refreshMetrics()
     } catch (error: any) {
       showToast('error', 'No se pudo crear', error?.message || 'Error al crear el agente')
     } finally {
@@ -999,6 +1013,7 @@ export const ConversationalAgentSettings: React.FC = () => {
           await conversationalAgentService.deleteAgent(agent.id)
           setAgents((current) => current.filter((item) => item.id !== agent.id))
           setSelectedAgentId((current) => (current === agent.id ? null : current))
+          void refreshMetrics()
         } catch (error: any) {
           showToast('error', 'No se pudo eliminar', error?.message || 'Error al eliminar el agente')
         }
@@ -1025,6 +1040,7 @@ export const ConversationalAgentSettings: React.FC = () => {
           setConfig(nextConfig)
           setAgents(updatedAgents)
           setSelectedAgentId(null)
+          void refreshMetrics()
           showToast('success', 'Agente conversacional', 'Todo quedó omitido y apagado.')
         } catch (error: any) {
           showToast('error', 'No se pudo omitir todo', error?.message || 'Inténtalo otra vez.')
@@ -1040,6 +1056,12 @@ export const ConversationalAgentSettings: React.FC = () => {
   const systemStrategy = config?.systemClosingStrategy || ''
   const selectedAgent = selectedAgentId ? agents.find((agent) => agent.id === selectedAgentId) || null : null
   const activeAgentsCount = agents.filter((agent) => agent.enabled).length
+  const metricsByAgentId = new Map((metrics?.byAgent || []).map((item) => [item.agentId, item]))
+  const assignedConversations = metrics?.assignedConversations ?? 0
+  const busyAgents = metrics?.agentsWithAssignedConversations ?? 0
+  const completedConversations = metrics?.completedConversations ?? 0
+  const errorEvents = metrics?.errorEvents ?? 0
+  const successRate = metrics?.successRate ?? 0
 
   if (selectedAgent) {
     return (
@@ -1100,6 +1122,26 @@ export const ConversationalAgentSettings: React.FC = () => {
             <small>{activeAgentsCount === 1 ? 'activo' : 'activos'}</small>
           </div>
           <div>
+            <span>{assignedConversations}</span>
+            <small>chats atendiendo</small>
+          </div>
+          <div>
+            <span>{busyAgents}</span>
+            <small>agentes ocupados</small>
+          </div>
+          <div>
+            <span>{completedConversations}</span>
+            <small>objetivos cumplidos</small>
+          </div>
+          <div>
+            <span>{successRate}%</span>
+            <small>tasa de éxito</small>
+          </div>
+          <div className={errorEvents > 0 ? styles.agentDirectoryStatError : undefined}>
+            <span>{errorEvents}</span>
+            <small>errores registrados</small>
+          </div>
+          <div>
             <span>{config?.enabled ? 'Listo' : 'Omitido'}</span>
             <small>seguridad general</small>
           </div>
@@ -1133,6 +1175,7 @@ export const ConversationalAgentSettings: React.FC = () => {
             const actionLabel = successActionLabels[agent.successAction]?.label || 'Acción'
             const modelLabel = aiModelOptions.find((option) => option.value === getKnownAIModel(agent.model || DEFAULT_AI_MODEL))?.label || agent.model
             const entryRules = agent.filters.entry.groups.reduce((total, group) => total + group.conditions.length, 0)
+            const agentMetrics = metricsByAgentId.get(agent.id)
 
             return (
               <div
@@ -1159,6 +1202,8 @@ export const ConversationalAgentSettings: React.FC = () => {
                   <div className={styles.agentDirectoryMeta}>
                     <span>{modelLabel}</span>
                     <span>{entryRules > 0 ? `${entryRules} ${entryRules === 1 ? 'regla' : 'reglas'}` : 'Cualquier chat'}</span>
+                    <span>{agentMetrics?.assignedConversations ?? 0} atendiendo</span>
+                    <span>{agentMetrics?.completedConversations ?? 0} cumplidos</span>
                     {agent.hideAttended && <span>Oculta atendidas</span>}
                     {agent.hideAttendedNotifications && <span>Silencia avisos</span>}
                   </div>

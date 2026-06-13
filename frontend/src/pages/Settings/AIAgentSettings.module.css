@@ -834,13 +834,24 @@
   }
 
   .headerLeft {
-    align-items: center;
+    align-items: flex-start;
+    flex-direction: column;
     min-width: 0;
     gap: 10px;
   }
 
   .headerLeft > div:last-child {
     min-width: 0;
+  }
+
+  .headerActions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .headerActions button {
+    justify-content: center;
+    width: 100%;
   }
 
   .iconBox {
@@ -851,12 +862,14 @@
   .title {
     font-size: 17px;
     line-height: 1.2;
+    overflow-wrap: anywhere;
   }
 
   .description {
     max-width: 100%;
     font-size: 13px;
     line-height: 1.45;
+    overflow-wrap: anywhere;
   }
 
   .settingsGrid {
@@ -945,9 +958,9 @@
 /* ------------------------------------------------------------------ */
 
 .agentDirectoryStats {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 136px), 1fr));
   align-items: stretch;
-  flex-wrap: wrap;
   gap: 10px;
   margin-top: 18px;
 }
@@ -955,11 +968,20 @@
 .agentDirectoryStats > div {
   display: grid;
   gap: 3px;
-  min-width: 132px;
+  min-width: 136px;
   padding: 11px 12px;
   border-radius: 8px;
   border: 1px solid rgba(148, 163, 184, 0.14);
   background: rgba(148, 163, 184, 0.06);
+}
+
+.agentDirectoryStatError {
+  border-color: rgba(239, 68, 68, 0.24) !important;
+  background: rgba(239, 68, 68, 0.07) !important;
+}
+
+.agentDirectoryStatError span {
+  color: var(--color-status-error);
 }
 
 .agentDirectoryStats span {
@@ -1275,11 +1297,6 @@
 
   .agentDirectoryCard {
     min-height: 188px;
-  }
-
-  .agentDirectoryStats {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .agentDirectoryStats > div {

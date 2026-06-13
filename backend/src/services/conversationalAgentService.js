@@ -799,15 +799,40 @@ function mapAgentRow(row) {
   }
 }
 
+function hasText(value) {
+  return String(value || '').trim().length > 0
+}
+
+export function shouldMigrateLegacyConversationalAgentConfig(legacy) {
+  if (!legacy) return false
+
+  return (
+    (VALID_OBJECTIVES.has(legacy.objective) && legacy.objective !== 'citas') ||
+    hasText(legacy.custom_objective) ||
+    (VALID_SUCCESS_ACTIONS.has(legacy.success_action) && legacy.success_action !== DEFAULT_SUCCESS_ACTION) ||
+    hasText(legacy.required_data) ||
+    hasText(legacy.handoff_rules) ||
+    hasText(legacy.extra_instructions) ||
+    toBoolean(legacy.allow_emojis) ||
+    toBoolean(legacy.hide_attended) ||
+    toBoolean(legacy.hide_attended_notifications) ||
+    hasText(legacy.default_calendar_id) ||
+    legacy.closing_strategy_mode === 'custom' ||
+    hasText(legacy.closing_strategy_custom)
+  )
+}
+
 /**
  * Si todavía no hay agentes pero la config global vieja (de un solo agente)
- * tiene datos, crea el "Agente principal" a partir de ella.
+ * tiene reglas reales, crea el "Agente principal" a partir de ella.
+ * La config default vacía no se migra, así una cuenta nueva empieza sin agentes.
  */
 export async function ensureAgentsMigration() {
   const existing = await db.get('SELECT COUNT(*) AS total FROM conversational_agents')
   if (Number(existing?.total) > 0) return
   const legacy = await db.get('SELECT * FROM conversational_agent_config WHERE id = 1')
   if (!legacy) return
+  if (!shouldMigrateLegacyConversationalAgentConfig(legacy)) return
   await db.run(`
     INSERT INTO conversational_agents (
       id, name, enabled, model, position, objective, custom_objective, success_action,
@@ -845,6 +870,157 @@ export async function listConversationalAgents() {
   await ensureAgentsMigration()
   const rows = await db.all('SELECT * FROM conversational_agents ORDER BY position ASC, created_at ASC')
   return rows.map(mapAgentRow)
+}
+
+function toMetricNumber(value) {
+  const number = Number(value)
+  return Number.isFinite(number) ? number : 0
+}
+
+function stateLastActivity(row) {
+  return row?.updated_at || row?.last_reply_at || row?.signal_at || null
+}
+
+function isCompletedAgentState(row) {
+  return row?.status === 'completed' || (Boolean(row?.signal) && row.signal !== 'discarded')
+}
+
+function isDiscardedAgentState(row) {
+  return row?.status === 'discarded' || row?.signal === 'discarded'
+}
+
+function buildEmptyAgentMetric(agent) {
+  return {
+    agentId: agent.id,
+    name: agent.name,
+    enabled: Boolean(agent.enabled),
+    model: agent.model,
+    assignedConversations: 0,
+    completedConversations: 0,
+    pausedConversations: 0,
+    humanTakeovers: 0,
+    skippedConversations: 0,
+    discardedConversations: 0,
+    totalConversations: 0,
+    lastActivityAt: null
+  }
+}
+
+export function buildConversationalAgentMetrics({ agents = [], stateRows = [], eventSummary = {} } = {}) {
+  const metricsByAgent = new Map(agents.map((agent) => [agent.id, buildEmptyAgentMetric(agent)]))
+  const assignedAgentIds = new Set()
+  const totals = {
+    totalAgents: agents.length,
+    activeAgents: agents.filter((agent) => agent.enabled).length,
+    assignedConversations: 0,
+    agentsWithAssignedConversations: 0,
+    completedConversations: 0,
+    pausedConversations: 0,
+    humanTakeovers: 0,
+    skippedConversations: 0,
+    discardedConversations: 0,
+    totalTrackedConversations: 0,
+    totalEvents: toMetricNumber(eventSummary.total_events),
+    successEvents: toMetricNumber(eventSummary.success_events),
+    errorEvents: toMetricNumber(eventSummary.error_events),
+    assignedEvents: toMetricNumber(eventSummary.assigned_events),
+    replyEvents: toMetricNumber(eventSummary.reply_events),
+    successRate: 0,
+    byAgent: []
+  }
+
+  for (const row of stateRows || []) {
+    const agentId = row?.agent_id
+    if (!agentId) continue
+    if (!metricsByAgent.has(agentId)) {
+      metricsByAgent.set(agentId, {
+        ...buildEmptyAgentMetric({
+          id: agentId,
+          name: 'Agente eliminado',
+          enabled: false,
+          model: DEFAULT_CONVERSATIONAL_AGENT_MODEL
+        })
+      })
+    }
+
+    const agentMetric = metricsByAgent.get(agentId)
+    agentMetric.totalConversations += 1
+    totals.totalTrackedConversations += 1
+
+    if (row.status === 'active' && !row.signal) {
+      agentMetric.assignedConversations += 1
+      totals.assignedConversations += 1
+      assignedAgentIds.add(agentId)
+    }
+    if (isCompletedAgentState(row)) {
+      agentMetric.completedConversations += 1
+      totals.completedConversations += 1
+    }
+    if (row.status === 'paused') {
+      agentMetric.pausedConversations += 1
+      totals.pausedConversations += 1
+    }
+    if (row.status === 'human') {
+      agentMetric.humanTakeovers += 1
+      totals.humanTakeovers += 1
+    }
+    if (row.status === 'skipped') {
+      agentMetric.skippedConversations += 1
+      totals.skippedConversations += 1
+    }
+    if (isDiscardedAgentState(row)) {
+      agentMetric.discardedConversations += 1
+      totals.discardedConversations += 1
+    }
+
+    const activity = stateLastActivity(row)
+    if (activity && (!agentMetric.lastActivityAt || activity > agentMetric.lastActivityAt)) {
+      agentMetric.lastActivityAt = activity
+    }
+  }
+
+  totals.agentsWithAssignedConversations = assignedAgentIds.size
+  const closedConversations = totals.completedConversations + totals.discardedConversations + totals.errorEvents
+  totals.successRate = closedConversations > 0
+    ? Math.round((totals.completedConversations / closedConversations) * 100)
+    : 0
+  totals.byAgent = Array.from(metricsByAgent.values())
+    .sort((a, b) => (b.assignedConversations - a.assignedConversations) || (b.completedConversations - a.completedConversations))
+
+  return totals
+}
+
+export async function getConversationalAgentMetrics() {
+  await ensureAgentsMigration()
+  const [agentRows, stateRows, eventSummary] = await Promise.all([
+    db.all('SELECT * FROM conversational_agents ORDER BY position ASC, created_at ASC'),
+    db.all(`
+      SELECT agent_id, status, signal, signal_at, last_reply_at, updated_at
+      FROM conversational_agent_state
+      WHERE agent_id IS NOT NULL AND agent_id <> ''
+    `),
+    db.get(`
+      SELECT
+        COUNT(*) AS total_events,
+        SUM(CASE WHEN event_type = 'signal_set' THEN 1 ELSE 0 END) AS success_events,
+        SUM(CASE WHEN event_type = 'agent_assigned' THEN 1 ELSE 0 END) AS assigned_events,
+        SUM(CASE WHEN event_type = 'reply_sent' THEN 1 ELSE 0 END) AS reply_events,
+        SUM(CASE
+          WHEN event_type = 'error'
+            OR LOWER(event_type) LIKE '%error%'
+            OR LOWER(event_type) LIKE '%failed%'
+            OR LOWER(event_type) LIKE '%failure%'
+          THEN 1 ELSE 0
+        END) AS error_events
+      FROM conversational_agent_events
+    `)
+  ])
+
+  return buildConversationalAgentMetrics({
+    agents: agentRows.map(mapAgentRow),
+    stateRows,
+    eventSummary
+  })
 }
 
 export async function getConversationalAgent(agentId) {

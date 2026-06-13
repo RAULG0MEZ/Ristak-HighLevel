@@ -3315,6 +3315,7 @@ async function initTables() {
     `)
     await db.run('CREATE INDEX IF NOT EXISTS idx_conv_agent_state_signal ON conversational_agent_state(signal, signal_at)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_conv_agent_state_status ON conversational_agent_state(status, updated_at)')
+    await db.run('CREATE INDEX IF NOT EXISTS idx_conv_agent_state_agent_status ON conversational_agent_state(agent_id, status, updated_at)')
 
     // Columnas agregadas al evolucionar el agente conversacional.
     for (const [columnName, columnType] of [
@@ -3343,6 +3344,7 @@ async function initTables() {
       )
     `)
     await db.run('CREATE INDEX IF NOT EXISTS idx_conv_agent_events_contact ON conversational_agent_events(contact_id, created_at)')
+    await db.run('CREATE INDEX IF NOT EXISTS idx_conv_agent_events_type ON conversational_agent_events(event_type, created_at)')
 
     const userOptionalColumns = [
       ['first_name', 'TEXT'],

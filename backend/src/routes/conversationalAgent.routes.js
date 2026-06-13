@@ -8,6 +8,7 @@ import {
   testAgent,
   listEvents,
   listAgents,
+  getMetrics,
   createAgent,
   updateAgent,
   deleteAgent,
@@ -24,6 +25,7 @@ router.use(requireModuleAccess('ai_agent'))
 router.get('/config', getConfig)
 router.post('/config', saveConfig)
 router.get('/agents', listAgents)
+router.get('/metrics', getMetrics)
 router.get('/filter-options', getFilterOptions)
 router.post('/agents', createAgent)
 router.put('/agents/:agentId', updateAgent)

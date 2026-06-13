@@ -10,6 +10,7 @@ import {
   listConversationStates,
   listConversationalAgentEvents,
   listConversationalAgents,
+  getConversationalAgentMetrics,
   createConversationalAgent,
   updateConversationalAgent,
   deleteConversationalAgent,
@@ -144,6 +145,16 @@ export async function listAgents(req, res) {
   } catch (error) {
     logger.error('Error listando agentes conversacionales:', error)
     res.status(500).json({ success: false, error: 'Error al listar los agentes conversacionales' })
+  }
+}
+
+export async function getMetrics(req, res) {
+  try {
+    const metrics = await getConversationalAgentMetrics()
+    res.json({ success: true, data: metrics })
+  } catch (error) {
+    logger.error('Error obteniendo métricas del agente conversacional:', error)
+    res.status(500).json({ success: false, error: 'Error al cargar las métricas del agente' })
   }
 }
 

@@ -2,10 +2,12 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  buildConversationalAgentMetrics,
   getAgentReplyDeliveryPartDelayMs,
   mergeAdvancedClosingContext,
   normalizeAgentReplyDelivery,
-  normalizeConversationalSuccessAction
+  normalizeConversationalSuccessAction,
+  shouldMigrateLegacyConversationalAgentConfig
 } from '../src/services/conversationalAgentService.js'
 import {
   buildReplyPartDelaySchedule,
@@ -44,6 +46,56 @@ test('normaliza acciones redundantes del agente a humano', () => {
   for (const action of ['book_appointment', 'ready_for_human', 'ready_to_buy', 'internal_signal', 'none', '', null]) {
     assert.equal(normalizeConversationalSuccessAction(action), 'ready_for_human')
   }
+})
+
+test('no migra una configuración legacy vacía como agente predeterminado', () => {
+  assert.equal(shouldMigrateLegacyConversationalAgentConfig({
+    enabled: 1,
+    model: 'gpt-5.4-mini',
+    objective: 'citas',
+    success_action: 'ready_for_human',
+    allow_emojis: 0,
+    hide_attended: 0,
+    hide_attended_notifications: 0
+  }), false)
+
+  assert.equal(shouldMigrateLegacyConversationalAgentConfig({
+    objective: 'ventas',
+    extra_instructions: 'Pregunta presupuesto antes de pasar al equipo.'
+  }), true)
+})
+
+test('calcula métricas del agente conversacional por estado y errores', () => {
+  const metrics = buildConversationalAgentMetrics({
+    agents: [
+      { id: 'agent_1', name: 'Ventas', enabled: true, model: 'gpt-5.4-mini' },
+      { id: 'agent_2', name: 'Soporte', enabled: false, model: 'gpt-5.4-mini' }
+    ],
+    stateRows: [
+      { agent_id: 'agent_1', status: 'active', signal: null, updated_at: '2026-06-13T10:00:00Z' },
+      { agent_id: 'agent_1', status: 'completed', signal: 'ready_for_human', updated_at: '2026-06-13T10:05:00Z' },
+      { agent_id: 'agent_2', status: 'discarded', signal: 'discarded', updated_at: '2026-06-13T10:10:00Z' },
+      { agent_id: 'agent_2', status: 'human', signal: null, updated_at: '2026-06-13T10:15:00Z' }
+    ],
+    eventSummary: {
+      total_events: 8,
+      success_events: 1,
+      assigned_events: 2,
+      reply_events: 3,
+      error_events: 1
+    }
+  })
+
+  assert.equal(metrics.totalAgents, 2)
+  assert.equal(metrics.activeAgents, 1)
+  assert.equal(metrics.assignedConversations, 1)
+  assert.equal(metrics.agentsWithAssignedConversations, 1)
+  assert.equal(metrics.completedConversations, 1)
+  assert.equal(metrics.discardedConversations, 1)
+  assert.equal(metrics.humanTakeovers, 1)
+  assert.equal(metrics.errorEvents, 1)
+  assert.equal(metrics.successRate, 33)
+  assert.equal(metrics.byAgent.find((agent) => agent.agentId === 'agent_1')?.completedConversations, 1)
 })
 
 test('calcula una pausa entre partes dentro del rango configurado', () => {
