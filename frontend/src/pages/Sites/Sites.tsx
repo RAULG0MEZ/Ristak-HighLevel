@@ -1828,6 +1828,7 @@ const getBlockCanvasStyle = (block: SiteBlock): React.CSSProperties => {
   const buttonTextDecoration = getTextDecorationTokens(settings.buttonTextDecoration).join(' ')
   const textTransform = getTextTransformValue(settings.textTransform)
   const buttonTextTransform = getTextTransformValue(settings.buttonTextTransform)
+  const textListStyle = getTextListStyleValue(settings.textListStyle)
   const fieldBg = getSettingString(settings, 'fieldBg')
   const fieldBorder = getSettingString(settings, 'fieldBorder')
   const blockBorder = getSettingString(settings, 'blockBorderColor')
@@ -1872,6 +1873,7 @@ const getBlockCanvasStyle = (block: SiteBlock): React.CSSProperties => {
   if (settings.fontStyle === 'italic') style['--rstk-block-font-style'] = 'italic'
   if (textDecoration) style['--rstk-block-text-decoration'] = textDecoration
   if (textTransform) style['--rstk-block-text-transform'] = textTransform
+  if (textListStyle && block.blockType === 'text') style['--rstk-text-list-style'] = textListStyle
   if (settings.lineHeight !== undefined && getSettingString(settings, 'lineHeight')) {
     style['--rstk-block-line-height'] = `${getSettingNumber(settings, 'lineHeight', 1.5, 0.8, 2.6)}`
   }
@@ -1980,6 +1982,7 @@ const getBlockStyleClassName = (block: SiteBlock, extra = '') => {
     getTextDecorationTokens(settings.textDecoration).length ? 'rstkUnderlineOverride' : '',
     getTextTransformValue(settings.textTransform) ? 'rstkTextTransformOverride' : '',
     settings.lineHeight !== undefined && getSettingString(settings, 'lineHeight') ? 'rstkLineHeightOverride' : '',
+    block.blockType === 'text' && getTextListStyleValue(settings.textListStyle) ? 'rstkListStyleOverride' : '',
     settings.textStrokeWidth !== undefined ? 'rstkStrokeOverride' : '',
     extra
   ].filter(Boolean).join(' ')
@@ -15085,6 +15088,11 @@ const getTextTransformValue = (value: unknown) => {
   return raw === 'uppercase' || raw === 'capitalize' ? raw : ''
 }
 
+const getTextListStyleValue = (value: unknown) => {
+  const raw = String(value || '')
+  return raw === 'disc' || raw === 'decimal' ? raw : ''
+}
+
 const TypographyFormatInspector: React.FC<{
   target: TypographyTarget
   settings: Record<string, unknown>
@@ -15095,6 +15103,7 @@ const TypographyFormatInspector: React.FC<{
   colorLabel: string
   colorValue: string
   allowGradient?: boolean
+  supportsList?: boolean
   onPatchSettings: (patch: Record<string, unknown>) => void
   onSave: () => void
 }> = ({
@@ -15107,6 +15116,7 @@ const TypographyFormatInspector: React.FC<{
   colorLabel,
   colorValue,
   allowGradient = true,
+  supportsList = false,
   onPatchSettings,
   onSave
 }) => {
@@ -15232,7 +15242,7 @@ const TypographyFormatInspector: React.FC<{
         })}
       </div>
 
-      {!isButton && (
+      {supportsList && (
         <div className={styles.typographyIndentGrid} aria-label="Sangria">
           <button type="button" disabled><List size={14} /></button>
           <button type="button" disabled><ListOrdered size={14} /></button>
@@ -15253,7 +15263,7 @@ const TypographyFormatInspector: React.FC<{
         </CustomSelect>
       </label>
 
-      {!isButton && (
+      {supportsList && (
         <label className={styles.typographySelectRow}>
           <span>Vinetas y listas</span>
           <CustomSelect
@@ -15308,6 +15318,7 @@ const InlineBlockStyleControls: React.FC<{
             alignOptions={horizontalAlignOptions}
             colorLabel="Color de texto"
             colorValue={blockTextPaint}
+            supportsList={block.blockType === 'text'}
             onPatchSettings={onPatchSettings}
             onSave={onSave}
           />
