@@ -1127,27 +1127,26 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 40px;
-  margin-bottom: 12px;
-  padding: 0;
+  min-height: 44px;
+  margin-bottom: 14px;
+  padding: 0 0 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
 }
 
 .agentStickyActions {
-  position: fixed;
-  top: 96px;
-  right: 28px;
-  z-index: 120;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
   flex-wrap: wrap;
-  padding: 8px;
+  padding: 4px;
   border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--color-background-secondary) 96%, transparent);
-  box-shadow: 0 16px 36px -24px rgba(15, 23, 42, 0.5);
-  backdrop-filter: blur(12px);
+  background: rgba(248, 250, 252, 0.72);
+}
+
+.agentStickyActions button {
+  min-width: 112px;
 }
 
 .agentDetailLayout {
@@ -1168,15 +1167,33 @@
   min-width: 0;
 }
 
+.agentTestColumn {
+  position: fixed;
+  top: 230px;
+  right: max(28px, calc((100vw - 1280px) / 2 + 68px));
+  bottom: 20px;
+  z-index: 30;
+  width: min(400px, calc(100vw - 56px));
+}
+
 .agentStatusPill {
   display: inline-flex;
   align-items: center;
-  min-height: 28px;
-  padding: 0 10px;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 12px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 760;
   white-space: nowrap;
+}
+
+.agentStatusPill::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+  content: '';
 }
 
 .agentStatusPillActive {
@@ -1206,11 +1223,11 @@
 }
 
 .agentTestPanel {
-  position: sticky;
-  top: 92px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  height: 100%;
+  max-height: none;
   min-width: 0;
   padding: 14px;
   border: 1px solid rgba(148, 163, 184, 0.16);
@@ -1230,7 +1247,17 @@
   }
 
   .agentTestPanel {
+    height: auto;
+    max-height: none;
+  }
+
+  .agentTestColumn {
     position: static;
+    width: auto;
+  }
+
+  .agentTestPanel .testChatBox {
+    min-height: 320px;
   }
 }
 
@@ -1259,15 +1286,12 @@
   }
 
   .agentStickyActions {
-    top: auto;
-    right: 14px;
-    bottom: 14px;
-    left: 14px;
-    justify-content: stretch;
+    justify-content: space-between;
+    width: 100%;
   }
 
   .agentStickyActions button {
-    flex: 1 1 0;
+    flex: 1 1 auto;
   }
 
   .agentCardActions {
@@ -1403,8 +1427,9 @@
   background: rgba(148, 163, 184, 0.08);
 }
 
-.conversationAgentCard {
-  overflow: visible;
+.conversationAgentCard,
+.conversationAgentCard:global([data-ristak-card]) {
+  overflow: visible !important;
 }
 
 .conversationAgentCard .actionTextarea {
@@ -1687,8 +1712,9 @@
 }
 
 .agentTestPanel .testChatBox {
-  height: clamp(260px, calc(100vh - 360px), 360px);
-  min-height: 0;
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 220px;
   max-height: none;
 }
 
