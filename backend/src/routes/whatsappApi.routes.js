@@ -9,6 +9,7 @@ import {
   disconnectWhatsAppQrView,
   getWhatsAppApiConnectionStatus,
   getMetaDirectConnectUrlView,
+  getMetaDirectSetupPrefillView,
   getWhatsAppApiTemplatesView,
   getWhatsAppQrView,
   previewWhatsAppApiPhoneNumbersView,
@@ -35,6 +36,7 @@ import { requireAuth } from '../middleware/authMiddleware.js'
 const router = express.Router()
 
 router.post('/meta/connect/complete', completeMetaDirectConnectionView)
+router.post('/meta/setup-prefill', getMetaDirectSetupPrefillView)
 router.post('/meta/webhook-relay', handleMetaDirectWebhookRelayView)
 
 router.use(requireAuth)
