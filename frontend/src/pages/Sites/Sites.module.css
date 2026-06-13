@@ -10453,8 +10453,8 @@
 }
 
 .editorSettingsButtonWarning {
-  border-color: rgba(249, 115, 22, 0.34);
-  background: rgba(249, 115, 22, 0.1);
+  border-color: color-mix(in srgb, var(--color-status-warning) 34%, var(--design-control-border) 66%);
+  background: color-mix(in srgb, var(--color-warning-light) 72%, var(--design-control-bg) 28%);
 }
 
 .editorSettingsButton:disabled {
@@ -10463,44 +10463,49 @@
 }
 
 .editorSettingsBadge {
-  min-width: 20px;
-  height: 20px;
+  min-width: 19px;
+  height: 19px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  background: rgba(249, 115, 22, 0.14);
-  color: #ea580c;
+  background: var(--color-warning-light);
+  color: var(--color-warning-dark);
   padding: 0 6px;
-  font-size: 0.7rem;
-  font-weight: 900;
+  font-size: 11px;
+  font-weight: var(--font-weight-bold, 700);
 }
 
 .editorSettingsPanel {
   position: absolute;
-  top: calc(100% + 9px);
+  top: calc(100% + 10px);
   left: 0;
   z-index: 3600;
-  width: min(440px, calc(100vw - 32px));
+  width: min(520px, calc(100vw - 32px));
   max-height: min(720px, calc(100dvh - 112px));
   display: grid;
   gap: 0;
   overflow: auto;
   border: 1px solid var(--ristak-dropdown-border, rgba(148, 163, 184, 0.24));
-  border-radius: var(--radius-md, 8px);
-  background: var(--ristak-dropdown-bg, var(--color-background-primary));
+  border-radius: var(--design-control-radius, var(--radius-md));
+  background: var(--color-background-primary);
   color: var(--color-text-primary);
-  padding: 8px 12px;
-  box-shadow: var(--ristak-dropdown-panel-shadow, 0 18px 46px -30px rgba(15, 23, 42, 0.46));
+  padding: 12px 14px;
+  font-family: var(--font-app, inherit);
+  letter-spacing: 0;
+  box-shadow: var(--ristak-dropdown-panel-shadow, 0 10px 24px -20px rgba(15, 23, 42, 0.45));
   scrollbar-gutter: stable;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 .editorSettingsSection {
   min-width: 0;
   display: grid;
-  gap: 10px;
-  padding: 13px 0;
-  border-top: 1px solid color-mix(in srgb, var(--color-border-subtle, rgba(148, 163, 184, 0.2)) 74%, transparent);
+  gap: 12px;
+  padding: 14px 0;
+  border-top: 1px solid color-mix(in srgb, var(--color-border-subtle, rgba(148, 163, 184, 0.2)) 82%, transparent);
 }
 
 .editorSettingsSection:first-child {
@@ -10510,7 +10515,7 @@
 .editorSettingsSectionHeader {
   min-width: 0;
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) auto;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
 }
@@ -10525,8 +10530,8 @@
   min-width: 0;
   overflow: hidden;
   color: var(--color-text-primary);
-  font-size: 0.82rem;
-  font-weight: 850;
+  font-size: 13px;
+  font-weight: var(--font-weight-bold, 700);
   line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -10536,26 +10541,26 @@
   min-width: 0;
   overflow: hidden;
   color: var(--color-text-tertiary);
-  font-size: 0.7rem;
-  font-weight: 720;
+  font-size: 12px;
+  font-weight: var(--font-weight-semibold, 600);
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .editorSettingsSectionHeader > button {
-  height: 32px;
+  height: 34px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: var(--radius-sm, 7px);
-  background: var(--color-background-secondary);
+  border: 1px solid var(--design-control-border);
+  border-radius: var(--design-control-radius);
+  background: var(--design-control-bg);
   color: var(--color-text-primary);
-  padding: 0 10px;
+  padding: 0 12px;
   font: inherit;
-  font-size: 0.74rem;
-  font-weight: 820;
+  font-size: 12px;
+  font-weight: var(--font-weight-bold, 700);
   cursor: pointer;
 }
 
@@ -10566,41 +10571,41 @@
 
 .editorSettingsSectionIcon,
 .editorSettingsMetaLogo {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-sm, 7px);
-  background: color-mix(in srgb, var(--color-background-tertiary) 82%, var(--color-primary) 18%);
+  border-radius: var(--design-control-radius);
+  background: color-mix(in srgb, var(--color-background-tertiary) 86%, var(--color-primary) 14%);
   color: var(--color-text-secondary);
 }
 
 .editorSettingsMetaLogo {
-  background: #1877f2;
+  background: color-mix(in srgb, #0866ff 88%, var(--color-background-primary) 12%);
   color: #ffffff;
 }
 
 .editorSettingsRouteField {
   min-width: 0;
-  height: 38px;
+  height: 42px;
   display: grid;
-  grid-template-columns: minmax(116px, max-content) minmax(0, 1fr);
+  grid-template-columns: minmax(190px, 1fr) minmax(132px, 0.72fr);
   align-items: center;
   overflow: hidden;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: var(--radius-md, 8px);
-  background: var(--color-background-secondary);
+  border: 1px solid var(--design-control-border);
+  border-radius: var(--design-control-radius);
+  background: var(--design-control-bg);
 }
 
 .editorSettingsRouteField > span {
   min-width: 0;
   overflow: hidden;
-  border-right: 1px solid rgba(148, 163, 184, 0.18);
+  border-right: 1px solid color-mix(in srgb, var(--design-control-border) 82%, transparent);
   color: var(--color-text-tertiary);
-  padding: 0 10px;
-  font-size: 0.74rem;
-  font-weight: 800;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: var(--font-weight-semibold, 600);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -10612,10 +10617,10 @@
   border: 0;
   background: transparent;
   color: var(--color-text-primary);
-  padding: 0 10px;
+  padding: 0 12px;
   font: inherit;
-  font-size: 0.82rem;
-  font-weight: 780;
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold, 600);
   outline: none;
 }
 
@@ -10630,8 +10635,8 @@
   align-items: center;
   gap: 7px;
   color: var(--color-text-secondary);
-  font-size: 0.74rem;
-  font-weight: 760;
+  font-size: 12px;
+  font-weight: var(--font-weight-semibold, 600);
   line-height: 1.25;
 }
 
@@ -10645,49 +10650,49 @@
 .editorSettingsMetaControls {
   min-width: 0;
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
-.editorSettingsMetaStatus {
+.editorSettingsMetaRow {
   min-width: 0;
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) auto;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: var(--radius-md, 8px);
-  background: var(--color-background-secondary);
-  padding: 8px 10px;
+  border: 1px solid var(--design-control-border);
+  border-radius: var(--design-control-radius);
+  background: var(--design-control-bg);
+  padding: 9px 10px;
 }
 
-.editorSettingsMetaStatusActive {
+.editorSettingsMetaRowActive {
   border-color: rgba(var(--color-primary-rgb), 0.26);
   background: rgba(var(--color-primary-rgb), 0.08);
 }
 
-.editorSettingsMetaStatus > div {
+.editorSettingsMetaRow > div {
   min-width: 0;
   display: grid;
   gap: 3px;
 }
 
-.editorSettingsMetaStatus strong {
+.editorSettingsMetaRow strong {
   min-width: 0;
   overflow: hidden;
   color: var(--color-text-primary);
-  font-size: 0.8rem;
-  font-weight: 850;
+  font-size: 13px;
+  font-weight: var(--font-weight-bold, 700);
   line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.editorSettingsMetaStatus small {
+.editorSettingsMetaRow small {
   min-width: 0;
   overflow: hidden;
   color: var(--color-text-tertiary);
-  font-size: 0.68rem;
-  font-weight: 720;
+  font-size: 12px;
+  font-weight: var(--font-weight-semibold, 600);
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -10697,7 +10702,7 @@
   min-width: 0;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 9px;
+  gap: 10px;
 }
 
 .editorSettingsField {
@@ -10708,8 +10713,8 @@
 
 .editorSettingsField > span {
   color: var(--color-text-tertiary);
-  font-size: 0.62rem;
-  font-weight: 850;
+  font-size: 11px;
+  font-weight: var(--font-weight-bold, 700);
   letter-spacing: 0.03em;
   line-height: 1;
   text-transform: uppercase;
@@ -10717,15 +10722,15 @@
 
 .editorSettingsField [data-ristak-dropdown-trigger] {
   width: 100%;
-  height: 34px;
-  min-height: 34px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: var(--radius-sm, 7px);
-  background: var(--color-background-secondary);
+  height: 40px;
+  min-height: 40px;
+  border: 1px solid var(--design-control-border);
+  border-radius: var(--design-control-radius);
+  background: var(--design-control-bg);
   color: var(--color-text-primary);
-  padding: 0 9px;
-  font-size: 0.76rem;
-  font-weight: 760;
+  padding: 0 11px;
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold, 600);
 }
 
 .editorSettingsField [data-ristak-dropdown-trigger] > span {
@@ -10737,19 +10742,19 @@
 
 .editorSettingsInlineToggle {
   width: 100%;
-  min-height: 34px;
+  min-height: 38px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: var(--radius-sm, 7px);
-  background: var(--color-background-secondary);
+  border: 1px solid var(--design-control-border);
+  border-radius: var(--design-control-radius);
+  background: var(--design-control-bg);
   color: var(--color-text-secondary);
-  padding: 0 10px;
+  padding: 0 12px;
   font: inherit;
-  font-size: 0.76rem;
-  font-weight: 820;
+  font-size: 13px;
+  font-weight: var(--font-weight-bold, 700);
   cursor: pointer;
 }
 

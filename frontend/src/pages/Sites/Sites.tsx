@@ -13186,13 +13186,13 @@ const MetaPageConversionSettingsPanel: React.FC<{
 
   return (
     <div className={styles.editorSettingsMetaControls}>
-      <div className={`${styles.editorSettingsMetaStatus} ${metaEnabled ? styles.editorSettingsMetaStatusActive : ''}`}>
+      <div className={`${styles.editorSettingsMetaRow} ${metaEnabled ? styles.editorSettingsMetaRowActive : ''}`}>
         <span className={styles.editorSettingsMetaLogo} aria-hidden="true">
           <MetaBrandMark size={18} />
         </span>
         <div>
-          <strong>{metaEnabled ? 'Meta encendido' : 'Meta apagado'}</strong>
-          <small>{metaEnabled ? 'Pixel y CAPI activos para esta pagina' : 'Activa Meta para disparar conversiones'}</small>
+          <strong>Meta Pixel + CAPI</strong>
+          <small>{metaEnabled ? 'Encendido para visitas y conversiones' : 'Apagado para esta pagina'}</small>
         </div>
         <label className={styles.metaSwitch}>
           <input
@@ -13323,7 +13323,10 @@ const EditorSettingsDropdown: React.FC<{
     if (!open) return
 
     const handleMouseDown = (event: MouseEvent) => {
-      if (!dropdownRef.current?.contains(event.target as Node)) setOpen(false)
+      const target = event.target as Node
+      if (dropdownRef.current?.contains(target)) return
+      if (target instanceof Element && target.closest('[data-ristak-dropdown-panel]')) return
+      setOpen(false)
     }
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setOpen(false)
@@ -13363,13 +13366,13 @@ const EditorSettingsDropdown: React.FC<{
       </button>
 
       {open && (
-        <div className={styles.editorSettingsPanel}>
+        <div className={styles.editorSettingsPanel} data-ristak-dropdown-panel>
           <section className={styles.editorSettingsSection}>
             <div className={styles.editorSettingsSectionHeader}>
               <span className={styles.editorSettingsSectionIcon}><Link2 size={15} /></span>
               <div>
                 <strong>Ruta publica</strong>
-                <small>{routePreview}</small>
+                <small>Edita la direccion de esta pagina</small>
               </div>
             </div>
             <label className={styles.editorSettingsRouteField}>
@@ -13405,15 +13408,6 @@ const EditorSettingsDropdown: React.FC<{
           )}
 
           <section className={styles.editorSettingsSection}>
-            <div className={styles.editorSettingsSectionHeader}>
-              <span className={styles.editorSettingsMetaLogo} aria-hidden="true">
-                <MetaBrandMark size={16} />
-              </span>
-              <div>
-                <strong>Meta Pixel + CAPI</strong>
-                <small>{metaPixelConnected ? 'Conversiones de esta pagina' : 'Conecta Meta en Configuracion'}</small>
-              </div>
-            </div>
             {metaPixelConnected && isLanding(site) && activePage ? (
               <MetaPageConversionSettingsPanel
                 site={site}
@@ -13425,7 +13419,15 @@ const EditorSettingsDropdown: React.FC<{
                 onSaveSite={onSaveSite}
               />
             ) : (
-              <div className={styles.editorSettingsEmptyLine}>Meta no esta disponible para esta vista.</div>
+              <div className={styles.editorSettingsMetaRow}>
+                <span className={styles.editorSettingsMetaLogo} aria-hidden="true">
+                  <MetaBrandMark size={18} />
+                </span>
+                <div>
+                  <strong>Meta Pixel + CAPI</strong>
+                  <small>{metaPixelConnected ? 'No disponible para esta vista' : 'Conecta Meta en Configuracion'}</small>
+                </div>
+              </div>
             )}
           </section>
 
