@@ -7290,7 +7290,7 @@
   align-content: start;
   gap: 10px;
   min-height: 0;
-  max-height: min(70dvh, 620px);
+  max-height: min(72dvh, 650px);
   padding: 0 2px 8px;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -7338,10 +7338,21 @@
 .agentMasterToggle,
 .agentCompactToggle {
   display: grid !important;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 12px;
   min-width: 0;
+  min-height: 64px;
+  padding: 11px 12px;
+  border: 1px solid var(--phone-chat-border);
+  border-radius: 12px;
+  background: var(--phone-chat-surface);
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.agentCompactToggleActive {
+  border-color: rgba(var(--phone-chat-primary-rgb), 0.34);
+  background: rgba(var(--phone-chat-primary-rgb), 0.08);
 }
 
 .agentMasterToggle > span,
@@ -7372,6 +7383,47 @@
 .agentMasterToggle input,
 .agentCompactToggle input {
   accent-color: var(--phone-chat-accent);
+}
+
+.agentMenuPrimaryRow {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 64px;
+  padding: 10px;
+  border: 0;
+  border-radius: 12px;
+  color: var(--phone-chat-text);
+  background: var(--phone-chat-surface);
+  text-align: left;
+}
+
+.agentMenuPrimaryRow > span:nth-child(2) {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.agentMenuPrimaryRow strong,
+.agentMenuPrimaryRow small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agentMenuPrimaryRow strong {
+  color: var(--phone-chat-text);
+  font-size: 14.5px;
+  font-weight: 850;
+  line-height: 1.12;
+}
+
+.agentMenuPrimaryRow small {
+  color: var(--phone-chat-muted);
+  font-size: 12.5px;
+  font-weight: 580;
+  line-height: 1.3;
 }
 
 .agentPickerList {
@@ -7526,6 +7578,151 @@
   border-radius: 10px;
   font-size: 14px;
   font-weight: 780;
+}
+
+.agentListStack {
+  display: grid;
+  gap: 9px;
+}
+
+.agentListCard {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--phone-chat-border);
+  border-radius: 14px;
+  background: var(--phone-chat-surface);
+}
+
+.agentListCardSelected {
+  border-color: rgba(var(--phone-chat-primary-rgb), 0.34);
+  background: rgba(var(--phone-chat-primary-rgb), 0.07);
+}
+
+.agentListSelect {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  color: var(--phone-chat-text);
+  background: transparent;
+  text-align: left;
+}
+
+.agentListMeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+
+.agentListMeta span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  max-width: 100%;
+  padding: 0 8px;
+  border-radius: 999px;
+  color: var(--phone-chat-muted);
+  background: rgba(var(--phone-chat-primary-rgb), 0.08);
+  font-size: 11.5px;
+  font-weight: 720;
+  line-height: 1.1;
+}
+
+.agentListActions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.agentListToggle,
+.agentListMore,
+.agentPublishButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 820;
+}
+
+.agentListToggle {
+  border: 1px solid var(--phone-chat-border);
+  color: var(--phone-chat-text);
+  background: var(--phone-chat-surface-soft);
+}
+
+.agentListMore,
+.agentPublishButton {
+  border: 0;
+  color: var(--phone-chat-text-on-primary);
+  background: var(--phone-chat-primary);
+}
+
+.agentListToggle:disabled,
+.agentPublishButton:disabled {
+  opacity: 0.55;
+}
+
+.agentDetailHero {
+  gap: 12px;
+}
+
+.agentDetailHeroTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.agentDetailStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--phone-chat-border);
+  border-radius: 999px;
+  color: var(--phone-chat-muted);
+  background: var(--phone-chat-surface);
+  font-size: 12px;
+  font-weight: 780;
+}
+
+.agentDetailStatus::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+  content: '';
+}
+
+.agentDetailStatusOn {
+  border-color: rgba(16, 185, 129, 0.28);
+  color: #047857;
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.agentNumberGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  min-width: 0;
+}
+
+.agentNumberGrid > * {
+  min-width: 0;
 }
 
 .agentMenuBack {

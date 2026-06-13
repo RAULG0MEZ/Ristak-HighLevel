@@ -62,7 +62,7 @@ import { AppointmentModal, Icon, Modal, RecordPaymentModal } from '@/components/
 import { PhoneEcosystemNav } from '@/components/phone/PhoneEcosystemNav'
 import { PhonePageTransition } from '@/components/phone/PhonePageTransition'
 import { PhoneSelect } from '@/components/phone/PhoneSelect'
-import { PhoneSheet } from '@/components/phone/ui'
+import { PhoneSheet, PhoneTextArea, PhoneTextField } from '@/components/phone/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useLabels } from '@/contexts/LabelsContext'
 import { useNotification } from '@/contexts/NotificationContext'
@@ -73,14 +73,21 @@ import {
   CONVERSATIONAL_AGENT_LIVE_CACHE_EVENT,
   conversationalAgentService,
   readConversationalAgentLiveCache,
+  type AgentReplyDeliveryConfig,
+  type AgentReplyDeliveryMode,
+  type AgentResponseDelayConfig,
+  type AgentResponseDelayMode,
+  type AgentResponseDelayUnit,
   type ConversationalAgentLiveCache,
   type ConversationAgentState,
   type ConversationStateAction,
   type ConversationalAgentConfig,
   type ConversationalAgentDef,
+  type ConversationalAgentDefInput,
   type ConversationalObjective,
   type ConversationalSuccessAction
 } from '@/services/conversationalAgentService'
+import { DEFAULT_AI_MODEL, aiModelOptions, getKnownAIModel } from '@/constants/aiModels'
 import apiClient from '@/services/apiClient'
 import { calendarsService, type Calendar, type CalendarEvent } from '@/services/calendarsService'
 import { contactsService, type JourneyEvent } from '@/services/contactsService'
@@ -231,7 +238,7 @@ type MessageAudioRate = typeof MESSAGE_AUDIO_RATE_OPTIONS[number]
 type PaymentMode = 'single' | 'partial'
 type ActionSheet = 'attachments' | 'templates' | 'clabe' | 'payment' | 'appointment' | 'settings' | 'newChat' | 'chatMore' | 'schedule' | 'agentMenu' | null
 type ChatMoreMode = 'default' | 'agentControls'
-type AgentMenuSection = 'menu' | 'ready_human'
+type AgentMenuSection = 'menu' | 'agents' | 'agent_detail' | 'ready_human'
 type ChatFilter = 'all' | 'agent' | 'unread' | 'appointments' | 'customers' | 'leads'
 type TemplateMode = 'choice' | 'send' | 'create'
 type ChatSettingsSection = 'appearance' | 'templates' | 'numbers' | 'notifications' | 'agent' | 'chats' | 'display' | null
@@ -248,6 +255,76 @@ type MessageActionMenuAlign = 'start' | 'end'
 type SendMessageOptions = {
   textOverride?: string
   preserveComposer?: boolean
+}
+
+const DEFAULT_PHONE_AGENT_RESPONSE_DELAY: AgentResponseDelayConfig = {
+  mode: 'none',
+  fixedValue: 10,
+  fixedUnit: 'seconds',
+  minValue: 1,
+  maxValue: 10,
+  rangeUnit: 'minutes'
+}
+
+const DEFAULT_PHONE_AGENT_REPLY_DELIVERY: AgentReplyDeliveryConfig = {
+  mode: 'single',
+  splitMessagesEnabled: false,
+  minMessageLengthToSplit: 120,
+  maxBubbles: 5,
+  minBubbleLength: 20,
+  maxBubbleLength: 350,
+  targetChars: 350,
+  randomizeSplitting: true,
+  delayBetweenBubblesEnabled: true,
+  minDelaySeconds: 2,
+  maxDelaySeconds: 7
+}
+
+const PHONE_AGENT_RESPONSE_DELAY_MODE_OPTIONS: Array<{ value: AgentResponseDelayMode; label: string; description: string }> = [
+  { value: 'none', label: 'No esperar', description: 'Responde en cuanto termina de preparar el mensaje.' },
+  { value: 'fixed', label: 'Tiempo fijo', description: 'Siempre espera el mismo tiempo antes de responder.' },
+  { value: 'random', label: 'Rango aleatorio', description: 'Espera un rango para sentirse más natural.' }
+]
+
+const PHONE_AGENT_RESPONSE_DELAY_UNIT_OPTIONS: Array<{ value: AgentResponseDelayUnit; label: string }> = [
+  { value: 'seconds', label: 'Segundos' },
+  { value: 'minutes', label: 'Minutos' }
+]
+
+function getPhoneAgentResponseDelay(agent: ConversationalAgentDef): AgentResponseDelayConfig {
+  return {
+    ...DEFAULT_PHONE_AGENT_RESPONSE_DELAY,
+    ...((agent.responseDelay || {}) as Partial<AgentResponseDelayConfig>)
+  }
+}
+
+function getPhoneAgentReplyDelivery(agent: ConversationalAgentDef): AgentReplyDeliveryConfig {
+  return {
+    ...DEFAULT_PHONE_AGENT_REPLY_DELIVERY,
+    ...((agent.replyDelivery || {}) as Partial<AgentReplyDeliveryConfig>)
+  }
+}
+
+function getPhoneDelayUnitLabel(unit: AgentResponseDelayUnit, value: number) {
+  if (unit === 'minutes') return Number(value) === 1 ? 'minuto' : 'minutos'
+  return Number(value) === 1 ? 'segundo' : 'segundos'
+}
+
+function getPhoneResponseDelaySummary(delay: AgentResponseDelayConfig) {
+  if (delay.mode === 'fixed') {
+    return `${delay.fixedValue} ${getPhoneDelayUnitLabel(delay.fixedUnit, delay.fixedValue)}`
+  }
+  if (delay.mode === 'random') {
+    return `${delay.minValue} a ${delay.maxValue} ${getPhoneDelayUnitLabel(delay.rangeUnit, delay.maxValue)}`
+  }
+  return 'Sin espera'
+}
+
+function getPhoneReplyDeliverySummary(delivery: AgentReplyDeliveryConfig) {
+  if (delivery.splitMessagesEnabled || delivery.mode === 'split') {
+    return `${delivery.maxBubbles} globos, pausas ${delivery.delayBetweenBubblesEnabled ? 'activas' : 'apagadas'}`
+  }
+  return 'Un solo mensaje'
 }
 
 type SchedulePeriod = 'AM' | 'PM'
@@ -3610,30 +3687,17 @@ export const PhoneChat: React.FC = () => {
     return () => window.removeEventListener(CONVERSATIONAL_AGENT_LIVE_CACHE_EVENT, handleAgentLiveCache)
   }, [applyAgentLiveCache])
 
-  const saveAgentConfigPatch = useCallback(async (patch: Partial<{
-    enabled: boolean
-    hideAttended: boolean
-    hideAttendedNotifications: boolean
-  }>) => {
-    setAgentConfigSaving(true)
-    try {
-      const next = await conversationalAgentService.saveConfig(patch)
-      setAgentConfig(next)
-    } catch (error: any) {
-      showToast('error', 'Agente conversacional', error?.message || 'No se pudo guardar el cambio')
-    } finally {
-      setAgentConfigSaving(false)
-    }
-  }, [showToast])
+  const updateAgentDraft = useCallback((agentId: string, patch: ConversationalAgentDefInput) => {
+    setAgentDefs((current) => current.map((agent) => (
+      agent.id === agentId
+        ? { ...agent, ...patch } as ConversationalAgentDef
+        : agent
+    )))
+  }, [])
 
-  const saveAgentPatch = useCallback(async (agentId: string, patch: Partial<{
-    enabled: boolean
-    objective: ConversationalObjective
-    successAction: ConversationalSuccessAction
-    hideAttended: boolean
-    hideAttendedNotifications: boolean
-  }>) => {
+  const saveAgentPatch = useCallback(async (agentId: string, patch: ConversationalAgentDefInput) => {
     if (!agentId) return
+    updateAgentDraft(agentId, patch)
     setAgentConfigSaving(true)
     try {
       const next = await conversationalAgentService.updateAgent(agentId, patch)
@@ -3643,7 +3707,7 @@ export const PhoneChat: React.FC = () => {
     } finally {
       setAgentConfigSaving(false)
     }
-  }, [showToast])
+  }, [showToast, updateAgentDraft])
 
   const handleAgentStateAction = useCallback(async (contactId: string, action: ConversationStateAction, successMessage: string) => {
     try {
@@ -10614,156 +10678,525 @@ export const PhoneChat: React.FC = () => {
     const selectedAgentActions = selectedAgentDef
       ? agentActionsByObjective[selectedAgentDef.objective] || agentActionsByObjective.custom
       : []
+    const selectedObjectiveLabel = selectedAgentDef
+      ? agentObjectiveOptions.find((option) => option.value === selectedAgentDef.objective)?.label || 'Objetivo'
+      : 'Sin agente'
+    const selectedAgentModelValue = selectedAgentDef ? getKnownAIModel(selectedAgentDef.model || DEFAULT_AI_MODEL) : DEFAULT_AI_MODEL
+    const responseDelay = selectedAgentDef ? getPhoneAgentResponseDelay(selectedAgentDef) : DEFAULT_PHONE_AGENT_RESPONSE_DELAY
+    const replyDelivery = selectedAgentDef ? getPhoneAgentReplyDelivery(selectedAgentDef) : DEFAULT_PHONE_AGENT_REPLY_DELIVERY
+
+    const saveSelectedAgentPatch = (patch: ConversationalAgentDefInput) => {
+      if (!selectedAgentDef) return
+      void saveAgentPatch(selectedAgentDef.id, patch)
+    }
+
+    const updateResponseDelay = (patch: Partial<AgentResponseDelayConfig>) => {
+      saveSelectedAgentPatch({ responseDelay: { ...responseDelay, ...patch } })
+    }
+
+    const updateReplyDelivery = (patch: Partial<AgentReplyDeliveryConfig>) => {
+      saveSelectedAgentPatch({ replyDelivery: { ...replyDelivery, ...patch } })
+    }
+
+    const renderAgentOrderControls = (agent: ConversationalAgentDef) => (
+      <section className={styles.agentMenuSection} aria-label="Orden del chat">
+        <div className={styles.agentMenuSectionHeader}>
+          <span>Orden del chat</span>
+          <small>{agent.name || 'Agente seleccionado'}</small>
+        </div>
+        <label className={`${styles.agentCompactToggle} ${agent.hideAttended ? styles.agentCompactToggleActive : ''}`}>
+          <input
+            type="checkbox"
+            checked={Boolean(agent.hideAttended)}
+            disabled={agentConfigSaving}
+            onChange={(event) => saveAgentPatch(agent.id, { hideAttended: event.target.checked })}
+          />
+          <span>
+            <strong>Ocultar atendidas</strong>
+            <small>Oculta conversaciones que este agente esté atendiendo.</small>
+          </span>
+        </label>
+
+        <label className={`${styles.agentCompactToggle} ${agent.hideAttendedNotifications ? styles.agentCompactToggleActive : ''}`}>
+          <input
+            type="checkbox"
+            checked={Boolean(agent.hideAttendedNotifications)}
+            disabled={agentConfigSaving}
+            onChange={(event) => saveAgentPatch(agent.id, { hideAttendedNotifications: event.target.checked })}
+          />
+          <span>
+            <strong>Silenciar atendidas</strong>
+            <small>Sin avisos mientras responde; al cumplir objetivo vuelve a avisar.</small>
+          </span>
+        </label>
+      </section>
+    )
+
+    if (agentMenuSection === 'agents') {
+      return (
+        <>
+          <button type="button" className={styles.agentMenuBack} onClick={() => setAgentMenuSection('menu')}>
+            <ChevronLeft size={18} />
+            Volver al menú
+          </button>
+          <div className={styles.agentMenuBody} data-phone-chat-scrollable="true">
+            <section className={styles.agentMenuSection} aria-label="Lista de agentes">
+              <div className={styles.agentMenuSectionHeader}>
+                <span>Lista de agentes</span>
+                <small>{agentDefs.length ? `${agentDefs.length} configurados` : 'Sin agentes'}</small>
+              </div>
+
+              {agentDefs.length ? (
+                <div className={styles.agentListStack}>
+                  {agentDefs.map((agent) => {
+                    const active = selectedAgentDef?.id === agent.id
+                    const objectiveLabel = agentObjectiveOptions.find((option) => option.value === agent.objective)?.label || 'Objetivo'
+                    const delivery = getPhoneAgentReplyDelivery(agent)
+
+                    return (
+                      <article key={agent.id} className={`${styles.agentListCard} ${active ? styles.agentListCardSelected : ''}`}>
+                        <button
+                          type="button"
+                          className={styles.agentListSelect}
+                          aria-pressed={active}
+                          onClick={() => setSelectedAgentId(agent.id)}
+                        >
+                          <span className={styles.agentPickerIcon}>
+                            {active ? <Check size={16} /> : <Bot size={16} />}
+                          </span>
+                          <span className={styles.agentPickerCopy}>
+                            <strong>{agent.name || 'Agente sin nombre'}</strong>
+                            <small>{agent.enabled ? 'Publicado' : 'En pausa'} · {objectiveLabel}</small>
+                          </span>
+                        </button>
+
+                        <div className={styles.agentListMeta}>
+                          <span>{getKnownAIModel(agent.model || DEFAULT_AI_MODEL)}</span>
+                          <span>{getPhoneReplyDeliverySummary(delivery)}</span>
+                          {agent.hideAttended && <span>Oculta atendidas</span>}
+                          {agent.hideAttendedNotifications && <span>Silencia avisos</span>}
+                        </div>
+
+                        <div className={styles.agentListActions}>
+                          <button
+                            type="button"
+                            className={styles.agentListToggle}
+                            disabled={agentConfigSaving}
+                            onClick={() => saveAgentPatch(agent.id, { enabled: !agent.enabled })}
+                          >
+                            {agent.enabled ? <Pause size={15} /> : <Play size={15} />}
+                            {agent.enabled ? 'Pausar' : 'Publicar'}
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.agentListMore}
+                            onClick={() => {
+                              setSelectedAgentId(agent.id)
+                              setAgentMenuSection('agent_detail')
+                            }}
+                          >
+                            Ver más
+                            <ChevronRight size={16} />
+                          </button>
+                        </div>
+                      </article>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className={styles.emptySheetState}>
+                  <Bot size={24} />
+                  <strong>Aún no hay agentes</strong>
+                  <span>Crea agentes desde Agente AI → Agente conversacional.</span>
+                </div>
+              )}
+            </section>
+          </div>
+        </>
+      )
+    }
+
+    if (agentMenuSection === 'agent_detail') {
+      if (!selectedAgentDef) {
+        return (
+          <>
+            <button type="button" className={styles.agentMenuBack} onClick={() => setAgentMenuSection('agents')}>
+              <ChevronLeft size={18} />
+              Volver a agentes
+            </button>
+            <div className={styles.emptySheetState}>
+              <Bot size={24} />
+              <strong>Sin agente seleccionado</strong>
+              <span>Elige un agente de la lista para configurarlo.</span>
+            </div>
+          </>
+        )
+      }
+
+      return (
+        <>
+          <button type="button" className={styles.agentMenuBack} onClick={() => setAgentMenuSection('agents')}>
+            <ChevronLeft size={18} />
+            Lista de agentes
+          </button>
+          <div className={styles.agentMenuBody} data-phone-chat-scrollable="true">
+            <section className={`${styles.agentMenuSection} ${styles.agentDetailHero}`} aria-label="Agente seleccionado">
+              <div className={styles.agentDetailHeroTop}>
+                <span className={styles.agentPickerIcon}>
+                  <Bot size={18} />
+                </span>
+                <span className={`${styles.agentDetailStatus} ${selectedAgentDef.enabled ? styles.agentDetailStatusOn : ''}`}>
+                  {selectedAgentDef.enabled ? 'Publicado' : 'En pausa'}
+                </span>
+              </div>
+
+              <PhoneTextField
+                label="Nombre del agente"
+                value={selectedAgentDef.name || ''}
+                onChange={(value) => updateAgentDraft(selectedAgentDef.id, { name: value })}
+                onBlur={() => saveAgentPatch(selectedAgentDef.id, { name: selectedAgentDef.name || 'Agente' })}
+                placeholder="Agente principal"
+                disabled={agentConfigSaving}
+              />
+
+              <button
+                type="button"
+                className={styles.agentPublishButton}
+                disabled={agentConfigSaving}
+                onClick={() => saveSelectedAgentPatch({ enabled: !selectedAgentDef.enabled })}
+              >
+                {selectedAgentDef.enabled ? <Pause size={16} /> : <Play size={16} />}
+                {selectedAgentDef.enabled ? 'Pausar agente' : 'Publicar agente'}
+              </button>
+            </section>
+
+            <section className={styles.agentMenuSection} aria-label="Modelo y objetivo">
+              <div className={styles.agentMenuSectionHeader}>
+                <span>Modelo y objetivo</span>
+                <small>{selectedObjectiveLabel}</small>
+              </div>
+              <label className={styles.agentMenuField}>
+                <span>Modelo de OpenAI</span>
+                <PhoneSelect
+                  value={selectedAgentModelValue}
+                  onChange={(value) => saveSelectedAgentPatch({ model: value })}
+                  ariaLabel={`Modelo de ${selectedAgentDef.name || 'agente conversacional'}`}
+                  options={aiModelOptions.map((option) => ({ value: option.value, label: option.label }))}
+                  title="Modelo de OpenAI"
+                  placeholder="Modelo"
+                  disabled={agentConfigSaving}
+                  buttonClassName={styles.agentMenuSelectButton}
+                />
+              </label>
+              <label className={styles.agentMenuField}>
+                <span>Objetivo</span>
+                <PhoneSelect
+                  value={selectedAgentDef.objective}
+                  onChange={(value) => {
+                    const objective = value as ConversationalObjective
+                    const allowed = agentActionsByObjective[objective] || agentActionsByObjective.custom
+                    saveSelectedAgentPatch({
+                      objective,
+                      ...(allowed.includes(selectedAgentDef.successAction) ? {} : { successAction: allowed[0] })
+                    })
+                  }}
+                  ariaLabel={`Objetivo de ${selectedAgentDef.name || 'agente conversacional'}`}
+                  options={agentObjectiveOptions}
+                  title="Objetivo"
+                  placeholder="Objetivo"
+                  disabled={agentConfigSaving}
+                  buttonClassName={styles.agentMenuSelectButton}
+                />
+              </label>
+              {selectedAgentDef.objective === 'custom' && (
+                <PhoneTextArea
+                  label="Meta propia"
+                  value={selectedAgentDef.customObjective || ''}
+                  onChange={(value) => updateAgentDraft(selectedAgentDef.id, { customObjective: value })}
+                  onBlur={() => saveSelectedAgentPatch({ customObjective: selectedAgentDef.customObjective || '' })}
+                  placeholder="Ejemplo: que pida una propuesta formal para su empresa."
+                  rows={3}
+                  disabled={agentConfigSaving}
+                />
+              )}
+              <label className={styles.agentMenuField}>
+                <span>Cuando cumpla el objetivo</span>
+                <PhoneSelect
+                  value={selectedAgentDef.successAction}
+                  onChange={(value) => saveSelectedAgentPatch({ successAction: value as ConversationalSuccessAction })}
+                  ariaLabel={`Acción al cumplir el objetivo de ${selectedAgentDef.name || 'agente conversacional'}`}
+                  options={selectedAgentActions.map((action) => ({ value: action, label: agentSuccessActionLabels[action] }))}
+                  title="Al cumplir el objetivo"
+                  placeholder="Acción"
+                  disabled={agentConfigSaving}
+                  buttonClassName={styles.agentMenuSelectButton}
+                />
+              </label>
+              <p className={styles.agentMenuHint}>
+                Cuando cumpla el objetivo se marca como prioridad para que un humano lo atienda.
+              </p>
+            </section>
+
+            {renderAgentOrderControls(selectedAgentDef)}
+
+            <section className={styles.agentMenuSection} aria-label="Cuándo responde">
+              <div className={styles.agentMenuSectionHeader}>
+                <span>Cuándo responde</span>
+                <small>{getPhoneResponseDelaySummary(responseDelay)}</small>
+              </div>
+              <PhoneSelect
+                value={responseDelay.mode}
+                onChange={(value) => updateResponseDelay({ mode: value as AgentResponseDelayMode })}
+                ariaLabel="Espera antes de responder"
+                options={PHONE_AGENT_RESPONSE_DELAY_MODE_OPTIONS}
+                title="Espera"
+                placeholder="Espera"
+                disabled={agentConfigSaving}
+                buttonClassName={styles.agentMenuSelectButton}
+              />
+
+              {responseDelay.mode === 'fixed' && (
+                <div className={styles.agentNumberGrid}>
+                  <PhoneTextField
+                    label="Tiempo"
+                    type="number"
+                    inputMode="numeric"
+                    value={String(responseDelay.fixedValue)}
+                    onChange={(value) => updateResponseDelay({ fixedValue: Number(value) || 0 })}
+                    disabled={agentConfigSaving}
+                  />
+                  <PhoneSelect
+                    value={responseDelay.fixedUnit}
+                    onChange={(value) => updateResponseDelay({ fixedUnit: value as AgentResponseDelayUnit })}
+                    options={PHONE_AGENT_RESPONSE_DELAY_UNIT_OPTIONS}
+                    title="Unidad"
+                    ariaLabel="Unidad de espera"
+                    disabled={agentConfigSaving}
+                    buttonClassName={styles.agentMenuSelectButton}
+                  />
+                </div>
+              )}
+
+              {responseDelay.mode === 'random' && (
+                <div className={styles.agentNumberGrid}>
+                  <PhoneTextField
+                    label="Mínimo"
+                    type="number"
+                    inputMode="numeric"
+                    value={String(responseDelay.minValue)}
+                    onChange={(value) => updateResponseDelay({ minValue: Number(value) || 0 })}
+                    disabled={agentConfigSaving}
+                  />
+                  <PhoneTextField
+                    label="Máximo"
+                    type="number"
+                    inputMode="numeric"
+                    value={String(responseDelay.maxValue)}
+                    onChange={(value) => updateResponseDelay({ maxValue: Number(value) || 0 })}
+                    disabled={agentConfigSaving}
+                  />
+                  <PhoneSelect
+                    value={responseDelay.rangeUnit}
+                    onChange={(value) => updateResponseDelay({ rangeUnit: value as AgentResponseDelayUnit })}
+                    options={PHONE_AGENT_RESPONSE_DELAY_UNIT_OPTIONS}
+                    title="Unidad"
+                    ariaLabel="Unidad del rango"
+                    disabled={agentConfigSaving}
+                    buttonClassName={styles.agentMenuSelectButton}
+                  />
+                </div>
+              )}
+            </section>
+
+            <section className={styles.agentMenuSection} aria-label="Modo mensajes humanos">
+              <div className={styles.agentMenuSectionHeader}>
+                <span>Mensajes humanos</span>
+                <small>{getPhoneReplyDeliverySummary(replyDelivery)}</small>
+              </div>
+              <label className={`${styles.agentCompactToggle} ${replyDelivery.splitMessagesEnabled || replyDelivery.mode === 'split' ? styles.agentCompactToggleActive : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={replyDelivery.splitMessagesEnabled || replyDelivery.mode === 'split'}
+                  disabled={agentConfigSaving}
+                  onChange={(event) => updateReplyDelivery({
+                    mode: (event.target.checked ? 'split' : 'single') as AgentReplyDeliveryMode,
+                    splitMessagesEnabled: event.target.checked
+                  })}
+                />
+                <span>
+                  <strong>Partir respuestas largas</strong>
+                  <small>Divide textos largos en varios globos de chat.</small>
+                </span>
+              </label>
+
+              {(replyDelivery.splitMessagesEnabled || replyDelivery.mode === 'split') && (
+                <>
+                  <label className={`${styles.agentCompactToggle} ${replyDelivery.randomizeSplitting ? styles.agentCompactToggleActive : ''}`}>
+                    <input
+                      type="checkbox"
+                      checked={replyDelivery.randomizeSplitting}
+                      disabled={agentConfigSaving}
+                      onChange={(event) => updateReplyDelivery({ randomizeSplitting: event.target.checked })}
+                    />
+                    <span>
+                      <strong>Variar cortes</strong>
+                      <small>Evita que los globos se partan igual siempre.</small>
+                    </span>
+                  </label>
+                  <label className={`${styles.agentCompactToggle} ${replyDelivery.delayBetweenBubblesEnabled ? styles.agentCompactToggleActive : ''}`}>
+                    <input
+                      type="checkbox"
+                      checked={replyDelivery.delayBetweenBubblesEnabled}
+                      disabled={agentConfigSaving}
+                      onChange={(event) => updateReplyDelivery({ delayBetweenBubblesEnabled: event.target.checked })}
+                    />
+                    <span>
+                      <strong>Pausas entre globos</strong>
+                      <small>Hace pequeñas pausas antes de mandar el siguiente mensaje.</small>
+                    </span>
+                  </label>
+                  <div className={styles.agentNumberGrid}>
+                    <PhoneTextField
+                      label="Dividir desde"
+                      type="number"
+                      inputMode="numeric"
+                      value={String(replyDelivery.minMessageLengthToSplit)}
+                      onChange={(value) => updateReplyDelivery({ minMessageLengthToSplit: Number(value) || 0 })}
+                      disabled={agentConfigSaving}
+                    />
+                    <PhoneTextField
+                      label="Máx. globos"
+                      type="number"
+                      inputMode="numeric"
+                      value={String(replyDelivery.maxBubbles)}
+                      onChange={(value) => updateReplyDelivery({ maxBubbles: Number(value) || DEFAULT_PHONE_AGENT_REPLY_DELIVERY.maxBubbles })}
+                      disabled={agentConfigSaving}
+                    />
+                    <PhoneTextField
+                      label="Globo mín."
+                      type="number"
+                      inputMode="numeric"
+                      value={String(replyDelivery.minBubbleLength)}
+                      onChange={(value) => updateReplyDelivery({ minBubbleLength: Number(value) || DEFAULT_PHONE_AGENT_REPLY_DELIVERY.minBubbleLength })}
+                      disabled={agentConfigSaving}
+                    />
+                    <PhoneTextField
+                      label="Globo máx."
+                      type="number"
+                      inputMode="numeric"
+                      value={String(replyDelivery.maxBubbleLength)}
+                      onChange={(value) => {
+                        const maxBubbleLength = Number(value) || DEFAULT_PHONE_AGENT_REPLY_DELIVERY.maxBubbleLength
+                        updateReplyDelivery({ maxBubbleLength, targetChars: maxBubbleLength })
+                      }}
+                      disabled={agentConfigSaving}
+                    />
+                    <PhoneTextField
+                      label="Pausa mín."
+                      type="number"
+                      inputMode="numeric"
+                      value={String(replyDelivery.minDelaySeconds)}
+                      onChange={(value) => updateReplyDelivery({ minDelaySeconds: Number(value) || 0 })}
+                      disabled={agentConfigSaving || !replyDelivery.delayBetweenBubblesEnabled}
+                    />
+                    <PhoneTextField
+                      label="Pausa máx."
+                      type="number"
+                      inputMode="numeric"
+                      value={String(replyDelivery.maxDelaySeconds)}
+                      onChange={(value) => updateReplyDelivery({ maxDelaySeconds: Number(value) || 0 })}
+                      disabled={agentConfigSaving || !replyDelivery.delayBetweenBubblesEnabled}
+                    />
+                  </div>
+                </>
+              )}
+            </section>
+
+            <section className={styles.agentMenuSection} aria-label="Qué debe cuidar">
+              <div className={styles.agentMenuSectionHeader}>
+                <span>Qué debe cuidar</span>
+                <small>Instrucciones</small>
+              </div>
+              <PhoneTextArea
+                label="Datos que debe pedir"
+                value={selectedAgentDef.requiredData || ''}
+                onChange={(value) => updateAgentDraft(selectedAgentDef.id, { requiredData: value })}
+                onBlur={() => saveSelectedAgentPatch({ requiredData: selectedAgentDef.requiredData || '' })}
+                placeholder={'Ejemplo:\n- Nombre completo\n- Servicio que le interesa'}
+                rows={3}
+                disabled={agentConfigSaving}
+              />
+              <PhoneTextArea
+                label="Cuándo pasar al equipo"
+                value={selectedAgentDef.handoffRules || ''}
+                onChange={(value) => updateAgentDraft(selectedAgentDef.id, { handoffRules: value })}
+                onBlur={() => saveSelectedAgentPatch({ handoffRules: selectedAgentDef.handoffRules || '' })}
+                placeholder={'Ejemplo:\n- Se enojó\n- Pregunta por facturación'}
+                rows={3}
+                disabled={agentConfigSaving}
+              />
+              <PhoneTextArea
+                label="Tips del negocio"
+                value={selectedAgentDef.extraInstructions || ''}
+                onChange={(value) => updateAgentDraft(selectedAgentDef.id, { extraInstructions: value })}
+                onBlur={() => saveSelectedAgentPatch({ extraInstructions: selectedAgentDef.extraInstructions || '' })}
+                placeholder="Ejemplo: menciona la promo de junio sólo si preguntan por precio."
+                rows={3}
+                disabled={agentConfigSaving}
+              />
+              <label className={`${styles.agentCompactToggle} ${selectedAgentDef.allowEmojis ? styles.agentCompactToggleActive : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(selectedAgentDef.allowEmojis)}
+                  disabled={agentConfigSaving}
+                  onChange={(event) => saveSelectedAgentPatch({ allowEmojis: event.target.checked })}
+                />
+                <span>
+                  <strong>Puede usar emojis</strong>
+                  <small>Déjalo apagado si quieres un tono más serio.</small>
+                </span>
+              </label>
+            </section>
+          </div>
+        </>
+      )
+    }
 
     return (
       <div className={styles.agentMenuBody} data-phone-chat-scrollable="true">
-        <section className={styles.agentMenuSection} aria-label="Control general">
+        <section className={styles.agentMenuSection} aria-label="Agentes conversacionales">
           <div className={styles.agentMenuSectionHeader}>
-            <span>Control general</span>
-            <small>{agentConfig?.enabled ? 'Atendiendo chats' : 'Apagado'}</small>
+            <span>Agentes conversacionales</span>
+            <small>{agentDefs.length ? `${agentDefs.length} disponibles` : 'Sin agentes'}</small>
           </div>
-          <label className={styles.agentMasterToggle}>
-            <span>
-              <strong>Agente conversacional</strong>
-              <small>Permite que los agentes activos respondan conversaciones entrantes.</small>
+          <button type="button" className={styles.agentMenuPrimaryRow} onClick={() => setAgentMenuSection('agents')}>
+            <span className={styles.agentPickerIcon}>
+              <Bot size={17} />
             </span>
-            <input
-              type="checkbox"
-              checked={Boolean(agentConfig?.enabled)}
-              disabled={agentConfigSaving || !agentConfig}
-              onChange={(event) => saveAgentConfigPatch({ enabled: event.target.checked })}
-            />
-          </label>
-        </section>
-
-        <section className={styles.agentMenuSection} aria-label="Agentes">
-          <div className={styles.agentMenuSectionHeader}>
-            <span>Agentes</span>
-            <small>{agentDefs.length ? `${agentDefs.length} configurados` : 'Sin agentes'}</small>
-          </div>
-
-          {agentDefs.length ? (
-            <div className={styles.agentPickerList}>
-              {agentDefs.map((agent) => {
-                const active = selectedAgentDef?.id === agent.id
-                const objectiveLabel = agentObjectiveOptions.find((option) => option.value === agent.objective)?.label || 'Objetivo'
-
-                return (
-                  <div key={agent.id} className={`${styles.agentPickerItem} ${active ? styles.agentPickerItemActive : ''}`}>
-                    <button
-                      type="button"
-                      className={styles.agentPickerButton}
-                      aria-pressed={active}
-                      onClick={() => setSelectedAgentId(agent.id)}
-                    >
-                      <span className={styles.agentPickerIcon}>
-                        {active ? <Check size={16} /> : <Bot size={16} />}
-                      </span>
-                      <span className={styles.agentPickerCopy}>
-                        <strong>{agent.name || 'Agente sin nombre'}</strong>
-                        <small>{agent.enabled ? 'Activo' : 'Apagado'} · {objectiveLabel}</small>
-                      </span>
-                    </button>
-                    <label className={styles.agentPickerSwitch} aria-label={`${agent.enabled ? 'Desactivar' : 'Activar'} ${agent.name || 'agente'}`}>
-                      <input
-                        type="checkbox"
-                        checked={agent.enabled}
-                        disabled={agentConfigSaving}
-                        onChange={(event) => saveAgentPatch(agent.id, { enabled: event.target.checked })}
-                      />
-                      <span>
-                        <Check size={15} />
-                      </span>
-                    </label>
-                  </div>
-                )
-              })}
-            </div>
-          ) : (
+            <span>
+              <strong>Ver lista de agentes</strong>
+              <small>Elige, publica, pausa o entra a configurar cada agente.</small>
+            </span>
+            <ChevronRight size={18} />
+          </button>
+          {!agentDefs.length && (
             <p className={styles.agentMenuHint}>
-              Aún no hay agentes creados. Créalos en Agente AI → Agente conversacional.
+              No hay agentes todavía. Créalo en Agente AI → Agente conversacional.
             </p>
           )}
         </section>
 
-        {selectedAgentDef && (
-          <section className={styles.agentMenuSection} aria-label="Configurar agente">
-            <div className={styles.agentMenuSectionHeader}>
-              <span>Configurar agente</span>
-              <small>{selectedAgentDef.name || 'Agente seleccionado'}</small>
-            </div>
-
-            <label className={styles.agentMenuField}>
-              <span>Objetivo</span>
-              <PhoneSelect
-                value={selectedAgentDef.objective}
-                onChange={(value) => {
-                  const objective = value as ConversationalObjective
-                  const allowed = agentActionsByObjective[objective] || agentActionsByObjective.custom
-                  saveAgentPatch(selectedAgentDef.id, {
-                    objective,
-                    ...(allowed.includes(selectedAgentDef.successAction) ? {} : { successAction: allowed[0] })
-                  })
-                }}
-                ariaLabel={`Objetivo de ${selectedAgentDef.name || 'agente conversacional'}`}
-                options={agentObjectiveOptions}
-                title="Objetivo"
-                placeholder="Objetivo"
-                disabled={agentConfigSaving}
-                buttonClassName={styles.agentMenuSelectButton}
-              />
-            </label>
-
-            <label className={styles.agentMenuField}>
-              <span>Cuando cumpla el objetivo</span>
-              <PhoneSelect
-                value={selectedAgentDef.successAction}
-                onChange={(value) => saveAgentPatch(selectedAgentDef.id, { successAction: value as ConversationalSuccessAction })}
-                ariaLabel={`Acción al cumplir el objetivo de ${selectedAgentDef.name || 'agente conversacional'}`}
-                options={selectedAgentActions.map((action) => ({ value: action, label: agentSuccessActionLabels[action] }))}
-                title="Al cumplir el objetivo"
-                placeholder="Acción"
-                disabled={agentConfigSaving}
-                buttonClassName={styles.agentMenuSelectButton}
-              />
-              <small className={styles.agentMenuHint}>
-                En el chat aparecerá como prioridad en rojo para que un humano lo atienda.
-              </small>
-            </label>
-          </section>
-        )}
-
-        {selectedAgentDef && (
+        {selectedAgentDef ? (
+          renderAgentOrderControls(selectedAgentDef)
+        ) : (
           <section className={styles.agentMenuSection} aria-label="Orden del chat">
             <div className={styles.agentMenuSectionHeader}>
               <span>Orden del chat</span>
-              <small>{selectedAgentDef.name || 'Agente seleccionado'}</small>
+              <small>Sin agente</small>
             </div>
-            <label className={styles.agentCompactToggle}>
-              <span>
-                <strong>Ocultar atendidas</strong>
-                <small>Sólo oculta conversaciones de este agente.</small>
-              </span>
-              <input
-                type="checkbox"
-                checked={Boolean(selectedAgentDef.hideAttended)}
-                disabled={agentConfigSaving}
-                onChange={(event) => saveAgentPatch(selectedAgentDef.id, { hideAttended: event.target.checked })}
-              />
-            </label>
-
-            <label className={styles.agentCompactToggle}>
-              <span>
-                <strong>Silenciar atendidas</strong>
-                <small>Sin avisos mientras responde; al cumplir objetivo sí manda push.</small>
-              </span>
-              <input
-                type="checkbox"
-                checked={Boolean(selectedAgentDef.hideAttendedNotifications)}
-                disabled={agentConfigSaving}
-                onChange={(event) => saveAgentPatch(selectedAgentDef.id, { hideAttendedNotifications: event.target.checked })}
-              />
-            </label>
+            <p className={styles.agentMenuHint}>
+              Cuando exista un agente, aquí podrás ocultar atendidas y silenciar atendidas para ese agente.
+            </p>
           </section>
         )}
 
@@ -11245,7 +11678,15 @@ export const PhoneChat: React.FC = () => {
                     {sheet === 'settings' && 'Ajustes del chat'}
                     {sheet === 'newChat' && 'Nuevo chat'}
                     {sheet === 'chatMore' && (chatMoreMode === 'agentControls' ? 'Acciones del chatbot' : 'Más acciones')}
-                    {sheet === 'agentMenu' && (agentMenuSection === 'ready_human' ? 'Prioridad humana' : 'Agente conversacional')}
+                    {sheet === 'agentMenu' && (
+                      agentMenuSection === 'ready_human'
+                        ? 'Prioridad humana'
+                        : agentMenuSection === 'agents'
+                          ? 'Lista de agentes'
+                          : agentMenuSection === 'agent_detail'
+                            ? 'Configurar agente'
+                            : 'Agente conversacional'
+                    )}
                     {sheet === 'schedule' && (scheduleEditingMessageId ? 'Editar programación' : 'Programar mensaje')}
                   </h2>
                 </div>
