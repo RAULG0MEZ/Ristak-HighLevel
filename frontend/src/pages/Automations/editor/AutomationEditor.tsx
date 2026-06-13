@@ -284,8 +284,8 @@ export const AutomationEditor: React.FC = () => {
     }
   }, [automation])
 
-  // Variables congruentes con los disparadores del flujo (citas → Citas,
-  // pagos → Pagos…). Contacto/personalizados/conversación siempre presentes.
+  // Variables congruentes con los disparadores del flujo (citas, pagos...).
+  // Contacto, personalizados, variables internas y enlaces de disparo siempre presentes.
   const variableCategories = useMemo(() => {
     const TRIGGER_CATEGORY_MAP: Record<string, string> = {
       'trigger-appointment-status': 'appointment',
@@ -303,7 +303,7 @@ export const AutomationEditor: React.FC = () => {
           .filter((category): category is string => Boolean(category))
       )
     ]
-    return [...contextual, 'contact', 'custom', 'conversation', 'automation']
+    return [...contextual, 'contact', 'custom', 'variable', 'trigger_link', 'conversation', 'automation']
   }, [nodes])
 
   const flowVariableCatalog = useMemo(

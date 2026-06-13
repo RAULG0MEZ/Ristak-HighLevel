@@ -1,5 +1,6 @@
 import React from 'react'
 import { getCatalog } from '@/services/automationCatalogsService'
+import { triggerLinksService } from '@/services/triggerLinksService'
 import { variableFieldsService } from '@/services/variableFieldsService'
 import type {
   AutomationEdge,
@@ -57,6 +58,7 @@ export const VARIABLE_CATEGORIES: FlowVariableCategory[] = [
   { id: 'contact', label: 'Contacto' },
   { id: 'custom', label: 'Campos personalizados' },
   { id: 'variable', label: 'Campos variables' },
+  { id: 'trigger_link', label: 'Enlaces de disparo' },
   { id: 'conversation', label: 'Conversación' },
   { id: 'appointment', label: 'Citas' },
   { id: 'payment', label: 'Pagos' },
@@ -112,12 +114,13 @@ export const BASE_VARIABLES: FlowVariable[] = [
   { fieldId: 'flow.previous_result', label: 'Resultado del nodo anterior', category: 'automation' }
 ]
 
-/** Variables + campos personalizados reales del CRM (vía adaptador) */
+/** Variables + campos configurados reales del CRM/app (vía adaptadores) */
 export async function loadAllVariables(): Promise<FlowVariable[]> {
   try {
-    const [customFields, variableFields] = await Promise.all([
+    const [customFields, variableFields, triggerLinks] = await Promise.all([
       getCatalog('contactFields'),
-      variableFieldsService.list().catch(() => [])
+      variableFieldsService.list().catch(() => []),
+      triggerLinksService.list().catch(() => [])
     ])
     const custom = customFields
       .filter((field) => field.value.startsWith('custom:'))
@@ -131,7 +134,12 @@ export async function loadAllVariables(): Promise<FlowVariable[]> {
       label: field.label,
       category: 'variable'
     }))
-    return [...BASE_VARIABLES, ...custom, ...accountVariables]
+    const triggerLinkVariables = triggerLinks.map((link) => ({
+      fieldId: `trigger_link.${link.publicId}`,
+      label: link.name,
+      category: 'trigger_link'
+    }))
+    return [...BASE_VARIABLES, ...custom, ...accountVariables, ...triggerLinkVariables]
   } catch {
     return BASE_VARIABLES
   }

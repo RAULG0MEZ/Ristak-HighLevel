@@ -9,6 +9,7 @@
 const MAX_FLOW_BYTES = 2 * 1024 * 1024 // 2MB: límite defensivo para el JSON del flujo
 
 export const START_NODE_TYPE = 'start'
+const TRIGGER_LINK_WAIT_ACTIONS = new Set(['click_link', 'trigger_link_click', 'trigger-link-click'])
 
 // Únicos canales conversacionales soportados (sin SMS ni Email)
 export const ALLOWED_CHANNELS = ['whatsapp', 'messenger', 'instagram']
@@ -171,7 +172,7 @@ export function validateFlowForPublish(flow) {
       const config = isPlainObject(node.config) ? node.config : {}
       if (config.mode !== 'action') return
       const expectedAction = String(config.expectedAction || 'click_link')
-      if (expectedAction !== 'click_link') return
+      if (!TRIGGER_LINK_WAIT_ACTIONS.has(expectedAction)) return
       if (!String(config.actionResource || config.link || config.triggerLinkId || '').trim()) {
         errors.push('El paso Esperar necesita un clic de disparo seleccionado')
       }

@@ -200,6 +200,26 @@ test('publicar valida el horario global del flujo', () => {
   assert.deepEqual(validateFlowForPublish(flow), [])
 })
 
+test('publicar exige clic de disparo seleccionado en esperas por alias interno', () => {
+  const waitNode = {
+    id: 'wait1',
+    type: 'logic-wait',
+    position: { x: 100, y: 0 },
+    config: { mode: 'action', expectedAction: 'trigger_link_click', actionResource: '' }
+  }
+  const flow = {
+    nodes: [startNode(), waitNode],
+    edges: [edge('e1', 'start', 'wait1')]
+  }
+
+  let errors = validateFlowForPublish(flow)
+  assert.ok(errors.some((message) => message.includes('clic de disparo')))
+
+  waitNode.config.actionResource = 'trigger_link_123'
+  errors = validateFlowForPublish(flow)
+  assert.deepEqual(errors, [])
+})
+
 test('publicar detecta ciclos en el flujo', () => {
   const flow = {
     nodes: [startNode(), actionNode('a1'), actionNode('a2')],
