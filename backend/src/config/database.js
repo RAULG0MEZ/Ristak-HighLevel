@@ -606,6 +606,9 @@ async function initTables() {
         asset_path TEXT NOT NULL,
         content_type TEXT NOT NULL,
         content_base64 TEXT NOT NULL,
+        media_asset_id TEXT,
+        public_url TEXT,
+        storage_provider TEXT,
         size_bytes INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -645,6 +648,20 @@ async function initTables() {
       } catch (err) {
         if (!err.message.includes('duplicate column') && !err.message.includes('already exists')) {
           logger.warn(`Advertencia al migrar public_site_submissions.${columnName}: ${err.message}`)
+        }
+      }
+    }
+
+    for (const [columnName, columnType] of [
+      ['media_asset_id', 'TEXT'],
+      ['public_url', 'TEXT'],
+      ['storage_provider', 'TEXT']
+    ]) {
+      try {
+        await db.run(`ALTER TABLE public_site_import_assets ADD COLUMN ${columnName} ${columnType}`)
+      } catch (err) {
+        if (!err.message.includes('duplicate column') && !err.message.includes('already exists')) {
+          logger.warn(`Advertencia al migrar public_site_import_assets.${columnName}: ${err.message}`)
         }
       }
     }

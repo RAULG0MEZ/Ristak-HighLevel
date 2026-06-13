@@ -570,6 +570,14 @@ function getImportedAssetContentType(assetPath = '') {
   return IMPORTED_ASSET_CONTENT_TYPES.get(getImportedAssetExtension(assetPath)) || 'application/octet-stream'
 }
 
+function shouldStoreImportedAssetInMediaStorage(file = {}) {
+  const contentType = cleanString(file.contentType || getImportedAssetContentType(file.assetPath)).split(';')[0].toLowerCase()
+  return contentType.startsWith('image/') ||
+    contentType.startsWith('video/') ||
+    contentType.startsWith('audio/') ||
+    contentType === 'application/pdf'
+}
+
 function isSkippedImportedZipPath(assetPath = '') {
   const parts = normalizeImportedAssetPath(assetPath).split('/').map(part => part.toLowerCase())
   return parts.some(part => part === '__macosx' || part === '.ds_store' || part === 'thumbs.db')
@@ -6487,7 +6495,17 @@ async function extractImportedZipArchive(filename = '', buffer = Buffer.alloc(0)
   }
 }
 
-function buildImportedAssetRow({ importId, siteId, assetPath, contentType, content }) {
+function buildImportedAssetRow({
+  importId,
+  siteId,
+  assetPath,
+  contentType,
+  content,
+  mediaAssetId = '',
+  publicUrl = '',
+  storageProvider = '',
+  sizeBytes = null
+}) {
   const contentBuffer = Buffer.isBuffer(content) ? content : Buffer.from(String(content || ''), 'utf8')
   return {
     id: `site_import_asset_${crypto.randomUUID()}`,
@@ -6495,9 +6513,41 @@ function buildImportedAssetRow({ importId, siteId, assetPath, contentType, conte
     siteId,
     assetPath,
     contentType,
-    contentBase64: contentBuffer.toString('base64'),
-    sizeBytes: contentBuffer.byteLength
+    contentBase64: mediaAssetId ? '' : contentBuffer.toString('base64'),
+    mediaAssetId: cleanString(mediaAssetId) || null,
+    publicUrl: cleanString(publicUrl) || null,
+    storageProvider: cleanString(storageProvider) || null,
+    sizeBytes: sizeBytes === null || sizeBytes === undefined ? contentBuffer.byteLength : Number(sizeBytes) || 0
   }
+}
+
+async function buildImportedMediaAssetRow({ importId, siteId, file }) {
+  const { uploadMediaAsset } = await import('./mediaStorageService.js')
+  const asset = await uploadMediaAsset({
+    buffer: file.content,
+    mimeType: file.contentType,
+    filename: file.assetPath,
+    module: 'sites',
+    moduleEntityId: siteId,
+    isPublic: true,
+    metadata: {
+      source: 'site_zip_import',
+      importId,
+      assetPath: file.assetPath
+    }
+  })
+
+  return buildImportedAssetRow({
+    importId,
+    siteId,
+    assetPath: file.assetPath,
+    contentType: asset.mimeType || file.contentType,
+    content: Buffer.alloc(0),
+    mediaAssetId: asset.id,
+    publicUrl: asset.publicUrl,
+    storageProvider: asset.storageProvider,
+    sizeBytes: asset.sizeProcessed || file.sizeBytes || 0
+  })
 }
 
 function getImportedEditableUploadMimeType(value = '') {
@@ -6626,13 +6676,21 @@ async function prepareImportedZipContent({ filename, fileBase64, siteId, importI
       continue
     }
 
-    assets.push(buildImportedAssetRow({
-      importId,
-      siteId,
-      assetPath: file.assetPath,
-      contentType: file.contentType,
-      content: file.content
-    }))
+    if (shouldStoreImportedAssetInMediaStorage(file)) {
+      assets.push(await buildImportedMediaAssetRow({
+        importId,
+        siteId,
+        file
+      }))
+    } else {
+      assets.push(buildImportedAssetRow({
+        importId,
+        siteId,
+        assetPath: file.assetPath,
+        contentType: file.contentType,
+        content: file.content
+      }))
+    }
   }
 
   return {
@@ -6708,14 +6766,15 @@ async function prepareGeneratedImportedPagesContent({ pages = [], siteId, import
 }
 
 async function replaceImportedSiteAssets(siteId, assets = []) {
+  await deleteImportedSiteMediaAssets(siteId)
   await db.run('DELETE FROM public_site_import_assets WHERE site_id = ?', [siteId])
 
   for (const asset of assets) {
     await db.run(`
       INSERT INTO public_site_import_assets (
         id, import_id, site_id, asset_path, content_type, content_base64, size_bytes,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        media_asset_id, public_url, storage_provider, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     `, [
       asset.id,
       asset.importId,
@@ -6723,8 +6782,30 @@ async function replaceImportedSiteAssets(siteId, assets = []) {
       asset.assetPath,
       asset.contentType,
       asset.contentBase64,
-      asset.sizeBytes
+      asset.sizeBytes,
+      asset.mediaAssetId || null,
+      asset.publicUrl || null,
+      asset.storageProvider || null
     ])
+  }
+}
+
+async function deleteImportedSiteMediaAssets(siteId) {
+  const rows = await db.all(`
+    SELECT media_asset_id
+    FROM public_site_import_assets
+    WHERE site_id = ? AND media_asset_id IS NOT NULL AND media_asset_id != ''
+  `, [siteId]).catch(() => [])
+
+  if (!rows.length) return
+
+  const { softDeleteMediaAsset } = await import('./mediaStorageService.js')
+  for (const row of rows) {
+    const mediaAssetId = cleanString(row.media_asset_id)
+    if (!mediaAssetId) continue
+    await softDeleteMediaAsset(mediaAssetId).catch((error) => {
+      logger.warn(`[Sites] No se pudo eliminar media asset importado ${mediaAssetId}: ${error.message}`)
+    })
   }
 }
 
@@ -6815,6 +6896,9 @@ async function getImportedSiteAssetByPath(siteId, assetPath) {
     assetPath: row.asset_path,
     contentType: row.content_type || getImportedAssetContentType(row.asset_path),
     content: Buffer.from(row.content_base64 || '', 'base64'),
+    mediaAssetId: row.media_asset_id || null,
+    publicUrl: row.public_url || '',
+    storageProvider: row.storage_provider || '',
     sizeBytes: Number(row.size_bytes || 0),
     createdAt: row.created_at,
     updatedAt: row.updated_at
@@ -7686,6 +7770,7 @@ export async function deleteSite(siteId) {
   const existing = await db.get('SELECT id FROM public_sites WHERE id = ?', [siteId])
   if (!existing) return false
 
+  await deleteImportedSiteMediaAssets(siteId)
   await db.run('DELETE FROM public_sites WHERE id = ?', [siteId])
   return true
 }
@@ -11960,6 +12045,16 @@ export async function getImportedSiteAssetResponse(siteId, assetPath, { tracking
 
   const asset = await getImportedSiteAssetByPath(site.id, assetPath)
   if (!asset) return null
+
+  if (!/^text\/html\b/i.test(asset.contentType) && asset.publicUrl) {
+    return {
+      site,
+      assetPath: asset.assetPath,
+      contentType: asset.contentType,
+      redirectUrl: asset.publicUrl,
+      cacheControl: trackingEnabled ? 'public, max-age=3600' : 'no-store'
+    }
+  }
 
   if (/^text\/html\b/i.test(asset.contentType)) {
     const imported = await getImportedSiteBySiteId(site.id)
