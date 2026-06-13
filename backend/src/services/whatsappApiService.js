@@ -24,6 +24,7 @@ import { decrypt, encrypt } from '../utils/encryption.js'
 import { buildPhoneMatchCandidates, normalizePhoneDigits, normalizePhoneForStorage } from '../utils/phoneUtils.js'
 import { detectWhatsAppAttributionFields } from '../utils/whatsappAttribution.js'
 import { logger } from '../utils/logger.js'
+import { getMetaConfig } from './metaAdsService.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -4260,13 +4261,58 @@ export async function createMetaDirectConnectUrl({ appUrl } = {}) {
     exp: issuedAt + 15 * 60 * 1000
   }, runtime.licenseKey)
 
-  const installerUrl = normalizePublicBaseUrl(process.env.LICENSE_SERVER_URL || process.env.RISTAK_PORTAL_URL || DEFAULT_INSTALLER_PUBLIC_URL)
+  const installerUrl = normalizePublicBaseUrl(
+    process.env.META_WHATSAPP_PORTAL_URL ||
+    process.env.META_WHATSAPP_PUBLIC_URL ||
+    DEFAULT_INSTALLER_PUBLIC_URL
+  )
   const url = new URL('/meta/whatsapp/connect', installerUrl)
   url.searchParams.set('state', state)
 
   return {
     url: url.toString(),
     expiresAt: new Date(issuedAt + 15 * 60 * 1000).toISOString()
+  }
+}
+
+export async function getMetaDirectSetupPrefill({ payload = {}, rawBody = '', headers = {} } = {}) {
+  await verifyInstallerSignedRequest({ rawBody, headers, purpose: 'meta_setup_prefill' })
+
+  const runtime = await getLicenseRuntimeConfig()
+  const statePayload = decodeSignedState(payload.state || payload.signed_state || '', runtime.licenseKey)
+  if (cleanString(statePayload.installation_id) !== runtime.installationId && runtime.installationId !== 'local') {
+    throw new Error('La conexión pertenece a otra instalación de Ristak')
+  }
+
+  const [metaDirect, metaConfig, savedWabaId] = await Promise.all([
+    loadMetaDirectConfig({ includeSecrets: true }),
+    getMetaConfig().catch(error => {
+      logger.warn(`No se pudo leer Meta local para prellenar WhatsApp: ${error.message}`)
+      return null
+    }),
+    getAppConfig('meta_whatsapp_business_account_id').catch(() => '')
+  ])
+
+  const systemUserToken = cleanString(metaDirect.systemUserToken || metaConfig?.access_token)
+  const wabaId = cleanString(metaDirect.wabaId || savedWabaId)
+  const datasetId = cleanString(metaDirect.datasetId || metaConfig?.pixel_id)
+  const adAccountId = cleanString(metaDirect.adAccountId || metaConfig?.ad_account_id)
+
+  return {
+    available: Boolean(systemUserToken || wabaId || datasetId || adAccountId),
+    source: metaDirect.hasSystemUserToken ? 'whatsapp_meta_direct' : (metaConfig?.access_token ? 'meta_config' : ''),
+    appId: cleanString(metaDirect.appId || metaConfig?.app_id),
+    appSecret: cleanString(metaConfig?.app_secret),
+    systemUserToken,
+    systemUserTokenConfigured: Boolean(systemUserToken),
+    businessId: cleanString(metaDirect.businessId),
+    wabaId,
+    phoneNumberId: cleanString(metaDirect.phoneNumberId),
+    displayPhoneNumber: cleanString(metaDirect.displayPhoneNumber),
+    datasetId,
+    adAccountId,
+    pageId: cleanString(metaConfig?.page_id),
+    instagramAccountId: cleanString(metaConfig?.instagram_account_id)
   }
 }
 

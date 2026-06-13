@@ -685,7 +685,7 @@ export const WhatsAppSettings: React.FC = () => {
             <div>
               <p className={styles.eyebrow}>Meta directo</p>
               <h3>Conectar directamente con Meta</h3>
-              <span>Usa tu propia app de Meta Developer con Ristak como relay seguro para OAuth y webhooks.</span>
+              <span>Abre el portal oficial de Ristak, reutiliza la configuración de Meta que ya tengas y conecta WhatsApp sin cambiar YCloud automáticamente.</span>
             </div>
           </div>
           <span className={`${styles.metaStatusBadge} ${metaConnected ? styles.metaStatusConnected : styles.metaStatusMuted}`}>
@@ -720,10 +720,14 @@ export const WhatsAppSettings: React.FC = () => {
           </p>
         )}
 
+        <p className={styles.metaHint}>
+          El asistente abre www.ristak.com para guiarte con App Domain, OAuth, webhook y Embedded Signup. Al terminar vuelves aquí para activar Meta directo cuando estés listo.
+        </p>
+
         <div className={styles.metaActions}>
           <Button type="button" variant="primary" loading={metaConnecting} onClick={connectMetaDirect}>
             <Link2 size={17} />
-            {metaConnected ? 'Revisar conexión en portal' : 'Conectar con Meta'}
+            {metaConnected ? 'Revisar en portal' : 'Conectar WhatsApp con Meta'}
           </Button>
           <Button type="button" variant="secondary" loading={metaTesting} disabled={!metaConnected} onClick={testMetaConnection}>
             <ShieldCheck size={17} />
