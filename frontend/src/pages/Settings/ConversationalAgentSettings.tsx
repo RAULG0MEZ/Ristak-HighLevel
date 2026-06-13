@@ -190,25 +190,28 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, calendars, filterOptions, 
               emptyText="Sin reglas: este agente puede contestar cualquier chat nuevo."
               onChange={(groups) => onChange({ filters: { ...agent.filters, entry: { groups } } })}
             />
+
+            <div className={styles.agentNestedSection}>
+              <div className={styles.agentSubsectionHeader}>
+                <h4>Cuándo se sale</h4>
+                <span>Opcional</span>
+              </div>
+              <p className={styles.agentSectionHint}>
+                Úsalo si quieres que deje de contestar cuando pase algo, como cita agendada o etiqueta puesta.
+              </p>
+              <ConditionBuilder
+                groups={agent.filters.exit.groups}
+                mode="exit"
+                calendars={calendars}
+                options={filterOptions}
+                emptyText="Opcional: si no agregas reglas, el agente no se suelta solo por filtros."
+                onChange={(groups) => onChange({ filters: { ...agent.filters, exit: { groups } } })}
+              />
+            </div>
           </div>
 
           <div className={styles.agentSection}>
-            <h3 className={styles.sectionTitle}>2. Cuándo se sale</h3>
-            <p className={styles.agentSectionHint}>
-              Úsalo si quieres que deje de contestar cuando pase algo, como cita agendada o etiqueta puesta.
-            </p>
-            <ConditionBuilder
-              groups={agent.filters.exit.groups}
-              mode="exit"
-              calendars={calendars}
-              options={filterOptions}
-              emptyText="Sin reglas: no se suelta solo por filtros."
-              onChange={(groups) => onChange({ filters: { ...agent.filters, exit: { groups } } })}
-            />
-          </div>
-
-          <div className={styles.agentSection}>
-            <h3 className={styles.sectionTitle}>3. Qué tiene que lograr</h3>
+            <h3 className={styles.sectionTitle}>2. Qué tiene que lograr</h3>
             <div className={styles.compactSettingsGrid}>
               <div className={styles.field}>
                 <label className={styles.label}>Meta</label>
@@ -384,7 +387,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, calendars, filterOptions, 
           </details>
 
           <div className={styles.agentSection}>
-            <h3 className={styles.sectionTitle}>4. Qué debe cuidar</h3>
+            <h3 className={styles.sectionTitle}>3. Qué debe cuidar</h3>
             <div className={styles.agentTextGrid}>
               <div className={styles.field}>
                 <label className={styles.label}>Datos que debe pedir</label>
@@ -433,7 +436,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, calendars, filterOptions, 
           <div className={styles.agentSection}>
             <div className={styles.sectionHeading}>
               <Play size={17} />
-              <h3 className={styles.sectionTitle}>5. Pruébalo rápido</h3>
+              <h3 className={styles.sectionTitle}>4. Pruébalo rápido</h3>
             </div>
             <p className={styles.agentSectionHint}>
               Es una prueba: no manda WhatsApp ni mueve contactos.

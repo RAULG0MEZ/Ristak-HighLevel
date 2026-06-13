@@ -796,6 +796,42 @@
   color: var(--color-text-tertiary);
 }
 
+.agentNestedSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 6px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.agentSubsectionHeader {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.agentSubsectionHeader h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.agentSubsectionHeader span {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-tertiary);
+  background: rgba(148, 163, 184, 0.08);
+}
+
 .conversationAgentCard {
   overflow: visible;
 }
