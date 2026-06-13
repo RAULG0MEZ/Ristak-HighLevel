@@ -58,6 +58,7 @@ export type SiteOptionAction =
   | 'end_form'
   | 'jump'
   | 'redirect'
+  | 'site_page'
   | 'tag'
   | 'category'
 
@@ -67,8 +68,10 @@ export interface SiteBlockOption {
   value?: string
   action?: SiteOptionAction
   targetBlockId?: string
+  targetPageId?: string
   message?: string
   redirectUrl?: string
+  submitBeforeAction?: boolean
   tag?: string
   category?: string
 }

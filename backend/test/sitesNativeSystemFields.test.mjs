@@ -139,3 +139,127 @@ test('native form system fields save to contact and locked system fields', async
     await setAppConfig(DOMAIN_KEYS.error, previousConfig.error)
   }
 })
+
+test('native form option rules redirect to site pages and external URLs with submit preference', async () => {
+  const previousConfig = {
+    domain: await getAppConfig(DOMAIN_KEYS.domain),
+    verified: await getAppConfig(DOMAIN_KEYS.verified),
+    checkedAt: await getAppConfig(DOMAIN_KEYS.checkedAt),
+    error: await getAppConfig(DOMAIN_KEYS.error)
+  }
+  const slug = `form-rules-${Date.now()}`
+  let site
+
+  try {
+    await setAppConfig(DOMAIN_KEYS.domain, 'example.test')
+    await setAppConfig(DOMAIN_KEYS.verified, '1')
+    await setAppConfig(DOMAIN_KEYS.checkedAt, new Date().toISOString())
+    await setAppConfig(DOMAIN_KEYS.error, '')
+
+    site = await createSite({
+      name: 'Formulario reglas',
+      slug,
+      siteType: 'landing_page',
+      status: 'published',
+      blankCanvas: true,
+      theme: {
+        pages: [
+          { id: 'page-1', title: 'Inicio', slug: 'inicio', sortOrder: 0 },
+          { id: 'page-2', title: 'Gracias', slug: 'gracias', sortOrder: 1 }
+        ]
+      }
+    })
+
+    const siteWithField = await createBlock(site.id, {
+      blockType: 'radio',
+      label: 'Destino',
+      required: true,
+      settings: { pageId: 'page-1' },
+      options: [
+        {
+          id: 'internal-page',
+          label: 'Gracias interna',
+          value: 'Gracias interna',
+          action: 'site_page',
+          targetPageId: 'page-2',
+          submitBeforeAction: true
+        },
+        {
+          id: 'external-url',
+          label: 'URL externa',
+          value: 'URL externa',
+          action: 'redirect',
+          redirectUrl: 'https://example.com/oferta',
+          submitBeforeAction: false
+        },
+        {
+          id: 'not-qualified',
+          label: 'No califico',
+          value: 'No califico',
+          action: 'disqualify_after_submit',
+          message: 'No califica por ahora.'
+        }
+      ]
+    })
+
+    const field = siteWithField.blocks.find(block => block.blockType === 'radio')
+    assert.ok(field)
+
+    const baseReq = {
+      headers: { host: 'example.test', 'user-agent': 'node-test' },
+      hostname: 'example.test',
+      path: `/${slug}`,
+      ip: '127.0.0.1',
+      socket: { remoteAddress: '127.0.0.1' }
+    }
+
+    const internalResult = await createSubmissionFromRequest(baseReq, {
+      siteId: site.id,
+      pageId: 'page-1',
+      responses: {
+        [field.id]: 'Gracias interna'
+      }
+    })
+
+    assert.equal(internalResult.status, 'received')
+    assert.equal(internalResult.redirectUrl, '?page=page-2')
+    assert.equal(internalResult.rules.targetPageId, 'page-2')
+    assert.equal(internalResult.rules.actions[0].action, 'site_page')
+    assert.equal(internalResult.rules.actions[0].submitBeforeAction, true)
+
+    const externalResult = await createSubmissionFromRequest(baseReq, {
+      siteId: site.id,
+      pageId: 'page-1',
+      responses: {
+        [field.id]: 'URL externa'
+      }
+    })
+
+    assert.equal(externalResult.status, 'received')
+    assert.equal(externalResult.redirectUrl, 'https://example.com/oferta')
+    assert.equal(externalResult.rules.actions[0].action, 'redirect')
+    assert.equal(externalResult.rules.actions[0].submitBeforeAction, false)
+
+    const disqualifiedResult = await createSubmissionFromRequest(baseReq, {
+      siteId: site.id,
+      pageId: 'page-1',
+      responses: {
+        [field.id]: 'No califico'
+      }
+    })
+
+    assert.equal(disqualifiedResult.status, 'disqualified')
+    assert.equal(disqualifiedResult.message, 'No califica por ahora.')
+    assert.equal(disqualifiedResult.redirectUrl, '')
+    assert.equal(disqualifiedResult.rules.actions[0].action, 'disqualify_after_submit')
+  } finally {
+    if (site?.id) {
+      await deleteSite(site.id).catch(() => undefined)
+    }
+    await db.run('DELETE FROM contacts WHERE source = ?', [`ristak_site:${slug}`]).catch(() => undefined)
+    await setAppConfig(DOMAIN_KEYS.domain, previousConfig.domain)
+    await setAppConfig(DOMAIN_KEYS.verified, previousConfig.verified)
+    await setAppConfig(DOMAIN_KEYS.checkedAt, previousConfig.checkedAt)
+    await setAppConfig(DOMAIN_KEYS.error, previousConfig.error)
+  }
+})

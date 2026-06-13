@@ -79,6 +79,7 @@ export const OPTION_ACTIONS = new Set([
   'end_form',
   'jump',
   'redirect',
+  'site_page',
   'tag',
   'category'
 ])
@@ -3003,11 +3004,20 @@ function normalizeOptionAction(value) {
     finalizar: 'end_form',
     saltar: 'jump',
     saltar_pregunta: 'jump',
+    saltar_a_pregunta: 'jump',
     dirigir: 'redirect',
     dirigir_a_sitio: 'redirect',
     redirigir: 'redirect',
     redirigir_a_sitio: 'redirect',
     sitio: 'redirect',
+    pagina: 'site_page',
+    página: 'site_page',
+    pagina_sitio: 'site_page',
+    pagina_del_sitio: 'site_page',
+    dirigir_a_pagina: 'site_page',
+    dirigir_a_pagina_del_sitio: 'site_page',
+    redirigir_a_pagina: 'site_page',
+    redirigir_a_pagina_del_sitio: 'site_page',
     etiqueta: 'tag',
     asignar_etiqueta: 'tag',
     categoria: 'category',
@@ -3016,6 +3026,11 @@ function normalizeOptionAction(value) {
 
   const resolvedAction = aliases[action] || action
   return OPTION_ACTIONS.has(resolvedAction) ? resolvedAction : 'continue'
+}
+
+function normalizeSubmitBeforeAction(value) {
+  if (value === undefined || value === null || value === '') return true
+  return Boolean(normalizeBoolean(value))
 }
 
 const TEMPLATE_IMAGE_URLS = {
@@ -9005,8 +9020,10 @@ function normalizeOption(option) {
       value: cleanString(option.value) || label,
       action: normalizeOptionAction(option.action),
       targetBlockId: cleanString(option.targetBlockId || option.target_block_id),
+      targetPageId: cleanString(option.targetPageId || option.target_page_id || option.pageId || option.page_id),
       message: cleanString(option.message),
       redirectUrl: safeHref(option.redirectUrl || option.redirect_url || option.siteUrl || option.site_url || option.url || option.sitio, ''),
+      submitBeforeAction: normalizeSubmitBeforeAction(option.submitBeforeAction ?? option.submit_before_action ?? option.saveBeforeAction ?? option.save_before_action),
       tag: cleanString(option.tag),
       category: cleanString(option.category)
     }
@@ -9019,8 +9036,10 @@ function normalizeOption(option) {
     value: label,
     action: 'continue',
     targetBlockId: '',
+    targetPageId: '',
     message: '',
     redirectUrl: '',
+    submitBeforeAction: true,
     tag: '',
     category: ''
   }
@@ -9036,8 +9055,10 @@ function optionRuleAttributes(option) {
   const rule = {
     action: option.action || 'continue',
     targetBlockId: option.targetBlockId || '',
+    targetPageId: option.targetPageId || '',
     message: option.message || '',
     redirectUrl: safeHref(option.redirectUrl, ''),
+    submitBeforeAction: option.submitBeforeAction !== false,
     tag: option.tag || '',
     category: option.category || ''
   }
@@ -13201,6 +13222,27 @@ export async function renderPublicSiteHtml(site, { pageId, pagePath, trackingEna
         url.searchParams.set('page', targetPageId);
         return preserveUrl(url.toString());
       };
+      const isExitRule = (rule) => rule && (rule.action === 'redirect' || rule.action === 'site_page');
+      const shouldSubmitRule = (rule) => !isExitRule(rule) || rule.submitBeforeAction !== false;
+      const getRuleRedirectUrl = (rule) => {
+        if (!rule) return '';
+        if (rule.action === 'redirect') return preserveUrl(rule.redirectUrl || '');
+        if (rule.action === 'site_page') return pageUrl(rule.targetPageId || '');
+        return '';
+      };
+      const handleBlockingRule = (rule, rulePageId, targetMessage) => {
+        if (!rule) return false;
+        if (isExitRule(rule) && !shouldSubmitRule(rule)) {
+          const targetUrl = getRuleRedirectUrl(rule);
+          if (targetUrl) window.location.href = targetUrl;
+          return true;
+        }
+        if (targetMessage) targetMessage.textContent = isExitRule(rule) ? 'Enviando...' : (rule.message || 'Gracias. Tu información fue recibida.');
+        form.dataset.ruleSubmit = 'true';
+        form.dataset.rulePageId = rulePageId || getCurrentPageId();
+        form.requestSubmit();
+        return true;
+      };
 
       const readSelectedRules = (field) => {
         const type = field.getAttribute('data-field-type');
@@ -13284,14 +13326,8 @@ export async function renderPublicSiteHtml(site, { pageId, pagePath, trackingEna
           const currentFields = getEmbeddedPageFields(state);
           if (!currentFields.every(validateField)) return;
           const rules = currentFields.flatMap((field) => readSelectedRules(field)).filter(item => item.action && item.action !== 'continue');
-          const blockingRule = rules.find(item => item.action === 'show_message' || item.action === 'disqualify' || item.action === 'end_form' || item.action === 'redirect');
-          if (blockingRule) {
-            if (state.message) state.message.textContent = blockingRule.action === 'redirect' ? 'Enviando...' : (blockingRule.message || 'Gracias. Tu información fue recibida.');
-            form.dataset.ruleSubmit = 'true';
-            form.dataset.rulePageId = state.pageIds[state.index] || '';
-            form.requestSubmit();
-            return;
-          }
+          const blockingRule = rules.find(item => item.action === 'show_message' || item.action === 'disqualify' || item.action === 'end_form' || item.action === 'redirect' || item.action === 'site_page');
+          if (blockingRule && handleBlockingRule(blockingRule, state.pageIds[state.index] || '', state.message)) return;
           const jumpRule = rules.find(item => item.action === 'jump' && item.targetBlockId);
           const targetPageId = jumpRule && jumpRule.targetBlockId ? targetBlockPageMap[jumpRule.targetBlockId] : '';
           const targetIndex = state.pageIds.indexOf(targetPageId);
@@ -13309,13 +13345,8 @@ export async function renderPublicSiteHtml(site, { pageId, pagePath, trackingEna
         const currentFields = getPageFields(getCurrentPageId());
         if (!currentFields.every(validateField)) return;
         const rules = currentFields.flatMap((field) => readSelectedRules(field)).filter(item => item.action && item.action !== 'continue');
-        const blockingRule = rules.find(item => item.action === 'show_message' || item.action === 'disqualify' || item.action === 'end_form' || item.action === 'redirect');
-        if (blockingRule) {
-          if (message) message.textContent = blockingRule.action === 'redirect' ? 'Enviando...' : (blockingRule.message || 'Gracias. Tu información fue recibida.');
-          form.dataset.ruleSubmit = 'true';
-          form.requestSubmit();
-          return;
-        }
+        const blockingRule = rules.find(item => item.action === 'show_message' || item.action === 'disqualify' || item.action === 'end_form' || item.action === 'redirect' || item.action === 'site_page');
+        if (blockingRule && handleBlockingRule(blockingRule, getCurrentPageId(), message)) return;
         const jumpRule = rules.find(item => item.action === 'jump' && item.targetBlockId);
         if (jumpRule && jumpRule.targetBlockId) {
           const targetField = fields.find(field => field.getAttribute('data-block-id') === jumpRule.targetBlockId);
@@ -13334,13 +13365,10 @@ export async function renderPublicSiteHtml(site, { pageId, pagePath, trackingEna
         const currentResponses = getCurrentResponses();
         const mergedResponses = { ...readStoredResponses(), ...currentResponses };
         const rules = currentFields.flatMap((field) => readSelectedRules(field)).filter(item => item.action && item.action !== 'continue');
-        const blockingRule = rules.find(item => item.action === 'show_message' || item.action === 'disqualify' || item.action === 'end_form' || item.action === 'redirect');
+        const blockingRule = rules.find(item => item.action === 'show_message' || item.action === 'disqualify' || item.action === 'end_form' || item.action === 'redirect' || item.action === 'site_page');
         if (blockingRule) {
-          writeStoredResponses(mergedResponses);
-          if (message) message.textContent = blockingRule.action === 'redirect' ? 'Enviando...' : (blockingRule.message || 'Gracias. Tu información fue recibida.');
-          form.dataset.ruleSubmit = 'true';
-          form.requestSubmit();
-          return;
+          if (shouldSubmitRule(blockingRule)) writeStoredResponses(mergedResponses);
+          if (handleBlockingRule(blockingRule, pageId, message)) return;
         }
 
         writeStoredResponses(mergedResponses);
@@ -14041,6 +14069,7 @@ function evaluateSubmissionRules(blocks, responses = {}) {
   let disqualified = false
   let message = ''
   let redirectUrl = ''
+  let targetPageId = ''
 
   for (const block of fields) {
     if (!['dropdown', 'radio', 'checkboxes'].includes(block.blockType)) continue
@@ -14068,8 +14097,10 @@ function evaluateSubmissionRules(blocks, responses = {}) {
           option: option.label,
           action,
           targetBlockId: option.targetBlockId || '',
+          targetPageId: option.targetPageId || '',
           message: option.message || '',
           redirectUrl: option.redirectUrl || '',
+          submitBeforeAction: option.submitBeforeAction !== false,
           tag: option.tag || '',
           category: option.category || ''
         })
@@ -14089,6 +14120,10 @@ function evaluateSubmissionRules(blocks, responses = {}) {
       if (action === 'redirect' && !redirectUrl) {
         redirectUrl = safeHref(option.redirectUrl, '')
       }
+
+      if (action === 'site_page' && !targetPageId) {
+        targetPageId = cleanString(option.targetPageId)
+      }
     }
   }
 
@@ -14097,6 +14132,7 @@ function evaluateSubmissionRules(blocks, responses = {}) {
     disqualified,
     message,
     redirectUrl,
+    targetPageId,
     tags: Array.from(tags),
     categories: Array.from(categories),
     actions
@@ -14862,6 +14898,8 @@ export async function createSubmissionFromRequest(req, body = {}) {
   }
 
   const ruleEvaluation = evaluateSubmissionRules(submissionBlocks, responses)
+  const ruleRedirectUrl = ruleEvaluation.redirectUrl ||
+    (ruleEvaluation.targetPageId ? buildPageHref(ruleEvaluation.targetPageId, { site }) : '')
 
   const meta = {
     ...(body.meta && typeof body.meta === 'object' ? body.meta : {}),
@@ -14953,7 +14991,7 @@ export async function createSubmissionFromRequest(req, body = {}) {
     contactPhone: inferredContact.phone || '',
     status: ruleEvaluation.status,
     message: getSiteFinalMessage(site, ruleEvaluation),
-    redirectUrl: ruleEvaluation.redirectUrl || '',
+    redirectUrl: ruleRedirectUrl,
     rules: ruleEvaluation,
     rawFields: nativeLayers.rawFields,
     mappedFields,

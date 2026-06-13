@@ -334,23 +334,18 @@ const pruneMetaEventParametersForEvent = (parameters?: SiteMetaEventParameters |
 }
 
 const ruleActions: Array<{ value: SiteOptionAction; label: string }> = [
-  { value: 'continue', label: 'Continuar' },
-  { value: 'cold_lead', label: 'Clasificar lead frio' },
-  { value: 'warm_lead', label: 'Clasificar lead tibio' },
-  { value: 'hot_lead', label: 'Clasificar lead caliente' },
-  { value: 'jump', label: 'Saltar a otra pregunta' },
-  { value: 'show_message', label: 'Mostrar mensaje' },
-  { value: 'end_form', label: 'Terminar formulario' },
+  { value: 'continue', label: 'Continuar normalmente' },
+  { value: 'jump', label: 'Saltar a una pregunta' },
+  { value: 'site_page', label: 'Dirigir a página del sitio' },
+  { value: 'redirect', label: 'Dirigir a URL externa' },
   { value: 'disqualify', label: 'Descalificar inmediatamente' },
-  { value: 'disqualify_after_submit', label: 'Descalificar al finalizar formulario' },
-  { value: 'redirect', label: 'Dirigir a sitio' },
-  { value: 'tag', label: 'Agregar etiqueta' },
-  { value: 'category', label: 'Asignar categoría' }
+  { value: 'disqualify_after_submit', label: 'Descalificar al enviar' }
 ]
 const visibleRuleActionValues = new Set<SiteOptionAction>(ruleActions.map(action => action.value))
 const normalizeVisibleRuleAction = (action?: SiteOptionAction): SiteOptionAction => (
   action && visibleRuleActionValues.has(action) ? action : 'continue'
 )
+const exitRuleActions = new Set<SiteOptionAction>(['redirect', 'site_page'])
 
 const embeddedFormFieldTypes: SiteBlockType[] = [
   'short_text',
@@ -2736,8 +2731,10 @@ const normalizeOption = (option: string | SiteBlockOption, index: number): SiteB
     value: option.value || label,
     action: normalizeVisibleRuleAction(option.action),
     targetBlockId: option.targetBlockId || '',
+    targetPageId: option.targetPageId || '',
     message: option.message || '',
     redirectUrl: option.redirectUrl || '',
+    submitBeforeAction: option.submitBeforeAction !== false,
     tag: option.tag || '',
     category: option.category || ''
   }
@@ -3482,6 +3479,8 @@ function FormEmbedEditorPanel({
   customFields,
   pages,
   activePageId,
+  sitePages,
+  activeSitePageId,
   onPatchBlock,
   onPatchSettings,
   onPatchField,
@@ -3501,6 +3500,8 @@ function FormEmbedEditorPanel({
   customFields: CustomFieldDefinition[]
   pages: SitePage[]
   activePageId: string
+  sitePages: SitePage[]
+  activeSitePageId: string
   onPatchBlock: (patch: Partial<SiteBlock>) => void
   onPatchSettings: (patch: Record<string, unknown>) => void
   onPatchField: (fieldId: string, patch: Partial<SiteBlock>) => void
@@ -3654,7 +3655,15 @@ function FormEmbedEditorPanel({
           />
 
           {isChoiceBlock(activeField.blockType) && (
-            <OptionsRulesEditor block={activeField} blocks={fields} pages={pages} onPatchBlock={patchActiveField} onSave={onSave} />
+            <OptionsRulesEditor
+              block={activeField}
+              blocks={fields}
+              pages={pages}
+              sitePages={sitePages}
+              activeSitePageId={activeSitePageId}
+              onPatchBlock={patchActiveField}
+              onSave={onSave}
+            />
           )}
 
           <div className={styles.panelSubheader}>Apariencia del campo</div>
@@ -7317,6 +7326,8 @@ export const Sites: React.FC = () => {
                     customFields={customFields}
                     pages={formEditPages}
                     activePageId={activeEmbeddedFormPage?.id || DEFAULT_FUNNEL_PAGE_ID}
+                    sitePages={pages}
+                    activeSitePageId={activePage?.id || DEFAULT_FUNNEL_PAGE_ID}
                     onPatchBlock={(patch) => patchSelectedBlock(patch)}
                     onPatchSettings={(patch) => patchSelectedBlockSettings(patch)}
                     onPatchField={patchEmbeddedFormField}
@@ -18697,7 +18708,15 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
       )}
 
       {isChoiceBlock(block.blockType) && (
-        <OptionsRulesEditor block={block} blocks={allBlocks || blocks} pages={pages} onPatchBlock={onPatchBlock} onSave={onSave} />
+        <OptionsRulesEditor
+          block={block}
+          blocks={allBlocks || blocks}
+          pages={pages}
+          sitePages={pages}
+          activeSitePageId={activePageId}
+          onPatchBlock={onPatchBlock}
+          onSave={onSave}
+        />
       )}
 
       {!isField && (
@@ -18754,15 +18773,17 @@ interface OptionsRulesEditorProps {
   block: SiteBlock
   blocks: SiteBlock[]
   pages: SitePage[]
+  sitePages?: SitePage[]
+  activeSitePageId?: string
   onPatchBlock: (patch: Partial<SiteBlock>) => void
   onSave: () => void
 }
 
-const OptionsRulesEditor: React.FC<OptionsRulesEditorProps> = ({ block, blocks, pages, onPatchBlock, onSave }) => {
+const OptionsRulesEditor: React.FC<OptionsRulesEditorProps> = ({ block, blocks, pages, sitePages, activeSitePageId, onPatchBlock, onSave }) => {
   const options = getOptions(block)
   const fieldTargets = blocks.filter(item => fieldBlockTypes.has(item.blockType) && item.id !== block.id)
-  const messageActions = new Set<SiteOptionAction>(['show_message', 'end_form', 'disqualify', 'disqualify_after_submit'])
-  const categoryActions = new Set<SiteOptionAction>(['category', 'cold_lead', 'warm_lead', 'hot_lead'])
+  const pageTargets = (sitePages && sitePages.length ? sitePages : pages)
+    .filter(page => page.id !== activeSitePageId)
   const getTargetLabel = (target: SiteBlock) => {
     const page = pages.find(item => item.id === getBlockPageId(target, pages))
     return page ? `${target.label} - ${page.title}` : target.label
@@ -18798,10 +18819,12 @@ const OptionsRulesEditor: React.FC<OptionsRulesEditorProps> = ({ block, blocks, 
   const buildRuleActionPatch = (option: SiteBlockOption, action: SiteOptionAction): Partial<SiteBlockOption> => ({
     action,
     targetBlockId: action === 'jump' ? option.targetBlockId || '' : '',
+    targetPageId: action === 'site_page' ? option.targetPageId || '' : '',
     redirectUrl: action === 'redirect' ? option.redirectUrl || '' : '',
-    message: messageActions.has(action) ? option.message || '' : '',
-    tag: action === 'tag' ? option.tag || '' : '',
-    category: categoryActions.has(action) ? option.category || '' : ''
+    submitBeforeAction: exitRuleActions.has(action) ? option.submitBeforeAction !== false : undefined,
+    message: action === 'disqualify' || action === 'disqualify_after_submit' ? option.message || '' : '',
+    tag: '',
+    category: ''
   })
 
   return (
@@ -18851,7 +18874,7 @@ const OptionsRulesEditor: React.FC<OptionsRulesEditorProps> = ({ block, blocks, 
 
           {option.action === 'redirect' && (
             <label className={styles.field}>
-              <span>Sitio</span>
+              <span>URL destino</span>
               <input
                 value={option.redirectUrl || ''}
                 placeholder="https://tusitio.com"
@@ -18861,7 +18884,36 @@ const OptionsRulesEditor: React.FC<OptionsRulesEditorProps> = ({ block, blocks, 
             </label>
           )}
 
-          {messageActions.has(getVisibleRuleAction(option.action)) && (
+          {option.action === 'site_page' && (
+            <label className={styles.field}>
+              <span>Página del sitio</span>
+              <CustomSelect value={option.targetPageId || ''} onChange={(event) => patchOption(index, { targetPageId: event.target.value })} onBlur={onSave}>
+                <option value="">Selecciona una página</option>
+                {pageTargets.map(page => <option key={page.id} value={page.id}>{page.title || 'Página'}</option>)}
+              </CustomSelect>
+            </label>
+          )}
+
+          {exitRuleActions.has(getVisibleRuleAction(option.action)) && (
+            <>
+              <label className={styles.field}>
+                <span>Datos del formulario</span>
+                <CustomSelect
+                  value={option.submitBeforeAction === false ? 'skip' : 'submit'}
+                  onChange={(event) => patchOption(index, { submitBeforeAction: event.target.value !== 'skip' })}
+                  onBlur={onSave}
+                >
+                  <option value="submit">Guardar datos y luego redirigir</option>
+                  <option value="skip">Redirigir sin guardar datos</option>
+                </CustomSelect>
+              </label>
+              <p className={styles.customFieldHint}>
+                Si guarda datos, el formulario se envía antes de mandar al usuario al destino.
+              </p>
+            </>
+          )}
+
+          {(option.action === 'disqualify' || option.action === 'disqualify_after_submit') && (
             <label className={styles.field}>
               <span>Mensaje</span>
               <textarea
@@ -18869,30 +18921,6 @@ const OptionsRulesEditor: React.FC<OptionsRulesEditorProps> = ({ block, blocks, 
                 value={option.message || ''}
                 placeholder={option.action === 'disqualify' ? 'Gracias. Por ahora no califica.' : 'Gracias. Tu información fue recibida.'}
                 onChange={(event) => patchOption(index, { message: event.target.value })}
-                onBlur={onSave}
-              />
-            </label>
-          )}
-
-          {option.action === 'tag' && (
-            <label className={styles.field}>
-              <span>Etiqueta</span>
-              <input
-                value={option.tag || ''}
-                placeholder="lead_prioritario"
-                onChange={(event) => patchOption(index, { tag: event.target.value })}
-                onBlur={onSave}
-              />
-            </label>
-          )}
-
-          {categoryActions.has(getVisibleRuleAction(option.action)) && (
-            <label className={styles.field}>
-              <span>Categoría</span>
-              <input
-                value={option.category || ''}
-                placeholder={option.action === 'cold_lead' ? 'frio' : option.action === 'warm_lead' ? 'tibio' : option.action === 'hot_lead' ? 'caliente' : 'categoría'}
-                onChange={(event) => patchOption(index, { category: event.target.value })}
                 onBlur={onSave}
               />
             </label>
