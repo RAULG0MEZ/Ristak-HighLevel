@@ -13274,3 +13274,359 @@
 .pageFrame .containerFocused .sitesShellFocused .paletteItem:hover .paletteGrip {
   opacity: 1;
 }
+
+/* Site editor header v3: product hierarchy, grouped controls, and save state. */
+.pageFrame .containerFocused:has(.builder) {
+  --sites-editor-topbar-h: 72px;
+  --editor-control-h: 40px;
+  --sites-editor-toolbar-offset: calc(var(--sites-editor-topbar-h, 72px) + 18px);
+}
+
+.pageFrame .containerFocused:has(.builder) .editorHeader {
+  min-height: var(--sites-editor-topbar-h, 72px);
+  padding: calc((var(--sites-editor-topbar-h, 72px) - var(--editor-control-h, 40px)) / 2) 16px;
+  border-bottom: 1px solid var(--color-border-subtle, rgba(148, 163, 184, 0.14));
+  background: color-mix(in srgb, var(--color-background-secondary) 96%, var(--color-background-primary) 4%);
+}
+
+.pageFrame .containerFocused:has(.builder) .editorUnifiedToolbar {
+  gap: 0;
+}
+
+.pageFrame .containerFocused:has(.builder) .editorToolbarTop {
+  min-height: var(--editor-control-h, 40px);
+  display: grid;
+  grid-template-columns: minmax(430px, 1.25fr) minmax(156px, auto) minmax(480px, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.editorToolbarContext,
+.editorToolbarTools,
+.editorToolbarPrimary {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.editorToolbarContext {
+  justify-content: flex-start;
+}
+
+.editorToolbarTools {
+  justify-content: center;
+  padding-inline: 12px;
+  border-inline: 1px solid var(--color-border-subtle, rgba(148, 163, 184, 0.14));
+}
+
+.editorToolbarPrimary {
+  justify-content: flex-end;
+}
+
+.pageFrame .containerFocused:has(.builder) .editorToolbarTop .backButton {
+  height: var(--editor-control-h, 40px);
+  min-height: var(--editor-control-h, 40px);
+  gap: 6px;
+  border: 0;
+  border-radius: var(--design-control-radius, 8px);
+  background: transparent;
+  color: var(--color-text-secondary);
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: var(--font-weight-semibold, 600);
+}
+
+.pageFrame .containerFocused:has(.builder) .editorToolbarTop .backButton:hover {
+  background: var(--design-control-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.pageFrame .containerFocused:has(.builder) .editorToolbarTop .editorToolbarNameField {
+  height: var(--editor-control-h, 40px);
+  flex: 0 1 176px;
+  min-width: 128px;
+  max-width: 200px;
+}
+
+.pageFrame .containerFocused:has(.builder) .editorToolbarTop .editorToolbarNameField input {
+  height: var(--editor-control-h, 40px);
+  border-color: var(--design-control-border);
+  border-radius: var(--design-control-radius, 8px);
+  background: var(--design-control-bg);
+  padding-inline: 12px;
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold, 600);
+}
+
+.editorPageSelectorSlot {
+  min-width: 0;
+  flex: 0 1 160px;
+  display: flex;
+  align-items: center;
+}
+
+.editorPageSelectorSlot .pagesDropdown {
+  flex: 0 1 160px;
+  width: min(160px, 100%);
+  min-width: 136px;
+  max-width: 160px;
+}
+
+.editorPageSelectorSlot .pagesDropdownTrigger {
+  height: var(--editor-control-h, 40px);
+  border-color: var(--design-control-border);
+  border-radius: var(--design-control-radius, 8px);
+  background: var(--design-control-bg);
+  box-shadow: none;
+}
+
+.editorPageSelectorSlot .pagesDropdownTrigger:hover,
+.editorPageSelectorSlot .pagesDropdownTrigger:focus-visible,
+.editorPageSelectorSlot .pagesDropdownOpen .pagesDropdownTrigger {
+  border-color: var(--design-control-border-hover);
+  background: var(--design-control-bg-hover);
+}
+
+.editorPageSelectorSlot .pagesDropdownTriggerText strong {
+  font-size: 13px;
+  font-weight: var(--font-weight-bold, 700);
+}
+
+.pageFrame .containerFocused:has(.builder) .editorToolbarTools .editorSettingsButton,
+.pageFrame .containerFocused:has(.builder) .editorToolbarTools .seoToolbarButton {
+  height: 38px;
+  min-height: 38px;
+  border-color: var(--design-control-border);
+  border-radius: var(--design-control-radius, 8px);
+  background: transparent;
+  color: var(--color-text-secondary);
+  padding-inline: 10px;
+  font-size: 12px;
+  font-weight: var(--font-weight-semibold, 600);
+  box-shadow: none;
+}
+
+.pageFrame .containerFocused:has(.builder) .editorToolbarTools .editorSettingsButton:hover:not(:disabled),
+.pageFrame .containerFocused:has(.builder) .editorToolbarTools .editorSettingsButtonActive,
+.pageFrame .containerFocused:has(.builder) .editorToolbarTools .seoToolbarButton:hover {
+  border-color: var(--design-control-border-hover);
+  background: var(--design-control-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.pageFrame .containerFocused:has(.builder) .editorToolbarTools .editorSettingsButtonWarning {
+  border-color: var(--design-control-border);
+  background: transparent;
+}
+
+.pageFrame .containerFocused:has(.builder) .editorToolbarTools .editorSettingsBadge {
+  min-width: 17px;
+  height: 17px;
+  padding-inline: 5px;
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold, 600);
+  opacity: 0.86;
+}
+
+.pageFrame .containerFocused:has(.builder) .editorToolbarTools .headerToolbarButtonActive {
+  border-color: rgba(var(--color-primary-rgb), 0.28);
+  background: rgba(var(--color-primary-rgb), 0.08);
+  color: var(--color-primary);
+}
+
+.pageFrame .containerFocused:has(.builder) .editorToolbarPrimary .deviceToggle {
+  height: var(--editor-control-h, 40px);
+  padding: 3px;
+  border: 1px solid var(--design-control-border);
+  border-radius: var(--design-control-radius, 8px);
+  background: var(--design-control-bg);
+}
+
+.pageFrame .containerFocused:has(.builder) .editorToolbarPrimary .deviceToggle button {
+  width: 32px;
+  height: 32px;
+  border-radius: calc(var(--design-control-radius, 8px) - 2px);
+}
+
+.pageFrame .containerFocused:has(.builder) .editorToolbarPrimary .deviceActive {
+  background: rgba(var(--color-primary-rgb), 0.11);
+  color: var(--color-primary);
+}
+
+.pageFrame .containerFocused:has(.builder) .editorToolbarPrimary .editorIconAction {
+  width: var(--editor-control-h, 40px);
+  height: var(--editor-control-h, 40px);
+  min-height: var(--editor-control-h, 40px);
+  border-color: var(--design-control-border);
+  border-radius: var(--design-control-radius, 8px);
+  background: var(--design-control-bg);
+}
+
+.editorActionButton,
+.editorPublishButton {
+  height: var(--editor-control-h, 40px) !important;
+  min-height: var(--editor-control-h, 40px) !important;
+  border-radius: var(--design-control-radius, 8px) !important;
+  padding-inline: 13px !important;
+  font-size: 13px !important;
+  font-weight: var(--font-weight-semibold, 600) !important;
+  white-space: nowrap;
+}
+
+.editorPublishButton {
+  min-width: 112px;
+  border-color: rgba(var(--color-primary-rgb), 0.34) !important;
+  background: rgba(var(--color-primary-rgb), 0.12) !important;
+  color: var(--color-text-primary) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+.editorPublishButton:hover:not(:disabled) {
+  border-color: rgba(var(--color-primary-rgb), 0.46) !important;
+  background: rgba(var(--color-primary-rgb), 0.18) !important;
+}
+
+.editorSaveStatus {
+  min-width: 126px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  font-weight: var(--font-weight-semibold, 600);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.editorSaveStatus svg {
+  flex: 0 0 auto;
+}
+
+.editorSaveStatusSaved {
+  color: var(--color-text-secondary);
+}
+
+.editorSaveStatusSaved svg {
+  color: var(--color-status-success);
+}
+
+.editorSaveStatusDirty {
+  color: var(--color-warning-dark);
+}
+
+.editorSaveStatusSaving {
+  color: var(--color-text-secondary);
+}
+
+.editorSaveStatusSaving svg {
+  animation: editorSaveSpin 0.9s linear infinite;
+}
+
+@keyframes editorSaveSpin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 1500px) {
+  .pageFrame .containerFocused:has(.builder) .editorToolbarTop {
+    grid-template-columns: minmax(390px, 1fr) minmax(142px, auto) minmax(430px, auto);
+    gap: 10px;
+  }
+
+  .pageFrame .containerFocused:has(.builder) .editorToolbarTools {
+    padding-inline: 8px;
+  }
+
+  .editorSaveStatus {
+    min-width: 106px;
+  }
+}
+
+@media (max-width: 1320px) {
+  .pageFrame .containerFocused:has(.builder) {
+    --sites-editor-topbar-h: 154px;
+    --sites-editor-toolbar-offset: calc(var(--sites-editor-topbar-h, 154px) + 18px);
+  }
+
+  .pageFrame .containerFocused:has(.builder) .editorHeader {
+    padding-block: 10px;
+  }
+
+  .pageFrame .containerFocused:has(.builder) .editorToolbarTop {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "context"
+      "tools"
+      "primary";
+    align-items: center;
+    row-gap: 8px;
+  }
+
+  .editorToolbarContext {
+    grid-area: context;
+  }
+
+  .editorToolbarTools {
+    grid-area: tools;
+    justify-content: flex-start;
+    padding-inline: 0;
+    border-inline: 0;
+  }
+
+  .editorToolbarPrimary {
+    grid-area: primary;
+    max-width: none;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .editorSaveStatus {
+    width: auto;
+    min-width: 126px;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 980px) {
+  .pageFrame .containerFocused:has(.builder) {
+    --sites-editor-topbar-h: 154px;
+    --sites-editor-toolbar-offset: calc(var(--sites-editor-topbar-h, 154px) + 18px);
+  }
+
+  .pageFrame .containerFocused:has(.builder) .editorToolbarTop {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "context"
+      "tools"
+      "primary";
+  }
+
+  .editorToolbarContext,
+  .editorToolbarTools,
+  .editorToolbarPrimary {
+    width: 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .editorToolbarPrimary {
+    max-width: none;
+  }
+
+  .editorSaveStatus {
+    width: auto;
+    min-width: 126px;
+    justify-content: flex-start;
+  }
+}

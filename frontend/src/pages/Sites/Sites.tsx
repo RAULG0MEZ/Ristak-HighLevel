@@ -1014,6 +1014,18 @@ const getPublicTitleEditorValue = (site?: PublicSite | null) =>
 const getPublicTitleForSave = (site: PublicSite) =>
   isLegacyPublicTitleDefault(site) ? '' : site.title
 
+const formatEditorSavedAt = (savedAt: number, now: number) => {
+  const elapsedSeconds = Math.max(0, Math.floor((now - savedAt) / 1000))
+  if (elapsedSeconds < 10) return 'Guardado hace unos segundos'
+  if (elapsedSeconds < 60) return `Guardado hace ${elapsedSeconds} segundos`
+
+  const elapsedMinutes = Math.floor(elapsedSeconds / 60)
+  if (elapsedMinutes <= 1) return 'Guardado hace 1 minuto'
+  if (elapsedMinutes < 60) return `Guardado hace ${elapsedMinutes} minutos`
+
+  return 'Guardado'
+}
+
 const templateMetaById = (id?: string) => siteTemplates.find(template => template.id === id)
 
 const getTemplateThemeDefaults = (id: SiteTemplateId, siteType: SiteType): Partial<SiteTheme> => {
@@ -3044,6 +3056,8 @@ export const Sites: React.FC = () => {
   const [leadRows, setLeadRows] = useState<LeadRow[]>([])
   const [loadingLeads, setLoadingLeads] = useState(false)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null)
+  const [saveStatusNow, setSaveStatusNow] = useState(() => Date.now())
   const [editorFocusMode, setEditorFocusMode] = useState(routeState.focus)
   const [seoModalOpen, setSeoModalOpen] = useState(false)
   const [headerModalOpen, setHeaderModalOpen] = useState(false)
@@ -3075,6 +3089,19 @@ export const Sites: React.FC = () => {
   useEffect(() => {
     selectedSiteRef.current = selectedSite
   }, [selectedSite])
+
+  useEffect(() => {
+    setLastSavedAt(null)
+    setSaveStatusNow(Date.now())
+  }, [selectedSite?.id])
+
+  useEffect(() => {
+    if (!lastSavedAt || saving || hasUnsavedChanges) return
+
+    setSaveStatusNow(Date.now())
+    const interval = window.setInterval(() => setSaveStatusNow(Date.now()), 10000)
+    return () => window.clearInterval(interval)
+  }, [hasUnsavedChanges, lastSavedAt, saving])
 
   useEffect(() => {
     let cancelled = false
@@ -3182,6 +3209,32 @@ export const Sites: React.FC = () => {
     ? getThemeString(editorSite.theme, 'continueText') || 'Continuar'
     : undefined
   const seoValidation = editorSite ? getSeoValidationState(editorSite) : null
+  const editorSaveStatus = useMemo(() => {
+    if (saving) {
+      return {
+        label: 'Guardando...',
+        tone: 'saving' as const,
+        icon: <RefreshCw size={14} />
+      }
+    }
+    if (hasUnsavedChanges) {
+      return {
+        label: 'Cambios sin guardar',
+        tone: 'dirty' as const,
+        icon: <AlertTriangle size={14} />
+      }
+    }
+    return {
+      label: lastSavedAt ? formatEditorSavedAt(lastSavedAt, saveStatusNow) : 'Guardado',
+      tone: 'saved' as const,
+      icon: <CheckCircle2 size={14} />
+    }
+  }, [hasUnsavedChanges, lastSavedAt, saveStatusNow, saving])
+  const editorSaveStatusClass = editorSaveStatus.tone === 'saving'
+    ? styles.editorSaveStatusSaving
+    : editorSaveStatus.tone === 'dirty'
+      ? styles.editorSaveStatusDirty
+      : styles.editorSaveStatusSaved
   const editorActive = Boolean(editorSite)
   const isCanvasFocusMode = editorFocusMode && Boolean(editorSite)
   const isFocusedSitesMode = createFlow !== 'closed' || Boolean(editorSite)
@@ -3325,6 +3378,11 @@ export const Sites: React.FC = () => {
       setHasUnsavedChanges(true)
     }
   }, [editorSite])
+
+  const markEditorSaved = useCallback(() => {
+    setHasUnsavedChanges(false)
+    setLastSavedAt(Date.now())
+  }, [])
 
   useEffect(() => {
     loadSites(routeState.siteId || new URLSearchParams(window.location.search).get('siteEditor') || undefined, routeState.pageId || undefined)
@@ -3941,7 +3999,7 @@ export const Sites: React.FC = () => {
       const targetPageId = nextActivePageId || activePageId
       setActivePageId(targetPageId)
       navigateSitesEditor({ site, pageId: targetPageId, blockId: '' })
-      setHasUnsavedChanges(false)
+      markEditorSaved()
     } catch (error) {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudieron guardar las paginas')
     } finally {
@@ -4045,7 +4103,7 @@ export const Sites: React.FC = () => {
       }
       const site = await saveSiteTheme(selectedSite, theme)
       syncSelectedSite(site)
-      setHasUnsavedChanges(false)
+      markEditorSaved()
       showToast('success', mode === 'website' ? 'Modo Sitio web' : 'Modo Embudo', mode === 'website'
         ? 'Ahora puedes organizar paginas con subpaginas.'
         : 'Las paginas vuelven a un orden lineal de embudo.')
@@ -4132,7 +4190,7 @@ export const Sites: React.FC = () => {
       syncSelectedSite(site)
       setActivePageId(newRootId)
       navigateSitesEditor({ site, pageId: newRootId, blockId: '' })
-      setHasUnsavedChanges(false)
+      markEditorSaved()
       showToast('success', subtreeIds.length > 1 ? 'Pagina y subpaginas duplicadas' : 'Pagina duplicada', 'Ya esta lista para editar.')
     } catch (error) {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo duplicar la pagina')
@@ -4189,7 +4247,7 @@ export const Sites: React.FC = () => {
             syncSelectedSite(site)
             setActivePageId(nextActive || DEFAULT_FUNNEL_PAGE_ID)
             navigateSitesEditor({ site, pageId: nextActive || DEFAULT_FUNNEL_PAGE_ID, blockId: '' })
-            setHasUnsavedChanges(false)
+            markEditorSaved()
             showToast('success', 'Pagina eliminada', `${getSiteTypeLabel(selectedSite)} se actualizo.`)
           } catch (error) {
             showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo eliminar la pagina')
@@ -4637,7 +4695,7 @@ export const Sites: React.FC = () => {
         metaEventName: siteToSave.metaEventName
       })
       syncSelectedSite(site)
-      setHasUnsavedChanges(false)
+      markEditorSaved()
       if (!options.silent) {
         showToast('success', statusOverride === 'published' ? 'Publicado' : 'Guardado', 'Sitio actualizado')
       }
@@ -5155,7 +5213,7 @@ export const Sites: React.FC = () => {
         site = await sitesService.updateBlock(siteToSave.id, block.id, block)
       }
       syncSelectedSite(site)
-      setHasUnsavedChanges(false)
+      markEditorSaved()
     } catch (error) {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo guardar el estilo')
     }
@@ -5170,7 +5228,7 @@ export const Sites: React.FC = () => {
     try {
       const site = await sitesService.updateBlock(siteToSave.id, block.id, block)
       syncSelectedSite(site)
-      setHasUnsavedChanges(false)
+      markEditorSaved()
     } catch (error) {
       showToast('error', 'Error', error instanceof Error ? error.message : 'No se pudo guardar el bloque')
     }
@@ -5306,7 +5364,7 @@ export const Sites: React.FC = () => {
         afterBlockIds
       })
       if (!wasAlreadyDirty) {
-        setHasUnsavedChanges(false)
+        markEditorSaved()
       }
       return true
     } catch (error) {
@@ -5687,14 +5745,11 @@ export const Sites: React.FC = () => {
             <>
               <div className={styles.editorUnifiedToolbar}>
                 <div className={styles.editorToolbarTop}>
-                  <div className={styles.editorToolbarLeft}>
+                  <div className={styles.editorToolbarContext}>
                     <button type="button" className={styles.backButton} onClick={handleBackToLibrary}>
                       <ArrowLeft size={15} />
                       <span>Volver</span>
                     </button>
-                    {editorSite.status !== 'draft' && (
-                      <span className={`${styles.statusPill} ${getStatusClass(editorSite, domainConfig)}`}>{getStatusLabel(editorSite, domainConfig)}</span>
-                    )}
                     <label className={`${styles.editorNameField} ${styles.editorToolbarNameField}`}>
                       <input
                         value={editorSite.name}
@@ -5704,6 +5759,40 @@ export const Sites: React.FC = () => {
                         onBlur={() => handleSaveSite(undefined, { silent: true })}
                       />
                     </label>
+                    {editorSite.status !== 'draft' && (
+                      <span className={`${styles.statusPill} ${getStatusClass(editorSite, domainConfig)}`}>{getStatusLabel(editorSite, domainConfig)}</span>
+                    )}
+                    <div className={styles.editorPageSelectorSlot}>
+                      {hasEditablePages(editorSite) && (
+                        <FunnelPagesPanel
+                          pages={pages}
+                          activePageId={activePage?.id || DEFAULT_FUNNEL_PAGE_ID}
+                          locked={!canManagePages(editorSite) || editorAIGenerating}
+                          draggingPageId={draggingPageId}
+                          colorFinalPages={isStandardForm(editorSite)}
+                          isFixedPage={isStandardForm(editorSite) ? isFormFinalPage : undefined}
+                          pageMode={getSitePageMode(editorSite)}
+                          onChangeMode={isLanding(editorSite) && !isImportedHtmlSite(editorSite) ? handleChangePageMode : undefined}
+                          onAddSubpage={handleAddSubpage}
+                          onPromotePage={handlePromotePage}
+                          onDemotePage={handleDemotePage}
+                          getPageDepth={(page) => getPageDepth(page, pages)}
+                          canDeletePage={(page) => isStandardForm(editorSite)
+                            ? !isFormFinalPage(page) && getFormContentPages(pages).length > 1
+                            : pages.length > 1}
+                          canDuplicatePage={(page) => !isStandardForm(editorSite) || !isFormFinalPage(page)}
+                          onSelectPage={selectEditorPage}
+                          onAddPage={handleAddPage}
+                          onDuplicatePage={handleDuplicatePage}
+                          onDeletePage={handleDeletePage}
+                          onDragPage={setDraggingPageId}
+                          onReorderPages={handleReorderPages}
+                          onRenamePage={handleRenamePage}
+                        />
+                      )}
+                    </div>
+                  </div>
+                  <div className={styles.editorToolbarTools} aria-label="Herramientas de edicion">
                     <EditorSettingsDropdown
                       site={editorSite}
                       pages={pages}
@@ -5735,62 +5824,37 @@ export const Sites: React.FC = () => {
                       </button>
                     )}
                   </div>
-                  <div className={styles.editorActions}>
-                    <div className={styles.editorRouteControls}>
-                      {hasEditablePages(editorSite) && (
-                        <FunnelPagesPanel
-                          pages={pages}
-                          activePageId={activePage?.id || DEFAULT_FUNNEL_PAGE_ID}
-                          locked={!canManagePages(editorSite) || editorAIGenerating}
-                          draggingPageId={draggingPageId}
-                          colorFinalPages={isStandardForm(editorSite)}
-                          isFixedPage={isStandardForm(editorSite) ? isFormFinalPage : undefined}
-                          pageMode={getSitePageMode(editorSite)}
-                          onChangeMode={isLanding(editorSite) && !isImportedHtmlSite(editorSite) ? handleChangePageMode : undefined}
-                          onAddSubpage={handleAddSubpage}
-                          onPromotePage={handlePromotePage}
-                          onDemotePage={handleDemotePage}
-                          getPageDepth={(page) => getPageDepth(page, pages)}
-                          canDeletePage={(page) => isStandardForm(editorSite)
-                            ? !isFormFinalPage(page) && getFormContentPages(pages).length > 1
-                            : pages.length > 1}
-                          canDuplicatePage={(page) => !isStandardForm(editorSite) || !isFormFinalPage(page)}
-                          onSelectPage={selectEditorPage}
-                          onAddPage={handleAddPage}
-                          onDuplicatePage={handleDuplicatePage}
-                          onDeletePage={handleDeletePage}
-                          onDragPage={setDraggingPageId}
-                          onReorderPages={handleReorderPages}
-                          onRenamePage={handleRenamePage}
-                        />
-                      )}
-                    </div>
+                  <div className={styles.editorToolbarPrimary}>
                     <div className={styles.deviceToggle} role="group" aria-label="Vista previa del dispositivo">
-                      <button type="button" className={device === 'desktop' ? styles.deviceActive : ''} onClick={() => selectEditorDevice('desktop')} disabled={editorAIGenerating} title="Escritorio">
+                      <button type="button" className={device === 'desktop' ? styles.deviceActive : ''} onClick={() => selectEditorDevice('desktop')} disabled={editorAIGenerating} title="Escritorio" aria-label="Escritorio">
                         <Monitor size={15} />
                       </button>
-                      <button type="button" className={device === 'mobile' ? styles.deviceActive : ''} onClick={() => selectEditorDevice('mobile')} disabled={editorAIGenerating} title="Movil">
+                      <button type="button" className={device === 'mobile' ? styles.deviceActive : ''} onClick={() => selectEditorDevice('mobile')} disabled={editorAIGenerating} title="Movil" aria-label="Movil">
                         <Smartphone size={15} />
                       </button>
                     </div>
-                    <button type="button" className={styles.editorIconAction} onClick={() => setEditorFocus(true)} disabled={editorAIGenerating} title="Modo enfoque" aria-label="Modo enfoque">
+                    <button type="button" className={styles.editorIconAction} onClick={() => setEditorFocus(true)} disabled={editorAIGenerating} title="Pantalla completa" aria-label="Pantalla completa">
                       <Maximize2 size={14} />
                     </button>
                     {isPublicSiteLive(editorSite, domainConfig) && (
-                      <Button variant="secondary" size="lg" onClick={handleOpenLiveEditorSite} disabled={editorAIGenerating}>
+                      <Button variant="secondary" size="md" className={styles.editorActionButton} onClick={handleOpenLiveEditorSite} disabled={editorAIGenerating}>
                         <ExternalLink size={15} />
                         Ver en vivo
                       </Button>
                     )}
-                    <Button variant="secondary" size="lg" onClick={handlePreviewSite} disabled={editorAIGenerating}>
+                    <Button variant="secondary" size="md" className={styles.editorActionButton} onClick={handlePreviewSite} disabled={editorAIGenerating}>
                       <Eye size={15} />
                       Previsualizar
                     </Button>
-                    <Button variant="secondary" size="lg" onClick={() => handleSaveSite()} loading={saving} disabled={editorAIGenerating}>
+                    <span className={`${styles.editorSaveStatus} ${editorSaveStatusClass}`} aria-live="polite">
+                      {editorSaveStatus.icon}
+                      <span>{editorSaveStatus.label}</span>
+                    </span>
+                    <Button variant="secondary" size="md" className={styles.editorActionButton} onClick={() => handleSaveSite()} loading={saving} disabled={editorAIGenerating}>
                       <Save size={15} />
                       Guardar
                     </Button>
-                    <Button size="lg" onClick={() => handleSaveSite('published')} loading={saving} disabled={editorAIGenerating}>
+                    <Button size="md" className={styles.editorPublishButton} onClick={() => handleSaveSite('published')} loading={saving} disabled={editorAIGenerating}>
                       <Send size={15} />
                       Publicar
                     </Button>
