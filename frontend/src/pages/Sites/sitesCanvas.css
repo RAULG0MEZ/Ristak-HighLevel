@@ -1186,6 +1186,34 @@ html body .rstkCanvas.rstk-kind-form.rstk-choice-pills .rstk-option input[type='
 .rstkCanvas [data-rstk-edit][data-empty="true"]::before {
   content: attr(data-placeholder); opacity: .45; pointer-events: none;
 }
+
+.rstkCanvas .rstkEmbeddedFormInlineControls,
+.rstkCanvas .rstkEmbeddedFormInlineControls select,
+.rstkCanvas .rstkEmbeddedFormInlineControls input {
+  pointer-events: auto;
+}
+
+.rstkCanvas .rstkEmbeddedFormInlineControls select:disabled {
+  cursor: not-allowed;
+  opacity: .62;
+}
+
+.rstkCanvas .rstkEmbeddedFormSystemBadge {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid color-mix(in srgb, var(--rstk-accent) 22%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--rstk-accent) 8%, transparent);
+  color: var(--rstk-ink);
+  padding: 0 10px;
+  font-size: .74rem;
+  font-weight: 820;
+  line-height: 1.2;
+  white-space: normal;
+}
+
 /* Focus keeps the same effective block color; gradient cases are handled below. */
 .rstkCanvas.rstk-kind-landing .rstk-headline[data-rstk-edit]:focus {
   color: var(--rstk-block-text, var(--rstk-ink));

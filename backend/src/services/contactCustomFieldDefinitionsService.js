@@ -15,6 +15,21 @@ const STANDARD_CONTACT_FIELD_KEYS = new Set([
 ])
 
 const SYSTEM_CONTACT_FIELD_CONFIG = {
+  city: {
+    label: 'Ciudad',
+    description: 'Ciudad capturada desde formularios de Ristak.',
+    fieldGroup: 'Sistema'
+  },
+  company: {
+    label: 'Empresa',
+    description: 'Empresa capturada desde formularios de Ristak.',
+    fieldGroup: 'Sistema'
+  },
+  address_1: {
+    label: 'Direccion 1',
+    description: 'Direccion principal capturada desde formularios de Ristak.',
+    fieldGroup: 'Sistema'
+  },
   whatsapp_api_provider: {
     label: 'WhatsApp API · Proveedor',
     description: 'Dato técnico usado por Ristak para identificar el proveedor de WhatsApp.',

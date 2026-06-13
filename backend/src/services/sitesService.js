@@ -204,6 +204,18 @@ const IMPORTED_EDITABLE_CONTENT_TYPES = new Set([
   'choice_option'
 ])
 const IMPORTED_FORM_STANDARD_FIELDS = new Set(['full_name', 'first_name', 'last_name', 'phone', 'email', 'message'])
+const NATIVE_FORM_STANDARD_SYSTEM_FIELDS = new Set(['full_name', 'first_name', 'last_name', 'phone', 'email'])
+const NATIVE_FORM_CUSTOM_SYSTEM_FIELDS = new Set(['city', 'company', 'address_1'])
+const NATIVE_FORM_SYSTEM_FIELD_LABELS = {
+  full_name: 'Nombre completo',
+  first_name: 'Primer nombre',
+  last_name: 'Apellido',
+  phone: 'Telefono / WhatsApp',
+  email: 'Correo electronico',
+  city: 'Ciudad',
+  company: 'Empresa',
+  address_1: 'Direccion 1'
+}
 const IMPORTED_AMBIGUOUS_PERSON_NAME_ALIASES = [
   'name',
   'nombre',
@@ -13532,9 +13544,121 @@ function splitName(fullName) {
   }
 }
 
+function getNativeSystemFieldKey(block) {
+  const settings = block?.settings || {}
+  const key = normalizeImportedFieldKey(
+    settings.systemFieldKey ||
+    settings.system_field_key ||
+    '',
+    ''
+  )
+
+  return NATIVE_FORM_STANDARD_SYSTEM_FIELDS.has(key) || NATIVE_FORM_CUSTOM_SYSTEM_FIELDS.has(key)
+    ? key
+    : ''
+}
+
+function getNativeStandardFieldKey(block) {
+  const systemFieldKey = getNativeSystemFieldKey(block)
+  if (NATIVE_FORM_STANDARD_SYSTEM_FIELDS.has(systemFieldKey)) return systemFieldKey
+
+  const settings = block?.settings || {}
+  const internalFieldKey = normalizeImportedFieldKey(
+    settings.internalName ||
+    settings.internal_name ||
+    '',
+    ''
+  )
+
+  return NATIVE_FORM_STANDARD_SYSTEM_FIELDS.has(internalFieldKey) ? internalFieldKey : ''
+}
+
+function getNativeSystemFieldLabel(fieldKey, fallback = '') {
+  return NATIVE_FORM_SYSTEM_FIELD_LABELS[fieldKey] || cleanString(fallback) || fieldKey
+}
+
+function setMappedFieldValue(target, key, value) {
+  if (!key || isEmptyImportedValue(value)) return
+  target[key] = value
+}
+
+function buildNativeSubmissionLayers({ site, blocks = [], responses = {} }) {
+  const rawFields = {}
+  const mappedFields = {
+    standard: {},
+    system: {},
+    custom: {}
+  }
+  const derivedFields = {}
+
+  for (const block of collectFieldBlocks(blocks)) {
+    const value = responses[block.id]
+    if (isEmptyImportedValue(value)) continue
+
+    const settings = block.settings || {}
+    const systemFieldKey = getNativeSystemFieldKey(block)
+    const standardFieldKey = getNativeStandardFieldKey(block)
+    const fallbackKey = normalizeImportedFieldKey(
+      standardFieldKey ||
+      systemFieldKey ||
+      settings.internalName ||
+      settings.internal_name ||
+      block.label ||
+      block.id,
+      block.id
+    )
+    const rawKey = fallbackKey || block.id
+    rawFields[rawKey] = value
+
+    if (standardFieldKey) {
+      setMappedFieldValue(mappedFields.standard, standardFieldKey, value)
+      continue
+    }
+
+    if (NATIVE_FORM_CUSTOM_SYSTEM_FIELDS.has(systemFieldKey)) {
+      setMappedFieldValue(mappedFields.system, systemFieldKey, value)
+      continue
+    }
+
+    const target = getBlockCustomFieldTarget(block)
+    if (target?.fieldKey) {
+      setMappedFieldValue(mappedFields.custom, target.fieldKey, value)
+    }
+  }
+
+  if (mappedFields.standard.full_name) {
+    const names = splitName(mappedFields.standard.full_name)
+    if (names.firstName && !mappedFields.standard.first_name) derivedFields.first_name = names.firstName
+    if (names.lastName && !mappedFields.standard.last_name) derivedFields.last_name = names.lastName
+  }
+
+  if (!mappedFields.standard.full_name && (mappedFields.standard.first_name || mappedFields.standard.last_name)) {
+    derivedFields.full_name = [mappedFields.standard.first_name, mappedFields.standard.last_name]
+      .map(cleanString)
+      .filter(Boolean)
+      .join(' ')
+  }
+
+  if (mappedFields.standard.email) {
+    derivedFields.email = normalizeEmail(mappedFields.standard.email)
+  }
+
+  if (mappedFields.standard.phone) {
+    derivedFields.phone = cleanString(mappedFields.standard.phone)
+  }
+
+  return {
+    rawFields,
+    mappedFields,
+    derivedFields
+  }
+}
+
 function inferContactFromResponses(blocks, responseEntries) {
   const contact = {
     fullName: '',
+    firstName: '',
+    lastName: '',
     email: '',
     phone: ''
   }
@@ -13545,8 +13669,34 @@ function inferContactFromResponses(blocks, responseEntries) {
     const label = cleanString(block.label).toLowerCase()
     const value = responseEntries[block.id]
     const normalizedValue = Array.isArray(value) ? value.join(', ') : cleanString(value)
+    const standardFieldKey = getNativeStandardFieldKey(block)
 
     if (!normalizedValue) continue
+
+    if (standardFieldKey === 'email' && !contact.email) {
+      contact.email = normalizeEmail(normalizedValue)
+      continue
+    }
+
+    if (standardFieldKey === 'phone' && !contact.phone) {
+      contact.phone = normalizedValue
+      continue
+    }
+
+    if (standardFieldKey === 'full_name' && !contact.fullName) {
+      contact.fullName = normalizedValue
+      continue
+    }
+
+    if (standardFieldKey === 'first_name' && !contact.firstName) {
+      contact.firstName = normalizedValue
+      continue
+    }
+
+    if (standardFieldKey === 'last_name' && !contact.lastName) {
+      contact.lastName = normalizedValue
+      continue
+    }
 
     if (!contact.email && (
       block.blockType === 'email' ||
@@ -13574,11 +13724,27 @@ function inferContactFromResponses(blocks, responseEntries) {
     }
   }
 
+  if (!contact.fullName && (contact.firstName || contact.lastName)) {
+    contact.fullName = [contact.firstName, contact.lastName].filter(Boolean).join(' ')
+  }
+
   return contact
 }
 
 function getBlockCustomFieldTarget(block) {
   const settings = block?.settings || {}
+  const systemFieldKey = getNativeSystemFieldKey(block)
+  if (NATIVE_FORM_STANDARD_SYSTEM_FIELDS.has(systemFieldKey)) return null
+  if (NATIVE_FORM_CUSTOM_SYSTEM_FIELDS.has(systemFieldKey)) {
+    return {
+      definitionId: '',
+      fieldKey: systemFieldKey,
+      label: getNativeSystemFieldLabel(systemFieldKey, block?.label),
+      dataType: cleanString(settings.customFieldDataType || settings.custom_field_data_type || block?.blockType || 'text'),
+      system: true
+    }
+  }
+
   const definitionId = cleanString(
     settings.customFieldDefinitionId ||
     settings.custom_field_definition_id ||
@@ -13596,6 +13762,7 @@ function getBlockCustomFieldTarget(block) {
     ''
   )
 
+  if (NATIVE_FORM_STANDARD_SYSTEM_FIELDS.has(fieldKey)) return null
   if (!definitionId && !fieldKey) return null
 
   return {
@@ -13639,8 +13806,8 @@ function buildNativeCustomFieldsFromResponses({ site, blocks = [], responses = {
       dataType: target.dataType,
       options: getNativeCustomFieldOptions(block),
       value,
-      syncTarget: 'local',
-      sourceType: 'native_site',
+      syncTarget: target.system ? 'none' : 'local',
+      sourceType: target.system ? 'system' : 'native_site',
       sourceId: site.id,
       sourceSiteId: site.id,
       sourcePageId: pageId,
@@ -13652,6 +13819,7 @@ function buildNativeCustomFieldsFromResponses({ site, blocks = [], responses = {
       sourceContext: {
         siteType: site.siteType,
         blockType: block.blockType,
+        systemFieldKey: target.system ? fieldKey : '',
         native: true
       }
     })
@@ -13679,7 +13847,8 @@ async function upsertNativeContactCustomFields({ site, contactId, blocks, respon
     sourceType: 'native_site',
     sourceId: site.id,
     sourceSiteId: site.id,
-    syncTarget: 'local'
+    syncTarget: 'local',
+    allowSystemContactCustomFields: true
   })
   const existing = await db.get('SELECT custom_fields FROM contacts WHERE id = ?', [contactId])
   const merged = mergeContactCustomFields(
@@ -13720,7 +13889,10 @@ async function findExistingContact({ email, phone }) {
 async function upsertContactFromSubmission({ site, contact, meta }) {
   const email = normalizeEmail(contact.email)
   const phone = await normalizePhoneForAccount(contact.phone) || cleanString(contact.phone)
-  const fullName = cleanString(contact.fullName) || email || phone || 'Lead de site'
+  const explicitFirstName = cleanString(contact.firstName || contact.first_name)
+  const explicitLastName = cleanString(contact.lastName || contact.last_name)
+  const joinedName = [explicitFirstName, explicitLastName].filter(Boolean).join(' ')
+  const fullName = cleanString(contact.fullName) || joinedName || email || phone || 'Lead de site'
 
   if (!email && !phone && !fullName) return null
 
@@ -13728,6 +13900,8 @@ async function upsertContactFromSubmission({ site, contact, meta }) {
   const contactId = existing?.id || `site_contact_${crypto.randomUUID()}`
   const phoneUpsert = await prepareContactPhoneUpsert({ contactId, phone })
   const names = splitName(fullName)
+  const firstName = explicitFirstName || names.firstName
+  const lastName = explicitLastName || names.lastName
   const params = meta?.params || {}
   const visitorId = cleanString(meta?.visitorId || meta?.visitor_id)
 
@@ -13752,8 +13926,8 @@ async function upsertContactFromSubmission({ site, contact, meta }) {
       phoneUpsert.phone || phone || null,
       email || null,
       fullName || null,
-      names.firstName || null,
-      names.lastName || null,
+      firstName || null,
+      lastName || null,
       `ristak_site:${site.slug}`,
       cleanString(meta?.pageUrl) || null,
       cleanString(params.utm_source || params.source) || null,
@@ -13786,8 +13960,8 @@ async function upsertContactFromSubmission({ site, contact, meta }) {
     phoneUpsert.phone || phone || null,
     email || null,
     fullName,
-    names.firstName || null,
-    names.lastName || null,
+    firstName || null,
+    lastName || null,
     `ristak_site:${site.slug}`,
     cleanString(meta?.pageUrl) || null,
     cleanString(params.utm_source || params.source) || null,
@@ -14696,6 +14870,7 @@ export async function createSubmissionFromRequest(req, body = {}) {
     userAgent: req.headers['user-agent'] || '',
     submittedAt: new Date().toISOString()
   }
+  const nativeLayers = buildNativeSubmissionLayers({ site, blocks: submissionBlocks, responses })
   const inferredContact = inferContactFromResponses(collectFieldBlocks(submissionBlocks), responses)
   const contactId = await upsertContactFromSubmission({ site, contact: inferredContact, meta })
   const preparedCustomFields = await upsertNativeContactCustomFields({
@@ -14704,22 +14879,32 @@ export async function createSubmissionFromRequest(req, body = {}) {
     blocks: submissionBlocks,
     responses
   })
-  const mappedFields = preparedCustomFields.length
-    ? { custom: buildNativeMappedCustomFields(preparedCustomFields) }
-    : {}
+  const preparedUserCustomFields = preparedCustomFields.filter(field => (
+    !NATIVE_FORM_CUSTOM_SYSTEM_FIELDS.has(cleanString(field.fieldKey || field.key))
+  ))
+  const mappedFields = {
+    ...(Object.keys(nativeLayers.mappedFields.standard || {}).length ? { standard: nativeLayers.mappedFields.standard } : {}),
+    ...(Object.keys(nativeLayers.mappedFields.system || {}).length ? { system: nativeLayers.mappedFields.system } : {}),
+    ...(Object.keys(nativeLayers.mappedFields.custom || {}).length || preparedUserCustomFields.length
+      ? { custom: { ...(nativeLayers.mappedFields.custom || {}), ...buildNativeMappedCustomFields(preparedUserCustomFields) } }
+      : {})
+  }
   const submissionId = crypto.randomUUID()
 
   await db.run(`
     INSERT INTO public_site_submissions (
-      id, site_id, contact_id, domain, response_json, mapped_fields_json, meta_json, status, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      id, site_id, contact_id, domain, response_json, raw_fields_json,
+      mapped_fields_json, derived_fields_json, meta_json, status, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
   `, [
     submissionId,
     site.id,
     contactId,
     host,
     jsonString(responses),
+    jsonString(nativeLayers.rawFields),
     jsonString(mappedFields),
+    jsonString(nativeLayers.derivedFields),
     jsonString(meta),
     ruleEvaluation.status
   ])
@@ -14770,6 +14955,9 @@ export async function createSubmissionFromRequest(req, body = {}) {
     message: getSiteFinalMessage(site, ruleEvaluation),
     redirectUrl: ruleEvaluation.redirectUrl || '',
     rules: ruleEvaluation,
+    rawFields: nativeLayers.rawFields,
+    mappedFields,
+    derivedFields: nativeLayers.derivedFields,
     capi
   }
 }

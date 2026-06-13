@@ -53,6 +53,7 @@ import {
   List,
   ListChecks,
   ListOrdered,
+  Lock,
   Maximize2,
   Mic,
   Monitor,
@@ -363,6 +364,169 @@ const embeddedFormFieldTypes: SiteBlockType[] = [
   'checkboxes',
   'date'
 ]
+
+type SystemFormFieldKey =
+  | 'full_name'
+  | 'first_name'
+  | 'last_name'
+  | 'email'
+  | 'phone'
+  | 'city'
+  | 'company'
+  | 'address_1'
+
+type SystemFormFieldPreset = {
+  key: SystemFormFieldKey
+  label: string
+  destinationLabel: string
+  blockType: SiteBlockType
+  placeholder: string
+  validation?: string
+  dataType: string
+  required?: boolean
+  settings?: Record<string, unknown>
+}
+
+const systemFormFieldPresets: SystemFormFieldPreset[] = [
+  {
+    key: 'full_name',
+    label: 'Nombre completo',
+    destinationLabel: 'Nombre completo del contacto',
+    blockType: 'short_text',
+    placeholder: 'Tu nombre completo',
+    dataType: 'text',
+    required: true
+  },
+  {
+    key: 'first_name',
+    label: 'Primer nombre',
+    destinationLabel: 'Primer nombre del contacto',
+    blockType: 'short_text',
+    placeholder: 'Tu primer nombre',
+    dataType: 'text'
+  },
+  {
+    key: 'last_name',
+    label: 'Apellido',
+    destinationLabel: 'Apellido del contacto',
+    blockType: 'short_text',
+    placeholder: 'Tu apellido',
+    dataType: 'text'
+  },
+  {
+    key: 'email',
+    label: 'Correo electrónico',
+    destinationLabel: 'Correo del contacto',
+    blockType: 'email',
+    placeholder: 'tu@email.com',
+    validation: 'email',
+    dataType: 'email',
+    required: true
+  },
+  {
+    key: 'phone',
+    label: 'Teléfono / WhatsApp',
+    destinationLabel: 'Teléfono del contacto',
+    blockType: 'phone',
+    placeholder: '10 dígitos',
+    validation: 'phone',
+    dataType: 'phone',
+    required: true,
+    settings: { phoneCountrySelectorEnabled: true }
+  },
+  {
+    key: 'city',
+    label: 'Ciudad',
+    destinationLabel: 'Ciudad del contacto',
+    blockType: 'short_text',
+    placeholder: 'Tu ciudad',
+    dataType: 'text'
+  },
+  {
+    key: 'company',
+    label: 'Empresa',
+    destinationLabel: 'Empresa del contacto',
+    blockType: 'short_text',
+    placeholder: 'Nombre de la empresa',
+    dataType: 'text'
+  },
+  {
+    key: 'address_1',
+    label: 'Dirección 1',
+    destinationLabel: 'Dirección principal del contacto',
+    blockType: 'short_text',
+    placeholder: 'Calle, número, colonia',
+    dataType: 'text'
+  }
+]
+
+const systemFormFieldPresetByKey = new Map<SystemFormFieldKey, SystemFormFieldPreset>(
+  systemFormFieldPresets.map(preset => [preset.key, preset])
+)
+
+const getSystemFormFieldPreset = (value: unknown): SystemFormFieldPreset | null => {
+  const key = String(value || '').trim() as SystemFormFieldKey
+  return systemFormFieldPresetByKey.get(key) || null
+}
+
+const getSystemFormFieldPresetForBlock = (block?: SiteBlock | null) =>
+  getSystemFormFieldPreset(block?.settings?.systemFieldKey || block?.settings?.system_field_key)
+
+const buildSystemFormFieldSettings = (preset: SystemFormFieldPreset, currentSettings: Record<string, unknown> = {}) => ({
+  ...currentSettings,
+  ...(preset.settings || {}),
+  systemFieldKey: preset.key,
+  systemFieldLabel: preset.label,
+  systemFieldTarget: ['full_name', 'first_name', 'last_name', 'email', 'phone'].includes(preset.key) ? 'standard' : 'system_custom',
+  internalName: preset.key,
+  validation: preset.validation || '',
+  customFieldDefinitionId: '',
+  customFieldKey: '',
+  customFieldLabel: '',
+  customFieldDataType: ''
+})
+
+const applySystemFormFieldPreset = <T extends {
+  blockType?: SiteBlockType
+  label?: string
+  content?: string
+  placeholder?: string
+  required?: boolean
+  settings?: Record<string, unknown>
+}>(payload: T, initialSettings: Record<string, unknown> = {}): T => {
+  const preset = getSystemFormFieldPreset(initialSettings.systemFieldKey || initialSettings.system_field_key)
+  if (!preset) {
+    return {
+      ...payload,
+      settings: {
+        ...(payload.settings || {}),
+        ...initialSettings
+      }
+    }
+  }
+
+  return {
+    ...payload,
+    blockType: preset.blockType,
+    label: preset.label,
+    placeholder: preset.placeholder,
+    required: preset.required ?? payload.required ?? false,
+    settings: buildSystemFormFieldSettings(preset, {
+      ...(payload.settings || {}),
+      ...initialSettings,
+      customFieldDataType: preset.dataType
+    })
+  }
+}
+
+const systemFormFieldPaletteItems: PaletteItem[] = systemFormFieldPresets.map(preset => ({
+  id: `system-${preset.key}`,
+  label: preset.label,
+  blockType: preset.blockType,
+  initialSettings: {
+    systemFieldKey: preset.key
+  }
+}))
 
 const videoSpeedOptions: Array<{ value: string; label: string }> = [
   { value: '0.75', label: '0.75x' },
@@ -2900,50 +3064,27 @@ const resolveImportedVideoPreview = (rawValue: string): EmbedPreviewConfig => {
   return resolveEmbedPreview(raw)
 }
 
-const createEmbeddedBlocks = (siteId: string): SiteBlock[] => [
-  {
-    id: `embedded_${crypto.randomUUID()}`,
-    siteId,
-    blockType: 'short_text',
-    label: 'Nombre completo',
-    content: '',
-    placeholder: 'Tu nombre',
-    required: true,
-    options: [],
-    settings: { internalName: 'full_name', pageId: DEFAULT_FUNNEL_PAGE_ID },
-    sortOrder: 0,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  },
-  {
-    id: `embedded_${crypto.randomUUID()}`,
-    siteId,
-    blockType: 'phone',
-    label: 'Teléfono / WhatsApp',
-    content: '',
-    placeholder: '10 dígitos',
-    required: true,
-    options: [],
-    settings: { internalName: 'phone', validation: 'phone', phoneCountrySelectorEnabled: true, pageId: DEFAULT_FUNNEL_PAGE_ID },
-    sortOrder: 1,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  },
-  {
-    id: `embedded_${crypto.randomUUID()}`,
-    siteId,
-    blockType: 'email',
-    label: 'Correo electrónico',
-    content: '',
-    placeholder: 'tu@email.com',
-    required: true,
-    options: [],
-    settings: { internalName: 'email', validation: 'email', pageId: DEFAULT_FUNNEL_PAGE_ID },
-    sortOrder: 2,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  }
-]
+const createEmbeddedBlocks = (siteId: string): SiteBlock[] =>
+  (['full_name', 'phone', 'email'] as SystemFormFieldKey[]).map((systemFieldKey, sortOrder) => {
+    const preset = getSystemFormFieldPreset(systemFieldKey)
+    const now = new Date().toISOString()
+    return {
+      id: `embedded_${crypto.randomUUID()}`,
+      siteId,
+      blockType: preset?.blockType || 'short_text',
+      label: preset?.label || 'Campo',
+      content: '',
+      placeholder: preset?.placeholder || '',
+      required: Boolean(preset?.required),
+      options: [],
+      settings: preset
+        ? buildSystemFormFieldSettings(preset, { pageId: DEFAULT_FUNNEL_PAGE_ID, customFieldDataType: preset.dataType })
+        : { internalName: systemFieldKey, pageId: DEFAULT_FUNNEL_PAGE_ID },
+      sortOrder,
+      createdAt: now,
+      updatedAt: now
+    }
+  })
 
 const defaultBlockPayload = (blockType: SiteBlockType, siteOrId: PublicSite | string, siteType?: SiteType) => {
   const site = typeof siteOrId === 'string' ? null : siteOrId
@@ -3152,11 +3293,11 @@ const defaultBlockPayload = (blockType: SiteBlockType, siteOrId: PublicSite | st
 }
 
 const makePreviewBlock = (blockType: SiteBlockType, site: PublicSite, pageId?: string, initialSettings: Record<string, unknown> = {}): SiteBlock => {
-  const payload = defaultBlockPayload(blockType, site)
+  const payload = applySystemFormFieldPreset(defaultBlockPayload(blockType, site), initialSettings)
   return {
     id: '__palette-preview__',
     siteId: site.id,
-    blockType,
+    blockType: payload.blockType || blockType,
     label: payload.label || blockLabels[blockType],
     content: payload.content || '',
     placeholder: payload.placeholder || '',
@@ -3164,7 +3305,6 @@ const makePreviewBlock = (blockType: SiteBlockType, site: PublicSite, pageId?: s
     options: payload.options || [],
     settings: {
       ...(payload.settings || {}),
-      ...initialSettings,
       ...(pageId ? { pageId } : {})
     },
     sortOrder: -1,
@@ -3173,14 +3313,20 @@ const makePreviewBlock = (blockType: SiteBlockType, site: PublicSite, pageId?: s
   }
 }
 
-const createEmbeddedFieldBlock = (site: PublicSite, blockType: SiteBlockType, sortOrder = 0, pageId = DEFAULT_FUNNEL_PAGE_ID): SiteBlock => {
-  const payload = defaultBlockPayload(blockType, site)
+const createEmbeddedFieldBlock = (
+  site: PublicSite,
+  blockType: SiteBlockType,
+  sortOrder = 0,
+  pageId = DEFAULT_FUNNEL_PAGE_ID,
+  initialSettings: Record<string, unknown> = {}
+): SiteBlock => {
+  const payload = applySystemFormFieldPreset(defaultBlockPayload(blockType, site), initialSettings)
   const now = new Date().toISOString()
   return {
     id: `embedded_${crypto.randomUUID()}`,
     siteId: site.id,
-    blockType,
-    label: payload.label || blockLabels[blockType] || 'Campo',
+    blockType: payload.blockType || blockType,
+    label: payload.label || blockLabels[payload.blockType || blockType] || 'Campo',
     content: payload.content || '',
     placeholder: payload.placeholder || '',
     required: Boolean(payload.required),
@@ -3254,11 +3400,23 @@ function FormModePalette({
 }: {
   fieldsCount: number
   activePageTitle: string
-  onAddField: (blockType: SiteBlockType) => void
+  onAddField: (blockType: SiteBlockType, initialSettings?: Record<string, unknown>) => void
   onPaletteDragStart: (payload: PaletteDragPayload, position: PaletteDragPosition | null) => void
   onPaletteDragMove: (position: PaletteDragPosition | null) => void
   onPaletteDragEnd: () => void
 }) {
+  const sections: Array<{ label: string; items: PaletteItem[] }> = [
+    { label: 'Sistema', items: systemFormFieldPaletteItems },
+    {
+      label: 'Campos libres',
+      items: embeddedFormFieldTypes.map(blockType => ({
+        id: blockType,
+        label: blockLabels[blockType] || 'Campo',
+        blockType
+      }))
+    }
+  ]
+
   return (
     <div className={styles.formModePalette}>
       <div className={styles.formModePaletteHeader}>
@@ -3269,39 +3427,47 @@ function FormModePalette({
         </div>
       </div>
       <p className={styles.formModePaletteHint}>Arrastra componentes al formulario o haz click para agregarlos.</p>
-      <div className={styles.formModePaletteList}>
-        {embeddedFormFieldTypes.map(blockType => (
-          <button
-            key={blockType}
-            type="button"
-            draggable
-            onDragStart={(event) => {
-              event.dataTransfer.effectAllowed = 'move'
-              event.dataTransfer.dropEffect = 'move'
-              event.dataTransfer.setData('application/ristak-block', blockType)
-              hideNativeDragPreview(event.dataTransfer)
-              const rect = event.currentTarget.getBoundingClientRect()
-              onPaletteDragStart(
-                { blockType },
-                event.clientX || event.clientY
-                  ? { x: event.clientX, y: event.clientY }
-                  : { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
-              )
-            }}
-            onDrag={(event) => {
-              if (event.clientX || event.clientY) {
-                onPaletteDragMove({ x: event.clientX, y: event.clientY })
-              }
-            }}
-            onDragEnd={onPaletteDragEnd}
-            onClick={() => onAddField(blockType)}
-          >
-            <span>{blockIcons[blockType]}</span>
-            <strong>{blockLabels[blockType] || 'Campo'}</strong>
-            <GripVertical size={14} />
-          </button>
-        ))}
-      </div>
+      {sections.map(section => (
+        <div key={section.label} className={styles.formModePaletteSection}>
+          <span>{section.label}</span>
+          <div className={styles.formModePaletteList}>
+            {section.items.map(item => (
+              <button
+                key={item.id}
+                type="button"
+                draggable
+                onDragStart={(event) => {
+                  event.dataTransfer.effectAllowed = 'move'
+                  event.dataTransfer.dropEffect = 'move'
+                  event.dataTransfer.setData('application/ristak-block', item.blockType)
+                  if (item.initialSettings) {
+                    event.dataTransfer.setData('application/ristak-block-settings', JSON.stringify(item.initialSettings))
+                  }
+                  hideNativeDragPreview(event.dataTransfer)
+                  const rect = event.currentTarget.getBoundingClientRect()
+                  onPaletteDragStart(
+                    { blockType: item.blockType, initialSettings: item.initialSettings },
+                    event.clientX || event.clientY
+                      ? { x: event.clientX, y: event.clientY }
+                      : { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+                  )
+                }}
+                onDrag={(event) => {
+                  if (event.clientX || event.clientY) {
+                    onPaletteDragMove({ x: event.clientX, y: event.clientY })
+                  }
+                }}
+                onDragEnd={onPaletteDragEnd}
+                onClick={() => onAddField(item.blockType, item.initialSettings)}
+              >
+                <span>{blockIcons[item.blockType]}</span>
+                <strong>{item.label}</strong>
+                <GripVertical size={14} />
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
@@ -5394,8 +5560,8 @@ export const Sites: React.FC = () => {
     try {
       const options = typeof addOptions === 'number' ? { insertIndex: addOptions } : addOptions
       const previousBlockIds = new Set((selectedSite.blocks || []).map(block => block.id))
-      const payload = defaultBlockPayload(blockType, selectedSite)
       const initialSettings = options.initialSettings || {}
+      const payload = applySystemFormFieldPreset(defaultBlockPayload(blockType, selectedSite), initialSettings)
       let blockIdsBeforeContent = previousBlockIds
       let autoCreatedSection: SiteBlock | null = null
       if (popupSurfaceSelected) {
@@ -5796,11 +5962,11 @@ export const Sites: React.FC = () => {
     setActiveEmbeddedFormPageId(fallbackPage.id)
   }
 
-  const handleAddEmbeddedFormField = (blockType: SiteBlockType, insertIndex?: number) => {
+  const handleAddEmbeddedFormField = (blockType: SiteBlockType, insertIndex?: number, initialSettings: Record<string, unknown> = {}) => {
     if (!embeddedFormFieldTypes.includes(blockType)) return
     const context = getCurrentEmbeddedFormContext()
     if (!context) return
-    const nextField = createEmbeddedFieldBlock(context.site, blockType, context.fields.length, context.activePageId)
+    const nextField = createEmbeddedFieldBlock(context.site, blockType, context.fields.length, context.activePageId, initialSettings)
     const pageFields = getEmbeddedFormPageFields(context.fields, context.pages, context.activePageId)
     const boundedIndex = Number.isFinite(Number(insertIndex))
       ? Math.max(0, Math.min(Number(insertIndex), pageFields.length))
@@ -6390,7 +6556,7 @@ export const Sites: React.FC = () => {
     const payload = getPalettePayloadForDrag(event.dataTransfer)
     resetPaletteDrag()
     if (!isEmbeddedFormPalettePayload(payload)) return
-    handleAddEmbeddedFormField(payload!.blockType, insertIndex)
+    handleAddEmbeddedFormField(payload!.blockType, insertIndex, payload!.initialSettings || {})
   }
 
   const handleEmbeddedFormFieldDragLeave = (event: React.DragEvent<HTMLElement>) => {
@@ -6772,7 +6938,7 @@ export const Sites: React.FC = () => {
                     <FormModePalette
                       fieldsCount={formEditVisibleFields.length}
                       activePageTitle={activeEmbeddedFormPage?.title || 'Formulario'}
-                      onAddField={handleAddEmbeddedFormField}
+                      onAddField={(blockType, initialSettings) => handleAddEmbeddedFormField(blockType, undefined, initialSettings || {})}
                       onPaletteDragStart={(payload, position) => {
                         setActivePaletteDragPayload(payload)
                         setPaletteDragPosition(position)
@@ -13380,6 +13546,10 @@ const paletteGroups: Array<{ label: string; items: PaletteItem[] }> = [
       .map(blockType => ({ id: blockType, label: blockLabels[blockType as SiteBlockType], blockType: blockType as SiteBlockType }))
   },
   {
+    label: 'Sistema',
+    items: systemFormFieldPaletteItems
+  },
+  {
     label: 'Campos',
     items: ['short_text', 'paragraph', 'email', 'phone', 'number', 'currency', 'date', 'dropdown', 'radio', 'checkboxes', 'description']
       .map(blockType => ({ id: blockType, label: blockLabels[blockType as SiteBlockType], blockType: blockType as SiteBlockType }))
@@ -17212,6 +17382,7 @@ const EmbeddedFormCanvasFields: React.FC<{
         <EmbeddedFormCanvasDropZone active={editor.insertIndex === 0} insertIndex={0} editor={editor} />
         {fields.map((field, index) => {
           const selected = editor.activeFieldId === field.id
+          const systemPreset = getSystemFormFieldPresetForBlock(field)
           return (
             <React.Fragment key={field.id}>
               <section
@@ -17266,11 +17437,18 @@ const EmbeddedFormCanvasFields: React.FC<{
                     <select
                       value={field.blockType}
                       aria-label="Tipo de campo"
+                      disabled={Boolean(systemPreset)}
                       onChange={(event) => editor.onPatchField(field.id, { blockType: event.target.value as SiteBlockType })}
                       onBlur={editor.onSaveField}
                     >
                       {embeddedFormFieldTypes.map(type => <option key={type} value={type}>{blockLabels[type]}</option>)}
                     </select>
+                    {systemPreset && (
+                      <span className="rstkEmbeddedFormSystemBadge">
+                        <Lock size={12} />
+                        {systemPreset.destinationLabel}
+                      </span>
+                    )}
                     <label>
                       <input
                         type="checkbox"
@@ -18063,6 +18241,22 @@ const CustomFieldBindingControl: React.FC<{
   onSave: () => void
 }> = ({ block, customFields, onPatchSettings, onSave }) => {
   const settings = block.settings || {}
+  const systemPreset = getSystemFormFieldPresetForBlock(block)
+  if (systemPreset) {
+    return (
+      <div className={styles.customFieldBinding}>
+        <div className={styles.panelSubheader}>Guardado de respuesta</div>
+        <div className={styles.systemFieldLock}>
+          <span><Lock size={14} /></span>
+          <div>
+            <strong>{systemPreset.destinationLabel}</strong>
+            <p>Este campo es del sistema y se guarda automaticamente al enviar el formulario.</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const currentDefinitionId = getSettingString(settings, 'customFieldDefinitionId')
   const compatibleFields = customFields
     .filter(field => !field.archived && !isSystemCustomFieldDefinition(field) && isCustomFieldCompatibleWithBlock(block.blockType, field))
@@ -18194,6 +18388,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
   const hasListCopy = ['benefits', 'testimonials', 'services', 'faq'].includes(block.blockType)
   const isPrimaryTextBlock = ['headline', 'title'].includes(block.blockType)
   const isSecondaryTextBlock = ['subheading', 'subtitle', 'description'].includes(block.blockType)
+  const systemFieldPreset = getSystemFormFieldPresetForBlock(block)
   const showBlockNameFirst = isField || block.blockType === SECTION_BLOCK_TYPE
   const showContentField = block.blockType !== 'calendar_embed' && block.blockType !== 'button'
   const contentLabel = isField
@@ -18309,6 +18504,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 <span>Nombre interno</span>
                 <input
                   value={getSettingString(settings, 'internalName')}
+                  disabled={Boolean(systemFieldPreset)}
                   onChange={(event) => onPatchSettings({ internalName: event.target.value })}
                   onBlur={onSave}
                 />
@@ -18320,6 +18516,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 <span>Validacion</span>
                 <CustomSelect
                   value={getSettingString(settings, 'validation')}
+                  disabled={Boolean(systemFieldPreset?.validation)}
                   onChange={(event) => onPatchSettings({ validation: event.target.value })}
                   onBlur={onSave}
                 >
@@ -18349,6 +18546,7 @@ const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
                 <input
                   type="checkbox"
                   checked={isPhoneCountrySelectorEnabled(block)}
+                  disabled={Boolean(systemFieldPreset)}
                   onChange={(event) => {
                     onPatchSettings({ phoneCountrySelectorEnabled: event.target.checked })
                     window.setTimeout(onSave, 0)

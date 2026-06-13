@@ -2890,6 +2890,43 @@
   white-space: nowrap;
 }
 
+.systemFieldLock {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  border: 1px solid rgba(var(--color-primary-rgb), 0.18);
+  border-radius: 10px;
+  background: rgba(var(--color-primary-rgb), 0.07);
+  padding: 10px;
+}
+
+.systemFieldLock > span {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--color-background-primary);
+  color: var(--color-primary);
+}
+
+.systemFieldLock strong {
+  display: block;
+  color: var(--color-text-primary);
+  font-size: 0.82rem;
+  font-weight: 850;
+  line-height: 1.25;
+}
+
+.systemFieldLock p {
+  margin: 3px 0 0;
+  color: var(--color-text-tertiary);
+  font-size: 0.74rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
 .sitesShell {
   min-height: calc(100vh - 220px);
   display: grid;
@@ -14145,6 +14182,19 @@
   font-size: 0.76rem;
   font-weight: 700;
   line-height: 1.35;
+}
+
+.formModePaletteSection {
+  display: grid;
+  gap: 7px;
+}
+
+.formModePaletteSection > span {
+  color: var(--color-text-tertiary);
+  font-size: 0.7rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .formModeIcon {
