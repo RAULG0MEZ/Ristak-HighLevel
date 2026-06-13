@@ -1619,6 +1619,9 @@ body.dark .tooltipInfo {
   --record-payment-embedded-text: var(--phone-chat-text, var(--color-text-primary, #0f172a));
   --record-payment-embedded-muted: var(--phone-chat-muted, var(--color-text-tertiary, #64748b));
   --record-payment-embedded-border: var(--phone-chat-border, var(--color-border, rgba(0, 0, 0, 0.08)));
+  --record-payment-embedded-tablist-bg: color-mix(in srgb, var(--record-payment-embedded-text) 4%, var(--record-payment-embedded-bg) 96%);
+  --record-payment-embedded-tablist-border: color-mix(in srgb, var(--record-payment-embedded-text) 14%, var(--record-payment-embedded-border) 86%);
+  --record-payment-embedded-tab-active-bg: color-mix(in srgb, var(--record-payment-embedded-text) 12%, var(--record-payment-embedded-bg) 88%);
   --record-payment-embedded-top-padding: calc(env(safe-area-inset-top, 0px) + 72px);
   --record-payment-control-border: color-mix(in srgb, var(--record-payment-embedded-text) 14%, var(--record-payment-embedded-border) 86%);
   --color-background: var(--record-payment-embedded-bg);
@@ -1992,8 +1995,8 @@ body.dark .tooltipInfo {
    blur heredados del web; piel 100% del tema del celular en claro y oscuro. */
 .embeddedRoot .radioGroup,
 .embeddedRoot [data-ristak-tablist] {
-  border: 1px solid var(--record-payment-embedded-border) !important;
-  background: var(--record-payment-embedded-panel) !important;
+  border: 1px solid var(--record-payment-embedded-tablist-border) !important;
+  background: var(--record-payment-embedded-tablist-bg) !important;
   border-radius: 16px;
   padding: 4px;
   /* Sin esto, width:100% + padding + borde hacen que el control se salga del contenedor */
@@ -2021,7 +2024,7 @@ body.dark .tooltipInfo {
 .embeddedRoot [data-ristak-tablist-tab][data-active="true"],
 .embeddedRoot .radioOptionActive {
   color: var(--record-payment-embedded-text);
-  background: var(--record-payment-embedded-soft) !important;
+  background: var(--record-payment-embedded-tab-active-bg) !important;
   box-shadow: none !important;
 }
 
