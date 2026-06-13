@@ -21,6 +21,26 @@ describe('manual business expense calculations', () => {
     )
   })
 
+  it('keeps monthly distribution stable when a single day is manually changed', () => {
+    const expenses = [
+      { period_type: 'month', period_start: '2026-06-01', amount: 100 },
+      { period_type: 'day', period_start: '2026-06-12', amount: 103.33 }
+    ]
+
+    assert.equal(
+      calculateManualBusinessExpensesForRange({ from: '2026-06-01', to: '2026-06-30' }, expenses),
+      200
+    )
+    assert.equal(
+      calculateManualBusinessExpensesForRange({ from: '2026-06-11', to: '2026-06-11' }, expenses),
+      3.33
+    )
+    assert.equal(
+      calculateManualBusinessExpensesForRange({ from: '2026-06-12', to: '2026-06-12' }, expenses),
+      103.33
+    )
+  })
+
   it('uses monthly overrides instead of adding them on top of yearly costs', () => {
     const expenses = [
       { period_type: 'year', period_start: '2026-01-01', amount: 120000 },

@@ -485,9 +485,16 @@ const calculateManualBusinessExpensesForRange = (
 }
 
 const getManualExpensePeriodStart = (period: string, viewType: ViewType) => {
-  if (viewType === 'day') return period
-  if (viewType === 'month') return `${period}-01`
-  return `${period}-01-01`
+  const parts = parseDateKeyParts(period)
+  if (!parts) return period
+
+  const year = String(parts.year).padStart(4, '0')
+  const month = String(parts.month).padStart(2, '0')
+  const day = String(parts.day).padStart(2, '0')
+
+  if (viewType === 'day') return `${year}-${month}-${day}`
+  if (viewType === 'month') return `${year}-${month}-01`
+  return `${year}-01-01`
 }
 
 const getManualExpenseRecordKey = (periodType: ViewType, periodStart: string) => `${periodType}:${periodStart}`
@@ -1288,11 +1295,18 @@ const mapContactsToModalData = (contacts: ContactListItem[]): ContactListItem[] 
     created_at: contact.created_at || (contact as any).createdAt
   }))
 
+type BusinessExpensePeriodTarget = {
+  type: ViewType
+  start: string
+  key: string
+}
+
 interface BusinessExpenseCellProps {
   value: number
   row: TableRow
+  period: BusinessExpensePeriodTarget
   saving: boolean
-  onCommit: (row: TableRow, value: string) => Promise<number | null>
+  onCommit: (period: BusinessExpensePeriodTarget, value: string) => Promise<number | null>
 }
 
 const formatBusinessExpenseDraft = (value: number) => {
@@ -1303,27 +1317,55 @@ const formatBusinessExpenseDraft = (value: number) => {
   }).format(roundCurrencyValue(value))
 }
 
-const BusinessExpenseCell: React.FC<BusinessExpenseCellProps> = ({ value, row, saving, onCommit }) => {
-  const [draft, setDraft] = React.useState(formatBusinessExpenseDraft(value))
+const BusinessExpenseCell: React.FC<BusinessExpenseCellProps> = ({ value, row, period, saving, onCommit }) => {
+  const formattedValue = formatBusinessExpenseDraft(value)
+  const [draft, setDraft] = React.useState(formattedValue)
   const [focused, setFocused] = React.useState(false)
+  const [dirty, setDirty] = React.useState(false)
+  const committingRef = React.useRef(false)
 
   React.useEffect(() => {
     if (!focused) {
-      setDraft(formatBusinessExpenseDraft(value))
+      setDraft(formattedValue)
+      setDirty(false)
     }
-  }, [value, focused])
+  }, [formattedValue, focused])
 
   const handleCommit = async () => {
-    const savedAmount = await onCommit(row, draft)
-    if (savedAmount !== null) {
-      setDraft(formatBusinessExpenseDraft(savedAmount))
-    } else {
-      setDraft(formatBusinessExpenseDraft(value))
+    if (committingRef.current) return
+    committingRef.current = true
+
+    try {
+      const savedAmount = await onCommit(period, draft)
+      if (savedAmount !== null) {
+        setDraft(formatBusinessExpenseDraft(savedAmount))
+        setDirty(false)
+      } else {
+        setDraft(formattedValue)
+        setDirty(false)
+      }
+    } finally {
+      committingRef.current = false
     }
   }
 
+  const shouldCommitDraft = () => {
+    if (!dirty) return false
+
+    const parsed = parseManualExpenseInput(draft)
+    if (parsed === null) return true
+    if (parsed.shouldDelete) return formattedValue !== ''
+
+    return roundCurrencyValue(parsed.amount) !== roundCurrencyValue(value)
+  }
+
   return (
-    <div className={styles.businessExpenseInputShell} data-ristak-unstyled onClick={(event) => event.stopPropagation()}>
+    <div
+      className={styles.businessExpenseInputShell}
+      data-period-key={period.key}
+      data-ristak-unstyled
+      onClick={(event) => event.stopPropagation()}
+    >
       <span className={styles.businessExpensePrefix}>$</span>
       <input
         className={styles.businessExpenseInput}
@@ -1335,19 +1377,25 @@ const BusinessExpenseCell: React.FC<BusinessExpenseCellProps> = ({ value, row, s
         onFocus={() => setFocused(true)}
         onBlur={() => {
           setFocused(false)
-          if (draft.trim() !== formatBusinessExpenseDraft(value)) {
+          if (shouldCommitDraft()) {
             void handleCommit()
           }
         }}
-        onChange={(event) => setDraft(event.target.value)}
+        onChange={(event) => {
+          setDraft(event.target.value)
+          setDirty(true)
+        }}
         onKeyDown={(event) => {
           if (event.key === 'Enter') {
             event.preventDefault()
-            void handleCommit()
+            if (shouldCommitDraft()) {
+              void handleCommit()
+            }
           }
           if (event.key === 'Escape') {
             event.preventDefault()
-            setDraft(formatBusinessExpenseDraft(value))
+            setDraft(formattedValue)
+            setDirty(false)
             event.currentTarget.blur()
           }
         }}
@@ -1652,7 +1700,10 @@ export const Reports: React.FC = () => {
     return calculateConfiguredBusinessCostsForRange(apiRange, configuredCosts, revenue)
   }, [apiRange, configuredCosts, summary?.payments.totalRevenue, metrics])
 
-  const handleSaveBusinessExpense = useCallback(async (row: TableRow, rawValue: string): Promise<number | null> => {
+  const handleSaveBusinessExpense = useCallback(async (
+    period: BusinessExpensePeriodTarget,
+    rawValue: string
+  ): Promise<number | null> => {
     const parsed = parseManualExpenseInput(rawValue)
 
     if (parsed === null) {
@@ -1660,21 +1711,18 @@ export const Reports: React.FC = () => {
       return null
     }
 
-    const periodStart = getManualExpensePeriodStart(row.date, viewType)
-    const expenseKey = getManualExpenseRecordKey(viewType, periodStart)
-
-    setSavingManualBusinessExpenseKey(expenseKey)
+    setSavingManualBusinessExpenseKey(period.key)
     try {
       const result = await reportsService.saveManualBusinessExpense({
-        period_type: viewType,
-        period_start: periodStart,
+        period_type: period.type,
+        period_start: period.start,
         amount: parsed.amount,
         delete: parsed.shouldDelete
       })
 
       setManualBusinessExpenses((current) => {
         const next = current.filter((expense) => (
-          getManualExpenseRecordKey(expense.period_type, expense.period_start) !== expenseKey
+          getManualExpenseRecordKey(expense.period_type, expense.period_start) !== period.key
         ))
 
         if (result.expense) {
@@ -1691,10 +1739,12 @@ export const Reports: React.FC = () => {
     }
 
     return parsed.amount
-  }, [showToast, viewType])
+  }, [showToast])
 
   const tableData: TableRow[] = useMemo(() => (
-    metrics.map((item, index) => {
+    metrics.map((item) => {
+      const periodStart = getManualExpensePeriodStart(item.date, viewType)
+      const periodKey = getManualExpenseRecordKey(viewType, periodStart)
       const businessExpenses = businessExpensesByPeriod[item.date] || 0
       const fixedBusinessExpenses = fixedBusinessExpensesByPeriod[item.date] || 0
       const profit = item.revenue -
@@ -1715,7 +1765,7 @@ export const Reports: React.FC = () => {
       const apptsToSalesRate = item.appointments > 0 ? (item.sales / item.appointments) * 100 : 0
 
       return {
-        id: `${item.date}-${index}`,
+        id: periodKey,
         date: item.date,
         displayDate: formatPeriodLabel(
           timezoneInfo.adjustMetaDateToLocal ? timezoneInfo.adjustMetaDateToLocal(item.date) : item.date,
@@ -1972,8 +2022,14 @@ export const Reports: React.FC = () => {
 
           return (
             <BusinessExpenseCell
+              key={expenseKey}
               value={value}
               row={row}
+              period={{
+                type: viewType,
+                start: periodStart,
+                key: expenseKey
+              }}
               saving={savingManualBusinessExpenseKey === expenseKey}
               onCommit={handleSaveBusinessExpense}
             />
