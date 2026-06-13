@@ -196,6 +196,7 @@ export const getManualBusinessExpenses = async (req, res) => {
 export const upsertManualBusinessExpense = async (req, res) => {
   try {
     const { period_type, period_start, amount } = req.body || {}
+    const shouldDelete = req.body?.delete === true || req.body?.clear === true
     const periodType = String(period_type || '').trim()
 
     if (!MANUAL_BUSINESS_EXPENSE_PERIODS.has(periodType)) {
@@ -213,15 +214,7 @@ export const upsertManualBusinessExpense = async (req, res) => {
       })
     }
 
-    const numericAmount = Number(amount)
-    if (!Number.isFinite(numericAmount) || numericAmount < 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'amount debe ser un número positivo'
-      })
-    }
-
-    if (numericAmount === 0) {
+    if (shouldDelete) {
       await db.run(`
         DELETE FROM report_manual_business_expenses
         WHERE period_type = ? AND period_start = ?
@@ -232,6 +225,14 @@ export const upsertManualBusinessExpense = async (req, res) => {
         data: {
           expense: null
         }
+      })
+    }
+
+    const numericAmount = Number(amount)
+    if (!Number.isFinite(numericAmount) || numericAmount < 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'amount debe ser un número válido'
       })
     }
 

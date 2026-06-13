@@ -321,7 +321,11 @@ const getManualExpenseRange = (expense: ManualBusinessExpense) => {
     return { from: `${parts.year}-${month}-01`, to: `${parts.year}-${month}-${lastDay}` }
   }
 
-  return { from: `${parts.year}-01-01`, to: `${parts.year}-12-31` }
+  if (expense.period_type === 'year') {
+    return { from: `${parts.year}-01-01`, to: `${parts.year}-12-31` }
+  }
+
+  return null
 }
 
 const roundCurrencyValue = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100
@@ -407,27 +411,46 @@ const calculateManualBusinessExpensesForRange = (
   const targetStart = toUtcDayIndex(targetRange.from)
   const targetEnd = toUtcDayIndex(targetRange.to)
 
-  if (targetStart === null || targetEnd === null) return 0
+  if (targetStart === null || targetEnd === null || targetEnd < targetStart) return 0
 
-  const total = expenses.reduce((sum, expense) => {
-    const amount = Number(expense.amount || 0)
-    if (!Number.isFinite(amount) || amount <= 0) return sum
+  const allocations = expenses
+    .map((expense) => {
+      const amount = Number(expense.amount ?? 0)
+      if (!Number.isFinite(amount) || amount < 0) return null
 
-    const sourceRange = getManualExpenseRange(expense)
-    if (!sourceRange) return sum
+      const sourceRange = getManualExpenseRange(expense)
+      if (!sourceRange) return null
 
-    const sourceStart = toUtcDayIndex(sourceRange.from)
-    const sourceEnd = toUtcDayIndex(sourceRange.to)
-    if (sourceStart === null || sourceEnd === null || sourceEnd < sourceStart) return sum
+      const sourceStart = toUtcDayIndex(sourceRange.from)
+      const sourceEnd = toUtcDayIndex(sourceRange.to)
+      if (sourceStart === null || sourceEnd === null || sourceEnd < sourceStart) return null
 
-    const overlapStart = Math.max(targetStart, sourceStart)
-    const overlapEnd = Math.min(targetEnd, sourceEnd)
-    if (overlapEnd < overlapStart) return sum
+      const sourceDays = sourceEnd - sourceStart + 1
+      const priority = expense.period_type === 'day' ? 3 : expense.period_type === 'month' ? 2 : 1
 
-    const sourceDays = sourceEnd - sourceStart + 1
-    const overlapDays = overlapEnd - overlapStart + 1
-    return sum + (amount * overlapDays) / sourceDays
-  }, 0)
+      return {
+        start: sourceStart,
+        end: sourceEnd,
+        priority,
+        amountPerDay: amount / sourceDays
+      }
+    })
+    .filter((allocation): allocation is {
+      start: number
+      end: number
+      priority: number
+      amountPerDay: number
+    } => Boolean(allocation))
+    .sort((a, b) => b.priority - a.priority)
+
+  let total = 0
+
+  for (let day = targetStart; day <= targetEnd; day += 1) {
+    const allocation = allocations.find((item) => day >= item.start && day <= item.end)
+    if (allocation) {
+      total += allocation.amountPerDay
+    }
+  }
 
   return roundCurrencyValue(total)
 }
@@ -442,12 +465,12 @@ const getManualExpenseRecordKey = (periodType: ViewType, periodStart: string) =>
 
 const parseManualExpenseInput = (value: string) => {
   const normalized = value.replace(/[$,\s]/g, '')
-  if (!normalized) return 0
+  if (!normalized) return { amount: 0, shouldDelete: true }
 
   const amount = Number(normalized)
   if (!Number.isFinite(amount) || amount < 0) return null
 
-  return roundCurrencyValue(amount)
+  return { amount: roundCurrencyValue(amount), shouldDelete: false }
 }
 
 const computeRangeForView = (
@@ -1265,6 +1288,8 @@ const BusinessExpenseCell: React.FC<BusinessExpenseCellProps> = ({ value, row, s
     const savedAmount = await onCommit(row, draft)
     if (savedAmount !== null) {
       setDraft(formatBusinessExpenseDraft(savedAmount))
+    } else {
+      setDraft(formatBusinessExpenseDraft(value))
     }
   }
 
@@ -1281,7 +1306,9 @@ const BusinessExpenseCell: React.FC<BusinessExpenseCellProps> = ({ value, row, s
         onFocus={() => setFocused(true)}
         onBlur={() => {
           setFocused(false)
-          setDraft(formatBusinessExpenseDraft(value))
+          if (draft.trim() !== formatBusinessExpenseDraft(value)) {
+            void handleCommit()
+          }
         }}
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={(event) => {
@@ -1597,10 +1624,10 @@ export const Reports: React.FC = () => {
   }, [apiRange, configuredCosts, summary?.payments.totalRevenue, metrics])
 
   const handleSaveBusinessExpense = useCallback(async (row: TableRow, rawValue: string): Promise<number | null> => {
-    const amount = parseManualExpenseInput(rawValue)
+    const parsed = parseManualExpenseInput(rawValue)
 
-    if (amount === null) {
-      showToast('warning', 'Gasto inválido', 'Ingresa un monto positivo')
+    if (parsed === null) {
+      showToast('warning', 'Gasto inválido', 'Ingresa un monto válido')
       return null
     }
 
@@ -1612,7 +1639,8 @@ export const Reports: React.FC = () => {
       const result = await reportsService.saveManualBusinessExpense({
         period_type: viewType,
         period_start: periodStart,
-        amount
+        amount: parsed.amount,
+        delete: parsed.shouldDelete
       })
 
       setManualBusinessExpenses((current) => {
@@ -1633,7 +1661,7 @@ export const Reports: React.FC = () => {
       setSavingManualBusinessExpenseKey(null)
     }
 
-    return amount
+    return parsed.amount
   }, [showToast, viewType])
 
   const tableData: TableRow[] = useMemo(() => (

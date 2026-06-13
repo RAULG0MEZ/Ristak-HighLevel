@@ -1,0 +1,55 @@
+import assert from 'node:assert/strict'
+import { describe, it } from 'node:test'
+
+import { calculateManualBusinessExpensesForRange } from '../src/services/manualBusinessExpensesService.js'
+
+describe('manual business expense calculations', () => {
+  it('uses daily overrides instead of adding them on top of monthly costs', () => {
+    const expenses = [
+      { period_type: 'month', period_start: '2026-06-01', amount: 30000 },
+      { period_type: 'day', period_start: '2026-06-10', amount: 2000 },
+      { period_type: 'day', period_start: '2026-06-11', amount: 500 }
+    ]
+
+    assert.equal(
+      calculateManualBusinessExpensesForRange({ from: '2026-06-01', to: '2026-06-30' }, expenses),
+      30500
+    )
+    assert.equal(
+      calculateManualBusinessExpensesForRange({ from: '2026-06-10', to: '2026-06-10' }, expenses),
+      2000
+    )
+  })
+
+  it('uses monthly overrides instead of adding them on top of yearly costs', () => {
+    const expenses = [
+      { period_type: 'year', period_start: '2026-01-01', amount: 120000 },
+      { period_type: 'month', period_start: '2026-06-01', amount: 30000 }
+    ]
+
+    assert.equal(
+      calculateManualBusinessExpensesForRange({ from: '2026-01-01', to: '2026-12-31' }, expenses),
+      140136.99
+    )
+    assert.equal(
+      calculateManualBusinessExpensesForRange({ from: '2026-06-01', to: '2026-06-30' }, expenses),
+      30000
+    )
+  })
+
+  it('keeps explicit zero values as overrides', () => {
+    const expenses = [
+      { period_type: 'month', period_start: '2026-06-01', amount: 30000 },
+      { period_type: 'day', period_start: '2026-06-10', amount: 0 }
+    ]
+
+    assert.equal(
+      calculateManualBusinessExpensesForRange({ from: '2026-06-01', to: '2026-06-30' }, expenses),
+      29000
+    )
+    assert.equal(
+      calculateManualBusinessExpensesForRange({ from: '2026-06-10', to: '2026-06-10' }, expenses),
+      0
+    )
+  })
+})

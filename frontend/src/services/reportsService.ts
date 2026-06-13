@@ -105,6 +105,10 @@ export interface ManualBusinessExpense {
   amount: number
 }
 
+export interface ManualBusinessExpenseInput extends ManualBusinessExpense {
+  delete?: boolean
+}
+
 export interface ContactPaymentDetail {
   id: string
   amount: number
@@ -242,7 +246,7 @@ class ReportsService {
     return response.expenses || []
   }
 
-  async saveManualBusinessExpense(input: ManualBusinessExpense): Promise<{ expense: ManualBusinessExpense | null }> {
+  async saveManualBusinessExpense(input: ManualBusinessExpenseInput): Promise<{ expense: ManualBusinessExpense | null }> {
     return apiClient.put<{ expense: ManualBusinessExpense | null }>('/reports/manual-business-expenses', input)
   }
 }
