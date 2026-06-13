@@ -205,6 +205,8 @@ export interface SiteTheme {
   submitPaddingX?: number
   submitFontSize?: number
   submitBorderWidth?: number
+  submitWidth?: number
+  submitAlign?: 'left' | 'center' | 'right' | 'full'
   formFontFamily?: string
   formLabelSize?: number
   formInputSize?: number
@@ -223,6 +225,7 @@ export interface SiteTheme {
   formFieldHeight?: number
   formFieldPaddingX?: number
   formFieldPaddingY?: number
+  formFieldWidth?: number
   formChoiceStyle?: 'native' | 'cards' | 'pills' | 'minimal'
   formChoiceSelectedBg?: string
   formChoiceSelectedBorder?: string

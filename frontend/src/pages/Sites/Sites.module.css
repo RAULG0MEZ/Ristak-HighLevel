@@ -3718,30 +3718,57 @@
 .inlineField select,
 .field input,
 .field textarea,
-.field select {
+.field select,
+.inlineField :global([data-ristak-dropdown-trigger]),
+.field :global([data-ristak-dropdown-trigger]) {
   width: 100%;
-  min-height: 40px;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 8px;
-  background: var(--color-background-primary);
-  color: var(--color-text-primary);
-  padding: 9px 11px;
+  min-height: var(--design-control-height);
+  border: 1px solid var(--design-control-border);
+  border-radius: var(--design-control-radius);
+  background: var(--design-control-bg);
+  color: var(--design-control-text);
+  padding: 0 var(--design-control-padding-x);
+  box-shadow: var(--design-control-shadow);
   font: inherit;
-  font-size: 0.9rem;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25rem;
   outline: none;
 }
 
 .field textarea {
   resize: vertical;
+  min-height: 92px;
+  padding: 10px var(--design-control-padding-x);
 }
 
 .inlineField input:focus,
 .inlineField select:focus,
 .field input:focus,
 .field textarea:focus,
-.field select:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.14);
+.field select:focus,
+.inlineField :global([data-ristak-dropdown-trigger]):focus,
+.inlineField :global([data-ristak-dropdown-trigger]):focus-visible,
+.inlineField :global([data-ristak-dropdown-trigger][aria-expanded='true']),
+.inlineField :global([data-ristak-dropdown-trigger][data-state='open']),
+.field :global([data-ristak-dropdown-trigger]):focus,
+.field :global([data-ristak-dropdown-trigger]):focus-visible,
+.field :global([data-ristak-dropdown-trigger][aria-expanded='true']),
+.field :global([data-ristak-dropdown-trigger][data-state='open']) {
+  border-color: var(--design-control-border-focus);
+  background: var(--design-control-bg);
+  box-shadow: var(--design-control-focus-shadow);
+}
+
+.inlineField :global([data-ristak-dropdown-trigger]) > span,
+.field :global([data-ristak-dropdown-trigger]) > span {
+  min-width: 0;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .deviceToggle {

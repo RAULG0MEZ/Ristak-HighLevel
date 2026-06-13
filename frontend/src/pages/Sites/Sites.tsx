@@ -1883,6 +1883,11 @@ const getButtonAlign = (settings: Record<string, unknown>, fallback: ButtonAlign
   return isButtonAlign(value) ? value : fallback
 }
 
+const getThemeButtonAlign = (theme: SiteTheme | undefined, key: keyof SiteTheme, fallback: ButtonAlign = 'center'): ButtonAlign => {
+  const value = theme?.[key]
+  return isButtonAlign(value) ? value : fallback
+}
+
 const justifyForAlign = (align: HorizontalAlign | ButtonAlign) => {
   if (align === 'center') return 'center'
   if (align === 'right') return 'end'
@@ -2016,8 +2021,9 @@ const getPanelStyleSettings = (site: PublicSite, block: SiteBlock, blocks: SiteB
     mediaAlign: 'center',
     mediaWidth: 100,
     mediaRadius: 18,
-    fieldBg: '#ffffff',
+    fieldBg: 'transparent',
     fieldBorder: '#dbe3ef',
+    fieldWidth: 100,
     fieldRadius: 12,
     buttonRadius: 28,
     buttonHeight: 54,
@@ -2120,7 +2126,7 @@ const getBlockCanvasStyle = (block: SiteBlock): React.CSSProperties => {
   const blockBorder = getSettingString(settings, 'blockBorderColor')
   const blockBackgroundImage = getSettingString(settings, 'blockBackgroundImage')
   const blockHasNativeBorder = nativeBorderBlockTypes.has(block.blockType)
-  const supportsButton = block.blockType === 'hero' || block.blockType === 'button' || block.blockType === 'cta'
+  const supportsButton = block.blockType === 'hero' || block.blockType === 'button' || block.blockType === 'cta' || block.blockType === 'form_embed'
 
   if (isCssPaint(bg)) {
     const normalized = normalizeCssPaint(bg, '#ffffff')
@@ -2242,6 +2248,7 @@ const getBlockCanvasStyle = (block: SiteBlock): React.CSSProperties => {
   if (settings.cardBorderWidth !== undefined) style['--rstk-card-border-width'] = `${getSettingNumber(settings, 'cardBorderWidth', 1, 0, 8)}px`
   if (settings.listColumns !== undefined) style['--rstk-list-columns'] = `repeat(${getSettingNumber(settings, 'listColumns', 3, 1, 4)}, minmax(0, 1fr))`
   if (settings.cardAlign !== undefined) style['--rstk-card-align'] = getHorizontalAlign(settings, 'cardAlign', 'left')
+  if (settings.fieldWidth !== undefined) style['--rstk-field-width'] = `${getSettingNumber(settings, 'fieldWidth', 100, 20, 100)}%`
   if (settings.fieldRadius !== undefined) style['--rstk-field-radius'] = `${getSettingNumber(settings, 'fieldRadius', 12, 0, 32)}px`
   if (block.blockType === SECTION_BLOCK_TYPE) {
     style['--rstk-section-columns'] = `${getSectionColumns(block)}`
@@ -3483,10 +3490,12 @@ function FormEmbedEditorPanel({
   activeSitePageId,
   onPatchBlock,
   onPatchSettings,
+  onPatchTheme,
   onPatchField,
   onPatchFieldSettings,
   onDeleteField,
   onSave,
+  onSaveSite,
   onActivePageChange,
   onAddPage,
   onRenamePage,
@@ -3504,10 +3513,12 @@ function FormEmbedEditorPanel({
   activeSitePageId: string
   onPatchBlock: (patch: Partial<SiteBlock>) => void
   onPatchSettings: (patch: Record<string, unknown>) => void
+  onPatchTheme: (patch: Partial<SiteTheme>) => void
   onPatchField: (fieldId: string, patch: Partial<SiteBlock>) => void
   onPatchFieldSettings: (field: SiteBlock, patch: Record<string, unknown>) => void
   onDeleteField: (fieldId: string) => void
   onSave: () => void
+  onSaveSite: () => void
   onActivePageChange: (pageId: string) => void
   onAddPage: () => void
   onRenamePage: (pageId: string, title: string) => void
@@ -3749,7 +3760,10 @@ function FormEmbedEditorPanel({
   )
 
   const designContent = (
-    <InlineBlockStyleControls site={site} block={block} blocks={[block]} onPatchSettings={onPatchSettings} onSave={onSave} />
+    <>
+      <InlineBlockStyleControls site={site} block={block} blocks={[block]} onPatchSettings={onPatchSettings} onSave={onSave} />
+      <FormGlobalStyleControls site={site} embedded onPatchTheme={onPatchTheme} onSaveSite={onSaveSite} />
+    </>
   )
 
   return (
@@ -7330,10 +7344,12 @@ export const Sites: React.FC = () => {
                     activeSitePageId={activePage?.id || DEFAULT_FUNNEL_PAGE_ID}
                     onPatchBlock={(patch) => patchSelectedBlock(patch)}
                     onPatchSettings={(patch) => patchSelectedBlockSettings(patch)}
+                    onPatchTheme={patchSiteTheme}
                     onPatchField={patchEmbeddedFormField}
                     onPatchFieldSettings={patchEmbeddedFormFieldSettings}
                     onDeleteField={removeEmbeddedFormField}
                     onSave={() => handleSaveBlock()}
+                    onSaveSite={() => handleSaveSite()}
                     onActivePageChange={selectEmbeddedFormPage}
                     onAddPage={addEmbeddedFormPage}
                     onRenamePage={renameEmbeddedFormPage}
@@ -16659,7 +16675,7 @@ const InlineBlockStyleControls: React.FC<{
   const defaultAccent = defaultAccentForSite(site)
   const isSection = block.blockType === SECTION_BLOCK_TYPE
   const isLandingContent = isLanding(site) && !isSection
-  const supportsButton = block.blockType === 'hero' || block.blockType === 'button' || block.blockType === 'cta'
+  const supportsButton = block.blockType === 'hero' || block.blockType === 'button' || block.blockType === 'cta' || block.blockType === 'form_embed'
   const supportsField = fieldBlockTypes.has(block.blockType)
   const isHardEmbed = block.blockType === 'embed' || block.blockType === 'calendar_embed'
   const supportsTextStyle = supportsField || isSection || ['headline', 'title', 'subheading', 'subtitle', 'description', 'text', 'hero', 'cta', 'benefits', 'testimonials', 'services', 'faq', 'form_embed', 'social_profile'].includes(block.blockType)
@@ -16823,7 +16839,7 @@ const InlineBlockStyleControls: React.FC<{
           <div className={styles.twoColumn}>
             <ColorField
               label="Caja del campo"
-              value={getSettingPaint(settings, 'fieldBg', '#ffffff')}
+              value={getSettingPaint(settings, 'fieldBg', 'transparent')}
               allowGradient
               onChange={(value) => onPatchSettings({ fieldBg: value })}
               onCommit={onSave}
@@ -16842,6 +16858,15 @@ const InlineBlockStyleControls: React.FC<{
             min={0}
             max={32}
             onChange={(value) => onPatchSettings({ fieldRadius: value })}
+            onCommit={onSave}
+          />
+          <DimensionField
+            label="Ancho caja"
+            value={getSettingNumber(settings, 'fieldWidth', 100, 20, 100)}
+            min={20}
+            max={100}
+            unit="%"
+            onChange={(value) => onPatchSettings({ fieldWidth: value })}
             onCommit={onSave}
           />
         </>
@@ -17358,7 +17383,7 @@ const CanvasPreviewBlock: React.FC<CanvasPreviewBlockProps> = ({
           fields.map(field => <FieldStaticPreview key={field.id} block={field} />)
         )}
         <div className="rstk-actions rstk-embed-actions">
-          <button type="button" data-submit>Enviar</button>
+          <button type="button" data-submit><SubmitButtonContent theme={site?.theme} /></button>
         </div>
       </section>
     )
@@ -17527,7 +17552,7 @@ const FieldControlPreview: React.FC<{ block: SiteBlock }> = ({ block }) => {
 
 // Read-only field preview (rstk markup) for embedded form fields on the canvas.
 const FieldStaticPreview: React.FC<{ block: SiteBlock }> = ({ block }) => (
-  <section className="rstk-field">
+  <section className={getBlockStyleClassName(block, 'rstk-field')} style={getBlockCanvasStyle(block)}>
     <label>{block.label || 'Pregunta'}{block.required ? <span className="rstk-required">*</span> : null}</label>
     {block.content ? <p className="rstk-help">{block.content}</p> : null}
     <FieldControlPreview block={block} />
@@ -17574,7 +17599,12 @@ const EmbeddedFormCanvasFields: React.FC<{
           return (
             <React.Fragment key={field.id}>
               <section
-                className={`rstkEmbeddedFormField ${selected ? 'rstkEmbeddedFormFieldActive' : ''}`}
+                className={[
+                  'rstkEmbeddedFormField',
+                  selected ? 'rstkEmbeddedFormFieldActive' : '',
+                  getBlockStyleClassName(field)
+                ].filter(Boolean).join(' ')}
+                style={getBlockCanvasStyle(field)}
                 onClick={(event) => {
                   event.stopPropagation()
                   editor.onSelectField(field.id)
@@ -17680,10 +17710,11 @@ interface PropertiesPanelProps {
 
 const FormGlobalStyleControls: React.FC<{
   site: PublicSite
+  embedded?: boolean
   onPatchTheme: (patch: Partial<SiteTheme>) => void
   onSaveSite: () => void
-}> = ({ site, onPatchTheme, onSaveSite }) => {
-  if (!isFormSite(site)) return null
+}> = ({ site, embedded = false, onPatchTheme, onSaveSite }) => {
+  if (!embedded && !isFormSite(site)) return null
 
   const theme = site.theme || {}
   const defaultAccent = defaultAccentForSite(site)
@@ -17704,7 +17735,7 @@ const FormGlobalStyleControls: React.FC<{
 
   return (
     <div className={styles.formGlobalControls}>
-      <div className={styles.panelSubheader}>Formulario global</div>
+      <div className={styles.panelSubheader}>{embedded ? 'Diseño del formulario' : 'Formulario global'}</div>
       <div className={styles.textFormatPanel}>
         <div className={styles.textToolbar}>
           <label className={styles.textFontSelect}>
@@ -17739,7 +17770,7 @@ const FormGlobalStyleControls: React.FC<{
         <ColorField label="Ayuda" value={getThemePaint(theme, 'formHelpColor', '#64748b')} allowGradient onChange={(value) => onPatchTheme({ formHelpColor: value })} onCommit={onSaveSite} />
       </div>
       <div className={styles.twoColumn}>
-        <ColorField label="Caja" value={getThemePaint(theme, 'formFieldBg', '#ffffff')} allowGradient onChange={(value) => onPatchTheme({ formFieldBg: value })} onCommit={onSaveSite} />
+        <ColorField label="Caja" value={getThemePaint(theme, 'formFieldBg', 'transparent')} allowGradient onChange={(value) => onPatchTheme({ formFieldBg: value })} onCommit={onSaveSite} />
         <ColorField label="Texto caja" value={getThemePaint(theme, 'formFieldText', inputText)} allowGradient onChange={(value) => onPatchTheme({ formFieldText: value })} onCommit={onSaveSite} />
       </div>
       <div className={styles.twoColumn}>
@@ -17756,6 +17787,7 @@ const FormGlobalStyleControls: React.FC<{
         <DimensionField label="Relleno lados" value={getThemeNumber(theme, 'formFieldPaddingX', 14, 6, 48)} min={6} max={48} onChange={(value) => onPatchTheme({ formFieldPaddingX: value })} onCommit={onSaveSite} />
       </div>
       <DimensionField label="Relleno vertical" value={getThemeNumber(theme, 'formFieldPaddingY', 13, 6, 36)} min={6} max={36} onChange={(value) => onPatchTheme({ formFieldPaddingY: value })} onCommit={onSaveSite} />
+      <DimensionField label="Ancho cajas" value={getThemeNumber(theme, 'formFieldWidth', 560, 240, 900)} min={240} max={900} step={10} onChange={(value) => onPatchTheme({ formFieldWidth: value })} onCommit={onSaveSite} />
 
       <div className={styles.twoColumn}>
         <label className={styles.field}>
@@ -17795,7 +17827,7 @@ const FormGlobalStyleControls: React.FC<{
           </label>
         </div>
       )}
-      {isInteractiveForm(site) && (
+      {(isInteractiveForm(site) || embedded) && (
         <div className={styles.twoColumn}>
           <label className={styles.field}>
             <span>Texto botón siguiente</span>
@@ -17822,6 +17854,24 @@ const FormGlobalStyleControls: React.FC<{
       <div className={styles.twoColumn}>
         <DimensionField label="Relleno botón" value={getThemeNumber(theme, 'submitPaddingX', 22, 8, 72)} min={8} max={72} onChange={(value) => onPatchTheme({ submitPaddingX: value })} onCommit={onSaveSite} />
         <DimensionField label="Borde botón" value={getThemeNumber(theme, 'submitBorderWidth', 1, 0, 8)} min={0} max={8} onChange={(value) => onPatchTheme({ submitBorderWidth: value })} onCommit={onSaveSite} />
+      </div>
+      <div className={styles.twoColumn}>
+        <AlignmentControl
+          label="Alineación botón"
+          value={getThemeButtonAlign(theme, 'submitAlign', 'center')}
+          options={buttonAlignOptions}
+          onChange={(value) => onPatchTheme({ submitAlign: value as SiteTheme['submitAlign'] })}
+          onCommit={onSaveSite}
+        />
+        <DimensionField
+          label="Ancho botón"
+          value={getThemeNumber(theme, 'submitWidth', 0, 0, 100)}
+          min={0}
+          max={100}
+          unit="%"
+          onChange={(value) => onPatchTheme({ submitWidth: value })}
+          onCommit={onSaveSite}
+        />
       </div>
     </div>
   )

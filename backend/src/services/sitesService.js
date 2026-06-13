@@ -4275,7 +4275,6 @@ function buildDefaultBlocks(siteId, siteType, template, siteContext = {}) {
                   blockBg: '#101010',
                   blockText: '#f8fafc',
                   blockBorderColor: '#3f3f46',
-                  fieldBg: '#202023',
                   fieldBorder: '#3f3f46',
                   fieldRadius: 8
                 })
@@ -4381,7 +4380,6 @@ function buildDefaultBlocks(siteId, siteType, template, siteContext = {}) {
               settings: formEmbedSettings('Completa la información y te contactamos.', {
                 blockBg: tpl === 'tiktok' ? '#161616' : '#f8fafc',
                 blockText: tpl === 'tiktok' ? '#ffffff' : '#111827',
-                fieldBg: tpl === 'tiktok' ? '#1f1f1f' : '#ffffff',
                 fieldBorder: tpl === 'tiktok' ? 'rgba(255,255,255,.16)' : '#dbe3ef'
               })
             })
@@ -10255,10 +10253,11 @@ function renderBlockStyleVars(block) {
   const cardRadius = blockSettingNumber(settings, 'cardRadius', 0, 48)
   const cardBorderWidth = blockSettingNumber(settings, 'cardBorderWidth', 0, 8)
   const listColumns = blockSettingNumber(settings, 'listColumns', 1, 4)
+  const fieldWidth = blockSettingNumber(settings, 'fieldWidth', 20, 100)
   const fieldRadius = blockSettingNumber(settings, 'fieldRadius', 0, 32)
   const sectionGap = blockSettingNumber(settings, 'sectionGap', 0, 80)
   const blockHasNativeBorder = ['hero', 'section', 'cta', 'benefits', 'testimonials', 'services', 'faq', 'form_embed', 'image', 'video', 'embed', 'calendar_embed'].includes(block.blockType)
-  const supportsButton = ['hero', 'button', 'cta'].includes(block.blockType)
+  const supportsButton = ['hero', 'button', 'cta', 'form_embed'].includes(block.blockType)
 
   if (blockBg) {
     vars.push(`--rstk-block-bg:${blockBg}`)
@@ -10357,6 +10356,7 @@ function renderBlockStyleVars(block) {
   if (cardBorderWidth !== null) vars.push(`--rstk-card-border-width:${cardBorderWidth}px`)
   if (listColumns !== null) vars.push(`--rstk-list-columns:repeat(${listColumns},minmax(0,1fr))`)
   if (settings.cardAlign !== undefined) vars.push(`--rstk-card-align:${blockHorizontalAlign(settings, 'cardAlign', 'left')}`)
+  if (fieldWidth !== null) vars.push(`--rstk-field-width:${fieldWidth}%`)
   if (fieldRadius !== null) vars.push(`--rstk-field-radius:${fieldRadius}px`)
   if (block.blockType === 'section') {
     vars.push(`--rstk-section-columns:${getSectionColumns(block)}`)
@@ -10672,7 +10672,7 @@ function renderContentBlock(block, context = {}) {
     const renderEmbeddedFields = () => {
       if (!fields.length) return '<p class="rstk-help">Selecciona o crea un formulario embebido para capturar respuestas.</p>'
       if (!hasEmbeddedPages) {
-        return fields.map(field => renderFieldBlock(field, false, getBlockPageId(field, embeddedPages), context)).join('\n')
+        return fields.map(field => wrapRenderedBlock(field, renderFieldBlock(field, false, getBlockPageId(field, embeddedPages), context))).join('\n')
       }
       return `
         <div class="rstk-embedded-pages" data-embedded-form-pages>
@@ -10681,7 +10681,7 @@ function renderContentBlock(block, context = {}) {
             return `
               <div data-embedded-page-content="${escapeHtml(page.id)}"${index === 0 ? '' : ' hidden'}>
                 ${pageFields.length
-                  ? pageFields.map(field => renderFieldBlock(field, false, page.id, context)).join('\n')
+                  ? pageFields.map(field => wrapRenderedBlock(field, renderFieldBlock(field, false, page.id, context))).join('\n')
                   : `<p class="rstk-help">Esta página no tiene campos.</p>`}
               </div>
             `
@@ -11563,49 +11563,50 @@ const RSTK_BASE_CSS = `
   .rstk-site-panel-footer .rstk-site-panel-links{justify-content:center}
 
   .rstk-field{display:grid;gap:8px;text-align:left}
-  .rstk-embedded-form > .rstk-field,.rstk-embedded-form > .rstk-options,.rstk-embedded-form > .rstk-actions{width:min(100%,560px);justify-self:center}
-  .rstk-embedded-form > .rstk-field{text-align:left}
+  .rstk-kind-form .rstk-field,.rstk-kind-form .rstk-options,.rstk-kind-form .rstk-actions,.rstk-embedded-form > .rstk-field,.rstk-embedded-form > .rstk-block-style,.rstk-embedded-form > .rstk-options,.rstk-embedded-form > .rstk-actions{width:min(100%,var(--rstk-form-field-width,560px));justify-self:center}
+  .rstk-embedded-form > .rstk-field,.rstk-embedded-form > .rstk-block-style > .rstk-field{text-align:left}
   .rstk-embedded-form > .rstk-help{width:min(100%,620px);justify-self:center}
-  .rstk-embedded-pages,.rstk-embedded-pages [data-embedded-page-content]{width:min(100%,560px);justify-self:center;display:grid;gap:14px}
-	  .rstk-kind-form form{font-family:var(--rstk-form-font,var(--rstk-font))}
+  .rstk-embedded-pages,.rstk-embedded-pages [data-embedded-page-content]{width:min(100%,var(--rstk-form-field-width,560px));justify-self:center;display:grid;gap:14px}
+  .rstk-block-style.rstk-field,.rstk-block-style > .rstk-field{width:min(100%,var(--rstk-field-width,100%));justify-self:center}
+	  .rstk-kind-form form,.rstk-embedded-form{font-family:var(--rstk-form-font,var(--rstk-font))}
 	  label{font-size:.95rem;font-weight:700;color:var(--rstk-ink)}
-	  .rstk-kind-form .rstk-field > label{color:var(--rstk-form-label-color,var(--rstk-ink));font-family:var(--rstk-form-font,var(--rstk-font));font-size:var(--rstk-form-label-size,.95rem);font-style:var(--rstk-form-font-style,normal);font-weight:var(--rstk-form-weight,700);text-decoration:var(--rstk-form-text-decoration,none)}
+	  .rstk-kind-form .rstk-field > label,.rstk-embedded-form .rstk-field > label{color:var(--rstk-form-label-color,var(--rstk-ink));font-family:var(--rstk-form-font,var(--rstk-font));font-size:var(--rstk-form-label-size,.95rem);font-style:var(--rstk-form-font-style,normal);font-weight:var(--rstk-form-weight,700);text-decoration:var(--rstk-form-text-decoration,none)}
 	  .rstk-required{color:#dc2626;margin-left:3px}
 	  .rstk-help{margin:0;color:var(--rstk-muted);font-size:.9rem}
-	  .rstk-kind-form .rstk-help{color:var(--rstk-form-help-color,var(--rstk-muted));font-family:var(--rstk-form-font,var(--rstk-font));font-size:var(--rstk-form-help-size,.9rem);font-style:var(--rstk-form-font-style,normal);text-decoration:var(--rstk-form-text-decoration,none)}
+	  .rstk-kind-form .rstk-help,.rstk-embedded-form .rstk-help{color:var(--rstk-form-help-color,var(--rstk-muted));font-family:var(--rstk-form-font,var(--rstk-font));font-size:var(--rstk-form-help-size,.9rem);font-style:var(--rstk-form-font-style,normal);text-decoration:var(--rstk-form-text-decoration,none)}
 	  input,textarea,select{
 	    width:100%;border:1px solid var(--rstk-input-border);border-radius:var(--rstk-field-radius,var(--rstk-radius));
 	    background:var(--rstk-input-bg);color:var(--rstk-input-ink);font:inherit;font-size:1rem;
 	    padding:13px 14px;outline:none;transition:border-color .15s ease,box-shadow .15s ease;
 	  }
-	  .rstk-kind-form .rstk-field > input,.rstk-kind-form .rstk-field > textarea,.rstk-kind-form .rstk-field > select{min-height:var(--rstk-form-field-height,50px);border-width:var(--rstk-form-field-border-width,1px);border-color:var(--rstk-form-field-border,var(--rstk-input-border));border-radius:var(--rstk-form-field-radius,var(--rstk-field-radius,var(--rstk-radius)));background:var(--rstk-form-field-bg,var(--rstk-input-bg));color:var(--rstk-form-field-text,var(--rstk-input-ink));font-family:var(--rstk-form-font,var(--rstk-font));font-size:var(--rstk-form-input-size,1rem);font-style:var(--rstk-form-font-style,normal);font-weight:var(--rstk-form-weight,700);text-decoration:var(--rstk-form-text-decoration,none);padding:var(--rstk-form-field-pad-y,13px) var(--rstk-form-field-pad-x,14px)}
+	  .rstk-kind-form .rstk-field > input,.rstk-kind-form .rstk-field > textarea,.rstk-kind-form .rstk-field > select,.rstk-embedded-form .rstk-field > input,.rstk-embedded-form .rstk-field > textarea,.rstk-embedded-form .rstk-field > select{min-height:var(--rstk-form-field-height,50px);border-width:var(--rstk-form-field-border-width,1px);border-color:var(--rstk-form-field-border,var(--rstk-input-border));border-radius:var(--rstk-form-field-radius,var(--rstk-field-radius,var(--rstk-radius)));background:var(--rstk-form-field-bg,var(--rstk-input-bg));color:var(--rstk-form-field-text,var(--rstk-input-ink));font-family:var(--rstk-form-font,var(--rstk-font));font-size:var(--rstk-form-input-size,1rem);font-style:var(--rstk-form-font-style,normal);font-weight:var(--rstk-form-weight,700);text-decoration:var(--rstk-form-text-decoration,none);padding:var(--rstk-form-field-pad-y,13px) var(--rstk-form-field-pad-x,14px)}
 	  .rstk-phone-input{display:grid;grid-template-columns:minmax(92px,.24fr) minmax(0,1fr);gap:8px;align-items:stretch}
 	  .rstk-phone-input > select,.rstk-phone-input > input{min-width:0}
-	  .rstk-kind-form .rstk-field .rstk-phone-input > input,.rstk-kind-form .rstk-field .rstk-phone-input > select{min-height:var(--rstk-form-field-height,50px);border-width:var(--rstk-form-field-border-width,1px);border-color:var(--rstk-form-field-border,var(--rstk-input-border));border-radius:var(--rstk-form-field-radius,var(--rstk-field-radius,var(--rstk-radius)));background:var(--rstk-form-field-bg,var(--rstk-input-bg));color:var(--rstk-form-field-text,var(--rstk-input-ink));font-family:var(--rstk-form-font,var(--rstk-font));font-size:var(--rstk-form-input-size,1rem);font-style:var(--rstk-form-font-style,normal);font-weight:var(--rstk-form-weight,700);text-decoration:var(--rstk-form-text-decoration,none);padding:var(--rstk-form-field-pad-y,13px) var(--rstk-form-field-pad-x,14px)}
+	  .rstk-kind-form .rstk-field .rstk-phone-input > input,.rstk-kind-form .rstk-field .rstk-phone-input > select,.rstk-embedded-form .rstk-field .rstk-phone-input > input,.rstk-embedded-form .rstk-field .rstk-phone-input > select{min-height:var(--rstk-form-field-height,50px);border-width:var(--rstk-form-field-border-width,1px);border-color:var(--rstk-form-field-border,var(--rstk-input-border));border-radius:var(--rstk-form-field-radius,var(--rstk-field-radius,var(--rstk-radius)));background:var(--rstk-form-field-bg,var(--rstk-input-bg));color:var(--rstk-form-field-text,var(--rstk-input-ink));font-family:var(--rstk-form-font,var(--rstk-font));font-size:var(--rstk-form-input-size,1rem);font-style:var(--rstk-form-font-style,normal);font-weight:var(--rstk-form-weight,700);text-decoration:var(--rstk-form-text-decoration,none);padding:var(--rstk-form-field-pad-y,13px) var(--rstk-form-field-pad-x,14px)}
 	  textarea{resize:vertical;min-height:108px}
 	  input::placeholder,textarea::placeholder{color:color-mix(in srgb,var(--rstk-muted) 80%,transparent)}
-	  .rstk-kind-form input::placeholder,.rstk-kind-form textarea::placeholder{color:var(--rstk-form-placeholder,color-mix(in srgb,var(--rstk-muted) 80%,transparent))}
+	  .rstk-kind-form input::placeholder,.rstk-kind-form textarea::placeholder,.rstk-embedded-form input::placeholder,.rstk-embedded-form textarea::placeholder{color:var(--rstk-form-placeholder,color-mix(in srgb,var(--rstk-muted) 80%,transparent))}
 	  input:focus,textarea:focus,select:focus{border-color:var(--rstk-accent);box-shadow:0 0 0 4px var(--rstk-ring)}
 	  select{appearance:none;-webkit-appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--rstk-muted) 50%),linear-gradient(135deg,var(--rstk-muted) 50%,transparent 50%);background-position:calc(100% - 20px) calc(50% - 3px),calc(100% - 15px) calc(50% - 3px);background-size:5px 5px,5px 5px;background-repeat:no-repeat;padding-right:42px}
-	  .rstk-kind-form.rstk-select-filled .rstk-field select{background-color:color-mix(in srgb,var(--rstk-form-field-bg,var(--rstk-input-bg)) 88%,var(--rstk-accent) 12%)}
-	  .rstk-kind-form.rstk-select-underline .rstk-field select{border-width:0 0 var(--rstk-form-field-border-width,1px);border-radius:0;background-color:transparent;padding-left:0;padding-right:36px}
+	  .rstk-kind-form.rstk-select-filled .rstk-field select,.rstk-select-filled .rstk-embedded-form select{background-color:color-mix(in srgb,var(--rstk-form-field-bg,transparent) 88%,var(--rstk-accent) 12%)}
+	  .rstk-kind-form.rstk-select-underline .rstk-field select,.rstk-select-underline .rstk-embedded-form select{border-width:0 0 var(--rstk-form-field-border-width,1px);border-radius:0;background-color:transparent;padding-left:0;padding-right:36px}
 	  .rstk-phone-input > select{background:linear-gradient(45deg,transparent 50%,var(--rstk-muted) 50%) calc(100% - 20px) calc(50% - 3px)/5px 5px no-repeat,linear-gradient(135deg,var(--rstk-muted) 50%,transparent 50%) calc(100% - 15px) calc(50% - 3px)/5px 5px no-repeat,var(--rstk-input-bg)}
-	  .rstk-kind-form .rstk-field .rstk-phone-input > select,.rstk-kind-form.rstk-select-filled .rstk-field .rstk-phone-input > select,.rstk-kind-form.rstk-select-underline .rstk-field .rstk-phone-input > select{border-width:var(--rstk-form-field-border-width,1px);border-radius:var(--rstk-form-field-radius,var(--rstk-field-radius,var(--rstk-radius)));background:linear-gradient(45deg,transparent 50%,var(--rstk-muted) 50%) calc(100% - 20px) calc(50% - 3px)/5px 5px no-repeat,linear-gradient(135deg,var(--rstk-muted) 50%,transparent 50%) calc(100% - 15px) calc(50% - 3px)/5px 5px no-repeat,var(--rstk-form-field-bg,var(--rstk-input-bg));padding-left:var(--rstk-form-field-pad-x,14px);padding-right:42px}
+	  .rstk-kind-form .rstk-field .rstk-phone-input > select,.rstk-kind-form.rstk-select-filled .rstk-field .rstk-phone-input > select,.rstk-kind-form.rstk-select-underline .rstk-field .rstk-phone-input > select,.rstk-embedded-form .rstk-field .rstk-phone-input > select,.rstk-select-filled .rstk-embedded-form .rstk-field .rstk-phone-input > select,.rstk-select-underline .rstk-embedded-form .rstk-field .rstk-phone-input > select{border-width:var(--rstk-form-field-border-width,1px);border-radius:var(--rstk-form-field-radius,var(--rstk-field-radius,var(--rstk-radius)));background:linear-gradient(45deg,transparent 50%,var(--rstk-muted) 50%) calc(100% - 20px) calc(50% - 3px)/5px 5px no-repeat,linear-gradient(135deg,var(--rstk-muted) 50%,transparent 50%) calc(100% - 15px) calc(50% - 3px)/5px 5px no-repeat,var(--rstk-form-field-bg,var(--rstk-input-bg));padding-left:var(--rstk-form-field-pad-x,14px);padding-right:42px}
 
 	  .rstk-options{display:grid;gap:10px}
 	  .rstk-option{display:flex;align-items:center;gap:11px;min-height:50px;border:1px solid var(--rstk-input-border);border-radius:var(--rstk-field-radius,var(--rstk-radius));padding:11px 14px;background:var(--rstk-input-bg);color:var(--rstk-input-ink);font-weight:600;cursor:pointer;transition:border-color .15s ease,background .15s ease}
 	  .rstk-option:hover{border-color:var(--rstk-accent)}
 	  .rstk-option:has(input:checked){border-color:var(--rstk-accent);background:color-mix(in srgb,var(--rstk-accent) 8%,var(--rstk-input-bg))}
 	  .rstk-option input{width:19px;height:19px;padding:0;flex:0 0 auto;accent-color:var(--rstk-accent)}
-	  .rstk-kind-form .rstk-options .rstk-option{min-height:var(--rstk-form-field-height,50px);border-width:var(--rstk-form-field-border-width,1px);border-color:var(--rstk-form-field-border,var(--rstk-input-border));border-radius:var(--rstk-form-field-radius,var(--rstk-field-radius,var(--rstk-radius)));background:var(--rstk-form-field-bg,var(--rstk-input-bg));color:var(--rstk-form-field-text,var(--rstk-input-ink));font-family:var(--rstk-form-font,var(--rstk-font));font-size:var(--rstk-form-input-size,1rem);font-style:var(--rstk-form-font-style,normal);font-weight:var(--rstk-form-weight,700);text-decoration:var(--rstk-form-text-decoration,none);padding:var(--rstk-form-field-pad-y,13px) var(--rstk-form-field-pad-x,14px)}
-	  .rstk-kind-form .rstk-option:has(input:checked){border-color:var(--rstk-form-choice-selected-border,var(--rstk-accent));background:var(--rstk-form-choice-selected-bg,color-mix(in srgb,var(--rstk-accent) 8%,var(--rstk-form-field-bg,var(--rstk-input-bg))))}
-	  .rstk-kind-form.rstk-choice-cards .rstk-option,.rstk-kind-form.rstk-choice-pills .rstk-option{position:relative;gap:0}
-	  .rstk-kind-form.rstk-choice-cards .rstk-option input,.rstk-kind-form.rstk-choice-pills .rstk-option input{position:absolute;opacity:0;pointer-events:none}
-	  .rstk-kind-form.rstk-choice-cards .rstk-option{padding-left:var(--rstk-form-field-pad-x,14px);box-shadow:inset 4px 0 0 transparent}
-	  .rstk-kind-form.rstk-choice-cards .rstk-option:has(input:checked){box-shadow:inset 4px 0 0 var(--rstk-form-choice-selected-border,var(--rstk-accent))}
-	  .rstk-kind-form.rstk-choice-pills .rstk-options{display:flex;flex-wrap:wrap;gap:8px}
-	  .rstk-kind-form.rstk-choice-pills .rstk-option{flex:0 1 auto;min-height:40px;border-radius:999px;padding:9px 16px}
-	  .rstk-kind-form.rstk-choice-minimal .rstk-option{min-height:38px;border-width:0 0 var(--rstk-form-field-border-width,1px);border-radius:0;background:transparent;padding-inline:0}
+	  .rstk-kind-form .rstk-options .rstk-option,.rstk-embedded-form .rstk-option{min-height:var(--rstk-form-field-height,50px);border-width:var(--rstk-form-field-border-width,1px);border-color:var(--rstk-form-field-border,var(--rstk-input-border));border-radius:var(--rstk-form-field-radius,var(--rstk-field-radius,var(--rstk-radius)));background:var(--rstk-form-field-bg,var(--rstk-input-bg));color:var(--rstk-form-field-text,var(--rstk-input-ink));font-family:var(--rstk-form-font,var(--rstk-font));font-size:var(--rstk-form-input-size,1rem);font-style:var(--rstk-form-font-style,normal);font-weight:var(--rstk-form-weight,700);text-decoration:var(--rstk-form-text-decoration,none);padding:var(--rstk-form-field-pad-y,13px) var(--rstk-form-field-pad-x,14px)}
+	  .rstk-kind-form .rstk-option:has(input:checked),.rstk-embedded-form .rstk-option:has(input:checked){border-color:var(--rstk-form-choice-selected-border,var(--rstk-accent));background:var(--rstk-form-choice-selected-bg,color-mix(in srgb,var(--rstk-accent) 8%,transparent))}
+	  .rstk-kind-form.rstk-choice-cards .rstk-option,.rstk-kind-form.rstk-choice-pills .rstk-option,.rstk-choice-cards .rstk-embedded-form .rstk-option,.rstk-choice-pills .rstk-embedded-form .rstk-option{position:relative;gap:0}
+	  .rstk-kind-form.rstk-choice-cards .rstk-option input,.rstk-kind-form.rstk-choice-pills .rstk-option input,.rstk-choice-cards .rstk-embedded-form .rstk-option input,.rstk-choice-pills .rstk-embedded-form .rstk-option input{position:absolute;opacity:0;pointer-events:none}
+	  .rstk-kind-form.rstk-choice-cards .rstk-option,.rstk-choice-cards .rstk-embedded-form .rstk-option{padding-left:var(--rstk-form-field-pad-x,14px);box-shadow:inset 4px 0 0 transparent}
+	  .rstk-kind-form.rstk-choice-cards .rstk-option:has(input:checked),.rstk-choice-cards .rstk-embedded-form .rstk-option:has(input:checked){box-shadow:inset 4px 0 0 var(--rstk-form-choice-selected-border,var(--rstk-accent))}
+	  .rstk-kind-form.rstk-choice-pills .rstk-options,.rstk-choice-pills .rstk-embedded-form .rstk-options{display:flex;flex-wrap:wrap;gap:8px}
+	  .rstk-kind-form.rstk-choice-pills .rstk-option,.rstk-choice-pills .rstk-embedded-form .rstk-option{flex:0 1 auto;min-height:40px;border-radius:999px;padding:9px 16px}
+	  .rstk-kind-form.rstk-choice-minimal .rstk-option,.rstk-choice-minimal .rstk-embedded-form .rstk-option{min-height:38px;border-width:0 0 var(--rstk-form-field-border-width,1px);border-radius:0;background:transparent;padding-inline:0}
 
   .rstk-embed{width:100%;min-height:var(--rstk-embed-height,360px);display:block;border:var(--rstk-block-border-width,1px) solid var(--rstk-block-border,var(--rstk-border));border-radius:var(--rstk-block-radius,var(--rstk-radius));background:var(--rstk-block-bg,var(--rstk-surface2))}
   .rstk-calendar-embed{min-height:760px}
@@ -11615,7 +11616,8 @@ const RSTK_BASE_CSS = `
 
 	  .rstk-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
 	  .rstk-actions [data-submit],.rstk-actions [data-next]{flex:1 1 auto}
-	  .rstk-kind-form .rstk-actions [data-submit]{min-height:var(--rstk-submit-height,var(--rstk-button-height,50px));border-width:var(--rstk-submit-border-width,var(--rstk-button-border-width,1px));border-color:var(--rstk-submit-border,var(--rstk-button-border,var(--rstk-accent)));border-radius:var(--rstk-submit-radius,var(--rstk-btn-radius));background:var(--rstk-submit-bg,var(--rstk-accent));color:var(--rstk-submit-text,var(--rstk-on-accent));flex-direction:column;gap:2px;font-size:var(--rstk-submit-size,var(--rstk-button-size,1.02rem));padding-left:var(--rstk-submit-pad-x,var(--rstk-button-pad-x,22px));padding-right:var(--rstk-submit-pad-x,var(--rstk-button-pad-x,22px))}
+	  .rstk-kind-form .rstk-actions,.rstk-embedded-form .rstk-actions{justify-content:var(--rstk-submit-justify,center)}
+	  .rstk-kind-form .rstk-actions [data-submit],.rstk-embedded-form .rstk-actions [data-submit]{min-height:var(--rstk-submit-height,var(--rstk-button-height,50px));border-width:var(--rstk-submit-border-width,var(--rstk-button-border-width,1px));border-color:var(--rstk-submit-border,var(--rstk-button-border,var(--rstk-accent)));border-radius:var(--rstk-submit-radius,var(--rstk-btn-radius));background:var(--rstk-submit-bg,var(--rstk-accent));color:var(--rstk-submit-text,var(--rstk-on-accent));flex-direction:column;gap:2px;font-size:var(--rstk-submit-size,var(--rstk-button-size,1.02rem));padding-left:var(--rstk-submit-pad-x,var(--rstk-button-pad-x,22px));padding-right:var(--rstk-submit-pad-x,var(--rstk-button-pad-x,22px));flex:0 1 var(--rstk-submit-width,fit-content);width:var(--rstk-submit-width,fit-content)}
 	  .rstk-actions [data-back]{flex:0 0 auto;min-width:120px}
   .rstk-error{margin:2px 0 0;color:#dc2626;font-size:.85rem;font-weight:650}
   .rstk-submit-message{margin:0;color:var(--rstk-muted);font-weight:650;text-align:center}
@@ -11916,17 +11918,19 @@ function buildFormThemeStyleVars(theme, { baseFont, v, accent, ink, muted }) {
   const formFont = sanitizeCssFont(theme.formFontFamily) || baseFont
   const formLabel = themePaint(theme, 'formLabelColor') || ink
   const formHelp = themePaint(theme, 'formHelpColor') || muted
-  const formFieldBg = themePaint(theme, 'formFieldBg') || v.inputBg
+  const formFieldBg = themePaint(theme, 'formFieldBg') || 'transparent'
   const formFieldText = themePaint(theme, 'formFieldText') || v.inputInk
   const formFieldBorder = themePaint(theme, 'formFieldBorder') || v.inputBorder
   const formPlaceholder = themePaint(theme, 'formPlaceholderColor') || muted
-  const choiceSelectedBg = themePaint(theme, 'formChoiceSelectedBg') || `color-mix(in srgb, ${accent} 10%, ${v.inputBg})`
+  const choiceSelectedBg = themePaint(theme, 'formChoiceSelectedBg') || `color-mix(in srgb, ${accent} 10%, transparent)`
   const choiceSelectedBorder = themePaint(theme, 'formChoiceSelectedBorder') || accent
   const submitBg = themePaint(theme, 'submitBg') || accent
   const submitText = themePaint(theme, 'submitTextColor') || v.onAccent
   const submitBorder = themePaint(theme, 'submitBorderColor') || accent
   const defaultRadius = Number.parseInt(v.radius, 10) || 12
   const defaultButtonRadius = Number.parseInt(v.btnRadius, 10) || 12
+  const submitAlign = blockButtonAlign({ buttonAlign: theme.submitAlign }, 'center')
+  const submitWidth = themeNumber(theme, 'submitWidth', 0, 0, 100)
 
   return `
 	    --rstk-form-font:${formFont};
@@ -11947,6 +11951,7 @@ function buildFormThemeStyleVars(theme, { baseFont, v, accent, ink, muted }) {
 	    --rstk-form-field-height:${themeNumber(theme, 'formFieldHeight', 50, 34, 96)}px;
 	    --rstk-form-field-pad-x:${themeNumber(theme, 'formFieldPaddingX', 14, 6, 48)}px;
 	    --rstk-form-field-pad-y:${themeNumber(theme, 'formFieldPaddingY', 13, 6, 36)}px;
+	    --rstk-form-field-width:${themeNumber(theme, 'formFieldWidth', 560, 240, 900)}px;
 	    --rstk-form-choice-selected-bg:${choiceSelectedBg};
 	    --rstk-form-choice-selected-border:${paintFallbackColor(choiceSelectedBorder, accent)};
 	    --rstk-submit-bg:${submitBg};
@@ -11957,6 +11962,8 @@ function buildFormThemeStyleVars(theme, { baseFont, v, accent, ink, muted }) {
 	    --rstk-submit-pad-x:${themeNumber(theme, 'submitPaddingX', 22, 8, 72)}px;
 	    --rstk-submit-size:${themeNumber(theme, 'submitFontSize', 16, 11, 32)}px;
 	    --rstk-submit-border-width:${themeNumber(theme, 'submitBorderWidth', 1, 0, 8)}px;
+	    --rstk-submit-justify:${justifyForAlign(submitAlign)};
+	    --rstk-submit-width:${submitAlign === 'full' ? '100%' : submitWidth > 0 ? `${submitWidth}%` : 'fit-content'};
   `
 }
 
