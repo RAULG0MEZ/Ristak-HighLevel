@@ -363,6 +363,37 @@
   gap: 12px;
 }
 
+.responseDelayGrid {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(280px, 1fr);
+  align-items: start;
+  gap: 12px;
+}
+
+.responseDelayControls {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+}
+
+.delayNumberField {
+  flex: 0 0 116px;
+}
+
+.delayUnitField {
+  flex: 0 0 150px;
+}
+
+.delayNumberInput {
+  padding-right: 12px;
+}
+
+.responseDelayHelp {
+  grid-column: 1 / -1;
+}
+
 .agentTextGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(180px, 1fr));
@@ -566,6 +597,7 @@
   .settingsGrid,
   .conversationSetupGrid,
   .compactSettingsGrid,
+  .responseDelayGrid,
   .agentTextGrid,
   .contextGrid,
   .modelGrid,

@@ -3,6 +3,17 @@ export type ConversationalSuccessAction = 'book_appointment' | 'ready_for_human'
 export type ConversationStatus = 'active' | 'paused' | 'human' | 'skipped' | 'completed' | 'discarded'
 export type ConversationSignal = 'ready_for_human' | 'ready_to_schedule' | 'ready_to_buy' | 'appointment_booked' | 'discarded'
 export type ClosingStrategyMode = 'system' | 'custom'
+export type AgentResponseDelayMode = 'none' | 'fixed' | 'random'
+export type AgentResponseDelayUnit = 'seconds' | 'minutes'
+
+export interface AgentResponseDelayConfig {
+  mode: AgentResponseDelayMode
+  fixedValue: number
+  fixedUnit: AgentResponseDelayUnit
+  minValue: number
+  maxValue: number
+  rangeUnit: AgentResponseDelayUnit
+}
 
 export interface ConversationalAgentConfig {
   enabled: boolean
@@ -124,6 +135,7 @@ export interface ConversationalAgentDef {
   defaultCalendarId: string | null
   closingStrategyMode: ClosingStrategyMode
   closingStrategyCustom: string
+  responseDelay: AgentResponseDelayConfig
   filters: AgentFilters
   createdAt: string | null
   updatedAt: string | null

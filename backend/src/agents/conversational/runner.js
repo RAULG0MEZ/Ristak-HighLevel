@@ -20,7 +20,8 @@ import {
   assignAgentToConversation,
   buildRuleContext,
   exitRulesMatch,
-  normalizeConversationalAgentModel
+  normalizeConversationalAgentModel,
+  getAgentResponseDelayMs
 } from '../../services/conversationalAgentService.js'
 import { buildConversationalInstructions } from './prompt.js'
 import { createConversationalTools } from './tools.js'
@@ -37,6 +38,10 @@ const runningContacts = new Set()
 
 // Palabras internas que jamás deben llegar al cliente final.
 const INTERNAL_TOKEN_PATTERN = /\b(AGENDAR|SALTAR|ready_for_human|ready_to_schedule|ready_to_buy|mark_ready_to_advance|send_to_human|discard_conversation|stay_silent|book_appointment)\b/gi
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
 
 export function sanitizeAgentReply(text) {
   let reply = String(text || '').trim()
@@ -69,6 +74,16 @@ async function loadConversationHistory(contactId) {
       content: text || '(mensaje vacío)'
     }
   })
+}
+
+async function loadLatestInboundMessage(contactId) {
+  return db.get(`
+    SELECT id, message_text, phone, business_phone, business_phone_number_id
+    FROM whatsapp_api_messages
+    WHERE contact_id = ? AND direction = 'inbound'
+    ORDER BY COALESCE(message_timestamp, created_at) DESC
+    LIMIT 1
+  `, [contactId])
 }
 
 async function buildAgentForRun({ config, conversationModel, contactId, contactName, dryRun }) {
@@ -177,15 +192,9 @@ export async function handleInboundMessageForConversationalAgent({ contactId, ph
     try {
       // Pequeña espera para agrupar ráfagas de mensajes: si después de la
       // espera ya hay un mensaje más nuevo, esa ejecución posterior atiende.
-      await new Promise((resolve) => setTimeout(resolve, DEBOUNCE_MS))
+      await sleep(DEBOUNCE_MS)
 
-      const latest = await db.get(`
-        SELECT id, message_text, phone, business_phone, business_phone_number_id
-        FROM whatsapp_api_messages
-        WHERE contact_id = ? AND direction = 'inbound'
-        ORDER BY COALESCE(message_timestamp, created_at) DESC
-        LIMIT 1
-      `, [contactId])
+      const latest = await loadLatestInboundMessage(contactId)
       if (!latest) return
 
       const freshState = await getConversationState(contactId)
@@ -264,7 +273,41 @@ export async function handleInboundMessageForConversationalAgent({ contactId, ph
 
       const reply = await executeAgent({ agent, apiKey, messages, contactId, model })
 
-      // El estado pudo cambiar durante la ejecución (descartada, humano, etc.)
+      const responseDelayMs = getAgentResponseDelayMs(agentConfig)
+      if (responseDelayMs > 0) {
+        await recordConversationalAgentEvent({
+          contactId,
+          eventType: 'reply_wait_started',
+          detail: { messageId: latest.id, agentId: agentConfig.id || null, delayMs: responseDelayMs }
+        })
+        await sleep(responseDelayMs)
+
+        const latestAfterDelay = await loadLatestInboundMessage(contactId)
+        if (latestAfterDelay && latestAfterDelay.id !== latest.id) {
+          await recordConversationalAgentEvent({
+            contactId,
+            eventType: 'reply_suppressed',
+            detail: {
+              messageId: latest.id,
+              agentId: agentConfig.id || null,
+              reason: 'newer_inbound_during_response_delay',
+              newerMessageId: latestAfterDelay.id
+            }
+          })
+          setTimeout(() => {
+            handleInboundMessageForConversationalAgent({
+              contactId,
+              phone: latestAfterDelay.phone || phone,
+              messageId: latestAfterDelay.id
+            }).catch((error) => {
+              logger.error(`[Agente conversacional] Error reintentando tras pausa de respuesta: ${error.message}`)
+            })
+          }, 0)
+          return
+        }
+      }
+
+      // El estado pudo cambiar durante la ejecución o la espera (descartada, humano, etc.)
       const postState = await getConversationState(contactId)
       const blockedStatuses = new Set(['discarded', 'paused', 'skipped'])
       if (ctx.suppressReply || !reply || blockedStatuses.has(postState?.status)) {
@@ -332,7 +375,8 @@ export async function runConversationalAgentPreview({ messages = [], configOverr
     baseConfig = {
       name: 'Agente', objective: 'citas', customObjective: '', successAction: 'ready_for_human',
       successExtras: [], requiredData: '', handoffRules: '', extraInstructions: '',
-      allowEmojis: false, defaultCalendarId: null, closingStrategyMode: 'system', closingStrategyCustom: ''
+      allowEmojis: false, defaultCalendarId: null, closingStrategyMode: 'system', closingStrategyCustom: '',
+      responseDelay: { mode: 'none', fixedValue: 10, fixedUnit: 'seconds', minValue: 1, maxValue: 10, rangeUnit: 'minutes' }
     }
   }
   const config = configOverride ? { ...baseConfig, ...configOverride } : baseConfig

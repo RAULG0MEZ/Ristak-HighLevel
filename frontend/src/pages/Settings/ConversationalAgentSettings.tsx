@@ -1,11 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Bot, ChevronDown, MessageCircle, Play, Plus, RotateCcw, Send, Trash2, X } from 'lucide-react'
+import { Bot, ChevronDown, Clock, MessageCircle, Play, Plus, RotateCcw, Send, Trash2, X } from 'lucide-react'
 import { Button, Card, CustomSelect, TagPicker } from '@/components/common'
 import { DEFAULT_AI_MODEL, aiModelOptionGroups, aiModelOptions, getKnownAIModel } from '@/constants/aiModels'
 import { useNotification } from '@/contexts/NotificationContext'
 import {
   conversationalAgentService,
   type AgentFilterOptions,
+  type AgentResponseDelayConfig,
+  type AgentResponseDelayMode,
+  type AgentResponseDelayUnit,
   type AgentSuccessExtra,
   type ClosingStrategyMode,
   type ConversationalAgentConfig,
@@ -54,11 +57,60 @@ const extraTypeOptions: Array<{ value: SuccessExtraType; label: string }> = [
   { value: 'set_custom_field', label: 'Cambiar campo personalizado' }
 ]
 
+const responseDelayModeOptions: Array<{ value: AgentResponseDelayMode; label: string }> = [
+  { value: 'none', label: 'No esperar' },
+  { value: 'fixed', label: 'Esperar tiempo fijo' },
+  { value: 'random', label: 'Aleatorio en un rango' }
+]
+
+const responseDelayUnitOptions: Array<{ value: AgentResponseDelayUnit; label: string }> = [
+  { value: 'seconds', label: 'Segundos' },
+  { value: 'minutes', label: 'Minutos' }
+]
+
+const defaultResponseDelay: AgentResponseDelayConfig = {
+  mode: 'none',
+  fixedValue: 10,
+  fixedUnit: 'seconds',
+  minValue: 1,
+  maxValue: 10,
+  rangeUnit: 'minutes'
+}
+
 type TestMessage = { role: 'user' | 'assistant'; content: string; internal?: boolean }
 
 function agentToInput(agent: ConversationalAgentDef): ConversationalAgentDefInput {
   const { id: _id, createdAt: _c, updatedAt: _u, ...rest } = agent
   return rest
+}
+
+function getAgentResponseDelay(agent: ConversationalAgentDef): AgentResponseDelayConfig {
+  return { ...defaultResponseDelay, ...((agent.responseDelay || {}) as Partial<AgentResponseDelayConfig>) }
+}
+
+function getDelayUnitLabel(unit: AgentResponseDelayUnit, value: number) {
+  if (unit === 'minutes') return Number(value) === 1 ? 'minuto' : 'minutos'
+  return Number(value) === 1 ? 'segundo' : 'segundos'
+}
+
+function getResponseDelaySummary(delay: AgentResponseDelayConfig) {
+  if (delay.mode === 'fixed') {
+    return `${delay.fixedValue} ${getDelayUnitLabel(delay.fixedUnit, delay.fixedValue)}`
+  }
+  if (delay.mode === 'random') {
+    return `${delay.minValue} a ${delay.maxValue} ${getDelayUnitLabel(delay.rangeUnit, delay.maxValue)}`
+  }
+  return ''
+}
+
+function getResponseDelayHelp(delay: AgentResponseDelayConfig) {
+  if (delay.mode === 'fixed') {
+    return `Espera ${getResponseDelaySummary(delay)} antes de enviar el mensaje.`
+  }
+  if (delay.mode === 'random') {
+    return `Escoge un tiempo entre ${getResponseDelaySummary(delay)} para que las respuestas no salgan siempre igual.`
+  }
+  return 'Contesta en cuanto termina de preparar la respuesta y agrupar mensajes recientes.'
 }
 
 interface AgentCardProps {
@@ -86,9 +138,15 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, calendars, filterOptions, 
   const entryCount = agent.filters.entry.groups.reduce((total, group) => total + group.conditions.length, 0)
   const exitCount = agent.filters.exit.groups.reduce((total, group) => total + group.conditions.length, 0)
   const customFieldOptions = filterOptions?.customFields || []
+  const responseDelay = getAgentResponseDelay(agent)
+  const responseDelaySummary = getResponseDelaySummary(responseDelay)
 
   const updateExtra = (index: number, patch: Partial<AgentSuccessExtra>) => {
     onChange({ successExtras: agent.successExtras.map((extra, i) => (i === index ? { ...extra, ...patch } : extra)) })
+  }
+
+  const updateResponseDelay = (patch: Partial<AgentResponseDelayConfig>) => {
+    onChange({ responseDelay: { ...responseDelay, ...patch } })
   }
 
   const handleObjectiveChange = (objective: ConversationalObjective) => {
@@ -172,6 +230,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, calendars, filterOptions, 
             ? ` · entra con ${entryCount} ${entryCount === 1 ? 'regla' : 'reglas'}`
             : ' · entra con cualquier chat'}
           {exitCount > 0 ? ` · se suelta con ${exitCount}` : ''}
+          {responseDelaySummary ? ` · espera ${responseDelaySummary}` : ''}
         </p>
       )}
 
@@ -387,7 +446,100 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, calendars, filterOptions, 
           </details>
 
           <div className={styles.agentSection}>
-            <h3 className={styles.sectionTitle}>3. Qué debe cuidar</h3>
+            <div className={styles.sectionHeading}>
+              <Clock size={17} />
+              <h3 className={styles.sectionTitle}>3. Cuándo responde</h3>
+            </div>
+            <p className={styles.agentSectionHint}>
+              Controla si responde al instante, espera un tiempo fijo o usa una pausa aleatoria para sentirse más natural.
+            </p>
+            <div className={styles.responseDelayGrid}>
+              <div className={styles.field}>
+                <label className={styles.label}>Espera</label>
+                <CustomSelect
+                  value={responseDelay.mode}
+                  onChange={(event) => updateResponseDelay({ mode: event.target.value as AgentResponseDelayMode })}
+                  portal
+                >
+                  {responseDelayModeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </CustomSelect>
+              </div>
+
+              {responseDelay.mode === 'fixed' && (
+                <div className={styles.responseDelayControls}>
+                  <div className={`${styles.field} ${styles.delayNumberField}`}>
+                    <label className={styles.label}>Tiempo</label>
+                    <input
+                      className={`${styles.input} ${styles.delayNumberInput}`}
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={responseDelay.fixedValue}
+                      onChange={(event) => updateResponseDelay({ fixedValue: Number(event.target.value) || 0 })}
+                    />
+                  </div>
+                  <div className={`${styles.field} ${styles.delayUnitField}`}>
+                    <label className={styles.label}>Unidad</label>
+                    <CustomSelect
+                      value={responseDelay.fixedUnit}
+                      onChange={(event) => updateResponseDelay({ fixedUnit: event.target.value as AgentResponseDelayUnit })}
+                      portal
+                    >
+                      {responseDelayUnitOptions.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </CustomSelect>
+                  </div>
+                </div>
+              )}
+
+              {responseDelay.mode === 'random' && (
+                <div className={styles.responseDelayControls}>
+                  <div className={`${styles.field} ${styles.delayNumberField}`}>
+                    <label className={styles.label}>Mínimo</label>
+                    <input
+                      className={`${styles.input} ${styles.delayNumberInput}`}
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={responseDelay.minValue}
+                      onChange={(event) => updateResponseDelay({ minValue: Number(event.target.value) || 0 })}
+                    />
+                  </div>
+                  <div className={`${styles.field} ${styles.delayNumberField}`}>
+                    <label className={styles.label}>Máximo</label>
+                    <input
+                      className={`${styles.input} ${styles.delayNumberInput}`}
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={responseDelay.maxValue}
+                      onChange={(event) => updateResponseDelay({ maxValue: Number(event.target.value) || 0 })}
+                    />
+                  </div>
+                  <div className={`${styles.field} ${styles.delayUnitField}`}>
+                    <label className={styles.label}>Unidad</label>
+                    <CustomSelect
+                      value={responseDelay.rangeUnit}
+                      onChange={(event) => updateResponseDelay({ rangeUnit: event.target.value as AgentResponseDelayUnit })}
+                      portal
+                    >
+                      {responseDelayUnitOptions.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </CustomSelect>
+                  </div>
+                </div>
+              )}
+
+              <p className={`${styles.helper} ${styles.responseDelayHelp}`}>{getResponseDelayHelp(responseDelay)}</p>
+            </div>
+          </div>
+
+          <div className={styles.agentSection}>
+            <h3 className={styles.sectionTitle}>4. Qué debe cuidar</h3>
             <div className={styles.agentTextGrid}>
               <div className={styles.field}>
                 <label className={styles.label}>Datos que debe pedir</label>
@@ -436,7 +588,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, calendars, filterOptions, 
           <div className={styles.agentSection}>
             <div className={styles.sectionHeading}>
               <Play size={17} />
-              <h3 className={styles.sectionTitle}>4. Pruébalo rápido</h3>
+              <h3 className={styles.sectionTitle}>5. Pruébalo rápido</h3>
             </div>
             <p className={styles.agentSectionHint}>
               Es una prueba: no manda WhatsApp ni mueve contactos.

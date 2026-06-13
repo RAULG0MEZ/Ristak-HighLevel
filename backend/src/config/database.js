@@ -3080,11 +3080,25 @@ async function initTables() {
         default_calendar_id TEXT,
         closing_strategy_mode TEXT DEFAULT 'system',
         closing_strategy_custom TEXT,
+        response_delay_config TEXT,
         entry_filters TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `)
+    for (const [columnName, columnType] of [
+      ['response_delay_config', 'TEXT']
+    ]) {
+      try {
+        if (usePostgres) {
+          await db.run(`ALTER TABLE conversational_agents ADD COLUMN IF NOT EXISTS ${columnName} ${columnType}`)
+        } else {
+          await db.run(`ALTER TABLE conversational_agents ADD COLUMN ${columnName} ${columnType}`)
+        }
+      } catch (err) {
+        // La columna ya existe.
+      }
+    }
     await db.run('CREATE INDEX IF NOT EXISTS idx_conversational_agents_enabled ON conversational_agents(enabled, position)')
 
     await db.run(`

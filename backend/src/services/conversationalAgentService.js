@@ -42,6 +42,17 @@ const VALID_SUCCESS_ACTIONS = new Set(SUCCESS_ACTIONS.map((item) => item.id))
 const VALID_STATUSES = new Set(['active', 'paused', 'human', 'skipped', 'completed', 'discarded'])
 const DEFAULT_CONVERSATIONAL_AGENT_MODEL = process.env.OPENAI_CONVERSATIONAL_AGENT_MODEL || 'gpt-5.4-nano'
 const AI_MODEL_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,99}$/
+const RESPONSE_DELAY_MODES = new Set(['none', 'fixed', 'random'])
+const RESPONSE_DELAY_UNITS = new Set(['seconds', 'minutes'])
+const MAX_RESPONSE_DELAY_SECONDS = 60 * 60
+const DEFAULT_RESPONSE_DELAY_CONFIG = {
+  mode: 'none',
+  fixedValue: 10,
+  fixedUnit: 'seconds',
+  minValue: 1,
+  maxValue: 10,
+  rangeUnit: 'minutes'
+}
 
 function toBoolean(value) {
   return [true, 1, '1', 'true'].includes(value)
@@ -537,6 +548,56 @@ function normalizeSuccessExtras(input) {
     .slice(0, 12)
 }
 
+function clampDelayValue(value, unit, fallback) {
+  const max = unit === 'minutes' ? 60 : MAX_RESPONSE_DELAY_SECONDS
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return fallback
+  return Math.min(Math.max(Math.round(numeric), 0), max)
+}
+
+function delayToSeconds(value, unit) {
+  return unit === 'minutes' ? value * 60 : value
+}
+
+export function normalizeAgentResponseDelay(input) {
+  const raw = input && typeof input === 'object' ? input : {}
+  const mode = RESPONSE_DELAY_MODES.has(raw.mode) ? raw.mode : DEFAULT_RESPONSE_DELAY_CONFIG.mode
+  const fixedUnit = RESPONSE_DELAY_UNITS.has(raw.fixedUnit) ? raw.fixedUnit : DEFAULT_RESPONSE_DELAY_CONFIG.fixedUnit
+  const rangeUnit = RESPONSE_DELAY_UNITS.has(raw.rangeUnit) ? raw.rangeUnit : DEFAULT_RESPONSE_DELAY_CONFIG.rangeUnit
+  let minValue = clampDelayValue(raw.minValue, rangeUnit, DEFAULT_RESPONSE_DELAY_CONFIG.minValue)
+  let maxValue = clampDelayValue(raw.maxValue, rangeUnit, DEFAULT_RESPONSE_DELAY_CONFIG.maxValue)
+
+  if (minValue > maxValue) {
+    const swap = minValue
+    minValue = maxValue
+    maxValue = swap
+  }
+
+  return {
+    mode,
+    fixedValue: clampDelayValue(raw.fixedValue, fixedUnit, DEFAULT_RESPONSE_DELAY_CONFIG.fixedValue),
+    fixedUnit,
+    minValue,
+    maxValue,
+    rangeUnit
+  }
+}
+
+export function getAgentResponseDelayMs(agentConfig = {}) {
+  const delay = normalizeAgentResponseDelay(agentConfig.responseDelay)
+  if (delay.mode === 'fixed') {
+    return Math.min(delayToSeconds(delay.fixedValue, delay.fixedUnit), MAX_RESPONSE_DELAY_SECONDS) * 1000
+  }
+  if (delay.mode === 'random') {
+    const minSeconds = Math.min(delayToSeconds(delay.minValue, delay.rangeUnit), MAX_RESPONSE_DELAY_SECONDS)
+    const maxSeconds = Math.min(delayToSeconds(delay.maxValue, delay.rangeUnit), MAX_RESPONSE_DELAY_SECONDS)
+    const min = Math.min(minSeconds, maxSeconds)
+    const max = Math.max(minSeconds, maxSeconds)
+    return Math.round((min + Math.random() * (max - min)) * 1000)
+  }
+  return 0
+}
+
 function mapAgentRow(row) {
   if (!row) return null
   return {
@@ -555,6 +616,7 @@ function mapAgentRow(row) {
     defaultCalendarId: row.default_calendar_id || null,
     closingStrategyMode: row.closing_strategy_mode === 'custom' ? 'custom' : 'system',
     closingStrategyCustom: row.closing_strategy_custom || '',
+    responseDelay: normalizeAgentResponseDelay(parseJsonField(row.response_delay_config, null)),
     filters: normalizeAgentFilters(parseJsonField(row.entry_filters, null)),
     createdAt: row.created_at || null,
     updatedAt: row.updated_at || null
@@ -574,8 +636,9 @@ export async function ensureAgentsMigration() {
     INSERT INTO conversational_agents (
       id, name, enabled, position, objective, custom_objective, success_action,
       success_extras, required_data, handoff_rules, extra_instructions,
-      allow_emojis, default_calendar_id, closing_strategy_mode, closing_strategy_custom, entry_filters
-    ) VALUES (?, ?, 1, 0, ?, ?, ?, '[]', ?, ?, ?, ?, ?, ?, ?, ?)
+      allow_emojis, default_calendar_id, closing_strategy_mode, closing_strategy_custom,
+      response_delay_config, entry_filters
+    ) VALUES (?, ?, 1, 0, ?, ?, ?, '[]', ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
     `cagent_${randomUUID()}`,
     'Agente principal',
@@ -589,6 +652,7 @@ export async function ensureAgentsMigration() {
     legacy.default_calendar_id || null,
     legacy.closing_strategy_mode === 'custom' ? 'custom' : 'system',
     legacy.closing_strategy_custom || '',
+    JSON.stringify(DEFAULT_RESPONSE_DELAY_CONFIG),
     JSON.stringify({ entry: [], exit: [] })
   ])
   logger.info('[Agente conversacional] Config previa migrada al contenedor "Agente principal"')
@@ -626,6 +690,9 @@ function agentInputToRowValues(input, base) {
     closingStrategyCustom: input.closingStrategyCustom === undefined
       ? base.closingStrategyCustom
       : String(input.closingStrategyCustom || '').slice(0, 8000),
+    responseDelay: input.responseDelay === undefined
+      ? normalizeAgentResponseDelay(base.responseDelay)
+      : normalizeAgentResponseDelay(input.responseDelay),
     filters: input.filters === undefined ? base.filters : normalizeAgentFilters(input.filters)
   }
   return next
@@ -646,6 +713,7 @@ const DEFAULT_AGENT_BASE = {
   defaultCalendarId: null,
   closingStrategyMode: 'system',
   closingStrategyCustom: '',
+  responseDelay: DEFAULT_RESPONSE_DELAY_CONFIG,
   filters: { entry: [], exit: [] }
 }
 
@@ -658,13 +726,15 @@ export async function createConversationalAgent(input = {}) {
     INSERT INTO conversational_agents (
       id, name, enabled, position, objective, custom_objective, success_action,
       success_extras, required_data, handoff_rules, extra_instructions,
-      allow_emojis, default_calendar_id, closing_strategy_mode, closing_strategy_custom, entry_filters
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      allow_emojis, default_calendar_id, closing_strategy_mode, closing_strategy_custom,
+      response_delay_config, entry_filters
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
     id, next.name, next.enabled ? 1 : 0, next.position, next.objective, next.customObjective,
     next.successAction, JSON.stringify(next.successExtras), next.requiredData, next.handoffRules,
     next.extraInstructions, next.allowEmojis ? 1 : 0, next.defaultCalendarId,
-    next.closingStrategyMode, next.closingStrategyCustom, JSON.stringify(next.filters)
+    next.closingStrategyMode, next.closingStrategyCustom,
+    JSON.stringify(next.responseDelay), JSON.stringify(next.filters)
   ])
   await recordConversationalAgentEvent({ eventType: 'agent_created', detail: { agentId: id, name: next.name } })
   return getConversationalAgent(id)
@@ -681,14 +751,15 @@ export async function updateConversationalAgent(agentId, input = {}) {
     SET name = ?, enabled = ?, position = ?, objective = ?, custom_objective = ?,
         success_action = ?, success_extras = ?, required_data = ?, handoff_rules = ?,
         extra_instructions = ?, allow_emojis = ?, default_calendar_id = ?,
-        closing_strategy_mode = ?, closing_strategy_custom = ?, entry_filters = ?,
+        closing_strategy_mode = ?, closing_strategy_custom = ?, response_delay_config = ?, entry_filters = ?,
         updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `, [
     next.name, next.enabled ? 1 : 0, next.position, next.objective, next.customObjective,
     next.successAction, JSON.stringify(next.successExtras), next.requiredData, next.handoffRules,
     next.extraInstructions, next.allowEmojis ? 1 : 0, next.defaultCalendarId,
-    next.closingStrategyMode, next.closingStrategyCustom, JSON.stringify(next.filters),
+    next.closingStrategyMode, next.closingStrategyCustom,
+    JSON.stringify(next.responseDelay), JSON.stringify(next.filters),
     agentId
   ])
   return getConversationalAgent(agentId)
