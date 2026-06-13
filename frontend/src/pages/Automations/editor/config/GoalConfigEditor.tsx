@@ -26,7 +26,7 @@ const GOAL_TYPES = [
   { value: 'payment', label: 'Pago' },
   { value: 'appointment', label: 'Cita / agenda' },
   { value: 'form', label: 'Formulario' },
-  { value: 'link', label: 'Link / activación' },
+  { value: 'link', label: 'Clics de disparo' },
   { value: 'conversation', label: 'Conversación' },
   { value: 'contact', label: 'Contacto / CRM' },
   { value: 'ads', label: 'Ads / campañas' },
@@ -162,19 +162,21 @@ export const GoalConfigEditor: React.FC<{ config: Config; onChange: (config: Con
           <Field label="Evento">
             <CustomSelect
               options={[
-                { value: 'clicked', label: 'Hizo clic en enlace' },
-                { value: 'activation', label: 'Hizo clic en enlace de activación' }
+                { value: 'clicked', label: 'Clic de disparo recibido' },
+                { value: 'activation', label: 'Clic de disparo de activación' }
               ]}
               value={str(config.linkEvent) || 'clicked'}
               onValueChange={(next) => set({ linkEvent: next })}
-              aria-label="Evento de link"
+              aria-label="Evento de clic de disparo"
             />
           </Field>
-          <Field label="Link específico (opcional)">
-            <TextInput
+          <Field label="Clic de disparo específico (opcional)">
+            <CatalogSelect
+              catalog="links"
               value={str(config.link)}
-              placeholder="Cualquier enlace"
-              onChange={(event) => set({ link: event.target.value })}
+              onChange={(value, label) => set({ link: value, linkName: label })}
+              placeholder="Cualquier clic de disparo"
+              aria-label="Clic de disparo"
             />
           </Field>
         </>

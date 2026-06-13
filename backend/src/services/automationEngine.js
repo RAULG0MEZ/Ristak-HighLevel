@@ -16,6 +16,8 @@ import { buildTagMatchKeys, resolveTagIds, tagNamesForIds } from './contactTagsS
 
 const MAX_STEPS = 60
 const MAX_INLINE_DELAY_SECONDS = 120
+const WAIT_KIND_REPLY = 'reply'
+const WAIT_KIND_TRIGGER_LINK_CLICK = 'trigger-link-click'
 
 function makeId(prefix) {
   return `${prefix}_${crypto.randomUUID()}`
@@ -41,6 +43,30 @@ function str(value) {
 
 function normalizeText(value) {
   return String(value || '').trim().toLowerCase()
+}
+
+function triggerLinkCandidateValues(ctx = {}) {
+  return [
+    ctx.triggerLinkId,
+    ctx.triggerLinkPublicId,
+    ctx.triggerLinkName,
+    ctx.publicId,
+    ctx.link
+  ]
+}
+
+function triggerLinkMatchesValue(configured, ctx = {}) {
+  const wanted = normalizeText(configured)
+  if (!wanted) return true
+  return triggerLinkCandidateValues(ctx).map(normalizeText).includes(wanted)
+}
+
+function hasTriggerLinkEventContext(ctx = {}) {
+  return triggerLinkCandidateValues(ctx).some((value) => Boolean(normalizeText(value)))
+}
+
+function triggerLinkDisplayName(ctx = {}) {
+  return String(ctx.triggerLinkName || ctx.triggerLinkPublicId || ctx.triggerLinkId || ctx.publicId || ctx.link || '')
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -285,15 +311,7 @@ function triggerMatches(trigger, eventType, ctx) {
     case 'trigger-link-clicked': {
       if (trigger.type !== 'trigger-activation-link' && trigger.type !== 'trigger-link-clicked') return false
       const configured = str(config.link || config.triggerLinkId || config.publicId)
-      if (!configured) return true
-      const wanted = normalizeText(configured)
-      return [
-        ctx.triggerLinkId,
-        ctx.triggerLinkPublicId,
-        ctx.triggerLinkName,
-        ctx.publicId,
-        ctx.link
-      ].map(normalizeText).includes(wanted)
+      return triggerLinkMatchesValue(configured, ctx)
     }
 
     default:
@@ -312,7 +330,7 @@ const EVENT_DESCRIPTIONS = {
   'payment-received': (ctx) => `se recibió un pago${ctx.amount ? ` de $${ctx.amount}` : ''}`,
   refund: () => 'se procesó un reembolso',
   'webhook-received': () => 'se recibió un webhook',
-  'trigger-link-clicked': (ctx) => `abrió el enlace de disparo${ctx.triggerLinkName ? ` "${ctx.triggerLinkName}"` : ''}`
+  'trigger-link-clicked': (ctx) => `recibió un clic de disparo${ctx.triggerLinkName ? ` en "${ctx.triggerLinkName}"` : ''}`
 }
 
 // ---------------------------------------------------------------------------
@@ -711,11 +729,35 @@ async function executeNode(node, ctx) {
           : 0
         return {
           wait: {
-            kind: 'reply',
+            kind: WAIT_KIND_REPLY,
             resumeAt: timeoutMs > 0 ? new Date(Date.now() + timeoutMs).toISOString() : null
           },
           detail: 'Esperando la respuesta del contacto'
         }
+      }
+      if (mode === 'action') {
+        const expectedAction = str(config.expectedAction) || 'click_link'
+        if (expectedAction === 'click_link' || expectedAction === 'trigger_link_click' || expectedAction === 'trigger-link-click') {
+          const timeoutMs = config.timeoutEnabled
+            ? (Number(config.timeoutAmount) || 0) * (DURATION_MS[str(config.timeoutUnit) || 'hours'] || DURATION_MS.hours)
+            : 0
+          const actionResource = str(config.actionResource || config.link || config.triggerLinkId)
+          const actionResourceName = str(config.actionResourceName || config.linkName)
+          const displayName = actionResourceName || actionResource
+          return {
+            wait: {
+              kind: WAIT_KIND_TRIGGER_LINK_CLICK,
+              resumeAt: timeoutMs > 0 ? new Date(Date.now() + timeoutMs).toISOString() : null,
+              context: {
+                waitExpectedAction: 'trigger_link_click',
+                waitActionResource: actionResource,
+                waitActionResourceName: actionResourceName
+              }
+            },
+            detail: displayName ? `Esperando clic de disparo en "${displayName}"` : 'Esperando un clic de disparo'
+          }
+        }
+        return { skipped: true, handle: 'out', detail: `Espera por acción "${expectedAction}" aún no soportada: continúa` }
       }
       return { skipped: true, handle: 'out', detail: `Espera "${mode}" aún no soportada: continúa` }
     }
@@ -772,6 +814,7 @@ async function runFrom(flow, enrollment, startNodeId, ctx) {
       enrollment.status = 'waiting'
       enrollment.waitKind = result.wait.kind
       enrollment.resumeAt = result.wait.resumeAt
+      enrollment.context = { ...enrollment.context, ...(result.wait.context || {}) }
       break
     }
 
@@ -844,6 +887,72 @@ async function listPublishedAutomations() {
   return rows.map((row) => ({ id: row.id, name: row.name, flow: parseJson(row.flow, { nodes: [], edges: [] }) }))
 }
 
+async function resumeWaitingTriggerLinkClicks(automations, baseCtx) {
+  const contact = baseCtx.contact || {}
+  if (!contact.id || !hasTriggerLinkEventContext(baseCtx)) return
+
+  const waiting = await db.all(
+    `SELECT * FROM automation_enrollments
+     WHERE contact_id = ? AND status = 'waiting' AND wait_kind = ?`,
+    [contact.id, WAIT_KIND_TRIGGER_LINK_CLICK]
+  )
+
+  for (const row of waiting) {
+    const automation = automations.find((candidate) => candidate.id === row.automation_id)
+    if (!automation) continue
+
+    const storedContext = parseJson(row.context, {})
+    if (!triggerLinkMatchesValue(storedContext.waitActionResource, baseCtx)) continue
+
+    const clickedContext = {
+      triggerLinkId: baseCtx.triggerLinkId || null,
+      triggerLinkPublicId: baseCtx.triggerLinkPublicId || null,
+      triggerLinkName: baseCtx.triggerLinkName || null,
+      triggerLinkUrl: baseCtx.triggerLinkUrl || null,
+      destinationUrl: baseCtx.destinationUrl || null,
+      visitorId: baseCtx.visitorId || null,
+      referrer: baseCtx.referrer || null,
+      eventId: baseCtx.eventId || null,
+      clickedAt: baseCtx.clickedAt || nowIso(),
+      query: baseCtx.query || null
+    }
+    const enrollment = {
+      id: row.id,
+      automationId: row.automation_id,
+      status: 'active',
+      currentNodeId: row.current_node_id,
+      log: parseJson(row.log, []),
+      resumeAt: null,
+      waitKind: null,
+      context: { ...storedContext, ...clickedContext }
+    }
+    const ctx = {
+      ...storedContext,
+      ...baseCtx,
+      ...clickedContext,
+      contact,
+      messageText: baseCtx.messageText || storedContext.messageText || '',
+      channel: baseCtx.channel || storedContext.channel || '',
+      businessPhoneNumberId: baseCtx.businessPhoneNumberId || storedContext.businessPhoneNumberId || null,
+      automationName: automation.name
+    }
+    const displayName = triggerLinkDisplayName(baseCtx) || storedContext.waitActionResourceName || storedContext.waitActionResource
+    addLog(enrollment, {
+      nodeId: row.current_node_id,
+      label: 'Esperar',
+      status: 'ok',
+      detail: displayName ? `Clic de disparo recibido en "${displayName}"` : 'Clic de disparo recibido'
+    })
+    const edge = edgesFrom(automation.flow, row.current_node_id, 'out')[0]
+    if (edge) await runFrom(automation.flow, enrollment, edge.targetNodeId, ctx)
+    else {
+      enrollment.status = 'completed'
+      addLog(enrollment, { nodeId: row.current_node_id, label: 'Esperar', status: 'ok', detail: 'Fin del flujo' })
+      await saveEnrollment(enrollment)
+    }
+  }
+}
+
 /** Evento principal: llega un mensaje entrante (WhatsApp por ahora) */
 export async function handleIncomingMessage({ contactId, phone, contactName, text, channel = 'whatsapp', businessPhoneNumberId = null }) {
   try {
@@ -853,8 +962,8 @@ export async function handleIncomingMessage({ contactId, phone, contactName, tex
 
     // 1) Reanudar inscripciones que esperaban respuesta de este contacto
     const waiting = await db.all(
-      `SELECT * FROM automation_enrollments WHERE contact_id = ? AND status = 'waiting' AND wait_kind = 'reply'`,
-      [contact.id]
+      `SELECT * FROM automation_enrollments WHERE contact_id = ? AND status = 'waiting' AND wait_kind = ?`,
+      [contact.id, WAIT_KIND_REPLY]
     )
     for (const row of waiting) {
       const automation = automations.find((candidate) => candidate.id === row.automation_id)
@@ -884,14 +993,14 @@ export async function handleIncomingMessage({ contactId, phone, contactName, tex
       if (automation.flow?.settings?.stopOnContactResponse) {
         await db.run(
           `UPDATE automation_enrollments SET status = 'exited', updated_at = CURRENT_TIMESTAMP
-           WHERE automation_id = ? AND contact_id = ? AND status IN ('active', 'waiting') AND wait_kind IS DISTINCT FROM 'reply'`,
-          [automation.id, contact.id]
+           WHERE automation_id = ? AND contact_id = ? AND status IN ('active', 'waiting') AND wait_kind IS DISTINCT FROM ?`,
+          [automation.id, contact.id, WAIT_KIND_REPLY]
         ).catch(async () => {
           // SQLite no soporta IS DISTINCT FROM
           await db.run(
             `UPDATE automation_enrollments SET status = 'exited', updated_at = CURRENT_TIMESTAMP
-             WHERE automation_id = ? AND contact_id = ? AND status IN ('active', 'waiting') AND (wait_kind IS NULL OR wait_kind != 'reply')`,
-            [automation.id, contact.id]
+             WHERE automation_id = ? AND contact_id = ? AND status IN ('active', 'waiting') AND (wait_kind IS NULL OR wait_kind != ?)`,
+            [automation.id, contact.id, WAIT_KIND_REPLY]
           )
         })
       }
@@ -967,6 +1076,9 @@ export async function handleAutomationEvent(eventType, data = {}) {
     }
     const ctx = { ...data, contact, messageText: data.messageText || '', channel: data.channel || '' }
     const automations = await listPublishedAutomations()
+    if (eventType === 'trigger-link-clicked') {
+      await resumeWaitingTriggerLinkClicks(automations, ctx)
+    }
     await enrollMatching(automations, eventType, ctx)
   } catch (error) {
     logger.error(`[Automatizaciones] Error en evento ${eventType}: ${error.message}`)
@@ -1012,13 +1124,18 @@ export async function processDueResumes() {
         businessPhoneNumberId: enrollment.context.businessPhoneNumberId || null,
         automationName: automation.name
       }
-      const wasReplyTimeout = row.wait_kind === 'reply'
-      const handle = wasReplyTimeout ? 'timeout' : 'out'
+      const wasReplyTimeout = row.wait_kind === WAIT_KIND_REPLY
+      const wasTriggerLinkTimeout = row.wait_kind === WAIT_KIND_TRIGGER_LINK_CLICK
+      const handle = wasReplyTimeout || wasTriggerLinkTimeout ? 'timeout' : 'out'
       addLog(enrollment, {
         nodeId: row.current_node_id,
         label: 'Esperar',
         status: 'ok',
-        detail: wasReplyTimeout ? 'No respondió a tiempo' : 'Espera terminada'
+        detail: wasReplyTimeout
+          ? 'No respondió a tiempo'
+          : wasTriggerLinkTimeout
+            ? 'No hubo clic de disparo a tiempo'
+            : 'Espera terminada'
       })
       const edge = edgesFrom(automation.flow, row.current_node_id, handle)[0]
       if (edge) await runFrom(automation.flow, enrollment, edge.targetNodeId, ctx)

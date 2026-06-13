@@ -1,6 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { renderTemplate, filtersMatch, evaluateConditionNode } from '../src/services/automationEngine.js'
+import { randomUUID } from 'node:crypto'
+import { db } from '../src/config/database.js'
+import { renderTemplate, filtersMatch, evaluateConditionNode, handleAutomationEvent } from '../src/services/automationEngine.js'
 
 const ctx = {
   contact: {
@@ -95,4 +97,120 @@ test('filtersMatch: conector O entre filtros', () => {
     { field: 'message', match: 'contains', value: 'precio', connector: 'and' }
   ]
   assert.equal(filtersMatch(andFilters, ctx), false)
+})
+
+test('logic-wait por clic de disparo reanuda cuando llega el trigger link configurado', async () => {
+  const suffix = randomUUID()
+  const contactId = `rstk_contact_trigger_wait_${suffix}`
+  const automationId = `automation_trigger_wait_${suffix}`
+  const matchingTriggerLinkId = `trigger_link_${suffix}`
+  const otherTriggerLinkId = `trigger_link_other_${suffix}`
+  const flow = {
+    nodes: [
+      {
+        id: 'start',
+        type: 'start',
+        label: 'Cuando...',
+        config: {
+          triggers: [
+            {
+              id: 'trigger-message',
+              type: 'trigger-customer-replied',
+              config: { channel: 'any' }
+            }
+          ]
+        }
+      },
+      {
+        id: 'wait-click',
+        type: 'logic-wait',
+        label: 'Esperar',
+        config: {
+          mode: 'action',
+          expectedAction: 'click_link',
+          actionResource: matchingTriggerLinkId,
+          actionResourceName: 'Promo demo'
+        }
+      },
+      {
+        id: 'done',
+        type: 'extra-comment',
+        label: 'Listo',
+        config: {}
+      }
+    ],
+    edges: [
+      { id: 'edge-start-wait', sourceNodeId: 'start', targetNodeId: 'wait-click' },
+      { id: 'edge-wait-done', sourceNodeId: 'wait-click', sourceHandle: 'out', targetNodeId: 'done' }
+    ],
+    settings: {}
+  }
+
+  try {
+    await db.run(
+      `INSERT INTO contacts (id, phone, email, full_name, first_name, custom_fields)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        contactId,
+        `+1555${Date.now().toString().slice(-8)}`,
+        `trigger-${suffix}@example.com`,
+        'Contacto Trigger',
+        'Contacto',
+        '{}'
+      ]
+    )
+    await db.run(
+      `INSERT INTO automations (id, name, status, flow, published_flow, published_at)
+       VALUES (?, ?, 'published', ?, ?, CURRENT_TIMESTAMP)`,
+      [automationId, 'Test clic de disparo', JSON.stringify(flow), JSON.stringify(flow)]
+    )
+
+    await handleAutomationEvent('message-received', {
+      contactId,
+      messageText: 'hola',
+      channel: 'whatsapp'
+    })
+
+    let enrollment = await db.get(
+      'SELECT * FROM automation_enrollments WHERE automation_id = ? AND contact_id = ?',
+      [automationId, contactId]
+    )
+    assert.equal(enrollment.status, 'waiting')
+    assert.equal(enrollment.wait_kind, 'trigger-link-click')
+    assert.equal(enrollment.current_node_id, 'wait-click')
+    assert.equal(JSON.parse(enrollment.context).waitActionResource, matchingTriggerLinkId)
+
+    await handleAutomationEvent('trigger-link-clicked', {
+      contactId,
+      triggerLinkId: otherTriggerLinkId,
+      triggerLinkPublicId: 'otro-publico',
+      triggerLinkName: 'Otro link'
+    })
+
+    enrollment = await db.get(
+      'SELECT * FROM automation_enrollments WHERE automation_id = ? AND contact_id = ?',
+      [automationId, contactId]
+    )
+    assert.equal(enrollment.status, 'waiting')
+
+    await handleAutomationEvent('trigger-link-clicked', {
+      contactId,
+      triggerLinkId: matchingTriggerLinkId,
+      triggerLinkPublicId: 'promo-publica',
+      triggerLinkName: 'Promo demo'
+    })
+
+    enrollment = await db.get(
+      'SELECT * FROM automation_enrollments WHERE automation_id = ? AND contact_id = ?',
+      [automationId, contactId]
+    )
+    assert.equal(enrollment.status, 'completed')
+    assert.equal(enrollment.current_node_id, 'done')
+    const log = JSON.parse(enrollment.log)
+    assert.equal(log.some((entry) => String(entry.detail || '').includes('Clic de disparo recibido')), true)
+  } finally {
+    await db.run('DELETE FROM automation_enrollments WHERE automation_id = ?', [automationId])
+    await db.run('DELETE FROM automations WHERE id = ?', [automationId])
+    await db.run('DELETE FROM contacts WHERE id = ?', [contactId])
+  }
 })

@@ -34,7 +34,7 @@ export const CRM_FIELD_CATEGORIES: CrmFieldCategory[] = [
   { id: 'appointments', label: 'Citas / agenda' },
   { id: 'payments', label: 'Pagos' },
   { id: 'forms', label: 'Formularios' },
-  { id: 'links', label: 'Links / activación' },
+  { id: 'links', label: 'Clics de disparo' },
   { id: 'ads', label: 'Ads / campañas' },
   { id: 'automations', label: 'Automatizaciones' }
 ]
@@ -113,10 +113,10 @@ export const CRM_FIELDS: CrmField[] = [
   { id: 'form-field-value', label: 'Campo del formulario contiene', category: 'forms', type: 'text', needsCustomKey: true },
   { id: 'form-date', label: 'Fecha de envío', category: 'forms', type: 'date' },
 
-  // Links
-  { id: 'link-clicked', label: 'Hizo clic en enlace', category: 'links', type: 'boolean' },
-  { id: 'link-specific', label: 'Link específico', category: 'links', type: 'select', valueCatalog: 'links' },
-  { id: 'link-date', label: 'Fecha de clic', category: 'links', type: 'date' },
+  // Clics de disparo
+  { id: 'link-clicked', label: 'Recibió clic de disparo', category: 'links', type: 'boolean' },
+  { id: 'link-specific', label: 'Clic de disparo específico', category: 'links', type: 'select', valueCatalog: 'links' },
+  { id: 'link-date', label: 'Fecha del clic de disparo', category: 'links', type: 'date' },
 
   // Ads
   { id: 'ads-fb-click', label: 'Clic en anuncio de Facebook', category: 'ads', type: 'boolean' },

@@ -764,29 +764,29 @@ const TRIGGERS: NodeDefinition[] = [
   {
     type: 'trigger-activation-link',
     kind: 'trigger',
-    label: 'Enlace de disparo',
+    label: 'Clic de disparo',
     category: 'trigger-events',
     description: 'Se activa cuando alguien abre una URL pública de disparo',
     icon: MousePointerClick,
     accent: 'green',
-    addButtonLabel: 'Seleccionar enlace',
+    addButtonLabel: 'Seleccionar clic',
     defaultConfig: () => ({ link: '', linkName: '' }),
     fields: [
-      { key: 'link', label: 'Enlace de disparo', type: 'catalogSelect', catalog: 'links', required: true }
+      { key: 'link', label: 'Clic de disparo', type: 'catalogSelect', catalog: 'links', required: true }
     ],
     outputs: () => SINGLE_OUTPUT,
     variableOutput: (config) => ({
       baseId: 'enlace_disparo',
       baseLabel: str(config.linkName) || str(config.link)
-        ? `Enlace de disparo - ${str(config.linkName) || str(config.link)}`
-        : 'Enlace de disparo',
+        ? `Clic de disparo - ${str(config.linkName) || str(config.link)}`
+        : 'Clic de disparo',
       fields: TRIGGER_LINK_FIELDS
     }),
     summary: (config) => ({
       text: str(config.linkName) || str(config.link)
-        ? `Cuando alguien abra el enlace "${str(config.linkName) || str(config.link)}"${triggerFiltersSentence(config.filters)}`
+        ? `Cuando ocurra el clic de disparo "${str(config.linkName) || str(config.link)}"${triggerFiltersSentence(config.filters)}`
         : undefined,
-      empty: 'Selecciona el enlace de disparo'
+      empty: 'Selecciona el clic de disparo'
     })
   },
   {
@@ -1747,6 +1747,7 @@ const OTHER_ACTIONS: NodeDefinition[] = [
       // acción
       expectedAction: 'click_link',
       actionResource: '',
+      actionResourceName: '',
       actionChannel: 'any',
       // condiciones
       conditions: emptyAdvancedCondition(),
@@ -1867,14 +1868,16 @@ const OTHER_ACTIONS: NodeDefinition[] = [
       }
       if (mode === 'action') {
         const actions: Record<string, string> = {
-          click_link: 'haga clic en un enlace',
+          click_link: 'reciba un clic de disparo',
           submit_form: 'envíe un formulario',
           purchase: 'realice un pago',
           book_appointment: 'agende una cita',
           reply_message: 'responda un mensaje',
           custom_event: 'dispare un evento personalizado'
         }
-        return { text: `Esperar a que ${actions[str(config.expectedAction)] || 'realice una acción'}${timeoutText}` }
+        const actionResource = str(config.actionResourceName) || str(config.actionResource)
+        const resourceText = str(config.expectedAction) === 'click_link' && actionResource ? ` "${actionResource}"` : ''
+        return { text: `Esperar a que ${actions[str(config.expectedAction)] || 'realice una acción'}${resourceText}${timeoutText}` }
       }
       if (mode === 'conditions') {
         const summary = summarizeAdvancedCondition(config.conditions)
@@ -1921,6 +1924,7 @@ const OTHER_ACTIONS: NodeDefinition[] = [
       // link
       linkEvent: 'clicked',
       link: '',
+      linkName: '',
       // conversación
       conversationEvent: 'replied',
       conversationChannel: 'any',
@@ -2019,7 +2023,10 @@ const OTHER_ACTIONS: NodeDefinition[] = [
           return `${statuses[str(config.appointmentStatus)] || 'Cita agendada'}${calendar ? ` en ${calendar}` : ''}`
         },
         form: () => `Formulario ${str(config.formName) || str(config.form) || ''} enviado`,
-        link: () => (str(config.linkEvent) === 'activation' ? 'Clic en enlace de activación' : 'Hizo clic en enlace'),
+        link: () => {
+          const linkName = str(config.linkName) || str(config.link)
+          return `Clic de disparo${linkName ? ` "${linkName}"` : ''}`
+        },
         conversation: () => `Respondió por ${channelLabel(str(config.conversationChannel) || 'any')}`,
         contact: () => 'Cambio en el contacto',
         ads: () => (str(config.adsEvent) === 'ctwa' ? 'Click to WhatsApp ads' : 'Clic en anuncio de Facebook'),

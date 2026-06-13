@@ -54,12 +54,12 @@ const WAIT_MODES: WaitMode[] = [
   { id: 'recurring', title: 'Una programación recurrente', example: 'Ej.: Cada martes, el 15 de cada mes', icon: Repeat, isNew: true },
   { id: 'appointment', title: 'Una cita o reserva próxima', example: 'Ej.: 1 hora antes de la cita programada', icon: CalendarClock },
   { id: 'reply', title: 'El contacto al que responder', example: 'Espera una respuesta por WhatsApp, Messenger o Instagram', icon: MessageCircleReply },
-  { id: 'action', title: 'El contacto para realizar una acción', example: 'Ejemplo: hace clic en un enlace, envía un formulario', icon: MousePointerClick },
+  { id: 'action', title: 'El contacto para realizar una acción', example: 'Ejemplo: recibe un clic de disparo, envía un formulario', icon: MousePointerClick },
   { id: 'conditions', title: 'Condiciones específicas que deben cumplirse', example: 'Crea un segmento con cualquiera de tus campos', icon: ListFilter }
 ]
 
 const EXPECTED_ACTIONS = [
-  { value: 'click_link', label: 'Hace clic en un enlace' },
+  { value: 'click_link', label: 'Clic de disparo' },
   { value: 'submit_form', label: 'Envía un formulario' },
   { value: 'purchase', label: 'Compra / paga' },
   { value: 'book_appointment', label: 'Agenda una cita' },
@@ -304,17 +304,32 @@ export const WaitConfigEditor: React.FC<WaitConfigEditorProps> = ({ config, onCh
             <CustomSelect
               options={EXPECTED_ACTIONS}
               value={str(config.expectedAction) || 'click_link'}
-              onValueChange={(next) => set({ expectedAction: next })}
+              onValueChange={(next) => set({ expectedAction: next, actionResource: '', actionResourceName: '' })}
               aria-label="Acción esperada"
             />
           </Field>
-          <Field label="Recurso relacionado (opcional)" help="Link, formulario, producto, calendario o evento según la acción">
-            <TextInput
-              value={str(config.actionResource)}
-              placeholder="Ej. enlace-promo, formulario demo…"
-              onChange={(event) => set({ actionResource: event.target.value })}
-            />
-          </Field>
+          {str(config.expectedAction) === 'click_link' || !str(config.expectedAction) ? (
+            <Field
+              label="Clic de disparo (opcional)"
+              help="Si lo dejas vacío, cualquier clic de disparo continúa la espera."
+            >
+              <CatalogSelect
+                catalog="links"
+                value={str(config.actionResource)}
+                onChange={(value, label) => set({ actionResource: value, actionResourceName: label })}
+                placeholder="Cualquier clic de disparo"
+                aria-label="Clic de disparo"
+              />
+            </Field>
+          ) : (
+            <Field label="Recurso relacionado (opcional)" help="Formulario, producto, calendario o evento según la acción">
+              <TextInput
+                value={str(config.actionResource)}
+                placeholder="Ej. formulario demo, producto, evento…"
+                onChange={(event) => set({ actionResource: event.target.value, actionResourceName: '' })}
+              />
+            </Field>
+          )}
           {str(config.expectedAction) === 'reply_message' && (
             <Field label="Canal relacionado">
               <CustomSelect
