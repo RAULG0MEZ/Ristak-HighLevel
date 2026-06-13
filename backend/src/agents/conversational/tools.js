@@ -5,6 +5,7 @@ import { invokeController, toToolResult } from '../invokeController.js'
 import { createAppointment } from '../../controllers/calendarsController.js'
 import { updateContact } from '../../controllers/contactsController.js'
 import { listCalendarsTool, getFreeSlotsTool } from '../tools/appointmentTools.js'
+import { createSinglePaymentLink } from '../../services/paymentFlowService.js'
 import {
   setConversationSignal,
   setConversationStatus,
@@ -31,7 +32,23 @@ function pushAction(ctx, type, detail = {}) {
 }
 
 function resolveAdvanceSignal(config) {
+  if (config?.successAction === 'ready_to_buy') return 'ready_to_buy'
   return 'ready_for_human'
+}
+
+function buildPaymentChannels(channel) {
+  const normalized = String(channel || '').toLowerCase()
+  return {
+    email: normalized === 'email' || normalized === 'all',
+    whatsapp: normalized === 'whatsapp' || normalized === 'all',
+    sms: normalized === 'sms' || normalized === 'all'
+  }
+}
+
+async function getPaymentContact(contactId) {
+  const row = await db.get('SELECT id, full_name, email, phone FROM contacts WHERE id = ?', [contactId])
+  if (!row) return null
+  return { id: row.id, name: row.full_name, email: row.email, phone: row.phone }
 }
 
 async function notifyHumanPriority(ctx, { reason = '', summary = '', signal = 'ready_for_human' } = {}) {
@@ -373,6 +390,77 @@ export function createConversationalTools(ctx) {
     }
   })
 
+  const createPaymentLinkTool = tool({
+    name: 'create_payment_link',
+    description: 'Crea y envía un link de pago real al contacto actual. Úsala sólo después de confirmar concepto, monto, moneda y canal con la persona. Nunca inventes precios: usa list_products o el producto configurado del agente.',
+    parameters: z.object({
+      amount: z.number().positive().describe('Monto confirmado del cobro'),
+      currency: z.string().nullable().describe('Moneda ISO, por ejemplo MXN'),
+      concept: z.string().describe('Concepto breve del cobro'),
+      dueDate: z.string().nullable().describe('Fecha límite de pago YYYY-MM-DD opcional'),
+      channel: z.enum(['email', 'whatsapp', 'sms', 'all']).describe('Canal confirmado para enviar el link'),
+      confirm: z.boolean().describe('true sólo cuando la persona ya aprobó explícitamente el cobro')
+    }),
+    execute: async ({ amount, currency, concept, dueDate, channel, confirm }) => {
+      if (!confirm) {
+        return { ok: false, error: 'Falta confirmación explícita. Resume monto, concepto y canal, y pide aprobación antes de crear el link.' }
+      }
+      const contact = await getPaymentContact(ctx.contactId)
+      if (!contact) return { ok: false, error: 'Contacto no encontrado' }
+
+      pushAction(ctx, 'create_payment_link', { amount, currency: currency || null, concept, channel })
+      if (ctx.dryRun) {
+        return { ok: true, simulated: true, amount, currency: currency || null, concept, channel }
+      }
+
+      try {
+        const result = await createSinglePaymentLink({
+          contact,
+          amount,
+          currency: currency || undefined,
+          description: concept,
+          concept,
+          title: concept,
+          dueDate: dueDate || undefined,
+          channels: buildPaymentChannels(channel),
+          source: 'conversational_agent'
+        })
+        await setConversationSignal(ctx.contactId, 'ready_to_buy', {
+          reason: 'Link de pago enviado por el agente',
+          summary: `${concept} · ${result.amount} ${result.currency}`,
+          status: 'completed'
+        })
+        await notifyHumanPriority(ctx, {
+          reason: 'Link de pago enviado por el agente',
+          summary: `${concept} · ${result.amount} ${result.currency}`,
+          signal: 'ready_to_buy'
+        })
+        await recordConversationalAgentEvent({
+          contactId: ctx.contactId,
+          eventType: 'payment_link_created',
+          detail: { invoiceId: result.invoiceId, amount: result.amount, currency: result.currency, channel }
+        })
+        await applyAgentSuccessExtras(config, ctx.contactId)
+        return {
+          ok: true,
+          invoiceId: result.invoiceId,
+          paymentLink: result.paymentLink,
+          sendMethod: result.sendMethod,
+          amount: result.amount,
+          currency: result.currency,
+          status: result.status
+        }
+      } catch (error) {
+        await recordConversationalAgentEvent({
+          contactId: ctx.contactId,
+          eventType: 'payment_link_failed',
+          detail: { error: error.message, amount, currency: currency || null, concept }
+        })
+        return { ok: false, error: error.message }
+      }
+    }
+  })
+
   const sendToHumanTool = tool({
     name: 'send_to_human',
     description: 'Manda la conversación a un humano: preguntas delicadas, quejas serias, confusión fuerte, información que no tienes, o casos definidos por el negocio. Crea la señal interna y el agente deja de responder. No le digas al cliente que lo estás transfiriendo.',
@@ -444,5 +532,7 @@ export function createConversationalTools(ctx) {
   // Disponibilidad y agenda: lectura siempre (para responder horarios reales);
   // escritura solo si el negocio configuró agenda directa.
   tools.push(listCalendarsTool, getFreeSlotsTool)
+  if (config?.successAction === 'book_appointment') tools.push(bookAppointmentTool)
+  if (config?.successAction === 'ready_to_buy') tools.push(createPaymentLinkTool)
   return tools
 }

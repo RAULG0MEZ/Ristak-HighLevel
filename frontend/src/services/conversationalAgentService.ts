@@ -1,4 +1,4 @@
-export type ConversationalObjective = 'citas' | 'ventas' | 'datos' | 'filtrar' | 'detectar' | 'custom'
+export type ConversationalObjective = 'citas' | 'ventas' | 'datos' | 'filtrar' | 'custom'
 export type ConversationalSuccessAction = 'book_appointment' | 'ready_for_human' | 'ready_to_buy' | 'internal_signal' | 'none'
 export type ConversationStatus = 'active' | 'paused' | 'human' | 'skipped' | 'completed' | 'discarded'
 export type ConversationSignal = 'ready_for_human' | 'ready_to_schedule' | 'ready_to_buy' | 'appointment_booked' | 'discarded'
@@ -28,6 +28,32 @@ export interface AgentReplyDeliveryConfig {
   delayBetweenBubblesEnabled: boolean
   minDelaySeconds: number
   maxDelaySeconds: number
+}
+
+export type AgentGoalOwner = 'human' | 'ai'
+
+export interface AgentGoalWorkflowConfig {
+  appointments: {
+    owner: AgentGoalOwner
+    calendarId: string | null
+  }
+  sales: {
+    owner: AgentGoalOwner
+    productId: string
+    priceId: string
+    productName: string
+    priceName: string
+    amount: number | null
+    currency: string
+  }
+  data: {
+    afterComplete: 'human'
+  }
+  qualification: {
+    questions: string
+    qualifies: string
+    disqualifies: string
+  }
 }
 
 export interface ConversationalAgentConfig {
@@ -157,6 +183,7 @@ export interface ConversationalAgentDef {
   closingStrategyCustom: string
   responseDelay: AgentResponseDelayConfig
   replyDelivery: AgentReplyDeliveryConfig
+  goalWorkflow: AgentGoalWorkflowConfig
   filters: AgentFilters
   createdAt: string | null
   updatedAt: string | null
@@ -247,23 +274,75 @@ export const CONVERSATIONAL_AGENT_LIVE_CACHE_EVENT = 'ristak-conversational-agen
 
 const LIVE_CACHE_KEY = 'ristak_conversational_agent_live_cache_v1'
 const API_BASE_URL = import.meta.env.VITE_API_URL || ''
+const VALID_CONVERSATIONAL_SUCCESS_ACTIONS = new Set<ConversationalSuccessAction>([
+  'book_appointment',
+  'ready_for_human',
+  'ready_to_buy',
+  'internal_signal',
+  'none'
+])
 
-function normalizeConversationalSuccessAction(): ConversationalSuccessAction {
-  return 'ready_for_human'
+const DEFAULT_AGENT_GOAL_WORKFLOW: AgentGoalWorkflowConfig = {
+  appointments: {
+    owner: 'human',
+    calendarId: null
+  },
+  sales: {
+    owner: 'human',
+    productId: '',
+    priceId: '',
+    productName: '',
+    priceName: '',
+    amount: null,
+    currency: ''
+  },
+  data: {
+    afterComplete: 'human'
+  },
+  qualification: {
+    questions: '',
+    qualifies: '',
+    disqualifies: ''
+  }
+}
+
+function normalizeConversationalSuccessAction(value?: unknown): ConversationalSuccessAction {
+  const action = String(value || '').trim() as ConversationalSuccessAction
+  return VALID_CONVERSATIONAL_SUCCESS_ACTIONS.has(action) ? action : 'ready_for_human'
 }
 
 function normalizeAgentConfig<T extends ConversationalAgentConfig | null | undefined>(config: T): T {
   if (!config) return config
   return {
     ...config,
-    successAction: normalizeConversationalSuccessAction()
+    successAction: normalizeConversationalSuccessAction(config.successAction)
   }
 }
 
 function normalizeAgentDef<T extends ConversationalAgentDef>(agent: T): T {
   return {
     ...agent,
-    successAction: normalizeConversationalSuccessAction()
+    successAction: normalizeConversationalSuccessAction(agent.successAction),
+    goalWorkflow: {
+      ...DEFAULT_AGENT_GOAL_WORKFLOW,
+      ...((agent.goalWorkflow || {}) as Partial<AgentGoalWorkflowConfig>),
+      appointments: {
+        ...DEFAULT_AGENT_GOAL_WORKFLOW.appointments,
+        ...((agent.goalWorkflow?.appointments || {}) as Partial<AgentGoalWorkflowConfig['appointments']>)
+      },
+      sales: {
+        ...DEFAULT_AGENT_GOAL_WORKFLOW.sales,
+        ...((agent.goalWorkflow?.sales || {}) as Partial<AgentGoalWorkflowConfig['sales']>)
+      },
+      data: {
+        ...DEFAULT_AGENT_GOAL_WORKFLOW.data,
+        ...((agent.goalWorkflow?.data || {}) as Partial<AgentGoalWorkflowConfig['data']>)
+      },
+      qualification: {
+        ...DEFAULT_AGENT_GOAL_WORKFLOW.qualification,
+        ...((agent.goalWorkflow?.qualification || {}) as Partial<AgentGoalWorkflowConfig['qualification']>)
+      }
+    }
   }
 }
 

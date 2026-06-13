@@ -58,7 +58,6 @@ const OBJECTIVE_FINAL_TEXTS = {
   ventas: 'comprar',
   datos: 'compartir los datos clave',
   filtrar: 'confirmar si tiene intencion real',
-  detectar: 'detectar si esta listo para comprar o agendar',
   custom: 'avanzar al siguiente paso definido por el negocio'
 }
 
@@ -67,7 +66,7 @@ const runningContacts = new Set()
 const pendingContactReruns = new Map()
 
 // Palabras internas que jamás deben llegar al cliente final.
-const INTERNAL_TOKEN_PATTERN = /\b(AGENDAR|SALTAR|ready_for_human|ready_to_schedule|ready_to_buy|mark_ready_to_advance|send_to_human|discard_conversation|stay_silent|book_appointment)\b/gi
+const INTERNAL_TOKEN_PATTERN = /\b(AGENDAR|SALTAR|ready_for_human|ready_to_schedule|ready_to_buy|mark_ready_to_advance|send_to_human|discard_conversation|stay_silent|book_appointment|create_payment_link)\b/gi
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))

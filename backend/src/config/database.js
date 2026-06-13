@@ -3270,6 +3270,7 @@ async function initTables() {
         closing_strategy_custom TEXT,
         response_delay_config TEXT,
         reply_delivery_config TEXT,
+        goal_workflow_config TEXT,
         entry_filters TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -3280,7 +3281,8 @@ async function initTables() {
       ['hide_attended', 'INTEGER DEFAULT 0'],
       ['hide_attended_notifications', 'INTEGER DEFAULT 0'],
       ['response_delay_config', 'TEXT'],
-      ['reply_delivery_config', 'TEXT']
+      ['reply_delivery_config', 'TEXT'],
+      ['goal_workflow_config', 'TEXT']
     ]) {
       try {
         if (usePostgres) {

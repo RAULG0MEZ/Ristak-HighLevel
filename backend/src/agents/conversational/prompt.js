@@ -9,14 +9,23 @@ const OBJECTIVE_TEXTS = {
   ventas: 'que la persona compre',
   datos: 'conseguir los datos clave del prospecto',
   filtrar: 'filtrar curiosos y detectar prospectos con intención real',
-  detectar: 'detectar prospectos listos para comprar o agendar'
 }
 
 const SUCCESS_ACTION_TEXTS = {
   ready_for_human: `Cuando la persona esté lista para avanzar:
 - Ejecuta mark_ready_to_advance con el resumen de la conversación.
 - El chat aparecerá como prioridad roja para que un humano lo atienda.
-- NO escribas un mensaje final largo después de ejecutarla; el sistema toma el control. Si necesitas cerrar, una frase mínima y natural basta.`
+- NO escribas un mensaje final largo después de ejecutarla; el sistema toma el control. Si necesitas cerrar, una frase mínima y natural basta.`,
+  book_appointment: `Cuando la persona esté lista para agendar:
+- Consulta horarios reales con get_free_slots.
+- Propón opciones concretas y pide confirmación explícita del horario.
+- Cuando confirme el horario exacto, ejecuta book_appointment.
+- Si falta información, no inventes; pide sólo lo mínimo o manda a humano con send_to_human.`,
+  ready_to_buy: `Cuando la persona esté lista para pagar:
+- Usa list_products para verificar producto y valor real antes de hablar de precio.
+- Confirma concepto, monto, moneda y canal de envío.
+- Sólo después de confirmación explícita ejecuta create_payment_link.
+- Si no puedes crear el link, manda a humano con send_to_human y resume el motivo.`
 }
 
 /**
@@ -1015,6 +1024,61 @@ function describeObjective(config) {
   return OBJECTIVE_TEXTS[config.objective] || OBJECTIVE_TEXTS.citas
 }
 
+function buildGoalWorkflowSection(config = {}) {
+  const workflow = config.goalWorkflow || {}
+  const sections = []
+
+  if (config.objective === 'citas') {
+    const appointments = workflow.appointments || {}
+    if (appointments.owner === 'ai') {
+      sections.push(`## Flujo de agenda configurado
+- Este agente debe intentar agendar por IA.
+- Calendario configurado: ${appointments.calendarId || config.defaultCalendarId || 'sin calendario fijo; usa list_calendars para elegir uno activo'}.
+- Antes de crear la cita, confirma día y hora exactos con la persona.
+- Usa book_appointment sólo con un horario real devuelto por get_free_slots.`)
+    } else {
+      sections.push(`## Flujo de agenda configurado
+- Este agente NO agenda por su cuenta.
+- Cuando la persona quiera agendar, ejecuta mark_ready_to_advance para que un humano tome la conversación.`)
+    }
+  }
+
+  if (config.objective === 'ventas') {
+    const sales = workflow.sales || {}
+    if (sales.owner === 'ai') {
+      const productLine = sales.productName
+        ? `Producto configurado: ${sales.productName}${sales.amount ? ` · ${sales.amount} ${sales.currency || 'MXN'}` : ''}.`
+        : 'No hay producto fijo configurado; usa list_products para encontrar el producto correcto.'
+      sections.push(`## Flujo de cobro configurado
+- Este agente puede enviar link de pago por IA.
+- ${productLine}
+- Verifica el valor real con list_products antes de confirmar precio.
+- Pide confirmación explícita del cobro y canal; luego ejecuta create_payment_link.`)
+    } else {
+      sections.push(`## Flujo de cobro configurado
+- Este agente NO manda links de pago por su cuenta.
+- Cuando la persona esté lista para comprar, ejecuta mark_ready_to_advance para que un humano cierre el cobro.`)
+    }
+  }
+
+  if (config.objective === 'datos') {
+    sections.push(`## Flujo de datos configurado
+- Pide los datos faltantes de uno en uno.
+- Cuando los tengas, ejecuta mark_ready_to_advance para que un humano continúe.`)
+  }
+
+  if (config.objective === 'filtrar') {
+    const qualification = workflow.qualification || {}
+    sections.push(`## Flujo de filtrado configurado
+${qualification.questions ? `Preguntas útiles para calificar:\n${qualification.questions}\n` : ''}${qualification.qualifies ? `Se considera buen prospecto si:\n${qualification.qualifies}\n` : ''}${qualification.disqualifies ? `Se descalifica o se manda a humano si:\n${qualification.disqualifies}` : ''}
+- Haz pocas preguntas, una por mensaje.
+- Si califica, ejecuta mark_ready_to_advance.
+- Si claramente no califica o es spam, usa discard_conversation sólo cuando corresponda.`)
+  }
+
+  return sections.filter(Boolean).join('\n\n')
+}
+
 export function buildConversationalInstructions({ config, businessContext, brandVoice, businessName, timezone, nowIso, contactName, advancedClosingContext = null }) {
   const sections = []
 
@@ -1046,6 +1110,9 @@ No estás para vender de forma agresiva. Estás para acompañar, orientar, resol
 7. Lleva la conversación de forma natural al siguiente paso.`)
 
   sections.push(`## Acción cuando la persona está lista\n${SUCCESS_ACTION_TEXTS[config.successAction] || SUCCESS_ACTION_TEXTS.ready_for_human}`)
+
+  const workflowSection = buildGoalWorkflowSection(config)
+  if (workflowSection) sections.push(workflowSection)
 
   if (config.requiredData) {
     sections.push(`## Datos mínimos antes de cumplir el objetivo

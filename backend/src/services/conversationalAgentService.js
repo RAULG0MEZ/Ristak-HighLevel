@@ -25,12 +25,13 @@ export const CONVERSATIONAL_OBJECTIVES = [
   { id: 'ventas', label: 'Cerrar ventas' },
   { id: 'datos', label: 'Conseguir datos específicos' },
   { id: 'filtrar', label: 'Filtrar curiosos' },
-  { id: 'detectar', label: 'Detectar prospectos listos' },
   { id: 'custom', label: 'Objetivo personalizado' }
 ]
 
 export const SUCCESS_ACTIONS = [
-  { id: 'ready_for_human', label: 'Pasar a un humano' }
+  { id: 'ready_for_human', label: 'Pasar a un humano' },
+  { id: 'book_appointment', label: 'Agendar con IA' },
+  { id: 'ready_to_buy', label: 'Enviar link de pago' }
 ]
 
 const VALID_OBJECTIVES = new Set(CONVERSATIONAL_OBJECTIVES.map((item) => item.id))
@@ -96,8 +97,9 @@ export function normalizeConversationalAgentModel(value) {
   return AI_MODEL_ID_PATTERN.test(model) ? model : DEFAULT_CONVERSATIONAL_AGENT_MODEL
 }
 
-export function normalizeConversationalSuccessAction() {
-  return DEFAULT_SUCCESS_ACTION
+export function normalizeConversationalSuccessAction(value = DEFAULT_SUCCESS_ACTION) {
+  const action = String(value || '').trim()
+  return VALID_SUCCESS_ACTIONS.has(action) ? action : DEFAULT_SUCCESS_ACTION
 }
 
 function mapConfigRow(row) {
@@ -636,6 +638,31 @@ function normalizeAgentFilters(input) {
 }
 
 const SUCCESS_EXTRA_TYPES = new Set(['add_tag', 'remove_tag', 'set_custom_field'])
+const GOAL_WORKFLOW_OWNERS = new Set(['human', 'ai'])
+
+const DEFAULT_GOAL_WORKFLOW_CONFIG = {
+  appointments: {
+    owner: 'human',
+    calendarId: null
+  },
+  sales: {
+    owner: 'human',
+    productId: '',
+    priceId: '',
+    productName: '',
+    priceName: '',
+    amount: null,
+    currency: ''
+  },
+  data: {
+    afterComplete: 'human'
+  },
+  qualification: {
+    questions: '',
+    qualifies: '',
+    disqualifies: ''
+  }
+}
 
 function normalizeSuccessExtras(input) {
   if (!Array.isArray(input)) return []
@@ -649,6 +676,48 @@ function normalizeSuccessExtras(input) {
     }))
     .filter((extra) => (extra.type === 'set_custom_field' ? Boolean(extra.field) : Boolean(extra.tag)))
     .slice(0, 12)
+}
+
+function normalizeGoalOwner(value, fallback = 'human') {
+  const owner = String(value || '').trim()
+  return GOAL_WORKFLOW_OWNERS.has(owner) ? owner : fallback
+}
+
+function normalizeNullableAmount(value) {
+  const amount = Number(value)
+  if (!Number.isFinite(amount) || amount <= 0) return null
+  return Math.round(amount * 100) / 100
+}
+
+export function normalizeAgentGoalWorkflow(input) {
+  const raw = input && typeof input === 'object' ? input : {}
+  const appointments = raw.appointments && typeof raw.appointments === 'object' ? raw.appointments : {}
+  const sales = raw.sales && typeof raw.sales === 'object' ? raw.sales : {}
+  const qualification = raw.qualification && typeof raw.qualification === 'object' ? raw.qualification : {}
+
+  return {
+    appointments: {
+      owner: normalizeGoalOwner(appointments.owner, DEFAULT_GOAL_WORKFLOW_CONFIG.appointments.owner),
+      calendarId: String(appointments.calendarId || '').trim() || null
+    },
+    sales: {
+      owner: normalizeGoalOwner(sales.owner, DEFAULT_GOAL_WORKFLOW_CONFIG.sales.owner),
+      productId: String(sales.productId || '').trim().slice(0, 160),
+      priceId: String(sales.priceId || '').trim().slice(0, 160),
+      productName: String(sales.productName || '').trim().slice(0, 240),
+      priceName: String(sales.priceName || '').trim().slice(0, 160),
+      amount: normalizeNullableAmount(sales.amount),
+      currency: String(sales.currency || '').trim().slice(0, 12).toUpperCase()
+    },
+    data: {
+      afterComplete: 'human'
+    },
+    qualification: {
+      questions: String(qualification.questions || '').slice(0, 2000),
+      qualifies: String(qualification.qualifies || '').slice(0, 2000),
+      disqualifies: String(qualification.disqualifies || '').slice(0, 2000)
+    }
+  }
 }
 
 function clampDelayValue(value, unit, fallback) {
@@ -793,6 +862,7 @@ function mapAgentRow(row) {
     closingStrategyCustom: row.closing_strategy_custom || '',
     responseDelay: normalizeAgentResponseDelay(parseJsonField(row.response_delay_config, null)),
     replyDelivery: normalizeAgentReplyDelivery(parseJsonField(row.reply_delivery_config, null)),
+    goalWorkflow: normalizeAgentGoalWorkflow(parseJsonField(row.goal_workflow_config, null)),
     filters: normalizeAgentFilters(parseJsonField(row.entry_filters, null)),
     createdAt: row.created_at || null,
     updatedAt: row.updated_at || null
@@ -839,8 +909,8 @@ export async function ensureAgentsMigration() {
       success_extras, required_data, handoff_rules, extra_instructions,
       allow_emojis, hide_attended, hide_attended_notifications,
       default_calendar_id, closing_strategy_mode, closing_strategy_custom,
-      response_delay_config, reply_delivery_config, entry_filters
-    ) VALUES (?, ?, 1, ?, 0, ?, ?, ?, '[]', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      response_delay_config, reply_delivery_config, goal_workflow_config, entry_filters
+    ) VALUES (?, ?, 1, ?, 0, ?, ?, ?, '[]', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
     `cagent_${randomUUID()}`,
     'Agente principal',
@@ -861,6 +931,7 @@ export async function ensureAgentsMigration() {
     legacy.closing_strategy_custom || '',
     JSON.stringify(DEFAULT_RESPONSE_DELAY_CONFIG),
     JSON.stringify(DEFAULT_REPLY_DELIVERY_CONFIG),
+    JSON.stringify(DEFAULT_GOAL_WORKFLOW_CONFIG),
     JSON.stringify({ entry: [], exit: [] })
   ])
   logger.info('[Agente conversacional] Config previa migrada al contenedor "Agente principal"')
@@ -1058,6 +1129,9 @@ function agentInputToRowValues(input, base) {
     replyDelivery: input.replyDelivery === undefined
       ? normalizeAgentReplyDelivery(base.replyDelivery)
       : normalizeAgentReplyDelivery(input.replyDelivery),
+    goalWorkflow: input.goalWorkflow === undefined
+      ? normalizeAgentGoalWorkflow(base.goalWorkflow)
+      : normalizeAgentGoalWorkflow(input.goalWorkflow),
     filters: input.filters === undefined ? base.filters : normalizeAgentFilters(input.filters)
   }
   return next
@@ -1083,6 +1157,7 @@ const DEFAULT_AGENT_BASE = {
   closingStrategyCustom: '',
   responseDelay: DEFAULT_RESPONSE_DELAY_CONFIG,
   replyDelivery: DEFAULT_REPLY_DELIVERY_CONFIG,
+  goalWorkflow: DEFAULT_GOAL_WORKFLOW_CONFIG,
   filters: { entry: [], exit: [] }
 }
 
@@ -1097,15 +1172,15 @@ export async function createConversationalAgent(input = {}) {
       success_extras, required_data, handoff_rules, extra_instructions,
       allow_emojis, hide_attended, hide_attended_notifications,
       default_calendar_id, closing_strategy_mode, closing_strategy_custom,
-      response_delay_config, reply_delivery_config, entry_filters
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      response_delay_config, reply_delivery_config, goal_workflow_config, entry_filters
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
     id, next.name, next.enabled ? 1 : 0, next.model, next.position, next.objective, next.customObjective,
     next.successAction, JSON.stringify(next.successExtras), next.requiredData, next.handoffRules,
     next.extraInstructions, next.allowEmojis ? 1 : 0,
     next.hideAttended ? 1 : 0, next.hideAttendedNotifications ? 1 : 0, next.defaultCalendarId,
     next.closingStrategyMode, next.closingStrategyCustom,
-    JSON.stringify(next.responseDelay), JSON.stringify(next.replyDelivery), JSON.stringify(next.filters)
+    JSON.stringify(next.responseDelay), JSON.stringify(next.replyDelivery), JSON.stringify(next.goalWorkflow), JSON.stringify(next.filters)
   ])
   await recordConversationalAgentEvent({ eventType: 'agent_created', detail: { agentId: id, name: next.name } })
   return getConversationalAgent(id)
@@ -1124,7 +1199,7 @@ export async function updateConversationalAgent(agentId, input = {}) {
         extra_instructions = ?, allow_emojis = ?, hide_attended = ?, hide_attended_notifications = ?,
         default_calendar_id = ?,
         closing_strategy_mode = ?, closing_strategy_custom = ?, response_delay_config = ?,
-        reply_delivery_config = ?, entry_filters = ?,
+        reply_delivery_config = ?, goal_workflow_config = ?, entry_filters = ?,
         updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `, [
@@ -1133,7 +1208,7 @@ export async function updateConversationalAgent(agentId, input = {}) {
     next.extraInstructions, next.allowEmojis ? 1 : 0,
     next.hideAttended ? 1 : 0, next.hideAttendedNotifications ? 1 : 0, next.defaultCalendarId,
     next.closingStrategyMode, next.closingStrategyCustom,
-    JSON.stringify(next.responseDelay), JSON.stringify(next.replyDelivery), JSON.stringify(next.filters),
+    JSON.stringify(next.responseDelay), JSON.stringify(next.replyDelivery), JSON.stringify(next.goalWorkflow), JSON.stringify(next.filters),
     agentId
   ])
   return getConversationalAgent(agentId)

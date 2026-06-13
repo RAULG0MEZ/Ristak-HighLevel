@@ -42,8 +42,11 @@ test('normaliza la entrega de respuestas en partes', () => {
   assert.equal(delivery.maxDelaySeconds, 12)
 })
 
-test('normaliza acciones redundantes del agente a humano', () => {
-  for (const action of ['book_appointment', 'ready_for_human', 'ready_to_buy', 'internal_signal', 'none', '', null]) {
+test('normaliza acciones del agente conversacional', () => {
+  assert.equal(normalizeConversationalSuccessAction('book_appointment'), 'book_appointment')
+  assert.equal(normalizeConversationalSuccessAction('ready_to_buy'), 'ready_to_buy')
+  assert.equal(normalizeConversationalSuccessAction('ready_for_human'), 'ready_for_human')
+  for (const action of ['internal_signal', 'none', '', null]) {
     assert.equal(normalizeConversationalSuccessAction(action), 'ready_for_human')
   }
 })

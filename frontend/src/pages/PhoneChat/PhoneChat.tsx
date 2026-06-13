@@ -78,6 +78,7 @@ import {
   type AgentResponseDelayConfig,
   type AgentResponseDelayMode,
   type AgentResponseDelayUnit,
+  type AgentGoalWorkflowConfig,
   type ConversationalAgentLiveCache,
   type ConversationAgentState,
   type ConversationStateAction,
@@ -291,6 +292,55 @@ const PHONE_AGENT_RESPONSE_DELAY_UNIT_OPTIONS: Array<{ value: AgentResponseDelay
   { value: 'minutes', label: 'Minutos' }
 ]
 
+const DEFAULT_PHONE_AGENT_GOAL_WORKFLOW: AgentGoalWorkflowConfig = {
+  appointments: {
+    owner: 'human',
+    calendarId: null
+  },
+  sales: {
+    owner: 'human',
+    productId: '',
+    priceId: '',
+    productName: '',
+    priceName: '',
+    amount: null,
+    currency: ''
+  },
+  data: {
+    afterComplete: 'human'
+  },
+  qualification: {
+    questions: '',
+    qualifies: '',
+    disqualifies: ''
+  }
+}
+
+const PHONE_AGENT_OWNER_OPTIONS = [
+  { value: 'human', label: 'Pasar a humano' },
+  { value: 'ai', label: 'Que lo haga la IA' }
+]
+
+interface ProductPrice {
+  id?: string
+  _id?: string
+  localId?: string
+  name?: string
+  amount?: number
+  price?: number
+  currency?: string
+}
+
+interface ProductItem {
+  id?: string
+  _id?: string
+  localId?: string
+  name: string
+  description?: string
+  currency?: string
+  prices?: ProductPrice[]
+}
+
 function getPhoneAgentResponseDelay(agent: ConversationalAgentDef): AgentResponseDelayConfig {
   return {
     ...DEFAULT_PHONE_AGENT_RESPONSE_DELAY,
@@ -303,6 +353,46 @@ function getPhoneAgentReplyDelivery(agent: ConversationalAgentDef): AgentReplyDe
     ...DEFAULT_PHONE_AGENT_REPLY_DELIVERY,
     ...((agent.replyDelivery || {}) as Partial<AgentReplyDeliveryConfig>)
   }
+}
+
+function getPhoneAgentGoalWorkflow(agent: ConversationalAgentDef): AgentGoalWorkflowConfig {
+  const workflow = (agent.goalWorkflow || {}) as Partial<AgentGoalWorkflowConfig>
+  return {
+    ...DEFAULT_PHONE_AGENT_GOAL_WORKFLOW,
+    ...workflow,
+    appointments: {
+      ...DEFAULT_PHONE_AGENT_GOAL_WORKFLOW.appointments,
+      ...((workflow.appointments || {}) as Partial<AgentGoalWorkflowConfig['appointments']>)
+    },
+    sales: {
+      ...DEFAULT_PHONE_AGENT_GOAL_WORKFLOW.sales,
+      ...((workflow.sales || {}) as Partial<AgentGoalWorkflowConfig['sales']>)
+    },
+    data: {
+      ...DEFAULT_PHONE_AGENT_GOAL_WORKFLOW.data,
+      ...((workflow.data || {}) as Partial<AgentGoalWorkflowConfig['data']>)
+    },
+    qualification: {
+      ...DEFAULT_PHONE_AGENT_GOAL_WORKFLOW.qualification,
+      ...((workflow.qualification || {}) as Partial<AgentGoalWorkflowConfig['qualification']>)
+    }
+  }
+}
+
+function getProductId(product: ProductItem) {
+  return product.id || product._id || product.localId || ''
+}
+
+function getPriceId(price?: ProductPrice | null) {
+  return price?.id || price?._id || price?.localId || ''
+}
+
+function getPrimaryPrice(product?: ProductItem | null) {
+  return Array.isArray(product?.prices) ? product.prices[0] || null : null
+}
+
+function getPriceAmount(price?: ProductPrice | null) {
+  return Number(price?.amount ?? price?.price ?? 0) || 0
 }
 
 function getPhoneDelayUnitLabel(unit: AgentResponseDelayUnit, value: number) {
@@ -2765,6 +2855,8 @@ export const PhoneChat: React.FC = () => {
   const [calendars, setCalendars] = useState<Calendar[]>([])
   const [calendarsLoading, setCalendarsLoading] = useState(false)
   const [selectedCalendarId, setSelectedCalendarId] = useState('')
+  const [agentProducts, setAgentProducts] = useState<ProductItem[]>([])
+  const [agentProductsLoading, setAgentProductsLoading] = useState(false)
   const [sheet, setSheet] = useState<ActionSheet>(null)
   const [activeSettingsSection, setActiveSettingsSection] = useState<ChatSettingsSection>(null)
   const [contactInfoOpen, setContactInfoOpen] = useState(false)
@@ -3920,8 +4012,10 @@ export const PhoneChat: React.FC = () => {
   const loadSupportData = useCallback(async () => {
     const statusCacheKey = getPhoneDailyCacheKey('phone-chat', 'whatsapp-status', locationId || 'default')
     const calendarsCacheKey = getPhoneDailyCacheKey('phone-chat', 'calendars', locationId || 'default')
+    const productsCacheKey = getPhoneDailyCacheKey('phone-chat', 'agent-products', locationId || 'default')
     const cachedStatus = readPhoneDailyCache<WhatsAppApiStatus>(statusCacheKey)
     const cachedCalendars = readPhoneDailyCache<Calendar[]>(calendarsCacheKey)
+    const cachedProducts = readPhoneDailyCache<ProductItem[]>(productsCacheKey)
     const applyCalendars = (items: Calendar[]) => {
       const availableItems = items.filter((calendar) => calendar.isActive !== false)
       setCalendars(availableItems)
@@ -3933,16 +4027,31 @@ export const PhoneChat: React.FC = () => {
       ))
       return availableItems
     }
+    const applyProducts = (items: ProductItem[]) => {
+      const availableItems = items.filter((product) => getProductId(product))
+      setAgentProducts(availableItems)
+      return availableItems
+    }
 
     if (cachedStatus) setWhatsappStatus(cachedStatus.data)
     const cachedAvailableCalendars = cachedCalendars
       ? applyCalendars(Array.isArray(cachedCalendars.data) ? cachedCalendars.data : [])
       : []
+    const cachedAvailableProducts = cachedProducts
+      ? applyProducts(Array.isArray(cachedProducts.data) ? cachedProducts.data : [])
+      : []
     setCalendarsLoading(cachedAvailableCalendars.length === 0)
+    setAgentProductsLoading(cachedAvailableProducts.length === 0)
 
-    const [status, calendarItems] = await Promise.all([
+    const [status, calendarItems, productsResponse] = await Promise.all([
       whatsappApiService.getStatus().catch(() => null),
-      calendarsService.getCalendars(locationId, accessToken).catch(() => [])
+      calendarsService.getCalendars(locationId, accessToken).catch(() => []),
+      apiClient.get<{ products?: ProductItem[] }>('/products', {
+        params: {
+          limit: '100',
+          includePrices: 'true'
+        }
+      }).catch(() => null)
     ])
 
     if (status) {
@@ -3955,7 +4064,14 @@ export const PhoneChat: React.FC = () => {
     } else if (!cachedCalendars) {
       setCalendars([])
     }
+    if (productsResponse && Array.isArray(productsResponse.products)) {
+      const nextProducts = applyProducts(productsResponse.products)
+      writePhoneDailyCache(productsCacheKey, nextProducts, { maxEntryChars: 180_000 })
+    } else if (!cachedProducts) {
+      setAgentProducts([])
+    }
     setCalendarsLoading(false)
+    setAgentProductsLoading(false)
   }, [accessToken, defaultCalendarId, locationId])
 
   const loadTemplates = useCallback(async () => {
@@ -10578,37 +10694,18 @@ export const PhoneChat: React.FC = () => {
   }
 
   const agentObjectiveOptions: Array<{ value: ConversationalObjective; label: string }> = [
-    { value: 'citas', label: 'Cerrar citas' },
+    { value: 'citas', label: 'Agendar cita' },
     { value: 'ventas', label: 'Cerrar ventas' },
-    { value: 'datos', label: 'Conseguir datos específicos' },
+    { value: 'datos', label: 'Pedir datos' },
     { value: 'filtrar', label: 'Filtrar curiosos' },
-    { value: 'detectar', label: 'Detectar prospectos listos' },
-    { value: 'custom', label: 'Objetivo personalizado' }
+    { value: 'custom', label: 'Objetivo propio' }
   ]
-
-  const agentSuccessActionLabels: Record<ConversationalSuccessAction, string> = {
-    book_appointment: 'Pasar a un humano',
-    ready_for_human: 'Pasar a un humano',
-    ready_to_buy: 'Pasar a un humano',
-    internal_signal: 'Pasar a un humano',
-    none: 'Pasar a un humano'
-  }
-
-  // Acciones coherentes con cada objetivo (mismo criterio que la config web)
-  const agentActionsByObjective: Record<ConversationalObjective, ConversationalSuccessAction[]> = {
-    citas: ['ready_for_human'],
-    ventas: ['ready_for_human'],
-    datos: ['ready_for_human'],
-    filtrar: ['ready_for_human'],
-    detectar: ['ready_for_human'],
-    custom: ['ready_for_human']
-  }
 
   const agentSignalLabels: Record<string, string> = {
     ready_for_human: 'Pasar a humano',
     ready_to_schedule: 'Pasar a humano',
-    ready_to_buy: 'Pasar a humano',
-    appointment_booked: 'Pasar a humano',
+    ready_to_buy: 'Link de pago enviado',
+    appointment_booked: 'Cita agendada',
     discarded: 'Descartada'
   }
 
@@ -10675,15 +10772,17 @@ export const PhoneChat: React.FC = () => {
 
     const readyHumanCount = agentPriorityStates.length
     const selectedAgentDef = agentDefs.find((agent) => agent.id === selectedAgentId) || agentDefs[0] || null
-    const selectedAgentActions = selectedAgentDef
-      ? agentActionsByObjective[selectedAgentDef.objective] || agentActionsByObjective.custom
-      : []
     const selectedObjectiveLabel = selectedAgentDef
       ? agentObjectiveOptions.find((option) => option.value === selectedAgentDef.objective)?.label || 'Objetivo'
       : 'Sin agente'
     const selectedAgentModelValue = selectedAgentDef ? getKnownAIModel(selectedAgentDef.model || DEFAULT_AI_MODEL) : DEFAULT_AI_MODEL
     const responseDelay = selectedAgentDef ? getPhoneAgentResponseDelay(selectedAgentDef) : DEFAULT_PHONE_AGENT_RESPONSE_DELAY
     const replyDelivery = selectedAgentDef ? getPhoneAgentReplyDelivery(selectedAgentDef) : DEFAULT_PHONE_AGENT_REPLY_DELIVERY
+    const goalWorkflow = selectedAgentDef ? getPhoneAgentGoalWorkflow(selectedAgentDef) : DEFAULT_PHONE_AGENT_GOAL_WORKFLOW
+    const selectedSalesProduct = agentProducts.find((product) => getProductId(product) === goalWorkflow.sales.productId) || null
+    const selectedSalesPrice = selectedSalesProduct
+      ? (selectedSalesProduct.prices || []).find((price) => getPriceId(price) === goalWorkflow.sales.priceId) || getPrimaryPrice(selectedSalesProduct)
+      : null
 
     const saveSelectedAgentPatch = (patch: ConversationalAgentDefInput) => {
       if (!selectedAgentDef) return
@@ -10696,6 +10795,70 @@ export const PhoneChat: React.FC = () => {
 
     const updateReplyDelivery = (patch: Partial<AgentReplyDeliveryConfig>) => {
       saveSelectedAgentPatch({ replyDelivery: { ...replyDelivery, ...patch } })
+    }
+
+    const mergeGoalWorkflow = (patch: Partial<AgentGoalWorkflowConfig>): AgentGoalWorkflowConfig => ({
+      ...goalWorkflow,
+      ...patch,
+      appointments: {
+        ...goalWorkflow.appointments,
+        ...((patch.appointments || {}) as Partial<AgentGoalWorkflowConfig['appointments']>)
+      },
+      sales: {
+        ...goalWorkflow.sales,
+        ...((patch.sales || {}) as Partial<AgentGoalWorkflowConfig['sales']>)
+      },
+      data: {
+        ...goalWorkflow.data,
+        ...((patch.data || {}) as Partial<AgentGoalWorkflowConfig['data']>)
+      },
+      qualification: {
+        ...goalWorkflow.qualification,
+        ...((patch.qualification || {}) as Partial<AgentGoalWorkflowConfig['qualification']>)
+      }
+    })
+
+    const updateGoalWorkflow = (patch: Partial<AgentGoalWorkflowConfig>) => {
+      saveSelectedAgentPatch({ goalWorkflow: mergeGoalWorkflow(patch) })
+    }
+
+    const updateGoalWorkflowDraft = (patch: Partial<AgentGoalWorkflowConfig>) => {
+      if (!selectedAgentDef) return
+      updateAgentDraft(selectedAgentDef.id, { goalWorkflow: mergeGoalWorkflow(patch) })
+    }
+
+    const updateAppointmentOwner = (owner: AgentGoalWorkflowConfig['appointments']['owner']) => {
+      const calendarId = owner === 'ai'
+        ? goalWorkflow.appointments.calendarId || selectedAgentDef?.defaultCalendarId || calendars[0]?.id || null
+        : goalWorkflow.appointments.calendarId
+      saveSelectedAgentPatch({
+        goalWorkflow: mergeGoalWorkflow({ appointments: { ...goalWorkflow.appointments, owner, calendarId } }),
+        successAction: owner === 'ai' ? 'book_appointment' : 'ready_for_human',
+        defaultCalendarId: owner === 'ai' ? calendarId : selectedAgentDef?.defaultCalendarId || null
+      })
+    }
+
+    const updateSalesOwner = (owner: AgentGoalWorkflowConfig['sales']['owner']) => {
+      saveSelectedAgentPatch({
+        goalWorkflow: mergeGoalWorkflow({ sales: { ...goalWorkflow.sales, owner } }),
+        successAction: owner === 'ai' ? 'ready_to_buy' : 'ready_for_human'
+      })
+    }
+
+    const updateSalesProduct = (productId: string) => {
+      const product = agentProducts.find((item) => getProductId(item) === productId) || null
+      const price = getPrimaryPrice(product)
+      updateGoalWorkflow({
+        sales: {
+          ...goalWorkflow.sales,
+          productId: product ? getProductId(product) : '',
+          priceId: getPriceId(price),
+          productName: product?.name || '',
+          priceName: price?.name || '',
+          amount: price ? getPriceAmount(price) : null,
+          currency: price?.currency || product?.currency || ''
+        }
+      })
     }
 
     const renderAgentOrderControls = (agent: ConversationalAgentDef) => (
@@ -10731,6 +10894,238 @@ export const PhoneChat: React.FC = () => {
         </label>
       </section>
     )
+
+    const renderGoalWorkflowControls = (agent: ConversationalAgentDef) => {
+      if (agent.objective === 'citas') {
+        return (
+          <section className={styles.agentMenuSection} aria-label="Flujo de agenda">
+            <div className={styles.agentMenuSectionHeader}>
+              <span>Agenda</span>
+              <small>{goalWorkflow.appointments.owner === 'ai' ? 'La IA agenda' : 'Pasa a humano'}</small>
+            </div>
+            <label className={styles.agentMenuField}>
+              <span>Quién quieres que lo agende</span>
+              <PhoneSelect
+                value={goalWorkflow.appointments.owner}
+                onChange={(value) => updateAppointmentOwner(value as AgentGoalWorkflowConfig['appointments']['owner'])}
+                ariaLabel="Quién agenda la cita"
+                options={PHONE_AGENT_OWNER_OPTIONS}
+                title="Agenda"
+                placeholder="Quién agenda"
+                disabled={agentConfigSaving}
+                buttonClassName={styles.agentMenuSelectButton}
+              />
+            </label>
+
+            {goalWorkflow.appointments.owner === 'ai' ? (
+              <div className={styles.agentGoalPanel}>
+                <label className={styles.agentMenuField}>
+                  <span>Calendario</span>
+                  <PhoneSelect
+                    value={goalWorkflow.appointments.calendarId || agent.defaultCalendarId || ''}
+                    onChange={(value) => {
+                      const calendarId = value || null
+                      saveSelectedAgentPatch({
+                        goalWorkflow: mergeGoalWorkflow({ appointments: { ...goalWorkflow.appointments, calendarId } }),
+                        defaultCalendarId: calendarId,
+                        successAction: 'book_appointment'
+                      })
+                    }}
+                    ariaLabel="Calendario para agendar con IA"
+                    options={[
+                      { value: '', label: calendarsLoading ? 'Cargando calendarios...' : 'Elegir calendario activo' },
+                      ...calendars.map((calendar) => ({ value: calendar.id, label: calendar.name }))
+                    ]}
+                    title="Calendario"
+                    placeholder="Calendario"
+                    disabled={agentConfigSaving || calendarsLoading || calendars.length === 0}
+                    buttonClassName={styles.agentMenuSelectButton}
+                  />
+                </label>
+                <p className={styles.agentMenuHint}>
+                  La IA revisa horarios reales, confirma el horario con la persona y agenda en este calendario.
+                </p>
+              </div>
+            ) : (
+              <p className={styles.agentMenuHint}>
+                Cuando la persona quiera cita, el chat sube como prioridad para que un humano lo agende.
+              </p>
+            )}
+          </section>
+        )
+      }
+
+      if (agent.objective === 'ventas') {
+        const productOptions = [
+          { value: '', label: agentProductsLoading ? 'Cargando productos...' : 'Elegir producto del CRM' },
+          ...agentProducts.map((product) => ({ value: getProductId(product), label: product.name }))
+        ]
+        const priceOptions = selectedSalesProduct
+          ? [
+              { value: '', label: 'Precio base' },
+              ...(selectedSalesProduct.prices || []).map((price) => ({
+                value: getPriceId(price),
+                label: `${price.name || 'Precio'} · ${formatCurrency(getPriceAmount(price), price.currency || selectedSalesProduct.currency || 'MXN')}`
+              }))
+            ]
+          : [{ value: '', label: 'Selecciona producto primero' }]
+
+        return (
+          <section className={styles.agentMenuSection} aria-label="Flujo de ventas">
+            <div className={styles.agentMenuSectionHeader}>
+              <span>Venta</span>
+              <small>{goalWorkflow.sales.owner === 'ai' ? 'IA cobra' : 'Humano cobra'}</small>
+            </div>
+            <label className={styles.agentMenuField}>
+              <span>Quién cierra la venta</span>
+              <PhoneSelect
+                value={goalWorkflow.sales.owner}
+                onChange={(value) => updateSalesOwner(value as AgentGoalWorkflowConfig['sales']['owner'])}
+                ariaLabel="Quién cierra la venta"
+                options={PHONE_AGENT_OWNER_OPTIONS}
+                title="Venta"
+                placeholder="Quién cobra"
+                disabled={agentConfigSaving}
+                buttonClassName={styles.agentMenuSelectButton}
+              />
+            </label>
+
+            {goalWorkflow.sales.owner === 'ai' ? (
+              <div className={styles.agentGoalPanel}>
+                <label className={styles.agentMenuField}>
+                  <span>Producto del CRM</span>
+                  <PhoneSelect
+                    value={goalWorkflow.sales.productId}
+                    onChange={updateSalesProduct}
+                    ariaLabel="Producto para vender con IA"
+                    options={productOptions}
+                    title="Producto"
+                    placeholder="Producto"
+                    disabled={agentConfigSaving || agentProductsLoading || agentProducts.length === 0}
+                    buttonClassName={styles.agentMenuSelectButton}
+                  />
+                </label>
+                {selectedSalesProduct && (
+                  <label className={styles.agentMenuField}>
+                    <span>Precio</span>
+                    <PhoneSelect
+                      value={goalWorkflow.sales.priceId}
+                      onChange={(priceId) => {
+                        const price = (selectedSalesProduct.prices || []).find((item) => getPriceId(item) === priceId) || getPrimaryPrice(selectedSalesProduct)
+                        updateGoalWorkflow({
+                          sales: {
+                            ...goalWorkflow.sales,
+                            priceId: getPriceId(price),
+                            priceName: price?.name || '',
+                            amount: price ? getPriceAmount(price) : null,
+                            currency: price?.currency || selectedSalesProduct.currency || ''
+                          }
+                        })
+                      }}
+                      ariaLabel="Precio para vender con IA"
+                      options={priceOptions}
+                      title="Precio"
+                      placeholder="Precio"
+                      disabled={agentConfigSaving}
+                      buttonClassName={styles.agentMenuSelectButton}
+                    />
+                  </label>
+                )}
+                {selectedSalesProduct && selectedSalesPrice && (
+                  <div className={styles.agentGoalSummary}>
+                    <strong>{selectedSalesProduct.name}</strong>
+                    <span>
+                      {selectedSalesPrice.name || 'Precio'} · {formatCurrency(getPriceAmount(selectedSalesPrice), selectedSalesPrice.currency || selectedSalesProduct.currency || 'MXN')}
+                    </span>
+                  </div>
+                )}
+                <p className={styles.agentMenuHint}>
+                  La IA confirma el cobro y el canal antes de mandar el link de pago.
+                </p>
+              </div>
+            ) : (
+              <p className={styles.agentMenuHint}>
+                Cuando la persona esté lista para comprar, el chat sube para que un humano cobre.
+              </p>
+            )}
+          </section>
+        )
+      }
+
+      if (agent.objective === 'datos') {
+        return (
+          <section className={styles.agentMenuSection} aria-label="Flujo de datos">
+            <div className={styles.agentMenuSectionHeader}>
+              <span>Datos a pedir</span>
+              <small>Luego pasa a humano</small>
+            </div>
+            <PhoneTextArea
+              label="Cuáles datos debe pedir"
+              value={agent.requiredData || ''}
+              onChange={(value) => updateAgentDraft(agent.id, { requiredData: value })}
+              onBlur={() => saveSelectedAgentPatch({ requiredData: agent.requiredData || '' })}
+              placeholder={'Ejemplo:\n- Nombre completo\n- Servicio que le interesa\n- Presupuesto aproximado'}
+              rows={4}
+              disabled={agentConfigSaving}
+            />
+            <div className={styles.agentGoalSummary}>
+              <strong>Después de pedirlos</strong>
+              <span>El chat se pasa a humano con el resumen.</span>
+            </div>
+          </section>
+        )
+      }
+
+      if (agent.objective === 'filtrar') {
+        return (
+          <section className={styles.agentMenuSection} aria-label="Flujo de filtro">
+            <div className={styles.agentMenuSectionHeader}>
+              <span>Filtro de curiosos</span>
+              <small>Califica o descarta</small>
+            </div>
+            <PhoneTextArea
+              label="Qué preguntas debe hacer"
+              value={goalWorkflow.qualification.questions}
+              onChange={(value) => updateGoalWorkflowDraft({ qualification: { ...goalWorkflow.qualification, questions: value } })}
+              onBlur={() => saveSelectedAgentPatch({ goalWorkflow })}
+              placeholder={'Ejemplo:\n- Qué problema quiere resolver\n- Para cuándo lo necesita\n- Qué presupuesto trae'}
+              rows={4}
+              disabled={agentConfigSaving}
+            />
+            <PhoneTextArea
+              label="Qué lo califica"
+              value={goalWorkflow.qualification.qualifies}
+              onChange={(value) => updateGoalWorkflowDraft({ qualification: { ...goalWorkflow.qualification, qualifies: value } })}
+              onBlur={() => saveSelectedAgentPatch({ goalWorkflow })}
+              placeholder="Ejemplo: tiene necesidad real, presupuesto y quiere avanzar esta semana."
+              rows={3}
+              disabled={agentConfigSaving}
+            />
+            <PhoneTextArea
+              label="Qué lo descalifica"
+              value={goalWorkflow.qualification.disqualifies}
+              onChange={(value) => updateGoalWorkflowDraft({ qualification: { ...goalWorkflow.qualification, disqualifies: value } })}
+              onBlur={() => saveSelectedAgentPatch({ goalWorkflow })}
+              placeholder="Ejemplo: sólo pide gratis, no responde datos mínimos o está fuera del servicio."
+              rows={3}
+              disabled={agentConfigSaving}
+            />
+          </section>
+        )
+      }
+
+      return (
+        <section className={styles.agentMenuSection} aria-label="Flujo de objetivo propio">
+          <div className={styles.agentMenuSectionHeader}>
+            <span>Al cumplir</span>
+            <small>Pasar a humano</small>
+          </div>
+          <p className={styles.agentMenuHint}>
+            Cuando cumpla el objetivo propio, el chat se marca como prioridad para que el equipo lo tome.
+          </p>
+        </section>
+      )
+    }
 
     if (agentMenuSection === 'agents') {
       return (
@@ -10894,10 +11289,14 @@ export const PhoneChat: React.FC = () => {
                   value={selectedAgentDef.objective}
                   onChange={(value) => {
                     const objective = value as ConversationalObjective
-                    const allowed = agentActionsByObjective[objective] || agentActionsByObjective.custom
+                    const nextSuccessAction: ConversationalSuccessAction = objective === 'citas' && goalWorkflow.appointments.owner === 'ai'
+                      ? 'book_appointment'
+                      : objective === 'ventas' && goalWorkflow.sales.owner === 'ai'
+                      ? 'ready_to_buy'
+                      : 'ready_for_human'
                     saveSelectedAgentPatch({
                       objective,
-                      ...(allowed.includes(selectedAgentDef.successAction) ? {} : { successAction: allowed[0] })
+                      successAction: nextSuccessAction
                     })
                   }}
                   ariaLabel={`Objetivo de ${selectedAgentDef.name || 'agente conversacional'}`}
@@ -10919,23 +11318,9 @@ export const PhoneChat: React.FC = () => {
                   disabled={agentConfigSaving}
                 />
               )}
-              <label className={styles.agentMenuField}>
-                <span>Cuando cumpla el objetivo</span>
-                <PhoneSelect
-                  value={selectedAgentDef.successAction}
-                  onChange={(value) => saveSelectedAgentPatch({ successAction: value as ConversationalSuccessAction })}
-                  ariaLabel={`Acción al cumplir el objetivo de ${selectedAgentDef.name || 'agente conversacional'}`}
-                  options={selectedAgentActions.map((action) => ({ value: action, label: agentSuccessActionLabels[action] }))}
-                  title="Al cumplir el objetivo"
-                  placeholder="Acción"
-                  disabled={agentConfigSaving}
-                  buttonClassName={styles.agentMenuSelectButton}
-                />
-              </label>
-              <p className={styles.agentMenuHint}>
-                Cuando cumpla el objetivo se marca como prioridad para que un humano lo atienda.
-              </p>
             </section>
+
+            {renderGoalWorkflowControls(selectedAgentDef)}
 
             {renderAgentOrderControls(selectedAgentDef)}
 
@@ -11117,15 +11502,6 @@ export const PhoneChat: React.FC = () => {
                 <span>Qué debe cuidar</span>
                 <small>Instrucciones</small>
               </div>
-              <PhoneTextArea
-                label="Datos que debe pedir"
-                value={selectedAgentDef.requiredData || ''}
-                onChange={(value) => updateAgentDraft(selectedAgentDef.id, { requiredData: value })}
-                onBlur={() => saveSelectedAgentPatch({ requiredData: selectedAgentDef.requiredData || '' })}
-                placeholder={'Ejemplo:\n- Nombre completo\n- Servicio que le interesa'}
-                rows={3}
-                disabled={agentConfigSaving}
-              />
               <PhoneTextArea
                 label="Cuándo pasar al equipo"
                 value={selectedAgentDef.handoffRules || ''}

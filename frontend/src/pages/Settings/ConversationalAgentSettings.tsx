@@ -34,24 +34,22 @@ const objectiveOptions: Array<{ value: ConversationalObjective; label: string; d
   { value: 'ventas', label: 'Cerrar ventas', description: 'Empuja la conversación hacia una compra real.' },
   { value: 'datos', label: 'Pedir datos', description: 'Pide lo que falta, sin repetir lo que ya sabe.' },
   { value: 'filtrar', label: 'Filtrar curiosos', description: 'Separa gente interesada de quien nomás anda viendo.' },
-  { value: 'detectar', label: 'Detectar listos', description: 'Avísale al equipo cuando alguien ya trae intención.' },
   { value: 'custom', label: 'Objetivo propio', description: 'Escribe una meta específica para este agente.' }
 ]
 
 const successActionLabels: Record<ConversationalSuccessAction, { label: string; description: string }> = {
-  book_appointment: { label: 'Pasar a un humano', description: 'En el chat aparecerá como prioridad en rojo para que el equipo lo atienda.' },
+  book_appointment: { label: 'Que agende la IA', description: 'La IA revisa disponibilidad real y agenda cuando la persona confirma horario.' },
   ready_for_human: { label: 'Pasar a un humano', description: 'En el chat aparecerá como prioridad en rojo para que el equipo lo atienda.' },
-  ready_to_buy: { label: 'Pasar a un humano', description: 'En el chat aparecerá como prioridad en rojo para que el equipo lo atienda.' },
+  ready_to_buy: { label: 'Que mande link de pago', description: 'La IA confirma el cobro y crea el link de pago si el contacto acepta.' },
   internal_signal: { label: 'Pasar a un humano', description: 'En el chat aparecerá como prioridad en rojo para que el equipo lo atienda.' },
   none: { label: 'Pasar a un humano', description: 'En el chat aparecerá como prioridad en rojo para que el equipo lo atienda.' }
 }
 
 const actionsByObjective: Record<ConversationalObjective, ConversationalSuccessAction[]> = {
-  citas: ['ready_for_human'],
-  ventas: ['ready_for_human'],
+  citas: ['ready_for_human', 'book_appointment'],
+  ventas: ['ready_for_human', 'ready_to_buy'],
   datos: ['ready_for_human'],
   filtrar: ['ready_for_human'],
-  detectar: ['ready_for_human'],
   custom: ['ready_for_human']
 }
 
