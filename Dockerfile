@@ -22,6 +22,7 @@ RUN npm ci --omit=dev --no-audit --no-fund
 # --- Imagen final ---
 FROM node:22-bookworm-slim
 ENV NODE_ENV=production
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 # Versión generada por el workflow en cada push (v1.0.<build>); la expone
 # /health y /api/health y se muestra en el menú de usuario de la app.
 ARG APP_VERSION=0.0.0
