@@ -23,14 +23,12 @@ type VariableFieldDraft = {
   label: string
   fieldKey: string
   value: string
-  description: string
 }
 
 const emptyDraft = (): VariableFieldDraft => ({
   label: '',
   fieldKey: '',
-  value: '',
-  description: ''
+  value: ''
 })
 
 const normalizeFieldKey = (value: string) => {
@@ -65,7 +63,6 @@ export const VariableFields: React.FC = () => {
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingField, setEditingField] = useState<VariableField | null>(null)
   const [draft, setDraft] = useState<VariableFieldDraft>(emptyDraft())
-  const [keyTouched, setKeyTouched] = useState(false)
 
   const loadFields = async () => {
     setLoading(true)
@@ -92,8 +89,7 @@ export const VariableFields: React.FC = () => {
         field.label,
         field.fieldKey,
         field.parameter,
-        field.value,
-        field.description
+        field.value
       ].some(value => String(value || '').toLowerCase().includes(query))
     })
   }, [fields, search])
@@ -105,7 +101,6 @@ export const VariableFields: React.FC = () => {
   const openCreateEditor = () => {
     setEditingField(null)
     setDraft(emptyDraft())
-    setKeyTouched(false)
     setEditorOpen(true)
   }
 
@@ -114,10 +109,8 @@ export const VariableFields: React.FC = () => {
     setDraft({
       label: field.label,
       fieldKey: field.fieldKey,
-      value: field.value || '',
-      description: field.description || ''
+      value: field.value || ''
     })
-    setKeyTouched(true)
     setEditorOpen(true)
   }
 
@@ -126,7 +119,6 @@ export const VariableFields: React.FC = () => {
     setEditorOpen(false)
     setEditingField(null)
     setDraft(emptyDraft())
-    setKeyTouched(false)
   }
 
   const copyText = async (value: string, label: string) => {
@@ -139,14 +131,16 @@ export const VariableFields: React.FC = () => {
   }
 
   const handleLabelChange = (value: string) => {
-    const patch: Partial<VariableFieldDraft> = { label: value }
-    if (!editingField && !keyTouched) patch.fieldKey = normalizeFieldKey(value)
-    patchDraft(patch)
+    setDraft(current => ({
+      ...current,
+      label: value,
+      fieldKey: editingField ? current.fieldKey : normalizeFieldKey(value)
+    }))
   }
 
   const buildPayload = (): SaveVariableFieldInput | null => {
     const label = draft.label.trim()
-    const fieldKey = normalizeFieldKey(draft.fieldKey)
+    const fieldKey = editingField ? normalizeFieldKey(draft.fieldKey) : normalizeFieldKey(label)
     if (!label) {
       showToast('warning', 'Falta nombre', 'Ponle un nombre al campo variable.')
       return null
@@ -158,8 +152,7 @@ export const VariableFields: React.FC = () => {
     return {
       label,
       fieldKey,
-      value: draft.value,
-      description: draft.description.trim()
+      value: draft.value
     }
   }
 
@@ -274,7 +267,6 @@ export const VariableFields: React.FC = () => {
                     <tr key={field.id}>
                       <td>
                         <strong>{field.label}</strong>
-                        {field.description && <span>{field.description}</span>}
                       </td>
                       <td><code>{field.parameter || variableParameter(field)}</code></td>
                       <td><code>{field.value || '-'}</code></td>
@@ -318,21 +310,7 @@ export const VariableFields: React.FC = () => {
               <label className={styles.field}>
                 <span>Nombre visible</span>
                 <input value={draft.label} placeholder="Ej. Nombre del negocio" onChange={(event) => handleLabelChange(event.target.value)} />
-              </label>
-
-              <label className={styles.field}>
-                <span>Parámetro</span>
-                <input
-                  value={draft.fieldKey}
-                  placeholder="nombre_del_negocio"
-                  disabled={Boolean(editingField)}
-                  onChange={(event) => {
-                    if (editingField) return
-                    setKeyTouched(true)
-                    patchDraft({ fieldKey: normalizeFieldKey(event.target.value) })
-                  }}
-                />
-                <small>{variableParameter(draft)}</small>
+                <small className={styles.parameterPreview}>Parámetro: <code>{variableParameter({ fieldKey: draft.fieldKey || normalizeFieldKey(draft.label) })}</code></small>
               </label>
 
               <label className={styles.field}>
@@ -345,15 +323,6 @@ export const VariableFields: React.FC = () => {
                 />
               </label>
 
-              <label className={styles.field}>
-                <span>Descripción opcional</span>
-                <textarea
-                  rows={3}
-                  value={draft.description}
-                  placeholder="Para que tu equipo sepa cuándo usarlo."
-                  onChange={(event) => patchDraft({ description: event.target.value })}
-                />
-              </label>
             </div>
 
             <div className={styles.editorActions}>

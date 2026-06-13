@@ -677,6 +677,24 @@
   cursor: not-allowed;
 }
 
+.parameterPreview {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.parameterPreview code {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--color-text-primary);
+  font-size: 12px;
+}
+
 .typeHint {
   display: flex;
   align-items: center;

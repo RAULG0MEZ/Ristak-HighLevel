@@ -32,7 +32,6 @@ type FolderFilter = 'all' | 'unfiled' | string
 type FieldDraft = {
   label: string
   fieldKey: string
-  description: string
   dataType: CustomFieldDataType
   folderId: string
   optionsText: string
@@ -61,7 +60,6 @@ const choiceTypes = new Set<CustomFieldDataType>(['radio', 'dropdown', 'checkbox
 const emptyDraft = (folderId = ''): FieldDraft => ({
   label: '',
   fieldKey: '',
-  description: '',
   dataType: 'text',
   folderId,
   optionsText: ''
@@ -129,7 +127,6 @@ export const CustomFields: React.FC = () => {
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingField, setEditingField] = useState<CustomFieldDefinition | null>(null)
   const [draft, setDraft] = useState<FieldDraft>(emptyDraft())
-  const [keyTouched, setKeyTouched] = useState(false)
   const [selectedFieldIds, setSelectedFieldIds] = useState<Set<string>>(() => new Set())
   const [movingFields, setMovingFields] = useState(false)
   const [draggingFieldIds, setDraggingFieldIds] = useState<string[]>([])
@@ -183,7 +180,6 @@ export const CustomFields: React.FC = () => {
         field.label,
         field.fieldKey,
         customFieldParameter(field),
-        field.description,
         field.folderName,
         getTypeLabel(field.dataType)
       ].some(value => String(value || '').toLowerCase().includes(query))
@@ -208,7 +204,6 @@ export const CustomFields: React.FC = () => {
     const folderId = activeFolder !== 'all' && activeFolder !== 'unfiled' ? activeFolder : ''
     setEditingField(null)
     setDraft(emptyDraft(folderId))
-    setKeyTouched(false)
     setEditorOpen(true)
   }
 
@@ -222,12 +217,10 @@ export const CustomFields: React.FC = () => {
     setDraft({
       label: field.label,
       fieldKey: field.fieldKey || field.key,
-      description: field.description || '',
       dataType: field.dataType,
       folderId: field.folderId || '',
       optionsText: optionsToText(field.options)
     })
-    setKeyTouched(true)
     setEditorOpen(true)
   }
 
@@ -235,7 +228,6 @@ export const CustomFields: React.FC = () => {
     setEditorOpen(false)
     setEditingField(null)
     setDraft(emptyDraft())
-    setKeyTouched(false)
   }
 
   const openFolderCreator = (options: { moveSelected?: boolean } = {}) => {
@@ -268,13 +260,13 @@ export const CustomFields: React.FC = () => {
     setDraft(current => ({
       ...current,
       label: value,
-      fieldKey: keyTouched ? current.fieldKey : normalizeFieldKey(value)
+      fieldKey: editingField ? current.fieldKey : normalizeFieldKey(value)
     }))
   }
 
   const buildPayload = (): SaveCustomFieldInput | null => {
     const label = draft.label.trim()
-    const fieldKey = normalizeFieldKey(draft.fieldKey || draft.label)
+    const fieldKey = editingField ? normalizeFieldKey(draft.fieldKey) : normalizeFieldKey(label)
     const options = choiceTypes.has(draft.dataType) ? optionLinesToOptions(draft.optionsText) : []
 
     if (!label) {
@@ -296,7 +288,6 @@ export const CustomFields: React.FC = () => {
       label,
       fieldKey,
       dataType: draft.dataType,
-      description: draft.description.trim(),
       folderId: draft.folderId || undefined,
       fieldGroup: draft.folderId ? getFolderName(folders, draft.folderId) : 'general',
       options,
@@ -693,7 +684,6 @@ export const CustomFields: React.FC = () => {
                       </td>
                       <td>
                         <strong>{field.label}</strong>
-                        {field.description && <span>{field.description}</span>}
                       </td>
                       <td><code>{customFieldParameter(field)}</code></td>
                       <td><span className={styles.typePill}>{getTypeLabel(field.dataType)}</span></td>
@@ -744,21 +734,7 @@ export const CustomFields: React.FC = () => {
               <label className={styles.field}>
                 <span>Nombre visible</span>
                 <input value={draft.label} placeholder="Ej. Presupuesto mensual" onChange={(event) => handleLabelChange(event.target.value)} />
-              </label>
-
-              <label className={styles.field}>
-                <span>Parámetro</span>
-                <input
-                  value={draft.fieldKey}
-                  placeholder="presupuesto_mensual"
-                  disabled={Boolean(editingField)}
-                  onChange={(event) => {
-                    if (editingField) return
-                    setKeyTouched(true)
-                    patchDraft({ fieldKey: normalizeFieldKey(event.target.value) })
-                  }}
-                />
-                <small>{editingField ? `Este parámetro ya quedó fijo: ${customFieldParameter({ fieldKey: draft.fieldKey, key: draft.fieldKey })}` : `Se usará como ${customFieldParameter({ fieldKey: draft.fieldKey || 'campo_personalizado', key: draft.fieldKey || 'campo_personalizado' })}`}</small>
+                <small className={styles.parameterPreview}>Parámetro: <code>{customFieldParameter({ fieldKey: draft.fieldKey || normalizeFieldKey(draft.label), key: draft.fieldKey || normalizeFieldKey(draft.label) })}</code></small>
               </label>
 
               <label className={styles.field}>
@@ -789,18 +765,6 @@ export const CustomFields: React.FC = () => {
                       <option key={folder.id} value={folder.id}>{folder.name}</option>
                     ))}
                   </CustomSelect>
-                </label>
-              )}
-
-              {!editingField && (
-                <label className={styles.field}>
-                  <span>Descripcion opcional</span>
-                  <textarea
-                    rows={3}
-                    value={draft.description}
-                    placeholder="Para que el equipo sepa cuando usarlo."
-                    onChange={(event) => patchDraft({ description: event.target.value })}
-                  />
                 </label>
               )}
 

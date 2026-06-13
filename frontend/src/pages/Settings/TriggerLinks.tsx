@@ -25,13 +25,11 @@ import styles from './CustomFields.module.css'
 type TriggerLinkDraft = {
   name: string
   destinationUrl: string
-  description: string
 }
 
 const emptyDraft = (): TriggerLinkDraft => ({
   name: '',
-  destinationUrl: '',
-  description: ''
+  destinationUrl: ''
 })
 
 const formatDateTime = (value?: string | null) => {
@@ -82,8 +80,7 @@ export const TriggerLinks: React.FC = () => {
         link.publicId,
         triggerLinkParameter(link),
         link.publicUrl,
-        link.destinationUrl,
-        link.description
+        link.destinationUrl
       ].some(value => String(value || '').toLowerCase().includes(query))
     })
   }, [links, search])
@@ -102,8 +99,7 @@ export const TriggerLinks: React.FC = () => {
     setEditingLink(link)
     setDraft({
       name: link.name,
-      destinationUrl: link.destinationUrl,
-      description: link.description || ''
+      destinationUrl: link.destinationUrl
     })
     setEditorOpen(true)
   }
@@ -137,8 +133,7 @@ export const TriggerLinks: React.FC = () => {
     }
     return {
       name,
-      destinationUrl,
-      description: draft.description.trim()
+      destinationUrl
     }
   }
 
@@ -312,16 +307,6 @@ export const TriggerLinks: React.FC = () => {
                 <span>Destino final</span>
                 <input value={draft.destinationUrl} placeholder="https://tusitio.com/promo.pdf" onChange={(event) => patchDraft({ destinationUrl: event.target.value })} />
                 <small>Puede ser una URL externa, un PDF, una página o una ruta interna que empiece con /.</small>
-              </label>
-
-              <label className={styles.field}>
-                <span>Descripción opcional</span>
-                <textarea
-                  rows={3}
-                  value={draft.description}
-                  placeholder="Para que tu equipo sepa dónde se usa."
-                  onChange={(event) => patchDraft({ description: event.target.value })}
-                />
               </label>
 
               {editingLink && (
