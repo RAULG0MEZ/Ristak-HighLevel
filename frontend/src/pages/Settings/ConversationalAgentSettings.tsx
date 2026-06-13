@@ -166,16 +166,16 @@ interface SelectionToggleProps {
 
 const SelectionToggle: React.FC<SelectionToggleProps> = ({ checked, title, description, disabled, onChange }) => (
   <label className={`${styles.selectionToggle} ${checked ? styles.selectionToggleChecked : ''} ${disabled ? styles.selectionToggleDisabled : ''}`}>
-    <span className={styles.selectionToggleCopy}>
-      <strong>{title}</strong>
-      {description && <small>{description}</small>}
-    </span>
     <input
       type="checkbox"
       checked={checked}
       disabled={disabled}
       onChange={(event) => onChange(event.target.checked)}
     />
+    <span className={styles.selectionToggleCopy}>
+      <strong>{title}</strong>
+      {description && <small>{description}</small>}
+    </span>
   </label>
 )
 
@@ -1004,7 +1004,9 @@ export const ConversationalAgentSettings: React.FC = () => {
         }
       },
       'Eliminar',
-      'Cancelar'
+      'Cancelar',
+      undefined,
+      { typeToConfirm: 'ELIMINAR' }
     )
   }
 

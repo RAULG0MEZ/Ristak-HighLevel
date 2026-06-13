@@ -371,11 +371,15 @@
 }
 
 .replyDeliveryControls {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
   align-items: flex-start;
-  flex-wrap: wrap;
   gap: 10px;
   min-width: 0;
+}
+
+.replyDeliveryControls .selectionToggle {
+  min-height: 42px;
 }
 
 .replyDeliveryToggle {
@@ -389,15 +393,15 @@
 }
 
 .delayNumberField {
-  flex: 0 0 116px;
+  min-width: 0;
 }
 
 .replyPartSizeField {
-  flex: 0 0 142px;
+  min-width: 0;
 }
 
 .delayUnitField {
-  flex: 0 0 150px;
+  min-width: 0;
 }
 
 .delayNumberInput {
@@ -622,11 +626,11 @@
 
 .selectionToggle {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: flex-start;
   gap: 12px;
   min-width: 0;
-  min-height: 52px;
+  min-height: 50px;
   padding: 10px 12px;
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 8px;
@@ -680,7 +684,7 @@
   min-width: 18px !important;
   height: 18px !important;
   min-height: 18px !important;
-  margin: 0 !important;
+  margin: 1px 0 0 !important;
   border: 1.5px solid rgba(148, 163, 184, 0.42) !important;
   border-radius: 999px !important;
   background: var(--color-background-primary) !important;
@@ -1092,6 +1096,9 @@
   display: grid;
   justify-items: start;
   gap: 10px;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .emptyAgentDirectory h3,
@@ -1110,6 +1117,7 @@
   color: var(--color-text-secondary);
   font-size: 13px;
   line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .agentDetailTopbar {
@@ -1119,12 +1127,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 16px;
-  padding: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--color-background-secondary) 94%, transparent);
-  box-shadow: 0 10px 24px -22px rgba(15, 23, 42, 0.45);
+  min-height: 40px;
+  margin-bottom: 12px;
+  padding: 0;
 }
 
 .agentStickyActions {
@@ -1149,11 +1154,17 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);
   align-items: start;
-  gap: 18px;
+  gap: 20px;
 }
 
 .agentConfigColumn,
 .agentTestColumn {
+  min-width: 0;
+}
+
+.agentConfigColumn {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
 }
 
@@ -1182,14 +1193,16 @@
 
 .agentOpsGrid {
   display: grid;
-  grid-template-columns: minmax(220px, 420px) minmax(260px, 1fr);
+  grid-template-columns: minmax(220px, 360px) minmax(280px, 1fr);
   align-items: start;
   gap: 14px;
 }
 
 .agentOpsToggles {
   display: grid;
-  gap: 7px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+  min-width: 0;
 }
 
 .agentTestPanel {
@@ -1202,7 +1215,7 @@
   padding: 14px;
   border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 8px;
-  background: rgba(148, 163, 184, 0.045);
+  background: var(--color-background-secondary);
 }
 
 .agentTestHeader {
@@ -1267,6 +1280,8 @@
   align-items: center;
   gap: 12px;
   min-width: 0;
+  padding: 8px 0 14px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
 }
 
 .agentCardToggle {
@@ -1295,14 +1310,14 @@
 .agentNameInput {
   flex: 1;
   min-width: 0;
-  height: 38px;
-  border: 1px solid transparent;
+  height: 40px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
   border-radius: 8px;
-  padding: 0 10px;
+  padding: 0 12px;
   font-size: 15px;
   font-weight: 700;
   color: var(--color-text-primary);
-  background: transparent;
+  background: var(--color-background-primary);
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
@@ -1329,8 +1344,9 @@
 }
 
 .agentCardSummary {
-  margin: 10px 0 0;
+  margin: 10px 0 2px;
   font-size: 13px;
+  line-height: 1.45;
   color: var(--color-text-tertiary);
 }
 
@@ -1671,8 +1687,9 @@
 }
 
 .agentTestPanel .testChatBox {
-  min-height: 420px;
-  max-height: calc(100vh - 260px);
+  height: clamp(260px, calc(100vh - 360px), 360px);
+  min-height: 0;
+  max-height: none;
 }
 
 .testChatEmpty {
