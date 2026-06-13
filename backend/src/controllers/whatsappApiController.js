@@ -1,6 +1,9 @@
 import {
   connectWhatsAppQrForPhone,
   connectWhatsAppApi,
+  completeMetaDirectConnection,
+  createMetaDirectConnectUrl,
+  disconnectMetaDirectConnection,
   disconnectWhatsAppQrForPhone,
   disconnectWhatsAppApi,
   getWhatsAppApiStatus,
@@ -8,6 +11,7 @@ import {
   getWhatsAppApiWebhookPath,
   getWhatsAppQrForPhone,
   previewWhatsAppApiPhoneNumbers,
+  processMetaDirectWebhookRelay,
   processYCloudWhatsAppWebhook,
   refreshWhatsAppApi,
   resetWhatsAppApiCredentials,
@@ -16,7 +20,11 @@ import {
   sendWhatsAppApiImageMessage,
   sendWhatsAppApiTemplateMessage,
   sendWhatsAppApiTextMessage,
+  sendMetaDirectTestMessage,
+  setWhatsAppActiveProvider,
   setWhatsAppApiDefaultPhoneNumber,
+  syncMetaDirectHistory,
+  testMetaDirectConnection,
   rerouteWhatsAppPhoneNumberContacts,
   restoreWhatsAppPhoneNumberContacts
 } from '../services/whatsappApiService.js'
@@ -47,6 +55,15 @@ function getPublicBaseUrl(req) {
 
 function getWebhookUrl(req) {
   return `${getPublicBaseUrl(req)}${getWhatsAppApiWebhookPath()}`
+}
+
+function getInstallerSignatureHeaders(req) {
+  return {
+    signature: req.get('X-Ristak-Signature') || '',
+    signatureTimestamp: req.get('X-Ristak-Timestamp') || '',
+    signatureNonce: req.get('X-Ristak-Nonce') || '',
+    installationId: req.get('X-Ristak-Installation-Id') || ''
+  }
 }
 
 export async function getWhatsAppApiConnectionStatus(req, res) {
@@ -179,6 +196,124 @@ export async function resetWhatsAppApiCredentialsView(req, res) {
     res.status(500).json({
       success: false,
       error: 'No se pudieron limpiar las credenciales de WhatsApp_API'
+    })
+  }
+}
+
+export async function getMetaDirectConnectUrlView(req, res) {
+  try {
+    const data = await createMetaDirectConnectUrl({
+      appUrl: req.query?.appUrl || req.body?.appUrl || getPublicBaseUrl(req)
+    })
+    res.json({ success: true, data })
+  } catch (error) {
+    logger.error(`Error iniciando Meta directo: ${error.message}`)
+    res.status(400).json({
+      success: false,
+      error: error.message || 'No se pudo iniciar la conexión con Meta'
+    })
+  }
+}
+
+export async function completeMetaDirectConnectionView(req, res) {
+  try {
+    const data = await completeMetaDirectConnection({
+      payload: req.body || {},
+      rawBody: req.rawBody || JSON.stringify(req.body || {}),
+      headers: getInstallerSignatureHeaders(req)
+    })
+    res.json({ success: true, data })
+  } catch (error) {
+    logger.error(`Error completando Meta directo: ${error.message}`)
+    res.status(400).json({
+      success: false,
+      error: error.message || 'No se pudo completar la conexión con Meta'
+    })
+  }
+}
+
+export async function handleMetaDirectWebhookRelayView(req, res) {
+  try {
+    const data = await processMetaDirectWebhookRelay({
+      payload: req.body || {},
+      rawBody: req.rawBody || JSON.stringify(req.body || {}),
+      headers: getInstallerSignatureHeaders(req)
+    })
+    res.status(200).json({ success: true, data })
+  } catch (error) {
+    logger.error(`Error procesando relay Meta directo: ${error.message}`)
+    const statusCode = error.statusCode || (/firma|nonce|encabezados/i.test(error.message || '') ? 401 : 500)
+    res.status(statusCode).json({
+      success: false,
+      error: error.message || 'No se pudo procesar el relay de Meta'
+    })
+  }
+}
+
+export async function setWhatsAppActiveProviderView(req, res) {
+  try {
+    const data = await setWhatsAppActiveProvider({ provider: req.body?.provider })
+    res.json({ success: true, data })
+  } catch (error) {
+    logger.error(`Error cambiando proveedor WhatsApp: ${error.message}`)
+    res.status(400).json({
+      success: false,
+      error: error.message || 'No se pudo cambiar el proveedor de WhatsApp'
+    })
+  }
+}
+
+export async function testMetaDirectConnectionView(req, res) {
+  try {
+    const data = await testMetaDirectConnection()
+    res.json({ success: true, data })
+  } catch (error) {
+    logger.error(`Error probando Meta directo: ${error.message}`)
+    res.status(400).json({
+      success: false,
+      error: error.message || 'No se pudo probar Meta directo'
+    })
+  }
+}
+
+export async function syncMetaDirectHistoryView(req, res) {
+  try {
+    const data = await syncMetaDirectHistory()
+    res.json({ success: true, data })
+  } catch (error) {
+    logger.error(`Error sincronizando Meta directo: ${error.message}`)
+    res.status(400).json({
+      success: false,
+      error: error.message || 'No se pudo sincronizar Meta directo'
+    })
+  }
+}
+
+export async function disconnectMetaDirectConnectionView(req, res) {
+  try {
+    const data = await disconnectMetaDirectConnection()
+    res.json({ success: true, data })
+  } catch (error) {
+    logger.error(`Error desconectando Meta directo: ${error.message}`)
+    res.status(500).json({
+      success: false,
+      error: 'No se pudo desconectar Meta directo'
+    })
+  }
+}
+
+export async function sendMetaDirectTestMessageView(req, res) {
+  try {
+    const data = await sendMetaDirectTestMessage({
+      to: req.body?.to,
+      text: req.body?.text
+    })
+    res.json({ success: true, data })
+  } catch (error) {
+    logger.error(`Error enviando prueba Meta directo: ${error.message}`)
+    res.status(400).json({
+      success: false,
+      error: error.message || 'No se pudo enviar la prueba por Meta directo'
     })
   }
 }

@@ -1,14 +1,18 @@
 import express from 'express'
 import {
   cancelScheduledChatMessageView,
+  completeMetaDirectConnectionView,
   connectWhatsAppApiView,
   connectWhatsAppQrView,
   disconnectWhatsAppApiView,
+  disconnectMetaDirectConnectionView,
   disconnectWhatsAppQrView,
   getWhatsAppApiConnectionStatus,
+  getMetaDirectConnectUrlView,
   getWhatsAppApiTemplatesView,
   getWhatsAppQrView,
   previewWhatsAppApiPhoneNumbersView,
+  handleMetaDirectWebhookRelayView,
   refreshWhatsAppApiView,
   resetWhatsAppApiCredentialsView,
   listScheduledChatMessagesView,
@@ -18,7 +22,11 @@ import {
   sendWhatsAppApiImageMessageView,
   sendWhatsAppApiTemplateMessageView,
   sendWhatsAppApiTextMessageView,
+  sendMetaDirectTestMessageView,
+  setWhatsAppActiveProviderView,
   setWhatsAppApiDefaultPhoneNumberView,
+  syncMetaDirectHistoryView,
+  testMetaDirectConnectionView,
   rerouteWhatsAppPhoneNumberContactsView,
   restoreWhatsAppPhoneNumberContactsView
 } from '../controllers/whatsappApiController.js'
@@ -26,9 +34,18 @@ import { requireAuth } from '../middleware/authMiddleware.js'
 
 const router = express.Router()
 
+router.post('/meta/connect/complete', completeMetaDirectConnectionView)
+router.post('/meta/webhook-relay', handleMetaDirectWebhookRelayView)
+
 router.use(requireAuth)
 
 router.get('/status', getWhatsAppApiConnectionStatus)
+router.get('/meta/connect-url', getMetaDirectConnectUrlView)
+router.post('/meta/provider', setWhatsAppActiveProviderView)
+router.post('/meta/test', testMetaDirectConnectionView)
+router.post('/meta/messages/test', sendMetaDirectTestMessageView)
+router.post('/meta/sync-history', syncMetaDirectHistoryView)
+router.post('/meta/disconnect', disconnectMetaDirectConnectionView)
 router.post('/connect', connectWhatsAppApiView)
 router.post('/phone-numbers/preview', previewWhatsAppApiPhoneNumbersView)
 router.post('/phone-numbers/default', setWhatsAppApiDefaultPhoneNumberView)

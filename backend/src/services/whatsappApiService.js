@@ -28,8 +28,12 @@ import { logger } from '../utils/logger.js'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 const YCLOUD_API_BASE_URL = 'https://api.ycloud.com/v2'
+const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION || 'v22.0'
+const META_GRAPH_BASE_URL = `https://graph.facebook.com/${META_GRAPH_VERSION}`
 const SOURCE_NAME = 'WhatsApp_API'
 const PROVIDER_NAME = 'ycloud'
+const META_DIRECT_PROVIDER_NAME = 'meta_direct'
+const DEFAULT_INSTALLER_PUBLIC_URL = 'https://www.ristak.com'
 const WEBHOOK_DESCRIPTION = 'Ristak WhatsApp API'
 const GENERIC_CONTACT_NAME = 'Contacto WhatsApp_API'
 const WHATSAPP_IMAGE_UPLOAD_ROOT = join(__dirname, '../../uploads/whatsapp-images')
@@ -231,6 +235,24 @@ const CONFIG_KEYS = {
   phoneNumberId: 'whatsapp_api_phone_number_id',
   wabaId: 'whatsapp_api_waba_id',
   provider: 'whatsapp_api_provider',
+  metaStatus: 'whatsapp_meta_direct_status',
+  metaAppId: 'whatsapp_meta_direct_app_id',
+  metaBusinessId: 'whatsapp_meta_direct_business_id',
+  metaWabaId: 'whatsapp_meta_direct_waba_id',
+  metaPhoneNumberId: 'whatsapp_meta_direct_phone_number_id',
+  metaDisplayPhoneNumber: 'whatsapp_meta_direct_display_phone_number',
+  metaCoexistenceEnabled: 'whatsapp_meta_direct_coexistence_enabled',
+  metaSystemUserToken: 'whatsapp_meta_direct_system_user_token_encrypted',
+  metaWebhookMode: 'whatsapp_meta_direct_webhook_mode',
+  metaInstallerWebhookUrl: 'whatsapp_meta_direct_installer_webhook_url',
+  metaInstallerOAuthCallbackUrl: 'whatsapp_meta_direct_installer_oauth_callback_url',
+  metaConnectedAt: 'whatsapp_meta_direct_connected_at',
+  metaDisconnectedAt: 'whatsapp_meta_direct_disconnected_at',
+  metaLastWebhookReceivedAt: 'whatsapp_meta_direct_last_webhook_received_at',
+  metaLastRelayReceivedAt: 'whatsapp_meta_direct_last_relay_received_at',
+  metaLastError: 'whatsapp_meta_direct_last_error',
+  metaDatasetId: 'whatsapp_meta_direct_dataset_id',
+  metaAdAccountId: 'whatsapp_meta_direct_ad_account_id',
   webhookEndpointId: 'whatsapp_api_webhook_endpoint_id',
   webhookSecret: 'whatsapp_api_webhook_secret_encrypted',
   webhookUrl: 'whatsapp_api_webhook_url',
@@ -927,6 +949,170 @@ async function loadConfig({ includeSecrets = false } = {}) {
   }
 }
 
+function base64UrlEncode(value) {
+  return Buffer.from(value).toString('base64url')
+}
+
+function base64UrlDecode(value) {
+  return Buffer.from(String(value || ''), 'base64url').toString('utf8')
+}
+
+async function getLicenseRuntimeConfig({ appUrl } = {}) {
+  const [
+    licenseKey,
+    clientId,
+    installationId,
+    savedAppUrl
+  ] = await Promise.all([
+    getAppConfig('license_key'),
+    getAppConfig('license_client_id'),
+    getAppConfig('installation_id'),
+    getAppConfig('public_app_url')
+  ])
+
+  return {
+    licenseKey: cleanString(licenseKey || process.env.RISTAK_LICENSE_KEY || process.env.LICENSE_KEY),
+    clientId: cleanString(clientId || process.env.RISTAK_CLIENT_ID || process.env.CLIENT_ID || process.env.RENDER_SERVICE_ID || 'local'),
+    installationId: cleanString(installationId || process.env.RISTAK_INSTALLATION_ID || process.env.INSTALLATION_ID || process.env.RENDER_SERVICE_ID || 'local'),
+    appUrl: normalizePublicBaseUrl(appUrl || savedAppUrl || process.env.RENDER_EXTERNAL_URL || process.env.PUBLIC_URL || process.env.APP_URL || 'http://localhost:5173')
+  }
+}
+
+function signHmacHex(secret, value) {
+  return crypto.createHmac('sha256', cleanString(secret)).update(String(value || '')).digest('hex')
+}
+
+function encodeSignedState(payload, secret) {
+  const body = base64UrlEncode(JSON.stringify(payload || {}))
+  return `${body}.${signHmacHex(secret, body)}`
+}
+
+function decodeSignedState(state = '', secret = '') {
+  const [body, signature] = cleanString(state).split('.')
+  if (!body || !signature || !secret) throw new Error('Estado de conexión inválido')
+  const expected = signHmacHex(secret, body)
+  if (!timingSafeEqualText(expected, signature)) throw new Error('Estado de conexión alterado')
+  const payload = JSON.parse(base64UrlDecode(body))
+  if (Number(payload.exp || 0) && Date.now() > Number(payload.exp)) {
+    throw new Error('Estado de conexión expirado')
+  }
+  return payload
+}
+
+async function getMetaDirectHmacSecret() {
+  const runtime = await getLicenseRuntimeConfig()
+  if (!runtime.licenseKey) throw new Error('Falta la licencia local para firmar la conexión con Ristak')
+  return runtime.licenseKey
+}
+
+function timingSafeEqualText(left = '', right = '') {
+  const leftBuffer = Buffer.from(cleanString(left))
+  const rightBuffer = Buffer.from(cleanString(right))
+  if (leftBuffer.length !== rightBuffer.length) return false
+  return crypto.timingSafeEqual(leftBuffer, rightBuffer)
+}
+
+async function rememberSignedRequestNonce(nonce, purpose = 'meta_direct') {
+  const cleanNonce = cleanString(nonce)
+  if (!cleanNonce) throw new Error('Falta nonce de seguridad')
+  const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString()
+  await db.run(`
+    DELETE FROM whatsapp_meta_direct_nonces
+    WHERE created_at < ?
+  `, [cutoff]).catch(() => null)
+
+  const existing = await db.get('SELECT nonce FROM whatsapp_meta_direct_nonces WHERE nonce = ?', [cleanNonce]).catch(() => null)
+  if (existing) throw new Error('Nonce de seguridad repetido')
+  await db.run('INSERT INTO whatsapp_meta_direct_nonces (nonce, purpose) VALUES (?, ?)', [cleanNonce, purpose])
+}
+
+async function verifyInstallerSignedRequest({ rawBody = '', headers = {}, purpose = 'meta_direct' } = {}) {
+  const timestamp = cleanString(headers.signatureTimestamp || headers.timestamp)
+  const nonce = cleanString(headers.signatureNonce || headers.nonce)
+  const signature = cleanString(headers.signature)
+  if (!timestamp || !nonce || !signature) throw new Error('Faltan encabezados de firma de Ristak')
+
+  const timestampMs = Number(timestamp)
+  if (!Number.isFinite(timestampMs) || Math.abs(Date.now() - timestampMs) > 5 * 60 * 1000) {
+    throw new Error('Firma expirada')
+  }
+
+  const secret = await getMetaDirectHmacSecret()
+  const expected = signHmacHex(secret, `${timestamp}.${nonce}.${rawBody || ''}`)
+  if (!timingSafeEqualText(expected, signature)) throw new Error('Firma inválida de Ristak')
+  await rememberSignedRequestNonce(nonce, purpose)
+}
+
+async function loadMetaDirectConfig({ includeSecrets = false } = {}) {
+  const [
+    status,
+    appId,
+    businessId,
+    wabaId,
+    phoneNumberId,
+    displayPhoneNumber,
+    coexistenceEnabled,
+    webhookMode,
+    installerWebhookUrl,
+    installerOAuthCallbackUrl,
+    connectedAt,
+    disconnectedAt,
+    lastWebhookReceivedAt,
+    lastRelayReceivedAt,
+    lastError,
+    datasetId,
+    adAccountId,
+    token
+  ] = await Promise.all([
+    getAppConfig(CONFIG_KEYS.metaStatus),
+    getAppConfig(CONFIG_KEYS.metaAppId),
+    getAppConfig(CONFIG_KEYS.metaBusinessId),
+    getAppConfig(CONFIG_KEYS.metaWabaId),
+    getAppConfig(CONFIG_KEYS.metaPhoneNumberId),
+    getAppConfig(CONFIG_KEYS.metaDisplayPhoneNumber),
+    getAppConfig(CONFIG_KEYS.metaCoexistenceEnabled),
+    getAppConfig(CONFIG_KEYS.metaWebhookMode),
+    getAppConfig(CONFIG_KEYS.metaInstallerWebhookUrl),
+    getAppConfig(CONFIG_KEYS.metaInstallerOAuthCallbackUrl),
+    getAppConfig(CONFIG_KEYS.metaConnectedAt),
+    getAppConfig(CONFIG_KEYS.metaDisconnectedAt),
+    getAppConfig(CONFIG_KEYS.metaLastWebhookReceivedAt),
+    getAppConfig(CONFIG_KEYS.metaLastRelayReceivedAt),
+    getAppConfig(CONFIG_KEYS.metaLastError),
+    getAppConfig(CONFIG_KEYS.metaDatasetId),
+    getAppConfig(CONFIG_KEYS.metaAdAccountId),
+    includeSecrets ? getEncryptedConfig(CONFIG_KEYS.metaSystemUserToken) : Promise.resolve('')
+  ])
+
+  const hasSystemUserToken = Boolean(await getAppConfig(CONFIG_KEYS.metaSystemUserToken))
+  const connected = status === 'connected' && Boolean(phoneNumberId && wabaId && hasSystemUserToken)
+
+  return {
+    provider: META_DIRECT_PROVIDER_NAME,
+    status: connected ? 'connected' : (status || 'disconnected'),
+    connected,
+    configured: Boolean(phoneNumberId || wabaId || appId || hasSystemUserToken),
+    hasSystemUserToken,
+    appId: appId || '',
+    businessId: businessId || '',
+    wabaId: wabaId || '',
+    phoneNumberId: phoneNumberId || '',
+    displayPhoneNumber: displayPhoneNumber || '',
+    coexistenceEnabled: coexistenceEnabled === '1',
+    webhookMode: webhookMode || 'installer_relay',
+    installerWebhookUrl: installerWebhookUrl || '',
+    installerOAuthCallbackUrl: installerOAuthCallbackUrl || '',
+    connectedAt: connectedAt || null,
+    disconnectedAt: disconnectedAt || null,
+    lastWebhookReceivedAt: lastWebhookReceivedAt || null,
+    lastRelayReceivedAt: lastRelayReceivedAt || null,
+    lastError: lastError || '',
+    datasetId: datasetId || '',
+    adAccountId: adAccountId || '',
+    systemUserToken: token || ''
+  }
+}
+
 async function ycloudRequest(path, { apiKey, method = 'GET', body, query } = {}) {
   const cleanApiKey = cleanString(apiKey)
   if (!cleanApiKey) {
@@ -1098,6 +1284,7 @@ function normalizePhoneNumberRecord(record = {}) {
 
   return {
     id,
+    provider: cleanString(record.provider) || PROVIDER_NAME,
     wabaId,
     phoneNumber,
     displayPhoneNumber: cleanString(record.displayPhoneNumber) || phoneNumber,
@@ -1115,6 +1302,7 @@ function mapPhoneNumberForResponse(record = {}) {
   const item = normalizePhoneNumberRecord(record)
   return {
     id: item.id,
+    provider: item.provider || PROVIDER_NAME,
     waba_id: item.wabaId || null,
     phone_number: item.phoneNumber || null,
     display_phone_number: item.displayPhoneNumber || null,
@@ -1124,6 +1312,7 @@ function mapPhoneNumberForResponse(record = {}) {
     quality_rating: item.qualityRating || null,
     messaging_limit: item.messagingLimit || null,
     status: item.status || null,
+    provider: cleanString(record.provider || item.provider) || PROVIDER_NAME,
     label: cleanString(record.label) || null,
     is_default_sender: Number(record.is_default_sender || 0) === 1,
     api_send_enabled: record.api_send_enabled === undefined ? true : Number(record.api_send_enabled || 0) === 1,
@@ -1538,9 +1727,10 @@ async function syncPhoneNumbers(phoneNumbers = [], options = {}) {
     const stale = await db.all(`
       SELECT id, phone_number, verified_name
       FROM whatsapp_api_phone_numbers
-      WHERE LOWER(COALESCE(qr_status, '')) NOT IN ('connected', 'reconnecting', 'restarting')
+      WHERE COALESCE(provider, 'ycloud') = ?
+        AND LOWER(COALESCE(qr_status, '')) NOT IN ('connected', 'reconnecting', 'restarting')
         ${keepIds.length ? `AND id NOT IN (${placeholders})` : ''}
-    `, keepIds)
+    `, [PROVIDER_NAME, ...keepIds])
 
     for (const row of stale) {
       await db.run('DELETE FROM whatsapp_api_phone_numbers WHERE id = ?', [row.id])
@@ -1551,11 +1741,12 @@ async function syncPhoneNumbers(phoneNumbers = [], options = {}) {
   for (const item of normalized) {
     await db.run(`
       INSERT INTO whatsapp_api_phone_numbers (
-        id, waba_id, phone_number, display_phone_number, verified_name,
+        id, provider, waba_id, phone_number, display_phone_number, verified_name,
         profile_picture_url, business_profile_json, quality_rating, messaging_limit,
         status, raw_payload_json, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(id) DO UPDATE SET
+        provider = COALESCE(NULLIF(excluded.provider, ''), whatsapp_api_phone_numbers.provider),
         waba_id = excluded.waba_id,
         phone_number = excluded.phone_number,
         display_phone_number = excluded.display_phone_number,
@@ -1569,6 +1760,7 @@ async function syncPhoneNumbers(phoneNumbers = [], options = {}) {
         updated_at = CURRENT_TIMESTAMP
     `, [
       item.id,
+      cleanString(item.provider) || PROVIDER_NAME,
       item.wabaId || null,
       item.phoneNumber || null,
       item.displayPhoneNumber || null,
@@ -2092,7 +2284,7 @@ async function ensureWebhookEndpoint({ apiKey, webhookUrl, webhookEndpointId }) 
 async function getPhoneNumbersFromDb() {
   return db.all(`
     SELECT id, waba_id, phone_number, display_phone_number, verified_name,
-      profile_picture_url, business_profile_json, quality_rating, messaging_limit,
+      provider, profile_picture_url, business_profile_json, quality_rating, messaging_limit,
       status, label, is_default_sender, api_send_enabled, qr_send_enabled,
       qr_consent_accepted_at, qr_consent_accepted_by, qr_status,
       qr_connected_phone, qr_last_connected_at, qr_last_disconnected_at,
@@ -2221,7 +2413,7 @@ async function getStats() {
     countRows('SELECT COUNT(*) as total FROM whatsapp_api_contacts'),
     countRows('SELECT COUNT(*) as total FROM whatsapp_api_messages'),
     countRows("SELECT COUNT(*) as total FROM whatsapp_api_messages WHERE direction = 'inbound'"),
-    countRows("SELECT COUNT(*) as total FROM whatsapp_api_messages WHERE direction = 'outbound'"),
+    countRows("SELECT COUNT(*) as total FROM whatsapp_api_messages WHERE direction IN ('outbound', 'business_echo')"),
     countRows('SELECT COUNT(*) as total FROM whatsapp_api_attribution'),
     countRows('SELECT COUNT(*) as total FROM whatsapp_api_webhook_events'),
     countRows('SELECT COUNT(*) as total FROM whatsapp_api_templates'),
@@ -2363,6 +2555,7 @@ export async function restoreWhatsAppPhoneNumberContacts({ phoneNumberId } = {})
 
 export async function getWhatsAppApiStatus() {
   const config = await loadConfig()
+  const metaDirect = await loadMetaDirectConfig()
   const [stats, phoneNumbers, balance, templates, alerts, qrSessions] = await Promise.all([
     getStats(),
     getPhoneNumbersFromDb(),
@@ -2423,6 +2616,7 @@ export async function getWhatsAppApiStatus() {
 
   return {
     provider: PROVIDER_NAME,
+    activeProvider: config.provider || PROVIDER_NAME,
     source: SOURCE_NAME,
     connected,
     configured: Boolean(config.hasApiKey),
@@ -2469,6 +2663,29 @@ export async function getWhatsAppApiStatus() {
     qr: {
       consentText: QR_CONSENT_TEXT,
       sessions: qrSessions
+    },
+    metaDirect: {
+      provider: metaDirect.provider,
+      connected: metaDirect.connected,
+      configured: metaDirect.configured,
+      status: metaDirect.status,
+      appId: metaDirect.appId,
+      businessId: metaDirect.businessId,
+      wabaId: metaDirect.wabaId,
+      phoneNumberId: metaDirect.phoneNumberId,
+      displayPhoneNumber: metaDirect.displayPhoneNumber,
+      coexistenceEnabled: metaDirect.coexistenceEnabled,
+      webhookMode: metaDirect.webhookMode,
+      installerWebhookUrl: metaDirect.installerWebhookUrl,
+      installerOAuthCallbackUrl: metaDirect.installerOAuthCallbackUrl,
+      connectedAt: metaDirect.connectedAt,
+      disconnectedAt: metaDirect.disconnectedAt,
+      lastWebhookReceivedAt: metaDirect.lastWebhookReceivedAt,
+      lastRelayReceivedAt: metaDirect.lastRelayReceivedAt,
+      lastError: metaDirect.lastError,
+      datasetId: metaDirect.datasetId,
+      adAccountId: metaDirect.adAccountId,
+      hasSystemUserToken: metaDirect.hasSystemUserToken
     },
     stats,
     timestamps: {
@@ -2809,6 +3026,7 @@ function normalizeDirectionValue(value) {
   if (!text) return ''
   if (['inbound', 'incoming', 'received', 'customer', 'user'].includes(text)) return 'inbound'
   if (['outbound', 'outgoing', 'sent', 'business', 'api', 'app'].includes(text)) return 'outbound'
+  if (['business_echo', 'smb_echo', 'echo', 'message_echo'].includes(text)) return 'business_echo'
   return ''
 }
 
@@ -2831,6 +3049,9 @@ function inferMessageDirection({ payload = {}, direction = '', message = {}, bus
   )
   if (explicitDirection) return explicitDirection
 
+  const messageType = cleanString(message.type || message.messageType || message.message_type).toLowerCase()
+  if (message.businessEcho === true || message.business_echo === true || message.isEcho === true || message.is_echo === true) return 'business_echo'
+  if (payload.field === 'smb_message_echoes' || payload.field === 'message_echoes' || messageType === 'smb_message_echo') return 'business_echo'
   if (message.fromMe === true || message.from_me === true || message.isFromMe === true) return 'outbound'
   if (message.fromMe === false || message.from_me === false || message.isFromMe === false) return 'inbound'
 
@@ -2848,8 +3069,9 @@ function inferMessageDirection({ payload = {}, direction = '', message = {}, bus
 
 function getMessageIdentity({ payload = {}, direction = '', message = {}, businessPhoneHints = [] }) {
   const normalizedDirection = inferMessageDirection({ payload, direction, message, businessPhoneHints })
-  const customerPhone = normalizedDirection === 'inbound' ? message.from : message.to
-  const businessPhone = normalizedDirection === 'inbound' ? message.to : message.from
+  const isInbound = normalizedDirection === 'inbound'
+  const customerPhone = isInbound ? message.from : message.to
+  const businessPhone = isInbound ? message.to : message.from
 
   return {
     direction: normalizedDirection,
@@ -3298,18 +3520,25 @@ async function upsertMessage({ payload, message, direction, businessPhoneHints =
     seenAt: messageTimestamp
   })
 
-  const ycloudMessageId = cleanString(normalizedMessage.id)
+  const provider = cleanString(normalizedMessage.provider || payload.provider) || PROVIDER_NAME
+  const origin = cleanString(normalizedMessage.origin || payload.origin || payload.field || payload.type)
+  const rawMessageId = cleanString(normalizedMessage.id)
+  const metaMessageId = provider === META_DIRECT_PROVIDER_NAME
+    ? cleanString(normalizedMessage.metaMessageId || normalizedMessage.meta_message_id || rawMessageId || normalizedMessage.wamid)
+    : ''
+  const ycloudMessageId = provider === META_DIRECT_PROVIDER_NAME ? '' : rawMessageId
   const wamid = cleanString(normalizedMessage.wamid || normalizedMessage.context?.id)
-  const computedMessageId = hashId('waapi_msg', ycloudMessageId || wamid || `${payload.id}|${identity.direction}|${identity.phone}`)
+  const computedMessageId = hashId('waapi_msg', ycloudMessageId || metaMessageId || wamid || `${payload.id}|${identity.direction}|${identity.phone}`)
   const existingMessage = await db.get(`
     SELECT id, status, transport
     FROM whatsapp_api_messages
     WHERE id = ?
       OR (? != '' AND ycloud_message_id = ?)
+      OR (? != '' AND meta_message_id = ?)
       OR (? != '' AND wamid = ?)
     ORDER BY updated_at DESC
     LIMIT 1
-  `, [computedMessageId, ycloudMessageId, ycloudMessageId, wamid, wamid]).catch(() => null)
+  `, [computedMessageId, ycloudMessageId, ycloudMessageId, metaMessageId, metaMessageId, wamid, wamid]).catch(() => null)
   const messageId = existingMessage?.id || computedMessageId
   const businessPhoneNumberId = await findBusinessPhoneNumberId(identity.businessPhone)
   const incomingStatus = normalizeMessageDeliveryStatus(normalizedMessage.status)
@@ -3319,20 +3548,25 @@ async function upsertMessage({ payload, message, direction, businessPhoneHints =
   const errorMessage = cleanString(error?.message || error?.title || normalizedMessage.errorMessage)
   const messageType = cleanString(normalizedMessage.type) || 'unknown'
   const media = extractMessageMedia(normalizedMessage)
+  const businessEcho = identity.direction === 'business_echo' || normalizedMessage.businessEcho === true || normalizedMessage.business_echo === true
+  const relayEventId = cleanString(payload.relayEventId || payload.relay_event_id)
 
   await db.run(`
     INSERT INTO whatsapp_api_messages (
-      id, ycloud_message_id, wamid, waba_id, business_phone_number_id,
+      id, provider, origin, ycloud_message_id, meta_message_id, wamid, waba_id, business_phone_number_id,
       whatsapp_api_contact_id, contact_id,
       phone, from_phone, to_phone, business_phone, transport, routing_reason, direction, message_type,
       message_text, media_url, media_mime_type, media_filename, media_duration_ms,
-      status, error_code, error_message, message_timestamp,
+      status, business_echo, relay_event_id, error_code, error_message, message_timestamp,
       raw_payload_json, context_json, referral_json,
       detected_ctwa_clid, detected_source_id, detected_source_url, detected_source_type,
       detected_source_app, detected_entry_point, detected_headline, detected_body,
       detected_conversion_data, detected_ctwa_payload, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(id) DO UPDATE SET
+      provider = COALESCE(NULLIF(excluded.provider, ''), whatsapp_api_messages.provider),
+      origin = COALESCE(NULLIF(excluded.origin, ''), whatsapp_api_messages.origin),
+      meta_message_id = COALESCE(NULLIF(excluded.meta_message_id, ''), whatsapp_api_messages.meta_message_id),
       business_phone_number_id = COALESCE(excluded.business_phone_number_id, whatsapp_api_messages.business_phone_number_id),
       whatsapp_api_contact_id = COALESCE(excluded.whatsapp_api_contact_id, whatsapp_api_messages.whatsapp_api_contact_id),
       contact_id = COALESCE(excluded.contact_id, whatsapp_api_messages.contact_id),
@@ -3350,6 +3584,8 @@ async function upsertMessage({ payload, message, direction, businessPhoneHints =
       media_filename = COALESCE(NULLIF(excluded.media_filename, ''), whatsapp_api_messages.media_filename),
       media_duration_ms = COALESCE(excluded.media_duration_ms, whatsapp_api_messages.media_duration_ms),
       status = COALESCE(NULLIF(excluded.status, ''), whatsapp_api_messages.status),
+      business_echo = COALESCE(excluded.business_echo, whatsapp_api_messages.business_echo),
+      relay_event_id = COALESCE(NULLIF(excluded.relay_event_id, ''), whatsapp_api_messages.relay_event_id),
       error_code = COALESCE(NULLIF(excluded.error_code, ''), whatsapp_api_messages.error_code),
       error_message = COALESCE(NULLIF(excluded.error_message, ''), whatsapp_api_messages.error_message),
       message_timestamp = COALESCE(excluded.message_timestamp, whatsapp_api_messages.message_timestamp),
@@ -3369,7 +3605,10 @@ async function upsertMessage({ payload, message, direction, businessPhoneHints =
       updated_at = CURRENT_TIMESTAMP
   `, [
     messageId,
+    provider,
+    origin || null,
     ycloudMessageId || null,
+    provider === META_DIRECT_PROVIDER_NAME ? metaMessageId || null : null,
     wamid || null,
     cleanString(message.wabaId) || null,
     businessPhoneNumberId,
@@ -3389,6 +3628,8 @@ async function upsertMessage({ payload, message, direction, businessPhoneHints =
     media.mediaFilename || null,
     media.mediaDurationMs,
     status || null,
+    businessEcho ? 1 : 0,
+    relayEventId || null,
     errorCode || null,
     errorMessage || null,
     messageTimestamp,
@@ -3509,6 +3750,9 @@ async function upsertMessage({ payload, message, direction, businessPhoneHints =
     apiContactId,
     attribution,
     direction: identity.direction,
+    provider,
+    origin,
+    businessEcho,
     phone: identity.phone,
     businessPhone: identity.businessPhone,
     businessPhoneNumberId,
@@ -4000,6 +4244,508 @@ export async function processYCloudWhatsAppWebhook({ payload, rawBody, signature
   }
 }
 
+export async function createMetaDirectConnectUrl({ appUrl } = {}) {
+  const runtime = await getLicenseRuntimeConfig({ appUrl })
+  if (!runtime.licenseKey) {
+    throw new Error('Falta la licencia local para iniciar la conexión directa con Meta')
+  }
+
+  const issuedAt = Date.now()
+  const state = encodeSignedState({
+    client_id: runtime.clientId,
+    installation_id: runtime.installationId,
+    app_url: runtime.appUrl,
+    nonce: crypto.randomUUID(),
+    iat: issuedAt,
+    exp: issuedAt + 15 * 60 * 1000
+  }, runtime.licenseKey)
+
+  const installerUrl = normalizePublicBaseUrl(process.env.LICENSE_SERVER_URL || process.env.RISTAK_PORTAL_URL || DEFAULT_INSTALLER_PUBLIC_URL)
+  const url = new URL('/meta/whatsapp/connect', installerUrl)
+  url.searchParams.set('state', state)
+
+  return {
+    url: url.toString(),
+    expiresAt: new Date(issuedAt + 15 * 60 * 1000).toISOString()
+  }
+}
+
+export async function completeMetaDirectConnection({ payload = {}, rawBody = '', headers = {} } = {}) {
+  await verifyInstallerSignedRequest({ rawBody, headers, purpose: 'meta_connect_complete' })
+
+  const runtime = await getLicenseRuntimeConfig()
+  const statePayload = decodeSignedState(payload.state || payload.signed_state || '', runtime.licenseKey)
+  if (cleanString(statePayload.installation_id) !== runtime.installationId && runtime.installationId !== 'local') {
+    throw new Error('La conexión pertenece a otra instalación de Ristak')
+  }
+
+  const systemUserToken = cleanString(payload.systemUserToken || payload.system_user_token)
+  const appId = cleanString(payload.appId || payload.app_id)
+  const businessId = cleanString(payload.businessId || payload.business_id)
+  const wabaId = cleanString(payload.wabaId || payload.waba_id)
+  const phoneNumberId = cleanString(payload.phoneNumberId || payload.phone_number_id)
+  const displayPhoneNumber = normalizePhoneForStorage(payload.displayPhoneNumber || payload.display_phone_number) ||
+    cleanString(payload.displayPhoneNumber || payload.display_phone_number)
+
+  if (!systemUserToken) throw new Error('Falta el System User Token de Meta')
+  if (!wabaId) throw new Error('Falta el WABA ID de Meta')
+  if (!phoneNumberId) throw new Error('Falta el Phone Number ID de Meta')
+
+  await setAppConfig(CONFIG_KEYS.metaStatus, 'connected')
+  await setAppConfig(CONFIG_KEYS.metaAppId, appId)
+  await setAppConfig(CONFIG_KEYS.metaBusinessId, businessId)
+  await setAppConfig(CONFIG_KEYS.metaWabaId, wabaId)
+  await setAppConfig(CONFIG_KEYS.metaPhoneNumberId, phoneNumberId)
+  await setAppConfig(CONFIG_KEYS.metaDisplayPhoneNumber, displayPhoneNumber)
+  await setAppConfig(CONFIG_KEYS.metaCoexistenceEnabled, payload.coexistenceEnabled === false ? '0' : '1')
+  await setAppConfig(CONFIG_KEYS.metaWebhookMode, 'installer_relay')
+  await setAppConfig(CONFIG_KEYS.metaInstallerWebhookUrl, cleanString(payload.installerWebhookUrl || payload.installer_webhook_url))
+  await setAppConfig(CONFIG_KEYS.metaInstallerOAuthCallbackUrl, cleanString(payload.installerOAuthCallbackUrl || payload.installer_oauth_callback_url))
+  await setAppConfig(CONFIG_KEYS.metaDatasetId, cleanString(payload.datasetId || payload.dataset_id))
+  await setAppConfig(CONFIG_KEYS.metaAdAccountId, cleanString(payload.adAccountId || payload.ad_account_id))
+  await setAppConfig(CONFIG_KEYS.metaConnectedAt, nowIso())
+  await setAppConfig(CONFIG_KEYS.metaDisconnectedAt, '')
+  await setAppConfig(CONFIG_KEYS.metaLastError, '')
+  await setEncryptedConfig(CONFIG_KEYS.metaSystemUserToken, systemUserToken)
+
+  await db.run(`
+    INSERT INTO whatsapp_api_phone_numbers (
+      id, provider, waba_id, phone_number, display_phone_number, verified_name,
+      status, raw_payload_json, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, 'CONNECTED', ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(id) DO UPDATE SET
+      provider = excluded.provider,
+      waba_id = excluded.waba_id,
+      phone_number = COALESCE(NULLIF(excluded.phone_number, ''), whatsapp_api_phone_numbers.phone_number),
+      display_phone_number = COALESCE(NULLIF(excluded.display_phone_number, ''), whatsapp_api_phone_numbers.display_phone_number),
+      verified_name = COALESCE(NULLIF(excluded.verified_name, ''), whatsapp_api_phone_numbers.verified_name),
+      status = 'CONNECTED',
+      raw_payload_json = excluded.raw_payload_json,
+      updated_at = CURRENT_TIMESTAMP
+  `, [
+    phoneNumberId,
+    META_DIRECT_PROVIDER_NAME,
+    wabaId,
+    displayPhoneNumber || null,
+    cleanString(payload.displayPhoneNumber || payload.display_phone_number) || displayPhoneNumber || null,
+    cleanString(payload.verifiedName || payload.verified_name) || 'Meta directo',
+    safeJson({
+      appId,
+      businessId,
+      wabaId,
+      phoneNumberId,
+      displayPhoneNumber,
+      source: META_DIRECT_PROVIDER_NAME
+    })
+  ])
+
+  return getWhatsAppApiStatus()
+}
+
+export async function disconnectMetaDirectConnection() {
+  await deleteAppConfig([
+    CONFIG_KEYS.metaSystemUserToken,
+    CONFIG_KEYS.metaLastError
+  ])
+  await setAppConfig(CONFIG_KEYS.metaStatus, 'disconnected')
+  await setAppConfig(CONFIG_KEYS.metaDisconnectedAt, nowIso())
+
+  const activeProvider = await getAppConfig(CONFIG_KEYS.provider)
+  if (activeProvider === META_DIRECT_PROVIDER_NAME) {
+    await setAppConfig(CONFIG_KEYS.provider, PROVIDER_NAME)
+  }
+
+  return getWhatsAppApiStatus()
+}
+
+export async function setWhatsAppActiveProvider({ provider } = {}) {
+  const cleanProvider = cleanString(provider)
+  if (![PROVIDER_NAME, META_DIRECT_PROVIDER_NAME].includes(cleanProvider)) {
+    throw new Error('Proveedor de WhatsApp inválido')
+  }
+
+  if (cleanProvider === META_DIRECT_PROVIDER_NAME) {
+    const metaConfig = await loadMetaDirectConfig()
+    if (!metaConfig.connected) throw new Error('Primero conecta Meta directo')
+  }
+
+  await setAppConfig(CONFIG_KEYS.provider, cleanProvider)
+  return getWhatsAppApiStatus()
+}
+
+async function metaDirectGraphRequest(path, { method = 'GET', token, query, body } = {}) {
+  const cleanToken = cleanString(token)
+  if (!cleanToken) throw new Error('Falta el token de Meta directo')
+  const url = new URL(`${META_GRAPH_BASE_URL}${path}`)
+  for (const [key, value] of Object.entries(query || {})) {
+    if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value))
+  }
+
+  const response = await fetch(url.toString(), {
+    method,
+    headers: {
+      Authorization: `Bearer ${cleanToken}`,
+      ...(body ? { 'Content-Type': 'application/json' } : {})
+    },
+    ...(body ? { body: JSON.stringify(body) } : {})
+  })
+  const data = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    throw new Error(data?.error?.message || `Meta Graph respondió ${response.status}`)
+  }
+  return data
+}
+
+export async function testMetaDirectConnection() {
+  const config = await loadMetaDirectConfig({ includeSecrets: true })
+  if (!config.connected) throw new Error('Meta directo no está conectado')
+  const phone = await metaDirectGraphRequest(`/${encodeURIComponent(config.phoneNumberId)}`, {
+    token: config.systemUserToken,
+    query: { fields: 'id,display_phone_number,verified_name,quality_rating,messaging_limit_tier' }
+  })
+
+  if (phone.display_phone_number || phone.verified_name) {
+    await db.run(`
+      UPDATE whatsapp_api_phone_numbers
+      SET display_phone_number = COALESCE(?, display_phone_number),
+        verified_name = COALESCE(?, verified_name),
+        quality_rating = COALESCE(?, quality_rating),
+        messaging_limit = COALESCE(?, messaging_limit),
+        raw_payload_json = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `, [
+      phone.display_phone_number || null,
+      phone.verified_name || null,
+      phone.quality_rating || null,
+      phone.messaging_limit_tier || null,
+      safeJson(phone),
+      config.phoneNumberId
+    ])
+  }
+
+  await setAppConfig(CONFIG_KEYS.metaLastError, '')
+  return { ok: true, phone }
+}
+
+export async function syncMetaDirectHistory() {
+  return {
+    synced: false,
+    status: 'not_available',
+    message: 'Meta no entrega historial completo por Graph API en este flujo. Los mensajes nuevos se sincronizan por webhook relay.'
+  }
+}
+
+function normalizeMetaMessageBody(message = {}) {
+  if (message.text?.body) return message.text.body
+  if (message.button?.text) return message.button.text
+  if (message.interactive?.button_reply?.title) return message.interactive.button_reply.title
+  if (message.interactive?.list_reply?.title) return message.interactive.list_reply.title
+  if (message.image?.caption) return message.image.caption
+  if (message.document?.caption) return message.document.caption
+  if (message.video?.caption) return message.video.caption
+  return ''
+}
+
+function normalizeMetaWebhookMessages(payload = {}, config = {}) {
+  const results = []
+  const entries = Array.isArray(payload.entry) ? payload.entry : []
+
+  for (const entry of entries) {
+    const changes = Array.isArray(entry.changes) ? entry.changes : []
+    for (const change of changes) {
+      const field = cleanString(change.field)
+      const value = change.value || {}
+      const metadata = value.metadata || {}
+      const businessPhone = normalizePhoneForStorage(metadata.display_phone_number || config.displayPhoneNumber) ||
+        cleanString(metadata.display_phone_number || config.displayPhoneNumber)
+      const phoneNumberId = cleanString(metadata.phone_number_id || config.phoneNumberId)
+      const wabaId = cleanString(entry.id || value.whatsapp_business_account_id || config.wabaId)
+
+      for (const message of Array.isArray(value.messages) ? value.messages : []) {
+        const direction = field === 'smb_message_echoes' || message.from_me || message.business_echo
+          ? 'business_echo'
+          : 'inbound'
+        const messageType = cleanString(message.type) || 'unknown'
+        results.push({
+          direction,
+          message: {
+            ...message,
+            id: message.id,
+            wamid: message.id,
+            metaMessageId: message.id,
+            provider: META_DIRECT_PROVIDER_NAME,
+            origin: field || 'messages',
+            wabaId,
+            from: direction === 'inbound' ? message.from : businessPhone,
+            to: direction === 'inbound' ? businessPhone : (message.to || message.recipient_id),
+            type: messageType,
+            status: direction === 'business_echo' ? 'sent' : cleanString(message.status),
+            sendTime: message.timestamp,
+            text: normalizeMetaMessageBody(message) ? { body: normalizeMetaMessageBody(message) } : message.text,
+            businessEcho: direction === 'business_echo',
+            phoneNumberId
+          }
+        })
+      }
+
+      const echoes = Array.isArray(value.smb_message_echoes)
+        ? value.smb_message_echoes
+        : Array.isArray(value.message_echoes)
+          ? value.message_echoes
+          : []
+      for (const echo of echoes) {
+        results.push({
+          direction: 'business_echo',
+          message: {
+            ...echo,
+            id: echo.id || echo.message_id,
+            wamid: echo.id || echo.message_id,
+            metaMessageId: echo.id || echo.message_id,
+            provider: META_DIRECT_PROVIDER_NAME,
+            origin: field || 'smb_message_echoes',
+            wabaId,
+            from: businessPhone,
+            to: echo.to || echo.recipient_id || echo.from,
+            type: cleanString(echo.type) || 'text',
+            status: cleanString(echo.status) || 'sent',
+            sendTime: echo.timestamp,
+            text: normalizeMetaMessageBody(echo) ? { body: normalizeMetaMessageBody(echo) } : echo.text,
+            businessEcho: true,
+            phoneNumberId
+          }
+        })
+      }
+
+      for (const status of Array.isArray(value.statuses) ? value.statuses : []) {
+        results.push({
+          direction: 'outbound',
+          message: {
+            id: status.id,
+            wamid: status.id,
+            metaMessageId: status.id,
+            provider: META_DIRECT_PROVIDER_NAME,
+            origin: field || 'statuses',
+            wabaId,
+            from: businessPhone,
+            to: status.recipient_id,
+            type: 'status',
+            status: status.status,
+            sendTime: status.timestamp,
+            errors: status.errors,
+            phoneNumberId
+          }
+        })
+      }
+    }
+  }
+
+  return results
+}
+
+async function processMetaDirectWebhookPayload({ payload = {}, eventRowId = '' } = {}) {
+  const config = await loadMetaDirectConfig()
+  const businessPhoneHints = await getKnownBusinessPhoneHints({
+    senderPhone: config.displayPhoneNumber,
+    phoneNumberId: config.phoneNumberId,
+    wabaId: config.wabaId
+  })
+  const normalized = normalizeMetaWebhookMessages(payload, config)
+  const results = []
+
+  for (const item of normalized) {
+    const result = await upsertMessage({
+      payload: {
+        ...payload,
+        id: payload.id || eventRowId,
+        provider: META_DIRECT_PROVIDER_NAME,
+        origin: item.message.origin,
+        field: item.message.origin,
+        relayEventId: eventRowId
+      },
+      message: item.message,
+      direction: item.direction,
+      businessPhoneHints,
+      transport: 'api'
+    })
+    results.push(result)
+  }
+
+  const alertFields = new Set([
+    'message_template_status_update',
+    'message_template_quality_update',
+    'account_update',
+    'phone_number_quality_update',
+    'business_capability_update'
+  ])
+  const entries = Array.isArray(payload.entry) ? payload.entry : []
+  for (const entry of entries) {
+    for (const change of Array.isArray(entry.changes) ? entry.changes : []) {
+      if (!alertFields.has(cleanString(change.field))) continue
+      await upsertAlert({
+        severity: change.field.includes('quality') ? 'warning' : 'info',
+        alertType: `meta_direct_${change.field}`,
+        title: 'Actualización de Meta directo',
+        message: cleanString(change.value?.event || change.value?.new_status || change.value?.message_template_name || change.field),
+        sourceEventId: eventRowId,
+        entityType: change.field,
+        entityId: cleanString(change.value?.message_template_id || change.value?.phone_number_id || entry.id || change.field),
+        raw: change.value || change
+      })
+    }
+  }
+
+  await setAppConfig(CONFIG_KEYS.metaLastWebhookReceivedAt, nowIso())
+  return results
+}
+
+export async function processMetaDirectWebhookRelay({ payload = {}, rawBody = '', headers = {} } = {}) {
+  await verifyInstallerSignedRequest({ rawBody, headers, purpose: 'meta_webhook_relay' })
+  const eventRowId = await saveWebhookEvent({
+    payload: {
+      ...payload,
+      id: payload.id || payload.event_id || hashId('meta_evt', rawBody || safeJson(payload)),
+      type: cleanString(payload.type) || 'meta.direct.webhook',
+      apiVersion: META_GRAPH_VERSION
+    },
+    rawBody,
+    endpointId: headers.installationId || 'installer_relay',
+    signatureValid: true,
+    processedStatus: 'received'
+  })
+
+  try {
+    const messageResults = await processMetaDirectWebhookPayload({ payload, eventRowId })
+    const inboundResults = messageResults.filter(result => result?.direction === 'inbound' && result?.isNew !== false)
+    const confirmWindows = new Map()
+
+    await Promise.all(inboundResults.map(result => handleInboundForConfirmation({
+      contactId: result.contactId,
+      text: result.messageText
+    }).then(w => { confirmWindows.set(result.contactId, w) }).catch(error => {
+      logger.warn(`[Citas] Error en ventana Meta directo: ${error.message}`)
+    })))
+
+    await Promise.all(inboundResults.map(result => {
+      const win = confirmWindows.get(result.contactId)
+      if (win?.windowActive) return Promise.resolve()
+      return maybeConfirmAppointmentFromReply({
+        contactId: result.contactId,
+        text: result.messageText
+      }).catch(error => logger.warn(`[Citas] No se pudo evaluar Meta directo: ${error.message}`))
+    }))
+
+    Promise.all(inboundResults
+      .filter(result => {
+        const win = confirmWindows.get(result.contactId)
+        return !(win?.windowActive && win?.bypassAutomations)
+      })
+      .map(result => import('./automationEngine.js')
+        .then(engine => engine.handleIncomingMessage({
+          contactId: result.contactId,
+          phone: result.phone,
+          contactName: result.contactName,
+          text: result.messageText,
+          channel: 'whatsapp',
+          businessPhoneNumberId: result.businessPhoneNumberId || null
+        }))
+        .catch(error => logger.warn(`[Automatizaciones] Meta directo no pudo procesar mensaje: ${error.message}`)))).catch(() => {})
+
+    Promise.all(inboundResults
+      .filter(result => result?.contactId)
+      .filter(result => {
+        const win = confirmWindows.get(result.contactId)
+        return !(win?.windowActive && win?.bypassAutomations)
+      })
+      .map(result => import('../agents/conversational/runner.js')
+        .then(runner => runner.handleInboundMessageForConversationalAgent({
+          contactId: result.contactId,
+          phone: result.phone,
+          messageId: result.messageId
+        }))
+        .catch(error => logger.warn(`[Agente conversacional] Meta directo no pudo atender: ${error.message}`)))).catch(() => {})
+
+    await Promise.all(inboundResults.map(result => sendChatMessageNotification({
+      contactId: result.contactId,
+      contactName: result.contactName,
+      phone: result.phone,
+      profileName: result.profileName,
+      text: result.messageText,
+      messageType: result.messageType,
+      messageId: result.messageId,
+      timestamp: result.messageTimestamp
+    }).catch(error => {
+      logger.warn(`[Push] No se pudo avisar mensaje Meta directo ${result?.messageId || ''}: ${error.message}`)
+    })))
+
+    await db.run(`
+      UPDATE whatsapp_api_webhook_events
+      SET processed_status = 'processed', processed_error = NULL, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `, [eventRowId])
+    await setAppConfig(CONFIG_KEYS.metaLastRelayReceivedAt, nowIso())
+
+    return { processed: true, eventId: eventRowId, messages: messageResults.length }
+  } catch (error) {
+    await setAppConfig(CONFIG_KEYS.metaLastError, error.message)
+    await db.run(`
+      UPDATE whatsapp_api_webhook_events
+      SET processed_status = 'error', processed_error = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `, [error.message, eventRowId])
+    throw error
+  }
+}
+
+async function sendTextViaMetaDirect({ to, text, from, externalId } = {}) {
+  const config = await loadMetaDirectConfig({ includeSecrets: true })
+  if (!config.connected) throw new Error('Meta directo no está conectado')
+  const toPhone = normalizePhoneForStorage(to) || cleanString(to)
+  const body = cleanString(text)
+  if (!toPhone) throw new Error('Falta el número destino')
+  if (!body) throw new Error('Falta el texto del mensaje')
+
+  return metaDirectGraphRequest(`/${encodeURIComponent(config.phoneNumberId)}/messages`, {
+    method: 'POST',
+    token: config.systemUserToken,
+    body: {
+      messaging_product: 'whatsapp',
+      to: toPhone,
+      type: 'text',
+      text: { body },
+      ...(externalId ? { biz_opaque_callback_data: externalId } : {})
+    }
+  })
+}
+
+export async function sendMetaDirectTestMessage({ to, text } = {}) {
+  return sendTextViaMetaDirect({ to, text: text || 'Prueba de WhatsApp directo desde Ristak' })
+}
+
+async function sendTemplateViaMetaDirect({ to, template, components, externalId } = {}) {
+  const config = await loadMetaDirectConfig({ includeSecrets: true })
+  if (!config.connected) throw new Error('Meta directo no está conectado')
+  const toPhone = normalizePhoneForStorage(to) || cleanString(to)
+  if (!toPhone) throw new Error('Falta el número destino')
+  if (!template?.name || !template?.language) throw new Error('Falta la plantilla de Meta')
+
+  return metaDirectGraphRequest(`/${encodeURIComponent(config.phoneNumberId)}/messages`, {
+    method: 'POST',
+    token: config.systemUserToken,
+    body: {
+      messaging_product: 'whatsapp',
+      to: toPhone,
+      type: 'template',
+      template: {
+        name: template.name,
+        language: { code: template.language },
+        ...(Array.isArray(components) && components.length ? { components } : {})
+      },
+      ...(externalId ? { biz_opaque_callback_data: externalId } : {})
+    }
+  })
+}
+
 export async function getWhatsAppApiTemplates({ status, limit } = {}) {
   const [items, total, approved] = await Promise.all([
     getTemplatesFromDb({ status, limit }),
@@ -4230,16 +4976,10 @@ export async function sendWhatsAppApiTemplateMessage({
   phoneNumberId
 } = {}) {
   const config = await loadConfig({ includeSecrets: true })
-  if (!config.enabled || !config.apiKey) {
-    throw new Error('WhatsApp_API no esta conectado')
-  }
-
-  const fromPhone = normalizePhoneForStorage(from || config.senderPhone) || cleanString(from || config.senderPhone)
   const toPhone = normalizePhoneForStorage(to) || cleanString(to)
   const cleanTemplateName = cleanString(templateName)
   const cleanLanguage = cleanString(language)
 
-  if (!fromPhone) throw new Error('Falta el numero emisor de WhatsApp_API')
   if (!toPhone) throw new Error('Falta el numero destino')
   if (!templateId && !cleanTemplateName) throw new Error('Elige una plantilla')
 
@@ -4263,6 +5003,21 @@ export async function sendWhatsAppApiTemplateMessage({
   }
 
   const templateComponents = buildTemplateComponents({ components, variables })
+  if (config.provider === META_DIRECT_PROVIDER_NAME) {
+    return sendTemplateViaMetaDirect({
+      to: toPhone,
+      template: finalTemplate,
+      components: templateComponents,
+      externalId
+    })
+  }
+
+  if (!config.enabled || !config.apiKey) {
+    throw new Error('WhatsApp_API no esta conectado')
+  }
+
+  const fromPhone = normalizePhoneForStorage(from || config.senderPhone) || cleanString(from || config.senderPhone)
+  if (!fromPhone) throw new Error('Falta el numero emisor de WhatsApp_API')
   const normalizedVariables = normalizeTemplateVariables(variables)
   const requestBody = {
     from: fromPhone,
@@ -4628,13 +5383,18 @@ export async function sendWhatsAppApiTextMessage({ to, text, from, externalId, t
   const body = cleanString(text)
   const cleanTransport = cleanString(transport).toLowerCase() === 'qr' ? 'qr' : 'api'
 
+  if (!toPhone) throw new Error('Falta el número destino')
+  if (!body) throw new Error('Falta el texto del mensaje')
+
+  if (cleanTransport !== 'qr' && config.provider === META_DIRECT_PROVIDER_NAME) {
+    return sendTextViaMetaDirect({ to: toPhone, text: body, from, externalId })
+  }
+
   if (cleanTransport !== 'qr' && (!config.enabled || !config.apiKey)) {
     throw new Error('WhatsApp_API no está conectado')
   }
 
   if (!fromPhone) throw new Error('Falta el número emisor de WhatsApp_API')
-  if (!toPhone) throw new Error('Falta el número destino')
-  if (!body) throw new Error('Falta el texto del mensaje')
 
   if (cleanTransport === 'qr') {
     return sendTextViaQrFallback({
