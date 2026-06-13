@@ -153,7 +153,10 @@ export async function getEnrollmentStatsHandler(req, res) {
 
 export async function uploadAssetHandler(req, res) {
   try {
-    const asset = await saveAutomationAsset(req.body || {})
+    const asset = await saveAutomationAsset({
+      ...(req.body || {}),
+      userId: req.user?.userId || req.user?.id || null
+    })
     res.status(201).json({ success: true, data: asset })
   } catch (error) {
     logger.error(`Error subiendo archivo de automatización: ${error.message}`)

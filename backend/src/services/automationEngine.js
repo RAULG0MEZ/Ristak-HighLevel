@@ -480,15 +480,23 @@ async function sendMediaBlock({ block, to, phoneNumberId, ctx }) {
   let filename = str(block.caption) || 'archivo'
   let mimeType
 
-  const assetMatch = /\/api\/automations\/assets\/([\w-]+)/.exec(str(block.url))
-  if (assetMatch) {
+  const mediaUrl = str(block.url)
+  const { extractMediaAssetIdFromUrl, getMediaAssetDataUrl } = await import('./mediaStorageService.js')
+  const mediaAssetId = extractMediaAssetIdFromUrl(mediaUrl)
+  const assetMatch = /\/api\/automations\/assets\/([\w-]+)/.exec(mediaUrl)
+  if (mediaAssetId) {
+    const media = await getMediaAssetDataUrl(mediaAssetId)
+    dataUrl = media.dataUrl
+    mimeType = media.mimeType
+    filename = media.filename || filename
+  } else if (assetMatch) {
     const row = await db.get('SELECT * FROM automation_assets WHERE id = ?', [assetMatch[1]])
     if (!row) throw new Error('El archivo adjunto ya no existe')
     dataUrl = `data:${row.content_type};base64,${row.content_base64}`
     mimeType = row.content_type
     filename = row.filename || filename
   } else {
-    externalUrl = str(block.url)
+    externalUrl = mediaUrl
   }
 
   if (block.type === 'image') {
@@ -559,9 +567,17 @@ async function sendWhatsAppBlocks(node, ctx) {
         const headerUrl = str(block.headerMediaUrl)
         if (headerUrl) {
           const { saveWhatsAppImageDataUrl, buildLocalMediaUrl } = await import('./whatsappApiService.js')
+          const { extractMediaAssetIdFromUrl, getMediaAssetDataUrl } = await import('./mediaStorageService.js')
           let link = headerUrl
+          const mediaAssetId = extractMediaAssetIdFromUrl(headerUrl)
           const assetMatch = /\/api\/automations\/assets\/([\w-]+)/.exec(headerUrl)
-          if (assetMatch) {
+          if (mediaAssetId) {
+            const media = await getMediaAssetDataUrl(mediaAssetId)
+            if (media.mimeType.startsWith('image/')) {
+              const localMedia = await saveWhatsAppImageDataUrl(media.dataUrl)
+              link = buildLocalMediaUrl(localMedia)
+            }
+          } else if (assetMatch) {
             const row = await db.get('SELECT * FROM automation_assets WHERE id = ?', [assetMatch[1]])
             if (row && row.content_type.startsWith('image/')) {
               const media = await saveWhatsAppImageDataUrl(`data:${row.content_type};base64,${row.content_base64}`)
