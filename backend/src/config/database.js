@@ -1941,6 +1941,7 @@ async function initTables() {
     await db.run(`
       CREATE TABLE IF NOT EXISTS whatsapp_api_phone_numbers (
         id TEXT PRIMARY KEY,
+        provider TEXT DEFAULT 'ycloud',
         waba_id TEXT,
         phone_number TEXT,
         display_phone_number TEXT,
@@ -1957,6 +1958,7 @@ async function initTables() {
     `)
 
     for (const [columnName, columnType] of [
+      ['provider', "TEXT DEFAULT 'ycloud'"],
       ['profile_picture_url', 'TEXT'],
       ['business_profile_json', 'TEXT'],
       ['label', 'TEXT'],
@@ -2014,7 +2016,10 @@ async function initTables() {
     await db.run(`
       CREATE TABLE IF NOT EXISTS whatsapp_api_messages (
         id TEXT PRIMARY KEY,
+        provider TEXT DEFAULT 'ycloud',
+        origin TEXT,
         ycloud_message_id TEXT,
+        meta_message_id TEXT,
         wamid TEXT,
         waba_id TEXT,
         business_phone_number_id TEXT,
@@ -2034,6 +2039,8 @@ async function initTables() {
         media_filename TEXT,
         media_duration_ms INTEGER,
         status TEXT,
+        business_echo INTEGER DEFAULT 0,
+        relay_event_id TEXT,
         error_code TEXT,
         error_message TEXT,
         message_timestamp DATETIME,
@@ -2058,13 +2065,18 @@ async function initTables() {
     `)
 
     for (const [columnName, columnType] of [
+      ['provider', "TEXT DEFAULT 'ycloud'"],
+      ['origin', 'TEXT'],
+      ['meta_message_id', 'TEXT'],
       ['business_phone_number_id', 'TEXT'],
       ['transport', "TEXT DEFAULT 'api'"],
       ['routing_reason', 'TEXT'],
       ['media_url', 'TEXT'],
       ['media_mime_type', 'TEXT'],
       ['media_filename', 'TEXT'],
-      ['media_duration_ms', 'INTEGER']
+      ['media_duration_ms', 'INTEGER'],
+      ['business_echo', 'INTEGER DEFAULT 0'],
+      ['relay_event_id', 'TEXT']
     ]) {
       try {
         await db.run(`ALTER TABLE whatsapp_api_messages ADD COLUMN ${columnName} ${columnType}`)
@@ -2245,6 +2257,14 @@ async function initTables() {
     `)
 
     await db.run(`
+      CREATE TABLE IF NOT EXISTS whatsapp_meta_direct_nonces (
+        nonce TEXT PRIMARY KEY,
+        purpose TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `)
+
+    await db.run(`
       CREATE TABLE IF NOT EXISTS whatsapp_qr_sessions (
         id TEXT PRIMARY KEY,
         phone_number_id TEXT NOT NULL,
@@ -2291,6 +2311,7 @@ async function initTables() {
     `)
 
     await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_api_phone_numbers_phone ON whatsapp_api_phone_numbers(phone_number)')
+    await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_api_phone_numbers_provider ON whatsapp_api_phone_numbers(provider)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_api_phone_numbers_default ON whatsapp_api_phone_numbers(is_default_sender)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_api_contacts_phone ON whatsapp_api_contacts(phone)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_api_contacts_contact ON whatsapp_api_contacts(contact_id)')
@@ -2301,6 +2322,9 @@ async function initTables() {
     await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_api_messages_business_phone_id ON whatsapp_api_messages(business_phone_number_id)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_api_messages_created ON whatsapp_api_messages(created_at)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_api_messages_wamid ON whatsapp_api_messages(wamid)')
+    await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_api_messages_meta_message ON whatsapp_api_messages(meta_message_id)')
+    await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_api_messages_provider_origin ON whatsapp_api_messages(provider, origin)')
+    await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_meta_direct_nonces_created ON whatsapp_meta_direct_nonces(created_at)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_scheduled_chat_messages_contact ON scheduled_chat_messages(contact_id, status, scheduled_at)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_scheduled_chat_messages_due ON scheduled_chat_messages(status, scheduled_at)')
     await db.run('CREATE INDEX IF NOT EXISTS idx_whatsapp_api_attr_contact ON whatsapp_api_attribution(contact_id)')

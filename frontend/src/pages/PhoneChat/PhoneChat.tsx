@@ -662,6 +662,11 @@ function getContactMessageCount(contact: ChatContact) {
   return Number(contact.messageCount || 0)
 }
 
+function normalizeWhatsAppBusinessDirection(value?: unknown): 'inbound' | 'outbound' {
+  const direction = String(value || '').toLowerCase()
+  return ['outbound', 'business_echo', 'smb_echo', 'echo', 'message_echo'].includes(direction) ? 'outbound' : 'inbound'
+}
+
 function applyLocalUnreadState(contact: ChatContact, readState: ChatReadState): ChatContact {
   const serverUnread = Math.max(0, Number(contact.unreadCount || 0))
   const lastDirection = String(contact.lastMessageDirection || '').toLowerCase()
@@ -1395,7 +1400,7 @@ function getContactInfoArchiveItems(journey: JourneyEvent[] = []): ContactInfoAr
     if (event.type !== 'whatsapp_message' && event.type !== 'meta_message') return
 
     const text = String(event.data?.message_text || event.data?.message || event.data?.body || '').trim()
-    const direction = String(event.data?.direction || '').toLowerCase() === 'outbound' ? 'outbound' : 'inbound'
+    const direction = normalizeWhatsAppBusinessDirection(event.data?.direction)
     const messageId = String(
       event.data?.whatsapp_api_message_id ||
       event.data?.whatsapp_message_id ||
@@ -1462,7 +1467,7 @@ function getJourneyMessage(event: JourneyEvent, index: number): ChatMessage | nu
 
   if (!text && !messageType && !attachment) return null
 
-  const direction = String(event.data?.direction || '').toLowerCase() === 'outbound' ? 'outbound' : 'inbound'
+  const direction = normalizeWhatsAppBusinessDirection(event.data?.direction)
 
   return {
     id: String(
@@ -2363,7 +2368,7 @@ function getChatPreview(contact: ChatContact) {
       ? 'Mensaje de Messenger'
       : 'Mensaje de WhatsApp'
   const typeLabel = text ? text : getMessageTypeLabel(contact.lastMessageType || '', fallback)
-  return contact.lastMessageDirection === 'outbound' ? `Tú: ${typeLabel}` : typeLabel
+  return normalizeWhatsAppBusinessDirection(contact.lastMessageDirection) === 'outbound' ? `Tú: ${typeLabel}` : typeLabel
 }
 
 function getNotificationPermissionLabel() {
