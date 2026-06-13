@@ -3627,6 +3627,41 @@ export const PhoneChat: React.FC = () => {
     }
   }, [showToast])
 
+  const acknowledgeAgentPriorityOnOpen = useCallback((contactId: string) => {
+    const state = agentStates[contactId]
+    if (!state?.signal || state.signal === 'discarded') return
+
+    const acknowledgedAt = new Date().toISOString()
+    const toAcknowledgedState = (currentState: ConversationAgentState): ConversationAgentState => ({
+      ...currentState,
+      signal: null,
+      signalReason: null,
+      signalSummary: null,
+      signalAt: null,
+      updatedBy: 'user',
+      updatedAt: acknowledgedAt
+    })
+
+    setAgentStates((current) => {
+      const currentState = current[contactId]
+      if (!currentState?.signal || currentState.signal === 'discarded') return current
+      return { ...current, [contactId]: toAcknowledgedState(currentState) }
+    })
+
+    void conversationalAgentService.updateState(contactId, 'clear_signal')
+      .then((nextState) => {
+        setAgentStates((current) => ({ ...current, [contactId]: nextState }))
+      })
+      .catch((error: any) => {
+        setAgentStates((current) => {
+          const currentState = current[contactId]
+          if (currentState?.signal) return current
+          return { ...current, [contactId]: state }
+        })
+        showToast('error', 'Agente conversacional', error?.message || 'No se pudo quitar la prioridad del chat')
+      })
+  }, [agentStates, showToast])
+
   const loadContactResults = useCallback(async (query: string) => {
     setContactsLoading(true)
 
@@ -4804,6 +4839,7 @@ export const PhoneChat: React.FC = () => {
   const handleSelectContact = (contact: Contact) => {
     const chatContact = (chats.find((item) => item.id === contact.id) || contact) as ChatContact
     const nextContact = ensureChatContact(contact)
+    acknowledgeAgentPriorityOnOpen(nextContact.id)
     closeSwipeActions()
     handleCancelVoiceDraft()
     clearMessageActionPress()
