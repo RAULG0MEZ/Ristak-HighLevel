@@ -17,6 +17,7 @@ import {
   splitMessageIntoBubbles
 } from '../src/agents/conversational/messageSplitter.js'
 import {
+  DEFAULT_CLOSING_STRATEGY,
   buildConversationalInstructions,
   renderClosingStrategyTemplate
 } from '../src/agents/conversational/prompt.js'
@@ -334,6 +335,18 @@ test('rellena parametros de la estrategia de cierre de fabrica', () => {
   assert.equal(rendered, 'Agente de Clínica Norte por WhatsApp; problema: dolor que ya afecta su rutina; avance: mark_ready_to_advance')
 })
 
+test('estrategia de fabrica evita moldes repetitivos de venta', () => {
+  assert.doesNotMatch(DEFAULT_CLOSING_STRATEGY, /ah va/i)
+  assert.doesNotMatch(DEFAULT_CLOSING_STRATEGY, /me da curiosidad/i)
+  assert.doesNotMatch(DEFAULT_CLOSING_STRATEGY, /qué fue lo que/i)
+  assert.doesNotMatch(DEFAULT_CLOSING_STRATEGY, /justo ahorita/i)
+  assert.doesNotMatch(DEFAULT_CLOSING_STRATEGY, /qué te hizo escribirnos/i)
+  assert.match(DEFAULT_CLOSING_STRATEGY, /VARIACIÓN HUMANA OBLIGATORIA/)
+  assert.match(DEFAULT_CLOSING_STRATEGY, /No repitas:/)
+  assert.match(DEFAULT_CLOSING_STRATEGY, /no son guiones para copiar literal/)
+  assert.match(DEFAULT_CLOSING_STRATEGY, /sin parecer que estás llenando un formulario/)
+})
+
 test('agrega memoria interna de cierre solo cuando usa estrategia de fabrica', () => {
   const baseConfig = {
     objective: 'ventas',
@@ -383,6 +396,8 @@ test('agrega memoria interna de cierre solo cuando usa estrategia de fabrica', (
   assert.match(instructions, /Problema real: sus conversaciones se enfrían/)
   assert.match(instructions, /update_closing_context/)
   assert.doesNotMatch(instructions, /\[NOMBRE_DEL_NEGOCIO\]/)
+  assert.match(instructions, /No uses el mismo molde dos veces seguidas/)
+  assert.match(instructions, /precisión concreta, reflejo breve, respuesta puntual o siguiente paso/)
 
   const customInstructions = buildConversationalInstructions({
     config: {
