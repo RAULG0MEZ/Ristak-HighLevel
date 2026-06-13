@@ -27,6 +27,8 @@ services:
         value: "true"
       - key: DEFAULT_STORAGE_QUOTA_GB
         value: "5"
+      - key: MEDIA_STORAGE_REQUIRE_BUNNY
+        value: "true"
       - key: BUNNY_STORAGE_ZONE
         sync: false
       - key: BUNNY_STORAGE_REGION

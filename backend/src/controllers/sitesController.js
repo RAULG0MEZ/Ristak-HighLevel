@@ -131,6 +131,10 @@ export async function importedSiteAssetHandler(req, res) {
     }
 
     res.set('Cache-Control', result.cacheControl)
+    if (result.redirectUrl) {
+      return res.redirect(302, result.redirectUrl)
+    }
+
     res.set('Content-Type', result.contentType)
     return res.status(200).send(result.body)
   } catch (error) {

@@ -493,6 +493,32 @@ export function buildLocalMediaUrl(localMedia, publicBaseUrl = '') {
   return publicPath
 }
 
+export function requirePublicMediaUrl(localMedia, publicBaseUrl = '', mediaLabel = 'archivos') {
+  const publicPath = cleanString(localMedia?.publicPath)
+  if (/^https:\/\//i.test(publicPath)) return publicPath
+
+  const baseUrl = requirePublicHttpsBaseUrl(publicBaseUrl || process.env.RENDER_EXTERNAL_URL || process.env.PUBLIC_URL, mediaLabel)
+  const mediaUrl = buildLocalMediaUrl(localMedia, baseUrl)
+  if (!/^https:\/\//i.test(mediaUrl)) {
+    throw new Error(`Para enviar ${mediaLabel} por WhatsApp, Ristak necesita un enlace público HTTPS que WhatsApp pueda abrir.`)
+  }
+  return mediaUrl
+}
+
+function allowsLegacyWhatsAppLocalMediaFallback() {
+  return /^(1|true|yes|si|on)$/i.test(cleanString(process.env.WHATSAPP_LOCAL_MEDIA_FALLBACK))
+}
+
+function handleWhatsAppMediaStorageError(mediaLabel, error) {
+  if (allowsLegacyWhatsAppLocalMediaFallback()) {
+    logger.warn(`[WhatsApp API] No se pudo guardar ${mediaLabel} en mediaStorageService: ${error.message}; usando fallback local de emergencia.`)
+    return
+  }
+
+  logger.error(`[WhatsApp API] No se pudo guardar ${mediaLabel} en almacenamiento multimedia centralizado: ${error.message}`)
+  throw error
+}
+
 function parseImageDataUrl(value = '') {
   const match = cleanString(value).match(/^data:(image\/(?:jpeg|jpg|png|webp));base64,([a-z0-9+/=\s]+)$/i)
   if (!match) {
@@ -682,7 +708,7 @@ export async function saveWhatsAppImageDataUrl(dataUrl = '') {
       mediaAssetId: asset.id
     }
   } catch (error) {
-    logger.warn(`[WhatsApp API] No se pudo guardar imagen en mediaStorageService: ${error.message}; usando fallback local.`)
+    handleWhatsAppMediaStorageError('imagen de chat', error)
   }
 
   const dayKey = new Date().toISOString().slice(0, 10)
@@ -722,7 +748,7 @@ export async function saveWhatsAppAudioDataUrl(dataUrl = '') {
       mediaAssetId: asset.id
     }
   } catch (error) {
-    logger.warn(`[WhatsApp API] No se pudo guardar audio en mediaStorageService: ${error.message}; usando fallback local.`)
+    handleWhatsAppMediaStorageError('audio de chat', error)
   }
 
   const media = audioNeedsWhatsAppConversion(parsed)
@@ -774,7 +800,7 @@ async function saveWhatsAppDocumentDataUrl(dataUrl = '', filename = '', mimeType
       mediaAssetId: asset.id
     }
   } catch (error) {
-    logger.warn(`[WhatsApp API] No se pudo guardar documento en mediaStorageService: ${error.message}; usando fallback local.`)
+    handleWhatsAppMediaStorageError('documento de chat', error)
   }
 
   const dayKey = new Date().toISOString().slice(0, 10)
@@ -4810,8 +4836,7 @@ export async function sendWhatsAppApiImageMessage({
     if (cleanTransport === 'qr') {
       link = buildLocalMediaUrl(savedImage, publicBaseUrl)
     } else {
-      const baseUrl = requirePublicHttpsBaseUrl(publicBaseUrl || process.env.RENDER_EXTERNAL_URL || process.env.PUBLIC_URL, 'fotos')
-      link = `${baseUrl}${savedImage.publicPath}`
+      link = requirePublicMediaUrl(savedImage, publicBaseUrl, 'fotos')
     }
   }
 
@@ -4961,8 +4986,7 @@ export async function sendWhatsAppApiDocumentMessage({
     if (cleanTransport === 'qr') {
       link = buildLocalMediaUrl(savedDocument, publicBaseUrl)
     } else {
-      const baseUrl = requirePublicHttpsBaseUrl(publicBaseUrl || process.env.RENDER_EXTERNAL_URL || process.env.PUBLIC_URL, 'documentos')
-      link = `${baseUrl}${savedDocument.publicPath}`
+      link = requirePublicMediaUrl(savedDocument, publicBaseUrl, 'documentos')
     }
   }
 
@@ -5121,8 +5145,7 @@ export async function sendWhatsAppApiAudioMessage({
     if (cleanTransport === 'qr') {
       link = buildLocalMediaUrl(savedAudio, publicBaseUrl)
     } else {
-      const baseUrl = requirePublicHttpsBaseUrl(publicBaseUrl || process.env.RENDER_EXTERNAL_URL || process.env.PUBLIC_URL, 'audios')
-      link = `${baseUrl}${savedAudio.publicPath}`
+      link = requirePublicMediaUrl(savedAudio, publicBaseUrl, 'audios')
     }
   }
 
