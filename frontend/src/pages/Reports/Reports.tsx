@@ -1464,7 +1464,7 @@ export const Reports: React.FC = () => {
     const columnConfig = reportsTableConfig.find((column) => column.id === FIXED_BUSINESS_EXPENSES_COLUMN_KEY)
     return columnConfig ? columnConfig.visible !== false : true
   }, [reportsTableConfig])
-  const applyManualBusinessExpenses = manualBusinessExpensesEnabled && manualBusinessExpensesColumnVisible
+  const applyManualBusinessExpenses = manualBusinessExpensesEnabled || manualBusinessExpensesColumnVisible
   const applyFixedBusinessExpenses = fixedBusinessExpensesColumnVisible
 
   const [manualBusinessExpenses, setManualBusinessExpenses] = useState<ManualBusinessExpense[]>([])
