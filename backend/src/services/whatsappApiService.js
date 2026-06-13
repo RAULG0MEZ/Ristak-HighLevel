@@ -4408,15 +4408,33 @@ export async function completeMetaDirectConnection({ payload = {}, rawBody = '',
     throw new Error('La conexión pertenece a otra instalación de Ristak')
   }
 
-  const systemUserToken = cleanString(payload.systemUserToken || payload.system_user_token)
-  const appId = cleanString(payload.appId || payload.app_id)
+  const [metaDirect, metaConfig] = await Promise.all([
+    loadMetaDirectConfig({ includeSecrets: true }).catch(error => {
+      logger.warn(`No se pudo leer Meta directo local al completar conexión: ${error.message}`)
+      return null
+    }),
+    getMetaConfig().catch(error => {
+      logger.warn(`No se pudo leer Meta local al completar conexión de WhatsApp: ${error.message}`)
+      return null
+    })
+  ])
+
+  const systemUserToken = cleanString(
+    payload.systemUserToken ||
+    payload.system_user_token ||
+    metaDirect?.systemUserToken ||
+    metaConfig?.access_token
+  )
+  const appId = cleanString(payload.appId || payload.app_id || metaDirect?.appId || metaConfig?.app_id)
   const businessId = cleanString(payload.businessId || payload.business_id)
   const wabaId = cleanString(payload.wabaId || payload.waba_id)
   const phoneNumberId = cleanString(payload.phoneNumberId || payload.phone_number_id)
   const displayPhoneNumber = normalizePhoneForStorage(payload.displayPhoneNumber || payload.display_phone_number) ||
     cleanString(payload.displayPhoneNumber || payload.display_phone_number)
+  const datasetId = cleanString(payload.datasetId || payload.dataset_id || metaDirect?.datasetId || metaConfig?.pixel_id)
+  const adAccountId = cleanString(payload.adAccountId || payload.ad_account_id || metaDirect?.adAccountId || metaConfig?.ad_account_id)
 
-  if (!systemUserToken) throw new Error('Falta el System User Token de Meta')
+  if (!systemUserToken) throw new Error('Falta el System User Token de Meta en la configuración local de Ristak')
   if (!wabaId) throw new Error('Falta el WABA ID de Meta')
   if (!phoneNumberId) throw new Error('Falta el Phone Number ID de Meta')
 
@@ -4432,8 +4450,8 @@ export async function completeMetaDirectConnection({ payload = {}, rawBody = '',
   await setAppConfig(CONFIG_KEYS.metaWebhookMode, 'installer_relay')
   await setAppConfig(CONFIG_KEYS.metaInstallerWebhookUrl, cleanString(payload.installerWebhookUrl || payload.installer_webhook_url))
   await setAppConfig(CONFIG_KEYS.metaInstallerOAuthCallbackUrl, cleanString(payload.installerOAuthCallbackUrl || payload.installer_oauth_callback_url))
-  await setAppConfig(CONFIG_KEYS.metaDatasetId, cleanString(payload.datasetId || payload.dataset_id))
-  await setAppConfig(CONFIG_KEYS.metaAdAccountId, cleanString(payload.adAccountId || payload.ad_account_id))
+  await setAppConfig(CONFIG_KEYS.metaDatasetId, datasetId)
+  await setAppConfig(CONFIG_KEYS.metaAdAccountId, adAccountId)
   await setAppConfig(CONFIG_KEYS.metaConnectedAt, nowIso())
   await setAppConfig(CONFIG_KEYS.metaDisconnectedAt, '')
   await setAppConfig(CONFIG_KEYS.metaLastError, '')
