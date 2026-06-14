@@ -67,6 +67,8 @@ export const FIELD_BLOCK_TYPES = new Set([
   'email',
   'date'
 ])
+const EMBEDDED_FORM_CONTENT_BLOCK_TYPES = new Set(['title', 'subtitle', 'text', 'image', 'video', 'embed'])
+const EMBEDDED_FORM_BLOCK_TYPES = new Set([...FIELD_BLOCK_TYPES, ...EMBEDDED_FORM_CONTENT_BLOCK_TYPES])
 export const BLOCK_TYPES = new Set([...CONTENT_BLOCK_TYPES, ...FIELD_BLOCK_TYPES])
 export const OPTION_ACTIONS = new Set([
   'continue',
@@ -10664,25 +10666,37 @@ function renderContentBlock(block, context = {}) {
   }
 
   if (block.blockType === 'form_embed') {
-    const embeddedBlocks = Array.isArray(settings.embeddedBlocks) ? settings.embeddedBlocks : []
-    const fields = collectFieldBlocks(embeddedBlocks)
     const embeddedPages = normalizeEmbeddedFormPages(settings.embeddedPages)
+    const embeddedPageIds = new Set(embeddedPages.map(page => page.id))
+    const embeddedItems = (Array.isArray(settings.embeddedBlocks) ? settings.embeddedBlocks : [])
+      .filter(item => {
+        const rawPageId = cleanString(item?.settings?.pageId)
+        return EMBEDDED_FORM_BLOCK_TYPES.has(item?.blockType) && (!rawPageId || embeddedPageIds.has(rawPageId))
+      })
+    const fields = collectFieldBlocks(embeddedItems)
     const hasEmbeddedPages = embeddedPages.length > 1
     const submitButtonContent = renderSubmitButtonContent(context.submitText, context.submitSubtitle)
-    const renderEmbeddedFields = () => {
-      if (!fields.length) return '<p class="rstk-help">Selecciona o crea un formulario embebido para capturar respuestas.</p>'
+    const renderEmbeddedItem = (item, pageId) => {
+      if (FIELD_BLOCK_TYPES.has(item.blockType)) {
+        return wrapRenderedBlock(item, renderFieldBlock(item, false, pageId || getBlockPageId(item, embeddedPages), context))
+      }
+
+      return wrapRenderedBlock(item, renderContentBlock(item, context))
+    }
+    const renderEmbeddedItems = () => {
+      if (!embeddedItems.length) return '<p class="rstk-help">Agrega campos o contenido al formulario.</p>'
       if (!hasEmbeddedPages) {
-        return fields.map(field => wrapRenderedBlock(field, renderFieldBlock(field, false, getBlockPageId(field, embeddedPages), context))).join('\n')
+        return embeddedItems.map(item => renderEmbeddedItem(item, getBlockPageId(item, embeddedPages))).join('\n')
       }
       return `
         <div class="rstk-embedded-pages" data-embedded-form-pages>
           ${embeddedPages.map((page, index) => {
-            const pageFields = getEmbeddedFormPageFields(fields, embeddedPages, page.id)
+            const pageItems = getEmbeddedFormPageFields(embeddedItems, embeddedPages, page.id)
             return `
               <div data-embedded-page-content="${escapeHtml(page.id)}"${index === 0 ? '' : ' hidden'}>
-                ${pageFields.length
-                  ? pageFields.map(field => wrapRenderedBlock(field, renderFieldBlock(field, false, page.id, context))).join('\n')
-                  : `<p class="rstk-help">Esta página no tiene campos.</p>`}
+                ${pageItems.length
+                  ? pageItems.map(item => renderEmbeddedItem(item, page.id)).join('\n')
+                  : `<p class="rstk-help">Esta página no tiene contenido.</p>`}
               </div>
             `
           }).join('\n')}
@@ -10691,9 +10705,7 @@ function renderContentBlock(block, context = {}) {
     }
     return `
       <section class="rstk-embedded-form" id="form">
-        <h2>${content || escapeHtml(block.label || 'Formulario')}</h2>
-        ${settings.description ? `<p class="rstk-help">${escapeHtml(settings.description)}</p>` : ''}
-        ${renderEmbeddedFields()}
+        ${renderEmbeddedItems()}
         ${fields.length ? `
           <div class="rstk-actions rstk-embed-actions">
             ${hasEmbeddedPages ? `<button type="button" class="rstk-secondary" data-embedded-back hidden>${escapeHtml(context.backText || 'Anterior')}</button>` : ''}

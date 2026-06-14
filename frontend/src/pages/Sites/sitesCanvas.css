@@ -360,13 +360,21 @@
   width: min(100%, var(--rstk-field-width, 100%));
   justify-self: center;
 }
-.rstkCanvas .rstkEmbeddedFormField {
+.rstkCanvas .rstkEmbeddedFormItem.rstk-block-style {
+  width: 100%;
+  justify-self: center;
+}
+.rstkCanvas .rstkEmbeddedFormField,
+.rstkCanvas .rstkEmbeddedFormItem {
   position: relative;
   width: 100%;
   border: 1px solid transparent;
-  border-radius: calc(var(--rstk-field-radius, var(--rstk-radius)) + 4px);
+  border-radius: calc(var(--rstk-radius) + 4px);
   padding: 8px;
   transition: border-color .16s ease, background .16s ease, box-shadow .16s ease;
+}
+.rstkCanvas .rstkEmbeddedFormField {
+  border-radius: calc(var(--rstk-field-radius, var(--rstk-radius)) + 4px);
 }
 .rstkCanvas .rstkEmbeddedFormField > .rstk-field {
   width: 100%;
@@ -376,7 +384,13 @@
   border-color: color-mix(in srgb, var(--rstk-accent) 62%, transparent);
   background: color-mix(in srgb, var(--rstk-accent) 7%, transparent);
 }
-.rstkCanvas .rstkEmbeddedFormFieldActive {
+.rstkCanvas .rstkEmbeddedFormItem:hover,
+.rstkCanvas .rstkEmbeddedFormItemActive {
+  border-color: color-mix(in srgb, var(--rstk-accent) 62%, transparent);
+  background: transparent;
+}
+.rstkCanvas .rstkEmbeddedFormFieldActive,
+.rstkCanvas .rstkEmbeddedFormItemActive {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--rstk-accent) 20%, transparent);
 }
 .rstkCanvas .rstk-embed-actions {
@@ -405,7 +419,9 @@
   transition: opacity .14s ease, transform .14s ease;
 }
 .rstkCanvas .rstkEmbeddedFormField:hover .rstkEmbeddedFormFieldTools,
-.rstkCanvas .rstkEmbeddedFormFieldActive .rstkEmbeddedFormFieldTools {
+.rstkCanvas .rstkEmbeddedFormItem:hover .rstkEmbeddedFormFieldTools,
+.rstkCanvas .rstkEmbeddedFormFieldActive .rstkEmbeddedFormFieldTools,
+.rstkCanvas .rstkEmbeddedFormItemActive .rstkEmbeddedFormFieldTools {
   opacity: 1;
   transform: translateY(0);
 }
