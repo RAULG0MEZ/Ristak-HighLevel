@@ -3436,8 +3436,10 @@ export const PhoneChat: React.FC = () => {
     [agentDefs]
   )
   const agentPriorityStates = useMemo(
-    () => Object.values(agentStates).filter((state) => Boolean(state.signal) && state.signal !== 'discarded'),
-    [agentStates]
+    () => agentEnabled
+      ? Object.values(agentStates).filter((state) => Boolean(state.signal) && state.signal !== 'discarded')
+      : [],
+    [agentEnabled, agentStates]
   )
   const agentPriorityChatIdSet = useMemo(
     () => new Set(agentPriorityStates.map((state) => state.contactId)),
@@ -3447,7 +3449,7 @@ export const PhoneChat: React.FC = () => {
   const publishedAgentDefs = useMemo(() => agentDefs.filter((agent) => agent.enabled), [agentDefs])
   const publishedAgentCount = publishedAgentDefs.length
   const aiAgentHubAgentFilters = useMemo(() => {
-    if (publishedAgentDefs.length <= 1) return []
+    if (!agentEnabled || publishedAgentDefs.length <= 1) return []
 
     const activeCounts = new Map<string, number>()
     Object.values(agentStates).forEach((state) => {
@@ -3461,12 +3463,14 @@ export const PhoneChat: React.FC = () => {
       name: agent.name || 'Agente sin nombre',
       count: activeCounts.get(agent.id) || 0
     }))
-  }, [agentStates, archivedChatIdSet, publishedAgentDefs])
+  }, [agentEnabled, agentStates, archivedChatIdSet, publishedAgentDefs])
   const activeAiAgentHubAgentFilter = aiAgentHubAgentFilters.some((agent) => agent.id === aiAgentHubAgentFilter)
     ? aiAgentHubAgentFilter
     : 'all'
   const aiAgentHubAgentFilterTotal = aiAgentHubAgentFilters.reduce((total, agent) => total + agent.count, 0)
   const agentHubChatRows = useMemo(() => {
+    if (!agentEnabled) return []
+
     const activeContactIds = new Set(
       Object.values(agentStates)
         .filter((state) => state.status === 'active' && state.signal !== 'discarded')
@@ -3493,7 +3497,7 @@ export const PhoneChat: React.FC = () => {
         return Date.parse(rightState?.updatedAt || right.lastMessageDate || right.createdAt) -
           Date.parse(leftState?.updatedAt || left.lastMessageDate || left.createdAt)
       })
-  }, [activeAiAgentHubAgentFilter, agentStates, aiAgentHubQuery, archivedChatIdSet, chats])
+  }, [activeAiAgentHubAgentFilter, agentEnabled, agentStates, aiAgentHubQuery, archivedChatIdSet, chats])
   const agentPriorityChatRows = useMemo(() => {
     if (archivedViewOpen || agentPriorityViewOpen || chatFilter !== 'all') return []
     return chats
@@ -3543,6 +3547,12 @@ export const PhoneChat: React.FC = () => {
       setChatFilter('all')
     }
   }, [chatFilter])
+
+  useEffect(() => {
+    if (!agentEnabled) {
+      setAgentPriorityViewOpen(false)
+    }
+  }, [agentEnabled])
 
   useEffect(() => {
     if (aiAgentHubAgentFilter === 'all') return
@@ -7530,7 +7540,7 @@ export const PhoneChat: React.FC = () => {
     const hasUnread = showUnreadIndicators && source === 'chat' && unreadCount > 0
     const isArchived = archivedChatIdSet.has(contact.id)
     const isMuted = mutedChatIdSet.has(contact.id)
-    const agentState = source === 'chat' ? agentStates[contact.id] || null : null
+    const agentState = source === 'chat' && agentEnabled ? agentStates[contact.id] || null : null
     const isAgentActionChat = Boolean(agentState?.signal && agentState.signal !== 'discarded')
 
     const content = (
