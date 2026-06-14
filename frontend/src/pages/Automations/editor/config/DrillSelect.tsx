@@ -36,7 +36,7 @@ export const DrillSelect: React.FC<DrillSelectProps> = ({
   const [open, setOpen] = useState(false)
   const [groupId, setGroupId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
-  const [position, setPosition] = useState({ top: 0, left: 0, width: 0 })
+  const [position, setPosition] = useState({ top: 0, left: 0, width: 0, maxHeight: 0 })
 
   const visibleGroups = groups.filter((group) => group.items.length > 0)
   const selected = visibleGroups.flatMap((group) => group.items).find((item) => item.value === value)
@@ -56,12 +56,21 @@ export const DrillSelect: React.FC<DrillSelectProps> = ({
     const place = () => {
       const rect = triggerRef.current?.getBoundingClientRect()
       if (!rect) return
-      const height = Math.min(320, window.innerHeight - rect.bottom - 16)
-      const flip = height < 180 && rect.top > 320
+      const viewportPadding = 12
+      const gap = 6
+      const targetWidth = Math.min(Math.max(rect.width, 360), window.innerWidth - viewportPadding * 2)
+      const spaceBelow = window.innerHeight - rect.bottom - viewportPadding
+      const spaceAbove = rect.top - viewportPadding
+      const openAbove = spaceBelow < 260 && spaceAbove > spaceBelow
+      const availableSpace = Math.max(220, openAbove ? spaceAbove - gap : spaceBelow - gap)
+      const maxHeight = Math.min(420, availableSpace)
       setPosition({
-        top: flip ? rect.top - 8 : rect.bottom + 4,
-        left: Math.min(rect.left, window.innerWidth - rect.width - 12),
-        width: Math.max(rect.width, 230)
+        top: openAbove
+          ? Math.max(viewportPadding, rect.top - maxHeight - gap)
+          : Math.min(rect.bottom + gap, window.innerHeight - viewportPadding - maxHeight),
+        left: Math.min(Math.max(viewportPadding, rect.left), window.innerWidth - targetWidth - viewportPadding),
+        width: targetWidth,
+        maxHeight
       })
     }
     place()
@@ -122,7 +131,7 @@ export const DrillSelect: React.FC<DrillSelectProps> = ({
           <div
             ref={dropdownRef}
             className={styles.drillDropdown}
-            style={{ top: position.top, left: position.left, width: position.width }}
+            style={{ top: position.top, left: position.left, width: position.width, maxHeight: position.maxHeight }}
             data-automation-interactive="true"
           >
             <div className={styles.drillSearch}>

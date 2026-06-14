@@ -297,6 +297,7 @@ export const TagPicker: React.FC<TagPickerProps> = (props) => {
         aria-expanded={isOpen}
         aria-haspopup="listbox"
         aria-label={props['aria-label']}
+        data-ristak-dropdown-trigger
       >
         <span className={isMultiple || !singleLabel ? styles.triggerPlaceholder : styles.triggerLabel}>
           {isMultiple
