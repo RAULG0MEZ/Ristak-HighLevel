@@ -58,6 +58,7 @@ import {
   Mic,
   Monitor,
   MoreVertical,
+  Moon,
   Music2,
   MousePointerClick,
   PanelBottom,
@@ -74,6 +75,7 @@ import {
   Sparkles,
   Smartphone,
   Strikethrough,
+  Sun,
   Trash2,
   Type,
   Underline,
@@ -10732,6 +10734,111 @@ const ImportedActionChainEditor: React.FC<{
   )
 }
 
+type ImportedCodeTheme = 'dark' | 'light'
+
+function escapeImportedCodeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function wrapImportedCodeToken(token: 'tag' | 'attr' | 'string' | 'comment' | 'keyword', value: string) {
+  return `<span class=rstk-code-token-${token}>${value}</span>`
+}
+
+function highlightImportedHtmlTag(rawTag: string) {
+  if (rawTag.startsWith('<!--')) {
+    return wrapImportedCodeToken('comment', escapeImportedCodeHtml(rawTag))
+  }
+
+  const tagNameMatch = rawTag.match(/^<\/?\s*([A-Za-z][\w:-]*)/)
+  if (!tagNameMatch?.[1]) return escapeImportedCodeHtml(rawTag)
+
+  const tagName = tagNameMatch[1]
+  const tagNameIndex = rawTag.indexOf(tagName)
+  const beforeTagName = rawTag.slice(0, tagNameIndex)
+  const afterTagName = rawTag.slice(tagNameIndex + tagName.length)
+  let output = `${escapeImportedCodeHtml(beforeTagName)}${wrapImportedCodeToken('tag', escapeImportedCodeHtml(tagName))}`
+  let cursor = 0
+  const attrRegex = /([^\s=/>]+)(\s*=\s*)("[^"]*"|'[^']*'|[^\s>]+)?/g
+  let match: RegExpExecArray | null
+
+  while ((match = attrRegex.exec(afterTagName))) {
+    output += escapeImportedCodeHtml(afterTagName.slice(cursor, match.index))
+    output += wrapImportedCodeToken('attr', escapeImportedCodeHtml(match[1] || ''))
+    output += escapeImportedCodeHtml(match[2] || '')
+    if (match[3]) output += wrapImportedCodeToken('string', escapeImportedCodeHtml(match[3]))
+    cursor = match.index + match[0].length
+  }
+
+  output += escapeImportedCodeHtml(afterTagName.slice(cursor))
+  return output
+}
+
+function highlightImportedHtmlCode(value: string) {
+  const tagRegex = /(<!--[\s\S]*?-->|<!doctype[^>]*>|<\/?[A-Za-z][^>]*>)/gi
+  let output = ''
+  let cursor = 0
+  let match: RegExpExecArray | null
+
+  while ((match = tagRegex.exec(value))) {
+    output += escapeImportedCodeHtml(value.slice(cursor, match.index))
+    output += highlightImportedHtmlTag(match[0])
+    cursor = match.index + match[0].length
+  }
+
+  output += escapeImportedCodeHtml(value.slice(cursor))
+  return output
+}
+
+function highlightImportedCode(value: string, language = 'html') {
+  if (!value) return ' '
+  const normalizedLanguage = language.toLowerCase()
+  if (normalizedLanguage.includes('html') || normalizedLanguage.includes('xml')) {
+    return highlightImportedHtmlCode(value)
+  }
+  return escapeImportedCodeHtml(value)
+}
+
+function getImportedCodeDiagnostics(value: string, language = 'html') {
+  const diagnostics: string[] = []
+  const normalizedLanguage = language.toLowerCase()
+  if (!value.trim()) return diagnostics
+
+  if ((value.match(/</g)?.length || 0) > (value.match(/>/g)?.length || 0)) {
+    diagnostics.push('Hay una etiqueta sin cerrar.')
+  }
+
+  if (normalizedLanguage.includes('html')) {
+    const voidTags = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'])
+    const stack: string[] = []
+    const tagRegex = /<\/?([A-Za-z][\w:-]*)\b[^>]*>/g
+    let match: RegExpExecArray | null
+    while ((match = tagRegex.exec(value))) {
+      const fullTag = match[0]
+      const tagName = match[1].toLowerCase()
+      if (voidTags.has(tagName) || fullTag.startsWith('<!--') || fullTag.startsWith('<!') || fullTag.endsWith('/>')) continue
+      if (fullTag.startsWith('</')) {
+        const expected = stack.pop()
+        if (expected && expected !== tagName) {
+          diagnostics.push(`Se esperaba cerrar <${expected}> antes de </${tagName}>.`)
+          break
+        }
+        continue
+      }
+      stack.push(tagName)
+    }
+    if (!diagnostics.length && stack.length) {
+      diagnostics.push(`Falta cerrar <${stack[stack.length - 1]}>.`)
+    }
+  }
+
+  return diagnostics.slice(0, 2)
+}
+
 const ImportedHtmlEditorPanel: React.FC<{
   site: PublicSite
   pages: SitePage[]
@@ -10777,6 +10884,8 @@ const ImportedHtmlEditorPanel: React.FC<{
 }) => {
   const { showToast } = useNotification()
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
+  const codeSplitRef = useRef<HTMLDivElement | null>(null)
+  const codeHighlightRef = useRef<HTMLPreElement | null>(null)
   const selectedIframeElementRef = useRef<HTMLElement | null>(null)
   const previewVisualContextRef = useRef<SitesAIPreviewVisualContext | null>(null)
   const inlineImageFileInputRef = useRef<HTMLInputElement | null>(null)
@@ -10800,7 +10909,8 @@ const ImportedHtmlEditorPanel: React.FC<{
   const [panelFormFields, setPanelFormFields] = useState<ImportedPanelFormField[]>([])
   const [contentSaving, setContentSaving] = useState(false)
   const [contentError, setContentError] = useState('')
-  const [activeCodeFileKey, setActiveCodeFileKey] = useState('')
+  const [codeEditorWidth, setCodeEditorWidth] = useState(50)
+  const [codeEditorTheme, setCodeEditorTheme] = useState<ImportedCodeTheme>('dark')
   const importedPages = pages.length ? pages : [{ id: DEFAULT_FUNNEL_PAGE_ID, title: 'Página 1', sortOrder: 0 }]
   const activeImportedPage = importedPages.find(page => page.id === activePageId) || importedPages[0]
   const codeFiles = useMemo<ImportedSiteCodeFile[]>(() => {
@@ -10826,10 +10936,18 @@ const ImportedHtmlEditorPanel: React.FC<{
     codeFiles[0] ||
     null
   ), [activeImportedPage?.id, activeImportedPage?.importedAssetPath, codeFiles])
-  const activeCodeFile = codeFiles.find(file => getImportedCodeFileKey(file.path) === activeCodeFileKey) || activePageCodeFile
+  const activeCodeFile = activePageCodeFile
   const activeCodeKey = activeCodeFile ? getImportedCodeFileKey(activeCodeFile.path) : ''
   const activeCodeValue = activeCodeFile ? codeDrafts[activeCodeKey] ?? activeCodeFile.content : ''
   const activeCodeDirty = Boolean(activeCodeKey && Object.prototype.hasOwnProperty.call(codeDrafts, activeCodeKey))
+  const activeCodeDiagnostics = useMemo(
+    () => getImportedCodeDiagnostics(activeCodeValue, activeCodeFile?.language || 'html'),
+    [activeCodeFile?.language, activeCodeValue]
+  )
+  const highlightedActiveCode = useMemo(
+    () => highlightImportedCode(activeCodeValue, activeCodeFile?.language || 'html'),
+    [activeCodeFile?.language, activeCodeValue]
+  )
   const mappingStats = useMemo(() => {
     const formMappings = Array.isArray(importData?.formMappings) ? importData.formMappings : []
     const fields = formMappings.flatMap(form => Array.isArray(form.fields) ? form.fields : [])
@@ -10850,16 +10968,39 @@ const ImportedHtmlEditorPanel: React.FC<{
     onError: setAiRegionError,
     onStart: () => setAiRegionError('')
   })
+  const syncCodeHighlightScroll = useCallback((event: React.UIEvent<HTMLTextAreaElement>) => {
+    const highlight = codeHighlightRef.current
+    if (!highlight) return
+    highlight.scrollTop = event.currentTarget.scrollTop
+    highlight.scrollLeft = event.currentTarget.scrollLeft
+  }, [])
+  const handleCodeSplitPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const container = codeSplitRef.current
+    if (!container) return
+    event.preventDefault()
 
-  useEffect(() => {
-    if (!codeEditorOpen) return
-    if (!activePageCodeFile) {
-      setActiveCodeFileKey('')
-      return
+    const updateWidth = (clientX: number) => {
+      const rect = container.getBoundingClientRect()
+      if (!rect.width) return
+      const next = ((clientX - rect.left) / rect.width) * 100
+      setCodeEditorWidth(Math.min(72, Math.max(28, next)))
     }
-    const nextKey = getImportedCodeFileKey(activePageCodeFile.path)
-    setActiveCodeFileKey(current => codeFiles.some(file => getImportedCodeFileKey(file.path) === current) ? current : nextKey)
-  }, [activePageCodeFile, codeEditorOpen, codeFiles])
+
+    updateWidth(event.clientX)
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      updateWidth(moveEvent.clientX)
+    }
+    const handlePointerUp = () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerUp)
+      document.body.classList.remove('rstk-code-resizing')
+    }
+
+    document.body.classList.add('rstk-code-resizing')
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerUp, { once: true })
+  }, [])
 
   useEffect(() => {
     if (!routeEditing) setRouteDraft(getRouteEditorValue(site))
@@ -11967,76 +12108,105 @@ const ImportedHtmlEditorPanel: React.FC<{
     ? resolveImportedVideoPreview(inlineEditor.value)
     : { kind: 'empty' }
 
-  const selectCodeFile = (file: ImportedSiteCodeFile) => {
-    setActiveCodeFileKey(getImportedCodeFileKey(file.path))
-    if (file.pageId && file.pageId !== activeImportedPage?.id) {
-      onSelectPage(file.pageId)
-    }
-  }
   const activeCodePreviewHtml = activeCodeFile?.language === 'html'
     ? activeCodeValue
     : previewHtml
 
   if (codeEditorOpen) {
     return (
-      <div className={styles.importedCodeEditorPanel}>
-        <aside className={styles.importedCodeFilesPane} aria-label="Archivos del HTML importado">
+      <div
+        ref={codeSplitRef}
+        className={styles.importedCodeEditorPanel}
+        style={{ '--imported-code-source-width': `${codeEditorWidth}%` } as React.CSSProperties}
+      >
+        <section className={`${styles.importedCodeSourcePane} ${codeEditorTheme === 'dark' ? styles.importedCodeSourcePaneDark : styles.importedCodeSourcePaneLight} ${activeCodeDiagnostics.length ? styles.importedCodeSourcePaneInvalid : ''}`}>
           <div className={styles.importedCodePaneHeader}>
-            <span>Archivos</span>
-            <strong>{codeFiles.length}</strong>
-          </div>
-          <div className={styles.importedCodeFilesList}>
-            {codeFiles.map(file => {
-              const fileKey = getImportedCodeFileKey(file.path)
-              const selected = fileKey === activeCodeKey
-              const dirty = Object.prototype.hasOwnProperty.call(codeDrafts, fileKey)
-              return (
+            <div className={styles.importedCodeTitleBlock}>
+              <span>Editor HTML</span>
+              <strong>{activeCodeFile?.label || activeImportedPage?.title || 'Código de la página'}</strong>
+            </div>
+            <div className={styles.importedCodeHeaderActions}>
+              {activeCodeDiagnostics.length > 0 && (
+                <span className={styles.importedCodeDiagnostic}>
+                  <AlertTriangle size={13} />
+                  {activeCodeDiagnostics[0]}
+                </span>
+              )}
+              <strong className={activeCodeDirty ? styles.importedCodeDirtyStatus : styles.importedCodeSavedStatus}>
+                {activeCodeDirty ? 'Cambios sin guardar' : 'Guardado'}
+              </strong>
+              <div className={styles.importedCodeThemeToggle} aria-label="Tema del editor de código">
                 <button
-                  key={fileKey}
                   type="button"
-                  className={`${styles.importedCodeFileButton} ${selected ? styles.importedCodeFileButtonActive : ''}`}
-                  onClick={() => selectCodeFile(file)}
-                  disabled={saving}
+                  className={codeEditorTheme === 'light' ? styles.importedCodeThemeButtonActive : ''}
+                  onClick={() => setCodeEditorTheme('light')}
+                  aria-pressed={codeEditorTheme === 'light'}
                 >
-                  <FileText size={15} />
-                  <span>
-                    <strong>{file.label || file.path || 'index.html'}</strong>
-                    <small>{file.path || 'Archivo principal'} · {file.language.toUpperCase()}</small>
-                  </span>
-                  {dirty && <i aria-label="Cambios sin guardar" />}
+                  <Sun size={13} />
+                  Claro
                 </button>
-              )
-            })}
-            {!codeFiles.length && (
-              <div className={styles.importedCodeEmptyState}>
-                <Code2 size={18} />
-                <span>No hay archivos editables.</span>
+                <button
+                  type="button"
+                  className={codeEditorTheme === 'dark' ? styles.importedCodeThemeButtonActive : ''}
+                  onClick={() => setCodeEditorTheme('dark')}
+                  aria-pressed={codeEditorTheme === 'dark'}
+                >
+                  <Moon size={13} />
+                  Oscuro
+                </button>
               </div>
-            )}
-          </div>
-        </aside>
-
-        <section className={styles.importedCodeSourcePane}>
-          <div className={styles.importedCodePaneHeader}>
-            <span>{activeCodeFile?.label || 'Código'}</span>
-            {activeCodeDirty && <strong>Cambios sin guardar</strong>}
+            </div>
           </div>
           {activeCodeFile ? (
-            <textarea
-              className={styles.importedCodeTextarea}
-              value={activeCodeValue}
-              spellCheck={false}
-              disabled={saving}
-              aria-label={`Código de ${activeCodeFile.label || activeCodeFile.path || 'archivo principal'}`}
-              onChange={(event) => onCodeDraftChange(activeCodeFile.path, event.target.value, activeCodeFile.content)}
-            />
+            <div className={styles.importedCodeEditorShell}>
+              <pre
+                ref={codeHighlightRef}
+                className={styles.importedCodeHighlight}
+                aria-hidden="true"
+              >
+                <code dangerouslySetInnerHTML={{ __html: highlightedActiveCode }} />
+              </pre>
+              <textarea
+                className={styles.importedCodeTextarea}
+                value={activeCodeValue}
+                spellCheck={false}
+                disabled={saving}
+                wrap="off"
+                aria-label={`Código de ${activeCodeFile.label || activeCodeFile.path || 'archivo principal'}`}
+                onScroll={syncCodeHighlightScroll}
+                onChange={(event) => onCodeDraftChange(activeCodeFile.path, event.target.value, activeCodeFile.content)}
+              />
+            </div>
           ) : (
             <div className={styles.importedCodeEmptyState}>
               <Code2 size={18} />
-              <span>Selecciona un archivo.</span>
+              <span>No hay HTML editable para esta página.</span>
             </div>
           )}
         </section>
+
+        <div
+          className={styles.importedCodeResizeHandle}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Cambiar tamaño entre código y vista"
+          aria-valuemin={28}
+          aria-valuemax={72}
+          aria-valuenow={Math.round(codeEditorWidth)}
+          tabIndex={0}
+          onPointerDown={handleCodeSplitPointerDown}
+          onDoubleClick={() => setCodeEditorWidth(50)}
+          onKeyDown={(event) => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+            event.preventDefault()
+            if (event.key === 'ArrowLeft') setCodeEditorWidth(current => Math.max(28, current - 4))
+            if (event.key === 'ArrowRight') setCodeEditorWidth(current => Math.min(72, current + 4))
+            if (event.key === 'Home') setCodeEditorWidth(28)
+            if (event.key === 'End') setCodeEditorWidth(72)
+          }}
+        >
+          <span />
+        </div>
 
         <section className={styles.importedCodePreviewPane}>
           <div className={styles.importedCodePaneHeader}>
