@@ -61,7 +61,11 @@ const AUDIO_EXTENSION_BY_MIME = {
   'audio/ogg': 'ogg',
   'audio/webm': 'webm',
   'audio/wav': 'wav',
-  'audio/x-wav': 'wav'
+  'audio/x-wav': 'wav',
+  // Safari can wrap microphone-only recordings in an MP4 container and label
+  // them as video/mp4. This endpoint only accepts audio payloads, so we treat
+  // that input as something that must be transcoded before WhatsApp sees it.
+  'video/mp4': 'mp4'
 }
 const DOCUMENT_EXTENSION_BY_MIME = {
   'application/pdf': 'pdf',
@@ -737,6 +741,24 @@ async function convertAudioToOggOpus({ buffer, extension }) {
   }
 }
 
+async function prepareWhatsAppVoiceAudio(parsed) {
+  if (audioNeedsWhatsAppConversion(parsed)) {
+    return {
+      buffer: await convertAudioToOggOpus(parsed),
+      mimeType: WHATSAPP_VOICE_NOTE_MIME_TYPE,
+      extension: 'ogg',
+      compression: 'whatsapp_ogg_opus'
+    }
+  }
+
+  return {
+    buffer: parsed.buffer,
+    mimeType: normalizeVoiceNoteMimeType(parsed) || parsed.mimeType,
+    extension: 'ogg',
+    compression: 'original_ogg_opus'
+  }
+}
+
 export async function saveWhatsAppImageDataUrl(dataUrl = '') {
   const parsed = parseImageDataUrl(dataUrl)
   const prepared = await prepareWhatsAppApiImageBuffer(parsed)
@@ -786,17 +808,26 @@ export async function saveWhatsAppImageDataUrl(dataUrl = '') {
 export async function saveWhatsAppAudioDataUrl(dataUrl = '') {
   const parsed = parseAudioDataUrl(dataUrl)
   const originalMimeType = parsed.mimeType
+  const media = await prepareWhatsAppVoiceAudio(parsed)
   try {
     const { uploadMediaAsset } = await import('./mediaStorageService.js')
     const asset = await uploadMediaAsset({
-      buffer: parsed.buffer,
-      mimeType: parsed.mimeType,
-      filename: `whatsapp-audio.${parsed.extension || 'audio'}`,
+      buffer: media.buffer,
+      mimeType: media.mimeType,
+      filename: `whatsapp-audio.${media.extension}`,
       module: 'chat',
-      isPublic: true
+      isPublic: true,
+      skipCompression: true,
+      metadata: {
+        whatsappApiCompatible: true,
+        whatsappVoiceNote: true,
+        whatsappAudioCompression: media.compression,
+        originalMimeType,
+        originalExtension: parsed.extension
+      }
     })
     return {
-      mimeType: asset.mimeType,
+      mimeType: media.mimeType,
       originalMimeType,
       size: asset.sizeProcessed,
       publicPath: asset.publicUrl,
@@ -807,17 +838,6 @@ export async function saveWhatsAppAudioDataUrl(dataUrl = '') {
     handleWhatsAppMediaStorageError('audio de chat', error)
   }
 
-  const media = audioNeedsWhatsAppConversion(parsed)
-    ? {
-        buffer: await convertAudioToOggOpus(parsed),
-        mimeType: WHATSAPP_VOICE_NOTE_MIME_TYPE,
-        extension: 'ogg'
-      }
-    : {
-        buffer: parsed.buffer,
-        mimeType: normalizeVoiceNoteMimeType(parsed) || parsed.mimeType,
-        extension: parsed.extension
-      }
   const dayKey = new Date().toISOString().slice(0, 10)
   const folder = join(WHATSAPP_AUDIO_UPLOAD_ROOT, dayKey)
   const filename = `${crypto.randomUUID()}.${media.extension}`
