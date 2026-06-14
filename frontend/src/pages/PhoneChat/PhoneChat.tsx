@@ -7645,36 +7645,25 @@ export const PhoneChat: React.FC = () => {
 
     return (
       <section className={`${styles.aiAgentHubScreen} ${styles.aiAgentHubScreenOpen}`} aria-label="Inteligencia artificial">
-        <header className={styles.aiAgentHubHeader}>
-          <button
-            type="button"
-            className={styles.backButton}
-            onClick={() => {
-              setAiAgentHubOpen(false)
-              setAgentPickerOpen(false)
-            }}
-            aria-label="Volver a chats"
-          >
-            <ChevronLeft size={32} />
-          </button>
-          <strong>Inteligencia artificial</strong>
-          <button
-            type="button"
-            className={styles.aiAgentHubHeaderAction}
-            onClick={openAgentSelectorScreen}
-            aria-label="Elegir agentes"
-          >
-            <Bot size={19} />
-          </button>
-        </header>
-
         <div className={styles.aiAgentHubContent} data-phone-chat-scrollable="true">
           <section className={styles.aiAgentHubHero} aria-label="Control de inteligencia artificial">
+            <button
+              type="button"
+              className={styles.aiAgentHubHeroBack}
+              onClick={() => {
+                setAiAgentHubOpen(false)
+                setAgentPickerOpen(false)
+              }}
+              aria-label="Volver a chats"
+            >
+              <ChevronLeft size={26} />
+            </button>
+            <span className={styles.aiAgentHubEyebrow}>Inteligencia artificial</span>
             <span className={`${styles.aiAgentHubRobot} ${agentEnabled ? styles.aiAgentHubRobotOn : styles.aiAgentHubRobotOff}`}>
               {renderAgentRobotGlyph(agentEnabled)}
             </span>
             <div className={styles.aiAgentHubCopy}>
-              <p>{activeLabel}</p>
+              <p className={`${styles.aiAgentHubStatus} ${agentEnabled ? styles.aiAgentHubStatusOn : styles.aiAgentHubStatusOff}`}>{activeLabel}</p>
               <h2>Agente conversacional</h2>
               <span>{agentEnabled ? `${agentCountLabel} atendiendo chats.` : `${agentCountLabel}; toca encender para activarlos.`}</span>
             </div>
