@@ -6,6 +6,8 @@ import { requireAuth } from '../middleware/authMiddleware.js'
 import { requireModuleAccess } from '../middleware/userAccessMiddleware.js'
 import {
   deleteMediaAssetHandler,
+  downloadMediaAssetHandler,
+  downloadMediaAssetsArchiveHandler,
   getMediaAssetUrlHandler,
   getStorageUsageHandler,
   listMediaAssetsHandler,
@@ -39,6 +41,8 @@ router.get('/assets', requireMediaAccess, listMediaAssetsHandler)
 router.get('/storage/usage', getStorageUsageHandler)
 router.get('/diagnostics', storageDiagnosticsHandler)
 router.get('/assets/:assetId/url', requireMediaAccess, getMediaAssetUrlHandler)
+router.get('/assets/:assetId/download', requireMediaAccess, downloadMediaAssetHandler)
+router.post('/assets/download', requireMediaAccess, downloadMediaAssetsArchiveHandler)
 router.delete('/assets/:assetId', requireMediaAccess, deleteMediaAssetHandler)
 router.put('/assets/:assetId/replace', requireMediaAccess, upload.single('file'), replaceMediaAssetHandler)
 router.post('/assets/:assetId/retry', requireMediaAccess, retryMediaAssetHandler)

@@ -3,6 +3,7 @@ import {
   AudioLines,
   ChevronRight,
   Copy,
+  Download,
   ExternalLink,
   File,
   FileAudio,
@@ -14,15 +15,26 @@ import {
   HardDrive,
   List,
   Loader2,
+  MoreHorizontal,
   RefreshCw,
   Search,
   Trash2,
   Upload,
   X
 } from 'lucide-react'
-import { Button, Card, PageHeader, TabList } from '@/components/common'
+import {
+  Button,
+  Card,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  PageHeader,
+  TabList
+} from '@/components/common'
 import { useNotification } from '@/contexts/NotificationContext'
-import mediaService, { type MediaAsset, type StorageUsage } from '@/services/mediaService'
+import mediaService, { type MediaAsset, type MediaDownloadEntry, type StorageUsage } from '@/services/mediaService'
 import styles from './MediaSettings.module.css'
 
 type MediaFilter = 'all' | 'image' | 'video' | 'audio' | 'document' | 'other'
@@ -45,6 +57,8 @@ interface FolderSummary {
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || ''
 const STORAGE_GB = 1024 * 1024 * 1024
+const FILE_SELECTION_PREFIX = 'file:'
+const FOLDER_SELECTION_PREFIX = 'folder:'
 
 const mediaTabs: Array<{ value: MediaFilter; label: string; icon: React.ReactNode }> = [
   { value: 'all', label: 'Todo', icon: <HardDrive size={14} /> },
@@ -79,6 +93,22 @@ const moduleLabelMap: Record<string, string> = {
 
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(' ')
+}
+
+function fileSelectionKey(assetId: string) {
+  return `${FILE_SELECTION_PREFIX}${assetId}`
+}
+
+function folderSelectionKey(path: string) {
+  return `${FOLDER_SELECTION_PREFIX}${path}`
+}
+
+function selectedFileIdFromKey(key: string) {
+  return key.startsWith(FILE_SELECTION_PREFIX) ? key.slice(FILE_SELECTION_PREFIX.length) : ''
+}
+
+function selectedFolderPathFromKey(key: string) {
+  return key.startsWith(FOLDER_SELECTION_PREFIX) ? key.slice(FOLDER_SELECTION_PREFIX.length) : ''
 }
 
 function formatBytes(bytes?: number | null) {
@@ -242,6 +272,24 @@ function getCurrentFolderLabel(currentPath: string) {
   return formatFolderSegment(parts[parts.length - 1])
 }
 
+function getArchiveEntryPath(file: ExplorerFile) {
+  const folders = file.folderSegments.map(formatFolderSegment)
+  return [...folders, file.fileName].filter(Boolean).join('/') || file.fileName
+}
+
+function sanitizeDownloadName(value: string, fallback = 'media') {
+  const cleaned = value
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, '-')
+    .replace(/\s+/g, ' ')
+    .slice(0, 80)
+  return cleaned || fallback
+}
+
+function buildArchiveFilename(label: string) {
+  return `${sanitizeDownloadName(label, 'media')}.zip`
+}
+
 export const MediaSettings: React.FC = () => {
   const { showToast, showConfirm } = useNotification()
   const uploadInputRef = useRef<HTMLInputElement>(null)
@@ -251,12 +299,15 @@ export const MediaSettings: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
+  const [bulkAction, setBulkAction] = useState<'download' | 'delete' | null>(null)
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
   const [activeFilter, setActiveFilter] = useState<MediaFilter>('all')
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [currentPath, setCurrentPath] = useState('')
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null)
+  const [selectedItemKeys, setSelectedItemKeys] = useState<Set<string>>(() => new Set())
 
   const loadMedia = useCallback(async (mode: 'initial' | 'refresh' = 'refresh') => {
     if (mode === 'initial') setLoading(true)
@@ -285,6 +336,16 @@ export const MediaSettings: React.FC = () => {
   }, [loadMedia])
 
   const files = useMemo(() => assets.map(toExplorerFile), [assets])
+  const filesById = useMemo(() => new Map(files.map((file) => [file.asset.id, file])), [files])
+  const allFolderPaths = useMemo(() => {
+    const folders = new Set<string>()
+    files.forEach((file) => {
+      file.folderSegments.forEach((_, index) => {
+        folders.add(file.folderSegments.slice(0, index + 1).join('/'))
+      })
+    })
+    return folders
+  }, [files])
   const typeFilteredFiles = useMemo(() => (
     activeFilter === 'all'
       ? files
@@ -306,17 +367,100 @@ export const MediaSettings: React.FC = () => {
     normalizedQuery ? [] : buildFolderSummaries(typeFilteredFiles, currentPath)
   ), [currentPath, normalizedQuery, typeFilteredFiles])
   const rootFolders = useMemo(() => buildFolderSummaries(typeFilteredFiles, ''), [typeFilteredFiles])
+  const visibleSelectionKeys = useMemo(() => [
+    ...folderSummaries.map((folder) => folderSelectionKey(folder.path)),
+    ...visibleFiles.map((file) => fileSelectionKey(file.asset.id))
+  ], [folderSummaries, visibleFiles])
+  const selectedFiles = useMemo(() => {
+    const selected = new Map<string, ExplorerFile>()
+
+    selectedItemKeys.forEach((key) => {
+      const assetId = selectedFileIdFromKey(key)
+      if (assetId) {
+        const file = filesById.get(assetId)
+        if (file) selected.set(assetId, file)
+        return
+      }
+
+      const folderPath = selectedFolderPathFromKey(key)
+      if (folderPath) {
+        files
+          .filter((file) => fileStartsWithPath(file, folderPath))
+          .forEach((file) => selected.set(file.asset.id, file))
+      }
+    })
+
+    return Array.from(selected.values())
+  }, [files, filesById, selectedItemKeys])
   const selectedFile = useMemo(() => (
     files.find((file) => file.asset.id === selectedAssetId) || visibleFiles[0] || null
   ), [files, selectedAssetId, visibleFiles])
   const usagePercent = Math.max(0, Math.min(100, Number(usage?.usage_percent || 0)))
   const filesCount = usage?.files_count ?? assets.length
   const folderPathParts = pathSegments(currentPath)
+  const selectedFileCount = selectedFiles.length
+  const selectedElementCount = selectedItemKeys.size
+  const allVisibleSelected = visibleSelectionKeys.length > 0 && visibleSelectionKeys.every((key) => selectedItemKeys.has(key))
+  const partiallySelected = !allVisibleSelected && visibleSelectionKeys.some((key) => selectedItemKeys.has(key))
+
+  useEffect(() => {
+    setSelectedItemKeys((current) => {
+      let changed = false
+      const next = new Set<string>()
+
+      current.forEach((key) => {
+        const assetId = selectedFileIdFromKey(key)
+        if (assetId) {
+          if (filesById.has(assetId)) next.add(key)
+          else changed = true
+          return
+        }
+
+        const folderPath = selectedFolderPathFromKey(key)
+        if (folderPath && allFolderPaths.has(folderPath)) {
+          next.add(key)
+        } else {
+          changed = true
+        }
+      })
+
+      return changed ? next : current
+    })
+  }, [allFolderPaths, filesById])
 
   const handleFolderOpen = (path: string) => {
     setCurrentPath(path)
     setSelectedAssetId(null)
   }
+
+  const toggleSelection = (key: string) => {
+    setSelectedItemKeys((current) => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  const clearSelection = () => {
+    setSelectedItemKeys(new Set())
+  }
+
+  const toggleVisibleSelection = () => {
+    setSelectedItemKeys((current) => {
+      const next = new Set(current)
+      if (allVisibleSelected) {
+        visibleSelectionKeys.forEach((key) => next.delete(key))
+      } else {
+        visibleSelectionKeys.forEach((key) => next.add(key))
+      }
+      return next
+    })
+  }
+
+  const filesInsideFolder = (folderPath: string) => (
+    files.filter((file) => fileStartsWithPath(file, folderPath))
+  )
 
   const handleUploadClick = () => {
     uploadInputRef.current?.click()
@@ -360,12 +504,74 @@ export const MediaSettings: React.FC = () => {
     window.open(getOpenUrl(asset), '_blank', 'noopener,noreferrer')
   }
 
+  const downloadFiles = async (filesToDownload: ExplorerFile[], archiveFilename: string) => {
+    if (!filesToDownload.length) {
+      showToast('warning', 'No hay archivos', 'Selecciona al menos un archivo para descargar.')
+      return
+    }
+
+    if (filesToDownload.length === 1) {
+      const [file] = filesToDownload
+      setDownloadingId(file.asset.id)
+      try {
+        await mediaService.downloadAsset(file.asset.id, file.fileName)
+        showToast('success', 'Descarga iniciada', `${file.fileName} se está descargando.`)
+      } catch (downloadError) {
+        showToast('error', 'No se pudo descargar', downloadError instanceof Error ? downloadError.message : 'Intenta otra vez.')
+      } finally {
+        setDownloadingId(null)
+      }
+      return
+    }
+
+    setBulkAction('download')
+    try {
+      const entries: MediaDownloadEntry[] = filesToDownload.map((file) => ({
+        id: file.asset.id,
+        path: getArchiveEntryPath(file)
+      }))
+      await mediaService.downloadAssetsArchive(entries, archiveFilename)
+      showToast('success', 'Descarga iniciada', `${filesToDownload.length} archivos van en un ZIP.`)
+    } catch (downloadError) {
+      showToast('error', 'No se pudo descargar', downloadError instanceof Error ? downloadError.message : 'Intenta otra vez.')
+    } finally {
+      setBulkAction(null)
+    }
+  }
+
+  const handleDownloadAsset = (file: ExplorerFile) => {
+    void downloadFiles([file], file.fileName)
+  }
+
+  const handleDownloadFolder = (folder: FolderSummary) => {
+    void downloadFiles(filesInsideFolder(folder.path), buildArchiveFilename(folder.name))
+  }
+
+  const handleDownloadSelected = () => {
+    const selectedFolderNames = Array.from(selectedItemKeys)
+      .map(selectedFolderPathFromKey)
+      .filter(Boolean)
+      .map((path) => getCurrentFolderLabel(path))
+    const currentFolderName = selectedElementCount === 1 && selectedFolderNames[0]
+      ? selectedFolderNames[0]
+      : getCurrentFolderLabel(currentPath)
+    const filename = selectedElementCount === 1
+      ? buildArchiveFilename(currentFolderName)
+      : buildArchiveFilename(`Media ${selectedFileCount} archivos`)
+    void downloadFiles(selectedFiles, filename)
+  }
+
   const deleteAsset = async (asset: MediaAsset) => {
     setDeletingId(asset.id)
     try {
       await mediaService.deleteAsset(asset.id)
       setAssets((current) => current.filter((item) => item.id !== asset.id))
       if (selectedAssetId === asset.id) setSelectedAssetId(null)
+      setSelectedItemKeys((current) => {
+        const next = new Set(current)
+        next.delete(fileSelectionKey(asset.id))
+        return next
+      })
       await loadMedia('refresh')
       showToast('success', 'Archivo eliminado', 'Ya no aparecerá en Media.')
     } catch (deleteError) {
@@ -381,6 +587,57 @@ export const MediaSettings: React.FC = () => {
       `Se quitará ${getAssetDisplayName(asset)} de Media y del storage conectado.`,
       () => {
         void deleteAsset(asset)
+      },
+      'Eliminar',
+      'Cancelar'
+    )
+  }
+
+  const deleteFiles = async (filesToDelete: ExplorerFile[], successTitle: string, successMessage: string) => {
+    if (!filesToDelete.length) {
+      showToast('warning', 'No hay archivos', 'Selecciona al menos un archivo para eliminar.')
+      return
+    }
+
+    setBulkAction('delete')
+    const deletedIds = new Set<string>()
+    try {
+      for (const file of filesToDelete) {
+        await mediaService.deleteAsset(file.asset.id)
+        deletedIds.add(file.asset.id)
+      }
+      setAssets((current) => current.filter((item) => !deletedIds.has(item.id)))
+      setSelectedItemKeys(new Set())
+      if (selectedAssetId && deletedIds.has(selectedAssetId)) setSelectedAssetId(null)
+      await loadMedia('refresh')
+      showToast('success', successTitle, successMessage)
+    } catch (deleteError) {
+      await loadMedia('refresh')
+      showToast('error', 'No se pudo eliminar', deleteError instanceof Error ? deleteError.message : 'Intenta otra vez.')
+    } finally {
+      setBulkAction(null)
+    }
+  }
+
+  const handleDeleteFolder = (folder: FolderSummary) => {
+    const filesToDelete = filesInsideFolder(folder.path)
+    showConfirm(
+      'Eliminar carpeta',
+      `Se quitarán ${filesToDelete.length} archivo${filesToDelete.length === 1 ? '' : 's'} dentro de ${folder.name}.`,
+      () => {
+        void deleteFiles(filesToDelete, 'Carpeta eliminada', `${folder.name} ya no aparecerá en Media.`)
+      },
+      'Eliminar',
+      'Cancelar'
+    )
+  }
+
+  const handleDeleteSelected = () => {
+    showConfirm(
+      'Eliminar selección',
+      `Se quitarán ${selectedFileCount} archivo${selectedFileCount === 1 ? '' : 's'} de Media y del storage conectado.`,
+      () => {
+        void deleteFiles(selectedFiles, 'Selección eliminada', 'Los archivos seleccionados ya no aparecerán en Media.')
       },
       'Eliminar',
       'Cancelar'
@@ -410,52 +667,160 @@ export const MediaSettings: React.FC = () => {
     )
   }
 
-  const renderFolderButton = (folder: FolderSummary, variant: 'tile' | 'row') => (
-    <button
-      key={folder.path}
-      type="button"
-      className={variant === 'tile' ? styles.folderTile : styles.listRow}
-      onClick={() => handleFolderOpen(folder.path)}
-    >
-      {variant === 'tile' ? (
-        <>
-          <span className={styles.folderTileIcon}><Folder size={28} /></span>
-          <span className={styles.folderTileText}>
-            <strong>{folder.name}</strong>
-            <small>{folder.filesCount} archivo{folder.filesCount === 1 ? '' : 's'}</small>
-          </span>
-        </>
-      ) : (
-        <>
-          <span className={styles.nameCell}>
-            <span className={styles.rowIcon}><Folder size={18} /></span>
-            <span>
-              <strong>{folder.name}</strong>
-              <small>Carpeta</small>
-            </span>
-          </span>
-          <span>{folder.filesCount} archivo{folder.filesCount === 1 ? '' : 's'}</span>
-          <span>{formatBytes(folder.sizeBytes)}</span>
-          <span>Carpeta</span>
-        </>
-      )}
-    </button>
+  const stopItemEvent = (event: React.SyntheticEvent) => {
+    event.stopPropagation()
+  }
+
+  const handleItemKeyDown = (event: React.KeyboardEvent<HTMLElement>, action: () => void) => {
+    if (event.currentTarget !== event.target) return
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    action()
+  }
+
+  const renderSelectionCheckbox = (key: string, label: string) => (
+    <input
+      type="checkbox"
+      className={styles.selectionCheckbox}
+      checked={selectedItemKeys.has(key)}
+      onClick={stopItemEvent}
+      onChange={() => toggleSelection(key)}
+      aria-label={label}
+    />
   )
+
+  const renderFolderActions = (folder: FolderSummary) => (
+    <span className={styles.actionCell} onClick={stopItemEvent}>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className={styles.rowActionButton}
+            aria-label={`Acciones para ${folder.name}`}
+            disabled={Boolean(bulkAction)}
+          >
+            <MoreHorizontal size={16} />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={() => handleDownloadFolder(folder)}>
+            <Download size={15} className={styles.menuItemIcon} />
+            Descargar carpeta
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem className={styles.dangerMenuItem} onSelect={() => handleDeleteFolder(folder)}>
+            <Trash2 size={15} className={styles.menuItemIcon} />
+            Eliminar carpeta
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </span>
+  )
+
+  const renderFileActions = (file: ExplorerFile) => {
+    const asset = file.asset
+    return (
+      <span className={styles.actionCell} onClick={stopItemEvent}>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className={styles.rowActionButton}
+              aria-label={`Acciones para ${file.fileName}`}
+              disabled={Boolean(deletingId) || Boolean(bulkAction) || downloadingId === asset.id}
+            >
+              {downloadingId === asset.id ? <Loader2 size={16} className={styles.spin} /> : <MoreHorizontal size={16} />}
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={() => void handleCopyLink(asset)}>
+              <Copy size={15} className={styles.menuItemIcon} />
+              Copiar enlace
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => handleDownloadAsset(file)}>
+              <Download size={15} className={styles.menuItemIcon} />
+              Descargar archivo
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem className={styles.dangerMenuItem} onSelect={() => handleDeleteAsset(asset)}>
+              <Trash2 size={15} className={styles.menuItemIcon} />
+              Eliminar archivo
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </span>
+    )
+  }
+
+  const renderFolderButton = (folder: FolderSummary, variant: 'tile' | 'row') => {
+    const selectionKey = folderSelectionKey(folder.path)
+    const isChecked = selectedItemKeys.has(selectionKey)
+
+    return (
+      <div
+        key={folder.path}
+        role="button"
+        tabIndex={0}
+        className={cx(variant === 'tile' ? styles.folderTile : styles.listRow, isChecked && styles.itemChecked)}
+        onClick={() => handleFolderOpen(folder.path)}
+        onKeyDown={(event) => handleItemKeyDown(event, () => handleFolderOpen(folder.path))}
+      >
+        {variant === 'tile' ? (
+          <>
+            <span className={styles.tileControls}>
+              {renderSelectionCheckbox(selectionKey, `Seleccionar carpeta ${folder.name}`)}
+              {renderFolderActions(folder)}
+            </span>
+            <span className={styles.folderTileIcon}><Folder size={28} /></span>
+            <span className={styles.folderTileText}>
+              <strong>{folder.name}</strong>
+              <small>{folder.filesCount} archivo{folder.filesCount === 1 ? '' : 's'}</small>
+            </span>
+          </>
+        ) : (
+          <>
+            <span className={styles.selectionCell}>
+              {renderSelectionCheckbox(selectionKey, `Seleccionar carpeta ${folder.name}`)}
+            </span>
+            <span className={styles.nameCell}>
+              <span className={styles.rowIcon}><Folder size={18} /></span>
+              <span>
+                <strong>{folder.name}</strong>
+                <small>Carpeta</small>
+              </span>
+            </span>
+            <span>{folder.filesCount} archivo{folder.filesCount === 1 ? '' : 's'}</span>
+            <span>{formatBytes(folder.sizeBytes)}</span>
+            <span>Carpeta</span>
+            {renderFolderActions(folder)}
+          </>
+        )}
+      </div>
+    )
+  }
 
   const renderFileButton = (file: ExplorerFile, variant: 'tile' | 'row') => {
     const asset = file.asset
     const selected = selectedFile?.asset.id === asset.id
+    const selectionKey = fileSelectionKey(asset.id)
+    const isChecked = selectedItemKeys.has(selectionKey)
     const size = asset.quotaSize || asset.sizeProcessed || asset.sizeOriginal
 
     if (variant === 'tile') {
       return (
-        <button
+        <div
           key={asset.id}
-          type="button"
-          className={cx(styles.fileTile, selected && styles.itemSelected)}
+          role="button"
+          tabIndex={0}
+          className={cx(styles.fileTile, selected && styles.itemSelected, isChecked && styles.itemChecked)}
           onClick={() => setSelectedAssetId(asset.id)}
           onDoubleClick={() => handleOpenAsset(asset)}
+          onKeyDown={(event) => handleItemKeyDown(event, () => setSelectedAssetId(asset.id))}
         >
+          <span className={styles.tileControls}>
+            {renderSelectionCheckbox(selectionKey, `Seleccionar archivo ${file.fileName}`)}
+            {renderFileActions(file)}
+          </span>
           <span className={styles.fileThumb}>
             {asset.mediaType === 'image'
               ? <img src={buildFileUrl(asset, 'thumbnail')} alt="" />
@@ -465,18 +830,23 @@ export const MediaSettings: React.FC = () => {
             <strong>{file.fileName}</strong>
             <small>{formatBytes(size)} · {formatModuleLabel(asset.module)}</small>
           </span>
-        </button>
+        </div>
       )
     }
 
     return (
-      <button
+      <div
         key={asset.id}
-        type="button"
-        className={cx(styles.listRow, selected && styles.itemSelected)}
+        role="button"
+        tabIndex={0}
+        className={cx(styles.listRow, selected && styles.itemSelected, isChecked && styles.itemChecked)}
         onClick={() => setSelectedAssetId(asset.id)}
         onDoubleClick={() => handleOpenAsset(asset)}
+        onKeyDown={(event) => handleItemKeyDown(event, () => setSelectedAssetId(asset.id))}
       >
+        <span className={styles.selectionCell}>
+          {renderSelectionCheckbox(selectionKey, `Seleccionar archivo ${file.fileName}`)}
+        </span>
         <span className={styles.nameCell}>
           <span className={styles.rowIcon}>{getMediaIcon(asset.mediaType, 18)}</span>
           <span>
@@ -487,7 +857,8 @@ export const MediaSettings: React.FC = () => {
         <span>{formatDate(asset.createdAt)}</span>
         <span>{formatBytes(size)}</span>
         <span>{asset.mimeType || asset.mediaType || 'Archivo'}</span>
-      </button>
+        {renderFileActions(file)}
+      </div>
     )
   }
 
@@ -545,8 +916,8 @@ export const MediaSettings: React.FC = () => {
 
       <Card padding="none" className={styles.explorerCard}>
         <div className={styles.toolbar}>
-          <div className={styles.searchBox}>
-            <Search size={16} />
+          <div className={styles.searchBox} data-ristak-unstyled>
+            <Search size={17} className={styles.searchIcon} />
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -554,7 +925,7 @@ export const MediaSettings: React.FC = () => {
               aria-label="Buscar archivos de Media"
             />
             {query ? (
-              <button type="button" onClick={() => setQuery('')} aria-label="Limpiar búsqueda">
+              <button type="button" className={styles.searchClearButton} onClick={() => setQuery('')} aria-label="Limpiar búsqueda">
                 <X size={15} />
               </button>
             ) : null}
@@ -653,6 +1024,35 @@ export const MediaSettings: React.FC = () => {
                   <h2>{normalizedQuery ? 'Resultados' : getCurrentFolderLabel(currentPath)}</h2>
                   <p>{folderSummaries.length} carpeta{folderSummaries.length === 1 ? '' : 's'} · {visibleFiles.length} archivo{visibleFiles.length === 1 ? '' : 's'}</p>
                 </div>
+                {selectedElementCount > 0 ? (
+                  <div className={styles.selectionBar}>
+                    <span>
+                      {selectedElementCount} seleccionado{selectedElementCount === 1 ? '' : 's'} · {selectedFileCount} archivo{selectedFileCount === 1 ? '' : 's'}
+                    </span>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      leftIcon={bulkAction === 'download' ? <Loader2 size={15} className={styles.spin} /> : <Download size={15} />}
+                      onClick={handleDownloadSelected}
+                      disabled={Boolean(bulkAction) || selectedFileCount === 0}
+                    >
+                      Descargar
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={styles.deleteButton}
+                      leftIcon={bulkAction === 'delete' ? <Loader2 size={15} className={styles.spin} /> : <Trash2 size={15} />}
+                      onClick={handleDeleteSelected}
+                      disabled={Boolean(bulkAction) || selectedFileCount === 0}
+                    >
+                      Eliminar
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={clearSelection} disabled={Boolean(bulkAction)}>
+                      Limpiar
+                    </Button>
+                  </div>
+                ) : null}
               </div>
 
               {loading ? (
@@ -674,11 +1074,24 @@ export const MediaSettings: React.FC = () => {
                 </div>
               ) : (
                 <div className={styles.listView}>
-                  <div className={styles.listHeader} aria-hidden="true">
+                  <div className={styles.listHeader}>
+                    <span className={styles.selectionCell}>
+                      <input
+                        type="checkbox"
+                        className={styles.selectionCheckbox}
+                        checked={allVisibleSelected}
+                        ref={(node) => {
+                          if (node) node.indeterminate = partiallySelected
+                        }}
+                        onChange={toggleVisibleSelection}
+                        aria-label="Seleccionar elementos visibles"
+                      />
+                    </span>
                     <span>Nombre</span>
                     <span>Fecha</span>
                     <span>Tamaño</span>
                     <span>Tipo</span>
+                    <span>Acciones</span>
                   </div>
                   {folderSummaries.map((folder) => renderFolderButton(folder, 'row'))}
                   {visibleFiles.map((file) => renderFileButton(file, 'row'))}
@@ -699,6 +1112,15 @@ export const MediaSettings: React.FC = () => {
                   <div className={styles.previewActions}>
                     <Button variant="secondary" size="sm" leftIcon={<ExternalLink size={15} />} onClick={() => handleOpenAsset(selectedFile.asset)}>
                       Abrir
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      leftIcon={downloadingId === selectedFile.asset.id ? <Loader2 size={15} className={styles.spin} /> : <Download size={15} />}
+                      onClick={() => handleDownloadAsset(selectedFile)}
+                      disabled={downloadingId === selectedFile.asset.id}
+                    >
+                      Descargar
                     </Button>
                     <Button variant="outline" size="sm" leftIcon={<Copy size={15} />} onClick={() => void handleCopyLink(selectedFile.asset)}>
                       Copiar link
@@ -732,7 +1154,7 @@ export const MediaSettings: React.FC = () => {
                     className={styles.deleteButton}
                     leftIcon={deletingId === selectedFile.asset.id ? <Loader2 size={15} className={styles.spin} /> : <Trash2 size={15} />}
                     onClick={() => handleDeleteAsset(selectedFile.asset)}
-                    disabled={Boolean(deletingId)}
+                    disabled={Boolean(deletingId) || Boolean(bulkAction)}
                   >
                     Eliminar archivo
                   </Button>
