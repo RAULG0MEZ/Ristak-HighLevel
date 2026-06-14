@@ -135,7 +135,7 @@ import {
 import { aiAgentService } from '@/services/aiAgentService'
 import { campaignsService, type ConnectedSocialProfile } from '@/services/campaignsService'
 import { calendarsService, type Calendar as CalendarType } from '@/services/calendarsService'
-import mediaService from '@/services/mediaService'
+import mediaService, { type MediaAsset } from '@/services/mediaService'
 import {
   customFieldsService,
   isSystemCustomFieldDefinition,
@@ -3679,8 +3679,9 @@ function FormEmbedEditorPanel({
         <>
           <MediaUploadControl
             kind={mediaKind}
-            label={mediaKind === 'image' ? 'Subir imagen' : 'Subir video'}
+            label={mediaKind === 'image' ? 'Elegir imagen' : 'Elegir video'}
             moduleEntityId={site.id}
+            currentUrl={mediaUrl}
             onUploaded={(url) => patchActiveField({
               content: url,
               settings: mediaKind === 'video'
@@ -14415,17 +14416,101 @@ const ColorField: React.FC<ColorFieldProps> = ({ label, value, allowGradient = t
   )
 }
 
-const MediaUploadControl: React.FC<{
+const mediaPickerAssetLimit = 250
+
+function formatMediaPickerAssetSize(asset: MediaAsset) {
+  const bytes = Number(asset.quotaSize || asset.sizeProcessed || asset.sizeOriginal || 0)
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 MB'
+  const gb = bytes / 1024 / 1024 / 1024
+  if (gb >= 1) return `${gb.toFixed(gb >= 10 ? 0 : 1)} GB`
+  const mb = bytes / 1024 / 1024
+  if (mb >= 1) return `${mb.toFixed(mb >= 10 ? 0 : 1)} MB`
+  const kb = bytes / 1024
+  if (kb >= 1) return `${Math.max(1, Math.round(kb))} KB`
+  return `${Math.max(1, Math.round(bytes))} B`
+}
+
+function getMediaPickerAssetName(asset: MediaAsset) {
+  return asset.originalFilename || asset.storedFilename || asset.bunnyPath?.split('/').pop() || `Archivo ${asset.id.slice(0, 8)}`
+}
+
+function getMediaPickerAssetUrl(asset: MediaAsset, variant: 'file' | 'thumbnail' = 'file') {
+  const thumbnailValue = asset.metadata?.thumbnailUrl
+  const thumbnailUrl = typeof thumbnailValue === 'string' ? thumbnailValue.trim() : ''
+  if (variant === 'thumbnail' && thumbnailUrl) return thumbnailUrl
+  if (variant === 'thumbnail' && asset.mediaType === 'image' && asset.publicUrl) return asset.publicUrl
+  if (asset.publicUrl) return asset.publicUrl
+
+  const path = `/api/media/assets/${encodeURIComponent(asset.id)}/${variant}`
+  const baseUrl = import.meta.env.VITE_API_URL || ''
+  return `${baseUrl}${path}`
+}
+
+const SitesMediaPickerModal: React.FC<{
   kind: 'image' | 'video'
-  label?: string
   moduleEntityId?: string
-  onUploaded: (url: string) => void
-  onCommit: () => void
-}> = ({ kind, label, moduleEntityId, onUploaded, onCommit }) => {
+  onClose: () => void
+  onSelect: (url: string) => void
+}> = ({ kind, moduleEntityId, onClose, onSelect }) => {
   const inputRef = useRef<HTMLInputElement>(null)
+  const [assets, setAssets] = useState<MediaAsset[]>([])
+  const [query, setQuery] = useState('')
+  const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
-  const { showToast } = useNotification()
+  const [deletingAssetId, setDeletingAssetId] = useState('')
+  const { showToast, showConfirm } = useNotification()
   const accept = kind === 'image' ? 'image/*' : 'video/*'
+  const title = kind === 'image' ? 'Elegir imagen' : 'Elegir video'
+  const uploadText = uploading ? 'Subiendo...' : kind === 'image' ? 'Subir imagen nueva' : 'Subir video nuevo'
+
+  const loadAssets = useCallback(async () => {
+    setLoading(true)
+    try {
+      const list = await mediaService.listAllAssets({
+        mediaType: kind,
+        status: 'ready'
+      })
+      setAssets(list
+        .filter(asset => asset.status !== 'deleted' && asset.mediaType === kind)
+        .slice(0, mediaPickerAssetLimit))
+    } catch (error) {
+      showToast('error', 'No se pudo cargar Media', error instanceof Error ? error.message : 'Inténtalo otra vez.')
+    } finally {
+      setLoading(false)
+    }
+  }, [kind, showToast])
+
+  useEffect(() => {
+    void loadAssets()
+  }, [loadAssets])
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
+  const filteredAssets = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase()
+    if (!normalizedQuery) return assets
+    return assets.filter(asset => {
+      const name = getMediaPickerAssetName(asset).toLowerCase()
+      const url = getMediaPickerAssetUrl(asset).toLowerCase()
+      return name.includes(normalizedQuery) || url.includes(normalizedQuery)
+    })
+  }, [assets, query])
+
+  const selectAsset = (asset: MediaAsset) => {
+    const url = getMediaPickerAssetUrl(asset)
+    if (!url) {
+      showToast('error', 'Archivo sin URL', 'Este archivo no tiene una URL pública disponible.')
+      return
+    }
+    onSelect(url)
+    onClose()
+  }
 
   const handleFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -14448,9 +14533,10 @@ const MediaUploadControl: React.FC<{
         moduleEntityId,
         isPublic: true
       })
-      onUploaded(uploaded.publicUrl)
-      window.setTimeout(onCommit, 0)
-      showToast('success', kind === 'image' ? 'Imagen subida' : 'Video subido', 'El archivo ya está listo en el editor.')
+      setAssets(current => [uploaded, ...current.filter(asset => asset.id !== uploaded.id)].slice(0, mediaPickerAssetLimit))
+      onSelect(getMediaPickerAssetUrl(uploaded))
+      onClose()
+      showToast('success', kind === 'image' ? 'Imagen seleccionada' : 'Video seleccionado', 'El archivo ya quedó puesto en el editor.')
     } catch (error) {
       showToast('error', 'No se pudo subir', error instanceof Error ? error.message : 'Inténtalo otra vez.')
     } finally {
@@ -14458,13 +14544,159 @@ const MediaUploadControl: React.FC<{
     }
   }
 
+  const deleteAsset = async (asset: MediaAsset) => {
+    setDeletingAssetId(asset.id)
+    try {
+      await mediaService.deleteAsset(asset.id)
+      setAssets(current => current.filter(item => item.id !== asset.id))
+      showToast('success', 'Archivo eliminado', 'Se quitó de la biblioteca de Media.')
+    } catch (error) {
+      showToast('error', 'No se pudo eliminar', error instanceof Error ? error.message : 'Inténtalo otra vez.')
+    } finally {
+      setDeletingAssetId('')
+    }
+  }
+
+  const requestDeleteAsset = (asset: MediaAsset, event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation()
+    showConfirm(
+      'Eliminar archivo',
+      `Esto eliminará "${getMediaPickerAssetName(asset)}" de Media. Los sitios que ya usen su URL podrían dejar de mostrarlo.`,
+      () => { void deleteAsset(asset) },
+      'Eliminar',
+      'Cancelar'
+    )
+  }
+
+  return (
+    <div className={styles.mediaPickerOverlay} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+      <div className={styles.mediaPickerModal} role="dialog" aria-modal="true" aria-label={title}>
+        <header className={styles.mediaPickerHeader}>
+          <div>
+            <span>{kind === 'image' ? 'Biblioteca de imágenes' : 'Biblioteca de videos'}</span>
+            <strong>{title}</strong>
+          </div>
+          <button type="button" className={styles.mediaPickerIconButton} onClick={onClose} aria-label="Cerrar selector">
+            <X size={16} />
+          </button>
+        </header>
+        <div className={styles.mediaPickerToolbar}>
+          <label className={styles.mediaPickerSearch}>
+            <Search size={15} />
+            <input
+              value={query}
+              placeholder={kind === 'image' ? 'Buscar imagen...' : 'Buscar video...'}
+              onChange={(event) => setQuery(event.target.value)}
+              autoFocus
+            />
+          </label>
+          <div className={styles.mediaPickerActions}>
+            <button type="button" className={styles.mediaPickerSecondaryButton} onClick={() => void loadAssets()} disabled={loading || uploading}>
+              <RefreshCw size={14} />
+              <span>Actualizar</span>
+            </button>
+            <input ref={inputRef} type="file" accept={accept} onChange={handleFile} className={styles.hiddenFileInput} />
+            <button type="button" className={styles.mediaPickerUploadButton} onClick={() => inputRef.current?.click()} disabled={uploading}>
+              <Upload size={14} />
+              <span>{uploadText}</span>
+            </button>
+          </div>
+        </div>
+        <div className={styles.mediaPickerBody} aria-busy={loading || uploading}>
+          {loading ? (
+            <div className={styles.mediaPickerEmpty}>
+              <RefreshCw size={18} />
+              <span>Cargando biblioteca...</span>
+            </div>
+          ) : filteredAssets.length ? (
+            <div className={styles.mediaPickerGrid}>
+              {filteredAssets.map(asset => {
+                const assetUrl = getMediaPickerAssetUrl(asset)
+                const previewUrl = getMediaPickerAssetUrl(asset, 'thumbnail')
+                const name = getMediaPickerAssetName(asset)
+                const deleting = deletingAssetId === asset.id
+
+                return (
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    key={asset.id}
+                    className={styles.mediaPickerAsset}
+                    onClick={() => selectAsset(asset)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        selectAsset(asset)
+                      }
+                    }}
+                  >
+                    <span className={styles.mediaPickerAssetPreview}>
+                      {kind === 'image' ? (
+                        <img src={previewUrl} alt="" loading="lazy" />
+                      ) : (
+                        assetUrl
+                          ? <video src={assetUrl} muted playsInline preload="metadata" />
+                          : <Video size={24} />
+                      )}
+                    </span>
+                    <span className={styles.mediaPickerAssetInfo}>
+                      <strong title={name}>{name}</strong>
+                      <small>{formatMediaPickerAssetSize(asset)}</small>
+                    </span>
+                    <span className={styles.mediaPickerAssetFooter}>
+                      <span>Elegir</span>
+                      <button
+                        type="button"
+                        className={styles.mediaPickerDeleteButton}
+                        onClick={(event) => requestDeleteAsset(asset, event)}
+                        disabled={deleting}
+                        aria-label={`Eliminar ${name}`}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div className={styles.mediaPickerEmpty}>
+              {kind === 'image' ? <Image size={20} /> : <Video size={20} />}
+              <strong>No hay {kind === 'image' ? 'imágenes' : 'videos'} listos</strong>
+              <span>Sube uno nuevo desde aquí o cambia la búsqueda.</span>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const MediaUploadControl: React.FC<{
+  kind: 'image' | 'video'
+  label?: string
+  moduleEntityId?: string
+  currentUrl?: string
+  onUploaded: (url: string) => void
+  onCommit?: () => void
+}> = ({ kind, label, moduleEntityId, currentUrl, onUploaded }) => {
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const buttonLabel = label || (currentUrl ? (kind === 'image' ? 'Cambiar imagen' : 'Cambiar video') : (kind === 'image' ? 'Elegir imagen' : 'Elegir video'))
+
   return (
     <div className={styles.mediaUploadControl}>
-      <input ref={inputRef} type="file" accept={accept} onChange={handleFile} className={styles.hiddenFileInput} />
-      <button type="button" onClick={() => inputRef.current?.click()} disabled={uploading}>
-        <Upload size={14} />
-        <span>{uploading ? 'Subiendo...' : label || (kind === 'image' ? 'Subir imagen' : 'Subir video')}</span>
+      <button type="button" onClick={() => setPickerOpen(true)}>
+        {kind === 'image' ? <Image size={14} /> : <Video size={14} />}
+        <span>{buttonLabel}</span>
       </button>
+      {pickerOpen && (
+        <SitesMediaPickerModal
+          kind={kind}
+          moduleEntityId={moduleEntityId}
+          onClose={() => setPickerOpen(false)}
+          onSelect={onUploaded}
+        />
+      )}
     </div>
   )
 }
@@ -17986,8 +18218,9 @@ const InlineBlockStyleControls: React.FC<{
               </div>
               <MediaUploadControl
                 kind={getSettingString(settings, 'blockBackgroundMediaType') === 'video' ? 'video' : 'image'}
-                label={getSettingString(settings, 'blockBackgroundMediaType') === 'video' ? 'Subir video de franja' : 'Subir imagen de franja'}
+                label={getSettingString(settings, 'blockBackgroundMediaType') === 'video' ? 'Elegir video de franja' : 'Elegir imagen de franja'}
                 moduleEntityId={site.id}
+                currentUrl={getSettingString(settings, 'blockBackgroundImage')}
                 onUploaded={(url) => onPatchSettings({
                   blockBackgroundImage: url,
                   blockBackgroundMediaType: getSettingString(settings, 'blockBackgroundMediaType') === 'video' ? 'video' : 'image'
@@ -19556,8 +19789,9 @@ const PageInspector: React.FC<{
       </div>
       <MediaUploadControl
         kind={theme.backgroundMediaType === 'video' ? 'video' : 'image'}
-        label={theme.backgroundMediaType === 'video' ? 'Subir video de fondo' : 'Subir imagen de fondo'}
+        label={theme.backgroundMediaType === 'video' ? 'Elegir video de fondo' : 'Elegir imagen de fondo'}
         moduleEntityId={site.id}
+        currentUrl={getThemeString(theme, 'backgroundImage')}
         onUploaded={(url) => onPatchTheme({
           backgroundImage: url,
           backgroundMediaType: theme.backgroundMediaType === 'video' ? 'video' : 'image'
@@ -20540,8 +20774,9 @@ const LandingBlockSettings: React.FC<LandingBlockSettingsProps> = ({ site, block
       <div className={styles.settingsGroup}>
         <MediaUploadControl
           kind={mediaKind}
-          label={mediaKind === 'image' ? 'Subir imagen' : 'Subir video'}
+          label={mediaKind === 'image' ? 'Elegir imagen' : 'Elegir video'}
           moduleEntityId={site.id}
+          currentUrl={getSettingString(settings, 'mediaUrl')}
           onUploaded={(url) => onPatchSettings(mediaKind === 'video'
             ? withUploadedVideoSettings(settings, url)
             : { mediaUrl: url })}
