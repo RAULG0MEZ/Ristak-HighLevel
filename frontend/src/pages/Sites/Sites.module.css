@@ -518,6 +518,17 @@
   --rstk-code-comment: #86efac;
   --rstk-code-keyword: #f0abfc;
   --rstk-code-selection: rgba(96, 165, 250, 0.28);
+  --rstk-assistant-bg: #141518;
+  --rstk-assistant-surface: #1a1b1f;
+  --rstk-assistant-soft: #22242a;
+  --rstk-assistant-control: #0f1117;
+  --rstk-assistant-text: #f8fafc;
+  --rstk-assistant-secondary: #e5e7eb;
+  --rstk-assistant-muted: #9ca3af;
+  --rstk-assistant-border: rgba(148, 163, 184, 0.22);
+  --rstk-assistant-border-strong: rgba(148, 163, 184, 0.34);
+  --rstk-assistant-focus: rgba(var(--color-primary-rgb), 0.2);
+  --rstk-assistant-chip: rgba(var(--color-primary-rgb), 0.18);
   color-scheme: dark;
 }
 
@@ -532,6 +543,17 @@
   --rstk-code-comment: #15803d;
   --rstk-code-keyword: #be185d;
   --rstk-code-selection: rgba(71, 85, 105, 0.18);
+  --rstk-assistant-bg: var(--color-background-secondary);
+  --rstk-assistant-surface: var(--color-background-primary);
+  --rstk-assistant-soft: var(--color-background-tertiary);
+  --rstk-assistant-control: var(--design-control-bg, var(--color-background-secondary));
+  --rstk-assistant-text: var(--color-text-primary);
+  --rstk-assistant-secondary: var(--color-text-secondary);
+  --rstk-assistant-muted: var(--color-text-tertiary);
+  --rstk-assistant-border: var(--color-border-subtle);
+  --rstk-assistant-border-strong: var(--color-border);
+  --rstk-assistant-focus: var(--design-control-focus-shadow, rgba(var(--color-primary-rgb), 0.12));
+  --rstk-assistant-chip: rgba(var(--color-primary-rgb), 0.1);
   color-scheme: light;
 }
 
@@ -682,32 +704,32 @@
   display: grid;
   place-items: center;
   cursor: row-resize;
-  border-top: 1px solid color-mix(in srgb, var(--rstk-code-text) 10%, transparent);
-  background: var(--rstk-code-bg);
+  border-top: 1px solid var(--rstk-assistant-border);
+  background: var(--rstk-assistant-bg);
 }
 
 .importedCodeAssistantResizeHandle span {
   width: 56px;
   height: 3px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--rstk-code-muted) 42%, transparent);
+  background: color-mix(in srgb, var(--rstk-assistant-muted) 42%, transparent);
   transition: background 160ms ease, transform 160ms ease;
 }
 
 .importedCodeAssistantResizeHandle:hover span,
 .importedCodeAssistantResizeHandle:focus-visible span {
-  background: color-mix(in srgb, var(--rstk-code-tag) 70%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 72%, transparent);
   transform: scaleY(1.35);
 }
 
 .importedCodeAssistantPanel {
   min-height: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
   gap: 10px;
-  border-top: 1px solid color-mix(in srgb, var(--rstk-code-text) 12%, transparent);
-  background: color-mix(in srgb, var(--rstk-code-bg) 92%, var(--rstk-code-text) 8%);
-  color: var(--rstk-code-text);
+  border-top: 1px solid var(--rstk-assistant-border);
+  background: var(--rstk-assistant-bg);
+  color: var(--rstk-assistant-text);
   padding: 12px;
   overflow: hidden;
 }
@@ -729,7 +751,7 @@
 
 .importedCodeAssistantTitle > svg {
   flex: 0 0 auto;
-  color: var(--rstk-code-tag);
+  color: var(--color-primary);
 }
 
 .importedCodeAssistantTitle div {
@@ -741,7 +763,7 @@
 .importedCodeAssistantTitle span,
 .importedCodeAssistantModel span,
 .importedCodeAssistantMessage span {
-  color: var(--rstk-code-muted);
+  color: var(--rstk-assistant-muted);
   font-size: 0.68rem;
   font-weight: 780;
   letter-spacing: 0;
@@ -751,7 +773,7 @@
 .importedCodeAssistantTitle strong {
   min-width: 0;
   overflow: hidden;
-  color: var(--rstk-code-text);
+  color: var(--rstk-assistant-text);
   font-size: 0.82rem;
   font-weight: 780;
   text-overflow: ellipsis;
@@ -767,6 +789,9 @@
 .importedCodeAssistantModel :global(.customSelect),
 .importedCodeAssistantModel select {
   min-height: 34px;
+  border-color: var(--rstk-assistant-border) !important;
+  background: var(--rstk-assistant-control) !important;
+  color: var(--rstk-assistant-text) !important;
 }
 
 .importedCodeAssistantMessages {
@@ -781,7 +806,7 @@
 
 .importedCodeAssistantEmpty {
   margin: 0;
-  color: var(--rstk-code-muted);
+  color: var(--rstk-assistant-muted);
   font-size: 0.8rem;
   line-height: 1.45;
 }
@@ -790,14 +815,14 @@
   display: grid;
   gap: 4px;
   max-width: 92%;
-  border: 1px solid color-mix(in srgb, var(--rstk-code-text) 12%, transparent);
+  border: 1px solid var(--rstk-assistant-border);
   border-radius: 8px;
   padding: 8px 10px;
 }
 
 .importedCodeAssistantMessage p {
   margin: 0;
-  color: var(--rstk-code-text);
+  color: var(--rstk-assistant-text);
   font-size: 0.8rem;
   line-height: 1.45;
   white-space: pre-wrap;
@@ -805,12 +830,98 @@
 
 .importedCodeAssistantMessageUser {
   justify-self: end;
-  background: color-mix(in srgb, var(--rstk-code-tag) 18%, var(--rstk-code-bg));
+  background: var(--rstk-assistant-chip);
 }
 
 .importedCodeAssistantMessageAssistant {
   justify-self: start;
-  background: color-mix(in srgb, var(--rstk-code-text) 7%, var(--rstk-code-bg));
+  background: var(--rstk-assistant-surface);
+}
+
+.importedCodeAssistantProgress {
+  min-height: 0;
+  display: grid;
+  gap: 7px;
+  border: 1px solid var(--rstk-assistant-border);
+  border-radius: 8px;
+  background: var(--rstk-assistant-surface);
+  padding: 8px;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.importedCodeAssistantProgressStep {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  border-radius: 7px;
+  padding: 6px;
+  color: var(--rstk-assistant-muted);
+}
+
+.importedCodeAssistantProgressIcon {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--rstk-assistant-border);
+  border-radius: 999px;
+  background: var(--rstk-assistant-bg);
+  color: var(--rstk-assistant-muted);
+}
+
+.importedCodeAssistantProgressStep span:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.importedCodeAssistantProgressStep strong {
+  overflow: hidden;
+  color: var(--rstk-assistant-secondary);
+  font-size: 0.76rem;
+  font-weight: 820;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.importedCodeAssistantProgressStep small {
+  color: var(--rstk-assistant-muted);
+  font-size: 0.72rem;
+  font-weight: 680;
+  line-height: 1.32;
+}
+
+.importedCodeAssistantProgressActive {
+  background: var(--rstk-assistant-chip);
+  color: var(--rstk-assistant-text);
+}
+
+.importedCodeAssistantProgressActive .importedCodeAssistantProgressIcon {
+  border-color: rgba(var(--color-primary-rgb), 0.34);
+  color: var(--color-primary);
+}
+
+.importedCodeAssistantProgressActive .importedCodeAssistantProgressIcon svg {
+  animation: editorSaveSpin 0.9s linear infinite;
+}
+
+.importedCodeAssistantProgressDone .importedCodeAssistantProgressIcon {
+  border-color: rgba(16, 185, 129, 0.28);
+  color: var(--color-status-success);
+}
+
+.importedCodeAssistantProgressError .importedCodeAssistantProgressIcon {
+  border-color: rgba(220, 38, 38, 0.28);
+  color: var(--color-status-error);
+}
+
+.importedCodeAssistantProgressError strong,
+.importedCodeAssistantProgressError small {
+  color: var(--color-status-error);
 }
 
 .importedCodeAssistantComposer {
@@ -822,10 +933,10 @@
   width: 100%;
   min-height: 72px;
   resize: none;
-  border: 1px solid color-mix(in srgb, var(--rstk-code-text) 18%, transparent);
+  border: 1px solid var(--rstk-assistant-border);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--rstk-code-bg) 88%, #ffffff 12%);
-  color: var(--rstk-code-text);
+  background: var(--rstk-assistant-control);
+  color: var(--rstk-assistant-text);
   padding: 10px 11px;
   font: inherit;
   font-size: 0.84rem;
@@ -834,12 +945,12 @@
 }
 
 .importedCodeAssistantComposer textarea::placeholder {
-  color: color-mix(in srgb, var(--rstk-code-muted) 82%, transparent);
+  color: color-mix(in srgb, var(--rstk-assistant-muted) 82%, transparent);
 }
 
 .importedCodeAssistantComposer textarea:focus {
-  border-color: color-mix(in srgb, var(--rstk-code-tag) 70%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rstk-code-tag) 22%, transparent);
+  border-color: rgba(var(--color-primary-rgb), 0.42);
+  box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.12);
 }
 
 .importedCodeAssistantFooter {
@@ -868,6 +979,30 @@
 
 .importedCodeAssistantVoice .aiCreationVoiceWaveform {
   height: 22px;
+}
+
+.importedCodeSourcePaneDark .importedCodeAssistantVoice .aiVoiceMicButton {
+  border-color: var(--rstk-assistant-border);
+  background: var(--rstk-assistant-control);
+  color: var(--rstk-assistant-secondary);
+}
+
+.importedCodeSourcePaneDark .importedCodeAssistantVoice .aiVoiceMicButton:hover:not(:disabled) {
+  border-color: rgba(34, 197, 94, 0.38);
+  background: var(--rstk-assistant-soft);
+  color: #bbf7d0;
+}
+
+.importedCodeSourcePaneDark .importedCodeAssistantVoice .aiVoiceMicActive {
+  border-color: rgba(34, 197, 94, 0.42);
+  background: rgba(34, 197, 94, 0.16);
+  color: #bbf7d0;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.1);
+}
+
+.importedCodeSourcePaneDark .importedCodeAssistantVoice .aiCreationVoiceComposer {
+  border-color: rgba(34, 197, 94, 0.24);
+  background: rgba(34, 197, 94, 0.09);
 }
 
 .importedCodeSelectionNotice {
@@ -15202,6 +15337,12 @@
 
 .editorSaveStatusSaved {
   color: var(--color-text-secondary);
+}
+
+.editorSaveStatus.editorSaveStatusBeforeDevice {
+  min-width: auto;
+  justify-content: flex-end;
+  padding-inline: 2px;
 }
 
 .editorSaveStatusSaved svg {

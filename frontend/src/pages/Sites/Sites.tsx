@@ -7710,6 +7710,10 @@ export const Sites: React.FC = () => {
                         <small>{formEditBlock?.content || formEditBlock?.label || 'Formulario'}</small>
                       </div>
                     )}
+                    <span className={`${styles.editorSaveStatus} ${styles.editorSaveStatusBeforeDevice} ${editorSaveStatusClass}`} aria-live="polite">
+                      {editorSaveStatus.icon}
+                      <span>{editorSaveStatus.label}</span>
+                    </span>
                     <div className={styles.deviceToggle} role="group" aria-label="Vista previa del dispositivo">
                       <button type="button" className={device === 'desktop' ? styles.deviceActive : ''} onClick={() => selectEditorDevice('desktop')} disabled={editorAIGenerating} title="Escritorio">
                         <Monitor size={15} />
@@ -7728,10 +7732,6 @@ export const Sites: React.FC = () => {
                       <Eye size={15} />
                       Previsualizar
                     </Button>
-                    <span className={`${styles.editorSaveStatus} ${editorSaveStatusClass}`} aria-live="polite">
-                      {editorSaveStatus.icon}
-                      <span>{editorSaveStatus.label}</span>
-                    </span>
                     <Button variant="secondary" size="md" className={styles.editorActionButton} onClick={() => handleSaveSite()} loading={saving} disabled={editorAIGenerating}>
                       <Save size={15} />
                       Guardar
@@ -9297,6 +9297,13 @@ type ImportedCodeAssistantMessage = {
   role: 'user' | 'assistant'
   content: string
   debug?: SitesAIEditDebug
+}
+
+type ImportedCodeAssistantWorkStep = {
+  id: string
+  label: string
+  detail: string
+  status: 'pending' | 'active' | 'done' | 'error'
 }
 
 type ImportedButtonEditorState = {
@@ -12421,6 +12428,7 @@ const ImportedHtmlEditorPanel: React.FC<{
   const codeHighlightRef = useRef<HTMLPreElement | null>(null)
   const codeTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const codeAssistantHeightRef = useRef(286)
+  const codeAssistantProgressTimerRef = useRef<number | null>(null)
   const selectedIframeElementRef = useRef<HTMLElement | null>(null)
   const selectedCodePreviewElementRef = useRef<HTMLElement | null>(null)
   const elementPopoverRef = useRef<HTMLDivElement | null>(null)
@@ -12461,6 +12469,7 @@ const ImportedHtmlEditorPanel: React.FC<{
   const [codeAssistantSaving, setCodeAssistantSaving] = useState(false)
   const [codeAssistantError, setCodeAssistantError] = useState('')
   const [codeAssistantHeight, setCodeAssistantHeight] = useState(286)
+  const [codeAssistantWorkSteps, setCodeAssistantWorkSteps] = useState<ImportedCodeAssistantWorkStep[]>([])
   const importedPages = pages.length ? pages : [{ id: DEFAULT_FUNNEL_PAGE_ID, title: 'Página 1', sortOrder: 0 }]
   const activeImportedPage = importedPages.find(page => page.id === activePageId) || importedPages[0]
   const codeFiles = useMemo<ImportedSiteCodeFile[]>(() => {
@@ -12630,6 +12639,89 @@ const ImportedHtmlEditorPanel: React.FC<{
     codeAssistantHeightRef.current = codeAssistantHeight
   }, [codeAssistantHeight])
 
+  const stopCodeAssistantProgress = useCallback(() => {
+    if (codeAssistantProgressTimerRef.current !== null) {
+      window.clearInterval(codeAssistantProgressTimerRef.current)
+      codeAssistantProgressTimerRef.current = null
+    }
+  }, [])
+
+  const setCodeAssistantProgressStep = useCallback((index: number, status: ImportedCodeAssistantWorkStep['status']) => {
+    setCodeAssistantWorkSteps(current => current.map((step, stepIndex) => {
+      if (stepIndex < index && status !== 'error') return { ...step, status: 'done' }
+      if (stepIndex === index) return { ...step, status }
+      if (status === 'error') return step
+      return { ...step, status: 'pending' }
+    }))
+  }, [])
+
+  const startCodeAssistantProgress = useCallback((steps: ImportedCodeAssistantWorkStep[]) => {
+    stopCodeAssistantProgress()
+    setCodeAssistantWorkSteps(steps.map((step, index) => ({
+      ...step,
+      status: index === 0 ? 'active' : 'pending'
+    })))
+
+    let stepIndex = 0
+    codeAssistantProgressTimerRef.current = window.setInterval(() => {
+      stepIndex = Math.min(stepIndex + 1, Math.max(0, steps.length - 2))
+      setCodeAssistantProgressStep(stepIndex, 'active')
+    }, 1800)
+  }, [setCodeAssistantProgressStep, stopCodeAssistantProgress])
+
+  const completeCodeAssistantProgress = useCallback((debug?: SitesAIEditDebug | null, fallback = 'Listo, el borrador quedó actualizado.') => {
+    stopCodeAssistantProgress()
+    const debugSteps = Array.isArray(debug?.steps)
+      ? debug.steps.map(step => String(step || '').trim()).filter(Boolean)
+      : []
+    if (debugSteps.length) {
+      setCodeAssistantWorkSteps(debugSteps.slice(-5).map((step, index) => ({
+        id: `debug-${index}-${step.slice(0, 24)}`,
+        label: index === debugSteps.length - 1 ? 'Resultado' : `Paso ${index + 1}`,
+        detail: step,
+        status: 'done'
+      })))
+      return
+    }
+    setCodeAssistantWorkSteps(current => current.length
+      ? current.map(step => ({ ...step, status: 'done' }))
+      : [{
+        id: 'assistant-completed',
+        label: 'Resultado',
+        detail: fallback,
+        status: 'done'
+      }]
+    )
+  }, [stopCodeAssistantProgress])
+
+  const failCodeAssistantProgress = useCallback((message: string) => {
+    stopCodeAssistantProgress()
+    setCodeAssistantWorkSteps(current => {
+      if (!current.length) {
+        return [{
+          id: 'assistant-error',
+          label: 'No se pudo completar',
+          detail: message,
+          status: 'error'
+        }]
+      }
+      const preferredErrorIndex = /openai|api key|modelo|ia/i.test(message)
+        ? current.findIndex(step => step.id === 'model')
+        : -1
+      const activeIndex = preferredErrorIndex >= 0
+        ? preferredErrorIndex
+        : Math.max(0, current.findIndex(step => step.status === 'active'))
+      return current.map((step, index) => index === activeIndex
+        ? { ...step, status: 'error', detail: message || step.detail }
+        : step
+      )
+    })
+  }, [stopCodeAssistantProgress])
+
+  useEffect(() => () => {
+    stopCodeAssistantProgress()
+  }, [stopCodeAssistantProgress])
+
   const handleCodeAssistantResizePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault()
     const startY = event.clientY
@@ -12714,9 +12806,11 @@ const ImportedHtmlEditorPanel: React.FC<{
     aiRegionVoiceDictation.cancelVoice()
     codeAssistantVoiceDictation.cancelVoice()
     setCodeAssistantError('')
+    setCodeAssistantWorkSteps([])
     setFieldEditor(null)
     setContentError('')
-  }, [activeImportedPage?.id, aiRegionVoiceDictation.cancelVoice, codeAssistantVoiceDictation.cancelVoice, site.id])
+    stopCodeAssistantProgress()
+  }, [activeImportedPage?.id, aiRegionVoiceDictation.cancelVoice, codeAssistantVoiceDictation.cancelVoice, site.id, stopCodeAssistantProgress])
 
   useEffect(() => {
     selectedIframeElementRef.current?.classList.remove('rstk-imported-selected')
@@ -13322,10 +13416,49 @@ const ImportedHtmlEditorPanel: React.FC<{
       role: 'user',
       content: prompt
     }
+    const selectedStepDetail = selectedRange
+      ? `${selectedRange.label || 'Elemento seleccionado'} cerca de la línea ${selectedRange.line || 'detectada'}.`
+      : codeSelectionNotice
+        ? codeSelectionNotice
+        : 'Sin elemento seleccionado: revisando la página activa completa.'
+    const selectedModelLabel = getChatGPTSiteModelOption(codeAssistantModel, true).label
+    const workPlan: ImportedCodeAssistantWorkStep[] = [
+      {
+        id: 'context',
+        label: 'Preparando contexto',
+        detail: `${activeCodeFile.label || activeCodeFile.path || 'HTML principal'} · ${(activeCodeValue.length / 1000).toFixed(1)}k caracteres.`,
+        status: 'pending'
+      },
+      {
+        id: 'selection',
+        label: 'Ubicando zona',
+        detail: selectedStepDetail,
+        status: 'pending'
+      },
+      {
+        id: 'model',
+        label: 'Pidiendo edición a la IA',
+        detail: `${selectedModelLabel}. Se manda el borrador actual sin guardarlo todavía.`,
+        status: 'pending'
+      },
+      {
+        id: 'patch',
+        label: 'Esperando HTML editado',
+        detail: 'El asistente debe devolver sólo el HTML modificado o pedir más detalle.',
+        status: 'pending'
+      },
+      {
+        id: 'draft',
+        label: 'Aplicando borrador',
+        detail: 'Si hay cambios visibles, se actualiza el preview y queda pendiente de guardar.',
+        status: 'pending'
+      }
+    ]
 
     setCodeAssistantSaving(true)
     setCodeAssistantError('')
     setCodeAssistantMessages(current => [...current.slice(-8), userMessage])
+    startCodeAssistantProgress(workPlan)
 
     try {
       const result = await sitesService.editImportedHtmlWithAI(site.id, {
@@ -13358,6 +13491,7 @@ const ImportedHtmlEditorPanel: React.FC<{
       if (result.status === 'needs_more_info' || !nextHtml.trim()) {
         const message = result.reply || 'El asistente necesita más detalle para aplicar el cambio.'
         setCodeAssistantError(message)
+        failCodeAssistantProgress(message)
         setCodeAssistantMessages(current => [...current, {
           id: makeAICreationId(),
           role: 'assistant',
@@ -13370,6 +13504,7 @@ const ImportedHtmlEditorPanel: React.FC<{
       if (normalizeImportedAIRegionPreviewHtml(nextHtml) === normalizeImportedAIRegionPreviewHtml(activeCodeValue)) {
         const message = result.reply || 'El asistente respondió, pero no cambió el HTML visible. Intenta pedir el ajuste con más precisión.'
         setCodeAssistantError(message)
+        failCodeAssistantProgress(message)
         setCodeAssistantMessages(current => [...current, {
           id: makeAICreationId(),
           role: 'assistant',
@@ -13382,6 +13517,7 @@ const ImportedHtmlEditorPanel: React.FC<{
       onCodeDraftChange(activeCodeFile.path, nextHtml, activeCodeFile.content)
       setCodeAssistantPrompt('')
       const assistantReply = result.reply || 'Listo, apliqué el cambio en el borrador del HTML. Revisa la vista previa y guarda cuando esté correcto.'
+      completeCodeAssistantProgress(result.debug, assistantReply)
       setCodeAssistantMessages(current => [...current, {
         id: makeAICreationId(),
         role: 'assistant',
@@ -13392,6 +13528,7 @@ const ImportedHtmlEditorPanel: React.FC<{
     } catch (error) {
       const message = error instanceof Error ? error.message : 'No se pudo editar el HTML con el asistente.'
       setCodeAssistantError(message)
+      failCodeAssistantProgress(message)
       setCodeAssistantMessages(current => [...current, {
         id: makeAICreationId(),
         role: 'assistant',
@@ -14989,6 +15126,24 @@ const ImportedHtmlEditorPanel: React.FC<{
                     </p>
                   )}
                 </div>
+                {codeAssistantWorkSteps.length > 0 && (
+                  <div className={styles.importedCodeAssistantProgress} aria-live="polite">
+                    {codeAssistantWorkSteps.map(step => (
+                      <div
+                        key={step.id}
+                        className={`${styles.importedCodeAssistantProgressStep} ${step.status === 'active' ? styles.importedCodeAssistantProgressActive : ''} ${step.status === 'done' ? styles.importedCodeAssistantProgressDone : ''} ${step.status === 'error' ? styles.importedCodeAssistantProgressError : ''}`}
+                      >
+                        <span className={styles.importedCodeAssistantProgressIcon} aria-hidden="true">
+                          {step.status === 'done' ? <Check size={12} /> : step.status === 'error' ? <AlertTriangle size={12} /> : <RefreshCw size={12} />}
+                        </span>
+                        <span>
+                          <strong>{step.label}</strong>
+                          <small>{step.detail}</small>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {codeAssistantError && (
                   <div className={styles.importedAIRegionError}>
                     <AlertTriangle size={14} />
@@ -15000,6 +15155,7 @@ const ImportedHtmlEditorPanel: React.FC<{
                     rows={3}
                     value={codeAssistantPrompt}
                     disabled={codeAssistantSaving}
+                    data-ristak-unstyled="true"
                     placeholder="Ejemplo: cambia el texto del botón seleccionado a “Quiero mi guía gratis” y conserva su acción..."
                     name="rstk-imported-code-assistant-prompt"
                     {...importedEditorNoAutocompleteAttrs}
@@ -15033,7 +15189,7 @@ const ImportedHtmlEditorPanel: React.FC<{
                     loading={codeAssistantSaving}
                   >
                     <Sparkles size={14} />
-                    Aplicar cambio
+                    {codeAssistantSaving ? 'Analizando...' : 'Aplicar cambio'}
                   </Button>
                 </div>
               </div>

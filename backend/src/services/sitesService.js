@@ -4788,9 +4788,18 @@ function normalizeSitesAIMessages(messages = []) {
     .filter(message => message.content)
 }
 
+function sanitizeOpenAIErrorMessage(message = '') {
+  const text = cleanString(message)
+  if (!text) return ''
+  if (/incorrect api key|invalid_api_key/i.test(text)) {
+    return 'La API key de OpenAI no es válida o fue revocada. Revisa Configuración > Agente AI y vuelve a conectar OpenAI.'
+  }
+  return text.replace(/sk-(?:proj-)?[a-zA-Z0-9_-]{8,}/g, '[API key oculta]')
+}
+
 function getOpenAIErrorMessage(data, fallback = 'OpenAI no pudo generar el site') {
   if (!data) return fallback
-  return cleanString(data?.error?.message || data?.message || data?.error) || fallback
+  return sanitizeOpenAIErrorMessage(data?.error?.message || data?.message || data?.error) || fallback
 }
 
 function extractOpenAIResponseText(data) {
@@ -4848,12 +4857,32 @@ function validateSitesAICreationKind(value) {
 }
 
 const SITES_AI_MODEL_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,99}$/
+const SITES_AI_REQUEST_TIMEOUT_MS = Number(process.env.SITES_AI_REQUEST_TIMEOUT_MS || 120_000) || 120_000
 
 function normalizeSitesAIModel(value, fallback = '') {
   const model = cleanString(value)
   if (model && SITES_AI_MODEL_ID_PATTERN.test(model)) return model
   const fallbackModel = cleanString(fallback)
   return SITES_AI_MODEL_ID_PATTERN.test(fallbackModel) ? fallbackModel : ''
+}
+
+function createSitesAITimeoutError(label = 'OpenAI') {
+  const error = new Error(`${label} tardó demasiado en responder. Intenta de nuevo con una instrucción más específica o un modelo más rápido.`)
+  error.status = 504
+  return error
+}
+
+async function runSitesAIWithTimeout(promise, label = 'OpenAI') {
+  let timeoutId = null
+  promise.catch(() => {})
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(createSitesAITimeoutError(label)), SITES_AI_REQUEST_TIMEOUT_MS)
+  })
+  try {
+    return await Promise.race([promise, timeoutPromise])
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId)
+  }
 }
 
 function getSitesAIKindFromSiteType(siteType = 'landing_page') {
@@ -5074,19 +5103,30 @@ function buildSitesAIResponsesInput(input = {}) {
 }
 
 async function callSitesAIJson({ apiKey, model, instructions, input, maxOutputTokens = 7200, fallbackError = 'OpenAI no pudo generar el site' }) {
-  const response = await fetch(OPENAI_RESPONSES_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: cleanString(model) || 'gpt-5.5',
-      instructions,
-      input: buildSitesAIResponsesInput(input),
-      max_output_tokens: maxOutputTokens
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), SITES_AI_REQUEST_TIMEOUT_MS)
+  let response = null
+  try {
+    response = await fetch(OPENAI_RESPONSES_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: cleanString(model) || 'gpt-5.5',
+        instructions,
+        input: buildSitesAIResponsesInput(input),
+        max_output_tokens: maxOutputTokens
+      }),
+      signal: controller.signal
     })
-  })
+  } catch (error) {
+    if (error?.name === 'AbortError') throw createSitesAITimeoutError('OpenAI')
+    throw error
+  } finally {
+    clearTimeout(timeout)
+  }
 
   let data = null
   try {
@@ -5134,15 +5174,19 @@ async function callSitesAIJsonWithAgentSdk({ apiKey, model, instructions, input,
       modelProvider: new OpenAIProvider({ apiKey }),
       tracingDisabled: true
     })
-    const result = await runner.run(
-      agent,
-      [{ role: 'user', content: buildSitesAIAgentInputText(input) }],
-      { maxTurns: 4, context: { category: 'site_html_editor' } }
+    const result = await runSitesAIWithTimeout(
+      runner.run(
+        agent,
+        [{ role: 'user', content: buildSitesAIAgentInputText(input) }],
+        { maxTurns: 4, context: { category: 'site_html_editor' } }
+      ),
+      'Agents SDK'
     )
     const output = String(result.finalOutput || '').trim()
     return parseSitesAIJson(output)
   } catch (error) {
-    logger.warn(`[Sites AI HTML edit] Agents SDK falló; usando Responses API como respaldo: ${error.message}`)
+    const safeAgentError = sanitizeOpenAIErrorMessage(error?.message) || 'error no especificado'
+    logger.warn(`[Sites AI HTML edit] Agents SDK falló; usando Responses API como respaldo: ${safeAgentError}`)
     return callSitesAIJson({
       apiKey,
       model,
