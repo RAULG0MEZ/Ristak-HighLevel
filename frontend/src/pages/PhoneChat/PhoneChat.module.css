@@ -4595,14 +4595,15 @@
   --phone-chat-composer-action: 38px;
   --phone-chat-composer-side-action: 36px;
   --phone-chat-composer-plus: 34px;
-  --phone-chat-composer-input: 38px;
+  --phone-chat-composer-row: 38px;
+  --phone-chat-composer-input: 32px;
   display: grid;
   grid-template-columns: var(--phone-chat-composer-plus) minmax(0, 1fr) auto;
   align-items: end;
   gap: var(--phone-chat-composer-gap);
   box-sizing: border-box;
-  min-height: calc(48px + env(safe-area-inset-bottom));
-  padding: 5px var(--phone-chat-composer-inline) max(6px, env(safe-area-inset-bottom));
+  min-height: calc(42px + env(safe-area-inset-bottom));
+  padding: 3px var(--phone-chat-composer-inline) max(4px, env(safe-area-inset-bottom));
   background: transparent;
   transition: gap 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -4612,8 +4613,8 @@
 }
 
 :global(html[data-phone-chat-keyboard="true"]) .composer {
-  min-height: 46px;
-  padding-bottom: 5px;
+  min-height: 40px;
+  padding-bottom: 4px;
 }
 
 .composerPlus,
@@ -4629,13 +4630,14 @@
 
 .composerPlus {
   width: var(--phone-chat-composer-plus);
-  height: var(--phone-chat-composer-input);
+  height: var(--phone-chat-composer-row);
   font-size: 22px;
 }
 
 .composerPlus svg {
-  width: 22px;
-  height: 22px;
+  width: 31px;
+  height: 31px;
+  stroke-width: 2.25;
 }
 
 .messageInputWrap {
@@ -4644,7 +4646,7 @@
   align-items: end;
   min-height: var(--phone-chat-composer-input);
   border: 1px solid var(--phone-chat-border);
-  border-radius: 20px;
+  border-radius: 17px;
   background: var(--phone-chat-surface);
   box-sizing: border-box;
   overflow: hidden;
@@ -4666,16 +4668,16 @@
 .composerInput {
   box-sizing: border-box;
   width: 100%;
-  min-height: 36px;
+  min-height: 30px;
   max-height: 118px;
-  padding: 8px 8px 7px 13px;
+  padding: 6px 8px 5px 13px;
   border: 0;
   outline: none;
   color: var(--phone-chat-text);
   background: transparent;
   font: inherit;
   font-size: 16px;
-  line-height: 1.28;
+  line-height: 1.2;
   letter-spacing: 0;
   white-space: pre-wrap;
   overflow-x: hidden;
@@ -4704,7 +4706,7 @@
 
 .messageInputWrap button {
   width: 34px;
-  height: 36px;
+  height: 30px;
   margin-bottom: 0;
 }
 
@@ -4712,9 +4714,9 @@
   align-self: end;
   justify-self: end;
   width: 34px;
-  height: 36px;
+  height: 30px;
   color: var(--phone-chat-text);
-  border-radius: 20px;
+  border-radius: 17px;
 }
 
 .composerScheduleButton:active {
@@ -4724,7 +4726,7 @@
 
 .composerIconButton {
   width: var(--phone-chat-composer-side-action);
-  height: var(--phone-chat-composer-input);
+  height: var(--phone-chat-composer-row);
   border-radius: 999px;
   overflow: hidden;
   transition:
@@ -4734,6 +4736,12 @@
     background-color 180ms ease,
     color 180ms ease,
     box-shadow 180ms ease;
+}
+
+.composerIconButton svg {
+  width: 29px;
+  height: 29px;
+  stroke-width: 2.35;
 }
 
 .composerIconButton:disabled {
@@ -4746,7 +4754,7 @@
   align-items: end;
   gap: 4px;
   min-width: calc(var(--phone-chat-composer-side-action) + var(--phone-chat-composer-action) + 4px);
-  height: var(--phone-chat-composer-input);
+  height: var(--phone-chat-composer-row);
   transition:
     grid-template-columns 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
     min-width 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
@@ -4774,13 +4782,15 @@
 
 .composerSendButton {
   width: var(--phone-chat-composer-action);
-  height: var(--phone-chat-composer-input);
+  height: var(--phone-chat-composer-row);
   color: var(--phone-chat-text-on-primary);
   background: var(--phone-chat-accent);
   box-shadow: 0 8px 18px rgba(var(--phone-chat-accent-rgb), 0.25);
 }
 
 .composerSendButton svg {
+  width: 20px;
+  height: 20px;
   stroke-width: 3;
 }
 
