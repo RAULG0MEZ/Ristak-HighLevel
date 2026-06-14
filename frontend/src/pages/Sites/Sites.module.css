@@ -9230,7 +9230,7 @@
 }
 
 .containerFocused .builderGridLanding .blocksRail {
-  padding-right: 18px;
+  padding-right: 12px;
 }
 
 .containerFocused .builderGridLanding .canvasColumn {
@@ -9612,12 +9612,12 @@
 .containerFocused .propertiesPanel {
   top: calc(var(--header-height) + 16px);
   max-height: calc(100vh - var(--header-height) - 42px);
-  scrollbar-gutter: stable;
+  scrollbar-gutter: stable both-edges;
 }
 
 .containerFocused .blocksRail {
   border-right: 1px solid var(--color-border-subtle, rgba(148, 163, 184, 0.22));
-  padding: 0 16px 0 20px;
+  padding: 0 10px 0 14px;
 }
 
 .containerFocused .propertiesPanel {
@@ -14164,7 +14164,7 @@
 .pageFrame .containerFocused:has(.builder) .blocksRail {
   overflow-y: scroll;
   overflow-x: hidden;
-  scrollbar-gutter: stable;
+  scrollbar-gutter: stable both-edges;
   padding-bottom: 24px;
 }
 
