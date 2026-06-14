@@ -7644,15 +7644,17 @@ export const Sites: React.FC = () => {
                       <ArrowLeft size={15} />
                       <span>Volver</span>
                     </button>
-                    <label className={`${styles.editorNameField} ${styles.editorToolbarNameField}`}>
-                      <input
-                        value={editorSite.name}
-                        aria-label="Nombre interno del site"
-                        disabled={editorAIGenerating}
-                        onChange={(event) => updateSelectedSite({ name: event.target.value })}
-                        onBlur={() => handleSaveSite(undefined, { silent: true })}
-                      />
-                    </label>
+                    {!isImportedHtmlSite(editorSite) && (
+                      <label className={`${styles.editorNameField} ${styles.editorToolbarNameField}`}>
+                        <input
+                          value={editorSite.name}
+                          aria-label="Nombre interno del site"
+                          disabled={editorAIGenerating}
+                          onChange={(event) => updateSelectedSite({ name: event.target.value })}
+                          onBlur={() => handleSaveSite(undefined, { silent: true })}
+                        />
+                      </label>
+                    )}
                     {editorSite.status !== 'draft' && !formEditMode && (
                       <span className={`${styles.statusPill} ${getStatusClass(editorSite, domainConfig)}`}>{getStatusLabel(editorSite, domainConfig)}</span>
                     )}
@@ -9292,18 +9294,49 @@ type ImportedAIRegionAttempt = {
   debug?: SitesAIEditDebug
 }
 
-type ImportedCodeAssistantMessage = {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  debug?: SitesAIEditDebug
-}
-
 type ImportedCodeAssistantWorkStep = {
   id: string
   label: string
   detail: string
   status: 'pending' | 'active' | 'done' | 'error'
+}
+
+function getImportedCodeAssistantProgressPercent(steps: ImportedCodeAssistantWorkStep[]) {
+  if (!steps.length) return 0
+  const errorIndex = steps.findIndex(step => step.status === 'error')
+  const activeIndex = steps.findIndex(step => step.status === 'active')
+  const doneCount = steps.filter(step => step.status === 'done').length
+  const weightedCount = errorIndex >= 0
+    ? Math.max(1, errorIndex + 0.62)
+    : activeIndex >= 0
+      ? doneCount + 0.48
+      : doneCount
+  return Math.max(8, Math.min(100, Math.round((weightedCount / steps.length) * 100)))
+}
+
+function getImportedCodeAssistantStepsFromDebug(debug?: SitesAIEditDebug | null): ImportedCodeAssistantWorkStep[] {
+  const structuredSteps = Array.isArray(debug?.progressSteps)
+    ? debug.progressSteps
+    : []
+  if (structuredSteps.length) {
+    return structuredSteps.map((step, index) => ({
+      id: String(step.id || `debug-step-${index}`),
+      label: String(step.label || `Fase ${index + 1}`),
+      detail: String(step.detail || ''),
+      status: ['pending', 'active', 'done', 'error'].includes(String(step.status))
+        ? step.status as ImportedCodeAssistantWorkStep['status']
+        : 'done'
+    }))
+  }
+  const textSteps = Array.isArray(debug?.steps)
+    ? debug.steps.map(step => String(step || '').trim()).filter(Boolean)
+    : []
+  return textSteps.map((step, index) => ({
+    id: `debug-${index}-${step.slice(0, 24)}`,
+    label: index === textSteps.length - 1 ? 'Resultado' : `Fase ${index + 1}`,
+    detail: step,
+    status: 'done'
+  }))
 }
 
 type ImportedButtonEditorState = {
@@ -12428,7 +12461,6 @@ const ImportedHtmlEditorPanel: React.FC<{
   const codeHighlightRef = useRef<HTMLPreElement | null>(null)
   const codeTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const codeAssistantHeightRef = useRef(286)
-  const codeAssistantProgressTimerRef = useRef<number | null>(null)
   const selectedIframeElementRef = useRef<HTMLElement | null>(null)
   const selectedCodePreviewElementRef = useRef<HTMLElement | null>(null)
   const elementPopoverRef = useRef<HTMLDivElement | null>(null)
@@ -12465,7 +12497,6 @@ const ImportedHtmlEditorPanel: React.FC<{
   const [codeAssistantOpen, setCodeAssistantOpen] = useState(false)
   const [codeAssistantPrompt, setCodeAssistantPrompt] = useState('')
   const [codeAssistantModel, setCodeAssistantModel] = useState(getDefaultSiteChatGPTModel(true))
-  const [codeAssistantMessages, setCodeAssistantMessages] = useState<ImportedCodeAssistantMessage[]>([])
   const [codeAssistantSaving, setCodeAssistantSaving] = useState(false)
   const [codeAssistantError, setCodeAssistantError] = useState('')
   const [codeAssistantHeight, setCodeAssistantHeight] = useState(286)
@@ -12640,10 +12671,9 @@ const ImportedHtmlEditorPanel: React.FC<{
   }, [codeAssistantHeight])
 
   const stopCodeAssistantProgress = useCallback(() => {
-    if (codeAssistantProgressTimerRef.current !== null) {
-      window.clearInterval(codeAssistantProgressTimerRef.current)
-      codeAssistantProgressTimerRef.current = null
-    }
+    // The assistant progress intentionally advances only when the editor or
+    // backend reaches a real execution phase. Keep this callback for cleanup
+    // symmetry without running a fake timer.
   }, [])
 
   const setCodeAssistantProgressStep = useCallback((index: number, status: ImportedCodeAssistantWorkStep['status']) => {
@@ -12655,32 +12685,11 @@ const ImportedHtmlEditorPanel: React.FC<{
     }))
   }, [])
 
-  const startCodeAssistantProgress = useCallback((steps: ImportedCodeAssistantWorkStep[]) => {
-    stopCodeAssistantProgress()
-    setCodeAssistantWorkSteps(steps.map((step, index) => ({
-      ...step,
-      status: index === 0 ? 'active' : 'pending'
-    })))
-
-    let stepIndex = 0
-    codeAssistantProgressTimerRef.current = window.setInterval(() => {
-      stepIndex = Math.min(stepIndex + 1, Math.max(0, steps.length - 2))
-      setCodeAssistantProgressStep(stepIndex, 'active')
-    }, 1800)
-  }, [setCodeAssistantProgressStep, stopCodeAssistantProgress])
-
   const completeCodeAssistantProgress = useCallback((debug?: SitesAIEditDebug | null, fallback = 'Listo, el borrador quedó actualizado.') => {
     stopCodeAssistantProgress()
-    const debugSteps = Array.isArray(debug?.steps)
-      ? debug.steps.map(step => String(step || '').trim()).filter(Boolean)
-      : []
+    const debugSteps = getImportedCodeAssistantStepsFromDebug(debug)
     if (debugSteps.length) {
-      setCodeAssistantWorkSteps(debugSteps.slice(-5).map((step, index) => ({
-        id: `debug-${index}-${step.slice(0, 24)}`,
-        label: index === debugSteps.length - 1 ? 'Resultado' : `Paso ${index + 1}`,
-        detail: step,
-        status: 'done'
-      })))
+      setCodeAssistantWorkSteps(debugSteps.slice(-6))
       return
     }
     setCodeAssistantWorkSteps(current => current.length
@@ -13411,45 +13420,41 @@ const ImportedHtmlEditorPanel: React.FC<{
       selectedContext,
       `Solicitud del usuario: ${prompt}`
     ].join('\n\n')
-    const userMessage: ImportedCodeAssistantMessage = {
-      id: makeAICreationId(),
-      role: 'user',
-      content: prompt
-    }
     const selectedStepDetail = selectedRange
       ? `${selectedRange.label || 'Elemento seleccionado'} cerca de la línea ${selectedRange.line || 'detectada'}.`
       : codeSelectionNotice
         ? codeSelectionNotice
         : 'Sin elemento seleccionado: revisando la página activa completa.'
     const selectedModelLabel = getChatGPTSiteModelOption(codeAssistantModel, true).label
+    const selectedModelDisplay = selectedModelLabel.replace(/\s*·\s*\$+.*$/, '').trim() || selectedModelLabel
     const workPlan: ImportedCodeAssistantWorkStep[] = [
       {
         id: 'context',
-        label: 'Preparando contexto',
+        label: 'Contexto preparado',
         detail: `${activeCodeFile.label || activeCodeFile.path || 'HTML principal'} · ${(activeCodeValue.length / 1000).toFixed(1)}k caracteres.`,
         status: 'pending'
       },
       {
         id: 'selection',
-        label: 'Ubicando zona',
+        label: 'Zona definida',
         detail: selectedStepDetail,
         status: 'pending'
       },
       {
         id: 'model',
-        label: 'Pidiendo edición a la IA',
-        detail: `${selectedModelLabel}. Se manda el borrador actual sin guardarlo todavía.`,
+        label: 'Consultando modelo',
+        detail: `${selectedModelDisplay}. Se manda el HTML activo como borrador, sin guardarlo todavía.`,
         status: 'pending'
       },
       {
         id: 'patch',
-        label: 'Esperando HTML editado',
-        detail: 'El asistente debe devolver sólo el HTML modificado o pedir más detalle.',
+        label: 'Recibiendo propuesta',
+        detail: 'Esperando la respuesta del modelo con el HTML modificado o una solicitud de más detalle.',
         status: 'pending'
       },
       {
         id: 'draft',
-        label: 'Aplicando borrador',
+        label: 'Preparando borrador',
         detail: 'Si hay cambios visibles, se actualiza el preview y queda pendiente de guardar.',
         status: 'pending'
       }
@@ -13457,8 +13462,11 @@ const ImportedHtmlEditorPanel: React.FC<{
 
     setCodeAssistantSaving(true)
     setCodeAssistantError('')
-    setCodeAssistantMessages(current => [...current.slice(-8), userMessage])
-    startCodeAssistantProgress(workPlan)
+    stopCodeAssistantProgress()
+    setCodeAssistantWorkSteps(workPlan.map((step, index) => ({
+      ...step,
+      status: index < 2 ? 'done' : index === 2 ? 'active' : 'pending'
+    })))
 
     try {
       const result = await sitesService.editImportedHtmlWithAI(site.id, {
@@ -13471,10 +13479,6 @@ const ImportedHtmlEditorPanel: React.FC<{
         currentHtml: activeCodeValue,
         currentFilePath: activeCodeFile.path || activeCodeFile.label || '',
         messages: [
-          ...codeAssistantMessages.slice(-6).map(message => ({
-            role: message.role,
-            content: message.content
-          } satisfies SitesAICreationMessage)),
           {
             role: 'user',
             content: assistantInstruction
@@ -13491,49 +13495,31 @@ const ImportedHtmlEditorPanel: React.FC<{
       if (result.status === 'needs_more_info' || !nextHtml.trim()) {
         const message = result.reply || 'El asistente necesita más detalle para aplicar el cambio.'
         setCodeAssistantError(message)
-        failCodeAssistantProgress(message)
-        setCodeAssistantMessages(current => [...current, {
-          id: makeAICreationId(),
-          role: 'assistant',
-          content: message,
-          debug: result.debug
-        }])
+        const debugSteps = getImportedCodeAssistantStepsFromDebug(result.debug)
+        if (debugSteps.length) setCodeAssistantWorkSteps(debugSteps)
+        else failCodeAssistantProgress(message)
         return
       }
 
       if (normalizeImportedAIRegionPreviewHtml(nextHtml) === normalizeImportedAIRegionPreviewHtml(activeCodeValue)) {
         const message = result.reply || 'El asistente respondió, pero no cambió el HTML visible. Intenta pedir el ajuste con más precisión.'
         setCodeAssistantError(message)
-        failCodeAssistantProgress(message)
-        setCodeAssistantMessages(current => [...current, {
-          id: makeAICreationId(),
-          role: 'assistant',
-          content: message,
-          debug: result.debug
-        }])
+        const debugSteps = getImportedCodeAssistantStepsFromDebug(result.debug)
+        if (debugSteps.length) setCodeAssistantWorkSteps(debugSteps)
+        else failCodeAssistantProgress(message)
         return
       }
 
+      setCodeAssistantProgressStep(3, 'active')
       onCodeDraftChange(activeCodeFile.path, nextHtml, activeCodeFile.content)
       setCodeAssistantPrompt('')
       const assistantReply = result.reply || 'Listo, apliqué el cambio en el borrador del HTML. Revisa la vista previa y guarda cuando esté correcto.'
       completeCodeAssistantProgress(result.debug, assistantReply)
-      setCodeAssistantMessages(current => [...current, {
-        id: makeAICreationId(),
-        role: 'assistant',
-        content: assistantReply,
-        debug: result.debug
-      }])
       showToast('success', 'Cambio preparado', 'El asistente editó el HTML como borrador. Guarda el sitio para aplicarlo.')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'No se pudo editar el HTML con el asistente.'
       setCodeAssistantError(message)
       failCodeAssistantProgress(message)
-      setCodeAssistantMessages(current => [...current, {
-        id: makeAICreationId(),
-        role: 'assistant',
-        content: message
-      }])
     } finally {
       setCodeAssistantSaving(false)
     }
@@ -14964,6 +14950,8 @@ const ImportedHtmlEditorPanel: React.FC<{
     }
   }, [activeCodePreviewHtml, codeEditorOpen, guardedCodePreviewHtml, openCodeButtonEditorForElement, openCodeElementEditorForElement, selectImportedCodePreviewElement])
 
+  const codeAssistantProgressPercent = getImportedCodeAssistantProgressPercent(codeAssistantWorkSteps)
+
   if (codeEditorOpen) {
     return (
       <div
@@ -15109,87 +15097,76 @@ const ImportedHtmlEditorPanel: React.FC<{
                     </CustomSelect>
                   </label>
                 </div>
-                <div className={styles.importedCodeAssistantMessages} aria-live="polite">
-                  {codeAssistantMessages.length ? (
-                    codeAssistantMessages.slice(-6).map(message => (
-                      <div
-                        key={message.id}
-                        className={`${styles.importedCodeAssistantMessage} ${message.role === 'user' ? styles.importedCodeAssistantMessageUser : styles.importedCodeAssistantMessageAssistant}`}
-                      >
-                        <span>{message.role === 'user' ? 'Tú' : 'Asistente'}</span>
-                        <p>{message.content}</p>
+                <div className={styles.importedCodeAssistantRun} aria-live="polite">
+                  {codeAssistantWorkSteps.length > 0 ? (
+                    <>
+                      <div className={styles.importedCodeAssistantLinearTrack}>
+                        <span style={{ width: `${codeAssistantProgressPercent}%` }} />
                       </div>
-                    ))
+                      <div className={styles.importedCodeAssistantProgress} aria-label="Progreso del asistente AI">
+                        {codeAssistantWorkSteps.map(step => (
+                          <div
+                            key={step.id}
+                            className={`${styles.importedCodeAssistantProgressStep} ${step.status === 'active' ? styles.importedCodeAssistantProgressActive : ''} ${step.status === 'done' ? styles.importedCodeAssistantProgressDone : ''} ${step.status === 'error' ? styles.importedCodeAssistantProgressError : ''}`}
+                          >
+                            <span className={styles.importedCodeAssistantProgressIcon} aria-hidden="true">
+                              {step.status === 'done' ? <Check size={12} /> : step.status === 'error' ? <AlertTriangle size={12} /> : <span />}
+                            </span>
+                            <span>
+                              <strong>{step.label}</strong>
+                              <small>{step.detail}</small>
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
                   ) : (
-                    <p className={styles.importedCodeAssistantEmpty}>
-                      Selecciona algo en la vista o escribe directo qué quieres cambiar: título, botón, campo, sección o toda la página.
-                    </p>
+                    <div className={styles.importedCodeAssistantEmptyState}>
+                      <Sparkles size={15} />
+                      <span>Escribe una instrucción. Si seleccionas un elemento en la vista, el asistente usará esa zona como contexto.</span>
+                    </div>
                   )}
                 </div>
-                {codeAssistantWorkSteps.length > 0 && (
-                  <div className={styles.importedCodeAssistantProgress} aria-live="polite">
-                    {codeAssistantWorkSteps.map(step => (
-                      <div
-                        key={step.id}
-                        className={`${styles.importedCodeAssistantProgressStep} ${step.status === 'active' ? styles.importedCodeAssistantProgressActive : ''} ${step.status === 'done' ? styles.importedCodeAssistantProgressDone : ''} ${step.status === 'error' ? styles.importedCodeAssistantProgressError : ''}`}
-                      >
-                        <span className={styles.importedCodeAssistantProgressIcon} aria-hidden="true">
-                          {step.status === 'done' ? <Check size={12} /> : step.status === 'error' ? <AlertTriangle size={12} /> : <RefreshCw size={12} />}
-                        </span>
-                        <span>
-                          <strong>{step.label}</strong>
-                          <small>{step.detail}</small>
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
                 {codeAssistantError && (
                   <div className={styles.importedAIRegionError}>
                     <AlertTriangle size={14} />
                     <span>{codeAssistantError}</span>
                   </div>
                 )}
-                <label className={styles.importedCodeAssistantComposer}>
-                  <textarea
-                    rows={3}
-                    value={codeAssistantPrompt}
-                    disabled={codeAssistantSaving}
-                    data-ristak-unstyled="true"
-                    placeholder="Ejemplo: cambia el texto del botón seleccionado a “Quiero mi guía gratis” y conserva su acción..."
-                    name="rstk-imported-code-assistant-prompt"
-                    {...importedEditorNoAutocompleteAttrs}
-                    onChange={(event) => setCodeAssistantPrompt(event.target.value)}
-                  />
-                </label>
-                <div className={styles.importedCodeAssistantFooter}>
+                <div className={styles.importedCodeAssistantComposer}>
                   <AIVoiceDictationControl
                     voice={codeAssistantVoiceDictation}
                     disabled={codeAssistantSaving}
                     className={styles.importedCodeAssistantVoice}
                   />
+                  <label className={styles.importedCodeAssistantInputWrap}>
+                    <textarea
+                      rows={1}
+                      value={codeAssistantPrompt}
+                      disabled={codeAssistantSaving}
+                      data-ristak-unstyled="true"
+                      placeholder="Dile qué quieres cambiar en este HTML..."
+                      name="rstk-imported-code-assistant-prompt"
+                      {...importedEditorNoAutocompleteAttrs}
+                      onChange={(event) => setCodeAssistantPrompt(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter' || event.shiftKey) return
+                        event.preventDefault()
+                        if (!activeCodeFile || !codeAssistantPrompt.trim() || codeAssistantSaving) return
+                        void applyCodeAssistantEdit()
+                      }}
+                    />
+                  </label>
                   <Button
                     type="button"
-                    variant="secondary"
                     size="sm"
-                    onClick={() => {
-                      codeAssistantVoiceDictation.cancelVoice()
-                      setCodeAssistantPrompt('')
-                      setCodeAssistantError('')
-                    }}
-                    disabled={codeAssistantSaving || (!codeAssistantPrompt && !codeAssistantError)}
-                  >
-                    Limpiar
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
+                    className={styles.importedCodeAssistantSendButton}
                     onClick={() => void applyCodeAssistantEdit()}
                     disabled={!activeCodeFile || !codeAssistantPrompt.trim() || codeAssistantSaving}
                     loading={codeAssistantSaving}
                   >
-                    <Sparkles size={14} />
-                    {codeAssistantSaving ? 'Analizando...' : 'Aplicar cambio'}
+                    <Send size={14} />
+                    {codeAssistantSaving ? 'Analizando...' : 'Enviar'}
                   </Button>
                 </div>
               </div>

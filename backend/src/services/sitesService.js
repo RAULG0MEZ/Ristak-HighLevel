@@ -8029,6 +8029,7 @@ function createSitesAIEditDebug({ traceId, siteId, activePageId, model, imported
     fallbackType: '',
     fallbackReason: '',
     finalStatus: '',
+    progressSteps: [],
     steps: []
   }
 }
@@ -8037,6 +8038,30 @@ function addSitesAIEditDebugStep(debug, message = '') {
   const cleanMessage = limitString(message, 420)
   if (!debug || !cleanMessage) return
   debug.steps.push(cleanMessage)
+}
+
+function addSitesAIEditProgressStep(debug, {
+  id = '',
+  label = '',
+  detail = '',
+  status = 'done'
+} = {}) {
+  if (!debug) return
+  const cleanId = cleanString(id || label).replace(/[^a-z0-9_-]+/gi, '_').slice(0, 64)
+  const cleanLabel = limitString(label, 80)
+  if (!cleanId || !cleanLabel) return
+  const cleanStep = {
+    id: cleanId,
+    label: cleanLabel,
+    detail: limitString(detail, 420),
+    status: ['pending', 'active', 'done', 'error'].includes(status) ? status : 'done'
+  }
+  const index = debug.progressSteps.findIndex(step => step.id === cleanStep.id)
+  if (index >= 0) {
+    debug.progressSteps[index] = { ...debug.progressSteps[index], ...cleanStep }
+  } else {
+    debug.progressSteps.push(cleanStep)
+  }
 }
 
 function getSitesAIEditDebugPayload(debug = {}) {
@@ -8062,6 +8087,7 @@ function getSitesAIEditDebugPayload(debug = {}) {
     fallbackType: debug.fallbackType,
     fallbackReason: debug.fallbackReason,
     finalStatus: debug.finalStatus,
+    progressSteps: Array.isArray(debug.progressSteps) ? debug.progressSteps.slice(-12) : [],
     steps: Array.isArray(debug.steps) ? debug.steps.slice(-12) : []
   }
 }
@@ -8237,6 +8263,12 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
     aiRegionRequest
   })
   addSitesAIEditDebugStep(debug, `Inicio de edición IA para página ${activePageId || 'activa'} con ${debug.selectedElements} elementos visuales.`)
+  addSitesAIEditProgressStep(debug, {
+    id: 'context',
+    label: 'Contexto preparado',
+    detail: `${importedPages.length || 1} página(s), ${debug.selectedElements} elemento(s) visuales y borrador activo listos para analizar.`,
+    status: 'done'
+  })
   logSitesAIEditDebug(debug, 'request_started')
 
   const initialAgentImportedPages = await getImportedSitePagesForAIContext(currentSite, currentImport, { htmlLimit: 0 })
@@ -8264,6 +8296,12 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
   debug.agentOperations = agentResult.operations || []
   if (agentResult.attempted) {
     addSitesAIEditDebugStep(debug, `Agente interno ${agentResult.operation || 'operación'}: ${agentResult.reason || 'sin detalle'}`)
+    addSitesAIEditProgressStep(debug, {
+      id: 'site_agent',
+      label: agentResult.page ? 'Regla interna aplicada' : 'Regla interna revisada',
+      detail: agentResult.reason || 'Ristak revisó si el cambio se podía resolver sin llamar a OpenAI.',
+      status: agentResult.page ? 'done' : 'done'
+    })
     logSitesAIEditDebug(debug, agentResult.page ? 'site_agent_updated' : 'site_agent_no_change', {
       agentOperations: debug.agentOperations
     })
@@ -8273,6 +8311,12 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
     if (draftOnly) {
       debug.finalStatus = 'draft_updated_with_site_agent'
       addSitesAIEditDebugStep(debug, 'Se devolvio el HTML del borrador aplicado por el agente interno.')
+      addSitesAIEditProgressStep(debug, {
+        id: 'draft',
+        label: 'Borrador listo',
+        detail: 'El cambio quedó aplicado como borrador local, pendiente de guardar el sitio.',
+        status: 'done'
+      })
       logSitesAIEditDebug(debug, 'draft_updated_with_site_agent')
       return buildSitesAIDraftOnlyUpdateResponse({
         page: agentResult.page,
@@ -8292,6 +8336,12 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
     })
     debug.finalStatus = 'updated_with_site_agent'
     addSitesAIEditDebugStep(debug, 'Se guardo el HTML aplicado por el agente interno.')
+    addSitesAIEditProgressStep(debug, {
+      id: 'save',
+      label: 'HTML guardado',
+      detail: 'El cambio interno se guardó en el sitio.',
+      status: 'done'
+    })
     logSitesAIEditDebug(debug, 'updated_with_site_agent')
 
     return {
@@ -8319,6 +8369,13 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
 
   let aiPayload = null
   try {
+    addSitesAIEditDebugStep(debug, `Solicitud enviada a OpenAI con modelo ${model}.`)
+    addSitesAIEditProgressStep(debug, {
+      id: 'openai_request',
+      label: 'IA consultada',
+      detail: `${model}. Se mandó el HTML activo y la instrucción del usuario.`,
+      status: 'done'
+    })
     aiPayload = await callSitesAIHtmlEditor({
       apiKey,
       model,
@@ -8332,20 +8389,51 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
       activePageId,
       aiRegionRequest
     })
+    debug.aiStatus = cleanString(aiPayload?.status || 'updated')
+    debug.aiReply = limitString(aiPayload?.reply, 900)
+    addSitesAIEditDebugStep(debug, `OpenAI respondió con estado ${debug.aiStatus || 'sin estado explícito'}.`)
+    addSitesAIEditProgressStep(debug, {
+      id: 'openai_response',
+      label: 'Respuesta recibida',
+      detail: debug.aiReply || 'La IA devolvió una propuesta de HTML para revisar.',
+      status: 'done'
+    })
   } catch (error) {
+    addSitesAIEditDebugStep(debug, `OpenAI no completó la edición: ${sanitizeOpenAIErrorMessage(error?.message) || 'sin detalle'}`)
+    addSitesAIEditProgressStep(debug, {
+      id: 'openai_error',
+      label: 'IA no disponible',
+      detail: sanitizeOpenAIErrorMessage(error?.message) || 'OpenAI no completó la edición.',
+      status: 'error'
+    })
+    error.debug = getSitesAIEditDebugPayload(debug)
     throw error
   }
 
   const status = cleanString(aiPayload?.status)
 
   if (status === 'needs_more_info' || !hasSitesAIHtmlPayload(aiPayload)) {
+    debug.finalStatus = 'needs_more_info'
+    addSitesAIEditProgressStep(debug, {
+      id: 'needs_more_info',
+      label: 'Falta información',
+      detail: limitString(aiPayload?.reply, 420) || 'La IA pidió más detalle antes de editar.',
+      status: 'error'
+    })
     return {
       status: 'needs_more_info',
-      reply: limitString(aiPayload?.reply, 1000) || 'Me falta saber que cambio quieres hacer en esta página HTML.'
+      reply: limitString(aiPayload?.reply, 1000) || 'Me falta saber que cambio quieres hacer en esta página HTML.',
+      debug: getSitesAIEditDebugPayload(debug)
     }
   }
 
   const aiPage = normalizeAIHtmlPagePayload(aiPayload, siteKind)
+  addSitesAIEditProgressStep(debug, {
+    id: 'normalize',
+    label: 'HTML normalizado',
+    detail: 'Ristak validó la respuesta de la IA y la convirtió al formato editable del sitio.',
+    status: 'done'
+  })
   const aiPageHasPages = Array.isArray(aiPage.pages) && aiPage.pages.length > 0
   const shouldMergeSingleActivePage = !aiPageHasPages && importedPages.length > 1 && Boolean(cleanString(aiPage.html))
   const shouldMergePartialPages = aiPageHasPages && importedPages.length > aiPage.pages.length
@@ -8365,6 +8453,7 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
     activePageId
   )
   const changedByAI = didAIChangeImportedHtml(page, currentImportForAI, mergeImportedPages)
+  debug.changedByAI = Boolean(changedByAI)
 
   if (hasSelectedRegionHints && (shouldApplyImportedAIRegionCenteredLayoutFallback(operationalPromptText) || shouldApplyImportedAIRegionVideoOnlyFallback(operationalPromptText))) {
     debug.fallbackAttempted = true
@@ -8388,6 +8477,18 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
       if (draftOnly) {
         debug.finalStatus = 'draft_updated_with_layout_fallback'
         addSitesAIEditDebugStep(debug, 'Se devolvio el HTML del borrador aplicado por fallback de layout.')
+        addSitesAIEditProgressStep(debug, {
+          id: 'layout_fallback',
+          label: 'Ajuste interno aplicado',
+          detail: 'La IA no dejó el resultado final suficiente, así que Ristak aplicó el ajuste de layout detectado.',
+          status: 'done'
+        })
+        addSitesAIEditProgressStep(debug, {
+          id: 'draft',
+          label: 'Borrador listo',
+          detail: 'El cambio quedó aplicado como borrador local, pendiente de guardar el sitio.',
+          status: 'done'
+        })
         logSitesAIEditDebug(debug, 'draft_updated_with_layout_fallback')
         return buildSitesAIDraftOnlyUpdateResponse({
           page: layoutFallbackPage,
@@ -8419,7 +8520,7 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
     }
     const missingTargetMessage = getImportedAIRegionMissingTargetMessage(layoutFallbackResult)
     if (missingTargetMessage) {
-      return buildImportedAIRegionMissingTargetResponse(missingTargetMessage)
+      return buildImportedAIRegionMissingTargetResponse(debug, missingTargetMessage)
     }
   }
 
@@ -8440,6 +8541,18 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
         if (draftOnly) {
           debug.finalStatus = 'draft_updated_with_fallback'
           addSitesAIEditDebugStep(debug, 'Se devolvio el HTML del borrador aplicado por fallback.')
+          addSitesAIEditProgressStep(debug, {
+            id: 'fallback',
+            label: 'Ajuste interno aplicado',
+            detail: 'Ristak aplicó una corrección local porque la IA no dejó cambios visibles.',
+            status: 'done'
+          })
+          addSitesAIEditProgressStep(debug, {
+            id: 'draft',
+            label: 'Borrador listo',
+            detail: 'El cambio quedó aplicado como borrador local, pendiente de guardar el sitio.',
+            status: 'done'
+          })
           logSitesAIEditDebug(debug, 'draft_updated_with_fallback')
           return buildSitesAIDraftOnlyUpdateResponse({
             page: fallbackPage,
@@ -8471,17 +8584,33 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
       }
     }
 
+    debug.finalStatus = 'unchanged'
+    addSitesAIEditProgressStep(debug, {
+      id: 'unchanged',
+      label: 'Sin cambio visible',
+      detail: hasSelectedRegionHints
+        ? 'La IA respondió, pero el HTML de la zona seleccionada quedó igual.'
+        : 'La IA respondió, pero el HTML de la página quedó igual.',
+      status: 'error'
+    })
     return {
       status: 'needs_more_info',
       reply: hasSelectedRegionHints
         ? 'La IA devolvio el mismo HTML sin cambios visibles. Reintenta indicando exactamente que debe cambiar en la zona seleccionada.'
-        : 'La IA devolvio el mismo HTML sin cambios visibles. Reintenta indicando exactamente que debe cambiar en la página.'
+        : 'La IA devolvio el mismo HTML sin cambios visibles. Reintenta indicando exactamente que debe cambiar en la página.',
+      debug: getSitesAIEditDebugPayload(debug)
     }
   }
 
   if (draftOnly) {
     debug.finalStatus = 'draft_updated_with_ai'
     addSitesAIEditDebugStep(debug, 'Se devolvio el HTML del borrador generado por la IA sin guardar en base de datos.')
+    addSitesAIEditProgressStep(debug, {
+      id: 'draft',
+      label: 'Borrador listo',
+      detail: 'El cambio de la IA quedó aplicado como borrador local, pendiente de guardar el sitio.',
+      status: 'done'
+    })
     logSitesAIEditDebug(debug, 'draft_updated_with_ai')
     return buildSitesAIDraftOnlyUpdateResponse({
       page,
@@ -8504,7 +8633,8 @@ export async function updateImportedSiteHtmlWithAI(siteId, input = {}) {
     status: 'updated',
     reply: limitString(aiPayload?.reply, 1000) || 'Listo, actualice el HTML y volvi a revisar los formularios.',
     site: result.site,
-    import: result.import
+    import: result.import,
+    debug: getSitesAIEditDebugPayload(debug)
   }
 }
 

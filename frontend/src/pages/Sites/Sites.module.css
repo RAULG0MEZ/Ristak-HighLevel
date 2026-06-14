@@ -518,17 +518,6 @@
   --rstk-code-comment: #86efac;
   --rstk-code-keyword: #f0abfc;
   --rstk-code-selection: rgba(96, 165, 250, 0.28);
-  --rstk-assistant-bg: #141518;
-  --rstk-assistant-surface: #1a1b1f;
-  --rstk-assistant-soft: #22242a;
-  --rstk-assistant-control: #0f1117;
-  --rstk-assistant-text: #f8fafc;
-  --rstk-assistant-secondary: #e5e7eb;
-  --rstk-assistant-muted: #9ca3af;
-  --rstk-assistant-border: rgba(148, 163, 184, 0.22);
-  --rstk-assistant-border-strong: rgba(148, 163, 184, 0.34);
-  --rstk-assistant-focus: rgba(var(--color-primary-rgb), 0.2);
-  --rstk-assistant-chip: rgba(var(--color-primary-rgb), 0.18);
   color-scheme: dark;
 }
 
@@ -543,6 +532,10 @@
   --rstk-code-comment: #15803d;
   --rstk-code-keyword: #be185d;
   --rstk-code-selection: rgba(71, 85, 105, 0.18);
+  color-scheme: light;
+}
+
+.importedCodeSourcePane {
   --rstk-assistant-bg: var(--color-background-secondary);
   --rstk-assistant-surface: var(--color-background-primary);
   --rstk-assistant-soft: var(--color-background-tertiary);
@@ -554,7 +547,6 @@
   --rstk-assistant-border-strong: var(--color-border);
   --rstk-assistant-focus: var(--design-control-focus-shadow, rgba(var(--color-primary-rgb), 0.12));
   --rstk-assistant-chip: rgba(var(--color-primary-rgb), 0.1);
-  color-scheme: light;
 }
 
 .importedCodeSourcePaneInvalid {
@@ -725,13 +717,23 @@
 .importedCodeAssistantPanel {
   min-height: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
-  gap: 10px;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: 9px;
   border-top: 1px solid var(--rstk-assistant-border);
   background: var(--rstk-assistant-bg);
   color: var(--rstk-assistant-text);
   padding: 12px;
   overflow: hidden;
+  color-scheme: normal;
+}
+
+:global(body.light) .importedCodeAssistantPanel {
+  color-scheme: light;
+}
+
+:global(body.dark) .importedCodeAssistantPanel,
+:global([data-theme="dark"]) .importedCodeAssistantPanel {
+  color-scheme: dark;
 }
 
 .importedCodeAssistantHeader {
@@ -761,8 +763,7 @@
 }
 
 .importedCodeAssistantTitle span,
-.importedCodeAssistantModel span,
-.importedCodeAssistantMessage span {
+.importedCodeAssistantModel span {
   color: var(--rstk-assistant-muted);
   font-size: 0.68rem;
   font-weight: 780;
@@ -794,82 +795,105 @@
   color: var(--rstk-assistant-text) !important;
 }
 
-.importedCodeAssistantMessages {
+.importedCodeAssistantRun {
   min-height: 0;
   display: grid;
   align-content: start;
-  gap: 8px;
+  gap: 10px;
   overflow: auto;
   scrollbar-gutter: stable;
   padding-right: 2px;
 }
 
-.importedCodeAssistantEmpty {
-  margin: 0;
-  color: var(--rstk-assistant-muted);
-  font-size: 0.8rem;
-  line-height: 1.45;
-}
-
-.importedCodeAssistantMessage {
-  display: grid;
-  gap: 4px;
-  max-width: 92%;
-  border: 1px solid var(--rstk-assistant-border);
+.importedCodeAssistantEmptyState {
+  min-height: 86px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 1px dashed var(--rstk-assistant-border);
   border-radius: 8px;
-  padding: 8px 10px;
-}
-
-.importedCodeAssistantMessage p {
-  margin: 0;
-  color: var(--rstk-assistant-text);
-  font-size: 0.8rem;
+  background: color-mix(in srgb, var(--rstk-assistant-surface) 86%, var(--color-primary) 14%);
+  color: var(--rstk-assistant-muted);
+  padding: 12px;
+  font-size: 13px;
+  font-weight: 650;
   line-height: 1.45;
-  white-space: pre-wrap;
 }
 
-.importedCodeAssistantMessageUser {
-  justify-self: end;
-  background: var(--rstk-assistant-chip);
+.importedCodeAssistantEmptyState svg {
+  flex: 0 0 auto;
+  color: var(--color-primary);
 }
 
-.importedCodeAssistantMessageAssistant {
-  justify-self: start;
-  background: var(--rstk-assistant-surface);
+.importedCodeAssistantLinearTrack {
+  position: relative;
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--rstk-assistant-border) 58%, transparent);
+}
+
+.importedCodeAssistantLinearTrack span {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  min-width: 8%;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--color-primary) 84%, var(--rstk-assistant-surface) 16%),
+    color-mix(in srgb, var(--color-primary) 58%, var(--color-status-success) 42%)
+  );
+  transition: width 220ms ease;
+}
+
+.importedCodeAssistantLinearTrack span::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.42), transparent);
+  animation: importedAssistantLinearSweep 1.15s ease-in-out infinite;
 }
 
 .importedCodeAssistantProgress {
   min-height: 0;
   display: grid;
-  gap: 7px;
+  gap: 6px;
   border: 1px solid var(--rstk-assistant-border);
   border-radius: 8px;
   background: var(--rstk-assistant-surface);
-  padding: 8px;
+  padding: 7px;
   overflow: auto;
   scrollbar-gutter: stable;
 }
 
 .importedCodeAssistantProgressStep {
   min-width: 0;
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
-  gap: 8px;
-  align-items: start;
+  display: flex;
+  align-items: center;
+  gap: 7px;
   border-radius: 7px;
-  padding: 6px;
+  padding: 6px 7px;
   color: var(--rstk-assistant-muted);
 }
 
 .importedCodeAssistantProgressIcon {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   display: grid;
   place-items: center;
   border: 1px solid var(--rstk-assistant-border);
   border-radius: 999px;
   background: var(--rstk-assistant-bg);
   color: var(--rstk-assistant-muted);
+}
+
+.importedCodeAssistantProgressIcon span {
+  width: 6px;
+  height: 6px;
+  display: block;
+  border-radius: 999px;
+  background: currentColor;
 }
 
 .importedCodeAssistantProgressStep span:last-child {
@@ -881,7 +905,7 @@
 .importedCodeAssistantProgressStep strong {
   overflow: hidden;
   color: var(--rstk-assistant-secondary);
-  font-size: 0.76rem;
+  font-size: 12.5px;
   font-weight: 820;
   line-height: 1.25;
   text-overflow: ellipsis;
@@ -890,7 +914,7 @@
 
 .importedCodeAssistantProgressStep small {
   color: var(--rstk-assistant-muted);
-  font-size: 0.72rem;
+  font-size: 11.5px;
   font-weight: 680;
   line-height: 1.32;
 }
@@ -905,8 +929,8 @@
   color: var(--color-primary);
 }
 
-.importedCodeAssistantProgressActive .importedCodeAssistantProgressIcon svg {
-  animation: editorSaveSpin 0.9s linear infinite;
+.importedCodeAssistantProgressActive .importedCodeAssistantProgressIcon {
+  animation: importedAssistantPulse 1.1s ease-in-out infinite;
 }
 
 .importedCodeAssistantProgressDone .importedCodeAssistantProgressIcon {
@@ -926,12 +950,21 @@
 
 .importedCodeAssistantComposer {
   min-width: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.importedCodeAssistantInputWrap {
+  flex: 1 1 auto;
+  min-width: 0;
   display: grid;
 }
 
-.importedCodeAssistantComposer textarea {
+.importedCodeAssistantInputWrap textarea {
   width: 100%;
-  min-height: 72px;
+  min-height: 42px;
+  max-height: 96px;
   resize: none;
   border: 1px solid var(--rstk-assistant-border);
   border-radius: 8px;
@@ -939,70 +972,96 @@
   color: var(--rstk-assistant-text);
   padding: 10px 11px;
   font: inherit;
-  font-size: 0.84rem;
+  font-size: 13px;
   line-height: 1.45;
   outline: none;
+  overflow-y: auto;
 }
 
-.importedCodeAssistantComposer textarea::placeholder {
+.importedCodeAssistantInputWrap textarea::placeholder {
   color: color-mix(in srgb, var(--rstk-assistant-muted) 82%, transparent);
 }
 
-.importedCodeAssistantComposer textarea:focus {
+.importedCodeAssistantInputWrap textarea:focus {
   border-color: rgba(var(--color-primary-rgb), 0.42);
   box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.12);
 }
 
-.importedCodeAssistantFooter {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
 .importedCodeAssistantVoice.aiVoiceDictationActive {
-  flex: 1 1 220px;
+  flex: 0 1 214px;
 }
 
 .importedCodeAssistantVoice .aiVoiceMicButton {
-  width: 38px;
-  height: 38px;
-  min-height: 38px;
-}
-
-.importedCodeAssistantVoice .aiVoiceComposerInline {
-  min-height: 38px;
-  padding: 6px 9px;
-}
-
-.importedCodeAssistantVoice .aiCreationVoiceWaveform {
-  height: 22px;
-}
-
-.importedCodeSourcePaneDark .importedCodeAssistantVoice .aiVoiceMicButton {
+  width: 42px;
+  height: 42px;
+  min-height: 42px;
   border-color: var(--rstk-assistant-border);
   background: var(--rstk-assistant-control);
   color: var(--rstk-assistant-secondary);
 }
 
-.importedCodeSourcePaneDark .importedCodeAssistantVoice .aiVoiceMicButton:hover:not(:disabled) {
-  border-color: rgba(34, 197, 94, 0.38);
-  background: var(--rstk-assistant-soft);
-  color: #bbf7d0;
+.importedCodeAssistantVoice .aiVoiceComposerInline {
+  min-height: 42px;
+  padding: 6px 9px;
+  border-color: rgba(34, 197, 94, 0.22);
+  background: color-mix(in srgb, var(--color-status-success) 8%, var(--rstk-assistant-surface) 92%);
 }
 
-.importedCodeSourcePaneDark .importedCodeAssistantVoice .aiVoiceMicActive {
+.importedCodeAssistantVoice .aiCreationVoiceWaveform {
+  height: 18px;
+}
+
+.importedCodeAssistantVoice .aiCreationVoiceWaveform::before {
+  border-top-color: color-mix(in srgb, var(--color-status-success) 34%, transparent);
+}
+
+.importedCodeAssistantVoice .aiCreationVoiceBar {
+  flex: 0 0 2px;
+  min-width: 2px;
+  max-height: 18px;
+  min-height: 3px;
+  background: var(--color-status-success);
+}
+
+.importedCodeAssistantVoice .aiVoiceMicButton:hover:not(:disabled) {
   border-color: rgba(34, 197, 94, 0.42);
-  background: rgba(34, 197, 94, 0.16);
-  color: #bbf7d0;
+  background: color-mix(in srgb, var(--color-status-success) 8%, var(--rstk-assistant-surface) 92%);
+  color: var(--color-status-success);
+}
+
+.importedCodeAssistantVoice .aiVoiceMicActive {
+  border-color: rgba(34, 197, 94, 0.42);
+  background: color-mix(in srgb, var(--color-status-success) 14%, var(--rstk-assistant-surface) 86%);
+  color: var(--color-status-success);
   box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.1);
 }
 
-.importedCodeSourcePaneDark .importedCodeAssistantVoice .aiCreationVoiceComposer {
-  border-color: rgba(34, 197, 94, 0.24);
-  background: rgba(34, 197, 94, 0.09);
+.importedCodeAssistantSendButton {
+  min-width: 86px;
+  min-height: 42px !important;
+  height: 42px !important;
+  align-self: stretch;
+}
+
+@keyframes importedAssistantLinearSweep {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes importedAssistantPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(var(--color-primary-rgb), 0.18);
+  }
+
+  50% {
+    box-shadow: 0 0 0 4px rgba(var(--color-primary-rgb), 0.08);
+  }
 }
 
 .importedCodeSelectionNotice {
@@ -15175,16 +15234,16 @@
 
 .editorPageSelectorSlot {
   min-width: 0;
-  flex: 0 1 160px;
+  flex: 0 1 224px;
   display: flex;
   align-items: center;
 }
 
 .editorPageSelectorSlot .pagesDropdown {
-  flex: 0 1 160px;
-  width: min(160px, 100%);
-  min-width: 136px;
-  max-width: 160px;
+  flex: 0 1 224px;
+  width: min(224px, 100%);
+  min-width: 188px;
+  max-width: 240px;
 }
 
 .editorPageSelectorSlot .pagesDropdownTrigger {
@@ -15208,31 +15267,31 @@
 }
 
 .pageFrame .containerFocused:has(.builder) .editorToolbarTools .editorPageSelectorSlot {
-  flex: 0 0 160px;
+  flex: 0 0 224px;
 }
 
 .pageFrame .containerFocused:has(.builder) .editorToolbarTools .editorPageSelectorSlot .pagesDropdownTrigger {
-  height: 38px;
-  min-height: 38px;
-  background: transparent;
-  padding-inline: 10px;
+  height: var(--editor-control-h, 40px);
+  min-height: var(--editor-control-h, 40px);
+  background: var(--design-control-bg);
+  padding-inline: 12px;
 }
 
 .pageFrame .containerFocused:has(.builder) .editorToolbarTools .editorPageSelectorSlot .pagesDropdownTriggerText strong {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: var(--font-weight-semibold, 600);
 }
 
 .pageFrame .containerFocused:has(.builder) .editorToolbarTools .editorSettingsButton,
 .pageFrame .containerFocused:has(.builder) .editorToolbarTools .seoToolbarButton {
-  height: 38px;
-  min-height: 38px;
+  height: var(--editor-control-h, 40px);
+  min-height: var(--editor-control-h, 40px);
   border-color: var(--design-control-border);
   border-radius: var(--design-control-radius, 8px);
-  background: transparent;
+  background: var(--design-control-bg);
   color: var(--color-text-secondary);
-  padding-inline: 10px;
-  font-size: 12px;
+  padding-inline: 12px;
+  font-size: 13px;
   font-weight: var(--font-weight-semibold, 600);
   box-shadow: none;
 }

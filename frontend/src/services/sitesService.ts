@@ -527,6 +527,12 @@ export interface SitesAIEditDebug {
   fallbackType?: string
   fallbackReason?: string
   finalStatus?: string
+  progressSteps?: Array<{
+    id?: string
+    label?: string
+    detail?: string
+    status?: 'pending' | 'active' | 'done' | 'error'
+  }>
   steps?: string[]
 }
 
