@@ -63,6 +63,7 @@ import { AppointmentModal, Icon, Modal, RecordPaymentModal } from '@/components/
 import { PhoneEcosystemNav } from '@/components/phone/PhoneEcosystemNav'
 import { PhonePageTransition } from '@/components/phone/PhonePageTransition'
 import { PhoneSelect } from '@/components/phone/PhoneSelect'
+import { PhoneStartupLoader } from '@/components/phone/PhoneStartupLoader'
 import { PhoneSheet, PhoneTextArea, PhoneTextField } from '@/components/phone/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useLabels } from '@/contexts/LabelsContext'
@@ -11954,11 +11955,7 @@ export const PhoneChat: React.FC = () => {
   )
 
   if (accessState === 'checking') {
-    return (
-      <main className={styles.loadingPage}>
-        <span className={styles.loadingDot} />
-      </main>
-    )
+    return <PhoneStartupLoader />
   }
 
   if (accessState === 'blocked') {

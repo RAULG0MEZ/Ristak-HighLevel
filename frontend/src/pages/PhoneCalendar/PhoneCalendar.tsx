@@ -13,6 +13,7 @@ import {
 import { AppointmentModal } from '@/components/common'
 import { PhoneEcosystemNav } from '@/components/phone/PhoneEcosystemNav'
 import { PhonePageTransition } from '@/components/phone/PhonePageTransition'
+import { PhoneStartupLoader } from '@/components/phone/PhoneStartupLoader'
 import { useAuth } from '@/contexts/AuthContext'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useTimezone } from '@/contexts/TimezoneContext'
@@ -1160,11 +1161,7 @@ export const PhoneCalendar: React.FC = () => {
   }
 
   if (accessState === 'checking') {
-    return (
-      <main className={styles.loadingPage}>
-        <span className={styles.loadingDot} />
-      </main>
-    )
+    return <PhoneStartupLoader />
   }
 
   if (accessState === 'blocked') {

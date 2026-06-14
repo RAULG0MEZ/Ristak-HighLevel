@@ -51,7 +51,6 @@
 :global(body[data-phone-chat-tone="dark"]) .dayTimeline,
 :global(body[data-phone-chat-tone="dark"]) .timelineHeader,
 :global(body[data-phone-chat-tone="dark"]) .timelineBody,
-:global(body[data-phone-chat-tone="dark"]) .loadingPage,
 :global(body[data-phone-chat-tone="dark"]) .blockedPage {
   background: var(--phone-calendar-surface);
 }
@@ -1597,7 +1596,6 @@
   width: 100%;
 }
 
-.loadingPage,
 .blockedPage {
   display: grid;
   min-height: 100dvh;
@@ -1605,15 +1603,6 @@
   color: #050505;
   background: #ffffff;
   place-items: center;
-}
-
-.loadingDot {
-  width: 18px;
-  height: 18px;
-  border: 2px solid #8e8e93;
-  border-top-color: transparent;
-  border-radius: 999px;
-  animation: spin 0.8s linear infinite;
 }
 
 .blockedPanel {

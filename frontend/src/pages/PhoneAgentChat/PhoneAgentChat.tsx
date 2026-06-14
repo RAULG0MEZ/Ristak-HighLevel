@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { MonitorX } from 'lucide-react'
 import { AIAgentPanel } from '@/components/ai'
 import { PhoneEcosystemNav } from '@/components/phone/PhoneEcosystemNav'
+import { PhoneStartupLoader } from '@/components/phone/PhoneStartupLoader'
 import { isLocalPhonePreviewHost } from '@/utils/phoneAccess'
 import styles from './PhoneAgentChat.module.css'
 
@@ -133,11 +134,7 @@ export const PhoneAgentChat: React.FC = () => {
   }, [accessState])
 
   if (accessState === 'checking') {
-    return (
-      <main className={styles.loadingPage}>
-        <span className={styles.loadingDot} />
-      </main>
-    )
+    return <PhoneStartupLoader />
   }
 
   if (accessState === 'blocked') {

@@ -36,7 +36,9 @@ import { Sso } from '@/pages/Login/Sso'
 import { ToastContainer } from '@/components/common/Toast'
 import { Modal } from '@/components/common/Modal'
 import { StorageAlert } from '@/components/common/StorageAlert'
+import { AppStartupLoader } from '@/components/common/AppStartupLoader'
 import { MobileNotificationOnboarding } from '@/components/phone/MobileNotificationOnboarding'
+import { PhoneStartupLoader } from '@/components/phone/PhoneStartupLoader'
 import {
   DESKTOP_LOGIN_PATH,
   PHONE_APP_HOME_PATH,
@@ -193,6 +195,12 @@ function getStandalonePhoneRedirect(pathname: string) {
   return ''
 }
 
+const RouteStartupLoader: React.FC<{ pathname: string; message?: string }> = ({ pathname, message }) => (
+  isPhoneAppPath(pathname)
+    ? <PhoneStartupLoader message={message || 'Abriendo Ristak'} />
+    : <AppStartupLoader message={message || 'Cargando Ristak'} />
+)
+
 // Componente para la ruta de setup (primera vez)
 const SetupRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, needsSetup, isLoading } = useAuth()
@@ -200,18 +208,7 @@ const SetupRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const redirectPath = getPostAuthRedirectPath((location.state as RouteLocationState)?.from)
 
   if (isLoading) {
-    return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        background: 'var(--color-background-primary)',
-        color: 'var(--color-text-primary)'
-      }}>
-        Loading...
-      </div>
-    )
+    return <RouteStartupLoader pathname={location.pathname} />
   }
 
   if (!needsSetup) {
@@ -229,19 +226,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   const location = useLocation()
 
   if (isLoading) {
-    // Mostrar loading mientras verificamos el token
-    return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '100vh',
-        background: 'var(--color-background-primary)',
-        color: 'var(--color-text-primary)'
-      }}>
-        Loading...
-      </div>
-    )
+    return <RouteStartupLoader pathname={location.pathname} />
   }
 
   if (needsSetup) {
@@ -273,17 +258,7 @@ const HomeRedirect: React.FC = () => {
   const { user } = useAuth()
 
   if (loading) {
-    return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '60vh',
-        color: 'var(--color-text-tertiary)'
-      }}>
-        Cargando...
-      </div>
-    )
+    return <AppStartupLoader compact />
   }
 
   if (!isInitialized && user?.role === 'admin') {
@@ -323,7 +298,7 @@ const PhoneRouteEffects: React.FC = () => {
     }
   }, [isPhoneRoute])
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
     const body = document.body
     const root = document.documentElement
     const previousBodyPhoneApp = body.dataset.phoneApp

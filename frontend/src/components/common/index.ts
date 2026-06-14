@@ -48,6 +48,7 @@ export { TagPicker, useContactTags } from './TagPicker'
 export { NumberInput } from './NumberInput'
 export type { NumberInputProps } from './NumberInput'
 export { Loading } from './Loading'
+export { AppStartupLoader } from './AppStartupLoader'
 export {
   DropdownMenu,
   DropdownMenuTrigger,

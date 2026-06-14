@@ -5,6 +5,7 @@ import { RecordPaymentModal } from '@/components/common'
 import { PhoneEcosystemNav } from '@/components/phone/PhoneEcosystemNav'
 import { PhonePageTransition } from '@/components/phone/PhonePageTransition'
 import { PhoneSelect } from '@/components/phone/PhoneSelect'
+import { PhoneStartupLoader } from '@/components/phone/PhoneStartupLoader'
 import { useNotification } from '@/contexts/NotificationContext'
 import { useAppConfig, useHighLevelConnected, usePhoneElasticScroll } from '@/hooks'
 import apiClient from '@/services/apiClient'
@@ -703,11 +704,7 @@ export const PhonePayments: React.FC = () => {
   )
 
   if (accessState === 'checking') {
-    return (
-      <main className={styles.loadingPage}>
-        <span className={styles.loadingDot} />
-      </main>
-    )
+    return <PhoneStartupLoader />
   }
 
   if (accessState === 'blocked') {

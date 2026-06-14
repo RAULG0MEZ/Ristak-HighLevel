@@ -24,6 +24,7 @@ import { useDateRange } from '@/contexts/DateRangeContext'
 import { useHighLevelConnected, usePhoneElasticScroll } from '@/hooks'
 import { AccountSettings } from '@/pages/Settings/AccountSettings'
 import { AIAgentSettings } from '@/pages/Settings/AIAgentSettings'
+import { PhoneStartupLoader } from '@/components/phone/PhoneStartupLoader'
 import { calendarsService, type AppointmentStats, type Calendar, type CalendarEvent } from '@/services/calendarsService'
 import { campaignsService, type Campaign } from '@/services/campaignsService'
 import { contactsService, type ContactStats } from '@/services/contactsService'
@@ -761,11 +762,7 @@ export const PhoneApp: React.FC = () => {
   }
 
   if (accessState === 'checking') {
-    return (
-      <main className={styles.loadingPage}>
-        <span className={styles.loadingDot} />
-      </main>
-    )
+    return <PhoneStartupLoader />
   }
 
   if (accessState === 'blocked') {
